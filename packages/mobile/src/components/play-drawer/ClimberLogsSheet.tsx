@@ -1,13 +1,17 @@
 // Every climber the viewer follows who logged this climb, opened from the
 // "Climber logs" card's "See all logs" row. The card is capped at four rows (it
 // lives in the play drawer's plain ScrollView); this sheet holds the rest in a
-// virtualised list, with three chips to narrow it.
+// virtualised list, with three chips to narrow it. Those chips are the only
+// chips: every row says how it went in words.
+//
+// Climbers with a note or a grade that disagrees get a row. The rest sit two to
+// a line under "Also sent" and "Tried, no send" (one to a line at large text).
 //
 // Driven by a controlled `visible` prop and mounted INSIDE PlayDrawer, so the
 // ModalSheet coordinator presents it above the `/play` modal. A root-level
 // sheet would land underneath it.
 import { useCallback, useMemo, useRef, useState, type ComponentType } from 'react';
-import { StyleSheet, View, type FlatListProps } from 'react-native';
+import { StyleSheet, View, useWindowDimensions, type FlatListProps } from 'react-native';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { Climb } from '@boardsesh/shared-schema';
@@ -15,7 +19,7 @@ import { ModalSheet } from '../ModalSheet';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
-import { ClimberLogEarlierRow, ClimberLogRow } from './ClimberLogRow';
+import { ClimberLogBareRow, ClimberLogEarlierFoldRow, ClimberLogEarlierRow, ClimberLogRow } from './ClimberLogRow';
 import {
   buildClimberLogListItems,
   deriveCrewCounts,
@@ -31,6 +35,7 @@ import {
 import { useFollowingClimbLogs } from '../../lib/graphql/hooks/use-following-climb-logs';
 import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
 import { useGradeFormat } from '../../hooks/use-grade-format';
+import { getDifficultyIdForGradeName } from '../../lib/grade-label';
 import { useTheme } from '../../providers/theme-provider';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -54,6 +59,8 @@ const SNAP_POINTS = ['90%'];
 const MIN_TARGET = 44;
 const CHIP_HEIGHT = 32;
 const NO_EXPANDED: ReadonlySet<string> = new Set();
+/** From this text size up, two names to a line no longer fit: one each. */
+const ONE_COLUMN_FONT_SCALE = 1.3;
 
 function keyExtractor(item: ClimberLogListItem): string {
   return item.key;
@@ -88,6 +95,9 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
   const { brandColors, systemColors } = useTheme();
   const { formatGrade } = useGradeFormat();
   const climbUuid = climb?.uuid ?? null;
+  const climbGradeId = getDifficultyIdForGradeName(climb?.difficulty);
+  const { fontScale } = useWindowDimensions();
+  const columns = fontScale >= ONE_COLUMN_FONT_SCALE ? 1 : 2;
 
   // Asks only while open. The sheet stays mounted once it has been opened, and
   // a closed sheet must not send a request for every climb the drawer passes.
@@ -174,17 +184,20 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
 
   const logs = data?.items;
   const items = useMemo(() => {
-    const groups = rankClimberLogGroups(groupClimberLogs(filterClimberLogs(logs ?? [], angle, filters), angle));
+    const groups = rankClimberLogGroups(
+      groupClimberLogs(filterClimberLogs(logs ?? [], angle, filters), angle, climbGradeId),
+    );
     const notices: ClimberLogNotice[] = [];
     const elsewhere = otherAnglesNoticeCount(counts, filters);
     if (elsewhere > 0) notices.push({ notice: 'otherAngles', count: elsewhere });
     if (hasMore && groups.length > 0) notices.push({ notice: 'capped', count: 0 });
     return buildClimberLogListItems(
-      [{ id: 'following', groups, count: followingSectionCount(counts, filters) }],
+      [{ id: 'following', groups, count: followingSectionCount(counts, filters), capped: hasMore }],
       expandedUserIds,
       notices,
+      { columns, boardAngle: angle, climbGradeId },
     );
-  }, [logs, angle, filters, counts, hasMore, expandedUserIds]);
+  }, [logs, angle, climbGradeId, filters, counts, hasMore, expandedUserIds, columns]);
 
   const angleOnly = filters.angleOnly;
   const renderItem = useCallback(
@@ -215,6 +228,7 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
             <ClimberLogRow
               group={item.group}
               boardAngle={angle}
+              climbGradeId={climbGradeId}
               noteLines={6}
               hideEarlier={hasMore}
               onPressClimber={handlePressClimber}
@@ -222,8 +236,44 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
               earlierExpanded={expandedUserIds.has(item.group.userId)}
             />
           );
+        case 'bareHeader': {
+          const label =
+            item.result === 'sent'
+              ? item.count === null
+                ? t('mobile.climberLogs.bareHeaderSent')
+                : t('mobile.climberLogs.bareHeaderSentCount', { count: item.count })
+              : item.count === null
+                ? t('mobile.climberLogs.bareHeaderTried')
+                : t('mobile.climberLogs.bareHeaderTriedCount', { count: item.count });
+          return (
+            <Text
+              variant="footnote"
+              accessibilityRole="header"
+              color={systemColors.secondaryLabel}
+              style={[styles.section, styles.bareHeader, { borderTopColor: systemColors.separator }]}
+            >
+              {label}
+            </Text>
+          );
+        }
+        case 'bare':
+          return (
+            <ClimberLogBareRow
+              groups={item.groups}
+              wide={item.wide}
+              boardAngle={angle}
+              climbGradeId={climbGradeId}
+              // Only Following has the "Tried, no send" heading above its cells.
+              underTriedHeading={item.section === 'following'}
+              onPressClimber={handlePressClimber}
+              onPressEarlier={handleToggleEarlier}
+              earlierExpanded={item.wide && expandedUserIds.has(item.groups[0].userId)}
+            />
+          );
         case 'earlier':
-          return <ClimberLogEarlierRow log={item.log} boardAngle={angle} />;
+          return <ClimberLogEarlierRow log={item.log} boardAngle={angle} climbGradeId={climbGradeId} />;
+        case 'earlierFold':
+          return <ClimberLogEarlierFoldRow angle={item.angle} count={item.count} boardAngle={angle} />;
         default:
           return item.notice === 'otherAngles' ? (
             <PressableSurface
@@ -247,6 +297,7 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
     },
     [
       angle,
+      climbGradeId,
       angleOnly,
       hasMore,
       expandedUserIds,
@@ -255,6 +306,7 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
       handleShowAllAngles,
       brandColors.primary,
       systemColors.secondaryLabel,
+      systemColors.separator,
       t,
     ],
   );
@@ -406,6 +458,11 @@ const styles = StyleSheet.create({
     paddingTop: spacing[2],
     paddingBottom: spacing[1],
     fontWeight: '600',
+  },
+  bareHeader: {
+    marginTop: spacing[2],
+    paddingTop: spacing[3],
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   notice: {
     minHeight: MIN_TARGET,

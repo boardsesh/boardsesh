@@ -4,7 +4,9 @@ import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 
+const dimensions = vi.hoisted(() => ({ fontScale: 1 }));
 vi.mock('react-native', () => ({
+  useWindowDimensions: () => ({ fontScale: dimensions.fontScale }),
   View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
     createElement('div', { 'data-testid': testID }, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
@@ -97,6 +99,14 @@ type RowProps = {
   onPressClimber: (userId: string) => void;
   onPressEarlier?: (userId: string) => void;
 };
+type BareProps = {
+  groups: Array<{ userId: string }>;
+  wide: boolean;
+  underTriedHeading?: boolean;
+  earlierExpanded?: boolean;
+  onPressClimber: (userId: string) => void;
+  onPressEarlier?: (userId: string) => void;
+};
 vi.mock('../ClimberLogRow', () => ({
   ClimberLogRow: (props: RowProps) =>
     createElement(
@@ -111,8 +121,34 @@ vi.mock('../ClimberLogRow', () => ({
       createElement('button', { type: 'button', onClick: () => props.onPressClimber(props.group.userId) }, 'open'),
       createElement('button', { type: 'button', onClick: () => props.onPressEarlier?.(props.group.userId) }, 'earlier'),
     ),
+  ClimberLogBareRow: (props: BareProps) =>
+    createElement(
+      'div',
+      {
+        'data-testid': 'bare-row',
+        'data-wide': String(props.wide),
+        'data-expanded': String(props.earlierExpanded),
+        'data-under-tried': String(props.underTriedHeading),
+      },
+      props.groups.map((group) =>
+        createElement(
+          'div',
+          { key: group.userId, 'data-testid': 'bare-cell', 'data-user': group.userId },
+          createElement('button', { type: 'button', onClick: () => props.onPressClimber(group.userId) }, 'open'),
+        ),
+      ),
+      props.wide
+        ? createElement(
+            'button',
+            { type: 'button', onClick: () => props.onPressEarlier?.(props.groups[0].userId) },
+            'earlier',
+          )
+        : null,
+    ),
   ClimberLogEarlierRow: ({ log }: { log: { uuid: string } }) =>
     createElement('div', { 'data-testid': 'earlier-row' }, log.uuid),
+  ClimberLogEarlierFoldRow: ({ angle, count }: { angle: number; count: number }) =>
+    createElement('div', { 'data-testid': 'earlier-fold' }, `${count}@${angle}`),
 }));
 
 type QueryState = {
@@ -195,11 +231,19 @@ function chip(view: { getByText: (text: string) => HTMLElement }, key: string): 
 
 const ANGLE_CHIP = 'mobile.climberLogs.filterAngleOnly:{"angle":40}';
 
-function rowUsers(view: { queryAllByTestId: (id: string) => HTMLElement[] }): string[] {
-  return view.queryAllByTestId('climber-row').map((node) => node.getAttribute('data-user') ?? '');
+/** Every climber on screen, top to bottom: the ones with a row and the bare ones in cells. */
+function rowUsers(view: { container: HTMLElement }): string[] {
+  return [...view.container.querySelectorAll('[data-user]')].map((node) => node.getAttribute('data-user') ?? '');
+}
+
+function kinds(view: { getByTestId: (id: string) => HTMLElement }): Array<string | null> {
+  return [...view.getByTestId('sheet-flat-list').querySelectorAll('[data-kind]')].map((node) =>
+    node.getAttribute('data-kind'),
+  );
 }
 
 beforeEach(() => {
+  dimensions.fontScale = 1;
   list.props = null;
   sheet.props = null;
   logsQuery.calls = [];
@@ -333,7 +377,12 @@ describe('ClimberLogsSheet', () => {
 
   it('says the list is cut at the latest 100 logs and hides the earlier-log lines', () => {
     setLoaded(
-      [log({ userId: 'mika' }), log({ userId: 'mika' })],
+      [
+        log({ userId: 'mika', comment: 'beta' }),
+        log({ userId: 'mika' }),
+        log({ userId: 'jonas' }),
+        log({ userId: 'jonas' }),
+      ],
       { climberCount: 40, senderCount: 30, byAngle: [{ angle: 40, climberCount: 40, senderCount: 30 }] },
       true,
     );
@@ -341,6 +390,9 @@ describe('ClimberLogsSheet', () => {
 
     expect(view.getByText('mobile.climberLogs.cappedNotice')).toBeTruthy();
     expect(view.getByTestId('climber-row').getAttribute('data-hide-earlier')).toBe('true');
+    // A bare climber's earlier logs are not offered either, and the block has no number.
+    expect(view.getByTestId('bare-row').getAttribute('data-wide')).toBe('false');
+    expect(view.getByText('mobile.climberLogs.bareHeaderSent')).toBeTruthy();
   });
 
   it('narrows with "With notes" and "Sends only", and drops the count while notes are on', () => {
@@ -395,15 +447,87 @@ describe('ClimberLogsSheet', () => {
     fireEvent.click(mikaRow!.querySelectorAll('button')[1]);
 
     expect(view.getByTestId('earlier-row').textContent).toBe('older');
-    const kinds = [...view.getByTestId('sheet-flat-list').querySelectorAll('[data-kind]')].map((node) =>
-      node.getAttribute('data-kind'),
-    );
-    expect(kinds).toEqual(['header', 'group', 'earlier', 'group']);
+    expect(kinds(view)).toEqual(['header', 'group', 'earlier', 'bareHeader', 'bare']);
     const expandedRow = view.getAllByTestId('climber-row').find((node) => node.getAttribute('data-user') === 'mika');
     expect(expandedRow?.getAttribute('data-expanded')).toBe('true');
 
     fireEvent.click(expandedRow!.querySelectorAll('button')[1]);
     expect(view.queryByTestId('earlier-row')).toBeNull();
+  });
+
+  it('gives bare climbers no row: two to a line under their own headings, after the rows', () => {
+    setLoaded(
+      [
+        log({ userId: 'ana' }),
+        log({ userId: 'tess', comment: 'heel on' }),
+        log({ userId: 'jo' }),
+        log({ userId: 'kit' }),
+        log({ userId: 'bea', status: 'attempt' }),
+      ],
+      { climberCount: 5, senderCount: 4, byAngle: [{ angle: 40, climberCount: 5, senderCount: 4 }] },
+    );
+    const view = renderSheet();
+
+    expect(kinds(view)).toEqual(['header', 'group', 'bareHeader', 'bare', 'bare', 'bareHeader', 'bare']);
+    expect(view.getAllByTestId('climber-row').map((node) => node.getAttribute('data-user'))).toEqual(['tess']);
+    const bareRows = view.getAllByTestId('bare-row');
+    expect(bareRows[0].querySelectorAll('[data-testid="bare-cell"]')).toHaveLength(2);
+    expect(view.getByText('mobile.climberLogs.bareHeaderSentCount:{"count":3}')).toBeTruthy();
+    expect(view.getByText('mobile.climberLogs.bareHeaderTriedCount:{"count":1}')).toBeTruthy();
+    expect(rowUsers(view)).toEqual(['tess', 'ana', 'jo', 'kit', 'bea']);
+  });
+
+  it('puts one bare climber on a line once the text size reaches 130%', () => {
+    dimensions.fontScale = 1.3;
+    setLoaded([log({ userId: 'ana' }), log({ userId: 'jo' })], {
+      climberCount: 2,
+      senderCount: 2,
+      byAngle: [{ angle: 40, climberCount: 2, senderCount: 2 }],
+    });
+    const view = renderSheet();
+    const bareRows = view.getAllByTestId('bare-row');
+    expect(bareRows).toHaveLength(2);
+    expect(bareRows.every((row) => row.querySelectorAll('[data-testid="bare-cell"]').length === 1)).toBe(true);
+  });
+
+  it('has no bare lines with "With notes" on, and no "Tried, no send" with "Sends only" on', () => {
+    setLoaded(
+      [log({ userId: 'tess', comment: 'heel on' }), log({ userId: 'ana' }), log({ userId: 'bea', status: 'attempt' })],
+      { climberCount: 3, senderCount: 2, byAngle: [{ angle: 40, climberCount: 3, senderCount: 2 }] },
+    );
+    const view = renderSheet();
+    expect(view.container.textContent).toContain('mobile.climberLogs.bareHeaderTriedCount');
+
+    fireEvent.click(chip(view, 'mobile.climberLogs.filterSendsOnly'));
+    expect(view.container.textContent).not.toContain('mobile.climberLogs.bareHeaderTried');
+    expect(rowUsers(view)).toEqual(['tess', 'ana']);
+
+    fireEvent.click(chip(view, 'mobile.climberLogs.filterWithNotes'));
+    expect(view.queryByTestId('bare-row')).toBeNull();
+    expect(view.container.textContent).not.toContain('mobile.climberLogs.bareHeader');
+    expect(rowUsers(view)).toEqual(['tess']);
+  });
+
+  it("opens a bare climber's earlier logs from their own line, folding the plain repeats", () => {
+    setLoaded(
+      [
+        log({ userId: 'mj', attemptCount: 1, climbedAt: '2026-03-10T18:00:00' }),
+        log({ userId: 'mj', uuid: 'hard', attemptCount: 8, climbedAt: '2026-02-01T18:00:00' }),
+        ...Array.from({ length: 3 }, () => log({ userId: 'mj', attemptCount: 1, climbedAt: '2026-01-01T18:00:00' })),
+        log({ userId: 'ana' }),
+      ],
+      { climberCount: 2, senderCount: 2, byAngle: [{ angle: 40, climberCount: 2, senderCount: 2 }] },
+    );
+    const view = renderSheet();
+    expect(view.getAllByTestId('bare-row')[0].getAttribute('data-wide')).toBe('true');
+    expect(view.queryByTestId('earlier-row')).toBeNull();
+
+    fireEvent.click(view.getByText('earlier'));
+
+    expect(kinds(view)).toEqual(['header', 'bareHeader', 'bare', 'earlier', 'earlierFold', 'bare']);
+    expect(view.getByTestId('earlier-row').textContent).toBe('hard');
+    expect(view.getByTestId('earlier-fold').textContent).toBe('3@40');
+    expect(view.getAllByTestId('bare-row')[0].getAttribute('data-expanded')).toBe('true');
   });
 
   it('closes first on a row tap and opens the profile only once the sheet is gone', () => {

@@ -24,6 +24,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useBoardseshGrade, useClimbStatsHistory, useFollowingClimbLogs } from '../../lib/graphql/hooks';
 import { useFollowedAuthorsSnapshot } from '../../lib/graphql/hooks/use-followed-authors';
 import { useGradeFormat } from '../../hooks/use-grade-format';
+import { getDifficultyIdForGradeName } from '../../lib/grade-label';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useDeferredAfterInteractions } from '../../hooks/use-deferred-after-interactions';
 import { useClimbSettled } from '../../hooks/use-climb-settled';
@@ -135,6 +136,8 @@ export const DeferredSections = memo(function DeferredSections({
   // followed-authors request and no SQLite write. A missing one loads behind
   // the same settle gate.
   const settled = useClimbSettled(enabled, climb.uuid);
+  // What a climber's own grade is compared against: only one that differs is worth a mention.
+  const climbGradeId = getDifficultyIdForGradeName(climb.difficulty);
   const { data: followedAuthors, isError: followedAuthorsFailed } = useFollowedAuthorsSnapshot({
     loadWhenMissing: isAuthenticated && settled,
   });
@@ -302,6 +305,7 @@ export const DeferredSections = memo(function DeferredSections({
                 climbUuid={climb.uuid}
                 boardName={boardName}
                 angle={angle}
+                climbGradeId={climbGradeId}
                 followState={followState}
                 onSeeAll={onOpenClimberLogs ?? noop}
                 onPressClimber={onOpenClimberProfile ?? noop}

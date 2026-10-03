@@ -13,18 +13,33 @@ vi.mock('react-native', () => ({
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
-vi.mock('../../Icon', () => ({ Icon: () => createElement('i', null) }));
+vi.mock('../../Icon', () => ({ Icon: () => createElement('i', { 'data-testid': 'icon' }) }));
 vi.mock('../../Avatar', () => ({ Avatar: () => createElement('i', { 'data-testid': 'avatar' }) }));
 vi.mock('../../Button', () => ({
   Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
     createElement('button', { type: 'button', onClick: onPress }, title),
 }));
 vi.mock('../../PressableSurface', () => ({
-  PressableSurface: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
-    createElement('button', { type: 'button', onClick: onPress }, children),
+  PressableSurface: ({
+    children,
+    onPress,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    accessibilityLabel?: string;
+  }) =>
+    createElement(
+      'button',
+      { type: 'button', onClick: onPress, 'aria-label': accessibilityLabel, 'data-testid': 'pressable' },
+      children,
+    ),
 }));
-vi.mock('../../ascent-marks', () => ({
-  GradePill: ({ difficultyId }: { difficultyId: number }) => createElement('span', null, `grade:${difficultyId}`),
+vi.mock('../../../hooks/use-grade-format', () => ({
+  useGradeFormat: () => ({
+    formatGradeByDifficultyId: (difficultyId: number | null | undefined) =>
+      difficultyId == null ? null : `grade:${difficultyId}`,
+  }),
 }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -97,6 +112,19 @@ function log(overrides: Partial<ClimberLog> = {}): ClimberLog {
   };
 }
 
+/** The climb is graded 16 at the board's angle, 40°. */
+const CLIMB_GRADE = 16;
+
+/** A climber with something to say, so they get a row. */
+function noted(userId: string, overrides: Partial<ClimberLog> = {}): ClimberLog {
+  return log({ userId, userDisplayName: userId, comment: `beta from ${userId}`, ...overrides });
+}
+
+/** A climber with nothing to add: a name in the footer, never a row. */
+function bare(userId: string, overrides: Partial<ClimberLog> = {}): ClimberLog {
+  return log({ userId, userDisplayName: userId, ...overrides });
+}
+
 function loaded(
   items: ClimberLog[],
   summary: { climberCount: number; senderCount: number },
@@ -126,6 +154,7 @@ function renderSection(followState: 'none' | 'some' | 'unknown' = 'some') {
       climbUuid: 'climb-1',
       boardName: 'kilter',
       angle: 40,
+      climbGradeId: CLIMB_GRADE,
       followState,
       ...handlers,
     }),
@@ -162,11 +191,11 @@ describe('ClimberLogsSection', () => {
     expect(container.textContent).not.toContain('mobile.climberLogs.emptyFollowNobodyTitle');
   });
 
-  it('shows four fixed skeleton rows while the first request is in flight', () => {
+  it('shows two fixed skeleton rows while the first request is in flight', () => {
     logsQuery.state = { ...IDLE, fetchStatus: 'fetching', isLoading: true };
     const { getAllByTestId, queryByTestId } = renderSection();
 
-    expect(getAllByTestId('climber-logs-skeleton-row')).toHaveLength(4);
+    expect(getAllByTestId('climber-logs-skeleton-row')).toHaveLength(2);
     expect(queryByTestId('climber-row')).toBeNull();
   });
 
@@ -178,7 +207,7 @@ describe('ClimberLogsSection', () => {
   });
 
   it('takes the header counts from the summary, never from the rows', () => {
-    const items = ['a', 'b', 'c', 'd', 'e', 'f'].map((userId) => log({ userId }));
+    const items = ['a', 'b', 'c', 'd', 'e', 'f'].map((userId) => noted(userId));
     logsQuery.state = loaded(items, { climberCount: 12, senderCount: 9 });
     const { container, getAllByTestId } = renderSection();
 
@@ -188,40 +217,113 @@ describe('ClimberLogsSection', () => {
     expect(getAllByTestId('climber-row')).toHaveLength(4);
   });
 
-  it('shows the grades they gave when the rows are complete', () => {
+  it('gives a row only to climbers with a note or a grade that disagrees', () => {
     logsQuery.state = loaded(
-      [
-        log({ userId: 'a', difficulty: 16 }),
-        log({ userId: 'b', difficulty: 16 }),
-        log({ userId: 'c', difficulty: 18 }),
-      ],
-      { climberCount: 3, senderCount: 3 },
+      [bare('ana'), noted('tess'), bare('slab', { difficulty: 18 }), bare('agrees', { difficulty: CLIMB_GRADE })],
+      { climberCount: 4, senderCount: 4 },
     );
-    const { container, getAllByTestId } = renderSection();
-
-    expect(container.textContent).toContain('mobile.climberLogs.gradeTally');
-    expect(getAllByTestId('climber-logs-tally-grade').map((node) => node.textContent)).toEqual([
-      'grade:16mobile.climberLogs.gradeTallyItem:{"count":2}',
-      'grade:18mobile.climberLogs.gradeTallyItem:{"count":1}',
-    ]);
-    expect(rows.props.every((props) => props.hideEarlier === false)).toBe(true);
+    const { getAllByTestId } = renderSection();
+    expect(getAllByTestId('climber-row').map((node) => node.textContent)).toEqual(['tess', 'slab']);
   });
 
-  it('hides the tally and the earlier-log lines when the server cut the rows at its cap', () => {
+  it('pools the bare climbers into the footer: three faces, two names and the rest as a number', () => {
     logsQuery.state = loaded(
-      [log({ userId: 'a', difficulty: 16 }), log({ userId: 'a' })],
+      [
+        noted('tess'),
+        ...['ana', 'jo', 'kit', 'lena', 'ray', 'mj'].map((userId) => bare(userId)),
+        bare('bea', { status: 'attempt' }),
+      ],
+      { climberCount: 8, senderCount: 7 },
+    );
+    const { getByTestId } = renderSection();
+
+    const lines = getByTestId('climber-logs-bare');
+    expect(lines.querySelectorAll('[data-testid="avatar"]')).toHaveLength(3);
+    expect(lines.textContent).toContain('mobile.climberLogs.alsoSent');
+    expect(lines.textContent).toContain('mobile.climberLogs.namesPlus:{"names":"ana, jo","count":4}');
+    expect(lines.textContent).toContain('mobile.climberLogs.triedNoSend bea');
+    expect(lines.textContent).not.toContain('mobile.climberLogs.sentIt');
+  });
+
+  it('says "and more" with no number when the server cut the logs at its cap', () => {
+    logsQuery.state = loaded(
+      ['ana', 'jo', 'kit'].map((userId) => bare(userId)),
       { climberCount: 40, senderCount: 30 },
       true,
     );
-    const { container, queryByTestId } = renderSection();
+    const { getByTestId } = renderSection();
+    const lines = getByTestId('climber-logs-bare');
+    expect(lines.textContent).toContain('mobile.climberLogs.namesAndMore:{"names":"ana, jo"}');
+    expect(lines.textContent).not.toContain('mobile.climberLogs.namesPlus');
+  });
 
-    expect(container.textContent).not.toContain('mobile.climberLogs.gradeTally');
-    expect(queryByTestId('climber-logs-tally-grade')).toBeNull();
+  it('says "Sent it" and shows no row when every log is bare', () => {
+    logsQuery.state = loaded(
+      ['ana', 'jo'].map((userId) => bare(userId)),
+      { climberCount: 2, senderCount: 2 },
+    );
+    const { getByTestId, queryByTestId } = renderSection();
+    expect(queryByTestId('climber-row')).toBeNull();
+    expect(getByTestId('climber-logs-bare').textContent).toContain('mobile.climberLogs.sentIt ana, jo');
+  });
+
+  it('never drops a bare followed climber from the card to make room for rows', () => {
+    logsQuery.state = loaded([bare('quiet-friend'), ...['a', 'b', 'c', 'd', 'e', 'f'].map((userId) => noted(userId))], {
+      climberCount: 7,
+      senderCount: 7,
+    });
+    const { getAllByTestId, getByTestId } = renderSection();
+    expect(getAllByTestId('climber-row')).toHaveLength(4);
+    expect(getByTestId('climber-logs-bare').textContent).toContain('quiet-friend');
+  });
+
+  it('makes the footer one button with one chevron: the bare names and "See all logs"', () => {
+    logsQuery.state = loaded([noted('tess'), bare('ana')], { climberCount: 2, senderCount: 2 });
+    const { getAllByTestId, getByTestId, onSeeAll } = renderSection();
+
+    const footer = getAllByTestId('pressable').at(-1)!;
+    expect(getAllByTestId('pressable')).toHaveLength(1);
+    expect(footer.contains(getByTestId('climber-logs-bare'))).toBe(true);
+    expect(footer.textContent).toContain('mobile.climberLogs.seeAll');
+    expect(footer.querySelectorAll('[data-testid="icon"]')).toHaveLength(1);
+    expect(footer.getAttribute('aria-label')).toContain('mobile.climberLogs.footerA11y');
+    expect(footer.getAttribute('aria-label')).toContain('ana');
+
+    fireEvent.click(getByTestId('climber-logs-bare'));
+    expect(onSeeAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('names a disagreeing grade in the summary line when the rows are complete', () => {
+    logsQuery.state = loaded(
+      [bare('a', { difficulty: 18 }), bare('b', { difficulty: 18 }), bare('c', { difficulty: CLIMB_GRADE })],
+      { climberCount: 3, senderCount: 3 },
+    );
+    const { container } = renderSection();
+
+    expect(container.textContent).toContain('mobile.climberLogs.gradedItCount:{"count":2,"grade":"grade:18"}');
+    expect(container.textContent).not.toContain('grade:16');
+    expect(rows.props.every((props) => props.hideEarlier === false)).toBe(true);
+  });
+
+  it('says nothing about grades when everybody agrees with the climb', () => {
+    logsQuery.state = loaded([noted('a', { difficulty: CLIMB_GRADE })], { climberCount: 1, senderCount: 1 });
+    expect(renderSection().container.textContent).not.toContain('mobile.climberLogs.gradedItCount');
+  });
+
+  it('hides the grades and the earlier-log words when the server cut the rows at its cap', () => {
+    logsQuery.state = loaded(
+      [noted('a', { difficulty: 18 }), log({ userId: 'a' })],
+      { climberCount: 40, senderCount: 30 },
+      true,
+    );
+    const { container } = renderSection();
+
+    expect(container.textContent).not.toContain('mobile.climberLogs.gradedItCount');
     expect(rows.props.at(-1)?.hideEarlier).toBe(true);
   });
 
   it('opens the full list from "See all logs" and a profile from a row', () => {
-    logsQuery.state = loaded([log({ userId: 'mika' })], { climberCount: 1, senderCount: 1 });
+    logsQuery.state = loaded([noted('mika')], { climberCount: 1, senderCount: 1 });
     const { getByText, getByTestId, onSeeAll, onPressClimber } = renderSection();
 
     fireEvent.click(getByText('mobile.climberLogs.seeAll'));
@@ -268,7 +370,7 @@ describe('ClimberLogsSection', () => {
   });
 
   it('keeps rows it already has when a later refetch fails', () => {
-    logsQuery.state = { ...loaded([log()], { climberCount: 1, senderCount: 1 }), status: 'error' };
+    logsQuery.state = { ...loaded([noted('mika')], { climberCount: 1, senderCount: 1 }), status: 'error' };
     const { getAllByTestId, container } = renderSection();
     expect(getAllByTestId('climber-row')).toHaveLength(1);
     expect(container.textContent).not.toContain('mobile.offlineState.errorTitle');

@@ -370,6 +370,18 @@ describe('DeferredSections', () => {
       });
     });
 
+    it("hands the card the climb's grade id, or null for a grade it cannot read", () => {
+      auth.isAuthenticated = true;
+      deferred.ready = true;
+      followedAuthors.result = follows();
+
+      renderSections({ contentEnabled: true, climbOverrides: { difficulty: '6a/V3' } });
+      expect(climberLogsSection.props?.climbGradeId).toEqual(expect.any(Number));
+
+      renderSections({ contentEnabled: true, climbOverrides: { difficulty: 'project' } });
+      expect(climberLogsSection.props?.climbGradeId).toBeNull();
+    });
+
     it('waits for the open animation and the dwell before asking', () => {
       auth.isAuthenticated = true;
       crewQuery.settled = false;

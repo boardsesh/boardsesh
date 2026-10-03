@@ -11,9 +11,16 @@ import {
   otherAnglesNoticeCount,
   rankClimberLogGroups,
   takeInlineGroups,
-  tallyGivenGrades,
+  describeBareNames,
+  foldEarlierLogs,
+  gradeDisagrees,
+  isBareLog,
+  partitionClimberLogGroups,
+  planClimberLogsCard,
+  tallyDisagreeingGrades,
   type ClimberLog,
   type ClimberLogFilters,
+  type ClimberLogListOptions,
 } from '../climber-logs';
 
 // Pinned so "distinct local days" does not depend on the machine's zone.
@@ -48,10 +55,40 @@ function log(overrides: Partial<ClimberLog> = {}): ClimberLog {
 }
 
 const NO_FILTERS: ClimberLogFilters = { angleOnly: false, withNotes: false, sendsOnly: false };
+const TWO_COLUMNS: ClimberLogListOptions = { columns: 2, boardAngle: 40, climbGradeId: 16 };
+const ONE_COLUMN: ClimberLogListOptions = { ...TWO_COLUMNS, columns: 1 };
+
+describe('gradeDisagrees and isBareLog', () => {
+  it('counts a grade at the board angle that is not the climb grade', () => {
+    expect(gradeDisagrees(log({ difficulty: 18 }), 40, 16)).toBe(true);
+    expect(gradeDisagrees(log({ difficulty: 16 }), 40, 16)).toBe(false);
+    expect(gradeDisagrees(log({ difficulty: null }), 40, 16)).toBe(false);
+  });
+
+  it('never counts a grade given at another angle', () => {
+    expect(gradeDisagrees(log({ angle: 45, difficulty: 18 }), 40, 16)).toBe(false);
+    expect(isBareLog(log({ angle: 45, difficulty: 18 }), 40, 16)).toBe(true);
+  });
+
+  it('counts any grade at the board angle when the climb grade is unknown', () => {
+    expect(gradeDisagrees(log({ difficulty: 16 }), 40, null)).toBe(true);
+    expect(isBareLog(log({ difficulty: 16 }), 40, null)).toBe(false);
+    expect(gradeDisagrees(log({ angle: 45, difficulty: 16 }), 40, null)).toBe(false);
+  });
+
+  it('never lets stars make a log loud', () => {
+    expect(isBareLog(log({ status: 'send', quality: 5, effectiveQuality: 5 }), 40, 16)).toBe(true);
+  });
+
+  it('is loud for a note, and bare for a blank one', () => {
+    expect(isBareLog(log({ comment: 'toe hook' }), 40, 16)).toBe(false);
+    expect(isBareLog(log({ comment: '   ' }), 40, 16)).toBe(true);
+  });
+});
 
 describe('groupClimberLogs', () => {
   it('gives one group per climber', () => {
-    const groups = groupClimberLogs([log(), log(), log({ userId: 'jonas', userDisplayName: 'Jonas' })], 40);
+    const groups = groupClimberLogs([log(), log(), log({ userId: 'jonas', userDisplayName: 'Jonas' })], 40, null);
     expect(groups.map((group) => group.userId)).toEqual(['mika', 'jonas']);
     expect(groups[0].earlier).toHaveLength(1);
     expect(groups[1].earlier).toHaveLength(0);
@@ -59,36 +96,61 @@ describe('groupClimberLogs', () => {
 
   it('leads with a note over everything else', () => {
     const noted = log({ angle: 25, comment: 'Heel on the start jug', climbedAt: '2026-01-01T10:00:00' });
-    const groups = groupClimberLogs([log({ status: 'send', climbedAt: '2026-03-01T10:00:00' }), noted], 40);
+    const groups = groupClimberLogs([log({ status: 'send', climbedAt: '2026-03-01T10:00:00' }), noted], 40, null);
     expect(groups[0].lead.uuid).toBe(noted.uuid);
     expect(groups[0].hasNote).toBe(true);
     expect(groups[0].atBoardAngle).toBe(false);
   });
 
   it('treats a whitespace-only comment as no note', () => {
-    const groups = groupClimberLogs([log({ comment: '   ' })], 40);
+    const groups = groupClimberLogs([log({ comment: '   ' })], 40, null);
     expect(groups[0].hasNote).toBe(false);
   });
 
   it('then prefers the board angle, then a send, then the newest', () => {
     const atAngle = log({ angle: 40, status: 'attempt', climbedAt: '2026-01-01T10:00:00' });
     const sentElsewhere = log({ angle: 45, status: 'send', climbedAt: '2026-03-01T10:00:00' });
-    expect(groupClimberLogs([sentElsewhere, atAngle], 40)[0].lead.uuid).toBe(atAngle.uuid);
+    expect(groupClimberLogs([sentElsewhere, atAngle], 40, null)[0].lead.uuid).toBe(atAngle.uuid);
 
     const sent = log({ userId: 'jonas', status: 'flash', climbedAt: '2026-01-01T10:00:00' });
     const newerTry = log({ userId: 'jonas', status: 'attempt', climbedAt: '2026-03-01T10:00:00' });
-    expect(groupClimberLogs([newerTry, sent], 40)[0].lead.uuid).toBe(sent.uuid);
+    expect(groupClimberLogs([newerTry, sent], 40, null)[0].lead.uuid).toBe(sent.uuid);
 
     const older = log({ userId: 'priya', climbedAt: '2026-01-01T10:00:00' });
     const newer = log({ userId: 'priya', climbedAt: '2026-03-01T10:00:00' });
-    expect(groupClimberLogs([older, newer], 40)[0].lead.uuid).toBe(newer.uuid);
+    expect(groupClimberLogs([older, newer], 40, null)[0].lead.uuid).toBe(newer.uuid);
+  });
+
+  it('leads with a disagreeing grade over the board angle, a send and recency, but under a note', () => {
+    const graded = log({ status: 'attempt', difficulty: 18, climbedAt: '2026-01-01T10:00:00' });
+    const newerSend = log({ status: 'send', climbedAt: '2026-03-01T10:00:00' });
+    const [group] = groupClimberLogs([newerSend, graded], 40, 16);
+    expect(group.lead.uuid).toBe(graded.uuid);
+    expect(group).toMatchObject({ gradeDisagrees: true, bare: false, sent: false });
+
+    const noted = log({ angle: 45, comment: 'beta', climbedAt: '2025-01-01T10:00:00' });
+    expect(groupClimberLogs([newerSend, graded, noted], 40, 16)[0].lead.uuid).toBe(noted.uuid);
+  });
+
+  it('marks a climber bare only when no log of theirs has anything to add', () => {
+    const [bareSender] = groupClimberLogs([log({ status: 'send', quality: 5 }), log({ status: 'attempt' })], 40, 16);
+    expect(bareSender).toMatchObject({ bare: true, sent: true });
+
+    const [agrees] = groupClimberLogs([log({ status: 'send', difficulty: 16 })], 40, 16);
+    expect(agrees.bare).toBe(true);
+
+    const [bareTrier] = groupClimberLogs([log({ status: 'attempt' })], 40, 16);
+    expect(bareTrier).toMatchObject({ bare: true, sent: false });
+
+    const [loud] = groupClimberLogs([log({ status: 'send' }), log({ comment: 'beta' })], 40, 16);
+    expect(loud.bare).toBe(false);
   });
 
   it('lists the other logs newest first and floors each at one try', () => {
     const lead = log({ comment: 'beta', climbedAt: '2026-01-01T10:00:00' });
     const imported = log({ attemptCount: 0, climbedAt: '2026-02-01T10:00:00' });
     const session = log({ attemptCount: 4, climbedAt: '2026-03-01T10:00:00' });
-    const [group] = groupClimberLogs([lead, imported, session], 40);
+    const [group] = groupClimberLogs([lead, imported, session], 40, null);
     expect(group.earlier.map((entry) => entry.uuid)).toEqual([session.uuid, imported.uuid]);
     expect(group.earlierTries).toBe(5);
   });
@@ -102,14 +164,15 @@ describe('groupClimberLogs', () => {
     const sameEvening = log({ climbedAt: '2026-03-12T01:00:00' });
     const sameEveningLater = log({ climbedAt: '2026-03-12T05:00:00' });
 
-    expect(groupClimberLogs([lead, beforeMidnight, afterMidnight], 40)[0].earlierDays).toBe(2);
-    expect(groupClimberLogs([lead, sameEvening, sameEveningLater], 40)[0].earlierDays).toBe(1);
+    expect(groupClimberLogs([lead, beforeMidnight, afterMidnight], 40, null)[0].earlierDays).toBe(2);
+    expect(groupClimberLogs([lead, sameEvening, sameEveningLater], 40, null)[0].earlierDays).toBe(1);
   });
 
   it('takes the name and avatar from whichever log carries them', () => {
     const [group] = groupClimberLogs(
       [log({ userDisplayName: null, comment: 'beta' }), log({ userAvatarUrl: 'https://example.test/a.png' })],
       40,
+      null,
     );
     expect(group.displayName).toBe('Mika');
     expect(group.avatarUrl).toBe('https://example.test/a.png');
@@ -117,6 +180,19 @@ describe('groupClimberLogs', () => {
 });
 
 describe('rankClimberLogGroups', () => {
+  it('puts a disagreeing grade under the notes and over everything else', () => {
+    const groups = groupClimberLogs(
+      [
+        log({ userId: 'plain-new', climbedAt: '2026-05-01T10:00:00' }),
+        log({ userId: 'graded', difficulty: 18, climbedAt: '2025-01-01T10:00:00' }),
+        log({ userId: 'noted', angle: 20, comment: 'drop knee', climbedAt: '2024-01-01T10:00:00' }),
+      ],
+      40,
+      16,
+    );
+    expect(rankClimberLogGroups(groups).map((group) => group.userId)).toEqual(['noted', 'graded', 'plain-new']);
+  });
+
   it('orders notes, then the board angle, then the newest lead, with ties by user id', () => {
     const groups = groupClimberLogs(
       [
@@ -128,6 +204,7 @@ describe('rankClimberLogGroups', () => {
         log({ userId: 'tie-a', angle: 45, climbedAt: '2026-04-01T10:00:00' }),
       ],
       40,
+      null,
     );
     expect(rankClimberLogGroups(groups).map((group) => group.userId)).toEqual([
       'noted',
@@ -143,47 +220,164 @@ describe('rankClimberLogGroups', () => {
 describe('takeInlineGroups', () => {
   it('never returns more than the inline cap', () => {
     const logs = Array.from({ length: 100 }, (_, index) => log({ userId: `climber-${index}` }));
-    const inline = takeInlineGroups(rankClimberLogGroups(groupClimberLogs(logs, 40)));
+    const inline = takeInlineGroups(rankClimberLogGroups(groupClimberLogs(logs, 40, null)));
     expect(INLINE_CLIMBER_LOG_CAP).toBe(4);
     expect(inline).toHaveLength(4);
   });
 });
 
-describe('tallyGivenGrades', () => {
-  it('counts one grade per climber, from their newest graded log', () => {
+describe('partitionClimberLogGroups', () => {
+  it('splits climbers with something to say from bare senders and bare triers, keeping order', () => {
     const groups = groupClimberLogs(
       [
-        log({ userId: 'mika', difficulty: 16, climbedAt: '2026-01-01T10:00:00' }),
-        log({ userId: 'mika', difficulty: 18, climbedAt: '2026-02-01T10:00:00' }),
-        log({ userId: 'mika', difficulty: null, climbedAt: '2026-03-01T10:00:00' }),
-        log({ userId: 'jonas', difficulty: 18 }),
-        log({ userId: 'priya', difficulty: 16 }),
-        log({ userId: 'tomas', difficulty: null }),
+        log({ userId: 'sender-1', status: 'send' }),
+        log({ userId: 'noted-try', status: 'attempt', comment: 'so close' }),
+        log({ userId: 'trier', status: 'attempt' }),
+        log({ userId: 'sender-2', status: 'flash' }),
+        log({ userId: 'grader', status: 'send', difficulty: 18 }),
       ],
       40,
+      16,
     );
-    expect(tallyGivenGrades(groups)).toEqual([
+    const { loud, bareSent, bareTried } = partitionClimberLogGroups(groups);
+    expect(loud.map((group) => group.userId)).toEqual(['noted-try', 'grader']);
+    expect(bareSent.map((group) => group.userId)).toEqual(['sender-1', 'sender-2']);
+    expect(bareTried.map((group) => group.userId)).toEqual(['trier']);
+  });
+});
+
+describe('planClimberLogsCard', () => {
+  it('gives the rows to the first four ranked climbers with something to say', () => {
+    const logs = Array.from({ length: 6 }, (_, index) =>
+      log({ userId: `noted-${index}`, comment: 'beta', climbedAt: `2026-03-0${index + 1}T10:00:00` }),
+    );
+    const plan = planClimberLogsCard(rankClimberLogGroups(groupClimberLogs(logs, 40, 16)));
+    expect(plan.rows.map((group) => group.userId)).toEqual(['noted-5', 'noted-4', 'noted-3', 'noted-2']);
+  });
+
+  it('keeps every bare followed climber on the card, however many rows there are', () => {
+    const logs = [
+      ...Array.from({ length: 9 }, (_, index) => log({ userId: `noted-${index}`, comment: 'beta' })),
+      log({ userId: 'bare-sender', status: 'send' }),
+      log({ userId: 'bare-trier', status: 'attempt' }),
+    ];
+    const plan = planClimberLogsCard(rankClimberLogGroups(groupClimberLogs(logs, 40, 16)));
+    expect(plan.rows).toHaveLength(INLINE_CLIMBER_LOG_CAP);
+    expect(plan.rows.every((group) => !group.bare)).toBe(true);
+    expect(plan.bareSent.map((group) => group.userId)).toEqual(['bare-sender']);
+    expect(plan.bareTried.map((group) => group.userId)).toEqual(['bare-trier']);
+  });
+
+  it('gives a bare climber no row, even with rows to spare', () => {
+    const plan = planClimberLogsCard(groupClimberLogs([log({ status: 'send' })], 40, 16));
+    expect(plan.rows).toEqual([]);
+    expect(plan.bareSent).toHaveLength(1);
+  });
+});
+
+describe('describeBareNames', () => {
+  const groups = groupClimberLogs(
+    ['ana', 'jo', 'kit', 'lena'].map((userId) => log({ userId, userDisplayName: userId, status: 'send' })),
+    40,
+    16,
+  );
+
+  it('names two climbers and counts the rest when it holds every log', () => {
+    expect(describeBareNames(groups, true)).toEqual({ names: ['ana', 'jo'], extra: 2, andMore: false });
+    expect(describeBareNames(groups.slice(0, 2), true)).toEqual({ names: ['ana', 'jo'], extra: 0, andMore: false });
+  });
+
+  it('gives no number when the logs were cut at the cap', () => {
+    expect(describeBareNames(groups, false)).toEqual({ names: ['ana', 'jo'], extra: 0, andMore: true });
+    expect(describeBareNames(groups.slice(0, 1), false)).toEqual({ names: ['ana'], extra: 0, andMore: false });
+  });
+});
+
+describe('tallyDisagreeingGrades', () => {
+  it('counts each climber once, from their newest disagreeing log at the board angle', () => {
+    const groups = groupClimberLogs(
+      [
+        log({ userId: 'mika', difficulty: 14, climbedAt: '2026-01-01T10:00:00' }),
+        log({ userId: 'mika', difficulty: 18, climbedAt: '2026-02-01T10:00:00' }),
+        log({ userId: 'mika', difficulty: 16, climbedAt: '2026-03-01T10:00:00' }),
+        log({ userId: 'jonas', difficulty: 18 }),
+        log({ userId: 'priya', difficulty: 14 }),
+        log({ userId: 'agrees', difficulty: 16 }),
+        log({ userId: 'elsewhere', angle: 45, difficulty: 20 }),
+        log({ userId: 'ungraded', difficulty: null }),
+      ],
+      40,
+      16,
+    );
+    expect(tallyDisagreeingGrades(groups, 40, 16)).toEqual([
       { difficultyId: 18, count: 2 },
-      { difficultyId: 16, count: 1 },
+      { difficultyId: 14, count: 1 },
     ]);
   });
 
-  it('keeps the three most common grades, lower grade first on a tie', () => {
+  it('keeps the two most common grades, lower grade first on a tie', () => {
     const groups = groupClimberLogs(
       [
         log({ userId: 'a', difficulty: 20 }),
         log({ userId: 'b', difficulty: 20 }),
         log({ userId: 'c', difficulty: 14 }),
         log({ userId: 'd', difficulty: 12 }),
-        log({ userId: 'e', difficulty: 22 }),
       ],
       40,
+      16,
     );
-    expect(tallyGivenGrades(groups).map((entry) => entry.difficultyId)).toEqual([20, 12, 14]);
+    expect(tallyDisagreeingGrades(groups, 40, 16).map((entry) => entry.difficultyId)).toEqual([20, 12]);
   });
 
-  it('is empty when nobody gave a grade', () => {
-    expect(tallyGivenGrades(groupClimberLogs([log()], 40))).toEqual([]);
+  it('is empty when everybody who graded it agrees with the climb', () => {
+    const groups = groupClimberLogs([log({ difficulty: 16 }), log({ userId: 'b' })], 40, 16);
+    expect(tallyDisagreeingGrades(groups, 40, 16)).toEqual([]);
+  });
+});
+
+describe('foldEarlierLogs', () => {
+  const repeat = (overrides: Partial<ClimberLog> = {}) => log({ status: 'send', attemptCount: 1, ...overrides });
+
+  it('folds three or more plain one-try sends at an angle into one line, board angle first', () => {
+    const hard = log({ status: 'send', attemptCount: 8 });
+    const noted = repeat({ comment: 'Final test' });
+    const earlier = [
+      hard,
+      noted,
+      ...Array.from({ length: 4 }, () => repeat({ angle: 35 })),
+      ...Array.from({ length: 3 }, () => repeat()),
+    ];
+    expect(foldEarlierLogs(earlier, 40, 16)).toEqual([
+      { kind: 'log', log: hard },
+      { kind: 'log', log: noted },
+      { kind: 'fold', angle: 40, count: 3 },
+      { kind: 'fold', angle: 35, count: 4 },
+    ]);
+  });
+
+  it('leaves two plain repeats as lines of their own', () => {
+    const earlier = [repeat(), repeat()];
+    expect(foldEarlierLogs(earlier, 40, 16)).toEqual(earlier.map((entry) => ({ kind: 'log', log: entry })));
+  });
+
+  it('never folds a no-send, a multi-try send, a note or a disagreeing grade', () => {
+    const earlier = [
+      log({ status: 'attempt', attemptCount: 1 }),
+      log({ status: 'send', attemptCount: 2 }),
+      repeat({ comment: 'beta' }),
+      repeat({ difficulty: 18 }),
+      repeat(),
+      repeat(),
+      repeat(),
+    ];
+    const lines = foldEarlierLogs(earlier, 40, 16);
+    expect(lines.filter((line) => line.kind === 'log')).toHaveLength(4);
+    expect(lines.at(-1)).toEqual({ kind: 'fold', angle: 40, count: 3 });
+  });
+
+  it('counts a flash and an imported zero-try send as one-try sends', () => {
+    const earlier = [log({ status: 'flash' }), repeat({ attemptCount: 0 }), repeat()];
+    expect(foldEarlierLogs(earlier, 40, 16)).toEqual([{ kind: 'fold', angle: 40, count: 3 }]);
   });
 });
 
@@ -194,9 +388,11 @@ describe('filterClimberLogs', () => {
     const onlyElsewhere = log({ userId: 'jonas', angle: 45 });
     const all = [notedElsewhere, plainAtAngle, onlyElsewhere];
 
-    expect(groupClimberLogs(all, 40).find((group) => group.userId === 'mika')?.lead.uuid).toBe(notedElsewhere.uuid);
+    expect(groupClimberLogs(all, 40, null).find((group) => group.userId === 'mika')?.lead.uuid).toBe(
+      notedElsewhere.uuid,
+    );
 
-    const groups = groupClimberLogs(filterClimberLogs(all, 40, { ...NO_FILTERS, angleOnly: true }), 40);
+    const groups = groupClimberLogs(filterClimberLogs(all, 40, { ...NO_FILTERS, angleOnly: true }), 40, null);
     expect(groups.map((group) => group.userId)).toEqual(['mika']);
     expect(groups[0].lead.uuid).toBe(plainAtAngle.uuid);
   });
@@ -216,17 +412,24 @@ describe('buildClimberLogListItems', () => {
       log({ userId: 'mika', comment: 'beta' }),
       log({ userId: 'mika', uuid: 'mika-old-1', climbedAt: '2026-02-02T10:00:00' }),
       log({ userId: 'mika', uuid: 'mika-old-2', climbedAt: '2026-02-01T10:00:00' }),
-      log({ userId: 'jonas' }),
+      log({ userId: 'jonas', comment: 'heel hook' }),
       log({ userId: 'jonas', uuid: 'jonas-old' }),
     ],
     40,
+    16,
   );
+  const bare = (userId: string, overrides: Partial<ClimberLog> = {}) => log({ userId, status: 'send', ...overrides });
 
   it('emits a header, the groups, earlier logs for expanded climbers only, then the notices', () => {
-    const items = buildClimberLogListItems([{ id: 'following', groups, count: 5 }], new Set(['mika']), [
-      { notice: 'otherAngles', count: 3 },
-      { notice: 'capped', count: 0 },
-    ]);
+    const items = buildClimberLogListItems(
+      [{ id: 'following', groups, count: 5 }],
+      new Set(['mika']),
+      [
+        { notice: 'otherAngles', count: 3 },
+        { notice: 'capped', count: 0 },
+      ],
+      TWO_COLUMNS,
+    );
 
     expect(items.map((item) => item.kind)).toEqual([
       'header',
@@ -245,15 +448,147 @@ describe('buildClimberLogListItems', () => {
     expect(new Set(items.map((item) => item.key)).size).toBe(items.length);
   });
 
-  it('keeps keys unique across two sections, with the notices under the first', () => {
-    const everyone = groupClimberLogs([log({ userId: 'lena' })], 40);
+  it('folds an expanded climber plain repeats into one line per angle', () => {
+    const repeats = groupClimberLogs(
+      [
+        log({ userId: 'mika', comment: 'beta' }),
+        ...Array.from({ length: 3 }, () => bare('mika', { attemptCount: 1 })),
+        bare('mika', { uuid: 'hard', attemptCount: 8 }),
+      ],
+      40,
+      16,
+    );
+    const items = buildClimberLogListItems(
+      [{ id: 'following', groups: repeats, count: 1 }],
+      new Set(['mika']),
+      [],
+      TWO_COLUMNS,
+    );
+    expect(items.map((item) => item.key)).toEqual([
+      'header:following',
+      'following:mika',
+      'earlier:hard',
+      'earlierFold:mika:40',
+    ]);
+    expect(items.at(-1)).toMatchObject({ angle: 40, count: 3 });
+  });
+
+  it('gives bare climbers no row: two to a line under "Also sent" and "Tried, no send", after the rows', () => {
+    const mixed = groupClimberLogs(
+      [
+        bare('ana'),
+        log({ userId: 'noted', comment: 'beta' }),
+        bare('jo'),
+        log({ userId: 'bea', status: 'attempt' }),
+        bare('kit'),
+      ],
+      40,
+      16,
+    );
+    const items = buildClimberLogListItems([{ id: 'following', groups: mixed, count: 5 }], new Set(), [], TWO_COLUMNS);
+
+    expect(items.map((item) => item.key)).toEqual([
+      'header:following',
+      'following:noted',
+      'bareHeader:following:sent',
+      'bare:following:ana',
+      'bare:following:kit',
+      'bareHeader:following:tried',
+      'bare:following:bea',
+    ]);
+    expect(items.filter((item) => item.kind === 'group')).toHaveLength(1);
+    expect(items[2]).toMatchObject({ result: 'sent', count: 3 });
+    expect(items[3]).toMatchObject({ wide: false });
+    expect(items[3].kind === 'bare' && items[3].groups.map((group) => group.userId)).toEqual(['ana', 'jo']);
+    expect(items[5]).toMatchObject({ result: 'tried', count: 1 });
+  });
+
+  it('puts one bare climber on a line at large text sizes', () => {
+    const three = groupClimberLogs([bare('ana'), bare('jo'), bare('kit')], 40, 16);
+    const items = buildClimberLogListItems([{ id: 'following', groups: three, count: 3 }], new Set(), [], ONE_COLUMN);
+    expect(items.filter((item) => item.kind === 'bare').map((item) => item.key)).toEqual([
+      'bare:following:ana',
+      'bare:following:jo',
+      'bare:following:kit',
+    ]);
+  });
+
+  it('gives a bare climber with earlier logs the whole line, and opens those logs under it', () => {
+    const withHistory = groupClimberLogs(
+      [
+        bare('ana'),
+        bare('mj'),
+        bare('mj', { uuid: 'mj-old', attemptCount: 5, climbedAt: '2026-01-01T10:00:00' }),
+        bare('jo'),
+      ],
+      40,
+      16,
+    );
+    const section = { id: 'following' as const, groups: withHistory, count: 3 };
+
+    const closed = buildClimberLogListItems([section], new Set(), [], TWO_COLUMNS);
+    expect(closed.map((item) => item.key)).toEqual([
+      'header:following',
+      'bareHeader:following:sent',
+      'bare:following:mj',
+      'bare:following:ana',
+    ]);
+    expect(closed[2]).toMatchObject({ wide: true });
+    expect(closed[3]).toMatchObject({ wide: false });
+
+    const open = buildClimberLogListItems([section], new Set(['mj']), [], TWO_COLUMNS);
+    expect(open.map((item) => item.key).slice(2, 5)).toEqual([
+      'bare:following:mj',
+      'earlier:mj-old',
+      'bare:following:ana',
+    ]);
+  });
+
+  it('offers no earlier logs and no bare count when the server cut the list', () => {
+    const withHistory = groupClimberLogs([bare('mj'), bare('mj'), bare('ana')], 40, 16);
+    const items = buildClimberLogListItems(
+      [{ id: 'following', groups: withHistory, count: 40, capped: true }],
+      new Set(['mj']),
+      [],
+      TWO_COLUMNS,
+    );
+    expect(items.map((item) => item.kind)).toEqual(['header', 'bareHeader', 'bare']);
+    expect(items[1]).toMatchObject({ count: null });
+    expect(items[2]).toMatchObject({ wide: false });
+  });
+
+  it('keeps the server order under Everyone, pairing bare climbers that sit next to each other', () => {
+    const everyone = groupClimberLogs(
+      [bare('dee'), log({ userId: 'rat', comment: 'no swing' }), bare('pilot'), bare('quin'), bare('rae')],
+      40,
+      16,
+    );
+    const items = buildClimberLogListItems(
+      [{ id: 'everyone', groups: everyone, count: null }],
+      new Set(),
+      [],
+      TWO_COLUMNS,
+    );
+    expect(items.map((item) => item.key)).toEqual([
+      'header:everyone',
+      'bare:everyone:dee',
+      'everyone:rat',
+      'bare:everyone:pilot',
+      'bare:everyone:rae',
+    ]);
+    expect(items.some((item) => item.kind === 'bareHeader')).toBe(false);
+  });
+
+  it('always lists Following before Everyone, and never repeats a followed climber under Everyone', () => {
+    const everyone = groupClimberLogs([log({ userId: 'lena', comment: 'sloper' }), log({ userId: 'mika' })], 40, 16);
     const items = buildClimberLogListItems(
       [
-        { id: 'following', groups, count: 2 },
         { id: 'everyone', groups: everyone, count: null },
+        { id: 'following', groups, count: 2 },
       ],
       new Set(),
       [{ notice: 'capped', count: 0 }],
+      TWO_COLUMNS,
     );
     expect(items.map((item) => item.key)).toEqual([
       'header:following',
@@ -266,11 +601,16 @@ describe('buildClimberLogListItems', () => {
   });
 
   it('emits nothing for a section with no groups, so an empty result is an empty list', () => {
-    expect(buildClimberLogListItems([{ id: 'following', groups: [], count: 0 }], new Set(), [])).toEqual([]);
+    expect(buildClimberLogListItems([{ id: 'following', groups: [], count: 0 }], new Set(), [], TWO_COLUMNS)).toEqual(
+      [],
+    );
     expect(
-      buildClimberLogListItems([{ id: 'following', groups: [], count: 0 }], new Set(), [
-        { notice: 'otherAngles', count: 2 },
-      ]),
+      buildClimberLogListItems(
+        [{ id: 'following', groups: [], count: 0 }],
+        new Set(),
+        [{ notice: 'otherAngles', count: 2 }],
+        TWO_COLUMNS,
+      ),
     ).toEqual([{ kind: 'notice', key: 'notice:otherAngles', notice: 'otherAngles', count: 2 }]);
   });
 });
@@ -380,6 +720,6 @@ describe('ClimberLog', () => {
       commentCount: 0,
     };
     const asLog: ClimberLog = item;
-    expect(groupClimberLogs([asLog], 40)).toHaveLength(1);
+    expect(groupClimberLogs([asLog], 40, null)).toHaveLength(1);
   });
 });

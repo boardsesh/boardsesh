@@ -3,12 +3,15 @@
 // and no I/O, so the card, the sheet and the collapsed Logbook line all read
 // the same numbers.
 //
-// Two rules hold the whole file together:
+// Three rules hold the whole file together:
 //   1. Counts come from the server's `summary`, never from `items.length`. The
 //      rows are the 100 newest logs; the counts cover every log.
 //   2. Filters run on LOGS, then the caller groups. "40° only" must re-pick each
 //      climber's lead log at that angle, not hide climbers whose best log sat
 //      at another one.
+//   3. A log with nothing to add gets no row. A log is "bare" when it has no
+//      note and its grade does not disagree with the climb's. Bare climbers
+//      share a line on the card and sit two to a line in the full list.
 import { parseTickTime, tickTimeMs } from '@boardsesh/profile-stats';
 import type { FollowingClimbAscentsSummary } from '@boardsesh/shared-schema';
 
@@ -47,22 +50,69 @@ export type ClimberLogGroup = {
   earlierDays: number;
   hasNote: boolean;
   atBoardAngle: boolean;
+  /** The lead log gave a grade, at the board's angle, that is not the climb's. */
+  gradeDisagrees: boolean;
+  /** The lead log is a send or a flash. */
+  sent: boolean;
+  /** The lead log has nothing to add, so no log of theirs has: no row for this climber. */
+  bare: boolean;
 };
 
 export type ClimberLogFilters = { angleOnly: boolean; withNotes: boolean; sendsOnly: boolean };
 
 export type ClimberLogSectionId = 'following' | 'everyone';
 
-/** `count` is the server's number for the header, or null when it has none to give. */
-export type ClimberLogSection = { id: ClimberLogSectionId; groups: ClimberLogGroup[]; count: number | null };
+/**
+ * `count` is the server's number for the header, or null when it has none to
+ * give. `capped` says the groups were built from a list the server cut short:
+ * a climber's earlier logs and the size of a bare block would both be wrong, so
+ * neither is offered.
+ */
+export type ClimberLogSection = {
+  id: ClimberLogSectionId;
+  groups: ClimberLogGroup[];
+  count: number | null;
+  capped?: boolean;
+};
 
 export type ClimberLogNotice = { notice: 'capped' | 'otherAngles'; count: number };
 
 export type ClimberLogListItem =
   | { kind: 'header'; key: string; section: ClimberLogSectionId; count: number | null }
   | { kind: 'group'; key: string; section: ClimberLogSectionId; group: ClimberLogGroup }
+  | { kind: 'bareHeader'; key: string; section: ClimberLogSectionId; result: BareResult; count: number | null }
+  | { kind: 'bare'; key: string; section: ClimberLogSectionId; groups: ClimberLogGroup[]; wide: boolean }
   | { kind: 'earlier'; key: string; log: ClimberLog }
+  | { kind: 'earlierFold'; key: string; angle: number; count: number }
   | { kind: 'notice'; key: string; notice: 'capped' | 'otherAngles'; count: number };
+
+export type BareResult = 'sent' | 'tried';
+
+/** One line of a climber's earlier logs: a log worth its own line, or a fold of plain repeats. */
+export type EarlierLogLine = { kind: 'log'; log: ClimberLog } | { kind: 'fold'; angle: number; count: number };
+
+export type ClimberLogListOptions = {
+  /** Bare climbers to a line. One at large text sizes. */
+  columns: 1 | 2;
+  boardAngle: number;
+  climbGradeId: number | null;
+};
+
+/** What the card shows, in order: rows, then the two shared lines. */
+export type ClimberLogsCardPlan = {
+  rows: ClimberLogGroup[];
+  bareSent: ClimberLogGroup[];
+  bareTried: ClimberLogGroup[];
+};
+
+/** The names on one shared line of the card. A null name is a climber with none set. */
+export type BareNames = {
+  names: (string | null)[];
+  /** Climbers past the named ones. Zero when there are none, or when the number is not known. */
+  extra: number;
+  /** There are more climbers than named, and how many is not known. */
+  andMore: boolean;
+};
 
 export type ClimberLogResult = { kind: 'flash' } | { kind: 'sent'; tries: number } | { kind: 'noSend'; tries: number };
 
@@ -80,7 +130,11 @@ export type CrewCounts = {
  */
 export const INLINE_CLIMBER_LOG_CAP = 4;
 
-const MAX_TALLY_GRADES = 3;
+const MAX_TALLY_GRADES = 2;
+/** Names on one shared line of the card; the rest are "+N". */
+const BARE_NAME_CAP = 2;
+/** Plain one-try sends at one angle fold into a single line from this many up. */
+const FOLD_MIN = 3;
 
 /**
  * A sorted copy. Not `Array.prototype.toSorted`: Hermes, the engine the app
@@ -108,17 +162,43 @@ function newestFirst(first: ClimberLog, second: ClimberLog): number {
   return tickTimeMs(second.climbedAt) - tickTimeMs(first.climbedAt) || second.uuid.localeCompare(first.uuid);
 }
 
-/** Lead order: a note, then the board's angle, then a send, then the newest. */
-function leadFirst(boardAngle: number) {
+/**
+ * True when the log carries a grade, at the board's angle, that is not the
+ * climb's. A grade given at another angle never counts: the caller only knows
+ * the climb's grade at the board's angle. With no climb grade to compare
+ * against (`climbGradeId` null), any grade at the board's angle counts, so it
+ * is shown rather than dropped.
+ */
+export function gradeDisagrees(log: ClimberLog, boardAngle: number, climbGradeId: number | null): boolean {
+  return log.angle === boardAngle && log.difficulty != null && log.difficulty !== climbGradeId;
+}
+
+/** Nothing to add: no note, and no grade that disagrees. Stars never count. */
+export function isBareLog(log: ClimberLog, boardAngle: number, climbGradeId: number | null): boolean {
+  return !hasNote(log) && !gradeDisagrees(log, boardAngle, climbGradeId);
+}
+
+/**
+ * Lead order: a note, then a disagreeing grade, then the board's angle, then a
+ * send, then the newest. The two "has something to say" tiers come first, so a
+ * bare lead means every log of that climber is bare.
+ */
+function leadFirst(boardAngle: number, climbGradeId: number | null) {
   return (first: ClimberLog, second: ClimberLog): number =>
     Number(hasNote(second)) - Number(hasNote(first)) ||
+    Number(gradeDisagrees(second, boardAngle, climbGradeId)) -
+      Number(gradeDisagrees(first, boardAngle, climbGradeId)) ||
     Number(second.angle === boardAngle) - Number(first.angle === boardAngle) ||
     Number(isSent(second)) - Number(isSent(first)) ||
     newestFirst(first, second);
 }
 
 /** One group per climber, in first-seen order. Rank with `rankClimberLogGroups`. */
-export function groupClimberLogs(logs: readonly ClimberLog[], boardAngle: number): ClimberLogGroup[] {
+export function groupClimberLogs(
+  logs: readonly ClimberLog[],
+  boardAngle: number,
+  climbGradeId: number | null,
+): ClimberLogGroup[] {
   const logsByUser = new Map<string, ClimberLog[]>();
   for (const log of logs) {
     const existing = logsByUser.get(log.userId);
@@ -128,7 +208,7 @@ export function groupClimberLogs(logs: readonly ClimberLog[], boardAngle: number
 
   const groups: ClimberLogGroup[] = [];
   for (const [userId, userLogs] of logsByUser) {
-    const [lead, ...rest] = sorted(userLogs, leadFirst(boardAngle));
+    const [lead, ...rest] = sorted(userLogs, leadFirst(boardAngle, climbGradeId));
     const earlier = sorted(rest, newestFirst);
     const named = userLogs.find((log) => log.userDisplayName);
     const pictured = userLogs.find((log) => log.userAvatarUrl);
@@ -142,17 +222,21 @@ export function groupClimberLogs(logs: readonly ClimberLog[], boardAngle: number
       earlierDays: new Set(earlier.map((log) => parseTickTime(log.climbedAt).format('YYYY-MM-DD'))).size,
       hasNote: hasNote(lead),
       atBoardAngle: lead.angle === boardAngle,
+      gradeDisagrees: gradeDisagrees(lead, boardAngle, climbGradeId),
+      sent: isSent(lead),
+      bare: isBareLog(lead, boardAngle, climbGradeId),
     });
   }
   return groups;
 }
 
-/** Notes first, then the board's angle, then the newest lead; ties by user id. */
+/** Notes first, then a disagreeing grade, then the board's angle, then the newest lead; ties by user id. */
 export function rankClimberLogGroups(groups: readonly ClimberLogGroup[]): ClimberLogGroup[] {
   return sorted(
     groups,
     (first, second) =>
       Number(second.hasNote) - Number(first.hasNote) ||
+      Number(second.gradeDisagrees) - Number(first.gradeDisagrees) ||
       Number(second.atBoardAngle) - Number(first.atBoardAngle) ||
       tickTimeMs(second.lead.climbedAt) - tickTimeMs(first.lead.climbedAt) ||
       first.userId.localeCompare(second.userId),
@@ -164,14 +248,62 @@ export function takeInlineGroups(groups: readonly ClimberLogGroup[]): ClimberLog
 }
 
 /**
- * How the group graded the climb: each climber counts once, with the grade on
- * their newest graded log. Most common first, three grades at most.
+ * Splits climbers into those who get a row and the two pools that share a
+ * line: bare climbers who sent, and bare climbers who did not. Order is kept.
  */
-export function tallyGivenGrades(groups: readonly ClimberLogGroup[]): { difficultyId: number; count: number }[] {
+export function partitionClimberLogGroups(groups: readonly ClimberLogGroup[]): {
+  loud: ClimberLogGroup[];
+  bareSent: ClimberLogGroup[];
+  bareTried: ClimberLogGroup[];
+} {
+  const loud: ClimberLogGroup[] = [];
+  const bareSent: ClimberLogGroup[] = [];
+  const bareTried: ClimberLogGroup[] = [];
+  for (const group of groups) {
+    if (!group.bare) loud.push(group);
+    else if (group.sent) bareSent.push(group);
+    else bareTried.push(group);
+  }
+  return { loud, bareSent, bareTried };
+}
+
+/**
+ * What the card shows for the climbers the viewer follows, from ranked groups:
+ * the first `INLINE_CLIMBER_LOG_CAP` climbers with something to say get the
+ * rows, and every bare climber stays on the card in one of the two shared
+ * lines. A bare climber is never dropped to make room for a row.
+ */
+export function planClimberLogsCard(followed: readonly ClimberLogGroup[]): ClimberLogsCardPlan {
+  const { loud, bareSent, bareTried } = partitionClimberLogGroups(followed);
+  return { rows: takeInlineGroups(loud), bareSent, bareTried };
+}
+
+/**
+ * The names for one shared line of the card: two at most. `complete` says the
+ * groups are every climber there is; only then is the rest a number.
+ */
+export function describeBareNames(groups: readonly ClimberLogGroup[], complete: boolean): BareNames {
+  const names = groups.slice(0, BARE_NAME_CAP).map((group) => group.displayName);
+  const rest = groups.length - names.length;
+  return { names, extra: complete ? rest : 0, andMore: !complete && rest > 0 };
+}
+
+/**
+ * Who graded the climb differently: each climber counts once, with the grade on
+ * their newest disagreeing log. Most common first, two grades at most. Empty
+ * when everybody who graded it agrees with the climb.
+ */
+export function tallyDisagreeingGrades(
+  groups: readonly ClimberLogGroup[],
+  boardAngle: number,
+  climbGradeId: number | null,
+): { difficultyId: number; count: number }[] {
   const countByGrade = new Map<number, number>();
   for (const group of groups) {
-    const newestGraded = sorted([group.lead, ...group.earlier], newestFirst).find((log) => log.difficulty != null);
-    const difficultyId = newestGraded?.difficulty;
+    const newestDisagreeing = sorted([group.lead, ...group.earlier], newestFirst).find((log) =>
+      gradeDisagrees(log, boardAngle, climbGradeId),
+    );
+    const difficultyId = newestDisagreeing?.difficulty;
     if (difficultyId == null) continue;
     countByGrade.set(difficultyId, (countByGrade.get(difficultyId) ?? 0) + 1);
   }
@@ -195,15 +327,59 @@ export function filterClimberLogs(
 }
 
 /**
+ * A climber's earlier logs as lines. A log keeps its own line for a note, a
+ * disagreeing grade, a no-send, or more than one try. One-try sends with
+ * nothing else fold into one line per angle once there are three of them; the
+ * folds come last, the board's angle first.
+ */
+export function foldEarlierLogs(
+  earlier: readonly ClimberLog[],
+  boardAngle: number,
+  climbGradeId: number | null,
+): EarlierLogLine[] {
+  const isPlainRepeat = (log: ClimberLog) =>
+    isSent(log) && triesOf(log) === 1 && isBareLog(log, boardAngle, climbGradeId);
+  const repeatsByAngle = new Map<number, number>();
+  for (const log of earlier) {
+    if (isPlainRepeat(log)) repeatsByAngle.set(log.angle, (repeatsByAngle.get(log.angle) ?? 0) + 1);
+  }
+  const folds = sorted(
+    [...repeatsByAngle].filter(([, count]) => count >= FOLD_MIN),
+    ([firstAngle], [secondAngle]) =>
+      Number(secondAngle === boardAngle) - Number(firstAngle === boardAngle) || firstAngle - secondAngle,
+  );
+  const foldedAngles = new Set(folds.map(([angle]) => angle));
+
+  const lines: EarlierLogLine[] = [];
+  for (const log of earlier) {
+    if (isPlainRepeat(log) && foldedAngles.has(log.angle)) continue;
+    lines.push({ kind: 'log', log });
+  }
+  for (const [angle, count] of folds) lines.push({ kind: 'fold', angle, count });
+  return lines;
+}
+
+const SECTION_ORDER: Record<ClimberLogSectionId, number> = { following: 0, everyone: 1 };
+
+/**
  * The flat array the full list virtualises. A section with no groups emits
  * nothing, not even its header, so an empty result is an empty array and the
- * list's own empty state shows. Notices describe the first section's result
- * (the cap, the logs at other angles), so they sit right under its rows.
+ * list's own empty state shows. Notices describe the Following result (the
+ * cap, the logs at other angles), so they sit right under its rows.
+ *
+ * Following always comes before Everyone, whatever order the caller passed,
+ * and a climber listed under Following is never repeated under Everyone.
+ *
+ * Inside Following, climbers with something to say come first, then the bare
+ * ones in two blocks ("Also sent", "Tried, no send"). Everyone keeps the
+ * server's order, because the next page has to land under this one; bare
+ * climbers next to each other share a line.
  */
 export function buildClimberLogListItems(
   sections: readonly ClimberLogSection[],
   expandedUserIds: ReadonlySet<string>,
   notices: readonly ClimberLogNotice[],
+  options: ClimberLogListOptions,
 ): ClimberLogListItem[] {
   const items: ClimberLogListItem[] = [];
   const noticeItems: ClimberLogListItem[] = notices.map(({ notice, count }) => ({
@@ -212,19 +388,88 @@ export function buildClimberLogListItems(
     notice,
     count,
   }));
+  const ordered = sorted(sections, (first, second) => SECTION_ORDER[first.id] - SECTION_ORDER[second.id]);
+  const listedUserIds = new Set<string>();
 
-  sections.forEach((section, sectionIndex) => {
-    if (section.groups.length > 0) {
+  const pushEarlier = (section: ClimberLogSection, group: ClimberLogGroup) => {
+    if (section.capped || !expandedUserIds.has(group.userId)) return;
+    for (const line of foldEarlierLogs(group.earlier, options.boardAngle, options.climbGradeId)) {
+      items.push(
+        line.kind === 'log'
+          ? { kind: 'earlier', key: `earlier:${line.log.uuid}`, log: line.log }
+          : {
+              kind: 'earlierFold',
+              key: `earlierFold:${group.userId}:${line.angle}`,
+              angle: line.angle,
+              count: line.count,
+            },
+      );
+    }
+  };
+  const pushBare = (section: ClimberLogSection, groups: ClimberLogGroup[], wide: boolean) => {
+    items.push({ kind: 'bare', key: `bare:${section.id}:${groups[0].userId}`, section: section.id, groups, wide });
+  };
+  /** Bare climbers with no earlier logs to offer, `columns` to a line. */
+  const pushBareCells = (section: ClimberLogSection, groups: readonly ClimberLogGroup[]) => {
+    for (let index = 0; index < groups.length; index += options.columns) {
+      pushBare(section, groups.slice(index, index + options.columns), false);
+    }
+  };
+  /** A climber with earlier logs takes the whole line, so the way into them fits beside the name. */
+  const takesLine = (section: ClimberLogSection, group: ClimberLogGroup) => !section.capped && group.earlier.length > 0;
+  const pushBareBlock = (section: ClimberLogSection, result: BareResult, groups: readonly ClimberLogGroup[]) => {
+    if (groups.length === 0) return;
+    items.push({
+      kind: 'bareHeader',
+      key: `bareHeader:${section.id}:${result}`,
+      section: section.id,
+      result,
+      count: section.capped ? null : groups.length,
+    });
+    for (const group of groups) {
+      if (!takesLine(section, group)) continue;
+      pushBare(section, [group], true);
+      pushEarlier(section, group);
+    }
+    pushBareCells(
+      section,
+      groups.filter((group) => !takesLine(section, group)),
+    );
+  };
+
+  ordered.forEach((section, sectionIndex) => {
+    const groups = section.groups.filter((group) => !listedUserIds.has(group.userId));
+    if (groups.length > 0) {
       items.push({ kind: 'header', key: `header:${section.id}`, section: section.id, count: section.count });
-      for (const group of section.groups) {
-        items.push({ kind: 'group', key: `${section.id}:${group.userId}`, section: section.id, group });
-        if (!expandedUserIds.has(group.userId)) continue;
-        for (const log of group.earlier) items.push({ kind: 'earlier', key: `earlier:${log.uuid}`, log });
+      if (section.id === 'following') {
+        const { loud, bareSent, bareTried } = partitionClimberLogGroups(groups);
+        for (const group of loud) {
+          items.push({ kind: 'group', key: `${section.id}:${group.userId}`, section: section.id, group });
+          pushEarlier(section, group);
+        }
+        pushBareBlock(section, 'sent', bareSent);
+        pushBareBlock(section, 'tried', bareTried);
+      } else {
+        let run: ClimberLogGroup[] = [];
+        const flush = () => {
+          pushBareCells(section, run);
+          run = [];
+        };
+        for (const group of groups) {
+          if (group.bare) {
+            run.push(group);
+            continue;
+          }
+          flush();
+          items.push({ kind: 'group', key: `${section.id}:${group.userId}`, section: section.id, group });
+        }
+        flush();
       }
+      for (const group of groups) listedUserIds.add(group.userId);
     }
     if (sectionIndex === 0) items.push(...noticeItems);
   });
-  if (sections.length === 0) items.push(...noticeItems);
+  if (ordered.length === 0) items.push(...noticeItems);
   return items;
 }
 

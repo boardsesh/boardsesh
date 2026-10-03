@@ -41,13 +41,14 @@ vi.mock('../../PressableSurface', () => ({
       children,
     ),
 }));
-// The marks have their own suite; here they only need to show what they were handed.
-vi.mock('../../ascent-marks', () => ({
-  AscentStatusMark: ({ status }: { status: string }) => createElement('i', { 'data-testid': `mark-${status}` }),
-  GradePill: ({ difficultyId }: { difficultyId: number | null | undefined }) =>
-    difficultyId == null ? null : createElement('span', { 'data-testid': 'grade' }, `grade:${difficultyId}`),
-  StarNumber: ({ quality }: { quality: number | null | undefined }) =>
-    quality == null ? null : createElement('span', { 'data-testid': 'stars' }, `stars:${quality}`),
+vi.mock('../../Icon', () => ({
+  Icon: ({ name }: { name: string }) => createElement('i', { 'data-testid': 'icon', 'data-name': name }),
+}));
+vi.mock('../../../hooks/use-grade-format', () => ({
+  useGradeFormat: () => ({
+    formatGradeByDifficultyId: (difficultyId: number | null | undefined) =>
+      difficultyId == null ? null : `grade:${difficultyId}`,
+  }),
 }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -68,7 +69,7 @@ vi.mock('../../../lib/format-relative-time', () => ({
   },
 }));
 
-import { ClimberLogEarlierRow, ClimberLogRow } from '../ClimberLogRow';
+import { ClimberLogBareRow, ClimberLogEarlierFoldRow, ClimberLogEarlierRow, ClimberLogRow } from '../ClimberLogRow';
 import { groupClimberLogs, type ClimberLog, type ClimberLogGroup } from '../climber-logs';
 
 let nextId = 0;
@@ -93,13 +94,18 @@ function log(overrides: Partial<ClimberLog> = {}): ClimberLog {
   };
 }
 
+/** The climb is graded 16 at the board's angle, 40°. */
+const CLIMB_GRADE = 16;
+
 function groupOf(...logs: ClimberLog[]): ClimberLogGroup {
-  return groupClimberLogs(logs, 40)[0];
+  return groupClimberLogs(logs, 40, CLIMB_GRADE)[0];
 }
 
 function renderRow(group: ClimberLogGroup, props: Partial<Parameters<typeof ClimberLogRow>[0]> = {}) {
   const onPressClimber = vi.fn();
-  const view = render(createElement(ClimberLogRow, { group, boardAngle: 40, onPressClimber, ...props }));
+  const view = render(
+    createElement(ClimberLogRow, { group, boardAngle: 40, climbGradeId: CLIMB_GRADE, onPressClimber, ...props }),
+  );
   return { ...view, onPressClimber };
 }
 
@@ -111,9 +117,9 @@ describe('ClimberLogRow', () => {
     expect(getByText('Mika Tanaka')).toBeTruthy();
     // Recency goes through the one frozen-clock door, never a formatter of its own.
     expect(relativeTime.calls).toEqual(['2026-03-10T18:00:00']);
-    expect(getByText('ago(2026-03-10T18:00:00)')).toBeTruthy();
+    expect(container.textContent).toContain('ago(2026-03-10T18:00:00)');
     expect(getByText('Heel on the start jug').getAttribute('data-lines')).toBe('3');
-    expect(container.querySelector('[data-testid="avatar"]')?.getAttribute('data-size')).toBe('36');
+    expect(container.querySelector('[data-testid="avatar"]')?.getAttribute('data-size')).toBe('32');
   });
 
   it('falls back to a generic name when the climber has none', () => {
@@ -122,50 +128,53 @@ describe('ClimberLogRow', () => {
   });
 
   it.each([
-    ['flash', 1, 'mark-flash', 'mobile.climberLogs.resultFlash'],
-    ['send', 4, 'mark-send', 'mobile.climberLogs.resultSentIn:{"count":4}'],
-    ['attempt', 6, 'mark-attempt', 'mobile.climberLogs.resultNoSend:{"count":6}'],
-    ['attempt', 0, 'mark-attempt', 'mobile.climberLogs.resultNoSend:{"count":1}'],
-  ])('words a %s with %i tries', (status, attemptCount, mark, words) => {
-    const { getByText, getByTestId } = renderRow(groupOf(log({ status, attemptCount })));
-    expect(getByTestId(mark)).toBeTruthy();
-    expect(getByText(words)).toBeTruthy();
+    ['flash', 1, 'mobile.climberLogs.resultFlash'],
+    ['send', 4, 'mobile.climberLogs.resultSentIn:{"count":4}'],
+    ['attempt', 6, 'mobile.climberLogs.resultNoSend:{"count":6}'],
+    ['attempt', 0, 'mobile.climberLogs.resultNoSend:{"count":1}'],
+  ])('says how a %s with %i tries went in words', (status, attemptCount, words) => {
+    const { container } = renderRow(groupOf(log({ status, attemptCount })));
+    expect(container.textContent).toContain(words);
   });
 
-  it('shows the grade they gave, and no pill without one', () => {
-    const graded = renderRow(groupOf(log({ difficulty: 18 })));
-    expect(graded.getByText('grade:18')).toBeTruthy();
-    graded.unmount();
-    expect(renderRow(groupOf(log({ difficulty: null }))).queryByTestId('grade')).toBeNull();
+  it('carries no chip: no status mark, no angle or grade pill, no stars', () => {
+    const { container } = renderRow(
+      groupOf(log({ comment: 'beta', difficulty: CLIMB_GRADE, quality: 5, effectiveQuality: 5 })),
+    );
+    expect(container.querySelector('[data-testid^="mark-"]')).toBeNull();
+    expect(container.querySelector('[data-testid^="climber-log-angle"]')).toBeNull();
+    expect(container.querySelector('[data-testid="stars"]')).toBeNull();
+    expect(container.textContent).not.toContain('5');
   });
 
-  it('prefers the effective rating over the raw one', () => {
-    const cases: Array<[number | null, number | null, string]> = [
-      [null, 4, 'stars:4'],
-      [3, null, 'stars:3'],
-      [2, 5, 'stars:5'],
-    ];
-    for (const [quality, effectiveQuality, shown] of cases) {
-      const view = renderRow(groupOf(log({ quality, effectiveQuality })));
-      expect(view.getByTestId('stars').textContent).toBe(shown);
-      view.unmount();
-    }
+  it('names the grade only when it disagrees with the climb at the board angle', () => {
+    const disagrees = renderRow(groupOf(log({ difficulty: 18 })));
+    expect(disagrees.getByText('mobile.climberLogs.gradedIt:{"grade":"grade:18"}')).toBeTruthy();
+    disagrees.unmount();
+
+    const agrees = renderRow(groupOf(log({ difficulty: CLIMB_GRADE, comment: 'beta' })));
+    expect(agrees.container.textContent).not.toContain('mobile.climberLogs.gradedIt');
+    agrees.unmount();
+
+    const elsewhere = renderRow(groupOf(log({ angle: 45, difficulty: 18, comment: 'beta' })));
+    expect(elsewhere.container.textContent).not.toContain('mobile.climberLogs.gradedIt');
   });
 
-  it('shows no stars on a log with no send', () => {
-    const { queryByTestId } = renderRow(groupOf(log({ status: 'attempt', quality: 4, effectiveQuality: 4 })));
-    expect(queryByTestId('stars')).toBeNull();
+  it('names any grade given at the board angle when the climb grade is unknown', () => {
+    const group = groupClimberLogs([log({ difficulty: CLIMB_GRADE })], 40, null)[0];
+    const { getByText } = renderRow(group, { climbGradeId: null });
+    expect(getByText('mobile.climberLogs.gradedIt:{"grade":"grade:16"}')).toBeTruthy();
   });
 
-  it('fills the angle pill only when the log is at the board angle', () => {
-    const here = renderRow(groupOf(log({ angle: 40 })));
-    expect(here.getByTestId('climber-log-angle-here').textContent).toBe('40°');
-    expect(here.queryByTestId('climber-log-angle-other')).toBeNull();
+  it('mentions the angle only when the log is not at the board angle', () => {
+    const here = renderRow(groupOf(log({ angle: 40, comment: 'beta' })));
+    expect(here.container.textContent).not.toContain('mobile.climberLogs.resultAtAngle');
+    expect(here.container.textContent).not.toContain('40');
     here.unmount();
 
-    const elsewhere = renderRow(groupOf(log({ angle: 45 })));
-    expect(elsewhere.getByTestId('climber-log-angle-other').textContent).toBe('45°');
-    expect(elsewhere.queryByTestId('climber-log-angle-here')).toBeNull();
+    const elsewhere = renderRow(groupOf(log({ angle: 45, comment: 'beta' })));
+    expect(elsewhere.container.textContent).toContain('mobile.climberLogs.resultAtAngle');
+    expect(elsewhere.container.textContent).toContain('"angle":45');
   });
 
   it('opens the climber once per press', () => {
@@ -183,23 +192,25 @@ describe('ClimberLogRow', () => {
         log({ status: 'attempt', attemptCount: 4, climbedAt: '2026-03-03T18:00:00' }),
       );
 
-    it('reads logs, tries and days as plain text when it cannot be pressed', () => {
+    it('is a few plain words on the row when it cannot be pressed', () => {
       const { container, getAllByRole } = renderRow(group());
-      expect(container.textContent).toContain('mobile.climberLogs.earlierDetail');
-      expect(container.textContent).toContain('mobile.climberLogs.earlierLogs:{\\"count\\":2}');
-      expect(container.textContent).toContain('mobile.logbook.tries:{\\"count\\":9}');
-      expect(container.textContent).toContain('mobile.climberLogs.earlierDays:{\\"count\\":2}');
+      expect(container.textContent).toContain('mobile.climberLogs.earlierShort:{"count":2}');
+      expect(container.textContent).not.toContain('mobile.climberLogs.earlierDetail');
       expect(getAllByRole('button')).toHaveLength(1);
     });
 
     it('is hidden when the rows are cut by the cap', () => {
-      const { container } = renderRow(group(), { hideEarlier: true, onPressEarlier: vi.fn() });
-      expect(container.textContent).not.toContain('mobile.climberLogs.earlierDetail');
+      const pressable = renderRow(group(), { hideEarlier: true, onPressEarlier: vi.fn() });
+      expect(pressable.container.textContent).not.toContain('mobile.climberLogs.earlier');
+      pressable.unmount();
+      expect(renderRow(group(), { hideEarlier: true }).container.textContent).not.toContain(
+        'mobile.climberLogs.earlier',
+      );
     });
 
     it('is absent for a climber with one log', () => {
       const { container } = renderRow(groupOf(log()), { onPressEarlier: vi.fn() });
-      expect(container.textContent).not.toContain('mobile.climberLogs.earlierDetail');
+      expect(container.textContent).not.toContain('mobile.climberLogs.earlier');
     });
 
     it('becomes its own button when a handler is passed, beside the row button', () => {
@@ -210,6 +221,10 @@ describe('ClimberLogRow', () => {
       // Siblings, not nested: a button inside a button is unreachable for a screen reader.
       expect(buttons[0].contains(buttons[1])).toBe(false);
       expect(buttons[1].getAttribute('aria-expanded')).toBe('true');
+      expect(buttons[1].textContent).toContain('mobile.climberLogs.earlierDetail');
+      expect(buttons[1].textContent).toContain('mobile.climberLogs.earlierLogs:{\\"count\\":2}');
+      expect(buttons[1].textContent).toContain('mobile.logbook.tries:{\\"count\\":9}');
+      expect(buttons[1].textContent).toContain('mobile.climberLogs.earlierDays:{\\"count\\":2}');
 
       fireEvent.click(buttons[1]);
       expect(onPressEarlier).toHaveBeenCalledWith('mika');
@@ -218,13 +233,105 @@ describe('ClimberLogRow', () => {
   });
 });
 
+describe('ClimberLogBareRow', () => {
+  const ana = () => groupOf(log({ userId: 'ana', userDisplayName: 'ana_p', attemptCount: 2 }));
+  const jo = () => groupOf(log({ userId: 'jo', userDisplayName: 'jo_dyno', status: 'flash' }));
+
+  function renderBare(props: Partial<Parameters<typeof ClimberLogBareRow>[0]>) {
+    const handlers = { onPressClimber: vi.fn(), onPressEarlier: vi.fn() };
+    const view = render(
+      createElement(ClimberLogBareRow, {
+        groups: [ana()],
+        wide: false,
+        boardAngle: 40,
+        climbGradeId: CLIMB_GRADE,
+        ...handlers,
+        ...props,
+      }),
+    );
+    return { ...view, ...handlers };
+  }
+
+  it('puts two climbers on one line, each its own labelled button to their profile', () => {
+    const { getAllByRole, onPressClimber } = renderBare({ groups: [ana(), jo()] });
+    const buttons = getAllByRole('button');
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0].contains(buttons[1])).toBe(false);
+    expect(buttons[0].getAttribute('aria-label')).toContain('"name":"ana_p"');
+    expect(buttons[1].getAttribute('aria-label')).toContain('"name":"jo_dyno"');
+    expect(buttons[0].textContent).toContain('mobile.climberLogs.resultSentIn:{"count":2}');
+    expect(buttons[0].textContent).toContain('ago(2026-03-10T18:00:00)');
+    expect(buttons[1].textContent).toContain('mobile.climberLogs.resultFlash');
+
+    fireEvent.click(buttons[1]);
+    expect(onPressClimber).toHaveBeenCalledWith('jo');
+  });
+
+  it('says only the tries under the "Tried, no send" heading, and the whole result to a screen reader', () => {
+    const trier = groupOf(log({ userId: 'bea', status: 'attempt', attemptCount: 5 }));
+    const { getByRole } = renderBare({ groups: [trier], underTriedHeading: true });
+    const button = getByRole('button');
+    expect(button.textContent).toContain('mobile.logbook.tries:{"count":5}');
+    expect(button.textContent).not.toContain('mobile.climberLogs.resultNoSend');
+    expect(button.getAttribute('aria-label')).toContain('mobile.climberLogs.resultNoSend');
+  });
+
+  it('gives a climber with earlier logs a "+N earlier" button beside the cell, not inside it', () => {
+    const withHistory = groupOf(
+      log({ userId: 'mj' }),
+      log({ userId: 'mj', climbedAt: '2026-01-01T10:00:00' }),
+      log({ userId: 'mj', climbedAt: '2026-01-02T10:00:00' }),
+    );
+    const { getAllByRole, onPressClimber, onPressEarlier } = renderBare({
+      groups: [withHistory],
+      wide: true,
+      earlierExpanded: false,
+    });
+    const [cell, earlier] = getAllByRole('button');
+    expect(cell.contains(earlier)).toBe(false);
+    expect(earlier.textContent).toContain('mobile.climberLogs.earlierShort:{"count":2}');
+    expect(earlier.getAttribute('aria-label')).toContain('mobile.climberLogs.earlierA11y');
+    expect(earlier.getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.click(earlier);
+    expect(onPressEarlier).toHaveBeenCalledWith('mj');
+    expect(onPressClimber).not.toHaveBeenCalled();
+  });
+
+  it('has no earlier button on a plain cell', () => {
+    expect(renderBare({ groups: [ana()] }).getAllByRole('button')).toHaveLength(1);
+  });
+});
+
 describe('ClimberLogEarlierRow', () => {
-  it('shows the result, the time and the note of one earlier log', () => {
+  it('shows the result, the time and the note of one earlier log, with no mark', () => {
     const earlier = log({ status: 'attempt', attemptCount: 3, comment: 'Barn door on the last move' });
-    const { getByText, getByTestId } = render(createElement(ClimberLogEarlierRow, { log: earlier, boardAngle: 40 }));
-    expect(getByTestId('mark-attempt')).toBeTruthy();
+    const { getByText, container } = render(
+      createElement(ClimberLogEarlierRow, { log: earlier, boardAngle: 40, climbGradeId: CLIMB_GRADE }),
+    );
+    expect(container.querySelector('[data-testid^="mark-"]')).toBeNull();
     expect(getByText('mobile.climberLogs.resultNoSend:{"count":3}')).toBeTruthy();
     expect(getByText('Barn door on the last move')).toBeTruthy();
     expect(getByText(`ago(${earlier.climbedAt})`)).toBeTruthy();
+  });
+
+  it('says "at 35°" for a log away from the board angle', () => {
+    const earlier = log({ angle: 35, attemptCount: 2 });
+    const { container } = render(
+      createElement(ClimberLogEarlierRow, { log: earlier, boardAngle: 40, climbGradeId: CLIMB_GRADE }),
+    );
+    expect(container.textContent).toContain('mobile.climberLogs.resultAtAngle');
+    expect(container.textContent).toContain('"angle":35');
+  });
+});
+
+describe('ClimberLogEarlierFoldRow', () => {
+  it('counts the folded sends, naming the angle only away from the board angle', () => {
+    const here = render(createElement(ClimberLogEarlierFoldRow, { angle: 40, count: 10, boardAngle: 40 }));
+    expect(here.getByText('mobile.climberLogs.foldSends:{"count":10}')).toBeTruthy();
+    here.unmount();
+
+    const elsewhere = render(createElement(ClimberLogEarlierFoldRow, { angle: 35, count: 6, boardAngle: 40 }));
+    expect(elsewhere.getByText('mobile.climberLogs.foldSendsAtAngle:{"count":6,"angle":35}')).toBeTruthy();
   });
 });
