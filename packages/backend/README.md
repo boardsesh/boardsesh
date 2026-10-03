@@ -50,6 +50,13 @@ Environment variables:
 | `POSTHOG_HOST`        | `https://us.i.posthog.com`                                        | PostHog ingestion host                                 |
 | `POSTHOG_ENVIRONMENT` | `resolveSentryEnvironment()`                                      | Environment for backend PostHog analytics — see below  |
 
+The mention-driven Discord issue bot is disabled unless
+`DISCORD_ISSUE_BOT_ENABLED=true`. It then requires `DISCORD_BOT_TOKEN`,
+`DISCORD_GUILD_ID`, `DISCORD_ISSUE_TRIGGER_USER_IDS`,
+`DISCORD_GITHUB_APP_ID`, and `DISCORD_GITHUB_APP_PRIVATE_KEY`. See
+[`docs/discord-feedback-pipeline.md`](../../docs/discord-feedback-pipeline.md)
+for the Discord and GitHub App setup and rollback procedure.
+
 `POSTHOG_ENVIRONMENT` is an override; unset, the environment comes from `resolveSentryEnvironment()` in `@boardsesh/db/client/config` — the same helper that gates backend Sentry, so the two SDKs can't disagree about what runtime this is. It resolves in this order:
 
 1. `SENTRY_ENVIRONMENT`, when it names something other than `production` (this is how preview/staging deploys opt out and keep their own name).
