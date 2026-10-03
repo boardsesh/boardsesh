@@ -339,8 +339,9 @@ function explainMigrationFailure(tag: string): string {
     '         If postgres reported "already exists", that database carries this',
     "         migration's objects without its ledger row — it ran a superseded version",
     '         on another branch, before the migration was renumbered or collapsed (#3978).',
-    '         Whoever owns it has to reset it (docker compose down -v && vp run db:up)',
-    '         or repair the ledger by hand; see docs/db-migrations.md.',
+    '         Do not reset it from this client. The database owner must inspect its',
+    '         history and confirm its volume is disposable before any reset; otherwise',
+    "         reconcile the ledger under that owner's review. See docs/db-migrations.md.",
     '',
   ].join('\n');
 }
