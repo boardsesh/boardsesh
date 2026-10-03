@@ -187,7 +187,8 @@ function makeTickRow(overrides: {
     },
     climbName: overrides.climbName,
     climbDescription: '',
-    characteristics: overrides.characteristics ?? null,
+    // Match the alias selected by sessionDetail's Drizzle projection.
+    climbCharacteristics: overrides.characteristics ?? null,
     setterUsername: 'setter',
     layoutId: 1,
     frames: 'p1r1',
