@@ -48,6 +48,12 @@
  * A tick already moved off the feed stops matching. Use a new --out path on
  * every run: existing plan/recovery files are never overwritten.
  *
+ * The repair updates only Boardsesh board attribution and its `updatedAt`
+ * sync timestamp. Aurora IDs and sync markers are retained; this tool does
+ * not write to Aurora. The new timestamp may move a tick past an offline-sync
+ * client's cursor and cause that row to be delivered again, so schedule any
+ * separately authorized production run for low traffic.
+ *
  * Forward applies re-read and re-plan their still-source rows in a SERIALIZABLE
  * transaction. If a resolved wall changed, take a fresh dry-run and review its
  * new snapshot; this tool never retries an old plan or picks a replacement.
