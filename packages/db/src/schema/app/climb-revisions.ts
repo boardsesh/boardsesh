@@ -100,6 +100,11 @@ export const boardClimbRevisions = pgTable(
     sprayWallVersionIdx: index('board_climb_revisions_spray_wall_version_idx')
       .on(table.sprayWallVersionId)
       .where(sql`${table.sprayWallVersionId} IS NOT NULL`),
+    // The `SET NULL` an account deletion runs. Partial because a row whose
+    // editor is already gone never needs finding again.
+    editedByIdx: index('board_climb_revisions_edited_by_idx')
+      .on(table.editedBy)
+      .where(sql`${table.editedBy} IS NOT NULL`),
   }),
 );
 

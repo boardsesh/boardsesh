@@ -1,5 +1,5 @@
 {
-  "id": "93a64dde-747e-4644-a8a5-25c74dd6fa41",
+  "id": "81064e30-b67e-4b2e-babc-48630084c6ae",
   "prevId": "2549351c-c794-4065-8150-e613a25e9714",
   "version": "7",
   "dialect": "postgresql",
@@ -15601,6 +15601,22 @@
           ],
           "isUnique": false,
           "where": "\"board_climb_revisions\".\"spray_wall_version_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "board_climb_revisions_edited_by_idx": {
+          "name": "board_climb_revisions_edited_by_idx",
+          "columns": [
+            {
+              "expression": "edited_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"board_climb_revisions\".\"edited_by\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
