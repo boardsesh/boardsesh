@@ -1048,7 +1048,14 @@
     "publishFailed": "Los cambios de tus presas están guardados. Intenta publicarlos de nuevo.",
     "refreshing": "Cargando el muro actualizado…",
     "refreshFailed": "Tus presas están publicadas. Intenta cargar el muro de nuevo.",
-    "retry": "Intentar de nuevo"
+    "retry": "Reintentar",
+    "temporarilyUnavailable": "La edición de presas no está disponible ahora. Inténtalo más tarde.",
+    "leave": {
+      "title": "¿Descartar los cambios en las presas sin guardar?",
+      "body": "Los cambios sin guardar no se conservarán. Tu borrador guardado seguirá disponible.",
+      "stay": "Seguir editando",
+      "discard": "Descartar cambios"
+    }
   },
   "sprayCaps": {
     "holds": "En un muro caben hasta {{max}} presas. Descarta algunas y vuelve a guardar.",

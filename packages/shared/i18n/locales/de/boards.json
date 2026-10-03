@@ -1048,7 +1048,14 @@
     "publishFailed": "Deine Griffänderungen sind gespeichert. Versuch erneut, sie zu veröffentlichen.",
     "refreshing": "Die aktualisierte Wand wird geladen…",
     "refreshFailed": "Deine Griffe sind veröffentlicht. Versuch erneut, die Wand zu laden.",
-    "retry": "Erneut versuchen"
+    "retry": "Nochmal versuchen",
+    "temporarilyUnavailable": "Die Griffbearbeitung ist gerade nicht verfügbar. Versuch es später erneut.",
+    "leave": {
+      "title": "Ungespeicherte Griffänderungen verwerfen?",
+      "body": "Deine ungespeicherten Änderungen gehen verloren. Dein gespeicherter Entwurf bleibt verfügbar.",
+      "stay": "Weiter bearbeiten",
+      "discard": "Änderungen verwerfen"
+    }
   },
   "sprayCaps": {
     "holds": "Eine Wand trägt bis zu {{max}} Griffe. Verwirf ein paar und speichere erneut.",

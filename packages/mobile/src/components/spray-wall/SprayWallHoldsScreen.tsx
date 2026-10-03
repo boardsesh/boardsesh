@@ -13,7 +13,7 @@ import { SprayHoldEditorScreen, confirmDiscardSprayEdits } from '../outline-edit
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { getHttpClient } from '../../lib/graphql/client';
-import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
+import { extractGraphqlMessage, isGraphqlValidationFailedError } from '../../lib/graphql/extract-error-message';
 import { fetchSprayWallVersions, mySprayWallsQueryKey } from '../../lib/spray/use-create-spray-wall';
 import { sprayWallWithVersionsQueryKey } from '../../lib/spray/use-spray-wall-reset';
 import {
@@ -178,10 +178,10 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
           navigation.dispatch(action);
         },
         {
-          title: t('sprayWizard.leave.unsavedTitle'),
-          message: t('sprayWizard.leave.unsavedBody'),
-          keep: t('sprayWizard.leave.stay'),
-          discard: t('sprayWizard.leave.discard'),
+          title: t('sprayMaintenance.leave.title'),
+          message: t('sprayMaintenance.leave.body'),
+          keep: t('sprayMaintenance.leave.stay'),
+          discard: t('sprayMaintenance.leave.discard'),
         },
       );
     },
@@ -211,12 +211,14 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
         : failure.reason === 'nothingPublished'
           ? t('sprayMaintenance.nothingPublished')
           : t('sprayMaintenance.draftUnavailable')
-      : (extractGraphqlMessage(failure) ??
-        (draft
-          ? publishedRef.current
-            ? t('sprayMaintenance.refreshFailed')
-            : t('sprayMaintenance.publishFailed')
-          : t('sprayMaintenance.loadFailed')));
+      : isGraphqlValidationFailedError(failure)
+        ? t('sprayMaintenance.temporarilyUnavailable')
+        : (extractGraphqlMessage(failure) ??
+          (draft
+            ? publishedRef.current
+              ? t('sprayMaintenance.refreshFailed')
+              : t('sprayMaintenance.publishFailed')
+            : t('sprayMaintenance.loadFailed')));
   const workingText =
     status === 'preparing'
       ? t('sprayMaintenance.preparing')

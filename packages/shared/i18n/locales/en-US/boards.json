@@ -1048,7 +1048,14 @@
     "publishFailed": "Your hold changes are saved. Try publishing again.",
     "refreshing": "Loading the updated wall…",
     "refreshFailed": "Your holds are published. Try loading the wall again.",
-    "retry": "Try again"
+    "retry": "Try again",
+    "temporarilyUnavailable": "Hold editing isn't available right now. Try again later.",
+    "leave": {
+      "title": "Discard unsaved hold changes?",
+      "body": "Your unsaved changes won't be kept. Your saved draft stays available.",
+      "stay": "Keep editing",
+      "discard": "Discard changes"
+    }
   },
   "sprayCaps": {
     "holds": "A wall carries up to {{max}} holds. Drop a few and save again.",

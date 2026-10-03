@@ -1048,7 +1048,14 @@
     "publishFailed": "Tes modifications sont enregistrées. Réessaie de les publier.",
     "refreshing": "Chargement du mur mis à jour…",
     "refreshFailed": "Tes prises sont publiées. Réessaie de charger le mur.",
-    "retry": "Réessayer"
+    "retry": "Réessayer",
+    "temporarilyUnavailable": "La modification des prises est indisponible pour le moment. Réessaie plus tard.",
+    "leave": {
+      "title": "Abandonner les modifications des prises non enregistrées ?",
+      "body": "Tes modifications non enregistrées seront perdues. Ton brouillon enregistré reste disponible.",
+      "stay": "Continuer à modifier",
+      "discard": "Abandonner les modifications"
+    }
   },
   "sprayCaps": {
     "holds": "Un mur porte jusqu’à {{max}} prises. Écartes-en quelques-unes et enregistre à nouveau.",

@@ -131,6 +131,20 @@ beforeEach(() => {
 });
 
 describe('SprayWallHoldsScreen', () => {
+  it('uses friendly copy for an older backend schema and can retry after it catches up', async () => {
+    const schemaMessage = 'Field "sourceVersionId" is not defined by type "CreateSprayWallVersionInput".';
+    requests.prepare.mockRejectedValueOnce({
+      response: { errors: [{ message: schemaMessage, extensions: { code: 'GRAPHQL_VALIDATION_FAILED' } }] },
+    });
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    await screen.findByText('sprayMaintenance.temporarilyUnavailable');
+    expect(screen.queryByText(schemaMessage)).toBeNull();
+    fireEvent.click(screen.getByText('sprayMaintenance.retry'));
+    await screen.findByTestId('editor');
+    expect(requests.prepare).toHaveBeenCalledTimes(2);
+    expect(requests.publish).not.toHaveBeenCalled();
+  });
+
   it('opens the fresh prepared draft and keeps the route wall fixed across param updates', async () => {
     const { rerender } = render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
     await screen.findByTestId('editor');
