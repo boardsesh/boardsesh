@@ -257,25 +257,11 @@ jobs:
         run: vp install --frozen-lockfile
 
       # The trusted wrapper deliberately invokes the official uploader installed
-      # by the anchored app. Reject anchors that do not carry the audited 7.11.0
+      # by the anchored app. Reject anchors that do not carry an audited
       # implementation instead of changing dependencies (and the fingerprint).
       - name: Validate anchored Sentry uploader support
         run: |
-          set -euo pipefail
-          sentry_version="$(jq -r '.dependencies["@sentry/react-native"] // .devDependencies["@sentry/react-native"] // empty' packages/mobile/package.json)"
-          if [ "$sentry_version" != "7.11.0" ]; then
-            echo "::error::This anchor has @sentry/react-native $sentry_version; OTA source-map backports require exactly 7.11.0. Ship a native update instead."
-            exit 1
-          fi
-          # createRequire anchored at packages/mobile/package.json: under pnpm's
-          # isolated linker `require.resolve` must start from the consuming package,
-          # not the process CWD, to reach the hoisted .pnpm store path.
-          uploader_path="$(cd packages/mobile && node -e 'const path = require("node:path"); const { createRequire } = require("node:module"); const requireFromMobile = createRequire(path.join(process.cwd(), "package.json")); const packageJson = requireFromMobile.resolve("@sentry/react-native/package.json"); console.log(path.join(path.dirname(packageJson), "scripts", "expo-upload-sourcemaps.js"));')"
-          if [ ! -f "$uploader_path" ]; then
-            echo "::error::The anchored @sentry/react-native install has no official Expo source-map uploader."
-            exit 1
-          fi
-          echo "::notice::Anchored app has the audited @sentry/react-native 7.11.0 Expo uploader."
+          node --import tsx --input-type=module --eval 'import * as sourceMapTools from "./scripts/mobile-upload-sourcemaps.ts"; console.log((sourceMapTools.default ?? sourceMapTools).resolveInstalledSentryUploader("packages/mobile"));'
 
       - name: Write .env for Expo build-time inlining
         working-directory: packages/mobile

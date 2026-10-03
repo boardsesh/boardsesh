@@ -148,9 +148,9 @@ export function collectArchiveDsyms(archivePathInput: string): ArchiveDsyms {
 }
 
 /**
- * Resolve the sentry-cli binary the same way the iOS build phase does: from
- * packages/mobile, where `@sentry/cli` is a direct dependency so pnpm's isolated
- * linker actually surfaces it (guarded by scripts/mobile-native-deps-check.ts).
+ * Resolve the standalone sentry-cli from packages/mobile, where `@sentry/cli`
+ * remains a direct dependency for this wrapper under pnpm's isolated linker.
+ * Sentry 8.24's native build phases resolve their own SDK-owned CLI separately.
  */
 export function resolveSentryCli(mobileDirInput: string): string {
   const mobileDir = resolve(mobileDirInput);

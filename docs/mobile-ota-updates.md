@@ -365,16 +365,24 @@ upstream expo-open-ota change.
 ### OTA source maps and Sentry
 
 Production and approved-release backport workflows publish and upload in this order: iOS OTA → iOS
-maps → Android OTA → Android maps. The wrapper derives executable bundles from the requested
+maps → Android OTA → Android maps. Before either platform publishes, a shared compatibility
+preflight checks the installed uploader and its dependencies; it needs neither a Sentry token nor
+an Expo export. The audited SDK versions are exactly `7.11.0` and `8.24.0`; other versions stop the
+workflow before publishing. The wrapper derives executable bundles from the requested
 platform in `dist/metadata.json` (the primary bundle plus declared DOM component JavaScript), then
 validates each bundle/map pair and map Debug ID. Public-folder JavaScript is not update executable
-metadata and is ignored. Only validated pairs are staged for the official `@sentry/react-native`
-7.11 Expo uploader, whose recursive scan cannot see other files in `dist`. Sentry matches the running
+metadata and is ignored. Only validated pairs are copied into an isolated working directory for
+the installed official Expo uploader, whose recursive scan cannot see other files in `dist`.
+SDK 8.24.0 delegates to `@sentry/expo-upload-sourcemaps`; both audited versions use the same exact
+bundle/map pairing and Debug ID contract. SDK 8.24's native build phases also resolve their own
+CLI dependency. The native dependency check follows that resolution instead of requiring it to
+match the direct CLI used by the standalone dSYM uploader; both existing dependency pins stay
+unchanged. Sentry matches the running
 OTA bundle to its map by Debug ID. It deliberately receives no synthetic release or dist, so the
 SDK's native release/dist continue to describe the installed store binary.
 
 Expo 57 declares DOM component JavaScript under `www.bundle`, but independently content-hashes its
-map filename. Sentry 7.11 can only group an exact adjacent `<bundle>.map`, so the wrapper rejects
+map filename. Both audited uploaders require an exact adjacent `<bundle>.map`, so the wrapper rejects
 such an export with an actionable error instead of silently omitting executable code. Boardsesh does
 not currently use Expo DOM components; add an audited pairing/upload path before introducing one.
 
@@ -384,7 +392,11 @@ that crash frames may remain minified, and then fails the workflow. For a manual
 exact same commit/tree, platform, and build environment that produced the live OTA, rerun that one
 platform's publish to regenerate `dist`, and immediately run `mobile:upload-sourcemaps` before any
 other `eoas publish`. A newer tree or different environment can produce a different Debug ID and
-cannot repair the already-published artifact.
+cannot repair the already-published artifact. When the failed run retained no exact export
+artifacts, recover the current train by publishing a fresh OTA from the latest train tree with
+the fixed uploader and require successful uploads for both platforms. That gives the fresh
+update readable crash frames; repairing a historical update still requires its exact bundle/map
+artifacts and matching Debug IDs.
 
 **Progressive rollouts** are a control-plane feature: `eoas publish --branch production
 --rollout-percentage N` ships to only `N%` of the channel's installs. Finish or revert
@@ -824,7 +836,8 @@ the latest Android build.
    sees a clean tree. It then verifies the resolved fingerprint's 12-char prefix equals the anchor's
    `<shortfp>`. A mismatch means the cherry-pick or tooling changed native inputs — it aborts,
    because an OTA would resolve a fingerprint no shipped binary has and silently never land. Anchors
-   without the audited `@sentry/react-native` 7.11 uploader also abort. Do not change that
+   without an audited `@sentry/react-native` uploader (`7.11.0` or `8.24.0`) or its required
+   dependencies also abort in the shared compatibility preflight, before publishing. Do not change that
    dependency on the frozen anchor: ship a native update with a supported uploader, wait for its
    approved release anchor, and backport against that new anchor instead.
 4. Re-run with `dry_run` off to publish under the approved fingerprint and immediately upload that

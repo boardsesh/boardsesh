@@ -18,7 +18,7 @@
  * check fails the PR the moment that invariant is broken, on a cheap Linux
  * runner — no Xcode required.
  *
- * It enforces two invariants per rule:
+ * For legacy scripts it enforces two invariants per rule:
  *   1. Resolvable — the tool resolves from packages/mobile (the exact thing the
  *      bundle phase does). This is what broke the TestFlight archive.
  *   2. Version-aligned — the copy packages/mobile resolves is the SAME install
@@ -26,6 +26,11 @@
  *      silently drift from the trigger's transitive requirement when either is
  *      bumped; this catches that so the bundle phase and the JS runtime never
  *      use mismatched CLI versions.
+ *
+ * Sentry 8.24 resolves its CLI from the SDK's own dependency graph instead.
+ * Check that installed dependency for this audited version; its CLI need not
+ * match the direct CLI used by our standalone dSYM uploader. Keep both existing
+ * pins so this tooling fix does not change a shipped binary's fingerprint.
  *
  * Usage: vp run check:mobile-native-deps
  */
@@ -38,8 +43,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 export interface NativeDepRule {
   /** A direct dependency of packages/mobile whose Expo config plugin injects an iOS build-phase script. */
   trigger: string;
-  /** Bare module specifiers that build-phase script resolves via Node from packages/mobile. */
+  /** Bare module specifiers that the build-phase script resolves via Node. */
   tools: readonly string[];
+  /** Audited installed trigger versions whose scripts resolve tools from their own dependency graph. */
+  triggerToolResolutionVersions?: readonly string[];
 }
 
 /**
@@ -50,7 +57,9 @@ export interface NativeDepRule {
  * add a rule here — otherwise that tool's drift won't be caught until the next
  * push-to-main archive. Today only @sentry/react-native does this.
  */
-export const RULES: readonly NativeDepRule[] = [{ trigger: '@sentry/react-native', tools: ['@sentry/cli'] }];
+export const RULES: readonly NativeDepRule[] = [
+  { trigger: '@sentry/react-native', tools: ['@sentry/cli'], triggerToolResolutionVersions: ['8.24.0'] },
+];
 
 /**
  * Resolution + version reads, abstracted so {@link checkNativeBuildPhaseDeps}
@@ -84,10 +93,24 @@ export function checkNativeBuildPhaseDeps(
   const errors: string[] = [];
   let checked = 0;
 
-  for (const { trigger, tools } of rules) {
+  for (const { trigger, tools, triggerToolResolutionVersions } of rules) {
     if (!mobileDeps[trigger]) continue;
     for (const tool of tools) {
       checked += 1;
+
+      if (triggerToolResolutionVersions) {
+        try {
+          const triggerPackageJson = resolver.resolve(mobilePackageJsonPath, `${trigger}/package.json`);
+          if (triggerToolResolutionVersions.includes(resolver.readVersion(triggerPackageJson))) {
+            const toolFromTrigger = resolver.resolve(triggerPackageJson, `${tool}/package.json`);
+            resolver.readVersion(toolFromTrigger);
+            continue;
+          }
+        } catch (error) {
+          errors.push(`could not verify ${tool} resolution from ${trigger}: ${(error as Error).message}`);
+          continue;
+        }
+      }
 
       // (1) Resolvability from packages/mobile — exactly what the iOS bundle
       //     phase does, and the failure that broke the TestFlight archive.
@@ -182,7 +205,9 @@ export function main(): number {
     return 1;
   }
 
-  console.log(`[mobile-native-deps] OK — ${checked} native build-phase dep(s) resolvable and version-aligned.`);
+  console.log(
+    `[mobile-native-deps] OK — ${checked} native build-phase dep(s) resolve from the required dependency scope.`,
+  );
   return 0;
 }
 
