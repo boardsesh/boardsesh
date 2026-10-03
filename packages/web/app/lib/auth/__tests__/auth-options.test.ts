@@ -66,8 +66,11 @@ const mockDbSet = vi.fn();
 const mockDbUpdateWhere = vi.fn();
 const mockDbSelect = vi.fn();
 const mockDbFrom = vi.fn();
+const mockDbInnerJoin = vi.fn();
 const mockDbWhere = vi.fn();
 const mockDbLimit = vi.fn();
+
+mockDbInnerJoin.mockReturnValue({ where: mockDbWhere });
 
 vi.mock('@/app/lib/db/db', () => ({
   getDb: () => ({
@@ -80,6 +83,8 @@ vi.mock('@/app/lib/db/schema', () => ({
   users: {
     id: 'users.id',
     email: 'users.email',
+    name: 'users.name',
+    image: 'users.image',
     emailVerified: 'users.emailVerified',
     createdAt: 'users.createdAt',
   },
@@ -115,7 +120,7 @@ describe('authOptions.callbacks.signIn', () => {
 
     // Default DB chain: select().from().where().limit() resolves to empty
     mockDbSelect.mockReturnValue({ from: mockDbFrom });
-    mockDbFrom.mockReturnValue({ where: mockDbWhere });
+    mockDbFrom.mockReturnValue({ where: mockDbWhere, innerJoin: mockDbInnerJoin });
     mockDbWhere.mockReturnValue({ limit: mockDbLimit });
     mockDbLimit.mockResolvedValue([]);
   });
@@ -431,7 +436,7 @@ describe('authOptions.callbacks.session', () => {
 
     // Default DB chain: select().from().where().limit() resolves to empty
     mockDbSelect.mockReturnValue({ from: mockDbFrom });
-    mockDbFrom.mockReturnValue({ where: mockDbWhere });
+    mockDbFrom.mockReturnValue({ where: mockDbWhere, innerJoin: mockDbInnerJoin });
     mockDbWhere.mockReturnValue({ limit: mockDbLimit });
     mockDbLimit.mockResolvedValue([]);
   });
@@ -524,7 +529,7 @@ describe('authOptions.callbacks.jwt', () => {
     // Default DB chain: select().from().where().limit() resolves to empty so the
     // profile-claim refresh below doesn't throw when a test doesn't care about it.
     mockDbSelect.mockReturnValue({ from: mockDbFrom });
-    mockDbFrom.mockReturnValue({ where: mockDbWhere });
+    mockDbFrom.mockReturnValue({ where: mockDbWhere, innerJoin: mockDbInnerJoin });
     mockDbWhere.mockReturnValue({ limit: mockDbLimit });
     mockDbLimit.mockResolvedValue([]);
   });
@@ -684,28 +689,25 @@ function getNativeOAuthProvider(): CredentialProviderLike {
 }
 
 describe('CredentialsProvider.authorize — email/password', () => {
-  // The email lookup is now case-insensitive and returns ALL matching rows (a
-  // legacy duplicate-by-case set can briefly have more than one) — so the users
-  // query is `select().from().where(sql)` awaited directly (no .limit), and the
-  // per-candidate credential lookup is `select().from().where(eq).limit(1)`.
-  // A single `where` return that is both thenable (→ candidates) and has
-  // `.limit` (→ credentials) serves both query shapes.
-  function setAuthorizeRows(candidates: unknown[], credentialsByUserId: Record<string, unknown[]>): void {
-    mockDbWhere.mockImplementation((condition: { _type?: string; col?: unknown; val?: unknown }) => ({
-      then: (resolve: (rows: unknown[]) => unknown) => resolve(candidates),
-      limit: () => {
-        // credential lookup: eq(userCredentials.userId, user.id)
-        const userId = condition?._type === 'eq' ? String(condition.val) : '';
-        return Promise.resolve(credentialsByUserId[userId] ?? []);
-      },
-    }));
+  type PasswordCandidate = {
+    id: string;
+    email: string;
+    name: string | null;
+    image: string | null;
+    passwordHash: string;
+  };
+
+  function setAuthorizeCandidates(candidates: PasswordCandidate[]): void {
+    mockDbLimit.mockResolvedValue(candidates);
   }
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockDbSelect.mockReturnValue({ from: mockDbFrom });
-    mockDbFrom.mockReturnValue({ where: mockDbWhere });
-    setAuthorizeRows([], {});
+    mockDbFrom.mockReturnValue({ where: mockDbWhere, innerJoin: mockDbInnerJoin });
+    mockDbInnerJoin.mockReturnValue({ where: mockDbWhere });
+    mockDbWhere.mockReturnValue({ limit: mockDbLimit });
+    setAuthorizeCandidates([]);
   });
 
   it('returns null when credentials are missing', async () => {
@@ -727,28 +729,28 @@ describe('CredentialsProvider.authorize — email/password', () => {
   });
 
   it('returns null when user is not found', async () => {
-    setAuthorizeRows([], {});
-
     const provider = getEmailCredentialsProvider();
     const result = await provider.authorize?.({ email: 'notfound@example.com', password: 'pass' });
     expect(result).toBeNull();
+    expect(mockDbLimit).toHaveBeenCalledWith(9);
+    expect(mockBcryptCompare).not.toHaveBeenCalled();
   });
 
-  it('returns null when user has no password (OAuth-only account)', async () => {
-    setAuthorizeRows([{ id: 'user-1', email: 'user@example.com', name: 'Test', image: null }], {});
-
+  it('queries credential-bearing candidates with a bounded join', async () => {
     const provider = getEmailCredentialsProvider();
     const result = await provider.authorize?.({
       email: 'user@example.com',
       password: 'mypassword',
     });
     expect(result).toBeNull();
+    expect(mockDbInnerJoin).toHaveBeenCalledTimes(1);
+    expect(mockDbLimit).toHaveBeenCalledWith(9);
   });
 
   it('returns null when password is incorrect', async () => {
-    setAuthorizeRows([{ id: 'user-1', email: 'user@example.com', name: 'Test', image: null }], {
-      'user-1': [{ userId: 'user-1', passwordHash: '$2a$12$hashed' }],
-    });
+    setAuthorizeCandidates([
+      { id: 'user-1', email: 'user@example.com', name: 'Test', image: null, passwordHash: '$2a$12$hashed' },
+    ]);
     mockBcryptCompare.mockResolvedValue(false);
 
     const provider = getEmailCredentialsProvider();
@@ -757,8 +759,15 @@ describe('CredentialsProvider.authorize — email/password', () => {
   });
 
   it('returns user object when credentials are valid', async () => {
-    const user = { id: 'user-1', email: 'user@example.com', name: 'Test User', image: null };
-    setAuthorizeRows([user], { 'user-1': [{ userId: 'user-1', passwordHash: '$2a$12$hashed' }] });
+    setAuthorizeCandidates([
+      {
+        id: 'user-1',
+        email: 'user@example.com',
+        name: 'Test User',
+        image: null,
+        passwordHash: '$2a$12$hashed',
+      },
+    ]);
     mockBcryptCompare.mockResolvedValue(true);
 
     const provider = getEmailCredentialsProvider();
@@ -776,38 +785,109 @@ describe('CredentialsProvider.authorize — email/password', () => {
     expect(mockBcryptCompare).toHaveBeenCalledWith('correctpass', '$2a$12$hashed');
   });
 
-  it('verifies the password against each candidate when a duplicate-by-case set still exists', async () => {
-    // Two rows share the email; only the second has the matching password.
-    const oauthOnly = { id: 'user-oauth', email: 'User@example.com', name: 'OAuth', image: null };
-    const passwordUser = { id: 'user-pw', email: 'user@example.com', name: 'Password', image: null };
-    setAuthorizeRows([oauthOnly, passwordUser], {
-      'user-pw': [{ userId: 'user-pw', passwordHash: '$2a$12$hashed' }],
-    });
+  it('accepts the unique matching twin regardless of candidate order', async () => {
+    const firstTwin: PasswordCandidate = {
+      id: 'user-a',
+      email: 'User@example.com',
+      name: 'A',
+      image: null,
+      passwordHash: '$2a$12$hash-a',
+    };
+    const matchingTwin: PasswordCandidate = {
+      id: 'user-b',
+      email: 'user@example.com',
+      name: 'B',
+      image: null,
+      passwordHash: '$2a$12$hash-b',
+    };
+    mockBcryptCompare.mockImplementation((_password: string, passwordHash: string) =>
+      Promise.resolve(passwordHash === '$2a$12$hash-b'),
+    );
+
+    const provider = getEmailCredentialsProvider();
+    for (const candidates of [
+      [firstTwin, matchingTwin],
+      [matchingTwin, firstTwin],
+    ]) {
+      setAuthorizeCandidates(candidates);
+      mockBcryptCompare.mockClear();
+      const result = await provider.authorize?.({ email: 'user@example.com', password: 'correctpass' });
+
+      expect(result).toEqual({ id: 'user-b', email: 'user@example.com', name: 'B', image: null });
+      expect(mockBcryptCompare).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it('rejects a password matching two twins regardless of candidate order', async () => {
+    const firstTwin: PasswordCandidate = {
+      id: 'user-a',
+      email: 'User@example.com',
+      name: 'A',
+      image: null,
+      passwordHash: '$2a$12$shared-hash',
+    };
+    const secondTwin: PasswordCandidate = {
+      id: 'user-b',
+      email: 'user@example.com',
+      name: 'B',
+      image: null,
+      passwordHash: '$2a$12$shared-hash',
+    };
     mockBcryptCompare.mockResolvedValue(true);
+
+    const provider = getEmailCredentialsProvider();
+    for (const candidates of [
+      [firstTwin, secondTwin],
+      [secondTwin, firstTwin],
+    ]) {
+      setAuthorizeCandidates(candidates);
+      mockBcryptCompare.mockClear();
+      const result = await provider.authorize?.({ email: 'user@example.com', password: 'samepass' });
+
+      expect(result).toBeNull();
+      expect(mockBcryptCompare).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it('compares all eight supported candidates before accepting the unique match', async () => {
+    const candidates = Array.from({ length: 8 }, (_, index) => ({
+      id: `user-${index}`,
+      email: index === 0 ? 'User@example.com' : 'user@example.com',
+      name: `User ${index}`,
+      image: null,
+      passwordHash: `hash-${index}`,
+    }));
+    setAuthorizeCandidates(candidates);
+    mockBcryptCompare.mockImplementation((_password: string, passwordHash: string) =>
+      Promise.resolve(passwordHash === 'hash-7'),
+    );
 
     const provider = getEmailCredentialsProvider();
     const result = await provider.authorize?.({ email: 'user@example.com', password: 'correctpass' });
 
-    expect(result).toEqual({ id: 'user-pw', email: 'user@example.com', name: 'Password', image: null });
+    expect(result).toEqual({ id: 'user-7', email: 'user@example.com', name: 'User 7', image: null });
+    expect(mockDbLimit).toHaveBeenCalledWith(9);
+    expect(mockBcryptCompare).toHaveBeenCalledTimes(8);
   });
 
-  it('returns null once every candidate in a duplicate set rejects the password', async () => {
-    // Both rows have a password, neither matches — the loop must exhaust and
-    // fall through to null rather than returning the last candidate anyway.
-    const firstTwin = { id: 'user-a', email: 'User@example.com', name: 'A', image: null };
-    const secondTwin = { id: 'user-b', email: 'user@example.com', name: 'B', image: null };
-    setAuthorizeRows([firstTwin, secondTwin], {
-      'user-a': [{ userId: 'user-a', passwordHash: '$2a$12$hash-a' }],
-      'user-b': [{ userId: 'user-b', passwordHash: '$2a$12$hash-b' }],
-    });
-    mockBcryptCompare.mockResolvedValue(false);
+  it('fails closed on the ninth candidate after a bounded eight-hash comparison', async () => {
+    const candidates = Array.from({ length: 9 }, (_, index) => ({
+      id: `user-${index}`,
+      email: index === 0 ? 'User@example.com' : 'user@example.com',
+      name: `User ${index}`,
+      image: null,
+      passwordHash: `hash-${index}`,
+    }));
+    setAuthorizeCandidates(candidates);
+    mockBcryptCompare.mockResolvedValue(true);
 
     const provider = getEmailCredentialsProvider();
-    const result = await provider.authorize?.({ email: 'user@example.com', password: 'wrongpass' });
+    const result = await provider.authorize?.({ email: 'user@example.com', password: 'matchingpass' });
 
     expect(result).toBeNull();
-    // Every candidate was actually checked, not short-circuited after the first.
-    expect(mockBcryptCompare).toHaveBeenCalledTimes(2);
+    expect(mockDbLimit).toHaveBeenCalledWith(9);
+    expect(mockBcryptCompare).toHaveBeenCalledTimes(8);
+    expect(mockBcryptCompare).not.toHaveBeenCalledWith('matchingpass', 'hash-8');
   });
 });
 
@@ -820,7 +900,7 @@ describe('CredentialsProvider.authorize — native-oauth', () => {
     vi.clearAllMocks();
 
     mockDbSelect.mockReturnValue({ from: mockDbFrom });
-    mockDbFrom.mockReturnValue({ where: mockDbWhere });
+    mockDbFrom.mockReturnValue({ where: mockDbWhere, innerJoin: mockDbInnerJoin });
     mockDbWhere.mockReturnValue({ limit: mockDbLimit });
     mockDbLimit.mockResolvedValue([]);
   });
@@ -1086,7 +1166,7 @@ describe('authOptions.adapter (case-insensitive wrapper)', () => {
     vi.clearAllMocks();
     // select().from().where().orderBy().limit()
     mockDbSelect.mockReturnValue({ from: mockDbFrom });
-    mockDbFrom.mockReturnValue({ where: mockDbWhere });
+    mockDbFrom.mockReturnValue({ where: mockDbWhere, innerJoin: mockDbInnerJoin });
     mockDbWhere.mockReturnValue({ orderBy: mockDbOrderBy });
     mockDbOrderBy.mockReturnValue({ limit: mockDbLimit });
     mockDbLimit.mockResolvedValue([]);

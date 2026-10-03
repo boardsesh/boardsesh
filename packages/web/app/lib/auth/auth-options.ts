@@ -34,6 +34,7 @@ const PROFILE_CLAIMS_TTL_MS = 5 * 60 * 1000;
 const OAUTH_EMAIL_REQUIRED_ERROR = 'OAuthEmailRequired';
 const OAUTH_EMAIL_REQUIRED_REDIRECT = `/auth/error?error=${OAUTH_EMAIL_REQUIRED_ERROR}`;
 const OAUTH_TELEMETRY_PROVIDERS = new Set(['google', 'apple', 'facebook']);
+const MAX_CREDENTIAL_CANDIDATES = 8;
 
 function hasUsableEmail(email: string | null | undefined): email is string {
   return typeof email === 'string' && email.trim().length > 0;
@@ -141,44 +142,53 @@ providers.push(
       const db = getDb();
       const normalizedEmail = normalizeEmail(credentials.email);
 
-      // Look up user by email, case-insensitively. Legacy rows may still be
-      // mixed-case, and a duplicate-by-case set can briefly return more than one
-      // row until the account merge collapses it — so verify the password
-      // against each candidate and return whichever one matches.
-      //
-      // Candidate count is bounded by real duplicate-by-case signups for one
-      // address: the prod audit found at most 3, and after the merge runs it is
-      // always 1, so the per-candidate bcrypt compares below stay cheap. It is
-      // not attacker-inflatable (a row requires a completed signup), so no
-      // explicit cap is needed.
+      // Look up password-bearing users by email, case-insensitively. Legacy
+      // rows may still be mixed-case, so authenticate only when exactly one
+      // candidate's password matches. The joined lookup excludes OAuth-only
+      // rows and bounds both the database result and bcrypt work.
       const candidates = await db
-        .select()
+        .select({
+          id: schema.users.id,
+          email: schema.users.email,
+          name: schema.users.name,
+          image: schema.users.image,
+          passwordHash: schema.userCredentials.passwordHash,
+        })
         .from(schema.users)
-        .where(sql`lower(${schema.users.email}) = ${normalizedEmail}`);
+        .innerJoin(schema.userCredentials, eq(schema.userCredentials.userId, schema.users.id))
+        .where(sql`lower(${schema.users.email}) = ${normalizedEmail}`)
+        .limit(MAX_CREDENTIAL_CANDIDATES + 1);
 
-      for (const user of candidates) {
-        const userCredentials = await db
-          .select()
-          .from(schema.userCredentials)
-          .where(eq(schema.userCredentials.userId, user.id))
-          .limit(1);
-
-        if (userCredentials.length === 0) {
-          // This candidate has no password (e.g., OAuth only) — try the next.
-          continue;
-        }
-
-        if (await compare(credentials.password, userCredentials[0].passwordHash)) {
-          return {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            image: user.image,
-          };
-        }
+      if (candidates.length === 0) {
+        return null;
       }
 
-      return null;
+      if (candidates.length > MAX_CREDENTIAL_CANDIDATES) {
+        // The extra row is an overflow sentinel. Match the supported maximum's
+        // bcrypt work, then reject rather than authenticating a truncated set.
+        await Promise.all(
+          candidates
+            .slice(0, MAX_CREDENTIAL_CANDIDATES)
+            .map((candidate) => compare(credentials.password, candidate.passwordHash)),
+        );
+        return null;
+      }
+
+      const matches = await Promise.all(
+        candidates.map((candidate) => compare(credentials.password, candidate.passwordHash)),
+      );
+      const matchingCandidates = candidates.filter((_, index) => matches[index]);
+      if (matchingCandidates.length !== 1) {
+        return null;
+      }
+
+      const user = matchingCandidates[0];
+      return {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        image: user.image,
+      };
     },
   }),
 );
