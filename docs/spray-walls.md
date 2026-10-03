@@ -1690,6 +1690,11 @@ who neither owns the wall nor belongs to its gym open an unlisted share without
 the enumerable `boardBySlug` lookup. Denied or mismatched capabilities never
 fall back to a stored board or populate the public slug cache.
 
+The `/b/<slug>/<angle>/view/<climb>` and `/play/<climb>` routes also pass
+`wall` through board adoption. Climb reads retain their separate backend access
+rules: this wall-list share fix does not grant a nonmember access to an unlisted
+wall's individual climb link.
+
 `SprayWall.uuid` is the owning `UserBoard.uuid`: the backend resolves UUID
 lookups through `spray_walls.board_uuid` and returns `board.uuid`. The numeric
 `spray_walls.id` stays internal. Native adoption checks both UUID fields against

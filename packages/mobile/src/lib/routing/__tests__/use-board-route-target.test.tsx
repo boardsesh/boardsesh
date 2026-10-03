@@ -262,6 +262,42 @@ describe('useBoardRouteTarget', () => {
     expect(createBoardMutateAsync).not.toHaveBeenCalled();
   });
 
+  it('adopts a capability-authorized wall before opening an authorized climb', async () => {
+    useRealResolver();
+    const wallBoard = board({
+      uuid: WALL_UUID,
+      slug: 'public-wall',
+      boardType: 'spray',
+      isPublic: true,
+      layoutId: 4242,
+      sizeId: 4242,
+      setIds: '4242',
+    });
+    fetchSprayWallBoardFromLink.mockResolvedValue(wallBoard);
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+    render(
+      createElement(Harness, {
+        target: { kind: 'slug-climb', slug: 'public-wall', angle: 40, climbUuid: CLIMB_UUID },
+        wallUuid: WALL_UUID,
+      }),
+    );
+
+    await waitFor(() => expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(1));
+    expect(setActiveBoard).toHaveBeenCalledWith({ ...wallBoard, angle: 40 });
+    expect(openClimbInPlayDrawer).toHaveBeenCalledWith(
+      {
+        kind: 'climb',
+        climb: { uuid: CLIMB_UUID },
+        boardConfig: { boardName: 'spray', layoutId: 4242, sizeId: 4242, setIds: '4242', angle: 40 },
+      },
+      { openPlayDrawer, router },
+      { preview: true },
+    );
+    expect(setActiveBoard.mock.invocationCallOrder[0]).toBeLessThan(openClimbInPlayDrawer.mock.invocationCallOrder[0]);
+    expect(fetchBoardBySlug).not.toHaveBeenCalled();
+    expect(createBoardMutateAsync).not.toHaveBeenCalled();
+  });
+
   it('does not adopt a locally stored wall when its explicit capability is denied', async () => {
     useRealResolver();
     getStoredActiveBoard.mockResolvedValue(board({ uuid: 'old-wall', slug: 'unlisted-wall', boardType: 'spray' }));
@@ -294,6 +330,7 @@ describe('useBoardRouteTarget', () => {
       );
 
       await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+      await act(async () => {});
       expect(fetchSprayWallBoardFromLink).toHaveBeenCalledTimes(1);
       expect(setActiveBoard).not.toHaveBeenCalled();
       expect(router.replace).not.toHaveBeenCalled();
@@ -329,6 +366,32 @@ describe('useBoardRouteTarget', () => {
     rerender(createElement(Harness, { target, wallUuid: nextUuid }));
     await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith(wallBoard));
     expect(fetchSprayWallBoardFromLink).toHaveBeenLastCalledWith(routeQueryClient, nextUuid, 'unlisted-wall');
+  });
+
+  it('does not retry a pending capability on reconnect because an earlier capability failed', async () => {
+    useRealResolver();
+    connectivity.isOnline = false;
+    const target: BoardRouteTarget = { kind: 'slug-list', slug: 'unlisted-wall', angle: null };
+    fetchSprayWallBoardFromLink.mockRejectedValueOnce(new TypeError('Network request failed'));
+    const { container, rerender } = render(createElement(Harness, { target, wallUuid: WALL_UUID }));
+    await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+
+    const nextUuid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const wallBoard = board({ uuid: nextUuid, slug: 'unlisted-wall', boardType: 'spray' });
+    const pending = deferredBoard(wallBoard);
+    fetchSprayWallBoardFromLink.mockReturnValue(pending.promise);
+    rerender(createElement(Harness, { target, wallUuid: nextUuid }));
+    await waitFor(() => expect(fetchSprayWallBoardFromLink).toHaveBeenCalledTimes(2));
+    expect(statusOf(container)).toBe('resolving');
+
+    await act(async () => connectivity.goOnline());
+    expect(fetchSprayWallBoardFromLink).toHaveBeenCalledTimes(2);
+    expect(resolveBoardForSession).toHaveBeenCalledTimes(2);
+    expect(setActiveBoard).not.toHaveBeenCalled();
+    await act(async () => pending.release());
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith(wallBoard));
+    expect(setActiveBoard).toHaveBeenCalledTimes(1);
+    expect(fetchSprayWallBoardFromLink).toHaveBeenCalledTimes(2);
   });
 
   it('waits for the session before redeeming a private-wall capability', async () => {
@@ -779,6 +842,9 @@ describe('useBoardRouteTarget', () => {
     );
 
     await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+    // The DOM commits before the reconnect watcher's passive error-ref update.
+    // Flush that update before delivering the next external connectivity event.
+    await act(async () => {});
     expect(fetchAllMyBoards).not.toHaveBeenCalled();
 
     fetchAllMyBoards.mockResolvedValue([RESOLVED_BOARD]);
