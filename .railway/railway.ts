@@ -11,8 +11,10 @@ export default defineRailway(() => {
   };
   Redis.networking = { privateNetworkEndpoint: 'redis', tcpProxies: { '6379': {} } };
   const PostGISPG18 = postgres('PostGIS - PG18', { region: 'us-west2' });
-  // Keep this existing Railway-managed database's current source unset.
-  delete PostGISPG18.source;
+  // Keep the imported managed databases' source unset instead of adding helper defaults.
+  for (const managedDatabase of [Postgres, Redis, PostGISPG18]) {
+    delete managedDatabase.source;
+  }
   PostGISPG18.deploy = { limitOverride: { containers: { cpu: 8, memoryBytes: 4000000000 } } };
   PostGISPG18.networking = { privateNetworkEndpoint: 'postgis---pg18', tcpProxies: { '5432': {} } };
   const postgisPg18Volume = volume('postgis-pg18-volume', {

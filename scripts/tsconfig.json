@@ -84,6 +84,7 @@
     "__tests__/railway-config-inventory.test.ts",
     "__tests__/eoas-version-parity.test.ts",
     "lib/eoas.ts",
+    "../.railway/railway.ts",
     "../infra/railway/config.ts",
     "../infra/railway/plan.ts",
     "mobile-profile-capture.ts",
