@@ -533,12 +533,14 @@ describe('board-snapshot export ↔ live pull parity', () => {
       { climbUuid: 'c2', angle: 40, updatedAt: '2026-05-03 00:00:00', syncSeq: 5000 },
       { climbUuid: 'c2', angle: 45, updatedAt: '2026-05-02 23:59:59.999999', syncSeq: 6000 },
     ];
-    for (const statRow of statRows) {
-      await db.execute(sql`
+    await seedWithRestoredSyncCursors(
+      ...statRows.map(
+        (statRow) => sql`
         INSERT INTO board_climb_stats (board_type, climb_uuid, angle, updated_at, sync_seq)
         VALUES (${BOARD_TYPE}, ${statRow.climbUuid}, ${statRow.angle}, ${statRow.updatedAt}::timestamp, ${statRow.syncSeq})
-      `);
-    }
+      `,
+      ),
+    );
 
     const filePath = join(workDir, 'artifact-precision.db');
     const result = await exportLayoutSnapshot({

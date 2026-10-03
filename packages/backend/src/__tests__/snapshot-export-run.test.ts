@@ -27,7 +27,7 @@ import { LATEST_SCHEMA_VERSION, type SnapshotManifest, type SnapshotManifestEntr
 import { createPool } from '@boardsesh/db/client';
 import { db } from '../db/client';
 import { uploadToS3, getFromS3Strict, deleteFromS3, listS3Objects } from '../storage/s3';
-import { runExport, runExportWithOptions, mergeManifestEntries } from '../scripts/export-board-snapshots';
+import { parseArgs, runExport, runExportWithOptions, mergeManifestEntries } from '../scripts/export-board-snapshots';
 import { getWorkerDatabaseUrl } from './worker-db';
 
 const MANIFEST_KEY = 'board-snapshots/v1/manifest.json';
@@ -337,8 +337,8 @@ describe('runExport — threshold refresh', () => {
 
     await runHeartbeatExport(thresholdArgs);
 
-    expect(vi.mocked(uploadToS3).mock.calls.map(([, key]) => key)).toEqual(['board-snapshots/ops/refresh.json']);
-    const [body, , contentType, options] = vi.mocked(uploadToS3).mock.calls[0];
+    expect(vi.mocked(uploadToS3).mock.calls.map(([, , key]) => key)).toEqual(['board-snapshots/ops/refresh.json']);
+    const [, body, , contentType, options] = vi.mocked(uploadToS3).mock.calls[0];
     expect(contentType).toBe('application/json');
     expect(options).toEqual({ cacheControl: 'no-store, max-age=0' });
     expect(JSON.parse((body as Buffer).toString('utf8'))).toMatchObject({
@@ -420,28 +420,48 @@ describe('runExport — threshold refresh', () => {
     const testSuffix = `w${process.env.VITEST_POOL_ID ?? '0'}_p${process.pid}`;
     const roleName = `snapshot_visibility_peer_${testSuffix}`;
     const quotedRole = quoteIdentifier(roleName);
+    const exporterRoleName = `snapshot_visibility_exporter_${testSuffix}`;
+    const quotedExporterRole = quoteIdentifier(exporterRoleName);
     // Fixed credential for a disposable local test role, never a production
     // secret. CREATE ROLE does not accept a bind parameter in this position.
     const peerPassword = 'snapshot-visibility-peer-test';
+    const exporterPassword = 'snapshot-visibility-exporter-test';
+    const previousDatabaseUrl = process.env.DATABASE_URL;
     const adminPool = createPool();
     await adminPool.unsafe(`DROP ROLE IF EXISTS ${quotedRole}`);
     await adminPool.unsafe(`CREATE ROLE ${quotedRole} LOGIN PASSWORD '${peerPassword}'`);
+    await adminPool.unsafe(`DROP ROLE IF EXISTS ${quotedExporterRole}`);
+    await adminPool.unsafe(`CREATE ROLE ${quotedExporterRole} LOGIN PASSWORD '${exporterPassword}'`);
+    await adminPool.unsafe(
+      `GRANT SELECT ON board_climbs, board_climb_stats, board_climb_grades, sync_deletions TO ${quotedExporterRole}`,
+    );
     const peerUrl = new URL(getWorkerDatabaseUrl());
     peerUrl.username = roleName;
     peerUrl.password = peerPassword;
     const peerPool = postgres(peerUrl.toString(), { max: 1, ssl: false });
+    const exporterUrl = new URL(getWorkerDatabaseUrl());
+    exporterUrl.username = exporterRoleName;
+    exporterUrl.password = exporterPassword;
+    exporterUrl.searchParams.delete('options');
+    process.env.DATABASE_URL = exporterUrl.toString();
     const peer = await peerPool.reserve();
     try {
       await peer.unsafe('BEGIN');
       await peer.unsafe('SELECT 1');
-      await expect(runExport(['--gzip', '--key-prefix', GZIP_PREFIX, '--refresh-threshold', '1'])).rejects.toThrow(
-        /Export failed for 1 layout\(s\): kilter:1/,
-      );
+      await expect(
+        runExportWithOptions(parseArgs(['--gzip', '--key-prefix', GZIP_PREFIX, '--refresh-threshold', '1']), {
+          requireAllRolesVisible: true,
+        }),
+      ).rejects.toThrow(/Export failed for 1 layout\(s\): kilter:1/);
     } finally {
       await peer.unsafe('ROLLBACK').catch(() => {});
       peer.release();
       await peerPool.end({ timeout: 5 });
       await adminPool.unsafe(`DROP ROLE IF EXISTS ${quotedRole}`).catch(() => {});
+      if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previousDatabaseUrl;
+      await adminPool.unsafe(`DROP OWNED BY ${quotedExporterRole}`).catch(() => {});
+      await adminPool.unsafe(`DROP ROLE IF EXISTS ${quotedExporterRole}`).catch(() => {});
     }
 
     const artifactUploads = vi.mocked(uploadToS3).mock.calls.filter(([, , key]) => key !== GZIP_MANIFEST_KEY);
@@ -743,23 +763,23 @@ describe('runExport — gzip + key-prefix (dual-publish transition)', () => {
     await runHeartbeatExport(['--gzip', '--key-prefix', GZIP_PREFIX]);
 
     const uploadCalls = vi.mocked(uploadToS3).mock.calls;
-    const uploadedKeys = uploadCalls.map(([, key]) => key);
+    const uploadedKeys = uploadCalls.map(([, , key]) => key);
     expect(uploadedKeys.slice(-3)).toEqual([
       GZIP_MANIFEST_KEY,
       'board-snapshots/ops/full.json',
       'board-snapshots/ops/refresh.json',
     ]);
     const manifest = uploadedManifest(GZIP_MANIFEST_KEY);
-    const fullHeartbeatCall = uploadCalls.find(([, key]) => key === 'board-snapshots/ops/full.json')!;
-    const refreshHeartbeatCall = uploadCalls.find(([, key]) => key === 'board-snapshots/ops/refresh.json')!;
-    const fullHeartbeat = JSON.parse((fullHeartbeatCall[0] as Buffer).toString('utf8')) as Record<string, unknown>;
-    const refreshHeartbeat = JSON.parse((refreshHeartbeatCall[0] as Buffer).toString('utf8')) as Record<
+    const fullHeartbeatCall = uploadCalls.find(([, , key]) => key === 'board-snapshots/ops/full.json')!;
+    const refreshHeartbeatCall = uploadCalls.find(([, , key]) => key === 'board-snapshots/ops/refresh.json')!;
+    const fullHeartbeat = JSON.parse((fullHeartbeatCall[1] as Buffer).toString('utf8')) as Record<string, unknown>;
+    const refreshHeartbeat = JSON.parse((refreshHeartbeatCall[1] as Buffer).toString('utf8')) as Record<
       string,
       unknown
     >;
 
-    expect(fullHeartbeatCall.slice(2)).toEqual(['application/json', { cacheControl: 'no-store, max-age=0' }]);
-    expect(refreshHeartbeatCall.slice(2)).toEqual(['application/json', { cacheControl: 'no-store, max-age=0' }]);
+    expect(fullHeartbeatCall.slice(3)).toEqual(['application/json', { cacheControl: 'no-store, max-age=0' }]);
+    expect(refreshHeartbeatCall.slice(3)).toEqual(['application/json', { cacheControl: 'no-store, max-age=0' }]);
     expect(fullHeartbeat).toMatchObject({
       formatVersion: 1,
       runKind: 'full',
@@ -976,7 +996,7 @@ describe('runExport — board_climb_grades artifacts', () => {
 describe('runExportWithOptions — worker hooks', () => {
   const GZIP_PREFIX = 'board-snapshots/v1-gzip';
   const GZIP_MANIFEST_KEY = `${GZIP_PREFIX}/manifest.json`;
-  const liveOptions = { dryRun: false, gzip: true, keyPrefix: GZIP_PREFIX };
+  const liveOptions = parseArgs(['--gzip', '--key-prefix', GZIP_PREFIX]);
 
   // The batch worker passes its attempt fence here: every artifact is already
   // on S3, and the manifest that names them is not.
