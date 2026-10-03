@@ -3,7 +3,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import { sprayWallDetections, sprayWalls, sprayWallVersions, userBoards } from '@boardsesh/db/schema';
 import type { readSprayDetection } from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
-import { requireBoardEditAccess } from './boards';
+import { filterEditableBoards } from './boards';
 
 type SprayNotificationTarget = {
   uuid: string;
@@ -56,17 +56,18 @@ export async function enrichSprayNotificationTargets(
     .innerJoin(userBoards, eq(userBoards.uuid, sprayWalls.boardUuid))
     .where(and(inArray(sprayWallDetections.id, ids), eq(sprayWallDetections.requestedBy, recipientId)));
   const sourceById = new Map(sources.map((source) => [source.detectionId, source]));
+  const uniqueBoards = [...new Map(sources.map((source) => [source.board.uuid, source.board])).values()];
+  const allowedBoardUuids = new Set((await filterEditableBoards(uniqueBoards, recipientId)).map((board) => board.uuid));
   for (const target of targets) {
     const source = sourceById.get(target.uuid);
-    if (!source || source.wall.deletedAt || source.board.deletedAt || source.wall.hiddenAt) continue;
-    try {
-      await requireBoardEditAccess(
-        { connectionId: 'spray-notifications', userId: recipientId, isAuthenticated: true },
-        source.board,
-      );
-    } catch {
+    if (
+      !source ||
+      source.wall.deletedAt ||
+      source.board.deletedAt ||
+      source.wall.hiddenAt ||
+      !allowedBoardUuids.has(source.board.uuid)
+    )
       continue;
-    }
     target.sprayWallName = source.board.name;
     target.sprayWallUuid = source.wall.boardUuid;
     target.sprayVersionId = String(source.versionId);
