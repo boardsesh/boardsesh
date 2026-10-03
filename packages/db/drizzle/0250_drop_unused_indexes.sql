@@ -1,5 +1,6 @@
 -- C7 index cleanup (docs/postgres-query-costs.md): drop indexes that production
--- shows as unused or strictly redundant, about 850 MB in all, and adopt
+-- shows as unused or strictly redundant, about 872 MB by the individually
+-- rounded September 2026 measurements, and adopt
 -- board_climbs_layout_filter_idx into the schema.
 --
 -- Every drop was checked against prod pg_stat_user_indexes (stats window since
@@ -17,7 +18,9 @@
 --     COALESCE(setter_score, 0), which this index cannot serve.
 --   board_climbs_edges_idx: dropped by 0067 but still in prod (3 scans);
 --     board_climbs_search_filter_idx carries the edge columns.
---   board_climbs_characteristics_idx (GIN): 0 scans, no query filters the array.
+--   board_climbs_characteristics_idx (GIN): 0 scans; the current matcher filters
+--     COALESCE(characteristics, legacy Aurora-description fallback), so this
+--     plain-column index does not match the queried expression.
 --   board_climbs_board_type_idx: board_climbs_layout_filter_idx has the same
 --     leading column at about the same size.
 --   boardsesh_ticks_sync_pending_idx (54 MB): the pending-push count filters
