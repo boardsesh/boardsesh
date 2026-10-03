@@ -1,6 +1,32 @@
 # Required checks on main
 
-**Status:** active. Ruleset `23720085` was applied on 2026-09-20. The GitHub Actions app id and repository-bot bypass were verified against GitHub; existing classic branch protection and release-tag rules were preserved.
+**Status:** active. Ruleset `23720085` was applied on 2026-09-20. The checked-in JSON
+is the original creation payload, not a mirror of current live repository settings.
+A read-only API check on 2026-10-03 confirmed the active rule still requires
+`ci-status` from GitHub Actions and has the bypass actors listed below. This PR
+makes no repository-settings changes.
+
+## Live policy
+
+The active ruleset currently allows `bypass_mode: always` for repository
+administrators (`RepositoryRole`, actor id `5`) and `boardsesh-repo-bot`
+(`Integration`, actor id `4098323`). The checked-in payload contains only the bot
+actor; it records the payload used when the ruleset was first applied and is
+pinned as that payload by `scripts/__tests__/required-checks-payload.test.ts`. It
+is not the current live snapshot. Read current state with:
+
+```bash
+gh api repos/boardsesh/boardsesh/rulesets/23720085 \
+  --jq '{id,name,enforcement,bypass_actors,rules}'
+```
+
+The repository-role bypass means administrators can merge without `ci-status`;
+classic branch protection also reports `enforce_admins: false`. A bypass is not
+evidence that a PR is ready. In the PR backlog sweep, `ready-for-admin-review` is
+applied only after exact-head CI checks pass or have expected skips, independent
+review is clean, valid review threads are addressed, and the branch is
+conflict-free. The label records readiness evidence, not merge authorization;
+the repository owner makes the final manual admin-merge decision.
 
 ## The failure this exists to stop
 
@@ -73,20 +99,25 @@ Two of the three carry `[skip ci]`, so no CI run — and therefore no `ci-status
 check — can ever exist on those commits, and the push is evaluated before any run
 could report anyway. Classic enforcement would reject all three.
 
-A **repository ruleset** can express the same requirement with a bypass actor, so
-the bot keeps pushing and human merges require CI. The bot's `always` bypass also
-allows it to merge PRs without CI; it is not limited to the three direct-push
-workflows. No repository workflow currently merges PRs with that token. Any future
-bot merge automation must verify the required checks independently or migrate the
-bot's direct writes before removing this exception.
+A **repository ruleset** can express the same requirement with explicit bypass
+actors, so the bot keeps pushing and contributors outside those actors must pass
+CI. The live ruleset also gives repository administrators an `always` bypass, so
+they can merge without CI; it is not limited to the bot's three direct-push
+workflows. No repository workflow currently merges PRs with the bot token. Any
+future bot merge automation must verify the required checks independently or
+migrate the bot's direct writes before removing this exception.
 
 The classic protection remains unchanged, and the existing *Protect native
 release tags* ruleset (id 21751146) targets tags, so the two never overlap.
 
 ## Applying it
 
-The payload is checked in at `.github/rulesets/main-require-ci-status.json` and
-pinned by `scripts/__tests__/required-checks-payload.test.ts`.
+The original creation payload is checked in at
+`.github/rulesets/main-require-ci-status.json` and pinned by
+`scripts/__tests__/required-checks-payload.test.ts`. It does not track later edits
+to the live ruleset. Inspect live state before changing repository settings; do
+not infer live bypass actors from this file or submit it again for an already
+existing ruleset.
 
 1. Confirm the GitHub Actions app id the payload pins (it is global, `15368`, but
    verify rather than trust):
@@ -151,10 +182,11 @@ Recovery ladder from #4731, cheapest first:
 1. `gh workflow run ci.yml --ref <branch>` — proves the code. A dispatch run
    forces every path filter to `true`, so it runs *more* jobs than the PR run
    would have (`release-notes` and `changelog-owned` are `pull_request`-only and
-   skip). It does **not** restore `pull_request` delivery and it does **not**
-   attach to the PR's rollup, so the required `ci-status` context stays
-   unsatisfied and the PR still cannot merge. Treat it as evidence, not as a
-   green PR.
+   skip). GitHub does not show `workflow_dispatch` job checks in the PR's checks
+   section or count them toward a required status check, even when they run on
+   that PR's head SHA ([required-check troubleshooting](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks#checks-from-some-workflow-jobs-are-not-evaluated)).
+   A dispatch therefore does **not** restore `pull_request` delivery or satisfy
+   the required `ci-status`; treat it as code evidence, not as a green PR.
 2. Close and reopen — did nothing on #4731, and `closed` handlers can fire
    teardown you did not intend (the OTA preview channel) on a PR whose events are
    only partly dead. One attempt at most.
