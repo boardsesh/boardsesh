@@ -1751,6 +1751,13 @@
       "when": 1790980220712,
       "tag": "0249_adds_spray_wall_render_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 250,
+      "version": "7",
+      "when": 1791063827476,
+      "tag": "0250_favorites_key_by_climb_uuid",
+      "breakpoints": true
     }
   ]
 }
