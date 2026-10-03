@@ -521,6 +521,29 @@ describe('LiveActivityBridge session-presence gating', () => {
       }),
     );
   });
+
+  it('drives widget navigation through the party path in a normal build', () => {
+    renderBridge();
+
+    expect(widget.useLiveActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ isSessionActive: true, isPartySession: true }),
+    );
+  });
+
+  // Screenshot builds run on a simulator, whose sandbox APNs token prod
+  // rejects and deletes, so every party-authorised widget tap would 401.
+  it('keeps a screenshot build off the party path even inside a session', () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    try {
+      renderBridge();
+
+      expect(widget.useLiveActivity).toHaveBeenCalledWith(
+        expect.objectContaining({ isSessionActive: true, isPartySession: false }),
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });
 
 // #5099 — the Android foreground-service notification renders its thumbnail from

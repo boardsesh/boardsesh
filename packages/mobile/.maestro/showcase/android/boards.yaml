@@ -1,0 +1,13 @@
+appId: com.boardsesh.app.dev
+name: showcase take - one lit climb, held still (Android)
+---
+# Takes: boards-<wall> -> .boardsesh/showcase-video/work/android/footage/boards-<wall>/
+#
+# The Android twin of ../boards.yaml: nothing moves, so only the appId differs.
+
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
+
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 6500
+    optional: true

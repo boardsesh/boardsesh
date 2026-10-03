@@ -113,6 +113,23 @@
     "recentBeta": {
       "title": "Frische Beta"
     },
+    "showcase": {
+      "videoLabel": "Demo: ein Kilter Board vom Handy beleuchten, Boards wechseln, eine Crew-Warteschlange führen und eine Begehung eintragen.",
+      "scenes": {
+        "hook": "Dein Board. Vom Handy beleuchtet.",
+        "light": "Wische, und das Board folgt.",
+        "boards": "Jedes Board. Eine App.",
+        "wall": "Sieh, was an der Wand läuft.",
+        "crew": "Deine Crew. Eine Warteschlange.",
+        "workouts": "Gib deiner Session einen Plan.",
+        "island": "Steuere die Wand über die Dynamic Island.",
+        "log": "Jede Begehung im Blick.",
+        "outro": "Weniger Handy. Mehr Wand."
+      },
+      "unsupported": "Dein Browser kann dieses Video nicht abspielen.",
+      "pause": "Demo pausieren",
+      "play": "Demo abspielen"
+    },
     "features": {
       "title": "Board-Abend, geregelt",
       "lead": "Vom ersten Boulder bis zur letzten Begehung bleibt eure Session zusammen.",

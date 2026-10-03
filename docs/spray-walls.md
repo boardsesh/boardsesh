@@ -297,13 +297,20 @@ would leave first-run open.
 
 Three rules in that flow are not obvious from the API and are easy to undo:
 
-- **A wall is created PRIVATE whatever the climber chose.** The row exists from
-  the moment `createSprayWall` returns — the photo handler authorises against it —
-  but it has no version, no photo and no holds, and `searchBoards` filters on
-  `is_public` / `is_unlisted` alone. A wall created public is therefore listed as
-  an unusable board for as long as the flow takes, and forever if it is abandoned.
-  The chosen visibility is applied by `updateSprayWall` straight after the first
-  publish.
+- **A wall is created PRIVATE whatever the climber chose, and the choice waits on
+  the server.** The row exists from the moment `createSprayWall` returns — the
+  photo handler authorises against it — but it has no version, no photo and no
+  holds. A wall created public would be a public board with nothing on it for as
+  long as the flow takes, and forever if it is abandoned. So the resolver writes
+  `user_boards.is_public` / `is_unlisted` false and parks the requested pair on
+  `spray_walls.pending_is_public` / `pending_is_unlisted`; the first publish copies
+  it onto the board row (and the photo into the public bucket, when public) and
+  nulls it. An explicit `updateSprayWall` visibility change before then nulls it
+  too — the later choice wins. It used to live only in the wizard's React state,
+  applied by an `updateSprayWall` after the publish, so a climber who closed the
+  app and resumed the wall published it private whatever they had picked (#5513).
+  The wizard still makes that post-publish write, which re-states the choice on a
+  backend that predates the pending columns.
 - **An unfinished wall is resumed, never duplicated.** Because the row is real, an
   abandoned run counts against `MAX_SPRAY_WALLS_PER_USER`. The resume check has to
   read a list fetched AFTER the screen mounted: React Query serves the cached
@@ -381,6 +388,7 @@ Everything a wall needs is in `packages/shared-schema/src/schema/spray-walls.ts`
 | `upsertSprayWallHolds(input)` | Adds or corrects holds on a draft. A hold with no `id` gets a new catalogue id; one with an `id` has its geometry rewritten. |
 | `removeSprayWallHolds(input)` | Takes holds off as of a draft. |
 | `publishSprayWallVersion(input)` | Makes a draft the generation climbers set against. |
+| `setSprayWallRenderSettings(input)` | Stores the wall's default look on `spray_walls.render_settings`, or clears it with `null`. The plain edit gate (below). |
 | `deleteSprayWall(uuid)` | Soft delete. Catalogue rows and climbs stay. |
 | `reportSprayWall(input)` | Report a wall. Any signed-in viewer who can see it, once per wall (SW-17, below). |
 | `setSprayWallHidden(input)` | The admin switch. Community admins only. |
@@ -406,7 +414,28 @@ so a client cannot set them:
   spray wall does not adjust.
 
 And one default is inverted from every other board type: **a wall is private
-unless the input says otherwise**. A wall is somebody's home.
+unless the input says otherwise**. A wall is somebody's home. Even when the input
+does say otherwise, the board row starts private: `isPublic` / `isUnlisted` land on
+`spray_walls.pending_is_public` / `pending_is_unlisted` and the first publish
+applies them (#5513). A client that sends neither — every binary from before that
+fix sends both false — gets a private wall and nothing pending, as before.
+
+### The wall's default look
+
+`spray_walls.render_settings` is a nullable `jsonb` holding
+`{ mode: 'classic' | 'aura', boardsesh: BoardseshRenderSettings }` — the look the
+creator picked in the add-wall wizard. `SprayWall.renderSettings` returns it on
+every wall read. NULL means "no wall default", which is every wall created before
+the column existed, and the mobile resolver falls back to the global default for
+it. A viewer's own explicit render-mode choice always wins over the wall's.
+
+- **Validated against `@boardsesh/board-look`'s own option lists and slider
+  bounds** (`SetSprayWallRenderSettingsInputSchema`), strict, every knob required.
+  `mode: 'default'` is refused: a wall default of "use the default" points at itself.
+- **On `spray_walls`, not `spray_wall_versions`.** A reset does not need a new look,
+  so it is current-state config like `reference_width/height`.
+- **No wall lock.** No hold, version or publish path reads or writes the column, so
+  there is no concurrent writer to order against; the last call wins.
 
 ### Versions, anchors and the homography
 
@@ -1016,8 +1045,9 @@ inherits the whole LED-less path from #4585 with no spray branch: the bulb means
 "I'm on it", the device picker is never mounted, and `SPRAY_CAPABILITIES`
 `nativeBoardControl: false` keeps the native BLE adapter out. That is why the edit
 form must not render the Lights toggle on a wall — one tap would have put a
-Bluetooth scan on a photograph. `updateBoard` still ACCEPTS `hasLeds` for a spray
-board, which is the remaining hole (#5486).
+Bluetooth scan on a photograph. `updateBoard` refuses a change to `hasLeds` or
+`isAngleAdjustable` on a spray board (`SPRAY_WALL_HAS_NO_HARDWARE`, #5483), so the
+flag cannot be unpinned through the ordinary board door either.
 
 ### The owner rows, and the sheet that is not mounted
 

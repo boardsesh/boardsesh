@@ -1,0 +1,13 @@
+appId: com.boardsesh.app.dev
+name: showcase setup - live session hidden (Android)
+---
+# The Android twin of ../session-private.yaml: switch "Show this session live"
+# off on the pre-session Record tab. The recorder checks the app logged
+# `Session Visibility Changed {"isPublic": false}` before it starts anything.
+#
+# Coordinates (1080x2424 emulator, 411x923 dp, portrait):
+#   82%,46%  the "Show this session live" switch
+
+- tapOn:
+    point: '82%,46%'
+- waitForAnimationToEnd

@@ -7,6 +7,7 @@ import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
 import QRCode from 'react-native-qrcode-svg';
+import { useShowcaseAnchor } from '../../lib/showcase-anchor';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { useTheme } from '../../providers/theme-provider';
@@ -35,6 +36,7 @@ export function InviteSheet({ visible, onDismiss, sessionId }: InviteSheetProps)
   const { showToast } = useToast();
   const windowInsetBottom = useWindowBottomInset();
   const sheetRef = useRef<BottomSheetMethods>(null);
+  const qrAnchor = useShowcaseAnchor('invite-qr');
 
   const shareUrl = useMemo(() => buildSessionShareUrl(sessionId), [sessionId]);
 
@@ -80,7 +82,7 @@ export function InviteSheet({ visible, onDismiss, sessionId }: InviteSheetProps)
           {t('mobile.session.inviteSubtitle')}
         </Text>
 
-        <View style={styles.qrTile}>
+        <View style={styles.qrTile} {...qrAnchor}>
           <QRCode value={shareUrl} size={QR_SIZE} backgroundColor={QR_TILE_BACKGROUND} />
         </View>
 

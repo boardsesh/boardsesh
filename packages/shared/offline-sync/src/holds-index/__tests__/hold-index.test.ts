@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TestSqliteDb } from '../../testing/sqlite-test-db';
+import { rejectBinaryDatabaseResults } from '../../testing/reject-binary-results';
 import { markScopeDownloadComplete } from '../../sync/checkpoints';
 import { offlineBoardKey, type OfflineBoardScope } from '../../offline-board-key';
 import {
@@ -56,6 +57,66 @@ beforeEach(async () => {
 });
 
 afterEach(() => close());
+
+describe('native BLOB read regression', () => {
+  it('builds, restarts, updates and deletes without returning binary columns from SQLite', async () => {
+    const guarded = rejectBinaryDatabaseResults(db);
+    for (let index = 1; index <= 7; index += 1) {
+      await insertClimb({ uuid: `climb-${index}`, seq: index, frames: `p1r12p${index + 1}r13` });
+    }
+    const first = await ensureHoldIndex(guarded, KILTER_12, {
+      parseHoldRows,
+      initialChunkClimbs: 2,
+      shouldContinue: stopAfter(7),
+    });
+    expect(first.status).toBe('aborted');
+    expect(await holdSetCount()).toBeGreaterThan(0);
+    expect(await holdSetCount()).toBeLessThan(7);
+    expect(await watermarkOf(KILTER_12)).toBeNull();
+
+    expect((await ensureHoldIndex(guarded, KILTER_12, { parseHoldRows, initialChunkClimbs: 2 })).status).toBe(
+      'complete',
+    );
+    expect(await holdSetCount()).toBe(7);
+    await expectPostingsMatchHoldSets(db, 'kilter', 1);
+
+    await insertClimb({ uuid: 'climb-1', seq: 8, frames: 'p20r12p21r13' });
+    await insertClimb({ uuid: 'climb-2', seq: 9, hidden: 1 });
+    await insertClimb({ uuid: 'climb-8', seq: 10, frames: 'p20r13' });
+    expect(await ensureHoldIndex(guarded, KILTER_12, { parseHoldRows, chunkClimbs: 1 })).toMatchObject({
+      status: 'complete',
+      holdSetsWritten: 2,
+      holdSetsDeleted: 1,
+    });
+    expect(await holdSetOf(db, 'climb-1')).toEqual([
+      [20, HOLD_ROLE.STARTING],
+      [21, HOLD_ROLE.HAND],
+    ]);
+    expect(await holdSetOf(db, 'climb-2')).toBeNull();
+    expect(await watermarkOf(KILTER_12)).toMatchObject({ syncSeq: 10 });
+    await expectPostingsMatchHoldSets(db, 'kilter', 1);
+
+    await guarded.withExclusiveTransactionAsync(async (txn) => {
+      await removeClimbFromHoldIndex(txn, { uuid: 'climb-1', boardType: 'kilter', layoutId: 1 });
+      await txn.runAsync('DELETE FROM board_climbs WHERE uuid = ?', ['climb-1']);
+    });
+    expect(await holdSetOf(db, 'climb-1')).toBeNull();
+    expect((await postingsOf(db, 'kilter', 1)).get(20)).toEqual(['climb-8']);
+    await expectPostingsMatchHoldSets(db, 'kilter', 1);
+  });
+
+  it('rejects native binary values on both read methods and exclusive transactions', async () => {
+    const guarded = rejectBinaryDatabaseResults(db);
+    await expect(guarded.getAllAsync("SELECT x'0102' AS holds")).rejects.toThrow('Native binary result');
+    await expect(guarded.getFirstAsync("SELECT x'0102' AS holds")).rejects.toThrow('Native binary result');
+    await expect(
+      guarded.withExclusiveTransactionAsync(async (txn) => {
+        await txn.getAllAsync("SELECT x'0102' AS holds");
+      }),
+    ).rejects.toThrow('Native binary result');
+    expect(await guarded.getFirstAsync("SELECT hex(x'0102') AS holds")).toEqual({ holds: '0102' });
+  });
+});
 
 describe('ensureHoldIndex — first build', () => {
   it('indexes listed, published, visible climbs, with roles, and stamps the watermark at MAX(sync_seq)', async () => {

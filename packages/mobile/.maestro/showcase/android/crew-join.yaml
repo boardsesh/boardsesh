@@ -1,0 +1,22 @@
+appId: com.boardsesh.app.dev
+name: showcase setup - rejoin a session (Android)
+---
+# Used only by `vp run video:record -- --platform android --end-session <id>`:
+# the Android primary rejoins a session a crashed run left running, then ends
+# it. (The crew take's second phone is the iOS simulator, which runs
+# ../crew-join.yaml.)
+#
+# The recorder has opened ://join/<id>. React Native on Android exposes text to
+# the accessibility tree, so this taps the button by its label rather than by a
+# point nobody has seen on this screen. "Session not found" means the session
+# already ended.
+
+- extendedWaitUntil:
+    visible: 'Join session'
+    timeout: 8000
+- tapOn: 'Join session'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 3000
+    optional: true

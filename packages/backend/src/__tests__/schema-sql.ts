@@ -1748,6 +1748,13 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     -- The key of this wall's photo copy in the PUBLIC media bucket, non-null
     -- exactly while the wall is public (migration 0229, SW-14).
     "public_photo_key" text,
+    -- The visibility asked for at creation, applied and nulled by the first
+    -- publish (migration 0240, #5513). Both NULL = nothing pending.
+    "pending_is_public" boolean,
+    "pending_is_unlisted" boolean,
+    -- The wall's stored default look, { mode, boardsesh }, or NULL for "no wall
+    -- default" (migration 0249).
+    "render_settings" jsonb,
     "created_at" timestamp DEFAULT now() NOT NULL,
     "updated_at" timestamp DEFAULT now() NOT NULL,
     "deleted_at" timestamp,

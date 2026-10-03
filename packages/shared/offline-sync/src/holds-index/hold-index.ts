@@ -56,7 +56,14 @@ import { climbsScopeFilter } from '../sync/board-scope-sql';
 import { isScopeDownloadComplete } from '../sync/checkpoints';
 import { invalidateKeysForTable, scopedInvalidateFilters } from '../sync/invalidate-keys';
 import { runPullWrite } from '../sync/pull-write';
-import { decodeHoldSetIds, editPostings, encodeHoldSet, encodePostings, holdStateToRole } from './query';
+import {
+  decodeHoldSetIds,
+  decodeSqliteBlobHex,
+  editPostings,
+  encodeHoldSet,
+  encodePostings,
+  holdStateToRole,
+} from './query';
 
 /** One parsed hold: a hold a climb lights, and the role it lights it in. */
 export type HoldRow = { holdId: number; holdState: string };
@@ -161,7 +168,8 @@ async function bumpGeneration(txn: SqlExecutor, key: string): Promise<void> {
   );
 }
 
-async function readGeneration(db: SqlExecutor, boardType: string, layoutId: number): Promise<string> {
+/** Snapshot of the layout and board teardown counters for detecting stale reads. */
+export async function readHoldIndexGeneration(db: SqlExecutor, boardType: string, layoutId: number): Promise<string> {
   const rows = await db.getAllAsync<{ key: string; value: string }>(
     'SELECT key, value FROM sync_meta WHERE key IN (?, ?) ORDER BY key',
     [layoutGenerationKey(boardType, layoutId), boardTypeGenerationKey(boardType)],
@@ -254,10 +262,6 @@ function bytesEqual(left: Uint8Array | null, right: Uint8Array | null): boolean 
   return true;
 }
 
-function asBytes(value: unknown): Uint8Array | null {
-  return value instanceof Uint8Array ? value : null;
-}
-
 /** The climb's hold-set blob, or null when it must not be indexed (or lights nothing). */
 function deriveHoldSet(boardType: string, climb: ClimbChunkRow, parseHoldRows: HoldRowParser): Uint8Array | null {
   const indexable = climb.is_listed === 1 && climb.is_draft === 0 && (climb.is_hidden ?? 0) === 0;
@@ -290,11 +294,11 @@ async function readHoldSets(executor: SqlExecutor, climbIds: readonly number[]):
   for (let start = 0; start < climbIds.length; start += IN_LIST_BATCH) {
     const batch = climbIds.slice(start, start + IN_LIST_BATCH);
     const rows = await executor.getAllAsync<{ climb_id: number; holds: unknown }>(
-      `SELECT climb_id, holds FROM board_climb_hold_sets WHERE climb_id IN (${placeholders(batch.length)})`,
+      `SELECT climb_id, hex(holds) AS holds FROM board_climb_hold_sets WHERE climb_id IN (${placeholders(batch.length)})`,
       batch,
     );
     for (const row of rows) {
-      const bytes = asBytes(row.holds);
+      const bytes = decodeSqliteBlobHex(row.holds);
       if (bytes) sets.set(row.climb_id, bytes);
     }
   }
@@ -308,10 +312,10 @@ async function readPosting(
   holdId: number,
 ): Promise<Uint8Array | null> {
   const row = await txn.getFirstAsync<{ climb_ids: unknown }>(
-    'SELECT climb_ids FROM board_climb_hold_postings WHERE board_type = ? AND layout_id = ? AND hold_id = ?',
+    'SELECT hex(climb_ids) AS climb_ids FROM board_climb_hold_postings WHERE board_type = ? AND layout_id = ? AND hold_id = ?',
     [boardType, layoutId, holdId],
   );
-  return asBytes(row?.climb_ids);
+  return decodeSqliteBlobHex(row?.climb_ids);
 }
 
 async function writePosting(
@@ -439,7 +443,7 @@ async function buildHoldIndex(
   const aborted = (): EnsureHoldIndexResult => ({ ...result, status: 'aborted' });
 
   // Read BEFORE anything else: a teardown that lands after this point changes it.
-  const generation = await readGeneration(db, boardType, layoutId);
+  const generation = await readHoldIndexGeneration(db, boardType, layoutId);
   if (!(await isScopeDownloadComplete(db, scopeKey))) return { ...result, status: 'not-downloaded' };
 
   const filter = climbsScopeFilter(scope);
@@ -468,7 +472,8 @@ async function buildHoldIndex(
           throw new HoldIndexChunkAbortedError();
         }
         if ((await readRawWatermark(txn, scopeKey)) !== expectedRaw) throw new HoldIndexChunkAbortedError();
-        if ((await readGeneration(txn, boardType, layoutId)) !== generation) throw new HoldIndexChunkAbortedError();
+        if ((await readHoldIndexGeneration(txn, boardType, layoutId)) !== generation)
+          throw new HoldIndexChunkAbortedError();
         await task(txn, tally);
       });
       result.holdSetsWritten += tally.holdSetsWritten;
@@ -501,7 +506,7 @@ async function buildHoldIndex(
       await yieldToHost();
       if (!shouldContinue()) return false;
       const rows = await db.getAllAsync<{ climb_id: number; holds: unknown }>(
-        `SELECT hs.climb_id, hs.holds
+        `SELECT hs.climb_id, hex(hs.holds) AS holds
          FROM board_climb_hold_sets hs
          JOIN holds_index_climbs hic ON hic.id = hs.climb_id
          JOIN board_climbs c ON c.uuid = hic.uuid
@@ -512,7 +517,7 @@ async function buildHoldIndex(
       );
       if (rows.length === 0) break;
       for (const row of rows) {
-        const bytes = asBytes(row.holds);
+        const bytes = decodeSqliteBlobHex(row.holds);
         if (!bytes) continue;
         // Rows arrive in climb-id order, so each posting list is built sorted.
         for (const holdId of decodeHoldSetIds(bytes)) {

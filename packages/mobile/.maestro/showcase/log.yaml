@@ -1,0 +1,70 @@
+appId: com.boardsesh.app
+name: showcase take - the logbook fills itself
+---
+# Take: log -> .boardsesh/showcase-video/work/footage/log/ (homepage showcase, scene "log")
+#
+# Records: the profile's Progress tab. It opens on the all-boards totals,
+# scrolls to "Your progress" with the activity calendar under it, then filters
+# the section to Kilter and then Tension through "Filters" (the
+# `profile-board-filter` anchor), so the records, calendar and charts redraw
+# twice. The all-boards totals at the top ignore the filter by design.
+#
+# The recorder opens ://profile on a freshly launched app BEFORE recording, so
+# this flow opens on the top of the Progress tab.
+#
+# Marks (work/marks/log.json): scrolled, filter-kilter, filter-tension.
+#
+# Coordinates (iPhone 16 Pro Max portrait), measured on the recorded frames:
+#   50%,80% -> 50%,40%  a slow drag up: "Your progress" lands at ~28%
+#   90%,28%             "Filters", right of the "Your progress" title
+#   50%,74%             Kilter in the filter sheet's Board list
+#   50%,79%             Tension
+#   12%,89%             Done, bottom left of the sheet
+#
+# Keep every tap off the bottom 12%: the now-playing bar sits there, and a tap
+# on it opens the play view over the whole take.
+
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
+
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 800
+    optional: true
+
+# Slow, so the list does not fling past the calendar.
+- swipe:
+    start: '50%,80%'
+    end: '50%,40%'
+    duration: 1800
+- waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/scrolled')}
+
+# Kilter.
+- tapOn:
+    point: '90%,28%'
+- waitForAnimationToEnd
+- tapOn:
+    point: '50%,74%'
+- tapOn:
+    point: '12%,89%'
+- waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/filter-kilter')}
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 1200
+    optional: true
+
+# Tension.
+- tapOn:
+    point: '90%,28%'
+- waitForAnimationToEnd
+- tapOn:
+    point: '50%,79%'
+- tapOn:
+    point: '12%,89%'
+- waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/filter-tension')}
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 1800
+    optional: true

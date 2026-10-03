@@ -124,6 +124,27 @@ None of the three is a synced table. They have no `TABLE_CONFIGS` entry, no chec
 
 Both keys are **board-scoped** (`scopedInvalidateFilters` in `sync/invalidate-keys.ts`): a pull of a per-board table, and a holds-index build, invalidate them with a predicate that matches only query keys naming that board's `boardName`/`boardType` + `layoutId`. A key that names no board is always refreshed. The holds-index build also passes `cancelRefetch: false`, because the heatmap's own `queryFn` joins the very build that finishes (it calls `ensureHoldIndex` first); a cancelling refetch would throw that answer away and run the aggregate again.
 
+### Android binary-read safety
+
+The index remains packed BLOBs on disk, but every hold-set and posting reader projects
+`hex(column)` and uses the shared `decodeSqliteBlobHex` helper to allocate JavaScript-owned
+bytes. Expo SQLite's Android BLOB result path creates a JNI global reference for each native
+buffer. The October 2, 2026 bug report contained 25 crashes at the 51,200-reference ceiling,
+with roughly 50,000 `DirectByteBuffer` entries and `SQLiteModule.getAll` on the crashing stack.
+This affects background index rebuilding during sessions as well as interactive readers;
+reducing a query's batch size alone does not guarantee collection of prior native buffers.
+Text transport avoids that result-buffer path without a schema or native dependency change.
+
+The local heatmap folds 1,000 climbs per page into one numeric aggregate and yields between
+pages. One query selects matching numeric climb IDs through the board/filter indexes;
+the fixed candidate list bounds the read during concurrent imports. Each page looks up at
+most 1,000 candidate IDs through the hold-set primary key, so unrelated downloaded boards
+are not scanned and sparse filters do not trigger a global hold-set scan. Only numeric IDs
+and the aggregate are retained between pages; decoded hold sets are not accumulated.
+Account changes, scope removal, or index teardown invalidate the in-flight
+result. Ordinary sync edits are eventually refreshed by the existing scoped invalidation;
+the paged aggregate is not a database snapshot and takes no long write transaction.
+
 ### Expensive catalogue reads are local-only
 
 Similar climbs is the first read registered with `networkPolicy: 'local-only'` (`packages/mobile/src/lib/graphql/offline-request.ts`). It is kept off the live resolver by policy: similar climbs are an offline feature for non-admins. The server's live scan (every hold row of the layout) is admin-only after #5766, and non-admins would otherwise get the nightly neighbour index. A local-only op never calls `getHttpClient()`: when the downloaded board can serve it, it reads SQLite (online or offline); when it cannot, it returns the op's empty fallback. The unavailable reason is recorded only while offline, as on the local-first path, because online the `download` audience never runs the query. There is no network-error rescue either, because there is no network request to fail.

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 // The one dependency under test: the row renders exactly the label + colour that
@@ -26,36 +26,61 @@ const myGradeOverride = vi.hoisted(() => ({
     | { status: 'set'; difficultyId: number; climbedAt: string | null },
 }));
 
-vi.mock('@boardsesh/board-react', () => ({
-  useEffectiveClimbStats: (
-    _boardName: string,
-    _layoutId: number,
-    _climbUuid: string,
-    _angle: number,
-    base: { ascensionistCount?: number; qualityAverage?: string; difficulty?: string },
-  ) =>
-    liveStatsOverride.current ?? {
-      ascensionistCount: base.ascensionistCount ?? 0,
-      qualityAverage: base.qualityAverage ?? null,
-      difficulty: base.difficulty ?? null,
-    },
+type StatusEntry = {
+  status?: 'flash' | 'send' | 'attempt' | null;
+  is_ascent: boolean;
+  tries: number;
+  is_mirror: boolean;
+};
+const statusLogbook = vi.hoisted(() => ({
+  listeners: new Set<() => void>(),
+  current: null as { logbookByClimbAngle: Map<string, StatusEntry[]> } | null,
 }));
+
+vi.mock('@boardsesh/board-react', async () => {
+  const { useSyncExternalStore } = await import('react');
+  return {
+    useOptionalBoardLogbook: () =>
+      useSyncExternalStore(
+        (listener) => {
+          statusLogbook.listeners.add(listener);
+          return () => {
+            statusLogbook.listeners.delete(listener);
+          };
+        },
+        () => statusLogbook.current,
+      ),
+    logbookClimbAngleKey: (climbUuid: string, angle: number) => `${climbUuid}:${angle}`,
+    useEffectiveClimbStats: (
+      _boardName: string,
+      _layoutId: number,
+      _climbUuid: string,
+      _angle: number,
+      base: { ascensionistCount?: number; qualityAverage?: string; difficulty?: string },
+    ) =>
+      liveStatsOverride.current ?? {
+        ascensionistCount: base.ascensionistCount ?? 0,
+        qualityAverage: base.qualityAverage ?? null,
+        difficulty: base.difficulty ?? null,
+      },
+  };
+});
 
 vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
-  View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
+  View: ({ children, accessibilityLabel }: { children?: ReactNode; accessibilityLabel?: string }) =>
+    createElement('div', { 'aria-label': accessibilityLabel }, children),
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, options?: { direction: string; status: string }) =>
+      key === 'mobile.climbRow.directionStatus' && options ? `${options.direction}: ${options.status}` : key,
+  }),
 }));
 
 vi.mock('../../hooks/use-display-grade', () => ({
   useDisplayGrade: () => ({ boardseshActive: true, resolveGrade }),
-}));
-
-vi.mock('../../hooks/use-ascent-status', () => ({
-  useAscentStatus: () => null,
 }));
 
 const useMyGradeCalls = vi.hoisted(() => [] as Array<{ climbUuid: string; angle: number; options: unknown }>);
@@ -93,8 +118,9 @@ vi.mock('../Text', () => ({
   },
 }));
 
+const thumbnailRender = vi.hoisted(() => vi.fn(() => null));
 vi.mock('../ClimbListThumbnail', () => ({
-  ClimbListThumbnail: () => null,
+  ClimbListThumbnail: thumbnailRender,
   THUMBNAIL_WIDTH: 60,
   THUMBNAIL_HEIGHT: 80,
 }));
@@ -459,5 +485,144 @@ describe('ClimbListItemContent lost-holds chip', () => {
   it('stays in the row neutral grey — colour is the grade’s alone', () => {
     const { container } = renderWith(1);
     expect(chipIcon(container)?.getAttribute('data-color')).toBe('#8E8E93');
+  });
+});
+
+// #5917: exercise the actual indexed hook and status precedence, not a glyph stub.
+describe('ClimbListItemContent original and mirror statuses', () => {
+  const tick = (overrides: Partial<StatusEntry> = {}): StatusEntry => ({
+    status: 'send',
+    is_ascent: true,
+    tries: 2,
+    is_mirror: false,
+    ...overrides,
+  });
+  const renderWoods = (angle = 40) =>
+    render(
+      <ClimbListItemContent climb={baseClimb} boardName="woods" layoutId={1} sizeId={2} setIds="1" angle={angle} />,
+    );
+  const directionRows = (container: HTMLElement) =>
+    [...container.querySelectorAll('[aria-label]')].filter((node) =>
+      node.getAttribute('aria-label')?.includes('mobile.logbook.'),
+    );
+
+  beforeEach(() => {
+    resolveGrade.mockReturnValue({ label: 'V4', color: '#111111', isBoardsesh: false });
+    statusLogbook.current = null;
+  });
+
+  it.each([false, true])('identifies a single direction send (mirrored=%s)', (isMirror) => {
+    statusLogbook.current = { logbookByClimbAngle: new Map([['c1:40', [tick({ is_mirror: isMirror })]]]) };
+    const rows = directionRows(renderWoods().container);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].textContent).toBe(isMirror ? 'mobile.logbook.mirroredTag' : 'mobile.logbook.originalTag');
+    expect(rows[0].getAttribute('aria-label')).toContain('ascentStatus.send');
+    expect(rows[0].querySelector('[data-icon]')?.getAttribute('data-icon')).toBe('tick.outline');
+  });
+
+  it.each(['woods', 'tension'] as const)('shows both sends independently on %s layout 1', (boardName) => {
+    statusLogbook.current = { logbookByClimbAngle: new Map([['c1:40', [tick(), tick({ is_mirror: true })]]]) };
+    const { container } = render(
+      <ClimbListItemContent climb={baseClimb} boardName={boardName} layoutId={1} sizeId={2} setIds="1" angle={40} />,
+    );
+    const rows = directionRows(container);
+    expect(rows.map((node) => node.textContent)).toEqual(['mobile.logbook.originalTag', 'mobile.logbook.mirroredTag']);
+    expect(rows.every((node) => node.getAttribute('aria-label')?.includes('ascentStatus.send'))).toBe(true);
+  });
+
+  it('hides both Woods direction statuses while retaining normal climb content', () => {
+    myGradeOverride.current = { status: 'unknown' };
+    statusLogbook.current = {
+      logbookByClimbAngle: new Map([
+        [
+          'c1:40',
+          [tick({ status: 'flash', tries: 1 }), tick({ is_mirror: true, status: 'attempt', is_ascent: false })],
+        ],
+      ]),
+    };
+    const { container, rerender } = renderWoods();
+    expect(directionRows(container)).toHaveLength(2);
+    expect(iconNames(container)).toEqual(expect.arrayContaining(['flash', 'ascent.attempt']));
+
+    rerender(
+      <ClimbListItemContent
+        climb={baseClimb}
+        boardName="woods"
+        layoutId={1}
+        sizeId={2}
+        setIds="1"
+        angle={40}
+        showAscentStatus={false}
+      />,
+    );
+
+    expect(directionRows(container)).toHaveLength(0);
+    expect(container.textContent).not.toContain('mobile.logbook.originalTag');
+    expect(container.textContent).not.toContain('mobile.logbook.mirroredTag');
+    expect(iconNames(container)).not.toContain('flash');
+    expect(iconNames(container)).not.toContain('ascent.attempt');
+    expect(iconNames(container)).not.toContain('tick.outline');
+    expect(container.textContent).toContain(baseClimb.name);
+    expect(gradeNode(container)?.textContent).toBe('V4');
+    expect(container.textContent).toContain('4.5★');
+    expect(container.textContent).toContain('sends');
+  });
+
+  it('preserves flash precedence in the original direction and a mirrored try', () => {
+    statusLogbook.current = {
+      logbookByClimbAngle: new Map([
+        [
+          'c1:40',
+          [tick(), tick({ status: null, tries: 1 }), tick({ is_mirror: true, status: 'attempt', is_ascent: false })],
+        ],
+      ]),
+    };
+    const rows = directionRows(renderWoods().container);
+    expect(rows.map((node) => node.getAttribute('aria-label'))).toEqual([
+      'mobile.logbook.originalTag: mobile.climbRow.ascentStatus.flash',
+      'mobile.logbook.mirroredTag: mobile.climbRow.ascentStatus.attempt',
+    ]);
+    expect(rows.map((node) => node.querySelector('[data-icon]')?.getAttribute('data-icon'))).toEqual([
+      'flash',
+      'ascent.attempt',
+    ]);
+  });
+
+  it('never claims an original send from a mirrored-only attempt', () => {
+    statusLogbook.current = {
+      logbookByClimbAngle: new Map([['c1:40', [tick({ is_mirror: true, status: null, is_ascent: false })]]]),
+    };
+    const rows = directionRows(renderWoods().container);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].getAttribute('aria-label')).toBe('mobile.logbook.mirroredTag: mobile.climbRow.ascentStatus.attempt');
+  });
+
+  it('shows no status outside the provider or at another angle', () => {
+    expect(directionRows(renderWoods().container)).toHaveLength(0);
+    statusLogbook.current = { logbookByClimbAngle: new Map([['c1:40', [tick()]]]) };
+    expect(directionRows(renderWoods(30).container)).toHaveLength(0);
+  });
+
+  it('updates only the status child after a logbook merge', () => {
+    thumbnailRender.mockClear();
+    const { container } = renderWoods();
+    expect(directionRows(container)).toHaveLength(0);
+    const thumbnailCalls = thumbnailRender.mock.calls.length;
+    act(() => {
+      statusLogbook.current = { logbookByClimbAngle: new Map([['c1:40', [tick({ is_mirror: true })]]]) };
+      statusLogbook.listeners.forEach((listener) => listener());
+    });
+    expect(directionRows(container)[0]?.textContent).toBe('mobile.logbook.mirroredTag');
+    expect(thumbnailRender.mock.calls).toHaveLength(thumbnailCalls);
+    expect(container.textContent).toContain(baseClimb.name);
+  });
+
+  it('retains a single aggregate glyph for nonmirrorable Tension layout 11', () => {
+    statusLogbook.current = { logbookByClimbAngle: new Map([['c1:40', [tick({ is_mirror: true })]]]) };
+    const { container } = render(
+      <ClimbListItemContent climb={baseClimb} boardName="tension" layoutId={11} sizeId={1} setIds="1" angle={40} />,
+    );
+    expect(directionRows(container)).toHaveLength(0);
+    expect(container.querySelector('[aria-label="mobile.climbRow.ascentStatus.send"]')).not.toBeNull();
   });
 });

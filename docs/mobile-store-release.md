@@ -358,6 +358,8 @@ after the shipped fingerprint moves on.
 6. Verify the store drafts select the tagged builds, then submit both manually.
 7. After approval, confirm both immutable release anchors were created, then
    merge `release/next` into `main` as a **merge commit** and reset the train.
+8. Re-record the homepage showcase video's app footage so the site shows the
+   shipped app: `vp run video` ([showcase-video.md](showcase-video.md)).
 
 ## Notes
 

@@ -190,6 +190,7 @@
       "pendingSync_other": "{{count}} warten auf Sync",
       "tries_one": "{{count}} Versuch",
       "tries_other": "{{count}} Versuche",
+      "originalTag": "Original",
       "mirroredTag": "Gespiegelt",
       "lifetimeTries_one": "{{count}} Versuch",
       "lifetimeTries_other": "{{count}} Versuche",

@@ -1,0 +1,23 @@
+appId: com.boardsesh.app.dev
+name: showcase setup - crew, open the invite sheet (Android)
+---
+# Setup for take: crew (primary phone, NOT recorded), after crew-start.yaml
+# and the relaunch that gives the recorder the session id.
+#
+# Opens the in-session Record tab and its invite sheet, so recording starts on
+# the QR.
+#
+# Coordinates (1080x2424 emulator, 411x923 dp, portrait):
+#   20%,9%  the invite button (person with a plus) in the in-session header
+
+- openLink: com.boardsesh.app://home
+- waitForAnimationToEnd
+- openLink: com.boardsesh.app://record
+- waitForAnimationToEnd
+- tapOn:
+    point: '20%,9%'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 1500
+    optional: true

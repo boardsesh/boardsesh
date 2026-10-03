@@ -1,0 +1,23 @@
+appId: com.boardsesh.app.dev
+name: showcase setup - lock-screen, put the climb on the wall (Android)
+---
+# Setup for take: lock-screen (primary phone, NOT recorded), after
+# lock-screen-setup.yaml and a relaunch.
+#
+# Opens the play view from the now-playing bar and taps the bulb. The fake board
+# (EXPO_PUBLIC_SCREENSHOT_FAKE_BLE) connects at once, so the session
+# notification's bulb action reads "Relight wall" instead of "Reconnect".
+#
+# Coordinates (1080x2424 emulator, 411x923 dp, portrait):
+#   40%,86%  the now-playing bar -> play view
+#   87%,83%  the bulb
+
+- tapOn:
+    point: '40%,86%'
+- waitForAnimationToEnd
+- tapOn:
+    point: '87%,83%'
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 3000
+    optional: true

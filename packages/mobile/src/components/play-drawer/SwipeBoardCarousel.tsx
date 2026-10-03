@@ -16,6 +16,7 @@ import { useZoomPanGesture } from './use-zoom-pan-gesture';
 import { computeContainedBoardSize, CAROUSEL_LAYER_Z } from './play-drawer-layout';
 import { ResetZoomButton } from '../board-controls/ResetZoomButton';
 import { UpcomingBoardPrefetch } from './UpcomingBoardPrefetch';
+import { useShowcaseAnchor } from '../../lib/showcase-anchor';
 
 type BoardRenderData = {
   boardWidth: number;
@@ -237,6 +238,8 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   }, []);
 
   const isScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
+  // The lit climb, for the showcase video's callouts (screenshot mode only, like the plain board below).
+  const boardSurfaceAnchor = useShowcaseAnchor('board-surface');
 
   // Keep measuring the flex box, but never mount images at an implicit/full-width
   // size. Cached photos can paint before onLayout reaches JS, making the later
@@ -266,7 +269,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
           // board-presence sheet (no carousel) already captures reliably, confirming
           // the carousel layer is the culprit. overlayTestID anchors on the painted
           // holds overlay.
-          <View style={[styles.boardWrapper, boardBox]}>
+          <View style={[styles.boardWrapper, boardBox]} {...boardSurfaceAnchor}>
             <BoardImageNative
               frames={currentFrameOverride ?? currentFrames}
               boardName={boardName}

@@ -1,0 +1,60 @@
+appId: com.boardsesh.app.dev
+name: showcase take - a workout with a rest timer (Android)
+---
+# Take: workouts -> .boardsesh/showcase-video/work/android/footage/workouts/
+#
+# The Android twin of ../workouts.yaml; that file says what the take shows.
+# The screen is shorter than the iPhone's, so the generated workout preview
+# stays below the fold and Start floats over the "Show this session live" row
+# once the rest timer is armed.
+#
+# Coordinates (1080x2424 emulator, 411x923 dp, portrait), top of the page:
+#   94%,66%  the third workout tile (Pyramid), half off the right edge
+#   82%,34%  the rest timer switch
+#   71%,53%  "Fixed window" in the cadence toggle (once armed)
+#   81%,41%  the rest length pill: one tap goes from Off to 0:30
+#   80%,74%  Start, once the rest settings have pushed it up
+#
+# Marks (work/android/marks/workouts.json): pyramid-picked, rest-armed, rest-pill, started.
+
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
+
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 800
+    optional: true
+
+- tapOn:
+    point: '94%,66%'
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/pyramid-picked')}
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 1000
+    optional: true
+
+- tapOn:
+    point: '82%,34%'
+- waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/rest-armed')}
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 600
+    optional: true
+- tapOn:
+    point: '71%,53%'
+- tapOn:
+    point: '81%,41%'
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/rest-pill')}
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 1200
+    optional: true
+
+- tapOn:
+    point: '80%,74%'
+- waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/started')}
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 3000
+    optional: true

@@ -3,6 +3,7 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useLogbook } from '@boardsesh/board-react';
+import { boardSupportsMirroring } from '@boardsesh/board-config';
 import { groupEntriesByAngle, tickTimeMs } from '@boardsesh/profile-stats';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -14,7 +15,8 @@ import { spacing } from '../../theme/tokens';
 
 type LogbookSectionProps = {
   climbUuid: string;
-  boardName: string;
+  boardName: BoardName;
+  layoutId: number;
   userAscents: number | null | undefined;
   userAttempts: number | null | undefined;
 };
@@ -22,12 +24,13 @@ type LogbookSectionProps = {
 export const LogbookSection = memo(function LogbookSection({
   climbUuid,
   boardName,
+  layoutId,
   userAscents,
   userAttempts,
 }: LogbookSectionProps) {
   const { t } = useTranslation('session');
   const { isAuthenticated } = useAuth();
-  const { logbook, isLoading } = useLogbook(boardName as BoardName, [climbUuid]);
+  const { logbook, isLoading } = useLogbook(boardName, [climbUuid]);
   const { data: pendingTicks = 0 } = useLocalPendingTicks(climbUuid, boardName);
 
   const entries = useMemo(
@@ -45,8 +48,7 @@ export const LogbookSection = memo(function LogbookSection({
     [logbook, climbUuid],
   );
 
-  // Only Tension/Decoy log mirrored sends, so the mirror tag is board-gated.
-  const showMirrorTag = boardName === 'tension' || boardName === 'decoy';
+  const showMirrorTag = boardSupportsMirroring(boardName, layoutId);
   const pendingRow =
     pendingTicks > 0 ? (
       <View style={styles.row}>

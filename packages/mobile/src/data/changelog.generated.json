@@ -1,6 +1,42 @@
 {
-  "generatedAt": "2026-09-29T12:32:27.671Z",
+  "generatedAt": "2026-10-02T13:13:03.510Z",
   "entries": [
+    {
+      "prNumber": 5933,
+      "category": "fixed",
+      "title": "Keep your Android session going while downloaded boards update in the background.",
+      "mergedAt": "2026-10-02T05:33:25Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5933"
+    },
+    {
+      "prNumber": 5930,
+      "category": "fixed",
+      "title": "Hold a climb in Android's queue to open reactions and Play next.",
+      "mergedAt": "2026-10-01T21:37:42Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5930"
+    },
+    {
+      "prNumber": 5796,
+      "category": "fixed",
+      "title": "A spray wall you finish later now keeps the visibility you picked when you started it.",
+      "mergedAt": "2026-09-30T21:13:22Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5796"
+    },
+    {
+      "prNumber": 5908,
+      "category": "new",
+      "title": "See Boardsesh in action at the top of boardsesh.com: a one-minute tour of lighting climbs, sharing a queue and logging sends.",
+      "mergedAt": "2026-09-30T20:54:58Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5908"
+    },
+    {
+      "prNumber": 5893,
+      "category": "new",
+      "title": "Download your climbing history from Settings, across every board.",
+      "mergedAt": "2026-09-30T06:26:06Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5893",
+      "body": "Keep a Boardsesh archive or download Aurora JSON where available."
+    },
     {
       "prNumber": 5872,
       "category": "fixed",

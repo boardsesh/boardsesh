@@ -1,0 +1,25 @@
+appId: com.boardsesh.app
+name: showcase setup - crew, the second phone joins
+---
+# Setup for take: crew, SECONDARY phone (not recorded)
+#
+# The recorder has opened ://join/<sessionId> (the id comes from the invite
+# link the primary copied). This taps Join on the confirmation card; the app
+# resolves the session's wall against the second account's boards (creating a
+# matching one if it has none) and joins. The recorder then opens ://climbs,
+# where crew-secondary.yaml swipes a row into the queue.
+#
+# Coordinates (iPhone 16 Pro Max portrait):
+#   24%,61%  "Join session", the filled button on the left of the session card
+
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 2500
+    optional: true
+- tapOn:
+    point: '24%,61%'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 3000
+    optional: true

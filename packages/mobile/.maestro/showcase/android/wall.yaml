@@ -1,0 +1,42 @@
+appId: com.boardsesh.app.dev
+name: showcase take - what is on the wall (Android)
+---
+# Take: wall -> .boardsesh/showcase-video/work/android/footage/wall/
+#
+# The Android twin of ../wall.yaml. Android's Climbs header has no board
+# button on the right (that is "+", a new climb); the wall sheet opens from the
+# board name instead, at half height, so the drag starts lower.
+#
+# Coordinates (1080x2424 emulator, 411x923 dp, portrait):
+#   34%,9%              "Marco's Board", the board name in the Climbs header
+#   50%,62% -> 50%,12%  drag the sheet up: "Lit on this wall" comes into view
+#
+# Marks (work/android/marks/wall.json): sheet-open, history-shown.
+
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
+
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 1200
+    optional: true
+
+- tapOn:
+    point: '34%,9%'
+- waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/sheet-open')}
+
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 1800
+    optional: true
+
+- swipe:
+    start: '50%,62%'
+    end: '50%,12%'
+    duration: 900
+- waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/history-shown')}
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 2500
+    optional: true

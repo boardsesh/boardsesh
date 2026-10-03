@@ -14,14 +14,14 @@ vi.mock('../../../lib/error-reporting', () => ({ addErrorBreadcrumb: vi.fn() }))
 import { getHoldHeatmapLocal } from '../get-hold-heatmap-local';
 
 describe('getHoldHeatmapLocal — interrupted index build', () => {
-  it('throws instead of aggregating a partial index', async () => {
-    ensureHoldIndex.mockResolvedValue({ status: 'aborted' });
-    const getAllAsync = vi.fn();
-    const db = { getAllAsync, getFirstAsync: vi.fn() } as unknown as OfflineDatabase;
+  it.each(['aborted', 'not-downloaded'])('rejects an index that is %s', async (status) => {
+    ensureHoldIndex.mockResolvedValue({ status });
+    const getAllAsync = vi.fn().mockResolvedValue([]);
+    const db = { getAllAsync, getFirstAsync: vi.fn().mockResolvedValue(null) } as unknown as OfflineDatabase;
 
     await expect(
       getHoldHeatmapLocal(db, { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '', angle: 40 }),
-    ).rejects.toThrow(/interrupted/);
-    expect(getAllAsync).not.toHaveBeenCalled();
+    ).rejects.toThrow(/interrupted|no longer downloaded/);
+    expect(getAllAsync.mock.calls.every(([sql]) => !sql.includes('board_climb_hold_sets'))).toBe(true);
   });
 });

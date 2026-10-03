@@ -17,6 +17,7 @@ import { Text } from '../../Text';
 import { useTheme } from '../../../providers/theme-provider';
 import { withAlpha } from '../../../theme/colors';
 import { borderRadius, spacing } from '../../../theme/tokens';
+import { ShowcaseAnchorView } from '../../../lib/showcase-anchor';
 
 const CHART_HEIGHT = 82;
 
@@ -145,7 +146,10 @@ export const WorkoutTypeShelf = memo(function WorkoutTypeShelf({ items }: Workou
       decelerationRate="fast"
     >
       {items.map((item) => (
-        <WorkoutTypeTile item={item} key={item.key} tileWidth={tileWidth} />
+        // Only the selected tile reports (screenshot mode); a pass-through elsewhere.
+        <ShowcaseAnchorView key={item.key} name="workout-type" enabled={item.selected}>
+          <WorkoutTypeTile item={item} tileWidth={tileWidth} />
+        </ShowcaseAnchorView>
       ))}
     </ScrollView>
   );

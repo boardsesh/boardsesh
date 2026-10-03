@@ -344,6 +344,7 @@ function QueueListComponent({
               drag={dragControls}
               rowIndex={index}
               queueIndex={row.queueIndex}
+              showcaseAvatarAnchor={process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && index === firstFutureRowIndex}
               isDraggable={!isEditMode}
               showAddedBy={showAddedBy}
               viewerUserId={viewerUserId}
@@ -380,6 +381,7 @@ function QueueListComponent({
     [
       board,
       dragControls,
+      firstFutureRowIndex,
       isEditMode,
       selectedItems,
       onClimbPress,

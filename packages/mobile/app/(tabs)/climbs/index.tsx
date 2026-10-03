@@ -1056,7 +1056,11 @@ function ClimbListInner() {
   useEffect(() => {
     if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1') return;
     if (!activeBoard || !searchReady || visibleClimbs.length === 0) return;
-    publishScreenshotWallClimbs(buildScreenshotWallSeed(visibleClimbs, activeBoard.angle ?? null, activeBoard), null);
+    publishScreenshotWallClimbs(
+      buildScreenshotWallSeed(visibleClimbs, activeBoard.angle ?? null, activeBoard),
+      null,
+      activeBoard.uuid,
+    );
   }, [activeBoard, searchReady, visibleClimbs]);
 
   // Screenshot mode: open the first climb in one of the drawer's two wall-state
@@ -1991,6 +1995,7 @@ function ClimbListInner() {
         onCreate={handleCreateClimb}
         onOpenBoardDetail={handleOpenBoardDetail}
         showBoardBadge={showRevealTip}
+        anchorBoardButton
         onHeightChange={setSearchBarHeight}
         searchFieldRef={searchHeaderRef}
         searchInitialValue={name}

@@ -10,7 +10,7 @@ import type { SitemapItem } from './entries';
  * once #4381 lands the public-gyms enumeration query.
  */
 export const STATIC_ENTRIES: readonly SitemapItem[] = [
-  { path: '/', changeFrequency: 'weekly', priority: 1.0, lastModified: new Date('2026-04-30') },
+  { path: '/', changeFrequency: 'weekly', priority: 1.0, lastModified: new Date('2026-09-30') },
   { path: '/aurora-migration', changeFrequency: 'weekly', priority: 0.9, lastModified: new Date('2026-04-30') },
   { path: '/about', changeFrequency: 'monthly', priority: 0.8, lastModified: new Date('2026-04-30') },
   { path: '/support', changeFrequency: 'monthly', priority: 0.6, lastModified: new Date('2026-09-16') },

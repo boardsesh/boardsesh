@@ -30,12 +30,27 @@ const managedSheet = vi.hoisted(() => ({
 // makes it bail — exactly the win the frozen snapshot buys.
 const queueList = vi.hoisted(() => ({ renders: 0, lastQueue: null as ClimbQueueItem[] | null }));
 
+const platform = vi.hoisted(() => ({ os: 'ios' }));
+const gestureRoot = vi.hoisted(() => ({ style: undefined as unknown }));
+
 type ViewProps = { children?: ReactNode; testID?: string; style?: unknown };
 vi.mock('react-native', () => ({
   View: ({ children, testID }: ViewProps) => createElement('div', { 'data-testid': testID }, children),
   Pressable: ({ children }: ViewProps) => createElement('div', null, children),
-  Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
+  Platform: {
+    get OS() {
+      return platform.os;
+    },
+    select: (options: Record<string, unknown>) => options[platform.os] ?? options.default,
+  },
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+}));
+
+vi.mock('react-native-gesture-handler', () => ({
+  GestureHandlerRootView: ({ children, style }: ViewProps) => {
+    gestureRoot.style = style;
+    return createElement('div', { 'data-testid': 'dialog-gesture-root' }, children);
+  },
 }));
 
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
@@ -149,12 +164,29 @@ function renderSheet(handleRef: ReturnType<typeof createRef<QueueSheetHandle>>) 
 
 describe('QueueSheet freeze contract', () => {
   beforeEach(() => {
+    platform.os = 'ios';
+    gestureRoot.style = undefined;
     queueData.current = makeData(['a', 'b']);
     managedSheet.present.mockClear();
     managedSheet.dismiss.mockClear();
     managedSheet.dismissAndWait.mockClear();
     queueList.renders = 0;
     queueList.lastQueue = null;
+  });
+
+  it('hosts Android queue gestures inside the native dialog with a flex root', () => {
+    platform.os = 'android';
+    const { getByTestId } = renderSheet(createRef<QueueSheetHandle>());
+    const root = getByTestId('dialog-gesture-root');
+    expect(getByTestId('sheet').contains(root)).toBe(true);
+    expect(root.contains(getByTestId('queue-list'))).toBe(true);
+    expect(gestureRoot.style).toHaveProperty('flex', 1);
+  });
+
+  it('preserves the iOS sheet content without an extra gesture root', () => {
+    const { queryByTestId, getByTestId } = renderSheet(createRef<QueueSheetHandle>());
+    expect(queryByTestId('dialog-gesture-root')).toBeNull();
+    expect(getByTestId('sheet').contains(getByTestId('queue-list'))).toBe(true);
   });
 
   it('does NOT re-render QueueList when queue data changes while hidden', () => {

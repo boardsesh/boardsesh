@@ -164,6 +164,7 @@
   "/images/help/playlist-detail.webp": "static/v1/27e58132e15b5a29b2c5369de0640948a948475718d605ebc6421b2c1b184012.webp",
   "/images/help/session-detail.webp": "static/v1/8c3130d05a583e099e2a4eb4305391c5da0dd3c53b237746106ea75b6446a7e5.webp",
   "/images/help/setters.webp": "static/v1/65fbbf8332dd0f897afb67e937f4b2a0cd2ff7b91b4d5eaf9c2d332ae48bf8ab.webp",
+  "/images/home/showcase-hero-9x16.webp": "static/v1/cba8ba69a08f22d0950fb09459b4376e17250f7db666ec761cda022237f3f255.webp",
   "/images/kilter/product_sizes_layouts_sets/15_5_24.webp": "static/v1/f5b8e20a0888a4c8649be51611426518c2eff7cd39b3b206c4113a0fea2673d4.webp",
   "/images/kilter/product_sizes_layouts_sets/36-1.webp": "static/v1/8d58e55281aeefc89e973f164b20f5c55ea0afff0734b852c90b740575838a5b.webp",
   "/images/kilter/product_sizes_layouts_sets/38-1.webp": "static/v1/a56ba044f548d913eee80e4889b8dc8e0da70a0b1e4ae839264178f3cedcbc41.webp",
@@ -419,5 +420,7 @@
   "/videos/help/swipe-row-queue-playlist.mp4": "static/v1/c9d1c746da46db0b3df986c11a3cd37af239e77ac2262fad96bb77e2ed5e4c41.mp4",
   "/videos/help/swipe-row-queue-playlist.webm": "static/v1/026306a8d37a0a9f886114bf984447d6b86b2664232250248640a580c2ddce51.webm",
   "/videos/help/zone-filter-drag.mp4": "static/v1/b52fd295a0575e1ba838d4e67824b20dcb49f2b064c41a20e90bbe1a89451d1c.mp4",
-  "/videos/help/zone-filter-drag.webm": "static/v1/0f1a0e92774a4531c5c0f7a125b351a825492240c30b497a880dbcef463d4a2f.webm"
+  "/videos/help/zone-filter-drag.webm": "static/v1/0f1a0e92774a4531c5c0f7a125b351a825492240c30b497a880dbcef463d4a2f.webm",
+  "/videos/home/showcase-9x16-lite.mp4": "static/v1/03a1ec31f4884e298f5a138a159deebf4512ca3239d6dba9aad36bacb2621bb0.mp4",
+  "/videos/home/showcase-9x16-lite.webm": "static/v1/690a87017f63293a774b48a9357e588dad0fde694d463ce5f0298a13c640f71b.webm"
 }

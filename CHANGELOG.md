@@ -4,6 +4,30 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-10-02
+
+### Fixed
+
+- Keep your Android session going while downloaded boards update in the background. ([#5933](https://github.com/boardsesh/boardsesh/pull/5933))
+
+## 2026-10-01
+
+### Fixed
+
+- Hold a climb in Android's queue to open reactions and Play next. ([#5930](https://github.com/boardsesh/boardsesh/pull/5930))
+
+## 2026-09-30
+
+### New
+
+- See Boardsesh in action at the top of boardsesh.com: a one-minute tour of lighting climbs, sharing a queue and logging sends. ([#5908](https://github.com/boardsesh/boardsesh/pull/5908))
+- Download your climbing history from Settings, across every board. ([#5893](https://github.com/boardsesh/boardsesh/pull/5893))
+  Keep a Boardsesh archive or download Aurora JSON where available.
+
+### Fixed
+
+- A spray wall you finish later now keeps the visibility you picked when you started it. ([#5796](https://github.com/boardsesh/boardsesh/pull/5796))
+
 ## 2026-09-29
 
 ### Fixed

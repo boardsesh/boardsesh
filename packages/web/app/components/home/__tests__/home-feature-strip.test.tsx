@@ -1,7 +1,7 @@
 // @vitest-environment node
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 /**
@@ -33,11 +33,17 @@ vi.mock('@/app/hooks/use-install-platform', () => ({
 }));
 vi.mock('@/app/lib/static-asset-url', () => ({ resolveStaticAssetUrl: (path: string) => path }));
 
+let mockLocale = 'en-US';
 vi.mock('@/app/lib/i18n/server', () => ({
   getServerTranslation: vi.fn(async () => ({
     t: (key: string) => resolveMarketingKey(key),
-    locale: 'en-US',
+    locale: mockLocale,
   })),
+}));
+
+vi.mock('@/app/components/marketing/marketing-screenshot', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/app/components/marketing/marketing-screenshot')>()),
+  MarketingPreviewSwitch: () => <div data-testid="preview-switch" />,
 }));
 
 // `next/image` is a client component with its own loader; a plain <img> keeps
@@ -55,6 +61,19 @@ async function renderStrip(): Promise<string> {
 }
 
 describe('HomeFeatureStrip', () => {
+  afterEach(() => {
+    mockLocale = 'en-US';
+  });
+
+  it('hosts the iOS/Android preview switch on the English page', async () => {
+    expect(await renderStrip()).toContain('data-testid="preview-switch"');
+  });
+
+  it('leaves the preview switch in the hero for other locales', async () => {
+    mockLocale = 'de';
+    expect(await renderStrip()).not.toContain('data-testid="preview-switch"');
+  });
+
   it('renders three columns, each with a heading and a line of copy', async () => {
     const html = await renderStrip();
 

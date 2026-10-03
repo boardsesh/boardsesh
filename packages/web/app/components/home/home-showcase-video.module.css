@@ -1,0 +1,105 @@
+/* The hero video card, 9:16. Mobile-first: the phone layout is the default. */
+.figure {
+  position: relative;
+  isolation: isolate;
+  width: min(100%, calc(70svh * 9 / 16));
+  aspect-ratio: 9 / 16;
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-xl);
+  background: var(--semantic-surface);
+}
+
+/* The poster and the video share one box, so the video can never be larger than
+   the poster. The video is invisible until its first frame is playing: a video
+   with no frame yet paints black in some Safari versions. */
+.poster,
+.video {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.video {
+  opacity: 0;
+}
+
+.video[data-active='true'] {
+  opacity: 1;
+}
+
+/* Both toggles are doubled with .figure: MUI's own button styles (position:
+   relative, transparent background) are injected after this stylesheet and win
+   a single-class tie, which pushed the button to the top-left as a faint notch.
+   The fixed dark scrim (--overlay-dark) plus a white icon stays legible over the
+   dark and the lavender scenes alike, in either colour mode. */
+.figure .toggle,
+.figure .toggleCentered {
+  position: absolute;
+  z-index: 1;
+  min-width: 44px;
+  min-height: 44px;
+  color: var(--color-on-primary);
+  background: var(--overlay-dark);
+}
+
+.figure .toggle:hover,
+.figure .toggleCentered:hover {
+  background: var(--overlay-dark);
+}
+
+.figure .toggle:focus-visible,
+.figure .toggleCentered:focus-visible {
+  outline: 3px solid var(--color-on-primary);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 7px var(--overlay-dark);
+}
+
+.figure .toggle {
+  right: var(--spacing-3);
+  bottom: var(--spacing-3);
+}
+
+/* Poster with nothing playing (data saver, reduced motion): the play button is
+   the call to action, so it sits in the middle and is larger. */
+.figure .toggleCentered {
+  top: 50%;
+  left: 50%;
+  min-width: 64px;
+  min-height: 64px;
+  transform: translate(-50%, -50%);
+}
+
+.sceneList {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sceneList ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Desktop (761px and up, the complement of the phone breakpoint): the card sits
+   beside the hero copy, as wide as fits without outgrowing the viewport height
+   (header and 120px of breathing room). Below that the phone layout above holds:
+   the copy comes first and the card sits directly below at full content width,
+   capped at 70% of the screen height. */
+@media (min-width: 761px) {
+  .figure {
+    width: min(400px, calc((100dvh - var(--global-header-height) - 120px) * 9 / 16));
+    margin: 0;
+  }
+}

@@ -55,6 +55,36 @@ describe('useQueueSheetHandlers', () => {
     expect(Number.isFinite(payload.baseAscensionistCount)).toBe(true);
   });
 
+  it('opens actions for the exact duplicate slot without playing or dismissing it', () => {
+    const setCurrentClimb = vi.fn();
+    const openPlayDrawer = vi.fn();
+    const openClimbActions = vi.fn();
+    const requestCloseQueueSheet = vi.fn();
+    const dismissQueueSheetAndWait = vi.fn(async () => ({ status: 'dismissed' as const }));
+    const { result } = renderHook(() =>
+      useQueueSheetHandlers({
+        setCurrentClimb,
+        openPlayDrawer,
+        openClimbActions,
+        openLogAscent: vi.fn(),
+        storedBoardConfig: null,
+        sessionId: 'session-1',
+        requestCloseQueueSheet,
+        dismissQueueSheetAndWait,
+      }),
+    );
+    const duplicateSlot = { ...queueItemWithCount(null), uuid: 'second-slot-for-climb-1' };
+    act(() => result.current.handleOpenActions(duplicateSlot));
+    expect(openClimbActions).toHaveBeenCalledExactlyOnceWith(duplicateSlot.climb, undefined, {
+      queueItemUuid: 'second-slot-for-climb-1',
+      dismissSourceSheet: dismissQueueSheetAndWait,
+    });
+    expect(setCurrentClimb).not.toHaveBeenCalled();
+    expect(openPlayDrawer).not.toHaveBeenCalled();
+    expect(requestCloseQueueSheet).not.toHaveBeenCalled();
+    expect(dismissQueueSheetAndWait).not.toHaveBeenCalled();
+  });
+
   it('handleClimbPress drops the list source so the queue sheet resumes queue-order swipes', () => {
     const setCurrentClimb = vi.fn();
     const openPlayDrawer = vi.fn();
