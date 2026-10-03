@@ -850,6 +850,8 @@ describe('initializeDatabase lock contention (#4104)', () => {
     await vi.advanceTimersByTimeAsync(WHOLE_LADDER_MS);
 
     expect(contended.failures()).toBe(TOTAL_ATTEMPTS);
+    expect(getDatabaseHandle()).toBeNull();
+    expect(isSchemaReady()).toBe(false);
     expect(reportErrorMock).toHaveBeenCalledTimes(1);
     const [, context] = reportErrorMock.mock.calls[0];
     // Tagged, not merged: #4314's close criterion reads the clean `superseded:false`
