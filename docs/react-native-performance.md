@@ -93,9 +93,10 @@ unbounded drain-until-`hasMore` loop quietly fetches and mounts the entire catal
 - `packages/mobile/src/components/play-drawer/BetaVideosSection.tsx` and queue lists use the Gorhom
   `BottomSheetFlatList` so the virtualization cooperates with the sheet's scroll gesture.
 - `packages/mobile/src/components/play-drawer/LogbookSection.tsx` sits inside the play drawer's plain
-  `ScrollView`, so it renders a fixed amount: 6 sessions, 4 logs per session, 40 fall marks per
-  session. Everything past that is in `logbook/LogbookFullSheet.tsx`, a `BottomSheetFlatList`. The
-  caps are constants with no inline expand; raising one puts a growable `.map()` back in the drawer.
+  `ScrollView`, so it renders a fixed amount: 6 sessions and 4 logs per session, each log one or
+  two lines of text. Everything past that is in `logbook/LogbookFullSheet.tsx`, a
+  `BottomSheetFlatList`. The caps are constants with no inline expand; raising one puts a growable
+  `.map()` back in the drawer.
 
 **Anti-pattern:** `{items.map((item) => <Row key={item.id} item={item} />)}` inside a
 `<ScrollView>` for anything that isn't a fixed, small, known-length list. A fixed footer of 6
