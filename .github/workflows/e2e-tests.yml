@@ -339,6 +339,14 @@ jobs:
           tar -xf built-packages.tar
           rm built-packages.tar
 
+      # Older dev-db images stamped ledger rows with the image build clock, not
+      # each journal entry's `when` (#4211). Repair existing volumes before the
+      # migration step so a branch migration below that mark is not skipped.
+      - name: Normalize the dev-db image migration ledger
+        run: vp exec pnpm --filter @boardsesh/db run db:normalize-ledger
+        env:
+          DATABASE_URL: postgresql://postgres:password@postgres:5432/main
+
       - name: Run database migrations
         run: vp exec drizzle-kit migrate
         working-directory: packages/db
@@ -605,6 +613,14 @@ jobs:
         run: |
           tar -xf built-packages.tar
           rm built-packages.tar
+
+      # Same repair as the shard job above: older image volumes may retain a
+      # build-clock high-water mark that would skip a branch migration (#4211).
+      # Keep normalization ahead of the migrate step.
+      - name: Normalize the dev-db image migration ledger
+        run: vp exec pnpm --filter @boardsesh/db run db:normalize-ledger
+        env:
+          DATABASE_URL: postgresql://postgres:password@postgres:5432/main
 
       - name: Run database migrations
         run: vp exec drizzle-kit migrate

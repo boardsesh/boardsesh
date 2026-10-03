@@ -19,15 +19,15 @@
  *
  * Two properties of the real data shape the API:
  *
- *  - **The key is `hash`, not `created_at`.** The `boardsesh-dev-db` image
- *    bulk-loads its ledger with synthetic timestamps (34 distinct `created_at`
- *    values are duplicated, one of them 13 times), so 180 of 188 journal entries
- *    have no `created_at`-matching row there. Hashes survive the bulk load:
- *    187 of 188 match. Matching on `created_at` would false-positive on
- *    essentially every local and CI database.
- *  - **Missing-only, never extra.** Ledger rows whose hash matches no journal
- *    entry are legitimate renumber residue (two exist on the local dev DB right
- *    now). Failing on those would block deploys for a non-problem.
+ *  - **The key is `hash`, not `created_at`.** Older `boardsesh-dev-db` image
+ *    releases stamped ledger rows with synthetic build timestamps, so most rows
+ *    had no `created_at`-matching journal entry. Hashes survive that load;
+ *    matching on `created_at` would false-positive on those persistent volumes.
+ *  - **The verification gate is missing-only.** `findUnappliedMigrations`
+ *    ignores ledger rows whose hash matches no journal entry, because they do
+ *    not prove a journal migration is missing. The timestamp normalizer is
+ *    stricter: it cannot safely assign timestamps to an unknown or excess row,
+ *    so it refuses to write until an owner reconciles that residue.
  *
  * Callers get the hashes from drizzle's own exported `readMigrationFiles`
  * (`drizzle-orm/migrator`) rather than re-deriving sha256, so the hash can't
@@ -38,6 +38,173 @@
 export interface ExpectedMigration {
   tag: string;
   hash: string;
+}
+
+/**
+ * The same entry with the journal's own `when` attached — the value drizzle
+ * writes into `created_at` when it applies a migration itself
+ * (`PgDialect.migrate()` inserts `migration.folderMillis`, which
+ * `readMigrationFiles` copies straight from `journalEntry.when`).
+ *
+ * Only the timestamp planner below needs it; everything else keys on `hash`.
+ */
+export interface ExpectedMigrationWithWhen extends ExpectedMigration {
+  when: number;
+}
+
+/** One row of `drizzle."__drizzle_migrations"`, as the normaliser reads it. */
+export interface LedgerTimestampRow {
+  id: number;
+  hash: string;
+  createdAt: number;
+}
+
+/** A single `UPDATE … SET created_at = to WHERE id = id`, with the tag for the log line. */
+export interface LedgerTimestampRepair {
+  id: number;
+  tag: string;
+  from: number;
+  to: number;
+}
+
+/**
+ * Ledger rows whose `created_at` is not the journal `when` drizzle would have
+ * written, paired with the value they should carry.
+ *
+ * Older `boardsesh-dev-db` image releases stamped each ledger row with the
+ * image's *build* wall clock instead of the entry's `when`. That made drizzle's
+ * applier skip branch migrations below the mark; current image builds use the
+ * exact-time helper in `packages/db/docker/apply-drizzle-migrations.sh`. This
+ * planner repairs only persistent volumes created by older images. Rewriting
+ * `created_at` to `when` writes the value drizzle itself uses.
+ *
+ * Pairing is positional within a hash, not a `Map<hash, when>` lookup:
+ * byte-identical `.sql` files share a hash (see the `0177_illegal_omega_red`
+ * note in `scripts/lib/drizzle-migrations.ts`), and a map would stamp both ledger
+ * rows with the first entry's `when`. The k-th ledger row bearing hash H (in `id`
+ * order — the order they were inserted) pairs with the k-th journal entry bearing
+ * hash H.
+ *
+ * Ledger rows whose hash matches no journal entry, and excess copies of a hash,
+ * are never rewritten: their migration identity is unknown or removed. Since
+ * the normalizer cannot establish a safe `when` for them, it fails closed on
+ * any such residue before proposing writes. Matched rows are also checked
+ * against the resulting high-water mark so no unapplied migration can remain
+ * skipped after normalization.
+ */
+export function planLedgerTimestampRepairs(
+  expected: readonly ExpectedMigrationWithWhen[],
+  ledgerRows: readonly LedgerTimestampRow[],
+): LedgerTimestampRepair[] {
+  const entriesByHash = new Map<string, ExpectedMigrationWithWhen[]>();
+  for (const migration of expected) {
+    const entries = entriesByHash.get(migration.hash);
+    if (entries) {
+      entries.push(migration);
+    } else {
+      entriesByHash.set(migration.hash, [migration]);
+    }
+  }
+
+  const nextIndexByHash = new Map<string, number>();
+  const repairs: LedgerTimestampRepair[] = [];
+  const pairedEntryById = new Map<number, ExpectedMigrationWithWhen>();
+  const residueKindById = new Map<number, 'unmatched hash' | 'excess duplicate hash'>();
+  for (const row of [...ledgerRows].sort((left, right) => left.id - right.id)) {
+    const entries = entriesByHash.get(row.hash);
+    if (!entries) {
+      residueKindById.set(row.id, 'unmatched hash');
+      continue;
+    }
+    const nextIndex = nextIndexByHash.get(row.hash) ?? 0;
+    const entry = entries[nextIndex];
+    if (!entry) {
+      residueKindById.set(row.id, 'excess duplicate hash');
+      continue;
+    }
+    nextIndexByHash.set(row.hash, nextIndex + 1);
+    pairedEntryById.set(row.id, entry);
+    if (row.createdAt === entry.when) continue;
+    repairs.push({ id: row.id, tag: entry.tag, from: row.createdAt, to: entry.when });
+  }
+
+  const projectedRows = ledgerRows.map((row) => ({
+    ...row,
+    createdAt: pairedEntryById.get(row.id)?.when ?? row.createdAt,
+    pairedTag: pairedEntryById.get(row.id)?.tag,
+  }));
+  const resultingHighWater = projectedRows.reduce<number | null>(
+    (maximum, row) => (maximum === null ? row.createdAt : Math.max(maximum, row.createdAt)),
+    null,
+  );
+  const newestJournalWhen = expected.reduce<number | null>(
+    (maximum, migration) => (maximum === null ? migration.when : Math.max(maximum, migration.when)),
+    null,
+  );
+  const latestWhenBlockers = projectedRows.filter(
+    (row) => newestJournalWhen === null || row.createdAt > newestJournalWhen,
+  );
+  const unappliedTags = new Set(
+    findUnappliedMigrations(
+      expected,
+      ledgerRows.map((row) => row.hash),
+    ),
+  );
+  const blockedMigrations = expected.filter(
+    (migration) =>
+      unappliedTags.has(migration.tag) && resultingHighWater !== null && migration.when <= resultingHighWater,
+  );
+
+  if (residueKindById.size > 0 || latestWhenBlockers.length > 0 || blockedMigrations.length > 0) {
+    const firstBlockedWhen = blockedMigrations.reduce<number | null>(
+      (minimum, migration) => (minimum === null ? migration.when : Math.min(minimum, migration.when)),
+      null,
+    );
+    const blockingRows = projectedRows.filter(
+      (row) =>
+        residueKindById.has(row.id) ||
+        latestWhenBlockers.some((blocker) => blocker.id === row.id) ||
+        (firstBlockedWhen !== null && row.createdAt >= firstBlockedWhen),
+    );
+    const reasons: string[] = [];
+    if (residueKindById.size > 0) {
+      reasons.push(`${residueKindById.size} ledger row(s) cannot be paired one-to-one with the current journal`);
+    }
+    if (newestJournalWhen === null && resultingHighWater !== null) {
+      reasons.push('the journal is empty but the ledger contains rows');
+    } else if (newestJournalWhen !== null && resultingHighWater !== null && resultingHighWater > newestJournalWhen) {
+      reasons.push(
+        `the resulting high-water mark ${resultingHighWater} exceeds newest journal when ${newestJournalWhen}`,
+      );
+    }
+    if (blockedMigrations.length > 0) {
+      reasons.push(
+        `unapplied migrations would still be skipped: ${blockedMigrations
+          .map((migration) => `${migration.tag} (when ${migration.when})`)
+          .join(', ')}`,
+      );
+    }
+    const rowDetails = blockingRows
+      .sort((left, right) => left.id - right.id)
+      .map(
+        (row) =>
+          `id=${row.id} hash=${row.hash} created_at=${row.createdAt}` +
+          (residueKindById.has(row.id)
+            ? ` ${residueKindById.get(row.id)}`
+            : row.pairedTag
+              ? ` journal=${row.pairedTag}`
+              : ' unmatched-or-excess'),
+      )
+      .join('; ');
+    throw new Error(
+      `Refusing migration ledger timestamp normalization: ${reasons.join('; ')}. ` +
+        `Blocking ledger rows: ${rowDetails}. Inspect these IDs and hashes against the current journal and ` +
+        `database history, then reconcile with the database owner before retrying. This command will not ` +
+        `invent timestamps or delete ledger rows. No repairs were written.`,
+    );
+  }
+
+  return repairs;
 }
 
 /**
