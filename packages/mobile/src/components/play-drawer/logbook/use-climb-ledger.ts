@@ -4,8 +4,9 @@ import { useLogbook, type LogbookEntry } from '@boardsesh/board-react';
 import { deriveClimbLedger, type ClimbLedger, type LedgerStatus } from '@boardsesh/profile-stats';
 import { normalizeAscentStatus } from '../../../lib/ascent-status-utils';
 
-// The same normaliser the entry rows use, so a tile's marks and the rows under
-// it always agree, including for entries that arrive without a `status`.
+// The same normaliser the entry rows use, so the verdict, the totals and the
+// rows under them always agree, including for entries that arrive without a
+// `status`.
 function statusOf(entry: LogbookEntry): LedgerStatus {
   return normalizeAscentStatus({ status: entry.status, isAscent: entry.is_ascent, tries: entry.tries });
 }

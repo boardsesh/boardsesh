@@ -56,7 +56,7 @@ export type LedgerDayLabelOptions = LedgerDayKeys & {
   locale?: string;
 };
 
-/** A session tile's heading: "Today", "Yesterday", "Mon 28 Sep", or "28 Sep 2025". */
+/** A day's heading: "Today", "Yesterday", "Mon 28 Sep", or "28 Sep 2025". */
 export function formatLedgerDayLabel(dayKey: string, options: LedgerDayLabelOptions): string {
   if (dayKey === options.todayKey) return options.todayLabel;
   if (dayKey === options.yesterdayKey) return options.yesterdayLabel;

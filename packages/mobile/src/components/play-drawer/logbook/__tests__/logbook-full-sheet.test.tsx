@@ -165,8 +165,8 @@ describe('LogbookFullSheet', () => {
     const { container, getByTestId, getAllByTestId } = renderSheet();
 
     const flatList = getByTestId('sheet-flat-list');
-    expect(getAllByTestId('logbook-session-tile')).toHaveLength(10);
-    expect(flatList.querySelectorAll('[data-testid="logbook-session-tile"]')).toHaveLength(10);
+    expect(getAllByTestId('logbook-session')).toHaveLength(10);
+    expect(flatList.querySelectorAll('[data-testid="logbook-session"]')).toHaveLength(10);
     expect(rows.uuids).toHaveLength(39);
     expect(rows.uuids).not.toContain('other-climb');
     expect(container.textContent).not.toContain('mobile.logbook.moreLogsThatDay');
@@ -177,6 +177,27 @@ describe('LogbookFullSheet', () => {
     expect(keys[10]).toBe('angle:45');
     expect(keys).toHaveLength(12);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('heads every angle in the sheet, the board angle included, with its story', () => {
+    logbookState.logbook = [makeEntry({}), makeEntry({ uuid: 'steeper', angle: 45 })];
+    const single = renderSheet();
+    const text = single.container.textContent ?? '';
+    expect(text).toContain('40° · mobile.logbook.angleBoardIsHere · mobile.logbook.angleLine');
+    expect(text).toContain('45° · mobile.logbook.angleLine');
+  });
+
+  it('prints a day’s try count only under an angle with more than one day', () => {
+    logbookState.logbook = [
+      makeEntry({ uuid: 'day-1', tries: 3, climbed_at: '2026-06-01T12:00:00' }),
+      makeEntry({ uuid: 'day-2', tries: 2, climbed_at: '2026-06-02T12:00:00' }),
+      makeEntry({ uuid: 'steeper', angle: 45, tries: 7 }),
+    ];
+    const { container } = renderSheet();
+    const text = container.textContent ?? '';
+    expect(text).toContain('mobile.logbook.tries:3');
+    expect(text).toContain('mobile.logbook.tries:2');
+    expect(text).not.toContain('mobile.logbook.tries:7');
   });
 
   it('is a tall, solid sheet that reports a pan-down close', () => {

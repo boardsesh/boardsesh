@@ -4,10 +4,38 @@ import { useTranslation } from 'react-i18next';
 import { parseTickTime, type ClimbVerdict } from '@boardsesh/profile-stats';
 import { Text } from '../../Text';
 import { Icon } from '../../Icon';
-import { AscentStatusMark } from '../../ascent-marks';
 import { formatLedgerDate } from './day-label';
 import { useTheme } from '../../../providers/theme-provider';
 import { spacing } from '../../../theme/tokens';
+
+const GLYPH_SIZE = 16;
+
+type LogbookHeadlineProps = {
+  /** A send or a flash. Picks the glyph only: the words carry the result. */
+  sent: boolean;
+  text: string;
+};
+
+/**
+ * The Logbook card's headline line: one small glyph and the words. The glyph is
+ * decoration (a green tick for a send, a grey dash otherwise), so the text is
+ * the whole accessibility label.
+ */
+export const LogbookHeadline = memo(function LogbookHeadline({ sent, text }: LogbookHeadlineProps) {
+  const { brandColors, systemColors } = useTheme();
+  return (
+    <View accessible accessibilityRole="header" accessibilityLabel={text} style={styles.row}>
+      {sent ? (
+        <Icon name="check.small" size={GLYPH_SIZE} color={brandColors.success} />
+      ) : (
+        <Icon name="minus" size={GLYPH_SIZE} color={systemColors.secondaryLabel} />
+      )}
+      <Text variant="headline" style={styles.headline}>
+        {text}
+      </Text>
+    </View>
+  );
+});
 
 type LogbookVerdictProps = {
   verdict: ClimbVerdict;
@@ -15,24 +43,12 @@ type LogbookVerdictProps = {
   yesterdayKey: string;
 };
 
-const MARK_SIZE = 40;
-
-/** The Logbook card's headline: where the climber stands on this climb, in one line. */
+/** Where the climber stands on this climb, in one line. */
 export const LogbookVerdict = memo(function LogbookVerdict({ verdict, todayKey, yesterdayKey }: LogbookVerdictProps) {
   const { t } = useTranslation('session');
-  const { systemColors } = useTheme();
 
   if (verdict.kind === 'untried') {
-    return (
-      <View accessible accessibilityRole="header" style={styles.row}>
-        <View style={[styles.untriedMark, { backgroundColor: systemColors.fill }]}>
-          <Icon name="history" size={20} color={systemColors.secondaryLabel} />
-        </View>
-        <Text variant="headline" style={styles.headline}>
-          {t('mobile.logbook.noEntries')}
-        </Text>
-      </View>
-    );
+    return <LogbookHeadline sent={false} text={t('mobile.logbook.noEntries')} />;
   }
 
   const dayKey = parseTickTime(verdict.climbedAt).format('YYYY-MM-DD');
@@ -53,28 +69,14 @@ export const LogbookVerdict = memo(function LogbookVerdict({ verdict, todayKey, 
       headline = t('mobile.logbook.verdictAttempt', { angle: verdict.angle, when });
   }
 
-  return (
-    <View accessible accessibilityRole="header" style={styles.row}>
-      <AscentStatusMark status={verdict.kind} size={MARK_SIZE} />
-      <Text variant="headline" style={styles.headline}>
-        {headline}
-      </Text>
-    </View>
-  );
+  return <LogbookHeadline sent={verdict.kind !== 'attempt'} text={headline} />;
 });
 
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing[3],
-  },
-  untriedMark: {
-    width: MARK_SIZE,
-    height: MARK_SIZE,
-    borderRadius: MARK_SIZE / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
+    gap: spacing[2],
   },
   headline: {
     flex: 1,

@@ -32,16 +32,12 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ colorScheme: 'light', brandColors: {}, systemColors: {} }),
 }));
-vi.mock('@boardsesh/board-constants/grade-colors', () => ({
-  getGradeColor: () => '#abcdef',
-  DEFAULT_GRADE_COLOR: '#000000',
-}));
 vi.mock('../../../hooks/use-grade-format', () => ({
   useGradeFormat: () => ({
     formatGradeByDifficultyId: (id: number | null | undefined) => (id == null ? null : `V${id}`),
   }),
 }));
-// The row now prints the time of day only (the session tile above it names the
+// The row prints the time of day only (the day line above it names the
 // day), so hour and minute are the whole assertion.
 // Stand-in for the real Intl formatter that reads the Date's LOCAL getters
 // directly. This keeps the assertion decoupled from host ICU locale/format
@@ -100,7 +96,7 @@ describe('LogbookEntryRow climbed-at display (#3569)', () => {
     expect(getByText('8:14')).toBeTruthy();
   });
 
-  it('asks for the time of day only: the session tile above names the day', () => {
+  it('asks for the time of day only: the day line above names the day', () => {
     render(createElement(LogbookEntryRow, { entry: makeEntry({}), showMirrorTag: false }));
     expect(formatter.options.at(-1)).toEqual({ hour: 'numeric', minute: '2-digit' });
   });

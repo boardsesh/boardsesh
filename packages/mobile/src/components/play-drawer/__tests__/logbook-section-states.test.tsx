@@ -56,10 +56,6 @@ vi.mock('../../../providers/theme-provider', () => ({
     },
   }),
 }));
-vi.mock('@boardsesh/board-constants/grade-colors', () => ({
-  getGradeColor: () => '#abcdef',
-  DEFAULT_GRADE_COLOR: '#000000',
-}));
 vi.mock('../../../hooks/use-grade-format', () => ({
   useGradeFormat: () => ({
     formatGradeByDifficultyId: (id: number | null | undefined) => (id == null ? null : `V${id}`),
@@ -154,7 +150,7 @@ function sessionsAt(angle: number, count: number): LogbookEntry[] {
   );
 }
 
-const STAT_TILE_KEYS = ['statTries', 'statSessions', 'statSends', 'statGrade'];
+const STAT_LINE_KEYS = ['angleLine', 'statRecap', 'statLineAllAngles', 'lifetimeRecap'];
 
 beforeEach(() => {
   rows.props = [];
@@ -272,13 +268,12 @@ describe('LogbookSection: the fetch failed with signal', () => {
 });
 
 describe('LogbookSection: fetched with no logs', () => {
-  it('shows the untried verdict alone, with no stat tiles', () => {
+  it('shows the untried verdict alone, with no line under it', () => {
     const { container } = renderSection();
     const text = container.textContent ?? '';
 
-    expect(text).toContain('mobile.logbook.noEntries');
-    for (const key of STAT_TILE_KEYS) expect(text).not.toContain(`mobile.logbook.${key}`);
-    expect(text).not.toContain('mobile.logbook.tilesAllAngles');
+    expect(text).toBe('mobile.logbook.noEntries');
+    for (const key of STAT_LINE_KEYS) expect(text).not.toContain(`mobile.logbook.${key}`);
   });
 
   it('shows the count summary when the climb payload has counts', () => {
@@ -291,7 +286,7 @@ describe('LogbookSection: fetched with no logs', () => {
 });
 
 describe('LogbookSection: the ledger body', () => {
-  it('shows the verdict, the four tiles scoped to the board angle, and a dot per try', () => {
+  it('shows the verdict, one line of totals for the board angle, and each day as words', () => {
     logbookState.logbook = [
       makeEntry({ uuid: 'send', tries: 3, difficulty: 16, climbed_at: '2026-06-22T11:00:00' }),
       makeEntry({ uuid: 'burn', tries: 2, status: 'attempt', is_ascent: false, climbed_at: '2026-06-21T11:00:00' }),
@@ -300,21 +295,23 @@ describe('LogbookSection: the ledger body', () => {
     const text = container.textContent ?? '';
 
     expect(text).toContain('mobile.logbook.verdictSend(angle=40,when=mobile.logbook.whenToday)');
-    expect(text).toContain('mobile.logbook.tilesAtAngle(angle=40)');
-    for (const key of STAT_TILE_KEYS) expect(text).toContain(`mobile.logbook.${key}`);
-    expect(text).toContain('V16');
+    expect(text).toContain(
+      'mobile.logbook.statLineWithGrade(line=mobile.logbook.angleLine(result=mobile.logbook.angleSentInSession(session=2),' +
+        'recap=mobile.logbook.statRecap(tries=mobile.logbook.lifetimeTries(count=5),sends=mobile.logbook.sendCount(count=1),' +
+        'sessions=mobile.logbook.lifetimeSessions(count=2))),grade=V16)',
+    );
+    expect(getAllByTestId('logbook-session')).toHaveLength(2);
     expect(text).toContain('mobile.logbook.dayToday');
     expect(text).toContain('mobile.logbook.dayYesterday');
-    expect(text).toContain('mobile.logbook.sessionSent(tries=mobile.logbook.tries(count=3))');
-    expect(getAllByTestId('try-dot-fall')).toHaveLength(4);
-    expect(getAllByTestId('try-dot-send')).toHaveLength(1);
+    // Two days at the angle, so each day carries its own count.
+    expect(text).toContain('mobile.logbook.dayTodaymobile.logbook.tries(count=3)');
+    expect(text).toContain('mobile.logbook.dayYesterdaymobile.logbook.tries(count=2)');
   });
 
-  it('captions the tiles "all angles" when the board angle has no logs', () => {
-    logbookState.logbook = [makeEntry({ angle: 45 })];
+  it('says the totals cover all angles when the board angle has no logs and there are several', () => {
+    logbookState.logbook = [makeEntry({ angle: 45 }), makeEntry({ uuid: 'tick-2', angle: 30 })];
     const { container } = renderSection({ angle: 40 });
-    expect(container.textContent).toContain('mobile.logbook.tilesAllAngles');
-    expect(container.textContent).not.toContain('mobile.logbook.tilesAtAngle');
+    expect(container.textContent).toContain('mobile.logbook.statLineAllAngles');
   });
 });
 
@@ -349,12 +346,12 @@ describe('LogbookSection: inline caps', () => {
     const onOpenFullLogbook = vi.fn();
     const { container, getAllByTestId, getByRole } = renderSection({ onOpenFullLogbook });
 
-    expect(getAllByTestId('logbook-session-tile')).toHaveLength(6);
+    expect(getAllByTestId('logbook-session')).toHaveLength(6);
     expect(container.textContent).toContain('mobile.logbook.seeFullLogbook(count=3)');
 
     fireEvent.click(getByRole('button'));
     expect(onOpenFullLogbook).toHaveBeenCalledTimes(1);
-    expect(getAllByTestId('logbook-session-tile')).toHaveLength(6);
+    expect(getAllByTestId('logbook-session')).toHaveLength(6);
   });
 
   it('renders 4 rows of a 30-log day and counts the other 26', () => {
@@ -368,7 +365,7 @@ describe('LogbookSection: inline caps', () => {
     );
     const { container, getAllByTestId } = renderSection({ onOpenFullLogbook: vi.fn() });
 
-    expect(getAllByTestId('logbook-session-tile')).toHaveLength(1);
+    expect(getAllByTestId('logbook-session')).toHaveLength(1);
     expect(rows.props).toHaveLength(4);
     // Newest four of the day.
     expect(rows.props.map((rowProps) => (rowProps.entry as LogbookEntry).uuid)).toEqual([
@@ -386,13 +383,13 @@ describe('LogbookSection: inline caps', () => {
     logbookState.logbook = [...sessionsAt(45, 6), ...sessionsAt(40, 2)];
     const { container, getAllByTestId } = renderSection({ angle: 40, onOpenFullLogbook: vi.fn() });
 
-    expect(getAllByTestId('logbook-session-tile')).toHaveLength(6);
+    expect(getAllByTestId('logbook-session')).toHaveLength(6);
     const rowAngles = rows.props.map((rowProps) => (rowProps.entry as LogbookEntry).angle);
     expect(rowAngles).toEqual([40, 40, 45, 45, 45, 45]);
     expect(container.textContent).toContain('mobile.logbook.seeFullLogbook(count=2)');
   });
 
-  it('keeps an angle’s header when the budget ran out before its tiles', () => {
+  it('keeps an angle’s heading when the budget ran out before its days', () => {
     logbookState.logbook = [...sessionsAt(40, 6), ...sessionsAt(45, 1)];
     const { container } = renderSection({ angle: 40, onOpenFullLogbook: vi.fn() });
     expect(container.textContent).toContain('45°');

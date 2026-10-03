@@ -4,7 +4,14 @@ import type { ClimbLedger, LedgerAngleSection, LedgerSession } from '@boardsesh/
 /** One row of the full logbook list: an angle heading, or one day under it. */
 export type LedgerListItem =
   | { kind: 'angle'; key: string; section: LedgerAngleSection<LogbookEntry> }
-  | { kind: 'session'; key: string; session: LedgerSession<LogbookEntry>; angle: number };
+  | {
+      kind: 'session';
+      key: string;
+      session: LedgerSession<LogbookEntry>;
+      angle: number;
+      /** The angle has more than one day, so each day prints its own try count. */
+      showDayTries: boolean;
+    };
 
 /**
  * Flattens the ledger for a virtualised list: each angle heading followed by
@@ -15,8 +22,15 @@ export function buildLedgerListItems(ledger: ClimbLedger<LogbookEntry>): LedgerL
   const items: LedgerListItem[] = [];
   for (const section of ledger.angles) {
     items.push({ kind: 'angle', key: `angle:${section.angle}`, section });
+    const showDayTries = section.sessionCount > 1;
     for (const session of section.sessions) {
-      items.push({ kind: 'session', key: `session:${section.angle}:${session.dayKey}`, session, angle: section.angle });
+      items.push({
+        kind: 'session',
+        key: `session:${section.angle}:${session.dayKey}`,
+        session,
+        angle: section.angle,
+        showDayTries,
+      });
     }
   }
   return items;

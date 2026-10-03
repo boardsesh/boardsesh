@@ -4,19 +4,18 @@ import { useTranslation } from 'react-i18next';
 import type { LogbookEntry } from '@boardsesh/board-react';
 import { parseTickTime } from '@boardsesh/profile-stats';
 import { Text } from '../Text';
-import { AscentStatusMark, GradePill, StarNumber } from '../ascent-marks';
 import { normalizeAscentStatus } from '../../lib/ascent-status-utils';
 import { getCachedDateTimeFormat } from '../../lib/intl-formatter-cache';
+import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useTheme } from '../../providers/theme-provider';
-import { iosSystemColors } from '../../theme/ios-colors';
-import { spacing, borderRadius } from '../../theme/tokens';
+import { spacing } from '../../theme/tokens';
 
 type LogbookEntryRowProps = {
   entry: LogbookEntry;
   showMirrorTag: boolean;
 };
 
-// Time of day only: the session tile above the row already names the day.
+// Time of day only: the day line above the row already names the day.
 // Hoisted so every row shares one cache lookup key instead of allocating a
 // fresh options object per call (#3155). Note: the cache in
 // intl-formatter-cache.ts keys only on (locale, options), not on the
@@ -42,10 +41,16 @@ function formatClimbedAt(iso: string): string {
   return getCachedDateTimeFormat(undefined, CLIMBED_AT_FORMAT_OPTIONS).format(date);
 }
 
-/** One of the climber's own logs: result, grade given, stars, time, then the note. */
+/**
+ * One of the climber's own logs, as words: the result ("Flash", "Sent in 3",
+ * "5 tries, no send"), then in grey the grade they gave, their stars and the
+ * mirror tag, the time on the right, and the note under it. The result is
+ * text, never a colour or a glyph, so the row reads the same in any theme.
+ */
 export const LogbookEntryRow = memo(function LogbookEntryRow({ entry, showMirrorTag }: LogbookEntryRowProps) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
+  const { formatGradeByDifficultyId } = useGradeFormat();
 
   const status = normalizeAscentStatus({ status: entry.status, isAscent: entry.is_ascent, tries: entry.tries });
   // Imported ticks can carry zero tries; a logged row is always at least one.
@@ -59,73 +64,70 @@ export const LogbookEntryRow = memo(function LogbookEntryRow({ entry, showMirror
       result = t('mobile.logbook.entrySentIn', { count: tries });
       break;
     default:
-      result = t('mobile.logbook.tries', { count: tries });
+      result = t('mobile.logbook.entryNoSend', { count: tries });
   }
 
   const climbedAtLabel = useMemo(() => formatClimbedAt(entry.climbed_at), [entry.climbed_at]);
 
+  const grade = formatGradeByDifficultyId(entry.difficulty);
+  // The effective quality, so a Kilter-pulled tick (no per-tick quality)
+  // surfaces the climber's own synced star rating. Sends only: a try that did
+  // not go carries no rating.
+  const quality = status === 'attempt' ? null : (entry.effectiveQuality ?? entry.quality);
+  const stars = quality != null && quality > 0 ? quality : null;
+  let mirrorTag: string | null = null;
+  if (showMirrorTag) {
+    mirrorTag = entry.is_mirror ? t('mobile.logbook.mirroredTag') : t('mobile.logbook.originalTag');
+  }
+
+  const details = [grade, stars === null ? null : `${stars}★`, mirrorTag].filter((detail) => Boolean(detail));
+  const accessibilityLabel = [
+    result,
+    grade,
+    stars === null ? null : t('mobile.logbook.starsA11y', { count: stars }),
+    mirrorTag,
+    climbedAtLabel,
+    entry.comment,
+  ]
+    .filter((part) => Boolean(part))
+    .join(', ');
+
   return (
-    <View style={[styles.container, { borderTopColor: systemColors.separator }]}>
-      <View style={styles.headerRow}>
-        <View style={styles.result}>
-          <AscentStatusMark status={status} />
-          <Text variant="subheadline" style={styles.resultLabel}>
-            {result}
-          </Text>
-        </View>
-        <GradePill difficultyId={entry.difficulty} />
-        {showMirrorTag ? (
-          <View style={styles.mirrorChip}>
-            <Text variant="caption2" color={systemColors.secondaryLabel}>
-              {entry.is_mirror ? t('mobile.logbook.mirroredTag') : t('mobile.logbook.originalTag')}
+    <View accessible accessibilityLabel={accessibilityLabel} style={styles.container}>
+      <View style={styles.line}>
+        <Text variant="subheadline" style={styles.result}>
+          {result}
+          {details.length > 0 ? (
+            <Text variant="subheadline" color={systemColors.secondaryLabel}>
+              {details.map((detail) => ` · ${detail}`).join('')}
             </Text>
-          </View>
-        ) : null}
-        {/* Show the effective quality so a Kilter-pulled tick (no per-tick
-            quality) surfaces the climber's own synced star rating. Sends only:
-            a try that did not go carries no rating. */}
-        {status === 'attempt' ? null : <StarNumber quality={entry.effectiveQuality ?? entry.quality} />}
-        <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.time}>
+          ) : null}
+        </Text>
+        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.time}>
           {climbedAtLabel}
         </Text>
       </View>
-
-      {entry.comment ? <Text variant="body">{entry.comment}</Text> : null}
+      {entry.comment ? <Text variant="subheadline">{entry.comment}</Text> : null}
     </View>
   );
 });
 
 const styles = StyleSheet.create({
   container: {
-    gap: spacing[1],
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingVertical: spacing[2],
-    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 6,
+    gap: 1,
   },
-  headerRow: {
+  line: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'baseline',
     gap: spacing[2],
-    // Wraps at accessibility type sizes rather than squeezing the time off.
-    flexWrap: 'wrap',
   },
+  // Takes the free width and wraps inside it, so a long German result or a
+  // large text size pushes onto a second line instead of squeezing the time.
   result: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[1],
-  },
-  resultLabel: {
-    fontWeight: '600',
-  },
-  mirrorChip: {
-    paddingHorizontal: spacing[2],
-    paddingVertical: 1,
-    borderRadius: borderRadius.full,
-    backgroundColor: `${iosSystemColors.systemGray}24`,
+    flex: 1,
   },
   time: {
-    marginLeft: 'auto',
     fontVariant: ['tabular-nums'],
   },
 });

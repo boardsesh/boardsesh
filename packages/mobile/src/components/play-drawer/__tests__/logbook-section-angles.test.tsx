@@ -48,10 +48,6 @@ vi.mock('../../../providers/theme-provider', () => ({
     },
   }),
 }));
-vi.mock('@boardsesh/board-constants/grade-colors', () => ({
-  getGradeColor: () => '#abcdef',
-  DEFAULT_GRADE_COLOR: '#000000',
-}));
 vi.mock('../../../hooks/use-grade-format', () => ({
   useGradeFormat: () => ({
     formatGradeByDifficultyId: (id: number | null | undefined) => (id == null ? null : `V${id}`),
@@ -133,6 +129,8 @@ const recap = (tries: number, sessions: number) =>
   `mobile.logbook.lifetimeRecap(tries=mobile.logbook.lifetimeTries(count=${tries}),sessions=mobile.logbook.lifetimeSessions(count=${sessions}))`;
 const angleLine = (result: string, tries: number, sessions: number) =>
   `mobile.logbook.angleLine(result=${result},recap=${recap(tries, sessions)})`;
+const statRecap = (tries: number, sends: number, sessions: number) =>
+  `mobile.logbook.statRecap(tries=mobile.logbook.lifetimeTries(count=${tries}),sends=mobile.logbook.sendCount(count=${sends}),sessions=mobile.logbook.lifetimeSessions(count=${sessions}))`;
 
 beforeEach(() => {
   rows.props = [];
@@ -169,23 +167,47 @@ describe('LogbookSection: per-angle sections', () => {
     logbookState.logbook = threeAngles;
     const { container } = renderSection({ angle: 40 });
     const text = container.textContent ?? '';
-    expect(text.match(/mobile\.logbook\.boardIsHere/g)).toHaveLength(1);
-    // The pill sits in the 40° header, ahead of the 45° one.
-    expect(text.indexOf('mobile.logbook.boardIsHere')).toBeLessThan(text.indexOf('45°'));
+    expect(text.match(/mobile\.logbook\.angleBoardIsHere/g)).toHaveLength(1);
+    // Plain words in the 40° heading, ahead of the 45° one.
+    expect(text).toContain('40° · mobile.logbook.angleBoardIsHere');
+    expect(text.indexOf('mobile.logbook.angleBoardIsHere')).toBeLessThan(text.indexOf('45°'));
 
     rows.props = [];
     const elsewhere = renderSection({ angle: 55 });
-    expect(elsewhere.container.textContent).not.toContain('mobile.logbook.boardIsHere');
+    expect(elsewhere.container.textContent).not.toContain('mobile.logbook.angleBoardIsHere');
   });
 
   it('tells each angle’s story: which session the send came in, a flash, or no send', () => {
     logbookState.logbook = threeAngles;
     const { container } = renderSection({ angle: 40 });
     const text = container.textContent ?? '';
-    // 40°: 4 falls then a send of 3 on a second day.
-    expect(text).toContain(angleLine('mobile.logbook.angleSentInSession(session=2)', 7, 2));
-    expect(text).toContain(angleLine('mobile.logbook.angleNoSend', 2, 1));
-    expect(text).toContain(angleLine('mobile.logbook.angleFlashed', 1, 1));
+    // 40°: 4 falls then a send of 3 on a second day. The board's angle tells
+    // its story once, in the line under the verdict, not again in its heading.
+    expect(text).toContain(
+      `mobile.logbook.angleLine(result=mobile.logbook.angleSentInSession(session=2),recap=${statRecap(7, 1, 2)})`,
+    );
+    expect(text).not.toContain(angleLine('mobile.logbook.angleSentInSession(session=2)', 7, 2));
+    expect(text).toContain(`45° · ${angleLine('mobile.logbook.angleNoSend', 2, 1)}`);
+    expect(text).toContain(`30° · ${angleLine('mobile.logbook.angleFlashed', 1, 1)}`);
+  });
+
+  it('gives every angle its story when the board angle has no logs', () => {
+    logbookState.logbook = threeAngles;
+    const { container } = renderSection({ angle: 55 });
+    const text = container.textContent ?? '';
+    expect(text).toContain(`mobile.logbook.statLineAllAngles(recap=${statRecap(10, 2, 4)})`);
+    expect(text).toContain(`40° · ${angleLine('mobile.logbook.angleSentInSession(session=2)', 7, 2)}`);
+  });
+
+  it('prints a day’s try count only under an angle with more than one day', () => {
+    logbookState.logbook = threeAngles;
+    const { container } = renderSection({ angle: 40 });
+    const text = container.textContent ?? '';
+    // 40° has two days; 45° and 30° have one each.
+    expect(text).toContain('mobile.logbook.tries(count=3)');
+    expect(text).toContain('mobile.logbook.tries(count=4)');
+    expect(text).not.toContain('mobile.logbook.tries(count=2)');
+    expect(text).not.toContain('mobile.logbook.tries(count=1)');
   });
 
   it('hands rows no angle chip prop', () => {
@@ -193,6 +215,51 @@ describe('LogbookSection: per-angle sections', () => {
     renderSection();
     expect(rows.props).toHaveLength(4);
     expect(rows.props.every((rowProps) => !('showAngleChip' in rowProps))).toBe(true);
+  });
+});
+
+describe('LogbookSection: one angle', () => {
+  it('prints no angle heading and no "board is here" at the board angle', () => {
+    logbookState.logbook = [
+      makeEntry({ uuid: 'flash', status: 'flash', climbed_at: '2026-06-21T10:00:00' }),
+      makeEntry({ uuid: 'repeat', tries: 3, climbed_at: '2026-06-21T10:02:00' }),
+    ];
+    const { container } = renderSection({ angle: 40 });
+    const text = container.textContent ?? '';
+    expect(text).toContain(`mobile.logbook.angleLine(result=mobile.logbook.angleFlashed,recap=${statRecap(4, 2, 1)})`);
+    expect(text).not.toContain('40°');
+    expect(text).not.toContain('mobile.logbook.angleBoardIsHere');
+    // One day at the angle: the line above already has the count.
+    expect(text).not.toContain('mobile.logbook.tries(');
+  });
+
+  it('tells the one angle’s story under the verdict when the board is set elsewhere', () => {
+    logbookState.logbook = [makeEntry({ uuid: 'only', angle: 35, tries: 2 })];
+    const { container } = renderSection({ angle: 40 });
+    const text = container.textContent ?? '';
+    expect(text).toContain(
+      `mobile.logbook.angleLine(result=mobile.logbook.angleSentInSession(session=1),recap=${statRecap(2, 1, 1)})`,
+    );
+    expect(text).not.toContain('mobile.logbook.statLineAllAngles');
+    expect(text).not.toContain('35°');
+  });
+
+  it('leaves the sends out of the line when there are none', () => {
+    logbookState.logbook = [attempt({ uuid: 'burn', tries: 5 })];
+    const { container } = renderSection({ angle: 40 });
+    const text = container.textContent ?? '';
+    expect(text).toContain(angleLine('mobile.logbook.angleNoSend', 5, 1));
+    expect(text).not.toContain('mobile.logbook.statRecap');
+  });
+
+  it('adds the climber’s own grade only when they gave one', () => {
+    logbookState.logbook = [makeEntry({ uuid: 'graded', difficulty: 16 })];
+    const graded = renderSection({ angle: 40 });
+    expect(graded.container.textContent).toMatch(/mobile\.logbook\.statLineWithGrade\(line=.*,grade=V16\)/);
+
+    logbookState.logbook = [makeEntry({ uuid: 'ungraded' })];
+    const ungraded = renderSection({ angle: 40 });
+    expect(ungraded.container.textContent).not.toContain('mobile.logbook.statLineWithGrade');
   });
 });
 

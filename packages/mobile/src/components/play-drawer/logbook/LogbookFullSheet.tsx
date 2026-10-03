@@ -17,7 +17,7 @@ import { Text } from '../../Text';
 import { Icon } from '../../Icon';
 import { PressableSurface } from '../../PressableSurface';
 import { LogbookAngleHeader } from './LogbookAngleHeader';
-import { LogbookSessionTile } from './LogbookSessionTile';
+import { LogbookSession } from './LogbookSession';
 import { buildLedgerListItems, type LedgerListItem } from './ledger-list-items';
 import { formatLedgerDayLabel, ledgerDayKeys } from './day-label';
 import { useClimbLedger } from './use-climb-ledger';
@@ -74,13 +74,15 @@ export function LogbookFullSheet({ visible, climbUuid, boardName, layoutId, angl
   const renderItem = useCallback(
     ({ item }: { item: LedgerListItem }) => {
       if (item.kind === 'angle') {
-        return <LogbookAngleHeader section={item.section} isBoardAngle={item.section.angle === angle} />;
+        // The sheet has no line under a verdict, so every angle tells its own story.
+        return <LogbookAngleHeader section={item.section} isBoardAngle={item.section.angle === angle} showStory />;
       }
       return (
-        <LogbookSessionTile
+        <LogbookSession
           session={item.session}
           dayLabel={formatLedgerDayLabel(item.session.dayKey, { todayKey, yesterdayKey, todayLabel, yesterdayLabel })}
           showMirrorTag={showMirrorTag}
+          showDayTries={item.showDayTries}
         />
       );
     },
@@ -146,7 +148,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   listContent: {
-    gap: spacing[2],
+    gap: spacing[3],
     paddingHorizontal: spacing[4],
     paddingBottom: spacing[4],
   },

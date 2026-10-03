@@ -9,9 +9,9 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { LogbookAngleHeader } from './logbook/LogbookAngleHeader';
-import { LogbookSessionTile } from './logbook/LogbookSessionTile';
-import { LogbookStatTiles } from './logbook/LogbookStatTiles';
-import { LogbookVerdict } from './logbook/LogbookVerdict';
+import { LogbookSession } from './logbook/LogbookSession';
+import { LogbookStatLine } from './logbook/LogbookStatLine';
+import { LogbookHeadline, LogbookVerdict } from './logbook/LogbookVerdict';
 import { formatLedgerDayLabel, ledgerDayKeys } from './logbook/day-label';
 import { useClimbLedger } from './logbook/use-climb-ledger';
 import { useLocalPendingTicks } from '../../hooks/use-local-ticks';
@@ -20,14 +20,13 @@ import type { ConnectivitySnapshot } from '../../lib/connectivity/connectivity-s
 import { nowMs } from '../../lib/clock';
 import { useAuth } from '../../providers/auth-provider';
 import { useTheme } from '../../providers/theme-provider';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 
 type LogbookSectionProps = {
   climbUuid: string;
   boardName: BoardName;
   layoutId: number;
-  /** The angle the board is set to. Its section leads and the tiles scope to it. */
+  /** The angle the board is set to. Its section leads and the line under the verdict covers it. */
   angle: number;
   userAscents: number | null | undefined;
   userAttempts: number | null | undefined;
@@ -40,10 +39,11 @@ type LogbookSectionProps = {
 // (docs/react-native-performance.md section 2). A long-running project can hold
 // hundreds of logs, so the card shows a fixed amount and hands the rest to the
 // virtualised full-logbook sheet. Do not raise these or add an inline expand:
-// worst case here is 6 tiles x (4 rows + 40 fall marks) plus one header per
-// angle, and angles are a small fixed set per board.
+// worst case here is 6 days x 4 rows plus one heading per angle, and angles are
+// a small fixed set per board.
 const MAX_SESSIONS_INLINE = 6;
-const MAX_ENTRIES_PER_TILE = 4;
+const MAX_ENTRIES_PER_SESSION = 4;
+const STATE_GLYPH_SIZE = 16;
 
 // Hoisted: `useConnectivityField` memoizes its reader on the selector identity.
 function selectEffectiveOffline(snapshot: ConnectivitySnapshot): boolean {
@@ -57,7 +57,7 @@ type InlineAngle = {
 
 // Spends the session budget in ledger order: the board's angle first (newest
 // session first), then the other angles steepest first. Every angle keeps its
-// header even when the budget ran out before its tiles.
+// heading even when the budget ran out before its days.
 function takeInlineSessions(angles: LedgerAngleSection<LogbookEntry>[]): {
   inline: InlineAngle[];
   hiddenSessions: number;
@@ -70,7 +70,7 @@ function takeInlineSessions(angles: LedgerAngleSection<LogbookEntry>[]): {
     const sessions = section.sessions.slice(0, remaining);
     remaining -= sessions.length;
     hiddenSessions += section.sessions.length - sessions.length;
-    if (sessions.some((session) => session.entries.length > MAX_ENTRIES_PER_TILE)) hasHiddenEntries = true;
+    if (sessions.some((session) => session.entries.length > MAX_ENTRIES_PER_SESSION)) hasHiddenEntries = true;
     return { section, sessions };
   });
   return { inline, hiddenSessions, hasHiddenEntries };
@@ -87,7 +87,7 @@ export const LogbookSection = memo(function LogbookSection({
 }: LogbookSectionProps) {
   const { t } = useTranslation('session');
   const { isAuthenticated } = useAuth();
-  const { systemColors } = useTheme();
+  const { brandColors, systemColors } = useTheme();
   const { ledger, hasEntries, fetched, error, retry } = useClimbLedger(boardName, climbUuid, angle);
   const offline = useConnectivityField(selectEffectiveOffline);
   const { data: pendingTicks = 0 } = useLocalPendingTicks(climbUuid, boardName);
@@ -102,8 +102,8 @@ export const LogbookSection = memo(function LogbookSection({
     return (
       <View style={styles.container}>
         <View style={styles.row}>
-          <Icon name="history" size={20} color={iosSystemColors.systemGray} />
-          <Text variant="subheadline" color={iosSystemColors.systemGray}>
+          <Icon name="history" size={STATE_GLYPH_SIZE} color={systemColors.secondaryLabel} />
+          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.flexText}>
             {t('mobile.logbook.signedOut')}
           </Text>
         </View>
@@ -112,12 +112,13 @@ export const LogbookSection = memo(function LogbookSection({
   }
 
   // Leads every signed-in branch: a tick still on the phone is the newest thing
-  // the climber did here, whatever the rest of the card can or cannot show.
+  // the climber did here, whatever the rest of the card can or cannot show. The
+  // words are in the label colour: the orange glyph is decoration, not the status.
   const pendingRow =
     pendingTicks > 0 ? (
       <View style={styles.row}>
-        <Icon name="history" size={20} color={iosSystemColors.systemOrange} />
-        <Text variant="subheadline" color={iosSystemColors.systemOrange}>
+        <Icon name="clock" size={STATE_GLYPH_SIZE} color={brandColors.warning} />
+        <Text variant="subheadline" style={styles.flexText}>
           {t('mobile.logbook.pendingSync', { count: pendingTicks })}
         </Text>
       </View>
@@ -132,12 +133,9 @@ export const LogbookSection = memo(function LogbookSection({
   let historyLine: ReactNode = null;
   if (historyUnavailable && offline) {
     historyLine = (
-      <View style={styles.row}>
-        <Icon name="offline.unavailable" size={20} color={systemColors.secondaryLabel} />
-        <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.flexText}>
-          {t('mobile.logbook.offlineEarlier')}
-        </Text>
-      </View>
+      <Text variant="subheadline" color={systemColors.secondaryLabel}>
+        {t('mobile.logbook.offlineEarlier')}
+      </Text>
     );
   } else if (historyUnavailable) {
     const retryLabel = t('mobile.logbook.loadFailedRetry');
@@ -149,7 +147,7 @@ export const LogbookSection = memo(function LogbookSection({
         accessibilityLabel={retryLabel}
         style={styles.retryRow}
       >
-        <Icon name="refresh" size={20} color={systemColors.secondaryLabel} />
+        <Icon name="refresh" size={STATE_GLYPH_SIZE} color={systemColors.secondaryLabel} />
         <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.flexText}>
           {retryLabel}
         </Text>
@@ -173,29 +171,43 @@ export const LogbookSection = memo(function LogbookSection({
       hiddenSessions > 0
         ? t('mobile.logbook.seeFullLogbook', { count: hiddenSessions })
         : t('mobile.logbook.seeFullLogbookPlain');
+    // One angle needs no heading: the verdict above already names it.
+    const showAngleHeaders = ledger.angles.length > 1;
+    // The totals describe one angle when the board's angle has logs (it then
+    // leads the ledger) or when the climber has logged a single angle.
+    const statSection = ledger.totals.scope === 'angle' || !showAngleHeaders ? ledger.angles[0] : undefined;
 
     return (
       <View style={styles.container}>
         {pendingRow}
-        <LogbookVerdict verdict={ledger.verdict} todayKey={dayKeys.todayKey} yesterdayKey={dayKeys.yesterdayKey} />
-        <LogbookStatTiles totals={ledger.totals} boardAngle={angle} />
+        <View style={styles.summary}>
+          <LogbookVerdict verdict={ledger.verdict} todayKey={dayKeys.todayKey} yesterdayKey={dayKeys.yesterdayKey} />
+          <LogbookStatLine totals={ledger.totals} section={statSection} />
+        </View>
         {/* What is on the phone (an optimistic or cached tick) is not the whole
             history until this climb's fetch lands. */}
         {historyLine}
-        {inline.map(({ section, sessions }) => (
-          <View key={section.angle} style={styles.angleSection}>
-            <LogbookAngleHeader section={section} isBoardAngle={section.angle === angle} />
-            {sessions.map((session) => (
-              <LogbookSessionTile
-                key={session.dayKey}
-                session={session}
-                dayLabel={formatLedgerDayLabel(session.dayKey, dayLabelOptions)}
-                showMirrorTag={showMirrorTag}
-                maxEntries={MAX_ENTRIES_PER_TILE}
-              />
-            ))}
-          </View>
-        ))}
+        {inline.map(({ section, sessions }) => {
+          const isBoardAngle = section.angle === angle;
+          return (
+            <View key={section.angle} style={styles.angleSection}>
+              {showAngleHeaders ? (
+                // The line under the verdict tells the board angle's story.
+                <LogbookAngleHeader section={section} isBoardAngle={isBoardAngle} showStory={!isBoardAngle} />
+              ) : null}
+              {sessions.map((session) => (
+                <LogbookSession
+                  key={session.dayKey}
+                  session={session}
+                  dayLabel={formatLedgerDayLabel(session.dayKey, dayLabelOptions)}
+                  showMirrorTag={showMirrorTag}
+                  showDayTries={section.sessionCount > 1}
+                  maxEntries={MAX_ENTRIES_PER_SESSION}
+                />
+              ))}
+            </View>
+          );
+        })}
         {somethingHidden && onOpenFullLogbook ? (
           <PressableSurface
             onPress={onOpenFullLogbook}
@@ -207,7 +219,7 @@ export const LogbookSection = memo(function LogbookSection({
             <Text variant="subheadline" color={systemColors.accent} style={styles.seeAllLabel}>
               {seeFullLabel}
             </Text>
-            <Icon name="chevron.right" size={16} color={systemColors.accent} />
+            <Icon name="chevron.right" size={STATE_GLYPH_SIZE} color={systemColors.accent} />
           </PressableSurface>
         ) : null}
       </View>
@@ -230,12 +242,7 @@ export const LogbookSection = memo(function LogbookSection({
     } else {
       summaryText = t('mobile.logbook.summaryAttemptsNoSend', { attempts: attemptsLabel });
     }
-    countSummary = (
-      <View style={styles.row}>
-        <Icon name="tick" size={20} color={iosSystemColors.systemGreen} />
-        <Text variant="body">{summaryText}</Text>
-      </View>
-    );
+    countSummary = <LogbookHeadline sent={sends > 0} text={summaryText} />;
   }
 
   // No history from the server and no logs on the phone. Never the untried state: the climber
@@ -256,7 +263,7 @@ export const LogbookSection = memo(function LogbookSection({
       <View style={styles.container}>
         {pendingRow}
         <View style={styles.row}>
-          <ActivityIndicator size="small" color={iosSystemColors.systemGray} />
+          <ActivityIndicator size="small" color={systemColors.secondaryLabel} />
         </View>
       </View>
     );
@@ -284,8 +291,12 @@ const styles = StyleSheet.create({
   container: {
     gap: spacing[3],
   },
+  // The verdict and the line under it read as one block.
+  summary: {
+    gap: 2,
+  },
   angleSection: {
-    gap: spacing[2],
+    gap: spacing[3],
   },
   row: {
     flexDirection: 'row',
@@ -304,12 +315,13 @@ const styles = StyleSheet.create({
   seeAll: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing[1],
+    justifyContent: 'space-between',
+    gap: spacing[2],
     minHeight: 44,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   seeAllLabel: {
+    flex: 1,
     fontWeight: '600',
   },
 });

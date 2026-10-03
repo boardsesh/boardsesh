@@ -23,6 +23,25 @@ function makeEntry(uuid: string, angle: number, climbedAt: string): LogbookEntry
 }
 
 describe('buildLedgerListItems', () => {
+  it('asks for a day’s try count only when the angle has more than one day', () => {
+    const items = buildLedgerListItems(
+      deriveClimbLedger(
+        [
+          makeEntry('a', 40, '2026-06-01T12:00:00'),
+          makeEntry('b', 40, '2026-06-02T12:00:00'),
+          makeEntry('c', 45, '2026-06-01T12:00:00'),
+        ],
+        { currentAngle: 40 },
+      ),
+    );
+    const sessions = items.filter((item) => item.kind === 'session');
+    expect(sessions.map((item) => [item.angle, item.showDayTries])).toEqual([
+      [40, true],
+      [40, true],
+      [45, false],
+    ]);
+  });
+
   it('returns nothing for an empty ledger', () => {
     expect(buildLedgerListItems(deriveClimbLedger<LogbookEntry>([], { currentAngle: 40 }))).toEqual([]);
   });
@@ -47,7 +66,7 @@ describe('buildLedgerListItems', () => {
     ]);
     expect(items[0]).toMatchObject({ kind: 'angle', key: 'angle:40' });
     expect(items[13]).toMatchObject({ kind: 'angle', key: 'angle:45' });
-    expect(items[14]).toMatchObject({ kind: 'session', angle: 45 });
+    expect(items[14]).toMatchObject({ kind: 'session', angle: 45, showDayTries: true });
     // The same day at two angles must not collide.
     expect(new Set(items.map((item) => item.key)).size).toBe(items.length);
   });
