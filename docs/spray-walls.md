@@ -1071,7 +1071,7 @@ Bluetooth scan on a photograph. `updateBoard` refuses a change to `hasLeds` or
 `isAngleAdjustable` on a spray board (`SPRAY_WALL_HAS_NO_HARDWARE`, #5483), so the
 flag cannot be unpinned through the ordinary board door either.
 
-### The owner rows, and the sheet that is not mounted
+### Maintenance on the live wall sheet
 
 `sprayDetailRows(board)` is the gate behind the wall-maintenance rows ("Edit
 holds", "New photo"): two rows on a spray wall whose `canEdit` is true, none

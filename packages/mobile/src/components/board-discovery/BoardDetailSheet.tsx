@@ -201,7 +201,6 @@ function BoardDetailBody({
           />
         </View>
       ) : null}
-
     </>
   );
 }
