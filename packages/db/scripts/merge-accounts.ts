@@ -182,9 +182,6 @@ const DEDUPE_REPOINTS: Array<{
   // One row per viewer and board. The collision merge below retains the
   // canonical account's pin choice while combining board-open recency.
   { table: 'user_board_activity', column: 'user_id', otherCols: ['board_uuid'] },
-  // One report per wall and reporter. Keep the winner's report on collision;
-  // distinct reports move to the canonical account.
-  { table: 'spray_wall_reports', column: 'reporter_id', otherCols: ['wall_id'] },
   // user-scoped unique only — the aurora_id/kilter_id partial uniques are global,
   // so a given surrogate exists on at most one rating and can never collide here.
   { table: 'board_climb_ratings', column: 'user_id', otherCols: ['board_type', 'climb_uuid', 'angle'] },
@@ -213,6 +210,9 @@ const SPECIAL_REPOINT_COLUMNS: Array<{ table: string; column: string }> = [
   { table: 'votes', column: 'user_id' },
   { table: 'user_follows', column: 'follower_id' },
   { table: 'user_follows', column: 'following_id' },
+  // Report collisions are explicitly reconciled before loser deletion so an
+  // ON DELETE SET NULL row cannot become an extra anonymous moderation entry.
+  { table: 'spray_wall_reports', column: 'reporter_id' },
   { table: 'user_credentials', column: 'user_id' },
   { table: 'user_profiles', column: 'user_id' },
 ];
@@ -321,7 +321,7 @@ function compareForWinner(first: Member, second: Member): number {
   const firstVerified = first.emailVerified ? 1 : 0;
   const secondVerified = second.emailVerified ? 1 : 0;
   if (firstVerified !== secondVerified) return secondVerified - firstVerified;
-  return first.createdAt.localeCompare(second.createdAt);
+  return first.createdAt.localeCompare(second.createdAt) || first.id.localeCompare(second.id);
 }
 
 export function buildDuplicateSets(members: Member[]): DuplicateSet[] {
@@ -382,7 +382,7 @@ async function fetchAllDuplicateMembers(commandDb: ExecuteDb, onlyEmail: string 
 
   const rows = await executeRows<MemberRow>(
     commandDb,
-    sql`SELECT ${MEMBER_COLUMNS} FROM users u ${MEMBER_JOINS} WHERE ${emailClause} ORDER BY lower(u.email), u.created_at`,
+    sql`SELECT ${MEMBER_COLUMNS} FROM users u ${MEMBER_JOINS} WHERE ${emailClause} ORDER BY lower(u.email), u.created_at, u.id`,
   );
   return rows.map(coerceMember);
 }
@@ -390,7 +390,7 @@ async function fetchAllDuplicateMembers(commandDb: ExecuteDb, onlyEmail: string 
 export async function fetchMembersForEmail(commandDb: ExecuteDb, lowerEmail: string): Promise<Member[]> {
   const rows = await executeRows<MemberRow>(
     commandDb,
-    sql`SELECT ${MEMBER_COLUMNS} FROM users u ${MEMBER_JOINS} WHERE lower(u.email) = ${lowerEmail} ORDER BY u.created_at`,
+    sql`SELECT ${MEMBER_COLUMNS} FROM users u ${MEMBER_JOINS} WHERE lower(u.email) = ${lowerEmail} ORDER BY u.created_at, u.id`,
   );
   return rows.map(coerceMember);
 }
@@ -464,6 +464,44 @@ async function executeCount(commandDb: ExecuteDb, query: SQL): Promise<number> {
   return Number(row?.count ?? 0);
 }
 
+/**
+ * Merge reports separately because reporter_id uses ON DELETE SET NULL and a
+ * partial unique index. Keep the canonical account's report reason, preserve
+ * the earliest report time and newest moderation decision, drop only colliding
+ * loser rows, and transfer reports for other walls. Existing anonymous reports
+ * never match either account id and remain untouched.
+ */
+async function mergeSprayWallReports(commandDb: ExecuteDb, winnerId: string, loserId: string): Promise<void> {
+  const loserReviewIsNewer = sql`
+    loser_row.reviewed_at IS NOT NULL
+      AND (winner_row.reviewed_at IS NULL OR loser_row.reviewed_at > winner_row.reviewed_at)
+  `;
+  await execute(
+    commandDb,
+    sql`
+      UPDATE spray_wall_reports AS winner_row
+         SET created_at = LEAST(winner_row.created_at, loser_row.created_at),
+             reviewed_at = CASE WHEN ${loserReviewIsNewer} THEN loser_row.reviewed_at ELSE winner_row.reviewed_at END,
+             reviewed_by = CASE WHEN ${loserReviewIsNewer} THEN loser_row.reviewed_by ELSE winner_row.reviewed_by END
+        FROM spray_wall_reports AS loser_row
+       WHERE winner_row.reporter_id = ${winnerId}
+         AND loser_row.reporter_id = ${loserId}
+         AND winner_row.wall_id = loser_row.wall_id
+    `,
+  );
+  await execute(
+    commandDb,
+    sql`
+      DELETE FROM spray_wall_reports AS loser_row
+       USING spray_wall_reports AS winner_row
+       WHERE loser_row.reporter_id = ${loserId}
+         AND winner_row.reporter_id = ${winnerId}
+         AND winner_row.wall_id = loser_row.wall_id
+    `,
+  );
+  await execute(commandDb, sql`UPDATE spray_wall_reports SET reporter_id = ${winnerId} WHERE reporter_id = ${loserId}`);
+}
+
 /** Move every row a single loser owns onto the winner, deduping where needed. */
 async function mergeLoserIntoWinner(commandDb: ExecuteDb, winnerId: string, loserId: string): Promise<void> {
   for (const { table, column } of PLAIN_REPOINTS) {
@@ -472,6 +510,8 @@ async function mergeLoserIntoWinner(commandDb: ExecuteDb, winnerId: string, lose
       sql`UPDATE ${sql.raw(table)} SET ${sql.raw(column)} = ${winnerId} WHERE ${sql.raw(column)} = ${loserId}`,
     );
   }
+
+  await mergeSprayWallReports(commandDb, winnerId, loserId);
 
   // A control row is scoped to one account's credential link generation. The
   // losing account's queued/running jobs still carry its id, so invalidate those
@@ -891,6 +931,9 @@ export async function applyMerge(
   }
 
   const lockedSet = buildDuplicateSets(lockedMembers)[0];
+  if (lockedSet.winner.id !== duplicateSet.winner.id) {
+    return { merged: false, reason: 'winner ranking changed since the dry-run; rerun the dry-run before applying' };
+  }
   await mergeSet(commandDb, lockedSet);
   return { merged: true };
 }
