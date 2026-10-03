@@ -538,8 +538,8 @@ job. The `DEPLOY_RUNNER_LINUX` wiring is still in the workflow (unset, the
 default, means `ubuntu-latest`) but nothing legal can be pointed at it: the
 bs-ci homelab fleet was retired in September 2026, and the September 2026
 capacity review decided against a cloud runner pool. The org moved to the
-GitHub Team plan (60 concurrent jobs instead of 20) and ci.yml went from 25 jobs
-to 15 instead. The numbers, the rejected options and the queued-age watchdog
+GitHub Team plan (60 concurrent jobs instead of 20) and ci.yml went from 26 jobs
+to 16 instead. The numbers, the rejected options and the queued-age watchdog
 that tells us if a deploy ever waits again are in [ci-runners.md](./ci-runners.md).
 
 `["self-hosted","bs-ci"]` is no longer a legal value for this variable; the
