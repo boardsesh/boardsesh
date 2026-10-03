@@ -1884,9 +1884,22 @@ The order is wall, then row. A reset holds the wall lock while it rewrites
 `missing_hold_count` on the wall's climbs, so taking the row first would be a
 deadlock.
 
-If the locked row's draft state is not the one the resolver decided on (a publish
-landed in between), the edit is refused with "This climb changed while you were
-editing it" and nothing is written.
+The resolver makes its decisions (did the holds change, does the duplicate gate
+run) from the row it loaded before the transaction. So the locked row is compared
+with that row on `isDraft`, `frames`, `framesCount`, `angle`, `characteristics`
+and, on the Aurora boards, `description`. If any differ, another edit landed in
+between: the save is refused with "This climb changed while you were editing it"
+(`extensions.code` `CLIMB_EDIT_CONFLICT`) and nothing is written. `name` and
+`framesPace` are not compared, because they feed no decision.
+
+The decisions are not recomputed under the lock. The duplicate-gate lock is keyed
+on the hold signature and is taken before the wall lock, so recomputing would
+mean taking it while holding the row, which reverses the lock order.
+
+One case succeeds instead: a publish that arrives after the same publish already
+landed (a double tap). When every field the request carries equals the locked
+row, `updateClimb` returns the published climb and writes nothing: no revision,
+no second `climb.created`.
 
 ### Which wall photo a revision belongs to
 
