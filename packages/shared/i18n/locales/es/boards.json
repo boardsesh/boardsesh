@@ -926,7 +926,8 @@
       "loading": "Cargando tu muro…",
       "unavailable": "Aquí no se puede mostrar la foto de tu muro, pero puedes elegir el aspecto igualmente.",
       "saving": "Guardando el aspecto…",
-      "failed": "No se pudo guardar el aspecto. Inténtalo de nuevo."
+      "failed": "No se pudo guardar el aspecto. Inténtalo de nuevo o publícalo igualmente.",
+      "publishWithout": "Publicar igualmente"
     },
     "publish": {
       "title": "Añádelo a tus plafones",

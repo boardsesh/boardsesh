@@ -926,7 +926,8 @@
       "loading": "Deine Wand wird geladen…",
       "unavailable": "Das Foto deiner Wand lässt sich hier nicht zeigen, aber du kannst trotzdem einen Look wählen.",
       "saving": "Dein Look wird gespeichert…",
-      "failed": "Der Look konnte nicht gespeichert werden. Versuch es noch mal."
+      "failed": "Der Look konnte nicht gespeichert werden. Versuch es noch mal oder veröffentliche trotzdem.",
+      "publishWithout": "Trotzdem veröffentlichen"
     },
     "publish": {
       "title": "Ab zu deinen Boards",

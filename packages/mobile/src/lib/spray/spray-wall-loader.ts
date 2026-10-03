@@ -17,6 +17,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import {
   GET_SPRAY_WALL,
   GET_SPRAY_WALL_BY_LAYOUT,
+  GET_SPRAY_WALL_LOOK,
   GET_SPRAY_WALL_RENDER_DATA,
 } from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWall, SprayWallRenderData } from '@boardsesh/graphql/generated/graphql';
@@ -26,8 +27,10 @@ import {
   refreshSprayWall,
   registerSprayWall,
   setSprayWallLoader,
+  setSprayWallLook,
   sprayCacheToken,
   unregisterSprayWall,
+  type SprayWallRenderSettingsValue,
 } from './spray-wall-registry';
 import { clearSupersededSprayDrafts } from '../create-climb-draft-store';
 import { sanitizeBoardRenderDefault } from '../board-render-settings';
@@ -160,11 +163,10 @@ export function registerRenderData(layoutId: number, renderData: SprayWallRender
     photoThumbUrl: renderData.photo.thumbUrl ?? null,
     photoExpiresAt: renderData.photo.expiresAt,
     holds,
-    // A `JSON` scalar off the wire, so it is validated here rather than trusted:
-    // anything that is not a usable look registers as "no stored look", and the
-    // render path falls back to the app default instead of drawing garbage.
-    renderSettings: sanitizeBoardRenderDefault(renderData.wall.renderSettings),
   });
+  // The look comes on its own request (`GET_SPRAY_WALL_LOOK`) and lands after the
+  // first paint; until then the wall draws in the viewer's own settings.
+  void loadSprayWallLook(layoutId, renderData.wall.uuid);
 
   // The create-climb draft slot is keyed on the version, so a reset moves it and
   // leaves the old one holding holds that are no longer on the wall. Nothing else
@@ -174,6 +176,89 @@ export function registerRenderData(layoutId: number, renderData: SprayWallRender
     // AsyncStorage unavailable. The orphan survives until the next reset.
   });
   return true;
+}
+
+type SprayWallLookResponse = { sprayWall: { uuid: string; renderSettings?: unknown } | null } | undefined;
+
+const looks = new Map<string, { look: SprayWallRenderSettingsValue | null; settledAtMs: number }>();
+const looksInFlight = new Map<string, Promise<SprayWallRenderSettingsValue | null>>();
+/**
+ * Bumped, per wall, by every write to `looks` that is not a read's answer. A
+ * read that started before one is stale: the look step's save can land while
+ * the draft's own read is still in flight, and that read's older answer must
+ * not overwrite the look the climber just picked. `lookEpoch` does the same for
+ * every wall at once when the cache is cleared.
+ */
+const lookWrites = new Map<string, number>();
+let lookEpoch = 0;
+
+/**
+ * A wall's stored look, sanitised, or null when it has none.
+ *
+ * Never rejects. The look is optional: a failed read (offline, or a backend that
+ * predates the field) keeps the last look this session knew, or none, and the
+ * wall draws in the viewer's own settings. Answers are kept for the registry's
+ * revalidation window, so a backend without the field is asked once per window,
+ * not once per row.
+ */
+export function fetchSprayWallLook(wallUuid: string): Promise<SprayWallRenderSettingsValue | null> {
+  const known = looks.get(wallUuid);
+  if (known && Date.now() - known.settledAtMs < REGISTERED_WALL_REVALIDATE_MS) return Promise.resolve(known.look);
+  const pending = looksInFlight.get(wallUuid);
+  if (pending) return pending;
+
+  const writesAtStart = lookWrites.get(wallUuid) ?? 0;
+  const epochAtStart = lookEpoch;
+  // Started inside a `then` so a client that throws synchronously still lands
+  // in the failure branch below rather than escaping as an exception.
+  const request = Promise.resolve()
+    .then(() => getHttpClient().request<SprayWallLookResponse>(GET_SPRAY_WALL_LOOK, { uuid: wallUuid }))
+    .then(
+      // A `JSON` scalar off the wire, so it is validated rather than trusted:
+      // anything that is not a usable look reads as "no stored look".
+      (response) => sanitizeBoardRenderDefault(response?.sprayWall?.renderSettings),
+      () => known?.look ?? null,
+    )
+    .then((look) => {
+      if ((lookWrites.get(wallUuid) ?? 0) !== writesAtStart || lookEpoch !== epochAtStart) {
+        return looks.get(wallUuid)?.look ?? null;
+      }
+      looks.set(wallUuid, { look, settledAtMs: Date.now() });
+      return look;
+    })
+    .finally(() => {
+      if (looksInFlight.get(wallUuid) === request) looksInFlight.delete(wallUuid);
+    });
+  looksInFlight.set(wallUuid, request);
+  return request;
+}
+
+/** Fetch a wall's look and hand it to the registered wall, if it is still that wall. */
+export async function loadSprayWallLook(layoutId: number, wallUuid: string): Promise<void> {
+  setSprayWallLook(layoutId, wallUuid, await fetchSprayWallLook(wallUuid));
+}
+
+/**
+ * Record a look this device just stored, so the next read does not wait out the
+ * window holding the answer from before the write.
+ */
+export function primeSprayWallLook(
+  layoutId: number,
+  wallUuid: string,
+  look: SprayWallRenderSettingsValue | null,
+): void {
+  lookWrites.set(wallUuid, (lookWrites.get(wallUuid) ?? 0) + 1);
+  looksInFlight.delete(wallUuid);
+  looks.set(wallUuid, { look, settledAtMs: Date.now() });
+  setSprayWallLook(layoutId, wallUuid, look);
+}
+
+/** Test seam: forget every look this session has read. */
+export function clearSprayWallLooks(): void {
+  lookEpoch += 1;
+  looks.clear();
+  looksInFlight.clear();
+  lookWrites.clear();
 }
 
 /** The wall's uuid for a layout id, through React Query so two callers share one request. */

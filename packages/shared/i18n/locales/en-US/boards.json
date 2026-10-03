@@ -926,7 +926,8 @@
       "loading": "Loading your wall…",
       "unavailable": "Your wall's photo can't be shown here, but you can still pick a look.",
       "saving": "Saving your look…",
-      "failed": "Couldn't save the look. Try again."
+      "failed": "Couldn't save the look. Try again, or publish anyway.",
+      "publishWithout": "Publish anyway"
     },
     "publish": {
       "title": "Put it on your boards",

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { DEFAULT_BOARDSESH_RENDER_SETTINGS } from '@boardsesh/board-look';
 
 // The GraphQL client pulls react-native's Flow source at import time, and the
 // draft store and error reporter both reach native modules. Mocked so the
@@ -12,7 +13,8 @@ const invalidateQueriesMock = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock('../../error-reporting', () => ({ reportHandledError: reportHandledErrorMock }));
 
 const { clearSprayWallRegistry, getSprayWall, registerSprayWall } = await import('../spray-wall-registry');
-const { loadSprayWall } = await import('../spray-wall-loader');
+const { clearSprayWallLooks, loadSprayWall, primeSprayWallLook } = await import('../spray-wall-loader');
+const sprayOperations = await import('@boardsesh/graphql/operations/spray-walls');
 
 const LAYOUT_ID = 4200;
 const WALL_UUID = 'wall-uuid';
@@ -54,8 +56,21 @@ function registerExistingWall() {
   });
 }
 
+/** The look request: answered by the matching operation, so the order of other requests does not matter. */
+function answerLook(answer: () => Promise<unknown>) {
+  const fallback = requestMock.getMockImplementation();
+  requestMock.mockImplementation((operation: unknown, variables: unknown) =>
+    operation === sprayOperations.GET_SPRAY_WALL_LOOK ? answer() : fallback?.(operation, variables),
+  );
+}
+
+function lookRequests(): number {
+  return requestMock.mock.calls.filter(([operation]) => operation === sprayOperations.GET_SPRAY_WALL_LOOK).length;
+}
+
 beforeEach(() => {
   clearSprayWallRegistry();
+  clearSprayWallLooks();
   requestMock.mockReset();
   reportHandledErrorMock.mockReset();
   invalidateQueriesMock.mockClear();
@@ -96,21 +111,30 @@ describe('loadSprayWall', () => {
     expect(getSprayWall(LAYOUT_ID)).toMatchObject({ version: 2, angle: null });
   });
 
-  it("registers the wall's stored look, sanitised, so the render path can fill in for a climber on default", async () => {
-    const payload = renderDataPayload();
-    requestMock.mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } }).mockResolvedValueOnce({
-      sprayWallRenderData: {
-        ...payload.sprayWallRenderData,
-        wall: {
-          uuid: WALL_UUID,
-          board: { angle: 25 },
-          renderSettings: { mode: 'aura', boardsesh: { markStyle: 'outline', glowReach: 40 } },
-        },
+  it('never asks for the look inside a query or mutation that loads, creates or draws a wall', () => {
+    // The app and the backend ship on different trains. A field the backend does
+    // not have yet fails validation for the whole operation: in the shared wall
+    // fragment it broke creating, loading and drawing every wall at once.
+    for (const [name, operation] of Object.entries(sprayOperations)) {
+      if (name === 'GET_SPRAY_WALL_LOOK' || name === 'SET_SPRAY_WALL_RENDER_SETTINGS') continue;
+      expect(JSON.stringify(operation) ?? '', name).not.toContain('renderSettings');
+    }
+  });
+
+  it("fills in the wall's stored look, sanitised, so the render path can fill in for a climber on default", async () => {
+    requestMock
+      .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
+      .mockResolvedValueOnce(renderDataPayload());
+    answerLook(async () => ({
+      sprayWall: {
+        uuid: WALL_UUID,
+        renderSettings: { mode: 'aura', boardsesh: { markStyle: 'outline', glowReach: 40 } },
       },
-    });
+    }));
 
     await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
 
+    await vi.waitFor(() => expect(getSprayWall(LAYOUT_ID)?.renderSettings).not.toBeNull());
     const look = getSprayWall(LAYOUT_ID)?.renderSettings;
     expect(look?.mode).toBe('aura');
     expect(look?.boardsesh.markStyle).toBe('outline');
@@ -122,15 +146,74 @@ describe('loadSprayWall', () => {
   it('registers no look for a wall that never stored one, or stored something unusable', async () => {
     for (const renderSettings of [null, undefined, { mode: 'boardsesh', boardsesh: {} }, 'aura', { mode: 'aura' }]) {
       clearSprayWallRegistry();
-      const payload = renderDataPayload();
-      requestMock.mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } }).mockResolvedValueOnce({
-        sprayWallRenderData: { ...payload.sprayWallRenderData, wall: { uuid: WALL_UUID, renderSettings } },
-      });
+      clearSprayWallLooks();
+      requestMock.mockReset();
+      requestMock
+        .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
+        .mockResolvedValueOnce(renderDataPayload());
+      answerLook(async () => ({ sprayWall: { uuid: WALL_UUID, renderSettings } }));
 
       await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+      await vi.waitFor(() => expect(lookRequests()).toBe(1));
 
       expect(getSprayWall(LAYOUT_ID)).toMatchObject({ version: 2, renderSettings: null });
     }
+  });
+
+  it('still draws the wall when the backend does not know the look yet, and asks once per window', async () => {
+    answerLook(async () => {
+      throw new Error('Cannot query field "renderSettings" on type "SprayWall".');
+    });
+    requestMock
+      .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
+      .mockResolvedValueOnce(renderDataPayload());
+
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+    await vi.waitFor(() => expect(lookRequests()).toBe(1));
+
+    expect(getSprayWall(LAYOUT_ID)).toMatchObject({ version: 2, renderSettings: null });
+    expect(reportHandledErrorMock).not.toHaveBeenCalled();
+
+    requestMock
+      .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
+      .mockResolvedValueOnce(renderDataPayload());
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+    await Promise.resolve();
+    expect(lookRequests()).toBe(1);
+  });
+
+  it('keeps a look this device just stored when an older read answers after it', async () => {
+    let answerRead: (value: unknown) => void = () => {};
+    answerLook(() => new Promise((resolve) => (answerRead = resolve)));
+    requestMock
+      .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
+      .mockResolvedValueOnce(renderDataPayload());
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+    await vi.waitFor(() => expect(lookRequests()).toBe(1));
+
+    const picked = { mode: 'classic' as const, boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS };
+    primeSprayWallLook(LAYOUT_ID, WALL_UUID, picked);
+    // The read started before the save, so its answer is the look from before it.
+    answerRead({ sprayWall: { uuid: WALL_UUID, renderSettings: null } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(getSprayWall(LAYOUT_ID)?.renderSettings).toEqual(picked);
+  });
+
+  it('draws a look this device just stored without asking again', async () => {
+    registerExistingWall();
+    const look = { mode: 'classic' as const, boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS };
+    primeSprayWallLook(LAYOUT_ID, WALL_UUID, look);
+    expect(getSprayWall(LAYOUT_ID)?.renderSettings).toEqual(look);
+
+    requestMock
+      .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
+      .mockResolvedValueOnce(renderDataPayload());
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+    await Promise.resolve();
+
+    expect(lookRequests()).toBe(0);
+    expect(getSprayWall(LAYOUT_ID)).toMatchObject({ version: 2, renderSettings: look });
   });
 
   it('withdraws a held wall when the layout no longer resolves', async () => {
