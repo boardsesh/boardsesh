@@ -1,4 +1,4 @@
-import { QueryClient } from '@tanstack/react-query';
+import { InfiniteQueryObserver, QueryClient } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import {
@@ -197,11 +197,14 @@ describe('live-stat invalidation against SQLite pages', () => {
       await insertStats({ uuid: 'climb-b', angle: eventAngle, ascensions: 1 });
 
       const input = makeInput({ sortBy });
-      const queryKey = await cacheInfinitePages(input, [0, 1]);
+      const queryKey = await cacheInfinitePages(input, [0]);
       const cachedPages = queryClient.getQueryData<{ pages: { searchClimbs: { climbs: { uuid: string }[] } }[] }>(
         queryKey,
       );
-      expect(cachedPages?.pages.map((page) => page.searchClimbs.climbs[0]?.uuid)).toEqual(['climb-a', 'climb-b']);
+      expect(cachedPages?.pages.map((page) => page.searchClimbs.climbs[0]?.uuid)).toEqual(['climb-a']);
+      expect((await searchClimbsLocal(database, { ...input, page: 1 })).climbs.map((climb) => climb.uuid)).toEqual([
+        'climb-b',
+      ]);
 
       const sync = startSync();
       sync.handle(makeEvent({ uuid: 'climb-b', angle: eventAngle, ascensions: 100, syncSeq: '1' }));
@@ -209,10 +212,25 @@ describe('live-stat invalidation against SQLite pages', () => {
       runTrailingFlush();
       await waitForInvalidation(queryKey);
 
-      const refreshedPage0 = await searchClimbsLocal(database, { ...input, page: 0 });
-      const refreshedPage1 = await searchClimbsLocal(database, { ...input, page: 1 });
-      expect(refreshedPage0.climbs.map((climb) => climb.uuid)).toEqual(['climb-b']);
-      expect(refreshedPage1.climbs.map((climb) => climb.uuid)).toEqual(['climb-a']);
+      const observer = new InfiniteQueryObserver(queryClient, {
+        queryKey,
+        enabled: false,
+        initialPageParam: 0,
+        queryFn: async ({ pageParam }) => ({
+          searchClimbs: await searchClimbsLocal(database, { ...input, page: pageParam }),
+        }),
+        getNextPageParam: (_lastPage, _pages, lastPageParam) => lastPageParam + 1,
+      });
+      try {
+        await observer.refetch();
+        await observer.fetchNextPage();
+        const refreshedPages = queryClient.getQueryData<{
+          pages: { searchClimbs: { climbs: { uuid: string }[] } }[];
+        }>(queryKey);
+        expect(refreshedPages?.pages.map((page) => page.searchClimbs.climbs[0]?.uuid)).toEqual(['climb-b', 'climb-a']);
+      } finally {
+        observer.destroy();
+      }
     },
   );
 

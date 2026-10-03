@@ -58,23 +58,19 @@ export type TableSyncConfig = {
    */
   cursorColumn: string;
   /**
-   * When set, the guarded upsert compares the `(cursorColumn, revisionColumn)`
-   * pair instead of issuing an unconditional `INSERT OR REPLACE`. Timestamps
-   * are normalized before the comparison so fractional-width differences do
-   * not reverse their text order.
+   * Revision column used by a table-specific guard in `pull-write.ts`. For
+   * `board_climb_stats`, the guard compares `sync_seq` alone: its live
+   * `climbStatsUpdated` writer stamps `updated_at` at the epoch, so including
+   * the cursor timestamp could let a stale pull row overwrite a newer stream
+   * revision.
    *
-   * Only for tables with a SECOND local writer. `board_climb_stats` has one
-   * (the live `climbStatsUpdated` write-through, #5227), and a pull page can
-   * commit up to 5 s after it was fetched — long enough for the stream to have
-   * landed a newer row that the page would otherwise revert until the next
-   * cycle. Other tables do not have a second local writer, but a refresh page
-   * can still race a newer ordinary pull. That separate `(updated_at, sync_seq)`
-   * guard lives in `pull-write.ts` and applies only to refresh pages.
+   * Set only for tables with a second local writer. Refresh pages for other
+   * cursor-bearing tables use the separate `(updated_at, sync_seq)` guard in
+   * `pull-write.ts` when they race a newer ordinary pull.
    *
-   * The comparison is `>=`, not `>`: the pull usually carries the SAME revision
-   * the stream did, and that row must still be applied because it fills the
-   * columns the stream deliberately leaves alone (`updated_at`, which is the
-   * pull cursor, plus `benchmark_difficulty` and the `fa_*` pair).
+   * The comparison is `>=`, not `>`: the pull usually carries the same revision
+   * as the stream and still needs to fill columns the stream leaves alone
+   * (`updated_at`, `benchmark_difficulty`, and the `fa_*` pair).
    */
   revisionColumn?: string;
 };
