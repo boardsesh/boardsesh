@@ -34,8 +34,6 @@ type ClimberLogRowProps = {
   group: ClimberLogGroup;
   /** The angle the board is set to. A log at it does not mention its angle. */
   boardAngle: number;
-  /** The climb's grade at the board's angle, or null when it is not known. */
-  climbGradeId: number | null;
   noteLines?: number;
   /** Hide the "+N earlier" words. Set when the rows are cut by the server's
    *  cap, where the count behind them would be wrong. */
@@ -65,25 +63,31 @@ function resultWords(result: ClimberLogResult, t: TFunction<'session'>): string 
 }
 
 /**
- * How a log went, in words: "Sent in 2", with "at 35°" only when the log is not
- * at the board's angle, and "graded it V4" only when that grade disagrees with
- * the climb's.
+ * The words a line is built from. `result` is how one log went ("Sent in 2",
+ * with "at 35°" only when the log is not at the board's angle). `graded` is
+ * "graded it V4" for a grade that disagrees with the climb's, or null.
  */
-function useLogWords(boardAngle: number, climbGradeId: number | null) {
+function useLogWords(boardAngle: number) {
   const { t } = useTranslation('session');
   const { formatGradeByDifficultyId } = useGradeFormat();
-  return useCallback(
-    (log: ClimberLog): { result: string; graded: string | null } => {
+  const result = useCallback(
+    (log: ClimberLog): string => {
       const words = resultWords(describeResult(log), t);
-      const result =
-        log.angle === boardAngle ? words : t('mobile.climberLogs.resultAtAngle', { result: words, angle: log.angle });
-      const grade = gradeDisagrees(log, boardAngle, climbGradeId)
-        ? formatGradeByDifficultyId(log.difficulty) || getGradeLabel(log.difficulty)
-        : '';
-      return { result, graded: grade ? t('mobile.climberLogs.gradedIt', { grade }) : null };
+      return log.angle === boardAngle
+        ? words
+        : t('mobile.climberLogs.resultAtAngle', { result: words, angle: log.angle });
     },
-    [boardAngle, climbGradeId, formatGradeByDifficultyId, t],
+    [boardAngle, t],
   );
+  const graded = useCallback(
+    (disagreeingGradeId: number | null | undefined): string | null => {
+      if (disagreeingGradeId == null) return null;
+      const grade = formatGradeByDifficultyId(disagreeingGradeId) || getGradeLabel(disagreeingGradeId);
+      return grade ? t('mobile.climberLogs.gradedIt', { grade }) : null;
+    },
+    [formatGradeByDifficultyId, t],
+  );
+  return { result, graded };
 }
 
 /** "+2 earlier logs · 9 tries over 2 days", as a button that opens them in place. */
@@ -122,7 +126,6 @@ const EarlierButton = memo(function EarlierButton({
 export const ClimberLogRow = memo(function ClimberLogRow({
   group,
   boardAngle,
-  climbGradeId,
   noteLines = 3,
   hideEarlier = false,
   onPressClimber,
@@ -131,11 +134,13 @@ export const ClimberLogRow = memo(function ClimberLogRow({
 }: ClimberLogRowProps) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
-  const logWords = useLogWords(boardAngle, climbGradeId);
-  const { lead, earlier, userId } = group;
+  const logWords = useLogWords(boardAngle);
+  const { lead, earlier, userId, note } = group;
   const name = group.displayName ?? t('mobile.climberLogs.unknownClimber');
-  const note = lead.comment.trim();
-  const { result, graded } = logWords(lead);
+  // How it went and when come from their best log; the note and the grade from
+  // the logs that carry them, which may be other ones.
+  const result = logWords.result(lead);
+  const graded = logWords.graded(group.disagreeingGradeId);
   const when = formatRelativeTime(lead.climbedAt);
 
   const handlePress = useCallback(() => onPressClimber(userId), [onPressClimber, userId]);
@@ -144,6 +149,13 @@ export const ClimberLogRow = memo(function ClimberLogRow({
   const hasEarlier = !hideEarlier && earlier.length > 0;
   const earlierShort =
     hasEarlier && !onPressEarlier ? t('mobile.climberLogs.earlierShort', { count: earlier.length }) : null;
+  const earlierDetail = hasEarlier
+    ? t('mobile.climberLogs.earlierDetail', {
+        logs: t('mobile.climberLogs.earlierLogs', { count: earlier.length }),
+        tries: t('mobile.logbook.tries', { count: group.earlierTries }),
+        days: t('mobile.climberLogs.earlierDays', { count: group.earlierDays }),
+      })
+    : null;
 
   return (
     <View style={styles.row}>
@@ -153,7 +165,8 @@ export const ClimberLogRow = memo(function ClimberLogRow({
         accessibilityRole="button"
         accessibilityLabel={t('mobile.climberLogs.rowA11y', {
           name,
-          result: [result, graded, when, note].filter(Boolean).join(', '),
+          // "+N earlier" is part of the row when it is not a button of its own.
+          result: [result, graded, when, earlierShort, note].filter(Boolean).join(', '),
         })}
         style={styles.pressable}
       >
@@ -188,17 +201,8 @@ export const ClimberLogRow = memo(function ClimberLogRow({
       </PressableSurface>
       {/* A sibling of the row button, not a child: a button inside a button is
           unreachable for VoiceOver and TalkBack. */}
-      {hasEarlier && onPressEarlier ? (
-        <EarlierButton
-          label={t('mobile.climberLogs.earlierDetail', {
-            logs: t('mobile.climberLogs.earlierLogs', { count: earlier.length }),
-            tries: t('mobile.logbook.tries', { count: group.earlierTries }),
-            days: t('mobile.climberLogs.earlierDays', { count: group.earlierDays }),
-          })}
-          expanded={earlierExpanded}
-          onPress={handlePressEarlier}
-          inset
-        />
+      {earlierDetail && onPressEarlier ? (
+        <EarlierButton label={earlierDetail} expanded={earlierExpanded} onPress={handlePressEarlier} inset />
       ) : null}
     </View>
   );
@@ -207,26 +211,19 @@ export const ClimberLogRow = memo(function ClimberLogRow({
 type BareCellProps = {
   group: ClimberLogGroup;
   boardAngle: number;
-  climbGradeId: number | null;
   /** The cell sits under a "Tried, no send" heading, so it only says how many tries. */
   underTriedHeading: boolean;
   onPressClimber: (userId: string) => void;
 };
 
 /** A climber with nothing to add: face, name, how it went and when. Opens their profile. */
-const BareCell = memo(function BareCell({
-  group,
-  boardAngle,
-  climbGradeId,
-  underTriedHeading,
-  onPressClimber,
-}: BareCellProps) {
+const BareCell = memo(function BareCell({ group, boardAngle, underTriedHeading, onPressClimber }: BareCellProps) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
-  const logWords = useLogWords(boardAngle, climbGradeId);
+  const logWords = useLogWords(boardAngle);
   const { lead, userId } = group;
   const name = group.displayName ?? t('mobile.climberLogs.unknownClimber');
-  const { result } = logWords(lead);
+  const result = logWords.result(lead);
   const when = formatRelativeTime(lead.climbedAt);
   const tries = describeResult(lead);
   const shown =
@@ -266,7 +263,6 @@ type ClimberLogBareRowProps = {
   /** One climber with earlier logs: the cell takes the line and "+N earlier" sits beside it. */
   wide: boolean;
   boardAngle: number;
-  climbGradeId: number | null;
   underTriedHeading?: boolean;
   onPressClimber: (userId: string) => void;
   onPressEarlier?: (userId: string) => void;
@@ -278,7 +274,6 @@ export const ClimberLogBareRow = memo(function ClimberLogBareRow({
   groups,
   wide,
   boardAngle,
-  climbGradeId,
   underTriedHeading = false,
   onPressClimber,
   onPressEarlier,
@@ -298,7 +293,6 @@ export const ClimberLogBareRow = memo(function ClimberLogBareRow({
           key={group.userId}
           group={group}
           boardAngle={boardAngle}
-          climbGradeId={climbGradeId}
           underTriedHeading={underTriedHeading}
           onPressClimber={onPressClimber}
         />
@@ -329,9 +323,10 @@ export const ClimberLogEarlierRow = memo(function ClimberLogEarlierRow({
   climbGradeId: number | null;
 }) {
   const { systemColors } = useTheme();
-  const logWords = useLogWords(boardAngle, climbGradeId);
+  const logWords = useLogWords(boardAngle);
   const note = log.comment.trim();
-  const { result, graded } = logWords(log);
+  const result = logWords.result(log);
+  const graded = logWords.graded(gradeDisagrees(log, boardAngle, climbGradeId) ? log.difficulty : null);
 
   return (
     <View style={[styles.earlierRow, { borderLeftColor: systemColors.separator }]}>

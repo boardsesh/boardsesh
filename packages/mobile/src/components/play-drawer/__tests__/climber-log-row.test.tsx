@@ -103,9 +103,7 @@ function groupOf(...logs: ClimberLog[]): ClimberLogGroup {
 
 function renderRow(group: ClimberLogGroup, props: Partial<Parameters<typeof ClimberLogRow>[0]> = {}) {
   const onPressClimber = vi.fn();
-  const view = render(
-    createElement(ClimberLogRow, { group, boardAngle: 40, climbGradeId: CLIMB_GRADE, onPressClimber, ...props }),
-  );
+  const view = render(createElement(ClimberLogRow, { group, boardAngle: 40, onPressClimber, ...props }));
   return { ...view, onPressClimber };
 }
 
@@ -162,7 +160,7 @@ describe('ClimberLogRow', () => {
 
   it('names any grade given at the board angle when the climb grade is unknown', () => {
     const group = groupClimberLogs([log({ difficulty: CLIMB_GRADE })], 40, null)[0];
-    const { getByText } = renderRow(group, { climbGradeId: null });
+    const { getByText } = renderRow(group);
     expect(getByText('mobile.climberLogs.gradedIt:{"grade":"grade:16"}')).toBeTruthy();
   });
 
@@ -175,6 +173,23 @@ describe('ClimberLogRow', () => {
     const elsewhere = renderRow(groupOf(log({ angle: 45, comment: 'beta' })));
     expect(elsewhere.container.textContent).toContain('mobile.climberLogs.resultAtAngle');
     expect(elsewhere.container.textContent).toContain('"angle":45');
+  });
+
+  it('never says "no send" for a climber who sent: the send and its time, then their older note', () => {
+    relativeTime.calls = [];
+    const { container } = renderRow(
+      groupOf(
+        log({ status: 'attempt', attemptCount: 5, comment: 'Cannot hold the swing', climbedAt: '2026-01-10T18:00:00' }),
+        log({ status: 'send', attemptCount: 2, climbedAt: '2026-03-09T18:00:00' }),
+      ),
+    );
+    expect(container.textContent).toContain('mobile.climberLogs.resultSentIn:{"count":2}');
+    expect(container.textContent).not.toContain('mobile.climberLogs.resultNoSend');
+    expect(container.textContent).toContain('Cannot hold the swing');
+    // The time shown is the send's, not the note's.
+    expect(relativeTime.calls).toEqual(['2026-03-09T18:00:00']);
+    expect(container.textContent).toContain('ago(2026-03-09T18:00:00)');
+    expect(container.textContent).not.toContain('ago(2026-01-10T18:00:00)');
   });
 
   it('opens the climber once per press', () => {
@@ -197,6 +212,8 @@ describe('ClimberLogRow', () => {
       expect(container.textContent).toContain('mobile.climberLogs.earlierShort:{"count":2}');
       expect(container.textContent).not.toContain('mobile.climberLogs.earlierDetail');
       expect(getAllByRole('button')).toHaveLength(1);
+      // Said to a screen reader too: the label replaces the row's own text.
+      expect(getAllByRole('button')[0].getAttribute('aria-label')).toContain('mobile.climberLogs.earlierShort');
     });
 
     it('is hidden when the rows are cut by the cap', () => {
@@ -244,7 +261,6 @@ describe('ClimberLogBareRow', () => {
         groups: [ana()],
         wide: false,
         boardAngle: 40,
-        climbGradeId: CLIMB_GRADE,
         ...handlers,
         ...props,
       }),

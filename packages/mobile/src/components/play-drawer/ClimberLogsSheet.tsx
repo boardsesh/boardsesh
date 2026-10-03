@@ -228,7 +228,6 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
             <ClimberLogRow
               group={item.group}
               boardAngle={angle}
-              climbGradeId={climbGradeId}
               noteLines={6}
               hideEarlier={hasMore}
               onPressClimber={handlePressClimber}
@@ -262,7 +261,6 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
               groups={item.groups}
               wide={item.wide}
               boardAngle={angle}
-              climbGradeId={climbGradeId}
               // Only Following has the "Tried, no send" heading above its cells.
               underTriedHeading={item.section === 'following'}
               onPressClimber={handlePressClimber}

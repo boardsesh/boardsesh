@@ -530,6 +530,20 @@ describe('ClimberLogsSheet', () => {
     expect(view.getAllByTestId('bare-row')[0].getAttribute('data-expanded')).toBe('true');
   });
 
+  it('keeps the Following header over "more at other angles" when the chips leave no rows', () => {
+    setLoaded([log({ userId: 'jonas', angle: 45 })], {
+      climberCount: 1,
+      senderCount: 1,
+      byAngle: [{ angle: 45, climberCount: 1, senderCount: 1 }],
+    });
+    const view = renderSheet();
+    fireEvent.click(chip(view, ANGLE_CHIP));
+
+    expect(kinds(view)).toEqual(['header', 'notice']);
+    expect(view.container.textContent).toContain('mobile.climberLogs.sectionFollowingAtAngle:{"count":0,"angle":40}');
+    expect(view.getByText('mobile.climberLogs.otherAngles:{"count":1}')).toBeTruthy();
+  });
+
   it('closes first on a row tap and opens the profile only once the sheet is gone', () => {
     setLoaded([log({ userId: 'mika' })], {
       climberCount: 1,

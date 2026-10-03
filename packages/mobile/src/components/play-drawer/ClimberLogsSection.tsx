@@ -316,7 +316,7 @@ export const ClimberLogsSection = memo(function ClimberLogsSection({
   // Rows for the climbers with something to say, capped; everyone else followed
   // keeps a name in the footer.
   const plan = useMemo(() => planClimberLogsCard(groups), [groups]);
-  const tally = useMemo(() => tallyDisagreeingGrades(groups, angle, climbGradeId), [groups, angle, climbGradeId]);
+  const tally = useMemo(() => tallyDisagreeingGrades(groups), [groups]);
 
   if (followState === 'none') return <ClimberLogsFollowNobody onFindClimbers={onFindClimbers} />;
 
@@ -364,13 +364,7 @@ export const ClimberLogsSection = memo(function ClimberLogsSection({
           key={group.userId}
           style={index > 0 ? [styles.rowRule, { borderTopColor: systemColors.separator }] : undefined}
         >
-          <ClimberLogRow
-            group={group}
-            boardAngle={angle}
-            climbGradeId={climbGradeId}
-            hideEarlier={hasMore}
-            onPressClimber={onPressClimber}
-          />
+          <ClimberLogRow group={group} boardAngle={angle} hideEarlier={hasMore} onPressClimber={onPressClimber} />
         </View>
       ))}
 

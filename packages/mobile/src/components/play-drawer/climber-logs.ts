@@ -37,24 +37,34 @@ export type ClimberLog = {
   climbedAt: string;
 };
 
-/** One climber's logs on the climb: the most useful one leads, the rest wait behind it. */
+/**
+ * One climber's logs on the climb. Three things are read from them, each from
+ * the log that carries it, so a row never says "no send" for a climber who sent:
+ * how it went and when (`lead`), their note (`note`), and a grade they disagree
+ * on (`disagreeingGradeId`).
+ */
 export type ClimberLogGroup = {
   userId: string;
   displayName: string | null;
   avatarUrl: string | null;
+  /** Their best log: a send over a no-send, then the board's angle, then the newest. The row's result and time. */
   lead: ClimberLog;
   /** Every other log by this climber, newest first. */
   earlier: ClimberLog[];
   earlierTries: number;
   /** Distinct local calendar days the earlier logs fall on. */
   earlierDays: number;
+  /** The note on their newest log that has one, trimmed. It may sit on another log than `lead`. */
+  note: string | null;
   hasNote: boolean;
+  /** `lead` is at the board's angle. */
   atBoardAngle: boolean;
-  /** The lead log gave a grade, at the board's angle, that is not the climb's. */
+  /** The grade on their newest log that disagrees with the climb's, or null. */
+  disagreeingGradeId: number | null;
   gradeDisagrees: boolean;
-  /** The lead log is a send or a flash. */
+  /** Any of their logs is a send or a flash (so `lead` is one). */
   sent: boolean;
-  /** The lead log has nothing to add, so no log of theirs has: no row for this climber. */
+  /** No log of theirs has a note or a disagreeing grade: no row for this climber. */
   bare: boolean;
 };
 
@@ -179,17 +189,14 @@ export function isBareLog(log: ClimberLog, boardAngle: number, climbGradeId: num
 }
 
 /**
- * Lead order: a note, then a disagreeing grade, then the board's angle, then a
- * send, then the newest. The two "has something to say" tiers come first, so a
- * bare lead means every log of that climber is bare.
+ * Lead order: a send over a no-send, then the board's angle, then the newest.
+ * A send always wins, so a climber who sent it never reads as "no send" and
+ * never pools under "Tried, no send", whatever else they logged.
  */
-function leadFirst(boardAngle: number, climbGradeId: number | null) {
+function leadFirst(boardAngle: number) {
   return (first: ClimberLog, second: ClimberLog): number =>
-    Number(hasNote(second)) - Number(hasNote(first)) ||
-    Number(gradeDisagrees(second, boardAngle, climbGradeId)) -
-      Number(gradeDisagrees(first, boardAngle, climbGradeId)) ||
-    Number(second.angle === boardAngle) - Number(first.angle === boardAngle) ||
     Number(isSent(second)) - Number(isSent(first)) ||
+    Number(second.angle === boardAngle) - Number(first.angle === boardAngle) ||
     newestFirst(first, second);
 }
 
@@ -208,8 +215,11 @@ export function groupClimberLogs(
 
   const groups: ClimberLogGroup[] = [];
   for (const [userId, userLogs] of logsByUser) {
-    const [lead, ...rest] = sorted(userLogs, leadFirst(boardAngle, climbGradeId));
+    const [lead, ...rest] = sorted(userLogs, leadFirst(boardAngle));
     const earlier = sorted(rest, newestFirst);
+    const newest = sorted(userLogs, newestFirst);
+    const note = newest.find(hasNote)?.comment.trim() ?? null;
+    const disagreeingGradeId = newest.find((log) => gradeDisagrees(log, boardAngle, climbGradeId))?.difficulty ?? null;
     const named = userLogs.find((log) => log.userDisplayName);
     const pictured = userLogs.find((log) => log.userAvatarUrl);
     groups.push({
@@ -220,11 +230,13 @@ export function groupClimberLogs(
       earlier,
       earlierTries: earlier.reduce((total, log) => total + triesOf(log), 0),
       earlierDays: new Set(earlier.map((log) => parseTickTime(log.climbedAt).format('YYYY-MM-DD'))).size,
-      hasNote: hasNote(lead),
+      note,
+      hasNote: note !== null,
       atBoardAngle: lead.angle === boardAngle,
-      gradeDisagrees: gradeDisagrees(lead, boardAngle, climbGradeId),
+      disagreeingGradeId,
+      gradeDisagrees: disagreeingGradeId !== null,
       sent: isSent(lead),
-      bare: isBareLog(lead, boardAngle, climbGradeId),
+      bare: note === null && disagreeingGradeId === null,
     });
   }
   return groups;
@@ -293,19 +305,11 @@ export function describeBareNames(groups: readonly ClimberLogGroup[], complete: 
  * their newest disagreeing log. Most common first, two grades at most. Empty
  * when everybody who graded it agrees with the climb.
  */
-export function tallyDisagreeingGrades(
-  groups: readonly ClimberLogGroup[],
-  boardAngle: number,
-  climbGradeId: number | null,
-): { difficultyId: number; count: number }[] {
+export function tallyDisagreeingGrades(groups: readonly ClimberLogGroup[]): { difficultyId: number; count: number }[] {
   const countByGrade = new Map<number, number>();
-  for (const group of groups) {
-    const newestDisagreeing = sorted([group.lead, ...group.earlier], newestFirst).find((log) =>
-      gradeDisagrees(log, boardAngle, climbGradeId),
-    );
-    const difficultyId = newestDisagreeing?.difficulty;
-    if (difficultyId == null) continue;
-    countByGrade.set(difficultyId, (countByGrade.get(difficultyId) ?? 0) + 1);
+  for (const { disagreeingGradeId } of groups) {
+    if (disagreeingGradeId === null) continue;
+    countByGrade.set(disagreeingGradeId, (countByGrade.get(disagreeingGradeId) ?? 0) + 1);
   }
   return sorted(
     [...countByGrade].map(([difficultyId, count]) => ({ difficultyId, count })),
@@ -365,7 +369,9 @@ const SECTION_ORDER: Record<ClimberLogSectionId, number> = { following: 0, every
  * The flat array the full list virtualises. A section with no groups emits
  * nothing, not even its header, so an empty result is an empty array and the
  * list's own empty state shows. Notices describe the Following result (the
- * cap, the logs at other angles), so they sit right under its rows.
+ * cap, the logs at other angles), so they sit right under its rows. When the
+ * chips leave Following with no rows but a notice remains, the header still
+ * shows, so "3 more at other angles" never floats with nothing above it.
  *
  * Following always comes before Everyone, whatever order the caller passed,
  * and a climber listed under Following is never repeated under Everyone.
@@ -437,10 +443,13 @@ export function buildClimberLogListItems(
     );
   };
 
-  ordered.forEach((section, sectionIndex) => {
+  for (const section of ordered) {
     const groups = section.groups.filter((group) => !listedUserIds.has(group.userId));
-    if (groups.length > 0) {
+    const ownsNotices = section.id === 'following' && noticeItems.length > 0;
+    if (groups.length > 0 || ownsNotices) {
       items.push({ kind: 'header', key: `header:${section.id}`, section: section.id, count: section.count });
+    }
+    if (groups.length > 0) {
       if (section.id === 'following') {
         const { loud, bareSent, bareTried } = partitionClimberLogGroups(groups);
         for (const group of loud) {
@@ -467,9 +476,8 @@ export function buildClimberLogListItems(
       }
       for (const group of groups) listedUserIds.add(group.userId);
     }
-    if (sectionIndex === 0) items.push(...noticeItems);
-  });
-  if (ordered.length === 0) items.push(...noticeItems);
+    if (ownsNotices) items.push(...noticeItems);
+  }
   return items;
 }
 
