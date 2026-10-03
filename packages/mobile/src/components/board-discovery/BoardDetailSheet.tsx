@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
 import { View, Pressable, StyleSheet, type ColorValue } from 'react-native';
-import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { toBoardName } from '@boardsesh/board-config';
 import type { UserBoard } from '@boardsesh/shared-schema';
@@ -13,8 +12,7 @@ import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { getBoardDetailFields, isActiveBoard } from './board-detail-fields';
-import { sprayDetailRows, sprayShareTarget, type SprayDetailRow, type SprayShareTarget } from './spray-detail-rows';
-import { SPRAY_DETAIL_ROWS_ENABLED } from '../../lib/spray/spray-routes';
+import { sprayShareTarget, type SprayShareTarget } from './spray-detail-rows';
 import { BoardShareSheet } from './BoardShareSheet';
 import { ReportSprayWallSheet } from '../spray-wall/ReportSprayWallSheet';
 import { useSprayModerationAccess } from '../../lib/spray/use-spray-moderation';
@@ -30,19 +28,12 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
   const { systemColors } = useTheme();
   const { t } = useTranslation('boards');
   const { data: activeBoard } = useActiveBoard();
-  const router = useRouter();
   const { canReport } = useSprayModerationAccess();
   const [reportTarget, setReportTarget] = useState<{ uuid: string; name: string } | null>(null);
   const closeReport = useCallback(() => setReportTarget(null), []);
   const openReport = useCallback(() => {
     if (board && canReport) setReportTarget({ uuid: board.uuid, name: board.name });
   }, [board, canReport]);
-
-  // Empty for every board that is not a spray wall the viewer may edit, which is
-  // what keeps this a no-op on the eight catalogue boards — and empty for ALL of
-  // them until the two screens the rows lead to exist. See
-  // `SPRAY_DETAIL_ROWS_ENABLED`; the gate below is live and tested either way.
-  const wallRows = useMemo(() => (SPRAY_DETAIL_ROWS_ENABLED ? sprayDetailRows(board) : []), [board]);
 
   // Null on a catalogue board and on a PRIVATE wall — a private wall's link
   // resolves for nobody, so the row is absent rather than disabled. The edit
@@ -53,16 +44,6 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
     if (board && shareTarget) setShareSnapshot({ target: shareTarget, wallName: board.name });
   }, [board, shareTarget]);
   const closeShare = useCallback(() => setShareSnapshot(null), []);
-
-  // Close first, then navigate: the sheet is always mounted and these rows push a
-  // full route, so leaving it open would stack a screen under an open sheet.
-  const openWallRow = useCallback(
-    (href: string) => {
-      onClose();
-      router.push(href);
-    },
-    [onClose, router],
-  );
 
   const footer = board ? (
     isActiveBoard(board, activeBoard?.uuid) ? (
@@ -92,8 +73,6 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
             board={board}
             systemColors={systemColors}
             t={t}
-            wallRows={wallRows}
-            onOpenWallRow={openWallRow}
             shareTarget={shareTarget}
             onOpenShare={openShare}
             canReport={canReport && toBoardName(board.boardType) === 'spray'}
@@ -126,8 +105,6 @@ function BoardDetailBody({
   board,
   systemColors,
   t,
-  wallRows,
-  onOpenWallRow,
   shareTarget,
   onOpenShare,
   canReport,
@@ -136,8 +113,6 @@ function BoardDetailBody({
   board: UserBoard;
   systemColors: SystemColors;
   t: TFn;
-  wallRows: SprayDetailRow[];
-  onOpenWallRow: (href: string) => void;
   shareTarget: SprayShareTarget | null;
   onOpenShare: () => void;
   canReport: boolean;
@@ -197,10 +172,6 @@ function BoardDetailBody({
         </Text>
       ) : null}
 
-      {/* Wall maintenance, owner/editor only. Empty on every catalogue board, so
-          the card and its separator never render there. Literal translation keys
-          per row — a computed `t(row.key)` is rejected by the i18n linter and
-          hides the string from the catalogue scanners either way. */}
       {shareTarget ? (
         <View style={[styles.wallRows, { backgroundColor: systemColors.tertiaryBackground }]}>
           <WallRow
@@ -228,30 +199,6 @@ function BoardDetailBody({
             systemColors={systemColors}
             onPress={onOpenReport}
           />
-        </View>
-      ) : null}
-
-      {wallRows.length > 0 ? (
-        <View style={[styles.wallRows, { backgroundColor: systemColors.tertiaryBackground }]}>
-          {wallRows.map((row, index) => (
-            <WallRow
-              key={row.key}
-              icon={row.icon}
-              label={
-                row.key === 'editHolds'
-                  ? t('mobile.boardDetail.spray.editHolds')
-                  : t('mobile.boardDetail.spray.newPhoto')
-              }
-              hint={
-                row.key === 'editHolds'
-                  ? t('mobile.boardDetail.spray.editHoldsHint')
-                  : t('mobile.boardDetail.spray.newPhotoHint')
-              }
-              showSeparator={index > 0}
-              systemColors={systemColors}
-              onPress={() => onOpenWallRow(row.href)}
-            />
-          ))}
         </View>
       ) : null}
     </>

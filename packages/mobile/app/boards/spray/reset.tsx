@@ -13,20 +13,18 @@
 import { Redirect, useLocalSearchParams } from 'expo-router';
 import { SprayWallResetScreen } from '../../../src/components/spray-wall/SprayWallResetScreen';
 import { useFeatureFlagsResolved, useSprayWallsEnabled } from '../../../src/providers/feature-flags-provider';
+import { readSprayWallUuid } from '../../../src/lib/spray/spray-routes';
 
 export default function ResetSprayWall() {
-  const params = useLocalSearchParams<{ wallUuid?: string }>();
+  const params = useLocalSearchParams<{ wallUuid?: string | string[]; boardUuid?: string | string[] }>();
+  const wallUuid = readSprayWallUuid(params);
   const flagsResolved = useFeatureFlagsResolved();
   const enabled = useSprayWallsEnabled();
 
-  // Nothing at all until the flags are final. `useSprayWallsEnabled` reads an
-  // unresolved flag as OFF, which is right for a row on a sheet — it stays
-  // hidden and appears when the value lands — and wrong here: a redirect is not
-  // something a later value can undo, so a wall owner the feature IS enabled for
-  // would be bounced off their own deep link before PostHog ever answered. The
-  // wait is bounded by the provider's own timeout.
+  // Wait for bounded resolution before redirecting. Spray walls ship on, but
+  // an explicit Off override must land before a deep link opens editing.
   if (!flagsResolved) return null;
-  if (!enabled || !params.wallUuid) return <Redirect href="/boards" />;
+  if (!enabled || !wallUuid) return <Redirect href="/boards" />;
 
-  return <SprayWallResetScreen wallUuid={params.wallUuid} />;
+  return <SprayWallResetScreen wallUuid={wallUuid} />;
 }

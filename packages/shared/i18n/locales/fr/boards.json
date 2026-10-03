@@ -1036,6 +1036,27 @@
       "toast": "{{removed}} parties, {{added}} nouvelles, {{climbs}} blocs modifiés"
     }
   },
+  "sprayMaintenance": {
+    "screenTitle": "Modifier les prises",
+    "preparing": "Ouverture de ton mur…",
+    "unavailable": "Tu ne peux pas modifier ce mur.",
+    "nothingPublished": "Termine la configuration de ce mur avant de modifier ses prises.",
+    "draftUnavailable": "Ce brouillon a changé. Rouvre le mur pour modifier ses prises.",
+    "loadFailed": "Impossible d'ouvrir l'éditeur de prises. Réessaie.",
+    "publish": "Publier les prises",
+    "publishing": "Publication de tes prises…",
+    "publishFailed": "Tes modifications sont enregistrées. Réessaie de les publier.",
+    "refreshing": "Chargement du mur mis à jour…",
+    "refreshFailed": "Tes prises sont publiées. Réessaie de charger le mur.",
+    "retry": "Réessayer",
+    "temporarilyUnavailable": "La modification des prises est indisponible pour le moment. Réessaie plus tard.",
+    "leave": {
+      "title": "Abandonner les modifications des prises non enregistrées ?",
+      "body": "Tes modifications non enregistrées seront perdues. Ton brouillon enregistré reste disponible.",
+      "stay": "Continuer à modifier",
+      "discard": "Abandonner les modifications"
+    }
+  },
   "sprayCaps": {
     "holds": "Un mur porte jusqu’à {{max}} prises. Écartes-en quelques-unes et enregistre à nouveau.",
     "versions": "Un mur garde {{max}} réinitialisations, et celui-ci les a toutes utilisées.",

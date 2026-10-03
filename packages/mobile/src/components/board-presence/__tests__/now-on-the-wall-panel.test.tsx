@@ -2,7 +2,7 @@
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BoardPresenceClimb, BoardPresenceStats, Climb } from '@boardsesh/shared-schema';
+import type { BoardPresenceClimb, BoardPresenceStats, Climb, UserBoard } from '@boardsesh/shared-schema';
 import type { NowOnTheWallPanelProps } from '../NowOnTheWallPanel';
 import type { DismissAndWaitResult } from '../../../providers/sheet-presentation-provider';
 
@@ -341,6 +341,62 @@ describe('NowOnTheWallPanel', () => {
     presence.refresh.mockClear();
     // mockReset, not mockClear: the tap-ordering test installs an implementation.
     analytics.track.mockReset();
+  });
+
+  const sprayWall: UserBoard = {
+    uuid: 'spray-wall-1',
+    slug: 'garage',
+    name: 'Garage',
+    ownerId: 'owner-1',
+    boardType: 'spray',
+    layoutId: 12,
+    sizeId: 12,
+    setIds: '12',
+    angle: 30,
+    canEdit: true,
+    isPublic: true,
+    isUnlisted: false,
+    isOwned: true,
+    isFollowedByMe: true,
+    hideLocation: false,
+    isAngleAdjustable: false,
+    createdAt: '2026-01-01',
+    totalAscents: 0,
+    uniqueClimbers: 0,
+    followerCount: 0,
+    commentCount: 0,
+  };
+
+  it('mounts all wall actions in the live sheet and forwards the active wall identity', () => {
+    const onOpenSprayMaintenance = vi.fn();
+    const onShareSprayWall = vi.fn();
+    const { getByLabelText } = render(
+      panelElement({ activeBoard: sprayWall, onOpenSprayMaintenance, onShareSprayWall }),
+    );
+    fireEvent.click(getByLabelText('mobile.boardDetail.spray.editHolds'));
+    fireEvent.click(getByLabelText('mobile.boardDetail.spray.newPhoto'));
+    fireEvent.click(getByLabelText('mobile.boardDetail.spray.shareLink'));
+    expect(onOpenSprayMaintenance.mock.calls).toEqual([
+      [sprayWall.uuid, 'editHolds'],
+      [sprayWall.uuid, 'newPhoto'],
+    ]);
+    expect(onShareSprayWall).toHaveBeenCalledExactlyOnceWith(sprayWall.uuid);
+  });
+
+  it('keeps public sharing for viewers and hides maintenance on the kiosk and catalogue boards', () => {
+    const callbacks = { onOpenSprayMaintenance: vi.fn(), onShareSprayWall: vi.fn() };
+    const { queryByLabelText, rerender } = render(
+      panelElement({ activeBoard: { ...sprayWall, canEdit: false }, ...callbacks }),
+    );
+    expect(queryByLabelText('mobile.boardDetail.spray.editHolds')).toBeNull();
+    expect(queryByLabelText('mobile.boardDetail.spray.newPhoto')).toBeNull();
+    expect(queryByLabelText('mobile.boardDetail.spray.shareLink')).not.toBeNull();
+    rerender(panelElement({ activeBoard: sprayWall, variant: 'column', ...callbacks }));
+    expect(queryByLabelText('mobile.boardDetail.spray.shareLink')).toBeNull();
+    expect(queryByLabelText('mobile.boardDetail.spray.editHolds')).toBeNull();
+    rerender(panelElement({ activeBoard: { ...sprayWall, boardType: 'kilter' }, ...callbacks }));
+    expect(queryByLabelText('mobile.boardDetail.spray.shareLink')).toBeNull();
+    expect(queryByLabelText('mobile.boardDetail.spray.newPhoto')).toBeNull();
   });
 
   it('mounts the live-sessions block in the sheet with the board id and whoever holds the board now', () => {

@@ -19,12 +19,8 @@ export default function NewSprayWall() {
   const flagsResolved = useFeatureFlagsResolved();
   const enabled = useSprayWallsEnabled();
 
-  // Nothing at all until the flags are final. `useSprayWallsEnabled` reads an
-  // unresolved flag as OFF, which is right for a tile — it stays hidden and
-  // appears when the value lands — and wrong here: a redirect is not something a
-  // later value can undo, so a climber the feature IS enabled for would be
-  // bounced off their own deep link before PostHog ever answered. The wait is
-  // bounded by the provider's own timeout.
+  // Wait for bounded resolution before redirecting. Spray walls ship on, but
+  // an explicit Off override must land before a deep link opens authoring.
   if (!flagsResolved) return null;
   if (!enabled) return <Redirect href="/boards" />;
 
