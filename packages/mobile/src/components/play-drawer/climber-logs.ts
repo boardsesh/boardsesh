@@ -82,6 +82,15 @@ export const INLINE_CLIMBER_LOG_CAP = 4;
 
 const MAX_TALLY_GRADES = 3;
 
+/**
+ * A sorted copy. Not `Array.prototype.toSorted`: Hermes, the engine the app
+ * runs on, does not have it, so it throws "undefined is not a function" on a
+ * phone while passing every test (Node has it).
+ */
+function sorted<Item>(items: readonly Item[], compare: (first: Item, second: Item) => number): Item[] {
+  return [...items].sort(compare);
+}
+
 function isSent(log: ClimberLog): boolean {
   return log.status === 'flash' || log.status === 'send';
 }
@@ -119,8 +128,8 @@ export function groupClimberLogs(logs: readonly ClimberLog[], boardAngle: number
 
   const groups: ClimberLogGroup[] = [];
   for (const [userId, userLogs] of logsByUser) {
-    const [lead, ...rest] = userLogs.toSorted(leadFirst(boardAngle));
-    const earlier = rest.toSorted(newestFirst);
+    const [lead, ...rest] = sorted(userLogs, leadFirst(boardAngle));
+    const earlier = sorted(rest, newestFirst);
     const named = userLogs.find((log) => log.userDisplayName);
     const pictured = userLogs.find((log) => log.userAvatarUrl);
     groups.push({
@@ -140,7 +149,8 @@ export function groupClimberLogs(logs: readonly ClimberLog[], boardAngle: number
 
 /** Notes first, then the board's angle, then the newest lead; ties by user id. */
 export function rankClimberLogGroups(groups: readonly ClimberLogGroup[]): ClimberLogGroup[] {
-  return groups.toSorted(
+  return sorted(
+    groups,
     (first, second) =>
       Number(second.hasNote) - Number(first.hasNote) ||
       Number(second.atBoardAngle) - Number(first.atBoardAngle) ||
@@ -160,15 +170,15 @@ export function takeInlineGroups(groups: readonly ClimberLogGroup[]): ClimberLog
 export function tallyGivenGrades(groups: readonly ClimberLogGroup[]): { difficultyId: number; count: number }[] {
   const countByGrade = new Map<number, number>();
   for (const group of groups) {
-    const newestGraded = [group.lead, ...group.earlier].toSorted(newestFirst).find((log) => log.difficulty != null);
+    const newestGraded = sorted([group.lead, ...group.earlier], newestFirst).find((log) => log.difficulty != null);
     const difficultyId = newestGraded?.difficulty;
     if (difficultyId == null) continue;
     countByGrade.set(difficultyId, (countByGrade.get(difficultyId) ?? 0) + 1);
   }
-  return [...countByGrade]
-    .map(([difficultyId, count]) => ({ difficultyId, count }))
-    .toSorted((first, second) => second.count - first.count || first.difficultyId - second.difficultyId)
-    .slice(0, MAX_TALLY_GRADES);
+  return sorted(
+    [...countByGrade].map(([difficultyId, count]) => ({ difficultyId, count })),
+    (first, second) => second.count - first.count || first.difficultyId - second.difficultyId,
+  ).slice(0, MAX_TALLY_GRADES);
 }
 
 export function filterClimberLogs(
