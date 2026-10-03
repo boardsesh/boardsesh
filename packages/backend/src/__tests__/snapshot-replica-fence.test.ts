@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { setTimeout as delay } from 'node:timers/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
@@ -11,6 +12,7 @@ import {
   createIsolatedSnapshotPool,
   exportLayoutSnapshot,
   reservedSnapshotClient,
+  runPrimaryFenceAudit,
   waitForReplicaReplay,
 } from '../scripts/export-board-snapshots';
 import { snapshotFenceMembershipSql } from './global-setup';
@@ -253,21 +255,106 @@ describe('replica snapshot fence', () => {
     }
   });
 
-  it('requires certificate and hostname verification for every non-local database URL', async () => {
+  it('cancels the read-only fence audit, rolls back, and leaves the session lock-free', async () => {
+    const auditPool = createIsolatedSnapshotPool(getWorkerDatabaseUrl(), 2);
+    const coordinator = await auditPool.reserve();
+    const canceller = await auditPool.reserve();
+    const sleepQueryStarted = deferred();
+    let coordinatorPid = 0;
+    let auditFinished: Promise<unknown> | null = null;
+    try {
+      const initialSettingsRows = await coordinator.unsafe(
+        `SELECT current_setting('statement_timeout') AS statement_timeout,
+                current_setting('transaction_read_only') AS transaction_read_only`,
+      );
+      const initialSettings = initialSettingsRows[0] as unknown as {
+        statement_timeout: string;
+        transaction_read_only: string;
+      };
+
+      auditFinished = runPrimaryFenceAudit(coordinator, async () => {
+        const transactionRows = await coordinator.unsafe(
+          `SELECT current_setting('statement_timeout') AS statement_timeout,
+                  current_setting('transaction_read_only') AS transaction_read_only,
+                  pg_backend_pid() AS backend_pid`,
+        );
+        const transactionSettings = transactionRows[0] as unknown as {
+          statement_timeout: string;
+          transaction_read_only: string;
+          backend_pid: number;
+        };
+        expect(transactionSettings).toMatchObject({
+          statement_timeout: '10s',
+          transaction_read_only: 'on',
+        });
+        coordinatorPid = Number(transactionSettings.backend_pid);
+        sleepQueryStarted.resolve();
+        return coordinator.unsafe('SELECT pg_sleep(30)');
+      });
+
+      await sleepQueryStarted.promise;
+      let sleepIsActive = false;
+      for (let attempt = 0; attempt < 100 && !sleepIsActive; attempt++) {
+        const activityRows = await canceller.unsafe(`SELECT state, query FROM pg_stat_activity WHERE pid = $1`, [
+          coordinatorPid,
+        ]);
+        const activity = activityRows[0] as unknown as { state: string; query: string } | undefined;
+        sleepIsActive = activity?.state === 'active' && activity.query.includes('pg_sleep(30)');
+        if (!sleepIsActive) await delay(10);
+      }
+      expect(sleepIsActive).toBe(true);
+
+      const cancellationRows = await canceller.unsafe('SELECT pg_cancel_backend($1) AS cancelled', [coordinatorPid]);
+      expect(cancellationRows).toMatchObject([{ cancelled: true }]);
+      if (!auditFinished) throw new Error('primary fence audit was not started');
+      await expect(auditFinished).rejects.toMatchObject({ code: '57014' });
+
+      const afterRows = await coordinator.unsafe(
+        `SELECT current_setting('statement_timeout') AS statement_timeout,
+                current_setting('transaction_read_only') AS transaction_read_only,
+                count(*) FILTER (WHERE locktype = 'advisory')::int AS advisory_locks
+         FROM pg_locks WHERE pid = pg_backend_pid()`,
+      );
+      expect(afterRows).toEqual([
+        {
+          statement_timeout: initialSettings.statement_timeout,
+          transaction_read_only: initialSettings.transaction_read_only,
+          advisory_locks: 0,
+        },
+      ]);
+
+      const testLockRows = await coordinator.unsafe('SELECT pg_try_advisory_lock(4475000001::bigint) AS acquired');
+      expect(testLockRows).toMatchObject([{ acquired: true }]);
+      await coordinator.unsafe('SELECT pg_advisory_unlock(4475000001::bigint)');
+    } finally {
+      if (auditFinished) {
+        if (coordinatorPid) await canceller.unsafe('SELECT pg_cancel_backend($1)', [coordinatorPid]).catch(() => {});
+        await auditFinished.catch(() => {});
+      }
+      canceller.release();
+      coordinator.release();
+      await auditPool.end({ timeout: 5 });
+    }
+  }, 20_000);
+
+  it('uses verified TLS for non-local URLs and disables it for literal localhost without connecting', async () => {
     const remotePool = createIsolatedSnapshotPool('postgresql://snapshot@example.test:5432/boardsesh', 1);
     const dockerServicePool = createIsolatedSnapshotPool('postgresql://snapshot@postgres:5432/boardsesh', 1);
     const dockerTestServicePool = createIsolatedSnapshotPool('postgresql://snapshot@postgres-test:5432/boardsesh', 1);
     const loopbackPool = createIsolatedSnapshotPool('postgresql://snapshot@127.0.0.1:5432/boardsesh', 1);
+    const localhostPool = createIsolatedSnapshotPool('postgresql://snapshot@localhost:5432/boardsesh', 1);
     try {
       expect(remotePool.options.ssl).toBe('verify-full');
       expect(dockerServicePool.options.ssl).toBe('verify-full');
       expect(dockerTestServicePool.options.ssl).toBe('verify-full');
       expect(loopbackPool.options.ssl).toBe(false);
+      expect(localhostPool.options.ssl).toBe(false);
     } finally {
       await remotePool.end({ timeout: 0 });
       await dockerServicePool.end({ timeout: 0 });
       await dockerTestServicePool.end({ timeout: 0 });
       await loopbackPool.end({ timeout: 0 });
+      await localhostPool.end({ timeout: 0 });
     }
   });
 
