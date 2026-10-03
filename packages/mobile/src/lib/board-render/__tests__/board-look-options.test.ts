@@ -30,9 +30,12 @@ const {
   BOARD_LOOK_SETTINGS_OPTIONS,
   CLASSIC_PREVIEW_SETTINGS,
   DEFAULT_SPRAY_WALL_LOOK_OPTION_ID,
+  SPRAY_WALL_DIM_RANGE,
   SPRAY_WALL_LOOK_OPTIONS,
   applyBoardLookOption,
   boardLookOptionWallDefault,
+  sprayWallDimLevel,
+  withSprayWallDim,
   buildBoardLookPreviewSettings,
   matchingBoardLookOptionId,
 } = await import('../board-look-options');
@@ -301,5 +304,54 @@ describe('every option signs differently, so no two cards share a PNG', () => {
 
     // The card is a promise: what it drew is what the climber now has.
     expect(applied).toBe(previewed);
+  });
+});
+
+describe('the spray look step dimming slider', () => {
+  const option = (id: string) => {
+    const found = SPRAY_WALL_LOOK_OPTIONS.find((candidate) => candidate.id === id);
+    if (!found) throw new Error(`no spray look option ${id}`);
+    return found;
+  };
+
+  it("starts at each look's own dimming, and has none for Classic", () => {
+    // `auto` has no measured brightness to size itself from on a photo, so it is 0.
+    expect(sprayWallDimLevel(option('aura-outline'))).toBe(0);
+    expect(sprayWallDimLevel(option('aura-subtle'))).toBe(0.3);
+    expect(sprayWallDimLevel(option('max-contrast'))).toBe(0.7);
+    expect(sprayWallDimLevel(option('classic'))).toBeNull();
+  });
+
+  it('leaves every card alone until the creator touches the slider', () => {
+    expect(withSprayWallDim(SPRAY_WALL_LOOK_OPTIONS, null)).toBe(SPRAY_WALL_LOOK_OPTIONS);
+  });
+
+  it('applies a touched value to every look with a veil, and to what the wall stores', () => {
+    const dimmed = withSprayWallDim(SPRAY_WALL_LOOK_OPTIONS, 0.45);
+    for (const candidate of dimmed) {
+      if (candidate.id === 'classic') continue;
+      expect(sprayWallDimLevel(candidate)).toBe(0.45);
+    }
+    const stored = boardLookOptionWallDefault('aura-outline', dimmed);
+    expect(stored?.boardsesh.veil).toBe('custom');
+    expect(stored?.boardsesh.veilOpacity).toBe(0.45);
+    // The rest of the look is untouched.
+    expect(stored?.boardsesh.markStyle).toBe('outline');
+    // Classic has no veil, so it is handed back as it was.
+    expect(dimmed.find((candidate) => candidate.id === 'classic')).toBe(option('classic'));
+  });
+
+  it('stores an explicit off at zero, even over a look with its own strong veil', () => {
+    const stored = boardLookOptionWallDefault('max-contrast', withSprayWallDim(SPRAY_WALL_LOOK_OPTIONS, 0));
+    expect(stored?.boardsesh.veil).toBe('off');
+  });
+
+  it('stays inside the bounds the backend validates against', () => {
+    expect(SPRAY_WALL_DIM_RANGE.min).toBe(0);
+    const stored = boardLookOptionWallDefault(
+      'aura-outline',
+      withSprayWallDim(SPRAY_WALL_LOOK_OPTIONS, SPRAY_WALL_DIM_RANGE.max),
+    );
+    expect(stored?.boardsesh.veilOpacity).toBeLessThanOrEqual(SPRAY_WALL_DIM_RANGE.max);
   });
 });

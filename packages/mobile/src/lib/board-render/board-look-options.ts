@@ -6,7 +6,9 @@ import {
   type BoardRenderPresetId,
 } from '../board-render-presets';
 import {
+  BOARD_RENDER_SETTING_BOUNDS,
   DEFAULT_BOARDSESH_RENDER_SETTINGS,
+  VEIL_SETTING_OPACITY,
   setBoardRenderModePreference,
   type BoardRenderDefault,
   type BoardRenderSettings,
@@ -237,6 +239,64 @@ export function boardLookOptionWallDefault(
   const settings = options.find((option) => option.id === id)?.previewSettings;
   if (!settings || settings.mode === 'default') return null;
   return { mode: settings.mode, boardsesh: settings.boardsesh };
+}
+
+/** The spray look step's dimming slider: 0 (off) to the veil's own ceiling. */
+export const SPRAY_WALL_DIM_RANGE = BOARD_RENDER_SETTING_BOUNDS.veilOpacity;
+export const SPRAY_WALL_DIM_STEP = 0.05;
+
+/**
+ * How hard a look dims the rest of a spray wall, 0–0.9, or `null` for a look
+ * with nothing to dim (Classic draws no veil).
+ *
+ * `auto` reads 0: it sizes the veil from a measured wall brightness, and a
+ * spray wall has none, so on a photo it draws nothing (`resolveVeilOpacity`).
+ */
+export function sprayWallDimLevel(option: BoardLookOption): number | null {
+  const settings = option.previewSettings;
+  if (!settings || settings.mode === 'classic') return null;
+  const { veil, veilOpacity } = settings.boardsesh;
+  switch (veil) {
+    case 'soft':
+      return VEIL_SETTING_OPACITY.soft;
+    case 'strong':
+      return VEIL_SETTING_OPACITY.strong;
+    case 'custom':
+      return veilOpacity;
+    case 'off':
+    case 'auto':
+      return 0;
+  }
+}
+
+/**
+ * The spray look options with the creator's dimming applied to every look that
+ * has a veil, or unchanged for `dim: null` (the slider not touched yet, so each
+ * card keeps its own).
+ *
+ * Applied to the options themselves so the preview cards and the stored bundle
+ * (`boardLookOptionWallDefault`) cannot disagree. 0 stores `veil: 'off'` rather
+ * than a zero-strength custom veil, which reads the same and says what it means.
+ * Callers memoize on `dim`: each option's `previewSettings` identity feeds a
+ * card's render, and a fresh one redraws it.
+ */
+export function withSprayWallDim(options: readonly BoardLookOption[], dim: number | null): readonly BoardLookOption[] {
+  if (dim === null) return options;
+  return options.map((option) => {
+    const settings = option.previewSettings;
+    if (!settings || settings.mode === 'classic') return option;
+    return {
+      ...option,
+      previewSettings: {
+        ...settings,
+        boardsesh: {
+          ...settings.boardsesh,
+          veil: dim > 0 ? 'custom' : 'off',
+          veilOpacity: dim > 0 ? dim : settings.boardsesh.veilOpacity,
+        },
+      },
+    };
+  });
 }
 
 /**

@@ -25,6 +25,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Button } from '../Button';
+import { ValueSlider } from '../ValueSlider';
+import { adjustValue, notchIndex } from '../value-slider.logic';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { BoardLookCarousel } from '../board-look/BoardLookCarousel';
 import { RailIndexDots } from '../board-look/RailIndexDots';
@@ -38,13 +40,40 @@ import { useEffectiveBoardRenderSettings } from '../../hooks/use-native-climb-re
 import { useSyntheticSprayWallPreview } from '../../hooks/use-synthetic-spray-wall-preview';
 import {
   DEFAULT_SPRAY_WALL_LOOK_OPTION_ID,
+  SPRAY_WALL_DIM_RANGE,
+  SPRAY_WALL_DIM_STEP,
   SPRAY_WALL_LOOK_OPTIONS,
   boardLookOptionWallDefault,
+  sprayWallDimLevel,
+  withSprayWallDim,
   type BoardLookOptionId,
 } from '../../lib/board-render/board-look-options';
 import { useKeepSprayDraftRegistered, useSprayWallDraft } from '../../lib/spray/use-spray-wall-draft';
 import { useSetSprayWallRenderSettings } from '../../lib/spray/use-create-spray-wall';
 import type { CreatedWallDraft } from './add-wall-machine';
+
+// Plain numbers, so the worklets below capture numbers rather than a shared object.
+const DIM_MIN = SPRAY_WALL_DIM_RANGE.min;
+const DIM_MAX = SPRAY_WALL_DIM_RANGE.max;
+const DIM_STEP = SPRAY_WALL_DIM_STEP;
+const DIM_STEPS_PER_UNIT = Math.round(1 / SPRAY_WALL_DIM_STEP);
+
+// Worklets: the slider runs these inside its gesture, on every frame. Rounded
+// through whole steps so 0.15 is 0.15, not 0.15000000000000002.
+function roundDim(raw: number): number {
+  'worklet';
+  return Math.round(raw * DIM_STEPS_PER_UNIT) / DIM_STEPS_PER_UNIT;
+}
+
+function dimNotch(value: number): number {
+  'worklet';
+  return notchIndex(value, DIM_STEP);
+}
+
+function adjustDim(value: number, direction: 1 | -1): number {
+  'worklet';
+  return adjustValue(value, direction * DIM_STEP, DIM_MIN, DIM_MAX, roundDim);
+}
 
 type SprayWallLookStepProps = {
   draft: CreatedWallDraft;
@@ -78,12 +107,20 @@ export function SprayWallLookStep({ draft, onSaveStarted, onSaveFailed, onConfir
   const { status: previewStatus, preview } = useSyntheticSprayWallPreview(draft.layoutId);
   const { boardseshRendererAvailable } = useEffectiveBoardRenderSettings();
 
+  // How hard the rest of the wall is dimmed. `null` until the creator touches
+  // the slider: each card keeps its own look's dimming, and the slider shows
+  // the selected one's. Once touched, the value applies to every look that has
+  // a veil, in the previews and in what is stored. Committed on release only:
+  // every committed value redraws every card.
+  const [dim, setDim] = useState<number | null>(null);
+  const [liveDim, setLiveDim] = useState<number | null>(null);
+
   // Every look stays offered even when THIS phone cannot draw Aura: the pick
   // is stored for every climber on the wall, and one creator's binary (or a
   // runtime fallback that latched its renderer off) must not turn it into a
   // wall-wide Classic. Those cards show as placeholders here (the carousel's
   // own skeleton), and the default stays the spray look.
-  const options = SPRAY_WALL_LOOK_OPTIONS;
+  const options = useMemo(() => withSprayWallDim(SPRAY_WALL_LOOK_OPTIONS, dim), [dim]);
 
   // Local until Continue: a carousel tap only moves the selection, and the one
   // write happens on the button.
@@ -93,6 +130,22 @@ export function SprayWallLookStep({ draft, onSaveStarted, onSaveFailed, onConfir
     options.findIndex((option) => option.id === selectedId),
   );
   const selectedOption = options[selectedIndex] ?? options[0];
+  // `null` for Classic, which draws no veil, so the slider goes away there.
+  const selectedDim = selectedOption ? sprayWallDimLevel(selectedOption) : null;
+  const shownDim = liveDim ?? selectedDim ?? 0;
+
+  const commitDim = useCallback((value: number) => {
+    setLiveDim(null);
+    setDim(value);
+  }, []);
+  const cancelDim = useCallback(() => setLiveDim(null), []);
+  const formatDim = useCallback(
+    (value: number) =>
+      value <= 0
+        ? t('sprayWizard.look.dimOff')
+        : tCommon('mobile.settings.boardLook.glowVeil.veilOpacity.value', { value: Math.round(value * 100) }),
+    [t, tCommon],
+  );
 
   const [railSlotHeight, setRailSlotHeight] = useState(0);
   const handleRailLayout = useCallback((event: LayoutChangeEvent) => {
@@ -195,6 +248,31 @@ export function SprayWallLookStep({ draft, onSaveStarted, onSaveFailed, onConfir
 
       {preview ? <RailIndexDots count={options.length} activeIndex={selectedIndex} /> : null}
 
+      {selectedDim !== null ? (
+        <View style={styles.dim}>
+          <View style={styles.dimLabels}>
+            <Text variant="subheadline">{t('sprayWizard.look.dimTitle')}</Text>
+            <Text variant="subheadline" color={systemColors.secondaryLabel}>
+              {formatDim(shownDim)}
+            </Text>
+          </View>
+          <ValueSlider
+            value={selectedDim}
+            min={DIM_MIN}
+            max={DIM_MAX}
+            round={roundDim}
+            notch={dimNotch}
+            format={formatDim}
+            accessibilityLabel={t('sprayWizard.look.dimTitle')}
+            adjust={adjustDim}
+            onLiveChange={setLiveDim}
+            onCommit={commitDim}
+            onCancel={cancelDim}
+            testID="spray-look-dim-slider"
+          />
+        </View>
+      ) : null}
+
       <View
         style={[styles.footer, { borderTopColor: systemColors.separator, paddingBottom: insets.bottom + spacing[3] }]}
       >
@@ -245,6 +323,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing[3],
     paddingHorizontal: spacing[6],
+  },
+  dim: {
+    paddingHorizontal: spacing[4],
+    paddingBottom: spacing[3],
+    gap: spacing[2],
+  },
+  dimLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    gap: spacing[2],
   },
   centered: {
     textAlign: 'center',

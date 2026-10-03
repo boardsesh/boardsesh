@@ -927,7 +927,9 @@
       "unavailable": "Your wall's photo can't be shown here, but you can still pick a look.",
       "saving": "Saving your look…",
       "failed": "Couldn't save the look. Try again, or publish anyway.",
-      "publishWithout": "Publish anyway"
+      "publishWithout": "Publish anyway",
+      "dimTitle": "Dim the rest of the wall",
+      "dimOff": "Off"
     },
     "publish": {
       "title": "Put it on your boards",

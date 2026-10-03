@@ -927,7 +927,9 @@
       "unavailable": "Impossible d'afficher la photo de ton mur ici, mais tu peux quand même choisir un rendu.",
       "saving": "Enregistrement du rendu…",
       "failed": "Impossible d'enregistrer le rendu. Réessaie ou publie quand même.",
-      "publishWithout": "Publier quand même"
+      "publishWithout": "Publier quand même",
+      "dimTitle": "Assombrir le reste du mur",
+      "dimOff": "Désactivé"
     },
     "publish": {
       "title": "Ajoute-le à tes boards",
