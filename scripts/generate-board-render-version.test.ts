@@ -44,7 +44,7 @@ describe('computeBoardRenderVersion', () => {
   });
 
   it('matches the committed constant', () => {
-    // The same gate as the `board-render-version` CI job, run again here so a
+    // The same gate as the `board-render-version` CI guard step, run again here so a
     // stale constant is a red test locally and not only in CI.
     expect(BOARD_RENDER_VERSION).toBe(computeBoardRenderVersion(REPO_ROOT));
   });

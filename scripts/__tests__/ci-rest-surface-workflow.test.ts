@@ -34,6 +34,23 @@ function mappingEntry(source: string, key: string, indentation: number): string 
   return lines.slice(startIndex, endIndex).join('\n');
 }
 
+/**
+ * One step of a job, found by its `id:`, from its `- ` line to the next step at
+ * the same indentation.
+ */
+function stepWithId(jobSource: string, id: string): string {
+  const lines = jobSource.split('\n');
+  const idIndex = lines.findIndex((line) => line.trim() === `id: ${id}`);
+  if (idIndex < 0) {
+    throw new Error(`missing step with id ${id}`);
+  }
+  let startIndex = idIndex;
+  while (startIndex > 0 && !lines[startIndex].startsWith('      - ')) startIndex -= 1;
+  let endIndex = startIndex + 1;
+  while (endIndex < lines.length && !lines[endIndex].startsWith('      - ')) endIndex += 1;
+  return lines.slice(startIndex, endIndex).join('\n');
+}
+
 /** Strip `#` comment lines so a job's rationale can never satisfy an assertion. */
 function withoutComments(source: string): string {
   return source
@@ -49,13 +66,13 @@ function withoutComments(source: string): string {
  * static import, so Vitest's `--changed` module-graph analysis in test-default
  * never selects them for a route-file-only diff, which is the one diff shape
  * they exist to catch. Measured on #4663: adding a route file and, separately,
- * deleting one each selected ZERO specs. The dedicated `rest-surface` job is the
- * fix; this contract stops a future narrowing from quietly undoing it.
+ * deleting one each selected ZERO specs. The dedicated `rest-surface` step of the
+ * `guards` job is the fix; this contract stops a future narrowing from quietly undoing it.
  */
-describe('rest-surface CI job contract', () => {
+describe('rest-surface CI guard contract', () => {
   const changesJob = mappingEntry(workflowSource, 'changes', 2);
-  const restSurfaceJob = mappingEntry(workflowSource, 'rest-surface', 2);
-  const restSurfaceSteps = withoutComments(restSurfaceJob);
+  const guardsJob = withoutComments(mappingEntry(workflowSource, 'guards', 2));
+  const restSurfaceSteps = stepWithId(guardsJob, 'rest-surface');
   const ciStatusJob = withoutComments(mappingEntry(workflowSource, 'ci-status', 2));
 
   it('gates on the API tree and everything the two oracles read', () => {
@@ -74,7 +91,7 @@ describe('rest-surface CI job contract', () => {
 
   it('runs whenever the API tree or the shared CI config changes', () => {
     expect(restSurfaceSteps).toContain(
-      "if: needs.changes.outputs.restSurface == 'true' || needs.changes.outputs.rootCi == 'true'",
+      "(needs.changes.outputs.restSurface == 'true' || needs.changes.outputs.rootCi == 'true')",
     );
   });
 
@@ -85,14 +102,14 @@ describe('rest-surface CI job contract', () => {
     expect(restSurfaceSteps).not.toContain('--changed');
   });
 
-  it('runs this contract spec from inside the job it guards', () => {
+  it('runs this contract spec from inside the step it guards', () => {
     // Without this step nothing un-filtered reads ci.yml, so the gate above
     // could be narrowed by a ci.yml-only diff with nothing going red on the PR
     // — the same blind spot, one level up.
     expect(restSurfaceSteps).toContain('scripts/__tests__/ci-rest-surface-workflow.test.ts');
   });
 
-  it('makes the aggregate status depend on the job', () => {
-    expect(ciStatusJob).toContain('- rest-surface');
+  it('makes the aggregate status depend on the job that runs it', () => {
+    expect(ciStatusJob).toContain('- guards');
   });
 });
