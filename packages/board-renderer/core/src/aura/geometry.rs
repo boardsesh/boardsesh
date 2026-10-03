@@ -365,3 +365,32 @@ impl LitHold {
         self.path.bounds()
     }
 }
+
+/// The placement radius, in output px, of the board's median hold — lit and
+/// unlit alike, measured the way `LitHold::new` measures `r_px`.
+///
+/// Aura Outline caps every lit hold's glow at the reach a hold this size
+/// gets. Reach grows with a hold's own radius, so on a spray wall a big
+/// volume's halo ran over the small holds beside it; an outline should read
+/// as an even rim, whatever the hold's size. `None` when no hold has a usable
+/// radius, which means no cap.
+pub fn median_hold_radius_px(holds: &[HoldData], scale_x: f32) -> Option<f32> {
+    let mut radii: Vec<f32> = holds
+        .iter()
+        .map(|hold| hold.r * scale_x)
+        .filter(|r_px| r_px.is_finite() && *r_px > 0.0)
+        .collect();
+    if radii.is_empty() {
+        return None;
+    }
+    // O(n) selection: a board carries up to ~1500 holds, once per render.
+    let count = radii.len();
+    let middle = count / 2;
+    let (lower, upper_middle, _) = radii.select_nth_unstable_by(middle, f32::total_cmp);
+    let upper_middle = *upper_middle;
+    if count % 2 == 1 {
+        return Some(upper_middle);
+    }
+    let lower_middle = lower.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    Some((lower_middle + upper_middle) / 2.0)
+}

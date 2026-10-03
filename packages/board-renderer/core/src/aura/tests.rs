@@ -874,6 +874,115 @@ fn outline_follows_the_circle_fallback_and_the_brush_multiplier() {
     assert_eq!(alpha(&thick, 100, 100), 0);
 }
 
+/// The fixture board plus one big outline-less hold: hold 6, a circle of
+/// r = 60 at (200, 200), spanning x 140..260. The board's median radius stays
+/// 20 (four holds at 20, one at 60).
+fn with_big_hold(frames: &str, mark_style: MarkStyle) -> RenderConfig {
+    let mut cfg = config(frames);
+    let mut big = hold(6, 200.0, 200.0, None);
+    big.r = 60.0;
+    cfg.holds.push(big);
+    cfg.mark_style = Some(mark_style);
+    // A zero-alpha stroke, so every lit pixel probed is glow.
+    cfg.fill.opacity = 0.0;
+    cfg
+}
+
+/// The pixels around hold 1 (the square at 80..120), past its 14 px reach.
+fn hold_one_window(data: &[u8]) -> Vec<[u8; 4]> {
+    (60..140)
+        .flat_map(|y| (60..140).map(move |x| (x, y)))
+        .map(|(x, y)| pixel(data, x, y))
+        .collect()
+}
+
+#[test]
+fn outline_caps_a_big_holds_glow_at_the_median_holds_reach() {
+    assert_eq!(
+        super::geometry::median_hold_radius_px(&with_big_hold("", MarkStyle::Outline).holds, 1.0),
+        Some(20.0)
+    );
+    let data = render(&with_big_hold("p1r42p6r44", MarkStyle::Outline));
+    // Uncapped, r = 60 gives reach 0.7 × 60 = 42 (last lit x ≈ 301). Capped at
+    // the median r = 20 it gets 14, like every other hold: last lit x ≈ 273.
+    assert!(alpha(&data, 265, 200) > 0, "the big hold still glows");
+    assert!(alpha(&data, 272, 200) > 0, "out to the median hold's 14 px");
+    for x in [276, 280, 290, 300] {
+        assert_eq!(
+            alpha(&data, x, 200),
+            0,
+            "x = {x} is past the capped reach, inside the old 42 px one"
+        );
+    }
+    // Hold 1 sits at the median, so its glow is exactly what it was: the same
+    // pixels as a board with no big hold on it at all, out to x = 133.
+    let mut plain = config("p1r42");
+    plain.mark_style = Some(MarkStyle::Outline);
+    plain.fill.opacity = 0.0;
+    assert_eq!(hold_one_window(&data), hold_one_window(&render(&plain)));
+    assert!(alpha(&data, 133, 100) > 0);
+    assert_eq!(alpha(&data, 134, 100), 0);
+}
+
+#[test]
+fn glow_keeps_a_big_holds_full_reach() {
+    let data = render(&with_big_hold("p1r42p6r44", MarkStyle::Glow));
+    for x in [276, 280, 290, 300] {
+        assert!(
+            alpha(&data, x, 200) > 0,
+            "x = {x}: Glow still carries the big hold's 42 px reach"
+        );
+    }
+    assert_eq!(alpha(&data, 304, 200), 0, "and nothing past it");
+    // GlowFill and Fill draw it the same way too: only Outline caps.
+    let glow_fill = render(&with_big_hold("p1r42p6r44", MarkStyle::GlowFill));
+    assert!(alpha(&glow_fill, 290, 200) > 0);
+}
+
+#[test]
+fn median_hold_radius_skips_unusable_radii_and_averages_an_even_count() {
+    let with_radii = |radii: &[f32]| -> Vec<HoldData> {
+        radii
+            .iter()
+            .enumerate()
+            .map(|(index, r)| {
+                let mut entry = hold(index as u32, 0.0, 0.0, None);
+                entry.r = *r;
+                entry
+            })
+            .collect()
+    };
+    let median = |radii: &[f32], scale_x: f32| {
+        super::geometry::median_hold_radius_px(&with_radii(radii), scale_x)
+    };
+    assert_eq!(median(&[10.0, 40.0, 20.0], 1.0), Some(20.0));
+    assert_eq!(median(&[10.0, 40.0, 20.0, 30.0], 1.0), Some(25.0));
+    assert_eq!(median(&[10.0, 40.0, 20.0], 0.5), Some(10.0), "output px");
+    assert_eq!(
+        median(&[0.0, -5.0, f32::NAN, f32::INFINITY, 12.0], 1.0),
+        Some(12.0),
+        "only finite, positive radii count"
+    );
+    assert_eq!(median(&[], 1.0), None);
+    assert_eq!(
+        median(&[0.0, f32::NAN], 1.0),
+        None,
+        "nothing usable: no cap"
+    );
+}
+
+#[test]
+fn outline_on_a_board_of_equal_holds_is_the_uncapped_glow() {
+    // Every fixture hold is r = 20, so the median is every hold's own size and
+    // no reach moves: a zero-alpha outline is exactly the Glow render.
+    let mut outline = config("p1r42p2r43p3r43p4r45");
+    outline.mark_style = Some(MarkStyle::Outline);
+    outline.fill.opacity = 0.0;
+    let mut glow = config("p1r42p2r43p3r43p4r45");
+    glow.mark_style = Some(MarkStyle::Glow);
+    assert_eq!(render(&outline), render(&glow));
+}
+
 #[test]
 fn thumbnail_defaults_to_glow_fill_and_full_size_to_glow() {
     let mut thumb = config("p1r42");
