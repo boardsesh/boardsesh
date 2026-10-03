@@ -107,6 +107,8 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
   \`user_boards\` row \`board\` returns — nothing about a wall is stored twice.
   """
   type SprayWall {
+    # Public identity is the owning UserBoard.uuid, also returned as board.uuid.
+    # The separate spray_walls.id is an internal numeric key, never a capability.
     uuid: ID!
     board: UserBoard!
     "The wall's board_layouts id. Also its board_product_sizes id: a wall has exactly one size, itself."

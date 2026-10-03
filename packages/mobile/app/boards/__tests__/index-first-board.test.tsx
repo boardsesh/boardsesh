@@ -36,7 +36,6 @@ const routerMock = vi.hoisted(() => ({ push: vi.fn(), dismissTo: vi.fn() }));
 const setActiveBoardMock = vi.hoisted(() => vi.fn());
 const requestLocationMock = vi.hoisted(() => vi.fn());
 const refreshLocationMock = vi.hoisted(() => vi.fn());
-const flags = vi.hoisted(() => ({ sprayWalls: false }));
 const chooseFirstBoardPathMock = vi.hoisted(() => vi.fn());
 const openAppSettingsMock = vi.hoisted(() => vi.fn());
 const refetchNearbyMock = vi.hoisted(() => vi.fn());
@@ -198,7 +197,6 @@ vi.mock('../../../src/offline/use-confirm-board-download', () => ({
 }));
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
   useOfflineDownloadsEnabled: () => true,
-  useSprayWallsEnabled: () => flags.sprayWalls,
 }));
 vi.mock('../../../src/offline/use-downloaded-scope-keys', () => ({ useDownloadedScopeKeys: () => ({ data: [] }) }));
 vi.mock('../../../src/offline/use-offline-catalog-state', () => ({ useOfflineCatalogState: () => null }));
@@ -268,7 +266,6 @@ beforeEach(() => {
   state.nearbyLoading = false;
   state.nearbyError = false;
   state.locationStatus = 'idle';
-  flags.sprayWalls = false;
   refreshLocationMock.mockResolvedValue(false);
 });
 
@@ -417,8 +414,7 @@ describe('the picker in first-board mode', () => {
 // The wall wizard binds without the onboarding source, so it would leave
 // first-run open; the launch gate's showing keeps its three answers.
 describe('the launch gate showing and spray walls', () => {
-  it('offers no spray wall even with the flag on', () => {
-    flags.sprayWalls = true;
+  it('keeps spray walls out of the launch onboarding flow', () => {
     render(createElement(BoardSelection));
     expect(choice().onAddSprayWall).toBeUndefined();
   });
@@ -521,8 +517,7 @@ describe('the picker opened from Climbs with no board', () => {
 
   // The tile row this block replaced carried the spray wall tile, and My own
   // board's builder cannot make a spray wall.
-  it('offers a spray wall when the flag is on', () => {
-    flags.sprayWalls = true;
+  it('offers a spray wall from the no-board entry', () => {
     render(createElement(BoardSelection));
     const onAddSprayWall = choice().onAddSprayWall;
     if (!onAddSprayWall) throw new Error('no spray wall path');
@@ -533,11 +528,6 @@ describe('the picker opened from Climbs with no board', () => {
       pathname: '/boards/spray/new',
       params: { returnTo: '/(tabs)/climbs' },
     });
-  });
-
-  it('offers no spray wall with the flag off', () => {
-    render(createElement(BoardSelection));
-    expect(choice().onAddSprayWall).toBeUndefined();
   });
 
   // The empty state shows for anyone with no board bound, at any account age,

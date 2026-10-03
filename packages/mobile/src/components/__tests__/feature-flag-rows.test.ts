@@ -24,13 +24,9 @@ function captionFor(key: string, overrides: Record<string, boolean>, baseFlags: 
 }
 
 describe('buildFeatureFlagRows', () => {
-  it('shows the shipped spray-wall default and honours either explicit off', () => {
-    expect(captionFor('spray-walls', {}, {})).toBe('Live default: not set · Effective: on');
-    expect(captionFor('spray-walls', {}, { 'spray-walls': false })).toBe('Live default: off · Effective: off');
-    expect(captionFor('spray-walls', { 'spray-walls': false }, {})).toBe('Live default: not set · Effective: off');
-    expect(captionFor('spray-walls', { 'spray-walls': true }, { 'spray-walls': false })).toBe(
-      'Live default: off · Effective: on',
-    );
+  it('does not expose shipped spray walls despite stale remote flags or overrides', () => {
+    const rows = buildFeatureFlagRows(FEATURE_FLAG_DEFINITIONS, { 'spray-walls': false }, { 'spray-walls': false });
+    expect(rows.some((row) => row.key === 'spray-walls')).toBe(false);
   });
   it('does not expose permanently shipped offline capabilities as overrides', () => {
     const keys = FEATURE_FLAG_DEFINITIONS.map((definition) => definition.key);

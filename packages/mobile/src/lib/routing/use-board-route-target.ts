@@ -28,7 +28,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { onlineManager } from '@tanstack/react-query';
+import { onlineManager, useQueryClient } from '@tanstack/react-query';
 import { isNetworkError } from '@boardsesh/offline-sync/error-classification';
 import type { Climb, CreateBoardInput, UserBoard } from '@boardsesh/shared-schema';
 import { toBoardPath, type BoardRouteTarget } from './board-route-target';
@@ -51,6 +51,7 @@ import {
 } from '../board-path-to-user-board';
 import { openClimbInPlayDrawer } from '../open-climb-in-play-drawer';
 import { consumeClimbHandoffIntent } from './climb-handoff-intent';
+import { isWallUuidParam } from '../spray/use-spray-wall-link';
 
 /**
  * What the entry route should draw.
@@ -236,10 +237,12 @@ type AdoptedBoardState = { path: string; board: UserBoard | null };
 function useAdoptedBoard(
   target: BoardRouteTarget | null,
   enabled: boolean,
+  wallUuid?: string,
 ): { board: UserBoard | null; error: boolean } {
   const { isAuthenticated, isLoading: authIsLoading } = useAuth();
   const createBoard = useCreateBoard();
   const setActiveBoard = useSetActiveBoard();
+  const queryClient = useQueryClient();
 
   const [adopted, setAdopted] = useState<AdoptedBoardState | null>(null);
   // Bumped by the reconnect watcher below to re-enter the resolve effect for a
@@ -258,14 +261,17 @@ function useAdoptedBoard(
   // but that's the provider's invariant, not this hook's, and a cold deep-link
   // open is exactly where it would bite. The `/b/{slug}` form needs no session
   // at all (public `boardBySlug`, local `setActiveBoard`), so it stays eager.
-  const waitingForAuth = needsOwnedBoards && authIsLoading;
+  const waitingForAuth = (needsOwnedBoards || !!wallUuid) && authIsLoading;
   // Key the effect on the resolved path rather than the target object so a
   // re-render with an equivalent target doesn't re-run board creation.
   const boardPath = enabled && target && !waitingForAuth ? toBoardPath(target) : null;
+  // Capability changes on the same slug are separate resolutions. A denied or
+  // pending earlier link must not keep the next link's answer out of the route.
+  const resolutionKey = boardPath ? JSON.stringify([boardPath, wallUuid ?? null]) : null;
   const resolvedPathRef = useRef<string | null>(null);
 
   // Only a resolve that finished for THIS path may be read; see AdoptedBoardState.
-  const settled = adopted && adopted.path === boardPath ? adopted : null;
+  const settled = adopted && adopted.path === resolutionKey ? adopted : null;
   const board = settled?.board ?? null;
   const error = settled?.board === null;
 
@@ -308,16 +314,23 @@ function useAdoptedBoard(
   }, []);
 
   useEffect(() => {
-    if (!boardPath || resolvedPathRef.current === boardPath) return;
+    if (!boardPath || !resolutionKey || resolvedPathRef.current === resolutionKey) return;
     // The marker claims the path for the duration of the run so re-renders don't
     // re-enter it. A run that never finishes gives the claim back in the cleanup
     // below — nothing else does, and a stale claim is unrecoverable.
-    resolvedPathRef.current = boardPath;
+    resolvedPathRef.current = resolutionKey;
 
     let cancelled = false;
     let settledThisRun = false;
     void (async () => {
       try {
+        // Ordinary board routes do not need the spray renderer or native auth
+        // storage. Load these dependencies only when redeeming a capability.
+        const capabilityModules = wallUuid
+          ? await Promise.all([import('../spray/spray-wall-link-board'), import('../auth-store')])
+          : null;
+        if (cancelled) return;
+        const credentialGeneration = capabilityModules?.[1].captureAuthCredentialGeneration() ?? null;
         const { createBoard: createBoardMutation, isAuthenticated: signedIn } = queriesRef.current;
         // Local first, before anything can wait on the network. The deep-linked
         // board is nearly always the board this device is already on, and on a
@@ -369,18 +382,26 @@ function useAdoptedBoard(
             // Local first here too, so a named board already on the device opens
             // offline. The named-path angle rule (URL angle, else the board's
             // own) stays inside `resolveBoardForSession` for both branches.
-            fetchBoardBySlug: resolveBoardSlugLocalFirst,
+            fetchBoardBySlug:
+              wallUuid && capabilityModules
+                ? (slug) => capabilityModules[0].fetchSprayWallBoardFromLink(queryClient, wallUuid, slug)
+                : resolveBoardSlugLocalFirst,
           }));
         if (cancelled) return;
+        if (
+          credentialGeneration !== null &&
+          !capabilityModules?.[1].isAuthCredentialGenerationCurrent(credentialGeneration)
+        )
+          return;
         await setActiveBoard(resolved);
         if (cancelled) return;
         settledThisRun = true;
-        setAdopted({ path: boardPath, board: resolved });
+        setAdopted({ path: resolutionKey, board: resolved });
       } catch (resolveError) {
         if (__DEV__) console.warn('[board-route] could not resolve board from URL', boardPath, resolveError);
         if (cancelled) return;
         settledThisRun = true;
-        setAdopted({ path: boardPath, board: null });
+        setAdopted({ path: resolutionKey, board: null });
       }
     })();
 
@@ -393,11 +414,11 @@ function useAdoptedBoard(
       // same, and `authIsLoading` flipping true mid-resolve blanks `boardPath`
       // and restores it — all three land here. A replayed run can double-fire
       // CREATE_BOARD in a narrow race, which the duplicate recovery absorbs.
-      if (!settledThisRun && resolvedPathRef.current === boardPath) resolvedPathRef.current = null;
+      if (!settledThisRun && resolvedPathRef.current === resolutionKey) resolvedPathRef.current = null;
     };
     // `retryNonce` is a dep purely so a reconnect re-enters this effect; nothing
     // in the body reads it.
-  }, [boardPath, needsOwnedBoards, retryNonce, setActiveBoard]);
+  }, [boardPath, needsOwnedBoards, queryClient, resolutionKey, retryNonce, setActiveBoard, wallUuid]);
 
   return { board, error };
 }
@@ -501,6 +522,7 @@ export function useBoardRouteTarget(
   options?: {
     mode?: BoardRouteMode;
     activationIntent?: string | string[];
+    wallUuid?: string | string[];
     onHandedOff?: () => void;
     anonymousClimbEnabled?: boolean;
   },
@@ -551,7 +573,12 @@ export function useBoardRouteTarget(
   // Neither signed-out branch adopts. Adoption's first act is a CREATE_BOARD the
   // backend refuses without a session, and it is not a render input for either
   // one — so it is skipped rather than gated on the outcome.
-  const { board: adoptedBoard, error: boardError } = useAdoptedBoard(target, adoptsBoard && !signedOutOnWeb);
+  const wallParam = Array.isArray(options?.wallUuid) ? options.wallUuid[0] : options?.wallUuid;
+  const wallUuid =
+    (target?.kind === 'slug-list' || target?.kind === 'slug-climb') && isWallUuidParam(wallParam)
+      ? wallParam.toLowerCase()
+      : undefined;
+  const { board: adoptedBoard, error: boardError } = useAdoptedBoard(target, adoptsBoard && !signedOutOnWeb, wallUuid);
   const anonymousBoard = anonymousSlugBoard.state === 'resolved' ? anonymousSlugBoard.board : null;
   const board = adoptedBoard ?? anonymousBoard;
 

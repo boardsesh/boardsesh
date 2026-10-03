@@ -205,9 +205,6 @@ vi.mock('../../../src/offline/use-confirm-board-download', () => ({
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
   useFeatureFlag: () => false,
   useOfflineDownloadsEnabled: () => true,
-  // The spray-wall tile is behind its own flag (epic #5346, SW-09). Off here so
-  // these cases keep describing the board row they were written for.
-  useSprayWallsEnabled: () => false,
 }));
 vi.mock('../../../src/offline/use-downloaded-scope-keys', () => ({
   useDownloadedScopeKeys: () => ({ data: state.downloadedScopeKeys }),

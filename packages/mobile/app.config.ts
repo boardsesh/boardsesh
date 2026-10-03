@@ -464,7 +464,8 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
     android: {
       package: androidPackage,
       playStoreUrl: ANDROID_PLAY_STORE_URL,
-      // App Links for the multiplayer join flow and retired OTA preview links:
+      // App Links for board shares, the multiplayer join flow and retired OTA preview links:
+      // https://www.boardsesh.com/b/{slug}/{angle}/list (including ?wall= for unlisted walls),
       // https://www.boardsesh.com/join/{sessionId} and
       // https://www.boardsesh.com/preview/pr-N (plus the apex domain).
       // The preview ingress remains for old shared links; +native-intent maps it
@@ -483,6 +484,8 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
             { scheme: 'https', host: 'boardsesh.com', pathPrefix: '/join' },
             { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/preview' },
             { scheme: 'https', host: 'boardsesh.com', pathPrefix: '/preview' },
+            { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/b/' },
+            { scheme: 'https', host: 'boardsesh.com', pathPrefix: '/b/' },
           ],
           category: ['BROWSABLE', 'DEFAULT'],
         },

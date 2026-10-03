@@ -6,20 +6,7 @@ import type { DismissAndWaitResult } from '../../../providers/sheet-presentation
 import { useSprayWallSheetActions } from '../use-spray-wall-sheet-actions';
 
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
-const flags = vi.hoisted((): { enabled: boolean | undefined } => ({ enabled: true }));
 vi.mock('expo-router', () => ({ router: navigation }));
-vi.mock('../../../providers/feature-flags-provider', async () => {
-  const featureFlags = await vi.importActual<typeof import('../../../providers/feature-flags-provider')>(
-    '../../../providers/feature-flags-provider',
-  );
-  return {
-    useSprayWallsEnabled: () => {
-      const shippedDefault = featureFlags.useSprayWallsEnabled();
-      return flags.enabled ?? shippedDefault;
-    },
-  };
-});
-
 const wall: UserBoard = {
   uuid: 'wall-1',
   slug: 'garage',
@@ -54,17 +41,14 @@ function deferredDismiss() {
 
 beforeEach(() => {
   navigation.push.mockClear();
-  flags.enabled = true;
 });
 
 describe('live spray wall sheet actions', () => {
-  it('keeps an unresolved flag handoff when resolution confirms enabled', async () => {
-    flags.enabled = undefined;
+  it('keeps a pending handoff when the same wall rerenders', async () => {
     const { dismiss, finish } = deferredDismiss();
     const { result, rerender } = renderHook(() => useSprayWallSheetActions(wall, dismiss));
     act(() => result.current.openMaintenance(wall.uuid, 'editHolds'));
     expect(dismiss).toHaveBeenCalledTimes(1);
-    flags.enabled = true;
     rerender();
     await act(async () => finish({ status: 'dismissed' }));
     expect(navigation.push).toHaveBeenCalledExactlyOnceWith('/boards/spray/holds?wallUuid=wall-1');
@@ -103,7 +87,7 @@ describe('live spray wall sheet actions', () => {
     expect(result.current.shareSnapshot).toBeNull();
   });
 
-  it.each(['board', 'permission', 'visibility', 'reopen', 'off', 'unmount', 'abort'])(
+  it.each(['board', 'permission', 'visibility', 'reopen', 'unmount', 'abort'])(
     'cancels stale handoff after %s',
     async (change) => {
       const { dismiss, finish } = deferredDismiss();
@@ -115,10 +99,6 @@ describe('live spray wall sheet actions', () => {
       if (change === 'permission') rerender({ board: { ...wall, canEdit: false } });
       if (change === 'visibility') rerender({ board: { ...wall, isPublic: false } });
       if (change === 'reopen') act(() => result.current.cancelPendingAction());
-      if (change === 'off') {
-        flags.enabled = false;
-        rerender({ board: wall });
-      }
       if (change === 'unmount') unmount();
       await act(async () => {
         finish({ status: change === 'abort' ? 'aborted' : 'dismissed' });

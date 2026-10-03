@@ -46,7 +46,7 @@ import { useRememberDownloadedBoards } from '../../src/offline/use-remember-down
 import { useDownloadedScopeKeys } from '../../src/offline/use-downloaded-scope-keys';
 import { useConfirmBoardDownload } from '../../src/offline/use-confirm-board-download';
 import { useOfflineCatalogState } from '../../src/offline/use-offline-catalog-state';
-import { useOfflineDownloadsEnabled, useSprayWallsEnabled } from '../../src/providers/feature-flags-provider';
+import { useOfflineDownloadsEnabled } from '../../src/providers/feature-flags-provider';
 import { useBoardOfflineState } from '../../src/components/board-discovery/use-board-offline-state';
 import { OfflineCatalogCta } from '../../src/components/offline/OfflineCatalogCta';
 import { trackNudgeAccepted } from '../../src/lib/offline-nudges/nudge-analytics';
@@ -135,13 +135,12 @@ export default function BoardSelection() {
   // `presentation: 'modal'` route, so it cannot survive a dismiss: every one of
   // the twelve places that open this picker gets it switched off.
   const [isEditingBoards, setIsEditingBoards] = useState(false);
-  const sprayWallsEnabled = useSprayWallsEnabled();
   const [detailBoard, setDetailBoard] = useState<UserBoard | null>(null);
   const detailPickSource = useRef<BoardPickSource>('your_boards');
   const closeBoardDetails = useCallback(() => setDetailBoard(null), []);
   useEffect(() => {
-    if (!isAuthenticated || !sprayWallsEnabled) closeBoardDetails();
-  }, [isAuthenticated, sprayWallsEnabled, closeBoardDetails]);
+    if (!isAuthenticated) closeBoardDetails();
+  }, [isAuthenticated, closeBoardDetails]);
 
   // Pins the climber toggled since this modal opened, so the glyph flips under
   // the finger without waiting for a refetch. Deliberately does NOT reorder: the
@@ -336,11 +335,11 @@ export default function BoardSelection() {
   const openBoardDetails = useCallback(
     (item: DiscoveryBoardItem, pickSource: BoardPickSource) => {
       const board = detailBoardsByUuid.get(item.key);
-      if (!board || !sprayWallsEnabled) return;
+      if (!board) return;
       detailPickSource.current = pickSource;
       setDetailBoard(board);
     },
-    [detailBoardsByUuid, sprayWallsEnabled],
+    [detailBoardsByUuid],
   );
   const onMyBoardDetails = useCallback(
     (item: DiscoveryBoardItem) => openBoardDetails(item, 'your_boards'),
@@ -351,8 +350,8 @@ export default function BoardSelection() {
     [openBoardDetails],
   );
   const onActiveBoardDetails = useCallback(() => {
-    if (activeBoard && sprayWallsEnabled) setDetailBoard(activeBoard);
-  }, [activeBoard, sprayWallsEnabled]);
+    if (activeBoard) setDetailBoard(activeBoard);
+  }, [activeBoard]);
   const onSetActiveFromDetails = useCallback(
     (board: UserBoard) => {
       closeBoardDetails();
@@ -364,11 +363,7 @@ export default function BoardSelection() {
   const nearbySection =
     nearbyItems.length > 0 ? (
       <Section title={t('mobile.discovery.nearbyTitle')}>
-        <BoardCarousel
-          items={nearbyItems}
-          onSelect={onSelectNearbyBoard}
-          onDetails={sprayWallsEnabled ? onNearbyBoardDetails : undefined}
-        />
+        <BoardCarousel items={nearbyItems} onSelect={onSelectNearbyBoard} onDetails={onNearbyBoardDetails} />
       </Section>
     ) : null;
   // Tap-to-download, scoped to boards the user owns or follows. Gated on the
@@ -609,7 +604,7 @@ export default function BoardSelection() {
         <BoardCarousel
           items={myBoardItems}
           onSelect={onSelectMyBoardCard}
-          onDetails={sprayWallsEnabled ? onMyBoardDetails : undefined}
+          onDetails={onMyBoardDetails}
           onDownload={offlineDownloadsEnabled ? onDownloadMyBoard : undefined}
           downloadLabelFor={downloadLabelFor}
           actionFor={canEditBoards ? myBoardActionFor : undefined}
@@ -670,7 +665,7 @@ export default function BoardSelection() {
     router.push({ pathname: '/boards/create', params: { returnTo: boardReturnTo, source } });
   }, [router, boardReturnTo, source]);
 
-  // Spray walls ship enabled; an explicit remote false removes the front door.
+  // The wall front door: photograph a wall instead of choosing a catalogue board.
   const onModeAddWall = useCallback(() => {
     router.push({ pathname: '/boards/spray/new', params: { returnTo: boardReturnTo } });
   }, [router, boardReturnTo]);
@@ -724,7 +719,7 @@ export default function BoardSelection() {
     chooseFirstBoardPath('scan');
     onModeBluetooth();
   }, [chooseFirstBoardPath, onModeBluetooth]);
-  // Climbs' no-board entry only, with the spray-walls flag on: the tile row it
+  // Climbs' no-board entry only: the tile row it
   // replaced carried the spray wall tile, and My own board's builder cannot
   // make one. Not on the launch gate's showing, because the wall wizard binds
   // without the onboarding `source` and so would leave first-run open.
@@ -732,7 +727,7 @@ export default function BoardSelection() {
     chooseFirstBoardPath('spray_wall');
     onModeAddWall();
   }, [chooseFirstBoardPath, onModeAddWall]);
-  const offerSprayWall = sprayWallsEnabled && firstBoardChoiceEntry === 'no_board';
+  const offerSprayWall = firstBoardChoiceEntry === 'no_board';
   const onFirstBoardGymMap = useCallback(() => {
     chooseFirstBoardPath('gym_map');
     onModeFindGym();
@@ -880,7 +875,7 @@ export default function BoardSelection() {
         contentContainerStyle={[styles.container, { paddingBottom: scrollBottomPadding }]}
         showsVerticalScrollIndicator={false}
       >
-        {sprayWallsEnabled && activeBoard?.boardType === 'spray' ? (
+        {activeBoard?.boardType === 'spray' ? (
           <Pressable onPress={onActiveBoardDetails} accessibilityRole="button" style={styles.manageRow}>
             <Text variant="body" color={brandColors.primary} style={styles.manageRowLabel}>
               {t('mobile.boardDetail.activeSprayDetails', { name: activeBoard.name })}
@@ -940,9 +935,7 @@ export default function BoardSelection() {
               {/* Next to "Create board", because that is the question it answers: the
                   other tile is for a catalogue board you pick a layout for, this one
                   is for a wall you photograph. */}
-              {sprayWallsEnabled ? (
-                <BoardModeCard icon="camera" label={t('mobile.discovery.addWallTile')} onPress={onModeAddWall} />
-              ) : null}
+              <BoardModeCard icon="camera" label={t('mobile.discovery.addWallTile')} onPress={onModeAddWall} />
             </View>
 
             {/* Find nearby's answer when it has no list to show. Not while it

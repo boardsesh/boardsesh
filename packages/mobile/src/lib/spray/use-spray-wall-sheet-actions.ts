@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { useSprayWallsEnabled } from '../../providers/feature-flags-provider';
 import type { DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
 import {
   sprayDetailRows,
@@ -29,14 +28,11 @@ function boardActionSignature(board: UserBoard | null): string {
 
 /** Own action lifetimes above the panel, which unmounts after normal dismissal. */
 export function useSprayWallSheetActions(board: UserBoard | null, dismissAndWait: () => Promise<DismissAndWaitResult>) {
-  const enabled = useSprayWallsEnabled();
   const boardRef = useRef(board);
   boardRef.current = board;
   const signature = useMemo(() => boardActionSignature(board), [board]);
   const signatureRef = useRef(signature);
   signatureRef.current = signature;
-  const enabledRef = useRef(enabled);
-  enabledRef.current = enabled;
   const mountedRef = useRef(false);
   const requestRef = useRef(0);
   const pendingRef = useRef(false);
@@ -52,7 +48,7 @@ export function useSprayWallSheetActions(board: UserBoard | null, dismissAndWait
   useEffect(() => {
     cancelPendingAction();
     setShareVisible(false);
-  }, [signature, enabled, cancelPendingAction]);
+  }, [signature, cancelPendingAction]);
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -64,7 +60,7 @@ export function useSprayWallSheetActions(board: UserBoard | null, dismissAndWait
   const openAction = useCallback(
     async (wallUuid: string, action: SprayDetailRowKey | 'share') => {
       const activeWall = boardRef.current;
-      if (!enabledRef.current || pendingRef.current || !activeWall || activeWall.uuid !== wallUuid) return;
+      if (pendingRef.current || !activeWall || activeWall.uuid !== wallUuid) return;
       const href = action === 'share' ? null : sprayDetailRows(activeWall).find((row) => row.key === action)?.href;
       const target = action === 'share' ? sprayShareTarget(activeWall) : null;
       if (action === 'share' ? !target : !href) return;
@@ -78,7 +74,6 @@ export function useSprayWallSheetActions(board: UserBoard | null, dismissAndWait
           result.status !== 'dismissed' ||
           !mountedRef.current ||
           request !== requestRef.current ||
-          !enabledRef.current ||
           startingSignature !== signatureRef.current
         )
           return;

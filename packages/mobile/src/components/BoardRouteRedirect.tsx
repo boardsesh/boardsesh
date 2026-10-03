@@ -149,11 +149,14 @@ export function BoardRouteHandoff({
   target,
   mode,
   activationIntent,
+  wallUuid,
 }: {
   target: BoardRouteTarget | null;
   mode?: BoardRouteMode;
   /** Opaque id for a pending internal tick handoff; URL flags alone cannot activate. */
   activationIntent?: string | string[];
+  /** A spray-wall UUID from a shared link; resolved before board adoption. */
+  wallUuid?: string | string[];
 }) {
   const report = useBoardRouteHandoffReporter(target, mode);
   const onHandedOff = useCallback(() => report('resolved'), [report]);
@@ -164,6 +167,7 @@ export function BoardRouteHandoff({
   const { status, climb, boardConfig, isAngleAdjustable } = useBoardRouteTarget(target, {
     mode,
     activationIntent,
+    wallUuid,
     onHandedOff,
     anonymousClimbEnabled,
   });

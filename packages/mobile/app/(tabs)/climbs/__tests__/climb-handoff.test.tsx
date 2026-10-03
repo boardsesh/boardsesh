@@ -23,7 +23,10 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('@tanstack/react-query', () => ({ onlineManager: { isOnline: () => true, subscribe: () => () => {} } }));
+vi.mock('@tanstack/react-query', () => ({
+  onlineManager: { isOnline: () => true, subscribe: () => () => {} },
+  useQueryClient: () => null,
+}));
 vi.mock('../../../../src/providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: true, isLoading: false }),
 }));

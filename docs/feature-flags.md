@@ -183,16 +183,6 @@ diagnostic) applies on native. The whole surface lives in three files:
   connect-step state, takes effect right away for the signed-in account
   (`FirstConnectHost` re-enrols when the override changes), and tags the
   exposure `arm_forced: true`.
-  `spray-walls` ships enabled by default (read through
-  `useSprayWallsEnabled`, absent/unresolved = on). An explicit false disables
-  the picker tile, spray routes, live maintenance and reporting affordances remotely; the tester
-  override can force either choice. No enable env variable is required.
-  The tester screen uses the catalog's `defaultEnabled` metadata to display
-  the same effective default as the app.
-  `climb-moderation-kill` also covers spray-wall reporting and admin review,
-  including direct entry to the review route. The report and admin surfaces
-  wait for flag resolution before accepting actions.
-  Recognition-service rollout gates remain in `docs/spray-recognition-rollout.md`.
 - **Live read**: `readPosthogFeatureFlags` in `packages/mobile/src/lib/analytics.ts`.
 - **Dev override**: `packages/mobile/src/lib/feature-flag-overrides.ts` — an
   on-device `Record<string, boolean | string>`, persisted to AsyncStorage,
@@ -212,6 +202,17 @@ the same rendered UI. `useAnonymousClimbViewEnabled`'s kill-switch inversion
 above is the sharpest example of this rule; the two render-mode flags below are
 a plainer one — the shipped defaults ARE the unresolved reading, so there is
 nothing to invert.
+
+### Spray walls are enabled by default
+
+The former `spray-walls` rollout flag has been retired. The boards picker and
+`/boards/spray/*` routes are available without a PostHog flag or an environment
+override, including before flags resolve and when PostHog is unreachable. Old
+PostHog values and saved on-device overrides for `spray-walls` no longer control
+these surfaces. No dashboard change is required for the new release.
+
+Detection-worker deployment and quality checks remain in
+[the service rollout runbook](spray-recognition-rollout.md).
 
 ### A flag that sets a SETTING's default, not a gate
 
