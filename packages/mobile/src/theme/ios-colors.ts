@@ -43,9 +43,6 @@ export const iosSystemColors = {
   separator: 'rgba(60, 60, 67, 0.29)',
   /** Star/rating gold */
   starGold: '#FFB800',
-  /** Star glyph on a light surface, where `starGold` falls under 3:1. Pair it
-   *  with the rating as a number so the glyph is never the only signal. */
-  starGoldOnLight: '#C27803',
   /** Pure white — text on colored backgrounds */
   white: '#FFFFFF',
   /** Pure black — text on light/yellow backgrounds where white wouldn't pass contrast (e.g. flash badge on systemYellow) */
