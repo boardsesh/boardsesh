@@ -6,7 +6,7 @@
 // Driven by a controlled `visible` prop and mounted INSIDE PlayDrawer, so the
 // ModalSheet coordinator presents it above the `/play` modal. A root-level
 // sheet would land underneath it.
-import { useCallback, useMemo, type ComponentType } from 'react';
+import { useCallback, useMemo, useState, type ComponentType } from 'react';
 import { StyleSheet, View, type FlatListProps } from 'react-native';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
@@ -27,6 +27,7 @@ import { spacing } from '../../../theme/tokens';
 
 type LogbookFullSheetProps = {
   visible: boolean;
+  /** The climb the sheet is open for; null once it is closed. */
   climbUuid: string | null;
   boardName: BoardName;
   layoutId: number;
@@ -49,10 +50,20 @@ function keyExtractor(item: LedgerListItem): string {
 export function LogbookFullSheet({ visible, climbUuid, boardName, layoutId, angle, onClose }: LogbookFullSheetProps) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
-  const { ledger } = useClimbLedger(boardName, climbUuid, angle);
+  // The climb this sheet was last opened for. PlayDrawer keeps the sheet
+  // mounted after its first open and hands it null once it closes, so holding
+  // the uuid here does two jobs: the rows stay put while the sheet animates out
+  // (a climb change must not swap in the next climb's history mid-dismiss), and
+  // a closed sheet neither fetches nor re-derives a ledger for every climb the
+  // drawer moves through. Scoped to the board, so a board switch drops it.
+  const [held, setHeld] = useState<{ climbUuid: string; boardName: BoardName } | null>(null);
+  if (visible && climbUuid !== null && (held?.climbUuid !== climbUuid || held.boardName !== boardName)) {
+    setHeld({ climbUuid, boardName });
+  }
+  const ledgerClimbUuid = climbUuid ?? (held?.boardName === boardName ? held.climbUuid : null);
+  const { ledger } = useClimbLedger(boardName, ledgerClimbUuid, angle);
   const showMirrorTag = boardSupportsMirroring(boardName, layoutId);
 
-  // Not gated on `visible`: the rows have to stay put while the sheet animates out.
   const items = useMemo(() => buildLedgerListItems(ledger), [ledger]);
 
   // Strings, so `renderItem` keeps its identity until the calendar day turns.

@@ -81,6 +81,7 @@ import { AngleSelectorSheet } from './AngleSelectorSheet';
 import { ClimbActionsSheet } from '../ClimbActionsSheet';
 import { AddBetaVideoSheet } from '../AddBetaVideoSheet';
 import { LogbookFullSheet } from './logbook/LogbookFullSheet';
+import { useFullLogbookSheet } from './logbook/use-full-logbook-sheet';
 import { ReportClimbSheet } from '../report-climb/ReportClimbSheet';
 import { BleControlSheetHost } from '../ble/BleControlSheetHost';
 import { RestTimerPillHost } from '../queue-control/RestTimerPillHost';
@@ -373,9 +374,6 @@ export function PlayDrawer({
   const [isTickBarActive, setIsTickBarActive] = useState(false);
   const [activeSubDrawer, setActiveSubDrawer] = useState<ActiveSubDrawer>('none');
   const [addBetaVideoOpen, setAddBetaVideoOpen] = useState(false);
-  // The climb whose full logbook is open. Keyed on the uuid (like `mirrorFlip`)
-  // so moving to another climb closes the sheet without an effect.
-  const [fullLogbookClimbUuid, setFullLogbookClimbUuid] = useState<string | null>(null);
   // Pinned climb/board the reaction menu opened the beta sheet for; null falls back
   // to the live displayedClimb (the "+" button path). See #3505.
   const [betaVideoTarget, setBetaVideoTarget] = useState<{ climb: Climb; boardConfig: BoardConfig } | null>(null);
@@ -1636,12 +1634,12 @@ export function PlayDrawer({
   }, []);
 
   // Logbook card "See full logbook": the virtualised history sheet.
-  const handleOpenFullLogbook = useCallback(() => {
-    setFullLogbookClimbUuid(displayedClimbUuid ?? null);
-  }, [displayedClimbUuid]);
-  const handleCloseFullLogbook = useCallback(() => {
-    setFullLogbookClimbUuid(null);
-  }, []);
+  // Pinned to the climb it was opened on: a climb change closes it for good.
+  const {
+    climbUuid: fullLogbookClimbUuid,
+    open: handleOpenFullLogbook,
+    close: handleCloseFullLogbook,
+  } = useFullLogbookSheet(displayedClimbUuid);
 
   const handleOpenActions = useCallback(() => {
     // iOS: open the floating reaction menu (over the drawer) instead of the in-drawer
@@ -1802,7 +1800,7 @@ export function PlayDrawer({
   const angleSelectorVisible = activeSubDrawer === 'angleSelector';
   const mountClimbActions = useMountedOnFirstOpen(climbActionsVisible);
   const mountAddBetaVideo = useMountedOnFirstOpen(addBetaVideoOpen);
-  const fullLogbookOpen = fullLogbookClimbUuid !== null && fullLogbookClimbUuid === displayedClimbUuid;
+  const fullLogbookOpen = fullLogbookClimbUuid !== null;
   const mountFullLogbook = useMountedOnFirstOpen(fullLogbookOpen);
   const mountReportClimb = useMountedOnFirstOpen(reportClimbOpen);
   const mountAngleSelector = useMountedOnFirstOpen(angleSelectorVisible);
@@ -2209,7 +2207,7 @@ export function PlayDrawer({
       {mountFullLogbook && (
         <LogbookFullSheet
           visible={fullLogbookOpen}
-          climbUuid={displayedClimbUuid ?? null}
+          climbUuid={fullLogbookClimbUuid}
           boardName={boardName as BoardName}
           layoutId={layoutId}
           angle={angle}

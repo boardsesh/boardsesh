@@ -169,6 +169,13 @@ export function useLogbook(boardName: BoardName | null, climbUuids: string[]) {
     lastAuthRef.current = isAuthenticated;
   }, [isAuthenticated, queryClient]);
 
+  // Re-runs the pending batch after a failure. A failed batch never reaches
+  // `fetchedUuids`, so its key is unchanged and this is the same request again.
+  const { refetch: refetchBatch } = fetchQuery;
+  const refetch = useCallback(() => {
+    void refetchBatch();
+  }, [refetchBatch]);
+
   return {
     logbook,
     // Which climbs the logbook can actually answer for. Absence means "not
@@ -176,6 +183,7 @@ export function useLogbook(boardName: BoardName | null, climbUuids: string[]) {
     fetchedUuids,
     isLoading: fetchQuery.isLoading && logbook.length === 0,
     error: fetchQuery.error,
+    refetch,
   };
 }
 

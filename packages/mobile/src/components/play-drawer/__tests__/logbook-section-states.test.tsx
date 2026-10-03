@@ -80,6 +80,7 @@ const logbookState = vi.hoisted(() => ({
   logbook: [] as unknown[],
   fetchedUuids: new Set<string>() as ReadonlySet<string>,
   error: null as Error | null,
+  refetch: vi.fn(),
   // Deliberately misleading: the card must never read this board-wide flag.
   isLoading: false,
 }));
@@ -160,6 +161,7 @@ beforeEach(() => {
   logbookState.logbook = [];
   logbookState.fetchedUuids = new Set(['climb-1']);
   logbookState.error = null;
+  logbookState.refetch = vi.fn();
   logbookState.isLoading = false;
   pending.count = 0;
   connectivity.effectiveOffline = false;
@@ -187,17 +189,20 @@ describe('LogbookSection: before this climb’s logs have landed', () => {
 
 describe('LogbookSection: no signal', () => {
   it.each([
-    ['a paused fetch (offline, no error)', true, null],
-    ['a failed fetch', false, new Error('Network request failed')],
-  ])('says earlier logs need signal for %s, never "no tries yet"', (_label, offline, error) => {
+    ['a paused fetch (offline, no error)', null],
+    ['a fetch that failed while offline', new Error('Network request failed')],
+  ])('says earlier logs need signal for %s, never "no tries yet"', (_label, error) => {
     logbookState.fetchedUuids = new Set();
-    connectivity.effectiveOffline = offline;
+    connectivity.effectiveOffline = true;
     logbookState.error = error;
-    const { container, queryByTestId } = renderSection();
+    const { container, queryByTestId, queryByRole } = renderSection();
 
     expect(container.textContent).toContain('mobile.logbook.offlineEarlier');
+    expect(container.textContent).not.toContain('mobile.logbook.loadFailedRetry');
     expect(container.textContent).not.toContain('mobile.logbook.noEntries');
     expect(queryByTestId('spinner')).toBeNull();
+    // Nothing to tap: the paused fetch resumes by itself when signal returns.
+    expect(queryByRole('button')).toBeNull();
   });
 
   it('adds the denormalised counts when the climb payload has them', () => {
@@ -226,6 +231,43 @@ describe('LogbookSection: no signal', () => {
     logbookState.logbook = [makeEntry({})];
     const { container } = renderSection();
     expect(container.textContent).not.toContain('mobile.logbook.offlineEarlier');
+  });
+});
+
+describe('LogbookSection: the fetch failed with signal', () => {
+  // A server error, a rate limit or an expired session. The climber is online,
+  // so the card must not blame signal, and nothing retries unless they do.
+  it('says the logs could not load and retries on tap, never "need signal" or "no tries yet"', () => {
+    logbookState.fetchedUuids = new Set();
+    logbookState.error = new Error('RATE_LIMITED');
+    const { container, queryByTestId, getByRole } = renderSection();
+
+    expect(container.textContent).toContain('mobile.logbook.loadFailedRetry');
+    expect(container.textContent).not.toContain('mobile.logbook.offlineEarlier');
+    expect(container.textContent).not.toContain('mobile.logbook.noEntries');
+    expect(queryByTestId('spinner')).toBeNull();
+
+    fireEvent.click(getByRole('button'));
+    expect(logbookState.refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the denormalised counts above the retry line', () => {
+    logbookState.fetchedUuids = new Set();
+    logbookState.error = new Error('Internal server error');
+    const { container } = renderSection({ userAscents: 2 });
+
+    expect(container.textContent).toContain('mobile.logbook.sendCount(count=2)');
+    expect(container.textContent).toContain('mobile.logbook.loadFailedRetry');
+  });
+
+  it('offers the retry under an optimistic tick too', () => {
+    logbookState.fetchedUuids = new Set();
+    logbookState.error = new Error('Internal server error');
+    logbookState.logbook = [makeEntry({ uuid: 'temp-1', climbed_at: '2026-06-22T11:00:00' })];
+    const { container } = renderSection();
+
+    expect(rows.props).toHaveLength(1);
+    expect(container.textContent).toContain('mobile.logbook.loadFailedRetry');
   });
 });
 

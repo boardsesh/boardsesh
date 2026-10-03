@@ -233,6 +233,7 @@
       "seeFullLogbookPlain": "See full logbook",
       "closeFullLogbook": "Close logbook",
       "offlineEarlier": "Your earlier logs on this climb need signal to load.",
+      "loadFailedRetry": "Couldn't load your earlier logs. Tap to try again.",
       "signedOut": "Sign in to see your tries on this climb."
     },
     "anonymous": {

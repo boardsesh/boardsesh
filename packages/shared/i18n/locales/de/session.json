@@ -233,6 +233,7 @@
       "seeFullLogbookPlain": "Ganzes Routenbuch ansehen",
       "closeFullLogbook": "Routenbuch schließen",
       "offlineEarlier": "Deine früheren Einträge an diesem Boulder brauchen Netz zum Laden.",
+      "loadFailedRetry": "Deine früheren Einträge konnten nicht geladen werden. Tippe für einen neuen Versuch.",
       "signedOut": "Melde dich an, um deine Versuche an diesem Boulder zu sehen."
     },
     "anonymous": {

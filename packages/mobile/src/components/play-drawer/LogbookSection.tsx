@@ -88,7 +88,7 @@ export const LogbookSection = memo(function LogbookSection({
   const { t } = useTranslation('session');
   const { isAuthenticated } = useAuth();
   const { systemColors } = useTheme();
-  const { ledger, hasEntries, fetched, error } = useClimbLedger(boardName, climbUuid, angle);
+  const { ledger, hasEntries, fetched, error, retry } = useClimbLedger(boardName, climbUuid, angle);
   const offline = useConnectivityField(selectEffectiveOffline);
   const { data: pendingTicks = 0 } = useLocalPendingTicks(climbUuid, boardName);
 
@@ -123,17 +123,39 @@ export const LogbookSection = memo(function LogbookSection({
       </View>
     ) : null;
 
-  // The fetch for THIS climb has not landed and will not until signal returns:
-  // either it failed, or it is paused (offlineFirst leaves `error` null).
+  // The fetch for THIS climb has not landed and will not on its own: either it
+  // is waiting on signal (offlineFirst pauses it and leaves `error` null), or
+  // it failed. Only the first is about signal. A failure with signal (a server
+  // error, a rate limit, an expired session) gets a line that says so and a
+  // tap to run the fetch again, since nothing else would until the card remounts.
   const historyUnavailable = !fetched && (error !== null || offline);
-  const offlineLine = historyUnavailable ? (
-    <View style={styles.row}>
-      <Icon name="offline.unavailable" size={20} color={systemColors.secondaryLabel} />
-      <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.flexText}>
-        {t('mobile.logbook.offlineEarlier')}
-      </Text>
-    </View>
-  ) : null;
+  let historyLine: ReactNode = null;
+  if (historyUnavailable && offline) {
+    historyLine = (
+      <View style={styles.row}>
+        <Icon name="offline.unavailable" size={20} color={systemColors.secondaryLabel} />
+        <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.flexText}>
+          {t('mobile.logbook.offlineEarlier')}
+        </Text>
+      </View>
+    );
+  } else if (historyUnavailable) {
+    const retryLabel = t('mobile.logbook.loadFailedRetry');
+    historyLine = (
+      <PressableSurface
+        onPress={retry}
+        feedback="opacity"
+        accessibilityRole="button"
+        accessibilityLabel={retryLabel}
+        style={styles.retryRow}
+      >
+        <Icon name="refresh" size={20} color={systemColors.secondaryLabel} />
+        <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.flexText}>
+          {retryLabel}
+        </Text>
+      </PressableSurface>
+    );
+  }
 
   if (hasEntries) {
     // Read on every render rather than memoised, so the labels cannot go stale
@@ -159,7 +181,7 @@ export const LogbookSection = memo(function LogbookSection({
         <LogbookStatTiles totals={ledger.totals} boardAngle={angle} />
         {/* What is on the phone (an optimistic or cached tick) is not the whole
             history until this climb's fetch lands. */}
-        {offlineLine}
+        {historyLine}
         {inline.map(({ section, sessions }) => (
           <View key={section.angle} style={styles.angleSection}>
             <LogbookAngleHeader section={section} isBoardAngle={section.angle === angle} />
@@ -216,14 +238,14 @@ export const LogbookSection = memo(function LogbookSection({
     );
   }
 
-  // No signal and no logs on the phone. Never the untried state: the climber
+  // No history from the server and no logs on the phone. Never the untried state: the climber
   // may well have logged this, the card just cannot know.
   if (historyUnavailable) {
     return (
       <View style={styles.container}>
         {pendingRow}
         {countSummary}
-        {offlineLine}
+        {historyLine}
       </View>
     );
   }
@@ -269,6 +291,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[2],
+  },
+  retryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    minHeight: 44,
   },
   flexText: {
     flex: 1,

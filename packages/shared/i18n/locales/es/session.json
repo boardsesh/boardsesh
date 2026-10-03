@@ -233,6 +233,7 @@
       "seeFullLogbookPlain": "Ver el registro completo",
       "closeFullLogbook": "Cerrar el registro",
       "offlineEarlier": "Tus registros anteriores de este bloque necesitan conexión para cargarse.",
+      "loadFailedRetry": "No se pudieron cargar tus registros anteriores. Toca para reintentar.",
       "signedOut": "Inicia sesión para ver tus intentos en este bloque."
     },
     "anonymous": {

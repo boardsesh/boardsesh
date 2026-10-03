@@ -233,6 +233,7 @@
       "seeFullLogbookPlain": "Voir tout le carnet",
       "closeFullLogbook": "Fermer le carnet",
       "offlineEarlier": "Tes entrées précédentes sur ce bloc ont besoin de réseau pour se charger.",
+      "loadFailedRetry": "Impossible de charger tes entrées précédentes. Touche pour réessayer.",
       "signedOut": "Connecte-toi pour voir tes essais sur ce bloc."
     },
     "anonymous": {

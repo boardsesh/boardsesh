@@ -84,7 +84,14 @@ const logbookState = vi.hoisted(() => ({
   fetchedUuids: new Set<string>(['climb-1']) as ReadonlySet<string>,
   error: null,
 }));
-vi.mock('@boardsesh/board-react', () => ({ useLogbook: () => logbookState }));
+// Records which climbs the sheet asks the logbook for, on every render.
+const logbookCalls = vi.hoisted(() => ({ climbUuids: [] as string[][] }));
+vi.mock('@boardsesh/board-react', () => ({
+  useLogbook: (_boardName: string, climbUuids: string[]) => {
+    logbookCalls.climbUuids.push(climbUuids);
+    return logbookState;
+  },
+}));
 
 import { LogbookFullSheet } from '../LogbookFullSheet';
 
@@ -108,22 +115,32 @@ function makeEntry(overrides: Partial<LogbookEntry>): LogbookEntry {
   };
 }
 
-function renderSheet(overrides: { visible?: boolean; climbUuid?: string | null; onClose?: () => void } = {}) {
-  return render(
-    createElement(LogbookFullSheet, {
-      visible: overrides.visible ?? true,
-      climbUuid: overrides.climbUuid === undefined ? 'climb-1' : overrides.climbUuid,
-      boardName: 'kilter',
-      layoutId: 1,
-      angle: 40,
-      onClose: overrides.onClose ?? vi.fn(),
-    }),
-  );
+type SheetOverrides = {
+  visible?: boolean;
+  climbUuid?: string | null;
+  boardName?: 'kilter' | 'tension';
+  onClose?: () => void;
+};
+
+function sheetElement(overrides: SheetOverrides = {}) {
+  return createElement(LogbookFullSheet, {
+    visible: overrides.visible ?? true,
+    climbUuid: overrides.climbUuid === undefined ? 'climb-1' : overrides.climbUuid,
+    boardName: overrides.boardName ?? 'kilter',
+    layoutId: 1,
+    angle: 40,
+    onClose: overrides.onClose ?? vi.fn(),
+  });
+}
+
+function renderSheet(overrides: SheetOverrides = {}) {
+  return render(sheetElement(overrides));
 }
 
 beforeEach(() => {
   list.renders = [];
   rows.uuids = [];
+  logbookCalls.climbUuids = [];
   sheet.props = null;
   logbookState.logbook = [];
 });
@@ -175,11 +192,44 @@ describe('LogbookFullSheet', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps its rows while closed, so they do not vanish mid-dismiss', () => {
-    logbookState.logbook = [makeEntry({})];
-    renderSheet({ visible: false });
+  // PlayDrawer hands the sheet null the moment it closes, including when the
+  // displayed climb changed under it.
+  it('keeps the rows of the climb it was opened for while it dismisses', () => {
+    logbookState.logbook = [makeEntry({}), makeEntry({ uuid: 'next-climb-tick', climb_uuid: 'climb-2' })];
+    const { rerender, getAllByTestId } = renderSheet();
+
+    rerender(sheetElement({ visible: false, climbUuid: null }));
     expect(sheet.props).toMatchObject({ visible: false });
-    expect(rows.uuids).toEqual(['tick-1']);
+    expect(getAllByTestId('entry-row')).toHaveLength(1);
+    // Never the next climb's row, on any render.
+    expect(new Set(rows.uuids)).toEqual(new Set(['tick-1']));
+  });
+
+  it('asks the logbook for no other climb while it sits closed', () => {
+    const { rerender } = renderSheet();
+    rerender(sheetElement({ visible: false, climbUuid: null }));
+    rerender(sheetElement({ visible: false, climbUuid: null }));
+
+    expect(new Set(logbookCalls.climbUuids.flat())).toEqual(new Set(['climb-1']));
+  });
+
+  it('drops the held climb when the board changes while closed', () => {
+    const { rerender } = renderSheet();
+    rerender(sheetElement({ visible: false, climbUuid: null }));
+    logbookCalls.climbUuids = [];
+
+    rerender(sheetElement({ visible: false, climbUuid: null, boardName: 'tension' }));
+    expect(logbookCalls.climbUuids.flat()).toEqual([]);
+  });
+
+  it('switches to the new climb when reopened', () => {
+    logbookState.logbook = [makeEntry({}), makeEntry({ uuid: 'next-climb-tick', climb_uuid: 'climb-2' })];
+    const { rerender } = renderSheet();
+    rerender(sheetElement({ visible: false, climbUuid: null }));
+    rows.uuids = [];
+
+    rerender(sheetElement({ climbUuid: 'climb-2' }));
+    expect(rows.uuids).toEqual(['next-climb-tick']);
   });
 
   it('stays closed with no climb', () => {

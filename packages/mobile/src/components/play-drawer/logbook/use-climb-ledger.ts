@@ -26,9 +26,16 @@ export function useClimbLedger(
   boardName: BoardName,
   climbUuid: string | null,
   angle: number,
-): { ledger: ClimbLedger<LogbookEntry>; hasEntries: boolean; fetched: boolean; error: Error | null } {
+): {
+  ledger: ClimbLedger<LogbookEntry>;
+  hasEntries: boolean;
+  fetched: boolean;
+  error: Error | null;
+  /** Runs this climb's fetch again after it failed. */
+  retry: () => void;
+} {
   const climbUuids = useMemo(() => (climbUuid ? [climbUuid] : NO_CLIMBS), [climbUuid]);
-  const { logbook, fetchedUuids, error } = useLogbook(boardName, climbUuids);
+  const { logbook, fetchedUuids, error, refetch } = useLogbook(boardName, climbUuids);
 
   const ledger = useMemo(
     () =>
@@ -44,5 +51,6 @@ export function useClimbLedger(
     hasEntries: ledger.angles.length > 0,
     fetched: climbUuid !== null && fetchedUuids.has(climbUuid),
     error,
+    retry: refetch,
   };
 }
