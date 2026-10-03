@@ -69,8 +69,8 @@ const BETA_LINKS_REVALIDATE_SECONDS = 3600;
  * The similar-climbs section retries instead from the reader's own browser
  * (`SimilarClimbsList` re-runs the query on hydration when the server hands it
  * no seed), which costs the crawler nothing, spends nobody's server-render
- * budget, and bills the resolver's 30/min rate limit against the reader's IP
- * rather than the web server's single shared one.
+ * budget, and bills the resolver's 600/min materialized-index limit against
+ * the reader's IP rather than the web server's trusted per-read partition.
  */
 const FRONT_DOOR_BACKEND_TIMEOUT_MS = 3000;
 
