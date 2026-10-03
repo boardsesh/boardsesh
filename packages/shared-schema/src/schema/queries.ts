@@ -433,6 +433,13 @@ export const queriesTypeDefs = /* GraphQL */ `
     followingClimbAscents(input: FollowingClimbAscentsInput!): FollowingClimbAscentsResult!
 
     """
+    Everyone's logs on a specific climb, one page at a time. Public. Newest
+    first. A spray climb the caller cannot see answers like a climb nobody
+    logged.
+    """
+    climbLogs(input: ClimbLogsInput!): ClimbLogsResult!
+
+    """
     Get global activity feed of all recent ascents.
     No authentication required.
     Deprecated: Use trendingFeed instead.

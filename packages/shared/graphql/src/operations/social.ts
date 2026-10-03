@@ -7,6 +7,8 @@ import type {
   FollowingAscentFeedItem,
   FollowingAscentsFeedResult,
   FollowingClimbAscentsSummary,
+  ClimbLogItem,
+  ClimbLogsInput,
   SetterProfile,
   Climb,
 } from '@boardsesh/shared-schema';
@@ -333,6 +335,50 @@ export type GetFollowingClimbAscentsQueryResponse = {
     items: FollowingClimbAscentItem[];
     hasMore: boolean;
     summary: FollowingClimbAscentsSummary;
+  };
+};
+
+// ============================================
+// Climb Logs (everyone's logs on a specific climb, paged)
+// ============================================
+
+export const GET_CLIMB_LOGS = gql`
+  query GetClimbLogs($input: ClimbLogsInput!) {
+    climbLogs(input: $input) {
+      items {
+        uuid
+        userId
+        userDisplayName
+        userAvatarUrl
+        climbUuid
+        angle
+        isMirror
+        status
+        attemptCount
+        quality
+        effectiveQuality
+        difficulty
+        comment
+        climbedAt
+      }
+      cursor
+      hasMore
+    }
+  }
+`;
+
+export type GetClimbLogsQueryVariables = {
+  input: ClimbLogsInput;
+};
+
+/** ClimbLogItem narrowed to exactly the fields GET_CLIMB_LOGS selects. */
+export type ClimbLogsQueryItem = Omit<ClimbLogItem, 'boardType'>;
+
+export type GetClimbLogsQueryResponse = {
+  climbLogs: {
+    items: ClimbLogsQueryItem[];
+    cursor?: string | null;
+    hasMore: boolean;
   };
 };
 

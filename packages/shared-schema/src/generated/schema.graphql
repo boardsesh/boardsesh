@@ -1771,6 +1771,78 @@ type FollowingClimbAscentsResult {
   summary: FollowingClimbAscentsSummary!
 }
 
+"""
+Input for one page of everyone's logs on a climb.
+"""
+input ClimbLogsInput {
+  "Board type (kilter, tension, moonboard, spray, ...)"
+  boardType: String!
+  "Climb UUID"
+  climbUuid: String!
+  "Only logs at this angle. Omit for every angle."
+  angle: Int
+  "Only logs with a non-empty note."
+  withNotes: Boolean
+  "Only flashes and sends."
+  sendsOnly: Boolean
+  "Signed-in callers only: drop the caller's own logs and logs by people they follow. Ignored when anonymous."
+  excludeFollowed: Boolean
+  "One row per climber: their newest log that passes the filters above."
+  latestPerClimber: Boolean
+  "1 to 50, default 20"
+  limit: Int
+  "Opaque keyset cursor from the previous page"
+  cursor: String
+}
+
+"""
+One climber's log on a climb, as the public per-climb list returns it.
+"""
+type ClimbLogItem {
+  "Tick UUID"
+  uuid: ID!
+  "User who logged it"
+  userId: ID!
+  "Display name of the user"
+  userDisplayName: String
+  "Avatar URL of the user"
+  userAvatarUrl: String
+  "UUID of the climb the log is stored under"
+  climbUuid: String!
+  "Board type"
+  boardType: String!
+  "Board angle"
+  angle: Int!
+  "Whether the climb was mirrored"
+  isMirror: Boolean!
+  "flash, send or attempt"
+  status: String!
+  "Number of tries"
+  attemptCount: Int!
+  "Star rating given on the log itself"
+  quality: Int
+  "Raw quality, or the climber's synced star rating for this climb and angle when the log has none. Sends and flashes only."
+  effectiveQuality: Int
+  "Personal grade id, null when none was given"
+  difficulty: Int
+  "The climber's note, empty when there is none"
+  comment: String!
+  "When the climb was logged"
+  climbedAt: String!
+}
+
+"""
+One page of logs on a climb, newest first.
+"""
+type ClimbLogsResult {
+  "Newest first (climbed at, then id)"
+  items: [ClimbLogItem!]!
+  "Pass back as input.cursor for the next page. Null on the last page."
+  cursor: String
+  "Whether another page exists"
+  hasMore: Boolean!
+}
+
 # ============================================
 # Materialized Activity Feed Types
 # ============================================
@@ -6888,6 +6960,13 @@ type Query {
   answers like a climb nobody logged. Requires authentication.
   """
   followingClimbAscents(input: FollowingClimbAscentsInput!): FollowingClimbAscentsResult!
+
+  """
+  Everyone's logs on a specific climb, one page at a time. Public. Newest
+  first. A spray climb the caller cannot see answers like a climb nobody
+  logged.
+  """
+  climbLogs(input: ClimbLogsInput!): ClimbLogsResult!
 
   """
   Get global activity feed of all recent ascents.
