@@ -37,7 +37,7 @@ export function useSprayWallSheetActions(board: UserBoard | null, dismissAndWait
   signatureRef.current = signature;
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
-  const mountedRef = useRef(true);
+  const mountedRef = useRef(false);
   const requestRef = useRef(0);
   const pendingRef = useRef(false);
   const [shareSnapshot, setShareSnapshot] = useState<ShareSnapshot | null>(null);
