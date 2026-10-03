@@ -226,6 +226,9 @@ segmentation model, tiling, outlines, retries and native-runtime cleanup.
 #### Import progress and completion
 
 My Boards keeps unfinished walls visible after the creator leaves the wizard.
+Caller-owned unpublished walls temporarily sort ahead of pinned and previously
+opened boards, so they remain on the first page. After first publication they
+return to the usual pin/recency order; published resets keep that normal order.
 `UserBoard.sprayImport` carries the wall UUID, exact draft version and detection
 IDs, stage, optional queue position/retry time, and whether the wall already has
 a published version. It is returned only to viewers with board edit access;

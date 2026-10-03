@@ -15,7 +15,7 @@ export function resolveNotificationRoute(notification: Notifications.Notificatio
     case 'spray_wall_detection_completed': {
       if (
         typeof payload.wallUuid !== 'string' ||
-        !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(payload.wallUuid) ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(payload.wallUuid) ||
         typeof payload.versionId !== 'string' ||
         !/^\d+$/.test(payload.versionId) ||
         typeof payload.isReset !== 'boolean'

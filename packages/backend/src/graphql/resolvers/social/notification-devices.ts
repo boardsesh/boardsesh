@@ -4,6 +4,7 @@ import { SPRAY_DETECTION_COMPLETION_QUEUE, type ConnectionContext } from '@board
 import { notificationDevices, notifications, sprayWallDetections } from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import { enqueueOn, requireJobQueue } from '../../../services/job-queue';
+import { NOTIFICATION_DEVICE_TOKEN_LOCK_SEED } from '../../../services/notification-locks';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 
 const installationIdSchema = z.string().min(16).max(200);
@@ -23,7 +24,9 @@ export const notificationDeviceMutations = {
     await applyRateLimit(ctx, 30, 'registerNotificationDevice');
     const device = validateInput(deviceSchema, input, 'input');
     await db.transaction(async (transaction) => {
-      await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${device.token}, 192704))`);
+      await transaction.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${device.token}, ${NOTIFICATION_DEVICE_TOKEN_LOCK_SEED}))`,
+      );
       // A reinstall can rotate its installation id while retaining its push token.
       await transaction
         .update(notificationDevices)

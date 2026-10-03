@@ -12072,6 +12072,10 @@ export type GetNotificationsQuery = {
       proposalUuid?: string | null;
       proposalType?: ProposalType | null;
       proposalValue?: string | null;
+      sprayWallName?: string | null;
+      sprayWallUuid?: string | null;
+      sprayVersionId?: string | null;
+      isSprayReset?: boolean | null;
       isRead: boolean;
       createdAt: string;
     }>;
@@ -12112,6 +12116,10 @@ export type GetGroupedNotificationsQuery = {
       proposalValue?: string | null;
       setterUsername?: string | null;
       gymName?: string | null;
+      sprayWallName?: string | null;
+      sprayWallUuid?: string | null;
+      sprayVersionId?: string | null;
+      isSprayReset?: boolean | null;
       isRead: boolean;
       createdAt: string;
       actors: Array<{
@@ -18441,6 +18449,10 @@ export const GetNotificationsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalUuid' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalType' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalValue' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayWallName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayWallUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayVersionId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isSprayReset' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isRead' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
                     ],
@@ -18535,6 +18547,10 @@ export const GetGroupedNotificationsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalValue' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'gymName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayWallName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayWallUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayVersionId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isSprayReset' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isRead' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
                     ],

@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { eq, ne, and, count, isNull, isNotNull, sql, ilike, or, asc, desc, inArray, like } from 'drizzle-orm';
+import { eq, ne, and, count, isNull, isNotNull, sql, ilike, or, asc, desc, inArray, like, exists } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { normaliseSetIds } from '@boardsesh/board-config';
@@ -249,8 +249,10 @@ export async function resolveBoardFromPath(
  * Whether a user owns or is an admin member of a gym. Used to authorize editing
  * a board through its linked gym (gym owners/admins may fix the gym's boards).
  */
-async function viewerCanAdminGym(gymId: number, userId: string): Promise<boolean> {
-  const [ownedGym] = await db
+type BoardEditExecutor = NonNullable<Parameters<typeof getUserCommunityRoles>[1]>;
+
+async function viewerCanAdminGym(gymId: number, userId: string, executor: BoardEditExecutor = db): Promise<boolean> {
+  const [ownedGym] = await executor
     .select({ id: dbSchema.gyms.id })
     .from(dbSchema.gyms)
     .where(and(eq(dbSchema.gyms.id, gymId), eq(dbSchema.gyms.ownerId, userId), isNull(dbSchema.gyms.deletedAt)))
@@ -258,7 +260,7 @@ async function viewerCanAdminGym(gymId: number, userId: string): Promise<boolean
 
   if (ownedGym) return true;
 
-  const [adminMembership] = await db
+  const [adminMembership] = await executor
     .select({ role: dbSchema.gymMembers.role })
     .from(dbSchema.gymMembers)
     .innerJoin(dbSchema.gyms, eq(dbSchema.gyms.id, dbSchema.gymMembers.gymId))
@@ -297,10 +299,14 @@ function boardIsRoleEditable(board: { isPublic: boolean; ownerId: string }): boo
 export async function canEditBoard(
   userId: string,
   board: Pick<typeof dbSchema.userBoards.$inferSelect, 'ownerId' | 'isPublic' | 'boardType' | 'gymId'>,
+  executor: BoardEditExecutor = db,
 ): Promise<boolean> {
   if (board.ownerId === userId) return true;
-  if (boardIsRoleEditable(board) && (await hasAdminOrLeader(userId, board.boardType))) return true;
-  if (board.gymId != null && (await viewerCanAdminGym(board.gymId, userId))) return true;
+  if (
+    boardIsRoleEditable(board) &&
+    rolesGrantAdminOrLeader(await getUserCommunityRoles(userId, executor), board.boardType)
+  ) return true;
+  if (board.gymId != null && (await viewerCanAdminGym(board.gymId, userId, executor))) return true;
   return false;
 }
 
@@ -316,8 +322,9 @@ export async function canEditBoard(
 export async function requireBoardEditAccess(
   ctx: ConnectionContext,
   board: typeof dbSchema.userBoards.$inferSelect,
+  executor: BoardEditExecutor = db,
 ): Promise<void> {
-  if (await canEditBoard(ctx.userId!, board)) return;
+  if (await canEditBoard(ctx.userId!, board, executor)) return;
   throw new Error('Not authorized to update this board');
 }
 
@@ -326,7 +333,9 @@ export async function filterEditableBoards(
   boards: Array<typeof dbSchema.userBoards.$inferSelect>,
   userId: string,
 ): Promise<Array<typeof dbSchema.userBoards.$inferSelect>> {
-  const gymIds = [...new Set(boards.flatMap((board) => (board.gymId !== null ? [board.gymId] : [])))];
+  const nonOwnedBoards = boards.filter((board) => board.ownerId !== userId);
+  if (nonOwnedBoards.length === 0) return boards;
+  const gymIds = [...new Set(nonOwnedBoards.flatMap((board) => (board.gymId !== null ? [board.gymId] : [])))];
   const [roles, editableGyms] = await Promise.all([
     getUserCommunityRoles(userId),
     gymIds.length > 0
@@ -1141,6 +1150,26 @@ export const socialBoardQueries = {
 
     const totalCount = Number(countResult?.count || 0);
 
+    // Unpublished owned walls must stay on the first page while being imported,
+    // even when the caller already has twenty pinned/recently opened boards.
+    // Published resets retain the normal pin/recency order below.
+    const ownedUnpublishedSprayWall = and(
+      eq(dbSchema.userBoards.ownerId, userId),
+      eq(dbSchema.userBoards.boardType, 'spray'),
+      exists(
+        db
+          .select({ id: dbSchema.sprayWalls.id })
+          .from(dbSchema.sprayWalls)
+          .where(
+            and(
+              eq(dbSchema.sprayWalls.boardUuid, dbSchema.userBoards.uuid),
+              isNull(dbSchema.sprayWalls.deletedAt),
+              isNull(dbSchema.sprayWalls.currentVersionId),
+            ),
+          ),
+      ),
+    )!;
+
     // Ordering (issue #4884): pinned boards first, then the ones you actually
     // used, most recent first, and only then the ones you have never opened.
     //
@@ -1172,6 +1201,7 @@ export const socialBoardQueries = {
       )
       .where(whereClause)
       .orderBy(
+        desc(ownedUnpublishedSprayWall),
         // Pinned first. `pinned_at IS NULL` sorts false (pinned) before true.
         sql`${dbSchema.userBoardActivity.pinnedAt} IS NULL`,
         // Oldest pin leads, so pinning a second board never reshuffles the first.

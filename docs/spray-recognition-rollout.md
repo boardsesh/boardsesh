@@ -37,7 +37,9 @@ can be resumed from its stored photo after leaving the app.
 ## Queue progress and completion delivery
 
 My Boards shows saved drafts, waiting imports with a queue position when known,
-running imports, ready-to-review results and failures. A published wall remains
+running imports, ready-to-review results and failures. Owned unpublished walls
+temporarily lead the first page ahead of pinned/recent boards. First publication
+restores their usual order; published resets are never promoted. A published wall remains
 usable during a photo reset; its review action resumes the exact draft version.
 Progress details are editor-only. Queue rank is based on pg-boss's active work
 and eligible waiting jobs, in priority/FIFO order, with blocked/deferred jobs
@@ -82,7 +84,11 @@ is not proof the phone displayed an alert.
 4. Configure the EAS project's APNs and FCM push credentials, and verify the
    app exposes its EAS project ID. If Expo push-security access-token protection
    is enabled, set backend `EXPO_ACCESS_TOKEN`; otherwise it is optional. Ship
-   the app after the new backend APIs are available. Android needs a new binary
+   the app after the new backend APIs are available. Set `GOOGLE_SERVICES_JSON`
+   to the EAS file-variable path for the Android package's `google-services.json`
+   and upload its matching FCM V1 service account to EAS as described in
+   [Expo's FCM credential setup](https://docs.expo.dev/push-notifications/fcm-credentials/).
+   Android needs a new binary
    with the `expo-notifications` config plugin before exposing phone alerts; an
    OTA cannot supply its native configuration. Validate foreground/background
    delivery and authenticated cold-launch taps on real iOS and Android devices.

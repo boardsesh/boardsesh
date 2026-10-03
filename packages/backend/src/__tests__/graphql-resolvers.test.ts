@@ -1,3 +1,4 @@
+import { once } from 'node:events';
 import { describe, it, expect, beforeAll, afterAll } from 'vite-plus/test';
 import { type Client, createClient } from 'graphql-ws';
 // eslint-disable-next-line import/no-named-as-default -- `ws` exports both default and named `WebSocket`; default is the correct one for graphql-ws.
@@ -5,7 +6,7 @@ import WebSocket from 'ws';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { startServer } from '../server';
 
-const TEST_PORT = 8084; // Different port to avoid conflicts
+let testPort = 0;
 const BOARD_NAME_ERROR = `Board name must be ${SUPPORTED_BOARDS.join(', ')}`;
 
 // Helper to execute GraphQL operations
@@ -59,10 +60,14 @@ describe('GraphQL Resolver Input Validation', () => {
 
   beforeAll(async () => {
     // Set the test port via environment variable
-    process.env.PORT = TEST_PORT.toString();
+    process.env.PORT = '0';
     server = await startServer();
+    if (!server.httpServer.listening) await once(server.httpServer, 'listening');
+    const address = server.httpServer.address();
+    if (!address || typeof address === 'string') throw new Error('Expected a TCP test server address');
+    testPort = address.port;
     client = createClient({
-      url: `ws://localhost:${TEST_PORT}/graphql`,
+      url: `ws://localhost:${testPort}/graphql`,
       webSocketImpl: WebSocket,
     });
   });

@@ -12,12 +12,13 @@ import { readSprayDetection, sprayDetectionSourceIsCurrent } from '@boardsesh/db
 import { notificationDevices, notificationDeliveries, notifications, userBoards } from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import { enqueueOn } from './job-queue';
+import { NOTIFICATION_DELIVERY_LOCK_SEED } from './notification-locks';
 import { requireBoardEditAccess } from '../graphql/resolvers/social/boards';
 import { pubsub } from '../pubsub';
-import english from '../../../shared/i18n/locales/en-US/notifications.json';
-import spanish from '../../../shared/i18n/locales/es/notifications.json';
-import french from '../../../shared/i18n/locales/fr/notifications.json';
-import german from '../../../shared/i18n/locales/de/notifications.json';
+import english from '@boardsesh/i18n/locales/en-US/notifications.json';
+import spanish from '@boardsesh/i18n/locales/es/notifications.json';
+import french from '@boardsesh/i18n/locales/fr/notifications.json';
+import german from '@boardsesh/i18n/locales/de/notifications.json';
 
 export const NOTIFICATION_PUSH_QUEUE = 'notification-push-delivery';
 const RETRIES = { retryLimit: 20, retryDelay: 60, retryBackoff: true, retryDelayMax: 300 } as const;
@@ -54,6 +55,7 @@ export async function completionNotification(
     await requireBoardEditAccess(
       { connectionId: 'spray-completion', userId: source.detection.requestedBy, isAuthenticated: true },
       board,
+      executor,
     );
   } catch {
     return null;
@@ -146,7 +148,9 @@ async function expoPost(path: 'send' | 'getReceipts', payload: unknown): Promise
 export async function deliverSprayNotification(boss: PgBoss, deliveryId: string): Promise<void> {
   let retry = false;
   await db.transaction(async (transaction) => {
-    await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${deliveryId}, 192705))`);
+    await transaction.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${deliveryId}, ${NOTIFICATION_DELIVERY_LOCK_SEED}))`,
+    );
     const [delivery] = await transaction
       .select()
       .from(notificationDeliveries)

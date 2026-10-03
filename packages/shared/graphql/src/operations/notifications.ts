@@ -31,6 +31,10 @@ export const GET_NOTIFICATIONS = gql`
         proposalUuid
         proposalType
         proposalValue
+        sprayWallName
+        sprayWallUuid
+        sprayVersionId
+        isSprayReset
         isRead
         createdAt
       }
@@ -70,6 +74,10 @@ export const GET_GROUPED_NOTIFICATIONS = gql`
         proposalValue
         setterUsername
         gymName
+        sprayWallName
+        sprayWallUuid
+        sprayVersionId
+        isSprayReset
         isRead
         createdAt
       }
@@ -154,6 +162,10 @@ export const NOTIFICATION_RECEIVED_SUBSCRIPTION = `
         proposalType
         proposalValue
         gymName
+        sprayWallName
+        sprayWallUuid
+        sprayVersionId
+        isSprayReset
         isRead
         createdAt
       }
