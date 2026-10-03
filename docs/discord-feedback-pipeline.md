@@ -50,12 +50,12 @@ two backend instances from dispatching the same message; a 15-minute local claim
 is the fallback when Redis is unavailable.
 
 After GitHub accepts the dispatch, the bot adds 👀. A successful run replaces it
-with ✅ and replies once with every issue URL. A failed dispatch uses ❌ and asks
-for a new mention. A failed workflow asks a maintainer to rerun that workflow for
-the same message, so already-created issues can be recovered by their markers.
-A failed success reaction or link reply is logged separately and does not turn
-completed issue creation into a failed workflow; both acknowledgements are
-attempted independently.
+with ✅ and replies with every issue URL. A failed dispatch uses ❌ and asks for a
+new mention. A failed workflow uses ❌ and asks a maintainer to inspect the run
+and created issues before retrying, since earlier attempts may have completed
+some issue writes. A failed success reaction or link reply is logged separately
+and does not turn completed issue creation into a failed workflow; both
+acknowledgements are attempted independently.
 
 ## Job isolation
 
@@ -63,21 +63,23 @@ The workflow uses three data stages plus a failure notifier:
 
 | Job | Environment | Permissions | Credentials |
 | --- | --- | --- | --- |
-| `collect` | `discord-feedback` | contents read | Discord bot token |
+| `collect` | `discord-feedback` | contents/actions read | Discord bot token on first attempt; workflow token for artifact recovery |
 | `triage` | none | contents/issues read, OIDC | Claude OAuth token |
-| `apply` | `discord-feedback` | contents/issues write | Discord bot token, workflow token |
+| `apply` | `discord-feedback` | contents/actions/issues write | Discord bot token, workflow token |
 | `notify-failure` | `discord-feedback` | contents read | Discord bot token |
 
-The collect and failure-notification jobs each re-fetch the exact message and
-repeat the guild, coordinates, human author, mention, instruction, and maintainer
-allowlist checks before writing anything. A rejected collect cannot trigger a
-reply to an unauthorized target through the failure handler. Workflow inputs
-are not authorization.
+The first collect and failure-notification jobs each re-fetch the exact message
+and repeat the guild, coordinates, human author, mention, instruction, and
+maintainer allowlist checks before writing anything. A retry does not recollect
+Discord text. It restores the earlier validated replay artifact instead. A
+rejected collect cannot trigger a reply to an unauthorized target through the
+failure handler. Workflow inputs are not authorization.
 
 Only `bundle.command.instruction` is an authorized instruction. The selected
 feedback and surrounding conversation remain untrusted public text. The triage
-job has no Discord credential and no repository write permission. Its sole
-write is an ephemeral decisions JSON file.
+job has no Discord credential and no repository write permission. Its model
+output is validated and sealed with the exact collected bundle into one
+immutable replay artifact before `apply` can run.
 
 Collect pins a SHA-256 digest before triage. Triage runs the exact TypeScript
 validator immediately after the model writes its artifact, and apply repeats
@@ -89,7 +91,7 @@ duplicate target from the configured GitHub repository before any writes. A
 missing issue, a pull request using the same number, or an inaccessible target
 rejects the run rather than dropping feedback as a supposed duplicate.
 
-## Idempotency
+## Idempotency and retries
 
 Each possible issue gets a stable first-line marker:
 
@@ -97,10 +99,22 @@ Each possible issue gets a stable first-line marker:
 <!-- discord-feedback:<trigger-message-id>:<issue-index> -->
 ```
 
-Workflow concurrency is also keyed by the trigger message ID. If issue creation
-succeeds and a later step fails, retrying finds each existing marker and reuses
-its issue URL before updating Discord. The command is acknowledged only after
-all requested issues are created or recovered.
+Workflow concurrency is also keyed by the trigger message ID. The first
+validated decision batch is sealed with the original bundle, its digest, the
+decision digest and count, and a replay identity tied to the run and command.
+Whole-workflow retries restore that exact artifact and skip collection and model
+triage. Failed-job-only retries consume the artifact ID and name reported by
+the successful producer job. Every upload name includes its run attempt, so
+reruns never overwrite another artifact.
+
+If issue creation succeeds for only part of the batch, the next apply uses the
+same original ordered decisions. Existing markers recover completed issues;
+remaining decisions are still present and can finish before the command is
+acknowledged. If the validated replay is missing, expired, or fails its digest
+and identity checks, the workflow stops before issue writes or success
+acknowledgement. A maintainer must inspect earlier attempts before starting a
+new run. This source change does not configure or enable the bot; live setup and
+maintainer QA remain a separate rollout step.
 
 ## One-time setup
 
@@ -195,6 +209,11 @@ gh label create from-discord --color 5865F2 --description "Filed from Discord us
 ```
 
 ## Rollout
+
+Keep `DISCORD_ISSUE_BOT_ENABLED=false` until the replay-recovery change has
+passed paired source review and current CI. Configuration and the maintainer's
+live test thread remain a later rollout; this source change does not enable the
+bot.
 
 1. Merge the workflow and backend code while `DISCORD_ISSUE_BOT_ENABLED=false`.
 2. Install/configure the dedicated GitHub App and both allowlist copies.

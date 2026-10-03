@@ -39,8 +39,13 @@ jobs:
     environment: discord-feedback
     permissions:
       contents: read
+      actions: read
     outputs:
-      sha256: ${{ steps.bundle.outputs.sha256 }}
+      bundle_sha256: ${{ steps.bundle.outputs.sha256 || steps.restore.outputs.bundle_sha256 }}
+      bundle_artifact_id: ${{ steps.upload_bundle.outputs.artifact-id }}
+      bundle_artifact_name: ${{ steps.bundle_name.outputs.name }}
+      replay_artifact_id: ${{ steps.upload_replay.outputs.artifact-id }}
+      replay_artifact_name: ${{ steps.restore.outputs.artifact_name }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -54,6 +59,7 @@ jobs:
         run: vp install --frozen-lockfile
 
       - name: Collect authorized Discord context
+        if: github.run_attempt == 1
         env:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           DISCORD_GUILD_ID: ${{ vars.DISCORD_GUILD_ID }}
@@ -69,19 +75,101 @@ jobs:
 
       - name: Pin bundle digest
         id: bundle
+        if: github.run_attempt == 1
         run: echo "sha256=$(sha256sum "$RUNNER_TEMP/discord-bundle.json" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
-      - name: Upload bundle
+      - name: Name bundle artifact
+        id: bundle_name
+        if: github.run_attempt == 1
+        run: echo "name=discord-bundle-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload collected bundle
+        id: upload_bundle
+        if: github.run_attempt == 1
         uses: actions/upload-artifact@v4
         with:
-          name: discord-bundle-${{ github.run_id }}
+          name: ${{ steps.bundle_name.outputs.name }}
           path: ${{ runner.temp }}/discord-bundle.json
+          retention-days: 7
+
+      - name: Locate previous validated replay
+        id: previous_replay
+        if: github.run_attempt > 1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          vp run discord:feedback-scan -- \
+            --mode find-replay \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --out "$RUNNER_TEMP/previous-replay-artifact.json"
+          echo "artifact_id=$(jq -er .id "$RUNNER_TEMP/previous-replay-artifact.json")" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$(jq -er .name "$RUNNER_TEMP/previous-replay-artifact.json")" >> "$GITHUB_OUTPUT"
+
+      - name: Download previous validated replay
+        id: download_previous_replay
+        if: github.run_attempt > 1
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.previous_replay.outputs.artifact_id }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+          path: ${{ runner.temp }}/previous-replay
+
+      - name: Require previous validated replay
+        if: always() && github.run_attempt > 1
+        env:
+          DOWNLOAD_OUTCOME: ${{ steps.download_previous_replay.outcome }}
+          SOURCE_ARTIFACT_NAME: ${{ steps.previous_replay.outputs.artifact_name }}
+        run: |
+          if [[ "$DOWNLOAD_OUTCOME" != "success" ]]; then
+            echo "::error::Original validated decision replay ${SOURCE_ARTIFACT_NAME:-from an earlier attempt} is unavailable or expired. This retry will not recollect Discord or rerun triage; inspect earlier attempts before starting another run."
+            exit 1
+          fi
+
+      - name: Validate and restore previous replay
+        id: restore
+        if: github.run_attempt > 1
+        run: |
+          vp run discord:feedback-scan -- \
+            --mode restore-replay \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --channel-id "$CHANNEL_ID" \
+            --trigger-message-id "$TRIGGER_MESSAGE_ID" \
+            --replay "$RUNNER_TEMP/previous-replay/discord-replay.json" \
+            --bundle-out "$RUNNER_TEMP/discord-bundle.json" \
+            --decisions-out "$RUNNER_TEMP/discord-decisions.json" \
+            --metadata-out "$RUNNER_TEMP/replay-metadata.json"
+          echo "bundle_sha256=$(jq -er .bundleSha256 "$RUNNER_TEMP/replay-metadata.json")" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$(jq -er .artifactName "$RUNNER_TEMP/replay-metadata.json")" >> "$GITHUB_OUTPUT"
+        env:
+          CHANNEL_ID: ${{ inputs.channel_id }}
+          TRIGGER_MESSAGE_ID: ${{ inputs.trigger_message_id }}
+
+      - name: Upload replay for this attempt
+        id: upload_replay
+        if: github.run_attempt > 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.restore.outputs.artifact_name }}
+          path: ${{ runner.temp }}/previous-replay/discord-replay.json
           retention-days: 7
 
   triage:
     needs: collect
+    if: >-
+      always() &&
+      (needs.collect.result == 'success' || needs.collect.result == 'skipped') &&
+      needs.collect.outputs.replay_artifact_id == ''
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      replay_artifact_id: ${{ steps.upload_replay.outputs.artifact-id }}
+      replay_artifact_name: ${{ steps.seal_replay.outputs.artifact_name }}
+      bundle_sha256: ${{ steps.seal_replay.outputs.bundle_sha256 }}
     # No environment: the model gets neither Discord credentials nor any
     # environment-scoped production secret.
     permissions:
@@ -100,10 +188,21 @@ jobs:
       - name: Install dependencies
         run: vp install --frozen-lockfile
 
+      - name: Verify bundle producer
+        env:
+          BUNDLE_ARTIFACT_ID: ${{ needs.collect.outputs.bundle_artifact_id }}
+          BUNDLE_ARTIFACT_NAME: ${{ needs.collect.outputs.bundle_artifact_name }}
+        run: |
+          if [[ -z "$BUNDLE_ARTIFACT_ID" || -z "$BUNDLE_ARTIFACT_NAME" ]]; then
+            echo "::error::The collect job did not produce a bundle artifact; refusing to triage."
+            exit 1
+          fi
+          echo "Triage input will use ${BUNDLE_ARTIFACT_NAME} (${BUNDLE_ARTIFACT_ID})."
+
       - name: Download bundle
         uses: actions/download-artifact@v4
         with:
-          name: discord-bundle-${{ github.run_id }}
+          artifact-ids: ${{ needs.collect.outputs.bundle_artifact_id }}
           path: ${{ runner.temp }}
 
       - name: Triage with Claude
@@ -129,7 +228,7 @@ jobs:
 
       - name: Validate triage decisions
         env:
-          BUNDLE_SHA256: ${{ needs.collect.outputs.sha256 }}
+          BUNDLE_SHA256: ${{ needs.collect.outputs.bundle_sha256 }}
           CHANNEL_ID: ${{ inputs.channel_id }}
           TRIGGER_MESSAGE_ID: ${{ inputs.trigger_message_id }}
         run: |
@@ -141,25 +240,50 @@ jobs:
             --decisions "$RUNNER_TEMP/discord-decisions.json" \
             --bundle-sha256 "$BUNDLE_SHA256"
 
-      - name: Upload decisions
-        if: always()
+      - name: Seal original validated decision batch
+        id: seal_replay
+        env:
+          BUNDLE_SHA256: ${{ needs.collect.outputs.bundle_sha256 }}
+          CHANNEL_ID: ${{ inputs.channel_id }}
+          TRIGGER_MESSAGE_ID: ${{ inputs.trigger_message_id }}
+        run: |
+          vp run discord:feedback-scan -- \
+            --mode seal-replay \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --channel-id "$CHANNEL_ID" \
+            --trigger-message-id "$TRIGGER_MESSAGE_ID" \
+            --bundle "$RUNNER_TEMP/discord-bundle.json" \
+            --decisions "$RUNNER_TEMP/discord-decisions.json" \
+            --bundle-sha256 "$BUNDLE_SHA256" \
+            --out "$RUNNER_TEMP/discord-replay.json" \
+            --metadata-out "$RUNNER_TEMP/replay-metadata.json"
+          echo "replay_id=$(jq -er .replayId "$RUNNER_TEMP/replay-metadata.json")" >> "$GITHUB_OUTPUT"
+          echo "bundle_sha256=$(jq -er .bundleSha256 "$RUNNER_TEMP/replay-metadata.json")" >> "$GITHUB_OUTPUT"
+          echo "decision_count=$(jq -er .decisionCount "$RUNNER_TEMP/replay-metadata.json")" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$(jq -er .artifactName "$RUNNER_TEMP/replay-metadata.json")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload validated replay
+        id: upload_replay
         uses: actions/upload-artifact@v4
         with:
-          name: discord-decisions-${{ github.run_id }}
-          path: |
-            ${{ runner.temp }}/discord-decisions.json
-            ${{ runner.temp }}/claude-execution-output.json
+          name: ${{ steps.seal_replay.outputs.artifact_name }}
+          path: ${{ runner.temp }}/discord-replay.json
           retention-days: 7
-          if-no-files-found: ignore
 
   apply:
     needs: [collect, triage]
+    if: >-
+      always() &&
+      (needs.collect.result == 'success' || needs.collect.result == 'skipped') &&
+      (needs.triage.result == 'success' || needs.triage.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: discord-feedback
     permissions:
       # Required to upload screenshots to the discord-attachments release.
       contents: write
+      actions: read
       issues: write
     steps:
       - name: Checkout repository
@@ -173,17 +297,67 @@ jobs:
       - name: Install dependencies
         run: vp install --frozen-lockfile
 
-      - name: Download bundle
-        uses: actions/download-artifact@v4
-        with:
-          name: discord-bundle-${{ github.run_id }}
-          path: ${{ runner.temp }}
+      - name: Select validated replay producer
+        id: replay_producer
+        env:
+          COLLECT_REPLAY_ID: ${{ needs.collect.outputs.replay_artifact_id }}
+          COLLECT_REPLAY_NAME: ${{ needs.collect.outputs.replay_artifact_name }}
+          TRIAGE_REPLAY_ID: ${{ needs.triage.outputs.replay_artifact_id }}
+          TRIAGE_REPLAY_NAME: ${{ needs.triage.outputs.replay_artifact_name }}
+        run: |
+          vp run discord:feedback-scan -- \
+            --mode select-replay \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --collect-artifact-id "$COLLECT_REPLAY_ID" \
+            --collect-artifact-name "$COLLECT_REPLAY_NAME" \
+            --triage-artifact-id "$TRIAGE_REPLAY_ID" \
+            --triage-artifact-name "$TRIAGE_REPLAY_NAME" \
+            --out "$RUNNER_TEMP/replay-producer.json"
+          echo "artifact_id=$(jq -er .artifactId "$RUNNER_TEMP/replay-producer.json")" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$(jq -er .artifactName "$RUNNER_TEMP/replay-producer.json")" >> "$GITHUB_OUTPUT"
+          echo "producer=$(jq -er .producer "$RUNNER_TEMP/replay-producer.json")" >> "$GITHUB_OUTPUT"
 
-      - name: Download decisions
+      - name: Download validated replay
+        id: download_replay
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          name: discord-decisions-${{ github.run_id }}
-          path: ${{ runner.temp }}
+          artifact-ids: ${{ steps.replay_producer.outputs.artifact_id }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+          path: ${{ runner.temp }}/validated-replay
+
+      - name: Require validated replay download
+        if: always() && steps.replay_producer.outcome == 'success'
+        env:
+          DOWNLOAD_OUTCOME: ${{ steps.download_replay.outcome }}
+          REPLAY_ARTIFACT_NAME: ${{ steps.replay_producer.outputs.artifact_name }}
+        run: |
+          if [[ "$DOWNLOAD_OUTCOME" != "success" ]]; then
+            echo "::error::Validated replay artifact ${REPLAY_ARTIFACT_NAME} is unavailable or expired; refusing to run triage again or acknowledge. Inspect earlier attempts."
+            exit 1
+          fi
+
+      - name: Restore and verify immutable decision batch
+        id: restore_replay
+        env:
+          CHANNEL_ID: ${{ inputs.channel_id }}
+          TRIGGER_MESSAGE_ID: ${{ inputs.trigger_message_id }}
+        run: |
+          vp run discord:feedback-scan -- \
+            --mode restore-replay \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --channel-id "$CHANNEL_ID" \
+            --trigger-message-id "$TRIGGER_MESSAGE_ID" \
+            --replay "$RUNNER_TEMP/validated-replay/discord-replay.json" \
+            --bundle-out "$RUNNER_TEMP/discord-bundle.json" \
+            --decisions-out "$RUNNER_TEMP/discord-decisions.json" \
+            --metadata-out "$RUNNER_TEMP/replay-metadata.json"
+          echo "bundle_sha256=$(jq -er .bundleSha256 "$RUNNER_TEMP/replay-metadata.json")" >> "$GITHUB_OUTPUT"
+          echo "decision_count=$(jq -er .decisionCount "$RUNNER_TEMP/replay-metadata.json")" >> "$GITHUB_OUTPUT"
 
       - name: Apply all triage decisions
         env:
@@ -191,7 +365,7 @@ jobs:
           DISCORD_GUILD_ID: ${{ vars.DISCORD_GUILD_ID }}
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          BUNDLE_SHA256: ${{ needs.collect.outputs.sha256 }}
+          BUNDLE_SHA256: ${{ steps.restore_replay.outputs.bundle_sha256 }}
           CHANNEL_ID: ${{ inputs.channel_id }}
           TRIGGER_MESSAGE_ID: ${{ inputs.trigger_message_id }}
           DRY_RUN: ${{ inputs.dry_run }}

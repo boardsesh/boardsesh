@@ -38,6 +38,13 @@ import {
   type AppliedIssue,
   type IssueDraft,
 } from './lib/discord-feedback-issue';
+import {
+  GitHubReplayArtifactClient,
+  openReplayBatch,
+  replayArtifactName,
+  selectReplayProducer,
+  sealReplayBatch,
+} from './lib/discord-feedback-replay';
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 const GITHUB_API_BASE = 'https://api.github.com';
@@ -692,7 +699,7 @@ export async function notifyFailure(
     args.channelId,
     args.triggerMessageId,
     args.guildId,
-    'Issue processing did not finish. A maintainer can rerun the workflow for this message to retry.',
+    'Issue processing did not finish. Earlier attempts may have created some issues; a maintainer should inspect the workflow and issues before retrying this message.',
   );
 }
 
@@ -710,7 +717,16 @@ function csv(raw: string | undefined): string[] {
 
 export function parseCliOptions(argv: string[], env: NodeJS.ProcessEnv) {
   const mode = flagValue(argv, 'mode') ?? 'collect';
-  if (mode !== 'collect' && mode !== 'validate' && mode !== 'apply' && mode !== 'notify-failure') {
+  if (
+    mode !== 'collect' &&
+    mode !== 'validate' &&
+    mode !== 'apply' &&
+    mode !== 'notify-failure' &&
+    mode !== 'find-replay' &&
+    mode !== 'select-replay' &&
+    mode !== 'seal-replay' &&
+    mode !== 'restore-replay'
+  ) {
     throw new Error(`Unknown --mode "${mode}".`);
   }
   return {
@@ -719,7 +735,17 @@ export function parseCliOptions(argv: string[], env: NodeJS.ProcessEnv) {
     out: flagValue(argv, 'out') ?? 'discord-bundle.json',
     bundlePath: flagValue(argv, 'bundle') ?? 'discord-bundle.json',
     decisionsPath: flagValue(argv, 'decisions') ?? 'discord-decisions.json',
+    replayPath: flagValue(argv, 'replay') ?? 'discord-replay.json',
+    bundleOut: flagValue(argv, 'bundle-out') ?? 'discord-bundle.json',
+    decisionsOut: flagValue(argv, 'decisions-out') ?? 'discord-decisions.json',
+    metadataOut: flagValue(argv, 'metadata-out') ?? '',
     bundleSha256: flagValue(argv, 'bundle-sha256') ?? '',
+    runId: flagValue(argv, 'run-id') ?? env.GITHUB_RUN_ID ?? '',
+    runAttempt: Number(flagValue(argv, 'run-attempt') ?? env.GITHUB_RUN_ATTEMPT ?? '1'),
+    collectArtifactId: flagValue(argv, 'collect-artifact-id') ?? '',
+    collectArtifactName: flagValue(argv, 'collect-artifact-name') ?? '',
+    triageArtifactId: flagValue(argv, 'triage-artifact-id') ?? '',
+    triageArtifactName: flagValue(argv, 'triage-artifact-name') ?? '',
     channelId: flagValue(argv, 'channel-id') ?? '',
     triggerMessageId: flagValue(argv, 'trigger-message-id') ?? '',
     guildId: env.DISCORD_GUILD_ID?.trim() ?? '',
@@ -732,6 +758,116 @@ export function parseCliOptions(argv: string[], env: NodeJS.ProcessEnv) {
 
 export async function runCli(argv: string[], env: NodeJS.ProcessEnv, logger: Logger): Promise<number> {
   const options = parseCliOptions(argv, env);
+  if (options.mode === 'select-replay') {
+    try {
+      const producer = selectReplayProducer({
+        runId: options.runId,
+        runAttempt: options.runAttempt,
+        collectArtifactId: options.collectArtifactId,
+        collectArtifactName: options.collectArtifactName,
+        triageArtifactId: options.triageArtifactId,
+        triageArtifactName: options.triageArtifactName,
+      });
+      writeFileSync(options.out, JSON.stringify(producer, null, 2));
+      logger.log(
+        `[discord-feedback] selected ${producer.producer} replay artifact ${producer.artifactName} (${producer.artifactId})`,
+      );
+      return 0;
+    } catch (error: unknown) {
+      logger.error(`[discord-feedback] ${error instanceof Error ? error.message : String(error)}`);
+      return 1;
+    }
+  }
+  if (options.mode === 'find-replay') {
+    try {
+      if (!options.githubToken) throw new Error('GITHUB_TOKEN is required to locate the original replay artifact.');
+      const artifact = await new GitHubReplayArtifactClient({
+        repositoryFullName: options.repositoryFullName,
+        token: options.githubToken,
+      }).findPreviousReplayArtifact(options.runId, options.runAttempt);
+      writeFileSync(options.out, JSON.stringify(artifact, null, 2));
+      logger.log(`[discord-feedback] found validated replay artifact ${artifact.name} (${artifact.id})`);
+      return 0;
+    } catch (error: unknown) {
+      logger.error(`[discord-feedback] ${error instanceof Error ? error.message : String(error)}`);
+      return 1;
+    }
+  }
+  if (options.mode === 'seal-replay') {
+    if (
+      !options.runId ||
+      !options.channelId ||
+      !options.triggerMessageId ||
+      ![options.channelId, options.triggerMessageId].every((discordId) => /^\d{16,20}$/.test(discordId))
+    ) {
+      logger.error('[discord-feedback] Workflow run ID and Discord command coordinates are required to seal replay.');
+      return 1;
+    }
+    try {
+      const sealed = sealReplayBatch({
+        runId: options.runId,
+        runAttempt: options.runAttempt,
+        channelId: options.channelId,
+        triggerMessageId: options.triggerMessageId,
+        expectedBundleSha256: options.bundleSha256,
+        serializedBundle: readFileSync(options.bundlePath, 'utf8'),
+        serializedDecisions: readFileSync(options.decisionsPath, 'utf8'),
+      });
+      writeFileSync(options.out, sealed.serializedReplay);
+      if (options.metadataOut) writeFileSync(options.metadataOut, JSON.stringify(sealed.metadata, null, 2));
+      logger.log(
+        `[discord-feedback] sealed replay ${sealed.metadata.replayId} with ${sealed.metadata.decisionCount} decisions`,
+      );
+      return 0;
+    } catch (error: unknown) {
+      logger.error(`[discord-feedback] ${error instanceof Error ? error.message : String(error)}`);
+      return 1;
+    }
+  }
+  if (options.mode === 'restore-replay') {
+    if (
+      !options.runId ||
+      !options.channelId ||
+      !options.triggerMessageId ||
+      ![options.channelId, options.triggerMessageId].every((discordId) => /^\d{16,20}$/.test(discordId))
+    ) {
+      logger.error(
+        '[discord-feedback] Workflow run ID and Discord command coordinates are required to restore replay.',
+      );
+      return 1;
+    }
+    try {
+      const restored = openReplayBatch({
+        serializedReplay: readFileSync(options.replayPath, 'utf8'),
+        runId: options.runId,
+        runAttempt: options.runAttempt,
+        channelId: options.channelId,
+        triggerMessageId: options.triggerMessageId,
+      });
+      writeFileSync(options.bundleOut, restored.serializedBundle);
+      writeFileSync(options.decisionsOut, restored.serializedDecisions);
+      if (options.metadataOut) {
+        writeFileSync(
+          options.metadataOut,
+          JSON.stringify(
+            {
+              ...restored.metadata,
+              artifactName: replayArtifactName(options.runId, options.runAttempt),
+            },
+            null,
+            2,
+          ),
+        );
+      }
+      logger.log(
+        `[discord-feedback] restored replay ${restored.metadata.replayId} with ${restored.metadata.decisionCount} decisions`,
+      );
+      return 0;
+    } catch (error: unknown) {
+      logger.error(`[discord-feedback] ${error instanceof Error ? error.message : String(error)}`);
+      return 1;
+    }
+  }
   if (options.mode === 'validate') {
     if (
       !options.channelId ||

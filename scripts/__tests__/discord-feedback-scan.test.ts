@@ -31,6 +31,7 @@ import {
   validateTriageResult,
   type IssueDraft,
 } from '../lib/discord-feedback-issue';
+import { openReplayBatch, sealReplayBatch } from '../lib/discord-feedback-replay';
 
 const GUILD_ID = '100000000000000001';
 const BOT_ID = '200000000000000001';
@@ -409,7 +410,9 @@ function applyDependencies(existingIssue: { number: number; htmlUrl: string } | 
   const issueSink: IssueSink = { findIssueByMarker, findIssueByUrl, ensureLabels, createIssue, uploadAttachment };
   const addReaction = vi.fn(async () => undefined);
   const removeReaction = vi.fn(async () => undefined);
-  const postReply = vi.fn(async () => undefined);
+  const postReply = vi.fn(
+    async (_channelId: string, _messageId: string, _guildId: string, _content: string) => undefined,
+  );
   const writer: DiscordWriter = {
     addReaction,
     removeReaction,
@@ -552,6 +555,78 @@ describe('applyTriage', () => {
     );
     expect(result.recovered).toBe(1);
     expect(deps.createIssue).not.toHaveBeenCalled();
+  });
+
+  it('replays the original full decision batch after one issue was created before a failure', async () => {
+    const collectedBundle = bundle();
+    const serializedBundle = JSON.stringify(collectedBundle);
+    const serializedDecisions = JSON.stringify({ decisions: [decision(1), decision(2)] });
+    const sealed = sealReplayBatch({
+      runId: '1234567890',
+      runAttempt: 1,
+      channelId: collectedBundle.command.channelId,
+      triggerMessageId: collectedBundle.command.messageId,
+      expectedBundleSha256: bundleDigest(serializedBundle),
+      serializedBundle,
+      serializedDecisions,
+    });
+    const restored = openReplayBatch({
+      serializedReplay: sealed.serializedReplay,
+      runId: '1234567890',
+      runAttempt: 2,
+      channelId: collectedBundle.command.channelId,
+      triggerMessageId: collectedBundle.command.messageId,
+    });
+    const restoredDecisions = JSON.parse(restored.serializedDecisions) as unknown;
+    const issueOne = { number: 101, htmlUrl: 'https://github.com/boardsesh/boardsesh/issues/101' };
+    const issueTwo = { number: 102, htmlUrl: 'https://github.com/boardsesh/boardsesh/issues/102' };
+    const markerOne = discordFeedbackMarker(COMMAND_ID, 1);
+    const attemptedIndexes: number[] = [];
+    let issueOneExists = false;
+    let failSecondIssue = true;
+    const deps = applyDependencies();
+    const findIssueByMarker = vi.fn(async (marker: string) =>
+      marker === markerOne && issueOneExists ? issueOne : null,
+    );
+    const createIssue = vi.fn(async (draft: IssueDraft) => {
+      attemptedIndexes.push(draft.issueIndex);
+      if (draft.issueIndex === 1) {
+        issueOneExists = true;
+        return issueOne;
+      }
+      if (failSecondIssue) {
+        failSecondIssue = false;
+        throw new Error('simulated interruption after issue one');
+      }
+      return issueTwo;
+    });
+    const retryDeps = {
+      ...deps,
+      issueSink: { ...deps.issueSink, findIssueByMarker, createIssue },
+      fetcher: fetch,
+      logger: console,
+    };
+
+    await expect(
+      applyTriage(collectedBundle, { decisions: [decision(1), decision(2)] }, { dryRun: false }, retryDeps),
+    ).rejects.toThrow(/simulated interruption/);
+    expect(deps.postReply).not.toHaveBeenCalled();
+    expect(deps.addReaction).not.toHaveBeenCalled();
+
+    // A fresh model response could reorder or shorten this request. Recovery
+    // uses the sealed producer output, not either changed response.
+    const reorderedRetry = JSON.stringify({ decisions: [decision(2), decision(1)] });
+    const shortenedRetry = JSON.stringify({ decisions: [decision(1)] });
+    expect(reorderedRetry).not.toBe(restored.serializedDecisions);
+    expect(shortenedRetry).not.toBe(restored.serializedDecisions);
+    const result = await applyTriage(collectedBundle, restoredDecisions, { dryRun: false }, retryDeps);
+
+    expect(result).toEqual({ filed: 1, recovered: 1, duplicates: 0 });
+    expect(attemptedIndexes).toEqual([1, 2, 2]);
+    expect(deps.addReaction).toHaveBeenCalledWith(collectedBundle.command.channelId, COMMAND_ID, '✅');
+    expect(deps.postReply).toHaveBeenCalledOnce();
+    const reply = deps.postReply.mock.calls[0]?.[3] ?? '';
+    expect(reply.indexOf('/issues/101')).toBeLessThan(reply.indexOf('/issues/102'));
   });
 
   it('still acknowledges created issues when reaction cleanup returns 404', async () => {
@@ -776,7 +851,7 @@ it('notifies Discord through the live failure-handler CLI path', async () => {
     expect(exitCode).toBe(0);
     expect(requests.map(({ method }) => method)).toEqual(['GET', 'GET', 'GET', 'DELETE', 'DELETE', 'PUT', 'POST']);
     expect(requests[5]?.url).toContain(`/reactions/${encodeURIComponent('❌')}/@me`);
-    expect(requests[6]?.body).toContain('rerun the workflow for this message');
+    expect(requests[6]?.body).toContain('inspect the workflow and issues before retrying this message');
   } finally {
     vi.unstubAllGlobals();
   }
