@@ -6,6 +6,12 @@ import { SprayWallWizardScreen } from '../../../src/components/spray-wall/SprayW
 import { resolveBoardReturnTo } from '../../../src/lib/boards/board-return-to';
 
 export default function NewSprayWall() {
-  const params = useLocalSearchParams<{ returnTo?: string }>();
-  return <SprayWallWizardScreen returnTo={resolveBoardReturnTo(params.returnTo)} />;
+  const params = useLocalSearchParams<{ returnTo?: string; wallUuid?: string; versionId?: string }>();
+  return (
+    <SprayWallWizardScreen
+      returnTo={resolveBoardReturnTo(params.returnTo)}
+      wallUuid={params.wallUuid}
+      versionId={params.versionId}
+    />
+  );
 }

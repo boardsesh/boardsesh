@@ -49,6 +49,15 @@ export type GetBoardDiscoveryQueryResponse = { boardDiscovery: BoardDiscoveryBoa
 export type GetBoardDiscoveryQueryVariables = { input?: BoardDiscoveryInput };
 
 export const BOARD_FIELDS = `
+  sprayImport {
+    wallUuid
+    versionId
+    detectionId
+    stage
+    queuePosition
+    retryAt
+    isReset
+  }
   uuid
   slug
   ownerId

@@ -2714,6 +2714,7 @@ input BoardDiscoveryInput {
 A named physical board installation (board type + layout + size + hold sets).
 """
 type UserBoard {
+  sprayImport: SprayWallImportProgress
   "Unique identifier"
   uuid: ID!
   "URL slug for this board"
@@ -4176,6 +4177,13 @@ extend type Mutation {
   refreshGymActivityStats(force: Boolean = false): GymActivityStatsRefreshResult!
 }
 
+input RegisterNotificationDeviceInput {
+  installationId: String!
+  token: String!
+  platform: String!
+  locale: String!
+}
+
 # ============================================
 # Notification Types
 # ============================================
@@ -4196,6 +4204,7 @@ enum NotificationType {
   new_climbs_synced
   gym_claim_approved
   proposal_on_your_climb
+  spray_wall_detection_completed
 }
 
 """
@@ -4232,6 +4241,10 @@ type Notification {
   proposalValue: String
   "Gym name (for gym_claim_approved notifications)"
   gymName: String
+  sprayWallName: String
+  sprayWallUuid: String
+  sprayVersionId: ID
+  isSprayReset: Boolean
   "Whether the notification has been read"
   isRead: Boolean!
   "When the notification was created (ISO 8601)"
@@ -4329,6 +4342,10 @@ type GroupedNotification {
   setterUsername: String
   "Gym name (for gym_claim_approved notifications)"
   gymName: String
+  sprayWallName: String
+  sprayWallUuid: String
+  sprayVersionId: ID
+  isSprayReset: Boolean
   "Whether all notifications in the group are read"
   isRead: Boolean!
   "When the most recent notification was created"
@@ -6171,13 +6188,25 @@ type SprayWallDetection {
   result: SprayDetectionResult
   error: String
   createdAt: String!
+  queuePosition: Int
+  retryAt: String
   finishedAt: String
+}
+type SprayWallImportProgress {
+  wallUuid: ID!
+  versionId: ID
+  detectionId: ID
+  stage: String!
+  queuePosition: Int
+  retryAt: String
+  isReset: Boolean!
 }
 input RequestSprayWallDetectionInput {
   wallUuid: ID!
   versionId: ID!
 }
 extend type Query {
+  sprayWallImportProgress(wallUuids: [ID!]!): [SprayWallImportProgress!]!
   sprayWallDetection(id: ID!): SprayWallDetection
   sprayWallDetectionForVersion(wallUuid: ID!, versionId: ID!): SprayWallDetection
 }
@@ -8385,6 +8414,8 @@ type Mutation {
   """
   Mark a notification as read.
   """
+  registerNotificationDevice(input: RegisterNotificationDeviceInput!): Boolean!
+  unregisterNotificationDevice(installationId: String!): Boolean!
   markNotificationRead(notificationUuid: ID!): Boolean!
 
   """

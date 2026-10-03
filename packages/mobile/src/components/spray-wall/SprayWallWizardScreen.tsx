@@ -117,9 +117,11 @@ const COUNTED_STEPS: readonly AddWallStep[] = ['meta', 'photo', 'anchors', 'revi
 type SprayWallWizardScreenProps = {
   /** Which tab the flow dismisses back to once the wall is bound. */
   returnTo: BoardReturnTo;
+  wallUuid?: string;
+  versionId?: string;
 };
 
-export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) {
+export function SprayWallWizardScreen({ returnTo, wallUuid, versionId }: SprayWallWizardScreenProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const { showToast } = useToast();
@@ -217,7 +219,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   // Only while the flow is actually asking. Once it has an answer the query is
   // dead weight, and refetching it mid-flow could offer to resume the very wall
   // this run just created.
-  const mySprayWalls = useMySprayWalls({ enabled: state.step === 'resuming' });
+  const mySprayWalls = useMySprayWalls({ enabled: state.step === 'resuming' && !wallUuid });
   // `refetch` comes out with the rest of the fields on purpose. React Query keeps
   // it stable for the query's life, where the RESULT object is a fresh reference
   // on every render — so a callback closing over the whole thing would be rebuilt
@@ -245,16 +247,35 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   const [resumeError, setResumeError] = useState<string | null>(null);
 
   const decideResume = useCallback(
-    async (resumable: NonNullable<ReturnType<typeof findResumableWall>>, choice: 'resume' | 'startOver') => {
+    async (
+      resumable: NonNullable<ReturnType<typeof findResumableWall>>,
+      choice: 'resume' | 'startOver',
+      loaded?: NonNullable<Awaited<ReturnType<typeof fetchSprayWallVersions>>>,
+    ) => {
       // The list carries no version history, so the draft — and whether it has a
       // photo — takes one more round trip. A FAILURE here is not "no draft":
       // treating it as one sends the climber to the photo step, where
       // `createSprayWallVersion` then refuses every upload forever because the
       // draft it could not see is still open. So it surfaces and offers a retry.
-      const full = await fetchSprayWallVersions(resumable.uuid).catch(() => null);
+      const full = loaded ?? (await fetchSprayWallVersions(resumable.uuid).catch(() => null));
       if (!full) {
         setResumeError(t('sprayWizard.resume.checkFailed'));
         resumeAskedRef.current = false;
+        return;
+      }
+      if (wallUuid && (!full.viewerCanEdit || full.uuid !== wallUuid)) {
+        setResumeError(t('sprayImport.unavailable'));
+        return;
+      }
+      if (wallUuid && full.currentVersion) {
+        await finish(full.board);
+        return;
+      }
+      if (
+        versionId &&
+        !full.versions?.some((version) => version.id === versionId && version.status.toLowerCase() === 'draft')
+      ) {
+        setResumeError(t('sprayImport.unavailable'));
         return;
       }
       if (full.board) boardRef.current = full.board;
@@ -281,11 +302,32 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
         dispatch({ type: 'RESUMED_AT_PHOTO', wall: target.wall });
       }
     },
-    [discardDraftAsync, t],
+    [discardDraftAsync, t, wallUuid, versionId, finish],
   );
 
+  const [targetAttempt, setTargetAttempt] = useState(0);
   useEffect(() => {
-    if (state.step !== 'resuming' || !wallsSettled || resumeAskedRef.current) return;
+    if (!wallUuid || state.step !== 'resuming') return;
+    let cancelled = false;
+    void fetchSprayWallVersions(wallUuid)
+      .then(async (target) => {
+        if (cancelled) return;
+        if (!target) {
+          setResumeError(t('sprayImport.unavailable'));
+          return;
+        }
+        await decideResume(target, 'resume', target);
+      })
+      .catch(() => {
+        if (!cancelled) setResumeError(t('sprayWizard.resume.checkFailed'));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [wallUuid, state.step, targetAttempt, decideResume, t]);
+
+  useEffect(() => {
+    if (wallUuid || state.step !== 'resuming' || !wallsSettled || resumeAskedRef.current) return;
     resumeAskedRef.current = true;
 
     // A failed list is not a reason to block: the worst case is one extra wall
@@ -305,15 +347,16 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
       },
       { text: t('sprayWizard.resume.pickUp'), onPress: () => void decideResume(resumable, 'resume') },
     ]);
-  }, [state.step, wallsSettled, walls, decideResume, t]);
+  }, [state.step, wallsSettled, walls, decideResume, t, wallUuid]);
 
   /** Ask again after a version-history request failed. */
   const retryResume = useCallback(() => {
     setResumeError(null);
     resumeAskedRef.current = false;
     mountedAtRef.current = Date.now();
-    void refetchMySprayWalls();
-  }, [refetchMySprayWalls]);
+    if (wallUuid) setTargetAttempt((attempt) => attempt + 1);
+    else void refetchMySprayWalls();
+  }, [refetchMySprayWalls, wallUuid]);
 
   // ============================================
   // Step 2 — the photo

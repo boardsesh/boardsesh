@@ -1,3 +1,5 @@
+import { useSprayImportProgress } from '../../src/lib/spray/use-spray-import-progress';
+import { sprayImportRoute } from '../../src/lib/spray/spray-import-progress';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, ScrollView, StyleSheet, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -168,7 +170,9 @@ export default function BoardSelection() {
     refetch,
     isRefetching,
   } = useMyBoards(undefined, { enabled: isAuthenticated });
-  const myBoards = boardConnection?.boards ?? EMPTY_BOARDS;
+  const { boards: myBoards, stale: importStatusStale } = useSprayImportProgress(
+    boardConnection?.boards ?? EMPTY_BOARDS,
+  );
 
   // Whether Climbs' no-board entry gets "Where do you climb?": only when the
   // account has no boards at all. Someone whose active board was merely cleared
@@ -282,8 +286,9 @@ export default function BoardSelection() {
         currentUserId,
         pinnedOverrides,
         labelOptions,
+        importStatusStale,
       }),
-    [myBoards, activeBoard?.uuid, boardOfflineState, currentUserId, pinnedOverrides, labelOptions],
+    [myBoards, activeBoard?.uuid, boardOfflineState, currentUserId, pinnedOverrides, labelOptions, importStatusStale],
   );
   const nearbyItems = useMemo(
     () => userBoardsToItems(nearby?.boards ?? [], { activeUuid: activeBoard?.uuid, labelOptions }),
@@ -311,7 +316,9 @@ export default function BoardSelection() {
         // Offline rows come from the persisted snapshots, which aren't in either
         // network list — without this an offline tap is dead.
         offlineRows.find((b) => b.uuid === item.key);
-      if (board) {
+      if (board?.sprayImport && !board.sprayImport.isReset) {
+        router.push(sprayImportRoute(board.sprayImport));
+      } else if (board) {
         void activateBoard(board, { pickSource });
       } else {
         // The item's UserBoard should always be in one of the lists it came
@@ -320,7 +327,7 @@ export default function BoardSelection() {
         showToast(t('mobile.boardSwitchError'), 'error');
       }
     },
-    [myBoards, nearby?.boards, offlineRows, activateBoard, showToast, t],
+    [myBoards, nearby?.boards, offlineRows, activateBoard, showToast, t, router],
   );
   const onSelectMyBoard = useCallback((item: DiscoveryBoardItem) => activateItem(item, 'your_boards'), [activateItem]);
   const onSelectNearbyBoard = useCallback((item: DiscoveryBoardItem) => activateItem(item, 'nearby'), [activateItem]);

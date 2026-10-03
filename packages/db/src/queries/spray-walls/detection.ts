@@ -75,6 +75,7 @@ export async function finishSprayDetection(
   id: string,
   attemptToken: string,
   result: SprayDetectionResult,
+  onCompleted?: (transaction: Parameters<Parameters<DbInstance['transaction']>[0]>[0]) => Promise<void>,
 ): Promise<boolean> {
   const initial = await readSprayDetection(database, id);
   if (!initial) return false;
@@ -88,7 +89,7 @@ export async function finishSprayDetection(
     const valid =
       sprayDetectionSourceIsCurrent(source) &&
       Date.now() - source.detection.createdAt.getTime() < SPRAY_DETECTION_PENDING_MS;
-    await transaction
+    const changed = await transaction
       .update(sprayWallDetections)
       .set({
         status: valid ? 'done' : 'cancelled',
@@ -97,8 +98,10 @@ export async function finishSprayDetection(
         finishedAt: new Date(),
         attemptToken: null,
       })
-      .where(and(eq(sprayWallDetections.id, id), eq(sprayWallDetections.attemptToken, attemptToken)));
-    return valid;
+      .where(and(eq(sprayWallDetections.id, id), eq(sprayWallDetections.attemptToken, attemptToken)))
+      .returning({ id: sprayWallDetections.id });
+    if (valid && changed.length > 0) await onCompleted?.(transaction);
+    return valid && changed.length > 0;
   });
 }
 

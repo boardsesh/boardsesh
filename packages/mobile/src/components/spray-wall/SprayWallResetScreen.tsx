@@ -69,9 +69,10 @@ const COUNTED_STEPS: readonly ResetWallStep[] = ['photo', 'anchors', 'compare'];
 export type SprayWallResetScreenProps = {
   /** The wall being reset. */
   wallUuid: string;
+  versionId?: string;
 };
 
-export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
+export function SprayWallResetScreen({ wallUuid, versionId }: SprayWallResetScreenProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const { showToast } = useToast();
@@ -361,6 +362,27 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
     }
   }, [openDraft, discardVersionAsync, showToast, t]);
 
+  const resumedTargetRef = useRef(false);
+  useEffect(() => {
+    if (
+      !versionId ||
+      resumedTargetRef.current ||
+      hasStartedWork ||
+      !wall?.viewerCanEdit ||
+      !wall.currentVersion ||
+      openDraft?.id !== versionId
+    )
+      return;
+    const { width, height } = openDraft.photo ?? {};
+    if (!width || !height) return;
+    resumedTargetRef.current = true;
+    dispatch({
+      type: 'DRAFT_CREATED',
+      draft: { versionId: openDraft.id, versionNumber: openDraft.number, photoWidth: width, photoHeight: height },
+    });
+    runDetection();
+  }, [versionId, hasStartedWork, wall, openDraft, runDetection]);
+
   // ============================================
   // Render
   // ============================================
@@ -380,6 +402,15 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
           {t('sprayReset.notYours')}
         </Text>
         <Button title={t('sprayWizard.back')} variant="text" onPress={() => router.back()} />
+      </View>
+    );
+  }
+
+  if (versionId && !hasStartedWork && openDraft?.id !== versionId) {
+    return (
+      <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
+        <Text>{t('sprayImport.unavailable')}</Text>
+        <Button title={t('sprayWizard.back')} onPress={() => router.replace('/boards')} />
       </View>
     );
   }

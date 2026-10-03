@@ -13,8 +13,8 @@
 //    add-a-wall wizard: without four corners the matcher reports the entire wall
 //    as removed.
 
-import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, act } from '@testing-library/react';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { render, act, waitFor, cleanup } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 const wallQueryState = vi.hoisted(() => ({ current: { data: null as unknown, isPending: false } }));
@@ -22,11 +22,23 @@ const pickResult = vi.hoisted(() => ({
   current: { outcome: 'picked', photo: { uri: 'file:///w.jpg', width: 2048, height: 1536 } } as unknown,
 }));
 const discardMutateAsync = vi.hoisted(() => vi.fn(async () => true));
+const targetMocks = vi.hoisted(() => ({
+  fetchWall: vi.fn(),
+  createWall: vi.fn(),
+  createVersion: vi.fn(),
+  publish: vi.fn(),
+  discardDraft: vi.fn(),
+  updateVisibility: vi.fn(),
+  finish: vi.fn(),
+  invalidateQueries: vi.fn(),
+  replace: vi.fn(),
+}));
 /** The corner marker's props, so a test can hand the screen four corners. */
 const markerProps = vi.hoisted(() => ({ current: null as null | { onChange?: (quad: unknown) => void } }));
 
 vi.mock('react-native', () => ({
   Alert: { alert: vi.fn() },
+  AccessibilityInfo: { announceForAccessibility: vi.fn() },
   KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   Platform: { OS: 'ios' },
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
@@ -37,7 +49,7 @@ vi.mock('react-native', () => ({
 
 vi.mock('expo-image', () => ({ Image: () => createElement('img', { 'data-testid': 'preview' }) }));
 vi.mock('expo-router', () => ({
-  useRouter: () => ({ back: vi.fn() }),
+  useRouter: () => ({ back: vi.fn(), replace: targetMocks.replace }),
   useNavigation: () => ({ addListener: () => () => {}, dispatch: vi.fn() }),
 }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
@@ -116,15 +128,55 @@ vi.mock('../../../lib/spray/wall-photo', () => ({
   rescalePoint: (point: [number, number]) => point,
 }));
 vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
-  useCreateSprayWallVersion: () => ({ mutateAsync: vi.fn() }),
-  fetchSprayWallVersions: vi.fn(),
+  useCreateSprayWallVersion: () => ({ mutateAsync: targetMocks.createVersion }),
+  useCreateSprayWall: () => ({ mutateAsync: targetMocks.createWall }),
+  usePublishSprayWallVersion: () => ({ mutateAsync: targetMocks.publish }),
+  useDiscardSprayWallDraft: () => ({ mutateAsync: targetMocks.discardDraft }),
+  useUpdateSprayWallVisibility: () => ({ mutateAsync: targetMocks.updateVisibility }),
+  useMySprayWalls: () => ({ data: [], isFetching: false, dataUpdatedAt: 0, errorUpdatedAt: 0, refetch: vi.fn() }),
+  fetchSprayWallVersions: targetMocks.fetchWall,
 }));
 vi.mock('../../../lib/spray/use-spray-wall-reset', () => ({
   useSprayWallWithVersions: () => wallQueryState.current,
   useDiscardSprayWallVersion: () => ({ mutateAsync: discardMutateAsync, isPending: false }),
 }));
 
+vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => ({ invalidateQueries: targetMocks.invalidateQueries }),
+}));
+vi.mock('../../../lib/boards/use-activate-board', () => ({ useActivateBoard: () => targetMocks.finish }));
+vi.mock('../../../lib/spray/spray-wall-loader', () => ({ invalidateSprayWallRenderData: vi.fn() }));
+vi.mock('../../board-discovery/use-spray-wall-builder', () => ({
+  SPRAY_ANGLE_OPTIONS: [40],
+  useSprayWallBuilder: () => ({}),
+}));
+vi.mock('../../board-discovery/GymPickerSheet', () => ({ GymPickerSheet: () => null }));
+vi.mock('../../board-discovery/BoardMetaFields', () => ({
+  BoardIdentityFields: () => null,
+  BoardVisibilityFields: () => null,
+  SectionLabel: () => null,
+}));
+vi.mock('../../play-drawer/AngleSlider', () => ({ AngleSlider: () => null }));
+vi.mock('../../play-drawer/AngleBoardDiagram', () => ({ AngleBoardDiagram: () => null }));
+vi.mock('../SprayWallLookStep', () => ({ SprayWallLookStep: () => null }));
+vi.mock('../../outline-editor/SprayHoldEditorScreen', () => ({
+  confirmDiscardSprayEdits: vi.fn(),
+  SprayHoldEditorScreen: (props: {
+    wallUuid: string;
+    versionId: string;
+    candidates: unknown[];
+    notice?: { message: string };
+  }) =>
+    createElement('div', {
+      'data-testid': 'hold-editor',
+      'data-wall': props.wallUuid,
+      'data-version': props.versionId,
+      'data-candidate-count': props.candidates.length,
+    }),
+}));
+
 const { SprayWallResetScreen } = await import('../SprayWallResetScreen');
+const { SprayWallWizardScreen } = await import('../SprayWallWizardScreen');
 
 const SQUARE = [
   [0, 0],
@@ -144,6 +196,7 @@ const EDITABLE_WALL = {
 const renderScreen = () => render(createElement(SprayWallResetScreen, { wallUuid: 'wall-1' }));
 
 beforeEach(() => {
+  Object.values(targetMocks).forEach((mock) => mock.mockReset());
   markerProps.current = null;
   discardMutateAsync.mockClear();
   pickResult.current = { outcome: 'picked', photo: { uri: 'file:///w.jpg', width: 2048, height: 1536 } };
@@ -255,5 +308,107 @@ describe('SprayWallResetScreen', () => {
 
     expect(getByText('sprayReset.photo.title')).toBeTruthy();
     expect(getByText('sprayWizard.photo.next').getAttribute('data-disabled')).toBe('true');
+  });
+});
+
+afterEach(cleanup);
+
+describe('targeted spray import resume', () => {
+  it('automatically resumes the exact reset version without creating or discarding a draft', () => {
+    wallQueryState.current = {
+      data: {
+        ...EDITABLE_WALL,
+        versions: [
+          { id: '42', number: 2, status: 'DRAFT', photo: { width: 800, height: 600 } },
+          ...EDITABLE_WALL.versions,
+        ],
+      },
+      isPending: false,
+    };
+    const { getByTestId } = render(createElement(SprayWallResetScreen, { wallUuid: 'wall-1', versionId: '42' }));
+    expect(getByTestId('detection').getAttribute('data-version')).toBe('42');
+    expect(targetMocks.createVersion).not.toHaveBeenCalled();
+    expect(discardMutateAsync).not.toHaveBeenCalled();
+    expect(EDITABLE_WALL.currentVersion.id).toBe('1');
+  });
+
+  it('refuses a stale reset version instead of adopting a different open draft', () => {
+    wallQueryState.current = {
+      data: {
+        ...EDITABLE_WALL,
+        versions: [
+          { id: '43', number: 2, status: 'DRAFT', photo: { width: 800, height: 600 } },
+          ...EDITABLE_WALL.versions,
+        ],
+      },
+      isPending: false,
+    };
+    const { getByText, queryByTestId } = render(
+      createElement(SprayWallResetScreen, { wallUuid: 'wall-1', versionId: '42' }),
+    );
+    expect(getByText('sprayImport.unavailable')).toBeTruthy();
+    expect(queryByTestId('detection')).toBeNull();
+    expect(targetMocks.createVersion).not.toHaveBeenCalled();
+    expect(discardMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('opens saved new-wall edits directly on the exact version without restarting detection or creating a wall', async () => {
+    targetMocks.fetchWall.mockResolvedValue({
+      uuid: 'wall-1',
+      layoutId: 9001,
+      viewerCanEdit: true,
+      board: { uuid: 'wall-1', name: 'Saved garage' },
+      currentVersion: null,
+      versions: [
+        { id: '42', number: 1, status: 'DRAFT', photo: { url: 'https://photo.invalid/saved.jpg' }, addedHoldCount: 17 },
+      ],
+    });
+    const { getByTestId, queryByTestId } = render(
+      createElement(SprayWallWizardScreen, { returnTo: '/(tabs)/climbs', wallUuid: 'wall-1', versionId: '42' }),
+    );
+    await waitFor(() => expect(getByTestId('hold-editor').getAttribute('data-version')).toBe('42'));
+    expect(getByTestId('hold-editor').getAttribute('data-wall')).toBe('wall-1');
+    expect(getByTestId('hold-editor').getAttribute('data-candidate-count')).toBe('0');
+    expect(queryByTestId('detection')).toBeNull();
+    expect(targetMocks.fetchWall).toHaveBeenCalledWith('wall-1');
+    expect(targetMocks.createWall).not.toHaveBeenCalled();
+    expect(targetMocks.createVersion).not.toHaveBeenCalled();
+  });
+
+  it('opens an already-published notification target as its board without creating another wall', async () => {
+    const publishedBoard = { uuid: 'wall-1', name: 'Published garage' };
+    targetMocks.fetchWall.mockResolvedValue({
+      uuid: 'wall-1',
+      layoutId: 9001,
+      viewerCanEdit: true,
+      board: publishedBoard,
+      currentVersion: { id: '42' },
+      versions: [{ id: '42', number: 1, status: 'PUBLISHED' }],
+    });
+    render(createElement(SprayWallWizardScreen, { returnTo: '/(tabs)/climbs', wallUuid: 'wall-1', versionId: '42' }));
+    await waitFor(() => expect(targetMocks.finish).toHaveBeenCalledWith(publishedBoard));
+    expect(targetMocks.createWall).not.toHaveBeenCalled();
+    expect(targetMocks.createVersion).not.toHaveBeenCalled();
+  });
+
+  it('rejects a stale new-wall version rather than resuming another draft or creating a wall', async () => {
+    targetMocks.fetchWall.mockResolvedValue({
+      uuid: 'wall-1',
+      layoutId: 9001,
+      viewerCanEdit: true,
+      board: { uuid: 'wall-1', name: 'Saved garage' },
+      currentVersion: null,
+      versions: [
+        { id: '43', number: 1, status: 'DRAFT', photo: { url: 'https://photo.invalid/saved.jpg' }, addedHoldCount: 17 },
+      ],
+    });
+    const { getByText, queryByTestId } = render(
+      createElement(SprayWallWizardScreen, { returnTo: '/(tabs)/climbs', wallUuid: 'wall-1', versionId: '42' }),
+    );
+    await waitFor(() => expect(getByText('sprayImport.unavailable')).toBeTruthy());
+    expect(queryByTestId('hold-editor')).toBeNull();
+    expect(queryByTestId('detection')).toBeNull();
+    expect(targetMocks.createWall).not.toHaveBeenCalled();
+    expect(targetMocks.createVersion).not.toHaveBeenCalled();
   });
 });

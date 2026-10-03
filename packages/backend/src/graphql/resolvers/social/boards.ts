@@ -4,6 +4,7 @@ import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { normaliseSetIds } from '@boardsesh/board-config';
 import { rowsFromResult } from '@boardsesh/db/client';
+import { readSprayWallImportProgress } from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
@@ -320,6 +321,44 @@ export async function requireBoardEditAccess(
   throw new Error('Not authorized to update this board');
 }
 
+/** Batch edit gate for progress polling; missing/revoked boards are omitted. */
+export async function filterEditableBoards(
+  boards: Array<typeof dbSchema.userBoards.$inferSelect>,
+  userId: string,
+): Promise<Array<typeof dbSchema.userBoards.$inferSelect>> {
+  const gymIds = [...new Set(boards.flatMap((board) => (board.gymId !== null ? [board.gymId] : [])))];
+  const [roles, editableGyms] = await Promise.all([
+    getUserCommunityRoles(userId),
+    gymIds.length > 0
+      ? db
+          .selectDistinct({ id: dbSchema.gyms.id })
+          .from(dbSchema.gyms)
+          .leftJoin(
+            dbSchema.gymMembers,
+            and(
+              eq(dbSchema.gymMembers.gymId, dbSchema.gyms.id),
+              eq(dbSchema.gymMembers.userId, userId),
+              eq(dbSchema.gymMembers.role, 'admin'),
+            ),
+          )
+          .where(
+            and(
+              inArray(dbSchema.gyms.id, gymIds),
+              isNull(dbSchema.gyms.deletedAt),
+              or(eq(dbSchema.gyms.ownerId, userId), isNotNull(dbSchema.gymMembers.id)),
+            ),
+          )
+      : Promise.resolve([]),
+  ]);
+  const editableGymIds = new Set(editableGyms.map((gym) => gym.id));
+  return boards.filter(
+    (board) =>
+      board.ownerId === userId ||
+      (boardIsRoleEditable(board) && rolesGrantAdminOrLeader(roles, board.boardType)) ||
+      (board.gymId !== null && editableGymIds.has(board.gymId)),
+  );
+}
+
 /**
  * The single gate for exposing a board's numeric presence-channel id
  * (userBoards.id, the `UserBoard.boardId` field feeding boardNowPlaying):
@@ -466,7 +505,13 @@ async function enrichBoard(
     ? board.ownerId === authenticatedUserId || (canEditByRole && boardIsRoleEditable(board)) || canEditByGym
     : false;
 
+  const sprayImport =
+    canEdit && isSprayBoardType(board.boardType)
+      ? ((await readSprayWallImportProgress(db, [board.uuid]))[0] ?? null)
+      : null;
+
   return {
+    sprayImport,
     uuid: board.uuid,
     slug: board.slug,
     ownerId: board.ownerId,
@@ -680,6 +725,21 @@ export async function enrichBoards(
     ...(adminGymRows as Array<{ gymId: number }>).map((row) => row.gymId),
   ]);
 
+  const editableSprayWallUuids = authenticatedUserId
+    ? boards
+        .filter(
+          ({ board }) =>
+            isSprayBoardType(board.boardType) &&
+            (board.ownerId === authenticatedUserId ||
+              (rolesGrantAdminOrLeader(viewerRoles, board.boardType) && boardIsRoleEditable(board)) ||
+              (board.gymId != null && editableGymIds.has(board.gymId))),
+        )
+        .map(({ board }) => board.uuid)
+    : [];
+  const sprayImportByWall = new Map(
+    (await readSprayWallImportProgress(db, editableSprayWallUuids)).map((progress) => [progress.wallUuid, progress]),
+  );
+
   return boards.map(({ board, distanceMeters }) => {
     const owner = ownerMap.get(board.ownerId);
     const ticks = tickMap.get(board.id);
@@ -691,6 +751,7 @@ export async function enrichBoards(
       : false;
 
     return {
+      sprayImport: canEdit ? (sprayImportByWall.get(board.uuid) ?? null) : null,
       uuid: board.uuid,
       slug: board.slug,
       ownerId: board.ownerId,

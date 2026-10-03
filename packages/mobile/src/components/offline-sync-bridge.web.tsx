@@ -1,4 +1,6 @@
 import { useEffect } from 'react';
+import { useAuth } from '../providers/auth-provider';
+import { useSprayCompletionUpdates } from '../notifications/use-spray-completion-updates';
 import { setOfflineEngineEnabled } from '../lib/offline-engine';
 import { registerOfflineEngineState } from '../lib/analytics-offline-engine-state';
 
@@ -14,5 +16,7 @@ export function OfflineEngineFlagSync(): null {
 }
 
 export function OfflineSyncBridge(): null {
+  const { isAuthenticated, isLoading } = useAuth();
+  useSprayCompletionUpdates(isAuthenticated && !isLoading, undefined);
   return null;
 }

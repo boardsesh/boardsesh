@@ -104,6 +104,10 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
+vi.mock('../../../src/lib/spray/use-spray-import-progress', () => ({
+  useSprayImportProgress: (boards: unknown[]) => ({ boards, stale: false }),
+}));
+
 vi.mock('expo-router', () => ({
   useRouter: () => routerMock,
   useLocalSearchParams: () => ({ source: state.source }),
@@ -790,5 +794,47 @@ describe('spray-wall detail sheet reachability', () => {
     mounted.rerender(createElement(BoardSelection));
     expect(detailProps.last?.visible).toBe(false);
     expect(detailProps.last?.board).toBeNull();
+  });
+});
+
+describe('picking an importing spray wall', () => {
+  const progress = {
+    wallUuid: 'spray-wall',
+    versionId: '42',
+    detectionId: 'detection',
+    stage: 'queued' as const,
+    queuePosition: 3,
+    retryAt: null,
+    isReset: false,
+  };
+
+  it('opens the exact unfinished wall instead of activating an unpublished board', () => {
+    state.myBoards = [
+      board({ uuid: 'spray-wall', name: 'Importing garage', boardType: 'spray', canEdit: true, sprayImport: progress }),
+    ];
+    render(createElement(BoardSelection));
+    fireEvent.click(screen.getByRole('button', { name: 'Importing garage' }));
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/boards/spray/new',
+      params: { wallUuid: 'spray-wall', versionId: '42' },
+    });
+    expect(setActiveBoardMock).not.toHaveBeenCalled();
+  });
+
+  it('continues activating the published wall while a reset is importing', async () => {
+    state.myBoards = [
+      board({
+        uuid: 'spray-wall',
+        name: 'Published garage',
+        boardType: 'spray',
+        canEdit: true,
+        sprayImport: { ...progress, isReset: true },
+      }),
+    ];
+    render(createElement(BoardSelection));
+    fireEvent.click(screen.getByRole('button', { name: 'Published garage' }));
+    await waitFor(() => expect(setActiveBoardMock).toHaveBeenCalledTimes(1));
+    expect(routerMock.push).not.toHaveBeenCalledWith(expect.objectContaining({ pathname: '/boards/spray/new' }));
+    expect(routerMock.push).not.toHaveBeenCalledWith(expect.objectContaining({ pathname: '/boards/spray/reset' }));
   });
 });

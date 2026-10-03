@@ -9,6 +9,7 @@ import { shutdownPosthog } from './services/analytics/posthog';
 import { logger } from './utils/logger';
 import { FORCE_SHUTDOWN_TIMEOUT_MS } from './shutdown-timing';
 import { startJobQueue, stopJobQueue } from './services/job-queue';
+import { startSprayDetectionNotifications } from './services/spray-detection-notifications';
 import { startSprayDetectionMaintenance } from './services/spray-detection-maintenance';
 import { startBackgroundJobMaintenance } from './services/background-job-maintenance';
 import { startBatchSchedules } from './services/batch-schedules';
@@ -29,6 +30,7 @@ async function main() {
   // call `startJobQueue()` directly, which is the honest way to test it.
   const jobQueue = await startJobQueue();
   await startSprayDetectionMaintenance(jobQueue);
+  await startSprayDetectionNotifications(jobQueue);
   await startBackgroundJobMaintenance(jobQueue, db);
   // Not fatal: without it no family schedule fires, which is also the state
   // with BATCH_FAMILIES_ENABLED unset. Work already queued is unaffected.

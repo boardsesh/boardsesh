@@ -223,6 +223,63 @@ the physical standby is not a queue endpoint. See
 [deployment and exposure gates](spray-recognition-rollout.md) for the pinned
 segmentation model, tiling, outlines, retries and native-runtime cleanup.
 
+#### Import progress and completion
+
+My Boards keeps unfinished walls visible after the creator leaves the wizard.
+`UserBoard.sprayImport` carries the wall UUID, exact draft version and detection
+IDs, stage, optional queue position/retry time, and whether the wall already has
+a published version. It is returned only to viewers with board edit access;
+public viewers and followers do not receive draft progress. An unpublished wall
+without a photo/version still appears as a draft. Published walls without an
+open draft have no import metadata.
+
+| Saved stage | What My Boards shows | Resume action |
+| --- | --- | --- |
+| `draft` | Draft | Continue the saved wall's setup. |
+| `queued` | Importing, with queue position when known; retry status during backoff | Open that version's progress. |
+| `running` | Importing | Open that version's progress. |
+| `ready` | Ready to review | Review that version's proposed holds. |
+| `failed` | Couldn't import | Retry; new walls can also place holds manually. |
+
+New-wall cards resume `/boards/spray/new` with `wallUuid` and, when present,
+`versionId`. Published reset cards retain normal board activation and offer a
+separate `/boards/spray/reset` progress/review action targeting that exact draft.
+Neither detection completion nor a notification publishes a wall. Existing
+walls stay usable until the reset is reviewed and published; saved manual edits
+remain the source when resuming review.
+
+`sprayWallImportProgress(wallUuids)` is a lightweight, editor-only batch read,
+limited to 50 UUIDs per request. Missing, deleted and no-longer-editable walls
+are omitted; a successful omission clears cached import metadata. My Boards
+polls at five seconds only while visible in the foreground and imports are
+waiting or running. Detection screens poll at two seconds. Offline/failed reads
+retain saved progress but mask stale queue ranks as a connection status.
+
+Queue position comes from one snapshot of pg-boss's detection queue: active
+jobs plus eligible waiting work ordered by priority, then creation time. Blocked,
+deferred, completed, failed and cancelled jobs do not occupy waiting positions.
+Tied ordering, active processing and retry backoff have no numbered position;
+backoff can include `retryAt`. No completion-time estimate is inferred from rank.
+Durable detection outcomes remain authoritative after queue cleanup.
+
+A successful fenced detection commit also inserts a
+`spray-wall-detection-completed` job in the same transaction. Cancelled/stale
+attempts cannot enqueue completion. The backend rechecks the requesting user's
+edit access and the source draft, then creates one notification identified by
+the detection UUID. Replays reuse that feed entry. Its wall name and exact
+review target travel in both fetched and live notification payloads.
+
+Native devices can receive the same completion through Expo Push. Registration
+is account-scoped, separate from Live Activity tokens, and stores platform and
+locale. Starting recognition may request notification permission; declining or
+registration failure never blocks the import or its in-app notification.
+Allowed devices refresh registration on sign-in/foreground and deactivate it
+on logout. Per-device delivery records, pg-boss retries, Expo receipt checks and
+invalid-token retirement make delivery recoverable; phone delivery remains
+best effort. Browsers use the notification feed. Alert/feed taps resume the
+correct draft after authentication, and handle already-published, discarded or
+inaccessible targets without creating another wall.
+
 The box-model measurements below are historical evidence, not the current
 segmentation service's inference configuration. The native runtime and benchmark
 have been removed; see [native cleanup](spray-recognition-native-cleanup.md).
@@ -385,6 +442,8 @@ Everything a wall needs is in `packages/shared-schema/src/schema/spray-walls.ts`
 | `sprayWallByLayout(layoutId)` | The same wall, for a client holding only a board config. |
 | `sprayWallRenderData(uuid, version)` | The whole render payload in one round trip: the photo, the homography and the holds alive at that version. Omit `version` for the published one. |
 | `mySprayWalls` | Every wall the caller owns, drafts included. |
+| `sprayWallImportProgress(wallUuids)` | Editor-only import stages for up to 50 walls; omits finished or inaccessible targets. |
+| `sprayWallDetection(id)` / `sprayWallDetectionForVersion(wallUuid, versionId)` | Durable detection status/result, plus nullable queue position and retry time. |
 | `createSprayWall(input)` | The `user_boards` row plus the three catalogue rows, all unlisted. |
 | `createSprayWallVersion(input)` | Adopts an uploaded photo as a new DRAFT version and solves its homography. |
 | `upsertSprayWallHolds(input)` | Adds or corrects holds on a draft. A hold with no `id` gets a new catalogue id; one with an `id` has its geometry rewritten. |

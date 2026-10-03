@@ -833,6 +833,8 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     Mark a notification as read.
     """
+    registerNotificationDevice(input: RegisterNotificationDeviceInput!): Boolean!
+    unregisterNotificationDevice(installationId: String!): Boolean!
     markNotificationRead(notificationUuid: ID!): Boolean!
 
     """

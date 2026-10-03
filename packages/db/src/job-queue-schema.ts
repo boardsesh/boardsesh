@@ -1,6 +1,7 @@
 import { PgBoss } from 'pg-boss';
 import {
   SPRAY_DETECTION_QUEUE,
+  SPRAY_DETECTION_COMPLETION_QUEUE,
   SPRAY_DETECTION_DEAD_QUEUE,
   SPRAY_DETECTION_RECONCILE_QUEUE,
   SPRAY_DETECTION_JOB_OPTIONS,
@@ -551,6 +552,19 @@ export async function initializeJobQueueSchema(
     // pg-boss 12.33's scheduler creates this queue at runtime. Pre-create it
     // under the owner so scheduler startup needs DML, never schema CREATE.
     await boss.createQueue('__pgboss__send-it', { partition: false });
+    await boss.createQueue(SPRAY_DETECTION_COMPLETION_QUEUE, {
+      partition: false,
+      retryLimit: 10,
+      retryDelay: 30,
+      retryBackoff: true,
+    });
+    await boss.createQueue('notification-push-delivery', {
+      partition: false,
+      retryLimit: 20,
+      retryDelay: 60,
+      retryBackoff: true,
+      retryDelayMax: 300,
+    });
     await boss.createQueue(SPRAY_DETECTION_DEAD_QUEUE, { partition: false });
     await boss.createQueue(SPRAY_DETECTION_QUEUE, { partition: false, ...SPRAY_DETECTION_JOB_OPTIONS });
     await boss.updateQueue(SPRAY_DETECTION_QUEUE, SPRAY_DETECTION_JOB_OPTIONS);
