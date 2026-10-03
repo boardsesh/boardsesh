@@ -35,8 +35,8 @@ The timestamp-normalizer source lineage has six distinct points:
   the live pull and JSON importer;
 - `ad4b39c08` made that shared normalizer safe for space-separated timestamps
   carrying an explicit UTC-offset suffix;
-- `cdf1406dfb53f1865513fd005d39b13f469a74e1` made the historical legacy web
-  `saveAscent` proxy use the shared normalizer when it writes
+- `cdf1406dfb53f1865513fd005d39b13f469a74e1` changed the historical legacy web
+  `saveAscent` helper to use the shared normalizer for rows it writes with
   `boardsesh_ticks.origin='native'`; its parent lineage already contains the
   explicit-offset fix above.
 
@@ -56,8 +56,10 @@ rollout instants from deployment records:
 - the first instant when migration 0146's `updated_at` guard was active and
   every native writer that could still receive traffic independently wrote safe
   UTC timestamps, or had been retired. This includes both GraphQL `saveTick`
-  and the legacy web `saveAscent` proxy; no single writer's fix establishes the
-  boundary for the others.
+  and the historical web `saveAscent` proxy through its deployed retirement.
+  Current `main` has removed that proxy route, but the source deletion alone
+  does not establish when its live instances stopped receiving traffic. No
+  single writer's fix establishes the boundary for the others.
 
 The open interval in either writer's last-old/first-fixed pair is an uncertain
 rollout cohort. Its rows always abstain. Use a non-secret policy slug that points
@@ -235,21 +237,22 @@ not graph filters.
 
 Native timestamps need a separate guard. The current GraphQL `saveTick` writer
 parses `climbedAt` through `Date.toISOString()` and explicitly assigns one `now`
-value to both `created_at` and `updated_at`. It was not the only native writer:
-the still-routable Next.js `/api/v1/[board_name]/proxy/saveAscent` endpoint calls
-the legacy web `saveAscent` helper, which also inserts `origin='native'`.
-Revision `cdf1406dfb53f1865513fd005d39b13f469a74e1` changed that helper from direct
-`Date` parsing to the shared `normalizeTimestamp`; the shared helper already
-contained `ad4b39c08`'s explicit-offset-suffix fix. That source revision is not
-a deployment boundary, and this route is not retired in the audited source.
-The route accepts a string while its documented contract requires an
-ISO-8601 zone; the normalizer also safely pins Aurora's space-separated naive
-form to UTC, but explicitly warns that a zoneless ISO `T` form is host-dependent.
-Deployment evidence must therefore establish that every active instance had the
-fixed writer and that callers used a supported timestamp form, or establish a
-later instant when an unsafe writer/input path was tightened or retired. If
-that cannot be proved, the operator must choose a later defensible boundary or
-omit native anchors as proposal evidence; a commit timestamp is never enough.
+value to both `created_at` and `updated_at`. Historically, the Next.js
+`/api/v1/[board_name]/proxy/saveAscent` endpoint called the legacy web
+`saveAscent` helper, which also inserted `origin='native'`. Current `main` has
+removed that endpoint; the helper remains in source only for tests. Revision
+`cdf1406dfb53f1865513fd005d39b13f469a74e1` changed the helper from direct `Date`
+parsing to the shared `normalizeTimestamp`; the shared helper already contained
+`ad4b39c08`'s explicit-offset-suffix fix. Neither source change nor route
+deletion is a deployment boundary. The historical route accepted a string
+while its documented contract required an ISO-8601 zone; the normalizer also
+pins Aurora's space-separated naive form to UTC, but explicitly warns that a
+zoneless ISO `T` form is host-dependent. Deployment evidence must establish
+that every active instance had the fixed writer and callers used a supported
+timestamp form, or provide a later verified instant when the unsafe input path
+was tightened or the endpoint was retired. If that cannot be proved, the
+operator must choose a later defensible boundary or omit native anchors as
+proposal evidence; a commit timestamp is never enough.
 
 `updateTick` can later replace `climbed_at`; every call explicitly advances
 `updated_at`. Migration 0146 also installs
