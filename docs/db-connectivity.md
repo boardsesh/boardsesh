@@ -311,7 +311,7 @@ rest of the hour-long entry.
 | knob                      | default        | meaning                                                                                  |
 | ------------------------- | -------------- | ---------------------------------------------------------------------------------------- |
 | `DB_READ_DEADLINE_MS`     | 6000           | web front door: wall clock for one _request's_ reads (queue wait + connect + execute)    |
-| `DB_POOL_MAX`             | 10 (Vercel: 3) | postgres.js `max`, clamped to a floor of 2                                               |
+| `DB_POOL_MAX`             | 5 (Vercel: 3)  | postgres.js `max`, clamped to a floor of 2                                               |
 | `DB_POOL_IDLE_TIMEOUT_S`  | 30 (Vercel: 5) | seconds an idle connection is held open; `0` means "never close one" and is not clamped  |
 | `DB_STATEMENT_TIMEOUT_MS` | unset          | emits a `statement_timeout` startup parameter — **off by default**, see the hazard below |
 
@@ -320,9 +320,9 @@ brownout the front door should shed load rather than spend a second and third
 connect attempt holding a pool slot while a crawler waits. That comparison only
 holds because the budget is per request — see the shared-budget note above.
 
-The pool knobs default to the values that used to be hard-coded — except on
-Vercel, where an unset knob now falls back to the serverless pair (`max` 3,
-idle 5 s; `process.env.VERCEL` selects it, an explicit env var still wins).
+The pool knobs default to `max` 5 and idle 30 s (the previous `max` default
+was 10) — except on Vercel, where an unset knob falls back to the serverless
+pair (`max` 3, idle 5 s; `process.env.VERCEL` selects it, an explicit env var still wins).
 The split exists because peak server-side connections scale with
 **instance count × connections held idle**, not with per-instance `max` — a
 fleet of serverless instances each sitting on a few idle connections for 30 s
@@ -406,6 +406,75 @@ WHERE backend_type = 'client backend'
 GROUP BY 1, 2
 ORDER BY 3 DESC;
 ```
+
+## Pool budgets and pg-boss timers (C15)
+
+The following are projections after the code defaults in this change are
+deployed. They are not a live production measurement. The web service currently
+sets `DB_POOL_MAX=10` explicitly, so the new default does not affect it until
+the separate operator cap is applied. The Aurora and Kilter sync runners also
+construct raw postgres.js clients with `max: 5`; they do not read
+`DB_POOL_MAX`. Capping those daemons at 3 needs a separate code change. The
+hold detector's `createDb()` pool uses the shared default of 5 (or honors an
+explicit `DB_POOL_MAX`), and its separate pg-boss pool is fixed at 3. No
+three-connection hold-detector override is part of these source defaults, so
+the projection below counts both pools as 5 + 3.
+
+| client                                   | code defaults (web still 10) | after web cap 4 | after separate daemon cap 3 |
+| ---------------------------------------- | ---------------------------: | --------------: | --------------------------: |
+| backend postgres.js, 2 replicas          |                       2 x 5 |          2 x 5 |                      2 x 5 |
+| backend pg-boss, 2 replicas              |                       2 x 2 |          2 x 2 |                      2 x 2 |
+| web postgres.js (explicit env)           |                          10 |             4 |                         4 |
+| hold detector                            |                           8 |             8 |                         8 |
+| sync daemons, about 3                    |                       3 x 5 |          3 x 5 |                      3 x 3 |
+| background workers, 4 roles              |                   4 x (2+1) |      4 x (2+1) |                  4 x (2+1) |
+| `boardsesh_readonly` (role cap)          |                         <=5 |           <=5 |                       <=5 |
+| migrator, during a deploy                |                           1 |             1 |                         1 |
+| **steady ceiling (one migrator counted)**|                     **<=65** |       **<=59** |                   **<=53** |
+| **+ old backend fleet draining (15 s)**  |                     **<=79** |       **<=73** |                   **<=67** |
+
+The code-only budget uses the unchanged web setting of 10. The web cap to 4 is
+an operator step after this change deploys. The daemon cap column is a later
+source change, because those runners currently ignore `DB_POOL_MAX`. Do not
+lower `max_connections` to 60 while the drain projection is 67 or higher: 60
+leaves 57 application slots, below even the later-cap projection. The original
+C15 order still applies — cap every client, watch a week of deploy peaks under
+45, then consider the restart-window change. If those conditions are not met,
+keep `max_connections=100`.
+
+### If PgBouncer is revisited
+
+PgBouncer remains parked as described above. If the backend and web are later
+moved behind its 45-server cap, the code defaults make them 18 clients at
+steady state (web 4 plus backend 14) or 32 during a backend deploy. The direct
+clients (hold detector, sync daemons, background workers, `boardsesh_readonly`,
+and migrator) total at most 41 while the daemons remain at 5. This projected
+split fits under the 97 application slots; it is not evidence that PgBouncer
+has been deployed or that its TLS prerequisites are complete.
+
+### pg-boss timers
+
+Only the backend owns pg-boss supervision and scheduling. Its replicas contend
+on the same `pgboss.version` row; the installed defaults perform frequent
+timer updates even when queues have little work. The C15 defaults are:
+
+| option                               | pg-boss default | this change | effect |
+| ------------------------------------ | --------------: | ----------: | ------ |
+| `flowIntervalSeconds`                | 5 s             | 3600 s      | Flows and job dependencies are unused; restore a short interval before adding either. |
+| `cronMonitorIntervalSeconds`         | 30 s            | 45 s        | 45 s is the maximum accepted by pg-boss 12.33; 46 throws during construction. |
+| `monitorIntervalSeconds`             | 60 s            | 120 s       | The 60 s supervise cadence makes expiry and missed-heartbeat checks 2–3 min instead of 1–2. |
+| maintenance `pollingIntervalSeconds` | 2 s             | 30 s        | Reconcile and dead-letter workers poll less often, with at most one-minute scheduling. |
+| selected cron retention              | 7 days          | 1 day       | Applies only to `__pgboss__send-it` and the spray/background-job reconcile queues. |
+
+The backend maintenance consumers set only their polling interval and therefore
+keep pg-boss 12.33's defaults of one local worker and a batch size of one. The
+hold-detector queue consumer sets both values to one explicitly. Slowing the
+maintenance polling does not change worker concurrency or batch size.
+
+The owner migrator updates retention on installed queues. pg-boss copies
+`deleteAfterSeconds` onto each job when it is inserted, so already-completed
+jobs keep the previous seven-day clock. The popular-config and climb-popularity
+queues keep their existing schedules and retention policies.
 
 ### A FATAL during startup, and the driver patch that handles it
 
