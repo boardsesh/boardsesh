@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Image } from 'expo-image';
@@ -20,21 +20,28 @@ import {
 import { groupSprayWallReports, type SprayWallReportGroup } from '../spray-wall/spray-report-presenters';
 import { spacing, borderRadius } from '../../theme/tokens';
 
-const keyExtractor = (group: SprayWallReportGroup) => group.wallUuid;
+type ReviewState = 'pending' | 'error';
+type ReportRow = { group: SprayWallReportGroup; reviewState?: ReviewState };
+const EMPTY_REVIEW_STATES: ReadonlyMap<string, ReviewState> = new Map();
+const keyExtractor = (row: ReportRow) => row.group.wallUuid;
 
 const SprayWallReportCard = memo(function SprayWallReportCard({
   group,
   onRefreshPhoto,
   canReview,
+  effectiveOffline,
+  reviewState,
+  onReview,
 }: {
   group: SprayWallReportGroup;
   onRefreshPhoto: () => void;
   canReview: boolean;
+  effectiveOffline: boolean;
+  reviewState?: ReviewState;
+  onReview: (wallUuid: string, hidden: boolean) => void;
 }) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
-  const { effectiveOffline } = useConnectivity();
-  const review = useReviewSprayWall();
   const failedPhoto = useRef<string | null>(null);
   const retryPhoto = useCallback(() => {
     const photoUrl = group.photo?.url;
@@ -53,21 +60,21 @@ const SprayWallReportCard = memo(function SprayWallReportCard({
       {
         label: t('sprayModeration.hide'),
         destructive: true,
-        disabled: !canReview || review.isPending || effectiveOffline,
+        disabled: !canReview || reviewState === 'pending' || effectiveOffline,
       },
       {
         label: group.hidden ? t('sprayModeration.unhide') : t('sprayModeration.keepVisible'),
-        disabled: !canReview || review.isPending || effectiveOffline,
+        disabled: !canReview || reviewState === 'pending' || effectiveOffline,
       },
     ],
-    [t, group.hidden, canReview, review.isPending, effectiveOffline],
+    [t, group.hidden, canReview, reviewState, effectiveOffline],
   );
   const choose = useCallback(
     (index: number) => {
-      if (!canReview || review.isPending || effectiveOffline) return;
-      review.mutate({ input: { uuid: group.wallUuid, hidden: index === 0 } });
+      if (!canReview || reviewState === 'pending' || effectiveOffline) return;
+      onReview(group.wallUuid, index === 0);
     },
-    [canReview, review, effectiveOffline, group.wallUuid],
+    [canReview, reviewState, effectiveOffline, group.wallUuid, onReview],
   );
   const photoAvailable = group.photo && Date.parse(group.photo.expiresAt) > Date.now();
   return (
@@ -93,8 +100,10 @@ const SprayWallReportCard = memo(function SprayWallReportCard({
         </Text>
       ))}
       <AppMenu label={t('sprayModeration.review')} actions={actions} onSelectIndex={choose} />
-      {review.isPending ? <ActivityIndicator /> : null}
-      {review.isError ? <Text accessibilityLiveRegion="polite">{t('sprayModeration.reviewError')}</Text> : null}
+      {reviewState === 'pending' ? <ActivityIndicator /> : null}
+      {reviewState === 'error' ? (
+        <Text accessibilityLiveRegion="polite">{t('sprayModeration.reviewError')}</Text>
+      ) : null}
     </View>
   );
 });
@@ -104,6 +113,45 @@ export function SprayWallReportsScreen() {
   const { t: tCommon } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
   const { canReview, sessionScope } = useSprayModerationAccess();
+  const { effectiveOffline } = useConnectivity();
+  const { mutateAsync: reviewWall } = useReviewSprayWall();
+  const [reviewStates, setReviewStates] = useState(EMPTY_REVIEW_STATES);
+  const inFlightWalls = useRef(new Set<string>());
+  const currentSession = useRef(sessionScope);
+  currentSession.current = sessionScope;
+  useEffect(() => {
+    currentSession.current = sessionScope;
+    inFlightWalls.current.clear();
+    setReviewStates(EMPTY_REVIEW_STATES);
+    return () => {
+      currentSession.current = -1;
+    };
+  }, [sessionScope]);
+  const onReview = useCallback(
+    (wallUuid: string, hidden: boolean) => {
+      if (!canReview || effectiveOffline || inFlightWalls.current.has(wallUuid)) return;
+      inFlightWalls.current.add(wallUuid);
+      setReviewStates((priorStates) => new Map(priorStates).set(wallUuid, 'pending'));
+      void reviewWall({ input: { uuid: wallUuid, hidden } })
+        .then(() => {
+          if (currentSession.current !== sessionScope) return;
+          setReviewStates((priorStates) => {
+            const nextStates = new Map(priorStates);
+            nextStates.delete(wallUuid);
+            return nextStates;
+          });
+        })
+        .catch(() => {
+          if (currentSession.current === sessionScope) {
+            setReviewStates((priorStates) => new Map(priorStates).set(wallUuid, 'error'));
+          }
+        })
+        .finally(() => {
+          if (currentSession.current === sessionScope) inFlightWalls.current.delete(wallUuid);
+        });
+    },
+    [canReview, effectiveOffline, reviewWall, sessionScope],
+  );
   const {
     data: reports,
     status,
@@ -114,15 +162,26 @@ export function SprayWallReportsScreen() {
     refetch,
   } = useSprayWallReports(canReview, sessionScope);
   const groups = useMemo(() => groupSprayWallReports(reports ?? []), [reports]);
+  const rows = useMemo<ReportRow[]>(
+    () => groups.map((group) => ({ group, reviewState: reviewStates.get(group.wallUuid) })),
+    [groups, reviewStates],
+  );
   const offline = useOfflineQueryState({ status, fetchStatus, data: reports });
   const refresh = useCallback(() => {
     if (canReview) void refetch();
   }, [canReview, refetch]);
   const renderItem = useCallback(
-    ({ item }: { item: SprayWallReportGroup }) => (
-      <SprayWallReportCard group={item} onRefreshPhoto={refresh} canReview={canReview} />
+    ({ item }: { item: ReportRow }) => (
+      <SprayWallReportCard
+        group={item.group}
+        onRefreshPhoto={refresh}
+        canReview={canReview}
+        effectiveOffline={effectiveOffline}
+        reviewState={item.reviewState}
+        onReview={onReview}
+      />
     ),
-    [refresh, canReview],
+    [refresh, canReview, effectiveOffline, onReview],
   );
   if (!canReview)
     return (
@@ -133,7 +192,7 @@ export function SprayWallReportsScreen() {
   return (
     <View style={[styles.flex, { backgroundColor: systemColors.background }]}>
       <FlashList
-        data={groups}
+        data={rows}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
         contentInsetAdjustmentBehavior="automatic"
