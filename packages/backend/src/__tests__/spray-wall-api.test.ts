@@ -2991,7 +2991,16 @@ describe('setSprayWallRenderSettings', () => {
         { input: { uuid: wall.uuid, renderSettings: AURA_LOOK } },
         ctxFor(null),
       ),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/Authentication required/);
+  });
+
+  it('hands the look to any climber who can see the wall, not only its owner', async () => {
+    // Every viewer on 'default' draws the wall in it, so it must reach them.
+    const { wall } = await createPublishedWall(OWNER, { isPublic: true });
+    await setLook(wall.uuid, AURA_LOOK, OWNER);
+
+    const read = (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(STRANGER))) as WallWithLook;
+    expect(read.renderSettings).toEqual(AURA_LOOK);
   });
 
   it('refuses mode \'default\' — a wall default of "use the default" points at itself', async () => {
@@ -2999,7 +3008,19 @@ describe('setSprayWallRenderSettings', () => {
     await expect(setLook(wall.uuid, { ...AURA_LOOK, mode: 'default' }, OWNER)).rejects.toThrow(/mode/);
   });
 
-  it('refuses an out-of-bounds knob, an unknown option, a missing field and an unknown key', async () => {
+  it('accepts an option this backend does not know yet, because the app ships ahead of it', async () => {
+    // The app's own default spray look is `markStyle: 'outline'`, which reaches
+    // the app on the native train before this backend's board-look knows it.
+    const { wall } = await createPublishedWall(OWNER);
+    const ahead = { ...AURA_LOOK, boardsesh: { ...AURA_LOOK.boardsesh, markStyle: 'outline-v2' } };
+
+    await setLook(wall.uuid, ahead, OWNER);
+
+    const read = (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))) as WallWithLook;
+    expect(read.renderSettings).toEqual(ahead);
+  });
+
+  it('refuses an out-of-bounds knob, a malformed option, a missing field and an unknown key', async () => {
     const { wall } = await createPublishedWall(OWNER);
     const withKnob = (patch: Record<string, unknown>) => ({
       ...AURA_LOOK,
@@ -3008,7 +3029,9 @@ describe('setSprayWallRenderSettings', () => {
 
     await expect(setLook(wall.uuid, withKnob({ glowReach: 99 }), OWNER)).rejects.toThrow(/glowReach/);
     await expect(setLook(wall.uuid, withKnob({ fillOpacity: 0.1 }), OWNER)).rejects.toThrow(/fillOpacity/);
-    await expect(setLook(wall.uuid, withKnob({ veil: 'blinding' }), OWNER)).rejects.toThrow(/veil/);
+    await expect(setLook(wall.uuid, withKnob({ veil: 'Blinding Light' }), OWNER)).rejects.toThrow(/veil/);
+    await expect(setLook(wall.uuid, withKnob({ markStyle: 'x'.repeat(33) }), OWNER)).rejects.toThrow(/markStyle/);
+    await expect(setLook(wall.uuid, withKnob({ holdShape: 7 }), OWNER)).rejects.toThrow(/holdShape/);
     await expect(setLook(wall.uuid, withKnob({ sparkle: true }), OWNER)).rejects.toThrow(/sparkle/);
 
     const { holdShape: _dropped, ...missingHoldShape } = AURA_LOOK.boardsesh;
