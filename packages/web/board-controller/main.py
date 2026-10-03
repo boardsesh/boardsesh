@@ -11,7 +11,7 @@ import logging
 import os
 import sys
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -756,7 +756,6 @@ def auto_generate_ssl_cert():
         from cryptography.x509.oid import NameOID
         from cryptography.hazmat.primitives import hashes, serialization
         from cryptography.hazmat.primitives.asymmetric import rsa
-        from datetime import datetime, timedelta, timedelta
         import socket
         import ipaddress
         
@@ -790,8 +789,8 @@ def auto_generate_ssl_cert():
         cert_builder = cert_builder.issuer_name(issuer)
         cert_builder = cert_builder.public_key(private_key.public_key())
         cert_builder = cert_builder.serial_number(x509.random_serial_number())
-        cert_builder = cert_builder.not_valid_before(datetime.utcnow())
-        cert_builder = cert_builder.not_valid_after(datetime.utcnow() + timedelta(days=365))
+        cert_builder = cert_builder.not_valid_before(datetime.now(timezone.utc))
+        cert_builder = cert_builder.not_valid_after(datetime.now(timezone.utc) + timedelta(days=365))
         
         # Add Subject Alternative Names (SAN)
         san_list = [
