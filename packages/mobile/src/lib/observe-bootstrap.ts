@@ -24,6 +24,7 @@ import { setObserveRuntime } from './observe-runtime';
 
 setObserveRuntime({
   configure: (overrides: ObserveRuntimeOverrides) => Observe.configure(buildObserveConfig(overrides)),
+  dispatchEvents: () => Observe.dispatchEvents(),
   reportError: (error: unknown) => Observe.reportError(error),
 });
 

@@ -16,6 +16,7 @@ import type { ObserveRuntimeOverrides } from './observe-config';
  */
 export type ObserveRuntime = {
   configure(overrides: ObserveRuntimeOverrides): void;
+  dispatchEvents(): Promise<void>;
   reportError(error: unknown): void;
 };
 
@@ -36,6 +37,21 @@ export function configureObserve(overrides: ObserveRuntimeOverrides = {}): void 
     runtime.configure(overrides);
   } catch {
     // A telemetry misconfiguration must not take the app down.
+  }
+}
+
+/**
+ * Flush locally persisted Observe events without making telemetry a dependency
+ * of the app lifecycle. Native module failures are best-effort by definition:
+ * a foreground transition must still complete when Observe cannot dispatch.
+ */
+export async function dispatchObserveEvents(): Promise<void> {
+  if (!runtime) return;
+  try {
+    await runtime.dispatchEvents();
+  } catch (error) {
+    // The next foreground/background transition can retry persisted events.
+    if (__DEV__) console.warn('[observe] event dispatch failed; will retry later', error);
   }
 }
 
