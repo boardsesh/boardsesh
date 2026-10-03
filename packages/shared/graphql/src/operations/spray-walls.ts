@@ -1,4 +1,7 @@
 import { gql } from 'graphql-request';
+import type { SprayWallReportReason } from '../generated/graphql';
+
+export type { SprayWallReportReason } from '../generated/graphql';
 
 /**
  * Spray wall operations, shared by web and mobile.
@@ -400,3 +403,85 @@ export const REMIX_CLIMB = gql`
     }
   }
 `;
+
+/** Reports never accept free text; duplicate reports preserve the first reason. */
+export const REPORT_SPRAY_WALL = gql`
+  mutation ReportSprayWall($input: ReportSprayWallInput!) {
+    reportSprayWall(input: $input) {
+      status
+    }
+  }
+`;
+
+/** Admin-only previews include private and hidden walls; never persist photo URLs. */
+export const GET_SPRAY_WALL_REPORTS = gql`
+  query GetSprayWallReports($uuid: ID) {
+    sprayWallReports(uuid: $uuid) {
+      id
+      wallUuid
+      wallName
+      layoutId
+      reason
+      hidden
+      createdAt
+      photo {
+        ${SPRAY_WALL_PHOTO_FIELDS}
+      }
+    }
+  }
+`;
+
+/** Either review outcome clears every pending report for this wall. */
+export const SET_SPRAY_WALL_HIDDEN = gql`
+  mutation SetSprayWallHidden($input: SetSprayWallHiddenInput!) {
+    setSprayWallHidden(input: $input) {
+      uuid
+      layoutId
+      hidden
+      hiddenAt
+    }
+  }
+`;
+
+export type SprayWallPhotoData = {
+  url: string;
+  thumbUrl: string | null;
+  width: number | null;
+  height: number | null;
+  expiresAt: string;
+};
+
+export type SprayWallReportData = {
+  id: string;
+  wallUuid: string;
+  wallName: string;
+  layoutId: number;
+  reason: SprayWallReportReason;
+  hidden: boolean;
+  createdAt: string;
+  photo: SprayWallPhotoData | null;
+};
+
+export type ReportSprayWallMutationVariables = {
+  input: { wallUuid: string; reason: SprayWallReportReason };
+};
+
+export type ReportSprayWallMutationResponse = {
+  reportSprayWall: { status: 'CREATED' | 'ALREADY_REPORTED' };
+};
+
+export type GetSprayWallReportsQueryVariables = {
+  uuid?: string | null;
+};
+
+export type GetSprayWallReportsQueryResponse = {
+  sprayWallReports: SprayWallReportData[];
+};
+
+export type SetSprayWallHiddenMutationVariables = {
+  input: { uuid: string; hidden: boolean };
+};
+
+export type SetSprayWallHiddenMutationResponse = {
+  setSprayWallHidden: { uuid: string; layoutId: number; hidden: boolean; hiddenAt: string | null };
+};

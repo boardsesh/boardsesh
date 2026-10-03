@@ -368,6 +368,106 @@ describe('reporting a wall', () => {
     expect(await sprayWallModerationQueries.sprayWallReports({}, { uuid: null }, ctxFor(ADMIN))).toEqual([]);
   });
 
+  it('excludes a deleted board even when its wall row remains live', async () => {
+    const { wall } = await createPublishedWall({ isPublic: true });
+    await sprayWallModerationMutations.reportSprayWall(
+      {},
+      { input: { wallUuid: wall.uuid, reason: 'OTHER' } },
+      ctxFor(STRANGER),
+    );
+    await db.execute(sql`UPDATE user_boards SET deleted_at = now() WHERE uuid = ${wall.uuid}`);
+    presignedUrls.length = 0;
+
+    expect(await sprayWallModerationQueries.sprayWallReports({}, { uuid: null }, ctxFor(ADMIN))).toEqual([]);
+    expect(presignedUrls).toEqual([]);
+  });
+
+  it('returns names and one signed preview per private hidden wall', async () => {
+    const { wall } = await createPublishedWall({ name: 'Private garage', isPublic: false });
+    await attachWallToGymWithMember(wall.uuid);
+    for (const reporter of [OWNER, GYM_MEMBER]) {
+      await sprayWallModerationMutations.reportSprayWall(
+        {},
+        { input: { wallUuid: wall.uuid, reason: 'PERSONAL_INFO' } },
+        ctxFor(reporter),
+      );
+    }
+    // A pending report can be added by the owner after the wall is hidden.
+    // Set the hidden state directly here so both fixture reports remain pending.
+    await db.execute(sql`UPDATE spray_walls SET hidden_at = now() WHERE board_uuid = ${wall.uuid}`);
+    presignedUrls.length = 0;
+
+    const reports = await sprayWallModerationQueries.sprayWallReports({}, { uuid: wall.uuid }, ctxFor(ADMIN));
+    expect(reports).toHaveLength(2);
+    expect(reports[0]).toMatchObject({
+      wallUuid: wall.uuid,
+      wallName: 'Private garage',
+      hidden: true,
+      photo: { width: 1200, height: 900, url: expect.stringContaining('https://private.example/') },
+    });
+    expect(reports[1].photo).toEqual(reports[0].photo);
+    expect(presignedUrls).toHaveLength(2);
+  });
+
+  it('never signs a report preview before admin authorization', async () => {
+    const { wall } = await createPublishedWall();
+    await sprayWallModerationMutations.reportSprayWall(
+      {},
+      { input: { wallUuid: wall.uuid, reason: 'OTHER' } },
+      ctxFor(OWNER),
+    );
+    presignedUrls.length = 0;
+
+    await expect(sprayWallModerationQueries.sprayWallReports({}, { uuid: null }, ctxFor(OWNER))).rejects.toThrow(
+      /admin/i,
+    );
+    await expect(sprayWallModerationQueries.sprayWallReports({}, { uuid: null }, ctxFor(null))).rejects.toThrow();
+    expect(presignedUrls).toEqual([]);
+  });
+
+  it('keeps the published preview while an unpublished reset is edited', async () => {
+    const { wall } = await createPublishedWall();
+    await sprayWallModerationMutations.reportSprayWall(
+      {},
+      { input: { wallUuid: wall.uuid, reason: 'OTHER' } },
+      ctxFor(OWNER),
+    );
+    const published = await sprayWallModerationQueries.sprayWallReports({}, { uuid: null }, ctxFor(ADMIN));
+    await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId: registerUploadedPhoto(wall.uuid), anchors: ANCHORS } },
+      ctxFor(OWNER),
+    );
+    const withDraft = await sprayWallModerationQueries.sprayWallReports({}, { uuid: null }, ctxFor(ADMIN));
+    expect(withDraft[0].photo?.url).toEqual(published[0].photo?.url);
+  });
+
+  it('uses an unpublished draft photo and tolerates unavailable previews', async () => {
+    const wall = await createWallOnly();
+    await sprayWallModerationMutations.reportSprayWall(
+      {},
+      { input: { wallUuid: wall.uuid, reason: 'NOT_A_WALL' } },
+      ctxFor(OWNER),
+    );
+    expect((await sprayWallModerationQueries.sprayWallReports({}, { uuid: null }, ctxFor(ADMIN)))[0].photo).toBeNull();
+
+    const photoId = registerUploadedPhoto(wall.uuid);
+    await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    );
+    const reports = await sprayWallModerationQueries.sprayWallReports({}, { uuid: null }, ctxFor(ADMIN));
+    expect(reports[0].photo?.url).toContain(photoId);
+
+    const storage = await import('../storage/s3');
+    vi.mocked(storage.isS3Configured).mockReturnValue(false);
+    expect((await sprayWallModerationQueries.sprayWallReports({}, { uuid: null }, ctxFor(ADMIN)))[0].photo).toBeNull();
+    vi.mocked(storage.isS3Configured).mockReturnValue(true);
+    vi.mocked(storage.presignGetObject).mockRejectedValueOnce(new Error('Storage unavailable'));
+    expect((await sprayWallModerationQueries.sprayWallReports({}, { uuid: null }, ctxFor(ADMIN)))[0].photo).toBeNull();
+  });
+
   it('refuses the admin switch to a climber who is not an admin', async () => {
     const { wall } = await createPublishedWall({ isPublic: true });
     await expect(
