@@ -23,6 +23,11 @@ describe('climb logs cursor', () => {
     expect(decodeClimbLogsCursor(encodeClimbLogsCursor({ climbedAt: '2026-05-01 18:00:00', id }))?.id).toBe(id);
   });
 
+  it('accepts 29 February in a leap year', () => {
+    const cursor = encodeClimbLogsCursor({ climbedAt: '2028-02-29 23:59:59.999999', id: 1n });
+    expect(decodeClimbLogsCursor(cursor)).toEqual({ climbedAt: '2028-02-29 23:59:59.999999', id: 1n });
+  });
+
   it('produces base64url output', () => {
     expect(encodeClimbLogsCursor({ climbedAt: '2026-05-01 18:00:00', id: 999999n })).not.toMatch(/[+/=]/);
   });
@@ -44,6 +49,11 @@ describe('climb logs cursor', () => {
     ['a date with no time', encodeRaw({ v: 1, t: '2026-01-01', i: '1' })],
     ['a zoned timestamp', encodeRaw({ v: 1, t: '2026-05-01T18:00:00.000Z', i: '1' })],
     ['a timestamp that is not a string', encodeRaw({ v: 1, t: 1777658400000, i: '1' })],
+    ['a month that does not exist', encodeRaw({ v: 1, t: '2026-13-01 18:00:00', i: '1' })],
+    ['a day that does not exist', encodeRaw({ v: 1, t: '2026-02-30 18:00:00', i: '1' })],
+    ['29 February outside a leap year', encodeRaw({ v: 1, t: '2026-02-29 18:00:00', i: '1' })],
+    ['an hour that does not exist', encodeRaw({ v: 1, t: '2026-05-01 24:00:00', i: '1' })],
+    ['digits in every field but no real instant', encodeRaw({ v: 1, t: '2026-99-99 99:99:99', i: '1' })],
   ])('returns null for %s', (_label, cursor) => {
     expect(decodeClimbLogsCursor(cursor)).toBeNull();
   });

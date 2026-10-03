@@ -179,8 +179,11 @@ export const climbLogsQueries = {
 
     // Outside the try block: a cursor nobody can decode is the caller's
     // mistake, not a DB error, and it must not quietly restart at page one.
-    const cursor = validatedInput.cursor ? decodeClimbLogsCursor(validatedInput.cursor) : null;
-    if (validatedInput.cursor && !cursor) {
+    // Nullish, not falsy: an empty string is a cursor the caller sent, and it
+    // decodes to nothing like any other broken one.
+    const hasCursor = validatedInput.cursor != null;
+    const cursor = hasCursor ? decodeClimbLogsCursor(validatedInput.cursor ?? '') : null;
+    if (hasCursor && !cursor) {
       throw new GraphQLError('Invalid cursor', { extensions: { code: 'BAD_USER_INPUT' } });
     }
 

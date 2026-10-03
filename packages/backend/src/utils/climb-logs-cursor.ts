@@ -24,7 +24,24 @@ type ClimbLogsCursorPayload = {
 export type ClimbLogsCursor = { climbedAt: string; id: bigint };
 
 /** What a `timestamp` column reads back as. */
-const TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,6})?$/;
+const TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(\.\d{1,6})?$/;
+
+/**
+ * True for a string in the timestamp shape that also names a real instant. The
+ * shape alone lets `2026-99-99 99:99:99` through, and Postgres then rejects the
+ * cast: a broken cursor would surface as a database error instead of
+ * BAD_USER_INPUT. Checked by building the date in UTC and reading the fields
+ * back, with no timezone conversion of the cursor's own string.
+ */
+function isRealTimestamp(value: string): boolean {
+  const match = TIMESTAMP_PATTERN.exec(value);
+  if (!match) return false;
+  const [year, month, day, hour, minute, second] = match.slice(1, 7).map(Number);
+  if (year < 1 || hour > 23 || minute > 59 || second > 59) return false;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCFullYear(year);
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
 /** A bigint fits in 19 decimal digits. */
 const ID_PATTERN = /^\d{1,19}$/;
 const MAX_BIGINT_ID = 9223372036854775807n;
@@ -45,7 +62,7 @@ export function decodeClimbLogsCursor(cursor: string): ClimbLogsCursor | null {
 
   const { v: version, t: climbedAt, i: id } = payload as Record<string, unknown>;
   if (version !== 1) return null;
-  if (typeof climbedAt !== 'string' || !TIMESTAMP_PATTERN.test(climbedAt)) return null;
+  if (typeof climbedAt !== 'string' || !isRealTimestamp(climbedAt)) return null;
   if (typeof id !== 'string' || !ID_PATTERN.test(id)) return null;
 
   const parsedId = BigInt(id);

@@ -263,6 +263,16 @@ describe('ordering and paging', () => {
     expect(await ask(null, { limit: 2 })).toMatchObject({ hasMore: false, cursor: null });
   });
 
+  it('rejects an empty cursor instead of starting again at page one', async () => {
+    await insertTick();
+
+    const { errors, answer } = await run(null, { boardType: BOARD, climbUuid: CLIMB_UUID, cursor: '' });
+
+    expect(answer).toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(errors[0].extensions?.code).toBe('BAD_USER_INPUT');
+  });
+
   it('rejects a cursor it cannot decode, and does not log it as a DB error', async () => {
     await insertTick();
     const errorLog = vi.spyOn(logger, 'error').mockImplementation(() => logger);
