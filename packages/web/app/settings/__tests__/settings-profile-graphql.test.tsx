@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { GET_MY_PROFILE, type MyProfile } from '@boardsesh/graphql/operations/account';
 
 const mocks = vi.hoisted(() => ({
@@ -129,6 +129,25 @@ describe('settings profile read over GraphQL', () => {
     await waitFor(() => expect(screen.getByTestId('set-password-section')).toBeTruthy());
     expect(mocks.graphqlRequest).not.toHaveBeenCalled();
     expect(mocks.showMessage).toHaveBeenCalledWith('loading.profileError', 'error');
+  });
+
+  it('reports the missing-token error once after password set and resets after token recovery', async () => {
+    mocks.wsAuthToken.token = null;
+    const { rerender } = render(<SettingsPageContent />);
+
+    await waitFor(() => expect(mocks.showMessage).toHaveBeenCalledTimes(1));
+    expect(mocks.graphqlRequest).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('reload profile'));
+    expect(mocks.showMessage).toHaveBeenCalledTimes(1);
+
+    mocks.wsAuthToken.token = 'recovered-token';
+    rerender(<SettingsPageContent />);
+    await waitFor(() => expect(mocks.graphqlRequest).toHaveBeenCalledTimes(1));
+
+    mocks.wsAuthToken.token = null;
+    rerender(<SettingsPageContent />);
+    await waitFor(() => expect(mocks.showMessage).toHaveBeenCalledTimes(2));
   });
 
   it('waits while the NextAuth session is still loading', async () => {

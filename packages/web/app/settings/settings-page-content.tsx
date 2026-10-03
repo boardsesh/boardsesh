@@ -55,6 +55,11 @@ export default function SettingsPageContent() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const reportedWsAuthDeadEnd = useRef(false);
   const { showMessage } = useSnackbar();
+  const reportWsAuthDeadEnd = useCallback(() => {
+    if (reportedWsAuthDeadEnd.current) return;
+    reportedWsAuthDeadEnd.current = true;
+    showMessage(t('loading.profileError'), 'error');
+  }, [showMessage, t]);
 
   // Redirect unauthenticated users to login with a return URL.
   useEffect(() => {
@@ -67,7 +72,7 @@ export default function SettingsPageContent() {
   const fetchProfile = useCallback(async () => {
     if (!authToken) {
       setLoading(false);
-      showMessage(t('loading.profileError'), 'error');
+      reportWsAuthDeadEnd();
       return;
     }
 
@@ -87,7 +92,7 @@ export default function SettingsPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [authToken, showMessage, t]);
+  }, [authToken, reportWsAuthDeadEnd, showMessage, t]);
 
   // Query.profile resolves from the bearer token; never send an anonymous
   // request for a signed-in settings session when ws-auth has not settled.
@@ -107,11 +112,8 @@ export default function SettingsPageContent() {
     }
 
     setLoading(false);
-    if (!reportedWsAuthDeadEnd.current) {
-      reportedWsAuthDeadEnd.current = true;
-      showMessage(t('loading.profileError'), 'error');
-    }
-  }, [wsAuthDeadEnd, showMessage, t]);
+    reportWsAuthDeadEnd();
+  }, [wsAuthDeadEnd, reportWsAuthDeadEnd]);
 
   if (status === 'loading' || loading) {
     return (
