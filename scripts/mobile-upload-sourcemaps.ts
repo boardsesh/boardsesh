@@ -373,8 +373,13 @@ export function resolveInstalledSentryUploader(mobileDirInput: string): string {
       if (!statSync(delegatedUploaderPath).isFile()) {
         throw new Error('Delegated uploader is not a file.');
       }
-    } catch {
-      throw new Error('Official Sentry Expo source-map uploader dependency @sentry/expo-upload-sourcemaps is missing.');
+    } catch (error) {
+      if (isJsonObject(error) && (error.code === 'MODULE_NOT_FOUND' || error.code === 'ENOENT')) {
+        throw new Error(
+          'Official Sentry Expo source-map uploader dependency @sentry/expo-upload-sourcemaps is missing.',
+        );
+      }
+      throw error;
     }
   }
   return existingPathWithin(packageRoot, uploaderPath, 'Official Sentry uploader');
