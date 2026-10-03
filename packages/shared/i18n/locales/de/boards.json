@@ -252,7 +252,10 @@
       "otherBoardsTitle": "Boards in der Nähe",
       "multiBoardChip": "2+ Board-Typen",
       "editGym": "Halle bearbeiten",
-      "editBoard": "Board bearbeiten"
+      "editBoard": "Board bearbeiten",
+      "updating": "Ergebnisse werden aktualisiert…",
+      "refreshFailed": "Die Ergebnisse konnten nicht aktualisiert werden. Versuch es erneut.",
+      "retry": "Erneut versuchen"
     },
     "myGyms": {
       "moreRowTitle": "Meine Hallen",
