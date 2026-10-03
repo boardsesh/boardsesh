@@ -18,6 +18,7 @@ export const SERIAL_TEST_FILES = [
   'src/workers/families/__tests__/kilter-user-sync.test.ts',
   'src/workers/families/__tests__/provider-routine-cycle.test.ts',
   'src/workers/families/__tests__/kilter-catalog-fence.test.ts',
+  'src/services/__tests__/job-queue-client.test.ts',
   'src/services/__tests__/job-queue-roles.test.ts',
   'src/services/__tests__/job-queue-roles-routine.test.ts',
   'src/services/__tests__/job-queue-roles-snapshots.test.ts',
