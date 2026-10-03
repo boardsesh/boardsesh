@@ -1,4 +1,4 @@
-import { sql, eq, and, type SQL } from 'drizzle-orm';
+import { sql, eq, and, isNull, type SQL } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm/alias';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
@@ -145,6 +145,47 @@ export const boardseshDifficultyExpr = sql<number | null>`COALESCE(
  * narrower compile-time type here doesn't hide a real bug.
  */
 export const boardseshConfidenceExpr = dbSchema.boardClimbGrades.confidence;
+
+// A tick pulled from Kilter carries no per-tick quality, but the climber's own
+// star rating for that (climb, angle) may already live in board_climb_ratings
+// (kilter-sync writes it there, keyed by board_type/climb_uuid/angle/user_id).
+// Join on the tick's OWN user + raw climb_uuid so a public viewer sees the
+// tick owner's synced rating, and expose it as `effectiveQuality`
+// (COALESCE(quality, rating)) — the same raw-vs-effective split as
+// `difficulty`/`effectiveDifficulty`, so the per-tick `quality` stays the raw
+// user value for edit/optimistic flows. Ratings are already 1–5 native (DB
+// check constraint), so there's nothing to rescale. The unique index
+// `board_climb_ratings_user_climb_angle_idx` on exactly
+// (board_type, climb_uuid, angle, user_id) — declared in
+// packages/db/src/schema/boards/unified.ts — makes this a 1:1 left join that
+// never multiplies rows and is fully index-backed.
+//
+// Detached ratings are excluded. When Kilter sends a REMOVE for a rating,
+// kilter-sync soft-detaches the row (kilter_id NULL + kilter_detached_at
+// stamped) instead of deleting it, so the climber's own edits survive a
+// PowerSync snapshot re-delivery. But a rating the climber deleted upstream
+// must stop feeding effectiveQuality: unlike a tick, every field on this row
+// comes from the Kilter payload, and Kilter never sends another PUT for a
+// rating it has deleted — so without this predicate the stale star would show
+// on the ascent forever. A REMOVE-then-PUT redelivery re-adopts the row and
+// clears the marker, so a live rating is unaffected.
+//
+// The marker is Kilter-specific but this predicate is not: a marked row is
+// hidden whatever its rating's origin. That is correct today because
+// kilter-sync is the only writer of this table. The day an Aurora writer
+// lands, revisit it — an Aurora-origin row that adopted a kilter_id and then
+// took a Kilter REMOVE would be hidden even though its Aurora rating is live.
+export const boardClimbRatingsJoinCondition = and(
+  eq(dbSchema.boardseshTicks.boardType, dbSchema.boardClimbRatings.boardType),
+  eq(dbSchema.boardseshTicks.climbUuid, dbSchema.boardClimbRatings.climbUuid),
+  eq(dbSchema.boardseshTicks.angle, dbSchema.boardClimbRatings.angle),
+  eq(dbSchema.boardseshTicks.userId, dbSchema.boardClimbRatings.userId),
+  isNull(dbSchema.boardClimbRatings.kilterDetachedAt),
+);
+
+export const effectiveQualityExpr = sql<
+  number | null
+>`COALESCE(${dbSchema.boardseshTicks.quality}, ${dbSchema.boardClimbRatings.rating})`;
 
 /**
  * Number of non-deleted comments targeting each tick, as a correlated

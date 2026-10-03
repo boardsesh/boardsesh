@@ -2336,6 +2336,8 @@ export type FollowingAscentFeedItem = {
   difficultyName?: Maybe<Scalars['String']['output']>;
   /** Number of downvotes on this tick. Null if the resolver doesn't compute it. */
   downvotes?: Maybe<Scalars['Int']['output']>;
+  /** Raw quality, or the climber's synced star rating for this climb and angle when the tick has none. Sends and flashes only. Null if the resolver doesn't compute it. */
+  effectiveQuality?: Maybe<Scalars['Int']['output']>;
   /** Encoded hold frames for thumbnail display */
   frames?: Maybe<Scalars['String']['output']>;
   /** Whether this is a benchmark climb */
@@ -2383,19 +2385,48 @@ export type FollowingAscentsFeedResult = {
   totalCount: Scalars['Int']['output'];
 };
 
+/** How many followed climbers logged a climb at one angle. */
+export type FollowingClimbAscentsAngleCount = {
+  __typename?: 'FollowingClimbAscentsAngleCount';
+  /** Board angle */
+  angle: Scalars['Int']['output'];
+  /** Followed climbers with at least one log at this angle, any status */
+  climberCount: Scalars['Int']['output'];
+  /** Followed climbers with at least one flash or send at this angle */
+  senderCount: Scalars['Int']['output'];
+};
+
 /** Input for fetching followed users' ticks on a specific climb. */
 export type FollowingClimbAscentsInput = {
-  /** Board type (kilter, tension, moonboard) */
+  /** Board type (kilter, tension, moonboard, spray, ...) */
   boardType: Scalars['String']['input'];
   /** Climb UUID */
   climbUuid: Scalars['String']['input'];
 };
 
-/** Unpaginated result: all ticks from followed users for a given climb. */
+/** The 100 most recent logs, plus counts that cover all of them */
 export type FollowingClimbAscentsResult = {
   __typename?: 'FollowingClimbAscentsResult';
-  /** List of feed items */
+  /** Whether more than 100 logs exist. There is no way to page to them. */
+  hasMore: Scalars['Boolean']['output'];
+  /** Newest first, one row per log, every angle, attempts included. At most 100. */
   items: Array<FollowingAscentFeedItem>;
+  /** Counts across all logs, including the ones past the cap */
+  summary: FollowingClimbAscentsSummary;
+};
+
+/**
+ * Counts over every log from followed climbers on a climb. Not bound by the
+ * 100-row cap on the list.
+ */
+export type FollowingClimbAscentsSummary = {
+  __typename?: 'FollowingClimbAscentsSummary';
+  /** One entry per angle that has a log, ascending. Angles with none are absent. */
+  byAngle: Array<FollowingClimbAscentsAngleCount>;
+  /** Followed climbers with at least one log, any angle, any status */
+  climberCount: Scalars['Int']['output'];
+  /** Followed climbers with at least one flash or send, any angle */
+  senderCount: Scalars['Int']['output'];
 };
 
 export type FreezeClimbInput = {
@@ -6052,8 +6083,9 @@ export type Query = {
    */
   followingAscentsFeed: FollowingAscentsFeedResult;
   /**
-   * Get ticks from followed users for a specific climb.
-   * Requires authentication.
+   * Logs from followed users on a specific climb: the 100 newest, plus
+   * counts that cover all of them. A spray climb the caller cannot see
+   * answers like a climb nobody logged. Requires authentication.
    */
   followingClimbAscents: FollowingClimbAscentsResult;
   /**
@@ -13406,6 +13438,7 @@ export type GetFollowingClimbAscentsQuery = {
   __typename?: 'Query';
   followingClimbAscents: {
     __typename?: 'FollowingClimbAscentsResult';
+    hasMore: boolean;
     items: Array<{
       __typename?: 'FollowingAscentFeedItem';
       uuid: string;
@@ -13418,12 +13451,25 @@ export type GetFollowingClimbAscentsQuery = {
       status: string;
       attemptCount: number;
       quality?: number | null;
+      effectiveQuality?: number | null;
+      difficulty?: number | null;
       comment: string;
       climbedAt: string;
       upvotes?: number | null;
       downvotes?: number | null;
       commentCount?: number | null;
     }>;
+    summary: {
+      __typename?: 'FollowingClimbAscentsSummary';
+      climberCount: number;
+      senderCount: number;
+      byAngle: Array<{
+        __typename?: 'FollowingClimbAscentsAngleCount';
+        angle: number;
+        climberCount: number;
+        senderCount: number;
+      }>;
+    };
   };
 };
 
@@ -21759,11 +21805,37 @@ export const GetFollowingClimbAscentsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'status' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'quality' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'effectiveQuality' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'upvotes' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'downvotes' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'commentCount' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'summary' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'climberCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'senderCount' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'byAngle' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'climberCount' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'senderCount' } },
+                          ],
+                        },
+                      },
                     ],
                   },
                 },

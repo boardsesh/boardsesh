@@ -64,6 +64,10 @@ export type FollowingAscentFeedItem = {
   status: string;
   attemptCount: number;
   quality?: number;
+  // Raw quality, or the climber's synced star rating for this climb and angle
+  // when the tick has none. Sends and flashes only; null when the resolver
+  // doesn't compute it.
+  effectiveQuality?: number | null;
   difficulty?: number;
   difficultyName?: string;
   isBenchmark: boolean;
@@ -157,8 +161,24 @@ export type FollowingClimbAscentsInput = {
   climbUuid: string;
 };
 
+export type FollowingClimbAscentsAngleCount = {
+  angle: number;
+  climberCount: number;
+  senderCount: number;
+};
+
+export type FollowingClimbAscentsSummary = {
+  climberCount: number;
+  senderCount: number;
+  /** One entry per angle that has a log, ascending. */
+  byAngle: FollowingClimbAscentsAngleCount[];
+};
+
 export type FollowingClimbAscentsResult = {
+  /** The 100 newest logs. Counts come from `summary`, never from this length. */
   items: FollowingAscentFeedItem[];
+  hasMore: boolean;
+  summary: FollowingClimbAscentsSummary;
 };
 
 export type ActivityFeedItemType = 'ascent' | 'new_climb' | 'comment' | 'proposal_approved' | 'session_summary';

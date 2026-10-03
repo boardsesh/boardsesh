@@ -613,7 +613,7 @@ a climb and never join `board_climbs` at all:
 
 | Shape | Where | Used by |
 | --- | --- | --- |
-| `sprayReferenceVisibilityCondition({ boardType, climbUuid }, userId)` | in the WHERE, over the referencing table | the smart-playlist ref queries, `browseProposals`, `globalCommentFeed`, `userProfileStats` |
+| `sprayReferenceVisibilityCondition({ boardType, climbUuid }, userId)` | in the WHERE, over the referencing table | the smart-playlist ref queries, `browseProposals`, `globalCommentFeed`, `userProfileStats`, `followingClimbAscents` |
 | `sprayClimbUuidIsReadable(climbUuid, userId)` | before the query | `comments`, `climbProposals` — the uuid-keyed threads |
 
 It is phrased "there is **no INVISIBLE** spray climb behind this reference"
@@ -622,6 +622,26 @@ survives; and because it starts from the reference, it works in a query that
 never mentions `board_climbs` — `userProfileStats` shares one condition list
 across three aggregates, one of which selects distinct climb uuids straight off
 `boardsesh_ticks`.
+
+`followingClimbAscents` (the play drawer's "Climber logs") takes the predicate
+from `climbLogConditions` in
+`packages/backend/src/graphql/resolvers/social/climb-log-query.ts`, which is the
+one array both its list query and its count query spread. That is deliberate: a
+count without the predicate would tell a follower that people log on a wall they
+cannot see. A climb on a hidden wall answers exactly like a climb nobody has
+logged (empty list, zero counts, no error).
+
+The reference form alone is not enough there. It passes a spray tick whose
+`board_climbs` row is missing, for every viewer, and a climb row does go missing:
+deleting a wall is a soft delete that keeps its climbs, but `deleteDraftClimb`
+and account deletion (which removes the deleted user's drafts) hard-delete the
+climb and leave its ticks. With no climb there is no wall to check, so
+`climbLogConditions` adds a second condition that fails closed: a spray tick is
+returned only when its climb row still exists. Other board types keep the lenient
+behaviour, because an Aurora tick can arrive before its climb. The other readers
+in the table above still use the reference form on its own and have not been
+audited for this case. Any new per-climb log reader imports `climbLogConditions`
+rather than writing its own.
 
 Pick by what the query HAS, not by taste:
 
