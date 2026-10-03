@@ -104,7 +104,11 @@
         "title": "Zur Playlist hinzufügen",
         "empty": "Noch keine Playlists",
         "createNew": "Neue Playlist erstellen",
-        "signInBlurb": "Melde dich an, um Playlists zu erstellen und zu verwalten"
+        "signInBlurb": "Melde dich an, um Playlists zu erstellen und zu verwalten",
+        "membershipUnknown": "Ohne das Layout dieses Boards ist die Playlist-Mitgliedschaft unbekannt. Nicht markierte Playlists sind gesperrt.",
+        "membershipChecking": "Playlist-Mitgliedschaft wird geprüft… Nicht markierte Playlists bleiben währenddessen gesperrt.",
+        "membershipUnavailable": "Die Playlist-Mitgliedschaft konnte nicht geprüft werden. Nicht markierte Playlists sind gesperrt.",
+        "angleUnavailable": "Hinzufügen ist deaktiviert, weil der Winkel dieses Boulders fehlt."
       },
       "create": {
         "namePlaceholder": "z. B. Harte Crimps",
