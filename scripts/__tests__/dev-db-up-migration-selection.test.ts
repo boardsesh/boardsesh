@@ -1,5 +1,6 @@
 /// <reference types="node" />
 
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -23,6 +24,26 @@ const executableLines = devDbUpSource
   .join('\n');
 
 const applyFunction = devDbUpSource.slice(devDbUpSource.indexOf('run_pending_drizzle_sql_migrations() {'));
+const ownerAdviceStart = devDbUpSource.indexOf('explain_container_reset_owner() {');
+const ownerAdviceEnd = devDbUpSource.indexOf('\n}\n', ownerAdviceStart) + 3;
+const ownerAdviceFunction = devDbUpSource.slice(ownerAdviceStart, ownerAdviceEnd);
+
+function runOwnerAdvice(labels: string, repoRoot: string): string {
+  const isolatedShell = [
+    'docker() { printf "%s" "$MOCK_DOCKER_LABELS"; }',
+    ownerAdviceFunction,
+    'explain_container_reset_owner 2>&1',
+  ].join('\n');
+  return execFileSync('sh', ['-c', isolatedShell], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      MOCK_DOCKER_LABELS: labels,
+      PG_CONTAINER: 'owned-fixture-container',
+      REPO_ROOT: repoRoot,
+    },
+  });
+}
 
 describe('dev-db-up.sh pending-migration selection', () => {
   it('never selects on a created_at high-water mark', () => {
@@ -38,6 +59,17 @@ describe('dev-db-up.sh pending-migration selection', () => {
   it('feeds the ledger hashes to the per-hash selector', () => {
     expect(executableLines).toContain('SELECT hash FROM drizzle.\\"__drizzle_migrations\\"');
     expect(executableLines).toContain('scripts/dev-db-pending-migrations.ts');
+    expect(executableLines).toContain('ORDER BY id');
+    expect(executableLines).toContain('vp exec tsx scripts/dev-db-pending-migrations.ts');
+    expect(executableLines).not.toContain('bun scripts/dev-db-pending-migrations.ts');
+  });
+
+  it('stops on a selector refusal before entering the migration SQL loop', () => {
+    const selectorPosition = applyFunction.indexOf('pending_migrations=$(');
+    const migrationLoopPosition = applyFunction.indexOf("while IFS='|' read -r tag created_at hash; do");
+    expect(executableLines).toMatch(/^set -e$/m);
+    expect(selectorPosition).toBeGreaterThanOrEqual(0);
+    expect(migrationLoopPosition).toBeGreaterThan(selectorPosition);
   });
 
   it('still records created_at as the journal when, the value drizzle writes', () => {
@@ -54,12 +86,29 @@ describe('dev-db-up.sh pending-migration selection', () => {
     expect(applyFunction).toContain("printf 'COMMIT;\\n'");
   });
 
-  it('explains a residue database instead of leaving the raw psql error', () => {
-    // #3978's shape: the volume carries a superseded branch version of a
-    // migration's objects but not its ledger row, so the apply dies on
-    // "already exists". Nothing can repair that in place, so the failure has to
-    // hand over the reset command rather than a bare SQL error.
-    expect(applyFunction).toContain('docker compose down -v && vp run db:up');
+  it('reports the actual Compose owner and requires its disposable-data confirmation', () => {
+    const ownerNotice = runOwnerAdvice(
+      'boardsesh-shared|/workspaces/owner-project|/workspaces/owner-project/docker-compose.yml',
+      '/workspaces/current-project',
+    );
+    expect(ownerNotice).toContain("Compose project 'boardsesh-shared'");
+    expect(ownerNotice).toContain("Owner working directory: '/workspaces/owner-project'");
+    expect(ownerNotice).toContain("This checkout is '/workspaces/current-project'");
+    expect(ownerNotice).toContain('confirm its volume is disposable');
+    expect(ownerNotice).not.toContain('docker compose down -v');
+  });
+
+  it('directs the operator to the owner when Compose identity labels are missing', () => {
+    const ownerNotice = runOwnerAdvice('<no value>|<no value>|<no value>', '/workspaces/current-project');
+    expect(ownerNotice).toContain('Could not establish PG_CONTAINER');
+    expect(ownerNotice).toContain('Ask the container owner to identify its project');
+    expect(ownerNotice).toContain('do not reset it from this checkout');
+    expect(ownerNotice).not.toContain('docker compose down -v');
+  });
+
+  it('explains an apply failure without printing an unscoped volume reset command', () => {
+    expect(applyFunction).toContain('explain_container_reset_owner');
+    expect(applyFunction).not.toContain('docker compose down -v && vp run db:up');
     expect(applyFunction).toContain('exit 1');
   });
 });

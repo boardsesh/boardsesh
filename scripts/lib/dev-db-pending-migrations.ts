@@ -18,15 +18,17 @@
  * was minted. The result is a checkout that reports "No pending migrations." and
  * a schema that is missing the table the branch just added.
  *
- * The selection here asks the per-entry question instead, through the same
- * `findUnappliedMigrations()` the production gate uses, so the two paths cannot
- * drift into disagreeing about what "applied" means.
+ * The selection here still compares journal entries by hash, through the same
+ * `findUnappliedMigrations()` the production gate uses. Before returning any
+ * SQL to execute, it also proves that the applied rows are an exact journal
+ * prefix. An absent hash in the middle of an existing ledger is unverified
+ * history, not permission to replay that migration's SQL.
  *
  * ## Hash parity with drizzle
  *
  * `packages/db` reads its hashes from drizzle's own `readMigrationFiles`, which
  * is the only way to be certain they match. Root `scripts/` cannot: `drizzle-orm`
- * is a `packages/db` dependency and Bun's isolated linker gives the repo root no
+ * is a `packages/db` dependency and pnpm's isolated linker gives the repo root no
  * hoisted copy. So the sha256 is re-derived here — the same derivation drizzle
  * 0.45 uses and the same one the `bun --eval` block this replaces already
  * computed: `readFileSync(file, 'utf8')`, then `sha256` of that string. Note that
@@ -53,20 +55,79 @@ import { findUnappliedMigrations, type ExpectedMigrationWithWhen } from './migra
 export const PENDING_MIGRATION_SEPARATOR = '|';
 
 /**
- * Journal entries with no matching ledger row, in journal order.
+ * Safe pending journal suffix after an exact, non-empty applied journal prefix.
  *
- * Delegates the comparison to `findUnappliedMigrations` rather than repeating
- * its multiset walk: byte-identical `.sql` files share a hash, and two such
- * entries need two ledger rows rather than one. Re-selecting by tag afterwards
- * is exact because journal tags are unique — `scripts/check-db-migrations.ts`
- * fails a PR that introduces a duplicate.
+ * A missing hash is safe to apply automatically only when every preceding
+ * journal entry has its ledger row. Otherwise the database may have lost a
+ * historical row for SQL that already ran; replaying that SQL can delete user
+ * data. We fail closed on holes, unknown hashes, duplicate/excess rows, and an
+ * empty existing ledger. The shared missing-only comparator remains an extra
+ * consistency check and preserves multiset behavior for byte-identical files.
  */
 export function selectPendingMigrations(
   expected: readonly ExpectedMigrationWithWhen[],
   ledgerHashes: readonly string[],
 ): ExpectedMigrationWithWhen[] {
-  const pendingTags = new Set(findUnappliedMigrations(expected, ledgerHashes));
-  return expected.filter((migration) => pendingTags.has(migration.tag));
+  if (expected.length === 0) {
+    if (ledgerHashes.length > 0) {
+      throw unsafeLedgerError(`the ledger has ${ledgerHashes.length} row(s), but the journal has no entries.`);
+    }
+    return [];
+  }
+
+  if (ledgerHashes.length === 0) {
+    throw unsafeLedgerError('the existing database has an empty migration ledger.');
+  }
+
+  for (const [index, ledgerHash] of ledgerHashes.entries()) {
+    const expectedMigration = expected[index];
+    if (!expectedMigration) {
+      throw unsafeLedgerError(`ledger row ${index + 1} has an excess hash ${ledgerHash}.`);
+    }
+    if (ledgerHash === expectedMigration.hash) continue;
+
+    const matchingJournalIndex = expected.findIndex((migration) => migration.hash === ledgerHash);
+    if (matchingJournalIndex > index) {
+      const laterMigration = expected[matchingJournalIndex];
+      throw unsafeLedgerError(
+        `the applied ledger has an unverified historical gap before ${expectedMigration.tag}; ` +
+          `row ${index + 1} matches later journal entry ${laterMigration?.tag ?? 'unknown'} instead.`,
+      );
+    }
+    if (matchingJournalIndex >= 0) {
+      throw unsafeLedgerError(
+        `ledger row ${index + 1} repeats or reorders hash ${ledgerHash}, already expected at journal row ` +
+          `${matchingJournalIndex + 1}.`,
+      );
+    }
+    throw unsafeLedgerError(`ledger row ${index + 1} has an unknown hash ${ledgerHash}.`);
+  }
+
+  const safeSuffix = expected.slice(ledgerHashes.length);
+  const appliedHashes = new Set(ledgerHashes);
+  const ambiguousDuplicate = safeSuffix.find((migration) => appliedHashes.has(migration.hash));
+  if (ambiguousDuplicate) {
+    throw unsafeLedgerError(
+      `pending migration ${ambiguousDuplicate.tag} has the same hash as an applied row, so its position in history cannot be verified.`,
+    );
+  }
+
+  const missingTags = findUnappliedMigrations(expected, ledgerHashes);
+  if (
+    missingTags.length !== safeSuffix.length ||
+    safeSuffix.some((migration, index) => missingTags[index] !== migration.tag)
+  ) {
+    throw unsafeLedgerError('the ledger and journal do not describe one contiguous applied prefix.');
+  }
+  return safeSuffix;
+}
+
+function unsafeLedgerError(reason: string): Error {
+  return new Error(
+    `Refusing to apply dev-database migrations: ${reason} ` +
+      'Missing hashes do not prove that historical SQL never ran. No migration SQL was executed. ' +
+      'Have the database owner verify and reconcile its history before retrying.',
+  );
 }
 
 /**
@@ -91,8 +152,8 @@ export function hashMigrationFile(migrationFilePath: string): string {
 /**
  * Ledger hashes as `psql -t -A` prints them: one per line, with a trailing
  * newline and — for an empty ledger — a single blank line. Blank lines are
- * dropped rather than treated as a hash, which is what makes "fresh tracker,
- * nothing applied" select the whole journal instead of nothing.
+ * dropped rather than treated as a hash; the selector rejects an empty existing
+ * ledger instead of assuming it is safe to replay the full migration history.
  */
 export function parseLedgerHashes(psqlOutput: string): string[] {
   return psqlOutput

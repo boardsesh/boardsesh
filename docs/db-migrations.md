@@ -18,10 +18,11 @@ Three properties matter more than they look:
 whose `when` is newer than the last applied migration, from a `max(created_at)` mark it
 reads once. A migration whose `when` is at or below an already-applied timestamp is
 skipped _forever_, silently — green PR, green deploy, DDL that never happened. The
-number is for humans; `when` is what runs. The two dev appliers used to repeat that
-selection and now ask the per-entry, hash-keyed question instead (#3979), so a renumbered
-or collapsed migration still lands on a dev database; production is guarded by the
-journal-vs-ledger check below rather than by a different applier.
+number is for humans; `when` is what runs. The two dev appliers now select a pending
+suffix by hash only after proving the recorded rows are an exact journal prefix (#3979).
+A gap or unknown history stops before SQL runs; a missing hash alone cannot prove that
+historical SQL never ran. Production remains guarded by the read-only journal-vs-ledger
+check below.
 
 **A `.sql` with no journal entry is inert.** Nothing applies it. It looks like a
 migration in review and does nothing in production.
@@ -175,18 +176,22 @@ It shipped opt-in (#2933) for one reason: the `boardsesh-dev-db` image was missi
 `0187_sad_freak`'s ledger row, so a default-on check would have reddened every developer's
 `vp run db:migrate` for a defect in the image rather than in their branch. Three things
 closed that (#3978): the image carries every journal entry's row, its build fails if the
-ledger's high-water mark is not the journal's newest `when`, and `vp run db:up` fills a stale
-volume's gaps hash-by-hash before `db:migrate` runs. Opt-in also meant the check was off in
+ledger's high-water mark is not the journal's newest `when`, and `vp run db:up` applies only
+a verified contiguous suffix before `db:migrate` runs. An unverified historical gap now
+stops before any migration SQL is returned. Opt-in also meant the check was off in
 the one place a gap is created — the branch author's machine, on the branch that creates it.
 
-`VERIFY_MIGRATION_JOURNAL=0` is the escape hatch, for the one shape this cannot help: a
-database with a gap nobody can repair right now, where `db:migrate` has to run anyway.
+`VERIFY_MIGRATION_JOURNAL=0` only disables the production journal gate; it does not make an
+uncertain dev-database history safe to replay. The dev appliers remain fail-closed on gaps,
+unknown rows, and ambiguous history.
 
-Two dev databases are outside `db:up`'s repair path and can still carry a real gap: a
-shared tailnet dev DB reached through `scripts/dev-db-discover.ts`, and a `db_data` volume
-that predates a migration renumber or collapse. Both report it now instead of hiding it —
-`db:up` names the migration it could not apply and hands over
-`docker compose down -v && vp run db:up`.
+Two dev database paths can still encounter unverified history: a shared tailnet database
+reached through `scripts/dev-db-discover.ts`, and a persistent volume that predates a
+migration renumber or collapse. Both stop before applying migration SQL when they encounter
+such a gap. Local failure guidance
+identifies the discovered container's Compose owner; it never prints a reset command for
+the current checkout to run against another project's volume. A reset requires the actual
+owner to inspect the data and confirm that volume is disposable.
 
 #### Ledger timestamps on the dev DB (`vp run db:normalize-ledger`)
 
@@ -248,28 +253,29 @@ encoding, BOM, line endings, or a drizzle change — and a repair row carrying a
 would not have written re-opens the same gap under a different name.
 
 **When it fires.** It does not self-heal, on purpose: several migrations here are data
-backfills whose idempotence hinges on `_bs_migration_guards` semantic keys, so re-running a
-mixed DDL/DML set unattended is worse than a blocked deploy.
+backfills whose idempotence hinges on `_bs_migration_guards` semantic keys, and migration
+`0136_cleanup_moonboard_2024_ocr` deletes unsynced user climbs and dependent rows. Replaying
+an uncertain historical migration unattended is worse than stopping before a schema change.
 
 A missing row is not proof the migration never ran. Two states produce the same report and
 need different repairs:
 
 - **The migration never ran** — usually drizzle's high-water-mark skip, the `0129` case
-  above. The objects are absent.
-- **The schema is there, the ledger row is not** — a snapshot or restore, a row lost in an
-  earlier hand repair, a renumber. `boardsesh-dev-db` is in exactly this state for
-  `0187_sad_freak` today (#3978): the tables and types exist, the row does not. The `.sql`
-  files are not idempotent, so applying one here just fails on `… already exists`.
+  above. The objects may be absent.
+- **The schema or data change already happened but the ledger row is absent** — a snapshot or
+  restore, a row lost in an earlier hand repair, or a renumber. In particular, replaying
+  `0136_cleanup_moonboard_2024_ocr` can delete newer unsynced user climbs. The appliers cannot
+  infer which case occurred from hashes alone, so they refuse both rather than replaying SQL.
 
-Repair each named tag by hand, in this order:
+The database owner must reconcile a reported gap after reviewing the migration's effects and
+the database history. Do not copy a hash into the ledger or replay migration SQL solely because
+the row is missing. For a reviewed manual repair, keep all schema/data changes and its matching
+ledger row in one transaction, then repeat the read-only verification:
 
-1. Check whether that migration's objects already exist (`\d <table>`, `\dT <type>`). If they
-   all do, go straight to step 3 and insert only the ledger row.
-2. Otherwise read `packages/db/drizzle/<tag>.sql`, confirm it is safe against the current
-   schema, and apply it inside a transaction. Partial state — some objects present, some not
-   — means trimming the statement list by hand; there is no safe shortcut.
-3. Insert the ledger row (in the same transaction as step 2, when there was one) with the
-   journal's `when` as `created_at` and the hash `db:verify-journal` printed for that tag:
+1. Inspect the schema and any affected user data for the named migration.
+2. Apply only the owner-reviewed repair that matches that observed state.
+3. Insert the ledger row in the same transaction with the journal's `when` as `created_at`
+   and the hash `db:verify-journal` printed for that tag:
    `INSERT INTO drizzle."__drizzle_migrations" (hash, created_at) VALUES ('<ledger hash>', <when>);`
 4. Re-run `vp run db:verify-journal` to confirm the repair.
 

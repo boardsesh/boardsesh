@@ -72,6 +72,33 @@ write_dev_db_env() {
   } > "$GENERATED_ENV_FILE"
 }
 
+explain_container_reset_owner() {
+  reset_owner_info=$(docker inspect "$PG_CONTAINER" --format='{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}|{{index .Config.Labels "com.docker.compose.project.config_files"}}' 2>/dev/null || true)
+  reset_owner_old_ifs=$IFS
+  IFS='|'
+  read -r reset_owner_project reset_owner_working_dir reset_owner_config_files <<EOF
+$reset_owner_info
+EOF
+  IFS=$reset_owner_old_ifs
+
+  if [ -n "$reset_owner_project" ] && [ "$reset_owner_project" != '<no value>' ] &&
+    [ -n "$reset_owner_working_dir" ] && [ "$reset_owner_working_dir" != '<no value>' ]; then
+    echo "       PG_CONTAINER belongs to Compose project '$reset_owner_project'." >&2
+    echo "       Owner working directory: '$reset_owner_working_dir'." >&2
+    if [ -n "$reset_owner_config_files" ] && [ "$reset_owner_config_files" != '<no value>' ]; then
+      echo "       Compose files: '$reset_owner_config_files'." >&2
+    fi
+    if [ "$reset_owner_working_dir" != "$REPO_ROOT" ]; then
+      echo "       This checkout is '$REPO_ROOT'; do not run a volume reset from this project." >&2
+    fi
+    echo "       Only the owning project's operator may inspect the data and confirm its volume is disposable before any reset." >&2
+    return
+  fi
+
+  echo "       Could not establish PG_CONTAINER's Compose project and working directory from its labels." >&2
+  echo "       Ask the container owner to identify its project and confirm whether its volume is disposable; do not reset it from this checkout." >&2
+}
+
 detect_local_redis_url() {
   redis_container=$(docker ps --filter "publish=6379" --filter "status=running" -q 2>/dev/null | head -1)
   if [ -n "$redis_container" ]; then
@@ -196,8 +223,8 @@ run_pending_drizzle_sql_migrations() {
   ledger_hashes=$(docker exec -u postgres "$PG_CONTAINER" psql -U postgres -d main -t -A -c \
     "SELECT hash FROM drizzle.\"__drizzle_migrations\" ORDER BY id;")
 
-  # An empty ledger prints one blank line here, which the reader drops — so a
-  # fresh tracker can be classified before any migration statement is run.
+  # The selector rejects empty or non-prefix history before this function can
+  # enter the SQL application loop.
   pending_migrations=$(printf '%s\n' "$ledger_hashes" \
     | (cd "$REPO_ROOT" && DRIZZLE_DIR="$DRIZZLE_DIR" vp exec tsx scripts/dev-db-pending-migrations.ts))
 
@@ -230,12 +257,7 @@ run_pending_drizzle_sql_migrations() {
       echo "       the migration on another branch, before it was renumbered or collapsed" >&2
       echo "       (#3978). Nothing repairs that in place: the two versions can differ in" >&2
       echo "       which objects they created, so no probe can tell what is already there." >&2
-      echo "" >&2
-      echo "       Reset the volume and pull a current image:" >&2
-      echo "         docker compose down -v && vp run db:up" >&2
-      echo "" >&2
-      echo "       The pre-built image ships the board data, the test user, and the seed" >&2
-      echo "       data, so a reset costs a pull rather than a re-import." >&2
+      explain_container_reset_owner
       exit 1
     fi
   done

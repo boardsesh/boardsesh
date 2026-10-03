@@ -19,12 +19,16 @@
  */
 import { after, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
+import { runPendingMigrations } from '../../../scripts/dev-db-discover.js';
+import { readJournalMigrations } from '../../../scripts/lib/dev-db-pending-migrations.js';
 import { findUnappliedMigrations } from '../../../scripts/lib/migration-ledger.js';
 import { PRODUCTION_LEDGER_BASELINE, type LedgerBaseline } from '../../../scripts/lib/migration-ledger-baseline.js';
 import {
@@ -49,16 +53,29 @@ type ScratchJournalEntry = { idx: number; version: string; when: number; tag: st
 
 const LOCAL_HOSTNAMES = ['localhost', '127.0.0.1', 'postgres'];
 const BUILD_CLOCK = 1_800_000_000_000;
+const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const MOONBOARD_CLEANUP_TAG = '0136_cleanup_moonboard_2024_ocr';
+const UNSYNCED_CLIMB_UUID = '00000000-0000-4000-8000-000000000136';
 
 function localDatabaseUrl(): string | null {
-  const databaseUrl = process.env.MIGRATION_JOURNAL_DB_URL ?? process.env.DATABASE_URL;
+  // Local runs must opt into a dedicated test endpoint. DATABASE_URL commonly
+  // points at a shared dev database, and these tests create/drop scratch DBs.
+  const databaseUrl = process.env.MIGRATION_JOURNAL_DB_URL ?? (process.env.CI ? process.env.DATABASE_URL : undefined);
   let resolved: string | null = null;
   if (databaseUrl) {
+    let parsedUrl: URL | null = null;
     try {
-      const hostname = new URL(databaseUrl).hostname.toLowerCase();
-      resolved = LOCAL_HOSTNAMES.includes(hostname) ? databaseUrl : null;
+      parsedUrl = new URL(databaseUrl);
     } catch {
-      resolved = null;
+      parsedUrl = null;
+    }
+    if (parsedUrl) {
+      const hostname = parsedUrl.hostname.toLowerCase();
+      const port = parsedUrl.port || '5432';
+      if (!process.env.CI && ['5432', '5433'].includes(port)) {
+        throw new Error(`Refusing shared/default Postgres port ${port}; use an owned test port.`);
+      }
+      resolved = LOCAL_HOSTNAMES.includes(hostname) ? databaseUrl : null;
     }
   }
   // Skipping is the right local default, but a silent skip in CI is a false
@@ -151,6 +168,50 @@ async function createLegacyLedger(
         fixedTimestamp ?? entry.when,
       ]);
     }
+  });
+}
+
+/** Minimal disposable schema sufficient for the real 0136 cleanup SQL to complete. */
+async function createMoonboardCleanupFixture(scratchUrl: string): Promise<void> {
+  const expected = readJournalMigrations(path.join(REPOSITORY_ROOT, 'packages/db/drizzle'));
+  const cleanupIndex = expected.findIndex((migration) => migration.tag === MOONBOARD_CLEANUP_TAG);
+  assert.ok(cleanupIndex > 0 && cleanupIndex < expected.length - 1, `${MOONBOARD_CLEANUP_TAG} must be in history`);
+
+  await withScratchClient(scratchUrl, async (client) => {
+    await client.unsafe('CREATE SCHEMA drizzle');
+    await client.unsafe(
+      'CREATE TABLE drizzle."__drizzle_migrations" (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint)',
+    );
+    for (const [index, migration] of expected.entries()) {
+      if (index === cleanupIndex) continue;
+      await client.unsafe('INSERT INTO drizzle."__drizzle_migrations" (hash, created_at) VALUES ($1, $2)', [
+        migration.hash,
+        migration.when,
+      ]);
+    }
+
+    await client.unsafe(
+      'CREATE TABLE public.board_climbs (uuid uuid, board_type text, layout_id integer, synced boolean, user_id text)',
+    );
+    await client.unsafe('CREATE TABLE public.boardsesh_ticks (board_type text, climb_uuid uuid)');
+    await client.unsafe('CREATE TABLE public.user_favorites (board_name text, climb_uuid uuid)');
+    await client.unsafe('CREATE TABLE public.playlist_climbs (climb_uuid uuid)');
+    await client.unsafe('CREATE TABLE public.board_climb_stats (board_type text, climb_uuid uuid)');
+    await client.unsafe('CREATE TABLE public.board_climb_ratings (board_type text, climb_uuid uuid)');
+    await client.unsafe('CREATE TABLE public.climb_proposals (board_type text, climb_uuid uuid)');
+    await client.unsafe('CREATE TABLE public.climb_community_status (board_type text, climb_uuid uuid)');
+    await client.unsafe('CREATE TABLE public.climb_classic_status (board_type text, climb_uuid uuid)');
+    await client.unsafe('CREATE TABLE public.board_climb_events (board_type text, climb_uuid uuid)');
+    await client.unsafe('CREATE TABLE public.board_climb_send_stats (board_type text, climb_uuid uuid)');
+    await client.unsafe('CREATE TABLE public.board_climb_stats_history (board_type text, climb_uuid uuid)');
+    await client.unsafe('CREATE TABLE public.board_beta_links (board_type text, climb_uuid uuid)');
+    await client.unsafe(
+      `INSERT INTO public.board_climbs (uuid, board_type, layout_id, synced, user_id) ` +
+        `VALUES ('${UNSYNCED_CLIMB_UUID}', 'moonboard', 3, false, 'disposable-fixture-user')`,
+    );
+    await client.unsafe(
+      `INSERT INTO public.boardsesh_ticks (board_type, climb_uuid) ` + `VALUES ('moonboard', '${UNSYNCED_CLIMB_UUID}')`,
+    );
   });
 }
 
@@ -261,6 +322,59 @@ describe('migration journal verification (#2933)', () => {
         runMigrationJournalGate({ VERIFY_MIGRATION_JOURNAL: '1' }, readLedgerHashesWith(client), migrationsFolder),
       ),
     );
+  });
+
+  void it('refuses a missing historical cleanup hash before local or tailnet migration SQL can run', async (context) => {
+    const adminUrl = localDatabaseUrl();
+    if (!adminUrl) {
+      context.skip('set MIGRATION_JOURNAL_DB_URL to an owned local Postgres test instance');
+      return;
+    }
+    const scratchUrl = await createScratchDatabase(adminUrl, 'historical_hole');
+    await createMoonboardCleanupFixture(scratchUrl);
+
+    const ledgerRows = await withScratchClient(
+      scratchUrl,
+      (client) => client<{ hash: string }[]>`SELECT hash FROM drizzle."__drizzle_migrations" ORDER BY id`,
+    );
+    const localSelector = spawnSync('vp', ['exec', 'tsx', 'scripts/dev-db-pending-migrations.ts'], {
+      cwd: REPOSITORY_ROOT,
+      encoding: 'utf8',
+      input: `${ledgerRows.map((row) => row.hash).join('\n')}\n`,
+      env: {
+        ...process.env,
+        DRIZZLE_DIR: path.join(REPOSITORY_ROOT, 'packages/db/drizzle'),
+      },
+      maxBuffer: 2 * 1024 * 1024,
+    });
+    assert.equal(localSelector.error, undefined, 'the local selector process should start');
+    assert.equal(localSelector.status, 1, 'the local dev-db-up selector must stop on the historical gap');
+    assert.equal(localSelector.stdout, '', 'a refusal must not hand any SQL migration rows to the shell loop');
+    assert.match(localSelector.stderr, /historical gap before 0136_cleanup_moonboard_2024_ocr/);
+    assert.match(localSelector.stderr, /No migration SQL was executed/);
+
+    await assert.rejects(
+      runPendingMigrations(scratchUrl),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /historical gap before 0136_cleanup_moonboard_2024_ocr/);
+        assert.match(error.message, /No migration SQL was executed/);
+        return true;
+      },
+      'the tailnet path must refuse the same ledger before its migration loop',
+    );
+
+    const preservedRows = await withScratchClient(scratchUrl, async (client) => {
+      const climbs = await client<{ uuid: string }[]>`
+        SELECT uuid FROM public.board_climbs WHERE uuid = ${UNSYNCED_CLIMB_UUID}
+      `;
+      const ticks = await client<{ climb_uuid: string }[]>`
+        SELECT climb_uuid FROM public.boardsesh_ticks WHERE climb_uuid = ${UNSYNCED_CLIMB_UUID}
+      `;
+      return { climbs, ticks };
+    });
+    assert.equal(preservedRows.climbs.length, 1, 'the unsynced user climb must remain untouched');
+    assert.equal(preservedRows.ticks.length, 1, 'the dependent tick must remain untouched');
   });
 
   it('catches the migration drizzle skips below its created_at high-water mark', async (context) => {

@@ -41,11 +41,9 @@ function writeMigrationsFolder(entries: readonly { tag: string; when: number; bo
 }
 
 describe('selectPendingMigrations', () => {
-  it('selects a migration whose when is below the newest applied entry (#3979)', () => {
-    // The whole bug. `0002_stale_when` was renumbered onto a `when` older than
-    // the already-applied `0001_b`, so the old `when > max(created_at)` filter
-    // skipped it on that run — and, because the mark only moves up, on every run
-    // after it. Its hash is absent, so the hash-keyed question gets it right.
+  it('selects an appended migration whose when is below the newest applied entry (#3979)', () => {
+    // The safe form of the bug: the new entry is journaled after the applied
+    // prefix even though its `when` is older than the prefix's high-water mark.
     const journal = [entry('0000_a', 1000), entry('0001_b', 3000), entry('0002_stale_when', 2000)];
     const pending = selectPendingMigrations(journal, ['hash-of-0000_a', 'hash-of-0001_b']);
     expect(pending.map((migration) => migration.tag)).toEqual(['0002_stale_when']);
@@ -53,39 +51,48 @@ describe('selectPendingMigrations', () => {
 
   it('selects nothing when every journal hash has a ledger row', () => {
     const journal = [entry('0000_a', 1000), entry('0001_b', 3000)];
-    expect(selectPendingMigrations(journal, ['hash-of-0001_b', 'hash-of-0000_a'])).toEqual([]);
+    expect(selectPendingMigrations(journal, ['hash-of-0000_a', 'hash-of-0001_b'])).toEqual([]);
   });
 
-  it('selects the whole journal against an empty ledger', () => {
-    // A fresh tracker — the shell script creates the table before this runs, so
-    // "no rows" is a normal state and must not read as "nothing to do".
+  it('refuses an empty existing ledger instead of replaying historical SQL', () => {
     const journal = [entry('0000_a', 1000), entry('0001_b', 3000)];
-    expect(selectPendingMigrations(journal, []).map((migration) => migration.tag)).toEqual(['0000_a', '0001_b']);
+    expect(() => selectPendingMigrations(journal, [])).toThrow(/empty migration ledger.*No migration SQL was executed/);
   });
 
-  it('needs one ledger row per byte-identical .sql, not one per hash', () => {
-    // Duplicate-content migrations have shipped here before (0177_illegal_omega_red).
-    // A Set-based diff would call the second one applied and skip it forever.
+  it('refuses an ambiguous boundary between byte-identical applied and pending migrations', () => {
+    // A hash-only ledger cannot prove which copy was applied if it is missing one
+    // of two byte-identical entries. Replaying the pending copy could run already-
+    // applied SQL, so this boundary needs owner reconciliation.
     const shared = 'sha-of-identical-bodies';
     const journal = [entry('0000_a', 1000, shared), entry('0001_b', 2000, shared)];
-    expect(selectPendingMigrations(journal, [shared]).map((migration) => migration.tag)).toEqual(['0001_b']);
+    expect(() => selectPendingMigrations(journal, [shared])).toThrow(/position in history cannot be verified/);
     expect(selectPendingMigrations(journal, [shared, shared])).toEqual([]);
   });
 
-  it('ignores ledger hashes that belong to no journal entry', () => {
-    // Renumber residue. The shared dev database carries three such rows; failing
-    // or re-applying on them would break `vp run db:up` for a non-problem.
+  it('refuses unknown ledger hashes instead of guessing at migration history', () => {
     const journal = [entry('0000_a', 1000), entry('0001_b', 2000)];
-    const ledger = ['hash-of-0000_a', 'hash-of-a-renumbered-away-migration', 'hash-of-0001_b'];
-    expect(selectPendingMigrations(journal, ledger)).toEqual([]);
+    const ledger = ['hash-of-0000_a', 'hash-of-a-renumbered-away-migration'];
+    expect(() => selectPendingMigrations(journal, ledger)).toThrow(/unknown hash.*No migration SQL was executed/);
   });
 
-  it('returns pending entries in journal order, carrying when and hash', () => {
+  it('refuses a missing historical entry when later journal rows are already applied', () => {
     const journal = [entry('0000_a', 1000), entry('0001_b', 3000), entry('0002_c', 2000)];
-    expect(selectPendingMigrations(journal, ['hash-of-0001_b'])).toEqual([
-      entry('0000_a', 1000),
-      entry('0002_c', 2000),
-    ]);
+    const ledger = ['hash-of-0000_a', 'hash-of-0002_c'];
+    expect(() => selectPendingMigrations(journal, ledger)).toThrow(
+      /historical gap before 0001_b.*later journal entry 0002_c.*No migration SQL was executed/,
+    );
+  });
+
+  it('refuses excess duplicate rows even when the hash is known', () => {
+    const journal = [entry('0000_a', 1000), entry('0001_b', 2000)];
+    expect(() => selectPendingMigrations(journal, ['hash-of-0000_a', 'hash-of-0001_b', 'hash-of-0001_b'])).toThrow(
+      /excess hash.*No migration SQL was executed/,
+    );
+  });
+
+  it('returns the safe suffix in journal order with each when and hash', () => {
+    const journal = [entry('0000_a', 1000), entry('0001_b', 3000), entry('0002_c', 2000)];
+    expect(selectPendingMigrations(journal, ['hash-of-0000_a', 'hash-of-0001_b'])).toEqual([entry('0002_c', 2000)]);
   });
 });
 
@@ -96,7 +103,7 @@ describe('parseLedgerHashes', () => {
 
   it('reads an empty ledger as no hashes rather than one blank hash', () => {
     // `printf '%s\n' "$ledger_hashes"` emits a single blank line for an empty
-    // ledger. Keeping it would leave one journal entry paired with '' and skipped.
+    // ledger. The selector rejects this state unless history has been reconciled.
     expect(parseLedgerHashes('')).toEqual([]);
     expect(parseLedgerHashes('\n')).toEqual([]);
     expect(parseLedgerHashes('  \n')).toEqual([]);

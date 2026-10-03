@@ -332,13 +332,14 @@ function explainMigrationFailure(tag: string): string {
     '         If postgres reported "already exists", that database carries this',
     "         migration's objects without its ledger row — it ran a superseded version",
     '         on another branch, before the migration was renumbered or collapsed (#3978).',
-    '         Whoever hosts it has to reset it (docker compose down -v && vp run db:up)',
-    '         or repair the ledger by hand; see docs/db-migrations.md.',
+    '         Do not reset it from this client. The host owner must inspect the database',
+    '         history and confirm its volume is disposable before any reset; otherwise',
+    "         reconcile the ledger under that owner's review. See docs/db-migrations.md.",
     '',
   ].join('\n');
 }
 
-async function runPendingMigrations(connectionString: string): Promise<void> {
+export async function runPendingMigrations(connectionString: string): Promise<void> {
   const client = postgres(connectionString, {
     max: 1,
     idle_timeout: 1,
@@ -353,7 +354,9 @@ async function runPendingMigrations(connectionString: string): Promise<void> {
     // high-water mark only ever moved up, so a migration landing at or below it
     // — renumbered by a rebase, collapsed with another branch's, or simply older
     // than the peer's image build — was skipped here on every run, for good.
-    const ledgerRows = await client<LedgerHashRow[]>`SELECT hash FROM drizzle."__drizzle_migrations"`;
+    const ledgerRows = await client<LedgerHashRow[]>`
+      SELECT hash FROM drizzle."__drizzle_migrations" ORDER BY id
+    `;
     const pendingMigrations = selectPendingMigrations(
       readJournalMigrations(drizzleDirectory),
       ledgerRows.map((row) => row.hash),
