@@ -163,7 +163,8 @@ export function SessionSummaryCard({
 
       <View style={styles.social}>
         <FeedSocialRow
-          entityId={session.sessionId}
+          entityId={session.socialEntityId}
+          entityType={session.socialEntityType}
           upvotes={voteSummary?.upvotes ?? session.upvotes}
           userVote={voteSummary?.userVote ?? null}
           commentCount={session.commentCount}

@@ -2,8 +2,9 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import {
+  ADD_COMMENT,
   FOLLOW_USER,
   GET_BULK_VOTE_SUMMARIES,
   GET_FOLLOWERS,
@@ -23,7 +24,7 @@ vi.mock('../../client', () => ({
   getHttpClient: () => ({ request: requestMock }),
 }));
 
-import { useBulkVoteSummaries, useFollowers, useSearchUsers, useToggleUserFollow } from '../use-social';
+import { useAddComment, useBulkVoteSummaries, useFollowers, useSearchUsers, useToggleUserFollow } from '../use-social';
 
 function makeWrapper() {
   const queryClient = new QueryClient({
@@ -137,6 +138,41 @@ describe('useSearchUsers', () => {
     expect(requestMock).toHaveBeenLastCalledWith(SEARCH_USERS, {
       input: { query: 'ma', limit: 30, offset: 30 },
     });
+  });
+});
+
+describe('useAddComment', () => {
+  it('refetches the selected session detail after a comment is added', async () => {
+    requestMock.mockResolvedValue({ addComment: { uuid: 'comment-1' } });
+    const { queryClient, Wrapper } = makeWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    const fetchSessionDetail = vi
+      .fn()
+      .mockResolvedValueOnce({ commentCount: 1 })
+      .mockResolvedValueOnce({ commentCount: 2 });
+    const { result } = renderHook(
+      () => ({
+        addComment: useAddComment(),
+        detail: useQuery({
+          queryKey: ['sessionDetail', 'daily:user:2026-02-04', 'tick-1'],
+          queryFn: fetchSessionDetail,
+        }),
+      }),
+      { wrapper: Wrapper },
+    );
+
+    await waitFor(() => expect(result.current.detail.data?.commentCount).toBe(1));
+
+    await act(async () => {
+      await result.current.addComment.mutateAsync({ entityType: 'tick', entityId: 'tick-1', body: 'Nice one' });
+    });
+
+    expect(requestMock).toHaveBeenCalledWith(ADD_COMMENT, {
+      input: { entityType: 'tick', entityId: 'tick-1', body: 'Nice one' },
+    });
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['sessionDetail'] }));
+    await waitFor(() => expect(result.current.detail.data?.commentCount).toBe(2));
+    expect(fetchSessionDetail).toHaveBeenCalledTimes(2);
   });
 });
 

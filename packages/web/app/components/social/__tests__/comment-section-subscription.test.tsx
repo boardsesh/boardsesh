@@ -8,7 +8,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
+import { QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
+import { createTestQueryClient } from '@/app/test-utils/test-providers';
 import CommentSection from '../comment-section';
 
 vi.mock('react-i18next', () => ({
@@ -41,10 +43,17 @@ vi.mock('@/app/lib/backend-url', () => ({
 }));
 
 const mockCreateGraphQLClient = vi.fn(() => ({ dispose: vi.fn() }));
-const mockSubscribe = vi.fn(() => vi.fn());
+let subscriptionNext: ((payload: { commentUpdates?: unknown }) => void) | null = null;
+const mockSubscribe = vi.fn(
+  (_client: unknown, _operation: unknown, observer: { next: (payload: { commentUpdates?: unknown }) => void }) => {
+    subscriptionNext = observer.next;
+    return vi.fn();
+  },
+);
 vi.mock('@/app/lib/realtime/graphql-client', () => ({
   createGraphQLClient: (...args: unknown[]) => mockCreateGraphQLClient(...(args as [])),
-  subscribe: (...args: unknown[]) => mockSubscribe(...(args as [])),
+  subscribe: (...args: unknown[]) =>
+    mockSubscribe(args[0], args[1], args[2] as { next: (payload: { commentUpdates?: unknown }) => void }),
 }));
 
 vi.mock('@boardsesh/graphql/operations', () => ({
@@ -64,13 +73,18 @@ describe('CommentSection live updates', () => {
   beforeEach(() => {
     mockCreateGraphQLClient.mockClear();
     mockSubscribe.mockClear();
+    subscriptionNext = null;
     mockAuthState = { token: 'test-token', isLoading: false, isAuthenticated: true, error: null };
   });
 
   it('opens no WebSocket for an anonymous reader', async () => {
     mockAuthState = { token: null as unknown as string, isLoading: false, isAuthenticated: false, error: null };
 
-    render(<CommentSection entityType="climb" entityId="climb-1" />);
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <CommentSection entityType="climb" entityId="climb-1" />
+      </QueryClientProvider>,
+    );
 
     // The thread itself still renders — anonymous readers (and crawlers) keep
     // the HTTP-fetched comment list.
@@ -82,11 +96,39 @@ describe('CommentSection live updates', () => {
   });
 
   it('opens exactly one WebSocket for a signed-in reader', async () => {
-    render(<CommentSection entityType="climb" entityId="climb-1" />);
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <CommentSection entityType="climb" entityId="climb-1" />
+      </QueryClientProvider>,
+    );
 
     await waitFor(() => {
       expect(mockCreateGraphQLClient).toHaveBeenCalledTimes(1);
     });
     expect(mockSubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('refetches the active detail counts after a comment event', async () => {
+    const queryClient = createTestQueryClient();
+    let count = 0;
+    function SessionDetailCountProbe() {
+      const { data } = useQuery({
+        queryKey: ['sessionDetail', 'daily:user-1:2026-10-03', 'tick-a'],
+        queryFn: async () => ++count,
+      });
+      return <div data-testid="session-detail-count">{data}</div>;
+    }
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <SessionDetailCountProbe />
+        <CommentSection entityType="tick" entityId="tick-a" />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId('session-detail-count').textContent).toBe('1'));
+    await waitFor(() => expect(subscriptionNext).not.toBeNull());
+    subscriptionNext?.({ commentUpdates: { entityType: 'tick', entityId: 'tick-a' } });
+    await waitFor(() => expect(screen.getByTestId('session-detail-count').textContent).toBe('2'));
   });
 });

@@ -646,6 +646,8 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     gradeDistribution: [SessionGradeDistributionItem!]!
     boardTypes: [String!]!
     hardestGrade: String
+    socialEntityType: SocialEntityType!
+    socialEntityId: String!
     firstTickAt: String!
     lastTickAt: String!
     durationMinutes: Int
