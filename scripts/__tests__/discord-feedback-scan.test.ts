@@ -267,6 +267,187 @@ describe('collectMentionCommand', () => {
     },
   );
 
+  it.each([
+    { label: 'forum', threadType: 11, starterHasThreadId: true },
+    { label: 'message-less private', threadType: 12, starterHasThreadId: false },
+  ] as const)('loads the original report for a long $label thread', async ({ threadType, starterHasThreadId }) => {
+    const threadId = '600000000000000001';
+    const parentId = '500000000000000001';
+    const starter = message({
+      id: starterHasThreadId ? threadId : '610000000000000001',
+      channel_id: threadId,
+      content: 'The original report is older than the recent message window.',
+      author: { id: USER_ID },
+      mentions: [],
+    });
+    const command = message({
+      id: COMMAND_ID,
+      channel_id: threadId,
+      content: `<@${BOT_ID}> split this report into two issues`,
+    });
+    const olderDiscussion = Array.from({ length: 220 }, (_, index) =>
+      message({
+        id: `71${String(index).padStart(16, '0')}`,
+        channel_id: threadId,
+        content: `Later discussion ${index}`,
+        timestamp: `2026-09-03T01:${String(Math.floor(index / 60)).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}.000Z`,
+        author: { id: USER_ID },
+        mentions: [],
+      }),
+    );
+    const completeHistory = [starter, ...olderDiscussion, command];
+    const recentWindow = completeHistory.slice(-100);
+    const getMessage = vi.fn(async (requestedChannelId: string, messageId: string) => {
+      if (requestedChannelId === threadId && messageId === COMMAND_ID) return command;
+      if (requestedChannelId === parentId && messageId === threadId) {
+        throw new Error('Starter is not in the parent message collection');
+      }
+      if (requestedChannelId === threadId && messageId === threadId && starterHasThreadId) return starter;
+      throw new Error('Unexpected Discord message lookup');
+    });
+    const listMessagesBefore = vi.fn(async (_channelId: string, beforeMessageId: string, limit: number) => {
+      const beforeIndex = completeHistory.findIndex(({ id }) => id === beforeMessageId);
+      if (beforeIndex < 0) throw new Error('Unknown history cursor');
+      return completeHistory.slice(Math.max(0, beforeIndex - limit), beforeIndex);
+    });
+    const discordSource = source({
+      getChannel: vi.fn(async (channelId) =>
+        channelId === threadId
+          ? channel({ id: threadId, type: threadType, parent_id: parentId })
+          : channel({ id: parentId, type: 15 }),
+      ),
+      getMessage,
+      listRecentMessages: vi.fn(async () => recentWindow),
+      listMessagesBefore,
+    });
+
+    const result = await collectMentionCommand({ ...options, channelId: threadId }, { source: discordSource });
+
+    expect(getMessage).toHaveBeenCalledWith(threadId, threadId);
+    expect(result.source.messageId).toBe(starter.id);
+    expect(result.source.content).toBe('The original report is older than the recent message window.');
+    expect(result.source.context).toHaveLength(50);
+    expect(result.source.context[0]?.content).toBe('Later discussion 170');
+    expect(result.source.context.at(-1)?.content).toBe('Later discussion 219');
+    expect(listMessagesBefore).toHaveBeenCalledTimes(starterHasThreadId ? 0 : 2);
+  });
+
+  it('refuses to substitute a recent message when the thread starter cannot be retrieved', async () => {
+    const threadId = '600000000000000001';
+    const parentId = '500000000000000001';
+    const command = message({ id: COMMAND_ID, channel_id: threadId });
+    const recentDiscussion = Array.from({ length: 100 }, (_, index) =>
+      message({
+        id: `72${String(index).padStart(16, '0')}`,
+        channel_id: threadId,
+        content: `Unrelated later message ${index}`,
+        author: { id: USER_ID },
+        mentions: [],
+      }),
+    );
+    const getMessage = vi.fn(async (requestedChannelId: string, messageId: string) => {
+      if (requestedChannelId === threadId && messageId === COMMAND_ID) return command;
+      throw new Error('Original message is unavailable');
+    });
+    const discordSource = source({
+      getChannel: vi.fn(async (channelId) =>
+        channelId === threadId
+          ? channel({ id: threadId, type: 12, parent_id: parentId })
+          : channel({ id: parentId, type: 0 }),
+      ),
+      getMessage,
+      listRecentMessages: vi.fn(async () => recentDiscussion),
+      listMessagesBefore: vi.fn(async () => {
+        throw new Error('READ_MESSAGE_HISTORY is denied');
+      }),
+    });
+
+    await expect(collectMentionCommand({ ...options, channelId: threadId }, { source: discordSource })).rejects.toThrow(
+      /Could not prove complete history.*refusing to select a recent starter/i,
+    );
+    expect(getMessage).toHaveBeenCalledWith(parentId, threadId);
+    expect(getMessage).toHaveBeenCalledWith(threadId, threadId);
+  });
+
+  it('refuses to replace a known non-human starter with a later human message', async () => {
+    const threadId = '600000000000000001';
+    const parentId = '500000000000000001';
+    const command = message({ id: COMMAND_ID, channel_id: threadId });
+    const nonHumanStarter = message({
+      id: threadId,
+      channel_id: parentId,
+      content: 'Automated thread starter',
+      author: { id: BOT_ID, bot: true },
+    });
+    const discordSource = source({
+      getChannel: vi.fn(async (channelId) =>
+        channelId === threadId
+          ? channel({ id: threadId, type: 11, parent_id: parentId })
+          : channel({ id: parentId, type: 15 }),
+      ),
+      getMessage: vi.fn(async (channelId: string, messageId: string) => {
+        if (channelId === threadId && messageId === COMMAND_ID) return command;
+        if (channelId === parentId && messageId === threadId) return nonHumanStarter;
+        throw new Error('Unexpected Discord message lookup');
+      }),
+      listRecentMessages: vi.fn(async () => [
+        message({ id: '620000000000000001', channel_id: threadId, content: 'Later human discussion' }),
+      ]),
+      listMessagesBefore: vi.fn(async () => []),
+    });
+
+    await expect(collectMentionCommand({ ...options, channelId: threadId }, { source: discordSource })).rejects.toThrow(
+      /starter was not sent by a human.*refusing to select a later message/i,
+    );
+    expect(discordSource.listMessagesBefore).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a message-less private thread exceeds the complete-history bound', async () => {
+    const threadId = '600000000000000001';
+    const parentId = '500000000000000001';
+    const command = message({ id: COMMAND_ID, channel_id: threadId });
+    const recentDiscussion = Array.from({ length: 100 }, (_, index) =>
+      message({
+        id: `75${String(index).padStart(16, '0')}`,
+        channel_id: threadId,
+        content: `Recent message ${index}`,
+        author: { id: USER_ID },
+        mentions: [],
+      }),
+    );
+    let olderPageIndex = 0;
+    const discordSource = source({
+      getChannel: vi.fn(async (channelId) =>
+        channelId === threadId
+          ? channel({ id: threadId, type: 12, parent_id: parentId })
+          : channel({ id: parentId, type: 0 }),
+      ),
+      getMessage: vi.fn(async (requestedChannelId: string, messageId: string) => {
+        if (requestedChannelId === threadId && messageId === COMMAND_ID) return command;
+        throw new Error('Message-linked starter does not exist');
+      }),
+      listRecentMessages: vi.fn(async () => recentDiscussion),
+      listMessagesBefore: vi.fn(async () => {
+        olderPageIndex += 1;
+        const snowflakePrefix = String(75 - olderPageIndex).padStart(2, '0');
+        return Array.from({ length: 100 }, (_, index) =>
+          message({
+            id: `${snowflakePrefix}${String(index).padStart(16, '0')}`,
+            channel_id: threadId,
+            content: `Older message ${olderPageIndex}-${index}`,
+            author: { id: USER_ID },
+            mentions: [],
+          }),
+        );
+      }),
+    });
+
+    await expect(collectMentionCommand({ ...options, channelId: threadId }, { source: discordSource })).rejects.toThrow(
+      /history exceeds 1000 messages.*refusing to select a recent starter/i,
+    );
+    expect(olderPageIndex).toBe(10);
+  });
+
   it('uses up to ten preceding human messages from the prior 30 minutes', async () => {
     const recent = Array.from({ length: 12 }, (_, index) =>
       message({
@@ -969,7 +1150,7 @@ describe('applyTriage', () => {
 
   it('turns the pending reaction into a failure reply', async () => {
     const deps = applyDependencies();
-    await notifyFailure(
+    const result = await notifyFailure(
       {
         channelId: '500000000000000001',
         triggerMessageId: COMMAND_ID,
@@ -981,6 +1162,7 @@ describe('applyTriage', () => {
     expect(deps.removeReaction).toHaveBeenCalledWith('500000000000000001', COMMAND_ID, '👀');
     expect(deps.addReaction).toHaveBeenCalledWith('500000000000000001', COMMAND_ID, '❌');
     expect(deps.postReply).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ reactionError: null, replyError: null });
   });
 });
 
@@ -1075,6 +1257,100 @@ it('notifies Discord through the live failure-handler CLI path', async () => {
     expect(requests.map(({ method }) => method)).toEqual(['GET', 'GET', 'GET', 'DELETE', 'DELETE', 'PUT', 'POST']);
     expect(requests[5]?.url).toContain(`/reactions/${encodeURIComponent('❌')}/@me`);
     expect(requests[6]?.body).toContain('inspect the workflow and issues before retrying this message');
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it.each([
+  { label: 'the reaction is denied', failedWrite: 'reaction', reactionError: true, replyError: false },
+  { label: 'the reply is denied', failedWrite: 'reply', reactionError: false, replyError: true },
+  { label: 'both writes are denied', failedWrite: 'both', reactionError: true, replyError: true },
+] as const)(
+  'attempts the failure reply independently when $label',
+  async ({ failedWrite, reactionError, replyError }) => {
+    const writeRequests: Array<{ method: string; url: string; body: string | null }> = [];
+    const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      const url = String(input);
+      if (method === 'GET') {
+        if (url.endsWith('/users/@me')) return Response.json({ id: BOT_ID });
+        return Response.json(url.includes('/messages/') ? message() : channel());
+      }
+      if (method === 'PUT' || method === 'POST') {
+        writeRequests.push({ method, url, body: typeof init?.body === 'string' ? init.body : null });
+        if (
+          (method === 'PUT' && (failedWrite === 'reaction' || failedWrite === 'both')) ||
+          (method === 'POST' && (failedWrite === 'reply' || failedWrite === 'both'))
+        ) {
+          return new Response('forbidden', { status: 403 });
+        }
+      }
+      return new Response(null, { status: 204 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      const logger = { error: vi.fn(), log: vi.fn(), warn: vi.fn() };
+      const exitCode = await runCli(
+        ['--mode', 'notify-failure', '--channel-id', '500000000000000001', '--trigger-message-id', COMMAND_ID],
+        { DISCORD_BOT_TOKEN: 'bot-token', DISCORD_GUILD_ID: GUILD_ID, DISCORD_ISSUE_TRIGGER_USER_IDS: MAINTAINER_ID },
+        logger,
+      );
+
+      expect(exitCode).toBe(1);
+      expect(writeRequests.map(({ method }) => method)).toEqual(['PUT', 'POST']);
+      expect(writeRequests[0]?.url).toContain(`/reactions/${encodeURIComponent('❌')}/@me`);
+      expect(writeRequests[1]?.body).toContain('inspect the workflow and issues before retrying this message');
+      if (reactionError) {
+        expect(logger.error).toHaveBeenCalledWith(
+          expect.stringContaining('[discord-feedback] failure reaction failed: Discord 403'),
+        );
+      }
+      if (replyError) {
+        expect(logger.error).toHaveBeenCalledWith(
+          expect.stringContaining('[discord-feedback] failure reply failed: Discord 403'),
+        );
+      }
+      expect(logger.error).toHaveBeenCalledTimes(Number(reactionError) + Number(replyError));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  },
+);
+
+it.each([
+  ['deleted current command', true],
+  ['revoked current author', false],
+] as const)('refuses failure-notifier writes for a %s', async (_label, deleted) => {
+  const requests: Array<{ method: string; url: string }> = [];
+  const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    const url = String(input);
+    requests.push({ method, url });
+    if (url.endsWith('/users/@me')) return Response.json({ id: BOT_ID });
+    if (method === 'GET' && url.endsWith(`/messages/${COMMAND_ID}`)) {
+      if (deleted) return new Response('Unknown Message', { status: 404 });
+      return Response.json(message({ author: { id: USER_ID } }));
+    }
+    if (method === 'GET') return Response.json(channel());
+    return new Response(null, { status: 204 });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  try {
+    const logger = { error: vi.fn(), log: vi.fn(), warn: vi.fn() };
+    const exitCode = await runCli(
+      ['--mode', 'notify-failure', '--channel-id', '500000000000000001', '--trigger-message-id', COMMAND_ID],
+      { DISCORD_BOT_TOKEN: 'bot-token', DISCORD_GUILD_ID: GUILD_ID, DISCORD_ISSUE_TRIGGER_USER_IDS: MAINTAINER_ID },
+      logger,
+    );
+
+    expect(exitCode).toBe(1);
+    expect(requests.every(({ method }) => method === 'GET')).toBe(true);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('[discord-feedback] refusing failure notification before writes:'),
+    );
   } finally {
     vi.unstubAllGlobals();
   }

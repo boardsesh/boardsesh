@@ -52,6 +52,9 @@ const USER_AGENT = 'DiscordBot (https://github.com/boardsesh/boardsesh, 2.0)';
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_RATE_LIMIT_SLEEP_SECONDS = 60;
 const THREAD_CONTEXT_LIMIT = 50;
+const THREAD_HISTORY_PAGE_SIZE = 100;
+const MAX_THREAD_HISTORY_MESSAGES = 1000;
+const MAX_THREAD_HISTORY_PAGES = MAX_THREAD_HISTORY_MESSAGES / THREAD_HISTORY_PAGE_SIZE + 1;
 const CHANNEL_CONTEXT_LIMIT = 10;
 const CHANNEL_CONTEXT_LOOKBACK_MS = 30 * 60 * 1000;
 
@@ -63,7 +66,9 @@ export type DiscordSource = {
   getSelfUserId(): Promise<string>;
   getChannel(channelId: string): Promise<DiscordChannel>;
   getMessage(channelId: string, messageId: string): Promise<DiscordMessage>;
+  /** Returns up to `limit` recent messages in chronological order. */
   listRecentMessages(channelId: string, limit: number): Promise<DiscordMessage[]>;
+  /** Returns up to `limit` messages older than `beforeMessageId`, chronologically. */
   listMessagesBefore(channelId: string, beforeMessageId: string, limit: number): Promise<DiscordMessage[]>;
 };
 
@@ -428,6 +433,70 @@ function humanMessages(messages: DiscordMessage[], selfUserId: string): DiscordM
   return messages.filter((message) => isCollectableMessage(message, selfUserId));
 }
 
+/**
+ * Return the complete bounded history for a thread, oldest first. A short page
+ * proves the start was reached; hitting the message bound or losing pagination
+ * progress must not make the first item in a recent page look like the starter.
+ */
+async function readCompleteThreadHistory(
+  source: DiscordSource,
+  threadId: string,
+  recentMessages: DiscordMessage[],
+): Promise<DiscordMessage[]> {
+  if (recentMessages.length > THREAD_HISTORY_PAGE_SIZE) {
+    throw new Error(`Discord returned more than ${THREAD_HISTORY_PAGE_SIZE} messages for one thread-history page.`);
+  }
+  if (recentMessages.length < THREAD_HISTORY_PAGE_SIZE) return recentMessages;
+
+  let history = recentMessages;
+  let beforeMessageId = recentMessages[0]?.id;
+  let pagesRead = 1;
+  const seenMessageIds = new Set(recentMessages.map(({ id }) => id));
+
+  while (pagesRead < MAX_THREAD_HISTORY_PAGES) {
+    if (!beforeMessageId) {
+      throw new Error(`Thread ${threadId} history returned no pagination cursor; refusing to select a recent starter.`);
+    }
+
+    let olderMessages: DiscordMessage[];
+    try {
+      olderMessages = await source.listMessagesBefore(threadId, beforeMessageId, THREAD_HISTORY_PAGE_SIZE);
+    } catch (error: unknown) {
+      throw new Error(
+        `Could not prove complete history for Discord thread ${threadId}; refusing to select a recent starter. Check bot history access. ${errorMessage(error)}`,
+      );
+    }
+    pagesRead += 1;
+
+    if (olderMessages.length > THREAD_HISTORY_PAGE_SIZE) {
+      throw new Error(`Discord returned more than ${THREAD_HISTORY_PAGE_SIZE} messages for one thread-history page.`);
+    }
+    if (olderMessages.length === 0) return history;
+    if (olderMessages.some(({ id }) => seenMessageIds.has(id))) {
+      throw new Error(`Thread ${threadId} history pagination repeated a message; refusing to select a recent starter.`);
+    }
+
+    const nextBeforeMessageId = olderMessages[0]?.id;
+    if (!nextBeforeMessageId || nextBeforeMessageId === beforeMessageId) {
+      throw new Error(`Thread ${threadId} history pagination did not advance; refusing to select a recent starter.`);
+    }
+    for (const olderMessage of olderMessages) seenMessageIds.add(olderMessage.id);
+    history = [...olderMessages, ...history];
+
+    if (history.length > MAX_THREAD_HISTORY_MESSAGES) {
+      throw new Error(
+        `Discord thread ${threadId} history exceeds ${MAX_THREAD_HISTORY_MESSAGES} messages; refusing to select a recent starter.`,
+      );
+    }
+    if (olderMessages.length < THREAD_HISTORY_PAGE_SIZE) return history;
+    beforeMessageId = nextBeforeMessageId;
+  }
+
+  throw new Error(
+    `Discord thread ${threadId} history could not be proven complete within ${MAX_THREAD_HISTORY_MESSAGES} messages; refusing to select a recent starter.`,
+  );
+}
+
 function collectedSource(args: {
   primary: DiscordMessage;
   context: DiscordMessage[];
@@ -504,14 +573,36 @@ export async function collectMentionCommand(
       deps.source.getChannel(commandChannel.parent_id),
       deps.source.listRecentMessages(commandChannel.id, 100),
     ]);
-    // A forum/private thread's first human message can itself be the command.
-    // Keep it eligible as the primary report; exclude it only from context below.
+    // Message-derived and forum thread starters can live in the parent or thread
+    // channel. Resolve that exact message before considering history fallback;
+    // a private thread created without a message has no associated starter.
     const humanThreadMessages = humanMessages(rawThreadMessages, selfUserId);
-    let starter = await deps.source
-      .getMessage(commandChannel.parent_id, commandChannel.id)
-      .catch(() => humanThreadMessages[0]);
-    if (!starter || !isCollectableMessage(starter, selfUserId)) starter = humanThreadMessages[0];
-    if (!starter) throw new Error('Thread contains no human feedback message');
+    let starter: DiscordMessage | undefined;
+    for (const starterChannelId of [parentChannel.id, commandChannel.id]) {
+      try {
+        const candidate = await deps.source.getMessage(starterChannelId, commandChannel.id);
+        if (candidate.id === commandChannel.id && candidate.channel_id === starterChannelId) {
+          starter = candidate;
+          break;
+        }
+      } catch {
+        // A thread starter is addressable through either its parent or thread channel.
+      }
+    }
+    if (starter && !isCollectableMessage(starter, selfUserId)) {
+      throw new Error(
+        `Discord thread ${commandChannel.id} starter was not sent by a human; refusing to select a later message.`,
+      );
+    }
+    if (!starter) {
+      const completeHistory = await readCompleteThreadHistory(deps.source, commandChannel.id, rawThreadMessages);
+      starter = humanMessages(completeHistory, selfUserId)[0];
+    }
+    if (!starter) {
+      throw new Error(
+        `Discord thread ${commandChannel.id} contains no human feedback message in its complete history.`,
+      );
+    }
     const context = humanThreadMessages
       .filter((message) => message.id !== starter.id && message.id !== command.id)
       .slice(-THREAD_CONTEXT_LIMIT);
@@ -686,21 +777,38 @@ export async function applyTriage(
   return result;
 }
 
+export type FailureNotificationResult = {
+  reactionError: string | null;
+  replyError: string | null;
+};
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export async function notifyFailure(
   args: CollectOptions,
   deps: { source: DiscordSource; writer: DiscordWriter },
-): Promise<void> {
+): Promise<FailureNotificationResult> {
   await authorizeMentionCommand(args, deps.source);
   const { writer } = deps;
   await writer.removeReaction(args.channelId, args.triggerMessageId, '👀').catch(() => undefined);
   await writer.removeReaction(args.channelId, args.triggerMessageId, '✅').catch(() => undefined);
-  await writer.addReaction(args.channelId, args.triggerMessageId, '❌');
-  await writer.postReply(
-    args.channelId,
-    args.triggerMessageId,
-    args.guildId,
-    'Issue processing did not finish. Earlier attempts may have created some issues; a maintainer should inspect the workflow and issues before retrying this message.',
-  );
+  const [reactionResult, replyResult] = await Promise.allSettled([
+    Promise.resolve().then(() => writer.addReaction(args.channelId, args.triggerMessageId, '❌')),
+    Promise.resolve().then(() =>
+      writer.postReply(
+        args.channelId,
+        args.triggerMessageId,
+        args.guildId,
+        'Issue processing did not finish. Earlier attempts may have created some issues; a maintainer should inspect the workflow and issues before retrying this message.',
+      ),
+    ),
+  ]);
+  return {
+    reactionError: reactionResult.status === 'rejected' ? errorMessage(reactionResult.reason) : null,
+    replyError: replyResult.status === 'rejected' ? errorMessage(replyResult.reason) : null,
+  };
 }
 
 function flagValue(argv: string[], name: string): string | undefined {
@@ -917,16 +1025,23 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv, logger: Log
       logger.error('[discord-feedback] DISCORD_ISSUE_TRIGGER_USER_IDS is empty.');
       return 1;
     }
-    await notifyFailure(
-      {
-        channelId: options.channelId,
-        triggerMessageId: options.triggerMessageId,
-        guildId: options.guildId,
-        allowedUserIds: options.allowedUserIds,
-      },
-      { source: discord, writer: discord },
-    );
-    return 0;
+    try {
+      const result = await notifyFailure(
+        {
+          channelId: options.channelId,
+          triggerMessageId: options.triggerMessageId,
+          guildId: options.guildId,
+          allowedUserIds: options.allowedUserIds,
+        },
+        { source: discord, writer: discord },
+      );
+      if (result.reactionError) logger.error(`[discord-feedback] failure reaction failed: ${result.reactionError}`);
+      if (result.replyError) logger.error(`[discord-feedback] failure reply failed: ${result.replyError}`);
+      return result.reactionError || result.replyError ? 1 : 0;
+    } catch (error: unknown) {
+      logger.error(`[discord-feedback] refusing failure notification before writes: ${errorMessage(error)}`);
+      return 1;
+    }
   }
 
   if (options.mode === 'collect') {

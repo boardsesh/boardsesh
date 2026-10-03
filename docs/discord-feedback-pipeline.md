@@ -29,7 +29,13 @@ The workflow resolves the mention in this order:
 Bots, webhooks, system messages, and the issue bot itself are excluded. At most
 four image attachments are copied from the selected context. The collected JSON
 contains pseudonymous reporter references, never Discord user names or raw user
-IDs.
+IDs. The collector retrieves the exact thread starter from its parent or thread
+channel. For a private thread created without an associated message, it pages
+backward through up to 1,000 messages and uses the first human message only once
+a short page proves history is complete. If it cannot prove completeness,
+collection fails closed instead of treating a later message as the report. A
+known non-human thread starter is also rejected rather than replaced by later
+discussion.
 
 ## Runtime path
 
@@ -53,9 +59,10 @@ After GitHub accepts the dispatch, the bot adds 👀. A successful run replaces 
 with ✅ and replies with every issue URL. A failed dispatch uses ❌ and asks for a
 new mention. A failed workflow uses ❌ and asks a maintainer to inspect the run
 and created issues before retrying, since earlier attempts may have completed
-some issue writes. A failed success reaction or link reply is logged separately
-and does not turn completed issue creation into a failed workflow; both
-acknowledgements are attempted independently.
+some issue writes. The failure handler reauthorizes the current command before
+attempting either Discord write, then attempts the ❌ reaction and explanatory
+reply independently. It logs each failed write and reports a failed notification
+step if either one fails.
 
 ## Job isolation
 
