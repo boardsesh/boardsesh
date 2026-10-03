@@ -1,5 +1,5 @@
 import { gql } from 'graphql-request';
-import type { SprayWallReportReason } from '../generated/graphql';
+import type { SprayWallPhoto, SprayWallReportReason } from '../generated/graphql';
 
 export type { SprayWallReportReason } from '../generated/graphql';
 
@@ -443,13 +443,7 @@ export const SET_SPRAY_WALL_HIDDEN = gql`
   }
 `;
 
-export type SprayWallPhotoData = {
-  url: string;
-  thumbUrl: string | null;
-  width: number | null;
-  height: number | null;
-  expiresAt: string;
-};
+export type SprayWallPhotoData = Required<Pick<SprayWallPhoto, 'url' | 'thumbUrl' | 'width' | 'height' | 'expiresAt'>>;
 
 export type SprayWallReportData = {
   id: string;
