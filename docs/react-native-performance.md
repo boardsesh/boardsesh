@@ -92,6 +92,10 @@ unbounded drain-until-`hasMore` loop quietly fetches and mounts the entire catal
   re-entrant drain. There is no "loop until hasMore" anywhere.
 - `packages/mobile/src/components/play-drawer/BetaVideosSection.tsx` and queue lists use the Gorhom
   `BottomSheetFlatList` so the virtualization cooperates with the sheet's scroll gesture.
+- `packages/mobile/src/components/play-drawer/ClimberLogsSection.tsx` sits inside the play drawer's
+  plain `ScrollView`, so it shows at most four climbers (`INLINE_CLIMBER_LOG_CAP`), however many the
+  server returned. The rest are behind "See all logs" in `ClimberLogsSheet.tsx`, a
+  `BottomSheetFlatList`.
 
 **Anti-pattern:** `{items.map((item) => <Row key={item.id} item={item} />)}` inside a
 `<ScrollView>` for anything that isn't a fixed, small, known-length list. A fixed footer of 6

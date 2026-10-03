@@ -78,6 +78,24 @@ describe('followed author invalidation', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['crewFeed'] });
   });
 
+  // The play drawer's "Climber logs" card shows the logs of whoever you follow,
+  // so every follow change has to drop what it cached.
+  it.each([
+    ['a user follow', 'user', true, false],
+    ['a user unfollow', 'user', false, false],
+    ['a queued user follow', 'user', true, true],
+    ['a queued user unfollow', 'user', false, true],
+    ['a setter follow', 'setter', true, false],
+  ] as const)('drops cached climber logs after %s', async (_label, kind, follow, queued) => {
+    offline.enabled = queued;
+    const { invalidate, wrapper } = createHarness();
+    const { result } = renderHook(() => useToggleAuthorFollow(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({ kind, identifier: 'friend', follow });
+    });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['followingClimbLogs'] });
+  });
+
   it('leaves user profile invalidation to the outer social mutation', async () => {
     const { invalidate, wrapper } = createHarness();
     const { result } = renderHook(() => useToggleAuthorFollow(), { wrapper });

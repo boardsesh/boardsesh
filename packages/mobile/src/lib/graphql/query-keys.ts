@@ -60,3 +60,19 @@ export const followedLiveSessionsQueryKey = (boardUuid: string | null) =>
   [...FOLLOWED_LIVE_SESSIONS_QUERY_KEY, boardUuid] as const;
 export const boardLiveSessionsQueryKey = (boardId: number | null) =>
   [...LIVE_SESSIONS_QUERY_KEY, 'board', boardId] as const;
+
+/**
+ * Logs from climbers the viewer follows, for one climb (the play drawer's
+ * "Climber logs" card and its full list).
+ *
+ * Here because `use-followed-authors.ts` invalidates the root on every follow
+ * and unfollow without importing the hook that writes under it. The root is a
+ * bare string, like the other entries in `AUTHOR_QUERY_KEYS`.
+ *
+ * The viewer id is part of the key so one account's rows can never answer for
+ * another. The angle is not: the server returns every angle in one answer, so
+ * turning the board refetches nothing.
+ */
+export const FOLLOWING_CLIMB_LOGS_QUERY_KEY = 'followingClimbLogs';
+export const followingClimbLogsQueryKey = (viewerId: string | undefined, boardName: string, climbUuid: string | null) =>
+  [FOLLOWING_CLIMB_LOGS_QUERY_KEY, viewerId, boardName, climbUuid] as const;

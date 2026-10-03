@@ -81,6 +81,7 @@ import { useDrawerDismissGesture, type SwipeDismissAnimation } from './use-drawe
 import { AngleSelectorSheet } from './AngleSelectorSheet';
 import { ClimbActionsSheet } from '../ClimbActionsSheet';
 import { AddBetaVideoSheet } from '../AddBetaVideoSheet';
+import { ClimberLogsSheet } from './ClimberLogsSheet';
 import { ReportClimbSheet } from '../report-climb/ReportClimbSheet';
 import { BleControlSheetHost } from '../ble/BleControlSheetHost';
 import { RestTimerPillHost } from '../queue-control/RestTimerPillHost';
@@ -373,6 +374,9 @@ export function PlayDrawer({
   const [isTickBarActive, setIsTickBarActive] = useState(false);
   const [activeSubDrawer, setActiveSubDrawer] = useState<ActiveSubDrawer>('none');
   const [addBetaVideoOpen, setAddBetaVideoOpen] = useState(false);
+  // The climb whose full climber-logs list is open. Keyed on the uuid (like
+  // `mirrorFlip`) so moving to another climb closes the sheet without an effect.
+  const [climberLogsClimbUuid, setClimberLogsClimbUuid] = useState<string | null>(null);
   // Pinned climb/board the reaction menu opened the beta sheet for; null falls back
   // to the live displayedClimb (the "+" button path). See #3505.
   const [betaVideoTarget, setBetaVideoTarget] = useState<{ climb: Climb; boardConfig: BoardConfig } | null>(null);
@@ -1632,6 +1636,22 @@ export function PlayDrawer({
     setAddBetaVideoOpen(false);
   }, []);
 
+  // Climber logs card: "See all logs" opens the virtualised list; a row opens
+  // that climber's profile; the empty states lead to climber search. Both routes
+  // sit on the root stack, so they push over the `/play` modal.
+  const handleOpenClimberLogs = useCallback(() => {
+    setClimberLogsClimbUuid(displayedClimbUuid ?? null);
+  }, [displayedClimbUuid]);
+  const handleCloseClimberLogs = useCallback(() => {
+    setClimberLogsClimbUuid(null);
+  }, []);
+  const handleOpenClimberProfile = useCallback((userId: string) => {
+    router.push({ pathname: '/users/[userId]', params: { userId } });
+  }, []);
+  const handleFindClimbers = useCallback(() => {
+    router.push('/users/search');
+  }, []);
+
   const handleOpenActions = useCallback(() => {
     // iOS: open the floating reaction menu (over the drawer) instead of the in-drawer
     // bottom sheet. Android keeps the bottom sheet.
@@ -1793,6 +1813,8 @@ export function PlayDrawer({
   const angleSelectorVisible = activeSubDrawer === 'angleSelector';
   const mountClimbActions = useMountedOnFirstOpen(climbActionsVisible);
   const mountAddBetaVideo = useMountedOnFirstOpen(addBetaVideoOpen);
+  const climberLogsOpen = climberLogsClimbUuid !== null && climberLogsClimbUuid === displayedClimbUuid;
+  const mountClimberLogs = useMountedOnFirstOpen(climberLogsOpen);
   const mountReportClimb = useMountedOnFirstOpen(reportClimbOpen);
   const mountAngleSelector = useMountedOnFirstOpen(angleSelectorVisible);
   const mountLogAscent = useMountedOnFirstOpen(isTickBarActive);
@@ -2139,6 +2161,9 @@ export function PlayDrawer({
                       onLogbookSectionLayout={handleLogbookSectionLayout}
                       onLogbookToggle={handleLogbookToggle}
                       onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
+                      onOpenClimberLogs={handleOpenClimberLogs}
+                      onOpenClimberProfile={handleOpenClimberProfile}
+                      onFindClimbers={handleFindClimbers}
                     />
                   </View>
                 </>
@@ -2192,6 +2217,19 @@ export function PlayDrawer({
           layoutId={betaVideoTarget?.boardConfig.layoutId ?? layoutId}
           angle={betaVideoTarget?.boardConfig.angle ?? angle}
           onClose={handleCloseAddBetaVideo}
+        />
+      )}
+
+      {/* Sub-drawer: every followed climber's logs on this climb, opened from the
+          Climber logs card's "See all logs" row. Mounted on first open. */}
+      {mountClimberLogs && (
+        <ClimberLogsSheet
+          visible={climberLogsOpen}
+          climb={displayedClimb ?? null}
+          boardName={boardName}
+          angle={angle}
+          onClose={handleCloseClimberLogs}
+          onOpenProfile={handleOpenClimberProfile}
         />
       )}
 
