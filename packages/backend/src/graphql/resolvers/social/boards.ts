@@ -305,7 +305,8 @@ export async function canEditBoard(
   if (
     boardIsRoleEditable(board) &&
     rolesGrantAdminOrLeader(await getUserCommunityRoles(userId, executor), board.boardType)
-  ) return true;
+  )
+    return true;
   if (board.gymId != null && (await viewerCanAdminGym(board.gymId, userId, executor))) return true;
   return false;
 }
