@@ -426,9 +426,19 @@ every wall read. NULL means "no wall default", which is every wall created befor
 the column existed, and the mobile resolver falls back to the global default for
 it. A viewer's own explicit render-mode choice always wins over the wall's.
 
-- **Validated against `@boardsesh/board-look`'s own option lists and slider
-  bounds** (`SetSprayWallRenderSettingsInputSchema`), strict, every knob required.
+- **Validated against `@boardsesh/board-look`'s slider bounds**
+  (`SetSprayWallRenderSettingsInputSchema`), strict, every knob required.
   `mode: 'default'` is refused: a wall default of "use the default" points at itself.
+- **Option knobs take any well-formed name** (`markStyle`, `veil`, …), not only
+  the ones this backend's `@boardsesh/board-look` lists. The app ships on its own
+  train and can offer an option first: its default spray look,
+  `markStyle: 'outline'`, reaches the native train before `main` knows it. Only
+  the app reads the value, and it sanitises a name it does not know to that
+  knob's default.
+- **Read in its own query** (`GET_SPRAY_WALL_LOOK`), never in the shared
+  `SPRAY_WALL_FIELDS`. A field a deployed backend does not have yet fails
+  validation for the whole operation it sits in; in the shared fragment that
+  took down creating, loading and drawing every wall.
 - **On `spray_walls`, not `spray_wall_versions`.** A reset does not need a new look,
   so it is current-state config like `reference_width/height`.
 - **No wall lock.** No hold, version or publish path reads or writes the column, so
