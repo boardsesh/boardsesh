@@ -1,10 +1,13 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   checkNativeBuildPhaseDeps,
   readMobileDeps,
+  nodeResolver,
+  RULES as NATIVE_DEP_RULES,
   type DepResolver,
   type NativeDepRule,
 } from '../mobile-native-deps-check';
@@ -35,6 +38,72 @@ function makeResolver(resolveMap: Record<string, string>, versionMap: Record<str
 }
 
 describe('checkNativeBuildPhaseDeps', () => {
+  it('checks the actual installed SDK and native CLI dependencies', () => {
+    const mobilePackageJson = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      '..',
+      '..',
+      'packages/mobile/package.json',
+    );
+    expect(
+      checkNativeBuildPhaseDeps(mobilePackageJson, readMobileDeps(mobilePackageJson), NATIVE_DEP_RULES, nodeResolver),
+    ).toEqual({ checked: 1, errors: [] });
+  });
+
+  it('checks Sentry 8.24 CLI from the SDK even when the standalone CLI differs', () => {
+    const resolver = makeResolver(
+      {
+        [`${MOBILE_PKG}::${RN}/package.json`]: '/store/rn/package.json',
+        [`${MOBILE_PKG}::${CLI}/package.json`]: '/store/cli-2.58.4/package.json',
+        [`/store/rn/package.json::${CLI}/package.json`]: '/store/cli-3.6.2/package.json',
+      },
+      {
+        '/store/rn/package.json': '8.24.0',
+        '/store/cli-2.58.4/package.json': '2.58.4',
+        '/store/cli-3.6.2/package.json': '3.6.2',
+      },
+    );
+    expect(
+      checkNativeBuildPhaseDeps(MOBILE_PKG, { [RN]: '8.24.0', [CLI]: '2.58.4' }, NATIVE_DEP_RULES, resolver),
+    ).toEqual({
+      checked: 1,
+      errors: [],
+    });
+  });
+
+  it('rejects Sentry 8.24 when its SDK-owned CLI is missing even if mobile resolves a CLI', () => {
+    const resolver = makeResolver(
+      {
+        [`${MOBILE_PKG}::${RN}/package.json`]: '/store/rn/package.json',
+        [`${MOBILE_PKG}::${CLI}/package.json`]: '/store/cli-2.58.4/package.json',
+      },
+      { '/store/rn/package.json': '8.24.0', '/store/cli-2.58.4/package.json': '2.58.4' },
+    );
+    const result = checkNativeBuildPhaseDeps(MOBILE_PKG, { [RN]: '8.24.0' }, NATIVE_DEP_RULES, resolver);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain(`could not verify ${CLI} resolution from ${RN}`);
+  });
+
+  it.each(['7.11.0', '8.25.0'])('keeps mobile CLI alignment for other installed SDKs, including %s', (version) => {
+    const resolver = makeResolver(
+      {
+        [`${MOBILE_PKG}::${RN}/package.json`]: '/store/rn/package.json',
+        [`${MOBILE_PKG}::${CLI}/package.json`]: '/store/cli-2.58.4/package.json',
+        [`/store/rn/package.json::${CLI}/package.json`]: '/store/cli-3.6.2/package.json',
+      },
+      {
+        '/store/rn/package.json': version,
+        '/store/cli-2.58.4/package.json': '2.58.4',
+        '/store/cli-3.6.2/package.json': '3.6.2',
+      },
+    );
+    // Manifest text is insufficient: an unaudited installed version must not
+    // inherit the exception just because the declared pin says 8.24.
+    const result = checkNativeBuildPhaseDeps(MOBILE_PKG, { [RN]: '8.24.0' }, NATIVE_DEP_RULES, resolver);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('version drift');
+  });
+
   it('passes when the tool resolves and versions are aligned', () => {
     const resolver = makeResolver(
       {
