@@ -23,9 +23,9 @@ export type UserCardProps = {
 
 export default function UserCard({ userId, profile, isOwnProfile, onProfileUpdate }: UserCardProps) {
   const { t } = useTranslation('profile');
-  const displayName = profile.profile?.displayName || profile.name || t('page.displayNameFallback');
-  const avatarUrl = profile.profile?.avatarUrl || profile.image;
-  const instagramUrl = profile.profile?.instagramUrl;
+  const displayName = profile.displayName || t('page.displayNameFallback');
+  const avatarUrl = profile.avatarUrl;
+  const instagramUrl = profile.instagramUrl;
 
   return (
     <MuiCard className={styles.profileCard}>
