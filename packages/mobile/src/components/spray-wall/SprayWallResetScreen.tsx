@@ -363,6 +363,8 @@ export function SprayWallResetScreen({ wallUuid, versionId }: SprayWallResetScre
   }, [openDraft, discardVersionAsync, showToast, t]);
 
   const resumedTargetRef = useRef(false);
+  // Both IDs come from GraphQL ID strings (including route params), so compare
+  // them directly. This flow does not read numeric SQLite version identifiers.
   useEffect(() => {
     if (
       !versionId ||

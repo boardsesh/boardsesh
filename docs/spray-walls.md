@@ -264,6 +264,9 @@ deferred, completed, failed and cancelled jobs do not occupy waiting positions.
 Tied ordering, active processing and retry backoff have no numbered position;
 backoff can include `retryAt`. No completion-time estimate is inferred from rank.
 Durable detection outcomes remain authoritative after queue cleanup.
+`SprayWallDetection.queuePosition` is nullable and counts the current job's
+position; `retryAt` is a nullable retry eligibility timestamp. Both also appear
+on the batch import progress projection.
 
 A successful fenced detection commit also inserts a
 `spray-wall-detection-completed` job in the same transaction. Cancelled/stale
@@ -272,8 +275,10 @@ edit access and the source draft, then creates one notification identified by
 the detection UUID. Replays reuse that feed entry. Its wall name and exact
 review target travel in both fetched and live notification payloads.
 
-Native devices can receive the same completion through Expo Push. Registration
-is account-scoped, separate from Live Activity tokens, and stores platform and
+Native devices can receive the same completion through Expo Push. Push copy
+uses localized templates from the backend's `@boardsesh/i18n` runtime dependency
+and its `notifications` namespace. Registration is account-scoped, separate
+from Live Activity tokens, and stores platform and
 locale. Starting recognition may request notification permission; declining or
 registration failure never blocks the import or its in-app notification.
 Allowed devices refresh registration on sign-in/foreground and deactivate it

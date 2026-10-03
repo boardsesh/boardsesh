@@ -87,6 +87,7 @@ export async function notifySprayDetectionCompleted(boss: PgBoss, detectionId: s
     await transaction.execute(sql`SELECT pg_advisory_xact_lock(${SPRAY_WALL_WRITE_LOCK_NAMESPACE}, ${source.wall.id})`);
     const current = await completionNotification(detectionId, transaction);
     if (!current) return;
+    // Replace the optimistic read with the source and permissions rechecked under the wall lock.
     Object.assign(event, current);
     deliverable = true;
     await transaction
@@ -247,6 +248,7 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
       if (!queued) throw new Error('RECEIPT_ENQUEUE_FAILED');
     }
   });
+  // Commit the cleared ticket before pg-boss retries; throwing inside would restore the stale ticket.
   if (retry) throw new Error('EXPO_PUSH_RETRY');
 }
 

@@ -7,6 +7,7 @@ export type NotificationHandlerOptions = {
   canNavigate?: boolean;
   onSprayCompletion?: () => void;
 };
+// Keep process-lifetime tap IDs across auth/provider remounts so the OS response cannot navigate twice.
 const consumedResponses = new Set<string>();
 
 export function resolveNotificationRoute(notification: Notifications.Notification): NotificationRoute | null {
