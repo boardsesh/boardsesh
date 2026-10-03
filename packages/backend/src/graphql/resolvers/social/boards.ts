@@ -27,7 +27,7 @@ import {
 } from '../../../validation/schemas';
 import { generateUniqueGymSlug, requireBoardGymLinkAccess, userCanEditGym } from './gyms';
 import { resolveAutoGymForBoard } from './gym-matching';
-import { findBlockingDuplicate, type BoardLocation } from './board-duplicates';
+import { canonicalSetIdMembership, findBlockingDuplicate, type BoardLocation } from './board-duplicates';
 import { assertBoardCapNotReached } from './board-limits';
 import { syncLocationGeography } from './location-geography';
 import { getUserCommunityRoles, hasAdminOrLeader, rolesGrantAdminOrLeader } from './roles';
@@ -56,61 +56,6 @@ function throwIfBoardSerialConflict(error: unknown): void {
       extensions: { code: 'BOARD_SERIAL_ALREADY_LINKED' },
     });
   }
-}
-
-function isAsciiWhitespace(character: string): boolean {
-  return character === ' ' || character === '\t' || character === '\n' || character === '\r' || character === '\f';
-}
-
-/**
- * Return canonical decimal set membership for comparison, without accepting
- * malformed stored values as equivalent to a valid editor submission. Board
- * rows predate the current input schema, so stored values may exceed today's
- * request length cap. Parse them structurally rather than feeding arbitrarily
- * long decimal tokens to BigInt; allocation is limited to normalized tokens,
- * so legacy leading-zero padding is discarded before strings are retained.
- *
- * Padding whitespace around an otherwise all-digit token is trimmed: legacy
- * rows were written before the CSV format was validated, and the membership of
- * "1, 2" is unambiguous. Whitespace inside a token ("1 2") stays malformed.
- */
-function canonicalSetIdMembership(setIds: string): string | undefined {
-  const normalizedSetIds = new Set<string>();
-  let tokenStart = 0;
-
-  for (let index = 0; index <= setIds.length; index += 1) {
-    if (index < setIds.length && setIds[index] !== ',') continue;
-
-    let tokenBegin = tokenStart;
-    let tokenEnd = index;
-    while (tokenBegin < tokenEnd && isAsciiWhitespace(setIds[tokenBegin])) tokenBegin += 1;
-    while (tokenEnd > tokenBegin && isAsciiWhitespace(setIds[tokenEnd - 1])) tokenEnd -= 1;
-
-    if (tokenBegin === tokenEnd) return undefined;
-
-    let firstSignificantDigit = tokenBegin;
-    for (let digitIndex = tokenBegin; digitIndex < tokenEnd; digitIndex += 1) {
-      const character = setIds[digitIndex];
-      if (character < '0' || character > '9') return undefined;
-      if (character === '0' && firstSignificantDigit === digitIndex && digitIndex < tokenEnd - 1) {
-        firstSignificantDigit += 1;
-      }
-    }
-
-    normalizedSetIds.add(setIds.slice(firstSignificantDigit, tokenEnd));
-    tokenStart = index + 1;
-  }
-
-  return [...normalizedSetIds]
-    .sort((firstSetId, secondSetId) => {
-      // Leading zeros are already stripped, so length then lexical order is numeric order without BigInt.
-      const lengthDifference = firstSetId.length - secondSetId.length;
-      if (lengthDifference !== 0) return lengthDifference;
-      if (firstSetId < secondSetId) return -1;
-      if (firstSetId > secondSetId) return 1;
-      return 0;
-    })
-    .join(',');
 }
 
 /**
