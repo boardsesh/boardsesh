@@ -14,6 +14,7 @@ import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import { QA_PREVIEWS_MAX_PR_NUMBERS, type ConnectionContext } from '@boardsesh/shared-schema';
 import type { QaPullRequest } from '../../../../services/github-qa';
+import { logger } from '../../../../utils/logger';
 
 const {
   readOpenPullRequestsMock,
@@ -132,7 +133,7 @@ const insertProfile = (userId: string, displayName: string) =>
 // into the table: the tally is a plain query over qa_verdicts, so who wrote the
 // row and how it got there is exactly the part that must not matter. `byTester`
 // is the one thing that does — only those rows move the label.
-const insertExistingVerdict = (userId: string, verdict: string, headSha: string, byTester = true) =>
+const insertExistingVerdict = (userId: string, verdict: string, headSha: string | null, byTester = true) =>
   db.execute(sql`
     INSERT INTO qa_verdicts (user_id, pr_number, branch, head_sha, verdict, platform, by_tester, created_at)
     VALUES (${userId}, 4792, 'pr-4792', ${headSha}, ${verdict}, 'ios', ${byTester}, now())
@@ -414,13 +415,86 @@ describe('submitQaVerdict', () => {
     expect(verdict.headSha).toBe('cachedsha000000');
   });
 
-  it('says GitHub is unreachable instead of claiming the PR is closed', async () => {
+  it('records the verdict without a head SHA when GitHub cannot be reached at all', async () => {
+    // The row is the record and GitHub only the mirror, so an unreachable
+    // GitHub cannot refuse a verdict. Null head SHA = "revision never verified".
     getPullRequestMock.mockResolvedValue({ status: 'unavailable' });
     readOpenPullRequestsMock.mockResolvedValue({ pullRequests: [], failed: true });
 
-    await expect(qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER))).rejects.toThrow(
-      'Could not reach GitHub to verify the pull request',
-    );
+    const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
+
+    expect(verdict.headSha).toBeNull();
+    expect((await readVerdictRow(verdict.id)).head_sha).toBeNull();
+    // Nothing to look up, so no GitHub call is spent asking.
+    expect(getHeadCommitDateMock).not.toHaveBeenCalled();
+  });
+
+  it('never mirrors a verdict GitHub never confirmed a PR for', async () => {
+    // With both reads failed, `prNumber` is unverified client input. The comment
+    // API answers for any number and `qa-approved` gates a merge on a public
+    // repo, so GitHub recovering mid-request must not let the mirror fire.
+    getPullRequestMock.mockResolvedValue({ status: 'unavailable' });
+    readOpenPullRequestsMock.mockResolvedValue({ pullRequests: [], failed: true });
+
+    // Anchored on the skip log, not a timer: a sleep here never flakes, it
+    // passes vacuously whenever the fire-and-forget block has not run yet.
+    const warn = vi.spyOn(logger, 'warn');
+    try {
+      const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
+
+      await vi.waitFor(() => {
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('recorded but not mirrored'));
+      });
+      expect(postVerdictCommentMock).not.toHaveBeenCalled();
+      expect(applyQaLabelMock).not.toHaveBeenCalled();
+      expect((await readVerdictRow(verdict.id)).github_comment_id).toBeNull();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('does not apply an unverified tester verdict after GitHub recovers', async () => {
+    getPullRequestMock.mockResolvedValue({ status: 'unavailable' });
+    readOpenPullRequestsMock.mockResolvedValue({ pullRequests: [], failed: true });
+
+    const warn = vi.spyOn(logger, 'warn');
+    const debug = vi.spyOn(logger, 'debug');
+    try {
+      const unverifiedTesterVerdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
+
+      expect(unverifiedTesterVerdict.headSha).toBeNull();
+      await vi.waitFor(() => {
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('recorded but not mirrored'));
+      });
+
+      getPullRequestMock.mockResolvedValue({
+        status: 'open',
+        pullRequest: openPullRequest({ headSha: 'verifiedsha9876543210' }),
+      });
+      const verifiedNonTesterVerdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(PLAIN));
+
+      expect(verifiedNonTesterVerdict.headSha).toBe('verifiedsha9876543210');
+      await vi.waitFor(() => {
+        expect(debug).toHaveBeenCalledWith(
+          expect.stringContaining('no tester verdict for #4792 at verified head verifiedsha9876543210'),
+        );
+      });
+      expect(postVerdictCommentMock).toHaveBeenCalledTimes(1);
+      expect(applyQaLabelMock).not.toHaveBeenCalled();
+      expect(await readByTester(unverifiedTesterVerdict.id)).toBe(true);
+      expect((await readVerdictRow(unverifiedTesterVerdict.id)).head_sha).toBeNull();
+
+      applyQaLabelMock.mockClear();
+      const verifiedTesterVerdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
+
+      expect(verifiedTesterVerdict.headSha).toBe('verifiedsha9876543210');
+      await vi.waitFor(() => {
+        expect(applyQaLabelMock).toHaveBeenCalledWith(4792, 'approved');
+      });
+    } finally {
+      warn.mockRestore();
+      debug.mockRestore();
+    }
   });
 
   it('still says "not open" when the repo really has no open pull requests', async () => {
@@ -471,13 +545,21 @@ describe('submitQaVerdict', () => {
     const OTHER_APPROVER = 'qa-other-approver';
     const OTHER_DECLINER = 'qa-other-decliner';
     const OTHER_HEAD_TESTER = 'qa-other-head';
-    await Promise.all([insertUser(OTHER_APPROVER), insertUser(OTHER_DECLINER), insertUser(OTHER_HEAD_TESTER)]);
+    const UNVERIFIED_APPROVER = 'qa-unverified-approver';
+    await Promise.all([
+      insertUser(OTHER_APPROVER),
+      insertUser(OTHER_DECLINER),
+      insertUser(OTHER_HEAD_TESTER),
+      insertUser(UNVERIFIED_APPROVER),
+    ]);
     await Promise.all([
       insertExistingVerdict(OTHER_APPROVER, 'approved', 'abcdef1234567890'),
       insertExistingVerdict(OTHER_DECLINER, 'declined', 'abcdef1234567890'),
       // Same PR, superseded head: the PR author cares what the CURRENT revision
       // scored, so this one must not be counted.
       insertExistingVerdict(OTHER_HEAD_TESTER, 'approved', '0000000000000000'),
+      // A null head was never verified, so it cannot score this revision.
+      insertExistingVerdict(UNVERIFIED_APPROVER, 'approved', null),
     ]);
 
     const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));

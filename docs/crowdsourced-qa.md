@@ -214,6 +214,17 @@ verdict as a non-tester one with no signal and nothing to repair it from, so the
 the app retries instead. Until a tester weighs in, a PR carries no QA label at all — a non-tester's
 verdict never clears one a tester set.
 
+The label is also scoped to the head the verdict was filed against. The recompute reads rows it did
+not write, so "newest tester verdict" is narrowed to `head_sha = <this head>`: a row filed while
+GitHub was unreachable has `head_sha IS NULL`, which that comparison never matches, so an unverified
+verdict cannot become a merge-gating label on the next verified submission that happens to run the
+recompute. Rows from an earlier head drop out the same way — they are not a verdict on the code this
+label gates. Every verdict stays in the database; an unverified row is not mirrored to a comment
+until an operator replays it after checking the PR and head. Any comment already posted remains
+visible. The recompute says the label is withheld — `[qa] no tester verdict for #N at verified head
+<sha>; leaving labels unchanged` at debug level — which is how you tell "withheld on purpose" from
+a mirror that dropped.
+
 The column **defaults to `true`**, which reads backwards until you follow the deploy order.
 Migrations run before the backend deploys, and an Instant Rollback leaves the migrated schema
 serving the old code (`docs/branch-deploys.md`), so in both windows the *previous*, tester-only
@@ -288,17 +299,33 @@ Every backend log line for this feature is tagged `[qa]`.
   Older rows are replayed by hand from the table.
 
 - **Every GitHub write stopped at once.** Almost always the App key: expired, revoked, or the App
-  uninstalled from the repo. `[github-app] could not mint an installation token` names the status —
-  a 404 on `/repos/.../installation` means the App is not installed, a 401 means the key is wrong.
+  uninstalled from the repo. `[github-app] could not mint an installation token` names the cause —
+  a 401 means the key is wrong, and a 404 on `/repos/.../installation` gets its own sentence naming
+  the two things it can be, because GitHub answers the same 404 for each. Either the App cannot see
+  the repo (fix under the App's **Install App** page, or add the repo to the installation's
+  **Repository access** when it is set to "Only select repositories"), or the repo path itself is
+  wrong — renamed, deleted, or a typo in `QA_GITHUB_REPO` / `FEEDBACK_GITHUB_REPO`. The message
+  prints the slug it asked for, so check that against the repo before touching App settings.
   The installation id is re-looked-up after any failure, so a reinstall recovers without a restart,
   and a failed mint is negative-cached for 30s so a broken key backs off rather than spending a
   round trip per write. Expect recovery within a minute of fixing the config, not instantly.
+- **A verdict has no head SHA.** `SELECT * FROM qa_verdicts WHERE head_sha IS NULL` — GitHub could
+  not be read at all when it was filed, so nothing verified which revision the tester ran, or that
+  `pr_number` names an open pull request at all. The verdict still counts: refusing it would strand
+  the tester on the preview, since the sheet they file from is also the one that surfs them back to
+  production. These rows are **never mirrored** — `pr_number` came from the client and unverified,
+  and the comment API answers for any number while `qa-approved` gates a merge, so the mirror would
+  be writing blind. Confirm the PR by hand before replaying one, and read it against
+  `bundle_created_at` rather than against the PR head.
 - **Testers see an empty list.** `[qa] open pull request lookup failed` means GitHub said no —
   usually the anonymous 60/hr ceiling on a deploy with no token. It self-heals in 30 seconds once
   GitHub answers.
 - **The label disagrees with the comments.** Expected when a PR has several verdicts: the label is
-  the latest **tester** one only. A PR whose only verdicts came from non-testers carries comments and
-  no label at all — check `SELECT verdict, by_tester FROM qa_verdicts WHERE pr_number = N ORDER BY
+  the latest **tester** one filed **against the current head**. A PR carries comments and no label
+  when its only verdicts came from non-testers, or when its only tester verdict was filed on an
+  earlier head. It carries neither comment nor label for a tester verdict that is unverified
+  (`head_sha IS NULL`), because that one was never mirrored at all and needs the operator replay
+  above. Check `SELECT verdict, by_tester, head_sha FROM qa_verdicts WHERE pr_number = N ORDER BY
   created_at DESC` before assuming the mirror failed.
 - **Verdict comment spam.** Filing is open to every signed-in account (only the label is
   tester-gated), so the write surface on the public repo is no longer a curated pool. The limiter is
