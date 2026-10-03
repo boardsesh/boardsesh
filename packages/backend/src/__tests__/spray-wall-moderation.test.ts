@@ -442,6 +442,47 @@ describe('reporting a wall', () => {
     expect(withDraft[0].photo?.url).toEqual(published[0].photo?.url);
   });
 
+  it('selects published and draft-only previews together without signing the reset draft', async () => {
+    const { wall: publishedWall } = await createPublishedWall();
+    await sprayWallModerationMutations.reportSprayWall(
+      {},
+      { input: { wallUuid: publishedWall.uuid, reason: 'OTHER' } },
+      ctxFor(OWNER),
+    );
+    const publishedPreview = (
+      await sprayWallModerationQueries.sprayWallReports({}, { uuid: publishedWall.uuid }, ctxFor(ADMIN))
+    )[0].photo?.url;
+    expect(publishedPreview).toBeDefined();
+    const resetPhotoId = registerUploadedPhoto(publishedWall.uuid);
+    await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: publishedWall.uuid, photoId: resetPhotoId, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    );
+
+    const draftWall = await createWallOnly();
+    const draftPhotoId = registerUploadedPhoto(draftWall.uuid);
+    await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: draftWall.uuid, photoId: draftPhotoId, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    );
+    await sprayWallModerationMutations.reportSprayWall(
+      {},
+      { input: { wallUuid: draftWall.uuid, reason: 'NOT_A_WALL' } },
+      ctxFor(OWNER),
+    );
+    presignedUrls.length = 0;
+
+    const mixedReports = await sprayWallModerationQueries.sprayWallReports({}, { uuid: null }, ctxFor(ADMIN));
+    const reportsByWall = new Map(mixedReports.map((report) => [report.wallUuid, report]));
+    expect(mixedReports).toHaveLength(2);
+    expect(reportsByWall.get(publishedWall.uuid)?.photo?.url).toEqual(publishedPreview);
+    expect(reportsByWall.get(draftWall.uuid)?.photo?.url).toContain(draftPhotoId);
+    expect(presignedUrls).toHaveLength(4);
+    expect(presignedUrls.some((url) => url.includes(resetPhotoId))).toBe(false);
+  });
+
   it('uses an unpublished draft photo and tolerates unavailable previews', async () => {
     const wall = await createWallOnly();
     await sprayWallModerationMutations.reportSprayWall(

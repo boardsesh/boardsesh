@@ -467,9 +467,14 @@ export const sprayWallModerationQueries = {
 
     // This read is intentionally admin-only rather than a normal wall read:
     // private and hidden photographs are precisely what the queue must review.
+    // Several reports can share a wall. Their joined wall fields are identical,
+    // so deduplicate by wallId before selecting and signing each preview once.
     const walls = new Map(rows.map((row) => [row.wallId, row]));
     const currentVersionIds = [...walls.values()].flatMap((wall) =>
       wall.currentVersionId == null ? [] : [wall.currentVersionId],
+    );
+    const unpublishedWallIds = [...walls.values()].flatMap((wall) =>
+      wall.currentVersionId == null ? [wall.wallId] : [],
     );
     const versions = await db
       .select()
@@ -478,7 +483,12 @@ export const sprayWallModerationQueries = {
         and(
           inArray(dbSchema.sprayWallVersions.wallId, [...walls.keys()]),
           or(
-            eq(dbSchema.sprayWallVersions.status, 'draft'),
+            unpublishedWallIds.length > 0
+              ? and(
+                  inArray(dbSchema.sprayWallVersions.wallId, unpublishedWallIds),
+                  eq(dbSchema.sprayWallVersions.status, 'draft'),
+                )
+              : undefined,
             currentVersionIds.length > 0 ? inArray(dbSchema.sprayWallVersions.id, currentVersionIds) : undefined,
           ),
         ),
