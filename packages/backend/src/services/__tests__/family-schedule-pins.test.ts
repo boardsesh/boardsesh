@@ -15,7 +15,7 @@ const EXPECTED_SCHEDULES: Record<string, Array<{ key: string; cron: string; tz: 
   'refresh-climb-neighbors': [{ key: 'nightly', cron: '45 6 * * *', tz: 'UTC', roles: ['batch'] }],
   'export-board-snapshots': [
     { key: 'nightly', cron: '15 7 * * *', tz: 'UTC', roles: ['batch'] },
-    { key: 'live-scan', cron: '7,22,37,52 * * * *', tz: 'UTC', roles: ['batch'] },
+    { key: 'live-scan', cron: '7,22,37,52 0-6,8-23 * * *', tz: 'UTC', roles: ['batch'] },
   ],
   'refresh-moonboard-angle-estimates': [{ key: 'weekly', cron: '0 8 * * 1', tz: 'UTC', roles: ['batch'] }],
   'refresh-moonboard-wide-angle-estimates': [{ key: 'weekly', cron: '30 8 * * 1', tz: 'UTC', roles: ['batch'] }],
