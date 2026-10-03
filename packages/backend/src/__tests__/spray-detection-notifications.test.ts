@@ -459,6 +459,49 @@ describe('spray import completion notifications', () => {
     expect(retry).toMatchObject({ status: 'pending', ticketId: null });
   });
 
+  it('keeps a failed HTTP delivery pending and persists the successful retry ticket', async () => {
+    const target = await completedWall();
+    await notificationDeviceMutations.registerNotificationDevice(
+      {},
+      {
+        input: {
+          installationId: randomUUID(),
+          token: `ExpoPushToken[${randomUUID()}]`,
+          platform: 'ios',
+          locale: 'en-US',
+        },
+      },
+      target.ctx,
+    );
+    await finishSprayDetection(db, target.detectionId, target.attemptToken, proposal);
+    const boss = await startJobQueue();
+    await notifySprayDetectionCompleted(boss, target.detectionId);
+    const [delivery] = await db
+      .select()
+      .from(notificationDeliveries)
+      .where(eq(notificationDeliveries.notificationUuid, target.detectionId));
+    const transport = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('temporary upstream failure', { status: 500 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { status: 'ok', id: 'http-retry-ticket' } }), { status: 200 }),
+      );
+    vi.stubGlobal('fetch', transport);
+
+    await expect(deliverSprayNotification(boss, delivery.id)).rejects.toThrow('EXPO_PUSH_HTTP_FAILED');
+    const [pending] = await db.select().from(notificationDeliveries).where(eq(notificationDeliveries.id, delivery.id));
+    expect(pending).toMatchObject({ status: 'pending', ticketId: null });
+
+    await deliverSprayNotification(boss, delivery.id);
+    const retryDeliveries = await db
+      .select()
+      .from(notificationDeliveries)
+      .where(eq(notificationDeliveries.notificationUuid, target.detectionId));
+    expect(retryDeliveries).toHaveLength(1);
+    expect(retryDeliveries[0]).toMatchObject({ id: delivery.id, status: 'receipt', ticketId: 'http-retry-ticket' });
+    expect(transport).toHaveBeenCalledTimes(2);
+  });
+
   it('persists tickets, checks receipts, and retires invalid tokens', async () => {
     const target = await completedWall();
     await notificationDeviceMutations.registerNotificationDevice(
