@@ -30,6 +30,7 @@ import {
   setSprayWallLoader,
   setSprayWallLook,
   sprayCacheToken,
+  sprayWallViewerGeneration,
   unregisterSprayWall,
   type SprayWallRenderSettingsValue,
 } from './spray-wall-registry';
@@ -152,6 +153,10 @@ export function registerRenderData(
   layoutId: number,
   renderData: SprayWallRenderData,
   look?: SprayWallRenderSettingsValue | null,
+  // The viewer generation `renderData` was fetched under, read before the
+  // request went out. Left out, the wall registers as "viewer cannot edit": a
+  // caller that cannot say whose answer this is does not get to show Edit.
+  fetchedUnderViewerGeneration?: number,
 ): boolean {
   const dimensions = photoDimensions(renderData);
   const canonicalHolds = toCanonicalHolds(renderData);
@@ -180,7 +185,10 @@ export function registerRenderData(
     renderSettings: look,
     // Strictly `true`: a payload from a backend that predates the field, or a
     // cached one missing it, must read as "cannot edit".
-    viewerCanEdit: renderData.wall.viewerCanEdit === true,
+    viewerAccess:
+      fetchedUnderViewerGeneration === undefined
+        ? undefined
+        : { canEdit: renderData.wall.viewerCanEdit === true, generation: fetchedUnderViewerGeneration },
   });
   if (look === undefined) void loadSprayWallLook(layoutId, renderData.wall.uuid);
 
@@ -306,10 +314,16 @@ export function fetchSprayWallUuid(queryClient: QueryClient, layoutId: number): 
 export function fetchSprayWallRenderData(
   queryClient: QueryClient,
   wallUuid: string,
+  // Part of the KEY, not only a stamp. The payload carries `viewerCanEdit`,
+  // which is one account's answer, so a request still in flight for the last
+  // account must not be the one a caller under the new account is handed
+  // (React Query shares an in-flight fetch between callers of one key), and a
+  // payload cached for the last account must not be read back as fresh.
+  viewerGeneration: number = sprayWallViewerGeneration(),
 ): Promise<SprayWallRenderData | null> {
   return queryClient
     .fetchQuery({
-      queryKey: sprayWallRenderDataQueryKey(wallUuid),
+      queryKey: [...sprayWallRenderDataQueryKey(wallUuid), viewerGeneration] as const,
       queryFn: () =>
         getHttpClient().request<SprayWallRenderDataResponse>(GET_SPRAY_WALL_RENDER_DATA, { uuid: wallUuid }),
       staleTime: RENDER_DATA_STALE_TIME_MS,
@@ -343,12 +357,22 @@ export async function loadSprayWall(
     await queryClient.invalidateQueries({ queryKey: sprayWallRenderDataQueryKey(wallUuid) });
   }
 
-  const renderDataRead = fetchSprayWallRenderData(queryClient, wallUuid);
+  // Noted before the request leaves. If the account changes while it is out,
+  // the answer's `viewerCanEdit` belongs to somebody else: ask once more under
+  // the account that is here now. A second change in the same breath is left to
+  // the registry, which registers the wall as "cannot edit" and stale.
+  let viewerGeneration = sprayWallViewerGeneration();
+  let renderDataRead = fetchSprayWallRenderData(queryClient, wallUuid, viewerGeneration);
   // Alongside the render data, not after it: a wall registered without its look
   // draws in the viewer's settings, then draws again when the look lands, which
   // on a cold start doubles every spray surface's renders. Never rejects.
   const lookRead = fetchSprayWallLook(wallUuid);
-  const renderData = await renderDataRead;
+  let renderData = await renderDataRead;
+  if (viewerGeneration !== sprayWallViewerGeneration()) {
+    viewerGeneration = sprayWallViewerGeneration();
+    renderDataRead = fetchSprayWallRenderData(queryClient, wallUuid, viewerGeneration);
+    renderData = await renderDataRead;
+  }
   if (!renderData) {
     // The wall exists but has nothing renderable: deleted between the two reads,
     // visibility revoked, the published version's photo gone. A wall we already
@@ -359,7 +383,7 @@ export async function loadSprayWall(
     unregisterSprayWall(layoutId);
     return;
   }
-  registerRenderData(layoutId, renderData, await lookRead);
+  registerRenderData(layoutId, renderData, await lookRead, viewerGeneration);
 }
 
 /**
@@ -387,19 +411,20 @@ export async function invalidateSprayWallRenderData(
 }
 
 /**
- * The signed-in account changed: re-read who can edit each wall in hand.
+ * The signed-in account changed: disown what the last account could edit, and
+ * re-read each wall in hand.
  *
- * `viewerCanEdit` is the one per-viewer field the registry keeps, and the render
- * payload it rides on is cached for ten minutes. So the cached payloads are
- * dropped and each registered wall is fetched again; until that lands every wall
- * reads as "cannot edit", which hides an Edit action rather than showing one that
- * belongs to somebody else. The server refuses a save it does not allow either way.
+ * Called by the auth provider (the one component that survives a sign-out), on
+ * every change of who is signed in. Synchronous on purpose: by the time it
+ * returns, no wall says the viewer can edit it and no request in flight can say
+ * so later (`resetSprayWallViewerAccess`). The refetch that follows is a
+ * courtesy. A wall with a load already in flight is skipped by
+ * `refreshSprayWall`; that load re-asks by itself when it sees the generation
+ * moved (`loadSprayWall`), and failing that the wall is stamped stale, so the
+ * next surface to ask for it fetches.
  */
-export async function refreshSprayWallViewerAccess(queryClient: QueryClient): Promise<void> {
-  const layoutIds = resetSprayWallViewerAccess();
-  if (layoutIds.length === 0) return;
-  await queryClient.invalidateQueries({ queryKey: ['sprayWallRenderData'] });
-  for (const layoutId of layoutIds) refreshSprayWall(layoutId);
+export function refreshSprayWallViewerAccess(): void {
+  for (const layoutId of resetSprayWallViewerAccess()) refreshSprayWall(layoutId);
 }
 
 /**

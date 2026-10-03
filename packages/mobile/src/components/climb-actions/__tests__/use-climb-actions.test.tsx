@@ -239,6 +239,18 @@ describe('useClimbActions gating', () => {
       expect(asViewer(publishedClimb, sprayBoard, 'stranger')).not.toContain('edit');
     });
 
+    it('does not offer a wall editor Edit on a queue item from Kilter or from another wall', () => {
+      // Standing at their own wall with a leftover queue item. They can edit
+      // the wall; this climb is not on it.
+      ctrl.viewerCanEditWall = true;
+      const fromKilter = { ...published, boardType: 'kilter', layoutId: 1 } as unknown as Climb;
+      const fromAnotherWall = { ...published, boardType: 'spray', layoutId: 4201 } as unknown as Climb;
+      const onThisWall = { ...published, boardType: 'spray', layoutId: 4200 } as unknown as Climb;
+      expect(asViewer(fromKilter, sprayBoard, 'wall-owner')).not.toContain('edit');
+      expect(asViewer(fromAnotherWall, sprayBoard, 'wall-owner')).not.toContain('edit');
+      expect(asViewer(onThisWall, sprayBoard, 'wall-owner')).toContain('edit');
+    });
+
     it('does not offer a non-setter Edit on Kilter, whatever the wall flag says', () => {
       ctrl.viewerCanEditWall = true;
       expect(asViewer(publishedClimb, kilterBoard, 'wall-owner')).not.toContain('edit');

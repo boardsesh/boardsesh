@@ -43,7 +43,7 @@ import { useProfile, useMyBoards } from '../lib/graphql/hooks';
 import { boardLooselyMatches } from '../lib/boards/board-matches';
 import { useAuth } from './auth-provider';
 import { useReduceMotion } from '../hooks/use-reduce-motion';
-import { useSprayWall, useSprayWallLoader, useSprayWallViewerAccessReset } from '../lib/spray/use-spray-wall';
+import { useSprayWall, useSprayWallLoader } from '../lib/spray/use-spray-wall';
 import { useSprayWallSheetActions } from '../lib/spray/use-spray-wall-sheet-actions';
 import { BoardShareSheet } from '../components/board-discovery/BoardShareSheet';
 import { climbToQueueItem } from '../lib/climb-to-queue-item';
@@ -404,7 +404,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // profile?.id, which can lag behind a fresh sign-in (profile query still
   // resolving) and would show the action in the play drawer but not here.
   // PlayDrawer uses the same predicate.
-  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const { isAuthenticated } = useAuth();
   const { data: myBoardsConn } = useMyBoards(undefined, { enabled: isAuthenticated });
   const [boardConfigOverride, setBoardConfigOverride] = useState<BoardConfig | null>(null);
   // These sheets stay mounted through their dismiss animation (see
@@ -511,8 +511,6 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // synchronously (`getBoardRenderData`, the background cache,
   // `use-native-climb-render`) with no branch of its own.
   useSprayWallLoader();
-  // Who can edit a wall is per account, and the registry outlives a sign-out.
-  useSprayWallViewerAccessReset(isAuthenticated, !isAuthLoading);
   const activeSprayLayoutId = activeBoardConfig?.boardName === 'spray' ? activeBoardConfig.layoutId : null;
   useSprayWall(activeSprayLayoutId);
 

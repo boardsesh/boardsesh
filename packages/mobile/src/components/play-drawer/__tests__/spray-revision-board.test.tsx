@@ -62,6 +62,7 @@ const {
   listRegisteredSprayWalls,
   registerSprayWall,
   sprayCacheToken,
+  sprayWallViewerGeneration,
   subscribeToSprayWalls,
 } = await import('../../../lib/spray/spray-wall-registry');
 const { SprayRevisionBoard, buildRevisionRingBuckets, sprayRevisionRenderDataQueryKey } =
@@ -83,7 +84,7 @@ function registerCurrentWall() {
     photoThumbUrl: null,
     photoExpiresAt: '2099-01-01T00:00:00.000Z',
     holds: [{ id: 99, cx: 10, cy: 20, r: 5 }],
-    viewerCanEdit: true,
+    viewerAccess: { canEdit: true, generation: sprayWallViewerGeneration() },
   });
 }
 

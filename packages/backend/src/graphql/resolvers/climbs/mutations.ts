@@ -27,6 +27,7 @@ import { requireAdminOrLeader } from '../social/roles';
 import { canEditBoard } from '../social/boards';
 import {
   CLIMB_EDIT_CONFLICT_ERROR_CODE,
+  CLIMB_EDIT_REFUSAL_CODES,
   climbEditDecisionsAreStale,
   lockClimbForRevision,
   recordClimbRevision,
@@ -798,18 +799,24 @@ export const climbMutations = {
     }
 
     if (!callerIsSetter && !sprayTarget) {
-      throw new Error('You can only update your own climbs');
+      throw new GraphQLError('You can only update your own climbs', {
+        extensions: { code: CLIMB_EDIT_REFUSAL_CODES.notAllowed },
+      });
     }
 
     if (!currentlyDraft && climbEditWindowApplies(boardType)) {
       // Published, on a board with a window: only editable within 24h of the
       // first publish.
       if (!existing.publishedAt) {
-        throw new Error('This climb can no longer be edited');
+        throw new GraphQLError('This climb can no longer be edited', {
+          extensions: { code: CLIMB_EDIT_REFUSAL_CODES.notEditable },
+        });
       }
       const publishedMs = Date.parse(existing.publishedAt);
       if (!Number.isFinite(publishedMs) || Date.now() - publishedMs > CLIMB_EDIT_WINDOW_MS) {
-        throw new Error('The 24 hour edit window has expired');
+        throw new GraphQLError('The 24 hour edit window has expired', {
+          extensions: { code: CLIMB_EDIT_REFUSAL_CODES.windowExpired },
+        });
       }
     }
 

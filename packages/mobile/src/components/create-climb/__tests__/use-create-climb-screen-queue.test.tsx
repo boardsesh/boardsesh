@@ -336,13 +336,16 @@ describe('editing a climb somebody else set (#5955)', () => {
     expect(climb.setter_username).toBe('Original Setter');
   });
 
-  it("shows the server's refusal when a spray edit is turned down", async () => {
+  it("says in the climber's language that a spray edit was not allowed", async () => {
     // The client gate ran on a stale read of who can edit the wall. Nothing is
-    // lost and the reason is on screen, not a generic "Failed to save".
+    // lost and the reason is on screen, translated. The server's own sentence
+    // is never shown.
     // A spray climb publishes with its setter's grade, so the edit carries one.
     edit.climb = { ...someoneElsesClimb, difficulty: '6a/V3' };
     board.updateClimb.mockRejectedValue({
-      response: { errors: [{ message: 'You can only update your own climbs' }] },
+      response: {
+        errors: [{ message: 'You can only update your own climbs', extensions: { code: 'CLIMB_EDIT_NOT_ALLOWED' } }],
+      },
     });
     const sprayBoard = { boardName: 'spray' as const, layoutId: 4200, sizeId: 4200, setIds: '1', angle: 40 };
     const { result } = renderHook(() => useCreateClimbScreen({ board: sprayBoard, editClimbUuid: 'climb-9' }));
@@ -351,7 +354,39 @@ describe('editing a climb somebody else set (#5955)', () => {
       await result.current.handleSave();
     });
 
-    expect(toast.showToast).toHaveBeenCalledWith('You can only update your own climbs', 'error');
+    expect(toast.showToast).toHaveBeenCalledTimes(1);
+    expect(toast.showToast).toHaveBeenCalledWith('createClimbForm.alerts.editNotAllowed', 'error');
+    expect(draftStore.clearDraft).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['CLIMB_EDIT_WINDOW_EXPIRED', 'createClimbForm.alerts.editWindowExpired'],
+    ['CLIMB_NOT_EDITABLE', 'createClimbForm.alerts.editNotEditable'],
+  ])('translates %s on a catalogue board', async (code, key) => {
+    edit.climb = someoneElsesClimb;
+    board.updateClimb.mockRejectedValue({ extensions: { code }, message: 'server prose' });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard, editClimbUuid: 'climb-9' }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(toast.showToast).toHaveBeenCalledWith(key, 'error');
+  });
+
+  it('never shows server prose: a failure with no known code gets the generic line, on spray too', async () => {
+    edit.climb = { ...someoneElsesClimb, difficulty: '6a/V3' };
+    board.updateClimb.mockRejectedValue({
+      response: { errors: [{ message: 'Some new refusal', extensions: { code: 'SOMETHING_NEWER' } }] },
+    });
+    const sprayBoard = { boardName: 'spray' as const, layoutId: 4200, sizeId: 4200, setIds: '1', angle: 40 };
+    const { result } = renderHook(() => useCreateClimbScreen({ board: sprayBoard, editClimbUuid: 'climb-9' }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(toast.showToast).toHaveBeenCalledWith('createClimbForm.alerts.saveFailedFallback', 'error');
   });
 
   it('says somebody else changed the climb when the server reports an edit conflict', async () => {
@@ -394,7 +429,7 @@ describe('editing a climb somebody else set (#5955)', () => {
     expect(toast.showToast).toHaveBeenCalledWith('createClimbForm.alerts.editConflict', 'error');
   });
 
-  it('keeps the generic failure line for a catalogue board', async () => {
+  it('keeps the generic failure line for a refusal from a server that predates the codes', async () => {
     edit.climb = someoneElsesClimb;
     board.updateClimb.mockRejectedValue({ response: { errors: [{ message: 'The 24 hour edit window has expired' }] } });
     const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard, editClimbUuid: 'climb-9' }));

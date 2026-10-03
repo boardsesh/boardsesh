@@ -130,6 +130,23 @@ export async function lockClimbForRevision(
  */
 export const CLIMB_EDIT_CONFLICT_ERROR_CODE = 'CLIMB_EDIT_CONFLICT';
 
+/**
+ * `extensions.code` on the three refusals `updateClimb` gives before it touches
+ * the row. Clients match on these, never on the message, and translate them; the
+ * messages are kept as they were for older clients.
+ *
+ *  - `notAllowed`: the caller is neither the setter nor, on a spray wall, someone
+ *    who can edit the wall. One code for every such caller, for the same reason
+ *    there is one message: it must not say whether a wall exists.
+ *  - `windowExpired`: a published catalogue climb, past 24 hours.
+ *  - `notEditable`: a published catalogue climb with no publish date on record.
+ */
+export const CLIMB_EDIT_REFUSAL_CODES = {
+  notAllowed: 'CLIMB_EDIT_NOT_ALLOWED',
+  windowExpired: 'CLIMB_EDIT_WINDOW_EXPIRED',
+  notEditable: 'CLIMB_NOT_EDITABLE',
+} as const;
+
 /** The columns of the pre-transaction row that `updateClimb`'s decisions are computed from. */
 export type ClimbEditDecisionInputs = {
   isDraft: boolean | null | undefined;

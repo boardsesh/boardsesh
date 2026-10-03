@@ -11,6 +11,7 @@ import {
   sprayCacheToken,
   sprayGeometryKey,
   sprayWallViewerCanEdit,
+  sprayWallViewerGeneration,
   subscribeToSprayWalls,
   unregisterSprayWall,
 } from '../spray-wall-registry';
@@ -260,32 +261,35 @@ describe("a wall's stored look", () => {
 });
 
 describe('who can edit the wall (#5955)', () => {
+  /** "The viewer can edit", fetched under the account that is signed in now. */
+  const canEditNow = () => ({ canEdit: true, generation: sprayWallViewerGeneration() });
+
   it('is false unless the registration says the viewer can edit', () => {
     registerSprayWall(LAYOUT_ID, wall(1));
     expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(false);
     expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(false);
 
-    registerSprayWall(LAYOUT_ID, { ...wall(1), viewerCanEdit: true });
+    registerSprayWall(LAYOUT_ID, { ...wall(1), viewerAccess: canEditNow() });
     expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(true);
   });
 
   it('is never carried over from the previous registration', () => {
     // A revalidation that no longer says "can edit" is a role that was taken
     // away. Keeping the old answer would leave Edit on screen.
-    registerSprayWall(LAYOUT_ID, { ...wall(1), viewerCanEdit: true });
+    registerSprayWall(LAYOUT_ID, { ...wall(1), viewerAccess: canEditNow() });
     registerSprayWall(LAYOUT_ID, wall(1));
     expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(false);
   });
 
   it('is false for a catalogue board and for a wall nobody registered', () => {
-    registerSprayWall(LAYOUT_ID, { ...wall(1), viewerCanEdit: true });
+    registerSprayWall(LAYOUT_ID, { ...wall(1), viewerAccess: canEditNow() });
     expect(sprayWallViewerCanEdit('kilter', LAYOUT_ID)).toBe(false);
     expect(sprayWallViewerCanEdit('spray', 999)).toBe(false);
   });
 
   it('drops every wall to "cannot edit" on an account change, and keeps the wall drawable', () => {
-    registerSprayWall(LAYOUT_ID, { ...wall(3), viewerCanEdit: true });
-    registerSprayWall(4201, { ...wall(1), wallUuid: 'other-wall', viewerCanEdit: true });
+    registerSprayWall(LAYOUT_ID, { ...wall(3), viewerAccess: canEditNow() });
+    registerSprayWall(4201, { ...wall(1), wallUuid: 'other-wall', viewerAccess: canEditNow() });
     let wakes = 0;
     const unsubscribe = subscribeToSprayWalls(() => {
       wakes += 1;
@@ -306,7 +310,10 @@ describe('who can edit the wall (#5955)', () => {
     expect(getSprayWall(LAYOUT_ID)?.registeredAtMs).toBe(0);
   });
 
-  it('wakes nobody when there is nothing registered', () => {
+  it('moves the viewer generation on every account change, even with nothing registered', () => {
+    // A load can be in flight for a wall that has not registered yet, and it
+    // has to be disowned too.
+    const before = sprayWallViewerGeneration();
     let wakes = 0;
     const unsubscribe = subscribeToSprayWalls(() => {
       wakes += 1;
@@ -317,5 +324,29 @@ describe('who can edit the wall (#5955)', () => {
     } finally {
       unsubscribe();
     }
+    expect(sprayWallViewerGeneration()).toBe(before + 1);
+  });
+
+  it('does not believe "can edit" from a payload fetched under the previous account', () => {
+    // The request left while account A was signed in...
+    const fetchedUnder = sprayWallViewerGeneration();
+    // ...A signed out, B signed in...
+    resetSprayWallViewerAccess();
+    resetSprayWallViewerAccess();
+    // ...and only then did A's answer land.
+    registerSprayWall(LAYOUT_ID, { ...wall(2), viewerAccess: { canEdit: true, generation: fetchedUnder } });
+
+    // The wall draws: its photo and holds are the same for everyone.
+    expect(getSprayWall(LAYOUT_ID)).toMatchObject({ version: 2, photoWidth: 1200 });
+    // But A's Edit is not B's, and the registration is stale so B's is fetched.
+    expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(false);
+    expect(getSprayWall(LAYOUT_ID)?.registeredAtMs).toBe(0);
+  });
+
+  it('believes it again once fetched under the account that is here', () => {
+    resetSprayWallViewerAccess();
+    registerSprayWall(LAYOUT_ID, { ...wall(2), viewerAccess: canEditNow() });
+    expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(true);
+    expect(getSprayWall(LAYOUT_ID)?.registeredAtMs).toBeGreaterThan(0);
   });
 });

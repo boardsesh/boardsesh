@@ -210,7 +210,7 @@ export function ClimbRevisionSheet({
                     editor: revision.editor.displayName ?? t('mobile.revisions.deletedEditor'),
                     role: revision.editedBySetter
                       ? t('mobile.revisions.tagSetter')
-                      : t('mobile.revisions.tagWallOwner'),
+                      : t('mobile.revisions.tagWallEditor'),
                   })
                 : t('mobile.revisions.deletedEditor')}
             </Text>

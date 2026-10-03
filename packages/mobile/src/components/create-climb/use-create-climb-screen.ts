@@ -35,8 +35,7 @@ import { useAuth } from '../../providers/auth-provider';
 import { useProfile, useClimb } from '../../lib/graphql/hooks';
 import { CLIMB_REVISIONS_QUERY_KEY } from '../../lib/graphql/hooks/climb-revisions-query-key';
 import { resolveProvisionalSetter } from './provisional-setter';
-import { isClimbEditConflictError } from './climb-edit-conflict';
-import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
+import { climbEditRefusal, climbEditRefusalMessage } from './climb-edit-refusal';
 import { useQueueActions } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -1710,24 +1709,23 @@ export function useCreateClimbScreen({
         // The inline DuplicateBanner already explains this one and offers the
         // match — the status line would just repeat it.
         setPublishDuplicateError(readDuplicateExtensions(err));
-      } else if (isClimbEditConflictError(err)) {
-        // Somebody else saved this climb while it was open here. Not retried:
-        // the retry would be decided on the same stale row. Nothing is thrown
-        // away either. The working copy stays on screen and in the autosave
-        // slot, and the status line stays on "not saved" until they reopen it.
-        setFailedSignature(signatureAtSave);
-        showToast(t('createClimbForm.alerts.editConflict'), 'error');
       } else {
         // The toast is gone in 3s. Without a persistent line the editor would go
         // on reading "Saved on this phone" — true, and silent about the account
         // copy never happening. Sticky until the next successful save or an edit.
         setFailedSignature(signatureAtSave);
-        // An edit on a spray wall says why in the server's own words. The Edit
-        // action is offered on a cached read of who can edit the wall, so the
-        // server's refusal is the one place a climber whose access has changed
-        // finds out, and "Failed to save" would send them round again.
-        const refusal = canUpdate && board.boardName === 'spray' ? extractGraphqlMessage(err) : null;
-        showToast(refusal ?? t('createClimbForm.alerts.saveFailedFallback'), 'error');
+        // A refusal the server gave a code for is said in the climber's own
+        // language: somebody else saved this climb while it was open here, the
+        // viewer's access to the wall has changed since Edit was offered, or the
+        // 24 hours are up. The server's prose is never shown. Nothing is retried
+        // for them and nothing is thrown away: the working copy stays on screen
+        // and in the autosave slot, and Save can be tapped again (after a
+        // conflict the server re-reads the climb, so a second Save can succeed).
+        const refusal = climbEditRefusal(err);
+        showToast(
+          refusal ? climbEditRefusalMessage(refusal, t) : t('createClimbForm.alerts.saveFailedFallback'),
+          'error',
+        );
       }
     } finally {
       saveInFlightRef.current = false;

@@ -5104,6 +5104,10 @@ describe('who may edit a climb on a spray wall (#5955)', () => {
     const { wall, climbUuid } = await climbSetBy(STRANGER);
     await linkWallToGym(wall.uuid, GYM_EDITOR, 'editor');
     await expect(rename(climbUuid, GYM_EDITOR)).rejects.toThrow(REFUSAL);
+    // The code is the contract a client translates; the sentence is for older clients.
+    await expect(rename(climbUuid, GYM_EDITOR)).rejects.toMatchObject({
+      extensions: { code: 'CLIMB_EDIT_NOT_ALLOWED' },
+    });
     expect(await climbRow(climbUuid)).toMatchObject({ name: 'As the setter left it', revisions: 0 });
 
     await db.execute(sql`UPDATE gym_members SET role = 'admin' WHERE user_id = ${GYM_EDITOR}`);

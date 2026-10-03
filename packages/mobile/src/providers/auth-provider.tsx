@@ -45,6 +45,7 @@ import {
 } from '../lib/onboarding/onboarding-storage';
 import { clearUserData, purgeLocalDataForSignOut, getDatabaseHandle } from '../db';
 import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
+import { refreshSprayWallViewerAccess } from '../lib/spray/spray-wall-loader';
 import { resetSyncStatus } from '../sync/sync-status';
 import { setSetting, clearOfflineBoards } from '../settings';
 import { getOutboxSummary, setSigningOut } from '@boardsesh/offline-sync';
@@ -117,6 +118,21 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   const queryClient = useQueryClient();
   const authStateRef = useRef({ isAuthenticated: false, isLoading: true });
   authStateRef.current = { isAuthenticated, isLoading };
+  // Whether a spray wall may be edited is an answer about one account, kept in
+  // a module-level registry that outlives every sign-out. It is disowned HERE,
+  // on any change of the resolved auth state, because this provider is the one
+  // component that stays mounted across it: everything below is swapped for a
+  // redirect or the splash, so a hook down there never sees a "before" (which
+  // is exactly how the first version of this, in the drawer host, never fired).
+  // The first resolved value is the launch session, not a change.
+  const resolvedAuthForSprayRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (isLoading) return;
+    const previous = resolvedAuthForSprayRef.current;
+    resolvedAuthForSprayRef.current = isAuthenticated;
+    if (previous === null || previous === isAuthenticated) return;
+    refreshSprayWallViewerAccess();
+  }, [isAuthenticated, isLoading]);
   const authTransitionEpochRef = useRef(0);
   const authTransitionQueueRef = useRef<Promise<void>>(Promise.resolve());
   const anonymousSessionIsolatedRef = useRef(false);
@@ -388,6 +404,10 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // would otherwise paper over the cross-user leak. Doing this at the auth
       // boundary keeps the rest of the hooks simple.
       queryClient.clear();
+      // The spray registry is module state, so `clear()` does not reach it, and
+      // it holds one per-account answer: whether the viewer can edit each wall.
+      // After the client reset above, so the re-read is the next viewer's.
+      refreshSprayWallViewerAccess();
       return true;
     },
     [clearPersistedUserStores, clearLocalOfflineUserData, isAuthTransitionCurrent, queryClient],

@@ -283,6 +283,25 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
       expect(editRow(container)).toBeNull();
     });
 
+    it('does not offer a wall editor Edit on a climb from Kilter or from another wall', () => {
+      ctrl.viewerCanEditWall = true;
+      for (const elsewhere of [
+        { boardType: 'kilter', layoutId: 1 },
+        { boardType: 'spray', layoutId: 4201 },
+      ]) {
+        const { container, unmount } = render(
+          <ClimbActionsSheet
+            visible={true}
+            {...sprayProps}
+            climb={{ ...published, ...elsewhere } as unknown as Climb}
+            currentUserId="wall-owner"
+          />,
+        );
+        expect(editRow(container)).toBeNull();
+        unmount();
+      }
+    });
+
     it('does not offer a non-setter Edit on Kilter, whatever the wall flag says', () => {
       ctrl.viewerCanEditWall = true;
       const { container } = render(

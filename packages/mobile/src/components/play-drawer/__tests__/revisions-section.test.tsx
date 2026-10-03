@@ -155,7 +155,7 @@ describe('RevisionsSection', () => {
 
     expect(screen.getAllByText('Current')).toHaveLength(1);
     expect(screen.getByText('Jo')).not.toBeNull();
-    expect(screen.getAllByText('Wall owner')).toHaveLength(1);
+    expect(screen.getAllByText('Wall editor')).toHaveLength(1);
     expect(screen.getAllByText('Setter')).toHaveLength(2);
     // Known kinds only, in a fixed order; the unknown one is dropped, not printed.
     expect(screen.getByText('Changed name, grade')).not.toBeNull();
@@ -167,7 +167,7 @@ describe('RevisionsSection', () => {
     query.data = rows(2, { editor: null, editedBySetter: false });
     renderSection(vi.fn());
     expect(screen.getAllByText('Deleted account')).toHaveLength(2);
-    expect(screen.queryByText('Wall owner')).toBeNull();
+    expect(screen.queryByText('Wall editor')).toBeNull();
     expect(screen.queryByText('Setter')).toBeNull();
   });
 
@@ -196,7 +196,7 @@ describe('RevisionsSection', () => {
     fireEvent.click(screen.getByText(`Show all ${MAX_REVISIONS_PER_CLIMB}`));
 
     expect(container.querySelectorAll('button')).toHaveLength(MAX_REVISIONS_PER_CLIMB);
-    const note = screen.getByText(/We keep the first version/);
+    const note = screen.getByText(/Only the first version/);
     expect(note.textContent).toContain(String(MAX_REVISIONS_PER_CLIMB));
     expect(note.textContent).not.toContain('{{');
     // The number comes from board-config, not from the catalog string.
@@ -207,7 +207,7 @@ describe('RevisionsSection', () => {
   it('says nothing about the cap on a short history', () => {
     query.data = rows(3);
     renderSection(vi.fn());
-    expect(screen.queryByText(/We keep the first version/)).toBeNull();
+    expect(screen.queryByText(/Only the first version/)).toBeNull();
   });
 
   it('opens the tapped revision through the handler it was given', () => {

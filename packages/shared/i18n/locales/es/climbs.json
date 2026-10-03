@@ -216,7 +216,10 @@
       "publishDuplicateUnnamed": "Este patrón de presas coincide con un bloque existente. Activa Borrador para guardarlo sin publicar, o cambia una presa.",
       "viewMatchingClimb": "Ver bloque coincidente",
       "saveFailedFallback": "No se pudo guardar el bloque. Inténtalo de nuevo.",
-      "editConflict": "Alguien acaba de cambiar este bloque. Vuelve a abrirlo para ver la última versión."
+      "editConflict": "Alguien acaba de cambiar este bloque. Vuelve a abrirlo para ver la última versión.",
+      "editNotAllowed": "No puedes editar este bloque. Solo pueden hacerlo quien lo montó y quienes gestionan el muro.",
+      "editWindowExpired": "Este bloque se publicó hace más de 24 horas y ya no se puede editar.",
+      "editNotEditable": "Este bloque ya no se puede editar."
     },
     "fields": {
       "description": "Descripción (opcional)"
@@ -846,7 +849,7 @@
       "summary_other": "Editado {{count}} veces",
       "current": "Actual",
       "tagSetter": "Setter",
-      "tagWallOwner": "Propietario del muro",
+      "tagWallEditor": "Editor del muro",
       "deletedEditor": "Cuenta eliminada",
       "published": "Primera publicación",
       "edited": "Editado",
@@ -860,7 +863,7 @@
         "rules": "reglas"
       },
       "showAll": "Ver los {{count}}",
-      "capNote": "Guardamos la primera versión y los últimos {{max}} cambios.",
+      "capNote": "Solo se guardan la primera versión y los cambios más recientes, {{max}} versiones en total.",
       "rowLabel": "{{date}}, {{editor}}. Ver esta versión.",
       "sheet": {
         "title": "Versión del {{date}}",

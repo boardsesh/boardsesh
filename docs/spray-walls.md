@@ -1821,7 +1821,8 @@ Four things the rule is careful about:
   `viewerCanWriteSprayClimbs`, as before. Anyone else needs that and
   `canEditBoard`.
 - **One refusal for every stranger.** A caller who is neither the setter nor a
-  wall editor gets `You can only update your own climbs`, whether the wall is
+  wall editor gets `You can only update your own climbs` with the code
+  `CLIMB_EDIT_NOT_ALLOWED`, whether the wall is
   private, the wall is public, or the climb is a draft. It is the message the
   mutation always gave, and it does not say that a wall exists.
 
@@ -1842,22 +1843,39 @@ It is a hint. `updateClimb` decides.
   in the spray registry, filled from `sprayWallRenderData.wall.viewerCanEdit`.
   Only a literal `true` counts, and a re-registration never inherits the last
   answer.
+- **Which climbs it covers.** Only climbs on that wall. A queue can hold a climb
+  from another wall or from Kilter; when the climb carries `boardType` or
+  `layoutId` and they say it is somewhere else, a wall editor is not offered
+  Edit on it.
 - **How stale it can be.** Ten minutes, the registry's revalidation window.
   `useSprayWallViewerCanEdit` asks for the wall each time a menu mounts, which
   is what re-reads it.
-- **Account changes.** The registry outlives a sign-out. On sign-in and
-  sign-out `useSprayWallViewerAccessReset` sets every wall to "cannot edit" at
-  once, then refetches them. A wall owner's Edit never shows for the next
-  person on the phone.
+- **Account changes.** The registry is module state and outlives a sign-out, and
+  the app tree below `AuthProvider` is replaced on every auth change, so the
+  reset lives in `AuthProvider`: an effect on the resolved auth state, and a
+  call beside `queryClient.clear()` in the signed-out cleanup.
+  `refreshSprayWallViewerAccess` sets every wall to "cannot edit" at once and
+  refetches them.
+- **A request that crosses the account change.** The registry counts account
+  changes (`sprayWallViewerGeneration`). A fetch notes the number before it
+  leaves, and it is part of the render-data query key, so two accounts never
+  share a request or a cache entry. A payload that lands under a different
+  number registers the wall but not its `viewerCanEdit`, and is stamped stale.
+  `loadSprayWall` asks once more by itself when it sees the number moved.
 - **When the hint is wrong.** A role taken away inside the window still shows
-  Edit. The save is refused, nothing is lost, and the editor shows the server's
-  reason in a toast (spray only; other boards keep the generic line).
+  Edit. The save is refused and nothing is lost. `updateClimb` gives each
+  refusal an `extensions.code` (`CLIMB_EDIT_NOT_ALLOWED`,
+  `CLIMB_EDIT_WINDOW_EXPIRED`, `CLIMB_NOT_EDITABLE`, `CLIMB_EDIT_CONFLICT`) and
+  the editor shows a translated line for each. The server's own sentence is
+  never shown; a failure with no known code gets the generic line.
 - **Two saves crossing.** `CLIMB_EDIT_CONFLICT` shows "Someone else just changed
-  this climb. Reopen it to see the latest." There is no retry, and the working
-  copy stays on screen and in the autosave slot.
+  this climb. Reopen it to see the latest." There is no automatic retry, and the
+  working copy stays on screen and in the autosave slot. Tapping Save again
+  re-reads the climb and can succeed.
 - **The setter stays the setter in the queue too.** The queue row the editor
   builds after a save takes `userId` and `setter_username` from the climb being
-  edited (`resolveProvisionalSetter`), not from whoever saved.
+  edited (`resolveProvisionalSetter`), not from whoever saved. A row with no `userId`
+  whose setter name is the saver's own keeps the saver's id, as before.
 
 ## Climb revisions
 

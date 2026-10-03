@@ -102,11 +102,12 @@ export type RegisteredSprayWall = {
    *
    * Read by one thing, the Edit action on a published climb somebody else set
    * (`canEditClimb`). It is a HINT about what the server will allow, not a
-   * permission: `updateClimb` checks `canEditBoard` itself on every save. It can
-   * be ten minutes behind a role change (the revalidation window), and it is
-   * dropped to `false` for every wall the moment the account changes
-   * (`resetSprayWallViewerAccess`), so one climber's access is never shown to
-   * the next one on a shared phone.
+   * permission: `updateClimb` checks `canEditBoard` itself on every save.
+   *
+   * It is an answer about one ACCOUNT, in a registry that outlives a sign-out,
+   * so it is only ever `true` for a payload fetched under the account that is
+   * signed in now. See `sprayWallViewerGeneration`. It can also be ten minutes
+   * behind a role change (the revalidation window).
    */
   viewerCanEdit: boolean;
   /**
@@ -193,12 +194,13 @@ export function registerSprayWall(
   // through `setSprayWallLook`), so a revalidation must not wipe the look the
   // same wall already has. A different wall under the layout starts with none.
   //
-  // `viewerCanEdit` left out means `false`. Never carried over from the previous
-  // registration: an answer that does not say the viewer may edit must not keep
-  // an Edit action on screen.
+  // `viewerAccess` is who-can-edit together with the viewer generation the
+  // payload was FETCHED under. Left out means "cannot edit": an answer that does
+  // not say the viewer may edit, or cannot say whose answer it is, must not put
+  // an Edit action on screen. Never carried over from the previous registration.
   wall: Omit<RegisteredSprayWall, 'layoutId' | 'registeredAtMs' | 'renderSettings' | 'viewerCanEdit'> & {
     renderSettings?: SprayWallRenderSettingsValue | null;
-    viewerCanEdit?: boolean;
+    viewerAccess?: SprayWallViewerAccess;
   },
 ): void {
   // An unchanged look keeps its previous identity. Every board surface on the
@@ -209,12 +211,19 @@ export function registerSprayWall(
   const previousLook = previous?.wallUuid === wall.wallUuid ? previous.renderSettings : null;
   const nextLook = wall.renderSettings === undefined ? previousLook : wall.renderSettings;
   const renderSettings = sameLook(previousLook, nextLook) ? previousLook : nextLook;
+  const { viewerAccess, ...registration } = wall;
+  // A payload fetched under an account that has since changed. The wall itself
+  // is still the wall (photo and holds do not depend on who is looking), so it
+  // registers and draws. But its `viewerCanEdit` is somebody else's answer, so
+  // it is dropped, and the registration is stamped stale so the next ask goes
+  // back to the server for this account instead of waiting out the window.
+  const fetchedForAnotherViewer = viewerAccess !== undefined && viewerAccess.generation !== viewerGeneration;
   walls.set(layoutId, {
-    ...wall,
+    ...registration,
     renderSettings,
-    viewerCanEdit: wall.viewerCanEdit === true,
+    viewerCanEdit: viewerAccess?.canEdit === true && !fetchedForAnotherViewer,
     layoutId,
-    registeredAtMs: now(),
+    registeredAtMs: fetchedForAnotherViewer ? 0 : now(),
   });
   loadStates.set(layoutId, { state: 'ready', settledAtMs: now() });
   registerRuntimeGeometry(sprayGeometryKey(layoutId), buildWallGeometry(wall.holds));
@@ -266,20 +275,49 @@ export function sprayWallViewerCanEdit(boardName: string, layoutId: number): boo
 }
 
 /**
- * Forget what the previous account could edit. Called when the signed-in
- * account changes, in either direction.
+ * Who-can-edit, with the viewer generation its payload was fetched under.
+ * `generation` is read with `sprayWallViewerGeneration()` BEFORE the request
+ * goes out, never after it comes back.
+ */
+export type SprayWallViewerAccess = { canEdit: boolean; generation: number };
+
+/**
+ * Counts account changes. Bumped by `resetSprayWallViewerAccess`.
  *
- * Two things, and both matter. `viewerCanEdit` drops to `false` at once, so a
- * wall owner signing out does not leave Edit on screen for whoever picks the
- * phone up next. And every wall's registration is marked stale, so the next ask
- * goes back to the server and a climber who has just signed IN gets their own
- * answer rather than the anonymous `false` for the rest of the window.
+ * This is how `viewerCanEdit` is tied to an account without the registry
+ * knowing who anyone is (native auth does not hand the provider a user id).
+ * A fetch notes the generation when it STARTS; a registration is only believed
+ * about `viewerCanEdit` if the generation is still that one when it lands. So a
+ * request that left under the previous account and came back after the switch
+ * cannot put that account's Edit action in front of the next person.
+ */
+let viewerGeneration = 0;
+
+export function sprayWallViewerGeneration(): number {
+  return viewerGeneration;
+}
+
+/**
+ * The signed-in account changed, in either direction.
+ *
+ * Module state on purpose, called from the auth provider, which is the one
+ * thing that stays mounted across a sign-out. The app tree below it is REPLACED
+ * on every auth change (a redirect or the splash is rendered instead of its
+ * children), so a hook down there never sees a "before".
+ *
+ * Three things happen. The generation moves, which disowns every request in
+ * flight. `viewerCanEdit` drops to `false` on every wall at once, so a wall
+ * owner signing out does not leave Edit on screen for whoever picks the phone
+ * up next. And every registration is stamped stale, so the next ask goes back
+ * to the server and a climber who has just signed IN gets their own answer
+ * rather than the anonymous `false` for the rest of the window.
  *
  * The walls themselves stay registered: the photo and the holds do not depend
  * on who is looking, and blanking every board over a sign-in would be a flash
  * for nothing. Returns the layout ids it touched so the caller can refresh them.
  */
 export function resetSprayWallViewerAccess(): number[] {
+  viewerGeneration += 1;
   if (walls.size === 0) return [];
   const layoutIds: number[] = [];
   for (const [layoutId, wall] of walls) {
@@ -551,6 +589,7 @@ export function clearSprayWallRegistry(): void {
   deferredRequests.clear();
   inFlightLoads.clear();
   sprayWallLoader = null;
+  viewerGeneration = 0;
   notify();
   subscribers.clear();
 }

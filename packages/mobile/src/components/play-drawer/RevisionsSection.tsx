@@ -92,7 +92,7 @@ const RevisionRow = memo(function RevisionRow({ row, onOpenRevision }: RevisionR
           {row.editor ? (
             <View style={[styles.tag, { borderColor: systemColors.separator, borderWidth: StyleSheet.hairlineWidth }]}>
               <Text variant="caption2" color={systemColors.secondaryLabel}>
-                {row.editedBySetter ? t('mobile.revisions.tagSetter') : t('mobile.revisions.tagWallOwner')}
+                {row.editedBySetter ? t('mobile.revisions.tagSetter') : t('mobile.revisions.tagWallEditor')}
               </Text>
             </View>
           ) : null}

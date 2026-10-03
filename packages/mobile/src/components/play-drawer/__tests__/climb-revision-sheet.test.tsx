@@ -319,7 +319,7 @@ describe('ClimbRevisionSheet — reading one', () => {
       revision(1, { editor: null }),
     ];
     renderSheet(kilterProps, 2);
-    expect(screen.getByText(/"editor":"Jo","role":"mobile.revisions.tagWallOwner"/)).not.toBeNull();
+    expect(screen.getByText(/"editor":"Jo","role":"mobile.revisions.tagWallEditor"/)).not.toBeNull();
 
     fireEvent.click(screen.getByText('mobile.revisions.sheet.older'));
     expect(screen.getByText('mobile.revisions.deletedEditor')).not.toBeNull();

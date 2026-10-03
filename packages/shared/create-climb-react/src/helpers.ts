@@ -70,6 +70,10 @@ export type EditableClimb = {
   is_draft?: boolean | null;
   published_at?: string | null;
   created_at?: string | null;
+  /** The board the climb itself is on, when the row carries it (queue items do). */
+  boardType?: string | null;
+  /** The layout the climb itself is on, which on spray is the wall. */
+  layoutId?: number | null;
 };
 
 export type CanEditClimbInput = {
@@ -84,6 +88,11 @@ export type CanEditClimbInput = {
    * wall says otherwise.
    */
   viewerCanEditWall?: boolean | null;
+  /**
+   * The layout of the wall `viewerCanEditWall` was read for. With it, a climb
+   * that says it is on a different wall is not offered to a wall editor.
+   */
+  wallLayoutId?: number | null;
   now?: number;
 };
 
@@ -97,7 +106,7 @@ export type CanEditClimbInput = {
  * | catalogue | published    | its setter                            | 24 hours     |
  * | spray     | a draft      | its setter                            | always       |
  * | spray     | published    | its setter, or anyone who can edit    | always       |
- * |           |              | the wall                              |              |
+ * |           |              | the wall the climb is on              |              |
  *
  * A hint, not a permission: `updateClimb` decides, and a viewer this gets wrong
  * (a role granted or taken away since the wall was last read) meets the server's
@@ -108,6 +117,7 @@ export function canEditClimb({
   boardType,
   currentUserId,
   viewerCanEditWall,
+  wallLayoutId,
   now = Date.now(),
 }: CanEditClimbInput): boolean {
   if (!climb || !currentUserId) return false;
@@ -117,7 +127,14 @@ export function canEditClimb({
   if (!isSetter) {
     // Somebody else's draft is theirs alone, wall editor or not: publishing it
     // would announce a new climb under the wrong name.
-    return boardType === SPRAY_BOARD_TYPE && viewerCanEditWall === true && !isDraft;
+    if (boardType !== SPRAY_BOARD_TYPE || viewerCanEditWall !== true || isDraft) return false;
+    // Editing a wall is not editing every climb seen while standing at it. A
+    // queue can still hold a climb from another wall, or from Kilter, and that
+    // climb says so. A row that does not carry the field is taken on trust:
+    // list rows come from the board they are listed under.
+    if (climb.boardType != null && climb.boardType !== SPRAY_BOARD_TYPE) return false;
+    if (climb.layoutId != null && wallLayoutId != null && climb.layoutId !== wallLayoutId) return false;
+    return true;
   }
 
   return computeCanUpdate(

@@ -223,7 +223,7 @@ export function useClimbActions({
     // edit the wall on a published spray climb. A hint only; the server decides.
     const canEdit =
       getBoardCapabilities(boardName).climbCreation &&
-      canEditClimb({ climb, boardType: boardName, currentUserId, viewerCanEditWall });
+      canEditClimb({ climb, boardType: boardName, currentUserId, viewerCanEditWall, wallLayoutId: layoutId });
 
     const items: ClimbActionItem[] = [];
 

@@ -218,8 +218,8 @@ function ClimbActionsSheet({
   const viewerCanEditWall = useSprayWallViewerCanEdit(boardName, layoutId);
   const canEdit = useMemo(() => {
     if (!getBoardCapabilities(boardName).climbCreation) return false;
-    return canEditClimb({ climb, boardType: boardName, currentUserId, viewerCanEditWall });
-  }, [climb, currentUserId, boardName, viewerCanEditWall]);
+    return canEditClimb({ climb, boardType: boardName, currentUserId, viewerCanEditWall, wallLayoutId: layoutId });
+  }, [climb, currentUserId, boardName, layoutId, viewerCanEditWall]);
 
   // Sized for the climb preview row plus the action list (a couple more rows show
   // for owners / Aurora-app climbs); the modal pans down to close.

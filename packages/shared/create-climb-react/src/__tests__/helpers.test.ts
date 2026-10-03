@@ -184,6 +184,47 @@ describe('canEditClimb', () => {
     expect(canEditClimb({ climb, boardType, currentUserId, viewerCanEditWall, now: NOW })).toBe(expected);
   });
 
+  describe('a wall editor and a climb from somewhere else', () => {
+    // A wall owner standing at their own wall, with a queue item left over from
+    // another board. The viewing board is spray and they can edit it; the climb
+    // is not theirs and not on it.
+    const asWallEditor = (climb: Record<string, unknown>) =>
+      canEditClimb({
+        climb: { ...old, ...climb },
+        boardType: 'spray',
+        currentUserId: OTHER,
+        viewerCanEditWall: true,
+        wallLayoutId: 4200,
+        now: NOW,
+      });
+
+    it('is offered a published climb on that wall', () => {
+      expect(asWallEditor({ boardType: 'spray', layoutId: 4200 })).toBe(true);
+    });
+
+    it('is not offered a Kilter climb sitting in the queue', () => {
+      expect(asWallEditor({ boardType: 'kilter', layoutId: 1 })).toBe(false);
+      // Even one whose layout id happens to equal the wall's.
+      expect(asWallEditor({ boardType: 'kilter', layoutId: 4200 })).toBe(false);
+    });
+
+    it('is not offered a climb from another spray wall', () => {
+      expect(asWallEditor({ boardType: 'spray', layoutId: 4201 })).toBe(false);
+    });
+
+    it('is offered a row that does not say which board it is on', () => {
+      expect(asWallEditor({})).toBe(true);
+      expect(asWallEditor({ boardType: null, layoutId: null })).toBe(true);
+    });
+
+    it('does not let the setter lose Edit over a board field', () => {
+      const own = { ...old, boardType: 'spray', layoutId: 4201 };
+      expect(
+        canEditClimb({ climb: own, boardType: 'spray', currentUserId: SETTER, wallLayoutId: 4200, now: NOW }),
+      ).toBe(true);
+    });
+  });
+
   it('is false with no climb', () => {
     expect(canEditClimb({ climb: null, boardType: 'spray', currentUserId: SETTER, viewerCanEditWall: true })).toBe(
       false,

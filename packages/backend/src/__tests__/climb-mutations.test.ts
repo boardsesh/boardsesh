@@ -1201,6 +1201,8 @@ describe('climb mutations', () => {
       scriptPublishedClimb({ publishedAt: new Date(Date.now() - 25 * HOUR_MS).toISOString() });
 
       await expect(rename()).rejects.toThrow('The 24 hour edit window has expired');
+      scriptPublishedClimb({ publishedAt: new Date(Date.now() - 25 * HOUR_MS).toISOString() });
+      await expect(rename()).rejects.toMatchObject({ extensions: { code: 'CLIMB_EDIT_WINDOW_EXPIRED' } });
 
       expect(mockDb.transaction).not.toHaveBeenCalled();
       expect(mockDb.update).not.toHaveBeenCalled();
@@ -1211,6 +1213,8 @@ describe('climb mutations', () => {
       scriptPublishedClimb({ publishedAt: null });
 
       await expect(rename()).rejects.toThrow('This climb can no longer be edited');
+      scriptPublishedClimb({ publishedAt: null });
+      await expect(rename()).rejects.toMatchObject({ extensions: { code: 'CLIMB_NOT_EDITABLE' } });
       expect(mockDb.update).not.toHaveBeenCalled();
     });
 
@@ -1224,6 +1228,13 @@ describe('climb mutations', () => {
       // An Aurora-synced climb has no Boardsesh setter at all.
       scriptPublishedClimb({ userId: null });
       await expect(rename()).rejects.toThrow('You can only update your own climbs');
+
+      // A stable code rides every one of them, so a client can translate the
+      // refusal without matching on the sentence.
+      scriptPublishedClimb();
+      await expect(rename(makeCtx({ userId: 'someone-else' }))).rejects.toMatchObject({
+        extensions: { code: 'CLIMB_EDIT_NOT_ALLOWED' },
+      });
 
       expect(mockDb.transaction).not.toHaveBeenCalled();
       expect(mockDb.update).not.toHaveBeenCalled();
