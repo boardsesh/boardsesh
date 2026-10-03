@@ -28,7 +28,9 @@ import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_MOBILE_DIR = resolve(REPO_ROOT, 'packages', 'mobile');
-const SUPPORTED_SENTRY_REACT_NATIVE_VERSION = '7.11.0';
+// Audit the official Expo uploader's pairing and Debug ID contract before adding
+// a version. Main and frozen release anchors must keep their own installed SDK.
+const SUPPORTED_SENTRY_REACT_NATIVE_VERSIONS = ['7.11.0', '8.24.0'];
 const VALID_DEBUG_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type MobilePlatform = 'ios' | 'android';
@@ -297,7 +299,7 @@ export function validateSourceMapOutput(
       const executableLabel = type === 'bundle' ? 'Primary OTA bundle' : 'Metadata-declared executable asset';
       throw new Error(
         `${executableLabel} requires an exact adjacent source map at ${relativeSourceMapPath}. ` +
-          'The installed Sentry 7.11 uploader cannot safely group an independently named map.',
+          'The installed Sentry Expo uploader cannot safely group an independently named map.',
       );
     }
     const sourceMapPath = assertRegularFileWithoutSymbolicLinks(realOutputDir, relativeSourceMapPath, 'Source map');
@@ -348,15 +350,37 @@ export function resolveInstalledSentryUploader(mobileDirInput: string): string {
     );
   }
   const sentryPackage = parseJsonObject(sentryPackageJsonPath, '@sentry/react-native package.json');
-  if (sentryPackage.version !== SUPPORTED_SENTRY_REACT_NATIVE_VERSION) {
+  if (
+    typeof sentryPackage.version !== 'string' ||
+    !SUPPORTED_SENTRY_REACT_NATIVE_VERSIONS.includes(sentryPackage.version)
+  ) {
     throw new Error(
-      `Unsupported @sentry/react-native version ${String(sentryPackage.version)}; expected ${SUPPORTED_SENTRY_REACT_NATIVE_VERSION}.`,
+      `Unsupported @sentry/react-native version ${String(sentryPackage.version)}; audited versions: ${SUPPORTED_SENTRY_REACT_NATIVE_VERSIONS.join(', ')}.`,
     );
   }
   const packageRoot = realpathSync(dirname(sentryPackageJsonPath));
   const uploaderPath = join(packageRoot, 'scripts', 'expo-upload-sourcemaps.js');
   if (!existsSync(uploaderPath) || !statSync(uploaderPath).isFile()) {
     throw new Error(`Official Sentry Expo source-map uploader is missing: ${uploaderPath}`);
+  }
+  // 8.24 keeps the SDK entrypoint but delegates to a separate package. Check it
+  // from the SDK's dependency graph, including pnpm's isolated linker, before
+  // letting a workflow publish an OTA whose maps cannot be uploaded.
+  if (sentryPackage.version === '8.24.0') {
+    const requireFromSentry = createRequire(sentryPackageJsonPath);
+    try {
+      const delegatedUploaderPath = requireFromSentry.resolve('@sentry/expo-upload-sourcemaps/cli.js');
+      if (!statSync(delegatedUploaderPath).isFile()) {
+        throw new Error('Delegated uploader is not a file.');
+      }
+    } catch (error) {
+      if (isJsonObject(error) && (error.code === 'MODULE_NOT_FOUND' || error.code === 'ENOENT')) {
+        throw new Error(
+          'Official Sentry Expo source-map uploader dependency @sentry/expo-upload-sourcemaps is missing.',
+        );
+      }
+      throw error;
+    }
   }
   return existingPathWithin(packageRoot, uploaderPath, 'Official Sentry uploader');
 }

@@ -474,6 +474,14 @@ jobs:
             --app-id 007e6fd7-f200-448c-9449-8d48ba5d51fc \
             --out ota-stage/baseline.json
 
+      # Check the same installed uploader the upload steps use before either OTA
+      # goes live. No export or Sentry token is needed for this compatibility check.
+      - name: Validate Sentry uploader support before publishing
+        id: sentry_uploader
+        if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && (!inputs.stage_for_production_deploy || steps.baseline.outcome == 'success') && steps.expect.outputs.mismatch != 'true' && ((steps.train_guard.outputs.publish_ios != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios')) || (steps.train_guard.outputs.publish_android != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')))
+        run: |
+          vp exec node --import tsx --input-type=module --eval 'import * as sourceMapTools from "./scripts/mobile-upload-sourcemaps.ts"; console.log((sourceMapTools.default ?? sourceMapTools).resolveInstalledSentryUploader("packages/mobile"));'
+
       # iOS and Android are published in SEPARATE steps with platform-specific env.
       # GOOGLE_MAPS_API_KEY is set only on the Android native prebuild (iOS uses
       # Apple Maps), and it changes the resolved config — hence the fingerprint —
@@ -482,7 +490,7 @@ jobs:
       # single `--platform all` publish with one env could only ever match one side.
       - name: Publish iOS OTA
         id: publish_ios
-        if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && (!inputs.stage_for_production_deploy || steps.baseline.outcome == 'success') && steps.expect.outputs.mismatch != 'true' && steps.train_guard.outputs.publish_ios != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios')
+        if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.sentry_uploader.outcome == 'success' && (!inputs.stage_for_production_deploy || steps.baseline.outcome == 'success') && steps.expect.outputs.mismatch != 'true' && steps.train_guard.outputs.publish_ios != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios')
         continue-on-error: true
         env:
           # V3 control-plane rejects Expo tokens; eoas publish authenticates with the
@@ -523,7 +531,7 @@ jobs:
 
       - name: Publish Android OTA
         id: publish_android
-        if: always() && steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && (!inputs.stage_for_production_deploy || steps.baseline.outcome == 'success') && steps.expect.outputs.mismatch != 'true' && steps.train_guard.outputs.publish_android != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')
+        if: always() && steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.sentry_uploader.outcome == 'success' && (!inputs.stage_for_production_deploy || steps.baseline.outcome == 'success') && steps.expect.outputs.mismatch != 'true' && steps.train_guard.outputs.publish_android != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')
         continue-on-error: true
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
