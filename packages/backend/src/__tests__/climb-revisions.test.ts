@@ -6,7 +6,8 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 /**
  * Climb revision history (#5955), against the real database.
  *
- * What `updateClimb` writes to `board_climb_revisions`. The rules under test:
+ * What `updateClimb` writes to `board_climb_revisions`, and what the
+ * `climbRevisions` query hands back. The rules under test:
  *
  *  - rows are written lazily: nothing until the first edit of a PUBLISHED climb,
  *    which writes revision 1 (the climb as published) and revision 2;
@@ -72,6 +73,7 @@ vi.mock('../utils/redis-rate-limiter', () => ({
 const { db } = await import('../db/client');
 const { sprayWallMutations } = await import('../graphql/resolvers/board/spray-walls');
 const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
+const { climbQueries } = await import('../graphql/resolvers/climbs/queries');
 const { sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
 const { MAX_REVISIONS_PER_CLIMB } = await import('@boardsesh/board-config');
 
@@ -212,6 +214,24 @@ async function versionIdsOf(wall: CreatedWall): Promise<Map<number, number>> {
   `)) as unknown as Array<{ id: string | number; version_number: number }>;
   return new Map(rows.map((row) => [Number(row.version_number), Number(row.id)]));
 }
+
+type ClimbRevisionResult = {
+  revisionNumber: number;
+  isCurrent: boolean;
+  createdAt: string;
+  name: string | null;
+  description: string | null;
+  frames: string | null;
+  angle: number | null;
+  difficultyId: number | null;
+  changes: string[];
+  editor: { id: string; displayName: string | null; avatarUrl: string | null } | null;
+  editedBySetter: boolean;
+  sprayWallVersionNumber: number | null;
+};
+
+const readRevisions = async (boardType: string, climbUuid: string, viewer: string | null) =>
+  (await climbQueries.climbRevisions({}, { boardType, climbUuid }, ctxFor(viewer))) as ClimbRevisionResult[];
 
 beforeEach(async () => {
   await db.execute(sql`
@@ -509,5 +529,106 @@ describe('what updateClimb records', () => {
       changes: ['name', 'description'],
       edited_by: SETTER,
     });
+  });
+});
+
+describe('climbRevisions', () => {
+  it('answers newest first, with the top row current and the editors named', async () => {
+    const { wall, holdIds } = await createPublishedWall({ isPublic: true });
+    const climbUuid = await saveSprayClimb(wall, holdIds, {}, SETTER);
+    await editSpray(climbUuid, { name: 'Setter rename' }, SETTER);
+    await editSpray(climbUuid, { userGrade: '7a/V6' }, OWNER);
+
+    const revisions = await readRevisions('spray', climbUuid, STRANGER);
+    expect(
+      revisions.map((revision) => ({
+        revisionNumber: revision.revisionNumber,
+        isCurrent: revision.isCurrent,
+        name: revision.name,
+        difficultyId: revision.difficultyId,
+        changes: revision.changes,
+        editorId: revision.editor?.id,
+        editedBySetter: revision.editedBySetter,
+        sprayWallVersionNumber: revision.sprayWallVersionNumber,
+      })),
+    ).toEqual([
+      {
+        revisionNumber: 3,
+        isCurrent: true,
+        name: 'Setter rename',
+        difficultyId: 22,
+        changes: ['grade'],
+        editorId: OWNER,
+        editedBySetter: false,
+        sprayWallVersionNumber: 1,
+      },
+      {
+        revisionNumber: 2,
+        isCurrent: false,
+        name: 'Setter rename',
+        difficultyId: 18,
+        changes: ['name'],
+        editorId: SETTER,
+        editedBySetter: true,
+        sprayWallVersionNumber: 1,
+      },
+      {
+        revisionNumber: 1,
+        isCurrent: false,
+        name: 'Original name',
+        difficultyId: 18,
+        changes: [],
+        editorId: SETTER,
+        editedBySetter: true,
+        sprayWallVersionNumber: 1,
+      },
+    ]);
+    expect(revisions[0].editor).toMatchObject({ id: OWNER, displayName: `User ${OWNER}` });
+    expect(Number.isFinite(Date.parse(revisions[0].createdAt))).toBe(true);
+  });
+
+  it('answers an empty list for a climb nobody has edited', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const climbUuid = await saveSprayClimb(wall, holdIds);
+    expect(await readRevisions('spray', climbUuid, OWNER)).toEqual([]);
+    expect(await readRevisions('spray', 'NOSUCHCLIMB', OWNER)).toEqual([]);
+  });
+
+  it('answers an empty list on a private wall to everyone who cannot see it', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const climbUuid = await saveSprayClimb(wall, holdIds);
+    await editSpray(climbUuid, { name: 'Renamed' });
+
+    expect(await readRevisions('spray', climbUuid, OWNER)).toHaveLength(2);
+    expect(await readRevisions('spray', climbUuid, STRANGER)).toEqual([]);
+    expect(await readRevisions('spray', climbUuid, null)).toEqual([]);
+    // The board type is the caller's claim, not the climb's: asking for a spray
+    // climb's history as if it were a Kilter climb must not get past the wall.
+    expect(await readRevisions('kilter', climbUuid, STRANGER)).toEqual([]);
+  });
+
+  it('answers a catalogue climb’s history to anyone', async () => {
+    const climbUuid = uuidv4().replace(/-/g, '').toUpperCase();
+    const publishedAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    await db.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, name, description, frames, frames_count, frames_pace,
+                                angle, is_draft, is_listed, created_at, published_at, user_id, setter_username)
+      VALUES (${climbUuid}, 'kilter', 1, 'Kilter original', '', 'p1117r12p1140r15', 1, 0,
+              40, false, true, ${publishedAt}, ${publishedAt}, ${SETTER}, 'setter')
+    `);
+    await climbMutations.updateClimb(
+      {},
+      { input: { uuid: climbUuid, boardType: 'kilter', name: 'Kilter renamed' } },
+      ctxFor(SETTER),
+    );
+
+    const revisions = await readRevisions('kilter', climbUuid, null);
+    expect(
+      revisions.map((revision) => [revision.revisionNumber, revision.name, revision.sprayWallVersionNumber]),
+    ).toEqual([
+      [2, 'Kilter renamed', null],
+      [1, 'Kilter original', null],
+    ]);
+    expect(revisions[1].createdAt).toBe(publishedAt);
   });
 });

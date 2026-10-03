@@ -372,6 +372,52 @@ type ClimbStatsEvent {
   syncSeq: String!
 }
 
+"Who made an edit to a climb."
+type ClimbRevisionEditor {
+  id: ID!
+  displayName: String
+  avatarUrl: String
+}
+
+"""
+One state a published climb has been in: the climb as it stood after an edit.
+
+The highest-numbered revision is always the climb as it is now. Revision 1 is
+the climb as it was first published. A climb nobody has edited has no
+revisions at all. Numbers are not always consecutive: past 50 revisions the
+oldest edits are dropped (revision 1 is always kept).
+
+Read-only. A revision cannot be restored, queued or lit up.
+"""
+type ClimbRevision {
+  revisionNumber: Int!
+  "True for the newest revision, which matches the live climb."
+  isCurrent: Boolean!
+  "When the edit was made. For revision 1, when the climb was published."
+  createdAt: String!
+  name: String
+  description: String
+  frames: String
+  angle: Int
+  "The setter grade at this revision. Spray walls only; null on every other board."
+  difficultyId: Int
+  """
+  What this revision changed against the one before it: any of name,
+  description, holds, grade, angle, rules. Empty for revision 1.
+  """
+  changes: [String!]!
+  "Who made the edit. Null when that account has since been deleted."
+  editor: ClimbRevisionEditor
+  "True when the editor is the climb's setter, false for a spray wall's editor."
+  editedBySetter: Boolean!
+  """
+  Spray walls only: the wall version (photo) this revision was drawn on, to pass
+  as sprayWallRenderData's version. Null on every other board, and on a first
+  revision whose version could not be worked out.
+  """
+  sprayWallVersionNumber: Int
+}
+
 """
 User information displayed in queue items.
 """
@@ -5251,9 +5297,12 @@ type SaveClimbResult {
 }
 
 """
-Input for updating an existing climb. Only the climb's owner can update
-the row, and only while it is still a draft OR within 24 hours of its
-first publish.
+Input for updating an existing climb.
+
+A draft can be updated by its setter at any time. A published climb can be
+updated by its setter within 24 hours of its first publish, except on a spray
+wall, where the setter and anyone who can edit the wall can update it with no
+time limit. Every edit to a published climb is kept (see climbRevisions).
 """
 input UpdateClimbInput {
   uuid: ID!
@@ -7354,6 +7403,14 @@ type Query {
   Get vote summaries for multiple entities of the same type.
   """
   bulkVoteSummaries(input: BulkVoteSummaryInput!): [VoteSummary!]!
+
+  """
+  The edit history of a published climb, newest first. At most 50 rows.
+
+  Empty for a climb nobody has edited, for a draft, and for a spray climb on a
+  wall the caller cannot see.
+  """
+  climbRevisions(boardType: String!, climbUuid: String!): [ClimbRevision!]!
 
   # ============================================
   # Beta Link Queries
