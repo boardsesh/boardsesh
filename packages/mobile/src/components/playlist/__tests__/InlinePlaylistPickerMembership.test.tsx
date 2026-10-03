@@ -16,7 +16,10 @@ const playlistContext = vi.hoisted(() => ({
 }));
 const requestMock = vi.hoisted(() => vi.fn());
 const seeded = vi.hoisted(() => ({ members: new Set<string>() }));
-const membershipStore = vi.hoisted(() => ({ setMembershipForClimb: vi.fn() }));
+const membershipStore = vi.hoisted(() => ({
+  getMembershipsForClimb: vi.fn((_climbUuid: string): ReadonlySet<string> => new Set()),
+  setMembershipForClimb: vi.fn((_climbUuid: string, _playlistUuids: readonly string[]) => {}),
+}));
 const showToast = vi.hoisted(() => vi.fn());
 const reportHandledError = vi.hoisted(() => vi.fn());
 
@@ -210,7 +213,10 @@ describe('InlinePlaylistPicker membership certainty and angle', () => {
     playlistContext.createPlaylist.mockReset();
     requestMock.mockReset().mockResolvedValue({ playlistsForClimb: [] });
     seeded.members = new Set();
-    membershipStore.setMembershipForClimb.mockReset();
+    membershipStore.getMembershipsForClimb.mockReset().mockImplementation(() => seeded.members);
+    membershipStore.setMembershipForClimb.mockReset().mockImplementation((_climbUuid, playlistUuids) => {
+      seeded.members = new Set(playlistUuids);
+    });
     showToast.mockReset();
     reportHandledError.mockReset();
   });
@@ -274,6 +280,129 @@ describe('InlinePlaylistPicker membership certainty and angle', () => {
 
     await waitFor(() => expect(playlistContext.addToPlaylist).toHaveBeenCalledWith('p-target', 'climb-1', 40));
     await waitFor(() => expect(hasCheck(row)).toBe(true));
+  });
+
+  it('keeps sibling membership unknown after a seeded removal and re-adds only that row', async () => {
+    const crossBoardClimb = { ...baseClimb, boardType: 'tension', layoutId: null, angle: 35 } as Climb;
+    playlistContext.playlists = [
+      { ...makePlaylist('p-a', 'tension', 10), name: 'Playlist A' },
+      { ...makePlaylist('p-b', 'tension', 10), name: 'Playlist B' },
+    ];
+    seeded.members = new Set(['p-a']);
+    const options = { climb: crossBoardClimb, angle: 40 };
+    const firstMount = renderPicker(options);
+    const memberRow = firstMount.getByRole('button', { name: 'Playlist A' });
+    const unknownRow = firstMount.getByText('Playlist B').closest('[data-row="Playlist B"]');
+
+    fireEvent.click(memberRow);
+
+    await waitFor(() => expect(playlistContext.removeFromPlaylist).toHaveBeenCalledWith('p-a', 'climb-1'));
+    expect(firstMount.queryByRole('button', { name: 'Playlist B' })).toBeNull();
+    expect(hasCheck(firstMount.getByRole('button', { name: 'Playlist A' }))).toBe(false);
+    expect(unknownRow).not.toBeNull();
+    expect(playlistContext.addToPlaylist).not.toHaveBeenCalledWith('p-b', 'climb-1', expect.any(Number));
+    expect(queryClient.getQueryData(['playlistsForClimb', 'tension', null, 'climb-1'])).toBeUndefined();
+    expect(queryClient.getQueryData(['playlistMembershipOverrides', 'tension', null, 'climb-1'])).toEqual({
+      'p-a': false,
+    });
+
+    firstMount.unmount();
+    const reopened = renderPicker(options);
+    const reAddRow = reopened.getByRole('button', { name: 'Playlist A' });
+    expect(hasCheck(reAddRow)).toBe(false);
+    expect(reopened.getByText('Playlist B').closest('[data-row="Playlist B"]')).not.toBeNull();
+
+    fireEvent.click(reAddRow);
+    await waitFor(() => expect(playlistContext.addToPlaylist).toHaveBeenCalledWith('p-a', 'climb-1', 35));
+    expect(playlistContext.addToPlaylist).not.toHaveBeenCalledWith('p-b', 'climb-1', expect.any(Number));
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it('restores a failed seeded removal without unlocking an unknown sibling', async () => {
+    const crossBoardClimb = { ...baseClimb, boardType: 'tension', layoutId: null, angle: 35 } as Climb;
+    playlistContext.playlists = [
+      { ...makePlaylist('p-a', 'tension', 10), name: 'Playlist A' },
+      { ...makePlaylist('p-b', 'tension', 10), name: 'Playlist B' },
+    ];
+    seeded.members = new Set(['p-a']);
+    playlistContext.removeFromPlaylist.mockRejectedValueOnce(new Error('offline'));
+    const screen = renderPicker({ climb: crossBoardClimb });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Playlist A' }));
+
+    await waitFor(() => expect(reportHandledError).toHaveBeenCalled());
+    expect(hasCheck(screen.getByRole('button', { name: 'Playlist A' }))).toBe(true);
+    expect(screen.getByText('Playlist B').closest('[data-row="Playlist B"]')).not.toBeNull();
+    expect(queryClient.getQueryData(['playlistsForClimb', 'tension', null, 'climb-1'])).toBeUndefined();
+    expect(queryClient.getQueryData(['playlistMembershipOverrides', 'tension', null, 'climb-1'])).toEqual({});
+    expect(playlistContext.addToPlaylist).not.toHaveBeenCalled();
+  });
+
+  it('rolls back one failed row without undoing another row that succeeded meanwhile', async () => {
+    const crossBoardClimb = { ...baseClimb, boardType: 'tension', layoutId: null, angle: 35 } as Climb;
+    playlistContext.playlists = [
+      { ...makePlaylist('p-a', 'tension', 10), name: 'Playlist A' },
+      { ...makePlaylist('p-b', 'tension', 10), name: 'Playlist B' },
+    ];
+    seeded.members = new Set(['p-a', 'p-b']);
+    const pendingA = deferred<void>();
+    const rejectedA = pendingA.promise.then(() => {
+      throw new Error('playlist A removal failed');
+    });
+    rejectedA.catch(() => {});
+    playlistContext.removeFromPlaylist.mockReset().mockReturnValueOnce(rejectedA).mockResolvedValueOnce(undefined);
+    const screen = renderPicker({ climb: crossBoardClimb });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Playlist A' }));
+    await waitFor(() => expect(playlistContext.removeFromPlaylist).toHaveBeenCalledWith('p-a', 'climb-1'));
+    fireEvent.click(screen.getByRole('button', { name: 'Playlist B' }));
+    await waitFor(() => expect(playlistContext.removeFromPlaylist).toHaveBeenCalledWith('p-b', 'climb-1'));
+
+    pendingA.resolve();
+    await waitFor(() => expect(reportHandledError).toHaveBeenCalledTimes(1));
+
+    expect(hasCheck(screen.getByRole('button', { name: 'Playlist A' }))).toBe(true);
+    expect(hasCheck(screen.getByRole('button', { name: 'Playlist B' }))).toBe(false);
+    expect(queryClient.getQueryData(['playlistMembershipOverrides', 'tension', null, 'climb-1'])).toEqual({
+      'p-b': false,
+    });
+  });
+
+  it('keeps unknown siblings locked when a seeded known-layout row changes during fetch', async () => {
+    const pending = deferred<{ playlistsForClimb: string[] }>();
+    requestMock.mockReturnValue(pending.promise);
+    const knownLayoutClimb = { ...baseClimb, boardType: 'tension', layoutId: 10, angle: 35 } as Climb;
+    playlistContext.playlists = [
+      { ...makePlaylist('p-a', 'tension', 10), name: 'Playlist A' },
+      { ...makePlaylist('p-b', 'tension', 10), name: 'Playlist B' },
+    ];
+    seeded.members = new Set(['p-a']);
+    const screen = renderPicker({ climb: knownLayoutClimb, angle: 40 });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Playlist A' }));
+
+    await waitFor(() => expect(playlistContext.removeFromPlaylist).toHaveBeenCalledWith('p-a', 'climb-1'));
+    expect(screen.queryByRole('button', { name: 'Playlist B' })).toBeNull();
+    expect(hasCheck(screen.getByRole('button', { name: 'Playlist A' }))).toBe(false);
+    expect(playlistContext.addToPlaylist).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData(['playlistsForClimb', 'tension', 10, 'climb-1'])).toBeUndefined();
+    expect(requestMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('makes every row actionable after a complete fetched empty result', async () => {
+    playlistContext.playlists = [
+      { ...makePlaylist('p-a', 'kilter', 1), name: 'Playlist A' },
+      { ...makePlaylist('p-b', 'kilter', 1), name: 'Playlist B' },
+    ];
+    requestMock.mockResolvedValue({ playlistsForClimb: [] });
+    const screen = renderPicker();
+
+    const firstRow = await screen.findByRole('button', { name: 'Playlist A' });
+    expect(screen.getByRole('button', { name: 'Playlist B' })).toBeTruthy();
+    fireEvent.click(firstRow);
+
+    await waitFor(() => expect(playlistContext.addToPlaylist).toHaveBeenCalledWith('p-a', 'climb-1', 40));
+    expect(screen.getByRole('button', { name: 'Playlist B' })).toBeTruthy();
   });
 
   it('removes a member returned by the exact-layout query', async () => {

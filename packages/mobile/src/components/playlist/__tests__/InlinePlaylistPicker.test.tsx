@@ -14,12 +14,23 @@ const playlistContext = vi.hoisted(() => ({
   isAuthenticated: true,
 }));
 const qstate = vi.hoisted(() => ({ data: [] as string[] | undefined, loading: false }));
+const membershipOverridesState = vi.hoisted(() => ({ data: {} as Record<string, boolean> }));
 const queryClientMock = vi.hoisted(() => ({
-  getQueryData: vi.fn(),
-  setQueryData: vi.fn(),
+  getQueryData: vi.fn((queryKey: readonly unknown[]): unknown =>
+    queryKey[0] === 'playlistsForClimb' ? qstate.data : membershipOverridesState.data,
+  ),
+  setQueryData: vi.fn((queryKey: readonly unknown[], nextValue: unknown) => {
+    if (queryKey[0] === 'playlistsForClimb' && Array.isArray(nextValue)) qstate.data = nextValue as string[];
+    else if (queryKey[0] === 'playlistMembershipOverrides' && typeof nextValue === 'object' && nextValue !== null) {
+      membershipOverridesState.data = nextValue as Record<string, boolean>;
+    }
+  }),
   cancelQueries: vi.fn(async () => {}),
 }));
-const membershipStore = vi.hoisted(() => ({ setMembershipForClimb: vi.fn() }));
+const membershipStore = vi.hoisted(() => ({
+  getMembershipsForClimb: vi.fn((_climbUuid: string): ReadonlySet<string> => new Set()),
+  setMembershipForClimb: vi.fn(),
+}));
 const showToast = vi.hoisted(() => vi.fn());
 const reportHandledError = vi.hoisted(() => vi.fn());
 
@@ -79,7 +90,10 @@ vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToa
 vi.mock('../../../lib/error-reporting', () => ({ reportHandledError }));
 
 vi.mock('@tanstack/react-query', () => ({
-  useQuery: () => ({ data: qstate.data, isLoading: qstate.loading }),
+  useQuery: (options: { queryKey: readonly unknown[] }) =>
+    options.queryKey[0] === 'playlistMembershipOverrides'
+      ? { data: membershipOverridesState.data }
+      : { data: qstate.data, isLoading: qstate.loading, isError: false },
   useQueryClient: () => queryClientMock,
 }));
 
@@ -214,9 +228,11 @@ describe('InlinePlaylistPicker', () => {
     playlistContext.createPlaylist.mockReset();
     qstate.data = [];
     qstate.loading = false;
-    queryClientMock.getQueryData.mockReset().mockReturnValue(undefined);
-    queryClientMock.setQueryData.mockReset();
+    membershipOverridesState.data = {};
+    queryClientMock.getQueryData.mockClear();
+    queryClientMock.setQueryData.mockClear();
     queryClientMock.cancelQueries.mockClear();
+    membershipStore.getMembershipsForClimb.mockReset().mockReturnValue(new Set());
     membershipStore.setMembershipForClimb.mockReset();
     showToast.mockReset();
     reportHandledError.mockReset();
