@@ -81,6 +81,7 @@ vi.mock('@/app/lib/db/schema', () => ({
     id: 'users.id',
     email: 'users.email',
     emailVerified: 'users.emailVerified',
+    createdAt: 'users.createdAt',
   },
   accounts: {},
   sessions: {},
@@ -347,6 +348,40 @@ describe('authOptions.callbacks.signIn', () => {
       });
 
       expect(result).toBe('/auth/verify-request?error=EmailNotVerified');
+    });
+
+    it('checks the password-authenticated identity when an email twin is verified', async () => {
+      vi.stubEnv('EMAIL_VERIFICATION_ENABLED', 'true');
+      const authenticatedUser = { id: 'password-user', email: 'same@example.com', emailVerified: null };
+      const verifiedTwin = { id: 'oauth-user', email: 'Same@example.com', emailVerified: new Date() };
+      mockDbWhere.mockImplementation((predicate: { _type?: string; col?: unknown; val?: unknown }) => ({
+        limit: vi.fn().mockResolvedValue([predicate._type === 'eq' ? authenticatedUser : verifiedTwin]),
+      }));
+
+      const result = await callSignIn({
+        user: { id: authenticatedUser.id, email: authenticatedUser.email },
+        account: { provider: 'credentials', type: 'credentials', providerAccountId: 'cred-123' },
+      });
+
+      expect(result).toBe('/auth/verify-request?error=EmailNotVerified');
+      expect(mockDbWhere).toHaveBeenCalledWith({ _type: 'eq', col: 'users.id', val: 'password-user' });
+    });
+
+    it('accepts the verified password identity when an email twin is unverified', async () => {
+      vi.stubEnv('EMAIL_VERIFICATION_ENABLED', 'true');
+      const authenticatedUser = { id: 'password-user', email: 'same@example.com', emailVerified: new Date() };
+      const unverifiedTwin = { id: 'oauth-user', email: 'Same@example.com', emailVerified: null };
+      mockDbWhere.mockImplementation((predicate: { _type?: string; col?: unknown; val?: unknown }) => ({
+        limit: vi.fn().mockResolvedValue([predicate._type === 'eq' ? authenticatedUser : unverifiedTwin]),
+      }));
+
+      const result = await callSignIn({
+        user: { id: authenticatedUser.id, email: authenticatedUser.email },
+        account: { provider: 'credentials', type: 'credentials', providerAccountId: 'cred-123' },
+      });
+
+      expect(result).toBe(true);
+      expect(mockDbWhere).toHaveBeenCalledWith({ _type: 'eq', col: 'users.id', val: 'password-user' });
     });
 
     it('returns true when email verification enabled but user not found in DB', async () => {

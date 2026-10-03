@@ -5,6 +5,7 @@ import * as schema from '@/app/lib/db/schema';
 import { hash } from 'bcryptjs';
 import { sql } from 'drizzle-orm';
 import { normalizeEmail } from '@boardsesh/db/utils';
+import { getEmailVerificationTokenIdentifier } from '@/app/lib/auth/email-verification-token';
 import { z } from 'zod';
 import { sendVerificationEmail } from '@boardsesh/email';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
@@ -78,6 +79,7 @@ export async function POST(request: NextRequest) {
     const passwordHash = await hash(password, 12);
     const verificationToken = emailVerificationEnabled ? crypto.randomUUID() : null;
     const tokenExpires = emailVerificationEnabled ? new Date(Date.now() + 24 * 60 * 60 * 1000) : null; // 24 hours
+    const verificationIdentifier = emailVerificationEnabled ? getEmailVerificationTokenIdentifier(userId) : null;
 
     // Use transaction to ensure user, credentials, profile, and token are created atomically
     // If any insert fails, all changes are rolled back
@@ -103,9 +105,9 @@ export async function POST(request: NextRequest) {
         });
 
         // Insert verification token if email verification is enabled
-        if (emailVerificationEnabled && verificationToken && tokenExpires) {
+        if (emailVerificationEnabled && verificationToken && tokenExpires && verificationIdentifier) {
           await tx.insert(schema.verificationTokens).values({
-            identifier: email,
+            identifier: verificationIdentifier,
             token: verificationToken,
             expires: tokenExpires,
           });

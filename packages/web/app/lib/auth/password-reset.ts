@@ -1,13 +1,25 @@
 import { createHash } from 'node:crypto';
-import { normalizeEmail } from '@boardsesh/db/utils';
-
 export const PASSWORD_RESET_IDENTIFIER_PREFIX = 'password-reset:';
+export const PASSWORD_RESET_USER_IDENTIFIER_PREFIX = `${PASSWORD_RESET_IDENTIFIER_PREFIX}v2:user:`;
 
-// Build the identifier from the canonicalised email so the value written in
-// forgot-password and the value read in reset-password always agree, regardless
-// of how the address was cased in the request or the reset link.
-export function getPasswordResetIdentifier(email: string): string {
-  return `${PASSWORD_RESET_IDENTIFIER_PREFIX}${normalizeEmail(email)}`;
+// New tokens identify the account selected when the email is issued. Legacy
+// email-only identifiers remain parseable so reset-password can accept them
+// only when the email resolves to exactly one account.
+export function getPasswordResetIdentifier(userId: string): string {
+  return `${PASSWORD_RESET_USER_IDENTIFIER_PREFIX}${userId}`;
+}
+
+export function getPasswordResetUserId(identifier: string): string | null {
+  if (!identifier.startsWith(PASSWORD_RESET_USER_IDENTIFIER_PREFIX)) return null;
+  const userId = identifier.slice(PASSWORD_RESET_USER_IDENTIFIER_PREFIX.length);
+  return userId || null;
+}
+
+export function getLegacyPasswordResetEmail(identifier: string): string | null {
+  if (!identifier.startsWith(PASSWORD_RESET_IDENTIFIER_PREFIX)) return null;
+  if (identifier.startsWith(PASSWORD_RESET_USER_IDENTIFIER_PREFIX)) return null;
+  const email = identifier.slice(PASSWORD_RESET_IDENTIFIER_PREFIX.length);
+  return email || null;
 }
 
 /** sha256(token) stored in DB; raw token travels only in the email link. */

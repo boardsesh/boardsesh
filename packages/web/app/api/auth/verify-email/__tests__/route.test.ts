@@ -10,20 +10,14 @@ vi.mock('@/app/lib/auth/rate-limiter', () => ({
   getClientIp: (...args: unknown[]) => mockGetClientIp(...args),
 }));
 
-// Record the predicates the route builds so assertions read what the code
-// actually emitted rather than a predicate rebuilt in the test.
 vi.mock('drizzle-orm', () => ({
   and: vi.fn((...args: unknown[]) => ({ _type: 'and', args })),
   eq: vi.fn((col: unknown, val: unknown) => ({ _type: 'eq', col, val })),
-  inArray: vi.fn((col: unknown, values: unknown[]) => ({ _type: 'inArray', col, values })),
   sql: vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => ({ _type: 'sql', strings, values })),
 }));
 
-type RecordedPredicate = { _type: string; values?: unknown[] };
-type RecordedAnd = { _type: 'and'; args: RecordedPredicate[] };
-
 const mockSelectLimit = vi.fn();
-const mockSelectWhere = vi.fn((_predicate: RecordedAnd) => ({ limit: mockSelectLimit }));
+const mockSelectWhere = vi.fn((_predicate: unknown) => ({ limit: mockSelectLimit }));
 const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
 const mockTxUpdateWhere = vi.fn().mockResolvedValue(undefined);
 const mockTxUpdateSet = vi.fn(() => ({ where: mockTxUpdateWhere }));
@@ -55,13 +49,6 @@ function createRequest(params: Record<string, string>): NextRequest {
   return new NextRequest(url, { method: 'GET' });
 }
 
-/** The identifier list the route passed to its first `inArray(...)` predicate. */
-function recordedIdentifierCandidates(): unknown[] {
-  const andPredicate = mockSelectWhere.mock.calls[0][0];
-  const inArrayPredicate = andPredicate.args.find((arg) => arg._type === 'inArray');
-  return inArrayPredicate?.values ?? [];
-}
-
 const FUTURE = new Date(Date.now() + 60 * 60 * 1000);
 
 describe('GET /api/auth/verify-email', () => {
@@ -69,63 +56,82 @@ describe('GET /api/auth/verify-email', () => {
     vi.clearAllMocks();
     mockGetClientIp.mockReturnValue('127.0.0.1');
     mockCheckRateLimit.mockReturnValue({ limited: false, retryAfterSeconds: 0 });
-    mockSelectWhere.mockReturnValue({ limit: mockSelectLimit });
-    // 1st select → the verification token; 2nd → the user row.
-    mockSelectLimit
-      .mockResolvedValueOnce([{ identifier: 'foo@example.com', token: 'tok-1', expires: FUTURE }])
-      .mockResolvedValueOnce([{ id: 'user-1', email: 'Foo@Example.com' }]);
+    mockSelectLimit.mockReset();
   });
 
-  it('verifies a link whose email is cased differently from the stored row', async () => {
+  it('verifies a current token against the exact account despite an email twin', async () => {
+    mockSelectLimit
+      .mockResolvedValueOnce([{ identifier: 'email-verification:v2:user:user-1', token: 'tok-1', expires: FUTURE }])
+      .mockResolvedValueOnce([{ id: 'user-1' }]);
+
     const response = await GET(createRequest({ token: 'tok-1', email: 'FOO@Example.com' }));
 
     expect(response.status).toBe(307);
     expect(response.headers.get('location')).toContain('/auth/login?verified=true');
-    expect(mockTxUpdateSet).toHaveBeenCalledWith({ emailVerified: expect.any(Date) });
-  });
-
-  it('also tries the raw-cased identifier so pre-normalization links still resolve', async () => {
-    await GET(createRequest({ token: 'tok-1', email: 'Foo@Example.com' }));
-
-    // Both the canonical identifier and the original casing the old code stored.
-    expect(recordedIdentifierCandidates()).toEqual(['foo@example.com', 'Foo@Example.com']);
-  });
-
-  it('does not duplicate the identifier when the link email is already canonical', async () => {
-    await GET(createRequest({ token: 'tok-1', email: 'foo@example.com' }));
-
-    expect(recordedIdentifierCandidates()).toEqual(['foo@example.com']);
-  });
-
-  it('marks only the account that owns the token, by id', async () => {
-    const { eq } = await import('drizzle-orm');
-    await GET(createRequest({ token: 'tok-1', email: 'FOO@Example.com' }));
-
-    // Scoped to users.id — NOT to every row sharing the lower-cased email.
-    expect(eq).toHaveBeenCalledWith('users.id', 'user-1');
     expect(mockTxUpdateWhere).toHaveBeenCalledWith({ _type: 'eq', col: 'users.id', val: 'user-1' });
   });
 
-  it('redirects to InvalidToken when no candidate identifier matches', async () => {
-    mockSelectLimit.mockReset();
-    mockSelectLimit.mockResolvedValue([]);
+  it('accepts a raw-case legacy identifier when exactly one account matches', async () => {
+    mockSelectLimit
+      .mockResolvedValueOnce([{ identifier: 'Foo@example.com', token: 'tok-1', expires: FUTURE }])
+      .mockResolvedValueOnce([{ id: 'legacy-user' }]);
 
-    const response = await GET(createRequest({ token: 'nope', email: 'foo@example.com' }));
+    const response = await GET(createRequest({ token: 'tok-1', email: 'foo@example.com' }));
+
+    expect(response.headers.get('location')).toContain('/auth/login?verified=true');
+    expect(mockTxUpdateWhere).toHaveBeenCalledWith({ _type: 'eq', col: 'users.id', val: 'legacy-user' });
+  });
+
+  it('rejects a legacy token when duplicate normalized emails make its owner ambiguous', async () => {
+    mockSelectLimit
+      .mockResolvedValueOnce([{ identifier: 'Foo@example.com', token: 'tok-1', expires: FUTURE }])
+      .mockResolvedValueOnce([{ id: 'mixed-case-twin' }, { id: 'lower-case-twin' }]);
+
+    const response = await GET(createRequest({ token: 'tok-1', email: 'foo@example.com' }));
+
+    expect(response.headers.get('location')).toContain('error=InvalidToken');
+    expect(mockTransaction).not.toHaveBeenCalled();
+    expect(mockTxUpdateWhere).not.toHaveBeenCalled();
+  });
+
+  it('rejects a current token when the supplied email no longer matches its owner', async () => {
+    mockSelectLimit
+      .mockResolvedValueOnce([{ identifier: 'email-verification:v2:user:user-1', token: 'tok-1', expires: FUTURE }])
+      .mockResolvedValueOnce([]);
+
+    const response = await GET(createRequest({ token: 'tok-1', email: 'other@example.com' }));
 
     expect(response.headers.get('location')).toContain('error=InvalidToken');
     expect(mockTransaction).not.toHaveBeenCalled();
   });
 
-  it('redirects to TokenExpired and clears the token when it has lapsed', async () => {
-    mockSelectLimit.mockReset();
+  it('rejects a duplicated raw token rather than selecting an arbitrary account', async () => {
     mockSelectLimit.mockResolvedValueOnce([
-      { identifier: 'foo@example.com', token: 'tok-1', expires: new Date(Date.now() - 1000) },
+      { identifier: 'email-verification:v2:user:user-1', token: 'tok-1', expires: FUTURE },
+      { identifier: 'email-verification:v2:user:user-2', token: 'tok-1', expires: FUTURE },
+    ]);
+
+    const response = await GET(createRequest({ token: 'tok-1', email: 'foo@example.com' }));
+
+    expect(response.headers.get('location')).toContain('error=InvalidToken');
+    expect(mockTransaction).not.toHaveBeenCalled();
+  });
+
+  it('redirects to TokenExpired and deletes only that token row', async () => {
+    mockSelectLimit.mockResolvedValueOnce([
+      { identifier: 'email-verification:v2:user:user-1', token: 'tok-1', expires: new Date(Date.now() - 1000) },
     ]);
 
     const response = await GET(createRequest({ token: 'tok-1', email: 'foo@example.com' }));
 
     expect(response.headers.get('location')).toContain('error=TokenExpired');
-    expect(mockDeleteWhere).toHaveBeenCalledTimes(1);
+    expect(mockDeleteWhere).toHaveBeenCalledWith({
+      _type: 'and',
+      args: [
+        { _type: 'eq', col: 'verification_tokens.identifier', val: 'email-verification:v2:user:user-1' },
+        { _type: 'eq', col: 'verification_tokens.token', val: 'tok-1' },
+      ],
+    });
     expect(mockTransaction).not.toHaveBeenCalled();
   });
 });

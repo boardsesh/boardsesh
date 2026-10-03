@@ -1,8 +1,9 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
-import { eq, and, sql, inArray } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { normalizeEmail } from '@boardsesh/db/utils';
+import { getEmailVerificationTokenUserId } from '@/app/lib/auth/email-verification-token';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
 
 export async function GET(request: NextRequest) {
@@ -23,28 +24,22 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL('/auth/verify-request?error=InvalidToken', request.url));
   }
 
-  // Canonicalise so the identifier match and user lookup align with the
-  // normalized values written at register/resend time. Also match the raw
-  // link email so verification links minted before the normalization deploy
-  // (identifier stored as the original-cased email) still resolve.
+  // The token row is authoritative for identity. Current tokens carry the
+  // selected user id; legacy email-only tokens are accepted only when that
+  // email resolves to exactly one account.
   const normalizedEmail = normalizeEmail(email);
-  const candidateIdentifiers = normalizedEmail === email ? [normalizedEmail] : [normalizedEmail, email];
 
   const db = getDb();
 
-  // Find the verification token
+  // Raw verification tokens are random UUIDs. Read at most two rows so an
+  // unexpected duplicate token fails closed instead of choosing an account.
   const verificationToken = await db
     .select()
     .from(schema.verificationTokens)
-    .where(
-      and(
-        inArray(schema.verificationTokens.identifier, candidateIdentifiers),
-        eq(schema.verificationTokens.token, token),
-      ),
-    )
-    .limit(1);
+    .where(eq(schema.verificationTokens.token, token))
+    .limit(2);
 
-  if (verificationToken.length === 0) {
+  if (verificationToken.length !== 1) {
     return NextResponse.redirect(new URL('/auth/verify-request?error=InvalidToken', request.url));
   }
 
@@ -56,31 +51,45 @@ export async function GET(request: NextRequest) {
     await db
       .delete(schema.verificationTokens)
       .where(
-        and(
-          inArray(schema.verificationTokens.identifier, candidateIdentifiers),
-          eq(schema.verificationTokens.token, token),
-        ),
+        and(eq(schema.verificationTokens.identifier, tokenData.identifier), eq(schema.verificationTokens.token, token)),
       );
 
     return NextResponse.redirect(new URL('/auth/verify-request?error=TokenExpired', request.url));
   }
 
-  // Verify user exists before updating (case-insensitive — legacy rows may be mixed-case)
-  const user = await db
-    .select()
-    .from(schema.users)
-    .where(sql`lower(${schema.users.email}) = ${normalizedEmail}`)
-    .limit(1);
+  const tokenUserId = getEmailVerificationTokenUserId(tokenData.identifier);
+  let user: Array<{ id: string }>;
+  if (tokenUserId) {
+    // Bind current tokens to both the issuing account and its email address.
+    // This prevents a stale link from verifying a changed address.
+    user = await db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(and(eq(schema.users.id, tokenUserId), sql`lower(${schema.users.email}) = ${normalizedEmail}`))
+      .limit(1);
+  } else {
+    // Old rows stored only the raw email as identifier. Their original account
+    // cannot be recovered if case-insensitive duplicates still exist, so reject
+    // that legacy link until the account merge leaves one match.
+    if (normalizeEmail(tokenData.identifier) !== normalizedEmail) {
+      return NextResponse.redirect(new URL('/auth/verify-request?error=InvalidToken', request.url));
+    }
+    user = await db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(sql`lower(${schema.users.email}) = ${normalizedEmail}`)
+      .limit(2);
+    if (user.length !== 1) {
+      return NextResponse.redirect(new URL('/auth/verify-request?error=InvalidToken', request.url));
+    }
+  }
 
   if (user.length === 0) {
     // Token exists but user doesn't - cleanup the orphan token
     await db
       .delete(schema.verificationTokens)
       .where(
-        and(
-          inArray(schema.verificationTokens.identifier, candidateIdentifiers),
-          eq(schema.verificationTokens.token, token),
-        ),
+        and(eq(schema.verificationTokens.identifier, tokenData.identifier), eq(schema.verificationTokens.token, token)),
       );
 
     return NextResponse.redirect(new URL('/auth/verify-request?error=InvalidToken', request.url));
@@ -93,10 +102,7 @@ export async function GET(request: NextRequest) {
     await tx
       .delete(schema.verificationTokens)
       .where(
-        and(
-          inArray(schema.verificationTokens.identifier, candidateIdentifiers),
-          eq(schema.verificationTokens.token, token),
-        ),
+        and(eq(schema.verificationTokens.identifier, tokenData.identifier), eq(schema.verificationTokens.token, token)),
       );
   });
 

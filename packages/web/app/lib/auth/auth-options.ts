@@ -403,16 +403,18 @@ export const authOptions: NextAuthOptions = {
         return true;
       }
 
-      // For credentials, check if email is verified
+      // CredentialsProvider.authorize already matched the password against a
+      // specific user row. Looking up by email again can select a different
+      // legacy duplicate and accept or reject the wrong identity.
       if (!user.email) {
         return false;
       }
 
       const db = getDb();
       const existingUser = await db
-        .select()
+        .select({ emailVerified: schema.users.emailVerified })
         .from(schema.users)
-        .where(sql`lower(${schema.users.email}) = ${normalizeEmail(user.email)}`)
+        .where(eq(schema.users.id, user.id))
         .limit(1);
 
       // Check if email verification is enabled (disabled by default until Fastmail auth is set up)
