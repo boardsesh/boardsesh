@@ -426,8 +426,9 @@ fix sends both false — gets a private wall and nothing pending, as before.
 `{ mode: 'classic' | 'aura', boardsesh: BoardseshRenderSettings }` — the look the
 creator picked in the add-wall wizard. `SprayWall.renderSettings` returns it on
 every wall read. NULL means "no wall default", which is every wall created before
-the column existed, and the mobile resolver falls back to the global default for
-it. A viewer's own explicit render-mode choice always wins over the wall's.
+the column existed, and the mobile resolver falls back to the climber's own look
+for it. On a wall that has one, the wall's look wins over the climber's own,
+unless they turned on "Use my look on spray walls" (More → Board look).
 
 - **Validated against `@boardsesh/board-look`'s own option lists and slider
   bounds** (`SetSprayWallRenderSettingsInputSchema`), strict, every knob required.
@@ -963,17 +964,29 @@ registration epoch subscribed as a background-effect-only dependency; it must no
 reach `buildCacheKey`, or every overlay PNG is orphaned on each ten-minute
 revalidation. Costs nothing before SW-09 makes a wall reachable.
 
-**A wall's own look only fills in for a climber who never chose one.** The loader
-reads `SprayWall.renderSettings` off the render payload, runs it through
-`sanitizeBoardRenderDefault` (a `JSON` scalar promises nothing: an unknown mode or
-a missing knob bundle registers as "no stored look", a present bundle is clamped
-like a stored preference) and registers it with the wall. `useNativeClimbRender`
-subscribes to it through `sprayBoardRenderDefault(boardName, layoutId)` — `null`
-off spray — and hands it to `resolveEffectiveRenderSettings` as a third argument.
-The rule is whole-bundle: a climber on `mode: 'default'` gets the wall's mode AND
-its knobs (with their own Role glyphs kept on, the same floor a preset pick
-respects); a climber with an explicit mode keeps their own bundle and the wall
-look is ignored. The look moves the render signature with it, so the two never
+**A wall's own look wins, unless the climber opted out.** The wall's look is
+read in its own query (`GET_SPRAY_WALL_LOOK`), never in the shared
+`SPRAY_WALL_FIELDS`: a field a deployed backend lacks fails validation for the
+whole operation, and in the shared fragment that took down creating, loading and
+drawing every wall. `loadSprayWall` starts that read alongside the render
+payload and registers the wall with the look already on it, so a surface draws
+once rather than in the climber's settings and again when the look lands. The
+read never rejects; a failure registers "no stored look" and is retried after
+30 s. The value runs through `sanitizeBoardRenderDefault` (a `JSON` scalar
+promises nothing: an unknown mode or a missing knob bundle reads as "no stored
+look", a present bundle is clamped like a stored preference, an unknown option
+name falls back to that knob's default).
+
+`useNativeClimbRender` subscribes to it through `sprayBoardRenderDefault(boardName,
+layoutId)` — `null` off spray — and `boardLookForRender` decides whether this
+render uses it: not for a climber who turned on "Use my look on spray walls"
+(`spray-wall-look-preference.ts`, its own AsyncStorage key so applying a preset
+cannot reset it), and not for a preview card or the heatmap, which each ask for a
+specific drawing. The rule is whole-bundle: the wall's mode AND its knobs, with
+the climber's own Role glyphs kept on (the same floor a preset pick respects).
+It is not "only for a climber on `mode: 'default'`": the onboarding look step
+stores an explicit mode for nearly everyone, so that rule meant almost nobody saw
+a wall's look. The look moves the render signature with it, so the two never
 share a PNG. It has its own subscription rather than riding `sprayCacheToken`,
 because a look stored without a reset does not move the version. The registry
 keeps an unchanged look's identity across re-registrations, so a revalidation

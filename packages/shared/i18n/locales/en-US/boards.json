@@ -922,7 +922,7 @@
     },
     "look": {
       "title": "How should your holds light up?",
-      "body": "Climbers who haven't picked a look of their own see your wall like this. Anyone who has keeps theirs.",
+      "body": "Climbers see your wall like this, unless they've chosen to use their own look on spray walls.",
       "loading": "Loading your wall…",
       "unavailable": "Your wall's photo can't be shown here, but you can still pick a look.",
       "saving": "Saving your look…",

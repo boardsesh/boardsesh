@@ -22,6 +22,9 @@ import {
   type BoardLookSuggestionDismissals,
 } from '../../../lib/board-render/board-look-suggestion-dismissals';
 import { buildBoardLookModel } from './board-look-model';
+import { useSprayWallsEnabled } from '../../../providers/feature-flags-provider';
+import { useSprayWallsUseOwnLookSetting } from '../../../lib/spray-wall-look-preference';
+import { hapticSelection } from '../../../lib/haptics';
 
 /**
  * "Board look" — the parent. Pick a look from a rail of renders of your own
@@ -52,6 +55,21 @@ export function BoardLookScreen() {
   const { fontScale } = useWindowDimensions();
   const { overrides, shapes, brushThickness, shapeSize } = useHoldColorOverrides();
   const signals = useOsAccessibilitySignals();
+  const sprayWallsEnabled = useSprayWallsEnabled();
+  const { useOwnLook, setUseOwnLook } = useSprayWallsUseOwnLookSetting();
+  const sprayWalls = useMemo(
+    () =>
+      sprayWallsEnabled
+        ? {
+            useOwnLook,
+            onUseOwnLookChange: (next: boolean) => {
+              hapticSelection();
+              setUseOwnLook(next);
+            },
+          }
+        : null,
+    [sprayWallsEnabled, useOwnLook, setUseOwnLook],
+  );
 
   // Start fully dismissed, so a banner can never flash in during hydration and
   // then vanish. Only a real read can un-dismiss.
@@ -155,6 +173,7 @@ export function BoardLookScreen() {
         suggestion,
         onApplySuggestion: () => suggestion && settleSuggestion(suggestion.id, true),
         onDismissSuggestion: () => suggestion && settleSuggestion(suggestion.id, false),
+        sprayWalls,
       }),
     [
       carousel,
@@ -168,6 +187,7 @@ export function BoardLookScreen() {
       resetBoardLook,
       suggestion,
       settleSuggestion,
+      sprayWalls,
     ],
   );
 

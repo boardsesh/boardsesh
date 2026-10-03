@@ -34,6 +34,7 @@ import {
   sprayCacheToken,
   subscribeToSprayWalls,
 } from '../lib/spray/spray-wall-registry';
+import { useSprayWallsUseOwnLook } from '../lib/spray-wall-look-preference';
 import {
   ensureBackgroundsCached,
   tryGetBackgroundPathsSync,
@@ -77,6 +78,7 @@ import {
 import { buildAuraRenderFields } from '@boardsesh/board-look';
 import {
   boardFieldColorForScheme,
+  boardLookForRender,
   buildBoardRenderSignature,
   requestedBoardRenderMode,
   resolveEffectiveRenderSettings,
@@ -1949,16 +1951,25 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     getBoardseshSupportRevision,
   );
   // The board's own stored look — a spray wall's, `null` for every catalogue
-  // board. Only a climber on `mode: 'default'` ever sees it; an explicit choice
-  // (or a preview card's own bundle) wins. Its own subscription rather than a
-  // ride on `sprayVersionToken` below: that token only moves with the wall's
-  // VERSION, and a look stored without a reset would never reach a surface
-  // mounted before it. The registry keeps an unchanged look's identity across
-  // re-registrations, so a revalidation costs no re-resolve.
-  const boardRenderDefault = useSyncExternalStore(
+  // board. It wins over the climber's own look unless they chose their own on
+  // spray walls. A preview card's bundle and a heatmap's mark override are
+  // asking for one specific drawing, so the wall's look never applies to them.
+  // Its own subscription rather than a ride on `sprayVersionToken` below: that
+  // token only moves with the wall's VERSION, and a look stored without a reset
+  // would never reach a surface mounted before it. The registry keeps an
+  // unchanged look's identity across re-registrations, so a revalidation costs
+  // no re-resolve.
+  const storedBoardLook = useSyncExternalStore(
     subscribeToSprayWalls,
     useCallback(() => sprayBoardRenderDefault(boardName, layoutId), [boardName, layoutId]),
   );
+  const useOwnLookOnSprayWalls = useSprayWallsUseOwnLook();
+  const boardRenderDefault = boardLookForRender({
+    storedLook: storedBoardLook,
+    useOwnLook: useOwnLookOnSprayWalls,
+    hasSettingsOverride: renderSettingsOverride !== undefined,
+    hasMarkStyleOverride: markStyleOverride !== undefined,
+  });
   // Two native renders per launch, so only for someone whose settings — or
   // whose board's stored look — ask for the mode.
   if (requestedBoardRenderMode(boardRenderSettings, boardRenderDefault) === 'aura') {

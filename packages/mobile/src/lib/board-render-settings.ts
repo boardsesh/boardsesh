@@ -177,12 +177,11 @@ export function sanitizeBoardRenderSettings(rawSettings: unknown): BoardRenderSe
 }
 
 /**
- * A board's own stored default look — today only a spray wall's
- * (`SprayWall.renderSettings`).
+ * A board's own stored look — today only a spray wall's
+ * (`SprayWall.renderSettings`), the look its creator picked for the photo.
  *
- * `mode` is never `'default'`: a board default IS the default a climber who
- * never chose gets, so `'default'` there would point at itself. The backend
- * refuses it for the same reason.
+ * `mode` is never `'default'`: the board's look is a concrete drawing, and
+ * `'default'` would only defer back to the climber. The backend refuses it too.
  */
 export type BoardRenderDefault = {
   mode: 'classic' | 'aura';
@@ -207,18 +206,35 @@ export function sanitizeBoardRenderDefault(rawDefault: unknown): BoardRenderDefa
 }
 
 /**
+ * The board's stored look this render should use, or `null` for the climber's own.
+ *
+ * `null` when the climber chose their own look on spray walls, and when the
+ * render brings its own drawing: a preview card's bundle (it is previewing one
+ * specific look) or a mark-style override (the heatmap's fill).
+ */
+export function boardLookForRender(input: {
+  storedLook: BoardRenderSettings | null;
+  useOwnLook: boolean;
+  hasSettingsOverride: boolean;
+  hasMarkStyleOverride: boolean;
+}): BoardRenderSettings | null {
+  if (input.useOwnLook || input.hasSettingsOverride || input.hasMarkStyleOverride) return null;
+  return input.storedLook;
+}
+
+/**
  * The board default this render may use, or `null`.
  *
  * Re-checked here, not trusted from the caller's type: the value comes off a
  * registry fed by the network, and a legacy or malformed object must fall back
  * to the app default rather than hand `undefined` knobs to the signature.
  */
-function usableBoardDefault(boardDefault: BoardRenderSettings | null | undefined): BoardRenderSettings | null {
+function usableBoardDefault(boardDefault: BoardRenderSettings | null | undefined): BoardRenderDefault | null {
   if (!isRecord(boardDefault)) return null;
   const { mode, boardsesh } = boardDefault as { mode: unknown; boardsesh: unknown };
   if (mode !== 'classic' && mode !== 'aura') return null;
   if (!isRecord(boardsesh)) return null;
-  return boardDefault;
+  return { mode, boardsesh: boardDefault.boardsesh };
 }
 
 /**
@@ -230,8 +246,9 @@ function usableBoardDefault(boardDefault: BoardRenderSettings | null | undefined
  * default, and the one-time board-look step in onboarding is what asks the
  * climber whether they want something else.
  *
- * `boardDefault` is the board's own stored look (a spray wall's). It is read
- * ONLY when the climber is on `'default'` — an explicit choice always wins.
+ * `boardDefault` is the board's own stored look (a spray wall's). When there is
+ * one it decides the mode, whatever the climber picked: callers leave it out for
+ * a climber who chose their own look on spray walls, and for preview cards.
  *
  * Split out of `resolveEffectiveRenderSettings` because the capability probe
  * costs two native renders per launch and is only worth paying for someone who
@@ -242,10 +259,9 @@ export function requestedBoardRenderMode(
   settings: BoardRenderSettings,
   boardDefault?: BoardRenderSettings | null,
 ): 'classic' | 'aura' {
-  if (settings.mode !== 'default') return settings.mode;
   const usable = usableBoardDefault(boardDefault);
-  if (usable && usable.mode !== 'default') return usable.mode;
-  return 'aura';
+  if (usable) return usable.mode;
+  return settings.mode === 'default' ? 'aura' : settings.mode;
 }
 
 /**
@@ -258,19 +274,22 @@ export function requestedBoardRenderMode(
  * must never ask unless it has verified the library can answer.
  *
  * `boardDefault` resolves at the WHOLE-BUNDLE level, never the mode alone. A
- * climber on `'default'` looking at a board that stored a look gets that look's
- * mode AND its knobs — the board's bundle used exactly as the climber's own
- * preset pick would be, accessibility floor included (see
+ * board that stored a look is drawn in that look's mode AND its knobs, whatever
+ * the climber picked — the bundle used exactly as the climber's own preset pick
+ * would be, accessibility floor included (see
  * `ACCESSIBILITY_OWNED_BOARDSESH_FIELDS`: a climber who switched Role glyphs on
- * keeps them over a wall whose look has them off). A climber with an explicit
- * mode keeps their own bundle and the board default is ignored entirely.
+ * keeps them over a wall whose look has them off). Onboarding stores an
+ * explicit mode for nearly every climber, so "only when the climber is on
+ * `'default'`" would have meant almost nobody saw a wall's look. The opt-out is
+ * the caller's: pass no `boardDefault` for a climber who chose their own look on
+ * spray walls (`spray-wall-look-preference.ts`).
  */
 export function resolveEffectiveRenderSettings(
   settings: BoardRenderSettings,
   rendererAvailable: boolean,
   boardDefault?: BoardRenderSettings | null,
 ): EffectiveBoardRenderSettings {
-  const usable = settings.mode === 'default' ? usableBoardDefault(boardDefault) : null;
+  const usable = usableBoardDefault(boardDefault);
   const source = usable ? withViewerAccessibility(usable, settings) : settings;
 
   const requestedMode = requestedBoardRenderMode(source);

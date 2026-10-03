@@ -185,6 +185,11 @@
           },
           "dismiss": "Jetzt nicht",
           "dismissAccessibility": "Diesen Vorschlag ausblenden"
+        },
+        "sprayWalls": {
+          "title": "Spraywände",
+          "useOwnLook": "Meinen Look auf Spraywänden verwenden",
+          "footer": "Spraywände zeigen den Look, der beim Anlegen für das Foto gewählt wurde. Schalte das ein, um dort deinen eigenen Look zu sehen."
         }
       },
       "accessibility": {

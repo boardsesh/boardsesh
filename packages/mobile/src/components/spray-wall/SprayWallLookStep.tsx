@@ -4,9 +4,9 @@
 // this is the first moment the wall can be drawn the way its climbers will see
 // it. The creator swipes the same looks the onboarding board-look step offers,
 // each drawn on THEIR wall with some of its own holds lit, and the pick is stored
-// on the wall (`setSprayWallRenderSettings`) before it publishes. Climbers who
-// never picked a look of their own then see the wall this way; anyone who did
-// keeps theirs (`resolveEffectiveRenderSettings`).
+// on the wall (`setSprayWallRenderSettings`) before it publishes. Every climber
+// then sees the wall this way, unless they turned on "Use my look on spray
+// walls" (`boardLookForRender`).
 //
 // Mandatory, like the onboarding step it mirrors: there is no Skip, because
 // skipping would silently store nothing and the wall would draw in whatever the
