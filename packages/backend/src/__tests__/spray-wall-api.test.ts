@@ -2991,7 +2991,16 @@ describe('setSprayWallRenderSettings', () => {
         { input: { uuid: wall.uuid, renderSettings: AURA_LOOK } },
         ctxFor(null),
       ),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/Authentication required/);
+  });
+
+  it('hands the look to any climber who can see the wall, not only its owner', async () => {
+    // Every viewer on 'default' draws the wall in it, so it must reach them.
+    const { wall } = await createPublishedWall(OWNER, { isPublic: true });
+    await setLook(wall.uuid, AURA_LOOK, OWNER);
+
+    const read = (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(STRANGER))) as WallWithLook;
+    expect(read.renderSettings).toEqual(AURA_LOOK);
   });
 
   it('refuses mode \'default\' — a wall default of "use the default" points at itself', async () => {
