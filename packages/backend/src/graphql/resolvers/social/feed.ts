@@ -13,7 +13,13 @@ import {
   boardClimbRatingsJoinCondition,
 } from '../shared/sql-expressions';
 import { selectedFieldNames, isFieldSelected } from '../shared/selected-fields';
-import { climbLogConditions, climbLogBaseSelection, sentStatusCondition, toClimbLogBase } from './climb-log-query';
+import {
+  climbLogConditions,
+  climbLogBaseSelection,
+  resolveClimbLogUuid,
+  sentStatusCondition,
+  toClimbLogBase,
+} from './climb-log-query';
 import { FollowingAscentsFeedInputSchema, FollowingClimbAscentsInputSchema } from '../../../validation/schemas';
 import { logger } from '../../../utils/logger';
 
@@ -323,13 +329,6 @@ export const socialFeedQueries = {
     // counts climbers, because it is not bound by this cap.
     const MAX_ITEMS = 100;
 
-    // One conditions array for the rows AND the counts: board, climb, Aurora's
-    // duplicate rows, spray-wall visibility. See climb-log-query.ts.
-    const conditions = climbLogConditions({
-      boardType: validatedInput.boardType,
-      climbUuid: validatedInput.climbUuid,
-      viewerUserId: myUserId,
-    });
     const followedByMe = and(
       eq(dbSchema.userFollows.followingId, dbSchema.boardseshTicks.userId),
       eq(dbSchema.userFollows.followerId, myUserId),
@@ -340,6 +339,18 @@ export const socialFeedQueries = {
     const wantsSummary = isFieldSelected(selectedFieldNames(info), 'summary');
 
     try {
+      // The climb's canonical uuid, so logs stored under a uuid that was
+      // deduplicated into this climb are found too.
+      const canonicalClimbUuid = await resolveClimbLogUuid(validatedInput.boardType, validatedInput.climbUuid);
+
+      // One conditions array for the rows AND the counts: board, climb, Aurora's
+      // duplicate rows, spray-wall visibility. See climb-log-query.ts.
+      const conditions = climbLogConditions({
+        boardType: validatedInput.boardType,
+        canonicalClimbUuid,
+        viewerUserId: myUserId,
+      });
+
       const itemsQuery = db
         .select({
           ...climbLogBaseSelection,
@@ -363,12 +374,16 @@ export const socialFeedQueries = {
         )
         // Synced-rating fallback for quality — see boardClimbRatingsJoinCondition.
         .leftJoin(dbSchema.boardClimbRatings, boardClimbRatingsJoinCondition)
-        // `uuid` is the primary key, so this never multiplies rows. LEFT, so a
-        // tick whose climb row is missing still comes back as "Unknown Climb".
+        // Joined on the canonical uuid, not the tick's own: a log stored under
+        // a retired uuid has no climb row of its own, and every row here is the
+        // same climb. `uuid` is the primary key, so this never multiplies rows.
+        // LEFT, so a climb the catalogue does not have still comes back as
+        // "Unknown Climb". (Spray is never alias-expanded, so there the
+        // canonical IS the tick's own uuid, the one the privacy predicates check.)
         .leftJoin(
           dbSchema.boardClimbs,
           and(
-            eq(dbSchema.boardClimbs.uuid, dbSchema.boardseshTicks.climbUuid),
+            eq(dbSchema.boardClimbs.uuid, canonicalClimbUuid),
             eq(dbSchema.boardClimbs.boardType, dbSchema.boardseshTicks.boardType),
           ),
         )

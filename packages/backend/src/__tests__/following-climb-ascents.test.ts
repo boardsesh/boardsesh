@@ -197,6 +197,8 @@ beforeEach(async () => {
   await db.execute(sql`DELETE FROM spray_walls WHERE board_uuid LIKE 'fca-%'`);
   await db.execute(sql`DELETE FROM user_boards WHERE uuid LIKE 'fca-%'`);
   await db.execute(sql`DELETE FROM gyms WHERE uuid LIKE 'fca-%'`);
+  // Before the climbs: an alias row holds a foreign key to its canonical climb.
+  await db.execute(sql`DELETE FROM board_climb_aliases WHERE alias_uuid LIKE 'fca-%'`);
   await db.execute(sql`DELETE FROM board_climbs WHERE uuid LIKE 'fca-%'`);
 
   await db.execute(sql`
@@ -401,21 +403,93 @@ describe('spray-wall privacy', () => {
     expect(answer.summary.climberCount).toBe(1);
   });
 
-  // Pins today's behaviour, and the assumption under it. The reference form of
-  // the predicate keeps a spray tick whose climb row is gone, which is safe only
-  // while deleting a wall is a soft delete that keeps its climbs. If spray
-  // climbs are ever hard-deleted, this is the case that turns into a leak, and
-  // this test is where that change has to be argued.
-  it('returns a spray tick whose climb row is missing as an unknown climb', async () => {
-    await insertTick({ userId: ALEX, boardType: 'spray', climbUuid: 'fca-ghost-climb' });
+  // A wall delete is soft and keeps its climbs, but `deleteDraftClimb` and
+  // account deletion hard-delete a climb row and leave its ticks. Such a tick
+  // has no wall left to check, and the reference predicate alone would pass it
+  // for everybody, so the reader fails closed on spray.
+  it('hides a spray tick whose climb row is missing, from the rows and the counts', async () => {
+    await insertTick({ userId: ALEX, boardType: 'spray', climbUuid: 'fca-ghost-climb', comment: SPRAY_NOTE });
+
+    expect(await ask(VIEWER, 'spray', 'fca-ghost-climb')).toEqual(EMPTY_ANSWER);
+  });
+
+  it('hides a log on a private wall once its climb row has been hard-deleted', async () => {
+    const { climbUuid } = await seedWall({ isPublic: false });
+    await insertOwnerLog(climbUuid);
+    await db.execute(sql`DELETE FROM board_climbs WHERE uuid = ${climbUuid}`);
+
+    expect(await ask(VIEWER, 'spray', climbUuid)).toEqual(EMPTY_ANSWER);
+    // The owner too: with the climb gone there is no wall to tie the log to.
+    await follow(WALL_OWNER, ALEX);
+    await insertTick({ userId: ALEX, boardType: 'spray', climbUuid });
+    expect(await ask(WALL_OWNER, 'spray', climbUuid)).toEqual(EMPTY_ANSWER);
+  });
+
+  // Only spray fails closed. An Aurora tick can arrive before its climb does.
+  it('still returns a tick on another board whose climb row is missing, as an unknown climb', async () => {
+    await insertTick({ userId: ALEX, climbUuid: 'fca-ghost-climb' });
 
     const document = `query Ghost($input: FollowingClimbAscentsInput!) {
       followingClimbAscents(input: $input) { items { climbName isNoMatch } }
     }`;
-    const { errors, answer } = await run(document, VIEWER, 'spray', 'fca-ghost-climb');
+    const { errors, answer } = await run(document, VIEWER, BOARD, 'fca-ghost-climb');
 
     expect(errors).toEqual([]);
     expect(answer).toEqual({ items: [{ climbName: 'Unknown Climb', isNoMatch: false }] });
+  });
+});
+
+describe('climbs that were deduplicated into this one', () => {
+  /** A uuid the dedup retired: an alias row, and no `board_climbs` row of its own. */
+  const RETIRED_UUID = 'fca-retired-climb';
+
+  beforeEach(async () => {
+    await db.insert(dbSchema.boardClimbAliases).values([
+      { boardType: BOARD, aliasUuid: CLIMB_UUID, canonicalUuid: CLIMB_UUID, source: 'test' },
+      { boardType: BOARD, aliasUuid: RETIRED_UUID, canonicalUuid: CLIMB_UUID, source: 'test' },
+    ]);
+  });
+
+  it('includes a log stored under a retired uuid in the rows and the counts', async () => {
+    await insertTick({ userId: ALEX, angle: 40 });
+    await insertTick({ userId: BEA, climbUuid: RETIRED_UUID, angle: 40, climbedAt: '2026-05-02T18:00:00.000Z' });
+
+    const answer = await ask(VIEWER);
+
+    expect(answer.items.map((item) => item.userId)).toEqual([BEA, ALEX]);
+    expect(answer.summary).toEqual({
+      climberCount: 2,
+      senderCount: 2,
+      byAngle: [{ angle: 40, climberCount: 2, senderCount: 2 }],
+    });
+  });
+
+  it('gives the same answer when asked with the retired uuid', async () => {
+    await insertTick({ userId: ALEX });
+    await insertTick({ userId: BEA, climbUuid: RETIRED_UUID, climbedAt: '2026-05-02T18:00:00.000Z' });
+
+    expect(await ask(VIEWER, BOARD, RETIRED_UUID)).toEqual(await ask(VIEWER));
+  });
+
+  it('names a retired-uuid log after the climb it was merged into', async () => {
+    await insertTick({ userId: BEA, climbUuid: RETIRED_UUID });
+
+    const document = `query Merged($input: FollowingClimbAscentsInput!) {
+      followingClimbAscents(input: $input) { items { climbUuid climbName } }
+    }`;
+    const { errors, answer } = await run(document, VIEWER, BOARD, CLIMB_UUID);
+
+    expect(errors).toEqual([]);
+    expect(answer).toEqual({ items: [{ climbUuid: RETIRED_UUID, climbName: CLIMB_NAME }] });
+  });
+
+  it('does not follow an alias recorded for another board type', async () => {
+    await db
+      .insert(dbSchema.boardClimbAliases)
+      .values({ boardType: 'tension', aliasUuid: 'fca-other-board-alias', canonicalUuid: CLIMB_UUID, source: 'test' });
+    await insertTick({ userId: ALEX, climbUuid: 'fca-other-board-alias' });
+
+    expect(await ask(VIEWER)).toEqual(EMPTY_ANSWER);
   });
 });
 

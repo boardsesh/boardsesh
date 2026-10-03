@@ -1,6 +1,11 @@
 import { eq, sql, type SQL } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
-import { notAuroraTwinDuplicate, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
+import {
+  notAuroraTwinDuplicate,
+  resolveCanonicalClimbUuid,
+  sprayReferenceVisibilityCondition,
+} from '@boardsesh/db/queries';
+import { db } from '../../../db/client';
 import { effectiveQualityExpr } from '../shared/sql-expressions';
 
 /**
@@ -8,49 +13,112 @@ import { effectiveQualityExpr } from '../shared/sql-expressions';
  * today, the public per-climb logs resolver next (#5968). One home, so a second
  * reader imports these rather than writing its own copy.
  *
- * Two things to know before changing anything here:
+ * Three things to know before changing anything here:
  *
- * 1. The spray-wall privacy predicate lives in the CONDITIONS array, not in a
+ * 1. The spray-wall privacy predicates live in the CONDITIONS array, not in a
  *    resolver. A list query and a count query that both spread the same array
- *    cannot disagree, and a count without the predicate would tell a stranger
+ *    cannot disagree, and a count without the predicates would tell a stranger
  *    that people log on a private wall.
  *
- * 2. The predicate is the REFERENCE form (`sprayReferenceVisibilityCondition`):
- *    "there is no invisible spray climb behind this tick". It keeps a spray tick
- *    whose `board_climbs` row is missing. That is safe only because deleting a
- *    wall is a soft delete that keeps its catalogue rows and climbs
- *    (docs/spray-walls.md, "Deleting a wall is a soft delete"). A future hard
- *    delete of spray climbs turns this into a leak, here and in #5968's public
- *    reader: the orphaned ticks would pass the predicate for everyone.
+ * 2. Spray fails CLOSED on a missing climb row. The reference predicate
+ *    (`sprayReferenceVisibilityCondition`) only says "there is no invisible
+ *    spray climb behind this tick", so on its own it passes a spray tick whose
+ *    `board_climbs` row is gone, for every viewer. Deleting a wall is a soft
+ *    delete that keeps its climbs, but two other paths hard-delete a climb row
+ *    and leave its ticks behind: `deleteDraftClimb` and account deletion (which
+ *    removes the deleted user's drafts). A tick left on such a climb has no wall
+ *    to check, so `sprayClimbRowExists` drops it. Other board types keep the
+ *    lenient behaviour: an Aurora tick can legitimately arrive before its climb.
+ *
+ * 3. A climb is matched by its canonical uuid AND every uuid deduplicated into
+ *    it (`board_climb_aliases`). `saveTick` lands new ticks on the canonical,
+ *    but ticks written by a sync or before a dedup can still carry a retired
+ *    uuid, and without this the climber is missing from the rows and the
+ *    counts. Spray is matched on the raw uuid only: walls have no dedup
+ *    aliases, and it keeps the uuid the row matched on and the uuid the privacy
+ *    predicates check the same.
  */
 
 type TicksTable = typeof dbSchema.boardseshTicks;
 
+const SPRAY_BOARD_TYPE = 'spray';
+
 /**
- * WHERE conditions for the logs on one climb: board type, climb, Aurora's own
- * duplicate rows collapsed, and spray-wall visibility for the viewer.
+ * The uuid to hand `climbLogConditions`: the canonical uuid of whatever the
+ * caller asked for, so asking with a retired uuid and asking with the canonical
+ * give the same answer. One primary-key probe; a miss returns the input. A DB
+ * error propagates, as `resolveCanonicalClimbUuid` documents.
+ *
+ * Spray climbs are returned unchanged, see point 3 in the header.
+ */
+export async function resolveClimbLogUuid(boardType: string, climbUuid: string): Promise<string> {
+  if (boardType === SPRAY_BOARD_TYPE) return climbUuid;
+  return resolveCanonicalClimbUuid(db, boardType, climbUuid);
+}
+
+/**
+ * True for a tick on `canonicalClimbUuid` or on any uuid deduplicated into it.
+ *
+ * `= ANY(array)` over an uncorrelated subquery, not `IN (subquery)` or a join:
+ * Postgres runs the alias lookup once and then probes
+ * `boardsesh_ticks_climb_idx` with the handful of uuids it found.
+ */
+function climbUuidCondition(ticks: TicksTable, boardType: string, canonicalClimbUuid: string): SQL {
+  if (boardType === SPRAY_BOARD_TYPE) return eq(ticks.climbUuid, canonicalClimbUuid);
+  return sql`${ticks.climbUuid} = ANY(array_append(ARRAY(
+    SELECT climb_alias.alias_uuid
+    FROM board_climb_aliases climb_alias
+    WHERE climb_alias.board_type = ${boardType}
+      AND climb_alias.canonical_uuid = ${canonicalClimbUuid}
+  ), ${canonicalClimbUuid}::text))`;
+}
+
+/**
+ * True for every non-spray tick, and for a spray tick whose climb row still
+ * exists. See point 2 in the header: without a climb row there is no wall to
+ * check, so the tick is not shown to anybody through these readers.
+ */
+function sprayClimbRowExists(ticks: TicksTable): SQL {
+  return sql`(
+    ${ticks.boardType} IS DISTINCT FROM 'spray'
+    OR EXISTS (
+      SELECT 1
+      FROM board_climbs existing_climb
+      WHERE existing_climb.uuid = ${ticks.climbUuid}
+        AND existing_climb.board_type = 'spray'
+    )
+  )`;
+}
+
+/**
+ * WHERE conditions for the logs on one climb: board type, the climb and its
+ * deduplicated uuids, Aurora's own duplicate rows collapsed, and spray-wall
+ * visibility for the viewer.
  *
  * Pass `viewerUserId` as null for an anonymous caller, never a hopeful id: then
  * only public walls pass.
  *
+ * @param canonicalClimbUuid from `resolveClimbLogUuid`, not the caller's raw
+ *   input, or a request naming a retired uuid misses the canonical's ticks.
  * @param ticks the ticks table, or an alias of it, so a subquery over
  *   `alias(boardseshTicks, ...)` gets the same filters.
  */
 export function climbLogConditions({
   boardType,
-  climbUuid,
+  canonicalClimbUuid,
   viewerUserId,
   ticks = dbSchema.boardseshTicks,
 }: {
   boardType: string;
-  climbUuid: string;
+  canonicalClimbUuid: string;
   viewerUserId: string | null;
   ticks?: TicksTable;
 }): SQL[] {
   return [
     eq(ticks.boardType, boardType),
-    eq(ticks.climbUuid, climbUuid),
+    climbUuidCondition(ticks, boardType, canonicalClimbUuid),
     notAuroraTwinDuplicate(ticks),
+    sprayClimbRowExists(ticks),
     sprayReferenceVisibilityCondition({ boardType: ticks.boardType, climbUuid: ticks.climbUuid }, viewerUserId),
   ];
 }

@@ -619,11 +619,19 @@ from `climbLogConditions` in
 one array both its list query and its count query spread. That is deliberate: a
 count without the predicate would tell a follower that people log on a wall they
 cannot see. A climb on a hidden wall answers exactly like a climb nobody has
-logged (empty list, zero counts, no error). Because this is the reference form,
-a spray tick whose `board_climbs` row is missing is returned; that is safe only
-while deleting a wall stays a soft delete that keeps its climbs (the retention
-section says it always will be). Any new per-climb log reader imports `climbLogConditions` rather
-than writing its own.
+logged (empty list, zero counts, no error).
+
+The reference form alone is not enough there. It passes a spray tick whose
+`board_climbs` row is missing, for every viewer, and a climb row does go missing:
+deleting a wall is a soft delete that keeps its climbs, but `deleteDraftClimb`
+and account deletion (which removes the deleted user's drafts) hard-delete the
+climb and leave its ticks. With no climb there is no wall to check, so
+`climbLogConditions` adds a second condition that fails closed: a spray tick is
+returned only when its climb row still exists. Other board types keep the lenient
+behaviour, because an Aurora tick can arrive before its climb. The other readers
+in the table above still use the reference form on its own and have not been
+audited for this case. Any new per-climb log reader imports `climbLogConditions`
+rather than writing its own.
 
 Pick by what the query HAS, not by taste:
 
