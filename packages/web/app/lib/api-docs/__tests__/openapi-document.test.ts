@@ -90,6 +90,7 @@ describe('generated OpenAPI document', () => {
     expect(paths.length).toBeGreaterThan(10);
     expect(paths).toContain('/api/internal/ws-auth');
     expect(paths).not.toContain('/api/internal/profile');
+    expect(paths).not.toContain('/api/internal/profile/{userId}');
   });
 
   it('never advertises an operation whose route file does not export that verb', () => {

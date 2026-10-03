@@ -34,7 +34,6 @@ const KEPT_PATHS = [
   'app/components/account/controllers-section.tsx',
   'app/components/account/set-password-section.tsx',
   'app/api/internal/controllers/route.ts',
-  'app/api/internal/profile/route.ts',
   'app/components/board-entity/board-credential-card.tsx',
   'app/components/board-entity/board-credential-card.module.css',
   'app/components/board-entity/board-import-prompt.tsx',
