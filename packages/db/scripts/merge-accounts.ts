@@ -128,6 +128,13 @@ const PLAIN_REPOINTS: Array<{ table: string; column: string }> = [
   // blank when the loser is deleted.
   { table: 'app_feedback', column: 'resolved_by' },
   { table: 'gym_merge_audit', column: 'performed_by' },
+  // Editor / review / moderation attribution is audit history, not owned state.
+  { table: 'hold_outline_overrides', column: 'author_id' },
+  { table: 'qa_verdicts', column: 'user_id' },
+  { table: 'spray_wall_detections', column: 'requested_by' },
+  { table: 'spray_wall_reports', column: 'reviewed_by' },
+  { table: 'spray_wall_versions', column: 'created_by' },
+  { table: 'spray_walls', column: 'hidden_by' },
 ];
 
 /**
@@ -172,9 +179,19 @@ const DEDUPE_REPOINTS: Array<{
   },
   { table: 'new_climb_subscriptions', column: 'user_id', otherCols: ['board_type', 'layout_id'] },
   { table: 'user_board_serials', column: 'user_id', otherCols: ['serial_number'] },
+  // One row per viewer and board. The collision merge below retains the
+  // canonical account's pin choice while combining board-open recency.
+  { table: 'user_board_activity', column: 'user_id', otherCols: ['board_uuid'] },
+  // One report per wall and reporter. Keep the winner's report on collision;
+  // distinct reports move to the canonical account.
+  { table: 'spray_wall_reports', column: 'reporter_id', otherCols: ['wall_id'] },
   // user-scoped unique only — the aurora_id/kilter_id partial uniques are global,
   // so a given surrogate exists on at most one rating and can never collide here.
   { table: 'board_climb_ratings', column: 'user_id', otherCols: ['board_type', 'climb_uuid', 'angle'] },
+  // Quarantined Aurora rows are replayable user data, not derived state. Move
+  // distinct rows and merge same-upstream-row collisions below so the newest
+  // payload and retry history survive account collapse.
+  { table: 'logbook_sync_skips', column: 'user_id', otherCols: ['board_type', 'aurora_type', 'aurora_id'] },
   // Partial unique (gym_id, claimant_user_id) WHERE status = 'pending' — only two
   // pending claims on the same gym collide; historical (approved/denied) claims
   // always move so the merged account keeps the full claim history.
@@ -190,6 +207,7 @@ const DEDUPE_REPOINTS: Array<{
 // (not in the two arrays above). Listed here so the FK-completeness guard knows
 // they're handled.
 const SPECIAL_REPOINT_COLUMNS: Array<{ table: string; column: string }> = [
+  { table: 'provider_sync_controls', column: 'user_id' },
   { table: 'boardsesh_ticks', column: 'user_id' },
   { table: 'user_boards', column: 'owner_id' },
   { table: 'votes', column: 'user_id' },
@@ -455,6 +473,56 @@ async function mergeLoserIntoWinner(commandDb: ExecuteDb, winnerId: string, lose
     );
   }
 
+  // A control row is scoped to one account's credential link generation. The
+  // losing account's queued/running jobs still carry its id, so invalidate those
+  // run references when controls move. Keep a control linked exactly when one
+  // of the two accounts has the credential that will survive the dedupe below.
+  await execute(
+    commandDb,
+    sql`
+      UPDATE provider_sync_controls AS winner_row
+         SET link_generation = gen_random_uuid(),
+             linked = EXISTS (
+               SELECT 1 FROM aurora_credentials AS credential
+                WHERE credential.user_id IN (${winnerId}, ${loserId})
+                  AND credential.board_type = winner_row.board_type
+             ),
+             pending_run_id = NULL,
+             notify_requester = false,
+             active_run_id = NULL,
+             active_lease_until = NULL,
+             updated_at = now()
+        FROM provider_sync_controls AS loser_row
+       WHERE winner_row.user_id = ${winnerId}
+         AND loser_row.user_id = ${loserId}
+         AND winner_row.board_type = loser_row.board_type
+    `,
+  );
+  await execute(
+    commandDb,
+    sql`
+      UPDATE provider_sync_controls AS target
+         SET user_id = ${winnerId},
+             link_generation = gen_random_uuid(),
+             linked = EXISTS (
+               SELECT 1 FROM aurora_credentials AS credential
+                WHERE credential.user_id IN (${winnerId}, ${loserId})
+                  AND credential.board_type = target.board_type
+             ),
+             pending_run_id = NULL,
+             notify_requester = false,
+             active_run_id = NULL,
+             active_lease_until = NULL,
+             updated_at = now()
+       WHERE target.user_id = ${loserId}
+         AND NOT EXISTS (
+           SELECT 1 FROM provider_sync_controls AS winner_row
+            WHERE winner_row.user_id = ${winnerId}
+              AND winner_row.board_type = target.board_type
+         )
+    `,
+  );
+
   for (const { table, column, otherCols, collisionPredicate } of DEDUPE_REPOINTS) {
     const matchParts = otherCols.map((otherCol) =>
       sql.raw(`winner_row.${otherCol} IS NOT DISTINCT FROM target.${otherCol}`),
@@ -477,6 +545,66 @@ async function mergeLoserIntoWinner(commandDb: ExecuteDb, winnerId: string, lose
       `,
     );
   }
+
+  // For a board opened on both accounts, retain the latest use time while the
+  // canonical account's pin/unpin choice remains authoritative. Non-colliding
+  // activity rows have already moved in the generic dedupe pass.
+  await execute(
+    commandDb,
+    sql`
+      UPDATE user_board_activity AS winner_row
+         SET last_used_at = GREATEST(winner_row.last_used_at, loser_row.last_used_at),
+             created_at = LEAST(winner_row.created_at, loser_row.created_at),
+             updated_at = GREATEST(winner_row.updated_at, loser_row.updated_at)
+        FROM user_board_activity AS loser_row
+       WHERE winner_row.user_id = ${winnerId}
+         AND loser_row.user_id = ${loserId}
+         AND winner_row.board_uuid = loser_row.board_uuid
+    `,
+  );
+
+  // A quarantined upstream row can exist under both duplicate accounts. Keep
+  // one winner row, combine its retry history, and prefer the most recently
+  // observed failure details/payload before deleting the duplicate loser row.
+  await execute(
+    commandDb,
+    sql`
+      UPDATE logbook_sync_skips AS winner_row
+         SET reason = CASE
+               WHEN loser_row.last_seen_at >= winner_row.last_seen_at THEN loser_row.reason
+               ELSE winner_row.reason
+             END,
+             detail = CASE
+               WHEN loser_row.last_seen_at >= winner_row.last_seen_at THEN COALESCE(loser_row.detail, winner_row.detail)
+               ELSE winner_row.detail
+             END,
+             payload = CASE
+               WHEN loser_row.last_seen_at >= winner_row.last_seen_at THEN COALESCE(loser_row.payload, winner_row.payload)
+               ELSE winner_row.payload
+             END,
+             first_seen_at = LEAST(winner_row.first_seen_at, loser_row.first_seen_at),
+             last_seen_at = GREATEST(winner_row.last_seen_at, loser_row.last_seen_at),
+             seen_count = winner_row.seen_count + loser_row.seen_count
+        FROM logbook_sync_skips AS loser_row
+       WHERE winner_row.user_id = ${winnerId}
+         AND loser_row.user_id = ${loserId}
+         AND winner_row.board_type = loser_row.board_type
+         AND winner_row.aurora_type = loser_row.aurora_type
+         AND winner_row.aurora_id = loser_row.aurora_id
+    `,
+  );
+  await execute(
+    commandDb,
+    sql`
+      DELETE FROM logbook_sync_skips AS loser_row
+       USING logbook_sync_skips AS winner_row
+       WHERE loser_row.user_id = ${loserId}
+         AND winner_row.user_id = ${winnerId}
+         AND winner_row.board_type = loser_row.board_type
+         AND winner_row.aurora_type = loser_row.aurora_type
+         AND winner_row.aurora_id = loser_row.aurora_id
+    `,
+  );
 
   // boardsesh_ticks: aurora_id/kilter_id are globally unique, so a loser tick
   // can never share one with a winner tick under the current schema — this

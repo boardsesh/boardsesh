@@ -100,6 +100,8 @@ void describe('merge-accounts apply path', () => {
           const loserId = `${tag}-loser`;
           const thirdId = `${tag}-third`;
           const gymUuid = `${tag}-gym`;
+          const activityBoardUuid = `${tag}-activity-board`;
+          const activityOnlyBoardUuid = `${tag}-activity-only-board`;
           const climbA = `${tag}-climb-a`;
           const climbB = `${tag}-climb-b`;
 
@@ -110,6 +112,20 @@ void describe('merge-accounts apply path', () => {
               (${winnerId}, ${`${tag.toUpperCase()}@Example.test`}, 'Winner', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
               (${loserId}, ${lowerEmail}, 'Loser', NULL, '2026-02-01T00:00:00Z', '2026-03-01T00:00:00Z'),
               (${thirdId}, ${`third-${tag}@example.test`}, 'Third', NULL, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+          `);
+
+          await tx.execute(sql`
+            INSERT INTO user_boards (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name)
+            VALUES
+              (${activityBoardUuid}, ${`${tag}-activity`}, ${thirdId}, 'kilter', 99101, 99101, '', 'Activity fixture'),
+              (${activityOnlyBoardUuid}, ${`${tag}-activity-only`}, ${thirdId}, 'kilter', 99102, 99102, '', 'Activity-only fixture')
+          `);
+          await tx.execute(sql`
+            INSERT INTO user_board_activity (user_id, board_uuid, last_used_at, pinned_at, created_at, updated_at)
+            VALUES
+              (${winnerId}, ${activityBoardUuid}, '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z'),
+              (${loserId}, ${activityBoardUuid}, '2026-02-01T00:00:00Z', NULL, '2026-01-03T00:00:00Z', '2026-02-01T00:00:00Z'),
+              (${loserId}, ${activityOnlyBoardUuid}, '2026-02-02T00:00:00Z', NULL, '2026-02-02T00:00:00Z', '2026-02-02T00:00:00Z')
           `);
 
           // Winner has more ticks → wins selection. Loser ticks (one with an
@@ -183,6 +199,60 @@ void describe('merge-accounts apply path', () => {
           await tx.execute(sql`
             INSERT INTO user_board_mappings (user_id, board_type, board_user_id, board_username)
             VALUES (${loserId}, 'tension', 999001, 'loserboard')
+          `);
+
+          // Provider control generations belong to the old account id. When
+          // its credential survives, the merged control must be live but must
+          // not retain a lease or queued job from either pre-merge account.
+          await tx.execute(sql`
+            INSERT INTO aurora_credentials (user_id, board_type, encrypted_username, encrypted_password)
+            VALUES (${loserId}, 'kilter', 'fixture-user', 'fixture-secret')
+          `);
+          await tx.execute(sql`
+            INSERT INTO provider_sync_controls (
+              user_id, board_type, link_generation, linked, pending_run_id,
+              notify_requester, active_run_id, active_lease_until
+            )
+            VALUES
+              (${winnerId}, 'kilter', '10000000-0000-4000-8000-000000000001', false,
+                '10000000-0000-4000-8000-000000000003', true,
+                '10000000-0000-4000-8000-000000000005', '2026-04-01T00:00:00Z'),
+              (${loserId}, 'kilter', '10000000-0000-4000-8000-000000000002', true,
+                '10000000-0000-4000-8000-000000000004', true,
+                '10000000-0000-4000-8000-000000000006', '2026-04-01T00:00:00Z'),
+              (${loserId}, 'tension', '10000000-0000-4000-8000-000000000007', false,
+                NULL, false, NULL, NULL)
+          `);
+
+          // Quarantined Aurora rows are durable replay data. Preserve a unique
+          // loser row, and merge a same-key collision without dropping its
+          // newer payload or retry history.
+          const collisionAuroraId = `${tag}-skip-collision`;
+          const uniqueAuroraId = `${tag}-skip-unique`;
+          await tx.execute(sql`
+            INSERT INTO logbook_sync_skips (
+              user_id, board_type, aurora_type, aurora_id, reason, detail, payload,
+              first_seen_at, last_seen_at, seen_count
+            )
+            VALUES
+              (
+                ${winnerId}, 'kilter', 'ascents'::aurora_table_type, ${collisionAuroraId},
+                'db_write_rejected'::logbook_sync_skip_reason, 'winner detail',
+                ${JSON.stringify({ source: 'winner' })}::jsonb,
+                '2026-01-01T00:00:00Z', '2026-03-01T00:00:00Z', 2
+              ),
+              (
+                ${loserId}, 'kilter', 'ascents'::aurora_table_type, ${collisionAuroraId},
+                'normalize_failed'::logbook_sync_skip_reason, 'loser latest detail',
+                ${JSON.stringify({ source: 'loser-latest' })}::jsonb,
+                '2026-02-01T00:00:00Z', '2026-04-01T00:00:00Z', 3
+              ),
+              (
+                ${loserId}, 'tension', 'bids'::aurora_table_type, ${uniqueAuroraId},
+                'invalid_identity'::logbook_sync_skip_reason, 'unique loser detail',
+                ${JSON.stringify({ source: 'unique-loser' })}::jsonb,
+                '2026-02-01T00:00:00Z', '2026-02-02T00:00:00Z', 4
+              )
           `);
 
           // Gym ownership claims (partial unique WHERE status='pending'): winner
@@ -347,6 +417,124 @@ void describe('merge-accounts apply path', () => {
             ),
             1,
             'loser Tension board link moved to winner',
+          );
+
+          const [mergedActivity] = await executeRows<{ lastUsedAt: string; pinnedAt: string }>(
+            tx,
+            sql`
+              SELECT last_used_at::timestamptz::text AS "lastUsedAt",
+                     pinned_at::timestamptz::text AS "pinnedAt"
+                FROM user_board_activity
+               WHERE user_id = ${winnerId} AND board_uuid = ${activityBoardUuid}
+            `,
+          );
+          assert.equal(
+            new Date(mergedActivity?.lastUsedAt ?? '').toISOString(),
+            '2026-02-01T00:00:00.000Z',
+            'colliding board activity keeps the latest open time',
+          );
+          assert.equal(
+            new Date(mergedActivity?.pinnedAt ?? '').toISOString(),
+            '2026-01-02T00:00:00.000Z',
+            'the canonical account pin choice remains authoritative',
+          );
+          assert.equal(
+            await countRows(
+              tx,
+              sql`SELECT count(*)::int AS count FROM user_board_activity WHERE user_id = ${winnerId} AND board_uuid = ${activityOnlyBoardUuid}`,
+            ),
+            1,
+            'non-colliding loser board activity moves to the winner',
+          );
+
+          const providerControls = await executeRows<{
+            boardType: string;
+            linkGeneration: string;
+            linked: boolean;
+            pendingRunId: string | null;
+            notifyRequester: boolean;
+            activeRunId: string | null;
+            activeLeaseUntil: string | null;
+          }>(
+            tx,
+            sql`
+              SELECT board_type AS "boardType", link_generation::text AS "linkGeneration", linked,
+                     pending_run_id::text AS "pendingRunId", notify_requester AS "notifyRequester",
+                     active_run_id::text AS "activeRunId", active_lease_until::text AS "activeLeaseUntil"
+                FROM provider_sync_controls
+               WHERE user_id = ${winnerId}
+               ORDER BY board_type
+            `,
+          );
+          const mergedKilterControl = providerControls.find((control) => control.boardType === 'kilter');
+          assert.equal(mergedKilterControl?.linked, true, 'a surviving loser credential keeps its control live');
+          assert.notEqual(
+            mergedKilterControl?.linkGeneration,
+            '10000000-0000-4000-8000-000000000001',
+            'account merge rotates the provider link fence',
+          );
+          assert.equal(mergedKilterControl?.pendingRunId, null, 'old pending jobs are cleared');
+          assert.equal(mergedKilterControl?.notifyRequester, false, 'old run notifications are cleared');
+          assert.equal(mergedKilterControl?.activeRunId, null, 'old active jobs are cleared');
+          assert.equal(mergedKilterControl?.activeLeaseUntil, null, 'old credential leases are cleared');
+          const movedTensionControl = providerControls.find((control) => control.boardType === 'tension');
+          assert.equal(
+            movedTensionControl?.linked,
+            false,
+            'a control without either account credential stays unlinked',
+          );
+          assert.notEqual(
+            movedTensionControl?.linkGeneration,
+            '10000000-0000-4000-8000-000000000007',
+            'a moved control also gets a fresh link fence',
+          );
+          assert.equal(
+            await countRows(
+              tx,
+              sql`SELECT count(*)::int AS count FROM provider_sync_controls WHERE user_id = ${loserId}`,
+            ),
+            0,
+            'provider controls no longer reference the losing account',
+          );
+
+          const [mergedSkip] = await executeRows<{
+            reason: string;
+            detail: string | null;
+            payload: string | null;
+            firstSeenAt: string;
+            lastSeenAt: string;
+            seenCount: number | string;
+          }>(
+            tx,
+            sql`
+              SELECT reason, detail, payload::text AS payload,
+                     first_seen_at::text AS "firstSeenAt", last_seen_at::text AS "lastSeenAt",
+                     seen_count::int AS "seenCount"
+                FROM logbook_sync_skips
+               WHERE user_id = ${winnerId}
+                 AND board_type = 'kilter'
+                 AND aurora_type = 'ascents'::aurora_table_type
+                 AND aurora_id = ${collisionAuroraId}
+            `,
+          );
+          assert.equal(mergedSkip?.reason, 'normalize_failed');
+          assert.equal(mergedSkip?.detail, 'loser latest detail');
+          assert.deepEqual(JSON.parse(mergedSkip?.payload ?? 'null'), { source: 'loser-latest' });
+          assert.equal(new Date(mergedSkip?.firstSeenAt ?? '').toISOString(), '2026-01-01T00:00:00.000Z');
+          assert.equal(new Date(mergedSkip?.lastSeenAt ?? '').toISOString(), '2026-04-01T00:00:00.000Z');
+          assert.equal(Number(mergedSkip?.seenCount), 5, 'collision retry counts are combined');
+          assert.equal(
+            await countRows(tx, sql`SELECT count(*)::int AS count FROM logbook_sync_skips WHERE user_id = ${winnerId}`),
+            2,
+            'both the merged collision and unique quarantined row remain replayable',
+          );
+          assert.equal(
+            await countRows(
+              tx,
+              sql`SELECT count(*)::int AS count FROM logbook_sync_skips WHERE user_id = ${winnerId} AND aurora_id = ${uniqueAuroraId}`,
+            ),
+            1,
+            'unique loser quarantine row moved to winner',
           );
 
           assert.equal(

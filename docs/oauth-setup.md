@@ -313,6 +313,14 @@ vp dlx ngrok http 3000
 
 Email verification is required for email/password accounts. OAuth accounts are pre-verified by the provider.
 
+Password and verification links are bound to the account selected when the
+email is sent. This matters while older accounts with the same address in
+different letter casing are being consolidated: credentials sign-in checks the
+password-authenticated account itself, and a current link cannot verify or reset
+a same-address twin. Older email-only links remain usable only when their
+normalized address resolves to exactly one account; ambiguous links fail closed
+and the person can request a fresh link after the accounts are consolidated.
+
 ### Fastmail Setup (Recommended)
 
 1. Log in to [Fastmail](https://www.fastmail.com/)
