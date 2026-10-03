@@ -314,8 +314,8 @@ describe('runMigrations', () => {
     await runMigrations(freshDb);
     await assertHoldsSchema(freshDb);
 
-    // Existing install stamped at v9: only the pending v10 migration applies,
-    // and the catalog rows already on disk are untouched.
+    // Existing install stamped at v9: v10 rebuilds the holds index and the
+    // subsequent v11 favorites migration applies; catalog rows stay untouched.
     const upgradedDb = createTestDatabase();
     await runMigrations(upgradedDb);
     await upgradedDb.execAsync(
@@ -332,7 +332,7 @@ describe('runMigrations', () => {
     });
     expect(
       (await upgradedDb.getFirstAsync<{ version: number }>('SELECT version FROM schema_version WHERE id = 1'))?.version,
-    ).toBe(10);
+    ).toBe(LATEST_SCHEMA_VERSION);
   });
 
   it('v11 re-keys favorites on v10 installs without dropping unrelated offline state', async () => {
@@ -385,7 +385,9 @@ describe('runMigrations', () => {
     expect(await tableColumns(database, 'user_favorites')).toEqual(
       expect.arrayContaining(['board_name', 'angle', 'user_id', 'created_at', 'updated_at']),
     );
-    expect(await database.getFirstAsync("SELECT key FROM sync_meta WHERE key = 'checkpoint:user_favorites'")).toBeNull();
+    expect(
+      await database.getFirstAsync("SELECT key FROM sync_meta WHERE key = 'checkpoint:user_favorites'"),
+    ).toBeNull();
     expect(await database.getFirstAsync("SELECT key FROM sync_meta WHERE key = 'checkpoint:boardsesh_ticks'")).toEqual({
       key: 'checkpoint:boardsesh_ticks',
     });
@@ -395,19 +397,23 @@ describe('runMigrations', () => {
     expect(
       await database.getFirstAsync("SELECT missing_hold_count FROM board_climbs WHERE uuid = 'kept-climb'"),
     ).toEqual({ missing_hold_count: 2 });
-    expect(await database.getFirstAsync("SELECT name FROM spray_walls WHERE layout_id = 991")).toEqual({
+    expect(await database.getFirstAsync('SELECT name FROM spray_walls WHERE layout_id = 991')).toEqual({
       name: 'kept wall',
     });
-    expect(await database.getFirstAsync("SELECT uuid FROM holds_index_climbs WHERE id = 41")).toEqual({
+    expect(await database.getFirstAsync('SELECT uuid FROM holds_index_climbs WHERE id = 41')).toEqual({
       uuid: 'kept-climb',
     });
     expect(await database.getFirstAsync('SELECT climb_id FROM board_climb_hold_sets WHERE climb_id = 41')).toEqual({
       climb_id: 41,
     });
     expect(
-      await database.getFirstAsync("SELECT hold_id FROM board_climb_hold_postings WHERE layout_id = 1 AND hold_id = 12"),
+      await database.getFirstAsync(
+        'SELECT hold_id FROM board_climb_hold_postings WHERE layout_id = 1 AND hold_id = 12',
+      ),
     ).toEqual({ hold_id: 12 });
-    expect(await database.getFirstAsync("SELECT status FROM pending_mutations WHERE idempotency_key = 'keep-dead-letter'")).toEqual({
+    expect(
+      await database.getFirstAsync("SELECT status FROM pending_mutations WHERE idempotency_key = 'keep-dead-letter'"),
+    ).toEqual({
       status: 'dead_letter',
     });
     expect(

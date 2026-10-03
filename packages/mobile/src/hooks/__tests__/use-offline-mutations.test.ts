@@ -429,7 +429,7 @@ describe('addFavoriteLocal', () => {
   });
 
   it('announces the queued write so the banner count can move', async () => {
-    await addFavoriteLocal(db, { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 });
+    await addFavoriteLocal(db, { climbUuid: 'climb-9' });
 
     expect(notifyOutboxChangedMock).toHaveBeenCalledTimes(1);
   });
