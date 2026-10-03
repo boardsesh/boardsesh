@@ -1038,6 +1038,34 @@ describe('applyLogs — PR4 offset inference + edit guard', () => {
     expect(recomputedKeys()).toEqual([{ climbUuid: 'climb-1', angle: 40 }]);
   });
 
+  it('defers Kilter send absorption after a clean board-attribution move refreshes its marker', async () => {
+    const repairedAt = new Date(Date.now() - 60_000).toISOString();
+    const { tx, calls } = createTx({
+      selectResults: [
+        [
+          existingKilterTick({
+            origin: 'native',
+            updatedAt: repairedAt,
+            kilterSyncedAt: repairedAt,
+          }),
+        ],
+      ],
+    });
+    const op = makeLogPutOp({
+      log_uuid: 'log-A',
+      climb_uuid: 'climb-1',
+      angle: 40,
+      created_at: '2026-05-01T12:00:00.000Z',
+      topped: 1,
+      flashed: 0,
+    });
+
+    await applyLogs(tx as unknown as TxArg, 'user-1', [op], aliasCacheFor(['climb-1']), logSpy);
+
+    expect(calls.filter((call) => call.kind === 'execute')).toHaveLength(0);
+    expect(recomputedKeys()).toEqual([]);
+  });
+
   it('recomputes only the key the UPDATE actually wrote, not a skipped locally-edited log', async () => {
     // log-A changed upstream and is written; log-B is locally edited since its
     // last Kilter sync, so its stale snapshot is skipped and its key is left alone.
@@ -1094,6 +1122,39 @@ describe('applyLogs — PR4 offset inference + edit guard', () => {
     // priorKey SELECT + bulk UPDATE.
     expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(2);
     expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(0);
+  });
+
+  it('accepts a later Kilter edit after a board-attribution redelivery kept the row clean', async () => {
+    // The repair advances updated_at and kilter_synced_at together for a clean
+    // row. Exercise the real Kilter writer with that resulting classification:
+    // a later upstream payload change must still pass the edit-clobber guard.
+    const repairedAt = '2026-05-03T00:00:00.000Z';
+    const { tx, calls } = createTx({
+      selectResults: [
+        [
+          existingKilterTick({
+            updatedAt: repairedAt,
+            kilterSyncedAt: repairedAt,
+            status: 'attempt',
+            kilterType: 'attempts',
+          }),
+        ],
+      ],
+    });
+
+    const op = makeLogPutOp({
+      log_uuid: 'log-A',
+      climb_uuid: 'climb-1',
+      angle: 40,
+      created_at: '2026-05-01T12:00:00.000Z',
+      topped: 1,
+      flashed: 0,
+    });
+
+    await applyLogs(tx as unknown as TxArg, 'user-1', [op], aliasCacheFor(['climb-1']), logSpy);
+
+    expect(calls.filter((call) => call.kind === 'execute')).toHaveLength(2);
+    expect(calls.filter((call) => call.kind === 'insert')).toHaveLength(0);
   });
 });
 
