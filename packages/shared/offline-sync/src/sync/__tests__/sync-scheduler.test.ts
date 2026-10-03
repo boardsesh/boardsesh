@@ -628,7 +628,7 @@ describe('sync-scheduler', () => {
     expect(mockPullSync).toHaveBeenCalledTimes(1);
   });
 
-  it('hands an in-flight cycle off to a replacement scheduler with its new snapshot source', async () => {
+  it('hands an in-flight cycle off to a replacement scheduler with its new database and snapshot source', async () => {
     const oldPull = deferred();
     mockPullSync.mockImplementationOnce(() => oldPull.promise).mockResolvedValue(undefined);
     const oldTriggers = createFakeTriggers();
@@ -650,8 +650,9 @@ describe('sync-scheduler', () => {
 
     stopOld();
     const snapshotSource = { fetchManifest: vi.fn() } as never;
+    const replacementDb = {} as OfflineDatabase;
     const stopNew = startSyncScheduler(
-      mockDb,
+      replacementDb,
       queryClient,
       mockGraphqlFetch,
       () => ['tension:11:8'],
@@ -665,6 +666,7 @@ describe('sync-scheduler', () => {
     oldPull.resolve();
     await flush();
     expect(mockPullSync).toHaveBeenCalledTimes(2);
+    expect(mockPullSync.mock.calls[1]?.[0]).toBe(replacementDb);
     expect(mockPullSync.mock.calls[1]?.[3]).toEqual(
       expect.objectContaining({ enabledBoards: ['tension:11:8'], snapshotSource }),
     );

@@ -449,6 +449,34 @@ describe('installed expo-sqlite async connection lifetime', () => {
     expect(native.close.mock.contexts[1]).toBe(native.database.nativeDatabase);
   });
 
+  it('keeps a stalled close local to its wrapper', async () => {
+    const native = fixture({ pauseAt: 'finalize' });
+    const query = native.database.runAsync('INSERT INTO ticks DEFAULT VALUES');
+    await native.enteredPause;
+    const closing = native.database.closeAsync();
+    let closeSettled = false;
+    void closing.then(() => {
+      closeSettled = true;
+    });
+    await flushMicrotasks();
+
+    // A cached native connection can have multiple independently admitted wrappers.
+    // A replacement wrapper does not await the retired wrapper's close promise.
+    const replacement = native.openWrapper();
+    await replacement.execAsync('SELECT 1');
+    expect(closeSettled).toBe(false);
+    expect(native.close).not.toHaveBeenCalled();
+    await expect(native.database.execAsync('SELECT 1')).rejects.toThrow(/closing|closed/i);
+
+    native.resume();
+    await query;
+    await closing;
+    await replacement.execAsync('SELECT 2');
+    expect(native.isFreed()).toBe(false);
+    await replacement.closeAsync();
+    expect(native.isFreed()).toBe(true);
+  });
+
   it('refuses synchronous close while async cleanup is pending', async () => {
     const native = fixture({ pauseAt: 'finalize' });
     const observedQuery = native.database.runAsync('INSERT INTO ticks DEFAULT VALUES').catch((error: unknown) => error);
