@@ -473,7 +473,12 @@ describe('shouldConfirmLeave', () => {
   it('asks while a request is in flight', () => {
     expect(shouldConfirmLeave(run([{ type: 'UPLOAD_STARTED' }]))).toBe(true);
     expect(shouldConfirmLeave(run([{ type: 'DETECTION_STARTED' }]))).toBe(true);
-    expect(shouldConfirmLeave(run([{ type: 'PUBLISH_STARTED' }]))).toBe(true);
+    const publishing = run(
+      [{ type: 'REVIEW_COMMITTED', holdCount: 3 }, { type: 'LOOK_CONFIRMED' }, { type: 'PUBLISH_STARTED' }],
+      atReview(),
+    );
+    expect(publishing.publish.running).toBe(true);
+    expect(shouldConfirmLeave(publishing)).toBe(true);
   });
 
   it('asks once a draft exists, because only the editor knows what is unsaved', () => {
@@ -623,6 +628,41 @@ describe('addWallReducer — the look step', () => {
     );
     expect(state.step).toBe('done');
     expect(state.published).toBe(true);
+
+    // Without the look step's confirm, a publish cannot start at all.
+    const review = atReview();
+    expect(addWallReducer(review, { type: 'PUBLISH_STARTED' })).toBe(review);
+    const look = atLook();
+    expect(addWallReducer(look, { type: 'PUBLISH_STARTED' })).toBe(look);
+  });
+
+  it('blocks every way out while the look is saving, because its success publishes', () => {
+    const saving = addWallReducer(atLook(), { type: 'LOOK_SAVE_STARTED' });
+    expect(saving.lookSaving).toBe(true);
+    expect(isBusy(saving)).toBe(true);
+    expect(leaveDecision(saving, EDITOR_IDLE)).toBe('block');
+    expect(addWallReducer(saving, { type: 'BACK' })).toBe(saving);
+  });
+
+  it('drops a Leave answered on a dialog the save started under', () => {
+    const asked = leaveCheckpoint(atLook());
+    const saving = addWallReducer(atLook(), { type: 'LOOK_SAVE_STARTED' });
+    expect(leaveStillApplies(asked, saving, EDITOR_IDLE)).toBe(false);
+  });
+
+  it('asks the ordinary question again once a save fails, and clears the flag on confirm', () => {
+    const failed = run([{ type: 'LOOK_SAVE_STARTED' }, { type: 'LOOK_SAVE_FAILED' }], atLook());
+    expect(failed.lookSaving).toBe(false);
+    expect(leaveDecision(failed, EDITOR_IDLE)).toBe('confirm');
+
+    const confirmed = run([{ type: 'LOOK_SAVE_STARTED' }, { type: 'LOOK_CONFIRMED' }], atLook());
+    expect(confirmed.step).toBe('publish');
+    expect(confirmed.lookSaving).toBe(false);
+  });
+
+  it('ignores a save starting off the look step', () => {
+    const review = atReview();
+    expect(addWallReducer(review, { type: 'LOOK_SAVE_STARTED' })).toBe(review);
   });
 });
 

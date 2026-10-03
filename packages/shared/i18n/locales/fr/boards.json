@@ -922,11 +922,12 @@
     },
     "look": {
       "title": "Comment allumer tes prises ?",
-      "body": "Les grimpeurs qui n'ont pas choisi leur propre rendu verront ton mur comme ça. Les autres gardent le leur.",
+      "body": "Les grimpeurs verront ton mur comme ça, sauf ceux qui ont choisi d'utiliser leur propre rendu sur les murs de spray.",
       "loading": "Chargement de ton mur…",
       "unavailable": "Impossible d'afficher la photo de ton mur ici, mais tu peux quand même choisir un rendu.",
       "saving": "Enregistrement du rendu…",
-      "failed": "Impossible d'enregistrer le rendu. Réessaie."
+      "failed": "Impossible d'enregistrer le rendu. Réessaie ou publie quand même.",
+      "publishWithout": "Publier quand même"
     },
     "publish": {
       "title": "Ajoute-le à tes boards",

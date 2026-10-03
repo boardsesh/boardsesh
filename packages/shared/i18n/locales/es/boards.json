@@ -922,11 +922,12 @@
     },
     "look": {
       "title": "¿Cómo quieres que se iluminen tus presas?",
-      "body": "Quien no haya elegido un aspecto propio verá tu muro así. Quien ya lo eligió conserva el suyo.",
+      "body": "Los escaladores verán tu muro así, salvo quienes hayan elegido usar su propio aspecto en los muros de spray.",
       "loading": "Cargando tu muro…",
       "unavailable": "Aquí no se puede mostrar la foto de tu muro, pero puedes elegir el aspecto igualmente.",
       "saving": "Guardando el aspecto…",
-      "failed": "No se pudo guardar el aspecto. Inténtalo de nuevo."
+      "failed": "No se pudo guardar el aspecto. Inténtalo de nuevo o publícalo igualmente.",
+      "publishWithout": "Publicar igualmente"
     },
     "publish": {
       "title": "Añádelo a tus plafones",

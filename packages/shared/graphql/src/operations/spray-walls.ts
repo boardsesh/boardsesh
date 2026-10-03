@@ -72,9 +72,7 @@ const SPRAY_WALL_FIELDS = `
   # Only ever non-null for the OWNER — a hidden wall does not resolve for anybody
   # else — so a client can render the notice off its presence alone (SW-17).
   hiddenAt
-  # The wall's stored default look, or null. A viewer's explicit render-mode
-  # choice still wins; this only fills in for one who never picked.
-  renderSettings
+  # The wall's stored look is deliberately absent: see GET_SPRAY_WALL_LOOK.
   board {
     uuid
     slug
@@ -239,13 +237,33 @@ export const UPDATE_SPRAY_WALL = gql`
 `;
 
 /**
+ * The wall's stored default look (`{ mode, boardsesh }`), or null.
+ *
+ * Its own query rather than a field on `SPRAY_WALL_FIELDS`. The app and the
+ * backend ship on different trains, and a field the backend does not have yet
+ * fails validation for the WHOLE operation it sits in. In the shared fragment it
+ * broke creating, loading and drawing every wall at once; out here, a backend
+ * without it costs only the look, which reads as "no stored look".
+ */
+export const GET_SPRAY_WALL_LOOK = gql`
+  query GetSprayWallLook($uuid: ID!) {
+    sprayWall(uuid: $uuid) {
+      uuid
+      renderSettings
+    }
+  }
+`;
+
+/**
  * Store the wall's default look (`{ mode, boardsesh }`), or clear it with
- * `renderSettings: null`. Same edit gate as `UPDATE_SPRAY_WALL`.
+ * `renderSettings: null`. Same edit gate as `UPDATE_SPRAY_WALL`. Selects only
+ * the look, for the reason `GET_SPRAY_WALL_LOOK` gives.
  */
 export const SET_SPRAY_WALL_RENDER_SETTINGS = gql`
   mutation SetSprayWallRenderSettings($input: SetSprayWallRenderSettingsInput!) {
     setSprayWallRenderSettings(input: $input) {
-      ${SPRAY_WALL_FIELDS}
+      uuid
+      renderSettings
     }
   }
 `;

@@ -26,6 +26,7 @@ const {
   EDITING_VEIL_OPACITY,
   _resetBoardRenderSettingsForTests,
   boardFieldColorForScheme,
+  boardLookForRender,
   buildBoardRenderSignature,
   loadBoardRenderSettings,
   requestedBoardRenderMode,
@@ -289,16 +290,35 @@ describe('a board default (a spray wall’s stored look)', () => {
   };
   const classicWall = { mode: 'classic' as const, boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS };
 
-  it("is ignored when the viewer picked a mode — the viewer's whole bundle wins", () => {
+  it('wins over a mode the viewer picked, because onboarding makes nearly everyone pick one', () => {
+    // The opt-out is the caller's: a climber who chose their own look on spray
+    // walls gets no board default passed in at all.
     const viewer = settingsWith({ glowReach: 1.5 }, 'aura');
     const effective = resolveEffectiveRenderSettings(viewer, true, classicWall);
-    expect(effective.mode).toBe('aura');
-    expect(effective.boardsesh).toBe(viewer.boardsesh);
-    expect(requestedBoardRenderMode(viewer, classicWall)).toBe('aura');
+    expect(effective.mode).toBe('classic');
+    expect(effective.boardsesh).toEqual(classicWall.boardsesh);
+    expect(requestedBoardRenderMode(viewer, classicWall)).toBe('classic');
 
     const classicViewer = settingsWith({}, 'classic');
-    expect(resolveEffectiveRenderSettings(classicViewer, true, wallLook).mode).toBe('classic');
-    expect(requestedBoardRenderMode(classicViewer, wallLook)).toBe('classic');
+    const onWall = resolveEffectiveRenderSettings(classicViewer, true, wallLook);
+    expect(onWall.mode).toBe('aura');
+    expect(onWall.boardsesh.markStyle).toBe('outline');
+    expect(requestedBoardRenderMode(classicViewer, wallLook)).toBe('aura');
+  });
+
+  it('is passed for a real surface, and left out for an opt-out, a preview card and the heatmap', () => {
+    const base = { storedLook: wallLook, useOwnLook: false, hasSettingsOverride: false, hasMarkStyleOverride: false };
+    expect(boardLookForRender(base)).toBe(wallLook);
+    expect(boardLookForRender({ ...base, useOwnLook: true })).toBeNull();
+    expect(boardLookForRender({ ...base, hasSettingsOverride: true })).toBeNull();
+    expect(boardLookForRender({ ...base, hasMarkStyleOverride: true })).toBeNull();
+    expect(boardLookForRender({ ...base, storedLook: null })).toBeNull();
+  });
+
+  it("is the viewer's own look when no board default is passed (opted out, or a preview)", () => {
+    const viewer = settingsWith({ glowReach: 1.5 }, 'aura');
+    expect(resolveEffectiveRenderSettings(viewer, true, null).boardsesh).toBe(viewer.boardsesh);
+    expect(requestedBoardRenderMode(settingsWith({}, 'classic'), null)).toBe('classic');
   });
 
   it("supplies both the mode and the knobs to a viewer on 'default'", () => {

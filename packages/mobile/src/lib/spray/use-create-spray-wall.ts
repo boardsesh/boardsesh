@@ -28,6 +28,7 @@ import type {
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../graphql/client';
 import type { BoardRenderDefault } from '../board-render-settings';
+import { primeSprayWallLook } from './spray-wall-loader';
 
 /** The owner's wall list, invalidated the moment a wall becomes one. */
 export const mySprayWallsQueryKey = ['mySprayWalls'] as const;
@@ -50,7 +51,8 @@ type SprayWallWithVersionsResponse = { sprayWall: CreatedSprayWall | null };
 type CreateVersionResponse = { createSprayWallVersion: SprayWallVersion };
 type PublishResponse = { publishSprayWallVersion: SprayWallVersion };
 type UpdateWallResponse = { updateSprayWall: CreatedSprayWall };
-type SetRenderSettingsResponse = { setSprayWallRenderSettings: SprayWall };
+type SetRenderSettingsResult = Pick<SprayWall, 'uuid' | 'renderSettings'>;
+type SetRenderSettingsResponse = { setSprayWallRenderSettings: SetRenderSettingsResult };
 
 /**
  * Create the wall row, its catalogue layout and its size.
@@ -188,16 +190,26 @@ export function usePublishSprayWallVersion() {
  * publish, so the wall's first climbers already get it.
  *
  * Idempotent (the last write wins), so a retry after a lost response is safe.
- * The registry picks the stored look up on the next registration of the wall,
- * which the publish forces anyway.
+ * On success the look goes straight into the look cache and the registry, so the
+ * wall draws it now rather than after the cache's window runs out.
  */
 export function useSetSprayWallRenderSettings() {
   return useMutation({
-    mutationFn: async (input: { uuid: string; renderSettings: BoardRenderDefault }): Promise<SprayWall> => {
+    mutationFn: async ({
+      uuid,
+      renderSettings,
+    }: {
+      layoutId: number;
+      uuid: string;
+      renderSettings: BoardRenderDefault;
+    }): Promise<SetRenderSettingsResult> => {
       const response = await getHttpClient().request<SetRenderSettingsResponse>(SET_SPRAY_WALL_RENDER_SETTINGS, {
-        input,
+        input: { uuid, renderSettings },
       });
       return response.setSprayWallRenderSettings;
+    },
+    onSuccess: (_result, { layoutId, uuid, renderSettings }) => {
+      primeSprayWallLook(layoutId, uuid, renderSettings);
     },
   });
 }

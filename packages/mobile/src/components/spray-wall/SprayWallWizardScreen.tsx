@@ -697,6 +697,8 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     [candidateCount],
   );
 
+  const onLookSaveStarted = useCallback(() => dispatch({ type: 'LOOK_SAVE_STARTED' }), []);
+  const onLookSaveFailed = useCallback(() => dispatch({ type: 'LOOK_SAVE_FAILED' }), []);
   const onLookConfirmed = useCallback(() => dispatch({ type: 'LOOK_CONFIRMED' }), []);
 
   const retryDetection = useCallback(() => dispatch({ type: 'DETECTION_STARTED' }), []);
@@ -756,7 +758,14 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   // rail is a near-full-height horizontal swiper, and the wizard's vertical
   // scroll view around it would steal the swipes.
   if (state.step === 'look' && state.draft) {
-    return <SprayWallLookStep draft={state.draft} onConfirmed={onLookConfirmed} />;
+    return (
+      <SprayWallLookStep
+        draft={state.draft}
+        onSaveStarted={onLookSaveStarted}
+        onSaveFailed={onLookSaveFailed}
+        onConfirmed={onLookConfirmed}
+      />
+    );
   }
 
   const stepIndex = COUNTED_STEPS.indexOf(state.step);

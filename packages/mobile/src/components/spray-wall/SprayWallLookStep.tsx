@@ -4,15 +4,20 @@
 // this is the first moment the wall can be drawn the way its climbers will see
 // it. The creator swipes the same looks the onboarding board-look step offers,
 // each drawn on THEIR wall with some of its own holds lit, and the pick is stored
-// on the wall (`setSprayWallRenderSettings`) before it publishes. Climbers who
-// never picked a look of their own then see the wall this way; anyone who did
-// keeps theirs (`resolveEffectiveRenderSettings`).
+// on the wall (`setSprayWallRenderSettings`) before it publishes. Every climber
+// then sees the wall this way, unless they turned on "Use my look on spray
+// walls" (`boardLookForRender`).
 //
 // Mandatory, like the onboarding step it mirrors: there is no Skip, because
 // skipping would silently store nothing and the wall would draw in whatever the
 // app default happens to be — the silence a choice step exists to end. The
 // default selection (`DEFAULT_SPRAY_WALL_LOOK_OPTION_ID`) is one tap away, so the
 // step costs a climber who does not care exactly one tap.
+//
+// The one way past without a stored look is a FAILED save. The look is the only
+// thing this step adds; a backend that cannot store it yet (the app and the
+// backend ship on different trains), or a save that keeps failing, must not keep
+// a finished wall from being published.
 
 import { useCallback, useMemo, useState } from 'react';
 import { AccessibilityInfo, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
@@ -29,7 +34,6 @@ import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { hapticSelection } from '../../lib/haptics';
 import { reportError } from '../../lib/error-reporting';
-import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import { useEffectiveBoardRenderSettings } from '../../hooks/use-native-climb-render';
 import { useSyntheticSprayWallPreview } from '../../hooks/use-synthetic-spray-wall-preview';
 import {
@@ -44,11 +48,19 @@ import type { CreatedWallDraft } from './add-wall-machine';
 
 type SprayWallLookStepProps = {
   draft: CreatedWallDraft;
-  /** The look is stored on the wall. The flow moves on to publish. */
+  /**
+   * The save is in flight. The flow treats it as busy, so nothing can leave
+   * under it: a Leave answered mid-save would pop the route, then the save's
+   * success would publish the wall the climber walked away from.
+   */
+  onSaveStarted: () => void;
+  /** The save failed; the step offers a retry and "Publish anyway". */
+  onSaveFailed: () => void;
+  /** The look is stored on the wall, or the climber chose to publish without it. */
   onConfirmed: () => void;
 };
 
-export function SprayWallLookStep({ draft, onConfirmed }: SprayWallLookStepProps) {
+export function SprayWallLookStep({ draft, onSaveStarted, onSaveFailed, onConfirmed }: SprayWallLookStepProps) {
   const { t } = useTranslation('boards');
   const { t: tCommon } = useTranslation('common');
   const { systemColors, textStyles } = useTheme();
@@ -66,16 +78,12 @@ export function SprayWallLookStep({ draft, onConfirmed }: SprayWallLookStepProps
   const { status: previewStatus, preview } = useSyntheticSprayWallPreview(draft.layoutId);
   const { boardseshRendererAvailable } = useEffectiveBoardRenderSettings();
 
-  // A binary that cannot draw Aura would skeleton those cards forever, so they
-  // go (the carousel's own contract). Unanswered (`null`) keeps them: they
-  // skeleton until the probe the carousel kicks off answers.
-  const options = useMemo(
-    () =>
-      boardseshRendererAvailable === false
-        ? SPRAY_WALL_LOOK_OPTIONS.filter((option) => !option.requiresBoardseshRenderer)
-        : SPRAY_WALL_LOOK_OPTIONS,
-    [boardseshRendererAvailable],
-  );
+  // Every look stays offered even when THIS phone cannot draw Aura: the pick
+  // is stored for every climber on the wall, and one creator's binary (or a
+  // runtime fallback that latched its renderer off) must not turn it into a
+  // wall-wide Classic. Those cards show as placeholders here (the carousel's
+  // own skeleton), and the default stays the spray look.
+  const options = SPRAY_WALL_LOOK_OPTIONS;
 
   // Local until Continue: a carousel tap only moves the selection, and the one
   // write happens on the button.
@@ -84,8 +92,6 @@ export function SprayWallLookStep({ draft, onConfirmed }: SprayWallLookStepProps
     0,
     options.findIndex((option) => option.id === selectedId),
   );
-  // Clamped, not trusted: filtering the Aura cards out can leave the selection
-  // naming a card that is no longer offered.
   const selectedOption = options[selectedIndex] ?? options[0];
 
   const [railSlotHeight, setRailSlotHeight] = useState(0);
@@ -112,15 +118,33 @@ export function SprayWallLookStep({ draft, onConfirmed }: SprayWallLookStepProps
     if (!renderSettings) return;
     hapticSelection();
     setSaveError(null);
+    onSaveStarted();
     AccessibilityInfo.announceForAccessibility(t('sprayWizard.look.saving'));
     try {
-      await setRenderSettingsAsync({ uuid: draft.wallUuid, renderSettings });
+      await setRenderSettingsAsync({ layoutId: draft.layoutId, uuid: draft.wallUuid, renderSettings });
       onConfirmed();
     } catch (error) {
       reportError(error);
-      setSaveError(extractGraphqlMessage(error) ?? t('sprayWizard.look.failed'));
+      onSaveFailed();
+      // Our own words, never the server's: the likeliest failure is a backend
+      // that predates the field, whose message is schema jargon.
+      const message = t('sprayWizard.look.failed');
+      setSaveError(message);
+      // `accessibilityLiveRegion` below is Android-only; VoiceOver needs telling.
+      AccessibilityInfo.announceForAccessibility(message);
     }
-  }, [saving, selectedOption, options, setRenderSettingsAsync, draft.wallUuid, onConfirmed, t]);
+  }, [
+    saving,
+    selectedOption,
+    options,
+    setRenderSettingsAsync,
+    draft.layoutId,
+    draft.wallUuid,
+    onSaveStarted,
+    onSaveFailed,
+    onConfirmed,
+    t,
+  ]);
 
   const selectedLabel = selectedOption ? tCommon(selectedOption.labelI18nKey) : '';
 
@@ -193,6 +217,9 @@ export function SprayWallLookStep({ draft, onConfirmed }: SprayWallLookStepProps
           loading={saving}
           disabled={saving}
         />
+        {saveError ? (
+          <Button title={t('sprayWizard.look.publishWithout')} variant="text" onPress={onConfirmed} disabled={saving} />
+        ) : null}
       </View>
     </View>
   );

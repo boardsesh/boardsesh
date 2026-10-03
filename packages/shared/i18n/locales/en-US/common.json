@@ -185,6 +185,11 @@
           },
           "dismiss": "Not now",
           "dismissAccessibility": "Dismiss this suggestion"
+        },
+        "sprayWalls": {
+          "title": "Spray walls",
+          "useOwnLook": "Use my look on spray walls",
+          "footer": "Spray walls show the look their creator picked for the photo. Turn this on to see your own look there instead."
         }
       },
       "accessibility": {
