@@ -1036,6 +1036,20 @@
       "toast": "{{removed}} weg, {{added}} neu, {{climbs}} Boulder geändert"
     }
   },
+  "sprayMaintenance": {
+    "screenTitle": "Griffe bearbeiten",
+    "preparing": "Deine Wand wird geöffnet…",
+    "unavailable": "Du kannst diese Wand nicht bearbeiten.",
+    "nothingPublished": "Richte diese Wand fertig ein, bevor du ihre Griffe bearbeitest.",
+    "draftUnavailable": "Dieser Entwurf hat sich geändert. Öffne die Wand erneut, um ihre Griffe zu bearbeiten.",
+    "loadFailed": "Der Griffeditor konnte nicht geöffnet werden. Versuch es erneut.",
+    "publish": "Griffe veröffentlichen",
+    "publishing": "Deine Griffe werden veröffentlicht…",
+    "publishFailed": "Deine Griffänderungen sind gespeichert. Versuch erneut, sie zu veröffentlichen.",
+    "refreshing": "Die aktualisierte Wand wird geladen…",
+    "refreshFailed": "Deine Griffe sind veröffentlicht. Versuch erneut, die Wand zu laden.",
+    "retry": "Erneut versuchen"
+  },
   "sprayCaps": {
     "holds": "Eine Wand trägt bis zu {{max}} Griffe. Verwirf ein paar und speichere erneut.",
     "versions": "Eine Wand behält {{max}} Zurücksetzungen, und diese hat alle verbraucht.",

@@ -1,0 +1,253 @@
+// @vitest-environment jsdom
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { createElement, type ReactNode } from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PreparedSprayHoldDraft } from '../../../lib/spray/spray-hold-maintenance';
+
+const requests = vi.hoisted(() => ({
+  prepare: vi.fn(),
+  publish: vi.fn(),
+  invalidate: vi.fn(),
+  fetchRender: vi.fn(),
+  register: vi.fn(),
+}));
+const queryClient = vi.hoisted(() => ({ invalidateQueries: vi.fn() }));
+const router = vi.hoisted(() => ({ back: vi.fn(), replace: vi.fn(), canGoBack: vi.fn() }));
+const navigation = vi.hoisted(() => ({ dispatch: vi.fn() }));
+const guard = vi.hoisted(() => ({
+  enabled: false,
+  callback: null as ((event: { data: { action: { type: string } } }) => void) | null,
+  confirm: null as (() => void) | null,
+  ask: vi.fn(),
+}));
+type EditorProps = {
+  wallUuid: string;
+  layoutId: number;
+  versionId: string;
+  versionNumber: number;
+  onCommitted: () => void;
+  onDirtyChange: (dirty: boolean) => void;
+  onHandoverChange: (handingOver: boolean) => void;
+};
+const editor = vi.hoisted(() => ({ current: null as EditorProps | null }));
+
+vi.mock('react-native', () => ({
+  StyleSheet: { create: (styles: unknown) => styles },
+  View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
+}));
+vi.mock('expo-router', () => ({ useRouter: () => router, useNavigation: () => navigation }));
+vi.mock('expo-router/react-navigation', () => ({
+  usePreventRemove: (enabled: boolean, callback: NonNullable<typeof guard.callback>) => {
+    guard.enabled = enabled;
+    guard.callback = callback;
+  },
+}));
+vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => queryClient }));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('@boardsesh/graphql/operations/spray-walls', () => ({
+  CREATE_SPRAY_WALL_VERSION: 'createVersion',
+  PUBLISH_SPRAY_WALL_VERSION: 'publishVersion',
+}));
+vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: vi.fn() }) }));
+vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
+  fetchSprayWallVersions: vi.fn(),
+  mySprayWallsQueryKey: ['mySprayWalls'],
+}));
+vi.mock('../../../lib/spray/use-spray-wall-reset', () => ({
+  sprayWallWithVersionsQueryKey: (wallUuid: string) => ['sprayWallWithVersions', wallUuid],
+}));
+vi.mock('../../../lib/spray/spray-wall-loader', () => ({
+  invalidateSprayWallRenderData: requests.invalidate,
+  fetchSprayWallRenderData: requests.fetchRender,
+  registerRenderData: requests.register,
+}));
+vi.mock('../../../lib/spray/spray-hold-maintenance', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../lib/spray/spray-hold-maintenance')>();
+  return { ...original, prepareSprayHoldDraft: requests.prepare, publishSprayHoldDraft: requests.publish };
+});
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: { background: '#000' } }),
+}));
+vi.mock('../../../theme/tokens', () => ({ spacing: { 4: 16, 6: 24 } }));
+vi.mock('../../Text', () => ({
+  Text: ({ children }: { children?: ReactNode }) => createElement('span', {}, children),
+}));
+vi.mock('../../Button', () => ({
+  Button: ({ title, onPress }: { title: string; onPress?: () => void }) =>
+    createElement('button', { onClick: onPress }, title),
+}));
+vi.mock('../../ActivityIndicator', () => ({
+  ActivityIndicator: () => createElement('i', { 'data-testid': 'spinner' }),
+}));
+vi.mock('../../outline-editor/SprayHoldEditorScreen', () => ({
+  SprayHoldEditorScreen: (props: EditorProps) => {
+    editor.current = props;
+    return createElement('button', { onClick: props.onCommitted, 'data-testid': 'editor' }, 'commit holds');
+  },
+  confirmDiscardSprayEdits: (dirty: boolean, action: () => void) => {
+    if (!dirty) {
+      action();
+      return;
+    }
+    guard.ask();
+    guard.confirm = action;
+  },
+}));
+
+const { SprayWallHoldsScreen } = await import('../SprayWallHoldsScreen');
+const draft: PreparedSprayHoldDraft = {
+  wallUuid: 'wall-1',
+  layoutId: 42,
+  versionId: 'draft-2',
+  versionNumber: 2,
+  viewerCanEdit: true,
+};
+const publishedRender = { wall: { uuid: 'wall-1' }, versionNumber: 2 };
+
+function editorProps(): EditorProps {
+  if (!editor.current) throw new Error('editor not mounted');
+  return editor.current;
+}
+
+function tryRemove() {
+  const action = { type: 'GO_BACK' };
+  if (guard.enabled) guard.callback?.({ data: { action } });
+  else navigation.dispatch(action);
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  requests.prepare.mockReset().mockResolvedValue(draft);
+  requests.publish.mockReset().mockResolvedValue(undefined);
+  requests.invalidate.mockReset().mockResolvedValue(undefined);
+  requests.fetchRender.mockReset().mockResolvedValue(publishedRender);
+  requests.register.mockReset().mockReturnValue(true);
+  queryClient.invalidateQueries.mockResolvedValue(undefined);
+  router.canGoBack.mockReturnValue(true);
+  guard.enabled = false;
+  guard.callback = null;
+  guard.confirm = null;
+  editor.current = null;
+});
+
+describe('SprayWallHoldsScreen', () => {
+  it('opens the fresh prepared draft and keeps the route wall fixed across param updates', async () => {
+    const { rerender } = render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    await screen.findByTestId('editor');
+    expect(editorProps()).toMatchObject(draft);
+    rerender(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-2' }));
+    expect(editorProps()).toMatchObject(draft);
+    expect(requests.prepare).toHaveBeenCalledTimes(1);
+    expect(requests.prepare.mock.calls[0][0]).toBe('wall-1');
+  });
+
+  it('publishes after save, awaits a renderable published wall, then returns', async () => {
+    let resolveRefresh: (result: typeof publishedRender) => void = () => {};
+    requests.fetchRender.mockReturnValue(
+      new Promise<typeof publishedRender>((resolve) => {
+        resolveRefresh = resolve;
+      }),
+    );
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    fireEvent.click(await screen.findByTestId('editor'));
+    await waitFor(() => expect(requests.fetchRender).toHaveBeenCalledTimes(1));
+    expect(requests.publish).toHaveBeenCalledTimes(1);
+    expect(guard.enabled).toBe(true);
+    expect(router.back).not.toHaveBeenCalled();
+    await act(async () => resolveRefresh(publishedRender));
+    await waitFor(() => expect(router.back).toHaveBeenCalledTimes(1));
+    expect(requests.register).toHaveBeenCalledWith(42, publishedRender);
+    expect(guard.enabled).toBe(false);
+  });
+
+  it('retries a failed publish without losing the saved draft or saving again', async () => {
+    requests.publish.mockRejectedValueOnce(new Error('publish failed')).mockResolvedValueOnce(undefined);
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    fireEvent.click(await screen.findByTestId('editor'));
+    await screen.findByText('sprayMaintenance.publishFailed');
+    expect(screen.queryByTestId('editor')).toBeNull();
+    fireEvent.click(screen.getByText('sprayMaintenance.retry'));
+    await waitFor(() => expect(router.back).toHaveBeenCalledTimes(1));
+    expect(requests.publish).toHaveBeenCalledTimes(2);
+    expect(requests.publish.mock.calls.every(([prepared]) => prepared === draft)).toBe(true);
+  });
+
+  it.each([null, { wall: { uuid: 'wall-2' }, versionNumber: 2 }, { wall: { uuid: 'wall-1' }, versionNumber: 1 }])(
+    'keeps a failed published refresh retry separate from publication',
+    async (renderResponse) => {
+      requests.fetchRender.mockResolvedValueOnce(renderResponse).mockResolvedValueOnce(publishedRender);
+      render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+      fireEvent.click(await screen.findByTestId('editor'));
+      await screen.findByText('sprayMaintenance.refreshFailed');
+      fireEvent.click(screen.getByText('sprayMaintenance.retry'));
+      await waitFor(() => expect(router.back).toHaveBeenCalledTimes(1));
+      expect(requests.publish).toHaveBeenCalledTimes(1);
+      expect(requests.fetchRender).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('stays on the refresh error when the payload cannot render', async () => {
+    requests.register.mockReturnValue(false);
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    fireEvent.click(await screen.findByTestId('editor'));
+    await screen.findByText('sprayMaintenance.refreshFailed');
+    expect(router.back).not.toHaveBeenCalled();
+    expect(requests.publish).toHaveBeenCalledTimes(1);
+  });
+
+  it('guards dirty native removal and rechecks handover after confirmation', async () => {
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    await screen.findByTestId('editor');
+    act(() => editorProps().onDirtyChange(true));
+    expect(guard.enabled).toBe(true);
+    act(tryRemove);
+    expect(guard.ask).toHaveBeenCalledTimes(1);
+    expect(navigation.dispatch).not.toHaveBeenCalled();
+    act(() => editorProps().onHandoverChange(true));
+    act(() => guard.confirm?.());
+    expect(navigation.dispatch).not.toHaveBeenCalled();
+    act(() => editorProps().onHandoverChange(false));
+    act(() => guard.confirm?.());
+    expect(navigation.dispatch).toHaveBeenCalledExactlyOnceWith({ type: 'GO_BACK' });
+  });
+
+  it('blocks removal during preparation and publication without asking', async () => {
+    let resolvePreparation: (result: PreparedSprayHoldDraft) => void = () => {};
+    requests.prepare.mockReturnValue(
+      new Promise<PreparedSprayHoldDraft>((resolve) => {
+        resolvePreparation = resolve;
+      }),
+    );
+    requests.publish.mockReturnValue(new Promise<void>(() => {}));
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    act(tryRemove);
+    expect(guard.ask).not.toHaveBeenCalled();
+    expect(navigation.dispatch).not.toHaveBeenCalled();
+    await act(async () => resolvePreparation(draft));
+    fireEvent.click(await screen.findByTestId('editor'));
+    act(tryRemove);
+    expect(guard.ask).not.toHaveBeenCalled();
+    expect(navigation.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('retries a failed fresh read and can leave without deleting the draft', async () => {
+    requests.prepare.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(draft);
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    await screen.findByText('sprayMaintenance.loadFailed');
+    expect(guard.enabled).toBe(false);
+    fireEvent.click(screen.getByText('sprayMaintenance.retry'));
+    await screen.findByTestId('editor');
+    expect(requests.prepare).toHaveBeenCalledTimes(2);
+    act(tryRemove);
+    expect(navigation.dispatch).toHaveBeenCalledTimes(1);
+    expect(requests.publish).not.toHaveBeenCalled();
+  });
+
+  it('returns deep links without a previous screen to the board picker', async () => {
+    router.canGoBack.mockReturnValue(false);
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    fireEvent.click(await screen.findByTestId('editor'));
+    await waitFor(() => expect(router.replace).toHaveBeenCalledExactlyOnceWith('/boards'));
+    expect(router.back).not.toHaveBeenCalled();
+  });
+});

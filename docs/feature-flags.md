@@ -185,7 +185,7 @@ diagnostic) applies on native. The whole surface lives in three files:
   exposure `arm_forced: true`.
   `spray-walls` ships enabled by default (read through
   `useSprayWallsEnabled`, absent/unresolved = on). An explicit false disables
-  the picker tile, spray routes and reporting affordances remotely; the tester
+  the picker tile, spray routes, live maintenance and reporting affordances remotely; the tester
   override can force either choice. No enable env variable is required.
   The tester screen uses the catalog's `defaultEnabled` metadata to display
   the same effective default as the app.

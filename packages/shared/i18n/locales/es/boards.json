@@ -1036,6 +1036,20 @@
       "toast": "{{removed}} fuera, {{added}} nuevas, {{climbs}} bloques cambiados"
     }
   },
+  "sprayMaintenance": {
+    "screenTitle": "Editar presas",
+    "preparing": "Abriendo tu muro…",
+    "unavailable": "No puedes editar este muro.",
+    "nothingPublished": "Termina de configurar este muro antes de editar sus presas.",
+    "draftUnavailable": "Este borrador ha cambiado. Vuelve a abrir el muro para editar sus presas.",
+    "loadFailed": "No se ha podido abrir el editor de presas. Inténtalo de nuevo.",
+    "publish": "Publicar presas",
+    "publishing": "Publicando tus presas…",
+    "publishFailed": "Los cambios de tus presas están guardados. Intenta publicarlos de nuevo.",
+    "refreshing": "Cargando el muro actualizado…",
+    "refreshFailed": "Tus presas están publicadas. Intenta cargar el muro de nuevo.",
+    "retry": "Intentar de nuevo"
+  },
   "sprayCaps": {
     "holds": "En un muro caben hasta {{max}} presas. Descarta algunas y vuelve a guardar.",
     "versions": "Un muro guarda {{max}} reseteos, y este ya los ha gastado todos.",

@@ -44,6 +44,8 @@ import { boardLooselyMatches } from '../lib/boards/board-matches';
 import { useAuth } from './auth-provider';
 import { useReduceMotion } from '../hooks/use-reduce-motion';
 import { useSprayWall, useSprayWallLoader } from '../lib/spray/use-spray-wall';
+import { useSprayWallSheetActions } from '../lib/spray/use-spray-wall-sheet-actions';
+import { BoardShareSheet } from '../components/board-discovery/BoardShareSheet';
 import { climbToQueueItem } from '../lib/climb-to-queue-item';
 import { useActiveClimbUuid, useQueueActions, useQueueSessionControls } from './queue-provider';
 import { useDeviceLayout } from '../hooks/use-device-layout';
@@ -751,20 +753,24 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     return dismissManagedSheetAndWait(queueSheetRef.current);
   }, []);
 
+  const requestCloseBoardSheet = useCallback(() => boardSheetRef.current?.dismiss(), []);
+  const dismissBoardSheetAndWait = useCallback((): Promise<DismissAndWaitResult> => {
+    return dismissManagedSheetAndWait(boardSheetRef.current);
+  }, []);
+  const sprayWallActions = useSprayWallSheetActions(activeBoard ?? null, dismissBoardSheetAndWait);
+  const cancelPendingSprayAction = sprayWallActions.cancelPendingAction;
+
   // Board sheet: present imperatively via the ref, exactly like the queue sheet
   // and Play Drawer. gorhom's present() from a `visible`-prop effect is a silent
   // no-op in this build.
   const openBoardSheet = useCallback(() => {
+    cancelPendingSprayAction();
     track(SHARED_EVENTS.BoardSheetOpened, {
       boardId: boardPresenceBoardIdRef.current ?? undefined,
       source: 'board_pill',
     });
     boardSheetRef.current?.present();
-  }, []);
-  const requestCloseBoardSheet = useCallback(() => boardSheetRef.current?.dismiss(), []);
-  const dismissBoardSheetAndWait = useCallback((): Promise<DismissAndWaitResult> => {
-    return dismissManagedSheetAndWait(boardSheetRef.current);
-  }, []);
+  }, [cancelPendingSprayAction]);
   // Snackbar "Open": dismiss the snackbar, then open the queue sheet.
   const handleSnackbarOpen = useCallback(() => {
     dismissSnackbar();
@@ -1216,12 +1222,24 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             onClose={requestCloseBoardSheet}
             onSwitchBoard={handleSwitchBoardFromSheet}
             activeBoard={activeBoard ?? null}
+            onOpenSprayMaintenance={sprayWallActions.openMaintenance}
+            onShareSprayWall={sprayWallActions.openShare}
             onSelectGymWall={handleSelectGymWall}
             onClimbPress={handleBoardSheetClimbPress}
             onAddToQueue={handleBoardSheetAddToQueue}
             onOpenPlaylist={handleBoardSheetOpenPlaylist}
             onOpenActions={handleBoardSheetModalOpenActions}
           />
+          {sprayWallActions.shareSnapshot ? (
+            <BoardShareSheet
+              visible={sprayWallActions.shareVisible}
+              onDismiss={sprayWallActions.closeShare}
+              onFullyDismissed={sprayWallActions.clearShareSnapshot}
+              shareUrl={sprayWallActions.shareSnapshot.url}
+              wallName={sprayWallActions.shareSnapshot.wallName}
+              visibility={sprayWallActions.shareSnapshot.visibility}
+            />
+          ) : null}
           {/* Rendered after the queue/board sheets so its iOS FullWindowOverlay mounts as a
           later sibling and floats above them when a row inside those sheets is
           long-pressed (RN-screens doesn't strictly guarantee cross-overlay z-order). */}

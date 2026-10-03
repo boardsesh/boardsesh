@@ -18,6 +18,7 @@ import type { SprayWallVisibility } from '../../lib/spray/spray-share';
 type BoardShareSheetProps = {
   visible: boolean;
   onDismiss: () => void;
+  onFullyDismissed?: () => void;
   /** The wall's share URL — already built, and never null (a private wall has none). */
   shareUrl: string;
   wallName: string;
@@ -43,14 +44,21 @@ const QR_TILE_BACKGROUND = '#FFFFFF';
  * title is the important part — an unlisted link is a capability and a public
  * wall is on the open web, and those are different promises.
  */
-export function BoardShareSheet({ visible, onDismiss, shareUrl, wallName, visibility }: BoardShareSheetProps) {
+export function BoardShareSheet({
+  visible,
+  onDismiss,
+  onFullyDismissed,
+  shareUrl,
+  wallName,
+  visibility,
+}: BoardShareSheetProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const { showToast } = useToast();
   const windowInsetBottom = useWindowBottomInset();
   const sheetRef = useRef<BottomSheetMethods>(null);
 
-  const managed = useManagedSheet({ open: visible, sheetRef, onClose: onDismiss });
+  const managed = useManagedSheet({ open: visible, sheetRef, onClose: onDismiss, onFullyDismissed });
 
   // A lone '60%' makes @expo/ui's Material sheet skip the partial state and open
   // full-screen on Android; androidSafeSnapPoints adds the full detent.

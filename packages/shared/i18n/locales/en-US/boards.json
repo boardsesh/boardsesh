@@ -1036,6 +1036,20 @@
       "toast": "{{removed}} gone, {{added}} new, {{climbs}} climbs changed"
     }
   },
+  "sprayMaintenance": {
+    "screenTitle": "Edit holds",
+    "preparing": "Opening your wall…",
+    "unavailable": "You can't edit this wall.",
+    "nothingPublished": "Finish setting up this wall before editing its holds.",
+    "draftUnavailable": "This draft has changed. Reopen the wall to edit its holds.",
+    "loadFailed": "Couldn't open the hold editor. Try again.",
+    "publish": "Publish holds",
+    "publishing": "Publishing your holds…",
+    "publishFailed": "Your hold changes are saved. Try publishing again.",
+    "refreshing": "Loading the updated wall…",
+    "refreshFailed": "Your holds are published. Try loading the wall again.",
+    "retry": "Try again"
+  },
   "sprayCaps": {
     "holds": "A wall carries up to {{max}} holds. Drop a few and save again.",
     "versions": "A wall keeps {{max}} resets, and this one has used them all.",

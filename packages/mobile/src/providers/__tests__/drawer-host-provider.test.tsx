@@ -212,6 +212,7 @@ vi.mock('../../components/board-presence/BoardSheet', async () => {
 vi.mock('../../components/board-presence/UndoWallChangeSnackbar', () => ({
   UndoWallChangeSnackbar: () => createElement('div', { 'data-undo-snackbar': 'true' }),
 }));
+vi.mock('../../components/board-discovery/BoardShareSheet', () => ({ BoardShareSheet: () => null }));
 
 vi.mock('expo-router', () => ({
   router: { push: vi.fn(), navigate: vi.fn(), dismiss: vi.fn() },

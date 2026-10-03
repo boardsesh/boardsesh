@@ -1079,16 +1079,24 @@ anywhere else. It reads `canEdit` rather than `isOwned` because that is the fiel
 the spray API gates every version mutation on, so the affordance and the
 permission cannot drift.
 
-The rows are **not rendered** (`SPRAY_DETAIL_ROWS_ENABLED = false`), for two
-reasons that both have to be fixed before the flag flips (#5491):
+`SprayWallActions` renders these rows in the live `BoardSheet` list header,
+alongside sharing for public and unlisted walls. The kiosk column has no account
+actions. The Boards picker's `BoardDetailSheet` retains details, sharing and
+reporting; maintenance lives on the active wall's live sheet.
 
-1. Neither route exists yet — `/boards/spray/holds` is SW-08 and
-   `/boards/spray/reset` is SW-13 — and Expo Router sends a prefix-less miss to
-   `+not-found`, which redirects to Home. A row that lands somewhere wrong is
-   worse than no row.
-2. The hold-editor route still needs the follow-up wiring in #5491.
-   `BoardDetailSheet` is now mounted by the Boards picker for sharing and
-   reporting, independently of the dormant owner-maintenance rows.
+Both routes use `wallUuid`; restored links with `boardUuid` still work. The hold
+route rechecks edit access and resumes the wall's one open draft. With no draft,
+it creates one from the current published photo using `sourceVersionId`, without
+uploading the photograph again or changing its coordinate frame. Editing saves
+the draft, then publishes it. An uncertain response is reconciled before retry;
+refreshing a successful publication never publishes a second time. Leaving
+retains the server draft, with confirmation for unsaved changes.
+
+Maintenance navigation and sharing wait for `BoardSheet.dismissAndWait()` to
+settle. `DrawerHostProvider` owns the share snapshot and sibling share sheet, so
+the panel's normal dismissal/unmount cannot lose it. A board switch, changed
+permissions/visibility or reopening cancels a pending handoff. The share payload
+stays mounted through its own closing animation.
 
 ## Resets
 
@@ -1556,7 +1564,8 @@ Two rules, both enforced by a test in
 
 The mobile `spray-walls` flag now defaults to enabled: no env variable or
 PostHog configuration is needed to see the picker tile and spray-wall routes.
-An explicit false remains a remote off switch, and More → Feature Flags
+The additive backend `sourceVersionId` input must be deployed before the mobile
+maintenance route is released. An explicit false remains a remote off switch, and More → Feature Flags
 lets testers override either choice. Existing walls remain stored when the
 surface is disabled.
 
