@@ -3,6 +3,11 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from '@sentry/nextjs';
+import {
+  redactWebOriginEvent,
+  redactWebOriginSpan,
+  redactWebOriginLog,
+} from './app/lib/observability/web-origin-redaction';
 import { isProductionSentryEnvironment, resolveSentryEnvironment } from '@boardsesh/db/client/config';
 import {
   redactSensitiveSpanUrls,
@@ -30,10 +35,12 @@ Sentry.init({
   // Normalise postgres.js and Drizzle wrapper shapes into queryable SQLSTATE
   // tags. Production alerts can now match `postgres.error_code:53300` without
   // relying on an English message or one particular error wrapper.
-  beforeSend: tagPostgresError,
+  beforeSend: (event, hint) => redactWebOriginEvent(tagPostgresError(event, hint)),
 
   // Enable logs to be sent to Sentry
   enableLogs: true,
+  beforeSendTransaction: redactWebOriginEvent,
+  beforeSendLog: redactWebOriginLog,
 
   // Enable sending user PII (Personally Identifiable Information)
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
@@ -54,7 +61,7 @@ Sentry.init({
 
   // Keeps OAuth codes and session ids out of span URLs now that spans record
   // one per sampled request. See the constant's doc comment.
-  beforeSendSpan: redactSensitiveSpanUrls,
+  beforeSendSpan: (span) => redactWebOriginSpan(redactSensitiveSpanUrls(span)),
 
   // Next.js render internals, the tunnel's forward to Sentry, and GraphQL
   // document parsing. ~2.2M stored spans in 14 days. See the constant.

@@ -1,7 +1,8 @@
 /// <reference types="node" />
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  fetchOnce,
   FIXTURE_PATHS,
   WWW_CHECKS,
   finalVerdict,
@@ -587,5 +588,40 @@ describe('parseBaseUrl', () => {
   it('rejects a malformed --base rather than failing three retries deep', () => {
     expect(() => parseBaseUrl(['--base', 'www.boardsesh.com'])).toThrow(/not a valid URL/);
     expect(() => parseBaseUrl(['--base', 'not a url at all'])).toThrow(/not a valid URL/);
+  });
+});
+
+describe('authenticated direct-origin smoke transport', () => {
+  it('forwards the secret on same-origin redirects', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 307, headers: { location: '/destination' } }))
+      .mockResolvedValueOnce(new Response('ok'));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await fetchOnce('https://origin.up.railway.app/start', 1000, 'secret');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls[1][1].headers['X-Boardsesh-Origin-Verify']).toBe('secret');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it('never follows a cross-origin redirect carrying the secret', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 302, headers: { location: 'https://other.example/' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await expect(fetchOnce('https://origin.up.railway.app/start', 1000, 'secret')).rejects.toThrow(
+        'left the requested origin',
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it('rejects sending the secret to a public or insecure base URL', async () => {
+    await expect(fetchOnce('https://www.boardsesh.com/', 1000, 'secret')).rejects.toThrow('HTTPS Railway origin');
+    await expect(fetchOnce('http://origin.up.railway.app/', 1000, 'secret')).rejects.toThrow('HTTPS Railway origin');
   });
 });
