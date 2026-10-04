@@ -88,6 +88,7 @@ function createFixtureRepo() {
   // generation fails when one is missing, so the fixture repo carries stubs.
   writeFixtureFile(repoRoot, 'scripts/build-expo-web-export.sh', '#!/usr/bin/env bash\n');
   writeFixtureFile(repoRoot, 'scripts/lib/patch-expo-web-pwa-manifest.mjs', 'export {};\n');
+  writeFixtureFile(repoRoot, 'scripts/lib/patch-expo-web-social.mjs', 'export {};\n');
   writeFixtureFile(repoRoot, 'scripts/lib/tailscale-hostname.ts', 'export {};\n');
   writeFixtureFile(repoRoot, 'scripts/lib/design-previews.ts', 'export {};\n');
   writeFixtureFile(repoRoot, 'scripts/lib/dev-object-store.ts', 'export {};\n');

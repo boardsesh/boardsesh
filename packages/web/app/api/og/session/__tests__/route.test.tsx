@@ -47,10 +47,6 @@ vi.mock('@/app/lib/grade-colors', () => ({
   getGradeColorWithOpacity: vi.fn(() => 'rgba(0, 170, 255, 0.5)'),
 }));
 
-vi.mock('@/app/lib/board-data', () => ({
-  BOULDER_GRADES: [{ difficulty_id: 10, font_grade: 'V5' }],
-}));
-
 vi.mock('@/app/lib/seo/og', () => ({
   OG_IMAGE_WIDTH: 1200,
   OG_IMAGE_HEIGHT: 630,
@@ -135,7 +131,8 @@ describe('api/og/session route', () => {
       participantNames: ['Alex', 'Sam'],
       participantCount: 2,
       totalSends: 5,
-      gradeRows: [{ difficulty: 10, count: 3 }],
+      gradeRows: [{ difficulty: 21, count: 3 }],
+      boardType: 'kilter',
       boardLabel: 'Kilter Original 12x12',
       boardAngle: 40,
       boardPreviewPath:
@@ -158,10 +155,96 @@ describe('api/og/session route', () => {
     expect(textContent).toContain('2 climbers');
     expect(textContent).toContain('5 sends so far');
     expect(textContent).toContain('Grades climbed so far');
-    expect(textContent).toContain('V5');
+    expect(textContent).toContain('6c');
+    // The axis is anchored at V0: the lowest send (difficulty 21 → V5) gets empty
+    // floor bars for V0…V4 prepended, so the board's easiest grade (4a) shows.
+    expect(textContent).toContain('4a');
     expect(imageSources).toContain(
       'http://localhost:3000/api/internal/board-render?board_name=kilter&frames=&thumbnail=1&include_background=1&format=png',
     );
+  });
+
+  it.each([
+    ['moonboard', 21, '5a', '4a'],
+    ['tension', 21, '4a', null],
+    ['kilter', 99, null, '4a'],
+  ])('uses the supported floor for %s and difficulty %s', async (boardType, difficulty, expected, absent) => {
+    sessionRouteState.getSessionOgSummaryMock.mockResolvedValue({
+      sessionType: 'party',
+      sessionName: 'Evening session',
+      leaderName: null,
+      participantNames: [],
+      participantCount: 0,
+      totalSends: 2,
+      gradeRows: [{ difficulty, count: 2 }],
+      boardType,
+      boardLabel: boardType,
+      boardAngle: 40,
+      boardPreviewPath: null,
+      version: 'test',
+      found: true,
+    });
+    const response = await GET(makeRequest({ sessionId: 'board-session', variant: 'join' }));
+    expect(response.status).toBe(200);
+    const textContent = collectText(sessionRouteState.capturedElement);
+    if (expected) expect(textContent).toContain(expected);
+    if (absent) expect(textContent).not.toContain(absent);
+  });
+
+  it('shows only observed grades when the current private board cannot be resolved', async () => {
+    sessionRouteState.getSessionOgSummaryMock.mockResolvedValue({
+      sessionType: 'party',
+      sessionName: 'Private board session',
+      leaderName: null,
+      participantNames: ['Alex'],
+      participantCount: 1,
+      totalSends: 2,
+      gradeRows: [{ difficulty: 21, count: 2 }],
+      boardType: null,
+      boardLabel: null,
+      boardAngle: null,
+      boardPreviewPath: null,
+      version: 'private-switch',
+      found: true,
+    });
+    const response = await GET(makeRequest({ sessionId: 'private-board-session', variant: 'join' }));
+    expect(response.status).toBe(200);
+    const textContent = collectText(sessionRouteState.capturedElement);
+    expect(textContent).toContain('6c');
+    expect(textContent).toContain('2 sends so far');
+    expect(textContent).toContain('Boardsesh session');
+    expect(textContent).not.toContain('4a');
+    expect(textContent).not.toContain('5a');
+    expect(
+      collectImageSources(sessionRouteState.capturedElement).some((source) => source.includes('board-render')),
+    ).toBe(false);
+  });
+
+  it('keeps the grade floor when a session also contains an unknown difficulty', async () => {
+    sessionRouteState.getSessionOgSummaryMock.mockResolvedValue({
+      sessionType: 'party',
+      sessionName: 'Mixed grades',
+      leaderName: null,
+      participantNames: ['Alex'],
+      participantCount: 1,
+      totalSends: 5,
+      gradeRows: [
+        { difficulty: -1, count: 2 },
+        { difficulty: 21, count: 3 },
+      ],
+      boardType: 'kilter',
+      boardLabel: 'Kilter',
+      boardAngle: 40,
+      boardPreviewPath: null,
+      version: 'mixed',
+      found: true,
+    });
+    const response = await GET(makeRequest({ sessionId: 'mixed-grades', variant: 'join' }));
+    expect(response.status).toBe(200);
+    const textContent = collectText(sessionRouteState.capturedElement);
+    expect(textContent).toContain('4a');
+    expect(textContent).toContain('6c');
+    expect(textContent).toContain('5 sends so far');
   });
 
   it('returns 404 when the session summary is not found', async () => {
