@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   rejectNextFinish: false,
   rendererAvailable: true as boolean | null,
   placementId: 42,
+  routeLayout: { width: 200, height: 200 },
   geometryPending: false,
   prefetchGeometry: vi.fn(),
   overrides: [] as {
@@ -38,11 +39,39 @@ vi.mock('react-native-reanimated', async () => {
 const HOLD = { id: 42, cx: 100, cy: 100, r: 28 };
 vi.mock('react-native', async () => {
   const { createElement, useEffect } = await import('react');
-  const MockView = ({ children, onLayout }: { children?: React.ReactNode; onLayout?: (event: unknown) => void }) => {
+  const MockView = ({
+    children,
+    onLayout,
+    style,
+  }: {
+    children?: React.ReactNode;
+    onLayout?: (event: unknown) => void;
+    style?: unknown;
+  }) => {
     useEffect(() => {
-      onLayout?.({ nativeEvent: { layout: { x: 0, y: 0, width: 200, height: 200 } } });
+      onLayout?.({ nativeEvent: { layout: { x: 0, y: 0, ...state.routeLayout } } });
     }, [onLayout]);
-    return createElement('div', null, children);
+    const styles = Array.isArray(style) ? style : [style];
+    const minHeight = styles.find(
+      (entry): entry is { minHeight: string } =>
+        entry !== null && typeof entry === 'object' && 'minHeight' in entry && typeof entry.minHeight === 'string',
+    )?.minHeight;
+    const maxHeight = styles.find(
+      (entry): entry is { maxHeight: string } =>
+        entry !== null && typeof entry === 'object' && 'maxHeight' in entry && typeof entry.maxHeight === 'string',
+    )?.maxHeight;
+    const flexDirection = styles.find(
+      (entry): entry is { flexDirection: string } =>
+        entry !== null &&
+        typeof entry === 'object' &&
+        'flexDirection' in entry &&
+        typeof entry.flexDirection === 'string',
+    )?.flexDirection;
+    return createElement(
+      'div',
+      { 'data-min-height': minHeight, 'data-max-height': maxHeight, 'data-flex-direction': flexDirection },
+      children,
+    );
   };
   return {
     Platform: { OS: 'android' },
@@ -133,7 +162,7 @@ vi.mock('../EditToolbar', async () => {
     EditToolbar: (props: {
       onNextPlacement: () => void;
       onEditKindChange: (kind: 'LED_INNER') => void;
-      onDrawModeChange: (mode: 'add') => void;
+      onDrawModeChange: (mode: 'add' | 'erase') => void;
       onSave: () => void;
       onUndo: () => void;
       onDiscardDraft: () => void;
@@ -154,6 +183,11 @@ vi.mock('../EditToolbar', async () => {
           disabled: !props.canBrush,
           onPress: () => props.onDrawModeChange('add'),
         }),
+        createElement(Pressable, {
+          testID: 'erase',
+          disabled: !props.canBrush,
+          onPress: () => props.onDrawModeChange('erase'),
+        }),
         createElement(Pressable, { testID: 'save', onPress: props.onSave, disabled: !props.hasDraft }),
         createElement(Pressable, { testID: 'undo', onPress: props.onUndo, disabled: !props.canUndo }),
         createElement(Pressable, { testID: 'discard', onPress: props.onDiscardDraft }),
@@ -168,6 +202,7 @@ import { OutlineCanvasScreen } from '../OutlineCanvasScreen';
 import { loadBoardArtGeometry } from '@boardsesh/board-art-geometry';
 import { brushEditOutline } from '@boardsesh/board-art-geometry/brush';
 import { finishOutlineRing, radiusRingToBoardPx } from '../stroke';
+import { STACKED_CANVAS_MIN_HEIGHT, STACKED_TOOLBAR_MAX_HEIGHT } from '../layout-constraints';
 
 beforeEach(() => {
   state.save.mockClear();
@@ -176,6 +211,7 @@ beforeEach(() => {
   state.rejectNextFinish = false;
   state.rendererAvailable = true;
   state.placementId = 42;
+  state.routeLayout = { width: 200, height: 200 };
   state.geometryPending = false;
   state.prefetchGeometry.mockReset();
   state.overrides = [];
@@ -198,6 +234,30 @@ describe('outline redraw then brush', () => {
     const rightmost = Math.max(...outline.filter((_, index) => index % 2 === 0));
     expect(rightmost).toBeGreaterThan(20 / HOLD.r);
   });
+});
+
+it('wires the stacked route canvas and scroll viewport to the measured layout contract', () => {
+  const screen = render(<OutlineCanvasScreen boardName="kilter" layoutId={1} sizeId={28} setIds="1" />);
+  const route = screen.container.firstElementChild;
+  expect(route).not.toBeNull();
+  const boardSection = route?.children.item(0);
+  const toolbarScroll = route?.children.item(1);
+
+  expect(boardSection?.getAttribute('data-min-height')).toBe(STACKED_CANVAS_MIN_HEIGHT);
+  expect(toolbarScroll?.getAttribute('data-max-height')).toBe(STACKED_TOOLBAR_MAX_HEIGHT);
+  expect(toolbarScroll?.querySelector('[data-testid="inner"]')).not.toBeNull();
+  expect(toolbarScroll?.querySelector('[data-testid="add"]')).not.toBeNull();
+  expect(toolbarScroll?.querySelector('[data-testid="erase"]')).not.toBeNull();
+});
+
+it('keeps the landscape controls in the existing side rail', () => {
+  state.routeLayout = { width: 1_024, height: 768 };
+  const screen = render(<OutlineCanvasScreen boardName="kilter" layoutId={1} sizeId={28} setIds="1" />);
+  const route = screen.container.firstElementChild;
+  const toolbarScroll = route?.children.item(1);
+
+  expect(route?.getAttribute('data-flex-direction')).toBe('row');
+  expect(toolbarScroll?.getAttribute('data-max-height')).toBeNull();
 });
 
 it('does not carry a rejected final ring into the next brush stroke', () => {

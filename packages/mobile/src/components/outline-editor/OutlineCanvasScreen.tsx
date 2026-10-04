@@ -38,6 +38,7 @@ import { spatialPlacementOrder, stepPlacement, zoomTargetForHold } from './hold-
 import { withUnsavedDraftGuard } from './draft-guard';
 import { editorTargetCapabilities, type CatalogueEditorTarget } from './editor-target';
 import { useBrushSession } from './use-brush-session';
+import { STACKED_CANVAS_MIN_HEIGHT, STACKED_TOOLBAR_MAX_HEIGHT } from './layout-constraints';
 import type { RingPoint } from '@boardsesh/board-art-geometry/ring';
 
 // Admin-only screen — hardcoded English literals throughout, matching the
@@ -1054,11 +1055,13 @@ const styles = StyleSheet.create({
   },
   boardSection: {
     flex: 1,
+    minHeight: STACKED_CANVAS_MIN_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
   },
   toolbarScroll: {
     flexGrow: 0,
+    maxHeight: STACKED_TOOLBAR_MAX_HEIGHT,
   },
   toolbarRail: {
     flexGrow: 0,
