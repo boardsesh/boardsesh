@@ -2,6 +2,7 @@ import 'server-only';
 
 import {
   checkRedisRateLimit,
+  isIpInAnyCidr,
   MemoryRateLimiter,
   normalizeRateLimitIp,
   RateLimitError,
@@ -20,9 +21,38 @@ const PUBLIC_API_LOCAL_MAX_IDENTITIES = 10_000;
 const LOGGED_USER_AGENT_MAX_LENGTH = 200;
 
 type PublicApiEnvironment = {
+  readonly RAILWAY_ENVIRONMENT_ID?: string;
   readonly VERCEL?: string;
   readonly VERCEL_ENV?: string;
 };
+
+// Current ranges from https://www.cloudflare.com/ips-v4 and /ips-v6.
+// Update this list when Cloudflare publishes a range change. It is used only
+// to decide whether Railway's documented remote peer is a Cloudflare edge.
+const CLOUDFLARE_PROXY_CIDRS = [
+  '173.245.48.0/20',
+  '103.21.244.0/22',
+  '103.22.200.0/22',
+  '103.31.4.0/22',
+  '141.101.64.0/18',
+  '108.162.192.0/18',
+  '190.93.240.0/20',
+  '188.114.96.0/20',
+  '197.234.240.0/22',
+  '198.41.128.0/17',
+  '162.158.0.0/15',
+  '104.16.0.0/13',
+  '104.24.0.0/14',
+  '172.64.0.0/13',
+  '131.0.72.0/22',
+  '2400:cb00::/32',
+  '2606:4700::/32',
+  '2803:f800::/32',
+  '2405:b500::/32',
+  '2405:8100::/32',
+  '2a06:98c0::/29',
+  '2c0f:f248::/32',
+] as const;
 
 type PublicApiRateLimitGuardOptions = {
   environment?: PublicApiEnvironment;
@@ -33,27 +63,45 @@ type PublicApiRateLimitGuardOptions = {
 };
 
 /**
- * Resolve only Vercel's platform-owned client-IP header.
+ * Resolve the platform's client identity only in an explicitly detected host.
  *
- * `x-vercel-forwarded-for` is overwritten by Vercel and contains the same
- * singular client address even when another proxy sits in front of Vercel.
- * Merely setting VERCEL_ENV is insufficient: branch deployments may carry that
- * value without running behind Vercel's header trust boundary.
+ * Railway documents `X-Real-IP` as the remote peer address. For a Cloudflare-
+ * proxied request that peer is a Cloudflare egress address, so its published
+ * CIDR must match before the Cloudflare-only `CF-Connecting-IP` is trusted.
+ * Otherwise the Railway remote address is the client identity. This code cannot
+ * prove Railway's header replacement behavior; the production host check stays
+ * an operator prerequisite before relying on this boundary.
  */
 export function resolvePublicApiClientIdentity(
   request: Request,
   environment: PublicApiEnvironment = process.env,
 ): string {
-  if (environment.VERCEL !== '1') return SHARED_UNTRUSTED_IDENTITY;
+  if (environment.VERCEL === '1') {
+    const platformAddress = request.headers.get('x-vercel-forwarded-for')?.trim();
+    if (!platformAddress || platformAddress.includes(',')) return SHARED_UNTRUSTED_IDENTITY;
+    return normalizeRateLimitIp(platformAddress) ?? SHARED_UNTRUSTED_IDENTITY;
+  }
 
-  const platformAddress = request.headers.get('x-vercel-forwarded-for')?.trim();
-  if (!platformAddress || platformAddress.includes(',')) return SHARED_UNTRUSTED_IDENTITY;
-  return normalizeRateLimitIp(platformAddress) ?? SHARED_UNTRUSTED_IDENTITY;
+  if (!environment.RAILWAY_ENVIRONMENT_ID?.trim()) return SHARED_UNTRUSTED_IDENTITY;
+  const railwayRemotePeer = request.headers.get('x-real-ip')?.trim();
+  if (!railwayRemotePeer || railwayRemotePeer.includes(',')) return SHARED_UNTRUSTED_IDENTITY;
+
+  if (isIpInAnyCidr(railwayRemotePeer, CLOUDFLARE_PROXY_CIDRS)) {
+    const cloudflareClient = request.headers.get('cf-connecting-ip')?.trim();
+    if (!cloudflareClient || cloudflareClient.includes(',')) return SHARED_UNTRUSTED_IDENTITY;
+    return normalizeRateLimitIp(cloudflareClient) ?? SHARED_UNTRUSTED_IDENTITY;
+  }
+
+  return normalizeRateLimitIp(railwayRemotePeer) ?? SHARED_UNTRUSTED_IDENTITY;
 }
 
 export function resolvePublicApiRateLimitNamespace(environment: PublicApiEnvironment = process.env): string {
-  if (environment.VERCEL !== '1') return 'public-api:web:local';
-  return environment.VERCEL_ENV === 'production' ? 'public-api:web:production' : 'public-api:web:preview';
+  if (environment.VERCEL === '1') {
+    return environment.VERCEL_ENV === 'production' ? 'public-api:web:production' : 'public-api:web:preview';
+  }
+
+  const railwayEnvironmentId = environment.RAILWAY_ENVIRONMENT_ID?.trim();
+  return railwayEnvironmentId ? `public-api:web:railway:${railwayEnvironmentId}` : 'public-api:web:local';
 }
 
 export function createPublicApiRateLimitGuard(
