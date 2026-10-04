@@ -279,19 +279,24 @@ export function expectsCloudflareOrigin(origin: string): boolean {
   return desiredR2Buckets.some((bucket) => bucket.customDomain === hostname);
 }
 
-async function validatePublicAsset(asset: StaticAssetRecord, beforeRequest: RequestStartLimiter): Promise<void> {
-  const origin = resolvePublicStaticAssetOrigin();
+export async function validatePublicAsset(
+  asset: StaticAssetRecord,
+  beforeRequest: RequestStartLimiter,
+  fetchImpl: typeof fetch = fetch,
+  origin: string = resolvePublicStaticAssetOrigin(),
+): Promise<void> {
   const url = `${origin}/${asset.objectKey}`;
   let lastError: unknown;
   for (let attempt = 1; attempt <= PUBLIC_VALIDATION_ATTEMPTS; attempt += 1) {
     try {
       await beforeRequest();
-      const response = await fetch(url, {
+      const signal = AbortSignal.timeout(PUBLIC_VALIDATION_REQUEST_TIMEOUT_MS);
+      const response = await fetchImpl(url, {
         headers: { Origin: 'https://www.boardsesh.com' },
         // A half-open CDN connection must not hold the serialized production
         // deployment indefinitely. Each aborted attempt follows the same
         // bounded retry path as other transient network failures.
-        signal: AbortSignal.timeout(PUBLIC_VALIDATION_REQUEST_TIMEOUT_MS),
+        signal,
       });
       if (!response.ok) {
         const httpError = new Error(`HTTP ${response.status}`);
@@ -299,7 +304,7 @@ async function validatePublicAsset(asset: StaticAssetRecord, beforeRequest: Requ
         throw httpError;
       }
       assertPublicStaticAssetHeaders(asset, response.headers, { expectCloudflare: expectsCloudflareOrigin(origin) });
-      const contents = await readResponseBodyWithinLimit(response, asset.bytes);
+      const contents = await readResponseBodyWithinLimit(response, asset.bytes, signal);
       if (contents.byteLength !== asset.bytes) {
         throw new Error(`Byte-length mismatch: expected ${asset.bytes}, received ${contents.byteLength}`);
       }
