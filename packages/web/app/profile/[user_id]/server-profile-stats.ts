@@ -64,6 +64,7 @@ export async function fetchProfileStatsData(
           layoutId: tick.layoutId,
           boardType: bt,
           climbUuid: tick.climbUuid,
+          boardDisplayName: tick.boardDisplayName,
         }))
       : [];
   });

@@ -11299,7 +11299,7 @@ export type Tick = {
   auroraSyncedAt?: Maybe<Scalars['String']['output']>;
   /** Type of Aurora sync ('bid' or 'ascent') */
   auroraType?: Maybe<Scalars['String']['output']>;
-  /** Physical board name, populated by updateTick for immediate editor refresh. */
+  /** The wall's own name (user_boards.name), e.g. Garage for a spray wall. Served by userTicks (charts label a runtime-created wall with it) and by updateTick for an immediate editor refresh. Null when the tick has no board, or when the viewer may not see the board's identity. */
   boardDisplayName?: Maybe<Scalars['String']['output']>;
   /** Board entity ID if tick was associated with a board */
   boardId?: Maybe<Scalars['Int']['output']>;

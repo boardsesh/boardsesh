@@ -4,7 +4,14 @@ import isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
 import { formatGradeByDifficultyId, type GradeDisplayFormat } from '@boardsesh/play-view';
 import { parseTickTime, tickTimeMs } from './format-tick-time';
 import { getDifficultyMapping, sortGrades } from './grade-mapping';
-import { BOARD_TYPES, getLayoutKey, getLayoutDisplayName, parseLayoutKey, sortLayoutKeys } from './layouts';
+import {
+  BOARD_TYPES,
+  buildLayoutNameLookup,
+  getLayoutKey,
+  getLayoutDisplayName,
+  parseLayoutKey,
+  sortLayoutKeys,
+} from './layouts';
 import type {
   LogbookEntry,
   UnifiedTimeframeType,
@@ -86,6 +93,8 @@ export function buildAggregatedStackedBars(
   toDate?: string,
   now: dayjs.Dayjs = dayjs(),
 ): RawStackedBars | null {
+  // Wall names for layouts the bundled catalogue cannot name (spray walls).
+  const layoutNames = buildLayoutNameLookup(allBoardsTicks);
   const layoutGradeClimbs: Record<string, Record<string, Set<string>>> = {};
   const allGrades = new Set<string>();
   const allLayouts = new Set<string>();
@@ -117,7 +126,7 @@ export function buildAggregatedStackedBars(
 
   const legend = sortedLayouts.map((layoutKey) => {
     const { boardType, layoutId } = parseLayoutKey(layoutKey);
-    return { key: layoutKey, label: getLayoutDisplayName(boardType, layoutId) };
+    return { key: layoutKey, label: getLayoutDisplayName(boardType, layoutId, layoutNames.get(layoutKey)) };
   });
 
   const bars: RawBar[] = sortedGrades.map((grade) => ({
@@ -128,7 +137,7 @@ export function buildAggregatedStackedBars(
       return {
         value: layoutGradeClimbs[layoutKey]?.[grade]?.size || 0,
         key: layoutKey,
-        label: getLayoutDisplayName(boardType, layoutId),
+        label: getLayoutDisplayName(boardType, layoutId, layoutNames.get(layoutKey)),
       };
     }),
   }));
@@ -305,6 +314,7 @@ export function buildVPointsTimeline(
 ): RawVPointsTimeline | null {
   // Collect entries per layout, filter by timeframe, exclude attempts
   const entriesByLayout: Record<string, LogbookEntry[]> = {};
+  const layoutNames = buildLayoutNameLookup(allBoardsTicks);
 
   BOARD_TYPES.forEach((boardType) => {
     const ticks = allBoardsTicks[boardType] || [];
@@ -388,7 +398,7 @@ export function buildVPointsTimeline(
 
     return {
       layoutKey,
-      displayName: getLayoutDisplayName(boardType, layoutId),
+      displayName: getLayoutDisplayName(boardType, layoutId, layoutNames.get(layoutKey)),
       data,
     };
   });
@@ -407,9 +417,18 @@ export function buildVPointsTimeline(
 
 // ── Statistics summary (layout percentages) ─────────────────────────
 
+/**
+ * Lifetime per-layout shares from the `userProfileStats` aggregate. That
+ * response carries no wall names — the aggregate groups by layout id — so the
+ * caller passes the names its tick data knows ({@link buildLayoutNameLookup})
+ * to keep a spray wall's row reading `Spray wall · <name>` instead of its raw
+ * layout id. Without a name for a layout the label falls back to the
+ * catalogue resolution exactly as before.
+ */
 export function buildStatisticsSummary(
   profileStats: ProfileStatsData | null,
   gradeFormat: GradeDisplayFormat = 'v-grade',
+  layoutNames?: Map<string, string>,
 ): RawStatisticsSummary {
   if (!profileStats) {
     return { totalAscents: 0, layoutPercentages: [] };
@@ -437,7 +456,7 @@ export function buildStatisticsSummary(
         layoutKey: stats.layoutKey,
         boardType: stats.boardType,
         layoutId: stats.layoutId,
-        displayName: getLayoutDisplayName(stats.boardType, stats.layoutId),
+        displayName: getLayoutDisplayName(stats.boardType, stats.layoutId, layoutNames?.get(stats.layoutKey)),
         count: stats.distinctClimbCount,
         grades,
         hardestSend:

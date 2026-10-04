@@ -1,7 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { SUPPORTED_BOARDS as PICKER_BOARDS } from '@boardsesh/board-config';
-import { BOARD_FILTER_TYPES, BOARD_TYPES, LAYOUT_ORDER, getLayoutDisplayName, sortLayoutKeys } from '../layouts';
+import {
+  BOARD_FILTER_TYPES,
+  BOARD_TYPES,
+  LAYOUT_ORDER,
+  buildLayoutNameLookup,
+  getLayoutDisplayName,
+  sortLayoutKeys,
+} from '../layouts';
+import type { LogbookEntry } from '../types';
 
 describe('BOARD_TYPES', () => {
   it('covers every board the schema knows, including spray', () => {
@@ -57,6 +65,81 @@ describe('getLayoutDisplayName', () => {
   it('keeps the Aurora and MoonBoard names it already had', () => {
     expect(getLayoutDisplayName('kilter', 1)).toBe('Kilter Original');
     expect(getLayoutDisplayName('moonboard', 2)).toBe('MoonBoard 2016');
+  });
+
+  // #5487: a spray wall has no catalogue layout row — its layout is created at
+  // runtime when the owner photographs the wall — so the charts need the wall's
+  // own name (`user_boards.name`, carried on the tick) to label it.
+  describe('with a wall name (spray)', () => {
+    it('reads `Spray wall · <name>`', () => {
+      expect(getLayoutDisplayName('spray', 941, 'Garage')).toBe('Spray wall · Garage');
+    });
+
+    it('keeps the raw-id fallback when no name is known', () => {
+      expect(getLayoutDisplayName('spray', 941)).toBe('Spray wall (Layout 941)');
+      expect(getLayoutDisplayName('spray', 941, null)).toBe('Spray wall (Layout 941)');
+      expect(getLayoutDisplayName('spray', 941, undefined)).toBe('Spray wall (Layout 941)');
+    });
+
+    it('separates two walls on their names — a bare "Spray wall" would collide', () => {
+      const first = getLayoutDisplayName('spray', 941, 'Garage');
+      const second = getLayoutDisplayName('spray', 942, 'The cave');
+      expect(first).toBe('Spray wall · Garage');
+      expect(second).toBe('Spray wall · The cave');
+      expect(first).not.toBe(second);
+    });
+
+    it('never replaces a catalogue board name — "My Kilter" must not win over "Kilter Original"', () => {
+      expect(getLayoutDisplayName('kilter', 1, 'My Kilter')).toBe('Kilter Original');
+      // Not even for a layout the catalogue does not know: only spray composes.
+      expect(getLayoutDisplayName('kilter', 99, 'My Kilter')).toBe('Kilter (Layout 99)');
+      expect(getLayoutDisplayName('woods', 1, 'Garage')).toBe('Woods Board');
+    });
+
+    it('keeps the Unknown Layout fallback for a spray tick without a layout', () => {
+      expect(getLayoutDisplayName('spray', null, 'Garage')).toBe('Spray wall (Unknown Layout)');
+    });
+  });
+});
+
+describe('buildLayoutNameLookup', () => {
+  const entry = (overrides: Partial<LogbookEntry> = {}): LogbookEntry => ({
+    climbed_at: '2026-01-01T00:00:00Z',
+    difficulty: 4,
+    tries: 1,
+    angle: 40,
+    ...overrides,
+  });
+
+  it('keys the wall names by layoutKey, from the board type the ticks are grouped under', () => {
+    const lookup = buildLayoutNameLookup({
+      spray: [entry({ layoutId: 941, boardDisplayName: 'Garage' }), entry({ layoutId: 942, boardDisplayName: 'Cave' })],
+      kilter: [entry({ layoutId: 1, boardDisplayName: 'Home Kilter' })],
+    });
+    expect(lookup.get('spray-941')).toBe('Garage');
+    expect(lookup.get('spray-942')).toBe('Cave');
+    expect(lookup.get('kilter-1')).toBe('Home Kilter');
+  });
+
+  it('skips ticks without a name and takes the first one that has it', () => {
+    const lookup = buildLayoutNameLookup({
+      spray: [
+        entry({ layoutId: 941, boardDisplayName: null }),
+        entry({ layoutId: 941, boardDisplayName: 'Garage' }),
+        entry({ layoutId: 941, boardDisplayName: 'Renamed later' }),
+      ],
+    });
+    expect(lookup.get('spray-941')).toBe('Garage');
+  });
+
+  it('leaves a layout out entirely when no tick on it knows its wall', () => {
+    const lookup = buildLayoutNameLookup({ spray: [entry({ layoutId: 941 })] });
+    expect(lookup.has('spray-941')).toBe(false);
+  });
+
+  it('feeds getLayoutDisplayName end to end', () => {
+    const lookup = buildLayoutNameLookup({ spray: [entry({ layoutId: 941, boardDisplayName: 'Garage' })] });
+    expect(getLayoutDisplayName('spray', 941, lookup.get('spray-941'))).toBe('Spray wall · Garage');
   });
 });
 

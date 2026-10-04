@@ -100,6 +100,36 @@ describe('deriveProfileViewModel', () => {
     expect(vm.statisticsSummary.totalAscents).toBe(3);
     expect(vm.statisticsSummary.layoutPercentages.reduce((s, l) => s + l.percentage, 0)).toBe(100);
   });
+
+  it('names a spray wall from the ticks in every chart at once (#5487)', () => {
+    // The lifetime stats aggregate only knows layout ids; the wall's name comes
+    // from the tick rows, and derive threads it into the stats summary too.
+    const vm = deriveProfileViewModel({
+      ...base,
+      selectedBoard: 'all',
+      allBoardsTicks: {
+        ...allBoardsTicks,
+        spray: [entry({ status: 'send', climbUuid: 's1', layoutId: 941, boardDisplayName: 'Garage' })],
+      },
+      profileStats: {
+        totalDistinctClimbs: 1,
+        layoutStats: [
+          {
+            layoutKey: 'spray-941',
+            boardType: 'spray',
+            layoutId: 941,
+            distinctClimbCount: 1,
+            gradeCounts: [{ grade: '22', count: 1 }],
+          },
+        ],
+      },
+    });
+    expect(vm.statisticsSummary.layoutPercentages[0].displayName).toBe('Spray wall · Garage');
+    expect(vm.aggregatedStackedBars?.legend.find((l) => l.key === 'spray-941')?.label).toBe('Spray wall · Garage');
+    expect(vm.vPointsTimeline?.series.find((s) => s.layoutKey === 'spray-941')?.displayName).toBe(
+      'Spray wall · Garage',
+    );
+  });
 });
 
 describe('deriveProfileViewModel periodComparison', () => {

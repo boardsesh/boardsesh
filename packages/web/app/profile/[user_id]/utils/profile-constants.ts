@@ -8,6 +8,7 @@ import {
   sortGrades,
   getLayoutKey,
   getLayoutDisplayName,
+  buildLayoutNameLookup,
   type LogbookEntry,
   type UnifiedTimeframeType,
 } from '@boardsesh/profile-stats';
@@ -18,7 +19,15 @@ import {
 // colors, MUI-facing option lists, the REST UserProfile shape) and re-exports
 // the shared pure helpers for back-compat with existing web call sites.
 
-export { BOARD_TYPES, difficultyMapping, getDifficultyMapping, sortGrades, getLayoutKey, getLayoutDisplayName };
+export {
+  BOARD_TYPES,
+  difficultyMapping,
+  getDifficultyMapping,
+  sortGrades,
+  getLayoutKey,
+  getLayoutDisplayName,
+  buildLayoutNameLookup,
+};
 export type { LogbookEntry, UnifiedTimeframeType };
 
 export type UserProfile = {

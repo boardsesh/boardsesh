@@ -23,6 +23,7 @@ import {
   type UnifiedTimeframeType,
   BOARD_TYPES,
   getDifficultyMapping,
+  buildLayoutNameLookup,
 } from '../utils/profile-constants';
 import { getGradeColor, getGradeTextColor } from '@/app/lib/grade-colors';
 import { isAbortError } from '@/app/lib/is-abort-error';
@@ -179,6 +180,7 @@ export function useProfileData(userId: string, initialData?: InitialData) {
             layoutId: tick.layoutId,
             boardType,
             climbUuid: tick.climbUuid,
+            boardDisplayName: tick.boardDisplayName,
           }));
         }),
       );
@@ -305,8 +307,11 @@ export function useProfileData(userId: string, initialData?: InitialData) {
   );
 
   const statisticsSummary = useMemo(
-    () => buildStatisticsSummary(profileStats, gradeFormat),
-    [profileStats, gradeFormat],
+    // Wall names (spray walls) come from the tick data: the profile-stats
+    // aggregate itself only carries layout ids, and it is lifetime/unfiltered,
+    // so the lookup spans every board, not just the selected one.
+    () => buildStatisticsSummary(profileStats, gradeFormat, buildLayoutNameLookup(allBoardsTicks)),
+    [profileStats, gradeFormat, allBoardsTicks],
   );
 
   const vPointsTimeline = useMemo(
