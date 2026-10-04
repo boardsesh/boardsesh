@@ -1747,6 +1747,7 @@ function ClimbListInner() {
     return (
       <>
         <FilterChipRow
+          boardName={boardName}
           pinnedChips={pinnedChips}
           activeFilterCount={activeFilterCount}
           onOpenFilters={handleOpenFilters}

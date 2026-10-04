@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { statusForAuth, filtersForBoard, DEFAULT_FILTERS, type ClimbFilters } from '../climb-filter-types';
+import {
+  statusForAuth,
+  filtersForBoard,
+  getSortOptionsForBoard,
+  isSortOptionForBoard,
+  DEFAULT_FILTERS,
+  type ClimbFilters,
+} from '../climb-filter-types';
 
 // statusForAuth is the auth-gating invariant behind the native status Picker: a
 // signed-out user can't pick "drafts", so a persisted drafts status is coerced to
@@ -77,5 +84,35 @@ describe('filtersForBoard', () => {
   it('returns the same reference when there is nothing to drop', () => {
     const filters: ClimbFilters = { ...DEFAULT_FILTERS, minGrade: 10 };
     expect(filtersForBoard(filters, 'kilter')).toBe(filters);
+  });
+
+  it('normalizes user-grade sorting on boards where the value is a setter grade', () => {
+    const filters: ClimbFilters = { ...DEFAULT_FILTERS, sortBy: 'userGrade', sortSeed: 'old-seed' };
+    expect(filtersForBoard(filters, 'spray')).toEqual({
+      ...DEFAULT_FILTERS,
+      sortBy: 'difficulty',
+      sortSeed: undefined,
+    });
+    expect(filtersForBoard(filters, 'woods').sortBy).toBe('difficulty');
+  });
+
+  it('keeps user-grade sorting on MoonBoard despite its missing Boardsesh model', () => {
+    const filters: ClimbFilters = { ...DEFAULT_FILTERS, sortBy: 'userGrade' };
+    expect(filtersForBoard(filters, 'moonboard')).toBe(filters);
+  });
+});
+
+describe('user-grade sort availability', () => {
+  it('keeps user grade for Aurora and MoonBoard but hides it on Woods and spray', () => {
+    expect(getSortOptionsForBoard('kilter')).toContain('userGrade');
+    expect(getSortOptionsForBoard('moonboard')).toContain('userGrade');
+    expect(getSortOptionsForBoard('woods')).not.toContain('userGrade');
+    expect(getSortOptionsForBoard('spray')).not.toContain('userGrade');
+  });
+
+  it('rejects unsupported and unknown picker tags', () => {
+    expect(isSortOptionForBoard('userGrade', 'spray')).toBe(false);
+    expect(isSortOptionForBoard('difficulty', 'spray')).toBe(true);
+    expect(isSortOptionForBoard('sideways', 'kilter')).toBe(false);
   });
 });
