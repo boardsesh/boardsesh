@@ -215,6 +215,50 @@ describe('public API guard', () => {
     await expect(guard(firstClient)).resolves.toMatchObject({ status: 429 });
   });
 
+  it('shares a budget across IPv4-mapped spellings without merging distinct clients', async () => {
+    const environment = { RAILWAY_ENVIRONMENT_ID: 'prod-id' };
+    const guard = createPublicApiRateLimitGuard({
+      environment,
+      getRedisEvaluator: () => undefined,
+      logRateLimited: () => undefined,
+      memoryLimiter: new MemoryRateLimiter({ maxEntries: 10 }),
+    });
+    const requestFromIp = (ip: string) =>
+      new Request('https://www.boardsesh.com/api/v1/kilter/grades', { headers: { 'x-real-ip': ip } });
+    const firstClientAliases = [
+      '203.0.113.5',
+      '::ffff:203.0.113.5',
+      '::ffff:cb00:7105',
+      '0:0:0:0:0:ffff:cb00:7105',
+      '0:0:0:0:0:ffff:203.0.113.5',
+    ];
+    const secondClientAliases = [
+      '198.51.100.9',
+      '::ffff:198.51.100.9',
+      '::ffff:c633:6409',
+      '0:0:0:0:0:ffff:c633:6409',
+      '0:0:0:0:0:ffff:198.51.100.9',
+    ];
+
+    for (let requestIndex = 0; requestIndex < PUBLIC_API_MAX_REQUESTS; requestIndex += 1) {
+      await expect(
+        guard(requestFromIp(firstClientAliases[requestIndex % firstClientAliases.length] ?? '')),
+      ).resolves.toBeNull();
+    }
+    for (const alias of firstClientAliases) {
+      await expect(guard(requestFromIp(alias))).resolves.toMatchObject({ status: 429 });
+    }
+
+    for (let requestIndex = 0; requestIndex < PUBLIC_API_MAX_REQUESTS; requestIndex += 1) {
+      await expect(
+        guard(requestFromIp(secondClientAliases[requestIndex % secondClientAliases.length] ?? '')),
+      ).resolves.toBeNull();
+    }
+    for (const alias of secondClientAliases) {
+      await expect(guard(requestFromIp(alias))).resolves.toMatchObject({ status: 429 });
+    }
+  });
+
   it('uses the one operation and preview namespace for the Redis tier', async () => {
     const evaluate = vi.fn().mockResolvedValue(1);
     const guard = createPublicApiRateLimitGuard({
