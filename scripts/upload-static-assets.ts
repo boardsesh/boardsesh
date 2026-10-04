@@ -262,9 +262,8 @@ export function resolvePublicStaticAssetOrigin(environment: Record<string, strin
 /**
  * Whether the public origin is expected to be served by Cloudflare.
  *
- * Derived from the desired R2 state rather than an env knob. The staging domain
- * stays attached after the live cutover, so both domains must prove Cloudflare
- * delivery during publication and migration verification.
+ * Desired R2 custom domains and the explicitly retained staging hostname must
+ * prove Cloudflare delivery during publication and migration verification.
  */
 export function expectsCloudflareOrigin(origin: string): boolean {
   const hostname = (() => {

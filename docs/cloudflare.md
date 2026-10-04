@@ -64,8 +64,9 @@ that named field directly; never print it or scan unrelated vault secrets.
 Use the Boardsesh account scope and the `boardsesh.com` zone scope.
 
 The infrastructure token needs the zone scopes above, `Workers R2 Storage Edit`
-and `Cloudflare Pages Edit`. Add **Account API Tokens Edit** to provision
-account-owned bucket credentials through `/accounts/<accountId>/tokens`.
+and `Cloudflare Pages Edit`. Add **Account > API Tokens > Edit** (the API
+permission is `Account API Tokens Edit`) to provision account-owned bucket
+credentials through `/accounts/<accountId>/tokens`.
 User-level API Tokens Edit is unnecessary for this account-owned flow.
 Cloudflare documents the distinction in
 [Create tokens via API](https://developers.cloudflare.com/fundamentals/api/how-to/create-via-api/).
@@ -347,7 +348,7 @@ Expect `HTTP/2 301`, a `location:` of
 `https://www.boardsesh.com/kilter/8/25/15,17/40/view/abc?utm_source=x`, and a
 `cf-ray` header (which is what proves Cloudflare answered rather than an origin).
 
-**If the token lacks `Zone.Dynamic Redirect Edit`,** `deploy-cloudflare` 403s on
+**If the token lacks `Zone.Single Redirect Edit`,** `deploy-cloudflare` 403s on
 this phase and this phase only. The cache, WAF and rate-limit phases apply
 normally, so the failure mode is a half-converged zone: the apex record flips to
 the originless address while nothing is there to redirect it, and the apex
@@ -829,11 +830,13 @@ NAT, which is why the threshold is generous rather than tight. Rollback is the
 usual one: set `enabled: false` on the rule and re-run
 `vp run cf:apply -- --apply`.
 
-The API token driving `cf:apply` needs `Zone.Rate Limit Edit` to create or
-update this rule — see the token scope list in `scripts/cloudflare-apply.ts`
-and the token section below. Without that scope, `deploy-cloudflare` 403s
-specifically on the `http_ratelimit` phase while every other phase applies
-cleanly.
+The API token driving `cf:apply` needs **Zone > Zone WAF > Edit** to create or
+update this rule and the crawler rules. Cloudflare documents the API permission
+as `Zone WAF Write` for the `http_ratelimit` phase in
+[rate limiting rules configuration](https://developers.cloudflare.com/terraform/additional-configurations/rate-limiting-rules/).
+See the token scope list in `scripts/cloudflare-apply.ts` and the token section
+below. Without that scope, both the firewall-custom and rate-limit phases fail
+authorization while other phases may already have applied.
 
 ### One-time: create the API token
 
@@ -855,20 +858,19 @@ Create a token at <https://dash.cloudflare.com/profile/api-tokens> scoped to the
 `boardsesh.com` zone with:
 
 - **Zone.Zone Read** — resolve the zone id by name + read the zone list
-- **Zone.DNS Edit** — patch the `ws` proxy flag, create/update the `assets` CNAME,
+- **Zone.DNS Edit** — patch the `ws` proxy flag, manage the apex and DR records,
   and read the zone's CNAME-flattening settings
 - **Zone.Cache Rules Edit** — create/update the `/og/` and board-render cache rules
-- **Zone.WAF Edit** — create/update the two crawler rules (see below). Without
-  this scope `cf:apply` fails on the WAF phase while the cache rules still apply,
-  so a partially-converged zone is the failure mode, not a silent skip.
-- **Zone.Rate Limit Edit** — create/update the climb-view rate-limit rule in the
-  `http_ratelimit` phase. Same partial-convergence failure mode as WAF Edit: the
-  earlier phases apply, this one 403s.
-- **Zone.Dynamic Redirect Edit** — create/update the apex → www redirect in the
+- **Zone.Zone WAF Edit** — create/update the crawler rules and climb-view
+  rate-limit rule in `http_request_firewall_custom` and `http_ratelimit`.
+  The permission picker is **Zone > Zone WAF > Edit**. Without it, these phases
+  fail authorization while earlier phases may already have applied.
+- **Zone.Single Redirect Edit** — create/update the apex → www redirect in the
   `http_request_dynamic_redirect` phase. Same partial-convergence failure mode,
   and worse in effect: the apex DNS record flips to the originless address while
-  no rule exists to answer it. In the permission picker the row is called
-  **Dynamic Redirect**, not "Redirect Rules" or "Single Redirects".
+  no rule exists to answer it. The permission picker is
+  **Zone > Single Redirect > Edit**, as documented in
+  [Create a redirect rule via API](https://developers.cloudflare.com/rules/url-forwarding/single-redirects/create-api/).
 - **Zone.Zone Settings Read** — read the SSL/TLS mode
 - **Zone.Zone Settings Edit** — only if you'll run `--allow-zone-ssl`
 

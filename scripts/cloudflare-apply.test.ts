@@ -95,7 +95,7 @@ function requiredFullyManagedDnsRecord(name: string): FullyManagedDnsRecordDesir
 }
 
 const wsDnsRecord = requiredDnsRecord(WS_HOSTNAME);
-// Historical Tigris fixture still exercises generic DNS convergence and rollback.
+// Historical Tigris fixture still exercises generic DNS convergence.
 const assetsDnsRecord: FullyManagedDnsRecordDesired = {
   management: 'full',
   name: ASSETS_HOSTNAME,
@@ -573,7 +573,7 @@ describe('pgdr.boardsesh.com desired state', () => {
   });
 });
 
-describe('assets.boardsesh.com routing and retained rollback fixture', () => {
+describe('assets.boardsesh.com routing and historical generic DNS fixture', () => {
   it('leaves live asset DNS to R2 even if the legacy record drifts', () => {
     expect(desired.dnsRecords.some((record) => record.name === ASSETS_HOSTNAME)).toBe(false);
     const drifted = {
@@ -589,7 +589,7 @@ describe('assets.boardsesh.com routing and retained rollback fixture', () => {
       ),
     ).toBe(false);
   });
-  it('retains the exact DNS-only Tigris rollback fixture with automatic TTL', () => {
+  it('retains the DNS-only Tigris generic convergence fixture with automatic TTL', () => {
     expect(assetsDnsRecord).toEqual({
       management: 'full',
       name: 'assets.boardsesh.com',
@@ -1490,15 +1490,16 @@ describe('token scope guidance', () => {
   // reading the same Production-environment CLOUDFLARE_API_TOKEN.
   it('names every zone permission the tool calls', () => {
     // One entry per request, reads included: a token missing a read scope fails
-    // just as hard as one missing a write. Zone.WAF Edit went missing from this
+    // just as hard as one missing a write. Zone.Zone WAF Edit went missing from this
     // list once while the crawler rules depended on it, so a partially-converged
     // zone was the failure mode rather than a clean error.
     const printed = TOKEN_SCOPES.join('\n');
     expect(printed).toContain('Zone.Zone Read'); // GET /zones?name= (resolve the zone id)
-    expect(printed).toContain('Zone.DNS Edit'); // PATCH ws; create/update the assets CNAME
+    expect(printed).toContain('Zone.DNS Edit'); // PATCH ws; manage apex and DR records
     expect(printed).toContain('Zone.Cache Rules Edit'); // PUT the cache-settings phase
-    expect(printed).toContain('Zone.WAF Edit'); // PUT the firewall-custom phase
-    expect(printed).toContain('Zone.Rate Limit Edit'); // PUT the http_ratelimit phase
+    expect(printed).toContain('Zone.Zone WAF Edit'); // PUT firewall-custom and http_ratelimit phases
+    expect(printed).toContain('http_request_firewall_custom and http_ratelimit phases');
+    expect(printed).not.toContain('Zone.Rate Limit Edit');
     expect(printed).toContain('Zone.Zone Settings Read'); // GET /settings/ssl
     expect(printed).toContain('Zone.Zone Settings Edit'); // PATCH /settings/ssl
   });
@@ -1819,7 +1820,8 @@ describe('apex → www redirect (#4655)', () => {
   it('names the Cloudflare permission the phase needs', () => {
     // Without it, deploy-cloudflare 403s on THIS phase only: the cache, WAF and
     // rate-limit phases apply and the zone is left half-converged.
-    expect(TOKEN_SCOPES.join('\n')).toContain('Zone.Dynamic Redirect Edit');
+    expect(TOKEN_SCOPES.join('\n')).toContain('Zone.Single Redirect Edit');
+    expect(TOKEN_SCOPES.join('\n')).not.toContain('Zone.Dynamic Redirect Edit');
   });
 });
 
@@ -1868,6 +1870,7 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
   function stubCloudflareApi(
     dnsByName: Record<string, LiveDnsRecord[]>,
     readLifecycleRules: (bucketName: string) => unknown = () => [],
+    readCustomDomains: (bucketName: string) => { domain: string; enabled: boolean }[] = () => [],
   ): RecordedRequest[] {
     const requests: RecordedRequest[] = [];
     const envelope = (result: unknown) =>
@@ -1894,7 +1897,10 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
       if (url.pathname.endsWith('/r2/buckets')) {
         return envelope({ buckets: desiredR2Buckets.map((bucket) => ({ name: bucket.name })) });
       }
-      if (url.pathname.endsWith('/domains/custom')) return envelope({ domains: [] });
+      if (url.pathname.endsWith('/domains/custom')) {
+        const bucketName = decodeURIComponent(url.pathname.split('/').at(-3)!);
+        return envelope({ domains: method === 'GET' ? readCustomDomains(bucketName) : [] });
+      }
       if (url.pathname.endsWith('/domains/managed')) {
         if (method === 'GET') return envelope({ bucketId: 'bucket-id', domain: 'example.r2.dev', enabled: true });
         return envelope({ bucketId: 'bucket-id', domain: 'example.r2.dev', enabled: false });
@@ -1973,6 +1979,30 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
       .filter((message) => typeof message === 'string' && message.includes('R2 boardsesh-static-assets:'));
     expect(assetChangeLogs.filter((message) => message.startsWith('[cf-apply] applied:'))).toHaveLength(1);
     expect(assetChangeLogs.filter((message) => message.startsWith('[cf-apply] skipped:'))).toHaveLength(2);
+  });
+
+  it('attaches live assets while retaining the existing staging custom domain', async () => {
+    const requests = stubCloudflareApi(
+      dnsResponses(liveApexDnsRecord()),
+      () => [],
+      (bucketName) =>
+        bucketName === 'boardsesh-static-assets' ? [{ domain: ASSETS_STAGING_HOSTNAME, enabled: true }] : [],
+    );
+    vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'account-1');
+
+    expect(await runCloudflareApply(['--apply'])).toBe(0);
+
+    const assetsCustomDomainPath = '/client/v4/accounts/account-1/r2/buckets/boardsesh-static-assets/domains/custom';
+    const domainMutations = requests.filter(
+      (request) => request.pathname.startsWith(assetsCustomDomainPath) && request.method !== 'GET',
+    );
+    expect(domainMutations).toEqual([
+      {
+        method: 'POST',
+        pathname: assetsCustomDomainPath,
+        body: { domain: ASSETS_HOSTNAME, zoneId: 'zone-1', enabled: true },
+      },
+    ]);
   });
 
   it.each([
