@@ -1,4 +1,4 @@
-/** Private export links are HTTPS browser downloads, never app/deep links. */
+/** Private exports use HTTPS downloads, never app/deep links. */
 export function isUserDataExportDownloadUrl(downloadUrl: string): boolean {
   try {
     const parsedUrl = new URL(downloadUrl);

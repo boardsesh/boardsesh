@@ -47,6 +47,90 @@ beforeEach(async () => {
 });
 
 describe('auth-store', () => {
+  it('notifies credential owners synchronously before a new login writes tokens', async () => {
+    const store = await secureStore();
+    const { captureAuthCredentialGeneration, storeTokens, subscribeAuthCredentialGenerationChanges } =
+      await import('../auth-store');
+    const initialGeneration = captureAuthCredentialGeneration();
+    const listener = vi.fn();
+    const unsubscribe = subscribeAuthCredentialGenerationChanges(listener);
+    try {
+      const login = storeTokens('new-jwt', 'new-refresh', '2026-10-01T00:00:00.000Z');
+      expect(listener).toHaveBeenCalledExactlyOnceWith(initialGeneration + 1);
+      expect(captureAuthCredentialGeneration()).toBe(initialGeneration + 1);
+      expect(store.setItemAsync).not.toHaveBeenCalled();
+      await login;
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('notifies credential owners synchronously before clearing stored credentials', async () => {
+    const store = await secureStore();
+    const {
+      captureAuthCredentialGeneration,
+      clearTokensForGeneration,
+      storeTokens,
+      subscribeAuthCredentialGenerationChanges,
+    } = await import('../auth-store');
+    await storeTokens('old-jwt', 'old-refresh', '2026-10-01T00:00:00.000Z');
+    const initialGeneration = captureAuthCredentialGeneration();
+    const listener = vi.fn();
+    const unsubscribe = subscribeAuthCredentialGenerationChanges(listener);
+    try {
+      const clearing = clearTokensForGeneration(initialGeneration);
+      expect(listener).toHaveBeenCalledExactlyOnceWith(initialGeneration + 1);
+      expect(captureAuthCredentialGeneration()).toBe(initialGeneration + 1);
+      expect(store.deleteItemAsync).not.toHaveBeenCalled();
+      await expect(clearing).resolves.toBe(true);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('keeps the same owner during token refresh and ignores stale credential clears', async () => {
+    const {
+      captureAuthCredentialGeneration,
+      clearTokensForGeneration,
+      storeTokens,
+      storeTokensForGeneration,
+      subscribeAuthCredentialGenerationChanges,
+    } = await import('../auth-store');
+    await storeTokens('old-jwt', 'old-refresh', '2026-10-01T00:00:00.000Z');
+    const generation = captureAuthCredentialGeneration();
+    const listener = vi.fn();
+    const unsubscribe = subscribeAuthCredentialGenerationChanges(listener);
+    try {
+      await expect(
+        storeTokensForGeneration(generation, 'fresh-jwt', 'fresh-refresh', '2026-11-01T00:00:00.000Z'),
+      ).resolves.toBe(true);
+      await expect(clearTokensForGeneration(generation - 1)).resolves.toBe(false);
+      expect(captureAuthCredentialGeneration()).toBe(generation);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('unsubscribes one credential owner while preserving another subscriber', async () => {
+    const { captureAuthCredentialGeneration, storeTokens, subscribeAuthCredentialGenerationChanges } =
+      await import('../auth-store');
+    const generation = captureAuthCredentialGeneration();
+    const removedListener = vi.fn();
+    const currentListener = vi.fn();
+    const unsubscribeRemoved = subscribeAuthCredentialGenerationChanges(removedListener);
+    const unsubscribeCurrent = subscribeAuthCredentialGenerationChanges(currentListener);
+    unsubscribeRemoved();
+    try {
+      const login = storeTokens('new-jwt', 'new-refresh', '2026-10-01T00:00:00.000Z');
+      expect(removedListener).not.toHaveBeenCalled();
+      expect(currentListener).toHaveBeenCalledExactlyOnceWith(generation + 1);
+      await login;
+    } finally {
+      unsubscribeCurrent();
+    }
+  });
+
   it('writes every token with keychainAccessible: AFTER_FIRST_UNLOCK', async () => {
     const store = await secureStore();
     const { storeTokens } = await import('../auth-store');

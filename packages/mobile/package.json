@@ -86,6 +86,7 @@
     "expo-router": "57.0.17",
     "expo-secure-store": "57.0.2",
     "expo-share-intent": "8.0.1",
+    "expo-sharing": "57.0.22",
     "expo-splash-screen": "57.0.8",
     "expo-sqlite": "57.0.2",
     "expo-store-review": "57.0.2",

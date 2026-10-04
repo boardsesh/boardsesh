@@ -18,6 +18,21 @@ const EXPIRES_AT_KEY = 'boardsesh_token_expires_at';
 const AUTH_SECURE_KEYS = [JWT_KEY, REFRESH_TOKEN_KEY, EXPIRES_AT_KEY] as const;
 let credentialGeneration = 0;
 let credentialMutationQueue: Promise<void> = Promise.resolve();
+const credentialGenerationListeners = new Set<(generation: number) => void>();
+
+/** Notify private-file owners synchronously, before credential storage awaits. */
+export function subscribeAuthCredentialGenerationChanges(listener: (generation: number) => void): () => void {
+  credentialGenerationListeners.add(listener);
+  return () => {
+    credentialGenerationListeners.delete(listener);
+  };
+}
+
+function advanceCredentialGeneration(): number {
+  credentialGeneration += 1;
+  for (const listener of credentialGenerationListeners) listener(credentialGeneration);
+  return credentialGeneration;
+}
 
 class AuthCredentialCleanupError extends Error {
   readonly failures: readonly unknown[];
@@ -231,8 +246,7 @@ export function storeTokensForGeneration(
 export async function storeTokens(jwt: string, refreshToken: string, expiresAt: string): Promise<void> {
   // A completed sign-in is a new credential owner, even when it follows a
   // signed-out generation whose SecureStore cleanup is still settling.
-  credentialGeneration += 1;
-  const generation = captureAuthCredentialGeneration();
+  const generation = advanceCredentialGeneration();
   await storeTokensForGeneration(generation, jwt, refreshToken, expiresAt);
 }
 
@@ -240,8 +254,7 @@ export function clearTokensForGeneration(generation: number): Promise<boolean> {
   if (!isAuthCredentialGenerationCurrent(generation)) return Promise.resolve(false);
   // Invalidate in-flight token writes synchronously, before deletion waits for
   // the serialized SecureStore mutation boundary.
-  const clearedGeneration = generation + 1;
-  credentialGeneration = clearedGeneration;
+  const clearedGeneration = advanceCredentialGeneration();
   return serializeCredentialMutation(async (): Promise<boolean> => {
     const results = await Promise.allSettled([
       clearStoredCredential(JWT_KEY),
