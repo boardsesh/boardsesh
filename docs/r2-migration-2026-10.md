@@ -51,17 +51,24 @@ for queue age or an active exporter; all three manifests remained identical.
 
 Actual pg-boss metadata confirmed a 21,600-second attempt, 120-second heartbeat,
 one retry, 300-second retry delay, and 72,000-second deadline. Restoring the
-original backend family list adds snapshot publishing to the 13-family freeze:
-14 families and 13 schedules. Require fresh replica health, schedule registration,
-and a subsequent automatic job with the same lease before considering scheduling
-restored. Reader release additionally requires actual native update installation
-and a fresh R2 snapshot import; the linked acceptance issue records those gates.
+original backend family list added snapshot publishing to the 13-family freeze.
+Deployment `df886699-7b7d-4b57-a52c-2be1865b3434` passed fresh health, schema,
+and render checks, with both replicas registering 14 families and 13 schedules.
+Automatic live run `a998008a-92e8-441f-afe3-c49bfe2e069a` started within three
+seconds and completed in 47.60 seconds at 09:08 UTC, with the same six-hour lease
+and no retries, age skip, or competing-run skip. It checked all 23 layouts and
+left all manifests unchanged. Scheduling is restored. Reader release still
+requires actual native update installation and a fresh R2 snapshot import;
+the linked acceptance issue records those gates. A real browser cross-origin
+fetch also decoded a gzip artifact into SQLite; its decoded hash and row counts
+matched an independent download and SQLite integrity check.
 
 Keep the Tigris bucket and read access for at least 30 days after reader cutover.
 The Homelab vault contains the complete pre-R2 batch-worker configuration, including
 both legacy public bases. An image-only rollback is insufficient. Follow the
 [snapshot rollback runbook](board-snapshots.md#moving-the-snapshot-bucket-to-r2).
-Three scheduled nightly observations remain a separate stability follow-up.
+Three scheduled nightly observations and comparable download metrics are tracked
+in [stability follow-up #6018](https://github.com/boardsesh/boardsesh/issues/6018).
 
 ## OTA: storage and historical delivery accepted
 

@@ -36,7 +36,7 @@ reject it as not in progress. Keep the workflow disabled until that legacy Tigri
 unable to start; do not claim the queue is drained from those failed cancellation attempts.
 Exactly one publisher may own each storage target and prefix at a time.
 The permanent worker now uses R2 and the Production variable is `r2`, blocking
-further rehearsals. Backend snapshot scheduling remains paused during normal
+further rehearsals. Backend snapshot scheduling was restored after normal
 producer acceptance; see the [live acceptance record](r2-migration-2026-10.md).
 
 **Dual-publish.** The nightly runs the export **twice**, targeting two prefixes via `--key-prefix`
