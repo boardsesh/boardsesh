@@ -135,6 +135,17 @@ describe('supportMutations', () => {
     return { insertValues, updateWhere };
   }
 
+  function setupVisibilityDatabase(operationRows: unknown[] = []) {
+    mockDb.transaction.mockImplementation(async (callback: (transaction: typeof mockDb) => Promise<unknown>) =>
+      callback(mockDb),
+    );
+    mockDb.select.mockImplementation((columns?: Record<string, unknown>) =>
+      selectRows(
+        columns && 'leaseExpiresAt' in columns ? operationRows : [{ id: 'user-1', email: 'climber@example.com' }],
+      ),
+    );
+  }
+
   it('returns SERVICE_UNAVAILABLE when Checkout is not configured', async () => {
     delete process.env.STRIPE_SECRET_KEY;
 
@@ -149,6 +160,7 @@ describe('supportMutations', () => {
   });
 
   it('does not update visibility without completed linked support', async () => {
+    setupVisibilityDatabase();
     const returning = vi.fn().mockResolvedValue([]);
     const where = vi.fn().mockReturnValue({ returning });
     mockDb.update.mockReturnValue({
@@ -385,6 +397,7 @@ describe('supportMutations', () => {
   });
 
   it('updates visibility for completed linked support', async () => {
+    setupVisibilityDatabase();
     const supporter = { userId: 'user-1', supportedAt: new Date(), showPublicly: true };
     mockDb.update.mockReturnValue({
       set: vi.fn().mockReturnValue({
@@ -395,6 +408,16 @@ describe('supportMutations', () => {
     await expect(
       supportMutations.updateSupporterVisibility({}, { showPublicly: true }, authContext()),
     ).resolves.toMatchObject({ linked: true, hasSupported: true, showPublicly: true });
+    expect(mockDb.update).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not change visibility while a live Checkout check can issue a claim', async () => {
+    setupVisibilityDatabase([{ state: 'checking_checkout', leaseExpiresAt: new Date(Date.now() + 60_000) }]);
+
+    await expect(
+      supportMutations.updateSupporterVisibility({}, { showPublicly: false }, authContext()),
+    ).rejects.toMatchObject({ extensions: { code: 'SUPPORT_OPERATION_PENDING' } });
+    expect(mockDb.update).not.toHaveBeenCalled();
   });
 });
 

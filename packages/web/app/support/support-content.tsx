@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useState } from 'react';
+import React, { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
@@ -22,6 +22,7 @@ import {
 } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, PageCard, Prose } from '@/app/components/ui/page-shell';
@@ -43,10 +44,19 @@ const LOCALE_CATALOGS_URL = 'https://github.com/boardsesh/boardsesh/tree/main/pa
 const GITHUB_REPO_URL = 'https://github.com/boardsesh/boardsesh';
 const DISCORD_URL = 'https://discord.gg/YXA8GsXfQK';
 const DONATION_CTA_SX = brandCtaSx();
+const useIdentityLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
+const EMPTY_SUPPORT_STATUS: SupporterStatus = {
+  linked: false,
+  hasSupported: false,
+  showPublicly: false,
+  hasActiveSubscription: false,
+  cancelAtPeriodEnd: false,
+};
 
 type SupportContentProps = {
   configuration: SupportConfiguration;
   initialStatus: SupporterStatus;
+  initialUserId: string | null;
   locale: string;
 };
 
@@ -73,8 +83,15 @@ function SupportResultAlert() {
   return null;
 }
 
-export default function SupportContent({ configuration, initialStatus, locale }: SupportContentProps) {
+export default function SupportContent({ configuration, initialStatus, initialUserId, locale }: SupportContentProps) {
   const { t } = useTranslation('marketing');
+  const { data: session, status: sessionStatus } = useSession();
+  const sessionUserId = session?.user?.id ?? null;
+  const priorSessionUserId = useRef<string | null>(initialUserId);
+  const sessionIdentity =
+    sessionStatus === 'loading' ? 'loading' : `${sessionUserId ?? 'anonymous'}:${session?.authSessionId ?? 'legacy'}`;
+  const currentSessionIdentity = useRef(sessionIdentity);
+  const hasUserChanged = sessionStatus !== 'loading' && priorSessionUserId.current !== sessionUserId;
   const {
     token: authToken,
     isAuthenticated,
@@ -87,12 +104,29 @@ export default function SupportContent({ configuration, initialStatus, locale }:
   const [amount, setAmount] = useState('5');
   const [cadence, setCadence] = useState<'MONTHLY' | 'ONE_TIME'>('MONTHLY');
   const [publicCredit, setPublicCredit] = useState(initialStatus.showPublicly);
-  const [status, setStatus] = useState(initialStatus);
+  const [storedStatus, setStatus] = useState(initialStatus);
+  const status = hasUserChanged ? EMPTY_SUPPORT_STATUS : storedStatus;
   const [existingSubscriptionDetected, setExistingSubscriptionDetected] = useState(false);
-  const shouldManageSubscription = status.hasActiveSubscription || existingSubscriptionDetected;
+  const shouldManageSubscription = status.hasActiveSubscription || (!hasUserChanged && existingSubscriptionDetected);
   const [busy, setBusy] = useState(false);
   const [isRetryingAuth, setIsRetryingAuth] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useIdentityLayoutEffect(() => {
+    if (currentSessionIdentity.current !== sessionIdentity) setBusy(false);
+    currentSessionIdentity.current = sessionIdentity;
+  }, [sessionIdentity]);
+
+  useEffect(() => {
+    if (sessionStatus === 'loading') return;
+    const previousUserId = priorSessionUserId.current;
+    priorSessionUserId.current = sessionUserId;
+    if (previousUserId === sessionUserId) return;
+    setStatus(EMPTY_SUPPORT_STATUS);
+    setPublicCredit(false);
+    setExistingSubscriptionDetected(false);
+    setError(null);
+  }, [sessionStatus, sessionUserId]);
 
   const showSupportError = (requestError: unknown) => {
     switch (supportErrorCode(requestError)) {
@@ -135,16 +169,24 @@ export default function SupportContent({ configuration, initialStatus, locale }:
       setError(t('support.stripe.amountError'));
       return;
     }
+    const requestIdentity = sessionIdentity;
     setBusy(true);
     setError(null);
     try {
       const response = await createGraphQLHttpClient(authToken).request<{
         createSupportCheckoutSession: { url: string };
       }>(CREATE_SUPPORT_CHECKOUT, {
-        input: { amount: amountInMinorUnits, cadence, publicCredit: isAuthenticated ? publicCredit : false, locale },
+        input: {
+          amount: amountInMinorUnits,
+          cadence,
+          publicCredit: isAuthenticated && !hasUserChanged ? publicCredit : false,
+          locale,
+        },
       });
+      if (currentSessionIdentity.current !== requestIdentity) return;
       window.location.assign(response.createSupportCheckoutSession.url);
     } catch (requestError) {
+      if (currentSessionIdentity.current !== requestIdentity) return;
       showSupportError(requestError);
       setBusy(false);
     }
@@ -152,31 +194,37 @@ export default function SupportContent({ configuration, initialStatus, locale }:
 
   const updateVisibility = async (showPublicly: boolean) => {
     if (busy || !canManageSupport) return;
+    const requestIdentity = sessionIdentity;
     setBusy(true);
     setError(null);
     try {
       const response = await createGraphQLHttpClient(authToken).request<{
         updateSupporterVisibility: SupporterStatus;
       }>(UPDATE_SUPPORTER_VISIBILITY, { showPublicly });
+      if (currentSessionIdentity.current !== requestIdentity) return;
       setStatus(response.updateSupporterVisibility);
       setPublicCredit(response.updateSupporterVisibility.showPublicly);
     } catch (requestError) {
+      if (currentSessionIdentity.current !== requestIdentity) return;
       showSupportError(requestError);
     } finally {
-      setBusy(false);
+      if (currentSessionIdentity.current === requestIdentity) setBusy(false);
     }
   };
 
   const openBillingPortal = async () => {
     if (busy || !canManageSupport) return;
+    const requestIdentity = sessionIdentity;
     setBusy(true);
     setError(null);
     try {
       const response = await createGraphQLHttpClient(authToken).request<{
         createSupportBillingPortalSession: { url: string };
       }>(CREATE_SUPPORT_BILLING_PORTAL, { locale });
+      if (currentSessionIdentity.current !== requestIdentity) return;
       window.location.assign(response.createSupportBillingPortalSession.url);
     } catch (requestError) {
+      if (currentSessionIdentity.current !== requestIdentity) return;
       showSupportError(requestError);
       setBusy(false);
     }
@@ -254,7 +302,7 @@ export default function SupportContent({ configuration, initialStatus, locale }:
                   <FormControlLabel
                     control={
                       <Checkbox
-                        checked={publicCredit}
+                        checked={!hasUserChanged && publicCredit}
                         disabled={busy || !canManageSupport}
                         onChange={(event) => setPublicCredit(event.target.checked)}
                       />
@@ -350,7 +398,7 @@ export default function SupportContent({ configuration, initialStatus, locale }:
                 {t('support.stripe.authError')}
               </Alert>
             ) : null}
-            {error ? <Alert severity="error">{error}</Alert> : null}
+            {error && !hasUserChanged ? <Alert severity="error">{error}</Alert> : null}
           </Box>
         </PageSection>
       </Box>

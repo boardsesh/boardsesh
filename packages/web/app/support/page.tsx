@@ -1,4 +1,5 @@
 import React from 'react';
+import { decode } from 'next-auth/jwt';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
@@ -24,6 +25,15 @@ export async function generateMetadata() {
 export default async function SupportPage() {
   const locale = await getLocale();
   const authToken = await getServerAuthToken();
+  let initialUserId: string | null = null;
+  if (authToken && process.env.NEXTAUTH_SECRET) {
+    try {
+      const principal = await decode({ token: authToken, secret: process.env.NEXTAUTH_SECRET });
+      initialUserId = typeof principal?.sub === 'string' && principal.sub.trim() ? principal.sub : null;
+    } catch {
+      // Invalid cookies cannot own server-rendered supporter state.
+    }
+  }
   let supportPage: GetSupportPageResponse = {
     supportConfiguration: {
       enabled: false,
@@ -40,8 +50,11 @@ export default async function SupportPage() {
       cancelAtPeriodEnd: false,
     },
   };
+  const anonymousSupporterStatus = supportPage.mySupporterStatus;
   try {
-    supportPage = await createGraphQLHttpClient(authToken).request<GetSupportPageResponse>(GET_SUPPORT_PAGE);
+    supportPage = await createGraphQLHttpClient(initialUserId ? authToken : undefined).request<GetSupportPageResponse>(
+      GET_SUPPORT_PAGE,
+    );
   } catch {
     // Keep the support page usable during a backend deploy or local setup.
   }
@@ -52,7 +65,8 @@ export default async function SupportPage() {
           ...supportPage.supportConfiguration,
           legacyDonateUrl: supportPage.supportConfiguration.legacyDonateUrl ?? resolveStripeDonateUrl(),
         }}
-        initialStatus={supportPage.mySupporterStatus}
+        initialStatus={initialUserId ? supportPage.mySupporterStatus : anonymousSupporterStatus}
+        initialUserId={initialUserId}
         locale={locale}
       />
     </I18nProvider>
