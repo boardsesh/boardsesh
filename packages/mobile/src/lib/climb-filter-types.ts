@@ -2,13 +2,32 @@
 // callers and the existing `ClimbFilters` / `DEFAULT_FILTERS` symbols
 // continue to work without churn.
 import { getBoardCapabilities } from '@boardsesh/board-config';
-import { type ClimbFilterState, DEFAULT_CLIMB_FILTER_STATE, type SortOption } from '@boardsesh/climb-filters';
+import {
+  type ClimbFilterState,
+  DEFAULT_CLIMB_FILTER_STATE,
+  SORT_OPTIONS,
+  type SortOption,
+} from '@boardsesh/climb-filters';
 
 export type ClimbFilters = ClimbFilterState;
 
 export const DEFAULT_FILTERS: ClimbFilters = DEFAULT_CLIMB_FILTER_STATE;
 
 export type { SortOption };
+
+const SORT_OPTIONS_WITHOUT_USER_GRADE: readonly SortOption[] = SORT_OPTIONS.filter(
+  (sortOption) => sortOption !== 'userGrade',
+);
+
+/** Sort keys whose upstream values represent user grades for this board. */
+export function getSortOptionsForBoard(boardName: string): readonly SortOption[] {
+  return getBoardCapabilities(boardName).userGradeSort ? SORT_OPTIONS : SORT_OPTIONS_WITHOUT_USER_GRADE;
+}
+
+/** Whether a raw picker tag remains a supported sort choice for this board. */
+export function isSortOptionForBoard(value: string, boardName: string): value is SortOption {
+  return getSortOptionsForBoard(boardName).includes(value as SortOption);
+}
 
 /**
  * Sanitizes the whole auth-gated "Your progress" section for a signed-out user.
@@ -47,13 +66,15 @@ export function statusForAuth(filters: ClimbFilters, isAuthenticated: boolean): 
 }
 
 /**
- * Drops the filters this board has no control for. Today that is only
- * `includeOtherAngles`: its switch renders on angle-bound boards (Woods) alone,
- * but recent pills are shared across boards, so a Woods pill replayed on Kilter
+ * Drops filters this board has no control or meaningful value for. The
+ * `includeOtherAngles` switch renders on angle-bound boards (Woods) alone, but
+ * recent pills are shared across boards, so a Woods pill replayed on Kilter
  * would carry it over with no switch to turn it off, and opt that search into the
  * cross-angle query, which costs ~5.6 s on Kilter's catalogue (see
- * `angleBoundClimbs` in @boardsesh/board-config). Returns the same reference when
- * there's nothing to drop.
+ * `angleBoundClimbs` in @boardsesh/board-config). The user-grade sort is also
+ * unavailable where `difficulty_average` is only the setter's catalog grade
+ * (Woods and spray), so those persisted selections fall back to `difficulty`.
+ * Returns the same reference when there's nothing to normalize.
  *
  * Applied where a pill is replayed, and again in every builder that turns filter
  * state into a search input — the list's `searchInput`, the play drawer's
@@ -61,7 +82,16 @@ export function statusForAuth(filters: ClimbFilters, isAuthenticated: boolean): 
  * filter state across boards cannot reach the slow query either.
  */
 export function filtersForBoard(filters: ClimbFilters, boardName: string): ClimbFilters {
-  if (!filters.includeOtherAngles || getBoardCapabilities(boardName).angleBoundClimbs) return filters;
-  const { includeOtherAngles: _droppedOtherAngles, ...filtersWithoutOtherAngles } = filters;
-  return filtersWithoutOtherAngles;
+  const capabilities = getBoardCapabilities(boardName);
+  const dropOtherAngles = !!filters.includeOtherAngles && !capabilities.angleBoundClimbs;
+  const resetSort = filters.sortBy === 'userGrade' && !capabilities.userGradeSort;
+  if (!dropOtherAngles && !resetSort) return filters;
+
+  const normalized = { ...filters };
+  if (dropOtherAngles) delete normalized.includeOtherAngles;
+  if (resetSort) {
+    normalized.sortBy = 'difficulty';
+    normalized.sortSeed = undefined;
+  }
+  return normalized;
 }

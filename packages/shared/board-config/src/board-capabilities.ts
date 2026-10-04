@@ -34,6 +34,13 @@ export type BoardCapabilities = {
    */
   crowdGrade: boolean;
   /**
+   * The upstream `difficulty_average` represents submitted user grades rather
+   * than the setter's catalog grade. MoonBoard imports per-user grades even
+   * though it has no Boardsesh crowd-grade model; Woods and spray walls seed the
+   * setter grade into this column.
+   */
+  userGradeSort: boolean;
+  /**
    * A climb on this board carries its grade and its ascents at the ONE angle it
    * was set at, so browsing any other angle finds no stats row for it. On Woods the
    * shape is total: 5,392 listed climbs share 5,398 stats rows between them, so
@@ -160,6 +167,7 @@ export type BoardCapabilities = {
  */
 const AURORA_CAPABILITIES: BoardCapabilities = {
   crowdGrade: true,
+  userGradeSort: true,
   angleBoundClimbs: false,
   climbCreation: true,
   explicitClimbRules: false,
@@ -176,6 +184,7 @@ const AURORA_CAPABILITIES: BoardCapabilities = {
  */
 const MOONBOARD_CAPABILITIES: BoardCapabilities = {
   crowdGrade: false,
+  userGradeSort: true,
   // Same angle-bound shape as Woods, still off — see the field's doc for why.
   angleBoundClimbs: false,
   climbCreation: true,
@@ -194,6 +203,7 @@ const MOONBOARD_CAPABILITIES: BoardCapabilities = {
  */
 const WOODS_CAPABILITIES: BoardCapabilities = {
   crowdGrade: false,
+  userGradeSort: false,
   angleBoundClimbs: true,
   climbCreation: true,
   explicitClimbRules: true,
@@ -221,6 +231,7 @@ const WOODS_CAPABILITIES: BoardCapabilities = {
  */
 const SPRAY_CAPABILITIES: BoardCapabilities = {
   crowdGrade: false,
+  userGradeSort: false,
   // A wall's angle is fixed at creation, so every climb on it is set — and
   // browsed — at that one angle. There is no other angle for a stats row to be
   // missing at or for a climb to belong to, so neither the browsed-angle

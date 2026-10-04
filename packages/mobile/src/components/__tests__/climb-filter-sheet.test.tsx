@@ -236,7 +236,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('@boardsesh/climb-filters', () => ({
-  SORT_OPTIONS: ['popular', 'difficulty'],
+  SORT_OPTIONS: ['popular', 'difficulty', 'userGrade'],
   GRADE_ACCURACY_VALUES: ['0', '0.2', '0.1', '0.05'],
   DEFAULT_CLIMB_FILTER_STATE: {
     sortBy: 'popular',
@@ -1133,6 +1133,27 @@ describe('ClimbFilterSheet random sort', () => {
       currentFilters: { ...currentFilters, sortBy: 'quality' },
     });
     expect(queryByText('mobile.filter.sort.reshuffle')).toBeNull();
+  });
+});
+
+describe('ClimbFilterSheet user-grade sort by board', () => {
+  it('hides and normalizes user-grade sorting on a spray wall', () => {
+    const onApply = vi.fn();
+    const { getByText, queryByText } = renderFilterSheet({
+      boardConfig: { ...boardConfig, boardName: 'spray' },
+      currentFilters: { ...currentFilters, sortBy: 'userGrade' },
+      onApply,
+    });
+
+    expect(queryByText('mobile.filter.sort.userGrade')).toBeNull();
+    expect(getByText('mobile.filter.sort.difficulty')).not.toBeNull();
+    applyAndClose(getByText('mobile.filter.showCount12'));
+    expect(onApply.mock.calls.at(-1)?.[0]).toMatchObject({ sortBy: 'difficulty' });
+  });
+
+  it('keeps user-grade sorting on MoonBoard', () => {
+    const { getByText } = renderFilterSheet({ boardConfig: { ...boardConfig, boardName: 'moonboard' } });
+    expect(getByText('mobile.filter.sort.userGrade')).not.toBeNull();
   });
 });
 

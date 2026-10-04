@@ -37,6 +37,14 @@ const tensionBoard: BoardSearchConfig = {
   angle: 30,
 };
 
+const sprayBoard: BoardSearchConfig = {
+  boardName: 'spray',
+  layoutId: 1,
+  sizeId: 1,
+  setIds: '1',
+  angle: 35,
+};
+
 const defaultFilters: ClimbFilters = {
   sortBy: 'ascents',
   sortOrder: 'desc',
@@ -125,6 +133,26 @@ describe('saveLastSearch / getLastSearch', () => {
     const restored = await getLastSearch(kilterBoard);
     expect(restored?.searchText).toBe('jugs');
     expect(restored?.filters.minGrade).toBeUndefined();
+  });
+
+  it('normalizes unsupported user-grade sorting before saving and restoring spray searches', async () => {
+    const { saveLastSearch, getLastSearch, boardConfigKey } = await import('../last-search-store');
+    const userGradeFilters = { ...defaultFilters, sortBy: 'userGrade' as const, minGrade: 12 };
+
+    await saveLastSearch(sprayBoard, userGradeFilters, 'aretes');
+    const savedMap = JSON.parse((await rawStorage())[STORE_KEY]) as Record<string, { filters: { sortBy: string } }>;
+    expect(savedMap[boardConfigKey(sprayBoard)].filters.sortBy).toBe('difficulty');
+    expect((await getLastSearch(sprayBoard))?.filters).toMatchObject({ sortBy: 'difficulty', minGrade: 12 });
+
+    await seedRaw({
+      [boardConfigKey(sprayBoard)]: {
+        filters: userGradeFilters,
+        boardFilters: {},
+        searchText: 'aretes',
+        updatedAt: 1,
+      },
+    });
+    expect((await getLastSearch(sprayBoard))?.filters).toMatchObject({ sortBy: 'difficulty', minGrade: 12 });
   });
 });
 

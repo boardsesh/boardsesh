@@ -126,4 +126,31 @@ describe('ClimbAttributeIcons', () => {
     expect(icons(container)).toEqual(['benchmark', 'no.match']);
     expect(badgeTexts(container)).toEqual(['mobile.climbRow.campus · mobile.climbRow.noKickboard']);
   });
+
+  it('renders a "Stiff" badge when the crowd average notably outgrades the display grade', () => {
+    const { container } = render(<ClimbAttributeIcons difficultyError={0.8} ascensionistCount={10} />);
+    expect(badgeTexts(container)).toEqual(['mobile.climbRow.gradeError.stiff']);
+  });
+
+  it('renders a "Soft" badge when the crowd average notably undergrades the display grade', () => {
+    const { container } = render(<ClimbAttributeIcons difficultyError={-0.8} ascensionistCount={10} />);
+    expect(badgeTexts(container)).toEqual(['mobile.climbRow.gradeError.soft']);
+  });
+
+  it('does not render a grade-error badge below the notability threshold or ascent floor', () => {
+    expect(icons(render(<ClimbAttributeIcons difficultyError={0.1} ascensionistCount={10} />).container)).toEqual([]);
+    expect(badgeTexts(render(<ClimbAttributeIcons difficultyError={0.1} ascensionistCount={10} />).container)).toEqual(
+      [],
+    );
+    expect(badgeTexts(render(<ClimbAttributeIcons difficultyError={2.0} ascensionistCount={1} />).container)).toEqual(
+      [],
+    );
+  });
+
+  it('joins the grade-error badge with other text badges', () => {
+    const { container } = render(
+      <ClimbAttributeIcons characteristics={['campus']} difficultyError={0.8} ascensionistCount={10} />,
+    );
+    expect(badgeTexts(container)).toEqual(['mobile.climbRow.campus · mobile.climbRow.gradeError.stiff']);
+  });
 });

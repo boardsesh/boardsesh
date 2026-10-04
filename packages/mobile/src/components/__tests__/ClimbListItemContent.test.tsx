@@ -8,7 +8,9 @@ import { createElement, type ReactNode } from 'react';
 // computing the legacy grade colour itself. A controllable stub lets us assert the
 // wiring without the flag/preference plumbing (covered by use-display-grade's tests).
 const resolveGrade = vi.fn();
+const gradePreferenceOverride = vi.hoisted(() => ({ boardseshActive: true }));
 const liveStatsOverride = vi.hoisted(() => ({
+  listeners: new Set<() => void>(),
   current: null as null | {
     ascensionistCount: number;
     qualityAverage: string | null;
@@ -57,12 +59,23 @@ vi.mock('@boardsesh/board-react', async () => {
       _climbUuid: string,
       _angle: number,
       base: { ascensionistCount?: number; qualityAverage?: string; difficulty?: string },
-    ) =>
-      liveStatsOverride.current ?? {
-        ascensionistCount: base.ascensionistCount ?? 0,
-        qualityAverage: base.qualityAverage ?? null,
-        difficulty: base.difficulty ?? null,
-      },
+    ) => {
+      const liveStats = useSyncExternalStore(
+        (listener) => {
+          liveStatsOverride.listeners.add(listener);
+          return () => liveStatsOverride.listeners.delete(listener);
+        },
+        () => liveStatsOverride.current,
+        () => liveStatsOverride.current,
+      );
+      return (
+        liveStats ?? {
+          ascensionistCount: base.ascensionistCount ?? 0,
+          qualityAverage: base.qualityAverage ?? null,
+          difficulty: base.difficulty ?? null,
+        }
+      );
+    },
   };
 });
 
@@ -80,7 +93,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('../../hooks/use-display-grade', () => ({
-  useDisplayGrade: () => ({ boardseshActive: true, resolveGrade }),
+  useDisplayGrade: () => ({ boardseshActive: gradePreferenceOverride.boardseshActive, resolveGrade }),
 }));
 
 const useMyGradeCalls = vi.hoisted(() => [] as Array<{ climbUuid: string; angle: number; options: unknown }>);
@@ -134,11 +147,23 @@ vi.mock('../Icon', () => ({
   Icon: ({ name, color }: { name: string; color?: string }) =>
     createElement('i', { 'data-icon': name, 'data-color': color }),
 }));
-vi.mock('../ClimbAttributeIcons', () => ({ ClimbAttributeIcons: () => null }));
+vi.mock('../ClimbAttributeIcons', () => ({
+  ClimbAttributeIcons: ({ difficultyError }: { difficultyError?: string | number | null }) =>
+    difficultyError == null
+      ? null
+      : createElement('span', { 'data-testid': 'climb-grade-error' }, String(difficultyError)),
+}));
 vi.mock('../ClimbPlaylistChips', () => ({ ClimbPlaylistChips: () => null }));
 
 import { favoritesStore } from '@boardsesh/climb-actions';
 import { ClimbListItemContent } from '../ClimbListItemContent';
+
+beforeEach(() => {
+  gradePreferenceOverride.boardseshActive = true;
+  liveStatsOverride.current = null;
+  myGradeOverride.current = { status: 'unknown' };
+  statusLogbook.current = null;
+});
 
 const baseClimb = {
   uuid: 'c1',
@@ -209,6 +234,139 @@ describe('ClimbListItemContent grade', () => {
 
     expect(resolveGrade).toHaveBeenCalledWith(expect.objectContaining({ difficulty: null }));
     expect(container.textContent).not.toContain('4.5★');
+  });
+});
+
+describe('ClimbListItemContent grade-error badge', () => {
+  beforeEach(() => {
+    resolveGrade.mockReset();
+    liveStatsOverride.current = null;
+    gradePreferenceOverride.boardseshActive = true;
+    myGradeOverride.current = { status: 'unknown' };
+  });
+
+  const climbWithGradeError = { ...baseClimb, difficulty_error: '1.2' };
+
+  const resolveWithPreference = (climb: { difficulty?: string | null; boardseshDifficulty?: number | null }) => {
+    const isBoardsesh = gradePreferenceOverride.boardseshActive && climb.boardseshDifficulty != null;
+    const label = isBoardsesh ? 'V5' : climb.difficulty === '6c/V5' ? 'V5' : 'V4';
+    return { label, color: '#111111', isBoardsesh };
+  };
+
+  it('suppresses the legacy badge when the visible grade is Boardsesh', () => {
+    resolveGrade.mockImplementation(resolveWithPreference);
+    const { queryByTestId } = render(
+      <ClimbListItemContent
+        climb={climbWithGradeError}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+      />,
+    );
+    expect(queryByTestId('climb-grade-error')).toBeNull();
+  });
+
+  it('keeps the legacy badge when the Boardsesh preference is off and the legacy grade is unchanged', () => {
+    gradePreferenceOverride.boardseshActive = false;
+    resolveGrade.mockImplementation(resolveWithPreference);
+    const { getByTestId } = render(
+      <ClimbListItemContent
+        climb={climbWithGradeError}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+      />,
+    );
+    expect(getByTestId('climb-grade-error').textContent).toBe('1.2');
+  });
+
+  it('hides a stale badge after the live legacy baseline changes with Boardsesh grades off', () => {
+    gradePreferenceOverride.boardseshActive = false;
+    resolveGrade.mockImplementation(resolveWithPreference);
+    const { queryByTestId, container } = render(
+      <ClimbListItemContent
+        climb={climbWithGradeError}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+      />,
+    );
+    expect(queryByTestId('climb-grade-error')).not.toBeNull();
+
+    act(() => {
+      liveStatsOverride.current = {
+        ascensionistCount: 11,
+        qualityAverage: '4.6',
+        difficulty: '6c/V5',
+      };
+      for (const listener of liveStatsOverride.listeners) listener();
+    });
+
+    expect(resolveGrade).toHaveBeenCalledWith(expect.objectContaining({ difficulty: '6c/V5' }));
+    expect(gradeNode(container)?.textContent).toBe('V5');
+    expect(queryByTestId('climb-grade-error')).toBeNull();
+  });
+
+  it('hides the crowd delta when a personal grade is the primary grade', () => {
+    gradePreferenceOverride.boardseshActive = false;
+    resolveGrade.mockImplementation(resolveWithPreference);
+    myGradeOverride.current = { status: 'set', difficultyId: 20, climbedAt: null };
+    const { queryByTestId, container } = render(
+      <ClimbListItemContent
+        climb={climbWithGradeError}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+      />,
+    );
+    expect(gradeNode(container)?.textContent).toBe('V5');
+    expect(queryByTestId('climb-grade-error')).toBeNull();
+  });
+
+  it('keeps the crowd delta when the consensus flag keeps the crowd grade primary', () => {
+    gradePreferenceOverride.boardseshActive = false;
+    resolveGrade.mockImplementation(resolveWithPreference);
+    myGradeOverride.current = { status: 'set', difficultyId: 20, climbedAt: null };
+    const { queryByTestId, container } = render(
+      <ClimbListItemContent
+        climb={climbWithGradeError}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+        gradeIsConsensus
+      />,
+    );
+    expect(gradeNode(container)?.textContent).toBe('V4');
+    expect(queryByTestId('climb-grade-error')?.textContent).toBe('1.2');
+  });
+
+  it('keeps the crowd delta when a consensus annotation suppresses the personal primary', () => {
+    gradePreferenceOverride.boardseshActive = false;
+    resolveGrade.mockImplementation(resolveWithPreference);
+    myGradeOverride.current = { status: 'set', difficultyId: 20, climbedAt: null };
+    const { queryByTestId, container } = render(
+      <ClimbListItemContent
+        climb={climbWithGradeError}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+        consensusGrade="V5"
+      />,
+    );
+    expect(gradeNode(container)?.textContent).toBe('V4');
+    expect(queryByTestId('climb-grade-error')?.textContent).toBe('1.2');
   });
 });
 

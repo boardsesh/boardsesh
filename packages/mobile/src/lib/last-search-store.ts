@@ -9,7 +9,7 @@ import {
   type BoardSearchConfig,
   type ClimbBoardFilterState,
 } from '@boardsesh/climb-filters';
-import type { ClimbFilters } from './climb-filter-types';
+import { filtersForBoard, type ClimbFilters } from './climb-filter-types';
 import { AUTH_GATED_FIELDS } from './recent-filter-store';
 
 export type LastSearch = {
@@ -127,10 +127,11 @@ export async function getLastSearch(
   const map = await readMap();
   const entry = map[boardConfigKey(board)];
   if (entry == null) return null;
+  const filters = filtersForBoard(entry.filters, board.boardName);
   if (options?.isAuthenticated === false) {
-    return { ...entry, filters: stripAuthGatedFields(entry.filters) };
+    return { ...entry, filters: stripAuthGatedFields(filters) };
   }
-  return entry;
+  return filters === entry.filters ? entry : { ...entry, filters };
 }
 
 /**
@@ -147,7 +148,12 @@ export async function saveLastSearch(
 ): Promise<void> {
   try {
     const key = boardConfigKey(board);
-    if (!hasActiveClimbFilters(filters) && !hasActiveBoardFilters(boardFilters) && searchText.trim() === '') {
+    const filtersForCurrentBoard = filtersForBoard(filters, board.boardName);
+    if (
+      !hasActiveClimbFilters(filtersForCurrentBoard) &&
+      !hasActiveBoardFilters(boardFilters) &&
+      searchText.trim() === ''
+    ) {
       const map = await readMap();
       if (key in map) {
         delete map[key];
@@ -156,7 +162,7 @@ export async function saveLastSearch(
       return;
     }
     const map = await readMap();
-    map[key] = { filters, boardFilters, searchText, updatedAt: Date.now() };
+    map[key] = { filters: filtersForCurrentBoard, boardFilters, searchText, updatedAt: Date.now() };
     const capped = capMap(map);
     await writeSecureValue(LAST_SEARCH_KEY, JSON.stringify(capped));
   } catch {

@@ -21,6 +21,9 @@ import type { DimensionChip } from '../../lib/dimension-chips';
 export type { DimensionChip } from '../../lib/dimension-chips';
 
 export type FilterChipRowProps = {
+  /** Active board type, used to hide sort keys that have no board-specific meaning. */
+  boardName: string;
+
   /**
    * The filter chips the user has pinned, in render order (see
    * lib/pinnable-chips.ts). Each pinnable chip renders only when its kind is
