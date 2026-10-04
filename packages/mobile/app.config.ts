@@ -622,8 +622,8 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       ],
       'expo-updates',
       'expo-web-browser',
-      // Photo-library access for picking a profile avatar (Edit Profile screen)
-      // and camera access for photographing a spray wall (epic #5346, SW-09).
+      // Photo-library access for picking a profile avatar (Edit Profile screen),
+      // a spray wall photo and a feedback screenshot, plus camera access for photographing a spray wall (epic #5346, SW-09).
       // Adds NSPhotoLibraryUsageDescription + NSCameraUsageDescription on iOS and
       // READ_MEDIA_IMAGES + CAMERA on Android; native change, ships on the next
       // build (not OTA). Nothing calls launchCameraAsync yet — the permission
@@ -636,7 +636,8 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       [
         'expo-image-picker',
         {
-          photosPermission: 'Boardsesh uses your photo library so you can pick a profile picture.',
+          photosPermission:
+            'Boardsesh uses your photo library so you can pick a profile picture, a photo of your wall, or a screenshot to send with feedback.',
           cameraPermission: 'Boardsesh uses your camera so you can photograph a wall and set climbs on it.',
         },
       ],

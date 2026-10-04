@@ -7,6 +7,6 @@
     "NSLocationWhenInUseUsageDescription": "Boardsesh usa tu ubicación para encontrar plafones cerca de ti y descubrir sesiones de escalada cercanas en Modo Fiesta.",
     "NSLocationAlwaysAndWhenInUseUsageDescription": "Boardsesh usa tu ubicación para encontrar plafones cerca de ti y descubrir sesiones de escalada cercanas en Modo Fiesta.",
     "NSCameraUsageDescription": "Boardsesh usa tu cámara para que puedas fotografiar un plafón y crear bloques en él.",
-    "NSPhotoLibraryUsageDescription": "Boardsesh usa tu fototeca para que puedas elegir una foto de perfil."
+    "NSPhotoLibraryUsageDescription": "Boardsesh usa tu fototeca para que puedas elegir una foto de perfil, una foto de tu muro o una captura para enviar con tus comentarios."
   }
 }
