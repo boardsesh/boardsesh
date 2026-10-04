@@ -1121,6 +1121,10 @@ worker stages one source object on disk, so reserve scratch space for up to the
 selected number of simultaneous objects. Verification streams directly from providers
 and does not stage objects on disk. Reduce the limit if provider throttling
 or disk pressure appears; full integrity and source-stability checks remain required.
+Transient upload failures receive at most four whole-object attempts, reopening the staged
+file and requiring its original Content-MD5 on every attempt. Authentication, checksum,
+local-file and unknown errors stop immediately. A rerun hashes existing destination objects
+before skipping them; it never deletes the completed prefix or skips final full verification.
 
 Run the gate in this order:
 

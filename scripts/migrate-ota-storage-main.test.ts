@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import type { ReadStream } from 'node:fs';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
@@ -13,6 +14,8 @@ import { main, parseMigrationOptions } from './migrate-ota-storage';
 type StoredObject = { body: Buffer; metadata: Omit<PutObjectCommandInput, 'Bucket' | 'Key' | 'Body'> };
 const storage = vi.hoisted(() => ({
   buckets: new Map<string, Map<string, StoredObject>>(),
+  putFailures: [] as { error: unknown; partial?: boolean; committed?: boolean }[],
+  putAttempts: [] as { body: Readable; bytes: Buffer; input: PutObjectCommandInput }[],
   activeReads: new Map<string, number>(),
   readPeaks: new Map<string, number[]>(),
   calls: [] as { endpoint: string; operation: string; key?: string }[],
@@ -95,18 +98,28 @@ vi.mock('@aws-sdk/client-s3', async (importOriginal) => {
           if (storage.earlyPutFailure === null) throw new Error('Missing early provider response');
           throw storage.earlyPutFailure;
         }
+        const failure = storage.putFailures.shift();
         const chunks: Buffer[] = [];
-        for await (const chunk of Body) chunks.push(Buffer.from(chunk as Uint8Array));
-        if (storage.putFailure) throw storage.putFailure;
-        if (storage.raceBeforePut) {
-          storage.raceBeforePut = false;
-          if (!storage.raceObject) throw new Error('Missing synthetic race object');
-          bucket.set(key, storage.raceObject);
+        for await (const chunk of Body) {
+          chunks.push(Buffer.from(chunk as Uint8Array));
+          if (failure?.partial) break;
         }
-        if (command.input.IfNoneMatch === '*' && bucket.has(key)) {
-          throw { name: 'PreconditionFailed', $metadata: { httpStatusCode: 412 } };
+        const bytes = Buffer.concat(chunks);
+        storage.putAttempts.push({ body: Body, bytes, input: command.input });
+        if (!failure?.partial) {
+          if (createHash('md5').update(bytes).digest('base64') !== _md5)
+            throw { name: 'BadDigest', $metadata: { httpStatusCode: 400 } };
+          if (storage.putFailure) throw storage.putFailure;
+          if (storage.raceBeforePut) {
+            storage.raceBeforePut = false;
+            if (!storage.raceObject) throw new Error('Missing synthetic race object');
+            bucket.set(key, storage.raceObject);
+          }
+          if (command.input.IfNoneMatch === '*' && bucket.has(key))
+            throw { name: 'PreconditionFailed', $metadata: { httpStatusCode: 412 } };
+          if (!failure || failure.committed) bucket.set(key, { body: bytes, metadata });
         }
-        bucket.set(key, { body: Buffer.concat(chunks), metadata });
+        if (failure) throw failure.error;
         return {};
       }
     },
@@ -153,6 +166,8 @@ beforeEach(() => {
   liveEndpoint = R2;
   storage.buckets.clear();
   storage.calls.length = 0;
+  storage.putFailures.length = 0;
+  storage.putAttempts.length = 0;
   storage.activeReads.clear();
   storage.readPeaks.clear();
   storage.putPreconditions.length = 0;
@@ -560,4 +575,56 @@ describe('OTA migration package-script argument separator', () => {
     expect(`${result.stdout}${result.stderr}`).toContain('Missing required environment variable: RAILWAY_TOKEN');
     expect(`${result.stdout}${result.stderr}`).not.toContain('Unknown argument');
   }, 25_000);
+});
+
+describe('OTA migration whole-object PUT retries', () => {
+  it.each([
+    { failure: { error: { name: 'InternalError', $metadata: { httpStatusCode: 500 } } } },
+    { failure: { error: { code: 'ECONNRESET' }, partial: true } },
+    { failure: { error: { name: 'ServiceUnavailable', $metadata: { httpStatusCode: 503 } }, committed: true } },
+  ])('reopens identical staged bytes after a transient failure: $failure', async ({ failure }) => {
+    liveEndpoint = LEGACY;
+    const current = object('full OTA bundle'.repeat(20_000));
+    storage.buckets.get(LEGACY)!.set('runtime/bundle', current);
+    storage.putFailures.push(failure);
+    await main(['--apply', '--concurrency', '1']);
+    expect(writes()).toHaveLength(2);
+    expect(storage.putAttempts[0].body).not.toBe(storage.putAttempts[1].body);
+    expect(storage.putAttempts.every(({ body }) => body.destroyed)).toBe(true);
+    expect(storage.putAttempts[1].bytes).toEqual(current.body);
+    for (const { input } of storage.putAttempts)
+      expect(input).toMatchObject({
+        ContentLength: current.body.length,
+        ContentMD5: createHash('md5').update(current.body).digest('base64'),
+        ...current.metadata,
+      });
+    expect(storage.buckets.get(R2)!.get('runtime/bundle')).toMatchObject(current);
+    expect(storage.readPeaks.get(LEGACY)).toEqual([1, 1, 1]);
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('SHA-256, and metadata (exact)'));
+  });
+  it('stops after four transient attempts without deleting any objects', async () => {
+    liveEndpoint = LEGACY;
+    storage.buckets.get(LEGACY)!.set('runtime/bundle', object('bundle'));
+    const failure = { name: 'SlowDown', $metadata: { httpStatusCode: 503 } };
+    for (let attempt = 0; attempt < 5; attempt += 1) storage.putFailures.push({ error: failure });
+    await expect(main(['--apply', '--concurrency', '1'])).rejects.toEqual(failure);
+    expect(writes()).toHaveLength(4);
+    expect(storage.putAttempts.every(({ body }) => body.destroyed)).toBe(true);
+    expect(storage.buckets.get(LEGACY)!.size).toBe(1);
+    expect(storage.buckets.get(R2)!.size).toBe(0);
+  });
+  it.each([
+    { name: 'AccessDenied', $metadata: { httpStatusCode: 403 } },
+    { name: 'BadDigest', $metadata: { httpStatusCode: 400 } },
+    { name: 'TimeoutError', $metadata: { httpStatusCode: 400 } },
+    { code: 'ENOENT' },
+    { name: 'Error', message: 'Unknown streaming failure' },
+  ])('does not retry permanent or unclassified failures: %j', async (failure) => {
+    liveEndpoint = LEGACY;
+    storage.buckets.get(LEGACY)!.set('runtime/bundle', object('bundle'));
+    storage.putFailures.push({ error: failure });
+    await expect(main(['--apply', '--concurrency', '1'])).rejects.toEqual(failure);
+    expect(writes()).toHaveLength(1);
+    expect(storage.putAttempts[0].body.destroyed).toBe(true);
+  });
 });

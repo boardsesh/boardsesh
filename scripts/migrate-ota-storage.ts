@@ -28,6 +28,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { setTimeout as delay } from 'node:timers/promises';
 import { OTA_SERVICE_NAME, RAILWAY_ENVIRONMENT_NAME } from '../infra/railway/config';
 import {
   assertCopyPreflight,
@@ -48,6 +49,7 @@ const RAILWAY_TIMEOUT_MS = 30_000;
 const OTA_BUCKET_NAME = 'boardsesh-ota-v3';
 const MAX_REPORTED_PROBLEMS = 20;
 const DEFAULT_CONCURRENCY = 4;
+const MAX_PUT_ATTEMPTS = 4;
 
 type MigrationMode = 'inventory' | 'copy' | 'verify';
 type AuthScheme = 'project' | 'account';
@@ -350,7 +352,44 @@ async function downloadSourceToFile(source: BucketClient, key: string, directory
   };
 }
 
+function isTransientPutError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { name?: string; code?: string; $metadata?: { httpStatusCode?: number } };
+  const status = candidate.$metadata?.httpStatusCode;
+  // A concrete client response wins over a misleading transport error name.
+  if (status !== undefined) return [429, 500, 502, 503, 504].includes(status);
+  return [
+    'InternalError',
+    'ServiceUnavailable',
+    'SlowDown',
+    'RequestTimeout',
+    'TimeoutError',
+    'ECONNRESET',
+    'EPIPE',
+    'ETIMEDOUT',
+    'ECONNREFUSED',
+    'ENETUNREACH',
+    'EAI_AGAIN',
+  ].includes(candidate.code ?? candidate.name ?? '');
+}
+
 async function putDestination(destination: BucketClient, key: string, source: TemporarySource): Promise<void> {
+  for (let attempt = 1; attempt <= MAX_PUT_ATTEMPTS; attempt += 1) {
+    const file = await stat(source.path);
+    if (file.size !== source.fingerprint.size) throw new Error(`Staged object changed before upload: ${key}`);
+    // Reopen the staged bytes with their original checksum and create-only condition.
+    // The attempt owns and awaits stream closure before another attempt can start.
+    try {
+      await putDestinationAttempt(destination, key, source);
+      return;
+    } catch (error) {
+      if (attempt === MAX_PUT_ATTEMPTS || !isTransientPutError(error)) throw error;
+    }
+    await delay(250 * 2 ** (attempt - 1));
+  }
+}
+
+async function putDestinationAttempt(destination: BucketClient, key: string, source: TemporarySource): Promise<void> {
   const metadata = expectedDestinationMetadata(source.fingerprint);
   const body = createReadStream(source.path);
   let bodyError: Error | undefined;
