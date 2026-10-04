@@ -73,18 +73,26 @@ describe('Migrate OTA Storage to R2 workflow', () => {
     const requestLogPath = join(temporaryDirectory, 'requests.log');
     writeFileSync(
       ghMockPath,
-      `#!/usr/bin/env node
-const { appendFileSync } = require('node:fs');
-const args = process.argv.slice(2);
-const endpoint = args.find((argument) => argument.includes('/actions/workflows/'));
-if (!endpoint) process.exit(2);
-const endpointPath = endpoint.split('/actions/workflows/')[1] ?? '';
-const runList = endpointPath.endsWith('/runs');
-const workflowFile = (runList ? endpointPath.slice(0, -5) : endpointPath).split('/').pop() ?? '';
-const status = args.find((argument) => argument.startsWith('status='))?.slice('status='.length);
-appendFileSync(process.env.OTA_WRITER_TEST_LOG, workflowFile + '\\t' + (status ?? 'state') + '\\n');
-const activeCaller = runList && workflowFile === 'production-deploy.yml' && status === 'in_progress';
-process.stdout.write(runList ? (activeCaller ? '1' : '0') : 'disabled_manually');
+      `#!/usr/bin/env bash
+set -euo pipefail
+endpointPath=''
+requestedStatus=state
+for argument in "$@"; do
+  case "$argument" in
+    */actions/workflows/*) endpointPath="\${argument#*/actions/workflows/}" ;;
+    status=*) requestedStatus="\${argument#status=}" ;;
+  esac
+done
+if [ -z "$endpointPath" ]; then exit 2; fi
+workflowFile="\${endpointPath%/runs}"
+printf '%s\\t%s\\n' "$workflowFile" "$requestedStatus" >> "$OTA_WRITER_TEST_LOG"
+if [[ "$endpointPath" != */runs ]]; then
+  echo disabled_manually
+elif [ "$workflowFile" = production-deploy.yml ] && [ "$requestedStatus" = in_progress ]; then
+  echo 1
+else
+  echo 0
+fi
 `,
     );
     chmodSync(ghMockPath, 0o755);
@@ -133,8 +141,32 @@ process.stdout.write(runList ? (activeCaller ? '1' : '0') : 'disabled_manually')
 
   it('maps every mode to the safe script flag', () => {
     const run = workflow.jobs.migrate.steps.find(({ name }) => name?.includes('Inventory, copy'))?.run ?? '';
-    expect(run).toContain('inventory) vp run storage:migrate-ota ;;');
-    expect(run).toContain('copy) vp run storage:migrate-ota -- --apply ;;');
-    expect(run).toContain('verify) vp run storage:migrate-ota -- --verify-only ;;');
+    expect(run).toContain('inventory) vp run storage:migrate-ota -- --concurrency "$OTA_MIGRATION_CONCURRENCY" ;;');
+    expect(run).toContain('copy) vp run storage:migrate-ota -- --apply --concurrency "$OTA_MIGRATION_CONCURRENCY" ;;');
+    expect(run).toContain(
+      'verify) vp run storage:migrate-ota -- --verify-only --concurrency "$OTA_MIGRATION_CONCURRENCY" ;;',
+    );
   });
+});
+
+describe('OTA migration workflow concurrency validation', () => {
+  it('defaults operators to 32 bounded parallel workers', () => {
+    expect(workflow.on.workflow_dispatch.inputs.concurrency).toMatchObject({ type: 'string', default: '32' });
+    const guard = workflow.jobs.migrate.steps.find(({ name }) => name === 'Validate migration concurrency');
+    expect(guard?.env).toEqual({ OTA_MIGRATION_CONCURRENCY: '${{ inputs.concurrency }}' });
+    const migration = workflow.jobs.migrate.steps.find(({ name }) => name?.includes('Inventory, copy'));
+    expect(migration?.env?.OTA_MIGRATION_CONCURRENCY).toBe('${{ inputs.concurrency }}');
+    expect(migration?.run).not.toContain('${{ inputs.');
+  });
+  it.each(['1', '32', '64', '0', '65', '-1', '1.5', '1e1', '', '04', '$(exit 99)', '9999999999999999999'])(
+    'validates dispatch value %j before providers are accessed',
+    (requested) => {
+      const guard = workflow.jobs.migrate.steps.find(({ name }) => name === 'Validate migration concurrency');
+      const result = spawnSync('bash', ['-c', guard!.run!], {
+        env: { ...process.env, OTA_MIGRATION_CONCURRENCY: requested },
+        encoding: 'utf8',
+      });
+      expect(result.status).toBe(['1', '32', '64'].includes(requested) ? 0 : 1);
+    },
+  );
 });

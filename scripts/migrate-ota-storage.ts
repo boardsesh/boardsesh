@@ -48,7 +48,7 @@ const RAILWAY_API = 'https://backboard.railway.com/graphql/v2';
 const RAILWAY_TIMEOUT_MS = 30_000;
 const OTA_BUCKET_NAME = 'boardsesh-ota-v3';
 const MAX_REPORTED_PROBLEMS = 20;
-const COPY_CONCURRENCY = 4;
+const DEFAULT_CONCURRENCY = 4;
 
 type MigrationMode = 'inventory' | 'copy' | 'verify';
 type AuthScheme = 'project' | 'account';
@@ -177,14 +177,34 @@ function maskForGitHubActions(value: string): void {
   if (process.env.GITHUB_ACTIONS === 'true') console.log(`::add-mask::${value}`);
 }
 
-function parseMode(argv: readonly string[]): MigrationMode {
-  const apply = argv.includes('--apply');
-  const verify = argv.includes('--verify-only');
-  const unknown = argv.filter((argument) => !['--apply', '--verify-only', '--reverse'].includes(argument));
-  if (unknown.length > 0) throw new Error(`Unknown argument: ${unknown[0]}`);
-  if (new Set(argv).size !== argv.length) throw new Error('Migration flags must not be repeated.');
-  if (apply && verify) throw new Error('--apply and --verify-only are mutually exclusive.');
-  return apply ? 'copy' : verify ? 'verify' : 'inventory';
+export function parseMigrationOptions(argv: readonly string[]): {
+  mode: MigrationMode;
+  reverse: boolean;
+  concurrency: number;
+} {
+  const flags = new Set<string>();
+  let concurrency = DEFAULT_CONCURRENCY;
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (!['--apply', '--verify-only', '--reverse', '--concurrency'].includes(argument))
+      throw new Error(`Unknown argument: ${argument}`);
+    if (flags.has(argument)) throw new Error('Migration flags must not be repeated.');
+    flags.add(argument);
+    if (argument === '--concurrency') {
+      const requested = argv[index + 1];
+      if (!requested || !/^[1-9]\d*$/.test(requested) || Number(requested) > 64)
+        throw new Error('--concurrency must be an integer from 1 to 64.');
+      concurrency = Number(requested);
+      index += 1;
+    }
+  }
+  if (flags.has('--apply') && flags.has('--verify-only'))
+    throw new Error('--apply and --verify-only are mutually exclusive.');
+  return {
+    mode: flags.has('--apply') ? 'copy' : flags.has('--verify-only') ? 'verify' : 'inventory',
+    reverse: flags.has('--reverse'),
+    concurrency,
+  };
 }
 
 function createBucketClient(
@@ -362,6 +382,7 @@ async function copyAll(
   sourceInventory: readonly ObjectInventoryEntry[],
   destinationInventory: readonly ObjectInventoryEntry[],
   inventoryPolicy: InventoryPolicy = 'exact',
+  concurrency = DEFAULT_CONCURRENCY,
 ): Promise<{ copied: number; skipped: number }> {
   assertCopyPreflight(sourceInventory, destinationInventory, inventoryPolicy);
   const destinationSizes = new Map(destinationInventory.map(({ key, size }) => [key, size]));
@@ -373,7 +394,7 @@ async function copyAll(
   let stopped = false;
   let firstError: unknown;
   try {
-    const workers = Array.from({ length: Math.min(COPY_CONCURRENCY, sourceInventory.length) }, async () => {
+    const workers = Array.from({ length: Math.min(concurrency, sourceInventory.length) }, async () => {
       while (!stopped && nextIndex < sourceInventory.length) {
         const object = sourceInventory[nextIndex];
         nextIndex += 1;
@@ -430,10 +451,11 @@ function inventoryBytes(objects: readonly ObjectInventoryEntry[]): number {
 async function loadFingerprintMap(
   target: BucketClient,
   inventory: readonly ObjectInventoryEntry[],
+  concurrency: number,
 ): Promise<Map<string, ObjectFingerprint>> {
   const fingerprints = new Map<string, ObjectFingerprint>();
   let nextIndex = 0;
-  const workers = Array.from({ length: Math.min(COPY_CONCURRENCY, inventory.length) }, async () => {
+  const workers = Array.from({ length: Math.min(concurrency, inventory.length) }, async () => {
     while (nextIndex < inventory.length) {
       const key = inventory[nextIndex].key;
       nextIndex += 1;
@@ -458,13 +480,14 @@ async function verify(
   source: BucketClient,
   destination: BucketClient,
   inventoryPolicy: InventoryPolicy,
+  concurrency: number,
 ): Promise<void> {
   const [sourceInventory, destinationInventory] = await Promise.all([
     listAllObjects(source),
     listAllObjects(destination),
   ]);
   reportInventory(sourceInventory, destinationInventory);
-  const sourceFingerprints = await loadFingerprintMap(source, sourceInventory);
+  const sourceFingerprints = await loadFingerprintMap(source, sourceInventory, concurrency);
   const problems = [
     ...(await verifyObjectStores(
       sourceInventory,
@@ -475,7 +498,7 @@ async function verify(
         if (!fingerprint) throw new Error(`Source fingerprint missing unexpectedly: ${key}`);
         return Promise.resolve(fingerprint);
       },
-      COPY_CONCURRENCY,
+      concurrency,
       inventoryPolicy,
     )),
   ];
@@ -484,7 +507,7 @@ async function verify(
   if (sourceChanged.missing.length > 0 || sourceChanged.extra.length > 0 || sourceChanged.sizeMismatches.length > 0) {
     throw new Error('Source inventory changed during verification. Keep OTA publishing frozen and run again.');
   }
-  const sourceFingerprintsAfter = await loadFingerprintMap(source, sourceAfterVerification);
+  const sourceFingerprintsAfter = await loadFingerprintMap(source, sourceAfterVerification, concurrency);
   for (const [key, before] of sourceFingerprints) {
     const after = sourceFingerprintsAfter.get(key);
     if (!after || !fingerprintsMatch(before, after)) {
@@ -505,8 +528,7 @@ async function verify(
 }
 
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
-  const mode = parseMode(argv);
-  const reverse = argv.includes('--reverse');
+  const { mode, reverse, concurrency } = parseMigrationOptions(argv);
   const inventoryPolicy: InventoryPolicy = reverse ? 'preserve-archives' : 'exact';
   const railwayVariables = await fetchRailwayServiceVariables(
     requireEnv('RAILWAY_TOKEN'),
@@ -521,6 +543,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   maskForGitHubActions(sourceEndpoint);
   maskForGitHubActions(sourceAccessKeyId);
   maskForGitHubActions(sourceSecretAccessKey);
+  console.log(`Migration object concurrency: ${concurrency}.`);
   const sourceProvider = classifyStorageEndpoint(sourceEndpoint);
   console.log(`Live Railway OTA storage provider: ${sourceProvider}.`);
   if (!reverse && sourceProvider === 'r2') {
@@ -562,7 +585,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   );
   try {
     if (mode === 'verify') {
-      await verify(source, destination, inventoryPolicy);
+      await verify(source, destination, inventoryPolicy, concurrency);
       return;
     }
 
@@ -576,11 +599,18 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       return;
     }
 
-    const result = await copyAll(source, destination, sourceInventory, destinationInventory, inventoryPolicy);
+    const result = await copyAll(
+      source,
+      destination,
+      sourceInventory,
+      destinationInventory,
+      inventoryPolicy,
+      concurrency,
+    );
     console.log(
       `Copy complete: ${result.copied} copied, ${result.skipped} already identical. Verifying from providers …`,
     );
-    await verify(source, destination, inventoryPolicy);
+    await verify(source, destination, inventoryPolicy, concurrency);
     console.log(`${reverse ? 'Legacy rollback' : 'R2'} copy verified. Railway remains unchanged.`);
   } finally {
     source.client.destroy();

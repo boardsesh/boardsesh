@@ -1113,6 +1113,14 @@ Before running it, add these bucket-scoped Production secrets for the private `b
 - `OTA_R2_AWS_ACCESS_KEY_ID`
 - `OTA_R2_AWS_SECRET_ACCESS_KEY`
 
+The CLI keeps its default of four concurrent objects. Use `--concurrency 32` to
+increase copy and every full SHA-256 verification pass together; accepted values
+are integers from 1 to 64. The migration workflow defaults its `concurrency`
+input to 32 and validates the same bounds before accessing providers. Each copy
+worker stages one source object on disk, so reserve scratch space for up to the
+selected number of simultaneous objects. Reduce the limit if provider throttling
+or disk pressure appears; full integrity and source-stability checks remain required.
+
 Run the gate in this order:
 
 1. Dispatch **Migrate OTA Storage to R2** on `main` with `mode=inventory`. It must classify the live endpoint as

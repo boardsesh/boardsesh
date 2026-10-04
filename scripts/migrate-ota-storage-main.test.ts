@@ -2,11 +2,13 @@ import { Readable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { GetObjectCommand, GetObjectTaggingCommand, ListObjectsV2Command, PutObjectCommand } from '@aws-sdk/client-s3';
 import type { PutObjectCommandInput } from '@aws-sdk/client-s3';
-import { main } from './migrate-ota-storage';
+import { main, parseMigrationOptions } from './migrate-ota-storage';
 
 type StoredObject = { body: Buffer; metadata: Omit<PutObjectCommandInput, 'Bucket' | 'Key' | 'Body'> };
 const storage = vi.hoisted(() => ({
   buckets: new Map<string, Map<string, StoredObject>>(),
+  activeReads: new Map<string, number>(),
+  readPeaks: new Map<string, number[]>(),
   calls: [] as { endpoint: string; operation: string; key?: string }[],
 }));
 vi.mock('@aws-sdk/client-s3', async (importOriginal) => {
@@ -25,8 +27,12 @@ vi.mock('@aws-sdk/client-s3', async (importOriginal) => {
           operation: command.constructor.name,
           key: 'Key' in command.input ? command.input.Key : undefined,
         });
-        if (command instanceof original.ListObjectsV2Command)
+        if (command instanceof original.ListObjectsV2Command) {
+          const peaks = storage.readPeaks.get(endpoint) ?? [];
+          peaks.push(0);
+          storage.readPeaks.set(endpoint, peaks);
           return { Contents: [...bucket].map(([Key, object]) => ({ Key, Size: object.body.length })) };
+        }
         if (command instanceof original.GetObjectTaggingCommand) {
           if (endpoint.includes('r2.cloudflarestorage.com')) throw new Error('R2 does not implement GetObjectTagging');
           return { TagSet: [] };
@@ -36,7 +42,21 @@ vi.mock('@aws-sdk/client-s3', async (importOriginal) => {
         if (command instanceof original.GetObjectCommand) {
           const object = bucket.get(key);
           if (!object) throw { $metadata: { httpStatusCode: 404 } };
-          return { ...object.metadata, ContentLength: object.body.length, Body: Readable.from([object.body]) };
+          const body = Readable.from(
+            (async function* () {
+              const active = (storage.activeReads.get(endpoint) ?? 0) + 1;
+              storage.activeReads.set(endpoint, active);
+              const peaks = storage.readPeaks.get(endpoint)!;
+              peaks[peaks.length - 1] = Math.max(peaks.at(-1)!, active);
+              try {
+                await new Promise<void>((resolve) => setImmediate(resolve));
+                yield object.body;
+              } finally {
+                storage.activeReads.set(endpoint, storage.activeReads.get(endpoint)! - 1);
+              }
+            })(),
+          );
+          return { ...object.metadata, ContentLength: object.body.length, Body: body };
         }
         const { Body, Bucket: _bucket, Key: _key, ContentMD5: _md5, ...metadata } = command.input;
         if (!(Body instanceof Readable)) throw new Error('Expected staged OTA stream');
@@ -71,6 +91,8 @@ beforeEach(() => {
   liveEndpoint = R2;
   storage.buckets.clear();
   storage.calls.length = 0;
+  storage.activeReads.clear();
+  storage.readPeaks.clear();
   storage.buckets.set(LEGACY, new Map());
   storage.buckets.set(R2, new Map());
   for (const [name, configured] of Object.entries({
@@ -171,5 +193,53 @@ describe('OTA migration main rollback', () => {
     liveEndpoint = LEGACY;
     await expect(main(['--reverse', '--apply'])).rejects.toThrow(/Rollback requires.*R2/);
     expect(storage.calls).toEqual([]);
+  });
+});
+
+describe('OTA migration concurrency', () => {
+  it('preserves four workers by default and supports both boundaries', () => {
+    expect(parseMigrationOptions([])).toEqual({ mode: 'inventory', reverse: false, concurrency: 4 });
+    for (const concurrency of [1, 32, 64]) {
+      expect(parseMigrationOptions(['--reverse', '--apply', '--concurrency', String(concurrency)])).toEqual({
+        mode: 'copy',
+        reverse: true,
+        concurrency,
+      });
+    }
+  });
+  it.each(['0', '65', '-1', '1.5', '1e1', 'NaN', 'Infinity', '', ' 4', '04', '999999999999999999999'])(
+    'rejects invalid concurrency %j before any provider requests',
+    async (requested) => {
+      await expect(main(['--concurrency', requested])).rejects.toThrow('integer from 1 to 64');
+      expect(fetch).not.toHaveBeenCalled();
+      expect(storage.calls).toEqual([]);
+    },
+  );
+  it('rejects missing values and repeated concurrency flags', () => {
+    expect(() => parseMigrationOptions(['--concurrency'])).toThrow('integer from 1 to 64');
+    expect(() => parseMigrationOptions(['--concurrency', '--apply'])).toThrow('integer from 1 to 64');
+    expect(() => parseMigrationOptions(['--concurrency', '4', '--concurrency', '8'])).toThrow('repeated');
+  });
+  it.each([1, 6])('bounds copy and every full verification pass to %i workers', async (concurrency) => {
+    liveEndpoint = LEGACY;
+    for (let index = 0; index < 9; index += 1)
+      storage.buckets.get(LEGACY)!.set(`runtime/asset-${index}`, object(`asset ${index}`));
+    await main(['--apply', '--concurrency', String(concurrency)]);
+    expect(writes()).toHaveLength(9);
+    expect(storage.readPeaks.get(LEGACY)).toEqual([concurrency, concurrency, concurrency]);
+    expect(storage.readPeaks.get(R2)).toEqual([0, concurrency]);
+    expect(
+      storage.calls.filter(({ endpoint, operation }) => endpoint === LEGACY && operation === 'GetObjectCommand'),
+    ).toHaveLength(27);
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('SHA-256, and metadata (exact)'));
+  });
+  it('uses the requested worker limit in read-only verification', async () => {
+    liveEndpoint = LEGACY;
+    for (const bucket of storage.buckets.values())
+      for (let index = 0; index < 9; index += 1) bucket.set(`asset-${index}`, object(`asset ${index}`));
+    await main(['--verify-only', '--concurrency', '6']);
+    expect(writes()).toEqual([]);
+    expect(storage.readPeaks.get(LEGACY)).toEqual([6, 6]);
+    expect(storage.readPeaks.get(R2)).toEqual([6]);
   });
 });
