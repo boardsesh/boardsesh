@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  resolveTickBoardContext,
   createInitialTickState,
   deriveAscentType,
   clampAttempts,
@@ -23,13 +24,11 @@ import {
   useSaveTick,
   logbookClimbAngleKey,
 } from '@boardsesh/board-react';
-import { toBoardName, normaliseSetIds } from '@boardsesh/board-config';
+import { toBoardName, type TickClimbIdentity } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { clampToNow, MAXIMUM_CLIMBED_AT_REFRESH_MS } from '../logbook/climbed-at';
-import { sameRenderBoard } from '../../lib/boards/climb-render-board';
 import { useGrades } from '../../lib/graphql/hooks';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
-import type { BoardConfig } from '../../providers/drawer-host-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useOptionalRogueTimer } from '../../providers/rogue-timer-provider';
 import { getSetting } from '../../settings';
@@ -57,6 +56,8 @@ export type QuickTickDismissSnapshot = {
 };
 
 export type QuickTickFormInput = {
+  visible?: boolean;
+  climb?: TickClimbIdentity;
   climbUuid: string;
   boardName: string;
   angle: number;
@@ -109,6 +110,8 @@ export type QuickTickForm = {
 };
 
 export function useQuickTickForm({
+  visible = true,
+  climb,
   climbUuid,
   boardName,
   angle,
@@ -127,56 +130,29 @@ export function useQuickTickForm({
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
   const { showToast } = useToast();
-  const saveTick = useSaveTick(toBoardName(boardName));
   // Only the (stable, memoized) startStopwatch action is used here — depend on
   // it directly so the save handler isn't recreated on every timer status /
   // deviceName change.
   const startTimerStopwatch = useOptionalRogueTimer()?.startStopwatch;
   const { enabled: boardPresenceEnabled, boardId: boardPresenceBoardId } = useBoardPresenceControls();
-  const { data: grades } = useGrades(boardName);
 
-  // The board this tick belongs to, read off the form's own board fields. The
-  // play drawer hands down the CLIMB's resolved render board (see
-  // `resolveClimbRenderBoard`), so a queued climb that belongs to another wall
-  // arrives here carrying THAT wall's layout, size and sets — not the one the
-  // climber is standing at.
-  const tickBoardConfig = useMemo<BoardConfig | null>(() => {
-    if (layoutId == null || sizeId == null || !setIds) return null;
-    return { boardName, layoutId, sizeId, setIds, angle };
-  }, [boardName, layoutId, sizeId, setIds, angle]);
-
-  // The wall board presence is bound to. `board-presence-provider` binds it from
-  // the stored active board — its uuid, or the serial of the board the climber
-  // connected to — so the presence boardId names that board and no other.
   const { data: activeBoard } = useActiveBoard();
-  const activeBoardConfig = useMemo<BoardConfig | null>(
-    () =>
-      activeBoard
-        ? {
-            boardName: activeBoard.boardType,
-            layoutId: activeBoard.layoutId,
-            sizeId: activeBoard.sizeId,
-            setIds: activeBoard.setIds,
-            angle: activeBoard.angle,
-          }
-        : null,
-    [activeBoard],
+  const liveContext = resolveTickBoardContext(
+    climb,
+    { boardName, layoutId, sizeId, setIds },
+    activeBoard ? { ...activeBoard, boardName: activeBoard.boardType } : null,
+    boardPresenceEnabled ? boardPresenceBoardId : null,
   );
-
-  // Which board id the tick is attributed to. The presence binding is the active
-  // board's, so it is this tick's board id only while the tick is FOR that board.
-  // Log a climb from another wall and the old code still stamped the active one,
-  // putting a problem nobody climbed there into that wall's "Now on the wall"
-  // feed — other climbers' data, not just the logger's.
-  //
-  // A resolved render board is a `BoardConfig`, which carries no board id of its
-  // own, so a foreign board sends no boardId at all and lets the server resolve
-  // the board from the tick's layout/size/sets instead. Never a guess, and never
-  // the active board.
-  const tickBoardId =
-    boardPresenceEnabled && boardPresenceBoardId != null && sameRenderBoard(tickBoardConfig, activeBoardConfig)
-      ? boardPresenceBoardId
-      : null;
+  // The selected wall is a snapshot of opening the form, not a live presence
+  // binding that can move the ascent to another wall while someone types.
+  const contextRef = useRef({ climbUuid, visible, context: liveContext });
+  if (contextRef.current.climbUuid !== climbUuid || (visible && !contextRef.current.visible)) {
+    contextRef.current = { climbUuid, visible, context: liveContext };
+  }
+  contextRef.current.visible = visible;
+  const tickContext = contextRef.current.context;
+  const saveTick = useSaveTick(toBoardName(tickContext.boardName));
+  const { data: grades } = useGrades(tickContext.boardName);
 
   // Mobile's `Climb.userAscents`/`userAttempts` GraphQL fields aren't
   // populated server-side, so we read the user's accumulated logbook
@@ -201,30 +177,7 @@ export function useQuickTickForm({
   // re-runs an O(logbook) scan. Same index `useAscentStatus` reads.
   const boardActions = useOptionalBoardActions();
   const boardLogbook = useOptionalBoardLogbook();
-  const { data: localPendingTicks = 0 } = useLocalPendingTicks(climbUuid, boardName);
-
-  // The board the climber selected, sent so the tick attaches to THAT wall
-  // rather than to whatever the presence layer happens to be bound to. Every
-  // serial-less wall (all of MoonBoard) binds presence to one system-owned feed
-  // shared by that configuration globally, so without this the tick lands on
-  // the shared feed and the climber's own board reads as empty on Home (#5121).
-  //
-  // Guarded on a config match because the drawer sends the RENDER board's
-  // config for a climb that doesn't fit the selected wall, and the server drops
-  // a boardUuid whose config disagrees without falling back to anything
-  // (#4219) — sending it unguarded would leave those ticks with no board at all.
-  // Set ids are normalised rather than compared as strings, the way the
-  // server's own config gate does: the stored wall and the tick can name the
-  // same sets in a different order.
-  const selectedBoardUuid = useMemo(() => {
-    if (!activeBoard || layoutId == null || sizeId == null || !setIds) return null;
-    const isSelectedBoard =
-      activeBoard.boardType === boardName &&
-      activeBoard.layoutId === layoutId &&
-      activeBoard.sizeId === sizeId &&
-      normaliseSetIds(activeBoard.setIds) === normaliseSetIds(setIds);
-    return isSelectedBoard ? activeBoard.uuid : null;
-  }, [activeBoard, boardName, layoutId, sizeId, setIds]);
+  const { data: localPendingTicks = 0 } = useLocalPendingTicks(climbUuid, tickContext.boardName);
   // Read through a ref so the save handler's identity doesn't change on every
   // connectivity flip (the file's existing stable-identity idiom). A save that
   // fails while offline has already exhausted the local write, the retry ladder
@@ -373,11 +326,10 @@ export function useQuickTickForm({
           comment,
           climbedAt: climbedAtIso,
           ...(sessionId ? { sessionId } : {}),
-          ...(layoutId != null ? { layoutId } : {}),
-          ...(sizeId != null ? { sizeId } : {}),
-          ...(setIds ? { setIds } : {}),
-          ...(selectedBoardUuid ? { boardUuid: selectedBoardUuid } : {}),
-          ...(tickBoardId != null ? { boardId: tickBoardId } : {}),
+          ...(tickContext.layoutId != null ? { layoutId: tickContext.layoutId } : {}),
+          ...('sizeId' in tickContext ? { sizeId: tickContext.sizeId, setIds: tickContext.setIds } : {}),
+          ...('boardId' in tickContext ? { boardId: tickContext.boardId } : {}),
+          ...('boardUuid' in tickContext ? { boardUuid: tickContext.boardUuid } : {}),
         },
         {
           onSuccess: () => {
@@ -448,10 +400,7 @@ export function useQuickTickForm({
       baseAscensionistCount,
       sessionId,
       layoutId,
-      sizeId,
-      setIds,
-      tickBoardId,
-      selectedBoardUuid,
+      tickContext,
       tickState,
       comment,
       climbedAt,

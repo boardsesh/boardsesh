@@ -163,7 +163,13 @@
       "chooser": {
         "editTitle": "¿Qué registro quieres editar?",
         "deleteTitle": "¿Qué registro quieres eliminar?"
-      }
+      },
+      "boardLabel": "Plafón",
+      "boardNone": "Ninguno",
+      "boardPickerLabel": "Elegir un plafón",
+      "boardBack": "Volver a editar",
+      "boardRetry": "No se pudieron cargar los plafones. Toca para reintentar.",
+      "boardEmpty": "Ningún plafón guardado o reciente es compatible con este bloque."
     },
     "boardLink": {
       "title": "¿Te faltan tus encadenes de {{boardName}}?",

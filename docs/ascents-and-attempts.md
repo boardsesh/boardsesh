@@ -214,6 +214,28 @@ Two client hooks call it:
 
 **No other code path may insert into `boardsesh_ticks`.** If you need to bulk-create ticks (a test, an import script), route through the same code or write a script in `packages/aurora-sync` that mirrors this shape.
 
+### Physical board attribution
+
+The climb's canonical catalogue identity is authoritative for physical-board
+attribution. `saveTick` checks its board type, layout, measured compatible sizes,
+and required hold sets before resolving a board UUID, presence ID, session board,
+or owned configuration. Unknown climbs and mismatches still save, with no physical
+board. Queue items already carry climb identity; they do not need a physical board ID.
+The mobile logging form snapshots its opening context and omits physical-board
+configuration when the active wall cannot display the climb.
+
+The logbook editor's Board row offers None and compatible saved/recent boards.
+`tickBoardOptions` is owner-only, filters before pagination, and returns the current
+board separately so old incorrect associations remain visible. `UpdateTickInput.boardUuid`
+has three meanings: omitted preserves attribution, null clears it, and a UUID
+selects a visible compatible board. Selection does not change the climbed angle.
+An incompatible explicit selection fails atomically.
+
+Updates move the logical tick group, linked beta, and feed copies in one transaction,
+then refresh statistics for both the old and new boards. Delayed ascent feed fanout
+reads current attribution under the same user mutation lock. No historical records
+are automatically repaired.
+
 ### Stats recompute on edits and deletes
 
 `updateTick` and `deleteTick` (same `mutations.ts` file) don't insert new

@@ -5,6 +5,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AscentFeedItem, UpdateTickInput } from '@boardsesh/graphql/operations';
 import { formatTickAbsoluteTime } from '@boardsesh/profile-stats';
 
+vi.mock('../TickBoardPicker', () => ({
+  TickBoardPicker: ({
+    onSelect,
+    onBack,
+  }: {
+    onSelect: (board: { uuid: string; name: string } | null) => void;
+    onBack: () => void;
+  }) =>
+    createElement(
+      'div',
+      null,
+      createElement('button', { onClick: () => onSelect(null) }, 'Choose None'),
+      createElement(
+        'button',
+        { onClick: () => onSelect({ uuid: 'homewall-uuid', name: 'Homewall' }) },
+        'Choose Homewall',
+      ),
+      createElement('button', { onClick: onBack }, 'Back to edit'),
+    ),
+}));
+
 const mutations = vi.hoisted(() => ({
   updateMutate: vi.fn(),
   deleteMutate: vi.fn(),
@@ -309,6 +330,39 @@ afterEach(() => {
 });
 
 describe('LogbookEditSheet', () => {
+  it('keeps an untouched board out of the mutation', () => {
+    renderSheet(makeAscent({ boardId: 942, boardDisplayName: 'Original' }));
+    expect(screen.getByText('Original')).toBeTruthy();
+    save();
+    expect(firstUpdateVariables().input).not.toHaveProperty('boardUuid');
+  });
+
+  it('stages None locally and clears attribution only on Save', () => {
+    renderSheet(makeAscent({ boardId: 942, boardDisplayName: 'Original' }));
+    fireEvent.click(screen.getByLabelText('mobile.logbook.boardPickerLabel'));
+    fireEvent.click(screen.getByText('Choose None'));
+    expect(mutations.updateMutate).not.toHaveBeenCalled();
+    expect(screen.getByText('mobile.logbook.boardNone')).toBeTruthy();
+    save();
+    expect(firstUpdateVariables().input.boardUuid).toBeNull();
+  });
+
+  it('saves a selected compatible board without changing the angle', () => {
+    renderSheet(makeAscent({ angle: 35 }));
+    fireEvent.click(screen.getByLabelText('mobile.logbook.boardPickerLabel'));
+    fireEvent.click(screen.getByText('Choose Homewall'));
+    save();
+    expect(firstUpdateVariables().input).toMatchObject({ boardUuid: 'homewall-uuid', angle: 35 });
+  });
+
+  it('returning without choosing preserves the existing attribution', () => {
+    renderSheet(makeAscent({ boardId: 942, boardDisplayName: 'Original' }));
+    fireEvent.click(screen.getByLabelText('mobile.logbook.boardPickerLabel'));
+    fireEvent.click(screen.getByText('Back to edit'));
+    save();
+    expect(firstUpdateVariables().input).not.toHaveProperty('boardUuid');
+  });
+
   it('opts the sheet into Android content-fitting so the form is not lost in a full-screen sheet (#4720)', () => {
     renderSheet();
     expect(sheetProps.androidContentSized).toBe(true);
