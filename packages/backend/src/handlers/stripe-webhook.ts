@@ -1,8 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { and, eq, isNull, lt, or } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type Stripe from 'stripe';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../db/client';
+import { lockSupportAccount } from '../services/stripe-support-lock';
 import { readJsonBody, sendJson } from './http-utils';
 import {
   getStripeClient,
@@ -31,12 +32,8 @@ export async function acceptCheckout(session: Stripe.Checkout.Session, eventCrea
 
   const stripeSubscriptionId =
     typeof session.subscription === 'string' ? session.subscription : (session.subscription?.id ?? null);
-  const subscription = stripeSubscriptionId
-    ? await getStripeClient().subscriptions.retrieve(stripeSubscriptionId)
-    : null;
-
   await db.transaction(async (tx) => {
-    const [claim] = await tx
+    const [initialClaim] = await tx
       .select()
       .from(dbSchema.stripeSupportClaims)
       // The cryptographically random client_reference_id is embedded in the
@@ -44,14 +41,33 @@ export async function acceptCheckout(session: Stripe.Checkout.Session, eventCrea
       // bookkeeping because its post-create DB update can fail independently.
       .where(eq(dbSchema.stripeSupportClaims.id, claimId))
       .limit(1);
+    if (!initialClaim) return;
+    if (!(await lockSupportAccount(tx, initialClaim.userId))) return;
+    // Another delivery may have accepted the claim while this one waited.
+    const [claim] = await tx
+      .select()
+      .from(dbSchema.stripeSupportClaims)
+      .where(eq(dbSchema.stripeSupportClaims.id, claimId))
+      .limit(1);
     if (!claim) return;
 
-    const stripeCustomerId = stripeId(session.customer);
+    // Read Stripe while holding the same lock as subscription updates. A
+    // delayed Checkout event cannot overwrite a more recent billing change.
+    const subscription = stripeSubscriptionId
+      ? await getStripeClient().subscriptions.retrieve(stripeSubscriptionId)
+      : null;
+    const checkoutCustomerId = stripeId(session.customer);
     const [existingSupporter] = await tx
       .select()
       .from(dbSchema.stripeSupporters)
       .where(eq(dbSchema.stripeSupporters.userId, claim.userId))
       .limit(1);
+    // One-time support can complete under a different customer while a
+    // monthly Checkout is pending. Keep the customer that owns billing.
+    const stripeCustomerId =
+      !stripeSubscriptionId && existingSupporter?.stripeSubscriptionId
+        ? existingSupporter.stripeCustomerId
+        : checkoutCustomerId;
     const retainedSubscriptionId = stripeSubscriptionId ?? existingSupporter?.stripeSubscriptionId ?? null;
     const retainedSubscriptionStatus = subscription?.status ?? existingSupporter?.subscriptionStatus ?? null;
     const eventCreatedAt = new Date(eventCreated * 1000);
@@ -100,32 +116,37 @@ export async function discardCheckout(session: Stripe.Checkout.Session): Promise
 }
 
 export async function updateSubscription(subscription: Stripe.Subscription, eventCreated: number): Promise<void> {
-  const eventCreatedAt = new Date(eventCreated * 1000);
-  const [current] = await db
-    .select({ stripeEventCreatedAt: dbSchema.stripeSupporters.stripeEventCreatedAt })
-    .from(dbSchema.stripeSupporters)
-    .where(eq(dbSchema.stripeSupporters.stripeSubscriptionId, subscription.id))
-    .limit(1);
-  if (current?.stripeEventCreatedAt && current.stripeEventCreatedAt >= eventCreatedAt) return;
-
-  await db
-    .update(dbSchema.stripeSupporters)
-    .set({
-      subscriptionStatus: subscription.status,
-      cancelAtPeriodEnd: subscription.cancel_at_period_end,
-      stripeCustomerId: stripeId(subscription.customer),
-      stripeEventCreatedAt: eventCreatedAt,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(dbSchema.stripeSupporters.stripeSubscriptionId, subscription.id),
-        or(
-          isNull(dbSchema.stripeSupporters.stripeEventCreatedAt),
-          lt(dbSchema.stripeSupporters.stripeEventCreatedAt, eventCreatedAt),
-        ),
-      ),
-    );
+  await db.transaction(async (transaction) => {
+    const [linkedSupporter] = await transaction
+      .select({ userId: dbSchema.stripeSupporters.userId })
+      .from(dbSchema.stripeSupporters)
+      .where(eq(dbSchema.stripeSupporters.stripeSubscriptionId, subscription.id))
+      .limit(1);
+    if (!linkedSupporter || !(await lockSupportAccount(transaction, linkedSupporter.userId))) return;
+    const [current] = await transaction
+      .select()
+      .from(dbSchema.stripeSupporters)
+      .where(eq(dbSchema.stripeSupporters.stripeSubscriptionId, subscription.id))
+      .limit(1);
+    if (!current) return;
+    // Event timestamps have second precision. Retrieve current state instead
+    // of discarding distinct events in the same second or replaying stale data.
+    const latestSubscription = await getStripeClient().subscriptions.retrieve(subscription.id);
+    const eventCreatedAt = new Date(eventCreated * 1000);
+    await transaction
+      .update(dbSchema.stripeSupporters)
+      .set({
+        subscriptionStatus: latestSubscription.status,
+        cancelAtPeriodEnd: latestSubscription.cancel_at_period_end,
+        stripeCustomerId: stripeId(latestSubscription.customer),
+        stripeEventCreatedAt:
+          current.stripeEventCreatedAt && current.stripeEventCreatedAt > eventCreatedAt
+            ? current.stripeEventCreatedAt
+            : eventCreatedAt,
+        updatedAt: new Date(),
+      })
+      .where(eq(dbSchema.stripeSupporters.stripeSubscriptionId, subscription.id));
+  });
 }
 
 export async function handleStripeWebhook(req: IncomingMessage, res: ServerResponse): Promise<void> {

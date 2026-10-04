@@ -1,4 +1,5 @@
 import type Stripe from 'stripe';
+import * as dbSchema from '@boardsesh/db/schema';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { Readable } from 'node:stream';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -85,30 +86,28 @@ function setupCheckoutTransaction(options?: {
   const deleteClaim = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
   const conflictUpdate = vi.fn().mockResolvedValue(undefined);
   const transaction = {
-    select: vi
-      .fn()
-      .mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
+    select: vi.fn().mockImplementation((columns?: Record<string, unknown>) => {
+      const rows =
+        columns && 'email' in columns
+          ? [{ id: 'user-1', email: 'climber@example.com' }]
+          : options?.missingClaim
+            ? []
+            : options?.claim === undefined
+              ? [{ id: 'claim-1', userId: 'user-1', showPublicly: true }]
+              : [options.claim];
+      return {
+        from: vi.fn().mockImplementation((table: unknown) => ({
           where: vi.fn().mockReturnValue({
             limit: vi
               .fn()
               .mockResolvedValue(
-                options?.missingClaim
-                  ? []
-                  : options?.claim === undefined
-                    ? [{ id: 'claim-1', userId: 'user-1', showPublicly: true }]
-                    : [options.claim],
+                table === dbSchema.stripeSupporters ? (options?.supporter ? [options.supporter] : []) : rows,
               ),
+            for: vi.fn().mockResolvedValue(rows),
           }),
-        }),
-      })
-      .mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue(options?.supporter ? [options.supporter] : []),
-          }),
-        }),
-      }),
+        })),
+      };
+    }),
     insert: vi.fn().mockReturnValue({
       values: insertedValues.mockReturnValue({ onConflictDoUpdate: conflictUpdate }),
     }),
@@ -122,14 +121,21 @@ function setupCheckoutTransaction(options?: {
 
 function setupSubscriptionUpdate(storedEventCreatedAt: Date | null) {
   const set = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
-  mockDb.select.mockReturnValue({
-    from: vi.fn().mockReturnValue({
-      where: vi.fn().mockReturnValue({
-        limit: vi.fn().mockResolvedValue([{ stripeEventCreatedAt: storedEventCreatedAt }]),
+  const transaction = {
+    select: vi.fn().mockImplementation((columns?: Record<string, unknown>) => ({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([{ userId: 'user-1', stripeEventCreatedAt: storedEventCreatedAt }]),
+          for: vi.fn().mockResolvedValue([{ id: 'user-1', email: 'climber@example.com' }]),
+        }),
       }),
-    }),
-  });
-  mockDb.update.mockReturnValue({ set });
+    })),
+    update: vi.fn().mockReturnValue({ set }),
+  };
+  mockDb.transaction.mockImplementation(async (callback: (database: typeof transaction) => Promise<void>) =>
+    callback(transaction),
+  );
+  mockRetrieveSubscription.mockResolvedValue(subscription({ status: 'past_due' }));
   return set;
 }
 
@@ -210,17 +216,20 @@ describe('acceptCheckout', () => {
 });
 
 describe('updateSubscription', () => {
-  it('ignores an event older than the stored subscription event', async () => {
+  it('reconciles an older event from current Stripe state without regressing event time', async () => {
     const set = setupSubscriptionUpdate(new Date(2_000 * 1000));
 
     await updateSubscription(subscription({ status: 'canceled' }), 1_000);
 
-    expect(set).not.toHaveBeenCalled();
+    expect(set).toHaveBeenCalledWith(
+      expect.objectContaining({ subscriptionStatus: 'past_due', stripeEventCreatedAt: new Date(2_000 * 1000) }),
+    );
   });
 
   it('stores status and event time from a newer event', async () => {
     const set = setupSubscriptionUpdate(new Date(1_000 * 1000));
 
+    mockRetrieveSubscription.mockResolvedValue(subscription({ status: 'canceled', cancel_at_period_end: true }));
     await updateSubscription(subscription({ status: 'canceled', cancel_at_period_end: true }), 2_000);
 
     expect(set).toHaveBeenCalledWith(

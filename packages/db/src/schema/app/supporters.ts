@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { boolean, index, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 import { users } from '../auth/users';
 
@@ -39,6 +40,7 @@ export const stripeSupportClaims = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     checkoutSessionId: text('checkout_session_id'),
+    checkoutExpiresAt: timestamp('checkout_expires_at'),
     cadence: text('cadence').notNull(),
     showPublicly: boolean('show_publicly').notNull().default(false),
     createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -46,5 +48,8 @@ export const stripeSupportClaims = pgTable(
   (table) => ({
     checkoutUnique: uniqueIndex('stripe_support_claims_checkout_unique').on(table.checkoutSessionId),
     userIdx: index('stripe_support_claims_user_idx').on(table.userId),
+    monthlyUnique: uniqueIndex('stripe_support_claims_monthly_unique')
+      .on(table.userId)
+      .where(sql`${table.cadence} = 'monthly'`),
   }),
 );

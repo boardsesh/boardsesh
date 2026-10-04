@@ -25,6 +25,7 @@ const notificationDeviceSchema = readFileSync(
   .filter((statement) => !statement.trim().startsWith('ALTER TYPE'))
   .join('\n');
 // Notification types are text in this fixture; use the generated table/FK DDL.
+const supportSchema = readFileSync(new URL('../../../db/drizzle/0250_stripe_supporters.sql', import.meta.url), 'utf8');
 const detectionSchema = readFileSync(
   new URL('../../../db/drizzle/0234_shallow_the_phantom.sql', import.meta.url),
   'utf8',
@@ -2148,4 +2149,5 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${sprayWallDeletionSchema}
   ${sessionBoardsSchema}
   ${privacySchema}
+${supportSchema}
 `;

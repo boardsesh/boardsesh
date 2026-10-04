@@ -1,18 +1,26 @@
+import Stripe from 'stripe';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
-const { applyRateLimit, checkoutSessionCreate, billingPortalSessionCreate, mockDb } = vi.hoisted(() => ({
-  applyRateLimit: vi.fn().mockResolvedValue(undefined),
-  checkoutSessionCreate: vi.fn(),
-  billingPortalSessionCreate: vi.fn(),
-  mockDb: {
-    select: vi.fn(),
-    update: vi.fn(),
-    insert: vi.fn(),
-    delete: vi.fn(),
-  },
-}));
+const { applyRateLimit, checkoutSessionCreate, billingPortalSessionCreate, subscriptionRetrieve, mockDb } = vi.hoisted(
+  () => ({
+    applyRateLimit: vi.fn().mockResolvedValue(undefined),
+    checkoutSessionCreate: vi.fn(),
+    billingPortalSessionCreate: vi.fn(),
+    subscriptionRetrieve: vi.fn().mockResolvedValue({ status: 'active' }),
+    mockDb: {
+      select: vi.fn(),
+      update: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      transaction: vi.fn(),
+    },
+  }),
+);
 
+vi.mock('../../services/reconcile-support-claims', () => ({
+  reconcileExpiredSupportClaims: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('../../db/client', () => ({ db: mockDb }));
 vi.mock('./shared/helpers', async (importOriginal) => {
   const original = await importOriginal<typeof import('./shared/helpers')>();
@@ -23,6 +31,7 @@ vi.mock('../../services/stripe-support', async (importOriginal) => {
   return {
     ...original,
     getStripeClient: () => ({
+      subscriptions: { retrieve: subscriptionRetrieve },
       checkout: { sessions: { create: checkoutSessionCreate } },
       billingPortal: { sessions: { create: billingPortalSessionCreate } },
     }),
@@ -54,7 +63,9 @@ describe('supportMutations', () => {
   function selectRows(rows: unknown[]) {
     return {
       from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue(rows) }),
+        where: vi
+          .fn()
+          .mockReturnValue({ limit: vi.fn().mockResolvedValue(rows), for: vi.fn().mockResolvedValue(rows) }),
       }),
     };
   }
@@ -63,7 +74,16 @@ describe('supportMutations', () => {
     const insertValues = vi.fn().mockResolvedValue(undefined);
     const updateWhere = vi.fn().mockResolvedValue(undefined);
     mockDb.select.mockImplementation((columns?: Record<string, unknown>) =>
-      selectRows(columns && 'email' in columns ? [{ email: 'climber@example.com' }] : supporterRows),
+      selectRows(
+        columns && 'email' in columns
+          ? [{ id: 'user-1', email: 'climber@example.com' }]
+          : columns && 'id' in columns
+            ? []
+            : supporterRows,
+      ),
+    );
+    mockDb.transaction.mockImplementation(async (callback: (transaction: typeof mockDb) => Promise<unknown>) =>
+      callback(mockDb),
     );
     mockDb.delete.mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
     mockDb.insert.mockReturnValue({ values: insertValues });
@@ -129,6 +149,7 @@ describe('supportMutations', () => {
         customer_email: 'climber@example.com',
         success_url: 'http://localhost:3000/fr/support?support=thanks',
       }),
+      expect.objectContaining({ idempotencyKey: expect.any(String) }),
     );
     expect(updateWhere).toHaveBeenCalledOnce();
     expect(insertValues.mock.invocationCallOrder[0]).toBeLessThan(checkoutSessionCreate.mock.invocationCallOrder[0]);
@@ -145,7 +166,10 @@ describe('supportMutations', () => {
       authContext(),
     );
 
-    expect(checkoutSessionCreate).toHaveBeenCalledWith(expect.objectContaining({ customer_creation: 'always' }));
+    expect(checkoutSessionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ customer_creation: 'always' }),
+      expect.objectContaining({ idempotencyKey: expect.any(String) }),
+    );
   });
 
   it('keeps anonymous support intentionally unlinked', async () => {
@@ -159,14 +183,19 @@ describe('supportMutations', () => {
       anonymousContext,
     );
 
-    expect(checkoutSessionCreate).toHaveBeenCalledWith(expect.objectContaining({ client_reference_id: undefined }));
+    expect(checkoutSessionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ client_reference_id: undefined }),
+      undefined,
+    );
     expect(mockDb.insert).not.toHaveBeenCalled();
   });
 
   it('removes a linked claim when Stripe session creation fails', async () => {
     process.env.STRIPE_SECRET_KEY = 'sk_test_example';
     const { insertValues } = setupCheckoutDatabase();
-    checkoutSessionCreate.mockRejectedValue(new Error('Stripe unavailable'));
+    checkoutSessionCreate.mockRejectedValue(
+      new Stripe.errors.StripeInvalidRequestError({ type: 'invalid_request_error', message: 'Stripe unavailable' }),
+    );
 
     await expect(
       supportMutations.createSupportCheckoutSession(
@@ -178,6 +207,22 @@ describe('supportMutations', () => {
 
     expect(insertValues).toHaveBeenCalledOnce();
     expect(mockDb.delete).toHaveBeenCalledOnce();
+  });
+
+  it('retains the claim when the Stripe creation outcome is uncertain', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_example';
+    setupCheckoutDatabase();
+    checkoutSessionCreate.mockRejectedValue(
+      new Stripe.errors.StripeConnectionError({ type: 'api_error', message: 'Response lost' }),
+    );
+    await expect(
+      supportMutations.createSupportCheckoutSession(
+        {},
+        { input: { amount: 500, cadence: 'MONTHLY', publicCredit: false } },
+        authContext(),
+      ),
+    ).rejects.toThrow('Response lost');
+    expect(mockDb.delete).not.toHaveBeenCalled();
   });
 
   it('rejects a second monthly checkout for a live subscription', async () => {
