@@ -124,28 +124,32 @@ describe('normalizeClientIp', () => {
     expect(normalizeClientIp(raw)).toBe(expected);
   });
 
-  it.each([undefined, '', '   ', 'unknown', 'not-an-ip', '999.1.1.1'])(
-    'rejects %j so the caller can try the next candidate',
-    (raw) => {
-      expect(normalizeClientIp(raw)).toBeUndefined();
-    },
-  );
+  it.each([
+    undefined,
+    '',
+    '   ',
+    'unknown',
+    'not-an-ip',
+    '999.1.1.1',
+    '192.0.2.1::',
+    '2001:192.0.2.1::',
+    '[2001:db8::1',
+    '2001:db8::1]',
+    '203.0.113.5%eth0',
+  ])('rejects %j so the caller can try the next candidate', (raw) => {
+    expect(normalizeClientIp(raw)).toBeUndefined();
+  });
 
   it('keeps an embedded trailing IPv4 out of the /64 prefix', () => {
     expect(normalizeClientIp('2001:db8:85a3:1::192.0.2.1')).toBe('2001:db8:85a3:1::/64');
   });
 
-  it('keys the hex form of an IPv4-mapped address as IPv6 instead of dropping it', () => {
-    // `::ffff:c000:0201` is a valid IPv6 literal whose tail (`c000:0201`) is not
-    // an IP, so the `::ffff:` unwrap must not fire here.
-    //
-    // Accepted consequence: every hex-form IPv4-mapped literal starts with the
-    // same four zero hextets, so they all collapse into the single
-    // `0:0:0:0::/64` bucket. Node renders IPv4-mapped socket addresses in dotted
-    // form and Cloudflare sends dotted `cf-connecting-ip`, so this shape only
-    // reaches us from a hand-forged header — sharing one bucket is the safe
-    // direction (stricter, not looser) for that traffic.
-    expect(normalizeClientIp('::ffff:c000:0201')).toBe('0:0:0:0::/64');
+  it('preserves a bracketed IPv6 socket address with a zone identifier', () => {
+    expect(normalizeClientIp('[fe80::1%eth0]')).toBe('fe80:0:0:0::/64');
+  });
+
+  it('canonicalizes a hexadecimal IPv4-mapped address to its IPv4 identity', () => {
+    expect(normalizeClientIp('::ffff:c000:0201')).toBe('192.0.2.1');
   });
 });
 
