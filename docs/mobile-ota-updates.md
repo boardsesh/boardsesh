@@ -1141,6 +1141,23 @@ Run the gate in this order:
    before rotation, re-enable the same five direct publishers, then `production-deploy.yml`; no reader or source
    object changed.
 
+**Rollback after new R2 publishes:** restoring the endpoint alone strands updates added to the shared database
+after cutover. Freeze and drain the same six workflows, manual publishers, server cleanup and lifecycle mutations.
+Retain the previous Tigris credentials securely and supply `OTA_LEGACY_AWS_ENDPOINT_URL`,
+`OTA_LEGACY_AWS_ACCESS_KEY_ID`, `OTA_LEGACY_AWS_SECRET_ACCESS_KEY`, and optionally `OTA_LEGACY_AWS_REGION`
+and `OTA_LEGACY_S3_FORCE_PATH_STYLE`. Run `vp run storage:migrate-ota -- --reverse --apply`, then
+`vp run storage:migrate-ota -- --reverse --verify-only`. Reverse mode requires Railway to still point at R2,
+reads its current credentials, and restores every R2 key with full size, SHA-256, metadata and source-stability
+verification. Extra archived Tigris objects are retained; forward migration still requires exact key sets. Only
+after verification passes, restore the old Railway endpoint and credentials together. Verify old and new update
+delivery before restoring writers. Neither direction changes Railway or deletes storage objects.
+
+Keep all mutable maintenance frozen through final verification and credential rotation, including any active bucket
+lifecycle rules. Record the prior policies and restore them unchanged after acceptance; do not introduce new expiry
+rules during the migration. Prove manifests actually deliver R2 assets after rotation, including representative old
+runtimes and a newly published update, rather than passing on cached Tigris URLs. Preserve the shared Redis cache
+configuration and signing identity.
+
 1. **Storage bucket** — an empty S3-compatible bucket `boardsesh-ota-v3` plus a scoped key. The original setup used
    Tigris (`t3.storage.dev`, region `auto`); the migration target is the private R2 bucket above. Keep it portable
    (see the object-storage rules in `CLAUDE.md`). For a brand-new replacement only, preflight

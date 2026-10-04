@@ -55,6 +55,7 @@
     "check-primary-tls.test.ts",
     "migrate-ota-storage.ts",
     "migrate-ota-storage.test.ts",
+    "migrate-ota-storage-main.test.ts",
     "ota-storage-migration-workflow.test.ts",
     "lib/ota-storage-migration.ts",
     "screenshot-backend.ts",

@@ -40,6 +40,8 @@ import {
   type ObjectFingerprint,
   type ObjectInventoryEntry,
   type ObjectMetadata,
+  type InventoryPolicy,
+  type StorageProvider,
 } from './lib/ota-storage-migration';
 
 const RAILWAY_API = 'https://backboard.railway.com/graphql/v2';
@@ -50,7 +52,12 @@ const COPY_CONCURRENCY = 4;
 
 type MigrationMode = 'inventory' | 'copy' | 'verify';
 type AuthScheme = 'project' | 'account';
-type BucketClient = Readonly<{ client: S3Client; bucket: string; label: 'source' | 'destination' }>;
+type BucketClient = Readonly<{
+  client: S3Client;
+  bucket: string;
+  label: 'source' | 'destination';
+  provider: StorageProvider;
+}>;
 
 interface GraphQLResponse<TData> {
   data?: TData;
@@ -173,8 +180,9 @@ function maskForGitHubActions(value: string): void {
 function parseMode(argv: readonly string[]): MigrationMode {
   const apply = argv.includes('--apply');
   const verify = argv.includes('--verify-only');
-  const unknown = argv.filter((argument) => argument !== '--apply' && argument !== '--verify-only');
+  const unknown = argv.filter((argument) => !['--apply', '--verify-only', '--reverse'].includes(argument));
   if (unknown.length > 0) throw new Error(`Unknown argument: ${unknown[0]}`);
+  if (new Set(argv).size !== argv.length) throw new Error('Migration flags must not be repeated.');
   if (apply && verify) throw new Error('--apply and --verify-only are mutually exclusive.');
   return apply ? 'copy' : verify ? 'verify' : 'inventory';
 }
@@ -189,6 +197,7 @@ function createBucketClient(
 ): BucketClient {
   return {
     label,
+    provider: classifyStorageEndpoint(endpoint),
     bucket: OTA_BUCKET_NAME,
     client: new S3Client({
       endpoint,
@@ -203,18 +212,28 @@ function createBucketClient(
 
 export async function listAllObjects(target: BucketClient): Promise<ObjectInventoryEntry[]> {
   const objects: ObjectInventoryEntry[] = [];
+  const seenKeys = new Set<string>();
+  const seenTokens = new Set<string>();
   let continuationToken: string | undefined;
   do {
     const response = await target.client.send(
       new ListObjectsV2Command({ Bucket: target.bucket, ContinuationToken: continuationToken }),
     );
     for (const object of response.Contents ?? []) {
-      if (object.Key) objects.push({ key: object.Key, size: object.Size ?? 0 });
+      if (!object.Key || object.Size === undefined || !Number.isSafeInteger(object.Size) || object.Size < 0)
+        throw new Error(`${target.label} listing contains an incomplete object.`);
+      if (seenKeys.has(object.Key)) throw new Error(`${target.label} listing contains a duplicate object key.`);
+      seenKeys.add(object.Key);
+      objects.push({ key: object.Key, size: object.Size });
     }
     if (response.IsTruncated && !response.NextContinuationToken) {
       throw new Error(`${target.label} listing was truncated without a continuation token.`);
     }
     continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+    if (continuationToken) {
+      if (seenTokens.has(continuationToken)) throw new Error(`${target.label} listing repeated a continuation token.`);
+      seenTokens.add(continuationToken);
+    }
   } while (continuationToken);
 
   objects.sort((left, right) => left.key.localeCompare(right.key));
@@ -272,6 +291,9 @@ async function fingerprintObject(target: BucketClient, key: string): Promise<Obj
 }
 
 async function assertSourceHasNoTags(source: BucketClient, key: string): Promise<void> {
+  // R2 cannot store S3 tags and does not implement GetObjectTagging. Its
+  // reverse-copy source is therefore tag-free; Tigris must still be checked.
+  if (source.provider === 'r2') return;
   const response = await source.client.send(new GetObjectTaggingCommand({ Bucket: source.bucket, Key: key }));
   if ((response.TagSet?.length ?? 0) > 0) {
     throw new Error(`Source object has S3 tags Cloudflare R2 cannot preserve: ${key}`);
@@ -339,8 +361,9 @@ async function copyAll(
   destination: BucketClient,
   sourceInventory: readonly ObjectInventoryEntry[],
   destinationInventory: readonly ObjectInventoryEntry[],
+  inventoryPolicy: InventoryPolicy = 'exact',
 ): Promise<{ copied: number; skipped: number }> {
-  assertCopyPreflight(sourceInventory, destinationInventory);
+  assertCopyPreflight(sourceInventory, destinationInventory, inventoryPolicy);
   const destinationSizes = new Map(destinationInventory.map(({ key, size }) => [key, size]));
   const directory = await mkdtemp(join(tmpdir(), 'boardsesh-ota-r2-'));
   let copied = 0;
@@ -431,7 +454,11 @@ function reportInventory(source: readonly ObjectInventoryEntry[], destination: r
   );
 }
 
-async function verify(source: BucketClient, destination: BucketClient): Promise<void> {
+async function verify(
+  source: BucketClient,
+  destination: BucketClient,
+  inventoryPolicy: InventoryPolicy,
+): Promise<void> {
   const [sourceInventory, destinationInventory] = await Promise.all([
     listAllObjects(source),
     listAllObjects(destination),
@@ -439,23 +466,29 @@ async function verify(source: BucketClient, destination: BucketClient): Promise<
   reportInventory(sourceInventory, destinationInventory);
   const sourceFingerprints = await loadFingerprintMap(source, sourceInventory);
   const problems = [
-    ...(await verifyObjectStores(sourceInventory, destinationInventory, (side, key) => {
-      if (side === 'destination') return fingerprintObject(destination, key);
-      const fingerprint = sourceFingerprints.get(key);
-      if (!fingerprint) throw new Error(`Source fingerprint missing unexpectedly: ${key}`);
-      return Promise.resolve(fingerprint);
-    })),
+    ...(await verifyObjectStores(
+      sourceInventory,
+      destinationInventory,
+      (side, key) => {
+        if (side === 'destination') return fingerprintObject(destination, key);
+        const fingerprint = sourceFingerprints.get(key);
+        if (!fingerprint) throw new Error(`Source fingerprint missing unexpectedly: ${key}`);
+        return Promise.resolve(fingerprint);
+      },
+      COPY_CONCURRENCY,
+      inventoryPolicy,
+    )),
   ];
   const sourceAfterVerification = await listAllObjects(source);
   const sourceChanged = diffInventories(sourceInventory, sourceAfterVerification);
   if (sourceChanged.missing.length > 0 || sourceChanged.extra.length > 0 || sourceChanged.sizeMismatches.length > 0) {
-    throw new Error('Tigris inventory changed during verification. Keep OTA publishing frozen and run again.');
+    throw new Error('Source inventory changed during verification. Keep OTA publishing frozen and run again.');
   }
   const sourceFingerprintsAfter = await loadFingerprintMap(source, sourceAfterVerification);
   for (const [key, before] of sourceFingerprints) {
     const after = sourceFingerprintsAfter.get(key);
     if (!after || !fingerprintsMatch(before, after)) {
-      problems.push({ key, kind: 'content', detail: 'Tigris object changed during verification' });
+      problems.push({ key, kind: 'content', detail: 'Source object changed during verification' });
     }
   }
   if (problems.length > 0) {
@@ -468,11 +501,13 @@ async function verify(source: BucketClient, destination: BucketClient): Promise<
     }
     throw new Error('OTA storage migration verification failed; Railway remains unchanged.');
   }
-  console.log(`Verified ${sourceInventory.length} objects by exact key set, size, SHA-256, and metadata.`);
+  console.log(`Verified ${sourceInventory.length} source objects by size, SHA-256, and metadata (${inventoryPolicy}).`);
 }
 
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
   const mode = parseMode(argv);
+  const reverse = argv.includes('--reverse');
+  const inventoryPolicy: InventoryPolicy = reverse ? 'preserve-archives' : 'exact';
   const railwayVariables = await fetchRailwayServiceVariables(
     requireEnv('RAILWAY_TOKEN'),
     requireEnv('RAILWAY_PROJECT_ID'),
@@ -488,10 +523,13 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   maskForGitHubActions(sourceSecretAccessKey);
   const sourceProvider = classifyStorageEndpoint(sourceEndpoint);
   console.log(`Live Railway OTA storage provider: ${sourceProvider}.`);
-  if (sourceProvider === 'r2') {
+  if (!reverse && sourceProvider === 'r2') {
     throw new Error('Railway already points at R2; refusing a Tigris-to-R2 copy with no Tigris source.');
   }
-  if (sourceProvider !== 'tigris') {
+  if (reverse && sourceProvider !== 'r2') {
+    throw new Error('Rollback requires the live Railway OTA endpoint to be R2; refusing to reverse another provider.');
+  }
+  if (!reverse && sourceProvider !== 'tigris') {
     throw new Error('The live Railway OTA endpoint is not a recognized Tigris endpoint; refusing to guess.');
   }
   if (requireRailwayVariable(railwayVariables, 'S3_BUCKET_NAME') !== OTA_BUCKET_NAME) {
@@ -501,22 +539,10 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     throw new Error('The Railway OTA service is not configured for S3 storage.');
   }
 
-  const destinationEndpoint = requireEnv('OTA_R2_AWS_ENDPOINT_URL');
-  let destinationUrl: URL;
-  try {
-    destinationUrl = new URL(destinationEndpoint);
-  } catch {
-    throw new Error('OTA_R2_AWS_ENDPOINT_URL must be an HTTPS Cloudflare R2 account endpoint.');
-  }
-  if (
-    classifyStorageEndpoint(destinationEndpoint) !== 'r2' ||
-    destinationUrl.port ||
-    destinationUrl.pathname !== '/' ||
-    destinationUrl.search ||
-    destinationUrl.hash
-  ) {
-    throw new Error('OTA_R2_AWS_ENDPOINT_URL must be an HTTPS Cloudflare R2 account endpoint.');
-  }
+  const destinationPrefix = reverse ? 'OTA_LEGACY' : 'OTA_R2';
+  const destinationEndpoint = requireEnv(`${destinationPrefix}_AWS_ENDPOINT_URL`);
+  if (classifyStorageEndpoint(destinationEndpoint) !== (reverse ? 'tigris' : 'r2'))
+    throw new Error(`${destinationPrefix}_AWS_ENDPOINT_URL must be the expected HTTPS account endpoint.`);
 
   const source = createBucketClient(
     'source',
@@ -529,33 +555,37 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   const destination = createBucketClient(
     'destination',
     destinationEndpoint,
-    readEnv('OTA_R2_AWS_REGION') ?? 'auto',
-    requireEnv('OTA_R2_AWS_ACCESS_KEY_ID'),
-    requireEnv('OTA_R2_AWS_SECRET_ACCESS_KEY'),
-    false,
+    readEnv(`${destinationPrefix}_AWS_REGION`) ?? 'auto',
+    requireEnv(`${destinationPrefix}_AWS_ACCESS_KEY_ID`),
+    requireEnv(`${destinationPrefix}_AWS_SECRET_ACCESS_KEY`),
+    readEnv(`${destinationPrefix}_S3_FORCE_PATH_STYLE`)?.toLowerCase() === 'true',
   );
+  try {
+    if (mode === 'verify') {
+      await verify(source, destination, inventoryPolicy);
+      return;
+    }
 
-  if (mode === 'verify') {
-    await verify(source, destination);
-    return;
+    const [sourceInventory, destinationInventory] = await Promise.all([
+      listAllObjects(source),
+      listAllObjects(destination),
+    ]);
+    reportInventory(sourceInventory, destinationInventory);
+    if (mode === 'inventory') {
+      console.log('Inventory only: no objects copied and Railway was not changed.');
+      return;
+    }
+
+    const result = await copyAll(source, destination, sourceInventory, destinationInventory, inventoryPolicy);
+    console.log(
+      `Copy complete: ${result.copied} copied, ${result.skipped} already identical. Verifying from providers …`,
+    );
+    await verify(source, destination, inventoryPolicy);
+    console.log(`${reverse ? 'Legacy rollback' : 'R2'} copy verified. Railway remains unchanged.`);
+  } finally {
+    source.client.destroy();
+    destination.client.destroy();
   }
-
-  const [sourceInventory, destinationInventory] = await Promise.all([
-    listAllObjects(source),
-    listAllObjects(destination),
-  ]);
-  reportInventory(sourceInventory, destinationInventory);
-  if (mode === 'inventory') {
-    console.log('Inventory only: no objects copied and Railway was not changed.');
-    return;
-  }
-
-  const result = await copyAll(source, destination, sourceInventory, destinationInventory);
-  console.log(
-    `Copy complete: ${result.copied} copied, ${result.skipped} already identical. Verifying from providers …`,
-  );
-  await verify(source, destination);
-  console.log('R2 copy verified. Railway still points at Tigris; credential rotation is a separate manual cutover.');
 }
 
 if (process.argv[1]?.endsWith('migrate-ota-storage.ts')) {

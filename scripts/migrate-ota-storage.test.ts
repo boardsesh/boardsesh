@@ -79,6 +79,12 @@ describe('diffInventories', () => {
     expect(() => assertCopyPreflight([], [{ key: 'stale', size: 1 }])).toThrow(/No objects were copied/);
     expect(() => assertCopyPreflight([{ key: 'same', size: 1 }], [{ key: 'same', size: 1 }])).not.toThrow();
   });
+  it('retains destination-only archives during reverse-copy preflight', () => {
+    expect(() =>
+      assertCopyPreflight([{ key: 'new-r2-update', size: 3 }], [{ key: 'old-preview', size: 4 }], 'preserve-archives'),
+    ).not.toThrow();
+    expect(() => assertCopyPreflight([{ key: 'same', size: 1 }], [{ key: 'stale', size: 1 }])).toThrow();
+  });
 });
 
 describe('destination read errors', () => {
@@ -118,6 +124,43 @@ describe('fingerprintsMatch', () => {
 });
 
 describe('verifyObjectStores', () => {
+  it('verifies every R2 object during rollback while retaining old legacy previews', async () => {
+    const reads: string[] = [];
+    const problems = await verifyObjectStores(
+      [{ key: 'current', size: 3 }],
+      [
+        { key: 'current', size: 3 },
+        { key: 'archived', size: 5 },
+      ],
+      async (side, key) => {
+        reads.push(`${side}:${key}`);
+        return fingerprint('same');
+      },
+      4,
+      'preserve-archives',
+    );
+    expect(problems).toEqual([]);
+    expect(reads).toEqual(['source:current', 'destination:current']);
+  });
+  it('still blocks missing or corrupt live rollback objects when legacy archives are allowed', async () => {
+    const problems = await verifyObjectStores(
+      [
+        { key: 'missing', size: 3 },
+        { key: 'corrupt', size: 3 },
+      ],
+      [
+        { key: 'corrupt', size: 3 },
+        { key: 'archived', size: 5 },
+      ],
+      async (side) => fingerprint(side),
+      4,
+      'preserve-archives',
+    );
+    expect(problems).toEqual([
+      { key: 'corrupt', kind: 'content', detail: 'SHA-256 differs' },
+      { key: 'missing', kind: 'missing', detail: 'absent from destination' },
+    ]);
+  });
   it('requires exact key sets before reading content', async () => {
     const calls: [side: 'source' | 'destination', key: string][] = [];
     const problems = await verifyObjectStores(
@@ -286,6 +329,29 @@ describe('Railway variable reads', () => {
 });
 
 describe('paginated inventory and no-delete contract', () => {
+  it('rejects looping continuation tokens instead of hanging the freeze', async () => {
+    const target = {
+      bucket: 'boardsesh-ota-v3',
+      label: 'source' as const,
+      client: { send: async () => ({ Contents: [], IsTruncated: true, NextContinuationToken: 'same' }) },
+    };
+    await expect(listAllObjects(target as unknown as Parameters<typeof listAllObjects>[0])).rejects.toThrow(
+      /repeated a continuation token/,
+    );
+  });
+  it.each([{ Key: 'key' }, { Size: 1 }, { Key: 'key', Size: -1 }])(
+    'rejects incomplete object inventory %j',
+    async (object) => {
+      const target = {
+        bucket: 'boardsesh-ota-v3',
+        label: 'source' as const,
+        client: { send: async () => ({ Contents: [object], IsTruncated: false }) },
+      };
+      await expect(listAllObjects(target as unknown as Parameters<typeof listAllObjects>[0])).rejects.toThrow(
+        /incomplete object/,
+      );
+    },
+  );
   it('follows every continuation token', async () => {
     const tokens: (string | undefined)[] = [];
     const target = {

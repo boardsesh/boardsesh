@@ -1,6 +1,7 @@
 /// <reference types="node" />
 
 export type StorageProvider = 'tigris' | 'r2' | 'unknown';
+export type InventoryPolicy = 'exact' | 'preserve-archives';
 
 export type ObjectInventoryEntry = Readonly<{
   key: string;
@@ -100,11 +101,12 @@ export function diffInventories(
 export function assertCopyPreflight(
   source: readonly ObjectInventoryEntry[],
   destination: readonly ObjectInventoryEntry[],
+  inventoryPolicy: InventoryPolicy = 'exact',
 ): void {
   const { extra } = diffInventories(source, destination);
-  if (extra.length > 0) {
+  if (extra.length > 0 && inventoryPolicy === 'exact') {
     throw new Error(
-      `Destination contains ${extra.length} object(s) absent from Tigris. ` +
+      `Destination contains ${extra.length} object(s) absent from the source. ` +
         'No objects were copied; investigate the extras manually because this tool never deletes.',
     );
   }
@@ -143,12 +145,15 @@ export async function verifyObjectStores(
   destinationInventory: readonly ObjectInventoryEntry[],
   loadFingerprint: (side: 'source' | 'destination', key: string) => Promise<ObjectFingerprint>,
   concurrency = 4,
+  inventoryPolicy: InventoryPolicy = 'exact',
 ): Promise<readonly VerificationProblem[]> {
   if (!Number.isInteger(concurrency) || concurrency <= 0) throw new Error('Verification concurrency must be positive.');
   const difference = diffInventories(sourceInventory, destinationInventory);
   const problems: VerificationProblem[] = [
     ...difference.missing.map((key) => ({ key, kind: 'missing' as const, detail: 'absent from destination' })),
-    ...difference.extra.map((key) => ({ key, kind: 'extra' as const, detail: 'absent from source' })),
+    ...(inventoryPolicy === 'exact'
+      ? difference.extra.map((key) => ({ key, kind: 'extra' as const, detail: 'absent from source' }))
+      : []),
     ...difference.sizeMismatches.map(({ key, sourceSize, destinationSize }) => ({
       key,
       kind: 'size' as const,
