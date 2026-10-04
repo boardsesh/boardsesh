@@ -14,5 +14,13 @@ export function navigateToSessionFeedItem(
   session: SessionFeedItem,
   pathname: SessionDetailPathname,
 ): void {
-  router.push({ pathname, params: { sessionId: session.sessionId } });
+  router.push({
+    pathname,
+    params: {
+      sessionId: session.sessionId,
+      ...(session.sessionType === 'daily_highlight' && session.socialEntityType === 'tick'
+        ? { highlightTickUuid: session.socialEntityId }
+        : {}),
+    },
+  });
 }

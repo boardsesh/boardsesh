@@ -118,6 +118,8 @@ function makeSession(ticks: SessionDetailTick[]): SessionDetail {
     gradeDistribution: [],
     boardTypes: ['kilter'],
     hardestGrade: 'V5',
+    socialEntityType: 'session',
+    socialEntityId: 'session-1',
     firstTickAt: '2024-01-15T10:00:00.000Z',
     lastTickAt: '2024-01-15T12:00:00.000Z',
     durationMinutes: 120,

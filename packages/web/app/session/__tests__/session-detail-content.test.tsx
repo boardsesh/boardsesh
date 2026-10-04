@@ -247,6 +247,8 @@ function makeSession(overrides: Partial<SessionDetail> = {}): SessionDetail {
     gradeDistribution: [{ grade: 'V5', flash: 2, send: 3, attempt: 3 }],
     boardTypes: ['kilter'],
     hardestGrade: 'V5',
+    socialEntityType: 'session',
+    socialEntityId: 'session-1',
     firstTickAt: '2024-01-15T10:00:00.000Z',
     lastTickAt: '2024-01-15T12:00:00.000Z',
     durationMinutes: 120,
@@ -374,6 +376,35 @@ describe('SessionDetailContent', () => {
     const sessionVote = voteButtons.find((el) => el.getAttribute('data-entity-type') === 'session');
     expect(sessionVote).toBeTruthy();
     expect(sessionVote!.getAttribute('data-entity-id')).toBe('session-1');
+  });
+
+  it('uses the resolved daily tick identity for votes and comments', () => {
+    const dailySession = makeSession({
+      sessionType: 'daily_highlight',
+      socialEntityType: 'tick',
+      socialEntityId: 'tick-a',
+      upvotes: 7,
+      downvotes: 2,
+      commentCount: 4,
+    });
+    render(
+      <SessionDetailContent session={dailySession} sessionId="daily:user-1:2026-10-03" highlightTickUuid="tick-a" />,
+    );
+
+    const voteButtons = screen.getAllByTestId('vote-button');
+    expect(
+      voteButtons.some(
+        (button) =>
+          button.getAttribute('data-entity-type') === 'tick' && button.getAttribute('data-entity-id') === 'tick-a',
+      ),
+    ).toBe(true);
+    expect(screen.getByText('4')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('session-comment-toggle'));
+    const sessionComment = screen
+      .getAllByTestId('comment-section')
+      .find((section) => section.getAttribute('data-entity-id') === 'tick-a');
+    expect(sessionComment?.getAttribute('data-entity-type')).toBe('tick');
   });
 
   it('renders session-level CommentSection collapsed by default', () => {

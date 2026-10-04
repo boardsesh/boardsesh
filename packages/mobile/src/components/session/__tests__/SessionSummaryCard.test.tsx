@@ -42,7 +42,7 @@ vi.mock('../../you/AvatarGroup', () => ({
   },
 }));
 vi.mock('../../you/FeedSocialRow', () => ({
-  FeedSocialRow: (props: { entityId: string }) => {
+  FeedSocialRow: (props: { entityId: string; entityType?: string }) => {
     mockFeedSocialRow(props);
     return createElement('div', { 'data-testid': 'social-row', 'data-entity': props.entityId });
   },
@@ -98,6 +98,8 @@ function session(overrides: Partial<SessionDetail> = {}): SessionDetail {
     gradeDistribution: [],
     boardTypes: ['kilter'],
     hardestGrade: 'V6',
+    socialEntityType: 'session',
+    socialEntityId: 'sess-1',
     firstTickAt: '2026-06-15T09:00:00.000Z',
     lastTickAt: '2026-06-15T11:00:00.000Z',
     durationMinutes: 120,
@@ -204,9 +206,20 @@ describe('SessionSummaryCard', () => {
     expect(container.textContent).not.toContain('sessionFeedCard.hardest');
   });
 
-  it('passes the sessionId to FeedSocialRow', () => {
-    render_(session({ sessionId: 'sess-42' }), 'Sesh', false);
+  it('passes the session social target to FeedSocialRow', () => {
+    render_(session({ sessionId: 'sess-42', socialEntityId: 'sess-42' }), 'Sesh', false);
     expect(mockFeedSocialRow).toHaveBeenCalledWith(expect.objectContaining({ entityId: 'sess-42' }));
+  });
+
+  it('uses the selected daily highlight tick as the social target', () => {
+    render_(
+      session({ sessionType: 'daily_highlight', socialEntityType: 'tick', socialEntityId: 'tick-board-a' }),
+      'Sesh',
+      true,
+    );
+    expect(mockFeedSocialRow).toHaveBeenCalledWith(
+      expect.objectContaining({ entityId: 'tick-board-a', entityType: 'tick' }),
+    );
   });
 
   it('wires onOpenComments through to FeedSocialRow', () => {

@@ -241,8 +241,8 @@ export const GET_CREW_FEED = gql`
 `;
 
 export const GET_SESSION_DETAIL = gql`
-  query GetSessionDetail($sessionId: ID!) {
-    sessionDetail(sessionId: $sessionId) {
+  query GetSessionDetail($sessionId: ID!, $highlightTickUuid: ID) {
+    sessionDetail(sessionId: $sessionId, highlightTickUuid: $highlightTickUuid) {
       sessionId
       sessionType
       sessionName
@@ -267,6 +267,8 @@ export const GET_SESSION_DETAIL = gql`
       }
       boardTypes
       hardestGrade
+      socialEntityType
+      socialEntityId
       firstTickAt
       lastTickAt
       durationMinutes
@@ -352,6 +354,7 @@ export type GetSessionGroupedFeedQueryResponse = {
 
 export type GetSessionDetailQueryVariables = {
   sessionId: string;
+  highlightTickUuid?: string;
 };
 
 export type GetSessionDetailQueryResponse = {

@@ -414,6 +414,8 @@ export type SessionDetail = {
   gradeDistribution: SessionGradeDistributionItem[];
   boardTypes: string[];
   hardestGrade?: string | null;
+  socialEntityType: SocialEntityType;
+  socialEntityId: string;
   firstTickAt: string;
   lastTickAt: string;
   durationMinutes?: number | null;

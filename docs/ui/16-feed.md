@@ -32,7 +32,15 @@ Each card represents a climbing session and contains:
 - **Board types + climb count**: Bottom row with board names and total ticks.
 - **Social row**: Like button (`VoteButton`, like-only mode) + comment button (`FeedCommentButton`).
 
-The entire body area (below the header) links to `/session/<sessionId>`.
+The entire body area (below the header) links to `/session/<sessionId>`. A
+board-scoped daily highlight adds `highlightTickUuid` so its social target stays
+on the tick selected by that board's feed; a bare daily URL still resolves the
+global highlight.
+
+Across mobile Home and the web activity feed, board-scoped daily highlights keep
+their vote and comment target on the tick selected for that board. Opening the
+card shows the climber's full sessionless day, while the social row remains
+attached to that selected tick.
 
 **Empty states:**
 

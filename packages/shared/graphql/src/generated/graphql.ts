@@ -6431,7 +6431,10 @@ export type Query = {
    * Returns null if session doesn't exist.
    */
   session?: Maybe<Session>;
-  /** Get full detail for a single explicitly-created session. */
+  /**
+   * Get full detail for a session or daily highlight. Pass the feed card's
+   * highlightTickUuid to keep a board-scoped daily card's social target stable.
+   */
   sessionDetail?: Maybe<SessionDetail>;
   /**
    * Get session-grouped activity feed (public, no auth required).
@@ -7179,6 +7182,7 @@ export type QuerySessionArgs = {
 
 /** Root query type for all read operations. */
 export type QuerySessionDetailArgs = {
+  highlightTickUuid?: InputMaybe<Scalars['ID']['input']>;
   sessionId: Scalars['ID']['input'];
 };
 
@@ -8137,6 +8141,8 @@ export type SessionDetail = {
   sessionId: Scalars['ID']['output'];
   sessionName?: Maybe<Scalars['String']['output']>;
   sessionType: Scalars['String']['output'];
+  socialEntityId: Scalars['String']['output'];
+  socialEntityType: SocialEntityType;
   tickCount: Scalars['Int']['output'];
   ticks: Array<SessionDetailTick>;
   totalAttempts: Scalars['Int']['output'];
@@ -10888,6 +10894,7 @@ export type GetCrewFeedQuery = {
 
 export type GetSessionDetailQueryVariables = Exact<{
   sessionId: Scalars['ID']['input'];
+  highlightTickUuid?: InputMaybe<Scalars['ID']['input']>;
 }>;
 
 export type GetSessionDetailQuery = {
@@ -10904,6 +10911,8 @@ export type GetSessionDetailQuery = {
     tickCount: number;
     boardTypes: Array<string>;
     hardestGrade?: string | null;
+    socialEntityType: SocialEntityType;
+    socialEntityId: string;
     firstTickAt: string;
     lastTickAt: string;
     durationMinutes?: number | null;
@@ -15451,6 +15460,11 @@ export const GetSessionDetailDocument = {
           variable: { kind: 'Variable', name: { kind: 'Name', value: 'sessionId' } },
           type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
         },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'highlightTickUuid' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } },
+        },
       ],
       selectionSet: {
         kind: 'SelectionSet',
@@ -15463,6 +15477,11 @@ export const GetSessionDetailDocument = {
                 kind: 'Argument',
                 name: { kind: 'Name', value: 'sessionId' },
                 value: { kind: 'Variable', name: { kind: 'Name', value: 'sessionId' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'highlightTickUuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'highlightTickUuid' } },
               },
             ],
             selectionSet: {
@@ -15506,6 +15525,8 @@ export const GetSessionDetailDocument = {
                 },
                 { kind: 'Field', name: { kind: 'Name', value: 'boardTypes' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'hardestGrade' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'socialEntityType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'socialEntityId' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'firstTickAt' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'lastTickAt' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'durationMinutes' } },
