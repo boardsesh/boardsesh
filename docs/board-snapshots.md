@@ -203,8 +203,16 @@ target; the R2 rehearsal (`storage_target: r2`) stays a `workflow_dispatch` of t
   pass no longer stops the gzip pass the fleet reads. Either failure fails the run with
   `SNAPSHOT_PASS_FAILED` after both have run, and the one retry (300 s later) repeats them. A catalogue
   failure is logged and the run still succeeds, as its only consumer is the dev-db image
-  ([When the catalogue pass fails](#when-the-catalogue-pass-fails)). An abort (lease expiry at 45
-  minutes, shutdown) stops at the next layout and publishes no manifest.
+  ([When the catalogue pass fails](#when-the-catalogue-pass-fails)). An abort (lease expiry at six
+  hours, shutdown) stops at the next layout and publishes no manifest. The homelab R2 rehearsal's
+  cold Kilter layout 1 identity export alone took 44 minutes; the prior 45-minute Actions budget
+  could not cover a full nightly here. Heartbeats refresh liveness, not the absolute attempt expiry
+  or worker abort timer. Two six-hour attempts plus the 300 s retry delay fit inside the 20-hour run
+  deadline; the unchanged 120 s heartbeat still detects a dead worker promptly. With one batch
+  consumer, a long nightly also delays other batch families and makes queued live scans skip as
+  stale. Before completing the production cutover, observe a normal nightly succeed within this
+  budget, then a subsequent live scan publish or correctly report no stale layouts. Record actual
+  cold and warm timings and queue delay; the isolated rehearsal does not prove the worker gate.
 - **The fence.** The family writes no Postgres rows. Right before each manifest upload it runs
   `SELECT 1` through the attempt fence, so an attempt that has lost its run throws instead of
   publishing. Every S3 request runs outside the fence. A small race remains: an attempt can lose its run

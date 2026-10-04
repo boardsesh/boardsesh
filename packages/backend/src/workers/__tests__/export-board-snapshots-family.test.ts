@@ -132,15 +132,17 @@ describe('registration, schedules and options', () => {
     expect(family.singletonKey?.({ mode: 'nightly', board: 'kilter', layout: 8 })).toBe('nightly');
   });
 
-  it("keeps the workflow's 45-minute budget, one retry after 300 s and a valid heartbeat", () => {
+  it('bounds a cold homelab nightly and retry inside the run deadline with a short heartbeat', () => {
     expect(family.options).toMatchObject({
-      expireInSeconds: 2700,
+      expireInSeconds: 21_600,
       retryLimit: 1,
       retryDelay: 300,
       deadlineSeconds: 72_000,
     });
-    expect(family.options.heartbeatSeconds).toBeGreaterThanOrEqual(10);
-    expect(family.options.heartbeatSeconds).toBeLessThan(family.options.expireInSeconds);
+    expect(family.options.heartbeatSeconds).toBe(120);
+    expect(
+      family.options.expireInSeconds * (family.options.retryLimit + 1) + family.options.retryDelayMax,
+    ).toBeLessThan(family.options.deadlineSeconds);
     expect(family.options.retryDelayMax).toBeGreaterThanOrEqual(family.options.retryDelay);
   });
 
