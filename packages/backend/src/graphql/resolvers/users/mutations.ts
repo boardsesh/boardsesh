@@ -41,7 +41,7 @@ import { purgeDeletedSprayWallPhotos } from '../board/spray-wall-moderation';
 import { retryAccountDeletion, withdrawDeletedAccountContent } from './delete-account-privacy';
 import { deleteAccountBoards } from './delete-account-boards';
 import { pubsub } from '../../../pubsub';
-import { getStripeClient, isLiveStripeSubscription } from '../../../services/stripe-support';
+import { getStripeClient } from '../../../services/stripe-support';
 
 /** Credential statuses a sync can run from; `expired` needs a relink first. */
 const SYNCABLE_CREDENTIAL_STATUSES = ['pending', 'active', 'error'];
