@@ -1,5 +1,5 @@
 import { PgBoss, type Db } from 'pg-boss';
-import { logger } from '../utils/logger';
+import { reportJobQueueError } from './job-queue-errors';
 
 export async function assertQueuePrimary(database: Db): Promise<void> {
   const result = await database.executeSql(
@@ -114,9 +114,8 @@ export function createJobQueueClient(options: {
     reindex: false,
     ...JOB_QUEUE_TIMER_OPTIONS,
   });
-  instance.on('error', () => {
-    // Driver errors can contain credentials/SQL. Emit a bounded operational error.
-    logger.error('[job-queue] connection or execution failed', new Error('JOB_QUEUE_ERROR'));
+  instance.on('error', (error: unknown) => {
+    reportJobQueueError(error, { owner: options.owner, poolSize: options.poolSize });
   });
   return instance;
 }
