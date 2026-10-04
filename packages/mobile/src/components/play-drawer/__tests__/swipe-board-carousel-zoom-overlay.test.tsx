@@ -84,18 +84,18 @@ vi.mock('../use-zoom-pan-gesture', () => ({
   useZoomPanGesture: (options: { dismissRef?: unknown }) => {
     zoomHookOptions.current = options;
     return {
-    pinchGesture: { kind: 'pinch' },
-    zoomPanGesture: { kind: 'zoom-pan' },
-    isZoomed: zoomState.isZoomed,
-    isZoomedSV: { value: zoomState.isZoomed },
-    isPinchingSV: { value: false },
-    scaleSV: { value: 1 },
-    translateXSV: { value: 0 },
-    translateYSV: { value: 0 },
-    containerWidthSV: { value: 390 },
-    containerHeightSV: { value: 600 },
-    resetZoom: () => {},
-    animatedZoomStyle: {},
+      pinchGesture: { kind: 'pinch' },
+      zoomPanGesture: { kind: 'zoom-pan' },
+      isZoomed: zoomState.isZoomed,
+      isZoomedSV: { value: zoomState.isZoomed },
+      isPinchingSV: { value: false },
+      scaleSV: { value: 1 },
+      translateXSV: { value: 0 },
+      translateYSV: { value: 0 },
+      containerWidthSV: { value: 390 },
+      containerHeightSV: { value: 600 },
+      resetZoom: () => {},
+      animatedZoomStyle: {},
     };
   },
 }));

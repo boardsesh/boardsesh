@@ -69,7 +69,7 @@ type SwipeBoardCarouselProps = {
    * Drawn on the CURRENT board only, above the photo and below the lit holds
    * (BoardImageNative's `underOverlay`) — the hold heatmap. Never on the peek:
    * the heatmap describes the board, and a second copy sliding in would be noise.
-  */
+   */
   underOverlay?: React.ReactNode;
   /** RNGH ref to the drawer-dismiss Pan blocked by the zoomed-only board pan. */
   dismissRef?: React.MutableRefObject<GestureType | undefined>;

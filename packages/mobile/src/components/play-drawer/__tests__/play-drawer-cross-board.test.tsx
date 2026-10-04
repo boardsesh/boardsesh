@@ -343,6 +343,7 @@ beforeEach(() => {
 
 describe('PlayDrawer relay board compatibility', () => {
   it('forwards the claimed dismiss gesture ref alongside the current heatmap overlay', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     renderDrawer();
 
     expect(lastBoardProps().dismissRef).toBe(dismissGestureRef);
