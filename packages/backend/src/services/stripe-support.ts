@@ -20,7 +20,7 @@ export function getStripeClient(): Stripe {
   if (!secretKey) throw new Error('Stripe support is not configured');
   // The client intentionally lives for the process lifetime. Rotating the
   // secret therefore requires restarting the backend deployment.
-  stripeClient ??= new Stripe(secretKey);
+  stripeClient ??= new Stripe(secretKey, { timeout: 5_000, maxNetworkRetries: 1 });
   return stripeClient;
 }
 

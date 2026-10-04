@@ -114,7 +114,7 @@ export default function AboutContent({ stripeSupporters }: { stripeSupporters: P
                 <MuiLink
                   key={supporter.userId}
                   component={LocaleLink}
-                  href={`/profile/${supporter.userId}`}
+                  href={`/profile/${encodeURIComponent(supporter.userId)}`}
                   className={styles.supporter}
                 >
                   <Avatar src={supporter.avatarUrl ?? undefined} alt="" className={styles.supporterAvatar} />

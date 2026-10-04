@@ -1,20 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type Stripe from 'stripe';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as schema from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import { createBarrier, handleLater } from './helpers/concurrency';
 
-const { checkoutCreate, checkoutList, checkoutRetrieve, subscriptionRetrieve, subscriptionUpdate, afterAccountLock } =
-  vi.hoisted(() => ({
-    checkoutCreate: vi.fn(),
-    checkoutList: vi.fn(),
-    checkoutRetrieve: vi.fn(),
-    subscriptionRetrieve: vi.fn(),
-    subscriptionUpdate: vi.fn(),
-    afterAccountLock: vi.fn(),
-  }));
+const { checkoutCreate, checkoutList, checkoutRetrieve, subscriptionRetrieve, subscriptionUpdate } = vi.hoisted(() => ({
+  checkoutCreate: vi.fn(),
+  checkoutList: vi.fn(),
+  checkoutRetrieve: vi.fn(),
+  subscriptionRetrieve: vi.fn(),
+  subscriptionUpdate: vi.fn(),
+}));
 
 vi.mock('../services/stripe-support', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/stripe-support')>()),
@@ -24,23 +22,10 @@ vi.mock('../services/stripe-support', async (importOriginal) => ({
   }),
 }));
 
-// Instrument the real row lock to force transaction overlap without replacing
-// PostgreSQL or depending on sleeps and scheduler timing.
-vi.mock('../services/stripe-support-lock', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../services/stripe-support-lock')>();
-  return {
-    ...original,
-    lockSupportAccount: async (...parameters: Parameters<typeof original.lockSupportAccount>) => {
-      const account = await original.lockSupportAccount(...parameters);
-      await afterAccountLock();
-      return account;
-    },
-  };
-});
-
 import { supportMutations } from '../graphql/resolvers/support';
 import { userMutations } from '../graphql/resolvers/users/mutations';
 import { acceptCheckout, updateSubscription } from '../handlers/stripe-webhook';
+import { withSupportOperation } from '../services/stripe-support-operation';
 
 const USER_ID = 'stripe-concurrency-user';
 const CLAIM_ID = 'stripe-concurrency-claim';
@@ -82,6 +67,22 @@ async function accounts() {
   return db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.id, USER_ID));
 }
 
+async function assertAccountUnlocked() {
+  await db.transaction(async (transaction) => {
+    await transaction.execute(sql`SET LOCAL lock_timeout = '1000ms'`);
+    const unlockedAccounts = await transaction
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(eq(schema.users.id, USER_ID))
+      .for('update');
+    expect(unlockedAccounts).toHaveLength(1);
+  });
+}
+
+async function operations() {
+  return db.select().from(schema.stripeSupportOperations).where(eq(schema.stripeSupportOperations.userId, USER_ID));
+}
+
 beforeEach(async () => {
   vi.resetAllMocks();
   vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_concurrency');
@@ -94,12 +95,132 @@ beforeEach(async () => {
 });
 
 describe('Stripe support account serialization — real PostgreSQL', () => {
+  it('fences an expired reader without releasing or overwriting its successor', async () => {
+    const firstEntered = createBarrier();
+    const releaseFirst = createBarrier();
+    const successorEntered = createBarrier();
+    const releaseSuccessor = createBarrier();
+    const firstFinish = vi.fn();
+    const first = withSupportOperation(
+      USER_ID,
+      'subscription',
+      async () => 'first',
+      async () => {
+        firstEntered.release();
+        await releaseFirst.promise;
+        return 'first';
+      },
+      firstFinish,
+    );
+    handleLater(first);
+    let successor: Promise<string | null> | undefined;
+    try {
+      await firstEntered.promise;
+      await assertAccountUnlocked();
+      await db
+        .update(schema.stripeSupportOperations)
+        .set({ leaseExpiresAt: new Date(0) })
+        .where(eq(schema.stripeSupportOperations.userId, USER_ID));
+      successor = withSupportOperation(
+        USER_ID,
+        'subscription',
+        async () => 'successor',
+        async () => {
+          successorEntered.release();
+          await releaseSuccessor.promise;
+          return 'successor';
+        },
+        async (transaction, _prepared, result) => {
+          await transaction.update(schema.users).set({ name: result }).where(eq(schema.users.id, USER_ID));
+          return result;
+        },
+      );
+      handleLater(successor);
+      await successorEntered.promise;
+      const [successorOperation] = await operations();
+      releaseFirst.release();
+      await expect(first).rejects.toMatchObject({ extensions: { code: 'SUPPORT_OPERATION_STALE' } });
+      expect(firstFinish).not.toHaveBeenCalled();
+      expect(await operations()).toEqual([successorOperation]);
+      releaseSuccessor.release();
+      await expect(successor).resolves.toBe('successor');
+      expect((await operations())[0].state).toBe('idle');
+      const [account] = await db
+        .select({ name: schema.users.name })
+        .from(schema.users)
+        .where(eq(schema.users.id, USER_ID));
+      expect(account.name).toBe('successor');
+    } finally {
+      releaseFirst.release();
+      releaseSuccessor.release();
+      await Promise.allSettled([first, ...(successor ? [successor] : [])]);
+    }
+  });
+
+  it('retains uncertain deletion intent and resumes with the same operation ID', async () => {
+    const intent = { subscriptionId: SUBSCRIPTION_ID, removeSetterName: true };
+    const seenOperationIds: string[] = [];
+    const finish = vi.fn();
+    await expect(
+      withSupportOperation(
+        USER_ID,
+        'deleting',
+        async () => intent,
+        async (_prepared, operationId) => {
+          await assertAccountUnlocked();
+          seenOperationIds.push(operationId);
+          throw new Error('Cancellation response lost');
+        },
+        finish,
+        { deletionIntent: (prepared) => prepared },
+      ),
+    ).rejects.toThrow('Cancellation response lost');
+    const [pendingDeletion] = await operations();
+    expect(pendingDeletion).toMatchObject({ state: 'deleting', deletionIntent: intent });
+    expect(finish).not.toHaveBeenCalled();
+    const competingNetwork = vi.fn();
+    await expect(
+      withSupportOperation(
+        USER_ID,
+        'checking_checkout',
+        async () => null,
+        competingNetwork,
+        async () => null,
+      ),
+    ).rejects.toMatchObject({ extensions: { code: 'SUPPORT_OPERATION_PENDING' } });
+    expect(competingNetwork).not.toHaveBeenCalled();
+
+    await expect(
+      withSupportOperation(
+        USER_ID,
+        'deleting',
+        async (_transaction, priorIntent) => {
+          expect(priorIntent).toEqual(intent);
+          return priorIntent!;
+        },
+        async (_prepared, operationId) => {
+          seenOperationIds.push(operationId);
+          return true;
+        },
+        async (_transaction, prepared) => prepared,
+        { deletionIntent: (prepared) => prepared },
+      ),
+    ).resolves.toEqual(intent);
+    expect(seenOperationIds).toEqual([pendingDeletion.operationId, pendingDeletion.operationId]);
+    expect((await operations())[0]).toMatchObject({ state: 'idle', deletionIntent: null });
+  });
+
   it('allows exactly one payable monthly Checkout when creation races', async () => {
     const results = await Promise.allSettled([createCheckout(), createCheckout()]);
 
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     const rejected = results.find((result) => result.status === 'rejected');
-    expect(rejected).toMatchObject({ reason: { extensions: { code: 'PENDING_CHECKOUT_EXISTS' } } });
+    expect(rejected?.status).toBe('rejected');
+    if (rejected?.status === 'rejected') {
+      expect(['PENDING_CHECKOUT_EXISTS', 'SUPPORT_OPERATION_PENDING']).toContain(
+        (rejected.reason as { extensions: { code: string } }).extensions.code,
+      );
+    }
     expect(checkoutCreate).toHaveBeenCalledOnce();
     const pendingClaims = await claims();
     expect(pendingClaims).toHaveLength(1);
@@ -149,15 +270,18 @@ describe('Stripe support account serialization — real PostgreSQL', () => {
 
   it('cancels the subscription accepted by a concurrent webhook before deletion commits', async () => {
     await db.insert(schema.stripeSupportClaims).values({ id: CLAIM_ID, userId: USER_ID, cadence: 'monthly' });
-    const acceptanceLocked = createBarrier();
+    const acceptanceEntered = createBarrier();
     const releaseAcceptance = createBarrier();
     const cancellationEntered = createBarrier();
     const releaseCancellation = createBarrier();
-    afterAccountLock.mockImplementationOnce(async () => {
-      acceptanceLocked.release();
+    subscriptionRetrieve.mockImplementationOnce(async () => {
+      await assertAccountUnlocked();
+      acceptanceEntered.release();
       await releaseAcceptance.promise;
+      return { id: SUBSCRIPTION_ID, status: 'active', cancel_at_period_end: false };
     });
     subscriptionUpdate.mockImplementationOnce(async () => {
+      await assertAccountUnlocked();
       cancellationEntered.release();
       await releaseCancellation.promise;
       return { id: SUBSCRIPTION_ID, status: 'active', cancel_at_period_end: true };
@@ -166,11 +290,12 @@ describe('Stripe support account serialization — real PostgreSQL', () => {
     handleLater(acceptance);
     let deletion: Promise<boolean> | undefined;
     try {
-      await acceptanceLocked.promise;
-      deletion = deleteAccount();
-      handleLater(deletion);
+      await acceptanceEntered.promise;
+      await expect(deleteAccount()).rejects.toMatchObject({ extensions: { code: 'SUPPORT_OPERATION_PENDING' } });
       releaseAcceptance.release();
       await acceptance;
+      deletion = deleteAccount();
+      handleLater(deletion);
       await cancellationEntered.promise;
       expect(await accounts()).toHaveLength(1);
       expect(subscriptionUpdate).toHaveBeenCalledWith(SUBSCRIPTION_ID, { cancel_at_period_end: true });
@@ -197,6 +322,67 @@ describe('Stripe support account serialization — real PostgreSQL', () => {
       .where(eq(schema.stripeSupporters.userId, USER_ID));
     expect(supporters).toHaveLength(1);
     expect(supporters[0].stripeSubscriptionId).toBe(SUBSCRIPTION_ID);
+  });
+
+  it('resumes failed account deletion without permitting Checkout or changing its intent', async () => {
+    await db.insert(schema.stripeSupporters).values({
+      userId: USER_ID,
+      stripeSubscriptionId: SUBSCRIPTION_ID,
+      subscriptionStatus: 'active',
+    });
+    subscriptionUpdate.mockRejectedValueOnce(new Error('Cancellation response lost'));
+
+    await expect(deleteAccount()).rejects.toMatchObject({ extensions: { code: 'STRIPE_CANCELLATION_FAILED' } });
+    const [pendingDeletion] = await operations();
+    expect(pendingDeletion).toMatchObject({
+      state: 'deleting',
+      deletionIntent: { subscriptionId: SUBSCRIPTION_ID, removeSetterName: false },
+    });
+    await expect(createCheckout()).rejects.toMatchObject({ extensions: { code: 'SUPPORT_OPERATION_PENDING' } });
+    expect(checkoutCreate).not.toHaveBeenCalled();
+    await expect(userMutations.deleteAccount({}, { input: { removeSetterName: true } }, context())).resolves.toBe(true);
+    expect(subscriptionUpdate).toHaveBeenNthCalledWith(1, SUBSCRIPTION_ID, { cancel_at_period_end: true });
+    expect(subscriptionUpdate).toHaveBeenNthCalledWith(2, SUBSCRIPTION_ID, { cancel_at_period_end: true });
+    expect(await accounts()).toHaveLength(0);
+  });
+
+  it('reapplies cancellation after a failed deletion and a portal resume', async () => {
+    await db.insert(schema.stripeSupporters).values({ userId: USER_ID, stripeSubscriptionId: SUBSCRIPTION_ID });
+    await db.execute(sql`
+      CREATE OR REPLACE FUNCTION reject_stripe_user_delete() RETURNS trigger AS $$
+      BEGIN
+        IF OLD.id = 'stripe-concurrency-user' THEN
+          RAISE EXCEPTION 'Simulated account deletion commit failure';
+        END IF;
+        RETURN OLD;
+      END;
+      $$ LANGUAGE plpgsql
+    `);
+    await db.execute(sql`
+      CREATE TRIGGER reject_stripe_user_delete BEFORE DELETE ON users
+      FOR EACH ROW EXECUTE FUNCTION reject_stripe_user_delete()
+    `);
+    try {
+      await expect(deleteAccount()).rejects.toThrow();
+      expect(await accounts()).toHaveLength(1);
+      expect(subscriptionUpdate).toHaveBeenCalledTimes(1);
+      const [pendingDeletion] = await operations();
+      expect(pendingDeletion.state).toBe('deleting');
+      await db.execute(sql`DROP TRIGGER reject_stripe_user_delete ON users`);
+      // An already-open Stripe portal resumed billing after cancellation.
+      subscriptionRetrieve.mockResolvedValue({ id: SUBSCRIPTION_ID, status: 'active', cancel_at_period_end: false });
+      subscriptionUpdate.mockImplementationOnce(async (...parameters: unknown[]) => {
+        expect(parameters).toEqual([SUBSCRIPTION_ID, { cancel_at_period_end: true }]);
+        expect((await operations())[0].operationId).toBe(pendingDeletion.operationId);
+        return { id: SUBSCRIPTION_ID, status: 'active', cancel_at_period_end: true };
+      });
+      await expect(deleteAccount()).resolves.toBe(true);
+      expect(subscriptionUpdate).toHaveBeenCalledTimes(2);
+      expect(await accounts()).toHaveLength(0);
+    } finally {
+      await db.execute(sql`DROP TRIGGER IF EXISTS reject_stripe_user_delete ON users`);
+      await db.execute(sql`DROP FUNCTION IF EXISTS reject_stripe_user_delete()`);
+    }
   });
 
   it('keeps the subscription customer when a different one-time customer completes later', async () => {
@@ -293,18 +479,20 @@ describe('Stripe support account serialization — real PostgreSQL', () => {
     });
   });
 
-  it('reads Checkout subscription state only after a concurrent subscription update unlocks', async () => {
+  it('retries Checkout acceptance after a concurrent subscription update finishes', async () => {
     await db.insert(schema.stripeSupporters).values({
       userId: USER_ID,
       stripeSubscriptionId: SUBSCRIPTION_ID,
       subscriptionStatus: 'active',
     });
     await db.insert(schema.stripeSupportClaims).values({ id: CLAIM_ID, userId: USER_ID, cadence: 'monthly' });
-    const updateLocked = createBarrier();
+    const updateEntered = createBarrier();
     const releaseUpdate = createBarrier();
-    afterAccountLock.mockImplementationOnce(async () => {
-      updateLocked.release();
+    subscriptionRetrieve.mockImplementationOnce(async () => {
+      await assertAccountUnlocked();
+      updateEntered.release();
       await releaseUpdate.promise;
+      return { id: SUBSCRIPTION_ID, status: 'canceled', cancel_at_period_end: false, customer: 'cus_concurrency' };
     });
     subscriptionRetrieve.mockResolvedValue({
       id: SUBSCRIPTION_ID,
@@ -316,12 +504,14 @@ describe('Stripe support account serialization — real PostgreSQL', () => {
     handleLater(updating);
     let acceptance: Promise<void> | undefined;
     try {
-      await updateLocked.promise;
+      await updateEntered.promise;
       acceptance = acceptCheckout(paidSession(), 100);
       handleLater(acceptance);
-      expect(subscriptionRetrieve).not.toHaveBeenCalled();
+      await expect(acceptance).rejects.toMatchObject({ extensions: { code: 'SUPPORT_OPERATION_PENDING' } });
+      expect(subscriptionRetrieve).toHaveBeenCalledOnce();
       releaseUpdate.release();
-      await Promise.all([updating, acceptance]);
+      await updating;
+      await acceptCheckout(paidSession(), 100);
       const supporters = await db
         .select()
         .from(schema.stripeSupporters)

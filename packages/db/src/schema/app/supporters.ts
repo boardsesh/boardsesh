@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { boolean, index, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { boolean, index, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 import { users } from '../auth/users';
 
 /**
@@ -53,3 +53,21 @@ export const stripeSupportClaims = pgTable(
       .where(sql`${table.cadence} = 'monthly'`),
   }),
 );
+
+export type SupportDeletionIntent = { subscriptionId: string | null; removeSetterName: boolean };
+
+/** Recoverable per-account billing lease; external Stripe calls never hold DB locks. */
+export const stripeSupportOperations = pgTable('stripe_support_operations', {
+  userId: text('user_id')
+    .primaryKey()
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  state: text('state')
+    .$type<'idle' | 'checking_checkout' | 'accepting' | 'subscription' | 'deleting' | 'reconciling'>()
+    .notNull()
+    .default('idle'),
+  operationId: text('operation_id'),
+  ownerToken: text('owner_token'),
+  leaseExpiresAt: timestamp('lease_expires_at'),
+  deletionIntent: jsonb('deletion_intent').$type<SupportDeletionIntent>(),
+});

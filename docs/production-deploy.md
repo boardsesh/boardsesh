@@ -741,12 +741,24 @@ monthly claim is pending. Checkout creation uses the opaque claim ID as its
 [Stripe idempotency key](https://docs.stripe.com/api/idempotent_requests).
 
 New Checkout claims store a fixed 23-hour expiration, also sent to Stripe.
-Creation and account deletion first reconcile expired claims under the account
-lock. Each attempt checks at most 10 claims and 1,000 sessions per claim with a
-missing session ID. It clears only confirmed expired sessions, or claims with
+Creation and account deletion first reconcile expired claims under a persisted
+billing operation. Each attempt checks at most 10 claims and 1,000 sessions per
+claim with a missing session ID, within a shared 15-second network budget. Stripe requests
+time out after five seconds; reconciliation disables retries, while other
+requests allow one retry. It clears only confirmed expired sessions, or claims with
 no matching session after exhausting that bounded creation-window search.
 Paid/completed sessions, failed lookups, and truncated searches retain claims.
 Legacy claims without a fixed expiration require manual reconciliation.
+
+Billing operations reserve and finalize in short database transactions; Stripe
+requests run between them, outside account locks. A five-minute lease and owner
+token fence stale results. Expired read operations can be retried. Account
+deletion persists its subscription target and setter-name choice before contacting
+Stripe; failures retain that intent and allow deletion to resume. Other billing
+operations stay blocked until deletion finishes. Recovery reapplies cancellation
+to that same subscription rather than replaying a cached Stripe success. If a
+deleting operation remains after a crash, retry account deletion; do not clear
+its intent or admit a new Checkout while cancellation is uncertain.
 
 If a network or Stripe server error leaves the creation outcome uncertain, the
 backend retains the claim and logs its ID for reconciliation. Look up the
