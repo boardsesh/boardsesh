@@ -171,17 +171,24 @@ persist in the session and repaint the board as soon as the phone reconnects.
 
 ## 8. CI/CD
 
-Two workflows cover this directory, both path-filtered so nothing else in the
-monorepo triggers them. Full reference: [`docs/garmin-sideload-build.md`](../docs/garmin-sideload-build.md).
+Two path-filtered workflows cover this directory. Full reference:
+[`docs/garmin-sideload-build.md`](../docs/garmin-sideload-build.md).
 
-- **`.github/workflows/garmin-ci.yml`** — on every PR touching `garmin/**`.
-  Compiles `fenix7`, the staging jungle flavour, and the `-t` unit-test target,
-  and fails if the `monkeyc` warning count grows. It signs with a **throwaway**
-  key minted in the job, so the real `developer_key` never touches a PR build.
+- **`.github/workflows/garmin-ci.yml`** — on matching same-repository PRs and
+  `main` pushes matching its path filters: Garmin app files except README-only
+  edits, either Garmin workflow, the shared gate script, or the SDK action. Fork
+  PRs skip because they cannot access the SDK credentials. It compiles `fenix7`,
+  the staging jungle flavour, and the `-t` unit-test target, and fails if the
+  `monkeyc` warning count grows. It signs with a **throwaway** key minted in the
+  job, so the real `developer_key` never touches a PR build.
 - **`.github/workflows/garmin-release.yml`** — on every push to `main` touching
-  `garmin/**` (except this README). Builds a signed, `-r` release `.prg` for
-  each watch in `garmin/release-devices.txt` and republishes them under the
-  rolling `garmin-latest` tag, so the download URL never moves:
+  `garmin/**` (except this README), the release workflow, or the SDK action.
+  Before SDK login, signing, or publication, it waits for the newest completed
+  successful `Garmin CI` push run for the exact checked-out main SHA. Manual
+  dispatch uses the same gate and cannot start a release without that run. It
+  then builds a signed, `-r` release `.prg` for each watch in
+  `garmin/release-devices.txt` and republishes them under the rolling
+  `garmin-latest` tag, so the download URL never moves:
   `https://github.com/boardsesh/boardsesh/releases/download/garmin-latest/boardsesh-fenix7.prg`
 
 CI installs the SDK per run with a dedicated Garmin account rather than pulling a
@@ -253,14 +260,16 @@ garmin/
 
 ## Validation status
 
-Earlier PR discussion records successful compilation and simulator tests; the
-old statement that this app had never compiled was stale. Device-specific
-compilation is now CI-verified: every PR compiles `fenix7` (app, staging flavour
-and test target) and every merge to `main` compiles all twelve published watches
-with the official Connect IQ 9.2.0 compiler. Simulator test **execution** is
-still manual (section 5) — `monkeydo` needs the Qt simulator, which is documented
-upstream to segfault and hang headlessly. Compilation is separate from executing
-the tests or checking a watch's memory/API limits.
+The workflows configure compilation for matching same-repository PRs and
+relevant pushes to `main`; the release workflow requires a completed successful
+compile run for its exact main commit. This describes the checked-in workflow,
+not proof that the Garmin environment, account, variables, secrets, or signing
+key backup are configured or that a current commit passed. Verify those
+operator-owned prerequisites before treating a release as qualified. Simulator
+test **execution** remains manual (section 5) — `monkeydo` needs the Qt
+simulator, which is documented upstream to segfault and hang headlessly.
+Compilation is separate from executing the tests or checking a watch's memory
+and API limits.
 
 The backend pairing alphabet matches `PairingView.CHARSET`. SDK 9.2.0 documents
 `Activity.SPORT_ROCK_CLIMBING`, `Gregorian.utcInfo` with numeric `FORMAT_SHORT`

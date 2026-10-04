@@ -40,6 +40,7 @@ jobs:
     timeout-minutes: 30
     environment: Garmin
     permissions:
+      actions: read # confirms the completed exact-source Garmin CI run
       contents: write # publishes the garmin-latest release
 
     steps:
@@ -53,6 +54,16 @@ jobs:
           exit 1
 
       - uses: actions/checkout@v6
+
+      - name: Wait for the successful Garmin CI gate on this exact commit
+        # The CI and release workflows start independently on a push. Polling
+        # their structured run records avoids assuming which workflow starts
+        # first, and also protects manual dispatches and release-only edits.
+        # This step runs before SDK login, the developer key, signing, or publish.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GARMIN_CI_GATE_MAX_POLL_ATTEMPTS: '80'
+        run: bash scripts/garmin-gate.sh release
 
       - name: Set up Java
         uses: actions/setup-java@v4
