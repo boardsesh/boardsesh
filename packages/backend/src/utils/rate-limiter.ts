@@ -9,12 +9,16 @@ const rateLimiter = new MemoryRateLimiter();
 
 export { RateLimitError };
 
-function normalizeRateLimitIdentifier(identifier: string): string {
+function normalizeRateLimitIdentifier(identifier: unknown): string {
   // Production contexts use server-generated UUID/http identifiers, but a
   // malformed or legacy context must still spend a finite shared budget. A
   // stable sentinel preserves the old empty-key behavior without weakening
   // the shared limiter's non-empty-identifier invariant or minting new keys.
-  return identifier.trim() ? identifier : UNKNOWN_RATE_LIMIT_IDENTIFIER;
+  if (typeof identifier !== 'string' || identifier.trim().length === 0) {
+    return UNKNOWN_RATE_LIMIT_IDENTIFIER;
+  }
+
+  return identifier;
 }
 
 /**
