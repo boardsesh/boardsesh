@@ -35,18 +35,18 @@ import Svg, { Path } from 'react-native-svg';
 import type { Quad } from '@boardsesh/spray-wall-geometry';
 import { borderRadius } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
-import { fitCornerPhoto, quadToPhoto, quadToRender, rescaleRenderCoordinate } from './corner-photo-fit';
+import {
+  CORNER_HANDLE_SIZE,
+  cornerLayerLayout,
+  fitCornerPhoto,
+  planCornerRefit,
+  quadToPhoto,
+  quadToRender,
+  rescaleRenderCoordinate,
+} from './corner-photo-fit';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
-/**
- * Touch target for one corner. Bigger than the ring it draws, so a thumb can find it.
- *
- * Exported because the handles overhang the photo by half of this on every side
- * (a ring ON a corner of the photo has to be whole, and touchable), so whoever
- * sizes the space around the photo has to leave that much room.
- */
-export const CORNER_HANDLE_SIZE = 44;
 const HANDLE_SIZE = CORNER_HANDLE_SIZE;
 /** The visible ring inside that target. */
 const RING_SIZE = 28;
@@ -72,6 +72,12 @@ export type SprayCornerMarkerProps = {
   onChange: (quad: Quad) => void;
   /** True once the quad has been refused for crossing itself; paints the guides red. */
   invalid?: boolean;
+  /**
+   * Fired when a finger lands on a handle and again when it lets go — twice per
+   * drag, never per frame. Lets a scrolling parent hold still while a ring is
+   * being moved.
+   */
+  onDragActiveChange?: (active: boolean) => void;
 };
 
 const CORNER_ORDER = [0, 1, 2, 3] as const;
@@ -98,6 +104,7 @@ export function SprayCornerMarker(props: SprayCornerMarkerProps) {
   // Nothing until there is a real frame. The rings are seeded through the fit's
   // scale, and `useSharedValue` reads its seed exactly once — mounting them
   // against a zero-sized box would seed all eight from a division by zero.
+  // (A photo with no size never gets here: `SprayCornerStep` says so instead.)
   if (!fit) return null;
   return <FittedCornerMarker {...props} renderWidth={fit.width} renderHeight={fit.height} renderScale={fit.scale} />;
 }
@@ -107,6 +114,7 @@ function FittedCornerMarker({
   value,
   onChange,
   invalid = false,
+  onDragActiveChange,
   renderWidth,
   renderHeight,
   renderScale,
@@ -158,21 +166,22 @@ function FittedCornerMarker({
    * very message telling the climber to fix them.
    */
   const seedKey = seed.map(([pointX, pointY]) => `${pointX},${pointY}`).join(';');
-  const applied = useRef({ seedKey, renderScale });
+  const applied = useRef({ seedKey, scale: renderScale });
   useEffect(() => {
     const previous = applied.current;
-    applied.current = { seedKey, renderScale };
-    if (previous.seedKey !== seedKey) {
+    const next = { seedKey, scale: renderScale };
+    applied.current = next;
+    const plan = planCornerRefit(previous, next);
+    if (plan === 'seed') {
       for (const [corner, [pointX, pointY]] of quadToRender(seed, renderScale).entries()) {
         xs[corner].value = pointX;
         ys[corner].value = pointY;
       }
-      return;
-    }
-    if (previous.renderScale === renderScale) return;
-    for (const corner of CORNER_ORDER) {
-      xs[corner].value = rescaleRenderCoordinate(xs[corner].value, previous.renderScale, renderScale);
-      ys[corner].value = rescaleRenderCoordinate(ys[corner].value, previous.renderScale, renderScale);
+    } else if (plan === 'rescale') {
+      for (const corner of CORNER_ORDER) {
+        xs[corner].value = rescaleRenderCoordinate(xs[corner].value, previous.scale, renderScale);
+        ys[corner].value = rescaleRenderCoordinate(ys[corner].value, previous.scale, renderScale);
+      }
     }
     // `seedKey` stands in for `seed`, and `xs` / `ys` are stable arrays of stable
     // shared values.
@@ -221,15 +230,15 @@ function FittedCornerMarker({
     t('sprayWizard.anchors.cornerBottomLeft'),
   ];
 
-  const frameBox = { width: renderWidth, height: renderHeight };
+  const layout = cornerLayerLayout({ width: renderWidth, height: renderHeight });
 
   return (
     // The handle layer is half a handle bigger than the photo on every side, and
     // only the PHOTO is clipped. A ring dragged onto a true corner of the photo
     // used to lose three quarters of itself, and of its touch target, to the
     // frame's rounded clip.
-    <View style={{ width: renderWidth + HANDLE_SIZE, height: renderHeight + HANDLE_SIZE }}>
-      <View style={[styles.frame, frameBox, { borderRadius: borderRadius.lg }]}>
+    <View style={layout.layer}>
+      <View style={[styles.frame, layout.frame, { borderRadius: borderRadius.lg }]}>
         <Image
           source={{ uri: photo.uri }}
           style={StyleSheet.absoluteFill}
@@ -237,7 +246,7 @@ function FittedCornerMarker({
           accessibilityIgnoresInvertColors
         />
       </View>
-      <Svg pointerEvents="none" style={[styles.outline, frameBox]} width={renderWidth} height={renderHeight}>
+      <Svg pointerEvents="none" style={[styles.outline, layout.frame]} width={renderWidth} height={renderHeight}>
         <AnimatedPath
           animatedProps={outlineProps}
           fill={guideColor}
@@ -254,6 +263,9 @@ function FittedCornerMarker({
           y={ys[corner]}
           maxX={renderWidth}
           maxY={renderHeight}
+          renderScale={renderScale}
+          offset={layout.handleOffset}
+          onDragActiveChange={onDragActiveChange}
           color={guideColor}
           label={cornerLabels[corner]}
           onCommit={commit}
@@ -268,6 +280,9 @@ function CornerHandle({
   y,
   maxX,
   maxY,
+  renderScale,
+  offset,
+  onDragActiveChange,
   color,
   label,
   onCommit,
@@ -276,37 +291,49 @@ function CornerHandle({
   y: SharedValue<number>;
   maxX: number;
   maxY: number;
+  /** Render points per photo pixel at the current fit. */
+  renderScale: number;
+  /** From `cornerLayerLayout`: added to (x, y) to place the handle in its layer. */
+  offset: number;
+  onDragActiveChange?: (active: boolean) => void;
   color: string;
   label: string;
   onCommit: () => void;
 }) {
-  const startX = useSharedValue(0);
-  const startY = useSharedValue(0);
+  // Where the drag started, in PHOTO pixels. Not render points: if the frame is
+  // re-fitted while this finger is still down (another ring released into a
+  // refusal, an iPad turned), a start remembered at the old scale would make the
+  // ring jump on the next move.
+  const startPhotoX = useSharedValue(0);
+  const startPhotoY = useSharedValue(0);
 
   const pan = useMemo(
     () =>
       Gesture.Pan()
         .onBegin(() => {
-          startX.value = x.value;
-          startY.value = y.value;
+          startPhotoX.value = x.value / renderScale;
+          startPhotoY.value = y.value / renderScale;
+          if (onDragActiveChange) runOnJS(onDragActiveChange)(true);
         })
         .onUpdate((event) => {
           // Clamped to the photo: an anchor outside the frame describes a corner
           // the photograph never saw, and the homography solved from it maps the
           // wall to somewhere nobody can check.
-          x.value = Math.min(maxX, Math.max(0, startX.value + event.translationX));
-          y.value = Math.min(maxY, Math.max(0, startY.value + event.translationY));
+          x.value = Math.min(maxX, Math.max(0, startPhotoX.value * renderScale + event.translationX));
+          y.value = Math.min(maxY, Math.max(0, startPhotoY.value * renderScale + event.translationY));
         })
         .onEnd(() => {
           runOnJS(onCommit)();
+        })
+        // Always follows `onBegin`, including for a touch that never became a drag.
+        .onFinalize(() => {
+          if (onDragActiveChange) runOnJS(onDragActiveChange)(false);
         }),
-    [x, y, startX, startY, maxX, maxY, onCommit],
+    [x, y, startPhotoX, startPhotoY, maxX, maxY, renderScale, onCommit, onDragActiveChange],
   );
 
-  // No half-handle offset: the layer the handles sit in already starts half a
-  // handle up and left of the photo, so (x, y) puts the ring's centre on the point.
   const style = useAnimatedStyle(() => ({
-    transform: [{ translateX: x.value }, { translateY: y.value }],
+    transform: [{ translateX: x.value + offset }, { translateY: y.value + offset }],
   }));
 
   return (
@@ -326,15 +353,11 @@ function CornerHandle({
 const styles = StyleSheet.create({
   frame: {
     position: 'absolute',
-    left: HANDLE_SIZE / 2,
-    top: HANDLE_SIZE / 2,
     overflow: 'hidden',
     backgroundColor: '#000000',
   },
   outline: {
     position: 'absolute',
-    left: HANDLE_SIZE / 2,
-    top: HANDLE_SIZE / 2,
   },
   handle: {
     position: 'absolute',

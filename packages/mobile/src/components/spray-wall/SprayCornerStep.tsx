@@ -9,12 +9,19 @@
 // So the copy takes the height it needs, the photo gets everything left over
 // (`stage`, measured), and the marker fits the photo inside that.
 //
-// The one exception is a screen with so little room left — the largest text
-// sizes on a small phone — that the photo would be too small to aim at. Below
-// `MIN_STAGE_HEIGHT` the photo stops shrinking and the step scrolls instead,
-// which is the old behaviour and still better than four rings on a thumbnail.
+// The one exception is a screen with so little room left that the photo would
+// be too small to aim at: below `MIN_STAGE_HEIGHT` the photo stops shrinking and
+// the step scrolls instead. That is not only a large-text case. On a 375x667
+// phone the reset flow's longer copy leaves the stage within a line of text of
+// the floor at the default size, so it has to be safe: the page is held still
+// for as long as a finger is on a ring, and a drag can never become a scroll.
+//
+// Nothing under the photo changes height either. The hint and the "those
+// corners cross over" sentence that replaces it share one slot, sized for the
+// taller of the two, so a refused quad does not re-fit the photo as the finger
+// lifts.
 
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Quad } from '@boardsesh/spray-wall-geometry';
@@ -23,7 +30,8 @@ import { useTheme } from '../../providers/theme-provider';
 import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
 import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
-import { CORNER_HANDLE_SIZE, SprayCornerMarker } from './SprayCornerMarker';
+import { SprayCornerMarker } from './SprayCornerMarker';
+import { CORNER_HANDLE_SIZE } from './corner-photo-fit';
 
 /** Widest the photo is ever drawn. Past this it is a wall on a coffee table. */
 const MAX_PHOTO_WIDTH = 520;
@@ -49,20 +57,9 @@ export type SprayCornerStepProps = {
   onChange: (quad: Quad) => void;
   /** True once the quad has been refused for crossing itself. */
   invalid: boolean;
-  /** Anything a flow has to say under the hint. */
-  children?: ReactNode;
 };
 
-export function SprayCornerStep({
-  stepCounter,
-  title,
-  body,
-  photo,
-  value,
-  onChange,
-  invalid,
-  children,
-}: SprayCornerStepProps) {
+export function SprayCornerStep({ stepCounter, title, body, photo, value, onChange, invalid }: SprayCornerStepProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const headerInset = useTransparentHeaderInset();
@@ -87,13 +84,41 @@ export function SprayCornerStep({
   }, []);
 
   // Scrolls only when the content really is taller than the screen — that is,
-  // only when the stage has hit its floor. A step that fits must not move under
-  // a finger that is dragging a ring.
+  // only when the stage has hit its floor.
   const overflows = contentHeight > viewportHeight + LAYOUT_EPSILON;
 
+  // And never while a ring is held. Counted, because two rings can be held at
+  // once and the page must stay put until the last finger lifts. The marker
+  // reports a finger landing and leaving, so this is two state changes per drag.
+  const heldHandles = useRef(0);
+  const [dragging, setDragging] = useState(false);
+  const onDragActiveChange = useCallback((active: boolean) => {
+    heldHandles.current = Math.max(0, heldHandles.current + (active ? 1 : -1));
+    setDragging(heldHandles.current > 0);
+  }, []);
+
+  // One slot for the hint and for the refusal that replaces it, as tall as the
+  // taller of the two at this width and text size.
+  const [hintHeight, setHintHeight] = useState(0);
+  const [crossedHeight, setCrossedHeight] = useState(0);
+  const onHintProbeLayout = useCallback((event: LayoutChangeEvent) => {
+    setHintHeight(event.nativeEvent.layout.height);
+  }, []);
+  const onCrossedProbeLayout = useCallback((event: LayoutChangeEvent) => {
+    setCrossedHeight(event.nativeEvent.layout.height);
+  }, []);
+
+  // `predictCompressedSize` answers zeros for a picker that could not report a
+  // size, and such a photo does reach this step. There is no pixel space to put
+  // corners in, so say so; Back is in the footer, and the add-a-wall flow can
+  // still skip.
+  const photoHasSize = photo.width > 0 && photo.height > 0;
+
   // The stage runs edge to edge so the handle layer, which overhangs the photo
-  // by half a handle, stays inside its parent and so stays touchable. The photo
-  // itself keeps the page's gutter.
+  // by half a handle on every side, has room. For a photo limited by its width
+  // the layer is still 12 points wider than the stage (the gutter is 16, the
+  // overhang 22), so 6 points of each outer touch target fall outside it, off
+  // the edge of the screen. The rings themselves are whole.
   const maxPhotoWidth = Math.min(MAX_PHOTO_WIDTH, stage.width - spacing[4] * 2);
   const maxPhotoHeight = stage.height - CORNER_HANDLE_SIZE;
 
@@ -104,7 +129,7 @@ export function SprayCornerStep({
       // it natively and the content could not be sized to the visible height.
       contentInsetAdjustmentBehavior="never"
       contentContainerStyle={[styles.content, { paddingTop: headerInset + spacing[4] }]}
-      scrollEnabled={overflows}
+      scrollEnabled={overflows && !dragging}
       bounces={false}
       showsVerticalScrollIndicator={false}
       onLayout={onViewportLayout}
@@ -120,23 +145,58 @@ export function SprayCornerStep({
         {body}
       </Text>
       <View style={styles.stage} onLayout={onStageLayout}>
-        <SprayCornerMarker
-          photo={photo}
-          maxWidth={maxPhotoWidth}
-          maxHeight={maxPhotoHeight}
-          value={value}
-          onChange={onChange}
-          invalid={invalid}
-        />
+        {photoHasSize ? (
+          <SprayCornerMarker
+            photo={photo}
+            maxWidth={maxPhotoWidth}
+            maxHeight={maxPhotoHeight}
+            value={value}
+            onChange={onChange}
+            invalid={invalid}
+            onDragActiveChange={onDragActiveChange}
+          />
+        ) : (
+          <Text
+            variant="subheadline"
+            color={iosSystemColors.systemRed}
+            style={styles.hint}
+            accessibilityLiveRegion="polite"
+          >
+            {t('sprayWizard.photo.failed')}
+          </Text>
+        )}
       </View>
-      <Text
-        variant="footnote"
-        color={invalid ? iosSystemColors.systemRed : systemColors.secondaryLabel}
-        style={styles.hint}
-      >
-        {invalid ? t('sprayWizard.anchors.crossed') : t('sprayWizard.anchors.hint')}
-      </Text>
-      {children}
+      <View style={{ minHeight: Math.max(hintHeight, crossedHeight) }}>
+        {/* The one announcement of a refusal, in both flows. */}
+        <Text
+          variant="footnote"
+          color={invalid ? iosSystemColors.systemRed : systemColors.secondaryLabel}
+          style={styles.hint}
+          accessibilityLiveRegion={invalid ? 'polite' : 'none'}
+        >
+          {invalid ? t('sprayWizard.anchors.crossed') : t('sprayWizard.anchors.hint')}
+        </Text>
+        {/* Both sentences, laid out and never shown, so the slot can be sized
+            before either is needed. */}
+        <Text
+          variant="footnote"
+          style={[styles.hint, styles.hintProbe]}
+          onLayout={onHintProbeLayout}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
+          {t('sprayWizard.anchors.hint')}
+        </Text>
+        <Text
+          variant="footnote"
+          style={[styles.hint, styles.hintProbe]}
+          onLayout={onCrossedProbeLayout}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
+          {t('sprayWizard.anchors.crossed')}
+        </Text>
+      </View>
     </ScrollView>
   );
 }
@@ -165,5 +225,12 @@ const styles = StyleSheet.create({
   hint: {
     textAlign: 'center',
     paddingHorizontal: spacing[4],
+  },
+  hintProbe: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    opacity: 0,
+    pointerEvents: 'none',
   },
 });

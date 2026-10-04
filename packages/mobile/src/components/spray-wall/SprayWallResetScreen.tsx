@@ -480,13 +480,7 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
           value={state.anchors}
           onChange={(quad) => dispatch({ type: 'ANCHORS_SET', anchors: quad })}
           invalid={state.anchorRejection != null}
-        >
-          {state.anchorRejection != null ? (
-            <Text variant="footnote" color={iosSystemColors.systemRed} accessibilityLiveRegion="polite">
-              {t('sprayReset.anchors.notConvex')}
-            </Text>
-          ) : null}
-        </SprayCornerStep>
+        />
         <SprayCornerFooter
           primaryTitle={t('sprayReset.anchors.use')}
           onPrimary={() => dispatch({ type: 'ANCHORS_DONE' })}

@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { Quad } from '@boardsesh/spray-wall-geometry';
-import { fitCornerPhoto, quadToPhoto, quadToRender, rescaleRenderCoordinate } from '../corner-photo-fit';
+import {
+  CORNER_FRAME_INSET,
+  CORNER_HANDLE_SIZE,
+  cornerLayerLayout,
+  fitCornerPhoto,
+  planCornerRefit,
+  quadToPhoto,
+  quadToRender,
+  rescaleRenderCoordinate,
+} from '../corner-photo-fit';
 
 /** A portrait phone photo, as the picker hands it over after compression. */
 const PORTRAIT = { photoWidth: 1536, photoHeight: 2048 };
@@ -116,5 +125,65 @@ describe('the corner mapping', () => {
   it('leaves a coordinate alone rather than divide by a scale that is not one', () => {
     expect(rescaleRenderCoordinate(120, 0, 0.2)).toBe(120);
     expect(rescaleRenderCoordinate(120, 0.2, Number.NaN)).toBe(120);
+  });
+});
+
+describe('cornerLayerLayout', () => {
+  const fit = { width: 315, height: 420 };
+  const layout = cornerLayerLayout(fit);
+
+  it('makes the handle layer the photo plus the inset on every side', () => {
+    expect(layout.layer).toEqual({ width: 315 + 2 * CORNER_FRAME_INSET, height: 420 + 2 * CORNER_FRAME_INSET });
+    expect(layout.frame).toEqual({ left: CORNER_FRAME_INSET, top: CORNER_FRAME_INSET, width: 315, height: 420 });
+  });
+
+  it('puts the centre of a handle on the point of the frame it stands for', () => {
+    // A handle is drawn at (coordinate + handleOffset) and is CORNER_HANDLE_SIZE
+    // across, so that is where its centre — the ring — ends up in the layer. It
+    // has to be the same place the frame puts that coordinate, or every saved
+    // corner is off from the ring the climber saw by the difference.
+    for (const coordinate of [0, 31.5, fit.width]) {
+      const handleCentre = coordinate + layout.handleOffset + CORNER_HANDLE_SIZE / 2;
+      expect(handleCentre).toBe(layout.frame.left + coordinate);
+    }
+  });
+
+  it('keeps a handle on any corner of the photo inside the layer, so it stays touchable', () => {
+    for (const [renderX, renderY] of [
+      [0, 0],
+      [fit.width, 0],
+      [fit.width, fit.height],
+      [0, fit.height],
+    ]) {
+      const left = renderX + layout.handleOffset;
+      const top = renderY + layout.handleOffset;
+      expect(left).toBeGreaterThanOrEqual(0);
+      expect(top).toBeGreaterThanOrEqual(0);
+      expect(left + CORNER_HANDLE_SIZE).toBeLessThanOrEqual(layout.layer.width);
+      expect(top + CORNER_HANDLE_SIZE).toBeLessThanOrEqual(layout.layer.height);
+    }
+  });
+});
+
+describe('planCornerRefit', () => {
+  const shown = { seedKey: '1,2;3,4;5,6;7,8', scale: 0.2 };
+
+  it('does nothing when neither the quad nor the fit changed', () => {
+    // A re-render must not move a ring that is under a finger.
+    expect(planCornerRefit(shown, { ...shown })).toBe('none');
+  });
+
+  it('re-seeds when the saved quad changed', () => {
+    expect(planCornerRefit(shown, { ...shown, seedKey: '9,9;3,4;5,6;7,8' })).toBe('seed');
+  });
+
+  it('rescales, and does not re-seed, when only the fit changed', () => {
+    // Re-seeding here would throw away a quad that was dragged, refused for
+    // crossing itself and so never saved.
+    expect(planCornerRefit(shown, { ...shown, scale: 0.18 })).toBe('rescale');
+  });
+
+  it('re-seeds when both changed: the new seed is already at the new scale', () => {
+    expect(planCornerRefit(shown, { seedKey: '9,9;3,4;5,6;7,8', scale: 0.18 })).toBe('seed');
   });
 });

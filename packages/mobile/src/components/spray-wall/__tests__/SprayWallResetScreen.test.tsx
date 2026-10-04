@@ -84,9 +84,13 @@ vi.mock('../../ActivityIndicator', () => ({
 // The step's body is stubbed (it only draws once its slot has been measured,
 // and nothing here lays out). Its footer is real: the gate lives on it.
 vi.mock('../SprayCornerStep', () => ({
-  SprayCornerStep: (props: { title: string; children?: ReactNode; onChange?: (quad: unknown) => void }) => {
+  SprayCornerStep: (props: { title: string; invalid: boolean; onChange?: (quad: unknown) => void }) => {
     markerProps.current = props;
-    return createElement('div', { 'data-testid': 'corner-marker' }, props.title, props.children);
+    return createElement(
+      'div',
+      { 'data-testid': 'corner-marker', 'data-invalid': props.invalid ? 'true' : 'false' },
+      props.title,
+    );
   },
 }));
 vi.mock('../SprayResetCompareScreen', () => ({
@@ -245,7 +249,7 @@ describe('SprayWallResetScreen', () => {
   });
 
   it('keeps the gate shut for corners that cross over each other', async () => {
-    const { getByText } = renderScreen();
+    const { getByText, getByTestId } = renderScreen();
 
     await act(async () => {
       getByText('sprayWizard.photo.library').click();
@@ -260,7 +264,8 @@ describe('SprayWallResetScreen', () => {
       ]),
     );
 
-    expect(getByText('sprayReset.anchors.notConvex')).toBeTruthy();
+    // The step says why, in the slot its hint lives in; the screen's part is the flag.
+    expect(getByTestId('corner-marker').getAttribute('data-invalid')).toBe('true');
     expect(getByText('sprayReset.anchors.use').getAttribute('data-disabled')).toBe('true');
   });
 

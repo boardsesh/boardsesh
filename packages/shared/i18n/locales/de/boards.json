@@ -938,8 +938,7 @@
     "anchors": {
       "title": "Markiere die Ecken",
       "body": "Zieh die vier Ringe auf die Ecken der Wand. Das ist nicht optional: nur so passt dein neues Foto zu jedem Boulder, der schon auf der Wand steht.",
-      "use": "Diese Ecken nehmen",
-      "notConvex": "Diese Ecken kreuzen sich. Setz sie der Reihe nach um die Wand."
+      "use": "Diese Ecken nehmen"
     },
     "leave": {
       "title": "Zurücksetzen verlassen?",

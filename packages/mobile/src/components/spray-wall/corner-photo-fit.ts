@@ -73,3 +73,58 @@ export function rescaleRenderCoordinate(coordinate: number, fromScale: number, t
   if (!(fromScale > 0) || !(toScale > 0)) return coordinate;
   return (coordinate * toScale) / fromScale;
 }
+
+/** Touch target for one corner. Bigger than the ring it draws, so a thumb can find it. */
+export const CORNER_HANDLE_SIZE = 44;
+
+/**
+ * How far the photo's frame sits in from the edge of the layer the handles live
+ * in, on every side.
+ *
+ * Half a handle, so a ring whose centre is on a true corner of the photo is
+ * still whole and still inside its parent — which is what keeps it touchable.
+ * The frame, the outline and the handles all take their position from
+ * `cornerLayerLayout`, so they cannot come to disagree about this number.
+ */
+export const CORNER_FRAME_INSET = CORNER_HANDLE_SIZE / 2;
+
+export type CornerLayerLayout = {
+  /** The handle layer: the photo plus the overhang on every side. */
+  layer: { width: number; height: number };
+  /** Where the photo's frame (and the outline over it) sits inside that layer. */
+  frame: { left: number; top: number; width: number; height: number };
+  /**
+   * What to add to a render coordinate to get the handle's own top-left in the
+   * layer. Zero today, because the inset is exactly half a handle; it is spelled
+   * out so that changing either number moves the handles with the frame.
+   */
+  handleOffset: number;
+};
+
+/** The geometry of the handle layer around a fitted photo. */
+export function cornerLayerLayout(fit: { width: number; height: number }): CornerLayerLayout {
+  return {
+    layer: { width: fit.width + CORNER_FRAME_INSET * 2, height: fit.height + CORNER_FRAME_INSET * 2 },
+    frame: { left: CORNER_FRAME_INSET, top: CORNER_FRAME_INSET, width: fit.width, height: fit.height },
+    handleOffset: CORNER_FRAME_INSET - CORNER_HANDLE_SIZE / 2,
+  };
+}
+
+/** What the marker last put on screen: which quad it was seeded with, at which scale. */
+export type CornerRefitState = { seedKey: string; scale: number };
+
+/**
+ * What to do with the rings when the seed or the fit may have changed.
+ *
+ *  - `seed`: the saved quad itself changed (Clear, a new photo). Put the rings
+ *    where it says, at the current scale. Wins over a scale change in the same
+ *    render: the seed is already expressed at the new scale.
+ *  - `rescale`: same quad, different fit. Carry every ring across by the ratio
+ *    of the scales, so a quad that was dragged but refused is not thrown away.
+ *  - `none`: nothing changed. A re-render must never move a ring.
+ */
+export function planCornerRefit(previous: CornerRefitState, next: CornerRefitState): 'seed' | 'rescale' | 'none' {
+  if (previous.seedKey !== next.seedKey) return 'seed';
+  if (previous.scale !== next.scale) return 'rescale';
+  return 'none';
+}

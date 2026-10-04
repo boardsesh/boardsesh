@@ -938,8 +938,7 @@
     "anchors": {
       "title": "Marque les coins",
       "body": "Fais glisser les quatre cercles sur les coins du mur. Ce n'est pas optionnel : c'est ça qui aligne ta nouvelle photo avec chaque bloc déjà posé sur le mur.",
-      "use": "Utiliser ces coins",
-      "notConvex": "Ces coins se croisent. Place-les autour du mur dans l'ordre."
+      "use": "Utiliser ces coins"
     },
     "leave": {
       "title": "Quitter la réinitialisation ?",
