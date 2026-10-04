@@ -623,12 +623,14 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       'expo-updates',
       'expo-web-browser',
       // Photo-library access for picking a profile avatar (Edit Profile screen),
-      // a spray wall photo and a feedback screenshot, plus camera access for photographing a spray wall (epic #5346, SW-09).
-      // Adds NSPhotoLibraryUsageDescription + NSCameraUsageDescription on iOS and
-      // READ_MEDIA_IMAGES + CAMERA on Android; native change, ships on the next
-      // build (not OTA). Nothing calls launchCameraAsync yet — the permission
-      // lands here weeks ahead of the UI so the JS slice that opens the camera
-      // can ship by OTA into a fleet whose binary already declares it.
+      // a spray wall photo and a feedback screenshot, plus camera access for
+      // photographing a spray wall (epic #5346, SW-09).
+      // Adds NSPhotoLibraryUsageDescription + NSCameraUsageDescription on iOS. On
+      // Android the plugin (57.0.14) adds CAMERA and RECORD_AUDIO; its library
+      // manifest declares READ/WRITE_EXTERNAL_STORAGE capped at maxSdkVersion 32 and
+      // no READ_MEDIA_IMAGES. Native change, ships on the next build (not OTA).
+      // The camera permission landed ahead of the UI that opens it, so that JS slice
+      // could ship by OTA into a fleet whose binary already declares it.
       //
       // These are the base/en strings. The localized prompts come from
       // locales/<lang>.json (the `locales` map above), kept in step by
