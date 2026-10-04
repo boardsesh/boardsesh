@@ -6,6 +6,7 @@
  * MIGRATION_INDEX_TEST_DB_URL. There is deliberately no DATABASE_URL fallback.
  */
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
@@ -29,6 +30,7 @@ type AliasIndexState = {
 
 const migrationDatabaseUrl = process.env.MIGRATION_INDEX_TEST_DB_URL;
 const expectedDatabaseName = process.env.MIGRATION_INDEX_TEST_EXPECTED_DATABASE;
+const requiredFixtureFlag = process.env.MIGRATION_INDEX_TEST_REQUIRED;
 const migrationSqlPath = fileURLToPath(new URL('../../drizzle/0250_mushy_retro_girl.sql', import.meta.url));
 const migrationSql = await readFile(migrationSqlPath, 'utf8');
 const migrationStatement = migrationSql.match(/CREATE INDEX IF NOT EXISTS[\s\S]*?;/i)?.[0];
@@ -36,11 +38,21 @@ const migrationStatement = migrationSql.match(/CREATE INDEX IF NOT EXISTS[\s\S]*
 if (!migrationStatement) {
   throw new Error('migration 0250 must contain the executable IF NOT EXISTS index statement');
 }
-if (process.env.CI && (!migrationDatabaseUrl || !expectedDatabaseName)) {
-  throw new Error('CI requires MIGRATION_INDEX_TEST_DB_URL and MIGRATION_INDEX_TEST_EXPECTED_DATABASE');
+if (requiredFixtureFlag !== undefined && requiredFixtureFlag !== '1') {
+  throw new Error('MIGRATION_INDEX_TEST_REQUIRED must be 1 when set');
 }
-if (migrationDatabaseUrl && !expectedDatabaseName) {
-  throw new Error('MIGRATION_INDEX_TEST_EXPECTED_DATABASE is required before connecting to the fixture');
+const fixtureUrlProvided = migrationDatabaseUrl !== undefined;
+const expectedDatabaseProvided = expectedDatabaseName !== undefined;
+if (fixtureUrlProvided !== expectedDatabaseProvided) {
+  throw new Error('MIGRATION_INDEX_TEST_DB_URL and MIGRATION_INDEX_TEST_EXPECTED_DATABASE must be provided together');
+}
+if (fixtureUrlProvided && (!migrationDatabaseUrl || !expectedDatabaseName)) {
+  throw new Error('MIGRATION_INDEX_TEST_DB_URL and MIGRATION_INDEX_TEST_EXPECTED_DATABASE must be non-empty');
+}
+if (requiredFixtureFlag === '1' && !fixtureUrlProvided) {
+  throw new Error(
+    'MIGRATION_INDEX_TEST_REQUIRED=1 requires MIGRATION_INDEX_TEST_DB_URL and MIGRATION_INDEX_TEST_EXPECTED_DATABASE',
+  );
 }
 
 function localTestDatabaseUrl(): string | null {
@@ -69,6 +81,7 @@ function localTestDatabaseUrl(): string | null {
 }
 
 const testDatabaseUrl = localTestDatabaseUrl();
+const migrationTestFilePath = fileURLToPath(import.meta.url);
 
 async function withTemporaryAliasTable<T>(run: (session: PgSession) => Promise<T>): Promise<T> {
   assert.ok(testDatabaseUrl);
@@ -174,3 +187,78 @@ void describe(
     });
   },
 );
+
+type FixtureEnvironment = Record<string, string | undefined>;
+
+function runFixtureModule(environmentOverrides: FixtureEnvironment) {
+  const subprocessEnvironment: NodeJS.ProcessEnv = {
+    NODE_ENV: 'test',
+    SKIP_TEST_INFRA: '1',
+    MIGRATION_INDEX_BOOTSTRAP_CHILD: '1',
+    DATABASE_URL: 'postgres://postgres:postgres@127.0.0.1:9/postgres',
+    READ_REPLICA_URL: '',
+    POSTGRES_URL: 'postgres://postgres:postgres@127.0.0.1:9/postgres',
+    REDIS_URL: 'redis://127.0.0.1:9',
+  };
+  if (process.env.PATH) subprocessEnvironment.PATH = process.env.PATH;
+  if (process.env.TMPDIR) subprocessEnvironment.TMPDIR = process.env.TMPDIR;
+  for (const [key, entry] of Object.entries(environmentOverrides)) {
+    if (entry === undefined) {
+      delete subprocessEnvironment[key];
+    } else {
+      subprocessEnvironment[key] = entry;
+    }
+  }
+
+  return spawnSync(process.execPath, ['--import', 'tsx', '--test', migrationTestFilePath], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    env: subprocessEnvironment,
+    timeout: 20_000,
+  });
+}
+
+if (process.env.MIGRATION_INDEX_BOOTSTRAP_CHILD !== '1') {
+  void describe('migration index fixture startup guards', () => {
+    void it('skips in ordinary CI without the dedicated fixture opt-in', () => {
+      const result = runFixtureModule({ CI: '1' });
+      const output = `${result.stdout}\n${result.stderr}`;
+      assert.equal(result.error, undefined, output);
+      assert.equal(result.status, 0, output);
+      assert.match(output, /# SKIP set MIGRATION_INDEX_TEST_DB_URL/);
+    });
+
+    void it('requires the fixture only when the dedicated CI flag is set', () => {
+      const result = runFixtureModule({ MIGRATION_INDEX_TEST_REQUIRED: '1' });
+      const output = `${result.stdout}\n${result.stderr}`;
+      assert.equal(result.error, undefined, output);
+      assert.notEqual(result.status, 0, output);
+      assert.match(output, /MIGRATION_INDEX_TEST_REQUIRED=1 requires MIGRATION_INDEX_TEST_DB_URL/);
+    });
+
+    void it('rejects either half of a partial fixture before connecting', () => {
+      const partialFixtures: FixtureEnvironment[] = [
+        { MIGRATION_INDEX_TEST_DB_URL: 'postgres://postgres:postgres@127.0.0.1:9/postgres' },
+        { MIGRATION_INDEX_TEST_EXPECTED_DATABASE: 'postgres' },
+      ];
+      for (const fixture of partialFixtures) {
+        const result = runFixtureModule(fixture);
+        const output = `${result.stdout}\n${result.stderr}`;
+        assert.equal(result.error, undefined, output);
+        assert.notEqual(result.status, 0, output);
+        assert.match(output, /must be provided together/);
+      }
+    });
+
+    void it('rejects malformed fixture URLs before connecting', () => {
+      const result = runFixtureModule({
+        MIGRATION_INDEX_TEST_DB_URL: 'http://127.0.0.1:9/postgres',
+        MIGRATION_INDEX_TEST_EXPECTED_DATABASE: 'postgres',
+      });
+      const output = `${result.stdout}\n${result.stderr}`;
+      assert.equal(result.error, undefined, output);
+      assert.notEqual(result.status, 0, output);
+      assert.match(output, /MIGRATION_INDEX_TEST_DB_URL must use PostgreSQL/);
+    });
+  });
+}
