@@ -18,7 +18,9 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 const mocks = vi.hoisted(() => ({
   storedActiveBoard: null as UserBoard | null,
   request: vi.fn(),
+  setStoredSessionId: vi.fn((_sessionId: string) => Promise.resolve()),
   setStoredSessionVisibility: vi.fn((_sessionId: string, _isPublic: boolean) => Promise.resolve()),
+  clearStoredQueueSnapshot: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('../../../lib/active-board-store', () => ({
@@ -35,10 +37,10 @@ vi.mock('../../../lib/session-store', () => ({
   clearStoredCreatedSessionId: () => Promise.resolve(),
   clearStoredSessionId: () => Promise.resolve(),
   setStoredCreatedSessionId: () => Promise.resolve(),
-  setStoredSessionId: () => Promise.resolve(),
+  setStoredSessionId: mocks.setStoredSessionId,
   setStoredSessionVisibility: mocks.setStoredSessionVisibility,
 }));
-vi.mock('../../../lib/queue-snapshot-store', () => ({ clearStoredQueueSnapshot: () => Promise.resolve() }));
+vi.mock('../../../lib/queue-snapshot-store', () => ({ clearStoredQueueSnapshot: mocks.clearStoredQueueSnapshot }));
 vi.mock('../../../lib/device-timezone', () => ({ getDeviceTimezone: () => 'UTC' }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn(), reportHandledError: vi.fn() }));
@@ -94,7 +96,7 @@ function renderSessionCommands() {
     setPlaylistSuggestionSourceState: vi.fn(),
     resyncInFlightRef: { current: false },
     resyncPendingRef: { current: false },
-    setActiveBoard: vi.fn(() => Promise.resolve()),
+    setActiveBoard: vi.fn(() => Promise.resolve(true)),
     locallyEndingSessionIdRef: { current: null },
     suppressedRemoteEndSessionIdRef: { current: null },
   };
@@ -111,6 +113,8 @@ describe('useSessionCommands — createSessionWithConfig boardPath', () => {
   beforeEach(() => {
     mocks.storedActiveBoard = null;
     mocks.request.mockReset().mockResolvedValue({ createSession: { id: 'session-1' } });
+    mocks.setStoredSessionId.mockClear();
+    mocks.clearStoredQueueSnapshot.mockClear();
   });
 
   it('names a gym-linked board so every joiner lands on the same board row', async () => {
@@ -168,8 +172,39 @@ describe('useSessionCommands — createSessionWithConfig boardPath', () => {
     expect(createBoard).not.toHaveBeenCalled();
     expect(joiner.params.setActiveBoard).toHaveBeenCalledWith(
       expect.objectContaining({ uuid: hostBoard.uuid, hasLeds: false }),
+      expect.any(Function),
     );
     expect(joiner.params.setSessionId).toHaveBeenCalledWith(sessionToJoin);
+  });
+
+  it('does not claim the session after the auth generation expires during active-board persistence', async () => {
+    let resolveActiveBoardWrite: (accepted: boolean) => void = () => {};
+    const activeBoardWrite = new Promise<boolean>((resolve) => {
+      resolveActiveBoardWrite = resolve;
+    });
+    const { result, params } = renderSessionCommands();
+    vi.mocked(params.setActiveBoard).mockReturnValueOnce(activeBoardWrite);
+    let operationCurrent = true;
+
+    let joinResult = true;
+    const pendingJoin = result.current.joinSession('session-next', {
+      boardPath: 'kilter/8/17/27,28/40',
+      userBoard: homeBoard(),
+      isOperationCurrent: () => operationCurrent,
+    });
+    expect(params.setActiveBoard).toHaveBeenCalledWith(homeBoard(), expect.any(Function));
+
+    operationCurrent = false;
+    resolveActiveBoardWrite(true);
+    await act(async () => {
+      joinResult = await pendingJoin;
+    });
+
+    expect(joinResult).toBe(false);
+    expect(params.sessionIdRef.current).toBeNull();
+    expect(params.setSessionId).not.toHaveBeenCalled();
+    expect(mocks.setStoredSessionId).not.toHaveBeenCalled();
+    expect(mocks.clearStoredQueueSnapshot).not.toHaveBeenCalled();
   });
 });
 

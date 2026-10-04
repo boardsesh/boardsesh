@@ -132,7 +132,10 @@ type QueueContextValue = {
    * `startSession`, which *reads* the active board to create a new session;
    * `joinSession` *writes* the active board from the session's boardPath.
    */
-  joinSession: (sessionId: string, opts: { boardPath: string; userBoard: UserBoard }) => Promise<void>;
+  joinSession: (
+    sessionId: string,
+    opts: { boardPath: string; userBoard: UserBoard; isOperationCurrent?: () => boolean },
+  ) => Promise<boolean>;
   /**
    * Broadcast the session's boardPath so every party member follows the same
    * angle/board. Best-effort; a true no-op in solo (never creates a session).

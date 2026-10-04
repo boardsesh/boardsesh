@@ -115,7 +115,7 @@ const activeBoard = vi.hoisted(() => ({
     canEdit: false,
   } satisfies UserBoard,
   getStoredActiveBoard: vi.fn(),
-  setActiveBoard: vi.fn(async () => {}),
+  setActiveBoard: vi.fn(async () => true),
 }));
 
 const toast = vi.hoisted(() => ({
@@ -284,7 +284,7 @@ type Snapshot = {
   nextClimb: ReturnType<typeof useQueue>['nextClimb'];
   previousClimb: ReturnType<typeof useQueue>['previousClimb'];
   setPlaylistSuggestionSource: ReturnType<typeof useQueue>['setPlaylistSuggestionSource'];
-  joinSession: (sessionId: string, opts: Parameters<ReturnType<typeof useQueue>['joinSession']>[1]) => Promise<void>;
+  joinSession: (sessionId: string, opts: Parameters<ReturnType<typeof useQueue>['joinSession']>[1]) => Promise<boolean>;
   endSession: (options?: { notes?: string }) => Promise<unknown>;
   confirmClimbOnWall: ReturnType<typeof useQueue>['confirmClimbOnWall'];
   reportWallDisconnect: ReturnType<typeof useQueue>['reportWallDisconnect'];
