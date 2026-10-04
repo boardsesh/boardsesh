@@ -274,7 +274,10 @@ describe('deleteAccount mutation', () => {
     try {
       await expect(
         userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx()),
-      ).rejects.toMatchObject({ extensions: { code: 'STRIPE_CANCELLATION_FAILED' } });
+      ).rejects.toMatchObject({
+        message: 'Stripe billing is temporarily unavailable. Your account was not deleted. Try again later.',
+        extensions: { code: 'STRIPE_CANCELLATION_FAILED' },
+      });
       expect(mockStripeSubscriptionRetrieve).not.toHaveBeenCalled();
       expect(mockStripeSubscriptionUpdate).not.toHaveBeenCalled();
       expect(txCalls.filter((call) => call.method === 'delete')).toHaveLength(0);

@@ -1,14 +1,29 @@
-import { afterEach, describe, expect, it } from 'vite-plus/test';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { isLiveStripeSubscription, supportReturnUrl } from './stripe-support';
 
 const originalBoardseshUrl = process.env.BOARDSESH_URL;
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   if (originalBoardseshUrl === undefined) delete process.env.BOARDSESH_URL;
   else process.env.BOARDSESH_URL = originalBoardseshUrl;
 });
 
 describe('supportReturnUrl', () => {
+  it('refuses missing production configuration instead of sending supporters to localhost', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    process.env.BOARDSESH_URL = '   ';
+
+    expect(() => supportReturnUrl('fr')).toThrow('BOARDSESH_URL must be configured');
+  });
+
+  it('retains localhost return URLs for unconfigured local development', () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    delete process.env.BOARDSESH_URL;
+
+    expect(supportReturnUrl('fr')).toBe('http://localhost:3000/fr/support');
+  });
+
   it('preserves supported locale prefixes and strips the base trailing slash', () => {
     process.env.BOARDSESH_URL = 'https://www.boardsesh.com/';
     expect(supportReturnUrl('fr')).toBe('https://www.boardsesh.com/fr/support');

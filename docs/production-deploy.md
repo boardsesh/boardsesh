@@ -728,6 +728,8 @@ The Railway backend service owns Stripe Checkout and must set:
 Use Stripe test-mode keys (`sk_test_...` and the matching `whsec_...`) in
 development, CI, staging, and preview environments. Only production may use a
 live secret key, and rotating either secret requires a backend restart.
+Production requires a nonempty `BOARDSESH_URL` before Checkout or Billing Portal
+return URLs can be created. Development defaults to `http://localhost:3000`.
 
 Configure Stripe to send `checkout.session.completed`,
 `checkout.session.async_payment_succeeded`, `checkout.session.expired`,
@@ -745,6 +747,8 @@ Linked Checkout claims block account deletion until completion, expiration, or
 payment failure is processed. A second monthly Checkout is refused while a
 monthly claim is pending. Checkout creation uses the opaque claim ID as its
 [Stripe idempotency key](https://docs.stripe.com/api/idempotent_requests).
+The database accepts only `monthly` and `one_time` claim cadences, preserving
+the one-pending-monthly-claim constraint even if a caller supplies wrong casing.
 
 New Checkout claims store a fixed 23-hour expiration, also sent to Stripe.
 Creation and account deletion first reconcile expired claims under a persisted

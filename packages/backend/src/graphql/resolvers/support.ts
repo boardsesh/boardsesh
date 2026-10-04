@@ -123,6 +123,8 @@ export const supportMutations = {
       });
     }
 
+    // Validate deployment return URLs before reserving any payable claim.
+    const returnUrl = supportReturnUrl(input.locale);
     const stripe = getStripeClient();
     const userId = ctx.isAuthenticated ? ctx.userId : null;
     if (userId) await reconcileExpiredSupportClaims(userId);
@@ -192,7 +194,6 @@ export const supportMutations = {
     const existing = linkedAccount?.existing;
     const account = linkedAccount?.account;
 
-    const returnUrl = supportReturnUrl(input.locale);
     let session;
     let checkoutAttempts = 0;
     const countCheckoutAttempt = (request: Stripe.RequestEvent) => {

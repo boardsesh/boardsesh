@@ -25,7 +25,11 @@ export function getStripeClient(): Stripe {
 }
 
 export function getBoardseshBaseUrl(): string {
-  return (process.env.BOARDSESH_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const configuredUrl = process.env.BOARDSESH_URL?.trim();
+  if (!configuredUrl && process.env.NODE_ENV === 'production') {
+    throw new Error('BOARDSESH_URL must be configured before creating Stripe return URLs in production');
+  }
+  return (configuredUrl || 'http://localhost:3000').replace(/\/$/, '');
 }
 
 export function supportReturnUrl(locale?: string | null): string {
