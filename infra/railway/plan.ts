@@ -173,6 +173,8 @@ export interface PlanOptions {
    * either; eoas-version-parity.test.ts requires the two to be equal.)
    */
   eoasVersion?: string;
+  /** Values by variable name, used only to validate matching groups before writes. */
+  suppliedValues?: ReadonlyMap<string, string>;
 }
 
 /** The key shape used by PlanOptions.suppliedVars. */
@@ -928,6 +930,79 @@ export function buildPlan(desired: RailwayDesiredState, live: LiveState, options
     if (missingInstances.has(service.name)) continue;
     changes.push(...diffServiceVars(service, live, options));
     changes.push(...diffForbiddenVars(service, live));
+  }
+
+  for (const { name, serviceNames } of desired.matchingServiceVars ?? []) {
+    // Compare the state after proposed writes, so filling a missing value cannot
+    // report convergence while leaving different credentials on the services.
+    // Compare exact bytes: trimming would hide a credential the backend rejects.
+    if (serviceNames.some((serviceName) => !findService(live, serviceName))) continue;
+    const proposedWrites = changes.filter(
+      (change) =>
+        !change.blocked && change.target?.varName === name && serviceNames.includes(change.target.serviceName),
+    );
+    const credentials = serviceNames.map((serviceName) =>
+      proposedWrites.some((change) => change.target?.serviceName === serviceName)
+        ? options.suppliedValues?.get(name)
+        : live.variables[serviceName]?.[name],
+    );
+    if (credentials.some((credential) => classifyVar(credential) !== 'set')) {
+      for (const change of proposedWrites) {
+        change.blocked = true;
+        change.detail = 'Every matching service credential must be present and non-placeholder before applying.';
+      }
+      continue;
+    }
+    if (new Set(credentials).size <= 1) continue;
+    for (const change of proposedWrites) change.blocked = true;
+    changes.push({
+      resource: 'env-var',
+      summary: `${name} differs between ${serviceNames.join(' and ')}`,
+      detail: 'Set the same credential on these services. Existing values are never overwritten automatically.',
+      blocked: true,
+    });
+  }
+
+  for (const { serviceName, names } of desired.distinctServiceVars ?? []) {
+    if (!findService(live, serviceName)) continue;
+    const proposedValues = names.map((name) => {
+      const plannedWrite = changes.find(
+        (change) => !change.blocked && change.target?.serviceName === serviceName && change.target.varName === name,
+      );
+      return plannedWrite ? options.suppliedValues?.get(name) : live.variables[serviceName]?.[name];
+    });
+    if (proposedValues.some((credential) => classifyVar(credential) !== 'set')) continue;
+    if (proposedValues[0] !== proposedValues[1]) continue;
+    for (const change of changes) {
+      if (change.target?.serviceName === serviceName && names.includes(change.target.varName)) change.blocked = true;
+    }
+    changes.push({
+      resource: 'env-var',
+      summary: `${names[0]} must differ from ${names[1]} on ${serviceName}`,
+      detail: 'Use separate credentials for SSR service reads and cron jobs. Live values are never printed.',
+      blocked: true,
+    });
+  }
+
+  // Matching credentials are one logical write. A member can be blocked by a
+  // separate constraint (for example, the backend SSR key colliding with CRON_SECRET),
+  // so propagate that block to every proposed write in its matching service group.
+  for (const { name, serviceNames } of desired.matchingServiceVars ?? []) {
+    const groupWrites = changes.filter(
+      (change) =>
+        change.resource === 'env-var' &&
+        change.target?.varName === name &&
+        serviceNames.includes(change.target.serviceName),
+    );
+    if (!groupWrites.some((change) => change.blocked)) continue;
+
+    for (const change of groupWrites) {
+      if (change.blocked) continue;
+      change.blocked = true;
+      change.detail =
+        `This ${name} write is blocked because the matching service credential group cannot be applied safely. ` +
+        'Resolve the reported constraint, then apply both service values together.';
+    }
   }
 
   // A null map means the check was skipped for want of a DSN, which must not read

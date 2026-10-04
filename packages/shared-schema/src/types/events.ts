@@ -175,6 +175,10 @@ export type ConnectionContext = {
   isAuthenticated?: boolean;
   // Set only by HTTP cron bearer authentication; never grants user access.
   isCronAuthenticated?: boolean;
+  // Verified HTTP INTERNAL_SERVICE_SECRET only; never grants user or cron access.
+  // SSR reads use per-read service buckets, with a finite fallback for operations
+  // without partitions, instead of sharing the web server's anonymous IP (#5291).
+  isInternalService?: boolean;
   // Client IP for rate limiting anonymous callers on both transports: HTTP
   // sets it in graphql/yoga.ts, WebSocket in websocket/setup.ts via
   // resolveWebSocketClientIp (issue #2863).

@@ -29,6 +29,7 @@ import {
   OTA_SERVICE_NAME,
   PLACEHOLDER_PATTERN,
   POSTGRES_PRIMARY_SERVICE_NAME,
+  BACKEND_SERVICE_NAME,
   WEB_SERVICE_NAME,
   desiredRailwayState,
 } from '../infra/railway/config';
@@ -1045,6 +1046,30 @@ describe('diffVolumeUsage', () => {
 });
 
 describe('buildPlan', () => {
+  it('blocks every matching service write when one credential collides with a distinct credential', () => {
+    const variables = convergedVariables();
+    delete variables[WEB_SERVICE_NAME].INTERNAL_SERVICE_SECRET;
+    delete variables[BACKEND_SERVICE_NAME].INTERNAL_SERVICE_SECRET;
+    const collidingCredential = 'same-credential-as-cron';
+    variables[BACKEND_SERVICE_NAME].CRON_SECRET = collidingCredential;
+    const suppliedVars = new Set([
+      varKey(WEB_SERVICE_NAME, 'INTERNAL_SERVICE_SECRET'),
+      varKey(BACKEND_SERVICE_NAME, 'INTERNAL_SERVICE_SECRET'),
+    ]);
+    const plan = buildPlan(desiredRailwayState, liveState({ variables }), {
+      ...PLAN_OPTIONS,
+      suppliedVars,
+      suppliedValues: new Map([['INTERNAL_SERVICE_SECRET', collidingCredential]]),
+    });
+    const credentialWrites = plan.filter(
+      (change) => change.resource === 'env-var' && change.target?.varName === 'INTERNAL_SERVICE_SECRET',
+    );
+
+    expect(credentialWrites).toHaveLength(2);
+    expect(credentialWrites.every((change) => change.blocked)).toBe(true);
+    expect(JSON.stringify(credentialWrites)).not.toContain(collidingCredential);
+  });
+
   it('keeps a skipped instance read distinct from a confirmed missing environment instance', () => {
     const skipped = buildPlan(desiredRailwayState, liveState({ instances: {} }), PLAN_OPTIONS);
     expect(skipped.filter((change) => change.resource === 'service-instance')).toEqual([]);
@@ -1067,8 +1092,9 @@ describe('buildPlan', () => {
     const live = liveState({ services: [], variables: {}, instances: {} });
     const plan = buildPlan(desiredRailwayState, live, PLAN_OPTIONS);
     expect(plan.filter((change) => change.resource === 'env-var')).toEqual([]);
-    // One per asserted service: the two managed ones, OTA Postgres, the primary, and web.
-    expect(plan.filter((change) => change.resource === 'service')).toHaveLength(5);
+    expect(plan.filter((change) => change.resource === 'service')).toHaveLength(
+      desiredRailwayState.services.filter((service) => service.management !== 'inventory').length,
+    );
   });
 
   it('reports missing TTLs', () => {
@@ -1235,6 +1261,7 @@ describe('inventory services', () => {
       OTA_POSTGRES_SERVICE_NAME,
       POSTGRES_PRIMARY_SERVICE_NAME,
       WEB_SERVICE_NAME,
+      BACKEND_SERVICE_NAME,
     ]);
   });
 });
@@ -2564,6 +2591,53 @@ describe('apply mode', () => {
     // ...and must not reach the log.
     expect(output).not.toContain('hunter2');
     expect(output).not.toContain(SECRET_DSN);
+  });
+
+  it('writes neither service credential when the proposed SSR key equals the backend cron key', async () => {
+    const variables = convergedVariables();
+    delete variables[WEB_SERVICE_NAME].INTERNAL_SERVICE_SECRET;
+    delete variables[BACKEND_SERVICE_NAME].INTERNAL_SERVICE_SECRET;
+    const collidingCredential = 'same-credential-as-cron';
+    variables[BACKEND_SERVICE_NAME].CRON_SECRET = collidingCredential;
+    const stub = railwayStub({ variables });
+    const { code, calls, output, error } = await runCli(['--apply', '--no-wait'], stub, {
+      RAILWAY_VAR_INTERNAL_SERVICE_SECRET: collidingCredential,
+    });
+
+    expect(error).toBeNull();
+    expect(code).toBe(1);
+    expect(callsMatching(calls, 'variableUpsert')).toHaveLength(0);
+    expect(output).toContain('must differ from CRON_SECRET');
+    expect(output).not.toContain(collidingCredential);
+  });
+
+  it('writes both missing matching credentials when they differ from the cron credential', async () => {
+    const variables = convergedVariables();
+    delete variables[WEB_SERVICE_NAME].INTERNAL_SERVICE_SECRET;
+    delete variables[BACKEND_SERVICE_NAME].INTERNAL_SERVICE_SECRET;
+    variables[BACKEND_SERVICE_NAME].CRON_SECRET = 'separate-cron-credential';
+    const sharedCredential = 'new-shared-internal-credential';
+    const stub = railwayStub({ variables });
+    const { code, calls, error } = await runCli(['--apply', '--no-wait'], stub, {
+      RAILWAY_VAR_INTERNAL_SERVICE_SECRET: sharedCredential,
+    });
+
+    expect(error).toBeNull();
+    expect(code).toBe(0);
+    expect(callsMatching(calls, 'variableUpsert').map((call) => call.variables.input)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          serviceId: liveServiceId(WEB_SERVICE_NAME),
+          name: 'INTERNAL_SERVICE_SECRET',
+          value: sharedCredential,
+        }),
+        expect.objectContaining({
+          serviceId: liveServiceId(BACKEND_SERVICE_NAME),
+          name: 'INTERNAL_SERVICE_SECRET',
+          value: sharedCredential,
+        }),
+      ]),
+    );
   });
 
   it('passes skipDeploys so a batch of variables does not roll one deployment each', async () => {

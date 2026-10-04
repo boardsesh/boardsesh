@@ -53,6 +53,9 @@ export const WEB_SERVICE_NAME = 'boardsesh-web';
  */
 export const POSTGRES_PRIMARY_SERVICE_NAME = 'PostGIS - PG18';
 
+/** The GraphQL backend; only the declared variables are asserted here. */
+export const BACKEND_SERVICE_NAME = 'boardsesh-backend';
+
 /** The only public origin that can safely issue Boardsesh's cross-subdomain session cookies. */
 export const CANONICAL_WEB_ORIGIN = 'https://www.boardsesh.com';
 
@@ -367,6 +370,10 @@ export const CLICKHOUSE_VOLUME_USAGE_LIMIT_PERCENT = 80;
 export interface RailwayDesiredState {
   environmentName: string;
   services: ServiceDesired[];
+  /** Credentials that must match exactly across existing services. Values stay in Railway. */
+  matchingServiceVars?: { name: string; serviceNames: readonly string[] }[];
+  /** Credentials on one service that must remain distinct. Values stay in Railway. */
+  distinctServiceVars?: { serviceName: string; names: readonly [string, string] }[];
   clickhouseRetention: TableRetentionDesired[];
   /** Fail the run when the ClickHouse volume passes this much of its capacity. */
   clickhouseVolumeUsageLimitPercent: number;
@@ -578,16 +585,10 @@ export const OTA_REQUIRED_VARS: RequiredEnvVar[] = [
  * Services this repo knowingly does not manage.
  *
  * Recorded so that `undeclaredServices()` reports a service nobody has claimed —
- * which is a real event worth seeing — instead of the same three lines every night.
+ * which is a real event worth seeing — instead of repeated known services.
  * Nothing here is asserted or applied.
  */
 export const INVENTORY_SERVICES: ServiceDesired[] = [
-  {
-    name: 'boardsesh-backend',
-    management: 'inventory',
-    requiredVars: [],
-    managedBy: 'railway.toml + .github/workflows/production-deploy.yml',
-  },
   {
     name: 'boardsesh-scheduler',
     management: 'inventory',
@@ -725,6 +726,13 @@ export const desiredRailwayState: RailwayDesiredState = {
           name: 'SMTP_PASSWORD',
           reason: 'Required to authenticate the SMTP transport for credential-account emails.',
         },
+        {
+          name: 'INTERNAL_SERVICE_SECRET',
+          reason:
+            'Must equal the backend service value. Unset or mismatched, SSR reads lose their trusted per-read ' +
+            'identity: anonymous similar-climb requests share a per-IP bucket (600/min for the materialized index, ' +
+            '30/min for the catalog live query). See docs/railway.md.',
+        },
       ],
       optionalConstrainedVars: [
         {
@@ -743,7 +751,19 @@ export const desiredRailwayState: RailwayDesiredState = {
       ],
     },
     ...INVENTORY_SERVICES,
+    {
+      name: BACKEND_SERVICE_NAME,
+      management: 'assert-only',
+      requiredVars: [
+        {
+          name: 'INTERNAL_SERVICE_SECRET',
+          reason: 'Must equal the web service value so SSR reads use their service rate-limit buckets (#5291).',
+        },
+      ],
+    },
   ],
+  matchingServiceVars: [{ name: 'INTERNAL_SERVICE_SECRET', serviceNames: [WEB_SERVICE_NAME, BACKEND_SERVICE_NAME] }],
+  distinctServiceVars: [{ serviceName: BACKEND_SERVICE_NAME, names: ['INTERNAL_SERVICE_SECRET', 'CRON_SECRET'] }],
   clickhouseRetention: CLICKHOUSE_RETENTION,
   clickhouseVolumeUsageLimitPercent: CLICKHOUSE_VOLUME_USAGE_LIMIT_PERCENT,
 };
