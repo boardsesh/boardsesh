@@ -18,6 +18,7 @@ const membershipOverridesState = vi.hoisted(() => ({
   data: {
     revision: 0,
     byPlaylistUuid: {} as Record<string, { isMember: boolean; revision: number; pending: boolean }>,
+    activeMutationOwnersByPlaylistUuid: {} as Record<string, object>,
   },
 }));
 const queryClientMock = vi.hoisted(() => ({
@@ -258,7 +259,7 @@ describe('InlinePlaylistPicker', () => {
     playlistContext.createPlaylist.mockReset();
     qstate.data = [];
     qstate.loading = false;
-    membershipOverridesState.data = { revision: 0, byPlaylistUuid: {} };
+    membershipOverridesState.data = { revision: 0, byPlaylistUuid: {}, activeMutationOwnersByPlaylistUuid: {} };
     queryClientMock.getQueryData.mockClear();
     queryClientMock.setQueryData.mockClear();
     queryClientMock.cancelQueries.mockClear();
@@ -485,6 +486,7 @@ describe('InlinePlaylistPicker', () => {
       ['playlistMembershipOverrides', 'kilter', 1, 'climb-1'],
       {
         revision: 1,
+        activeMutationOwnersByPlaylistUuid: {},
         byPlaylistUuid: { 'p-1': { isMember: true, revision: 1, pending: false } },
       },
     );
@@ -528,6 +530,7 @@ describe('InlinePlaylistPicker', () => {
       ['playlistMembershipOverrides', 'kilter', 1, 'climb-1'],
       {
         revision: 1,
+        activeMutationOwnersByPlaylistUuid: {},
         byPlaylistUuid: { 'p-1': { isMember: false, revision: 1, pending: false } },
       },
     );
@@ -546,13 +549,16 @@ describe('InlinePlaylistPicker', () => {
     });
     // Optimistic write then revert to the previous set.
     expect(queryClientMock.setQueryData).toHaveBeenNthCalledWith(
-      1,
+      2,
       ['playlistMembershipOverrides', 'kilter', 1, 'climb-1'],
-      expect.objectContaining({ byPlaylistUuid: { 'p-1': { isMember: true, revision: 1, pending: true } } }),
+      expect.objectContaining({
+        byPlaylistUuid: { 'p-1': { isMember: true, revision: 1, pending: true } },
+        activeMutationOwnersByPlaylistUuid: expect.objectContaining({ 'p-1': expect.any(Object) }),
+      }),
     );
     expect(queryClientMock.setQueryData).toHaveBeenLastCalledWith(
       ['playlistMembershipOverrides', 'kilter', 1, 'climb-1'],
-      { revision: 1, byPlaylistUuid: {} },
+      { revision: 1, activeMutationOwnersByPlaylistUuid: {}, byPlaylistUuid: {} },
     );
   });
 
@@ -587,9 +593,12 @@ describe('InlinePlaylistPicker', () => {
       // Optimistic checkmark is already written — this is what the climber saw
       // before dismissing.
       expect(queryClientMock.setQueryData).toHaveBeenNthCalledWith(
-        1,
+        2,
         ['playlistMembershipOverrides', 'kilter', 1, 'climb-1'],
-        expect.objectContaining({ byPlaylistUuid: { 'p-1': { isMember: true, revision: 1, pending: true } } }),
+        expect.objectContaining({
+          byPlaylistUuid: { 'p-1': { isMember: true, revision: 1, pending: true } },
+          activeMutationOwnersByPlaylistUuid: expect.objectContaining({ 'p-1': expect.any(Object) }),
+        }),
       );
 
       unmount();
