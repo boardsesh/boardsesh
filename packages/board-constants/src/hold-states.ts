@@ -492,6 +492,12 @@ function accumulateFramesToMapsInternal(
           diagnostics.skippedUnknownRoleTokens += 1;
         }
       }
+      // Keep signed IDs visible to diagnostics and the separate raw-fingerprint
+      // helper, but never let an invalid negative ID enter a playback snapshot.
+      // In particular, a negative-only absolute frame must remain an empty
+      // snapshot so playback sends the board's clear packet instead of a
+      // nonempty placement that the BLE encoder cannot address.
+      if (token.holdId < 0) continue;
       if (token.kind === 'off') {
         delete accumulator[token.holdId];
         continue;
