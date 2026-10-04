@@ -13,6 +13,7 @@ import {
   boardClimbRatingsJoinCondition,
 } from '../shared/sql-expressions';
 import { selectedFieldNames, isFieldSelected } from '../shared/selected-fields';
+import { logSlowRead } from '../shared/slow-read-log';
 import {
   climbLogConditions,
   climbLogBaseSelection,
@@ -338,6 +339,7 @@ export const socialFeedQueries = {
     // select it skips the aggregate and gets no `summary` key at all.
     const wantsSummary = isFieldSelected(selectedFieldNames(info), 'summary');
 
+    const startedAt = performance.now();
     try {
       // The climb's canonical uuid, so logs stored under a uuid that was
       // deduplicated into this climb are found too.
@@ -410,6 +412,12 @@ export const socialFeedQueries = {
         : null;
 
       const [rows, summaryRows] = await Promise.all([itemsQuery, summaryQuery]);
+      logSlowRead('followingClimbAscents', startedAt, {
+        boardType: validatedInput.boardType,
+        climbUuid: canonicalClimbUuid,
+        withSummary: wantsSummary,
+        rows: rows.length,
+      });
 
       const hasMore = rows.length > MAX_ITEMS;
       const items = (hasMore ? rows.slice(0, MAX_ITEMS) : rows).map((row) => ({

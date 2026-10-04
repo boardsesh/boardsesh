@@ -1,4 +1,5 @@
 import { and, eq, isNotNull, notExists, or, sql, type Column, type SQL } from 'drizzle-orm';
+import { aliasedTable } from 'drizzle-orm/alias';
 import { QueryBuilder, alias } from 'drizzle-orm/pg-core';
 import { boardseshTicks } from '../../schema';
 
@@ -163,23 +164,15 @@ export function isDirectAuroraTwin(smaller: AuroraTwinComparableRow, larger: Aur
  * from the same shared conditions array and can never disagree about how many
  * ascents there are. The correlated lookup is an equality on user, board,
  * climb, angle and `climbed_at`; on prod the planner probes
- * `boardsesh_ticks_climbed_at_idx` (an almost-unique key), not
- * `boardsesh_ticks_user_climb_lookup_idx`.
+ * `boardsesh_ticks_climbed_at_idx` (an almost-unique key) once per outer row.
+ *
+ * Right for a per-user read, where those probes land on pages the query is
+ * already reading. A read over every climber's logs on one climb should use
+ * `notAuroraTwinDuplicateWithin` instead.
  *
  * @param ticks the ticks table (or an alias of it) the query selects from.
- * @param options.skipNonAuroraRows evaluate the twin lookup only for rows that
- *   are real Aurora-pull rows (a `CASE`, so the order is guaranteed). The result
- *   set is identical, because `isDirectAuroraTwin` already requires the outer
- *   row to be one. Leave it off by default: the plain NOT EXISTS below is
- *   planned as a hash anti-join, which is right for a per-user read where most
- *   rows ARE Aurora-pull. Turn it on for a read over every climber's logs on one
- *   climb, where nearly every row is not, so the lookup runs per Aurora row
- *   instead of once per row.
  */
-export function notAuroraTwinDuplicate(
-  ticks: TicksTable = boardseshTicks,
-  { skipNonAuroraRows = false }: { skipNonAuroraRows?: boolean } = {},
-): SQL {
+export function notAuroraTwinDuplicate(ticks: TicksTable = boardseshTicks): SQL {
   const twin = alias(boardseshTicks, 'aurora_twin');
 
   const smallerTwinExists = new QueryBuilder()
@@ -192,7 +185,50 @@ export function notAuroraTwinDuplicate(
       isDirectAuroraTwin(twin, ticks),
     );
 
-  if (!skipNonAuroraRows) return notExists(smallerTwinExists);
+  return notExists(smallerTwinExists);
+}
 
-  return sql`CASE WHEN ${isRealAuroraPullRow(ticks)} THEN ${notExists(smallerTwinExists)} ELSE true END`;
+/**
+ * `notAuroraTwinDuplicate` for a query whose rows all come from one known
+ * slice of the table, such as every climber's logs on one climb. Same rows
+ * kept, same rule (`isDirectAuroraTwin`), different cost.
+ *
+ * The per-row form probes a tick index once for every row the query reads,
+ * each probe on a page nothing else in the query touches. On prod (#5986) one
+ * such page costs 30 ms to several seconds when it is not in memory: a climb
+ * with 1,675 logs took 30 s, 77 of its 80 disk reads being those probes.
+ *
+ * This form works the hidden rows out ONCE, from the slice itself. Both rows of
+ * a twin pair share board, climb and user, so a row inside `scope` can only be
+ * hidden by another row inside `scope`: the real Aurora-pull rows of the slice
+ * are read into a CTE, joined to themselves by the pair rule, and the outer
+ * query drops the ids that come out. Those pages are the ones the outer query
+ * reads anyway.
+ *
+ * `MATERIALIZED` is load-bearing. Without it Postgres inlines the second
+ * reference and goes back to probing an index per row.
+ *
+ * @param ticks the ticks table (or an alias of it) the query selects from.
+ * @param scope the slice, as a condition on the table it is handed. It has to
+ *   cover every row the outer query can return AND be closed under the pair
+ *   rule's equalities (user, board, climb, angle, `climbed_at`), or a twin
+ *   outside it goes unseen. "This board type and these climb uuids" is.
+ */
+export function notAuroraTwinDuplicateWithin(ticks: TicksTable, scope: (table: TicksTable) => SQL): SQL {
+  // `aliasedTable`, not `alias`: it keeps the table's own type, which is what
+  // the caller's `scope` is written against.
+  const scoped = aliasedTable(boardseshTicks, 'twin_scope');
+  const smaller = alias(boardseshTicks, 'aurora_twin');
+  const larger = alias(boardseshTicks, 'aurora_twin_hidden');
+
+  return sql`${ticks.id} <> ALL(ARRAY(
+    WITH twin_candidates AS MATERIALIZED (
+      SELECT "twin_scope".*
+      FROM "boardsesh_ticks" "twin_scope"
+      WHERE ${and(scope(scoped), isRealAuroraPullRow(scoped))}
+    )
+    SELECT "aurora_twin_hidden"."id"
+    FROM twin_candidates "aurora_twin"
+    INNER JOIN twin_candidates "aurora_twin_hidden" ON ${isDirectAuroraTwin(smaller, larger)}
+  ))`;
 }

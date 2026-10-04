@@ -39,6 +39,7 @@ import { GetTicksInputSchema, BoardNameSchema, AscentFeedInputSchema } from '../
 import { climbNameLikePattern } from '@boardsesh/climb-filters';
 import { extractInstagramHandle } from '../beta-videos/queries';
 import { selectedFieldNames, isFieldSelected } from '../shared/selected-fields';
+import { logSlowRead } from '../shared/slow-read-log';
 import type { GraphQLResolveInfo } from 'graphql';
 
 // Benchmark resolution shared by the flat and grouped ascent feeds: a climb
@@ -218,6 +219,7 @@ export const tickQueries = {
     validateInput(GetTicksInputSchema, input, 'input');
 
     const userId = ctx.userId!;
+    const startedAt = performance.now();
 
     // Build query conditions
     const conditions = [
@@ -300,6 +302,12 @@ export const tickQueries = {
               .groupBy(dbSchema.comments.entityId),
           ])
         : [[], []];
+
+    logSlowRead('ticks', startedAt, {
+      boardType: input.boardType,
+      climbs: input.climbUuids?.length ?? null,
+      rows: results.length,
+    });
 
     const voteMap = new Map(voteRows.map((v) => [v.entityId, v]));
     const commentMap = new Map(commentRows.map((c) => [c.entityId, Number(c.commentCount)]));
