@@ -250,28 +250,17 @@ async function sprayWallIsUnhidden(layoutId: number | null): Promise<boolean> {
  * survives. Answers true for every non-spray climb, so a call site needs no
  * board-type branch — and the caller must answer an unreadable climb with its
  * own EMPTY PAGE, never an error.
- *
- * `requireClimbRow` is for a caller that already KNOWS the board type is spray.
- * It also answers false when the climb row is missing: `deleteDraftClimb` and
- * account deletion hard-delete a climb and leave what referenced it, and with
- * no climb there is no wall to check (#5981). A caller that does not know the
- * board type (a comment thread) must not pass it, or every thread on a
- * catalogue board's missing climb would go empty.
  */
 export async function sprayClimbUuidIsReadable(
   climbUuid: string,
   viewerUserId: string | null | undefined,
-  options: { requireClimbRow?: boolean } = {},
 ): Promise<boolean> {
-  const climbRowExists = options.requireClimbRow
-    ? sql`AND ${sprayReferenceClimbExistsCondition({ boardType: sql`'spray'`, climbUuid: sql`${climbUuid}` })}`
-    : sql``;
   const rows = rowsFromResult<{ visible: boolean }>(
     await dbRead.execute(
-      sql`SELECT (${sprayReferenceVisibilityCondition(
+      sql`SELECT ${sprayReferenceVisibilityCondition(
         { boardType: sql`'spray'`, climbUuid: sql`${climbUuid}` },
         viewerUserId ?? null,
-      )} ${climbRowExists}) AS visible`,
+      )} AS visible`,
     ),
   );
   return rows[0]?.visible === true;
@@ -312,4 +301,30 @@ export async function sprayProposalUuidIsReadable(
     ),
   );
   return rows[0]?.visible === true;
+}
+
+/**
+ * Whether a spray climb's `board_climbs` row still exists, for a caller that
+ * already KNOWS the board type is spray.
+ *
+ * {@link sprayClimbUuidIsReadable} answers true when there is no climb row, and
+ * a spray climb row does go: `deleteDraftClimb` and account deletion hard-delete
+ * a draft and leave the proposals that named it. With no climb there is no wall
+ * to check, so the caller answers its empty page (#5981).
+ *
+ * A separate function rather than an option on `sprayClimbUuidIsReadable`, so
+ * that function's signature stays as it is. Reads the replica, like its
+ * neighbours: a climb created inside the replication lag answers false here,
+ * so its proposals read as empty until the replica has the row.
+ *
+ * Never call it for a climb whose board type is unknown (a comment thread):
+ * every thread on a catalogue board's missing climb would go empty.
+ */
+export async function sprayClimbRowExists(climbUuid: string): Promise<boolean> {
+  const rows = rowsFromResult<{ present: boolean }>(
+    await dbRead.execute(
+      sql`SELECT ${sprayReferenceClimbExistsCondition({ boardType: sql`'spray'`, climbUuid: sql`${climbUuid}` })} AS present`,
+    ),
+  );
+  return rows[0]?.present === true;
 }

@@ -1,6 +1,6 @@
 import { eq, and, isNull, count, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
-import { SUPPORTED_BOARDS, type ConnectionContext, type SocialEntityType } from '@boardsesh/shared-schema';
+import type { ConnectionContext, SocialEntityType } from '@boardsesh/shared-schema';
 import { executeRows } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -287,27 +287,16 @@ export const socialCommentQueries = {
     // the climb uuid with it, in front of everybody (#5981). A comment row
     // carries no board type, so there is no "spray only" version of this rule:
     // a climb comment is listed only while its climb still exists, on EVERY
-    // board. The alias arm keeps a comment stored under a uuid that was later
-    // deduplicated into another climb, which by design has no `board_climbs`
-    // row of its own (`board_climb_aliases`). That table's key leads with the
-    // board type, which a comment does not have, so every board type is listed:
-    // one index probe each instead of a scan.
-    const everyBoardType = sql.join(
-      SUPPORTED_BOARDS.map((boardName) => sql`${boardName}`),
-      sql`, `,
-    );
+    // board. No alias arm: a deduplicated climb keeps its `board_climbs` row
+    // (the MoonBoard merges delist the loser, they do not delete it) and those
+    // merges repoint comments at the survivor, so no comment sits under a uuid
+    // that has an alias and no row. It also matches the board-filtered path
+    // above, which already requires the row.
     const sprayCommentVisibility = sql`AND (
       c."entity_type" <> 'climb'
       OR (
         ${sprayReferenceVisibilityCondition({ boardType: sql`'spray'`, climbUuid: sql`c."entity_id"` }, authenticatedUserId)}
-        AND (
-          EXISTS (SELECT 1 FROM "board_climbs" commented_climb WHERE commented_climb."uuid" = c."entity_id")
-          OR EXISTS (
-            SELECT 1 FROM "board_climb_aliases" commented_alias
-            WHERE commented_alias."board_type" IN (${everyBoardType})
-              AND commented_alias."alias_uuid" = c."entity_id"
-          )
-        )
+        AND EXISTS (SELECT 1 FROM "board_climbs" commented_climb WHERE commented_climb."uuid" = c."entity_id")
       )
     )`;
 
@@ -319,7 +308,7 @@ export const socialCommentQueries = {
     // WHERE, because the join is right here.
     //
     // Both joins are LEFT and both are one-to-one (`climb_proposals.uuid` is
-    // unique, `board_climbs` is keyed on board type + uuid), so no comment can be
+    // unique, `board_climbs` is keyed on its uuid alone), so no comment can be
     // duplicated by them. `IS DISTINCT FROM` does the rest: a comment that is not
     // on a proposal, a proposal on one of the eight catalogue boards, and a
     // proposal whose climb row has gone all leave `bc_vis.board_type` NULL or

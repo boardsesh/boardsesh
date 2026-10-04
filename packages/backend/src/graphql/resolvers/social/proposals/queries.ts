@@ -4,7 +4,7 @@ import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sprayReferenceClimbExistsCondition, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
 import { validateInput } from '../../shared/helpers';
-import { isSprayBoardType, sprayClimbUuidIsReadable } from '../../climbs/spray-read-access';
+import { isSprayBoardType, sprayClimbRowExists, sprayClimbUuidIsReadable } from '../../climbs/spray-read-access';
 import { GetClimbProposalsInputSchema, BrowseProposalsInputSchema } from '../../../../validation/schemas';
 import { resolveCommunitySetting } from '../community-settings';
 import { batchEnrichProposals } from './enrichment';
@@ -27,11 +27,11 @@ export const socialProposalQueries = {
     // eight catalogue boards pay nothing — not even the round trip.
     // `comments(input)` cannot do the same: it is keyed on an entity, not a board.
     //
-    // `requireClimbRow`: a spray climb whose row has been hard-deleted has no
+    // `sprayClimbRowExists`: a spray climb whose row has been hard-deleted has no
     // wall left to check, so its proposals answer the empty page too (#5981).
     if (
       isSprayBoardType(boardType) &&
-      !(await sprayClimbUuidIsReadable(climbUuid, authenticatedUserId, { requireClimbRow: true }))
+      (!(await sprayClimbUuidIsReadable(climbUuid, authenticatedUserId)) || !(await sprayClimbRowExists(climbUuid)))
     ) {
       return { proposals: [], totalCount: 0, hasMore: false };
     }

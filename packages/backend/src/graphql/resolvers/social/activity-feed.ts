@@ -2,7 +2,11 @@ import { eq, and, desc, sql, or, isNull } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { sprayClimbVisibilityCondition, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
+import {
+  sprayClimbVisibilityCondition,
+  sprayReferenceClimbExistsCondition,
+  sprayReferenceVisibilityCondition,
+} from '@boardsesh/db/queries';
 import { withSerialPlan } from '@boardsesh/db/queries';
 import { requireAuthenticated, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import { ActivityFeedInputSchema } from '../../../validation/schemas';
@@ -175,6 +179,24 @@ export const activityFeedQueries = {
         { boardType: sql`'spray'`, climbUuid: sql`${dbSchema.feedItems.metadata}->>'climbUuid'` },
         myUserId,
       ),
+    );
+
+    // The reference form passes a row whose climb has gone, and a spray climb
+    // does go: `deleteDraftClimb` and account deletion hard-delete a draft. A
+    // comment on a proposal fans out with the climb's name, frames and layout id
+    // in its metadata and no wall or draft check (`getProposalContextMetadata`),
+    // so after the delete that row reached a follower who could never see the
+    // wall (#5981). Keyed on the row's OWN board type here, because that is what
+    // says "spray" once the climb cannot. A row with no climb uuid (a follow, a
+    // session) and every row on another board pass through.
+    conditions.push(
+      sql`(
+        ${dbSchema.feedItems.metadata}->>'climbUuid' IS NULL
+        OR ${sprayReferenceClimbExistsCondition({
+          boardType: sql`${dbSchema.feedItems.metadata}->>'boardType'`,
+          climbUuid: sql`${dbSchema.feedItems.metadata}->>'climbUuid'`,
+        })}
+      )`,
     );
 
     if (validatedInput.boardUuid) {

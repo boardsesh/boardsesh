@@ -119,6 +119,7 @@ const { schema } = await import('../graphql/index');
 const { sprayWallMutations } = await import('../graphql/resolvers/board/spray-walls');
 const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
 const { sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
+const { fanoutCommentFeedItems } = await import('../events/feed-fanout');
 
 // ---------------------------------------------------------------------------
 // Sentinels
@@ -628,7 +629,8 @@ const NOT_APPLICABLE: Record<string, string> = {
   // has nothing for a private one to leak. The retraction path — a wall that
   // goes private or is deleted AFTER the fan-out — is what matters here, and
   // spray-wall-api.test.ts drives it directly.
-  'Query.activityFeed': 'reads materialised feed_items, which a private wall never writes',
+  'Query.activityFeed':
+    'reads materialised feed_items, and the sweep fans nothing out to the owner (an actor is never a recipient of their own event). A comment on a proposal DOES fan out for a private wall, so the read gates carry it: spray-wall-api.test.ts for a wall that went private, and the hard-deleted block at the end of this file',
   'Query.sessionGroupedFeed': 'reads materialised feed_items, which a private wall never writes',
 
   // --- session readers --------------------------------------------------------
@@ -1388,7 +1390,7 @@ const ORPHAN_COMMENT_BODY = 'Zqx Orphan Comment Body Zqx';
 const ORPHAN_PROPOSAL_REASON = 'Zqx Orphan Proposal Reason Zqx';
 const ORPHAN_HIDE_REASON = 'Zqx Orphan Hide Reason Zqx';
 const MISSING_KILTER_COMMENT = 'Zqx Missing Kilter Climb Comment Zqx';
-const ALIASED_KILTER_COMMENT = 'Zqx Aliased Kilter Climb Comment Zqx';
+const ORPHAN_DRAFT_NAME = 'Zqx Orphan Draft Zqx';
 /** A grade no other seeded tick uses, so the bucket it lands in is its own. */
 const ORPHAN_DIFFICULTY = 23;
 
@@ -1409,6 +1411,7 @@ describe('references to a hard-deleted spray climb', () => {
   let orphanClimbUuid: string;
   let orphanGradeProposalUuid: string;
   let orphanHideProposalUuid: string;
+  const orphanHideCommentUuid = uuidv4();
   const proposalTotalBefore = new Map<ViewerName, number>();
   const profileStatsBefore = new Map<ViewerName, ProfileStatsAnswer>();
 
@@ -1433,12 +1436,12 @@ describe('references to a hard-deleted spray climb', () => {
       { input: { boardType: 'spray', limit: 50 } },
     ) as Promise<{ browseProposals: { totalCount: number; proposals: Array<{ uuid: string; climbUuid: string }> } }>;
 
-  const commentFeed = (viewer: ViewerName) =>
+  const commentFeed = (viewer: ViewerName, boardUuid?: string) =>
     ask(
       viewer,
       'query Orphan($input: GlobalCommentFeedInput) { globalCommentFeed(input: $input) ' +
         '{ comments { uuid entityType entityId body } } }',
-      { input: { limit: 50 } },
+      { input: boardUuid ? { limit: 50, boardUuid } : { limit: 50 } },
     );
 
   const profileStats = async (viewer: ViewerName) => {
@@ -1465,7 +1468,7 @@ describe('references to a hard-deleted spray climb', () => {
         input: {
           boardType: 'spray',
           layoutId: world.layoutId,
-          name: 'Zqx Orphan Draft Zqx',
+          name: ORPHAN_DRAFT_NAME,
           isDraft: true,
           frames: world.frames,
           angle: ANGLE,
@@ -1491,31 +1494,33 @@ describe('references to a hard-deleted spray climb', () => {
     `);
     await db.execute(sql`
       INSERT INTO comments (uuid, entity_type, entity_id, user_id, body, created_at, updated_at)
-      VALUES (${uuidv4()}, 'proposal', ${orphanHideProposalUuid}, ${OWNER}, ${ORPHAN_HIDE_REASON}, now(), now()),
+      VALUES (${orphanHideCommentUuid}, 'proposal', ${orphanHideProposalUuid}, ${OWNER}, ${ORPHAN_HIDE_REASON}, now(), now()),
              (${uuidv4()}, 'climb', ${orphanClimbUuid}, ${OWNER}, ${ORPHAN_COMMENT_BODY}, now(), now())
     `);
 
     // The comment rule has no board type to key on, so it applies to every
-    // board. Two catalogue-board comments pin both halves of it: one on a climb
-    // that never had a row, and one stored under a uuid that was deduplicated
-    // into another climb (an alias, which by design has no row of its own).
-    const kilterCanonicalUuid = 'sweep-orphan-kilter-canonical';
-    const kilterAliasUuid = 'sweep-orphan-kilter-alias';
-    await db.execute(sql`
-      INSERT INTO board_climbs (uuid, board_type, layout_id, name, frames, frames_count, is_draft, is_listed, created_at)
-      VALUES (${kilterCanonicalUuid}, 'kilter', 1, 'Sweep kilter canonical', 'p1r1', 1, false, true, '2026-01-01')
-      ON CONFLICT DO NOTHING
-    `);
-    await db.execute(sql`
-      INSERT INTO board_climb_aliases (board_type, alias_uuid, canonical_uuid, source)
-      VALUES ('kilter', ${kilterAliasUuid}, ${kilterCanonicalUuid}, 'backfill')
-      ON CONFLICT DO NOTHING
-    `);
+    // board: a comment on a catalogue-board climb that has no row.
     await db.execute(sql`
       INSERT INTO comments (uuid, entity_type, entity_id, user_id, body, created_at, updated_at)
-      VALUES (${uuidv4()}, 'climb', 'sweep-orphan-kilter-missing', ${OWNER}, ${MISSING_KILTER_COMMENT}, now(), now()),
-             (${uuidv4()}, 'climb', ${kilterAliasUuid}, ${OWNER}, ${ALIASED_KILTER_COMMENT}, now(), now())
+      VALUES (${uuidv4()}, 'climb', 'sweep-orphan-kilter-missing', ${OWNER}, ${MISSING_KILTER_COMMENT}, now(), now())
     `);
+
+    // The stranger follows the owner, so the real fan-out writes the stranger a
+    // feed row for the hide-reason comment WHILE THE DRAFT STILL EXISTS. That
+    // row carries the draft's name, frames and layout id in its metadata.
+    await fanoutCommentFeedItems({
+      type: 'comment.created',
+      actorId: OWNER,
+      entityType: 'comment',
+      entityId: orphanHideCommentUuid,
+      timestamp: Date.now(),
+      metadata: { commentUuid: orphanHideCommentUuid },
+    });
+    const fannedOut = (await db.execute(sql`
+      SELECT metadata->>'climbName' AS "climbName", metadata->>'boardType' AS "boardType"
+      FROM feed_items WHERE recipient_id = ${STRANGER} AND entity_id = ${orphanHideCommentUuid}
+    `)) as unknown as Array<{ climbName: string; boardType: string }>;
+    expect(fannedOut).toEqual([{ climbName: ORPHAN_DRAFT_NAME, boardType: 'spray' }]);
 
     // The real path, not a raw DELETE: this is the mutation that strands them.
     await climbMutations.deleteDraftClimb({}, { uuid: orphanClimbUuid, boardType: 'spray' }, ctxFor(OWNER));
@@ -1580,12 +1585,46 @@ describe('references to a hard-deleted spray climb', () => {
     expect(JSON.stringify(await commentFeed('owner'))).toContain(HIDE_REASON);
   });
 
-  it('globalCommentFeed applies the missing-climb rule on every board, and keeps a deduplicated climb', async () => {
+  it('globalCommentFeed applies the missing-climb rule on every board', async () => {
     for (const viewer of VIEWERS) {
       const feed = JSON.stringify(await commentFeed(viewer.name));
       expect(feed.includes(MISSING_KILTER_COMMENT), `${viewer.name}: comment on a climb with no row`).toBe(false);
-      expect(feed.includes(ALIASED_KILTER_COMMENT), `${viewer.name}: comment under an alias uuid`).toBe(true);
     }
+  });
+
+  it('globalCommentFeed filtered to the wall carries nothing from the deleted climb either', async () => {
+    // The board filter joins `board_climbs` for a climb comment, so that arm was
+    // already closed. A proposal thread is filtered on the PROPOSAL's board type,
+    // which a proposal on a deleted climb still has.
+    for (const viewer of VIEWERS) {
+      const answer = await commentFeed(viewer.name, world.wallUuid);
+      expect({ viewer: viewer.name, found: secretsIn(answer) }, 'filtered by the wall').toEqual({
+        viewer: viewer.name,
+        found: [],
+      });
+    }
+    expect(JSON.stringify(await commentFeed('owner', world.wallUuid))).toContain(COMMENT_BODY);
+  });
+
+  it('activityFeed drops a fanned-out row once its spray climb is deleted', async () => {
+    // Authenticated only, and the row was written for the stranger: the owner is
+    // the actor and never a recipient of their own event.
+    const answer = await ask(
+      'stranger',
+      'query Orphan($input: ActivityFeedInput) { activityFeed(input: $input) ' +
+        '{ items { type entityId climbName climbUuid layoutId frames commentBody } } }',
+      { input: { limit: 50 } },
+    );
+    const feed = JSON.stringify(answer);
+    expect(
+      {
+        draftName: feed.includes(ORPHAN_DRAFT_NAME),
+        hideReason: feed.includes(ORPHAN_HIDE_REASON),
+        climbUuid: feed.includes(orphanClimbUuid),
+        frames: feed.includes(world.frames),
+      },
+      "a follower must not be handed a deleted draft's name, frames or the comment about it",
+    ).toEqual({ draftName: false, hideReason: false, climbUuid: false, frames: false });
   });
 
   it('comments(proposal) answers the empty page for a proposal on the deleted climb', async () => {
