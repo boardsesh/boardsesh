@@ -14,7 +14,7 @@ import { isS3Configured } from '../../storage/s3';
 import { logger } from '../../utils/logger';
 import { BackgroundJobError, type BackgroundJobContext, type BackgroundJobFamilyModule } from './types';
 
-/** The live scan's rebuild threshold: one full 500-row GraphQL sync page, as in the workflow. */
+/** The live scan's rebuild threshold: one full 500-row GraphQL sync page. */
 export const LIVE_SCAN_REFRESH_THRESHOLD = 500;
 
 /**
@@ -45,7 +45,7 @@ const payload = z
     layout: z.number().int().min(0).max(2_147_483_647).optional(),
     /** Rebuild only layouts with at least this many rows past the live manifest's watermarks. */
     refreshThreshold: z.number().int().positive().max(1_000_000).optional(),
-    /** Nightly only: skip the identity (`v1`) pass, like the workflow's `gzip_only` input. */
+    /** Nightly only: skip the identity (`v1`) pass. */
     gzipOnly: z.boolean().optional(),
     /** Migration exports retain every existing object. Normal nightly pruning is unchanged. */
     skipPrune: z.boolean().optional(),
@@ -175,8 +175,8 @@ export const exportBoardSnapshotsFamily: BackgroundJobFamilyModule<ExportRequest
   singletonKey: ({ mode }) => mode,
   schedules: [
     { key: 'nightly', cron: '15 7 * * *', fanOut: async () => [{ payload: { mode: 'nightly' } }] },
-    // Match the GitHub publisher schedule: keep 07:00 UTC clear for the full
-    // export, then resume bounded scans at 08:07.
+    // Keep 07:00 UTC clear for this family's full nightly export, then resume
+    // bounded scans at 08:07.
     {
       key: 'live-scan',
       cron: '7,22,37,52 0-6,8-23 * * *',
@@ -262,13 +262,14 @@ export const exportBoardSnapshotsFamily: BackgroundJobFamilyModule<ExportRequest
       return;
     }
 
-    // The nightly: the workflow's three steps in its order. The identity and
+    // The nightly's three export passes, in workflow order. The identity and
     // live gzip prefixes are independent manifests, so a failed identity pass
     // no longer blocks the pass the fleet reads; the run still fails after
     // both, and its retry repeats them. The catalogue runs last and its failure
     // is only logged, as its consumer is the dev-db image, never the fleet.
-    // Operator filters narrow it the way a workflow_dispatch does: a threshold
-    // skips the identity and catalogue passes, a board or layout the catalogue.
+    // Queue options can narrow a batch run: a threshold skips the identity and
+    // catalogue passes, a board or layout skips the catalogue. The manual
+    // Actions workflow always runs a complete R2 rehearsal.
     const runIdentity = !request.gzipOnly && request.refreshThreshold === undefined;
     const runCatalog =
       request.refreshThreshold === undefined && request.board === undefined && request.layout === undefined;

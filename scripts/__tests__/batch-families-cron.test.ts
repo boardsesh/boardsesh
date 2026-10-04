@@ -1,10 +1,9 @@
 /// <reference types="node" />
 
 /**
- * A scheduled batch family and its GitHub workflow must fire at the same UTC
- * minute while both are enabled. After the snapshot owner cutover, the batch
- * family owns its schedule while Actions keeps only the manual R2 rehearsal.
- * A PR that changes either cron has to update this pin.
+ * Pins scheduled batch-family crons independently from GitHub workflows.
+ * Snapshot publishing is owned by the batch family; its Actions workflow is a
+ * manual R2 rehearsal with no schedule. A cron change has to update this pin.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
