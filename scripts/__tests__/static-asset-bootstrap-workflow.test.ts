@@ -10,11 +10,19 @@ type BootstrapWorkflow = {
     };
   };
   jobs: {
-    bootstrap: {
+    [name: string]: {
       if: string;
+      environment: string;
       'timeout-minutes': number;
       env?: Record<string, string>;
-      steps: Array<{ name?: string; if?: string; env?: Record<string, string>; run?: string }>;
+      steps: Array<{
+        name?: string;
+        if?: string;
+        env?: Record<string, string>;
+        run?: string;
+        uses?: string;
+        with?: Record<string, string | number>;
+      }>;
     };
   };
 };
@@ -66,10 +74,41 @@ describe('static asset bootstrap trust boundary', () => {
     expect(validation.run).not.toContain('echo "${!required_name}"');
   });
   it('keeps production credentials on main and defaults to read-only inventory', () => {
-    expect(bootstrap.if).toBe("github.ref == 'refs/heads/main'");
+    expect(bootstrap.if).toBe("github.ref == 'refs/heads/main' && inputs.mode != 'backup-credentials'");
     expect(workflow.on.workflow_dispatch.inputs.mode.default).toBe('inventory');
-    expect(workflow.on.workflow_dispatch.inputs.mode.options).toEqual(['inventory', 'bootstrap', 'verify']);
+    expect(workflow.on.workflow_dispatch.inputs.mode.options).toEqual([
+      'inventory',
+      'bootstrap',
+      'verify',
+      'backup-credentials',
+    ]);
     expect(bootstrap.env).toBeUndefined();
+  });
+
+  it('seals only the five legacy fields in a separate main-only Production job', () => {
+    const backup = workflow.jobs['backup-credentials'];
+    expect(backup.if).toBe("github.ref == 'refs/heads/main' && inputs.mode == 'backup-credentials'");
+    expect(backup.environment).toBe('Production');
+    expect(backup.env).toBeUndefined();
+    const seal = backup.steps.find((step) => step.name === 'Seal only the five existing Tigris publisher credentials');
+    expect(seal?.run).toBe('vp exec tsx scripts/seal-static-rollback-credentials.ts');
+    expect(seal?.env).toEqual({
+      STATIC_ROLLBACK_BACKUP_PUBLIC_KEY: '${{ inputs.backup_public_key }}',
+      STATIC_ROLLBACK_BACKUP_OUTPUT: '${{ runner.temp }}/static-assets-legacy.enc.json',
+      STATIC_ASSETS_LEGACY_S3_BUCKET_NAME: '${{ secrets.STATIC_ASSETS_S3_BUCKET_NAME }}',
+      STATIC_ASSETS_LEGACY_AWS_ENDPOINT_URL: '${{ secrets.STATIC_ASSETS_AWS_ENDPOINT_URL }}',
+      STATIC_ASSETS_LEGACY_AWS_REGION: '${{ secrets.STATIC_ASSETS_AWS_REGION }}',
+      STATIC_ASSETS_LEGACY_AWS_ACCESS_KEY_ID: '${{ secrets.STATIC_ASSETS_AWS_ACCESS_KEY_ID }}',
+      STATIC_ASSETS_LEGACY_AWS_SECRET_ACCESS_KEY: '${{ secrets.STATIC_ASSETS_AWS_SECRET_ACCESS_KEY }}',
+    });
+    const upload = backup.steps.find((step) => step.name === 'Upload encrypted rollback credential backup');
+    expect(upload?.uses).toMatch(/^actions\/upload-artifact@[a-f0-9]{40}$/);
+    expect(upload?.with?.path).toBe(seal?.env?.STATIC_ROLLBACK_BACKUP_OUTPUT);
+    expect(upload?.with?.['if-no-files-found']).toBe('error');
+    expect(upload?.with?.['retention-days']).toBe(7);
+    const commands = backup.steps.map((step) => step.run ?? '').join('\n');
+    expect(commands).not.toMatch(/storage:migrate|upload:static-assets|cf:apply|railway/);
+    expect(commands).not.toContain('${{');
   });
 
   it('copies historical keys before publishing the current catalog', () => {

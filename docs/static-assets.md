@@ -172,6 +172,14 @@ reads `desiredR2Buckets`, so there is no second switch to remember. That asserti
 DNS is good for roughly 60 days: Tigris renews the custom domain's certificate off the live CNAME, which will be
 pointing at Cloudflare, and renewal breaks within a couple of months.
 
+Preserve the five Tigris publisher credentials before rotating the Production secrets. If their only copy is in
+GitHub, dispatch **Bootstrap R2 Static Assets** on `main` with `mode=backup-credentials` and an operator RSA public
+PEM key of at least 3072 bits in `backup_public_key`. This separate job seals only the five static-assets credentials
+with RSA-OAEP-SHA256 and AES-256-GCM; it performs no storage writes and uploads only an encrypted artifact retained
+for seven days. Download it, authenticate and decrypt it locally with the private key, and save the original fields
+in 1Password before rotating anything. Never print or upload the private key or decrypted credentials. The backup
+refuses R2 credentials, so it must run while the existing Production publisher still points at Tigris.
+
 After R2 publishing resumes, a DNS-only rollback is incomplete: new deployments can reference hashes written only
 to R2. Pause and drain Production Deploy again, then run `vp run storage:migrate-static-assets -- --reverse --apply`
 followed by `vp run storage:migrate-static-assets -- --reverse --verify-only`. The same isolated legacy and R2
