@@ -38,7 +38,11 @@ export const LAUNCH_UPDATE_PLACEHOLDER_DELAY_MS = 2_000;
 export const LAUNCH_UPDATE_PREPARATION_TIMEOUT_MS = 1_500;
 /** Budget for persisting the gate's markers before a reload. */
 export const LAUNCH_UPDATE_MARKER_WRITE_TIMEOUT_MS = 700;
-/** Budget for sending the outcome event before a reload tears the runtime down. */
+/**
+ * Budget for sending the outcome event before a reload tears the runtime down.
+ * It runs alongside the marker writes, so the wait before a reload is the
+ * larger of the two budgets, not their sum.
+ */
 export const LAUNCH_UPDATE_FLUSH_TIMEOUT_MS = 700;
 /**
  * Counted from the moment `reloadAsync()` is called. If this runtime is still
@@ -208,7 +212,9 @@ export function launchUpdateStateFromContext(context: LaunchUpdateNativeContext)
     hasCheckError: context.checkError != null,
     hasDownloadError: context.downloadError != null,
     pendingIsRollback,
-    pendingUpdateId: downloadedManifest === undefined ? undefined : (downloadedManifest.id ?? ''),
+    // A manifest without an id is treated as no known update: an empty string
+    // would be stored as a reload target and then match itself next launch.
+    pendingUpdateId: downloadedManifest?.id || undefined,
   };
 }
 

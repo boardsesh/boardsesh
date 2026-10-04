@@ -204,6 +204,15 @@ describe('launchUpdateStateFromContext', () => {
     ).toMatchObject({ isUpdatePending: true, pendingUpdateId: 'next-update', pendingIsRollback: false });
   });
 
+  it('treats a downloaded manifest without an id as no known update', () => {
+    for (const downloadedManifest of [{}, { id: '' }]) {
+      expect(launchUpdateStateFromContext({ ...context, isUpdatePending: true, downloadedManifest })).toMatchObject({
+        pendingUpdateId: undefined,
+        pendingIsRollback: false,
+      });
+    }
+  });
+
   it('reads a rollback directive only when no manifest was downloaded', () => {
     const rollback = { commitTime: '2026-10-01T00:00:00.000Z' };
     expect(launchUpdateStateFromContext({ ...context, rollback })).toMatchObject({

@@ -33,7 +33,8 @@ function LaunchHold({ header }: LaunchHoldOptions) {
  * update placeholder cannot cover it and the screen would be usable while the
  * gate is still deciding whether to reload. Held behind a spinner until launch
  * is ready, nothing on it can be mid-tap when a reload lands. Every other route
- * sits under the placeholder and needs none of this.
+ * sits under the placeholder and needs none of this. The hold applies on
+ * Android too, where it is redundant but harmless; only web is exempt.
  *
  * Once launch is ready this is a passthrough: the hold reads one boolean from
  * context that never changes again, so it adds no re-render to the screen.
