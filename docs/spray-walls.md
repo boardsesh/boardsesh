@@ -700,11 +700,32 @@ server render fetches the stats with no viewer, so the owner's first paint omits
 the log until the signed-in client fetch replaces it; the same already holds for
 their logs on a private wall.
 
-**Not covered:** the logbook readers that LEFT JOIN `board_climbs` and use the
-column form (`userTicks`, the ascents feeds, the session feed, detail and
-summary). `IS DISTINCT FROM 'spray'` is true for a missing climb, so they still
-return a spray tick whose climb was hard-deleted, as "Unknown Climb", to anyone.
-That is #6031.
+**The logbook readers** LEFT JOIN `board_climbs` and use the column form, and
+`IS DISTINCT FROM 'spray'` is true for a missing climb. That is right for the
+other boards, where such a log renders as "Unknown Climb", and wrong for spray.
+They carry `sprayTickClimbExistsCondition(viewer)`
+(`packages/backend/src/graphql/resolvers/shared/spray-tick-visibility.ts`), which
+is the reference condition above keyed on the tick, with the author exemption
+(#6031):
+
+| Reader | A log on a hard-deleted spray climb |
+| --- | --- |
+| `userTicks`, `userAscentsFeed`, `userGroupedAscentsFeed` | the climber who logged it only; rows, totals and groups |
+| `followingAscentsFeed`, `globalAscentsFeed` | the climber who logged it only |
+| `sessionDetail` | the climber who logged it only; a session of nothing else answers null to everybody else |
+| the session summary's hardest send | the climber who logged it only |
+| `gymStats` top climbs | nobody (the reader has no viewer) |
+
+Not gated, on purpose, because the same is true of a log on a LIVE private wall
+today and changing it is one decision, not two:
+
+- the session feed cards (`sessionGroupedFeed`) and the session summary's totals
+  count every tick in a session, whatever wall it was on;
+- `comments` on a tick, `climbCommunityStatus` and `voteSummary` answer a caller
+  who already holds the uuid.
+
+The smart-playlist ref queries can still count a reference to a deleted climb in
+`totalCount`; no row is returned.
 
 Pick by what the query HAS, not by taste:
 

@@ -1818,6 +1818,18 @@ describe('references to a hard-deleted spray climb', () => {
       expect(JSON.stringify(orphanOutcomes.get('Query.gymStats')!.owner.data)).not.toContain(orphanClimbUuid);
     });
 
+    it('userAscentsFeed leaves it out of the total as well as the page', async () => {
+      // A count is a leak the sentinel scan cannot see. The list and the count
+      // spread the same conditions, so a stranger's total is what they are shown.
+      const feed = (await ask(
+        'stranger',
+        'query Orphan($userId: ID!, $input: AscentFeedInput) { userAscentsFeed(userId: $userId, input: $input) ' +
+          '{ totalCount items { uuid } } }',
+        { userId: OWNER, input: { limit: 50 } },
+      )) as { userAscentsFeed: { totalCount: number; items: unknown[] } };
+      expect(feed.userAscentsFeed.totalCount).toBe(feed.userAscentsFeed.items.length);
+    });
+
     it('keeps a log on a missing climb of any other board, for everybody', async () => {
       for (const viewer of VIEWERS) {
         const ticks = await ask(
