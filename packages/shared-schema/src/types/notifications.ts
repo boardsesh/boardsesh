@@ -78,6 +78,13 @@ export type GroupedNotification = {
   climbFrames?: string | null;
   /** Sizes the climb fits — Woods numbers holds per size, so the default size draws a different climb. */
   climbCompatibleSizeIds?: number[] | null;
+  /**
+   * Structured climb characteristics (e.g. 'no_match', 'method_footless').
+   * Decode with the CLIMB_CHARACTERISTICS helpers (isNoMatch / getMoonBoardMethod).
+   * Drives the Woods rules line and the no-match glyph when a notification opens
+   * the play drawer directly, without a climb refetch.
+   */
+  climbCharacteristics?: string[] | null;
   /** The commented-on entity behind a comment/vote row, so a client can open the thread. */
   threadEntityType?: SocialEntityType | null;
   threadEntityId?: string | null;
