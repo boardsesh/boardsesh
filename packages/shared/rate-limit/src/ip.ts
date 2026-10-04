@@ -49,6 +49,24 @@ function expandIpv6Hextets(address: string): string[] | undefined {
   return [...leadingHextets, ...Array<string>(zeroRunLength).fill('0'), ...trailingHextets];
 }
 
+function isIpv4MappedHextets(hextets: readonly string[]): boolean {
+  return (
+    hextets.length === IPV6_TOTAL_HEXTETS &&
+    hextets.slice(0, 5).every((hextet) => Number.parseInt(hextet, 16) === 0) &&
+    Number.parseInt(hextets[5] ?? '', 16) === 0xffff
+  );
+}
+
+function mappedHextetsToIpv4(hextets: readonly string[]): string {
+  return hextets
+    .slice(6)
+    .flatMap((hextet) => {
+      const group = Number.parseInt(hextet, 16);
+      return [(group >> 8) & 0xff, group & 0xff];
+    })
+    .join('.');
+}
+
 /** Normalize an IP for stable rate-limit keys, including IPv6 /64 grouping. */
 export function normalizeRateLimitIp(rawAddress: string | undefined): string | undefined {
   const trimmedAddress = rawAddress?.trim();
@@ -72,17 +90,13 @@ export function normalizeRateLimitIp(rawAddress: string | undefined): string | u
     if (!withoutZone.includes(':') || !zoneIdentifier || /\s/.test(zoneIdentifier)) return undefined;
   }
   const lowercasedAddress = withoutZone.toLowerCase();
-  const mappedIpv4Tail = lowercasedAddress.startsWith('::ffff:')
-    ? lowercasedAddress.slice('::ffff:'.length)
-    : undefined;
-  const mappedIpv4Octets = mappedIpv4Tail ? parseIpv4(mappedIpv4Tail) : undefined;
-  const normalizedAddress = mappedIpv4Octets ? mappedIpv4Octets.join('.') : lowercasedAddress;
-
-  const ipv4Octets = parseIpv4(normalizedAddress);
+  const ipv4Octets = parseIpv4(lowercasedAddress);
   if (ipv4Octets) return ipv4Octets.join('.');
 
-  const hextets = expandIpv6Hextets(normalizedAddress);
+  const hextets = expandIpv6Hextets(lowercasedAddress);
   if (!hextets) return undefined;
+  if (isIpv4MappedHextets(hextets)) return mappedHextetsToIpv4(hextets);
+
   const prefix = hextets
     .slice(0, IPV6_PREFIX_HEXTETS)
     .map((hextet) => hextet.replace(/^0+(?=.)/, ''))
