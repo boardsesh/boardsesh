@@ -1,3 +1,4 @@
+import type { QueryClient, QueryFilters } from '@tanstack/react-query';
 import type { DocumentsPulledSink, RowsDeletedSink } from '@boardsesh/offline-sync';
 import {
   SPRAY_PHOTO_STORE_AVAILABLE,
@@ -5,6 +6,8 @@ import {
   pruneStoredSprayPhotos,
   storeSprayPhoto,
 } from '../lib/spray/spray-photo-store';
+import { deleteCachedSprayWallPhotos } from '../lib/spray/spray-photo-cache';
+import { unregisterSprayWall } from '../lib/spray/spray-wall-registry';
 import { reportHandledError } from '../lib/error-reporting';
 import { clearSprayPhotoPending, recordSprayPhotoFailure } from './spray-photo-retry';
 
@@ -61,7 +64,7 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
     if (typeof photoUrl !== 'string' || !photoUrl) continue;
 
     if (await storeSprayPhoto(photoKey, photoUrl)) {
-      if (Number.isFinite(layoutId)) await clearSprayPhotoPending(db, layoutId);
+      if (Number.isFinite(layoutId)) await clearSprayPhotoPending(db, layoutId, photoKey);
       continue;
     }
 
@@ -125,15 +128,47 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
  * prune only knows the walls the device still has, so the file would sit in
  * durable storage until sign-out.
  */
-export const sprayWallDeletedSink: RowsDeletedSink = async ({ tableName, rows, db }) => {
-  if (tableName !== 'spray_walls') return;
+export function createSprayWallDeletedSink(
+  queryClient?: Pick<QueryClient, 'cancelQueries' | 'removeQueries'>,
+): RowsDeletedSink {
+  return async ({ tableName, rows, db }) => {
+    if (tableName !== 'spray_walls') return;
+    const filters: QueryFilters[] = [];
+    // Withdraw every renderer before awaiting query cancellation or SQLite.
+    for (const row of rows) {
+      const layoutId = typeof row.layout_id === 'number' ? row.layout_id : Number(row.layout_id);
+      if (Number.isFinite(layoutId)) {
+        unregisterSprayWall(layoutId);
+        deleteCachedSprayWallPhotos(layoutId);
+        filters.push({ queryKey: ['sprayWallByLayout', layoutId], exact: true });
+      }
+      const photoKey = row.photo_key;
+      if (typeof photoKey === 'string' && photoKey) deleteStoredSprayPhoto(photoKey);
+      const wallUuid = row.board_uuid;
+      if (typeof wallUuid === 'string' && wallUuid) {
+        filters.push(
+          { queryKey: ['sprayWallRenderData', wallUuid] },
+          { queryKey: ['sprayWallRevisionRenderData', wallUuid] },
+          { queryKey: ['sprayWall', wallUuid] },
+          { queryKey: ['sprayWallWithVersions', wallUuid] },
+        );
+      }
+    }
+    // Invalidating an inactive pending fetch does not cancel it. Disown it and
+    // remove the cached payload so its late response cannot seed a fresh load.
+    if (queryClient) {
+      await Promise.all(filters.map((filter) => queryClient.cancelQueries(filter)));
+      for (const filter of filters) queryClient.removeQueries(filter);
+    }
+    for (const row of rows) {
+      const layoutId = typeof row.layout_id === 'number' ? row.layout_id : Number(row.layout_id);
+      const photoKey = row.photo_key;
+      if (Number.isFinite(layoutId)) {
+        await clearSprayPhotoPending(db, layoutId, typeof photoKey === 'string' && photoKey ? photoKey : null);
+      }
+    }
+  };
+}
 
-  for (const row of rows) {
-    const photoKey = row.photo_key;
-    if (typeof photoKey === 'string' && photoKey) deleteStoredSprayPhoto(photoKey);
-    // The wall is gone, so a pending-photo marker for it describes nothing and
-    // would keep rewinding a cursor for a row that will never be served again.
-    const layoutId = typeof row.layout_id === 'number' ? row.layout_id : Number(row.layout_id);
-    if (Number.isFinite(layoutId)) await clearSprayPhotoPending(db, layoutId);
-  }
-};
+/** Filesystem/registry sink for callers without a React Query cache. */
+export const sprayWallDeletedSink = createSprayWallDeletedSink();

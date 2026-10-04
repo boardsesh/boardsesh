@@ -58,7 +58,8 @@ export function liveSprayPhotoFileNames(): Set<string> {
 const resolvedPaths = new Map<string, string>();
 
 /** In-flight downloads, so N rows on one wall fetch one photo, not N. */
-const pendingDownloads = new Map<string, Promise<string | null>>();
+type PhotoTransfer = { invalidated: boolean; promise: Promise<string | null> };
+const pendingDownloads = new Map<string, PhotoTransfer>();
 
 function photoFile(identity: SprayPhotoIdentity): File {
   return new File(new Directory(Paths.cache, SPRAY_PHOTO_CACHE_DIR_NAME), sprayPhotoFileName(identity));
@@ -138,16 +139,21 @@ export async function ensureSprayPhotoCached(identity: SprayPhotoIdentity): Prom
   if (alreadyOnDisk) return alreadyOnDisk;
 
   const inFlight = pendingDownloads.get(key);
-  if (inFlight) return inFlight;
+  if (inFlight) return inFlight.promise;
 
-  const download = downloadSprayPhoto(identity, key).finally(() => {
-    pendingDownloads.delete(key);
+  const transfer: PhotoTransfer = { invalidated: false, promise: Promise.resolve(null) };
+  transfer.promise = downloadSprayPhoto(identity, key, transfer).finally(() => {
+    if (pendingDownloads.get(key) === transfer) pendingDownloads.delete(key);
   });
-  pendingDownloads.set(key, download);
-  return download;
+  pendingDownloads.set(key, transfer);
+  return transfer.promise;
 }
 
-async function downloadSprayPhoto(identity: SprayPhotoIdentity, key: string): Promise<string | null> {
+async function downloadSprayPhoto(
+  identity: SprayPhotoIdentity,
+  key: string,
+  transfer: PhotoTransfer,
+): Promise<string | null> {
   // The registry is the only holder of a live signature. A wall that has been
   // unregistered — or whose version moved on while this was queued — has no URL
   // worth fetching, and guessing one is not possible by design.
@@ -177,6 +183,10 @@ async function downloadSprayPhoto(identity: SprayPhotoIdentity, key: string): Pr
     deleteQuietly(destination);
 
     await runRetainedDownload(wall.photoUrl, partial);
+    if (transfer.invalidated) {
+      deleteQuietly(partial);
+      return null;
+    }
 
     // Resolved BEFORE the move, so nothing can throw between a completed
     // `moveSync` and the memo write. Reading the uri afterwards would leave the
@@ -234,6 +244,33 @@ async function runRetainedDownload(url: string, destination: File): Promise<void
 function isExpired(expiresAt: string): boolean {
   const expiryMs = Date.parse(expiresAt);
   return Number.isFinite(expiryMs) && expiryMs <= Date.now();
+}
+
+/** Remove only this wall's cached versions and disown their pending transfers. */
+export function deleteCachedSprayWallPhotos(layoutId: number): void {
+  const belongsToWall = (filename: string) => filename.startsWith(`${layoutId}-`);
+  for (const key of resolvedPaths.keys()) {
+    if (belongsToWall(key)) resolvedPaths.delete(key);
+  }
+  // Keep cancelled transfers registered until native I/O settles, preventing a
+  // new request from racing their staging path or their cleanup.
+  for (const [key, transfer] of pendingDownloads) {
+    if (belongsToWall(key)) transfer.invalidated = true;
+  }
+  try {
+    const directory = new Directory(Paths.cache, SPRAY_PHOTO_CACHE_DIR_NAME);
+    if (!directory.exists) return;
+    for (const entry of directory.list()) {
+      if (!belongsToWall(entry.name)) continue;
+      try {
+        entry.delete();
+      } catch {
+        // Row cleanup has committed; a failed filesystem removal cannot undo it.
+      }
+    }
+  } catch {
+    // Best effort, like durable photo removal.
+  }
 }
 
 /**

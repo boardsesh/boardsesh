@@ -176,7 +176,13 @@ describe('useKeepSprayDraftRegistered', () => {
     await waitFor(() => expect(registerRenderDataMock).toHaveBeenCalledTimes(1));
     // With the viewer generation the draft was FETCHED under, so the registry
     // can believe the payload's `viewerCanEdit` for the wall's own owner.
-    expect(registerRenderDataMock).toHaveBeenCalledWith(LAYOUT_ID, RENDER_DATA, undefined, expect.any(Number));
+    expect(registerRenderDataMock).toHaveBeenCalledWith(
+      LAYOUT_ID,
+      RENDER_DATA,
+      undefined,
+      expect.any(Number),
+      expect.any(Number),
+    );
     expect(getSprayWall(LAYOUT_ID)?.version).toBe(3);
   });
 

@@ -51,3 +51,6 @@ export function clearSprayPhotoPathCache(): void {
 export function resetSprayPhotoCacheForTests(): void {
   // Same: nothing is memoised in a browser.
 }
+
+/** Browser photo URLs are held only by the registry; there are no app-owned copies. */
+export function deleteCachedSprayWallPhotos(_layoutId: number): void {}

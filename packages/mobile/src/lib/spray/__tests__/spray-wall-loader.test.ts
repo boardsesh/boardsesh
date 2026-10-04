@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { QueryClient } from '@tanstack/react-query';
+import { runMigrations } from '@boardsesh/offline-sync';
+import { createTestDatabase } from '@boardsesh/offline-sync/testing';
 import { DEFAULT_BOARDSESH_RENDER_SETTINGS } from '@boardsesh/board-look';
 
 // The GraphQL client pulls react-native's Flow source at import time, and the
@@ -7,6 +10,13 @@ import { DEFAULT_BOARDSESH_RENDER_SETTINGS } from '@boardsesh/board-look';
 // withdraw — can be exercised.
 const requestMock = vi.hoisted(() => vi.fn());
 vi.mock('../../graphql/client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
+vi.mock('../spray-photo-cache', () => ({ deleteCachedSprayWallPhotos: () => {} }));
+vi.mock('../spray-photo-store', () => ({
+  SPRAY_PHOTO_STORE_AVAILABLE: true,
+  deleteStoredSprayPhoto: () => {},
+  pruneStoredSprayPhotos: () => {},
+  storeSprayPhoto: async () => null,
+}));
 vi.mock('../../create-climb-draft-store', () => ({ clearSupersededSprayDrafts: async () => {} }));
 const reportHandledErrorMock = vi.hoisted(() => vi.fn());
 const invalidateQueriesMock = vi.hoisted(() => vi.fn(async () => {}));
@@ -16,6 +26,7 @@ const {
   clearSprayWallRegistry,
   getSprayWall,
   registerSprayWall,
+  unregisterSprayWall,
   resetSprayWallViewerAccess,
   setSprayWallLoader,
   sprayWallViewerGeneration,
@@ -29,6 +40,7 @@ const {
   primeSprayWallLook,
   refreshSprayWallViewerAccess,
 } = await import('../spray-wall-loader');
+const { createSprayWallDeletedSink } = await import('../../../offline/spray-photo-sink');
 const sprayOperations = await import('@boardsesh/graphql/operations/spray-walls');
 
 const LAYOUT_ID = 4200;
@@ -100,6 +112,114 @@ afterEach(() => {
 });
 
 describe('loadSprayWall', () => {
+  it.each(['sprayWallWithVersions', 'sprayWallRevisionRenderData'])(
+    'cancels inactive %s requests without clearing another wall',
+    async (queryPrefix) => {
+      const queryClient = new QueryClient();
+      const db = createTestDatabase();
+      await runMigrations(db);
+      const deletedKey = [queryPrefix, WALL_UUID, 2] as const;
+      const otherKey = [queryPrefix, 'other-wall', 2] as const;
+      queryClient.setQueryData(otherKey, { versions: [1] });
+      let resolveVersions: ((response: { versions: number[] }) => void) | undefined;
+      const pending = queryClient
+        .fetchQuery({
+          queryKey: deletedKey,
+          queryFn: () =>
+            new Promise<{ versions: number[] }>((resolve) => {
+              resolveVersions = resolve;
+            }),
+        })
+        .catch(() => {});
+
+      await createSprayWallDeletedSink(queryClient)({
+        tableName: 'spray_walls',
+        rows: [{ layout_id: LAYOUT_ID, board_uuid: WALL_UUID, photo_key: null }],
+        db,
+      });
+      resolveVersions?.({ versions: [1, 2] });
+      await pending;
+
+      expect(queryClient.getQueryData(deletedKey)).toBeUndefined();
+      expect(queryClient.getQueryData(otherKey)).toEqual({ versions: [1] });
+      queryClient.clear();
+      db.close();
+    },
+  );
+
+  it.each(['identity', 'render'])(
+    'cancels a pending %s query so a later load cannot reuse revoked data',
+    async (pendingStage) => {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const db = createTestDatabase();
+      await runMigrations(db);
+      let resolveOld: ((response: unknown) => void) | undefined;
+      const oldResponse = new Promise<unknown>((resolve) => {
+        resolveOld = resolve;
+      });
+      let revoked = false;
+      requestMock.mockImplementation((operation) => {
+        if (operation === sprayOperations.GET_SPRAY_WALL_BY_LAYOUT) {
+          if (revoked) return Promise.resolve({ sprayWallByLayout: null });
+          if (pendingStage === 'identity') return oldResponse;
+          return Promise.resolve({ sprayWallByLayout: { uuid: WALL_UUID } });
+        }
+        if (operation === sprayOperations.GET_SPRAY_WALL_LOOK) return Promise.resolve({ sprayWall: null });
+        return oldResponse;
+      });
+      registerExistingWall();
+      const firstLoad = loadSprayWall(queryClient, LAYOUT_ID).catch(() => {});
+      const pendingOperation =
+        pendingStage === 'identity'
+          ? sprayOperations.GET_SPRAY_WALL_BY_LAYOUT
+          : sprayOperations.GET_SPRAY_WALL_RENDER_DATA;
+      await vi.waitFor(() =>
+        expect(requestMock.mock.calls.some(([operation]) => operation === pendingOperation)).toBe(true),
+      );
+
+      revoked = true;
+      await createSprayWallDeletedSink(queryClient)({
+        tableName: 'spray_walls',
+        rows: [{ layout_id: LAYOUT_ID, board_uuid: WALL_UUID, photo_key: null }],
+        db,
+      });
+      resolveOld?.(pendingStage === 'identity' ? { sprayWallByLayout: { uuid: WALL_UUID } } : renderDataPayload());
+      await firstLoad;
+      await loadSprayWall(queryClient, LAYOUT_ID);
+
+      expect(getSprayWall(LAYOUT_ID)).toBeNull();
+      expect(
+        requestMock.mock.calls.filter(([operation]) => operation === sprayOperations.GET_SPRAY_WALL_BY_LAYOUT),
+      ).toHaveLength(2);
+      queryClient.clear();
+      db.close();
+    },
+  );
+
+  it('cannot reregister a revoked wall when an earlier render request completes', async () => {
+    registerExistingWall();
+    let resolveRender: ((payload: ReturnType<typeof renderDataPayload>) => void) | undefined;
+    const renderRequest = new Promise<ReturnType<typeof renderDataPayload>>((resolve) => {
+      resolveRender = resolve;
+    });
+    requestMock.mockImplementation((operation) => {
+      if (operation === sprayOperations.GET_SPRAY_WALL_BY_LAYOUT) {
+        return Promise.resolve({ sprayWallByLayout: { uuid: WALL_UUID } });
+      }
+      if (operation === sprayOperations.GET_SPRAY_WALL_LOOK) return Promise.resolve({ sprayWall: null });
+      return renderRequest;
+    });
+    const loading = loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+    await vi.waitFor(() =>
+      expect(requestMock).toHaveBeenCalledWith(sprayOperations.GET_SPRAY_WALL_RENDER_DATA, { uuid: WALL_UUID }),
+    );
+
+    unregisterSprayWall(LAYOUT_ID);
+    resolveRender?.(renderDataPayload());
+    await loading;
+    expect(getSprayWall(LAYOUT_ID)).toBeNull();
+  });
+
   it('registers the wall it fetched', async () => {
     requestMock
       .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
