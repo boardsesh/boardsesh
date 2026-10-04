@@ -150,6 +150,11 @@ total historical source bytes and can incur Tigris egress charges. Use inventory
 downloads; reserve full verification for the pre-cutover gate and integrity checks. Historical objects include
 hashes outside the current catalog, so the current catalog size is not a verification cost estimate.
 
+Current-catalog public GET verification accepts CDN responses without `Content-Length`, including chunked or
+HTTP/2 delivery. It still bounds the streamed body to the catalog's byte count, requires that exact count and
+SHA-256, and rejects an incorrect length header when present. Each download keeps its 30-second deadline;
+content type, immutable caching, CORS and declared Cloudflare delivery checks remain required.
+
 The JSON summary reports `sourceObjects` (historical source inventory), `missingObjects` (destination gaps at the
 start of the run), and `copiedObjects` (successful uploads performed by this run). A concurrent writer returning
 412 is verified but not counted as copied. `copiedObjects` is not the total number of objects present in R2;

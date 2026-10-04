@@ -6,9 +6,9 @@ import {
   type GetObjectCommandOutput,
   type HeadObjectCommandOutput,
 } from '@aws-sdk/client-s3';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { STATIC_ASSET_CACHE_CONTROL } from '../lib/static-asset-upload';
-import { validateRemoteAsset } from '../upload-static-assets';
+import { validatePublicAsset, validateRemoteAsset } from '../upload-static-assets';
 
 const contents = Buffer.from('homepage showcase video');
 const sha256 = createHash('sha256').update(contents).digest('hex');
@@ -126,5 +126,120 @@ describe('signed static asset checksum validation', () => {
     await expect(validateRemoteAsset(empty.client, 'static-assets', asset, empty.beforeRequest)).rejects.toThrow(
       'GET body missing',
     );
+  });
+});
+
+describe('public static asset checksum validation', () => {
+  const origin = 'https://assets-r2.boardsesh.com';
+  const publicHeaders = {
+    'content-type': asset.contentType,
+    'cache-control': STATIC_ASSET_CACHE_CONTROL,
+    'access-control-allow-origin': '*',
+    'cf-ray': 'test-ray-SYD',
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  async function expectFailedPublicValidation(fetchImpl: typeof fetch, message: string): Promise<void> {
+    vi.useFakeTimers();
+    const assertion = expect(validatePublicAsset(asset, async () => {}, fetchImpl, origin)).rejects.toThrow(message);
+    await vi.runAllTimersAsync();
+    await assertion;
+  }
+
+  it('verifies every streamed byte and SHA-256 without a Content-Length header', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(contents.subarray(0, 7));
+          controller.enqueue(contents.subarray(7));
+          controller.close();
+        },
+      });
+      return new Response(body, { headers: publicHeaders });
+    });
+    const beforeRequest = vi.fn(async () => {});
+
+    await expect(validatePublicAsset(asset, beforeRequest, fetchImpl, origin)).resolves.toBeUndefined();
+
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(fetchImpl).toHaveBeenCalledWith(`${origin}/${asset.objectKey}`, {
+      headers: { Origin: 'https://www.boardsesh.com' },
+      signal: expect.any(AbortSignal),
+    });
+    expect(beforeRequest).toHaveBeenCalledOnce();
+  });
+
+  it.each([String(asset.bytes - 1), String(asset.bytes + 1), ''])(
+    'rejects an incorrect present Content-Length %j even when bytes match',
+    async (contentLength) => {
+      const fetchImpl = vi.fn<typeof fetch>(
+        async () => new Response(contents, { headers: { ...publicHeaders, 'content-length': contentLength } }),
+      );
+
+      await expectFailedPublicValidation(fetchImpl, 'has Content-Length');
+    },
+  );
+
+  it('rejects a truncated stream without a Content-Length header', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () => new Response(contents.subarray(0, -1), { headers: publicHeaders }),
+    );
+
+    await expectFailedPublicValidation(fetchImpl, 'Byte-length mismatch');
+  });
+
+  it('rejects same-sized corrupt bytes without a Content-Length header', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () => new Response(Buffer.alloc(asset.bytes), { headers: publicHeaders }),
+    );
+
+    await expectFailedPublicValidation(fetchImpl, 'SHA-256 mismatch');
+  });
+
+  it('cancels an oversized stream immediately without a Content-Length header', async () => {
+    const cancel = vi.fn();
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(contents);
+              controller.enqueue(new Uint8Array([0]));
+            },
+            cancel,
+          }),
+          { headers: publicHeaders },
+        ),
+    );
+
+    await expectFailedPublicValidation(fetchImpl, `exceeds the expected ${asset.bytes} bytes`);
+    expect(cancel).toHaveBeenCalledTimes(6);
+  });
+
+  it('cancels a stalled headerless stream at the publisher download deadline', async () => {
+    const controller = new AbortController();
+    const downloadTimeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+    const cancel = vi.fn();
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(streamController) {
+              streamController.enqueue(contents.subarray(0, 7));
+              setTimeout(() => controller.abort(new Error('Download deadline exceeded')), 1);
+            },
+            cancel,
+          }),
+          { headers: publicHeaders },
+        ),
+    );
+
+    await expectFailedPublicValidation(fetchImpl, 'Download deadline exceeded');
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(downloadTimeout).toHaveBeenCalledWith(30_000);
   });
 });
