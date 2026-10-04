@@ -1405,11 +1405,10 @@ After cutover, the mobile value is `${SNAPSHOT_PUBLIC_BASE_URL}/board-snapshots/
 
 ### Moving the snapshot bucket to R2
 
-**The R2 rehearsal and permanent worker rotation are verified; normal producer and
-native reader acceptance remain in progress.** The migration is a full re-export
+**The R2 rehearsal, permanent worker rotation, and normal producer are verified.** The migration is a full re-export
 from the primary, not an object copy. The worker uses R2; existing shipped apps keep
 their baked Tigris base until they install the verified reader OTA. All 68 rehearsal
-artifacts passed the gate below. Normal nightly/live acceptance and reader rollout
+and normal nightly artifacts passed the gate below. Nightly/live evidence and reader rollout
 are recorded in [the migration acceptance record](r2-migration-2026-10.md).
 No object or bucket deletion belongs in the migration. The following procedure
 documents the ordered migration gates; do not reopen a rehearsal against an active
