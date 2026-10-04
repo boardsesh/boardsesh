@@ -88,6 +88,33 @@ A concurrent build that fails leaves an `INVALID` index behind; it is not used b
 planner and must be dropped (`DROP INDEX CONCURRENTLY`) before retrying. Check with
 `SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid`.
 
+#### `0250_mushy_retro_girl`: alias UUID lookup
+
+`board_climb_aliases` has catalog-sync writers (including
+`packages/kilter-sync/src/sync/catalog-sync.ts`). Migration 0250 therefore records
+the concurrent-prebuild path instead of assuming the table is cold or that a
+plain-build lock has a bounded duration. This is a deployment decision, not a
+claim about production row count or build time.
+
+Production deploy automatically runs unapplied migrations after the images pass
+their build gate. Before the first deploy that can apply 0250, an operator must
+build the index outside the transactional migrator:
+
+```sql
+CREATE INDEX CONCURRENTLY board_climb_aliases_alias_uuid_idx
+  ON public.board_climb_aliases USING btree (alias_uuid);
+```
+
+Then verify the object is on `public.board_climb_aliases`, is a non-unique btree
+over only `alias_uuid`, and has both `pg_index.indisvalid` and
+`pg_index.indisready` set. `CREATE INDEX IF NOT EXISTS` checks only the name; it
+does not repair or validate an existing same-named object. Do not let the deploy
+reach migration 0250 until that matching valid index is present. If a concurrent
+build fails and leaves an invalid index, drop that index concurrently and retry
+the prebuild before allowing the migration to run. Migration 0250 is
+`IF NOT EXISTS`, so it no-ops against the verified production index while still
+creating the same index on fresh dev, test, and CI databases.
+
 ## When main takes your number
 
 Migration numbers are first-come-first-served, and every open migration PR appends to
