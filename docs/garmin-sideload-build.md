@@ -33,14 +33,24 @@ each run, not from the tag.
 
 ## How it runs
 
-- **PR gate** (`garmin-ci.yml`): `pull_request` touching `garmin/**`. Compiles
-  `fenix7`, the staging jungle flavour, and the unit-test target. ~1 min after
-  SDK setup.
+- **CI gate** (`garmin-ci.yml`): matching pull requests and pushes to `main`
+  that change Garmin app files (except README-only edits), either Garmin
+  workflow, the shared gate script, or the SDK action. It compiles `fenix7`, the
+  staging jungle flavour, and the unit-test target.
 - **Release** (`garmin-release.yml`): push to `main` touching `garmin/**`,
-  excluding `garmin/README.md`. Also `workflow_dispatch`. All 12 watches compile
-  in about 26 seconds; the run is dominated by the SDK download.
-- Nothing else triggers either one. A push that does not touch `garmin/**` runs
-  no Garmin job at all.
+  excluding `garmin/README.md`, plus edits to the release workflow or SDK
+  action. Also `workflow_dispatch`. Before SDK login, signing, or publication,
+  it waits for the newest completed `push` run of `Garmin CI` for the exact
+  checked-out main SHA. A failed, cancelled, stale, or still-pending run cannot
+  authorize publication; the wait is bounded and fails closed. The release
+  workflow path is also a CI trigger, so changing release ordering itself gets
+  compiled on that same main commit.
+- A manual dispatch does not start CI. It can publish only when a successful
+  exact-SHA main push run already exists; otherwise it waits and then refuses.
+- All 12 watches compile in about 26 seconds; the run is dominated by the SDK
+  download.
+- Other pushes run no Garmin job unless they change one of the listed workflow,
+  gate-script, SDK-action, or app inputs.
 
 `ci.yml` deliberately has **no** `garmin` filter. Its `changes` job hardcodes
 every output to `'true'` on push, so a Garmin job there would compile on every
