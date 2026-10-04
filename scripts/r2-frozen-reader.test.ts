@@ -1,17 +1,25 @@
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   assertEnvironment,
   assertPlatform,
   assertR2Bundle,
   assertRuntime,
+  assertFrozenSource,
+  checkExport,
+  FROZEN_SOURCE,
   parseSignedManifest,
   RUNTIMES,
   SNAPSHOT_BASE,
   validateManifest,
   verifyDelivery,
 } from './r2-frozen-reader';
+
+vi.mock('node:child_process', () => ({ execFileSync: vi.fn() }));
 
 const bundle = Buffer.concat([Buffer.from('c61fbc03c103191f', 'hex'), Buffer.from(SNAPSHOT_BASE)]);
 const environment = {
@@ -25,6 +33,71 @@ function signed(payload: string, signaturePayload = payload): string {
   return `--fixture\r\nContent-Disposition: form-data; name="manifest"\r\nexpo-signature: sig="${signature}", keyid="main", alg="rsa-v1_5-sha256"\r\n\r\n${payload}\r\n--fixture--\r\n`;
 }
 describe('frozen reader fails closed', () => {
+  it('pins source HEAD, tracked cleanliness and original certificate independently', () => {
+    const root = mkdtempSync(join(tmpdir(), 'r2-frozen-source-fixture-'));
+    const certificatePath = join(root, 'packages/mobile/certs/certificate.pem');
+    mkdirSync(join(root, 'packages/mobile/certs'), { recursive: true });
+    copyFileSync('packages/mobile/certs/certificate.pem', certificatePath);
+    const git = vi.mocked(execFileSync);
+    try {
+      git.mockReturnValueOnce(FROZEN_SOURCE).mockReturnValueOnce('');
+      expect(assertFrozenSource(root).length).toBeGreaterThan(0);
+      git.mockReturnValueOnce('0'.repeat(40));
+      expect(() => assertFrozenSource(root)).toThrow('Frozen source changed');
+      git.mockReturnValueOnce(FROZEN_SOURCE).mockReturnValueOnce(' M packages/mobile/app.config.ts');
+      expect(() => assertFrozenSource(root)).toThrow('Frozen source changed');
+      writeFileSync(certificatePath, 'different public certificate fixture');
+      git.mockReturnValueOnce(FROZEN_SOURCE).mockReturnValueOnce('');
+      expect(() => assertFrozenSource(root)).toThrow('certificate changed');
+    } finally {
+      git.mockReset();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+  it('validates real export fixtures and rejects malformed or escaping asset paths', () => {
+    const mobile = mkdtempSync(join(tmpdir(), 'r2-frozen-export-fixture-'));
+    const output = join(mobile, 'dist');
+    const bundlePath = '_expo/static/js/ios/entry-fixture.hbc';
+    mkdirSync(join(output, '_expo/static/js/ios'), { recursive: true });
+    writeFileSync(join(output, bundlePath), bundle);
+    writeFileSync(
+      join(output, bundlePath + '.map'),
+      JSON.stringify({ version: 3, sources: [], mappings: '', debugId: '00000000-0000-4000-8000-000000000000' }),
+    );
+    writeFileSync(join(output, 'asset.bin'), 'public fixture asset');
+    const metadata = (path: unknown) =>
+      writeFileSync(
+        join(output, 'metadata.json'),
+        JSON.stringify({
+          version: 0,
+          bundler: 'metro',
+          fileMetadata: { ios: { bundle: bundlePath, assets: [{ path, ext: 'bin' }] } },
+        }),
+      );
+    try {
+      metadata('asset.bin');
+      expect(checkExport(output, 'ios').assetHashes).toEqual([
+        createHash('sha256').update('public fixture asset').digest('base64url'),
+      ]);
+      for (const path of [
+        '../asset.bin',
+        '/asset.bin',
+        'a//b',
+        './asset.bin',
+        'a/./b',
+        'a/../b',
+        'a\\b',
+        '',
+        null,
+        'a\0b',
+      ]) {
+        metadata(path);
+        expect(() => checkExport(output, 'ios')).toThrow();
+      }
+    } finally {
+      rmSync(mobile, { recursive: true, force: true });
+    }
+  });
   it('accepts only one of the fixed platform/full-runtime pairs', () => {
     expect(assertPlatform('ios')).toBe('ios');
     expect(() => assertPlatform('all')).toThrow();
@@ -117,6 +190,11 @@ describe('frozen reader fails closed', () => {
       manifest.launchAsset.url = 'https://foreign.example/boardsesh-ota-v3/fixture';
       await expect(verifyDelivery('ios', start, certificate, expectedSha, [])).rejects.toThrow('private R2 bucket');
       expect(fakeFetch).toHaveBeenCalledTimes(5);
+      await expect(verifyDelivery('ios', start, certificate, expectedSha, [hash])).rejects.toThrow(
+        'asset list differs',
+      );
+      Reflect.deleteProperty(manifest, 'launchAsset');
+      await expect(verifyDelivery('ios', start, certificate, expectedSha, [])).rejects.toThrow('Expected object');
     } finally {
       vi.unstubAllGlobals();
     }

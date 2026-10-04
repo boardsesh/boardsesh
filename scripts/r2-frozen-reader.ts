@@ -212,7 +212,8 @@ export async function verifyDelivery(
     const url = new URL(String(asset.url));
     const bytes = await readPrivateR2Asset(url);
     totalBytes += bytes.length;
-    if (totalBytes > 256 * 1024 * 1024 || createHash('sha256').update(bytes).digest('base64url') !== asset.hash)
+    if (totalBytes > 256 * 1024 * 1024) throw new Error('Total delivered assets exceeded byte limit');
+    if (createHash('sha256').update(bytes).digest('base64url') !== asset.hash)
       throw new Error('Delivered asset hash mismatch');
     if (index === 0) {
       assertR2Bundle(bytes);
