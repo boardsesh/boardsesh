@@ -661,6 +661,8 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
         <SprayCornerFooter
           primaryTitle={state.anchors ? t('sprayWizard.anchors.use') : t('sprayWizard.anchors.skip')}
           onPrimary={() => dispatch({ type: 'ANCHORS_DONE' })}
+          // Unlike the reset flow, no corners is a valid answer here (that is
+          // Skip), so only a refused quad shuts the gate.
           primaryDisabled={state.anchorRejection != null}
           canClear={state.anchors != null}
           onClear={() => dispatch({ type: 'ANCHORS_CLEARED' })}

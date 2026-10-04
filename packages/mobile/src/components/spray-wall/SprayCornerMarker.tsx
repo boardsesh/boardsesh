@@ -188,6 +188,20 @@ function FittedCornerMarker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedKey, renderScale]);
 
+  // The callbacks and the scale, as of the latest render, for the two functions
+  // below to read. Both of those are handed to the gestures, and a gesture
+  // object must not be rebuilt because a parent re-rendered: the page's scroll
+  // lock is a state change on finger-down, the screen passes `onChange` as a new
+  // closure every render, and a pan swapped out from under a finger is not
+  // something worth finding out about. With these in refs the two functions
+  // never change identity, so the gestures are built once per fit.
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const onDragActiveChangeRef = useRef(onDragActiveChange);
+  onDragActiveChangeRef.current = onDragActiveChange;
+  const renderScaleRef = useRef(renderScale);
+  renderScaleRef.current = renderScale;
+
   /**
    * Read all four handles and report them in photo pixels.
    *
@@ -196,7 +210,7 @@ function FittedCornerMarker({
    * same reason: by the time this runs, no worklet is writing them.
    */
   const commit = useCallback(() => {
-    onChange(
+    onChangeRef.current(
       quadToPhoto(
         [
           [x0.value, y0.value],
@@ -204,10 +218,15 @@ function FittedCornerMarker({
           [x2.value, y2.value],
           [x3.value, y3.value],
         ],
-        renderScale,
+        renderScaleRef.current,
       ),
     );
-  }, [x0, y0, x1, y1, x2, y2, x3, y3, renderScale, onChange]);
+  }, [x0, y0, x1, y1, x2, y2, x3, y3]);
+
+  /** A finger landed on a handle, or left it. Twice per drag, never per frame. */
+  const reportDragActive = useCallback((active: boolean) => {
+    onDragActiveChangeRef.current?.(active);
+  }, []);
 
   // The marked area, drawn between the four rings. A worklet reading the same
   // shared values the handles write, so it follows a drag on the UI thread and
@@ -265,7 +284,7 @@ function FittedCornerMarker({
           maxY={renderHeight}
           renderScale={renderScale}
           offset={layout.handleOffset}
-          onDragActiveChange={onDragActiveChange}
+          onDragActiveChange={reportDragActive}
           color={guideColor}
           label={cornerLabels[corner]}
           onCommit={commit}
@@ -295,9 +314,11 @@ function CornerHandle({
   renderScale: number;
   /** From `cornerLayerLayout`: added to (x, y) to place the handle in its layer. */
   offset: number;
-  onDragActiveChange?: (active: boolean) => void;
+  /** Stable for the life of the marker. */
+  onDragActiveChange: (active: boolean) => void;
   color: string;
   label: string;
+  /** Stable for the life of the marker. */
   onCommit: () => void;
 }) {
   // Where the drag started, in PHOTO pixels. Not render points: if the frame is
@@ -313,7 +334,7 @@ function CornerHandle({
         .onBegin(() => {
           startPhotoX.value = x.value / renderScale;
           startPhotoY.value = y.value / renderScale;
-          if (onDragActiveChange) runOnJS(onDragActiveChange)(true);
+          runOnJS(onDragActiveChange)(true);
         })
         .onUpdate((event) => {
           // Clamped to the photo: an anchor outside the frame describes a corner
@@ -327,8 +348,11 @@ function CornerHandle({
         })
         // Always follows `onBegin`, including for a touch that never became a drag.
         .onFinalize(() => {
-          if (onDragActiveChange) runOnJS(onDragActiveChange)(false);
+          runOnJS(onDragActiveChange)(false);
         }),
+    // Shared values and the marker's two ref-backed callbacks never change
+    // identity; `maxX`, `maxY` and `renderScale` change only when the photo is
+    // re-fitted. Nothing here moves when a parent re-renders.
     [x, y, startPhotoX, startPhotoY, maxX, maxY, renderScale, onCommit, onDragActiveChange],
   );
 

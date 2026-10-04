@@ -119,8 +119,10 @@ export function SprayCornerStep({ stepCounter, title, body, photo, value, onChan
   // the layer is still 12 points wider than the stage (the gutter is 16, the
   // overhang 22), so 6 points of each outer touch target fall outside it, off
   // the edge of the screen. The rings themselves are whole.
-  const maxPhotoWidth = Math.min(MAX_PHOTO_WIDTH, stage.width - spacing[4] * 2);
-  const maxPhotoHeight = stage.height - CORNER_HANDLE_SIZE;
+  // Floored at zero: before the stage is measured these would be negative, and
+  // "no room yet" should not depend on every reader treating that as zero.
+  const maxPhotoWidth = Math.max(0, Math.min(MAX_PHOTO_WIDTH, stage.width - spacing[4] * 2));
+  const maxPhotoHeight = Math.max(0, stage.height - CORNER_HANDLE_SIZE);
 
   return (
     <ScrollView
