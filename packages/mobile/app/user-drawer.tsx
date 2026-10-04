@@ -20,6 +20,7 @@ import { hasUnseenOfflineSpotlight } from '../src/lib/offline-nudges/spotlight-u
 import { useOfflineDownloadsEnabled } from '../src/providers/feature-flags-provider';
 import { useActiveBoard } from '../src/lib/graphql/use-active-board';
 import { useQaMenu } from '../src/lib/qa/use-qa-menu';
+import { holdUntilLaunchReady } from '../src/components/launch-update/hold-until-launch-ready';
 
 const DRAWER_MAX_WIDTH = 320;
 const DRAWER_SCREEN_FRACTION = 0.86;
@@ -39,7 +40,7 @@ const DRAWER_ANIMATION_MS = 220;
  * navigate or present the (root-mounted) FeedbackSheet without ever stacking a
  * second presentation over the still-up drawer.
  */
-export default function UserDrawerScreen() {
+function UserDrawerScreen() {
   const { t } = useTranslation('common');
   const { t: tSettings } = useTranslation('settings');
   const { systemColors, brandColors } = useTheme();
@@ -453,3 +454,8 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
 });
+
+// iOS presents this route as a native modal, above the launch update
+// placeholder, and a URL can open it on a cold start. Held until launch is
+// ready so a gate reload cannot land mid-tap (#6006).
+export default holdUntilLaunchReady(UserDrawerScreen);

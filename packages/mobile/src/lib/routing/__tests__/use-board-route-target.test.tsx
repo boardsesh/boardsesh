@@ -38,6 +38,16 @@ const authState = vi.hoisted(() => ({ current: { isAuthenticated: true, isLoadin
 // `false` is the native fork's value, which is what every pre-existing case in
 // this file runs against.
 const gateState = vi.hoisted(() => ({ relaxesRoutes: false }));
+// The launch hold as a tiny external store, so releasing it re-renders the hook
+// the way the launch-ready context does.
+const launchHold = vi.hoisted(() => ({
+  released: true,
+  listeners: new Set<() => void>(),
+  release() {
+    launchHold.released = true;
+    for (const listener of launchHold.listeners) listener();
+  },
+}));
 // The hook reads connectivity straight off React Query's onlineManager (the
 // resolve runs once, so a reactive hook would be the wrong shape) and subscribes
 // to it to heal a resolve that failed offline. `goOnline` drives that transition
@@ -93,6 +103,14 @@ vi.mock('../../board-path-to-user-board', async (importOriginal) => ({
   resolveBoardForSession,
 }));
 vi.mock('../../open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer }));
+vi.mock('../../launch-hold', async () => {
+  const { useSyncExternalStore } = await import('react');
+  const subscribe = (listener: () => void) => {
+    launchHold.listeners.add(listener);
+    return () => launchHold.listeners.delete(listener);
+  };
+  return { useLaunchHoldReleased: () => useSyncExternalStore(subscribe, () => launchHold.released) };
+});
 // The platform switch, as a mutable so one suite can exercise both forks. A
 // getter (not a captured value) because the hook reads the constant on every
 // render and the mock factory runs once.
@@ -230,6 +248,8 @@ beforeEach(() => {
   climbQueryVariables.current = [];
   authState.current = { isAuthenticated: true, isLoading: false };
   gateState.relaxesRoutes = false;
+  launchHold.released = true;
+  launchHold.listeners.clear();
   connectivity.isOnline = true;
   connectivity.listeners.clear();
 });
@@ -448,6 +468,30 @@ describe('useBoardRouteTarget', () => {
       expect.anything(),
       { preview: true },
     );
+  });
+
+  // `/play` is a root modal, which iOS presents ABOVE the launch update
+  // placeholder. A cold-start climb link must not open a usable player while
+  // the gate may still reload (#6006).
+  it('holds the hand-off until launch is ready, then opens the drawer once', async () => {
+    launchHold.released = false;
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+
+    render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    // Everything the hand-off needs has resolved; only the hold is in the way.
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalled());
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
+
+    act(() => launchHold.release());
+
+    await waitFor(() => expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(1));
+    expect(router.replace).toHaveBeenCalledTimes(1);
   });
 
   // Opening the drawer navigates to `/play`. A deep link has nothing behind it,

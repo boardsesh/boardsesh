@@ -35,6 +35,7 @@ import {
 } from '../src/lib/share-beta-list';
 import { spacing, borderRadius } from '../src/theme/tokens';
 import { iosSystemColors } from '../src/theme/ios-colors';
+import { holdUntilLaunchReady } from '../src/components/launch-update/hold-until-launch-ready';
 
 // Keep the ascents query from refiring on every keystroke; commit the search
 // term after a short pause.
@@ -47,7 +48,7 @@ const SEARCH_DEBOUNCE_MS = 300;
  * link to the climb they pick, via the existing attachBetaLink mutation. The link
  * arrives as a route param so this screen is decoupled from the native module.
  */
-export default function ShareBetaScreen() {
+function ShareBetaScreen() {
   // `link` is what the share target hands over. `screenshotShareBeta` is the
   // capture's way in — see the resolver below.
   const { link: sharedLink, screenshotShareBeta } = useLocalSearchParams<{
@@ -410,3 +411,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.15)',
   },
 });
+
+// iOS presents this route as a native modal, above the launch update
+// placeholder, and a URL can open it on a cold start. Held until launch is
+// ready so a gate reload cannot land mid-tap (#6006).
+export default holdUntilLaunchReady(ShareBetaScreen);

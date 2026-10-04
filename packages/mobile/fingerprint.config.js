@@ -131,6 +131,28 @@ module.exports = {
       // become common, narrow this to the mobile-reachable patch files.
     },
   ],
+  // Keep the marketing version and the build numbers out of the fingerprint.
+  // `ExpoConfigVersions` drops `version`, `android.versionCode` and
+  // `ios.buildNumber` from the hashed Expo config (sourcer/Expo.js), so a
+  // 2.6.0 -> 2.6.1 bump with no native change keeps runtimeVersion where it is
+  // and installed binaries keep receiving OTAs. Without it every release bump
+  // cut the whole store fleet off until the new binary was installed.
+  //
+  // `PackageJsonAndroidAndIosScriptsIfNotContainRun` is @expo/fingerprint's own
+  // default (DEFAULT_SOURCE_SKIPS in Options.js). Options.js spreads this config
+  // over the defaults, so naming `sourceSkips` here REPLACES that default rather
+  // than adding to it. It is restated so behaviour stays the library's: scripts
+  // without "run" in them (what `expo prebuild` leaves behind) stay unhashed.
+  //
+  // Names are looked up in the SourceSkips enum and an unknown name is ignored
+  // without an error (Config.js normalizeSourceSkips), so a typo silently turns
+  // a skip off. scripts/mobile-fingerprint-config.test.ts checks each name
+  // against the installed enum and pins the resolved bitmask at 513 (1 | 512).
+  //
+  // Consequence: two marketing versions can share one fingerprint. A push that
+  // only bumps the version does not move runtimeVersion, so it does not trigger
+  // a native build on its own.
+  sourceSkips: ['ExpoConfigVersions', 'PackageJsonAndroidAndIosScriptsIfNotContainRun'],
   fileHookTransform,
   // Ignored by @expo/fingerprint's config loader; exported only for focused unit
   // tests so the exact allowlist and normalization boundary cannot widen silently.

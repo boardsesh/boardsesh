@@ -10,12 +10,19 @@ name: Mobile Release Anchor
 # NO automatic marketing-version bump. We tried auto-bumping the patch on main the
 # moment App Store Connect reported a version accepted, on the theory that anchoring
 # only APPROVED (immutable) fingerprints made the resulting fingerprint churn safe.
-# That was wrong: bumping the version on main busts the fingerprint of the binary
-# ALREADY in the field, and "accepted" is not "adopted" — the vast majority of installs
-# are still on the previous store binary until they update. So the bump stranded every
-# current install's OTA (production publishes resolved a fingerprint no shipped binary
-# embeds). Version bumps are a manual decision, made alongside the native build that
-# ships them. This workflow only anchors; it never writes to app.config or pushes to main.
+# That was wrong at the time: `version` was part of the Expo fingerprint, so the bump
+# moved main off the fingerprint of the binary ALREADY in the field, and "accepted" is
+# not "adopted" — the vast majority of installs are still on the previous store binary
+# until they update. So the bump stranded every current install's OTA (production
+# publishes resolved a fingerprint no shipped binary embeds).
+#
+# A version bump no longer moves the fingerprint: packages/mobile/fingerprint.config.js
+# skips `version`, `ios.buildNumber` and `android.versionCode` (sourceSkips:
+# ExpoConfigVersions). The bump is still a manual decision, because a new version
+# number only reaches the stores through a native build and a version-only push does
+# not start one — the fingerprint tag already exists, so dispatch the two native
+# workflows by hand. This workflow only anchors; it never writes to app.config or
+# pushes to main.
 
 on:
   schedule:

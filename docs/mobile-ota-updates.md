@@ -173,18 +173,119 @@ install, since the device couldn't verify the manifest came from us.
    optional surfed branch, and runtimeVersion headers. V3 returns the latest signed update on the
    surfed branch when one is selected, otherwise the branch mapped to the production channel
    (see [Production channel mapping and branch surfing](#production-channel-mapping-and-branch-surfing)); the app verifies the
-   signature against the embedded cert and applies it on next launch.
+   signature against the embedded cert. The update applies on this launch when it downloads
+   inside the launch update gate's cap, and on the next launch otherwise (see
+   [What a launch runs](#what-a-launch-runs)).
 3. **runtimeVersion** uses the **`fingerprint`** policy — a hash of the native project (deps,
    config plugins, entitlements, native dirs), resolved by the exact-pinned, patched
-   `@expo/fingerprint@0.20.7` installation behind Expo's `expo/fingerprint` export. An
+   `@expo/fingerprint@0.20.11` installation behind Expo's `expo/fingerprint` export. An
    update only reaches a binary with the **same** fingerprint, so a JS-only change keeps the same
    fingerprint (the OTA lands) while **any native change yields a new fingerprint** — the OTA is
    intrinsically incompatible with old binaries and isn't delivered (they keep their embedded
    bundle until a store build with the new fingerprint ships). This removes the `appVersion`
    footgun where a native change without a manual `version` bump could push JS to a binary lacking
-   the native capability it needs. The `version` field (`2.0.0`) is now just the store/marketing
-   version, decoupled from OTA compatibility. Resolve the current value with
+   the native capability it needs. The `version` field (`2.6.0`) is the store/marketing version,
+   and it is not hashed: `fingerprint.config.js` skips `version`, `ios.buildNumber` and
+   `android.versionCode`, so two marketing versions can share one fingerprint (see
+   [Version-only releases](#version-only-releases)). Resolve the current value with
    `vp exec expo-updates runtimeversion:resolve --platform ios|android` (from `packages/mobile/`).
+
+## What a launch runs
+
+An install holds two kinds of JS: the bundle embedded in the binary at build time, and the newest
+signed update it has downloaded. Native `app.config.ts` sets `launchWaitMs` to 0 and checks for an
+update on every launch. So expo-updates starts the app on the stored update (or the embedded bundle
+when none is stored) without waiting, and downloads the next one in the background. A store binary's
+first launch therefore ran the JS embedded at build time, however old that was, and every later
+cold start ran the previous launch's download.
+
+Before #6006 the only thing that moved a new install forward was a side effect. The retired-channel
+migration ended in an ungated `Updates.reloadAsync()`, which expo-updates queued behind the
+launch-time download, so the reload landed whenever the download finished. On 2.5.0 newcomers
+(measured once, 2026-10-04) 48% of `Login Succeeded` events ran embedded JS, and for 26% the reload
+landed between `Login Attempted` and `Login Succeeded`.
+
+The **launch update gate** replaces that side effect. It gates every eligible cold start, not only
+first launches: a returning climber's cold start waits for the update check too. The gate runs once
+per JS runtime in a module-level store (`packages/mobile/src/lib/launch-update-gate-store.ts`, rules
+in `launch-update-gate.ts`). The root layout starts it and reads its flags through
+`useLaunchUpdateGate()`, so a remounted root layout reads the first verdict and never starts a
+second gate. While it waits, launch readiness stays false, so the gates that wait on launch
+readiness (onboarding, the QA prompt) do not paint.
+
+| Profile | Which launch | Download cap |
+| --- | --- | --- |
+| `first_launch` | An embedded launch whose runtime version is not yet recorded in the `ota_first_launch_update_runtime_v1` preference. A fresh install, or the first launch after a store update to a new fingerprint | 15 s (`FIRST_LAUNCH_UPDATE_CAP_MS`) |
+| `cold_start` | Every other eligible cold start | 10 s (`COLD_START_UPDATE_CAP_MS`) |
+| `none` | Dev builds, updates disabled, an emergency launch, an iOS background launch (Live Activity intent), and a runtime that is itself the product of a reload (`restartCount > 0`) | No gate |
+
+**Two phases, two caps.** The check phase is the wait for the update server to answer. It is capped
+at 4 s (`LAUNCH_UPDATE_CHECK_CAP_MS`) for both profiles. If the check has not answered by then the
+gate releases `timed_out`. The profile caps above, counted from gate start, apply only once a
+download is under way (or the downloaded update is waiting). The 4 s cap exists for a network that
+NetInfo calls online but whose upstream is dead: the manifest request can hang (the iOS request
+timeout is 60 s), and without it every cold start on that network would sit behind the placeholder
+for the full cap.
+
+The native splash covers the first 2 s (`LAUNCH_UPDATE_PLACEHOLDER_DELAY_MS`). After that
+`LaunchUpdatePlaceholder` shows "Checking for the latest version" with a progress bar for the
+download. The placeholder stays up until the gate has resolved and auth is ready.
+
+The gate ends in one of six outcomes:
+
+- `updated`: a newer update is pending, so the app reloads onto it.
+- `nothing_newer`: the launch check finished and found nothing to load.
+- `timed_out`: a cap passed first (or auth had not settled by the cap, see below). A download in
+  progress keeps going in the background and applies on the next launch. The gate never reloads
+  after it has released, so a reload cannot land mid-sign-in.
+- `failed`: the check or download errored, or the first-launch marker could not be read.
+- `offline`: the Offline mode toggle is on, the device reports no connection, or the network is
+  marked unreachable. The gate releases at once and never waits.
+- `skipped_failed_update`: the pending update is the one the gate already reloaded onto on an
+  earlier launch (stored under `ota_launch_update_last_reload_target_v1`) and it is still pending,
+  which means that update failed to launch. The gate does not reload onto it again.
+
+Offline never waits because there is nothing to download, and a first launch with no signal must
+open the app, not sit behind a bar. The first-launch marker is not written on `offline`, so the
+next launch gets its full wait. Every other first-launch outcome writes it.
+
+**No reload before auth settles.** Refresh tokens are single-use, so a reload in the middle of a
+launch-time refresh would sign the climber out. The gate holds a reload until the root layout
+reports auth ready (`notifyLaunchUpdateAuthReady`). If auth has not settled by the cap, it releases
+`timed_out` instead.
+
+When the launch-time manifest request went out under a retired channel override (the cleanup
+cleared a live one on this launch), the gate makes one explicit check with the clean headers inside
+the same caps, because the launch-time result describes the wrong channel.
+
+Each gated launch sends one `OTA Launch Update` event (see
+[OTA observability](#ota-observability-adoption--funnel)). It is sent before a reload, and the
+analytics flush is awaited for up to 700 ms before the reload starts, so an `updated` event can
+still be lost if the send is slower than that. A background launch that skips the gate leaves a
+Sentry breadcrumb (category `ota`).
+
+Routes that iOS presents as native modals sit above the React root, so the placeholder cannot
+cover them. All eleven root `modal` / `transparentModal` routes in `app/_layout.tsx` (join,
+share-beta, boards, moderation and its spray-walls screen, onboarding, the two QA screens,
+send-recovery, the user drawer and play) are wrapped in `holdUntilLaunchReady` and show a spinner
+until launch is ready. A cold start from a climb link also waits on launch-ready before it opens
+the play drawer (`use-board-route-target.ts`). Add the wrapper to any new root modal route.
+
+The cap timers decide when a cap has passed; the gate does not re-derive it from the wall clock,
+which can step backwards on Android. Once a reload has been requested the gate gives the native
+relaunch 5 s (`LAUNCH_UPDATE_RELOAD_GRACE_MS`) and then lets the app open. A relaunch that is
+slower than that cannot be cancelled and can still land afterwards.
+
+The browser target (`BOARDSESH_WEB=1`) is never gated: expo-updates' web module reports itself
+enabled, so the gate excludes `Platform.OS === 'web'` explicitly.
+
+**The gate has to be in the embedded bundle to help a first launch.** A first launch runs the
+embedded JS, so only a binary built with the gate waits for the update. The caps are JS constants,
+so a later OTA can change them for installs that already carry the gate. Do not remove the gate
+without a replacement that reloads before sign-in: without it a first launch runs stale embedded JS
+again, and the migration's old reload is gone.
+
+The gate has not yet been checked on a device or against production numbers.
 
 ### Invariant: OTA JS must not call native methods newer than the min shipped binary
 
@@ -576,7 +677,9 @@ binaries on the previous fingerprint stop receiving new bundles until users
 install the replacement store release. That gap closes at merge-back: once
 `release/next` merges into `main`, main's fingerprint equals the shipped binaries'
 again and main's publisher serves the new fleet. Prepare the version and localized
-release notes before the final native change, keep the release focused, and move
+release notes before the final native change (the version no longer moves the fingerprint, so
+bumping it alone starts no build; see [Version-only releases](#version-only-releases)),
+keep the release focused, and move
 both store builds through QA and review promptly. Keep backend changes compatible with the
 currently shipped app until the replacement has been adopted.
 
@@ -662,6 +765,47 @@ and fill both in from `git tag -l 'fingerprint-*' --sort=-creatordate` once the 
 | Merged | What moved it | iOS | Android |
 | --- | --- | --- | --- |
 | 2026-09-15, #5435 (SW-02) | `onnxruntime-react-native` 1.24.3 autolinked on Android via `packages/mobile/react-native.config.js`, `cameraPermission` on the `expo-image-picker` plugin, Android `CAMERA`, version 2.5.0 → 2.6.0 | main `b71bdb600c5a3e954d75c9ca673f056c62247ea9` (shipped tag) → PR `f0a4650d0746…` (`ota-check`; full hash lands as `fingerprint-ios-*` when `ios-testflight-rn` uploads) | main shipped tag `154bc941c504727afc914057aed2edff2c096576`; `ota-check` sees `fbc79fa47dc8…` → `4f14a7ee6bac…` WITHOUT the maps key, so neither is the binary's value — the real one lands as `fingerprint-android-*` when `android-apk-rn` uploads |
+| 2026-10-04, #6006 | `fingerprint.config.js` gained `sourceSkips: ['ExpoConfigVersions', 'PackageJsonAndroidAndIosScriptsIfNotContainRun']` (bitmask 513), so `version`, `ios.buildNumber` and `android.versionCode` are no longer hashed. The config file is itself a hashed source, so this edit moved both fingerprints once. Landed on `release/next` | see the `fingerprint-ios-*` tags for #6006 | see the `fingerprint-android-*` tags for #6006 |
+
+### Version-only releases
+
+`fingerprint.config.js` sets `sourceSkips: ['ExpoConfigVersions',
+'PackageJsonAndroidAndIosScriptsIfNotContainRun']`, which resolves to the bitmask 513.
+`ExpoConfigVersions` drops `version`, `ios.buildNumber` and `android.versionCode` from the hashed
+Expo config. The second name is `@expo/fingerprint`'s own default, restated because setting
+`sourceSkips` replaces the default list. An unknown name is ignored without an error, so
+`scripts/mobile-fingerprint-config.test.ts` pins both names against the installed enum, and
+`check:mobile-fingerprint-inputs` fails if the hashed config carries those fields again.
+
+Two marketing versions can now share one fingerprint. What follows from that:
+
+1. A push to `release/next` that only bumps `version` resolves an existing
+   `fingerprint-<platform>-<hash>` tag, so both native workflows skip the build. To ship a store
+   binary that differs only by version number:
+   1. Bump `version` and the release notes on `release/next`.
+   2. Dispatch `ios-testflight-rn.yml` on `release/next`.
+   3. Dispatch `android-apk-rn.yml` on `release/next` with `force_native` on.
+
+   `mobile-store-draft.yml` then runs from the two completions.
+2. After a version-only build the post-build OTA republish is skipped. The train guard in
+   `mobile-ota-production.yml` does not publish while the train's fingerprint equals main's, so that
+   binary runs its embedded bundle until main's next production publish.
+3. A version-only release gets no "App update" marker in the in-app changelog (markers come from
+   `fingerprint-*` tags) and no automatic screenshot run (that needs a fingerprint tag at the
+   triggering commit). Dispatch the screenshot workflows by hand.
+4. A backport (`mobile-ota-backport.yml`) to one version reaches every installed version that shares
+   that fingerprint, because they request the same runtimeVersion. Backport only once `main` has
+   moved off that fingerprint.
+5. A version-only PR into `main` passes the OTA compatibility check, since the fingerprint does not
+   move.
+
+A version bump that rides along with a real native change works as before: the native change moves
+the fingerprint and starts the build that carries the version. Every in-app reader of the app
+version uses `expo-application` (the installed binary), so an OTA built from a newer `version` does
+not change what an older binary shows or reports. Sentry release and dist come from the native
+build.
+
+These steps come from reading the workflows. No version-only release has been run end to end yet.
 
 ### Publish ordering: a binary can outrank a newer OTA
 
@@ -823,7 +967,8 @@ make that reproducible by anchoring each approved release with a tag.
 
 **Anchoring is tied to each store's approval, not to merge.** We only care
 about binaries that each platform actually accepted. The marketing `version`
-is part of the fingerprint, so bumping it moves the fingerprint.
+is not part of the fingerprint, so the anchor's `<shortfp>` can be shared by
+several versions (see [Version-only releases](#version-only-releases)).
 
 Two tag families do this:
 
@@ -842,11 +987,13 @@ exact approved build number before cutting that platform's idempotent anchor.
 
 **It does not bump the marketing version.** An earlier revision auto-bumped the patch on `main` the
 moment App Store Connect reported a version accepted, on the theory that anchoring only approved
-fingerprints made the churn safe. That was wrong and broke production OTAs: bumping the version on
-`main` busts the fingerprint of the binary **already in the field**, and "accepted" is not "adopted" —
-almost every install is still on the previous store binary until it updates, so those installs stop
-receiving OTAs (the publish resolves a fingerprint no shipped binary embeds). Marketing-version bumps
-are a manual decision, made alongside the native build that ships them. The workflow name (`Mobile
+fingerprints made the churn safe. That was wrong at the time and broke production OTAs: `version`
+was part of the fingerprint, so bumping it on `main` moved off the fingerprint of the binary
+**already in the field**, and "accepted" is not "adopted" — almost every install is still on the
+previous store binary until it updates, so those installs stopped receiving OTAs. The version is no
+longer hashed, so a bump alone would not strand anyone. It stays a manual decision because a new
+version number only reaches the stores through a native build, and a version-only push does not
+start one (dispatch both native workflows, see [Version-only releases](#version-only-releases)). The workflow name (`Mobile
 Release Anchor`) and file name are kept; only the bump was removed.
 
 **iOS anchoring is strict:** it uses App Store Connect's exact approved build number, and if no
@@ -900,6 +1047,17 @@ mounted once near the root beside `AnalyticsScreenTracker`:
 - **`OTA Update Downloaded`** — fired when a newer bundle finishes downloading in-session
   (`{ updateId, createdAtIso }`). It applies on the **next** launch, which the following
   `OTA Update Status` records — together they form the published → downloaded → applied funnel.
+  An update the launch update gate reloads onto (see [What a launch runs](#what-a-launch-runs))
+  applies on the same launch instead, so it has no downloaded-then-next-launch gap.
+- **`OTA Launch Update`** — fired once per gated cold start by the launch update gate, before the
+  reload when it reloads and on release otherwise. Properties: `outcome` (`updated` / `timed_out` /
+  `failed` / `offline` / `nothing_newer` / `skipped_failed_update`), `phase_at_release` (`check`,
+  `download` or `none`: what expo-updates was doing when the gate ended, which tells a hung
+  manifest request from a slow download among the `timed_out` launches), `duration_ms`, `trigger`
+  (`fresh_install` / `binary_update` / `cold_start`), `cap_ms` (always the profile's full cap,
+  15000 or 10000, never the 4000 check cap), `ota_runtime_version`, `ota_is_embedded`. Launches the
+  gate skips send nothing. `duration_ms` against `cap_ms` is how the caps get tuned. The flush
+  before a reload waits up to 700 ms, so `updated` can still be undercounted.
 
 The same launch reads also become **Sentry global tags** (`ota_channel`, `ota_branch`,
 `ota_update_id`, `ota_runtime_version`, `ota_is_embedded`) via `setOtaSentryTags`, so every crash /
@@ -910,6 +1068,15 @@ Both no-op in dev / Expo Go (analytics disabled, `Updates.isEnabled` false); the
 still logs `[analytics] OTA Update Status …` to Metro so you can confirm the tracker fires locally.
 In PostHog (project 412845), count distinct installs with `isEmbeddedLaunch = false` per `updateId` to
 measure how many pulled a given OTA.
+
+The launch update gate (#6006) is judged on two numbers, both from newcomers on a binary that
+carries it, measured against the 2.5.0 baseline taken on 2026-10-04:
+
+- Share of `Login Succeeded` with `ota_is_embedded = true`: 48% on 2.5.0, aim under 15%.
+- Share of logins where a reload landed between `Login Attempted` and `Login Succeeded`: 26% on
+  2.5.0, aim near 0.
+
+Neither has been measured on a build with the gate yet.
 
 ### expo-observe (per-update timings, logs and errors)
 
@@ -946,7 +1113,7 @@ Where the rows land, and what they cost to keep: `docs/railway.md`.
 
 ## Health monitoring & rollback
 
-A default production OTA reaches **every** matching install on the next launch, but V3 also supports
+A default production OTA reaches **every** matching install, on the launch that downloads it when that finishes inside the gate's cap and on the next launch otherwise, but V3 also supports
 **progressive rollouts** to cap the blast radius: `eoas publish … --rollout-percentage N` serves the
 update to only `N%` of the channel, and you finish or revert it from the dashboard once it looks
 healthy (a per-update rollout locks further publishing on that branch until it's finished). Either
@@ -1376,12 +1543,24 @@ manifest signing remain enforced by expo-updates.
 
 Old builds may have a native `expo-channel-name` override and a best-effort AsyncStorage mirror under
 `dev_ota_channel_override`. On the first launch in the fingerprint cohort carrying the required
-Branch Surfing headers, Boardsesh clears the native override unconditionally, removes the mirror, persists a
-dedicated migration-complete marker, and reloads before publishing QA readiness. The root's
-`OtaBranchSurfingInitializer` renders nothing and keeps this migration independent of preview UI.
+Branch Surfing headers, `clearRetiredChannelOverride` (`ota-channel-override-cleanup.ts`, run once
+per launch through `ota-channel-override-cleanup-run.ts`) clears the native override unconditionally,
+removes the mirror and persists a dedicated `ota_branch_surfing_migration_v1` marker. It no longer
+reloads. The root's `OtaBranchSurfingInitializer` renders nothing and keeps the cleanup independent
+of preview UI.
 The marker matters:
 the mirror can be absent even when the native override exists, while later launches must preserve
 xprem's own selected branch. A failed read/clear/write leaves QA readiness false and retries on a later launch.
+
+The cleanup is also what tells the launch update gate whether this launch's manifest request used a
+retired override. When it cleared an override that really was in effect, `Updates.channel` keeps
+naming the retired channel for the rest of this JS runtime, so QA readiness stays false for the
+whole session and becomes true on the runtime after a reload or on the next launch. It stays false
+only when all four hold: a Branch Surfing build, the `ota_branch_surfing_migration_v1` marker
+absent, `Updates.channel` different from the baked `expo-channel-name`, and the gate did not
+reload. A fresh install reports the cleanup as run but never had an override, so it is ready at
+once. The reload onto a
+fresh bundle belongs to the gate, not the cleanup.
 EAS preview builds skip this migration; their separate tester-only `BranchSwitcherScreen` remains
 available under More → Preview Build.
 

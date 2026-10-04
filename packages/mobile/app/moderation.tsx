@@ -24,6 +24,7 @@ import { useTranslation } from 'react-i18next';
 import { Icon } from '../src/components/Icon';
 import { ModerationFeedScreen } from '../src/components/moderation/ModerationFeedScreen';
 import { useStackScreenOptions } from '../src/hooks/use-stack-screen-options';
+import { holdUntilLaunchReady } from '../src/components/launch-update/hold-until-launch-ready';
 
 type Params = {
   /** Proposal to scroll to and outline (from a notification or the play drawer). */
@@ -32,7 +33,7 @@ type Params = {
   boardType?: string;
 };
 
-export default function ModerationRoute() {
+function ModerationRoute() {
   const params = useLocalSearchParams<Params>();
   const { t } = useTranslation('common');
   const { t: tClimbs } = useTranslation('climbs');
@@ -71,3 +72,8 @@ export default function ModerationRoute() {
     </>
   );
 }
+
+// iOS presents this route as a native modal, above the launch update
+// placeholder, and a URL can open it on a cold start. Held until launch is
+// ready so a gate reload cannot land mid-tap (#6006).
+export default holdUntilLaunchReady(ModerationRoute, { header: 'visible' });

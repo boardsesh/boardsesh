@@ -94,6 +94,29 @@ describe('validateFingerprintSources', () => {
       'android: expected exactly one rncoreAutolinkingConfig:android contents source, found 0',
     ]);
   });
+
+  it('rejects an Expo config that still hashes the marketing version or build numbers', () => {
+    const hashedConfig = { name: 'Boardsesh', ios: { bundleIdentifier: 'com.boardsesh.app' }, android: {} };
+    const skipped = [
+      ...completeSources('ios'),
+      { type: 'contents', id: 'expoConfig', contents: JSON.stringify(hashedConfig), hash: 'expo-config' },
+    ];
+    expect(validateFingerprintSources('ios', skipped)).toEqual([]);
+
+    const leaking = [
+      ...completeSources('ios'),
+      {
+        type: 'contents',
+        id: 'expoConfig',
+        contents: JSON.stringify({ ...hashedConfig, version: '2.6.0', android: { versionCode: 7 } }),
+        hash: 'expo-config',
+      },
+    ];
+    expect(validateFingerprintSources('ios', leaking)).toEqual([
+      expect.stringContaining('expoConfig still hashes version;'),
+      expect.stringContaining('expoConfig still hashes android.versionCode;'),
+    ]);
+  });
 });
 
 describe('parseResolverOutput', () => {

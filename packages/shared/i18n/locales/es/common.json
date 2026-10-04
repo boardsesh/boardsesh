@@ -814,6 +814,9 @@
         "message": "Algo salió mal al obtener la última versión. Inténtalo de nuevo en un rato."
       }
     },
+    "launchUpdate": {
+      "message": "Buscando la última versión"
+    },
     "connectivity": {
       "serverDown": {
         "title": "Tenemos problemas en el servidor",

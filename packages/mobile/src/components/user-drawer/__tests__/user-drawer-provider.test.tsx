@@ -26,6 +26,10 @@ const qaState = vi.hoisted(() => ({
 const profileState = vi.hoisted(() => ({ isTester: false }));
 const signOutFailureAlertMock = vi.hoisted(() => vi.fn());
 
+// The launch hold is covered by its own suite; here the screen renders as is.
+vi.mock('../../launch-update/hold-until-launch-ready', () => ({
+  holdUntilLaunchReady: <Screen,>(Screen: Screen) => Screen,
+}));
 vi.mock('react-native', () => ({
   Pressable: ({
     accessibilityLabel,

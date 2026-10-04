@@ -543,6 +543,9 @@
         "message": "Beim Abrufen der neuesten Version ging etwas schief. Versuch es gleich nochmal."
       }
     },
+    "launchUpdate": {
+      "message": "Suche nach der neuesten Version"
+    },
     "connectivity": {
       "serverDown": {
         "title": "Wir haben Server-Probleme",
