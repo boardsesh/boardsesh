@@ -128,6 +128,8 @@ Both keys are **board-scoped** (`scopedInvalidateFilters` in `sync/invalidate-ke
 
 ### Android binary-read safety
 
+All six packed-hold read projections also guard SQLite's storage class before converting to hex. `CASE WHEN typeof(column) = 'blob' THEN hex(column) ELSE NULL END` rejects corrupt TEXT and numeric rows while preserving empty BLOBs. Shared index readers skip invalid rows; the paginated heatmap fails closed instead of caching partial results.
+
 The index remains packed BLOBs on disk, but every hold-set and posting reader projects
 `hex(column)` and uses the shared `decodeSqliteBlobHex` helper to allocate JavaScript-owned
 bytes. Expo SQLite's Android BLOB result path creates a JNI global reference for each native
