@@ -58,9 +58,11 @@ the bucket but cannot resolve the zone.
 
 ### Reusable agent credential
 
-Store the infrastructure credential in the `Boardsesh` 1Password vault as
-`Boardsesh agent infrastructure`, with a concealed `api_token` field. Retrieve
-that named field directly; never print it or scan unrelated vault secrets.
+The infrastructure credential is in the `Private` 1Password vault as
+`Boardsesh agent infrastructure` (item ID `ulc6h2h3tgl6d7czo7l2zqkwmm`), in
+its concealed `password` field. Use the secret reference
+`op://Private/ulc6h2h3tgl6d7czo7l2zqkwmm/password` and capture the resolved
+field directly for the authorized process; never print it or scan unrelated vault secrets.
 Use the Boardsesh account scope and the `boardsesh.com` zone scope.
 
 The infrastructure token needs the zone scopes above, `Workers R2 Storage Edit`
