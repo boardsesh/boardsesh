@@ -36,6 +36,8 @@
     "create-service-docker-context.d.ts",
     "__tests__/backend-docker-context-images.test.ts",
     "__tests__/backend-artifact-build-workflow.test.ts",
+    "__tests__/branch-deploy-source.test.ts",
+    "resolve-branch-deploy-source.d.mts",
     "publish-help-shots.ts",
     "convert-help-shots.ts",
     "lib/help-shots.ts",

@@ -1,12 +1,18 @@
 # Expo web deployment: dev /app proxy vs prod subdomain (app.boardsesh.com)
 
-The Expo app's browser target ships in two serving shapes, both gated on
+The Expo app's browser target has two shipped serving shapes and a separate
+manual PR-preview lane, all gated on
 `BOARDSESH_WEB=1`:
 
 - **Development** — Next proxies `/app` to the live Metro dev server.
 - **Production** — a standalone static export served at the **root of
   `app.boardsesh.com`** (Cloudflare Pages), published by `production-deploy.yml`'s
   `deploy-app-web` job.
+- **PR preview** — the same root-served export at
+  `https://{PR}.app.boardsesh.com`, built from the selected PR's immutable head
+  and served by the branch-deploy workflow. It remains manual until operators
+  verify the homelab route and wildcard DNS/TLS; see
+  [`docs/branch-deploys.md`](branch-deploys.md#standalone-expo-web-pr-preview).
 
 The export's base URL is the only difference between the two shapes, and it is
 driven by `BOARDSESH_WEB_BASE_URL` (read by `resolveWebPlatforms` in
