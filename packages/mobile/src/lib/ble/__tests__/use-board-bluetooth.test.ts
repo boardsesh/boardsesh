@@ -167,6 +167,7 @@ import { parseBoardTypeFromDeviceName, parseSerialNumber } from '@boardsesh/ble-
 // dispatch tests below assert the real ASCII command, so the LED table is read
 // here rather than restated as magic numbers.
 import { WOODS_LED_MAPS } from '@boardsesh/board-constants/woods';
+import { useClimbFrames } from '@boardsesh/playback-react/use-climb-frames';
 // Real Woods geometry, for the same reason: the mirror pairs below are read from
 // the board config rather than restated, so a geometry change fails these tests
 // instead of quietly disagreeing with them.
@@ -4116,6 +4117,56 @@ describe('useBoardBluetooth multi-frame route collapse (#4634)', () => {
     expect(sendResult).toBe(true);
     expect(adapter.write).toHaveBeenCalled();
     expect(mockGetAuroraBluetoothPacket).toHaveBeenCalledWith('', {}, 'kilter', expect.anything());
+  });
+
+  it.each([
+    ['an absolute snapshot', 'p100r12,p-2r13'],
+    ['a delta snapshot', 'p100r12,"x100p-2r13'],
+  ])('sends the empty clear frame when %s ends with a negative hold', async (_kind, frames) => {
+    const actualAurora = await vi.importActual<typeof import('@boardsesh/ble-protocol/aurora')>(
+      '@boardsesh/ble-protocol/aurora',
+    );
+    const previousImplementation = mockGetAuroraBluetoothPacket.getMockImplementation();
+    mockGetAuroraBluetoothPacket.mockImplementation(actualAurora.getAuroraBluetoothPacket);
+    mockGetLedPlacements.mockReturnValue({ 100: 7 });
+    mockParseApiLevel.mockReturnValue(3);
+
+    try {
+      const adapterWrite = makeWriteSpy();
+      const adapter = makeFakeAdapter({ write: adapterWrite });
+      vi.mocked(createBluetoothAdapter).mockReturnValue(
+        adapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+      );
+      const { result } = renderHook(() => ({
+        bluetooth: useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }),
+        climb: useClimbFrames({ frames, framesCount: 2, framesPace: 1000 }, 'kilter'),
+      }));
+
+      expect(result.current.climb.frameStrings).toEqual(['p100r42', '']);
+      await act(async () => {
+        await result.current.bluetooth.connect();
+      });
+      adapterWrite.mockClear();
+
+      const sendResults: (boolean | undefined)[] = [];
+      for (const frame of result.current.climb.frameStrings) {
+        await act(async () => {
+          sendResults.push(await result.current.bluetooth.sendFramesToBoard(frame));
+        });
+      }
+
+      expect(sendResults).toEqual([true, true]);
+      expect(mockGetAuroraBluetoothPacket.mock.calls[0]?.slice(0, 4)).toEqual(['p100r42', { 100: 7 }, 'kilter', 3]);
+      expect(mockGetAuroraBluetoothPacket.mock.calls[1]?.slice(0, 4)).toEqual(['', {}, 'kilter', 3]);
+      expect(adapterWrite).toHaveBeenCalledTimes(2);
+      expect(adapterWrite.mock.calls[1]?.[0]).toEqual(
+        actualAurora.getAuroraBluetoothPacket('', {}, 'kilter', 3).packet,
+      );
+      expect(Alert.alert).not.toHaveBeenCalledWith('ble.sendFailedTitle', 'ble.errorIncompatible');
+    } finally {
+      if (previousImplementation) mockGetAuroraBluetoothPacket.mockImplementation(previousImplementation);
+      else mockGetAuroraBluetoothPacket.mockReset();
+    }
   });
 
   it('mirrors the collapsed union, so no rNaN reaches the packet builder', async () => {

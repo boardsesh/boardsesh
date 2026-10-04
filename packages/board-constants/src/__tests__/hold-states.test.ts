@@ -368,6 +368,30 @@ describe('accumulateFramesToMaps', () => {
     expect(result[0][100]).toBeUndefined();
   });
 
+  it.each([
+    ['an absolute frame', 'p100r12,p-2r13'],
+    ['a delta frame', 'p100r12,"x100p-2r13'],
+  ])('drops a negative control token from %s without losing its clear', (_description, frames) => {
+    const maps = accumulateFramesToMaps(frames, 'kilter');
+
+    expect(accumulatedMapsToFrameStrings(maps, 'kilter')).toEqual(['p100r42', '']);
+    expect(projectAuroraFramesToStoredRows(frames, 'kilter').diagnostics.skippedNonpositiveHoldIdTokens).toBe(1);
+    expect(legacyAuroraRawFrameHoldEvents(frames, 'kilter')).toContainEqual({
+      holdId: -2,
+      frameNumber: 1,
+      holdState: 'HAND',
+    });
+  });
+
+  it('keeps valid animation controls and Woods hold zero while excluding negative IDs', () => {
+    const frames = 'p100r12p-2r13,"p200r13x-3';
+    const maps = accumulateFramesToMaps(frames, 'kilter');
+
+    expect(accumulatedMapsToFrameStrings(maps, 'kilter')).toEqual(['p100r42', 'p100r42p200r43']);
+    expect(projectAuroraFramesToStoredRows(frames, 'kilter').diagnostics.skippedNonpositiveHoldIdTokens).toBe(2);
+    expect(accumulateFramesToMaps('p0r2', 'woods')[0][0].state).toBe('HAND');
+  });
+
   it('resets on an unquoted later frame — it is a snapshot, not a delta (#3947)', () => {
     // Frame 1 carries no `"`, so it restates the full lit set: holds 100
     // and 200 go dark. Before the fix this returned {100, 200, 300}.
