@@ -277,6 +277,12 @@ export default defineConfig({
         // often targets DB_URL against a remote database instead of local Docker.
         cache: false,
       },
+      'db:merge-accounts': {
+        command: 'pnpm --filter @boardsesh/db run db:merge-accounts',
+        // No db:up dependency: merge-account reports and applies are explicit
+        // maintainer actions against DB_URL, which may be remote.
+        cache: false,
+      },
       'db:dedupe-beta-links': {
         command: 'pnpm --filter @boardsesh/db run db:dedupe-beta-links',
         // No db:up dependency, same rationale as db:dedupe-gyms: a maintainer

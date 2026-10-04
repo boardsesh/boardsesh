@@ -2,10 +2,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test'
 import type { Session } from 'next-auth';
 import { authOptions } from '../auth-options';
 
-const { mockAdapterCreateUser, mockAdapterUpdateUser } = vi.hoisted(() => ({
-  mockAdapterCreateUser: vi.fn(),
-  mockAdapterUpdateUser: vi.fn(),
-}));
+const { mockAdapterCreateUser, mockAdapterUpdateUser, mockBaseCreateUser } = vi.hoisted(() => {
+  const mockAdapterCreateUser = vi.fn();
+  return {
+    mockAdapterCreateUser,
+    mockAdapterUpdateUser: vi.fn(),
+    // The account-normalizing wrapper delegates to the base adapter's createUser.
+    mockBaseCreateUser: mockAdapterCreateUser,
+  };
+});
 
 // Mock server-only before any imports
 vi.mock('server-only', () => ({}));
@@ -15,6 +20,7 @@ vi.mock('drizzle-orm', () => ({
   and: vi.fn((...args: unknown[]) => ({ _type: 'and', args })),
   eq: vi.fn((col: unknown, val: unknown) => ({ _type: 'eq', col, val })),
   isNull: vi.fn((col: unknown) => ({ _type: 'isNull', col })),
+  sql: vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => ({ _type: 'sql', strings, values })),
 }));
 
 // Adapter mutations stay visible so the OAuth rejection tests can prove that a
@@ -60,8 +66,11 @@ const mockDbSet = vi.fn();
 const mockDbUpdateWhere = vi.fn();
 const mockDbSelect = vi.fn();
 const mockDbFrom = vi.fn();
+const mockDbInnerJoin = vi.fn();
 const mockDbWhere = vi.fn();
 const mockDbLimit = vi.fn();
+
+mockDbInnerJoin.mockReturnValue({ where: mockDbWhere });
 
 vi.mock('@/app/lib/db/db', () => ({
   getDb: () => ({
@@ -74,7 +83,10 @@ vi.mock('@/app/lib/db/schema', () => ({
   users: {
     id: 'users.id',
     email: 'users.email',
+    name: 'users.name',
+    image: 'users.image',
     emailVerified: 'users.emailVerified',
+    createdAt: 'users.createdAt',
   },
   accounts: {},
   sessions: {},
@@ -108,7 +120,7 @@ describe('authOptions.callbacks.signIn', () => {
 
     // Default DB chain: select().from().where().limit() resolves to empty
     mockDbSelect.mockReturnValue({ from: mockDbFrom });
-    mockDbFrom.mockReturnValue({ where: mockDbWhere });
+    mockDbFrom.mockReturnValue({ where: mockDbWhere, innerJoin: mockDbInnerJoin });
     mockDbWhere.mockReturnValue({ limit: mockDbLimit });
     mockDbLimit.mockResolvedValue([]);
   });
@@ -343,6 +355,40 @@ describe('authOptions.callbacks.signIn', () => {
       expect(result).toBe('/auth/verify-request?error=EmailNotVerified');
     });
 
+    it('checks the password-authenticated identity when an email twin is verified', async () => {
+      vi.stubEnv('EMAIL_VERIFICATION_ENABLED', 'true');
+      const authenticatedUser = { id: 'password-user', email: 'same@example.com', emailVerified: null };
+      const verifiedTwin = { id: 'oauth-user', email: 'Same@example.com', emailVerified: new Date() };
+      mockDbWhere.mockImplementation((predicate: { _type?: string; col?: unknown; val?: unknown }) => ({
+        limit: vi.fn().mockResolvedValue([predicate._type === 'eq' ? authenticatedUser : verifiedTwin]),
+      }));
+
+      const result = await callSignIn({
+        user: { id: authenticatedUser.id, email: authenticatedUser.email },
+        account: { provider: 'credentials', type: 'credentials', providerAccountId: 'cred-123' },
+      });
+
+      expect(result).toBe('/auth/verify-request?error=EmailNotVerified');
+      expect(mockDbWhere).toHaveBeenCalledWith({ _type: 'eq', col: 'users.id', val: 'password-user' });
+    });
+
+    it('accepts the verified password identity when an email twin is unverified', async () => {
+      vi.stubEnv('EMAIL_VERIFICATION_ENABLED', 'true');
+      const authenticatedUser = { id: 'password-user', email: 'same@example.com', emailVerified: new Date() };
+      const unverifiedTwin = { id: 'oauth-user', email: 'Same@example.com', emailVerified: null };
+      mockDbWhere.mockImplementation((predicate: { _type?: string; col?: unknown; val?: unknown }) => ({
+        limit: vi.fn().mockResolvedValue([predicate._type === 'eq' ? authenticatedUser : unverifiedTwin]),
+      }));
+
+      const result = await callSignIn({
+        user: { id: authenticatedUser.id, email: authenticatedUser.email },
+        account: { provider: 'credentials', type: 'credentials', providerAccountId: 'cred-123' },
+      });
+
+      expect(result).toBe(true);
+      expect(mockDbWhere).toHaveBeenCalledWith({ _type: 'eq', col: 'users.id', val: 'password-user' });
+    });
+
     it('returns true when email verification enabled but user not found in DB', async () => {
       vi.stubEnv('EMAIL_VERIFICATION_ENABLED', 'true');
       mockDbLimit.mockResolvedValue([]); // user not found
@@ -390,7 +436,7 @@ describe('authOptions.callbacks.session', () => {
 
     // Default DB chain: select().from().where().limit() resolves to empty
     mockDbSelect.mockReturnValue({ from: mockDbFrom });
-    mockDbFrom.mockReturnValue({ where: mockDbWhere });
+    mockDbFrom.mockReturnValue({ where: mockDbWhere, innerJoin: mockDbInnerJoin });
     mockDbWhere.mockReturnValue({ limit: mockDbLimit });
     mockDbLimit.mockResolvedValue([]);
   });
@@ -483,7 +529,7 @@ describe('authOptions.callbacks.jwt', () => {
     // Default DB chain: select().from().where().limit() resolves to empty so the
     // profile-claim refresh below doesn't throw when a test doesn't care about it.
     mockDbSelect.mockReturnValue({ from: mockDbFrom });
-    mockDbFrom.mockReturnValue({ where: mockDbWhere });
+    mockDbFrom.mockReturnValue({ where: mockDbWhere, innerJoin: mockDbInnerJoin });
     mockDbWhere.mockReturnValue({ limit: mockDbLimit });
     mockDbLimit.mockResolvedValue([]);
   });
@@ -643,13 +689,25 @@ function getNativeOAuthProvider(): CredentialProviderLike {
 }
 
 describe('CredentialsProvider.authorize — email/password', () => {
+  type PasswordCandidate = {
+    id: string;
+    email: string;
+    name: string | null;
+    image: string | null;
+    passwordHash: string;
+  };
+
+  function setAuthorizeCandidates(candidates: PasswordCandidate[]): void {
+    mockDbLimit.mockResolvedValue(candidates);
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
-
     mockDbSelect.mockReturnValue({ from: mockDbFrom });
-    mockDbFrom.mockReturnValue({ where: mockDbWhere });
+    mockDbFrom.mockReturnValue({ where: mockDbWhere, innerJoin: mockDbInnerJoin });
+    mockDbInnerJoin.mockReturnValue({ where: mockDbWhere });
     mockDbWhere.mockReturnValue({ limit: mockDbLimit });
-    mockDbLimit.mockResolvedValue([]);
+    setAuthorizeCandidates([]);
   });
 
   it('returns null when credentials are missing', async () => {
@@ -671,32 +729,28 @@ describe('CredentialsProvider.authorize — email/password', () => {
   });
 
   it('returns null when user is not found', async () => {
-    // First select (users lookup) → empty
-    mockDbLimit.mockResolvedValue([]);
-
     const provider = getEmailCredentialsProvider();
     const result = await provider.authorize?.({ email: 'notfound@example.com', password: 'pass' });
     expect(result).toBeNull();
+    expect(mockDbLimit).toHaveBeenCalledWith(9);
+    expect(mockBcryptCompare).not.toHaveBeenCalled();
   });
 
-  it('returns null when user has no password (OAuth-only account)', async () => {
-    // First select (users) → user found; second select (userCredentials) → empty
-    mockDbLimit
-      .mockResolvedValueOnce([{ id: 'user-1', email: 'user@example.com', name: 'Test', image: null }])
-      .mockResolvedValueOnce([]);
-
+  it('queries credential-bearing candidates with a bounded join', async () => {
     const provider = getEmailCredentialsProvider();
     const result = await provider.authorize?.({
       email: 'user@example.com',
       password: 'mypassword',
     });
     expect(result).toBeNull();
+    expect(mockDbInnerJoin).toHaveBeenCalledTimes(1);
+    expect(mockDbLimit).toHaveBeenCalledWith(9);
   });
 
   it('returns null when password is incorrect', async () => {
-    mockDbLimit
-      .mockResolvedValueOnce([{ id: 'user-1', email: 'user@example.com', name: 'Test', image: null }])
-      .mockResolvedValueOnce([{ userId: 'user-1', passwordHash: '$2a$12$hashed' }]);
+    setAuthorizeCandidates([
+      { id: 'user-1', email: 'user@example.com', name: 'Test', image: null, passwordHash: '$2a$12$hashed' },
+    ]);
     mockBcryptCompare.mockResolvedValue(false);
 
     const provider = getEmailCredentialsProvider();
@@ -705,10 +759,15 @@ describe('CredentialsProvider.authorize — email/password', () => {
   });
 
   it('returns user object when credentials are valid', async () => {
-    const user = { id: 'user-1', email: 'user@example.com', name: 'Test User', image: null };
-    mockDbLimit
-      .mockResolvedValueOnce([user])
-      .mockResolvedValueOnce([{ userId: 'user-1', passwordHash: '$2a$12$hashed' }]);
+    setAuthorizeCandidates([
+      {
+        id: 'user-1',
+        email: 'user@example.com',
+        name: 'Test User',
+        image: null,
+        passwordHash: '$2a$12$hashed',
+      },
+    ]);
     mockBcryptCompare.mockResolvedValue(true);
 
     const provider = getEmailCredentialsProvider();
@@ -725,6 +784,111 @@ describe('CredentialsProvider.authorize — email/password', () => {
     });
     expect(mockBcryptCompare).toHaveBeenCalledWith('correctpass', '$2a$12$hashed');
   });
+
+  it('accepts the unique matching twin regardless of candidate order', async () => {
+    const firstTwin: PasswordCandidate = {
+      id: 'user-a',
+      email: 'User@example.com',
+      name: 'A',
+      image: null,
+      passwordHash: '$2a$12$hash-a',
+    };
+    const matchingTwin: PasswordCandidate = {
+      id: 'user-b',
+      email: 'user@example.com',
+      name: 'B',
+      image: null,
+      passwordHash: '$2a$12$hash-b',
+    };
+    mockBcryptCompare.mockImplementation((_password: string, passwordHash: string) =>
+      Promise.resolve(passwordHash === '$2a$12$hash-b'),
+    );
+
+    const provider = getEmailCredentialsProvider();
+    for (const candidates of [
+      [firstTwin, matchingTwin],
+      [matchingTwin, firstTwin],
+    ]) {
+      setAuthorizeCandidates(candidates);
+      mockBcryptCompare.mockClear();
+      const result = await provider.authorize?.({ email: 'user@example.com', password: 'correctpass' });
+
+      expect(result).toEqual({ id: 'user-b', email: 'user@example.com', name: 'B', image: null });
+      expect(mockBcryptCompare).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it('rejects a password matching two twins regardless of candidate order', async () => {
+    const firstTwin: PasswordCandidate = {
+      id: 'user-a',
+      email: 'User@example.com',
+      name: 'A',
+      image: null,
+      passwordHash: '$2a$12$shared-hash',
+    };
+    const secondTwin: PasswordCandidate = {
+      id: 'user-b',
+      email: 'user@example.com',
+      name: 'B',
+      image: null,
+      passwordHash: '$2a$12$shared-hash',
+    };
+    mockBcryptCompare.mockResolvedValue(true);
+
+    const provider = getEmailCredentialsProvider();
+    for (const candidates of [
+      [firstTwin, secondTwin],
+      [secondTwin, firstTwin],
+    ]) {
+      setAuthorizeCandidates(candidates);
+      mockBcryptCompare.mockClear();
+      const result = await provider.authorize?.({ email: 'user@example.com', password: 'samepass' });
+
+      expect(result).toBeNull();
+      expect(mockBcryptCompare).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it('compares all eight supported candidates before accepting the unique match', async () => {
+    const candidates = Array.from({ length: 8 }, (_, index) => ({
+      id: `user-${index}`,
+      email: index === 0 ? 'User@example.com' : 'user@example.com',
+      name: `User ${index}`,
+      image: null,
+      passwordHash: `hash-${index}`,
+    }));
+    setAuthorizeCandidates(candidates);
+    mockBcryptCompare.mockImplementation((_password: string, passwordHash: string) =>
+      Promise.resolve(passwordHash === 'hash-7'),
+    );
+
+    const provider = getEmailCredentialsProvider();
+    const result = await provider.authorize?.({ email: 'user@example.com', password: 'correctpass' });
+
+    expect(result).toEqual({ id: 'user-7', email: 'user@example.com', name: 'User 7', image: null });
+    expect(mockDbLimit).toHaveBeenCalledWith(9);
+    expect(mockBcryptCompare).toHaveBeenCalledTimes(8);
+  });
+
+  it('fails closed on the ninth candidate after a bounded eight-hash comparison', async () => {
+    const candidates = Array.from({ length: 9 }, (_, index) => ({
+      id: `user-${index}`,
+      email: index === 0 ? 'User@example.com' : 'user@example.com',
+      name: `User ${index}`,
+      image: null,
+      passwordHash: `hash-${index}`,
+    }));
+    setAuthorizeCandidates(candidates);
+    mockBcryptCompare.mockResolvedValue(true);
+
+    const provider = getEmailCredentialsProvider();
+    const result = await provider.authorize?.({ email: 'user@example.com', password: 'matchingpass' });
+
+    expect(result).toBeNull();
+    expect(mockDbLimit).toHaveBeenCalledWith(9);
+    expect(mockBcryptCompare).toHaveBeenCalledTimes(8);
+    expect(mockBcryptCompare).not.toHaveBeenCalledWith('matchingpass', 'hash-8');
+  });
 });
 
 // =============================================================================
@@ -736,7 +900,7 @@ describe('CredentialsProvider.authorize — native-oauth', () => {
     vi.clearAllMocks();
 
     mockDbSelect.mockReturnValue({ from: mockDbFrom });
-    mockDbFrom.mockReturnValue({ where: mockDbWhere });
+    mockDbFrom.mockReturnValue({ where: mockDbWhere, innerJoin: mockDbInnerJoin });
     mockDbWhere.mockReturnValue({ limit: mockDbLimit });
     mockDbLimit.mockResolvedValue([]);
   });
@@ -988,5 +1152,76 @@ describe('auth-options module side effect — canonical NEXTAUTH_URL', () => {
     await import('../auth-options');
 
     expect(process.env.NEXTAUTH_URL).toBe('http://localhost:3000');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Adapter wrapper: case-insensitive OAuth account lookup / creation
+// ---------------------------------------------------------------------------
+
+describe('authOptions.adapter (case-insensitive wrapper)', () => {
+  const mockDbOrderBy = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // select().from().where().orderBy().limit()
+    mockDbSelect.mockReturnValue({ from: mockDbFrom });
+    mockDbFrom.mockReturnValue({ where: mockDbWhere, innerJoin: mockDbInnerJoin });
+    mockDbWhere.mockReturnValue({ orderBy: mockDbOrderBy });
+    mockDbOrderBy.mockReturnValue({ limit: mockDbLimit });
+    mockDbLimit.mockResolvedValue([]);
+  });
+
+  it('matches an existing account whose stored email differs only in case', async () => {
+    mockDbLimit.mockResolvedValue([
+      {
+        id: 'user-mixed-case',
+        email: 'Foo@Example.com',
+        emailVerified: new Date('2026-01-01'),
+        name: 'Foo',
+        image: null,
+      },
+    ]);
+
+    const user = await authOptions.adapter?.getUserByEmail?.('FOO@example.com ');
+
+    expect(user).toMatchObject({ id: 'user-mixed-case', email: 'Foo@Example.com' });
+
+    // Assert on the predicate the code actually recorded, not one rebuilt here:
+    // it must compare lower(email) against the normalized input.
+    const recordedPredicate = mockDbWhere.mock.calls[0][0] as { strings: string[]; values: unknown[] };
+    expect(recordedPredicate.strings.join('?')).toContain('lower(');
+    expect(recordedPredicate.values).toContain('foo@example.com');
+  });
+
+  it('returns null when no row shares the lower-cased email', async () => {
+    mockDbLimit.mockResolvedValue([]);
+
+    await expect(authOptions.adapter?.getUserByEmail?.('nobody@example.com')).resolves.toBeNull();
+  });
+
+  it('takes a single row in verified-first, then oldest, order', async () => {
+    mockDbLimit.mockResolvedValue([]);
+
+    await authOptions.adapter?.getUserByEmail?.('dupe@example.com');
+
+    // NULLS LAST puts a verified row ahead of an unverified one; createdAt
+    // breaks the remaining tie so a duplicate set always resolves the same way.
+    const [orderExpression, tieBreaker] = mockDbOrderBy.mock.calls[0] as [{ strings: string[] }, unknown];
+    expect(orderExpression.strings.join('?')).toContain('ASC NULLS LAST');
+    expect(tieBreaker).toBe('users.createdAt');
+    expect(mockDbLimit).toHaveBeenCalledWith(1);
+  });
+
+  it('lower-cases the email before handing a new user to the base adapter', async () => {
+    mockBaseCreateUser.mockResolvedValue({ id: 'new-user' });
+
+    await authOptions.adapter?.createUser?.({
+      id: 'new-user',
+      email: '  New@Example.COM ',
+      emailVerified: null,
+    });
+
+    expect(mockBaseCreateUser).toHaveBeenCalledWith(expect.objectContaining({ email: 'new@example.com' }));
   });
 });

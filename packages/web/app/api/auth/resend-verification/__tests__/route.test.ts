@@ -10,6 +10,13 @@ vi.mock('@/app/lib/auth/rate-limiter', () => ({
   getClientIp: (...args: unknown[]) => mockGetClientIp(...args),
 }));
 
+vi.mock('drizzle-orm', () => ({
+  and: vi.fn((...args: unknown[]) => ({ _type: 'and', args })),
+  eq: vi.fn((col: unknown, val: unknown) => ({ _type: 'eq', col, val })),
+  isNull: vi.fn((col: unknown) => ({ _type: 'isNull', col })),
+  sql: vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => ({ _type: 'sql', strings, values })),
+}));
+
 const mockSendVerificationEmail = vi.fn();
 vi.mock('@boardsesh/email', () => ({
   sendVerificationEmail: (...args: unknown[]) => mockSendVerificationEmail(...args),
@@ -21,24 +28,38 @@ vi.mock('@sentry/nextjs', () => ({
 }));
 
 const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
-const mockValues = vi.fn().mockResolvedValue(undefined);
+const mockInsertValues = vi.fn().mockResolvedValue(undefined);
 const mockUserSelect = vi.fn();
+const mockSelectWhere = vi.fn();
+const mockSelectOrderBy = vi.fn(() => ({ limit: mockUserSelect }));
 const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
   await fn({
     delete: () => ({ where: mockDeleteWhere }),
-    insert: () => ({ values: mockValues }),
+    insert: () => ({ values: mockInsertValues }),
   });
 });
 
 vi.mock('@/app/lib/db/db', () => ({
   getDb: () => ({
-    select: () => ({ from: () => ({ where: () => ({ limit: mockUserSelect }) }) }),
+    select: () => ({
+      from: () => ({
+        where: (predicate: unknown) => {
+          mockSelectWhere(predicate);
+          return { orderBy: mockSelectOrderBy };
+        },
+      }),
+    }),
     transaction: (fn: (tx: unknown) => Promise<void>) => mockTransaction(fn),
   }),
 }));
 
 vi.mock('@/app/lib/db/schema', () => ({
-  users: { email: 'users.email' },
+  users: {
+    id: 'users.id',
+    email: 'users.email',
+    emailVerified: 'users.emailVerified',
+    createdAt: 'users.createdAt',
+  },
   verificationTokens: { identifier: 'verification_tokens.identifier' },
 }));
 
@@ -96,6 +117,20 @@ describe('POST /api/auth/resend-verification', () => {
     } finally {
       if (savedBaseUrl !== undefined) process.env.BASE_URL = savedBaseUrl;
     }
+  });
+
+  it('scopes the replacement token to the selected user rather than their shared email', async () => {
+    const response = await POST(createRequest({ email: 'test@example.com' }));
+
+    expect(response.status).toBe(200);
+    expect(mockInsertValues).toHaveBeenCalledWith(
+      expect.objectContaining({ identifier: 'email-verification:v2:user:user-1' }),
+    );
+    expect(mockDeleteWhere).toHaveBeenCalledWith({
+      _type: 'eq',
+      col: 'verification_tokens.identifier',
+      val: 'email-verification:v2:user:user-1',
+    });
   });
 
   it('reports a verification-email failure to Sentry', async () => {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
+import { normalizeEmail } from '@boardsesh/db/utils';
 import { z } from 'zod';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
@@ -46,13 +47,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: validationResult.error.issues[0].message }, { status: 400 });
     }
 
-    const { email } = validationResult.data;
+    const email = normalizeEmail(validationResult.data.email);
     const db = getDb();
 
     const user = await db
       .select({ id: schema.users.id })
       .from(schema.users)
-      .where(eq(schema.users.email, email))
+      .innerJoin(schema.userCredentials, eq(schema.userCredentials.userId, schema.users.id))
+      .where(sql`lower(${schema.users.email}) = ${email}`)
+      .orderBy(sql`${schema.users.emailVerified} ASC NULLS LAST`, schema.users.createdAt, schema.users.id)
       .limit(1);
 
     if (user.length === 0) {
@@ -60,21 +63,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: genericMessage }, { status: 200 });
     }
 
-    const hasCredentials = await db
-      .select({ userId: schema.userCredentials.userId })
-      .from(schema.userCredentials)
-      .where(eq(schema.userCredentials.userId, user[0].id))
-      .limit(1);
-
-    if (hasCredentials.length === 0) {
-      await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
-      return NextResponse.json({ message: genericMessage }, { status: 200 });
-    }
-
     const token = crypto.randomUUID();
     const tokenHash = hashResetToken(token);
     const expires = new Date(Date.now() + 60 * 60 * 1000);
-    const identifier = getPasswordResetIdentifier(email);
+    const identifier = getPasswordResetIdentifier(user[0].id);
 
     await db.transaction(async (tx) => {
       await tx.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));

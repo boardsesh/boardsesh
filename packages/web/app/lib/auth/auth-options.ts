@@ -1,5 +1,6 @@
 import type { NextAuthOptions } from 'next-auth';
 import { randomUUID } from 'node:crypto';
+import type { Adapter, AdapterUser } from 'next-auth/adapters';
 import { DrizzleAdapter } from '@auth/drizzle-adapter';
 import GoogleProvider from 'next-auth/providers/google';
 import AppleProvider from 'next-auth/providers/apple';
@@ -7,7 +8,8 @@ import FacebookProvider from 'next-auth/providers/facebook';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
+import { normalizeEmail } from '@boardsesh/db/utils';
 import { compare } from 'bcryptjs';
 import { verifyNativeOAuthTransferToken } from '@/app/lib/auth/native-oauth-transfer';
 import { isSecureCookieContext, sessionCookieDomain } from '@/app/lib/auth/secure-cookies';
@@ -32,6 +34,7 @@ const PROFILE_CLAIMS_TTL_MS = 5 * 60 * 1000;
 const OAUTH_EMAIL_REQUIRED_ERROR = 'OAuthEmailRequired';
 const OAUTH_EMAIL_REQUIRED_REDIRECT = `/auth/error?error=${OAUTH_EMAIL_REQUIRED_ERROR}`;
 const OAUTH_TELEMETRY_PROVIDERS = new Set(['google', 'apple', 'facebook']);
+const MAX_CREDENTIAL_CANDIDATES = 8;
 
 function hasUsableEmail(email: string | null | undefined): email is string {
   return typeof email === 'string' && email.trim().length > 0;
@@ -137,35 +140,49 @@ providers.push(
       }
 
       const db = getDb();
+      const normalizedEmail = normalizeEmail(credentials.email);
 
-      // Look up user by email
-      const users = await db.select().from(schema.users).where(eq(schema.users.email, credentials.email)).limit(1);
+      // Look up password-bearing users by email, case-insensitively. Legacy
+      // rows may still be mixed-case, so authenticate only when exactly one
+      // candidate's password matches. The joined lookup excludes OAuth-only
+      // rows and bounds both the database result and bcrypt work.
+      const candidates = await db
+        .select({
+          id: schema.users.id,
+          email: schema.users.email,
+          name: schema.users.name,
+          image: schema.users.image,
+          passwordHash: schema.userCredentials.passwordHash,
+        })
+        .from(schema.users)
+        .innerJoin(schema.userCredentials, eq(schema.userCredentials.userId, schema.users.id))
+        .where(sql`lower(${schema.users.email}) = ${normalizedEmail}`)
+        .limit(MAX_CREDENTIAL_CANDIDATES + 1);
 
-      if (users.length === 0) {
+      if (candidates.length === 0) {
         return null;
       }
 
-      const user = users[0];
-
-      // Get user credentials (password hash)
-      const userCredentials = await db
-        .select()
-        .from(schema.userCredentials)
-        .where(eq(schema.userCredentials.userId, user.id))
-        .limit(1);
-
-      if (userCredentials.length === 0) {
-        // User exists but has no password (e.g., OAuth only)
+      if (candidates.length > MAX_CREDENTIAL_CANDIDATES) {
+        // The extra row is an overflow sentinel. Match the supported maximum's
+        // bcrypt work, then reject rather than authenticating a truncated set.
+        await Promise.all(
+          candidates
+            .slice(0, MAX_CREDENTIAL_CANDIDATES)
+            .map((candidate) => compare(credentials.password, candidate.passwordHash)),
+        );
         return null;
       }
 
-      // Verify password
-      const isValidPassword = await compare(credentials.password, userCredentials[0].passwordHash);
-
-      if (!isValidPassword) {
+      const matches = await Promise.all(
+        candidates.map((candidate) => compare(credentials.password, candidate.passwordHash)),
+      );
+      const matchingCandidates = candidates.filter((_, index) => matches[index]);
+      if (matchingCandidates.length !== 1) {
         return null;
       }
 
+      const user = matchingCandidates[0];
       return {
         id: user.id,
         email: user.email,
@@ -204,13 +221,64 @@ const useSecureCookies = isSecureCookieContext();
 // *.boardsesh.com hosts.
 const cookieDomain = sessionCookieDomain();
 
-export const authOptions: NextAuthOptions = {
-  adapter: DrizzleAdapter(getDb(), {
+// Wrap the Drizzle adapter so OAuth account-linking and user creation treat
+// email case-insensitively. Without this, an OAuth sign-in whose provider email
+// differs only in case from an existing row would miss it (the stock adapter
+// matches `email` exactly) and create a duplicate account. `createUser`
+// lower-cases on write so every new row is canonical; `getUserByEmail` matches
+// existing rows — including legacy mixed-case ones — via `lower(email)`, with a
+// deterministic order so a transient duplicate set resolves to the same row
+// until the account merge collapses it.
+//
+// That row is not necessarily the one merge-accounts picks as the winner (it
+// ranks by ticks → other rows → verified → oldest; this ranks verified → oldest,
+// because a sign-in wants the verified identity). The two can only disagree in
+// the window between this deploy and the merge run, and nothing is lost when
+// they do: `accounts` rows are repointed by the merge, so an OAuth link made
+// against the non-winner follows the user onto the winner.
+function createAuthAdapter(): Adapter {
+  const base = DrizzleAdapter(getDb(), {
     usersTable: schema.users,
     accountsTable: schema.accounts,
     sessionsTable: schema.sessions,
     verificationTokensTable: schema.verificationTokens,
-  }),
+  });
+
+  return {
+    ...base,
+    // DrizzleAdapter always defines createUser (it's a required Adapter method);
+    // the assertion documents that invariant so we can delegate to it.
+    createUser: (data: AdapterUser) => base.createUser!({ ...data, email: normalizeEmail(data.email) }),
+    getUserByEmail: async (email): Promise<AdapterUser | null> => {
+      const db = getDb();
+      const rows = await db
+        .select()
+        .from(schema.users)
+        .where(sql`lower(${schema.users.email}) = ${normalizeEmail(email)}`)
+        .orderBy(sql`${schema.users.emailVerified} ASC NULLS LAST`, schema.users.createdAt)
+        .limit(1);
+      const user = rows[0];
+      if (!user) return null;
+      return {
+        id: user.id,
+        // Deliberately the stored value, not the normalized one: NextAuth puts
+        // this in the JWT claims and on `session.user.email`, and it should
+        // reflect what's actually in the row. For a legacy mixed-case row that
+        // stays mixed-case until the PR-2 backfill lower-cases it, so any
+        // downstream `session.user.email === someEmail` check can mismatch —
+        // compare with `lower()` (or `normalizeEmail`) on both sides, as every
+        // lookup in this file does.
+        email: user.email,
+        emailVerified: user.emailVerified,
+        name: user.name,
+        image: user.image,
+      };
+    },
+  };
+}
+
+export const authOptions: NextAuthOptions = {
+  adapter: createAuthAdapter(),
   providers,
   cookies: {
     // The session token is the login itself. SameSite=Lax (NOT None) is correct
@@ -345,13 +413,19 @@ export const authOptions: NextAuthOptions = {
         return true;
       }
 
-      // For credentials, check if email is verified
+      // CredentialsProvider.authorize already matched the password against a
+      // specific user row. Looking up by email again can select a different
+      // legacy duplicate and accept or reject the wrong identity.
       if (!user.email) {
         return false;
       }
 
       const db = getDb();
-      const existingUser = await db.select().from(schema.users).where(eq(schema.users.email, user.email)).limit(1);
+      const existingUser = await db
+        .select({ emailVerified: schema.users.emailVerified })
+        .from(schema.users)
+        .where(eq(schema.users.id, user.id))
+        .limit(1);
 
       // Check if email verification is enabled (disabled by default until Fastmail auth is set up)
       const emailVerificationEnabled = process.env.EMAIL_VERIFICATION_ENABLED === 'true';
