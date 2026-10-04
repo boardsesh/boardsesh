@@ -62,7 +62,7 @@ jobs:
       # (first run, or 7 days with no restore) is handled by the script: it posts
       # only the latest update of incidents still open.
       - name: Restore posted-update list
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .boardsesh/railway-status-seen.json
           key: railway-status-seen-${{ github.run_id }}-${{ github.run_attempt }}
@@ -88,7 +88,7 @@ jobs:
         # main only: Production also admits release/next, and a list saved from
         # there lands in a cache scope the scheduled runs on main cannot read.
         if: always() && steps.notify.outputs.changed == 'true' && github.ref == 'refs/heads/main'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .boardsesh/railway-status-seen.json
           key: railway-status-seen-${{ github.run_id }}-${{ github.run_attempt }}

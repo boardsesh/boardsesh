@@ -429,6 +429,25 @@ describe('run', () => {
     expect(readSeenIds(stateFile)).toEqual(['burst-0', 'burst-1', 'burst-2', 'burst-3', 'burst-4']);
   });
 
+  it('treats a truncated state file as no state, not as an empty list', async () => {
+    const stateFile = stateFileWith(null);
+    writeFileSync(stateFile, '{"seenUpdateIds": ["storage-inv');
+    const { fetcher, discordBodies } = fakeFetcher();
+
+    const result = await run({
+      stateFile,
+      dryRun: false,
+      webhookUrl: WEBHOOK,
+      fetcher,
+      logger: silentLogger,
+      nowMs: NOW_MS,
+    });
+
+    // The cache-miss path: one post for the open incident, not all three of its updates.
+    expect(result).toEqual({ posted: 1, failed: 0, changed: true });
+    expect(discordBodies).toHaveLength(1);
+  });
+
   it('posts nothing and writes nothing on a dry run', async () => {
     const stateFile = stateFileWith([]);
     const { fetcher, discordBodies } = fakeFetcher();

@@ -88,7 +88,13 @@ export type StatusIncident = {
 };
 export type StatusFeed = { activeIncidents: StatusIncident[]; recentIncidents: StatusIncident[] };
 
-export type PendingPost = { incident: StatusIncident; update: StatusUpdate; tier: Tier };
+export type PendingPost = {
+  incident: StatusIncident;
+  update: StatusUpdate;
+  tier: Tier;
+  /** The incident's components that matched our rules, for the message. */
+  components: StatusComponent[];
+};
 export type HealthProbe = { ok: boolean; detail: string };
 
 export type Fetcher = (input: string | URL, init?: RequestInit) => Promise<Response>;
@@ -166,11 +172,14 @@ export function parseStatusFeed(raw: unknown): StatusFeed {
 
 /** Lower-case, any dash to `-`, single spaces: "Networking — Public" -> "networking - public". */
 export function normalizeName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[‒-―-]/g, '-')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return (
+    name
+      .toLowerCase()
+      // Figure dash, en dash, em dash, horizontal bar and the Unicode hyphens.
+      .replace(/\u2010|\u2011|\u2012|\u2013|\u2014|\u2015/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
 }
 
 function componentTier(component: StatusComponent): Tier | null {
@@ -211,12 +220,14 @@ export function selectPendingPosts(
 ): { posts: PendingPost[]; alreadySeen: string[] } {
   const relevant = [...feed.activeIncidents, ...feed.recentIncidents].flatMap((incident) => {
     const classification = classifyIncident(incident);
-    return classification ? [{ incident, tier: classification.tier }] : [];
+    return classification ? [{ incident, ...classification }] : [];
   });
   // An incident moving from active to recent could be listed in both for one poll.
   const listedIds = new Set<string>();
   const everyUpdate = relevant
-    .flatMap(({ incident, tier }) => incident.updates.map((update) => ({ incident, update, tier })))
+    .flatMap(({ incident, tier, components }) =>
+      incident.updates.map((update) => ({ incident, update, tier, components })),
+    )
     .filter((entry) => {
       if (listedIds.has(entry.update.id)) return false;
       listedIds.add(entry.update.id);
@@ -227,12 +238,12 @@ export function selectPendingPosts(
     const activeIds = new Set(feed.activeIncidents.map((incident) => incident.id));
     const posts = relevant
       .filter(({ incident }) => activeIds.has(incident.id) && incident.updates.length > 0)
-      .map(({ incident, tier }) => {
+      .map(({ incident, tier, components }) => {
         const [latest] = incident.updates
           .map((update) => ({ update }))
           .sort(byCreatedAt)
           .slice(-1);
-        return { incident, update: latest.update, tier };
+        return { incident, update: latest.update, tier, components };
       })
       .sort(byCreatedAt);
     const postIds = new Set(posts.map((post) => post.update.id));
@@ -284,8 +295,7 @@ function headline(post: PendingPost): string {
 }
 
 export function formatDiscordContent(post: PendingPost, health: HealthProbe | null): string {
-  const classification = classifyIncident(post.incident);
-  const componentLine = (classification?.components ?? [])
+  const componentLine = post.components
     .map((component) => {
       const group = shortGroup(component.groupName);
       return `${component.name}${group ? ` (${group})` : ''}: ${humanize(component.impact)}`;
@@ -407,7 +417,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
   }
 
   const nextSeen = pruneSeen(seen);
-  const changed = !dryRun && (previouslySeen === null || nextSeen.length !== previouslySeen.length || posted > 0);
+  const changed = !dryRun && JSON.stringify(nextSeen) !== JSON.stringify(previouslySeen);
   if (changed) writeSeen(stateFile, nextSeen);
   logger.log(`${posts.length} new update(s), ${posted} posted, ${failed} failed.`);
   return { posted, failed, changed };
