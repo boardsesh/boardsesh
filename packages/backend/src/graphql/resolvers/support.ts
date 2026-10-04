@@ -1,10 +1,13 @@
-import { and, desc, eq, isNotNull } from 'drizzle-orm';
+import Stripe from 'stripe';
+import { and, asc, desc, eq, isNotNull } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import { randomUUID } from 'node:crypto';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../db/client';
 import { logger } from '../../utils/logger';
+import { reconcileExpiredSupportClaims } from '../../services/reconcile-support-claims';
+import { lockSupportAccount } from '../../services/stripe-support-lock';
 import { applyRateLimit, requireAuthenticated } from './shared/helpers';
 import {
   getStripeClient,
@@ -79,7 +82,7 @@ export const supportQueries = {
       .innerJoin(dbSchema.users, eq(dbSchema.users.id, dbSchema.stripeSupporters.userId))
       .leftJoin(dbSchema.userProfiles, eq(dbSchema.userProfiles.userId, dbSchema.users.id))
       .where(and(eq(dbSchema.stripeSupporters.showPublicly, true), isNotNull(dbSchema.stripeSupporters.supportedAt)))
-      .orderBy(desc(dbSchema.stripeSupporters.supportedAt))
+      .orderBy(desc(dbSchema.stripeSupporters.supportedAt), asc(dbSchema.stripeSupporters.userId))
       .limit(pageLimit)
       .offset(pageOffset);
     return rows.map((row) => ({
@@ -121,67 +124,101 @@ export const supportMutations = {
 
     const stripe = getStripeClient();
     const userId = ctx.isAuthenticated ? ctx.userId : null;
-    const [existing, account] = await Promise.all([
-      userId ? loadSupporter(userId) : undefined,
-      userId
-        ? db
-            .select({ email: dbSchema.users.email })
-            .from(dbSchema.users)
-            .where(eq(dbSchema.users.id, userId))
-            .limit(1)
-            .then((rows) => rows[0])
-        : undefined,
-    ]);
-    if (
-      input.cadence === 'MONTHLY' &&
-      existing?.stripeSubscriptionId &&
-      isLiveStripeSubscription(existing.subscriptionStatus)
-    ) {
-      throw new GraphQLError('Manage your existing monthly support in the billing portal.', {
-        extensions: { code: 'ACTIVE_SUBSCRIPTION_EXISTS' },
-      });
-    }
-
+    if (userId) await reconcileExpiredSupportClaims(userId);
     const claimId = userId ? randomUUID() : null;
-    if (userId) {
-      // Persist the authoritative claim before asking Stripe to create a
-      // payable session. The signed webhook can therefore grant credit even
-      // if the post-create bookkeeping update below fails.
-      await db.insert(dbSchema.stripeSupportClaims).values({
-        id: claimId!,
-        userId,
-        cadence: input.cadence === 'MONTHLY' ? 'monthly' : 'one_time',
-        showPublicly: input.publicCredit,
-      });
-    }
+    const checkoutExpiresAt = new Date(Math.floor(Date.now() / 1000) * 1000 + 23 * 60 * 60 * 1000);
+    const linkedAccount = userId
+      ? await db.transaction(async (transaction) => {
+          const account = await lockSupportAccount(transaction, userId);
+          if (!account) {
+            throw new GraphQLError('Your account was not found. Sign in again.', {
+              extensions: { code: 'UNAUTHENTICATED' },
+            });
+          }
+          const [existing] = await transaction
+            .select()
+            .from(dbSchema.stripeSupporters)
+            .where(eq(dbSchema.stripeSupporters.userId, userId))
+            .limit(1);
+          if (input.cadence === 'MONTHLY' && existing?.stripeSubscriptionId) {
+            const subscription = await stripe.subscriptions.retrieve(existing.stripeSubscriptionId);
+            if (!['canceled', 'incomplete_expired'].includes(subscription.status)) {
+              throw new GraphQLError('Manage your existing monthly support in the billing portal.', {
+                extensions: { code: 'ACTIVE_SUBSCRIPTION_EXISTS' },
+              });
+            }
+          }
+          if (input.cadence === 'MONTHLY') {
+            const [pendingClaim] = await transaction
+              .select({ id: dbSchema.stripeSupportClaims.id })
+              .from(dbSchema.stripeSupportClaims)
+              .where(
+                and(
+                  eq(dbSchema.stripeSupportClaims.userId, userId),
+                  eq(dbSchema.stripeSupportClaims.cadence, 'monthly'),
+                ),
+              )
+              .limit(1);
+            if (pendingClaim) {
+              throw new GraphQLError('Finish your pending monthly Checkout or wait for it to expire.', {
+                extensions: { code: 'PENDING_CHECKOUT_EXISTS' },
+              });
+            }
+          }
+          // Commit the claim before creating a payable Stripe session. Deletion
+          // sees it even while the network request or completion event is pending.
+          await transaction.insert(dbSchema.stripeSupportClaims).values({
+            id: claimId!,
+            userId,
+            cadence: input.cadence === 'MONTHLY' ? 'monthly' : 'one_time',
+            showPublicly: input.publicCredit,
+            checkoutExpiresAt,
+          });
+          return { existing, account };
+        })
+      : undefined;
+    const existing = linkedAccount?.existing;
+    const account = linkedAccount?.account;
 
     const returnUrl = supportReturnUrl(input.locale);
     let session;
     try {
-      session = await stripe.checkout.sessions.create({
-        mode: input.cadence === 'MONTHLY' ? 'subscription' : 'payment',
-        customer_creation: input.cadence === 'ONE_TIME' && !existing?.stripeCustomerId ? 'always' : undefined,
-        client_reference_id: claimId ?? undefined,
-        customer: existing?.stripeCustomerId || undefined,
-        customer_email: existing?.stripeCustomerId ? undefined : account?.email,
-        line_items: [
-          {
-            quantity: 1,
-            price_data: {
-              currency: SUPPORT_CURRENCY,
-              unit_amount: input.amount,
-              product_data: { name: 'Support Boardsesh' },
-              recurring: input.cadence === 'MONTHLY' ? { interval: 'month' } : undefined,
+      session = await stripe.checkout.sessions.create(
+        {
+          expires_at: Math.floor(checkoutExpiresAt.getTime() / 1000),
+          mode: input.cadence === 'MONTHLY' ? 'subscription' : 'payment',
+          customer_creation: input.cadence === 'ONE_TIME' && !existing?.stripeCustomerId ? 'always' : undefined,
+          client_reference_id: claimId ?? undefined,
+          customer: existing?.stripeCustomerId || undefined,
+          customer_email: existing?.stripeCustomerId ? undefined : account?.email,
+          line_items: [
+            {
+              quantity: 1,
+              price_data: {
+                currency: SUPPORT_CURRENCY,
+                unit_amount: input.amount,
+                product_data: { name: 'Support Boardsesh' },
+                recurring: input.cadence === 'MONTHLY' ? { interval: 'month' } : undefined,
+              },
             },
-          },
-        ],
-        success_url: `${returnUrl}?support=thanks`,
-        cancel_url: `${returnUrl}?support=cancelled`,
-      });
+          ],
+          success_url: `${returnUrl}?support=thanks`,
+          cancel_url: `${returnUrl}?support=cancelled`,
+        },
+        claimId ? { idempotencyKey: claimId } : undefined,
+      );
     } catch (error) {
-      if (claimId) {
+      // A connection/5xx failure can hide a successfully created session.
+      // Retain its claim so a retry or deletion cannot orphan recurring billing.
+      const definitelyRejected =
+        error instanceof Stripe.errors.StripeInvalidRequestError ||
+        error instanceof Stripe.errors.StripeAuthenticationError ||
+        error instanceof Stripe.errors.StripePermissionError;
+      if (claimId && definitelyRejected) {
         await db.delete(dbSchema.stripeSupportClaims).where(eq(dbSchema.stripeSupportClaims.id, claimId));
       }
+      if (claimId && !definitelyRejected)
+        logger.error('[stripe-support] Checkout outcome requires reconciliation', { claimId, error });
       throw error;
     }
     if (!session.url) throw new Error('Stripe Checkout did not return a URL');

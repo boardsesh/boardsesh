@@ -729,10 +729,34 @@ development, CI, staging, and preview environments. Only production may use a
 live secret key, and rotating either secret requires a backend restart.
 
 Configure Stripe to send `checkout.session.completed`,
-`checkout.session.async_payment_succeeded`, `customer.subscription.updated`,
-and `customer.subscription.deleted` to the backend webhook URL. Keep
+`checkout.session.async_payment_succeeded`, `checkout.session.expired`,
+`checkout.session.async_payment_failed`, `customer.subscription.updated`, and
+`customer.subscription.deleted` to the backend webhook URL. Keep
 `STRIPE_DONATE_URL` on the web service during rollout; the support page uses it
 only when backend Checkout is unavailable.
+
+Linked Checkout claims block account deletion until completion, expiration, or
+payment failure is processed. A second monthly Checkout is refused while a
+monthly claim is pending. Checkout creation uses the opaque claim ID as its
+[Stripe idempotency key](https://docs.stripe.com/api/idempotent_requests).
+
+New Checkout claims store a fixed 23-hour expiration, also sent to Stripe.
+Creation and account deletion first reconcile expired claims under the account
+lock. Each attempt checks at most 10 claims and 1,000 sessions per claim with a
+missing session ID. It clears only confirmed expired sessions, or claims with
+no matching session after exhausting that bounded creation-window search.
+Paid/completed sessions, failed lookups, and truncated searches retain claims.
+Legacy claims without a fixed expiration require manual reconciliation.
+
+If a network or Stripe server error leaves the creation outcome uncertain, the
+backend retains the claim and logs its ID for reconciliation. Look up the
+request using that idempotency key in Stripe's request logs. Replay its signed
+completion/cleanup event if a session exists; an open session can be
+[expired through Stripe](https://docs.stripe.com/api/checkout/sessions/expire).
+If no session was created, confirm that outcome in Stripe before clearing the
+claim. Never remove a claim just because it is old: a payment may already have
+completed while its webhook is delayed. Missing-session-ID bookkeeping errors
+use the same reconciliation procedure.
 
 `RAILWAY_TOKEN` must be a project token created for the Boardsesh project's
 Production environment, not a personal or team API token. The rollback helper

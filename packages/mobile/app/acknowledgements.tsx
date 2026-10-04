@@ -1,6 +1,8 @@
-import { useCallback } from 'react';
+import { memo, useCallback, useMemo, useRef } from 'react';
+import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
+import type { PublicSupporter } from '@boardsesh/graphql/operations/support';
 import { Stack, useRouter } from 'expo-router';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../src/components/Button';
 import { Icon } from '../src/components/Icon';
@@ -82,6 +84,26 @@ function ThanksCard({
   return <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>{content}</View>;
 }
 
+const SupporterRow = memo(function SupporterRow({
+  supporter,
+  onOpenProfile,
+}: {
+  supporter: PublicSupporter;
+  onOpenProfile: (userId: string) => void;
+}) {
+  const { systemColors } = useTheme();
+  const handlePress = useCallback(() => onOpenProfile(supporter.userId), [onOpenProfile, supporter.userId]);
+  return (
+    <View style={[styles.supporterRow, { backgroundColor: systemColors.secondaryBackground }]}>
+      <Chip icon="favorite.fill" label={supporter.displayName} onPress={handlePress} />
+    </View>
+  );
+});
+
+function supporterKey(supporter: PublicSupporter) {
+  return supporter.userId;
+}
+
 export default function AcknowledgementsScreen() {
   const { t } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
@@ -91,7 +113,52 @@ export default function AcknowledgementsScreen() {
   // Store rules only let some regions have a tappable donation link; everywhere
   // else the same message goes out as plain, unlinked text. See donation-links.ts.
   const donationLinksAllowed = useDonationLinksAllowed();
-  const { data: stripeSupporters = [] } = usePublicSupporters();
+  const {
+    data: supporterPages,
+    hasNextPage,
+    isFetching,
+    isFetchNextPageError,
+    isError,
+    fetchNextPage,
+    refetch,
+  } = usePublicSupporters();
+  const stripeSupporters = useMemo(
+    () => supporterPages?.pages.flatMap((page) => page.publicSupporters) ?? [],
+    [supporterPages],
+  );
+  const loadingMore = useRef(false);
+  const handleEndReached = useCallback(async () => {
+    if (!hasNextPage || isFetching || isFetchNextPageError || loadingMore.current) return;
+    loadingMore.current = true;
+    try {
+      await fetchNextPage();
+    } finally {
+      loadingMore.current = false;
+    }
+  }, [fetchNextPage, hasNextPage, isFetching, isFetchNextPageError]);
+  const handleRetrySupporters = useCallback(async () => {
+    if (isFetching || loadingMore.current) return;
+    loadingMore.current = true;
+    try {
+      if (isFetchNextPageError) {
+        await fetchNextPage();
+      } else {
+        await refetch();
+      }
+    } finally {
+      loadingMore.current = false;
+    }
+  }, [fetchNextPage, isFetchNextPageError, isFetching, refetch]);
+  const handleOpenSupporter = useCallback(
+    (userId: string) => router.push({ pathname: '/users/[userId]', params: { userId } }),
+    [router],
+  );
+  const renderSupporter = useCallback(
+    ({ item }: ListRenderItemInfo<PublicSupporter>) => (
+      <SupporterRow supporter={item} onOpenProfile={handleOpenSupporter} />
+    ),
+    [handleOpenSupporter],
+  );
 
   const handleOpenProfile = useCallback((url: string) => {
     void openExternalUrl(url, 'acknowledgements');
@@ -140,149 +207,152 @@ export default function AcknowledgementsScreen() {
     <>
       <Stack.Screen options={{ ...screenOptions, title: t('mobile.acknowledgements.title'), headerShown: true }} />
       {/* Glass contentStyle is transparent: unpainted, this scene shows the user-drawer's scrim (see changelog.tsx). */}
-      <ScrollView
+      <FlashList
+        data={stripeSupporters}
+        renderItem={renderSupporter}
+        keyExtractor={supporterKey}
+        onEndReached={handleEndReached}
+        onEndReachedThreshold={0.5}
         style={{ backgroundColor: systemColors.groupedBackground }}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={[styles.container, { paddingBottom: bottomChrome.scrollBottomPadding + spacing[6] }]}
-      >
-        <View style={[styles.hero, { backgroundColor: systemColors.secondaryBackground }]}>
-          <View style={[styles.heroIcon, { backgroundColor: brandColors.primaryFill }]}>
-            <Icon name="favorite.fill" size={28} color={brandColors.onPrimary} />
-          </View>
-          <Text variant="body" color={systemColors.secondaryLabel} style={styles.heroBody}>
-            {t('mobile.acknowledgements.intro')}
-          </Text>
-        </View>
-
-        <View style={styles.section}>
-          <SectionHeader title={t('mobile.acknowledgements.contributorsTitle')} />
-          <View style={[styles.groupCard, { backgroundColor: systemColors.secondaryBackground }]}>
-            <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.sectionBody}>
-              {t('mobile.acknowledgements.contributorsBody')}
-            </Text>
-            <View style={styles.chips}>
-              {contributors.map((contributor) => (
-                <Chip
-                  key={contributor.login}
-                  label={contributor.name ?? contributor.login}
-                  onPress={() => handleOpenProfile(contributor.htmlUrl)}
-                />
-              ))}
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <SectionHeader title={t('mobile.acknowledgements.sponsorsTitle')} />
-          {stripeSupporters.length > 0 ? (
-            <View style={[styles.groupCard, { backgroundColor: systemColors.secondaryBackground }]}>
-              <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.sectionBody}>
-                {t('mobile.acknowledgements.stripeSponsorsBody')}
+        ListHeaderComponent={
+          <View style={styles.listSection}>
+            <View style={[styles.hero, { backgroundColor: systemColors.secondaryBackground }]}>
+              <View style={[styles.heroIcon, { backgroundColor: brandColors.primaryFill }]}>
+                <Icon name="favorite.fill" size={28} color={brandColors.onPrimary} />
+              </View>
+              <Text variant="body" color={systemColors.secondaryLabel} style={styles.heroBody}>
+                {t('mobile.acknowledgements.intro')}
               </Text>
-              <View style={styles.chips}>
-                {stripeSupporters.map((supporter) => (
-                  <Chip
-                    key={supporter.userId}
-                    icon="favorite.fill"
-                    label={supporter.displayName}
-                    onPress={() => router.push({ pathname: '/users/[userId]', params: { userId: supporter.userId } })}
-                  />
-                ))}
+            </View>
+
+            <View style={styles.section}>
+              <SectionHeader title={t('mobile.acknowledgements.contributorsTitle')} />
+              <View style={[styles.groupCard, { backgroundColor: systemColors.secondaryBackground }]}>
+                <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.sectionBody}>
+                  {t('mobile.acknowledgements.contributorsBody')}
+                </Text>
+                <View style={styles.chips}>
+                  {contributors.map((contributor) => (
+                    <Chip
+                      key={contributor.login}
+                      label={contributor.name ?? contributor.login}
+                      onPress={() => handleOpenProfile(contributor.htmlUrl)}
+                    />
+                  ))}
+                </View>
               </View>
             </View>
-          ) : null}
-          {sponsors.length > 0 ? (
-            <View style={[styles.groupCard, { backgroundColor: systemColors.secondaryBackground }]}>
-              <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.sectionBody}>
-                {t('mobile.acknowledgements.sponsorsBody')}
-              </Text>
-              <View style={styles.chips}>
-                {sponsors.map((sponsor) => (
-                  <Chip
-                    key={sponsor.login}
-                    icon="favorite.fill"
-                    label={sponsor.name ?? sponsor.login}
-                    onPress={() => handleOpenProfile(sponsor.url)}
-                  />
-                ))}
-              </View>
-              {privateSponsorCount > 0 ? (
-                <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.privateThanks}>
-                  {t('mobile.acknowledgements.privateSponsorsThanks', { count: privateSponsorCount })}
+
+            <View style={styles.section}>
+              <SectionHeader title={t('mobile.acknowledgements.sponsorsTitle')} />
+              {stripeSupporters.length > 0 ? (
+                <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.sectionBody}>
+                  {t('mobile.acknowledgements.stripeSponsorsBody')}
                 </Text>
               ) : null}
-              {supportBlock}
             </View>
-          ) : (
-            <View style={[styles.groupCard, { backgroundColor: systemColors.secondaryBackground }]}>
-              <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.sectionBody}>
-                {privateSponsorCount > 0
-                  ? t('mobile.acknowledgements.privateSponsorsThanks', { count: privateSponsorCount })
-                  : t('mobile.acknowledgements.sponsorsEmpty')}
-              </Text>
-              {supportBlock}
+          </View>
+        }
+        ListFooterComponent={
+          <View style={styles.listSection}>
+            {isError ? <Button title={t('actions.retry')} onPress={handleRetrySupporters} /> : null}
+            <View style={styles.section}>
+              {sponsors.length > 0 ? (
+                <View style={[styles.groupCard, { backgroundColor: systemColors.secondaryBackground }]}>
+                  <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.sectionBody}>
+                    {t('mobile.acknowledgements.sponsorsBody')}
+                  </Text>
+                  <View style={styles.chips}>
+                    {sponsors.map((sponsor) => (
+                      <Chip
+                        key={sponsor.login}
+                        icon="favorite.fill"
+                        label={sponsor.name ?? sponsor.login}
+                        onPress={() => handleOpenProfile(sponsor.url)}
+                      />
+                    ))}
+                  </View>
+                  {privateSponsorCount > 0 ? (
+                    <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.privateThanks}>
+                      {t('mobile.acknowledgements.privateSponsorsThanks', { count: privateSponsorCount })}
+                    </Text>
+                  ) : null}
+                  {supportBlock}
+                </View>
+              ) : (
+                <View style={[styles.groupCard, { backgroundColor: systemColors.secondaryBackground }]}>
+                  <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.sectionBody}>
+                    {privateSponsorCount > 0
+                      ? t('mobile.acknowledgements.privateSponsorsThanks', { count: privateSponsorCount })
+                      : t('mobile.acknowledgements.sponsorsEmpty')}
+                  </Text>
+                  {supportBlock}
+                </View>
+              )}
             </View>
-          )}
-        </View>
 
-        <View style={styles.section}>
-          <SectionHeader title={t('mobile.acknowledgements.poweredByTitle')} />
-          <View style={styles.cardStack}>
-            <ThanksCard
-              icon="server"
-              title="xprem"
-              body={t('mobile.acknowledgements.xpremBody')}
-              onPress={handleOpenXprem}
-            />
-          </View>
-        </View>
+            <View style={styles.section}>
+              <SectionHeader title={t('mobile.acknowledgements.poweredByTitle')} />
+              <View style={styles.cardStack}>
+                <ThanksCard
+                  icon="server"
+                  title="xprem"
+                  body={t('mobile.acknowledgements.xpremBody')}
+                  onPress={handleOpenXprem}
+                />
+              </View>
+            </View>
 
-        <View style={styles.section}>
-          <SectionHeader title={t('mobile.acknowledgements.personalTitle')} />
-          <View style={styles.cardStack}>
-            <ThanksCard
-              icon="discord"
-              title={t('mobile.acknowledgements.discordTitle')}
-              body={t('mobile.acknowledgements.discordBody')}
-              onPress={handleJoinDiscord}
-            />
-            <ThanksCard
-              icon="people"
-              title={t('mobile.acknowledgements.friendsTitle')}
-              body={t('mobile.acknowledgements.friendsBody', { names: friendsLine })}
-            />
-            <ThanksCard icon="person" title="Alex" body={t('mobile.acknowledgements.alexBody')} />
-            <ThanksCard
-              icon="paw"
-              title={dogName}
-              body={t('mobile.acknowledgements.dogBody')}
-              onPress={handleOpenScout}
-            />
-          </View>
-        </View>
+            <View style={styles.section}>
+              <SectionHeader title={t('mobile.acknowledgements.personalTitle')} />
+              <View style={styles.cardStack}>
+                <ThanksCard
+                  icon="discord"
+                  title={t('mobile.acknowledgements.discordTitle')}
+                  body={t('mobile.acknowledgements.discordBody')}
+                  onPress={handleJoinDiscord}
+                />
+                <ThanksCard
+                  icon="people"
+                  title={t('mobile.acknowledgements.friendsTitle')}
+                  body={t('mobile.acknowledgements.friendsBody', { names: friendsLine })}
+                />
+                <ThanksCard icon="person" title="Alex" body={t('mobile.acknowledgements.alexBody')} />
+                <ThanksCard
+                  icon="paw"
+                  title={dogName}
+                  body={t('mobile.acknowledgements.dogBody')}
+                  onPress={handleOpenScout}
+                />
+              </View>
+            </View>
 
-        <PressableSurface
-          onPress={handleOpenLicenses}
-          feedback="opacity"
-          opacityTo={0.7}
-          accessibilityRole="button"
-          accessibilityLabel={t('mobile.acknowledgements.ossLicensesLink')}
-          style={[styles.linkRow, { backgroundColor: systemColors.secondaryBackground }]}
-        >
-          <View style={[styles.cardIcon, { backgroundColor: systemColors.fill }]}>
-            <Icon name="doc.text" size={22} color={systemColors.accent} />
+            <PressableSurface
+              onPress={handleOpenLicenses}
+              feedback="opacity"
+              opacityTo={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.acknowledgements.ossLicensesLink')}
+              style={[styles.linkRow, { backgroundColor: systemColors.secondaryBackground }]}
+            >
+              <View style={[styles.cardIcon, { backgroundColor: systemColors.fill }]}>
+                <Icon name="doc.text" size={22} color={systemColors.accent} />
+              </View>
+              <View style={styles.cardText}>
+                <Text variant="headline" style={styles.cardTitle}>
+                  {t('mobile.acknowledgements.ossLicensesLink')}
+                </Text>
+                <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.cardBody}>
+                  {t('mobile.acknowledgements.ossLicensesBody')}
+                </Text>
+              </View>
+              <Icon name="chevron.right" size={16} color={systemColors.secondaryLabel} />
+            </PressableSurface>
           </View>
-          <View style={styles.cardText}>
-            <Text variant="headline" style={styles.cardTitle}>
-              {t('mobile.acknowledgements.ossLicensesLink')}
-            </Text>
-            <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.cardBody}>
-              {t('mobile.acknowledgements.ossLicensesBody')}
-            </Text>
-          </View>
-          <Icon name="chevron.right" size={16} color={systemColors.secondaryLabel} />
-        </PressableSurface>
-      </ScrollView>
+        }
+      />
     </>
   );
 }
@@ -292,7 +362,16 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: spacing[4],
     paddingTop: spacing[4],
+  },
+  listSection: {
     gap: spacing[6],
+    paddingVertical: spacing[2],
+  },
+  supporterRow: {
+    borderRadius: borderRadius.lg,
+    padding: spacing[3],
+    marginBottom: spacing[2],
+    alignItems: 'flex-start',
   },
   hero: {
     alignItems: 'center',

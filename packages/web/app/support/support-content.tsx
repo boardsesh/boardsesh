@@ -60,7 +60,9 @@ function SupportResultAlert() {
 
 export default function SupportContent({ configuration, initialStatus, locale }: SupportContentProps) {
   const { t } = useTranslation('marketing');
-  const { token: authToken, isAuthenticated, isLoading: isAuthLoading } = useWsAuthToken();
+  const { token: authToken, isAuthenticated, isLoading: isAuthLoading, error: authError } = useWsAuthToken();
+  const isAuthUnresolved = isAuthLoading || Boolean(authError) || (isAuthenticated && !authToken);
+  const canManageSupport = isAuthenticated && Boolean(authToken) && !isAuthUnresolved;
   const [amount, setAmount] = useState('5');
   const [cadence, setCadence] = useState<'MONTHLY' | 'ONE_TIME'>('MONTHLY');
   const [publicCredit, setPublicCredit] = useState(initialStatus.showPublicly);
@@ -69,6 +71,7 @@ export default function SupportContent({ configuration, initialStatus, locale }:
   const [error, setError] = useState<string | null>(null);
 
   const startCheckout = async () => {
+    if (busy || isAuthUnresolved) return;
     const amountInMinorUnits = Math.round(Number(amount) * 100);
     if (
       !Number.isFinite(amountInMinorUnits) ||
@@ -94,6 +97,7 @@ export default function SupportContent({ configuration, initialStatus, locale }:
   };
 
   const updateVisibility = async (showPublicly: boolean) => {
+    if (busy || !canManageSupport) return;
     setBusy(true);
     setError(null);
     try {
@@ -101,6 +105,7 @@ export default function SupportContent({ configuration, initialStatus, locale }:
         updateSupporterVisibility: SupporterStatus;
       }>(UPDATE_SUPPORTER_VISIBILITY, { showPublicly });
       setStatus(response.updateSupporterVisibility);
+      setPublicCredit(response.updateSupporterVisibility.showPublicly);
     } catch {
       setError(t('support.stripe.error'));
     } finally {
@@ -109,6 +114,7 @@ export default function SupportContent({ configuration, initialStatus, locale }:
   };
 
   const openBillingPortal = async () => {
+    if (busy || !canManageSupport) return;
     setBusy(true);
     setError(null);
     try {
@@ -195,7 +201,7 @@ export default function SupportContent({ configuration, initialStatus, locale }:
                     control={
                       <Checkbox
                         checked={publicCredit}
-                        disabled={!isAuthenticated || isAuthLoading}
+                        disabled={busy || !canManageSupport}
                         onChange={(event) => setPublicCredit(event.target.checked)}
                       />
                     }
@@ -207,7 +213,11 @@ export default function SupportContent({ configuration, initialStatus, locale }:
                   <Button
                     variant="contained"
                     color="primaryFill"
-                    disabled={busy}
+                    disabled={
+                      busy ||
+                      isAuthUnresolved ||
+                      (status.hasActiveSubscription && cadence === 'MONTHLY' && !canManageSupport)
+                    }
                     onClick={status.hasActiveSubscription && cadence === 'MONTHLY' ? openBillingPortal : startCheckout}
                     sx={DONATION_CTA_SX}
                   >
@@ -245,14 +255,14 @@ export default function SupportContent({ configuration, initialStatus, locale }:
                   control={
                     <Checkbox
                       checked={status.showPublicly}
-                      disabled={busy}
+                      disabled={busy || !canManageSupport}
                       onChange={(event) => void updateVisibility(event.target.checked)}
                     />
                   }
                   label={t('support.manage.publicCredit')}
                 />
                 {status.hasActiveSubscription ? (
-                  <Button variant="outlined" disabled={busy} onClick={openBillingPortal}>
+                  <Button variant="outlined" disabled={busy || !canManageSupport} onClick={openBillingPortal}>
                     {t('support.manage.billing')}
                   </Button>
                 ) : null}

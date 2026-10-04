@@ -1,3 +1,5 @@
+import { reconcileExpiredSupportClaims } from '../../../services/reconcile-support-claims';
+import { lockSupportAccount } from '../../../services/stripe-support-lock';
 import { eq, and } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import * as Sentry from '@sentry/node';
@@ -265,36 +267,24 @@ export const userMutations = {
     validateInput(DeleteAccountInputSchema, input, 'input');
 
     const userId = ctx.userId!;
-
-    const [supporterBeforeCancellation] = await db
-      .select({
-        subscriptionId: dbSchema.stripeSupporters.stripeSubscriptionId,
-        subscriptionStatus: dbSchema.stripeSupporters.subscriptionStatus,
-        cancelAtPeriodEnd: dbSchema.stripeSupporters.cancelAtPeriodEnd,
-      })
-      .from(dbSchema.stripeSupporters)
-      .where(eq(dbSchema.stripeSupporters.userId, userId))
-      .limit(1);
-    let cancelledSubscriptionId: string | null = null;
-    if (
-      supporterBeforeCancellation?.subscriptionId &&
-      isLiveStripeSubscription(supporterBeforeCancellation.subscriptionStatus) &&
-      !supporterBeforeCancellation.cancelAtPeriodEnd
-    ) {
-      try {
-        await getStripeClient().subscriptions.update(supporterBeforeCancellation.subscriptionId, {
-          cancel_at_period_end: true,
-        });
-        cancelledSubscriptionId = supporterBeforeCancellation.subscriptionId;
-      } catch (error) {
-        logger.error('[deleteAccount] could not schedule Stripe subscription cancellation', { userId, error });
-        throw new GraphQLError('Could not cancel your Stripe subscription. Your account was not deleted.', {
-          extensions: { code: 'STRIPE_CANCELLATION_FAILED' },
-        });
-      }
-    }
+    await reconcileExpiredSupportClaims(userId);
 
     await db.transaction(async (tx) => {
+      const account = await lockSupportAccount(tx, userId);
+      if (!account) return;
+      const [pendingClaim] = await tx
+        .select({ id: dbSchema.stripeSupportClaims.id })
+        .from(dbSchema.stripeSupportClaims)
+        .where(eq(dbSchema.stripeSupportClaims.userId, userId))
+        .limit(1);
+      if (pendingClaim) {
+        throw new GraphQLError(
+          'Finish your pending Stripe Checkout or wait for it to expire before deleting your account.',
+          {
+            extensions: { code: 'PENDING_CHECKOUT_EXISTS' },
+          },
+        );
+      }
       const [supporter] = await tx
         .select({
           subscriptionId: dbSchema.stripeSupporters.stripeSubscriptionId,
@@ -304,15 +294,27 @@ export const userMutations = {
         .from(dbSchema.stripeSupporters)
         .where(eq(dbSchema.stripeSupporters.userId, userId))
         .limit(1);
-      if (
-        supporter?.subscriptionId &&
-        isLiveStripeSubscription(supporter.subscriptionStatus) &&
-        !supporter.cancelAtPeriodEnd &&
-        supporter.subscriptionId !== cancelledSubscriptionId
-      ) {
-        throw new GraphQLError('Your Stripe subscription changed. Retry account deletion to cancel it safely.', {
-          extensions: { code: 'STRIPE_SUBSCRIPTION_CHANGED' },
-        });
+      if (supporter?.subscriptionId) {
+        try {
+          const stripe = getStripeClient();
+          const currentSubscription = await stripe.subscriptions.retrieve(supporter.subscriptionId);
+          if (!['canceled', 'incomplete_expired'].includes(currentSubscription.status)) {
+            const subscription = await stripe.subscriptions.update(supporter.subscriptionId, {
+              cancel_at_period_end: true,
+            });
+            if (
+              !subscription.cancel_at_period_end &&
+              !['canceled', 'incomplete_expired'].includes(subscription.status)
+            ) {
+              throw new Error('Stripe did not confirm cancellation');
+            }
+          }
+        } catch (error) {
+          logger.error('[deleteAccount] could not schedule Stripe subscription cancellation', { userId, error });
+          throw new GraphQLError('Could not cancel your Stripe subscription. Your account was not deleted.', {
+            extensions: { code: 'STRIPE_CANCELLATION_FAILED' },
+          });
+        }
       }
 
       // Find this user's draft climbs first — the dependent-row cleanup below

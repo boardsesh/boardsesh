@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs';
 
 // Exercise the generated migration instead of maintaining a second detection schema.
+const supportSchema = readFileSync(new URL('../../../db/drizzle/0250_stripe_supporters.sql', import.meta.url), 'utf8');
 const detectionSchema = readFileSync(
   new URL('../../../db/drizzle/0234_shallow_the_phantom.sql', import.meta.url),
   'utf8',
@@ -2033,4 +2034,5 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "rejected_reason" text,
     CONSTRAINT "board_climb_ingest_skips_board_type_climb_uuid_pk" PRIMARY KEY ("board_type", "climb_uuid")
   );
+${supportSchema}
 `;

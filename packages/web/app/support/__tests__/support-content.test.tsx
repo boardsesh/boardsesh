@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { describe, it, expect, vi } from 'vite-plus/test';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import SupportContent from '../support-content';
 
@@ -20,9 +20,13 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-vi.mock('@/app/hooks/use-ws-auth-token', () => ({
-  useWsAuthToken: () => ({ token: null, isAuthenticated: false, isLoading: false, error: null }),
+const { authState, request } = vi.hoisted(() => ({
+  authState: { token: null as string | null, isAuthenticated: false, isLoading: false, error: null as string | null },
+  request: vi.fn(),
 }));
+
+vi.mock('@/app/hooks/use-ws-auth-token', () => ({ useWsAuthToken: () => authState }));
+vi.mock('@/app/lib/graphql/client', () => ({ createGraphQLHttpClient: () => ({ request }) }));
 
 vi.mock('next/link', () => ({
   default: ({ children, href, ...props }: { children: React.ReactNode; href: string; [key: string]: unknown }) => (
@@ -62,6 +66,81 @@ function hrefs(container: HTMLElement): (string | null)[] {
 }
 
 describe('SupportContent', () => {
+  beforeEach(() => {
+    Object.assign(authState, { token: null, isAuthenticated: false, isLoading: false, error: null });
+    request.mockReset();
+  });
+
+  function checkoutContent(initialStatus = EMPTY_STATUS) {
+    return (
+      <SupportContent
+        configuration={{ enabled: true, currency: 'USD', minimumAmount: 100, maximumAmount: 50_000 }}
+        initialStatus={initialStatus}
+        locale="en-US"
+      />
+    );
+  }
+
+  it.each([{ isLoading: true }, { error: 'Token request failed' }, { isAuthenticated: true }])(
+    'blocks Checkout while authentication is unresolved: %j',
+    (unresolvedAuth) => {
+      Object.assign(authState, unresolvedAuth);
+      render(checkoutContent());
+      const checkoutButton = screen.getByRole('button', { name: tFromCatalog('marketing', 'support.stripe.cta') });
+      expect(checkoutButton.hasAttribute('disabled')).toBe(true);
+      fireEvent.click(checkoutButton);
+      expect(request).not.toHaveBeenCalled();
+    },
+  );
+
+  it('blocks supporter account controls until the signed-in token resolves', () => {
+    Object.assign(authState, { isAuthenticated: true, isLoading: true });
+    render(checkoutContent({ ...EMPTY_STATUS, hasSupported: true, hasActiveSubscription: true }));
+    const visibility = screen.getByRole('checkbox', { name: tFromCatalog('marketing', 'support.manage.publicCredit') });
+    expect((visibility as HTMLInputElement).disabled).toBe(true);
+    for (const billingButton of screen.getAllByRole('button', {
+      name: tFromCatalog('marketing', 'support.manage.billing'),
+    })) {
+      expect(billingButton.hasAttribute('disabled')).toBe(true);
+      fireEvent.click(billingButton);
+    }
+    fireEvent.click(visibility);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('allows resolved anonymous Checkout and always sends private credit', async () => {
+    request.mockRejectedValue(new Error('Stop before navigation'));
+    render(checkoutContent({ ...EMPTY_STATUS, showPublicly: true }));
+    const checkoutButton = screen.getByRole('button', { name: tFromCatalog('marketing', 'support.stripe.cta') });
+    expect(checkoutButton.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(checkoutButton);
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(expect.anything(), {
+        input: { amount: 500, cadence: 'MONTHLY', publicCredit: false, locale: 'en-US' },
+      }),
+    );
+  });
+
+  it('keeps future Checkout credit in sync with saved supporter visibility', async () => {
+    Object.assign(authState, { token: 'account-token', isAuthenticated: true });
+    request.mockResolvedValueOnce({
+      updateSupporterVisibility: { ...EMPTY_STATUS, hasSupported: true, showPublicly: true },
+    });
+    render(checkoutContent({ ...EMPTY_STATUS, hasSupported: true }));
+    fireEvent.click(screen.getByRole('checkbox', { name: tFromCatalog('marketing', 'support.manage.publicCredit') }));
+    const checkoutCredit = screen.getByRole('checkbox', {
+      name: tFromCatalog('marketing', 'support.stripe.publicCredit'),
+    });
+    await waitFor(() => expect((checkoutCredit as HTMLInputElement).checked).toBe(true));
+    request.mockRejectedValueOnce(new Error('Stop before navigation'));
+    fireEvent.click(screen.getByRole('button', { name: tFromCatalog('marketing', 'support.stripe.cta') }));
+    await waitFor(() =>
+      expect(request).toHaveBeenLastCalledWith(expect.anything(), {
+        input: { amount: 500, cadence: 'MONTHLY', publicCredit: true, locale: 'en-US' },
+      }),
+    );
+  });
+
   it('renders the hero and the reason the page exists', () => {
     render(supportContent());
 

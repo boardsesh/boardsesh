@@ -48,7 +48,10 @@ export default async function SupportPage() {
   return (
     <I18nProvider locale={locale} namespaces={['marketing']}>
       <SupportContent
-        configuration={supportPage.supportConfiguration}
+        configuration={{
+          ...supportPage.supportConfiguration,
+          legacyDonateUrl: supportPage.supportConfiguration.legacyDonateUrl ?? resolveStripeDonateUrl(),
+        }}
         initialStatus={supportPage.mySupporterStatus}
         locale={locale}
       />

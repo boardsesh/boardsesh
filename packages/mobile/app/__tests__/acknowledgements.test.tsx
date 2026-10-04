@@ -10,6 +10,10 @@ const discord = vi.hoisted(() => ({ openDiscordInvite: vi.fn() }));
 // test: allowed renders the CTA, not-allowed renders unlinked text.
 const donationLinks = vi.hoisted(() => ({ allowed: false }));
 const publicSupporters = vi.hoisted(() => ({
+  fetchNextPage: vi.fn(),
+  hasNextPage: true,
+  isFetching: false,
+  isFetchNextPageError: false,
   items: [{ userId: 'stripe-user', displayName: 'Stripe Climber', avatarUrl: null, supportedAt: '2026-09-22' }],
 }));
 
@@ -19,6 +23,30 @@ vi.mock('react-native', () => ({
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('section', null, children),
   StyleSheet: { create: (styles: unknown) => styles },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+}));
+
+vi.mock('@shopify/flash-list', () => ({
+  FlashList: ({
+    data,
+    renderItem,
+    ListHeaderComponent,
+    ListFooterComponent,
+    onEndReached,
+  }: {
+    data: Array<{ userId: string }>;
+    renderItem: (row: { item: { userId: string } }) => ReactNode;
+    ListHeaderComponent: ReactNode;
+    ListFooterComponent: ReactNode;
+    onEndReached: () => void;
+  }) =>
+    createElement(
+      'section',
+      null,
+      ListHeaderComponent,
+      ...data.map((item) => createElement('div', { key: item.userId }, renderItem({ item }))),
+      createElement('button', { onClick: onEndReached, type: 'button' }, 'Reach end'),
+      ListFooterComponent,
+    ),
 }));
 
 vi.mock('expo-router', () => ({ Stack: { Screen: () => null }, useRouter: () => routerMock }));
@@ -62,7 +90,15 @@ vi.mock('../../src/lib/donation-links', () => ({
   useDonationLinksAllowed: () => donationLinks.allowed,
 }));
 vi.mock('../../src/lib/graphql/hooks/use-public-supporters', () => ({
-  usePublicSupporters: () => ({ data: publicSupporters.items }),
+  usePublicSupporters: () => ({
+    data: { pages: [{ publicSupporters: publicSupporters.items }] },
+    fetchNextPage: publicSupporters.fetchNextPage,
+    hasNextPage: publicSupporters.hasNextPage,
+    isFetching: publicSupporters.isFetching,
+    isFetchNextPageError: publicSupporters.isFetchNextPageError,
+    isError: publicSupporters.isFetchNextPageError,
+    refetch: vi.fn(),
+  }),
 }));
 
 vi.mock('../../src/components/Button', () => ({
@@ -110,6 +146,10 @@ beforeEach(() => {
   openUrl.openExternalUrl.mockClear();
   discord.openDiscordInvite.mockClear();
   donationLinks.allowed = false;
+  publicSupporters.fetchNextPage.mockReset();
+  publicSupporters.hasNextPage = true;
+  publicSupporters.isFetching = false;
+  publicSupporters.isFetchNextPageError = false;
   publicSupporters.items = [
     { userId: 'stripe-user', displayName: 'Stripe Climber', avatarUrl: null, supportedAt: '2026-09-22' },
   ];
@@ -141,6 +181,33 @@ describe('AcknowledgementsScreen', () => {
       pathname: '/users/[userId]',
       params: { userId: 'stripe-user' },
     });
+  });
+
+  it('fetches one page on end reach and blocks overlapping requests', async () => {
+    let finishPage: (() => void) | undefined;
+    publicSupporters.fetchNextPage.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishPage = resolve;
+        }),
+    );
+    render(<AcknowledgementsScreen />);
+    expect(publicSupporters.fetchNextPage).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Reach end' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reach end' }));
+    expect(publicSupporters.fetchNextPage).toHaveBeenCalledTimes(1);
+    finishPage?.();
+  });
+
+  it('keeps loaded supporter profiles after a later page fails', () => {
+    publicSupporters.isFetchNextPageError = true;
+    render(<AcknowledgementsScreen />);
+    fireEvent.click(screen.getByRole('button', { name: 'Stripe Climber' }));
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/users/[userId]', params: { userId: 'stripe-user' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reach end' }));
+    expect(publicSupporters.fetchNextPage).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'actions.retry' }));
+    expect(publicSupporters.fetchNextPage).toHaveBeenCalledTimes(1);
   });
 
   it('thanks private sponsors as an anonymous count', () => {
