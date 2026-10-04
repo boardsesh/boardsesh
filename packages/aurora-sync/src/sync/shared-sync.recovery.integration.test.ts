@@ -193,9 +193,10 @@ describeOwned('Aurora shared-sync missing-frame recovery in owned PostgreSQL', (
     token = randomUUID(),
     db = databaseOrThrow(),
     options?: SyncOptions,
+    board: 'decoy' | 'kilter' = 'decoy',
   ): Promise<void> {
     mockSharedSync.mockResolvedValueOnce(responseFor(climbRows));
-    await syncSharedDataOrThrow()(db, 'decoy', token, () => {}, options);
+    await syncSharedDataOrThrow()(db, board, token, () => {}, options);
   }
 
   async function seedClimb(
@@ -259,6 +260,35 @@ describeOwned('Aurora shared-sync missing-frame recovery in owned PostgreSQL', (
       expect(stored).toMatchObject({ frames: incomingFrames, frames_count: 1, frames_pace: 12 });
       expect(await readHolds(uuid)).toEqual([expectedHold(101, 'STARTING'), expectedHold(202, 'HAND')]);
     }
+  });
+
+  it.each([null, ''])('recovers the delayed-start Kilter source from a missing %s source', async (missingFrames) => {
+    const uuid = randomUUID();
+    const incomingFrames = ',"p100r13';
+    await seedClimb(uuid, { boardType: 'kilter', frames: missingFrames });
+
+    await runSync(
+      [climb(uuid, incomingFrames, { frames_count: 2, frames_pace: 2 })],
+      randomUUID(),
+      databaseOrThrow(),
+      undefined,
+      'kilter',
+    );
+    await runSync(
+      [climb(uuid, incomingFrames, { frames_count: 2, frames_pace: 2 })],
+      randomUUID(),
+      databaseOrThrow(),
+      undefined,
+      'kilter',
+    );
+
+    expect(await readClimb(uuid)).toMatchObject({
+      board_type: 'kilter',
+      frames: incomingFrames,
+      frames_count: 2,
+      frames_pace: 2,
+    });
+    expect(await readHolds(uuid)).toEqual([{ hold_id: 100, frame_number: 0, hold_state: 'HAND' }]);
   });
 
   it('preserves an existing nonempty same-board source and projects only its holds', async () => {
