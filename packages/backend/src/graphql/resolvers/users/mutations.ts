@@ -1,6 +1,7 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import * as Sentry from '@sentry/node';
+import { executeFirstRow } from '@boardsesh/db/client';
 import type {
   ConnectionContext,
   UserProfile,
@@ -266,6 +267,27 @@ export const userMutations = {
     const userId = ctx.userId!;
 
     await db.transaction(async (tx) => {
+      // This guard must be serving before migration 0250 can create its
+      // archive. The migration's DDL takes ACCESS EXCLUSIVE on the live table;
+      // holding ROW EXCLUSIVE here makes one operation wait for the other.
+      // The archive lookup is a separate READ COMMITTED statement after the
+      // lock, so it sees an archive created by a migration that committed
+      // while this transaction waited. If the archive is still absent, this
+      // transaction keeps the lock until deletion commits and prevents the
+      // migration from archiving favorites for an account being removed.
+      await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL READ COMMITTED`);
+      await tx.execute(sql`LOCK TABLE public.user_favorites IN ROW EXCLUSIVE MODE`);
+      const favoriteArchive = await executeFirstRow<{ present: boolean }>(
+        tx,
+        sql`SELECT to_regclass('public.user_favorites_dedup_backup_0194') IS NOT NULL AS present`,
+      );
+      if (favoriteArchive?.present) {
+        // The archive intentionally has no users FK because it retains legacy
+        // angle variants for offline clients. A deleted account can no longer
+        // sync, so remove only its archived rows in this same transaction.
+        await tx.execute(sql`DELETE FROM public.user_favorites_dedup_backup_0194 WHERE user_id = ${userId}`);
+      }
+
       // Find this user's draft climbs first — the dependent-row cleanup below
       // needs the (boardType, uuid) pairs, and it must run before the drafts
       // themselves are deleted or the rows it targets would already be gone.
