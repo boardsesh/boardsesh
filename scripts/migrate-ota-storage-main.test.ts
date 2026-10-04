@@ -590,6 +590,7 @@ describe('OTA migration whole-object PUT retries', () => {
     { failure: { error: { name: 'InternalError', $metadata: { httpStatusCode: 500 } } } },
     { failure: { error: { code: 'ECONNRESET' }, partial: true } },
     { failure: { error: { code: 'ECONNABORTED' }, partial: true } },
+    { failure: { error: { name: 'TimeoutError' }, partial: true } },
     { failure: { error: { name: 'RequestTimeout', $metadata: { httpStatusCode: 408 } } } },
     { failure: { error: { name: 'ServiceUnavailable', $metadata: { httpStatusCode: 503 } }, committed: true } },
   ])('reopens identical staged bytes after a transient failure: $failure', async ({ failure }) => {

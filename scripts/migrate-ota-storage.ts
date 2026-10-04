@@ -392,6 +392,7 @@ async function putDestination(destination: BucketClient, key: string, source: Te
 
 async function putDestinationAttempt(destination: BucketClient, key: string, source: TemporarySource): Promise<void> {
   const metadata = expectedDestinationMetadata(source.fingerprint);
+  // A missing or unreadable staged file remains fatal, including an open race after stat.
   const body = createReadStream(source.path);
   let bodyError: Error | undefined;
   const observeBodyError = (error: Error) => {
