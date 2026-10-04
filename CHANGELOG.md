@@ -4,6 +4,24 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-10-04
+
+### New
+
+- See how everyone got on with a climb, with the people you follow always first. ([#5975](https://github.com/boardsesh/boardsesh/pull/5975))
+  Open "See all logs" on any climb for the newest log from every climber, with filters for your angle, notes and sends.
+- See how a climb went for the people you follow. ([#5974](https://github.com/boardsesh/boardsesh/pull/5974))
+  Open a climb and scroll down: their notes and any grade they disagree on sit right under your Logbook, and everyone else who sent it is one line of names.
+- Your logbook on a climb is now a few plain lines: where you stand, your tries, sends and sessions, then each day with what you did. ([#5970](https://github.com/boardsesh/boardsesh/pull/5970))
+  Long projects keep the drawer quick: the newest sessions show first and "See full logbook" opens the rest.
+  A climb you have logged no longer says "No tries yet" when you have no signal.
+
+### Fixed
+
+- Close a climb and return to the playlist you were browsing. ([#5927](https://github.com/boardsesh/boardsesh/pull/5927))
+  Generated playlist names and climb counts have room to show.
+- Your crew now follows Next and Previous from Android's session notification. ([#5928](https://github.com/boardsesh/boardsesh/pull/5928))
+
 ## 2026-10-03
 
 ### App update

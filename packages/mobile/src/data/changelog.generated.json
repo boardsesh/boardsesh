@@ -1,6 +1,45 @@
 {
-  "generatedAt": "2026-10-03T22:08:20.747Z",
+  "generatedAt": "2026-10-04T01:23:15.348Z",
   "entries": [
+    {
+      "prNumber": 5975,
+      "category": "new",
+      "title": "See how everyone got on with a climb, with the people you follow always first.",
+      "mergedAt": "2026-10-04T01:20:11Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5975",
+      "body": "Open \"See all logs\" on any climb for the newest log from every climber, with filters for your angle, notes and sends."
+    },
+    {
+      "prNumber": 5974,
+      "category": "new",
+      "title": "See how a climb went for the people you follow.",
+      "mergedAt": "2026-10-04T01:09:30Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5974",
+      "body": "Open a climb and scroll down: their notes and any grade they disagree on sit right under your Logbook, and everyone else who sent it is one line of names."
+    },
+    {
+      "prNumber": 5970,
+      "category": "new",
+      "title": "Your logbook on a climb is now a few plain lines: where you stand, your tries, sends and sessions, then each day with what you did.",
+      "mergedAt": "2026-10-04T00:55:47Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5970",
+      "body": "Long projects keep the drawer quick: the newest sessions show first and \"See full logbook\" opens the rest.\nA climb you have logged no longer says \"No tries yet\" when you have no signal."
+    },
+    {
+      "prNumber": 5927,
+      "category": "fixed",
+      "title": "Close a climb and return to the playlist you were browsing.",
+      "mergedAt": "2026-10-04T00:54:13Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5927",
+      "body": "Generated playlist names and climb counts have room to show."
+    },
+    {
+      "prNumber": 5928,
+      "category": "fixed",
+      "title": "Your crew now follows Next and Previous from Android's session notification.",
+      "mergedAt": "2026-10-04T00:54:01Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5928"
+    },
     {
       "prNumber": 5963,
       "category": "fixed",
