@@ -29,7 +29,7 @@ import { createTestDatabase } from '@boardsesh/offline-sync/testing';
 // test. The production CLI creates isolated primary/replica pools and declares
 // their observer capability explicitly; parser parity is covered separately by
 // snapshot-replica-fence.test.ts.
-// TODO(#4475 review, finding 9): this golden byte-parity run reads through the
+// TODO(#6016): this golden byte-parity run reads through the
 // drizzle pool while production reads through the isolated single-connection
 // snapshot pool, so a pool-shaped parser difference stays outside the gate.
 import { createPool } from '@boardsesh/db/client';

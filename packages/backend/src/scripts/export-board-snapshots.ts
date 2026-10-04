@@ -785,7 +785,7 @@ type PrimaryFenceContractRow = {
   public_execute_revoked: unknown;
 };
 
-// TODO(#4475 review, finding 9): the fence role/grant contract is encoded four
+// TODO(#6016): the fence role/grant contract is encoded four
 // times — migration 0250, the development bootstrap SQL, this assertion, and the
 // backend global-setup fixture — with no parity test tying them together.
 async function assertPrimaryFenceContract(coordinator: ReservedSql): Promise<void> {

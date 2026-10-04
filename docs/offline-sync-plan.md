@@ -418,6 +418,17 @@ LIMIT 500
 
 This guarantees no rows are skipped regardless of timestamp collisions. For tables with composite PKs (like `board_climb_stats`), a sequential `sync_seq` column (bigserial) is added as the cursor's second component instead of `id`.
 
+The PostgreSQL source now enforces the cursor contract with triggers. Inserts
+and updates stamp their cursor time from the transaction timestamp in UTC and
+allocate the matching sequence for climbs, stats, and grades; deletion records
+receive a UTC `deleted_at`. Writers cannot keep caller-supplied cursor values
+on normal writes. Snapshot restore has a transaction-local
+`boardsesh.snapshot_cursor_restore` escape hatch for preserving imported INSERT
+cursors, and the trigger accepts it only when `session_user` is a PostgreSQL
+superuser. UPDATE triggers still restamp rows. The mobile client never sets
+this flag. See [`board-snapshots.md`](board-snapshots.md) for the full source,
+restore, and export-boundary contract.
+
 ### Pull queries (new GraphQL resolvers on the backend)
 
 ```graphql

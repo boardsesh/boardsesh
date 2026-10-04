@@ -1453,6 +1453,8 @@ snapshot tables, `USAGE` on `ops`, `EXECUTE` on `ops.board_snapshot_cluster_iden
 `pg_read_all_stats` so WAL-receiver state is visible. Grant those capabilities on the primary before the
 physical base backup so role metadata reaches the standby.
 
+Two follow-up test-coverage items are tracked in [#6016](https://github.com/boardsesh/boardsesh/issues/6016): parity across the migration, development bootstrap, exporter audit, and backend fixture copies of the fence-role contract; and running the golden byte-parity test through the isolated snapshot pool's PostgreSQL type parser as well as the Drizzle pool. These are maintenance gaps; the current owner/grant audit and row-parity coverage remain in place.
+
 ### Verify deletion replay metadata after a live full refresh
 
 After an unfiltered full gzip refresh, inspect the `Export board snapshots (gzip →
