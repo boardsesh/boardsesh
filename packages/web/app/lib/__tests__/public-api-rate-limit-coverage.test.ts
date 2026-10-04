@@ -11,7 +11,7 @@ const API_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../api/v1'
 // therefore fails until its guard and OpenAPI path are reviewed here together.
 const EXPECTED_PUBLIC_GET_ROUTES = [
   '[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/[climb_uuid]/route.ts',
-  '[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/heatmap/route.ts',
+  'spray-walls/[wall_uuid]/photo/route.ts',
   '[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/setters/route.ts',
   '[board_name]/climb-stats/[climb_uuid]/route.ts',
   '[board_name]/grades/route.ts',
@@ -24,7 +24,6 @@ const EXPECTED_PUBLIC_GET_ROUTES = [
 
 const EXPECTED_OPENAPI_PATHS = [
   '/api/v1/{board_name}/{layout_id}/{size_id}/{set_ids}/{angle}/{climb_uuid}',
-  '/api/v1/{board_name}/{layout_id}/{size_id}/{set_ids}/{angle}/heatmap',
   '/api/v1/{board_name}/{layout_id}/{size_id}/{set_ids}/{angle}/setters',
   '/api/v1/{board_name}/climb-stats/{climb_uuid}',
   '/api/v1/{board_name}/grades',
@@ -44,7 +43,7 @@ function listRouteFiles(directory: string): string[] {
 }
 
 describe('public API rate-limit coverage', () => {
-  it('guards exactly every public GET route and leaves legacy proxy POSTs alone', () => {
+  it('guards exactly each current public GET route and keeps retired proxy routes absent', () => {
     const routeFiles = listRouteFiles(API_ROOT);
     const publicGetRoutes = routeFiles
       .filter((routeFile) => readFileSync(routeFile, 'utf8').includes('export async function GET'))
@@ -60,13 +59,13 @@ describe('public API rate-limit coverage', () => {
     }
 
     const proxyRoutes = routeFiles.filter((routeFile) => relative(API_ROOT, routeFile).includes('/proxy/'));
-    expect(proxyRoutes).toHaveLength(5);
+    expect(proxyRoutes).toHaveLength(0);
     for (const proxyRoute of proxyRoutes) {
       expect(readFileSync(proxyRoute, 'utf8')).not.toContain('enforcePublicApiRateLimit');
     }
   });
 
-  it('documents 429 and cached-hit behavior on all ten OpenAPI GET operations', () => {
+  it('documents 429 and cached-hit behavior on all nine registered public GET operations', () => {
     const document = generateOpenApiDocument();
 
     for (const openApiPath of EXPECTED_OPENAPI_PATHS) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { normalizeRateLimitIp } from '../ip';
+import { isIpInAnyCidr, isIpInCidr, normalizeRateLimitIp } from '../ip';
 
 describe('normalizeRateLimitIp', () => {
   it.each([
@@ -28,5 +28,35 @@ describe('normalizeRateLimitIp', () => {
     'fe80::1%eth0%forged',
   ])('rejects %j', (rawAddress) => {
     expect(normalizeRateLimitIp(rawAddress)).toBeUndefined();
+  });
+});
+
+describe('isIpInCidr', () => {
+  it.each([
+    ['173.245.48.1', '173.245.48.0/20', true],
+    ['173.245.63.255', '173.245.48.0/20', true],
+    ['173.245.64.1', '173.245.48.0/20', false],
+    ['::ffff:173.245.48.1', '173.245.48.0/20', true],
+    ['2a06:98c7:ffff::1', '2a06:98c0::/29', true],
+    ['2a06:98c8::1', '2a06:98c0::/29', false],
+  ])('matches %j against %j as %j', (rawAddress, cidr, expected) => {
+    expect(isIpInCidr(rawAddress, cidr)).toBe(expected);
+  });
+
+  it.each([
+    [undefined, '173.245.48.0/20'],
+    ['173.245.48.1, 198.51.100.1', '173.245.48.0/20'],
+    ['173.245.48.1:443', '173.245.48.0/20'],
+    ['[173.245.48.1]', '173.245.48.0/20'],
+    ['fe80::1%eth0', 'fe80::/10'],
+  ])('rejects malformed address %j against %j', (rawAddress, cidr) => {
+    expect(isIpInCidr(rawAddress, cidr)).toBe(false);
+  });
+
+  it('rejects malformed CIDRs and checks lists without relaxing parsing', () => {
+    expect(isIpInCidr('173.245.48.1', '173.245.48.0/33')).toBe(false);
+    expect(isIpInCidr('173.245.48.1', '173.245.48.0/20/extra')).toBe(false);
+    expect(isIpInAnyCidr('173.245.48.1', ['192.0.2.0/24', '173.245.48.0/20'])).toBe(true);
+    expect(isIpInAnyCidr('203.0.113.8', ['192.0.2.0/24', '173.245.48.0/20'])).toBe(false);
   });
 });
