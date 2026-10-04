@@ -132,6 +132,14 @@ export type RegisteredSprayWall = {
 export const REGISTERED_WALL_REVALIDATE_MS = 10 * 60 * 1000;
 
 const walls = new Map<number, RegisteredSprayWall>();
+let removalSequence = 0;
+let registryRemovalGeneration = 0;
+const wallRemovalGenerations = new Map<number, number>();
+
+/** Stamp a load before I/O; removal makes its eventual registration stale. */
+export function sprayWallRemovalGeneration(layoutId: number): number {
+  return wallRemovalGenerations.get(layoutId) ?? registryRemovalGeneration;
+}
 
 /** Listeners woken when a wall is registered, re-registered or dropped. */
 const subscribers = new Set<() => void>();
@@ -333,6 +341,8 @@ export function resetSprayWallViewerAccess({ markStale = true }: { markStale?: b
 
 /** Drop a wall and its runtime geometry, so the render path reports no board rather than a stale one. */
 export function unregisterSprayWall(layoutId: number): void {
+  wallRemovalGenerations.set(layoutId, ++removalSequence);
+  deferredRequests.delete(layoutId);
   loadStates.set(layoutId, { state: 'unavailable', settledAtMs: now() });
   if (!walls.delete(layoutId)) {
     notify();
@@ -586,6 +596,8 @@ export function sprayCacheToken(boardName: string, layoutId: number): string {
  * subscriber-call-count assertion goes green for the wrong reason.
  */
 export function clearSprayWallRegistry(): void {
+  registryRemovalGeneration = ++removalSequence;
+  wallRemovalGenerations.clear();
   for (const layoutId of walls.keys()) unregisterRuntimeGeometry(sprayGeometryKey(layoutId));
   walls.clear();
   loadStates.clear();

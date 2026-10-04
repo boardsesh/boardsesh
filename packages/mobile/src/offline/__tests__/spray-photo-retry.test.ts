@@ -32,9 +32,44 @@ async function seedCheckpoint(): Promise<void> {
 beforeEach(async () => {
   db = createTestDatabase();
   await runMigrations(db);
+  await db.runAsync('INSERT INTO spray_walls (layout_id, board_uuid, photo_key) VALUES (?, ?, ?)', [
+    LAYOUT_ID,
+    'wall-4',
+    PHOTO_KEY,
+  ]);
 });
 
 describe('recordSprayPhotoFailure', () => {
+  it('checks wall presence after entering the writer transaction', async () => {
+    await seedCheckpoint();
+    const originalTransaction = db.withExclusiveTransactionAsync.bind(db);
+    db.withExclusiveTransactionAsync = async (task) => {
+      await db.runAsync('DELETE FROM spray_walls WHERE layout_id = ?', [LAYOUT_ID]);
+      await originalTransaction(task);
+    };
+
+    expect(await recordSprayPhotoFailure(db, LAYOUT_ID, PHOTO_KEY)).toBe(false);
+    expect(await getCheckpoint(db, CHECKPOINT_KEY)).not.toBeNull();
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', [`spray-photo-pending:${LAYOUT_ID}`]),
+    ).toBeNull();
+  });
+
+  it.each(['removed', 'replaced'])('ignores a failure after the wall was %s', async (change) => {
+    await seedCheckpoint();
+    if (change === 'removed') {
+      await db.runAsync('DELETE FROM spray_walls WHERE layout_id = ?', [LAYOUT_ID]);
+    } else {
+      await db.runAsync('UPDATE spray_walls SET photo_key = ? WHERE layout_id = ?', ['new-photo', LAYOUT_ID]);
+    }
+
+    expect(await recordSprayPhotoFailure(db, LAYOUT_ID, PHOTO_KEY)).toBe(false);
+    expect(await getCheckpoint(db, CHECKPOINT_KEY)).not.toBeNull();
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', [`spray-photo-pending:${LAYOUT_ID}`]),
+    ).toBeNull();
+  });
+
   it('rewinds the wall cursor so the next pull re-offers the row', async () => {
     // Re-offering the row is the ONLY way to get a fresh signature: the one that
     // failed is dead in fifteen minutes and the bucket is private.
@@ -74,6 +109,10 @@ describe('recordSprayPhotoFailure', () => {
     }
     await seedCheckpoint();
 
+    await db.runAsync('UPDATE spray_walls SET photo_key = ? WHERE layout_id = ?', [
+      'spray-walls/wall-4/photo-3.jpg',
+      LAYOUT_ID,
+    ]);
     const retried = await recordSprayPhotoFailure(db, LAYOUT_ID, 'spray-walls/wall-4/photo-3.jpg');
 
     expect(retried).toBe(true);
@@ -85,11 +124,24 @@ describe('recordSprayPhotoFailure', () => {
       await recordSprayPhotoFailure(db, LAYOUT_ID, PHOTO_KEY);
     }
 
+    await db.runAsync('INSERT INTO spray_walls (layout_id, board_uuid, photo_key) VALUES (?, ?, ?)', [
+      9,
+      'wall-9',
+      'spray-walls/wall-9/photo-1.jpg',
+    ]);
     expect(await recordSprayPhotoFailure(db, 9, 'spray-walls/wall-9/photo-1.jpg')).toBe(true);
   });
 });
 
 describe('clearSprayPhotoPending', () => {
+  it('keeps the retry marker for a newer photo when an old download succeeds', async () => {
+    await recordSprayPhotoFailure(db, LAYOUT_ID, PHOTO_KEY);
+    await clearSprayPhotoPending(db, LAYOUT_ID, 'older-photo');
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', [`spray-photo-pending:${LAYOUT_ID}`]),
+    ).not.toBeNull();
+  });
+
   it('resets the budget, so a later failure retries from scratch', async () => {
     for (let attempt = 1; attempt <= MAX_SPRAY_PHOTO_ATTEMPTS + 1; attempt += 1) {
       await recordSprayPhotoFailure(db, LAYOUT_ID, PHOTO_KEY);

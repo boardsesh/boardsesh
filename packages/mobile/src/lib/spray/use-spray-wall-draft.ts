@@ -37,7 +37,12 @@ import { GET_SPRAY_WALL_RENDER_DATA } from '@boardsesh/graphql/operations/spray-
 import type { SprayWallRenderData } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../graphql/client';
 import { invalidateSprayWallRenderData, registerRenderData } from './spray-wall-loader';
-import { getSprayWall, sprayWallViewerGeneration, subscribeToSprayWalls } from './spray-wall-registry';
+import {
+  getSprayWall,
+  sprayWallRemovalGeneration,
+  sprayWallViewerGeneration,
+  subscribeToSprayWalls,
+} from './spray-wall-registry';
 
 type SprayWallRenderDataResponse = { sprayWallRenderData: SprayWallRenderData | null };
 
@@ -52,6 +57,7 @@ type SprayWallRenderDataResponse = { sprayWallRenderData: SprayWallRenderData | 
  * is the registered version.
  */
 const draftViewerGenerations = new WeakMap<SprayWallRenderData, number>();
+const draftRemovalGenerations = new WeakMap<SprayWallRenderData, number>();
 
 export const sprayWallDraftQueryKey = (wallUuid: string | null, versionNumber: number | null) =>
   ['sprayWallRenderData', wallUuid, versionNumber] as const;
@@ -93,11 +99,15 @@ export function useSprayWallDraft(
     queryKey: sprayWallDraftQueryKey(wallUuid, versionNumber),
     queryFn: async () => {
       const viewerGeneration = sprayWallViewerGeneration();
+      const removalGeneration = sprayWallRemovalGeneration(layoutId);
       const response = await getHttpClient().request<SprayWallRenderDataResponse>(GET_SPRAY_WALL_RENDER_DATA, {
         uuid: wallUuid,
         version: versionNumber,
       });
-      if (response.sprayWallRenderData) draftViewerGenerations.set(response.sprayWallRenderData, viewerGeneration);
+      if (response.sprayWallRenderData) {
+        draftViewerGenerations.set(response.sprayWallRenderData, viewerGeneration);
+        draftRemovalGenerations.set(response.sprayWallRenderData, removalGeneration);
+      }
       return response;
     },
     select: (response) => response.sprayWallRenderData,
@@ -127,7 +137,13 @@ export function useSprayWallDraft(
     // the "cannot be edited" the screen shows in words.
     setVerdict({
       payload: renderData,
-      ok: registerRenderData(layoutId, renderData, undefined, draftViewerGenerations.get(renderData)),
+      ok: registerRenderData(
+        layoutId,
+        renderData,
+        undefined,
+        draftViewerGenerations.get(renderData),
+        draftRemovalGenerations.get(renderData),
+      ),
     });
   }, [layoutId, renderData]);
 
@@ -198,6 +214,12 @@ export function useKeepSprayDraftRegistered(
     );
     const payload = cached?.sprayWallRenderData;
     if (!payload) return;
-    registerRenderData(layoutId, payload, undefined, draftViewerGenerations.get(payload));
+    registerRenderData(
+      layoutId,
+      payload,
+      undefined,
+      draftViewerGenerations.get(payload),
+      draftRemovalGenerations.get(payload),
+    );
   }, [layoutId, wallUuid, versionNumber, registeredVersion, queryClient]);
 }

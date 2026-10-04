@@ -286,7 +286,7 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
     transientColumns: ['photo_url'],
     // A wall tombstone has to take the photograph with it; the row is the only
     // thing that names the file.
-    captureOnDelete: ['layout_id', 'photo_key'],
+    captureOnDelete: ['layout_id', 'board_uuid', 'photo_key'],
   },
 };
 

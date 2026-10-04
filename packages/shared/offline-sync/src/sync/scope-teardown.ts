@@ -338,72 +338,9 @@ export async function removeBoardScopeData(params: {
     // bootstrapScopeFromSnapshot uses.
     await applyBusyTimeout(txn);
 
-    const { sql, params: predicateParams } = orphanClimbsPredicate(scope, retainedSizeIds);
-    const climbUuids = `SELECT uuid FROM board_climbs WHERE ${sql}`;
-
-    // Children BEFORE parents, and via a targeted `IN (subquery)` rather than a
-    // board_type-wide orphan sweep. Both details are load-bearing:
-    //
-    // - A sweep (`... AND NOT EXISTS (SELECT 1 FROM board_climbs WHERE uuid = climb_uuid ...)`
-    //   run after the climbs delete) would delete stats/grades whose climb row isn't
-    //   present YET. That state is normal and reachable: syncTable pulls climbs, then
-    //   stats, then grades per scope, so a DIFFERENT, concurrently-downloading scope
-    //   can sit with advanced stats/grades checkpoints while its climbs are mid-crawl.
-    //   The sweep would take its rows, its checkpoints would stay advanced, and the
-    //   strict `>` delta would never revisit them — permanent loss in a board the user
-    //   never asked to remove. Grades are the worst case: isBoardTypeDownloadedLocally
-    //   gates on board TYPE only, so the sweep's blast radius is the read path's.
-    //   The targeted form only touches children of climbs we are actually deleting.
-    // - Order: the subquery resolves against board_climbs, so deleting climbs first
-    //   would silently delete NOTHING from stats/grades. Covered by a regression test.
-    //
-    // The leading `board_type = ?` is not redundant — it range-scans idx_stats_lookup,
-    // and grades' (board_type, climb_uuid, angle) PK autoindex.
-    const stats = await txn.runAsync(
-      `DELETE FROM board_climb_stats WHERE board_type = ? AND climb_uuid IN (${climbUuids})`,
-      [scope.boardType, ...predicateParams],
-    );
-    const grades = await txn.runAsync(
-      `DELETE FROM board_climb_grades WHERE board_type = ? AND climb_uuid IN (${climbUuids})`,
-      [scope.boardType, ...predicateParams],
-    );
-    // The derived holds index, before the climbs (its hold sets are found
-    // through them). Its postings are per LAYOUT and shared with any retained
-    // sibling size, so the whole layout's index goes, with every sibling's
-    // watermark: a survivor rebuilds on its next cycle rather than keep postings
-    // that name climbs deleted here. Not counted in the result: the index is
-    // rebuilt from frames, never downloaded.
-    await clearLayoutHoldIndex(txn, scope.boardType, scope.layoutId);
-    const climbs = await txn.runAsync(`DELETE FROM board_climbs WHERE ${sql}`, predicateParams);
-
-    // The wall itself (#5448). Guarded on the board type, NOT merely on the
-    // layout id: `spray_walls.layout_id` lives in the spray sequence's id space,
-    // and Kilter layout 1 is a different thing from wall 1 — an unguarded delete
-    // would take a wall off the device because somebody removed a catalogue
-    // board that happens to share a number.
-    //
-    // The photo key is read first, in the same transaction, because after the
-    // DELETE nothing on the device knows which file belonged to this wall.
-    let sprayWalls = 0;
-    if (scope.boardType === SPRAY_BOARD_TYPE) {
-      const wallRow = await txn.getFirstAsync<{ photo_key: string | null }>(
-        'SELECT photo_key FROM spray_walls WHERE layout_id = ?',
-        [scope.layoutId],
-      );
-      removedPhotoKey = wallRow?.photo_key ?? null;
-      const wallDelete = await txn.runAsync('DELETE FROM spray_walls WHERE layout_id = ?', [scope.layoutId]);
-      sprayWalls = wallDelete.changes;
-    }
-
-    await clearScopeSyncMeta(txn, scopeKey);
-
-    result = {
-      climbsDeleted: climbs.changes,
-      statsDeleted: stats.changes,
-      gradesDeleted: grades.changes,
-      sprayWallsDeleted: sprayWalls,
-      removedAnyRows: climbs.changes + stats.changes + grades.changes + sprayWalls > 0,
-    };
+    const removed = await removeBoardScopeRows(txn, scope, scopeKey, retainedSizeIds);
+    result = removed.result;
+    removedPhotoKey = removed.removedPhotoKey;
   });
 
   // After the commit, for the reason on `removeSprayPhoto`. Never fatal: the row
@@ -427,4 +364,81 @@ export async function removeBoardScopeData(params: {
   }
 
   return result;
+}
+
+/** Internal transaction seam shared with confirmed access-revocation cleanup. */
+export async function removeBoardScopeRows(
+  txn: SqlExecutor,
+  scope: OfflineBoardScope,
+  scopeKey: string,
+  retainedSizeIds: readonly number[],
+): Promise<{ result: ScopeTeardownResult; removedPhotoKey: string | null }> {
+  let removedPhotoKey: string | null = null;
+  const { sql, params: predicateParams } = orphanClimbsPredicate(scope, retainedSizeIds);
+  const climbUuids = `SELECT uuid FROM board_climbs WHERE ${sql}`;
+
+  // Children BEFORE parents, and via a targeted `IN (subquery)` rather than a
+  // board_type-wide orphan sweep. Both details are load-bearing:
+  //
+  // - A sweep (`... AND NOT EXISTS (SELECT 1 FROM board_climbs WHERE uuid = climb_uuid ...)`
+  //   run after the climbs delete) would delete stats/grades whose climb row isn't
+  //   present YET. That state is normal and reachable: syncTable pulls climbs, then
+  //   stats, then grades per scope, so a DIFFERENT, concurrently-downloading scope
+  //   can sit with advanced stats/grades checkpoints while its climbs are mid-crawl.
+  //   The sweep would take its rows, its checkpoints would stay advanced, and the
+  //   strict `>` delta would never revisit them — permanent loss in a board the user
+  //   never asked to remove. Grades are the worst case: isBoardTypeDownloadedLocally
+  //   gates on board TYPE only, so the sweep's blast radius is the read path's.
+  //   The targeted form only touches children of climbs we are actually deleting.
+  // - Order: the subquery resolves against board_climbs, so deleting climbs first
+  //   would silently delete NOTHING from stats/grades. Covered by a regression test.
+  //
+  // The leading `board_type = ?` is not redundant — it range-scans idx_stats_lookup,
+  // and grades' (board_type, climb_uuid, angle) PK autoindex.
+  const stats = await txn.runAsync(
+    `DELETE FROM board_climb_stats WHERE board_type = ? AND climb_uuid IN (${climbUuids})`,
+    [scope.boardType, ...predicateParams],
+  );
+  const grades = await txn.runAsync(
+    `DELETE FROM board_climb_grades WHERE board_type = ? AND climb_uuid IN (${climbUuids})`,
+    [scope.boardType, ...predicateParams],
+  );
+  // The derived holds index, before the climbs (its hold sets are found
+  // through them). Its postings are per LAYOUT and shared with any retained
+  // sibling size, so the whole layout's index goes, with every sibling's
+  // watermark: a survivor rebuilds on its next cycle rather than keep postings
+  // that name climbs deleted here. Not counted in the result: the index is
+  // rebuilt from frames, never downloaded.
+  await clearLayoutHoldIndex(txn, scope.boardType, scope.layoutId);
+  const climbs = await txn.runAsync(`DELETE FROM board_climbs WHERE ${sql}`, predicateParams);
+
+  // The wall itself (#5448). Guarded on the board type, NOT merely on the
+  // layout id: `spray_walls.layout_id` lives in the spray sequence's id space,
+  // and Kilter layout 1 is a different thing from wall 1 — an unguarded delete
+  // would take a wall off the device because somebody removed a catalogue
+  // board that happens to share a number.
+  //
+  // The photo key is read first, in the same transaction, because after the
+  // DELETE nothing on the device knows which file belonged to this wall.
+  let sprayWalls = 0;
+  if (scope.boardType === SPRAY_BOARD_TYPE) {
+    const wallRow = await txn.getFirstAsync<{ photo_key: string | null }>(
+      'SELECT photo_key FROM spray_walls WHERE layout_id = ?',
+      [scope.layoutId],
+    );
+    removedPhotoKey = wallRow?.photo_key ?? null;
+    const wallDelete = await txn.runAsync('DELETE FROM spray_walls WHERE layout_id = ?', [scope.layoutId]);
+    sprayWalls = wallDelete.changes;
+  }
+
+  await clearScopeSyncMeta(txn, scopeKey);
+
+  const result = {
+    climbsDeleted: climbs.changes,
+    statsDeleted: stats.changes,
+    gradesDeleted: grades.changes,
+    sprayWallsDeleted: sprayWalls,
+    removedAnyRows: climbs.changes + stats.changes + grades.changes + sprayWalls > 0,
+  };
+  return { result, removedPhotoKey };
 }

@@ -91,6 +91,45 @@ reference table gated at all — and its three layers are not the three above:
 
 The wall's **climbs** are wiped on the same argument. A `spray_walls` row is not the only private thing a mirrored wall leaves on disk: its `board_climbs`, `board_climb_stats` and `board_climb_grades` rows carry the climb names, descriptions, frames and grades of somebody's garage, and `searchClimbsLocal` reads board reference data with no owner stamp — deliberately, because a Kilter catalogue is a shared cache. So the selective wipe also deletes those three tables' `board_type = 'spray'` rows (`SPRAY_SCOPED_BOARD_TABLES` in `connection.ts`), together with every spray scope's markers so no cursor outlives its rows. The catalogue boards stay, which is the whole point of the selective wipe.
 
+### Revoked spray-wall downloads (#5490)
+
+The owner's deletion tombstone is owner-scoped. A gym member or a climber who
+downloaded a public wall does not receive it, so the pull also checks for revoked
+access when an explicitly scoped `syncSprayWalls` page is empty and that wall
+still exists locally.
+
+An empty delta is not proof of revoked access: an unchanged wall returns the same
+page. A cursor-free sync request is ambiguous too, because recently edited rows
+are excluded by sync's 30-second stability window. The client confirms with the
+existing `sprayWallByLayout(layoutId) { uuid }` query, through the network fetch
+seam rather than a cached or offline read. Only an explicit `null` confirms that
+the wall is unavailable. Failed or malformed confirmations fail the cycle and
+preserve the download; they do not skip just the affected wall.
+
+Confirmed removals wait until the cycle finishes successfully. One guarded
+transaction then removes the wall, its downloaded climbs, stats, grades and
+derived holds index, together with the scope's checkpoints and download markers.
+A failed cycle or an interruption before commit does not retire the download.
+The deleted-row sink removes the stored photograph after commit and clears its
+pending-photo retry marker; an in-flight photograph must not recreate the file or
+retry bookkeeping after removal.
+
+The mobile sink also unregisters the wall's render geometry, removes cached
+photograph versions, and cancels and removes the wall's React Query entries.
+Pending render and editor loads are fenced by the wall's removal generation, so
+a response started before revocation cannot register the wall again afterwards.
+
+Personal ticks, unrelated board downloads, the global deletions cursor and the
+enabled-board setting remain. If access returns, the cleared markers allow a
+fresh download. This is device-cache removal: server walls continue to use soft
+deletion and retain the existing recovery window. Owner tombstones still take
+their existing path, and a wall already removed by a tombstone is not retired
+again.
+
+Reference-safe reaping of unreferenced server records is tracked separately in
+[#5951](https://github.com/boardsesh/boardsesh/issues/5951). The existing server
+photo reaper and its 30-day recovery window remain in place.
+
 The read is deliberately **not** gated on `isUserDataComplete`. That marker is about the user tables having reached their tail, and a downloaded wall is board data — gating on it would refuse a wall that is fully on disk.
 
 The persisted cache adds its own layer on top: the blob carries a `userId` stamp validated against resolved auth on every transition, it is deleted inside the single `clearPersistedUserStores` call site rather than by a parallel delete, and `needsFullCleanup` has to fire on a logged-out cold start **when a blob exists** — the "the cache is empty" comment that justifies skipping cleanup today is only true because nothing hydrates yet.
