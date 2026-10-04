@@ -21,8 +21,9 @@ interface ShelfListProps {
   renderItem: unknown;
   extraData: unknown;
   drawDistance: number;
+  style: { height: number };
 }
-const list = vi.hoisted(() => ({ current: null as ShelfListProps | null }));
+const list = vi.hoisted(() => ({ current: null as ShelfListProps | null, fontScale: 1 }));
 vi.mock('@shopify/flash-list', () => ({
   FlashList: (props: ShelfListProps) => {
     list.current = props;
@@ -32,7 +33,7 @@ vi.mock('@shopify/flash-list', () => ({
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles },
-  useWindowDimensions: () => ({ fontScale: 1, width: 390, height: 844 }),
+  useWindowDimensions: () => ({ fontScale: list.fontScale, width: 390, height: 844 }),
 }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 2: 8, 4: 16 } }));
 vi.mock('../../../providers/theme-provider', () => ({
@@ -59,6 +60,7 @@ function callbacks(): ShelfListProps {
 }
 beforeEach(() => {
   list.current = null;
+  list.fontScale = 1;
 });
 describe('playlist shelf pagination', () => {
   it('loads one page per user end-reach and never drains appended data', () => {
@@ -212,6 +214,21 @@ describe('playlist shelf pagination', () => {
     expect(callbacks().renderItem).toBe(renderItem);
     expect(callbacks().extraData).toBe(extraData);
     expect(callbacks().keyExtractor(items[count - 1])).toBe(String(count - 1));
+  });
+  it.each([1, 1.5, 3])('sets the native list viewport height at font scale %s', (fontScale) => {
+    list.fontScale = fontScale;
+    render(
+      <PlaylistShelf
+        title="For You"
+        items={[{ uuid: 'projects' }]}
+        renderItem={renderItem}
+        keyExtractor={keyExtractor}
+        hasMore={false}
+        onEndReached={vi.fn()}
+      />,
+    );
+    expect(callbacks().style.height).toBe(playlistShelfHeight(fontScale, 20, 16));
+    expect(callbacks().style.height).toBeGreaterThan(120);
   });
   it('reserves room for card text up to the shared Text scaling cap', () => {
     expect(playlistShelfHeight(1, 20, 16)).toBe(172);
