@@ -92,6 +92,16 @@ export type GetPublicSupportersVariables = { limit: number; offset: number };
 export const PUBLIC_SUPPORTERS_PAGE_SIZE = 500;
 export const PUBLIC_SUPPORTERS_MAX_PAGES = 20;
 
+/** Offset pages may overlap when public visibility changes between requests. */
+export function deduplicatePublicSupporters(supporters: PublicSupporter[]): PublicSupporter[] {
+  const seenUserIds = new Set<string>();
+  return supporters.filter((supporter) => {
+    if (seenUserIds.has(supporter.userId)) return false;
+    seenUserIds.add(supporter.userId);
+    return true;
+  });
+}
+
 export async function fetchAllPublicSupporters(
   requestPage: (variables: GetPublicSupportersVariables) => Promise<GetPublicSupportersResponse>,
 ): Promise<PublicSupporter[]> {
@@ -100,7 +110,7 @@ export async function fetchAllPublicSupporters(
     const offset = pageIndex * PUBLIC_SUPPORTERS_PAGE_SIZE;
     const page = await requestPage({ limit: PUBLIC_SUPPORTERS_PAGE_SIZE, offset });
     supporters.push(...page.publicSupporters);
-    if (page.publicSupporters.length < PUBLIC_SUPPORTERS_PAGE_SIZE) return supporters;
+    if (page.publicSupporters.length < PUBLIC_SUPPORTERS_PAGE_SIZE) return deduplicatePublicSupporters(supporters);
   }
-  return supporters;
+  return deduplicatePublicSupporters(supporters);
 }
