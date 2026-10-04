@@ -27,7 +27,7 @@ import {
 } from '@boardsesh/board-render/pipeline';
 import { createOverlayRenderer, type OverlayRenderer } from '@boardsesh/board-render/wasm';
 import type { BoardName } from '@boardsesh/shared-schema';
-import sharp from 'sharp';
+import sharp, { type OverlayOptions } from 'sharp';
 import { logger } from '../utils/logger';
 
 /**
@@ -505,7 +505,7 @@ export function runOnRenderSemaphore<T>(fn: () => Promise<T>): Promise<T> {
   return renderSemaphore.run(fn);
 }
 
-async function renderOgCardLayersOrNone(card: OgCardContent): Promise<sharp.OverlayOptions[] | undefined> {
+async function renderOgCardLayersOrNone(card: OgCardContent): Promise<OverlayOptions[] | undefined> {
   try {
     return await renderOgCardLayers(card);
   } catch (error) {
