@@ -13,7 +13,8 @@ import { memo, useState, type ReactNode } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Chip, Divider, Menu } from 'react-native-paper';
-import { PROGRESS_FILTER_VALUES, SORT_OPTIONS, GRADE_ACCURACY_VALUES } from '@boardsesh/climb-filters';
+import { PROGRESS_FILTER_VALUES, GRADE_ACCURACY_VALUES } from '@boardsesh/climb-filters';
+import { getSortOptionsForBoard } from '../../lib/climb-filter-types';
 import { getFilterKey } from '../../lib/recent-filter-store';
 import { POPULARITY_BUCKETS, RATING_BUCKETS } from '../../lib/filter-chip-menus';
 import { COLLECTION_VALUES } from '../../lib/collection-filter';
@@ -62,6 +63,7 @@ function MenuChip({
 }
 
 function FilterChipRowComponent({
+  boardName,
   pinnedChips,
   activeFilterCount,
   onOpenFilters,
@@ -116,6 +118,9 @@ function FilterChipRowComponent({
   // Built once per render (and only when Sort is actually pinned), reused for the
   // resting label + every menu item.
   const sortLabelFor = pinnedChips.includes('sort') ? buildSortLabel(t) : null;
+  const sortOptions = getSortOptionsForBoard(boardName);
+  const selectedSortBy = sortOptions.includes(sortBy) ? sortBy : 'difficulty';
+  const selectedSortActive = sortActive && sortBy === selectedSortBy;
 
   return (
     <>
@@ -351,15 +356,15 @@ function FilterChipRowComponent({
             Random reseeds a fresh shuffle. Opt-in, sits last. */}
         {pinnedChips.includes('sort') ? (
           <MenuChip
-            label={sortActive ? (sortLabelFor?.(sortBy) ?? sortBy) : t('mobile.filter.sortBy')}
-            selected={sortActive}
+            label={selectedSortActive ? (sortLabelFor?.(selectedSortBy) ?? selectedSortBy) : t('mobile.filter.sortBy')}
+            selected={selectedSortActive}
           >
             {(close) =>
-              SORT_OPTIONS.map((value) => (
+              sortOptions.map((value) => (
                 <Menu.Item
                   key={value}
                   title={sortLabelFor?.(value) ?? value}
-                  leadingIcon={value === sortBy ? 'check' : undefined}
+                  leadingIcon={value === selectedSortBy ? 'check' : undefined}
                   onPress={() => {
                     onChangeSort(value);
                     close();

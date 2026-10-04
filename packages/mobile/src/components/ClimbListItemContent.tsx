@@ -355,6 +355,15 @@ const LiveClimbSubtitle = React.memo(function LiveClimbSubtitle({
   );
 });
 
+/** Keep the personal-grade choice identical wherever a climb row displays it. */
+function isPersonalGradePrimary(
+  derived: ReturnType<typeof derivePersonalGradeDisplay>,
+  gradeIsConsensus: boolean,
+  consensusGrade: string | null | undefined,
+): boolean {
+  return consensusGrade === undefined && !gradeIsConsensus && derived.source === 'personal';
+}
+
 const LiveClimbGrade = React.memo(function LiveClimbGrade({
   climb,
   boardName,
@@ -401,7 +410,7 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
   // logbook or session row rendering one specific tick). Otherwise the row
   // derives its own answer, so all six hosts get this without a prop change.
   const derived = derivePersonalGradeDisplay(mine?.label ?? null, crowdLabel);
-  const showsMine = consensusGrade === undefined && !gradeIsConsensus && derived.source === 'personal' && mine;
+  const showsMine = isPersonalGradePrimary(derived, gradeIsConsensus, consensusGrade) && mine;
 
   const primaryLabel = showsMine ? mine.label : crowdLabel;
   const primaryColor = showsMine ? mine.color : crowdColor;
@@ -467,6 +476,59 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
         </Text>
       ) : null}
     </View>
+  );
+});
+
+/**
+ * The grade-error badge is calculated from the legacy displayed grade. Keep it
+ * beside that grade only while the same legacy baseline is actually visible;
+ * when the shared resolver displays Boardsesh grade, the old delta no longer
+ * describes the number in the grade column. This exact-key live-stat reader is
+ * O(1) and isolated from the row shell, just like the grade/subtitle readers.
+ */
+const LiveClimbAttributeIcons = React.memo(function LiveClimbAttributeIcons({
+  climb,
+  boardName,
+  layoutId,
+  angle,
+  gradeIsConsensus,
+  consensusGrade,
+}: {
+  climb: ClimbListItemClimb;
+  boardName: BoardName;
+  layoutId: number;
+  angle: number;
+  gradeIsConsensus: boolean;
+  consensusGrade?: string | null;
+}) {
+  const { resolveGrade } = useDisplayGrade();
+  const { gradeFormat } = useGradeFormat();
+  const liveStats = useEffectiveClimbStats(boardName, layoutId, climb.uuid, angle, {
+    ascensionistCount: climb.ascensionist_count,
+    qualityAverage: climb.quality_average,
+    difficulty: climb.difficulty,
+  });
+  const resolvedGrade = resolveGrade({ ...climb, difficulty: liveStats.difficulty });
+  // Match LiveClimbGrade's primary selection exactly. A crowd-versus-setter
+  // delta is misleading if the row instead puts a personal grade first.
+  const myGrade = useMyGrade(climb.uuid, angle, { rowDifficulty: climb.myDifficulty });
+  const mine = myGrade.status === 'set' ? renderDifficulty(myGrade.difficultyId, gradeFormat) : null;
+  const derived = derivePersonalGradeDisplay(mine?.label ?? null, resolvedGrade.label);
+  const showsMine = isPersonalGradePrimary(derived, gradeIsConsensus, consensusGrade) && mine !== null;
+  // `difficulty_error` was measured against the row's original display grade.
+  // A live canonical replacement has no matching average delta in this payload.
+  const hasMatchingLegacyBaseline = liveStats.difficulty === climb.difficulty;
+
+  return (
+    <ClimbAttributeIcons
+      benchmarkDifficulty={climb.benchmark_difficulty}
+      characteristics={climb.characteristics}
+      isNoMatch={climb.is_no_match}
+      difficultyError={
+        resolvedGrade.isBoardsesh || showsMine || !hasMatchingLegacyBaseline ? null : climb.difficulty_error
+      }
+      ascensionistCount={climb.ascensionist_count}
+    />
   );
 });
 
@@ -542,12 +604,13 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
           <Text variant="body" numberOfLines={1} style={styles.climbName}>
             {climb.name}
           </Text>
-          <ClimbAttributeIcons
-            benchmarkDifficulty={climb.benchmark_difficulty}
-            characteristics={climb.characteristics}
-            isNoMatch={climb.is_no_match}
-            difficultyError={climb.difficulty_error}
-            ascensionistCount={climb.ascensionist_count}
+          <LiveClimbAttributeIcons
+            climb={climb}
+            boardName={boardName}
+            layoutId={layoutId}
+            angle={angle}
+            gradeIsConsensus={gradeIsConsensus}
+            consensusGrade={consensusGrade}
           />
           {climb.is_hidden ? <HiddenChip /> : null}
           {typeof climb.missingHoldCount === 'number' && climb.missingHoldCount > 0 ? (

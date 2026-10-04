@@ -26,7 +26,6 @@ import {
   type StatusFilter,
   type GradeAccuracyValue,
   type ClimbBoardFilterState,
-  SORT_OPTIONS,
   GRADE_ACCURACY_VALUES,
   PROGRESS_FILTER_VALUES,
   flagsToProgress,
@@ -71,7 +70,7 @@ import { iosSystemColors } from '../theme/ios-colors';
 import { spacing } from '../theme/tokens';
 import { GradeRangeRail } from './grade';
 import type { ClimbFilters } from '../lib/climb-filter-types';
-import { DEFAULT_FILTERS, statusForAuth } from '../lib/climb-filter-types';
+import { DEFAULT_FILTERS, filtersForBoard, getSortOptionsForBoard, statusForAuth } from '../lib/climb-filter-types';
 import { NO_LOCKED_DIMENSIONS, withLockedDimensions, type LockedDimensions } from '../lib/dimension-chips';
 
 export type { ClimbFilters };
@@ -229,7 +228,10 @@ export function ClimbFilterSheet({
   const showCountNote = boardName === 'kilter';
 
   const [localFilters, setLocalFilters] = useState<ClimbFilters>(() =>
-    withLockedDimensions(statusForAuth(normalizeRetiredStatus(currentFilters), isAuthenticated), lockedDimensions),
+    withLockedDimensions(
+      filtersForBoard(statusForAuth(normalizeRetiredStatus(currentFilters), isAuthenticated), boardName),
+      lockedDimensions,
+    ),
   );
   const [localBoardFilters, setLocalBoardFilters] = useState<ClimbBoardFilterState>(currentBoardFilters);
   // The name field's own draft — seeded from the committed `searchName` prop.
@@ -290,12 +292,12 @@ export function ClimbFilterSheet({
     // parent prop sync should not mark committed state as an in-flight edit.
     setLocalFilters(
       withLockedDimensions(
-        statusForAuth(normalizeRetiredStatus(currentFilters), isAuthenticated),
+        filtersForBoard(statusForAuth(normalizeRetiredStatus(currentFilters), isAuthenticated), boardName),
         lockedDimensionsRef.current,
       ),
     );
     setLocalBoardFilters(currentBoardFilters);
-  }, [currentFilters, currentBoardFilters, isAuthenticated]);
+  }, [currentFilters, currentBoardFilters, isAuthenticated, boardName]);
 
   // Safety net for an auth flip while the user is mid-edit. The parent-sync effect
   // also reacts to isAuthenticated, but it early-returns once there are local draft
@@ -361,7 +363,7 @@ export function ClimbFilterSheet({
   const previewInput = useMemo(() => {
     if (!boardConfig) return null;
     return buildCountPreviewInput(
-      debouncedEdits.filters,
+      filtersForBoard(debouncedEdits.filters, boardConfig.boardName),
       debouncedEdits.boardFilters,
       boardConfig,
       debouncedEdits.name,
@@ -591,7 +593,7 @@ export function ClimbFilterSheet({
   const handleApply = useCallback(() => {
     if (pendingApplyRef.current) return;
     pendingApplyRef.current = {
-      filters: localFilters,
+      filters: filtersForBoard(localFilters, boardConfigRef.current?.boardName ?? ''),
       boardFilters: localBoardFilters,
       boardKey: boardKeyOf(boardConfigRef.current),
     };
@@ -1327,9 +1329,9 @@ export function ClimbFilterSheet({
               {/* Flex-wrap (matching the popularity/rating chip rows above), not a
                   horizontal ScrollView: a gesture-handler ScrollView nested in the
                   native bottom sheet collapsed the chip row's height on iOS and
-                  clipped the labels. SORT_OPTIONS is short, so wrapping is fine. */}
+                  clipped the labels. The board-specific sort list stays short. */}
               <View style={styles.chipRow}>
-                {SORT_OPTIONS.map((option) => (
+                {getSortOptionsForBoard(boardName).map((option) => (
                   <Chip
                     key={option}
                     label={sortLabels[option]}

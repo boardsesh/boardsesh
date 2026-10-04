@@ -22,6 +22,7 @@ import {
   type GradeAccuracyValue,
 } from '@boardsesh/climb-filters';
 import type { CollectionFilter, ClimbTypeFilter } from '../../lib/collection-filter';
+export { isSortOptionForBoard } from '../../lib/climb-filter-types';
 
 export { progressFilterLabel } from '../../lib/filter-labels';
 export { isCollectionFilter } from '../../lib/collection-filter';

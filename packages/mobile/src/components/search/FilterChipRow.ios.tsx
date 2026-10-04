@@ -29,7 +29,8 @@ import { StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Host, HStack, ScrollView, Menu, Picker, Button, Text, Divider } from '@expo/ui/swift-ui';
 import { buttonStyle, controlSize, tint, tag, padding, fixedSize } from '@expo/ui/swift-ui/modifiers';
-import { PROGRESS_FILTER_VALUES, SORT_OPTIONS, GRADE_ACCURACY_VALUES } from '@boardsesh/climb-filters';
+import { PROGRESS_FILTER_VALUES, GRADE_ACCURACY_VALUES } from '@boardsesh/climb-filters';
+import { getSortOptionsForBoard } from '../../lib/climb-filter-types';
 import { getFilterKey } from '../../lib/recent-filter-store';
 import {
   POPULARITY_BUCKETS,
@@ -48,7 +49,7 @@ import {
   isProgressFilter,
   collectionChipLabel,
   isCollectionFilter,
-  isSortOption,
+  isSortOptionForBoard,
   accuracyChipLabel,
   isAccuracyTag,
   climbTypeChipLabel,
@@ -59,6 +60,7 @@ import { COLLECTION_VALUES } from '../../lib/collection-filter';
 import type { FilterChipRowProps } from './FilterChipRow.types';
 
 function FilterChipRowComponent({
+  boardName,
   pinnedChips,
   activeFilterCount,
   onOpenFilters,
@@ -98,6 +100,9 @@ function FilterChipRowComponent({
   // Built once per render (and only when Sort is actually pinned), reused for the
   // resting label + every menu item.
   const sortLabelFor = pinnedChips.includes('sort') ? buildSortLabel(t) : null;
+  const sortOptions = getSortOptionsForBoard(boardName);
+  const selectedSortBy = sortOptions.includes(sortBy) ? sortBy : 'difficulty';
+  const selectedSortActive = sortActive && sortBy === selectedSortBy;
 
   // Popularity / rating chip wording lives in FilterChipRow.logic (shared with the
   // Android tree) so a filter is never worded two ways across platforms.
@@ -363,17 +368,19 @@ function FilterChipRowComponent({
               refinement). Picking Random reseeds a fresh shuffle. Opt-in, sits last. */}
           {pinnedChips.includes('sort') ? (
             <Menu
-              label={sortActive ? (sortLabelFor?.(sortBy) ?? sortBy) : t('mobile.filter.sortBy')}
-              modifiers={chipModifiers(sortActive)}
+              label={
+                selectedSortActive ? (sortLabelFor?.(selectedSortBy) ?? selectedSortBy) : t('mobile.filter.sortBy')
+              }
+              modifiers={chipModifiers(selectedSortActive)}
             >
               <Picker
-                selection={sortBy}
+                selection={selectedSortBy}
                 onSelectionChange={(value) => {
-                  if (typeof value !== 'string' || !isSortOption(value)) return;
+                  if (typeof value !== 'string' || !isSortOptionForBoard(value, boardName)) return;
                   onChangeSort(value);
                 }}
               >
-                {SORT_OPTIONS.map((value) => (
+                {sortOptions.map((value) => (
                   <Text key={value} modifiers={[tag(value)]}>
                     {sortLabelFor?.(value) ?? value}
                   </Text>
