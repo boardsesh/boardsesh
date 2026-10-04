@@ -11,6 +11,10 @@ on:
           - copy
           - verify
         default: inventory
+      concurrency:
+        description: 'Parallel object workers for copy and every full verification pass (1–64).'
+        type: string
+        default: '32'
       ota_publishes_frozen:
         description: 'Confirm all production, preview, backport, and cleanup OTA writes stay frozen through cutover.'
         type: boolean
@@ -31,6 +35,16 @@ jobs:
     timeout-minutes: 180
     environment: Production
     steps:
+      - name: Validate migration concurrency
+        env:
+          OTA_MIGRATION_CONCURRENCY: ${{ inputs.concurrency }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$OTA_MIGRATION_CONCURRENCY" =~ ^[1-9][0-9]?$ ]] || (( OTA_MIGRATION_CONCURRENCY > 64 )); then
+            echo '::error::Migration concurrency must be an integer from 1 to 64.'
+            exit 1
+          fi
+
       - name: Require a write freeze for copy and verification
         if: inputs.mode != 'inventory' && !inputs.ota_publishes_frozen
         run: |
@@ -87,6 +101,8 @@ jobs:
 
       - name: Inventory, copy, or verify OTA objects
         env:
+          OTA_MIGRATION_CONCURRENCY: ${{ inputs.concurrency }}
+          OTA_MIGRATION_MODE: ${{ inputs.mode }}
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
           OTA_R2_AWS_ENDPOINT_URL: ${{ secrets.OTA_R2_AWS_ENDPOINT_URL }}
@@ -94,9 +110,9 @@ jobs:
           OTA_R2_AWS_SECRET_ACCESS_KEY: ${{ secrets.OTA_R2_AWS_SECRET_ACCESS_KEY }}
           OTA_R2_AWS_REGION: auto
         run: |
-          case '${{ inputs.mode }}' in
-            inventory) vp run storage:migrate-ota ;;
-            copy) vp run storage:migrate-ota -- --apply ;;
-            verify) vp run storage:migrate-ota -- --verify-only ;;
+          case "$OTA_MIGRATION_MODE" in
+            inventory) vp run storage:migrate-ota -- --concurrency "$OTA_MIGRATION_CONCURRENCY" ;;
+            copy) vp run storage:migrate-ota -- --apply --concurrency "$OTA_MIGRATION_CONCURRENCY" ;;
+            verify) vp run storage:migrate-ota -- --verify-only --concurrency "$OTA_MIGRATION_CONCURRENCY" ;;
             *) echo '::error::Unknown migration mode'; exit 1 ;;
           esac
