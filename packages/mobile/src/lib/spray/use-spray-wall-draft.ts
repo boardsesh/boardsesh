@@ -215,11 +215,13 @@ export function useSprayWallDraft(
   // unavailable — that is the one-frame flash.
   const awaitingVerdict = renderData != null && verdict?.payload !== renderData;
 
-  const isLoading = asked && (query.isPending || awaitingVerdict);
-  const isUnavailable = asked && !query.isPending && !awaitingVerdict && !(verdict?.ok ?? false);
   // True from the retry tap until its read has started, so the tap is answered
-  // with the loading line while the connectivity probe is still out.
+  // with the loading line while the connectivity probe is still out. It counts
+  // as loading and never as unavailable: a read that gave up is no longer
+  // pending, and without this the tap would flash "no photo to edit yet".
   const [retrying, setRetrying] = useState(false);
+  const isLoading = asked && (retrying || query.isPending || awaitingVerdict);
+  const isUnavailable = asked && !retrying && !query.isPending && !awaitingVerdict && !(verdict?.ok ?? false);
   // `paused` is a retry parked because the phone reads as offline; `isError` is
   // a read that gave up. A retry that is backing off or running is neither.
   const isStalled = asked && !retrying && query.data === undefined && (query.fetchStatus === 'paused' || query.isError);
@@ -235,6 +237,9 @@ export function useSprayWallDraft(
       // `refetch` hands back a parked read as it is, so that one is cancelled
       // first and the new read starts from its first attempt.
       .then(() => queryClient.cancelQueries({ queryKey: sprayWallDraftQueryKey(wallUuid, versionNumber) }))
+      // A cancel that fails still ends the "retrying" state and still reads:
+      // left set, it would hide the stalled screen behind a spinner for good.
+      .catch(() => undefined)
       .then(() => {
         setRetrying(false);
         return refetch();

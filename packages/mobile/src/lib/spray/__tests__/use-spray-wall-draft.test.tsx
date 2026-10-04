@@ -242,6 +242,10 @@ describe('useSprayWallDraft — a read that is not getting anywhere', () => {
     act(() => result.current.retry());
     // The tap is answered at once, while the probe is still out.
     expect(result.current.isStalled).toBe(false);
+    // The read that gave up is no longer pending, so only the retry itself
+    // keeps this on the loading line and off "no photo to edit yet".
+    expect(result.current.isLoading).toBe(true);
+    expect(result.current.isUnavailable).toBe(false);
     expect(retryConnectivityNowMock).toHaveBeenCalledTimes(1);
     expect(requestMock).toHaveBeenCalledTimes(1);
 
