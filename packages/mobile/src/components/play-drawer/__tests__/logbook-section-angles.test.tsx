@@ -5,10 +5,11 @@ import { createElement, type ReactNode } from 'react';
 import type { BoardName } from '@boardsesh/shared-schema';
 import type { LogbookEntry } from '@boardsesh/board-react';
 
-// react-native isn't satisfiable under jsdom; stub the surface the section touches.
+// react-native isn't satisfiable under jsdom; stub the surface the card touches.
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode } & Record<string, unknown>) => createElement('div', null, children),
-  ActivityIndicator: () => createElement('i', null),
+  View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
+    createElement('div', { 'data-testid': testID }, children),
+  ActivityIndicator: () => createElement('i', { 'data-testid': 'spinner' }),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
   Platform: { OS: 'ios' },
   PlatformColor: (name: string) => name,
@@ -17,49 +18,74 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: () => createElement('i', null) }));
+vi.mock('../../PressableSurface', () => ({
+  PressableSurface: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
+    createElement('button', { type: 'button', onClick: onPress }, children),
+}));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    // Counts render as `key:count`; the recap template keys interpolate their
-    // pre-translated segments like the real en-US catalog so joining is exercised.
-    t: (key: string, opts?: Record<string, unknown>) => {
-      if (opts && typeof opts.count === 'number') return `${key}:${opts.count}`;
-      const templates: Record<string, string> = {
-        'mobile.logbook.lifetimeRecap': '{{tries}} {{sessions}}',
-        'mobile.logbook.lifetimeRecapWithSends': '{{tries}} {{sessions}} · {{sends}}',
-      };
-      const template = templates[key];
-      if (template && opts) {
-        return Object.entries(opts).reduce(
-          (rendered, [name, value]) => rendered.replace(`{{${name}}}`, String(value)),
-          template,
-        );
-      }
-      return key;
+    // `key` alone, or `key(name=value,...)` so every interpolated segment,
+    // including nested pre-translated ones, is assertable.
+    t: (key: string, opts?: Record<string, unknown>) =>
+      opts
+        ? `${key}(${Object.entries(opts)
+            .map(([name, value]) => `${name}=${String(value)}`)
+            .join(',')})`
+        : key,
+  }),
+}));
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({
+    colorScheme: 'light',
+    brandColors: { primary: '#primary', primaryFill: '#primaryFill' },
+    systemColors: {
+      label: '#label',
+      secondaryLabel: '#secondary',
+      separator: '#separator',
+      elevatedSurface: '#raised',
+      fill: '#fill',
+      accent: '#accent',
     },
   }),
 }));
+vi.mock('../../../hooks/use-grade-format', () => ({
+  useGradeFormat: () => ({
+    formatGradeByDifficultyId: (id: number | null | undefined) => (id == null ? null : `V${id}`),
+  }),
+}));
 
-// Capture stub: records each row's props so the angle-chip passthrough is
-// assertable without rendering the real row.
+// Capture stub: records each row's props so passthrough is assertable without
+// rendering the real row.
 const rows = vi.hoisted(() => ({ props: [] as Array<Record<string, unknown>> }));
 vi.mock('../LogbookEntryRow', () => ({
   LogbookEntryRow: (props: Record<string, unknown>) => {
     rows.props.push(props);
-    return createElement('div', null);
+    return createElement('div', { 'data-testid': 'entry-row' });
   },
 }));
 
-const logbookState = vi.hoisted(() => ({ logbook: [] as unknown[], isLoading: false }));
-vi.mock('@boardsesh/board-react', () => ({
-  useLogbook: () => logbookState,
+const logbookState = vi.hoisted(() => ({
+  logbook: [] as unknown[],
+  fetchedUuids: new Set<string>() as ReadonlySet<string>,
+  error: null as Error | null,
+  // Deliberately misleading: the card must never read this board-wide flag.
+  isLoading: false,
+}));
+vi.mock('@boardsesh/board-react', () => ({ useLogbook: () => logbookState }));
+
+const pending = vi.hoisted(() => ({ count: 0 }));
+vi.mock('../../../hooks/use-local-ticks', () => ({ useLocalPendingTicks: () => ({ data: pending.count }) }));
+
+const connectivity = vi.hoisted(() => ({ effectiveOffline: false }));
+vi.mock('../../../lib/connectivity/use-connectivity', () => ({
+  useConnectivityField: (select: (snapshot: { effectiveOffline: boolean }) => unknown) => select(connectivity),
 }));
 
-// LogbookSection reads locally-queued (offline) tick counts via a React Query
-// hook; mock it so the test doesn't need a QueryClientProvider.
-vi.mock('../../../hooks/use-local-ticks', () => ({ useLocalPendingTicks: () => ({ data: 0 }) }));
+// Noon UTC on 22 June 2026: "today" for every fixture below, in any timezone
+// within twelve hours of UTC.
+vi.mock('../../../lib/clock', () => ({ nowMs: () => Date.parse('2026-06-22T12:00:00Z') }));
 
-// The section's first branch is the signed-out prompt; every case here is about
-// a member's own entries, so the session is signed in.
+// Every case here is about a member's own entries, so the session is signed in.
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 
 import { LogbookSection } from '../LogbookSection';
@@ -74,107 +100,180 @@ function makeEntry(overrides: Partial<LogbookEntry>): LogbookEntry {
     quality: null,
     difficulty: null,
     comment: '',
-    climbed_at: '2026-06-01T12:00:00.000Z',
+    climbed_at: '2026-06-01T12:00:00',
     is_ascent: true,
     status: 'send',
     upvotes: 0,
     downvotes: 0,
     commentCount: 0,
     ...overrides,
-  } as LogbookEntry;
+  };
 }
 
-function renderSection(boardName: BoardName = 'kilter', layoutId = 1) {
+const attempt = (overrides: Partial<LogbookEntry>) => makeEntry({ status: 'attempt', is_ascent: false, ...overrides });
+
+function renderSection(options: { boardName?: BoardName; layoutId?: number; angle?: number } = {}) {
   return render(
     createElement(LogbookSection, {
       climbUuid: 'climb-1',
-      boardName,
-      layoutId,
+      boardName: options.boardName ?? 'kilter',
+      layoutId: options.layoutId ?? 1,
+      angle: options.angle ?? 40,
       userAscents: null,
       userAttempts: null,
     }),
   );
 }
 
+const recap = (tries: number, sessions: number) =>
+  `mobile.logbook.lifetimeRecap(tries=mobile.logbook.lifetimeTries(count=${tries}),sessions=mobile.logbook.lifetimeSessions(count=${sessions}))`;
+const angleLine = (result: string, tries: number, sessions: number) =>
+  `mobile.logbook.angleLine(result=${result},recap=${recap(tries, sessions)})`;
+const statRecap = (tries: number, sends: number, sessions: number) =>
+  `mobile.logbook.statRecap(tries=mobile.logbook.lifetimeTries(count=${tries}),sends=mobile.logbook.sendCount(count=${sends}),sessions=mobile.logbook.lifetimeSessions(count=${sessions}))`;
+
 beforeEach(() => {
   rows.props = [];
   logbookState.logbook = [];
-  logbookState.isLoading = false;
+  logbookState.fetchedUuids = new Set(['climb-1']);
+  logbookState.error = null;
+  pending.count = 0;
+  connectivity.effectiveOffline = false;
 });
 
-describe('LogbookSection — per-angle section headers', () => {
-  it('renders one header per angle, steepest first, with the lifetime recap', () => {
-    logbookState.logbook = [
-      makeEntry({
-        uuid: 'a',
-        angle: 40,
-        tries: 4,
-        status: 'attempt',
-        is_ascent: false,
-        climbed_at: '2026-06-01T10:00:00',
-      }),
-      // 40° holds the NEWEST activity; 45° must still lead (steepest first).
-      makeEntry({ uuid: 'b', angle: 40, tries: 3, status: 'send', climbed_at: '2026-06-22T10:00:00' }),
-      makeEntry({
-        uuid: 'c',
-        angle: 45,
-        tries: 2,
-        status: 'attempt',
-        is_ascent: false,
-        climbed_at: '2026-06-20T10:00:00',
-      }),
-    ];
-    const { container } = renderSection();
-    const text = container.textContent ?? '';
+describe('LogbookSection: per-angle sections', () => {
+  const threeAngles = [
+    attempt({ uuid: 'a', angle: 40, tries: 4, climbed_at: '2026-06-01T10:00:00' }),
+    makeEntry({ uuid: 'b', angle: 40, tries: 3, climbed_at: '2026-06-20T10:00:00' }),
+    attempt({ uuid: 'c', angle: 45, tries: 2, climbed_at: '2026-06-21T10:00:00' }),
+    makeEntry({ uuid: 'd', angle: 30, tries: 1, status: 'flash', climbed_at: '2026-06-10T10:00:00' }),
+  ];
 
-    // Steepest angle (45°) leads regardless of recency; its recap has no sends part.
-    const fortyFiveAt = text.indexOf('45°');
-    const fortyAt = text.indexOf('40°');
-    expect(fortyFiveAt).toBeGreaterThanOrEqual(0);
-    expect(fortyAt).toBeGreaterThan(fortyFiveAt);
-
-    // 40° lifetime: 7 tries over 2 sessions · 1 send. 45°: 2 tries, 1 session, no sends.
-    expect(text).toContain('mobile.logbook.lifetimeTries:7 mobile.logbook.lifetimeSessions:2');
-    expect(text).toContain('mobile.logbook.lifetimeSends:1');
-    expect(text).toContain('mobile.logbook.lifetimeTries:2 mobile.logbook.lifetimeSessions:1');
-    // Exactly one sends fragment — the sendless 45° recap must omit it.
-    expect(text.match(/lifetimeSends/g)).toHaveLength(1);
-  });
-
-  it('drops the per-row angle chip under the headers and buckets rows by angle', () => {
-    logbookState.logbook = [
-      makeEntry({ uuid: 'a', angle: 40, climbed_at: '2026-06-21T10:00:00' }),
-      makeEntry({ uuid: 'b', angle: 45, climbed_at: '2026-06-20T10:00:00' }),
-    ];
-    renderSection();
-    expect(rows.props).toHaveLength(2);
-    expect(rows.props.every((rowProps) => rowProps.showAngleChip === false)).toBe(true);
-    // Steepest-first section order governs row order, not recency (40° is newer).
+  it('leads with the board angle, then the rest steepest first', () => {
+    logbookState.logbook = threeAngles;
+    renderSection({ angle: 40 });
     const rowAngles = rows.props.map((rowProps) => (rowProps.entry as LogbookEntry).angle);
-    expect(rowAngles).toEqual([45, 40]);
+    expect(rowAngles).toEqual([40, 40, 45, 30]);
+  });
+
+  it('is plain steepest first when the board angle has no logs', () => {
+    logbookState.logbook = threeAngles;
+    renderSection({ angle: 55 });
+    const rowAngles = rows.props.map((rowProps) => (rowProps.entry as LogbookEntry).angle);
+    expect(rowAngles).toEqual([45, 40, 40, 30]);
+  });
+
+  it('marks only the board angle as where the board is', () => {
+    logbookState.logbook = threeAngles;
+    const { container } = renderSection({ angle: 40 });
+    const text = container.textContent ?? '';
+    expect(text.match(/mobile\.logbook\.angleBoardIsHere/g)).toHaveLength(1);
+    // Plain words in the 40° heading, ahead of the 45° one.
+    expect(text).toContain('40° · mobile.logbook.angleBoardIsHere');
+    expect(text.indexOf('mobile.logbook.angleBoardIsHere')).toBeLessThan(text.indexOf('45°'));
+
+    rows.props = [];
+    const elsewhere = renderSection({ angle: 55 });
+    expect(elsewhere.container.textContent).not.toContain('mobile.logbook.angleBoardIsHere');
+  });
+
+  it('tells each angle’s story: which session the send came in, a flash, or no send', () => {
+    logbookState.logbook = threeAngles;
+    const { container } = renderSection({ angle: 40 });
+    const text = container.textContent ?? '';
+    // 40°: 4 falls then a send of 3 on a second day. The board's angle tells
+    // its story once, in the line under the verdict, not again in its heading.
+    expect(text).toContain(
+      `mobile.logbook.angleLine(result=mobile.logbook.angleSentInSession(session=2),recap=${statRecap(7, 1, 2)})`,
+    );
+    expect(text).not.toContain(angleLine('mobile.logbook.angleSentInSession(session=2)', 7, 2));
+    expect(text).toContain(`45° · ${angleLine('mobile.logbook.angleNoSend', 2, 1)}`);
+    expect(text).toContain(`30° · ${angleLine('mobile.logbook.angleFlashed', 1, 1)}`);
+  });
+
+  it('gives every angle its story when the board angle has no logs', () => {
+    logbookState.logbook = threeAngles;
+    const { container } = renderSection({ angle: 55 });
+    const text = container.textContent ?? '';
+    expect(text).toContain(`mobile.logbook.statLineAllAngles(recap=${statRecap(10, 2, 4)})`);
+    expect(text).toContain(`40° · ${angleLine('mobile.logbook.angleSentInSession(session=2)', 7, 2)}`);
+  });
+
+  it('prints a day’s try count only under an angle with more than one day', () => {
+    logbookState.logbook = threeAngles;
+    const { container } = renderSection({ angle: 40 });
+    const text = container.textContent ?? '';
+    // 40° has two days; 45° and 30° have one each.
+    expect(text).toContain('mobile.logbook.tries(count=3)');
+    expect(text).toContain('mobile.logbook.tries(count=4)');
+    expect(text).not.toContain('mobile.logbook.tries(count=2)');
+    expect(text).not.toContain('mobile.logbook.tries(count=1)');
+  });
+
+  it('hands rows no angle chip prop', () => {
+    logbookState.logbook = threeAngles;
+    renderSection();
+    expect(rows.props).toHaveLength(4);
+    expect(rows.props.every((rowProps) => !('showAngleChip' in rowProps))).toBe(true);
   });
 });
 
-describe('LogbookSection — chronological sort (#3569)', () => {
-  it('sorts same-angle rows newest-first by true UTC instant, not raw string/local-Date order', () => {
-    // `climbed_at` is a naive-but-UTC string with no `Z` suffix. Sorting with
-    // a bare `new Date(x.climbed_at).getTime()` parses it as device-local,
-    // which happens to preserve order for same-day entries but isn't
-    // guaranteed to across a DST boundary — the local-time resolution of an
-    // ambiguous/skipped hour is implementation-defined per ECMA-262 and isn't
-    // guaranteed to match between Hermes (on-device) and V8 (this test
-    // runner), so a same-engine reproduction here wouldn't prove much either
-    // way. `tickTimeMs` sidesteps the whole question by parsing explicitly as
-    // UTC. This test pins down the ordering contract: newest true instant
-    // first, using entries whose calendar-day order and clock-digit order
-    // agree (a case both the old and new code already got right), so a
-    // regression to raw `new Date(...)` sorting would NOT be caught by this
-    // test alone for DST-boundary cases — see the comment on the `.sort()`
-    // call in LogbookSection.tsx for the engine-dependence rationale.
+describe('LogbookSection: one angle', () => {
+  it('prints no angle heading and no "board is here" at the board angle', () => {
     logbookState.logbook = [
-      makeEntry({ uuid: 'oldest', angle: 40, climbed_at: '2026-06-01T09:00:00' }),
-      makeEntry({ uuid: 'newest', angle: 40, climbed_at: '2026-06-20T23:50:00' }),
-      makeEntry({ uuid: 'middle', angle: 40, climbed_at: '2026-06-10T12:00:00' }),
+      makeEntry({ uuid: 'flash', status: 'flash', climbed_at: '2026-06-21T10:00:00' }),
+      makeEntry({ uuid: 'repeat', tries: 3, climbed_at: '2026-06-21T10:02:00' }),
+    ];
+    const { container } = renderSection({ angle: 40 });
+    const text = container.textContent ?? '';
+    expect(text).toContain(`mobile.logbook.angleLine(result=mobile.logbook.angleFlashed,recap=${statRecap(4, 2, 1)})`);
+    expect(text).not.toContain('40°');
+    expect(text).not.toContain('mobile.logbook.angleBoardIsHere');
+    // One day at the angle: the line above already has the count.
+    expect(text).not.toContain('mobile.logbook.tries(');
+  });
+
+  it('tells the one angle’s story under the verdict when the board is set elsewhere', () => {
+    logbookState.logbook = [makeEntry({ uuid: 'only', angle: 35, tries: 2 })];
+    const { container } = renderSection({ angle: 40 });
+    const text = container.textContent ?? '';
+    expect(text).toContain(
+      `mobile.logbook.angleLine(result=mobile.logbook.angleSentInSession(session=1),recap=${statRecap(2, 1, 1)})`,
+    );
+    expect(text).not.toContain('mobile.logbook.statLineAllAngles');
+    expect(text).not.toContain('35°');
+  });
+
+  it('leaves the sends out of the line when there are none', () => {
+    logbookState.logbook = [attempt({ uuid: 'burn', tries: 5 })];
+    const { container } = renderSection({ angle: 40 });
+    const text = container.textContent ?? '';
+    expect(text).toContain(angleLine('mobile.logbook.angleNoSend', 5, 1));
+    expect(text).not.toContain('mobile.logbook.statRecap');
+  });
+
+  it('adds the climber’s own grade only when they gave one', () => {
+    logbookState.logbook = [makeEntry({ uuid: 'graded', difficulty: 16 })];
+    const graded = renderSection({ angle: 40 });
+    expect(graded.container.textContent).toMatch(/mobile\.logbook\.statLineWithGrade\(line=.*,grade=V16\)/);
+
+    logbookState.logbook = [makeEntry({ uuid: 'ungraded' })];
+    const ungraded = renderSection({ angle: 40 });
+    expect(ungraded.container.textContent).not.toContain('mobile.logbook.statLineWithGrade');
+  });
+});
+
+describe('LogbookSection: chronological sort (#3569)', () => {
+  it('orders sessions newest-first by true UTC instant, not raw string/local-Date order', () => {
+    // `climbed_at` is a naive-but-UTC string with no `Z` suffix. The ledger
+    // sorts through `tickTimeMs`, which parses it explicitly as UTC; a bare
+    // `new Date(x)` would parse it as device-local, and how an ambiguous or
+    // skipped local hour resolves is implementation-defined per ECMA-262, so
+    // Hermes (on-device) isn't guaranteed to agree with V8 (this runner).
+    logbookState.logbook = [
+      makeEntry({ uuid: 'oldest', climbed_at: '2026-06-01T09:00:00' }),
+      makeEntry({ uuid: 'newest', climbed_at: '2026-06-20T12:00:00' }),
+      makeEntry({ uuid: 'middle', climbed_at: '2026-06-10T12:00:00' }),
     ];
     renderSection();
     const rowUuids = rows.props.map((rowProps) => (rowProps.entry as LogbookEntry).uuid);
@@ -191,7 +290,7 @@ describe('LogbookSection direction capability', () => {
     ['kilter', 1, false],
   ])('gates direction tags for %s layout %s', (boardName, layoutId, expected) => {
     logbookState.logbook = [makeEntry({}), makeEntry({ uuid: 'mirror', is_mirror: true })];
-    renderSection(boardName as BoardName, layoutId as number);
+    renderSection({ boardName: boardName as BoardName, layoutId: layoutId as number });
     expect(rows.props).toHaveLength(2);
     expect(rows.props.every((props) => props.showMirrorTag === expected)).toBe(true);
   });

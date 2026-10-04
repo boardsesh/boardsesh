@@ -81,6 +81,8 @@ import { useDrawerDismissGesture, type SwipeDismissAnimation } from './use-drawe
 import { AngleSelectorSheet } from './AngleSelectorSheet';
 import { ClimbActionsSheet } from '../ClimbActionsSheet';
 import { AddBetaVideoSheet } from '../AddBetaVideoSheet';
+import { LogbookFullSheet } from './logbook/LogbookFullSheet';
+import { useFullLogbookSheet } from './logbook/use-full-logbook-sheet';
 import { ReportClimbSheet } from '../report-climb/ReportClimbSheet';
 import { BleControlSheetHost } from '../ble/BleControlSheetHost';
 import { RestTimerPillHost } from '../queue-control/RestTimerPillHost';
@@ -1632,6 +1634,14 @@ export function PlayDrawer({
     setAddBetaVideoOpen(false);
   }, []);
 
+  // Logbook card "See full logbook": the virtualised history sheet.
+  // Pinned to the climb it was opened on: a climb change closes it for good.
+  const {
+    climbUuid: fullLogbookClimbUuid,
+    open: handleOpenFullLogbook,
+    close: handleCloseFullLogbook,
+  } = useFullLogbookSheet(displayedClimbUuid);
+
   const handleOpenActions = useCallback(() => {
     // iOS: open the floating reaction menu (over the drawer) instead of the in-drawer
     // bottom sheet. Android keeps the bottom sheet.
@@ -1793,6 +1803,8 @@ export function PlayDrawer({
   const angleSelectorVisible = activeSubDrawer === 'angleSelector';
   const mountClimbActions = useMountedOnFirstOpen(climbActionsVisible);
   const mountAddBetaVideo = useMountedOnFirstOpen(addBetaVideoOpen);
+  const fullLogbookOpen = fullLogbookClimbUuid !== null;
+  const mountFullLogbook = useMountedOnFirstOpen(fullLogbookOpen);
   const mountReportClimb = useMountedOnFirstOpen(reportClimbOpen);
   const mountAngleSelector = useMountedOnFirstOpen(angleSelectorVisible);
   const mountLogAscent = useMountedOnFirstOpen(isTickBarActive);
@@ -2139,6 +2151,7 @@ export function PlayDrawer({
                       onLogbookSectionLayout={handleLogbookSectionLayout}
                       onLogbookToggle={handleLogbookToggle}
                       onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
+                      onOpenFullLogbook={handleOpenFullLogbook}
                     />
                   </View>
                 </>
@@ -2192,6 +2205,19 @@ export function PlayDrawer({
           layoutId={betaVideoTarget?.boardConfig.layoutId ?? layoutId}
           angle={betaVideoTarget?.boardConfig.angle ?? angle}
           onClose={handleCloseAddBetaVideo}
+        />
+      )}
+
+      {/* Sub-drawer: the climber's full history on this climb, opened from the
+          Logbook card when it has more than the card shows. Mounted on first open. */}
+      {mountFullLogbook && (
+        <LogbookFullSheet
+          visible={fullLogbookOpen}
+          climbUuid={fullLogbookClimbUuid}
+          boardName={boardName as BoardName}
+          layoutId={layoutId}
+          angle={angle}
+          onClose={handleCloseFullLogbook}
         />
       )}
 
