@@ -12,6 +12,7 @@ const discord = vi.hoisted(() => ({ openDiscordInvite: vi.fn() }));
 const donationLinks = vi.hoisted(() => ({ allowed: false }));
 const publicSupporters = vi.hoisted(() => ({
   additionalPages: [] as PublicSupporter[][],
+  refetch: vi.fn(),
   fetchNextPage: vi.fn(),
   hasNextPage: true,
   isFetching: false,
@@ -106,7 +107,7 @@ vi.mock('../../src/lib/graphql/hooks/use-public-supporters', () => ({
     isFetching: publicSupporters.isFetching,
     isFetchNextPageError: publicSupporters.isFetchNextPageError,
     isError: publicSupporters.isError ?? publicSupporters.isFetchNextPageError,
-    refetch: vi.fn(),
+    refetch: publicSupporters.refetch,
   }),
 }));
 
@@ -156,6 +157,7 @@ beforeEach(() => {
   discord.openDiscordInvite.mockClear();
   donationLinks.allowed = false;
   publicSupporters.additionalPages = [];
+  publicSupporters.refetch.mockReset().mockResolvedValue(undefined);
   publicSupporters.fetchNextPage.mockReset();
   publicSupporters.hasNextPage = true;
   publicSupporters.isFetching = false;
@@ -244,6 +246,17 @@ describe('AcknowledgementsScreen', () => {
     expect(publicSupporters.fetchNextPage).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'actions.retry' }));
     expect(publicSupporters.fetchNextPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries the initial supporter fetch when no profiles have loaded', () => {
+    publicSupporters.items = [];
+    publicSupporters.isError = true;
+    publicSupporters.isFetchNextPageError = false;
+    render(<AcknowledgementsScreen />);
+    expect(screen.queryByRole('button', { name: 'Stripe Climber' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'actions.retry' }));
+    expect(publicSupporters.refetch).toHaveBeenCalledOnce();
+    expect(publicSupporters.fetchNextPage).not.toHaveBeenCalled();
   });
 
   it('thanks private sponsors as an anonymous count', () => {

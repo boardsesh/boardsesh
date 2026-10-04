@@ -396,6 +396,28 @@ describe('supportMutations', () => {
     });
   });
 
+  it('rejects an unauthenticated billing portal request before reading its forged account', async () => {
+    const anonymousContext = { ...authContext(), isAuthenticated: false };
+
+    await expect(supportMutations.createSupportBillingPortalSession({}, {}, anonymousContext)).rejects.toThrow(
+      'Authentication required',
+    );
+
+    expect(mockDb.select).not.toHaveBeenCalled();
+    expect(billingPortalSessionCreate).not.toHaveBeenCalled();
+  });
+
+  it('rejects billing portal creation when the account has no linked Stripe customer', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_example';
+    mockDb.select.mockReturnValue(selectRows([]));
+
+    await expect(supportMutations.createSupportBillingPortalSession({}, {}, authContext())).rejects.toMatchObject({
+      extensions: { code: 'NOT_FOUND' },
+    });
+
+    expect(billingPortalSessionCreate).not.toHaveBeenCalled();
+  });
+
   it('updates visibility for completed linked support', async () => {
     setupVisibilityDatabase();
     const supporter = { userId: 'user-1', supportedAt: new Date(), showPublicly: true };
@@ -422,24 +444,50 @@ describe('supportMutations', () => {
 });
 
 describe('supportQueries', () => {
-  it('rate-limits the public supporter page query', async () => {
+  function setupPublicSupporterQuery() {
     const offset = vi.fn().mockResolvedValue([]);
+    const limit = vi.fn().mockReturnValue({ offset });
     mockDb.select.mockReturnValue({
       from: vi.fn().mockReturnValue({
         innerJoin: vi.fn().mockReturnValue({
           leftJoin: vi.fn().mockReturnValue({
             where: vi.fn().mockReturnValue({
               orderBy: vi.fn().mockReturnValue({
-                limit: vi.fn().mockReturnValue({ offset }),
+                limit,
               }),
             }),
           }),
         }),
       }),
     });
+    return { offset, limit };
+  }
+
+  it('rate-limits the public supporter page query', async () => {
+    setupPublicSupporterQuery();
     const context = authContext();
 
     await expect(supportQueries.publicSupporters({}, { limit: 500, offset: 0 }, context)).resolves.toEqual([]);
     expect(applyRateLimit).toHaveBeenCalledWith(context, 120, 'publicSupporters');
+  });
+
+  it.each([
+    { limit: 50_000, offset: -1, pageLimit: 500, pageOffset: 0 },
+    { limit: 0, offset: 3, pageLimit: 1, pageOffset: 3 },
+  ])('bounds public pagination for limit $limit and offset $offset', async (pagination) => {
+    const query = setupPublicSupporterQuery();
+
+    await supportQueries.publicSupporters({}, pagination, authContext());
+
+    expect(query.limit).toHaveBeenCalledWith(pagination.pageLimit);
+    expect(query.offset).toHaveBeenCalledWith(pagination.pageOffset);
+  });
+
+  it('returns unlinked status for anonymous requests carrying a forged user ID', async () => {
+    await expect(
+      supportQueries.mySupporterStatus({}, {}, { ...authContext(), isAuthenticated: false }),
+    ).resolves.toMatchObject({ linked: false, hasSupported: false, showPublicly: false, hasActiveSubscription: false });
+
+    expect(mockDb.select).not.toHaveBeenCalled();
   });
 });
