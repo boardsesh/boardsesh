@@ -7,7 +7,7 @@ import Animated, {
   runOnJS,
   type SharedValue,
 } from 'react-native-reanimated';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import { computePeekOffset, type PeekDirection } from '@boardsesh/play-view';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { BoardImageNative } from '../BoardImageNative';
@@ -71,6 +71,8 @@ type SwipeBoardCarouselProps = {
    * the heatmap describes the board, and a second copy sliding in would be noise.
    */
   underOverlay?: React.ReactNode;
+  /** RNGH ref to the drawer-dismiss Pan blocked by the zoomed-only board pan. */
+  dismissRef?: React.MutableRefObject<GestureType | undefined>;
 };
 
 /** Hoisted so an omitted `prefetchFrames` doesn't remount the prefetch every render. */
@@ -98,6 +100,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   swipeTranslateX,
   swipeIsAnimating,
   underOverlay,
+  dismissRef,
 }: SwipeBoardCarouselProps) {
   const { width: screenWidth } = useWindowDimensions();
   // Measured box the board is laid out into. The board is sized to *fit* this
@@ -127,6 +130,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     containerWidth: boardBox?.width ?? screenWidth,
     containerHeight: boardBox?.height ?? containerSize.height,
     scrollRef,
+    dismissRef,
   });
 
   const onResetZoomReadyRef = useRef(onResetZoomReady);
