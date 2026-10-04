@@ -14,6 +14,7 @@ import {
 import { logger } from '../utils/logger';
 import { getPostgresErrorCode } from '../utils/postgres-errors';
 
+// Add new application queues here when registering them; unrecognized names stay private.
 const QUEUE_NAMES = new Set([
   ...Object.values(BACKGROUND_JOB_QUEUES),
   BACKGROUND_JOB_RECONCILE_QUEUE,
@@ -97,5 +98,6 @@ export function reportJobQueueError(error: unknown, options: { owner: 'backend' 
     });
   } catch {
     // Diagnostics must never throw back into pg-boss's worker or pool error handler.
+    logger.warn('[job-queue] Sentry diagnostic capture failed');
   }
 }

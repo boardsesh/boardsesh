@@ -6,7 +6,7 @@ import { createJobQueueClient } from '../job-queue-client';
 import { jobQueueErrorDiagnostics } from '../job-queue-errors';
 
 vi.mock('@boardsesh/db/client/config', () => ({ isProductionSentryEnvironment: vi.fn(() => true) }));
-vi.mock('../../utils/logger', () => ({ logger: { error: vi.fn() } }));
+vi.mock('../../utils/logger', () => ({ logger: { error: vi.fn(), warn: vi.fn() } }));
 vi.mock('@sentry/node', () => ({ withScope: vi.fn(), captureException: vi.fn() }));
 
 const scope = { setTag: vi.fn(), setContext: vi.fn(), setFingerprint: vi.fn() };
@@ -50,6 +50,15 @@ describe('job queue diagnostics', () => {
         cause: Object.assign(new Error('postgres://username:secret@host/database'), { code: 'ECONNREFUSED' }),
       }),
     ).toEqual({ code: 'ECONNREFUSED', errorType: 'Error', queue: 'background-batch', failure: 'driver_error' });
+  });
+
+  it('retains a connection SQLSTATE independently of its raw message', () => {
+    expect(jobQueueErrorDiagnostics({ code: '08006', message: 'private connection details' })).toEqual({
+      code: '08006',
+      errorType: 'unknown',
+      queue: 'unknown',
+      failure: 'driver_error',
+    });
   });
 
   it('handles the plain object pg-boss emits after spreading a worker Error', () => {
@@ -168,5 +177,6 @@ describe('job queue diagnostics', () => {
     else vi.mocked(Sentry.captureException).mockImplementation(failReporting);
     expect(() => client.emit('error', new Error('private driver error'))).not.toThrow();
     expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledExactlyOnceWith('[job-queue] Sentry diagnostic capture failed');
   });
 });
