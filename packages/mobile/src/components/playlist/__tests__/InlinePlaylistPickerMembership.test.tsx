@@ -303,7 +303,8 @@ describe('InlinePlaylistPicker membership certainty and angle', () => {
     expect(playlistContext.addToPlaylist).not.toHaveBeenCalledWith('p-b', 'climb-1', expect.any(Number));
     expect(queryClient.getQueryData(['playlistsForClimb', 'tension', null, 'climb-1'])).toBeUndefined();
     expect(queryClient.getQueryData(['playlistMembershipOverrides', 'tension', null, 'climb-1'])).toEqual({
-      'p-a': false,
+      revision: 1,
+      byPlaylistUuid: { 'p-a': { isMember: false, revision: 1, pending: false } },
     });
 
     firstMount.unmount();
@@ -334,7 +335,10 @@ describe('InlinePlaylistPicker membership certainty and angle', () => {
     expect(hasCheck(screen.getByRole('button', { name: 'Playlist A' }))).toBe(true);
     expect(screen.getByText('Playlist B').closest('[data-row="Playlist B"]')).not.toBeNull();
     expect(queryClient.getQueryData(['playlistsForClimb', 'tension', null, 'climb-1'])).toBeUndefined();
-    expect(queryClient.getQueryData(['playlistMembershipOverrides', 'tension', null, 'climb-1'])).toEqual({});
+    expect(queryClient.getQueryData(['playlistMembershipOverrides', 'tension', null, 'climb-1'])).toEqual({
+      revision: 1,
+      byPlaylistUuid: {},
+    });
     expect(playlistContext.addToPlaylist).not.toHaveBeenCalled();
   });
 
@@ -364,7 +368,10 @@ describe('InlinePlaylistPicker membership certainty and angle', () => {
     expect(hasCheck(screen.getByRole('button', { name: 'Playlist A' }))).toBe(true);
     expect(hasCheck(screen.getByRole('button', { name: 'Playlist B' }))).toBe(false);
     expect(queryClient.getQueryData(['playlistMembershipOverrides', 'tension', null, 'climb-1'])).toEqual({
-      'p-b': false,
+      revision: 2,
+      byPlaylistUuid: {
+        'p-b': { isMember: false, revision: 2, pending: false },
+      },
     });
   });
 
@@ -417,10 +424,105 @@ describe('InlinePlaylistPicker membership certainty and angle', () => {
     expect(playlistContext.addToPlaylist).not.toHaveBeenCalled();
   });
 
+  it('lets a newer complete response replace a settled removal after the picker remounts', async () => {
+    playlistContext.playlists = [
+      { ...makePlaylist('p-a', 'kilter', 1), name: 'Playlist A' },
+      { ...makePlaylist('p-b', 'kilter', 1), name: 'Playlist B' },
+    ];
+    requestMock
+      .mockResolvedValueOnce({ playlistsForClimb: ['p-a'] })
+      .mockResolvedValueOnce({ playlistsForClimb: ['p-a', 'p-b'] });
+    const firstMount = renderPicker();
+    fireEvent.click(await firstMount.findByRole('button', { name: 'Playlist A' }));
+    await waitFor(() => expect(playlistContext.removeFromPlaylist).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      const overrides = queryClient.getQueryData<{
+        byPlaylistUuid: Record<string, { isMember: boolean; pending: boolean }>;
+      }>(['playlistMembershipOverrides', 'kilter', 1, 'climb-1']);
+      expect(overrides?.byPlaylistUuid['p-a']).toMatchObject({ isMember: false, pending: false });
+    });
+    firstMount.unmount();
+
+    const reopened = renderPicker();
+    const reopenedRow = await reopened.findByRole('button', { name: 'Playlist A' });
+    await queryClient.refetchQueries({ queryKey: ['playlistsForClimb', 'kilter', 1, 'climb-1'], exact: true });
+
+    await waitFor(() => expect(hasCheck(reopenedRow)).toBe(true));
+    expect(hasCheck(reopened.getByRole('button', { name: 'Playlist B' }))).toBe(true);
+    fireEvent.click(reopenedRow);
+    await waitFor(() => expect(playlistContext.removeFromPlaylist).toHaveBeenCalledTimes(2));
+    expect(playlistContext.addToPlaylist).not.toHaveBeenCalled();
+  });
+
+  it('lets a newer complete empty response replace a settled add after the picker remounts', async () => {
+    requestMock.mockResolvedValueOnce({ playlistsForClimb: [] }).mockResolvedValueOnce({ playlistsForClimb: [] });
+    const firstMount = renderPicker();
+    fireEvent.click(await firstMount.findByRole('button', { name: 'kilter target' }));
+    await waitFor(() => expect(playlistContext.addToPlaylist).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      const overrides = queryClient.getQueryData<{
+        byPlaylistUuid: Record<string, { isMember: boolean; pending: boolean }>;
+      }>(['playlistMembershipOverrides', 'kilter', 1, 'climb-1']);
+      expect(overrides?.byPlaylistUuid['p-target']).toMatchObject({ isMember: true, pending: false });
+    });
+    firstMount.unmount();
+
+    const reopened = renderPicker();
+    const reopenedRow = await reopened.findByRole('button', { name: 'kilter target' });
+    expect(hasCheck(reopenedRow)).toBe(true);
+    await queryClient.refetchQueries({ queryKey: ['playlistsForClimb', 'kilter', 1, 'climb-1'], exact: true });
+
+    await waitFor(() => expect(hasCheck(reopenedRow)).toBe(false));
+    fireEvent.click(reopenedRow);
+    await waitFor(() => expect(playlistContext.addToPlaylist).toHaveBeenCalledTimes(2));
+    expect(playlistContext.removeFromPlaylist).not.toHaveBeenCalled();
+  });
+
+  it('preserves a mutation overlapping a read, then reconciles it with the next read', async () => {
+    requestMock.mockResolvedValueOnce({ playlistsForClimb: ['p-target'] });
+    const pendingRemoval = deferred<void>();
+    playlistContext.removeFromPlaylist.mockReturnValueOnce(pendingRemoval.promise);
+    const screen = renderPicker();
+    const row = await screen.findByRole('button', { name: 'kilter target' });
+    fireEvent.click(row);
+    await waitFor(() => expect(playlistContext.removeFromPlaylist).toHaveBeenCalledTimes(1));
+
+    const overlappingRead = deferred<{ playlistsForClimb: string[] }>();
+    requestMock.mockReturnValueOnce(overlappingRead.promise);
+    const overlappingRefetch = queryClient.refetchQueries({
+      queryKey: ['playlistsForClimb', 'kilter', 1, 'climb-1'],
+      exact: true,
+    });
+    await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(2));
+    overlappingRead.resolve({ playlistsForClimb: ['p-target'] });
+    await overlappingRefetch;
+
+    expect(hasCheck(row)).toBe(false);
+    pendingRemoval.resolve();
+    await waitFor(() => {
+      const overrides = queryClient.getQueryData<{
+        byPlaylistUuid: Record<string, { isMember: boolean; pending: boolean }>;
+      }>(['playlistMembershipOverrides', 'kilter', 1, 'climb-1']);
+      expect(overrides?.byPlaylistUuid['p-target']).toMatchObject({ isMember: false, pending: false });
+    });
+    expect(hasCheck(row)).toBe(false);
+
+    requestMock.mockResolvedValueOnce({ playlistsForClimb: [] });
+    await queryClient.refetchQueries({ queryKey: ['playlistsForClimb', 'kilter', 1, 'climb-1'], exact: true });
+    expect(hasCheck(row)).toBe(false);
+    expect(queryClient.getQueryData(['playlistsForClimb', 'kilter', 1, 'climb-1'])).toMatchObject({
+      playlistUuids: [],
+    });
+  });
+
   it('uses the climb angle for a cached null-layout cross-board add', async () => {
     const crossBoardClimb = { ...baseClimb, boardType: 'tension', layoutId: null, angle: 35 } as Climb;
     playlistContext.playlists = [makePlaylist('p-target', 'tension', 10)];
-    queryClient.setQueryData(['playlistsForClimb', 'tension', null, 'climb-1'], []);
+    queryClient.setQueryData(['playlistsForClimb', 'tension', null, 'climb-1'], {
+      playlistUuids: [],
+      overrideRevisionAtFetchStart: 0,
+      pendingOverrideRevisionsAtFetchStart: {},
+    });
     const screen = renderPicker({ climb: crossBoardClimb, angle: 40 });
     const row = await screen.findByRole('button', { name: 'tension target' });
 
@@ -455,7 +557,7 @@ describe('InlinePlaylistPicker membership certainty and angle', () => {
     fireEvent.click(row);
     await waitFor(() => expect(reportHandledError).toHaveBeenCalled());
 
-    expect(queryClient.getQueryData(key)).toEqual([]);
+    expect(queryClient.getQueryData(key)).toMatchObject({ playlistUuids: [] });
     expect(hasCheck(row)).toBe(false);
   });
 
