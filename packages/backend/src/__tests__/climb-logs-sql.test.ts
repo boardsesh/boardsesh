@@ -29,6 +29,15 @@ const VISIBILITY = /NOT EXISTS \(\s*SELECT 1\s+FROM board_climbs ref_climb/;
 /** The fail-closed check: a spray log whose climb row is gone is not shown. */
 const CLIMB_ROW_EXISTS = /FROM board_climbs existing_climb/;
 const TWIN_FILTER = /"boardsesh_ticks" "aurora_twin"/;
+/**
+ * The twin lookup sits behind the full "real Aurora-pull row" test: origin,
+ * a non-null aurora_id, and not a json-import surrogate. CASE, not OR, so the
+ * order is guaranteed and the lookup runs per Aurora row.
+ */
+const twinGuard = (table: string) =>
+  new RegExp(
+    `CASE WHEN \\("${table}"\\."origin" = \\$\\d+ and "${table}"\\."aurora_id" is not null and "${table}"\\."aurora_id" NOT LIKE \\$\\d+\\) THEN not exists \\(select 1 from "boardsesh_ticks" "aurora_twin"[^]*?ELSE true END`,
+  );
 
 const sqlOf = (overrides: Partial<Parameters<typeof buildClimbLogsQuery>[0]> = {}) =>
   buildClimbLogsQuery({ ...base, ...overrides }).toSQL();
@@ -50,6 +59,10 @@ describe('climbLogs SQL, plain path', () => {
     expect(sql).toMatch(CLIMB_ROW_EXISTS);
     expect(sql).toMatch(TWIN_FILTER);
     expect(sql).not.toContain('row_number()');
+  });
+
+  it('runs the twin lookup only for Aurora-pull rows', () => {
+    expect(sqlOf().sql).toMatch(twinGuard('boardsesh_ticks'));
   });
 
   it('orders newest first with the id as tie-break and asks for one row past the page', () => {
@@ -77,6 +90,7 @@ describe('climbLogs SQL, one row per climber', () => {
     expect(ranked).toMatch(VISIBILITY);
     expect(ranked).toMatch(CLIMB_ROW_EXISTS);
     expect(ranked).toMatch(TWIN_FILTER);
+    expect(ranked).toMatch(twinGuard('ranked_log'));
     // The checks read the ranked rows, not the outer table of the same name.
     expect(ranked).toContain('ref_climb.uuid = "ranked_log"."climb_uuid"');
     expect(ranked).not.toContain('"boardsesh_ticks"."climb_uuid"');
