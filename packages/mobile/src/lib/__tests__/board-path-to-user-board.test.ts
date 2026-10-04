@@ -10,6 +10,7 @@ import {
 function makeBoard(overrides: Partial<UserBoard> = {}): UserBoard {
   return {
     uuid: 'board-uuid',
+    ownerId: 'viewer-1',
     boardType: 'kilter',
     layoutId: 8,
     sizeId: 17,
@@ -20,6 +21,10 @@ function makeBoard(overrides: Partial<UserBoard> = {}): UserBoard {
     isAngleAdjustable: true,
     ...overrides,
   } as unknown as UserBoard;
+}
+
+function ownedSnapshot(boards: UserBoard[], viewerId = 'viewer-1') {
+  return { viewerId, boards };
 }
 
 describe('parseBoardConfigFromPath', () => {
@@ -106,7 +111,7 @@ describe('resolveBoardForSession', () => {
     const owned = makeBoard({ angle: 40 });
     const createBoard = vi.fn();
     const result = await resolveBoardForSession('kilter/8/17/27,28/30', {
-      loadOwnedBoards: async () => [owned],
+      loadOwnedBoards: async () => ownedSnapshot([owned]),
       createBoard,
       fetchBoardBySlug: vi.fn(),
     });
@@ -118,7 +123,7 @@ describe('resolveBoardForSession', () => {
     const created = makeBoard({ uuid: 'fresh-uuid', isOwned: false, angle: 30 });
     const createBoard = vi.fn().mockResolvedValue(created);
     const result = await resolveBoardForSession('kilter/8/17/27,28/30', {
-      loadOwnedBoards: async () => [],
+      loadOwnedBoards: async () => ownedSnapshot([]),
       createBoard,
       fetchBoardBySlug: vi.fn(),
     });
@@ -137,7 +142,7 @@ describe('resolveBoardForSession', () => {
   it('throws on an unparseable board path', async () => {
     await expect(
       resolveBoardForSession('garbage', {
-        loadOwnedBoards: async () => [],
+        loadOwnedBoards: async () => ownedSnapshot([]),
         createBoard: vi.fn(),
         fetchBoardBySlug: vi.fn(),
       }),
@@ -152,11 +157,69 @@ describe('resolveBoardForSession', () => {
     const nonMatching = Array.from({ length: 60 }, (_, index) => makeBoard({ uuid: `other-${index}`, sizeId: 99 }));
     const createBoard = vi.fn();
     const result = await resolveBoardForSession('kilter/8/17/27,28/30', {
-      loadOwnedBoards: async () => [...nonMatching, matching],
+      loadOwnedBoards: async () => ownedSnapshot([...nonMatching, matching]),
       createBoard,
       fetchBoardBySlug: vi.fn(),
     });
     expect(result).toMatchObject({ uuid: 'page-two-uuid', angle: 30 });
+    expect(createBoard).not.toHaveBeenCalled();
+  });
+
+  it('selects the current owner match even when a followed physical wall sorts first', async () => {
+    const followed = makeBoard({ uuid: 'followed-first', ownerId: 'another-viewer', isOwned: true });
+    const owned = makeBoard({ uuid: 'viewer-wall', isOwned: false });
+    const createBoard = vi.fn();
+
+    const result = await resolveBoardForSession('kilter/8/17/27,28/30', {
+      loadOwnedBoards: async () => ownedSnapshot([followed, owned]),
+      createBoard,
+      fetchBoardBySlug: vi.fn(),
+    });
+
+    expect(result).toMatchObject({ uuid: 'viewer-wall', ownerId: 'viewer-1', angle: 30 });
+    expect(createBoard).not.toHaveBeenCalled();
+  });
+
+  it('creates instead of adopting a followed-only match beyond the first page', async () => {
+    const followedMatch = makeBoard({ uuid: 'followed-late', ownerId: 'another-viewer', isOwned: true });
+    const precedingBoards = Array.from({ length: 60 }, (_, index) => makeBoard({ uuid: `other-${index}`, sizeId: 99 }));
+    const created = makeBoard({ uuid: 'created-for-viewer', isOwned: false, angle: 30 });
+    const createBoard = vi.fn().mockResolvedValue(created);
+
+    const result = await resolveBoardForSession('kilter/8/17/27,28/30', {
+      loadOwnedBoards: async () => ownedSnapshot([...precedingBoards, followedMatch]),
+      createBoard,
+      fetchBoardBySlug: vi.fn(),
+    });
+
+    expect(result).toBe(created);
+    expect(createBoard).toHaveBeenCalledTimes(1);
+    expect(createBoard).toHaveBeenCalledWith({
+      boardType: 'kilter',
+      layoutId: 8,
+      sizeId: 17,
+      setIds: '27,28',
+      angle: 30,
+      isOwned: false,
+      name: 'Kilter',
+    });
+  });
+
+  it('fails closed when the viewer identity or a listed owner is missing', async () => {
+    const createBoard = vi.fn();
+    const missingViewer = resolveBoardForSession('kilter/8/17/27,28/30', {
+      loadOwnedBoards: async () => ownedSnapshot([], ''),
+      createBoard,
+      fetchBoardBySlug: vi.fn(),
+    });
+    const missingOwner = resolveBoardForSession('kilter/8/17/27,28/30', {
+      loadOwnedBoards: async () => ownedSnapshot([makeBoard({ ownerId: '' })]),
+      createBoard,
+      fetchBoardBySlug: vi.fn(),
+    });
+
+    await expect(missingViewer).rejects.toThrow(/verified account owner/);
+    await expect(missingOwner).rejects.toThrow(/verify ownership/);
     expect(createBoard).not.toHaveBeenCalled();
   });
 
@@ -180,7 +243,7 @@ describe('resolveBoardForSession', () => {
   // A named board resolves by slug, so the owned-list walk (a round trip, and a
   // rejection while offline) must never run for it.
   it('never loads the owned list for a named-board path', async () => {
-    const loadOwnedBoards = vi.fn(async () => []);
+    const loadOwnedBoards = vi.fn(async () => ownedSnapshot([]));
     const namedBoard = makeBoard({ uuid: 'named-uuid', slug: 'my-gym-moonboard', angle: 25 });
     await resolveBoardForSession('/b/my-gym-moonboard/40', {
       loadOwnedBoards,
@@ -196,7 +259,7 @@ describe('resolveBoardForSession', () => {
       const fetchBoardBySlug = vi.fn().mockResolvedValue(namedBoard);
       const createBoard = vi.fn();
       const result = await resolveBoardForSession('/b/my-gym-moonboard/40/list', {
-        loadOwnedBoards: async () => [],
+        loadOwnedBoards: async () => ownedSnapshot([]),
         createBoard,
         fetchBoardBySlug,
       });
@@ -210,7 +273,7 @@ describe('resolveBoardForSession', () => {
       const namedBoard = makeBoard({ uuid: 'named-uuid', slug: 'my-gym-moonboard', angle: 25 });
       const fetchBoardBySlug = vi.fn().mockResolvedValue(namedBoard);
       const result = await resolveBoardForSession('/b/my-gym-moonboard', {
-        loadOwnedBoards: async () => [],
+        loadOwnedBoards: async () => ownedSnapshot([]),
         createBoard: vi.fn(),
         fetchBoardBySlug,
       });
@@ -222,7 +285,7 @@ describe('resolveBoardForSession', () => {
       const fetchBoardBySlug = vi.fn().mockResolvedValue(null);
       await expect(
         resolveBoardForSession('/b/deleted-board/40', {
-          loadOwnedBoards: async () => [],
+          loadOwnedBoards: async () => ownedSnapshot([]),
           createBoard: vi.fn(),
           fetchBoardBySlug,
         }),

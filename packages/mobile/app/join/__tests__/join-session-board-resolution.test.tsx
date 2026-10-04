@@ -2,8 +2,8 @@
 //
 // The join screen's board resolution, end to end from the Join tap: the real
 // `resolveBoardForSession` + `createBoardOrAdoptDuplicate` wired to mocked
-// GraphQL. `fetchAllMyBoards` supplies its fully-collected result here; its
-// pagination loop has separate tests in the GraphQL hook suite. What's pinned
+// GraphQL. The owner-verified loader supplies its completed result here; its
+// profile and pagination checks have separate tests in the GraphQL hook suite. What's pinned
 // here is the three ways the old one-page/`?? []` resolution went wrong (#4409):
 //   1. a matching board in the complete owned-board list is REUSED, not duplicated;
 //   2. a BOARD_DUPLICATE_CONFIG rejection is adopted into the board it names;
@@ -19,7 +19,7 @@ const queue = vi.hoisted(() => ({
 }));
 const router = vi.hoisted(() => ({ replace: vi.fn(), back: vi.fn() }));
 const showToast = vi.hoisted(() => vi.fn());
-const fetchAllMyBoards = vi.hoisted(() => vi.fn());
+const fetchAllMyOwnedBoards = vi.hoisted(() => vi.fn());
 const fetchBoardBySlug = vi.hoisted(() => vi.fn());
 const fetchBoardByUuid = vi.hoisted(() => vi.fn());
 const createBoardMutateAsync = vi.hoisted(() => vi.fn());
@@ -81,10 +81,11 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
   useSessionPreview: () => preview,
   useCreateBoard: () => ({ mutateAsync: createBoardMutateAsync }),
   useBoardBySlug: () => ({ data: null }),
-  fetchAllMyBoards,
+  fetchAllMyOwnedBoards,
   fetchBoardBySlug,
   fetchBoardByUuid,
 }));
+vi.mock('../../../src/lib/graphql/hooks/fetch-all-my-owned-boards', () => ({ fetchAllMyOwnedBoards }));
 vi.mock('../../../src/theme/tokens', () => ({ spacing: {}, borderRadius: {} }));
 
 import JoinSessionScreen from '../[sessionId]';
@@ -92,6 +93,7 @@ import JoinSessionScreen from '../[sessionId]';
 function board(overrides: Partial<UserBoard> = {}): UserBoard {
   return {
     uuid: 'board-uuid',
+    ownerId: 'viewer-1',
     boardType: 'kilter',
     layoutId: 8,
     sizeId: 17,
@@ -126,19 +128,19 @@ async function pressJoin() {
 beforeEach(() => {
   vi.clearAllMocks();
   preview.data.boardPath = SESSION_BOARD_PATH;
-  fetchAllMyBoards.mockResolvedValue([]);
+  fetchAllMyOwnedBoards.mockResolvedValue({ viewerId: 'viewer-1', boards: [] });
   fetchBoardBySlug.mockResolvedValue(null);
   fetchBoardByUuid.mockResolvedValue(null);
   createBoardMutateAsync.mockResolvedValue(board({ uuid: 'minted-uuid', isOwned: false, angle: 40 }));
 });
 
 describe('JoinSessionScreen board resolution', () => {
-  // The mocked boundary supplies a completed walk with 20 earlier rows;
-  // actual page requests are pinned in fetch-all-my-boards.test.ts.
-  it('reuses a matching board from the completed owned-list walk', async () => {
-    const matching = board({ uuid: 'page-two-uuid' });
-    const firstPage = Array.from({ length: 20 }, (_, index) => board({ uuid: `other-${index}`, sizeId: 99 }));
-    fetchAllMyBoards.mockResolvedValue([...firstPage, matching]);
+  // The real resolver re-checks ownership even when a followed row sorts first;
+  // the loader's profile and pagination contract has its own GraphQL tests.
+  it('reuses the current viewer board when a followed physical wall sorts first', async () => {
+    const followed = board({ uuid: 'followed-first', ownerId: 'another-viewer', isOwned: true });
+    const matching = board({ uuid: 'viewer-wall', isOwned: false });
+    fetchAllMyOwnedBoards.mockResolvedValue({ viewerId: 'viewer-1', boards: [followed, matching] });
 
     await pressJoin();
 
@@ -150,6 +152,21 @@ describe('JoinSessionScreen board resolution', () => {
       userBoard: { ...matching, angle: 40 },
     });
     expect(router.replace).toHaveBeenCalledWith('/(tabs)/record');
+  });
+
+  it('creates instead of joining a followed-only matching board from a later page', async () => {
+    const precedingBoards = Array.from({ length: 60 }, (_, index) => board({ uuid: `other-${index}`, sizeId: 99 }));
+    const followedMatch = board({ uuid: 'followed-late', ownerId: 'another-viewer', isOwned: true });
+    fetchAllMyOwnedBoards.mockResolvedValue({ viewerId: 'viewer-1', boards: [...precedingBoards, followedMatch] });
+
+    await pressJoin();
+
+    await waitFor(() => expect(queue.joinSession).toHaveBeenCalledTimes(1));
+    expect(createBoardMutateAsync).toHaveBeenCalledTimes(1);
+    expect(queue.joinSession).toHaveBeenCalledWith('session-42', {
+      boardPath: SESSION_BOARD_PATH,
+      userBoard: expect.objectContaining({ uuid: 'minted-uuid', isOwned: false }),
+    });
   });
 
   // The walk closes the common case but not the race: a board created on another
@@ -174,7 +191,7 @@ describe('JoinSessionScreen board resolution', () => {
   // failed one degraded to `[]` and minted a duplicate. Now the walk rejects, and
   // the rejection is a transport failure the climber is told about by name.
   it('surfaces an offline message when the owned-board walk cannot reach the server', async () => {
-    fetchAllMyBoards.mockRejectedValue(new TypeError('Network request failed'));
+    fetchAllMyOwnedBoards.mockRejectedValue(new TypeError('Network request failed'));
 
     await pressJoin();
 

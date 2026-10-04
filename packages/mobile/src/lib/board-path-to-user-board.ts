@@ -10,12 +10,16 @@
 //
 // The pure logic (parse + owned-reuse + the create-input it would build) is
 // factored out so it can be unit-tested without React/GraphQL. Callers wire the
-// real owned-board walk (`fetchAllMyBoards`) + `useCreateBoard` mutation into
-// `deps`.
+// authenticated owner snapshot + `useCreateBoard` mutation into `deps`.
 
 import type { CreateBoardInput, UserBoard } from '@boardsesh/shared-schema';
 import { parseBoardPath, parseNamedBoardPath, formatBoardDisplayName } from '@boardsesh/board-config';
 import { findOwnedBoardForConfig } from '../components/board-discovery/board-items';
+
+export type OwnedBoardSnapshot = {
+  viewerId: string;
+  boards: UserBoard[];
+};
 
 /** A board config parsed out of a session boardPath, with a concrete angle. */
 export type ResolvedBoardConfig = {
@@ -29,24 +33,15 @@ export type ResolvedBoardConfig = {
 
 export type ResolveBoardDeps = {
   /**
-   * Every board the signed-in user already owns, loaded on demand.
-   *
-   * A loader rather than a pre-populated array, because the two ways of getting
-   * that array wrong both mint a duplicate of gear the user already has and the
-   * resolver cannot tell them apart from an honestly empty rack. A single
-   * `myBoards` page (20 rows by default, 50 at the cap) hides a board that sorts
-   * onto page two; and an awaited React Query `refetch()` under
-   * `networkMode: 'offlineFirst'` pauses its retryer while offline and never
-   * settles, so callers that guarded it with a `?? []` fallback handed over an
-   * empty list on exactly the failure that matters. Owning the call here makes
-   * the guard part of the contract instead of something every caller reimplements:
-   * pass an imperative walk that REJECTS (`fetchAllMyBoards`), and a failed load
-   * fails the resolve rather than creating a board.
+   * The account-verified board list, loaded on demand. `myBoards` also includes
+   * followed boards, so resolution must match each row's `ownerId` to `viewerId`.
+   * A failed or unverifiable load rejects rather than creating a board from an
+   * unknown ownership state.
    *
    * Called lazily, and only for the tuple form — a named board (`/b/{slug}`)
    * resolves by slug and never reads the owned list.
    */
-  loadOwnedBoards: () => Promise<UserBoard[]>;
+  loadOwnedBoards: () => Promise<OwnedBoardSnapshot>;
   /** Persists a new board server-side and returns the full UserBoard. */
   createBoard: (input: CreateBoardInput) => Promise<UserBoard>;
   /** Resolve a named board (`/b/{slug}`) to its full entity, or null when the
@@ -118,9 +113,9 @@ export function buildCreateBoardInput(config: ResolvedBoardConfig): CreateBoardI
  *   2. Reuse a matching owned board (angle overridden from the path), or
  *   3. Create a new board via `deps.createBoard`.
  *
- * A rejected `deps.loadOwnedBoards()` propagates: "you own no boards" and "we
- * couldn't find out which boards you own" are the same input to step 2 and mint
- * the same duplicate, so the resolver refuses to guess.
+ * A rejected or malformed `deps.loadOwnedBoards()` propagates: "you own no
+ * boards" and "we couldn't verify which boards you own" must not collapse into
+ * the same input to step 2 and mint a duplicate or adopt a followed board.
  */
 export async function resolveBoardForSession(boardPath: string, deps: ResolveBoardDeps): Promise<UserBoard> {
   const named = parseNamedBoardPath(boardPath);
@@ -138,7 +133,19 @@ export async function resolveBoardForSession(boardPath: string, deps: ResolveBoa
     throw new Error(`Cannot resolve a board from session boardPath: ${boardPath}`);
   }
 
-  const owned = findOwnedBoardForSession(await deps.loadOwnedBoards(), config);
+  const snapshot = await deps.loadOwnedBoards();
+  if (typeof snapshot.viewerId !== 'string' || snapshot.viewerId.trim().length === 0) {
+    throw new Error('Cannot resolve a board without a verified account owner');
+  }
+  if (!Array.isArray(snapshot.boards)) {
+    throw new Error('Cannot resolve a board without a verified owned-board list');
+  }
+  if (snapshot.boards.some((board) => typeof board.ownerId !== 'string' || board.ownerId.trim().length === 0)) {
+    throw new Error('Cannot verify ownership for every board in the list');
+  }
+
+  const viewerBoards = snapshot.boards.filter((board) => board.ownerId === snapshot.viewerId);
+  const owned = findOwnedBoardForSession(viewerBoards, config);
   if (owned) return owned;
 
   return deps.createBoard(buildCreateBoardInput(config));
