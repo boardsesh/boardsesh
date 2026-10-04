@@ -483,6 +483,7 @@ export async function prepareLaunchUpdateGate(deps: LaunchUpdatePreparationDeps)
     () => deps.isDeviceOffline(),
     () => false,
   );
+  // Only a throwing isDeviceOffline() reaches this; unknown counts as online.
   const safeDeviceRead = deviceRead.catch(() => false);
   const staleOverrideRead = withLaunchUpdateTimeout(deps.resolveStaleOverride(), timeoutMs, 'override cleanup').catch(
     () => false,
