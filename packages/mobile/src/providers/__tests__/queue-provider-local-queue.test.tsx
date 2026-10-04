@@ -271,6 +271,20 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+function queueStateResponse(queue: ClimbQueueItem[], sequence: number, stateHash: string) {
+  return {
+    session: {
+      queueState: {
+        queue,
+        currentClimbQueueItem: null,
+        sequence,
+        stateHash,
+        stateHashOrdered: null,
+      },
+    },
+  };
+}
+
 async function renderRestoredSession(snapshots: Snapshot[]) {
   sessionStore.getStoredSessionId.mockResolvedValue('session-1');
   http.request.mockImplementation((operation: string) =>
@@ -1078,6 +1092,298 @@ describe('QueueProvider local solo queue', () => {
 
     await act(async () => oldSend.resolve());
     expect(calls).toEqual(['account-a:account-a-first', 'account-b:account-b-first']);
+  });
+
+  it('does not apply account A failure reconciliation after account B appends in the same room', async () => {
+    partyProfileState.current = {
+      ...partyProfileState.current,
+      authenticatedUserId: 'account-a',
+      isAuthenticated: true,
+    };
+    const snapshots: Snapshot[] = [];
+    const rendered = await renderRestoredSession(snapshots);
+    const heldSnapshot = deferred<unknown>();
+    http.request.mockImplementation((operation: string) =>
+      operation.includes('GetSessionQueueState') ? heldSnapshot.promise : Promise.resolve({ sessionStatus: 'active' }),
+    );
+    queueMutations.addQueueItem.mockRejectedValueOnce(new Error('account A send failed'));
+
+    act(() => {
+      snapshots.at(-1)?.appendQueueItems([makeQueueItem('account-a-failed')]);
+    });
+    await waitFor(() =>
+      expect(http.request.mock.calls.some(([operation]) => String(operation).includes('GetSessionQueueState'))).toBe(
+        true,
+      ),
+    );
+
+    partyProfileState.current = { ...partyProfileState.current, authenticatedUserId: 'account-b' };
+    rendered.rerender(
+      createElement(QueueProvider, null, createElement(Probe, { onSnapshot: (snapshot) => snapshots.push(snapshot) })),
+    );
+    act(() => {
+      snapshots.at(-1)?.appendQueueItems([makeQueueItem('account-b-fresh')]);
+    });
+    await waitFor(() =>
+      expect(snapshots.at(-1)?.state.queue.some((item) => item.uuid === 'account-b-fresh')).toBe(true),
+    );
+
+    await act(async () =>
+      heldSnapshot.resolve({
+        session: {
+          queueState: {
+            queue: [],
+            currentClimbQueueItem: null,
+            sequence: 100,
+            stateHash: 'account-a-empty-snapshot',
+            stateHashOrdered: null,
+          },
+        },
+      }),
+    );
+
+    expect(snapshots.at(-1)?.state.queue.some((item) => item.uuid === 'account-b-fresh')).toBe(true);
+    expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
+  });
+
+  it('cancels a held failure reconciliation across an account A to B to A transition', async () => {
+    partyProfileState.current = {
+      ...partyProfileState.current,
+      authenticatedUserId: 'account-a',
+      isAuthenticated: true,
+    };
+    const snapshots: Snapshot[] = [];
+    const rendered = await renderRestoredSession(snapshots);
+    const heldSnapshot = deferred<unknown>();
+    http.request.mockImplementation((operation: string) =>
+      operation.includes('GetSessionQueueState') ? heldSnapshot.promise : Promise.resolve({ sessionStatus: 'active' }),
+    );
+    queueMutations.addQueueItem.mockRejectedValueOnce(new Error('account A send failed'));
+
+    act(() => {
+      snapshots.at(-1)?.appendQueueItems([makeQueueItem('account-a-pending')]);
+    });
+    await waitFor(() =>
+      expect(http.request.mock.calls.some(([operation]) => String(operation).includes('GetSessionQueueState'))).toBe(
+        true,
+      ),
+    );
+
+    for (const authenticatedUserId of ['account-b', 'account-a']) {
+      partyProfileState.current = { ...partyProfileState.current, authenticatedUserId };
+      rendered.rerender(
+        createElement(
+          QueueProvider,
+          null,
+          createElement(Probe, { onSnapshot: (snapshot) => snapshots.push(snapshot) }),
+        ),
+      );
+    }
+    await act(async () => heldSnapshot.resolve(queueStateResponse([], 101, 'stale-account-a')));
+
+    expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toContain('account-a-pending');
+    expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
+  });
+
+  it('ignores a held authenticated reconciliation after signout', async () => {
+    partyProfileState.current = {
+      ...partyProfileState.current,
+      authenticatedUserId: 'signed-in-account',
+      isAuthenticated: true,
+    };
+    const snapshots: Snapshot[] = [];
+    const rendered = await renderRestoredSession(snapshots);
+    const heldSnapshot = deferred<unknown>();
+    http.request.mockImplementation((operation: string) =>
+      operation.includes('GetSessionQueueState') ? heldSnapshot.promise : Promise.resolve({ sessionStatus: 'active' }),
+    );
+    queueMutations.addQueueItem.mockRejectedValueOnce(new Error('authenticated send failed'));
+
+    act(() => {
+      snapshots.at(-1)?.appendQueueItems([makeQueueItem('signed-in-pending')]);
+    });
+    await waitFor(() =>
+      expect(http.request.mock.calls.some(([operation]) => String(operation).includes('GetSessionQueueState'))).toBe(
+        true,
+      ),
+    );
+
+    partyProfileState.current = { ...partyProfileState.current, authenticatedUserId: null, isAuthenticated: false };
+    rendered.rerender(
+      createElement(QueueProvider, null, createElement(Probe, { onSnapshot: (snapshot) => snapshots.push(snapshot) })),
+    );
+    await act(async () => heldSnapshot.resolve(queueStateResponse([], 101, 'signed-out-stale')));
+
+    expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toContain('signed-in-pending');
+    expect(toast.showToast).not.toHaveBeenCalled();
+  });
+
+  it('ignores a held reconciliation after the active room changes', async () => {
+    const snapshots: Snapshot[] = [];
+    await renderRestoredSession(snapshots);
+    const heldSnapshot = deferred<unknown>();
+    http.request.mockImplementation((operation: string) =>
+      operation.includes('GetSessionQueueState') ? heldSnapshot.promise : Promise.resolve({ sessionStatus: 'active' }),
+    );
+    queueMutations.addQueueItem.mockRejectedValueOnce(new Error('old room send failed'));
+    const oldRoomItem = makeQueueItem('old-room-pending');
+
+    act(() => {
+      snapshots.at(-1)?.appendQueueItems([oldRoomItem]);
+    });
+    await waitFor(() =>
+      expect(http.request.mock.calls.some(([operation]) => String(operation).includes('GetSessionQueueState'))).toBe(
+        true,
+      ),
+    );
+    await act(async () =>
+      snapshots.at(-1)?.joinSession('session-2', {
+        boardPath: '/kilter/1/10/1,2/40/list',
+        userBoard: activeBoard.stored,
+      }),
+    );
+    const newRoomItem = makeQueueItem('new-room-current');
+    act(() => {
+      snapshots.at(-1)?.appendQueueItems([newRoomItem]);
+    });
+    await waitFor(() =>
+      expect(snapshots.at(-1)?.state.queue.some((item) => item.uuid === 'new-room-current')).toBe(true),
+    );
+
+    await act(async () => heldSnapshot.resolve(queueStateResponse([oldRoomItem], 101, 'old-room-stale')));
+
+    expect(snapshots.at(-1)?.sessionId).toBe('session-2');
+    expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toContain('new-room-current');
+    expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
+  });
+
+  it.each([
+    ['clear', (snapshot: Snapshot, _item: ClimbQueueItem) => snapshot.clearQueue(), ''],
+    ['replace', (snapshot: Snapshot, item: ClimbQueueItem) => snapshot.setQueue([item], item), 'replacement'],
+  ])(
+    'does not revive a queue superseded by %s while reconciliation is held',
+    async (intent, supersede, expectedUuid) => {
+      const snapshots: Snapshot[] = [];
+      await renderRestoredSession(snapshots);
+      const heldSnapshot = deferred<unknown>();
+      http.request.mockImplementation((operation: string) =>
+        operation.includes('GetSessionQueueState')
+          ? heldSnapshot.promise
+          : Promise.resolve({ sessionStatus: 'active' }),
+      );
+      queueMutations.addQueueItem.mockRejectedValueOnce(new Error('old queue send failed'));
+      const oldItem = makeQueueItem('old-queue-item');
+
+      act(() => {
+        snapshots.at(-1)?.appendQueueItems([oldItem]);
+      });
+      await waitFor(() =>
+        expect(http.request.mock.calls.some(([operation]) => String(operation).includes('GetSessionQueueState'))).toBe(
+          true,
+        ),
+      );
+      const replacement = makeQueueItem('replacement');
+      act(() => supersede(snapshots.at(-1)!, replacement));
+
+      await act(async () => heldSnapshot.resolve(queueStateResponse([oldItem], 101, `${intent}-stale`)));
+
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(expectedUuid ? [expectedUuid] : []);
+      expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
+    },
+  );
+
+  it('keeps a new account reconciliation flight independent while the old account request hangs', async () => {
+    partyProfileState.current = {
+      ...partyProfileState.current,
+      authenticatedUserId: 'account-a',
+      isAuthenticated: true,
+    };
+    const snapshots: Snapshot[] = [];
+    const rendered = await renderRestoredSession(snapshots);
+    const accountARead = deferred<unknown>();
+    const accountBRead = deferred<unknown>();
+    const accountBTrailingRead = deferred<unknown>();
+    const queueReads = [accountARead, accountBRead, accountBTrailingRead];
+    let queueReadIndex = 0;
+    http.request.mockImplementation((operation: string) => {
+      if (operation.includes('GetSessionQueueState')) return queueReads[queueReadIndex++].promise;
+      return Promise.resolve({ sessionStatus: 'active' });
+    });
+    queueMutations.addQueueItem
+      .mockRejectedValueOnce(new Error('account A send failed'))
+      .mockRejectedValueOnce(new Error('account B first send failed'))
+      .mockRejectedValueOnce(new Error('account B second send failed'))
+      .mockRejectedValueOnce(new Error('account B third send failed'));
+
+    act(() => {
+      snapshots.at(-1)?.appendQueueItems([makeQueueItem('account-a-failed')]);
+    });
+    await waitFor(() => expect(queueReadIndex).toBe(1));
+
+    partyProfileState.current = { ...partyProfileState.current, authenticatedUserId: 'account-b' };
+    rendered.rerender(
+      createElement(QueueProvider, null, createElement(Probe, { onSnapshot: (snapshot) => snapshots.push(snapshot) })),
+    );
+    act(() => {
+      snapshots.at(-1)?.appendQueueItems([makeQueueItem('account-b-first-failed')]);
+    });
+    await waitFor(() => expect(queueReadIndex).toBe(2));
+    act(() => {
+      snapshots.at(-1)?.appendQueueItems([makeQueueItem('account-b-second-failed')]);
+    });
+    await waitFor(() => expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(3));
+
+    await act(async () => accountARead.resolve(queueStateResponse([], 101, 'old-account-a')));
+    act(() => {
+      snapshots.at(-1)?.appendQueueItems([makeQueueItem('account-b-third-failed')]);
+    });
+    await waitFor(() => expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(4));
+    expect(queueReadIndex).toBe(2);
+
+    await act(async () => accountBRead.resolve(queueStateResponse([], 102, 'account-b-first-read')));
+    await waitFor(() => expect(queueReadIndex).toBe(3));
+    await act(async () => accountBTrailingRead.resolve(queueStateResponse([], 103, 'account-b-trailing-read')));
+
+    expect(queueReadIndex).toBe(3);
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
+  });
+
+  it('heals a current-origin failure across a same-account profile reload', async () => {
+    partyProfileState.current = {
+      ...partyProfileState.current,
+      authenticatedUserId: 'stable-account',
+      isAuthenticated: true,
+    };
+    const snapshots: Snapshot[] = [];
+    const rendered = await renderRestoredSession(snapshots);
+    const heldSnapshot = deferred<unknown>();
+    http.request.mockImplementation((operation: string) =>
+      operation.includes('GetSessionQueueState') ? heldSnapshot.promise : Promise.resolve({ sessionStatus: 'active' }),
+    );
+    queueMutations.addQueueItem.mockRejectedValueOnce(new Error('current-origin send failed'));
+
+    act(() => {
+      snapshots.at(-1)?.appendQueueItems([makeQueueItem('current-origin-pending')]);
+    });
+    await waitFor(() =>
+      expect(http.request.mock.calls.some(([operation]) => String(operation).includes('GetSessionQueueState'))).toBe(
+        true,
+      ),
+    );
+    partyProfileState.current = {
+      ...partyProfileState.current,
+      authenticatedUserId: null,
+      transportToken: 'refreshed-token',
+    };
+    rendered.rerender(
+      createElement(QueueProvider, null, createElement(Probe, { onSnapshot: (snapshot) => snapshots.push(snapshot) })),
+    );
+    await act(async () =>
+      heldSnapshot.resolve(queueStateResponse([makeQueueItem('server-authoritative')], 101, 'current-origin')),
+    );
+
+    expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['server-authoritative']);
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
   });
 
   it('appendQueueItems reconciles ONCE for a batch of failed adds, preferring the throttled reason', async () => {

@@ -49,9 +49,6 @@ type UseSessionCommandsParams = {
   onSessionContextChanging: () => void;
   dispatch: React.Dispatch<QueueAction>;
   setPlaylistSuggestionSourceState: React.Dispatch<React.SetStateAction<PlaylistSuggestionSource | null>>;
-  /** Single-flight guard for resyncQueueFromServer — cleared at the clearSession teardown boundary. */
-  resyncInFlightRef: React.RefObject<boolean>;
-  resyncPendingRef: React.RefObject<boolean>;
   /** Raw active-board setter (useSetActiveBoard), NOT the ref-wrapped one. */
   setActiveBoard: (board: UserBoard) => Promise<void>;
   /** Shared with the session-realtime SessionEnded handler; owned by the provider. */
@@ -69,8 +66,8 @@ type SessionCommands = {
 /**
  * The explicit session-lifecycle commands: create (Start button), join
  * (party mode), end, and clear (local teardown). `sessionCreationRef` is owned
- * internally (only createSessionWithConfig reads it); the leave-guard refs and
- * resync-flag refs are provider-owned shared state passed in.
+ * internally (only createSessionWithConfig reads it); the leave-guard refs are
+ * provider-owned shared state passed in.
  */
 export function useSessionCommands({
   showToast,
@@ -84,8 +81,6 @@ export function useSessionCommands({
   onSessionContextChanging,
   dispatch,
   setPlaylistSuggestionSourceState,
-  resyncInFlightRef,
-  resyncPendingRef,
   setActiveBoard,
   locallyEndingSessionIdRef,
   suppressedRemoteEndSessionIdRef,
@@ -248,14 +243,6 @@ export function useSessionCommands({
           if (__DEV__) console.warn('[queue] leaveSession on switch failed', error);
         }
       }
-      // A resync fetch that never settles (hung connection) would leave the
-      // single-flight guard stuck true; a mounted provider carries that across a
-      // session switch and would block every future resync. Reset at the teardown
-      // boundary so the next session always starts clean.
-      resyncInFlightRef.current = false;
-      // Same for the coalesced-rerun flag: a pending rerun belongs to the old
-      // session and must not fire a fetch into the next one.
-      resyncPendingRef.current = false;
       // Any pending seed-failure guard belongs to the session we're tearing down
       // (it's keyed by id, so a stale value can't match the next session anyway —
       // this just keeps the ref tidy).

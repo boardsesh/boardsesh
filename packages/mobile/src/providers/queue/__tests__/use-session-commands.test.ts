@@ -93,8 +93,6 @@ function renderSessionCommands() {
     onSessionContextChanging: vi.fn(),
     dispatch: vi.fn(),
     setPlaylistSuggestionSourceState: vi.fn(),
-    resyncInFlightRef: { current: false },
-    resyncPendingRef: { current: false },
     setActiveBoard: vi.fn(() => Promise.resolve()),
     locallyEndingSessionIdRef: { current: null },
     suppressedRemoteEndSessionIdRef: { current: null },

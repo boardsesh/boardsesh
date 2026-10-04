@@ -14,6 +14,7 @@
  */
 export const SERIAL_TEST_FILES = [
   'src/workers/__tests__/jobs.test.ts',
+  'src/workers/__tests__/snapshot-job-lease.test.ts',
   'src/workers/families/__tests__/aurora-user-sync.test.ts',
   'src/workers/families/__tests__/kilter-user-sync.test.ts',
   'src/workers/families/__tests__/provider-routine-cycle.test.ts',
