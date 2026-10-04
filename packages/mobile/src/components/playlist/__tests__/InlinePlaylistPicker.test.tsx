@@ -14,15 +14,34 @@ const playlistContext = vi.hoisted(() => ({
   isAuthenticated: true,
 }));
 const qstate = vi.hoisted(() => ({ data: [] as string[] | undefined, loading: false }));
-const membershipOverridesState = vi.hoisted(() => ({ data: {} as Record<string, boolean> }));
+const membershipOverridesState = vi.hoisted(() => ({
+  data: {
+    revision: 0,
+    byPlaylistUuid: {} as Record<string, { isMember: boolean; revision: number; pending: boolean }>,
+  },
+}));
 const queryClientMock = vi.hoisted(() => ({
   getQueryData: vi.fn((queryKey: readonly unknown[]): unknown =>
-    queryKey[0] === 'playlistsForClimb' ? qstate.data : membershipOverridesState.data,
+    queryKey[0] === 'playlistsForClimb'
+      ? qstate.data === undefined
+        ? undefined
+        : {
+            playlistUuids: qstate.data,
+            overrideRevisionAtFetchStart: 0,
+            pendingOverrideRevisionsAtFetchStart: {},
+          }
+      : membershipOverridesState.data,
   ),
   setQueryData: vi.fn((queryKey: readonly unknown[], nextValue: unknown) => {
-    if (queryKey[0] === 'playlistsForClimb' && Array.isArray(nextValue)) qstate.data = nextValue as string[];
-    else if (queryKey[0] === 'playlistMembershipOverrides' && typeof nextValue === 'object' && nextValue !== null) {
-      membershipOverridesState.data = nextValue as Record<string, boolean>;
+    if (
+      queryKey[0] === 'playlistsForClimb' &&
+      typeof nextValue === 'object' &&
+      nextValue !== null &&
+      'playlistUuids' in nextValue
+    ) {
+      qstate.data = (nextValue as { playlistUuids: string[] }).playlistUuids;
+    } else if (queryKey[0] === 'playlistMembershipOverrides' && typeof nextValue === 'object' && nextValue !== null) {
+      membershipOverridesState.data = nextValue as typeof membershipOverridesState.data;
     }
   }),
   cancelQueries: vi.fn(async () => {}),
@@ -93,7 +112,18 @@ vi.mock('@tanstack/react-query', () => ({
   useQuery: (options: { queryKey: readonly unknown[] }) =>
     options.queryKey[0] === 'playlistMembershipOverrides'
       ? { data: membershipOverridesState.data }
-      : { data: qstate.data, isLoading: qstate.loading, isError: false },
+      : {
+          data:
+            qstate.data === undefined
+              ? undefined
+              : {
+                  playlistUuids: qstate.data,
+                  overrideRevisionAtFetchStart: 0,
+                  pendingOverrideRevisionsAtFetchStart: {},
+                },
+          isLoading: qstate.loading,
+          isError: false,
+        },
   useQueryClient: () => queryClientMock,
 }));
 
@@ -228,7 +258,7 @@ describe('InlinePlaylistPicker', () => {
     playlistContext.createPlaylist.mockReset();
     qstate.data = [];
     qstate.loading = false;
-    membershipOverridesState.data = {};
+    membershipOverridesState.data = { revision: 0, byPlaylistUuid: {} };
     queryClientMock.getQueryData.mockClear();
     queryClientMock.setQueryData.mockClear();
     queryClientMock.cancelQueries.mockClear();
@@ -451,7 +481,13 @@ describe('InlinePlaylistPicker', () => {
       expect(playlistContext.addToPlaylist).toHaveBeenCalledWith('p-1', 'climb-1', 40);
     });
     expect(playlistContext.removeFromPlaylist).not.toHaveBeenCalled();
-    expect(queryClientMock.setQueryData).toHaveBeenCalledWith(['playlistsForClimb', 'kilter', 1, 'climb-1'], ['p-1']);
+    expect(queryClientMock.setQueryData).toHaveBeenLastCalledWith(
+      ['playlistMembershipOverrides', 'kilter', 1, 'climb-1'],
+      {
+        revision: 1,
+        byPlaylistUuid: { 'p-1': { isMember: true, revision: 1, pending: false } },
+      },
+    );
     expect(membershipStore.setMembershipForClimb).toHaveBeenCalledWith('climb-1', ['p-1']);
   });
 
@@ -488,7 +524,13 @@ describe('InlinePlaylistPicker', () => {
       expect(playlistContext.removeFromPlaylist).toHaveBeenCalledWith('p-1', 'climb-1');
     });
     expect(playlistContext.addToPlaylist).not.toHaveBeenCalled();
-    expect(queryClientMock.setQueryData).toHaveBeenCalledWith(['playlistsForClimb', 'kilter', 1, 'climb-1'], []);
+    expect(queryClientMock.setQueryData).toHaveBeenLastCalledWith(
+      ['playlistMembershipOverrides', 'kilter', 1, 'climb-1'],
+      {
+        revision: 1,
+        byPlaylistUuid: { 'p-1': { isMember: false, revision: 1, pending: false } },
+      },
+    );
   });
 
   it('reverts the optimistic membership and surfaces an inline error on failure', async () => {
@@ -503,8 +545,15 @@ describe('InlinePlaylistPicker', () => {
       expect(getByText('actions.playlist.toast.addFailed')).not.toBeNull();
     });
     // Optimistic write then revert to the previous set.
-    expect(queryClientMock.setQueryData).toHaveBeenNthCalledWith(1, expect.anything(), ['p-1']);
-    expect(queryClientMock.setQueryData).toHaveBeenNthCalledWith(2, expect.anything(), []);
+    expect(queryClientMock.setQueryData).toHaveBeenNthCalledWith(
+      1,
+      ['playlistMembershipOverrides', 'kilter', 1, 'climb-1'],
+      expect.objectContaining({ byPlaylistUuid: { 'p-1': { isMember: true, revision: 1, pending: true } } }),
+    );
+    expect(queryClientMock.setQueryData).toHaveBeenLastCalledWith(
+      ['playlistMembershipOverrides', 'kilter', 1, 'climb-1'],
+      { revision: 1, byPlaylistUuid: {} },
+    );
   });
 
   // #3891: the climber taps a playlist, sees the optimistic checkmark, and
@@ -537,7 +586,11 @@ describe('InlinePlaylistPicker', () => {
       await waitFor(() => expect(playlistContext.addToPlaylist).toHaveBeenCalled());
       // Optimistic checkmark is already written — this is what the climber saw
       // before dismissing.
-      expect(queryClientMock.setQueryData).toHaveBeenNthCalledWith(1, expect.anything(), ['p-1']);
+      expect(queryClientMock.setQueryData).toHaveBeenNthCalledWith(
+        1,
+        ['playlistMembershipOverrides', 'kilter', 1, 'climb-1'],
+        expect.objectContaining({ byPlaylistUuid: { 'p-1': { isMember: true, revision: 1, pending: true } } }),
+      );
 
       unmount();
       pending.resolve();

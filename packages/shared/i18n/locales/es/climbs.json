@@ -102,7 +102,7 @@
         "empty": "Aún no hay playlists",
         "createNew": "Crear nueva playlist",
         "signInBlurb": "Inicia sesión para crear y gestionar playlists",
-        "membershipUnknown": "No se puede comprobar la pertenencia a la playlist sin el diseño de este plafón. Las playlists sin marcar están bloqueadas.",
+        "membershipUnknown": "No se puede comprobar la pertenencia a la playlist sin el layout de este plafón. Las playlists sin marcar están bloqueadas.",
         "membershipChecking": "Comprobando la pertenencia a la playlist… Las playlists sin marcar están bloqueadas hasta que termine.",
         "membershipUnavailable": "No se pudo comprobar la pertenencia a la playlist. Las playlists sin marcar están bloqueadas.",
         "angleUnavailable": "No se puede añadir porque no está disponible el ángulo de este problema."
