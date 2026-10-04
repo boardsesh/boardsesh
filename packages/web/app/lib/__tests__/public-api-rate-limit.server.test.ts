@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { MemoryRateLimiter, RateLimitError } from '@boardsesh/rate-limit';
+import { webLogger } from '../observability/logger';
 
 vi.mock('server-only', () => ({}));
 vi.mock('../public-api-rate-limit-redis.server', () => ({
@@ -149,6 +150,23 @@ describe('public API client identity', () => {
 });
 
 describe('public API guard', () => {
+  it('keeps a trusted client independent when malformed platform identities exhaust the fallback', async () => {
+    const guard = createPublicApiRateLimitGuard({
+      environment: { VERCEL: '1', VERCEL_ENV: 'production' },
+      getRedisEvaluator: () => undefined,
+      logRateLimited: () => undefined,
+      memoryLimiter: new MemoryRateLimiter({ maxEntries: 10 }),
+    });
+    const unresolvableRequest = request('/api/v1/kilter/grades', 'not-an-ip');
+
+    for (let requestIndex = 0; requestIndex < PUBLIC_API_MAX_REQUESTS; requestIndex += 1) {
+      await expect(guard(unresolvableRequest)).resolves.toBeNull();
+    }
+    await expect(guard(unresolvableRequest)).resolves.toMatchObject({ status: 429 });
+    await expect(guard(request('/api/v1/kilter/grades', '198.51.100.77'))).resolves.toBeNull();
+    await expect(guard(unresolvableRequest)).resolves.toMatchObject({ status: 429 });
+  });
+
   it('uses the injected clock for the default local limiter across its fixed window', async () => {
     let currentTime = 1_000;
     const guard = createPublicApiRateLimitGuard({
@@ -301,7 +319,7 @@ describe('public API guard', () => {
 });
 
 describe('429 observability', () => {
-  it('logs the rejected path, identity, and user agent once per rejection', async () => {
+  it('passes structured rejection fields through the injectable logger', async () => {
     const logRateLimited = vi.fn();
     const guard = createPublicApiRateLimitGuard({
       environment: { VERCEL: '1', VERCEL_ENV: 'production' },
@@ -313,9 +331,60 @@ describe('429 observability', () => {
     await guard(request('/api/v1/kilter/climb-stats/abc123', '203.0.113.8', 'scraper/1.0'));
 
     expect(logRateLimited).toHaveBeenCalledOnce();
-    expect(logRateLimited.mock.calls[0]?.[0]).toBe(
-      '[public-api-rate-limit] 429 path=/api/v1/kilter/climb-stats/abc123 ip=203.0.113.8 ua=scraper/1.0',
+    expect(logRateLimited).toHaveBeenCalledWith(
+      'Public API request rate limited',
+      expect.objectContaining({
+        status: 429,
+        clientIp: '203.0.113.8',
+        userAgent: 'scraper/1.0',
+        retryAfterSeconds: 9,
+      }),
     );
+  });
+
+  it('writes rejected requests through the request-scoped structured logger only', async () => {
+    const infoSpy = vi.spyOn(webLogger, 'info').mockImplementation(() => undefined);
+
+    try {
+      const acceptedGuard = createPublicApiRateLimitGuard({
+        environment: { VERCEL: '1', VERCEL_ENV: 'production' },
+        getRedisEvaluator: () => undefined,
+        memoryLimiter: new MemoryRateLimiter(),
+      });
+      await expect(acceptedGuard(request('/api/v1/kilter/grades', '203.0.113.8'))).resolves.toBeNull();
+      expect(infoSpy).not.toHaveBeenCalled();
+
+      const rejectedGuard = createPublicApiRateLimitGuard({
+        environment: { VERCEL: '1', VERCEL_ENV: 'production' },
+        getRedisEvaluator: () => vi.fn().mockRejectedValue(new RateLimitError(9)),
+        memoryLimiter: new MemoryRateLimiter(),
+      });
+      const rejectedRequest = new Request('https://www.boardsesh.com/api/v1/kilter/climb-stats/abc123', {
+        headers: {
+          'user-agent': 'scraper/1.0',
+          'x-railway-request-id': 'railway-request-123',
+          'x-vercel-forwarded-for': '203.0.113.8',
+        },
+      });
+
+      await expect(rejectedGuard(rejectedRequest)).resolves.toMatchObject({ status: 429 });
+
+      expect(infoSpy).toHaveBeenCalledOnce();
+      expect(infoSpy).toHaveBeenCalledWith(
+        'Public API request rate limited',
+        expect.objectContaining({
+          route: '/api/v1/kilter/climb-stats/abc123',
+          method: 'GET',
+          requestId: 'railway-request-123',
+          status: 429,
+          clientIp: '203.0.113.8',
+          userAgent: 'scraper/1.0',
+          retryAfterSeconds: 9,
+        }),
+      );
+    } finally {
+      infoSpy.mockRestore();
+    }
   });
 
   it('stays silent while requests are inside the budget', async () => {
@@ -346,11 +415,13 @@ describe('429 observability', () => {
     hostileRequest.headers.set('user-agent', `curl/8\u0007ua=spoofed ${'A'.repeat(400)}`);
     await guard(hostileRequest);
 
-    const loggedLine = String(logRateLimited.mock.calls[0]?.[0]);
-    expect(loggedLine).toContain('ua=curl/8 ua=spoofed');
-    expect(loggedLine).not.toContain('\u0007');
-    expect(loggedLine.endsWith('…')).toBe(true);
-    expect(loggedLine.length).toBeLessThan(300);
+    expect(logRateLimited).toHaveBeenCalledWith(
+      'Public API request rate limited',
+      expect.objectContaining({
+        status: 429,
+        userAgent: `curl/8 ua=spoofed ${'A'.repeat(182)}…`,
+      }),
+    );
   });
 
   it('falls back to placeholders when the path and user agent are unavailable', async () => {
@@ -364,8 +435,14 @@ describe('429 observability', () => {
 
     await guard(request('/api/v1/kilter/grades'));
 
-    expect(logRateLimited.mock.calls[0]?.[0]).toBe(
-      '[public-api-rate-limit] 429 path=/api/v1/kilter/grades ip=unknown ua=unknown',
+    expect(logRateLimited).toHaveBeenCalledWith(
+      'Public API request rate limited',
+      expect.objectContaining({
+        status: 429,
+        clientIp: 'unknown',
+        userAgent: 'unknown',
+        retryAfterSeconds: 9,
+      }),
     );
   });
 });
