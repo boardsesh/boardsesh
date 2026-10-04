@@ -77,6 +77,7 @@ const privacySchema = readFileSync(
 
 export const schemaSQL = `
   DROP TABLE IF EXISTS resource_grants, resource_privacy, content_privacy, user_follow_requests, session_boards CASCADE;
+  DROP TABLE IF EXISTS "stripe_support_operations", "stripe_support_claims", "stripe_supporters";
   DROP TABLE IF EXISTS "board_session_queues" CASCADE;
   DROP TABLE IF EXISTS "session_health_kit_workouts" CASCADE;
   DROP TABLE IF EXISTS "board_session_participants" CASCADE;

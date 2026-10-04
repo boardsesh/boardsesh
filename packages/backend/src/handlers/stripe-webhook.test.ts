@@ -15,6 +15,19 @@ const { mockConstructEvent, mockDb, mockRetrieveSubscription } = vi.hoisted(() =
   mockRetrieveSubscription: vi.fn(),
 }));
 
+vi.mock('../services/stripe-support-operation', () => ({
+  withSupportOperation: async (
+    _userId: string,
+    _kind: string,
+    prepare: (transaction: unknown, intent: null) => Promise<unknown>,
+    perform: (prepared: unknown, operationId: string) => Promise<unknown>,
+    finish: (transaction: unknown, prepared: unknown, networkResult: unknown) => Promise<unknown>,
+  ) => {
+    const prepared = await mockDb.transaction(async (transaction: unknown) => prepare(transaction, null));
+    const networkResult = await perform(prepared, 'operation-1');
+    return mockDb.transaction(async (transaction: unknown) => finish(transaction, prepared, networkResult));
+  },
+}));
 vi.mock('../db/client', () => ({ db: mockDb }));
 vi.mock('../services/stripe-support', async (importOriginal) => {
   const original = await importOriginal<typeof import('../services/stripe-support')>();
@@ -113,8 +126,15 @@ function setupCheckoutTransaction(options?: {
     }),
     delete: deleteClaim,
   };
+  mockDb.select.mockReturnValue({
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue(options?.missingClaim ? [] : [{ userId: 'user-1' }]),
+      }),
+    }),
+  });
   mockDb.transaction.mockImplementation(async (callback: (database: typeof transaction) => Promise<void>) => {
-    await callback(transaction);
+    return callback(transaction);
   });
   return { deleteClaim, insertedValues, conflictUpdate, transaction };
 }
@@ -132,6 +152,13 @@ function setupSubscriptionUpdate(storedEventCreatedAt: Date | null) {
     })),
     update: vi.fn().mockReturnValue({ set }),
   };
+  mockDb.select.mockReturnValue({
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue([{ userId: 'user-1' }]),
+      }),
+    }),
+  });
   mockDb.transaction.mockImplementation(async (callback: (database: typeof transaction) => Promise<void>) =>
     callback(transaction),
   );

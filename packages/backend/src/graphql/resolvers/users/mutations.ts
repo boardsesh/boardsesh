@@ -1,5 +1,5 @@
 import { reconcileExpiredSupportClaims } from '../../../services/reconcile-support-claims';
-import { lockSupportAccount } from '../../../services/stripe-support-lock';
+import { withSupportOperation } from '../../../services/stripe-support-operation';
 import { eq, and, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import * as Sentry from '@sentry/node';
@@ -273,24 +273,21 @@ export const userMutations = {
     validateInput(DeleteAccountInputSchema, input, 'input');
 
     const userId = ctx.userId!;
-
-    await reconcileExpiredSupportClaims(userId);
+    // A retry of a persisted deletion must resume its original intent first.
+    const [operation] = await db
+      .select({ state: dbSchema.stripeSupportOperations.state })
+      .from(dbSchema.stripeSupportOperations)
+      .where(eq(dbSchema.stripeSupportOperations.userId, userId))
+      .limit(1);
+    if (operation?.state !== 'deleting') await reconcileExpiredSupportClaims(userId);
 
     let deletedWallIds: number[] = [];
     await retryAccountDeletion(() =>
-      db.transaction(async (tx) => {
-        // This guard must be serving before migration 0250 can create its
-        // archive. The migration's DDL takes ACCESS EXCLUSIVE on the live table;
-        // holding ROW EXCLUSIVE here makes one operation wait for the other.
-        // The archive lookup is a separate READ COMMITTED statement after the
-        // lock, so it sees an archive created by a migration that committed
-        // while this transaction waited. If the archive is still absent, this
-        // transaction keeps the lock until deletion commits and prevents the
-        // migration from archiving favorites for an account being removed.
-        await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL READ COMMITTED`);
-
-        const account = await lockSupportAccount(tx, userId);
-        if (!account) return;
+      withSupportOperation(
+      userId,
+      'deleting',
+      async (tx, priorDeletionIntent) => {
+        if (priorDeletionIntent) return priorDeletionIntent;
         const [pendingClaim] = await tx
           .select({ id: dbSchema.stripeSupportClaims.id })
           .from(dbSchema.stripeSupportClaims)
@@ -305,37 +302,38 @@ export const userMutations = {
           );
         }
         const [supporter] = await tx
-          .select({
-            subscriptionId: dbSchema.stripeSupporters.stripeSubscriptionId,
-            subscriptionStatus: dbSchema.stripeSupporters.subscriptionStatus,
-            cancelAtPeriodEnd: dbSchema.stripeSupporters.cancelAtPeriodEnd,
-          })
+          .select({ subscriptionId: dbSchema.stripeSupporters.stripeSubscriptionId })
           .from(dbSchema.stripeSupporters)
           .where(eq(dbSchema.stripeSupporters.userId, userId))
           .limit(1);
-        if (supporter?.subscriptionId) {
-          try {
-            const stripe = getStripeClient();
-            const currentSubscription = await stripe.subscriptions.retrieve(supporter.subscriptionId);
-            if (!['canceled', 'incomplete_expired'].includes(currentSubscription.status)) {
-              const subscription = await stripe.subscriptions.update(supporter.subscriptionId, {
-                cancel_at_period_end: true,
-              });
-              if (
-                !subscription.cancel_at_period_end &&
-                !['canceled', 'incomplete_expired'].includes(subscription.status)
-              ) {
-                throw new Error('Stripe did not confirm cancellation');
-              }
-            }
-          } catch (error) {
-            logger.error('[deleteAccount] could not schedule Stripe subscription cancellation', { userId, error });
-            throw new GraphQLError('Could not cancel your Stripe subscription. Your account was not deleted.', {
-              extensions: { code: 'STRIPE_CANCELLATION_FAILED' },
+        return { subscriptionId: supporter?.subscriptionId ?? null, removeSetterName: input.removeSetterName ?? false };
+      },
+      async (intent) => {
+        if (!intent.subscriptionId) return;
+        try {
+          const stripe = getStripeClient();
+          const currentSubscription = await stripe.subscriptions.retrieve(intent.subscriptionId);
+          if (!['canceled', 'incomplete_expired'].includes(currentSubscription.status)) {
+            // Reapply this idempotent assignment on every recovery attempt.
+            // A stable Stripe key could replay an old success after a portal resume.
+            const subscription = await stripe.subscriptions.update(intent.subscriptionId, {
+              cancel_at_period_end: true,
             });
+            if (
+              !subscription.cancel_at_period_end &&
+              !['canceled', 'incomplete_expired'].includes(subscription.status)
+            ) {
+              throw new Error('Stripe did not confirm cancellation');
+            }
           }
+        } catch (error) {
+          logger.error('[deleteAccount] could not schedule Stripe subscription cancellation', { userId, error });
+          throw new GraphQLError('Could not cancel your Stripe subscription. Your account was not deleted.', {
+            extensions: { code: 'STRIPE_CANCELLATION_FAILED' },
+          });
         }
-  
+      },
+      async (tx, intent) => {
         deletedWallIds = await deleteAccountSprayWalls(tx, userId);
         await withdrawDeletedAccountContent(tx, userId);
         await deleteAccountBoards(tx, userId);
@@ -376,7 +374,7 @@ export const userMutations = {
           .where(and(eq(dbSchema.boardClimbs.userId, userId), eq(dbSchema.boardClimbs.isDraft, true)));
 
         // Optionally remove setter name from published climbs
-        if (input.removeSetterName) {
+        if (intent.removeSetterName) {
           await tx
             .update(dbSchema.boardClimbs)
             .set({ setterUsername: null })
@@ -388,7 +386,9 @@ export const userMutations = {
         // boardClimbs.userId has onDelete: 'set null', so published climbs
         // will have their userId set to null (preserved).
         await tx.delete(dbSchema.users).where(eq(dbSchema.users.id, userId));
-      }),
+      },
+      { deletionIntent: (intent) => intent },
+      ),
     );
 
     pubsub.publishPrivacyChanged();

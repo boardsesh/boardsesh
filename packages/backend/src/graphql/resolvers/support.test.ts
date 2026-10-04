@@ -18,6 +18,19 @@ const { applyRateLimit, checkoutSessionCreate, billingPortalSessionCreate, subsc
   }),
 );
 
+vi.mock('../../services/stripe-support-operation', () => ({
+  withSupportOperation: async (
+    _userId: string,
+    _kind: string,
+    prepare: (transaction: unknown, intent: null) => Promise<unknown>,
+    perform: (prepared: unknown, operationId: string) => Promise<unknown>,
+    finish: (transaction: unknown, prepared: unknown, networkResult: unknown) => Promise<unknown>,
+  ) => {
+    const prepared = await mockDb.transaction(async (transaction: unknown) => prepare(transaction, null));
+    const networkResult = await perform(prepared, 'operation-1');
+    return mockDb.transaction(async (transaction: unknown) => finish(transaction, prepared, networkResult));
+  },
+}));
 vi.mock('../../services/reconcile-support-claims', () => ({
   reconcileExpiredSupportClaims: vi.fn().mockResolvedValue(undefined),
 }));
