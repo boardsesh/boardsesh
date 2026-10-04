@@ -2,7 +2,7 @@ import { eq, and, count, desc, inArray, sql, type SQL } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
+import { sprayReferenceClimbExistsCondition, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
 import { validateInput } from '../../shared/helpers';
 import { isSprayBoardType, sprayClimbUuidIsReadable } from '../../climbs/spray-read-access';
 import { GetClimbProposalsInputSchema, BrowseProposalsInputSchema } from '../../../../validation/schemas';
@@ -26,7 +26,13 @@ export const socialProposalQueries = {
     // Short-circuited on the board type, which this resolver has in hand, so the
     // eight catalogue boards pay nothing — not even the round trip.
     // `comments(input)` cannot do the same: it is keyed on an entity, not a board.
-    if (isSprayBoardType(boardType) && !(await sprayClimbUuidIsReadable(climbUuid, authenticatedUserId))) {
+    //
+    // `requireClimbRow`: a spray climb whose row has been hard-deleted has no
+    // wall left to check, so its proposals answer the empty page too (#5981).
+    if (
+      isSprayBoardType(boardType) &&
+      !(await sprayClimbUuidIsReadable(climbUuid, authenticatedUserId, { requireClimbRow: true }))
+    ) {
       return { proposals: [], totalCount: 0, hasMore: false };
     }
 
@@ -87,11 +93,21 @@ export const socialProposalQueries = {
     // COUNT below, so a private wall's proposal neither shortens a page nor
     // inflates a total. `browseProposals` is unauthenticated, so the viewer is
     // null for an anonymous caller — never a hopeful value.
+    //
+    // The second condition fails closed on a spray proposal whose climb row has
+    // been hard-deleted (`deleteDraftClimb`, account deletion). The reference
+    // form passes it for everybody, and the row carries the proposer and their
+    // reason (#5981). Nobody is exempt: with the climb gone there is nothing
+    // left to vote on.
     const conditions: SQL[] = [
       sprayReferenceVisibilityCondition(
         { boardType: dbSchema.climbProposals.boardType, climbUuid: dbSchema.climbProposals.climbUuid },
         authenticatedUserId,
       ),
+      sprayReferenceClimbExistsCondition({
+        boardType: dbSchema.climbProposals.boardType,
+        climbUuid: dbSchema.climbProposals.climbUuid,
+      }),
     ];
     if (boardTypeFilter) conditions.push(eq(dbSchema.climbProposals.boardType, boardTypeFilter));
     if (type) conditions.push(eq(dbSchema.climbProposals.type, type));
