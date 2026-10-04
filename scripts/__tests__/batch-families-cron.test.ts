@@ -34,12 +34,6 @@ const PINS = [
   { family: refreshClimbGradesFamily, workflow: 'refresh-climb-grades.yml', crons: ['30 6 * * *'] },
   // The workflow runs a matrix job per board; the family fans out one job per board.
   { family: refreshClimbNeighborsFamily, workflow: 'refresh-climb-neighbors.yml', crons: ['45 6 * * *'] },
-  // The nightly identity/gzip/catalogue export, then the 15-minute live scan.
-  {
-    family: exportBoardSnapshotsFamily,
-    workflow: 'export-board-snapshots.yml',
-    crons: ['15 7 * * *', '7,22,37,52 * * * *'],
-  },
   {
     family: refreshMoonboardAngleEstimatesFamily,
     workflow: 'refresh-moonboard-angle-estimates.yml',
@@ -53,6 +47,15 @@ const PINS = [
 ] as const;
 
 describe('batch family crons', () => {
+  it('keeps snapshot crons solely on the homelab worker after owner cutover', () => {
+    expect(exportBoardSnapshotsFamily.schedules?.map((schedule) => schedule.cron)).toEqual([
+      '15 7 * * *',
+      '7,22,37,52 * * * *',
+    ]);
+    const { on } = workflow('export-board-snapshots.yml');
+    expect(on).not.toHaveProperty('schedule');
+    expect(on).toHaveProperty('workflow_dispatch');
+  });
   it.each(PINS)('$workflow and its family fire at $crons UTC', ({ family, workflow: name, crons }) => {
     const schedules = family.schedules ?? [];
     expect(schedules.map((schedule) => schedule.cron)).toEqual(crons);

@@ -47,6 +47,8 @@ const payload = z
     refreshThreshold: z.number().int().positive().max(1_000_000).optional(),
     /** Nightly only: skip the identity (`v1`) pass, like the workflow's `gzip_only` input. */
     gzipOnly: z.boolean().optional(),
+    /** Migration exports retain every existing object. Normal nightly pruning is unchanged. */
+    skipPrune: z.boolean().optional(),
   })
   .strict()
   .refine((request) => request.layout === undefined || request.board !== undefined, {
@@ -235,6 +237,7 @@ export const exportBoardSnapshotsFamily: BackgroundJobFamilyModule<ExportRequest
       },
     };
     const filters = { boardFilter: request.board, layoutFilter: request.layout };
+    const pruneOptions = request.skipPrune === undefined ? {} : { skipPrune: request.skipPrune };
 
     if (request.mode === 'live-scan') {
       await runExportWithOptions(
@@ -244,6 +247,7 @@ export const exportBoardSnapshotsFamily: BackgroundJobFamilyModule<ExportRequest
           keyPrefix: LIVE_SNAPSHOT_KEY_PREFIX,
           refreshThreshold: request.refreshThreshold ?? LIVE_SCAN_REFRESH_THRESHOLD,
           ...filters,
+          ...pruneOptions,
         },
         dependencies,
       );
@@ -277,7 +281,7 @@ export const exportBoardSnapshotsFamily: BackgroundJobFamilyModule<ExportRequest
     if (runIdentity) {
       await runPass('identity', true, () =>
         runExportWithOptions(
-          { dryRun: false, gzip: false, keyPrefix: DEFAULT_SNAPSHOT_KEY_PREFIX, ...filters },
+          { dryRun: false, gzip: false, keyPrefix: DEFAULT_SNAPSHOT_KEY_PREFIX, ...filters, ...pruneOptions },
           dependencies,
         ),
       );
@@ -290,13 +294,17 @@ export const exportBoardSnapshotsFamily: BackgroundJobFamilyModule<ExportRequest
           keyPrefix: LIVE_SNAPSHOT_KEY_PREFIX,
           refreshThreshold: request.refreshThreshold,
           ...filters,
+          ...pruneOptions,
         },
         dependencies,
       ),
     );
     if (runCatalog) {
       await runPass('catalogue', false, () =>
-        runCatalogExportWithOptions({ dryRun: false, keyPrefix: DEFAULT_CATALOG_KEY_PREFIX }, dependencies),
+        runCatalogExportWithOptions(
+          { dryRun: false, keyPrefix: DEFAULT_CATALOG_KEY_PREFIX, ...pruneOptions },
+          dependencies,
+        ),
       );
     }
     if (failedPasses.length > 0) throw new BackgroundJobError('SNAPSHOT_PASS_FAILED');

@@ -459,6 +459,15 @@ describe('runExport — per-layout failure resilience', () => {
 });
 
 describe('runExport — stale-artifact pruning', () => {
+  it('--no-prune publishes artifacts and the manifest without listing or deleting old objects', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    await runExport(['--no-prune']);
+    expect(uploadedManifest().entries).toHaveLength(1);
+    expect(vi.mocked(uploadToS3).mock.calls.some(([, , key]) => key.endsWith('.db'))).toBe(true);
+    expect(listS3Objects).not.toHaveBeenCalled();
+    expect(deleteFromS3).not.toHaveBeenCalled();
+  });
+
   it('an unfiltered successful run prunes unreferenced artifacts older than the grace window only', async () => {
     await seedClimb('kilter', 1, 'k1-a');
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);

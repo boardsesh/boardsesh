@@ -1,53 +1,18 @@
 name: Export Board Snapshots
 
-# Nightly: build every per-(board, layout) SQLite snapshot of board_climbs +
-# board_climb_stats, plus one whole-catalogue artifact of the board hardware
-# tables (board-snapshots/v1-catalog, read only by the seeded dev-db image).
-# Every 15 minutes: cheaply probe the live gzip manifest's
-# watermarks and rebuild only layouts once they have >=500 stable delta rows,
-# keeping prolonged bulk gaps out of fresh downloads. Idempotent — each
-# refresh mints new content-addressed artifacts and rewrites the manifest last.
-#
-# The nightly full run publishes the catalog under TWO prefixes side by side
-# (see docs/board-snapshots.md):
-#   - board-snapshots/v1-gzip  gzip-encoded (~2.6x smaller) — what the fleet reads. Every
-#                              mobile workflow's EXPO_PUBLIC_SNAPSHOT_BASE_URL points here.
-#   - board-snapshots/v1       identity-encoded — nothing points at it any more; kept live
-#                              as the one-revert rollback target and the public dataset base.
-# Each prefix is a self-contained, single-encoding manifest; the export merges
-# and prunes strictly within the prefix it targets. A later cleanup drops the
-# identity pass and deletes the v1 prefix.
+# The homelab batch worker owns nightly and live exports. Actions is ONLY an
+# isolated, complete R2 rehearsal while that worker still publishes to Tigris.
+# This operator gate is not a cross-system lock: before worker R2 cutover, set
+# SNAPSHOT_PUBLISHER_STORAGE_TARGET=r2, disable this workflow, and drain its runs.
 on:
-  schedule:
-    - cron: '15 7 * * *' # 07:15 UTC daily (off-peak; distinct from the 06:00/06:30 refresh crons)
-    # Offset from :00/:15/:30/:45 to reduce GitHub schedule congestion. This
-    # refreshes only the live gzip prefix; the identity rollback stays nightly.
-    - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
     inputs:
       storage_target:
-        description: 'Storage destination. R2 is for a complete migration rehearsal only.'
+        description: 'Complete R2 migration rehearsal; the active producer must still use Tigris.'
         type: choice
         options:
-          - tigris
           - r2
-        default: tigris
-      gzip_only:
-        description: 'Skip the identity (v1) pass; only refresh the gzip (v1-gzip) artifacts'
-        type: boolean
-        default: false
-      board:
-        description: 'Limit both passes to one board type (e.g. kilter). Blank = all boards.'
-        required: false
-        default: ''
-      layout:
-        description: 'Limit both passes to one layout id (needs a board). Blank = all layouts.'
-        required: false
-        default: ''
-      refresh_threshold:
-        description: 'Live gzip only: rebuild layouts with at least this many rows after the manifest watermark. Blank = full export.'
-        required: false
-        default: ''
+        default: r2
 
 concurrency:
   group: export-board-snapshots
@@ -55,41 +20,24 @@ concurrency:
 
 jobs:
   export:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    # The nightly does two sequential read-only passes (identity + gzip); live
-    # scans do bounded probes and, normally, no export. 45m covers a bulk refresh.
-    timeout-minutes: 45
-    # DATABASE_URL is read-only-sufficient (snapshots only SELECT) but MUST
-    # point at the PRIMARY, never a read replica: the sync cursor
-    # (updated_at, sync_seq) is write-time ordered while a replica snapshot is
-    # commit-order consistent, so a lagging replica can yield watermarks that
-    # cover rows absent from the artifact — bootstrapped clients would skip
-    # those rows forever.
+    timeout-minutes: 60
     environment: Production
-    # Production DB/S3 credentials are NOT declared here: job-level env would leak
-    # them to actions/checkout, the setup actions, and `vp install` before the
-    # export ever runs. They're intentionally repeated on the three export steps.
     env:
-      # Scheduled and ordinary manual exports remain on Tigris until the R2
-      # rehearsal passes and the mobile readers move in a separate cutover.
-      SNAPSHOT_PUBLIC_BASE_URL: ${{ inputs.storage_target == 'r2' && 'https://snapshots.boardsesh.com' || 'https://boardsesh-board-snapshots.t3.tigrisfiles.io' }}
-      # Keep the export's stability window in lockstep with the backend if
-      # it's ever configured off-default (empty → the shared 30s default).
+      SNAPSHOT_PUBLIC_BASE_URL: https://snapshots.boardsesh.com
       SYNC_STABILITY_WINDOW_SECONDS: ${{ vars.SYNC_STABILITY_WINDOW_SECONDS }}
     steps:
-      - name: Validate R2 migration rehearsal
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.storage_target == 'r2' }}
+      - name: Validate isolated R2 rehearsal
         env:
-          GZIP_ONLY: ${{ inputs.gzip_only }}
-          BOARD: ${{ inputs.board }}
-          LAYOUT: ${{ inputs.layout }}
-          REFRESH_THRESHOLD: ${{ inputs.refresh_threshold }}
+          STORAGE_TARGET: ${{ inputs.storage_target }}
+          SNAPSHOT_PUBLISHER_STORAGE_TARGET: ${{ vars.SNAPSHOT_PUBLISHER_STORAGE_TARGET }}
           SNAPSHOTS_R2_AWS_ENDPOINT_URL: ${{ secrets.SNAPSHOTS_R2_AWS_ENDPOINT_URL }}
           SNAPSHOTS_R2_AWS_ACCESS_KEY_ID: ${{ secrets.SNAPSHOTS_R2_AWS_ACCESS_KEY_ID }}
           SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY: ${{ secrets.SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY }}
         run: |
-          if [ "$GZIP_ONLY" = 'true' ] || [ -n "$BOARD" ] || [ -n "$LAYOUT" ] || [ -n "$REFRESH_THRESHOLD" ]; then
-            echo '::error::An R2 rehearsal must be a complete export: gzip_only=false and all filters blank.'
+          if [ "$STORAGE_TARGET" != 'r2' ] || [ "$SNAPSHOT_PUBLISHER_STORAGE_TARGET" != 'tigris' ]; then
+            echo '::error::Rehearsal requires storage_target=r2 and Production variable SNAPSHOT_PUBLISHER_STORAGE_TARGET=tigris. Never run alongside an R2 worker.'
             exit 1
           fi
           for required_name in SNAPSHOTS_R2_AWS_ENDPOINT_URL SNAPSHOTS_R2_AWS_ACCESS_KEY_ID SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY; do
@@ -102,10 +50,8 @@ jobs:
             const raw = process.env.SNAPSHOTS_R2_AWS_ENDPOINT_URL ?? "";
             let endpoint;
             try { endpoint = new URL(raw); } catch { process.exitCode = 1; }
-            const suffix = ".r2.cloudflarestorage.com";
-            if (!endpoint || endpoint.protocol !== "https:" || !endpoint.hostname.endsWith(suffix) ||
-                endpoint.hostname === suffix.slice(1) || endpoint.username || endpoint.password || endpoint.port ||
-                endpoint.pathname !== "/" || endpoint.search || endpoint.hash) {
+            if (!endpoint || endpoint.protocol !== "https:" || !/^[a-z0-9]+\.r2\.cloudflarestorage\.com$/.test(endpoint.hostname) ||
+                endpoint.username || endpoint.password || endpoint.port || endpoint.pathname !== "/" || endpoint.search || endpoint.hash) {
               console.error("::error::SNAPSHOTS_R2_AWS_ENDPOINT_URL must be an HTTPS Cloudflare R2 account endpoint.");
               process.exitCode = 1;
             }
@@ -122,181 +68,61 @@ jobs:
       - name: Install dependencies
         run: vp install --frozen-lockfile
 
-      # Identity pass → board-snapshots/v1. The fleet no longer reads this prefix
-      # (it moved to v1-gzip), but it stays byte-for-byte the pre-gzip run so
-      # reverting the mobile workflows' EXPO_PUBLIC_SNAPSHOT_BASE_URL is a
-      # complete rollback on its own. It's also the base the public dataset doc
-      # hands out. Skipped on the frequent live scan and when a manual dispatch
-      # asks for gzip-only or threshold refresh.
-      #
-      # BOARD/LAYOUT come through `env` and are read as shell variables, never
-      # interpolated into the run script with `${{ }}` — a dispatch input must not
-      # be able to inject shell before the CLI's parseBoardFilter/parseLayoutFilter
-      # ever sees it. Empty values add no flag.
+      - name: Capture trusted coverage before export
+        run: |
+          curl --fail --silent --show-error --retry 4 --retry-all-errors --max-time 30 --max-filesize 2097152 \
+            'https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-gzip/manifest.json' \
+            -o "$RUNNER_TEMP/snapshot-expected-manifest.json"
+          printf 'SNAPSHOT_VERIFY_BUILT_AFTER=%s\n' "$(node -e 'process.stdout.write(new Date().toISOString())')" >> "$GITHUB_ENV"
+
+      # The database must be the primary: a replica can publish watermarks ahead
+      # of rows present in its transaction snapshot. Credentials are step-scoped.
       - name: Export board snapshots (identity → board-snapshots/v1)
-        if: >-
-          ${{
-            (github.event_name == 'schedule' && github.event.schedule == '15 7 * * *') ||
-            (github.event_name == 'workflow_dispatch' && inputs.gzip_only != true && inputs.refresh_threshold == '')
-          }}
         working-directory: packages/backend
         env:
-          BOARD: ${{ inputs.board }}
-          LAYOUT: ${{ inputs.layout }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          AWS_S3_BUCKET_NAME: ${{ secrets.AWS_S3_BUCKET_NAME }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          # Accept the Tigris console's exported names (AWS_ENDPOINT_URL_S3 /
-          # AWS_REGION) so rotating keys stays copy-paste, with the plain names
-          # as fallback for any other S3-compatible store.
-          AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL_S3 || secrets.AWS_ENDPOINT_URL }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || secrets.AWS_DEFAULT_REGION }}
-          SNAPSHOTS_S3_BUCKET_NAME: ${{ inputs.storage_target == 'r2' && 'boardsesh-board-snapshots' || '' }}
-          SNAPSHOTS_AWS_ACCESS_KEY_ID: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_ACCESS_KEY_ID || '' }}
-          SNAPSHOTS_AWS_SECRET_ACCESS_KEY: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY || '' }}
-          SNAPSHOTS_AWS_ENDPOINT_URL: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_ENDPOINT_URL || '' }}
-          SNAPSHOTS_AWS_REGION: ${{ inputs.storage_target == 'r2' && 'auto' || '' }}
-        run: |
-          args=()
-          if [ -n "$BOARD" ]; then args+=("--board=$BOARD"); fi
-          if [ -n "$LAYOUT" ]; then args+=("--layout=$LAYOUT"); fi
-          node --import tsx src/scripts/export-board-snapshots.ts "${args[@]}"
+          SNAPSHOTS_S3_BUCKET_NAME: boardsesh-board-snapshots
+          SNAPSHOTS_AWS_ACCESS_KEY_ID: ${{ secrets.SNAPSHOTS_R2_AWS_ACCESS_KEY_ID }}
+          SNAPSHOTS_AWS_SECRET_ACCESS_KEY: ${{ secrets.SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY }}
+          SNAPSHOTS_AWS_ENDPOINT_URL: ${{ secrets.SNAPSHOTS_R2_AWS_ENDPOINT_URL }}
+          SNAPSHOTS_AWS_REGION: auto
+          SNAPSHOTS_PUBLIC_BASE_URL: https://snapshots.boardsesh.com
+        run: vp exec tsx src/scripts/export-board-snapshots.ts --no-prune
 
-      # Gzip pass → board-snapshots/v1-gzip. This is the live prefix: every mobile
-      # workflow's EXPO_PUBLIC_SNAPSHOT_BASE_URL points here, so this pass must
-      # stay in the nightly (a gzip-pass failure strands the fleet on whatever the
-      # manifest last named). Clients verify the gzip magic bytes and fall back to
-      # the paged crawl if a body arrives undecoded.
       - name: Export board snapshots (gzip → board-snapshots/v1-gzip)
         working-directory: packages/backend
         env:
-          BOARD: ${{ inputs.board }}
-          LAYOUT: ${{ inputs.layout }}
-          # The frequent schedule is the fixed PAGE_LIMIT threshold. A manual
-          # dispatch can use the same mode with another positive integer.
-          REFRESH_THRESHOLD: ${{ github.event_name == 'schedule' && github.event.schedule == '7,22,37,52 * * * *' && '500' || inputs.refresh_threshold }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          AWS_S3_BUCKET_NAME: ${{ secrets.AWS_S3_BUCKET_NAME }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          # Accept the Tigris console's exported names (AWS_ENDPOINT_URL_S3 /
-          # AWS_REGION) so rotating keys stays copy-paste, with the plain names
-          # as fallback for any other S3-compatible store.
-          AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL_S3 || secrets.AWS_ENDPOINT_URL }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || secrets.AWS_DEFAULT_REGION }}
-          SNAPSHOTS_S3_BUCKET_NAME: ${{ inputs.storage_target == 'r2' && 'boardsesh-board-snapshots' || '' }}
-          SNAPSHOTS_AWS_ACCESS_KEY_ID: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_ACCESS_KEY_ID || '' }}
-          SNAPSHOTS_AWS_SECRET_ACCESS_KEY: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY || '' }}
-          SNAPSHOTS_AWS_ENDPOINT_URL: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_ENDPOINT_URL || '' }}
-          SNAPSHOTS_AWS_REGION: ${{ inputs.storage_target == 'r2' && 'auto' || '' }}
-        run: |
-          args=(--gzip --key-prefix board-snapshots/v1-gzip)
-          if [ -n "$BOARD" ]; then args+=("--board=$BOARD"); fi
-          if [ -n "$LAYOUT" ]; then args+=("--layout=$LAYOUT"); fi
-          if [ -n "$REFRESH_THRESHOLD" ]; then args+=("--refresh-threshold=$REFRESH_THRESHOLD"); fi
-          node --import tsx src/scripts/export-board-snapshots.ts "${args[@]}"
+          SNAPSHOTS_S3_BUCKET_NAME: boardsesh-board-snapshots
+          SNAPSHOTS_AWS_ACCESS_KEY_ID: ${{ secrets.SNAPSHOTS_R2_AWS_ACCESS_KEY_ID }}
+          SNAPSHOTS_AWS_SECRET_ACCESS_KEY: ${{ secrets.SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY }}
+          SNAPSHOTS_AWS_ENDPOINT_URL: ${{ secrets.SNAPSHOTS_R2_AWS_ENDPOINT_URL }}
+          SNAPSHOTS_AWS_REGION: auto
+          SNAPSHOTS_PUBLIC_BASE_URL: https://snapshots.boardsesh.com
+        run: vp exec tsx src/scripts/export-board-snapshots.ts --gzip --key-prefix board-snapshots/v1-gzip --no-prune
 
-      # Catalogue pass → board-snapshots/v1-catalog. The hardware geometry and
-      # reference tables the per-layout artifacts deliberately do not carry
-      # (holes, placements, LEDs, sets, sizes, layouts, grade scales, aliases,
-      # beta links). Its consumer is the seeded developer database image, which
-      # used to scrape six Aurora APKs for exactly this data (issue #4508); the
-      # mobile fleet never reads this prefix.
-      #
-      # Nightly only, and never on the 15-minute scan or a --board/--layout
-      # dispatch: it is one whole-catalogue artifact, ~30k geometry rows that
-      # change a handful of times a year, so a frequent rebuild would only churn
-      # S3. A failure here must not fail the fleet-facing passes above, which is
-      # why it runs last.
       - name: Export board catalogue (gzip → board-snapshots/v1-catalog)
-        if: >-
-          ${{
-            (github.event_name == 'schedule' && github.event.schedule == '15 7 * * *') ||
-            (github.event_name == 'workflow_dispatch' && inputs.refresh_threshold == '' &&
-             inputs.board == '' && inputs.layout == '')
-          }}
         working-directory: packages/backend
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          AWS_S3_BUCKET_NAME: ${{ secrets.AWS_S3_BUCKET_NAME }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL_S3 || secrets.AWS_ENDPOINT_URL }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || secrets.AWS_DEFAULT_REGION }}
-          SNAPSHOTS_S3_BUCKET_NAME: ${{ inputs.storage_target == 'r2' && 'boardsesh-board-snapshots' || '' }}
-          SNAPSHOTS_AWS_ACCESS_KEY_ID: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_ACCESS_KEY_ID || '' }}
-          SNAPSHOTS_AWS_SECRET_ACCESS_KEY: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY || '' }}
-          SNAPSHOTS_AWS_ENDPOINT_URL: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_ENDPOINT_URL || '' }}
-          SNAPSHOTS_AWS_REGION: ${{ inputs.storage_target == 'r2' && 'auto' || '' }}
-        run: node --import tsx src/scripts/export-board-catalog.ts
+          SNAPSHOTS_S3_BUCKET_NAME: boardsesh-board-snapshots
+          SNAPSHOTS_AWS_ACCESS_KEY_ID: ${{ secrets.SNAPSHOTS_R2_AWS_ACCESS_KEY_ID }}
+          SNAPSHOTS_AWS_SECRET_ACCESS_KEY: ${{ secrets.SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY }}
+          SNAPSHOTS_AWS_ENDPOINT_URL: ${{ secrets.SNAPSHOTS_R2_AWS_ENDPOINT_URL }}
+          SNAPSHOTS_AWS_REGION: auto
+          SNAPSHOTS_PUBLIC_BASE_URL: https://snapshots.boardsesh.com
+        run: vp exec tsx src/scripts/export-board-catalog.ts --no-prune
 
       - name: Verify every R2 artifact through the public domain
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.storage_target == 'r2' }}
-        timeout-minutes: 20
+        timeout-minutes: 30
         env:
-          SNAPSHOT_R2_BASE_URL: https://snapshots.boardsesh.com/board-snapshots
-          SNAPSHOT_VERIFY_KEY: ${{ github.run_id }}
-        run: |
-          verify_headers() {
-            header_file="$1"
-            required_pattern="$2"
-            if ! tr -d '\r' < "$header_file" | grep -Eiq "$required_pattern"; then
-              echo "::error::Missing expected response header matching: $required_pattern"
-              cat "$header_file"
-              exit 1
-            fi
-          }
-
-          work_dir="$(mktemp -d)"
-          trap 'rm -rf "$work_dir"' EXIT
-          sample_artifact=''
-          for prefix in v1 v1-gzip v1-catalog; do
-            manifest_url="$SNAPSHOT_R2_BASE_URL/$prefix/manifest.json?verify=$SNAPSHOT_VERIFY_KEY"
-            headers="$work_dir/$prefix.headers"
-            cached_headers="$work_dir/$prefix.cached.headers"
-            manifest="$work_dir/$prefix.json"
-            curl --fail --silent --show-error --retry 4 --retry-all-errors \
-              -H 'Origin: https://app.boardsesh.com' -D "$headers" -o "$manifest" "$manifest_url"
-            verify_headers "$headers" '^access-control-allow-origin: \*$'
-            verify_headers "$headers" '^cache-control: .*max-age=300'
-            verify_headers "$headers" '^cf-ray:'
-            for ((cache_attempt = 1; cache_attempt <= 13; cache_attempt += 1)); do
-              curl --fail --silent --show-error --retry 4 --retry-all-errors \
-                -H 'Origin: https://app.boardsesh.com' -D "$cached_headers" -o /dev/null "$manifest_url"
-              if tr -d '\r' < "$cached_headers" | grep -Eiq '^cf-cache-status: HIT$'; then break; fi
-              if [ "$cache_attempt" = 13 ]; then
-                echo '::error::Snapshot manifest did not reach cf-cache-status: HIT after 13 probes over 60 seconds.'
-                cat "$cached_headers"
-                exit 1
-              fi
-              sleep 5
-            done
-
-            if [ "$prefix" = 'v1-catalog' ]; then
-              jq -e --arg base "$SNAPSHOT_R2_BASE_URL/" \
-                '.artifact.url | startswith($base)' "$manifest" >/dev/null
-              jq -r '.artifact.url' "$manifest" > "$work_dir/$prefix.urls"
-            else
-              jq -e --arg base "$SNAPSHOT_R2_BASE_URL/" \
-                '(.entries | length > 0) and all(.entries[]; (.url | startswith($base)) and ((.grades.url? // $base) | startswith($base)))' \
-                "$manifest" >/dev/null
-              jq -r '.entries[] | .url, (.grades.url? // empty)' "$manifest" > "$work_dir/$prefix.urls"
-            fi
-
-            while IFS= read -r artifact_url; do
-              [ -n "$artifact_url" ] || continue
-              artifact_headers="$work_dir/artifact.headers"
-              curl --fail --silent --show-error --retry 4 --retry-all-errors \
-                -H 'Origin: https://app.boardsesh.com' -I -D "$artifact_headers" -o /dev/null "$artifact_url"
-              verify_headers "$artifact_headers" '^access-control-allow-origin: \*$'
-              verify_headers "$artifact_headers" '^cache-control: .*immutable'
-              verify_headers "$artifact_headers" '^cf-ray:'
-              if [ -z "$sample_artifact" ]; then sample_artifact="$artifact_url"; fi
-            done < "$work_dir/$prefix.urls"
-          done
-
-          no_origin_headers="$work_dir/no-origin.headers"
-          curl --fail --silent --show-error --retry 4 --retry-all-errors \
-            -I -D "$no_origin_headers" -o /dev/null "$sample_artifact"
-          verify_headers "$no_origin_headers" '^access-control-allow-origin: \*$'
+          SNAPSHOTS_S3_BUCKET_NAME: boardsesh-board-snapshots
+          SNAPSHOTS_AWS_ACCESS_KEY_ID: ${{ secrets.SNAPSHOTS_R2_AWS_ACCESS_KEY_ID }}
+          SNAPSHOTS_AWS_SECRET_ACCESS_KEY: ${{ secrets.SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY }}
+          SNAPSHOTS_AWS_ENDPOINT_URL: ${{ secrets.SNAPSHOTS_R2_AWS_ENDPOINT_URL }}
+          SNAPSHOTS_AWS_REGION: auto
+          SNAPSHOTS_PUBLIC_BASE_URL: https://snapshots.boardsesh.com
+        run: >-
+          vp run storage:verify-snapshots --
+          --expected-manifest "$RUNNER_TEMP/snapshot-expected-manifest.json"
+          --built-after "$SNAPSHOT_VERIFY_BUILT_AFTER"

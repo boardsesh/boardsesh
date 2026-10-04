@@ -7,8 +7,9 @@ registry: every job names a family, and the worker dispatches on it.
 `worker-probe` is served by every role. PR-B1 of #5800 adds the first three
 batch families, PR-B2 the two weekly MoonBoard estimate families and PR-B3
 the similar-climbs refresh (below); each stays off until
-`BATCH_FAMILIES_ENABLED` names it, and its GitHub Actions workflow keeps
-running until the cutover. PR-2 adds the first-link and "Sync now" provider
+`BATCH_FAMILIES_ENABLED` names it. Snapshot publishing completed its ownership cutover
+on September 30 (#5912); its Actions schedules are retired and only a gated R2 rehearsal remains.
+Other family workflows keep running until their own cutover. PR-2 adds the first-link and "Sync now" provider
 syncs; PR-3 the routine provider cycle, the board-wide catalog and location
 syncs, and the stats self-heal (see "Routine provider sync"). The Aurora and
 Kilter daemons keep owning routine syncs until the documented cutover.
@@ -284,7 +285,7 @@ fence (`context.transaction`). The worker never imports
 | `refresh-hold-features` | `15 6 * * *` | `{ board = 'kilter', dryRun?, shadow? }` | 30 s | `board_hold_features`, the shadow `user_hold_classifications` | `refresh-hold-features.yml` |
 | `refresh-climb-grades` | `30 6 * * *` | `{ refit?, dryRun?, validateOnly? }` | 900 s | `board_grade_coefficients`, `board_climb_grades` | `refresh-climb-grades.yml` |
 | `refresh-climb-neighbors` | `45 6 * * *`, one job per board | `{ board, full?, dryRun?, refillGaps? }` | 60 s | `board_climb_neighbors`, `board_climb_neighbor_runs`, `board_climb_neighbor_group_runs` | `refresh-climb-neighbors.yml` |
-| `export-board-snapshots` | `15 7 * * *` (`nightly`), `7,22,37,52 * * * *` (`live-scan`) | `{ mode, board?, layout?, refreshThreshold?, gzipOnly? }` | 120 s | nothing in Postgres; SQLite artifacts and manifests to the snapshot bucket | `export-board-snapshots.yml` |
+| `export-board-snapshots` | `15 7 * * *` (`nightly`), `7,22,37,52 * * * *` (`live-scan`) | `{ mode, board?, layout?, refreshThreshold?, gzipOnly?, skipPrune? }` | 120 s | nothing in Postgres; SQLite artifacts and manifests to the snapshot bucket | `export-board-snapshots.yml` |
 | `refresh-moonboard-angle-estimates` | `0 8 * * 1` | `{ publish = true, validateOnly?, dryRun? }` | 600 s | `board_grade_coefficients`, `board_climb_grades` | `refresh-moonboard-angle-estimates.yml` |
 | `refresh-moonboard-wide-angle-estimates` | `30 8 * * 1` | `{ publish = true, dryRun? }` | 300 s | `board_climb_grades` (no coefficients: the angle surface is refit from `board_climb_stats` every run) | `refresh-moonboard-wide-angle-estimates.yml` |
 
@@ -390,8 +391,8 @@ job's signal.
 
 | Variable or mount | Value |
 | --- | --- |
-| `AWS_S3_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL`, `AWS_DEFAULT_REGION` | The Tigris snapshot bucket, the same values as the workflow's `Production` secrets. Not the `SNAPSHOTS_*` names, which select the R2 rehearsal bucket. |
-| `SNAPSHOT_PUBLIC_BASE_URL` | `https://boardsesh-board-snapshots.t3.tigrisfiles.io`. Required: without it the run fails with `SNAPSHOT_PUBLIC_BASE_URL_UNSET` instead of publishing URLs clients cannot read. |
+| `AWS_S3_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL`, `AWS_DEFAULT_REGION` | Current Tigris producer configuration. At live R2 rotation use the complete named `SNAPSHOTS_*` configuration in `docs/board-snapshots.md`; Actions stays disabled. |
+| `SNAPSHOT_PUBLIC_BASE_URL` | Current Tigris public base. At R2 rotation set both this singular exporter base and plural `SNAPSHOTS_PUBLIC_BASE_URL` to `https://snapshots.boardsesh.com`. The live rotation remains uncompleted. |
 | `SYNC_STABILITY_WINDOW_SECONDS` | Only when the backend sets it; the export must use the same window. |
 | `/tmp` | tmpfs, 2 GB. One layout's SQLite files live there during its export (kilter's largest is about 271 MB raw). Tmpfs pages are charged to the container's memory cgroup, so a memory limit must cover them on top of the 4 GB heap. |
 

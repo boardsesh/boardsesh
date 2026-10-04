@@ -157,6 +157,8 @@ describe('payload', () => {
     expect(family.payload.parse({ mode: 'live-scan' })).toEqual({ mode: 'live-scan' });
     expect(accepts({ mode: 'nightly', board: 'kilter', layout: 8, gzipOnly: true })).toBe(true);
     expect(accepts({ mode: 'live-scan', board: 'tension', refreshThreshold: 100 })).toBe(true);
+    expect(accepts({ mode: 'nightly', skipPrune: true })).toBe(true);
+    expect(accepts({ mode: 'live-scan', skipPrune: true })).toBe(true);
   });
 
   it('rejects a missing or unknown mode, unknown keys and malformed filters', () => {
@@ -173,6 +175,28 @@ describe('payload', () => {
   it('needs a board for a layout, and takes gzipOnly on the nightly only', () => {
     expect(accepts({ mode: 'nightly', layout: 8 })).toBe(false);
     expect(accepts({ mode: 'live-scan', gzipOnly: true })).toBe(false);
+  });
+});
+
+describe('migration retention', () => {
+  it('forwards skipPrune to identity, gzip and catalog passes', async () => {
+    await family.execute(context().context, { mode: 'nightly', skipPrune: true });
+    expect(exporter.runExportWithOptions).toHaveBeenCalledTimes(2);
+    for (const [options] of exporter.runExportWithOptions.mock.calls as ExportCall[]) {
+      expect(options.skipPrune).toBe(true);
+    }
+    expect(exporter.runCatalogExportWithOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ skipPrune: true }),
+      expect.anything(),
+    );
+  });
+
+  it('also forwards skipPrune to the live scan', async () => {
+    await family.execute(context().context, { mode: 'live-scan', skipPrune: true });
+    expect(exporter.runExportWithOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ skipPrune: true }),
+      expect.anything(),
+    );
   });
 });
 
