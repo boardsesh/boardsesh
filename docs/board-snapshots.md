@@ -1632,7 +1632,7 @@ sees a key that is not on S3 yet.
 
 ## Rollout plan
 
-1. **Build configuration**: confirm `EXPO_PUBLIC_SNAPSHOT_BASE_URL` is set to the real Tigris bucket URL
+1. **Build configuration**: confirm `EXPO_PUBLIC_SNAPSHOT_BASE_URL` is set to the R2 gzip directory URL
    in every native build. With the env var missing, the app intentionally uses the paged crawl (see Mobile
    wiring above).
 2. **Two pre-release manual verifications**:
