@@ -33,6 +33,25 @@ Measured on 2026-09-25: a write on the primary was replayed on the standby in
 about 1 s. A Proxmox live migration caused 26 ms of downtime. After a reboot
 the standby was streaming again within 20 s.
 
+## Board-snapshot coordination
+
+Migration `0250_board_snapshot_replica_fence` adds the `ops` schema and the
+session-level advisory lock reserved for board-snapshot exports, key `(4340,
+1)`. The primary coordinator takes that lock, sets a cursor cutoff before
+transactions that were already active, and samples the WAL insert position in
+a later statement. A replica export waits for the same PostgreSQL system and
+timeline to replay that position before reading. The lock stays held through
+publication so another fenced exporter cannot cross the same boundary
+concurrently.
+The detailed contract and operator prerequisites are in
+[`board-snapshots.md`](./board-snapshots.md).
+
+The homelab replica path is prepared but inactive: the batch primary exporter
+remains the current snapshot publisher. In an unfenced primary run, the log
+fields `systemIdentifier: "unfenced"` and `timelineId: 0` are sentinel values,
+not the primary's PostgreSQL identity. Real identity comparisons are used by
+the fenced primary and replica paths.
+
 ## Failover
 
 ![Failover: fence Railway, promote read-only, route clients, enable writes; failback via a fresh Railway volume](diagrams/postgres-dr-failover.svg)

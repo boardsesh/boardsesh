@@ -1706,6 +1706,8 @@ device's own tables.
 Unset the variable and redeploy to go forward again; the next scan rebuilds every entry in shape 2 the
 same way. That is also how shape 2 first reaches a prefix whose entries predate it.
 
+Two follow-up test-coverage items are tracked in [#6016](https://github.com/boardsesh/boardsesh/issues/6016): parity across the migration, development bootstrap, exporter audit, and backend fixture copies of the fence-role contract; and running the golden byte-parity test through the isolated snapshot pool's PostgreSQL type parser as well as the Drizzle pool. These are maintenance gaps; the current owner/grant audit and row-parity coverage remain in place.
+
 ### Verify deletion replay metadata after a live full refresh
 
 After an unfiltered full gzip refresh, inspect the `Export board snapshots (gzip →

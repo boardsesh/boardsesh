@@ -10,6 +10,18 @@ The answer is **both, split by one rule**, not either. This document is the rule
 
 Three buckets fall out of that, and every query key belongs to exactly one. The rule is what stops the two mechanisms competing: nothing is ever served by both, so there is never a merge question.
 
+## PostgreSQL cursor source
+
+Offline pulls use database-owned cursors, not timestamps supplied by a writer.
+Triggers stamp climb, stats, and grade rows with a UTC transaction timestamp
+and sequence on insert/update; deletion records receive their UTC deletion
+time. Snapshot restore may preserve imported cursors only through the
+transaction-local `boardsesh.snapshot_cursor_restore` flag, which PostgreSQL
+accepts only for a superuser session. Normal app and sync writers do not set
+that flag, and updates always get fresh cursor values. The snapshot exporter,
+restore exception, and consistency boundary are documented in
+[`board-snapshots.md`](board-snapshots.md).
+
 ### Bucket 1 — SQLite (`offlineAwareRequest`)
 
 Anything already in `TABLE_CONFIGS` (`packages/shared/offline-sync/src/sync/table-config.ts`): climbs, stats, grades, ticks/logbook, playlists and playlist climbs, favorites, follows, and the mirrored spray wall (`spray_walls`, #5448).
