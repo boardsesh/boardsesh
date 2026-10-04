@@ -8,6 +8,7 @@ import type { Climb } from '@boardsesh/shared-schema';
 // playlist action is wired to the inline view switch) and what the picker gets.
 const captured = vi.hoisted(() => ({
   actionArgs: null as Record<string, unknown> | null,
+  pickerAngle: undefined as number | undefined,
   pickerOnBack: undefined as undefined | (() => void),
   pickerOnDetachedFailure: undefined as undefined | ((message: string) => void),
   modalOnRequestClose: undefined as undefined | (() => void),
@@ -123,12 +124,15 @@ vi.mock('../../BoardImageNative', () => ({
 vi.mock('../../ClimbAttributeIcons', () => ({ ClimbAttributeIcons: () => null }));
 vi.mock('../../playlist/InlinePlaylistPicker', () => ({
   InlinePlaylistPicker: ({
+    angle,
     onBack,
     onDetachedFailure,
   }: {
+    angle: number;
     onBack?: () => void;
     onDetachedFailure?: (message: string) => void;
   }) => {
+    captured.pickerAngle = angle;
     captured.pickerOnBack = onBack;
     captured.pickerOnDetachedFailure = onDetachedFailure;
     return createElement('div', { 'data-picker': 'true' }, 'picker');
@@ -203,6 +207,7 @@ function renderMenu(onClose = vi.fn(), extraProps: Record<string, unknown> = {})
 describe('ClimbReactionMenu view switching', () => {
   beforeEach(() => {
     captured.actionArgs = null;
+    captured.pickerAngle = undefined;
     captured.pickerOnBack = undefined;
     captured.pickerOnDetachedFailure = undefined;
     captured.modalOnRequestClose = undefined;
@@ -267,6 +272,21 @@ describe('ClimbReactionMenu view switching', () => {
     });
     expect(container.querySelector('[data-picker="true"]')).not.toBeNull();
     expect(queryByLabelText('Add to Playlist')).toBeNull();
+  });
+
+  it('uses the opened preview angle when the picker is reopened from the action menu', () => {
+    const preview = { ...climb, boardType: 'tension', layoutId: 10, angle: 35 } as Climb;
+    const { getByLabelText } = renderMenu(vi.fn(), {
+      climb: preview,
+      boardConfig: { ...boardConfig, boardName: 'tension', layoutId: 10, angle: 35 },
+    });
+
+    act(() => fireEvent.click(getByLabelText('Add to Playlist')));
+    expect(captured.pickerAngle).toBe(35);
+
+    act(() => captured.pickerOnBack?.());
+    act(() => fireEvent.click(getByLabelText('Add to Playlist')));
+    expect(captured.pickerAngle).toBe(35);
   });
 
   it('forwards the onAddBetaVideo override into useClimbActions', () => {

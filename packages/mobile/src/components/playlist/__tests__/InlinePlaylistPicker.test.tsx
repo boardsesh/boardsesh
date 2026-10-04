@@ -14,12 +14,43 @@ const playlistContext = vi.hoisted(() => ({
   isAuthenticated: true,
 }));
 const qstate = vi.hoisted(() => ({ data: [] as string[] | undefined, loading: false }));
+const membershipOverridesState = vi.hoisted(() => ({
+  data: {
+    revision: 0,
+    byPlaylistUuid: {} as Record<string, { isMember: boolean; revision: number; pending: boolean }>,
+    activeMutationOwnersByPlaylistUuid: {} as Record<string, object>,
+  },
+}));
 const queryClientMock = vi.hoisted(() => ({
-  getQueryData: vi.fn(),
-  setQueryData: vi.fn(),
+  getQueryData: vi.fn((queryKey: readonly unknown[]): unknown =>
+    queryKey[0] === 'playlistsForClimb'
+      ? qstate.data === undefined
+        ? undefined
+        : {
+            playlistUuids: qstate.data,
+            overrideRevisionAtFetchStart: 0,
+            pendingOverrideRevisionsAtFetchStart: {},
+          }
+      : membershipOverridesState.data,
+  ),
+  setQueryData: vi.fn((queryKey: readonly unknown[], nextValue: unknown) => {
+    if (
+      queryKey[0] === 'playlistsForClimb' &&
+      typeof nextValue === 'object' &&
+      nextValue !== null &&
+      'playlistUuids' in nextValue
+    ) {
+      qstate.data = (nextValue as { playlistUuids: string[] }).playlistUuids;
+    } else if (queryKey[0] === 'playlistMembershipOverrides' && typeof nextValue === 'object' && nextValue !== null) {
+      membershipOverridesState.data = nextValue as typeof membershipOverridesState.data;
+    }
+  }),
   cancelQueries: vi.fn(async () => {}),
 }));
-const membershipStore = vi.hoisted(() => ({ setMembershipForClimb: vi.fn() }));
+const membershipStore = vi.hoisted(() => ({
+  getMembershipsForClimb: vi.fn((_climbUuid: string): ReadonlySet<string> => new Set()),
+  setMembershipForClimb: vi.fn(),
+}));
 const showToast = vi.hoisted(() => vi.fn());
 const reportHandledError = vi.hoisted(() => vi.fn());
 
@@ -79,7 +110,21 @@ vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToa
 vi.mock('../../../lib/error-reporting', () => ({ reportHandledError }));
 
 vi.mock('@tanstack/react-query', () => ({
-  useQuery: () => ({ data: qstate.data, isLoading: qstate.loading }),
+  useQuery: (options: { queryKey: readonly unknown[] }) =>
+    options.queryKey[0] === 'playlistMembershipOverrides'
+      ? { data: membershipOverridesState.data }
+      : {
+          data:
+            qstate.data === undefined
+              ? undefined
+              : {
+                  playlistUuids: qstate.data,
+                  overrideRevisionAtFetchStart: 0,
+                  pendingOverrideRevisionsAtFetchStart: {},
+                },
+          isLoading: qstate.loading,
+          isError: false,
+        },
   useQueryClient: () => queryClientMock,
 }));
 
@@ -173,11 +218,16 @@ function NameInput(props: { value?: string; onChangeText?: (text: string) => voi
   });
 }
 
-function renderPicker(onBack?: () => void, onDetachedFailure?: (message: string) => void) {
+function renderPicker(
+  onBack?: () => void,
+  onDetachedFailure?: (message: string) => void,
+  climbOverride?: Climb,
+  angle = 40,
+) {
   return render(
     <InlinePlaylistPicker
-      climb={climb}
-      angle={40}
+      climb={climbOverride ?? climb}
+      angle={angle}
       boardName="kilter"
       layoutId={1}
       TextInputComponent={NameInput as never}
@@ -209,9 +259,11 @@ describe('InlinePlaylistPicker', () => {
     playlistContext.createPlaylist.mockReset();
     qstate.data = [];
     qstate.loading = false;
-    queryClientMock.getQueryData.mockReset().mockReturnValue(undefined);
-    queryClientMock.setQueryData.mockReset();
+    membershipOverridesState.data = { revision: 0, byPlaylistUuid: {}, activeMutationOwnersByPlaylistUuid: {} };
+    queryClientMock.getQueryData.mockClear();
+    queryClientMock.setQueryData.mockClear();
     queryClientMock.cancelQueries.mockClear();
+    membershipStore.getMembershipsForClimb.mockReset().mockReturnValue(new Set());
     membershipStore.setMembershipForClimb.mockReset();
     showToast.mockReset();
     reportHandledError.mockReset();
@@ -276,6 +328,149 @@ describe('InlinePlaylistPicker', () => {
     expect(queryByLabelText('Tension circuit')).toBeNull();
   });
 
+  // #4015 follow-up. The host props are the board the SURFACE is rendering on,
+  // which is not the climb's board on a cross-board preview (PlayDrawer opens
+  // the reaction menu with no board override, so a Tension climb previewed
+  // while the stored active board is Kilter lands here as boardName="kilter").
+  // The server guards the add on the climb's own board, so keying the list on
+  // the host offered Kilter playlists that the add then hard-failed.
+  it('offers the climbs own board when the climb disagrees with the host board', () => {
+    const tensionClimb = { ...climb, boardType: 'tension', layoutId: 10 } as Climb;
+    playlistContext.playlists = [
+      makePlaylist('p-kilter', 'Kilter warmups'),
+      {
+        ...basePlaylist,
+        id: 'p-tension',
+        uuid: 'p-tension',
+        name: 'Tension crimps',
+        boardType: 'tension',
+        layoutId: 10,
+      },
+    ];
+    const { getByLabelText, queryByLabelText } = renderPicker(undefined, undefined, tensionClimb);
+    expect(getByLabelText('Tension crimps')).not.toBeNull();
+    expect(queryByLabelText('Kilter warmups')).toBeNull();
+  });
+
+  // Same divergence within one board: a Kilter climb on layout 8 reached while
+  // the host renders layout 1 must be offered its own layout's playlists.
+  it('offers the climbs own layout when only the layout disagrees', () => {
+    const layout8Climb = { ...climb, boardType: 'kilter', layoutId: 8 } as Climb;
+    playlistContext.playlists = [
+      makePlaylist('p-layout-1', 'Layout one'),
+      { ...basePlaylist, id: 'p-layout-8', uuid: 'p-layout-8', name: 'Layout eight', layoutId: 8 },
+    ];
+    const { getByLabelText, queryByLabelText } = renderPicker(undefined, undefined, layout8Climb);
+    expect(getByLabelText('Layout eight')).not.toBeNull();
+    expect(queryByLabelText('Layout one')).toBeNull();
+  });
+
+  it('creates a new playlist on the climbs board, not the host board', async () => {
+    const tensionClimb = { ...climb, boardType: 'tension', layoutId: 10, angle: 35 } as Climb;
+    const created = { ...basePlaylist, id: 'p-new', uuid: 'p-new', name: 'Tension proj', boardType: 'tension' };
+    playlistContext.createPlaylist.mockResolvedValueOnce(created);
+    const { getByLabelText } = renderPicker(undefined, undefined, tensionClimb, 35);
+
+    fireEvent.click(getByLabelText('actions.playlist.popover.createNew'));
+    fireEvent.change(getByLabelText('name-input'), { target: { value: 'Tension proj' } });
+    fireEvent.click(getByLabelText('actions.playlist.create.submit'));
+
+    await waitFor(() => {
+      expect(playlistContext.createPlaylist).toHaveBeenCalledWith('Tension proj', undefined, undefined, undefined, {
+        boardType: 'tension',
+        layoutId: 10,
+      });
+    });
+    await waitFor(() => {
+      expect(playlistContext.addToPlaylist).toHaveBeenCalledWith('p-new', 'climb-1', 35);
+    });
+  });
+
+  // The shape that used to slip through: a subscription queue payload carries
+  // `boardType` but a null `layoutId` (toClimbQueueItem), and the queue sheet
+  // opens the reaction menu with no board override. Pairing the climb's board
+  // with the host's layout id would describe a board nobody has — layout ids are
+  // per-board — so the layout stays unknown and the board alone does the filtering.
+  it('offers every playlist on the climbs board when its layout is unknown', () => {
+    const tensionClimb = { ...climb, boardType: 'tension' } as Climb;
+    playlistContext.playlists = [
+      makePlaylist('p-kilter', 'Kilter warmups'),
+      {
+        ...basePlaylist,
+        id: 'p-tension',
+        uuid: 'p-tension',
+        name: 'Tension crimps',
+        boardType: 'tension',
+        layoutId: 10,
+      },
+    ];
+    const { getByLabelText, queryByLabelText } = renderPicker(undefined, undefined, tensionClimb);
+    // Not hidden behind the host's Kilter layout 1, which is what the climb
+    // would have inherited.
+    expect(getByLabelText('Tension crimps')).not.toBeNull();
+    expect(queryByLabelText('Kilter warmups')).toBeNull();
+  });
+
+  // Creating one would have to pin it to a layout, and the only one on hand is
+  // the host's — on the wrong board. That row could never be added to, by this
+  // climb or any other, so there is nothing to offer.
+  it('hides inline create when the climbs layout is unknown', () => {
+    const tensionClimb = { ...climb, boardType: 'tension' } as Climb;
+    playlistContext.playlists = [];
+    const { queryByLabelText } = renderPicker(undefined, undefined, tensionClimb);
+    expect(queryByLabelText('actions.playlist.popover.createNew')).toBeNull();
+  });
+
+  // Finding 3, same rule one level up: `Climb.boardType` is a free-form string,
+  // so a value this build doesn't know narrows to null. The board is then not the
+  // host's either, which puts the climb's layout id in a namespace we can't name
+  // — so the host board is kept WITHOUT it, never half of each. Keeping the
+  // climb's layout beside the host board is the mongrel pair all over again.
+  it('drops the climbs layout when its board is not a board this build knows', () => {
+    const unknownBoardClimb = { ...climb, boardType: 'not-a-real-board', layoutId: 10 } as Climb;
+    playlistContext.playlists = [
+      makePlaylist('p-layout-1', 'Layout one'),
+      { ...basePlaylist, id: 'p-layout-10', uuid: 'p-layout-10', name: 'Layout ten', layoutId: 10 },
+      {
+        ...basePlaylist,
+        id: 'p-tension',
+        uuid: 'p-tension',
+        name: 'Tension crimps',
+        boardType: 'tension',
+        layoutId: 10,
+      },
+    ];
+    const { getByLabelText, queryByLabelText } = renderPicker(undefined, undefined, unknownBoardClimb);
+    // Host board, layout unknown: both of the host board's playlists stay, and
+    // layout 10 is NOT read as "the climb's layout" on the host board.
+    expect(getByLabelText('Layout one')).not.toBeNull();
+    expect(getByLabelText('Layout ten')).not.toBeNull();
+    expect(queryByLabelText('Tension crimps')).toBeNull();
+    // And with the layout unknown there is nothing to pin a new playlist to.
+    expect(queryByLabelText('actions.playlist.popover.createNew')).toBeNull();
+  });
+
+  // The other half of that rule: when the climb names the host's own board, its
+  // missing layout IS the host's, so create keeps working. Only a climb on some
+  // OTHER board loses the host layout.
+  it('keeps the host layout when the climb names the host board and no layout', async () => {
+    const kilterClimb = { ...climb, boardType: 'kilter' } as Climb;
+    playlistContext.playlists = [];
+    playlistContext.createPlaylist.mockResolvedValueOnce({ ...basePlaylist, id: 'p-new', uuid: 'p-new', name: 'Proj' });
+    const { getByLabelText } = renderPicker(undefined, undefined, kilterClimb);
+
+    fireEvent.click(getByLabelText('actions.playlist.popover.createNew'));
+    fireEvent.change(getByLabelText('name-input'), { target: { value: 'Proj' } });
+    fireEvent.click(getByLabelText('actions.playlist.create.submit'));
+
+    await waitFor(() => {
+      expect(playlistContext.createPlaylist).toHaveBeenCalledWith('Proj', undefined, undefined, undefined, {
+        boardType: 'kilter',
+        layoutId: 1,
+      });
+    });
+  });
+
   it('adds the climb when tapping a non-member row (optimistic + store sync)', async () => {
     playlistContext.playlists = [makePlaylist('p-1', 'Hard Crimps')];
     qstate.data = [];
@@ -287,8 +482,37 @@ describe('InlinePlaylistPicker', () => {
       expect(playlistContext.addToPlaylist).toHaveBeenCalledWith('p-1', 'climb-1', 40);
     });
     expect(playlistContext.removeFromPlaylist).not.toHaveBeenCalled();
-    expect(queryClientMock.setQueryData).toHaveBeenCalledWith(['playlistsForClimb', 'kilter', 1, 'climb-1'], ['p-1']);
+    expect(queryClientMock.setQueryData).toHaveBeenLastCalledWith(
+      ['playlistMembershipOverrides', 'kilter', 1, 'climb-1'],
+      {
+        revision: 1,
+        activeMutationOwnersByPlaylistUuid: {},
+        byPlaylistUuid: { 'p-1': { isMember: true, revision: 1, pending: false } },
+      },
+    );
     expect(membershipStore.setMembershipForClimb).toHaveBeenCalledWith('climb-1', ['p-1']);
+  });
+
+  it('saves the preview angle when adding a cross-board climb to an existing playlist', async () => {
+    const tensionClimb = { ...climb, boardType: 'tension', layoutId: 10, angle: 35 } as Climb;
+    playlistContext.playlists = [
+      {
+        ...basePlaylist,
+        id: 'p-tension',
+        uuid: 'p-tension',
+        name: 'Tension projects',
+        boardType: 'tension',
+        layoutId: 10,
+      },
+    ];
+    const { getByLabelText } = renderPicker(undefined, undefined, tensionClimb, 35);
+
+    fireEvent.click(getByLabelText('Tension projects'));
+
+    await waitFor(() => {
+      expect(playlistContext.addToPlaylist).toHaveBeenCalledWith('p-tension', 'climb-1', 35);
+    });
+    expect(playlistContext.addToPlaylist).toHaveBeenCalledTimes(1);
   });
 
   it('removes the climb when tapping a member row', async () => {
@@ -302,7 +526,14 @@ describe('InlinePlaylistPicker', () => {
       expect(playlistContext.removeFromPlaylist).toHaveBeenCalledWith('p-1', 'climb-1');
     });
     expect(playlistContext.addToPlaylist).not.toHaveBeenCalled();
-    expect(queryClientMock.setQueryData).toHaveBeenCalledWith(['playlistsForClimb', 'kilter', 1, 'climb-1'], []);
+    expect(queryClientMock.setQueryData).toHaveBeenLastCalledWith(
+      ['playlistMembershipOverrides', 'kilter', 1, 'climb-1'],
+      {
+        revision: 1,
+        activeMutationOwnersByPlaylistUuid: {},
+        byPlaylistUuid: { 'p-1': { isMember: false, revision: 1, pending: false } },
+      },
+    );
   });
 
   it('reverts the optimistic membership and surfaces an inline error on failure', async () => {
@@ -317,8 +548,18 @@ describe('InlinePlaylistPicker', () => {
       expect(getByText('actions.playlist.toast.addFailed')).not.toBeNull();
     });
     // Optimistic write then revert to the previous set.
-    expect(queryClientMock.setQueryData).toHaveBeenNthCalledWith(1, expect.anything(), ['p-1']);
-    expect(queryClientMock.setQueryData).toHaveBeenNthCalledWith(2, expect.anything(), []);
+    expect(queryClientMock.setQueryData).toHaveBeenNthCalledWith(
+      2,
+      ['playlistMembershipOverrides', 'kilter', 1, 'climb-1'],
+      expect.objectContaining({
+        byPlaylistUuid: { 'p-1': { isMember: true, revision: 1, pending: true } },
+        activeMutationOwnersByPlaylistUuid: expect.objectContaining({ 'p-1': expect.any(Object) }),
+      }),
+    );
+    expect(queryClientMock.setQueryData).toHaveBeenLastCalledWith(
+      ['playlistMembershipOverrides', 'kilter', 1, 'climb-1'],
+      { revision: 1, activeMutationOwnersByPlaylistUuid: {}, byPlaylistUuid: {} },
+    );
   });
 
   // #3891: the climber taps a playlist, sees the optimistic checkmark, and
@@ -351,7 +592,14 @@ describe('InlinePlaylistPicker', () => {
       await waitFor(() => expect(playlistContext.addToPlaylist).toHaveBeenCalled());
       // Optimistic checkmark is already written — this is what the climber saw
       // before dismissing.
-      expect(queryClientMock.setQueryData).toHaveBeenNthCalledWith(1, expect.anything(), ['p-1']);
+      expect(queryClientMock.setQueryData).toHaveBeenNthCalledWith(
+        2,
+        ['playlistMembershipOverrides', 'kilter', 1, 'climb-1'],
+        expect.objectContaining({
+          byPlaylistUuid: { 'p-1': { isMember: true, revision: 1, pending: true } },
+          activeMutationOwnersByPlaylistUuid: expect.objectContaining({ 'p-1': expect.any(Object) }),
+        }),
+      );
 
       unmount();
       pending.resolve();

@@ -14,6 +14,7 @@ type ListRowProps = {
   trailing?: ReactNode;
   showChevron?: boolean;
   onPress?: () => void;
+  disabled?: boolean;
   haptic?: boolean;
   showSeparator?: boolean;
   separatorInset?: number;
@@ -31,6 +32,7 @@ export function ListRow({
   trailing,
   showChevron = false,
   onPress,
+  disabled = false,
   haptic = true,
   showSeparator = true,
   separatorInset = 16,
@@ -42,6 +44,7 @@ export function ListRow({
   const { systemColors } = useTheme();
 
   const handlePress = () => {
+    if (disabled) return;
     if (haptic) hapticLight();
     onPress?.();
   };
@@ -82,12 +85,14 @@ export function ListRow({
     return (
       <PressableSurface
         onPress={handlePress}
+        disabled={disabled}
         feedback="opacity"
         opacityTo={0.7}
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel ?? title}
         accessibilityHint={accessibilityHint}
-        style={[styles.container, style]}
+        accessibilityState={disabled ? { disabled: true } : undefined}
+        style={[styles.container, disabled && styles.disabledContainer, style]}
       >
         {content}
       </PressableSurface>
@@ -100,6 +105,9 @@ export function ListRow({
 const styles = StyleSheet.create({
   container: {
     backgroundColor: 'transparent',
+  },
+  disabledContainer: {
+    opacity: 0.55,
   },
   row: {
     flexDirection: 'row',
