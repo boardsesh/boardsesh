@@ -1618,3 +1618,26 @@ repo-level secret for the Android fingerprint).
   build — it overrides the `expo-channel-name` request header via the same `channel-switch.ts` state
   machine as before, with no EAS API token and no project-wide channel remap.
   The store-binary preview flow rides self-hosted `pr-<number>` branches through xprem (above).
+
+### R2 reader publication for the frozen 2.6 cohort
+
+The manual `R2 Frozen Reader Publication` workflow targets only shipped source
+`6986ca9100c0492586f42f1a88ce3d49b4986f07`. The current release train has newer native
+inputs, so its normal publisher cannot update this older cohort. No approved 2.6
+backport anchor exists; this workflow validates the actual shipped source instead
+of creating a release tag or overriding its fingerprint.
+
+Dispatch from `main` with one platform and **dry run enabled first**. The protected
+Production job resolves both original full fingerprints twice on Linux, cold exports
+with the public R2 snapshot base, and checks the compiled Hermes bundle before any
+publishing credential is provided. A production dispatch uses the same immutable
+source and shared production FIFO lane, requires source-map upload, and verifies the
+new signed production manifest and every delivered private R2 asset. The workflow
+cannot accept another source commit or runtime.
+
+A successful run is a publication check. Native launch and a fresh offline-board R2
+bootstrap still gate migration completion and restoration of paused publishing
+workflows. Keep all legacy objects and credentials during the retention period;
+see [the R2 reader acceptance PR](https://github.com/boardsesh/boardsesh/pull/5989) and issue #5912. An already
+published R2 update requires reverse copy and complete verification before an OTA
+storage rollback; changing only the endpoint is insufficient.

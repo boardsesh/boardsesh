@@ -13,6 +13,8 @@
     "types": ["node"]
   },
   "include": [
+    "r2-frozen-reader.ts",
+    "r2-frozen-reader.test.ts",
     "publish-design-previews.ts",
     "lib/design-previews.ts",
     "__tests__/design-previews.test.ts",
