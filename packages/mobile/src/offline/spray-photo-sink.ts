@@ -148,6 +148,7 @@ export function createSprayWallDeletedSink(
       if (typeof wallUuid === 'string' && wallUuid) {
         filters.push(
           { queryKey: ['sprayWallRenderData', wallUuid] },
+          { queryKey: ['sprayWallRevisionRenderData', wallUuid] },
           { queryKey: ['sprayWall', wallUuid] },
           { queryKey: ['sprayWallWithVersions', wallUuid] },
         );

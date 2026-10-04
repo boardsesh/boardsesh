@@ -3499,6 +3499,8 @@ export async function pullSync(
       }
     }
 
+    // Retirement belongs to a successfully completed cycle: even an unrelated
+    // scope failure defers these removals until a later cycle reaches every tail.
     if (allPullsReachedTail && retiredWalls.size > 0) {
       if (cycleAborted()) return reportInterruptedCycle();
       const candidates = [...retiredWalls.values()].filter(({ scope }) => !scopePurged(scope));
@@ -3534,7 +3536,9 @@ export async function pullSync(
               [scope.layoutId],
             );
             assertRetirementActive();
-            // Another pull or edit may have replaced the confirmed snapshot.
+            // Both snapshots use SELECT * through the same SQLite driver. Compare
+            // the whole row: sync_seq is a stable ID, not an update generation.
+            // Any mismatch conservatively keeps a newer or differently shaped row.
             if (!current || JSON.stringify(current) !== JSON.stringify(row)) continue;
             await removeBoardScopeRows(transaction, scope, scope.scopeKey, []);
             deletedRows.push(row);

@@ -112,37 +112,40 @@ afterEach(() => {
 });
 
 describe('loadSprayWall', () => {
-  it('cancels deleted wall version metadata without clearing another wall', async () => {
-    const queryClient = new QueryClient();
-    const db = createTestDatabase();
-    await runMigrations(db);
-    const deletedKey = ['sprayWallWithVersions', WALL_UUID] as const;
-    const otherKey = ['sprayWallWithVersions', 'other-wall'] as const;
-    queryClient.setQueryData(otherKey, { versions: [1] });
-    let resolveVersions: ((response: { versions: number[] }) => void) | undefined;
-    const pending = queryClient
-      .fetchQuery({
-        queryKey: deletedKey,
-        queryFn: () =>
-          new Promise<{ versions: number[] }>((resolve) => {
-            resolveVersions = resolve;
-          }),
-      })
-      .catch(() => {});
+  it.each(['sprayWallWithVersions', 'sprayWallRevisionRenderData'])(
+    'cancels inactive %s requests without clearing another wall',
+    async (queryPrefix) => {
+      const queryClient = new QueryClient();
+      const db = createTestDatabase();
+      await runMigrations(db);
+      const deletedKey = [queryPrefix, WALL_UUID, 2] as const;
+      const otherKey = [queryPrefix, 'other-wall', 2] as const;
+      queryClient.setQueryData(otherKey, { versions: [1] });
+      let resolveVersions: ((response: { versions: number[] }) => void) | undefined;
+      const pending = queryClient
+        .fetchQuery({
+          queryKey: deletedKey,
+          queryFn: () =>
+            new Promise<{ versions: number[] }>((resolve) => {
+              resolveVersions = resolve;
+            }),
+        })
+        .catch(() => {});
 
-    await createSprayWallDeletedSink(queryClient)({
-      tableName: 'spray_walls',
-      rows: [{ layout_id: LAYOUT_ID, board_uuid: WALL_UUID, photo_key: null }],
-      db,
-    });
-    resolveVersions?.({ versions: [1, 2] });
-    await pending;
+      await createSprayWallDeletedSink(queryClient)({
+        tableName: 'spray_walls',
+        rows: [{ layout_id: LAYOUT_ID, board_uuid: WALL_UUID, photo_key: null }],
+        db,
+      });
+      resolveVersions?.({ versions: [1, 2] });
+      await pending;
 
-    expect(queryClient.getQueryData(deletedKey)).toBeUndefined();
-    expect(queryClient.getQueryData(otherKey)).toEqual({ versions: [1] });
-    queryClient.clear();
-    db.close();
-  });
+      expect(queryClient.getQueryData(deletedKey)).toBeUndefined();
+      expect(queryClient.getQueryData(otherKey)).toEqual({ versions: [1] });
+      queryClient.clear();
+      db.close();
+    },
+  );
 
   it.each(['identity', 'render'])(
     'cancels a pending %s query so a later load cannot reuse revoked data',

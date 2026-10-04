@@ -132,8 +132,8 @@ export async function recordSprayPhotoFailure(
 }
 
 /**
- * Forget a wall's pending-photo record. A supplied key clears only that photo's
- * marker; null clears only an absent wall. Omit the key for an explicit reset.
+ * Forget a wall's pending-photo record. An absent wall clears any orphan marker;
+ * a live wall clears only the supplied photo's marker. Omit the key for an explicit reset.
  */
 export async function clearSprayPhotoPending(
   db: OfflineDatabase,
@@ -146,14 +146,15 @@ export async function clearSprayPhotoPending(
   }
   await db.withExclusiveTransactionAsync(async (transaction) => {
     await beginImmediateWrite(transaction, OFFLINE_DB_BUSY_TIMEOUT_MS);
-    if (photoKey === null) {
-      const wall = await transaction.getFirstAsync<{ layout_id: number }>(
-        'SELECT layout_id FROM spray_walls WHERE layout_id = ?',
-        [layoutId],
-      );
-      if (!wall) await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [pendingKey(layoutId)]);
+    const wall = await transaction.getFirstAsync<{ layout_id: number }>(
+      'SELECT layout_id FROM spray_walls WHERE layout_id = ?',
+      [layoutId],
+    );
+    if (!wall) {
+      await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [pendingKey(layoutId)]);
       return;
     }
+    if (photoKey === null) return;
     const pending = await readPending(transaction, layoutId);
     if (pending?.photoKey === photoKey) {
       await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [pendingKey(layoutId)]);

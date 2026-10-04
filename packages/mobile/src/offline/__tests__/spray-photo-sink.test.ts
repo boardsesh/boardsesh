@@ -228,6 +228,23 @@ describe('sprayWallPhotoSink', () => {
 });
 
 describe('sprayWallDeletedSink', () => {
+  it('clears an orphan retry marker whose photo differs from the deleted capture', async () => {
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [
+      `spray-photo-pending:${LAYOUT_ID}`,
+      JSON.stringify({ photoKey: 'previous-photo-generation', attempts: 3 }),
+    ]);
+
+    await sprayWallDeletedSink({
+      tableName: 'spray_walls',
+      rows: [{ layout_id: LAYOUT_ID, photo_key: PHOTO_KEY }],
+      db,
+    });
+
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', [`spray-photo-pending:${LAYOUT_ID}`]),
+    ).toBeNull();
+  });
+
   it('withdraws registered geometry and evicts only the deleted wall cache', async () => {
     const registration = {
       wallUuid: 'wall-4',
