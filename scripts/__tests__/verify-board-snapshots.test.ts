@@ -206,6 +206,80 @@ describe('complete snapshot verification', () => {
     }
   });
 
+  it('accepts chunked signed bodies while rejecting an incorrect length header when present', async () => {
+    const setup = await fixture();
+    const readObject = setup.dependencies.readObject;
+    setup.dependencies.readObject = async (key) => ({ ...(await readObject(key)), contentLength: undefined });
+    await verifySnapshots(setup.options, setup.dependencies);
+    expect(setup.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'passed', artifacts: 4 }));
+    setup.dependencies.readObject = async (key) => ({
+      ...(await readObject(key)),
+      contentLength: setup.objects.get(key)!.contents.length + 1,
+    });
+    await expect(verifySnapshots(setup.options, setup.dependencies)).rejects.toThrow('signed manifest length mismatch');
+  });
+
+  it('still requires exact streamed artifact bytes when the signed length header is absent', async () => {
+    const setup = await fixture();
+    const readObject = setup.dependencies.readObject;
+    setup.dependencies.readObject = async (key) => {
+      const object = await readObject(key);
+      return {
+        ...object,
+        contentLength: undefined,
+        body:
+          key === setup.identity.key ? Readable.from([setup.objects.get(key)!.contents.subarray(0, -1)]) : object.body,
+      };
+    };
+    await expect(verifySnapshots(setup.options, setup.dependencies)).rejects.toThrow('stored bytes/encoding mismatch');
+  });
+
+  it('warms the same per-export query and Origin cache key after an initial MISS', async () => {
+    const setup = await fixture();
+    const publicGet = setup.dependencies.publicGet;
+    const cacheKeys = new Set<string>();
+    setup.dependencies.publicGet = vi.fn(async (url, origin) => {
+      const response = await publicGet(url, origin);
+      if (new URL(url).pathname.endsWith('/manifest.json')) {
+        const cacheKey = `${url}:${origin ?? ''}`;
+        response.headers.set('CF-Cache-Status', cacheKeys.has(cacheKey) ? 'HIT' : 'MISS');
+        cacheKeys.add(cacheKey);
+      }
+      return response;
+    });
+    await verifySnapshots(setup.options, setup.dependencies);
+    for (const prefix of ['v1', 'v1-gzip', 'v1-catalog']) {
+      const manifestCalls = setup.publicGet.mock.calls.filter(
+        ([url]) => new URL(url).pathname === `/board-snapshots/${prefix}/manifest.json`,
+      );
+      expect(manifestCalls).toHaveLength(3);
+      expect(new Set(manifestCalls.map(([url]) => url))).toEqual(
+        new Set([`${BASE}/board-snapshots/${prefix}/manifest.json?verify=${encodeURIComponent(BUILD_TIME)}`]),
+      );
+      expect(manifestCalls.map(([, origin]) => origin)).toEqual([
+        undefined,
+        'https://app.boardsesh.com',
+        'https://app.boardsesh.com',
+      ]);
+    }
+    expect(setup.dependencies.sleep).not.toHaveBeenCalled();
+  });
+
+  it('rejects empty and duplicate trusted coverage before downloading any object', async () => {
+    const setup = await fixture();
+    const readObject = vi.fn(setup.dependencies.readObject);
+    setup.dependencies.readObject = readObject;
+    const expectedManifest: SnapshotManifest = { ...setup.options.expectedManifest, entries: [] };
+    await expect(verifySnapshots({ ...setup.options, expectedManifest }, setup.dependencies)).rejects.toThrow(
+      'Manifest coverage is empty',
+    );
+    expectedManifest.entries = [setup.gzip, setup.gzip];
+    await expect(verifySnapshots({ ...setup.options, expectedManifest }, setup.dependencies)).rejects.toThrow(
+      'Manifest contains duplicate layouts',
+    );
+    expect(readObject).not.toHaveBeenCalled();
+  });
+
   it('rejects omitted layouts and omitted grades from the trusted coverage baseline', async () => {
     const setup = await fixture();
     expect(() =>

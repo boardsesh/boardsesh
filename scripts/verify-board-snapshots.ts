@@ -32,7 +32,6 @@ const CURSOR_COLUMNS = {
 export type VerificationOptions = {
   expectedManifest: SnapshotManifest;
   builtAfter: string;
-  publicBaseUrl?: string;
 };
 export type StoredObject = {
   body: AsyncIterable<Uint8Array>;
@@ -83,13 +82,18 @@ function layoutKey(entry: { boardType: string; layoutId: number }): string {
   return `${entry.boardType}:${entry.layoutId}`;
 }
 
+function validatedLayoutKeys(manifest: SnapshotManifest): Set<string> {
+  const layoutKeys = manifest.entries.map(layoutKey);
+  const uniqueLayoutKeys = new Set(layoutKeys);
+  requireCondition(uniqueLayoutKeys.size === layoutKeys.length, 'Manifest contains duplicate layouts');
+  requireCondition(layoutKeys.length > 0, 'Manifest coverage is empty');
+  return uniqueLayoutKeys;
+}
+
 export function assertCoverage(actual: SnapshotManifest, expected: SnapshotManifest): void {
-  const layoutKeys = actual.entries.map(layoutKey);
-  const actualKeys = new Set(layoutKeys);
-  requireCondition(actualKeys.size === layoutKeys.length, 'Manifest contains duplicate layouts');
-  requireCondition(expected.entries.length > 0 && actual.entries.length > 0, 'Manifest coverage is empty');
-  for (const entry of expected.entries) {
-    requireCondition(actualKeys.has(layoutKey(entry)), `Missing expected layout: ${layoutKey(entry)}`);
+  const actualKeys = validatedLayoutKeys(actual);
+  for (const expectedKey of validatedLayoutKeys(expected)) {
+    requireCondition(actualKeys.has(expectedKey), `Missing expected layout: ${expectedKey}`);
   }
 }
 
@@ -422,11 +426,10 @@ export async function verifySnapshots(
   options: VerificationOptions,
   dependencies: VerificationDependencies,
 ): Promise<void> {
-  const base = (options.publicBaseUrl ?? PUBLIC_BASE_URL).replace(/\/+$/, '');
-  requireCondition(base === PUBLIC_BASE_URL, 'Snapshot verification requires https://snapshots.boardsesh.com');
+  const base = PUBLIC_BASE_URL;
   timestampMicros(options.builtAfter);
   requireCondition(parseSnapshotManifest(options.expectedManifest), 'Invalid trusted coverage manifest');
-  assertCoverage(options.expectedManifest, options.expectedManifest);
+  validatedLayoutKeys(options.expectedManifest);
   const workDirectory = await mkdtemp(join(tmpdir(), 'boardsesh-snapshot-verify-'));
   let artifactCount = 0;
   let identityManifest: SnapshotManifest | undefined;
@@ -440,7 +443,13 @@ export async function verifySnapshots(
         storedManifest.contentType === 'application/json' && storedManifest.cacheControl?.includes('max-age=300'),
         `${key}: wrong signed manifest metadata`,
       );
-      requireCondition(storedManifest.contentLength === signedBody.length, `${key}: signed manifest length mismatch`);
+      requireCondition(
+        storedManifest.contentLength === undefined || storedManifest.contentLength === signedBody.length,
+        `${key}: signed manifest length mismatch`,
+      );
+      // Reuse one fresh cache key for the entire export verification. Cloudflare
+      // keys query values and Origin by default; changing the query per probe
+      // would prevent warming, while the bare URL may retain the old 300s body.
       const manifestUrl = `${base}/${key}?verify=${encodeURIComponent(options.builtAfter)}`;
       let publicBody: Buffer | undefined;
       for (const origin of [undefined, 'https://app.boardsesh.com']) {
@@ -513,7 +522,7 @@ export async function verifySnapshots(
         keys.add(artifact.key);
         const stored = await dependencies.readObject(artifact.key);
         requireCondition(
-          stored.contentLength === artifact.bytes &&
+          (stored.contentLength === undefined || stored.contentLength === artifact.bytes) &&
             stored.contentType === 'application/x-sqlite3' &&
             stored.cacheControl?.includes('immutable') &&
             (stored.contentEncoding ?? 'identity') === artifact.contentEncoding,
