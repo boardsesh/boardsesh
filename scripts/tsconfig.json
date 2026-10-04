@@ -22,6 +22,8 @@
     "lib/static-asset-upload.ts",
     "lib/static-asset-upload.test.ts",
     "upload-static-assets.ts",
+    "seal-static-rollback-credentials.ts",
+    "seal-static-rollback-credentials.test.ts",
     "verify-board-snapshots.ts",
     "__tests__/verify-board-snapshots.test.ts",
     "__tests__/static-asset-remote-checksum.test.ts",

@@ -10,7 +10,12 @@ on:
           - inventory
           - bootstrap
           - verify
+          - backup-credentials
         default: inventory
+      backup_public_key:
+        description: 'Operator RSA public PEM key (3072+ bits), required only for encrypted credential backup.'
+        type: string
+        default: ''
 
 concurrency:
   group: bootstrap-r2-static-assets
@@ -21,7 +26,7 @@ permissions:
 
 jobs:
   bootstrap:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && inputs.mode != 'backup-credentials'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: Production
@@ -98,3 +103,34 @@ jobs:
           STATIC_ASSETS_AWS_ACCESS_KEY_ID: ${{ secrets.STATIC_ASSETS_R2_AWS_ACCESS_KEY_ID }}
           STATIC_ASSETS_AWS_SECRET_ACCESS_KEY: ${{ secrets.STATIC_ASSETS_R2_AWS_SECRET_ACCESS_KEY }}
         run: vp run upload:static-assets
+
+  backup-credentials:
+    if: github.ref == 'refs/heads/main' && inputs.mode == 'backup-credentials'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: Production
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+      - name: Seal only the five existing Tigris publisher credentials
+        env:
+          STATIC_ROLLBACK_BACKUP_PUBLIC_KEY: ${{ inputs.backup_public_key }}
+          STATIC_ROLLBACK_BACKUP_OUTPUT: ${{ runner.temp }}/static-assets-legacy.enc.json
+          STATIC_ASSETS_LEGACY_S3_BUCKET_NAME: ${{ secrets.STATIC_ASSETS_S3_BUCKET_NAME }}
+          STATIC_ASSETS_LEGACY_AWS_ENDPOINT_URL: ${{ secrets.STATIC_ASSETS_AWS_ENDPOINT_URL }}
+          STATIC_ASSETS_LEGACY_AWS_REGION: ${{ secrets.STATIC_ASSETS_AWS_REGION }}
+          STATIC_ASSETS_LEGACY_AWS_ACCESS_KEY_ID: ${{ secrets.STATIC_ASSETS_AWS_ACCESS_KEY_ID }}
+          STATIC_ASSETS_LEGACY_AWS_SECRET_ACCESS_KEY: ${{ secrets.STATIC_ASSETS_AWS_SECRET_ACCESS_KEY }}
+        run: vp exec tsx scripts/seal-static-rollback-credentials.ts
+      - name: Upload encrypted rollback credential backup
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: static-assets-legacy-credentials-${{ github.run_id }}
+          path: ${{ runner.temp }}/static-assets-legacy.enc.json
+          if-no-files-found: error
+          retention-days: 7
