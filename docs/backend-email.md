@@ -10,6 +10,15 @@ ownership-claim flow:
   human (no verifiable domain on file).
 - **Approval / ownership-lost** notices to the claimant and the displaced owner.
 
+An admin can approve a queued claim after a handover has already given the gym
+to that claimant. That approval closes the old queue entry but does not transfer
+the gym again. New approvals record whether they actually changed the owner, so
+a later no-op approval does not make a newer claim look stale. Older approvals
+without that record remain unknown and are treated conservatively as possible
+ownership changes; no history is inferred or backfilled. Claim-transfer records
+keep the original gym UUID when duplicate gyms are merged, so source-gym history
+does not become a transfer on the canonical gym.
+
 The transporter is lazy: importing the module never opens an SMTP connection, and
 nothing is sent until a claim actually fires. Notification emails are best-effort
 (a send failure is logged, never thrown) so a flaky mailer can't roll back an

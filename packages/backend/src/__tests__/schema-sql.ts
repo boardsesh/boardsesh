@@ -1336,6 +1336,18 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   CREATE UNIQUE INDEX IF NOT EXISTS "gym_claims_token_hash_idx" ON "gym_claims" ("token_hash") WHERE "token_hash" IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS "gym_claims_unique_pending" ON "gym_claims" ("gym_id", "claimant_user_id") WHERE "status" = 'pending';
 
+  -- Distinguish actual claim-driven ownership transfers from approvals that
+  -- merely close a current-owner claim. Missing rows are intentionally legacy.
+  DROP TABLE IF EXISTS "gym_claim_ownership_decisions" CASCADE;
+  CREATE TABLE IF NOT EXISTS "gym_claim_ownership_decisions" (
+    "claim_id" bigint PRIMARY KEY NOT NULL REFERENCES "gym_claims"("id") ON DELETE CASCADE,
+    "gym_uuid" text NOT NULL,
+    "did_transfer" boolean NOT NULL,
+    "decided_at" timestamp NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS "gym_claim_ownership_decisions_transfer_history_idx"
+    ON "gym_claim_ownership_decisions" ("gym_uuid", "decided_at") WHERE "did_transfer";
+
   -- Gym kiosks (smart-TV dashboards). layout holds the preset config (1–4 board
   -- slots + optional leaderboard rail); the resolver validates it with
   -- @boardsesh/kiosk's KioskLayoutSchema. Partial unique index keeps one live

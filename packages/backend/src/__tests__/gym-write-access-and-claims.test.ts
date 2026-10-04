@@ -264,6 +264,18 @@ const claimStatus = async (claimId: number): Promise<string> => {
   return Array.from(result as Iterable<{ status: string }>)[0].status;
 };
 
+const claimOwnershipDecision = async (
+  claimId: number,
+): Promise<{ gymUuid: string; didTransfer: boolean; decidedAt: string } | null> => {
+  const result = await db.execute(sql`
+    SELECT gym_uuid, did_transfer, decided_at::text AS decided_at
+      FROM gym_claim_ownership_decisions
+     WHERE claim_id = ${claimId}
+  `);
+  const [row] = Array.from(result as Iterable<{ gym_uuid: string; did_transfer: boolean; decided_at: string }>);
+  return row ? { gymUuid: row.gym_uuid, didTransfer: row.did_transfer, decidedAt: row.decided_at } : null;
+};
+
 // The gym_claim_approved notifications a user received, newest first.
 const claimApprovedNotifications = async (
   recipientId: string,
@@ -291,6 +303,8 @@ let gymId: number;
 let gymUuid: string;
 
 beforeEach(async () => {
+  resetAllRateLimits();
+
   await db.execute(sql`
     TRUNCATE TABLE
       "community_roles", "community_settings", "gym_members", "gym_follows", "gym_claims",
@@ -2963,6 +2977,134 @@ describe('a claim ownership has moved past cannot be approved (#4525)', () => {
 
     expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
     expect(await claimStatus(secondClaim)).toBe('pending');
+  });
+
+  it('does not treat a later no-op approval as a transfer that supersedes a fresh claim', async () => {
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'No-op Approval History' });
+    const earlierClaim = await fileAdminClaim(claimGym.uuid, CLAIMANT);
+
+    await reassignTo(claimGym.uuid, PRIOR_OWNER, CLAIMANT);
+    const freshClaim = await fileAdminClaim(claimGym.uuid, PLAIN_USER);
+
+    // Closing the old claimant's row is legitimate, but does not move the gym.
+    await expect(approveAsAdmin(earlierClaim)).resolves.toBe(true);
+    await expect(claimOwnershipDecision(earlierClaim)).resolves.toMatchObject({
+      gymUuid: claimGym.uuid,
+      didTransfer: false,
+    });
+    const [noOpWasResolvedAfterFreshFiling] = Array.from(
+      (await db.execute(sql`
+        SELECT decision.decided_at > fresh_claim.created_at AS newer
+          FROM gym_claim_ownership_decisions AS decision
+          JOIN gym_claims AS fresh_claim ON fresh_claim.id = ${freshClaim}
+         WHERE decision.claim_id = ${earlierClaim}
+      `)) as Iterable<{ newer: boolean }>,
+    );
+    expect(noOpWasResolvedAfterFreshFiling.newer).toBe(true);
+    expect(sendGymClaimOwnershipLostEmail).not.toHaveBeenCalled();
+
+    // The former updated_at-only guard falsely rejected this; the explicit
+    // no-transfer decision keeps the genuinely fresh claim eligible.
+    await expect(approveAsAdmin(freshClaim)).resolves.toBe(true);
+    await expect(claimOwnershipDecision(freshClaim)).resolves.toMatchObject({
+      gymUuid: claimGym.uuid,
+      didTransfer: true,
+    });
+    expect(await gymOwnerId(claimGym.uuid)).toBe(PLAIN_USER);
+    expect(sendGymClaimOwnershipLostEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps legacy approvals without a decision row conservative', async () => {
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Unknown Legacy Decision' });
+    const legacyClaim = await insertClaim({
+      gymId: claimGym.id,
+      claimantUserId: CLAIMANT,
+      method: 'admin',
+      status: 'approved',
+    });
+    const freshClaim = await insertClaim({ gymId: claimGym.id, claimantUserId: PLAIN_USER, method: 'admin' });
+    await db.execute(sql`UPDATE gyms SET owner_id = ${CLAIMANT} WHERE id = ${claimGym.id}`);
+    await db.execute(sql`UPDATE gym_claims SET updated_at = clock_timestamp() WHERE id = ${legacyClaim}`);
+
+    await expect(claimOwnershipDecision(legacyClaim)).resolves.toBeNull();
+    await expect(approveAsAdmin(freshClaim)).rejects.toMatchObject({
+      extensions: { code: GYM_CLAIM_SUPERSEDED_CODE },
+    });
+    expect(await claimStatus(freshClaim)).toBe('pending');
+    expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
+    await expect(claimOwnershipDecision(freshClaim)).resolves.toBeNull();
+  });
+
+  it('keeps claim-transfer provenance on the source gym through a merge', async () => {
+    const duplicate = await insertGym({ ownerId: PRIOR_OWNER, name: 'Claim Transfer Duplicate' });
+    const canonical = await insertGym({ ownerId: SECOND_TARGET, name: 'Claim Transfer Canonical' });
+    await db
+      .update(dbSchema.gyms)
+      .set({ latitude: 52, longitude: 4 })
+      .where(inArray(dbSchema.gyms.id, [duplicate.id, canonical.id]));
+
+    const canonicalClaim = await fileAdminClaim(canonical.uuid, EDITOR_TARGET);
+    const sourcePendingClaim = await fileAdminClaim(duplicate.uuid, CLAIMANT);
+    const sourceTransferClaim = await fileAdminClaim(duplicate.uuid, PLAIN_USER);
+    await expect(approveAsAdmin(sourceTransferClaim)).resolves.toBe(true);
+    await expect(claimOwnershipDecision(sourceTransferClaim)).resolves.toMatchObject({
+      gymUuid: duplicate.uuid,
+      didTransfer: true,
+    });
+
+    await socialGymDuplicateMutations.mergeGyms(
+      null,
+      { input: { canonicalGymUuid: canonical.uuid, duplicateGymUuids: [duplicate.uuid] } },
+      authCtx(GLOBAL_ADMIN),
+    );
+
+    expect(await claimStatus(sourcePendingClaim)).toBe('expired');
+    await expect(claimOwnershipDecision(sourceTransferClaim)).resolves.toMatchObject({
+      gymUuid: duplicate.uuid,
+      didTransfer: true,
+    });
+
+    // The moved source decision is not evidence of a transfer on the canonical
+    // gym; its older pending claim must still be approvable.
+    await expect(approveAsAdmin(canonicalClaim)).resolves.toBe(true);
+    expect(await gymOwnerId(canonical.uuid)).toBe(EDITOR_TARGET);
+  });
+
+  it('rolls back the claim and ownership update if its decision record cannot be written', async () => {
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Decision Record Rollback' });
+    const claimId = await fileAdminClaim(claimGym.uuid, CLAIMANT);
+
+    await db.execute(sql`DROP TRIGGER IF EXISTS trg_test_reject_claim_ownership_decision
+      ON gym_claim_ownership_decisions`);
+    await db.execute(sql`DROP FUNCTION IF EXISTS test_reject_claim_ownership_decision()`);
+    await db.execute(sql`
+      CREATE FUNCTION test_reject_claim_ownership_decision() RETURNS trigger
+      LANGUAGE plpgsql AS $reject$
+      BEGIN
+        RAISE EXCEPTION 'forced ownership decision write failure';
+      END;
+      $reject$
+    `);
+    await db.execute(sql`
+      CREATE TRIGGER trg_test_reject_claim_ownership_decision
+      BEFORE INSERT ON gym_claim_ownership_decisions
+      FOR EACH ROW EXECUTE FUNCTION test_reject_claim_ownership_decision()
+    `);
+
+    try {
+      const [claim] = await db.select().from(dbSchema.gymClaims).where(eq(dbSchema.gymClaims.id, claimId));
+      await expect(applyGymClaim(claim, { reviewerId: GLOBAL_ADMIN })).rejects.toThrow(
+        /Failed query: insert into "gym_claim_ownership_decisions"/,
+      );
+      expect(await claimStatus(claimId)).toBe('pending');
+      expect(await gymOwnerId(claimGym.uuid)).toBe(PRIOR_OWNER);
+      expect(await gymSyncFrozenAt(claimGym.uuid)).toBeNull();
+      await expect(claimOwnershipDecision(claimId)).resolves.toBeNull();
+    } finally {
+      await db.execute(sql`DROP TRIGGER IF EXISTS trg_test_reject_claim_ownership_decision
+        ON gym_claim_ownership_decisions`);
+      await db.execute(sql`DROP FUNCTION IF EXISTS test_reject_claim_ownership_decision()`);
+    }
   });
 
   it('refuses a claim filed after the handover transaction began but before ownership moved', async () => {

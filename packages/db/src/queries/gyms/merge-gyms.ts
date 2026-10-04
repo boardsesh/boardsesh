@@ -295,9 +295,9 @@ async function rebuildGymVoteCounts(commandDb: MergeExecuteDb, gymUuids: string[
  * a claimant can even have pending claims on several twins in the same cluster),
  * a naive `UPDATE ... SET gym_id = canonical` would trip the unique index. So:
  *  1. Promote at most one duplicate pending claim per claimant who has no pending
- *     claim on the canonical yet and no later handover superseding the claim on
- *     its original gym — moved keeping its `pending` status. A no-op approval
- *     for a current source/survivor owner is not superseded.
+ *     claim on the canonical yet and no later ownership decision superseding the
+ *     claim on its original gym — moved keeping its `pending` status. A no-op
+ *     approval for a current source/survivor owner is not superseded.
  *  2. Re-point any REMAINING pending claims on the duplicates (they collided with
  *     an existing canonical claim, were extra twins, or were superseded) to the
  *     canonical AND flip them to `expired` — never delete. Their full content
@@ -336,6 +336,29 @@ async function repointClaims(
                 AND original_gym.owner_id <> source_claim.claimant_user_id
                 AND survivor.owner_id <> source_claim.claimant_user_id
                 AND handover.created_at > source_claim.created_at
+           )
+           AND NOT EXISTS (
+             SELECT 1
+               FROM gym_claims AS prior_claim
+               LEFT JOIN gym_claim_ownership_decisions AS decision
+                 ON decision.claim_id = prior_claim.id
+               JOIN gyms AS original_gym ON original_gym.id = source_claim.gym_id
+               JOIN gyms AS survivor ON survivor.id = ${canonicalGymId}
+              WHERE prior_claim.gym_id = source_claim.gym_id
+                AND prior_claim.status = 'approved'
+                AND original_gym.owner_id <> source_claim.claimant_user_id
+                AND survivor.owner_id <> source_claim.claimant_user_id
+                AND (
+                  (
+                    decision.did_transfer = true
+                    AND decision.gym_uuid = original_gym.uuid
+                    AND decision.decided_at > source_claim.created_at
+                  )
+                  OR (
+                    decision.claim_id IS NULL
+                    AND prior_claim.updated_at > source_claim.created_at
+                  )
+                )
            )
          ORDER BY source_claim.claimant_user_id, source_claim.created_at DESC, source_claim.id DESC
       ),
