@@ -32,9 +32,8 @@ import {
 //    flag — so a future origin change is a reviewable diff rather than a
 //    dashboard click.
 //
-// 3. assets.boardsesh.com is the public, DNS-only custom domain for the Tigris
-//    static-assets bucket. Unlike ws, this tool owns the record's complete shape
-//    and creates it when it is absent.
+// 3. assets.boardsesh.com is the public R2 static-assets custom domain.
+//    R2 owns its DNS record; never recreate the legacy Tigris CNAME here.
 
 /** The Cloudflare zone this config manages. Resolved to a zone id by name when CLOUDFLARE_ZONE_ID is unset. */
 export const ZONE_NAME = 'boardsesh.com';
@@ -45,7 +44,7 @@ export const WS_HOSTNAME = 'ws.boardsesh.com';
 /** Public custom domain for the content-addressed static-assets bucket. */
 export const ASSETS_HOSTNAME = 'assets.boardsesh.com';
 
-/** Tigris custom-domain DNS target for the dedicated Boardsesh static-assets bucket. */
+/** Retained Tigris DNS target for rollback; absent from the desired DNS records. */
 export const ASSETS_CNAME_TARGET = 'boardsesh-static-assets.t3.tigrisbucket.io';
 
 /** Path prefix whose responses are immutable (`Cache-Control: … immutable`, 1y) and safe to edge-cache. */
@@ -908,10 +907,8 @@ export const ASSETS_CORS_HEADER_RULE_DESCRIPTION =
  * Both hostnames, so the rule is already live and proven on staging before
  * `assets.boardsesh.com` ever resolves to R2.
  *
- * Harmless on `assets.boardsesh.com` today: that record is grey-clouded, so its
- * traffic never reaches Cloudflare's proxy and the rule simply does not match.
- * It starts applying at the moment of the flip, which is exactly when it is
- * needed.
+ * The response-header rule applies on both public domains independently of
+ * whether the request includes Origin, keeping cached CORS responses safe.
  */
 export const ASSETS_CORS_HEADER_EXPRESSION = `(http.host eq "${ASSETS_HOSTNAME}" or http.host eq "${ASSETS_STAGING_HOSTNAME}")`;
 
@@ -1015,12 +1012,12 @@ export const desiredR2Buckets: readonly R2BucketDesired[] = [
   // single region, measured 614 ms TTFB and 4.62 s for 24 images from Sydney,
   // with no edge cache because a Tigris custom domain cannot be proxied).
   //
-  // Still pointed at the staging hostname: this entry creates the bucket and
-  // lets the publisher prove it. `assets.boardsesh.com` moves in a separate
-  // change, after that dry run passes. See docs/static-assets.md.
+  // Attach the live hostname only after the complete historical inventory
+  // passes staging verification and Production Deploy is frozen and drained.
+  // Keep the staging domain for verification. See docs/static-assets.md.
   {
     name: 'boardsesh-static-assets',
-    customDomain: ASSETS_STAGING_HOSTNAME,
+    customDomain: ASSETS_HOSTNAME,
     r2DevDomainEnabled: false,
     cors: PUBLIC_READ_CORS,
   },
@@ -1045,19 +1042,8 @@ export const desiredCloudflareState: CloudflareDesiredState = {
       name: WS_HOSTNAME,
       proxied: true,
     },
-    {
-      management: 'full',
-      name: ASSETS_HOSTNAME,
-      type: 'CNAME',
-      content: ASSETS_CNAME_TARGET,
-      ttl: 1,
-      proxied: false,
-      settings: {
-        flatten_cname: false,
-      },
-    },
     // The DR standby's route to the production primary. Fully managed and
-    // created when absent, exactly like assets above.
+    // created when absent.
     //
     // `proxied: false` is load-bearing and not a preference: this carries the
     // PostgreSQL wire protocol on a high port, and Cloudflare's proxy handles

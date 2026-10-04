@@ -132,15 +132,17 @@ describe('registration, schedules and options', () => {
     expect(family.singletonKey?.({ mode: 'nightly', board: 'kilter', layout: 8 })).toBe('nightly');
   });
 
-  it("keeps the workflow's 45-minute budget, one retry after 300 s and a valid heartbeat", () => {
+  it('bounds a cold homelab nightly and retry inside the run deadline with a short heartbeat', () => {
     expect(family.options).toMatchObject({
-      expireInSeconds: 2700,
+      expireInSeconds: 21_600,
       retryLimit: 1,
       retryDelay: 300,
       deadlineSeconds: 72_000,
     });
-    expect(family.options.heartbeatSeconds).toBeGreaterThanOrEqual(10);
-    expect(family.options.heartbeatSeconds).toBeLessThan(family.options.expireInSeconds);
+    expect(family.options.heartbeatSeconds).toBe(120);
+    expect(
+      family.options.expireInSeconds * (family.options.retryLimit + 1) + family.options.retryDelayMax,
+    ).toBeLessThan(family.options.deadlineSeconds);
     expect(family.options.retryDelayMax).toBeGreaterThanOrEqual(family.options.retryDelay);
   });
 
@@ -157,6 +159,8 @@ describe('payload', () => {
     expect(family.payload.parse({ mode: 'live-scan' })).toEqual({ mode: 'live-scan' });
     expect(accepts({ mode: 'nightly', board: 'kilter', layout: 8, gzipOnly: true })).toBe(true);
     expect(accepts({ mode: 'live-scan', board: 'tension', refreshThreshold: 100 })).toBe(true);
+    expect(accepts({ mode: 'nightly', skipPrune: true })).toBe(true);
+    expect(accepts({ mode: 'live-scan', skipPrune: true })).toBe(true);
   });
 
   it('rejects a missing or unknown mode, unknown keys and malformed filters', () => {
@@ -173,6 +177,28 @@ describe('payload', () => {
   it('needs a board for a layout, and takes gzipOnly on the nightly only', () => {
     expect(accepts({ mode: 'nightly', layout: 8 })).toBe(false);
     expect(accepts({ mode: 'live-scan', gzipOnly: true })).toBe(false);
+  });
+});
+
+describe('migration retention', () => {
+  it('forwards skipPrune to identity, gzip and catalog passes', async () => {
+    await family.execute(context().context, { mode: 'nightly', skipPrune: true });
+    expect(exporter.runExportWithOptions).toHaveBeenCalledTimes(2);
+    for (const [options] of exporter.runExportWithOptions.mock.calls as ExportCall[]) {
+      expect(options.skipPrune).toBe(true);
+    }
+    expect(exporter.runCatalogExportWithOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ skipPrune: true }),
+      expect.anything(),
+    );
+  });
+
+  it('also forwards skipPrune to the live scan', async () => {
+    await family.execute(context().context, { mode: 'live-scan', skipPrune: true });
+    expect(exporter.runExportWithOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ skipPrune: true }),
+      expect.anything(),
+    );
   });
 });
 

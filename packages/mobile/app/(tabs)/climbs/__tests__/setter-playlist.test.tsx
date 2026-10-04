@@ -18,8 +18,15 @@ const mocks = vi.hoisted(() => ({
   fetchNext: vi.fn(),
   request: vi.fn(),
   activate: vi.fn(),
+  append: vi.fn(),
+  isAppending: false,
   activation: null as UsePlaylistActivationOptions | null,
-  detail: null as { hero: { name: string; climbCount: number }; renderBoard: typeof board } | null,
+  detail: null as {
+    hero: { name: string; climbCount: number };
+    renderBoard: typeof board;
+    onAddAllToQueue?: () => void;
+    isAddingAllToQueue?: boolean;
+  } | null,
 }));
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -43,7 +50,6 @@ vi.mock('../../../../src/components/SetterFollowButton', () => ({
 }));
 vi.mock('../../../../src/components/playlist', () => ({
   PlaylistBackFab: () => <button>Back</button>,
-  PlaylistQueueReplaceSheet: () => <div data-testid="replace-sheet" />,
   PlaylistDetailView: (props: {
     hero: { name: string; climbCount: number };
     renderBoard: typeof board;
@@ -51,6 +57,8 @@ vi.mock('../../../../src/components/playlist', () => ({
     actions: () => ReactNode;
     headerSlot?: ReactNode;
     onActivateClimb: (climb: Climb) => void;
+    onAddAllToQueue?: () => void;
+    isAddingAllToQueue?: boolean;
   }) => {
     mocks.detail = props;
     return (
@@ -70,7 +78,10 @@ vi.mock('../../../../src/providers/queue-provider', () => ({ useIsSharedSession:
 vi.mock('../../../../src/lib/playlists/use-playlist-activation', () => ({
   usePlaylistActivation: (options: UsePlaylistActivationOptions) => {
     mocks.activation = options;
-    return { activate: mocks.activate, queueReplaceSheet: {} };
+    return {
+      activate: mocks.activate,
+      addToQueue: { append: mocks.append, isAppending: mocks.isAppending },
+    };
   },
 }));
 vi.mock('../../../../src/lib/graphql/hooks/use-infinite-search-climbs', () => ({
@@ -117,12 +128,13 @@ describe('setter smart playlist route', () => {
     mocks.shared = shared;
     const screen = render(<SetterPlaylist />);
     expect(mocks.detail).toMatchObject({ hero: { name: 'accountless-setter', climbCount: 8 }, renderBoard: board });
+    expect(mocks.detail).toMatchObject({ onAddAllToQueue: mocks.append, isAddingAllToQueue: false });
     expect(screen.getByText('follow:accountless-setter')).not.toBeNull();
     expect(mocks.activation).toMatchObject({ allClimbs: [climb], previewOnly: shared, replaceQueueOnActivate: true });
     expect(mocks.search).toHaveBeenCalledWith(expect.objectContaining({ setter: ['accountless-setter'] }), true);
     fireEvent.click(screen.getByRole('button', { name: 'Activate climb' }));
     expect(mocks.activate).toHaveBeenCalledWith(climb);
-    expect(screen.getByTestId('replace-sheet')).not.toBeNull();
+    expect(screen.queryByTestId('replace-sheet')).toBeNull();
   });
 
   it('fetches the activated board and page using only the setter playlist filters', async () => {

@@ -119,6 +119,7 @@ const { schema } = await import('../graphql/index');
 const { sprayWallMutations } = await import('../graphql/resolvers/board/spray-walls');
 const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
 const { sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
+const { fanoutCommentFeedItems } = await import('../events/feed-fanout');
 
 // ---------------------------------------------------------------------------
 // Sentinels
@@ -628,7 +629,8 @@ const NOT_APPLICABLE: Record<string, string> = {
   // has nothing for a private one to leak. The retraction path — a wall that
   // goes private or is deleted AFTER the fan-out — is what matters here, and
   // spray-wall-api.test.ts drives it directly.
-  'Query.activityFeed': 'reads materialised feed_items, which a private wall never writes',
+  'Query.activityFeed':
+    'reads materialised feed_items, and the sweep fans nothing out to the owner (an actor is never a recipient of their own event). A comment on a proposal DOES fan out for a private wall, so the read gates carry it: spray-wall-api.test.ts for a wall that went private, and the hard-deleted block at the end of this file',
   'Query.sessionGroupedFeed': 'reads materialised feed_items, which a private wall never writes',
 
   // --- session readers --------------------------------------------------------
@@ -1373,5 +1375,297 @@ describe('the spray-wall visibility sweep', () => {
       }
     }
     expect(leaks).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Hard-deleted climbs (#5981)
+// ---------------------------------------------------------------------------
+
+/**
+ * What the sweep above cannot reach: a reference whose climb row is GONE.
+ *
+ * Deleting a wall is a soft delete that keeps its climbs. `deleteDraftClimb` and
+ * account deletion are not: they hard-delete the `board_climbs` row and leave
+ * the ticks, proposals and comments that named it. With the climb gone there is
+ * no layout id, so no wall to check, and the reference form of the wall rule
+ * ("there is no INVISIBLE spray climb behind this reference") passes the row
+ * for everybody.
+ *
+ * So this block seeds a draft on the private wall, hangs one of each reference
+ * off it, deletes the draft through the real mutation, and asks each reader.
+ * These are explicit cases rather than more sentinels in the generic scan,
+ * because the scan would also turn the logbook readers red, and those are a
+ * separate change.
+ */
+const ORPHAN_TICK_COMMENT = 'Zqx Orphan Tick Comment Zqx';
+const ORPHAN_COMMENT_BODY = 'Zqx Orphan Comment Body Zqx';
+const ORPHAN_PROPOSAL_REASON = 'Zqx Orphan Proposal Reason Zqx';
+const ORPHAN_HIDE_REASON = 'Zqx Orphan Hide Reason Zqx';
+const MISSING_KILTER_COMMENT = 'Zqx Missing Kilter Climb Comment Zqx';
+const ORPHAN_DRAFT_NAME = 'Zqx Orphan Draft Zqx';
+/** A grade no other seeded tick uses, so the bucket it lands in is its own. */
+const ORPHAN_DIFFICULTY = 23;
+
+const ORPHAN_SECRETS = [ORPHAN_TICK_COMMENT, ORPHAN_COMMENT_BODY, ORPHAN_PROPOSAL_REASON, ORPHAN_HIDE_REASON];
+
+type ProfileStatsAnswer = {
+  totalDistinctClimbs: number;
+  layoutStats: Array<{
+    layoutKey: string;
+    boardType: string;
+    layoutId: number | null;
+    distinctClimbCount: number;
+    gradeCounts: Array<{ grade: string; count: number }>;
+  }>;
+};
+
+describe('references to a hard-deleted spray climb', () => {
+  let orphanClimbUuid: string;
+  let orphanGradeProposalUuid: string;
+  let orphanHideProposalUuid: string;
+  const orphanHideCommentUuid = uuidv4();
+  const proposalTotalBefore = new Map<ViewerName, number>();
+  const profileStatsBefore = new Map<ViewerName, ProfileStatsAnswer>();
+
+  /** One query, run exactly as the sweep runs its rows. Errors fail the case. */
+  async function ask(viewer: ViewerName, document: string, variables: Record<string, unknown>): Promise<unknown> {
+    const { ctx } = VIEWERS.find((candidate) => candidate.name === viewer)!;
+    const outcome = await runRow(
+      { key: 'orphan case', rootName: 'Query', fieldName: 'orphan', document, variables, kinds: [] },
+      ctx,
+    );
+    expect(outcome.errorMessages, viewer).toEqual([]);
+    return outcome.data;
+  }
+
+  const secretsIn = (answer: unknown) => ORPHAN_SECRETS.filter((secret) => JSON.stringify(answer).includes(secret));
+
+  const browseProposals = (viewer: ViewerName) =>
+    ask(
+      viewer,
+      'query Orphan($input: BrowseProposalsInput!) { browseProposals(input: $input) ' +
+        '{ totalCount proposals { uuid climbUuid reason } } }',
+      { input: { boardType: 'spray', limit: 50 } },
+    ) as Promise<{ browseProposals: { totalCount: number; proposals: Array<{ uuid: string; climbUuid: string }> } }>;
+
+  const commentFeed = (viewer: ViewerName, boardUuid?: string) =>
+    ask(
+      viewer,
+      'query Orphan($input: GlobalCommentFeedInput) { globalCommentFeed(input: $input) ' +
+        '{ comments { uuid entityType entityId body } } }',
+      { input: boardUuid ? { limit: 50, boardUuid } : { limit: 50 } },
+    );
+
+  const profileStats = async (viewer: ViewerName) => {
+    const answer = (await ask(
+      viewer,
+      'query Orphan($userId: ID!) { userProfileStats(userId: $userId) { totalDistinctClimbs ' +
+        'layoutStats { layoutKey boardType layoutId distinctClimbCount gradeCounts { grade count } } } }',
+      { userId: OWNER },
+    )) as { userProfileStats: ProfileStatsAnswer };
+    return answer.userProfileStats;
+  };
+
+  beforeAll(async () => {
+    // The answers BEFORE the orphan exists. A count is a leak the sentinel scan
+    // cannot see, so the cases below compare against these.
+    for (const viewer of VIEWERS) {
+      proposalTotalBefore.set(viewer.name, (await browseProposals(viewer.name)).browseProposals.totalCount);
+      profileStatsBefore.set(viewer.name, await profileStats(viewer.name));
+    }
+
+    const draft = (await climbMutations.saveClimb(
+      {},
+      {
+        input: {
+          boardType: 'spray',
+          layoutId: world.layoutId,
+          name: ORPHAN_DRAFT_NAME,
+          isDraft: true,
+          frames: world.frames,
+          angle: ANGLE,
+        },
+      },
+      ctxFor(OWNER),
+    )) as { uuid: string };
+    orphanClimbUuid = draft.uuid;
+
+    await db.execute(sql`
+      INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, difficulty, quality,
+                                   attempt_count, is_mirror, is_benchmark, comment, climbed_at, created_at, updated_at)
+      VALUES (${uuidv4()}, ${OWNER}, ${orphanClimbUuid}, 'spray', ${ANGLE}, 'send', ${ORPHAN_DIFFICULTY}, 3,
+              1, false, false, ${ORPHAN_TICK_COMMENT}, now(), now(), now())
+    `);
+
+    orphanGradeProposalUuid = uuidv4();
+    orphanHideProposalUuid = uuidv4();
+    await db.execute(sql`
+      INSERT INTO climb_proposals (uuid, climb_uuid, board_type, angle, proposer_id, type, proposed_value, current_value, reason, status, created_at)
+      VALUES (${orphanGradeProposalUuid}, ${orphanClimbUuid}, 'spray', ${ANGLE}, ${OWNER}, 'grade', '20', '18', ${ORPHAN_PROPOSAL_REASON}, 'open', now()),
+             (${orphanHideProposalUuid}, ${orphanClimbUuid}, 'spray', NULL, ${OWNER}, 'hide', 'true', 'false', ${ORPHAN_HIDE_REASON}, 'open', now())
+    `);
+    await db.execute(sql`
+      INSERT INTO comments (uuid, entity_type, entity_id, user_id, body, created_at, updated_at)
+      VALUES (${orphanHideCommentUuid}, 'proposal', ${orphanHideProposalUuid}, ${OWNER}, ${ORPHAN_HIDE_REASON}, now(), now()),
+             (${uuidv4()}, 'climb', ${orphanClimbUuid}, ${OWNER}, ${ORPHAN_COMMENT_BODY}, now(), now())
+    `);
+
+    // The comment rule has no board type to key on, so it applies to every
+    // board: a comment on a catalogue-board climb that has no row.
+    await db.execute(sql`
+      INSERT INTO comments (uuid, entity_type, entity_id, user_id, body, created_at, updated_at)
+      VALUES (${uuidv4()}, 'climb', 'sweep-orphan-kilter-missing', ${OWNER}, ${MISSING_KILTER_COMMENT}, now(), now())
+    `);
+
+    // The stranger follows the owner, so the real fan-out writes the stranger a
+    // feed row for the hide-reason comment WHILE THE DRAFT STILL EXISTS. That
+    // row carries the draft's name, frames and layout id in its metadata.
+    await fanoutCommentFeedItems({
+      type: 'comment.created',
+      actorId: OWNER,
+      entityType: 'comment',
+      entityId: orphanHideCommentUuid,
+      timestamp: Date.now(),
+      metadata: { commentUuid: orphanHideCommentUuid },
+    });
+    const fannedOut = (await db.execute(sql`
+      SELECT metadata->>'climbName' AS "climbName", metadata->>'boardType' AS "boardType"
+      FROM feed_items WHERE recipient_id = ${STRANGER} AND entity_id = ${orphanHideCommentUuid}
+    `)) as unknown as Array<{ climbName: string; boardType: string }>;
+    expect(fannedOut).toEqual([{ climbName: ORPHAN_DRAFT_NAME, boardType: 'spray' }]);
+
+    // The real path, not a raw DELETE: this is the mutation that strands them.
+    await climbMutations.deleteDraftClimb({}, { uuid: orphanClimbUuid, boardType: 'spray' }, ctxFor(OWNER));
+    const remaining = (await db.execute(
+      sql`SELECT 1 FROM board_climbs WHERE uuid = ${orphanClimbUuid}`,
+    )) as unknown as unknown[];
+    expect(remaining).toHaveLength(0);
+  }, 120_000);
+
+  it('browseProposals lists no proposal on the deleted climb, and counts none', async () => {
+    for (const viewer of VIEWERS) {
+      const answer = await browseProposals(viewer.name);
+      expect({ viewer: viewer.name, secrets: secretsIn(answer) }, 'the proposal reason must not be returned').toEqual({
+        viewer: viewer.name,
+        secrets: [],
+      });
+      expect(
+        answer.browseProposals.proposals.filter((proposal) => proposal.climbUuid === orphanClimbUuid),
+        viewer.name,
+      ).toEqual([]);
+      expect(answer.browseProposals.totalCount, `${viewer.name}: totalCount`).toBe(
+        proposalTotalBefore.get(viewer.name),
+      );
+    }
+    // The gate did not empty the reader: the owner still gets the live climb's.
+    expect(JSON.stringify(await browseProposals('owner'))).toContain(PROPOSAL_REASON);
+  });
+
+  it('climbProposals answers the empty page for the deleted climb', async () => {
+    for (const viewer of VIEWERS) {
+      const answer = await ask(
+        viewer.name,
+        'query Orphan($input: GetClimbProposalsInput!) { climbProposals(input: $input) ' +
+          '{ totalCount hasMore proposals { uuid reason } } }',
+        { input: { climbUuid: orphanClimbUuid, boardType: 'spray' } },
+      );
+      expect(answer, viewer.name).toEqual({ climbProposals: { totalCount: 0, hasMore: false, proposals: [] } });
+    }
+  });
+
+  it('globalCommentFeed carries no comment on the deleted climb', async () => {
+    for (const viewer of VIEWERS) {
+      const answer = await commentFeed(viewer.name);
+      expect(
+        { viewer: viewer.name, found: secretsIn(answer).filter((secret) => secret === ORPHAN_COMMENT_BODY) },
+        'a comment on a hard-deleted climb must not be listed',
+      ).toEqual({ viewer: viewer.name, found: [] });
+    }
+    expect(JSON.stringify(await commentFeed('owner'))).toContain(COMMENT_BODY);
+  });
+
+  it('globalCommentFeed carries no thread of a proposal on the deleted climb', async () => {
+    for (const viewer of VIEWERS) {
+      const answer = await commentFeed(viewer.name);
+      expect(
+        { viewer: viewer.name, found: secretsIn(answer).filter((secret) => secret === ORPHAN_HIDE_REASON) },
+        'a hide reason on a hard-deleted spray climb must not be listed',
+      ).toEqual({ viewer: viewer.name, found: [] });
+    }
+    // The live climb's hide reason still reaches the owner, so the new condition
+    // did not drop every proposal thread (or, through a NULL, the whole feed).
+    expect(JSON.stringify(await commentFeed('owner'))).toContain(HIDE_REASON);
+  });
+
+  it('globalCommentFeed applies the missing-climb rule on every board', async () => {
+    for (const viewer of VIEWERS) {
+      const feed = JSON.stringify(await commentFeed(viewer.name));
+      expect(feed.includes(MISSING_KILTER_COMMENT), `${viewer.name}: comment on a climb with no row`).toBe(false);
+    }
+  });
+
+  it('globalCommentFeed filtered to the wall carries nothing from the deleted climb either', async () => {
+    // The board filter joins `board_climbs` for a climb comment, so that arm was
+    // already closed. A proposal thread is filtered on the PROPOSAL's board type,
+    // which a proposal on a deleted climb still has.
+    for (const viewer of VIEWERS) {
+      const answer = await commentFeed(viewer.name, world.wallUuid);
+      expect({ viewer: viewer.name, found: secretsIn(answer) }, 'filtered by the wall').toEqual({
+        viewer: viewer.name,
+        found: [],
+      });
+    }
+    expect(JSON.stringify(await commentFeed('owner', world.wallUuid))).toContain(COMMENT_BODY);
+  });
+
+  it('activityFeed drops a fanned-out row once its spray climb is deleted', async () => {
+    // Authenticated only, and the row was written for the stranger: the owner is
+    // the actor and never a recipient of their own event.
+    const answer = await ask(
+      'stranger',
+      'query Orphan($input: ActivityFeedInput) { activityFeed(input: $input) ' +
+        '{ items { type entityId climbName climbUuid layoutId frames commentBody } } }',
+      { input: { limit: 50 } },
+    );
+    const feed = JSON.stringify(answer);
+    expect(
+      {
+        draftName: feed.includes(ORPHAN_DRAFT_NAME),
+        hideReason: feed.includes(ORPHAN_HIDE_REASON),
+        climbUuid: feed.includes(orphanClimbUuid),
+        frames: feed.includes(world.frames),
+      },
+      "a follower must not be handed a deleted draft's name, frames or the comment about it",
+    ).toEqual({ draftName: false, hideReason: false, climbUuid: false, frames: false });
+  });
+
+  it('comments(proposal) answers the empty page for a proposal on the deleted climb', async () => {
+    for (const viewer of VIEWERS) {
+      const answer = await ask(
+        viewer.name,
+        'query Orphan($input: CommentsInput!) { comments(input: $input) { totalCount comments { uuid body } } }',
+        { input: { entityType: 'proposal', entityId: orphanHideProposalUuid } },
+      );
+      expect(answer, viewer.name).toEqual({ comments: { totalCount: 0, comments: [] } });
+    }
+  });
+
+  it('userProfileStats counts the log for its author and for nobody else', async () => {
+    for (const viewer of ['anonymous', 'stranger'] as const) {
+      // Not one number moves: no `spray-unknown` bucket, no extra distinct climb.
+      expect(await profileStats(viewer), viewer).toEqual(profileStatsBefore.get(viewer));
+    }
+
+    const own = await profileStats('owner');
+    const ownBefore = profileStatsBefore.get('owner')!;
+    expect(own.totalDistinctClimbs).toBe(ownBefore.totalDistinctClimbs + 1);
+    expect(own.layoutStats.find((entry) => entry.layoutKey === 'spray-unknown')).toEqual({
+      layoutKey: 'spray-unknown',
+      boardType: 'spray',
+      layoutId: null,
+      distinctClimbCount: 1,
+      gradeCounts: [{ grade: String(ORPHAN_DIFFICULTY), count: 1 }],
+    });
   });
 });

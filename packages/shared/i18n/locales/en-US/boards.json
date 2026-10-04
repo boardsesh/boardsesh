@@ -887,7 +887,6 @@
       "camera": "Take a photo",
       "pickAnother": "Choose a different photo",
       "next": "Next",
-      "libraryDenied": "Boardsesh needs your photo library to add a wall.",
       "cameraDenied": "Boardsesh needs your camera to photograph a wall.",
       "failed": "That photo wouldn't open. Try another one."
     },
@@ -986,8 +985,7 @@
     "anchors": {
       "title": "Mark the corners",
       "body": "Drag the four rings onto the corners of the wall. This one isn't optional — it's what lines your new photo up with every climb already on the wall.",
-      "use": "Use these corners",
-      "notConvex": "Those corners cross over each other. Put them round the wall in order."
+      "use": "Use these corners"
     },
     "leave": {
       "title": "Leave the reset?",

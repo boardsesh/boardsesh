@@ -11,7 +11,7 @@ const errors = vi.hoisted(() => ({ reportError: vi.fn(), showToast: vi.fn() }));
 
 const queue = vi.hoisted(() => ({
   startSession: vi.fn(async () => 'session-1' as string | null),
-  appendGeneratedSession: vi.fn(),
+  appendQueueItems: vi.fn(),
 }));
 
 const drawer = vi.hoisted(() => ({ openPlayDrawer: vi.fn() }));
@@ -156,7 +156,7 @@ vi.mock('../../../../providers/theme-provider', () => ({
 vi.mock('../../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => activeBoard }));
 vi.mock('../../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../../../providers/queue-provider', () => ({
-  useQueueActions: () => ({ startSession: queue.startSession, appendGeneratedSession: queue.appendGeneratedSession }),
+  useQueueActions: () => ({ startSession: queue.startSession, appendQueueItems: queue.appendQueueItems }),
   useQueueSessionId: () => ({ sessionId: screenState.sessionId }),
   useQueueLiveStats: () => ({ sessionUsers: [] }),
 }));
@@ -211,7 +211,7 @@ beforeEach(() => {
   errors.showToast.mockClear();
   queue.startSession.mockClear();
   queue.startSession.mockResolvedValue('session-1');
-  queue.appendGeneratedSession.mockClear();
+  queue.appendQueueItems.mockClear();
   screenState.sessionId = null;
   screenState.isFocused = true;
   activeBoard.data = { boardType: 'kilter', layoutId: 8, sizeId: 21, setIds: '1,2', angle: 40 };
@@ -251,7 +251,7 @@ describe('PreSessionView analytics', () => {
 
     await act(async () => {
       startButton.onPress?.();
-      // Let the async handleStart chain (startSession → appendGeneratedSession
+      // Let the async handleStart chain (startSession → appendQueueItems
       // → track) settle.
       await Promise.resolve();
       await Promise.resolve();
@@ -269,10 +269,10 @@ describe('PreSessionView analytics', () => {
 
     // Preview items queued behind the live queue; the provider decides the
     // current climb (it stays put unless nothing is active).
-    expect(queue.appendGeneratedSession).toHaveBeenCalledTimes(1);
-    expect(queue.appendGeneratedSession).toHaveBeenCalledWith(previewItems);
+    expect(queue.appendQueueItems).toHaveBeenCalledTimes(1);
+    expect(queue.appendQueueItems).toHaveBeenCalledWith(previewItems, { activateFirstWhenIdle: true });
     expect(navigation.navigate).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
-    expect(queue.appendGeneratedSession.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(queue.appendQueueItems.mock.invocationCallOrder[0]).toBeLessThan(
       navigation.navigate.mock.invocationCallOrder[0],
     );
     expect(analytics.track).toHaveBeenCalledWith('Session Queue Generated', {
@@ -293,7 +293,7 @@ describe('PreSessionView analytics', () => {
     });
     await waitFor(() => expect(queue.startSession).toHaveBeenCalled());
 
-    expect(queue.appendGeneratedSession).not.toHaveBeenCalled();
+    expect(queue.appendQueueItems).not.toHaveBeenCalled();
     expect(analytics.track).not.toHaveBeenCalledWith('Session Queue Generated', expect.anything());
     expect(navigation.navigate).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
   });
@@ -326,7 +326,7 @@ describe('PreSessionView analytics', () => {
     });
 
     expect(queue.startSession).not.toHaveBeenCalled();
-    expect(queue.appendGeneratedSession).not.toHaveBeenCalled();
+    expect(queue.appendQueueItems).not.toHaveBeenCalled();
     expect(navigation.navigate).not.toHaveBeenCalled();
   });
 });
@@ -353,7 +353,7 @@ describe('PreSessionView Start navigation', () => {
     await act(async () => startButton.onPress?.());
 
     expect(navigation.navigate).not.toHaveBeenCalled();
-    expect(queue.appendGeneratedSession).not.toHaveBeenCalled();
+    expect(queue.appendQueueItems).not.toHaveBeenCalled();
   });
 
   it('stays on Session and shows the error when creation rejects', async () => {
@@ -410,7 +410,7 @@ describe('SessionScreen Start handoff', () => {
   it('keeps a created session visible if queue preparation fails', async () => {
     const creation = Promise.withResolvers<string | null>();
     queue.startSession.mockReturnValueOnce(creation.promise);
-    queue.appendGeneratedSession.mockImplementationOnce(() => {
+    queue.appendQueueItems.mockImplementationOnce(() => {
       throw new Error('Queue unavailable');
     });
     const screen = render(createElement(SessionScreen));

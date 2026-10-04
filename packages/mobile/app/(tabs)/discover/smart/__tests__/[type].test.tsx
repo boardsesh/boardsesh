@@ -13,13 +13,7 @@ type CapturedOptions = { sourceId: string; replaceQueueOnActivate?: boolean; pre
 const smartMocks = vi.hoisted(() => ({
   activationOptions: null as CapturedOptions | null,
   activate: vi.fn<(climb: Climb) => Promise<void>>(),
-  queueReplaceSheet: {
-    visible: true,
-    futureQueueCount: 2,
-    isReplacing: false,
-    onCancel: vi.fn(),
-    onConfirm: vi.fn(),
-  },
+  appendToQueue: vi.fn(),
   allClimbs: [{ uuid: 'c-1', name: 'Boulder' }] as unknown as Climb[],
 }));
 
@@ -47,25 +41,35 @@ vi.mock('../../../../../src/components/Text', () => ({
 vi.mock('../../../../../src/components/Icon', () => ({ Icon: () => null }));
 vi.mock('../../../../../src/components/ClimbListRowSkeleton', () => ({ ClimbListRowSkeleton: () => null }));
 
-type DetailViewProps = { onActivateClimb?: (climb: Climb) => void };
-type SheetProps = { visible?: boolean; futureQueueCount?: number };
+type DetailViewProps = {
+  onActivateClimb?: (climb: Climb) => void;
+  onAddAllToQueue?: () => void;
+  isAddingAllToQueue?: boolean;
+};
 vi.mock('../../../../../src/components/playlist', () => ({
   SKELETON_PLACEHOLDERS: [],
   PlaylistBackFab: () => null,
-  PlaylistDetailView: ({ onActivateClimb }: DetailViewProps) =>
-    createElement('button', {
-      'data-activate': 'true',
-      onClick: () => onActivateClimb?.({ uuid: 'c-1' } as unknown as Climb),
-    }),
-  PlaylistQueueReplaceSheet: ({ visible, futureQueueCount }: SheetProps) =>
-    createElement('div', { 'data-sheet': visible ? 'true' : 'false', 'data-future-count': String(futureQueueCount) }),
+  PlaylistDetailView: ({ onActivateClimb, onAddAllToQueue, isAddingAllToQueue }: DetailViewProps) =>
+    createElement(
+      'div',
+      null,
+      createElement('button', {
+        'data-activate': 'true',
+        onClick: () => onActivateClimb?.({ uuid: 'c-1' } as unknown as Climb),
+      }),
+      createElement('button', {
+        'data-add-all': onAddAllToQueue ? 'true' : 'false',
+        'data-appending': String(!!isAddingAllToQueue),
+        onClick: onAddAllToQueue,
+      }),
+    ),
 }));
 
 vi.mock('../../../../../src/lib/graphql/client', () => ({ getHttpClient: () => ({ request: vi.fn() }) }));
 vi.mock('../../../../../src/lib/playlists/use-playlist-activation', () => ({
   usePlaylistActivation: (options: CapturedOptions) => {
     smartMocks.activationOptions = options;
-    return { activate: smartMocks.activate, queueReplaceSheet: smartMocks.queueReplaceSheet };
+    return { activate: smartMocks.activate, addToQueue: { append: smartMocks.appendToQueue, isAppending: false } };
   },
 }));
 vi.mock('../../../../../src/lib/playlists/use-playlist-render-board', () => ({
@@ -93,18 +97,28 @@ vi.mock('../../../../../src/providers/queue-provider', () => ({
 import SmartPlaylistDetail from '../[type]';
 
 describe('SmartPlaylistDetail queue replacement wiring', () => {
-  it('activates with replaceQueueOnActivate and renders the queue-replace sheet', () => {
+  it('activates with replaceQueueOnActivate', () => {
     const { container } = render(<SmartPlaylistDetail />);
 
     expect(smartMocks.activationOptions?.replaceQueueOnActivate).toBe(true);
     expect(smartMocks.activationOptions?.sourceId).toBe('smart:LIKED_CLIMBS:u-1');
 
-    const sheet = container.querySelector('[data-sheet]');
-    expect(sheet?.getAttribute('data-sheet')).toBe('true');
-    expect(sheet?.getAttribute('data-future-count')).toBe('2');
-
     fireEvent.click(container.querySelector('[data-activate]')!);
     expect(smartMocks.activate).toHaveBeenCalledWith({ uuid: 'c-1' });
+  });
+
+  it('forwards the bulk add-to-queue handler and its in-flight flag', () => {
+    // Smart playlists render no overflow menu at all, so the header row is the
+    // ONLY additive bulk affordance they can ever have. If this wiring drops,
+    // Liked Climbs / Five Stars / Projects silently lose the feature.
+    const { container } = render(<SmartPlaylistDetail />);
+
+    const addAll = container.querySelector('[data-add-all]');
+    expect(addAll?.getAttribute('data-add-all')).toBe('true');
+    expect(addAll?.getAttribute('data-appending')).toBe('false');
+
+    fireEvent.click(addAll as HTMLButtonElement);
+    expect(smartMocks.appendToQueue).toHaveBeenCalledTimes(1);
   });
 
   // Same rule as the playlist detail screen: with a crew present, a row tap is a

@@ -56,6 +56,13 @@ type UseZoomPanGestureOptions = {
    * tools take every one-finger touch, so two fingers are the only way to move
    * across a zoomed wall mid-edit. Mirrored into a shared value like `maxScale`. */
   pinchPans?: boolean;
+  /** RNGH ref to the play drawer's pull-down-to-dismiss Pan (an ANCESTOR of this
+   * board). Both want a downward one-finger drag, so the zoomed-only pan declares
+   * `.blocksExternalGesture(dismissRef)` and the dismiss waits for it to fail —
+   * a downward drag on a zoomed board pans the board instead of pulling the
+   * drawer down. Unzoomed there's no overlay and no relation, so pull-to-dismiss
+   * keeps the whole surface. Only the play drawer passes it. */
+  dismissRef?: MutableRefObject<GestureType | undefined>;
 };
 
 type UseZoomPanGestureReturn = {
@@ -157,6 +164,7 @@ export function useZoomPanGesture({
   pinchRef,
   maxScale = MAX_SCALE,
   pinchPans = false,
+  dismissRef,
 }: UseZoomPanGestureOptions): UseZoomPanGestureReturn {
   const scale = useSharedValue(MIN_SCALE);
   const translateX = useSharedValue(0);
@@ -457,6 +465,10 @@ export function useZoomPanGesture({
     // instead of the play drawer scrolling out from under a downward drag. Idle
     // scrolling is untouched (no overlay, no relation).
     if (scrollRef) pan.blocksExternalGesture(scrollRef);
+    // Same relation against the drawer's pull-down-to-dismiss Pan, which sits on an
+    // ancestor and competes for the very same downward drag. Without it the dismiss
+    // can win and the drawer slides away mid-pan instead of the board moving.
+    if (dismissRef) pan.blocksExternalGesture(dismissRef);
     return pan;
   }, [
     scale,
@@ -468,6 +480,7 @@ export function useZoomPanGesture({
     containerHeightSV,
     panActivationOffset,
     scrollRef,
+    dismissRef,
   ]);
 
   const animatedZoomStyle = useAnimatedStyle(() => ({

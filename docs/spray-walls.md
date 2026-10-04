@@ -289,7 +289,7 @@ would leave first-run open.
 | `resuming` | Asks `mySprayWalls` for a wall of the caller's own with no published version and offers to pick it up or start over. |
 | `meta` | Name, gym, visibility, location, and the angle — snapped to `SPRAY_ANGLES`, because the server validates against that list. |
 | `photo` | Library pick; the camera button only on a binary at or past the version that shipped the usage description. Compressed to a 2048 px JPEG, which bakes the EXIF orientation into the pixels. |
-| `anchors` | Optional, Skip by default. Four draggable handles; a quad that crosses itself is refused client-side, because the server's fallback for a degenerate quad is the identity matrix. |
+| `anchors` | Optional, Skip by default. Four draggable handles with the marked area outlined between them; a quad that crosses itself is refused client-side, because the server's fallback for a degenerate quad is the identity matrix. The photo is fitted on both axes to the space between the header and the footer (`corner-photo-fit.ts`), so all four handles are on screen and the step does not scroll; the footer is the same height before and after the first drag. When that space would fall under about 200 points the photo stops shrinking and the step scrolls instead — reachable on a 375x667 phone with the reset flow's longer copy, not only at large text sizes — and the page is held still while a ring is being dragged, so a drag never becomes a scroll. The hint and the refusal that replaces it share one slot, so a refused quad does not re-fit the photo. The reset flow's corner step is the same component. |
 | `upload` | `createSprayWall`, then the multipart POST, then `createSprayWallVersion`. |
 | `detect` | Request or resume a server-owned recognition job. New walls can enter manual editing while queued ("Mark holds myself"); published reset versions remain unchanged until review and confirmation. With the photo still on the phone the step is full-screen (`SprayScanPhoto`): the photo sits exactly where the editor will put it (`fitSprayPhoto`), dimmed, with a violet band looping down it and a glass status card. A run resumed without the file, and the reset flow, keep the plain spinner. |
 | `review` | `SprayHoldEditorScreen`. Its one button, "Pick a look", commits the holds (`REVIEW_COMMITTED`) and hands over to the look step. Until its draft has loaded it shows `SprayEditorLoading`, never a bare spinner: the local photo dimmed with a status card and no scan band when the wizard still has the file, a spinner and a status line otherwise, and "Couldn't load your wall" with "Try again" when the read has given up or is parked offline (`useSprayWallDraft`'s `isStalled`; an automatic retry still in flight keeps the plain wait). "Try again" re-probes connectivity before it refetches, because an offline connectivity store refuses requests before they reach the network. The wizard prefetches that draft during `detect` (`prefetchSprayWallDraft`). |
@@ -663,10 +663,63 @@ and account deletion (which removes the deleted user's drafts) hard-delete the
 climb and leave its ticks. With no climb there is no wall to check, so
 `climbLogConditions` adds a second condition that fails closed: a spray tick is
 returned only when its climb row still exists. Other board types keep the lenient
-behaviour, because an Aurora tick can arrive before its climb. The other readers
-in the table above still use the reference form on its own and have not been
-audited for this case. Any new per-climb log reader imports `climbLogConditions`
-rather than writing its own.
+behaviour, because an Aurora tick can arrive before its climb. Any new per-climb
+log reader imports `climbLogConditions` rather than writing its own.
+
+#### References to a hard-deleted climb
+
+That second condition is `sprayReferenceClimbExistsCondition`, next to the
+reference form in `spray-visibility.ts`. It needs a board type on the
+referencing row, and takes an optional author exemption (the row's author
+column and the viewer) for readers where a climber is reading their own rows.
+The readers in the table above were audited for this case in #5981:
+
+| Reader | A reference to a hard-deleted spray climb |
+| --- | --- |
+| `followingClimbAscents`, `climbLogs` | hidden from everybody (`climbLogConditions`) |
+| `browseProposals`, `climbProposals` | hidden from everybody; `climbProposals` answers the empty page |
+| `comments` on a proposal | empty page (`sprayProposalUuidIsReadable`) |
+| `globalCommentFeed`, proposal threads | hidden from everybody: the proposal carries its board type |
+| `globalCommentFeed`, climb comments | hidden from everybody, **on every board** (below) |
+| `userProfileStats` | hidden from everybody but the climber whose log it is |
+| `activityFeed` | hidden from everybody. A comment on a proposal fans out with the climb's name, frames and layout id in the feed row's metadata; the row's own `boardType` says spray once the climb cannot |
+| the smart-playlist ref queries | not gated. Hydration reads `board_climbs`, so no row is returned; only `totalCount` can include it |
+| the stats and grade readers (`climbStatsForAngles` and friends) | nothing to read: the stats rows are deleted with the climb, and the recompute seed only inserts for a climb that has a row |
+| `comments` on a climb or a tick, keyed by uuid | not gated. A comment has no board type, and the caller must already hold the uuid |
+| `climbCommunityStatus`, `voteSummary` | not gated. Numbers for a uuid the caller already holds (`openProposalCount`, `communityGrade`, vote counts) |
+
+A comment row has no board type, so there is no spray-only version of the rule
+for a climb comment. `globalCommentFeed` lists a climb comment only while its
+climb still has a `board_climbs` row. That hides more than spray:
+
+- a comment on a deleted draft, on any board;
+- a comment on an upstream climb that `clearAuroraBoard` removed and a re-import
+  did not restore.
+
+Both stay readable through `comments(entityType: climb)` for a caller holding
+the uuid. There is no alias arm: a deduplicated climb keeps its `board_climbs`
+row (the MoonBoard merges delist the loser and repoint its comments at the
+survivor), so no comment sits under an alias uuid that has no row. The
+board-filtered feed already required the row, so the two paths now agree.
+
+The uuid-keyed checks (`sprayClimbRowExists`, `sprayProposalUuidIsReadable`)
+read the replica like their neighbours. A spray climb created inside the
+replication lag answers the empty page for its proposals until the replica has
+the row.
+
+`userProfileStats` is the one reader with the author exemption. The others list
+rows written by other people, so nobody is exempt. A profile's totals are the
+climber's own numbers, their logbook still lists the log as "Unknown Climb", and
+totals that dropped it would disagree with that logbook. The web profile's
+server render fetches the stats with no viewer, so the owner's first paint omits
+the log until the signed-in client fetch replaces it; the same already holds for
+their logs on a private wall.
+
+**Not covered:** the logbook readers that LEFT JOIN `board_climbs` and use the
+column form (`userTicks`, the ascents feeds, the session feed, detail and
+summary). `IS DISTINCT FROM 'spray'` is true for a missing climb, so they still
+return a spray tick whose climb was hard-deleted, as "Unknown Climb", to anyone.
+That is #6031.
 
 Pick by what the query HAS, not by taste:
 

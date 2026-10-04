@@ -9,7 +9,11 @@ import {
 } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { sprayClimbVisibilityCondition, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
+import {
+  sprayClimbVisibilityCondition,
+  sprayReferenceClimbExistsCondition,
+  sprayReferenceVisibilityCondition,
+} from '@boardsesh/db/queries';
 import { toConfidenceTier, notAuroraTwinDuplicate, withSerialPlan } from '@boardsesh/db/queries';
 import { requireAuthenticated, applyRateLimit, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import { fetchOwnerBoards, toTickBoardCandidate } from '../shared/render-board';
@@ -39,6 +43,7 @@ import { GetTicksInputSchema, BoardNameSchema, AscentFeedInputSchema } from '../
 import { climbNameLikePattern } from '@boardsesh/climb-filters';
 import { extractInstagramHandle } from '../beta-videos/queries';
 import { selectedFieldNames, isFieldSelected } from '../shared/selected-fields';
+import { logSlowRead } from '../shared/slow-read-log';
 import type { GraphQLResolveInfo } from 'graphql';
 
 // Benchmark resolution shared by the flat and grouped ascent feeds: a climb
@@ -218,6 +223,16 @@ export const tickQueries = {
     validateInput(GetTicksInputSchema, input, 'input');
 
     const userId = ctx.userId!;
+    const startedAt = performance.now();
+    // A read that timed out is the slowest read there is, so it is logged too.
+    const logFailedRead = (err: unknown): never => {
+      logSlowRead('ticks', startedAt, {
+        boardType: input.boardType,
+        climbs: input.climbUuids?.length ?? null,
+        failed: true,
+      });
+      throw err;
+    };
 
     // Build query conditions
     const conditions = [
@@ -266,7 +281,8 @@ export const tickQueries = {
       // Synced-rating fallback for quality — see boardClimbRatingsJoinCondition.
       .leftJoin(dbSchema.boardClimbRatings, boardClimbRatingsJoinCondition)
       .where(and(...conditions))
-      .orderBy(desc(dbSchema.boardseshTicks.climbedAt));
+      .orderBy(desc(dbSchema.boardseshTicks.climbedAt))
+      .catch(logFailedRead);
 
     // Batch-fetch social aggregates in two grouped queries instead of running
     // a correlated subquery per row — this resolver is unbounded (no LIMIT),
@@ -298,8 +314,14 @@ export const tickQueries = {
                 ),
               )
               .groupBy(dbSchema.comments.entityId),
-          ])
+          ]).catch(logFailedRead)
         : [[], []];
+
+    logSlowRead('ticks', startedAt, {
+      boardType: input.boardType,
+      climbs: input.climbUuids?.length ?? null,
+      rows: results.length,
+    });
 
     const voteMap = new Map(voteRows.map((v) => [v.entityId, v]));
     const commentMap = new Map(commentRows.map((c) => [c.entityId, Number(c.commentCount)]));
@@ -1400,6 +1422,16 @@ export const tickQueries = {
         sprayReferenceVisibilityCondition(
           { boardType: dbSchema.boardseshTicks.boardType, climbUuid: dbSchema.boardseshTicks.climbUuid },
           viewerUserId,
+        ),
+        // A spray send whose climb row has been hard-deleted (`deleteDraftClimb`,
+        // account deletion) passes the reference form for everybody and would
+        // show a stranger a `spray-unknown` bucket with the climber's counts and
+        // grades (#5981). Fail closed, except for the climber reading their own
+        // profile: the log is theirs, their logbook still lists it, and totals
+        // that dropped it would disagree with that logbook.
+        sprayReferenceClimbExistsCondition(
+          { boardType: dbSchema.boardseshTicks.boardType, climbUuid: dbSchema.boardseshTicks.climbUuid },
+          { authorId: dbSchema.boardseshTicks.userId, viewerUserId },
         ),
       );
 

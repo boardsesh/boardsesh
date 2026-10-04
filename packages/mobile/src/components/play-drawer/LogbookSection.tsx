@@ -15,8 +15,6 @@ import { LogbookHeadline, LogbookVerdict } from './logbook/LogbookVerdict';
 import { formatLedgerDayLabel, ledgerDayKeys } from './logbook/day-label';
 import { useClimbLedger } from './logbook/use-climb-ledger';
 import { useLocalPendingTicks } from '../../hooks/use-local-ticks';
-import { useConnectivityField } from '../../lib/connectivity/use-connectivity';
-import type { ConnectivitySnapshot } from '../../lib/connectivity/connectivity-store';
 import { nowMs } from '../../lib/clock';
 import { useAuth } from '../../providers/auth-provider';
 import { useTheme } from '../../providers/theme-provider';
@@ -44,11 +42,6 @@ type LogbookSectionProps = {
 const MAX_SESSIONS_INLINE = 6;
 const MAX_ENTRIES_PER_SESSION = 4;
 const STATE_GLYPH_SIZE = 16;
-
-// Hoisted: `useConnectivityField` memoizes its reader on the selector identity.
-function selectEffectiveOffline(snapshot: ConnectivitySnapshot): boolean {
-  return snapshot.effectiveOffline;
-}
 
 type InlineAngle = {
   section: LedgerAngleSection<LogbookEntry>;
@@ -88,8 +81,7 @@ export const LogbookSection = memo(function LogbookSection({
   const { t } = useTranslation('session');
   const { isAuthenticated } = useAuth();
   const { brandColors, systemColors } = useTheme();
-  const { ledger, hasEntries, fetched, error, retry } = useClimbLedger(boardName, climbUuid, angle);
-  const offline = useConnectivityField(selectEffectiveOffline);
+  const { ledger, hasEntries, fetched, error, offline, retry } = useClimbLedger(boardName, climbUuid, angle);
   const { data: pendingTicks = 0 } = useLocalPendingTicks(climbUuid, boardName);
 
   // A reader with no account has no logbook, so every string below would be a
@@ -184,8 +176,9 @@ export const LogbookSection = memo(function LogbookSection({
           <LogbookVerdict verdict={ledger.verdict} todayKey={dayKeys.todayKey} yesterdayKey={dayKeys.yesterdayKey} />
           <LogbookStatLine totals={ledger.totals} section={statSection} />
         </View>
-        {/* What is on the phone (an optimistic or cached tick) is not the whole
-            history until this climb's fetch lands. */}
+        {/* What is on the phone (an optimistic or cached tick, or the synced
+            rows shown while the fetch is in flight) is not the whole history
+            until this climb's fetch lands. */}
         {historyLine}
         {inline.map(({ section, sessions }) => {
           const isBoardAngle = section.angle === angle;
@@ -257,7 +250,9 @@ export const LogbookSection = memo(function LogbookSection({
     );
   }
 
-  // Guard the fetch so neither fallback below flashes before entries land.
+  // Guard the fetch so neither fallback below flashes before entries land. The
+  // ticks synced to the phone fill the card meanwhile (`useClimbLedger`); this
+  // is what is left when there are none, or the phone may not serve them.
   if (!fetched) {
     return (
       <View style={styles.container}>

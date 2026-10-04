@@ -631,11 +631,25 @@ export default defineConfig({
         command: 'tsx scripts/upload-static-assets.ts',
         cache: false,
       },
+      'storage:migrate-static-assets': {
+        command: 'tsx scripts/migrate-static-assets.ts',
+        cache: false,
+      },
       // One-shot migration of the Railway object-storage bucket into the two
       // Cloudflare R2 buckets. Needs both credential sets; see
       // docs/user-media-storage.md for the runbook.
       'storage:migrate-user-media': {
         command: 'tsx scripts/migrate-user-media.ts',
+        cache: false,
+      },
+      // One-shot, no-delete copy of the live XPRem bucket from Tigris to R2.
+      // Source credentials are read from Railway; see docs/mobile-ota-updates.md.
+      'storage:migrate-ota': {
+        command: 'tsx scripts/migrate-ota-storage.ts',
+        cache: false,
+      },
+      'storage:verify-snapshots': {
+        command: 'tsx scripts/verify-board-snapshots.ts',
         cache: false,
       },
       'generate:acknowledgements': {

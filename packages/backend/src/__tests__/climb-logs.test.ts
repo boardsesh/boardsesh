@@ -463,6 +463,65 @@ describe("Aurora's own duplicate rows", () => {
 
     expect(answer.items.map((item) => item.uuid)).toEqual([kept]);
   });
+
+  it('still hides the twin once the kept row has been edited here', async () => {
+    // Edited after its last sync, so the payload no longer has to match.
+    const kept = await insertTick({
+      ...twin,
+      auroraId: 'cl-aur-1',
+      comment: 'edited in Boardsesh',
+      updatedAt: '2026-05-02T09:00:00.000Z',
+    });
+    await insertTick({ ...twin, auroraId: 'cl-aur-2' });
+
+    expect((await ask(null)).items.map((item) => item.uuid)).toEqual([kept]);
+  });
+
+  it('keeps both rows when only the larger aurora id was edited here', async () => {
+    // Only an edit on the row that would be KEPT relaxes the payload match.
+    await insertTick({ ...twin, auroraId: 'cl-aur-1' });
+    await insertTick({
+      ...twin,
+      auroraId: 'cl-aur-2',
+      comment: 'edited in Boardsesh',
+      updatedAt: '2026-05-02T09:00:00.000Z',
+    });
+
+    expect((await ask(null)).items).toHaveLength(2);
+  });
+
+  it('keeps an attempt beside a send at the same instant, even once the smaller id is edited', async () => {
+    await insertTick({ ...twin, auroraId: 'cl-aur-1', status: 'attempt', updatedAt: '2026-05-02T09:00:00.000Z' });
+    await insertTick({ ...twin, auroraId: 'cl-aur-2' });
+
+    expect((await ask(null)).items).toHaveLength(2);
+  });
+
+  it('keeps two rows that each carry their own Kilter link', async () => {
+    await insertTick({ ...twin, auroraId: 'cl-aur-1', kilterId: 'cl-kilter-1' });
+    await insertTick({ ...twin, auroraId: 'cl-aur-2', kilterId: 'cl-kilter-2' });
+
+    expect((await ask(null)).items).toHaveLength(2);
+  });
+
+  it('keeps two Aurora sends by one climber that are not the same ascent', async () => {
+    await insertTick({ ...twin, auroraId: 'cl-aur-1' });
+    await insertTick({ ...twin, auroraId: 'cl-aur-2', climbedAt: '2026-05-01T18:00:01.000Z' });
+    await insertTick({ ...twin, auroraId: 'cl-aur-3', angle: 45 });
+
+    expect((await ask(null)).items).toHaveLength(3);
+  });
+
+  it('collapses a four-copy group to its smallest aurora id, among other climbers', async () => {
+    await insertTick({ userId: CAL, climbedAt: onDay(3) });
+    const kept = await insertTick({ ...twin, auroraId: 'cl-aur-1' });
+    for (const auroraId of ['cl-aur-2', 'cl-aur-3', 'cl-aur-4']) await insertTick({ ...twin, auroraId });
+
+    const answer = await ask(null);
+
+    expect(answer.items).toHaveLength(2);
+    expect(answer.items.map((item) => item.uuid)).toContain(kept);
+  });
 });
 
 describe('the fields on a row', () => {
@@ -644,5 +703,33 @@ describe.each([
     const { climbUuid } = await seedWall({ isPublic: true });
 
     expect(await askWall(WALL_OWNER, climbUuid, BOARD)).toEqual(EMPTY_ANSWER);
+  });
+});
+
+describe("Aurora's own duplicate rows, with the twin lookup limited to Aurora-pull rows", () => {
+  const pulled = {
+    userId: BEA,
+    origin: 'aurora_pull' as const,
+    auroraType: 'ascents' as const,
+    quality: 3,
+    difficulty: 21,
+    comment: 'crimpy',
+    // A freshly pulled row is not "locally edited". See aurora-twin-dedup.test.ts.
+    updatedAt: '2026-05-01T18:00:00.000Z',
+    auroraSyncedAt: '2026-05-01T18:00:00.000Z',
+  };
+
+  it('keeps a native log that matches an Aurora-pull row in every column', async () => {
+    await insertTick({ ...pulled, auroraId: 'cl-aur-1' });
+    await insertTick({ ...pulled, origin: 'native', auroraId: null });
+
+    expect((await ask(null)).items).toHaveLength(2);
+  });
+
+  it('keeps both rows when the Aurora-pull ids are json-import surrogates', async () => {
+    await insertTick({ ...pulled, auroraId: 'json-import-cl-2' });
+    await insertTick({ ...pulled, auroraId: 'json-import-cl-1' });
+
+    expect((await ask(null)).items).toHaveLength(2);
   });
 });

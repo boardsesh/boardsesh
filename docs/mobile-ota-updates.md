@@ -1306,15 +1306,98 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
 > **Storage migration gate:** `infra/cloudflare/config.ts` declares `boardsesh-ota-v3` as a private R2 bucket with
 > no custom domain and with `r2.dev` disabled. That desired state does not prove which provider Railway currently
 > uses, because `AWS_BASE_ENDPOINT` and its credentials remain live secrets. Inspect the production service before
-> calling the OTA bucket migrated. If `AWS_BASE_ENDPOINT` still points at Tigris, rotate the endpoint and credentials
-> to the scoped R2 key, then require `/hc` and `/ready` to return 200, publish a test update, and download/install it
+> calling the OTA bucket migrated. If it still points at Tigris, complete the verified copy below before rotating any
+> Railway credential. Then require `/hc` and `/ready` to return 200, publish a test update, and download/install it
 > from a production-configured client. See `docs/cloudflare.md` → **R2 buckets**; no live provider is inferred from
 > the declaration alone.
 
+### Tigris → R2 object-copy gate
+
+`.github/workflows/migrate-ota-storage.yml` is the one-shot, manual copy gate. It reads the live source endpoint,
+bucket and S3 credentials directly from the `boardsesh-ota-v3` Railway variables with the Production
+`RAILWAY_TOKEN`; it classifies the endpoint as Tigris or R2 without logging it and immediately masks the retrieved
+access keys. The workflow sends no Railway mutation and never changes the live reader. Its S3 client imports no
+delete operation, so neither provider loses an object.
+
+Before running it, add these bucket-scoped Production secrets for the private `boardsesh-ota-v3` R2 bucket:
+
+- `OTA_R2_AWS_ENDPOINT_URL`
+- `OTA_R2_AWS_ACCESS_KEY_ID`
+- `OTA_R2_AWS_SECRET_ACCESS_KEY`
+
+The CLI keeps its default of four concurrent objects. Use `--concurrency 32` to
+increase copy and every full SHA-256 verification pass together; accepted values
+are integers from 1 to 64. The migration workflow defaults its `concurrency`
+input to 32 and validates the same bounds before accessing providers. Each copy
+worker stages one source object on disk, so reserve scratch space for up to the
+selected number of simultaneous objects. Verification streams directly from providers
+and does not stage objects on disk. Reduce the limit if provider throttling
+or disk pressure appears; full integrity and source-stability checks remain required.
+Transient upload failures receive at most four whole-object attempts, reopening the staged
+file and requiring its original Content-MD5 on every attempt. Authentication, checksum,
+local-file and unknown errors stop immediately. A rerun hashes existing destination objects
+before skipping them; it never deletes the completed prefix or skips final full verification.
+
+Run the gate in this order:
+
+1. Dispatch **Migrate OTA Storage to R2** on `main` with `mode=inventory`. It must classify the live endpoint as
+   Tigris and list both complete buckets through every pagination token. An unknown endpoint or an R2 live endpoint
+   stops the Tigris-copy workflow without writing.
+2. Freeze every OTA writer: disable `production-deploy.yml` first, then disable
+   `mobile-ota-production.yml`, `mobile-ota-backport.yml`, `mobile-ota-preview.yml`,
+   `mobile-ota-preview-prompt.yml` and `mobile-ota-preview-sweep.yml`. The production deploy workflow can call the
+   production OTA publisher through `workflow_call` and promote its staged update; GitHub records that run under
+   the caller, so the callee's run list alone misses it. Disabling it also pauses web and backend production deploys
+   until it is re-enabled. Confirm all six are idle with
+   `gh run list --workflow <file> --status <status>` for `requested`, `waiting`, `pending`, `queued` and `in_progress`.
+   The migration workflow first verifies all six are `disabled_manually`, then refuses copy/verify while any has a
+   nonterminal run. Keep all six disabled through copy, final verification and Railway credential rotation; their
+   normal concurrency groups do not exclude one another.
+3. Dispatch the same workflow with `mode=copy` and `ota_publishes_frozen=true`. It refuses destination-only keys
+   before its first PUT. Existing same-key objects must match the source by full size, SHA-256 and portable metadata,
+   or the run stops without replacing them. Missing objects use create-only conditional PUTs; if another writer creates
+   one first, the workflow accepts it only after a full fingerprint match. Portable HTTP and user metadata are
+   preserved, and no objects are deleted. S3 tags, omitted metadata or object-lock/website metadata stop the run
+   because R2 cannot preserve them faithfully.
+4. Require the copy's built-in verification to pass, then dispatch `mode=verify` with the freeze confirmation for a
+   separate final read. Both runs require an exact key set and sizes, full-stream SHA-256 equality for every object,
+   metadata equality, a stable source listing, and a second full Tigris hash pass after destination verification. A
+   same-size source overwrite during the gate therefore fails even though its listing size did not change.
+5. Only after that final green verification, replace Railway's `AWS_BASE_ENDPOINT`, `AWS_ACCESS_KEY_ID` and
+   `AWS_SECRET_ACCESS_KEY` together with the scoped R2 values. Do not change `S3_BUCKET_NAME`. This repository does
+   not perform that credential rotation.
+6. Verify `/hc` and `/ready`, publish one test update, and install/download it from a production-configured client
+   before unfreezing OTA writers. Re-enable the five direct publisher files first, then re-enable
+   `production-deploy.yml` with `gh workflow enable <file>` so its caller resumes only after its OTA callee is
+   enabled. Keep the Tigris bucket and its credentials intact as the rollback source. If the migration is abandoned
+   before rotation, re-enable the same five direct publishers, then `production-deploy.yml`; no reader or source
+   object changed.
+
+**Rollback after new R2 publishes:** restoring the endpoint alone strands updates added to the shared database
+after cutover. Freeze and drain the same six workflows, manual publishers, server cleanup and lifecycle mutations.
+Retain the previous Tigris credentials securely and supply `OTA_LEGACY_AWS_ENDPOINT_URL`,
+`OTA_LEGACY_AWS_ACCESS_KEY_ID`, `OTA_LEGACY_AWS_SECRET_ACCESS_KEY`, and optionally `OTA_LEGACY_AWS_REGION`
+and `OTA_LEGACY_S3_FORCE_PATH_STYLE`. Run `vp run storage:migrate-ota -- --reverse --apply`, then
+`vp run storage:migrate-ota -- --reverse --verify-only`. Reverse mode requires Railway to still point at R2,
+reads its current credentials, and creates only missing Tigris keys using conditional PUTs. Existing same-key objects
+must match by full size, SHA-256 and metadata; a mismatch stops the copy without replacement, and a concurrent create
+is accepted only after the same full match. Extra archived Tigris objects are retained; forward migration still
+requires exact key sets. The final verification checks source stability. Only after verification passes, restore the
+old Railway endpoint and credentials together. Verify old and new update delivery before restoring writers. Neither
+direction changes Railway or deletes storage objects.
+
+Keep all mutable maintenance frozen through final verification and credential rotation, including any active bucket
+lifecycle rules. Record the prior policies and restore them unchanged after acceptance; do not introduce new expiry
+rules during the migration. Prove manifests actually deliver R2 assets after rotation, including representative old
+runtimes and a newly published update, rather than passing on cached Tigris URLs. Preserve the shared Redis cache
+configuration and signing identity.
+
 1. **Storage bucket** — an empty S3-compatible bucket `boardsesh-ota-v3` plus a scoped key. The original setup used
    Tigris (`t3.storage.dev`, region `auto`); the migration target is the private R2 bucket above. Keep it portable
-   (see the object-storage rules in `CLAUDE.md`). Preflight put/get/CopyObject/delete (retry with
-   `AWS_S3_FORCE_PATH_STYLE=true` if CopyObject fails).
+   (see the object-storage rules in `CLAUDE.md`). For a brand-new replacement only, preflight
+   put/get/CopyObject with a disposable key, then delete that test key only (retry with
+   `AWS_S3_FORCE_PATH_STYLE=true` if CopyObject fails). The migration workflow above uses real inventory and never
+   creates a test key or deletes any object.
 2. **Postgres** — a dedicated Railway Postgres. **Create the database before first boot** (the
    server runs migrations but never creates the DB itself, else SQLSTATE `3D000`), and use an
    internal URL with explicit `sslmode` in `DB_URL`. **Enable backups + uptime monitoring and keep a

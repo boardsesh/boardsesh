@@ -9,7 +9,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
-import { desiredR2Buckets } from '../infra/cloudflare/config';
+import { ASSETS_STAGING_HOSTNAME, desiredR2Buckets } from '../infra/cloudflare/config';
 import { STATIC_ASSET_OBJECT_KEYS, STATIC_ASSET_ORIGIN } from '../packages/shared/static-assets/src';
 import type { StaticAssetManifest, StaticAssetRecord } from '../packages/shared/static-assets/src';
 import {
@@ -262,11 +262,8 @@ export function resolvePublicStaticAssetOrigin(environment: Record<string, strin
 /**
  * Whether the public origin is expected to be served by Cloudflare.
  *
- * Derived from the desired R2 state rather than an env knob, so it is true for
- * exactly the hostnames this repo has declared as R2 custom domains — and turns
- * itself on for `assets.boardsesh.com` in the same commit that moves the bucket
- * onto it. Today that hostname is still the DNS-only Tigris CNAME, where there
- * is no `cf-ray` and asserting one would break every production publish.
+ * Desired R2 custom domains and the explicitly retained staging hostname must
+ * prove Cloudflare delivery during publication and migration verification.
  */
 export function expectsCloudflareOrigin(origin: string): boolean {
   const hostname = (() => {
@@ -276,22 +273,27 @@ export function expectsCloudflareOrigin(origin: string): boolean {
       return '';
     }
   })();
-  return desiredR2Buckets.some((bucket) => bucket.customDomain === hostname);
+  return hostname === ASSETS_STAGING_HOSTNAME || desiredR2Buckets.some((bucket) => bucket.customDomain === hostname);
 }
 
-async function validatePublicAsset(asset: StaticAssetRecord, beforeRequest: RequestStartLimiter): Promise<void> {
-  const origin = resolvePublicStaticAssetOrigin();
+export async function validatePublicAsset(
+  asset: StaticAssetRecord,
+  beforeRequest: RequestStartLimiter,
+  fetchImpl: typeof fetch = fetch,
+  origin: string = resolvePublicStaticAssetOrigin(),
+): Promise<void> {
   const url = `${origin}/${asset.objectKey}`;
   let lastError: unknown;
   for (let attempt = 1; attempt <= PUBLIC_VALIDATION_ATTEMPTS; attempt += 1) {
     try {
       await beforeRequest();
-      const response = await fetch(url, {
+      const signal = AbortSignal.timeout(PUBLIC_VALIDATION_REQUEST_TIMEOUT_MS);
+      const response = await fetchImpl(url, {
         headers: { Origin: 'https://www.boardsesh.com' },
         // A half-open CDN connection must not hold the serialized production
         // deployment indefinitely. Each aborted attempt follows the same
         // bounded retry path as other transient network failures.
-        signal: AbortSignal.timeout(PUBLIC_VALIDATION_REQUEST_TIMEOUT_MS),
+        signal,
       });
       if (!response.ok) {
         const httpError = new Error(`HTTP ${response.status}`);
@@ -299,7 +301,7 @@ async function validatePublicAsset(asset: StaticAssetRecord, beforeRequest: Requ
         throw httpError;
       }
       assertPublicStaticAssetHeaders(asset, response.headers, { expectCloudflare: expectsCloudflareOrigin(origin) });
-      const contents = await readResponseBodyWithinLimit(response, asset.bytes);
+      const contents = await readResponseBodyWithinLimit(response, asset.bytes, signal);
       if (contents.byteLength !== asset.bytes) {
         throw new Error(`Byte-length mismatch: expected ${asset.bytes}, received ${contents.byteLength}`);
       }

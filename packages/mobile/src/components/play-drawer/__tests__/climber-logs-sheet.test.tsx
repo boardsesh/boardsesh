@@ -920,9 +920,36 @@ describe('ClimberLogsSheet, everyone else', () => {
     expect(rowUsers(view)).toEqual(['dave', 'lena', 'omar']);
   });
 
-  it('waits for the followed-climbers answer before asking', () => {
+  it.each([
+    ['who follows people', ['mika']],
+    ['whose follow snapshot is missing', null],
+  ])('waits for the followed-climbers answer before asking, for a viewer %s', (_label, userIds) => {
+    followedAuthors.userIds = userIds;
     logsQuery.state = { status: 'pending', fetchStatus: 'fetching', isLoading: true, data: undefined };
     renderSheet();
+    expect(everyoneQuery.calls.at(-1)?.enabled).toBe(false);
+  });
+
+  it('asks at once for a viewer who follows nobody, with what the empty answer would have said', () => {
+    followedAuthors.userIds = [];
+    logsQuery.state = { status: 'pending', fetchStatus: 'fetching', isLoading: true, data: undefined };
+    setEveryone([[log({ userId: 'dave', comment: 'beta' })]]);
+    const view = renderSheet();
+
+    // Every angle, followed climbers left out: unchanged once the answer lands,
+    // so the request is not thrown away.
+    expect(everyoneQuery.calls.at(-1)).toMatchObject({ enabled: true, angle: undefined, excludeFollowed: true });
+    expect(rowUsers(view)).toEqual(['dave']);
+  });
+
+  it.each([
+    ['closed', () => undefined, { visible: false }],
+    ['with no signal', () => (connectivity.snapshot = { effectiveOffline: true, reason: 'device_offline' }), {}],
+  ])('still asks for nothing for a viewer who follows nobody: %s', (_label, arrange, props) => {
+    followedAuthors.userIds = [];
+    logsQuery.state = { status: 'pending', fetchStatus: 'fetching', isLoading: true, data: undefined };
+    arrange();
+    renderSheet(props);
     expect(everyoneQuery.calls.at(-1)?.enabled).toBe(false);
   });
 

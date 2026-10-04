@@ -465,7 +465,11 @@ export function PlayDrawer({
   // The dismiss reads these so it can stand down while a horizontal swipe owns the
   // gesture (offset non-zero) or a fling is still settling (carousel inert) — that's
   // when an accidental downward drift would otherwise yank the drawer down.
-  const { gesture: dismissGesture, translateY: dismissTranslateY } = useDrawerDismissGesture({
+  const {
+    gesture: dismissGesture,
+    translateY: dismissTranslateY,
+    gestureRef: dismissGestureRef,
+  } = useDrawerDismissGesture({
     onDismiss: handleDismiss,
     swipeDismiss,
     scrollYSV,
@@ -2031,6 +2035,7 @@ export function PlayDrawer({
                             swipeTranslateX={swipeTranslateX}
                             swipeIsAnimating={swipeIsAnimating}
                             underOverlay={heatmap.overlay}
+                            dismissRef={dismissGestureRef}
                           />
                         ) : (
                           <BoardRenderUnavailable

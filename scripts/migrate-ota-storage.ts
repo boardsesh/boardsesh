@@ -1,0 +1,769 @@
+/// <reference types="node" />
+
+/**
+ * Copy the live XPRem V3 bucket from Tigris to its private Cloudflare R2 bucket.
+ *
+ * Source credentials are read from the production Railway service at runtime.
+ * Destination credentials come from OTA_R2_* environment variables. This tool
+ * never mutates Railway and imports no S3 delete operation.
+ *
+ * Usage:
+ *   vp run storage:migrate-ota                 # inventory only
+ *   vp run storage:migrate-ota -- --apply      # idempotent copy, then verify
+ *   vp run storage:migrate-ota -- --verify-only
+ */
+
+import {
+  GetObjectCommand,
+  GetObjectTaggingCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+  type GetObjectCommandOutput,
+} from '@aws-sdk/client-s3';
+import { createHash, randomInt, randomUUID } from 'node:crypto';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { setTimeout as delay } from 'node:timers/promises';
+import { OTA_SERVICE_NAME, RAILWAY_ENVIRONMENT_NAME } from '../infra/railway/config';
+import {
+  assertCopyPreflight,
+  classifyStorageEndpoint,
+  diffInventories,
+  expectedDestinationMetadata,
+  fingerprintsMatch,
+  verifyObjectStores,
+  type ObjectFingerprint,
+  type ObjectInventoryEntry,
+  type ObjectMetadata,
+  type InventoryPolicy,
+  type StorageProvider,
+} from './lib/ota-storage-migration';
+
+const RAILWAY_API = 'https://backboard.railway.com/graphql/v2';
+const RAILWAY_TIMEOUT_MS = 30_000;
+const OTA_BUCKET_NAME = 'boardsesh-ota-v3';
+const MAX_REPORTED_PROBLEMS = 20;
+const DEFAULT_CONCURRENCY = 4;
+const MAX_PUT_ATTEMPTS = 4;
+
+type MigrationMode = 'inventory' | 'copy' | 'verify';
+type AuthScheme = 'project' | 'account';
+type BucketClient = Readonly<{
+  client: S3Client;
+  bucket: string;
+  label: 'source' | 'destination';
+  provider: StorageProvider;
+}>;
+
+interface GraphQLResponse<TData> {
+  data?: TData;
+  errors?: { message: string }[];
+}
+
+interface RailwayProjectResponse {
+  project: {
+    environments: { edges: { node: { id: string; name: string } }[] };
+    services: { edges: { node: { id: string; name: string } }[] };
+  };
+}
+
+const PROJECT_QUERY = `
+  query OtaStorageMigrationProject($projectId: String!) {
+    project(id: $projectId) {
+      environments { edges { node { id name } } }
+      services { edges { node { id name } } }
+    }
+  }
+`;
+
+const VARIABLES_QUERY = `
+  query OtaStorageMigrationVariables($projectId: String!, $environmentId: String!, $serviceId: String!) {
+    variables(projectId: $projectId, environmentId: $environmentId, serviceId: $serviceId)
+  }
+`;
+
+function readEnv(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  return value ? value : undefined;
+}
+
+function requireEnv(name: string): string {
+  const value = readEnv(name);
+  if (!value) throw new Error(`Missing required environment variable: ${name}`);
+  return value;
+}
+
+function authHeaders(scheme: AuthScheme, token: string): Record<string, string> {
+  return scheme === 'project' ? { 'Project-Access-Token': token } : { Authorization: `Bearer ${token}` };
+}
+
+function parseEnvelope<TData>(rawBody: string): GraphQLResponse<TData> | null {
+  try {
+    return rawBody ? (JSON.parse(rawBody) as GraphQLResponse<TData>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function isAuthorizationFailure<TData>(response: Response, envelope: GraphQLResponse<TData> | null): boolean {
+  return (
+    response.status === 401 ||
+    response.status === 403 ||
+    envelope?.errors?.some(({ message }) => /^Not Authorized\.?$/i.test(message.trim())) === true
+  );
+}
+
+async function postRailway(token: string, scheme: AuthScheme, body: string): Promise<Response> {
+  return fetch(RAILWAY_API, {
+    method: 'POST',
+    headers: { ...authHeaders(scheme, token), 'Content-Type': 'application/json' },
+    body,
+    signal: AbortSignal.timeout(RAILWAY_TIMEOUT_MS),
+  });
+}
+
+async function railwayRequest<TData>(token: string, query: string, variables: Record<string, unknown>): Promise<TData> {
+  const requestBody = JSON.stringify({ query, variables });
+  let response = await postRailway(token, 'project', requestBody);
+  let rawBody = await response.text();
+  let envelope = parseEnvelope<TData>(rawBody);
+
+  if (isAuthorizationFailure(response, envelope)) {
+    response = await postRailway(token, 'account', requestBody);
+    rawBody = await response.text();
+    envelope = parseEnvelope<TData>(rawBody);
+  }
+
+  if (!response.ok || !envelope || envelope.errors?.length) {
+    const messages = envelope?.errors?.map(({ message }) => message).join('; ');
+    throw new Error(`Railway API request failed (HTTP ${response.status})${messages ? `: ${messages}` : ''}.`);
+  }
+  if (!envelope.data) throw new Error('Railway API returned no data.');
+  return envelope.data;
+}
+
+/** Read exactly one service's variables. No Railway mutation exists in this module. */
+export async function fetchRailwayServiceVariables(
+  token: string,
+  projectId: string,
+  environmentName: string,
+  serviceName: string,
+): Promise<Record<string, string>> {
+  const project = await railwayRequest<RailwayProjectResponse>(token, PROJECT_QUERY, { projectId });
+  const environment = project.project.environments.edges.find(({ node }) => node.name === environmentName)?.node;
+  const service = project.project.services.edges.find(({ node }) => node.name === serviceName)?.node;
+  if (!environment) throw new Error(`Railway environment not found: ${environmentName}`);
+  if (!service) throw new Error(`Railway service not found: ${serviceName}`);
+
+  const result = await railwayRequest<{ variables: Record<string, string> }>(token, VARIABLES_QUERY, {
+    projectId,
+    environmentId: environment.id,
+    serviceId: service.id,
+  });
+  return result.variables ?? {};
+}
+
+function requireRailwayVariable(variables: Record<string, string>, name: string): string {
+  const value = variables[name]?.trim();
+  if (!value) throw new Error(`The Railway OTA service is missing required variable ${name}.`);
+  return value;
+}
+
+function maskForGitHubActions(value: string): void {
+  if (process.env.GITHUB_ACTIONS === 'true') console.log(`::add-mask::${value}`);
+}
+
+export function parseMigrationOptions(argv: readonly string[]): {
+  mode: MigrationMode;
+  reverse: boolean;
+  concurrency: number;
+} {
+  const migrationArguments = argv[0] === '--' ? argv.slice(1) : argv;
+  const flags = new Set<string>();
+  let concurrency = DEFAULT_CONCURRENCY;
+  for (let index = 0; index < migrationArguments.length; index += 1) {
+    const argument = migrationArguments[index];
+    if (!['--apply', '--verify-only', '--reverse', '--concurrency'].includes(argument))
+      throw new Error(`Unknown argument: ${argument}`);
+    if (flags.has(argument)) throw new Error('Migration flags must not be repeated.');
+    flags.add(argument);
+    if (argument === '--concurrency') {
+      const requested = migrationArguments[index + 1];
+      if (!requested || !/^[1-9]\d*$/.test(requested) || Number(requested) > 64)
+        throw new Error('--concurrency must be an integer from 1 to 64.');
+      concurrency = Number(requested);
+      index += 1;
+    }
+  }
+  if (flags.has('--apply') && flags.has('--verify-only'))
+    throw new Error('--apply and --verify-only are mutually exclusive.');
+  return {
+    mode: flags.has('--apply') ? 'copy' : flags.has('--verify-only') ? 'verify' : 'inventory',
+    reverse: flags.has('--reverse'),
+    concurrency,
+  };
+}
+
+function createBucketClient(
+  label: BucketClient['label'],
+  endpoint: string,
+  region: string,
+  accessKeyId: string,
+  secretAccessKey: string,
+  forcePathStyle: boolean,
+): BucketClient {
+  return {
+    label,
+    provider: classifyStorageEndpoint(endpoint),
+    bucket: OTA_BUCKET_NAME,
+    client: new S3Client({
+      endpoint,
+      region,
+      credentials: { accessKeyId, secretAccessKey },
+      forcePathStyle,
+      maxAttempts: 5,
+      retryMode: 'adaptive',
+    }),
+  };
+}
+
+export async function listAllObjects(target: BucketClient): Promise<ObjectInventoryEntry[]> {
+  const objects: ObjectInventoryEntry[] = [];
+  const seenKeys = new Set<string>();
+  const seenTokens = new Set<string>();
+  let continuationToken: string | undefined;
+  do {
+    const response = await target.client.send(
+      new ListObjectsV2Command({ Bucket: target.bucket, ContinuationToken: continuationToken }),
+    );
+    for (const object of response.Contents ?? []) {
+      if (!object.Key || object.Size === undefined || !Number.isSafeInteger(object.Size) || object.Size < 0)
+        throw new Error(`${target.label} listing contains an incomplete object.`);
+      if (seenKeys.has(object.Key)) throw new Error(`${target.label} listing contains a duplicate object key.`);
+      seenKeys.add(object.Key);
+      objects.push({ key: object.Key, size: object.Size });
+    }
+    if (response.IsTruncated && !response.NextContinuationToken) {
+      throw new Error(`${target.label} listing was truncated without a continuation token.`);
+    }
+    continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+    if (continuationToken) {
+      if (seenTokens.has(continuationToken)) throw new Error(`${target.label} listing repeated a continuation token.`);
+      seenTokens.add(continuationToken);
+    }
+  } while (continuationToken);
+
+  objects.sort((left, right) => left.key.localeCompare(right.key));
+  return objects;
+}
+
+function normalizeMetadata(
+  response: GetObjectCommandOutput,
+  key: string,
+  label: BucketClient['label'],
+): ObjectMetadata {
+  if ((response.MissingMeta ?? 0) > 0) {
+    throw new Error(`${label} metadata was omitted by the S3 API and cannot be verified: ${key}`);
+  }
+  if (
+    response.WebsiteRedirectLocation ||
+    response.ObjectLockMode ||
+    response.ObjectLockRetainUntilDate ||
+    response.ObjectLockLegalHoldStatus
+  ) {
+    throw new Error(`${label} object uses metadata Cloudflare R2 cannot preserve: ${key}`);
+  }
+  return {
+    contentType: response.ContentType ?? null,
+    cacheControl: response.CacheControl ?? null,
+    contentDisposition: response.ContentDisposition ?? null,
+    contentEncoding: response.ContentEncoding ?? null,
+    contentLanguage: response.ContentLanguage ?? null,
+    expires: response.Expires?.toISOString() ?? null,
+    userMetadata: Object.fromEntries(
+      Object.entries(response.Metadata ?? {}).map(([key, value]) => [key.toLowerCase(), value ?? '']),
+    ),
+  };
+}
+
+function readableBody(response: GetObjectCommandOutput, key: string): Readable {
+  if (!response.Body) throw new Error(`Object has no body: ${key}`);
+  return response.Body as Readable;
+}
+
+async function fingerprintObject(target: BucketClient, key: string): Promise<ObjectFingerprint> {
+  if (target.label === 'source') await assertSourceHasNoTags(target, key);
+  const response = await target.client.send(new GetObjectCommand({ Bucket: target.bucket, Key: key }));
+  const hash = createHash('sha256');
+  let size = 0;
+  for await (const rawChunk of readableBody(response, key)) {
+    const chunk = Buffer.isBuffer(rawChunk) ? rawChunk : Buffer.from(rawChunk as ArrayBuffer);
+    hash.update(chunk);
+    size += chunk.length;
+  }
+  if (response.ContentLength !== undefined && response.ContentLength !== size) {
+    throw new Error(`${target.label} object changed or truncated while reading: ${key}`);
+  }
+  return { size, sha256: hash.digest('hex'), metadata: normalizeMetadata(response, key, target.label) };
+}
+
+async function assertSourceHasNoTags(source: BucketClient, key: string): Promise<void> {
+  // R2 cannot store S3 tags and does not implement GetObjectTagging. Its
+  // reverse-copy source is therefore tag-free; Tigris must still be checked.
+  if (source.provider === 'r2') return;
+  const response = await source.client.send(new GetObjectTaggingCommand({ Bucket: source.bucket, Key: key }));
+  if ((response.TagSet?.length ?? 0) > 0) {
+    throw new Error(`Source object has S3 tags Cloudflare R2 cannot preserve: ${key}`);
+  }
+}
+
+type TemporarySource = Readonly<{ path: string; contentMd5: string; fingerprint: ObjectFingerprint }>;
+
+async function downloadSourceToFile(source: BucketClient, key: string, directory: string): Promise<TemporarySource> {
+  await assertSourceHasNoTags(source, key);
+  const response = await source.client.send(new GetObjectCommand({ Bucket: source.bucket, Key: key }));
+  const path = join(directory, randomUUID());
+  const hash = createHash('sha256');
+  const md5 = createHash('md5');
+  let size = 0;
+  const meter = new Transform({
+    transform(rawChunk: Buffer, _encoding, callback) {
+      const chunk = Buffer.isBuffer(rawChunk) ? rawChunk : Buffer.from(rawChunk);
+      hash.update(chunk);
+      md5.update(chunk);
+      size += chunk.length;
+      callback(null, chunk);
+    },
+  });
+  await pipeline(readableBody(response, key), meter, createWriteStream(path, { flags: 'wx' }));
+  const file = await stat(path);
+  if (file.size !== size || (response.ContentLength !== undefined && response.ContentLength !== size)) {
+    throw new Error(`Source object changed or truncated while staging: ${key}`);
+  }
+  return {
+    path,
+    contentMd5: md5.digest('base64'),
+    fingerprint: { size, sha256: hash.digest('hex'), metadata: normalizeMetadata(response, key, source.label) },
+  };
+}
+
+function isTransientPutError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { name?: string; code?: string; $metadata?: { httpStatusCode?: number } };
+  const status = candidate.$metadata?.httpStatusCode;
+  // A concrete client response wins over a misleading transport error name.
+  if (status !== undefined) return [408, 429, 500, 502, 503, 504].includes(status);
+  return [
+    'InternalError',
+    'ServiceUnavailable',
+    'SlowDown',
+    'RequestTimeout',
+    'TimeoutError',
+    'ECONNRESET',
+    'ECONNABORTED',
+    'EPIPE',
+    'ETIMEDOUT',
+    'ECONNREFUSED',
+    'ENETUNREACH',
+    'EAI_AGAIN',
+  ].includes(candidate.code ?? candidate.name ?? '');
+}
+
+async function putDestination(destination: BucketClient, key: string, source: TemporarySource): Promise<void> {
+  for (let attempt = 1; attempt <= MAX_PUT_ATTEMPTS; attempt += 1) {
+    const file = await stat(source.path);
+    if (file.size !== source.fingerprint.size) throw new Error(`Staged object changed before upload: ${key}`);
+    // Reopen the staged bytes with their original checksum and create-only condition.
+    // The attempt owns and awaits stream closure before another attempt can start.
+    try {
+      await putDestinationAttempt(destination, key, source);
+      return;
+    } catch (error) {
+      if (attempt === MAX_PUT_ATTEMPTS || !isTransientPutError(error)) throw error;
+    }
+    await delay((250 * 2 ** (attempt - 1) * randomInt(75, 126)) / 100);
+  }
+}
+
+async function putDestinationAttempt(destination: BucketClient, key: string, source: TemporarySource): Promise<void> {
+  const metadata = expectedDestinationMetadata(source.fingerprint);
+  // A missing or unreadable staged file remains fatal, including an open race after stat.
+  const body = createReadStream(source.path);
+  let bodyError: Error | undefined;
+  const observeBodyError = (error: Error) => {
+    bodyError = error;
+  };
+  body.on('error', observeBodyError);
+
+  let sendFailed = false;
+  let sendError: unknown;
+  try {
+    await destination.client.send(
+      new PutObjectCommand({
+        Bucket: destination.bucket,
+        Key: key,
+        IfNoneMatch: '*',
+        Body: body,
+        ContentLength: source.fingerprint.size,
+        ContentMD5: source.contentMd5,
+        ...(metadata.contentType && { ContentType: metadata.contentType }),
+        ...(metadata.cacheControl && { CacheControl: metadata.cacheControl }),
+        ...(metadata.contentDisposition && { ContentDisposition: metadata.contentDisposition }),
+        ...(metadata.contentEncoding && { ContentEncoding: metadata.contentEncoding }),
+        ...(metadata.contentLanguage && { ContentLanguage: metadata.contentLanguage }),
+        ...(metadata.expires && { Expires: new Date(metadata.expires) }),
+        Metadata: { ...metadata.userMetadata },
+      }),
+    );
+  } catch (error) {
+    sendFailed = true;
+    sendError = error;
+  } finally {
+    if (!body.closed) {
+      // Some S3 failures, including a conditional-create 412, arrive before the SDK
+      // consumes the request body. This function owns the staged file stream and
+      // closes it before the caller removes the staged path.
+      const closed = new Promise<void>((resolve) => body.once('close', resolve));
+      body.destroy();
+      await closed;
+    }
+    body.removeListener('error', observeBodyError);
+  }
+
+  // Keep the provider's original failure primary; surface a read failure only when
+  // the client otherwise reported success, rather than leaving an unhandled error.
+  if (sendFailed) throw sendError;
+  if (bodyError) throw bodyError;
+}
+
+export function isNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { name?: string; $metadata?: { httpStatusCode?: number } };
+  return candidate.name === 'NoSuchKey' || candidate.name === 'NotFound' || candidate.$metadata?.httpStatusCode === 404;
+}
+
+function isConditionalWriteCollision(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { $metadata?: { httpStatusCode?: number } };
+  return candidate.$metadata?.httpStatusCode === 412;
+}
+
+async function preflightExistingDestinations(
+  source: BucketClient,
+  destination: BucketClient,
+  sourceInventory: readonly ObjectInventoryEntry[],
+  destinationInventory: readonly ObjectInventoryEntry[],
+  concurrency: number,
+): Promise<ReadonlySet<string>> {
+  const sourceByKey = new Map(sourceInventory.map((object) => [object.key, object]));
+  const existingKeys = destinationInventory.filter((object) => sourceByKey.has(object.key));
+  for (const destinationObject of existingKeys) {
+    const sourceObject = sourceByKey.get(destinationObject.key);
+    if (sourceObject && sourceObject.size !== destinationObject.size) {
+      throw new Error(`Destination object conflicts with source size; refusing to overwrite: ${destinationObject.key}`);
+    }
+  }
+
+  const verifiedExistingKeys = new Set<string>();
+  let nextIndex = 0;
+  let stopped = false;
+  let firstError: unknown;
+  const workers = Array.from({ length: Math.min(concurrency, existingKeys.length) }, async () => {
+    while (!stopped && nextIndex < existingKeys.length) {
+      const { key } = existingKeys[nextIndex];
+      nextIndex += 1;
+      const [sourceResult, destinationResult] = await Promise.allSettled([
+        fingerprintObject(source, key),
+        fingerprintObject(destination, key),
+      ]);
+      if (sourceResult.status === 'rejected') {
+        stopped = true;
+        firstError ??= sourceResult.reason;
+        continue;
+      }
+      if (destinationResult.status === 'rejected') {
+        if (isNotFoundError(destinationResult.reason)) continue;
+        stopped = true;
+        firstError ??= destinationResult.reason;
+        continue;
+      }
+      if (!fingerprintsMatch(sourceResult.value, destinationResult.value)) {
+        stopped = true;
+        firstError ??= new Error(
+          `Destination object conflicts with source content or metadata; refusing to overwrite: ${key}`,
+        );
+        continue;
+      }
+      verifiedExistingKeys.add(key);
+    }
+  });
+  await Promise.all(workers);
+  if (firstError) throw firstError;
+  return verifiedExistingKeys;
+}
+
+async function copyAll(
+  source: BucketClient,
+  destination: BucketClient,
+  sourceInventory: readonly ObjectInventoryEntry[],
+  destinationInventory: readonly ObjectInventoryEntry[],
+  inventoryPolicy: InventoryPolicy = 'exact',
+  concurrency = DEFAULT_CONCURRENCY,
+): Promise<{ copied: number; skipped: number }> {
+  assertCopyPreflight(sourceInventory, destinationInventory, inventoryPolicy);
+  const verifiedExistingKeys = await preflightExistingDestinations(
+    source,
+    destination,
+    sourceInventory,
+    destinationInventory,
+    concurrency,
+  );
+  const directory = await mkdtemp(join(tmpdir(), 'boardsesh-ota-r2-'));
+  let copied = 0;
+  let skipped = 0;
+  let completed = 0;
+  let nextIndex = 0;
+  let stopped = false;
+  let firstError: unknown;
+  try {
+    const workers = Array.from({ length: Math.min(concurrency, sourceInventory.length) }, async () => {
+      while (!stopped && nextIndex < sourceInventory.length) {
+        const object = sourceInventory[nextIndex];
+        nextIndex += 1;
+        if (verifiedExistingKeys.has(object.key)) {
+          skipped += 1;
+          completed += 1;
+          if (completed % 100 === 0 || completed === sourceInventory.length) {
+            console.log(
+              `Processed ${completed}/${sourceInventory.length} objects (${copied} copied, ${skipped} unchanged).`,
+            );
+          }
+          continue;
+        }
+        try {
+          const staged = await downloadSourceToFile(source, object.key, directory);
+          try {
+            if (stopped) continue;
+            try {
+              await putDestination(destination, object.key, staged);
+              copied += 1;
+            } catch (error) {
+              // A 412 is the S3 conditional-create collision. Verify the complete
+              // winner; all other provider failures remain fail-closed.
+              if (!isConditionalWriteCollision(error)) throw error;
+              const winner = await fingerprintObject(destination, object.key);
+              if (!fingerprintsMatch(staged.fingerprint, winner)) {
+                throw new Error(
+                  `Destination object created during copy conflicts with source content or metadata: ${object.key}`,
+                );
+              }
+              skipped += 1;
+            }
+          } finally {
+            await rm(staged.path, { force: true });
+          }
+          completed += 1;
+          if (completed % 100 === 0 || completed === sourceInventory.length) {
+            console.log(
+              `Processed ${completed}/${sourceInventory.length} objects (${copied} copied, ${skipped} unchanged).`,
+            );
+          }
+        } catch (error) {
+          stopped = true;
+          firstError ??= error;
+        }
+      }
+    });
+    await Promise.all(workers);
+    if (firstError) throw firstError;
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+  return { copied, skipped };
+}
+
+function inventoryBytes(objects: readonly ObjectInventoryEntry[]): number {
+  return objects.reduce((total, object) => total + object.size, 0);
+}
+
+async function loadFingerprintMap(
+  target: BucketClient,
+  inventory: readonly ObjectInventoryEntry[],
+  concurrency: number,
+): Promise<Map<string, ObjectFingerprint>> {
+  const fingerprints = new Map<string, ObjectFingerprint>();
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(concurrency, inventory.length) }, async () => {
+    while (nextIndex < inventory.length) {
+      const key = inventory[nextIndex].key;
+      nextIndex += 1;
+      fingerprints.set(key, await fingerprintObject(target, key));
+    }
+  });
+  await Promise.all(workers);
+  return fingerprints;
+}
+
+function reportInventory(source: readonly ObjectInventoryEntry[], destination: readonly ObjectInventoryEntry[]): void {
+  const difference = diffInventories(source, destination);
+  console.log(`Source inventory: ${source.length} objects, ${inventoryBytes(source)} bytes.`);
+  console.log(`Destination inventory: ${destination.length} objects, ${inventoryBytes(destination)} bytes.`);
+  console.log(
+    `Inventory differences: ${difference.missing.length} missing, ${difference.extra.length} extra, ` +
+      `${difference.sizeMismatches.length} size mismatches.`,
+  );
+}
+
+async function verify(
+  source: BucketClient,
+  destination: BucketClient,
+  inventoryPolicy: InventoryPolicy,
+  concurrency: number,
+): Promise<void> {
+  const [sourceInventory, destinationInventory] = await Promise.all([
+    listAllObjects(source),
+    listAllObjects(destination),
+  ]);
+  reportInventory(sourceInventory, destinationInventory);
+  const sourceFingerprints = await loadFingerprintMap(source, sourceInventory, concurrency);
+  const problems = [
+    ...(await verifyObjectStores(
+      sourceInventory,
+      destinationInventory,
+      (side, key) => {
+        if (side === 'destination') return fingerprintObject(destination, key);
+        const fingerprint = sourceFingerprints.get(key);
+        if (!fingerprint) throw new Error(`Source fingerprint missing unexpectedly: ${key}`);
+        return Promise.resolve(fingerprint);
+      },
+      concurrency,
+      inventoryPolicy,
+    )),
+  ];
+  const sourceAfterVerification = await listAllObjects(source);
+  const sourceChanged = diffInventories(sourceInventory, sourceAfterVerification);
+  if (sourceChanged.missing.length > 0 || sourceChanged.extra.length > 0 || sourceChanged.sizeMismatches.length > 0) {
+    throw new Error('Source inventory changed during verification. Keep OTA publishing frozen and run again.');
+  }
+  const sourceFingerprintsAfter = await loadFingerprintMap(source, sourceAfterVerification, concurrency);
+  for (const [key, before] of sourceFingerprints) {
+    const after = sourceFingerprintsAfter.get(key);
+    if (!after || !fingerprintsMatch(before, after)) {
+      problems.push({ key, kind: 'content', detail: 'Source object changed during verification' });
+    }
+  }
+  if (problems.length > 0) {
+    console.error(`Verification failed with ${problems.length} problem(s):`);
+    for (const problem of problems.slice(0, MAX_REPORTED_PROBLEMS)) {
+      console.error(`  ${problem.kind}: ${problem.key} (${problem.detail})`);
+    }
+    if (problems.length > MAX_REPORTED_PROBLEMS) {
+      console.error(`  … and ${problems.length - MAX_REPORTED_PROBLEMS} more`);
+    }
+    throw new Error('OTA storage migration verification failed; Railway remains unchanged.');
+  }
+  console.log(`Verified ${sourceInventory.length} source objects by size, SHA-256, and metadata (${inventoryPolicy}).`);
+}
+
+export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
+  const { mode, reverse, concurrency } = parseMigrationOptions(argv);
+  const inventoryPolicy: InventoryPolicy = reverse ? 'preserve-archives' : 'exact';
+  const railwayVariables = await fetchRailwayServiceVariables(
+    requireEnv('RAILWAY_TOKEN'),
+    requireEnv('RAILWAY_PROJECT_ID'),
+    RAILWAY_ENVIRONMENT_NAME,
+    OTA_SERVICE_NAME,
+  );
+
+  const sourceEndpoint = requireRailwayVariable(railwayVariables, 'AWS_BASE_ENDPOINT');
+  const sourceAccessKeyId = requireRailwayVariable(railwayVariables, 'AWS_ACCESS_KEY_ID');
+  const sourceSecretAccessKey = requireRailwayVariable(railwayVariables, 'AWS_SECRET_ACCESS_KEY');
+  maskForGitHubActions(sourceEndpoint);
+  maskForGitHubActions(sourceAccessKeyId);
+  maskForGitHubActions(sourceSecretAccessKey);
+  if (mode !== 'inventory') console.log(`Migration object concurrency: ${concurrency}.`);
+  const sourceProvider = classifyStorageEndpoint(sourceEndpoint);
+  console.log(`Live Railway OTA storage provider: ${sourceProvider}.`);
+  if (!reverse && sourceProvider === 'r2') {
+    throw new Error('Railway already points at R2; refusing a Tigris-to-R2 copy with no Tigris source.');
+  }
+  if (reverse && sourceProvider !== 'r2') {
+    throw new Error('Rollback requires the live Railway OTA endpoint to be R2; refusing to reverse another provider.');
+  }
+  if (!reverse && sourceProvider !== 'tigris') {
+    throw new Error('The live Railway OTA endpoint is not a recognized Tigris endpoint; refusing to guess.');
+  }
+  if (requireRailwayVariable(railwayVariables, 'S3_BUCKET_NAME') !== OTA_BUCKET_NAME) {
+    throw new Error(`The Railway OTA service does not use the expected bucket ${OTA_BUCKET_NAME}.`);
+  }
+  if (requireRailwayVariable(railwayVariables, 'STORAGE_MODE').toLowerCase() !== 's3') {
+    throw new Error('The Railway OTA service is not configured for S3 storage.');
+  }
+
+  const destinationPrefix = reverse ? 'OTA_LEGACY' : 'OTA_R2';
+  const destinationEndpoint = requireEnv(`${destinationPrefix}_AWS_ENDPOINT_URL`);
+  if (classifyStorageEndpoint(destinationEndpoint) !== (reverse ? 'tigris' : 'r2'))
+    throw new Error(`${destinationPrefix}_AWS_ENDPOINT_URL must be the expected HTTPS account endpoint.`);
+
+  const source = createBucketClient(
+    'source',
+    sourceEndpoint,
+    railwayVariables.AWS_REGION?.trim() || 'auto',
+    sourceAccessKeyId,
+    sourceSecretAccessKey,
+    railwayVariables.AWS_S3_FORCE_PATH_STYLE?.trim().toLowerCase() === 'true',
+  );
+  const destination = createBucketClient(
+    'destination',
+    destinationEndpoint,
+    readEnv(`${destinationPrefix}_AWS_REGION`) ?? 'auto',
+    requireEnv(`${destinationPrefix}_AWS_ACCESS_KEY_ID`),
+    requireEnv(`${destinationPrefix}_AWS_SECRET_ACCESS_KEY`),
+    readEnv(`${destinationPrefix}_S3_FORCE_PATH_STYLE`)?.toLowerCase() === 'true',
+  );
+  try {
+    if (mode === 'verify') {
+      await verify(source, destination, inventoryPolicy, concurrency);
+      return;
+    }
+
+    const [sourceInventory, destinationInventory] = await Promise.all([
+      listAllObjects(source),
+      listAllObjects(destination),
+    ]);
+    reportInventory(sourceInventory, destinationInventory);
+    if (mode === 'inventory') {
+      console.log('Inventory only: no objects copied and Railway was not changed.');
+      return;
+    }
+
+    const result = await copyAll(
+      source,
+      destination,
+      sourceInventory,
+      destinationInventory,
+      inventoryPolicy,
+      concurrency,
+    );
+    console.log(
+      `Copy complete: ${result.copied} copied, ${result.skipped} already identical. Verifying from providers …`,
+    );
+    await verify(source, destination, inventoryPolicy, concurrency);
+    console.log(`${reverse ? 'Legacy rollback' : 'R2'} copy verified. Railway remains unchanged.`);
+  } finally {
+    source.client.destroy();
+    destination.client.destroy();
+  }
+}
+
+if (process.argv[1]?.endsWith('migrate-ota-storage.ts')) {
+  main().catch((error: unknown) => {
+    console.error(`[migrate-ota-storage] ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  });
+}

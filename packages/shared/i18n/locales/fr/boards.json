@@ -887,7 +887,6 @@
       "camera": "Prendre une photo",
       "pickAnother": "Choisir une autre photo",
       "next": "Suivant",
-      "libraryDenied": "Boardsesh a besoin de ta photothèque pour ajouter un mur.",
       "cameraDenied": "Boardsesh a besoin de ton appareil photo pour photographier un mur.",
       "failed": "Cette photo ne s'ouvre pas. Essaie-en une autre."
     },
@@ -986,8 +985,7 @@
     "anchors": {
       "title": "Marque les coins",
       "body": "Fais glisser les quatre cercles sur les coins du mur. Ce n'est pas optionnel : c'est ça qui aligne ta nouvelle photo avec chaque bloc déjà posé sur le mur.",
-      "use": "Utiliser ces coins",
-      "notConvex": "Ces coins se croisent. Place-les autour du mur dans l'ordre."
+      "use": "Utiliser ces coins"
     },
     "leave": {
       "title": "Quitter la réinitialisation ?",

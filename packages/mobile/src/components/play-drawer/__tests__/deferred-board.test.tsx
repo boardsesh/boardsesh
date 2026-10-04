@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
+import type { GestureType } from 'react-native-gesture-handler';
 
 // Controllable requestAnimationFrame: capture every scheduled callback + its id
 // so a test can decide whether the deferred frame runs (open commits) or is
@@ -10,6 +11,7 @@ import { createElement, type ReactNode } from 'react';
 const rafTasks: Array<{ id: number; run: FrameRequestCallback }> = [];
 const cancelledIds = new Set<number>();
 let nextRafId = 1;
+const forwardedCarouselProps = vi.hoisted(() => ({ current: null as Record<string, unknown> | null }));
 const requestFrame = vi.fn((callback: FrameRequestCallback): number => {
   const id = nextRafId++;
   rafTasks.push({ id, run: callback });
@@ -28,8 +30,15 @@ vi.mock('react-native', () => ({
 // The carousel is the expensive thing we're deferring — stand it in with a
 // cheap marker that echoes the climb frames so we can assert which climb shows.
 vi.mock('../SwipeBoardCarousel', () => ({
-  SwipeBoardCarousel: ({ currentFrames }: { currentFrames: string }) =>
-    createElement('div', { 'data-testid': 'swipe-board', 'data-frames': currentFrames }),
+  SwipeBoardCarousel: (props: Record<string, unknown>) => {
+    forwardedCarouselProps.current = props;
+    const currentFrames = props.currentFrames;
+    if (typeof currentFrames !== 'string') throw new Error('SwipeBoardCarousel needs climb frames');
+    return createElement('div', {
+      'data-testid': 'swipe-board',
+      'data-frames': currentFrames,
+    });
+  },
 }));
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemGray: '#8E8E93' } }));
 
@@ -67,6 +76,7 @@ describe('DeferredBoard', () => {
     nextRafId = 1;
     requestFrame.mockClear();
     cancelFrame.mockClear();
+    forwardedCarouselProps.current = null;
     vi.stubGlobal('requestAnimationFrame', requestFrame);
     vi.stubGlobal('cancelAnimationFrame', cancelFrame);
   });
@@ -92,6 +102,17 @@ describe('DeferredBoard', () => {
     expect(container.querySelector('[data-testid="deferred-board-placeholder"]')).toBeNull();
     const board = container.querySelector('[data-testid="swipe-board"]');
     expect(board?.getAttribute('data-frames')).toBe('p1145r15');
+  });
+
+  it('forwards the dismiss ref and current-board heatmap through the deferred mount', () => {
+    const dismissRef = { current: undefined as GestureType | undefined };
+    const underOverlay = createElement('div', { 'data-testid': 'heatmap-overlay' });
+    render(createElement(DeferredBoard, { ...baseProps, open: true, dismissRef, underOverlay }));
+
+    flushFrame();
+
+    expect(forwardedCarouselProps.current?.dismissRef).toBe(dismissRef);
+    expect(forwardedCarouselProps.current?.underOverlay).toBe(underOverlay);
   });
 
   it('waits for delayed layout, then defers one frame after the measured commit', () => {

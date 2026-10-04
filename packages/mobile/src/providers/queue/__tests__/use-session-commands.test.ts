@@ -90,10 +90,9 @@ function renderSessionCommands() {
     seedFailedSessionIdRef: { current: null },
     setSessionId: vi.fn(),
     sessionIdRef: { current: null },
+    onSessionContextChanging: vi.fn(),
     dispatch: vi.fn(),
     setPlaylistSuggestionSourceState: vi.fn(),
-    resyncInFlightRef: { current: false },
-    resyncPendingRef: { current: false },
     setActiveBoard: vi.fn(() => Promise.resolve()),
     locallyEndingSessionIdRef: { current: null },
     suppressedRemoteEndSessionIdRef: { current: null },
@@ -167,6 +166,7 @@ describe('useSessionCommands — createSessionWithConfig boardPath', () => {
       expect.objectContaining({ uuid: hostBoard.uuid, hasLeds: false }),
     );
     expect(joiner.params.setSessionId).toHaveBeenCalledWith(sessionToJoin);
+    expect(joiner.params.onSessionContextChanging).toHaveBeenCalledTimes(1);
   });
 });
 

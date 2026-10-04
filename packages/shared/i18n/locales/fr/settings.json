@@ -62,8 +62,7 @@
     "avatar": {
       "upload": "Importer",
       "change": "Modifier",
-      "hintMobile": "Recadrée en carré et compressée automatiquement.",
-      "permissionDenied": "Autorisez l'accès aux photos dans Réglages pour choisir une photo de profil."
+      "hintMobile": "Recadrée en carré et compressée automatiquement."
     },
     "displayName": {
       "label": "Nom affiché",

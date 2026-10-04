@@ -9,10 +9,8 @@
  * What it manages (and nothing else on the zone):
  *   - DNS: the `ws.boardsesh.com` record's proxied flag → true (orange cloud). The
  *     record's target/type/content are NOT managed — the record already exists.
- *     The `assets.boardsesh.com` record is fully managed and created when absent:
- *     CNAME → the Tigris bucket target, automatic TTL, DNS-only, with per-record
- *     CNAME flattening disabled. Zone-wide CNAME flattening fails closed because
- *     it would hide the literal answer Tigris verifies.
+ *     R2 owns the `assets.boardsesh.com` record through its bucket custom domain;
+ *     this tool must not recreate the retained Tigris rollback CNAME.
  *     `www.boardsesh.com` is proxy-only managed like `ws`, so the origin flip
  *     off Vercel is one edit to infra/cloudflare/config.ts (#4655). The apex
  *     `boardsesh.com` is fully managed as a PROXIED, originless A record to the
@@ -80,9 +78,8 @@ const TOKEN_SCOPES = [
   'Zone.Zone Read             — resolve the zone id by name + read zone list',
   'Zone.DNS Edit              — manage DNS records + read zone CNAME-flattening settings',
   'Zone.Cache Rules Edit      — create/update the /og/ cache rule',
-  'Zone.WAF Edit              — create/update the two crawler rules',
-  'Zone.Rate Limit Edit       — create/update the climb-view rate-limit rule (http_ratelimit phase)',
-  'Zone.Dynamic Redirect Edit — create/update the apex → www redirect (http_request_dynamic_redirect phase)',
+  'Zone.Zone WAF Edit         — create/update crawler rules and the climb-view rate-limit rule\n                               (http_request_firewall_custom and http_ratelimit phases)',
+  'Zone.Single Redirect Edit  — create/update the apex → www redirect (http_request_dynamic_redirect phase)',
   'Zone.Transform Rules Edit  — create/update the Observe country request-header rule and assets CORS\n                               response-header rule (request/response transform phases)',
   'Zone.Zone Settings Read    — read the SSL/TLS mode',
   'Zone.Zone Settings Edit    — ONLY needed with --allow-zone-ssl (to set the zone SSL mode)',

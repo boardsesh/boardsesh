@@ -25,6 +25,13 @@ const crewQuery = vi.hoisted(() => ({
   data: undefined as unknown,
 }));
 
+// Everyone else's newest logs, for the Climber logs card's fall-through rows:
+// what it was asked with, and whether the phone has signal.
+const everyoneQuery = vi.hoisted(() => ({
+  calls: [] as Array<{ boardName: string; climbUuid: string | null; enabled: boolean }>,
+  offline: false,
+}));
+
 // The phone's own snapshot of who the viewer follows.
 const followedAuthors = vi.hoisted(() => ({
   result: { data: undefined, isError: false } as {
@@ -162,7 +169,13 @@ vi.mock('../../../lib/graphql/hooks', () => ({
     crewQuery.calls.push({ boardName, climbUuid, enabled: options?.enabled });
     return { data: crewQuery.data };
   },
+  useClimbLogsPreview: (args: { boardName: string; climbUuid: string | null; enabled: boolean }) => {
+    everyoneQuery.calls.push(args);
+    return { data: undefined };
+  },
 }));
+
+vi.mock('../../../hooks/use-is-offline', () => ({ useIsOffline: () => everyoneQuery.offline }));
 
 vi.mock('../../../hooks/use-climb-settled', () => ({
   useClimbSettled: (active: boolean, climbUuid: string) => {
@@ -239,6 +252,8 @@ describe('DeferredSections', () => {
     crewQuery.gateCalls = [];
     crewQuery.calls = [];
     crewQuery.data = undefined;
+    everyoneQuery.calls = [];
+    everyoneQuery.offline = false;
     followedAuthors.result = { data: undefined, isError: false };
     followedAuthors.calls = [];
     climberLogsSection.props = null;
@@ -468,6 +483,80 @@ describe('DeferredSections', () => {
       expect(crewQuery.calls.at(-1)?.enabled).toBe(true);
       // The card itself still waits for the scroll gate like every below-fold section.
       expect(screen.queryByTestId('climber-logs')).toBeNull();
+    });
+
+    // The request counts themselves are pinned against the real hooks in
+    // climber-logs-request-counts.test.tsx; these cover the rule's inputs.
+    describe("everyone else's newest logs, for the card's fall-through rows", () => {
+      const crewAnswered = (climberCount: number) => ({
+        items: [],
+        hasMore: false,
+        summary: { climberCount, senderCount: 0, byAngle: [] },
+      });
+      const arrangeSettled = (snapshot: typeof followedAuthors.result, crewData?: unknown) => {
+        auth.isAuthenticated = true;
+        crewQuery.settled = true;
+        followedAuthors.result = snapshot;
+        crewQuery.data = crewData;
+      };
+
+      it.each([
+        ['an account that follows nobody', () => arrangeSettled(follows())],
+        ['once the server says nobody followed logged it', () => arrangeSettled(follows('friend'), crewAnswered(0))],
+        [
+          'once the server says so, with no follow snapshot to go on',
+          () => arrangeSettled({ data: undefined, isError: true }, crewAnswered(0)),
+        ],
+      ])('asks before the first scroll mounts the card: %s', (_label, arrange) => {
+        arrange();
+        renderSections({ contentEnabled: false });
+
+        expect(screen.queryByTestId('climber-logs')).toBeNull();
+        // The card's own read uses the same arguments, so one request serves both.
+        expect(everyoneQuery.calls.at(-1)).toEqual({ boardName: 'kilter', climbUuid: 'climb-1', enabled: true });
+      });
+
+      it.each([
+        ['while the followed-climbers answer is still out', () => arrangeSettled(follows('friend'))],
+        ['when somebody followed has logged the climb', () => arrangeSettled(follows('friend'), crewAnswered(2))],
+        [
+          'when the follow snapshot failed and the server has not answered',
+          () => arrangeSettled({ data: undefined, isError: true }),
+        ],
+        [
+          // A cached "nobody logged it" answer must not stand in for a snapshot.
+          'while the follow snapshot is still loading',
+          () => arrangeSettled({ data: undefined, isError: false }, crewAnswered(0)),
+        ],
+        [
+          'on a climb only swiped past',
+          () => {
+            arrangeSettled(follows());
+            crewQuery.settled = false;
+          },
+        ],
+        [
+          'with no signal',
+          () => {
+            arrangeSettled(follows());
+            everyoneQuery.offline = true;
+          },
+        ],
+        [
+          'for a signed-out visitor',
+          () => {
+            arrangeSettled(follows());
+            auth.isAuthenticated = false;
+          },
+        ],
+      ])('asks for nothing %s', (_label, arrange) => {
+        deferred.ready = true;
+        arrange();
+        renderSections({ contentEnabled: true });
+
+        expect(everyoneQuery.calls.length).toBeGreaterThan(0);
+        expect(everyoneQuery.calls.every((call) => call.enabled === false)).toBe(true);
+      });
     });
 
     it('only reads the follow snapshot, and holds a missing one back until the climb has settled', () => {

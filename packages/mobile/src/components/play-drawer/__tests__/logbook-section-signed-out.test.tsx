@@ -41,6 +41,7 @@ const logbookState = vi.hoisted(() => ({
   error: null,
 }));
 vi.mock('@boardsesh/board-react', () => ({ useLogbook: () => logbookState }));
+vi.mock('../../../hooks/use-local-climb-ticks', () => ({ useLocalClimbTicks: () => undefined }));
 vi.mock('../../../hooks/use-local-ticks', () => ({ useLocalPendingTicks: () => ({ data: 0 }) }));
 
 const authState = vi.hoisted(() => ({ current: { isAuthenticated: false } }));

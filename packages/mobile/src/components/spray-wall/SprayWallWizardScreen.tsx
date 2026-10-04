@@ -9,7 +9,7 @@
 //
 // Everything that can fail, fails into somewhere the climber can act:
 //
-//  - the photo library says no        → the step stays put and says so
+//  - the camera says no               → the step stays put and says so
 //  - the upload dies halfway          → "Try again" retries the UPLOAD, against
 //                                       the wall that already exists
 //  - this build cannot suggest holds  → straight into the editor, manual
@@ -44,7 +44,8 @@ import { Text } from '../Text';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { GymPickerSheet } from '../board-discovery/GymPickerSheet';
-import { SprayCornerMarker } from './SprayCornerMarker';
+import { SprayCornerFooter } from './SprayCornerFooter';
+import { SprayCornerStep } from './SprayCornerStep';
 import {
   confirmDiscardSprayEdits,
   SprayHoldEditorScreen,
@@ -327,11 +328,9 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
       hapticSelection();
       try {
         const result = source === 'camera' ? await pickWallPhotoFromCamera() : await pickWallPhotoFromLibrary();
+        // Only the camera can be refused; the library picker needs no permission.
         if (result.outcome === 'denied') {
-          showToast(
-            source === 'camera' ? t('sprayWizard.photo.cameraDenied') : t('sprayWizard.photo.libraryDenied'),
-            'warning',
-          );
+          showToast(t('sprayWizard.photo.cameraDenied'), 'warning');
           return;
         }
         if (result.outcome === 'cancelled') return;
@@ -780,6 +779,36 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
 
   const stepIndex = COUNTED_STEPS.indexOf(state.step);
 
+  // Its own screenful rather than a section of the scrolling page below: the
+  // photo is fitted to the space between the header and the footer, so all four
+  // rings are on screen and a vertical drag is never also a scroll (#5958).
+  if (state.step === 'anchors' && state.photo) {
+    return (
+      <View style={styles.flex}>
+        <SprayCornerStep
+          stepCounter={t('sprayWizard.stepCounter', { current: stepIndex + 1, total: COUNTED_STEPS.length })}
+          title={t('sprayWizard.anchors.title')}
+          body={t('sprayWizard.anchors.body')}
+          photo={state.photo}
+          value={state.anchors}
+          onChange={(quad) => dispatch({ type: 'ANCHORS_SET', anchors: quad })}
+          invalid={state.anchorRejection != null}
+        />
+        <SprayCornerFooter
+          primaryTitle={state.anchors ? t('sprayWizard.anchors.use') : t('sprayWizard.anchors.skip')}
+          onPrimary={() => dispatch({ type: 'ANCHORS_DONE' })}
+          // Unlike the reset flow, no corners is a valid answer here (that is
+          // Skip), so only a refused quad shuts the gate.
+          primaryDisabled={state.anchorRejection != null}
+          canClear={state.anchors != null}
+          onClear={() => dispatch({ type: 'ANCHORS_CLEARED' })}
+          onBack={goBack}
+          backDisabled={isBusy(state)}
+        />
+      </View>
+    );
+  }
+
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
@@ -895,22 +924,6 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
           </>
         ) : null}
 
-        {state.step === 'anchors' && state.photo ? (
-          <>
-            <Text variant="title3">{t('sprayWizard.anchors.title')}</Text>
-            <Text variant="subheadline" color={systemColors.secondaryLabel}>
-              {t('sprayWizard.anchors.body')}
-            </Text>
-            <SprayCornerMarker
-              photo={state.photo}
-              renderWidth={previewWidth}
-              value={state.anchors}
-              onChange={(quad) => dispatch({ type: 'ANCHORS_SET', anchors: quad })}
-              invalid={state.anchorRejection != null}
-            />
-          </>
-        ) : null}
-
         {state.step === 'upload' ? (
           <>
             <Text variant="title3">{t('sprayWizard.upload.title')}</Text>
@@ -1009,25 +1022,6 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
             onPress={() => dispatch({ type: 'PHOTO_CONFIRMED' })}
             disabled={state.photo == null}
           />
-        ) : null}
-
-        {state.step === 'anchors' ? (
-          <View style={styles.anchorActions}>
-            <Button
-              title={state.anchors ? t('sprayWizard.anchors.use') : t('sprayWizard.anchors.skip')}
-              variant="filled"
-              size="large"
-              onPress={() => dispatch({ type: 'ANCHORS_DONE' })}
-              disabled={state.anchorRejection != null}
-            />
-            {state.anchors ? (
-              <Button
-                title={t('sprayWizard.anchors.clear')}
-                variant="text"
-                onPress={() => dispatch({ type: 'ANCHORS_CLEARED' })}
-              />
-            ) : null}
-          </View>
         ) : null}
 
         {state.step === 'upload' && state.upload.error ? (
@@ -1134,9 +1128,6 @@ const styles = StyleSheet.create({
   photoActions: {
     gap: spacing[2],
     paddingTop: spacing[3],
-  },
-  anchorActions: {
-    gap: spacing[1],
   },
   progressBlock: {
     gap: spacing[3],

@@ -755,7 +755,6 @@
     "attachedCount_one": "{{count}} Screenshot angehängt",
     "attachedCount_other": "{{count}} Screenshots angehängt",
     "publicWarning": "Angehängte Screenshots landen öffentlich auf GitHub.",
-    "permissionDenied": "Boardsesh braucht Zugriff auf deine Fotos, um einen Screenshot anzuhängen.",
     "pickFailed": "Dieser Screenshot ließ sich nicht lesen — nimm einen anderen.",
     "uploadFailed": "Deine Screenshots ließen sich nicht hochladen — dein Bericht ist noch da."
   },

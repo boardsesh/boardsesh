@@ -27,18 +27,18 @@ describe('resolvePublicStaticAssetOrigin', () => {
 });
 
 describe('expectsCloudflareOrigin', () => {
-  it('is true for a hostname declared as an R2 custom domain', () => {
+  it('keeps the retained staging hostname subject to Cloudflare checks', () => {
     // The staging hostname is where the bucket is proved, and it is Cloudflare
     // from the moment it is attached.
     expect(expectsCloudflareOrigin(`https://${ASSETS_STAGING_HOSTNAME}`)).toBe(true);
   });
 
-  it('is false for assets.boardsesh.com until the bucket actually moves there', () => {
-    // This is the whole point of deriving it from desiredR2Buckets instead of an
-    // env flag: today the hostname is a DNS-only Tigris CNAME that sends no
-    // cf-ray, and the assertion must stay off. The commit that repoints the
-    // bucket's customDomain turns it on, with no second thing to remember.
-    expect(expectsCloudflareOrigin(`https://${ASSETS_HOSTNAME}`)).toBe(false);
+  it('requires Cloudflare delivery for the live R2 asset hostname', () => {
+    expect(expectsCloudflareOrigin(`https://${ASSETS_HOSTNAME}`)).toBe(true);
+  });
+
+  it('does not treat an unrelated hostname as a Cloudflare asset origin', () => {
+    expect(expectsCloudflareOrigin('https://unrelated.example.com')).toBe(false);
   });
 
   it('is false for an unparseable origin rather than throwing mid-publish', () => {

@@ -156,6 +156,49 @@ export function sprayReferenceVisibilityCondition(
 }
 
 /**
+ * The fail-closed half the reference form leaves open: `true` for every
+ * non-spray reference, and for a spray reference whose `board_climbs` row still
+ * exists.
+ *
+ * {@link sprayReferenceVisibilityCondition} passes a reference whose climb row
+ * is missing, for every viewer. That is right for an Aurora tick, which can
+ * arrive before its climb. It is wrong for spray: a wall delete is soft and
+ * keeps its climbs, but `deleteDraftClimb` and account deletion hard-delete a
+ * climb row and leave the ticks and proposals that named it. With the climb
+ * gone there is no layout id, so no wall to check, and the reference would
+ * reach everybody. AND this next to the reference form; it does not replace it.
+ *
+ * Needs a board type ON the referencing row (a tick, a proposal). A comment has
+ * none, so `globalCommentFeed` carries its own rule.
+ *
+ * `authorExemption` keeps the row for the person who wrote it: their own log on
+ * a climb they deleted is theirs to see, and a profile total that dropped it
+ * would disagree with their own logbook. Pass the referencing row's author
+ * column and the viewer (null for an anonymous caller, never a hopeful id).
+ * Leave it out for a reader that lists OTHER people's rows, like the per-climb
+ * logs, where nobody is exempt.
+ */
+export function sprayReferenceClimbExistsCondition(
+  columns: { boardType: SQL | unknown; climbUuid: SQL | unknown },
+  authorExemption?: { authorId: SQL | unknown; viewerUserId: string | null | undefined },
+): SQL {
+  const viewer = authorExemption?.viewerUserId ?? null;
+  const ownRow = authorExemption
+    ? sql`OR (${viewer}::text IS NOT NULL AND ${authorExemption.authorId} = ${viewer}::text)`
+    : sql``;
+  return sql`(
+    ${columns.boardType} IS DISTINCT FROM 'spray'
+    OR EXISTS (
+      SELECT 1
+      FROM board_climbs existing_climb
+      WHERE existing_climb.uuid = ${columns.climbUuid}
+        AND existing_climb.board_type = 'spray'
+    )
+    ${ownRow}
+  )`;
+}
+
+/**
  * The same rule for a query that has already narrowed to one board type and one
  * layout in JavaScript — the `boardType + layoutId` resolvers.
  *
