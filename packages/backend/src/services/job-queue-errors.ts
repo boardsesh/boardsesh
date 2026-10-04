@@ -60,7 +60,7 @@ export function jobQueueErrorDiagnostics(error: unknown) {
     typeof errorRecord.name === 'string' && ERROR_TYPES.has(errorRecord.name) ? errorRecord.name : 'unknown';
   const message = typeof errorRecord.message === 'string' ? errorRecord.message : '';
   // pg-boss 12 annotates worker failures in the message. Other emitters supply a queue field.
-  const queueSuffix = / \(Queue: ([a-z_-]{1,64}), Worker: [0-9a-f-]{36}\)$/.exec(message);
+  const queueSuffix = / \(Queue: ([a-z0-9_-]{1,64}), Worker: [0-9a-f-]{36}\)$/.exec(message);
   const queueCandidate = typeof errorRecord.queue === 'string' ? errorRecord.queue : queueSuffix?.[1];
   const queue = queueCandidate && QUEUE_NAMES.has(queueCandidate) ? queueCandidate : 'unknown';
   // pg-pool's acquisition timeout has no code; retain its meaning without copying its text.

@@ -114,6 +114,7 @@ describe('job queue diagnostics', () => {
     };
     expect(logger.error).toHaveBeenCalledExactlyOnceWith('[job-queue] connection or execution failed', diagnostics);
     expect(scope.setContext).toHaveBeenCalledExactlyOnceWith('job_queue', diagnostics);
+    expect(scope.setTag).toHaveBeenCalledWith('source', 'job-queue');
     expect(scope.setTag).toHaveBeenCalledWith('postgres.error_code', '53300');
     expect(scope.setFingerprint).toHaveBeenCalledExactlyOnceWith([
       'job-queue',
