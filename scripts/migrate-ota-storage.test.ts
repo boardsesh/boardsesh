@@ -1,0 +1,396 @@
+/// <reference types="node" />
+
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it, vi } from 'vite-plus/test';
+import {
+  assertCopyPreflight,
+  classifyStorageEndpoint,
+  diffInventories,
+  fingerprintsMatch,
+  metadataMatches,
+  verifyObjectStores,
+  type ObjectFingerprint,
+  type ObjectMetadata,
+} from './lib/ota-storage-migration';
+import { fetchRailwayServiceVariables, isNotFoundError, listAllObjects, main } from './migrate-ota-storage';
+
+const EMPTY_METADATA: ObjectMetadata = {
+  contentType: null,
+  cacheControl: null,
+  contentDisposition: null,
+  contentEncoding: null,
+  contentLanguage: null,
+  expires: null,
+  userMetadata: {},
+};
+
+function fingerprint(sha256: string, metadata: ObjectMetadata = EMPTY_METADATA): ObjectFingerprint {
+  return { size: 3, sha256, metadata };
+}
+
+describe('classifyStorageEndpoint', () => {
+  it.each([
+    ['https://t3.storage.dev', 'tigris'],
+    ['https://fly.storage.tigris.dev', 'tigris'],
+    ['https://abc.r2.cloudflarestorage.com', 'r2'],
+    ['http://t3.storage.dev', 'unknown'],
+    ['https://t3.storage.dev/path', 'unknown'],
+    ['https://abc.r2.cloudflarestorage.com?secret=x', 'unknown'],
+    ['not a URL', 'unknown'],
+  ])('classifies %s as %s', (endpoint, expected) => {
+    expect(classifyStorageEndpoint(endpoint)).toBe(expected);
+  });
+});
+
+describe('diffInventories', () => {
+  it('reports missing, extra and same-key size drift', () => {
+    expect(
+      diffInventories(
+        [
+          { key: 'a', size: 1 },
+          { key: 'b', size: 2 },
+        ],
+        [
+          { key: 'b', size: 7 },
+          { key: 'c', size: 3 },
+        ],
+      ),
+    ).toEqual({
+      missing: ['a'],
+      extra: ['c'],
+      sizeMismatches: [{ key: 'b', sourceSize: 2, destinationSize: 7 }],
+    });
+  });
+
+  it('rejects duplicate keys rather than hiding a broken listing', () => {
+    expect(() =>
+      diffInventories(
+        [
+          { key: 'a', size: 1 },
+          { key: 'a', size: 1 },
+        ],
+        [],
+      ),
+    ).toThrow(/Duplicate object key/);
+  });
+
+  it('blocks destination-only keys before copy because the tool cannot delete them', () => {
+    expect(() => assertCopyPreflight([], [{ key: 'stale', size: 1 }])).toThrow(/No objects were copied/);
+    expect(() => assertCopyPreflight([{ key: 'same', size: 1 }], [{ key: 'same', size: 1 }])).not.toThrow();
+  });
+  it('retains destination-only archives during reverse-copy preflight', () => {
+    expect(() =>
+      assertCopyPreflight([{ key: 'new-r2-update', size: 3 }], [{ key: 'old-preview', size: 4 }], 'preserve-archives'),
+    ).not.toThrow();
+    expect(() => assertCopyPreflight([{ key: 'same', size: 1 }], [{ key: 'stale', size: 1 }])).toThrow();
+  });
+});
+
+describe('destination read errors', () => {
+  it('recopies only a genuine not-found race', () => {
+    expect(isNotFoundError({ name: 'NoSuchKey' })).toBe(true);
+    expect(isNotFoundError({ $metadata: { httpStatusCode: 404 } })).toBe(true);
+    expect(isNotFoundError({ $metadata: { httpStatusCode: 503 } })).toBe(false);
+    expect(isNotFoundError(new Error('socket reset'))).toBe(false);
+  });
+});
+
+describe('metadataMatches', () => {
+  it('normalizes user-metadata key order and case', () => {
+    expect(
+      metadataMatches(
+        { ...EMPTY_METADATA, contentType: 'application/json', userMetadata: { Zebra: '1', alpha: '2' } },
+        { ...EMPTY_METADATA, contentType: 'application/json', userMetadata: { ALPHA: '2', zebra: '1' } },
+      ),
+    ).toBe(true);
+  });
+
+  it('detects a metadata-only mismatch', () => {
+    expect(metadataMatches(EMPTY_METADATA, { ...EMPTY_METADATA, cacheControl: 'private' })).toBe(false);
+  });
+});
+
+describe('fingerprintsMatch', () => {
+  it('catches a same-size source overwrite between verification passes', () => {
+    expect(fingerprintsMatch(fingerprint('before'), fingerprint('after'))).toBe(false);
+  });
+
+  it('requires metadata to remain stable too', () => {
+    expect(
+      fingerprintsMatch(fingerprint('same'), fingerprint('same', { ...EMPTY_METADATA, cacheControl: 'changed' })),
+    ).toBe(false);
+  });
+});
+
+describe('verifyObjectStores', () => {
+  it('verifies every R2 object during rollback while retaining old legacy previews', async () => {
+    const reads: string[] = [];
+    const problems = await verifyObjectStores(
+      [{ key: 'current', size: 3 }],
+      [
+        { key: 'current', size: 3 },
+        { key: 'archived', size: 5 },
+      ],
+      async (side, key) => {
+        reads.push(`${side}:${key}`);
+        return fingerprint('same');
+      },
+      4,
+      'preserve-archives',
+    );
+    expect(problems).toEqual([]);
+    expect(reads).toEqual(['source:current', 'destination:current']);
+  });
+  it('still blocks missing or corrupt live rollback objects when legacy archives are allowed', async () => {
+    const problems = await verifyObjectStores(
+      [
+        { key: 'missing', size: 3 },
+        { key: 'corrupt', size: 3 },
+      ],
+      [
+        { key: 'corrupt', size: 3 },
+        { key: 'archived', size: 5 },
+      ],
+      async (side) => fingerprint(side),
+      4,
+      'preserve-archives',
+    );
+    expect(problems).toEqual([
+      { key: 'corrupt', kind: 'content', detail: 'SHA-256 differs' },
+      { key: 'missing', kind: 'missing', detail: 'absent from destination' },
+    ]);
+  });
+  it('requires exact key sets before reading content', async () => {
+    const calls: [side: 'source' | 'destination', key: string][] = [];
+    const problems = await verifyObjectStores(
+      [
+        { key: 'missing', size: 1 },
+        { key: 'shared', size: 3 },
+      ],
+      [
+        { key: 'extra', size: 1 },
+        { key: 'shared', size: 3 },
+      ],
+      async (side, key) => {
+        calls.push([side, key]);
+        return fingerprint('same');
+      },
+    );
+
+    expect(problems).toEqual([
+      { key: 'extra', kind: 'extra', detail: 'absent from source' },
+      { key: 'missing', kind: 'missing', detail: 'absent from destination' },
+    ]);
+    expect(calls).toEqual([
+      ['source', 'shared'],
+      ['destination', 'shared'],
+    ]);
+  });
+
+  it('detects same-size content drift by full SHA-256', async () => {
+    const problems = await verifyObjectStores([{ key: 'asset', size: 3 }], [{ key: 'asset', size: 3 }], async (side) =>
+      fingerprint(side === 'source' ? 'source-hash' : 'destination-hash'),
+    );
+    expect(problems).toEqual([{ key: 'asset', kind: 'content', detail: 'SHA-256 differs' }]);
+  });
+
+  it('detects metadata drift after content matches', async () => {
+    const problems = await verifyObjectStores([{ key: 'asset', size: 3 }], [{ key: 'asset', size: 3 }], async (side) =>
+      fingerprint('same', side === 'source' ? EMPTY_METADATA : { ...EMPTY_METADATA, contentType: 'text/plain' }),
+    );
+    expect(problems).toEqual([{ key: 'asset', kind: 'metadata', detail: 'HTTP or user metadata differs' }]);
+  });
+});
+
+describe('Railway variable reads', () => {
+  it('reads one named service without mistaking a secret value for an auth error', async () => {
+    const originalFetch = globalThis.fetch;
+    const calls: { headers: Record<string, string>; query: string }[] = [];
+    globalThis.fetch = (async (_input, init) => {
+      if (typeof init?.body !== 'string') throw new Error('Expected a JSON request body.');
+      const body = JSON.parse(init.body) as { query: string };
+      calls.push({ headers: init?.headers as Record<string, string>, query: body.query });
+      const data = body.query.includes('MigrationProject')
+        ? {
+            project: {
+              environments: { edges: [{ node: { id: 'env', name: 'production' } }] },
+              services: { edges: [{ node: { id: 'service', name: 'boardsesh-ota-v3' } }] },
+            },
+          }
+        : { variables: { AWS_SECRET_ACCESS_KEY: 'contains Not Authorized but is valid' } };
+      return new Response(JSON.stringify({ data }), { status: 200 });
+    }) as typeof globalThis.fetch;
+    try {
+      const variables = await fetchRailwayServiceVariables('token', 'project', 'production', 'boardsesh-ota-v3');
+      expect(variables.AWS_SECRET_ACCESS_KEY).toContain('Not Authorized');
+      expect(calls).toHaveLength(2);
+      expect(calls.every(({ query }) => !/\bmutation\b/.test(query))).toBe(true);
+      expect(calls.every(({ headers }) => headers['Project-Access-Token'] === 'token')).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('falls back from project-token to account-token authentication', async () => {
+    const originalFetch = globalThis.fetch;
+    const headers: Record<string, string>[] = [];
+    globalThis.fetch = (async (_input, init) => {
+      const requestHeaders = init?.headers as Record<string, string>;
+      headers.push(requestHeaders);
+      if (requestHeaders['Project-Access-Token']) {
+        return new Response(JSON.stringify({ errors: [{ message: 'Not Authorized' }] }), { status: 200 });
+      }
+      if (typeof init?.body !== 'string') throw new Error('Expected a JSON request body.');
+      const body = JSON.parse(init.body) as { query: string };
+      const data = body.query.includes('MigrationProject')
+        ? {
+            project: {
+              environments: { edges: [{ node: { id: 'env', name: 'production' } }] },
+              services: { edges: [{ node: { id: 'service', name: 'boardsesh-ota-v3' } }] },
+            },
+          }
+        : { variables: { STORAGE_MODE: 's3' } };
+      return new Response(JSON.stringify({ data }), { status: 200 });
+    }) as typeof globalThis.fetch;
+    try {
+      await expect(fetchRailwayServiceVariables('token', 'project', 'production', 'boardsesh-ota-v3')).resolves.toEqual(
+        { STORAGE_MODE: 's3' },
+      );
+      expect(headers.some((entry) => entry.Authorization === 'Bearer token')).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('never includes a malformed secret-bearing response in an error', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response('secret-from-railway', { status: 502 })) as typeof globalThis.fetch;
+    try {
+      await expect(
+        fetchRailwayServiceVariables('token', 'project', 'production', 'boardsesh-ota-v3'),
+      ).rejects.not.toThrow(/secret-from-railway/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('masks the private source endpoint before object-store setup in GitHub Actions', async () => {
+    const originalFetch = globalThis.fetch;
+    const originalGithubActions = process.env.GITHUB_ACTIONS;
+    const originalRailwayToken = process.env.RAILWAY_TOKEN;
+    const originalRailwayProjectId = process.env.RAILWAY_PROJECT_ID;
+    const sourceEndpoint = 'https://synthetic-account.tigris.dev';
+    const sourceAccessKeyId = 'source-key-for-redaction-test';
+    const sourceSecretAccessKey = 'source-secret-for-redaction-test';
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    process.env.GITHUB_ACTIONS = 'true';
+    process.env.RAILWAY_TOKEN = 'synthetic-railway-token';
+    process.env.RAILWAY_PROJECT_ID = 'synthetic-project-id';
+    globalThis.fetch = (async (_input, init) => {
+      if (typeof init?.body !== 'string') throw new Error('Expected a JSON request body.');
+      const body = JSON.parse(init.body) as { query: string };
+      const data = body.query.includes('MigrationProject')
+        ? {
+            project: {
+              environments: { edges: [{ node: { id: 'environment', name: 'production' } }] },
+              services: { edges: [{ node: { id: 'ota-service', name: 'boardsesh-ota-v3' } }] },
+            },
+          }
+        : {
+            variables: {
+              AWS_BASE_ENDPOINT: sourceEndpoint,
+              AWS_ACCESS_KEY_ID: sourceAccessKeyId,
+              AWS_SECRET_ACCESS_KEY: sourceSecretAccessKey,
+              S3_BUCKET_NAME: 'unexpected-bucket',
+            },
+          };
+      return new Response(JSON.stringify({ data }), { status: 200 });
+    }) as typeof globalThis.fetch;
+
+    try {
+      await expect(main([])).rejects.toThrow(/expected bucket/);
+      expect(consoleLog.mock.calls.slice(0, 3)).toEqual([
+        [`::add-mask::${sourceEndpoint}`],
+        [`::add-mask::${sourceAccessKeyId}`],
+        [`::add-mask::${sourceSecretAccessKey}`],
+      ]);
+    } finally {
+      consoleLog.mockRestore();
+      globalThis.fetch = originalFetch;
+      if (originalGithubActions === undefined) delete process.env.GITHUB_ACTIONS;
+      else process.env.GITHUB_ACTIONS = originalGithubActions;
+      if (originalRailwayToken === undefined) delete process.env.RAILWAY_TOKEN;
+      else process.env.RAILWAY_TOKEN = originalRailwayToken;
+      if (originalRailwayProjectId === undefined) delete process.env.RAILWAY_PROJECT_ID;
+      else process.env.RAILWAY_PROJECT_ID = originalRailwayProjectId;
+    }
+  });
+});
+
+describe('paginated inventory and no-delete contract', () => {
+  it('rejects looping continuation tokens instead of hanging the freeze', async () => {
+    const target = {
+      bucket: 'boardsesh-ota-v3',
+      label: 'source' as const,
+      client: { send: async () => ({ Contents: [], IsTruncated: true, NextContinuationToken: 'same' }) },
+    };
+    await expect(listAllObjects(target as unknown as Parameters<typeof listAllObjects>[0])).rejects.toThrow(
+      /repeated a continuation token/,
+    );
+  });
+  it.each([{ Key: 'key' }, { Size: 1 }, { Key: 'key', Size: -1 }])(
+    'rejects incomplete object inventory %j',
+    async (object) => {
+      const target = {
+        bucket: 'boardsesh-ota-v3',
+        label: 'source' as const,
+        client: { send: async () => ({ Contents: [object], IsTruncated: false }) },
+      };
+      await expect(listAllObjects(target as unknown as Parameters<typeof listAllObjects>[0])).rejects.toThrow(
+        /incomplete object/,
+      );
+    },
+  );
+  it('follows every continuation token', async () => {
+    const tokens: (string | undefined)[] = [];
+    const target = {
+      bucket: 'boardsesh-ota-v3',
+      label: 'source' as const,
+      client: {
+        send: async (command: { input: { ContinuationToken?: string } }) => {
+          tokens.push(command.input.ContinuationToken);
+          return command.input.ContinuationToken
+            ? { Contents: [{ Key: 'b', Size: 2 }], IsTruncated: false }
+            : { Contents: [{ Key: 'a', Size: 1 }], IsTruncated: true, NextContinuationToken: 'next' };
+        },
+      },
+    };
+    const objects = await listAllObjects(target as unknown as Parameters<typeof listAllObjects>[0]);
+    expect(tokens).toEqual([undefined, 'next']);
+    expect(objects).toEqual([
+      { key: 'a', size: 1 },
+      { key: 'b', size: 2 },
+    ]);
+  });
+
+  it('rejects a truncated page with no continuation token', async () => {
+    const target = {
+      bucket: 'boardsesh-ota-v3',
+      label: 'source' as const,
+      client: { send: async () => ({ IsTruncated: true }) },
+    };
+    await expect(listAllObjects(target as unknown as Parameters<typeof listAllObjects>[0])).rejects.toThrow(
+      /without a continuation token/,
+    );
+  });
+
+  it('contains no S3 delete command or Railway mutation', () => {
+    const implementation = [
+      readFileSync(resolve(__dirname, 'migrate-ota-storage.ts'), 'utf8'),
+      readFileSync(resolve(__dirname, 'lib/ota-storage-migration.ts'), 'utf8'),
+    ].join('\n');
+    expect(implementation).not.toMatch(/DeleteObject|DeleteObjects/);
+    expect(implementation).not.toMatch(/^\s*mutation\s+[A-Za-z]/m);
+  });
+});
