@@ -1138,9 +1138,11 @@ Run the gate in this order:
    nonterminal run. Keep all six disabled through copy, final verification and Railway credential rotation; their
    normal concurrency groups do not exclude one another.
 3. Dispatch the same workflow with `mode=copy` and `ota_publishes_frozen=true`. It refuses destination-only keys
-   before its first PUT, recopies only missing or mismatched objects, preserves portable HTTP and user metadata, and
-   never deletes. S3 tags, omitted metadata or object-lock/website metadata stop the run because R2 cannot preserve
-   them faithfully.
+   before its first PUT. Existing same-key objects must match the source by full size, SHA-256 and portable metadata,
+   or the run stops without replacing them. Missing objects use create-only conditional PUTs; if another writer creates
+   one first, the workflow accepts it only after a full fingerprint match. Portable HTTP and user metadata are
+   preserved, and no objects are deleted. S3 tags, omitted metadata or object-lock/website metadata stop the run
+   because R2 cannot preserve them faithfully.
 4. Require the copy's built-in verification to pass, then dispatch `mode=verify` with the freeze confirmation for a
    separate final read. Both runs require an exact key set and sizes, full-stream SHA-256 equality for every object,
    metadata equality, a stable source listing, and a second full Tigris hash pass after destination verification. A
@@ -1161,10 +1163,12 @@ Retain the previous Tigris credentials securely and supply `OTA_LEGACY_AWS_ENDPO
 `OTA_LEGACY_AWS_ACCESS_KEY_ID`, `OTA_LEGACY_AWS_SECRET_ACCESS_KEY`, and optionally `OTA_LEGACY_AWS_REGION`
 and `OTA_LEGACY_S3_FORCE_PATH_STYLE`. Run `vp run storage:migrate-ota -- --reverse --apply`, then
 `vp run storage:migrate-ota -- --reverse --verify-only`. Reverse mode requires Railway to still point at R2,
-reads its current credentials, and restores every R2 key with full size, SHA-256, metadata and source-stability
-verification. Extra archived Tigris objects are retained; forward migration still requires exact key sets. Only
-after verification passes, restore the old Railway endpoint and credentials together. Verify old and new update
-delivery before restoring writers. Neither direction changes Railway or deletes storage objects.
+reads its current credentials, and creates only missing Tigris keys using conditional PUTs. Existing same-key objects
+must match by full size, SHA-256 and metadata; a mismatch stops the copy without replacement, and a concurrent create
+is accepted only after the same full match. Extra archived Tigris objects are retained; forward migration still
+requires exact key sets. The final verification checks source stability. Only after verification passes, restore the
+old Railway endpoint and credentials together. Verify old and new update delivery before restoring writers. Neither
+direction changes Railway or deletes storage objects.
 
 Keep all mutable maintenance frozen through final verification and credential rotation, including any active bucket
 lifecycle rules. Record the prior policies and restore them unchanged after acceptance; do not introduce new expiry

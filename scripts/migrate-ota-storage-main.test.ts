@@ -1,5 +1,8 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { GetObjectCommand, GetObjectTaggingCommand, ListObjectsV2Command, PutObjectCommand } from '@aws-sdk/client-s3';
@@ -12,6 +15,15 @@ const storage = vi.hoisted(() => ({
   activeReads: new Map<string, number>(),
   readPeaks: new Map<string, number[]>(),
   calls: [] as { endpoint: string; operation: string; key?: string }[],
+  putPreconditions: [] as (string | undefined)[],
+  raceBeforePut: false,
+  raceObject: null as StoredObject | null,
+  getFailureEndpoint: '' as string,
+  getFailureKey: '' as string,
+  getFailure: null as unknown,
+  putFailure: null as unknown,
+  sourceGets: 0,
+  mutateSourceAfterGet: 0,
 }));
 vi.mock('@aws-sdk/client-s3', async (importOriginal) => {
   const original = await importOriginal<typeof import('@aws-sdk/client-s3')>();
@@ -42,8 +54,17 @@ vi.mock('@aws-sdk/client-s3', async (importOriginal) => {
         const key = command.input.Key;
         if (!key) throw new Error('Missing key');
         if (command instanceof original.GetObjectCommand) {
-          const object = bucket.get(key);
-          if (!object) throw { $metadata: { httpStatusCode: 404 } };
+          if (endpoint === storage.getFailureEndpoint && key === storage.getFailureKey && storage.getFailure) {
+            throw storage.getFailure;
+          }
+          const storedObject = bucket.get(key);
+          if (!storedObject) throw { $metadata: { httpStatusCode: 404 } };
+          if (endpoint === R2) {
+            storage.sourceGets += 1;
+            if (storage.sourceGets === storage.mutateSourceAfterGet) {
+              bucket.set(key, object('changed!'));
+            }
+          }
           const body = Readable.from(
             (async function* () {
               const active = (storage.activeReads.get(endpoint) ?? 0) + 1;
@@ -52,18 +73,28 @@ vi.mock('@aws-sdk/client-s3', async (importOriginal) => {
               peaks[peaks.length - 1] = Math.max(peaks.at(-1)!, active);
               try {
                 await new Promise<void>((resolve) => setImmediate(resolve));
-                yield object.body;
+                yield storedObject.body;
               } finally {
                 storage.activeReads.set(endpoint, storage.activeReads.get(endpoint)! - 1);
               }
             })(),
           );
-          return { ...object.metadata, ContentLength: object.body.length, Body: body };
+          return { ...storedObject.metadata, ContentLength: storedObject.body.length, Body: body };
         }
+        storage.putPreconditions.push(command.input.IfNoneMatch);
         const { Body, Bucket: _bucket, Key: _key, ContentMD5: _md5, ...metadata } = command.input;
         if (!(Body instanceof Readable)) throw new Error('Expected staged OTA stream');
         const chunks: Buffer[] = [];
         for await (const chunk of Body) chunks.push(Buffer.from(chunk as Uint8Array));
+        if (storage.putFailure) throw storage.putFailure;
+        if (storage.raceBeforePut) {
+          storage.raceBeforePut = false;
+          if (!storage.raceObject) throw new Error('Missing synthetic race object');
+          bucket.set(key, storage.raceObject);
+        }
+        if (command.input.IfNoneMatch === '*' && bucket.has(key)) {
+          throw { name: 'PreconditionFailed', $metadata: { httpStatusCode: 412 } };
+        }
         bucket.set(key, { body: Buffer.concat(chunks), metadata });
         return {};
       }
@@ -95,6 +126,15 @@ beforeEach(() => {
   storage.calls.length = 0;
   storage.activeReads.clear();
   storage.readPeaks.clear();
+  storage.putPreconditions.length = 0;
+  storage.raceBeforePut = false;
+  storage.raceObject = null;
+  storage.getFailureEndpoint = '';
+  storage.getFailureKey = '';
+  storage.getFailure = null;
+  storage.putFailure = null;
+  storage.sourceGets = 0;
+  storage.mutateSourceAfterGet = 0;
   storage.buckets.set(LEGACY, new Map());
   storage.buckets.set(R2, new Map());
   for (const [name, configured] of Object.entries({
@@ -158,6 +198,7 @@ describe('OTA migration main rollback', () => {
     expect(
       storage.calls.filter(({ endpoint, operation }) => endpoint === R2 && operation === 'GetObjectCommand').length,
     ).toBeGreaterThanOrEqual(3);
+    expect(storage.putPreconditions).toEqual(['*']);
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('SHA-256, and metadata (preserve-archives)'));
   });
   it.each([{ flags: [] }, { flags: ['--verify-only'] }])('reverse $flags is read-only', async ({ flags }) => {
@@ -169,6 +210,23 @@ describe('OTA migration main rollback', () => {
       expect(console.log).not.toHaveBeenCalledWith(expect.stringContaining('Migration object concurrency:'));
     else expect(console.log).toHaveBeenCalledWith('Migration object concurrency: 4.');
   });
+  it.each([{ mismatch: 'content' }, { mismatch: 'metadata' }])(
+    'rollback refuses existing $mismatch conflicts without overwriting',
+    async ({ mismatch }) => {
+      const current = object('correct');
+      storage.buckets.get(R2)!.set('current', current);
+      storage.buckets.get(R2)!.set('later-missing', object('another asset'));
+      const conflict =
+        mismatch === 'content'
+          ? { ...current, body: Buffer.from('corrupt') }
+          : { ...current, metadata: { ...current.metadata, CacheControl: 'public' } };
+      storage.buckets.get(LEGACY)!.set('current', conflict);
+      await expect(main(['--reverse', '--apply'])).rejects.toThrow(/Destination object conflicts/);
+      expect(writes()).toEqual([]);
+      expect(storage.buckets.get(LEGACY)!.get('current')).toBe(conflict);
+      expect(storage.buckets.get(LEGACY)!.has('later-missing')).toBe(false);
+    },
+  );
   it.each([{ mismatch: 'content' }, { mismatch: 'metadata' }])(
     'verify-only detects $mismatch drift without writing',
     async ({ mismatch }) => {
@@ -187,6 +245,125 @@ describe('OTA migration main rollback', () => {
       expect(console.error).toHaveBeenCalledWith(expect.stringContaining(mismatch));
     },
   );
+  it('rollback refuses an existing size conflict before any copy write', async () => {
+    storage.buckets.get(R2)!.set('current', object('source bytes'));
+    const conflict = object('short');
+    storage.buckets.get(LEGACY)!.set('current', conflict);
+    storage.buckets.get(R2)!.set('later-missing', object('another asset'));
+
+    await expect(main(['--reverse', '--apply'])).rejects.toThrow(/Destination object conflicts with source size/);
+
+    expect(writes()).toEqual([]);
+    expect(storage.buckets.get(LEGACY)!.get('current')).toBe(conflict);
+    expect(storage.buckets.get(LEGACY)!.has('later-missing')).toBe(false);
+  });
+  it('fails closed on a destination read error before copying missing objects', async () => {
+    storage.buckets.get(R2)!.set('current', object('shared bytes'));
+    const retained = object('shared bytes');
+    storage.buckets.get(LEGACY)!.set('current', retained);
+    storage.buckets.get(R2)!.set('later-missing', object('another asset'));
+    storage.getFailureEndpoint = LEGACY;
+    storage.getFailureKey = 'current';
+    storage.getFailure = { name: 'AccessDenied', $metadata: { httpStatusCode: 403 } };
+
+    await expect(main(['--reverse', '--apply'])).rejects.toMatchObject({ name: 'AccessDenied' });
+
+    expect(writes()).toEqual([]);
+    expect(storage.buckets.get(LEGACY)!.get('current')).toBe(retained);
+    expect(storage.buckets.get(LEGACY)!.has('later-missing')).toBe(false);
+  });
+  it('keeps an identical existing destination object without a PUT', async () => {
+    const source = object('identical');
+    const destination = object('identical');
+    storage.buckets.get(R2)!.set('current', source);
+    storage.buckets.get(LEGACY)!.set('current', destination);
+
+    await main(['--reverse', '--apply']);
+
+    expect(writes()).toEqual([]);
+    expect(storage.buckets.get(LEGACY)!.get('current')).toBe(destination);
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('0 copied, 1 unchanged'));
+  });
+  it('accepts a concurrent create only after its complete fingerprint matches', async () => {
+    const source = object('new update');
+    const concurrent = object('new update');
+    storage.buckets.get(R2)!.set('new-runtime/bundle', source);
+    storage.raceBeforePut = true;
+    storage.raceObject = concurrent;
+
+    await main(['--reverse', '--apply']);
+
+    expect(writes()).toHaveLength(1);
+    expect(storage.putPreconditions).toEqual(['*']);
+    expect(storage.buckets.get(LEGACY)!.get('new-runtime/bundle')).toBe(concurrent);
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('0 copied, 1 unchanged'));
+  });
+  it('refuses a conflicting concurrent create without replacing the winner', async () => {
+    const source = object('new update');
+    const concurrent = object('different!');
+    storage.buckets.get(R2)!.set('new-runtime/bundle', source);
+    storage.raceBeforePut = true;
+    storage.raceObject = concurrent;
+
+    await expect(main(['--reverse', '--apply'])).rejects.toThrow(/created during copy conflicts/);
+
+    expect(writes()).toHaveLength(1);
+    expect(storage.putPreconditions).toEqual(['*']);
+    expect(storage.buckets.get(LEGACY)!.get('new-runtime/bundle')).toBe(concurrent);
+  });
+  it('refuses a same-content concurrent create when portable metadata differs', async () => {
+    const source = object('new update');
+    const concurrent = {
+      ...object('new update'),
+      metadata: { ...object('new update').metadata, CacheControl: 'public' },
+    };
+    storage.buckets.get(R2)!.set('new-runtime/bundle', source);
+    storage.raceBeforePut = true;
+    storage.raceObject = concurrent;
+
+    await expect(main(['--reverse', '--apply'])).rejects.toThrow(/created during copy conflicts/);
+
+    expect(writes()).toHaveLength(1);
+    expect(storage.buckets.get(LEGACY)!.get('new-runtime/bundle')).toBe(concurrent);
+  });
+  it('does not treat a non-412 provider error as a verified create collision', async () => {
+    storage.buckets.get(R2)!.set('new-runtime/bundle', object('new update'));
+    const providerError = { name: 'ConditionalRequestConflict', $metadata: { httpStatusCode: 409 } };
+    storage.putFailure = providerError;
+
+    await expect(main(['--reverse', '--apply'])).rejects.toBe(providerError);
+
+    expect(storage.putPreconditions).toEqual(['*']);
+    expect(storage.buckets.get(LEGACY)!.has('new-runtime/bundle')).toBe(false);
+    expect(
+      storage.calls.filter(({ endpoint, operation }) => endpoint === LEGACY && operation === 'GetObjectCommand'),
+    ).toEqual([]);
+  });
+  it('joins workers and removes staging files after a conflicting race', async () => {
+    const stagingRoot = await mkdtemp(join(tmpdir(), 'boardsesh-ota-cleanup-test-'));
+    vi.stubEnv('TMPDIR', stagingRoot);
+    storage.buckets.get(R2)!.set('new-runtime/bundle', object('new update'));
+    storage.raceBeforePut = true;
+    storage.raceObject = object('different!');
+
+    try {
+      await expect(main(['--reverse', '--apply'])).rejects.toThrow(/created during copy conflicts/);
+      expect(await readdir(stagingRoot)).toEqual([]);
+    } finally {
+      await rm(stagingRoot, { recursive: true, force: true });
+    }
+  });
+  it('detects a source change between verification passes', async () => {
+    storage.buckets.get(R2)!.set('new-runtime/bundle', object('original'));
+    storage.mutateSourceAfterGet = 2;
+
+    await expect(main(['--reverse', '--apply'])).rejects.toThrow(/OTA storage migration verification failed/);
+
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Source object changed during verification'));
+    expect(storage.buckets.get(R2)!.get('new-runtime/bundle')!.body.toString()).toBe('changed!');
+    expect(storage.buckets.get(LEGACY)!.get('new-runtime/bundle')!.body.toString()).toBe('original');
+    expect(storage.putPreconditions).toEqual(['*']);
+  });
   it('still rejects extra destination keys before forward-copy writes', async () => {
     liveEndpoint = LEGACY;
     storage.buckets.get(LEGACY)!.set('current', object('current'));
