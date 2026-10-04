@@ -1,7 +1,7 @@
-import { eq, sql, type SQL } from 'drizzle-orm';
+import { and, eq, sql, type SQL } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import {
-  notAuroraTwinDuplicate,
+  notAuroraTwinDuplicateWithin,
   resolveCanonicalClimbUuid,
   sprayReferenceVisibilityCondition,
 } from '@boardsesh/db/queries';
@@ -117,9 +117,11 @@ export function climbLogConditions({
   return [
     eq(ticks.boardType, boardType),
     climbUuidCondition(ticks, boardType, canonicalClimbUuid),
-    // Every climber's logs on one climb: almost none are Aurora-pull rows, so
-    // run the twin lookup only for those.
-    notAuroraTwinDuplicate(ticks, { skipNonAuroraRows: true }),
+    // Worked out once from this climb's own rows, not probed per row: a twin
+    // of a log on this climb is a log on this climb.
+    notAuroraTwinDuplicateWithin(ticks, (table) =>
+      and(eq(table.boardType, boardType), climbUuidCondition(table, boardType, canonicalClimbUuid))!,
+    ),
     sprayClimbRowExists(ticks),
     sprayReferenceVisibilityCondition({ boardType: ticks.boardType, climbUuid: ticks.climbUuid }, viewerUserId),
   ];

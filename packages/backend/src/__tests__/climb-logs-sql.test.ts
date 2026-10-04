@@ -28,16 +28,25 @@ const cursor = { climbedAt: '2026-05-01 18:00:00', id: 9007199254740993n };
 const VISIBILITY = /NOT EXISTS \(\s*SELECT 1\s+FROM board_climbs ref_climb/;
 /** The fail-closed check: a spray log whose climb row is gone is not shown. */
 const CLIMB_ROW_EXISTS = /FROM board_climbs existing_climb/;
-const TWIN_FILTER = /"boardsesh_ticks" "aurora_twin"/;
 /**
- * The twin lookup sits behind the full "real Aurora-pull row" test: origin,
- * a non-null aurora_id, and not a json-import surrogate. CASE, not OR, so the
- * order is guaranteed and the lookup runs per Aurora row.
+ * The twin filter: the hidden rows are worked out once, from the climb's own
+ * Aurora-pull rows, and dropped by id. `MATERIALIZED` is what keeps Postgres
+ * from turning the self-join back into an index probe per row (#5986).
  */
-const twinGuard = (table: string) =>
+const twinFilter = (table: string) =>
   new RegExp(
-    `CASE WHEN \\("${table}"\\."origin" = \\$\\d+ and "${table}"\\."aurora_id" is not null and "${table}"\\."aurora_id" NOT LIKE \\$\\d+\\) THEN not exists \\(select 1 from "boardsesh_ticks" "aurora_twin"[^]*?ELSE true END`,
+    `"${table}"\\."id" <> ALL\\(ARRAY\\(\\s*WITH twin_candidates AS MATERIALIZED \\([^]*?FROM twin_candidates "aurora_twin"\\s+INNER JOIN twin_candidates "aurora_twin_hidden" ON`,
   );
+/** The slice the twin filter reads: this board type, this climb and its aliases. */
+const TWIN_SCOPE =
+  /FROM "boardsesh_ticks" "twin_scope"\s+WHERE \(\("twin_scope"\."board_type" = \$\d+ and "twin_scope"\."climb_uuid" = [^]*?\) and \("twin_scope"\."origin" = \$\d+ and "twin_scope"\."aurora_id" is not null and "twin_scope"\."aurora_id" NOT LIKE \$\d+\)\)/;
+/**
+ * Only rows sharing user, board, climb, angle and instant with another reach
+ * the pair join. Without this the join is a nested loop over every Aurora row
+ * of the climb.
+ */
+const TWIN_COLLISIONS_ONLY =
+  /count\(\*\) OVER \(\s*PARTITION BY "twin_scope"\."user_id", "twin_scope"\."board_type", "twin_scope"\."climb_uuid", "twin_scope"\."angle", "twin_scope"\."climbed_at"\s*\) AS same_instant[^]*?WHERE same_instant > 1/;
 
 const sqlOf = (overrides: Partial<Parameters<typeof buildClimbLogsQuery>[0]> = {}) =>
   buildClimbLogsQuery({ ...base, ...overrides }).toSQL();
@@ -57,12 +66,17 @@ describe('climbLogs SQL, plain path', () => {
 
     expect(sql).toMatch(VISIBILITY);
     expect(sql).toMatch(CLIMB_ROW_EXISTS);
-    expect(sql).toMatch(TWIN_FILTER);
+    expect(sql).toMatch(twinFilter('boardsesh_ticks'));
     expect(sql).not.toContain('row_number()');
   });
 
-  it('runs the twin lookup only for Aurora-pull rows', () => {
-    expect(sqlOf().sql).toMatch(twinGuard('boardsesh_ticks'));
+  it("works the twins out from the climb's own Aurora-pull rows, with no lookup per row", () => {
+    const { sql } = sqlOf();
+
+    expect(sql).toMatch(TWIN_SCOPE);
+    expect(sql).toMatch(TWIN_COLLISIONS_ONLY);
+    // The per-row form: a correlated subquery over the whole table.
+    expect(sql).not.toContain('from "boardsesh_ticks" "aurora_twin"');
   });
 
   it('orders newest first with the id as tie-break and asks for one row past the page', () => {
@@ -89,8 +103,8 @@ describe('climbLogs SQL, one row per climber', () => {
 
     expect(ranked).toMatch(VISIBILITY);
     expect(ranked).toMatch(CLIMB_ROW_EXISTS);
-    expect(ranked).toMatch(TWIN_FILTER);
-    expect(ranked).toMatch(twinGuard('ranked_log'));
+    expect(ranked).toMatch(twinFilter('ranked_log'));
+    expect(ranked).toMatch(TWIN_SCOPE);
     // The checks read the ranked rows, not the outer table of the same name.
     expect(ranked).toContain('ref_climb.uuid = "ranked_log"."climb_uuid"');
     expect(ranked).not.toContain('"boardsesh_ticks"."climb_uuid"');

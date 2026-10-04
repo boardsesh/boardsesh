@@ -11,7 +11,7 @@ Each number carries a tag that says where it came from. The tags are explained i
 ## Summary
 
 - **Quiet-day load:** 15,727 s of query time in the 15.3 h window (P), or about 24,700 s/day (E).
-- **Savings:** the 15 changes below remove about **9,000 s/day on a quiet day, roughly 36% (E)**. Days with several deploys save more, because each popular-configs stampede costs about 10,000 s (P).
+- **Savings:** changes C1 to C15 below remove about **9,000 s/day on a quiet day, roughly 36% (E)**. Days with several deploys save more, because each popular-configs stampede costs about 10,000 s (P).
 - **Memory:**
   - Dropped: about 0.84 GB of indexes (P, from sizes). `board_climb_similar` (763 MB total, about 483 MB of that in indexes) is kept — see [C7](#c7-index-and-table-drops) — so it is no longer counted here.
   - Added: at most about 100 MB (E).
@@ -50,6 +50,7 @@ Change IDs (C#) match the audit findings. Rows are in rank order.
 | 13 | C10 | Shipped #5837 | You page: conditional userTicks joins, stop refetch on tick/resume | 200–500 (E) | 0 | S | No | Low | join trim confirmed | Yes, needs new data (L) |
 | 14 | C11 | Shipped earlier #4968 | Similar-climbs read: already cached (Redis 1 h + singleFlight, #4968) | 0 (done) | 0 | — | No | — | already shipped | Already local on mobile |
 | 15 | C15 | Source addressed #5858; rollout pending | Memory budget: parallel workers 0, smaller pools, pg-boss intervals | ceiling; wait time 500–700 (E) | −270 steady, −500 worst (E) | S | No | Low–Med | not re-tested | No |
+| 16 | C16 | Shipped #5993 | Per-climb logs: Aurora twins worked out once per climb, not probed per log | not sized; cuts first-open latency, not daily load | 0 | S | No | Med | prod only | No (other climbers' logs are never on the device) |
 
 ## Details per change
 
@@ -210,6 +211,19 @@ Already shipped. The `similarClimbs` resolver reads through `findSimilarClimbsCa
 - After C1 and this PR's code defaults: backend pool 5 and pg-boss 2; the web pool remains explicitly at 10, and sync daemons remain at 5. A web cap of 4 is a separate operator change; a daemon cap of 3 requires a source change.
 - pg-boss: `flowIntervalSeconds 3600`, `cronMonitorIntervalSeconds 45`, `monitorIntervalSeconds ≤120`.
 - Keep `max_connections=100`. Consider lowering it only after supported pool caps are applied and a week of deploy peaks stays below 45; the projected 67-connection drain exceeds the 57 application slots available at `max_connections=60`.
+
+### C16. Per-climb logs (climbLogs, followingClimbAscents)
+
+- **What:** `notAuroraTwinDuplicateWithin` replaces the per-row twin lookup on the readers that list every climber's logs on one climb. The climb's Aurora-pull rows that share user, angle and instant with another row go into a materialized CTE, the pair rule runs over those, and the hidden ids are dropped.
+- **Why it mattered:** the per-row lookup probed a tick index once per log, each probe on a page the query read for no other reason. On 2026-10-04 one page read from disk cost 30 ms to 6.6 s (P, #5994), so the cost was the page count, not the plan.
+- **Measured (P), climbs not opened that day:**
+  - Kilter, 1,167 logs: 39.5 s and 560 disk reads before. Similar climbs after: 4.7–10.5 s and 12–37 reads.
+  - Tension, 211 logs: 63.2 s and 223 reads before. Similar climbs after: 6.9–7.7 s and 13–18 reads.
+  - With the pages in memory: 6–8 ms before, 3–7 ms after.
+  - Since launch, `climbLogs` one-row-per-climber averaged 1.5–11.7 s against a 5–86 ms best case (P).
+- **Rows:** identical to the per-row rule on 15 climbs and on every log of the 8 climbs that hold a twin group (P).
+- **Not measured:** the full statement cold after the collision filter was added in review; the filter changes CPU, not page reads. `followingClimbAscents` at hundreds of follows.
+- **Caveats:** the remaining reads are the climb's own log pages and the joins for the page of rows. `ticks` and `userTicks` keep the per-row rule: one climber's rows, where the probe lands on pages already read.
 
 ## Offline-only candidates
 
