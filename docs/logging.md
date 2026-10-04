@@ -67,6 +67,23 @@ Specialised error paths still call `Sentry.captureException` directly (`graphql/
 
 `services/github-mirror-report.ts` is the pattern to copy when a failure needs per-event context. It pairs a **message-only** `logger.error` (which the transport deliberately skips) with its own `Sentry.withScope` capture, so the event carries the row that was lost and the user whose write it was — a `logger.error(msg, err)` there would file a second, poorer copy of the same failure.
 
+### Job queue diagnostics
+
+`services/job-queue-errors.ts` follows the same single-capture pattern for pg-boss
+errors. Logs and the Sentry `job_queue` context retain the SQLSTATE or known
+socket/driver code, allowlisted error type and queue name, failure category,
+client owner (`backend` or `worker`), and configured pool size. The reporter
+recognizes pg-pool's uncoded connection-acquisition timeout and pg-boss 12's
+queue annotation in worker error messages. Unknown identifiers become `unknown`.
+
+Raw messages, stacks, causes, SQL, connection strings and job payloads are not
+forwarded. Sentry receives a new exception containing only the safe failure
+category and code, with searchable `postgres.error_code` and `job_queue.*` tags.
+Its fingerprint uses owner, code, failure category and allowlisted queue; worker
+IDs and raw messages do not split issues. New events therefore split out of the
+old generic `JOB_QUEUE_ERROR` issue (BOARDSESH-P5). Only production captures to
+Sentry; local and preview environments retain the structured log.
+
 ### Dedup and DB-error masking
 
 Two small helpers keep the direct-capture paths from double-reporting and from leaking SQL:
