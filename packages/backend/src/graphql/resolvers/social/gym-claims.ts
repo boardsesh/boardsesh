@@ -97,11 +97,15 @@ export type ApplyGymClaimResult =
  *
  * Exactly two code paths move `gyms.owner_id` — this function's own transfer and
  * `reassignGymOwner` — and both leave a dated record: an admin handover writes a
- * `gym_owner_reassignments` row, and a claim-driven transfer is dated by the
- * approved claim row itself. Filing, approval and handover hold the same gym
- * row lock and stamp the database clock AFTER acquiring it. Transaction-start
- * timestamps cannot order these events: a transaction may wait behind a claim
- * that was filed after that transaction began.
+ * `gym_owner_reassignments` row, and an approved claim writes an immutable
+ * `gym_claim_ownership_decisions` row recording whether ownership actually
+ * changed.
+ * Filing, approval and handover hold the same gym row lock and stamp the database
+ * clock AFTER acquiring it. Transaction-start timestamps cannot order these
+ * events: a transaction may wait behind a claim that was filed after it began.
+ * Approved legacy claims with no decision row remain unknown; their resolution
+ * time conservatively blocks newer claims rather than guessing whether they
+ * transferred ownership.
  *
  * Anything newer than the claim means applying it now would reverse a decision
  * somebody made with more information than the claim carries.
@@ -128,12 +132,29 @@ async function ownershipMovedSinceClaim(
   const [approvedSince] = await tx
     .select({ id: dbSchema.gymClaims.id })
     .from(dbSchema.gymClaims)
+    .leftJoin(
+      dbSchema.gymClaimOwnershipDecisions,
+      eq(dbSchema.gymClaimOwnershipDecisions.claimId, dbSchema.gymClaims.id),
+    )
     .where(
       and(
         eq(dbSchema.gymClaims.gymId, claim.gymId),
         ne(dbSchema.gymClaims.id, claim.id),
         eq(dbSchema.gymClaims.status, 'approved'),
-        gt(dbSchema.gymClaims.updatedAt, filedAt),
+        or(
+          // A post-migration decision row distinguishes a transfer from a
+          // current-owner no-op. Its UUID is the gym that actually changed,
+          // unaffected by a later merge that moves the claim row.
+          and(
+            eq(dbSchema.gymClaimOwnershipDecisions.didTransfer, true),
+            eq(dbSchema.gymClaimOwnershipDecisions.gymUuid, gymUuid),
+            gt(dbSchema.gymClaimOwnershipDecisions.decidedAt, filedAt),
+          ),
+          // No row means history predates the marker or is otherwise unknown.
+          // Keep that case conservative; do not backfill every old approval as
+          // an actual transfer because some are known no-ops.
+          and(isNull(dbSchema.gymClaimOwnershipDecisions.claimId), gt(dbSchema.gymClaims.updatedAt, filedAt)),
+        ),
       ),
     )
     .limit(1);
@@ -246,6 +267,16 @@ export async function applyGymClaim(
         .delete(dbSchema.gymMembers)
         .where(and(eq(dbSchema.gymMembers.gymId, gym.id), eq(dbSchema.gymMembers.userId, claimantId)));
     }
+
+    // Keep an immutable account of what this approval did while the same gym
+    // row lock is held. `updatedAt` remains the ordinary claim-resolution audit
+    // timestamp; it is not treated as a transfer unless this event says so.
+    await tx.insert(dbSchema.gymClaimOwnershipDecisions).values({
+      claimId: claim.id,
+      gymUuid: gym.uuid,
+      didTransfer: priorOwnerId !== claimantId,
+      decidedAt: sql`clock_timestamp()`,
+    });
 
     return {
       outcome: 'applied',
