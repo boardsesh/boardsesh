@@ -33,6 +33,16 @@ vi.mock('ioredis', () => ({
 }));
 
 import { createWebRedisRateLimitEvaluator } from '../public-api-rate-limit-redis.server';
+import { webLogger } from '../observability/logger';
+
+async function loadFreshEvaluatorWithWebLoggerSpy() {
+  vi.resetModules();
+  const { webLogger: freshWebLogger } = await import('../observability/logger');
+  const warning = vi.spyOn(freshWebLogger, 'warn').mockImplementation(() => undefined);
+  const { getWebRedisRateLimitEvaluator } = await import('../public-api-rate-limit-redis.server');
+
+  return { getWebRedisRateLimitEvaluator, warning };
+}
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -114,6 +124,34 @@ describe('createWebRedisRateLimitEvaluator', () => {
     probeClient.evaluate.mockResolvedValueOnce(2);
     await expect(evaluate('script', 1, 'key', '60')).resolves.toBe(2);
     expect(createClient).toHaveBeenCalledTimes(2);
+  });
+
+  it('writes one structured process warning when Redis failure opens the local-fallback circuit', async () => {
+    const warning = vi.spyOn(webLogger, 'warn').mockImplementation(() => undefined);
+    const failedClient = {
+      status: 'ready',
+      connect: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn(),
+      evaluate: vi.fn().mockRejectedValue(new Error('Redis command timed out')),
+      onError: vi.fn(),
+    };
+    const evaluate = createWebRedisRateLimitEvaluator({
+      createClient: vi.fn().mockReturnValue(failedClient),
+      redisUrl: 'redis://redis.example.test:6379',
+    });
+    if (!evaluate) throw new Error('expected configured evaluator');
+
+    await expect(evaluate('script', 1, 'key', '60')).rejects.toThrow('Redis command timed out');
+
+    expect(warning).toHaveBeenCalledOnce();
+    expect(warning).toHaveBeenCalledWith(
+      '[public-api-rate-limit] Redis unavailable; the bounded local tier remains active.',
+      { event: 'public_api_rate_limit_redis_unavailable' },
+    );
+    await expect(evaluate('script', 1, 'key', '60')).rejects.toThrow('Redis rate-limit circuit is open');
+    expect(warning).toHaveBeenCalledOnce();
+    expect(JSON.stringify(warning.mock.calls)).not.toContain('redis://');
+    expect(JSON.stringify(warning.mock.calls)).not.toContain('Redis command timed out');
   });
 
   it('keeps the circuit open after sibling failures and a late sibling success', async () => {
@@ -238,16 +276,28 @@ describe('createWebRedisRateLimitEvaluator', () => {
 describe('getWebRedisRateLimitEvaluator', () => {
   it('warns only once per process when a Vercel deployment has no REDIS_URL', async () => {
     vi.stubEnv('VERCEL', '1');
+    vi.stubEnv('RAILWAY_ENVIRONMENT_ID', '');
     vi.stubEnv('REDIS_URL', '');
-    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    vi.resetModules();
-
-    const { getWebRedisRateLimitEvaluator } = await import('../public-api-rate-limit-redis.server');
+    const { getWebRedisRateLimitEvaluator, warning } = await loadFreshEvaluatorWithWebLoggerSpy();
     expect(getWebRedisRateLimitEvaluator()).toBeUndefined();
     expect(getWebRedisRateLimitEvaluator()).toBeUndefined();
 
     expect(warning).toHaveBeenCalledOnce();
-    expect(warning).toHaveBeenCalledWith(expect.stringContaining('REDIS_URL is not configured'));
+    expect(warning).toHaveBeenCalledWith(
+      '[public-api-rate-limit] REDIS_URL is not configured for the hosted web deployment; only the bounded local tier is active.',
+      { event: 'public_api_rate_limit_redis_unconfigured' },
+    );
+  });
+
+  it('stays quiet on the local tier when REDIS_URL is not configured', async () => {
+    vi.stubEnv('VERCEL', '');
+    vi.stubEnv('RAILWAY_ENVIRONMENT_ID', '');
+    vi.stubEnv('REDIS_URL', '');
+    const { getWebRedisRateLimitEvaluator, warning } = await loadFreshEvaluatorWithWebLoggerSpy();
+
+    expect(getWebRedisRateLimitEvaluator()).toBeUndefined();
+    expect(getWebRedisRateLimitEvaluator()).toBeUndefined();
+    expect(warning).not.toHaveBeenCalled();
   });
 });
 
@@ -256,14 +306,14 @@ describe('getWebRedisRateLimitEvaluator for Railway', () => {
     vi.stubEnv('VERCEL', '');
     vi.stubEnv('RAILWAY_ENVIRONMENT_ID', 'production-environment-id');
     vi.stubEnv('REDIS_URL', '');
-    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    vi.resetModules();
-
-    const { getWebRedisRateLimitEvaluator } = await import('../public-api-rate-limit-redis.server');
+    const { getWebRedisRateLimitEvaluator, warning } = await loadFreshEvaluatorWithWebLoggerSpy();
     expect(getWebRedisRateLimitEvaluator()).toBeUndefined();
     expect(getWebRedisRateLimitEvaluator()).toBeUndefined();
 
     expect(warning).toHaveBeenCalledOnce();
-    expect(warning).toHaveBeenCalledWith(expect.stringContaining('hosted web deployment'));
+    expect(warning).toHaveBeenCalledWith(
+      '[public-api-rate-limit] REDIS_URL is not configured for the hosted web deployment; only the bounded local tier is active.',
+      { event: 'public_api_rate_limit_redis_unconfigured' },
+    );
   });
 });

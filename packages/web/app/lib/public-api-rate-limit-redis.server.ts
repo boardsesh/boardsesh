@@ -2,6 +2,7 @@ import 'server-only';
 
 import Redis from 'ioredis';
 import type { RedisRateLimitEvaluate } from '@boardsesh/rate-limit';
+import { webLogger } from './observability/logger';
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 300;
 const DEFAULT_COMMAND_TIMEOUT_MS = 300;
@@ -58,7 +59,7 @@ export function createWebRedisRateLimitEvaluator({
   circuitCooldownMs = DEFAULT_CIRCUIT_COOLDOWN_MS,
   createClient = createDefaultRedisClient,
   now = Date.now,
-  onWarning = console.warn,
+  onWarning = (message) => webLogger.warn(message, { event: 'public_api_rate_limit_redis_unavailable' }),
   redisUrl,
 }: WebRedisRateLimitOptions): RedisRateLimitEvaluate | undefined {
   if (!redisUrl) return undefined;
@@ -137,8 +138,9 @@ export function getWebRedisRateLimitEvaluator(): RedisRateLimitEvaluate | undefi
   const redisUrl = process.env.REDIS_URL?.trim();
   const isHostedDeployment = process.env.VERCEL === '1' || Boolean(process.env.RAILWAY_ENVIRONMENT_ID?.trim());
   if (!redisUrl && isHostedDeployment) {
-    console.warn(
+    webLogger.warn(
       '[public-api-rate-limit] REDIS_URL is not configured for the hosted web deployment; only the bounded local tier is active.',
+      { event: 'public_api_rate_limit_redis_unconfigured' },
     );
   }
 
