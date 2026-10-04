@@ -182,16 +182,17 @@ export function parseMigrationOptions(argv: readonly string[]): {
   reverse: boolean;
   concurrency: number;
 } {
+  const migrationArguments = argv[0] === '--' ? argv.slice(1) : argv;
   const flags = new Set<string>();
   let concurrency = DEFAULT_CONCURRENCY;
-  for (let index = 0; index < argv.length; index += 1) {
-    const argument = argv[index];
+  for (let index = 0; index < migrationArguments.length; index += 1) {
+    const argument = migrationArguments[index];
     if (!['--apply', '--verify-only', '--reverse', '--concurrency'].includes(argument))
       throw new Error(`Unknown argument: ${argument}`);
     if (flags.has(argument)) throw new Error('Migration flags must not be repeated.');
     flags.add(argument);
     if (argument === '--concurrency') {
-      const requested = argv[index + 1];
+      const requested = migrationArguments[index + 1];
       if (!requested || !/^[1-9]\d*$/.test(requested) || Number(requested) > 64)
         throw new Error('--concurrency must be an integer from 1 to 64.');
       concurrency = Number(requested);
