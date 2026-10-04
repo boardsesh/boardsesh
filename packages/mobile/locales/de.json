@@ -7,6 +7,6 @@
     "NSLocationWhenInUseUsageDescription": "Boardsesh nutzt deinen Standort, um Boards in der Nähe zu finden und Kletter-Sessions in der Nähe im Party-Modus zu entdecken.",
     "NSLocationAlwaysAndWhenInUseUsageDescription": "Boardsesh nutzt deinen Standort, um Boards in der Nähe zu finden und Kletter-Sessions in der Nähe im Party-Modus zu entdecken.",
     "NSCameraUsageDescription": "Boardsesh nutzt deine Kamera, damit du eine Wand fotografieren und darauf Boulder setzen kannst.",
-    "NSPhotoLibraryUsageDescription": "Boardsesh nutzt deine Fotomediathek, damit du ein Profilbild auswählen kannst."
+    "NSPhotoLibraryUsageDescription": "Boardsesh nutzt deine Fotomediathek, damit du ein Profilbild, ein Foto deiner Wand oder einen Screenshot für dein Feedback auswählen kannst."
   }
 }
