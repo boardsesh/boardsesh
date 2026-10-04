@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { Readable } from 'node:stream';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-const { mockConstructEvent, mockDb, mockRetrieveSubscription } = vi.hoisted(() => ({
+const { mockConstructEvent, mockDb, mockRetrieveSubscription, mockRetrieveCheckout } = vi.hoisted(() => ({
   mockConstructEvent: vi.fn(),
   mockDb: {
     transaction: vi.fn(),
@@ -13,6 +13,7 @@ const { mockConstructEvent, mockDb, mockRetrieveSubscription } = vi.hoisted(() =
     delete: vi.fn(),
   },
   mockRetrieveSubscription: vi.fn(),
+  mockRetrieveCheckout: vi.fn(),
 }));
 
 vi.mock('../services/stripe-support-operation', () => ({
@@ -35,12 +36,13 @@ vi.mock('../services/stripe-support', async (importOriginal) => {
     ...original,
     getStripeClient: () => ({
       subscriptions: { retrieve: mockRetrieveSubscription },
+      checkout: { sessions: { retrieve: mockRetrieveCheckout } },
       webhooks: { constructEvent: mockConstructEvent },
     }),
   };
 });
 
-import { acceptCheckout, handleStripeWebhook, updateSubscription } from './stripe-webhook';
+import { acceptCheckout, discardCheckout, handleStripeWebhook, updateSubscription } from './stripe-webhook';
 
 const originalWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 const originalStripeSecret = process.env.STRIPE_SECRET_KEY;
@@ -142,7 +144,7 @@ function setupCheckoutTransaction(options?: {
 function setupSubscriptionUpdate(storedEventCreatedAt: Date | null) {
   const set = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
   const transaction = {
-    select: vi.fn().mockImplementation((columns?: Record<string, unknown>) => ({
+    select: vi.fn().mockImplementation(() => ({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
           limit: vi.fn().mockResolvedValue([{ userId: 'user-1', stripeEventCreatedAt: storedEventCreatedAt }]),
@@ -172,6 +174,48 @@ beforeEach(() => {
   else process.env.STRIPE_WEBHOOK_SECRET = originalWebhookSecret;
   if (originalStripeSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
   else process.env.STRIPE_SECRET_KEY = originalStripeSecret;
+});
+
+describe('discardCheckout', () => {
+  it.each(['expired', 'async_payment_failed'] as const)(
+    'retains a paid session after an older %s event',
+    async (reason) => {
+      const { deleteClaim } = setupCheckoutTransaction();
+      mockRetrieveCheckout.mockResolvedValue(checkoutSession({ status: 'complete' }));
+      await discardCheckout(checkoutSession({ payment_status: 'unpaid' }), reason);
+      expect(deleteClaim).not.toHaveBeenCalled();
+    },
+  );
+
+  it('retains an open session after an older cleanup event', async () => {
+    const { deleteClaim } = setupCheckoutTransaction();
+    mockRetrieveCheckout.mockResolvedValue(checkoutSession({ status: 'open', payment_status: 'unpaid' }));
+    await discardCheckout(checkoutSession(), 'expired');
+    expect(deleteClaim).not.toHaveBeenCalled();
+  });
+
+  it('retains the claim when Stripe cannot confirm the current session', async () => {
+    const { deleteClaim } = setupCheckoutTransaction();
+    mockRetrieveCheckout.mockRejectedValueOnce(new Error('Stripe unavailable'));
+    await expect(discardCheckout(checkoutSession(), 'expired')).rejects.toThrow('Stripe unavailable');
+    expect(deleteClaim).not.toHaveBeenCalled();
+  });
+
+  it('retains the claim when the retrieved session belongs to another Checkout', async () => {
+    const { deleteClaim } = setupCheckoutTransaction();
+    mockRetrieveCheckout.mockResolvedValue(
+      checkoutSession({ status: 'expired', payment_status: 'unpaid', client_reference_id: 'another-claim' }),
+    );
+    await discardCheckout(checkoutSession(), 'expired');
+    expect(deleteClaim).not.toHaveBeenCalled();
+  });
+
+  it('skips Stripe lookup when the claim was already accepted', async () => {
+    const { deleteClaim } = setupCheckoutTransaction({ missingClaim: true });
+    await discardCheckout(checkoutSession(), 'expired');
+    expect(mockRetrieveCheckout).not.toHaveBeenCalled();
+    expect(deleteClaim).not.toHaveBeenCalled();
+  });
 });
 
 describe('acceptCheckout', () => {
@@ -355,8 +399,13 @@ describe('handleStripeWebhook', () => {
     async (eventType) => {
       process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
       process.env.STRIPE_SECRET_KEY = 'sk_test_example';
-      const where = vi.fn().mockResolvedValue(undefined);
-      mockDb.delete.mockReturnValue({ where });
+      const { deleteClaim } = setupCheckoutTransaction();
+      mockRetrieveCheckout.mockResolvedValue(
+        checkoutSession({
+          status: eventType === 'checkout.session.expired' ? 'expired' : 'complete',
+          payment_status: 'unpaid',
+        }),
+      );
       mockConstructEvent.mockReturnValue({
         id: 'evt_expired_1',
         type: eventType,
@@ -367,7 +416,7 @@ describe('handleStripeWebhook', () => {
 
       await handleStripeWebhook(webhookRequest({ 'stripe-signature': 'valid' }), response);
 
-      expect(where).toHaveBeenCalledOnce();
+      expect(deleteClaim).toHaveBeenCalledOnce();
       expect(result().statusCode).toBe(200);
     },
   );

@@ -1,30 +1,43 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { eq, sql } from 'drizzle-orm';
-import type Stripe from 'stripe';
+import Stripe from 'stripe';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as schema from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import { createBarrier, handleLater } from './helpers/concurrency';
 
-const { checkoutCreate, checkoutList, checkoutRetrieve, subscriptionRetrieve, subscriptionUpdate } = vi.hoisted(() => ({
-  checkoutCreate: vi.fn(),
-  checkoutList: vi.fn(),
-  checkoutRetrieve: vi.fn(),
-  subscriptionRetrieve: vi.fn(),
-  subscriptionUpdate: vi.fn(),
-}));
+const { checkoutCreate, checkoutList, checkoutRetrieve, subscriptionRetrieve, subscriptionUpdate, requestListeners } =
+  vi.hoisted(() => ({
+    checkoutCreate: vi.fn(),
+    checkoutList: vi.fn(),
+    checkoutRetrieve: vi.fn(),
+    subscriptionRetrieve: vi.fn(),
+    subscriptionUpdate: vi.fn(),
+    requestListeners: new Set<(event: { idempotency_key?: string }) => void>(),
+  }));
 
 vi.mock('../services/stripe-support', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/stripe-support')>()),
   getStripeClient: () => ({
-    checkout: { sessions: { create: checkoutCreate, list: checkoutList, retrieve: checkoutRetrieve } },
+    on: (_event: string, listener: (event: { idempotency_key?: string }) => void) => requestListeners.add(listener),
+    off: (_event: string, listener: (event: { idempotency_key?: string }) => void) => requestListeners.delete(listener),
+    checkout: {
+      sessions: {
+        create: async (parameters: unknown, options?: { idempotencyKey?: string; maxNetworkRetries?: number }) => {
+          for (const listener of requestListeners) listener({ idempotency_key: options?.idempotencyKey });
+          return checkoutCreate(parameters, options);
+        },
+        list: checkoutList,
+        retrieve: checkoutRetrieve,
+      },
+    },
     subscriptions: { retrieve: subscriptionRetrieve, update: subscriptionUpdate },
   }),
 }));
 
 import { supportMutations } from '../graphql/resolvers/support';
 import { userMutations } from '../graphql/resolvers/users/mutations';
-import { acceptCheckout, updateSubscription } from '../handlers/stripe-webhook';
+import { acceptCheckout, discardCheckout, updateSubscription } from '../handlers/stripe-webhook';
 import { withSupportOperation } from '../services/stripe-support-operation';
 
 const USER_ID = 'stripe-concurrency-user';
@@ -85,6 +98,7 @@ async function operations() {
 
 beforeEach(async () => {
   vi.resetAllMocks();
+  requestListeners.clear();
   vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_concurrency');
   checkoutCreate.mockResolvedValue({ id: 'cs_concurrency', url: 'https://checkout.stripe.test/concurrency' });
   checkoutList.mockResolvedValue({ data: [], has_more: false });
@@ -230,8 +244,39 @@ describe('Stripe support account serialization — real PostgreSQL', () => {
         client_reference_id: pendingClaims[0].id,
         expires_at: Math.floor(pendingClaims[0].checkoutExpiresAt!.getTime() / 1000),
       }),
-      { idempotencyKey: pendingClaims[0].id },
+      { idempotencyKey: pendingClaims[0].id, maxNetworkRetries: 0 },
     );
+  });
+
+  it.each([
+    Stripe.errors.StripeInvalidRequestError,
+    Stripe.errors.StripeAuthenticationError,
+    Stripe.errors.StripePermissionError,
+    Stripe.errors.StripeRateLimitError,
+  ])('releases the pending claim after a definitive first-attempt %s rejection', async (ErrorClass) => {
+    checkoutCreate.mockRejectedValueOnce(
+      new ErrorClass({ type: 'rate_limit_error', message: 'Definitively rejected' }),
+    );
+    await expect(createCheckout()).rejects.toThrow('Definitively rejected');
+    expect(await claims()).toHaveLength(0);
+    expect(requestListeners.size).toBe(0);
+    await expect(createCheckout()).resolves.toMatchObject({ url: 'https://checkout.stripe.test/concurrency' });
+    expect(await claims()).toHaveLength(1);
+  });
+
+  it('retains the claim when a definitive error follows a hidden transport retry', async () => {
+    checkoutCreate.mockImplementationOnce(async (_parameters: unknown, options: { idempotencyKey: string }) => {
+      for (const listener of requestListeners) listener({ idempotency_key: options.idempotencyKey });
+      throw new Stripe.errors.StripeInvalidRequestError({
+        type: 'invalid_request_error',
+        message: 'Retry rejected after uncertain first attempt',
+      });
+    });
+    await expect(createCheckout()).rejects.toThrow('Retry rejected after uncertain first attempt');
+    expect(await claims()).toHaveLength(1);
+    expect(requestListeners.size).toBe(0);
+    await expect(createCheckout()).rejects.toMatchObject({ extensions: { code: 'PENDING_CHECKOUT_EXISTS' } });
+    expect(checkoutCreate).toHaveBeenCalledOnce();
   });
 
   it('retains the payment guard when Stripe loses the Checkout response', async () => {
@@ -308,6 +353,86 @@ describe('Stripe support account serialization — real PostgreSQL', () => {
       await Promise.allSettled([acceptance, ...(deletion ? [deletion] : [])]);
     }
   });
+
+  it('fences cleanup while paid Checkout acceptance is reading Stripe, then makes cleanup retry a no-op', async () => {
+    await db.insert(schema.stripeSupportClaims).values({
+      id: CLAIM_ID,
+      userId: USER_ID,
+      cadence: 'monthly',
+      showPublicly: true,
+    });
+    const acceptanceEntered = createBarrier();
+    const releaseAcceptance = createBarrier();
+    subscriptionRetrieve.mockImplementationOnce(async () => {
+      await assertAccountUnlocked();
+      acceptanceEntered.release();
+      await releaseAcceptance.promise;
+      return { id: SUBSCRIPTION_ID, status: 'active', cancel_at_period_end: false };
+    });
+    const accepting = acceptCheckout(paidSession(), 100);
+    handleLater(accepting);
+    try {
+      await acceptanceEntered.promise;
+      await expect(discardCheckout(paidSession(), 'expired')).rejects.toMatchObject({
+        extensions: { code: 'SUPPORT_OPERATION_PENDING' },
+      });
+      expect(await claims()).toHaveLength(1);
+      expect(checkoutRetrieve).not.toHaveBeenCalled();
+      releaseAcceptance.release();
+      await accepting;
+      const creditedSupporters = await db
+        .select()
+        .from(schema.stripeSupporters)
+        .where(eq(schema.stripeSupporters.userId, USER_ID));
+      expect(creditedSupporters).toHaveLength(1);
+      expect(creditedSupporters[0]).toMatchObject({
+        stripeSubscriptionId: SUBSCRIPTION_ID,
+        showPublicly: true,
+      });
+      expect(creditedSupporters[0].supportedAt).toBeInstanceOf(Date);
+      expect(await claims()).toHaveLength(0);
+      await expect(discardCheckout(paidSession(), 'expired')).resolves.toBeUndefined();
+      expect(checkoutRetrieve).not.toHaveBeenCalled();
+      expect(
+        await db.select().from(schema.stripeSupporters).where(eq(schema.stripeSupporters.userId, USER_ID)),
+      ).toEqual(creditedSupporters);
+    } finally {
+      releaseAcceptance.release();
+      await Promise.allSettled([accepting]);
+    }
+  });
+
+  it.each(['expired', 'async_payment_failed'] as const)(
+    'retains a currently paid claim when stale %s cleanup arrives first',
+    async (reason) => {
+      await db.insert(schema.stripeSupportClaims).values({
+        id: CLAIM_ID,
+        userId: USER_ID,
+        cadence: 'monthly',
+        showPublicly: true,
+      });
+      checkoutRetrieve.mockImplementationOnce(async () => {
+        await assertAccountUnlocked();
+        return { ...paidSession(), status: 'complete' };
+      });
+      const staleSession = { ...paidSession(), payment_status: 'unpaid', status: 'expired' } as Stripe.Checkout.Session;
+      await discardCheckout(staleSession, reason);
+      expect(checkoutRetrieve).toHaveBeenCalledWith('cs_concurrency');
+      expect(await claims()).toHaveLength(1);
+      expect((await operations())[0].state).toBe('idle');
+      await acceptCheckout(paidSession(), 100);
+      expect(await claims()).toHaveLength(0);
+      const creditedSupporters = await db
+        .select()
+        .from(schema.stripeSupporters)
+        .where(eq(schema.stripeSupporters.userId, USER_ID));
+      expect(creditedSupporters[0]).toMatchObject({
+        stripeSubscriptionId: SUBSCRIPTION_ID,
+        showPublicly: true,
+      });
+      expect(creditedSupporters[0].supportedAt).toBeInstanceOf(Date);
+    },
+  );
 
   it('keeps the account when Stripe cancellation fails after webhook acceptance', async () => {
     await db.insert(schema.stripeSupportClaims).values({ id: CLAIM_ID, userId: USER_ID, cadence: 'monthly' });

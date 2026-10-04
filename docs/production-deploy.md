@@ -745,9 +745,14 @@ Creation and account deletion first reconcile expired claims under a persisted
 billing operation. Each attempt checks at most 10 claims and 1,000 sessions per
 claim with a missing session ID, within a shared 15-second network budget. Stripe requests
 time out after five seconds; reconciliation disables retries, while other
-requests allow one retry. It clears only confirmed expired sessions, or claims with
+requests allow one retry. Checkout requests minimize retries and release a
+definitively rejected claim only after exactly one observed request with its
+unique idempotency key; a later rejection after a connection retry stays uncertain. It clears only confirmed expired sessions, or claims with
 no matching session after exhausting that bounded creation-window search.
 Paid/completed sessions, failed lookups, and truncated searches retain claims.
+Cleanup webhooks use the same persisted billing reservation and re-read the
+Checkout session from Stripe before removing a binding, so delayed cleanup
+cannot erase supporter credit for a completed payment.
 Legacy claims without a fixed expiration require manual reconciliation.
 
 Billing operations reserve and finalize in short database transactions; Stripe
