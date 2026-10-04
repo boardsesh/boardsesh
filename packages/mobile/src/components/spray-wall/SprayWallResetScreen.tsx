@@ -369,6 +369,9 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         <ActivityIndicator size="large" />
+        <Text variant="subheadline" color={systemColors.secondaryLabel} accessibilityLiveRegion="polite">
+          {t('sprayReset.loading')}
+        </Text>
       </View>
     );
   }

@@ -31,8 +31,8 @@
 // invalidates the draft's own key (see `use-spray-hold-writes.ts`) and the
 // published generation waits for the editor to close.
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { GET_SPRAY_WALL_RENDER_DATA } from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWallRenderData } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../graphql/client';
@@ -70,9 +70,60 @@ export const sprayWallDraftQueryKey = (wallUuid: string | null, versionNumber: n
  */
 const DRAFT_STALE_TIME_MS = 5 * 60 * 1000;
 
+/**
+ * Read one version's payload, noting which viewer and which removal generation
+ * it was read under.
+ *
+ * One function for the hook and for `prefetchSprayWallDraft`, so a prefetched
+ * payload carries the same notes a mounted read does.
+ */
+async function fetchSprayWallDraft(layoutId: number, wallUuid: string | null, versionNumber: number | null) {
+  const viewerGeneration = sprayWallViewerGeneration();
+  const removalGeneration = sprayWallRemovalGeneration(layoutId);
+  const response = await getHttpClient().request<SprayWallRenderDataResponse>(GET_SPRAY_WALL_RENDER_DATA, {
+    uuid: wallUuid,
+    version: versionNumber,
+  });
+  if (response.sprayWallRenderData) {
+    draftViewerGenerations.set(response.sprayWallRenderData, viewerGeneration);
+    draftRemovalGenerations.set(response.sprayWallRenderData, removalGeneration);
+  }
+  return response;
+}
+
+/**
+ * Start the draft's read before the editor mounts, so the editor usually opens
+ * with its wall already in hand. The add-a-wall flow calls this while the
+ * detector runs: the payload is the draft's photo, homography and saved holds,
+ * none of which detection writes to.
+ *
+ * Never rejects. A read that fails here is simply read again by the editor.
+ */
+export function prefetchSprayWallDraft(
+  queryClient: QueryClient,
+  layoutId: number,
+  wallUuid: string,
+  versionNumber: number,
+): Promise<void> {
+  return queryClient.prefetchQuery({
+    queryKey: sprayWallDraftQueryKey(wallUuid, versionNumber),
+    queryFn: () => fetchSprayWallDraft(layoutId, wallUuid, versionNumber),
+    staleTime: DRAFT_STALE_TIME_MS,
+  });
+}
+
 export type UseSprayWallDraftResult = {
   /** Nothing has resolved yet. */
   isLoading: boolean;
+  /**
+   * There is no payload and the read is not getting one: an attempt has failed
+   * (and is being retried, or gave up), or the retry is parked until the phone
+   * is back online. The screen says so and offers `retry` rather than leaving a
+   * spinner over a request that is not running.
+   */
+  isStalled: boolean;
+  /** Read the version again now, abandoning a retry that is parked or backing off. */
+  retry: () => void;
   /**
    * The version resolved but cannot be edited: it does not exist, the viewer may
    * not see it, its photo will not say its pixel size, or its homography has no
@@ -97,19 +148,7 @@ export function useSprayWallDraft(
 ): UseSprayWallDraftResult {
   const query = useQuery({
     queryKey: sprayWallDraftQueryKey(wallUuid, versionNumber),
-    queryFn: async () => {
-      const viewerGeneration = sprayWallViewerGeneration();
-      const removalGeneration = sprayWallRemovalGeneration(layoutId);
-      const response = await getHttpClient().request<SprayWallRenderDataResponse>(GET_SPRAY_WALL_RENDER_DATA, {
-        uuid: wallUuid,
-        version: versionNumber,
-      });
-      if (response.sprayWallRenderData) {
-        draftViewerGenerations.set(response.sprayWallRenderData, viewerGeneration);
-        draftRemovalGenerations.set(response.sprayWallRenderData, removalGeneration);
-      }
-      return response;
-    },
+    queryFn: () => fetchSprayWallDraft(layoutId, wallUuid, versionNumber),
     select: (response) => response.sprayWallRenderData,
     enabled: wallUuid != null && versionNumber != null,
     staleTime: DRAFT_STALE_TIME_MS,
@@ -170,11 +209,25 @@ export function useSprayWallDraft(
   // unavailable — that is the one-frame flash.
   const awaitingVerdict = renderData != null && verdict?.payload !== renderData;
 
-  return {
-    isLoading: asked && (query.isPending || awaitingVerdict),
-    isUnavailable: asked && !query.isPending && !awaitingVerdict && !(verdict?.ok ?? false),
-    homography: renderData?.homography ?? null,
-  };
+  const isLoading = asked && (query.isPending || awaitingVerdict);
+  const isUnavailable = asked && !query.isPending && !awaitingVerdict && !(verdict?.ok ?? false);
+  // `failureCount` is above zero from the first failed attempt until the next
+  // read starts, which covers a retry that is backing off and a read that gave
+  // up. `paused` is a retry parked because the phone reads as offline.
+  const isStalled = asked && query.data === undefined && (query.fetchStatus === 'paused' || query.failureCount > 0);
+  const homography = renderData?.homography ?? null;
+
+  const { refetch } = query;
+  const retry = useCallback(() => {
+    // `refetch` hands back a read that is parked or backing off as it is, so
+    // that one is cancelled first and the new read starts from its first attempt.
+    void queryClient.cancelQueries({ queryKey: sprayWallDraftQueryKey(wallUuid, versionNumber) }).then(() => refetch());
+  }, [queryClient, wallUuid, versionNumber, refetch]);
+
+  return useMemo(
+    () => ({ isLoading, isUnavailable, isStalled, retry, homography }),
+    [isLoading, isUnavailable, isStalled, retry, homography],
+  );
 }
 
 /**

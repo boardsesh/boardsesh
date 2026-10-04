@@ -10,10 +10,10 @@
 // appears; reporting a payload that genuinely CANNOT be drawn as "loading" hangs
 // a spinner forever. The verdict is therefore keyed on the payload, and this file
 // is what stops a future refactor collapsing it back to a boolean.
-import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const requestMock = vi.hoisted(() => vi.fn());
 const registerRenderDataMock = vi.hoisted(() => vi.fn());
@@ -25,7 +25,12 @@ vi.mock('../spray-wall-loader', () => ({
   invalidateSprayWallRenderData: invalidateMock,
 }));
 
-import { sprayWallDraftQueryKey, useKeepSprayDraftRegistered, useSprayWallDraft } from '../use-spray-wall-draft';
+import {
+  prefetchSprayWallDraft,
+  sprayWallDraftQueryKey,
+  useKeepSprayDraftRegistered,
+  useSprayWallDraft,
+} from '../use-spray-wall-draft';
 import { clearSprayWallRegistry, getSprayWall, registerSprayWall, unregisterSprayWall } from '../spray-wall-registry';
 
 const RENDER_DATA = {
@@ -129,6 +134,131 @@ describe('useSprayWallDraft', () => {
     const { unmount } = renderHook(() => useSprayWallDraft(4001, null, null), { wrapper });
     unmount();
     expect(invalidateMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('useSprayWallDraft — a read that is not getting anywhere', () => {
+  // The app's own query policy where it matters here: one attempt runs whatever
+  // the phone thinks of the network, and a retry waits for it to be online.
+  function appLikeWrapper(retry: number | false) {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry, retryDelay: 0, networkMode: 'offlineFirst' } },
+    });
+    return function AppLikeWrapper({ children }: { children: ReactNode }) {
+      return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    };
+  }
+
+  afterEach(() => {
+    onlineManager.setOnline(true);
+  });
+
+  it('is not stalled while the first attempt is in flight, or once the wall has loaded', async () => {
+    requestMock.mockResolvedValue({ sprayWallRenderData: RENDER_DATA });
+    registerRenderDataMock.mockReturnValue(true);
+
+    const seen: boolean[] = [];
+    const { result } = renderHook(
+      () => {
+        const state = useSprayWallDraft(4001, 'wall-1', 3);
+        seen.push(state.isStalled);
+        return state;
+      },
+      { wrapper: appLikeWrapper(2) },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(seen.every((stalled) => !stalled)).toBe(true);
+  });
+
+  it('says so when a retry is parked offline, instead of spinning over nothing', async () => {
+    // The stall behind #5959's shape: the first attempt fails, the phone reads
+    // as offline, and the retry waits. `isPending` stays true the whole time.
+    onlineManager.setOnline(false);
+    requestMock.mockRejectedValue(new Error('network down'));
+
+    const { result } = renderHook(() => useSprayWallDraft(4001, 'wall-1', 3), { wrapper: appLikeWrapper(2) });
+
+    await waitFor(() => expect(result.current.isStalled).toBe(true));
+    expect(result.current.isLoading).toBe(true);
+    expect(requestMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays stalled once the read has given up, so the screen offers the retry', async () => {
+    requestMock.mockRejectedValue(new Error('timed out'));
+
+    const { result } = renderHook(() => useSprayWallDraft(4001, 'wall-1', 3), { wrapper: appLikeWrapper(false) });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isStalled).toBe(true);
+  });
+
+  it('retry abandons the parked read and loads the wall from a fresh attempt', async () => {
+    onlineManager.setOnline(false);
+    requestMock.mockRejectedValueOnce(new Error('network down'));
+    requestMock.mockResolvedValue({ sprayWallRenderData: RENDER_DATA });
+    registerRenderDataMock.mockReturnValue(true);
+
+    const { result } = renderHook(() => useSprayWallDraft(4001, 'wall-1', 3), { wrapper: appLikeWrapper(2) });
+    await waitFor(() => expect(result.current.isStalled).toBe(true));
+
+    // Still offline as far as the phone knows: the retry must not wait for it.
+    act(() => result.current.retry());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isStalled).toBe(false);
+    expect(result.current.isUnavailable).toBe(false);
+    expect(requestMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('hands back the same result object while nothing about it changes', async () => {
+    requestMock.mockResolvedValue({ sprayWallRenderData: RENDER_DATA });
+    registerRenderDataMock.mockReturnValue(true);
+
+    const { result, rerender } = renderHook(() => useSprayWallDraft(4001, 'wall-1', 3), {
+      wrapper: appLikeWrapper(false),
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    const settled = result.current;
+    rerender();
+    expect(result.current).toBe(settled);
+  });
+});
+
+describe('prefetchSprayWallDraft', () => {
+  it('reads the draft once, so the editor that mounts next opens without asking again', async () => {
+    requestMock.mockResolvedValue({ sprayWallRenderData: RENDER_DATA });
+    registerRenderDataMock.mockReturnValue(true);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    await prefetchSprayWallDraft(queryClient, 4001, 'wall-1', 3);
+    expect(requestMock).toHaveBeenCalledTimes(1);
+    expect(requestMock.mock.calls[0][1]).toEqual({ uuid: 'wall-1', version: 3 });
+
+    const { result } = renderHook(() => useSprayWallDraft(4001, 'wall-1', 3), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      ),
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(requestMock).toHaveBeenCalledTimes(1);
+    // The generation notes travel with a prefetched payload too.
+    expect(registerRenderDataMock).toHaveBeenCalledWith(
+      4001,
+      RENDER_DATA,
+      undefined,
+      expect.any(Number),
+      expect.any(Number),
+    );
+  });
+
+  it('never rejects: a failed prefetch is simply read again by the editor', async () => {
+    requestMock.mockRejectedValue(new Error('network down'));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    await expect(prefetchSprayWallDraft(queryClient, 4001, 'wall-1', 3)).resolves.toBeUndefined();
   });
 });
 

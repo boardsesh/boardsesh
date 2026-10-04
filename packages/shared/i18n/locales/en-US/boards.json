@@ -862,7 +862,9 @@
     },
     "empty": {
       "noPhoto": "This wall has no photo to edit yet."
-    }
+    },
+    "loading": "Loading your wall…",
+    "loadStalled": "Couldn't load your wall. Check your connection and try again."
   },
   "sprayWizard": {
     "screenTitle": "Add a spray wall",
@@ -967,6 +969,7 @@
   },
   "sprayReset": {
     "screenTitle": "Reset the wall",
+    "loading": "Loading your wall…",
     "notYours": "This wall isn't yours to reset.",
     "nothingPublished": "This wall isn't set up yet. Finish adding it first.",
     "openDraft": {

@@ -862,7 +862,9 @@
     },
     "empty": {
       "noPhoto": "Este muro todavía no tiene foto que editar."
-    }
+    },
+    "loading": "Cargando tu muro…",
+    "loadStalled": "No pudimos cargar tu muro. Revisa tu conexión e inténtalo de nuevo."
   },
   "sprayWizard": {
     "screenTitle": "Añadir un muro de spray",
@@ -967,6 +969,7 @@
   },
   "sprayReset": {
     "screenTitle": "Resetear el muro",
+    "loading": "Cargando tu muro…",
     "notYours": "Este muro no es tuyo para resetearlo.",
     "nothingPublished": "Este muro todavía no está montado. Termina de añadirlo primero.",
     "openDraft": {

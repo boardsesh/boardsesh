@@ -19,7 +19,6 @@ import Animated, {
 import { useTranslation } from 'react-i18next';
 import { MAX_HOLDS_PER_WALL } from '@boardsesh/board-config';
 import { Text } from '../Text';
-import { ActivityIndicator } from '../ActivityIndicator';
 import { InteractiveFilterBoard, type FilterBoardTransformContext } from '../search/InteractiveFilterBoard';
 import { GlassIconButton } from '../GlassIconButton';
 import { OnboardingTipBanner } from '../onboarding/OnboardingTipBanner';
@@ -43,6 +42,7 @@ import { SprayEditGestureOverlay, type SprayWallAccessibility } from './SprayEdi
 import { SprayEditorBottomBar, sprayCountSummary } from './SprayEditorBottomBar';
 import { SprayCornersChipBar, SprayHoldChipBar } from './SprayHoldChipBar';
 import { SprayEditorBanner } from './SprayEditorBanner';
+import { SprayEditorLoading, type SprayEditorLoadingPhoto } from './SprayEditorLoading';
 import { SprayScanBand, SCAN_BAND_HEIGHT } from './SprayScanBand';
 import { SprayHoldSpotlight } from './SprayHoldSpotlight';
 import { SprayPublishSweep, PUBLISH_SWEEP_MS } from './SprayPublishSweep';
@@ -179,6 +179,12 @@ export type SprayHoldEditorScreenProps = {
   revealOnMount?: boolean;
   /** The bottom bar's one filled button — "Pick a look" on the add-a-wall flow. */
   primaryLabel: string;
+  /**
+   * The wall's photo as this phone still holds it, when it does. Shown dimmed
+   * while the draft loads, so the wait keeps the wall on screen. Without it the
+   * wait is a spinner and a status line.
+   */
+  loadingPhoto?: SprayEditorLoadingPhoto | null;
   /** Shown over an empty wall: why there are no rings, and optionally a way to try again. */
   notice?: SprayEditorNotice;
   /**
@@ -230,6 +236,7 @@ export function SprayHoldEditorScreen({
   candidates,
   revealOnMount = false,
   primaryLabel,
+  loadingPhoto,
   notice,
   onCommitted,
   onDirtyChange,
@@ -240,7 +247,11 @@ export function SprayHoldEditorScreen({
   const { t } = useTranslation('boards');
   const insets = useSafeAreaInsets();
 
-  const { isLoading, isUnavailable, homography } = useSprayWallDraft(layoutId, wallUuid, versionNumber);
+  const { isLoading, isUnavailable, isStalled, retry, homography } = useSprayWallDraft(
+    layoutId,
+    wallUuid,
+    versionNumber,
+  );
   const saveHolds = useSaveSprayHolds();
 
   const capabilities = useMemo(() => {
@@ -1464,12 +1475,11 @@ export function SprayHoldEditorScreen({
     if (hintLine) AccessibilityInfo.announceForAccessibility(hintLine);
   }, [hintLine]);
 
-  if (isLoading) {
-    return (
-      <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
+  // A read that stalled is said in the screen: this route is a modal, and the
+  // toast and banner overlays draw behind it. Checked ahead of "unavailable",
+  // which would call a dropped connection a wall with no photo.
+  if (isLoading || isStalled) {
+    return <SprayEditorLoading photo={loadingPhoto ?? null} stalled={isStalled} onRetry={retry} />;
   }
 
   if (!wall || isUnavailable || !homography) {

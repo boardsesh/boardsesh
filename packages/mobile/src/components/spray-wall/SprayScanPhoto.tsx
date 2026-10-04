@@ -45,6 +45,12 @@ type SprayScanPhotoProps = {
   retry?: SprayScanAction & { disabled?: boolean };
   /** "Mark holds myself": skips the scan and opens the editor empty. */
   manual?: SprayScanAction;
+  /**
+   * False when the wait is not a scan: the hold editor fetching its wall. The
+   * band stays off and the card carries a spinner, so a finished scan is never
+   * shown as still running. Defaults to true.
+   */
+  band?: boolean;
 };
 
 /**
@@ -58,7 +64,16 @@ type SprayScanPhotoProps = {
  * re-renders per frame. With Reduce Motion there is no band, only a small
  * spinner in the card.
  */
-export function SprayScanPhoto({ photo, message, detail, resumeHint, failed, retry, manual }: SprayScanPhotoProps) {
+export function SprayScanPhoto({
+  photo,
+  message,
+  detail,
+  resumeHint,
+  failed,
+  retry,
+  manual,
+  band = true,
+}: SprayScanPhotoProps) {
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
@@ -88,7 +103,7 @@ export function SprayScanPhoto({ photo, message, detail, resumeHint, failed, ret
     photoHeight: size.height,
   });
 
-  const scanning = !failed && !reduceMotion && frame.height > 0;
+  const scanning = band && !failed && !reduceMotion && frame.height > 0;
   const progressSV = useSharedValue(0);
   useEffect(() => {
     if (!scanning) {
@@ -133,7 +148,7 @@ export function SprayScanPhoto({ photo, message, detail, resumeHint, failed, ret
           pointerEvents="none"
         />
         <View style={styles.statusRow}>
-          {reduceMotion && !failed ? <ActivityIndicator /> : null}
+          {(reduceMotion || !band) && !failed ? <ActivityIndicator /> : null}
           <Text
             variant="headline"
             color={systemColors.label}

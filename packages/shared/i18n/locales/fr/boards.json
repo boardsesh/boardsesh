@@ -862,7 +862,9 @@
     },
     "empty": {
       "noPhoto": "Ce mur n'a pas encore de photo à modifier."
-    }
+    },
+    "loading": "Chargement de ton mur…",
+    "loadStalled": "Impossible de charger ton mur. Vérifie ta connexion et réessaie."
   },
   "sprayWizard": {
     "screenTitle": "Ajouter un mur de spray",
@@ -967,6 +969,7 @@
   },
   "sprayReset": {
     "screenTitle": "Réinitialiser le mur",
+    "loading": "Chargement de ton mur…",
     "notYours": "Ce mur n'est pas à toi, tu ne peux pas le réinitialiser.",
     "nothingPublished": "Ce mur n'est pas encore prêt. Termine de l'ajouter d'abord.",
     "openDraft": {
