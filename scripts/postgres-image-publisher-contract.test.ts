@@ -697,3 +697,13 @@ describe('trusted PostgreSQL image publisher contract', () => {
     );
   });
 });
+
+describe('development database snapshot reader default', () => {
+  it('resolves the gzip and catalog manifests from the R2 public host', () => {
+    const dockerfile = readFileSync(resolve(REPOSITORY_ROOT, 'packages/db/docker/Dockerfile.dev-db'), 'utf8');
+    const configuredBase = dockerfile.match(/^ARG SNAPSHOT_BASE_URL=(.+)$/m)?.[1];
+    expect(configuredBase).toBe('https://snapshots.boardsesh.com');
+    expect(dockerfile).toContain('--snapshot-base-url "$SNAPSHOT_BASE_URL"');
+    expect(dockerfile).toContain('ENV SNAPSHOT_BASE_URL=${SNAPSHOT_BASE_URL}');
+  });
+});

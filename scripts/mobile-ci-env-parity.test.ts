@@ -164,6 +164,15 @@ describe('Expo web export telemetry (app.boardsesh.com)', () => {
 });
 
 describe('mobile CI env parity (OTA fingerprint invariant)', () => {
+  it.each([NATIVE_IOS, NATIVE_ANDROID, OTA, OTA_CHECK, OTA_PREVIEW, OTA_BACKPORT, STORE_DRAFT])(
+    '%s downloads offline snapshots from the production R2 gzip manifest base',
+    (workflowName) => {
+      expect(workflowEnvValue(readWorkflow(workflowName), 'EXPO_PUBLIC_SNAPSHOT_BASE_URL')).toBe(
+        'https://snapshots.boardsesh.com/board-snapshots/v1-gzip',
+      );
+    },
+  );
+
   // The PR-time OTA-compat check + the per-PR preview publish resolve the same
   // fingerprint as the native builds + OTA publish, so they must share the same
   // fingerprint-affecting env.

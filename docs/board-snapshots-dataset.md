@@ -10,7 +10,7 @@ analysis, backup, or tooling can use them directly.
 The one stable URL is the manifest:
 
 ```
-https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-gzip/manifest.json
+https://snapshots.boardsesh.com/board-snapshots/v1-gzip/manifest.json
 ```
 
 Artifacts under this prefix are stored gzipped and served with `Content-Encoding: gzip`. Anything
@@ -24,7 +24,7 @@ that stores an artifact URL will 404 within two weeks; a job that reads the mani
 keep working.
 
 ```sh
-manifest=https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-gzip/manifest.json
+manifest=https://snapshots.boardsesh.com/board-snapshots/v1-gzip/manifest.json
 
 # List what's available
 curl -s "$manifest" |
