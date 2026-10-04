@@ -688,6 +688,62 @@ describe('an update that would not start', () => {
 });
 
 describe('paths that must not hang', () => {
+  it('releases at 1,500 ms as failed when the marker read never settles', async () => {
+    preferences.getPreference.mockImplementation((key: string) =>
+      key === MARKER_KEY ? new Promise<never>(() => {}) : Promise.resolve(null),
+    );
+    // A download is pending the whole time: without the marker it must not be used.
+    updates.latestContext = PENDING;
+    await startGate();
+
+    await advance(1_499);
+    expect(getLaunchUpdateGateFlags().resolved).toBe(false);
+    expect(launchUpdateEvents()).toHaveLength(0);
+
+    await advance(1);
+    expect(getLaunchUpdateGateFlags().resolved).toBe(true);
+    expect(launchUpdateEvents()).toEqual([
+      expect.objectContaining({
+        outcome: 'failed',
+        phase_at_release: 'none',
+        trigger: 'cold_start',
+        cap_ms: 10_000,
+        duration_ms: 1_500,
+      }),
+    ]);
+    expect(errors.reportHandledError).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { source: 'ota', op: 'launch-update-read-marker' },
+    });
+    expect(updates.reloadAsync).not.toHaveBeenCalled();
+    expect(preferences.setPreference).not.toHaveBeenCalled();
+  });
+
+  it('carries on at 1,500 ms without the explicit check when the cleanup hand-off never settles', async () => {
+    cleanup.runChannelOverrideCleanupOnce.mockReturnValue(new Promise<never>(() => {}));
+    // Nothing to wait for once the reads are done, so the gate's own verdict
+    // lands the moment the hand-off's budget runs out.
+    updates.latestContext = IDLE;
+    await startGate();
+
+    await advance(1_499);
+    expect(getLaunchUpdateGateFlags().resolved).toBe(false);
+    expect(launchUpdateEvents()).toHaveLength(0);
+
+    await advance(1);
+    expect(getLaunchUpdateGateFlags().resolved).toBe(true);
+    expect(launchUpdateEvents()).toEqual([
+      expect.objectContaining({
+        outcome: 'nothing_newer',
+        phase_at_release: 'none',
+        trigger: 'fresh_install',
+        cap_ms: 15_000,
+        duration_ms: 1_500,
+      }),
+    ]);
+    expect(updates.checkForUpdateAsync).not.toHaveBeenCalled();
+    expect(errors.reportHandledError).not.toHaveBeenCalled();
+  });
+
   it('releases, reports and tracks failed when the marker cannot be read', async () => {
     const failure = new Error('backing file unreadable');
     preferences.getPreference.mockRejectedValue(failure);
