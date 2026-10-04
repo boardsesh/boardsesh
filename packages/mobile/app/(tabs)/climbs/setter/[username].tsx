@@ -86,6 +86,8 @@ export default function SetterPlaylist() {
           hasNextPage={query.hasNextPage ?? false}
           fetchNextPage={query.fetchNextPage}
           onActivateClimb={activation.activate}
+          onAddAllToQueue={activation.addToQueue.append}
+          isAddingAllToQueue={activation.addToQueue.isAppending}
           emptyMessage={query.isError ? t('authors.loadError') : t('authors.empty')}
           headerSlot={
             query.isError ? <Button title={t('authors.retry')} onPress={() => void query.refetch()} /> : undefined
