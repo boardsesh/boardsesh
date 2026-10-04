@@ -54,9 +54,9 @@ export const PlaylistAddToQueueRow = memo(function PlaylistAddToQueueRow({
         }
         showChevron={false}
         showSeparator={false}
-        // `ListRow` has no `disabled` prop, so a second tap is swallowed here.
-        // The hook guards re-entrancy too; this keeps the haptic from firing on
-        // a tap that does nothing.
+        // Keep a second tap inert while the append is in flight. The hook guards
+        // re-entrancy too; this keeps the haptic from firing on a tap that does
+        // nothing.
         onPress={isAppending ? noop : onPress}
         haptic={!isAppending}
         accessibilityState={isAppending ? BUSY_STATE : undefined}
