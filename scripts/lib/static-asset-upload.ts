@@ -268,7 +268,7 @@ export function assertPublicStaticAssetHeaders(
   // bounds the streamed body, checks its exact byte count and verifies SHA-256.
   if (contentLength !== null && contentLength !== String(asset.bytes)) {
     throw new Error(
-      `Public asset ${asset.logicalPath} has Content-Length ${contentLength ?? '(missing)'}; expected ${asset.bytes}`,
+      `Public asset ${asset.logicalPath} has Content-Length ${JSON.stringify(contentLength)}; expected ${asset.bytes}`,
     );
   }
   const cacheControl = headers.get('cache-control') ?? '';

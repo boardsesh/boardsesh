@@ -217,7 +217,7 @@ describe('public static asset checksum validation', () => {
     );
 
     await expectFailedPublicValidation(fetchImpl, `exceeds the expected ${asset.bytes} bytes`);
-    expect(cancel).toHaveBeenCalledTimes(6);
+    expect(cancel).toHaveBeenCalledTimes(fetchImpl.mock.calls.length);
   });
 
   it('cancels a stalled headerless stream at the publisher download deadline', async () => {
