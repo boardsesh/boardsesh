@@ -6,16 +6,18 @@ import { useSyncExternalStore } from 'react';
  * subtree (the QA launch gate, the user drawer) can read it without redoing the
  * work or, worse, racing it.
  *
- * `ready` is the load-bearing half. A surfing-capable binary runs a one-time
- * migration on first launch that clears a retired channel override and ends in
- * `Updates.reloadAsync()`. Anything that navigates before that settles is
- * pushing a route the reload throws away — so consumers wait for `ready` rather
- * than assuming the first render is the real one.
+ * `ready` is the load-bearing half. A surfing-capable binary clears a retired
+ * channel override once per install (`ota-channel-override-cleanup.ts`). Until
+ * that has settled, and for the whole of the one launch where it cleared an
+ * override that was really in effect, `Updates.channel` cannot be trusted, so
+ * consumers wait for `ready` rather than assuming the first render is the real
+ * one. The reload onto a fresh bundle is the launch update gate's job now, and
+ * launch readiness (not this flag) is what waits for it.
  */
 export type OtaBranchSurfingState = {
   /** This binary's build-time headers allow a runtime branch override. */
   surfingBuild: boolean;
-  /** The one-time migration has settled; no reload is pending. */
+  /** The one-time override cleanup has settled and this runtime's channel is the baked one. */
   ready: boolean;
 };
 

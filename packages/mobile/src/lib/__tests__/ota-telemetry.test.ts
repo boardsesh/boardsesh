@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  OTA_LAUNCH_UPDATE_EVENT,
   OTA_UPDATE_DOWNLOADED_EVENT,
   OTA_UPDATE_STATUS_EVENT,
+  buildOtaLaunchUpdateProperties,
   buildOtaStatusProperties,
   readOtaBranch,
 } from '../ota-telemetry';
@@ -70,5 +72,47 @@ describe('buildOtaStatusProperties', () => {
   it('keeps the mobile-only event names stable', () => {
     expect(OTA_UPDATE_STATUS_EVENT).toBe('OTA Update Status');
     expect(OTA_UPDATE_DOWNLOADED_EVENT).toBe('OTA Update Downloaded');
+  });
+});
+
+describe('the launch update event', () => {
+  it('pins the event name dashboards filter on', () => {
+    expect(OTA_LAUNCH_UPDATE_EVENT).toBe('OTA Launch Update');
+  });
+
+  it('builds the flat property set', () => {
+    expect(
+      buildOtaLaunchUpdateProperties({
+        outcome: 'updated',
+        phase: 'download',
+        durationMs: 8_412.6,
+        trigger: 'fresh_install',
+        capMs: 15_000,
+        runtimeVersion: 'abcdef123456',
+        isEmbeddedLaunch: true,
+      }),
+    ).toEqual({
+      outcome: 'updated',
+      phase_at_release: 'download',
+      duration_ms: 8_413,
+      trigger: 'fresh_install',
+      cap_ms: 15_000,
+      ota_runtime_version: 'abcdef123456',
+      ota_is_embedded: true,
+    });
+  });
+
+  it('coerces a missing runtime version to null and never reports a negative duration', () => {
+    expect(
+      buildOtaLaunchUpdateProperties({
+        outcome: 'offline',
+        phase: 'none',
+        durationMs: -3,
+        trigger: 'cold_start',
+        capMs: 10_000,
+        runtimeVersion: undefined,
+        isEmbeddedLaunch: false,
+      }),
+    ).toMatchObject({ duration_ms: 0, ota_runtime_version: null, ota_is_embedded: false });
   });
 });

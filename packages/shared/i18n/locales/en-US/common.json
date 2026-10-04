@@ -543,6 +543,9 @@
         "message": "Something went wrong getting the latest version. Try again in a bit."
       }
     },
+    "launchUpdate": {
+      "message": "Checking for the latest version"
+    },
     "connectivity": {
       "serverDown": {
         "title": "We're having server trouble",

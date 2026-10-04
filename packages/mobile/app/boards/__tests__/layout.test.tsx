@@ -31,6 +31,11 @@ vi.mock('expo-router', () => {
   };
   return { Stack, router: routerMock };
 });
+// The launch hold is covered by its own suite; here the screen renders as is.
+vi.mock('../../../src/components/launch-update/hold-until-launch-ready', () => ({
+  holdUntilLaunchReady: <Screen,>(Screen: Screen) => Screen,
+}));
+
 vi.mock('react-native', () => ({
   Pressable: ({
     children,

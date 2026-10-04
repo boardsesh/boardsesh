@@ -1,3 +1,5 @@
+import type { LaunchUpdateOutcome, LaunchUpdatePhase, LaunchUpdateTrigger } from './launch-update-gate';
+
 // OTA-adoption telemetry. Mobile-only (web has no OTA), so the event names stay
 // free-string constants rather than entries in @boardsesh/analytics'
 // SHARED_EVENTS (which is for names fired by BOTH platforms). See
@@ -13,6 +15,47 @@ export const OTA_UPDATE_STATUS_EVENT = 'OTA Update Status';
 // next launch, which the following launch's OTA Update Status event records).
 // Together they form the published → downloaded → applied funnel.
 export const OTA_UPDATE_DOWNLOADED_EVENT = 'OTA Update Downloaded';
+
+// Fired exactly once per gated cold start by the launch update gate
+// (launch-update-gate.ts): before the reload when the gate reloads onto a fresh
+// bundle, on release otherwise. `duration_ms` against `cap_ms` is how the caps
+// get tuned; `trigger` separates a binary's first launch from an ordinary cold
+// start; `phase_at_release` says whether the gate ended while still waiting on
+// the manifest (`check`), with a download under way or done (`download`), or
+// with neither (`none`), which is what tells a hung manifest request from a
+// slow download among the `timed_out` launches. A launch the gate skips (dev, updates disabled, emergency launch,
+// background launch, the runtime a reload produced) fires nothing.
+export const OTA_LAUNCH_UPDATE_EVENT = 'OTA Launch Update';
+
+export type OtaLaunchUpdateProperties = {
+  outcome: LaunchUpdateOutcome;
+  phase_at_release: LaunchUpdatePhase;
+  duration_ms: number;
+  trigger: LaunchUpdateTrigger;
+  cap_ms: number;
+  ota_runtime_version: string | null;
+  ota_is_embedded: boolean;
+};
+
+export function buildOtaLaunchUpdateProperties(fields: {
+  outcome: LaunchUpdateOutcome;
+  phase: LaunchUpdatePhase;
+  durationMs: number;
+  trigger: LaunchUpdateTrigger;
+  capMs: number;
+  runtimeVersion: string | null | undefined;
+  isEmbeddedLaunch: boolean;
+}): OtaLaunchUpdateProperties {
+  return {
+    outcome: fields.outcome,
+    phase_at_release: fields.phase,
+    duration_ms: Math.max(0, Math.round(fields.durationMs)),
+    trigger: fields.trigger,
+    cap_ms: fields.capMs,
+    ota_runtime_version: fields.runtimeVersion ?? null,
+    ota_is_embedded: fields.isEmbeddedLaunch,
+  };
+}
 
 // The raw expo-updates constants the status event is built from. Nullable string
 // and Date fields accept `undefined` too so the mapper can run against the

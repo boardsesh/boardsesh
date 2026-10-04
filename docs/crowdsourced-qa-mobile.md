@@ -146,9 +146,16 @@ would silently switch the cold-start prompt off for anyone whose profile lands a
 menu entry does not consult `isTester` at all, so it is unaffected — only the prompt is.
 
 **Nothing prompts before xprem's migration settles.** A surfing-capable binary's first launch clears
-a retired channel override and calls `Updates.reloadAsync()`. `app/_layout.tsx` publishes that state
-through `src/lib/ota-branch-surfing-state.ts`; the gate waits for `ready` so it never pushes a route
-the reload throws away. `ready` also covers the store's pre-launch state — `OtaBranchSurfingInitializer`
+a retired channel override once per install (`src/lib/ota-channel-override-cleanup.ts`). That cleanup
+no longer reloads. The reload onto a fresh bundle belongs to the launch update gate
+(`src/lib/launch-update-gate.ts`), which holds launch readiness until it has resolved, so a route the
+QA gate pushes is never thrown away by it. `app/_layout.tsx` publishes the cleanup's state through
+`src/lib/ota-branch-surfing-state.ts`, and the gate waits for `ready`. `ready` stays false for the
+rest of the session only when all four hold: a Branch Surfing build, the
+`ota_branch_surfing_migration_v1` marker absent, `Updates.channel` different from the baked
+`expo-channel-name`, and the gate did not reload. `Updates.channel` then still names the retired
+channel for that JS runtime, and xprem's branch API reads it. That session skips the prompt, and
+the next launch (or the runtime after the gate's reload) is ready. `ready` also covers the store's pre-launch state — `OtaBranchSurfingInitializer`
 is the LAST root sibling, so its publishing effect runs after the gate's — which is why
 `decideQaGate` waits on `surfingReady` alone rather than on `surfingBuild && !surfingReady`. Reading
 an unpublished store as "this build cannot surf" would resolve to `none`, and the gate marks the

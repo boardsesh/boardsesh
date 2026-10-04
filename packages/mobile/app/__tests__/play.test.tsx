@@ -22,6 +22,11 @@ vi.mock('../../src/lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: null }),
 }));
 
+// The launch hold is covered by its own suite; here the screen renders as is.
+vi.mock('../../src/components/launch-update/hold-until-launch-ready', () => ({
+  holdUntilLaunchReady: <Screen,>(Screen: Screen) => Screen,
+}));
+
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-testid': 'backing' }, children),
   StyleSheet: { create: (styles: unknown) => styles, absoluteFill: {} },

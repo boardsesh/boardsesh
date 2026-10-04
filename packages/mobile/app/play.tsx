@@ -21,6 +21,7 @@ import { usePlayerDismissAndWait } from '../src/components/create-climb/use-play
 import { usePlaySwipeDismiss } from '../src/components/play-drawer/use-play-swipe-dismiss';
 import type { Climb } from '@boardsesh/shared-schema';
 import { dismissManagedSheetAndWait, type DismissAndWaitResult } from '../src/providers/sheet-presentation-provider';
+import { holdUntilLaunchReady } from '../src/components/launch-update/hold-until-launch-ready';
 
 /**
  * Full-screen "now playing" player route (`presentation: 'transparentModal'`,
@@ -45,7 +46,7 @@ import { dismissManagedSheetAndWait, type DismissAndWaitResult } from '../src/pr
  * snackbar path) so the queue stacks over the player — both share queue state via
  * QueueProvider and never present at once.
  */
-export default function PlayScreen() {
+function PlayScreen() {
   const {
     activeBoardConfig,
     isAngleAdjustable,
@@ -204,3 +205,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
+
+// iOS presents this route as a native modal, above the launch update
+// placeholder, and a URL can open it on a cold start. Held until launch is
+// ready so a gate reload cannot land mid-tap (#6006).
+export default holdUntilLaunchReady(PlayScreen);

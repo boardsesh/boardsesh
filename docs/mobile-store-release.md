@@ -6,7 +6,9 @@ change that moves the native fingerprint targets `release/next`, and merging it
 there is what starts a store build. A native fingerprint change temporarily
 prevents the current store fleet from receiving new production OTAs, so prepare
 the release identity before the final native change and move the replacement
-binaries through review quickly.
+binaries through review quickly. The marketing version and build numbers are not
+part of the fingerprint, so a version bump alone starts no build (see
+[Version-only releases](#version-only-releases)).
 
 Source of truth for uploaded material:
 
@@ -43,7 +45,10 @@ merged back when the stores have accepted it.
 2. **Land the release identity on the train, before the final native change.**
    Bump `version` in `packages/mobile/app.config.ts` and update the localized iOS
    and Android release notes for `en-US`, `es-ES`, `es-MX`, `fr-FR`, and `de-DE`.
-   Those PRs target `release/next`.
+   Those PRs target `release/next`. Keep this order so the automatic builds carry
+   the intended version and copy. The version no longer moves the fingerprint, so
+   landing it first does not cost the store fleet its OTAs; it just means the
+   version rides on the native change that does start the build.
 3. **Land the native changes.** Every PR that moves the native fingerprint
    targets `release/next`. The OTA compatibility check fails a fingerprint-moving
    PR into `main` and tells you to retarget it; the `allow-native-on-main` label
@@ -110,6 +115,29 @@ train's fingerprint still equals main's, the train's publish is skipped for that
 platform, because xprem serves the newest update per runtimeVersion and the train's
 JS would otherwise be handed to the whole store fleet. The train starts publishing
 once a native change has moved its fingerprint off main's.
+
+### Version-only releases
+
+When the release is a new version number with no native change, the fingerprint
+does not move, the `fingerprint-<platform>-<hash>` tag already exists, and both
+native workflows skip the build on push. Ship the binary by hand:
+
+1. On `release/next`, bump `version` in `packages/mobile/app.config.ts` and land
+   the localized release notes.
+2. Dispatch `ios-testflight-rn.yml` on `release/next`.
+3. Dispatch `android-apk-rn.yml` on `release/next` with `force_native` on.
+
+`mobile-store-draft.yml` then runs from the two completions. Two caveats:
+
+- The train does not republish an OTA after the build. Its guard skips the publish
+  while the train's fingerprint equals main's, so the new binary runs its embedded
+  bundle until main's next production publish.
+- Screenshots do not run on their own, because that needs a fingerprint tag at the
+  triggering commit. Dispatch the screenshot workflows by hand. The in-app
+  changelog also gets no "App update" marker for the release.
+
+Details and the other consequences (backports reach every version sharing the
+fingerprint): `docs/mobile-ota-updates.md`, "Version-only releases".
 
 ## 3. Listing material
 
@@ -349,7 +377,8 @@ after the shipped fingerprint moves on.
 
 1. Cut the train: `git push --force-with-lease origin main:release/next`.
 2. Set the release version and translate both stores' release notes — on
-   `release/next`.
+   `release/next`. A version-only release also needs both native workflows
+   dispatched by hand (§2, "Version-only releases").
 3. Land the focused native changes on `release/next`; wait for TestFlight and
    Play internal builds.
 4. Complete native QA against the exact uploaded candidates.

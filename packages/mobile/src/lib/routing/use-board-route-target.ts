@@ -51,6 +51,7 @@ import {
 } from '../board-path-to-user-board';
 import { openClimbInPlayDrawer } from '../open-climb-in-play-drawer';
 import { consumeClimbHandoffIntent } from './climb-handoff-intent';
+import { useLaunchHoldReleased } from '../launch-hold';
 import { isWallUuidParam } from '../spray/use-spray-wall-link';
 
 /**
@@ -636,7 +637,13 @@ export function useBoardRouteTarget(
   useEffect(() => {
     onHandedOffRef.current = options?.onHandedOff;
   });
+  // The hand-off ends in `router.navigate('/play')`, a root modal that iOS
+  // presents above the launch update placeholder. Wait for launch to be ready,
+  // so a cold-start climb link does not open a usable player the gate may then
+  // reload out from under (#6006). This screen's own spinner covers the wait.
+  const launchHoldReleased = useLaunchHoldReleased();
   useEffect(() => {
+    if (!launchHoldReleased) return;
     if (!target || !targetKey || handedOffRef.current === targetKey) return;
     if (authRequired) return;
     // The anonymous climb renders where it stands. Handing off would navigate to
@@ -707,6 +714,7 @@ export function useBoardRouteTarget(
     board,
     boardConfig,
     climb,
+    launchHoldReleased,
     openPlayDrawer,
     activationIntent,
     router,

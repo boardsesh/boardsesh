@@ -37,7 +37,7 @@ vi.mock('expo-updates', () => ({
   },
 }));
 vi.mock('expo-constants', () => ({ default: { expoConfig: { updates: {} } } }));
-vi.mock('../../legacy-ota-channel-migration', () => ({
+vi.mock('../../ota-channel-override-cleanup', () => ({
   isBranchSurfingBuild: migration.isBranchSurfingBuild,
 }));
 

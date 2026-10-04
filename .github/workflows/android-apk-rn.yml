@@ -197,7 +197,10 @@ jobs:
           tag="fingerprint-android-$fp"
           if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
             echo "should_build=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Android fingerprint $fp already built (tag $tag) — skipping the native build; the OTA delivers the JS."
+            # The marketing version and build numbers are not part of the fingerprint
+            # (fingerprint.config.js sourceSkips), so a push that only bumps `version`
+            # lands here too. A new version number needs a manual dispatch.
+            echo "::notice::Android fingerprint $fp already built (tag $tag) — skipping the native build; the OTA delivers the JS. A version-only bump does not move the fingerprint: dispatch this workflow by hand with force_native on to ship a binary with the new version number."
           else
             echo "should_build=true" >> "$GITHUB_OUTPUT"
             echo "::notice::Android fingerprint $fp is new — running the native build."

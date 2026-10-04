@@ -543,6 +543,9 @@
         "message": "Une erreur s'est produite lors de la récupération de la dernière version. Réessayez dans un instant."
       }
     },
+    "launchUpdate": {
+      "message": "Recherche de la dernière version"
+    },
     "connectivity": {
       "serverDown": {
         "title": "Notre serveur a un souci",

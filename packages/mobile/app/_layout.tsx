@@ -34,7 +34,6 @@ import { SystemBars } from 'react-native-edge-to-edge';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModalProvider } from '@expo/ui/community/bottom-sheet';
 import { ObserveRoot } from 'expo-observe';
-import Constants from 'expo-constants';
 import { QueryProvider } from '../src/providers/query-provider';
 import { ThemeProvider, useTheme } from '../src/providers/theme-provider';
 import { MaterialThemeProvider } from '../src/providers/material-theme-provider';
@@ -112,9 +111,14 @@ import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
 import { BottomChromeDebugOverlay } from '../src/components/BottomChromeDebugOverlay';
 import { WindowInsetPublisher } from '../src/hooks/use-window-bottom-inset';
 import { LiveActivityIntentDiagnostics } from '../src/components/LiveActivityIntentDiagnostics';
-import { isBranchSurfingBuild, prepareOtaBranchSurfing } from '../src/lib/legacy-ota-channel-migration';
+import { LaunchUpdateGatePlaceholder } from '../src/components/launch-update/LaunchUpdatePlaceholder';
+import { useLaunchUpdateGate } from '../src/components/launch-update/use-launch-update-gate';
+import { notifyLaunchUpdateAuthReady } from '../src/lib/launch-update-gate-store';
+import {
+  isSurfingBuildForThisLaunch,
+  runChannelOverrideCleanupOnce,
+} from '../src/lib/ota-channel-override-cleanup-run';
 import { setOtaBranchSurfingState } from '../src/lib/ota-branch-surfing-state';
-import { getPreference, removePreference, setPreference } from '../src/lib/preference-store';
 // Side-effect import: instantiates the Android-only MemoryTrim native module
 // (expo-modules-core creates modules lazily on first JS access), whose Kotlin
 // OnCreate registers the Glide trim-on-UI_HIDDEN callback. No-op on iOS.
@@ -159,34 +163,23 @@ function OtaBranchSurfingInitializer() {
   // Fingerprint-bound required headers distinguish Branch Surfing-capable
   // binaries from EAS previews. Updates.channel cannot do that: a legacy
   // persisted override changes the value exposed for this launch.
-  const branchSurfingBuild = useMemo(
-    () =>
-      isBranchSurfingBuild({
-        development: __DEV__,
-        updatesEnabled: Updates.isEnabled,
-        updatesConfig: Constants.expoConfig?.updates,
-      }),
-    [],
-  );
-  const [migrationComplete, setMigrationComplete] = useState(!branchSurfingBuild);
+  const branchSurfingBuild = useMemo(() => isSurfingBuildForThisLaunch(), []);
+  const [cleanupSettled, setCleanupSettled] = useState(!branchSurfingBuild);
 
   useEffect(() => {
     if (!branchSurfingBuild) return;
 
     let cancelled = false;
-    void prepareOtaBranchSurfing({
-      branchSurfingBuild,
-      readMigrationComplete: getPreference,
-      clearRequestHeadersOverride: () => Updates.setUpdateRequestHeadersOverride(null),
-      removeLegacyMirror: removePreference,
-      markMigrationComplete: setPreference,
-      reload: Updates.reloadAsync,
-    })
-      .then((preparation) => {
-        // A cleared native override requires a new JS runtime before xprem reads
-        // Updates.channel. reloadAsync normally never returns to this tree; if it
-        // does, keep readiness false rather than publishing stale state.
-        if (!cancelled && preparation === 'ready') setMigrationComplete(true);
+    // Shared with the launch update gate, which needs the same answer to know
+    // whether the launch-time manifest request went out under a stale override.
+    void runChannelOverrideCleanupOnce()
+      .then((cleanupRun) => {
+        // The cleanup no longer reloads (#6006). When it cleared an override
+        // that really was in effect, Updates.channel still names the retired
+        // channel for this JS runtime and xprem reads it when resolving a
+        // preview action. Stay not-ready for this runtime: the gate's reload,
+        // or the next launch, starts one whose channel is the baked one.
+        if (!cancelled && !cleanupRun.staleOverrideActive) setCleanupSettled(true);
       })
       .catch((error: unknown) => {
         reportHandledError(error, { tags: { source: 'ota', op: 'clear-legacy-channel-override' } });
@@ -198,12 +191,11 @@ function OtaBranchSurfingInitializer() {
   }, [branchSurfingBuild]);
 
   // Publish what we resolved so surfaces outside this subtree (the QA launch
-  // gate, the user drawer) can read it without redoing the work or racing the
-  // migration's reload. Written in an effect, not during render, so a subscriber
-  // is never notified mid-render.
+  // gate, the user drawer) can read it without redoing the work. Written in an
+  // effect, not during render, so a subscriber is never notified mid-render.
   useEffect(() => {
-    setOtaBranchSurfingState({ surfingBuild: branchSurfingBuild, ready: migrationComplete });
-  }, [branchSurfingBuild, migrationComplete]);
+    setOtaBranchSurfingState({ surfingBuild: branchSurfingBuild, ready: cleanupSettled });
+  }, [branchSurfingBuild, cleanupSettled]);
 
   return null;
 }
@@ -538,6 +530,19 @@ function ObserveRuntimeConfigSync(): null {
 function RootLayout() {
   const [authReady, setAuthReady] = useState(false);
   const [fontsReady, setFontsReady] = useState(false);
+  // Holds the launch UI while a newer bundle downloads, then reloads onto it
+  // before sign-in is usable (#6006). Resolved on the first render for a launch
+  // it does not cover. Only its two flags are read here, and they change a
+  // handful of times per launch; download progress goes to the placeholder
+  // alone. See src/lib/launch-update-gate.ts.
+  const launchUpdateGate = useLaunchUpdateGate();
+  const launchSettled = authReady && fontsReady && launchUpdateGate.resolved;
+  // The placeholder is the splash's stand-in once the wait runs long, so the
+  // splash comes down for it as soon as the fonts it draws with are loaded. It
+  // then stays up until auth is ready too, so the hand-over is splash, then
+  // placeholder, then the settled app, with the pre-auth tree never showing.
+  const splashCanHide = launchSettled || (fontsReady && launchUpdateGate.showPlaceholder);
+  const splashHideRequestedRef = useRef(false);
 
   useEffect(() => {
     void initializeUserDataExportDownloads().catch(reportError);
@@ -588,26 +593,34 @@ function RootLayout() {
 
   const onAuthReady = useCallback(() => {
     setAuthReady(true);
+    // The gate will not reload while auth's launch-time token refresh could
+    // still be in flight (single-use refresh tokens, see launch-update-gate.ts).
+    notifyLaunchUpdateAuthReady();
   }, []);
 
   useEffect(() => {
     if (__DEV__) {
       // eslint-disable-next-line no-console
-      console.warn(`[root-ready] authReady=${String(authReady)} fontsReady=${String(fontsReady)}`);
+      console.warn(
+        `[root-ready] authReady=${String(authReady)} fontsReady=${String(fontsReady)} splashCanHide=${String(splashCanHide)}`,
+      );
     }
-    if (!authReady || !fontsReady) return;
+    // Once only: splashCanHide can hold across the placeholder hand-over and
+    // then again once the app has settled.
+    if (!splashCanHide || splashHideRequestedRef.current) return;
+    splashHideRequestedRef.current = true;
     markStartup('splash.hide.request');
     void SplashScreen.hideAsync().then(
       () => markStartup('splash.hide.resolved', 'ready'),
       () => markStartup('splash.hide.resolved', 'error'),
     );
-  }, [authReady, fontsReady]);
+  }, [authReady, fontsReady, splashCanHide]);
 
   return (
     // Outermost, so nothing stands between RootLayout and this provider. A
     // context value is how RootLayout state reaches the launch gates past
     // SQLiteProvider's memo (see launch-ready-context.tsx, #5654).
-    <LaunchReadyProvider ready={authReady && fontsReady}>
+    <LaunchReadyProvider ready={authReady && fontsReady && launchUpdateGate.resolved}>
       <GestureHandlerRootView style={layoutStyles.root}>
         {/* Effect runs only after this React root commits. It marks whether an
           iOS LiveActivityIntent background launch mounted React, then consumes
@@ -1012,12 +1025,18 @@ function RootLayout() {
                 </ThemeProvider>
               </DatabaseProvider>
             </QueryProvider>
+            {/* The launch update gate's stand-in for the splash. A sibling of
+              QueryProvider, outside <DatabaseProvider>, and inside I18nProvider
+              for its one line of copy. Drawn last, it covers and blocks the
+              tree. It reads the gate itself, so download progress re-renders
+              this leaf and nothing else. */}
+            <LaunchUpdateGatePlaceholder />
           </I18nProvider>
         </AnalyticsProvider>
         {/* Initialize preview eligibility without mounting xprem's floating picker:
           its edge touch target can intercept climb-search interactions (#5287).
           The QA screens use xprem's branch APIs directly and wait for this
-          initializer's one-time migration before prompting. */}
+          initializer's one-time override cleanup before prompting. */}
         <OtaBranchSurfingInitializer />
       </GestureHandlerRootView>
     </LaunchReadyProvider>

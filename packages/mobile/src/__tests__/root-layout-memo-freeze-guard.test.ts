@@ -110,7 +110,14 @@ const code = stripComments(layoutSource);
 describe('app/_layout.tsx and the SQLiteProvider memo', () => {
   it('still finds what RootLayout declares (else this guard is checking nothing)', () => {
     expect(rootLayoutBindings(rootLayoutSetup(code))).toEqual(
-      expect.arrayContaining(['authReady', 'setAuthReady', 'fontsReady', 'setFontsReady', 'onAuthReady']),
+      expect.arrayContaining([
+        'authReady',
+        'setAuthReady',
+        'fontsReady',
+        'setFontsReady',
+        'onAuthReady',
+        'launchUpdateGate',
+      ]),
     );
   });
 
@@ -154,7 +161,7 @@ function RootLayout() {
   });
 
   it('provides launch readiness above <DatabaseProvider>, wrapping it', () => {
-    const provider = code.indexOf('<LaunchReadyProvider ready={authReady && fontsReady}>');
+    const provider = code.indexOf('<LaunchReadyProvider ready={authReady && fontsReady && launchUpdateGate.resolved}>');
     const providerClose = code.indexOf('</LaunchReadyProvider>');
     expect(provider).toBeGreaterThan(-1);
     expect(provider).toBeLessThan(code.indexOf('<DatabaseProvider>'));

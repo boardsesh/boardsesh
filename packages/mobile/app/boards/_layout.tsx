@@ -5,6 +5,7 @@ import { Icon } from '../../src/components/Icon';
 import { useStackScreenOptions } from '../../src/hooks/use-stack-screen-options';
 import { isFirstBoardMode, isNoBoardEntry } from '../../src/lib/boards/first-board-mode';
 import { noteFirstBoardCloseTapped } from '../../src/lib/onboarding/first-board-picker-analytics';
+import { holdUntilLaunchReady } from '../../src/components/launch-update/hold-until-launch-ready';
 
 /**
  * How the picker was opened, from its params, read defensively: `route.params`
@@ -41,7 +42,7 @@ function closeNoBoardPicker() {
   router.back();
 }
 
-export default function BoardsLayout() {
+function BoardsLayout() {
   const { t } = useTranslation('common');
   const { t: tBoards } = useTranslation('boards');
   const screenOptions = useStackScreenOptions();
@@ -101,3 +102,8 @@ export default function BoardsLayout() {
     </Stack>
   );
 }
+
+// iOS presents this route as a native modal, above the launch update
+// placeholder, and a URL can open it on a cold start. Held until launch is
+// ready so a gate reload cannot land mid-tap (#6006).
+export default holdUntilLaunchReady(BoardsLayout);

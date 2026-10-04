@@ -18,6 +18,8 @@ vi.mock('expo-router', () => ({
   Stack: { Screen: () => null },
   Redirect: () => null,
 }));
+// Launch is long settled in these flows; the hold has its own suite.
+vi.mock('../../../../src/lib/launch-hold', () => ({ useLaunchHoldReleased: () => true }));
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles },
