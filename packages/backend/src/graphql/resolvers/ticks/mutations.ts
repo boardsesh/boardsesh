@@ -44,6 +44,7 @@ import {
   acquireUserTickMutationLock,
   isDirectAuroraTwin,
   isRealAuroraPullRow,
+  lockBoardSerialWrite,
   notAuroraTwinDuplicate,
   resolveCanonicalClimbUuid,
 } from '@boardsesh/db/queries';
@@ -56,6 +57,8 @@ type LockedTickBoard = {
   deletedAt: Date | string | null;
   mergedIntoBoardUuid: string | null;
 };
+
+type TickMutationBoardSurfaceRow = LockedTickBoard & { serialNumber: string | null };
 
 export function buildTickBoardLockQuery(requestedBoardId: number) {
   return sql`
@@ -101,6 +104,129 @@ export function buildTickBoardLockQuery(requestedBoardId: number) {
   `;
 }
 
+function buildTickMutationBoardSurfaceQuery(boardIds: number[], lockRows: boolean) {
+  const boardIdList = sql.join(
+    [...new Set(boardIds)].sort((first, second) => first - second).map((boardId) => sql`${boardId}`),
+    sql`, `,
+  );
+  const lockClause = lockRows ? sql`FOR NO KEY UPDATE OF board` : sql``;
+
+  return sql`
+    WITH RECURSIVE anchor_boards AS (
+      SELECT id, uuid, serial_number, merged_into_board_uuid
+        FROM user_boards
+       WHERE id IN (${boardIdList})
+    ),
+    merge_chain AS (
+      SELECT id, uuid, serial_number, merged_into_board_uuid, 0 AS depth
+        FROM anchor_boards
+      UNION ALL
+      SELECT next_board.id,
+             next_board.uuid,
+             next_board.serial_number,
+             next_board.merged_into_board_uuid,
+             merge_chain.depth + 1
+        FROM merge_chain
+        JOIN user_boards next_board
+          ON next_board.uuid = merge_chain.merged_into_board_uuid
+       WHERE merge_chain.depth < 3
+    ),
+    candidate_ids AS (
+      SELECT id FROM merge_chain
+      UNION
+      SELECT active_board.id
+        FROM merge_chain cluster_board
+        JOIN user_boards active_board
+          ON active_board.serial_number = cluster_board.serial_number
+         AND active_board.serial_number IS NOT NULL
+         AND active_board.serial_number <> ''
+         AND active_board.deleted_at IS NULL
+       WHERE cluster_board.serial_number IS NOT NULL
+         AND cluster_board.serial_number <> ''
+    )
+    SELECT board.id AS "id",
+           board.uuid AS "uuid",
+           board.deleted_at AS "deletedAt",
+           board.merged_into_board_uuid AS "mergedIntoBoardUuid",
+           board.serial_number AS "serialNumber"
+      FROM user_boards board
+      JOIN candidate_ids ON candidate_ids.id = board.id
+     ORDER BY board.id
+     ${lockClause}
+  `;
+}
+
+async function readTickMutationBoardSurface(
+  transactionDb: TickBoardLockDb,
+  boardIds: number[],
+  lockRows: boolean,
+): Promise<TickMutationBoardSurfaceRow[]> {
+  if (boardIds.length === 0) return [];
+  return rowsFromResult<TickMutationBoardSurfaceRow>(
+    await transactionDb.execute(buildTickMutationBoardSurfaceQuery(boardIds, lockRows)),
+  );
+}
+
+function tickMutationBoardSurfaceFingerprint(rows: TickMutationBoardSurfaceRow[]): string {
+  return rows
+    .map((board) => [
+      Number(board.id),
+      board.uuid,
+      board.serialNumber ?? '',
+      board.deletedAt === null ? '' : String(board.deletedAt),
+      board.mergedIntoBoardUuid ?? '',
+    ])
+    .join('\n');
+}
+
+function tickMutationGroupFingerprint(ticks: dbSchema.BoardseshTick[]): string {
+  return [...ticks]
+    .sort((first, second) => first.uuid.localeCompare(second.uuid))
+    .map((tick) =>
+      [
+        tick.uuid,
+        tick.userId,
+        tick.boardType,
+        tick.climbUuid,
+        tick.boardId ?? '',
+        tick.sessionId ?? '',
+        tick.auroraType ?? '',
+        tick.auroraId ?? '',
+        tick.kilterId ?? '',
+      ].join('\u0000'),
+    )
+    .join('\n');
+}
+
+function resolveLockedTickBoardId(
+  lockedBoards: LockedTickBoard[],
+  requestedBoardId: number,
+  operation: 'saveTick' | 'updateTick',
+): number | null {
+  const requestedBoard = lockedBoards.find((board) => Number(board.id) === requestedBoardId);
+  if (!requestedBoard) return null;
+  if (requestedBoard.deletedAt === null) return Number(requestedBoard.id);
+
+  const boardsByUuid = new Map(lockedBoards.map((board) => [board.uuid, board]));
+  let nextBoardUuid = requestedBoard.mergedIntoBoardUuid;
+  for (let hop = 0; hop < 3 && nextBoardUuid; hop++) {
+    const candidate = boardsByUuid.get(nextBoardUuid);
+    if (!candidate) {
+      logger.warn(
+        `[${operation}] merged board ${requestedBoardId} points outside its locked serial cluster at ${nextBoardUuid}`,
+      );
+      return null;
+    }
+    if (candidate.deletedAt === null) return Number(candidate.id);
+    nextBoardUuid = candidate.mergedIntoBoardUuid;
+  }
+
+  if (nextBoardUuid) {
+    logger.warn(`[${operation}] merged board ${requestedBoardId} exceeded the tombstone hop limit at ${nextBoardUuid}`);
+  }
+  return null;
+}
+
 /**
  * Pin a tick's board association against the serial-board dedupe transaction.
  *
@@ -126,29 +252,7 @@ export async function lockCanonicalTickBoardId(
   const lockedBoards = rowsFromResult<LockedTickBoard>(
     await transactionDb.execute(buildTickBoardLockQuery(requestedBoardId)),
   );
-
-  const requestedBoard = lockedBoards.find((board) => Number(board.id) === requestedBoardId);
-  if (!requestedBoard) return null;
-  if (requestedBoard.deletedAt === null) return Number(requestedBoard.id);
-
-  const boardsByUuid = new Map(lockedBoards.map((board) => [board.uuid, board]));
-  let nextBoardUuid = requestedBoard.mergedIntoBoardUuid;
-  for (let hop = 0; hop < 3 && nextBoardUuid; hop++) {
-    const candidate = boardsByUuid.get(nextBoardUuid);
-    if (!candidate) {
-      logger.warn(
-        `[saveTick] merged board ${requestedBoardId} points outside its locked serial cluster at ${nextBoardUuid}`,
-      );
-      return null;
-    }
-    if (candidate.deletedAt === null) return Number(candidate.id);
-    nextBoardUuid = candidate.mergedIntoBoardUuid;
-  }
-
-  if (nextBoardUuid) {
-    logger.warn(`[saveTick] merged board ${requestedBoardId} exceeded the tombstone hop limit at ${nextBoardUuid}`);
-  }
-  return null;
+  return resolveLockedTickBoardId(lockedBoards, requestedBoardId, 'saveTick');
 }
 
 // Beta links are only attached on successful ascents (flash / send), never
@@ -549,6 +653,27 @@ const auroraMutationTwin = aliasedTable(dbSchema.boardseshTicks, 'aurora_mutatio
 
 type TickMutationTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+class TickMutationSurfaceChangedError extends Error {}
+
+async function retryTickMutationOnChangedSurface<T>(operation: () => Promise<T>): Promise<T> {
+  const maxAttempts = 2;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!(error instanceof TickMutationSurfaceChangedError)) throw error;
+      if (attempt === maxAttempts) {
+        throw new GraphQLError('The tick or board changed while saving. Please try again.', {
+          extensions: { code: 'TICK_CHANGED_RETRY' },
+        });
+      }
+    }
+  }
+  throw new GraphQLError('The tick or board changed while saving. Please try again.', {
+    extensions: { code: 'TICK_CHANGED_RETRY' },
+  });
+}
+
 /**
  * Convert a client timestamp to the UTC wall-clock text PostgreSQL stores for
  * `timestamp without time zone`, without serializing its fraction through a
@@ -628,15 +753,147 @@ async function selectTickMutationGroupForUpdate(
     .orderBy(auroraMutationTwin.uuid)
     .for('update');
 
-  const mutationGroup = [targetResult.tick, ...directTwins.map((row) => row.tick)];
+  return tickMutationGroup(
+    targetResult.tick,
+    directTwins.map((row) => row.tick),
+  );
+}
+
+async function selectTickMutationGroupSnapshot(
+  tx: TickMutationTransaction,
+  uuid: string,
+  userId: string,
+): Promise<dbSchema.BoardseshTick[]> {
+  const [targetResult] = await tx
+    .select({
+      tick: dbSchema.boardseshTicks,
+      isVisible: sql<boolean>`${notAuroraTwinDuplicate(dbSchema.boardseshTicks)}`,
+      isRealAuroraPull: sql<boolean>`${isRealAuroraPullRow(dbSchema.boardseshTicks)}`,
+    })
+    .from(dbSchema.boardseshTicks)
+    .where(eq(dbSchema.boardseshTicks.uuid, uuid))
+    .limit(1);
+
+  if (!targetResult) {
+    throw new GraphQLError('Tick not found', { extensions: { code: 'TICK_NOT_FOUND' } });
+  }
+  if (targetResult.tick.userId !== userId) {
+    throw new GraphQLError('Not authorized to update this tick', { extensions: { code: 'FORBIDDEN' } });
+  }
+  if (!targetResult.isVisible || !targetResult.isRealAuroraPull) return [targetResult.tick];
+
+  const directTwins = await tx
+    .select({ tick: auroraMutationTwin })
+    .from(auroraMutationTwin)
+    .innerJoin(dbSchema.boardseshTicks, eq(dbSchema.boardseshTicks.uuid, uuid))
+    .where(isDirectAuroraTwin(dbSchema.boardseshTicks, auroraMutationTwin))
+    .orderBy(auroraMutationTwin.uuid);
+
+  return tickMutationGroup(
+    targetResult.tick,
+    directTwins.map((row) => row.tick),
+  );
+}
+
+function tickMutationGroup(
+  targetTick: dbSchema.BoardseshTick,
+  directTwins: dbSchema.BoardseshTick[],
+): dbSchema.BoardseshTick[] {
+  const mutationGroup = [targetTick, ...directTwins];
   const kilterIds = new Set(mutationGroup.flatMap((tick) => (tick.kilterId ? [tick.kilterId] : [])));
 
   // `isDirectAuroraTwin` intentionally permits one NULL Kilter link. That is
   // safe pairwise, but a NULL target can individually witness two different
   // real links. Do not turn that V shape into one mutable logical ascent.
-  if (kilterIds.size > 1) return [targetResult.tick];
+  if (kilterIds.size > 1) return [targetTick];
 
   return mutationGroup;
+}
+
+async function lockUpdateTickMutationSurface(
+  tx: TickMutationTransaction,
+  uuid: string,
+  userId: string,
+  boardUuid: string | null | undefined,
+): Promise<{ snapshotTicks: dbSchema.BoardseshTick[]; selectedBoard: typeof dbSchema.userBoards.$inferSelect | null }> {
+  // Preserve the existing not-found contract for explicit board selections.
+  // Omitted and null selections continue through the normal owner check below.
+  if (boardUuid != null) {
+    const [ownedTick] = await tx
+      .select({ uuid: dbSchema.boardseshTicks.uuid })
+      .from(dbSchema.boardseshTicks)
+      .where(and(eq(dbSchema.boardseshTicks.uuid, uuid), eq(dbSchema.boardseshTicks.userId, userId)))
+      .limit(1);
+    if (!ownedTick) throw new GraphQLError('Tick not found', { extensions: { code: 'TICK_NOT_FOUND' } });
+  }
+
+  const snapshotTicks = await selectTickMutationGroupSnapshot(tx, uuid, userId);
+  const [requestedBoard] =
+    boardUuid == null
+      ? []
+      : await tx.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.uuid, boardUuid)).limit(1);
+  const anchorBoardIds = [
+    ...new Set([
+      ...snapshotTicks.flatMap((tick) => (tick.boardId == null ? [] : [tick.boardId])),
+      ...(requestedBoard ? [requestedBoard.id] : []),
+    ]),
+  ];
+
+  // One sorted union is important. Locking old and requested clusters with two
+  // calls would still acquire them in caller order when their ids are reversed.
+  const lockedBoardSurface = await readTickMutationBoardSurface(tx, anchorBoardIds, true);
+  const serialNumbers = [
+    ...new Set(
+      lockedBoardSurface
+        .flatMap((board) => (board.serialNumber ? [board.serialNumber] : []))
+        .sort((first, second) => first.localeCompare(second)),
+    ),
+  ];
+  for (const serialNumber of serialNumbers) await lockBoardSerialWrite(tx, serialNumber);
+
+  // A merge or serial edit can commit while the row-lock query waits. Re-read
+  // the same union after serial locks and restart before touching tick rows if
+  // the locked cluster no longer covers the current board surface.
+  const currentBoardSurface = await readTickMutationBoardSurface(tx, anchorBoardIds, false);
+  if (
+    tickMutationBoardSurfaceFingerprint(lockedBoardSurface) !== tickMutationBoardSurfaceFingerprint(currentBoardSurface)
+  ) {
+    throw new TickMutationSurfaceChangedError();
+  }
+
+  const sessionIds = distinctTickSessions(snapshotTicks).sort((first, second) => first.localeCompare(second));
+  if (sessionIds.length > 0) {
+    await tx
+      .select({ id: sessions.id })
+      .from(sessions)
+      .where(inArray(sessions.id, sessionIds))
+      .orderBy(sessions.id)
+      .for('no key update');
+  }
+
+  const currentTicks = await selectTickMutationGroupSnapshot(tx, uuid, userId);
+  if (tickMutationGroupFingerprint(snapshotTicks) !== tickMutationGroupFingerprint(currentTicks)) {
+    throw new TickMutationSurfaceChangedError();
+  }
+
+  if (boardUuid == null) return { snapshotTicks, selectedBoard: null };
+  if (!requestedBoard) {
+    throw new GraphQLError('Board is no longer available', { extensions: { code: 'TICK_BOARD_UNAVAILABLE' } });
+  }
+
+  const canonicalBoardId = resolveLockedTickBoardId(lockedBoardSurface, requestedBoard.id, 'updateTick');
+  const [selectedBoard] =
+    canonicalBoardId == null
+      ? []
+      : await tx
+          .select()
+          .from(dbSchema.userBoards)
+          .where(and(eq(dbSchema.userBoards.id, canonicalBoardId), listableSprayWallCondition(userId)))
+          .limit(1);
+  if (!selectedBoard || (!selectedBoard.isPublic && selectedBoard.ownerId !== userId)) {
+    throw new GraphQLError('Board is no longer available', { extensions: { code: 'TICK_BOARD_UNAVAILABLE' } });
+  }
+  return { snapshotTicks, selectedBoard };
 }
 
 function distinctTickStatsKeys(ticks: dbSchema.BoardseshTick[]): Array<{
@@ -1355,157 +1612,129 @@ export const tickMutations = {
     const changedFields = Object.keys(validatedInput);
     logger.info(`[updateTick] user=${userId} tick=${uuid} fields=[${changedFields.join(',')}]`);
 
-    const mutationResult = await db.transaction(async (tx) => {
-      await acquireUserTickMutationLock(tx, userId);
-      // Board merges lock boards before ticks. Keep that order when changing
-      // attribution, otherwise an edit and a merge can deadlock each other.
-      let selectedBoard: typeof dbSchema.userBoards.$inferSelect | null = null;
-      if (validatedInput.boardUuid === null) {
-        const [ownedTick] = await tx
-          .select({ boardId: dbSchema.boardseshTicks.boardId })
-          .from(dbSchema.boardseshTicks)
-          .where(and(eq(dbSchema.boardseshTicks.uuid, uuid), eq(dbSchema.boardseshTicks.userId, userId)))
-          .limit(1);
-        // A merge also locks sessions before ticks. Clearing must wait on the
-        // old board before holding its tick, since we update its session later.
-        if (ownedTick?.boardId != null) await lockCanonicalTickBoardId(tx, ownedTick.boardId);
-      }
-      if (validatedInput.boardUuid != null) {
-        const [ownedTick] = await tx
-          .select({ uuid: dbSchema.boardseshTicks.uuid })
-          .from(dbSchema.boardseshTicks)
-          .where(and(eq(dbSchema.boardseshTicks.uuid, uuid), eq(dbSchema.boardseshTicks.userId, userId)))
-          .limit(1);
-        if (!ownedTick) throw new GraphQLError('Tick not found', { extensions: { code: 'TICK_NOT_FOUND' } });
-        const [requestedBoard] = await tx
-          .select()
-          .from(dbSchema.userBoards)
-          .where(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid))
-          .limit(1);
-        const selectedId = requestedBoard ? await lockCanonicalTickBoardId(tx, requestedBoard.id) : null;
-        if (selectedId != null) {
-          const [board] = await tx
-            .select()
-            .from(dbSchema.userBoards)
-            .where(and(eq(dbSchema.userBoards.id, selectedId), listableSprayWallCondition(userId)))
-            .limit(1);
-          selectedBoard = board ?? null;
+    const mutationResult = await retryTickMutationOnChangedSurface(() =>
+      db.transaction(async (tx) => {
+        await acquireUserTickMutationLock(tx, userId);
+        const lockContext = await lockUpdateTickMutationSurface(tx, uuid, userId, validatedInput.boardUuid);
+        const { selectedBoard } = lockContext;
+        const existingTicks = await selectTickMutationGroupForUpdate(tx, uuid, userId, 'update');
+        if (tickMutationGroupFingerprint(lockContext.snapshotTicks) !== tickMutationGroupFingerprint(existingTicks)) {
+          throw new TickMutationSurfaceChangedError();
         }
-        if (!selectedBoard || (!selectedBoard.isPublic && selectedBoard.ownerId !== userId)) {
-          throw new GraphQLError('Board is no longer available', { extensions: { code: 'TICK_BOARD_UNAVAILABLE' } });
-        }
-      }
-      const existingTicks = await selectTickMutationGroupForUpdate(tx, uuid, userId, 'update');
-      const targetTick = existingTicks.find((tick) => tick.uuid === uuid)!;
-      const affectedUuids = existingTicks.map((tick) => tick.uuid);
+        const targetTick = existingTicks.find((tick) => tick.uuid === uuid)!;
+        const affectedUuids = existingTicks.map((tick) => tick.uuid);
 
-      if (selectedBoard) {
-        const climb = await findTickClimb(tx, targetTick.boardType, targetTick.climbUuid);
-        if (!canAttributeTickToBoard(climb, selectedBoard)) {
-          throw new GraphQLError('This climb does not fit that board', {
-            extensions: { code: 'TICK_BOARD_INCOMPATIBLE' },
+        if (selectedBoard) {
+          const climb = await findTickClimb(tx, targetTick.boardType, targetTick.climbUuid);
+          if (!canAttributeTickToBoard(climb, selectedBoard)) {
+            throw new GraphQLError('This climb does not fit that board', {
+              extensions: { code: 'TICK_BOARD_INCOMPATIBLE' },
+            });
+          }
+        }
+
+        if (!isBoardAngleSupported(targetTick.boardType, validatedInput.angle)) {
+          throw new GraphQLError(BOARD_ANGLE_VALIDATION_MESSAGE, {
+            extensions: { code: 'BAD_USER_INPUT' },
           });
         }
-      }
 
-      if (!isBoardAngleSupported(targetTick.boardType, validatedInput.angle)) {
-        throw new GraphQLError(BOARD_ANGLE_VALIDATION_MESSAGE, {
-          extensions: { code: 'BAD_USER_INPUT' },
-        });
-      }
+        const updates: Partial<typeof dbSchema.boardseshTicks.$inferInsert> = {
+          updatedAt: new Date().toISOString(),
+        };
+        if (validatedInput.boardUuid !== undefined) updates.boardId = selectedBoard?.id ?? null;
+        if (validatedInput.status !== undefined) updates.status = validatedInput.status;
+        if (validatedInput.attemptCount !== undefined) updates.attemptCount = validatedInput.attemptCount;
+        if (validatedInput.quality !== undefined) updates.quality = validatedInput.quality;
+        if (validatedInput.difficulty !== undefined) updates.difficulty = validatedInput.difficulty;
+        if (validatedInput.isBenchmark !== undefined) updates.isBenchmark = validatedInput.isBenchmark;
+        if (validatedInput.comment !== undefined) updates.comment = validatedInput.comment;
+        if (canonicalClimbedAt !== undefined) updates.climbedAt = canonicalClimbedAt;
+        if (validatedInput.angle !== undefined) updates.angle = validatedInput.angle;
 
-      const updates: Partial<typeof dbSchema.boardseshTicks.$inferInsert> = {
-        updatedAt: new Date().toISOString(),
-      };
-      if (validatedInput.boardUuid !== undefined) updates.boardId = selectedBoard?.id ?? null;
-      if (validatedInput.status !== undefined) updates.status = validatedInput.status;
-      if (validatedInput.attemptCount !== undefined) updates.attemptCount = validatedInput.attemptCount;
-      if (validatedInput.quality !== undefined) updates.quality = validatedInput.quality;
-      if (validatedInput.difficulty !== undefined) updates.difficulty = validatedInput.difficulty;
-      if (validatedInput.isBenchmark !== undefined) updates.isBenchmark = validatedInput.isBenchmark;
-      if (validatedInput.comment !== undefined) updates.comment = validatedInput.comment;
-      if (canonicalClimbedAt !== undefined) updates.climbedAt = canonicalClimbedAt;
-      if (validatedInput.angle !== undefined) updates.angle = validatedInput.angle;
-
-      const finalStatus = validatedInput.status ?? targetTick.status;
-      const finalAttemptCount = validatedInput.attemptCount ?? targetTick.attemptCount;
-      if (finalStatus === 'flash') {
-        if (finalAttemptCount !== 1) {
-          logger.warn('[updateTick] Coerced flash tick attemptCount to 1', {
-            tickUuid: uuid,
-            userId,
-            previousAttemptCount: finalAttemptCount,
-          });
+        const finalStatus = validatedInput.status ?? targetTick.status;
+        const finalAttemptCount = validatedInput.attemptCount ?? targetTick.attemptCount;
+        if (finalStatus === 'flash') {
+          if (finalAttemptCount !== 1) {
+            logger.warn('[updateTick] Coerced flash tick attemptCount to 1', {
+              tickUuid: uuid,
+              userId,
+              previousAttemptCount: finalAttemptCount,
+            });
+          }
+          // A locally edited survivor can directly hide rows whose editable
+          // payload differs. Reassert the flash invariant across every member.
+          updates.attemptCount = 1;
         }
-        // A locally edited survivor can directly hide rows whose editable
-        // payload differs. Reassert the flash invariant across every member.
-        updates.attemptCount = 1;
-      }
 
-      const updatedTicks = await tx
-        .update(dbSchema.boardseshTicks)
-        .set(updates)
-        .where(inArray(dbSchema.boardseshTicks.uuid, affectedUuids))
-        .returning();
-      const updatedTarget = updatedTicks.find((tick) => tick.uuid === uuid)!;
+        const updatedTicks = await tx
+          .update(dbSchema.boardseshTicks)
+          .set(updates)
+          .where(inArray(dbSchema.boardseshTicks.uuid, affectedUuids))
+          .returning();
+        const updatedTarget = updatedTicks.find((tick) => tick.uuid === uuid)!;
 
-      // Keep linked beta videos at the angle of the edited ascent.
-      let movedBetaLinks = false;
-      if (existingTicks.some((tick) => tick.angle !== updatedTarget.angle) || validatedInput.boardUuid !== undefined) {
-        const moved = await tx
-          .update(dbSchema.boardBetaLinks)
-          .set({
-            angle: updatedTarget.angle,
-            ...(validatedInput.boardUuid !== undefined ? { boardId: updatedTarget.boardId } : {}),
-          })
-          .where(inArray(dbSchema.boardBetaLinks.tickUuid, affectedUuids))
-          .returning({ link: dbSchema.boardBetaLinks.link });
-        movedBetaLinks = moved.length > 0;
-      }
+        // Keep linked beta videos at the angle of the edited ascent.
+        let movedBetaLinks = false;
+        if (
+          existingTicks.some((tick) => tick.angle !== updatedTarget.angle) ||
+          validatedInput.boardUuid !== undefined
+        ) {
+          const moved = await tx
+            .update(dbSchema.boardBetaLinks)
+            .set({
+              angle: updatedTarget.angle,
+              ...(validatedInput.boardUuid !== undefined ? { boardId: updatedTarget.boardId } : {}),
+            })
+            .where(inArray(dbSchema.boardBetaLinks.tickUuid, affectedUuids))
+            .returning({ link: dbSchema.boardBetaLinks.link });
+          movedBetaLinks = moved.length > 0;
+        }
 
-      if (validatedInput.boardUuid !== undefined) {
-        await tx
-          .update(dbSchema.feedItems)
-          .set({
-            boardUuid: selectedBoard?.uuid ?? null,
-            metadata: sql`CASE WHEN ${dbSchema.feedItems.metadata} ? 'boardUuid'
+        if (validatedInput.boardUuid !== undefined) {
+          await tx
+            .update(dbSchema.feedItems)
+            .set({
+              boardUuid: selectedBoard?.uuid ?? null,
+              metadata: sql`CASE WHEN ${dbSchema.feedItems.metadata} ? 'boardUuid'
             THEN jsonb_set(${dbSchema.feedItems.metadata}, '{boardUuid}', ${JSON.stringify(selectedBoard?.uuid ?? null)}::jsonb)
             ELSE ${dbSchema.feedItems.metadata} END`,
-          })
-          .where(and(eq(dbSchema.feedItems.entityType, 'tick'), inArray(dbSchema.feedItems.entityId, affectedUuids)));
-      }
+            })
+            .where(and(eq(dbSchema.feedItems.entityType, 'tick'), inArray(dbSchema.feedItems.entityId, affectedUuids)));
+        }
 
-      const sessionIds = distinctTickSessions(existingTicks);
-      if (sessionIds.length > 0) {
-        await tx.update(sessions).set({ lastActivity: new Date() }).where(inArray(sessions.id, sessionIds));
-      }
+        const sessionIds = distinctTickSessions(existingTicks);
+        if (sessionIds.length > 0) {
+          await tx.update(sessions).set({ lastActivity: new Date() }).where(inArray(sessions.id, sessionIds));
+        }
 
-      // An edit can move climbed_at, which moves the tick between runs — so both the
-      // window it left and the one it joined need redrawing. Reconciling the old
-      // timestamp first leaves the tick's new home authoritative.
-      for (const climbedAt of new Set([
-        ...existingTicks.map((tick) => tick.climbedAt),
-        ...updatedTicks.map((tick) => tick.climbedAt),
-      ])) {
-        await reconcileInferredSessions(tx, userId, parseClimbedAt(climbedAt));
-      }
+        // An edit can move climbed_at, which moves the tick between runs — so both the
+        // window it left and the one it joined need redrawing. Reconciling the old
+        // timestamp first leaves the tick's new home authoritative.
+        for (const climbedAt of new Set([
+          ...existingTicks.map((tick) => tick.climbedAt),
+          ...updatedTicks.map((tick) => tick.climbedAt),
+        ])) {
+          await reconcileInferredSessions(tx, userId, parseClimbedAt(climbedAt));
+        }
 
-      const [attributedBoard] =
-        updatedTarget.boardId == null
-          ? []
-          : await tx
-              .select({ name: dbSchema.userBoards.name })
-              .from(dbSchema.userBoards)
-              .where(eq(dbSchema.userBoards.id, updatedTarget.boardId))
-              .limit(1);
-      return {
-        existingTicks,
-        updatedTicks,
-        updatedTarget,
-        movedBetaLinks,
-        boardDisplayName: attributedBoard?.name ?? null,
-      };
-    });
+        const [attributedBoard] =
+          updatedTarget.boardId == null
+            ? []
+            : await tx
+                .select({ name: dbSchema.userBoards.name })
+                .from(dbSchema.userBoards)
+                .where(eq(dbSchema.userBoards.id, updatedTarget.boardId))
+                .limit(1);
+        return {
+          existingTicks,
+          updatedTicks,
+          updatedTarget,
+          movedBetaLinks,
+          boardDisplayName: attributedBoard?.name ?? null,
+        };
+      }),
+    );
 
     // Both the key the tick left and the key it joined, so an angle edit doesn't
     // strand a stale bucket. Inline first for the same reason as saveTick: the
