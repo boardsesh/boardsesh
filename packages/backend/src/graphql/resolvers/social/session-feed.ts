@@ -2,7 +2,7 @@ import { eq, and, desc, sql, count as drizzleCount, isNull, inArray, type SQL } 
 import { dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
-import { sprayTickClimbExistsCondition } from '../shared/spray-tick-visibility';
+import { sprayTickClimbExistsCondition, sprayTickVisibleSql } from '../shared/spray-tick-visibility';
 import { getGradeLabel, toConfidenceTier, withSerialPlan } from '@boardsesh/db/queries';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { requireAuthenticated, validateInput, resolveClimbNoMatch } from '../shared/helpers';
@@ -237,6 +237,12 @@ export async function getSessionFeed(
                   COALESCE(dt.effective_difficulty, -1) DESC, dt.climbed_at DESC, dt.id DESC
               ) AS rank
             FROM daily_ticks dt
+            -- The wall rule goes HERE, where the highlight is chosen: a log on a
+            -- spray climb the viewer cannot see is never the highlight, and the
+            -- next one is picked instead. The card anchors its votes and comments
+            -- on this tick's uuid, so the uuid itself must be one they may see. A
+            -- day of nothing else produces no card (the INNER JOIN below).
+            WHERE ${sprayTickVisibleSql('dt', ctx?.userId)}
           ) ranked
           WHERE rank = 1
         ),
@@ -1351,6 +1357,10 @@ async function fetchTickHighlightsByUuid(
       sql`, `,
     )})`}
     ${tickSnapshotFilter(snapshotAt)}
+    -- Callers choose these uuids with the wall rule already applied. Repeated
+    -- here so a uuid that reaches this function some other way cannot be
+    -- hydrated into a row the viewer may not see.
+    AND ${sprayTickVisibleSql('t', viewerUserId)}
   `);
 
   const rows = rowsFromResult<TickHighlightRow>(result);
@@ -1390,6 +1400,11 @@ async function fetchHardestSendsBatch(
         ${batchTickFilter}
         ${batchUserFilter}
         AND t.status IN ('flash', 'send')
+        -- In the ranking, not only in the hydrating join below: that join nulls
+        -- the CLIMB's columns, and the tick row itself carries its uuid, climb
+        -- uuid and comment. A send on a spray climb the viewer cannot see is not
+        -- a candidate, so the hardest send they CAN see is picked.
+        AND ${sprayTickVisibleSql('t', viewerUserId)}
     )
     SELECT
       ${tickHighlightSelectSql(sql`ranked.session_id`)}
@@ -1573,8 +1588,8 @@ async function fetchFeaturedBetaBatch(
   viewerUserId: string | null | undefined,
 ): Promise<Map<string, SessionFeedBetaHighlight>> {
   const [sessionBetaRows, dailyBetaRows] = await Promise.all([
-    fetchSessionFeaturedBetaRows(sessionIds, filterOptions),
-    fetchDailyFeaturedBetaRows(dailyHighlightKeys, filterOptions),
+    fetchSessionFeaturedBetaRows(sessionIds, filterOptions, viewerUserId),
+    fetchDailyFeaturedBetaRows(dailyHighlightKeys, filterOptions, viewerUserId),
   ]);
   const betaRows = [...sessionBetaRows, ...dailyBetaRows];
   if (betaRows.length === 0) return new Map();
@@ -1631,6 +1646,7 @@ function betaCandidateRankSql(partitionExpression: SQL) {
 async function fetchSessionFeaturedBetaRows(
   sessionIds: string[],
   { boardIdFilter, userIdFilter, snapshotAt }: SessionFeedFilterOptions,
+  viewerUserId: string | null | undefined,
 ): Promise<FeaturedBetaRow[]> {
   if (sessionIds.length === 0) return [];
 
@@ -1666,6 +1682,9 @@ async function fetchSessionFeaturedBetaRows(
         ${batchTickFilter}
         ${batchUserFilter}
         AND t.status IN ('flash', 'send')
+        -- The row carries the beta link's url and climb uuid, so a link on a
+        -- spray climb the viewer cannot see is not a candidate.
+        AND ${sprayTickVisibleSql('t', viewerUserId)}
     )
     SELECT *
     FROM ranked
@@ -1678,6 +1697,7 @@ async function fetchSessionFeaturedBetaRows(
 async function fetchDailyFeaturedBetaRows(
   dailyHighlightKeys: DailyHighlightKey[],
   { boardIdFilter, snapshotAt }: SessionFeedFilterOptions,
+  viewerUserId: string | null | undefined,
 ): Promise<FeaturedBetaRow[]> {
   if (dailyHighlightKeys.length === 0) return [];
 
@@ -1718,6 +1738,8 @@ async function fetchDailyFeaturedBetaRows(
         AND bcs_beta.angle = t.angle
       WHERE t.status IN ('flash', 'send')
         ${batchTickFilter}
+        -- Same rule as the session query above.
+        AND ${sprayTickVisibleSql('t', viewerUserId)}
     )
     SELECT *
     FROM ranked

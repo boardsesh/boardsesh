@@ -632,7 +632,6 @@ const NOT_APPLICABLE: Record<string, string> = {
   // spray-wall-api.test.ts drives it directly.
   'Query.activityFeed':
     'reads materialised feed_items, and the sweep fans nothing out to the owner (an actor is never a recipient of their own event). A comment on a proposal DOES fan out for a private wall, so the read gates carry it: spray-wall-api.test.ts for a wall that went private, and the hard-deleted block at the end of this file',
-  'Query.sessionGroupedFeed': 'reads materialised feed_items, which a private wall never writes',
 
   // --- session readers --------------------------------------------------------
   'Query.session': 'live room state held in Redis, not a climb read; membership-gated',
@@ -717,6 +716,25 @@ type SweepRow = {
 let sweepSchema: GraphQLSchema;
 let rows: SweepRow[] = [];
 
+/**
+ * How deep the generated selection goes. Two levels reaches the rows of every
+ * list reader, which is where a climb is named.
+ *
+ * The session readers nest further, and a sweep that does not ask for a field
+ * cannot see it leak. `sessionGroupedFeed` puts a tick at
+ * `sessions.hardestSend` and a beta link at `sessions.featuredBeta.betaLink`;
+ * `sessionDetail` puts beta links at `ticks.betaLinks`. At depth 2 neither was
+ * requested, the owner saw nothing through `sessionGroupedFeed`, and the field
+ * sat on the allow-list while it returned a private wall's log to anybody
+ * (#6031). A new reader that nests a tick or a beta link deeper than two levels
+ * gets a row here.
+ */
+const DEFAULT_SELECTION_DEPTH = 2;
+const SELECTION_DEPTH: Record<string, number> = {
+  'Query.sessionGroupedFeed': 4,
+  'Query.sessionDetail': 3,
+};
+
 function enumerateRows(): SweepRow[] {
   const enumerated: SweepRow[] = [];
   for (const rootName of ['Query', 'Subscription'] as const) {
@@ -735,7 +753,11 @@ function enumerateRows(): SweepRow[] {
         .filter((arg) => arg.name in variables)
         .map((arg) => `$${arg.name}: ${String(arg.type)}`)
         .join(', ');
-      const selection = selectionSetFor(namedType(field.type), 2, new Set());
+      const selection = selectionSetFor(
+        namedType(field.type),
+        SELECTION_DEPTH[`${rootName}.${field.name}`] ?? DEFAULT_SELECTION_DEPTH,
+        new Set(),
+      );
       const operation = rootName === 'Query' ? 'query' : 'subscription';
       const document = `${operation} Sweep${variableList ? `(${variableList})` : ''} { ${field.name}${
         argumentList ? `(${argumentList})` : ''
@@ -1388,6 +1410,9 @@ describe('the spray-wall visibility sweep', () => {
  */
 const ORPHAN_TICK_COMMENT = 'Zqx Orphan Tick Comment Zqx';
 const ORPHAN_SESSION_TICK_COMMENT = 'Zqx Orphan Session Tick Comment Zqx';
+const DAILY_PRIVATE_TICK_COMMENT = 'Zqx Daily Private Tick Comment Zqx';
+const DAILY_PRIVATE_BETA_LINK = 'https://beta.example/ZqxDailyPrivateBetaZqx';
+const GHOST_KILTER_SEND_COMMENT = 'Zqx Ghost Kilter Send Comment Zqx';
 const GHOST_KILTER_TICK_COMMENT = 'Zqx Ghost Kilter Tick Comment Zqx';
 const ORPHAN_COMMENT_BODY = 'Zqx Orphan Comment Body Zqx';
 const ORPHAN_PROPOSAL_REASON = 'Zqx Orphan Proposal Reason Zqx';
@@ -1459,7 +1484,44 @@ describe('references to a hard-deleted spray climb', () => {
     return answer.userProfileStats;
   };
 
+  /**
+   * `setup.ts` truncates `board_sessions` before every test, so by the time
+   * anything in this block runs the sweep's session rows are gone (their ticks
+   * keep the session id). The session readers answer null or drop the session's
+   * name without the row, which would make a pass over them prove nothing. Put
+   * the rows back wherever a session reader is about to be asked.
+   */
+  async function reseedSessionRows(): Promise<void> {
+    for (const [sessionId, name] of [
+      [world.sessionId, 'Sweep session'],
+      [orphanOnlySessionId, 'Orphan-only session'],
+    ]) {
+      await db.execute(sql`
+        INSERT INTO board_sessions (id, board_path, created_by_user_id, name, board_id, status, started_at, created_at, last_activity)
+        VALUES (${sessionId}, ${`spray/${world.layoutId}/${world.sizeId}/1/${ANGLE}`}, ${OWNER}, ${name},
+                ${world.boardId}, 'active', now() - interval '1 hour', now(), now())
+        ON CONFLICT (id) DO NOTHING
+      `);
+      await db.execute(sql`
+        INSERT INTO board_session_participants (session_id, user_id, joined_at) VALUES (${sessionId}, ${OWNER}, now())
+        ON CONFLICT DO NOTHING
+      `);
+    }
+  }
+
   beforeAll(async () => {
+    // A send on ANOTHER board in the sweep's session, easier than everything on
+    // the wall. It is what a stranger should be shown as the session's hardest
+    // send once the wall's own sends are not candidates, and it is the positive
+    // control that a log on a missing climb of another board still reaches
+    // everybody. Seeded before the "before" answers so no later count moves.
+    await db.execute(sql`
+      INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, difficulty,
+                                   attempt_count, is_mirror, is_benchmark, session_id, comment, climbed_at, created_at, updated_at)
+      VALUES (${uuidv4()}, ${OWNER}, 'sweep-ghost-kilter-send', 'kilter', ${ANGLE}, 'send', 10,
+              1, false, false, ${world.sessionId}, ${GHOST_KILTER_SEND_COMMENT}, now(), now(), now())
+    `);
+
     // The answers BEFORE the orphan exists. A count is a leak the sentinel scan
     // cannot see, so the cases below compare against these.
     for (const viewer of VIEWERS) {
@@ -1714,6 +1776,7 @@ describe('references to a hard-deleted spray climb', () => {
         { name: 'orphan tick uuid', value: orphanTickUuid, kind: 'secret' },
         { name: 'orphan climb uuid', value: orphanClimbUuid, kind: 'secret' },
       ];
+      await reseedSessionRows();
       for (const row of rows) {
         const perViewer = {} as Record<ViewerName, Outcome>;
         for (const viewer of VIEWERS) {
@@ -1753,6 +1816,105 @@ describe('references to a hard-deleted spray climb', () => {
       }
     });
 
+    it('reached every session reader for the owner, so the pass above is not vacuous', () => {
+      const ownerData = (key: string) =>
+        orphanOutcomes.get(key)!.owner.data as Record<string, { sessions?: unknown[] } | null> | null;
+      expect(ownerData('Query.sessionDetail')?.sessionDetail, 'sessionDetail').not.toBeNull();
+      expect(ownerData('Query.sessionSummary')?.sessionSummary, 'sessionSummary').not.toBeNull();
+      expect(
+        ownerData('Query.sessionGroupedFeed')?.sessionGroupedFeed?.sessions?.length,
+        'sessionGroupedFeed',
+      ).toBeGreaterThan(0);
+      expect(ownerData('Query.gymStats')?.gymStats, 'gymStats').not.toBeNull();
+      // …and through the session cards the owner is shown their own log on the
+      // deleted climb: it is the hardest send of the sweep's session.
+      expect(findSentinels(ownerData('Query.sessionGroupedFeed'), orphanSentinels).join(' | ')).toContain(
+        'hardestSend',
+      );
+    });
+
+    it('sessionGroupedFeed picks the hardest send the viewer may see, not a nulled shell', async () => {
+      await reseedSessionRows();
+      const cards = async (viewer: ViewerName) => {
+        const answer = (await ask(
+          viewer,
+          'query Orphan($input: ActivityFeedInput) { sessionGroupedFeed(input: $input) ' +
+            '{ sessions { sessionId tickCount hardestSend { uuid climbUuid climbName boardType comment } ' +
+            'featuredBeta { tick { uuid climbUuid comment } betaLink { climbUuid link } } } } }',
+          { input: { userId: OWNER, limit: 50 } },
+        )) as {
+          sessionGroupedFeed: {
+            sessions: Array<{ sessionId: string; hardestSend: { boardType: string; comment: string | null } | null }>;
+          };
+        };
+        return answer.sessionGroupedFeed.sessions;
+      };
+
+      for (const viewer of ['anonymous', 'stranger'] as const) {
+        const sessions = await cards(viewer);
+        // Nothing of the wall: not the live climb's log, not the deleted one's,
+        // not the beta link. `sentinels` is the main sweep's list.
+        expect(
+          { viewer, hits: findSentinels(sessions, [...sentinels, ...orphanSentinels].filter(isSecretSentinel)) },
+          'a session card must not carry a log or a beta link from a wall the viewer cannot see',
+        ).toEqual({ viewer, hits: [] });
+        // The sweep's session still has a card, and its hardest send is the
+        // Kilter one: the next send down that they may see.
+        const sweepSession = sessions.find((session) => session.sessionId === world.sessionId);
+        expect(sweepSession?.hardestSend, viewer).toMatchObject({
+          boardType: 'kilter',
+          comment: GHOST_KILTER_SEND_COMMENT,
+        });
+        // A session of nothing but the deleted climb's log has no send to show.
+        const orphanOnly = sessions.find((session) => session.sessionId === orphanOnlySessionId);
+        expect(orphanOnly?.hardestSend ?? null, `${viewer}: orphan-only session`).toBeNull();
+      }
+
+      const own = await cards('owner');
+      expect(own.find((session) => session.sessionId === world.sessionId)?.hardestSend?.comment).toBe(
+        ORPHAN_TICK_COMMENT,
+      );
+      expect(own.find((session) => session.sessionId === orphanOnlySessionId)?.hardestSend?.comment).toBe(
+        ORPHAN_SESSION_TICK_COMMENT,
+      );
+    });
+
+    it('the daily highlight card never anchors on a log the viewer may not see', async () => {
+      // A day with no session: the feed builds a "daily highlight" card from the
+      // day's hardest log, and anchors the card's votes and comments on that
+      // tick's uuid. Seeded here, on the LIVE private climb and three days back,
+      // with a beta link of its own. Same climb and grade as the sweep's tick, so
+      // no profile count moves.
+      const dailyTickUuid = uuidv4();
+      await db.execute(sql`
+        INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, difficulty, quality,
+                                     attempt_count, is_mirror, is_benchmark, comment, climbed_at, created_at, updated_at)
+        VALUES (${dailyTickUuid}, ${OWNER}, ${world.climbUuid}, 'spray', ${ANGLE}, 'send', 18, 3,
+                1, false, false, ${DAILY_PRIVATE_TICK_COMMENT}, now() - interval '3 days', now(), now())
+      `);
+      await db.execute(sql`
+        INSERT INTO board_beta_links (board_type, climb_uuid, link, foreign_username, angle, is_listed, created_by_user_id, tick_uuid)
+        VALUES ('spray', ${world.climbUuid}, ${DAILY_PRIVATE_BETA_LINK}, 'someone', ${ANGLE}, true, ${OWNER}, ${dailyTickUuid})
+      `);
+
+      const daily = (viewer: ViewerName) =>
+        ask(
+          viewer,
+          'query Daily($input: ActivityFeedInput) { sessionGroupedFeed(input: $input) ' +
+            '{ sessions { sessionId sessionType socialEntityId hardestSend { uuid climbUuid comment } ' +
+            'featuredBeta { tick { uuid comment } betaLink { climbUuid link } } } } }',
+          { input: { userId: OWNER, includeDailyHighlights: true, limit: 50 } },
+        );
+      const dailySecrets = [DAILY_PRIVATE_TICK_COMMENT, DAILY_PRIVATE_BETA_LINK, dailyTickUuid];
+      const found = (answer: unknown) => dailySecrets.filter((secret) => JSON.stringify(answer).includes(secret));
+
+      for (const viewer of ['anonymous', 'stranger'] as const) {
+        expect({ viewer, found: found(await daily(viewer)) }).toEqual({ viewer, found: [] });
+      }
+      // The owner gets the card, the log and the link.
+      expect(found(await daily('owner')).sort()).toEqual([...dailySecrets].sort());
+    });
+
     // The two ascents feeds take no argument the sweep can seed, so it never
     // enumerates them. The stranger follows the owner, which is the case the
     // following feed exists for.
@@ -1764,9 +1926,13 @@ describe('references to a hard-deleted spray climb', () => {
         { input: { limit: 50 } },
       );
     const orphanHits = (answer: unknown) => findSentinels(answer, orphanSentinels);
+    const isSecretSentinel = (sentinel: Sentinel) => sentinel.kind === 'secret';
 
     it('followingAscentsFeed does not carry it to a follower', async () => {
-      expect(orphanHits(await ascentsFeed('followingAscentsFeed', 'stranger'))).toEqual([]);
+      const feed = await ascentsFeed('followingAscentsFeed', 'stranger');
+      expect(orphanHits(feed)).toEqual([]);
+      // The feed itself is not empty: the owner's logs on other boards arrive.
+      expect(JSON.stringify(feed)).toContain(GHOST_KILTER_TICK_COMMENT);
     });
 
     it('globalAscentsFeed carries it to its author and to nobody else', async () => {
@@ -1798,15 +1964,7 @@ describe('references to a hard-deleted spray climb', () => {
       const hardest = async (viewer: string | null) =>
         (await generateSessionSummary(orphanOnlySessionId, viewer))?.hardestClimb?.climbUuid ?? null;
 
-      // The summary answers null without a `board_sessions` row, and by the time
-      // the generic pass above has run the seeded rows are gone (their ticks keep
-      // the session id). Put this one back rather than depend on that.
-      await db.execute(sql`
-        INSERT INTO board_sessions (id, board_path, created_by_user_id, name, board_id, status, started_at, created_at, last_activity)
-        VALUES (${orphanOnlySessionId}, ${`spray/${world.layoutId}/${world.sizeId}/1/${ANGLE}`}, ${OWNER}, 'Orphan-only session',
-                ${world.boardId}, 'active', now() - interval '1 hour', now(), now())
-        ON CONFLICT (id) DO NOTHING
-      `);
+      await reseedSessionRows();
 
       expect(await hardest(STRANGER)).toBeNull();
       expect(await hardest(null)).toBeNull();
@@ -1815,7 +1973,10 @@ describe('references to a hard-deleted spray climb', () => {
 
     it('gymStats does not list the deleted climb among the top climbs', () => {
       // `gymStats` passes a null viewer, so nobody is exempt, the owner included.
-      expect(JSON.stringify(orphanOutcomes.get('Query.gymStats')!.owner.data)).not.toContain(orphanClimbUuid);
+      const stats = orphanOutcomes.get('Query.gymStats')!.owner;
+      expect(stats.errorMessages).toEqual([]);
+      expect((stats.data as { gymStats: unknown } | null)?.gymStats).not.toBeNull();
+      expect(JSON.stringify(stats.data)).not.toContain(orphanClimbUuid);
     });
 
     it('userAscentsFeed leaves it out of the total as well as the page', async () => {
@@ -1844,8 +2005,17 @@ describe('references to a hard-deleted spray climb', () => {
           { userId: OWNER },
         );
         expect(JSON.stringify(feed), `${viewer.name}: userAscentsFeed`).toContain(GHOST_KILTER_TICK_COMMENT);
+        const grouped = await ask(
+          viewer.name,
+          'query Ghost($userId: ID!) { userGroupedAscentsFeed(userId: $userId) { groups { climbUuid latestComment } } }',
+          { userId: OWNER },
+        );
+        expect(JSON.stringify(grouped), `${viewer.name}: userGroupedAscentsFeed`).toContain('sweep-ghost-kilter-climb');
       }
       expect(JSON.stringify(await ascentsFeed('globalAscentsFeed', 'anonymous'))).toContain(GHOST_KILTER_TICK_COMMENT);
+      expect(JSON.stringify(await ascentsFeed('followingAscentsFeed', 'stranger'))).toContain(
+        GHOST_KILTER_TICK_COMMENT,
+      );
     });
   });
 });
