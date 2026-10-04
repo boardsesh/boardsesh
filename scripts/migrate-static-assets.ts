@@ -1,7 +1,7 @@
 import { pathToFileURL } from 'node:url';
 import { Readable } from 'node:stream';
 import { GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { migrateStaticAssets, parseMigrationMode, type AssetStore } from './lib/static-asset-migration';
+import { migrateStaticAssets, parseMigrationOptions, type AssetStore } from './lib/static-asset-migration';
 import { createRequestStartLimiter } from './lib/static-asset-upload';
 
 function requiredEnvironment(name: string): string {
@@ -113,14 +113,14 @@ export function createAssetStore(client: S3Client, bucket: string): AssetStore {
 }
 
 export async function main(arguments_: readonly string[] = process.argv.slice(2)): Promise<void> {
-  const mode = parseMigrationMode(arguments_);
+  const { mode, reverse } = parseMigrationOptions(arguments_);
   const legacyEndpoint = requiredEnvironment('STATIC_ASSETS_LEGACY_AWS_ENDPOINT_URL');
   const r2Endpoint = requiredEnvironment('STATIC_ASSETS_R2_AWS_ENDPOINT_URL');
   assertMigrationEndpoints(legacyEndpoint, r2Endpoint);
   const legacyBucket = requiredEnvironment('STATIC_ASSETS_LEGACY_S3_BUCKET_NAME');
   if (legacyBucket !== 'boardsesh-static-assets')
     throw new Error('Historical migration requires boardsesh-static-assets source bucket');
-  const source = new S3Client({
+  const legacyClient = new S3Client({
     endpoint: legacyEndpoint,
     region: requiredEnvironment('STATIC_ASSETS_LEGACY_AWS_REGION'),
     maxAttempts: 1,
@@ -129,7 +129,7 @@ export async function main(arguments_: readonly string[] = process.argv.slice(2)
       secretAccessKey: requiredEnvironment('STATIC_ASSETS_LEGACY_AWS_SECRET_ACCESS_KEY'),
     },
   });
-  const destination = new S3Client({
+  const r2Client = new S3Client({
     endpoint: r2Endpoint,
     region: 'auto',
     maxAttempts: 1,
@@ -139,15 +139,13 @@ export async function main(arguments_: readonly string[] = process.argv.slice(2)
     },
   });
   try {
-    const summary = await migrateStaticAssets(
-      createAssetStore(source, legacyBucket),
-      createAssetStore(destination, 'boardsesh-static-assets'),
-      mode,
-    );
-    console.log(JSON.stringify({ mode, ...summary }));
+    const legacyStore = createAssetStore(legacyClient, legacyBucket);
+    const r2Store = createAssetStore(r2Client, 'boardsesh-static-assets');
+    const summary = await migrateStaticAssets(reverse ? r2Store : legacyStore, reverse ? legacyStore : r2Store, mode);
+    console.log(JSON.stringify({ mode, direction: reverse ? 'r2-to-tigris' : 'tigris-to-r2', ...summary }));
   } finally {
-    source.destroy();
-    destination.destroy();
+    legacyClient.destroy();
+    r2Client.destroy();
   }
 }
 

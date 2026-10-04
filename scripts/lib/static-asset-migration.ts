@@ -31,12 +31,21 @@ const IMMUTABLE_KEY = /^static\/v1\/([a-f0-9]{64})\.(webp|png|ico|mp4|webm)$/;
 const MAX_OBJECT_BYTES = 128 * 1024 * 1024;
 
 export function parseMigrationMode(arguments_: readonly string[]): MigrationMode {
+  return parseMigrationOptions(arguments_).mode;
+}
+
+export function parseMigrationOptions(arguments_: readonly string[]): { mode: MigrationMode; reverse: boolean } {
   const flags = arguments_[0] === '--' ? arguments_.slice(1) : arguments_;
-  if (flags.some((argument) => !['--dry-run', '--apply', '--verify-only'].includes(argument))) {
-    throw new Error('Supported flags: --dry-run, --apply, --verify-only');
+  if (flags.some((argument) => !['--dry-run', '--apply', '--verify-only', '--reverse'].includes(argument))) {
+    throw new Error('Supported flags: --dry-run, --apply, --verify-only, --reverse');
   }
-  if (flags.length > 1) throw new Error('Choose exactly one migration mode');
-  return flags[0] === '--apply' ? 'apply' : flags[0] === '--verify-only' ? 'verify-only' : 'dry-run';
+  const modes = flags.filter((flag) => flag !== '--reverse');
+  if (modes.length > 1 || flags.filter((flag) => flag === '--reverse').length > 1)
+    throw new Error('Choose exactly one migration mode and at most one --reverse flag');
+  return {
+    mode: modes[0] === '--apply' ? 'apply' : modes[0] === '--verify-only' ? 'verify-only' : 'dry-run',
+    reverse: flags.includes('--reverse'),
+  };
 }
 
 export async function inventoryAssets(store: AssetStore): Promise<string[]> {

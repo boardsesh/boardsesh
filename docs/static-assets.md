@@ -167,6 +167,14 @@ reads `desiredR2Buckets`, so there is no second switch to remember. That asserti
 DNS is good for roughly 60 days: Tigris renews the custom domain's certificate off the live CNAME, which will be
 pointing at Cloudflare, and renewal breaks within a couple of months.
 
+After R2 publishing resumes, a DNS-only rollback is incomplete: new deployments can reference hashes written only
+to R2. Pause and drain Production Deploy again, then run `vp run storage:migrate-static-assets -- --reverse --apply`
+followed by `vp run storage:migrate-static-assets -- --reverse --verify-only`. The same isolated legacy and R2
+credential prefixes select their fixed providers; only the copy direction changes. Every R2 hash must be verified
+on Tigris before restoring its DNS record and publisher settings. Extra archived Tigris hashes remain untouched,
+and an immutable content or metadata conflict fails rather than overwriting it. Keep both providers frozen through
+verification and routing restoration, then force full catalog validation before resuming deployments.
+
 ## Bucket setup (Tigris — current, until the cutover above completes)
 
 Create a dedicated public Tigris bucket for `assets.boardsesh.com`. Do not reuse the snapshot, OTA, or user-upload

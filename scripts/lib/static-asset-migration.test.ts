@@ -5,6 +5,7 @@ import {
   inventoryAssets,
   migrateStaticAssets,
   parseMigrationMode,
+  parseMigrationOptions,
   type AssetStore,
   type StoredAsset,
 } from './static-asset-migration';
@@ -62,6 +63,23 @@ describe('historical immutable assets migration', () => {
     expect(() => parseMigrationMode(['--apply', '--dry-run'])).toThrow('exactly one');
     expect(() => parseMigrationMode(['--delete'])).toThrow('Supported flags');
     expect(() => parseMigrationMode(['--', '--', '--dry-run'])).toThrow('Supported flags');
+  });
+  it('requires an explicit reverse direction without implicitly enabling writes', () => {
+    expect(parseMigrationOptions(['--reverse'])).toEqual({ mode: 'dry-run', reverse: true });
+    expect(parseMigrationOptions(['--', '--reverse', '--apply'])).toEqual({ mode: 'apply', reverse: true });
+    expect(parseMigrationOptions(['--verify-only', '--reverse'])).toEqual({ mode: 'verify-only', reverse: true });
+    expect(() => parseMigrationOptions(['--reverse', '--reverse'])).toThrow('at most one');
+    expect(() => parseMigrationOptions(['--reverse', '--apply', '--dry-run'])).toThrow('exactly one');
+  });
+  it('restores new hashes while retaining archived destination-only assets', async () => {
+    const archivedContents = Buffer.from('older deployment retained only in Tigris');
+    const archivedKey = `static/v1/${createHash('sha256').update(archivedContents).digest('hex')}.webp`;
+    const r2 = memoryStore({ [key]: contents });
+    const legacy = memoryStore({ [archivedKey]: archivedContents });
+    await expect(migrateStaticAssets(r2, legacy, 'apply')).resolves.toMatchObject({ copiedObjects: 1 });
+    expect(r2.put).not.toHaveBeenCalled();
+    expect((await legacy.get(archivedKey))?.bytes).toBe(archivedContents.length);
+    await expect(migrateStaticAssets(r2, legacy, 'verify-only')).resolves.toMatchObject({ copiedObjects: 0 });
   });
   it('inventories without reading or writing objects in dry run', async () => {
     const source = memoryStore({ [key]: contents, 'static/v1/manifest.json': Buffer.from('{}') });
