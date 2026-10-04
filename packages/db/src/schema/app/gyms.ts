@@ -203,6 +203,34 @@ export const gymClaims = pgTable(
   }),
 );
 
+/**
+ * Immutable ownership outcome for an approved claim created after this table
+ * exists. `didTransfer = false` records an approval that merely closed a claim
+ * already filed by the current owner; it is not an ownership event. Missing
+ * rows are legacy/unknown history and are intentionally not backfilled from
+ * `gym_claims.updated_at`, which cannot distinguish a transfer from a no-op.
+ *
+ * `gymUuid` is the gym identity at decision time, with no FK and no merge-time
+ * rewrite. This keeps a transfer on a duplicate from becoming a transfer on the
+ * canonical gym when claim rows are moved during a merge.
+ */
+export const gymClaimOwnershipDecisions = pgTable(
+  'gym_claim_ownership_decisions',
+  {
+    claimId: bigint('claim_id', { mode: 'number' })
+      .primaryKey()
+      .references(() => gymClaims.id, { onDelete: 'cascade' }),
+    gymUuid: text('gym_uuid').notNull(),
+    didTransfer: boolean('did_transfer').notNull(),
+    decidedAt: timestamp('decided_at').notNull(),
+  },
+  (table) => ({
+    transferredHistoryIdx: index('gym_claim_ownership_decisions_transfer_history_idx')
+      .on(table.gymUuid, table.decidedAt)
+      .where(sql`${table.didTransfer}`),
+  }),
+);
+
 // Type exports
 export type Gym = typeof gyms.$inferSelect;
 export type NewGym = typeof gyms.$inferInsert;
@@ -212,3 +240,4 @@ export type GymFollow = typeof gymFollows.$inferSelect;
 export type NewGymFollow = typeof gymFollows.$inferInsert;
 export type GymClaim = typeof gymClaims.$inferSelect;
 export type NewGymClaim = typeof gymClaims.$inferInsert;
+export type GymClaimOwnershipDecision = typeof gymClaimOwnershipDecisions.$inferSelect;
