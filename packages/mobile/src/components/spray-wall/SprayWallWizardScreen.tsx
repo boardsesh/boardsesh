@@ -9,7 +9,7 @@
 //
 // Everything that can fail, fails into somewhere the climber can act:
 //
-//  - the photo library says no        → the step stays put and says so
+//  - the camera says no               → the step stays put and says so
 //  - the upload dies halfway          → "Try again" retries the UPLOAD, against
 //                                       the wall that already exists
 //  - this build cannot suggest holds  → straight into the editor, manual
