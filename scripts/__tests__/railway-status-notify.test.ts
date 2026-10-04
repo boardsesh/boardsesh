@@ -203,6 +203,15 @@ describe('selectPendingPosts', () => {
     expect(alreadySeen).toEqual(['deploy-resolved', 'deploy-investigating']);
   });
 
+  it('posts an incident listed as both active and recent once', () => {
+    const { posts } = selectPendingPosts(
+      { activeIncidents: [storageIncident], recentIncidents: [storageIncident] },
+      ['storage-investigating', 'storage-identified'],
+      NOW_MS,
+    );
+    expect(posts.map((post) => post.update.id)).toEqual(['storage-monitoring']);
+  });
+
   it('with no stored state, posts only the latest update of an open incident', () => {
     const { posts, alreadySeen } = selectPendingPosts(feed, null, NOW_MS);
     expect(posts.map((post) => post.update.id)).toEqual(['storage-monitoring']);
@@ -254,6 +263,13 @@ describe('parseStatusFeed', () => {
     expect(() =>
       parseStatusFeed({ activeIncidents: [{ ...storageIncident, updates: undefined }], recentIncidents: [] }),
     ).toThrow(/updates/);
+  });
+
+  it('throws on a timestamp it cannot read, which the age rule would otherwise drop', () => {
+    const badUpdate = { ...storageIncident.updates[0], createdAt: 'yesterday' };
+    expect(() =>
+      parseStatusFeed({ activeIncidents: [{ ...storageIncident, updates: [badUpdate] }], recentIncidents: [] }),
+    ).toThrow(/createdAt is not a timestamp/);
   });
 
   it('accepts a component with no group', () => {
@@ -333,6 +349,84 @@ describe('run', () => {
     expect(result).toEqual({ posted: 1, failed: 0, changed: true });
     expect(discordBodies).toHaveLength(1);
     expect(readSeenIds(stateFile)).toHaveLength(5);
+  });
+
+  it('keeps the posts that landed when a later one fails', async () => {
+    const stateFile = stateFileWith(['deploy-investigating', 'deploy-resolved']);
+    let discordCalls = 0;
+    const fetcher: Fetcher = async (input) => {
+      const url = String(input);
+      if (url === STATUS_API_URL) return new Response(JSON.stringify(feed), { status: 200 });
+      if (url === HEALTH_URL) return new Response(null, { status: 200 });
+      discordCalls += 1;
+      return new Response(null, { status: discordCalls === 3 ? 500 : 204 });
+    };
+
+    const result = await run({
+      stateFile,
+      dryRun: false,
+      webhookUrl: WEBHOOK,
+      fetcher,
+      logger: silentLogger,
+      nowMs: NOW_MS,
+    });
+
+    expect(result).toEqual({ posted: 2, failed: 1, changed: true });
+    expect(readSeenIds(stateFile)).toEqual([
+      'deploy-investigating',
+      'deploy-resolved',
+      'storage-investigating',
+      'storage-identified',
+    ]);
+  });
+
+  it('fails the run when there is something to post and no webhook', async () => {
+    const seenBefore = ['storage-investigating', 'storage-identified', 'deploy-investigating', 'deploy-resolved'];
+    const stateFile = stateFileWith(seenBefore);
+    const { fetcher } = fakeFetcher();
+
+    const result = await run({
+      stateFile,
+      dryRun: false,
+      webhookUrl: undefined,
+      fetcher,
+      logger: silentLogger,
+      nowMs: NOW_MS,
+    });
+
+    expect(result).toEqual({ posted: 0, failed: 1, changed: false });
+    expect(readSeenIds(stateFile)).toEqual(seenBefore);
+  });
+
+  it('holds anything past 5 posts for the next run', async () => {
+    const manyUpdates = Array.from({ length: 7 }, (_, index) => ({
+      id: `burst-${index}`,
+      status: 'MONITORING',
+      createdAt: `2026-10-04T07:0${index}:00+00:00`,
+      message: `Update ${index}`,
+    }));
+    const burstFeed = { activeIncidents: [{ ...storageIncident, updates: manyUpdates }], recentIncidents: [] };
+    const stateFile = stateFileWith([]);
+    const discordBodies: string[] = [];
+    const fetcher: Fetcher = async (input, init) => {
+      const url = String(input);
+      if (url === STATUS_API_URL) return new Response(JSON.stringify(burstFeed), { status: 200 });
+      if (url === HEALTH_URL) return new Response(null, { status: 200 });
+      discordBodies.push(typeof init?.body === 'string' ? init.body : '');
+      return new Response(null, { status: 204 });
+    };
+
+    const result = await run({
+      stateFile,
+      dryRun: false,
+      webhookUrl: WEBHOOK,
+      fetcher,
+      logger: silentLogger,
+      nowMs: NOW_MS,
+    });
+
+    expect(result).toEqual({ posted: 5, failed: 0, changed: true });
+    expect(readSeenIds(stateFile)).toEqual(['burst-0', 'burst-1', 'burst-2', 'burst-3', 'burst-4']);
   });
 
   it('posts nothing and writes nothing on a dry run', async () => {

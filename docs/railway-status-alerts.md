@@ -69,6 +69,8 @@ The cron needs no `vp install`: the script is TypeScript run by plain `node` and
   the script checks every field it reads and fails loudly instead of reporting "no incidents".
 - `status.railway.com` did not answer.
 - Discord rejected a post.
+- There was something to post and `DISCORD_DEPLOY_WEBHOOK` was not readable. Left green, the update
+  would pass the 24-hour mark and be recorded without anyone having seen it.
 
 ## Trying it
 
@@ -81,8 +83,13 @@ A dry run prints what it would post, posts nothing and writes nothing. With no s
 the cache-miss behaviour; with a file containing `{"seenUpdateIds": []}` it shows every matching
 update from the last 24 hours, capped at 5.
 
-In GitHub, dispatch the workflow from `main` with `dry_run` ticked. A dispatch from another branch
-fails on the Production environment gate before any step runs.
+In GitHub, dispatch the workflow from `main` with `dry_run` ticked. A dispatch from a feature branch
+fails on the Production environment gate before any step runs. `release/next` passes the gate, but
+only a run on `main` saves the list, because a cache entry saved from another branch is invisible
+to the scheduled runs.
+
+The cache key ends in the run attempt. Re-running a red run therefore restores the newest list, not
+the one that run saved the first time, and does not repost.
 
 ## Not covered
 

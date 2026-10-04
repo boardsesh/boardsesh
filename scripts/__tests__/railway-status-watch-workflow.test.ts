@@ -25,7 +25,14 @@ describe('railway status watch workflow', () => {
     expect(workflow.split(`path: ${statePath}`)).toHaveLength(3);
     expect(workflow).toContain(`args=(--state-file ${statePath})`);
     expect(workflow).toContain('restore-keys: |\n            railway-status-seen-');
-    expect(workflow).toContain("if: always() && steps.notify.outputs.changed == 'true'");
+    expect(workflow).toContain(
+      "if: always() && steps.notify.outputs.changed == 'true' && github.ref == 'refs/heads/main'",
+    );
+  });
+
+  it('keys the cache per attempt, so a re-run restores the newest list and not its own old one', () => {
+    const cacheKey = 'key: railway-status-seen-${{ github.run_id }}-${{ github.run_attempt }}';
+    expect(workflow.split(cacheKey)).toHaveLength(3);
   });
 
   it('runs the script with plain node, so the script may only import node: builtins', () => {

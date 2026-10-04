@@ -56,14 +56,16 @@ jobs:
           node-version: '22.x'
 
       # The list of update IDs already posted. A cache entry is immutable, so each
-      # change is saved under a new key and the newest is found by prefix. A miss
+      # change is saved under a new key and the newest is found by prefix. The key
+      # carries run_attempt so a re-run never gets an exact hit on its own older
+      # entry: that would restore a stale list and repost everything since. A miss
       # (first run, or 7 days with no restore) is handled by the script: it posts
       # only the latest update of incidents still open.
       - name: Restore posted-update list
         uses: actions/cache/restore@v4
         with:
           path: .boardsesh/railway-status-seen.json
-          key: railway-status-seen-${{ github.run_id }}
+          key: railway-status-seen-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             railway-status-seen-
 
@@ -83,8 +85,10 @@ jobs:
       # and the posts that did land before it must still be remembered. Saved
       # only on a change, so a quiet day does not write 144 cache entries.
       - name: Save posted-update list
-        if: always() && steps.notify.outputs.changed == 'true'
+        # main only: Production also admits release/next, and a list saved from
+        # there lands in a cache scope the scheduled runs on main cannot read.
+        if: always() && steps.notify.outputs.changed == 'true' && github.ref == 'refs/heads/main'
         uses: actions/cache/save@v4
         with:
           path: .boardsesh/railway-status-seen.json
-          key: railway-status-seen-${{ github.run_id }}
+          key: railway-status-seen-${{ github.run_id }}-${{ github.run_attempt }}

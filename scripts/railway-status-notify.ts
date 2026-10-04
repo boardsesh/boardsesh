@@ -20,7 +20,7 @@
  * The cron runs this with plain `node` (type stripping) and no `vp install`, so
  * it may import node: builtins only. See docs/railway-status-alerts.md.
  *
- * Env: DISCORD_DEPLOY_WEBHOOK (absent = print and leave the update unseen),
+ * Env: DISCORD_DEPLOY_WEBHOOK (absent with something to post = print, leave it unseen, exit 1),
  * GITHUB_OUTPUT (optional; receives `changed=true|false` for the cache step).
  */
 
@@ -104,6 +104,13 @@ function requireString(source: Record<string, unknown>, key: string, where: stri
   return field;
 }
 
+function requireTimestamp(source: Record<string, unknown>, key: string, where: string): string {
+  const field = requireString(source, key, where);
+  // The 24-hour age rule compares on this; NaN would read as "stale" and drop the update unposted.
+  if (Number.isNaN(Date.parse(field))) throw new Error(`Railway status feed: ${where}.${key} is not a timestamp`);
+  return field;
+}
+
 function requireArray(source: Record<string, unknown>, key: string, where: string): unknown[] {
   const field = source[key];
   if (!Array.isArray(field)) throw new Error(`Railway status feed: ${where}.${key} is not an array`);
@@ -133,7 +140,7 @@ function parseIncident(raw: unknown, where: string): StatusIncident {
       return {
         id: requireString(update, 'id', updateWhere),
         status: requireString(update, 'status', updateWhere),
-        createdAt: requireString(update, 'createdAt', updateWhere),
+        createdAt: requireTimestamp(update, 'createdAt', updateWhere),
         message: requireString(update, 'message', updateWhere),
       };
     }),
@@ -206,9 +213,15 @@ export function selectPendingPosts(
     const classification = classifyIncident(incident);
     return classification ? [{ incident, tier: classification.tier }] : [];
   });
-  const everyUpdate = relevant.flatMap(({ incident, tier }) =>
-    incident.updates.map((update) => ({ incident, update, tier })),
-  );
+  // An incident moving from active to recent could be listed in both for one poll.
+  const listedIds = new Set<string>();
+  const everyUpdate = relevant
+    .flatMap(({ incident, tier }) => incident.updates.map((update) => ({ incident, update, tier })))
+    .filter((entry) => {
+      if (listedIds.has(entry.update.id)) return false;
+      listedIds.add(entry.update.id);
+      return true;
+    });
 
   if (seen === null) {
     const activeIds = new Set(feed.activeIncidents.map((incident) => incident.id));
@@ -363,8 +376,15 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
   for (const post of posts.slice(0, MAX_POSTS_PER_RUN)) {
     const content = formatDiscordContent(post, post.tier === 'users' ? health : null);
-    if (dryRun || !webhookUrl) {
-      logger.log(`--- would post (${dryRun ? 'dry run' : 'no webhook'})\n${content}`);
+    if (dryRun) {
+      logger.log(`--- would post (dry run)\n${content}`);
+      continue;
+    }
+    if (!webhookUrl) {
+      // Counted as a failure: left green, the update would age past 24 hours
+      // and be recorded as seen without anyone having read it.
+      failed += 1;
+      logger.log(`--- not posted (no webhook)\n${content}`);
       continue;
     }
     try {
@@ -383,7 +403,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     logger.warn(`${posts.length - MAX_POSTS_PER_RUN} update(s) held for the next run.`);
   }
   if (!dryRun && !webhookUrl && posts.length > 0) {
-    logger.warn('DISCORD_DEPLOY_WEBHOOK is not set: nothing was posted and the update(s) stay unseen.');
+    logger.error('DISCORD_DEPLOY_WEBHOOK is not set: nothing was posted and the update(s) stay unseen.');
   }
 
   const nextSeen = pruneSeen(seen);
