@@ -11,7 +11,7 @@ Each number carries a tag that says where it came from. The tags are explained i
 ## Summary
 
 - **Quiet-day load:** 15,727 s of query time in the 15.3 h window (P), or about 24,700 s/day (E).
-- **Savings:** the 15 changes below remove about **9,000 s/day on a quiet day, roughly 36% (E)**. Days with several deploys save more, because each popular-configs stampede costs about 10,000 s (P).
+- **Savings:** changes C1 to C15 below remove about **9,000 s/day on a quiet day, roughly 36% (E)**. Days with several deploys save more, because each popular-configs stampede costs about 10,000 s (P).
 - **Memory:**
   - Dropped: about 0.84 GB of indexes (P, from sizes). `board_climb_similar` (763 MB total, about 483 MB of that in indexes) is kept — see [C7](#c7-index-and-table-drops) — so it is no longer counted here.
   - Added: at most about 100 MB (E).

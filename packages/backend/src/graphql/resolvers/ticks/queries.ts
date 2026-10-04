@@ -220,6 +220,15 @@ export const tickQueries = {
 
     const userId = ctx.userId!;
     const startedAt = performance.now();
+    // A read that timed out is the slowest read there is, so it is logged too.
+    const logFailedRead = (err: unknown): never => {
+      logSlowRead('ticks', startedAt, {
+        boardType: input.boardType,
+        climbs: input.climbUuids?.length ?? null,
+        failed: true,
+      });
+      throw err;
+    };
 
     // Build query conditions
     const conditions = [
@@ -268,7 +277,8 @@ export const tickQueries = {
       // Synced-rating fallback for quality — see boardClimbRatingsJoinCondition.
       .leftJoin(dbSchema.boardClimbRatings, boardClimbRatingsJoinCondition)
       .where(and(...conditions))
-      .orderBy(desc(dbSchema.boardseshTicks.climbedAt));
+      .orderBy(desc(dbSchema.boardseshTicks.climbedAt))
+      .catch(logFailedRead);
 
     // Batch-fetch social aggregates in two grouped queries instead of running
     // a correlated subquery per row — this resolver is unbounded (no LIMIT),
@@ -300,7 +310,7 @@ export const tickQueries = {
                 ),
               )
               .groupBy(dbSchema.comments.entityId),
-          ])
+          ]).catch(logFailedRead)
         : [[], []];
 
     logSlowRead('ticks', startedAt, {
