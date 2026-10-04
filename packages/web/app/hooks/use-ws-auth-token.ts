@@ -28,7 +28,7 @@ async function fetchWsAuthToken(): Promise<WsAuthResponse> {
 export function useWsAuthToken(enabled = true) {
   const { data: session, status } = useSession();
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['wsAuthToken', status, session?.user.id ?? null, session?.authSessionId ?? null],
     queryFn: async () => {
       const result = await fetchWsAuthToken();
@@ -67,5 +67,6 @@ export function useWsAuthToken(enabled = true) {
     isAuthenticated: enabled ? (data?.authenticated ?? false) : false,
     isLoading: enabled && (isLoading || status === 'loading'),
     error: enabled ? errorMessage : null,
+    refetch,
   };
 }
