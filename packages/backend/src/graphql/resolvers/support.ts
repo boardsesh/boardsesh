@@ -193,6 +193,11 @@ export const supportMutations = {
 
     const returnUrl = supportReturnUrl(input.locale);
     let session;
+    let checkoutAttempts = 0;
+    const countCheckoutAttempt = (request: Stripe.RequestEvent) => {
+      if (claimId && request.idempotency_key === claimId) checkoutAttempts += 1;
+    };
+    if (claimId) stripe.on('request', countCheckoutAttempt);
     try {
       session = await stripe.checkout.sessions.create(
         {
@@ -216,21 +221,27 @@ export const supportMutations = {
           success_url: `${returnUrl}?support=thanks`,
           cancel_url: `${returnUrl}?support=cancelled`,
         },
-        claimId ? { idempotencyKey: claimId } : undefined,
+        // Minimize retries. The SDK may still retry a closed connection even
+        // with zero configured retries, so request events count actual attempts.
+        { maxNetworkRetries: 0, ...(claimId ? { idempotencyKey: claimId } : {}) },
       );
     } catch (error) {
       // A connection/5xx failure can hide a successfully created session.
       // Retain its claim so a retry or deletion cannot orphan recurring billing.
       const definitelyRejected =
-        error instanceof Stripe.errors.StripeInvalidRequestError ||
-        error instanceof Stripe.errors.StripeAuthenticationError ||
-        error instanceof Stripe.errors.StripePermissionError;
+        checkoutAttempts === 1 &&
+        (error instanceof Stripe.errors.StripeInvalidRequestError ||
+          error instanceof Stripe.errors.StripeAuthenticationError ||
+          error instanceof Stripe.errors.StripePermissionError ||
+          error instanceof Stripe.errors.StripeRateLimitError);
       if (claimId && definitelyRejected) {
         await db.delete(dbSchema.stripeSupportClaims).where(eq(dbSchema.stripeSupportClaims.id, claimId));
       }
       if (claimId && !definitelyRejected)
         logger.error('[stripe-support] Checkout outcome requires reconciliation', { claimId, error });
       throw error;
+    } finally {
+      if (claimId) stripe.off('request', countCheckoutAttempt);
     }
     if (!session.url) throw new Error('Stripe Checkout did not return a URL');
     if (userId) {

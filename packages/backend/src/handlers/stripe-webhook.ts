@@ -114,9 +114,43 @@ export async function acceptCheckout(session: Stripe.Checkout.Session, eventCrea
   );
 }
 
-export async function discardCheckout(session: Stripe.Checkout.Session): Promise<void> {
-  if (!session.client_reference_id) return;
-  await db.delete(dbSchema.stripeSupportClaims).where(eq(dbSchema.stripeSupportClaims.id, session.client_reference_id));
+export async function discardCheckout(
+  session: Stripe.Checkout.Session,
+  reason: 'expired' | 'async_payment_failed',
+): Promise<void> {
+  const claimId = session.client_reference_id;
+  if (!claimId) return;
+  const [linkedClaim] = await db
+    .select({ userId: dbSchema.stripeSupportClaims.userId })
+    .from(dbSchema.stripeSupportClaims)
+    .where(eq(dbSchema.stripeSupportClaims.id, claimId))
+    .limit(1);
+  if (!linkedClaim) return;
+  await withSupportOperation(
+    linkedClaim.userId,
+    'reconciling',
+    async (transaction) => {
+      const [claim] = await transaction
+        .select()
+        .from(dbSchema.stripeSupportClaims)
+        .where(eq(dbSchema.stripeSupportClaims.id, claimId))
+        .limit(1);
+      return claim ?? null;
+    },
+    async (claim) => (claim ? getStripeClient().checkout.sessions.retrieve(session.id) : null),
+    async (transaction, claim, latestSession) => {
+      if (!claim || !latestSession || latestSession.client_reference_id !== claim.id) return;
+      // An older cleanup event must not remove a binding for a completed payment.
+      // The reservation also prevents deletion between acceptance's Stripe read and commit.
+      const canDiscard =
+        latestSession.status === 'expired' ||
+        (reason === 'async_payment_failed' &&
+          latestSession.status === 'complete' &&
+          latestSession.payment_status === 'unpaid');
+      if (!canDiscard || latestSession.payment_status === 'paid') return;
+      await transaction.delete(dbSchema.stripeSupportClaims).where(eq(dbSchema.stripeSupportClaims.id, claim.id));
+    },
+  );
 }
 
 export async function updateSubscription(subscription: Stripe.Subscription, eventCreated: number): Promise<void> {
@@ -193,8 +227,10 @@ export async function handleStripeWebhook(req: IncomingMessage, res: ServerRespo
         await acceptCheckout(event.data.object, event.created);
         break;
       case 'checkout.session.expired':
+        await discardCheckout(event.data.object, 'expired');
+        break;
       case 'checkout.session.async_payment_failed':
-        await discardCheckout(event.data.object);
+        await discardCheckout(event.data.object, 'async_payment_failed');
         break;
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted':

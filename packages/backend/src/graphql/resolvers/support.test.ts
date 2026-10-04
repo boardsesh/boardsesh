@@ -2,21 +2,33 @@ import Stripe from 'stripe';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
-const { applyRateLimit, checkoutSessionCreate, billingPortalSessionCreate, subscriptionRetrieve, mockDb } = vi.hoisted(
-  () => ({
-    applyRateLimit: vi.fn().mockResolvedValue(undefined),
-    checkoutSessionCreate: vi.fn(),
-    billingPortalSessionCreate: vi.fn(),
-    subscriptionRetrieve: vi.fn().mockResolvedValue({ status: 'active' }),
-    mockDb: {
-      select: vi.fn(),
-      update: vi.fn(),
-      insert: vi.fn(),
-      delete: vi.fn(),
-      transaction: vi.fn(),
-    },
-  }),
-);
+const {
+  applyRateLimit,
+  checkoutSessionCreate,
+  billingPortalSessionCreate,
+  subscriptionRetrieve,
+  stripeOn,
+  stripeOff,
+  requestListeners,
+  emitRequest,
+  mockDb,
+} = vi.hoisted(() => ({
+  applyRateLimit: vi.fn().mockResolvedValue(undefined),
+  checkoutSessionCreate: vi.fn(),
+  billingPortalSessionCreate: vi.fn(),
+  subscriptionRetrieve: vi.fn().mockResolvedValue({ status: 'active' }),
+  requestListeners: new Set<(request: { idempotency_key?: string }) => void>(),
+  stripeOn: vi.fn(),
+  stripeOff: vi.fn(),
+  emitRequest: vi.fn(),
+  mockDb: {
+    select: vi.fn(),
+    update: vi.fn(),
+    insert: vi.fn(),
+    delete: vi.fn(),
+    transaction: vi.fn(),
+  },
+}));
 
 vi.mock('../../services/stripe-support-operation', () => ({
   withSupportOperation: async (
@@ -44,8 +56,17 @@ vi.mock('../../services/stripe-support', async (importOriginal) => {
   return {
     ...original,
     getStripeClient: () => ({
+      on: stripeOn,
+      off: stripeOff,
       subscriptions: { retrieve: subscriptionRetrieve },
-      checkout: { sessions: { create: checkoutSessionCreate } },
+      checkout: {
+        sessions: {
+          create: async (parameters: unknown, options: { idempotencyKey?: string }) => {
+            emitRequest({ idempotency_key: options.idempotencyKey });
+            return checkoutSessionCreate(parameters, options);
+          },
+        },
+      },
       billingPortal: { sessions: { create: billingPortalSessionCreate } },
     }),
   };
@@ -67,6 +88,16 @@ function authContext(): ConnectionContext {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  requestListeners.clear();
+  stripeOn.mockImplementation((_event: string, listener: (request: { idempotency_key?: string }) => void) => {
+    requestListeners.add(listener);
+  });
+  stripeOff.mockImplementation((_event: string, listener: (request: { idempotency_key?: string }) => void) => {
+    requestListeners.delete(listener);
+  });
+  emitRequest.mockImplementation((request: { idempotency_key?: string }) => {
+    for (const listener of requestListeners) listener(request);
+  });
   applyRateLimit.mockResolvedValue(undefined);
   if (originalStripeSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
   else process.env.STRIPE_SECRET_KEY = originalStripeSecret;
@@ -162,10 +193,12 @@ describe('supportMutations', () => {
         customer_email: 'climber@example.com',
         success_url: 'http://localhost:3000/fr/support?support=thanks',
       }),
-      expect.objectContaining({ idempotencyKey: expect.any(String) }),
+      expect.objectContaining({ idempotencyKey: expect.any(String), maxNetworkRetries: 0 }),
     );
     expect(updateWhere).toHaveBeenCalledOnce();
     expect(insertValues.mock.invocationCallOrder[0]).toBeLessThan(checkoutSessionCreate.mock.invocationCallOrder[0]);
+    expect(stripeOff).toHaveBeenCalledWith('request', stripeOn.mock.calls[0][1]);
+    expect(requestListeners.size).toBe(0);
   });
 
   it('creates a reusable Stripe customer for first-time one-time support', async () => {
@@ -181,7 +214,7 @@ describe('supportMutations', () => {
 
     expect(checkoutSessionCreate).toHaveBeenCalledWith(
       expect.objectContaining({ customer_creation: 'always' }),
-      expect.objectContaining({ idempotencyKey: expect.any(String) }),
+      expect.objectContaining({ idempotencyKey: expect.any(String), maxNetworkRetries: 0 }),
     );
   });
 
@@ -196,10 +229,9 @@ describe('supportMutations', () => {
       anonymousContext,
     );
 
-    expect(checkoutSessionCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ client_reference_id: undefined }),
-      undefined,
-    );
+    expect(checkoutSessionCreate).toHaveBeenCalledWith(expect.objectContaining({ client_reference_id: undefined }), {
+      maxNetworkRetries: 0,
+    });
     expect(mockDb.insert).not.toHaveBeenCalled();
   });
 
@@ -236,6 +268,91 @@ describe('supportMutations', () => {
       ),
     ).rejects.toThrow('Response lost');
     expect(mockDb.delete).not.toHaveBeenCalled();
+    expect(checkoutSessionCreate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ maxNetworkRetries: 0, idempotencyKey: expect.any(String) }),
+    );
+    expect(stripeOff).toHaveBeenCalledWith('request', stripeOn.mock.calls[0][1]);
+    expect(requestListeners.size).toBe(0);
+  });
+
+  it('releases a linked claim after a first-request Stripe rate limit rejection', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_example';
+    const { insertValues } = setupCheckoutDatabase();
+    const rateLimitError = new Stripe.errors.StripeRateLimitError({
+      type: 'rate_limit_error',
+      message: 'Too many requests',
+      statusCode: 429,
+    });
+    checkoutSessionCreate.mockRejectedValue(rateLimitError);
+
+    await expect(
+      supportMutations.createSupportCheckoutSession(
+        {},
+        { input: { amount: 500, cadence: 'MONTHLY', publicCredit: false } },
+        authContext(),
+      ),
+    ).rejects.toBe(rateLimitError);
+
+    expect(insertValues).toHaveBeenCalledOnce();
+    expect(checkoutSessionCreate).toHaveBeenCalledOnce();
+    expect(checkoutSessionCreate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ maxNetworkRetries: 0, idempotencyKey: expect.any(String) }),
+    );
+    expect(mockDb.delete).toHaveBeenCalledOnce();
+    expect(stripeOff).toHaveBeenCalledWith('request', stripeOn.mock.calls[0][1]);
+    expect(requestListeners.size).toBe(0);
+  });
+
+  it('retains a claim if a closed-connection retry ends in a rate limit rejection', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_example';
+    setupCheckoutDatabase();
+    const rateLimitError = new Stripe.errors.StripeRateLimitError({
+      type: 'rate_limit_error',
+      message: 'Too many requests',
+    });
+    checkoutSessionCreate.mockImplementationOnce(async (_parameters: unknown, options: { idempotencyKey: string }) => {
+      emitRequest({ idempotency_key: options.idempotencyKey });
+      throw rateLimitError;
+    });
+
+    await expect(
+      supportMutations.createSupportCheckoutSession(
+        {},
+        { input: { amount: 500, cadence: 'MONTHLY', publicCredit: false } },
+        authContext(),
+      ),
+    ).rejects.toBe(rateLimitError);
+
+    expect(emitRequest).toHaveBeenCalledTimes(2);
+    expect(mockDb.delete).not.toHaveBeenCalled();
+    expect(requestListeners.size).toBe(0);
+  });
+
+  it('ignores another claim request while determining a first-attempt rejection', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_example';
+    setupCheckoutDatabase();
+    const rateLimitError = new Stripe.errors.StripeRateLimitError({
+      type: 'rate_limit_error',
+      message: 'Too many requests',
+    });
+    checkoutSessionCreate.mockImplementationOnce(async () => {
+      emitRequest({ idempotency_key: 'another-concurrent-claim' });
+      throw rateLimitError;
+    });
+
+    await expect(
+      supportMutations.createSupportCheckoutSession(
+        {},
+        { input: { amount: 500, cadence: 'MONTHLY', publicCredit: false } },
+        authContext(),
+      ),
+    ).rejects.toBe(rateLimitError);
+
+    expect(emitRequest).toHaveBeenCalledTimes(2);
+    expect(mockDb.delete).toHaveBeenCalledOnce();
+    expect(requestListeners.size).toBe(0);
   });
 
   it('rejects a second monthly checkout for a live subscription', async () => {
