@@ -27,10 +27,15 @@ type QueueAddedSnackbarProps = {
 
 /** The message for this confirmation, resolved in one place so the Material and
  *  Liquid Glass implementations can't drift apart. Literal keys (never
- *  `t(variable)`) so the i18n orphan scanner can see both. `count` is ignored
- *  here — #4673 adds the plural against this same vocabulary. */
+ *  `t(variable)`) so the i18n orphan scanner can see both.
+ *
+ *  `count` resolves the plural for the bulk playlist append (#4673). It defaults
+ *  to 1, so every single-add path keeps the exact `added_one` wording it always
+ *  had. A Play next is always one climb, so that branch takes no count. */
 function snackbarMessage(t: TFunction<'session'>, queueAdded: QueueAddedSnackbarOptions): string {
-  return queueAdded.kind === 'playNext' ? t('mobile.queueSnackbar.playingNext') : t('mobile.queueSnackbar.added');
+  return queueAdded.kind === 'playNext'
+    ? t('mobile.queueSnackbar.playingNext')
+    : t('mobile.queueSnackbar.added', { count: queueAdded.count ?? 1 });
 }
 
 /**
