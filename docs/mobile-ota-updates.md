@@ -240,7 +240,8 @@ The gate ends in one of six outcomes:
   after it has released, so a reload cannot land mid-sign-in.
 - `failed`: the check or download errored, or the first-launch marker could not be read.
 - `offline`: the Offline mode toggle is on, the device reports no connection, or the network is
-  marked unreachable. The gate releases at once and never waits.
+  marked unreachable. Connectivity is read once, when the gate starts: an offline start releases at
+  once, and going offline after that just runs into the cap.
 - `skipped_failed_update`: the pending update is the one the gate already reloaded onto on an
   earlier launch (stored under `ota_launch_update_last_reload_target_v1`) and it is still pending,
   which means that update failed to launch. The gate does not reload onto it again.
