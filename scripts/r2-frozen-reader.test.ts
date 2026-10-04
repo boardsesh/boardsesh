@@ -232,7 +232,10 @@ describe('frozen reader fails closed', () => {
         });
       if (new URL(url).pathname === '/assets') {
         expect(options?.redirect).toBe('manual');
-        expect(options?.headers).toEqual({ 'user-agent': 'Boardsesh-R2-Migration-Acceptance/1' });
+        expect(options?.headers).toEqual({
+          'user-agent': 'Boardsesh-R2-Migration-Acceptance/1',
+          'expo-app-id': '007e6fd7-f200-448c-9449-8d48ba5d51fc',
+        });
         return new Response(null, { status: 302, headers: { location: target } });
       }
       expect(options?.redirect).toBe('error');

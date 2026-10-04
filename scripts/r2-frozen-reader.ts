@@ -169,7 +169,10 @@ async function readPrivateR2Asset(url: URL): Promise<Buffer> {
   const redirect = await fetch(url, {
     redirect: 'manual',
     signal: AbortSignal.timeout(60000),
-    headers: { 'user-agent': 'Boardsesh-R2-Migration-Acceptance/1' },
+    headers: {
+      'user-agent': 'Boardsesh-R2-Migration-Acceptance/1',
+      'expo-app-id': '007e6fd7-f200-448c-9449-8d48ba5d51fc',
+    },
   });
   if (![301, 302, 303, 307, 308].includes(redirect.status)) throw new Error('Expected private R2 asset redirect');
   const location = redirect.headers.get('location');
