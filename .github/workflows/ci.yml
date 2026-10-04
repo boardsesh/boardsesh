@@ -1020,6 +1020,7 @@ jobs:
       # session-local temporary relations.
       - name: Verify alias index migration replay on real PostgreSQL
         env:
+          MIGRATION_INDEX_TEST_REQUIRED: '1'
           MIGRATION_INDEX_TEST_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
           MIGRATION_INDEX_TEST_EXPECTED_DATABASE: postgres
         run: vp exec tsx --test packages/db/src/__tests__/board-climb-alias-index-migration.integration.test.ts
