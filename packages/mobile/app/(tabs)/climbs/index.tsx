@@ -510,21 +510,25 @@ function ClimbListInner() {
       };
     }, []),
   );
-  const showQuickActionsTip = useQuickActionsTipVisibility(quickActionsTipArmed, showRevealTip || connectCardVisible);
+  // The board-resolution error and no-board states return before the list header
+  // is mounted. Keep eligibility pending there, then expose it once a board is
+  // available and the list header can render the banner.
+  const showQuickActionsTip = useQuickActionsTipVisibility(
+    quickActionsTipArmed,
+    showRevealTip || connectCardVisible || activeBoard == null,
+  );
   const dismissQuickActionsTip = useCallback(() => {
     // A tap can arrive before the shown effect; retire the tip in either path.
     void markQuickActionsTipSeen();
     track(SHARED_EVENTS.OnboardingTipDismissed, { tip: QUICK_ACTIONS_TIP_NAME });
     setQuickActionsTipArmed(false);
   }, []);
-  // The whole banner is tappable and lands on More, the screen that owns the ⋮
-  // setting and the subtitle explaining it. The Display block is a section inside
-  // that native form, not a route of its own, so More is as deep as a link can go.
+  // The whole banner links to Settings, which owns the ⋮ display preference.
   const openQuickActionsSettings = useCallback(() => {
     void markQuickActionsTipSeen();
     track(SHARED_EVENTS.OnboardingTipPressed, { tip: QUICK_ACTIONS_TIP_NAME });
     setQuickActionsTipArmed(false);
-    router.push('/(tabs)/profile/more');
+    router.push('/settings');
   }, [router]);
   useEffect(() => {
     if (!showQuickActionsTip || quickActionsTipShownRef.current) return;

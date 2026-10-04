@@ -74,6 +74,7 @@ const mocks = vi.hoisted(() => ({
   track: vi.fn(),
   runFocusEffects: false,
   tipActionOnMount: null as 'dismiss' | 'press' | null,
+  resolveQuickActionsTip: vi.fn(async () => ({ armed: true, visitCount: 3 })),
   markQuickActionsTipSeen: vi.fn<() => Promise<void>>(),
   ensureBackgroundsCached: vi.fn(),
   imagePrefetch: vi.fn(),
@@ -174,7 +175,7 @@ vi.mock('../../../../src/components/onboarding/OnboardingTipBanner', () => ({
 }));
 vi.mock('../../../../src/lib/onboarding/quick-actions-tip', () => ({
   QUICK_ACTIONS_TIP_NAME: 'quick_actions',
-  resolveQuickActionsTip: vi.fn(async () => ({ armed: true, visitCount: 3 })),
+  resolveQuickActionsTip: mocks.resolveQuickActionsTip,
   markQuickActionsTipSeen: mocks.markQuickActionsTipSeen,
   getQuickActionsUsedSnapshot: () => false,
   subscribeToQuickActionsUsed: () => () => {},
@@ -515,6 +516,7 @@ beforeEach(() => {
   mocks.track.mockClear();
   mocks.runFocusEffects = false;
   mocks.tipActionOnMount = null;
+  mocks.resolveQuickActionsTip.mockReset().mockResolvedValue({ armed: true, visitCount: 3 });
   mocks.markQuickActionsTipSeen.mockReset().mockResolvedValue(undefined);
   mocks.ensureBackgroundsCached.mockClear();
   mocks.imagePrefetch.mockClear();
@@ -1153,7 +1155,32 @@ describe('ClimbList quick-actions tip wiring', () => {
     fireEvent.click(tip);
     expect(mocks.markQuickActionsTipSeen).toHaveBeenCalledOnce();
     expect(mocks.track).toHaveBeenCalledWith('Onboarding Tip Pressed', { tip: 'quick_actions' });
-    expect(mocks.push).toHaveBeenCalledWith('/(tabs)/profile/more');
+    expect(mocks.push).toHaveBeenCalledWith('/settings');
+  });
+
+  it.each([
+    { state: 'no board', activeBoard: null, boardStatus: 'success' as const },
+    { state: 'failed restore', activeBoard: undefined, boardStatus: 'error' as const },
+  ])('keeps the tip pending through $state until a board list can render', async ({ activeBoard, boardStatus }) => {
+    mocks.activeBoard = activeBoard;
+    mocks.boardStatus = boardStatus;
+    const screen = render(<ClimbList />);
+
+    await act(async () => {
+      await mocks.resolveQuickActionsTip.mock.results[0]?.value;
+    });
+    expect(screen.queryByTestId('onboarding-tip')).toBeNull();
+    expect(mocks.track).not.toHaveBeenCalledWith('Onboarding Tip Shown', expect.anything());
+    expect(mocks.markQuickActionsTipSeen).not.toHaveBeenCalled();
+
+    mocks.activeBoard = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1', angle: 40 };
+    mocks.boardStatus = 'success';
+    screen.rerender(<ClimbList />);
+
+    await screen.findByText('Moonage');
+    await screen.findByTestId('onboarding-tip');
+    expect(mocks.track).toHaveBeenCalledWith('Onboarding Tip Shown', { tip: 'quick_actions', visitCount: 3 });
+    expect(mocks.markQuickActionsTipSeen).toHaveBeenCalledOnce();
   });
 
   it.each(['dismiss', 'press'] as const)('persists an immediate %s before the parent shown effect', async (action) => {
