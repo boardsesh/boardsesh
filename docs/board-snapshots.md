@@ -1660,8 +1660,9 @@ fleet was never regressed while transparent decode was unverified:
    `SnapshotPermanentMissError`. iOS 26.5.2: via the `pr-3816` gzip OTA preview — fresh downloads took the
    snapshot path and Sentry reported no `kind: 'snapshot-bootstrap'` "arrived still gzip-compressed".
 3. **Cutover — shipped.** `EXPO_PUBLIC_SNAPSHOT_BASE_URL` points at `.../board-snapshots/v1-gzip` in **all
-   six** mobile fingerprint workflows — `mobile-ota-production.yml`, `ios-testflight-rn.yml`,
-   `android-apk-rn.yml`, `mobile-ota-check.yml`, `mobile-ota-preview.yml`, `mobile-ota-backport.yml`. They
+   seven** mobile fingerprint workflows — `mobile-ota-production.yml`, `ios-testflight-rn.yml`,
+   `android-apk-rn.yml`, `mobile-ota-check.yml`, `mobile-ota-preview.yml`, `mobile-ota-backport.yml`,
+   `mobile-store-draft.yml`. They
    must move together: `scripts/mobile-ci-env-parity.test.ts` requires the var byte-identical across them
    (a single-workflow change fails CI, and the `pr-<number>` preview branch bakes the same env as
    production, so there is no "preview-only" pointer). It's a bundle-only var, so the cutover rode the
@@ -1671,5 +1672,5 @@ fleet was never regressed while transparent decode was unverified:
    manifest available for rollback. Public dataset consumers use `v1-gzip`.
    Removing the identity prefix or legacy Tigris data requires separate explicit approval.
 
-**Rollback**: point the six workflows back at `v1` (identity is still published nightly) — a one-commit
+**Rollback**: point the seven workflows back at `v1` (identity is still published nightly) — a one-commit
 revert, no export change needed.
