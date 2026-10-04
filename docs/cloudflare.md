@@ -10,7 +10,8 @@ token setup, CI auto-apply, and the Pages deploy of `app.boardsesh.com`.
 
 - `boardsesh-user-media` serves public user media at `media.boardsesh.com`.
 - `boardsesh-user-private` holds exports and OCR submissions without a domain.
-- `boardsesh-static-assets` stages the repo image catalogue at `assets-r2.boardsesh.com`.
+- `boardsesh-static-assets` declares the unchanged public hostname `assets.boardsesh.com`;
+  the staging domain `assets-r2.boardsesh.com` remains available for verification.
 - `boardsesh-board-snapshots` stages mobile bootstrap data at `snapshots.boardsesh.com`.
 - `boardsesh-ota-v3` is the private R2 target for XPRem. Verify Railway's live
   storage endpoint before treating the service as migrated.
@@ -55,6 +56,29 @@ the bucket but cannot resolve the zone.
 
 > **Editing the token replaces ALL of its policies.** Re-add every existing scope in the same edit — the `Zone.*` list above and `Account.Cloudflare Pages Edit`. A rotation that granted only the zone scopes is what took `app.boardsesh.com` off the deploy train on 2026-08-25, and it presents as `Authentication error [code: 10000]` while `wrangler whoami` still succeeds.
 
+### Reusable agent credential
+
+Store the infrastructure credential in the `Boardsesh` 1Password vault as
+`Boardsesh agent infrastructure`, with a concealed `api_token` field. Retrieve
+that named field directly; never print it or scan unrelated vault secrets.
+Use the Boardsesh account scope and the `boardsesh.com` zone scope.
+
+The infrastructure token needs the zone scopes above, `Workers R2 Storage Edit`
+and `Cloudflare Pages Edit`. Add **Account API Tokens Edit** to provision
+account-owned bucket credentials through `/accounts/<accountId>/tokens`.
+User-level API Tokens Edit is unnecessary for this account-owned flow.
+Cloudflare documents the distinction in
+[Create tokens via API](https://developers.cloudflare.com/fundamentals/api/how-to/create-via-api/).
+
+Give each runtime or CI publisher its own object read/write credential scoped
+to its bucket. Keep the management token separate from those S3 credentials.
+The agent token's creation does not rotate the existing Production token;
+verify every required permission before an explicit CI rotation.
+
+Cloudflare's [API MCP server](https://developers.cloudflare.com/agents/model-context-protocol/cloudflare/servers-for-cloudflare/)
+at `https://mcp.cloudflare.com/mcp` offers OAuth and selectable permissions for
+interactive agents. CI and S3 publication still use their stored credentials.
+
 ## Observe country header
 
 The `http_request_late_transform` phase carries one host-scoped rule for
@@ -70,19 +94,32 @@ The generated Railway origin remains public, so a direct caller can still forge
 country telemetry. Treat it only as aggregate Observe metadata, never as an
 authorization or compliance input.
 
-## assets.boardsesh.com DNS-only Tigris domain
+## assets.boardsesh.com R2 cutover
 
-> **Migrating.** This hostname is moving to an R2 custom domain, which will make
-> it proxied and take the DNS record out of `dnsRecords` entirely — R2 owns the
-> record, exactly as it already does for `media.boardsesh.com`. The bucket, its
-> CORS policy, the edge cache rule and the CORS response-header rule are already
-> declared and converge today against the staging hostname
-> `assets-r2.boardsesh.com`. Everything below describes the state until the flip.
-> The cutover, the measurements behind it, and the CORS/`Vary` hazard it has to
-> solve first are in [static-assets.md](./static-assets.md#moving-to-r2-in-progress).
+The desired state attaches `assets.boardsesh.com` to `boardsesh-static-assets`
+and leaves its DNS record to R2. The legacy Tigris CNAME is absent from
+`dnsRecords`, so later converges cannot restore it. Public URLs stay unchanged.
+The cache and unconditional CORS response-header rules cover both the live
+and staging domains.
 
-The public static-assets hostname is repo-managed DNS. `vp run cf:apply` creates
-and maintains this complete record (not just its proxy flag):
+**Merge gate:** the live cutover has not been performed by this config change.
+Before merging or applying it, verify the full historical inventory on staging,
+freeze and drain Production Deploy, attach the live domain to the verified R2
+bucket, and rotate all five `STATIC_ASSETS_*` Production credentials together.
+Keep Production Deploy frozen until the cutover commit is on main; an older
+main converge would restore the Tigris CNAME. Follow
+[the complete runbook](./static-assets.md#moving-to-r2-in-progress).
+
+Retain the Tigris bucket, credentials and staging domain. If R2 has accepted new
+writes, reverse-copy and verify those hashes before routing back to Tigris.
+Reintroduce the DNS-only record below only in an explicit rollback change;
+never proxy a Tigris custom domain.
+
+### Historical Tigris routing and rollback
+
+Before the cutover, `vp run cf:apply` managed this complete DNS record. An
+explicit rollback change must reintroduce it into `dnsRecords` before the tool
+can create or maintain it again:
 
 ```text
 assets.boardsesh.com CNAME boardsesh-static-assets.t3.tigrisbucket.io
@@ -93,8 +130,7 @@ CNAME flattening: disabled
 
 Keep it DNS-only. Tigris terminates TLS and serves the public objects globally;
 putting Cloudflare's proxy in front would add a second CDN/TLS layer and obscure
-the CNAME Tigris uses to verify the custom domain. There is deliberately no
-Cloudflare cache rule for `assets.boardsesh.com`.
+the CNAME Tigris uses to verify the custom domain. The declared Cloudflare cache rule takes effect when R2 owns the hostname.
 
 The apply also disables per-record CNAME flattening. It reads the zone DNS
 settings and fails closed if **Flatten all CNAMEs** is enabled, because that
@@ -108,8 +144,9 @@ One-time setup order:
    public reads, CORS, CI access key, and deletion protection as documented in
    [static-assets.md](./static-assets.md).
 2. Register `assets.boardsesh.com` as that bucket's custom domain in Tigris.
-3. Merge/apply the repo Cloudflare state. The apply creates the DNS-only CNAME
-   if absent and corrects its target, type, TTL, or proxy status if they drift.
+3. Apply an explicit rollback state that declares the DNS-only CNAME.
+   That state creates the record if absent and corrects its target, type,
+   TTL, or proxy status if they drift.
 4. Wait for Tigris to report the custom domain and certificate active, then run
    the verification commands below before publishing the first catalog.
 
@@ -982,12 +1019,12 @@ whenever the reason for rolling back is a wrong cached response.
 Expect Ahrefs and Semrush at `403 reached-vercel:0`; Brave, Google and Bing at
 `200 reached-vercel:1`.
 
-For the static-assets custom domain, confirm the public DNS answer remains the
-Tigris target (not Cloudflare anycast), TLS is valid, listing is unavailable,
-and a catalog object supports both `HEAD` and cross-origin `GET`:
+After the static-assets cutover, confirm R2 domain activation, valid TLS,
+no public listing, and identical catalog-object bytes through both `HEAD`
+and cross-origin `GET`. Check CORS again without an Origin header:
 
 ```bash
-dig +short assets.boardsesh.com CNAME
+dig +short assets.boardsesh.com
 curl -sS -o /dev/null -w '%{http_code}\n' https://assets.boardsesh.com/
 curl -sSI -H 'Origin: https://www.boardsesh.com' \
   https://assets.boardsesh.com/static/v1/<catalog-object>
@@ -995,11 +1032,13 @@ curl -sS -H 'Origin: https://www.boardsesh.com' -o /dev/null -D - \
   https://assets.boardsesh.com/static/v1/<catalog-object>
 ```
 
-The CNAME must be `boardsesh-static-assets.t3.tigrisbucket.io.` and the bucket
-root should return `403` rather than an object listing. The object
+The live hostname must resolve through Cloudflare rather than the retained
+Tigris CNAME, and the bucket root must not expose an object listing. Object
 responses must include the image's correct content type,
-`cache-control: public, max-age=31536000, immutable`, and a permissive CORS
-header.
+`cache-control: public, max-age=31536000, immutable`, and
+`access-control-allow-origin: *` with and without Origin. Warm the same immutable
+object again and confirm `cf-cache-status: HIT`; compare its SHA-256 with the
+signed R2 object and the retained Tigris source.
 
 Then confirm the compute actually fell — the point of the exercise. Rerun the
 route breakdown a day later and compare against the table above:

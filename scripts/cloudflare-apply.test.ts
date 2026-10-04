@@ -95,7 +95,16 @@ function requiredFullyManagedDnsRecord(name: string): FullyManagedDnsRecordDesir
 }
 
 const wsDnsRecord = requiredDnsRecord(WS_HOSTNAME);
-const assetsDnsRecord = requiredFullyManagedDnsRecord(ASSETS_HOSTNAME);
+// Historical Tigris fixture still exercises generic DNS convergence and rollback.
+const assetsDnsRecord: FullyManagedDnsRecordDesired = {
+  management: 'full',
+  name: ASSETS_HOSTNAME,
+  type: 'CNAME',
+  content: ASSETS_CNAME_TARGET,
+  ttl: 1,
+  proxied: false,
+  settings: { flatten_cname: false },
+};
 const wwwDnsRecord = requiredFullyManagedDnsRecord(WWW_HOSTNAME);
 const apexDnsRecord = requiredFullyManagedDnsRecord(APEX_HOSTNAME);
 const drPrimaryDnsRecord = requiredFullyManagedDnsRecord(DR_PRIMARY_HOSTNAME);
@@ -529,16 +538,16 @@ describe('buildPlan', () => {
       dnsRecords: {
         ...inSyncDnsRecords(),
         [wsDnsRecord.name]: liveDnsRecord({ proxied: false }),
-        [assetsDnsRecord.name]: null,
+        [drPrimaryDnsRecord.name]: null,
       },
       sslMode: 'full',
     };
     const changes = buildPlan(desired, drifted, { allowZoneSsl: false });
     const dnsChanges = changes.filter((change) => change.resource === 'dns');
 
-    expect(dnsChanges.map((change) => change.dnsName)).toEqual([WS_HOSTNAME, ASSETS_HOSTNAME]);
+    expect(dnsChanges.map((change) => change.dnsName)).toEqual([WS_HOSTNAME, DR_PRIMARY_HOSTNAME]);
     expect(dnsChanges.find((change) => change.dnsName === WS_HOSTNAME)?.blocked).toBe(true);
-    expect(dnsChanges.find((change) => change.dnsName === ASSETS_HOSTNAME)?.blocked).toBeUndefined();
+    expect(dnsChanges.find((change) => change.dnsName === DR_PRIMARY_HOSTNAME)?.blocked).toBeUndefined();
   });
 
   it('fails closed when zone-wide flattening would hide the Tigris verification CNAME', () => {
@@ -564,8 +573,23 @@ describe('pgdr.boardsesh.com desired state', () => {
   });
 });
 
-describe('assets.boardsesh.com desired state', () => {
-  it('declares the exact DNS-only Tigris CNAME with automatic TTL', () => {
+describe('assets.boardsesh.com routing and retained rollback fixture', () => {
+  it('leaves live asset DNS to R2 even if the legacy record drifts', () => {
+    expect(desired.dnsRecords.some((record) => record.name === ASSETS_HOSTNAME)).toBe(false);
+    const drifted = {
+      ...inSyncLiveState(),
+      dnsRecords: {
+        ...inSyncDnsRecords(),
+        [ASSETS_HOSTNAME]: liveAssetsDnsRecord({ content: 'old.example.com', proxied: false }),
+      },
+    };
+    expect(
+      buildPlan(desired, drifted, { allowZoneSsl: false }).some(
+        (change) => change.resource === 'dns' && change.dnsName === ASSETS_HOSTNAME,
+      ),
+    ).toBe(false);
+  });
+  it('retains the exact DNS-only Tigris rollback fixture with automatic TTL', () => {
     expect(assetsDnsRecord).toEqual({
       management: 'full',
       name: 'assets.boardsesh.com',
@@ -1930,7 +1954,7 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
     );
     const assetsAttaches = attaches.filter((request) => request.pathname.includes('/boardsesh-static-assets/'));
     expect(assetsAttaches).toHaveLength(1);
-    expect(assetsAttaches[0].body).toMatchObject({ domain: ASSETS_STAGING_HOSTNAME });
+    expect(assetsAttaches[0].body).toMatchObject({ domain: ASSETS_HOSTNAME });
     const publicBuckets = desiredR2Buckets.filter((bucket) => bucket.customDomain !== null);
     expect(attaches).toHaveLength(publicBuckets.length);
 
@@ -2494,13 +2518,10 @@ describe('desiredR2Buckets', () => {
     expect(byName.get('boardsesh-user-media')?.customDomain).toBe('media.boardsesh.com');
   });
 
-  it('keeps the static-assets bucket on its staging hostname until the flip', () => {
-    // assets.boardsesh.com is still the Tigris CNAME. Declaring it here before
-    // the publisher has proved R2 would attach the live hostname to an empty
-    // bucket and 404 every board image.
+  it('attaches the verified static-assets bucket to the unchanged public hostname', () => {
     const assets = desiredR2Buckets.find((bucket) => bucket.name === 'boardsesh-static-assets');
-    expect(assets?.customDomain).toBe(ASSETS_STAGING_HOSTNAME);
-    expect(assets?.customDomain).not.toBe(ASSETS_HOSTNAME);
+    expect(assets?.customDomain).toBe(ASSETS_HOSTNAME);
+    expect(assets?.customDomain).not.toBe(ASSETS_STAGING_HOSTNAME);
   });
 
   it('declares CORS on the bucket the board workers fetch from', () => {
