@@ -422,12 +422,15 @@ The PostgreSQL source now enforces the cursor contract with triggers. Inserts
 and updates stamp their cursor time from the transaction timestamp in UTC and
 allocate the matching sequence for climbs, stats, and grades; deletion records
 receive a UTC `deleted_at`. Writers cannot keep caller-supplied cursor values
-on normal writes. Snapshot restore has a transaction-local
-`boardsesh.snapshot_cursor_restore` escape hatch for preserving imported INSERT
-cursors, and the trigger accepts it only when `session_user` is a PostgreSQL
-superuser. UPDATE triggers still restamp rows. The mobile client never sets
-this flag. See [`board-snapshots.md`](board-snapshots.md) for the full source,
-restore, and export-boundary contract.
+on normal writes. A controlled restore scopes the
+`boardsesh.snapshot_cursor_restore` marker with `SET LOCAL`, so it ends with
+that transaction. The setting itself is not the authorization boundary: an
+INSERT trigger preserves imported cursors only after checking that
+`session_user` is a PostgreSQL superuser, and rejects a marked INSERT from any
+other session. Ordinary INSERTs are stamped, and UPDATE triggers always
+restamp rows. App and mobile writers never set the marker. See
+[`board-snapshots.md`](board-snapshots.md) for the full source, restore, and
+export-boundary contract.
 
 ### Pull queries (new GraphQL resolvers on the backend)
 

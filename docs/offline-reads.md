@@ -15,12 +15,15 @@ Three buckets fall out of that, and every query key belongs to exactly one. The 
 Offline pulls use database-owned cursors, not timestamps supplied by a writer.
 Triggers stamp climb, stats, and grade rows with a UTC transaction timestamp
 and sequence on insert/update; deletion records receive their UTC deletion
-time. Snapshot restore may preserve imported cursors only through the
-transaction-local `boardsesh.snapshot_cursor_restore` flag, which PostgreSQL
-accepts only for a superuser session. Normal app and sync writers do not set
-that flag, and updates always get fresh cursor values. The snapshot exporter,
-restore exception, and consistency boundary are documented in
-[`board-snapshots.md`](board-snapshots.md).
+time. Controlled snapshot restores preserve imported cursors using the
+`boardsesh.snapshot_cursor_restore` marker set with `SET LOCAL`, which scopes it
+to the restore transaction. The marker is a request, not authorization: the
+INSERT trigger independently checks that `session_user` is a PostgreSQL
+superuser before preserving imported cursors, and rejects a marked INSERT from
+any other session. Ordinary INSERTs are stamped by the trigger; UPDATEs always
+get fresh cursor values, including during restore. Normal app and sync writers
+do not set the marker. See [`board-snapshots.md`](board-snapshots.md) for the
+snapshot-export and restore contract.
 
 ### Bucket 1 — SQLite (`offlineAwareRequest`)
 
