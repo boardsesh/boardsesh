@@ -938,8 +938,7 @@
     "anchors": {
       "title": "Marca las esquinas",
       "body": "Arrastra los cuatro círculos a las esquinas del muro. Esto no es opcional: es lo que alinea tu foto nueva con cada bloque que ya vive en el muro.",
-      "use": "Usar estas esquinas",
-      "notConvex": "Esas esquinas se cruzan entre sí. Colócalas alrededor del muro en orden."
+      "use": "Usar estas esquinas"
     },
     "leave": {
       "title": "¿Dejar el reseteo?",

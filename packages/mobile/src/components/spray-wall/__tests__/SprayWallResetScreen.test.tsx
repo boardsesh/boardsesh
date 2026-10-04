@@ -81,10 +81,16 @@ vi.mock('../../Button', () => ({
 vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('i', { 'data-testid': 'spinner' }),
 }));
-vi.mock('../SprayCornerMarker', () => ({
-  SprayCornerMarker: (props: { onChange?: (quad: unknown) => void }) => {
+// The step's body is stubbed (it only draws once its slot has been measured,
+// and nothing here lays out). Its footer is real: the gate lives on it.
+vi.mock('../SprayCornerStep', () => ({
+  SprayCornerStep: (props: { title: string; invalid: boolean; onChange?: (quad: unknown) => void }) => {
     markerProps.current = props;
-    return createElement('div', { 'data-testid': 'corner-marker' });
+    return createElement(
+      'div',
+      { 'data-testid': 'corner-marker', 'data-invalid': props.invalid ? 'true' : 'false' },
+      props.title,
+    );
   },
 }));
 vi.mock('../SprayResetCompareScreen', () => ({
@@ -225,8 +231,25 @@ describe('SprayWallResetScreen', () => {
     expect(getByText('sprayReset.anchors.use').getAttribute('data-disabled')).toBe('false');
   });
 
-  it('keeps the gate shut for corners that cross over each other', async () => {
+  it('shows "start the corners again" before there are corners, so the footer never grows', async () => {
     const { getByText } = renderScreen();
+
+    await act(async () => {
+      getByText('sprayWizard.photo.library').click();
+    });
+    act(() => getByText('sprayWizard.photo.next').click());
+
+    // The photo is fitted to the space the footer leaves. A button that only
+    // appeared after the first drag made the footer taller at that moment and
+    // put the bottom two rings under it (#5958).
+    expect(getByText('sprayWizard.anchors.clear').getAttribute('data-disabled')).toBe('true');
+
+    act(() => markerProps.current?.onChange?.(SQUARE));
+    expect(getByText('sprayWizard.anchors.clear').getAttribute('data-disabled')).toBe('false');
+  });
+
+  it('keeps the gate shut for corners that cross over each other', async () => {
+    const { getByText, getByTestId } = renderScreen();
 
     await act(async () => {
       getByText('sprayWizard.photo.library').click();
@@ -241,7 +264,8 @@ describe('SprayWallResetScreen', () => {
       ]),
     );
 
-    expect(getByText('sprayReset.anchors.notConvex')).toBeTruthy();
+    // The step says why, in the slot its hint lives in; the screen's part is the flag.
+    expect(getByTestId('corner-marker').getAttribute('data-invalid')).toBe('true');
     expect(getByText('sprayReset.anchors.use').getAttribute('data-disabled')).toBe('true');
   });
 
