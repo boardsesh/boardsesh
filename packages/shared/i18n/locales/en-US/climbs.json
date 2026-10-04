@@ -108,6 +108,7 @@
         "membershipUnknown": "Playlist membership can’t be checked without this board’s layout. Unchecked playlists are locked.",
         "membershipChecking": "Checking playlist membership… Unchecked playlists are locked until it loads.",
         "membershipUnavailable": "Playlist membership couldn’t be checked. Unchecked playlists are locked.",
+        "membershipUpdating": "This playlist is updating; try again when it finishes.",
         "angleUnavailable": "New adds are disabled because this climb’s angle is unavailable."
       },
       "create": {

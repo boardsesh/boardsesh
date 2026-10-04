@@ -106,18 +106,20 @@ vi.mock('../../ListRow', () => ({
   ListRow: ({
     title,
     onPress,
+    disabled,
     trailing,
     accessibilityHint,
   }: {
     title: string;
     onPress?: () => void;
+    disabled?: boolean;
     trailing?: ReactNode;
     accessibilityHint?: string;
   }) =>
     onPress
       ? createElement(
           'button',
-          { onClick: onPress, 'aria-label': title, 'data-hint': accessibilityHint },
+          { onClick: onPress, 'aria-label': title, 'data-hint': accessibilityHint, disabled },
           title,
           trailing,
         )
@@ -192,12 +194,64 @@ function hasCheck(row: HTMLElement): boolean {
   return row.querySelector('[data-icon="check.small"]') !== null;
 }
 
+function rowIsDisabled(row: HTMLElement): boolean {
+  return row instanceof HTMLButtonElement && row.disabled;
+}
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
-  const promise = new Promise<T>((finish) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((finish, fail) => {
     resolve = finish;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
+}
+
+type MembershipAction = 'add' | 'remove';
+
+function setControlledServerMembership(
+  initialMembers: readonly string[],
+  firstAction: MembershipAction,
+  followUpSucceeds = false,
+) {
+  const serverMembers = new Set(initialMembers);
+  const firstRequest = deferred<void>();
+  const calls: Array<{ playlistUuid: string; action: MembershipAction }> = [];
+  let firstRequestStarted = false;
+
+  requestMock.mockImplementation(async () => ({ playlistsForClimb: [...serverMembers] }));
+
+  const runAction = (action: MembershipAction, playlistUuid: string): Promise<void> => {
+    calls.push({ playlistUuid, action });
+    if (playlistUuid === 'p-a' && action === firstAction && !firstRequestStarted) {
+      firstRequestStarted = true;
+      return firstRequest.promise.then(
+        () => {
+          if (action === 'add') serverMembers.add(playlistUuid);
+          else serverMembers.delete(playlistUuid);
+        },
+        (error: unknown) => {
+          throw error;
+        },
+      );
+    }
+
+    if (playlistUuid === 'p-a') {
+      if (followUpSucceeds) {
+        if (action === 'add') serverMembers.add(playlistUuid);
+        else serverMembers.delete(playlistUuid);
+        return Promise.resolve();
+      }
+      return Promise.reject(new Error('follow-up action rejected'));
+    }
+    return Promise.reject(new Error('sibling action rejected'));
+  };
+
+  playlistContext.addToPlaylist.mockImplementation((playlistUuid: string) => runAction('add', playlistUuid));
+  playlistContext.removeFromPlaylist.mockImplementation((playlistUuid: string) => runAction('remove', playlistUuid));
+
+  return { serverMembers, firstRequest, calls };
 }
 
 describe('InlinePlaylistPicker membership certainty and angle', () => {
@@ -304,6 +358,7 @@ describe('InlinePlaylistPicker membership certainty and angle', () => {
     expect(queryClient.getQueryData(['playlistsForClimb', 'tension', null, 'climb-1'])).toBeUndefined();
     expect(queryClient.getQueryData(['playlistMembershipOverrides', 'tension', null, 'climb-1'])).toEqual({
       revision: 1,
+      activeMutationOwnersByPlaylistUuid: {},
       byPlaylistUuid: { 'p-a': { isMember: false, revision: 1, pending: false } },
     });
 
@@ -337,6 +392,7 @@ describe('InlinePlaylistPicker membership certainty and angle', () => {
     expect(queryClient.getQueryData(['playlistsForClimb', 'tension', null, 'climb-1'])).toBeUndefined();
     expect(queryClient.getQueryData(['playlistMembershipOverrides', 'tension', null, 'climb-1'])).toEqual({
       revision: 1,
+      activeMutationOwnersByPlaylistUuid: {},
       byPlaylistUuid: {},
     });
     expect(playlistContext.addToPlaylist).not.toHaveBeenCalled();
@@ -369,6 +425,7 @@ describe('InlinePlaylistPicker membership certainty and angle', () => {
     expect(hasCheck(screen.getByRole('button', { name: 'Playlist B' }))).toBe(false);
     expect(queryClient.getQueryData(['playlistMembershipOverrides', 'tension', null, 'climb-1'])).toEqual({
       revision: 2,
+      activeMutationOwnersByPlaylistUuid: {},
       byPlaylistUuid: {
         'p-b': { isMember: false, revision: 2, pending: false },
       },
@@ -513,6 +570,238 @@ describe('InlinePlaylistPicker membership certainty and angle', () => {
     expect(queryClient.getQueryData(['playlistsForClimb', 'kilter', 1, 'climb-1'])).toMatchObject({
       playlistUuids: [],
     });
+  });
+
+  it.each([
+    { olderAction: 'remove' as const, olderResult: 'success' as const, initiallyMember: true },
+    { olderAction: 'remove' as const, olderResult: 'error' as const, initiallyMember: true },
+    { olderAction: 'add' as const, olderResult: 'success' as const, initiallyMember: false },
+    { olderAction: 'add' as const, olderResult: 'error' as const, initiallyMember: false },
+  ])(
+    'serializes a remounted row through older $olderAction $olderResult, then follows server truth',
+    async ({ olderAction, olderResult, initiallyMember }) => {
+      const initialMembers = ['p-sibling', ...(initiallyMember ? ['p-a'] : [])];
+      const { serverMembers, firstRequest, calls } = setControlledServerMembership(initialMembers, olderAction);
+      playlistContext.playlists = [
+        { ...makePlaylist('p-a', 'kilter', 1), name: 'Playlist A' },
+        { ...makePlaylist('p-sibling', 'kilter', 1), name: 'Playlist B' },
+      ];
+
+      const firstMount = renderPicker();
+      const firstRow = await firstMount.findByRole('button', { name: 'Playlist A' });
+      expect(hasCheck(firstRow)).toBe(initiallyMember);
+      fireEvent.click(firstRow);
+      await waitFor(() => expect(calls.filter(({ playlistUuid }) => playlistUuid === 'p-a')).toHaveLength(1));
+      expect(calls[0]).toMatchObject({ playlistUuid: 'p-a', action: olderAction });
+      expect(rowIsDisabled(firstRow)).toBe(true);
+      expect(hasCheck(firstRow)).toBe(olderAction === 'add');
+
+      firstMount.unmount();
+      const reopened = renderPicker();
+      const reopenedRow = await reopened.findByRole('button', { name: 'Playlist A' });
+      const siblingRow = reopened.getByRole('button', { name: 'Playlist B' });
+      expect(rowIsDisabled(reopenedRow)).toBe(true);
+      fireEvent.click(reopenedRow);
+      expect(calls.filter(({ playlistUuid }) => playlistUuid === 'p-a')).toHaveLength(1);
+
+      // The row lock is per playlist: a sibling can still fail and roll back.
+      fireEvent.click(siblingRow);
+      await waitFor(() => expect(reportHandledError).toHaveBeenCalled());
+      expect(hasCheck(siblingRow)).toBe(true);
+      expect(calls).toContainEqual({ playlistUuid: 'p-sibling', action: 'remove' });
+      expect(rowIsDisabled(reopenedRow)).toBe(true);
+      expect(hasCheck(reopenedRow)).toBe(olderAction === 'add');
+
+      if (olderResult === 'success') firstRequest.resolve();
+      else firstRequest.reject(new Error('older action rejected'));
+
+      await waitFor(() => {
+        expect(rowIsDisabled(reopenedRow)).toBe(false);
+        expect(hasCheck(reopenedRow)).toBe(serverMembers.has('p-a'));
+      });
+
+      const membershipKey = ['playlistsForClimb', 'kilter', 1, 'climb-1'];
+      await queryClient.refetchQueries({ queryKey: membershipKey, exact: true });
+      expect(hasCheck(reopenedRow)).toBe(serverMembers.has('p-a'));
+
+      const expectedNextAction: MembershipAction = serverMembers.has('p-a') ? 'remove' : 'add';
+      fireEvent.click(reopenedRow);
+      await waitFor(() => expect(calls.filter(({ playlistUuid }) => playlistUuid === 'p-a')).toHaveLength(2));
+      expect(calls.filter(({ playlistUuid }) => playlistUuid === 'p-a')[1]).toMatchObject({
+        playlistUuid: 'p-a',
+        action: expectedNextAction,
+      });
+
+      await waitFor(() => {
+        expect(rowIsDisabled(reopenedRow)).toBe(false);
+        expect(
+          queryClient.getQueryData<{
+            activeMutationOwnersByPlaylistUuid: Record<string, object>;
+          }>(['playlistMembershipOverrides', 'kilter', 1, 'climb-1'])?.activeMutationOwnersByPlaylistUuid['p-a'],
+        ).toBeUndefined();
+      });
+      await queryClient.refetchQueries({ queryKey: membershipKey, exact: true });
+      expect(hasCheck(reopenedRow)).toBe(serverMembers.has('p-a'));
+      const retryAction: MembershipAction = serverMembers.has('p-a') ? 'remove' : 'add';
+      fireEvent.click(reopenedRow);
+      await waitFor(() => expect(calls.filter(({ playlistUuid }) => playlistUuid === 'p-a')).toHaveLength(3));
+      expect(calls.filter(({ playlistUuid }) => playlistUuid === 'p-a')[2]).toMatchObject({
+        playlistUuid: 'p-a',
+        action: retryAction,
+      });
+    },
+  );
+
+  it('isolates a new auth cache owner from an older remounted mutation', async () => {
+    const firstRequest = deferred<void>();
+    const newAccountRequest = deferred<void>();
+    const oldAccountMembers = new Set(['p-target']);
+    const newAccountMembers = new Set<string>();
+    let currentAccountMembers = oldAccountMembers;
+    let removeCalls = 0;
+
+    requestMock.mockImplementation(async () => ({ playlistsForClimb: [...currentAccountMembers] }));
+    playlistContext.removeFromPlaylist.mockImplementation(() => {
+      removeCalls += 1;
+      return firstRequest.promise.then(() => oldAccountMembers.delete('p-target'));
+    });
+    playlistContext.addToPlaylist.mockImplementation(() =>
+      newAccountRequest.promise.then(() => newAccountMembers.add('p-target')),
+    );
+
+    const oldPicker = renderPicker();
+    fireEvent.click(await oldPicker.findByRole('button', { name: 'kilter target' }));
+    await waitFor(() => expect(removeCalls).toBe(1));
+    oldPicker.unmount();
+
+    // AuthProvider clears QueryClient at the account boundary. The old network
+    // request may finish later, but its owner cannot settle a new cache entry.
+    queryClient.clear();
+    currentAccountMembers = newAccountMembers;
+    const newPicker = renderPicker();
+    const newAccountRow = await newPicker.findByRole('button', { name: 'kilter target' });
+    fireEvent.click(newAccountRow);
+    await waitFor(() => expect(playlistContext.addToPlaylist).toHaveBeenCalledTimes(1));
+    const membershipOverridesKey = ['playlistMembershipOverrides', 'kilter', 1, 'climb-1'];
+    const newOwner = queryClient.getQueryData<{
+      activeMutationOwnersByPlaylistUuid: Record<string, object>;
+    }>(membershipOverridesKey)?.activeMutationOwnersByPlaylistUuid['p-target'];
+    expect(newOwner).toBeDefined();
+
+    firstRequest.resolve();
+    await waitFor(() => expect(oldAccountMembers.has('p-target')).toBe(false));
+    expect(
+      queryClient.getQueryData<{
+        activeMutationOwnersByPlaylistUuid: Record<string, object>;
+      }>(membershipOverridesKey)?.activeMutationOwnersByPlaylistUuid['p-target'],
+    ).toBe(newOwner);
+    expect(rowIsDisabled(newAccountRow)).toBe(true);
+
+    newAccountRequest.resolve();
+    await waitFor(() => expect(rowIsDisabled(newAccountRow)).toBe(false));
+    expect(newAccountMembers.has('p-target')).toBe(true);
+    expect(hasCheck(newAccountRow)).toBe(true);
+  });
+
+  it('retries only after an older error settles and then follows the new server truth', async () => {
+    const { serverMembers, firstRequest, calls } = setControlledServerMembership(['p-a'], 'remove', true);
+    playlistContext.playlists = [{ ...makePlaylist('p-a', 'kilter', 1), name: 'Playlist A' }];
+
+    const firstMount = renderPicker();
+    fireEvent.click(await firstMount.findByRole('button', { name: 'Playlist A' }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    firstMount.unmount();
+
+    const reopened = renderPicker();
+    const row = await reopened.findByRole('button', { name: 'Playlist A' });
+    expect(rowIsDisabled(row)).toBe(true);
+    fireEvent.click(row);
+    expect(calls).toHaveLength(1);
+
+    firstRequest.reject(new Error('older removal rejected'));
+    await waitFor(() => {
+      expect(rowIsDisabled(row)).toBe(false);
+      expect(hasCheck(row)).toBe(true);
+    });
+    await queryClient.refetchQueries({ queryKey: ['playlistsForClimb', 'kilter', 1, 'climb-1'], exact: true });
+    expect(hasCheck(row)).toBe(true);
+
+    fireEvent.click(row);
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls[1]).toMatchObject({ playlistUuid: 'p-a', action: 'remove' });
+    await waitFor(() => {
+      expect(rowIsDisabled(row)).toBe(false);
+      expect(serverMembers.has('p-a')).toBe(false);
+      expect(hasCheck(row)).toBe(false);
+    });
+    await queryClient.refetchQueries({ queryKey: ['playlistsForClimb', 'kilter', 1, 'climb-1'], exact: true });
+    expect(hasCheck(row)).toBe(false);
+
+    fireEvent.click(row);
+    await waitFor(() => expect(calls).toHaveLength(3));
+    expect(calls[2]).toMatchObject({ playlistUuid: 'p-a', action: 'add' });
+    await waitFor(() => expect(serverMembers.has('p-a')).toBe(true));
+  });
+
+  it('keeps the active-row lock scoped to the climb membership query', async () => {
+    const kilterMembers = new Set(['p-shared']);
+    const tensionMembers = new Set<string>();
+    const kilterRequest = deferred<void>();
+    const tensionRequest = deferred<void>();
+    playlistContext.playlists = [makePlaylist('p-shared', 'kilter', 1)];
+    requestMock.mockResolvedValueOnce({ playlistsForClimb: ['p-shared'] });
+    playlistContext.removeFromPlaylist.mockImplementation(() =>
+      kilterRequest.promise.then(() => kilterMembers.delete('p-shared')),
+    );
+    playlistContext.addToPlaylist.mockImplementation(() =>
+      tensionRequest.promise.then(() => tensionMembers.add('p-shared')),
+    );
+
+    const kilterPicker = renderPicker();
+    fireEvent.click(await kilterPicker.findByRole('button', { name: 'kilter target' }));
+    await waitFor(() => expect(playlistContext.removeFromPlaylist).toHaveBeenCalledTimes(1));
+    kilterPicker.unmount();
+
+    const secondClimbMembershipKey = ['playlistsForClimb', 'kilter', 1, 'climb-2'];
+    queryClient.setQueryData(secondClimbMembershipKey, {
+      playlistUuids: [],
+      overrideRevisionAtFetchStart: 0,
+      pendingOverrideRevisionsAtFetchStart: {},
+    });
+    const secondClimb = { ...baseClimb, uuid: 'climb-2' } as Climb;
+    const secondPicker = renderPicker({ climb: secondClimb });
+    const secondRow = await secondPicker.findByRole('button', { name: 'kilter target' });
+    fireEvent.click(secondRow);
+    await waitFor(() => expect(playlistContext.addToPlaylist).toHaveBeenCalledTimes(1));
+    expect(rowIsDisabled(secondRow)).toBe(true);
+
+    const kilterOwner = queryClient.getQueryData<{
+      activeMutationOwnersByPlaylistUuid: Record<string, object>;
+    }>(['playlistMembershipOverrides', 'kilter', 1, 'climb-1'])?.activeMutationOwnersByPlaylistUuid['p-shared'];
+    const secondOwner = queryClient.getQueryData<{
+      activeMutationOwnersByPlaylistUuid: Record<string, object>;
+    }>(['playlistMembershipOverrides', 'kilter', 1, 'climb-2'])?.activeMutationOwnersByPlaylistUuid['p-shared'];
+    expect(kilterOwner).toBeDefined();
+    expect(secondOwner).toBeDefined();
+    expect(secondOwner).not.toBe(kilterOwner);
+
+    kilterRequest.resolve();
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData<{
+          activeMutationOwnersByPlaylistUuid: Record<string, object>;
+        }>(['playlistMembershipOverrides', 'kilter', 1, 'climb-1'])?.activeMutationOwnersByPlaylistUuid['p-shared'],
+      ).toBeUndefined(),
+    );
+    expect(rowIsDisabled(secondRow)).toBe(true);
+
+    tensionRequest.resolve();
+    await waitFor(() => {
+      expect(rowIsDisabled(secondRow)).toBe(false);
+      expect(tensionMembers.has('p-shared')).toBe(true);
+      expect(hasCheck(secondRow)).toBe(true);
+    });
+    expect(kilterMembers.has('p-shared')).toBe(false);
   });
 
   it('uses the climb angle for a cached null-layout cross-board add', async () => {
