@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { boolean, index, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { boolean, check, index, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 import { users } from '../auth/users';
 
 /**
@@ -41,17 +41,20 @@ export const stripeSupportClaims = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     checkoutSessionId: text('checkout_session_id'),
     checkoutExpiresAt: timestamp('checkout_expires_at'),
-    cadence: text('cadence').notNull(),
+    cadence: text('cadence').$type<'monthly' | 'one_time'>().notNull(),
     showPublicly: boolean('show_publicly').notNull().default(false),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
-  (table) => ({
-    checkoutUnique: uniqueIndex('stripe_support_claims_checkout_unique').on(table.checkoutSessionId),
-    userIdx: index('stripe_support_claims_user_idx').on(table.userId),
-    monthlyUnique: uniqueIndex('stripe_support_claims_monthly_unique')
+  (table) => [
+    uniqueIndex('stripe_support_claims_checkout_unique')
+      .on(table.checkoutSessionId)
+      .where(sql`${table.checkoutSessionId} IS NOT NULL`),
+    index('stripe_support_claims_user_idx').on(table.userId),
+    uniqueIndex('stripe_support_claims_monthly_unique')
       .on(table.userId)
       .where(sql`${table.cadence} = 'monthly'`),
-  }),
+    check('stripe_support_claims_cadence_check', sql`${table.cadence} IN ('monthly', 'one_time')`),
+  ],
 );
 
 export type SupportDeletionIntent = { subscriptionId: string | null; removeSetterName: boolean };

@@ -1,6 +1,6 @@
 import Stripe from 'stripe';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 const {
   applyRateLimit,
@@ -103,6 +103,10 @@ beforeEach(() => {
   else process.env.STRIPE_SECRET_KEY = originalStripeSecret;
 });
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe('supportMutations', () => {
   function selectRows(rows: unknown[]) {
     return {
@@ -157,6 +161,24 @@ describe('supportMutations', () => {
       ),
     ).rejects.toMatchObject({ extensions: { code: 'SERVICE_UNAVAILABLE' } });
     expect(mockDb.select).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing production return URL before reserving a claim or contacting Stripe', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('BOARDSESH_URL', undefined);
+    vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_example');
+
+    await expect(
+      supportMutations.createSupportCheckoutSession(
+        {},
+        { input: { amount: 500, cadence: 'MONTHLY', publicCredit: false } },
+        authContext(),
+      ),
+    ).rejects.toThrow('BOARDSESH_URL must be configured');
+
+    expect(mockDb.transaction).not.toHaveBeenCalled();
+    expect(mockDb.insert).not.toHaveBeenCalled();
+    expect(checkoutSessionCreate).not.toHaveBeenCalled();
   });
 
   it('does not update visibility without completed linked support', async () => {

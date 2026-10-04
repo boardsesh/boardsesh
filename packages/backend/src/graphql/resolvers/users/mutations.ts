@@ -41,7 +41,7 @@ import { purgeDeletedSprayWallPhotos } from '../board/spray-wall-moderation';
 import { retryAccountDeletion, withdrawDeletedAccountContent } from './delete-account-privacy';
 import { deleteAccountBoards } from './delete-account-boards';
 import { pubsub } from '../../../pubsub';
-import { getStripeClient } from '../../../services/stripe-support';
+import { getStripeClient, isStripeSupportConfigured } from '../../../services/stripe-support';
 
 /** Credential statuses a sync can run from; `expired` needs a relink first. */
 const SYNCABLE_CREDENTIAL_STATUSES = ['pending', 'active', 'error'];
@@ -328,7 +328,10 @@ export const userMutations = {
           }
         } catch (error) {
           logger.error('[deleteAccount] could not schedule Stripe subscription cancellation', { userId, error });
-          throw new GraphQLError('Could not cancel your Stripe subscription. Your account was not deleted.', {
+          const message = isStripeSupportConfigured()
+            ? 'Could not cancel your Stripe subscription. Your account was not deleted.'
+            : 'Stripe billing is temporarily unavailable. Your account was not deleted. Try again later.';
+          throw new GraphQLError(message, {
             extensions: { code: 'STRIPE_CANCELLATION_FAILED' },
           });
         }
