@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { PlaylistDetailView, PlaylistQueueReplaceSheet, PlaylistBackFab } from '../../../../src/components/playlist';
+import { PlaylistDetailView, PlaylistBackFab } from '../../../../src/components/playlist';
 import { SetterFollowButton } from '../../../../src/components/SetterFollowButton';
 import { Button } from '../../../../src/components/Button';
 import { Text } from '../../../../src/components/Text';
@@ -106,7 +106,6 @@ export default function SetterPlaylist() {
           />
         </View>
       )}
-      <PlaylistQueueReplaceSheet {...activation.queueReplaceSheet} />
     </>
   );
 }

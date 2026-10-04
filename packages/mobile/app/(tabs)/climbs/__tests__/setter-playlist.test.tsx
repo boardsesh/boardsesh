@@ -43,7 +43,6 @@ vi.mock('../../../../src/components/SetterFollowButton', () => ({
 }));
 vi.mock('../../../../src/components/playlist', () => ({
   PlaylistBackFab: () => <button>Back</button>,
-  PlaylistQueueReplaceSheet: () => <div data-testid="replace-sheet" />,
   PlaylistDetailView: (props: {
     hero: { name: string; climbCount: number };
     renderBoard: typeof board;
@@ -70,7 +69,7 @@ vi.mock('../../../../src/providers/queue-provider', () => ({ useIsSharedSession:
 vi.mock('../../../../src/lib/playlists/use-playlist-activation', () => ({
   usePlaylistActivation: (options: UsePlaylistActivationOptions) => {
     mocks.activation = options;
-    return { activate: mocks.activate, queueReplaceSheet: {} };
+    return { activate: mocks.activate };
   },
 }));
 vi.mock('../../../../src/lib/graphql/hooks/use-infinite-search-climbs', () => ({
@@ -122,7 +121,7 @@ describe('setter smart playlist route', () => {
     expect(mocks.search).toHaveBeenCalledWith(expect.objectContaining({ setter: ['accountless-setter'] }), true);
     fireEvent.click(screen.getByRole('button', { name: 'Activate climb' }));
     expect(mocks.activate).toHaveBeenCalledWith(climb);
-    expect(screen.getByTestId('replace-sheet')).not.toBeNull();
+    expect(screen.queryByTestId('replace-sheet')).toBeNull();
   });
 
   it('fetches the activated board and page using only the setter playlist filters', async () => {
