@@ -70,6 +70,8 @@ vi.mock('../../../../hooks/use-grade-format', () => ({
   useGradeFormat: () => ({ formatGradeByDifficultyId: () => null }),
 }));
 vi.mock('../../../../lib/clock', () => ({ nowMs: () => Date.parse('2026-06-22T12:00:00Z') }));
+vi.mock('../../../../lib/connectivity/use-connectivity', () => ({ useConnectivityField: () => false }));
+vi.mock('../../../../hooks/use-local-climb-ticks', () => ({ useLocalClimbTicks: () => undefined }));
 
 const rows = vi.hoisted(() => ({ uuids: [] as string[] }));
 vi.mock('../../LogbookEntryRow', () => ({

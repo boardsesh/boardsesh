@@ -82,6 +82,19 @@ const logbookState = vi.hoisted(() => ({
 }));
 vi.mock('@boardsesh/board-react', () => ({ useLogbook: () => logbookState }));
 
+// The ticks synced to the phone. `undefined` is "nothing to serve": the owner
+// gate declined, the read is off, or it has not resolved.
+const localTicks = vi.hoisted(() => ({
+  entries: undefined as unknown[] | undefined,
+  enabledCalls: [] as boolean[],
+}));
+vi.mock('../../../hooks/use-local-climb-ticks', () => ({
+  useLocalClimbTicks: (_boardName: string, _climbUuid: string, enabled: boolean) => {
+    localTicks.enabledCalls.push(enabled);
+    return localTicks.entries;
+  },
+}));
+
 const pending = vi.hoisted(() => ({ count: 0 }));
 vi.mock('../../../hooks/use-local-ticks', () => ({ useLocalPendingTicks: () => ({ data: pending.count }) }));
 
@@ -161,6 +174,98 @@ beforeEach(() => {
   logbookState.isLoading = false;
   pending.count = 0;
   connectivity.effectiveOffline = false;
+  localTicks.entries = undefined;
+  localTicks.enabledCalls = [];
+});
+
+describe('LogbookSection: the phone’s own rows while the fetch is in flight', () => {
+  it('shows the synced rows in place of the spinner', () => {
+    logbookState.fetchedUuids = new Set();
+    localTicks.entries = [
+      makeEntry({ uuid: 'local-1' }),
+      makeEntry({ uuid: 'local-2', climbed_at: '2026-06-02T12:00:00' }),
+    ];
+    const { container, queryByTestId } = renderSection();
+
+    expect(localTicks.enabledCalls.at(-1)).toBe(true);
+    expect(queryByTestId('spinner')).toBeNull();
+    expect(container.textContent).toContain('mobile.logbook.verdictSend');
+    expect(rows.props.map((props) => (props.entry as LogbookEntry).uuid).sort()).toEqual(['local-1', 'local-2']);
+  });
+
+  it('keeps the spinner when the phone may not serve its rows', () => {
+    // The owner gate declined (another account's rows, or an unfinished sync).
+    logbookState.fetchedUuids = new Set();
+    localTicks.entries = undefined;
+    const { queryByTestId } = renderSection({ userAscents: 2 });
+
+    expect(queryByTestId('spinner')).not.toBeNull();
+    expect(rows.props).toHaveLength(0);
+  });
+
+  it('keeps the spinner when the phone has no rows for the climb: only the server can say untried', () => {
+    logbookState.fetchedUuids = new Set();
+    localTicks.entries = [];
+    const { container, queryByTestId } = renderSection();
+
+    expect(queryByTestId('spinner')).not.toBeNull();
+    expect(container.textContent).not.toContain('mobile.logbook.noEntries');
+  });
+
+  it('shows a tick saved from the drawer next to the synced rows, once', () => {
+    logbookState.fetchedUuids = new Set();
+    logbookState.logbook = [makeEntry({ uuid: 'saved-now', climbed_at: '2026-06-22T11:00:00' })];
+    localTicks.entries = [
+      makeEntry({ uuid: 'saved-now', climbed_at: '2026-06-22T11:00:00' }),
+      makeEntry({ uuid: 'local-1' }),
+    ];
+    renderSection();
+
+    expect(rows.props.map((props) => (props.entry as LogbookEntry).uuid).sort()).toEqual(['local-1', 'saved-now']);
+  });
+
+  it('replaces them with the server’s rows once the fetch lands', () => {
+    logbookState.fetchedUuids = new Set();
+    localTicks.entries = [makeEntry({ uuid: 'local-twin-a' }), makeEntry({ uuid: 'local-only', angle: 25 })];
+    const view = renderSection();
+    expect(rows.props.map((props) => (props.entry as LogbookEntry).uuid).sort()).toEqual([
+      'local-only',
+      'local-twin-a',
+    ]);
+
+    // The server's answer: a different survivor for the same ascent, with its
+    // social counts, and no row the phone alone held.
+    rows.props = [];
+    logbookState.fetchedUuids = new Set(['climb-1']);
+    logbookState.logbook = [makeEntry({ uuid: 'server-1', upvotes: 3 })];
+    view.rerender(
+      createElement(LogbookSection, {
+        climbUuid: 'climb-1',
+        boardName: 'kilter',
+        layoutId: 1,
+        angle: 40,
+        userAscents: 0,
+        userAttempts: 0,
+      }),
+    );
+
+    expect(localTicks.enabledCalls.at(-1)).toBe(false);
+    expect(rows.props.map((props) => (props.entry as LogbookEntry).uuid)).toEqual(['server-1']);
+  });
+
+  it.each([
+    ['with no signal', () => (connectivity.effectiveOffline = true)],
+    ['after the fetch failed', () => (logbookState.error = new Error('RATE_LIMITED'))],
+  ])('does not read them %s: that card says why the history is missing', (_label, arrange) => {
+    logbookState.fetchedUuids = new Set();
+    // Rows left in the cache by an earlier, in-flight read.
+    localTicks.entries = [makeEntry({ uuid: 'local-1' })];
+    arrange();
+    renderSection();
+
+    expect(localTicks.enabledCalls.at(-1)).toBe(false);
+    expect(rows.props).toHaveLength(0);
+  });
 });
 
 describe('LogbookSection: before this climb’s logs have landed', () => {

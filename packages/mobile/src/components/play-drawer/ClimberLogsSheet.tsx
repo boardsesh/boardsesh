@@ -164,11 +164,18 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
   );
   const expandedUserIds = expanded && expanded.climbUuid === climbUuid ? expanded.userIds : NO_EXPANDED;
 
+  // Everyone the viewer follows, from the phone's own snapshot (read only, the
+  // root sync bridge keeps it fresh).
+  const { data: followedAuthors } = useFollowedAuthorsSnapshot({ loadWhenMissing: visible });
+  const followsNobody = followedAuthors !== undefined && followedAuthors.users.length === 0;
+
   // Everyone else. Waits for the Following answer: the angle chip's default and
   // whether the server may leave followed climbers out both come from it, and
   // asking before it lands would send a request the next render throws away.
-  // With no signal it does not ask at all, and rows from an earlier visit are
-  // not shown: who may see a spray wall's logs is decided per request.
+  // An account that follows nobody has nothing to wait for: its Following
+  // answer is empty, which is what both values already assume, so it asks at
+  // once. With no signal it does not ask at all, and rows from an earlier visit
+  // are not shown: who may see a spray wall's logs is decided per request.
   const { userId: viewerId } = useStoredUserId(true);
   const everyone = useClimbLogs({
     boardName,
@@ -179,7 +186,7 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
     // The Following list was cut at 100 logs: a followed climber past the cut
     // is in neither section unless Everyone keeps them.
     excludeFollowed: !hasMore,
-    enabled: visible && data !== undefined && !offline.isOffline,
+    enabled: visible && (data !== undefined || followsNobody) && !offline.isOffline,
   });
   const everyonePages = offline.isOffline ? undefined : everyone.data?.pages;
   const {
@@ -251,10 +258,8 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
   }, [onOpenProfile]);
 
   const logs = data?.items;
-  // Everyone the viewer follows: the phone's own snapshot (read only, the root
-  // sync bridge keeps it fresh), plus anybody in the Following answer in case
-  // the snapshot is missing or a follow landed since.
-  const { data: followedAuthors } = useFollowedAuthorsSnapshot({ loadWhenMissing: visible });
+  // The snapshot, plus anybody in the Following answer in case the snapshot is
+  // missing or a follow landed since.
   const followedUserIds = useMemo(() => {
     const userIds = new Set<string>();
     for (const author of followedAuthors?.users ?? []) userIds.add(author.userId);

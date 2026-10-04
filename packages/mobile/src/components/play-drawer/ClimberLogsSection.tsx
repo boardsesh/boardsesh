@@ -387,6 +387,8 @@ export const ClimberLogsSection = memo(function ClimberLogsSection({
   // server's count. Every angle, so a climb with logs never shows an empty card.
   // Waits for `settled` like the followed-climbers request: an account that
   // follows nobody would otherwise send one of these per climb swiped past.
+  // DeferredSections asks under the same rule and key before this card mounts,
+  // so the request is normally in flight or answered by then.
   const { userId: viewerId, isLoading: viewerIdLoading } = useStoredUserId(true);
   const nobodyFollowedLogged = followState === 'none' || data?.summary.climberCount === 0;
   const previewWanted = nobodyFollowedLogged && !offline.isOffline;
