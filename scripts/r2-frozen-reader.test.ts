@@ -178,6 +178,8 @@ describe('frozen reader fails closed', () => {
     expect(workflow.match(/secrets.EOO_TOKEN/g)).toHaveLength(1);
     expect(workflow.match(/secrets.SENTRY_AUTH_TOKEN/g)).toHaveLength(1);
     expect(workflow).toContain('--clear --dump-sourcemap');
+    expect(workflow).toContain('public_keys=(EXPO_PUBLIC_BACKEND_URL');
+    expect(workflow).not.toContain('env |');
     expect(workflow).toContain('ref: 6986ca9100c0492586f42f1a88ce3d49b4986f07');
   });
 });

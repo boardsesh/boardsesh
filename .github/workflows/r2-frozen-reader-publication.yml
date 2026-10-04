@@ -73,7 +73,13 @@ jobs:
           echo "TMPDIR=$RUNNER_TEMP/r2-reader-cache" >> "$GITHUB_ENV"
           echo "R2_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
           # Only original public fields are written; no publishing credential.
-          env | LC_ALL=C sort | awk '/^EXPO_PUBLIC_/ {print}' > frozen/packages/mobile/.env
+          public_keys=(EXPO_PUBLIC_BACKEND_URL EXPO_PUBLIC_WS_URL EXPO_PUBLIC_WEB_URL
+            EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
+            EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID EXPO_PUBLIC_SENTRY_DSN
+            EXPO_PUBLIC_POSTHOG_KEY EXPO_PUBLIC_SNAPSHOT_BASE_URL EXPO_PUBLIC_USE_RN_FETCH)
+          for public_key in "${public_keys[@]}"; do
+            printf '%s=%s\n' "$public_key" "${!public_key}"
+          done > frozen/packages/mobile/.env
           test "$PLATFORM" = ios || test "$PLATFORM" = android
       - name: Resolve both shipped fingerprints twice on Linux
         working-directory: frozen/packages/mobile
