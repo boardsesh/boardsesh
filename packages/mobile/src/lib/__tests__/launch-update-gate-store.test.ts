@@ -914,7 +914,10 @@ describe('a launch whose manifest request used a retired override', () => {
     expect(updates.checkForUpdateAsync).toHaveBeenCalledOnce();
     expect(updates.fetchUpdateAsync).toHaveBeenCalledOnce();
     expect(updates.reloadAsync).toHaveBeenCalledOnce();
-    expect(launchUpdateEvents()[0]).toMatchObject({ outcome: 'updated' });
+    // This is a fresh install on a Branch Surfing build: the first-launch
+    // profile and the retired-override check apply together.
+    expect(launchUpdateEvents()[0]).toMatchObject({ outcome: 'updated', trigger: 'fresh_install', cap_ms: 15_000 });
+    expect(preferences.stored.get(MARKER_KEY)).toBe('fingerprint-new');
     // The state machine never reported a downloaded id here, so the remembered
     // reload target comes from the fetch result.
     expect(preferences.stored.get(RELOAD_TARGET_KEY)).toBe('fetched-update');
