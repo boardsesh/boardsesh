@@ -11,6 +11,7 @@ import {
 import { NextResponse } from 'next/server';
 import type { ErrorResponse } from '@/app/lib/types';
 import { getWebRedisRateLimitEvaluator } from './public-api-rate-limit-redis.server';
+import { createRequestLogger } from './observability/request-logger';
 
 export const PUBLIC_API_MAX_REQUESTS = 120;
 export const PUBLIC_API_RATE_LIMIT_WINDOW_MS = 60_000;
@@ -24,6 +25,13 @@ type PublicApiEnvironment = {
   readonly RAILWAY_ENVIRONMENT_ID?: string;
   readonly VERCEL?: string;
   readonly VERCEL_ENV?: string;
+};
+
+type PublicApiRateLimitLogFields = {
+  status: 429;
+  clientIp: string;
+  userAgent: string;
+  retryAfterSeconds: number;
 };
 
 // Current ranges from https://www.cloudflare.com/ips-v4 and /ips-v6.
@@ -57,7 +65,7 @@ const CLOUDFLARE_PROXY_CIDRS = [
 type PublicApiRateLimitGuardOptions = {
   environment?: PublicApiEnvironment;
   getRedisEvaluator?: () => RedisRateLimitEvaluate | undefined;
-  logRateLimited?: (message: string) => void;
+  logRateLimited?: (message: string, fields: PublicApiRateLimitLogFields) => void;
   memoryLimiter?: MemoryRateLimiter;
   now?: () => number;
 };
@@ -110,7 +118,7 @@ export function createPublicApiRateLimitGuard(
   const {
     environment = process.env,
     getRedisEvaluator = getWebRedisRateLimitEvaluator,
-    logRateLimited = console.info,
+    logRateLimited,
     memoryLimiter: injectedMemoryLimiter,
     now = Date.now,
   } = options;
@@ -140,30 +148,29 @@ export function createPublicApiRateLimitGuard(
       return null;
     } catch (error) {
       if (!(error instanceof RateLimitError)) throw error;
-      // One line per rejected request, so 429 volume stays greppable in the
-      // function logs and an alert window can tell a scraper enumerating climb
-      // UUIDs apart from a busy gym sharing one NAT address. This replaces the
-      // per-route log the climb-stats endpoint used to emit.
-      logRateLimited(
-        `[public-api-rate-limit] 429 path=${resolveRequestPath(request)} ip=${clientIdentity} ua=${resolveLoggedUserAgent(request)}`,
-      );
+      // Keep the web request context (route, method, Railway request ID) and
+      // numeric fields searchable while bounding caller-controlled user-agent
+      // text. Tests can still inject the callback without writing a log line.
+      const rateLimitLogFields: PublicApiRateLimitLogFields = {
+        status: 429,
+        clientIp: clientIdentity,
+        userAgent: resolveLoggedUserAgent(request),
+        retryAfterSeconds: error.retryAfterSeconds,
+      };
+      const message = 'Public API request rate limited';
+      if (logRateLimited) {
+        logRateLimited(message, rateLimitLogFields);
+      } else {
+        createRequestLogger(request).info(message, rateLimitLogFields);
+      }
       return createRateLimitedResponse(error.retryAfterSeconds);
     }
   };
 }
 
-function resolveRequestPath(request: Request): string {
-  try {
-    return new URL(request.url).pathname;
-  } catch {
-    return 'unknown';
-  }
-}
-
 /**
- * The User-Agent is caller-controlled, unlike the normalized IP and the routed
- * path, so cap its length and fold control characters before it reaches a log
- * line something else will parse.
+ * The User-Agent is caller-controlled, so cap its length and fold control
+ * characters before it reaches a structured log field.
  */
 function resolveLoggedUserAgent(request: Request): string {
   const rawUserAgent = request.headers.get('user-agent');
