@@ -31,6 +31,7 @@ import {
   sprayCacheToken,
   sprayWallViewerGeneration,
   unregisterSprayWall,
+  sprayWallRemovalGeneration,
   type SprayWallRenderSettingsValue,
 } from './spray-wall-registry';
 import { clearSupersededSprayDrafts } from '../create-climb-draft-store';
@@ -171,7 +172,13 @@ export function registerRenderData(
   // request went out. Left out, the wall registers as "viewer cannot edit": a
   // caller that cannot say whose answer this is does not get to show Edit.
   fetchedUnderViewerGeneration?: number,
+  fetchedUnderRemovalGeneration?: number,
 ): boolean {
+  if (
+    fetchedUnderRemovalGeneration !== undefined &&
+    sprayWallRemovalGeneration(layoutId) !== fetchedUnderRemovalGeneration
+  )
+    return false;
   const dimensions = photoDimensions(renderData);
   const canonicalHolds = toCanonicalHolds(renderData);
   const holds = mapCanonicalHoldsToPhoto(renderData.homography, canonicalHolds);
@@ -358,7 +365,9 @@ export async function loadSprayWall(
   layoutId: number,
   options?: { force?: boolean },
 ): Promise<void> {
+  const removalGeneration = sprayWallRemovalGeneration(layoutId);
   const wallUuid = await fetchSprayWallUuid(queryClient, layoutId);
+  if (sprayWallRemovalGeneration(layoutId) !== removalGeneration) return;
   if (!wallUuid) {
     unregisterSprayWall(layoutId);
     return;
@@ -387,6 +396,7 @@ export async function loadSprayWall(
     renderDataRead = fetchSprayWallRenderData(queryClient, wallUuid, viewerGeneration);
     renderData = await renderDataRead;
   }
+  if (sprayWallRemovalGeneration(layoutId) !== removalGeneration) return;
   if (!renderData) {
     // The wall exists but has nothing renderable: deleted between the two reads,
     // visibility revoked, the published version's photo gone. A wall we already
@@ -397,7 +407,9 @@ export async function loadSprayWall(
     unregisterSprayWall(layoutId);
     return;
   }
-  registerRenderData(layoutId, renderData, await lookRead, viewerGeneration);
+  const look = await lookRead;
+  if (sprayWallRemovalGeneration(layoutId) !== removalGeneration) return;
+  registerRenderData(layoutId, renderData, look, viewerGeneration, removalGeneration);
 }
 
 /**

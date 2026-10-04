@@ -17,7 +17,7 @@ function declaredOperationName(document: string): string | null {
 describe('listSyncPullDocuments', () => {
   it('returns one document per table config plus the deletions query', () => {
     const documents = listSyncPullDocuments();
-    expect(documents).toHaveLength(Object.keys(TABLE_CONFIGS).length + 1);
+    expect(documents).toHaveLength(Object.keys(TABLE_CONFIGS).length + 2);
     expect(documents.map((entry) => entry.operationName)).toContain('SyncDeletions');
   });
 

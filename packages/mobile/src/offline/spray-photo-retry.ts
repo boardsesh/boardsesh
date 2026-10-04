@@ -1,4 +1,11 @@
-import { getCheckpointKey, offlineBoardKey, type OfflineDatabase } from '@boardsesh/offline-sync';
+import {
+  beginImmediateWrite,
+  getCheckpointKey,
+  OFFLINE_DB_BUSY_TIMEOUT_MS,
+  offlineBoardKey,
+  type OfflineDatabase,
+  type SqlExecutor,
+} from '@boardsesh/offline-sync';
 import { spraySizeIdForLayout } from '@boardsesh/board-config';
 
 /**
@@ -61,7 +68,7 @@ function pendingKey(layoutId: number): string {
   return `${SPRAY_PHOTO_PENDING_PREFIX}${layoutId}`;
 }
 
-async function readPending(db: OfflineDatabase, layoutId: number): Promise<PendingRecord | null> {
+async function readPending(db: SqlExecutor, layoutId: number): Promise<PendingRecord | null> {
   const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
     pendingKey(layoutId),
   ]);
@@ -92,25 +99,64 @@ export async function recordSprayPhotoFailure(
   layoutId: number,
   photoKey: string,
 ): Promise<boolean> {
-  const existing = await readPending(db, layoutId);
-  // A different key means the wall published a new photo: the old failure is not
-  // this one's, so the budget starts again.
-  const attempts = existing && existing.photoKey === photoKey ? existing.attempts + 1 : 1;
-  await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
-    pendingKey(layoutId),
-    JSON.stringify({ photoKey, attempts } satisfies PendingRecord),
-  ]);
+  let rewound = false;
+  await db.withExclusiveTransactionAsync(async (transaction) => {
+    await beginImmediateWrite(transaction, OFFLINE_DB_BUSY_TIMEOUT_MS);
+    // Read under the writer lock: a download may finish after wall removal or
+    // after a reset changed its photo. Neither may recreate a retry marker.
+    const wall = await transaction.getFirstAsync<{ photo_key: string | null }>(
+      'SELECT photo_key FROM spray_walls WHERE layout_id = ?',
+      [layoutId],
+    );
+    if (!wall || wall.photo_key !== photoKey) return;
+    const existing = await readPending(transaction, layoutId);
+    // A different key means the wall published a new photo: the old failure is not
+    // this one's, so the budget starts again.
+    const attempts = existing && existing.photoKey === photoKey ? existing.attempts + 1 : 1;
+    await transaction.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      pendingKey(layoutId),
+      JSON.stringify({ photoKey, attempts } satisfies PendingRecord),
+    ]);
 
-  if (attempts > MAX_SPRAY_PHOTO_ATTEMPTS) return false;
+    if (attempts > MAX_SPRAY_PHOTO_ATTEMPTS) return;
 
-  // Deleting the checkpoint rather than rewinding it to an earlier cursor: the
-  // table holds one row per scope, so "from the beginning" and "from just before
-  // this wall" are the same page.
-  await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [getCheckpointKey('spray_walls', sprayScopeKey(layoutId))]);
-  return true;
+    // Deleting the checkpoint rather than rewinding it to an earlier cursor: the
+    // table holds one row per scope, so "from the beginning" and "from just before
+    // this wall" are the same page.
+    await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [
+      getCheckpointKey('spray_walls', sprayScopeKey(layoutId)),
+    ]);
+    rewound = true;
+  });
+  return rewound;
 }
 
-/** Forget a wall's pending-photo record — the bytes are on disk, or the row is gone. */
-export async function clearSprayPhotoPending(db: OfflineDatabase, layoutId: number): Promise<void> {
-  await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [pendingKey(layoutId)]);
+/**
+ * Forget a wall's pending-photo record. A supplied key clears only that photo's
+ * marker; null clears only an absent wall. Omit the key for an explicit reset.
+ */
+export async function clearSprayPhotoPending(
+  db: OfflineDatabase,
+  layoutId: number,
+  photoKey?: string | null,
+): Promise<void> {
+  if (photoKey === undefined) {
+    await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [pendingKey(layoutId)]);
+    return;
+  }
+  await db.withExclusiveTransactionAsync(async (transaction) => {
+    await beginImmediateWrite(transaction, OFFLINE_DB_BUSY_TIMEOUT_MS);
+    if (photoKey === null) {
+      const wall = await transaction.getFirstAsync<{ layout_id: number }>(
+        'SELECT layout_id FROM spray_walls WHERE layout_id = ?',
+        [layoutId],
+      );
+      if (!wall) await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [pendingKey(layoutId)]);
+      return;
+    }
+    const pending = await readPending(transaction, layoutId);
+    if (pending?.photoKey === photoKey) {
+      await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [pendingKey(layoutId)]);
+    }
+  });
 }

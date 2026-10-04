@@ -21,9 +21,10 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 type FakeFile = { contents: string };
 
-const { files, downloadedUrls } = vi.hoisted(() => ({
+const { files, downloadedUrls, deferredDownload } = vi.hoisted(() => ({
   files: new Map<string, FakeFile>(),
   downloadedUrls: [] as string[],
+  deferredDownload: { resolve: null as (() => void) | null, enabled: false },
 }));
 
 // Both classes address by their full joined uri, so a file's identity is its
@@ -81,6 +82,14 @@ vi.mock('expo-file-system', () => {
       destination: { uri: string },
     ): Promise<{ moveSync: (to: { uri: string }) => void; uri: string }> {
       downloadedUrls.push(url);
+      if (deferredDownload.enabled) {
+        return new Promise((resolve) => {
+          deferredDownload.resolve = () => {
+            files.set(destination.uri, { contents: url });
+            resolve(new File(destination.uri));
+          };
+        });
+      }
       files.set(destination.uri, { contents: url });
       return Promise.resolve(
         new File(destination.uri) as unknown as { moveSync: (to: { uri: string }) => void; uri: string },
@@ -114,6 +123,8 @@ const KEY_OTHER = 'spray-walls/wall-b/photo-1.jpg';
 beforeEach(() => {
   files.clear();
   downloadedUrls.length = 0;
+  deferredDownload.enabled = false;
+  deferredDownload.resolve = null;
 });
 
 describe('storeSprayPhoto', () => {
@@ -223,6 +234,26 @@ describe('pruneStoredSprayPhotos', () => {
 });
 
 describe('deleteStoredSprayPhoto', () => {
+  it('fences a removed wall until its late download settles, then permits a fresh download', async () => {
+    deferredDownload.enabled = true;
+    const pending = storeSprayPhoto(KEY_V1, 'https://private.example/a?sig=old');
+    deleteStoredSprayPhoto(KEY_V1);
+    const overlapping = storeSprayPhoto(KEY_V1, 'https://private.example/a?sig=new');
+    expect(overlapping).toBe(pending);
+    expect(downloadedUrls).toHaveLength(1);
+
+    deferredDownload.resolve?.();
+    expect(await pending).toBeNull();
+    expect(await overlapping).toBeNull();
+    expect(names()).toEqual([]);
+    expect(tryGetStoredSprayPhotoPathSync(KEY_V1)).toBeNull();
+
+    deferredDownload.enabled = false;
+    expect(await storeSprayPhoto(KEY_V1, 'https://private.example/a?sig=new')).not.toBeNull();
+    expect(names()).toEqual([sprayPhotoStoreFileName(KEY_V1)]);
+    expect(files.get(pathFor(KEY_V1))?.contents).toBe('https://private.example/a?sig=new');
+  });
+
   it('removes one wall’s photo and its staging file, leaving the others', async () => {
     await storeSprayPhoto(KEY_V2, 'https://private.example/a?sig=2');
     await storeSprayPhoto(KEY_OTHER, 'https://private.example/b?sig=1');

@@ -34,6 +34,12 @@ vi.mock('expo-file-system', () => {
     get exists() {
       return true;
     }
+    list() {
+      return [...fsState.files.keys()].map((uri) => ({
+        name: uri.slice(uri.lastIndexOf('/') + 1),
+        delete: () => fsState.files.delete(uri),
+      }));
+    }
     create() {
       fsState.directoryCreated += 1;
     }
@@ -79,7 +85,7 @@ vi.mock('expo-file-system', () => {
 
 const { clearSprayWallRegistry, registerSprayWall } = await import('../spray-wall-registry');
 const registry = await import('../spray-wall-registry');
-const { ensureSprayPhotoCached, resetSprayPhotoCacheForTests, tryGetSprayPhotoPathSync } =
+const { deleteCachedSprayWallPhotos, ensureSprayPhotoCached, resetSprayPhotoCacheForTests, tryGetSprayPhotoPathSync } =
   await import('../spray-photo-cache');
 const { sprayPartialPhotoFileName, sprayPhotoFileName } = await import('../spray-photo-keys');
 
@@ -120,6 +126,42 @@ beforeEach(() => {
 afterEach(() => {
   clearSprayWallRegistry();
   resetSprayPhotoCacheForTests();
+});
+
+describe('deleteCachedSprayWallPhotos', () => {
+  it('removes every version and memo for only the revoked wall', async () => {
+    registerWall(FUTURE);
+    await ensureSprayPhotoCached(IDENTITY);
+    const olderVersion = 'file:///cache/spray-walls/4200-9.jpg';
+    const otherWall = 'file:///cache/spray-walls/42001-1.jpg';
+    fsState.files.set(olderVersion, { exists: true });
+    fsState.files.set(otherWall, { exists: true });
+
+    deleteCachedSprayWallPhotos(LAYOUT_ID);
+
+    expect(tryGetSprayPhotoPathSync(IDENTITY)).toBeNull();
+    expect([...fsState.files.keys()]).toEqual([otherWall]);
+  });
+
+  it('discards a late native completion and permits a later replacement', async () => {
+    registerWall(FUTURE);
+    fsState.downloadResult = 'hang';
+    const first = ensureSprayPhotoCached(IDENTITY);
+    deleteCachedSprayWallPhotos(LAYOUT_ID);
+    const overlapping = ensureSprayPhotoCached(IDENTITY);
+    expect(fsState.downloads).toHaveLength(1);
+
+    fsState.downloadResult = 'resolve';
+    for (const settle of fsState.pendingResolvers) settle();
+    expect(await first).toBeNull();
+    expect(await overlapping).toBeNull();
+    expect(fsState.files.has(FINAL_URI)).toBe(false);
+    expect(fsState.files.has(PART_URI)).toBe(false);
+    expect(tryGetSprayPhotoPathSync(IDENTITY)).toBeNull();
+
+    expect(await ensureSprayPhotoCached(IDENTITY)).toBe(FINAL_URI.replace('file://', ''));
+    expect(fsState.files.has(FINAL_URI)).toBe(true);
+  });
 });
 
 describe('ensureSprayPhotoCached', () => {

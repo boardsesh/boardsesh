@@ -349,6 +349,15 @@ bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the grades table has 
   a different shape — so nothing tells a caller which layout ids are private walls, and a page carries at most the
   one wall its scope key resolves to.
 - Local PK: **`layout_id`**. table-config: `['layout_id']`.
+- Revoked mirrors (#5490): an empty page for an explicitly requested scope with
+  a local wall triggers `sprayWallByLayout(layoutId) { uuid }` confirmation. Only
+  an explicit `null` permits retirement: empty deltas also represent unchanged
+  walls, and cursor-free sync pages still exclude recently edited rows. At the
+  successful cycle tail, a guarded transaction removes the entire downloaded
+  spray scope and its markers, followed by stored-photo deletion through the
+  existing deleted-row sink. Failures, cancellation and purge must not turn an
+  unanswered request into absence. Personal ticks and enabled-board settings
+  survive so restored visibility can download the scope afresh.
 - Del: migration `0228`. A wall is only ever SOFT-deleted (deleting the row would strand every climb set on it), so
   the trigger fires on `deleted_at` going NULL → NOT NULL and emits `record_id = OLD.layout_id::text` (1 seg) — the
   layout id, not the server bigserial, because `(board_type, layout_id)` is the only wall identity a phone can match

@@ -109,7 +109,8 @@ export function tryGetStoredSprayPhotoPathSync(photoKey: string | null | undefin
  * Joining the in-flight promise makes the second caller wait for the first
  * rather than fight it, which is also what it wanted: the same bytes.
  */
-const downloadsInFlight = new Map<string, Promise<string | null>>();
+type PhotoDownload = { invalidated: boolean; promise: Promise<string | null> };
+const downloadsInFlight = new Map<string, PhotoDownload>();
 
 /**
  * Download a wall photo into the durable store, unless it is already there.
@@ -138,16 +139,17 @@ export function storeSprayPhoto(photoKey: string, photoUrl: string): Promise<str
   const inFlight = downloadsInFlight.get(photoKey);
   // The URL is deliberately not compared: two signatures over the same key are
   // the same picture, and the newer caller wants the bytes, not its own request.
-  if (inFlight) return inFlight;
+  if (inFlight) return inFlight.promise;
 
-  const download = downloadSprayPhoto(photoKey, photoUrl).finally(() => {
-    downloadsInFlight.delete(photoKey);
+  const transfer: PhotoDownload = { invalidated: false, promise: Promise.resolve(null) };
+  transfer.promise = downloadSprayPhoto(photoKey, photoUrl, transfer).finally(() => {
+    if (downloadsInFlight.get(photoKey) === transfer) downloadsInFlight.delete(photoKey);
   });
-  downloadsInFlight.set(photoKey, download);
-  return download;
+  downloadsInFlight.set(photoKey, transfer);
+  return transfer.promise;
 }
 
-async function downloadSprayPhoto(photoKey: string, photoUrl: string): Promise<string | null> {
+async function downloadSprayPhoto(photoKey: string, photoUrl: string, transfer: PhotoDownload): Promise<string | null> {
   const destination = storeFile(photoKey);
   const partial = partialFile(photoKey);
   try {
@@ -157,6 +159,13 @@ async function downloadSprayPhoto(photoKey: string, photoUrl: string): Promise<s
     deleteQuietly(partial);
 
     const downloaded = await File.downloadFileAsync(photoUrl, partial, { idempotent: true });
+    // A teardown may have deleted .part while native I/O was still streaming.
+    // Keep the transfer registered until it settles: a replacement cannot share
+    // this staging path while the cancelled request still owns it.
+    if (transfer.invalidated) {
+      deleteQuietly(partial);
+      return null;
+    }
     downloaded.moveSync(destination);
     return destination.uri.replace(/^file:\/\//, '');
   } catch {
@@ -180,6 +189,8 @@ async function downloadSprayPhoto(photoKey: string, photoUrl: string): Promise<s
  */
 export function deleteStoredSprayPhoto(photoKey: string | null | undefined): void {
   if (!photoKey) return;
+  const transfer = downloadsInFlight.get(photoKey);
+  if (transfer) transfer.invalidated = true;
   deleteQuietly(storeFile(photoKey));
   deleteQuietly(partialFile(photoKey));
 }
@@ -206,6 +217,10 @@ export function pruneStoredSprayPhotos(liveKeys: Iterable<string>): number {
   const keepNames = new Set<string>();
   for (const key of liveKeys) keepNames.add(sprayPhotoStoreFileName(key));
   if (keepNames.size === 0) return 0;
+
+  for (const [photoKey, transfer] of downloadsInFlight) {
+    if (!keepNames.has(sprayPhotoStoreFileName(photoKey))) transfer.invalidated = true;
+  }
 
   let deleted = 0;
   try {
@@ -242,6 +257,7 @@ export function pruneStoredSprayPhotos(liveKeys: Iterable<string>): number {
  * account — and it would still be there after the rows that name it are gone.
  */
 export function clearStoredSprayPhotos(): void {
+  for (const transfer of downloadsInFlight.values()) transfer.invalidated = true;
   try {
     const directory = storeDirectory();
     if (directory.exists) directory.delete();

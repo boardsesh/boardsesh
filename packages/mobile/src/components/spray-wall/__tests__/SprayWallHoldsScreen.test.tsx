@@ -2,6 +2,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { sprayWallRemovalGeneration, unregisterSprayWall } from '../../../lib/spray/spray-wall-registry';
 import type { PreparedSprayHoldDraft } from '../../../lib/spray/spray-hold-maintenance';
 
 const requests = vi.hoisted(() => ({
@@ -188,8 +189,33 @@ describe('SprayWallHoldsScreen', () => {
     // owner's wall registers as editable by the owner who just published it.
     const [, , fetchedUnder] = requests.fetchRender.mock.calls[0] as unknown[];
     expect(typeof fetchedUnder).toBe('number');
-    expect(requests.register).toHaveBeenCalledWith(42, publishedRender, undefined, fetchedUnder);
+    expect(requests.register).toHaveBeenCalledWith(42, publishedRender, undefined, fetchedUnder, expect.any(Number));
     expect(guard.enabled).toBe(false);
+  });
+
+  it('keeps a removed wall unavailable when its published refresh finishes late', async () => {
+    let resolveRefresh: ((result: typeof publishedRender) => void) | undefined;
+    requests.fetchRender.mockReturnValue(
+      new Promise<typeof publishedRender>((resolve) => {
+        resolveRefresh = resolve;
+      }),
+    );
+    requests.register.mockImplementation(
+      (layoutId: number, _payload: unknown, _look: unknown, _viewer: unknown, removalGeneration: number) =>
+        removalGeneration === sprayWallRemovalGeneration(layoutId),
+    );
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    const startedUnder = sprayWallRemovalGeneration(42);
+    fireEvent.click(await screen.findByTestId('editor'));
+    await waitFor(() => expect(requests.fetchRender).toHaveBeenCalledTimes(1));
+    unregisterSprayWall(42);
+
+    await act(async () => resolveRefresh?.(publishedRender));
+
+    await screen.findByText('sprayMaintenance.refreshFailed');
+    expect(requests.register.mock.calls[0][4]).toBe(startedUnder);
+    expect(router.back).not.toHaveBeenCalled();
+    expect(requests.publish).toHaveBeenCalledTimes(1);
   });
 
   it('retries a failed publish without losing the saved draft or saving again', async () => {

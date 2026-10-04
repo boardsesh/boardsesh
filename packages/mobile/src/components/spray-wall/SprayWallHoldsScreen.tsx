@@ -25,7 +25,7 @@ import {
   invalidateSprayWallRenderData,
   registerRenderData,
 } from '../../lib/spray/spray-wall-loader';
-import { sprayWallViewerGeneration } from '../../lib/spray/spray-wall-registry';
+import { sprayWallRemovalGeneration, sprayWallViewerGeneration } from '../../lib/spray/spray-wall-registry';
 import {
   prepareSprayHoldDraft,
   publishSprayHoldDraft,
@@ -112,6 +112,7 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
     const prepared = draftRef.current;
     if (!prepared || busyRef.current) return;
     busyRef.current = true;
+    const removalGeneration = sprayWallRemovalGeneration(prepared.layoutId);
     setFailure(null);
     try {
       if (!publishedRef.current) {
@@ -135,7 +136,7 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
         !publishedRenderData ||
         publishedRenderData.wall.uuid !== prepared.wallUuid ||
         publishedRenderData.versionNumber < prepared.versionNumber ||
-        !registerRenderData(prepared.layoutId, publishedRenderData, undefined, viewerGeneration)
+        !registerRenderData(prepared.layoutId, publishedRenderData, undefined, viewerGeneration, removalGeneration)
       ) {
         throw new Error('Published wall refresh was unavailable');
       }
