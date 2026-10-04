@@ -23,7 +23,7 @@ import type {
 } from '../api/sync-api-types';
 import { UNIFIED_TABLES } from '../db/table-select';
 import { normalizeQualityTo5, isNoMatchClimb, CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
-import { projectAuroraFramesToStoredRows } from '@boardsesh/board-constants/hold-states';
+import { parseFramesSegments, projectAuroraFramesToStoredRows } from '@boardsesh/board-constants/hold-states';
 import {
   mergeCatalogCharacteristicsSql,
   populateDenormalizedColumns,
@@ -55,6 +55,7 @@ export type NewClimbInfo = {
 type ExistingClimbFrameSource = {
   boardType: string;
   frames: string | null;
+  userId?: string | null;
 };
 
 /**
@@ -63,11 +64,10 @@ type ExistingClimbFrameSource = {
  * The climb conflict policy deliberately preserves frames on existing UUIDs,
  * so the hold writer must project that same persisted value. Projecting a
  * changed incoming blob would otherwise add rows that disagree with the
- * `board_climbs` row. A UUID owned by another board is a global-PK collision,
- * not a climb this sync may attach holds to. A legacy same-board row whose
- * persisted frames are NULL likewise projects no rows here: the conflict
- * policy cannot make the incoming blob authoritative, so repair/backfill owns
- * recovery instead of silently diverging from `board_climbs`.
+ * `board_climbs` row. A UUID owned by another board or by a Boardsesh user is
+ * not a climb this catalog sync may attach holds to. A legacy same-board row
+ * whose persisted frames are still NULL/empty projects no rows here; the
+ * guarded writer first has to persist an accepted incoming source.
  */
 export function resolveAuthoritativeClimbFrames(
   board: AuroraBoardName,
@@ -75,8 +75,8 @@ export function resolveAuthoritativeClimbFrames(
   existing: ExistingClimbFrameSource | undefined,
 ): string | null {
   if (!existing) return incomingFrames;
-  if (existing.boardType !== board) return null;
-  return existing.frames;
+  if (existing.boardType !== board || existing.userId != null) return null;
+  return existing.frames || null;
 }
 
 export function projectAuthoritativeClimbRows(
@@ -86,6 +86,56 @@ export function projectAuthoritativeClimbRows(
 ) {
   const frames = resolveAuthoritativeClimbFrames(board, incomingFrames, existing);
   return frames ? projectAuroraFramesToStoredRows(frames, board).rows : [];
+}
+
+/**
+ * Whether an incoming Aurora row is safe to use to fill a legacy missing
+ * source. Ordinary inserts keep the existing sync contract; this stricter
+ * check applies only to recovery so malformed input cannot replace an empty
+ * persisted source.
+ */
+function hasValidFrameRecoverySource(board: AuroraBoardName, climb: Climb): boolean {
+  if (
+    typeof climb.frames !== 'string' ||
+    climb.frames.length === 0 ||
+    !Number.isSafeInteger(climb.frames_count) ||
+    climb.frames_count < 1 ||
+    !Number.isSafeInteger(climb.frames_pace) ||
+    climb.frames_pace < 0
+  ) {
+    return false;
+  }
+
+  const segments = parseFramesSegments(climb.frames);
+  if (segments.length !== climb.frames_count) return false;
+  for (const [index, segment] of segments.entries()) {
+    if (segment.body.length === 0) {
+      // Only a quoted delta after frame zero is the documented hold tick.
+      if (segment.absolute || index === 0) return false;
+      continue;
+    }
+
+    const tokens = /p(-?\d+)r(\d+)|x(-?\d+)/g;
+    let consumed = 0;
+    let match: RegExpExecArray | null;
+    while ((match = tokens.exec(segment.body)) !== null) {
+      if (match.index !== consumed) return false;
+      const holdId = Number(match[1] ?? match[3]);
+      const roleCode = match[2] === undefined ? undefined : Number(match[2]);
+      if (!Number.isSafeInteger(holdId) || holdId <= 0) return false;
+      if (roleCode !== undefined && !Number.isSafeInteger(roleCode)) return false;
+      consumed += match[0].length;
+    }
+    if (consumed !== segment.body.length) return false;
+  }
+
+  const projection = projectAuroraFramesToStoredRows(climb.frames, board);
+  return (
+    projection.frameCount === climb.frames_count &&
+    projection.rows.length > 0 &&
+    projection.diagnostics.skippedUnknownRoleTokens === 0 &&
+    projection.diagnostics.skippedNonpositiveHoldIdTokens === 0
+  );
 }
 
 // Tables we actually want to process and store, in FK-safe upsert order.
@@ -869,7 +919,7 @@ async function upsertClimbs(db: DrizzleDb, board: AuroraBoardName, data: Climb[]
 
   const uuids = data.map((c) => c.uuid);
   const existingRows = await db
-    .select({ uuid: climbsSchema.uuid, boardType: climbsSchema.boardType, frames: climbsSchema.frames })
+    .select({ uuid: climbsSchema.uuid })
     .from(climbsSchema)
     .where(inArray(climbsSchema.uuid, uuids));
   const existingByUuid = new Map(existingRows.map((row) => [row.uuid, row]));
@@ -888,7 +938,8 @@ async function upsertClimbs(db: DrizzleDb, board: AuroraBoardName, data: Climb[]
   //     ownership guard protects it belt-and-suspenders if a UUID ever collides.
   // Everything else (frames/edges/setter/layout/angle) is preserved on
   // conflict — Aurora seeds these on insert, but we don't trust remote
-  // re-edits to overwrite our copy.
+  // re-edits to overwrite our copy. The separate conditional recovery update
+  // below only fills an actually missing source on a same-board catalog row.
   const climbSet = {
     // is_draft/is_listed: verbatim for catalog rows, preserved for user
     // climbs. See climbListingConflictSet.
@@ -931,17 +982,62 @@ async function upsertClimbs(db: DrizzleDb, board: AuroraBoardName, data: Climb[]
       .onConflictDoUpdate({
         target: [climbsSchema.uuid],
         set: climbSet,
-        // Skip a re-sent climb whose five written columns already match.
-        setWhere: conflictSetChangesRowSql(climbGuardEntries),
+        // A globally colliding UUID is not permission to mutate another
+        // board's catalog row or a Boardsesh-created climb. For owned
+        // same-board catalog rows, skip a re-send whose written columns match.
+        setWhere: and(
+          eq(climbsSchema.boardType, board),
+          isNull(climbsSchema.userId),
+          conflictSetChangesRowSql(climbGuardEntries),
+        ),
       });
   });
 
-  // Flatten all per-climb holds into a single multi-row INSERT chunked by
-  // BATCH_SIZE. With the previous per-climb pattern this was N round-trips for
-  // N climbs; flattening turns it into ceil(totalHolds/BATCH_SIZE) round-trips
-  // regardless of climb count.
+  // A legacy catalog row with no source blob cannot be healed by the hold
+  // backfill: there is nothing authoritative to project. Fill only those rows
+  // whose incoming payload is structurally valid, and use a conditional UPDATE
+  // so concurrent writers have one winner. The UPDATE is in the page
+  // transaction with the climb upsert and hold inserts.
+  const recoverableRows = data.filter((item) => hasValidFrameRecoverySource(board, item));
+  await processBatches(recoverableRows, async (batch) => {
+    const recoveryValues = batch.map(
+      (item) =>
+        sql`(${item.uuid}::text, ${item.frames}::text, ${item.frames_count}::integer, ${item.frames_pace}::integer)`,
+    );
+    await db.execute(sql`
+      UPDATE ${climbsSchema} AS target
+      SET frames = incoming.frames,
+          frames_count = incoming.frames_count,
+          frames_pace = incoming.frames_pace
+      FROM (VALUES ${sql.join(recoveryValues, sql`, `)}) AS incoming(uuid, frames, frames_count, frames_pace)
+      WHERE target.uuid = incoming.uuid
+        AND target.board_type = ${board}
+        AND target.user_id IS NULL
+        AND (target.frames IS NULL OR target.frames = '')
+    `);
+  });
+
+  // Re-read the row after the conditional recovery update. An earlier
+  // pre-read can lose a race with another sync transaction; only the source
+  // actually persisted under the row lock may be used to project holds.
+  const acceptedRows = await db
+    .select({
+      uuid: climbsSchema.uuid,
+      boardType: climbsSchema.boardType,
+      userId: climbsSchema.userId,
+      frames: climbsSchema.frames,
+    })
+    .from(climbsSchema)
+    .where(inArray(climbsSchema.uuid, uuids));
+  const acceptedByUuid = new Map(acceptedRows.map((row) => [row.uuid, row]));
+
+  // Flatten accepted per-climb holds into multi-row INSERTs. With the previous
+  // per-climb pattern this was N round-trips for N climbs; flattening turns it
+  // into ceil(totalHolds/BATCH_SIZE) round-trips regardless of climb count.
   const allHolds = data.flatMap((item) => {
-    return projectAuthoritativeClimbRows(board, item.frames, existingByUuid.get(item.uuid)).map((row) => ({
+    const accepted = acceptedByUuid.get(item.uuid);
+    if (!accepted) return [];
+    return projectAuthoritativeClimbRows(board, item.frames, accepted).map((row) => ({
       boardType: board,
       climbUuid: item.uuid,
       frameNumber: row.frameNumber,

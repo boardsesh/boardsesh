@@ -82,6 +82,13 @@ const shimConflictGuards: Array<{ set: Record<string, unknown>; setWhere: SQL | 
 let shimFailedCommitsRemaining = 0;
 const shimExistingClimbStatRows: Array<{ climbUuid: string; angle: number }> = [];
 const shimClimbStatSelectPredicates: SQL[] = [];
+const shimExistingClimbRows: Array<{ uuid: string; boardType: string; userId: string | null; frames: string | null }> =
+  [];
+
+beforeEach(() => {
+  shimInsertedRows.length = 0;
+  shimExistingClimbRows.length = 0;
+});
 
 function createDbShim() {
   const fluent: Record<string, unknown> = {};
@@ -107,7 +114,28 @@ function createDbShim() {
       if (prop === 'select') {
         return (selectedColumns: Record<string, unknown>) => {
           const isClimbStatKeySelect = 'climbUuid' in selectedColumns && 'angle' in selectedColumns;
-          const rows = isClimbStatKeySelect ? [...shimExistingClimbStatRows] : [];
+          const selectedColumnNames = Object.keys(selectedColumns);
+          const isClimbSourceSelect =
+            'uuid' in selectedColumns &&
+            'boardType' in selectedColumns &&
+            'userId' in selectedColumns &&
+            'frames' in selectedColumns;
+          const isClimbUuidSelect = selectedColumnNames.length === 1 && selectedColumnNames[0] === 'uuid';
+          const writtenClimbs = shimInsertedRows
+            .filter((row) => 'uuid' in row && 'boardType' in row && 'frames' in row && 'layoutId' in row)
+            .map((row) => ({
+              uuid: String(row.uuid),
+              boardType: String(row.boardType),
+              userId: (row.userId as string | null | undefined) ?? null,
+              frames: (row.frames as string | null | undefined) ?? null,
+            }));
+          const rows = isClimbStatKeySelect
+            ? [...shimExistingClimbStatRows]
+            : isClimbSourceSelect
+              ? [...shimExistingClimbRows, ...writtenClimbs]
+              : isClimbUuidSelect
+                ? [...shimExistingClimbRows, ...writtenClimbs].map(({ uuid }) => ({ uuid }))
+                : [];
           const terminal = Object.assign(Promise.resolve(rows), {
             limit: () => Promise.resolve(rows),
           });
@@ -303,7 +331,14 @@ describe('board_climb_holds writes', () => {
         boardType: 'decoy',
         frames: '',
       }),
-    ).toBe('');
+    ).toBeNull();
+    expect(
+      resolveAuthoritativeClimbFrames('decoy', 'p1r1p2r2', {
+        boardType: 'decoy',
+        userId: 'boardsesh-owner',
+        frames: 'p1r1',
+      }),
+    ).toBeNull();
     expect(resolveAuthoritativeClimbFrames('decoy', 'p1r1p2r2', undefined)).toBe('p1r1p2r2');
 
     mockProjectStoredRows.mockImplementation((frames: string) => ({
@@ -1184,9 +1219,10 @@ describe('no-op write guards (recorded from the real write path)', () => {
     await syncSharedData(fakePostgresClient(), 'decoy', 'token');
 
     const climb = recordedGuard((recordedSet) => 'characteristics' in recordedSet);
-    const [climbStoredTuple] = climb.guard.split(' is distinct from ');
-    expect(climbStoredTuple).toBe(
-      '("board_climbs"."is_draft", "board_climbs"."is_listed", "board_climbs"."name", "board_climbs"."description", "board_climbs"."characteristics")',
+    expect(climb.guard).toContain('"board_climbs"."board_type" =');
+    expect(climb.guard).toContain('"board_climbs"."user_id" is null');
+    expect(climb.guard).toContain(
+      '("board_climbs"."is_draft", "board_climbs"."is_listed", "board_climbs"."name", "board_climbs"."description", "board_climbs"."characteristics") is distinct from',
     );
     expect(Object.keys(climb.set)).toEqual(['isDraft', 'isListed', 'name', 'description', 'characteristics']);
 
