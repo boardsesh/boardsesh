@@ -86,7 +86,8 @@
     "button": "Konto löschen",
     "dialog": {
       "warning": "Das ist endgültig. Dein Profil, deine Boulder-Entwürfe, deine Routenbuch-Einträge und alle weiteren Daten werden gelöscht und lassen sich nicht wiederherstellen.",
-      "checking": "Wir prüfen deine Boulder...",
+      "checking": "Wir prüfen deine Boulder und Abrechnung...",
+      "infoError": "Deine Boulder und Abrechnung konnten nicht geprüft werden. Versuch es erneut, bevor du dein Konto löschst.",
       "stripeCancellation": "Dein aktives Stripe-Abo wird vor dem Löschen deines Kontos zum Laufzeitende gekündigt.",
       "publishedClimbs_one": "Du hast <strong>{{count}}</strong> veröffentlichten Boulder, der nach dem Löschen erhalten bleibt.",
       "publishedClimbs_other": "Du hast <strong>{{count}}</strong> veröffentlichte Boulder, die nach dem Löschen erhalten bleiben.",

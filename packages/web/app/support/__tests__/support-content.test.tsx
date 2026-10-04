@@ -417,6 +417,74 @@ describe('SupportContent', () => {
     );
   });
 
+  it.each([false, true])(
+    'preserves saved visibility %s after a failed update and permits retry',
+    async (showPublicly) => {
+      Object.assign(authState, { token: 'account-token', isAuthenticated: true });
+      request.mockRejectedValueOnce({ response: { errors: [{ extensions: { code: 'NOT_FOUND' } }] } });
+      render(checkoutContent({ ...EMPTY_STATUS, hasSupported: true, showPublicly }));
+      const visibility = screen.getByRole('checkbox', {
+        name: tFromCatalog('marketing', 'support.manage.publicCredit'),
+      }) as HTMLInputElement;
+      fireEvent.click(visibility);
+      await waitFor(() =>
+        expect(screen.getByRole('alert').textContent).toContain(tFromCatalog('marketing', 'support.stripe.error')),
+      );
+      expect(visibility.checked).toBe(showPublicly);
+      expect(visibility.disabled).toBe(false);
+      expect(
+        (
+          screen.getByRole('checkbox', {
+            name: tFromCatalog('marketing', 'support.stripe.publicCredit'),
+          }) as HTMLInputElement
+        ).checked,
+      ).toBe(showPublicly);
+      request.mockResolvedValueOnce({
+        updateSupporterVisibility: { ...EMPTY_STATUS, hasSupported: true, showPublicly: !showPublicly },
+      });
+      fireEvent.click(visibility);
+      await waitFor(() => expect(visibility.checked).toBe(!showPublicly));
+      expect(request).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it.each(['checkout', 'portal'])(
+    'releases busy after successful %s navigation returns without leaving the page',
+    async (flow) => {
+      Object.assign(authState, { token: 'account-token', isAuthenticated: true });
+      let finishRequest: (response: unknown) => void = () => {};
+      request.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishRequest = resolve;
+          }),
+      );
+      render(
+        checkoutContent({ ...EMPTY_STATUS, hasSupported: flow === 'portal', hasActiveSubscription: flow === 'portal' }),
+      );
+      const buttonName = tFromCatalog('marketing', flow === 'portal' ? 'support.manage.billing' : 'support.stripe.cta');
+      const button = screen.getAllByRole('button', { name: buttonName })[0];
+      fireEvent.click(button);
+      expect(button.hasAttribute('disabled')).toBe(true);
+      fireEvent.click(button);
+      expect(request).toHaveBeenCalledTimes(1);
+      // A same-document destination makes jsdom's assign return without unloading,
+      // matching a browser that keeps this page open after a navigation attempt.
+      const url = `${window.location.href.split('#')[0]}#${flow}`;
+      await act(async () =>
+        finishRequest(
+          flow === 'portal'
+            ? { createSupportBillingPortalSession: { url } }
+            : { createSupportCheckoutSession: { url } },
+        ),
+      );
+      await waitFor(() => expect(button.hasAttribute('disabled')).toBe(false));
+      request.mockRejectedValueOnce(new Error('Retry request'));
+      fireEvent.click(button);
+      await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+    },
+  );
+
   it('renders the hero and the reason the page exists', () => {
     render(supportContent());
 

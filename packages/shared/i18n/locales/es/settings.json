@@ -86,7 +86,8 @@
     "button": "Eliminar cuenta",
     "dialog": {
       "warning": "Esto es permanente. Tu perfil, los borradores de vías, las entradas del logbook y el resto de datos se eliminarán y no se podrán recuperar.",
-      "checking": "Comprobando tus vías...",
+      "checking": "Comprobando tus bloques y tu facturación...",
+      "infoError": "No hemos podido comprobar tus bloques y tu facturación. Vuelve a intentarlo antes de eliminar tu cuenta.",
       "stripeCancellation": "Tu suscripción activa de Stripe se cancelará al final del periodo antes de eliminar tu cuenta.",
       "publishedClimbs_one": "Tienes <strong>{{count}}</strong> vía publicada que se conservará tras la eliminación.",
       "publishedClimbs_other": "Tienes <strong>{{count}}</strong> vías publicadas que se conservarán tras la eliminación.",

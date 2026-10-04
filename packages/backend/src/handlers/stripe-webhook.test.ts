@@ -1,4 +1,4 @@
-import type Stripe from 'stripe';
+import Stripe from 'stripe';
 import * as dbSchema from '@boardsesh/db/schema';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { Readable } from 'node:stream';
@@ -47,8 +47,8 @@ import { acceptCheckout, discardCheckout, handleStripeWebhook, updateSubscriptio
 const originalWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 const originalStripeSecret = process.env.STRIPE_SECRET_KEY;
 
-function webhookRequest(headers: Record<string, string> = {}): IncomingMessage {
-  const request = Readable.from([Buffer.from('{}')]) as unknown as IncomingMessage;
+function webhookRequest(headers: Record<string, string> = {}, chunks: Buffer[] = [Buffer.from('{}')]): IncomingMessage {
+  const request = Readable.from(chunks) as unknown as IncomingMessage;
   Object.defineProperty(request, 'headers', { value: headers });
   return request;
 }
@@ -219,6 +219,24 @@ describe('discardCheckout', () => {
 });
 
 describe('acceptCheckout', () => {
+  it.each([null, 99, 50_001])('rejects amount %s without looking up or granting a claim', async (amountTotal) => {
+    await acceptCheckout(checkoutSession({ amount_total: amountTotal }), 1_000);
+
+    expect(mockDb.select).not.toHaveBeenCalled();
+    expect(mockDb.transaction).not.toHaveBeenCalled();
+  });
+
+  it.each([100, 50_000])('grants linked support at the allowed amount boundary %i', async (amountTotal) => {
+    const { insertedValues, deleteClaim } = setupCheckoutTransaction();
+
+    await acceptCheckout(checkoutSession({ amount_total: amountTotal }), 1_000);
+
+    expect(insertedValues).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-1', supportedAt: expect.any(Date) }),
+    );
+    expect(deleteClaim).toHaveBeenCalledOnce();
+  });
+
   it('rejects an unexpected currency before writing anything', async () => {
     await acceptCheckout(checkoutSession({ currency: 'eur' }), 1_000);
 
@@ -314,6 +332,45 @@ describe('updateSubscription', () => {
 });
 
 describe('handleStripeWebhook', () => {
+  it('rejects an oversized body before signature verification or processing', async () => {
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+    process.env.STRIPE_SECRET_KEY = 'sk_test_example';
+    const request = webhookRequest({ 'stripe-signature': 'valid' }, [Buffer.alloc(256 * 1024), Buffer.from('x')]);
+    const { response, result } = webhookResponse();
+
+    await handleStripeWebhook(request, response);
+
+    expect(request.destroyed).toBe(true);
+    expect(mockConstructEvent).not.toHaveBeenCalled();
+    expect(mockDb.transaction).not.toHaveBeenCalled();
+    expect(result().statusCode).toBe(400);
+  });
+
+  it('verifies untouched UTF-8 JSON when a character is split across request chunks', async () => {
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+    process.env.STRIPE_SECRET_KEY = 'sk_test_example';
+    const verifier = new Stripe('sk_test_example');
+    const payload = '{ "id": "evt_utf8", "type": "unhandled.event", "data": { "object": { "name": "Crème ☃" } } }\n';
+    const payloadBytes = Buffer.from(payload);
+    const splitAt = payloadBytes.indexOf(Buffer.from('☃')) + 1;
+    const signature = verifier.webhooks.generateTestHeaderString({ payload, secret: 'whsec_test' });
+    mockConstructEvent.mockImplementation((rawBody: string, header: string, secret: string) =>
+      verifier.webhooks.constructEvent(rawBody, header, secret),
+    );
+    const { response, result } = webhookResponse();
+
+    await handleStripeWebhook(
+      webhookRequest({ 'stripe-signature': signature }, [
+        payloadBytes.subarray(0, splitAt),
+        payloadBytes.subarray(splitAt),
+      ]),
+      response,
+    );
+
+    expect(mockConstructEvent).toHaveBeenCalledWith(payload, signature, 'whsec_test');
+    expect(result().statusCode).toBe(200);
+  });
+
   it('returns 503 when the webhook secret is not configured', async () => {
     delete process.env.STRIPE_WEBHOOK_SECRET;
     const { response, result } = webhookResponse();
@@ -358,41 +415,48 @@ describe('handleStripeWebhook', () => {
     expect(result().statusCode).toBe(400);
   });
 
-  it('verifies and routes a subscription event before acknowledging it', async () => {
+  it.each([
+    { eventType: 'customer.subscription.updated', status: 'past_due' },
+    { eventType: 'customer.subscription.deleted', status: 'canceled' },
+  ])('verifies and routes $eventType before acknowledging it', async ({ eventType, status }) => {
     process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
     process.env.STRIPE_SECRET_KEY = 'sk_test_example';
     const set = setupSubscriptionUpdate(null);
+    mockRetrieveSubscription.mockResolvedValue(subscription({ status }));
     mockConstructEvent.mockReturnValue({
-      type: 'customer.subscription.updated',
+      type: eventType,
       created: 2_000,
-      data: { object: subscription({ status: 'past_due' }) },
+      data: { object: subscription({ status }) },
     });
     const { response, result } = webhookResponse();
 
     await handleStripeWebhook(webhookRequest({ 'stripe-signature': 'valid' }), response);
 
     expect(mockConstructEvent).toHaveBeenCalledWith('{}', 'valid', 'whsec_test');
-    expect(set).toHaveBeenCalledWith(expect.objectContaining({ subscriptionStatus: 'past_due' }));
+    expect(set).toHaveBeenCalledWith(expect.objectContaining({ subscriptionStatus: status }));
     expect(result().statusCode).toBe(200);
   });
 
-  it('routes a delayed-payment success to checkout acceptance', async () => {
-    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
-    process.env.STRIPE_SECRET_KEY = 'sk_test_example';
-    const { insertedValues } = setupCheckoutTransaction();
-    mockConstructEvent.mockReturnValue({
-      id: 'evt_async_1',
-      type: 'checkout.session.async_payment_succeeded',
-      created: 2_000,
-      data: { object: checkoutSession() },
-    });
-    const { response, result } = webhookResponse();
+  it.each(['checkout.session.completed', 'checkout.session.async_payment_succeeded'])(
+    'routes %s to Checkout acceptance',
+    async (eventType) => {
+      process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+      process.env.STRIPE_SECRET_KEY = 'sk_test_example';
+      const { insertedValues } = setupCheckoutTransaction();
+      mockConstructEvent.mockReturnValue({
+        id: 'evt_async_1',
+        type: eventType,
+        created: 2_000,
+        data: { object: checkoutSession() },
+      });
+      const { response, result } = webhookResponse();
 
-    await handleStripeWebhook(webhookRequest({ 'stripe-signature': 'valid' }), response);
+      await handleStripeWebhook(webhookRequest({ 'stripe-signature': 'valid' }), response);
 
-    expect(insertedValues).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1' }));
-    expect(result().statusCode).toBe(200);
-  });
+      expect(insertedValues).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1' }));
+      expect(result().statusCode).toBe(200);
+    },
+  );
 
   it.each(['checkout.session.expired', 'checkout.session.async_payment_failed'])(
     'removes the claim for %s',

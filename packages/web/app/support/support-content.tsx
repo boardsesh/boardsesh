@@ -188,7 +188,8 @@ export default function SupportContent({ configuration, initialStatus, initialUs
     } catch (requestError) {
       if (currentSessionIdentity.current !== requestIdentity) return;
       showSupportError(requestError);
-      setBusy(false);
+    } finally {
+      if (currentSessionIdentity.current === requestIdentity) setBusy(false);
     }
   };
 
@@ -226,7 +227,8 @@ export default function SupportContent({ configuration, initialStatus, initialUs
     } catch (requestError) {
       if (currentSessionIdentity.current !== requestIdentity) return;
       showSupportError(requestError);
-      setBusy(false);
+    } finally {
+      if (currentSessionIdentity.current === requestIdentity) setBusy(false);
     }
   };
   return (
