@@ -42,8 +42,8 @@ is in the production workflow.
 
 ## Moving to R2 (in progress)
 
-`assets.boardsesh.com` is the last public read path still on Tigris, and Tigris serves it badly. Measured from a
-Cloudflare `SYD` PoP on 2026-09-15:
+`assets.boardsesh.com` serves the immutable application assets. The Tigris delivery baseline measured from a
+Cloudflare `SYD` PoP on 2026-09-15 was:
 
 | Host | Store | Protocol | conn | TTFB | 119 KB webp |
 | --- | --- | --- | --- | --- | --- |
@@ -86,16 +86,17 @@ The keys are `static/v1/<sha256>` — content-addressed, immutable, written only
 and R2 can therefore hold the identical catalogue simultaneously, which is what makes every step reversible and the
 flip itself a non-event.
 
-1. **Dashboard.** Create an R2 API token scoped to `boardsesh-static-assets`. Add `Zone.Transform Rules Edit` to
-   `CLOUDFLARE_API_TOKEN`, re-adding every existing scope in the same edit — editing a token replaces all its policies.
-2. **Merge the prepare change** (this one). `cf:apply` creates the bucket. Note it creates and returns: the custom
-   domain attaches on the *next* run, which is why the flip is not repo-driven (see step 5).
-3. **Run `cf:apply` again** to attach `assets-r2.boardsesh.com` and converge CORS, the cache rule and the header rule.
-   Both rules cover the staging hostname as well as the production one, so the dry run in step 4 exercises the real
-   edge-cache and CORS behaviour rather than a fresh origin read every time.
-4. **Dual-publish and validate through staging** — the real gate. Add the three `Production` environment secrets
-   `STATIC_ASSETS_R2_AWS_ENDPOINT_URL`, `STATIC_ASSETS_R2_AWS_ACCESS_KEY_ID`, and
-   `STATIC_ASSETS_R2_AWS_SECRET_ACCESS_KEY`, then dispatch **Bootstrap R2 Static Assets** from `main`.
+The preparation change creates the R2 bucket and attaches `assets-r2.boardsesh.com` on a later `cf:apply` pass.
+Require that staging domain to be active and retain it through the cutover. The cache and unconditional CORS
+header rules cover both hostnames. The cutover config declares the live hostname as `customDomain`; applying
+that config attaches `assets.boardsesh.com`, so staging attachment belongs to the earlier preparation revision.
+
+Use an R2 object-write credential scoped to `boardsesh-static-assets` for the three `Production` staging secrets
+`STATIC_ASSETS_R2_AWS_ENDPOINT_URL`, `STATIC_ASSETS_R2_AWS_ACCESS_KEY_ID`, and
+`STATIC_ASSETS_R2_AWS_SECRET_ACCESS_KEY`. Retain the Tigris credentials and require the Cloudflare permissions
+listed in [the infrastructure runbook](./cloudflare.md#token-scopes).
+
+1. **Validate through staging.** Dispatch **Bootstrap R2 Static Assets** from `main`.
    The workflow fixes the bucket, region, and public base URL so credentials cannot accidentally target the live
    Tigris bucket. Start with `mode=inventory`, then use `mode=bootstrap` to copy and verify every historical immutable
    key before uploading the current catalog. Publication validates every current object's signed S3 `HEAD` metadata
@@ -105,19 +106,27 @@ flip itself a non-event.
    through `HeadObject`'s `ChecksumSHA256` or, when that is absent, a complete signed `GetObject`; the publisher hashes
    that bounded fallback body. `PutObject` must honour `If-None-Match: *` (`putImmutableObjectIfMissing` maps the
    412 to "already present"). The historical copy repeats one same-bytes conditional upload and requires 412,
-   proving the precondition on the live R2 endpoint. Every reader is still on Tigris throughout. Run `mode=verify`
-   for a separate read-only verification immediately before the flip.
-5. **The flip.** Attach `assets.boardsesh.com` to the bucket **in the dashboard**, then repoint the bucket's
-   `customDomain` in `infra/cloudflare/config.ts` and drop the record from `dnsRecords` so R2 owns it, as it already
-   does for `media.boardsesh.com`. Dashboard first because `applyR2Bucket` needs two passes, and the gap between them
-   would leave the hostname proxied at R2 with nothing attached — 404 on every board image.
-   Switch the five `STATIC_ASSETS_*` Production secrets to R2 in the same window, then dispatch Production Deploy to
-   force a full-catalogue `sync-static-assets` against the live hostname (the flip touches no static-asset path, so
-   the change detector would otherwise skip it).
+   proving the precondition on the live R2 endpoint. Readers keep the existing hostname throughout staging.
+2. **Freeze and verify.** Disable and drain Production Deploy, then run `mode=verify` for separate read-only
+   historical verification immediately before attachment. Keep the workflow frozen through attachment,
+   credential rotation and the cutover merge; an old-main `cf:apply` would restore the Tigris CNAME.
+3. **Attach the live hostname.** Capture the existing DNS record for rollback, then use the R2 dashboard or
+   custom-domain API to attach `assets.boardsesh.com` to the verified bucket while retaining `assets-r2.boardsesh.com`.
+   Require a read-only domain GET proving the correct zone, `enabled: true`, and active ownership and SSL,
+   then verify TLS, bytes, metadata, cache and both CORS request shapes through the live hostname.
+4. **Rotate the publisher credentials.** Switch all five `Production` secrets together:
+   `STATIC_ASSETS_S3_BUCKET_NAME`, `STATIC_ASSETS_AWS_ENDPOINT_URL`, `STATIC_ASSETS_AWS_REGION`,
+   `STATIC_ASSETS_AWS_ACCESS_KEY_ID`, and `STATIC_ASSETS_AWS_SECRET_ACCESS_KEY`. Use the fixed R2 bucket and
+   region `auto`; preserve the legacy Tigris credentials for rollback.
+5. **Merge and validate.** Merge the cutover config, which sets `customDomain` to `assets.boardsesh.com` and
+   removes the legacy CNAME from `dnsRecords`. Once that commit is on `main`, run an isolated full-catalog
+   `sync-static-assets` with the five named R2 publisher variables above to validate the live hostname.
+   Keep Production Deploy disabled while the OTA migration is in progress: it is also an OTA writer.
+   Resume and manually dispatch it only after both the static and OTA storage gates pass. Manual dispatch
+   forces full publication even though the cutover changes no catalog path and the change detector would
+   otherwise skip it.
 
-Pause and drain Production Deploy around the final verification, domain attachment, secret rotation, and cutover
-merge. An old-main `cf:apply` would otherwise restore the Tigris CNAME after the domain attachment. Resume the
-workflow only after the cutover change is on `main`, then dispatch it manually for full live-catalog validation.
+Retain both buckets and the active staging hostname after acceptance. No step deletes historical objects.
 
 ### Preserving historical asset URLs
 
@@ -164,9 +173,9 @@ User media and private exports already use R2. The remaining storage cutovers ar
 [OTA #5848](https://github.com/boardsesh/boardsesh/issues/5848) and
 [board snapshots #5912](https://github.com/boardsesh/boardsesh/issues/5912).
 
-Repointing `customDomain` also turns on the `cf-ray` assertion in the publisher by itself — `expectsCloudflareOrigin`
-reads `desiredR2Buckets`, so there is no second switch to remember. That assertion is the replacement for the
-"is it proxied?" DNS check, which goes away with the record.
+`expectsCloudflareOrigin` requires `cf-ray` for each custom domain in `desiredR2Buckets` and the explicitly retained
+`ASSETS_STAGING_HOSTNAME`. Repointing `customDomain` therefore enforces Cloudflare delivery on the live hostname,
+while staging remains covered by the same assertion. This replaces the proxy check on the legacy DNS record.
 
 **Rollback decays.** Before the flip, every step is "do nothing" or "detach in the dashboard". After it, reverting the
 DNS is good for roughly 60 days: Tigris renews the custom domain's certificate off the live CNAME, which will be

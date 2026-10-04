@@ -9,7 +9,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
-import { desiredR2Buckets } from '../infra/cloudflare/config';
+import { ASSETS_STAGING_HOSTNAME, desiredR2Buckets } from '../infra/cloudflare/config';
 import { STATIC_ASSET_OBJECT_KEYS, STATIC_ASSET_ORIGIN } from '../packages/shared/static-assets/src';
 import type { StaticAssetManifest, StaticAssetRecord } from '../packages/shared/static-assets/src';
 import {
@@ -262,11 +262,8 @@ export function resolvePublicStaticAssetOrigin(environment: Record<string, strin
 /**
  * Whether the public origin is expected to be served by Cloudflare.
  *
- * Derived from the desired R2 state rather than an env knob, so it is true for
- * exactly the hostnames this repo has declared as R2 custom domains — and turns
- * itself on for `assets.boardsesh.com` in the same commit that moves the bucket
- * onto it. Today that hostname is still the DNS-only Tigris CNAME, where there
- * is no `cf-ray` and asserting one would break every production publish.
+ * Desired R2 custom domains and the explicitly retained staging hostname must
+ * prove Cloudflare delivery during publication and migration verification.
  */
 export function expectsCloudflareOrigin(origin: string): boolean {
   const hostname = (() => {
@@ -276,7 +273,7 @@ export function expectsCloudflareOrigin(origin: string): boolean {
       return '';
     }
   })();
-  return desiredR2Buckets.some((bucket) => bucket.customDomain === hostname);
+  return hostname === ASSETS_STAGING_HOSTNAME || desiredR2Buckets.some((bucket) => bucket.customDomain === hostname);
 }
 
 export async function validatePublicAsset(
