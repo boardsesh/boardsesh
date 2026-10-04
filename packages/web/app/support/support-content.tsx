@@ -50,6 +50,21 @@ type SupportContentProps = {
   locale: string;
 };
 
+function supportErrorCode(requestError: unknown): string | null {
+  if (!requestError || typeof requestError !== 'object' || !('response' in requestError)) return null;
+  const response = requestError.response;
+  if (!response || typeof response !== 'object' || !('errors' in response) || !Array.isArray(response.errors))
+    return null;
+  for (const graphqlError of response.errors as unknown[]) {
+    if (!graphqlError || typeof graphqlError !== 'object' || !('extensions' in graphqlError)) continue;
+    const extensions = graphqlError.extensions;
+    if (extensions && typeof extensions === 'object' && 'code' in extensions && typeof extensions.code === 'string') {
+      return extensions.code;
+    }
+  }
+  return null;
+}
+
 function SupportResultAlert() {
   const { t } = useTranslation('marketing');
   const result = useSearchParams().get('support');
@@ -73,9 +88,31 @@ export default function SupportContent({ configuration, initialStatus, locale }:
   const [cadence, setCadence] = useState<'MONTHLY' | 'ONE_TIME'>('MONTHLY');
   const [publicCredit, setPublicCredit] = useState(initialStatus.showPublicly);
   const [status, setStatus] = useState(initialStatus);
+  const [existingSubscriptionDetected, setExistingSubscriptionDetected] = useState(false);
+  const shouldManageSubscription = status.hasActiveSubscription || existingSubscriptionDetected;
   const [busy, setBusy] = useState(false);
   const [isRetryingAuth, setIsRetryingAuth] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const showSupportError = (requestError: unknown) => {
+    switch (supportErrorCode(requestError)) {
+      case 'PENDING_CHECKOUT_EXISTS':
+        setError(t('support.stripe.pendingCheckout'));
+        break;
+      case 'ACTIVE_SUBSCRIPTION_EXISTS':
+        setExistingSubscriptionDetected(true);
+        setError(t('support.stripe.activeSubscription'));
+        break;
+      case 'SUPPORT_OPERATION_PENDING':
+        setError(t('support.stripe.operationPending'));
+        break;
+      case 'SUPPORT_OPERATION_STALE':
+        setError(t('support.stripe.operationStale'));
+        break;
+      default:
+        setError(t('support.stripe.error'));
+    }
+  };
 
   const retryAuth = async () => {
     if (isAuthLoading || isRetryingAuth) return;
@@ -107,8 +144,8 @@ export default function SupportContent({ configuration, initialStatus, locale }:
         input: { amount: amountInMinorUnits, cadence, publicCredit: isAuthenticated ? publicCredit : false, locale },
       });
       window.location.assign(response.createSupportCheckoutSession.url);
-    } catch {
-      setError(t('support.stripe.error'));
+    } catch (requestError) {
+      showSupportError(requestError);
       setBusy(false);
     }
   };
@@ -123,8 +160,8 @@ export default function SupportContent({ configuration, initialStatus, locale }:
       }>(UPDATE_SUPPORTER_VISIBILITY, { showPublicly });
       setStatus(response.updateSupporterVisibility);
       setPublicCredit(response.updateSupporterVisibility.showPublicly);
-    } catch {
-      setError(t('support.stripe.error'));
+    } catch (requestError) {
+      showSupportError(requestError);
     } finally {
       setBusy(false);
     }
@@ -139,8 +176,8 @@ export default function SupportContent({ configuration, initialStatus, locale }:
         createSupportBillingPortalSession: { url: string };
       }>(CREATE_SUPPORT_BILLING_PORTAL, { locale });
       window.location.assign(response.createSupportBillingPortalSession.url);
-    } catch {
-      setError(t('support.stripe.error'));
+    } catch (requestError) {
+      showSupportError(requestError);
       setBusy(false);
     }
   };
@@ -233,14 +270,14 @@ export default function SupportContent({ configuration, initialStatus, locale }:
                     disabled={
                       busy ||
                       isAuthUnresolved ||
-                      (status.hasActiveSubscription && cadence === 'MONTHLY' && !canManageSupport)
+                      (shouldManageSubscription && cadence === 'MONTHLY' && !canManageSupport)
                     }
-                    onClick={status.hasActiveSubscription && cadence === 'MONTHLY' ? openBillingPortal : startCheckout}
+                    onClick={shouldManageSubscription && cadence === 'MONTHLY' ? openBillingPortal : startCheckout}
                     sx={DONATION_CTA_SX}
                   >
                     {busy
                       ? t('support.stripe.processing')
-                      : status.hasActiveSubscription && cadence === 'MONTHLY'
+                      : shouldManageSubscription && cadence === 'MONTHLY'
                         ? t('support.manage.billing')
                         : t('support.stripe.cta')}
                   </Button>

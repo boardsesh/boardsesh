@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { parse } from 'graphql';
 import {
+  deduplicatePublicSupporters,
   fetchAllPublicSupporters,
   PUBLIC_SUPPORTERS_MAX_PAGES,
   PUBLIC_SUPPORTERS_PAGE_SIZE,
@@ -78,6 +79,41 @@ describe('supporter pagination', () => {
     });
   });
 
+  it('deduplicates overlapping pages while preserving first appearance and continuing pagination', async () => {
+    const firstPage = Array.from({ length: PUBLIC_SUPPORTERS_PAGE_SIZE }, (_, index): PublicSupporter => ({
+      userId: `user-${index}`,
+      displayName: `Supporter ${index}`,
+      supportedAt: new Date(index).toISOString(),
+    }));
+    const newSupporter: PublicSupporter = {
+      userId: 'new-user',
+      displayName: 'New supporter',
+      supportedAt: '2026-10-01',
+    };
+    const requestPage = vi
+      .fn()
+      .mockResolvedValueOnce({ publicSupporters: firstPage })
+      .mockResolvedValueOnce({
+        publicSupporters: [{ ...firstPage.at(-1)!, displayName: 'Changed later' }, newSupporter],
+      });
+    await expect(fetchAllPublicSupporters(requestPage)).resolves.toEqual([...firstPage, newSupporter]);
+    expect(requestPage).toHaveBeenCalledTimes(2);
+    expect(requestPage).toHaveBeenLastCalledWith({
+      limit: PUBLIC_SUPPORTERS_PAGE_SIZE,
+      offset: PUBLIC_SUPPORTERS_PAGE_SIZE,
+    });
+  });
+
+  it('keeps the first supporter object without changing input order or contents', () => {
+    const firstSupporter: PublicSupporter = { userId: 'first', displayName: 'First', supportedAt: '2026-10-01' };
+    const nextSupporter: PublicSupporter = { userId: 'next', displayName: 'Next', supportedAt: '2026-10-02' };
+    const duplicateSupporter = { ...firstSupporter, displayName: 'Duplicate' };
+    const supporters = [firstSupporter, nextSupporter, duplicateSupporter];
+    expect(deduplicatePublicSupporters(supporters)).toEqual([firstSupporter, nextSupporter]);
+    expect(deduplicatePublicSupporters(supporters)[0]).toBe(firstSupporter);
+    expect(supporters).toEqual([firstSupporter, nextSupporter, duplicateSupporter]);
+  });
+
   it('stops after the public supporter page ceiling', async () => {
     const fullPage = Array.from({ length: PUBLIC_SUPPORTERS_PAGE_SIZE }, (_, index): PublicSupporter => ({
       userId: `user-${index}`,
@@ -89,7 +125,7 @@ describe('supporter pagination', () => {
     const supporters = await fetchAllPublicSupporters(requestPage);
 
     expect(requestPage).toHaveBeenCalledTimes(PUBLIC_SUPPORTERS_MAX_PAGES);
-    expect(supporters).toHaveLength(PUBLIC_SUPPORTERS_MAX_PAGES * PUBLIC_SUPPORTERS_PAGE_SIZE);
+    expect(supporters).toHaveLength(PUBLIC_SUPPORTERS_PAGE_SIZE);
   });
 });
 

@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import SupportContent from '../support-content';
+import { CREATE_SUPPORT_BILLING_PORTAL } from '@boardsesh/graphql/operations/support';
 
 vi.mock('react-i18next', () => ({
   useTranslation: (ns?: string) => ({
@@ -139,6 +140,48 @@ describe('SupportContent', () => {
     expect(screen.getByRole('alert').textContent).toContain(tFromCatalog('marketing', 'support.stripe.authError'));
     fireEvent.click(checkoutButton);
     expect(request).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['PENDING_CHECKOUT_EXISTS', 'support.stripe.pendingCheckout'],
+    ['ACTIVE_SUBSCRIPTION_EXISTS', 'support.stripe.activeSubscription'],
+    ['SUPPORT_OPERATION_PENDING', 'support.stripe.operationPending'],
+    ['SUPPORT_OPERATION_STALE', 'support.stripe.operationStale'],
+  ])('gives an actionable localized explanation for %s', async (code, messageKey) => {
+    Object.assign(authState, { token: 'account-token', isAuthenticated: true });
+    request.mockRejectedValue({ response: { errors: [{ message: 'Internal server wording', extensions: { code } }] } });
+    render(checkoutContent());
+    fireEvent.click(screen.getByRole('button', { name: tFromCatalog('marketing', 'support.stripe.cta') }));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain(tFromCatalog('marketing', messageKey)));
+    expect(screen.getByRole('alert').textContent).not.toContain('Internal server wording');
+  });
+
+  it('offers the billing portal after a stale page discovers existing monthly support', async () => {
+    Object.assign(authState, { token: 'account-token', isAuthenticated: true });
+    request.mockRejectedValueOnce({ response: { errors: [{ extensions: { code: 'ACTIVE_SUBSCRIPTION_EXISTS' } }] } });
+    render(checkoutContent());
+    fireEvent.click(screen.getByRole('button', { name: tFromCatalog('marketing', 'support.stripe.cta') }));
+    const billingButton = await screen.findByRole('button', {
+      name: tFromCatalog('marketing', 'support.manage.billing'),
+    });
+    await waitFor(() => expect(billingButton.hasAttribute('disabled')).toBe(false));
+    request.mockRejectedValueOnce(new Error('Stop before navigation'));
+    fireEvent.click(billingButton);
+    await waitFor(() => expect(request).toHaveBeenLastCalledWith(CREATE_SUPPORT_BILLING_PORTAL, { locale: 'en-US' }));
+  });
+
+  it.each([
+    { response: { errors: [{ extensions: { code: 'UNKNOWN_CODE' } }] } },
+    { response: { errors: [{ extensions: { code: 42 } }] } },
+    { response: { errors: 'invalid' } },
+    new Error('Opaque network failure'),
+  ])('keeps unknown or malformed failures generic', async (requestError) => {
+    request.mockRejectedValue(requestError);
+    render(checkoutContent());
+    fireEvent.click(screen.getByRole('button', { name: tFromCatalog('marketing', 'support.stripe.cta') }));
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toContain(tFromCatalog('marketing', 'support.stripe.error')),
+    );
   });
 
   it('blocks supporter account controls until the signed-in token resolves', () => {

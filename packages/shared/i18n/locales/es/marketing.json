@@ -224,6 +224,10 @@
       "processing": "Abriendo Stripe…",
       "error": "No se pudo abrir Stripe. Inténtalo de nuevo.",
       "authError": "No hemos podido confirmar si has iniciado sesión. Vuelve a intentarlo para continuar.",
+      "pendingCheckout": "Hay un pago mensual pendiente. Complétalo en la pestaña de Stripe que ya tienes abierta o espera a que caduque.",
+      "activeSubscription": "Ya tienes una aportación mensual. Selecciona Gestionar pagos en Stripe para cambiarla o cancelarla.",
+      "operationPending": "Hay otra actualización de pagos en curso. Vuelve a intentarlo en unos minutos.",
+      "operationStale": "Esta solicitud de pago ha caducado. Vuelve a intentarlo para comprobar el estado actual de tus pagos.",
       "thanks": "Gracias por apoyar Boardsesh. Tu reconocimiento aparecerá cuando Stripe confirme el pago.",
       "cancelled": "El pago se canceló. No se realizó ningún cargo.",
       "unavailable": "El pago con tarjeta no está disponible temporalmente. Puedes usar GitHub Sponsors abajo."

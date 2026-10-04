@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
+import type { PublicSupporter } from '@boardsesh/graphql/operations/support';
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn() }));
 const openUrl = vi.hoisted(() => ({ openExternalUrl: vi.fn() }));
@@ -10,6 +11,7 @@ const discord = vi.hoisted(() => ({ openDiscordInvite: vi.fn() }));
 // test: allowed renders the CTA, not-allowed renders unlinked text.
 const donationLinks = vi.hoisted(() => ({ allowed: false }));
 const publicSupporters = vi.hoisted(() => ({
+  additionalPages: [] as PublicSupporter[][],
   fetchNextPage: vi.fn(),
   hasNextPage: true,
   isFetching: false,
@@ -91,7 +93,12 @@ vi.mock('../../src/lib/donation-links', () => ({
 }));
 vi.mock('../../src/lib/graphql/hooks/use-public-supporters', () => ({
   usePublicSupporters: () => ({
-    data: { pages: [{ publicSupporters: publicSupporters.items }] },
+    data: {
+      pages: [
+        { publicSupporters: publicSupporters.items },
+        ...publicSupporters.additionalPages.map((supporters) => ({ publicSupporters: supporters })),
+      ],
+    },
     fetchNextPage: publicSupporters.fetchNextPage,
     hasNextPage: publicSupporters.hasNextPage,
     isFetching: publicSupporters.isFetching,
@@ -146,6 +153,7 @@ beforeEach(() => {
   openUrl.openExternalUrl.mockClear();
   discord.openDiscordInvite.mockClear();
   donationLinks.allowed = false;
+  publicSupporters.additionalPages = [];
   publicSupporters.fetchNextPage.mockReset();
   publicSupporters.hasNextPage = true;
   publicSupporters.isFetching = false;
@@ -181,6 +189,20 @@ describe('AcknowledgementsScreen', () => {
       pathname: '/users/[userId]',
       params: { userId: 'stripe-user' },
     });
+  });
+
+  it('renders each supporter once when loaded pages overlap, retaining the first profile label', () => {
+    publicSupporters.additionalPages = [
+      [
+        { ...publicSupporters.items[0], displayName: 'Duplicate Stripe Climber' },
+        { userId: 'next-supporter', displayName: 'Next Climber', supportedAt: '2026-10-01' },
+      ],
+    ];
+    render(<AcknowledgementsScreen />);
+    expect(screen.getAllByRole('button', { name: 'Stripe Climber' })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Duplicate Stripe Climber' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Next Climber' }));
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/users/[userId]', params: { userId: 'next-supporter' } });
   });
 
   it('fetches one page on end reach and blocks overlapping requests', async () => {

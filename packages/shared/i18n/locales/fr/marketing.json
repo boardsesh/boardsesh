@@ -224,6 +224,10 @@
       "processing": "Ouverture de Stripe…",
       "error": "Impossible d’ouvrir Stripe. Réessayez.",
       "authError": "Impossible de confirmer si vous êtes connecté. Réessayez pour continuer.",
+      "pendingCheckout": "Un paiement mensuel est en attente. Terminez-le dans votre onglet Stripe déjà ouvert ou attendez son expiration.",
+      "activeSubscription": "Vous avez déjà un soutien mensuel. Choisissez Gérer la facturation dans Stripe pour le modifier ou l’annuler.",
+      "operationPending": "Une autre mise à jour de facturation est en cours. Réessayez dans quelques minutes.",
+      "operationStale": "Cette demande de facturation a expiré. Réessayez pour vérifier votre situation actuelle.",
       "thanks": "Merci de soutenir Boardsesh. Votre remerciement apparaîtra après confirmation du paiement par Stripe.",
       "cancelled": "Le paiement a été annulé. Aucun débit n’a été effectué.",
       "unavailable": "Le paiement par carte est temporairement indisponible. GitHub Sponsors reste disponible ci-dessous."

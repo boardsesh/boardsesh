@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo, useRef } from 'react';
 import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
-import type { PublicSupporter } from '@boardsesh/graphql/operations/support';
+import { deduplicatePublicSupporters, type PublicSupporter } from '@boardsesh/graphql/operations/support';
 import { Stack, useRouter } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -123,7 +123,7 @@ export default function AcknowledgementsScreen() {
     refetch,
   } = usePublicSupporters();
   const stripeSupporters = useMemo(
-    () => supporterPages?.pages.flatMap((page) => page.publicSupporters) ?? [],
+    () => deduplicatePublicSupporters(supporterPages?.pages.flatMap((page) => page.publicSupporters) ?? []),
     [supporterPages],
   );
   const loadingMore = useRef(false);

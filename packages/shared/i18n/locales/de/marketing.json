@@ -224,6 +224,10 @@
       "processing": "Stripe wird geöffnet…",
       "error": "Stripe konnte nicht geöffnet werden. Versuche es erneut.",
       "authError": "Wir konnten deinen Anmeldestatus nicht bestätigen. Versuch es erneut, um fortzufahren.",
+      "pendingCheckout": "Ein monatlicher Zahlungsvorgang steht noch aus. Schließe ihn im bereits geöffneten Stripe-Tab ab oder warte, bis er abläuft.",
+      "activeSubscription": "Du unterstützt Boardsesh bereits monatlich. Wähle Zahlungen in Stripe verwalten, um deine Unterstützung zu ändern oder zu kündigen.",
+      "operationPending": "Eine andere Änderung an deiner Abrechnung läuft gerade. Versuch es in ein paar Minuten erneut.",
+      "operationStale": "Diese Abrechnungsanfrage ist abgelaufen. Versuch es erneut, um deinen aktuellen Abrechnungsstatus zu prüfen.",
       "thanks": "Danke für deine Unterstützung. Deine Nennung erscheint, sobald Stripe die Zahlung bestätigt hat.",
       "cancelled": "Der Bezahlvorgang wurde abgebrochen. Es wurde nichts berechnet.",
       "unavailable": "Kartenzahlungen sind vorübergehend nicht verfügbar. GitHub Sponsors funktioniert weiterhin."

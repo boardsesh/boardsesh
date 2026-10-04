@@ -224,6 +224,10 @@
       "processing": "Opening Stripe…",
       "error": "Stripe could not be opened. Try again.",
       "authError": "We couldn’t confirm your sign-in status. Try again to continue.",
+      "pendingCheckout": "A monthly checkout is pending. Finish Checkout in its existing Stripe tab, or wait for it to expire.",
+      "activeSubscription": "You already have monthly support. Choose Manage billing in Stripe to change or cancel it.",
+      "operationPending": "Another billing update is in progress. Try again in a few minutes.",
+      "operationStale": "This billing request expired. Try again to check your latest billing status.",
       "thanks": "Thanks for supporting Boardsesh. Your public credit will appear after Stripe confirms the payment.",
       "cancelled": "Checkout was cancelled. Nothing was charged.",
       "unavailable": "Card support is temporarily unavailable. GitHub Sponsors still works below."
