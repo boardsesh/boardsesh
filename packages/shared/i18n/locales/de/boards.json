@@ -864,7 +864,7 @@
       "noPhoto": "Diese Wand hat noch kein Foto zum Bearbeiten."
     },
     "loading": "Deine Wand wird geladen…",
-    "loadStalled": "Deine Wand konnte nicht geladen werden. Prüf deine Verbindung und versuch es erneut."
+    "loadStalled": "Deine Wand konnte nicht geladen werden. Versuch es erneut."
   },
   "sprayWizard": {
     "screenTitle": "Spraywand hinzufügen",

@@ -864,7 +864,7 @@
       "noPhoto": "Ce mur n'a pas encore de photo à modifier."
     },
     "loading": "Chargement de ton mur…",
-    "loadStalled": "Impossible de charger ton mur. Vérifie ta connexion et réessaie."
+    "loadStalled": "Impossible de charger ton mur. Réessaie."
   },
   "sprayWizard": {
     "screenTitle": "Ajouter un mur de spray",

@@ -864,7 +864,7 @@
       "noPhoto": "Este muro todavía no tiene foto que editar."
     },
     "loading": "Cargando tu muro…",
-    "loadStalled": "No pudimos cargar tu muro. Revisa tu conexión e inténtalo de nuevo."
+    "loadStalled": "No pudimos cargar tu muro. Inténtalo de nuevo."
   },
   "sprayWizard": {
     "screenTitle": "Añadir un muro de spray",

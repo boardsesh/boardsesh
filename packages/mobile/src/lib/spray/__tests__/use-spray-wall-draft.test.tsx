@@ -18,8 +18,10 @@ import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react
 const requestMock = vi.hoisted(() => vi.fn());
 const registerRenderDataMock = vi.hoisted(() => vi.fn());
 const invalidateMock = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+const retryConnectivityNowMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../graphql/client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
+vi.mock('../../connectivity/connectivity-store', () => ({ retryConnectivityNow: retryConnectivityNowMock }));
 vi.mock('../spray-wall-loader', () => ({
   registerRenderData: registerRenderDataMock,
   invalidateSprayWallRenderData: invalidateMock,
@@ -31,6 +33,8 @@ import {
   useKeepSprayDraftRegistered,
   useSprayWallDraft,
 } from '../use-spray-wall-draft';
+import { BackendUnavailableError } from '../../connectivity/backend-unavailable-error';
+import { shouldRetryQuery } from '../../graphql/query-retry';
 import { clearSprayWallRegistry, getSprayWall, registerSprayWall, unregisterSprayWall } from '../spray-wall-registry';
 
 const RENDER_DATA = {
@@ -50,6 +54,8 @@ beforeEach(() => {
   requestMock.mockReset();
   registerRenderDataMock.mockReset();
   invalidateMock.mockClear();
+  retryConnectivityNowMock.mockReset();
+  retryConnectivityNowMock.mockResolvedValue('reachable');
 });
 
 describe('useSprayWallDraft', () => {
@@ -140,9 +146,9 @@ describe('useSprayWallDraft', () => {
 describe('useSprayWallDraft — a read that is not getting anywhere', () => {
   // The app's own query policy where it matters here: one attempt runs whatever
   // the phone thinks of the network, and a retry waits for it to be online.
-  function appLikeWrapper(retry: number | false) {
+  function appLikeWrapper(retry: number | false | typeof shouldRetryQuery, retryDelay = 0) {
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry, retryDelay: 0, networkMode: 'offlineFirst' } },
+      defaultOptions: { queries: { retry, retryDelay, networkMode: 'offlineFirst' } },
     });
     return function AppLikeWrapper({ children }: { children: ReactNode }) {
       return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
@@ -169,6 +175,95 @@ describe('useSprayWallDraft — a read that is not getting anywhere', () => {
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(seen.every((stalled) => !stalled)).toBe(true);
+  });
+
+  it('keeps the plain loading state while an automatic retry is in flight', async () => {
+    // One dropped request, then a second attempt that is still out. The screen
+    // must not flash "couldn't load" ahead of an editor that is about to open.
+    let landSecondAttempt: (response: { sprayWallRenderData: typeof RENDER_DATA }) => void = () => {};
+    requestMock.mockRejectedValueOnce(new Error('socket hang up'));
+    requestMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          landSecondAttempt = resolve;
+        }),
+    );
+    registerRenderDataMock.mockReturnValue(true);
+
+    const seen: boolean[] = [];
+    const { result } = renderHook(
+      () => {
+        const state = useSprayWallDraft(4001, 'wall-1', 3);
+        seen.push(state.isStalled);
+        return state;
+      },
+      { wrapper: appLikeWrapper(2, 20) },
+    );
+
+    await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(2));
+    expect(result.current.isLoading).toBe(true);
+    expect(result.current.isStalled).toBe(false);
+
+    await act(async () => landSecondAttempt({ sprayWallRenderData: RENDER_DATA }));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    // Not through the backoff, not through the second attempt, not at the end.
+    expect(seen.some((stalled) => stalled)).toBe(false);
+  });
+
+  it('retry re-probes connectivity first, because an offline store refuses every request', async () => {
+    // The client's gate, modelled: while the connectivity store reads offline a
+    // request is refused before it reaches the network, and only a probe flips
+    // the store back. A retry that only refetched would be refused again.
+    let storeOffline = true;
+    requestMock.mockImplementation(() =>
+      storeOffline
+        ? Promise.reject(new BackendUnavailableError('backend_unreachable'))
+        : Promise.resolve({ sprayWallRenderData: RENDER_DATA }),
+    );
+    let finishProbe: (backend: string) => void = () => {};
+    retryConnectivityNowMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishProbe = (backend) => {
+            storeOffline = false;
+            resolve(backend);
+          };
+        }),
+    );
+    registerRenderDataMock.mockReturnValue(true);
+
+    // The app's real retry policy: a refused request is not retried.
+    const { result } = renderHook(() => useSprayWallDraft(4001, 'wall-1', 3), {
+      wrapper: appLikeWrapper(shouldRetryQuery),
+    });
+    await waitFor(() => expect(result.current.isStalled).toBe(true));
+    expect(requestMock).toHaveBeenCalledTimes(1);
+
+    act(() => result.current.retry());
+    // The tap is answered at once, while the probe is still out.
+    expect(result.current.isStalled).toBe(false);
+    expect(retryConnectivityNowMock).toHaveBeenCalledTimes(1);
+    expect(requestMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => finishProbe('reachable'));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isStalled).toBe(false);
+    expect(result.current.isUnavailable).toBe(false);
+    expect(requestMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('goes back to stalled when the probe finds the backend still down', async () => {
+    requestMock.mockRejectedValue(new BackendUnavailableError('backend_unreachable'));
+    retryConnectivityNowMock.mockRejectedValue(new Error('probe failed'));
+
+    const { result } = renderHook(() => useSprayWallDraft(4001, 'wall-1', 3), {
+      wrapper: appLikeWrapper(shouldRetryQuery),
+    });
+    await waitFor(() => expect(result.current.isStalled).toBe(true));
+
+    act(() => result.current.retry());
+    await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.isStalled).toBe(true));
   });
 
   it('says so when a retry is parked offline, instead of spinning over nothing', async () => {

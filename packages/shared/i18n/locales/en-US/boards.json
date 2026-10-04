@@ -864,7 +864,7 @@
       "noPhoto": "This wall has no photo to edit yet."
     },
     "loading": "Loading your wall…",
-    "loadStalled": "Couldn't load your wall. Check your connection and try again."
+    "loadStalled": "Couldn't load your wall. Try again."
   },
   "sprayWizard": {
     "screenTitle": "Add a spray wall",

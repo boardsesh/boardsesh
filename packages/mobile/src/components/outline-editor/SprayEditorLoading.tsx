@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useEffect, useMemo } from 'react';
+import { AccessibilityInfo, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Button } from '../Button';
@@ -33,6 +33,13 @@ export function SprayEditorLoading({ photo, stalled, onRetry }: SprayEditorLoadi
   const message = stalled ? t('sprayEditor.loadStalled') : t('sprayEditor.loading');
   const retryLabel = t('sprayDetection.retry');
   const retry = useMemo(() => ({ label: retryLabel, onPress: onRetry }), [retryLabel, onRetry]);
+
+  // `accessibilityLiveRegion` only speaks on Android. Said once each time the
+  // wait turns into a stall, not on every render.
+  const stalledMessage = stalled ? message : null;
+  useEffect(() => {
+    if (stalledMessage) AccessibilityInfo.announceForAccessibility(stalledMessage);
+  }, [stalledMessage]);
 
   if (photo) {
     return <SprayScanPhoto photo={photo} message={message} failed={stalled} retry={retry} band={false} />;

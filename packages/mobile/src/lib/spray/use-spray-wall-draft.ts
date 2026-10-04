@@ -36,6 +36,7 @@ import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-quer
 import { GET_SPRAY_WALL_RENDER_DATA } from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWallRenderData } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../graphql/client';
+import { retryConnectivityNow } from '../connectivity/connectivity-store';
 import { invalidateSprayWallRenderData, registerRenderData } from './spray-wall-loader';
 import {
   getSprayWall,
@@ -116,13 +117,18 @@ export type UseSprayWallDraftResult = {
   /** Nothing has resolved yet. */
   isLoading: boolean;
   /**
-   * There is no payload and the read is not getting one: an attempt has failed
-   * (and is being retried, or gave up), or the retry is parked until the phone
-   * is back online. The screen says so and offers `retry` rather than leaving a
-   * spinner over a request that is not running.
+   * There is no payload and nothing is fetching one: the read gave up, or its
+   * retry is parked until the phone is back online. The screen says so and
+   * offers `retry` rather than leaving a spinner over a request that is not
+   * running. An automatic retry that is still in flight is NOT stalled — one
+   * dropped request must not flash an error ahead of the editor.
    */
   isStalled: boolean;
-  /** Read the version again now, abandoning a retry that is parked or backing off. */
+  /**
+   * Read the version again now. Asks the connectivity store to re-probe first:
+   * while it reads as offline every request is refused before it reaches the
+   * network, so a refetch alone could never succeed.
+   */
   retry: () => void;
   /**
    * The version resolved but cannot be edited: it does not exist, the viewer may
@@ -211,17 +217,28 @@ export function useSprayWallDraft(
 
   const isLoading = asked && (query.isPending || awaitingVerdict);
   const isUnavailable = asked && !query.isPending && !awaitingVerdict && !(verdict?.ok ?? false);
-  // `failureCount` is above zero from the first failed attempt until the next
-  // read starts, which covers a retry that is backing off and a read that gave
-  // up. `paused` is a retry parked because the phone reads as offline.
-  const isStalled = asked && query.data === undefined && (query.fetchStatus === 'paused' || query.failureCount > 0);
+  // True from the retry tap until its read has started, so the tap is answered
+  // with the loading line while the connectivity probe is still out.
+  const [retrying, setRetrying] = useState(false);
+  // `paused` is a retry parked because the phone reads as offline; `isError` is
+  // a read that gave up. A retry that is backing off or running is neither.
+  const isStalled = asked && !retrying && query.data === undefined && (query.fetchStatus === 'paused' || query.isError);
   const homography = renderData?.homography ?? null;
 
   const { refetch } = query;
   const retry = useCallback(() => {
-    // `refetch` hands back a read that is parked or backing off as it is, so
-    // that one is cancelled first and the new read starts from its first attempt.
-    void queryClient.cancelQueries({ queryKey: sprayWallDraftQueryKey(wallUuid, versionNumber) }).then(() => refetch());
+    setRetrying(true);
+    void retryConnectivityNow()
+      // An inconclusive or failed probe still gets the read: the request itself
+      // is the next best sample.
+      .catch(() => undefined)
+      // `refetch` hands back a parked read as it is, so that one is cancelled
+      // first and the new read starts from its first attempt.
+      .then(() => queryClient.cancelQueries({ queryKey: sprayWallDraftQueryKey(wallUuid, versionNumber) }))
+      .then(() => {
+        setRetrying(false);
+        return refetch();
+      });
   }, [queryClient, wallUuid, versionNumber, refetch]);
 
   return useMemo(

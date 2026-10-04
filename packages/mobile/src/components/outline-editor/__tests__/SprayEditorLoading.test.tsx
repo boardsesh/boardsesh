@@ -9,9 +9,12 @@
 // rather than assumed; only its leaf dependencies are stubbed.
 import { fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const announce = vi.hoisted(() => vi.fn());
 
 vi.mock('react-native', () => ({
+  AccessibilityInfo: { announceForAccessibility: announce },
   StyleSheet: { create: (styles: unknown) => styles, absoluteFill: {} },
   View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
 }));
@@ -66,7 +69,23 @@ import { SprayScanPhoto } from '../../spray-wall/SprayScanPhoto';
 
 const PHOTO = { uri: 'file:///wall.jpg', width: 1536, height: 2048 };
 
+beforeEach(() => {
+  announce.mockClear();
+});
+
 describe('SprayEditorLoading', () => {
+  it('announces a stall once when it starts, and never announces the plain wait', () => {
+    // `accessibilityLiveRegion` is Android-only, so VoiceOver hears this or nothing.
+    const onRetry = () => {};
+    const { rerender } = render(<SprayEditorLoading photo={null} stalled={false} onRetry={onRetry} />);
+    expect(announce).not.toHaveBeenCalled();
+
+    rerender(<SprayEditorLoading photo={null} stalled onRetry={onRetry} />);
+    rerender(<SprayEditorLoading photo={null} stalled onRetry={onRetry} />);
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenCalledWith('sprayEditor.loadStalled');
+  });
+
   it('keeps the photo on screen with a status line and no scan band', () => {
     render(<SprayEditorLoading photo={PHOTO} stalled={false} onRetry={() => {}} />);
 
