@@ -60,7 +60,13 @@ function SupportResultAlert() {
 
 export default function SupportContent({ configuration, initialStatus, locale }: SupportContentProps) {
   const { t } = useTranslation('marketing');
-  const { token: authToken, isAuthenticated, isLoading: isAuthLoading, error: authError } = useWsAuthToken();
+  const {
+    token: authToken,
+    isAuthenticated,
+    isLoading: isAuthLoading,
+    error: authError,
+    refetch: refetchAuth,
+  } = useWsAuthToken();
   const isAuthUnresolved = isAuthLoading || Boolean(authError) || (isAuthenticated && !authToken);
   const canManageSupport = isAuthenticated && Boolean(authToken) && !isAuthUnresolved;
   const [amount, setAmount] = useState('5');
@@ -68,7 +74,18 @@ export default function SupportContent({ configuration, initialStatus, locale }:
   const [publicCredit, setPublicCredit] = useState(initialStatus.showPublicly);
   const [status, setStatus] = useState(initialStatus);
   const [busy, setBusy] = useState(false);
+  const [isRetryingAuth, setIsRetryingAuth] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const retryAuth = async () => {
+    if (isAuthLoading || isRetryingAuth) return;
+    setIsRetryingAuth(true);
+    try {
+      await refetchAuth();
+    } finally {
+      setIsRetryingAuth(false);
+    }
+  };
 
   const startCheckout = async () => {
     if (busy || isAuthUnresolved) return;
@@ -283,6 +300,19 @@ export default function SupportContent({ configuration, initialStatus, locale }:
                 </Button>
               </Box>
             </PageCard>
+            {(configuration.enabled || status.hasSupported) &&
+            (authError || (isAuthenticated && !authToken && !isAuthLoading)) ? (
+              <Alert
+                severity="error"
+                action={
+                  <Button color="inherit" disabled={isAuthLoading || isRetryingAuth} onClick={() => void retryAuth()}>
+                    {t('common:actions.retry')}
+                  </Button>
+                }
+              >
+                {t('support.stripe.authError')}
+              </Alert>
+            ) : null}
             {error ? <Alert severity="error">{error}</Alert> : null}
           </Box>
         </PageSection>

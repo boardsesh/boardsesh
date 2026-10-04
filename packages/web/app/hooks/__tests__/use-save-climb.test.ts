@@ -100,6 +100,7 @@ describe('useSaveClimb', () => {
     mockDispose.mockReset();
     mockShowMessage.mockReset();
     mockUseWsAuthToken.mockReturnValue({
+      refetch: vi.fn(),
       token: 'test-token',
       isAuthenticated: true,
       isLoading: false,

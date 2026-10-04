@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { createQueryWrapper } from '@/app/test-utils/test-providers';
 import { useWsAuthToken } from '../use-ws-auth-token';
 
@@ -48,6 +48,23 @@ describe('useWsAuthToken', () => {
     });
 
     expect(result.current.token).toBe('test-token-123');
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(result.current.error).toBeNull();
+  });
+
+  it('clears a failed token request after an explicit successful retry', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 500 });
+    const { result } = renderHook(() => useWsAuthToken(), { wrapper: createQueryWrapper() });
+    await waitFor(() => expect(result.current.error).toBe('Failed to fetch auth token: 500'));
+    expect(result.current.token).toBeNull();
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ token: 'recovered-token', authenticated: true }),
+    });
+    await act(async () => {
+      await result.current.refetch();
+    });
+    await waitFor(() => expect(result.current.token).toBe('recovered-token'));
     expect(result.current.isAuthenticated).toBe(true);
     expect(result.current.error).toBeNull();
   });

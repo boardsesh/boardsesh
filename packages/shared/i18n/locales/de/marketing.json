@@ -223,6 +223,7 @@
       "cta": "Mit Stripe unterstützen",
       "processing": "Stripe wird geöffnet…",
       "error": "Stripe konnte nicht geöffnet werden. Versuche es erneut.",
+      "authError": "Wir konnten deinen Anmeldestatus nicht bestätigen. Versuch es erneut, um fortzufahren.",
       "thanks": "Danke für deine Unterstützung. Deine Nennung erscheint, sobald Stripe die Zahlung bestätigt hat.",
       "cancelled": "Der Bezahlvorgang wurde abgebrochen. Es wurde nichts berechnet.",
       "unavailable": "Kartenzahlungen sind vorübergehend nicht verfügbar. GitHub Sponsors funktioniert weiterhin."

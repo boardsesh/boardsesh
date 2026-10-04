@@ -45,6 +45,7 @@ describe('useDeleteTick', () => {
     mockRequest.mockReset();
     mockShowMessage.mockReset();
     mockUseWsAuthToken.mockReturnValue({
+      refetch: vi.fn(),
       token: 'test-token',
       isAuthenticated: true,
       isLoading: false,
@@ -80,6 +81,7 @@ describe('useDeleteTick', () => {
 
   it('throws when no token', async () => {
     mockUseWsAuthToken.mockReturnValue({
+      refetch: vi.fn(),
       token: null,
       isAuthenticated: false,
       isLoading: false,

@@ -350,24 +350,27 @@ describe('handleStripeWebhook', () => {
     expect(result().statusCode).toBe(200);
   });
 
-  it('removes the claim for an expired checkout session', async () => {
-    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
-    process.env.STRIPE_SECRET_KEY = 'sk_test_example';
-    const where = vi.fn().mockResolvedValue(undefined);
-    mockDb.delete.mockReturnValue({ where });
-    mockConstructEvent.mockReturnValue({
-      id: 'evt_expired_1',
-      type: 'checkout.session.expired',
-      created: 2_000,
-      data: { object: checkoutSession({ payment_status: 'unpaid' }) },
-    });
-    const { response, result } = webhookResponse();
+  it.each(['checkout.session.expired', 'checkout.session.async_payment_failed'])(
+    'removes the claim for %s',
+    async (eventType) => {
+      process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+      process.env.STRIPE_SECRET_KEY = 'sk_test_example';
+      const where = vi.fn().mockResolvedValue(undefined);
+      mockDb.delete.mockReturnValue({ where });
+      mockConstructEvent.mockReturnValue({
+        id: 'evt_expired_1',
+        type: eventType,
+        created: 2_000,
+        data: { object: checkoutSession({ payment_status: 'unpaid' }) },
+      });
+      const { response, result } = webhookResponse();
 
-    await handleStripeWebhook(webhookRequest({ 'stripe-signature': 'valid' }), response);
+      await handleStripeWebhook(webhookRequest({ 'stripe-signature': 'valid' }), response);
 
-    expect(where).toHaveBeenCalledOnce();
-    expect(result().statusCode).toBe(200);
-  });
+      expect(where).toHaveBeenCalledOnce();
+      expect(result().statusCode).toBe(200);
+    },
+  );
 
   it('returns 500 so Stripe retries a transient processing failure', async () => {
     process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';

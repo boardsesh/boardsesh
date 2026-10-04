@@ -223,6 +223,7 @@
       "cta": "Soutenir avec Stripe",
       "processing": "Ouverture de Stripe…",
       "error": "Impossible d’ouvrir Stripe. Réessayez.",
+      "authError": "Impossible de confirmer si vous êtes connecté. Réessayez pour continuer.",
       "thanks": "Merci de soutenir Boardsesh. Votre remerciement apparaîtra après confirmation du paiement par Stripe.",
       "cancelled": "Le paiement a été annulé. Aucun débit n’a été effectué.",
       "unavailable": "Le paiement par carte est temporairement indisponible. GitHub Sponsors reste disponible ci-dessous."

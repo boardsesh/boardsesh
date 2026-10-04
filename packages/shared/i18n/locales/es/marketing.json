@@ -223,6 +223,7 @@
       "cta": "Apoyar con Stripe",
       "processing": "Abriendo Stripe…",
       "error": "No se pudo abrir Stripe. Inténtalo de nuevo.",
+      "authError": "No hemos podido confirmar si has iniciado sesión. Vuelve a intentarlo para continuar.",
       "thanks": "Gracias por apoyar Boardsesh. Tu reconocimiento aparecerá cuando Stripe confirme el pago.",
       "cancelled": "El pago se canceló. No se realizó ningún cargo.",
       "unavailable": "El pago con tarjeta no está disponible temporalmente. Puedes usar GitHub Sponsors abajo."

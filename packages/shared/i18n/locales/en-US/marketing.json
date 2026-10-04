@@ -223,6 +223,7 @@
       "cta": "Support with Stripe",
       "processing": "Opening Stripe…",
       "error": "Stripe could not be opened. Try again.",
+      "authError": "We couldn’t confirm your sign-in status. Try again to continue.",
       "thanks": "Thanks for supporting Boardsesh. Your public credit will appear after Stripe confirms the payment.",
       "cancelled": "Checkout was cancelled. Nothing was charged.",
       "unavailable": "Card support is temporarily unavailable. GitHub Sponsors still works below."

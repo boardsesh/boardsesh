@@ -59,7 +59,7 @@ beforeEach(() => {
 });
 
 describe('expired support claim reconciliation', () => {
-  it('scans Stripe between preparation and finalization, with no transaction open', async () => {
+  it('releases a never-created Checkout claim after an empty Stripe scan outside transactions', async () => {
     const phases: string[] = [];
     withSupportOperation.mockImplementation(
       async (

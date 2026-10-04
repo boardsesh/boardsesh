@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import SupportContent from '../support-content';
 
@@ -20,12 +20,13 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-const { authState, request } = vi.hoisted(() => ({
+const { authState, request, refetchAuth } = vi.hoisted(() => ({
   authState: { token: null as string | null, isAuthenticated: false, isLoading: false, error: null as string | null },
   request: vi.fn(),
+  refetchAuth: vi.fn(),
 }));
 
-vi.mock('@/app/hooks/use-ws-auth-token', () => ({ useWsAuthToken: () => authState }));
+vi.mock('@/app/hooks/use-ws-auth-token', () => ({ useWsAuthToken: () => ({ ...authState, refetch: refetchAuth }) }));
 vi.mock('@/app/lib/graphql/client', () => ({ createGraphQLHttpClient: () => ({ request }) }));
 
 vi.mock('next/link', () => ({
@@ -69,6 +70,7 @@ describe('SupportContent', () => {
   beforeEach(() => {
     Object.assign(authState, { token: null, isAuthenticated: false, isLoading: false, error: null });
     request.mockReset();
+    refetchAuth.mockReset().mockResolvedValue(undefined);
   });
 
   function checkoutContent(initialStatus = EMPTY_STATUS) {
@@ -92,6 +94,52 @@ describe('SupportContent', () => {
       expect(request).not.toHaveBeenCalled();
     },
   );
+
+  it('explains an auth failure and retries before enabling Checkout', async () => {
+    authState.error = 'Token request failed';
+    const { rerender } = render(checkoutContent());
+    expect(screen.getByRole('alert').textContent).toContain(tFromCatalog('marketing', 'support.stripe.authError'));
+    const checkoutButton = screen.getByRole('button', { name: tFromCatalog('marketing', 'support.stripe.cta') });
+    expect(checkoutButton.hasAttribute('disabled')).toBe(true);
+    refetchAuth.mockImplementation(async () => {
+      Object.assign(authState, { error: null, token: 'account-token', isAuthenticated: true });
+    });
+    fireEvent.click(screen.getByRole('button', { name: tFromCatalog('common', 'actions.retry') }));
+    await waitFor(() => expect(refetchAuth).toHaveBeenCalledTimes(1));
+    rerender(checkoutContent());
+    await waitFor(() => expect(checkoutButton.hasAttribute('disabled')).toBe(false));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('keeps Checkout blocked while retrying and after another auth failure', async () => {
+    authState.error = 'Token request failed';
+    let finishRetry: (() => void) | undefined;
+    refetchAuth.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRetry = resolve;
+        }),
+    );
+    render(checkoutContent());
+    const retryButton = screen.getByRole('button', { name: tFromCatalog('common', 'actions.retry') });
+    const checkoutButton = screen.getByRole('button', { name: tFromCatalog('marketing', 'support.stripe.cta') });
+    fireEvent.click(retryButton);
+    expect(retryButton.hasAttribute('disabled')).toBe(true);
+    expect(checkoutButton.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(checkoutButton);
+    fireEvent.click(retryButton);
+    expect(refetchAuth).toHaveBeenCalledTimes(1);
+    expect(request).not.toHaveBeenCalled();
+    await act(async () => {
+      finishRetry?.();
+    });
+    await waitFor(() => expect(retryButton.hasAttribute('disabled')).toBe(false));
+    expect(checkoutButton.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('alert').textContent).toContain(tFromCatalog('marketing', 'support.stripe.authError'));
+    fireEvent.click(checkoutButton);
+    expect(request).not.toHaveBeenCalled();
+  });
 
   it('blocks supporter account controls until the signed-in token resolves', () => {
     Object.assign(authState, { isAuthenticated: true, isLoading: true });
