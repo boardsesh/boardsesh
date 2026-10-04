@@ -230,20 +230,26 @@ describe('supportMutations', () => {
     );
   });
 
-  it('keeps anonymous support intentionally unlinked', async () => {
+  it.each(['ONE_TIME', 'MONTHLY'] as const)('keeps anonymous %s support intentionally unlinked', async (cadence) => {
     process.env.STRIPE_SECRET_KEY = 'sk_test_example';
     checkoutSessionCreate.mockResolvedValue({ id: 'cs_test_1', url: 'https://checkout.stripe.test/session' });
     const anonymousContext = { ...authContext(), isAuthenticated: false, userId: undefined };
 
     await supportMutations.createSupportCheckoutSession(
       {},
-      { input: { amount: 500, cadence: 'ONE_TIME', publicCredit: false } },
+      { input: { amount: 500, cadence, publicCredit: false } },
       anonymousContext,
     );
 
-    expect(checkoutSessionCreate).toHaveBeenCalledWith(expect.objectContaining({ client_reference_id: undefined }), {
-      maxNetworkRetries: 0,
-    });
+    expect(checkoutSessionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        client_reference_id: undefined,
+        mode: cadence === 'MONTHLY' ? 'subscription' : 'payment',
+      }),
+      {
+        maxNetworkRetries: 0,
+      },
+    );
     expect(mockDb.insert).not.toHaveBeenCalled();
   });
 

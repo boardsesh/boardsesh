@@ -17,27 +17,29 @@ import { userMutations } from '../graphql/resolvers/users/mutations';
 import { userQueries } from '../graphql/resolvers/users/queries';
 
 // Hoist mock variables so they're available before module evaluation
-const { mockDb, mockStripeSubscriptionUpdate, mockStripeSubscriptionRetrieve, txCalls } = vi.hoisted(() => {
-  const txCalls: Array<{ method: string; args: unknown[] }> = [];
+const { mockDb, mockStripeSubscriptionUpdate, mockStripeSubscriptionRetrieve, useRealStripeClient, txCalls } =
+  vi.hoisted(() => {
+    const txCalls: Array<{ method: string; args: unknown[] }> = [];
 
-  const mockDb = {
-    select: vi.fn().mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          limit: vi.fn().mockResolvedValue([]),
+    const mockDb = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([]),
+          }),
         }),
       }),
-    }),
-    transaction: vi.fn(),
-  };
+      transaction: vi.fn(),
+    };
 
-  return {
-    mockDb,
-    mockStripeSubscriptionUpdate: vi.fn(),
-    mockStripeSubscriptionRetrieve: vi.fn().mockResolvedValue({ status: 'active', cancel_at_period_end: false }),
-    txCalls,
-  };
-});
+    return {
+      mockDb,
+      mockStripeSubscriptionUpdate: vi.fn(),
+      mockStripeSubscriptionRetrieve: vi.fn().mockResolvedValue({ status: 'active', cancel_at_period_end: false }),
+      useRealStripeClient: vi.fn().mockReturnValue(false),
+      txCalls,
+    };
+  });
 
 vi.mock('../services/stripe-support-operation', () => ({
   withSupportOperation: async (
@@ -62,9 +64,12 @@ vi.mock('../services/stripe-support', async (importOriginal) => {
   const original = await importOriginal<typeof import('../services/stripe-support')>();
   return {
     ...original,
-    getStripeClient: () => ({
-      subscriptions: { update: mockStripeSubscriptionUpdate, retrieve: mockStripeSubscriptionRetrieve },
-    }),
+    getStripeClient: () =>
+      useRealStripeClient()
+        ? original.getStripeClient()
+        : {
+            subscriptions: { update: mockStripeSubscriptionUpdate, retrieve: mockStripeSubscriptionRetrieve },
+          },
   };
 });
 
@@ -258,6 +263,24 @@ describe('deleteAccount mutation', () => {
       userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx()),
     ).rejects.toThrow('Your account was not deleted');
     expect(txCalls.filter((call) => call.method === 'delete')).toHaveLength(0);
+  });
+
+  it('retains the linked account when the Stripe secret key is missing', async () => {
+    setupTransactionMock({
+      supporter: { subscriptionId: 'sub_1', subscriptionStatus: 'active', cancelAtPeriodEnd: false },
+    });
+    vi.stubEnv('STRIPE_SECRET_KEY', undefined);
+    useRealStripeClient.mockReturnValueOnce(true);
+    try {
+      await expect(
+        userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx()),
+      ).rejects.toMatchObject({ extensions: { code: 'STRIPE_CANCELLATION_FAILED' } });
+      expect(mockStripeSubscriptionRetrieve).not.toHaveBeenCalled();
+      expect(mockStripeSubscriptionUpdate).not.toHaveBeenCalled();
+      expect(txCalls.filter((call) => call.method === 'delete')).toHaveLength(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('blocks deletion while linked Checkout is pending', async () => {

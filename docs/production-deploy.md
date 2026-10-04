@@ -738,6 +738,9 @@ backend exposes it through `supportConfiguration` for the web support page when
 Checkout is unavailable. Mobile support links open that page. The web service also supplies its local fallback if
 the backend returns no link or the configuration request fails.
 
+Anonymous one-time and monthly support remains unlinked and gets no profile
+credit; public credit requires a signed-in Boardsesh account.
+
 Linked Checkout claims block account deletion until completion, expiration, or
 payment failure is processed. A second monthly Checkout is refused while a
 monthly claim is pending. Checkout creation uses the opaque claim ID as its

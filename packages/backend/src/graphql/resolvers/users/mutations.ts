@@ -35,7 +35,7 @@ import {
 import { mapAuroraCredentialStatus } from './credential-status';
 import type { AuroraBoardName } from '@boardsesh/shared-schema';
 import { deleteClimbDependentRows, groupClimbUuidsByBoardType } from '../climbs/climb-cleanup';
-import { getStripeClient, isLiveStripeSubscription } from '../../../services/stripe-support';
+import { getStripeClient } from '../../../services/stripe-support';
 
 /** Credential statuses a sync can run from; `expired` needs a relink first. */
 const SYNCABLE_CREDENTIAL_STATUSES = ['pending', 'active', 'error'];
