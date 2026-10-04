@@ -16,6 +16,7 @@ const publicSupporters = vi.hoisted(() => ({
   hasNextPage: true,
   isFetching: false,
   isFetchNextPageError: false,
+  isError: null as boolean | null,
   items: [{ userId: 'stripe-user', displayName: 'Stripe Climber', avatarUrl: null, supportedAt: '2026-09-22' }],
 }));
 
@@ -103,7 +104,7 @@ vi.mock('../../src/lib/graphql/hooks/use-public-supporters', () => ({
     hasNextPage: publicSupporters.hasNextPage,
     isFetching: publicSupporters.isFetching,
     isFetchNextPageError: publicSupporters.isFetchNextPageError,
-    isError: publicSupporters.isFetchNextPageError,
+    isError: publicSupporters.isError ?? publicSupporters.isFetchNextPageError,
     refetch: vi.fn(),
   }),
 }));
@@ -158,6 +159,7 @@ beforeEach(() => {
   publicSupporters.hasNextPage = true;
   publicSupporters.isFetching = false;
   publicSupporters.isFetchNextPageError = false;
+  publicSupporters.isError = null;
   publicSupporters.items = [
     { userId: 'stripe-user', displayName: 'Stripe Climber', avatarUrl: null, supportedAt: '2026-09-22' },
   ];
@@ -226,6 +228,17 @@ describe('AcknowledgementsScreen', () => {
     render(<AcknowledgementsScreen />);
     fireEvent.click(screen.getByRole('button', { name: 'Stripe Climber' }));
     expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/users/[userId]', params: { userId: 'stripe-user' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reach end' }));
+    expect(publicSupporters.fetchNextPage).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'actions.retry' }));
+    expect(publicSupporters.fetchNextPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers Retry defensively when only the next-page error flag is set', () => {
+    publicSupporters.isError = false;
+    publicSupporters.isFetchNextPageError = true;
+    render(<AcknowledgementsScreen />);
+    expect(screen.getByRole('button', { name: 'Stripe Climber' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Reach end' }));
     expect(publicSupporters.fetchNextPage).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'actions.retry' }));
