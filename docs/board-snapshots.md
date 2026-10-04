@@ -1300,7 +1300,7 @@ pre-refresh object. It checks every current layout artifact against the same met
 set -euo pipefail
 snapshot_check_dir="$(mktemp -d)"
 snapshot_manifest="$snapshot_check_dir/manifest.json"
-manifest_url='https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-gzip/manifest.json'
+manifest_url='https://snapshots.boardsesh.com/board-snapshots/v1-gzip/manifest.json'
 manifest_cache_tag="$(date +%s)"
 latest_schema_version="$(vp node --import tsx -e \
   "import('./packages/shared/offline-sync/src/db/migrations.ts').then(({ LATEST_SCHEMA_VERSION }) => console.log(LATEST_SCHEMA_VERSION))")"
@@ -1604,7 +1604,7 @@ can ever see it.
   "generatedAt": "2026-08-26T07:16:04.221Z",
   "artifact": {
     "key": "board-snapshots/v1-catalog/2026-08-26T07-15-58-102Z.db",
-    "url": "https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-catalog/...",
+    "url": "https://snapshots.boardsesh.com/board-snapshots/v1-catalog/...",
     "bytes": 12685503,
     "uncompressedBytes": 63229952,
     "contentEncoding": "gzip",
