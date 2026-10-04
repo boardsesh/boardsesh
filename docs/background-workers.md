@@ -391,8 +391,8 @@ job's signal.
 
 | Variable or mount | Value |
 | --- | --- |
-| `AWS_S3_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL`, `AWS_DEFAULT_REGION` | Current Tigris producer configuration. At live R2 rotation use the complete named `SNAPSHOTS_*` configuration in `docs/board-snapshots.md`; Actions stays disabled. |
-| `SNAPSHOT_PUBLIC_BASE_URL` | Current Tigris public base. At R2 rotation set both this singular exporter base and plural `SNAPSHOTS_PUBLIC_BASE_URL` to `https://snapshots.boardsesh.com`. The live rotation remains uncompleted. |
+| `SNAPSHOTS_S3_BUCKET_NAME`, `SNAPSHOTS_AWS_ACCESS_KEY_ID`, `SNAPSHOTS_AWS_SECRET_ACCESS_KEY`, `SNAPSHOTS_AWS_ENDPOINT_URL`, `SNAPSHOTS_AWS_REGION` | Permanent worker R2 configuration; see `docs/board-snapshots.md`. Legacy `AWS_*` fields remain available for rollback. Actions stays disabled. |
+| `SNAPSHOT_PUBLIC_BASE_URL`, `SNAPSHOTS_PUBLIC_BASE_URL` | Both are `https://snapshots.boardsesh.com`. Storage client reads passed; normal producer and native reader acceptance are tracked in `docs/r2-migration-2026-10.md`. |
 | `SYNC_STABILITY_WINDOW_SECONDS` | Only when the backend sets it; the export must use the same window. |
 | `/tmp` | tmpfs, 2 GB. One layout's SQLite files live there during its export (kilter's largest is about 271 MB raw). Tmpfs pages are charged to the container's memory cgroup, so a memory limit must cover them on top of the 4 GB heap. |
 

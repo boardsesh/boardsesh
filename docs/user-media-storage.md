@@ -9,7 +9,7 @@ Where avatars, gym images, beta-video thumbnails, spray wall photos and user dat
 | `boardsesh-user-media` | `media` | Cloudflare R2 | Public through the `media.boardsesh.com` custom domain | `beta-link-thumbnails/{instagram,tiktok}/…`, `avatars/<userId>.<ext>`, `gym-logos/<uuid>.<ext>`, `gym-photos/<uuid>.<ext>`, `feedback-screenshots/<uuid>.<ext>`, `spray-walls/<wall uuid>/<32 hex>.jpg`, and every `@<size>.jpg` resize variant |
 | `boardsesh-user-private` | `private` | Cloudflare R2 | No custom domain, therefore unreachable from the internet | `user-data-exports/<userId>/<boardType>/<isoWeek>.json`, `spray-walls/<wallUuid>/<photoId>.jpg` (+ its `@<size>.jpg` variant), `moonboard-ocr-test-data/<ts>-<uuid>/…` |
 | `boardsesh-board-snapshots` | `snapshots` | Cloudflare R2 | Public through `snapshots.boardsesh.com` after the gated publisher/reader cutover | `board-snapshots/**` — see `docs/board-snapshots.md` |
-| `boardsesh-static-assets` | — (published by CI, not the backend) | Cloudflare R2 | Public through a custom domain — `assets-r2.boardsesh.com` today, `assets.boardsesh.com` after the cutover | `static/v1/<sha256>.<ext>` — repo-owned board art, icons, brand marks; see `docs/static-assets.md` |
+| `boardsesh-static-assets` | — (published by CI, not the backend) | Cloudflare R2 | Public through `assets.boardsesh.com`; `assets-r2.boardsesh.com` remains available for staging | `static/v1/<sha256>.<ext>` — repo-owned board art, icons, brand marks; see `docs/static-assets.md` |
 
 A public spray wall's photo is the one entry whose filename is random rather than
 derived, and deliberately so. The wall photo itself lives in the `private` bucket
@@ -29,7 +29,7 @@ resize variants. See `docs/spray-walls.md`.
 
 When user media storage was introduced, Boardsesh's other object storage used Tigris, making it the initial candidate for this data too. Two measurements said otherwise.
 
-**Tigris cannot sit behind Cloudflare.** Its docs are explicit: *"Your custom domain must point directly to Tigris without any intermediate proxy that terminates TLS, such as Cloudflare's proxy mode."* Tigris issues and renews the domain's TLS certificate off the live CNAME, so orange-clouding it breaks renewal within a couple of months. The Cloudflare Origin Rules workaround — overriding the Host header, which also sets SNI — is Enterprise-only. This is the constraint behind the "keep `assets.boardsesh.com` DNS-only" rule in `docs/cloudflare.md`; it is not a preference.
+**Tigris cannot sit behind Cloudflare.** Its docs are explicit: *"Your custom domain must point directly to Tigris without any intermediate proxy that terminates TLS, such as Cloudflare's proxy mode."* Tigris issues and renews the domain's TLS certificate off the live CNAME, so orange-clouding it breaks renewal within a couple of months. The Cloudflare Origin Rules workaround — overriding the Host header, which also sets SNI — is Enterprise-only. This constrained the former Tigris binding for `assets.boardsesh.com`; the migrated R2 custom domain is proxied by design.
 
 **Tigris's edge footprint is thin.** Measured from Sydney on 2026-09-01, twenty consecutive requests to `assets.boardsesh.com` were served from `sjc1` at ~540 ms each; dynamic data placement never moved the object closer. The same box reached a Cloudflare cache hit in 30 ms.
 
@@ -67,7 +67,11 @@ Any handle with no `<PREFIX>_S3_BUCKET_NAME` falls back to the bare `AWS_S3_BUCK
 
 The one deliberate deviation is `private`, which defaults to **no** ACL in both modes. The old single-client module sent `public-read` on any upload that did not override it, which for this handle is the OCR test-data path; that was harmless only because the Railway bucket ignores ACLs, and would publish user-submitted screenshots against any store that honours them.
 
-It is also how the board-snapshots GitHub job keeps working untouched: `.github/workflows/export-board-snapshots.yml` passes `AWS_*` secrets that point at Tigris, and the `snapshots` handle reads them.
+The permanent board-snapshot worker uses the named `SNAPSHOTS_*` R2 configuration.
+`.github/workflows/export-board-snapshots.yml` is a gated R2 rehearsal with scoped
+`SNAPSHOTS_R2_*` inputs; it has no scheduled or Tigris publishing path and remains
+disabled while the homelab worker owns publication. Legacy `AWS_*` fields remain
+available for rollback, rather than being borrowed by a named bucket.
 
 Each configured bucket logs one line at first use:
 

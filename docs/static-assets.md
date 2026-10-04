@@ -1,6 +1,7 @@
 # Static image CDN
 
-Boardsesh publishes repo-owned runtime images to a dedicated Tigris bucket and serves them through
+Boardsesh publishes repo-owned runtime images to the dedicated Cloudflare R2 bucket
+`boardsesh-static-assets` and serves them through
 `https://assets.boardsesh.com`. The immutable catalog lives in `@boardsesh/static-assets` and is shared by the
 Next.js and Expo web builds.
 
@@ -40,7 +41,18 @@ Checked-in Expo public files retain their existing URLs for local and PR exports
 its shell and PWA manifest icons to cataloged CDN URLs only when `EXPO_PUBLIC_STATIC_ASSET_BASE_URL` is set, as it
 is in the production workflow.
 
-## Moving to R2 (in progress)
+## R2 cutover — accepted October 4, 2026
+
+The live domain and all five Production publisher secrets now target R2. The frozen
+verification covered all 426 historical objects, and public catalog verification
+covered all 421 current objects, including SHA-256, MIME type, caching, and CORS.
+`assets-r2.boardsesh.com` remains available for staging. Legacy Tigris objects and
+credentials are retained for rollback; no objects were deleted. See the
+[migration acceptance record](r2-migration-2026-10.md#static-assets-accepted).
+
+The following measurements and ordered procedure document the migration and remain
+useful for rollback planning. The historical bootstrap source refuses live R2
+publisher credentials; do not rerun it using today's live secrets as a Tigris source.
 
 `assets.boardsesh.com` serves the immutable application assets. The Tigris delivery baseline measured from a
 Cloudflare `SYD` PoP on 2026-09-15 was:
@@ -50,9 +62,10 @@ Cloudflare `SYD` PoP on 2026-09-15 was:
 | `media.boardsesh.com` | R2 | HTTP/2 | 22 ms | — | — |
 | `assets.boardsesh.com` | Tigris | **HTTP/1.1** | 183 ms | **614 ms** | **1.08 s** |
 
-`X-Tigris-Served-From: sjc1` on every response: one region, no edge cache — the custom domain is deliberately
-grey-clouded because Tigris cannot sit behind a TLS-terminating proxy. HTTP/1.1 compounds it, capping browsers at
-~6 connections to the host. 24 catalogued images at 6-way parallel measured **4.62 s**.
+The former Tigris binding returned `X-Tigris-Served-From: sjc1` on every response:
+one region, no edge cache. It was grey-clouded because Tigris cannot sit behind a
+TLS-terminating proxy. HTTP/1.1 capped browsers at approximately six connections to
+the host. Twenty-four catalogued images at six-way parallel measured **4.62 s**.
 
 ### The CORS difference, which is the dangerous part
 
@@ -197,7 +210,21 @@ on Tigris before restoring its DNS record and publisher settings. Extra archived
 and an immutable content or metadata conflict fails rather than overwriting it. Keep both providers frozen through
 verification and routing restoration, then force full catalog validation before resuming deployments.
 
-## Bucket setup (Tigris — current, until the cutover above completes)
+## Current R2 configuration
+
+The desired bucket, live custom domain, CORS, cache rules, and unconditional CORS
+response header live in `infra/cloudflare/config.ts`. Converge them with
+`vp run cf:apply -- --apply`. The R2 endpoint uses the Cloudflare account's
+`https://<account>.r2.cloudflarestorage.com` URL, bucket
+`boardsesh-static-assets`, and region `auto`. Keep `r2.dev` disabled and use a
+single-bucket object-write credential for the five `STATIC_ASSETS_*` Production
+secrets listed below. Public builds continue to use `assets.boardsesh.com`.
+
+## Historical Tigris setup — rollback reference
+
+This describes the former provider. Its DNS record is absent from the current
+desired configuration, which manages the R2 custom domain instead. Restore Tigris
+only after the reverse-copy and verification gates above pass.
 
 Create a dedicated public Tigris bucket for `assets.boardsesh.com`. Do not reuse the snapshot, OTA, or user-upload
 buckets. Configure it with:
@@ -218,13 +245,12 @@ Proxy status: DNS only
 CNAME flattening: disabled
 ```
 
-The desired DNS state lives in `infra/cloudflare/config.ts` and is converged by `vp run cf:apply -- --apply`. It
-creates the record when missing and repairs its type, target, TTL, or proxy flag when drifted. Keep the record
-DNS-only: Tigris owns TLS and global object delivery, and there is intentionally no Cloudflare cache rule for this
-hostname. It also disables per-record CNAME flattening and fails closed if Cloudflare's zone-wide **Flatten all
-CNAMEs** setting would override that record. Wait for Tigris to report the custom-domain certificate active and
-verify public reads before the first catalog publication. Tigris's S3 API endpoint is for signed publishing;
-browsers must use `assets.boardsesh.com`.
+The former configuration managed this record as DNS-only, with per-record CNAME
+flattening disabled: Tigris owns TLS and requires its direct delivery CNAME.
+Cloudflare's zone-wide **Flatten all CNAMEs** setting must not override that record.
+Wait for Tigris to report the custom-domain certificate active and verify public
+reads before restoring publication. Tigris's S3 endpoint is for signed publishing;
+browsers use `assets.boardsesh.com`.
 
 Set these secrets on GitHub's protected `Production` environment:
 
