@@ -5,4 +5,4 @@ export {
   checkRedisRateLimit,
   type RedisRateLimitEvaluate,
 } from './redis';
-export { normalizeRateLimitIp } from './ip';
+export { isIpInAnyCidr, isIpInCidr, normalizeRateLimitIp } from './ip';

@@ -89,3 +89,57 @@ export function normalizeRateLimitIp(rawAddress: string | undefined): string | u
     .join(':');
   return `${prefix}::/64`;
 }
+
+type ParsedIpAddress = {
+  family: 4 | 6;
+  bytes: number[];
+};
+
+function parseIpAddress(rawAddress: string): ParsedIpAddress | undefined {
+  const address = rawAddress.trim().toLowerCase();
+  if (!address || /[,%[\]]/.test(address)) return undefined;
+
+  const ipv4Octets = parseIpv4(address);
+  if (ipv4Octets) return { family: 4, bytes: ipv4Octets };
+
+  const hextets = expandIpv6Hextets(address);
+  if (!hextets) return undefined;
+  const ipv6Bytes = hextets.flatMap((hextet) => {
+    const group = Number.parseInt(hextet, 16);
+    return [(group >> 8) & 0xff, group & 0xff];
+  });
+  const isIpv4Mapped =
+    ipv6Bytes.slice(0, 10).every((byte) => byte === 0) && ipv6Bytes[10] === 0xff && ipv6Bytes[11] === 0xff;
+  return isIpv4Mapped ? { family: 4, bytes: ipv6Bytes.slice(12) } : { family: 6, bytes: ipv6Bytes };
+}
+
+/** Check a literal IP against one CIDR without accepting chains, ports, or zones. */
+export function isIpInCidr(rawAddress: string | undefined, cidr: string): boolean {
+  if (!rawAddress) return false;
+  const separator = cidr.lastIndexOf('/');
+  if (separator <= 0 || separator !== cidr.indexOf('/')) return false;
+
+  const network = parseIpAddress(cidr.slice(0, separator));
+  const address = parseIpAddress(rawAddress);
+  const prefixText = cidr.slice(separator + 1);
+  if (!network || !address || network.family !== address.family || !/^\d+$/.test(prefixText)) return false;
+
+  const prefixLength = Number(prefixText);
+  const addressBits = address.bytes.length * 8;
+  if (prefixLength < 0 || prefixLength > addressBits) return false;
+
+  const wholeBytes = Math.floor(prefixLength / 8);
+  for (let byteIndex = 0; byteIndex < wholeBytes; byteIndex += 1) {
+    if (address.bytes[byteIndex] !== network.bytes[byteIndex]) return false;
+  }
+
+  const remainingBits = prefixLength % 8;
+  if (remainingBits === 0) return true;
+  const mask = (0xff << (8 - remainingBits)) & 0xff;
+  return ((address.bytes[wholeBytes] ?? 0) & mask) === ((network.bytes[wholeBytes] ?? 0) & mask);
+}
+
+/** Check a literal IP against any trusted CIDR in a bounded, source-owned list. */
+export function isIpInAnyCidr(rawAddress: string | undefined, cidrs: readonly string[]): boolean {
+  return cidrs.some((cidr) => isIpInCidr(rawAddress, cidr));
+}

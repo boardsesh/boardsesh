@@ -32,6 +32,68 @@ describe('public API client identity', () => {
     expect(resolvePublicApiClientIdentity(publicRequest, { VERCEL_ENV: 'production' })).toBe('unknown');
   });
 
+  it('uses Railway remote identity for direct requests and ignores forged forwarding headers', () => {
+    const publicRequest = new Request('https://www.boardsesh.com/api/v1/kilter/grades', {
+      headers: {
+        'cf-connecting-ip': '198.51.100.5',
+        'x-forwarded-for': '192.0.2.10',
+        'x-real-ip': '203.0.113.8',
+      },
+    });
+
+    expect(resolvePublicApiClientIdentity(publicRequest, { RAILWAY_ENVIRONMENT_ID: 'prod-id' })).toBe('203.0.113.8');
+  });
+
+  it('uses Cloudflare visitor identity only when Railway reports a Cloudflare peer', () => {
+    const cloudflareRequest = new Request('https://www.boardsesh.com/api/v1/kilter/grades', {
+      headers: {
+        'cf-connecting-ip': '203.0.113.8',
+        'x-forwarded-for': '192.0.2.10',
+        'x-real-ip': '173.245.48.10',
+      },
+    });
+    const forgedRequest = new Request('https://www.boardsesh.com/api/v1/kilter/grades', {
+      headers: {
+        'cf-connecting-ip': '203.0.113.8',
+        'x-real-ip': '198.51.100.2',
+      },
+    });
+    const missingClientRequest = new Request('https://www.boardsesh.com/api/v1/kilter/grades', {
+      headers: { 'x-real-ip': '173.245.48.10' },
+    });
+
+    expect(resolvePublicApiClientIdentity(cloudflareRequest, { RAILWAY_ENVIRONMENT_ID: 'prod-id' })).toBe(
+      '203.0.113.8',
+    );
+    expect(resolvePublicApiClientIdentity(forgedRequest, { RAILWAY_ENVIRONMENT_ID: 'prod-id' })).toBe('198.51.100.2');
+    expect(resolvePublicApiClientIdentity(missingClientRequest, { RAILWAY_ENVIRONMENT_ID: 'prod-id' })).toBe('unknown');
+  });
+
+  it('rejects malformed Railway and Cloudflare address values into the shared fallback', () => {
+    const malformedDirectRequests = [
+      new Request('https://www.boardsesh.com/api/v1/kilter/grades', {
+        headers: { 'x-real-ip': '203.0.113.8, 198.51.100.2' },
+      }),
+      new Request('https://www.boardsesh.com/api/v1/kilter/grades', {
+        headers: { 'x-real-ip': 'not-an-ip' },
+      }),
+      new Request('https://www.boardsesh.com/api/v1/kilter/grades'),
+    ];
+    const malformedCloudflareRequest = new Request('https://www.boardsesh.com/api/v1/kilter/grades', {
+      headers: {
+        'cf-connecting-ip': '203.0.113.8, 198.51.100.2',
+        'x-real-ip': '173.245.48.10',
+      },
+    });
+
+    for (const malformedRequest of malformedDirectRequests) {
+      expect(resolvePublicApiClientIdentity(malformedRequest, { RAILWAY_ENVIRONMENT_ID: 'prod-id' })).toBe('unknown');
+    }
+    expect(resolvePublicApiClientIdentity(malformedCloudflareRequest, { RAILWAY_ENVIRONMENT_ID: 'prod-id' })).toBe(
+      'unknown',
+    );
+  });
+
   it('ignores forgeable forwarding headers outside the platform-owned header', () => {
     const publicRequest = new Request('https://www.boardsesh.com/api/v1/kilter/grades', {
       headers: {
@@ -77,6 +139,12 @@ describe('public API client identity', () => {
     );
     expect(resolvePublicApiRateLimitNamespace({ VERCEL: '1', VERCEL_ENV: 'preview' })).toBe('public-api:web:preview');
     expect(resolvePublicApiRateLimitNamespace({ VERCEL_ENV: 'production' })).toBe('public-api:web:local');
+    expect(resolvePublicApiRateLimitNamespace({ RAILWAY_ENVIRONMENT_ID: 'prod-id' })).toBe(
+      'public-api:web:railway:prod-id',
+    );
+    expect(resolvePublicApiRateLimitNamespace({ RAILWAY_ENVIRONMENT_ID: 'preview-id' })).not.toBe(
+      resolvePublicApiRateLimitNamespace({ RAILWAY_ENVIRONMENT_ID: 'prod-id' }),
+    );
   });
 });
 
@@ -104,7 +172,7 @@ describe('public API guard', () => {
     await expect(guard(publicRequest)).resolves.toBeNull();
   });
 
-  it('shares one aggregate budget across grade and heatmap reads behind a gym NAT', async () => {
+  it('shares one aggregate budget across grade and climb-stat reads behind a gym NAT', async () => {
     const guard = createPublicApiRateLimitGuard({
       environment: { VERCEL: '1', VERCEL_ENV: 'production' },
       getRedisEvaluator: () => undefined,
@@ -113,17 +181,38 @@ describe('public API guard', () => {
     });
 
     for (let requestIndex = 0; requestIndex < PUBLIC_API_MAX_REQUESTS; requestIndex += 1) {
-      const path =
-        requestIndex % 2 === 0 ? '/api/v1/kilter/grades' : '/api/v1/kilter/home/12/mainline/40/heatmap?gradeAccuracy=3';
+      const path = requestIndex % 2 === 0 ? '/api/v1/kilter/grades' : '/api/v1/kilter/climb-stats/abc123';
       await expect(guard(request(path, '203.0.113.8'))).resolves.toBeNull();
     }
 
-    const response = await guard(request('/api/v1/kilter/home/12/mainline/40/heatmap', '203.0.113.8'));
+    const response = await guard(request('/api/v1/kilter/climb-stats/abc123', '203.0.113.8'));
     expect(response?.status).toBe(429);
     expect(Number(response?.headers.get('Retry-After'))).toBeGreaterThanOrEqual(1);
     expect(response?.headers.get('Cache-Control')).toContain('no-store');
     expect(response?.headers.get('CDN-Cache-Control')).toBe('no-store');
     expect(response?.headers.get('Vercel-CDN-Cache-Control')).toBe('no-store');
+  });
+
+  it('keeps two clients behind one Cloudflare peer on independent budgets', async () => {
+    const guard = createPublicApiRateLimitGuard({
+      environment: { RAILWAY_ENVIRONMENT_ID: 'prod-id' },
+      getRedisEvaluator: () => undefined,
+      logRateLimited: () => undefined,
+      memoryLimiter: new MemoryRateLimiter({ maxEntries: 10 }),
+    });
+    const cloudflarePeer = '173.245.48.10';
+    const firstClient = new Request('https://www.boardsesh.com/api/v1/kilter/grades', {
+      headers: { 'cf-connecting-ip': '203.0.113.8', 'x-real-ip': cloudflarePeer },
+    });
+    const secondClient = new Request('https://www.boardsesh.com/api/v1/kilter/grades', {
+      headers: { 'cf-connecting-ip': '198.51.100.9', 'x-real-ip': cloudflarePeer },
+    });
+
+    for (let requestIndex = 0; requestIndex < PUBLIC_API_MAX_REQUESTS; requestIndex += 1) {
+      await expect(guard(firstClient)).resolves.toBeNull();
+    }
+    await expect(guard(secondClient)).resolves.toBeNull();
+    await expect(guard(firstClient)).resolves.toMatchObject({ status: 429 });
   });
 
   it('uses the one operation and preview namespace for the Redis tier', async () => {
