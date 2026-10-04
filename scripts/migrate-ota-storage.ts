@@ -352,23 +352,52 @@ async function downloadSourceToFile(source: BucketClient, key: string, directory
 
 async function putDestination(destination: BucketClient, key: string, source: TemporarySource): Promise<void> {
   const metadata = expectedDestinationMetadata(source.fingerprint);
-  await destination.client.send(
-    new PutObjectCommand({
-      Bucket: destination.bucket,
-      Key: key,
-      IfNoneMatch: '*',
-      Body: createReadStream(source.path),
-      ContentLength: source.fingerprint.size,
-      ContentMD5: source.contentMd5,
-      ...(metadata.contentType && { ContentType: metadata.contentType }),
-      ...(metadata.cacheControl && { CacheControl: metadata.cacheControl }),
-      ...(metadata.contentDisposition && { ContentDisposition: metadata.contentDisposition }),
-      ...(metadata.contentEncoding && { ContentEncoding: metadata.contentEncoding }),
-      ...(metadata.contentLanguage && { ContentLanguage: metadata.contentLanguage }),
-      ...(metadata.expires && { Expires: new Date(metadata.expires) }),
-      Metadata: { ...metadata.userMetadata },
-    }),
-  );
+  const body = createReadStream(source.path);
+  let bodyError: Error | undefined;
+  const observeBodyError = (error: Error) => {
+    bodyError = error;
+  };
+  body.on('error', observeBodyError);
+
+  let sendFailed = false;
+  let sendError: unknown;
+  try {
+    await destination.client.send(
+      new PutObjectCommand({
+        Bucket: destination.bucket,
+        Key: key,
+        IfNoneMatch: '*',
+        Body: body,
+        ContentLength: source.fingerprint.size,
+        ContentMD5: source.contentMd5,
+        ...(metadata.contentType && { ContentType: metadata.contentType }),
+        ...(metadata.cacheControl && { CacheControl: metadata.cacheControl }),
+        ...(metadata.contentDisposition && { ContentDisposition: metadata.contentDisposition }),
+        ...(metadata.contentEncoding && { ContentEncoding: metadata.contentEncoding }),
+        ...(metadata.contentLanguage && { ContentLanguage: metadata.contentLanguage }),
+        ...(metadata.expires && { Expires: new Date(metadata.expires) }),
+        Metadata: { ...metadata.userMetadata },
+      }),
+    );
+  } catch (error) {
+    sendFailed = true;
+    sendError = error;
+  } finally {
+    if (!body.closed) {
+      // Some S3 failures, including a conditional-create 412, arrive before the SDK
+      // consumes the request body. This function owns the staged file stream and
+      // closes it before the caller removes the staged path.
+      const closed = new Promise<void>((resolve) => body.once('close', resolve));
+      body.destroy();
+      await closed;
+    }
+    body.removeListener('error', observeBodyError);
+  }
+
+  // Keep the provider's original failure primary; surface a read failure only when
+  // the client otherwise reported success, rather than leaving an unhandled error.
+  if (sendFailed) throw sendError;
+  if (bodyError) throw bodyError;
 }
 
 export function isNotFoundError(error: unknown): boolean {
@@ -388,6 +417,7 @@ async function preflightExistingDestinations(
   destination: BucketClient,
   sourceInventory: readonly ObjectInventoryEntry[],
   destinationInventory: readonly ObjectInventoryEntry[],
+  concurrency: number,
 ): Promise<ReadonlySet<string>> {
   const sourceByKey = new Map(sourceInventory.map((object) => [object.key, object]));
   const existingKeys = destinationInventory.filter((object) => sourceByKey.has(object.key));
@@ -402,7 +432,7 @@ async function preflightExistingDestinations(
   let nextIndex = 0;
   let stopped = false;
   let firstError: unknown;
-  const workers = Array.from({ length: Math.min(COPY_CONCURRENCY, existingKeys.length) }, async () => {
+  const workers = Array.from({ length: Math.min(concurrency, existingKeys.length) }, async () => {
     while (!stopped && nextIndex < existingKeys.length) {
       const { key } = existingKeys[nextIndex];
       nextIndex += 1;
@@ -450,6 +480,7 @@ async function copyAll(
     destination,
     sourceInventory,
     destinationInventory,
+    concurrency,
   );
   const directory = await mkdtemp(join(tmpdir(), 'boardsesh-ota-r2-'));
   let copied = 0;
