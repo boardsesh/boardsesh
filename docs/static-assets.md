@@ -98,8 +98,8 @@ flip itself a non-event.
    The workflow fixes the bucket, region, and public base URL so credentials cannot accidentally target the live
    Tigris bucket. It uploads all 365 objects and puts every one through both the signed `HEAD` and public `GET` — SHA-256,
    MIME, immutable caching, CORS with an `Origin`, and the sampled CORS probe **without** one. It is also what proves
-   the two R2 behaviours this repo cannot assert from source: that `HeadObject` returns `ChecksumSHA256`
-   (`assertRemoteStaticAssetMetadata` throws without it) and that `PutObject` honours `If-None-Match: *`
+   the two R2 behaviours this repo cannot assert from source: that object integrity can be verified through
+   `HeadObject`'s `ChecksumSHA256` or a complete signed `GetObject`, and that `PutObject` honours `If-None-Match: *`
    (`putImmutableObjectIfMissing` maps the 412 to "already present"). Every reader is still on Tigris throughout.
 5. **The flip.** Attach `assets.boardsesh.com` to the bucket **in the dashboard**, then repoint the bucket's
    `customDomain` in `infra/cloudflare/config.ts` and drop the record from `dnsRecords` so R2 owns it, as it already
@@ -173,6 +173,11 @@ SHA-256, MIME type, immutable caching, and CORS). Each public CDN attempt has a 
 failures (404, 429, 5xx, network errors, timeouts, or stale headers/body) retry up to six times with bounded
 exponential jitter; permanent 4xx responses fail immediately. The complete `sync-static-assets` job has a 10-minute
 timeout so a stalled storage or CDN connection cannot hold the serialized production deployment indefinitely.
+If an existing object's S3 `HEAD` omits `ChecksumSHA256`, the publisher performs a signed S3 `GET` and verifies
+the complete byte length and SHA-256 against the source catalog instead. The download is capped at the cataloged
+size and its request has a 30-second deadline. Missing checksums never authorize an overwrite or bypass the
+public CDN validation. Present but incorrect S3 checksums, incorrect metadata, and corrupt downloaded bytes still
+fail publication. The audit manifest continues to require its S3 checksum after upload.
 When Cloudflare desired state changes in the same deployment, `sync-static-assets` waits for `deploy-cloudflare`,
 preventing public validation from racing DNS convergence. A successful or legitimately skipped Cloudflare job allows
 publication; a failed or cancelled prerequisite explicitly fails `sync-static-assets` so downstream builds cannot
