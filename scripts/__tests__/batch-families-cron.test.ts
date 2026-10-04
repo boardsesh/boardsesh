@@ -1,11 +1,9 @@
 /// <reference types="node" />
 
 /**
- * The batch families and the GitHub Actions workflows they replace must fire at
- * the same minute while both exist: the cutover enables a family, waits for
- * three green ledger rows, then deletes the workflow's `schedule:` in its own
- * PR (docs/background-workers.md, "Batch families"). A PR that changes either
- * cron, or deletes a workflow schedule, has to update this pin.
+ * Pins scheduled batch-family crons independently from GitHub workflows.
+ * Snapshot publishing is owned by the batch family; its Actions workflow is a
+ * manual R2 rehearsal with no schedule. A cron change has to update this pin.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -50,7 +48,7 @@ describe('batch family crons', () => {
   it('keeps snapshot crons solely on the homelab worker after owner cutover', () => {
     expect(exportBoardSnapshotsFamily.schedules?.map((schedule) => schedule.cron)).toEqual([
       '15 7 * * *',
-      '7,22,37,52 * * * *',
+      '7,22,37,52 0-6,8-23 * * *',
     ]);
     const { on } = workflow('export-board-snapshots.yml');
     expect(on).not.toHaveProperty('schedule');

@@ -17,9 +17,10 @@
  * production owner role owns the database instead, which
  * `reserveMigrationOwnerSession` also accepts (migration-owner-role.ts).
  *
- * Runs against this job's stock `postgres:17` service; skipped when
- * SERIAL_PLAN_DB_URL is unset, the same gate the migration-journal and
- * migration-owner integration suites use.
+ * Runs against this job's primary stock `postgres:17` service on port 5432;
+ * the snapshot-fence migration smoke uses a separate PostgreSQL 18 service.
+ * Skipped when SERIAL_PLAN_DB_URL is unset, the same gate the migration-journal
+ * and migration-owner integration suites use.
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';

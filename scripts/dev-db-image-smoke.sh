@@ -185,8 +185,9 @@ BEGIN
   -- This is the catalog half of the guard, and the only one that can see a
   -- hand-mutation on a real database. The textual half lives in
   -- scripts/__tests__/db-trigger-search-path.test.ts, which runs in the
-  -- db-migrations job whose stock postgres:17 service has no PostGIS and never
-  -- executes the migration SQL. This image has applied every migration to
+  -- db-migrations job's primary stock postgres:17 service (no PostGIS). Its
+  -- separate stock PostgreSQL 18 service only runs the snapshot-fence smoke.
+  -- This image has applied every migration to
   -- PG18.4 + PostGIS 3.6.4, so it can ask pg_proc directly.
   --
   -- PostGIS installs its own RETURNS trigger function, postgis_cache_bbox(),

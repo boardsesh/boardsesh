@@ -63,6 +63,9 @@ jobs:
       # selected ZERO specs under `vp test run --project web --changed`. Gates
       # the rest-surface step of the `guards` job (see below).
       restSurface: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.restSurface }}
+      # The snapshot publisher contract test reads its workflow from disk, so
+      # --changed cannot select it for a workflow-only edit. Gate that guard step.
+      snapshotWatchdogWorkflow: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.snapshotWatchdogWorkflow }}
       # PR-only guard signal: did this PR edit the OTA-owned changelog data file?
       # Defaults false off PRs (the OTA bot legitimately rewrites it on push).
       changelogData: ${{ github.event_name == 'pull_request' && steps.filter.outputs.changelogData || 'false' }}
@@ -100,9 +103,10 @@ jobs:
       # with the job `if:`s below so a future job can gate on it again.
       runAny: ${{ github.event_name != 'pull_request' || steps.filter.outputs.anyJs == 'true' || steps.filter.outputs.web == 'true' || steps.filter.outputs.i18nCatalogs == 'true' || steps.filter.outputs.sharedSchema == 'true' || steps.filter.outputs.sharedDeps == 'true' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.mobile == 'true' || steps.filter.outputs.ocr == 'true' || steps.filter.outputs.locationSync == 'true' || steps.filter.outputs.auroraCircuitArbitration == 'true' || steps.filter.outputs.rootCi == 'true' || steps.filter.outputs.staticAssets == 'true' }}
       # NOTE: deployConfig, storeMetadata, mobileLocales, restSurface,
-      # pg18Artifacts and boardRenderer are deliberately NOT part of runAny —
-      # the deploy-config, listing-guards, rest-surface and pg18-artifacts steps
-      # of the `guards` job and the renderer-rust job gate on their own filters,
+      # snapshotWatchdogWorkflow, pg18Artifacts and boardRenderer are deliberately
+      # NOT part of runAny — the deploy-config, listing-guards, rest-surface,
+      # snapshot-watchdog and pg18-artifacts steps of `guards`, plus renderer-rust,
+      # gate on their own filters,
       # so a PR touching only their files runs nothing else.
     steps:
       # No actions/checkout here on purpose: on `pull_request` dorny/paths-filter
@@ -278,6 +282,9 @@ jobs:
               - 'packages/web/app/lib/api-docs/**'
               - 'packages/web/app/__tests__/rest-surface-inventory.test.ts'
               - 'scripts/__tests__/ci-rest-surface-workflow.test.ts'
+            snapshotWatchdogWorkflow:
+              - '.github/workflows/export-board-snapshots.yml'
+              - 'scripts/__tests__/snapshot-watchdog-workflow.test.ts'
             # Everything that decides what the www production image contains.
             # Gates `docker-web` below, which is expensive (a full `next build`
             # plus a three-stage image), so this list is the DERIVED closure
@@ -406,8 +413,12 @@ jobs:
               - 'scripts/__tests__/pg18-artifact-drift.test.ts'
             dbMigrations:
               - 'packages/db/drizzle/**'
+              - 'packages/db/docker/bootstrap-pg18-development-roles.sql'
               - 'packages/db/src/schema/**'
               - 'scripts/check-db-migrations.ts'
+              - 'scripts/__tests__/ci-db-migrations-workflow.test.ts'
+              - 'scripts/board-snapshot-migration-pg18.test.sh'
+              - 'scripts/dev-db-up.sh'
               - 'scripts/lib/drizzle-migrations.ts'
               # The journal<->ledger verification that gates the production
               # deploy (#2933) and its real-database test.
@@ -624,7 +635,9 @@ jobs:
           fi
           exit $status
 
-  # Eleven cheap guards, one job. Each used to be its own job, and on the
+  # Twelve cheap guards, one job: the eleven existing guards plus the
+  # filesystem-reading snapshot workflow guard. The existing guards used to be
+  # separate jobs, and on the
   # GitHub Free plan's 20-slot pool every job costs a slot allocation plus ~40 s
   # of runner setup for a minute or less of work. Here they share one checkout
   # and one `vp install`, and each former job is one step (its `id:` is the old
@@ -633,15 +646,15 @@ jobs:
   # Every guard step runs even when an earlier guard failed (`!cancelled()`), so
   # a run reports every broken guard at once, and `Guards summary` names them in
   # its annotation. Guard steps also require a successful install: a failed
-  # install already fails the job and should not be buried under ten
-  # derivative failures.
+  # install already fails the job and should not be buried under derivative
+  # failures.
   #
   # Job-level `if: !cancelled()` rather than the default `success()`:
   # large-files and board-render-version read no `changes` output and used to
   # run with no `needs` at all, so they must still run when `changes` fails.
   # The path-gated steps then see empty outputs and skip; ci-status fails on
   # `changes` regardless. Those two guards being ungated is also why this job
-  # has no path gate of its own: the OR of the eleven old job gates is `true`.
+  # has no path gate of its own: the existing ungated checks ensure it runs.
   guards:
     needs: [changes]
     if: ${{ !cancelled() }}
@@ -861,6 +874,14 @@ jobs:
             packages/web/app/lib/api-docs/__tests__/openapi-document.test.ts
           vp test run --project scripts scripts/__tests__/ci-rest-surface-workflow.test.ts
 
+      # This suite reads export-board-snapshots.yml from disk; a workflow-only
+      # diff is invisible to Vitest's --changed graph, so run it explicitly in
+      # this shared guard job whenever its workflow or the CI wiring changes.
+      - name: snapshot-watchdog (workflow contract)
+        id: snapshot-watchdog
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && (needs.changes.outputs.snapshotWatchdogWorkflow == 'true' || needs.changes.outputs.rootCi == 'true') }}
+        run: vp test run --project scripts scripts/__tests__/snapshot-watchdog-workflow.test.ts --reporter=agent
+
       # Last on purpose: `vp run codegen` rewrites generated files in the
       # working tree, and no earlier guard should see that.
       #
@@ -958,9 +979,10 @@ jobs:
     if: needs.changes.outputs.dbMigrations == 'true' || needs.changes.outputs.rootCi == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # A stock Postgres is enough: the journal<->ledger test builds its own
-    # throwaway migrations folder and database, so it needs no board data and
-    # never pulls the (large) boardsesh-dev-db image.
+    # Keep the primary PostgreSQL 17 service for existing journal, MoonBoard,
+    # and serial-plan checks. The replica-fence migration smoke gets a separate
+    # stock PostgreSQL 18 service; neither service needs board data or pulls the
+    # (large) boardsesh-dev-db image.
     services:
       postgres:
         image: postgres:17
@@ -980,6 +1002,19 @@ jobs:
           --health-interval 2s
           --health-timeout 5s
           --health-retries 25
+      postgres18:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 25
     steps:
       - uses: actions/checkout@v6
         with:
@@ -991,10 +1026,19 @@ jobs:
           cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
+      - name: Check database service wiring
+        run: vp test run --project scripts scripts/__tests__/ci-db-migrations-workflow.test.ts --reporter=agent
       - name: Validate the migration folder
         run: |
           git fetch --no-tags --depth=1 origin main
           vp run check:db-migrations -- --base origin/main
+      # Named after the migration the script applies, never its number: the file
+      # is renumbered at merge time and a hardcoded number rots the moment it is.
+      - name: Run the board snapshot replica-fence migration through the superuser and restricted PG18 apply paths
+        env:
+          SNAPSHOT_MIGRATION_PG18_DB_URL: postgres://postgres:postgres@localhost:5433/postgres
+          SNAPSHOT_MIGRATION_PG18_ALLOW_LOCAL_ADMIN: '1'
+        run: bash scripts/board-snapshot-migration-pg18.test.sh
       # Guards the failure mode check:db-migrations cannot see: a migration
       # whose `when` lands below drizzle's created_at high-water mark is skipped
       # forever and silently (#2933). Drives drizzle's real migrate() against a
@@ -1025,9 +1069,10 @@ jobs:
       # A trigger function with no pinned search_path cannot resolve an
       # unqualified type or table while pg_restore holds search_path at '',
       # which aborts a --data-only restore on the first affected table with zero
-      # rows loaded (#4699). Textual, because this job's service is a stock
-      # postgres:17 with no PostGIS and cannot apply the full migration chain. The
-      # catalog counterpart runs in test-dev-db via scripts/dev-db-image-smoke.sh.
+      # rows loaded (#4699). Textual, because the primary service is stock
+      # postgres:17 with no PostGIS and cannot apply the full migration chain;
+      # the separate PG18 service runs only the snapshot-fence migration smoke.
+      # The catalog counterpart runs in test-dev-db via scripts/dev-db-image-smoke.sh.
       - name: Every trigger function pins search_path
         run: vp test run --project scripts scripts/__tests__/db-trigger-search-path.test.ts
       # #5352: `ALTER DATABASE ... SET max_parallel_workers_per_gather = 0` needs

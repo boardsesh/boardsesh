@@ -116,10 +116,10 @@ describe('registration, schedules and options', () => {
     expect(familiesForRole('routine-provider').map(({ name }) => name)).not.toContain('export-board-snapshots');
   });
 
-  it('schedules the nightly at 07:15 and the live scan at :07/:22/:37/:52, both UTC', async () => {
+  it('schedules the nightly at 07:15 and keeps live scans clear of its 07:00 window', async () => {
     expect(family.schedules?.map(({ key, cron, tz }) => ({ key, cron, tz }))).toEqual([
       { key: 'nightly', cron: '15 7 * * *', tz: undefined },
-      { key: 'live-scan', cron: '7,22,37,52 * * * *', tz: undefined },
+      { key: 'live-scan', cron: '7,22,37,52 0-6,8-23 * * *', tz: undefined },
     ]);
     const database = fakeDatabase();
     expect(await family.schedules?.[0].fanOut(database)).toEqual([{ payload: { mode: 'nightly' } }]);
@@ -259,6 +259,9 @@ describe('live scan', () => {
       dryRun: false,
       gzip: true,
       keyPrefix: 'board-snapshots/v1-gzip',
+      source: 'primary',
+      fence: false,
+      heartbeat: false,
       refreshThreshold: LIVE_SCAN_REFRESH_THRESHOLD,
       boardFilter: undefined,
       layoutFilter: undefined,
@@ -339,11 +342,23 @@ describe('nightly', () => {
     await family.execute(context().context, { mode: 'nightly' });
     expect(order).toEqual(['board-snapshots/v1', 'board-snapshots/v1-gzip', 'board-snapshots/v1-catalog']);
     expect(exportCalls().map(([options]) => options)).toEqual([
-      { dryRun: false, gzip: false, keyPrefix: 'board-snapshots/v1', boardFilter: undefined, layoutFilter: undefined },
+      {
+        dryRun: false,
+        gzip: false,
+        keyPrefix: 'board-snapshots/v1',
+        source: 'primary',
+        fence: false,
+        heartbeat: false,
+        boardFilter: undefined,
+        layoutFilter: undefined,
+      },
       {
         dryRun: false,
         gzip: true,
         keyPrefix: 'board-snapshots/v1-gzip',
+        source: 'primary',
+        fence: false,
+        heartbeat: false,
         refreshThreshold: undefined,
         boardFilter: undefined,
         layoutFilter: undefined,
