@@ -230,6 +230,47 @@ export async function verifyDelivery(
     bundleSha256: expectedBundleSha,
   };
 }
+const SAFE_FAILURE_MESSAGES = new Set([
+  'Android maps input missing',
+  'Asset is not delivered from the private R2 bucket',
+  'Code signing certificate changed',
+  'Compiled bundle lacks R2 snapshot base',
+  'Compiled bundle retains legacy snapshot base',
+  'Delivered asset hash mismatch',
+  'Expected bounded Hermes bundle',
+  'Expected exactly one signed update',
+  'Expected object',
+  'Expected one Hermes entry bundle',
+  'Expected private R2 asset redirect',
+  'Expected signed multipart manifest',
+  'Frozen source changed',
+  'Invalid asset list',
+  'Invalid reader proof invocation',
+  'Invalid update ID',
+  'Manifest signature invalid',
+  'Missing exported asset list',
+  'Missing private R2 redirect target',
+  'Public delivery failed',
+  'Public response exceeded bound',
+  'Resolved fingerprint differs from shipped cohort',
+  'Select one platform',
+  'Served asset list differs from exported asset list',
+  'Served launch bundle differs from exported bundle',
+  'Total delivered assets exceeded byte limit',
+  'Unexpected native configuration override',
+  'Unexpected private R2 redirect target',
+  'Unexpected public reader configuration',
+  'Unsafe exported asset path',
+  'Update is not newly published',
+  'Wrong production branch',
+  'iOS must not include Android maps input',
+]);
+export function safeProofFailure(error: unknown): string {
+  return error instanceof Error && SAFE_FAILURE_MESSAGES.has(error.message)
+    ? error.message
+    : 'Unexpected external proof failure';
+}
+
 async function main(): Promise<void> {
   const [mode, sourceRoot, platformInput, exportRoot, receiptPath, startedAt] = process.argv.slice(2);
   const platform = assertPlatform(platformInput ?? '');
@@ -246,7 +287,7 @@ async function main(): Promise<void> {
   console.log(`${platform} R2 ${mode} proof passed`);
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)
-  void main().catch(() => {
-    console.error('::error::R2 reader proof failed');
+  void main().catch((error: unknown) => {
+    console.error(`::error::R2 reader proof failed: ${safeProofFailure(error)}`);
     process.exitCode = 1;
   });

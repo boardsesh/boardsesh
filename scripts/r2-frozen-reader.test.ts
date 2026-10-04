@@ -3,6 +3,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import {
   assertEnvironment,
@@ -17,9 +18,12 @@ import {
   SNAPSHOT_BASE,
   validateManifest,
   verifyDelivery,
+  safeProofFailure,
 } from './r2-frozen-reader';
 
 vi.mock('node:child_process', () => ({ execFileSync: vi.fn() }));
+
+const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
 
 const bundle = Buffer.concat([Buffer.from('c61fbc03c103191f', 'hex'), Buffer.from(SNAPSHOT_BASE)]);
 const environment = {
@@ -33,11 +37,20 @@ function signed(payload: string, signaturePayload = payload): string {
   return `--fixture\r\nContent-Disposition: form-data; name="manifest"\r\nexpo-signature: sig="${signature}", keyid="main", alg="rsa-v1_5-sha256"\r\n\r\n${payload}\r\n--fixture--\r\n`;
 }
 describe('frozen reader fails closed', () => {
+  it('reports useful static failures without printing credential-bearing external errors', () => {
+    expect(safeProofFailure(new Error('Manifest signature invalid'))).toBe('Manifest signature invalid');
+    expect(safeProofFailure(new Error('fetch failed: https://example.test/?X-Amz-Signature=private-fixture'))).toBe(
+      'Unexpected external proof failure',
+    );
+    expect(safeProofFailure(new SyntaxError('private-fixture response text'))).toBe(
+      'Unexpected external proof failure',
+    );
+  });
   it('pins source HEAD, tracked cleanliness and original certificate independently', () => {
     const root = mkdtempSync(join(tmpdir(), 'r2-frozen-source-fixture-'));
     const certificatePath = join(root, 'packages/mobile/certs/certificate.pem');
     mkdirSync(join(root, 'packages/mobile/certs'), { recursive: true });
-    copyFileSync('packages/mobile/certs/certificate.pem', certificatePath);
+    copyFileSync(join(REPO_ROOT, 'packages/mobile/certs/certificate.pem'), certificatePath);
     const git = vi.mocked(execFileSync);
     try {
       git.mockReturnValueOnce(FROZEN_SOURCE).mockReturnValueOnce('');
@@ -245,7 +258,7 @@ describe('frozen reader fails closed', () => {
     }
   });
   it('keeps production credentials out of dry-run and pre-export steps', () => {
-    const workflow = readFileSync('.github/workflows/r2-frozen-reader-publication.yml', 'utf8');
+    const workflow = readFileSync(join(REPO_ROOT, '.github/workflows/r2-frozen-reader-publication.yml'), 'utf8');
     expect(workflow).not.toMatch(/\n  (push|schedule|workflow_call):/);
     expect(workflow).toContain("if: github.ref == 'refs/heads/main'");
     expect(workflow).toContain('environment: Production');
