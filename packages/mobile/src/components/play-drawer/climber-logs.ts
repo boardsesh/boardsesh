@@ -108,12 +108,19 @@ export type ClimberLogListOptions = {
   climbGradeId: number | null;
 };
 
-/** What the card shows, in order: rows, then the two shared lines. */
-export type ClimberLogsCardPlan = {
+/** One block of the card, in order: rows, then the two shared lines. */
+export type ClimberLogsCardBlock = {
   rows: ClimberLogGroup[];
   bareSent: ClimberLogGroup[];
   bareTried: ClimberLogGroup[];
 };
+
+/**
+ * What the card shows. The followed block always comes first and whole;
+ * `everyone` is the block under it for climbers the viewer does not follow, or
+ * null when there is no room or nobody to show.
+ */
+export type ClimberLogsCardPlan = ClimberLogsCardBlock & { everyone: ClimberLogsCardBlock | null };
 
 /** The names on one shared line of the card. A null name is a climber with none set. */
 export type BareNames = {
@@ -280,14 +287,40 @@ export function partitionClimberLogGroups(groups: readonly ClimberLogGroup[]): {
 }
 
 /**
- * What the card shows for the climbers the viewer follows, from ranked groups:
- * the first `INLINE_CLIMBER_LOG_CAP` climbers with something to say get the
- * rows, and every bare climber stays on the card in one of the two shared
- * lines. A bare climber is never dropped to make room for a row.
+ * What the card shows. People the viewer follows come first, always:
+ *
+ *   1. The first `INLINE_CLIMBER_LOG_CAP` followed climbers with something to
+ *      say get the rows, in the ranked order passed in.
+ *   2. Every bare followed climber stays on the card in one of the two shared
+ *      lines. None is dropped to make room for a row, theirs or a stranger's.
+ *   3. Only when rows are left over do climbers the viewer does not follow get
+ *      any, in the order passed in (the server's, newest first), in a block of
+ *      their own under everything followed. With all rows taken by followed
+ *      climbers there is no such block at all.
+ *
+ * A followed climber who also shows up in `everyone` is listed once, as followed.
  */
-export function planClimberLogsCard(followed: readonly ClimberLogGroup[]): ClimberLogsCardPlan {
+export function planClimberLogsCard(
+  followed: readonly ClimberLogGroup[],
+  everyone: readonly ClimberLogGroup[] = [],
+): ClimberLogsCardPlan {
   const { loud, bareSent, bareTried } = partitionClimberLogGroups(followed);
-  return { rows: takeInlineGroups(loud), bareSent, bareTried };
+  const rows = takeInlineGroups(loud);
+
+  const followedUserIds = new Set(followed.map((group) => group.userId));
+  const strangers = partitionClimberLogGroups(everyone.filter((group) => !followedUserIds.has(group.userId)));
+  const rowsLeft = INLINE_CLIMBER_LOG_CAP - rows.length;
+  const hasStrangers = strangers.loud.length + strangers.bareSent.length + strangers.bareTried.length > 0;
+
+  return {
+    rows,
+    bareSent,
+    bareTried,
+    everyone:
+      rowsLeft > 0 && hasStrangers
+        ? { rows: strangers.loud.slice(0, rowsLeft), bareSent: strangers.bareSent, bareTried: strangers.bareTried }
+        : null,
+  };
 }
 
 /**
@@ -328,6 +361,61 @@ export function filterClimberLogs(
       (!filters.withNotes || hasNote(log)) &&
       (!filters.sendsOnly || isSent(log)),
   );
+}
+
+/**
+ * Drops every log by a climber in `knownUserIds`: the viewer, and anyone
+ * already listed under Following. The server leaves these out when it can, but
+ * not when the Following list was cut at 100 logs, the token was rejected, or a
+ * follow landed mid-session. One rule on the phone covers all three, so a
+ * climber never shows in both sections. Order is kept.
+ */
+export function dropKnownClimbers<TLog extends ClimberLog>(
+  logs: readonly TLog[],
+  knownUserIds: ReadonlySet<string>,
+): TLog[] {
+  return logs.filter((log) => !knownUserIds.has(log.userId));
+}
+
+/**
+ * Sorts a page of everyone's logs into the two sections of the full list, so
+ * the people the viewer follows never show under Everyone and never fall out of
+ * both sections. Order is kept.
+ *
+ *   - The viewer's own logs are dropped.
+ *   - A followed climber already shown under Following is dropped: one row each.
+ *   - A followed climber NOT shown there is `followed` when the Following list
+ *     was cut at 100 logs. Their matching log sits past the cut (the server sent
+ *     it here because it cannot leave followed climbers out of a cut list), so
+ *     it belongs under Following. With a complete Following list they are
+ *     dropped instead: the chips hid them, and the server only sent them because
+ *     a token was rejected or a follow landed mid-session.
+ *   - Everybody else is a stranger.
+ */
+export function splitEveryoneLogs<TLog extends ClimberLog>(
+  logs: readonly TLog[],
+  {
+    viewerId,
+    followedUserIds,
+    shownFollowingUserIds,
+    followingCapped,
+  }: {
+    viewerId: string | null | undefined;
+    /** Everyone the viewer follows, as far as the phone knows. */
+    followedUserIds: ReadonlySet<string>;
+    /** Climbers with a row or a cell under Following right now, after the chips. */
+    shownFollowingUserIds: ReadonlySet<string>;
+    followingCapped: boolean;
+  },
+): { followed: TLog[]; strangers: TLog[] } {
+  const followed: TLog[] = [];
+  const strangers: TLog[] = [];
+  for (const log of logs) {
+    if (log.userId === viewerId || shownFollowingUserIds.has(log.userId)) continue;
+    if (!followedUserIds.has(log.userId)) strangers.push(log);
+    else if (followingCapped) followed.push(log);
+  }
+  return { followed, strangers };
 }
 
 /**

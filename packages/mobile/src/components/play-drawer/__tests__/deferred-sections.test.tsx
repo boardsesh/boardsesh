@@ -381,7 +381,18 @@ describe('DeferredSections', () => {
         boardName: 'kilter',
         angle: 40,
         followState: 'none',
+        settled: true,
       });
+    });
+
+    it('hands the card the settle gate, so a climb swiped past sends nothing from it either', () => {
+      auth.isAuthenticated = true;
+      deferred.ready = true;
+      crewQuery.settled = false;
+      followedAuthors.result = follows();
+      renderSections({ contentEnabled: true });
+
+      expect(climberLogsSection.props).toMatchObject({ followState: 'none', settled: false });
     });
 
     it("hands the card the climb's grade id, or null for a grade it cannot read", () => {

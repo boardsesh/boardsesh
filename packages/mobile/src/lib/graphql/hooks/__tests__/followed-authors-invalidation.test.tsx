@@ -125,6 +125,9 @@ describe('followed author invalidation', () => {
       await result.current.mutateAsync({ kind, identifier: 'friend', follow });
     });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['followingClimbLogs'] });
+    // Everyone's logs leave out the people you follow, so they move with it.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['climbLogs'] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['climbLogsPreview'] });
   });
 
   it('leaves user profile invalidation to the outer social mutation', async () => {

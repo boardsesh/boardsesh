@@ -81,6 +81,25 @@ vi.mock('../../../lib/graphql/hooks/use-following-climb-logs', () => ({
   },
 }));
 
+// The card's fall-through: the newest logs from everyone else.
+type PreviewState = { isLoading: boolean; data: unknown };
+const previewQuery = vi.hoisted(() => ({
+  state: { isLoading: false, data: undefined } as PreviewState,
+  calls: [] as Array<{ boardName: string; climbUuid: string | null; enabled: boolean }>,
+}));
+vi.mock('../../../lib/graphql/hooks/use-climb-logs', () => ({
+  useClimbLogsPreview: (args: { boardName: string; climbUuid: string | null; enabled: boolean }) => {
+    previewQuery.calls.push(args);
+    return previewQuery.state;
+  },
+}));
+const viewer = vi.hoisted(() => ({
+  state: { userId: 'viewer' as string | undefined, isLoading: false },
+}));
+vi.mock('../../../hooks/use-current-user-id', () => ({
+  useStoredUserId: () => viewer.state,
+}));
+
 // The real reducer decides "blocked"; only the connectivity store is stood in.
 const connectivity = vi.hoisted(() => ({
   snapshot: { effectiveOffline: false, reason: null as 'device_offline' | 'backend_unreachable' | null },
@@ -147,7 +166,7 @@ const IDLE: QueryState = {
   refetch: vi.fn(),
 };
 
-function renderSection(followState: 'none' | 'some' | 'unknown' = 'some') {
+function renderSection(followState: 'none' | 'some' | 'unknown' = 'some', settled = true) {
   const handlers = { onSeeAll: vi.fn(), onPressClimber: vi.fn(), onFindClimbers: vi.fn() };
   const view = render(
     createElement(ClimberLogsSection, {
@@ -156,6 +175,7 @@ function renderSection(followState: 'none' | 'some' | 'unknown' = 'some') {
       angle: 40,
       climbGradeId: CLIMB_GRADE,
       followState,
+      settled,
       ...handlers,
     }),
   );
@@ -166,8 +186,14 @@ beforeEach(() => {
   rows.props = [];
   logsQuery.calls = [];
   logsQuery.state = IDLE;
+  previewQuery.calls = [];
+  previewQuery.state = { isLoading: false, data: undefined };
+  viewer.state = { userId: 'viewer', isLoading: false };
   connectivity.snapshot = { effectiveOffline: false, reason: null };
 });
+
+const NOBODY_LOGGED = { climberCount: 0, senderCount: 0 };
+const sixStrangers = () => ['s1', 's2', 's3', 's4', 's5', 's6'].map((userId) => noted(userId));
 
 describe('ClimberLogsSection', () => {
   it('answers "follows nobody" from the phone, without asking the server', () => {
@@ -374,5 +400,253 @@ describe('ClimberLogsSection', () => {
     const { getAllByTestId, container } = renderSection();
     expect(getAllByTestId('climber-row')).toHaveLength(1);
     expect(container.textContent).not.toContain('mobile.offlineState.errorTitle');
+  });
+
+  describe('logs from everyone, when nobody followed has logged the climb', () => {
+    it('adds them under the follow-nobody pitch, four at most, with a way to the full list', () => {
+      previewQuery.state = { isLoading: false, data: sixStrangers() };
+      const { container, getAllByTestId, getByText, onSeeAll, onPressClimber, onFindClimbers } = renderSection('none');
+
+      // The pitch and its button stay exactly as they were.
+      expect(container.textContent).toContain('mobile.climberLogs.emptyFollowNobodyTitle');
+      expect(container.textContent).toContain('mobile.climberLogs.emptyFollowNobodyBody');
+      fireEvent.click(getByText('mobile.climberLogs.findClimbers'));
+      expect(onFindClimbers).toHaveBeenCalledTimes(1);
+
+      expect(container.textContent).toContain('mobile.climberLogs.fallthrough.latestFromEveryone');
+      // Six came back; the drawer's plain ScrollView gets four of them.
+      expect(getAllByTestId('climber-row').map((node) => node.textContent)).toEqual(['s1', 's2', 's3', 's4']);
+      expect(rows.props.every((props) => props.hideEarlier === true)).toBe(true);
+
+      fireEvent.click(getByText('mobile.climberLogs.seeAll'));
+      expect(onSeeAll).toHaveBeenCalledTimes(1);
+      fireEvent.click(getAllByTestId('climber-row')[0]);
+      expect(onPressClimber).toHaveBeenCalledWith('s1');
+      // Still no request for followed climbers: there are none.
+      expect(logsQuery.calls.at(-1)?.enabled).toBe(false);
+    });
+
+    it('adds them under the nobody-logged line, and drops "Find climbers" for the rows', () => {
+      logsQuery.state = loaded([], NOBODY_LOGGED);
+      previewQuery.state = { isLoading: false, data: sixStrangers() };
+      const { container, getAllByTestId } = renderSection('some');
+
+      expect(container.textContent).toContain('mobile.climberLogs.emptyNobodyLogged');
+      expect(container.textContent).toContain('mobile.climberLogs.fallthrough.latestFromEveryone');
+      expect(getAllByTestId('climber-row')).toHaveLength(4);
+      expect(container.textContent).toContain('mobile.climberLogs.seeAll');
+      expect(container.textContent).not.toContain('mobile.climberLogs.findClimbers');
+    });
+
+    it('gives strangers with nothing to add no row either: names in the footer, with no number', () => {
+      logsQuery.state = loaded([], NOBODY_LOGGED);
+      previewQuery.state = {
+        isLoading: false,
+        data: [noted('roofrat'), bare('dee'), bare('pilot'), bare('quin'), bare('tryer', { status: 'attempt' })],
+      };
+      const { getAllByTestId, getByTestId } = renderSection('some');
+
+      expect(getAllByTestId('climber-row').map((node) => node.textContent)).toEqual(['roofrat']);
+      const lines = getByTestId('climber-logs-bare');
+      // The preview is the newest few logs, never all of them: "and more", not "+1".
+      expect(lines.textContent).toContain('mobile.climberLogs.namesAndMore:{"names":"dee, pilot"}');
+      expect(lines.textContent).toContain('mobile.climberLogs.triedNoSend tryer');
+      expect(lines.textContent).not.toContain('mobile.climberLogs.namesPlus');
+    });
+
+    it('keeps everything about the people the viewer follows above the other climbers', () => {
+      logsQuery.state = loaded([], NOBODY_LOGGED);
+      previewQuery.state = { isLoading: false, data: sixStrangers() };
+      const { container, getByTestId } = renderSection('some');
+
+      const everyone = getByTestId('climber-logs-everyone');
+      const message = container.textContent ?? '';
+      expect(message.indexOf('mobile.climberLogs.emptyNobodyLogged')).toBeLessThan(
+        message.indexOf('mobile.climberLogs.fallthrough.latestFromEveryone'),
+      );
+      // Every stranger's row, and the one footer button, sit inside that last block.
+      expect(everyone.querySelectorAll('[data-testid="climber-row"]')).toHaveLength(4);
+      expect(container.querySelectorAll('[data-testid="climber-row"]')).toHaveLength(4);
+      expect(everyone.querySelectorAll('[data-testid="pressable"]')).toHaveLength(1);
+      expect(container.lastElementChild?.contains(everyone)).toBe(true);
+    });
+
+    it('shows no other climbers once somebody the viewer follows has logged it', () => {
+      logsQuery.state = loaded([bare('quiet-friend')], { climberCount: 1, senderCount: 1 });
+      // A stale answer sits in the cache from before the friend logged it. A
+      // disabled query still returns it; the card must not ask and must not show it.
+      previewQuery.state = { isLoading: false, data: sixStrangers() };
+      const { queryByTestId, getByTestId, container } = renderSection('some');
+
+      expect(previewQuery.calls.at(-1)?.enabled).toBe(false);
+      expect(queryByTestId('climber-logs-everyone')).toBeNull();
+      expect(queryByTestId('climber-row')).toBeNull();
+      expect(container.textContent).not.toContain('s1');
+      expect(getByTestId('climber-logs-bare').textContent).toContain('quiet-friend');
+    });
+
+    it.each(['none', 'some'] as const)('shows no cached rows from an earlier visit with no signal (%s)', (state) => {
+      connectivity.snapshot = { effectiveOffline: true, reason: 'device_offline' };
+      logsQuery.state = loaded([], NOBODY_LOGGED);
+      previewQuery.state = { isLoading: false, data: sixStrangers() };
+      const { queryByTestId } = renderSection(state);
+
+      expect(previewQuery.calls.at(-1)?.enabled).toBe(false);
+      expect(queryByTestId('climber-logs-everyone')).toBeNull();
+      expect(queryByTestId('climber-row')).toBeNull();
+    });
+
+    it("leaves out the viewer's own log even when the server sent it", () => {
+      logsQuery.state = loaded([], NOBODY_LOGGED);
+      previewQuery.state = { isLoading: false, data: [noted('viewer'), noted('s1')] };
+      const { getAllByTestId } = renderSection('some');
+
+      expect(getAllByTestId('climber-row').map((node) => node.textContent)).toEqual(['s1']);
+    });
+
+    it.each(['none', 'some'] as const)(
+      'keeps the plain empty state when nobody else logged it either (%s)',
+      (state) => {
+        logsQuery.state = loaded([], NOBODY_LOGGED);
+        previewQuery.state = { isLoading: false, data: [] };
+        const { container, queryByTestId } = renderSection(state);
+
+        expect(container.textContent).not.toContain('mobile.climberLogs.fallthrough.latestFromEveryone');
+        expect(container.textContent).not.toContain('mobile.climberLogs.seeAll');
+        expect(container.textContent).toContain('mobile.climberLogs.findClimbers');
+        expect(queryByTestId('climber-row')).toBeNull();
+      },
+    );
+
+    it('keeps the plain empty state when the request for them failed', () => {
+      logsQuery.state = loaded([], NOBODY_LOGGED);
+      previewQuery.state = { isLoading: false, data: undefined };
+      const { container } = renderSection('some');
+
+      expect(container.textContent).toContain('mobile.climberLogs.emptyNobodyLogged');
+      expect(container.textContent).toContain('mobile.climberLogs.findClimbers');
+    });
+
+    it('holds the skeleton until they land, so the card resizes once', () => {
+      logsQuery.state = loaded([], NOBODY_LOGGED);
+      previewQuery.state = { isLoading: true, data: undefined };
+      const { container, getByTestId } = renderSection('some');
+
+      expect(getByTestId('climber-logs-skeleton')).toBeTruthy();
+      expect(container.textContent).not.toContain('mobile.climberLogs.emptyNobodyLogged');
+    });
+
+    it('keeps the skeleton up from a cached "nobody logged" answer until the climb settles', () => {
+      logsQuery.state = loaded([], NOBODY_LOGGED);
+      const { container, getByTestId } = renderSection('some', false);
+
+      expect(previewQuery.calls.at(-1)?.enabled).toBe(false);
+      expect(getByTestId('climber-logs-skeleton')).toBeTruthy();
+      expect(container.textContent).not.toContain('mobile.climberLogs.emptyNobodyLogged');
+    });
+
+    describe('for a viewer who follows nobody', () => {
+      // The pitch never unmounts; only the slot under it waits.
+      const expectPitchOverSkeleton = (view: ReturnType<typeof renderSection>) => {
+        expect(view.container.textContent).toContain('mobile.climberLogs.emptyFollowNobodyTitle');
+        expect(view.container.textContent).toContain('mobile.climberLogs.findClimbers');
+        expect(view.getAllByTestId('climber-logs-skeleton-row')).toHaveLength(2);
+      };
+
+      it('keeps the pitch and its button mounted while the rows load', () => {
+        previewQuery.state = { isLoading: true, data: undefined };
+        expectPitchOverSkeleton(renderSection('none'));
+      });
+
+      it('shows the same card before the climb has settled, with no request out', () => {
+        const view = renderSection('none', false);
+
+        expect(previewQuery.calls.at(-1)?.enabled).toBe(false);
+        expectPitchOverSkeleton(view);
+      });
+
+      it('shows the same card while the viewer id is still being read', () => {
+        viewer.state = { userId: undefined, isLoading: true };
+        expectPitchOverSkeleton(renderSection('none'));
+      });
+
+      it('holds no placeholder when there is no viewer id to ask with', () => {
+        viewer.state = { userId: undefined, isLoading: false };
+        const { container, queryByTestId } = renderSection('none', false);
+
+        expect(container.textContent).toContain('mobile.climberLogs.emptyFollowNobodyTitle');
+        expect(queryByTestId('climber-logs-skeleton')).toBeNull();
+      });
+
+      it('drops the placeholder when the request failed', () => {
+        previewQuery.state = { isLoading: false, data: undefined };
+        const { container, queryByTestId } = renderSection('none');
+
+        expect(container.textContent).toContain('mobile.climberLogs.emptyFollowNobodyTitle');
+        expect(queryByTestId('climber-logs-skeleton')).toBeNull();
+      });
+
+      it('shows rows it already has without waiting for the climb to settle', () => {
+        previewQuery.state = { isLoading: false, data: sixStrangers() };
+        const { getAllByTestId, queryByTestId } = renderSection('none', false);
+
+        expect(getAllByTestId('climber-row')).toHaveLength(4);
+        expect(queryByTestId('climber-logs-skeleton')).toBeNull();
+      });
+    });
+
+    it.each(['none', 'some', 'unknown'] as const)(
+      'asks for nothing on a climb the climber is only swiping past (%s)',
+      (state) => {
+        logsQuery.state = loaded([], NOBODY_LOGGED);
+        renderSection(state, false);
+
+        expect(logsQuery.calls.at(-1)?.enabled).toBe(false);
+        expect(previewQuery.calls.at(-1)?.enabled).toBe(false);
+      },
+    );
+
+    it('shows the skeleton, not an empty card, while a first visit waits to settle', () => {
+      logsQuery.state = IDLE;
+      const { getByTestId } = renderSection('some', false);
+      expect(getByTestId('climber-logs-skeleton')).toBeTruthy();
+    });
+
+    it('asks once it is known nobody followed logged it', () => {
+      renderSection('none');
+      expect(previewQuery.calls.at(-1)).toEqual({ boardName: 'kilter', climbUuid: 'climb-1', enabled: true });
+
+      logsQuery.state = loaded([], NOBODY_LOGGED);
+      renderSection('unknown');
+      expect(previewQuery.calls.at(-1)?.enabled).toBe(true);
+    });
+
+    it('does not ask while the followed-climbers request is still out', () => {
+      logsQuery.state = { ...IDLE, fetchStatus: 'fetching', isLoading: true };
+      renderSection('some');
+      expect(previewQuery.calls.at(-1)?.enabled).toBe(false);
+    });
+
+    it('does not ask when somebody followed has logged the climb', () => {
+      logsQuery.state = loaded([log()], { climberCount: 1, senderCount: 1 });
+      const { container } = renderSection('some');
+
+      expect(previewQuery.calls.at(-1)?.enabled).toBe(false);
+      expect(container.textContent).not.toContain('mobile.climberLogs.fallthrough.latestFromEveryone');
+    });
+
+    it('does not ask when the followed-climbers request is blocked or failed', () => {
+      logsQuery.state = { status: 'error', fetchStatus: 'idle', isLoading: false, data: undefined, refetch: vi.fn() };
+      renderSection('some');
+      expect(previewQuery.calls.at(-1)?.enabled).toBe(false);
+    });
+
+    it.each(['none', 'some'] as const)('does not ask with no signal (%s)', (state) => {
+      connectivity.snapshot = { effectiveOffline: true, reason: 'device_offline' };
+      // Rows from an earlier visit are still in the cache for `some`.
+      logsQuery.state = loaded([], NOBODY_LOGGED);
+      renderSection(state);
+      expect(previewQuery.calls.at(-1)?.enabled).toBe(false);
+    });
   });
 });

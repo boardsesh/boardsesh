@@ -7,9 +7,13 @@
 // People the viewer follows always come first, and a followed climber is never
 // pushed off the card: one without a note still has their name in the footer.
 //
-// The rows come straight from `followingClimbAscents`, so what may be shown
-// (spray-wall privacy above all) is decided by the server on every request.
-// Nothing here is cached on the phone or read offline.
+// When nobody the viewer follows has logged the climb (or they follow nobody),
+// the card does not sit empty: under the message, and under a plain heading, it
+// shows the newest few logs from everyone else by the same rules.
+//
+// The rows come straight from `followingClimbAscents` and `climbLogs`, so what
+// may be shown (spray-wall privacy above all) is decided by the server on every
+// request. Nothing here is cached on the phone or read offline.
 import { memo, useCallback, useMemo, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -21,15 +25,19 @@ import { Text } from '../Text';
 import { ClimberLogRow } from './ClimberLogRow';
 import {
   describeBareNames,
+  dropKnownClimbers,
   groupClimberLogs,
   planClimberLogsCard,
   rankClimberLogGroups,
   tallyDisagreeingGrades,
   type ClimberLogGroup,
+  type ClimberLogsCardBlock,
 } from './climber-logs';
 import { getGradeLabel } from '../../lib/grade-label';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useFollowingClimbLogs } from '../../lib/graphql/hooks/use-following-climb-logs';
+import { useClimbLogsPreview } from '../../lib/graphql/hooks/use-climb-logs';
+import { useStoredUserId } from '../../hooks/use-current-user-id';
 import { useOfflineQueryState, type OfflineQueryReason } from '../../hooks/use-offline-query-state';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -47,6 +55,12 @@ type ClimberLogsSectionProps = {
    * server and never claims the viewer follows nobody.
    */
   followState: 'none' | 'some' | 'unknown';
+  /**
+   * The drawer's open animation is done and the climber has stayed on this
+   * climb for a moment (`useClimbSettled`). Nothing here asks the server before
+   * it, so a fast swipe through a queue sends no request per climb passed.
+   */
+  settled: boolean;
   onSeeAll: () => void;
   onPressClimber: (userId: string) => void;
   onFindClimbers: () => void;
@@ -59,7 +73,7 @@ const FACE_SIZE = 24;
 const FACE_CAP = 3;
 const SEPARATOR = ' · ';
 
-/** The viewer follows nobody. `children` is where a later fall-through list goes. */
+/** The viewer follows nobody. `children` is the fall-through list, under the pitch and its button. */
 export const ClimberLogsFollowNobody = memo(function ClimberLogsFollowNobody({
   onFindClimbers,
   children,
@@ -75,15 +89,19 @@ export const ClimberLogsFollowNobody = memo(function ClimberLogsFollowNobody({
       <Text variant="subheadline" color={systemColors.secondaryLabel}>
         {t('mobile.climberLogs.emptyFollowNobodyBody')}
       </Text>
-      {children}
       <View style={styles.cta}>
         <Button title={t('mobile.climberLogs.findClimbers')} variant="tonal" size="small" onPress={onFindClimbers} />
       </View>
+      {children}
     </View>
   );
 });
 
-/** The viewer follows people, and none of them has logged this climb. */
+/**
+ * The viewer follows people, and none of them has logged this climb. With a
+ * fall-through list as `children` the rows are the next thing to do, so "Find
+ * climbers" only shows when there is nothing else to offer.
+ */
 export const ClimberLogsNobodyLogged = memo(function ClimberLogsNobodyLogged({
   onFindClimbers,
   children,
@@ -98,10 +116,11 @@ export const ClimberLogsNobodyLogged = memo(function ClimberLogsNobodyLogged({
       <Text variant="subheadline" color={systemColors.secondaryLabel}>
         {t('mobile.climberLogs.emptyNobodyLogged')}
       </Text>
-      {children}
-      <View style={styles.cta}>
-        <Button title={t('mobile.climberLogs.findClimbers')} variant="tonal" size="small" onPress={onFindClimbers} />
-      </View>
+      {children ?? (
+        <View style={styles.cta}>
+          <Button title={t('mobile.climberLogs.findClimbers')} variant="tonal" size="small" onPress={onFindClimbers} />
+        </View>
+      )}
     </View>
   );
 });
@@ -285,12 +304,60 @@ function ClimberLogsSkeleton() {
   );
 }
 
+/**
+ * Climbers the viewer does not follow: a plain heading, then the same rows and
+ * footer as the followed block. Always the last thing on the card, so nobody
+ * here is ever above or between people the viewer follows. `block.rows` is
+ * already cut to the rows the followed climbers left over.
+ */
+const ClimberLogsFromEveryone = memo(function ClimberLogsFromEveryone({
+  block,
+  angle,
+  onPressClimber,
+  onSeeAll,
+}: {
+  block: ClimberLogsCardBlock;
+  angle: number;
+  onPressClimber: (userId: string) => void;
+  onSeeAll: () => void;
+}) {
+  const { t } = useTranslation('session');
+  const { systemColors } = useTheme();
+  return (
+    <View testID="climber-logs-everyone">
+      <Text variant="footnote" color={systemColors.secondaryLabel} style={[styles.strong, styles.everyoneHeading]}>
+        {t('mobile.climberLogs.fallthrough.latestFromEveryone')}
+      </Text>
+      {/* At most INLINE_CLIMBER_LOG_CAP rows on the whole card: the drawer body
+          is a plain ScrollView (docs/react-native-performance.md section 2). */}
+      {block.rows.map((group, index) => (
+        <View
+          key={group.userId}
+          style={index > 0 ? [styles.rowRule, { borderTopColor: systemColors.separator }] : undefined}
+        >
+          <ClimberLogRow group={group} boardAngle={angle} hideEarlier onPressClimber={onPressClimber} />
+        </View>
+      ))}
+      <ClimberLogsFooter
+        bareSent={block.bareSent}
+        bareTried={block.bareTried}
+        // The preview is the newest few logs, never all of them: no "+N".
+        complete={false}
+        standsAlone={block.rows.length === 0}
+        ruled={block.rows.length > 0}
+        onSeeAll={onSeeAll}
+      />
+    </View>
+  );
+});
+
 export const ClimberLogsSection = memo(function ClimberLogsSection({
   climbUuid,
   boardName,
   angle,
   climbGradeId,
   followState,
+  settled,
   onSeeAll,
   onPressClimber,
   onFindClimbers,
@@ -300,7 +367,7 @@ export const ClimberLogsSection = memo(function ClimberLogsSection({
   const { formatGradeByDifficultyId } = useGradeFormat();
   // Same key as DeferredSections' read for the collapsed Logbook line, so React
   // Query serves both from one request.
-  const query = useFollowingClimbLogs(boardName, climbUuid, { enabled: followState !== 'none' });
+  const query = useFollowingClimbLogs(boardName, climbUuid, { enabled: settled && followState !== 'none' });
   const offline = useOfflineQueryState(query);
   const { data, refetch } = query;
   const isLoading = query.isLoading;
@@ -313,12 +380,58 @@ export const ClimberLogsSection = memo(function ClimberLogsSection({
     () => rankClimberLogGroups(groupClimberLogs(items ?? [], angle, climbGradeId)),
     [items, angle, climbGradeId],
   );
-  // Rows for the climbers with something to say, capped; everyone else followed
-  // keeps a name in the footer.
-  const plan = useMemo(() => planClimberLogsCard(groups), [groups]);
   const tally = useMemo(() => tallyDisagreeingGrades(groups), [groups]);
 
-  if (followState === 'none') return <ClimberLogsFollowNobody onFindClimbers={onFindClimbers} />;
+  // The fall-through. Asked only once it is known that nobody followed has
+  // logged the climb: `none` knows without a request, the rest wait for the
+  // server's count. Every angle, so a climb with logs never shows an empty card.
+  // Waits for `settled` like the followed-climbers request: an account that
+  // follows nobody would otherwise send one of these per climb swiped past.
+  const { userId: viewerId, isLoading: viewerIdLoading } = useStoredUserId(true);
+  const nobodyFollowedLogged = followState === 'none' || data?.summary.climberCount === 0;
+  const previewWanted = nobodyFollowedLogged && !offline.isOffline;
+  const preview = useClimbLogsPreview({
+    boardName,
+    climbUuid,
+    enabled: previewWanted && settled,
+  });
+  // Only while it is wanted. A disabled query still hands back what it cached,
+  // and those rows must not show with no signal (who may see a spray wall's
+  // logs is decided per request) or once somebody followed has logged the climb.
+  const previewLogs = previewWanted ? preview.data : undefined;
+  // The rows are on their way: in flight, or about to be asked for once the
+  // climb settles and the viewer id is read. Counts the same as loading, so
+  // the card holds one placeholder from mount until the answer. Rows already
+  // cached show at once instead.
+  const previewPending =
+    previewLogs === undefined && previewWanted && (preview.isLoading || viewerIdLoading || (!settled && !!viewerId));
+  const everyoneGroups = useMemo(
+    () =>
+      // The server already leaves the viewer out; a rejected token would not.
+      // Server order (newest first) is kept.
+      groupClimberLogs(dropKnownClimbers(previewLogs ?? [], new Set(viewerId ? [viewerId] : [])), angle, climbGradeId),
+    [previewLogs, viewerId, angle, climbGradeId],
+  );
+  // Followed climbers first, always: rows for the ones with something to say,
+  // capped, and a name in the footer for the rest. Climbers the viewer does not
+  // follow only get the rows left over, in their own block under all of that.
+  const plan = useMemo(() => planClimberLogsCard(groups, everyoneGroups), [groups, everyoneGroups]);
+  // No block (nobody else logged it, no signal, or the request failed) leaves
+  // the plain message exactly as it was.
+  const fromEveryone = plan.everyone ? (
+    <ClimberLogsFromEveryone block={plan.everyone} angle={angle} onPressClimber={onPressClimber} onSeeAll={onSeeAll} />
+  ) : null;
+
+  if (followState === 'none') {
+    // The pitch and its button stay mounted the whole time. Only the slot under
+    // them waits, on a placeholder the size of the rows, so the card changes
+    // height once at most.
+    return (
+      <ClimberLogsFollowNobody onFindClimbers={onFindClimbers}>
+        {previewPending ? <ClimberLogsSkeleton /> : fromEveryone}
+      </ClimberLogsFollowNobody>
+    );
+  }
 
   if (!data) {
     // Includes an older server rejecting the document: it lands here as an
@@ -326,13 +439,18 @@ export const ClimberLogsSection = memo(function ClimberLogsSection({
     if (offline.isBlocked && offline.reason) {
       return <ClimberLogsBlocked reason={offline.reason} onRetry={handleRetry} />;
     }
-    if (isLoading) return <ClimberLogsSkeleton />;
+    // Waiting for the climb to settle counts as loading: the request follows.
+    if (isLoading || !settled) return <ClimberLogsSkeleton />;
     // Not asking yet (the viewer id is still being read): nothing honest to show.
     return null;
   }
 
   const { summary, hasMore } = data;
-  if (summary.climberCount === 0) return <ClimberLogsNobodyLogged onFindClimbers={onFindClimbers} />;
+  if (summary.climberCount === 0) {
+    // Held on the skeleton until the rows land, so the card resizes once.
+    if (previewPending) return <ClimberLogsSkeleton />;
+    return <ClimberLogsNobodyLogged onFindClimbers={onFindClimbers}>{fromEveryone}</ClimberLogsNobodyLogged>;
+  }
 
   // The counts are the server's. The grades are counted from the rows, so they
   // only show when the rows are every log there is.
@@ -368,14 +486,30 @@ export const ClimberLogsSection = memo(function ClimberLogsSection({
         </View>
       ))}
 
-      <ClimberLogsFooter
-        bareSent={plan.bareSent}
-        bareTried={plan.bareTried}
-        complete={!hasMore}
-        standsAlone={plan.rows.length === 0}
-        ruled={plan.rows.length > 0}
-        onSeeAll={onSeeAll}
-      />
+      {fromEveryone ? (
+        // Everything followed is above this line, the bare names included; the
+        // other climbers' block brings the "See all logs" button with it.
+        <>
+          {plan.bareSent.length + plan.bareTried.length > 0 ? (
+            <BareLines
+              bareSent={plan.bareSent}
+              bareTried={plan.bareTried}
+              complete={!hasMore}
+              standsAlone={plan.rows.length === 0}
+            />
+          ) : null}
+          {fromEveryone}
+        </>
+      ) : (
+        <ClimberLogsFooter
+          bareSent={plan.bareSent}
+          bareTried={plan.bareTried}
+          complete={!hasMore}
+          standsAlone={plan.rows.length === 0}
+          ruled={plan.rows.length > 0}
+          onSeeAll={onSeeAll}
+        />
+      )}
     </View>
   );
 });
@@ -393,6 +527,9 @@ const styles = StyleSheet.create({
   },
   strong: {
     fontWeight: '600',
+  },
+  everyoneHeading: {
+    paddingTop: spacing[2],
   },
   footer: {
     paddingTop: spacing[1],

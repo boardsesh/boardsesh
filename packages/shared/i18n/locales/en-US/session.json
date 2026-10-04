@@ -292,7 +292,18 @@
       "cappedNotice": "Showing the latest 100 logs.",
       "sheetSubtitle": "{{name}} · {{grade}}",
       "rowA11y": "{{name}}, {{result}}. Opens their profile.",
-      "unknownClimber": "Climber"
+      "unknownClimber": "Climber",
+      "everyone": {
+        "title": "Everyone",
+        "titleAtAngle": "Everyone at {{angle}}°",
+        "sortHint": "Newest first",
+        "empty": "No one else has logged this yet.",
+        "loadMore": "Show more logs",
+        "loadMoreError": "Couldn't load more logs."
+      },
+      "fallthrough": {
+        "latestFromEveryone": "Latest logs from everyone"
+      }
     },
     "anonymous": {
       "signInHeadline": "Log this send",

@@ -292,7 +292,18 @@
       "cappedNotice": "Les 100 dernières entrées sont affichées.",
       "sheetSubtitle": "{{name}} · {{grade}}",
       "rowA11y": "{{name}}, {{result}}. Ouvre son profil.",
-      "unknownClimber": "Grimpeur"
+      "unknownClimber": "Grimpeur",
+      "everyone": {
+        "title": "Tout le monde",
+        "titleAtAngle": "Tout le monde à {{angle}}°",
+        "sortHint": "Les plus récentes d'abord",
+        "empty": "Personne d'autre n'a encore essayé ce bloc.",
+        "loadMore": "Voir plus d'entrées",
+        "loadMoreError": "Impossible de charger plus d'entrées."
+      },
+      "fallthrough": {
+        "latestFromEveryone": "Dernières entrées de tout le monde"
+      }
     },
     "anonymous": {
       "signInHeadline": "Fais la croix",

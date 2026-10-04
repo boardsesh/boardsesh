@@ -22,7 +22,7 @@ import {
 } from '../../../db/queries/followed-authors-local';
 import { useStoredUserId } from '../../../hooks/use-current-user-id';
 import { getHttpClient } from '../client';
-import { FOLLOWING_CLIMB_LOGS_QUERY_KEY } from '../query-keys';
+import { CLIMB_LOGS_PREVIEW_QUERY_KEY, CLIMB_LOGS_QUERY_KEY, FOLLOWING_CLIMB_LOGS_QUERY_KEY } from '../query-keys';
 import { isOfflineEngineEnabled } from '../../offline-engine';
 import { updateUserFollowCaches } from './user-follow-cache';
 
@@ -35,6 +35,9 @@ export const AUTHOR_QUERY_KEYS = [
   'searchClimbsCount',
   // The play drawer's "Climber logs" card: who you follow decides whose logs it shows.
   FOLLOWING_CLIMB_LOGS_QUERY_KEY,
+  // Its "Everyone" rows leave out the people you follow, so they move too.
+  CLIMB_LOGS_QUERY_KEY,
+  CLIMB_LOGS_PREVIEW_QUERY_KEY,
 ] as const;
 // One local database has one active owner. A newer load (including an account
 // switch) supersedes older loads across hook instances. Real-SQLite race tests
