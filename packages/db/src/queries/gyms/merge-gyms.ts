@@ -297,7 +297,7 @@ async function rebuildGymVoteCounts(commandDb: MergeExecuteDb, gymUuids: string[
  *  1. Promote at most one duplicate pending claim per claimant who has no pending
  *     claim on the canonical yet and no later ownership decision superseding the
  *     claim on its original gym — moved keeping its `pending` status. A no-op
- *     approval for a current source/survivor owner is not superseded.
+ *     approval for the current survivor owner is not superseded.
  *  2. Re-point any REMAINING pending claims on the duplicates (they collided with
  *     an existing canonical claim, were extra twins, or were superseded) to the
  *     canonical AND flip them to `expired` — never delete. Their full content
@@ -333,7 +333,6 @@ async function repointClaims(
                -- Compare the selected survivor's owner independently of the source gym.
                JOIN gyms AS survivor ON survivor.id = ${canonicalGymId}
               WHERE original_gym.id = source_claim.gym_id
-                AND original_gym.owner_id <> source_claim.claimant_user_id
                 AND survivor.owner_id <> source_claim.claimant_user_id
                 AND handover.created_at > source_claim.created_at
            )
@@ -346,7 +345,6 @@ async function repointClaims(
                JOIN gyms AS survivor ON survivor.id = ${canonicalGymId}
               WHERE prior_claim.gym_id = source_claim.gym_id
                 AND prior_claim.status = 'approved'
-                AND original_gym.owner_id <> source_claim.claimant_user_id
                 AND survivor.owner_id <> source_claim.claimant_user_id
                 AND (
                   (
