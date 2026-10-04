@@ -8,7 +8,7 @@ Where avatars, gym images, beta-video thumbnails, spray wall photos and user dat
 | --- | --- | --- | --- | --- |
 | `boardsesh-user-media` | `media` | Cloudflare R2 | Public through the `media.boardsesh.com` custom domain | `beta-link-thumbnails/{instagram,tiktok}/…`, `avatars/<userId>.<ext>`, `gym-logos/<uuid>.<ext>`, `gym-photos/<uuid>.<ext>`, `feedback-screenshots/<uuid>.<ext>`, `spray-walls/<wall uuid>/<32 hex>.jpg`, and every `@<size>.jpg` resize variant |
 | `boardsesh-user-private` | `private` | Cloudflare R2 | No custom domain, therefore unreachable from the internet | `user-data-exports/<userId>/<boardType>/<isoWeek>.json`, `spray-walls/<wallUuid>/<photoId>.jpg` (+ its `@<size>.jpg` variant), `moonboard-ocr-test-data/<ts>-<uuid>/…` |
-| `boardsesh-board-snapshots` | `snapshots` | Tigris | Public on the bucket's virtual-host domain | `board-snapshots/**` — see `docs/board-snapshots.md` |
+| `boardsesh-board-snapshots` | `snapshots` | Cloudflare R2 | Public through `snapshots.boardsesh.com` after the gated publisher/reader cutover | `board-snapshots/**` — see `docs/board-snapshots.md` |
 | `boardsesh-static-assets` | — (published by CI, not the backend) | Cloudflare R2 | Public through a custom domain — `assets-r2.boardsesh.com` today, `assets.boardsesh.com` after the cutover | `static/v1/<sha256>.<ext>` — repo-owned board art, icons, brand marks; see `docs/static-assets.md` |
 
 A public spray wall's photo is the one entry whose filename is random rather than
@@ -27,7 +27,7 @@ resize variants. See `docs/spray-walls.md`.
 
 ## Why R2 and not Tigris
 
-The rest of Boardsesh's object storage is Tigris, and the obvious move for this data was Tigris too. Two measurements said otherwise.
+When user media storage was introduced, Boardsesh's other object storage used Tigris, making it the initial candidate for this data too. Two measurements said otherwise.
 
 **Tigris cannot sit behind Cloudflare.** Its docs are explicit: *"Your custom domain must point directly to Tigris without any intermediate proxy that terminates TLS, such as Cloudflare's proxy mode."* Tigris issues and renews the domain's TLS certificate off the live CNAME, so orange-clouding it breaks renewal within a couple of months. The Cloudflare Origin Rules workaround — overriding the Host header, which also sets SNI — is Enterprise-only. This is the constraint behind the "keep `assets.boardsesh.com` DNS-only" rule in `docs/cloudflare.md`; it is not a preference.
 
