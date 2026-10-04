@@ -139,7 +139,7 @@ type UseSessionRealtimeParams = {
     (queue: ClimbQueueItem[], currentClimbQueueItem?: ClimbQueueItem | null) => Promise<void>
   >;
   activeBoardRef: React.RefObject<UserBoard | null | undefined>;
-  setActiveBoardRef: React.RefObject<(board: UserBoard) => Promise<void>>;
+  setActiveBoardRef: React.RefObject<(board: UserBoard) => Promise<boolean>>;
   showToastRef: React.RefObject<(message: string, variant?: ToastVariant, duration?: number) => void>;
   tRef: React.RefObject<(key: string) => string>;
   clearSessionRef: React.RefObject<(options?: { notifyServer?: boolean }) => Promise<void>>;

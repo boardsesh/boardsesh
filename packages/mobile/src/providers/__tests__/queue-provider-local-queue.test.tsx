@@ -144,7 +144,7 @@ vi.mock('../../lib/queue-snapshot-store', () => queueSnapshotStore);
 vi.mock('../../lib/active-board-store', () => ({ getStoredActiveBoard: activeBoard.getStoredActiveBoard }));
 vi.mock('../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: activeBoard.stored }),
-  useSetActiveBoard: () => vi.fn(async () => {}),
+  useSetActiveBoard: () => vi.fn(async () => true),
 }));
 vi.mock('../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: http.request }) }));
 vi.mock('../../lib/analytics', () => ({ track: vi.fn(), registerRenderSuperProperties: vi.fn() }));

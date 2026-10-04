@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -14,6 +14,7 @@ import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { Icon } from '../../src/components/Icon';
 import { useTheme } from '../../src/providers/theme-provider';
 import { useAuth } from '../../src/providers/auth-provider';
+import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../../src/lib/auth-store';
 import { useQueueSessionId, useQueueActions } from '../../src/providers/queue-provider';
 import { useToast } from '../../src/providers/toast-provider';
 import { isNetworkError } from '@boardsesh/offline-sync/error-classification';
@@ -37,6 +38,14 @@ function boardLabelFromPath(boardPath: string): string {
 const LIVE_SESSION_JOIN_SOURCES = ['home_rail', 'board_sheet'] as const;
 type LiveSessionJoinSource = (typeof LIVE_SESSION_JOIN_SOURCES)[number];
 
+type JoinOperation = {
+  sessionId: string;
+  boardPath: string;
+  authCredentialGeneration: number;
+  wasAlreadyInSession: boolean;
+  liveSessionSource: LiveSessionJoinSource | null;
+};
+
 function parseLiveSessionJoinSource(source: string | string[] | undefined): LiveSessionJoinSource | null {
   const value = Array.isArray(source) ? source[0] : source;
   return LIVE_SESSION_JOIN_SOURCES.find((known) => known === value) ?? null;
@@ -50,9 +59,15 @@ export default function JoinSessionScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { isAuthenticated } = useAuth();
+  const isAuthenticatedRef = useRef(isAuthenticated);
+  isAuthenticatedRef.current = isAuthenticated;
+  const screenMountedRef = useRef(false);
+  const activeJoinOperationRef = useRef<JoinOperation | null>(null);
   const { showToast } = useToast();
 
   const { sessionId: activeSessionId } = useQueueSessionId();
+  const activeSessionIdRef = useRef(activeSessionId);
+  activeSessionIdRef.current = activeSessionId;
   const { joinSession, clearSession } = useQueueActions();
 
   const preview = useSessionPreview(sessionId);
@@ -61,6 +76,44 @@ export default function JoinSessionScreen() {
   const [isJoining, setIsJoining] = useState(false);
 
   const session = preview.data;
+  const currentSessionRef = useRef<{ id: string; boardPath: string } | null>(null);
+  currentSessionRef.current = session ? { id: session.id, boardPath: session.boardPath } : null;
+
+  useLayoutEffect(() => {
+    screenMountedRef.current = true;
+    return () => {
+      screenMountedRef.current = false;
+      activeJoinOperationRef.current = null;
+    };
+  }, []);
+
+  const isJoinOperationCurrent = useCallback((operation: JoinOperation): boolean => {
+    const currentSession = currentSessionRef.current;
+    return (
+      screenMountedRef.current &&
+      activeJoinOperationRef.current === operation &&
+      isAuthenticatedRef.current &&
+      currentSession?.id === operation.sessionId &&
+      currentSession.boardPath === operation.boardPath &&
+      isAuthCredentialGenerationCurrent(operation.authCredentialGeneration)
+    );
+  }, []);
+
+  const beginJoinOperation = useCallback((): JoinOperation | null => {
+    if (!session || !isAuthenticatedRef.current || !screenMountedRef.current) return null;
+    const activeOperation = activeJoinOperationRef.current;
+    if (activeOperation && isJoinOperationCurrent(activeOperation)) return null;
+    const operation = {
+      sessionId: session.id,
+      boardPath: session.boardPath,
+      authCredentialGeneration: captureAuthCredentialGeneration(),
+      wasAlreadyInSession: activeSessionIdRef.current === session.id,
+      liveSessionSource,
+    };
+    activeJoinOperationRef.current = operation;
+    setIsJoining(true);
+    return operation;
+  }, [isJoinOperationCurrent, liveSessionSource, session]);
   const hostName = useMemo(
     () => session?.users.find((sessionUser) => sessionUser.isLeader)?.username ?? t('mobileJoin.hostFallback'),
     [session, t],
@@ -81,79 +134,112 @@ export default function JoinSessionScreen() {
     return session ? boardLabelFromPath(session.boardPath) : '';
   }, [namedBoard, slugBoard.data, session]);
 
-  const performJoin = useCallback(async () => {
-    if (!session) return;
-    setIsJoining(true);
-    try {
-      const userBoard = await resolveBoardForSession(session.boardPath, {
-        // `myBoards` includes followed boards as well as owned boards; this
-        // loader verifies the signed-in profile and returns only its ownerId rows.
-        loadOwnedBoards: fetchAllMyOwnedBoards,
-        // Absorbs the narrow race the walk can't: a board with this config
-        // created on another device since the walk comes back as
-        // BOARD_DUPLICATE_CONFIG naming the board to join on instead.
-        createBoard: (input) =>
-          createBoardOrAdoptDuplicate(input, (createInput) => createBoard.mutateAsync(createInput)),
-        fetchBoardBySlug,
-      });
-      // joinSession returns early when we're already in this session, and that
-      // isn't a join the live-sessions funnel should count.
-      const alreadyInSession = activeSessionId === session.id;
-      await joinSession(session.id, { boardPath: session.boardPath, userBoard });
-      // Web fires `Session Joined` on a genuine new-session entry (board-session-
-      // bridge). The mobile equivalent is a successful deep-link join — the
-      // queue provider only emits Session Started/Ended, never Joined. Mirror
-      // web's props (session_id, board_name, layout_id). Derive from the resolved
-      // board so the event still fires for named-board (`/b/{slug}`) sessions,
-      // whose path can't be parsed.
-      const parsedBoard = parseBoardPath(session.boardPath);
-      track(SHARED_EVENTS.SessionJoined, {
-        session_id: session.id,
-        board_name: parsedBoard?.boardName ?? userBoard.boardType,
-        layout_id: parsedBoard?.layoutId ?? userBoard.layoutId,
-      });
-      // The last step of the live-sessions funnel (Shelf Viewed → Card Tapped →
-      // Live Session Joined). Only joins that started on a live-session card
-      // carry a source; invite links don't.
-      if (liveSessionSource && !alreadyInSession) {
-        track(SHARED_EVENTS.LiveSessionJoined, { source: liveSessionSource });
+  const performJoin = useCallback(
+    async (operation: JoinOperation, clearPreviousSession: boolean) => {
+      const isCurrent = () => isJoinOperationCurrent(operation);
+      if (!isCurrent()) return;
+      try {
+        if (clearPreviousSession) {
+          await clearSession({ notifyServer: true });
+          if (!isCurrent()) return;
+        }
+
+        const userBoard = await resolveBoardForSession(operation.boardPath, {
+          isOperationCurrent: isCurrent,
+          // `myBoards` includes followed boards as well as owned boards; this
+          // loader verifies the signed-in profile and returns only its ownerId rows.
+          loadOwnedBoards: fetchAllMyOwnedBoards,
+          // Absorbs the narrow race the walk can't: a board with this config
+          // created on another device since the walk comes back as
+          // BOARD_DUPLICATE_CONFIG naming the board to join on instead.
+          createBoard: (input) =>
+            createBoardOrAdoptDuplicate(input, (createInput) => createBoard.mutateAsync(createInput), isCurrent),
+          fetchBoardBySlug,
+        });
+        if (!isCurrent()) return;
+        // joinSession returns early when we're already in this session, and that
+        // isn't a join the live-sessions funnel should count.
+        const joined = await joinSession(operation.sessionId, {
+          boardPath: operation.boardPath,
+          userBoard,
+          isOperationCurrent: isCurrent,
+        });
+        if (!joined || !isCurrent()) return;
+        // Web fires `Session Joined` on a genuine new-session entry (board-session-
+        // bridge). The mobile equivalent is a successful deep-link join — the
+        // queue provider only emits Session Started/Ended, never Joined. Mirror
+        // web's props (session_id, board_name, layout_id). Derive from the resolved
+        // board so the event still fires for named-board (`/b/{slug}`) sessions,
+        // whose path can't be parsed.
+        const parsedBoard = parseBoardPath(operation.boardPath);
+        track(SHARED_EVENTS.SessionJoined, {
+          session_id: operation.sessionId,
+          board_name: parsedBoard?.boardName ?? userBoard.boardType,
+          layout_id: parsedBoard?.layoutId ?? userBoard.layoutId,
+        });
+        // The last step of the live-sessions funnel (Shelf Viewed → Card Tapped →
+        // Live Session Joined). Only joins that started on a live-session card
+        // carry a source; invite links don't.
+        if (operation.liveSessionSource && !operation.wasAlreadyInSession) {
+          track(SHARED_EVENTS.LiveSessionJoined, { source: operation.liveSessionSource });
+        }
+        // Land on the Record tab so the user drops straight into the joined session.
+        router.replace('/(tabs)/record');
+      } catch (error) {
+        if (!isCurrent()) return;
+        if (__DEV__) console.warn('[join] failed to join session', error);
+        // Resolving the session's board needs the network, so a join attempted with
+        // no signal fails on the transport rather than on anything the climber did.
+        // Saying so is the difference between "move to where you have bars" and a
+        // generic failure they can only retry blindly.
+        showToast(isNetworkError(error) ? t('mobileJoin.offlineError') : t('mobileJoin.joinError'), 'error');
+      } finally {
+        if (screenMountedRef.current && activeJoinOperationRef.current === operation) {
+          activeJoinOperationRef.current = null;
+          setIsJoining(false);
+        }
       }
-      // Land on the Record tab so the user drops straight into the joined session.
-      router.replace('/(tabs)/record');
-    } catch (error) {
-      if (__DEV__) console.warn('[join] failed to join session', error);
-      // Resolving the session's board needs the network, so a join attempted with
-      // no signal fails on the transport rather than on anything the climber did.
-      // Saying so is the difference between "move to where you have bars" and a
-      // generic failure they can only retry blindly.
-      showToast(isNetworkError(error) ? t('mobileJoin.offlineError') : t('mobileJoin.joinError'), 'error');
-      setIsJoining(false);
-    }
-  }, [session, activeSessionId, createBoard, joinSession, liveSessionSource, router, showToast, t]);
+    },
+    [clearSession, createBoard, isJoinOperationCurrent, joinSession, liveSessionSource, router, showToast, t],
+  );
 
   const handleJoinPress = useCallback(() => {
-    if (!session) return;
+    if (!session || !isAuthenticatedRef.current) return;
     // Already in a different session — confirm the switch before clearing it.
     if (activeSessionId && activeSessionId !== session.id) {
+      const confirmationGeneration = captureAuthCredentialGeneration();
+      const confirmedSessionId = session.id;
+      const confirmedBoardPath = session.boardPath;
+      const confirmedActiveSessionId = activeSessionId;
       Alert.alert(t('mobileJoin.switchTitle'), t('mobileJoin.switchBody'), [
         { text: t('mobileJoin.cancel'), style: 'cancel' },
         {
           text: t('mobileJoin.join'),
           style: 'destructive',
           onPress: () => {
-            void (async () => {
-              // notifyServer: leave session A on the backend before joining B so
-              // peers see the departure now, not after the 60s disconnect grace.
-              await clearSession({ notifyServer: true });
-              await performJoin();
-            })();
+            const currentSession = currentSessionRef.current;
+            if (
+              !isAuthenticatedRef.current ||
+              !isAuthCredentialGenerationCurrent(confirmationGeneration) ||
+              currentSession?.id !== confirmedSessionId ||
+              currentSession.boardPath !== confirmedBoardPath ||
+              activeSessionIdRef.current !== confirmedActiveSessionId
+            ) {
+              return;
+            }
+            const operation = beginJoinOperation();
+            if (operation) void performJoin(operation, true);
           },
         },
       ]);
       return;
     }
-    void performJoin();
-  }, [session, activeSessionId, clearSession, performJoin, t]);
+    const operation = beginJoinOperation();
+    if (operation) void performJoin(operation, false);
+  }, [activeSessionId, beginJoinOperation, performJoin, session, t]);
+
+  const activeJoinOperation = activeJoinOperationRef.current;
+  const isCurrentJoinPending = isJoining && activeJoinOperation !== null && isJoinOperationCurrent(activeJoinOperation);
 
   const containerStyle = [styles.container, { backgroundColor: systemColors.background, paddingTop: insets.top }];
 
@@ -260,15 +346,15 @@ export default function JoinSessionScreen() {
             title={t('mobileJoin.join')}
             variant="filled"
             size="large"
-            loading={isJoining}
-            disabled={isJoining}
+            loading={isCurrentJoinPending}
+            disabled={isCurrentJoinPending}
             onPress={handleJoinPress}
           />
           <Button
             title={t('mobileJoin.cancel')}
             variant="text"
             size="large"
-            disabled={isJoining}
+            disabled={isCurrentJoinPending}
             onPress={() => router.back()}
           />
         </View>

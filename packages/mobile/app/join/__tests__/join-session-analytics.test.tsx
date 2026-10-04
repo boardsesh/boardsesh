@@ -7,9 +7,10 @@ const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 
 const queue = vi.hoisted(() => ({
   sessionId: null as string | null,
-  joinSession: vi.fn(async () => {}),
+  joinSession: vi.fn(async () => true),
   clearSession: vi.fn(async () => {}),
 }));
+const authGeneration = vi.hoisted(() => ({ value: 0 }));
 
 const router = vi.hoisted(() => ({ replace: vi.fn(), back: vi.fn() }));
 // The route's search params. `source` is set by a live-session card.
@@ -86,6 +87,10 @@ vi.mock('../../../src/providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: {}, brandColors: {} }),
 }));
 vi.mock('../../../src/providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
+vi.mock('../../../src/lib/auth-store', () => ({
+  captureAuthCredentialGeneration: () => authGeneration.value,
+  isAuthCredentialGenerationCurrent: (generation: number) => generation === authGeneration.value,
+}));
 vi.mock('../../../src/providers/queue-provider', () => ({
   useQueueSessionId: () => ({ sessionId: queue.sessionId }),
   useQueueActions: () => ({
@@ -114,6 +119,7 @@ import JoinSessionScreen from '../[sessionId]';
 
 beforeEach(() => {
   analytics.track.mockClear();
+  authGeneration.value = 0;
   queue.sessionId = null;
   queue.joinSession.mockClear();
   router.replace.mockClear();
