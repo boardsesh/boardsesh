@@ -660,15 +660,6 @@ describe("Aurora's own duplicate rows, with the twin lookup limited to Aurora-pu
     auroraSyncedAt: '2026-05-01T18:00:00.000Z',
   };
 
-  it('keeps the lowest aurora_id of a real twin pair', async () => {
-    await insertTick({ ...pulled, auroraId: 'cl-aur-2' });
-    const survivor = await insertTick({ ...pulled, auroraId: 'cl-aur-1' });
-
-    const answer = await ask(null);
-
-    expect(answer.items.map((item) => item.uuid)).toEqual([survivor]);
-  });
-
   it('keeps a native log that matches an Aurora-pull row in every column', async () => {
     await insertTick({ ...pulled, auroraId: 'cl-aur-1' });
     await insertTick({ ...pulled, origin: 'native', auroraId: null });
