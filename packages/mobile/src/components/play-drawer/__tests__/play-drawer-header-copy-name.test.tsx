@@ -79,6 +79,9 @@ vi.mock('../../ClimbAttributeIcons', () => ({ ClimbAttributeIcons: () => createE
 // `react-native` stub can't satisfy — and the grade glyphs are not what it tests.
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }) }));
 
+// The real chip reads the theme provider, which this suite does not stand up.
+vi.mock('../../DraftChip', () => ({ DraftChip: () => createElement('i', { 'data-chip': 'draft' }) }));
+
 import { PlayDrawerHeader } from '../PlayDrawerHeader';
 
 const baseProps = {
@@ -153,5 +156,25 @@ describe('PlayDrawerHeader personal grade', () => {
   it('pins the trailing flank so the centred name stops re-measuring per climb', () => {
     const { container } = render(createElement(PlayDrawerHeader, baseProps));
     expect(container.querySelector('[data-trailing-min-width]')?.getAttribute('data-trailing-min-width')).toBe('72');
+  });
+});
+
+// #5954: a draft is left out of the Climbs list, so the drawer has to say why the
+// climb in front of you is not in it.
+describe('PlayDrawerHeader draft chip', () => {
+  it('marks a draft beside the name', () => {
+    const { container } = render(createElement(PlayDrawerHeader, { ...baseProps, isDraft: true }));
+    expect(container.querySelector('[data-chip="draft"]')).not.toBeNull();
+  });
+
+  it('leaves a published climb unmarked, and one that does not say', () => {
+    expect(
+      render(createElement(PlayDrawerHeader, { ...baseProps, isDraft: false })).container.querySelector(
+        '[data-chip="draft"]',
+      ),
+    ).toBeNull();
+    expect(
+      render(createElement(PlayDrawerHeader, baseProps)).container.querySelector('[data-chip="draft"]'),
+    ).toBeNull();
   });
 });

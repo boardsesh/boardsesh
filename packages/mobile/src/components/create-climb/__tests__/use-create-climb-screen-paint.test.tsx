@@ -14,7 +14,7 @@ const board = vi.hoisted(() => ({
   updateClimb: vi.fn(),
 }));
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
-const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn() }));
+const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn(), refreshAuthoredClimb: vi.fn() }));
 const router = vi.hoisted(() => ({ push: vi.fn() }));
 
 const DEFAULT_HOLDS = { 1: { state: 'STARTING' }, 2: { state: 'HAND' }, 3: { state: 'FINISH' } };
@@ -93,7 +93,10 @@ vi.mock('../../../lib/graphql/hooks', () => ({
   useClimb: () => ({ data: undefined }),
 }));
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueueActions: () => ({ setCurrentClimb: queue.setCurrentClimb }),
+  useQueueActions: () => ({
+    setCurrentClimb: queue.setCurrentClimb,
+    refreshAuthoredClimb: queue.refreshAuthoredClimb,
+  }),
 }));
 vi.mock('../../../providers/bluetooth-provider', () => ({
   useOptionalBluetoothContext: () => null,

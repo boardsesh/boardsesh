@@ -914,3 +914,151 @@ describe('REGRADE_CLIMBS', () => {
     expect(result.queue[1].climb.angle).toBe(25);
   });
 });
+
+describe('REFRESH_AUTHORED_CLIMB', () => {
+  // The setter saved a climb again from the editor. DELTA_UPDATE_CURRENT_CLIMB
+  // deliberately leaves an already-current item alone, and never rewrites a slot
+  // already in the queue — so this is what corrects the stale copies.
+  const publishedPatch = {
+    name: 'Renamed',
+    frames: 'p1r12p2r14',
+    is_draft: false,
+    published_at: '2026-10-03T10:00:00.000Z',
+  };
+
+  it('refreshes the current item and its queue slot', () => {
+    const draft = makeClimbQueueItem({
+      uuid: 'climb-a',
+      climb: { uuid: 'climb-a', name: 'First go', frames: 'p1r12', is_draft: true, published_at: null },
+    });
+    const state = makeState({ queue: [draft], currentClimbQueueItem: draft });
+
+    const result = queueReducer(state, {
+      type: 'REFRESH_AUTHORED_CLIMB',
+      payload: { climbUuid: 'climb-a', patch: publishedPatch },
+    });
+
+    expect(result.currentClimbQueueItem?.climb).toMatchObject(publishedPatch);
+    expect(result.queue[0].climb).toMatchObject(publishedPatch);
+  });
+
+  it('refreshes a queued copy that is not the current climb, and leaves the current one alone', () => {
+    const other = makeClimbQueueItem({ uuid: 'other' });
+    const draft = makeClimbQueueItem({ uuid: 'climb-a', climb: { uuid: 'climb-a', is_draft: true } });
+    const state = makeState({ queue: [other, draft], currentClimbQueueItem: other });
+
+    const result = queueReducer(state, {
+      type: 'REFRESH_AUTHORED_CLIMB',
+      payload: { climbUuid: 'climb-a', patch: publishedPatch },
+    });
+
+    expect(result.queue[1].climb.is_draft).toBe(false);
+    expect(result.queue[0]).toBe(other);
+    expect(result.currentClimbQueueItem).toBe(other);
+  });
+
+  it('matches on the climb, so a climb queued twice is corrected in both slots', () => {
+    const first = makeClimbQueueItem({ uuid: 'slot-1', climb: { uuid: 'climb-a', is_draft: true } });
+    const second = makeClimbQueueItem({ uuid: 'slot-2', climb: { uuid: 'climb-a', is_draft: true } });
+    const state = makeState({ queue: [first, second], currentClimbQueueItem: second });
+
+    const result = queueReducer(state, {
+      type: 'REFRESH_AUTHORED_CLIMB',
+      payload: { climbUuid: 'climb-a', patch: publishedPatch },
+    });
+
+    expect(result.queue.map((item) => item.climb.is_draft)).toEqual([false, false]);
+    expect(result.currentClimbQueueItem?.climb.is_draft).toBe(false);
+    // Slot identity and order are what the session state hash covers.
+    expect(result.queue.map((item) => item.uuid)).toEqual(['slot-1', 'slot-2']);
+  });
+
+  it('keeps what the editor does not author: grade, sends, mirroring, attribution', () => {
+    const queued = makeClimbQueueItem({
+      uuid: 'climb-a',
+      addedBy: 'user-7',
+      climb: {
+        uuid: 'climb-a',
+        difficulty: '6c/V5',
+        ascensionist_count: 12,
+        quality_average: '3.5',
+        mirrored: true,
+        angle: 40,
+        is_draft: true,
+      },
+    });
+    const state = makeState({ queue: [queued], currentClimbQueueItem: queued });
+
+    const result = queueReducer(state, {
+      type: 'REFRESH_AUTHORED_CLIMB',
+      payload: { climbUuid: 'climb-a', patch: publishedPatch },
+    });
+
+    expect(result.currentClimbQueueItem).toMatchObject({ uuid: 'climb-a', addedBy: 'user-7' });
+    expect(result.currentClimbQueueItem?.climb).toMatchObject({
+      difficulty: '6c/V5',
+      ascensionist_count: 12,
+      quality_average: '3.5',
+      mirrored: true,
+      angle: 40,
+    });
+  });
+
+  it('does not touch the echo-suppression list or the playlist source', () => {
+    const draft = makeClimbQueueItem({ uuid: 'climb-a', climb: { uuid: 'climb-a', is_draft: true } });
+    const state = makeState({
+      queue: [draft],
+      currentClimbQueueItem: draft,
+      pendingCurrentClimbUpdates: ['corr-1'],
+    });
+
+    const result = queueReducer(state, {
+      type: 'REFRESH_AUTHORED_CLIMB',
+      payload: { climbUuid: 'climb-a', patch: publishedPatch },
+    });
+
+    expect(result.pendingCurrentClimbUpdates).toBe(state.pendingCurrentClimbUpdates);
+    expect(result.playlistSuggestionSource).toBe(state.playlistSuggestionSource);
+  });
+
+  it('returns the same state when the climb is not queued', () => {
+    const other = makeClimbQueueItem({ uuid: 'other' });
+    const state = makeState({ queue: [other], currentClimbQueueItem: other });
+
+    const result = queueReducer(state, {
+      type: 'REFRESH_AUTHORED_CLIMB',
+      payload: { climbUuid: 'climb-a', patch: publishedPatch },
+    });
+
+    expect(result).toBe(state);
+  });
+
+  it('returns the same state when the queued copy already matches', () => {
+    const published = makeClimbQueueItem({ uuid: 'climb-a', climb: { uuid: 'climb-a', ...publishedPatch } });
+    const state = makeState({ queue: [published], currentClimbQueueItem: published });
+
+    const result = queueReducer(state, {
+      type: 'REFRESH_AUTHORED_CLIMB',
+      payload: { climbUuid: 'climb-a', patch: publishedPatch },
+    });
+
+    expect(result).toBe(state);
+  });
+
+  it('leaves the same-uuid short-circuit of DELTA_UPDATE_CURRENT_CLIMB as it was', () => {
+    // The save path still sends this first. It must keep ignoring the payload and
+    // keep seeding the correlationId that suppresses the server echo.
+    const draft = makeClimbQueueItem({ uuid: 'climb-a', climb: { uuid: 'climb-a', is_draft: true } });
+    const resaved = makeClimbQueueItem({ uuid: 'climb-a', climb: { uuid: 'climb-a', is_draft: false } });
+    const state = makeState({ queue: [draft], currentClimbQueueItem: draft });
+
+    const result = queueReducer(state, {
+      type: 'DELTA_UPDATE_CURRENT_CLIMB',
+      payload: { item: resaved, shouldAddToQueue: true, isServerEvent: false, correlationId: 'corr-9' },
+    });
+
+    expect(result.currentClimbQueueItem).toBe(draft);
+    expect(result.queue[0]).toBe(draft);
+    expect(result.pendingCurrentClimbUpdates).toEqual(['corr-9']);
+  });
+});

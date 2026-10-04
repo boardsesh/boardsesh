@@ -26,6 +26,7 @@ import {
 } from '@boardsesh/queue';
 import type {
   Climb,
+  ClimbAuthoredPatch,
   QueueSearchParams,
   ClimbQueueItem,
   PlaylistSuggestionSource,
@@ -1679,6 +1680,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     [dispatchSetCurrent],
   );
 
+  // The editor saved a climb that is already in the queue. See the reducer's
+  // REFRESH_AUTHORED_CLIMB for why this is not folded into setCurrentClimb.
+  const refreshAuthoredClimb = useCallback((climbUuid: string, patch: ClimbAuthoredPatch) => {
+    dispatch({ type: 'REFRESH_AUTHORED_CLIMB', payload: { climbUuid, patch } });
+  }, []);
+
   // One skip run gets one notice. A held swipe can fire nextClimb twice for the
   // same current item before the dispatch commits — that is one run — so latch
   // it here and clear the latch whenever the current climb changes, which is the
@@ -1950,6 +1957,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       getQueueSnapshot,
       appendGeneratedSession,
       setCurrentClimb,
+      refreshAuthoredClimb,
       nextClimb,
       previousClimb,
       dispatchWidgetNavigation,
@@ -1978,6 +1986,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       getQueueSnapshot,
       appendGeneratedSession,
       setCurrentClimb,
+      refreshAuthoredClimb,
       nextClimb,
       previousClimb,
       dispatchWidgetNavigation,

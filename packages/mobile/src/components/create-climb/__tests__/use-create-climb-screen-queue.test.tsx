@@ -29,7 +29,7 @@ const cache = vi.hoisted(() => ({ invalidateQueries: vi.fn() }));
 const draftStore = vi.hoisted(() => ({ clearDraft: vi.fn(async () => {}) }));
 /** The climb `useClimb` answers with when the editor is opened on an existing one. */
 const edit = vi.hoisted(() => ({ climb: undefined as Record<string, unknown> | undefined }));
-const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn() }));
+const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn(), refreshAuthoredClimb: vi.fn() }));
 const router = vi.hoisted(() => ({ push: vi.fn() }));
 
 const createClimb = vi.hoisted(() => ({
@@ -101,7 +101,10 @@ vi.mock('../../../lib/graphql/hooks', () => ({
   useClimb: () => ({ data: edit.climb }),
 }));
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueueActions: () => ({ setCurrentClimb: queue.setCurrentClimb }),
+  useQueueActions: () => ({
+    setCurrentClimb: queue.setCurrentClimb,
+    refreshAuthoredClimb: queue.refreshAuthoredClimb,
+  }),
 }));
 vi.mock('../../../providers/bluetooth-provider', () => ({
   useOptionalBluetoothContext: () => null,
@@ -128,7 +131,8 @@ vi.mock('../brush-roles', () => ({
   getPaintRoles: () => ['HAND', 'STARTING', 'FINISH'],
 }));
 
-import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
+import { initialState, queueReducer } from '@boardsesh/queue';
+import type { Climb, ClimbAuthoredPatch, ClimbQueueItem, QueueState } from '@boardsesh/queue';
 import { DEFAULT_PACE_MS } from '@boardsesh/playback-react';
 import { climbToQueueItem, toClimbInput } from '../../../lib/climb-to-queue-item';
 import { useCreateClimbScreen } from '../use-create-climb-screen';
@@ -143,7 +147,8 @@ function lastQueuedItem(): ClimbQueueItem {
 
 beforeEach(() => {
   toast.showToast.mockClear();
-  queue.setCurrentClimb.mockClear();
+  queue.setCurrentClimb.mockReset();
+  queue.refreshAuthoredClimb.mockReset();
   router.push.mockClear();
   cryptoMock.randomUUID.mockClear();
   board.isAuthenticated = true;
@@ -681,5 +686,111 @@ describe('climbToQueueItem board identity at the queue boundary', () => {
       is_draft: false,
       published_at: '2026-07-01T00:00:00Z',
     });
+  });
+});
+
+// A climb saved twice. `setCurrentClimb` reaches the reducer as a LOCAL
+// DELTA_UPDATE_CURRENT_CLIMB, whose same-uuid branch deliberately keeps the item
+// it already has, and whose add is skipped for a slot already in the queue. So
+// the second save used to leave the first save's copy in place — and with it the
+// Draft chip on a climb that had just gone public (#5954 review).
+//
+// Runs the REAL queue reducer, driven the way the provider drives it. A mocked
+// `setCurrentClimb` cannot see this bug: it records the fresh item it was handed,
+// which is exactly the item the reducer throws away.
+describe('a re-saved climb is refreshed in the queue', () => {
+  let queueState: QueueState;
+  let correlationCounter = 0;
+
+  beforeEach(() => {
+    queueState = initialState({});
+    correlationCounter = 0;
+    // What the provider's setCurrentClimb dispatches (see dispatchSetCurrent).
+    queue.setCurrentClimb.mockImplementation((item: ClimbQueueItem) => {
+      queueState = queueReducer(queueState, {
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: {
+          item,
+          shouldAddToQueue: true,
+          insertAfterCurrent: true,
+          isServerEvent: false,
+          correlationId: `corr-${++correlationCounter}`,
+        },
+      });
+    });
+    queue.refreshAuthoredClimb.mockImplementation((climbUuid: string, patch: ClimbAuthoredPatch) => {
+      queueState = queueReducer(queueState, { type: 'REFRESH_AUTHORED_CLIMB', payload: { climbUuid, patch } });
+    });
+    board.saveClimb.mockResolvedValue({ uuid: 'saved-1', createdAt: null, publishedAt: null, isDraft: true });
+    board.updateClimb.mockResolvedValue({
+      uuid: 'saved-1',
+      createdAt: null,
+      publishedAt: '2026-10-03T10:00:00.000Z',
+      isDraft: false,
+    });
+  });
+
+  async function saveDraftThenPublish(betweenSaves: () => void = () => {}) {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.setName('Slab problem'));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(queueState.currentClimbQueueItem?.climb.is_draft).toBe(true);
+
+    betweenSaves();
+
+    act(() => {
+      result.current.setName('Slab problem, final');
+      result.current.setIsDraft(false);
+    });
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(board.updateClimb).toHaveBeenCalledTimes(1);
+  }
+
+  it('drops the draft state from the current item and its slot when the draft is current', async () => {
+    await saveDraftThenPublish();
+
+    expect(queueState.currentClimbQueueItem?.climb).toMatchObject({
+      uuid: 'saved-1',
+      name: 'Slab problem, final',
+      is_draft: false,
+      published_at: '2026-10-03T10:00:00.000Z',
+    });
+    expect(queueState.queue).toHaveLength(1);
+    expect(queueState.queue[0].climb).toMatchObject({ name: 'Slab problem, final', is_draft: false });
+  });
+
+  it('drops it from the queue slot too when the draft is queued but not current', async () => {
+    const somethingElse = climbToQueueItem(
+      { uuid: 'other-climb', name: 'Warm up', frames: 'p9r12', angle: 40 } as Climb,
+      { uuid: 'other-slot' },
+    );
+
+    await saveDraftThenPublish(() => {
+      // The climber moved on to another climb between the two saves.
+      queue.setCurrentClimb(somethingElse);
+      expect(queueState.currentClimbQueueItem?.uuid).toBe('other-slot');
+      expect(queueState.queue.map((item) => item.climb.uuid)).toContain('saved-1');
+    });
+
+    // The publish makes it current again, and no stale copy is left behind it.
+    expect(queueState.currentClimbQueueItem?.climb).toMatchObject({ uuid: 'saved-1', is_draft: false });
+    const copies = queueState.queue.filter((item) => item.climb.uuid === 'saved-1');
+    expect(copies).toHaveLength(1);
+    expect(copies[0].climb).toMatchObject({
+      name: 'Slab problem, final',
+      is_draft: false,
+      published_at: '2026-10-03T10:00:00.000Z',
+    });
+  });
+
+  it('seeds the echo-suppression id for the re-save, as a re-assert of the current climb always has', async () => {
+    await saveDraftThenPublish();
+    // One id per setCurrentClimb. The second came through the same-uuid branch.
+    expect(queueState.pendingCurrentClimbUpdates).toEqual(['corr-1', 'corr-2']);
   });
 });

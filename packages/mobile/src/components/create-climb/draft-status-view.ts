@@ -19,6 +19,15 @@ export type DraftStatusView = {
    * The row's live region is `none`; this drives a rate-limited announcement.
    */
   announce: boolean;
+  /**
+   * True for a warning that only says what a PUBLISH still needs (a start and a
+   * finish, or the setter grade). It describes ordinary work in progress rather
+   * than something that went wrong, so it gives its line box up to the hold
+   * heatmap's legend while the heat is on. On a spray wall, where Save publishes
+   * by default, one of these is up from the first hold until the climb is
+   * complete — which is exactly when the heatmap is in use.
+   */
+  yieldsToHeatmap?: boolean;
 };
 
 export type DraftStatusState = {
@@ -34,12 +43,19 @@ export type DraftStatusState = {
   /** Publishing is selected but the climb has no start or no finish hold. */
   publishBlocked: boolean;
   /**
-   * The publish is blocked by the missing SETTER GRADE rather than by the holds
-   * (a spray wall, which has no crowd grade to fall back on). Separate because a
-   * line that says "add a start and a finish" to somebody who has both is worse
-   * than no line at all.
+   * The holds are fine and the setter grade is what is still missing (a spray
+   * wall, which has no crowd grade to fall back on). Not a blocked publish: Save
+   * stays enabled and its tap opens the grade rail (#5954). This line is the
+   * passive half of that prompt, for anyone who reads before they tap.
    */
-  publishBlockedByGrade?: boolean;
+  gradeNeededToPublish?: boolean;
+  /**
+   * Where the "Save as draft" switch sits. Decides only the wording of the two
+   * "it is saved" lines: with the switch off, calling a climb a draft is wrong —
+   * and on a spray wall it is off from the start. Absent reads as a draft, which
+   * is what every caller meant before the switch had a second default.
+   */
+  isDraft?: boolean;
 };
 
 /**
@@ -71,17 +87,38 @@ export function deriveDraftStatusView(state: DraftStatusState, t: TranslateDraft
   // this line is what names the missing requirement.
   if (state.publishBlocked) {
     return {
-      text: state.publishBlockedByGrade ? t('mobile.create.publish.gradeBlocked') : t('mobile.create.publish.blocked'),
+      text: t('mobile.create.publish.blocked'),
       tone: 'warning',
+      announce: true,
+      yieldsToHeatmap: true,
+    };
+  }
+
+  if (state.gradeNeededToPublish) {
+    return {
+      text: t('mobile.create.publish.gradeBlocked'),
+      tone: 'warning',
+      announce: true,
+      yieldsToHeatmap: true,
+    };
+  }
+
+  const savingAsDraft = state.isDraft ?? true;
+
+  if (state.hasSavedClimb) {
+    if (state.hasUnsavedEdits) {
+      return { text: t('mobile.create.autosave.unsyncedEdits'), tone: 'muted', announce: false };
+    }
+    return {
+      text: savingAsDraft ? t('mobile.create.autosave.inAccount') : t('mobile.create.autosave.inAccountPublish'),
+      tone: 'muted',
       announce: true,
     };
   }
 
-  if (state.hasSavedClimb) {
-    return state.hasUnsavedEdits
-      ? { text: t('mobile.create.autosave.unsyncedEdits'), tone: 'muted', announce: false }
-      : { text: t('mobile.create.autosave.inAccount'), tone: 'muted', announce: true };
-  }
-
-  return { text: t('mobile.create.autosave.onDevice'), tone: 'muted', announce: false };
+  return {
+    text: savingAsDraft ? t('mobile.create.autosave.onDevice') : t('mobile.create.autosave.onDevicePublish'),
+    tone: 'muted',
+    announce: false,
+  };
 }

@@ -17,6 +17,7 @@ import { splitGradeLabel } from '@boardsesh/play-view';
 import { useTheme } from '../providers/theme-provider';
 import { Icon } from './Icon';
 import { ClimbAttributeIcons } from './ClimbAttributeIcons';
+import { DraftChip, climbChipStyles } from './DraftChip';
 import { ClimbPlaylistChips } from './ClimbPlaylistChips';
 import { isClimbResolved } from '../lib/queue-climb-resolution';
 import { useIsClimbFavorited } from '../hooks/use-is-climb-favorited';
@@ -185,7 +186,7 @@ const HiddenChip = React.memo(function HiddenChip() {
 
   return (
     <View
-      style={[styles.nameRowChip, { backgroundColor: systemColors.fill }]}
+      style={[climbChipStyles.chip, styles.nameRowChip, { backgroundColor: systemColors.fill }]}
       accessibilityRole="text"
       accessibilityLabel={t('mobile.hidden.chip')}
       testID="climb-row-hidden-chip"
@@ -216,7 +217,7 @@ const LostHoldsChip = React.memo(function LostHoldsChip({ count }: { count: numb
 
   return (
     <View
-      style={[styles.nameRowChip, { backgroundColor: systemColors.fill }]}
+      style={[climbChipStyles.chip, styles.nameRowChip, { backgroundColor: systemColors.fill }]}
       accessibilityRole="text"
       accessibilityLabel={t('mobile.lostHolds.chipAria', { count })}
       testID="climb-row-lost-holds-chip"
@@ -336,7 +337,7 @@ const LiveClimbSubtitle = React.memo(function LiveClimbSubtitle({
     qualityAverage,
   });
   const parts: string[] = [];
-  if (isDraft) parts.push(t('createClimbForm.draftBadge'));
+  // A draft says so with the chip beside its name (DraftChip), not in this line.
   if (!isDraft && liveStats.ascensionistCount > 0) {
     parts.push(formatSends(liveStats.ascensionistCount, t));
   }
@@ -544,6 +545,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
             characteristics={climb.characteristics}
             isNoMatch={climb.is_no_match}
           />
+          {climb.is_draft === true ? <DraftChip style={styles.nameRowChip} testID="climb-row-draft-chip" /> : null}
           {climb.is_hidden ? <HiddenChip /> : null}
           {typeof climb.missingHoldCount === 'number' && climb.missingHoldCount > 0 ? (
             <LostHoldsChip count={climb.missingHoldCount} />
@@ -620,17 +622,10 @@ const styles = StyleSheet.create({
     // Shrink so the name (not the trailing attribute glyphs) absorbs truncation.
     flexShrink: 1,
   },
-  // Shared by HiddenChip and LostHoldsChip — one chip shape in the name row.
+  // The chip shape itself is `climbChipStyles.chip`, shared with DraftChip; this
+  // is only where a chip sits in the name row.
   nameRowChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
     marginLeft: 6,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 4,
-    // Never absorbs the row's truncation — the name does (see `climbName`).
-    flexShrink: 0,
   },
   subtitle: {
     opacity: 0.6,

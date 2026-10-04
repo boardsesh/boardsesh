@@ -765,6 +765,8 @@
       "autosave": {
         "onDevice": "Borrador guardado en este teléfono",
         "inAccount": "Borrador guardado en tu cuenta",
+        "onDevicePublish": "Guardado en este teléfono",
+        "inAccountPublish": "Guardado en tu cuenta",
         "unsyncedEdits": "Los últimos cambios están solo en este teléfono",
         "notStored": "Inicia sesión para guardar este borrador",
         "saveFailed": "No se pudo guardar en tu cuenta. Toca Guardar para reintentar.",

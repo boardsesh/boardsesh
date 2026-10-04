@@ -22,7 +22,7 @@ const board = vi.hoisted(() => ({
   isDuplicateClimbError: vi.fn((_err: unknown) => false),
 }));
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
-const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn() }));
+const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn(), refreshAuthoredClimb: vi.fn() }));
 const router = vi.hoisted(() => ({ push: vi.fn() }));
 // Edit mode seeds a savedClimb from `useClimb`.
 const editClimb = vi.hoisted(() => ({ data: undefined as unknown }));
@@ -96,7 +96,10 @@ vi.mock('../../../lib/graphql/hooks', () => ({
   useClimb: () => ({ data: editClimb.data }),
 }));
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueueActions: () => ({ setCurrentClimb: queue.setCurrentClimb }),
+  useQueueActions: () => ({
+    setCurrentClimb: queue.setCurrentClimb,
+    refreshAuthoredClimb: queue.refreshAuthoredClimb,
+  }),
 }));
 vi.mock('../../../providers/bluetooth-provider', () => ({
   useOptionalBluetoothContext: () => null,

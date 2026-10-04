@@ -20,7 +20,7 @@ const boardActions = vi.hoisted(() => ({ saveClimb: vi.fn(), updateClimb: vi.fn(
 const forkSeed = vi.hoisted(() => ({ frame: {} as Record<number, { state: string }> }));
 /** What the stubbed `createClimbDraftKey` folds in, standing in for the registry. */
 const sprayToken = vi.hoisted(() => ({ current: '' }));
-const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn() }));
+const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn(), refreshAuthoredClimb: vi.fn() }));
 const draftStore = vi.hoisted(() => ({
   loadDraft: vi.fn(async () => null as null | Record<string, unknown>),
   // Typed with its real arity so a test can read the slot key off the call.
@@ -86,7 +86,10 @@ vi.mock('../../../lib/graphql/hooks', () => ({
   useClimb: () => ({ data: graphql.climb, isError: graphql.climbFailed }),
 }));
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueueActions: () => ({ setCurrentClimb: queue.setCurrentClimb }),
+  useQueueActions: () => ({
+    setCurrentClimb: queue.setCurrentClimb,
+    refreshAuthoredClimb: queue.refreshAuthoredClimb,
+  }),
 }));
 vi.mock('../../../providers/bluetooth-provider', () => ({ useOptionalBluetoothContext: () => ble.context }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
@@ -179,31 +182,157 @@ describe('the setter grade gates a publish', () => {
     expect(kilter.current.showSetterGrade).toBe(false);
   });
 
-  it('blocks a publish with no grade, and says the grade is why', () => {
-    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
-
-    act(() => {
-      result.current.setName('Slopey traverse');
-      result.current.setIsDraft(false);
-    });
-
-    expect(result.current.setterGradeMissing).toBe(true);
-    expect(result.current.publishBlocked).toBe(true);
-    expect(result.current.draftStatus?.text).toBe('mobile.create.publish.gradeBlocked');
+  it('starts a wall climb on publish, and a catalogue climb on draft', () => {
+    // #5954: a draft is left out of the Climbs list, so a wall climb that saved
+    // as one looked like a climb that was lost.
+    const { result: spray } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+    const { result: kilter } = renderHook(() => useCreateClimbScreen({ board: KILTER_BOARD }));
+    expect(spray.current.isDraft).toBe(false);
+    expect(kilter.current.isDraft).toBe(true);
   });
 
-  it('refuses to write anything while the grade is missing', async () => {
+  it('keeps Save enabled with no grade, and says the grade is what is missing', () => {
     const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
 
-    act(() => {
-      result.current.setName('Slopey traverse');
-      result.current.setIsDraft(false);
+    act(() => result.current.setName('Slopey traverse'));
+
+    expect(result.current.setterGradeMissing).toBe(true);
+    // The grade rail is below the fold: a disabled Save up top gave no hint
+    // where to look. The tap is what leads there — see the next case.
+    expect(result.current.publishBlocked).toBe(false);
+    expect(result.current.draftStatus).toEqual({
+      text: 'mobile.create.publish.gradeBlocked',
+      tone: 'warning',
+      announce: true,
+      yieldsToHeatmap: true,
     });
+  });
+
+  it('answers a Save tap with no grade by asking for it, and writes nothing', async () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+
+    act(() => result.current.setName('Slopey traverse'));
+    expect(result.current.focusGradeSignal).toBe(0);
+
     await act(async () => {
       await result.current.handleSave();
     });
 
+    expect(result.current.focusGradeSignal).toBe(1);
     expect(boardActions.saveClimb).not.toHaveBeenCalled();
+    expect(boardActions.updateClimb).not.toHaveBeenCalled();
+    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+
+    // Every further tap asks again, so the drawer scrolls back to the rail.
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(result.current.focusGradeSignal).toBe(2);
+  });
+
+  it('asks for the grade before the name, since the grade is the one below the fold', async () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(result.current.focusGradeSignal).toBe(1);
+    expect(result.current.focusNameSignal).toBe(0);
+  });
+
+  it('still disables Save, and names the holds, while a start or finish is missing', () => {
+    createClimb.canPublish = false;
+    try {
+      const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+      act(() => result.current.setName('One hold'));
+
+      expect(result.current.publishBlocked).toBe(true);
+      // The holds come first: "pick your grade" to somebody with no finish hold
+      // sends them to the wrong half of the sheet.
+      expect(result.current.draftStatus?.text).toBe('mobile.create.publish.blocked');
+    } finally {
+      createClimb.canPublish = true;
+    }
+  });
+
+  it('drops the prompt once a grade is picked, so unpicking it does not bring the warning back', async () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(result.current.focusGradeSignal).toBe(1);
+
+    act(() => result.current.setSetterGradeDifficultyId(SIX_C_DIFFICULTY_ID));
+    await waitFor(() => expect(result.current.focusGradeSignal).toBe(0));
+
+    // The grade goes missing again with no Save tap behind it: no prompt.
+    act(() => result.current.setSetterGradeDifficultyId(null));
+    expect(result.current.setterGradeMissing).toBe(true);
+    expect(result.current.focusGradeSignal).toBe(0);
+  });
+
+  it('drops the prompt when the draft switch goes on, and keeps it down when it goes off again', async () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(result.current.focusGradeSignal).toBe(1);
+
+    act(() => result.current.setIsDraft(true));
+    await waitFor(() => expect(result.current.focusGradeSignal).toBe(0));
+
+    act(() => result.current.setIsDraft(false));
+    expect(result.current.setterGradeMissing).toBe(true);
+    expect(result.current.focusGradeSignal).toBe(0);
+  });
+
+  it('drops an outstanding grade prompt when a new climb starts', async () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(result.current.focusGradeSignal).toBe(1);
+
+    await act(async () => {
+      result.current.confirmNewClimb();
+    });
+
+    await waitFor(() => expect(result.current.focusGradeSignal).toBe(0));
+  });
+
+  it('keeps the next climb of a session on publish', async () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+
+    act(() => {
+      result.current.setName('First of the session');
+      result.current.setSetterGradeDifficultyId(SIX_C_DIFFICULTY_ID);
+    });
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(boardActions.saveClimb.mock.calls[0][0].is_draft).toBe(false);
+
+    await act(async () => {
+      result.current.handleNewClimb();
+    });
+
+    await waitFor(() => expect(result.current.name).toBe(''));
+    expect(result.current.isDraft).toBe(false);
+  });
+
+  it('puts a catalogue board back on draft when a new climb starts', async () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: KILTER_BOARD }));
+
+    act(() => result.current.setIsDraft(false));
+    await act(async () => {
+      result.current.confirmNewClimb();
+    });
+
+    await waitFor(() => expect(result.current.isDraft).toBe(true));
   });
 
   it('lets the publish through once a grade is picked, and sends it', async () => {
@@ -211,7 +340,6 @@ describe('the setter grade gates a publish', () => {
 
     act(() => {
       result.current.setName('Slopey traverse');
-      result.current.setIsDraft(false);
       result.current.setSetterGradeDifficultyId(SIX_C_DIFFICULTY_ID);
     });
     expect(result.current.publishBlocked).toBe(false);
@@ -220,13 +348,19 @@ describe('the setter grade gates a publish', () => {
       await result.current.handleSave();
     });
 
-    expect(boardActions.saveClimb).toHaveBeenCalledWith(expect.objectContaining({ user_grade: '6c/V5' }));
+    expect(boardActions.saveClimb).toHaveBeenCalledWith(
+      expect.objectContaining({ user_grade: '6c/V5', is_draft: false }),
+    );
+    expect(result.current.focusGradeSignal).toBe(0);
   });
 
   it('leaves a DRAFT saveable with no grade', async () => {
     const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
 
-    act(() => result.current.setName('Work in progress'));
+    act(() => {
+      result.current.setName('Work in progress');
+      result.current.setIsDraft(true);
+    });
     expect(result.current.setterGradeMissing).toBe(false);
     expect(result.current.publishBlocked).toBe(false);
 
@@ -242,7 +376,10 @@ describe('the setter grade gates a publish', () => {
   it('carries the grade on the update path, so an ungraded draft can still publish', async () => {
     const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
 
-    act(() => result.current.setName('Draft first'));
+    act(() => {
+      result.current.setName('Draft first');
+      result.current.setIsDraft(true);
+    });
     await act(async () => {
       await result.current.handleSave();
     });
@@ -266,7 +403,6 @@ describe('the setter grade gates a publish', () => {
 
     act(() => {
       result.current.setName('Published, then regraded');
-      result.current.setIsDraft(false);
       result.current.setSetterGradeDifficultyId(SIX_C_DIFFICULTY_ID);
     });
     await act(async () => {
@@ -429,7 +565,6 @@ describe('the wall owns the angle and the identity', () => {
 
     act(() => {
       result.current.setName('At the wall angle');
-      result.current.setIsDraft(false);
       result.current.setSetterGradeDifficultyId(SIX_C_DIFFICULTY_ID);
     });
     await act(async () => {
@@ -442,7 +577,10 @@ describe('the wall owns the angle and the identity', () => {
   it('presents the wall uuid on every spray write', async () => {
     const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
 
-    act(() => result.current.setName('Share-link crew'));
+    act(() => {
+      result.current.setName('Share-link crew');
+      result.current.setIsDraft(true);
+    });
     await act(async () => {
       await result.current.handleSave();
     });
@@ -480,7 +618,6 @@ describe('the last-used grade seed', () => {
 
     act(() => {
       result.current.setName('First of the session');
-      result.current.setIsDraft(false);
       result.current.setSetterGradeDifficultyId(SIX_C_DIFFICULTY_ID);
     });
     await act(async () => {
@@ -558,5 +695,107 @@ describe('an unnameable grade id', () => {
     });
 
     expect(boardActions.saveClimb.mock.calls[0][0].user_grade).toBeUndefined();
+  });
+});
+
+describe('the queue item after a save', () => {
+  // `syncSavedToQueue` runs in the same tick as `setSavedClimb`, so anything it
+  // reads off the `savedClimb` STATE is still the previous render's — null on a
+  // first save. The play drawer's Draft badge and its Edit gate both read this.
+  it('queues a first publish as published, not as a draft', async () => {
+    boardActions.saveClimb.mockResolvedValue({
+      uuid: 'saved-1',
+      createdAt: '2026-10-03T10:00:00.000Z',
+      publishedAt: '2026-10-03T10:00:00.000Z',
+      isDraft: false,
+    });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+
+    act(() => {
+      result.current.setName('Straight to the wall');
+      result.current.setSetterGradeDifficultyId(SIX_C_DIFFICULTY_ID);
+    });
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    const queued = queue.setCurrentClimb.mock.calls.at(-1)?.[0] as { climb: Record<string, unknown> };
+    expect(queued.climb.uuid).toBe('saved-1');
+    expect(queued.climb.is_draft).toBe(false);
+    expect(queued.climb.published_at).toBe('2026-10-03T10:00:00.000Z');
+  });
+
+  it('queues a first draft save as a draft', async () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: KILTER_BOARD }));
+
+    act(() => result.current.setName('Still working on it'));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    const queued = queue.setCurrentClimb.mock.calls.at(-1)?.[0] as { climb: Record<string, unknown> };
+    expect(queued.climb.is_draft).toBe(true);
+  });
+});
+
+// `defaultIsDraft` is only where the switch STARTS on a fresh climb. Work that
+// already has an answer keeps it (#5954): a phone copy from before the change
+// was a draft and must restore as one, and an edit takes the row's own state.
+describe('the publish default never overrules a climb that already has an answer', () => {
+  const storedSlot = (isDraft: boolean) => ({
+    holdsJson: '{}',
+    framesJson: '[{}]',
+    name: 'Left half-finished',
+    description: '',
+    isDraft,
+  });
+  const serverRow = (isDraft: boolean) => ({
+    uuid: 'climb-9',
+    name: 'On the server',
+    description: '',
+    frames: 'p1r1p2r3',
+    is_draft: isDraft,
+    created_at: null,
+    published_at: isDraft ? null : '2026-10-01T10:00:00.000Z',
+  });
+
+  it('restores a phone copy saved as a draft as a draft', async () => {
+    draftStore.loadDraft.mockResolvedValue(storedSlot(true));
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+
+    await waitFor(() => expect(result.current.name).toBe('Left half-finished'));
+    expect(result.current.isDraft).toBe(true);
+  });
+
+  it('restores a phone copy saved for publishing as publish', async () => {
+    draftStore.loadDraft.mockResolvedValue(storedSlot(false));
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+
+    await waitFor(() => expect(result.current.name).toBe('Left half-finished'));
+    expect(result.current.isDraft).toBe(false);
+  });
+
+  it('opens a server draft for editing as a draft', async () => {
+    graphql.climb = serverRow(true);
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD, editClimbUuid: 'climb-9' }));
+
+    await waitFor(() => expect(result.current.name).toBe('On the server'));
+    expect(result.current.isDraft).toBe(true);
+  });
+
+  it('opens a published climb for editing as published', async () => {
+    graphql.climb = serverRow(false);
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD, editClimbUuid: 'climb-9' }));
+
+    await waitFor(() => expect(result.current.name).toBe('On the server'));
+    expect(result.current.isDraft).toBe(false);
+  });
+
+  it('opens a published Kilter climb for editing as published too, over the draft default', async () => {
+    graphql.climb = { ...serverRow(false), frames: 'p1r12p2r14' };
+    const { result } = renderHook(() => useCreateClimbScreen({ board: KILTER_BOARD, editClimbUuid: 'climb-9' }));
+
+    await waitFor(() => expect(result.current.name).toBe('On the server'));
+    expect(result.current.isDraft).toBe(false);
   });
 });

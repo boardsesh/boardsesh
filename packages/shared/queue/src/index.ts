@@ -19,7 +19,7 @@ export type {
 } from './types';
 
 // Queue-local type definitions (wide enough for both web and shared-schema consumers)
-export type { Climb, ClimbQueueItem, QueueItemUser, ClimbRegradePatch } from './types';
+export type { Climb, ClimbQueueItem, QueueItemUser, ClimbRegradePatch, ClimbAuthoredPatch } from './types';
 
 export {
   insertQueueItemIdempotent,

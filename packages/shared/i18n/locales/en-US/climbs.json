@@ -765,6 +765,8 @@
       "autosave": {
         "onDevice": "Draft saved on this phone",
         "inAccount": "Draft saved to your account",
+        "onDevicePublish": "Saved on this phone",
+        "inAccountPublish": "Saved to your account",
         "unsyncedEdits": "Latest edits are on this phone only",
         "notStored": "Sign in to keep this draft",
         "saveFailed": "Couldn't save to your account. Tap Save to retry.",

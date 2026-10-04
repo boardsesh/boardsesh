@@ -4,6 +4,8 @@ import { useTheme } from '../../providers/theme-provider';
 import { glassSize } from '../../theme/layout';
 import { spacing, borderRadius } from '../../theme/tokens';
 
+const BANNER_MARGIN_TOP = spacing[2];
+
 type InlineConfirmBannerProps = {
   title: string;
   message: string;
@@ -11,6 +13,8 @@ type InlineConfirmBannerProps = {
   cancelLabel: string;
   onConfirm: () => void;
   onCancel: () => void;
+  /** The vertical space this banner takes in the drawer, top margin included. */
+  onFootprint?: (height: number) => void;
 };
 
 /**
@@ -36,10 +40,15 @@ export function InlineConfirmBanner({
   cancelLabel,
   onConfirm,
   onCancel,
+  onFootprint,
 }: InlineConfirmBannerProps) {
   const { systemColors, brandColors } = useTheme();
   return (
-    <View style={[styles.banner, { backgroundColor: systemColors.fill }]} accessibilityRole="alert">
+    <View
+      style={[styles.banner, { backgroundColor: systemColors.fill }]}
+      accessibilityRole="alert"
+      onLayout={onFootprint ? (event) => onFootprint(event.nativeEvent.layout.height + BANNER_MARGIN_TOP) : undefined}
+    >
       <View style={styles.text}>
         <Text variant="footnote" style={styles.title}>
           {title}
@@ -67,7 +76,7 @@ export function InlineConfirmBanner({
 const styles = StyleSheet.create({
   banner: {
     marginHorizontal: spacing[4],
-    marginTop: spacing[2],
+    marginTop: BANNER_MARGIN_TOP,
     padding: spacing[3],
     borderRadius: borderRadius.md,
     gap: spacing[2],
