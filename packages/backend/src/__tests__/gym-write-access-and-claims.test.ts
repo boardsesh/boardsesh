@@ -2768,6 +2768,7 @@ describe('a claim ownership has moved past cannot be approved (#4525)', () => {
     { secondMerge: true, claimAfterHandover: true, claimOnCanonical: false, currentOwner: 'neither' },
     { secondMerge: false, claimAfterHandover: false, claimOnCanonical: true, currentOwner: 'neither' },
     { secondMerge: false, claimAfterHandover: false, claimOnCanonical: false, currentOwner: 'source' },
+    { secondMerge: true, claimAfterHandover: false, claimOnCanonical: false, currentOwner: 'source' },
     { secondMerge: false, claimAfterHandover: false, claimOnCanonical: false, currentOwner: 'survivor' },
   ])(
     'expires superseded moved claims during gym merges: $secondMerge, newer claim: $claimAfterHandover, canonical origin: $claimOnCanonical, owns: $currentOwner',
@@ -2803,7 +2804,8 @@ describe('a claim ownership has moved past cannot be approved (#4525)', () => {
         },
         authCtx(GLOBAL_ADMIN),
       );
-      const shouldExpire = !claimAfterHandover && !claimOnCanonical && currentOwner === 'neither';
+      const shouldExpire =
+        !claimAfterHandover && !claimOnCanonical && (currentOwner === 'neither' || currentOwner === 'source');
       const [mergeAudit] = await db
         .select({ movedCounts: dbSchema.gymMergeAudit.movedCounts, movedRows: dbSchema.gymMergeAudit.movedRows })
         .from(dbSchema.gymMergeAudit)
@@ -2840,6 +2842,64 @@ describe('a claim ownership has moved past cannot be approved (#4525)', () => {
       }
     },
   );
+
+  it('expires a moved claim when approved source history predates it and the claimant owns only the source', async () => {
+    const duplicate = await insertGym({ ownerId: PRIOR_OWNER, name: 'Approved-Transfer Duplicate' });
+    const canonical = await insertGym({ ownerId: SECOND_TARGET, name: 'Approved-Transfer Survivor' });
+    await db.execute(
+      sql`UPDATE gyms SET latitude = 52.0, longitude = 4.0 WHERE id IN (${canonical.id}, ${duplicate.id})`,
+    );
+
+    // Record a genuine approval/transfer first. The partial unique index allows
+    // only one pending row per claimant+gym, so seed the old pending row after
+    // this decision and give it its earlier original creation time below.
+    const approvedClaimId = await fileAdminClaim(duplicate.uuid, CLAIMANT);
+    await expect(approveAsAdmin(approvedClaimId)).resolves.toBe(true);
+    const approvedDecision = await claimOwnershipDecision(approvedClaimId);
+    expect(approvedDecision).toMatchObject({ gymUuid: duplicate.uuid, didTransfer: true });
+
+    const pendingClaimId = await insertClaim({
+      gymId: duplicate.id,
+      claimantUserId: CLAIMANT,
+      method: 'admin',
+    });
+    const [orderedHistory] = Array.from(
+      (await db.execute(sql`
+        UPDATE gym_claims AS pending_claim
+           SET created_at = decision.decided_at - INTERVAL '1 second'
+          FROM gym_claim_ownership_decisions AS decision
+         WHERE pending_claim.id = ${pendingClaimId}
+           AND decision.claim_id = ${approvedClaimId}
+        RETURNING decision.decided_at > pending_claim.created_at AS transfer_is_newer
+      `)) as Iterable<{ transfer_is_newer: boolean }>,
+    );
+    expect(orderedHistory.transfer_is_newer).toBe(true);
+
+    await socialGymDuplicateMutations.mergeGyms(
+      null,
+      { input: { canonicalGymUuid: canonical.uuid, duplicateGymUuids: [duplicate.uuid] } },
+      authCtx(GLOBAL_ADMIN),
+    );
+
+    expect(await gymOwnerId(duplicate.uuid)).toBe(CLAIMANT);
+    expect(await gymOwnerId(canonical.uuid)).toBe(SECOND_TARGET);
+    expect(await claimStatus(pendingClaimId)).toBe('expired');
+    await expect(claimOwnershipDecision(approvedClaimId)).resolves.toEqual(approvedDecision);
+    const [mergeAudit] = await db
+      .select({ movedCounts: dbSchema.gymMergeAudit.movedCounts, movedRows: dbSchema.gymMergeAudit.movedRows })
+      .from(dbSchema.gymMergeAudit)
+      .where(eq(dbSchema.gymMergeAudit.duplicateGymId, duplicate.id));
+    expect(mergeAudit.movedCounts).toMatchObject({ claimsExpired: 1 });
+    expect(mergeAudit.movedRows).toMatchObject({ expiredClaimIds: [pendingClaimId] });
+
+    const approvedEmailCount = vi.mocked(sendGymClaimApprovedEmail).mock.calls.length;
+    const ownershipLostEmailCount = vi.mocked(sendGymClaimOwnershipLostEmail).mock.calls.length;
+    await expect(approveAsAdmin(pendingClaimId)).rejects.toThrow('Claim not found or already resolved');
+    expect(await gymOwnerId(canonical.uuid)).toBe(SECOND_TARGET);
+    expect(await claimStatus(pendingClaimId)).toBe('expired');
+    expect(sendGymClaimApprovedEmail).toHaveBeenCalledTimes(approvedEmailCount);
+    expect(sendGymClaimOwnershipLostEmail).toHaveBeenCalledTimes(ownershipLostEmailCount);
+  });
 
   const REASSIGN_REASON = 'The wall was sold and the buyer runs it now.';
 
