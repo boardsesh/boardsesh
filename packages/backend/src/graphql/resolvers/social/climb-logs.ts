@@ -5,6 +5,7 @@ import type { ClimbLogsInput, ConnectionContext } from '@boardsesh/shared-schema
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import { applyRateLimit, validateInput } from '../shared/helpers';
+import { logSlowRead } from '../shared/slow-read-log';
 import { boardClimbRatingsJoinCondition } from '../shared/sql-expressions';
 import {
   climbLogBaseSelection,
@@ -192,6 +193,7 @@ export const climbLogsQueries = {
     const viewerUserId = ctx.isAuthenticated ? (ctx.userId ?? null) : null;
     const { boardType, limit } = validatedInput;
 
+    const startedAt = performance.now();
     try {
       // The climb's canonical uuid, so logs stored under a uuid that was
       // deduplicated into this climb are found too.
@@ -204,6 +206,14 @@ export const climbLogsQueries = {
         latestPerClimber: validatedInput.latestPerClimber === true,
         limit,
         cursor,
+      });
+
+      logSlowRead('climbLogs', startedAt, {
+        boardType,
+        climbUuid: canonicalClimbUuid,
+        latestPerClimber: validatedInput.latestPerClimber === true,
+        paged: hasCursor,
+        rows: rows.length,
       });
 
       const hasMore = rows.length > limit;
@@ -220,6 +230,8 @@ export const climbLogsQueries = {
         hasMore,
       };
     } catch (err) {
+      // A read that timed out is the slowest read there is.
+      logSlowRead('climbLogs', startedAt, { boardType, climbUuid: validatedInput.climbUuid, failed: true });
       logger.error('[climbLogs] DB error:', err);
       throw err;
     }
