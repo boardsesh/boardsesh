@@ -1,3 +1,4 @@
+import { appFeedback } from '@boardsesh/db/schema';
 import { describe, it, expect, beforeEach } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import type { AppFeedbackReport, ConnectionContext } from '@boardsesh/shared-schema';
@@ -86,6 +87,23 @@ beforeEach(async () => {
 });
 
 describe('adminAppFeedback auth gate', () => {
+  it('keeps stored diagnostic identifiers private from non-admin callers', async () => {
+    await db.insert(appFeedback).values({
+      source: 'drawer-bug',
+      platform: 'ios',
+      comment: 'The app disappeared',
+      context: { diagnostics: { launchId: 'private-launch', easClientId: 'private-device' } },
+    });
+    await expect(feedbackQueries.adminAppFeedback(null, { input: {} }, authCtx(NON_ADMIN))).rejects.toThrow(
+      /Admin role required/i,
+    );
+    await expect(feedbackQueries.adminAppFeedback(null, { input: {} }, anonCtx())).rejects.toThrow(
+      /Authentication required/i,
+    );
+    const result = await feedbackQueries.adminAppFeedback(null, { input: {} }, authCtx(ADMIN));
+    expect(result.reports[0].context?.diagnostics?.launchId).toBe('private-launch');
+  });
+
   it('rejects an unauthenticated caller', async () => {
     await expect(feedbackQueries.adminAppFeedback(null, { input: {} }, anonCtx())).rejects.toThrow(
       /Authentication required/i,

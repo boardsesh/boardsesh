@@ -210,6 +210,8 @@ export type AppFeedbackContext = {
   __typename?: 'AppFeedbackContext';
   climbName?: Maybe<Scalars['String']['output']>;
   climbUuid?: Maybe<Scalars['String']['output']>;
+  /** Private identifiers. Any resolver returning this context must require admin access. */
+  diagnostics?: Maybe<FeedbackDiagnostics>;
   difficulty?: Maybe<Scalars['String']['output']>;
   sessionId?: Maybe<Scalars['String']['output']>;
   sessionName?: Maybe<Scalars['String']['output']>;
@@ -2291,11 +2293,39 @@ export type FavoritesCount = {
 export type FeedbackContextInput = {
   climbName?: InputMaybe<Scalars['String']['input']>;
   climbUuid?: InputMaybe<Scalars['String']['input']>;
+  /**
+   * Opaque input so malformed or newer optional diagnostics cannot reject the
+   * report. The backend stores only known, validated fields; output remains
+   * explicitly typed and admin-only.
+   */
+  diagnostics?: InputMaybe<Scalars['JSON']['input']>;
   difficulty?: InputMaybe<Scalars['String']['input']>;
   sessionId?: InputMaybe<Scalars['String']['input']>;
   sessionName?: InputMaybe<Scalars['String']['input']>;
   url?: InputMaybe<Scalars['String']['input']>;
   userAgent?: InputMaybe<Scalars['String']['input']>;
+};
+
+/**
+ * Private, best-effort telemetry identifiers for feedback investigation.
+ * Available only through the authenticated admin dashboard.
+ */
+export type FeedbackDiagnostics = {
+  __typename?: 'FeedbackDiagnostics';
+  easClientId?: Maybe<Scalars['String']['output']>;
+  lastUserOperationId?: Maybe<Scalars['String']['output']>;
+  launchId?: Maybe<Scalars['String']['output']>;
+  nativeStartupId?: Maybe<Scalars['String']['output']>;
+  otaBranch?: Maybe<Scalars['String']['output']>;
+  otaIsEmbedded?: Maybe<Scalars['Boolean']['output']>;
+  otaRuntimeVersion?: Maybe<Scalars['String']['output']>;
+  otaUpdateId?: Maybe<Scalars['String']['output']>;
+  posthogDistinctId?: Maybe<Scalars['String']['output']>;
+  posthogSessionId?: Maybe<Scalars['String']['output']>;
+  previousLaunchCrashed?: Maybe<Scalars['Boolean']['output']>;
+  previousLaunchId?: Maybe<Scalars['String']['output']>;
+  reportId?: Maybe<Scalars['String']['output']>;
+  schemaVersion?: Maybe<Scalars['Int']['output']>;
 };
 
 /**
@@ -10603,6 +10633,7 @@ export type ResolversTypes = ResolversObject<{
   >;
   FavoritesCount: ResolverTypeWrapper<FavoritesCount>;
   FeedbackContextInput: FeedbackContextInput;
+  FeedbackDiagnostics: ResolverTypeWrapper<FeedbackDiagnostics>;
   FindSimilarGymsInput: FindSimilarGymsInput;
   Float: ResolverTypeWrapper<Scalars['Float']['output']>;
   FollowBoardInput: FollowBoardInput;
@@ -11071,6 +11102,7 @@ export type ResolversParentTypes = ResolversObject<{
   EventsReplayResponse: Omit<EventsReplayResponse, 'events'> & { events: Array<ResolversParentTypes['QueueEvent']> };
   FavoritesCount: FavoritesCount;
   FeedbackContextInput: FeedbackContextInput;
+  FeedbackDiagnostics: FeedbackDiagnostics;
   FindSimilarGymsInput: FindSimilarGymsInput;
   Float: Scalars['Float']['output'];
   FollowBoardInput: FollowBoardInput;
@@ -11461,6 +11493,7 @@ export type AppFeedbackContextResolvers<
 > = ResolversObject<{
   climbName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   climbUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  diagnostics?: Resolver<Maybe<ResolversTypes['FeedbackDiagnostics']>, ParentType, ContextType>;
   difficulty?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   sessionId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   sessionName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
@@ -12521,6 +12554,27 @@ export type FavoritesCountResolvers<
 > = ResolversObject<{
   boardName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   count?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type FeedbackDiagnosticsResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['FeedbackDiagnostics'] = ResolversParentTypes['FeedbackDiagnostics'],
+> = ResolversObject<{
+  easClientId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  lastUserOperationId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  launchId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  nativeStartupId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  otaBranch?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  otaIsEmbedded?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
+  otaRuntimeVersion?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  otaUpdateId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  posthogDistinctId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  posthogSessionId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  previousLaunchCrashed?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
+  previousLaunchId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  reportId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  schemaVersion?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -16829,6 +16883,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   DuplicateGymMember?: DuplicateGymMemberResolvers<ContextType>;
   EventsReplayResponse?: EventsReplayResponseResolvers<ContextType>;
   FavoritesCount?: FavoritesCountResolvers<ContextType>;
+  FeedbackDiagnostics?: FeedbackDiagnosticsResolvers<ContextType>;
   FollowConnection?: FollowConnectionResolvers<ContextType>;
   FollowedAuthorUser?: FollowedAuthorUserResolvers<ContextType>;
   FollowedAuthors?: FollowedAuthorsResolvers<ContextType>;
