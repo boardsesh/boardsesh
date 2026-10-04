@@ -711,16 +711,35 @@ is the reference condition above keyed on the tick, with the author exemption
 | Reader | A log on a hard-deleted spray climb |
 | --- | --- |
 | `userTicks`, `userAscentsFeed`, `userGroupedAscentsFeed` | the climber who logged it only; rows, totals and groups |
-| `followingAscentsFeed`, `globalAscentsFeed` | the climber who logged it only |
+| `globalAscentsFeed` | the climber who logged it only |
+| `followingAscentsFeed` | nobody: the feed lists the people a viewer follows, never the viewer |
 | `sessionDetail` | the climber who logged it only; a session of nothing else answers null to everybody else |
 | the session summary's hardest send | the climber who logged it only |
 | `gymStats` top climbs | nobody (the reader has no viewer) |
 
-Not gated, on purpose, because the same is true of a log on a LIVE private wall
-today and changing it is one decision, not two:
+**The session cards** (`sessionGroupedFeed`, and the crew feed built on it)
+choose a tick first and join `board_climbs` afterwards: the session's hardest
+send, a day's highlight, the featured beta. A wall rule in that join only nulls
+the climb's columns. The tick that was chosen still carries its own uuid, climb
+uuid and comment, and a beta link its url, so for a live private wall as much as
+for a deleted climb the card handed those to anybody. The whole rule,
+`sprayTickVisibleSql(alias, viewer)`, now sits where the tick is CHOSEN:
 
-- the session feed cards (`sessionGroupedFeed`) and the session summary's totals
-  count every tick in a session, whatever wall it was on;
+| Query in `social/session-feed.ts` | What it leaves out for a viewer who may not see the wall |
+| --- | --- |
+| `fetchHardestSendsBatch`, the `ranked` CTE | the send is not a candidate; the next hardest visible send is picked |
+| `daily_hardest` in `getSessionFeed` | the log is not the day's highlight; a day of nothing else has no card |
+| `fetchSessionFeaturedBetaRows`, `fetchDailyFeaturedBetaRows` | the beta link is not a candidate |
+| `fetchTickHighlightsByUuid` | a uuid that reached it some other way is not hydrated |
+
+Still not gated, and the same for a live private wall and a deleted climb:
+
+- the session cards' and the session summary's COUNTS (tick count, sends, grade
+  distribution, board types, participants) include every tick in the session;
+- `sessionDetail`'s participant list is built from every tick, while its rows
+  and totals are filtered;
+- `userTickCountsByBoard` returns a count per board type, spray included. Its
+  own comment calls counts non-sensitive, so that one is a product decision;
 - `comments` on a tick, `climbCommunityStatus` and `voteSummary` answer a caller
   who already holds the uuid.
 
