@@ -19,6 +19,10 @@ export type LogbookEntry = {
   layoutId?: number | null;
   boardType?: string;
   climbUuid?: string;
+  // The wall's own name (`user_boards.name`), sent by `userTicks` for boards the
+  // viewer may see. A spray wall has no catalogue layout row, so charts need
+  // this to label it `Spray wall · <name>` instead of its raw layout id.
+  boardDisplayName?: string | null;
 };
 
 export type UnifiedTimeframeType = 'all' | 'lastYear' | 'lastMonth' | 'lastWeek' | 'today' | 'custom';

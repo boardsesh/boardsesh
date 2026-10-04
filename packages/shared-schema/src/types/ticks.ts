@@ -45,6 +45,11 @@ export type Tick = {
   auroraSyncedAt: string | null;
   layoutId: number | null;
   boardId?: number | null;
+  // The wall's own name (user_boards.name) — "Garage" for a spray wall, the
+  // installation name for a catalogue board. Null when the tick has no board or
+  // the viewer may not see the board. Populated by read queries; mutation
+  // responses don't compute it.
+  boardDisplayName?: string | null;
   // Social aggregates are populated only by read queries (the `ticks`
   // resolver joins `vote_counts` and counts `comments`). Mutation resolvers
   // like `saveTick` / `updateTick` don't compute them, so these stay optional

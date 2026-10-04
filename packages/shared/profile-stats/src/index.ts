@@ -23,6 +23,7 @@ export {
   LAYOUT_ORDER,
   getLayoutKey,
   getLayoutDisplayName,
+  buildLayoutNameLookup,
   parseLayoutKey,
   sortLayoutKeys,
 } from './layouts';
