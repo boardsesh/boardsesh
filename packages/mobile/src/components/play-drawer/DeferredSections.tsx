@@ -71,6 +71,24 @@ type DeferredSectionsProps = {
 const noop = () => {};
 
 /**
+ * Sends the request for everyone's newest logs on a climb and renders nothing.
+ * Its own component so the query's state changes re-render this, not the whole
+ * of DeferredSections, which never reads the answer.
+ */
+const ClimbLogsPreviewRequest = memo(function ClimbLogsPreviewRequest({
+  boardName,
+  climbUuid,
+  enabled,
+}: {
+  boardName: BoardName;
+  climbUuid: string;
+  enabled: boolean;
+}) {
+  useClimbLogsPreview({ boardName, climbUuid, enabled });
+  return null;
+});
+
+/**
  * Below-fold deferred content for the play drawer.
  * Uses InteractionManager.runAfterInteractions() to defer rendering
  * until after the drawer open animation completes, preventing jank.
@@ -141,8 +159,8 @@ export const DeferredSections = memo(function DeferredSections({
   // on the climb for a moment (a fast queue swipe sends nothing) and the phone's
   // own followed-authors snapshot says there is someone to ask about. An account
   // that follows nobody never sends this request; everyone's newest logs are
-  // asked for instead, below, behind the same settle gate (`settled` is also
-  // handed to ClimberLogsSection, for its own copies of both queries). The
+  // asked for instead, behind the same settle gate (`settled` is also handed
+  // to ClimberLogsSection, for its own copies of both queries). The
   // snapshot is only read here: the root sync bridge keeps it fresh, so opening
   // the drawer costs no followed-authors request and no SQLite write. A missing
   // one loads behind the same settle gate.
@@ -164,18 +182,21 @@ export const DeferredSections = memo(function DeferredSections({
   });
   // Everyone else's newest logs, for the Climber logs card's fall-through rows.
   // The card mounts only once the climber scrolls, so asking from there starts
-  // the request late. Asked here instead, at the same settle gate and next to
-  // the followed-climbers request rather than after its answer. Same hook and
-  // key as the card's own read, so React Query sends one request for both, and
-  // the card alone decides whether the rows may show. Nothing reads the answer
-  // here. `unknown` is left to the card, which asks once the server has said
-  // nobody followed logged the climb.
+  // the request late. Asked from here instead (`ClimbLogsPreviewRequest`, in the
+  // tree below), under the card's own rule: only once it is known that nobody
+  // followed has logged the climb. `none` knows at the settle gate; the rest
+  // wait for the followed-climbers answer above, and a failed or blocked one
+  // sends nothing. So a climb costs one request when somebody followed logged
+  // it, never a second one whose rows the card would not show. Same hook and
+  // key as the card's read: React Query sends one request for both, and the
+  // card alone decides whether the rows may show.
   const isOffline = useIsOffline();
-  useClimbLogsPreview({
-    boardName,
-    climbUuid: climb.uuid,
-    enabled: isAuthenticated && settled && !isOffline && (followState === 'none' || followState === 'some'),
-  });
+  const everyoneLogsWanted =
+    isAuthenticated &&
+    settled &&
+    !isOffline &&
+    followState !== 'none-yet' &&
+    (followState === 'none' || crewLogs?.summary.climberCount === 0);
   // A disabled query still hands back what it cached, so an account that has
   // since unfollowed everyone must not keep a crew mention from that answer.
   const crew = useMemo(
@@ -289,6 +310,8 @@ export const DeferredSections = memo(function DeferredSections({
   // interaction queue.
   return (
     <View style={styles.container}>
+      {/* Renders nothing, so the Logbook is still the first section. */}
+      <ClimbLogsPreviewRequest boardName={boardName} climbUuid={climb.uuid} enabled={everyoneLogsWanted} />
       {/* Wrapper measures the whole section (header + expanded body) so the play
           drawer can smoothly scroll a deliberate expand fully into view. */}
       <View onLayout={onLogbookSectionLayout ? handleLogbookSectionLayout : undefined}>

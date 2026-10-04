@@ -443,14 +443,30 @@ describe('DeferredSections', () => {
       expect(screen.queryByTestId('climber-logs')).toBeNull();
     });
 
+    // The request counts themselves are pinned against the real hooks in
+    // climber-logs-request-counts.test.tsx; these cover the rule's inputs.
     describe("everyone else's newest logs, for the card's fall-through rows", () => {
-      it.each([
-        ['an account that follows nobody', [] as string[]],
-        ['an account that follows people, before their answer is in', ['friend']],
-      ])('asks once settled, before the first scroll mounts the card: %s', (_label, userIds) => {
+      const crewAnswered = (climberCount: number) => ({
+        items: [],
+        hasMore: false,
+        summary: { climberCount, senderCount: 0, byAngle: [] },
+      });
+      const arrangeSettled = (snapshot: typeof followedAuthors.result, crewData?: unknown) => {
         auth.isAuthenticated = true;
         crewQuery.settled = true;
-        followedAuthors.result = follows(...userIds);
+        followedAuthors.result = snapshot;
+        crewQuery.data = crewData;
+      };
+
+      it.each([
+        ['an account that follows nobody', () => arrangeSettled(follows())],
+        ['once the server says nobody followed logged it', () => arrangeSettled(follows('friend'), crewAnswered(0))],
+        [
+          'once the server says so, with no follow snapshot to go on',
+          () => arrangeSettled({ data: undefined, isError: true }, crewAnswered(0)),
+        ],
+      ])('asks before the first scroll mounts the card: %s', (_label, arrange) => {
+        arrange();
         renderSections({ contentEnabled: false });
 
         expect(screen.queryByTestId('climber-logs')).toBeNull();
@@ -459,20 +475,40 @@ describe('DeferredSections', () => {
       });
 
       it.each([
-        ['on a climb only swiped past', () => (crewQuery.settled = false)],
-        ['with no signal', () => (everyoneQuery.offline = true)],
-        ['for a signed-out visitor', () => (auth.isAuthenticated = false)],
+        ['while the followed-climbers answer is still out', () => arrangeSettled(follows('friend'))],
+        ['when somebody followed has logged the climb', () => arrangeSettled(follows('friend'), crewAnswered(2))],
         [
-          'while the follow snapshot is still loading',
-          () => (followedAuthors.result = { data: undefined, isError: false }),
+          'when the follow snapshot failed and the server has not answered',
+          () => arrangeSettled({ data: undefined, isError: true }),
         ],
-        // The card asks later, once the server has said nobody followed logged it.
-        ['when the follow snapshot failed', () => (followedAuthors.result = { data: undefined, isError: true })],
+        [
+          // A cached "nobody logged it" answer must not stand in for a snapshot.
+          'while the follow snapshot is still loading',
+          () => arrangeSettled({ data: undefined, isError: false }, crewAnswered(0)),
+        ],
+        [
+          'on a climb only swiped past',
+          () => {
+            arrangeSettled(follows());
+            crewQuery.settled = false;
+          },
+        ],
+        [
+          'with no signal',
+          () => {
+            arrangeSettled(follows());
+            everyoneQuery.offline = true;
+          },
+        ],
+        [
+          'for a signed-out visitor',
+          () => {
+            arrangeSettled(follows());
+            auth.isAuthenticated = false;
+          },
+        ],
       ])('asks for nothing %s', (_label, arrange) => {
-        auth.isAuthenticated = true;
         deferred.ready = true;
-        crewQuery.settled = true;
-        followedAuthors.result = follows('friend');
         arrange();
         renderSections({ contentEnabled: true });
 

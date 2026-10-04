@@ -48,12 +48,17 @@ function ensureMarkerIsRemovedWithRows(queryClient: QueryClient) {
  * finds the answer in the cache and sends nothing. An invalidation marks these
  * entries stale like any other fetch, so that hook still re-reads the climb
  * after a tick lands from elsewhere.
+ *
+ * Each entry is dated with the batch's own answer time, and a climb whose own
+ * entry is newer than that is left alone: a batch merged again later (after the
+ * accumulated rows were removed) must not put an older answer over it.
  */
 function fileBatchUnderSingleClimbKeys(
   queryClient: QueryClient,
   boardName: BoardName | null,
   batchUuids: string[],
   batchEntries: LogbookEntry[],
+  batchUpdatedAt: number,
 ) {
   const entriesByClimb = new Map<string, LogbookEntry[]>();
   for (const entry of batchEntries) {
@@ -62,7 +67,11 @@ function fileBatchUnderSingleClimbKeys(
     else entriesByClimb.set(entry.climb_uuid, [entry]);
   }
   for (const uuid of batchUuids) {
-    queryClient.setQueryData<LogbookEntry[]>(fetchLogbookQueryKey(boardName, [uuid]), entriesByClimb.get(uuid) ?? []);
+    const singleClimbKey = fetchLogbookQueryKey(boardName, [uuid]);
+    if ((queryClient.getQueryState(singleClimbKey)?.dataUpdatedAt ?? 0) > batchUpdatedAt) continue;
+    queryClient.setQueryData<LogbookEntry[]>(singleClimbKey, entriesByClimb.get(uuid) ?? [], {
+      updatedAt: batchUpdatedAt,
+    });
   }
 }
 
@@ -92,6 +101,7 @@ export function useLogbook(boardName: BoardName | null, climbUuids: string[]) {
   // leaves out; what the hook reports as fetched is the shared marker below.
   const fetchedUuidsRef = useRef<Set<string>>(new Set());
   const lastMergedRef = useRef<LogbookEntry[] | undefined>(undefined);
+  const lastMergedAtRef = useRef(0);
   const [invalidationCount, setInvalidationCount] = useState(0);
   // Which climbs the accumulated rows answer for, across every hook on this
   // board. Subscribed rather than read once because a climb with no ticks
@@ -175,10 +185,15 @@ export function useLogbook(boardName: BoardName | null, climbUuids: string[]) {
   // Mark UUIDs as fetched HERE, not in `queryFn`, so the query key stays
   // stable until the data is consumed — mutating the ref inside queryFn
   // would change the key on the resolved-query re-render and lose the data.
+  // A refetch that answers with the same rows keeps the data's identity, so the
+  // answer time is compared too: the single-climb entries below are re-dated by
+  // every answer, changed or not.
+  const { data: batchEntries, dataUpdatedAt: batchUpdatedAt } = fetchQuery;
   useEffect(() => {
-    if (!fetchQuery.data || fetchQuery.data === lastMergedRef.current) return;
-    lastMergedRef.current = fetchQuery.data;
-    const batchEntries = fetchQuery.data;
+    if (!batchEntries) return;
+    if (batchEntries === lastMergedRef.current && batchUpdatedAt === lastMergedAtRef.current) return;
+    lastMergedRef.current = batchEntries;
+    lastMergedAtRef.current = batchUpdatedAt;
 
     newUuids.forEach((uuid) => fetchedUuidsRef.current.add(uuid));
 
@@ -198,9 +213,13 @@ export function useLogbook(boardName: BoardName | null, climbUuids: string[]) {
     queryClient.setQueryData<ReadonlySet<string>>(fetchedUuidsKey, (existing) =>
       existing && newUuids.every((uuid) => existing.has(uuid)) ? existing : new Set([...(existing ?? []), ...newUuids]),
     );
-    // A one-climb batch already sits under its own key.
-    if (newUuids.length > 1) fileBatchUnderSingleClimbKeys(queryClient, boardName, newUuids, batchEntries);
-  }, [fetchQuery.data, newUuids, accumulatedKey, fetchedUuidsKey, boardName, queryClient]);
+    // A one-climb batch already sits under its own key. A batch invalidated
+    // since it was fetched (read back from the cache, its refetch still out) is
+    // not filed: that would mark each climb fresh with rows that are not.
+    if (newUuids.length > 1 && !queryClient.getQueryState(fetchLogbookQueryKey(boardName, newUuids))?.isInvalidated) {
+      fileBatchUnderSingleClimbKeys(queryClient, boardName, newUuids, batchEntries, batchUpdatedAt);
+    }
+  }, [batchEntries, batchUpdatedAt, newUuids, accumulatedKey, fetchedUuidsKey, boardName, queryClient]);
 
   // Reset UUID tracking when the accumulated cache entry is removed
   // (explicit invalidation via useInvalidateLogbook). The shared marker goes
