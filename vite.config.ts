@@ -1295,6 +1295,13 @@ export default defineConfig({
         command: 'tsx scripts/discord-feedback-scan.ts',
         cache: false,
       },
+      // Railway status page -> Discord for incidents that touch our region.
+      // Forward `-- --dry-run` to print instead of posting. The cron runs the
+      // script with plain node; see docs/railway-status-alerts.md.
+      'railway:status-notify': {
+        command: 'tsx scripts/railway-status-notify.ts',
+        cache: false,
+      },
       // Cloudflare config-as-code for the boardsesh.com zone (DNS proxied flag,
       // the edge-cache rules and the WAF crawler rules). Dry-run by default;
       // forward `-- --apply` (and optionally `--allow-zone-ssl`) to converge.

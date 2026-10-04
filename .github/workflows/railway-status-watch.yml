@@ -1,0 +1,90 @@
+name: Railway Status Watch
+
+# Posts Railway incidents that touch what Boardsesh runs to the deploy channel.
+#
+# On 2026-10-03 a Railway US West storage incident made /graphql time out for 6.7
+# hours. We heard about it from a climber, and ruled out our own code before
+# anyone opened status.railway.com. This reads that page's JSON feed and posts
+# each new update of an incident on our region's compute, storage or networking
+# (the app breaks), or on deployments, the Railway API or GHCR (deploys stall).
+#
+# It runs here and not on the scheduler or a pg-boss worker because both of those
+# need Railway to be healthy, which is the one thing this cannot assume.
+#
+# It explains an outage; it does not detect one. Railway's first update for that
+# incident came an hour after our timeouts began. See docs/railway-status-alerts.md.
+
+on:
+  schedule:
+    # Every 10 minutes, off the round minutes the other crons sit on. GitHub runs
+    # scheduled jobs late under load, so read this as "within about 20 minutes".
+    - cron: '3,13,23,33,43,53 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Print what would be posted; post nothing and store nothing. Dispatch from main.'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  # One run at a time: two runs restoring the same seen-list would both post the
+  # same update. `cancel-in-progress: false` so a run part-way through posting
+  # still saves what it posted.
+  group: railway-status-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # DISCORD_DEPLOY_WEBHOOK is a Production **environment** secret. The
+    # environment's branch policy admits `main` and `release/next` only, so a
+    # manual dispatch from a feature branch fails on the gate before any step
+    # runs. synthetic-checks.yml has the long version of this note.
+    environment: Production
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      # railway-status-notify.ts is TypeScript run by plain `node` (type
+      # stripping) and imports only node: builtins, so there is no `vp install`.
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version: '22.x'
+
+      # The list of update IDs already posted. A cache entry is immutable, so each
+      # change is saved under a new key and the newest is found by prefix. A miss
+      # (first run, or 7 days with no restore) is handled by the script: it posts
+      # only the latest update of incidents still open.
+      - name: Restore posted-update list
+        uses: actions/cache/restore@v4
+        with:
+          path: .boardsesh/railway-status-seen.json
+          key: railway-status-seen-${{ github.run_id }}
+          restore-keys: |
+            railway-status-seen-
+
+      - name: Post new Railway incident updates
+        id: notify
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          args=(--state-file .boardsesh/railway-status-seen.json)
+          if [ "$DRY_RUN" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          node scripts/railway-status-notify.ts "${args[@]}"
+
+      # `always()` because the script exits non-zero when one Discord post fails,
+      # and the posts that did land before it must still be remembered. Saved
+      # only on a change, so a quiet day does not write 144 cache entries.
+      - name: Save posted-update list
+        if: always() && steps.notify.outputs.changed == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .boardsesh/railway-status-seen.json
+          key: railway-status-seen-${{ github.run_id }}
