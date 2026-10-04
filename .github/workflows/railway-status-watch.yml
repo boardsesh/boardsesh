@@ -73,7 +73,10 @@ jobs:
         id: notify
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          # Off main is always a dry run. Production also admits release/next, and
+          # the save step below skips there, so a real post from that branch would
+          # be posted again by the next scheduled run.
+          DRY_RUN: ${{ inputs.dry_run || github.ref != 'refs/heads/main' }}
         run: |
           args=(--state-file .boardsesh/railway-status-seen.json)
           if [ "$DRY_RUN" = "true" ]; then

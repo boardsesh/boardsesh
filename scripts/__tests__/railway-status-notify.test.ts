@@ -321,6 +321,35 @@ describe('run', () => {
     expect(secondRun.discordBodies).toEqual([]);
   });
 
+  it('reports the backend as unreachable when the health probe throws', async () => {
+    const stateFile = stateFileWith([
+      'storage-investigating',
+      'storage-identified',
+      'deploy-investigating',
+      'deploy-resolved',
+    ]);
+    const discordBodies: string[] = [];
+    const fetcher: Fetcher = async (input, init) => {
+      const url = String(input);
+      if (url === STATUS_API_URL) return new Response(JSON.stringify(feed), { status: 200 });
+      if (url === HEALTH_URL) throw new Error('getaddrinfo ENOTFOUND');
+      discordBodies.push(typeof init?.body === 'string' ? init.body : '');
+      return new Response(null, { status: 204 });
+    };
+
+    const result = await run({
+      stateFile,
+      dryRun: false,
+      webhookUrl: WEBHOOK,
+      fetcher,
+      logger: silentLogger,
+      nowMs: NOW_MS,
+    });
+
+    expect(result.posted).toBe(1);
+    expect(discordBodies[0]).toContain('Boardsesh database health right now: unreachable (no answer in 10 s)');
+  });
+
   it('leaves an update unseen when Discord rejects it, so the next run retries', async () => {
     const seenBefore = ['storage-investigating', 'storage-identified', 'deploy-investigating', 'deploy-resolved'];
     const stateFile = stateFileWith(seenBefore);

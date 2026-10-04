@@ -30,6 +30,10 @@ describe('railway status watch workflow', () => {
     );
   });
 
+  it('only posts for real from main, the one ref whose saved list the cron can read', () => {
+    expect(workflow).toContain("DRY_RUN: ${{ inputs.dry_run || github.ref != 'refs/heads/main' }}");
+  });
+
   it('keys the cache per attempt, so a re-run restores the newest list and not its own old one', () => {
     const cacheKey = 'key: railway-status-seen-${{ github.run_id }}-${{ github.run_attempt }}';
     expect(workflow.split(cacheKey)).toHaveLength(3);

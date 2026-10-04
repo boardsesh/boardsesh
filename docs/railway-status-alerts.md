@@ -85,8 +85,8 @@ update from the last 24 hours, capped at 5.
 
 In GitHub, dispatch the workflow from `main` with `dry_run` ticked. A dispatch from a feature branch
 fails on the Production environment gate before any step runs. `release/next` passes the gate, but
-only a run on `main` saves the list, because a cache entry saved from another branch is invisible
-to the scheduled runs.
+a run there is always a dry run: a cache entry saved from another branch is invisible to the
+scheduled runs, so a real post from it would go out a second time.
 
 The cache key ends in the run attempt. Re-running a red run therefore restores the newest list, not
 the one that run saved the first time, and does not repost.
