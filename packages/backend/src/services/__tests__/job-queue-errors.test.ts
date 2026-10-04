@@ -125,6 +125,10 @@ describe('job queue diagnostics', () => {
     expect(scope.setContext).toHaveBeenCalledExactlyOnceWith('job_queue', diagnostics);
     expect(scope.setTag).toHaveBeenCalledWith('source', 'job-queue');
     expect(scope.setTag).toHaveBeenCalledWith('postgres.error_code', '53300');
+    expect(scope.setTag).toHaveBeenCalledWith('job_queue.error_type', 'Error');
+    expect(scope.setTag).toHaveBeenCalledWith('job_queue.queue', 'background-job-reconcile');
+    expect(scope.setTag).toHaveBeenCalledWith('job_queue.failure', 'driver_error');
+    expect(scope.setTag).toHaveBeenCalledWith('job_queue.owner', 'backend');
     expect(scope.setFingerprint).toHaveBeenCalledExactlyOnceWith([
       'job-queue',
       'backend',
