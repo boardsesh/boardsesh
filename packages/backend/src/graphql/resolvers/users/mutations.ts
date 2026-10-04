@@ -267,6 +267,14 @@ export const userMutations = {
     const userId = ctx.userId!;
 
     await db.transaction(async (tx) => {
+      // Serialize account deletion with the favorites re-key migration. The
+      // migration takes ACCESS EXCLUSIVE on user_favorites while it creates
+      // the archive; this lock is compatible with normal writers but waits for
+      // that DDL. Under READ COMMITTED, the archive check below then sees the
+      // migration's committed table instead of racing its creation.
+      await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL READ COMMITTED`);
+      await tx.execute(sql`LOCK TABLE public.user_favorites IN ROW EXCLUSIVE MODE`);
+
       // Find this user's draft climbs first — the dependent-row cleanup below
       // needs the (boardType, uuid) pairs, and it must run before the drafts
       // themselves are deleted or the rows it targets would already be gone.

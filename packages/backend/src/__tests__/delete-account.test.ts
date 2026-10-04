@@ -89,10 +89,10 @@ function setupTransactionMock(options?: {
         const call = { method: 'execute', args: [query] };
         txCalls.push(call);
         const executeCalls = txCalls.filter((entry) => entry.method === 'execute').length;
-        if (options?.failOnArchiveDelete && executeCalls === 2) {
+        if (options?.failOnArchiveDelete && executeCalls === 4) {
           return Promise.reject(new Error('Archive cleanup failed'));
         }
-        return Promise.resolve(executeCalls === 1 ? [{ present: options?.archivePresent ?? false }] : []);
+        return Promise.resolve(executeCalls === 3 ? [{ present: options?.archivePresent ?? false }] : []);
       }),
       delete: vi.fn().mockImplementation((table: unknown) => {
         const call = { method: 'delete', table, args: [] as unknown[] };
@@ -193,13 +193,17 @@ describe('deleteAccount mutation', () => {
   it('should execute operations in correct order: select drafts, delete drafts, setter name, user', async () => {
     await userMutations.deleteAccount({}, { input: { removeSetterName: true } }, makeAuthCtx());
 
-    // The archive lookup is inside the transaction and precedes user deletion.
-    expect(txCalls).toHaveLength(5);
-    expect(txCalls[0].method).toBe('select'); // this user's draft climbs
-    expect(txCalls[1].method).toBe('delete'); // draft climbs
-    expect(txCalls[2].method).toBe('update'); // setter name
-    expect(txCalls[3].method).toBe('execute'); // optional archive table lookup
-    expect(txCalls[4].method).toBe('delete'); // user row
+    // The migration barrier is the first transaction work; archive lookup still
+    // follows deletion of this user's own data and precedes the user row.
+    expect(txCalls.map((call) => call.method)).toEqual([
+      'execute',
+      'execute',
+      'select',
+      'delete',
+      'update',
+      'execute',
+      'delete',
+    ]);
   });
 
   it('deletes archived favorites before deleting the user when the archive exists', async () => {
@@ -207,7 +211,15 @@ describe('deleteAccount mutation', () => {
 
     await userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx('user-1'));
 
-    expect(txCalls.map((call) => call.method)).toEqual(['select', 'delete', 'execute', 'execute', 'delete']);
+    expect(txCalls.map((call) => call.method)).toEqual([
+      'execute',
+      'execute',
+      'select',
+      'delete',
+      'execute',
+      'execute',
+      'delete',
+    ]);
   });
 
   it('does not require the favorites archive on pre-migration databases', async () => {
@@ -217,7 +229,7 @@ describe('deleteAccount mutation', () => {
       userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx('user-1')),
     ).resolves.toBe(true);
 
-    expect(txCalls.map((call) => call.method)).toEqual(['select', 'delete', 'execute', 'delete']);
+    expect(txCalls.map((call) => call.method)).toEqual(['execute', 'execute', 'select', 'delete', 'execute', 'delete']);
   });
 
   it('propagates archive cleanup errors so the account-delete transaction rolls back', async () => {
@@ -227,7 +239,14 @@ describe('deleteAccount mutation', () => {
       userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx('user-1')),
     ).rejects.toThrow('Archive cleanup failed');
 
-    expect(txCalls.map((call) => call.method)).toEqual(['select', 'delete', 'execute', 'execute']);
+    expect(txCalls.map((call) => call.method)).toEqual([
+      'execute',
+      'execute',
+      'select',
+      'delete',
+      'execute',
+      'execute',
+    ]);
   });
 
   it('cleans up board_climb_stats/history/beta_links for a draft climb before deleting the drafts', async () => {
@@ -238,6 +257,8 @@ describe('deleteAccount mutation', () => {
     // select drafts, delete stats, delete history, delete beta links, delete drafts, delete user.
     // The dependent-row cleanup (3 deletes) must land between the select and the drafts delete.
     expect(txCalls.map((call) => call.method)).toEqual([
+      'execute',
+      'execute',
       'select',
       'delete',
       'delete',
