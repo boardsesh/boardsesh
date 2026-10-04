@@ -3,6 +3,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import {
   notAuroraTwinDuplicateWithin,
   resolveCanonicalClimbUuid,
+  sprayReferenceClimbExistsCondition,
   sprayReferenceVisibilityCondition,
 } from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
@@ -27,8 +28,9 @@ import { effectiveQualityExpr } from '../shared/sql-expressions';
  *    delete that keeps its climbs, but two other paths hard-delete a climb row
  *    and leave its ticks behind: `deleteDraftClimb` and account deletion (which
  *    removes the deleted user's drafts). A tick left on such a climb has no wall
- *    to check, so `sprayClimbRowExists` drops it. Other board types keep the
- *    lenient behaviour: an Aurora tick can legitimately arrive before its climb.
+ *    to check, so `sprayReferenceClimbExistsCondition` drops it. Other board
+ *    types keep the lenient behaviour: an Aurora tick can legitimately arrive
+ *    before its climb.
  *
  * 3. A climb is matched by its canonical uuid AND every uuid deduplicated into
  *    it (`board_climb_aliases`). `saveTick` lands new ticks on the canonical,
@@ -74,23 +76,6 @@ function climbUuidCondition(ticks: TicksTable, boardType: string, canonicalClimb
 }
 
 /**
- * True for every non-spray tick, and for a spray tick whose climb row still
- * exists. See point 2 in the header: without a climb row there is no wall to
- * check, so the tick is not shown to anybody through these readers.
- */
-function sprayClimbRowExists(ticks: TicksTable): SQL {
-  return sql`(
-    ${ticks.boardType} IS DISTINCT FROM 'spray'
-    OR EXISTS (
-      SELECT 1
-      FROM board_climbs existing_climb
-      WHERE existing_climb.uuid = ${ticks.climbUuid}
-        AND existing_climb.board_type = 'spray'
-    )
-  )`;
-}
-
-/**
  * WHERE conditions for the logs on one climb: board type, the climb and its
  * deduplicated uuids, Aurora's own duplicate rows collapsed, and spray-wall
  * visibility for the viewer.
@@ -122,7 +107,9 @@ export function climbLogConditions({
     notAuroraTwinDuplicateWithin(ticks, (table) =>
       and(eq(table.boardType, boardType), climbUuidCondition(table, boardType, canonicalClimbUuid))!,
     ),
-    sprayClimbRowExists(ticks),
+    // No author exemption: these readers list other people's logs (point 2 in
+    // the header).
+    sprayReferenceClimbExistsCondition({ boardType: ticks.boardType, climbUuid: ticks.climbUuid }),
     sprayReferenceVisibilityCondition({ boardType: ticks.boardType, climbUuid: ticks.climbUuid }, viewerUserId),
   ];
 }

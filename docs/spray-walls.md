@@ -648,10 +648,63 @@ and account deletion (which removes the deleted user's drafts) hard-delete the
 climb and leave its ticks. With no climb there is no wall to check, so
 `climbLogConditions` adds a second condition that fails closed: a spray tick is
 returned only when its climb row still exists. Other board types keep the lenient
-behaviour, because an Aurora tick can arrive before its climb. The other readers
-in the table above still use the reference form on its own and have not been
-audited for this case. Any new per-climb log reader imports `climbLogConditions`
-rather than writing its own.
+behaviour, because an Aurora tick can arrive before its climb. Any new per-climb
+log reader imports `climbLogConditions` rather than writing its own.
+
+#### References to a hard-deleted climb
+
+That second condition is `sprayReferenceClimbExistsCondition`, next to the
+reference form in `spray-visibility.ts`. It needs a board type on the
+referencing row, and takes an optional author exemption (the row's author
+column and the viewer) for readers where a climber is reading their own rows.
+The readers in the table above were audited for this case in #5981:
+
+| Reader | A reference to a hard-deleted spray climb |
+| --- | --- |
+| `followingClimbAscents`, `climbLogs` | hidden from everybody (`climbLogConditions`) |
+| `browseProposals`, `climbProposals` | hidden from everybody; `climbProposals` answers the empty page |
+| `comments` on a proposal | empty page (`sprayProposalUuidIsReadable`) |
+| `globalCommentFeed`, proposal threads | hidden from everybody: the proposal carries its board type |
+| `globalCommentFeed`, climb comments | hidden from everybody, **on every board** (below) |
+| `userProfileStats` | hidden from everybody but the climber whose log it is |
+| `activityFeed` | hidden from everybody. A comment on a proposal fans out with the climb's name, frames and layout id in the feed row's metadata; the row's own `boardType` says spray once the climb cannot |
+| the smart-playlist ref queries | not gated. Hydration reads `board_climbs`, so no row is returned; only `totalCount` can include it |
+| the stats and grade readers (`climbStatsForAngles` and friends) | nothing to read: the stats rows are deleted with the climb, and the recompute seed only inserts for a climb that has a row |
+| `comments` on a climb or a tick, keyed by uuid | not gated. A comment has no board type, and the caller must already hold the uuid |
+| `climbCommunityStatus`, `voteSummary` | not gated. Numbers for a uuid the caller already holds (`openProposalCount`, `communityGrade`, vote counts) |
+
+A comment row has no board type, so there is no spray-only version of the rule
+for a climb comment. `globalCommentFeed` lists a climb comment only while its
+climb still has a `board_climbs` row. That hides more than spray:
+
+- a comment on a deleted draft, on any board;
+- a comment on an upstream climb that `clearAuroraBoard` removed and a re-import
+  did not restore.
+
+Both stay readable through `comments(entityType: climb)` for a caller holding
+the uuid. There is no alias arm: a deduplicated climb keeps its `board_climbs`
+row (the MoonBoard merges delist the loser and repoint its comments at the
+survivor), so no comment sits under an alias uuid that has no row. The
+board-filtered feed already required the row, so the two paths now agree.
+
+The uuid-keyed checks (`sprayClimbRowExists`, `sprayProposalUuidIsReadable`)
+read the replica like their neighbours. A spray climb created inside the
+replication lag answers the empty page for its proposals until the replica has
+the row.
+
+`userProfileStats` is the one reader with the author exemption. The others list
+rows written by other people, so nobody is exempt. A profile's totals are the
+climber's own numbers, their logbook still lists the log as "Unknown Climb", and
+totals that dropped it would disagree with that logbook. The web profile's
+server render fetches the stats with no viewer, so the owner's first paint omits
+the log until the signed-in client fetch replaces it; the same already holds for
+their logs on a private wall.
+
+**Not covered:** the logbook readers that LEFT JOIN `board_climbs` and use the
+column form (`userTicks`, the ascents feeds, the session feed, detail and
+summary). `IS DISTINCT FROM 'spray'` is true for a missing climb, so they still
+return a spray tick whose climb was hard-deleted, as "Unknown Climb", to anyone.
+That is #6031.
 
 Pick by what the query HAS, not by taste:
 

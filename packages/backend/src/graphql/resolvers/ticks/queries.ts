@@ -9,7 +9,11 @@ import {
 } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { sprayClimbVisibilityCondition, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
+import {
+  sprayClimbVisibilityCondition,
+  sprayReferenceClimbExistsCondition,
+  sprayReferenceVisibilityCondition,
+} from '@boardsesh/db/queries';
 import { toConfidenceTier, notAuroraTwinDuplicate, withSerialPlan } from '@boardsesh/db/queries';
 import { requireAuthenticated, applyRateLimit, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import { fetchOwnerBoards, toTickBoardCandidate } from '../shared/render-board';
@@ -1418,6 +1422,16 @@ export const tickQueries = {
         sprayReferenceVisibilityCondition(
           { boardType: dbSchema.boardseshTicks.boardType, climbUuid: dbSchema.boardseshTicks.climbUuid },
           viewerUserId,
+        ),
+        // A spray send whose climb row has been hard-deleted (`deleteDraftClimb`,
+        // account deletion) passes the reference form for everybody and would
+        // show a stranger a `spray-unknown` bucket with the climber's counts and
+        // grades (#5981). Fail closed, except for the climber reading their own
+        // profile: the log is theirs, their logbook still lists it, and totals
+        // that dropped it would disagree with that logbook.
+        sprayReferenceClimbExistsCondition(
+          { boardType: dbSchema.boardseshTicks.boardType, climbUuid: dbSchema.boardseshTicks.climbUuid },
+          { authorId: dbSchema.boardseshTicks.userId, viewerUserId },
         ),
       );
 

@@ -1,7 +1,11 @@
 import { GraphQLError } from 'graphql';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
-import { sprayLayoutVisibilitySql, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
+import {
+  sprayLayoutVisibilitySql,
+  sprayReferenceClimbExistsCondition,
+  sprayReferenceVisibilityCondition,
+} from '@boardsesh/db/queries';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { dbRead } from '../../../db/client';
 
@@ -272,7 +276,9 @@ export async function sprayClimbUuidIsReadable(
  * wall's rule reaches it one hop away.
  *
  * True for a proposal that does not exist and for one on any other board type,
- * so the caller needs no branch beyond the entity type.
+ * so the caller needs no branch beyond the entity type. False for a spray
+ * proposal whose climb row has been hard-deleted: the proposal carries its own
+ * board type, so this fails closed without guessing (#5981).
  */
 export async function sprayProposalUuidIsReadable(
   proposalUuid: string,
@@ -284,12 +290,41 @@ export async function sprayProposalUuidIsReadable(
         SELECT 1
         FROM climb_proposals cp
         WHERE cp.uuid = ${proposalUuid}
-          AND NOT (${sprayReferenceVisibilityCondition(
-            { boardType: sql`cp.board_type`, climbUuid: sql`cp.climb_uuid` },
-            viewerUserId ?? null,
-          )})
+          AND NOT (
+            ${sprayReferenceVisibilityCondition(
+              { boardType: sql`cp.board_type`, climbUuid: sql`cp.climb_uuid` },
+              viewerUserId ?? null,
+            )}
+            AND ${sprayReferenceClimbExistsCondition({ boardType: sql`cp.board_type`, climbUuid: sql`cp.climb_uuid` })}
+          )
       ) AS visible`,
     ),
   );
   return rows[0]?.visible === true;
+}
+
+/**
+ * Whether a spray climb's `board_climbs` row still exists, for a caller that
+ * already KNOWS the board type is spray.
+ *
+ * {@link sprayClimbUuidIsReadable} answers true when there is no climb row, and
+ * a spray climb row does go: `deleteDraftClimb` and account deletion hard-delete
+ * a draft and leave the proposals that named it. With no climb there is no wall
+ * to check, so the caller answers its empty page (#5981).
+ *
+ * A separate function rather than an option on `sprayClimbUuidIsReadable`, so
+ * that function's signature stays as it is. Reads the replica, like its
+ * neighbours: a climb created inside the replication lag answers false here,
+ * so its proposals read as empty until the replica has the row.
+ *
+ * Never call it for a climb whose board type is unknown (a comment thread):
+ * every thread on a catalogue board's missing climb would go empty.
+ */
+export async function sprayClimbRowExists(climbUuid: string): Promise<boolean> {
+  const rows = rowsFromResult<{ present: boolean }>(
+    await dbRead.execute(
+      sql`SELECT ${sprayReferenceClimbExistsCondition({ boardType: sql`'spray'`, climbUuid: sql`${climbUuid}` })} AS present`,
+    ),
+  );
+  return rows[0]?.present === true;
 }

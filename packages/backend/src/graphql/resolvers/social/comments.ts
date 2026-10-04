@@ -279,11 +279,25 @@ export const socialCommentQueries = {
     // The feed spans every entity type and joins `board_climbs` only for the
     // board filter, so a comment on a private wall's climb reached an anonymous
     // caller carrying the climb uuid in `entityId`. The reference form of the
-    // wall rule, applied to the climb rows only — NULL-safe, so a comment whose
-    // climb row has gone survives.
+    // wall rule, applied to the climb rows only.
+    //
+    // The reference form passes a comment whose climb row has gone, and a climb
+    // row does go: `deleteDraftClimb` and account deletion hard-delete a draft
+    // and leave its comments. On a private wall that put the setter's note, and
+    // the climb uuid with it, in front of everybody (#5981). A comment row
+    // carries no board type, so there is no "spray only" version of this rule:
+    // a climb comment is listed only while its climb still exists, on EVERY
+    // board. No alias arm: a deduplicated climb keeps its `board_climbs` row
+    // (the MoonBoard merges delist the loser, they do not delete it) and those
+    // merges repoint comments at the survivor, so no comment sits under a uuid
+    // that has an alias and no row. It also matches the board-filtered path
+    // above, which already requires the row.
     const sprayCommentVisibility = sql`AND (
       c."entity_type" <> 'climb'
-      OR ${sprayReferenceVisibilityCondition({ boardType: sql`'spray'`, climbUuid: sql`c."entity_id"` }, authenticatedUserId)}
+      OR (
+        ${sprayReferenceVisibilityCondition({ boardType: sql`'spray'`, climbUuid: sql`c."entity_id"` }, authenticatedUserId)}
+        AND EXISTS (SELECT 1 FROM "board_climbs" commented_climb WHERE commented_climb."uuid" = c."entity_id")
+      )
     )`;
 
     // `proposal` was the hole the climb arm left open: a `hide` proposal persists
@@ -294,11 +308,18 @@ export const socialCommentQueries = {
     // WHERE, because the join is right here.
     //
     // Both joins are LEFT and both are one-to-one (`climb_proposals.uuid` is
-    // unique, `board_climbs` is keyed on board type + uuid), so no comment can be
+    // unique, `board_climbs` is keyed on its uuid alone), so no comment can be
     // duplicated by them. `IS DISTINCT FROM` does the rest: a comment that is not
     // on a proposal, a proposal on one of the eight catalogue boards, and a
     // proposal whose climb row has gone all leave `bc_vis.board_type` NULL or
-    // non-spray, and all survive.
+    // non-spray, and all pass the column form.
+    //
+    // The last of those is wrong for spray: with the climb hard-deleted there is
+    // no wall to check, and the thread is prose about a private wall's climb
+    // (#5981). The proposal carries its own board type, so the second condition
+    // drops exactly that case. `IS DISTINCT FROM`, not `NOT (… = 'spray' AND …)`:
+    // `cp_vis` is NULL for every comment that is not on a proposal, and a NULL
+    // there would drop the whole feed.
     const sprayProposalJoin = sql`
       LEFT JOIN "climb_proposals" cp_vis
         ON c."entity_type" = 'proposal' AND cp_vis."uuid" = c."entity_id"
@@ -308,7 +329,8 @@ export const socialCommentQueries = {
     const sprayProposalCommentVisibility = sql`AND ${sprayClimbVisibilityCondition(
       { boardType: sql`bc_vis."board_type"`, layoutId: sql`bc_vis."layout_id"` },
       authenticatedUserId,
-    )}`;
+    )}
+      AND (cp_vis."board_type" IS DISTINCT FROM 'spray' OR bc_vis."uuid" IS NOT NULL)`;
 
     const rawRows = await executeRows<CommentRow>(
       db,
