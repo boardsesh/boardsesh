@@ -109,6 +109,98 @@ beforeEach(async () => {
 });
 
 describe('Stripe support account serialization — real PostgreSQL', () => {
+  it.each([false, true])(
+    'retains the newer visibility choice %s while payment acceptance is in flight',
+    async (showPublicly) => {
+      await db
+        .insert(schema.stripeSupporters)
+        .values({ userId: USER_ID, supportedAt: new Date(), showPublicly: !showPublicly });
+      await db.insert(schema.stripeSupportClaims).values([
+        { id: CLAIM_ID, userId: USER_ID, cadence: 'monthly', showPublicly: !showPublicly },
+        { id: 'other-pending-payment', userId: USER_ID, cadence: 'one_time', showPublicly: !showPublicly },
+      ]);
+      const acceptanceEntered = createBarrier();
+      const releaseAcceptance = createBarrier();
+      subscriptionRetrieve.mockImplementationOnce(async () => {
+        acceptanceEntered.release();
+        await releaseAcceptance.promise;
+        return { id: SUBSCRIPTION_ID, status: 'active', cancel_at_period_end: false };
+      });
+      const acceptance = acceptCheckout(paidSession(), 100);
+      handleLater(acceptance);
+      try {
+        await acceptanceEntered.promise;
+        await expect(
+          supportMutations.updateSupporterVisibility({}, { showPublicly }, context()),
+        ).resolves.toMatchObject({ showPublicly });
+        const pendingClaims = await claims();
+        expect(pendingClaims).toHaveLength(2);
+        expect(pendingClaims.every((claim) => claim.showPublicly === showPublicly)).toBe(true);
+        releaseAcceptance.release();
+        await acceptance;
+        const [supporter] = await db
+          .select()
+          .from(schema.stripeSupporters)
+          .where(eq(schema.stripeSupporters.userId, USER_ID));
+        expect(supporter.showPublicly).toBe(showPublicly);
+      } finally {
+        releaseAcceptance.release();
+        await Promise.allSettled([acceptance]);
+      }
+    },
+  );
+
+  it.each([false, true])(
+    'honors a returning supporter explicitly choosing Checkout credit %s',
+    async (publicCredit) => {
+      await db
+        .insert(schema.stripeSupporters)
+        .values({ userId: USER_ID, supportedAt: new Date(), showPublicly: !publicCredit });
+      await supportMutations.createSupportCheckoutSession(
+        {},
+        { input: { amount: 500, cadence: 'ONE_TIME', publicCredit } },
+        context(),
+      );
+      const [claim] = await claims();
+      expect(claim.showPublicly).toBe(publicCredit);
+
+      await acceptCheckout({ ...paidSession(), client_reference_id: claim.id, subscription: null }, 100);
+
+      const [supporter] = await db
+        .select()
+        .from(schema.stripeSupporters)
+        .where(eq(schema.stripeSupporters.userId, USER_ID));
+      expect(supporter.showPublicly).toBe(publicCredit);
+    },
+  );
+
+  it('blocks a visibility change during a live Checkout check but allows an expired check', async () => {
+    await db.insert(schema.stripeSupporters).values({ userId: USER_ID, supportedAt: new Date(), showPublicly: true });
+    await db
+      .insert(schema.stripeSupportClaims)
+      .values({ id: CLAIM_ID, userId: USER_ID, cadence: 'one_time', showPublicly: true });
+    await db.insert(schema.stripeSupportOperations).values({
+      userId: USER_ID,
+      state: 'checking_checkout',
+      operationId: 'checking-operation',
+      ownerToken: 'checking-owner',
+      leaseExpiresAt: new Date(Date.now() + 60_000),
+    });
+
+    await expect(
+      supportMutations.updateSupporterVisibility({}, { showPublicly: false }, context()),
+    ).rejects.toMatchObject({ extensions: { code: 'SUPPORT_OPERATION_PENDING' } });
+    expect((await claims())[0].showPublicly).toBe(true);
+    await db
+      .update(schema.stripeSupportOperations)
+      .set({ leaseExpiresAt: new Date(0) })
+      .where(eq(schema.stripeSupportOperations.userId, USER_ID));
+    await expect(
+      supportMutations.updateSupporterVisibility({}, { showPublicly: false }, context()),
+    ).resolves.toMatchObject({ showPublicly: false });
+    expect((await claims())[0].showPublicly).toBe(false);
+  });
+
   it('fences an expired reader without releasing or overwriting its successor', async () => {
     const firstEntered = createBarrier();
     const releaseFirst = createBarrier();

@@ -8,6 +8,7 @@ import { db } from '../../db/client';
 import { logger } from '../../utils/logger';
 import { reconcileExpiredSupportClaims } from '../../services/reconcile-support-claims';
 import { withSupportOperation } from '../../services/stripe-support-operation';
+import { lockSupportAccount } from '../../services/stripe-support-lock';
 import { applyRateLimit, requireAuthenticated } from './shared/helpers';
 import {
   getStripeClient,
@@ -268,14 +269,41 @@ export const supportMutations = {
   ) => {
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 10, 'updateSupporterVisibility');
-    const [row] = await db
-      .update(dbSchema.stripeSupporters)
-      .set({ showPublicly, updatedAt: new Date() })
-      .where(and(eq(dbSchema.stripeSupporters.userId, ctx.userId!), isNotNull(dbSchema.stripeSupporters.supportedAt)))
-      .returning();
-    if (!row?.supportedAt) {
-      throw new GraphQLError('No completed linked Stripe support was found.', { extensions: { code: 'NOT_FOUND' } });
-    }
+    const row = await db.transaction(async (transaction) => {
+      await lockSupportAccount(transaction, ctx.userId!);
+      const [operation] = await transaction
+        .select({
+          state: dbSchema.stripeSupportOperations.state,
+          leaseExpiresAt: dbSchema.stripeSupportOperations.leaseExpiresAt,
+        })
+        .from(dbSchema.stripeSupportOperations)
+        .where(eq(dbSchema.stripeSupportOperations.userId, ctx.userId!))
+        .limit(1);
+      if (
+        operation?.state === 'checking_checkout' &&
+        operation.leaseExpiresAt &&
+        operation.leaseExpiresAt > new Date()
+      ) {
+        throw new GraphQLError('Another billing operation is in progress. Try again shortly.', {
+          extensions: { code: 'SUPPORT_OPERATION_PENDING' },
+        });
+      }
+      const [supporter] = await transaction
+        .update(dbSchema.stripeSupporters)
+        .set({ showPublicly, updatedAt: new Date() })
+        .where(and(eq(dbSchema.stripeSupporters.userId, ctx.userId!), isNotNull(dbSchema.stripeSupporters.supportedAt)))
+        .returning();
+      if (!supporter?.supportedAt) {
+        throw new GraphQLError('No completed linked Stripe support was found.', { extensions: { code: 'NOT_FOUND' } });
+      }
+      // Acceptance re-reads the claim under this same account lock. A newer
+      // visibility choice must also apply to Checkout events still in flight.
+      await transaction
+        .update(dbSchema.stripeSupportClaims)
+        .set({ showPublicly })
+        .where(eq(dbSchema.stripeSupportClaims.userId, ctx.userId!));
+      return supporter;
+    });
     return supporterStatus(row);
   },
 

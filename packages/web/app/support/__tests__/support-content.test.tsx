@@ -22,9 +22,22 @@ vi.mock('next/navigation', () => ({
 }));
 
 const { authState, request, refetchAuth } = vi.hoisted(() => ({
-  authState: { token: null as string | null, isAuthenticated: false, isLoading: false, error: null as string | null },
+  authState: {
+    token: null as string | null,
+    isAuthenticated: false,
+    isLoading: false,
+    error: null as string | null,
+    userId: 'user-1',
+  },
   request: vi.fn(),
   refetchAuth: vi.fn(),
+}));
+
+vi.mock('next-auth/react', () => ({
+  useSession: () => ({
+    status: authState.isLoading ? 'loading' : authState.isAuthenticated ? 'authenticated' : 'unauthenticated',
+    data: authState.isAuthenticated ? { user: { id: authState.userId } } : null,
+  }),
 }));
 
 vi.mock('@/app/hooks/use-ws-auth-token', () => ({ useWsAuthToken: () => ({ ...authState, refetch: refetchAuth }) }));
@@ -58,6 +71,7 @@ function supportContent(legacyDonateUrl?: string) {
         legacyDonateUrl,
       }}
       initialStatus={EMPTY_STATUS}
+      initialUserId={null}
       locale="en-US"
     />
   );
@@ -69,7 +83,7 @@ function hrefs(container: HTMLElement): (string | null)[] {
 
 describe('SupportContent', () => {
   beforeEach(() => {
-    Object.assign(authState, { token: null, isAuthenticated: false, isLoading: false, error: null });
+    Object.assign(authState, { token: null, isAuthenticated: false, isLoading: false, error: null, userId: 'user-1' });
     request.mockReset();
     refetchAuth.mockReset().mockResolvedValue(undefined);
   });
@@ -79,6 +93,7 @@ describe('SupportContent', () => {
       <SupportContent
         configuration={{ enabled: true, currency: 'USD', minimumAmount: 100, maximumAmount: 50_000 }}
         initialStatus={initialStatus}
+        initialUserId={authState.isAuthenticated || authState.isLoading ? authState.userId : null}
         locale="en-US"
       />
     );
@@ -181,6 +196,176 @@ describe('SupportContent', () => {
     fireEvent.click(screen.getByRole('button', { name: tFromCatalog('marketing', 'support.stripe.cta') }));
     await waitFor(() =>
       expect(screen.getByRole('alert').textContent).toContain(tFromCatalog('marketing', 'support.stripe.error')),
+    );
+  });
+
+  it('clears prior billing, credit, and errors across sign-out and another account sign-in', async () => {
+    Object.assign(authState, { token: 'token-A', isAuthenticated: true, userId: 'user-A' });
+    const initialStatus = { ...EMPTY_STATUS, hasSupported: true, showPublicly: true };
+    const { rerender } = render(checkoutContent(initialStatus));
+    request.mockRejectedValueOnce({ response: { errors: [{ extensions: { code: 'ACTIVE_SUBSCRIPTION_EXISTS' } }] } });
+    fireEvent.click(screen.getByRole('button', { name: tFromCatalog('marketing', 'support.stripe.cta') }));
+    await screen.findByRole('button', { name: tFromCatalog('marketing', 'support.manage.billing') });
+    expect(screen.getByRole('alert')).toBeTruthy();
+    Object.assign(authState, { token: null, isAuthenticated: false });
+    rerender(checkoutContent(initialStatus));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('button', { name: tFromCatalog('marketing', 'support.manage.billing') })).toBeNull();
+    Object.assign(authState, { token: 'token-B', isAuthenticated: true, userId: 'user-B' });
+    rerender(checkoutContent(initialStatus));
+    const credit = screen.getByRole('checkbox', { name: tFromCatalog('marketing', 'support.stripe.publicCredit') });
+    expect((credit as HTMLInputElement).checked).toBe(false);
+    expect(
+      screen.queryByRole('checkbox', { name: tFromCatalog('marketing', 'support.manage.publicCredit') }),
+    ).toBeNull();
+    request.mockRejectedValueOnce(new Error('Stop before navigation'));
+    fireEvent.click(screen.getByRole('button', { name: tFromCatalog('marketing', 'support.stripe.cta') }));
+    await waitFor(() =>
+      expect(request).toHaveBeenLastCalledWith(expect.anything(), {
+        input: { amount: 500, cadence: 'MONTHLY', publicCredit: false, locale: 'en-US' },
+      }),
+    );
+  });
+
+  it('ignores account A’s late visibility response after account B takes over', async () => {
+    Object.assign(authState, { token: 'token-A', isAuthenticated: true, userId: 'user-A' });
+    let finishA: ((response: unknown) => void) | undefined;
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishA = resolve;
+        }),
+    );
+    const initialStatus = { ...EMPTY_STATUS, hasSupported: true };
+    const { rerender } = render(checkoutContent(initialStatus));
+    fireEvent.click(screen.getByRole('checkbox', { name: tFromCatalog('marketing', 'support.manage.publicCredit') }));
+    Object.assign(authState, { token: 'token-B', userId: 'user-B' });
+    rerender(checkoutContent(initialStatus));
+    await act(async () => {
+      finishA?.({ updateSupporterVisibility: { ...initialStatus, showPublicly: true, hasActiveSubscription: true } });
+    });
+    expect(
+      screen.queryByRole('checkbox', { name: tFromCatalog('marketing', 'support.manage.publicCredit') }),
+    ).toBeNull();
+    expect(
+      (
+        screen.getByRole('checkbox', {
+          name: tFromCatalog('marketing', 'support.stripe.publicCredit'),
+        }) as HTMLInputElement
+      ).checked,
+    ).toBe(false);
+    expect(screen.queryByRole('button', { name: tFromCatalog('marketing', 'support.manage.billing') })).toBeNull();
+  });
+
+  it('ignores account A’s late billing error and keeps account B’s request busy', async () => {
+    Object.assign(authState, { token: 'token-A', isAuthenticated: true, userId: 'user-A' });
+    let failA: ((error: unknown) => void) | undefined;
+    let failB: ((error: unknown) => void) | undefined;
+    request.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          failA = reject;
+        }),
+    );
+    const { rerender } = render(checkoutContent());
+    fireEvent.click(screen.getByRole('button', { name: tFromCatalog('marketing', 'support.stripe.cta') }));
+    Object.assign(authState, { token: 'token-B', userId: 'user-B' });
+    rerender(checkoutContent());
+    request.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          failB = reject;
+        }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: tFromCatalog('marketing', 'support.stripe.cta') }));
+    await act(async () => {
+      failA?.({ response: { errors: [{ extensions: { code: 'ACTIVE_SUBSCRIPTION_EXISTS' } }] } });
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('button', { name: tFromCatalog('marketing', 'support.manage.billing') })).toBeNull();
+    expect(
+      screen
+        .getByRole('button', { name: tFromCatalog('marketing', 'support.stripe.processing') })
+        .hasAttribute('disabled'),
+    ).toBe(true);
+    await act(async () => {
+      failB?.(new Error('Stop before navigation'));
+    });
+  });
+
+  it('masks account A’s SSR billing when the first settled session belongs to B', () => {
+    Object.assign(authState, { isLoading: true, userId: 'user-A' });
+    const initialStatus = { ...EMPTY_STATUS, hasSupported: true, hasActiveSubscription: true, showPublicly: true };
+    const { rerender } = render(checkoutContent(initialStatus));
+    Object.assign(authState, { isLoading: false, isAuthenticated: true, token: 'token-B', userId: 'user-B' });
+    rerender(checkoutContent(initialStatus));
+    expect(screen.queryByRole('button', { name: tFromCatalog('marketing', 'support.manage.billing') })).toBeNull();
+    expect(
+      screen.queryByRole('checkbox', { name: tFromCatalog('marketing', 'support.manage.publicCredit') }),
+    ).toBeNull();
+    expect(
+      (
+        screen.getByRole('checkbox', {
+          name: tFromCatalog('marketing', 'support.stripe.publicCredit'),
+        }) as HTMLInputElement
+      ).checked,
+    ).toBe(false);
+  });
+
+  it.each([
+    ['createSupportCheckoutSession', 'support.stripe.cta', false],
+    ['createSupportBillingPortalSession', 'support.manage.billing', true],
+  ] as const)(
+    'ignores account A’s late %s URL after a switch',
+    async (responseField, buttonKey, activeSubscription) => {
+      Object.assign(authState, { token: 'token-A', isAuthenticated: true, userId: 'user-A' });
+      let finishA: ((response: unknown) => void) | undefined;
+      request.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishA = resolve;
+          }),
+      );
+      const initialStatus = {
+        ...EMPTY_STATUS,
+        hasSupported: activeSubscription,
+        hasActiveSubscription: activeSubscription,
+      };
+      const { rerender } = render(checkoutContent(initialStatus));
+      fireEvent.click(screen.getAllByRole('button', { name: tFromCatalog('marketing', buttonKey) })[0]);
+      Object.assign(authState, { token: 'token-B', userId: 'user-B' });
+      rerender(checkoutContent(initialStatus));
+      const readSessionUrl = vi.fn(() => ({ url: 'https://stripe.test/account-A' }));
+      const staleResponse = Object.defineProperty({}, responseField, { get: readSessionUrl });
+      await act(async () => {
+        finishA?.(staleResponse);
+      });
+      expect(readSessionUrl).not.toHaveBeenCalled();
+    },
+  );
+
+  it('preserves server supporter state while the initial session loads', () => {
+    Object.assign(authState, { isLoading: true });
+    const initialStatus = { ...EMPTY_STATUS, hasSupported: true, hasActiveSubscription: true, showPublicly: true };
+    const { rerender } = render(checkoutContent(initialStatus));
+    expect(
+      (
+        screen.getByRole('checkbox', {
+          name: tFromCatalog('marketing', 'support.manage.publicCredit'),
+        }) as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    Object.assign(authState, { isLoading: false, token: 'token-A', isAuthenticated: true });
+    rerender(checkoutContent(initialStatus));
+    expect(
+      (
+        screen.getByRole('checkbox', {
+          name: tFromCatalog('marketing', 'support.manage.publicCredit'),
+        }) as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    expect(screen.getAllByRole('button', { name: tFromCatalog('marketing', 'support.manage.billing') })).toHaveLength(
+      2,
     );
   });
 
