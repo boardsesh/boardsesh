@@ -14,6 +14,7 @@ import { main, parseMigrationOptions } from './migrate-ota-storage';
 type StoredObject = { body: Buffer; metadata: Omit<PutObjectCommandInput, 'Bucket' | 'Key' | 'Body'> };
 const storage = vi.hoisted(() => ({
   buckets: new Map<string, Map<string, StoredObject>>(),
+  backoffs: [] as number[],
   putFailures: [] as { error: unknown; partial?: boolean; committed?: boolean }[],
   putAttempts: [] as { body: Readable; bytes: Buffer; input: PutObjectCommandInput }[],
   activeReads: new Map<string, number>(),
@@ -32,6 +33,12 @@ const storage = vi.hoisted(() => ({
   uploadBodies: [] as ReadStream[],
   sourceGets: 0,
   mutateSourceAfterGet: 0,
+}));
+vi.mock('node:timers/promises', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:timers/promises')>()),
+  setTimeout: async (duration: number) => {
+    storage.backoffs.push(duration);
+  },
 }));
 vi.mock('@aws-sdk/client-s3', async (importOriginal) => {
   const original = await importOriginal<typeof import('@aws-sdk/client-s3')>();
@@ -167,6 +174,7 @@ beforeEach(() => {
   storage.buckets.clear();
   storage.calls.length = 0;
   storage.putFailures.length = 0;
+  storage.backoffs.length = 0;
   storage.putAttempts.length = 0;
   storage.activeReads.clear();
   storage.readPeaks.clear();
@@ -581,6 +589,8 @@ describe('OTA migration whole-object PUT retries', () => {
   it.each([
     { failure: { error: { name: 'InternalError', $metadata: { httpStatusCode: 500 } } } },
     { failure: { error: { code: 'ECONNRESET' }, partial: true } },
+    { failure: { error: { code: 'ECONNABORTED' }, partial: true } },
+    { failure: { error: { name: 'RequestTimeout', $metadata: { httpStatusCode: 408 } } } },
     { failure: { error: { name: 'ServiceUnavailable', $metadata: { httpStatusCode: 503 } }, committed: true } },
   ])('reopens identical staged bytes after a transient failure: $failure', async ({ failure }) => {
     liveEndpoint = LEGACY;
@@ -599,7 +609,11 @@ describe('OTA migration whole-object PUT retries', () => {
         ...current.metadata,
       });
     expect(storage.buckets.get(R2)!.get('runtime/bundle')).toMatchObject(current);
+    // Copy, initial source SHA-256 pass, then final source-stability SHA-256 pass.
     expect(storage.readPeaks.get(LEGACY)).toEqual([1, 1, 1]);
+    expect(storage.backoffs).toHaveLength(1);
+    expect(storage.backoffs[0]).toBeGreaterThanOrEqual(187.5);
+    expect(storage.backoffs[0]).toBeLessThanOrEqual(312.5);
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('SHA-256, and metadata (exact)'));
   });
   it('stops after four transient attempts without deleting any objects', async () => {
@@ -609,6 +623,11 @@ describe('OTA migration whole-object PUT retries', () => {
     for (let attempt = 0; attempt < 5; attempt += 1) storage.putFailures.push({ error: failure });
     await expect(main(['--apply', '--concurrency', '1'])).rejects.toEqual(failure);
     expect(writes()).toHaveLength(4);
+    expect(storage.backoffs).toHaveLength(3);
+    for (const [index, milliseconds] of storage.backoffs.entries()) {
+      expect(milliseconds).toBeGreaterThanOrEqual(187.5 * 2 ** index);
+      expect(milliseconds).toBeLessThanOrEqual(312.5 * 2 ** index);
+    }
     expect(storage.putAttempts.every(({ body }) => body.destroyed)).toBe(true);
     expect(storage.buckets.get(LEGACY)!.size).toBe(1);
     expect(storage.buckets.get(R2)!.size).toBe(0);
@@ -625,6 +644,7 @@ describe('OTA migration whole-object PUT retries', () => {
     storage.putFailures.push({ error: failure });
     await expect(main(['--apply', '--concurrency', '1'])).rejects.toEqual(failure);
     expect(writes()).toHaveLength(1);
+    expect(storage.backoffs).toEqual([]);
     expect(storage.putAttempts[0].body.destroyed).toBe(true);
   });
 });

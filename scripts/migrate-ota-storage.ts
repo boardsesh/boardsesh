@@ -21,7 +21,7 @@ import {
   S3Client,
   type GetObjectCommandOutput,
 } from '@aws-sdk/client-s3';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -357,7 +357,7 @@ function isTransientPutError(error: unknown): boolean {
   const candidate = error as { name?: string; code?: string; $metadata?: { httpStatusCode?: number } };
   const status = candidate.$metadata?.httpStatusCode;
   // A concrete client response wins over a misleading transport error name.
-  if (status !== undefined) return [429, 500, 502, 503, 504].includes(status);
+  if (status !== undefined) return [408, 429, 500, 502, 503, 504].includes(status);
   return [
     'InternalError',
     'ServiceUnavailable',
@@ -365,6 +365,7 @@ function isTransientPutError(error: unknown): boolean {
     'RequestTimeout',
     'TimeoutError',
     'ECONNRESET',
+    'ECONNABORTED',
     'EPIPE',
     'ETIMEDOUT',
     'ECONNREFUSED',
@@ -385,7 +386,7 @@ async function putDestination(destination: BucketClient, key: string, source: Te
     } catch (error) {
       if (attempt === MAX_PUT_ATTEMPTS || !isTransientPutError(error)) throw error;
     }
-    await delay(250 * 2 ** (attempt - 1));
+    await delay((250 * 2 ** (attempt - 1) * randomInt(75, 126)) / 100);
   }
 }
 
