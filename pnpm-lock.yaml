@@ -112,6 +112,9 @@ importers:
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
+      yoga-layout:
+        specifier: 3.2.1
+        version: 3.2.1
 
   packages/aurora-sync:
     dependencies:

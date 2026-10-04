@@ -26,7 +26,7 @@ import {
   resolveDetailPaneWidth,
   WALL_COLUMN_WIDTH,
 } from '../../src/theme/size-class';
-import { isAccessoryHiddenRoute, tabsActiveSegment } from '../../src/lib/route-segments';
+import { isAccessoryHiddenRoute, isOutlineEditorRoute, tabsActiveSegment } from '../../src/lib/route-segments';
 import { useKeepAwakeWhile } from '../../src/hooks/use-keep-awake-while';
 import { SIDEBAR_WIDTH } from '../../src/theme/layout';
 import { getAppEntryTab } from '../../src/lib/app-entry-route';
@@ -139,6 +139,8 @@ export default function TabLayout() {
   const accessoryNativeProps = isAccessoryHiddenRoute(segments)
     ? ACCESSORY_HIDDEN_NATIVE_PROPS
     : ACCESSORY_SHOWN_NATIVE_PROPS;
+  // The outline editor needs the full content pane for its board canvas.
+  const onOutlineEditor = isOutlineEditorRoute(segments);
   // Kiosk stays lit: hold the screen awake while the "On the Wall" tab is the
   // focused destination (iPad-only — /wall is unreachable elsewhere). Released
   // on navigate-away and unmount so other tabs don't hold the lock.
@@ -294,7 +296,7 @@ export default function TabLayout() {
             on the "On the Wall" tab: the kiosk IS the wall surface and needs the full
             content pane, so a persistent (usually empty) detail pane there just squeezes
             it — same redundancy guard as the wall column below. */}
-        {isRegular && showDetailPane && !onWallTab ? (
+        {isRegular && showDetailPane && !onWallTab && !onOutlineEditor ? (
           <View key="pane" style={[styles.playPane, { width: playPaneWidth, borderLeftColor: shellDividerColor }]}>
             <IpadPlayPane />
           </View>
@@ -304,7 +306,7 @@ export default function TabLayout() {
             rides a strip atop the pane (IpadPlayPane) instead. Hidden while the
             "On the Wall" tab is the focused destination — it shows the same feed,
             so two live copies would be redundant. */}
-        {isRegular && showWallColumn && !onWallTab ? (
+        {isRegular && showWallColumn && !onWallTab && !onOutlineEditor ? (
           <View
             key="wall"
             style={[styles.wallColumn, { width: WALL_COLUMN_WIDTH, borderLeftColor: shellDividerColor }]}
