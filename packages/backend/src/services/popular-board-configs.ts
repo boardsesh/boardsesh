@@ -299,7 +299,7 @@ export async function startPopularBoardConfigsRefresh(boss: PgBoss): Promise<voi
   });
 }
 
-async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
+export function popularBoardConfigsQuery() {
   // Every listed per-size config, with the climbs that fit it: inside the
   // size's edges, and needing only sets the config has.
   //
@@ -323,7 +323,7 @@ async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
   // (`create-climb-filters.ts`) drops such a climb on every board but MoonBoard,
   // whose backfill runs separately and which it lets through; this count
   // follows the same rule so it still matches the list behind the tap.
-  const result = await db.execute(sql`
+  return sql`
     SELECT
       configs.board_type,
       configs.layout_id,
@@ -393,7 +393,11 @@ async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
     WHERE bl.is_listed = true
       AND bps.is_listed = true
     ORDER BY board_count DESC, total_ascents DESC, configs.board_type, bl.name
-  `);
+  `;
+}
+
+async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
+  const result = await db.execute(popularBoardConfigsQuery());
 
   const rows = rowsFromResult<Record<string, unknown>>(result);
 

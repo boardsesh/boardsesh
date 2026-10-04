@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
-import postgres from 'postgres';
-import { drizzle } from 'drizzle-orm/postgres-js';
 import {
   legacyAuroraRawFrameHoldEvents,
   projectAuroraFramesToStoredRows,
@@ -10,26 +8,15 @@ import {
 import { enrichFingerprintOwnersWithLegacyCompatibility } from './catalog-fingerprint-compat';
 import { fingerprintFromHolds } from './fingerprint';
 import {
-  existingCatalogLayoutRowsQuery,
-  legacyFingerprintCompatibilityRowsQuery,
   buildLayoutCatalogIndex,
   createStagingBatch,
   createGroupResult,
+  loadLayoutCatalogIndex,
+  loadLegacyFingerprintCompatibilityRows,
   stageCatalogClimb,
 } from './catalog-sync';
 
-const renderOnlyDb = drizzle({} as never);
-
 describe('catalog fingerprint owner ordering', () => {
-  it('orders the existing-layout query by raw UUID before first-owner indexing', () => {
-    const rendered = existingCatalogLayoutRowsQuery(renderOnlyDb, 42).toSQL();
-    const normalizedSql = rendered.sql.replaceAll(/\s+/g, ' ').trim().toLowerCase();
-
-    expect(normalizedSql).toContain('order by "board_climbs"."uuid"');
-    expect(normalizedSql).not.toContain('lower("board_climbs"."uuid")');
-    expect(rendered.params).toEqual(['kilter', 42]);
-  });
-
   it('routes duplicate legacy owners to the stable first UUID', () => {
     const frames = 'p100r12,"x100p100r13';
     const legacyFingerprint = fingerprintFromHolds(legacyAuroraRawFrameHoldEvents(frames, 'kilter'));
@@ -52,22 +39,53 @@ describe('catalog fingerprint owner ordering', () => {
 });
 
 const compatibilityTestDatabaseUrl = process.env.KILTER_COMPAT_TEST_DB_URL;
-const hasLocalCompatibilityDatabase =
-  compatibilityTestDatabaseUrl && ['localhost', '127.0.0.1'].includes(new URL(compatibilityTestDatabaseUrl).hostname);
+const ownedCompatibilityDatabase = (() => {
+  if (
+    process.env.BOARDSESH_4161_SQL_APPROVED !== '1' ||
+    process.env.BOARDSESH_4161_OWNED_PG_PORT !== '32785' ||
+    process.env.BOARDSESH_4161_OWNED_CONTAINER_ID !==
+      '47c56beae33b3f73ecce8556290f2f91b24f5f18f44ad538f478ff614126f210' ||
+    !compatibilityTestDatabaseUrl ||
+    compatibilityTestDatabaseUrl !== process.env.DATABASE_URL ||
+    compatibilityTestDatabaseUrl !== process.env.POSTGRES_URL
+  ) {
+    return false;
+  }
+  const url = new URL(compatibilityTestDatabaseUrl);
+  return (
+    url.protocol === 'postgres:' &&
+    url.hostname === '127.0.0.1' &&
+    url.port === '32785' &&
+    url.pathname === '/boardsesh_pr_sweep_4161' &&
+    decodeURIComponent(url.username) === 'boardsesh_4161' &&
+    decodeURIComponent(url.password) === 'fixture-only-4161' &&
+    process.env.REDIS_URL === 'redis://127.0.0.1:9/0' &&
+    (process.env.READ_REPLICA_URL ?? '') === ''
+  );
+})();
 
-it.skipIf(!hasLocalCompatibilityDatabase)(
+it.skipIf(!ownedCompatibilityDatabase)(
   'preloads single-frame legacy sentinels without loading normal single-frame catalog rows',
   async () => {
-    const client = postgres(compatibilityTestDatabaseUrl!);
+    if (!compatibilityTestDatabaseUrl) throw new Error('the exact owned 4161 database URL was not supplied');
+    const [{ default: postgres }, { drizzle }] = await Promise.all([
+      import('postgres'),
+      import('drizzle-orm/postgres-js'),
+    ]);
+    const client = postgres(compatibilityTestDatabaseUrl, { max: 1, prepare: false });
     const database = drizzle(client);
     try {
+      const [identity] = await client<{ current_database: string }[]>`SELECT current_database()`;
+      expect(identity?.current_database).toBe('boardsesh_pr_sweep_4161');
       await database.transaction(async (transaction) => {
         await transaction.execute(sql`CREATE TEMP TABLE board_climbs (
         board_type text, uuid text, layout_id integer, frames text, frames_count integer,
-        hold_fingerprint text, user_id text
+        hold_fingerprint text, user_id text, is_listed boolean, is_draft boolean
       ) ON COMMIT DROP`);
         const fixtures = [
           { uuid: 'legacy-single', frames: 'p100r12p200r999', framesCount: 1, userId: null },
+          { uuid: 'legacy-owner-z', frames: 'p100r12p200r999', framesCount: 1, userId: null },
+          { uuid: 'legacy-owner-a', frames: 'p100r12p200r999', framesCount: 1, userId: null },
           { uuid: 'legacy-multi', frames: 'p100r12,"p100r13', framesCount: 2, userId: null },
           { uuid: 'duplicate-hold', frames: 'p100r12p100r13', framesCount: 1, userId: null },
           { uuid: 'normal-single', frames: 'p100r12p200r13', framesCount: 1, userId: null },
@@ -76,16 +94,28 @@ it.skipIf(!hasLocalCompatibilityDatabase)(
         for (const fixture of fixtures) {
           const fingerprint = fingerprintFromHolds(legacyAuroraRawFrameHoldEvents(fixture.frames, 'kilter'));
           await transaction.execute(
-            sql`INSERT INTO board_climbs VALUES ('kilter', ${fixture.uuid}, 1, ${fixture.frames}, ${fixture.framesCount}, ${fingerprint}, ${fixture.userId})`,
+            sql`INSERT INTO board_climbs VALUES (
+              'kilter', ${fixture.uuid}, 1, ${fixture.frames}, ${fixture.framesCount}, ${fingerprint},
+              ${fixture.userId}, true, false
+            )`,
           );
         }
-        const candidates = await legacyFingerprintCompatibilityRowsQuery(transaction);
-        expect(candidates.map((row) => row.uuid)).toEqual(['duplicate-hold', 'legacy-multi', 'legacy-single']);
+        const candidates = await loadLegacyFingerprintCompatibilityRows(transaction);
+        expect(candidates.map((row) => row.uuid)).toEqual([
+          'duplicate-hold',
+          'legacy-multi',
+          'legacy-owner-a',
+          'legacy-owner-z',
+          'legacy-single',
+        ]);
+        const legacyFingerprint = fingerprintFromHolds(legacyAuroraRawFrameHoldEvents('p100r12p200r999', 'kilter'));
+        const loadedIndex = await loadLayoutCatalogIndex(transaction, 1, new Map(), new Set(), candidates);
+        expect(loadedIndex.fingerprintToCanonical.get(legacyFingerprint)).toBe('legacy-owner-a');
         const legacy = fixtures[0]!;
-        const fingerprint = fingerprintFromHolds(legacyAuroraRawFrameHoldEvents(legacy.frames, 'kilter'));
+        const fingerprint = legacyFingerprint;
         const index = buildLayoutCatalogIndex({
           layoutId: 1,
-          selfAliasUuids: [],
+          existingSelfAliasLower: new Set(),
           holeToPlacement: new Map([
             [10, 100],
             [20, 200],
