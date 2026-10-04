@@ -1138,7 +1138,9 @@ describe('ClimbList quick-actions tip wiring', () => {
   it('reports the shown visit once, then persists dismissal', async () => {
     const { findByRole, queryByTestId, rerender } = render(<ClimbList />);
     const dismiss = await findByRole('button', { name: 'Dismiss tip' });
-    expect(mocks.track).toHaveBeenCalledWith('Onboarding Tip Shown', { tip: 'quick_actions', visitCount: 3 });
+    await waitFor(() =>
+      expect(mocks.track).toHaveBeenCalledWith('Onboarding Tip Shown', { tip: 'quick_actions', visitCount: 3 }),
+    );
     rerender(<ClimbList />);
     expect(mocks.track.mock.calls.filter(([event]) => event === 'Onboarding Tip Shown')).toHaveLength(1);
     mocks.markQuickActionsTipSeen.mockClear();
