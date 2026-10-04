@@ -6,9 +6,11 @@ import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { useLogbook } from '@boardsesh/board-react';
 import { getBoardCapabilities } from '@boardsesh/board-config';
 import { deriveAngleTickCounts, deriveOtherAngleActivity } from './logbook-summary';
+import { deriveCrewCounts } from './climber-logs';
 import { CollapsibleSection } from '../CollapsibleSection';
 import { Icon } from '../Icon';
 import { LogbookSection } from './LogbookSection';
+import { ClimberLogsSection } from './ClimberLogsSection';
 import { SimilarClimbsSection } from './SimilarClimbsSection';
 import { CommunitySection } from './CommunitySection';
 import { BoardseshGradeSection } from './BoardseshGradeSection';
@@ -19,10 +21,13 @@ import { SetterNotesSection } from './SetterNotesSection';
 import { useAuth } from '../../providers/auth-provider';
 import { useBoardseshGradeEnabled } from '../../providers/feature-flags-provider';
 import { useTheme } from '../../providers/theme-provider';
-import { useBoardseshGrade, useClimbStatsHistory } from '../../lib/graphql/hooks';
+import { useBoardseshGrade, useClimbStatsHistory, useFollowingClimbLogs } from '../../lib/graphql/hooks';
+import { useFollowedAuthorsSnapshot } from '../../lib/graphql/hooks/use-followed-authors';
 import { useGradeFormat } from '../../hooks/use-grade-format';
+import { getDifficultyIdForGradeName } from '../../lib/grade-label';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useDeferredAfterInteractions } from '../../hooks/use-deferred-after-interactions';
+import { useClimbSettled } from '../../hooks/use-climb-settled';
 import { BETA_SHELF_SECTION_KEY } from '../../lib/beta-shelf-collapse';
 
 type DeferredSectionsProps = {
@@ -49,7 +54,15 @@ type DeferredSectionsProps = {
   onAddBetaVideo?: () => void;
   /** Opens the full-history sheet from the Logbook card's "See full logbook" row. */
   onOpenFullLogbook?: () => void;
+  /** Opens the full list from the Climber logs card's "See all logs" row. */
+  onOpenClimberLogs?: () => void;
+  /** Opens a climber's profile from a Climber logs row. */
+  onOpenClimberProfile?: (userId: string) => void;
+  /** Opens climber search from the Climber logs card's empty states. */
+  onFindClimbers?: () => void;
 };
+
+const noop = () => {};
 
 /**
  * Below-fold deferred content for the play drawer.
@@ -71,6 +84,9 @@ export const DeferredSections = memo(function DeferredSections({
   onLogbookToggle,
   onAddBetaVideo,
   onOpenFullLogbook,
+  onOpenClimberLogs,
+  onOpenClimberProfile,
+  onFindClimbers,
 }: DeferredSectionsProps) {
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
@@ -113,6 +129,38 @@ export const DeferredSections = memo(function DeferredSections({
     };
   }, [logbook, climb.uuid, angle]);
 
+  // Logs on this climb from the climbers the viewer follows. Fetched ahead of
+  // the scroll gate because the collapsed Logbook line above the fold mentions
+  // them, but only once the open animation has settled, the climber has stayed
+  // on the climb for a moment (a fast queue swipe sends nothing) and the phone's
+  // own followed-authors snapshot says there is someone to ask about. An account
+  // that follows nobody never sends this request. The snapshot is only read
+  // here: the root sync bridge keeps it fresh, so opening the drawer costs no
+  // followed-authors request and no SQLite write. A missing one loads behind
+  // the same settle gate.
+  const settled = useClimbSettled(enabled, climb.uuid);
+  // What a climber's own grade is compared against: only one that differs is worth a mention.
+  const climbGradeId = getDifficultyIdForGradeName(climb.difficulty);
+  const { data: followedAuthors, isError: followedAuthorsFailed } = useFollowedAuthorsSnapshot({
+    loadWhenMissing: isAuthenticated && settled,
+  });
+  const followState: 'none' | 'some' | 'unknown' | 'none-yet' = followedAuthors
+    ? followedAuthors.users.length > 0
+      ? 'some'
+      : 'none'
+    : followedAuthorsFailed
+      ? 'unknown'
+      : 'none-yet';
+  const { data: crewLogs } = useFollowingClimbLogs(boardName, climb.uuid, {
+    enabled: isAuthenticated && settled && (followState === 'some' || followState === 'unknown'),
+  });
+  // A disabled query still hands back what it cached, so an account that has
+  // since unfollowed everyone must not keep a crew mention from that answer.
+  const crew = useMemo(
+    () => (followState === 'none' ? null : deriveCrewCounts(crewLogs, angle)),
+    [followState, crewLogs, angle],
+  );
+
   // The one-line summary on the collapsed Logbook header — the scroll hint the
   // user peeks at the fold. The current-angle counts read the denormalised
   // userAscents/userAttempts (both angle-scoped, disjoint), so the line renders
@@ -144,6 +192,15 @@ export const DeferredSections = memo(function DeferredSections({
     else body = t('mobile.logbook.summaryUntried');
 
     const line = t('mobile.logbook.summaryAnglePrefix', { angle, body });
+    // Followed climbers who sent it at this angle. The climber's own status
+    // stays first, so the one-line clamp never cuts it.
+    const lead =
+      crew && crew.sendersAtAngle > 0
+        ? t('mobile.logbook.summaryWithCrew', {
+            body: line,
+            crew: t('mobile.logbook.crewSent', { count: crew.sendersAtAngle }),
+          })
+        : line;
 
     const { sentAngles, triedAngles } = otherAngleActivity;
     const formatAngles = (angles: number[]) => angles.map((otherAngle) => `${otherAngle}°`).join(', ');
@@ -163,8 +220,19 @@ export const DeferredSections = memo(function DeferredSections({
           : t('mobile.logbook.otherAnglesTriedCount', { count: triedAngles.length });
     const clause = [sentClause, triedClause].filter(Boolean).join(' · ');
 
-    return clause ? t('mobile.logbook.summaryWithOtherAngles', { body: line, clause }) : line;
-  }, [isAuthenticated, angleTickCounts, climb.userAscents, climb.userAttempts, angle, otherAngleActivity, t]);
+    return clause ? t('mobile.logbook.summaryWithOtherAngles', { body: lead, clause }) : lead;
+  }, [isAuthenticated, angleTickCounts, climb.userAscents, climb.userAttempts, angle, otherAngleActivity, crew, t]);
+
+  const climberLogsSummary = useMemo(
+    () =>
+      crew
+        ? t('mobile.climberLogs.collapsedSummary', {
+            logged: t('mobile.climberLogs.collapsedLogged', { count: crew.climbers }),
+            sent: t('mobile.climberLogs.sentCount', { count: crew.senders }),
+          })
+        : null,
+    [crew, t],
+  );
 
   // Grade shown next to the collapsed Boardsesh grade header. Lifted up here
   // (rather than read from BoardseshGradeSection) because that section
@@ -223,11 +291,36 @@ export const DeferredSections = memo(function DeferredSections({
 
       {readyToRender && (
         <>
-          {/* The setter's own notes. First below-fold section AFTER the Logbook,
-              never before it: PlayDrawer's `firstScreenReserve` /
-              `computeLogbookScrollTarget` assume the Logbook is the first
-              section here, so anything inserted above it breaks the fold math.
-              Renders nothing when the climb has no notes worth showing. */}
+          {/* Logs from climbers the viewer follows. First below-fold section
+              AFTER the Logbook, never before it: PlayDrawer's
+              `firstScreenReserve` / `computeLogbookScrollTarget` assume the
+              Logbook is the first section here, so anything inserted above it
+              breaks the fold math. Signed-in only, and left out of store
+              captures (its query is off in screenshot mode). Waits for the
+              followed-authors snapshot so the card never opens on the wrong
+              empty state. */}
+          {isAuthenticated && process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' && followState !== 'none-yet' && (
+            <CollapsibleSection
+              title={t('mobile.climberLogs.title')}
+              summary={climberLogsSummary}
+              defaultExpanded
+              persistKey="climberLogs"
+            >
+              <ClimberLogsSection
+                climbUuid={climb.uuid}
+                boardName={boardName}
+                angle={angle}
+                climbGradeId={climbGradeId}
+                followState={followState}
+                onSeeAll={onOpenClimberLogs ?? noop}
+                onPressClimber={onOpenClimberProfile ?? noop}
+                onFindClimbers={onFindClimbers ?? noop}
+              />
+            </CollapsibleSection>
+          )}
+
+          {/* The setter's own notes. Renders nothing when the climb has no notes
+              worth showing. */}
           <SetterNotesSection description={climb.description} />
 
           <CollapsibleSection

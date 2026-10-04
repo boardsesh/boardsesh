@@ -22,6 +22,7 @@ import {
 } from '../../../db/queries/followed-authors-local';
 import { useStoredUserId } from '../../../hooks/use-current-user-id';
 import { getHttpClient } from '../client';
+import { FOLLOWING_CLIMB_LOGS_QUERY_KEY } from '../query-keys';
 import { isOfflineEngineEnabled } from '../../offline-engine';
 import { updateUserFollowCaches } from './user-follow-cache';
 
@@ -32,6 +33,8 @@ export const AUTHOR_QUERY_KEYS = [
   'searchClimbs',
   'infiniteSearchClimbs',
   'searchClimbsCount',
+  // The play drawer's "Climber logs" card: who you follow decides whose logs it shows.
+  FOLLOWING_CLIMB_LOGS_QUERY_KEY,
 ] as const;
 // One local database has one active owner. A newer load (including an account
 // switch) supersedes older loads across hook instances. Real-SQLite race tests
@@ -110,6 +113,34 @@ export function useFollowedAuthors() {
   }, [query.data, queryClient]);
   const userIds = useMemo(() => new Set(query.data?.users.map((user) => user.userId)), [query.data]);
   return { ...query, setterNames, userIds };
+}
+
+/**
+ * Reads the followed-authors answer the app already holds, for a surface that
+ * opens often (the play drawer). It never refetches an answer that exists:
+ * `OfflineSyncBridge` keeps the root observer mounted, and that one owns the
+ * refresh, the SQLite snapshot write and the feed invalidation. Mounting
+ * `useFollowedAuthors` here instead would send the query, and take the exclusive
+ * write lock, on every open more than a minute after the last sync.
+ *
+ * `loadWhenMissing` lets the caller pick the moment for the one case with no
+ * answer at all (a failed first sync, or the browser build, which has no
+ * bridge).
+ */
+export function useFollowedAuthorsSnapshot({ loadWhenMissing }: { loadWhenMissing: boolean }) {
+  const { userId } = useStoredUserId(true);
+  return useQuery({
+    queryKey: ['followedAuthors', userId],
+    queryFn: () => loadFollowedAuthors(userId!),
+    enabled: !!userId && loadWhenMissing,
+    networkMode: 'always',
+    // An answer in the cache is never stale to this observer, so neither
+    // mounting nor `loadWhenMissing` turning on refetches it.
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
 }
 
 export function useToggleAuthorFollow() {

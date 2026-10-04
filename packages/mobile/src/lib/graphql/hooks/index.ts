@@ -1405,6 +1405,7 @@ export function useUserBetaLinks(
 // Own module: it pulls in the offline source hook (expo-sqlite), which the
 // barrel's unit tests mock out the same way as the other submodules.
 export { useSimilarClimbs } from './use-similar-climbs';
+export { useFollowingClimbLogs, useClimbDwell } from './use-following-climb-logs';
 
 /**
  * Per-angle stats for a climb (grade, stars, sends). Every consumer keeps the
