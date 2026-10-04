@@ -145,7 +145,8 @@ async function selectSmartClimbRefs(
   if (type === 'LIKED_CLIMBS') {
     const favConditions: SQL[] = [
       eq(dbSchema.userFavorites.userId, userId),
-      // Favourites are the other reference source — same rule, same reason.
+      // Use the joined catalog type: legacy favorite board names can be stale,
+      // which must not bypass private-spray filtering in the playlist.
       sprayReferenceVisibilityCondition(
         { boardType: dbSchema.boardClimbs.boardType, climbUuid: dbSchema.userFavorites.climbUuid },
         viewerUserId,
@@ -229,9 +230,10 @@ async function countSmartClimbRefs(
   if (type === 'LIKED_CLIMBS') {
     const favConditions: SQL[] = [
       eq(dbSchema.userFavorites.userId, userId),
-      // Favourites are the other reference source — same rule, same reason.
+      // Match the page query's catalog type so stale legacy names cannot
+      // bypass private-spray filtering or inflate this total count.
       sprayReferenceVisibilityCondition(
-        { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
+        { boardType: dbSchema.boardClimbs.boardType, climbUuid: dbSchema.userFavorites.climbUuid },
         viewerUserId,
       ),
     ];
