@@ -451,6 +451,12 @@ export const socialFeedQueries = {
         },
       };
     } catch (err) {
+      // A read that timed out is the slowest read there is.
+      logSlowRead('followingClimbAscents', startedAt, {
+        boardType: validatedInput.boardType,
+        climbUuid: validatedInput.climbUuid,
+        failed: true,
+      });
       logger.error('[followingClimbAscents] DB error:', err);
       throw err;
     }

@@ -40,6 +40,13 @@ const twinFilter = (table: string) =>
 /** The slice the twin filter reads: this board type, this climb and its aliases. */
 const TWIN_SCOPE =
   /FROM "boardsesh_ticks" "twin_scope"\s+WHERE \(\("twin_scope"\."board_type" = \$\d+ and "twin_scope"\."climb_uuid" = [^]*?\) and \("twin_scope"\."origin" = \$\d+ and "twin_scope"\."aurora_id" is not null and "twin_scope"\."aurora_id" NOT LIKE \$\d+\)\)/;
+/**
+ * Only rows sharing user, board, climb, angle and instant with another reach
+ * the pair join. Without this the join is a nested loop over every Aurora row
+ * of the climb.
+ */
+const TWIN_COLLISIONS_ONLY =
+  /count\(\*\) OVER \(\s*PARTITION BY "twin_scope"\."user_id", "twin_scope"\."board_type", "twin_scope"\."climb_uuid", "twin_scope"\."angle", "twin_scope"\."climbed_at"\s*\) AS same_instant[^]*?WHERE same_instant > 1/;
 
 const sqlOf = (overrides: Partial<Parameters<typeof buildClimbLogsQuery>[0]> = {}) =>
   buildClimbLogsQuery({ ...base, ...overrides }).toSQL();
@@ -67,6 +74,7 @@ describe('climbLogs SQL, plain path', () => {
     const { sql } = sqlOf();
 
     expect(sql).toMatch(TWIN_SCOPE);
+    expect(sql).toMatch(TWIN_COLLISIONS_ONLY);
     // The per-row form: a correlated subquery over the whole table.
     expect(sql).not.toContain('from "boardsesh_ticks" "aurora_twin"');
   });

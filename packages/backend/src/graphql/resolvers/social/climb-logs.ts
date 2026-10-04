@@ -230,6 +230,8 @@ export const climbLogsQueries = {
         hasMore,
       };
     } catch (err) {
+      // A read that timed out is the slowest read there is.
+      logSlowRead('climbLogs', startedAt, { boardType, climbUuid: validatedInput.climbUuid, failed: true });
       logger.error('[climbLogs] DB error:', err);
       throw err;
     }

@@ -501,6 +501,25 @@ describe('climbs that were deduplicated into this one', () => {
     expect(answer.summary.climberCount).toBe(1);
   });
 
+  it('keeps two Aurora rows that match in everything but the uuid they are stored under', async () => {
+    // A twin is the same climb uuid. One row on the retired uuid and one on
+    // the canonical are two rows, as they were before the lookup was scoped.
+    const sameAscent = {
+      userId: ALEX,
+      origin: 'aurora_pull' as const,
+      auroraType: 'ascents' as const,
+      updatedAt: '2026-05-01T18:00:00.000Z',
+      auroraSyncedAt: '2026-05-01T18:00:00.000Z',
+    };
+    await insertTick({ ...sameAscent, auroraId: 'fca-split-aur-1' });
+    await insertTick({ ...sameAscent, auroraId: 'fca-split-aur-2', climbUuid: RETIRED_UUID });
+
+    const answer = await ask(VIEWER);
+
+    expect(answer.items).toHaveLength(2);
+    expect(answer.summary.climberCount).toBe(1);
+  });
+
   it('does not follow an alias recorded for another board type', async () => {
     await db
       .insert(dbSchema.boardClimbAliases)

@@ -205,8 +205,16 @@ export function notAuroraTwinDuplicate(ticks: TicksTable = boardseshTicks): SQL 
  * query drops the ids that come out. Those pages are the ones the outer query
  * reads anyway.
  *
- * `MATERIALIZED` is load-bearing. Without it Postgres inlines the second
- * reference and goes back to probing an index per row.
+ * Two things in the SQL are load-bearing:
+ *
+ *  - `MATERIALIZED`. Without it Postgres inlines the second reference and goes
+ *    back to probing an index per row.
+ *  - The `same_instant > 1` filter. A CTE has no statistics, so the planner
+ *    joins it to itself with a nested loop: quadratic in the rows it holds
+ *    (4.6 s for 5,000 Aurora rows on one climb). Twins share user, board,
+ *    climb, angle and `climbed_at` exactly, so only rows that have company on
+ *    that key can be in a pair. A window count keeps just those, in one sort,
+ *    and the pair rule then runs over a handful of rows.
  *
  * @param ticks the ticks table (or an alias of it) the query selects from.
  * @param scope the slice, as a condition on the table it is handed. It has to
@@ -223,9 +231,15 @@ export function notAuroraTwinDuplicateWithin(ticks: TicksTable, scope: (table: T
 
   return sql`${ticks.id} <> ALL(ARRAY(
     WITH twin_candidates AS MATERIALIZED (
-      SELECT "twin_scope".*
-      FROM "boardsesh_ticks" "twin_scope"
-      WHERE ${and(scope(scoped), isRealAuroraPullRow(scoped))}
+      SELECT *
+      FROM (
+        SELECT "twin_scope".*, count(*) OVER (
+          PARTITION BY ${scoped.userId}, ${scoped.boardType}, ${scoped.climbUuid}, ${scoped.angle}, ${scoped.climbedAt}
+        ) AS same_instant
+        FROM "boardsesh_ticks" "twin_scope"
+        WHERE ${and(scope(scoped), isRealAuroraPullRow(scoped))}
+      ) twin_scope_counted
+      WHERE same_instant > 1
     )
     SELECT "aurora_twin_hidden"."id"
     FROM twin_candidates "aurora_twin"
