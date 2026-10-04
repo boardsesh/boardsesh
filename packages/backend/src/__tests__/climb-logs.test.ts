@@ -646,3 +646,40 @@ describe.each([
     expect(await askWall(WALL_OWNER, climbUuid, BOARD)).toEqual(EMPTY_ANSWER);
   });
 });
+
+describe("Aurora's own duplicate rows, with the twin lookup limited to Aurora-pull rows", () => {
+  const pulled = {
+    userId: BEA,
+    origin: 'aurora_pull' as const,
+    auroraType: 'ascents' as const,
+    quality: 3,
+    difficulty: 21,
+    comment: 'crimpy',
+    // A freshly pulled row is not "locally edited". See aurora-twin-dedup.test.ts.
+    updatedAt: '2026-05-01T18:00:00.000Z',
+    auroraSyncedAt: '2026-05-01T18:00:00.000Z',
+  };
+
+  it('keeps the lowest aurora_id of a real twin pair', async () => {
+    await insertTick({ ...pulled, auroraId: 'cl-aur-2' });
+    const survivor = await insertTick({ ...pulled, auroraId: 'cl-aur-1' });
+
+    const answer = await ask(null);
+
+    expect(answer.items.map((item) => item.uuid)).toEqual([survivor]);
+  });
+
+  it('keeps a native log that matches an Aurora-pull row in every column', async () => {
+    await insertTick({ ...pulled, auroraId: 'cl-aur-1' });
+    await insertTick({ ...pulled, origin: 'native', auroraId: null });
+
+    expect((await ask(null)).items).toHaveLength(2);
+  });
+
+  it('keeps both rows when the Aurora-pull ids are json-import surrogates', async () => {
+    await insertTick({ ...pulled, auroraId: 'json-import-cl-2' });
+    await insertTick({ ...pulled, auroraId: 'json-import-cl-1' });
+
+    expect((await ask(null)).items).toHaveLength(2);
+  });
+});

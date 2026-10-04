@@ -52,6 +52,16 @@ describe('climbLogs SQL, plain path', () => {
     expect(sql).not.toContain('row_number()');
   });
 
+  it('runs the twin lookup only for Aurora-pull rows', () => {
+    const { sql } = sqlOf();
+
+    // CASE, not OR: the order is guaranteed, so the lookup runs per Aurora row.
+    expect(sql).toMatch(
+      /CASE WHEN \("boardsesh_ticks"\."origin" = \$\d+ and "boardsesh_ticks"\."aurora_id" is not null[^]*?\) THEN not exists \(select 1 from "boardsesh_ticks" "aurora_twin"/,
+    );
+    expect(sql).toMatch(/ELSE true END/);
+  });
+
   it('orders newest first with the id as tie-break and asks for one row past the page', () => {
     const { sql, params } = sqlOf({ limit: 20 });
 

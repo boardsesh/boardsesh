@@ -117,7 +117,9 @@ export function climbLogConditions({
   return [
     eq(ticks.boardType, boardType),
     climbUuidCondition(ticks, boardType, canonicalClimbUuid),
-    notAuroraTwinDuplicate(ticks),
+    // Every climber's logs on one climb: almost none are Aurora-pull rows, so
+    // run the twin lookup only for those.
+    notAuroraTwinDuplicate(ticks, { skipNonAuroraRows: true }),
     sprayClimbRowExists(ticks),
     sprayReferenceVisibilityCondition({ boardType: ticks.boardType, climbUuid: ticks.climbUuid }, viewerUserId),
   ];

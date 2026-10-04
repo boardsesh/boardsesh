@@ -161,13 +161,25 @@ export function isDirectAuroraTwin(smaller: AuroraTwinComparableRow, larger: Aur
  *
  * Composes as a plain condition, so a list query and its count query pick it up
  * from the same shared conditions array and can never disagree about how many
- * ascents there are. Index-backed: the correlated lookup probes
- * `boardsesh_ticks_user_climb_lookup_idx` (user_id, board_type, angle,
- * climb_uuid) with equality on all four columns.
+ * ascents there are. The correlated lookup is an equality on user, board,
+ * climb, angle and `climbed_at`; on prod the planner probes
+ * `boardsesh_ticks_climbed_at_idx` (an almost-unique key), not
+ * `boardsesh_ticks_user_climb_lookup_idx`.
  *
  * @param ticks the ticks table (or an alias of it) the query selects from.
+ * @param options.skipNonAuroraRows evaluate the twin lookup only for rows that
+ *   are real Aurora-pull rows (a `CASE`, so the order is guaranteed). The result
+ *   set is identical, because `isDirectAuroraTwin` already requires the outer
+ *   row to be one. Leave it off by default: the plain NOT EXISTS below is
+ *   planned as a hash anti-join, which is right for a per-user read where most
+ *   rows ARE Aurora-pull. Turn it on for a read over every climber's logs on one
+ *   climb, where nearly every row is not, so the lookup runs per Aurora row
+ *   instead of once per row.
  */
-export function notAuroraTwinDuplicate(ticks: TicksTable = boardseshTicks): SQL {
+export function notAuroraTwinDuplicate(
+  ticks: TicksTable = boardseshTicks,
+  { skipNonAuroraRows = false }: { skipNonAuroraRows?: boolean } = {},
+): SQL {
   const twin = alias(boardseshTicks, 'aurora_twin');
 
   const smallerTwinExists = new QueryBuilder()
@@ -180,5 +192,7 @@ export function notAuroraTwinDuplicate(ticks: TicksTable = boardseshTicks): SQL 
       isDirectAuroraTwin(twin, ticks),
     );
 
-  return notExists(smallerTwinExists);
+  if (!skipNonAuroraRows) return notExists(smallerTwinExists);
+
+  return sql`CASE WHEN ${isRealAuroraPullRow(ticks)} THEN ${notExists(smallerTwinExists)} ELSE true END`;
 }
