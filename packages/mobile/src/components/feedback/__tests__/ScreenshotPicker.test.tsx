@@ -76,7 +76,9 @@ const thumbnails = (root: HTMLElement) =>
 beforeEach(() => {
   showToast.mockClear();
   reportError.mockClear();
-  picker.requestMediaLibraryPermissionsAsync.mockReset().mockResolvedValue({ granted: true });
+  // A spy only: the component must never ask. It answers "denied" so a request
+  // that came back would also block the pick, not just trip the call count.
+  picker.requestMediaLibraryPermissionsAsync.mockReset().mockResolvedValue({ granted: false });
   picker.launchImageLibraryAsync.mockReset();
   compressPickedImage.mockReset().mockImplementation((uri: string) => Promise.resolve(`${uri}.compressed`));
 });
@@ -157,17 +159,22 @@ describe('ScreenshotPicker at the cap', () => {
   });
 });
 
-describe('ScreenshotPicker without photo permission', () => {
-  it('says so and never opens the library', async () => {
-    picker.requestMediaLibraryPermissionsAsync.mockResolvedValue({ granted: false });
+describe('ScreenshotPicker and photo library access', () => {
+  // The system picker hands back only the chosen shots and needs no permission
+  // (#5957). Asking first put a whole-library prompt in front of the picker.
+  it('opens the library without asking for photo access', async () => {
+    picker.launchImageLibraryAsync.mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file:///a.png', width: 1179, height: 2556 }],
+    });
     const onChange = vi.fn();
     const { container } = render(<ScreenshotPicker uris={[]} onChange={onChange} />);
 
     fireEvent.click(addTile(container));
 
-    await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('screenshots.permissionDenied', 'warning'));
-    expect(picker.launchImageLibraryAsync).not.toHaveBeenCalled();
-    expect(onChange).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(onChange).toHaveBeenCalledWith(['file:///a.png.compressed']));
+    expect(picker.requestMediaLibraryPermissionsAsync).not.toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
   });
 });
 

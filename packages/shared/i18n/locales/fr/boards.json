@@ -860,7 +860,6 @@
       "camera": "Prendre une photo",
       "pickAnother": "Choisir une autre photo",
       "next": "Suivant",
-      "libraryDenied": "Boardsesh a besoin de ta photothèque pour ajouter un mur.",
       "cameraDenied": "Boardsesh a besoin de ton appareil photo pour photographier un mur.",
       "failed": "Cette photo ne s'ouvre pas. Essaie-en une autre."
     },

@@ -131,7 +131,9 @@ beforeEach(() => {
   saveAsyncMock.mockReset();
   releaseMock.mockReset();
 
-  requestMediaLibraryPermissionsMock.mockResolvedValue({ granted: true });
+  // A spy only: the screen must never ask. It answers "denied" so a request
+  // that came back would also block the pick, not just trip the call count.
+  requestMediaLibraryPermissionsMock.mockResolvedValue({ granted: false });
   launchImageLibraryMock.mockResolvedValue({
     canceled: false,
     assets: [{ uri: 'file://picked-avatar.jpg', width: 2400, height: 1600 }],
@@ -172,5 +174,20 @@ describe('EditProfileScreen', () => {
       avatarUrl: 'https://ws.example.com/static/avatars/11111111-1111-4111-8111-111111111111.jpg?v=upload-123',
     });
     expect(routerBackMock).toHaveBeenCalledOnce();
+  });
+
+  // The system picker hands back only the chosen photo and needs no permission
+  // (#5957). Asking first put a whole-library prompt in front of the picker.
+  it('opens the avatar picker without asking for photo library access', async () => {
+    render(createElement(EditProfileScreen));
+
+    fireEvent.click(screen.getByRole('button', { name: 'profile.avatar.upload' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('avatar').getAttribute('data-uri')).toBe('file://compressed-avatar.jpg');
+    });
+    expect(launchImageLibraryMock).toHaveBeenCalledWith(expect.objectContaining({ allowsEditing: true }));
+    expect(requestMediaLibraryPermissionsMock).not.toHaveBeenCalled();
+    expect(showToastMock).not.toHaveBeenCalled();
   });
 });

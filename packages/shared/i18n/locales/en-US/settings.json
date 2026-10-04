@@ -57,8 +57,7 @@
     "avatar": {
       "upload": "Upload",
       "change": "Change",
-      "hintMobile": "Cropped square and compressed automatically.",
-      "permissionDenied": "Allow photo access in Settings to choose an avatar."
+      "hintMobile": "Cropped square and compressed automatically."
     },
     "displayName": {
       "label": "Display Name",

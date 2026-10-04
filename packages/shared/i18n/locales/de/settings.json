@@ -57,8 +57,7 @@
     "avatar": {
       "upload": "Hochladen",
       "change": "Ändern",
-      "hintMobile": "Wird automatisch quadratisch zugeschnitten und komprimiert.",
-      "permissionDenied": "Erlaube den Fotozugriff in den Einstellungen, um einen Avatar zu wählen."
+      "hintMobile": "Wird automatisch quadratisch zugeschnitten und komprimiert."
     },
     "displayName": {
       "label": "Anzeigename",

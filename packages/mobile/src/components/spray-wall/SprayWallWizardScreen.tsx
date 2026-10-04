@@ -9,7 +9,7 @@
 //
 // Everything that can fail, fails into somewhere the climber can act:
 //
-//  - the photo library says no        → the step stays put and says so
+//  - the camera says no               → the step stays put and says so
 //  - the upload dies halfway          → "Try again" retries the UPLOAD, against
 //                                       the wall that already exists
 //  - this build cannot suggest holds  → straight into the editor, manual
@@ -307,11 +307,9 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
       hapticSelection();
       try {
         const result = source === 'camera' ? await pickWallPhotoFromCamera() : await pickWallPhotoFromLibrary();
+        // Only the camera can be refused; the library picker needs no permission.
         if (result.outcome === 'denied') {
-          showToast(
-            source === 'camera' ? t('sprayWizard.photo.cameraDenied') : t('sprayWizard.photo.libraryDenied'),
-            'warning',
-          );
+          showToast(t('sprayWizard.photo.cameraDenied'), 'warning');
           return;
         }
         if (result.outcome === 'cancelled') return;
