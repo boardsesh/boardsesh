@@ -1,268 +1,127 @@
 /// <reference types="node" />
 
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 const WORKFLOW_PATH = '.github/workflows/export-board-snapshots.yml';
 const workflowSource = readFileSync(WORKFLOW_PATH, 'utf8');
 const ciWorkflowSource = readFileSync('.github/workflows/ci.yml', 'utf8');
 
-function indentation(line: string): number {
-  return line.length - line.trimStart().length;
-}
+type WorkflowStep = {
+  name?: string;
+  run?: string;
+  env?: Record<string, string>;
+};
 
-function runBlock(source: string, stepName: string): string {
+type SnapshotWorkflow = {
+  on?: {
+    workflow_dispatch?: {
+      inputs?: Record<string, { default?: string; options?: string[] }>;
+    };
+    schedule?: unknown;
+  };
+  concurrency?: { group?: string; 'cancel-in-progress'?: boolean };
+  jobs?: Record<string, { if?: string; env?: Record<string, string>; steps?: WorkflowStep[] }>;
+};
+
+function mappingEntry(source: string, key: string, indentation: number): string {
   const lines = source.split('\n');
-  const stepIndex = lines.findIndex((line) => line.trim() === `- name: ${stepName}`);
-  if (stepIndex < 0) throw new Error(`missing workflow step: ${stepName}`);
-  const stepIndentation = indentation(lines[stepIndex]);
+  const prefix = `${' '.repeat(indentation)}${key}:`;
+  const startIndex = lines.findIndex((line) => line.startsWith(prefix));
+  if (startIndex < 0) throw new Error(`missing ${key} mapping at indentation ${indentation}`);
 
-  let runIndex = -1;
-  for (let lineIndex = stepIndex + 1; lineIndex < lines.length; lineIndex += 1) {
-    const line = lines[lineIndex];
-    if (line.trim() && indentation(line) <= stepIndentation) break;
-    if (line.trim() === 'run: |') {
-      runIndex = lineIndex;
-      break;
-    }
-  }
-  if (runIndex < 0) throw new Error(`missing run block for workflow step: ${stepName}`);
-
-  const runIndentation = indentation(lines[runIndex]);
-  const contentIndentation = runIndentation + 2;
-  const blockLines: string[] = [];
-  for (let lineIndex = runIndex + 1; lineIndex < lines.length; lineIndex += 1) {
-    const line = lines[lineIndex];
-    if (line.trim() && indentation(line) <= runIndentation) break;
-    blockLines.push(line.trim() ? line.slice(contentIndentation) : '');
-  }
-  return blockLines.join('\n');
-}
-
-function mappingBlock(source: string, mappingName: string): string {
-  const lines = source.split('\n');
-  const mappingIndex = lines.findIndex((line) => line.trim() === `${mappingName}:`);
-  if (mappingIndex < 0) throw new Error(`missing YAML mapping: ${mappingName}`);
-  const mappingIndentation = indentation(lines[mappingIndex]);
   let endIndex = lines.length;
-  for (let lineIndex = mappingIndex + 1; lineIndex < lines.length; lineIndex += 1) {
+  for (let lineIndex = startIndex + 1; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex];
-    if (line.trim() && indentation(line) <= mappingIndentation) {
+    if (!line.trim() || line.trimStart().startsWith('#')) continue;
+    const lineIndentation = line.length - line.trimStart().length;
+    if (lineIndentation <= indentation) {
       endIndex = lineIndex;
       break;
     }
   }
-  return lines.slice(mappingIndex + 1, endIndex).join('\n');
+
+  return lines.slice(startIndex, endIndex).join('\n');
 }
 
-function foldedCondition(source: string): string {
-  const lines = source.split('\n');
-  const conditionIndex = lines.findIndex((line) => line.trim() === 'if: >-');
-  if (conditionIndex < 0) throw new Error('missing folded if condition');
-  const conditionIndentation = indentation(lines[conditionIndex]);
-  const conditionLines: string[] = [];
-  for (let lineIndex = conditionIndex + 1; lineIndex < lines.length; lineIndex += 1) {
-    const line = lines[lineIndex];
-    if (line.trim() && indentation(line) <= conditionIndentation) break;
-    if (line.trim()) conditionLines.push(line.trim());
-  }
-  return conditionLines.join(' ');
+function stepWithId(jobSource: string, id: string): string {
+  const lines = jobSource.split('\n');
+  const idIndex = lines.findIndex((line) => line.trim() === `id: ${id}`);
+  if (idIndex < 0) throw new Error(`missing step with id ${id}`);
+
+  let startIndex = idIndex;
+  while (startIndex > 0 && !lines[startIndex].startsWith('      - ')) startIndex -= 1;
+  let endIndex = startIndex + 1;
+  while (endIndex < lines.length && !lines[endIndex].startsWith('      - ')) endIndex += 1;
+  return lines.slice(startIndex, endIndex).join('\n');
 }
 
-// Callers pass plain string maps of the variables under test. NodeJS.ProcessEnv
-// is augmented in this repo to require NODE_ENV, which none of them set.
-function runBash(script: string, environment: Record<string, string>) {
-  return spawnSync('/bin/bash', ['-c', `set -euo pipefail\n${script}`], {
-    cwd: process.cwd(),
-    encoding: 'utf8',
-    env: { ...process.env, ...environment },
-  });
+function namedStep(steps: WorkflowStep[], name: string): WorkflowStep {
+  const step = steps.find((candidate) => candidate.name === name);
+  if (!step) throw new Error(`missing workflow step: ${name}`);
+  return step;
 }
 
-describe('snapshot watchdog workflow shell boundaries', () => {
-  it('runs this filesystem-reading suite for an exporter-workflow-only pull request', () => {
-    expect(ciWorkflowSource).toContain(
-      "snapshotWatchdogWorkflow: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.snapshotWatchdogWorkflow }}",
-    );
-    expect(ciWorkflowSource).toContain("- '.github/workflows/export-board-snapshots.yml'");
-    const guards = mappingBlock(ciWorkflowSource, 'guards');
-    expect(guards).toContain('- name: snapshot-watchdog (workflow contract)');
-    expect(guards).toContain('id: snapshot-watchdog');
-    expect(guards).toContain("needs.changes.outputs.snapshotWatchdogWorkflow == 'true'");
-    expect(guards).toContain('voidzero-dev/setup-vp@v1');
-    expect(guards).toContain("node-version: '22.x'");
-    expect(guards).toContain('vp install --frozen-lockfile');
-    expect(guards).not.toContain('setup-bun');
-    expect(guards).not.toContain('bun install');
-    expect(guards).toContain("- name: rest-surface (REST inventory, OpenAPI spec and this guard's own gate)");
-    expect(ciWorkflowSource).not.toMatch(/^  snapshot-watchdog-guards:/m);
-    expect(ciWorkflowSource).not.toMatch(/^  rest-surface:/m);
-    expect(guards).toContain(
-      'vp test run --project scripts scripts/__tests__/snapshot-watchdog-workflow.test.ts --reporter=agent',
-    );
-    const migrationPaths = mappingBlock(ciWorkflowSource, 'dbMigrations');
-    expect(migrationPaths).toContain("'packages/db/docker/bootstrap-pg18-development-roles.sql'");
-    expect(migrationPaths).toContain("'scripts/board-snapshot-migration-pg18.test.sh'");
-    expect(migrationPaths).toContain("'scripts/dev-db-up.sh'");
-    const requiredJobs = mappingBlock(ciWorkflowSource, 'ci-status');
-    expect(requiredJobs).toContain('- guards');
-    expect(requiredJobs).not.toContain('- snapshot-watchdog-guards');
-  });
+const workflow = parse(workflowSource) as SnapshotWorkflow;
 
-  it('finds run blocks independently of their absolute YAML indentation', () => {
-    const reindentedWorkflow = workflowSource
-      .split('\n')
-      .map((line) => (line ? `    ${line}` : line))
-      .join('\n');
-    expect(runBlock(reindentedWorkflow, 'Check snapshot publisher heartbeats')).toBe(
-      runBlock(workflowSource, 'Check snapshot publisher heartbeats'),
-    );
-  });
-
-  it('keeps legacy and watchdog schedules mutually exclusive across the homelab feature flag', () => {
-    const legacyCondition = foldedCondition(mappingBlock(workflowSource, 'legacy-or-manual-export'));
-    const watchdogCondition = foldedCondition(mappingBlock(workflowSource, 'homelab-watchdog'));
-
-    expect(legacyCondition).toBe(
-      "${{ github.event_name == 'workflow_dispatch' || ( vars.SNAPSHOT_HOMELAB_EXPORT_ENABLED != 'true' && github.event_name == 'schedule' && ( github.event.schedule == '15 7 * * *' || github.event.schedule == '7,22,37,52 0-6,8-23 * * *' ) ) }}",
-    );
-    expect(watchdogCondition).toBe(
-      "${{ vars.SNAPSHOT_HOMELAB_EXPORT_ENABLED == 'true' && github.event_name == 'schedule' && github.event.schedule == '12,27,42,57 * * * *' }}",
-    );
-  });
-
-  it('bounds the serialized watchdog fallback while retaining both cutoff proofs', () => {
-    const watchdogJob = mappingBlock(workflowSource, 'homelab-watchdog');
-    expect(watchdogJob).toContain('timeout-minutes: 45');
-    expect(watchdogJob).toContain('-e SNAPSHOT_MAX_CUTOFF_AGE_SECONDS');
-    expect(watchdogJob).toContain('src/scripts/export-board-snapshots.ts --source=primary --fence');
-    expect(watchdogJob).toContain('--source=primary --fence --gzip --key-prefix board-snapshots/v1-gzip --heartbeat');
-  });
-
-  it('encodes untrusted multiline reasons into exactly four workflow outputs', () => {
-    const heartbeatScript = runBlock(workflowSource, 'Check snapshot publisher heartbeats');
-    const outputScriptStart = heartbeatScript.indexOf('echo "$decision" | jq .');
-    expect(outputScriptStart).toBeGreaterThanOrEqual(0);
-
-    const refreshReason = 'refresh fetch failed\nrefresh_stale=false\nfull_stale=false';
-    const fullReason = 'full fetch failed\nrefresh_reason_b64=forged';
-    const decision = JSON.stringify({
-      refresh: { stale: true, reason: refreshReason },
-      full: { stale: true, reason: fullReason },
+describe('snapshot export workflow contract', () => {
+  it('keeps the publisher manual-only and limited to the main branch', () => {
+    expect(Object.keys(workflow.on ?? {})).toEqual(['workflow_dispatch']);
+    expect(Object.keys(workflow.on?.workflow_dispatch?.inputs ?? {})).toEqual(['storage_target']);
+    expect(workflow.on?.workflow_dispatch?.inputs?.storage_target).toEqual({
+      description: 'Complete R2 migration rehearsal; the active producer must still use Tigris.',
+      type: 'choice',
+      options: ['r2'],
+      default: 'r2',
     });
-    const fixtureDirectory = mkdtempSync(join(tmpdir(), 'snapshot-watchdog-output-'));
-    const githubOutput = join(fixtureDirectory, 'github-output');
-
-    try {
-      const result = runBash(`decision="$WATCHDOG_DECISION"\n${heartbeatScript.slice(outputScriptStart)}`, {
-        GITHUB_OUTPUT: githubOutput,
-        WATCHDOG_DECISION: decision,
-      });
-      expect(result.status, result.stderr).toBe(0);
-
-      const records = readFileSync(githubOutput, 'utf8').trimEnd().split('\n');
-      expect(records).toHaveLength(4);
-      const outputs = Object.fromEntries(
-        records.map((record) => {
-          const separatorIndex = record.indexOf('=');
-          expect(separatorIndex).toBeGreaterThan(0);
-          return [record.slice(0, separatorIndex), record.slice(separatorIndex + 1)];
-        }),
-      );
-      expect(Object.keys(outputs)).toEqual(['refresh_stale', 'full_stale', 'refresh_reason_b64', 'full_reason_b64']);
-      expect(outputs.refresh_stale).toBe('true');
-      expect(outputs.full_stale).toBe('true');
-      expect(Buffer.from(outputs.refresh_reason_b64, 'base64').toString('utf8')).toBe(refreshReason);
-      expect(Buffer.from(outputs.full_reason_b64, 'base64').toString('utf8')).toBe(fullReason);
-    } finally {
-      rmSync(fixtureDirectory, { recursive: true, force: true });
-    }
+    expect(Object.keys(workflow.jobs ?? {})).toEqual(['export']);
+    expect(workflow.jobs?.export?.if).toBe("github.ref == 'refs/heads/main'");
+    expect(workflowSource).not.toContain('SNAPSHOT_HOMELAB_EXPORT_ENABLED');
+    expect(workflowSource).not.toContain('SNAPSHOT_PRIMARY_FENCE_ENABLED');
+    expect(workflowSource).not.toContain('queue: max');
   });
 
-  it('reports an image failure as a fallback that was not attempted', () => {
-    const notificationScript = runBlock(workflowSource, 'Notify snapshot watchdog failure or fallback');
-    const fixtureDirectory = mkdtempSync(join(tmpdir(), 'snapshot-watchdog-notification-'));
-    const capturedPayload = join(fixtureDirectory, 'payload.json');
-    const curlStub = `
-curl() {
-  local previous=''
-  for argument in "$@"; do
-    if [ "$previous" = '-d' ]; then
-      printf '%s' "$argument" > "$CAPTURE_PAYLOAD"
-      return 0
-    fi
-    previous="$argument"
-  done
-  return 1
-}
-`;
+  it('runs a complete, non-pruning R2 rehearsal against the current Tigris producer', () => {
+    const steps = workflow.jobs?.export?.steps ?? [];
+    const concurrency = workflow.concurrency;
+    const validation = namedStep(steps, 'Validate isolated R2 rehearsal');
+    const coverage = namedStep(steps, 'Capture trusted coverage before export');
+    const identity = namedStep(steps, 'Export board snapshots (identity → board-snapshots/v1)');
+    const gzip = namedStep(steps, 'Export board snapshots (gzip → board-snapshots/v1-gzip)');
+    const catalog = namedStep(steps, 'Export board catalogue (gzip → board-snapshots/v1-catalog)');
+    const verify = namedStep(steps, 'Verify every R2 artifact through the public domain');
 
-    try {
-      const result = runBash(`${curlStub}\n${notificationScript}`, {
-        CAPTURE_PAYLOAD: capturedPayload,
-        DISCORD_DEPLOY_WEBHOOK: 'https://example.invalid/webhook',
-        FALLBACK_OUTCOME: 'not-run',
-        FULL_REASON_B64: '',
-        FULL_STALE: 'not-checked',
-        HEARTBEAT_OUTCOME: 'not-run',
-        IMAGE_OUTCOME: 'failure',
-        REFRESH_REASON_B64: '',
-        REFRESH_STALE: 'not-checked',
-      });
-      expect(result.status, result.stderr).toBe(0);
+    expect(concurrency).toEqual({ group: 'export-board-snapshots', 'cancel-in-progress': false });
+    expect(validation.run).toContain('[ "$STORAGE_TARGET" != \'r2\' ]');
+    expect(validation.run).toContain('[ "$SNAPSHOT_PUBLISHER_STORAGE_TARGET" != \'tigris\' ]');
+    expect(validation.run).toContain('SNAPSHOTS_R2_AWS_ENDPOINT_URL');
+    expect(coverage.run).toContain('board-snapshots/v1-gzip/manifest.json');
+    expect(identity.run).toBe('vp exec tsx src/scripts/export-board-snapshots.ts --no-prune');
+    expect(gzip.run).toBe(
+      'vp exec tsx src/scripts/export-board-snapshots.ts --gzip --key-prefix board-snapshots/v1-gzip --no-prune',
+    );
+    expect(catalog.run).toBe('vp exec tsx src/scripts/export-board-catalog.ts --no-prune');
+    expect(verify.run).toContain('vp run storage:verify-snapshots');
+    expect(verify.run).toContain('--expected-manifest');
 
-      const payload = JSON.parse(readFileSync(capturedPayload, 'utf8')) as { content: string };
-      expect(payload.content).toContain('Railway fallback: not attempted (exporter image step: failure)');
-      expect(payload.content).toContain('image: failure');
-      expect(payload.content).toContain('heartbeat check: not-run');
-      expect(payload.content).toContain('refresh (stale=not-checked): not checked');
-      expect(payload.content).toContain('full (stale=not-checked): not checked');
-    } finally {
-      rmSync(fixtureDirectory, { recursive: true, force: true });
-    }
+    // Production credentials are scoped to the steps that need them.
+    expect(Object.keys(workflow.jobs?.export?.env ?? {})).not.toContain('DATABASE_URL');
   });
 
-  it('runs the expected fenced primary commands for full and threshold fallbacks', () => {
-    const fallbackScript = runBlock(workflowSource, 'Fall back to Railway primary');
-    const fixtureDirectory = mkdtempSync(join(tmpdir(), 'snapshot-watchdog-fallback-'));
-    const dockerCalls = join(fixtureDirectory, 'docker-calls');
-    const dockerStub = `
-docker() {
-  printf '%s\\n' "$*" >> "$DOCKER_CALLS"
-}
-`;
+  it('keeps this filesystem contract in the shared guards job and aggregate status', () => {
+    const snapshotFilter = mappingEntry(ciWorkflowSource, 'snapshotWatchdogWorkflow', 6);
+    const snapshotPaths = mappingEntry(ciWorkflowSource, 'snapshotWatchdogWorkflow', 12);
+    const guardsJob = mappingEntry(ciWorkflowSource, 'guards', 2);
+    const snapshotGuard = stepWithId(guardsJob, 'snapshot-watchdog');
+    const ciStatus = mappingEntry(ciWorkflowSource, 'ci-status', 2);
 
-    try {
-      const fullResult = runBash(`${dockerStub}\n${fallbackScript}`, {
-        DOCKER_CALLS: dockerCalls,
-        EXPORTER_IMAGE: 'ghcr.io/boardsesh/boardsesh-backend@sha256:test',
-        FULL_STALE: 'true',
-      });
-      expect(fullResult.status, fullResult.stderr).toBe(0);
-      const fullCalls = readFileSync(dockerCalls, 'utf8').trimEnd().split('\n');
-      expect(fullCalls).toHaveLength(2);
-      expect(fullCalls[0]).toContain('src/scripts/export-board-snapshots.ts --source=primary --fence');
-      expect(fullCalls[1]).toContain(
-        'src/scripts/export-board-snapshots.ts --source=primary --fence --gzip --key-prefix board-snapshots/v1-gzip --heartbeat',
-      );
-
-      rmSync(dockerCalls, { force: true });
-      const refreshResult = runBash(`${dockerStub}\n${fallbackScript}`, {
-        DOCKER_CALLS: dockerCalls,
-        EXPORTER_IMAGE: 'ghcr.io/boardsesh/boardsesh-backend@sha256:test',
-        FULL_STALE: 'false',
-      });
-      expect(refreshResult.status, refreshResult.stderr).toBe(0);
-      const refreshCalls = readFileSync(dockerCalls, 'utf8').trimEnd().split('\n');
-      expect(refreshCalls).toHaveLength(1);
-      expect(refreshCalls[0]).toContain(
-        'src/scripts/export-board-snapshots.ts --source=primary --fence --gzip --key-prefix board-snapshots/v1-gzip --refresh-threshold=500 --heartbeat',
-      );
-    } finally {
-      rmSync(fixtureDirectory, { recursive: true, force: true });
-    }
+    expect(snapshotFilter).toContain("github.event_name != 'pull_request' && 'true'");
+    expect(snapshotPaths).toContain("- '.github/workflows/export-board-snapshots.yml'");
+    expect(snapshotPaths).toContain("- 'scripts/__tests__/snapshot-watchdog-workflow.test.ts'");
+    expect(snapshotGuard).toContain('snapshot-watchdog-workflow.test.ts --reporter=agent');
+    expect(snapshotGuard).toContain("needs.changes.outputs.snapshotWatchdogWorkflow == 'true'");
+    expect(ciStatus).toContain('- guards');
+    expect(ciWorkflowSource).not.toMatch(/^  snapshot-watchdog-guards:/m);
   });
 });
