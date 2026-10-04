@@ -196,10 +196,15 @@ function componentTier(component: StatusComponent): Tier | null {
 
 /** The components of this incident that touch us, and the worse of their tiers. */
 export function classifyIncident(incident: StatusIncident): { tier: Tier; components: StatusComponent[] } | null {
-  const matched = incident.components.filter((component) => componentTier(component) !== null);
+  const matched = incident.components.flatMap((component) => {
+    const tier = componentTier(component);
+    return tier ? [{ component, tier }] : [];
+  });
   if (matched.length === 0) return null;
-  const tier: Tier = matched.some((component) => componentTier(component) === 'users') ? 'users' : 'deploys';
-  return { tier, components: matched };
+  return {
+    tier: matched.some(({ tier }) => tier === 'users') ? 'users' : 'deploys',
+    components: matched.map(({ component }) => component),
+  };
 }
 
 function byCreatedAt(first: { update: StatusUpdate }, second: { update: StatusUpdate }): number {
@@ -282,8 +287,12 @@ function shortGroup(groupName: string): string {
 }
 
 function excerpt(message: string): string {
-  // Backticks and leading `>` would break out of the blockquote line.
-  const flat = message.replace(/\s+/g, ' ').replace(/`/g, "'").trim();
+  // One line, no code spans, and no leading `>` to nest a second blockquote.
+  const flat = message
+    .replace(/\s+/g, ' ')
+    .replace(/`/g, "'")
+    .replace(/^[>\s]+/, '')
+    .trim();
   return flat.length <= UPDATE_EXCERPT_LIMIT ? flat : `${flat.slice(0, UPDATE_EXCERPT_LIMIT - 1)}…`;
 }
 

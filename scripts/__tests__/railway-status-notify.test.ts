@@ -248,6 +248,12 @@ describe('formatDiscordContent', () => {
     expect(formatDiscordContent(resolved, null).startsWith('✅ Railway resolved an incident')).toBe(true);
   });
 
+  it('keeps a quoted update to one blockquote level', () => {
+    const [post] = selectPendingPosts(feed, null, NOW_MS).posts;
+    const quoted = { ...post, update: { ...post.update, message: '> > Storage is `slow`.\nStill.' } };
+    expect(formatDiscordContent(quoted, null)).toContain("\n> Storage is 'slow'. Still.\n");
+  });
+
   it('keeps a long update inside Discord’s 2000-character cap', () => {
     const [post] = selectPendingPosts(feed, null, NOW_MS).posts;
     const longPost = { ...post, update: { ...post.update, message: 'storage '.repeat(2000) } };
