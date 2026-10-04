@@ -17,13 +17,8 @@ import { useAuth } from '../../src/providers/auth-provider';
 import { useQueueSessionId, useQueueActions } from '../../src/providers/queue-provider';
 import { useToast } from '../../src/providers/toast-provider';
 import { isNetworkError } from '@boardsesh/offline-sync/error-classification';
-import {
-  useSessionPreview,
-  useCreateBoard,
-  useBoardBySlug,
-  fetchAllMyBoards,
-  fetchBoardBySlug,
-} from '../../src/lib/graphql/hooks';
+import { useSessionPreview, useCreateBoard, useBoardBySlug, fetchBoardBySlug } from '../../src/lib/graphql/hooks';
+import { fetchAllMyOwnedBoards } from '../../src/lib/graphql/hooks/fetch-all-my-owned-boards';
 import { createBoardOrAdoptDuplicate } from '../../src/lib/graphql/create-board-or-adopt-duplicate';
 import { resolveBoardForSession } from '../../src/lib/board-path-to-user-board';
 import { spacing, borderRadius } from '../../src/theme/tokens';
@@ -91,14 +86,9 @@ export default function JoinSessionScreen() {
     setIsJoining(true);
     try {
       const userBoard = await resolveBoardForSession(session.boardPath, {
-        // The whole owned rack, walked imperatively. `useMyBoards` hands back one
-        // page — 20 boards by default — so a joiner whose matching board sorts
-        // past it reads as owning no such board and the join mints a duplicate
-        // the backend then rejects. The walk also REJECTS when it can't reach the
-        // server, where an awaited `refetch()` would pause forever under
-        // `networkMode: 'offlineFirst'` and a `?? []` fallback would mint that
-        // same duplicate.
-        loadOwnedBoards: fetchAllMyBoards,
+        // `myBoards` includes followed boards as well as owned boards; this
+        // loader verifies the signed-in profile and returns only its ownerId rows.
+        loadOwnedBoards: fetchAllMyOwnedBoards,
         // Absorbs the narrow race the walk can't: a board with this config
         // created on another device since the walk comes back as
         // BOARD_DUPLICATE_CONFIG naming the board to join on instead.

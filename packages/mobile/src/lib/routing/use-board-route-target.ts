@@ -14,7 +14,7 @@
 // `parseBoardPath` deliberately doesn't parse.
 //
 // Resolution is local-first, then server, and never reactive. Every lookup here
-// is imperative (`fetchAllMyBoards`, `fetchBoardBySlug`) because React Query
+// is imperative (`fetchAllMyOwnedBoards`, `fetchBoardBySlug`) because React Query
 // runs `networkMode: 'offlineFirst'`: an awaited `refetch()` on a cold offline
 // open pauses its retryer and never settles, so the route would spin forever
 // over a climb that is sitting in the downloaded snapshot. A bare request
@@ -37,7 +37,8 @@ import { toBoardPath, type BoardRouteTarget } from './board-route-target';
 // parse (see the config's `hooks-dual-write` exclusion note).
 import { RELAXES_ANONYMOUS_ROUTES } from './anonymous-auth-gate';
 import { useClimb } from '../graphql/hooks';
-import { fetchAllMyBoards, fetchBoardBySlug, useCreateBoard } from '../graphql/hooks';
+import { fetchBoardBySlug, useCreateBoard } from '../graphql/hooks';
+import { fetchAllMyOwnedBoards } from '../graphql/hooks/fetch-all-my-owned-boards';
 import { createBoardOrAdoptDuplicate } from '../graphql/create-board-or-adopt-duplicate';
 import { useSetActiveBoard } from '../graphql/use-active-board';
 import { getStoredActiveBoard } from '../active-board-store';
@@ -291,7 +292,7 @@ function useAdoptedBoard(
         // itself already serves from the downloaded snapshot.
         let localBoard = needsOwnedBoards ? await findLocalBoardForPath(boardPath, !onlineManager.isOnline()) : null;
 
-        let ownedBoards: UserBoard[] = [];
+        let ownedBoardSnapshot: Awaited<ReturnType<typeof fetchAllMyOwnedBoards>> | null = null;
         if (needsOwnedBoards && !localBoard) {
           // Offline with nothing local is unresolvable and has to say so rather
           // than wait: every remaining step (the owned-list walk, CREATE_BOARD)
@@ -301,24 +302,20 @@ function useAdoptedBoard(
           if (!onlineManager.isOnline()) {
             throw new Error(`No downloaded board matches ${boardPath} while offline`);
           }
-          // Same cold-start guard the join screen uses: an empty owned-board list
-          // makes resolveBoardForSession mint a board the user already has, which
-          // the backend rejects. Fetch the *whole* list — `myBoards` pages at 50,
-          // and a board on page two reads as no board at all — and let a rejected
-          // walk fail the resolve, since "no boards" and "we don't know your
-          // boards" mint the same duplicate otherwise. Signed out is legitimately
-          // empty: there the create fails, and that rejection is the not-found.
+          // A signed-out native route is not reachable in the app, and the web
+          // route gate skips adoption for signed-out visitors. Keep this check
+          // as defense in depth; the resolver's loader still rejects if a tuple
+          // resolve reaches it without an owner snapshot.
           if (signedIn) {
             try {
-              ownedBoards = await fetchAllMyBoards();
+              ownedBoardSnapshot = await fetchAllMyOwnedBoards();
             } catch (listError) {
               // `onlineManager` said online and the walk still never reached the
               // server, so it was lying (captive portal, dead uplink, lost
               // cold-start seed race). Take the downloaded cards' second look
               // before giving up, exactly as `offlineAwareRequest` does — but
-              // only for a transport failure. A rejection carrying a server
-              // status is a verdict, and adopting a stale card over it would
-              // hand back a board the backend has disowned.
+              // only for a transport failure. An identity/owner failure or server
+              // rejection is authoritative and must not fall back to stale rows.
               if (!isNetworkError(listError)) throw listError;
               localBoard = await findLocalBoardForPath(boardPath, true);
               if (!localBoard) throw listError;
@@ -329,10 +326,14 @@ function useAdoptedBoard(
         const resolved =
           localBoard ??
           (await resolveBoardForSession(boardPath, {
-            // Already walked above (or deliberately left empty for a signed-out
-            // visitor), so the loader hands the list straight back rather than
-            // fetching it twice.
-            loadOwnedBoards: async () => ownedBoards,
+            // The account-verified snapshot is already collected above, so the
+            // resolver can re-check ownerId without starting a second walk.
+            loadOwnedBoards: async () => {
+              if (!ownedBoardSnapshot) {
+                throw new Error('Cannot resolve a board without a verified account owner');
+              }
+              return ownedBoardSnapshot;
+            },
             createBoard: (input) =>
               createBoardOrAdoptDuplicate(input, (createInput) => createBoardMutation.mutateAsync(createInput)),
             // Local first here too, so a named board already on the device opens
