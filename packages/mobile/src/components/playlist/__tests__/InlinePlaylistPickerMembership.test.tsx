@@ -745,16 +745,16 @@ describe('InlinePlaylistPicker membership certainty and angle', () => {
 
   it('keeps the active-row lock scoped to the climb membership query', async () => {
     const kilterMembers = new Set(['p-shared']);
-    const tensionMembers = new Set<string>();
+    const secondClimbMembers = new Set<string>();
     const kilterRequest = deferred<void>();
-    const tensionRequest = deferred<void>();
+    const secondClimbRequest = deferred<void>();
     playlistContext.playlists = [makePlaylist('p-shared', 'kilter', 1)];
     requestMock.mockResolvedValueOnce({ playlistsForClimb: ['p-shared'] });
     playlistContext.removeFromPlaylist.mockImplementation(() =>
       kilterRequest.promise.then(() => kilterMembers.delete('p-shared')),
     );
     playlistContext.addToPlaylist.mockImplementation(() =>
-      tensionRequest.promise.then(() => tensionMembers.add('p-shared')),
+      secondClimbRequest.promise.then(() => secondClimbMembers.add('p-shared')),
     );
 
     const kilterPicker = renderPicker();
@@ -795,10 +795,10 @@ describe('InlinePlaylistPicker membership certainty and angle', () => {
     );
     expect(rowIsDisabled(secondRow)).toBe(true);
 
-    tensionRequest.resolve();
+    secondClimbRequest.resolve();
     await waitFor(() => {
       expect(rowIsDisabled(secondRow)).toBe(false);
-      expect(tensionMembers.has('p-shared')).toBe(true);
+      expect(secondClimbMembers.has('p-shared')).toBe(true);
       expect(hasCheck(secondRow)).toBe(true);
     });
     expect(kilterMembers.has('p-shared')).toBe(false);
