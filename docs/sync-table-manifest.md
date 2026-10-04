@@ -356,7 +356,8 @@ bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the grades table has 
   successful cycle tail, a guarded transaction removes the entire downloaded
   spray scope and its markers, followed by stored-photo deletion through the
   existing deleted-row sink. Failures, cancellation and purge must not turn an
-  unanswered request into absence. Personal ticks and enabled-board settings
+  unanswered request into absence. A failed or malformed confirmation fails the
+  cycle, preserving downloads until a later successful cycle. Personal ticks and enabled-board settings
   survive so restored visibility can download the scope afresh.
 - Del: migration `0228`. A wall is only ever SOFT-deleted (deleting the row would strand every climb set on it), so
   the trigger fires on `deleted_at` going NULL → NOT NULL and emits `record_id = OLD.layout_id::text` (1 seg) — the

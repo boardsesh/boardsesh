@@ -103,7 +103,8 @@ page. A cursor-free sync request is ambiguous too, because recently edited rows
 are excluded by sync's 30-second stability window. The client confirms with the
 existing `sprayWallByLayout(layoutId) { uuid }` query, through the network fetch
 seam rather than a cached or offline read. Only an explicit `null` confirms that
-the wall is unavailable. Failed or malformed responses preserve the download.
+the wall is unavailable. Failed or malformed confirmations fail the cycle and
+preserve the download; they do not skip just the affected wall.
 
 Confirmed removals wait until the cycle finishes successfully. One guarded
 transaction then removes the wall, its downloaded climbs, stats, grades and
