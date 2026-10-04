@@ -1440,7 +1440,8 @@ R2 producer.
    `https://snapshots.boardsesh.com/board-snapshots/v1-gzip`, both dev-database defaults to
    `https://snapshots.boardsesh.com`, and public dataset/runbook URLs. Publish the mobile OTA only after
    producer verification. Prove fresh iOS/Android board downloads use snapshots, and browser/dev-database
-   consumers work. Retain Tigris read access for at least 30 days and compare 404/download-failure telemetry.
+   consumers work. Retain Tigris read access for at least 30 days after actual production reader
+   publication and compare 404/download-failure telemetry.
    Removing its data remains a separate, explicitly approved operation.
 
 The verifier is read-only against storage and Postgres (it uses no database connection); its only writes
@@ -1508,8 +1509,8 @@ build with no incremental state, so re-running it is always safe and always suff
 partial-catalogue mode to get stuck in — the export either publishes a complete artifact or leaves
 the last one in place.
 
-If it fails repeatedly, the likely causes are the ones the per-layout passes share (Production
-secrets, the Tigris endpoint) rather than anything catalogue-specific — it reads ~816k rows from
+If it fails repeatedly, the likely causes are the ones the per-layout passes share (named storage
+credentials or the account endpoint) rather than anything catalogue-specific — it reads ~816k rows from
 fourteen tables in one REPEATABLE READ transaction and writes a single ~12 MB object.
 
 ### Format-version bump procedure
