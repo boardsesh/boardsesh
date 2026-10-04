@@ -336,6 +336,13 @@ export default function SessionDetailContent({
   const upvotes = session?.upvotes ?? 0;
   const downvotes = session?.downvotes ?? 0;
   const commentCount = session?.commentCount ?? 0;
+  // A daily-highlight session (`daily:<user>:<date>`) has no row of its own to
+  // vote/comment on — validateEntityExists would reject `sessionId` outright.
+  // socialEntityType/Id is the resolved real target (a real session votes on
+  // itself; a daily highlight redirects to the day's hardest tick), matching
+  // the fix already applied to session-feed-card.tsx and the mobile app.
+  const socialEntityType = session?.socialEntityType ?? 'session';
+  const socialEntityId = session?.socialEntityId ?? sessionId;
 
   // Still read: the own-tick delete affordance is gated on it. Owner-only
   // writes (rename, recap) live in the app — see SessionEditSheet.
@@ -511,8 +518,8 @@ export default function SessionDetailContent({
         <Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
             <VoteButton
-              entityType="session"
-              entityId={sessionId}
+              entityType={socialEntityType}
+              entityId={socialEntityId}
               initialUpvotes={upvotes}
               initialDownvotes={downvotes}
               likeOnly
@@ -536,7 +543,7 @@ export default function SessionDetailContent({
             </IconButton>
           </Box>
           <Collapse in={sessionCommentsOpen} unmountOnExit>
-            <CommentSection entityType="session" entityId={sessionId} title={t('detail.comments')} />
+            <CommentSection entityType={socialEntityType} entityId={socialEntityId} title={t('detail.comments')} />
           </Collapse>
         </Box>
 

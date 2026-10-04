@@ -7,6 +7,7 @@ const updateSession = vi.hoisted(() => ({
   mutate: vi.fn(),
   isPending: false,
   isError: false,
+  error: undefined as unknown,
   reset: vi.fn(),
 }));
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
@@ -76,13 +77,26 @@ const recapInput = (root: HTMLElement) => inputByPlaceholder(root, 'summary.comm
 const button = (root: HTMLElement, title: string) =>
   root.querySelector(`[data-button="${title}"]`) as HTMLButtonElement | null;
 const save = (root: HTMLElement) => fireEvent.click(button(root, 'detail.editSave')!);
+// Settle the most recent mutate() call as a failure, the way React Query does:
+// fire its onError callback and flip the hook into the error state.
+const failSave = () => {
+  const [, options] = updateSession.mutate.mock.calls.at(-1)!;
+  (options as { onError?: () => void } | undefined)?.onError?.();
+  updateSession.isError = true;
+};
 
 describe('SessionEditSheet', () => {
   beforeEach(() => {
     updateSession.mutate.mockReset();
     updateSession.reset.mockReset();
+    // Mirror React Query: reset() returns the mutation to idle, clearing the error.
+    updateSession.reset.mockImplementation(() => {
+      updateSession.isError = false;
+      updateSession.error = undefined;
+    });
     updateSession.isPending = false;
     updateSession.isError = false;
+    updateSession.error = undefined;
     analytics.track.mockReset();
     haptics.hapticSuccess.mockReset();
   });
@@ -153,5 +167,125 @@ describe('SessionEditSheet', () => {
     save(container);
     expect(updateSession.mutate).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  // #5290: the sheet stays mounted (only `visible` toggles) while its owner keeps
+  // editing. Before this fix, every closed→open transition unconditionally reseeded
+  // name/recap from the (unchanged) server values — so a climber who tapped Save,
+  // hit the (then-unfixable) daily-session validation error, gave up and closed the
+  // sheet, then reopened to retry lost everything they had typed.
+  it('preserves the typed recap after a failed save, across a close and reopen', () => {
+    const { container, rerender } = render(
+      <SessionEditSheet visible sessionId="s1" currentName="Old" currentNotes="Recap" onClose={() => {}} />,
+    );
+    fireEvent.change(recapInput(container)!, { target: { value: 'Great sesh, sent my project!' } });
+    save(container);
+    expect(updateSession.mutate).toHaveBeenCalledTimes(1);
+
+    // The mutation settles into an error state.
+    failSave();
+    rerender(<SessionEditSheet visible sessionId="s1" currentName="Old" currentNotes="Recap" onClose={() => {}} />);
+    expect(recapInput(container)?.value).toBe('Great sesh, sent my project!');
+
+    // Close (Cancel / dismiss) and reopen to retry.
+    rerender(
+      <SessionEditSheet visible={false} sessionId="s1" currentName="Old" currentNotes="Recap" onClose={() => {}} />,
+    );
+    rerender(<SessionEditSheet visible sessionId="s1" currentName="Old" currentNotes="Recap" onClose={() => {}} />);
+
+    expect(recapInput(container)?.value).toBe('Great sesh, sent my project!');
+    expect(nameInput(container)?.value).toBe('Old');
+  });
+
+  // Codex review on #5363: editing a field after the failure calls reset() to clear
+  // the banner, which also clears isError. Keying the reopen reseed off isError
+  // therefore discarded the corrected draft.
+  it('preserves a draft corrected after a failed save, across a close and reopen', () => {
+    const { container, rerender } = render(
+      <SessionEditSheet visible sessionId="s1" currentName="Old" currentNotes="Recap" onClose={() => {}} />,
+    );
+    fireEvent.change(recapInput(container)!, { target: { value: 'First try' } });
+    save(container);
+    failSave();
+    rerender(<SessionEditSheet visible sessionId="s1" currentName="Old" currentNotes="Recap" onClose={() => {}} />);
+
+    // Correct the draft after seeing the error — this clears the error state.
+    fireEvent.change(recapInput(container)!, { target: { value: 'Corrected recap' } });
+    expect(updateSession.reset).toHaveBeenCalled();
+    expect(updateSession.isError).toBe(false);
+
+    rerender(
+      <SessionEditSheet visible={false} sessionId="s1" currentName="Old" currentNotes="Recap" onClose={() => {}} />,
+    );
+    rerender(<SessionEditSheet visible sessionId="s1" currentName="Old" currentNotes="Recap" onClose={() => {}} />);
+
+    expect(recapInput(container)?.value).toBe('Corrected recap');
+  });
+
+  it('reseeds from server values on reopen once a retry succeeds', () => {
+    const { container, rerender } = render(
+      <SessionEditSheet visible sessionId="s1" currentName="Old" currentNotes="Recap" onClose={() => {}} />,
+    );
+    fireEvent.change(recapInput(container)!, { target: { value: 'Retry me' } });
+    save(container);
+    failSave();
+    save(container);
+    const [, retryOptions] = updateSession.mutate.mock.calls[1];
+    (retryOptions as { onSuccess: () => void }).onSuccess();
+
+    rerender(
+      <SessionEditSheet visible={false} sessionId="s1" currentName="Old" currentNotes="Retry me" onClose={() => {}} />,
+    );
+    rerender(<SessionEditSheet visible sessionId="s1" currentName="Old" currentNotes="Retry me" onClose={() => {}} />);
+    fireEvent.change(recapInput(container)!, { target: { value: 'Scratch' } });
+    rerender(
+      <SessionEditSheet visible={false} sessionId="s1" currentName="Old" currentNotes="Retry me" onClose={() => {}} />,
+    );
+    rerender(<SessionEditSheet visible sessionId="s1" currentName="Old" currentNotes="Retry me" onClose={() => {}} />);
+
+    expect(recapInput(container)?.value).toBe('Retry me');
+  });
+
+  it('still reseeds from server values on reopen when the last attempt did not fail', () => {
+    const { container, rerender } = render(
+      <SessionEditSheet visible sessionId="s1" currentName="Old" currentNotes="Recap" onClose={() => {}} />,
+    );
+    fireEvent.change(recapInput(container)!, { target: { value: 'Abandoned scratch draft' } });
+    // No save attempt — just closed and reopened, e.g. by accident.
+    rerender(
+      <SessionEditSheet visible={false} sessionId="s1" currentName="Old" currentNotes="Recap" onClose={() => {}} />,
+    );
+    rerender(<SessionEditSheet visible sessionId="s1" currentName="Old" currentNotes="Recap" onClose={() => {}} />);
+
+    expect(recapInput(container)?.value).toBe('Recap');
+  });
+
+  it('surfaces the real server error instead of the generic failure message', () => {
+    const { container, rerender } = render(
+      <SessionEditSheet visible sessionId="s1" currentName="Old" currentNotes="Recap" onClose={() => {}} />,
+    );
+    fireEvent.change(recapInput(container)!, { target: { value: 'New recap' } });
+    save(container);
+    updateSession.isError = true;
+    updateSession.error = {
+      response: { errors: [{ message: 'Invalid input: Session ID must be alphanumeric with hyphens only' }] },
+    };
+    rerender(<SessionEditSheet visible sessionId="s1" currentName="Old" currentNotes="Recap" onClose={() => {}} />);
+
+    expect(container.textContent).toContain('Invalid input: Session ID must be alphanumeric with hyphens only');
+    expect(container.textContent).not.toContain('detail.editSaveFailed');
+  });
+
+  it('falls back to the generic failure message when the server error carries no message', () => {
+    const { container, rerender } = render(
+      <SessionEditSheet visible sessionId="s1" currentName="Old" currentNotes="Recap" onClose={() => {}} />,
+    );
+    fireEvent.change(recapInput(container)!, { target: { value: 'New recap' } });
+    save(container);
+    updateSession.isError = true;
+    updateSession.error = new Error('network blip');
+    rerender(<SessionEditSheet visible sessionId="s1" currentName="Old" currentNotes="Recap" onClose={() => {}} />);
+
+    expect(container.textContent).toContain('detail.editSaveFailed');
   });
 });

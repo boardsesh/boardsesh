@@ -245,6 +245,8 @@ export const GET_SESSION_DETAIL = gql`
     sessionDetail(sessionId: $sessionId) {
       sessionId
       sessionType
+      socialEntityType
+      socialEntityId
       sessionName
       ownerUserId
       participants {

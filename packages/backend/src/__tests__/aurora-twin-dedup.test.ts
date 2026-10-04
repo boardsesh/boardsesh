@@ -649,17 +649,10 @@ describe('#3535 Aurora-side duplicate ascents', () => {
       .values(
         tickUuids.map((tickUuid) => ({ userId: USER_ID, entityType: 'tick' as const, entityId: tickUuid, value: 1 })),
       );
-    await db.insert(dbSchema.voteCounts).values(
-      tickUuids.map((tickUuid) => ({
-        entityType: 'tick' as const,
-        entityId: tickUuid,
-        upvotes: 1,
-        downvotes: 0,
-        score: 1,
-        hotScore: 1,
-        createdAt: new Date(),
-      })),
-    );
+    // vote_counts is trigger-maintained (votes_count_trigger, schema-sql.ts) —
+    // the insert above already populated a matching row per tick. Inserting it
+    // again here would collide with the trigger's own upsert on the same
+    // (entity_type, entity_id) primary key.
     await db.insert(dbSchema.feedItems).values(
       tickUuids.map((tickUuid) => ({
         recipientId: USER_ID,

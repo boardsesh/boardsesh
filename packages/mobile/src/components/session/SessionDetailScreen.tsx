@@ -18,6 +18,7 @@ import { SessionBetaCarousel } from './SessionBetaCarousel';
 import { SessionLeaderboard } from './SessionLeaderboard';
 import { SessionTickRow } from './SessionTickRow';
 import { useSessionDetail, useBulkVoteSummaries, useProfile } from '../../lib/graphql/hooks';
+import { canEditSessionDetail } from '../../lib/session-edit-permissions';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
@@ -48,16 +49,27 @@ export default function SessionDetailScreen() {
   const paddingBottom = bottomChrome.floatingControlBottom + spacing[6];
 
   const { data: session, isPending } = useSessionDetail(sessionId);
-  const { data: voteSummaries } = useBulkVoteSummaries('session', sessionId ? [sessionId] : [], !!sessionId);
+  // Keyed off the session's RESOLVED social entity, not its (possibly synthetic
+  // `daily:<user>:<date>`) sessionId — a daily highlight has no session row, so
+  // its votes live on the day's hardest tick instead. See socialEntityType/Id
+  // on SessionDetail. Waits for `session` to load rather than firing off the raw
+  // route param, which is exactly the id shape that must never reach this query.
+  const { data: voteSummaries } = useBulkVoteSummaries(
+    session?.socialEntityType ?? 'session',
+    session ? [session.socialEntityId] : [],
+    !!session,
+  );
   // `.at(0)`, not `[0]`: the list is empty until the chunk resolves, and `.at`
   // is the indexed read typed `VoteSummary | undefined` without
   // `noUncheckedIndexedAccess`.
   const sessionVoteSummary = voteSummaries.at(0);
   const { data: profile } = useProfile();
 
-  // Only the session's creator can rename it / edit the recap (the server enforces
-  // this too; gating the affordance keeps non-owners from hitting a rejection).
-  const canEdit = !!session?.ownerUserId && !!profile?.id && session.ownerUserId === profile.id;
+  // Renaming/annotating requires a real `board_sessions` row to write to — a
+  // `daily_highlight` is reconstructed from ticks on the fly and has none, so
+  // its pencil never renders regardless of ownership (the server has nothing to
+  // update either way). Real sessions still gate on ownership as before.
+  const canEdit = canEditSessionDetail(session, profile?.id ?? null);
 
   const commentSheetRef = useRef<BottomSheet | null>(null);
   const [commentTarget, setCommentTarget] = useState<{ entityId: string; entityType: SocialEntityType } | null>(null);
@@ -83,8 +95,6 @@ export default function SessionDetailScreen() {
     setCommentTarget({ entityId, entityType });
     commentSheetRef.current?.snapToIndex(0);
   }, []);
-
-  const handleOpenSessionComments = useCallback((id: string) => openComments(id, 'session'), [openComments]);
 
   const handleTickPress = useCallback(
     (tick: SessionDetailTick) => openClimbInPlayDrawer({ kind: 'tick', tick }, { openPlayDrawer, router }),
@@ -139,7 +149,7 @@ export default function SessionDetailScreen() {
         session={session}
         title={title}
         titleIsDate={!session.sessionName}
-        onOpenComments={handleOpenSessionComments}
+        onOpenComments={openComments}
         voteSummary={sessionVoteSummary}
         onEditSession={canEdit ? openEdit : undefined}
       />

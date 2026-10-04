@@ -18,6 +18,8 @@ function makeSessionDetail(overrides: Partial<SessionDetail> = {}): SessionDetai
     sessionType: 'party',
     sessionName: 'Morning Session',
     ownerUserId: 'owner-1',
+    socialEntityType: 'session',
+    socialEntityId: 'session-1',
     participants: [
       {
         userId: 'user-1',
