@@ -459,6 +459,9 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
 
       expect(cacheKeyStep, `${workflowName} must retain its CocoaPods cache key`).toBeTruthy();
       expect(cacheKeyStep).not.toContain("'packages/mobile/assets/**'");
+      expect(cacheKeyStep, `${workflowName} must invalidate Pods when autolinking overrides change`).toContain(
+        "'packages/mobile/react-native.config.js'",
+      );
       for (const nativeAppImage of nativeAppImages) {
         expect(cacheKeyStep, `${workflowName} must invalidate Pods when ${nativeAppImage} changes`).toContain(
           `'${nativeAppImage}'`,
