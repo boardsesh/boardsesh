@@ -59,6 +59,88 @@ Instant Rollback probe — was deleted on 2026-09-02. See
 history and [Rollback runbook](#rollback-runbook-web-on-railway) for what
 replaced Instant Rollback.
 
+## Build a backend artifact while publishers are paused
+
+`backend-artifact-build.yml` has separate manual, main-only `build` and `promote`
+modes for maintenance that must keep `production-deploy.yml` disabled. The default
+`build` mode uses the production backend
+Docker context, stamps the exact source revision, builds Linux AMD64, and
+attests the digest. Its only registry tag is
+`r2-scheduler-<full-sha>-<run-id>-<run-attempt>`; rerunning creates a new tag.
+The build does not update `production`, `staging`, `latest`, or the shared build
+cache. The explicit `promote` mode verifies provenance, merged-main ancestry,
+the six disabled and drained publishers, and the expected current digest before
+moving only `boardsesh-daemon:production`. It shares the normal deploy concurrency
+lock and verifies that the promoted digest is unchanged. Neither mode has
+Production secrets, migration, web, static, OTA, or Railway deployment jobs.
+Registry tag writes have no compare-and-swap: exclude other manual tag writers
+throughout promotion. A failed or timed-out publication needs registry
+reconciliation before retrying or deploying.
+
+During the R2 cutover, both the backend producer and the batch worker must
+contain the six-hour snapshot lease fix. Enqueueing stamps `expireInSeconds`
+into each pg-boss job: updating only the consumer cannot change a job created
+with the old 2,700-second expiry. An isolated export or a new worker image alone
+therefore does not prove that normal snapshot production is ready.
+
+1. Keep the six OTA-writing workflows disabled and drained, including
+   Production Deploy. Keep snapshot scheduling frozen at 13 backend families
+   and the batch worker paused. Capture the current daemon `production` digest
+   and the exact live Railway backend deployment for rollback.
+2. Dispatch `gh workflow run backend-artifact-build.yml --ref main`. After the
+   run succeeds, record its source revision, unique tag, immutable image, and
+   attestation from the run summary. Inspect that revision for the lease fix
+   and any other changes relative to the current backend; this workflow does
+   not run database migrations.
+3. Verify the immutable image provenance against this workflow, the exact
+   source revision, and `refs/heads/main`. Confirm the pulled image's stamped
+   release and snapshot family options without opening a database connection.
+   The worker needs its own attested image containing the same fix.
+4. Dispatch the separate `promote` mode with the accepted digest/source and a
+   freshly inspected production digest. It moves only the canonical daemon
+   `production` tag. Then redeploy only the Railway backend
+   from its existing `ghcr.io/boardsesh/boardsesh-daemon:production` source.
+   Preserve all runtime variables and the 13-family freeze. Verify the exact
+   new deployment, release, health, schema, and frozen-family startup on both
+   replicas before accepting it. On failure, restore the captured Railway
+   deployment and keep the publishers frozen. The canonical tag remains on the
+   new digest until a separate, reviewed tag repair or restoration; do not
+   resume normal deploys over the rollback.
+5. After full R2 artifact verification and both producer/consumer deployments,
+   keep the 13-family freeze while manually enqueueing the normal snapshot
+   family's nightly acceptance job with `{ mode: 'nightly', skipPrune: true }`.
+   Confirm `expire_seconds = 21600` and `heartbeat_seconds = 120` before
+   unpausing the worker. Require that job and a subsequent
+   `{ mode: 'live-scan', skipPrune: true }` job to complete without stale layouts.
+   Restore normal 14-family scheduling only after both acceptance jobs pass;
+   leave OTA writers frozen until the separate OTA storage gate passes.
+
+For step 3, substitute the recorded digest and source revision below. GHCR
+authentication is required; these values are public artifact metadata.
+
+```bash
+gh attestation verify "oci://ghcr.io/boardsesh/boardsesh-daemon@${BACKEND_ARTIFACT_DIGEST}" \
+  --repo boardsesh/boardsesh \
+  --signer-workflow boardsesh/boardsesh/.github/workflows/backend-artifact-build.yml \
+  --source-ref refs/heads/main \
+  --source-digest "$BACKEND_ARTIFACT_SOURCE_SHA" \
+  --deny-self-hosted-runners
+```
+
+Step 4 requires another explicit dispatch. Use the accepted metadata and a fresh
+production-tag inspection; the workflow refuses a changed baseline.
+
+```bash
+gh workflow run backend-artifact-build.yml --ref main \
+  --field mode=promote \
+  --field artifact_digest="$BACKEND_ARTIFACT_DIGEST" \
+  --field artifact_source_sha="$BACKEND_ARTIFACT_SOURCE_SHA" \
+  --field expected_current_digest="$BACKEND_PRODUCTION_BASELINE_DIGEST"
+```
+
+The promotion uses a [single-source manifest copy](https://docs.docker.com/reference/cli/docker/buildx/imagetools/create/)
+with `--prefer-index=false`; it neither rebuilds the daemon nor deploys Railway.
+
 ## Serial-plan verification after migrations
 
 **Disabled on 2026-09-25 pending [#5767](https://github.com/boardsesh/boardsesh/issues/5767)** (`if: false` on the job; production still resolves the setting to `2`, and the job made every deploy run red while the deploys succeeded). The paragraph below describes it as designed.

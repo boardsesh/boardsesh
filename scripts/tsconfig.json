@@ -35,6 +35,7 @@
     "__tests__/static-asset-bootstrap-workflow.test.ts",
     "create-service-docker-context.d.ts",
     "__tests__/backend-docker-context-images.test.ts",
+    "__tests__/backend-artifact-build-workflow.test.ts",
     "publish-help-shots.ts",
     "convert-help-shots.ts",
     "lib/help-shots.ts",
