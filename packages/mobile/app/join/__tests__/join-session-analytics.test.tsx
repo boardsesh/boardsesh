@@ -98,9 +98,12 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
   useSessionPreview: () => preview,
   useCreateBoard: () => ({ mutateAsync: vi.fn(async () => ({})) }),
   useBoardBySlug: () => slugBoardQuery,
-  fetchAllMyBoards: vi.fn(async () => []),
+  fetchAllMyOwnedBoards: vi.fn(async () => ({ viewerId: 'viewer-1', boards: [] })),
   fetchBoardBySlug: vi.fn(async () => null),
   fetchBoardByUuid: vi.fn(async () => null),
+}));
+vi.mock('../../../src/lib/graphql/hooks/fetch-all-my-owned-boards', () => ({
+  fetchAllMyOwnedBoards: vi.fn(async () => ({ viewerId: 'viewer-1', boards: [] })),
 }));
 vi.mock('../../../src/lib/board-path-to-user-board', () => ({
   resolveBoardForSession: boardResolver.resolveBoardForSession,
