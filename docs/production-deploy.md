@@ -723,6 +723,7 @@ The Railway backend service owns Stripe Checkout and must set:
 | `STRIPE_SECRET_KEY`     | secret | Creates Checkout and Billing Portal sessions.                         |
 | `STRIPE_WEBHOOK_SECRET` | secret | Verifies `POST /webhooks/stripe` before linking supporter accounts.   |
 | `BOARDSESH_URL`         | var    | Builds locale-preserving Checkout and Billing Portal return URLs.     |
+| `STRIPE_DONATE_URL`     | var    | Optional HTTPS Payment Link fallback returned by `supportConfiguration`. |
 
 Use Stripe test-mode keys (`sk_test_...` and the matching `whsec_...`) in
 development, CI, staging, and preview environments. Only production may use a
@@ -732,8 +733,10 @@ Configure Stripe to send `checkout.session.completed`,
 `checkout.session.async_payment_succeeded`, `checkout.session.expired`,
 `checkout.session.async_payment_failed`, `customer.subscription.updated`, and
 `customer.subscription.deleted` to the backend webhook URL. Keep
-`STRIPE_DONATE_URL` on the web service during rollout; the support page uses it
-only when backend Checkout is unavailable.
+`STRIPE_DONATE_URL` on both the backend and web services during rollout. The
+backend exposes it through `supportConfiguration` for the web support page when
+Checkout is unavailable. Mobile support links open that page. The web service also supplies its local fallback if
+the backend returns no link or the configuration request fails.
 
 Linked Checkout claims block account deletion until completion, expiration, or
 payment failure is processed. A second monthly Checkout is refused while a
