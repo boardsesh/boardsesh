@@ -40,7 +40,10 @@ export const favoriteClimbsQuery = {
     const pageSize = input.pageSize ?? 20;
     const tables = UNIFIED_TABLES;
 
-    // Get total count of user's favorites for this board
+    // Board scope now comes from the climbs join, not from the favorite row:
+    // favorites are keyed by (user_id, climb_uuid) and carry no board of their
+    // own. The count MUST use the identical join + filter as the results query
+    // below, or totalCount and the page disagree and pagination breaks.
     const countResult = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(dbSchema.userFavorites)
@@ -53,7 +56,6 @@ export const favoriteClimbsQuery = {
       .where(
         and(
           eq(dbSchema.userFavorites.userId, userId),
-          eq(dbSchema.userFavorites.boardName, boardName),
           // A favourite is a reference the user PERSISTED, so it outlives the
           // wall's visibility: without this, a climb favourited while the wall was
           // public keeps returning its name, description and frames after the owner
@@ -134,7 +136,6 @@ export const favoriteClimbsQuery = {
       .where(
         and(
           eq(dbSchema.userFavorites.userId, userId),
-          eq(dbSchema.userFavorites.boardName, boardName),
           // A favourite is a reference the user PERSISTED, so it outlives the
           // wall's visibility: without this, a climb favourited while the wall was
           // public keeps returning its name, description and frames after the owner

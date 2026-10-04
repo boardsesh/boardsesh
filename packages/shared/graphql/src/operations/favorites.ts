@@ -1,8 +1,8 @@
 import { gql } from 'graphql-request';
 
 export const GET_FAVORITES = gql`
-  query Favorites($boardName: String!, $climbUuids: [String!]!, $angle: Int!) {
-    favorites(boardName: $boardName, climbUuids: $climbUuids, angle: $angle)
+  query Favorites($climbUuids: [String!]!) {
+    favorites(climbUuids: $climbUuids)
   }
 `;
 
@@ -16,9 +16,7 @@ export const TOGGLE_FAVORITE = gql`
 
 // Type for the favorites query variables
 export type FavoritesQueryVariables = {
-  boardName: string;
   climbUuids: string[];
-  angle: number;
 };
 
 // Type for the favorites query response
@@ -29,9 +27,7 @@ export type FavoritesQueryResponse = {
 // Type for the toggle favorite mutation variables
 export type ToggleFavoriteMutationVariables = {
   input: {
-    boardName: string;
     climbUuid: string;
-    angle: number;
   };
 };
 
