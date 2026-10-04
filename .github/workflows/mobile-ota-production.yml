@@ -132,9 +132,10 @@ env:
   EXPO_PUBLIC_SENTRY_DSN: https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400
   EXPO_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
   # Manifest base for the offline snapshot bootstrap (bundle-only, no fingerprint
-  # effect). Public Tigris bucket; keep in sync with SNAPSHOT_PUBLIC_BASE_URL in
-  # export-board-snapshots.yml.
-  EXPO_PUBLIC_SNAPSHOT_BASE_URL: https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-gzip
+  # effect). Public R2 host; keep in sync with SNAPSHOT_PUBLIC_BASE_URL in
+  # blackheathdc-ansible/inventories/boardsesh_workers.yml (batch defaults).
+  # Cutover: docs/board-snapshots.md#batch-worker-owner-export-board-snapshots-family.
+  EXPO_PUBLIC_SNAPSHOT_BASE_URL: https://snapshots.boardsesh.com/board-snapshots/v1-gzip
   EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
   # Pin React Native's fetch as the global `fetch` instead of expo/fetch. Expo 57's
   # WinterCG runtime installs expo/fetch as the global unless this is '1'; expo/fetch's
