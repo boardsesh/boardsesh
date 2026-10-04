@@ -220,7 +220,7 @@ describe('frozen reader fails closed', () => {
       createdAt: new Date().toISOString(),
       extra: { branch: 'production' },
       assets: [],
-      launchAsset: { url: 'https://updates.boardsesh.com/assets/public-fixture', hash },
+      launchAsset: { url: 'https://updates.boardsesh.com/assets?ext=hbc&h=public-fixture&platform=ios', hash },
     };
     let target = 'https://boardsesh-ota-v3.7e9cab940b939f124941596d68fe0199.r2.cloudflarestorage.com/public-fixture';
     let secondRedirect = false;
@@ -230,8 +230,9 @@ describe('frozen reader fails closed', () => {
         return new Response(signed(JSON.stringify(manifest)), {
           headers: { 'content-type': 'multipart/mixed; boundary=fixture' },
         });
-      if (url.includes('updates.boardsesh.com/assets')) {
+      if (new URL(url).pathname === '/assets') {
         expect(options?.redirect).toBe('manual');
+        expect(options?.headers).toEqual({ 'user-agent': 'Boardsesh-R2-Migration-Acceptance/1' });
         return new Response(null, { status: 302, headers: { location: target } });
       }
       expect(options?.redirect).toBe('error');

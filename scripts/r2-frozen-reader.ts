@@ -160,13 +160,17 @@ async function readPrivateR2Asset(url: URL): Promise<Buffer> {
   if (
     url.protocol !== 'https:' ||
     url.hostname !== 'updates.boardsesh.com' ||
-    !url.pathname.startsWith('/assets/') ||
+    url.pathname !== '/assets' ||
     url.username ||
     url.password ||
     url.port
   )
     throw new Error('Asset is not delivered from the private R2 bucket');
-  const redirect = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(60000) });
+  const redirect = await fetch(url, {
+    redirect: 'manual',
+    signal: AbortSignal.timeout(60000),
+    headers: { 'user-agent': 'Boardsesh-R2-Migration-Acceptance/1' },
+  });
   if (![301, 302, 303, 307, 308].includes(redirect.status)) throw new Error('Expected private R2 asset redirect');
   const location = redirect.headers.get('location');
   await redirect.body?.cancel();
@@ -187,6 +191,7 @@ export async function verifyDelivery(
     redirect: 'error',
     signal: AbortSignal.timeout(60000),
     headers: {
+      'user-agent': 'Boardsesh-R2-Migration-Acceptance/1',
       'expo-platform': platform,
       'expo-runtime-version': RUNTIMES[platform],
       'expo-channel-name': 'production',
