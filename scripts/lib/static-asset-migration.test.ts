@@ -74,7 +74,7 @@ describe('historical immutable assets migration', () => {
     expect(source.get).not.toHaveBeenCalled();
     expect(destination.put).not.toHaveBeenCalled();
   });
-  it('copies historical objects with all portable metadata and checksum then reruns without PUTs', async () => {
+  it('copies historical objects with all portable metadata and checksum then reruns without copies', async () => {
     const source = memoryStore({ [key]: contents });
     const destination = memoryStore();
     expect((await migrateStaticAssets(source, destination, 'apply')).copiedObjects).toBe(1);
