@@ -108,6 +108,7 @@
         "membershipUnknown": "Ohne das Layout dieses Boards ist die Playlist-Mitgliedschaft unbekannt. Nicht markierte Playlists sind gesperrt.",
         "membershipChecking": "Playlist-Mitgliedschaft wird geprüft… Nicht markierte Playlists bleiben währenddessen gesperrt.",
         "membershipUnavailable": "Die Playlist-Mitgliedschaft konnte nicht geprüft werden. Nicht markierte Playlists sind gesperrt.",
+        "membershipUpdating": "Diese Playlist wird aktualisiert. Versuche es danach erneut.",
         "angleUnavailable": "Hinzufügen ist deaktiviert, weil der Winkel dieses Boulders fehlt."
       },
       "create": {

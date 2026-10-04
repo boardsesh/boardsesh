@@ -108,7 +108,8 @@
         "membershipUnknown": "No se puede comprobar la pertenencia a la playlist sin el layout de este plafón. Las playlists sin marcar están bloqueadas.",
         "membershipChecking": "Comprobando la pertenencia a la playlist… Las playlists sin marcar están bloqueadas hasta que termine.",
         "membershipUnavailable": "No se pudo comprobar la pertenencia a la playlist. Las playlists sin marcar están bloqueadas.",
-        "angleUnavailable": "No se puede añadir porque no está disponible el ángulo de este problema."
+        "membershipUpdating": "Se está actualizando esta playlist. Vuelve a intentarlo cuando termine.",
+        "angleUnavailable": "No se puede añadir porque no está disponible el ángulo de este bloque."
       },
       "create": {
         "namePlaceholder": "p. ej., Regletas duras",

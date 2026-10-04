@@ -107,6 +107,7 @@ type PlaylistMembershipOverride = Readonly<{
 type PlaylistMembershipOverrides = Readonly<{
   revision: number;
   byPlaylistUuid: Readonly<Record<string, PlaylistMembershipOverride>>;
+  activeMutationOwnersByPlaylistUuid: Readonly<Record<string, object>>;
 }>;
 
 type PlaylistMembershipSnapshot = Readonly<{
@@ -115,7 +116,11 @@ type PlaylistMembershipSnapshot = Readonly<{
   pendingOverrideRevisionsAtFetchStart: Readonly<Record<string, number>>;
 }>;
 
-const EMPTY_MEMBERSHIP_OVERRIDES: PlaylistMembershipOverrides = { revision: 0, byPlaylistUuid: {} };
+const EMPTY_MEMBERSHIP_OVERRIDES: PlaylistMembershipOverrides = {
+  revision: 0,
+  byPlaylistUuid: {},
+  activeMutationOwnersByPlaylistUuid: {},
+};
 
 function visibleMembershipOverrides(
   overrides: PlaylistMembershipOverrides,
@@ -380,6 +385,33 @@ export function InlinePlaylistPicker({
   // Membership changes stay as per-row overlays. Each carries a monotonic
   // revision so a complete read that started later can replace settled facts,
   // while a read overlapping an in-flight mutation cannot erase it.
+  //
+  // A second tap on the same playlist is serialized in this shared cache entry,
+  // not a component ref: the reaction menu unmounts this picker on Back, so a
+  // component-local lock would let its remount race the first request. The cache
+  // key includes the climb's board/layout scope, and auth transitions clear the
+  // QueryClient. Owner identity prevents an old request from settling or
+  // unlocking a later account's mutation after that clear.
+  const reservePartialMembership = useCallback(
+    (playlistUuid: string): object | null => {
+      const currentOverrides =
+        queryClient.getQueryData<PlaylistMembershipOverrides>(membershipOverridesKey) ?? EMPTY_MEMBERSHIP_OVERRIDES;
+      const activeMutationOwners = currentOverrides.activeMutationOwnersByPlaylistUuid ?? {};
+      if (Object.hasOwn(activeMutationOwners, playlistUuid)) return null;
+
+      const owner = {};
+      queryClient.setQueryData<PlaylistMembershipOverrides>(membershipOverridesKey, {
+        ...currentOverrides,
+        activeMutationOwnersByPlaylistUuid: {
+          ...activeMutationOwners,
+          [playlistUuid]: owner,
+        },
+      });
+      return owner;
+    },
+    [queryClient, membershipOverridesKey],
+  );
+
   const writePartialMembership = useCallback(
     (playlistUuid: string, isMember: boolean, pending: boolean): number => {
       const currentOverrides =
@@ -387,6 +419,7 @@ export function InlinePlaylistPicker({
       const revision = currentOverrides.revision + 1;
       queryClient.setQueryData<PlaylistMembershipOverrides>(membershipOverridesKey, {
         revision,
+        activeMutationOwnersByPlaylistUuid: currentOverrides.activeMutationOwnersByPlaylistUuid ?? {},
         byPlaylistUuid: {
           ...currentOverrides.byPlaylistUuid,
           [playlistUuid]: { isMember, revision, pending },
@@ -403,11 +436,18 @@ export function InlinePlaylistPicker({
   );
 
   const settlePartialMembership = useCallback(
-    (playlistUuid: string, revision: number) => {
+    (playlistUuid: string, revision: number, owner: object) => {
       const currentOverrides =
         queryClient.getQueryData<PlaylistMembershipOverrides>(membershipOverridesKey) ?? EMPTY_MEMBERSHIP_OVERRIDES;
       const currentOverride = currentOverrides.byPlaylistUuid[playlistUuid];
-      if (!currentOverride || currentOverride.revision !== revision || !currentOverride.pending) return;
+      if (
+        currentOverrides.activeMutationOwnersByPlaylistUuid?.[playlistUuid] !== owner ||
+        !currentOverride ||
+        currentOverride.revision !== revision ||
+        !currentOverride.pending
+      ) {
+        return;
+      }
       queryClient.setQueryData<PlaylistMembershipOverrides>(membershipOverridesKey, {
         ...currentOverrides,
         byPlaylistUuid: {
@@ -423,13 +463,20 @@ export function InlinePlaylistPicker({
     (
       playlistUuid: string,
       revision: number,
+      owner: object,
       previousOverride: PlaylistMembershipOverride | undefined,
       wasMember: boolean,
     ) => {
       const currentOverrides =
         queryClient.getQueryData<PlaylistMembershipOverrides>(membershipOverridesKey) ?? EMPTY_MEMBERSHIP_OVERRIDES;
       const currentOverride = currentOverrides.byPlaylistUuid[playlistUuid];
-      if (!currentOverride || currentOverride.revision !== revision) return;
+      if (
+        currentOverrides.activeMutationOwnersByPlaylistUuid?.[playlistUuid] !== owner ||
+        !currentOverride ||
+        currentOverride.revision !== revision
+      ) {
+        return;
+      }
       const byPlaylistUuid = { ...currentOverrides.byPlaylistUuid };
       if (previousOverride) byPlaylistUuid[playlistUuid] = previousOverride;
       else delete byPlaylistUuid[playlistUuid];
@@ -446,26 +493,40 @@ export function InlinePlaylistPicker({
     [queryClient, membershipOverridesKey, climb.uuid],
   );
 
-  // Serialize toggles per playlist: a row stays tappable while its mutation is in
-  // flight, so ignore repeat taps on the same row until it settles — otherwise a
-  // fast add-then-remove could reorder on the backend and leave the cache/UI out
-  // of sync with the row's real membership.
-  const togglingRef = useRef<Set<string>>(new Set());
+  const releasePartialMembership = useCallback(
+    (playlistUuid: string, owner: object) => {
+      const currentOverrides =
+        queryClient.getQueryData<PlaylistMembershipOverrides>(membershipOverridesKey) ?? EMPTY_MEMBERSHIP_OVERRIDES;
+      if (currentOverrides.activeMutationOwnersByPlaylistUuid?.[playlistUuid] !== owner) return;
+      const activeMutationOwnersByPlaylistUuid = { ...currentOverrides.activeMutationOwnersByPlaylistUuid };
+      delete activeMutationOwnersByPlaylistUuid[playlistUuid];
+      queryClient.setQueryData<PlaylistMembershipOverrides>(membershipOverridesKey, {
+        ...currentOverrides,
+        activeMutationOwnersByPlaylistUuid,
+      });
+    },
+    [queryClient, membershipOverridesKey],
+  );
 
   // Toggle one playlist's membership. Reads and writes are surgical — computed
-  // against the latest complete cache, per-row overrides and shared set — so
-  // overlapping toggles of different rows never claim certainty for a sibling.
+  // against the latest complete cache, per-row overrides and shared set. The
+  // shared per-row owner is reserved before the first await, so only the same
+  // row is blocked across mounts; other rows can continue independently.
   const handleToggle = useCallback(
     async (playlist: Playlist) => {
-      if (togglingRef.current.has(playlist.uuid)) return;
+      if (!isAuthenticated) return;
       const knownFromRender =
         membershipSnapshot !== undefined ||
         Object.hasOwn(visibleOverrides, playlist.uuid) ||
         seededMembers.has(playlist.uuid);
       if (!knownFromRender) return;
-      togglingRef.current.add(playlist.uuid);
+      const owner = reservePartialMembership(playlist.uuid);
+      if (!owner) return;
       try {
         await queryClient.cancelQueries({ queryKey: membershipKey, exact: true });
+        const currentOverrides =
+          queryClient.getQueryData<PlaylistMembershipOverrides>(membershipOverridesKey) ?? EMPTY_MEMBERSHIP_OVERRIDES;
+        if (currentOverrides.activeMutationOwnersByPlaylistUuid?.[playlist.uuid] !== owner) return;
         const authoritativeBefore = queryClient.getQueryData<PlaylistMembershipSnapshot>(membershipKey);
         const overridesBefore =
           queryClient.getQueryData<PlaylistMembershipOverrides>(membershipOverridesKey) ?? EMPTY_MEMBERSHIP_OVERRIDES;
@@ -498,11 +559,17 @@ export function InlinePlaylistPicker({
           // The backend resolvers key on playlists.uuid, so the uuid (not the
           // bigserial id) goes on the wire.
           await runToggle();
-          settlePartialMembership(playlist.uuid, mutationRevision);
+          settlePartialMembership(playlist.uuid, mutationRevision, owner);
         } catch (toggleError) {
-          // Roll back only our own latest row revision. A newer mutation in
-          // another mounted picker must keep its newer state.
-          rollbackPartialMembership(playlist.uuid, mutationRevision, visibleOverridesBefore[playlist.uuid], wasMember);
+          // This owner is the only request allowed to mutate the row while it is
+          // pending, including after the picker unmounts and remounts.
+          rollbackPartialMembership(
+            playlist.uuid,
+            mutationRevision,
+            owner,
+            visibleOverridesBefore[playlist.uuid],
+            wasMember,
+          );
           surfaceFailure(
             t(willBeMember ? 'actions.playlist.toast.addFailed' : 'actions.playlist.toast.removeFailed'),
             t(willBeMember ? 'actions.playlist.toast.addFailedNamed' : 'actions.playlist.toast.removeFailedNamed', {
@@ -523,7 +590,7 @@ export function InlinePlaylistPicker({
           }
         }
       } finally {
-        togglingRef.current.delete(playlist.uuid);
+        releasePartialMembership(playlist.uuid, owner);
       }
     },
     [
@@ -534,10 +601,13 @@ export function InlinePlaylistPicker({
       membershipSnapshot,
       visibleOverrides,
       seededMembers,
+      isAuthenticated,
+      reservePartialMembership,
       mutationAngle,
       writePartialMembership,
       settlePartialMembership,
       rollbackPartialMembership,
+      releasePartialMembership,
       addToPlaylist,
       removeFromPlaylist,
       climb.uuid,
@@ -651,15 +721,26 @@ export function InlinePlaylistPicker({
     // (still-unchecked) playlist is already in the list to tap if the add fails.
     setCreateOpen(false);
     resetCreate();
+    const membershipOwner = reservePartialMembership(created.uuid);
+    if (!membershipOwner) {
+      const addError = new Error('Membership update already in progress for the newly created playlist');
+      surfaceFailure(
+        t('actions.playlist.toast.addFailedNamed', { playlist: created.name }),
+        t('actions.playlist.toast.addFailedNamed', { playlist: created.name }),
+      );
+      reportHandledError(addError, { tags: { source: 'playlist', op: 'create-then-add' } });
+      if (isCurrent()) setSubmitting(false);
+      return;
+    }
+    const mutationRevision = writePartialMembership(created.uuid, true, true);
     try {
       await addToPlaylist(created.uuid, climb.uuid, mutationAngle);
+      settlePartialMembership(created.uuid, mutationRevision, membershipOwner);
       if (!isCurrent()) return;
-      // Cancel any in-flight membership fetch (it was sent before this playlist
-      // existed) so it can't overwrite the new checkmark. If there is no complete
-      // result yet, record certainty only for this newly created row.
-      await queryClient.cancelQueries({ queryKey: membershipKey, exact: true });
-      writePartialMembership(created.uuid, true, false);
+      // If a complete read started before this mutation, the newer row revision
+      // keeps its result from erasing this settled membership.
     } catch (addError) {
+      rollbackPartialMembership(created.uuid, mutationRevision, membershipOwner, undefined, false);
       // Not gated on isCurrent(). The token goes stale two ways here and both
       // want the message shown: the picker went away (so `surfaceFailure` routes
       // to the detached channel), or a SECOND inline create was submitted while
@@ -680,6 +761,7 @@ export function InlinePlaylistPicker({
         });
       }
     } finally {
+      releasePartialMembership(created.uuid, membershipOwner);
       if (isCurrent()) setSubmitting(false);
     }
   }, [
@@ -693,10 +775,11 @@ export function InlinePlaylistPicker({
     climb.uuid,
     mutationAngle,
     resetCreate,
-    queryClient,
-    membershipKey,
-    membershipOverridesKey,
+    reservePartialMembership,
     writePartialMembership,
+    settlePartialMembership,
+    rollbackPartialMembership,
+    releasePartialMembership,
     surfaceFailure,
     t,
   ]);
@@ -724,6 +807,8 @@ export function InlinePlaylistPicker({
       const member = members.has(item.uuid);
       const membershipIsKnown =
         membershipSnapshot !== undefined || Object.hasOwn(visibleOverrides, item.uuid) || seededMembers.has(item.uuid);
+      const activeMutationOwnersByPlaylistUuid = membershipOverrides.activeMutationOwnersByPlaylistUuid ?? {};
+      const membershipMutationPending = Object.hasOwn(activeMutationOwnersByPlaylistUuid, item.uuid);
       const canToggle = (membershipIsKnown || member) && (member || mutationAngle !== null);
       return (
         <ListRow
@@ -732,15 +817,18 @@ export function InlinePlaylistPicker({
           leading={<Icon name="playlist" size={22} color={accent} />}
           trailing={member ? <Icon name="check.small" size={18} color={brandColors.primary} /> : undefined}
           onPress={canToggle ? () => void handleToggle(item) : undefined}
+          disabled={membershipMutationPending}
           accessibilityLabel={item.name}
           accessibilityHint={
-            !canToggle
-              ? membershipIsKnown
-                ? t('actions.playlist.popover.angleUnavailable')
-                : t('actions.playlist.popover.membershipUnknown')
-              : member
-                ? t('actions.playlist.toast.removed')
-                : t('actions.playlist.toast.added')
+            membershipMutationPending
+              ? t('actions.playlist.popover.membershipUpdating')
+              : !canToggle
+                ? membershipIsKnown
+                  ? t('actions.playlist.popover.angleUnavailable')
+                  : t('actions.playlist.popover.membershipUnknown')
+                : member
+                  ? t('actions.playlist.toast.removed')
+                  : t('actions.playlist.toast.added')
           }
           showSeparator={index < sortedPlaylists.length - 1}
         />
@@ -751,6 +839,7 @@ export function InlinePlaylistPicker({
       members,
       membershipSnapshot,
       visibleOverrides,
+      membershipOverrides.activeMutationOwnersByPlaylistUuid,
       seededMembers,
       mutationAngle,
       handleToggle,
