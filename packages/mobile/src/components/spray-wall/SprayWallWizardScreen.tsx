@@ -67,6 +67,7 @@ import { SPRAY_CAP_VALUES, sprayCapFromErrorCode, sprayCapMessage } from '../../
 import { useActivateBoard } from '../../lib/boards/use-activate-board';
 import type { BoardReturnTo } from '../../lib/boards/board-return-to';
 import { invalidateSprayWallRenderData } from '../../lib/spray/spray-wall-loader';
+import { prefetchSprayWallDraft } from '../../lib/spray/use-spray-wall-draft';
 import {
   fetchSprayWallVersions,
   useCreateSprayWall,
@@ -489,6 +490,14 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     void runUpload();
   }, [state.step, state.upload.running, state.upload.error, state.upload.attempts, runUpload]);
 
+  // The editor reads the draft the moment detection hands over. Starting that
+  // read while the detector runs means it usually opens with its wall in hand.
+  const detectDraft = state.step === 'detect' ? state.draft : null;
+  useEffect(() => {
+    if (!detectDraft) return;
+    void prefetchSprayWallDraft(queryClient, detectDraft.layoutId, detectDraft.wallUuid, detectDraft.versionNumber);
+  }, [detectDraft, queryClient]);
+
   // ============================================
   // Step 7 — publish, bind, leave
   // ============================================
@@ -746,6 +755,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
         candidates={state.detection.candidates}
         revealOnMount={revealRings}
         primaryLabel={t('sprayWizard.review.next')}
+        loadingPhoto={state.photo}
         notice={reviewNotice}
         onCommitted={onHoldsCommitted}
         onDirtyChange={onEditorDirtyChange}

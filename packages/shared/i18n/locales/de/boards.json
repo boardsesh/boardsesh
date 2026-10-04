@@ -862,7 +862,9 @@
     },
     "empty": {
       "noPhoto": "Diese Wand hat noch kein Foto zum Bearbeiten."
-    }
+    },
+    "loading": "Deine Wand wird geladen…",
+    "loadStalled": "Deine Wand konnte nicht geladen werden. Versuch es erneut."
   },
   "sprayWizard": {
     "screenTitle": "Spraywand hinzufügen",
@@ -967,6 +969,7 @@
   },
   "sprayReset": {
     "screenTitle": "Wand zurücksetzen",
+    "loading": "Deine Wand wird geladen…",
     "notYours": "Diese Wand gehört dir nicht, du kannst sie nicht zurücksetzen.",
     "nothingPublished": "Diese Wand ist noch nicht fertig eingerichtet. Schließ das Hinzufügen erst ab.",
     "openDraft": {
