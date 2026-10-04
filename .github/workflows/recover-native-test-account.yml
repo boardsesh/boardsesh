@@ -1,0 +1,42 @@
+name: Recover Native Test Account
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: recover-native-test-account
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  seal-test-account:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: Production
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+      - name: Seal only the dedicated native test account
+        env:
+          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
+          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
+          NATIVE_TEST_ACCOUNT_OUTPUT: ${{ runner.temp }}/native-test-account.enc.json
+        run: vp exec tsx scripts/seal-native-test-account.ts
+      - name: Upload encrypted test account handoff
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-test-account-${{ github.run_id }}
+          path: ${{ runner.temp }}/native-test-account.enc.json
+          if-no-files-found: error
+          retention-days: 7
