@@ -1006,6 +1006,8 @@ export async function exportLayoutSnapshot(params: {
 
 export type SnapshotExportOptions = {
   dryRun: boolean;
+  /** Migration/rehearsal exports must not delete superseded objects. */
+  skipPrune?: boolean;
   // Off by default: upload artifacts uncompressed until transparent
   // Content-Encoding: gzip decode is verified on-device (see the encoding
   // comment in the pair loop).
@@ -1065,6 +1067,8 @@ export function parseArgs(argv: string[]): SnapshotExportOptions {
     if (arg === '--') continue; // vp forwards a literal `--` into argv
     if (arg === '--dry-run') {
       options.dryRun = true;
+    } else if (arg === '--no-prune') {
+      options.skipPrune = true;
     } else if (arg === '--gzip') {
       options.gzip = true;
     } else if (arg === '--key-prefix') {
@@ -1672,7 +1676,7 @@ export async function runExportWithOptions(
       // nights just defers pruning to the next green nightly. Scoped to this
       // run's key prefix, so a gzip run never prunes the identity prefix's
       // artifacts (and vice versa).
-      if (!isFilteredRun && !isThresholdRefresh && failures.length === 0) {
+      if (!options.skipPrune && !isFilteredRun && !isThresholdRefresh && failures.length === 0) {
         await pruneStaleArtifacts(manifest, Date.now(), keyPrefix, log);
       }
     }

@@ -244,7 +244,7 @@ export async function buildCatalogArtifact(params: {
   return tables;
 }
 
-export type CatalogExportOptions = { dryRun: boolean; keyPrefix: string };
+export type CatalogExportOptions = { dryRun: boolean; keyPrefix: string; skipPrune?: boolean };
 
 /** The per-layout export's injection points, minus the replay observer it has no use for. The CLI passes none. */
 export type CatalogExportDependencies = Omit<SnapshotExportDependencies, 'requireAllRolesVisible'>;
@@ -253,8 +253,11 @@ export function parseArgs(argv: string[]): CatalogExportOptions {
   const options: CatalogExportOptions = { dryRun: false, keyPrefix: DEFAULT_CATALOG_KEY_PREFIX };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
+    if (arg === '--') continue;
     if (arg === '--dry-run') {
       options.dryRun = true;
+    } else if (arg === '--no-prune') {
+      options.skipPrune = true;
     } else if (arg === '--key-prefix') {
       index += 1;
       const raw = argv[index];
@@ -395,7 +398,7 @@ export async function runCatalogExportWithOptions(
       durationMs: Date.now() - startedAt,
     });
 
-    await pruneStaleArtifacts(manifest, Date.now(), options.keyPrefix, log);
+    if (!options.skipPrune) await pruneStaleArtifacts(manifest, Date.now(), options.keyPrefix, log);
   } finally {
     if (!options.dryRun) rmSync(workDir, { recursive: true, force: true });
   }

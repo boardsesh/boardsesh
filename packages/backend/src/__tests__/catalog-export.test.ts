@@ -258,6 +258,14 @@ describe('runCatalogExport', () => {
     expect(deleted).toEqual([`${CATALOG_PREFIX}/ancient.db`]);
   });
 
+  it('--no-prune publishes the catalog without listing or deleting old objects', async () => {
+    await runCatalogExport(['--', '--no-prune']);
+    expect(vi.mocked(uploadToS3).mock.calls.map(([, , key]) => key)).toContain(MANIFEST_KEY);
+    expect(vi.mocked(uploadToS3).mock.calls.some(([, , key]) => key.endsWith('.db'))).toBe(true);
+    expect(listS3Objects).not.toHaveBeenCalled();
+    expect(deleteFromS3).not.toHaveBeenCalled();
+  });
+
   // Storage costs are worth less than a published artifact, so a failing prune
   // is logged and swallowed rather than failing the run.
   it('does not fail the run when pruning throws', async () => {

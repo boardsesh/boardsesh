@@ -648,6 +648,10 @@ export default defineConfig({
         command: 'tsx scripts/migrate-ota-storage.ts',
         cache: false,
       },
+      'storage:verify-snapshots': {
+        command: 'tsx scripts/verify-board-snapshots.ts',
+        cache: false,
+      },
       'generate:acknowledgements': {
         command: 'node --import tsx scripts/fetch-acknowledgements.ts',
         cache: false,
