@@ -292,7 +292,18 @@
       "cappedNotice": "Die letzten 100 Einträge werden angezeigt.",
       "sheetSubtitle": "{{name}} · {{grade}}",
       "rowA11y": "{{name}}, {{result}}. Öffnet das Profil.",
-      "unknownClimber": "Kletterer*in"
+      "unknownClimber": "Kletterer*in",
+      "everyone": {
+        "title": "Alle",
+        "titleAtAngle": "Alle bei {{angle}}°",
+        "sortHint": "Neueste zuerst",
+        "empty": "Sonst hat diesen Boulder bisher niemand eingetragen.",
+        "loadMore": "Mehr Einträge ansehen",
+        "loadMoreError": "Weitere Einträge konnten nicht geladen werden."
+      },
+      "fallthrough": {
+        "latestFromEveryone": "Neueste Einträge von allen"
+      }
     },
     "anonymous": {
       "signInHeadline": "Begehung eintragen",

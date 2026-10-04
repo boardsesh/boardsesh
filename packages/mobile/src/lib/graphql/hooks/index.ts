@@ -1406,6 +1406,7 @@ export function useUserBetaLinks(
 // barrel's unit tests mock out the same way as the other submodules.
 export { useSimilarClimbs } from './use-similar-climbs';
 export { useFollowingClimbLogs, useClimbDwell } from './use-following-climb-logs';
+export { useClimbLogs, useClimbLogsPreview, flattenClimbLogPages } from './use-climb-logs';
 
 /**
  * Per-angle stats for a climb (grade, stars, sends). Every consumer keeps the

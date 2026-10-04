@@ -76,3 +76,36 @@ export const boardLiveSessionsQueryKey = (boardId: number | null) =>
 export const FOLLOWING_CLIMB_LOGS_QUERY_KEY = 'followingClimbLogs';
 export const followingClimbLogsQueryKey = (viewerId: string | undefined, boardName: string, climbUuid: string | null) =>
   [FOLLOWING_CLIMB_LOGS_QUERY_KEY, viewerId, boardName, climbUuid] as const;
+
+/**
+ * Everyone's logs on one climb: the paged "Everyone" section of the Climber
+ * logs list, and the few rows the card falls back to when nobody followed has
+ * logged the climb.
+ *
+ * Both roots are in `AUTHOR_QUERY_KEYS` too. The server leaves out the people
+ * the viewer follows, so a follow or unfollow changes the answer.
+ *
+ * The list key carries everything the server filters on, so each chip
+ * combination is its own set of pages. The preview key has no angle: it asks
+ * for every angle, so turning the board refetches nothing.
+ */
+export const CLIMB_LOGS_QUERY_KEY = 'climbLogs';
+export const CLIMB_LOGS_PREVIEW_QUERY_KEY = 'climbLogsPreview';
+export const climbLogsQueryKey = (
+  viewerId: string | undefined,
+  boardName: string,
+  climbUuid: string | null,
+  filters: { angle: number | undefined; withNotes: boolean; sendsOnly: boolean; excludeFollowed: boolean },
+) =>
+  [
+    CLIMB_LOGS_QUERY_KEY,
+    viewerId,
+    boardName,
+    climbUuid,
+    filters.angle ?? null,
+    filters.withNotes,
+    filters.sendsOnly,
+    filters.excludeFollowed,
+  ] as const;
+export const climbLogsPreviewQueryKey = (viewerId: string | undefined, boardName: string, climbUuid: string | null) =>
+  [CLIMB_LOGS_PREVIEW_QUERY_KEY, viewerId, boardName, climbUuid] as const;

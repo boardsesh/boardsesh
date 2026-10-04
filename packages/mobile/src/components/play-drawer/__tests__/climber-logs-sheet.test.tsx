@@ -24,7 +24,9 @@ type ListProps = {
   keyExtractor: (item: Item) => string;
   ListHeaderComponent?: ReactNode;
   ListEmptyComponent?: ReactNode;
-  onEndReached?: unknown;
+  ListFooterComponent?: ReactNode;
+  onEndReached?: () => void;
+  onEndReachedThreshold?: number;
 };
 const list = vi.hoisted(() => ({ props: null as ListProps | null }));
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
@@ -38,6 +40,7 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
       props.data.map((item) =>
         createElement('div', { key: props.keyExtractor(item), 'data-kind': item.kind }, props.renderItem({ item })),
       ),
+      createElement('footer', { 'data-testid': 'list-footer' }, props.ListFooterComponent),
     );
   },
 }));
@@ -54,6 +57,10 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: () => createElement('i', null) }));
+vi.mock('../../Button', () => ({
+  Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
+    createElement('button', { type: 'button', onClick: onPress }, title),
+}));
 vi.mock('../../PressableSurface', () => ({
   PressableSurface: ({
     children,
@@ -88,8 +95,12 @@ vi.mock('../../../providers/theme-provider', () => ({
 vi.mock('../../../hooks/use-grade-format', () => ({
   useGradeFormat: () => ({ formatGrade: (difficulty: string | null | undefined) => difficulty ?? null }),
 }));
-vi.mock('../../../lib/connectivity/use-connectivity', () => ({
-  useConnectivity: () => ({ effectiveOffline: false, reason: null }),
+const connectivity = vi.hoisted(() => ({
+  snapshot: { effectiveOffline: false, reason: null as 'device_offline' | null },
+}));
+vi.mock('../../../lib/connectivity/use-connectivity', () => ({ useConnectivity: () => connectivity.snapshot }));
+vi.mock('../../../hooks/use-current-user-id', () => ({
+  useStoredUserId: () => ({ userId: 'viewer', isLoading: false }),
 }));
 
 type RowProps = {
@@ -116,6 +127,7 @@ vi.mock('../ClimberLogRow', () => ({
         'data-user': props.group.userId,
         'data-lead': props.group.lead.uuid,
         'data-hide-earlier': String(props.hideEarlier),
+        'data-can-expand': String(props.onPressEarlier !== undefined),
         'data-expanded': String(props.earlierExpanded),
       },
       createElement('button', { type: 'button', onClick: () => props.onPressClimber(props.group.userId) }, 'open'),
@@ -168,6 +180,51 @@ vi.mock('../../../lib/graphql/hooks/use-following-climb-logs', () => ({
   },
 }));
 
+// Everyone else's logs: the paged query, stood in. `flattenClimbLogPages` is
+// the real one (its module only reaches for the network inside the hooks).
+type EveryoneArgs = {
+  boardName: string;
+  climbUuid: string | null;
+  angle?: number;
+  withNotes: boolean;
+  sendsOnly: boolean;
+  excludeFollowed: boolean;
+  enabled: boolean;
+};
+type EveryoneState = {
+  data: { pages: Array<{ items: unknown[]; cursor: string | null; hasMore: boolean }> } | undefined;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  isFetchNextPageError: boolean;
+  isLoading: boolean;
+  isError: boolean;
+  isSuccess: boolean;
+  fetchNextPage: () => Promise<unknown>;
+  refetch: () => Promise<unknown>;
+};
+const everyoneQuery = vi.hoisted(() => ({
+  state: null as unknown as EveryoneState,
+  calls: [] as EveryoneArgs[],
+}));
+vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: vi.fn() }) }));
+vi.mock('../../../lib/graphql/hooks/use-climb-logs', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../lib/graphql/hooks/use-climb-logs')>()),
+  useClimbLogs: (args: EveryoneArgs) => {
+    everyoneQuery.calls.push(args);
+    return everyoneQuery.state;
+  },
+}));
+
+// The phone's own list of who the viewer follows.
+const followedAuthors = vi.hoisted(() => ({ userIds: null as string[] | null }));
+vi.mock('../../../lib/graphql/hooks/use-followed-authors', () => ({
+  useFollowedAuthorsSnapshot: () => ({
+    data: followedAuthors.userIds
+      ? { setterUsernames: [], users: followedAuthors.userIds.map((userId) => ({ userId, boardAccounts: [] })) }
+      : undefined,
+  }),
+}));
+
 import { ClimberLogsSheet } from '../ClimberLogsSheet';
 import type { ClimberLog } from '../climber-logs';
 
@@ -202,6 +259,29 @@ type Summary = {
 function setLoaded(items: ClimberLog[], summary: Summary, hasMore = false) {
   logsQuery.state = { status: 'success', fetchStatus: 'idle', isLoading: false, data: { items, hasMore, summary } };
 }
+
+/** Everyone's logs as loaded pages. The last page says whether more exist. */
+function setEveryone(pages: ClimberLog[][], overrides: Partial<EveryoneState> = {}) {
+  everyoneQuery.state = {
+    data: { pages: pages.map((items) => ({ items, cursor: null, hasMore: false })) },
+    hasNextPage: false,
+    isFetchingNextPage: false,
+    isFetchNextPageError: false,
+    isLoading: false,
+    isError: false,
+    isSuccess: true,
+    fetchNextPage: vi.fn(),
+    refetch: vi.fn(),
+    ...overrides,
+  };
+}
+
+const ONE_FOLLOWED = {
+  climberCount: 1,
+  senderCount: 1,
+  byAngle: [{ angle: 40, climberCount: 1, senderCount: 1 }],
+};
+const NOBODY_FOLLOWED = { climberCount: 0, senderCount: 0, byAngle: [] };
 
 const climb = { uuid: 'climb-1', name: 'Slow Orbit', difficulty: 'V3' } as Climb;
 
@@ -243,15 +323,19 @@ function kinds(view: { getByTestId: (id: string) => HTMLElement }): Array<string
 }
 
 beforeEach(() => {
+  followedAuthors.userIds = null;
   dimensions.fontScale = 1;
   list.props = null;
   sheet.props = null;
   logsQuery.calls = [];
+  everyoneQuery.calls = [];
+  connectivity.snapshot = { effectiveOffline: false, reason: null };
   setLoaded([], { climberCount: 0, senderCount: 0, byAngle: [] });
+  setEveryone([]);
 });
 
 describe('ClimberLogsSheet', () => {
-  it('lists the rows through the virtualised list, with no paging of its own', () => {
+  it('lists the rows through the virtualised list', () => {
     setLoaded([log({ userId: 'mika' }), log({ userId: 'jonas' })], {
       climberCount: 2,
       senderCount: 2,
@@ -261,7 +345,6 @@ describe('ClimberLogsSheet', () => {
 
     expect(view.getByTestId('sheet-flat-list')).toBeTruthy();
     expect(rowUsers(view)).toHaveLength(2);
-    expect(list.props?.onEndReached).toBeUndefined();
     expect(view.container.textContent).toContain('mobile.climberLogs.sheetSubtitle:{"name":"Slow Orbit","grade":"V3"}');
   });
 
@@ -594,5 +677,375 @@ describe('ClimberLogsSheet', () => {
     renderSheet({ climb: null });
     expect(sheet.props?.visible).toBe(false);
     expect(logsQuery.calls.at(-1)?.climbUuid).toBeNull();
+  });
+});
+
+describe('ClimberLogsSheet, everyone else', () => {
+  function sectionKinds(view: { getByTestId: (id: string) => HTMLElement }): string[] {
+    return [...view.getByTestId('sheet-flat-list').querySelectorAll('[data-kind]')].map(
+      (node) => node.getAttribute('data-kind') ?? '',
+    );
+  }
+
+  it('lists everyone else under the people the viewer follows', () => {
+    setLoaded([log({ userId: 'mika', comment: 'beta' })], ONE_FOLLOWED);
+    setEveryone([[log({ userId: 'dave', comment: 'beta' }), log({ userId: 'lena', comment: 'beta' })]]);
+    const view = renderSheet();
+
+    expect(sectionKinds(view)).toEqual(['header', 'group', 'header', 'group', 'group']);
+    // Server order, newest first. No re-rank, or the next page would not land under this one.
+    expect(rowUsers(view)).toEqual(['mika', 'dave', 'lena']);
+    expect(view.container.textContent).toContain('mobile.climberLogs.everyone.sortHint');
+  });
+
+  it('pairs bare strangers that sit next to each other, in server order and with no heading of their own', () => {
+    setLoaded([log({ userId: 'mika', comment: 'beta' })], ONE_FOLLOWED);
+    setEveryone([
+      [
+        log({ userId: 'rat', status: 'attempt', comment: 'no swing' }),
+        log({ userId: 'dee' }),
+        log({ userId: 'pilot' }),
+        log({ userId: 'quin', status: 'attempt' }),
+      ],
+    ]);
+    const view = renderSheet();
+
+    expect(sectionKinds(view)).toEqual(['header', 'group', 'header', 'group', 'bare', 'bare']);
+    expect(rowUsers(view)).toEqual(['mika', 'rat', 'dee', 'pilot', 'quin']);
+    expect(view.container.textContent).not.toContain('mobile.climberLogs.bareHeader');
+    // No "Tried, no send" heading above an Everyone cell, so it says the whole result.
+    expect(view.getAllByTestId('bare-row').every((row) => row.getAttribute('data-under-tried') === 'false')).toBe(true);
+  });
+
+  const CHIPS = ['mobile.climberLogs.filterWithNotes', 'mobile.climberLogs.filterSendsOnly'];
+  const COMBINATIONS = [0, 1, 2, 3, 4, 5, 6, 7].map((mask) => ({
+    angleOff: (mask & 1) === 1,
+    chips: CHIPS.filter((_, index) => (mask & (2 << index)) !== 0),
+  }));
+
+  it.each(COMBINATIONS)(
+    'always lists Following before Everyone, and nobody twice (angle off: $angleOff, chips: $chips)',
+    ({ angleOff, chips }) => {
+      setLoaded(
+        [
+          log({ userId: 'mika', status: 'send', comment: 'drop knee' }),
+          log({ userId: 'jonas', status: 'send' }),
+          log({ userId: 'priya', status: 'attempt', angle: 45 }),
+        ],
+        {
+          climberCount: 3,
+          senderCount: 2,
+          byAngle: [
+            { angle: 40, climberCount: 2, senderCount: 2 },
+            { angle: 45, climberCount: 1, senderCount: 0 },
+          ],
+        },
+      );
+      // The server sends back the viewer and three followed climbers by mistake.
+      setEveryone([
+        [
+          log({ userId: 'dave', status: 'send', comment: 'soft' }),
+          log({ userId: 'mika', status: 'send', comment: 'again' }),
+          log({ userId: 'viewer', status: 'send', comment: 'mine' }),
+          log({ userId: 'jonas', status: 'send' }),
+          log({ userId: 'priya', status: 'send', comment: 'finally' }),
+          log({ userId: 'lena', status: 'send' }),
+        ],
+      ]);
+      const view = renderSheet();
+      if (angleOff) fireEvent.click(chip(view, ANGLE_CHIP));
+      for (const key of chips) fireEvent.click(chip(view, key));
+
+      const nodes = [...view.getByTestId('sheet-flat-list').querySelectorAll('[data-kind]')];
+      const everyoneAt = nodes.findIndex((node) => (node.textContent ?? '').includes('mobile.climberLogs.everyone.'));
+      const followingAt = nodes.findIndex((node) =>
+        (node.textContent ?? '').includes('mobile.climberLogs.sectionFollowing'),
+      );
+      expect(followingAt).toBe(0);
+      expect(everyoneAt).toBeGreaterThan(followingAt);
+
+      const usersIn = (slice: Element[]) =>
+        slice.flatMap((node) =>
+          [...node.querySelectorAll('[data-user]')].map((user) => user.getAttribute('data-user')),
+        );
+      const followed = usersIn(nodes.slice(0, everyoneAt));
+      const strangers = usersIn(nodes.slice(everyoneAt));
+      expect(followed).toContain('mika');
+      expect(followed.every((userId) => ['mika', 'jonas', 'priya'].includes(userId ?? ''))).toBe(true);
+      // Followed climbers the chips hide are still followed: they never fall into Everyone.
+      expect(strangers).toEqual(['dave', 'lena']);
+    },
+  );
+
+  describe('when the Following list was cut at 100 logs', () => {
+    const CAPPED = {
+      climberCount: 40,
+      senderCount: 30,
+      byAngle: [{ angle: 40, climberCount: 40, senderCount: 30 }],
+    };
+    const usersUnder = (view: { getByTestId: (id: string) => HTMLElement }) => {
+      const nodes = [...view.getByTestId('sheet-flat-list').querySelectorAll('[data-kind]')];
+      const everyoneAt = nodes.findIndex((node) => (node.textContent ?? '').includes('mobile.climberLogs.everyone.'));
+      const usersIn = (slice: Element[]) =>
+        slice.flatMap((node) =>
+          [...node.querySelectorAll('[data-user]')].map((user) => user.getAttribute('data-user')),
+        );
+      return everyoneAt === -1
+        ? { following: usersIn(nodes), everyone: [] }
+        : { following: usersIn(nodes.slice(0, everyoneAt)), everyone: usersIn(nodes.slice(everyoneAt)) };
+    };
+
+    it('lists a followed climber past the cut under Following, never among strangers', () => {
+      followedAuthors.userIds = ['mika', 'far-friend'];
+      setLoaded([log({ userId: 'mika', comment: 'beta' })], CAPPED, true);
+      // The server cannot leave followed climbers out of a cut list, so they come back here.
+      setEveryone([
+        [
+          log({ userId: 'dave', comment: 'soft' }),
+          log({ userId: 'far-friend', comment: 'from way back' }),
+          log({ userId: 'mika', comment: 'again' }),
+          log({ userId: 'lena' }),
+        ],
+      ]);
+      const view = renderSheet();
+
+      expect(everyoneQuery.calls.at(-1)?.excludeFollowed).toBe(false);
+      expect(usersUnder(view)).toEqual({ following: ['mika', 'far-friend'], everyone: ['dave', 'lena'] });
+    });
+
+    it('keeps a followed climber whose send is past the cut when "Sends only" is on', () => {
+      followedAuthors.userIds = ['mika', 'jonas'];
+      // Inside the cut Jonas only has a no-send; his send is older than the 100 newest logs.
+      setLoaded(
+        [log({ userId: 'mika', status: 'send', comment: 'beta' }), log({ userId: 'jonas', status: 'attempt' })],
+        CAPPED,
+        true,
+      );
+      setEveryone([[log({ userId: 'jonas', status: 'send' }), log({ userId: 'dave', status: 'send' })]]);
+      const view = renderSheet();
+      fireEvent.click(chip(view, 'mobile.climberLogs.filterSendsOnly'));
+
+      expect(usersUnder(view)).toEqual({ following: ['mika', 'jonas'], everyone: ['dave'] });
+    });
+
+    it('still keeps followed climbers out of Everyone when the follow snapshot is missing', () => {
+      followedAuthors.userIds = null;
+      setLoaded([log({ userId: 'mika', comment: 'beta' }), log({ userId: 'jonas', status: 'attempt' })], CAPPED, true);
+      setEveryone([[log({ userId: 'jonas', status: 'send' }), log({ userId: 'dave', status: 'send' })]]);
+      const view = renderSheet();
+      fireEvent.click(chip(view, 'mobile.climberLogs.filterSendsOnly'));
+
+      expect(usersUnder(view)).toEqual({ following: ['mika', 'jonas'], everyone: ['dave'] });
+    });
+  });
+
+  it('gives an Everyone row no earlier-logs line to open', () => {
+    setLoaded([log({ userId: 'mika', comment: 'beta' })], ONE_FOLLOWED);
+    setEveryone([[log({ userId: 'dave', comment: 'beta' })]]);
+    const view = renderSheet();
+
+    const [followed, stranger] = view.getAllByTestId('climber-row');
+    expect(followed.getAttribute('data-can-expand')).toBe('true');
+    expect(stranger.getAttribute('data-hide-earlier')).toBe('true');
+    expect(stranger.getAttribute('data-can-expand')).toBe('false');
+  });
+
+  it('names the angle in the header only while the angle chip is on', () => {
+    setLoaded([log({ userId: 'mika' })], ONE_FOLLOWED);
+    setEveryone([[log({ userId: 'dave' })]]);
+    const view = renderSheet();
+
+    expect(view.getByText('mobile.climberLogs.everyone.titleAtAngle:{"angle":40}')).toBeTruthy();
+
+    fireEvent.click(chip(view, ANGLE_CHIP));
+    expect(view.getByText('mobile.climberLogs.everyone.title')).toBeTruthy();
+    expect(view.queryByText('mobile.climberLogs.everyone.titleAtAngle:{"angle":40}')).toBeNull();
+  });
+
+  it('sends the chips to the server instead of filtering the pages on the phone', () => {
+    setLoaded([log({ userId: 'mika' })], ONE_FOLLOWED);
+    const view = renderSheet();
+
+    expect(everyoneQuery.calls.at(-1)).toEqual({
+      boardName: 'kilter',
+      climbUuid: 'climb-1',
+      angle: 40,
+      withNotes: false,
+      sendsOnly: false,
+      excludeFollowed: true,
+      enabled: true,
+    });
+
+    fireEvent.click(chip(view, ANGLE_CHIP));
+    expect(everyoneQuery.calls.at(-1)).toMatchObject({ angle: undefined });
+
+    fireEvent.click(chip(view, 'mobile.climberLogs.filterWithNotes'));
+    fireEvent.click(chip(view, 'mobile.climberLogs.filterSendsOnly'));
+    expect(everyoneQuery.calls.at(-1)).toMatchObject({ angle: undefined, withNotes: true, sendsOnly: true });
+  });
+
+  it('asks the server to keep followed climbers when the Following list was cut at its cap', () => {
+    setLoaded([log({ userId: 'mika' })], ONE_FOLLOWED, true);
+    renderSheet();
+    // A followed climber past the cut would otherwise be in neither section.
+    expect(everyoneQuery.calls.at(-1)?.excludeFollowed).toBe(false);
+  });
+
+  it('never lists a climber twice, nor the viewer, whatever the server sends', () => {
+    setLoaded([log({ userId: 'mika' }), log({ userId: 'jonas', angle: 45 })], {
+      climberCount: 2,
+      senderCount: 2,
+      byAngle: [
+        { angle: 40, climberCount: 1, senderCount: 1 },
+        { angle: 45, climberCount: 1, senderCount: 1 },
+      ],
+    });
+    // Jonas is hidden under Following by the angle chip. He is still followed.
+    setEveryone([
+      [log({ userId: 'mika' }), log({ userId: 'jonas' }), log({ userId: 'viewer' }), log({ userId: 'dave' })],
+    ]);
+    const view = renderSheet();
+
+    expect(rowUsers(view)).toEqual(['mika', 'dave']);
+  });
+
+  it('keeps a log once when two pages overlap', () => {
+    const repeated = log({ userId: 'dave' });
+    setEveryone([
+      [repeated, log({ userId: 'lena' })],
+      [repeated, log({ userId: 'omar' })],
+    ]);
+    const view = renderSheet();
+
+    expect(rowUsers(view)).toEqual(['dave', 'lena', 'omar']);
+  });
+
+  it('waits for the followed-climbers answer before asking', () => {
+    logsQuery.state = { status: 'pending', fetchStatus: 'fetching', isLoading: true, data: undefined };
+    renderSheet();
+    expect(everyoneQuery.calls.at(-1)?.enabled).toBe(false);
+  });
+
+  it('does not ask while it is closed', () => {
+    renderSheet({ visible: false });
+    expect(everyoneQuery.calls.at(-1)?.enabled).toBe(false);
+  });
+
+  it('asks for one page per end-reach', () => {
+    const fetchNextPage = vi.fn();
+    setEveryone([[log({ userId: 'dave' })]], { hasNextPage: true, fetchNextPage });
+    renderSheet();
+
+    expect(list.props?.onEndReachedThreshold).toBe(0.5);
+    list.props?.onEndReached?.();
+    expect(fetchNextPage).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['a page is already on its way', { hasNextPage: true, isFetchingNextPage: true }],
+    ['there is no next page', { hasNextPage: false }],
+    ['the last page failed, which waits for the retry button', { hasNextPage: true, isFetchNextPageError: true }],
+  ])('does not ask on end-reach when %s', (_label, overrides) => {
+    const fetchNextPage = vi.fn();
+    setEveryone([[log({ userId: 'dave' })]], { ...overrides, fetchNextPage });
+    renderSheet();
+
+    list.props?.onEndReached?.();
+    expect(fetchNextPage).not.toHaveBeenCalled();
+  });
+
+  it('shows placeholder rows while a page is on its way', () => {
+    setEveryone([[log({ userId: 'dave' })]], { hasNextPage: true, isFetchingNextPage: true });
+    expect(renderSheet().getByTestId('climber-logs-page-skeleton')).toBeTruthy();
+
+    setEveryone([], { data: undefined, isLoading: true, isSuccess: false });
+    const first = renderSheet();
+    expect(first.getAllByTestId('climber-logs-page-skeleton').length).toBeGreaterThan(0);
+    // Nothing is known yet, so nothing is claimed.
+    expect(first.container.textContent).not.toContain('mobile.climberLogs.everyone.empty');
+  });
+
+  it('says a page did not load and retries that page', () => {
+    const fetchNextPage = vi.fn();
+    const refetch = vi.fn();
+    setEveryone([[log({ userId: 'dave' })]], { hasNextPage: true, isFetchNextPageError: true, fetchNextPage, refetch });
+    const view = renderSheet();
+
+    expect(view.getByText('mobile.climberLogs.everyone.loadMoreError')).toBeTruthy();
+    fireEvent.click(view.getByText('mobile.offlineState.retry'));
+    expect(fetchNextPage).toHaveBeenCalledTimes(1);
+    expect(refetch).not.toHaveBeenCalled();
+  });
+
+  it('retries from the top when the first page never loaded', () => {
+    const fetchNextPage = vi.fn();
+    const refetch = vi.fn();
+    setEveryone([], { data: undefined, isError: true, isSuccess: false, fetchNextPage, refetch });
+    const view = renderSheet();
+
+    fireEvent.click(view.getByText('mobile.offlineState.retry'));
+    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(fetchNextPage).not.toHaveBeenCalled();
+    // Without Everyone's answer the empty line can only speak for followed climbers.
+    expect(view.getByText('mobile.climberLogs.emptyNobodyLogged')).toBeTruthy();
+  });
+
+  it('offers more by hand when a page added no rows, so the list cannot stall', () => {
+    const fetchNextPage = vi.fn();
+    setLoaded([log({ userId: 'mika' })], ONE_FOLLOWED, true);
+    // The whole page was climbers already listed under Following.
+    setEveryone([[log({ userId: 'mika' })]], { hasNextPage: true, fetchNextPage });
+    const view = renderSheet();
+
+    expect(rowUsers(view)).toEqual(['mika']);
+    fireEvent.click(view.getByText('mobile.climberLogs.everyone.loadMore'));
+    expect(fetchNextPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows nothing under the last row once every page is in', () => {
+    setEveryone([[log({ userId: 'dave' })]]);
+    expect(renderSheet().getByTestId('list-footer').childElementCount).toBe(0);
+  });
+
+  it('says nobody else has logged it when both sections are empty', () => {
+    setLoaded([], NOBODY_FOLLOWED);
+    const view = renderSheet();
+
+    expect(view.getByText('mobile.climberLogs.everyone.empty')).toBeTruthy();
+    expect(view.queryByText('mobile.climberLogs.everyone.title')).toBeNull();
+  });
+
+  it('blames the chips when they are what emptied both sections', () => {
+    setLoaded([], NOBODY_FOLLOWED);
+    const view = renderSheet();
+    fireEvent.click(chip(view, 'mobile.climberLogs.filterSendsOnly'));
+
+    expect(view.getByText('mobile.climberLogs.filterEmpty')).toBeTruthy();
+    expect(view.queryByText('mobile.climberLogs.everyone.empty')).toBeNull();
+  });
+
+  it('shows no Everyone section and sends no request with no signal', () => {
+    connectivity.snapshot = { effectiveOffline: true, reason: 'device_offline' };
+    // Followed rows from an earlier visit are still held, and so are these.
+    setLoaded([log({ userId: 'mika' })], ONE_FOLLOWED);
+    setEveryone([[log({ userId: 'dave' })]], { hasNextPage: true });
+    const view = renderSheet();
+
+    expect(everyoneQuery.calls.at(-1)?.enabled).toBe(false);
+    expect(rowUsers(view)).toEqual(['mika']);
+    expect(view.queryByText('mobile.climberLogs.everyone.titleAtAngle:{"angle":40}')).toBeNull();
+    expect(view.getByTestId('list-footer').childElementCount).toBe(0);
+  });
+
+  it('closes first on an Everyone row tap and opens the profile once the sheet is gone', () => {
+    setEveryone([[log({ userId: 'dave' })]]);
+    const view = renderSheet();
+
+    fireEvent.click(view.getByText('open'));
+    expect(view.onClose).toHaveBeenCalledTimes(1);
+    expect(view.onOpenProfile).not.toHaveBeenCalled();
+
+    sheet.props?.onFullyDismissed?.();
+    expect(view.onOpenProfile).toHaveBeenCalledWith('dave');
   });
 });

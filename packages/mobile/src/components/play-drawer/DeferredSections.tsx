@@ -134,10 +134,12 @@ export const DeferredSections = memo(function DeferredSections({
   // them, but only once the open animation has settled, the climber has stayed
   // on the climb for a moment (a fast queue swipe sends nothing) and the phone's
   // own followed-authors snapshot says there is someone to ask about. An account
-  // that follows nobody never sends this request. The snapshot is only read
-  // here: the root sync bridge keeps it fresh, so opening the drawer costs no
-  // followed-authors request and no SQLite write. A missing one loads behind
-  // the same settle gate.
+  // that follows nobody never sends this request; its card asks for everyone's
+  // newest logs instead, behind the same settle gate (`settled` is handed to
+  // ClimberLogsSection for that, and for its own copy of this query). The
+  // snapshot is only read here: the root sync bridge keeps it fresh, so opening
+  // the drawer costs no followed-authors request and no SQLite write. A missing
+  // one loads behind the same settle gate.
   const settled = useClimbSettled(enabled, climb.uuid);
   // What a climber's own grade is compared against: only one that differs is worth a mention.
   const climbGradeId = getDifficultyIdForGradeName(climb.difficulty);
@@ -312,6 +314,7 @@ export const DeferredSections = memo(function DeferredSections({
                 angle={angle}
                 climbGradeId={climbGradeId}
                 followState={followState}
+                settled={settled}
                 onSeeAll={onOpenClimberLogs ?? noop}
                 onPressClimber={onOpenClimberProfile ?? noop}
                 onFindClimbers={onFindClimbers ?? noop}

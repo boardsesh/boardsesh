@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { FollowingClimbAscentItem } from '@boardsesh/graphql/operations';
+import type { ClimbLogsQueryItem, FollowingClimbAscentItem } from '@boardsesh/graphql/operations';
 import {
   INLINE_CLIMBER_LOG_CAP,
   buildClimberLogListItems,
   deriveCrewCounts,
   describeResult,
+  dropKnownClimbers,
+  splitEveryoneLogs,
   filterClimberLogs,
   followingSectionCount,
   groupClimberLogs,
@@ -328,6 +330,58 @@ describe('planClimberLogsCard', () => {
     const plan = planClimberLogsCard(groupClimberLogs([log({ status: 'send' })], 40, 16));
     expect(plan.rows).toEqual([]);
     expect(plan.bareSent).toHaveLength(1);
+  });
+});
+
+describe('planClimberLogsCard with climbers the viewer does not follow', () => {
+  const noted = (userId: string) => log({ userId, comment: 'beta' });
+  const plain = (userId: string, status = 'send') => log({ userId, status });
+  const groupsOf = (logs: ClimberLog[]) => groupClimberLogs(logs, 40, 16);
+
+  it('gives strangers only the rows the followed climbers left over, in their own block', () => {
+    const followed = rankClimberLogGroups(groupsOf([noted('friend-1'), noted('friend-2'), plain('quiet-friend')]));
+    const everyone = groupsOf([noted('stranger-1'), noted('stranger-2'), noted('stranger-3'), plain('stranger-4')]);
+    const plan = planClimberLogsCard(followed, everyone);
+
+    expect(plan.rows.map((group) => group.userId).sort()).toEqual(['friend-1', 'friend-2']);
+    expect(plan.bareSent.map((group) => group.userId)).toEqual(['quiet-friend']);
+    expect(plan.everyone?.rows.map((group) => group.userId)).toEqual(['stranger-1', 'stranger-2']);
+    expect(plan.everyone?.bareSent.map((group) => group.userId)).toEqual(['stranger-4']);
+    expect(plan.rows.length + (plan.everyone?.rows.length ?? 0)).toBe(INLINE_CLIMBER_LOG_CAP);
+  });
+
+  it('shows no stranger at all once followed climbers fill the rows', () => {
+    const followed = groupsOf(['a', 'b', 'c', 'd', 'e'].map(noted));
+    const plan = planClimberLogsCard(followed, groupsOf([noted('stranger'), plain('bare-stranger')]));
+    expect(plan.rows).toHaveLength(INLINE_CLIMBER_LOG_CAP);
+    expect(plan.everyone).toBeNull();
+  });
+
+  it("never lets a stranger's note push a bare followed climber off the card", () => {
+    const followed = groupsOf([plain('quiet-friend'), plain('trying-friend', 'attempt')]);
+    const everyone = groupsOf(['s1', 's2', 's3', 's4', 's5', 's6'].map(noted));
+    const plan = planClimberLogsCard(followed, everyone);
+
+    expect(plan.rows).toEqual([]);
+    expect(plan.bareSent.map((group) => group.userId)).toEqual(['quiet-friend']);
+    expect(plan.bareTried.map((group) => group.userId)).toEqual(['trying-friend']);
+    expect(plan.everyone?.rows).toHaveLength(INLINE_CLIMBER_LOG_CAP);
+  });
+
+  it('lists a followed climber once, as followed, when the server also sent them under everyone', () => {
+    const plan = planClimberLogsCard(groupsOf([noted('friend')]), groupsOf([noted('friend'), noted('stranger')]));
+    expect(plan.rows.map((group) => group.userId)).toEqual(['friend']);
+    expect(plan.everyone?.rows.map((group) => group.userId)).toEqual(['stranger']);
+  });
+
+  it('keeps the order strangers came in, and has no block without them', () => {
+    const everyone = groupsOf([
+      log({ userId: 'older', comment: 'beta', climbedAt: '2026-01-01T10:00:00' }),
+      log({ userId: 'newer', comment: 'beta', climbedAt: '2026-03-01T10:00:00' }),
+    ]);
+    expect(planClimberLogsCard([], everyone).everyone?.rows.map((group) => group.userId)).toEqual(['older', 'newer']);
+    expect(planClimberLogsCard(groupsOf([noted('friend')]), []).everyone).toBeNull();
+    expect(planClimberLogsCard(groupsOf([noted('friend')])).everyone).toBeNull();
   });
 });
 
@@ -779,5 +833,140 @@ describe('ClimberLog', () => {
     };
     const asLog: ClimberLog = item;
     expect(groupClimberLogs([asLog], 40, null)).toHaveLength(1);
+  });
+
+  it("accepts an everyone's-logs query item, which has no votes and no comment count", () => {
+    const item: ClimbLogsQueryItem = {
+      uuid: 'wire-2',
+      userId: 'dave',
+      userDisplayName: 'Dave',
+      climbUuid: 'climb-1',
+      angle: 40,
+      isMirror: false,
+      status: 'flash',
+      attemptCount: 1,
+      effectiveQuality: 3,
+      difficulty: 17,
+      comment: 'soft if you are tall',
+      climbedAt: '2026-03-10T18:00:00',
+    };
+    const asLog: ClimberLog = item;
+
+    // The server sends one log per climber, so there is never an "earlier".
+    expect(groupClimberLogs([asLog], 40, null)).toEqual([
+      expect.objectContaining({ userId: 'dave', lead: asLog, earlier: [], hasNote: true }),
+    ]);
+  });
+});
+
+describe('dropKnownClimbers', () => {
+  it('removes every log by a known climber and keeps the rest in order', () => {
+    const logs = [
+      log({ userId: 'dave' }),
+      log({ userId: 'viewer' }),
+      log({ userId: 'lena' }),
+      log({ userId: 'mika' }),
+      log({ userId: 'dave' }),
+    ];
+
+    const kept = dropKnownClimbers(logs, new Set(['viewer', 'mika']));
+
+    expect(kept).toEqual([logs[0], logs[2], logs[4]]);
+  });
+
+  it('keeps everything when nobody is known', () => {
+    const logs = [log({ userId: 'dave' }), log({ userId: 'lena' })];
+    expect(dropKnownClimbers(logs, new Set())).toEqual(logs);
+  });
+});
+
+describe('splitEveryoneLogs', () => {
+  const logs = [
+    log({ userId: 'dave' }),
+    log({ userId: 'viewer' }),
+    log({ userId: 'shown-friend' }),
+    log({ userId: 'hidden-friend' }),
+    log({ userId: 'lena' }),
+  ];
+  const options = {
+    viewerId: 'viewer',
+    followedUserIds: new Set(['shown-friend', 'hidden-friend']),
+    shownFollowingUserIds: new Set(['shown-friend']),
+  };
+
+  it('never leaves a followed climber among strangers, and drops the viewer', () => {
+    for (const followingCapped of [true, false]) {
+      const { strangers } = splitEveryoneLogs(logs, { ...options, followingCapped });
+      expect(strangers.map((entry) => entry.userId)).toEqual(['dave', 'lena']);
+    }
+  });
+
+  it('hands a followed climber past the 100-log cut back to Following', () => {
+    const { followed } = splitEveryoneLogs(logs, { ...options, followingCapped: true });
+    expect(followed.map((entry) => entry.userId)).toEqual(['hidden-friend']);
+  });
+
+  it('drops a followed climber the chips hid when the Following list is complete', () => {
+    expect(splitEveryoneLogs(logs, { ...options, followingCapped: false }).followed).toEqual([]);
+  });
+});
+
+describe('an Everyone section in the list', () => {
+  it('sits under Following with a header that carries no count', () => {
+    const following = groupClimberLogs([log({ userId: 'mika', comment: 'beta' })], 40, 16);
+    const everyone = groupClimberLogs(
+      [log({ userId: 'dave', comment: 'beta' }), log({ userId: 'lena', comment: 'beta' })],
+      40,
+      16,
+    );
+
+    const items = buildClimberLogListItems(
+      [
+        { id: 'following', groups: following, count: 1 },
+        { id: 'everyone', groups: everyone, count: null },
+      ],
+      new Set(),
+      [{ notice: 'capped', count: 0 }],
+      TWO_COLUMNS,
+    );
+
+    expect(items.map((item) => item.key)).toEqual([
+      'header:following',
+      'following:mika',
+      // Notices describe the Following result, so they stay above Everyone.
+      'notice:capped',
+      'header:everyone',
+      'everyone:dave',
+      'everyone:lena',
+    ]);
+    expect(items[3]).toMatchObject({ kind: 'header', section: 'everyone', count: null });
+  });
+
+  it('emits no Everyone header when nobody else has logged the climb', () => {
+    const items = buildClimberLogListItems(
+      [
+        { id: 'following', groups: groupClimberLogs([log({ userId: 'mika', comment: 'beta' })], 40, 16), count: 1 },
+        { id: 'everyone', groups: [], count: null },
+      ],
+      new Set(),
+      [],
+      TWO_COLUMNS,
+    );
+
+    expect(items.map((item) => item.key)).toEqual(['header:following', 'following:mika']);
+  });
+
+  it('leads with Everyone when nobody followed has logged it', () => {
+    const items = buildClimberLogListItems(
+      [
+        { id: 'following', groups: [], count: null },
+        { id: 'everyone', groups: groupClimberLogs([log({ userId: 'dave', comment: 'beta' })], 40, 16), count: null },
+      ],
+      new Set(),
+      [],
+      TWO_COLUMNS,
+    );
+
+    expect(items.map((item) => item.key)).toEqual(['header:everyone', 'everyone:dave']);
   });
 });

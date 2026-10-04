@@ -292,7 +292,18 @@
       "cappedNotice": "Se muestran los últimos 100 registros.",
       "sheetSubtitle": "{{name}} · {{grade}}",
       "rowA11y": "{{name}}, {{result}}. Abre su perfil.",
-      "unknownClimber": "Escalador"
+      "unknownClimber": "Escalador",
+      "everyone": {
+        "title": "Todos",
+        "titleAtAngle": "Todos en {{angle}}°",
+        "sortHint": "Más recientes primero",
+        "empty": "Nadie más ha registrado este bloque todavía.",
+        "loadMore": "Ver más registros",
+        "loadMoreError": "No se han podido cargar más registros."
+      },
+      "fallthrough": {
+        "latestFromEveryone": "Últimos registros de todos"
+      }
     },
     "anonymous": {
       "signInHeadline": "Registra este encadene",

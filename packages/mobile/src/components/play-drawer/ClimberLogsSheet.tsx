@@ -1,11 +1,19 @@
-// Every climber the viewer follows who logged this climb, opened from the
-// "Climber logs" card's "See all logs" row. The card is capped at four rows (it
-// lives in the play drawer's plain ScrollView); this sheet holds the rest in a
-// virtualised list, with three chips to narrow it. Those chips are the only
-// chips: every row says how it went in words.
+// Every climber who logged this climb, opened from the "Climber logs" card's
+// "See all logs" row: the people the viewer follows first, then everyone else.
+// The card is capped at four rows (it lives in the play drawer's plain
+// ScrollView); this sheet holds the rest in a virtualised list, with three
+// chips to narrow it. Those chips are the only chips: every row says how it
+// went in words.
 //
 // Climbers with a note or a grade that disagrees get a row. The rest sit two to
-// a line under "Also sent" and "Tried, no send" (one to a line at large text).
+// a line (one at large text): under "Also sent" and "Tried, no send" in
+// Following, and in place among the rows in Everyone.
+//
+// The two sections come from two requests. Following is one answer of up to
+// 100 logs, grouped and filtered here. Everyone is paged by the server, one row
+// per climber and already filtered, one page per end-reach. Following is always
+// the first section, at every chip combination, and Everyone never repeats the
+// viewer or anyone already listed under Following.
 //
 // Driven by a controlled `visible` prop and mounted INSIDE PlayDrawer, so the
 // ModalSheet coordinator presents it above the `/play` modal. A root-level
@@ -15,6 +23,7 @@ import { StyleSheet, View, useWindowDimensions, type FlatListProps } from 'react
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { Climb } from '@boardsesh/shared-schema';
+import { Button } from '../Button';
 import { ModalSheet } from '../ModalSheet';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -28,11 +37,15 @@ import {
   groupClimberLogs,
   otherAnglesNoticeCount,
   rankClimberLogGroups,
+  splitEveryoneLogs,
   type ClimberLogFilters,
   type ClimberLogListItem,
   type ClimberLogNotice,
 } from './climber-logs';
 import { useFollowingClimbLogs } from '../../lib/graphql/hooks/use-following-climb-logs';
+import { flattenClimbLogPages, useClimbLogs } from '../../lib/graphql/hooks/use-climb-logs';
+import { useFollowedAuthorsSnapshot } from '../../lib/graphql/hooks/use-followed-authors';
+import { useStoredUserId } from '../../hooks/use-current-user-id';
 import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { getDifficultyIdForGradeName } from '../../lib/grade-label';
@@ -59,6 +72,10 @@ const SNAP_POINTS = ['90%'];
 const MIN_TARGET = 44;
 const CHIP_HEIGHT = 32;
 const NO_EXPANDED: ReadonlySet<string> = new Set();
+const SKELETON_ROW_HEIGHT = 64;
+// Past the halfway point of the last screenful, the next page is already on
+// its way by the time the climber reaches the end.
+const END_REACHED_THRESHOLD = 0.5;
 /** From this text size up, two names to a line no longer fit: one each. */
 const ONE_COLUMN_FONT_SCALE = 1.3;
 
@@ -86,6 +103,28 @@ function FilterChip({ label, selected, onPress }: FilterChipProps) {
         </Text>
       </View>
     </PressableSurface>
+  );
+}
+
+/** Two placeholder rows while a page of Everyone's logs is on its way. */
+function PageSkeleton() {
+  const { systemColors } = useTheme();
+  const block = { backgroundColor: systemColors.fill };
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      testID="climber-logs-page-skeleton"
+    >
+      <View style={styles.skeletonRow}>
+        <View style={[styles.skeletonAvatar, block]} />
+        <View style={[styles.skeletonLine, block]} />
+      </View>
+      <View style={styles.skeletonRow}>
+        <View style={[styles.skeletonAvatar, block]} />
+        <View style={[styles.skeletonLine, block]} />
+      </View>
+    </View>
   );
 }
 
@@ -124,6 +163,35 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
     [chosen, climbUuid, angleOnlyDefault],
   );
   const expandedUserIds = expanded && expanded.climbUuid === climbUuid ? expanded.userIds : NO_EXPANDED;
+
+  // Everyone else. Waits for the Following answer: the angle chip's default and
+  // whether the server may leave followed climbers out both come from it, and
+  // asking before it lands would send a request the next render throws away.
+  // With no signal it does not ask at all, and rows from an earlier visit are
+  // not shown: who may see a spray wall's logs is decided per request.
+  const { userId: viewerId } = useStoredUserId(true);
+  const everyone = useClimbLogs({
+    boardName,
+    climbUuid,
+    angle: filters.angleOnly ? angle : undefined,
+    withNotes: filters.withNotes,
+    sendsOnly: filters.sendsOnly,
+    // The Following list was cut at 100 logs: a followed climber past the cut
+    // is in neither section unless Everyone keeps them.
+    excludeFollowed: !hasMore,
+    enabled: visible && data !== undefined && !offline.isOffline,
+  });
+  const everyonePages = offline.isOffline ? undefined : everyone.data?.pages;
+  const {
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    fetchNextPage,
+    refetch: refetchEveryone,
+    isLoading: everyoneLoading,
+    isError: everyoneFailed,
+    isSuccess: everyoneLoaded,
+  } = everyone;
 
   const changeFilters = useCallback(
     (change: (current: ClimberLogFilters) => ClimberLogFilters) => {
@@ -183,29 +251,93 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
   }, [onOpenProfile]);
 
   const logs = data?.items;
+  // Everyone the viewer follows: the phone's own snapshot (read only, the root
+  // sync bridge keeps it fresh), plus anybody in the Following answer in case
+  // the snapshot is missing or a follow landed since.
+  const { data: followedAuthors } = useFollowedAuthorsSnapshot({ loadWhenMissing: visible });
+  const followedUserIds = useMemo(() => {
+    const userIds = new Set<string>();
+    for (const author of followedAuthors?.users ?? []) userIds.add(author.userId);
+    for (const log of logs ?? []) userIds.add(log.userId);
+    return userIds;
+  }, [followedAuthors, logs]);
+
+  const heldFollowingGroups = useMemo(
+    () => rankClimberLogGroups(groupClimberLogs(filterClimberLogs(logs ?? [], angle, filters), angle, climbGradeId)),
+    [logs, angle, filters, climbGradeId],
+  );
+  // Follow-first, past the 100-log cut too: a followed climber the server sent
+  // with everyone's logs goes under Following, never under Everyone, and is
+  // never left out of both. Server order (newest first) is kept inside each
+  // half, so the next page lands under this one.
+  const { followingGroups, everyoneGroups } = useMemo(() => {
+    const { followed, strangers } = splitEveryoneLogs(flattenClimbLogPages(everyonePages), {
+      viewerId,
+      followedUserIds,
+      shownFollowingUserIds: new Set(heldFollowingGroups.map((group) => group.userId)),
+      followingCapped: hasMore,
+    });
+    return {
+      followingGroups: [...heldFollowingGroups, ...groupClimberLogs(followed, angle, climbGradeId)],
+      everyoneGroups: groupClimberLogs(strangers, angle, climbGradeId),
+    };
+  }, [everyonePages, viewerId, followedUserIds, heldFollowingGroups, hasMore, angle, climbGradeId]);
+
   const items = useMemo(() => {
-    const groups = rankClimberLogGroups(
-      groupClimberLogs(filterClimberLogs(logs ?? [], angle, filters), angle, climbGradeId),
-    );
     const notices: ClimberLogNotice[] = [];
     const elsewhere = otherAnglesNoticeCount(counts, filters);
     if (elsewhere > 0) notices.push({ notice: 'otherAngles', count: elsewhere });
-    if (hasMore && groups.length > 0) notices.push({ notice: 'capped', count: 0 });
+    if (hasMore && followingGroups.length > 0) notices.push({ notice: 'capped', count: 0 });
     return buildClimberLogListItems(
-      [{ id: 'following', groups, count: followingSectionCount(counts, filters), capped: hasMore }],
+      [
+        // Following first. The builder holds that order whatever is passed, and
+        // drops from Everyone anyone it has already listed.
+        { id: 'following', groups: followingGroups, count: followingSectionCount(counts, filters), capped: hasMore },
+        // No count: the server pages this list and never totals it.
+        { id: 'everyone', groups: everyoneGroups, count: null },
+      ],
       expandedUserIds,
       notices,
       { columns, boardAngle: angle, climbGradeId },
     );
-  }, [logs, angle, climbGradeId, filters, counts, hasMore, expandedUserIds, columns]);
+  }, [angle, climbGradeId, filters, counts, hasMore, expandedUserIds, columns, followingGroups, everyoneGroups]);
+
+  // One page per end-reach. A page that failed waits for the retry button
+  // instead of being asked for again on every scroll.
+  const handleEndReached = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
+  const handleLoadMore = useCallback(() => {
+    void fetchNextPage();
+  }, [fetchNextPage]);
+  const handleRetryEveryone = useCallback(() => {
+    void (isFetchNextPageError ? fetchNextPage() : refetchEveryone());
+  }, [isFetchNextPageError, fetchNextPage, refetchEveryone]);
 
   const angleOnly = filters.angleOnly;
   const renderItem = useCallback(
     ({ item }: { item: ClimberLogListItem }) => {
       switch (item.kind) {
         case 'header': {
-          // Only the Following section exists here; other sections bring their own header.
-          if (item.section !== 'following') return null;
+          if (item.section === 'everyone') {
+            return (
+              <View style={[styles.sectionRow, { borderTopColor: systemColors.separator }]}>
+                <Text
+                  variant="footnote"
+                  accessibilityRole="header"
+                  color={systemColors.secondaryLabel}
+                  style={styles.sectionTitle}
+                >
+                  {angleOnly
+                    ? t('mobile.climberLogs.everyone.titleAtAngle', { angle })
+                    : t('mobile.climberLogs.everyone.title')}
+                </Text>
+                <Text variant="caption1" color={systemColors.secondaryLabel}>
+                  {t('mobile.climberLogs.everyone.sortHint')}
+                </Text>
+              </View>
+            );
+          }
           const label =
             item.count === null
               ? t('mobile.climberLogs.sectionFollowing')
@@ -224,7 +356,17 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
           );
         }
         case 'group':
-          return (
+          // An Everyone row is the climber's newest matching log and nothing
+          // else: the server sends one per climber, so there is no "earlier".
+          return item.section === 'everyone' ? (
+            <ClimberLogRow
+              group={item.group}
+              boardAngle={angle}
+              noteLines={6}
+              hideEarlier
+              onPressClimber={handlePressClimber}
+            />
+          ) : (
             <ClimberLogRow
               group={item.group}
               boardAngle={angle}
@@ -332,16 +474,74 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
     [angle, filters, handleToggleAngleOnly, handleToggleWithNotes, handleToggleSendsOnly, t],
   );
 
-  // Says why the list is empty. A request still in flight says nothing yet.
-  const emptyText = data
-    ? data.summary.climberCount === 0
-      ? t('mobile.climberLogs.emptyNobodyLogged')
-      : t('mobile.climberLogs.filterEmpty')
-    : offline.isBlocked
-      ? offline.reason === 'error'
+  // What sits under the last row: the next page on its way, a page that did
+  // not arrive, or a way to ask for more. The last one matters when a page came
+  // back holding only climbers already listed above. It adds no rows, the list
+  // does not grow, and end-reach would never fire again.
+  const everyoneBusy = everyoneLoading || isFetchingNextPage;
+  const everyoneBroken = !everyoneBusy && (everyoneFailed || isFetchNextPageError);
+  const listFooter = useMemo(() => {
+    if (offline.isOffline) return null;
+    if (everyoneBusy) return <PageSkeleton />;
+    if (everyoneBroken) {
+      return (
+        <View style={styles.footer}>
+          <Text variant="footnote" color={systemColors.secondaryLabel}>
+            {t('mobile.climberLogs.everyone.loadMoreError')}
+          </Text>
+          <Button
+            title={tCommon('mobile.offlineState.retry')}
+            variant="tonal"
+            size="small"
+            onPress={handleRetryEveryone}
+          />
+        </View>
+      );
+    }
+    if (hasNextPage) {
+      return (
+        <PressableSurface onPress={handleLoadMore} feedback="opacity" accessibilityRole="button" style={styles.notice}>
+          <Text variant="footnote" color={brandColors.primary}>
+            {t('mobile.climberLogs.everyone.loadMore')}
+          </Text>
+        </PressableSurface>
+      );
+    }
+    return null;
+  }, [
+    offline.isOffline,
+    everyoneBusy,
+    everyoneBroken,
+    hasNextPage,
+    handleRetryEveryone,
+    handleLoadMore,
+    brandColors.primary,
+    systemColors.secondaryLabel,
+    t,
+    tCommon,
+  ]);
+
+  // Says why the list is empty. A request still in flight says nothing yet, and
+  // neither does a list with more pages to ask for.
+  const anyChip = filters.angleOnly || filters.withNotes || filters.sendsOnly;
+  const everyoneExhausted = !offline.isOffline && everyoneLoaded && !hasNextPage && !isFetchingNextPage;
+  const emptyText = (() => {
+    if (!data) {
+      if (!offline.isBlocked) return null;
+      return offline.reason === 'error'
         ? tCommon('mobile.offlineState.errorBody')
-        : t('mobile.climberLogs.offlineBody')
-      : null;
+        : t('mobile.climberLogs.offlineBody');
+    }
+    if (everyoneExhausted) {
+      return anyChip ? t('mobile.climberLogs.filterEmpty') : t('mobile.climberLogs.everyone.empty');
+    }
+    if (everyoneBusy || hasNextPage) return null;
+    // Everyone's logs are not available (no signal, or the request failed), so
+    // this can only speak for the people the viewer follows.
+    return data.summary.climberCount === 0
+      ? t('mobile.climberLogs.emptyNobodyLogged')
+      : t('mobile.climberLogs.filterEmpty');
+  })();
   const listEmpty = useMemo(
     () =>
       emptyText ? (
@@ -396,6 +596,9 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
         keyExtractor={keyExtractor}
         ListHeaderComponent={listHeader}
         ListEmptyComponent={listEmpty}
+        ListFooterComponent={listFooter}
+        onEndReached={handleEndReached}
+        onEndReachedThreshold={END_REACHED_THRESHOLD}
         style={styles.list}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
@@ -457,6 +660,19 @@ const styles = StyleSheet.create({
     paddingBottom: spacing[1],
     fontWeight: '600',
   },
+  sectionRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: spacing[2],
+    marginTop: spacing[2],
+    paddingTop: spacing[3],
+    paddingBottom: spacing[1],
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  sectionTitle: {
+    fontWeight: '600',
+  },
   bareHeader: {
     marginTop: spacing[2],
     paddingTop: spacing[3],
@@ -465,6 +681,29 @@ const styles = StyleSheet.create({
   notice: {
     minHeight: MIN_TARGET,
     justifyContent: 'center',
+  },
+  footer: {
+    alignItems: 'flex-start',
+    gap: spacing[2],
+    paddingVertical: spacing[3],
+  },
+  skeletonRow: {
+    height: SKELETON_ROW_HEIGHT,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[3],
+  },
+  skeletonAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    opacity: 0.55,
+  },
+  skeletonLine: {
+    flex: 1,
+    height: 14,
+    borderRadius: borderRadius.full,
+    opacity: 0.55,
   },
   empty: {
     paddingVertical: spacing[6],
