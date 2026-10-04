@@ -405,6 +405,24 @@ Record fixtures only with the dedicated screenshots account
 (`test@boardsesh.com`), never a personal one — whatever email signs in during
 recording ends up readable in the public snapshot.
 
+For a normal native acceptance run, the main-only manual
+`recover-native-test-account.yml` workflow can hand off the existing repository
+`SCREENSHOT_USER_EMAIL` and `SCREENSHOT_USER_PASSWORD` secrets to the migration
+operator. It requires exactly `test@boardsesh.com` and a printable ASCII password
+of 1–128 characters, matching the normal Android login bridge. The committed
+RSA4096 public recipient is pinned by its SPKI SHA256; there is no recipient
+input. The workflow seals only those two fields with RSA-OAEP-SHA256 and
+AES-256-GCM, then uploads only an exclusive 0600 ciphertext artifact using the
+existing seven-day backup policy. Plaintext stays in process memory.
+
+Before dispatch, check whether the account is already available in the operator's
+vault; avoid a duplicate handoff. After checking the workflow's repository,
+main commit and artifact identity, the operator decrypts locally in memory,
+checks the envelope kind and exact two fields, and passes them over stdin to the
+normal native login helper. Keep values out of arguments, logs and plaintext
+files. The private key stays local. This workflow does not publish an update,
+change the account, or access application storage.
+
 `manifest.json` also carries **`accountUserId`**: the `sub` claim the recorder
 decoded (unverified, in memory) out of the live jwt the upstream returned. The
 id is written; the token never is. Replay needs it because the app reads its own
