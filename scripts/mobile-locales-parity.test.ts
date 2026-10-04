@@ -3,7 +3,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import buildExpoConfig, { APP_LOCALIZATIONS, localeStringsPath } from '../packages/mobile/app.config';
 import { SUPPORTED_LOCALES } from '../packages/shared/i18n/src/config';
@@ -113,10 +113,17 @@ describe('mobile locale parity', () => {
     }
   });
 
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('keeps the base photo-library prompt in step with the expo-image-picker plugin string', () => {
     // `photosPermission` is the development-region string Expo writes into
     // Info.plist; locales/en.json overrides it in en.lproj. If they drift, a
     // device whose language has no .lproj shows a different prompt from English.
+    // An empty TAILSCALE_HOSTS makes app.config.ts skip its `tailscale status`
+    // subprocess, so building the config here stays hermetic on a dev machine.
+    vi.stubEnv('TAILSCALE_HOSTS', '');
     const config = buildExpoConfig({ config: {}, projectRoot: MOBILE_ROOT } as Parameters<typeof buildExpoConfig>[0]);
     const imagePicker = (config.plugins ?? []).find(
       (plugin) => Array.isArray(plugin) && plugin[0] === 'expo-image-picker',

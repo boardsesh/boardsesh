@@ -626,9 +626,10 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // a spray wall photo and a feedback screenshot, plus camera access for
       // photographing a spray wall (epic #5346, SW-09).
       // Adds NSPhotoLibraryUsageDescription + NSCameraUsageDescription on iOS. On
-      // Android the plugin (57.0.14) adds CAMERA and RECORD_AUDIO; its library
-      // manifest declares READ/WRITE_EXTERNAL_STORAGE capped at maxSdkVersion 32 and
-      // no READ_MEDIA_IMAGES. Native change, ships on the next build (not OTA).
+      // Android (expo-image-picker 57.0.14) the config plugin adds only RECORD_AUDIO;
+      // CAMERA and READ/WRITE_EXTERNAL_STORAGE (maxSdkVersion 32) come from the
+      // library's own AndroidManifest.xml through manifest merge, and there is no
+      // READ_MEDIA_IMAGES. Native change, ships on the next build (not OTA).
       // The camera permission landed ahead of the UI that opens it, so that JS slice
       // could ship by OTA into a fleet whose binary already declares it.
       //
