@@ -106,12 +106,24 @@ function hasValidFrameRecoverySource(board: AuroraBoardName, climb: Climb): bool
     return false;
   }
 
+  // Aurora counts the leading dark slot in a delayed-start frame string such
+  // as `,"p100r13`. The shared parser intentionally drops that empty initial
+  // slot, so validate the wire count before parsing and compare the parsed
+  // projection against the number of nonempty encoded slots.
+  const rawFrameSlots = climb.frames.split(',');
+  if (rawFrameSlots.length !== climb.frames_count) return false;
+  if (rawFrameSlots.slice(1).some((slot) => slot.length === 0)) return false;
+
+  const leadingDarkSlotCount = rawFrameSlots[0] === '' ? 1 : 0;
+  const expectedProjectedFrameCount = rawFrameSlots.length - leadingDarkSlotCount;
   const segments = parseFramesSegments(climb.frames);
-  if (segments.length !== climb.frames_count) return false;
-  for (const [index, segment] of segments.entries()) {
+  if (segments.length !== expectedProjectedFrameCount) return false;
+  for (const [segmentIndex, segment] of segments.entries()) {
+    const rawFrameIndex = segmentIndex + leadingDarkSlotCount;
     if (segment.body.length === 0) {
-      // Only a quoted delta after frame zero is the documented hold tick.
-      if (segment.absolute || index === 0) return false;
+      // Only a quoted delta after the raw first slot is the documented hold
+      // tick. The parsed index can be zero after a delayed-start slot is dropped.
+      if (segment.absolute || rawFrameIndex === 0) return false;
       continue;
     }
 
@@ -131,7 +143,7 @@ function hasValidFrameRecoverySource(board: AuroraBoardName, climb: Climb): bool
 
   const projection = projectAuroraFramesToStoredRows(climb.frames, board);
   return (
-    projection.frameCount === climb.frames_count &&
+    projection.frameCount === expectedProjectedFrameCount &&
     projection.rows.length > 0 &&
     projection.diagnostics.skippedUnknownRoleTokens === 0 &&
     projection.diagnostics.skippedNonpositiveHoldIdTokens === 0

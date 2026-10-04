@@ -82,8 +82,14 @@ const shimConflictGuards: Array<{ set: Record<string, unknown>; setWhere: SQL | 
 let shimFailedCommitsRemaining = 0;
 const shimExistingClimbStatRows: Array<{ climbUuid: string; angle: number }> = [];
 const shimClimbStatSelectPredicates: SQL[] = [];
-const shimExistingClimbRows: Array<{ uuid: string; boardType: string; userId: string | null; frames: string | null }> =
-  [];
+const shimExistingClimbRows: Array<{
+  uuid: string;
+  boardType: string;
+  userId: string | null;
+  frames: string | null;
+  framesCount: number | null;
+  framesPace: number | null;
+}> = [];
 
 beforeEach(() => {
   shimInsertedRows.length = 0;
@@ -110,7 +116,27 @@ function createDbShim() {
           }
         };
       }
-      if (prop === 'execute') return async () => undefined;
+      if (prop === 'execute') {
+        return async (statement: SQL) => {
+          const rendered = new PgDialect().sqlToQuery(statement);
+          if (!rendered.sql.includes('SET frames = incoming.frames')) return undefined;
+
+          const [uuid, frames, framesCount, framesPace, boardType] = rendered.params;
+          const existingRow = shimExistingClimbRows.find(
+            (row) =>
+              row.uuid === uuid &&
+              row.boardType === boardType &&
+              row.userId === null &&
+              (row.frames === null || row.frames === ''),
+          );
+          if (existingRow) {
+            existingRow.frames = String(frames);
+            existingRow.framesCount = Number(framesCount);
+            existingRow.framesPace = Number(framesPace);
+          }
+          return undefined;
+        };
+      }
       if (prop === 'select') {
         return (selectedColumns: Record<string, unknown>) => {
           const isClimbStatKeySelect = 'climbUuid' in selectedColumns && 'angle' in selectedColumns;
@@ -129,12 +155,15 @@ function createDbShim() {
               userId: (row.userId as string | null | undefined) ?? null,
               frames: (row.frames as string | null | undefined) ?? null,
             }));
+          const filteredWrittenClimbs = writtenClimbs.filter(
+            (writtenClimb) => !shimExistingClimbRows.some((existingClimb) => existingClimb.uuid === writtenClimb.uuid),
+          );
           const rows = isClimbStatKeySelect
             ? [...shimExistingClimbStatRows]
             : isClimbSourceSelect
-              ? [...shimExistingClimbRows, ...writtenClimbs]
+              ? [...shimExistingClimbRows, ...filteredWrittenClimbs]
               : isClimbUuidSelect
-                ? [...shimExistingClimbRows, ...writtenClimbs].map(({ uuid }) => ({ uuid }))
+                ? [...shimExistingClimbRows, ...filteredWrittenClimbs].map(({ uuid }) => ({ uuid }))
                 : [];
           const terminal = Object.assign(Promise.resolve(rows), {
             limit: () => Promise.resolve(rows),
@@ -305,6 +334,164 @@ describe('board_climb_holds writes', () => {
       { boardType: 'decoy', climbUuid: 'CLIMB-2', frameNumber: 0, holdId: 100, holdState: 'STARTING' },
       { boardType: 'decoy', climbUuid: 'CLIMB-2', frameNumber: 1, holdId: 300, holdState: 'HAND' },
     ]);
+  });
+
+  it.each([null, ''])('recovers delayed-start Kilter frames for a missing %s source', async (storedFrames) => {
+    const actualHoldStates = await vi.importActual<typeof import('@boardsesh/board-constants/hold-states')>(
+      '@boardsesh/board-constants/hold-states',
+    );
+    mockProjectStoredRows.mockImplementation(actualHoldStates.projectAuroraFramesToStoredRows);
+
+    const frames = ',"p100r13';
+    shimExistingClimbRows.push({
+      uuid: 'DELAYED-START',
+      boardType: 'kilter',
+      userId: null,
+      frames: storedFrames,
+      framesCount: 1,
+      framesPace: 9,
+    });
+    mockSharedSync.mockResolvedValueOnce(
+      complete({
+        climbs: [
+          {
+            uuid: 'DELAYED-START',
+            name: 'Delayed start',
+            description: '',
+            hsm: 1,
+            edge_left: 0,
+            edge_right: 0,
+            edge_bottom: 0,
+            edge_top: 0,
+            frames_count: 2,
+            frames_pace: 2,
+            frames,
+            setter_id: 0,
+            setter_username: '',
+            layout_id: 1,
+            is_draft: true,
+            is_listed: false,
+            created_at: '2026-10-04 00:00:00',
+            updated_at: '2026-10-04 00:00:00',
+            angle: 40,
+          },
+        ],
+      } as Partial<SyncData>),
+    );
+
+    await syncSharedData(fakePostgresClient(), 'kilter', 'token');
+
+    expect(shimExistingClimbRows[0]).toMatchObject({
+      frames,
+      framesCount: 2,
+      framesPace: 2,
+    });
+    expect(shimInsertedRows.filter((row) => 'holdId' in row && row.climbUuid === 'DELAYED-START')).toEqual([
+      { boardType: 'kilter', climbUuid: 'DELAYED-START', frameNumber: 0, holdId: 100, holdState: 'HAND' },
+    ]);
+  });
+
+  it('keeps a quoted empty hold frame after the leading dark slot', async () => {
+    const actualHoldStates = await vi.importActual<typeof import('@boardsesh/board-constants/hold-states')>(
+      '@boardsesh/board-constants/hold-states',
+    );
+    mockProjectStoredRows.mockImplementation(actualHoldStates.projectAuroraFramesToStoredRows);
+
+    const frames = ',","p100r13';
+    shimExistingClimbRows.push({
+      uuid: 'DELAYED-START-WITH-HOLD',
+      boardType: 'kilter',
+      userId: null,
+      frames: null,
+      framesCount: 1,
+      framesPace: 9,
+    });
+    mockSharedSync.mockResolvedValueOnce(
+      complete({
+        climbs: [
+          {
+            uuid: 'DELAYED-START-WITH-HOLD',
+            name: 'Delayed start',
+            description: '',
+            hsm: 1,
+            edge_left: 0,
+            edge_right: 0,
+            edge_bottom: 0,
+            edge_top: 0,
+            frames_count: 3,
+            frames_pace: 2,
+            frames,
+            setter_id: 0,
+            setter_username: '',
+            layout_id: 1,
+            is_draft: true,
+            is_listed: false,
+            created_at: '2026-10-04 00:00:00',
+            updated_at: '2026-10-04 00:00:00',
+            angle: 40,
+          },
+        ],
+      } as Partial<SyncData>),
+    );
+
+    await syncSharedData(fakePostgresClient(), 'kilter', 'token');
+
+    expect(shimExistingClimbRows[0]).toMatchObject({ frames, framesCount: 3, framesPace: 2 });
+    expect(shimInsertedRows.filter((row) => 'holdId' in row && row.climbUuid === 'DELAYED-START-WITH-HOLD')).toEqual([
+      { boardType: 'kilter', climbUuid: 'DELAYED-START-WITH-HOLD', frameNumber: 1, holdId: 100, holdState: 'HAND' },
+    ]);
+  });
+
+  it.each([
+    { description: 'a quoted empty first raw slot', frames: '"', framesCount: 1 },
+    { description: 'a middle unquoted empty slot', frames: 'p100r13,,p200r13', framesCount: 3 },
+    { description: 'a mismatched raw slot count', frames: ',"p100r13', framesCount: 1 },
+  ])('refuses recovery with $description', async ({ frames, framesCount }) => {
+    const actualHoldStates = await vi.importActual<typeof import('@boardsesh/board-constants/hold-states')>(
+      '@boardsesh/board-constants/hold-states',
+    );
+    mockProjectStoredRows.mockImplementation(actualHoldStates.projectAuroraFramesToStoredRows);
+
+    shimExistingClimbRows.push({
+      uuid: 'INVALID-RECOVERY',
+      boardType: 'kilter',
+      userId: null,
+      frames: null,
+      framesCount: 1,
+      framesPace: 9,
+    });
+    mockSharedSync.mockResolvedValueOnce(
+      complete({
+        climbs: [
+          {
+            uuid: 'INVALID-RECOVERY',
+            name: 'Invalid source',
+            description: '',
+            hsm: 1,
+            edge_left: 0,
+            edge_right: 0,
+            edge_bottom: 0,
+            edge_top: 0,
+            frames_count: framesCount,
+            frames_pace: 2,
+            frames,
+            setter_id: 0,
+            setter_username: '',
+            layout_id: 1,
+            is_draft: true,
+            is_listed: false,
+            created_at: '2026-10-04 00:00:00',
+            updated_at: '2026-10-04 00:00:00',
+            angle: 40,
+          },
+        ],
+      } as Partial<SyncData>),
+    );
+
+    await syncSharedData(fakePostgresClient(), 'kilter', 'token');
+
+    expect(shimExistingClimbRows[0]).toMatchObject({ frames: null, framesCount: 1, framesPace: 9 });
+    expect(shimInsertedRows.filter((row) => 'holdId' in row && row.climbUuid === 'INVALID-RECOVERY')).toEqual([]);
   });
 
   it('projects persisted frames for an existing UUID and skips cross-board or null sources', () => {

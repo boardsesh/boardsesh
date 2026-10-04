@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getTableName, type Table } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import {
   legacyAuroraRawFrameHoldEvents,
   projectAuroraFramesToStoredRows,
@@ -130,10 +131,25 @@ function createFakeDb(queues: TableQueues) {
         inserts.push({ table: getTableName(table), values: Array.isArray(values) ? values : [values] });
         return insertResult();
       },
-      // insert().select(unnest …) carries its rows as SQL params; record the
-      // write without them.
-      select: () => {
-        inserts.push({ table: getTableName(table), values: [] });
+      // insert().select(unnest …) carries its rows in SQL parameters. Decode
+      // those values so reroute assertions observe the actual alias writes.
+      select: (query: Parameters<PgDialect['sqlToQuery']>[0]) => {
+        const [boardTypes, aliasUuids, canonicalUuids, sources] = new PgDialect().sqlToQuery(query).params as [
+          string[],
+          string[],
+          string[],
+          string[],
+        ];
+        const values =
+          getTableName(table) === 'board_climb_aliases'
+            ? boardTypes.map((boardType, index) => ({
+                boardType,
+                aliasUuid: aliasUuids[index],
+                canonicalUuid: canonicalUuids[index],
+                source: sources[index],
+              }))
+            : [];
+        inserts.push({ table: getTableName(table), values });
         return insertResult();
       },
     }),
