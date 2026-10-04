@@ -1,15 +1,80 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Only the two pure helpers are under test here; the picker and the native image
-// manipulator are stubbed so the module loads outside a React Native runtime.
-vi.mock('expo-image-picker', () => ({
+// The picker and the native image manipulator are stubbed so the module loads
+// outside a React Native runtime.
+const picker = vi.hoisted(() => ({
   requestMediaLibraryPermissionsAsync: vi.fn(),
   requestCameraPermissionsAsync: vi.fn(),
   launchImageLibraryAsync: vi.fn(),
   launchCameraAsync: vi.fn(),
 }));
-vi.mock('../../image-compression', () => ({ compressPickedImage: vi.fn() }));
-import { WALL_PHOTO_MAX_DIMENSION, predictCompressedSize, rescalePoint } from '../wall-photo';
+vi.mock('expo-image-picker', () => picker);
+const compressPickedImage = vi.hoisted(() => vi.fn());
+vi.mock('../../image-compression', () => ({ compressPickedImage }));
+import {
+  WALL_PHOTO_MAX_DIMENSION,
+  WALL_PHOTO_QUALITY,
+  pickWallPhotoFromCamera,
+  pickWallPhotoFromLibrary,
+  predictCompressedSize,
+  rescalePoint,
+} from '../wall-photo';
+
+const pickedAsset = { uri: 'file:///wall.heic', width: 4032, height: 3024 };
+
+beforeEach(() => {
+  // A spy only: the library pick must never ask. It answers "denied" so a
+  // request that came back would also block the pick, not just trip the count.
+  picker.requestMediaLibraryPermissionsAsync.mockReset().mockResolvedValue({ granted: false });
+  picker.requestCameraPermissionsAsync.mockReset().mockResolvedValue({ granted: true });
+  picker.launchImageLibraryAsync.mockReset().mockResolvedValue({ canceled: false, assets: [pickedAsset] });
+  picker.launchCameraAsync.mockReset().mockResolvedValue({ canceled: false, assets: [pickedAsset] });
+  compressPickedImage.mockReset().mockResolvedValue('file:///wall.jpg');
+});
+
+describe('pickWallPhotoFromLibrary', () => {
+  // The system picker hands back only the chosen photo and needs no permission
+  // (#5957). Asking first put a whole-library prompt in front of the picker, and
+  // a climber who refused it could not add a wall at all.
+  it('opens the library without asking for photo library access', async () => {
+    const result = await pickWallPhotoFromLibrary();
+
+    expect(result).toEqual({
+      outcome: 'picked',
+      photo: { uri: 'file:///wall.jpg', width: WALL_PHOTO_MAX_DIMENSION, height: 1536 },
+    });
+    expect(picker.requestMediaLibraryPermissionsAsync).not.toHaveBeenCalled();
+    expect(picker.launchImageLibraryAsync).toHaveBeenCalledWith({ mediaTypes: ['images'], quality: 1 });
+    expect(compressPickedImage).toHaveBeenCalledWith('file:///wall.heic', 4032, 3024, {
+      maxDimension: WALL_PHOTO_MAX_DIMENSION,
+      quality: WALL_PHOTO_QUALITY,
+    });
+  });
+
+  it('answers cancelled when the climber backs out of the picker', async () => {
+    picker.launchImageLibraryAsync.mockResolvedValue({ canceled: true, assets: null });
+
+    expect(await pickWallPhotoFromLibrary()).toEqual({ outcome: 'cancelled' });
+    expect(compressPickedImage).not.toHaveBeenCalled();
+  });
+});
+
+describe('pickWallPhotoFromCamera', () => {
+  it('still asks for the camera, and answers denied without opening it when refused', async () => {
+    picker.requestCameraPermissionsAsync.mockResolvedValue({ granted: false });
+
+    expect(await pickWallPhotoFromCamera()).toEqual({ outcome: 'denied' });
+    expect(picker.launchCameraAsync).not.toHaveBeenCalled();
+  });
+
+  it('photographs the wall once the camera is allowed', async () => {
+    expect(await pickWallPhotoFromCamera()).toEqual({
+      outcome: 'picked',
+      photo: { uri: 'file:///wall.jpg', width: WALL_PHOTO_MAX_DIMENSION, height: 1536 },
+    });
+    expect(picker.requestMediaLibraryPermissionsAsync).not.toHaveBeenCalled();
+  });
+});
 
 describe('predictCompressedSize', () => {
   it('leaves a photo that is already small enough alone', () => {

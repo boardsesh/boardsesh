@@ -306,11 +306,9 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
       hapticSelection();
       try {
         const result = source === 'camera' ? await pickWallPhotoFromCamera() : await pickWallPhotoFromLibrary();
+        // Only the camera can be refused; the library picker needs no permission.
         if (result.outcome === 'denied') {
-          showToast(
-            source === 'camera' ? t('sprayWizard.photo.cameraDenied') : t('sprayWizard.photo.libraryDenied'),
-            'warning',
-          );
+          showToast(t('sprayWizard.photo.cameraDenied'), 'warning');
           return;
         }
         if (result.outcome === 'cancelled') return;

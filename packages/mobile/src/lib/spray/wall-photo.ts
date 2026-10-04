@@ -69,10 +69,11 @@ export function rescalePoint(
   return [(point[0] * to.width) / from.width, (point[1] * to.height) / from.height];
 }
 
-export type WallPhotoPickResult =
-  | { outcome: 'picked'; photo: PickedWallPhotoFile }
-  | { outcome: 'cancelled' }
-  | { outcome: 'denied' };
+/** What the library picker can answer. It asks for no permission, so it cannot be denied. */
+export type WallPhotoLibraryResult = { outcome: 'picked'; photo: PickedWallPhotoFile } | { outcome: 'cancelled' };
+
+/** What the camera can answer: the same, plus a climber who refused camera access. */
+export type WallPhotoCameraResult = WallPhotoLibraryResult | { outcome: 'denied' };
 
 async function compressAsset(asset: ImagePicker.ImagePickerAsset): Promise<PickedWallPhotoFile> {
   const uri = await compressPickedImage(asset.uri, asset.width, asset.height, {
@@ -83,10 +84,16 @@ async function compressAsset(asset: ImagePicker.ImagePickerAsset): Promise<Picke
   return { uri, width: size.width, height: size.height };
 }
 
-/** Pick a wall photo from the library and compress it. Throws only on a real failure. */
-export async function pickWallPhotoFromLibrary(): Promise<WallPhotoPickResult> {
-  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!permission.granted) return { outcome: 'denied' };
+/**
+ * Pick a wall photo from the library and compress it. Throws only on a real failure.
+ *
+ * No permission request, on purpose (#5957). The system picker runs outside the
+ * app and hands back only the photo the climber chose, and `expo-image-picker`
+ * does not check for library access before opening it. Asking first put a
+ * whole-library prompt in front of a one-photo pick, and "Don't Allow" then
+ * blocked adding a wall at all.
+ */
+export async function pickWallPhotoFromLibrary(): Promise<WallPhotoLibraryResult> {
   // `quality: 1` — we do our own compression below and want the full-quality
   // file to do it from, exactly as the screenshot picker does.
   const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
@@ -102,7 +109,7 @@ export async function pickWallPhotoFromLibrary(): Promise<WallPhotoPickResult> {
  * `NSCameraUsageDescription` iOS does not deny the request, it terminates the
  * process, so the gate belongs before the call and not inside it.
  */
-export async function pickWallPhotoFromCamera(): Promise<WallPhotoPickResult> {
+export async function pickWallPhotoFromCamera(): Promise<WallPhotoCameraResult> {
   const permission = await ImagePicker.requestCameraPermissionsAsync();
   if (!permission.granted) return { outcome: 'denied' };
   const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1 });

@@ -63,11 +63,7 @@ export function EditProfileScreen() {
 
   const handlePickAvatar = async () => {
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        showToast(t('profile.avatar.permissionDenied'), 'warning');
-        return;
-      }
+      // No library permission request: the system picker needs none (#5957).
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsEditing: true,

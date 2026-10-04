@@ -41,11 +41,7 @@ export function ScreenshotPicker({ uris, onChange, disabled = false }: Screensho
 
   const handlePick = async () => {
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        showToast(t('screenshots.permissionDenied'), 'warning');
-        return;
-      }
+      // No library permission request: the system picker needs none (#5957).
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsMultipleSelection: true,
