@@ -250,3 +250,20 @@ describe('getWebRedisRateLimitEvaluator', () => {
     expect(warning).toHaveBeenCalledWith(expect.stringContaining('REDIS_URL is not configured'));
   });
 });
+
+describe('getWebRedisRateLimitEvaluator for Railway', () => {
+  it('warns only once per process when Railway has no REDIS_URL', async () => {
+    vi.stubEnv('VERCEL', '');
+    vi.stubEnv('RAILWAY_ENVIRONMENT_ID', 'production-environment-id');
+    vi.stubEnv('REDIS_URL', '');
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.resetModules();
+
+    const { getWebRedisRateLimitEvaluator } = await import('../public-api-rate-limit-redis.server');
+    expect(getWebRedisRateLimitEvaluator()).toBeUndefined();
+    expect(getWebRedisRateLimitEvaluator()).toBeUndefined();
+
+    expect(warning).toHaveBeenCalledOnce();
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('hosted web deployment'));
+  });
+});

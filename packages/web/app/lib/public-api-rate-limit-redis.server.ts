@@ -135,9 +135,10 @@ export function getWebRedisRateLimitEvaluator(): RedisRateLimitEvaluate | undefi
   singletonInitialized = true;
 
   const redisUrl = process.env.REDIS_URL?.trim();
-  if (!redisUrl && process.env.VERCEL === '1') {
+  const isHostedDeployment = process.env.VERCEL === '1' || Boolean(process.env.RAILWAY_ENVIRONMENT_ID?.trim());
+  if (!redisUrl && isHostedDeployment) {
     console.warn(
-      '[public-api-rate-limit] REDIS_URL is not configured for the Vercel web deployment; only the bounded local tier is active.',
+      '[public-api-rate-limit] REDIS_URL is not configured for the hosted web deployment; only the bounded local tier is active.',
     );
   }
 

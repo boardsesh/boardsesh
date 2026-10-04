@@ -9,13 +9,18 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 vi.mock('server-only', () => ({}));
 
 const logError = vi.fn();
+const checkRateLimit = vi.fn(() => ({ limited: false, retryAfterSeconds: 0 }));
+const enforcePublicApiRateLimit = vi.fn(async () => null);
+const resolvePublicApiClientIdentity = vi.fn(() => '203.0.113.7');
 vi.mock('@/app/lib/observability/request-logger', () => ({
   createRequestLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: logError }),
 }));
 
-vi.mock('@/app/lib/auth/rate-limiter', () => ({
-  checkRateLimit: vi.fn(() => ({ limited: false, retryAfterSeconds: 0 })),
-  getClientIp: vi.fn(() => '203.0.113.7'),
+vi.mock('@/app/lib/auth/rate-limiter', () => ({ checkRateLimit }));
+
+vi.mock('@/app/lib/public-api-rate-limit.server', () => ({
+  enforcePublicApiRateLimit,
+  resolvePublicApiClientIdentity,
 }));
 
 const fetchSprayWallPhotoUrl = vi.fn(async (_wallUuid: string): Promise<string | null> => null);
@@ -42,6 +47,8 @@ describe('GET /api/v1/spray-walls/[wall_uuid]/photo', () => {
     expect(response.status).toBe(302);
     expect(response.headers.get('location')).toBe('https://private.example/wall.jpg?sig=fresh');
     expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(enforcePublicApiRateLimit).toHaveBeenCalledOnce();
+    expect(checkRateLimit).toHaveBeenCalledWith('spray-photo:203.0.113.7', 60, 60_000);
   });
 
   it('404s a wall this anonymous read may not see', async () => {
