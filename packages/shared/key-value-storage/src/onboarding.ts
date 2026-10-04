@@ -39,3 +39,17 @@ export const ONBOARDING_TIP_CLIMBS_TAB_KEY = 'onboarding_tip_climbs_tab_seen';
 // true condition rather than a one-time thing to teach, so only an explicit dismiss
 // hides it — it is not consumed on first render like the banners above.
 export const ONBOARDING_LINK_EMPTY_DISMISSED_KEY = 'onboarding_link_empty_dismissed';
+// Two signals that decide WHEN the quick-actions tip fires, rather than whether
+// it already has. Both are local-only.
+//
+// `..._visits`: how many times the climber has landed on the Climbs tab. The tip
+// waits for the third so it arrives once they have a reason to want a menu,
+// instead of on the very first screen they ever see. Stored as a number; the
+// writer stops counting once it reaches the threshold so a long-time user isn't
+// writing SecureStore on every focus.
+export const ONBOARDING_TIP_QUICKACTIONS_VISITS_KEY = 'onboarding_tip_quickactions_visits';
+// `..._used`: boolean-true once the quick-actions menu has been opened by ANY
+// route (long-press, the ⋮ button, or the screen-reader action) from ANY surface
+// — it's written at the single DrawerHostProvider chokepoint. A climber who has
+// already found the menu is never taught it.
+export const ONBOARDING_TIP_QUICKACTIONS_USED_KEY = 'onboarding_tip_quickactions_used';

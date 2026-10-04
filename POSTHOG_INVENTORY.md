@@ -678,3 +678,21 @@ These events are separate from external `Integration*` events and do not change
 `integrations_connected_count`. Later linking surfaces can report `onboarding`,
 `progress_empty` or `logbook_empty`; this change does not configure production
 PostHog dashboards or person properties.
+
+## Quick-actions onboarding tip (#5221)
+
+The Climbs tab offers this tip from the third recorded visit, after the connect
+card and board-reveal tip clear. A previous quick-actions menu use or seen flag
+suppresses it. Events use `tip: 'quick_actions'`:
+
+| Event | Additional properties | Trigger |
+| --- | --- | --- |
+| `Onboarding Tip Shown` | `visitCount` (capped at 3) | The tip becomes visible, once per mounted screen |
+| `Onboarding Tip Dismissed` | none | The climber taps the close button |
+| `Onboarding Tip Pressed` | none | The climber taps the tip and opens Settings |
+
+Showing, dismissing, or pressing records the same one-shot seen flag. The tap
+handlers also record it directly, covering a tap before the shown effect runs.
+An in-flight preference write is guarded for the current launch. Concurrent tab
+focuses can share a counter increment and delay eligibility; they
+cannot advance it past the cap or re-show a seen tip.

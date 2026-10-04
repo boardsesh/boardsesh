@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, useEffect, useLayoutEffect, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb } from '@boardsesh/shared-schema';
 
@@ -72,6 +72,10 @@ const mocks = vi.hoisted(() => ({
   getRecentFilters: vi.fn(),
   getLogbook: vi.fn(),
   track: vi.fn(),
+  runFocusEffects: false,
+  tipActionOnMount: null as 'dismiss' | 'press' | null,
+  resolveQuickActionsTip: vi.fn(async () => ({ armed: true, visitCount: 3 })),
+  markQuickActionsTipSeen: vi.fn<() => Promise<void>>(),
   ensureBackgroundsCached: vi.fn(),
   imagePrefetch: vi.fn(),
 }));
@@ -146,14 +150,35 @@ vi.mock('expo-router', () => ({
   Stack: { Screen: () => null },
   useRouter: () => ({ push: mocks.push }),
   useLocalSearchParams: () => mocks.searchParams,
-  useFocusEffect: () => {},
+  useFocusEffect: (callback: () => void | (() => void)) =>
+    useEffect(() => {
+      if (mocks.runFocusEffects) return callback();
+    }, [callback]),
 }));
 
 // The onboarding reveal banner + its storage pull expo-haptics / expo-secure-store
 // (expo-modules-core EventEmitter) into the graph — irrelevant to the keyboard
 // test, so stub both.
 vi.mock('../../../../src/components/onboarding/OnboardingTipBanner', () => ({
-  OnboardingTipBanner: () => null,
+  OnboardingTipBanner: ({ text, onPress, onDismiss }: { text: string; onPress: () => void; onDismiss: () => void }) => {
+    useLayoutEffect(() => {
+      if (mocks.tipActionOnMount === 'dismiss') onDismiss();
+      if (mocks.tipActionOnMount === 'press') onPress();
+    }, [onDismiss, onPress]);
+    return createElement(
+      'div',
+      { 'data-testid': 'onboarding-tip' },
+      createElement('button', { onClick: onPress }, text),
+      createElement('button', { onClick: onDismiss }, 'Dismiss tip'),
+    );
+  },
+}));
+vi.mock('../../../../src/lib/onboarding/quick-actions-tip', () => ({
+  QUICK_ACTIONS_TIP_NAME: 'quick_actions',
+  resolveQuickActionsTip: mocks.resolveQuickActionsTip,
+  markQuickActionsTipSeen: mocks.markQuickActionsTipSeen,
+  getQuickActionsUsedSnapshot: () => false,
+  subscribeToQuickActionsUsed: () => () => {},
 }));
 // The connect-step card has its own suite; it reaches the Bluetooth provider,
 // which this suite has no reason to load.
@@ -176,7 +201,13 @@ vi.mock('expo-crypto', () => ({ randomUUID: () => 'queue-item-1' }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 vi.mock('@boardsesh/analytics', () => ({
-  SHARED_EVENTS: { ClimbSearchPerformed: 'Climb Search Performed', SearchResultSelected: 'Search Result Selected' },
+  SHARED_EVENTS: {
+    ClimbSearchPerformed: 'Climb Search Performed',
+    SearchResultSelected: 'Search Result Selected',
+    OnboardingTipShown: 'Onboarding Tip Shown',
+    OnboardingTipDismissed: 'Onboarding Tip Dismissed',
+    OnboardingTipPressed: 'Onboarding Tip Pressed',
+  },
 }));
 
 vi.mock('@boardsesh/climb-filters', () => ({
@@ -483,6 +514,10 @@ beforeEach(() => {
   mocks.saveLastSearch.mockResolvedValue(undefined);
   mocks.getRecentFilters.mockResolvedValue([]);
   mocks.track.mockClear();
+  mocks.runFocusEffects = false;
+  mocks.tipActionOnMount = null;
+  mocks.resolveQuickActionsTip.mockReset().mockResolvedValue({ armed: true, visitCount: 3 });
+  mocks.markQuickActionsTipSeen.mockReset().mockResolvedValue(undefined);
   mocks.ensureBackgroundsCached.mockClear();
   mocks.imagePrefetch.mockClear();
   mocks.searchClimbs = [mocks.climb, mocks.secondClimb];
@@ -1092,5 +1127,72 @@ describe('ClimbList row highlight', () => {
     // Exactly one row is selected — the previewed uuid clears itself on the next
     // committing open, so the two can never both claim a row.
     expect((await findByText('Moonage')).getAttribute('data-selected')).toBe('false');
+  });
+});
+
+describe('ClimbList quick-actions tip wiring', () => {
+  beforeEach(() => {
+    mocks.runFocusEffects = true;
+  });
+
+  it('reports the shown visit once, then persists dismissal', async () => {
+    const { findByRole, queryByTestId, rerender } = render(<ClimbList />);
+    const dismiss = await findByRole('button', { name: 'Dismiss tip' });
+    await waitFor(() =>
+      expect(mocks.track).toHaveBeenCalledWith('Onboarding Tip Shown', { tip: 'quick_actions', visitCount: 3 }),
+    );
+    rerender(<ClimbList />);
+    expect(mocks.track.mock.calls.filter(([event]) => event === 'Onboarding Tip Shown')).toHaveLength(1);
+    mocks.markQuickActionsTipSeen.mockClear();
+    fireEvent.click(dismiss);
+    expect(mocks.markQuickActionsTipSeen).toHaveBeenCalledOnce();
+    expect(mocks.track).toHaveBeenCalledWith('Onboarding Tip Dismissed', { tip: 'quick_actions' });
+    expect(queryByTestId('onboarding-tip')).toBeNull();
+  });
+
+  it('reports a press, persists seen and opens the settings that own the menu switch', async () => {
+    const { findByRole } = render(<ClimbList />);
+    const tip = await findByRole('button', { name: 'mobile.onboarding.quickActionsTip' });
+    mocks.markQuickActionsTipSeen.mockClear();
+    fireEvent.click(tip);
+    expect(mocks.markQuickActionsTipSeen).toHaveBeenCalledOnce();
+    expect(mocks.track).toHaveBeenCalledWith('Onboarding Tip Pressed', { tip: 'quick_actions' });
+    expect(mocks.push).toHaveBeenCalledWith('/settings');
+  });
+
+  it.each([
+    { state: 'no board', activeBoard: null, boardStatus: 'success' as const },
+    { state: 'failed restore', activeBoard: undefined, boardStatus: 'error' as const },
+  ])('keeps the tip pending through $state until a board list can render', async ({ activeBoard, boardStatus }) => {
+    mocks.activeBoard = activeBoard;
+    mocks.boardStatus = boardStatus;
+    const screen = render(<ClimbList />);
+
+    await act(async () => {
+      await mocks.resolveQuickActionsTip.mock.results[0]?.value;
+    });
+    expect(screen.queryByTestId('onboarding-tip')).toBeNull();
+    expect(mocks.track).not.toHaveBeenCalledWith('Onboarding Tip Shown', expect.anything());
+    expect(mocks.markQuickActionsTipSeen).not.toHaveBeenCalled();
+
+    mocks.activeBoard = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1', angle: 40 };
+    mocks.boardStatus = 'success';
+    screen.rerender(<ClimbList />);
+
+    await screen.findByText('Moonage');
+    await screen.findByTestId('onboarding-tip');
+    expect(mocks.track).toHaveBeenCalledWith('Onboarding Tip Shown', { tip: 'quick_actions', visitCount: 3 });
+    expect(mocks.markQuickActionsTipSeen).toHaveBeenCalledOnce();
+  });
+
+  it.each(['dismiss', 'press'] as const)('persists an immediate %s before the parent shown effect', async (action) => {
+    mocks.tipActionOnMount = action;
+    render(<ClimbList />);
+    const expectedEvent = action === 'dismiss' ? 'Onboarding Tip Dismissed' : 'Onboarding Tip Pressed';
+    await waitFor(() => expect(mocks.track).toHaveBeenCalledWith(expectedEvent, { tip: 'quick_actions' }));
+    const interactionIndex = mocks.track.mock.calls.findIndex(([event]) => event === expectedEvent);
+    expect(mocks.markQuickActionsTipSeen.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.track.mock.invocationCallOrder[interactionIndex]!,
+    );
   });
 });
