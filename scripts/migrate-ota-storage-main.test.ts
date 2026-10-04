@@ -15,7 +15,7 @@ type StoredObject = { body: Buffer; metadata: Omit<PutObjectCommandInput, 'Bucke
 const storage = vi.hoisted(() => ({
   buckets: new Map<string, Map<string, StoredObject>>(),
   backoffs: [] as number[],
-  putFailures: [] as { error: unknown; partial?: boolean; committed?: boolean }[],
+  putFailures: [] as { error: unknown; partial?: boolean; committed?: boolean; committedObject?: StoredObject }[],
   putAttempts: [] as { body: Readable; bytes: Buffer; input: PutObjectCommandInput }[],
   activeReads: new Map<string, number>(),
   readPeaks: new Map<string, number[]>(),
@@ -124,7 +124,7 @@ vi.mock('@aws-sdk/client-s3', async (importOriginal) => {
           }
           if (command.input.IfNoneMatch === '*' && bucket.has(key))
             throw { name: 'PreconditionFailed', $metadata: { httpStatusCode: 412 } };
-          if (!failure || failure.committed) bucket.set(key, { body: bytes, metadata });
+          if (!failure || failure.committed) bucket.set(key, failure?.committedObject ?? { body: bytes, metadata });
         }
         if (failure) throw failure.error;
         return {};
@@ -602,9 +602,11 @@ describe('OTA migration whole-object PUT retries', () => {
     expect(writes()).toHaveLength(2);
     expect(storage.putAttempts[0].body).not.toBe(storage.putAttempts[1].body);
     expect(storage.putAttempts.every(({ body }) => body.destroyed)).toBe(true);
+    expectUploadStreamsClosed();
     expect(storage.putAttempts[1].bytes).toEqual(current.body);
     for (const { input } of storage.putAttempts)
       expect(input).toMatchObject({
+        IfNoneMatch: '*',
         ContentLength: current.body.length,
         ContentMD5: createHash('md5').update(current.body).digest('base64'),
         ...current.metadata,
@@ -616,6 +618,33 @@ describe('OTA migration whole-object PUT retries', () => {
     expect(storage.backoffs[0]).toBeGreaterThanOrEqual(187.5);
     expect(storage.backoffs[0]).toBeLessThanOrEqual(312.5);
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('SHA-256, and metadata (exact)'));
+  });
+  it('awaits actual closure of every unread body before retry and staging cleanup', async () => {
+    storage.buckets.get(R2)!.set('runtime/bundle', object('bundle'));
+    const failure = { name: 'InternalError', $metadata: { httpStatusCode: 500 } };
+    storage.returnBeforeDrain = true;
+    storage.earlyPutFailure = failure;
+    await withIsolatedStagingDirectory(async () => {
+      await expect(main(['--reverse', '--apply', '--concurrency', '1'])).rejects.toEqual(failure);
+      expect(writes()).toHaveLength(4);
+      expect(storage.putPreconditions).toEqual(['*', '*', '*', '*']);
+      expectUploadStreamsClosed();
+    });
+  });
+  it('rejects a conflicting conditional winner after an ambiguous committed upload', async () => {
+    liveEndpoint = LEGACY;
+    storage.buckets.get(LEGACY)!.set('runtime/bundle', object('desired'));
+    const concurrent = object('different winner');
+    storage.putFailures.push({
+      error: { name: 'InternalError', $metadata: { httpStatusCode: 500 } },
+      committed: true,
+      committedObject: concurrent,
+    });
+    await expect(main(['--apply', '--concurrency', '1'])).rejects.toThrow(/created during copy conflicts with source/);
+    expect(writes()).toHaveLength(2);
+    expect(storage.putPreconditions).toEqual(['*', '*']);
+    expect(storage.buckets.get(R2)!.get('runtime/bundle')).toBe(concurrent);
+    expectUploadStreamsClosed();
   });
   it('stops after four transient attempts without deleting any objects', async () => {
     liveEndpoint = LEGACY;
@@ -630,6 +659,7 @@ describe('OTA migration whole-object PUT retries', () => {
       expect(milliseconds).toBeLessThanOrEqual(312.5 * 2 ** index);
     }
     expect(storage.putAttempts.every(({ body }) => body.destroyed)).toBe(true);
+    expectUploadStreamsClosed();
     expect(storage.buckets.get(LEGACY)!.size).toBe(1);
     expect(storage.buckets.get(R2)!.size).toBe(0);
   });
