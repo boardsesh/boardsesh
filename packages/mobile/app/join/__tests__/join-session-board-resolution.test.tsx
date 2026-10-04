@@ -14,11 +14,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
 const queue = vi.hoisted(() => ({
-  joinSession: vi.fn(async () => {}),
+  sessionId: null as string | null,
+  joinSession: vi.fn<
+    (
+      sessionId: string,
+      options: { boardPath: string; userBoard: UserBoard; isOperationCurrent?: () => boolean },
+    ) => Promise<boolean>
+  >(async () => true),
   clearSession: vi.fn(async () => {}),
 }));
 const router = vi.hoisted(() => ({ replace: vi.fn(), back: vi.fn() }));
 const showToast = vi.hoisted(() => vi.fn());
+const analytics = vi.hoisted(() => ({ track: vi.fn() }));
+const auth = vi.hoisted(() => ({ isAuthenticated: true, generation: 0 }));
+const alerts = vi.hoisted(() => ({ actions: [] as Array<{ text: string; style?: string; onPress?: () => void }> }));
 const fetchAllMyOwnedBoards = vi.hoisted(() => vi.fn());
 const fetchBoardBySlug = vi.hoisted(() => vi.fn());
 const fetchBoardByUuid = vi.hoisted(() => vi.fn());
@@ -38,12 +47,16 @@ const preview = vi.hoisted(() => ({
   refetch: vi.fn(),
 }));
 
-vi.mock('../../../src/lib/analytics', () => ({ track: vi.fn() }));
+vi.mock('../../../src/lib/analytics', () => ({ track: analytics.track }));
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles },
-  Alert: { alert: vi.fn() },
+  Alert: {
+    alert: vi.fn((_title: string, _message: string, actions: typeof alerts.actions) => {
+      alerts.actions = actions;
+    }),
+  },
 }));
 
 vi.mock('expo-router', () => ({
@@ -69,9 +82,13 @@ vi.mock('../../../src/components/Icon', () => ({ Icon: () => null }));
 vi.mock('../../../src/providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: {}, brandColors: {} }),
 }));
-vi.mock('../../../src/providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
+vi.mock('../../../src/providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: auth.isAuthenticated }) }));
+vi.mock('../../../src/lib/auth-store', () => ({
+  captureAuthCredentialGeneration: () => auth.generation,
+  isAuthCredentialGenerationCurrent: (generation: number) => generation === auth.generation,
+}));
 vi.mock('../../../src/providers/queue-provider', () => ({
-  useQueueSessionId: () => ({ sessionId: null }),
+  useQueueSessionId: () => ({ sessionId: queue.sessionId }),
   useQueueActions: () => ({ joinSession: queue.joinSession, clearSession: queue.clearSession }),
 }));
 vi.mock('../../../src/providers/toast-provider', () => ({ useToast: () => ({ showToast }) }));
@@ -123,15 +140,37 @@ async function pressJoin() {
   await act(async () => {
     fireEvent.click(joinButton);
   });
+  return rendered;
+}
+
+function deferred<T>() {
+  let resolvePromise: (result: T) => void = () => {};
+  let rejectPromise: (reason?: unknown) => void = () => {};
+  const promise = new Promise<T>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+  return { promise, resolve: resolvePromise, reject: rejectPromise };
+}
+
+async function flushJoinContinuation() {
+  await act(async () => {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  auth.isAuthenticated = true;
+  auth.generation = 0;
+  alerts.actions = [];
+  queue.sessionId = null;
   preview.data.boardPath = SESSION_BOARD_PATH;
   fetchAllMyOwnedBoards.mockResolvedValue({ viewerId: 'viewer-1', boards: [] });
   fetchBoardBySlug.mockResolvedValue(null);
   fetchBoardByUuid.mockResolvedValue(null);
-  createBoardMutateAsync.mockResolvedValue(board({ uuid: 'minted-uuid', isOwned: false, angle: 40 }));
+  queue.joinSession.mockReset().mockResolvedValue(true);
+  createBoardMutateAsync.mockReset().mockResolvedValue(board({ uuid: 'minted-uuid', isOwned: false, angle: 40 }));
 });
 
 describe('JoinSessionScreen board resolution', () => {
@@ -150,6 +189,7 @@ describe('JoinSessionScreen board resolution', () => {
       boardPath: SESSION_BOARD_PATH,
       // Adopted at the session's angle, not the board's stored 20.
       userBoard: { ...matching, angle: 40 },
+      isOperationCurrent: expect.any(Function),
     });
     expect(router.replace).toHaveBeenCalledWith('/(tabs)/record');
   });
@@ -166,6 +206,7 @@ describe('JoinSessionScreen board resolution', () => {
     expect(queue.joinSession).toHaveBeenCalledWith('session-42', {
       boardPath: SESSION_BOARD_PATH,
       userBoard: expect.objectContaining({ uuid: 'minted-uuid', isOwned: false }),
+      isOperationCurrent: expect.any(Function),
     });
   });
 
@@ -183,8 +224,172 @@ describe('JoinSessionScreen board resolution', () => {
     expect(queue.joinSession).toHaveBeenCalledWith('session-42', {
       boardPath: SESSION_BOARD_PATH,
       userBoard: { ...existing, angle: 40 },
+      isOperationCurrent: expect.any(Function),
     });
     expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('keeps a same-owner join valid through the initial profile request and proactive refresh', async () => {
+    const verifiedOwnerList = deferred<{ viewerId: string; boards: UserBoard[] }>();
+    fetchAllMyOwnedBoards.mockReturnValueOnce(verifiedOwnerList.promise);
+    const startingGeneration = auth.generation;
+    const rendered = await pressJoin();
+
+    await waitFor(() => expect(fetchAllMyOwnedBoards).toHaveBeenCalledTimes(1));
+    // The native interceptor refreshes tokens with storeTokensForGeneration,
+    // which preserves the credential generation; the initial GET_PROFILE can
+    // therefore finish without invalidating this same-owner operation.
+    expect(auth.generation).toBe(startingGeneration);
+    await act(async () => {
+      verifiedOwnerList.resolve({ viewerId: 'viewer-1', boards: [] });
+      await verifiedOwnerList.promise;
+    });
+
+    await waitFor(() => expect(queue.joinSession).toHaveBeenCalledTimes(1));
+    expect(auth.generation).toBe(startingGeneration);
+    expect(router.replace).toHaveBeenCalledWith('/(tabs)/record');
+    expect(rendered.getByRole('button', { name: 'mobileJoin.join' })).toBeDefined();
+  });
+
+  it('does not create a board when the verified owned-board walk belongs to an older auth generation', async () => {
+    const ownedBoards = deferred<{ viewerId: string; boards: UserBoard[] }>();
+    fetchAllMyOwnedBoards.mockReturnValueOnce(ownedBoards.promise);
+    const rendered = await pressJoin();
+
+    await waitFor(() => expect(fetchAllMyOwnedBoards).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      auth.generation += 1;
+      auth.isAuthenticated = false;
+      rendered.rerender(createElement(JoinSessionScreen));
+    });
+    await act(async () => {
+      ownedBoards.resolve({ viewerId: 'viewer-1', boards: [] });
+      await ownedBoards.promise;
+    });
+    await flushJoinContinuation();
+
+    expect(createBoardMutateAsync).not.toHaveBeenCalled();
+    expect(queue.joinSession).not.toHaveBeenCalled();
+    expect(analytics.track).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('rejects an A→B→A completion after the deferred board create', async () => {
+    const createdBoard = deferred<UserBoard>();
+    createBoardMutateAsync.mockReturnValueOnce(createdBoard.promise);
+    const rendered = await pressJoin();
+
+    await waitFor(() => expect(createBoardMutateAsync).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      auth.generation += 1;
+      auth.isAuthenticated = false;
+      rendered.rerender(createElement(JoinSessionScreen));
+    });
+    await act(async () => {
+      auth.generation += 1;
+      auth.isAuthenticated = true;
+      rendered.rerender(createElement(JoinSessionScreen));
+    });
+    await act(async () => {
+      createdBoard.resolve(board({ uuid: 'created-for-a', isOwned: false, angle: 40 }));
+      await createdBoard.promise;
+    });
+    await flushJoinContinuation();
+
+    expect(queue.joinSession).not.toHaveBeenCalled();
+    expect(analytics.track).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('passes the live auth guard through session publication and stays quiet after sign-out', async () => {
+    const joinResult = deferred<boolean>();
+    queue.joinSession.mockReturnValueOnce(joinResult.promise);
+    const rendered = await pressJoin();
+
+    await waitFor(() => expect(queue.joinSession).toHaveBeenCalledTimes(1));
+    const joinOptions = queue.joinSession.mock.calls[0]?.[1] as { isOperationCurrent?: () => boolean } | undefined;
+    expect(joinOptions?.isOperationCurrent?.()).toBe(true);
+
+    await act(async () => {
+      auth.generation += 1;
+      auth.isAuthenticated = false;
+      rendered.rerender(createElement(JoinSessionScreen));
+    });
+    expect(joinOptions?.isOperationCurrent?.()).toBe(false);
+    await act(async () => {
+      joinResult.resolve(false);
+      await joinResult.promise;
+    });
+    await flushJoinContinuation();
+
+    expect(analytics.track).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('does not publish a board returned by a duplicate lookup after auth changes', async () => {
+    const existingBoard = deferred<UserBoard | null>();
+    createBoardMutateAsync.mockRejectedValueOnce(duplicateRejection('existing-uuid'));
+    fetchBoardByUuid.mockReturnValueOnce(existingBoard.promise);
+    const rendered = await pressJoin();
+
+    await waitFor(() => expect(fetchBoardByUuid).toHaveBeenCalledWith('existing-uuid'));
+    await act(async () => {
+      auth.generation += 1;
+      // Account B is authenticated too; the credential generation, not just
+      // the screen's signed-in boolean, must fence A's late board result.
+      auth.isAuthenticated = true;
+      rendered.rerender(createElement(JoinSessionScreen));
+    });
+    await act(async () => {
+      existingBoard.resolve(board({ uuid: 'existing-uuid' }));
+      await existingBoard.promise;
+    });
+    await flushJoinContinuation();
+
+    expect(queue.joinSession).not.toHaveBeenCalled();
+    expect(analytics.track).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('does not publish after the screen unmounts while duplicate lookup is pending', async () => {
+    const existingBoard = deferred<UserBoard | null>();
+    createBoardMutateAsync.mockRejectedValueOnce(duplicateRejection('existing-uuid'));
+    fetchBoardByUuid.mockReturnValueOnce(existingBoard.promise);
+    const rendered = await pressJoin();
+
+    await waitFor(() => expect(fetchBoardByUuid).toHaveBeenCalledWith('existing-uuid'));
+    rendered.unmount();
+    await act(async () => {
+      existingBoard.resolve(board({ uuid: 'existing-uuid' }));
+      await existingBoard.promise;
+    });
+    await flushJoinContinuation();
+
+    expect(auth.generation).toBe(0);
+    expect(queue.joinSession).not.toHaveBeenCalled();
+    expect(analytics.track).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('keeps the current session when the climber cancels a confirmed switch', async () => {
+    queue.sessionId = 'current-session';
+    const rendered = render(createElement(JoinSessionScreen));
+    await act(async () => {
+      fireEvent.click(rendered.getByRole('button', { name: 'mobileJoin.join' }));
+    });
+
+    const cancelAction = alerts.actions.find((action) => action.text === 'mobileJoin.cancel');
+    expect(cancelAction).toBeDefined();
+    await act(async () => cancelAction?.onPress?.());
+
+    expect(queue.clearSession).not.toHaveBeenCalled();
+    expect(queue.joinSession).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
   });
 
   // Previously: an awaited `refetch()` paused forever under `offlineFirst`, and a

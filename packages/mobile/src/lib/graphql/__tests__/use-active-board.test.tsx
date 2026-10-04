@@ -8,17 +8,23 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 // AsyncStorage-backed preference store (in-memory).
 vi.mock('@react-native-async-storage/async-storage', () => {
   let storage: Record<string, string> = {};
+  const setItem = vi.fn(async (key: string, value: string) => {
+    storage[key] = value;
+  });
   return {
     default: {
       getItem: vi.fn(async (key: string) => storage[key] ?? null),
-      setItem: vi.fn(async (key: string, value: string) => {
-        storage[key] = value;
-      }),
+      setItem,
       removeItem: vi.fn(async (key: string) => {
         delete storage[key];
       }),
       __reset: () => {
         storage = {};
+      },
+      __restoreSetItem: () => {
+        setItem.mockImplementation(async (key: string, value: string) => {
+          storage[key] = value;
+        });
       },
     },
   };
@@ -61,7 +67,13 @@ describe('useActiveBoard', () => {
     await resetAsyncStorage();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    const asyncStorage = (await import('@react-native-async-storage/async-storage'))
+      .default as (typeof import('@react-native-async-storage/async-storage'))['default'] & {
+      __restoreSetItem: () => void;
+    };
+    asyncStorage.__restoreSetItem();
     onlineManager.setOnline(true);
   });
 
@@ -173,6 +185,42 @@ describe('useActiveBoard', () => {
 
     await waitFor(() => expect(read.result.current.data).toEqual(otherBoard));
     await expect(getStoredActiveBoard()).resolves.toEqual(otherBoard);
+  });
+
+  it('does not publish a persisted board after the owning join operation becomes stale', async () => {
+    const { ACTIVE_BOARD_QUERY_KEY, useSetActiveBoard } = await import('../use-active-board');
+    const asyncStorage = (await import('@react-native-async-storage/async-storage'))
+      .default as (typeof import('@react-native-async-storage/async-storage'))['default'] & {
+      __restoreSetItem: () => void;
+    };
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const setter = renderHook(() => useSetActiveBoard(), { wrapper: wrapper(queryClient) });
+    let markStorageWriteStarted: () => void = () => {};
+    const storageWriteStarted = new Promise<void>((resolve) => {
+      markStorageWriteStarted = resolve;
+    });
+    let finishStorageWrite: () => void = () => {};
+    const storageWriteGate = new Promise<void>((resolve) => {
+      finishStorageWrite = resolve;
+    });
+    const setPreference = vi.spyOn(asyncStorage, 'setItem').mockImplementation(async () => {
+      markStorageWriteStarted();
+      await storageWriteGate;
+    });
+    let operationCurrent = true;
+    let accepted = true;
+
+    const pendingWrite = setter.result.current(otherBoard, () => operationCurrent);
+    await storageWriteStarted;
+    operationCurrent = false;
+    finishStorageWrite();
+    await act(async () => {
+      accepted = await pendingWrite;
+    });
+
+    expect(setPreference).toHaveBeenCalledTimes(1);
+    expect(accepted).toBe(false);
+    expect(queryClient.getQueryData(ACTIVE_BOARD_QUERY_KEY)).toBeUndefined();
   });
 
   it('fences a stale conditional heal as soon as a newer user selection starts', async () => {

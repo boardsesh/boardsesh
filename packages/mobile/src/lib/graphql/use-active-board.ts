@@ -51,6 +51,7 @@ function enqueueActiveBoardWrite(
   writeStorage: ActiveBoardStorageWrite,
   commitCache: () => void,
   retireOnPrivacyChange = true,
+  isStillCurrent: () => boolean = () => true,
 ): Promise<boolean> {
   const privacyGeneration = getPrivacyRevocationGeneration();
   const operation = activeBoardWriteQueue.then(async () => {
@@ -62,7 +63,7 @@ function enqueueActiveBoardWrite(
 
     // A newer intent may have arrived while AsyncStorage was in flight. Its
     // write is queued next, so do not briefly roll the React Query cache back.
-    if (generation !== activeBoardWriteGeneration || privacyGeneration !== getPrivacyRevocationGeneration())
+    if (generation !== activeBoardWriteGeneration || privacyGeneration !== getPrivacyRevocationGeneration() || !isStillCurrent())
       return false;
     commitCache();
     return true;
@@ -146,17 +147,22 @@ export function useSetActiveBoard() {
     getPrivacyRevocationGeneration,
   );
   return useCallback(
-    async (board: UserBoard) => {
-      if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
+    async (board: UserBoard, isOperationCurrent?: () => boolean): Promise<boolean> => {
+      if (privacyGeneration !== getPrivacyRevocationGeneration() || (isOperationCurrent && !isOperationCurrent())) return false;
       const generation = beginActiveBoardWrite();
       const owner = getCurrentUserStorageOwner();
-      await enqueueActiveBoardWrite(
+      return enqueueActiveBoardWrite(
         generation,
-        () => setStoredActiveBoard(board, owner),
+        () => {
+          if (isOperationCurrent && !isOperationCurrent()) return Promise.resolve();
+          return setStoredActiveBoard(board, owner);
+        },
         () => {
           const cached = queryClient.setQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY, board);
           if (cached) authorizeActiveBoardProjection(cached);
         },
+        true,
+        isOperationCurrent,
       );
     },
     [queryClient, privacyGeneration],

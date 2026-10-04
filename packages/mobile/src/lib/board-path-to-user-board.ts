@@ -32,6 +32,8 @@ export type ResolvedBoardConfig = {
 };
 
 export type ResolveBoardDeps = {
+  /** False when this join or route resolution was superseded while awaiting I/O. */
+  isOperationCurrent?: () => boolean;
   /**
    * The account-verified board list, loaded on demand. `myBoards` also includes
    * followed boards, so resolution must match each row's `ownerId` to `viewerId`.
@@ -118,9 +120,17 @@ export function buildCreateBoardInput(config: ResolvedBoardConfig): CreateBoardI
  * the same input to step 2 and mint a duplicate or adopt a followed board.
  */
 export async function resolveBoardForSession(boardPath: string, deps: ResolveBoardDeps): Promise<UserBoard> {
+  const assertOperationCurrent = () => {
+    if (deps.isOperationCurrent && !deps.isOperationCurrent()) {
+      throw new Error('Session board resolution was superseded');
+    }
+  };
+
+  assertOperationCurrent();
   const named = parseNamedBoardPath(boardPath);
   if (named) {
     const board = await deps.fetchBoardBySlug(named.slug);
+    assertOperationCurrent();
     if (!board) {
       throw new Error(`Cannot resolve a board from session boardPath: ${boardPath}`);
     }
@@ -134,6 +144,7 @@ export async function resolveBoardForSession(boardPath: string, deps: ResolveBoa
   }
 
   const snapshot = await deps.loadOwnedBoards();
+  assertOperationCurrent();
   if (typeof snapshot.viewerId !== 'string' || snapshot.viewerId.trim().length === 0) {
     throw new Error('Cannot resolve a board without a verified account owner');
   }
@@ -148,5 +159,8 @@ export async function resolveBoardForSession(boardPath: string, deps: ResolveBoa
   const owned = findOwnedBoardForSession(viewerBoards, config);
   if (owned) return owned;
 
-  return deps.createBoard(buildCreateBoardInput(config));
+  assertOperationCurrent();
+  const createdBoard = await deps.createBoard(buildCreateBoardInput(config));
+  assertOperationCurrent();
+  return createdBoard;
 }

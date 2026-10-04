@@ -25,10 +25,21 @@ import { fetchBoardByUuid } from './hooks';
 export async function createBoardOrAdoptDuplicate(
   input: CreateBoardInput,
   createBoard: (input: CreateBoardInput) => Promise<UserBoard>,
+  isOperationCurrent?: () => boolean,
 ): Promise<UserBoard> {
+  const assertOperationCurrent = () => {
+    if (isOperationCurrent && !isOperationCurrent()) {
+      throw new Error('Board creation was superseded');
+    }
+  };
+
+  assertOperationCurrent();
   try {
-    return await createBoard(input);
+    const createdBoard = await createBoard(input);
+    assertOperationCurrent();
+    return createdBoard;
   } catch (createError) {
+    if (isOperationCurrent && !isOperationCurrent()) throw createError;
     const duplicate = readDuplicateBoardError(createError);
     if (!duplicate) throw createError;
     // A duplicate naming a board we then can't read is a dead end, not a
@@ -36,7 +47,9 @@ export async function createBoardOrAdoptDuplicate(
     // happened, so the lookup's own rejection is swallowed rather than replacing
     // it. Hence `.catch(() => null)`: a rejected lookup and a null board are the
     // same outcome here.
+    assertOperationCurrent();
     const existing = await fetchBoardByUuid(duplicate.boardUuid).catch(() => null);
+    if (isOperationCurrent && !isOperationCurrent()) throw createError;
     if (!existing) throw createError;
     // `CreateBoardInput.angle` is optional on the wire; `buildCreateBoardInput`
     // always fills it from the path, and the board's own angle is the fallback.
