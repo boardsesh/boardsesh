@@ -382,22 +382,31 @@ export const ClimberLogsSection = memo(function ClimberLogsSection({
   );
   const tally = useMemo(() => tallyDisagreeingGrades(groups), [groups]);
 
-  // The fall-through. Asked only once it is known that nobody followed has
+  // The fall-through. Shown only once it is known that nobody followed has
   // logged the climb: `none` knows without a request, the rest wait for the
   // server's count. Every angle, so a climb with logs never shows an empty card.
-  // Waits for `settled` like the followed-climbers request: an account that
-  // follows nobody would otherwise send one of these per climb swiped past.
   const { userId: viewerId, isLoading: viewerIdLoading } = useStoredUserId(true);
   const nobodyFollowedLogged = followState === 'none' || data?.summary.climberCount === 0;
   const previewWanted = nobodyFollowedLogged && !offline.isOffline;
+  // Asked for alongside the followed-climbers request, not after its answer:
+  // an account whose follows have not logged the climb would otherwise wait on
+  // two requests back to back. DeferredSections sends the same request (same
+  // key) when the climb settles, so this is normally already in flight or
+  // answered by the time the card mounts. `unknown` has no snapshot to go on
+  // and still waits for the server's count. Waits for `settled` like the
+  // followed-climbers request: otherwise one of these goes out per climb
+  // swiped past.
+  const previewRequested =
+    !offline.isOffline && (followState === 'none' || followState === 'some' || nobodyFollowedLogged);
   const preview = useClimbLogsPreview({
     boardName,
     climbUuid,
-    enabled: previewWanted && settled,
+    enabled: previewRequested && settled,
   });
-  // Only while it is wanted. A disabled query still hands back what it cached,
-  // and those rows must not show with no signal (who may see a spray wall's
-  // logs is decided per request) or once somebody followed has logged the climb.
+  // Only while it is wanted, which is narrower than requested. The query hands
+  // back whatever it holds, and those rows must not show with no signal (who
+  // may see a spray wall's logs is decided per request) or once somebody
+  // followed has logged the climb.
   const previewLogs = previewWanted ? preview.data : undefined;
   // The rows are on their way: in flight, or about to be asked for once the
   // climb settles and the viewer id is read. Counts the same as loading, so

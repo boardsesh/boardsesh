@@ -473,12 +473,12 @@ describe('ClimberLogsSection', () => {
 
     it('shows no other climbers once somebody the viewer follows has logged it', () => {
       logsQuery.state = loaded([bare('quiet-friend')], { climberCount: 1, senderCount: 1 });
-      // A stale answer sits in the cache from before the friend logged it. A
-      // disabled query still returns it; the card must not ask and must not show it.
+      // The answer is there: it was asked for alongside the followed-climbers
+      // request, before anyone knew a friend had logged it. The card must not
+      // show it.
       previewQuery.state = { isLoading: false, data: sixStrangers() };
       const { queryByTestId, getByTestId, container } = renderSection('some');
 
-      expect(previewQuery.calls.at(-1)?.enabled).toBe(false);
       expect(queryByTestId('climber-logs-everyone')).toBeNull();
       expect(queryByTestId('climber-row')).toBeNull();
       expect(container.textContent).not.toContain('s1');
@@ -621,24 +621,51 @@ describe('ClimberLogsSection', () => {
       expect(previewQuery.calls.at(-1)?.enabled).toBe(true);
     });
 
-    it('does not ask while the followed-climbers request is still out', () => {
+    it('asks alongside the followed-climbers request, not after its answer', () => {
       logsQuery.state = { ...IDLE, fetchStatus: 'fetching', isLoading: true };
-      renderSection('some');
+      const { getByTestId, queryByTestId } = renderSection('some');
+
+      expect(previewQuery.calls.at(-1)?.enabled).toBe(true);
+      // One placeholder until the card knows what to show.
+      expect(getByTestId('climber-logs-skeleton')).toBeTruthy();
+      expect(queryByTestId('climber-logs-everyone')).toBeNull();
+    });
+
+    it('holds rows that landed first back until the followed-climbers answer says nobody logged it', () => {
+      logsQuery.state = { ...IDLE, fetchStatus: 'fetching', isLoading: true };
+      previewQuery.state = { isLoading: false, data: sixStrangers() };
+      const view = renderSection('some');
+
+      expect(view.getByTestId('climber-logs-skeleton')).toBeTruthy();
+      expect(view.queryByTestId('climber-row')).toBeNull();
+    });
+
+    it('with no follow snapshot to go on, waits for the server to say nobody followed logged it', () => {
+      logsQuery.state = { ...IDLE, fetchStatus: 'fetching', isLoading: true };
+      renderSection('unknown');
+      expect(previewQuery.calls.at(-1)?.enabled).toBe(false);
+
+      logsQuery.state = loaded([log()], { climberCount: 1, senderCount: 1 });
+      renderSection('unknown');
       expect(previewQuery.calls.at(-1)?.enabled).toBe(false);
     });
 
-    it('does not ask when somebody followed has logged the climb', () => {
+    it('shows nothing from the request once somebody followed has logged the climb', () => {
       logsQuery.state = loaded([log()], { climberCount: 1, senderCount: 1 });
-      const { container } = renderSection('some');
+      previewQuery.state = { isLoading: false, data: sixStrangers() };
+      const { container, queryByTestId } = renderSection('some');
 
-      expect(previewQuery.calls.at(-1)?.enabled).toBe(false);
+      expect(queryByTestId('climber-logs-everyone')).toBeNull();
       expect(container.textContent).not.toContain('mobile.climberLogs.fallthrough.latestFromEveryone');
     });
 
-    it('does not ask when the followed-climbers request is blocked or failed', () => {
+    it('shows nothing from the request when the followed-climbers request is blocked or failed', () => {
       logsQuery.state = { status: 'error', fetchStatus: 'idle', isLoading: false, data: undefined, refetch: vi.fn() };
-      renderSection('some');
-      expect(previewQuery.calls.at(-1)?.enabled).toBe(false);
+      previewQuery.state = { isLoading: false, data: sixStrangers() };
+      const { queryByTestId } = renderSection('some');
+
+      expect(queryByTestId('climber-logs-everyone')).toBeNull();
+      expect(queryByTestId('climber-row')).toBeNull();
     });
 
     it.each(['none', 'some'] as const)('does not ask with no signal (%s)', (state) => {

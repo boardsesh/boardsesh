@@ -21,7 +21,13 @@ import { SetterNotesSection } from './SetterNotesSection';
 import { useAuth } from '../../providers/auth-provider';
 import { useBoardseshGradeEnabled } from '../../providers/feature-flags-provider';
 import { useTheme } from '../../providers/theme-provider';
-import { useBoardseshGrade, useClimbStatsHistory, useFollowingClimbLogs } from '../../lib/graphql/hooks';
+import {
+  useBoardseshGrade,
+  useClimbLogsPreview,
+  useClimbStatsHistory,
+  useFollowingClimbLogs,
+} from '../../lib/graphql/hooks';
+import { useIsOffline } from '../../hooks/use-is-offline';
 import { useFollowedAuthorsSnapshot } from '../../lib/graphql/hooks/use-followed-authors';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { getDifficultyIdForGradeName } from '../../lib/grade-label';
@@ -134,9 +140,9 @@ export const DeferredSections = memo(function DeferredSections({
   // them, but only once the open animation has settled, the climber has stayed
   // on the climb for a moment (a fast queue swipe sends nothing) and the phone's
   // own followed-authors snapshot says there is someone to ask about. An account
-  // that follows nobody never sends this request; its card asks for everyone's
-  // newest logs instead, behind the same settle gate (`settled` is handed to
-  // ClimberLogsSection for that, and for its own copy of this query). The
+  // that follows nobody never sends this request; everyone's newest logs are
+  // asked for instead, below, behind the same settle gate (`settled` is also
+  // handed to ClimberLogsSection, for its own copies of both queries). The
   // snapshot is only read here: the root sync bridge keeps it fresh, so opening
   // the drawer costs no followed-authors request and no SQLite write. A missing
   // one loads behind the same settle gate.
@@ -155,6 +161,20 @@ export const DeferredSections = memo(function DeferredSections({
       : 'none-yet';
   const { data: crewLogs } = useFollowingClimbLogs(boardName, climb.uuid, {
     enabled: isAuthenticated && settled && (followState === 'some' || followState === 'unknown'),
+  });
+  // Everyone else's newest logs, for the Climber logs card's fall-through rows.
+  // The card mounts only once the climber scrolls, so asking from there starts
+  // the request late. Asked here instead, at the same settle gate and next to
+  // the followed-climbers request rather than after its answer. Same hook and
+  // key as the card's own read, so React Query sends one request for both, and
+  // the card alone decides whether the rows may show. Nothing reads the answer
+  // here. `unknown` is left to the card, which asks once the server has said
+  // nobody followed logged the climb.
+  const isOffline = useIsOffline();
+  useClimbLogsPreview({
+    boardName,
+    climbUuid: climb.uuid,
+    enabled: isAuthenticated && settled && !isOffline && (followState === 'none' || followState === 'some'),
   });
   // A disabled query still hands back what it cached, so an account that has
   // since unfollowed everyone must not keep a crew mention from that answer.
