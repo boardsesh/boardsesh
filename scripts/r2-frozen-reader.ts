@@ -6,7 +6,7 @@ import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { validateSourceMapOutput } from './mobile-upload-sourcemaps';
 
-export const FROZEN_SOURCE = '6986ca9100c0492586f42f1a88ce3d49b4986f07';
+export const FROZEN_SOURCE = '6cab8437bb7875e3a84ea228365c344428a6ca3c';
 export const SNAPSHOT_BASE = 'https://snapshots.boardsesh.com/board-snapshots/v1-gzip';
 export const CERT_SHA = 'f5f367cf1451a428f2a4a68f1beccca2dd42275d0df8e3a56a32f0087407f7d5';
 export const RUNTIMES = {
@@ -84,6 +84,7 @@ export function checkExport(exportRoot: string, platform: Platform): { bundleSha
         typeof assetPath !== 'string' ||
         assetPath.startsWith('/') ||
         assetPath.includes('\\') ||
+        assetPath.includes('\0') ||
         assetPath.split('/').some((part) => !part || part === '..' || part === '.')
       )
         throw new Error('Unsafe exported asset path');

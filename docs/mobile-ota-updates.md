@@ -1621,10 +1621,10 @@ repo-level secret for the Android fingerprint).
 
 ### R2 reader publication for the frozen 2.6 cohort
 
-The manual `R2 Frozen Reader Publication` workflow targets only shipped source
-`6986ca9100c0492586f42f1a88ce3d49b4986f07`. The current release train has newer native
+The manual `R2 Frozen Reader Publication` workflow targets only deployed production source
+`6cab8437bb7875e3a84ea228365c344428a6ca3c`. The current release train has newer native
 inputs, so its normal publisher cannot update this older cohort. No approved 2.6
-backport anchor exists; this workflow validates the actual shipped source instead
+backport anchor exists; this workflow validates the actual deployed production source instead
 of creating a release tag or overriding its fingerprint.
 
 Dispatch from `main` with one platform and **dry run enabled first**. The protected

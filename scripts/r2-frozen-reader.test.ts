@@ -275,6 +275,6 @@ describe('frozen reader fails closed', () => {
     expect(workflow).toContain('--clear --dump-sourcemap');
     expect(workflow).toContain('public_keys=(EXPO_PUBLIC_BACKEND_URL');
     expect(workflow).not.toContain('env |');
-    expect(workflow).toContain('ref: 6986ca9100c0492586f42f1a88ce3d49b4986f07');
+    expect(workflow).toContain('ref: 6cab8437bb7875e3a84ea228365c344428a6ca3c');
   });
 });

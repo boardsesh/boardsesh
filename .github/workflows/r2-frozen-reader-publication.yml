@@ -1,7 +1,7 @@
 name: R2 Frozen Reader Publication
 run-name: R2 frozen ${{ inputs.platform }} reader (${{ inputs.dry_run && 'dry run' || 'production' }})
 
-# One immutable, actually shipped cohort. Never publish current native code under
+# One immutable, already deployed production source. Never publish current native code under
 # an old fingerprint. Retire only after issue #5912 acceptance and retention.
 on:
   workflow_dispatch:
@@ -49,10 +49,10 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - name: Checkout immutable shipped source
+      - name: Checkout immutable deployed production source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: 6986ca9100c0492586f42f1a88ce3d49b4986f07
+          ref: 6cab8437bb7875e3a84ea228365c344428a6ca3c
           path: frozen
           persist-credentials: false
       - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
@@ -105,7 +105,7 @@ jobs:
           EXPO_NO_TELEMETRY: '1'
           SENTRY_DISABLE_AUTO_UPLOAD: 'true'
         run: vp exec expo export --platform "$PLATFORM" --clear --dump-sourcemap --output-dir dist
-      - name: Require compiled R2 reader and unchanged shipped source
+      - name: Require compiled R2 reader and unchanged deployed production source
         env:
           PLATFORM: ${{ inputs.platform }}
           GOOGLE_MAPS_API_KEY: ${{ inputs.platform == 'android' && secrets.GOOGLE_MAPS_API_KEY || '' }}
