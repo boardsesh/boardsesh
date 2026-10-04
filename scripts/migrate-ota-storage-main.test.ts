@@ -1,3 +1,5 @@
+import { spawnSync } from 'node:child_process';
+import { resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { GetObjectCommand, GetObjectTaggingCommand, ListObjectsV2Command, PutObjectCommand } from '@aws-sdk/client-s3';
@@ -161,7 +163,7 @@ describe('OTA migration main rollback', () => {
   it.each([{ flags: [] }, { flags: ['--verify-only'] }])('reverse $flags is read-only', async ({ flags }) => {
     for (const bucket of storage.buckets.values()) bucket.set('current', object('shared'));
     storage.buckets.get(LEGACY)!.set('archive', object('keep'));
-    await main(['--reverse', ...flags]);
+    await main(['--', '--reverse', ...flags]);
     expect(writes()).toEqual([]);
     if (flags.length === 0)
       expect(console.log).not.toHaveBeenCalledWith(expect.stringContaining('Migration object concurrency:'));
@@ -227,7 +229,7 @@ describe('OTA migration concurrency', () => {
     liveEndpoint = LEGACY;
     for (let index = 0; index < 9; index += 1)
       storage.buckets.get(LEGACY)!.set(`runtime/asset-${index}`, object(`asset ${index}`));
-    await main(['--apply', '--concurrency', String(concurrency)]);
+    await main(['--', '--apply', '--concurrency', String(concurrency)]);
     expect(writes()).toHaveLength(9);
     expect(storage.readPeaks.get(LEGACY)).toEqual([concurrency, concurrency, concurrency]);
     expect(storage.readPeaks.get(R2)).toEqual([0, concurrency]);
@@ -240,9 +242,38 @@ describe('OTA migration concurrency', () => {
     liveEndpoint = LEGACY;
     for (const bucket of storage.buckets.values())
       for (let index = 0; index < 9; index += 1) bucket.set(`asset-${index}`, object(`asset ${index}`));
-    await main(['--verify-only', '--concurrency', '6']);
+    await main(['--', '--verify-only', '--concurrency', '6']);
     expect(writes()).toEqual([]);
     expect(storage.readPeaks.get(LEGACY)).toEqual([6, 6]);
     expect(storage.readPeaks.get(R2)).toEqual([6]);
   });
+});
+
+describe('OTA migration package-script argument separator', () => {
+  it('accepts exactly one leading separator with all supported modes', () => {
+    for (const flags of [[], ['--apply'], ['--verify-only'], ['--reverse', '--apply', '--concurrency', '64']])
+      expect(parseMigrationOptions(['--', ...flags])).toEqual(parseMigrationOptions(flags));
+  });
+  it.each([
+    { flags: ['--', '--'] },
+    { flags: ['--apply', '--'] },
+    { flags: ['--', '--apply', '--'] },
+    { flags: ['--concurrency', '--', '64'] },
+    { flags: ['--', '--concurrency', '64', '--'] },
+  ])('rejects misplaced or repeated separators: $flags', async ({ flags }) => {
+    await expect(main(flags)).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(storage.calls).toEqual([]);
+  });
+  it('accepts arguments forwarded by the actual vp package-script entrypoint', () => {
+    const result = spawnSync('vp', ['run', 'storage:migrate-ota', '--', '--apply', '--concurrency', '64'], {
+      cwd: resolve(__dirname, '..'),
+      env: { ...process.env, RAILWAY_TOKEN: '', RAILWAY_PROJECT_ID: '' },
+      encoding: 'utf8',
+      timeout: 20_000,
+    });
+    expect(result.status).toBe(1);
+    expect(`${result.stdout}${result.stderr}`).toContain('Missing required environment variable: RAILWAY_TOKEN');
+    expect(`${result.stdout}${result.stderr}`).not.toContain('Unknown argument');
+  }, 25_000);
 });
