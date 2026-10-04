@@ -550,9 +550,7 @@ export const betaLinkQueries = {
     // nothing, not even the round trip.
     if (
       isSprayBoardType(boardType) &&
-      !(await sprayClimbUuidIsReadable(climbUuid, ctx?.isAuthenticated ? (ctx.userId ?? null) : null, {
-        requireClimbRow: true,
-      }))
+      !(await sprayClimbUuidIsReadable(climbUuid, ctx?.isAuthenticated ? (ctx.userId ?? null) : null))
     ) {
       return [];
     }
