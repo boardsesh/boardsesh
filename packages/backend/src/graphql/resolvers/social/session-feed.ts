@@ -2,6 +2,7 @@ import { eq, and, desc, sql, count as drizzleCount, isNull, inArray, type SQL } 
 import { dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { sprayTickClimbExistsCondition } from '../shared/spray-tick-visibility';
 import { getGradeLabel, toConfidenceTier, withSerialPlan } from '@boardsesh/db/queries';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { requireAuthenticated, validateInput, resolveClimbNoMatch } from '../shared/helpers';
@@ -633,6 +634,10 @@ export const sessionFeedQueries = {
             { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
             ctx?.userId,
           ),
+          // …and a spray log whose climb was hard-deleted is its author's alone.
+          // A session of nothing but those answers null below, like any session
+          // the viewer can see no tick of.
+          sprayTickClimbExistsCondition(ctx?.userId),
         ),
       )
       .orderBy(desc(dbSchema.boardseshTicks.climbedAt));

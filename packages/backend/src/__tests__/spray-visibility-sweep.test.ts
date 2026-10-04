@@ -120,6 +120,7 @@ const { sprayWallMutations } = await import('../graphql/resolvers/board/spray-wa
 const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
 const { sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
 const { fanoutCommentFeedItems } = await import('../events/feed-fanout');
+const { generateSessionSummary } = await import('../graphql/resolvers/sessions/session-summary');
 
 // ---------------------------------------------------------------------------
 // Sentinels
@@ -1386,6 +1387,8 @@ describe('the spray-wall visibility sweep', () => {
  * separate change.
  */
 const ORPHAN_TICK_COMMENT = 'Zqx Orphan Tick Comment Zqx';
+const ORPHAN_SESSION_TICK_COMMENT = 'Zqx Orphan Session Tick Comment Zqx';
+const GHOST_KILTER_TICK_COMMENT = 'Zqx Ghost Kilter Tick Comment Zqx';
 const ORPHAN_COMMENT_BODY = 'Zqx Orphan Comment Body Zqx';
 const ORPHAN_PROPOSAL_REASON = 'Zqx Orphan Proposal Reason Zqx';
 const ORPHAN_HIDE_REASON = 'Zqx Orphan Hide Reason Zqx';
@@ -1412,6 +1415,8 @@ describe('references to a hard-deleted spray climb', () => {
   let orphanGradeProposalUuid: string;
   let orphanHideProposalUuid: string;
   const orphanHideCommentUuid = uuidv4();
+  const orphanTickUuid = uuidv4();
+  const orphanOnlySessionId = uuidv4();
   const proposalTotalBefore = new Map<ViewerName, number>();
   const profileStatsBefore = new Map<ViewerName, ProfileStatsAnswer>();
 
@@ -1480,9 +1485,42 @@ describe('references to a hard-deleted spray climb', () => {
 
     await db.execute(sql`
       INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, difficulty, quality,
-                                   attempt_count, is_mirror, is_benchmark, comment, climbed_at, created_at, updated_at)
+                                   attempt_count, is_mirror, is_benchmark, session_id, board_id,
+                                   comment, climbed_at, created_at, updated_at)
+      VALUES (${orphanTickUuid}, ${OWNER}, ${orphanClimbUuid}, 'spray', ${ANGLE}, 'send', ${ORPHAN_DIFFICULTY}, 3,
+              1, false, false, ${world.sessionId}, ${world.boardId},
+              ${ORPHAN_TICK_COMMENT}, now(), now(), now())
+    `);
+
+    // A session made of NOTHING but a log on the deleted climb, so a reader that
+    // answers per session can be asked whether it leaves an empty shell behind.
+    // Same climb and grade as the log above, so no profile count moves.
+    await db.execute(sql`
+      INSERT INTO board_sessions (id, board_path, created_by_user_id, name, board_id, status, started_at, created_at, last_activity)
+      VALUES (${orphanOnlySessionId}, ${`spray/${world.layoutId}/${world.sizeId}/1/${ANGLE}`}, ${OWNER}, 'Orphan-only session',
+              ${world.boardId}, 'active', now() - interval '1 hour', now(), now())
+    `);
+    await db.execute(sql`
+      INSERT INTO board_session_participants (session_id, user_id, joined_at) VALUES (${orphanOnlySessionId}, ${OWNER}, now())
+    `);
+    await db.execute(sql`
+      INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, difficulty, quality,
+                                   attempt_count, is_mirror, is_benchmark, session_id, board_id,
+                                   comment, climbed_at, created_at, updated_at)
       VALUES (${uuidv4()}, ${OWNER}, ${orphanClimbUuid}, 'spray', ${ANGLE}, 'send', ${ORPHAN_DIFFICULTY}, 3,
-              1, false, false, ${ORPHAN_TICK_COMMENT}, now(), now(), now())
+              1, false, false, ${orphanOnlySessionId}, ${world.boardId},
+              ${ORPHAN_SESSION_TICK_COMMENT}, now(), now(), now())
+    `);
+
+    // The positive control. On every other board a log whose climb row is
+    // missing is a supported case ("Unknown Climb": an Aurora tick can arrive
+    // before its climb), and it must keep reaching everybody. An attempt, so no
+    // profile count moves.
+    await db.execute(sql`
+      INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status,
+                                   attempt_count, is_mirror, is_benchmark, comment, climbed_at, created_at, updated_at)
+      VALUES (${uuidv4()}, ${OWNER}, 'sweep-ghost-kilter-climb', 'kilter', ${ANGLE}, 'attempt',
+              1, false, false, ${GHOST_KILTER_TICK_COMMENT}, now(), now(), now())
     `);
 
     orphanGradeProposalUuid = uuidv4();
@@ -1653,6 +1691,149 @@ describe('references to a hard-deleted spray climb', () => {
       layoutId: null,
       distinctClimbCount: 1,
       gradeCounts: [{ grade: String(ORPHAN_DIFFICULTY), count: 1 }],
+    });
+  });
+
+  /**
+   * The generic half, for the log itself (#6031).
+   *
+   * The explicit cases above name the readers #5981 fixed. A LOG reaches far
+   * more of the schema than a proposal does: the logbook, the ascents feeds, the
+   * session readers. So every enumerated field is run again, now that the
+   * orphan exists, and scanned for what only the deleted climb's log carries.
+   * A reader added tomorrow is covered the day it lands.
+   */
+  describe('the log on the deleted climb, through every reader', () => {
+    const orphanOutcomes = new Map<string, Record<ViewerName, Outcome>>();
+    let orphanSentinels: Sentinel[] = [];
+
+    beforeAll(async () => {
+      orphanSentinels = [
+        { name: 'orphan tick comment', value: ORPHAN_TICK_COMMENT, kind: 'secret' },
+        { name: 'orphan session tick comment', value: ORPHAN_SESSION_TICK_COMMENT, kind: 'secret' },
+        { name: 'orphan tick uuid', value: orphanTickUuid, kind: 'secret' },
+        { name: 'orphan climb uuid', value: orphanClimbUuid, kind: 'secret' },
+      ];
+      for (const row of rows) {
+        const perViewer = {} as Record<ViewerName, Outcome>;
+        for (const viewer of VIEWERS) {
+          perViewer[viewer.name] = await runRow(row, viewer.ctx);
+        }
+        orphanOutcomes.set(row.key, perViewer);
+      }
+    }, 600_000);
+
+    it('never hands it to an anonymous caller or a stranger', () => {
+      const leaks: string[] = [];
+      for (const row of rows) {
+        for (const viewer of ['anonymous', 'stranger'] as const) {
+          const outcome = orphanOutcomes.get(row.key)![viewer];
+          const hits = [
+            ...findSentinels(outcome.data, orphanSentinels),
+            ...findSentinels(outcome.errorMessages, orphanSentinels),
+          ];
+          for (const hit of hits) leaks.push(`${row.key} → ${viewer}: ${hit}`);
+        }
+      }
+      expect(leaks).toEqual([]);
+    });
+
+    it('still shows it to the climber who logged it', () => {
+      const seenByOwner = rows
+        .filter((row) => findSentinels(orphanOutcomes.get(row.key)!.owner.data, orphanSentinels).length > 0)
+        .map((row) => row.key);
+      // Their own logbook keeps the entry, as "Unknown Climb".
+      for (const key of [
+        'Query.userTicks',
+        'Query.userAscentsFeed',
+        'Query.userGroupedAscentsFeed',
+        'Query.sessionDetail',
+      ]) {
+        expect(seenByOwner, key).toContain(key);
+      }
+    });
+
+    // The two ascents feeds take no argument the sweep can seed, so it never
+    // enumerates them. The stranger follows the owner, which is the case the
+    // following feed exists for.
+    const ascentsFeed = (field: 'followingAscentsFeed' | 'globalAscentsFeed', viewer: ViewerName) =>
+      ask(
+        viewer,
+        `query Orphan($input: FollowingAscentsFeedInput) { ${field}(input: $input) ` +
+          '{ items { uuid climbUuid climbName boardType comment } } }',
+        { input: { limit: 50 } },
+      );
+    const orphanHits = (answer: unknown) => findSentinels(answer, orphanSentinels);
+
+    it('followingAscentsFeed does not carry it to a follower', async () => {
+      expect(orphanHits(await ascentsFeed('followingAscentsFeed', 'stranger'))).toEqual([]);
+    });
+
+    it('globalAscentsFeed carries it to its author and to nobody else', async () => {
+      for (const viewer of ['anonymous', 'stranger'] as const) {
+        expect({ viewer, hits: orphanHits(await ascentsFeed('globalAscentsFeed', viewer)) }).toEqual({
+          viewer,
+          hits: [],
+        });
+      }
+      expect(orphanHits(await ascentsFeed('globalAscentsFeed', 'owner')).length).toBeGreaterThan(0);
+    });
+
+    it('sessionDetail answers null for a session of nothing but that log, except to its author', async () => {
+      const detail = (viewer: ViewerName) =>
+        ask(
+          viewer,
+          'query Orphan($sessionId: ID!) { sessionDetail(sessionId: $sessionId) { sessionId ticks { uuid comment } } }',
+          { sessionId: orphanOnlySessionId },
+        );
+      for (const viewer of ['anonymous', 'stranger'] as const) {
+        expect(await detail(viewer), viewer).toEqual({ sessionDetail: null });
+      }
+      expect(JSON.stringify(await detail('owner'))).toContain(ORPHAN_SESSION_TICK_COMMENT);
+    });
+
+    it('the session summary names the deleted climb as the hardest send to its author only', async () => {
+      // Called directly, as `spray-wall-api.test.ts` does: the summary is also
+      // built by `endSession`, with the viewer it is being rendered for.
+      const hardest = async (viewer: string | null) =>
+        (await generateSessionSummary(orphanOnlySessionId, viewer))?.hardestClimb?.climbUuid ?? null;
+
+      // The summary answers null without a `board_sessions` row, and by the time
+      // the generic pass above has run the seeded rows are gone (their ticks keep
+      // the session id). Put this one back rather than depend on that.
+      await db.execute(sql`
+        INSERT INTO board_sessions (id, board_path, created_by_user_id, name, board_id, status, started_at, created_at, last_activity)
+        VALUES (${orphanOnlySessionId}, ${`spray/${world.layoutId}/${world.sizeId}/1/${ANGLE}`}, ${OWNER}, 'Orphan-only session',
+                ${world.boardId}, 'active', now() - interval '1 hour', now(), now())
+        ON CONFLICT (id) DO NOTHING
+      `);
+
+      expect(await hardest(STRANGER)).toBeNull();
+      expect(await hardest(null)).toBeNull();
+      expect(await hardest(OWNER)).toBe(orphanClimbUuid);
+    });
+
+    it('gymStats does not list the deleted climb among the top climbs', () => {
+      // `gymStats` passes a null viewer, so nobody is exempt, the owner included.
+      expect(JSON.stringify(orphanOutcomes.get('Query.gymStats')!.owner.data)).not.toContain(orphanClimbUuid);
+    });
+
+    it('keeps a log on a missing climb of any other board, for everybody', async () => {
+      for (const viewer of VIEWERS) {
+        const ticks = await ask(
+          viewer.name,
+          'query Ghost($userId: ID!, $boardType: String!) { userTicks(userId: $userId, boardType: $boardType) { climbUuid comment } }',
+          { userId: OWNER, boardType: 'kilter' },
+        );
+        expect(JSON.stringify(ticks), `${viewer.name}: userTicks`).toContain(GHOST_KILTER_TICK_COMMENT);
+        const feed = await ask(
+          viewer.name,
+          'query Ghost($userId: ID!) { userAscentsFeed(userId: $userId) { items { climbName comment } } }',
+          { userId: OWNER },
+        );
+        expect(JSON.stringify(feed), `${viewer.name}: userAscentsFeed`).toContain(GHOST_KILTER_TICK_COMMENT);
+      }
+      expect(JSON.stringify(await ascentsFeed('globalAscentsFeed', 'anonymous'))).toContain(GHOST_KILTER_TICK_COMMENT);
     });
   });
 });
