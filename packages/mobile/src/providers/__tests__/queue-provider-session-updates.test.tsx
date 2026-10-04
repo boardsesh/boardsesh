@@ -3,7 +3,7 @@ import { act, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { isPlaylistPeekQueueItemUuid } from '@boardsesh/queue';
+import { getQueueBoardKey, isPlaylistPeekQueueItemUuid } from '@boardsesh/queue';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import type { SessionStatus, SessionUser, UserBoard } from '@boardsesh/shared-schema';
 
@@ -280,6 +280,7 @@ type Snapshot = {
   reorderQueue: ReturnType<typeof useQueue>['reorderQueue'];
   setQueue: ReturnType<typeof useQueue>['setQueue'];
   setCurrentClimb: ReturnType<typeof useQueue>['setCurrentClimb'];
+  dispatchWidgetNavigation: ReturnType<typeof useQueue>['dispatchWidgetNavigation'];
   nextClimb: ReturnType<typeof useQueue>['nextClimb'];
   previousClimb: ReturnType<typeof useQueue>['previousClimb'];
   setPlaylistSuggestionSource: ReturnType<typeof useQueue>['setPlaylistSuggestionSource'];
@@ -380,6 +381,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       reorderQueue: queue.reorderQueue,
       setQueue: queue.setQueue,
       setCurrentClimb: queue.setCurrentClimb,
+      dispatchWidgetNavigation: queue.dispatchWidgetNavigation,
       nextClimb: queue.nextClimb,
       previousClimb: queue.previousClimb,
       setPlaylistSuggestionSource: queue.setPlaylistSuggestionSource,
@@ -403,6 +405,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
     queue.reorderQueue,
     queue.setQueue,
     queue.setCurrentClimb,
+    queue.dispatchWidgetNavigation,
     queue.nextClimb,
     queue.previousClimb,
     queue.setPlaylistSuggestionSource,
@@ -536,6 +539,155 @@ describe('QueueProvider session update subscription', () => {
         : Promise.resolve({ endSession: { sessionId: 'session-1' } }),
     );
     graph.execute.mockResolvedValue(createJoinSessionResponse());
+  });
+
+  it('publishes Android absolute navigation with its native ID and survives echo/full sync', async () => {
+    const snapshots: Snapshot[] = [];
+    const items = [makeQueueItem('slot-1'), makeQueueItem('slot-2'), makeQueueItem('slot-3')];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => expect(snapshots.at(-1)?.sessionId).toBe('session-1'));
+    const sink = ws.getQueueUpdatesSink();
+    if (!sink) throw new Error('queueUpdates subscription was not opened');
+    const fullSync = (sequence: number, current: ClimbQueueItem) =>
+      sink.next({
+        data: {
+          queueUpdates: {
+            __typename: 'FullSync',
+            sequence,
+            state: {
+              sequence,
+              stateHash: `hash-${sequence}`,
+              queue: items,
+              currentClimbQueueItem: current,
+            },
+          },
+        },
+      });
+    act(() => fullSync(1, items[0]));
+    const source: PlaylistSuggestionSource = {
+      playlistUuid: 'playlist-1',
+      activatedClimbUuid: 'slot-1',
+      boardKey: getQueueBoardKey({ board_name: 'kilter', layout_id: 1, size_id: 10, set_ids: '1,2' }),
+      climbs: items.map((item) => item.climb),
+    };
+    act(() => snapshots.at(-1)?.setPlaylistSuggestionSource(source));
+    act(() => snapshots.at(-1)?.dispatchWidgetNavigation(items[1], 'android-next-1', { sendMutation: true }));
+    expect(queueMutations.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(items[1], false, 'android-next-1');
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('slot-2');
+    expect(snapshots.at(-1)?.state.pendingCurrentClimbUpdates).toContain('android-next-1');
+    act(() =>
+      sink.next({
+        data: {
+          queueUpdates: {
+            __typename: 'CurrentClimbChanged',
+            sequence: 2,
+            stateHash: 'hash-2',
+            currentItem: items[1],
+            clientId: 'client-peer',
+            correlationId: 'android-next-1',
+          },
+        },
+      }),
+    );
+    expect(snapshots.at(-1)?.state.pendingCurrentClimbUpdates).not.toContain('android-next-1');
+    expect(snapshots.at(-1)?.playlistSuggestionSource).toEqual(source);
+    act(() => fullSync(3, items[1]));
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('slot-2');
+    expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(items.map((item) => item.uuid));
+    // Native can reuse a PendingIntent ID before the notification rebuilds.
+    // Replaying that same ID after the echo still re-selects the absolute item.
+    act(() => snapshots.at(-1)?.dispatchWidgetNavigation(items[1], 'android-next-1', { sendMutation: true }));
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('slot-2');
+    expect(snapshots.at(-1)?.state.queue).toHaveLength(3);
+    expect(queueMutations.setCurrentClimb).toHaveBeenLastCalledWith(items[1], false, 'android-next-1');
+  });
+
+  it('keeps iOS widget navigation local-only by default', async () => {
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => expect(snapshots.at(-1)?.sessionId).toBe('session-1'));
+    act(() => snapshots.at(-1)?.dispatchWidgetNavigation(makeQueueItem('ios-target'), 'ios-native'));
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('ios-target');
+    expect(queueMutations.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  it('selects Android notification targets locally without creating a solo session', async () => {
+    sessionStore.getStoredSessionId.mockResolvedValue(null);
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => expect(snapshots.at(-1)).toBeDefined());
+    act(() =>
+      snapshots.at(-1)?.dispatchWidgetNavigation(makeQueueItem('solo-target'), 'android-solo', {
+        sendMutation: true,
+      }),
+    );
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('solo-target');
+    expect(snapshots.at(-1)?.sessionId).toBeNull();
+    // This provider fixture mocks the mutation factory; its no-session no-op is tested separately.
+    expect(queueMutations.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(
+      makeQueueItem('solo-target'),
+      false,
+      'android-solo',
+    );
+    expect(graph.execute).not.toHaveBeenCalled();
+  });
+
+  it('defers Android publication for an unresolved target until hydration', async () => {
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => expect(snapshots.at(-1)?.sessionId).toBe('session-1'));
+    const hydrationCorrelationId = '00000000-0000-4000-8000-000000005922';
+    const randomUuidSpy = vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(hydrationCorrelationId);
+    try {
+      const thinItem = makeQueueItem('thin-target');
+      thinItem.climb = { ...thinItem.climb, name: '', frames: '' };
+      act(() => snapshots.at(-1)?.dispatchWidgetNavigation(thinItem, 'android-thin', { sendMutation: true }));
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('thin-target');
+      expect(queueMutations.setCurrentClimb).not.toHaveBeenCalled();
+      const sink = ws.getQueueUpdatesSink();
+      if (!sink) throw new Error('queueUpdates subscription was not opened');
+      act(() =>
+        sink.next({
+          data: {
+            queueUpdates: {
+              __typename: 'FullSync',
+              sequence: 1,
+              state: {
+                sequence: 1,
+                stateHash: 'hydrated',
+                queue: [makeQueueItem('thin-target')],
+                currentClimbQueueItem: makeQueueItem('thin-target'),
+              },
+            },
+          },
+        }),
+      );
+      await waitFor(() => expect(queueMutations.setCurrentClimb).toHaveBeenCalledTimes(1));
+      expect(queueMutations.setCurrentClimb).toHaveBeenCalledWith(
+        expect.objectContaining({ uuid: 'thin-target', climb: expect.objectContaining({ name: 'Climb thin-target' }) }),
+        false,
+        hydrationCorrelationId,
+      );
+      expect(snapshots.at(-1)?.state.pendingCurrentClimbUpdates).toContain(hydrationCorrelationId);
+      act(() =>
+        sink.next({
+          data: {
+            queueUpdates: {
+              __typename: 'CurrentClimbChanged',
+              sequence: 2,
+              stateHash: 'hydration-echo',
+              currentItem: makeQueueItem('thin-target'),
+              clientId: 'client-peer',
+              correlationId: hydrationCorrelationId,
+            },
+          },
+        }),
+      );
+      expect(snapshots.at(-1)?.state.pendingCurrentClimbUpdates).not.toContain(hydrationCorrelationId);
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('thin-target');
+    } finally {
+      randomUuidSpy.mockRestore();
+    }
   });
 
   it('waits for JOIN_SESSION before opening queue and session subscriptions', async () => {
@@ -2240,6 +2392,22 @@ describe('QueueProvider mutation-failure resync', () => {
     expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
     // Solo's "Action failed" toast must NOT fire in a party session.
     expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.actionFailed', 'error');
+  });
+
+  it('reconciles a failed Android notification mutation against the server', async () => {
+    const snapshots: Snapshot[] = [];
+    const serverCurrent = makeQueueItem('server-current');
+    routeHttpRequest(queueStateResponse([serverCurrent], serverCurrent));
+    queueMutations.setCurrentClimb.mockRejectedValueOnce(new Error('notification mutation failed'));
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => expect(snapshots.at(-1)?.sessionId).toBe('session-1'));
+    act(() =>
+      snapshots.at(-1)?.dispatchWidgetNavigation(makeQueueItem('android-target'), 'android-failed', {
+        sendMutation: true,
+      }),
+    );
+    await waitFor(() => expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('server-current'));
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
   });
 
   it('toasts "slow down" and keeps the local climb when setCurrentClimb is rate-limited in a session', async () => {
