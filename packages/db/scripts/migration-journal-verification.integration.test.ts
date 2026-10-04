@@ -28,6 +28,14 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { findUnappliedMigrations } from '../../../scripts/lib/migration-ledger.js';
 import { PRODUCTION_LEDGER_BASELINE, type LedgerBaseline } from '../../../scripts/lib/migration-ledger-baseline.js';
 import {
+  DRIZZLE_LEDGER_TABLE,
+  LEGACY_LEDGER_TABLE,
+  normalizeLedgerTable,
+  normalizeLedgerTables,
+  readLedgerTimestampRows,
+  type LedgerTableRepairPlan,
+} from './normalize-ledger-timestamps.js';
+import {
   DRIZZLE_MIGRATIONS_FOLDER,
   assertMigrationJournalApplied,
   describeBaselinedGap,
@@ -40,6 +48,7 @@ import {
 type ScratchJournalEntry = { idx: number; version: string; when: number; tag: string; breakpoints: boolean };
 
 const LOCAL_HOSTNAMES = ['localhost', '127.0.0.1', 'postgres'];
+const BUILD_CLOCK = 1_800_000_000_000;
 
 function localDatabaseUrl(): string | null {
   const databaseUrl = process.env.MIGRATION_JOURNAL_DB_URL ?? process.env.DATABASE_URL;
@@ -122,6 +131,29 @@ async function applyMigrations(scratchUrl: string, migrationsFolder: string): Pr
   }
 }
 
+/** Adds a legacy-copy fixture without running the historical migration stack. */
+async function createLegacyLedger(
+  scratchUrl: string,
+  entries: readonly { hash: string; when: number }[],
+  createdAt: number | 'journal',
+  rejectTimestampUpdates = false,
+): Promise<void> {
+  await withScratchClient(scratchUrl, async (client) => {
+    const fixedTimestamp = typeof createdAt === 'number' ? createdAt : null;
+    const checkConstraint = rejectTimestampUpdates ? `, CHECK (created_at = ${fixedTimestamp})` : '';
+    await client.unsafe(
+      `CREATE TABLE public."__drizzle_migrations" (` +
+        `id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint NOT NULL${checkConstraint})`,
+    );
+    for (const entry of entries) {
+      await client.unsafe('INSERT INTO public."__drizzle_migrations" (hash, created_at) VALUES ($1, $2)', [
+        entry.hash,
+        fixedTimestamp ?? entry.when,
+      ]);
+    }
+  });
+}
+
 async function withScratchClient<T>(scratchUrl: string, run: (client: postgres.Sql) => Promise<T>): Promise<T> {
   const client = postgres(scratchUrl, { max: 1 });
   try {
@@ -129,6 +161,24 @@ async function withScratchClient<T>(scratchUrl: string, run: (client: postgres.S
   } finally {
     await client.end().catch(() => {});
   }
+}
+
+/** Waits until the named backend is blocked by the test's held relation lock. */
+async function waitForBlockedBackend(
+  observerClient: postgres.Sql,
+  applicationName: string,
+  blockerPid: number,
+): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const blockedBackends = await observerClient.unsafe<{ pid: number }[]>(
+      `SELECT pid FROM pg_stat_activity WHERE application_name = $1 AND $2 = ANY(pg_blocking_pids(pid)) LIMIT 1`,
+      [applicationName, blockerPid],
+    );
+    if (blockedBackends.length > 0) return;
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Timed out waiting for ${applicationName} to block on PostgreSQL backend ${blockerPid}`);
 }
 
 async function tableExists(scratchUrl: string, tableName: string): Promise<boolean> {
@@ -603,6 +653,438 @@ describe('migration journal verification (#2933)', () => {
         `${spelling} must resolve to the production baseline`,
       );
     }
+  });
+
+  it('normalizes both ledger copies so drizzle applies the next migration (#4211)', async (context) => {
+    const adminUrl = localDatabaseUrl();
+    if (!adminUrl) {
+      context.skip('set DATABASE_URL to a local Postgres to run');
+      return;
+    }
+    // Simulate a persistent volume created by an older image: both ledger copies
+    // have build-clock stamps, and a branch migration falls below that mark.
+    const migrationsFolder = makeTempFolder('build-clock');
+    const scratchUrl = await createScratchDatabase(adminUrl, 'build_clock');
+    writeMigrationsFolder(migrationsFolder, PHASE_ONE);
+    await applyMigrations(scratchUrl, migrationsFolder);
+    const phaseOneExpected = readExpectedMigrations(migrationsFolder);
+    await createLegacyLedger(scratchUrl, phaseOneExpected, 'journal');
+
+    // As drizzle left it, there is nothing to repair — the normaliser writes the
+    // same value drizzle already wrote.
+    const drizzleManagedPlan = await withScratchClient(scratchUrl, (client) =>
+      normalizeLedgerTables(client, [DRIZZLE_LEDGER_TABLE, LEGACY_LEDGER_TABLE], phaseOneExpected, { dryRun: true }),
+    );
+    assert.ok(
+      drizzleManagedPlan.every((plan) => plan.repairs.length === 0),
+      'both drizzle-managed ledger copies must need no repair',
+    );
+
+    await withScratchClient(scratchUrl, async (client) => {
+      await client`UPDATE drizzle."__drizzle_migrations" SET created_at = ${BUILD_CLOCK}`;
+      await client`UPDATE public."__drizzle_migrations" SET created_at = ${BUILD_CLOCK}`;
+    });
+
+    // A new migration lands, appended above every journal `when` but far below
+    // the build clock.
+    const laterEntry = { tag: '0002_later', when: 4000, sql: 'CREATE TABLE mjv_t_later (id int);' };
+    writeMigrationsFolder(migrationsFolder, [...PHASE_ONE, laterEntry]);
+    await applyMigrations(scratchUrl, migrationsFolder);
+
+    assert.equal(
+      await tableExists(scratchUrl, 'mjv_t_later'),
+      false,
+      'the build-clock high-water mark is expected to make drizzle skip the new migration',
+    );
+    await assert.rejects(
+      withScratchClient(scratchUrl, (client) =>
+        assertMigrationJournalApplied(readLedgerHashesWith(client), migrationsFolder),
+      ),
+      /0002_later/,
+      'the gate must see the skip as a real gap',
+    );
+
+    // The repair: rewrite created_at to each entry's own `when`.
+    const repairs = await withScratchClient(scratchUrl, (client) =>
+      normalizeLedgerTables(
+        client,
+        [DRIZZLE_LEDGER_TABLE, LEGACY_LEDGER_TABLE],
+        readExpectedMigrations(migrationsFolder),
+      ),
+    );
+    assert.deepEqual(
+      repairs.map(({ table, repairs: tableRepairs }) => ({
+        table: `${table.schema}.${table.table}`,
+        repairs: tableRepairs.map(({ tag, to }) => ({ tag, to })),
+      })),
+      [
+        {
+          table: 'drizzle.__drizzle_migrations',
+          repairs: [
+            { tag: '0000_a', to: 1000 },
+            { tag: '0001_b', to: 3000 },
+          ],
+        },
+        {
+          table: 'public.__drizzle_migrations',
+          repairs: [
+            { tag: '0000_a', to: 1000 },
+            { tag: '0001_b', to: 3000 },
+          ],
+        },
+      ],
+      'both copies retain their rows and use each entry’s own journal when',
+    );
+
+    await applyMigrations(scratchUrl, migrationsFolder);
+    assert.equal(await tableExists(scratchUrl, 'mjv_t_later'), true, 'the repaired ledger must let the migration run');
+    await assert.doesNotReject(
+      withScratchClient(scratchUrl, (client) =>
+        assertMigrationJournalApplied(readLedgerHashesWith(client), migrationsFolder),
+      ),
+    );
+
+    // And drizzle's own row for the newly applied migration already carries the
+    // journal `when`, so a second pass finds nothing to do.
+    const secondPass = await withScratchClient(scratchUrl, (client) =>
+      normalizeLedgerTables(
+        client,
+        [DRIZZLE_LEDGER_TABLE, LEGACY_LEDGER_TABLE],
+        readExpectedMigrations(migrationsFolder),
+        { dryRun: true },
+      ),
+    );
+    assert.ok(
+      secondPass.every((plan) => plan.repairs.length === 0),
+      'both ledger copies must be idempotent',
+    );
+    const legacyRows = await withScratchClient(scratchUrl, (client) =>
+      readLedgerTimestampRows(client, LEGACY_LEDGER_TABLE),
+    );
+    assert.equal(legacyRows.length, phaseOneExpected.length, 'the normalizer must not add or remove legacy rows');
+    assert.deepEqual(
+      legacyRows.map((row) => row.createdAt),
+      phaseOneExpected.map((entry) => entry.when),
+    );
+  });
+
+  it('refuses an unmatched high-water row before touching either ledger copy or applying migrations', async (context) => {
+    const adminUrl = localDatabaseUrl();
+    if (!adminUrl) {
+      context.skip('set DATABASE_URL to a local Postgres to run');
+      return;
+    }
+    const migrationsFolder = makeTempFolder('unmatched-residue');
+    const scratchUrl = await createScratchDatabase(adminUrl, 'unmatched_residue');
+    writeMigrationsFolder(migrationsFolder, PHASE_ONE);
+    await applyMigrations(scratchUrl, migrationsFolder);
+    const appliedExpected = readExpectedMigrations(migrationsFolder);
+    await createLegacyLedger(scratchUrl, appliedExpected, BUILD_CLOCK);
+
+    const laterEntry = { tag: '0002_later', when: 4000, sql: 'CREATE TABLE mjv_t_later (id int);' };
+    writeMigrationsFolder(migrationsFolder, [...PHASE_ONE, laterEntry]);
+    const expected = readExpectedMigrations(migrationsFolder);
+    await withScratchClient(scratchUrl, async (client) => {
+      await client`UPDATE drizzle."__drizzle_migrations" SET created_at = ${BUILD_CLOCK}`;
+      await client.unsafe('INSERT INTO drizzle."__drizzle_migrations" (hash, created_at) VALUES ($1, $2)', [
+        'hash-of-unrecognized-history',
+        BUILD_CLOCK,
+      ]);
+    });
+
+    const assertUnmatchedRowRejected = (error: unknown): boolean => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /unmatched hash/);
+      assert.match(error.message, /unapplied migrations would still be skipped: 0002_later \(when 4000\)/);
+      assert.match(error.message, /id=3 hash=hash-of-unrecognized-history/);
+      assert.match(error.message, /No repairs were written/);
+      return true;
+    };
+    await assert.rejects(
+      withScratchClient(scratchUrl, (client) =>
+        normalizeLedgerTables(client, [DRIZZLE_LEDGER_TABLE, LEGACY_LEDGER_TABLE], expected, { dryRun: true }),
+      ),
+      assertUnmatchedRowRejected,
+      'dry-run must refuse an unknown row instead of presenting an unsafe plan',
+    );
+    await assert.rejects(
+      withScratchClient(scratchUrl, (client) =>
+        normalizeLedgerTables(client, [DRIZZLE_LEDGER_TABLE, LEGACY_LEDGER_TABLE], expected),
+      ),
+      assertUnmatchedRowRejected,
+    );
+
+    const drizzleRows = await withScratchClient(scratchUrl, (client) =>
+      readLedgerTimestampRows(client, DRIZZLE_LEDGER_TABLE),
+    );
+    const legacyRows = await withScratchClient(scratchUrl, (client) =>
+      readLedgerTimestampRows(client, LEGACY_LEDGER_TABLE),
+    );
+    assert.deepEqual(
+      drizzleRows.map((row) => row.createdAt),
+      [BUILD_CLOCK, BUILD_CLOCK, BUILD_CLOCK],
+    );
+    assert.deepEqual(
+      legacyRows.map((row) => row.createdAt),
+      [BUILD_CLOCK, BUILD_CLOCK],
+    );
+    assert.equal(
+      await tableExists(scratchUrl, 'mjv_t_later'),
+      false,
+      'the refused normalizer cannot report migration success',
+    );
+  });
+
+  it('refuses an excess duplicate-hash row before repairing the other ledger copy', async (context) => {
+    const adminUrl = localDatabaseUrl();
+    if (!adminUrl) {
+      context.skip('set DATABASE_URL to a local Postgres to run');
+      return;
+    }
+    const migrationsFolder = makeTempFolder('excess-residue');
+    const scratchUrl = await createScratchDatabase(adminUrl, 'excess_residue');
+    writeMigrationsFolder(migrationsFolder, PHASE_ONE);
+    await applyMigrations(scratchUrl, migrationsFolder);
+    const appliedExpected = readExpectedMigrations(migrationsFolder);
+    await createLegacyLedger(scratchUrl, appliedExpected, BUILD_CLOCK);
+
+    const laterEntry = { tag: '0002_later', when: 4000, sql: 'CREATE TABLE mjv_t_later (id int);' };
+    writeMigrationsFolder(migrationsFolder, [...PHASE_ONE, laterEntry]);
+    const expected = readExpectedMigrations(migrationsFolder);
+    await withScratchClient(scratchUrl, async (client) => {
+      await client`UPDATE drizzle."__drizzle_migrations" SET created_at = ${BUILD_CLOCK}`;
+      await client.unsafe('INSERT INTO public."__drizzle_migrations" (hash, created_at) VALUES ($1, $2)', [
+        appliedExpected[0].hash,
+        BUILD_CLOCK,
+      ]);
+    });
+
+    const assertExcessRowRejected = (error: unknown): boolean => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /excess duplicate hash/);
+      assert.match(error.message, /unapplied migrations would still be skipped: 0002_later \(when 4000\)/);
+      assert.match(error.message, new RegExp(`hash=${appliedExpected[0].hash}`));
+      assert.match(error.message, /No repairs were written/);
+      return true;
+    };
+    await assert.rejects(
+      withScratchClient(scratchUrl, (client) =>
+        normalizeLedgerTables(client, [DRIZZLE_LEDGER_TABLE, LEGACY_LEDGER_TABLE], expected, { dryRun: true }),
+      ),
+      assertExcessRowRejected,
+      'dry-run must refuse an excess row instead of presenting an unsafe plan',
+    );
+    await assert.rejects(
+      withScratchClient(scratchUrl, (client) =>
+        normalizeLedgerTables(client, [DRIZZLE_LEDGER_TABLE, LEGACY_LEDGER_TABLE], expected),
+      ),
+      assertExcessRowRejected,
+    );
+
+    const drizzleRows = await withScratchClient(scratchUrl, (client) =>
+      readLedgerTimestampRows(client, DRIZZLE_LEDGER_TABLE),
+    );
+    const legacyRows = await withScratchClient(scratchUrl, (client) =>
+      readLedgerTimestampRows(client, LEGACY_LEDGER_TABLE),
+    );
+    assert.deepEqual(
+      drizzleRows.map((row) => row.createdAt),
+      [BUILD_CLOCK, BUILD_CLOCK],
+    );
+    assert.deepEqual(
+      legacyRows.map((row) => row.createdAt),
+      [BUILD_CLOCK, BUILD_CLOCK, BUILD_CLOCK],
+    );
+    assert.equal(
+      await tableExists(scratchUrl, 'mjv_t_later'),
+      false,
+      'the refused normalizer cannot report migration success',
+    );
+  });
+
+  void it('preflights rows committed while normalization waits for its ledger locks', async (context) => {
+    const adminUrl = localDatabaseUrl();
+    if (!adminUrl) {
+      context.skip('set DATABASE_URL to a local Postgres to run');
+      return;
+    }
+    const migrationsFolder = makeTempFolder('lock-snapshot-race');
+    const scratchUrl = await createScratchDatabase(adminUrl, 'lock_snapshot_race');
+    writeMigrationsFolder(migrationsFolder, PHASE_ONE);
+    await applyMigrations(scratchUrl, migrationsFolder);
+    const phaseOneExpected = readExpectedMigrations(migrationsFolder);
+    await createLegacyLedger(scratchUrl, phaseOneExpected, BUILD_CLOCK);
+    await withScratchClient(
+      scratchUrl,
+      (client) => client`UPDATE drizzle."__drizzle_migrations" SET created_at = ${BUILD_CLOCK}`,
+    );
+
+    const laterEntry = { tag: '0002_later', when: 4000, sql: 'CREATE TABLE mjv_t_later (id int);' };
+    writeMigrationsFolder(migrationsFolder, [...PHASE_ONE, laterEntry]);
+    const expected = readExpectedMigrations(migrationsFolder);
+    const insertedHash = 'hash-committed-between-existence-check-and-ledger-lock';
+    const normalizerApplicationName = `mjv_lock_race_${process.pid}`;
+    const blockerClient = postgres(scratchUrl, { max: 1 });
+    const observerClient = postgres(adminUrl, { max: 1 });
+    const normalizerClient = postgres(scratchUrl, {
+      max: 1,
+      connection: { application_name: normalizerApplicationName },
+    });
+
+    let signalBlockerLocked!: (pid: number) => void;
+    const blockerLocked = new Promise<number>((resolve) => {
+      signalBlockerLocked = resolve;
+    });
+    let releaseBlocker!: () => void;
+    const waitForInsert = new Promise<void>((resolve) => {
+      releaseBlocker = resolve;
+    });
+
+    const blockerOperation = blockerClient
+      .begin(async (transaction) => {
+        await transaction.unsafe('LOCK TABLE drizzle."__drizzle_migrations" IN ACCESS EXCLUSIVE MODE');
+        const blockerRows = await transaction.unsafe<{ pid: number | string }[]>('SELECT pg_backend_pid() AS pid');
+        const blockerRow = blockerRows[0];
+        assert.ok(blockerRow, 'expected the blocker transaction to expose its backend pid');
+        signalBlockerLocked(Number(blockerRow.pid));
+        await waitForInsert;
+        await transaction.unsafe('INSERT INTO drizzle."__drizzle_migrations" (hash, created_at) VALUES ($1, $2)', [
+          insertedHash,
+          BUILD_CLOCK,
+        ]);
+      })
+      .then(
+        () => ({ kind: 'committed' as const }),
+        (error: unknown) => ({ kind: 'failed' as const, error }),
+      );
+
+    let normalizationPromise: Promise<LedgerTableRepairPlan[]> | undefined;
+    try {
+      const blockerOutcome = await Promise.race([
+        blockerLocked.then((pid) => ({ kind: 'locked' as const, pid })),
+        blockerOperation.then((result) => ({ kind: 'finished' as const, result })),
+      ]);
+      if (blockerOutcome.kind !== 'locked') {
+        if (blockerOutcome.result.kind === 'failed') throw blockerOutcome.result.error;
+        assert.fail('the table-lock transaction finished before acquiring its lock');
+      }
+
+      const currentNormalization = normalizeLedgerTables(
+        normalizerClient,
+        [DRIZZLE_LEDGER_TABLE, LEGACY_LEDGER_TABLE],
+        expected,
+      );
+      normalizationPromise = currentNormalization;
+      void currentNormalization.catch(() => {});
+
+      // The writer holds ACCESS EXCLUSIVE, so this observes the real normalizer
+      // waiting after its existence query and before it can take the first lock.
+      await waitForBlockedBackend(observerClient, normalizerApplicationName, blockerOutcome.pid);
+      releaseBlocker();
+      const writerResult = await blockerOperation;
+      assert.equal(writerResult.kind, 'committed', 'the concurrent row must commit before the normalizer locks');
+
+      await assert.rejects(
+        currentNormalization,
+        (error: unknown) => {
+          assert.ok(error instanceof Error);
+          assert.match(error.message, /unmatched hash/);
+          assert.match(error.message, new RegExp(`hash=${insertedHash}`));
+          assert.match(error.message, /No repairs were written/);
+          return true;
+        },
+        'the post-lock preflight must see and reject the committed row before repairing either copy',
+      );
+
+      const drizzleRows = await withScratchClient(scratchUrl, (client) =>
+        readLedgerTimestampRows(client, DRIZZLE_LEDGER_TABLE),
+      );
+      const legacyRows = await withScratchClient(scratchUrl, (client) =>
+        readLedgerTimestampRows(client, LEGACY_LEDGER_TABLE),
+      );
+      assert.deepEqual(
+        drizzleRows.map((row) => row.createdAt),
+        [BUILD_CLOCK, BUILD_CLOCK, BUILD_CLOCK],
+      );
+      assert.equal(drizzleRows[2]?.hash, insertedHash, 'the concurrent row must remain present and unchanged');
+      assert.deepEqual(
+        legacyRows.map((row) => row.createdAt),
+        [BUILD_CLOCK, BUILD_CLOCK],
+      );
+      assert.equal(
+        await tableExists(scratchUrl, 'mjv_t_later'),
+        false,
+        'a refused normalization must stop before the pending migration can be reported as applied',
+      );
+    } finally {
+      releaseBlocker();
+      await blockerOperation;
+      await normalizationPromise?.catch(() => {});
+      await Promise.all([
+        blockerClient.end().catch(() => {}),
+        observerClient.end().catch(() => {}),
+        normalizerClient.end().catch(() => {}),
+      ]);
+    }
+  });
+
+  it('rolls back both ledger copies when a write fails midway', async (context) => {
+    const adminUrl = localDatabaseUrl();
+    if (!adminUrl) {
+      context.skip('set DATABASE_URL to a local Postgres to run');
+      return;
+    }
+    const migrationsFolder = makeTempFolder('repair-rollback');
+    const scratchUrl = await createScratchDatabase(adminUrl, 'repair_rollback');
+    writeMigrationsFolder(migrationsFolder, PHASE_ONE);
+    await applyMigrations(scratchUrl, migrationsFolder);
+    const expected = readExpectedMigrations(migrationsFolder);
+    await createLegacyLedger(scratchUrl, expected, BUILD_CLOCK, true);
+    await withScratchClient(
+      scratchUrl,
+      (client) => client`UPDATE drizzle."__drizzle_migrations" SET created_at = ${BUILD_CLOCK}`,
+    );
+
+    await assert.rejects(
+      withScratchClient(scratchUrl, (client) =>
+        normalizeLedgerTables(client, [DRIZZLE_LEDGER_TABLE, LEGACY_LEDGER_TABLE], expected),
+      ),
+      /violates check constraint/,
+    );
+
+    const drizzleRows = await withScratchClient(scratchUrl, (client) =>
+      readLedgerTimestampRows(client, DRIZZLE_LEDGER_TABLE),
+    );
+    const legacyRows = await withScratchClient(scratchUrl, (client) =>
+      readLedgerTimestampRows(client, LEGACY_LEDGER_TABLE),
+    );
+    assert.deepEqual(
+      drizzleRows.map((row) => row.createdAt),
+      [BUILD_CLOCK, BUILD_CLOCK],
+    );
+    assert.deepEqual(
+      legacyRows.map((row) => row.createdAt),
+      [BUILD_CLOCK, BUILD_CLOCK],
+    );
+  });
+
+  it('leaves a ledger table it cannot find alone (#4211)', async (context) => {
+    const adminUrl = localDatabaseUrl();
+    if (!adminUrl) {
+      context.skip('set DATABASE_URL to a local Postgres to run');
+      return;
+    }
+    // Older images have no legacy public."__drizzle_migrations" (and a brand new
+    // database has no drizzle schema at all). `vp run db:up` runs the normaliser
+    // unconditionally, so an absent table must be a quiet no-op, not a crash.
+    const migrationsFolder = makeTempFolder('absent-table');
+    const scratchUrl = await createScratchDatabase(adminUrl, 'absent_table');
+    writeMigrationsFolder(migrationsFolder, PHASE_ONE);
+
+    const plan = await withScratchClient(scratchUrl, (client) =>
+      normalizeLedgerTable(client, DRIZZLE_LEDGER_TABLE, readExpectedMigrations(migrationsFolder)),
+    );
+    assert.deepEqual(plan, []);
   });
 
   it('keeps findUnappliedMigrations multiset-aware for byte-identical migrations', () => {

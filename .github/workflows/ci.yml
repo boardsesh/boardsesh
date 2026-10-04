@@ -1456,6 +1456,13 @@ jobs:
           cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
+      # This pinned image predates the exact-time loader in #4474, so an existing
+      # ledger can still carry its build-clock high-water mark (#4211). Repair it
+      # before db:migrate so a branch migration below that mark is not skipped.
+      - name: Normalize the dev-db image migration ledger
+        env:
+          DATABASE_URL: postgres://postgres:password@localhost:5432/main
+        run: vp exec pnpm --filter @boardsesh/db run db:normalize-ledger
       - name: Apply the full migration journal
         env:
           DATABASE_URL: postgres://postgres:password@localhost:5432/main
