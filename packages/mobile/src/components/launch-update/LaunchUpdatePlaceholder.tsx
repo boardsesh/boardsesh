@@ -64,7 +64,9 @@ export function LaunchUpdatePlaceholder({ visible, progress }: LaunchUpdatePlace
   if (!visible) return null;
 
   const message = t('mobile.launchUpdate.message');
-  const percent = progress === undefined ? undefined : Math.round(progress * 100);
+  // A download that has reported nothing yet reads 0: an empty bar looks stuck,
+  // so it stays indeterminate until there is something to show.
+  const percent = progress === undefined || progress <= 0 ? undefined : Math.round(progress * 100);
 
   return (
     <View

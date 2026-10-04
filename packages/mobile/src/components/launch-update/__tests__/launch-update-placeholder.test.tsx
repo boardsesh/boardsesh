@@ -80,6 +80,12 @@ describe('LaunchUpdatePlaceholder', () => {
     expect(screen.getByTestId('launch-update-placeholder').getAttribute('aria-valuenow')).toBe('42');
   });
 
+  it('stays indeterminate while the download has reported no progress yet', () => {
+    render(createElement(LaunchUpdatePlaceholder, { visible: true, progress: 0 }));
+
+    expect(screen.getByTestId('indeterminate')).toBeTruthy();
+  });
+
   it('covers the window in the splash black and claims every touch', () => {
     responder.claims = [];
     render(createElement(LaunchUpdatePlaceholder, { visible: true, progress: undefined }));
