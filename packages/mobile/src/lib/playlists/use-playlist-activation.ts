@@ -536,7 +536,15 @@ export function usePlaylistActivation({
    * instead" branch, which already has the board-scoped list in hand.
    */
   const appendClimbsToQueue = useCallback(
-    async ({ loadedClimbs, entryPoint }: { loadedClimbs?: Climb[]; entryPoint: 'listHeader' | 'replacePrompt' }) => {
+    async ({
+      loadedClimbs,
+      drainStopReason: loadedDrainStopReason,
+      entryPoint,
+    }: {
+      loadedClimbs?: Climb[];
+      drainStopReason?: PlaylistDrainStopReason;
+      entryPoint: 'listHeader' | 'replacePrompt';
+    }) => {
       if (!activeBoard) return;
       if (isAppendingRef.current) {
         // The row swallows its own press while appending (and shows a spinner),
@@ -579,12 +587,30 @@ export function usePlaylistActivation({
           showToast(t('detail.addToQueue.queueFull', { max: MAX_SYNCED_QUEUE_ITEMS }), 'error');
           return;
         }
-        const fetchedClimbs =
-          loadedClimbs ?? (await fetchAllClimbsForBoard({ signal: abortController.signal, limit: remainingCapacity }));
+        let fetchedClimbs = loadedClimbs;
+        let drainStopReason = loadedDrainStopReason ?? null;
+        let pagesFetched = 0;
+        if (!fetchedClimbs) {
+          const drainResult = await fetchAllClimbsForBoard({
+            signal: abortController.signal,
+            limit: remainingCapacity,
+          });
+          fetchedClimbs = drainResult.climbs;
+          drainStopReason = drainResult.stopReason;
+          pagesFetched = drainResult.pagesFetched;
+          if (drainStopReason === 'page-cap' || drainStopReason === 'no-progress') {
+            reportHandledError(new Error(`Playlist drain stopped early: ${drainStopReason}`), {
+              tags: { source: 'playlist', op: `append-queue-${drainStopReason}` },
+              extra: { sourceId, pagesFetched, climbCount: fetchedClimbs.length },
+            });
+          }
+        }
         if (abortController.signal.aborted) return;
 
         if (fetchedClimbs.length === 0) {
-          reportEmptyBoardFetchOnce('append-queue-empty');
+          if (drainStopReason === null || drainStopReason === 'complete') {
+            reportEmptyBoardFetchOnce('append-queue-empty');
+          }
           trackQueued('nothingToAdd', 0, 0);
           showToast(t('detail.addToQueue.nothingToAdd'), 'info');
           return;
@@ -683,7 +709,9 @@ export function usePlaylistActivation({
             extra: { sourceId, pagesFetched: drainPagesFetched, climbCount: climbs.length },
           });
         }
-        if (climbs.length === 0) reportEmptyBoardFetchOnce('replace-queue-empty');
+        if (climbs.length === 0 && (drainStopReason === null || drainStopReason === 'complete')) {
+          reportEmptyBoardFetchOnce('replace-queue-empty');
+        }
         // Re-check live queue state after the async load: new future items may
         // have landed while the ordered list streamed in, and replacement still
         // clears them — so fork instead of clearing silently. Skipped once the
@@ -699,7 +727,11 @@ export function usePlaylistActivation({
           if (decision === 'cancel') return;
           if (decision === 'append') {
             // The board-scoped list is already in hand — no second round trip.
-            await appendClimbsToQueue({ loadedClimbs: climbs, entryPoint: 'replacePrompt' });
+            await appendClimbsToQueue({
+              loadedClimbs: climbs,
+              drainStopReason: drainStopReason ?? undefined,
+              entryPoint: 'replacePrompt',
+            });
             return;
           }
         }

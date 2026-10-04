@@ -32,6 +32,8 @@ type PartyProfileContextValue = {
   hasProfile: boolean;
   username: string | undefined;
   avatarUrl: string | undefined;
+  /** Authenticated account id, separate from the device-scoped party profile. */
+  authenticatedUserId: string | null;
   isAuthenticated: boolean;
   refreshProfile: () => Promise<void>;
 };
@@ -155,10 +157,19 @@ export function PartyProfileProvider({ children }: { children: ReactNode }) {
       // fetched above. Undefined until it loads or while signed out.
       username: userProfile?.displayName,
       avatarUrl: userProfile?.avatarUrl,
+      authenticatedUserId: isAuthenticated ? (userProfile?.id ?? null) : null,
       isAuthenticated,
       refreshProfile,
     }),
-    [profile, isLoading, isAuthenticated, refreshProfile, userProfile?.displayName, userProfile?.avatarUrl],
+    [
+      profile,
+      isLoading,
+      isAuthenticated,
+      refreshProfile,
+      userProfile?.id,
+      userProfile?.displayName,
+      userProfile?.avatarUrl,
+    ],
   );
 
   return <PartyProfileContext.Provider value={value}>{children}</PartyProfileContext.Provider>;

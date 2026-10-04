@@ -1466,6 +1466,50 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       expect(mocks.appendQueueItems).not.toHaveBeenCalled();
     });
 
+    it('keeps an append no-progress report separate from the empty-board canary', async () => {
+      const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: true });
+      const { result } = renderActivation(fetchPage, {
+        replaceQueueOnActivate: true,
+        sourceId: 'playlist:append-no-progress-1',
+        allClimbs: [makeClimb('a'), makeClimb('b')],
+      });
+
+      await act(async () => {
+        result.current.addToQueue.append?.();
+      });
+
+      expect(fetchPage).toHaveBeenCalledTimes(1);
+      expect(mocks.reportHandledError).toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({ tags: { source: 'playlist', op: 'append-queue-no-progress' } }),
+      );
+      expect(mocks.reportHandledError).not.toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({ tags: { source: 'playlist', op: 'append-queue-empty' } }),
+      );
+      expect(mocks.showToast).toHaveBeenCalledWith('detail.addToQueue.nothingToAdd', 'info');
+    });
+
+    it('reports a page-cap append under its own op while appending the bounded result', async () => {
+      let pageCounter = 0;
+      const fetchPage = vi.fn(async () => ({ climbs: [makeClimb(`append-cap-${pageCounter++}`)], hasMore: true }));
+      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+
+      await act(async () => {
+        result.current.addToQueue.append?.();
+      });
+
+      await waitFor(() => {
+        expect(mocks.reportHandledError).toHaveBeenCalledWith(
+          expect.any(Error),
+          expect.objectContaining({ tags: { source: 'playlist', op: 'append-queue-page-cap' } }),
+        );
+      });
+      expect(fetchPage).toHaveBeenCalledTimes(MAX_PLAYLIST_QUEUE_REPLACE_PAGES);
+      expect(mocks.appendQueueItems).toHaveBeenCalledTimes(1);
+      expect(mocks.appendQueueItems.mock.calls[0][0]).toHaveLength(MAX_PLAYLIST_QUEUE_REPLACE_PAGES);
+    });
+
     it('an append canary does not suppress the replace canary for the same playlist', async () => {
       // The once-per-session Set is keyed on `<op>|<sourceId>`. Keyed on the
       // sourceId alone this passes vacuously, which is why BOTH reports are

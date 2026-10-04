@@ -45,6 +45,8 @@ type UseSessionCommandsParams = {
   seedFailedSessionIdRef: React.RefObject<string | null>;
   setSessionId: React.Dispatch<React.SetStateAction<string | null>>;
   sessionIdRef: React.RefObject<string | null>;
+  /** Starts a fresh playlist-send lane before the active room changes. */
+  onSessionContextChanging: () => void;
   dispatch: React.Dispatch<QueueAction>;
   setPlaylistSuggestionSourceState: React.Dispatch<React.SetStateAction<PlaylistSuggestionSource | null>>;
   /** Single-flight guard for resyncQueueFromServer — cleared at the clearSession teardown boundary. */
@@ -79,6 +81,7 @@ export function useSessionCommands({
   seedFailedSessionIdRef,
   setSessionId,
   sessionIdRef,
+  onSessionContextChanging,
   dispatch,
   setPlaylistSuggestionSourceState,
   resyncInFlightRef,
@@ -129,6 +132,7 @@ export function useSessionCommands({
             },
           });
           const newId = response.createSession.id;
+          if (sessionIdRef.current !== newId) onSessionContextChanging();
           sessionIdRef.current = newId;
           await setStoredSessionId(newId);
           // Device provenance: this phone STARTED the party, as opposed to
@@ -224,50 +228,54 @@ export function useSessionCommands({
       sessionCreationRef.current = createPromise;
       return createPromise;
     },
-    [ensureJoined, setQueueMutation, showToast, t],
+    [ensureJoined, onSessionContextChanging, setQueueMutation, showToast, t],
   );
 
-  const clearSession = useCallback(async (options?: { notifyServer?: boolean }) => {
-    // When the user intentionally leaves a session (switching into another via
-    // the join-confirm dialog), tell the backend so peers see them leave NOW —
-    // the driver/presence release shouldn't wait on the 60s disconnect grace
-    // timer. Best-effort and BEFORE we reset local state, so the WS registration
-    // for the old session is still alive: a failed/timed-out leave degrades to
-    // the prior disconnect-grace behavior. Default false keeps every other
-    // caller (remote SessionEnded, endSession) unchanged. Mirrors web's
-    // sendLeaveOnCleanup in use-session-lifecycle.ts.
-    if (options?.notifyServer && sessionIdRef.current) {
-      try {
-        await execute(getWsClient(), { query: LEAVE_SESSION }, 5000);
-      } catch (error) {
-        if (__DEV__) console.warn('[queue] leaveSession on switch failed', error);
+  const clearSession = useCallback(
+    async (options?: { notifyServer?: boolean }) => {
+      // When the user intentionally leaves a session (switching into another via
+      // the join-confirm dialog), tell the backend so peers see them leave NOW —
+      // the driver/presence release shouldn't wait on the 60s disconnect grace
+      // timer. Best-effort and BEFORE we reset local state, so the WS registration
+      // for the old session is still alive: a failed/timed-out leave degrades to
+      // the prior disconnect-grace behavior. Default false keeps every other
+      // caller (remote SessionEnded, endSession) unchanged. Mirrors web's
+      // sendLeaveOnCleanup in use-session-lifecycle.ts.
+      if (options?.notifyServer && sessionIdRef.current) {
+        try {
+          await execute(getWsClient(), { query: LEAVE_SESSION }, 5000);
+        } catch (error) {
+          if (__DEV__) console.warn('[queue] leaveSession on switch failed', error);
+        }
       }
-    }
-    // A resync fetch that never settles (hung connection) would leave the
-    // single-flight guard stuck true; a mounted provider carries that across a
-    // session switch and would block every future resync. Reset at the teardown
-    // boundary so the next session always starts clean.
-    resyncInFlightRef.current = false;
-    // Same for the coalesced-rerun flag: a pending rerun belongs to the old
-    // session and must not fire a fetch into the next one.
-    resyncPendingRef.current = false;
-    // Any pending seed-failure guard belongs to the session we're tearing down
-    // (it's keyed by id, so a stale value can't match the next session anyway —
-    // this just keeps the ref tidy).
-    seedFailedSessionIdRef.current = null;
-    sessionIdRef.current = null;
-    setSessionId(null);
-    dispatch({
-      type: 'INITIAL_QUEUE_DATA',
-      payload: { queue: [], currentClimbQueueItem: null },
-    });
-    setPlaylistSuggestionSourceState(null);
-    await clearStoredSessionId();
-    // Provenance belongs to the session we're tearing down. It's keyed by
-    // session id so a stale value could never match the next one anyway —
-    // this just keeps the store tidy.
-    await clearStoredCreatedSessionId();
-  }, []);
+      // A resync fetch that never settles (hung connection) would leave the
+      // single-flight guard stuck true; a mounted provider carries that across a
+      // session switch and would block every future resync. Reset at the teardown
+      // boundary so the next session always starts clean.
+      resyncInFlightRef.current = false;
+      // Same for the coalesced-rerun flag: a pending rerun belongs to the old
+      // session and must not fire a fetch into the next one.
+      resyncPendingRef.current = false;
+      // Any pending seed-failure guard belongs to the session we're tearing down
+      // (it's keyed by id, so a stale value can't match the next session anyway —
+      // this just keeps the ref tidy).
+      seedFailedSessionIdRef.current = null;
+      if (sessionIdRef.current !== null) onSessionContextChanging();
+      sessionIdRef.current = null;
+      setSessionId(null);
+      dispatch({
+        type: 'INITIAL_QUEUE_DATA',
+        payload: { queue: [], currentClimbQueueItem: null },
+      });
+      setPlaylistSuggestionSourceState(null);
+      await clearStoredSessionId();
+      // Provenance belongs to the session we're tearing down. It's keyed by
+      // session id so a stale value could never match the next one anyway —
+      // this just keeps the store tidy.
+      await clearStoredCreatedSessionId();
+    },
+    [onSessionContextChanging],
+  );
 
   const endSession = useCallback(
     async (options?: { notes?: string }): Promise<SessionSummary | null> => {
@@ -343,6 +351,7 @@ export function useSessionCommands({
       // on the joined board. Unlike startSession (which reads the active board to
       // build the new session's path), joinSession writes it from the session.
       await setActiveBoard(opts.userBoard);
+      onSessionContextChanging();
       sessionIdRef.current = sessionToJoin;
       setSessionId(sessionToJoin);
       await setStoredSessionId(sessionToJoin);
@@ -350,7 +359,7 @@ export function useSessionCommands({
       // snapshot so a stale copy can't resurrect on a later cold start.
       await clearStoredQueueSnapshot();
     },
-    [setActiveBoard],
+    [onSessionContextChanging, setActiveBoard],
   );
 
   return { createSessionWithConfig, joinSession, endSession, clearSession };
