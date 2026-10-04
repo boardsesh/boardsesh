@@ -45,6 +45,7 @@ function enqueueActiveBoardWrite(
   generation: number,
   writeStorage: ActiveBoardStorageWrite,
   commitCache: () => void,
+  isStillCurrent: () => boolean = () => true,
 ): Promise<boolean> {
   const operation = activeBoardWriteQueue.then(async () => {
     // Always execute queued storage operations in intent order. In particular,
@@ -54,7 +55,7 @@ function enqueueActiveBoardWrite(
 
     // A newer intent may have arrived while AsyncStorage was in flight. Its
     // write is queued next, so do not briefly roll the React Query cache back.
-    if (generation !== activeBoardWriteGeneration) return false;
+    if (generation !== activeBoardWriteGeneration || !isStillCurrent()) return false;
     commitCache();
     return true;
   });
@@ -126,13 +127,18 @@ export function useActiveBoard() {
 export function useSetActiveBoard() {
   const queryClient = useQueryClient();
   return useCallback(
-    async (board: UserBoard) => {
+    async (board: UserBoard, isOperationCurrent?: () => boolean): Promise<boolean> => {
+      if (isOperationCurrent && !isOperationCurrent()) return false;
       const generation = beginActiveBoardWrite();
       const owner = getCurrentUserStorageOwner();
-      await enqueueActiveBoardWrite(
+      return enqueueActiveBoardWrite(
         generation,
-        () => setStoredActiveBoard(board, owner),
+        () => {
+          if (isOperationCurrent && !isOperationCurrent()) return Promise.resolve();
+          return setStoredActiveBoard(board, owner);
+        },
         () => queryClient.setQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY, board),
+        isOperationCurrent,
       );
     },
     [queryClient],

@@ -51,7 +51,7 @@ type UseSessionCommandsParams = {
   resyncInFlightRef: React.RefObject<boolean>;
   resyncPendingRef: React.RefObject<boolean>;
   /** Raw active-board setter (useSetActiveBoard), NOT the ref-wrapped one. */
-  setActiveBoard: (board: UserBoard) => Promise<void>;
+  setActiveBoard: (board: UserBoard, isOperationCurrent?: () => boolean) => Promise<boolean>;
   /** Shared with the session-realtime SessionEnded handler; owned by the provider. */
   locallyEndingSessionIdRef: React.RefObject<string | null>;
   suppressedRemoteEndSessionIdRef: React.RefObject<string | null>;
@@ -59,7 +59,10 @@ type UseSessionCommandsParams = {
 
 type SessionCommands = {
   createSessionWithConfig: (config?: StartSessionConfig) => Promise<string | null>;
-  joinSession: (sessionId: string, opts: { boardPath: string; userBoard: UserBoard }) => Promise<void>;
+  joinSession: (
+    sessionId: string,
+    opts: { boardPath: string; userBoard: UserBoard; isOperationCurrent?: () => boolean },
+  ) => Promise<boolean>;
   endSession: (options?: { notes?: string }) => Promise<SessionSummary | null>;
   clearSession: (options?: { notifyServer?: boolean }) => Promise<void>;
 };
@@ -334,21 +337,31 @@ export function useSessionCommands({
   );
 
   const joinSession = useCallback(
-    async (sessionToJoin: string, opts: { boardPath: string; userBoard: UserBoard }) => {
+    async (
+      sessionToJoin: string,
+      opts: { boardPath: string; userBoard: UserBoard; isOperationCurrent?: () => boolean },
+    ): Promise<boolean> => {
+      const isOperationCurrent = opts.isOperationCurrent ?? (() => true);
+      if (!isOperationCurrent()) return false;
       // Idempotent against double-tap / re-entrant deep links.
-      if (sessionIdRef.current === sessionToJoin) return;
+      if (sessionIdRef.current === sessionToJoin) return true;
       // Switch the active board to the session's board FIRST (and persist it) so
       // the session effect's JOIN_SESSION reads the correct boardPath and the
       // whole tree (BLE wrapper, BoardProvider, climb list, play drawer) renders
       // on the joined board. Unlike startSession (which reads the active board to
       // build the new session's path), joinSession writes it from the session.
-      await setActiveBoard(opts.userBoard);
+      const activeBoardSet = await setActiveBoard(opts.userBoard, isOperationCurrent);
+      if (!activeBoardSet || !isOperationCurrent()) return false;
+      // Claim session publication synchronously only while the originating
+      // account and mounted Join operation still own this continuation.
       sessionIdRef.current = sessionToJoin;
       setSessionId(sessionToJoin);
       await setStoredSessionId(sessionToJoin);
+      if (!isOperationCurrent()) return false;
       // The session's FullSync replaces the local queue — drop the solo
       // snapshot so a stale copy can't resurrect on a later cold start.
       await clearStoredQueueSnapshot();
+      return isOperationCurrent();
     },
     [setActiveBoard],
   );

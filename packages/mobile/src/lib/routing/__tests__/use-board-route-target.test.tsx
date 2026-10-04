@@ -13,7 +13,7 @@ const openPlayDrawer = vi.hoisted(() => vi.fn());
 const openClimbInPlayDrawer = vi.hoisted(() => vi.fn());
 const setActiveBoard = vi.hoisted(() => vi.fn(async () => {}));
 const resolveBoardForSession = vi.hoisted(() => vi.fn());
-const fetchAllMyBoards = vi.hoisted(() => vi.fn());
+const fetchAllMyOwnedBoards = vi.hoisted(() => vi.fn());
 const fetchBoardByUuid = vi.hoisted(() => vi.fn());
 const fetchBoardBySlug = vi.hoisted(() => vi.fn());
 const createBoardMutateAsync = vi.hoisted(() => vi.fn());
@@ -67,10 +67,11 @@ vi.mock('../../graphql/hooks', () => ({
     return variables ? climbQuery.current : { data: undefined, isError: false, isSuccess: false };
   },
   useCreateBoard: () => ({ mutateAsync: createBoardMutateAsync }),
-  fetchAllMyBoards,
+  fetchAllMyOwnedBoards,
   fetchBoardByUuid,
   fetchBoardBySlug,
 }));
+vi.mock('../../graphql/hooks/fetch-all-my-owned-boards', () => ({ fetchAllMyOwnedBoards }));
 vi.mock('../../graphql/use-active-board', () => ({ useSetActiveBoard: () => setActiveBoard }));
 vi.mock('../../active-board-store', () => ({ getStoredActiveBoard }));
 vi.mock('../../../settings/offline-boards', () => ({ getOfflineBoards }));
@@ -106,6 +107,7 @@ const OTHER_CLIMB_UUID = 'F9E8D7C6B5A4938271605F4E3D2C1B0A';
 const KILTER_BOARD = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
 const RESOLVED_BOARD = {
   uuid: 'board-uuid',
+  ownerId: 'viewer-1',
   boardType: 'kilter',
   layoutId: 1,
   sizeId: 10,
@@ -117,6 +119,7 @@ const RESOLVED_BOARD = {
 function board(overrides: Partial<UserBoard> & { uuid: string }): UserBoard {
   return {
     slug: overrides.uuid,
+    ownerId: 'viewer-1',
     boardType: 'kilter',
     layoutId: 1,
     sizeId: 10,
@@ -207,7 +210,7 @@ beforeEach(() => {
   openClimbInPlayDrawer.mockReset();
   router.canGoBack.mockReturnValue(true);
   resolveBoardForSession.mockResolvedValue(RESOLVED_BOARD);
-  fetchAllMyBoards.mockResolvedValue([]);
+  fetchAllMyOwnedBoards.mockResolvedValue({ viewerId: 'viewer-1', boards: [] });
   fetchBoardByUuid.mockResolvedValue(null);
   fetchBoardBySlug.mockResolvedValue(null);
   getStoredActiveBoard.mockResolvedValue(null);
@@ -425,7 +428,7 @@ describe('useBoardRouteTarget', () => {
   // duplicate of a board the user already has.
   it('waits for the session to settle before resolving a tuple URL', async () => {
     authState.current = { isAuthenticated: false, isLoading: true };
-    fetchAllMyBoards.mockResolvedValue([RESOLVED_BOARD]);
+    fetchAllMyOwnedBoards.mockResolvedValue({ viewerId: 'viewer-1', boards: [RESOLVED_BOARD] });
 
     const { container, rerender } = render(
       createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }),
@@ -438,10 +441,11 @@ describe('useBoardRouteTarget', () => {
     rerender(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }));
 
     await waitFor(() => expect(resolveBoardForSession).toHaveBeenCalledTimes(1));
-    expect(resolveBoardForSession).toHaveBeenCalledWith(
-      'kilter/1/10/1,20/40',
-      expect.objectContaining({ ownedBoards: [RESOLVED_BOARD] }),
-    );
+    expect(resolveBoardForSession).toHaveBeenCalledWith('kilter/1/10/1,20/40', expect.anything());
+    // The list is handed over through the loader the resolver now owns, already
+    // walked here so it isn't fetched twice.
+    const [, deps] = resolveBoardForSession.mock.calls[0] as [string, { loadOwnedBoards: () => Promise<unknown> }];
+    await expect(deps.loadOwnedBoards()).resolves.toEqual({ viewerId: 'viewer-1', boards: [RESOLVED_BOARD] });
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(tabs)/climbs'));
   });
 
@@ -466,12 +470,12 @@ describe('useBoardRouteTarget', () => {
     );
 
     await waitFor(() => expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(1));
-    expect(fetchAllMyBoards).not.toHaveBeenCalled();
+    expect(fetchAllMyOwnedBoards).not.toHaveBeenCalled();
     expect(getStoredActiveBoard).not.toHaveBeenCalled();
   });
 
   it('does not mint a duplicate board when the owned-board list could not be loaded', async () => {
-    fetchAllMyBoards.mockRejectedValue(new Error('network down'));
+    fetchAllMyOwnedBoards.mockRejectedValue(new Error('network down'));
 
     const { container } = render(
       createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }),
@@ -482,14 +486,13 @@ describe('useBoardRouteTarget', () => {
   });
 
   // The pagination itself is pinned in `fetch-all-my-boards.test.ts`; what this
-  // pins is the hook end: the whole list `fetchAllMyBoards` returns is threaded
-  // into the resolver un-sliced, so a match anywhere in it reuses that board
-  // instead of minting one, and it lands at the URL's angle.
+  // The verified list snapshot is threaded into the real resolver without a
+  // second request, and a current-owner match is adopted at the URL angle.
   it('reuses a matching owned board from anywhere in the list, at the URL angle', async () => {
     useRealResolver();
     const lastBoard = board({ uuid: 'last-in-list' });
     const nonMatching = Array.from({ length: 50 }, (_, index) => board({ uuid: `other-${index}`, sizeId: 99 }));
-    fetchAllMyBoards.mockResolvedValue([...nonMatching, lastBoard]);
+    fetchAllMyOwnedBoards.mockResolvedValue({ viewerId: 'viewer-1', boards: [...nonMatching, lastBoard] });
 
     render(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }));
 
@@ -497,6 +500,37 @@ describe('useBoardRouteTarget', () => {
     // Adopted at the URL's angle, not the board's stored 20.
     expect(setActiveBoard).toHaveBeenCalledWith({ ...lastBoard, angle: 40 });
     expect(createBoardMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('chooses the authenticated owner match over a followed physical wall', async () => {
+    useRealResolver();
+    getStoredActiveBoard.mockResolvedValue(board({ uuid: 'different-active', boardType: 'tension' }));
+    const followed = board({ uuid: 'followed-first', ownerId: 'another-viewer', isOwned: true });
+    const owned = board({ uuid: 'viewer-wall', isOwned: false });
+    fetchAllMyOwnedBoards.mockResolvedValue({ viewerId: 'viewer-1', boards: [followed, owned] });
+
+    render(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }));
+
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith({ ...owned, angle: 40 }));
+    expect(createBoardMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('creates for the viewer when only a later followed row matches the URL', async () => {
+    useRealResolver();
+    const precedingBoards = Array.from({ length: 60 }, (_, index) => board({ uuid: `other-${index}`, sizeId: 99 }));
+    const followedMatch = board({ uuid: 'followed-late', ownerId: 'another-viewer', isOwned: true });
+    const created = board({ uuid: 'created-for-viewer', isOwned: false, angle: 40 });
+    fetchAllMyOwnedBoards.mockResolvedValue({
+      viewerId: 'viewer-1',
+      boards: [...precedingBoards, followedMatch],
+    });
+    createBoardMutateAsync.mockResolvedValue(created);
+
+    render(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }));
+
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith({ ...created, angle: 40 }));
+    expect(createBoardMutateAsync).toHaveBeenCalledTimes(1);
+    expect(setActiveBoard).not.toHaveBeenCalledWith(expect.objectContaining({ uuid: 'followed-late' }));
   });
 
   // The list walk closes the common case but not the race — a board created on
@@ -525,13 +559,13 @@ describe('useBoardRouteTarget', () => {
   // entirely. Asserting the SKIP is the point — resolving correctly via the
   // server list would pass without the shortcut existing at all.
   it('adopts a matching stored active board online without fetching the owned list', async () => {
-    const activeBoard = board({ uuid: 'active-uuid' });
+    const activeBoard = board({ uuid: 'active-uuid', ownerId: 'another-viewer', isOwned: false });
     getStoredActiveBoard.mockResolvedValue(activeBoard);
 
     render(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }));
 
     await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith({ ...activeBoard, angle: 40 }));
-    expect(fetchAllMyBoards).not.toHaveBeenCalled();
+    expect(fetchAllMyOwnedBoards).not.toHaveBeenCalled();
     expect(resolveBoardForSession).not.toHaveBeenCalled();
   });
 
@@ -546,7 +580,7 @@ describe('useBoardRouteTarget', () => {
     render(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }));
 
     await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith({ ...activeBoard, angle: 40 }));
-    expect(fetchAllMyBoards).not.toHaveBeenCalled();
+    expect(fetchAllMyOwnedBoards).not.toHaveBeenCalled();
     expect(resolveBoardForSession).not.toHaveBeenCalled();
   });
 
@@ -558,7 +592,7 @@ describe('useBoardRouteTarget', () => {
     render(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }));
 
     await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith({ ...downloadedBoard, angle: 40 }));
-    expect(fetchAllMyBoards).not.toHaveBeenCalled();
+    expect(fetchAllMyOwnedBoards).not.toHaveBeenCalled();
   });
 
   // Offline with nothing local can never resolve: the list walk and CREATE_BOARD
@@ -572,7 +606,7 @@ describe('useBoardRouteTarget', () => {
     );
 
     await waitFor(() => expect(statusOf(container)).toBe('not-found'));
-    expect(fetchAllMyBoards).not.toHaveBeenCalled();
+    expect(fetchAllMyOwnedBoards).not.toHaveBeenCalled();
     expect(resolveBoardForSession).not.toHaveBeenCalled();
   });
 
@@ -582,12 +616,12 @@ describe('useBoardRouteTarget', () => {
     useRealResolver();
     getStoredActiveBoard.mockResolvedValue(board({ uuid: 'tension-uuid', boardType: 'tension' }));
     const ownedBoard = board({ uuid: 'owned-uuid' });
-    fetchAllMyBoards.mockResolvedValue([ownedBoard]);
+    fetchAllMyOwnedBoards.mockResolvedValue({ viewerId: 'viewer-1', boards: [ownedBoard] });
 
     render(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }));
 
     await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith({ ...ownedBoard, angle: 40 }));
-    expect(fetchAllMyBoards).toHaveBeenCalledTimes(1);
+    expect(fetchAllMyOwnedBoards).toHaveBeenCalledTimes(1);
     expect(createBoardMutateAsync).not.toHaveBeenCalled();
   });
 
@@ -597,7 +631,7 @@ describe('useBoardRouteTarget', () => {
     useRealResolver();
     getOfflineBoards.mockReturnValue([board({ uuid: 'stale-card' })]);
     const ownedBoard = board({ uuid: 'owned-uuid' });
-    fetchAllMyBoards.mockResolvedValue([ownedBoard]);
+    fetchAllMyOwnedBoards.mockResolvedValue({ viewerId: 'viewer-1', boards: [ownedBoard] });
 
     render(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }));
 
@@ -641,9 +675,9 @@ describe('useBoardRouteTarget', () => {
     );
 
     await waitFor(() => expect(statusOf(container)).toBe('not-found'));
-    expect(fetchAllMyBoards).not.toHaveBeenCalled();
+    expect(fetchAllMyOwnedBoards).not.toHaveBeenCalled();
 
-    fetchAllMyBoards.mockResolvedValue([RESOLVED_BOARD]);
+    fetchAllMyOwnedBoards.mockResolvedValue({ viewerId: 'viewer-1', boards: [RESOLVED_BOARD] });
     act(() => connectivity.goOnline());
 
     // The healed resolve is the longest await chain in this file — a local-board
@@ -655,7 +689,7 @@ describe('useBoardRouteTarget', () => {
     // spend its own budget — the test dies first with "Test timed out in
     // 5000ms", which is how this kept flaking after #4418 supposedly fixed it.
     await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith(RESOLVED_BOARD), { timeout: 5000 });
-    expect(fetchAllMyBoards).toHaveBeenCalledTimes(1);
+    expect(fetchAllMyOwnedBoards).toHaveBeenCalledTimes(1);
     // The healed resolve hands off; the stale not-found is gone either way.
     expect(statusOf(container)).not.toBe('not-found');
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(tabs)/climbs'));
@@ -685,7 +719,7 @@ describe('useBoardRouteTarget', () => {
   it('probes downloaded cards when the owned-list walk fails on a lying connection', async () => {
     const downloadedBoard = board({ uuid: 'downloaded-uuid' });
     getOfflineBoards.mockReturnValue([downloadedBoard]);
-    fetchAllMyBoards.mockRejectedValue(new TypeError('Network request failed'));
+    fetchAllMyOwnedBoards.mockRejectedValue(new TypeError('Network request failed'));
 
     render(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }));
 
@@ -698,7 +732,7 @@ describe('useBoardRouteTarget', () => {
   // the backend has disowned.
   it('does not adopt a downloaded card when the walk fails with a server status', async () => {
     getOfflineBoards.mockReturnValue([board({ uuid: 'stale-card' })]);
-    fetchAllMyBoards.mockRejectedValue(
+    fetchAllMyOwnedBoards.mockRejectedValue(
       Object.assign(new Error('Forbidden'), { response: { status: 403, errors: [{ message: 'Forbidden' }] } }),
     );
 
@@ -857,7 +891,7 @@ describe('useBoardRouteTarget signed-out on web', () => {
     // The assertion that matters: nothing was asked of the server, and no board
     // was adopted or minted, on behalf of someone with no account.
     expect(resolveBoardForSession).not.toHaveBeenCalled();
-    expect(fetchAllMyBoards).not.toHaveBeenCalled();
+    expect(fetchAllMyOwnedBoards).not.toHaveBeenCalled();
     expect(createBoardMutateAsync).not.toHaveBeenCalled();
     expect(setActiveBoard).not.toHaveBeenCalled();
     expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
@@ -1014,7 +1048,7 @@ describe('useBoardRouteTarget signed-out on web', () => {
     expect(climbQueryVariables.current).toContainEqual({ ...KILTER_BOARD, climbUuid: CLIMB_UUID });
     // Nothing was minted, walked, stored or navigated on their behalf.
     expect(resolveBoardForSession).not.toHaveBeenCalled();
-    expect(fetchAllMyBoards).not.toHaveBeenCalled();
+    expect(fetchAllMyOwnedBoards).not.toHaveBeenCalled();
     expect(createBoardMutateAsync).not.toHaveBeenCalled();
     expect(setActiveBoard).not.toHaveBeenCalled();
     // `/climbs` and `/play` are both behind the login gate, and AuthProvider
