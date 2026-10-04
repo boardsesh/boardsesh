@@ -205,7 +205,7 @@ module. The module declares:
 | `refresh-hold-features` | `batch` | 1,200 s | 2, 300 s backoff to 900 s | 20 h | board |
 | `refresh-climb-grades` | `batch` | 1,800 s | 1, after 900 s | 20 h | `nightly` |
 | `refresh-climb-neighbors` | `batch` | 21,600 s | 2, 300 s backoff to 900 s | 22 h | board |
-| `export-board-snapshots` | `batch` | 2,700 s | 1, after 300 s | 20 h (live scan: skips itself after 840 s) | mode (`nightly`, `live-scan`) |
+| `export-board-snapshots` | `batch` | 21,600 s (heartbeat 120 s) | 1, after 300 s | 20 h (live scan: skips itself after 840 s) | mode (`nightly`, `live-scan`) |
 | `refresh-moonboard-angle-estimates` | `batch` | 1,800 s | 1, after 900 s | 6 days | `weekly` |
 | `refresh-moonboard-wide-angle-estimates` | `batch` | 7,200 s | 1, after 900 s | 6 days | `weekly` |
 | `aurora-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:boardType:linkGeneration` |

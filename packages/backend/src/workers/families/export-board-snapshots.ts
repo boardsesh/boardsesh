@@ -141,21 +141,20 @@ export const exportBoardSnapshotsFamily: BackgroundJobFamilyModule<ExportRequest
   name: 'export-board-snapshots',
   roles: ['batch'],
   options: {
-    // The workflow's 45-minute budget. Its runs took 1 to 14 minutes end to
-    // end on GitHub Actions in Sep 2026, setup included; the nightly is the
-    // long one.
-    expireInSeconds: 2700,
+    // Cold primary reads on the homelab took 44 minutes for Kilter layout 1
+    // alone during the R2 rehearsal. One nightly rebuilds every layout twice,
+    // plus grades and the catalogue. Bound one attempt at six hours; the
+    // separate 120 s heartbeat still detects a dead worker promptly.
+    expireInSeconds: 21_600,
     retryLimit: 1,
     retryDelay: 300,
     retryBackoff: true,
     retryDelayMax: 300,
-    // The absolute cap for a run across every attempt. Heartbeats renew the
-    // lease, never this deadline, so it must outlive a run whose attempts are
-    // kept alive by heartbeat renewals on slow infrastructure (a stalled S3
-    // upload, a slow homelab uplink), plus time queued and the retry delay,
-    // not just two 45-minute leases. 20 h matches the other batch families
-    // and still ends a wedged nightly before the next one is due. The live
-    // scan does not rely on it: it skips itself after
+    // The absolute cap across every attempt, queue wait and retry delay.
+    // Heartbeats refresh liveness, never started_on + expireInSeconds or the
+    // worker's matching abort timer. Two six-hour attempts plus the 300 s
+    // retry delay fit inside 20 h, leaving queue slack and ending a wedged
+    // nightly before the next one is due. The live scan checks its age via
     // LIVE_SCAN_MAX_AGE_SECONDS (the ledger deadline is per family, not per
     // payload).
     deadlineSeconds: 72_000,
@@ -166,7 +165,7 @@ export const exportBoardSnapshotsFamily: BackgroundJobFamilyModule<ExportRequest
     // libuv pool), and the touch then queues for one of the pool's two
     // connections while the other holds the export transaction. 120 s covers
     // that with a wide margin, and a dead worker is still noticed within two
-    // minutes rather than at the 45-minute lease.
+    // minutes rather than at the six-hour lease.
     heartbeatSeconds: HEARTBEAT_SECONDS,
   },
   payload,
