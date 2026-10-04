@@ -13,24 +13,41 @@
 // dragging a corner is a worklet-only operation and the screen does not re-render
 // per frame.
 //
-// Coordinates on screen are RENDER pixels (the photo drawn to fit the width).
+// Coordinates on screen are RENDER pixels, measured from the top-left of the
+// photo's frame. The frame is the photo fitted inside the space it is given, on
+// both axes, so all four rings are on screen at once (`corner-photo-fit.ts`).
 // Coordinates leaving this component are PHOTO pixels, which is what
 // `createSprayWallVersion` stores and what the homography is solved in.
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useTranslation } from 'react-i18next';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
+import Animated, {
+  runOnJS,
+  useAnimatedProps,
+  useAnimatedStyle,
+  useSharedValue,
+  type SharedValue,
+} from 'react-native-reanimated';
+import Svg, { Path } from 'react-native-svg';
 import type { Quad } from '@boardsesh/spray-wall-geometry';
-import { useTheme } from '../../providers/theme-provider';
-import { Text } from '../Text';
-import { spacing, borderRadius } from '../../theme/tokens';
+import { borderRadius } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
+import { fitCornerPhoto, quadToPhoto, quadToRender, rescaleRenderCoordinate } from './corner-photo-fit';
 
-/** Touch target for one corner. Bigger than the ring it draws, so a thumb can find it. */
-const HANDLE_SIZE = 44;
+const AnimatedPath = Animated.createAnimatedComponent(Path);
+
+/**
+ * Touch target for one corner. Bigger than the ring it draws, so a thumb can find it.
+ *
+ * Exported because the handles overhang the photo by half of this on every side
+ * (a ring ON a corner of the photo has to be whole, and touchable), so whoever
+ * sizes the space around the photo has to leave that much room.
+ */
+export const CORNER_HANDLE_SIZE = 44;
+const HANDLE_SIZE = CORNER_HANDLE_SIZE;
 /** The visible ring inside that target. */
 const RING_SIZE = 28;
 
@@ -45,8 +62,10 @@ const DEFAULT_INSET = 0.1;
 
 export type SprayCornerMarkerProps = {
   photo: { uri: string; width: number; height: number };
-  /** Width the photo is drawn at. The height follows from its aspect ratio. */
-  renderWidth: number;
+  /** Widest the photo may be drawn. */
+  maxWidth: number;
+  /** Tallest the photo may be drawn. The photo is fitted inside both, never cropped. */
+  maxHeight: number;
   /** The quad to open with, in photo pixels, or null to start from the default inset. */
   value: Quad | null;
   /** Fired when a corner is released, with all four in photo pixels, TL/TR/BR/BL. */
@@ -69,28 +88,50 @@ function defaultQuad(width: number, height: number): Quad {
   ];
 }
 
-export function SprayCornerMarker({ photo, renderWidth, value, onChange, invalid = false }: SprayCornerMarkerProps) {
-  const { t } = useTranslation('boards');
-  const { systemColors } = useTheme();
+export function SprayCornerMarker(props: SprayCornerMarkerProps) {
+  const { photo, maxWidth, maxHeight } = props;
+  const fit = useMemo(
+    () =>
+      fitCornerPhoto({ boxWidth: maxWidth, boxHeight: maxHeight, photoWidth: photo.width, photoHeight: photo.height }),
+    [maxWidth, maxHeight, photo.width, photo.height],
+  );
+  // Nothing until there is a real frame. The rings are seeded through the fit's
+  // scale, and `useSharedValue` reads its seed exactly once — mounting them
+  // against a zero-sized box would seed all eight from a division by zero.
+  if (!fit) return null;
+  return <FittedCornerMarker {...props} renderWidth={fit.width} renderHeight={fit.height} renderScale={fit.scale} />;
+}
 
-  const aspect = photo.height > 0 ? photo.width / photo.height : 1;
-  const renderHeight = renderWidth / (aspect > 0 ? aspect : 1);
-  /** Photo px per render px. One number: the photo is drawn to fit, never stretched. */
-  const photoScale = photo.width > 0 ? photo.width / renderWidth : 1;
+function FittedCornerMarker({
+  photo,
+  value,
+  onChange,
+  invalid = false,
+  renderWidth,
+  renderHeight,
+  renderScale,
+}: SprayCornerMarkerProps & {
+  renderWidth: number;
+  renderHeight: number;
+  /** Render points per photo pixel, the same on both axes. */
+  renderScale: number;
+}) {
+  const { t } = useTranslation('boards');
 
   const seed = useMemo(() => value ?? defaultQuad(photo.width, photo.height), [value, photo.width, photo.height]);
+  const renderSeed = quadToRender(seed, renderScale);
 
   // Four handles, four pairs of shared values. Written unrolled because hooks
   // cannot be called in a loop whose length could ever change — and this one
   // cannot, which is exactly why unrolling costs nothing.
-  const x0 = useSharedValue(seed[0][0] / photoScale);
-  const y0 = useSharedValue(seed[0][1] / photoScale);
-  const x1 = useSharedValue(seed[1][0] / photoScale);
-  const y1 = useSharedValue(seed[1][1] / photoScale);
-  const x2 = useSharedValue(seed[2][0] / photoScale);
-  const y2 = useSharedValue(seed[2][1] / photoScale);
-  const x3 = useSharedValue(seed[3][0] / photoScale);
-  const y3 = useSharedValue(seed[3][1] / photoScale);
+  const x0 = useSharedValue(renderSeed[0][0]);
+  const y0 = useSharedValue(renderSeed[0][1]);
+  const x1 = useSharedValue(renderSeed[1][0]);
+  const y1 = useSharedValue(renderSeed[1][1]);
+  const x2 = useSharedValue(renderSeed[2][0]);
+  const y2 = useSharedValue(renderSeed[2][1]);
+  const x3 = useSharedValue(renderSeed[3][0]);
+  const y3 = useSharedValue(renderSeed[3][1]);
 
   const xs = useMemo(() => [x0, x1, x2, x3], [x0, x1, x2, x3]);
   const ys = useMemo(() => [y0, y1, y2, y3], [y0, y1, y2, y3]);
@@ -108,17 +149,35 @@ export function SprayCornerMarker({ photo, renderWidth, value, onChange, invalid
    *
    * Keyed on the seed's VALUES rather than its identity, so a re-render that
    * rebuilds the same quad does not yank a handle out from under a finger.
+   *
+   * A re-fit with the SAME seed is a different event and gets a different
+   * answer: the frame changed size (a rotation, a hint that wrapped onto a second
+   * line), so every ring is carried to the same point of the photo at the new
+   * scale. Re-seeding there would throw away a quad that was dragged, refused for
+   * crossing itself and so never saved — the rings would jump back under the
+   * very message telling the climber to fix them.
    */
   const seedKey = seed.map(([pointX, pointY]) => `${pointX},${pointY}`).join(';');
+  const applied = useRef({ seedKey, renderScale });
   useEffect(() => {
-    for (const [corner, [pointX, pointY]] of seed.entries()) {
-      xs[corner].value = pointX / photoScale;
-      ys[corner].value = pointY / photoScale;
+    const previous = applied.current;
+    applied.current = { seedKey, renderScale };
+    if (previous.seedKey !== seedKey) {
+      for (const [corner, [pointX, pointY]] of quadToRender(seed, renderScale).entries()) {
+        xs[corner].value = pointX;
+        ys[corner].value = pointY;
+      }
+      return;
+    }
+    if (previous.renderScale === renderScale) return;
+    for (const corner of CORNER_ORDER) {
+      xs[corner].value = rescaleRenderCoordinate(xs[corner].value, previous.renderScale, renderScale);
+      ys[corner].value = rescaleRenderCoordinate(ys[corner].value, previous.renderScale, renderScale);
     }
     // `seedKey` stands in for `seed`, and `xs` / `ys` are stable arrays of stable
     // shared values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seedKey, photoScale]);
+  }, [seedKey, renderScale]);
 
   /**
    * Read all four handles and report them in photo pixels.
@@ -128,14 +187,28 @@ export function SprayCornerMarker({ photo, renderWidth, value, onChange, invalid
    * same reason: by the time this runs, no worklet is writing them.
    */
   const commit = useCallback(() => {
-    const quad: Quad = [
-      [x0.value * photoScale, y0.value * photoScale],
-      [x1.value * photoScale, y1.value * photoScale],
-      [x2.value * photoScale, y2.value * photoScale],
-      [x3.value * photoScale, y3.value * photoScale],
-    ];
-    onChange(quad);
-  }, [x0, y0, x1, y1, x2, y2, x3, y3, photoScale, onChange]);
+    onChange(
+      quadToPhoto(
+        [
+          [x0.value, y0.value],
+          [x1.value, y1.value],
+          [x2.value, y2.value],
+          [x3.value, y3.value],
+        ],
+        renderScale,
+      ),
+    );
+  }, [x0, y0, x1, y1, x2, y2, x3, y3, renderScale, onChange]);
+
+  // The marked area, drawn between the four rings. A worklet reading the same
+  // shared values the handles write, so it follows a drag on the UI thread and
+  // the screen still does not re-render per frame.
+  const outlineProps = useAnimatedProps(() => {
+    'worklet';
+    return {
+      d: `M${x0.value} ${y0.value}L${x1.value} ${y1.value}L${x2.value} ${y2.value}L${x3.value} ${y3.value}Z`,
+    };
+  });
 
   const guideColor = invalid ? iosSystemColors.systemRed : iosSystemColors.systemBlue;
 
@@ -148,35 +221,44 @@ export function SprayCornerMarker({ photo, renderWidth, value, onChange, invalid
     t('sprayWizard.anchors.cornerBottomLeft'),
   ];
 
+  const frameBox = { width: renderWidth, height: renderHeight };
+
   return (
-    <View style={styles.container}>
-      <View style={[styles.frame, { width: renderWidth, height: renderHeight, borderRadius: borderRadius.lg }]}>
+    // The handle layer is half a handle bigger than the photo on every side, and
+    // only the PHOTO is clipped. A ring dragged onto a true corner of the photo
+    // used to lose three quarters of itself, and of its touch target, to the
+    // frame's rounded clip.
+    <View style={{ width: renderWidth + HANDLE_SIZE, height: renderHeight + HANDLE_SIZE }}>
+      <View style={[styles.frame, frameBox, { borderRadius: borderRadius.lg }]}>
         <Image
           source={{ uri: photo.uri }}
           style={StyleSheet.absoluteFill}
           contentFit="cover"
           accessibilityIgnoresInvertColors
         />
-        {CORNER_ORDER.map((corner) => (
-          <CornerHandle
-            key={corner}
-            x={xs[corner]}
-            y={ys[corner]}
-            maxX={renderWidth}
-            maxY={renderHeight}
-            color={guideColor}
-            label={cornerLabels[corner]}
-            onCommit={commit}
-          />
-        ))}
       </View>
-      <Text
-        variant="footnote"
-        color={invalid ? iosSystemColors.systemRed : systemColors.secondaryLabel}
-        style={styles.hint}
-      >
-        {invalid ? t('sprayWizard.anchors.crossed') : t('sprayWizard.anchors.hint')}
-      </Text>
+      <Svg pointerEvents="none" style={[styles.outline, frameBox]} width={renderWidth} height={renderHeight}>
+        <AnimatedPath
+          animatedProps={outlineProps}
+          fill={guideColor}
+          fillOpacity={0.12}
+          stroke={guideColor}
+          strokeWidth={2}
+          strokeLinejoin="round"
+        />
+      </Svg>
+      {CORNER_ORDER.map((corner) => (
+        <CornerHandle
+          key={corner}
+          x={xs[corner]}
+          y={ys[corner]}
+          maxX={renderWidth}
+          maxY={renderHeight}
+          color={guideColor}
+          label={cornerLabels[corner]}
+          onCommit={commit}
+        />
+      ))}
     </View>
   );
 }
@@ -221,8 +303,10 @@ function CornerHandle({
     [x, y, startX, startY, maxX, maxY, onCommit],
   );
 
+  // No half-handle offset: the layer the handles sit in already starts half a
+  // handle up and left of the photo, so (x, y) puts the ring's centre on the point.
   const style = useAnimatedStyle(() => ({
-    transform: [{ translateX: x.value - HANDLE_SIZE / 2 }, { translateY: y.value - HANDLE_SIZE / 2 }],
+    transform: [{ translateX: x.value }, { translateY: y.value }],
   }));
 
   return (
@@ -240,16 +324,22 @@ function CornerHandle({
 }
 
 const styles = StyleSheet.create({
-  container: {
-    alignItems: 'center',
-    gap: spacing[3],
-  },
   frame: {
+    position: 'absolute',
+    left: HANDLE_SIZE / 2,
+    top: HANDLE_SIZE / 2,
     overflow: 'hidden',
     backgroundColor: '#000000',
   },
+  outline: {
+    position: 'absolute',
+    left: HANDLE_SIZE / 2,
+    top: HANDLE_SIZE / 2,
+  },
   handle: {
     position: 'absolute',
+    left: 0,
+    top: 0,
     width: HANDLE_SIZE,
     height: HANDLE_SIZE,
     alignItems: 'center',
@@ -261,9 +351,5 @@ const styles = StyleSheet.create({
     borderRadius: RING_SIZE / 2,
     borderWidth: 3,
     backgroundColor: 'rgba(255, 255, 255, 0.25)',
-  },
-  hint: {
-    textAlign: 'center',
-    paddingHorizontal: spacing[4],
   },
 });

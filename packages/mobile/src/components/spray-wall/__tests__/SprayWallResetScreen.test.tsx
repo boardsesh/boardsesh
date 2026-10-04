@@ -81,10 +81,12 @@ vi.mock('../../Button', () => ({
 vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('i', { 'data-testid': 'spinner' }),
 }));
-vi.mock('../SprayCornerMarker', () => ({
-  SprayCornerMarker: (props: { onChange?: (quad: unknown) => void }) => {
+// The step's body is stubbed (it only draws once its slot has been measured,
+// and nothing here lays out). Its footer is real: the gate lives on it.
+vi.mock('../SprayCornerStep', () => ({
+  SprayCornerStep: (props: { title: string; children?: ReactNode; onChange?: (quad: unknown) => void }) => {
     markerProps.current = props;
-    return createElement('div', { 'data-testid': 'corner-marker' });
+    return createElement('div', { 'data-testid': 'corner-marker' }, props.title, props.children);
   },
 }));
 vi.mock('../SprayResetCompareScreen', () => ({
@@ -223,6 +225,23 @@ describe('SprayWallResetScreen', () => {
 
     act(() => markerProps.current?.onChange?.(SQUARE));
     expect(getByText('sprayReset.anchors.use').getAttribute('data-disabled')).toBe('false');
+  });
+
+  it('shows "start the corners again" before there are corners, so the footer never grows', async () => {
+    const { getByText } = renderScreen();
+
+    await act(async () => {
+      getByText('sprayWizard.photo.library').click();
+    });
+    act(() => getByText('sprayWizard.photo.next').click());
+
+    // The photo is fitted to the space the footer leaves. A button that only
+    // appeared after the first drag made the footer taller at that moment and
+    // put the bottom two rings under it (#5958).
+    expect(getByText('sprayWizard.anchors.clear').getAttribute('data-disabled')).toBe('true');
+
+    act(() => markerProps.current?.onChange?.(SQUARE));
+    expect(getByText('sprayWizard.anchors.clear').getAttribute('data-disabled')).toBe('false');
   });
 
   it('keeps the gate shut for corners that cross over each other', async () => {

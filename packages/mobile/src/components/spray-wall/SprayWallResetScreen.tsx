@@ -27,7 +27,8 @@ import { trackSprayEvent } from '../../lib/spray/spray-telemetry';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
-import { SprayCornerMarker } from './SprayCornerMarker';
+import { SprayCornerFooter } from './SprayCornerFooter';
+import { SprayCornerStep } from './SprayCornerStep';
 import { SprayResetCompareScreen } from './SprayResetCompareScreen';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -460,6 +461,46 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
 
   const stepIndex = COUNTED_STEPS.indexOf(state.step);
 
+  // Its own screenful rather than a section of the scrolling page below: the
+  // photo is fitted to the space between the header and the footer, so all four
+  // rings are on screen and a vertical drag is never also a scroll (#5958).
+  if (state.step === 'anchors' && state.photo) {
+    return (
+      <View style={styles.flex}>
+        {/* Not a nicety and not skippable. The wall's canonical frame is
+            version 1's photo frame forever, so these four points are the only
+            thing that says where THIS photograph sits in it. Without them
+            every hold in the new picture arrives labelled with coordinates
+            from another one, and the matcher reports the whole wall gone. */}
+        <SprayCornerStep
+          stepCounter={t('sprayWizard.stepCounter', { current: stepIndex + 1, total: COUNTED_STEPS.length })}
+          title={t('sprayReset.anchors.title')}
+          body={t('sprayReset.anchors.body')}
+          photo={state.photo}
+          value={state.anchors}
+          onChange={(quad) => dispatch({ type: 'ANCHORS_SET', anchors: quad })}
+          invalid={state.anchorRejection != null}
+        >
+          {state.anchorRejection != null ? (
+            <Text variant="footnote" color={iosSystemColors.systemRed} accessibilityLiveRegion="polite">
+              {t('sprayReset.anchors.notConvex')}
+            </Text>
+          ) : null}
+        </SprayCornerStep>
+        <SprayCornerFooter
+          primaryTitle={t('sprayReset.anchors.use')}
+          onPrimary={() => dispatch({ type: 'ANCHORS_DONE' })}
+          // There is no Skip. Four corners or the flow does not move.
+          primaryDisabled={!anchorsAreReady(state)}
+          canClear={state.anchors != null}
+          onClear={() => dispatch({ type: 'ANCHORS_CLEARED' })}
+          onBack={goBack}
+          backDisabled={isBusy(state)}
+        />
+      </View>
+    );
+  }
+
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
@@ -527,32 +568,6 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
           </>
         ) : null}
 
-        {state.step === 'anchors' && state.photo ? (
-          <>
-            <Text variant="title3">{t('sprayReset.anchors.title')}</Text>
-            {/* Not a nicety and not skippable. The wall's canonical frame is
-                version 1's photo frame forever, so these four points are the only
-                thing that says where THIS photograph sits in it. Without them
-                every hold in the new picture arrives labelled with coordinates
-                from another one, and the matcher reports the whole wall gone. */}
-            <Text variant="subheadline" color={systemColors.secondaryLabel}>
-              {t('sprayReset.anchors.body')}
-            </Text>
-            <SprayCornerMarker
-              photo={state.photo}
-              renderWidth={previewWidth}
-              value={state.anchors}
-              onChange={(quad) => dispatch({ type: 'ANCHORS_SET', anchors: quad })}
-              invalid={state.anchorRejection != null}
-            />
-            {state.anchorRejection != null ? (
-              <Text variant="footnote" color={iosSystemColors.systemRed} accessibilityLiveRegion="polite">
-                {t('sprayReset.anchors.notConvex')}
-              </Text>
-            ) : null}
-          </>
-        ) : null}
-
         {state.step === 'upload' ? (
           <>
             <Text variant="title3">{t('sprayWizard.upload.title')}</Text>
@@ -589,26 +604,6 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
             onPress={() => dispatch({ type: 'PHOTO_CONFIRMED' })}
             disabled={state.photo == null}
           />
-        ) : null}
-
-        {state.step === 'anchors' ? (
-          <View style={styles.anchorActions}>
-            <Button
-              title={t('sprayReset.anchors.use')}
-              variant="filled"
-              size="large"
-              onPress={() => dispatch({ type: 'ANCHORS_DONE' })}
-              // There is no Skip. Four corners or the flow does not move.
-              disabled={!anchorsAreReady(state)}
-            />
-            {state.anchors ? (
-              <Button
-                title={t('sprayWizard.anchors.clear')}
-                variant="text"
-                onPress={() => dispatch({ type: 'ANCHORS_CLEARED' })}
-              />
-            ) : null}
-          </View>
         ) : null}
 
         {state.step === 'upload' && state.upload.error ? (
@@ -687,9 +682,6 @@ const styles = StyleSheet.create({
   photoActions: {
     gap: spacing[2],
     paddingTop: spacing[3],
-  },
-  anchorActions: {
-    gap: spacing[1],
   },
   progressBlock: {
     gap: spacing[3],
