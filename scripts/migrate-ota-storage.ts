@@ -543,7 +543,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   maskForGitHubActions(sourceEndpoint);
   maskForGitHubActions(sourceAccessKeyId);
   maskForGitHubActions(sourceSecretAccessKey);
-  console.log(`Migration object concurrency: ${concurrency}.`);
+  if (mode !== 'inventory') console.log(`Migration object concurrency: ${concurrency}.`);
   const sourceProvider = classifyStorageEndpoint(sourceEndpoint);
   console.log(`Live Railway OTA storage provider: ${sourceProvider}.`);
   if (!reverse && sourceProvider === 'r2') {

@@ -1118,7 +1118,8 @@ increase copy and every full SHA-256 verification pass together; accepted values
 are integers from 1 to 64. The migration workflow defaults its `concurrency`
 input to 32 and validates the same bounds before accessing providers. Each copy
 worker stages one source object on disk, so reserve scratch space for up to the
-selected number of simultaneous objects. Reduce the limit if provider throttling
+selected number of simultaneous objects. Verification streams directly from providers
+and does not stage objects on disk. Reduce the limit if provider throttling
 or disk pressure appears; full integrity and source-stability checks remain required.
 
 Run the gate in this order:

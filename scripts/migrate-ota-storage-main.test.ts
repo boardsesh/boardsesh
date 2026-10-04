@@ -163,6 +163,9 @@ describe('OTA migration main rollback', () => {
     storage.buckets.get(LEGACY)!.set('archive', object('keep'));
     await main(['--reverse', ...flags]);
     expect(writes()).toEqual([]);
+    if (flags.length === 0)
+      expect(console.log).not.toHaveBeenCalledWith(expect.stringContaining('Migration object concurrency:'));
+    else expect(console.log).toHaveBeenCalledWith('Migration object concurrency: 4.');
   });
   it.each([{ mismatch: 'content' }, { mismatch: 'metadata' }])(
     'verify-only detects $mismatch drift without writing',
