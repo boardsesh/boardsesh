@@ -39,4 +39,14 @@ export {
   type AngleLifetimeStats,
   type AngleEntriesSection,
 } from './angle-lifetime';
+export {
+  deriveClimbLedger,
+  type ClimbLedger,
+  type ClimbVerdict,
+  type DeriveClimbLedgerOptions,
+  type LedgerAngleSection,
+  type LedgerSession,
+  type LedgerStatus,
+  type LedgerTotals,
+} from './climb-ledger';
 export { deriveProfileViewModel, type DeriveProfileViewModelInput, type ProfileViewModel } from './derive-view-model';

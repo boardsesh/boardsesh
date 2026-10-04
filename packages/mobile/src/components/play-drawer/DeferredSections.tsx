@@ -52,6 +52,8 @@ type DeferredSectionsProps = {
   /** Opens the "share your beta" sheet. Rendered as the Beta Videos header "+" for
    *  signed-in users; absent (undefined) hides it. */
   onAddBetaVideo?: () => void;
+  /** Opens the full-history sheet from the Logbook card's "See full logbook" row. */
+  onOpenFullLogbook?: () => void;
   /** Opens the full list from the Climber logs card's "See all logs" row. */
   onOpenClimberLogs?: () => void;
   /** Opens a climber's profile from a Climber logs row. */
@@ -81,6 +83,7 @@ export const DeferredSections = memo(function DeferredSections({
   onLogbookSectionLayout,
   onLogbookToggle,
   onAddBetaVideo,
+  onOpenFullLogbook,
   onOpenClimberLogs,
   onOpenClimberProfile,
   onFindClimbers,
@@ -278,8 +281,10 @@ export const DeferredSections = memo(function DeferredSections({
             climbUuid={climb.uuid}
             boardName={boardName}
             layoutId={layoutId}
+            angle={angle}
             userAscents={climb.userAscents}
             userAttempts={climb.userAttempts}
+            onOpenFullLogbook={onOpenFullLogbook}
           />
         </CollapsibleSection>
       </View>

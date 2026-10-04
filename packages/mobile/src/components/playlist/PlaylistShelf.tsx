@@ -106,6 +106,8 @@ export function PlaylistShelf<PlaylistItem>({
       ) : (
         <View style={listStyle}>
           <FlashList
+            // FlashList needs the bounded height on its native viewport as well as the wrapper.
+            style={listStyle}
             horizontal
             data={items}
             renderItem={renderItem}
