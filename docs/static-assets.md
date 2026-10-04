@@ -98,10 +98,11 @@ flip itself a non-event.
    `STATIC_ASSETS_R2_AWS_SECRET_ACCESS_KEY`, then dispatch **Bootstrap R2 Static Assets** from `main`.
    The workflow fixes the bucket, region, and public base URL so credentials cannot accidentally target the live
    Tigris bucket. Start with `mode=inventory`, then use `mode=bootstrap` to copy and verify every historical immutable
-   key before uploading the current catalog. Publication puts every current object through both signed `HEAD` and public `GET` — SHA-256,
-   MIME, immutable caching, CORS with an `Origin`, and the sampled CORS probe **without** one. It is also what proves
-   the two R2 behaviours this repo cannot assert from source: object integrity can be verified through
-   `HeadObject`'s `ChecksumSHA256` or, when that is absent, a complete signed `GetObject`; the publisher now hashes
+   key before uploading the current catalog. Publication validates every current object's signed S3 `HEAD` metadata
+   and SHA-256 (using the bounded signed-`GET` fallback below when `HEAD` omits its checksum), plus public `GET`
+   checks for SHA-256, MIME, immutable caching, CORS with an `Origin`, and the sampled CORS probe **without** one.
+   It is also what proves the two R2 behaviours this repo cannot assert from source: object integrity can be verified
+   through `HeadObject`'s `ChecksumSHA256` or, when that is absent, a complete signed `GetObject`; the publisher hashes
    that bounded fallback body. `PutObject` must honour `If-None-Match: *` (`putImmutableObjectIfMissing` maps the
    412 to "already present"). The historical copy repeats one same-bytes conditional upload and requires 412,
    proving the precondition on the live R2 endpoint. Every reader is still on Tigris throughout. Run `mode=verify`
