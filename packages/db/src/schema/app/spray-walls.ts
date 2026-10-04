@@ -95,11 +95,17 @@ export const sprayDetectionStatusEnum = pgEnum('spray_detection_status', [
  * A wall's stored default look: the `BoardRenderSettings` shape mobile keeps
  * per climber, minus its `'default'` mode — a wall default of "use the default"
  * would be circular, so only an explicit `classic` or `aura` is ever stored.
+ *
+ * Option knobs are typed `string`, not this build's option unions: the app can
+ * store an option (a new mark style) before the `@boardsesh/board-look` this was
+ * built with knows it, and the app sanitises whatever it reads back.
  */
 export type SprayWallRenderSettingsValue = {
   mode: 'classic' | 'aura';
-  boardsesh: BoardseshRenderSettings;
+  boardsesh: { [Knob in keyof BoardseshRenderSettings]: WidenOption<BoardseshRenderSettings[Knob]> };
 };
+
+type WidenOption<Value> = Value extends string ? string : Value;
 
 /**
  * One physical wall. Its catalogue identity is `layout_id`; its owner, name,

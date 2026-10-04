@@ -525,9 +525,9 @@ function ThemedNavigation({ children }: { children: ReactNode }) {
 }
 
 /**
- * Applies the runtime Observe settings from the feature flags. Split out as a
- * null-render child so the flag change re-runs one effect rather than
- * re-rendering the whole root, matching OfflineEngineFlagSync above it.
+ * Applies runtime Observe settings and flushes persisted telemetry whenever the
+ * app enters the foreground. Split out as a null-render child so lifecycle and
+ * flag changes do not re-render the whole root, matching OfflineEngineFlagSync.
  */
 function ObserveRuntimeConfigSync(): null {
   useObserveRuntimeConfig();
@@ -640,9 +640,8 @@ function RootLayout() {
                           OfflineEngineFlagSync because both publish into non-React
                           stores that later siblings read. Null render. */}
                         <ConnectivityBridge />
-                        {/* Applies the Observe kill switch and sample rate once PostHog
-                          resolves them. Until then the shipped defaults from
-                          observe-bootstrap stand. Null render. */}
+                        {/* Applies Observe flags, then flushes persisted telemetry on
+                          foreground transitions once PostHog resolves. Null render. */}
                         <ObserveRuntimeConfigSync />
                         <AuthProvider onReady={onAuthReady}>
                           <PartyProfileProvider>

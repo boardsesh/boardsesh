@@ -1214,6 +1214,74 @@ export type ClimbInput = {
   uuid: Scalars['ID']['input'];
 };
 
+/** One climber's log on a climb, as the public per-climb list returns it. */
+export type ClimbLogItem = {
+  __typename?: 'ClimbLogItem';
+  /** Board angle */
+  angle: Scalars['Int']['output'];
+  /** Number of tries */
+  attemptCount: Scalars['Int']['output'];
+  /** Board type */
+  boardType: Scalars['String']['output'];
+  /** UUID of the climb the log is stored under */
+  climbUuid: Scalars['String']['output'];
+  /** When the climb was logged */
+  climbedAt: Scalars['String']['output'];
+  /** The climber's note, empty when there is none */
+  comment: Scalars['String']['output'];
+  /** Personal grade id, null when none was given */
+  difficulty?: Maybe<Scalars['Int']['output']>;
+  /** Raw quality, or the climber's synced star rating for this climb and angle when the log has none. Sends and flashes only. */
+  effectiveQuality?: Maybe<Scalars['Int']['output']>;
+  /** Whether the climb was mirrored */
+  isMirror: Scalars['Boolean']['output'];
+  /** Star rating given on the log itself */
+  quality?: Maybe<Scalars['Int']['output']>;
+  /** flash, send or attempt */
+  status: Scalars['String']['output'];
+  /** Avatar URL of the user */
+  userAvatarUrl?: Maybe<Scalars['String']['output']>;
+  /** Display name of the user */
+  userDisplayName?: Maybe<Scalars['String']['output']>;
+  /** User who logged it */
+  userId: Scalars['ID']['output'];
+  /** Tick UUID */
+  uuid: Scalars['ID']['output'];
+};
+
+/** Input for one page of everyone's logs on a climb. */
+export type ClimbLogsInput = {
+  /** Only logs at this angle. Omit for every angle. */
+  angle?: InputMaybe<Scalars['Int']['input']>;
+  /** Board type (kilter, tension, moonboard, spray, ...) */
+  boardType: Scalars['String']['input'];
+  /** Climb UUID */
+  climbUuid: Scalars['String']['input'];
+  /** Opaque keyset cursor from the previous page */
+  cursor?: InputMaybe<Scalars['String']['input']>;
+  /** Signed-in callers only: drop the caller's own logs and logs by people they follow. Ignored when anonymous. */
+  excludeFollowed?: InputMaybe<Scalars['Boolean']['input']>;
+  /** One row per climber: their newest log that passes the filters above. */
+  latestPerClimber?: InputMaybe<Scalars['Boolean']['input']>;
+  /** 1 to 50, default 20 */
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  /** Only flashes and sends. */
+  sendsOnly?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Only logs with a non-empty note. */
+  withNotes?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+/** One page of logs on a climb, newest first. */
+export type ClimbLogsResult = {
+  __typename?: 'ClimbLogsResult';
+  /** Pass back as input.cursor for the next page. Null on the last page. */
+  cursor?: Maybe<Scalars['String']['output']>;
+  /** Whether another page exists */
+  hasMore: Scalars['Boolean']['output'];
+  /** Newest first (climbed at, then id) */
+  items: Array<ClimbLogItem>;
+};
+
 export type ClimbMatchResult = {
   __typename?: 'ClimbMatchResult';
   climbName?: Maybe<Scalars['String']['output']>;
@@ -1884,11 +1952,13 @@ export type CreateSprayWallInput = {
 };
 
 export type CreateSprayWallVersionInput = {
-  /** The wall's four corners in this photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. Omit to use the photo frame. */
+  /** The wall's four corners in an uploaded photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. When sourceVersionId is supplied, omit this field entirely; explicit null is rejected. */
   anchors?: InputMaybe<Scalars['JSON']['input']>;
   notes?: InputMaybe<Scalars['String']['input']>;
-  /** photoId from POST /api/spray-wall-photos. */
-  photoId: Scalars['ID']['input'];
+  /** photoId from POST /api/spray-wall-photos. Supply exactly one of photoId and sourceVersionId. */
+  photoId?: InputMaybe<Scalars['ID']['input']>;
+  /** Reuse this wall's current published photo and its saved geometry for hold editing. Supply exactly one of photoId and sourceVersionId. */
+  sourceVersionId?: InputMaybe<Scalars['ID']['input']>;
   wallUuid: Scalars['ID']['input'];
 };
 
@@ -2385,6 +2455,8 @@ export type FollowingAscentFeedItem = {
   difficultyName?: Maybe<Scalars['String']['output']>;
   /** Number of downvotes on this tick. Null if the resolver doesn't compute it. */
   downvotes?: Maybe<Scalars['Int']['output']>;
+  /** Raw quality, or the climber's synced star rating for this climb and angle when the tick has none. Sends and flashes only. Null if the resolver doesn't compute it. */
+  effectiveQuality?: Maybe<Scalars['Int']['output']>;
   /** Encoded hold frames for thumbnail display */
   frames?: Maybe<Scalars['String']['output']>;
   /** Whether this is a benchmark climb */
@@ -2432,19 +2504,48 @@ export type FollowingAscentsFeedResult = {
   totalCount: Scalars['Int']['output'];
 };
 
+/** How many followed climbers logged a climb at one angle. */
+export type FollowingClimbAscentsAngleCount = {
+  __typename?: 'FollowingClimbAscentsAngleCount';
+  /** Board angle */
+  angle: Scalars['Int']['output'];
+  /** Followed climbers with at least one log at this angle, any status */
+  climberCount: Scalars['Int']['output'];
+  /** Followed climbers with at least one flash or send at this angle */
+  senderCount: Scalars['Int']['output'];
+};
+
 /** Input for fetching followed users' ticks on a specific climb. */
 export type FollowingClimbAscentsInput = {
-  /** Board type (kilter, tension, moonboard) */
+  /** Board type (kilter, tension, moonboard, spray, ...) */
   boardType: Scalars['String']['input'];
   /** Climb UUID */
   climbUuid: Scalars['String']['input'];
 };
 
-/** Unpaginated result: all ticks from followed users for a given climb. */
+/** The 100 most recent logs, plus counts that cover all of them */
 export type FollowingClimbAscentsResult = {
   __typename?: 'FollowingClimbAscentsResult';
-  /** List of feed items */
+  /** Whether more than 100 logs exist. There is no way to page to them. */
+  hasMore: Scalars['Boolean']['output'];
+  /** Newest first, one row per log, every angle, attempts included. At most 100. */
   items: Array<FollowingAscentFeedItem>;
+  /** Counts across all logs, including the ones past the cap */
+  summary: FollowingClimbAscentsSummary;
+};
+
+/**
+ * Counts over every log from followed climbers on a climb. Not bound by the
+ * 100-row cap on the list.
+ */
+export type FollowingClimbAscentsSummary = {
+  __typename?: 'FollowingClimbAscentsSummary';
+  /** One entry per angle that has a log, ascending. Angles with none are absent. */
+  byAngle: Array<FollowingClimbAscentsAngleCount>;
+  /** Followed climbers with at least one log, any angle, any status */
+  climberCount: Scalars['Int']['output'];
+  /** Followed climbers with at least one flash or send, any angle */
+  senderCount: Scalars['Int']['output'];
 };
 
 export type FreezeClimbInput = {
@@ -2851,6 +2952,14 @@ export type Gym = {
   brandPrimaryColor?: Maybe<Scalars['String']['output']>;
   /** Whether the current viewer may start an ownership claim for this gym (signed-in and not already the owner/gym admin) */
   canClaim: Scalars['Boolean']['output'];
+  /**
+   * Whether this gym's website can drive the self-service email claim: a real
+   * (non-free-provider) domain that the gym's OWNER put on the listing. Mirrors
+   * the two refusals in requestGymClaim, so a claim UI can open the form that
+   * can actually succeed instead of dead-ending on submit. Viewer-independent —
+   * unlike canClaim, this says nothing about who is asking.
+   */
+  canClaimByDomain: Scalars['Boolean']['output'];
   /** Whether the current viewer may edit this gym (owner, gym admin, gym editor, or community admin/leader for one of its board types) */
   canEdit: Scalars['Boolean']['output'];
   /** Whether the current viewer may grant/revoke write access to other users (owner, gym admin, or community admin/leader for one of its board types) */
@@ -6007,6 +6116,12 @@ export type Query = {
   climbClassicStatus: ClimbClassicStatus;
   /** Get community status for a specific climb at an angle. */
   climbCommunityStatus: ClimbCommunityStatus;
+  /**
+   * Everyone's logs on a specific climb, one page at a time. Public. Newest
+   * first. A spray climb the caller cannot see answers like a climb nobody
+   * logged.
+   */
+  climbLogs: ClimbLogsResult;
   /** Get proposals for a specific climb. */
   climbProposals: ProposalConnection;
   /**
@@ -6100,8 +6215,9 @@ export type Query = {
    */
   followingAscentsFeed: FollowingAscentsFeedResult;
   /**
-   * Get ticks from followed users for a specific climb.
-   * Requires authentication.
+   * Logs from followed users on a specific climb: the 100 newest, plus
+   * counts that cover all of them. A spray climb the caller cannot see
+   * answers like a climb nobody logged. Requires authentication.
    */
   followingClimbAscents: FollowingClimbAscentsResult;
   /**
@@ -6769,6 +6885,11 @@ export type QueryClimbCommunityStatusArgs = {
   angle: Scalars['Int']['input'];
   boardType: Scalars['String']['input'];
   climbUuid: Scalars['String']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryClimbLogsArgs = {
+  input: ClimbLogsInput;
 };
 
 /** Root query type for all read operations. */
@@ -8495,7 +8616,14 @@ export type SetSprayWallHiddenInput = {
 };
 
 export type SetSprayWallRenderSettingsInput = {
-  /** A { mode, boardsesh } blob, or null to clear the wall's stored default. */
+  /**
+   * Required: always send the key. A { mode, boardsesh } blob sets the wall's
+   * stored default; an explicit null clears it. Omitting the key is rejected
+   * rather than read as "leave it alone" — this mutation only ever sets or clears.
+   *
+   * Declared nullable (not JSON!) because a non-null scalar could not carry the
+   * null that clears it.
+   */
   renderSettings?: InputMaybe<Scalars['JSON']['input']>;
   uuid: Scalars['ID']['input'];
 };
@@ -8745,6 +8873,13 @@ export type SimilarGym = {
   __typename?: 'SimilarGym';
   /** Physical address */
   address?: Maybe<Scalars['String']['output']>;
+  /**
+   * Whether this gym's website can drive the self-service email claim: a real
+   * (non-free-provider) domain that the gym's OWNER put on the listing. Mirrors
+   * the two refusals in requestGymClaim. Answers a different question from
+   * isClaimable, which is about the viewer's standing, not the website.
+   */
+  canClaimByDomain: Scalars['Boolean']['output'];
   /** Distance in metres from the supplied coordinates; null when no coordinates were given. */
   distanceMeters?: Maybe<Scalars['Float']['output']>;
   /** Whether the current viewer can start an ownership claim for this gym. */
@@ -10462,6 +10597,9 @@ export type ResolversTypes = ResolversObject<{
   ClimbCommunityStatus: ResolverTypeWrapper<ClimbCommunityStatus>;
   ClimbGradeSource: ClimbGradeSource;
   ClimbInput: ClimbInput;
+  ClimbLogItem: ResolverTypeWrapper<ClimbLogItem>;
+  ClimbLogsInput: ClimbLogsInput;
+  ClimbLogsResult: ResolverTypeWrapper<ClimbLogsResult>;
   ClimbMatchResult: ResolverTypeWrapper<ClimbMatchResult>;
   ClimbMirrored: ResolverTypeWrapper<ClimbMirrored>;
   ClimbPlaylistMembership: ResolverTypeWrapper<ClimbPlaylistMembership>;
@@ -10546,8 +10684,10 @@ export type ResolversTypes = ResolversObject<{
   FollowingAscentFeedItem: ResolverTypeWrapper<FollowingAscentFeedItem>;
   FollowingAscentsFeedInput: FollowingAscentsFeedInput;
   FollowingAscentsFeedResult: ResolverTypeWrapper<FollowingAscentsFeedResult>;
+  FollowingClimbAscentsAngleCount: ResolverTypeWrapper<FollowingClimbAscentsAngleCount>;
   FollowingClimbAscentsInput: FollowingClimbAscentsInput;
   FollowingClimbAscentsResult: ResolverTypeWrapper<FollowingClimbAscentsResult>;
+  FollowingClimbAscentsSummary: ResolverTypeWrapper<FollowingClimbAscentsSummary>;
   FreezeClimbInput: FreezeClimbInput;
   FrozenLocationSyncEntitiesInput: FrozenLocationSyncEntitiesInput;
   FrozenLocationSyncEntity: ResolverTypeWrapper<FrozenLocationSyncEntity>;
@@ -10932,6 +11072,9 @@ export type ResolversParentTypes = ResolversObject<{
   ClimbClassicStatus: ClimbClassicStatus;
   ClimbCommunityStatus: ClimbCommunityStatus;
   ClimbInput: ClimbInput;
+  ClimbLogItem: ClimbLogItem;
+  ClimbLogsInput: ClimbLogsInput;
+  ClimbLogsResult: ClimbLogsResult;
   ClimbMatchResult: ClimbMatchResult;
   ClimbMirrored: ClimbMirrored;
   ClimbPlaylistMembership: ClimbPlaylistMembership;
@@ -11011,8 +11154,10 @@ export type ResolversParentTypes = ResolversObject<{
   FollowingAscentFeedItem: FollowingAscentFeedItem;
   FollowingAscentsFeedInput: FollowingAscentsFeedInput;
   FollowingAscentsFeedResult: FollowingAscentsFeedResult;
+  FollowingClimbAscentsAngleCount: FollowingClimbAscentsAngleCount;
   FollowingClimbAscentsInput: FollowingClimbAscentsInput;
   FollowingClimbAscentsResult: FollowingClimbAscentsResult;
+  FollowingClimbAscentsSummary: FollowingClimbAscentsSummary;
   FreezeClimbInput: FreezeClimbInput;
   FrozenLocationSyncEntitiesInput: FrozenLocationSyncEntitiesInput;
   FrozenLocationSyncEntity: FrozenLocationSyncEntity;
@@ -11931,6 +12076,38 @@ export type ClimbCommunityStatusResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type ClimbLogItemResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ClimbLogItem'] = ResolversParentTypes['ClimbLogItem'],
+> = ResolversObject<{
+  angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  attemptCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  climbUuid?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  climbedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  comment?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  difficulty?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  effectiveQuality?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  isMirror?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  quality?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  userAvatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  userDisplayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ClimbLogsResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ClimbLogsResult'] = ResolversParentTypes['ClimbLogsResult'],
+> = ResolversObject<{
+  cursor?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  items?: Resolver<Array<ResolversTypes['ClimbLogItem']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type ClimbMatchResultResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['ClimbMatchResult'] = ResolversParentTypes['ClimbMatchResult'],
@@ -12496,6 +12673,7 @@ export type FollowingAscentFeedItemResolvers<
   difficulty?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   difficultyName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   downvotes?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  effectiveQuality?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   frames?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   isBenchmark?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   isMirror?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
@@ -12523,12 +12701,36 @@ export type FollowingAscentsFeedResultResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type FollowingClimbAscentsAngleCountResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['FollowingClimbAscentsAngleCount'] =
+    ResolversParentTypes['FollowingClimbAscentsAngleCount'],
+> = ResolversObject<{
+  angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  climberCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  senderCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type FollowingClimbAscentsResultResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['FollowingClimbAscentsResult'] =
     ResolversParentTypes['FollowingClimbAscentsResult'],
 > = ResolversObject<{
+  hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   items?: Resolver<Array<ResolversTypes['FollowingAscentFeedItem']>, ParentType, ContextType>;
+  summary?: Resolver<ResolversTypes['FollowingClimbAscentsSummary'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type FollowingClimbAscentsSummaryResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['FollowingClimbAscentsSummary'] =
+    ResolversParentTypes['FollowingClimbAscentsSummary'],
+> = ResolversObject<{
+  byAngle?: Resolver<Array<ResolversTypes['FollowingClimbAscentsAngleCount']>, ParentType, ContextType>;
+  climberCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  senderCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -12691,6 +12893,7 @@ export type GymResolvers<
   brandBackgroundColor?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   brandPrimaryColor?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   canClaim?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  canClaimByDomain?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   canEdit?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   canGrantAccess?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   commentCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
@@ -14622,6 +14825,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryClimbCommunityStatusArgs, 'angle' | 'boardType' | 'climbUuid'>
   >;
+  climbLogs?: Resolver<
+    ResolversTypes['ClimbLogsResult'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryClimbLogsArgs, 'input'>
+  >;
   climbProposals?: Resolver<
     ResolversTypes['ProposalConnection'],
     ParentType,
@@ -15960,6 +16169,7 @@ export type SimilarGymResolvers<
   ParentType extends ResolversParentTypes['SimilarGym'] = ResolversParentTypes['SimilarGym'],
 > = ResolversObject<{
   address?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  canClaimByDomain?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   distanceMeters?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   isClaimable?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -16680,6 +16890,8 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   Climb?: ClimbResolvers<ContextType>;
   ClimbClassicStatus?: ClimbClassicStatusResolvers<ContextType>;
   ClimbCommunityStatus?: ClimbCommunityStatusResolvers<ContextType>;
+  ClimbLogItem?: ClimbLogItemResolvers<ContextType>;
+  ClimbLogsResult?: ClimbLogsResultResolvers<ContextType>;
   ClimbMatchResult?: ClimbMatchResultResolvers<ContextType>;
   ClimbMirrored?: ClimbMirroredResolvers<ContextType>;
   ClimbPlaylistMembership?: ClimbPlaylistMembershipResolvers<ContextType>;
@@ -16728,7 +16940,9 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   FollowedBoardAccount?: FollowedBoardAccountResolvers<ContextType>;
   FollowingAscentFeedItem?: FollowingAscentFeedItemResolvers<ContextType>;
   FollowingAscentsFeedResult?: FollowingAscentsFeedResultResolvers<ContextType>;
+  FollowingClimbAscentsAngleCount?: FollowingClimbAscentsAngleCountResolvers<ContextType>;
   FollowingClimbAscentsResult?: FollowingClimbAscentsResultResolvers<ContextType>;
+  FollowingClimbAscentsSummary?: FollowingClimbAscentsSummaryResolvers<ContextType>;
   FrozenLocationSyncEntity?: FrozenLocationSyncEntityResolvers<ContextType>;
   FrozenLocationSyncEntityConnection?: FrozenLocationSyncEntityConnectionResolvers<ContextType>;
   FullSync?: FullSyncResolvers<ContextType>;

@@ -1024,17 +1024,26 @@ against a connection with no tables.
 `SQLiteProvider`'s effect teardown calls `db.closeAsync()`, so a remount mid-chain
 closes the connection the chain captured and opens a new one. The retry chain is
 single-flight for the process but retargets onto the latest connection on every
-attempt; a failure against a superseded handle is a lifecycle artefact and is
-deliberately not reported to error tracking.
+attempt. A non-lock failure against a superseded (closed) handle is treated as a
+lifecycle artefact and refunded for a retry against the latest connection while the
+restart allowance remains. It does not count as a lock recovery.
 
 A superseded target is therefore a CLOSED one, which fixes where the handle may be
 published: only from the ready branch in `beginInitialization`, and only when
 `latestDatabase` still names the target. That is the single publish site in the
 lifecycle — publishing from anywhere that cannot see the supersede check served a
 closed connection with `isSchemaReady()` true, which is #5292's symptom list on every
-local read (#5366). A chain that runs out of superseded refunds ends with nothing
-published and reports under its own `kind: 'sqlite-init-superseded'`, kept out of the
-`sqlite-init` aggregate because no lock was contended in that failure.
+local read (#5366). A chain that runs out of superseded refunds after a successful
+attempt ends with nothing published and reports under its own
+`kind: 'sqlite-init-superseded'`, kept out of the `sqlite-init` aggregate because no
+lock was contended in that failure. A retry chain that exhausts its attempt window
+reports genuine lock failures under `kind: 'sqlite-init'`, including when its final
+attempt overlapped a remount; `superseded: 'true'` keeps that real contention visible.
+If the final error instead comes from a closed handle that was superseded, the chain
+rechecks connection identity after journal-mode read-back and reports a synthetic
+`kind: 'sqlite-init-superseded'` event. It does not send the stale closed-handle error
+through dead-handle recovery, so a healthy remount cannot be cleared or charged a
+recovery attempt by an obsolete failure.
 
 The retraction hung off the provider (`DatabaseHandleLifecycle`) does NOT beat the
 close: expo-sqlite enters `closeAsync()` synchronously from the parent's cleanup, which

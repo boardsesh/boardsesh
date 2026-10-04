@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 //
 // Same reasoning as production-deploy-hold.test.ts for living here: this reads
 // the workflow via fs, which Vitest's `--changed` selection cannot relate to a
-// diff of the file being read. ci.yml's `deploy-config` job runs this project
+// diff of the file being read. ci.yml's `deploy-config` guard step runs this project
 // unfiltered whenever production-deploy.yml changes.
 
 const WORKFLOW_PATH = resolve(import.meta.dirname, '..', '..', '..', '.github', 'workflows', 'production-deploy.yml');

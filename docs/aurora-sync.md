@@ -56,6 +56,47 @@ The `@boardsesh/aurora-sync` package provides the shared sync implementation. It
   - `bids` → `kilter_bids` + `boardsesh_ticks`
   - `circuits` → `kilter_circuits` + `playlists` + `playlist_climbs`
 
+Circuit playlist writes are arbitrated per `(board_type, circuit_uuid)` with a
+transaction-scoped PostgreSQL advisory lock. After taking the lock, the daemon
+reads the current owner edges and either refuses a foreign/ambiguous claim or
+writes the playlist, sole-owner edge, and climb replacement in one transaction.
+Circuit deltas are deduplicated with the last payload row winning, then sorted.
+The transaction acquires that complete sorted lock set before any
+`board_circuits` source upsert or playlist write. Claiming an orphan also
+promotes an existing editor/viewer edge for the syncing user to `owner`.
+The playlist upsert also retains its correlated ownership predicate as defence
+in depth. If that predicate suppresses an upsert, the daemon re-reads owners,
+counts the circuit as refused, and logs the exact owner state; an empty owner
+state is treated as an invariant/concurrency warning and is never claimed
+silently. After each successful cycle, a persistent ownership read records one
+of `none`, `foreign`, or `ambiguous`; mobile and web show distinct localised
+guidance for the two conflict states while continuing to understand the older
+generic stored code.
+
+Every daemon and legacy web circuit writer derives the same advisory-lock key
+from the `boardsesh:aurora-circuit` namespace, board type, and circuit UUID.
+PostgreSQL hashes that text to its 64-bit transaction lock; writers sort all
+circuit UUIDs before acquiring the full lock set. Locks stay held across the
+source-row upsert, ownership read, and playlist write, so overlapping batches
+cannot deadlock by taking the same circuits in different orders.
+
+The `aurora_credentials.sync_error` column keeps the detailed stored state:
+`duplicate-board-account-link:circuits:foreign` or
+`duplicate-board-account-link:circuits:ambiguous`. The REST credentials
+response preserves the older `duplicate-board-account-link:circuits` value in
+`syncError` for clients that predate this protocol and adds
+`syncErrorReason: "foreign"` or `"ambiguous"` for current clients. A client
+should localise only these recognised codes/reasons and render unrelated legacy
+error text verbatim. This lets old and new app versions explain the same
+playlist-only pause during a rolling deployment.
+
+The arbitration integration job uses a fresh, pinned development-database
+container. Its opt-in preparation script adds only the legacy playlist columns
+and indexes absent from that image, verifies their canonical definitions, and
+checks that the Drizzle migration ledger is unchanged. This fixture setup is
+guarded to loopback PostgreSQL and is not a production schema migration or a
+replacement for the migration journal.
+
 ### Logbook writes (`ascents`/`bids`): timezone, claim, soft-delete
 
 Both pull implementations (the daemon `packages/aurora-sync/src/sync/user-sync.ts`

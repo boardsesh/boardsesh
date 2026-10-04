@@ -132,6 +132,14 @@ describe('mobile mode (ensureReady)', () => {
     expect(executeMock).not.toHaveBeenCalled();
   });
 
+  it('no-ops a local current-climb selection without creating a session', async () => {
+    const ensureReady = vi.fn(async (captured: string | null) => captured);
+    await make({ getSessionId: () => null, ensureReady }).setCurrentClimb(item('solo'), false, 'android-notification');
+    expect(ensureReady).toHaveBeenCalledExactlyOnceWith(null);
+    expect(queriesFor(SET_CURRENT_CLIMB)).toHaveLength(0);
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
   it('issues REORDER_QUEUE_ITEM after ensureReady resolves an existing session', async () => {
     const ensureReady = vi.fn(async (captured: string | null) => captured);
     await make({ ensureReady }).reorderQueueItem('a', 2, 0);

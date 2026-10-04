@@ -1,6 +1,96 @@
 {
-  "generatedAt": "2026-10-02T13:13:03.510Z",
+  "generatedAt": "2026-10-04T01:23:15.348Z",
   "entries": [
+    {
+      "prNumber": 5975,
+      "category": "new",
+      "title": "See how everyone got on with a climb, with the people you follow always first.",
+      "mergedAt": "2026-10-04T01:20:11Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5975",
+      "body": "Open \"See all logs\" on any climb for the newest log from every climber, with filters for your angle, notes and sends."
+    },
+    {
+      "prNumber": 5974,
+      "category": "new",
+      "title": "See how a climb went for the people you follow.",
+      "mergedAt": "2026-10-04T01:09:30Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5974",
+      "body": "Open a climb and scroll down: their notes and any grade they disagree on sit right under your Logbook, and everyone else who sent it is one line of names."
+    },
+    {
+      "prNumber": 5970,
+      "category": "new",
+      "title": "Your logbook on a climb is now a few plain lines: where you stand, your tries, sends and sessions, then each day with what you did.",
+      "mergedAt": "2026-10-04T00:55:47Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5970",
+      "body": "Long projects keep the drawer quick: the newest sessions show first and \"See full logbook\" opens the rest.\nA climb you have logged no longer says \"No tries yet\" when you have no signal."
+    },
+    {
+      "prNumber": 5927,
+      "category": "fixed",
+      "title": "Close a climb and return to the playlist you were browsing.",
+      "mergedAt": "2026-10-04T00:54:13Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5927",
+      "body": "Generated playlist names and climb counts have room to show."
+    },
+    {
+      "prNumber": 5928,
+      "category": "fixed",
+      "title": "Your crew now follows Next and Previous from Android's session notification.",
+      "mergedAt": "2026-10-04T00:54:01Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5928"
+    },
+    {
+      "prNumber": 5963,
+      "category": "fixed",
+      "title": "The Logbook line on a climb updates as soon as you log a tick",
+      "mergedAt": "2026-10-03T22:02:08Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5963",
+      "body": "Scrolling a climb no longer runs text under the clock\nThe Download button under Similar Climbs fits its card"
+    },
+    {
+      "prNumber": 5948,
+      "category": "fixed",
+      "title": "Find gyms and boards without losing your results when searches need to wait.",
+      "mergedAt": "2026-10-03T09:00:51Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5948"
+    },
+    {
+      "prNumber": 5946,
+      "category": "fixed",
+      "title": "Keep your offline logbook available when storage reconnects during recovery.",
+      "mergedAt": "2026-10-03T06:27:58Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5946"
+    },
+    {
+      "prNumber": 4273,
+      "category": "fixed",
+      "title": "Empty beta-thumbnail downloads no longer become blank pictures in the feed.",
+      "mergedAt": "2026-10-03T05:52:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4273",
+      "body": "Broken images served through the backend proxy show a fallback instead of an empty image."
+    },
+    {
+      "prNumber": 4094,
+      "category": "fixed",
+      "title": "Playlist sync now explains when another Boardsesh account owns a circuit and shows how to recover.",
+      "mergedAt": "2026-10-03T05:50:08Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4094"
+    },
+    {
+      "prNumber": 5890,
+      "category": "improved",
+      "title": "Board images stay put during browser updates, and the app follows light or dark appearance changes more reliably.",
+      "mergedAt": "2026-10-03T04:11:24Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5890"
+    },
+    {
+      "prNumber": 5926,
+      "category": "fixed",
+      "title": "See which Woods climbs you've sent original, mirrored, or both.",
+      "mergedAt": "2026-10-02T13:14:28Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5926"
+    },
     {
       "prNumber": 5933,
       "category": "fixed",
@@ -5997,6 +6087,71 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-10-03T21:12:59+10:00",
+      "sha": "6986ca9100c0492586f42f1a88ce3d49b4986f07",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "04b545294d879a2a9d1fb2ac46a807d3175b39d6",
+        "ios": "c2643067d9b4f56009900f1954305ca73ea799d1"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-10-03T16:28:27+10:00",
+      "sha": "2d4bd8028c64d33bb9e85dfb5f30a9cdd06f5881",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "118c3d383482b5e290c4d0082e07fdd26e5e4708",
+        "ios": "56532eb8f1c08d3d6de24d61300cc9748921c013"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-10-03T16:20:09+10:00",
+      "sha": "511c8fac8b719fdcf6dbaf7b93c4890ea1e2505b",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "1814fef8f491e75ddc1d2e348a91ab644a8d4cc8",
+        "ios": "a4fc5a88a0cef2ce6b4a4ea3ee11b5c12af21530"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-10-03T10:21:59+10:00",
+      "sha": "a764bec577539ce131c13f21840fd60f3dc83176",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "0e07e7911472cd5b61b77ca4a4ab303abe389d5a",
+        "ios": "a7cb366b87a0a4697211b6eb5cdb3ade3a320c01"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-10-03T00:35:35Z",
+      "sha": "a764a0d6b3d5b56973bf35dc639bc29da3022a8a",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "a4b68dea749f9548adc0fc8a4bf905233aa30a1d",
+        "ios": "9232857c8e1b859e61de9457e4a39db44d0a7b5c"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-09-22T18:21:48+10:00",

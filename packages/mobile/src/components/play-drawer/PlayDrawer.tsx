@@ -46,6 +46,7 @@ import { BoardRenderUnavailable } from './BoardRenderUnavailable';
 import { PlaybackControls } from '../playback/PlaybackControls';
 import { useMobilePlayback } from './use-mobile-playback';
 import { LivePlayDrawerHeader } from './PlayDrawerHeader';
+import { PlayDrawerStatusBarScrim } from './PlayDrawerStatusBarScrim';
 import { copyClimbName } from './copy-climb-name';
 import { SwipeableHeader } from './SwipeableHeader';
 import { PlayDrawerActionBar } from './PlayDrawerActionBar';
@@ -81,6 +82,10 @@ import { AngleSelectorSheet } from './AngleSelectorSheet';
 import { ClimbActionsSheet } from '../ClimbActionsSheet';
 import { AddBetaVideoSheet } from '../AddBetaVideoSheet';
 import { ClimbRevisionSheet } from './ClimbRevisionSheet';
+import { LogbookFullSheet } from './logbook/LogbookFullSheet';
+import { useFullLogbookSheet } from './logbook/use-full-logbook-sheet';
+import { ClimberLogsSheet } from './ClimberLogsSheet';
+import { usePushAfterPlayerDismiss } from './use-push-after-player-dismiss';
 import { ReportClimbSheet } from '../report-climb/ReportClimbSheet';
 import { BleControlSheetHost } from '../ble/BleControlSheetHost';
 import { RestTimerPillHost } from '../queue-control/RestTimerPillHost';
@@ -373,6 +378,9 @@ export function PlayDrawer({
   const [isTickBarActive, setIsTickBarActive] = useState(false);
   const [activeSubDrawer, setActiveSubDrawer] = useState<ActiveSubDrawer>('none');
   const [addBetaVideoOpen, setAddBetaVideoOpen] = useState(false);
+  // The climb whose full climber-logs list is open. Keyed on the uuid (like
+  // `mirrorFlip`) so moving to another climb closes the sheet without an effect.
+  const [climberLogsClimbUuid, setClimberLogsClimbUuid] = useState<string | null>(null);
   // Pinned climb/board the reaction menu opened the beta sheet for; null falls back
   // to the live displayedClimb (the "+" button path). See #3505.
   const [betaVideoTarget, setBetaVideoTarget] = useState<{ climb: Climb; boardConfig: BoardConfig } | null>(null);
@@ -1660,6 +1668,35 @@ export function PlayDrawer({
     setAddBetaVideoOpen(false);
   }, []);
 
+  // Logbook card "See full logbook": the virtualised history sheet.
+  // Pinned to the climb it was opened on: a climb change closes it for good.
+  const {
+    climbUuid: fullLogbookClimbUuid,
+    open: handleOpenFullLogbook,
+    close: handleCloseFullLogbook,
+  } = useFullLogbookSheet(displayedClimbUuid);
+  // Climber logs card: "See all logs" opens the virtualised list; a row opens
+  // that climber's profile; the empty states lead to climber search. Both routes
+  // are plain cards on the root stack, and on iOS a card pushed while the
+  // `/play` modal is up lands beneath it (docs/mobile-sheets-vs-routes.md), so
+  // they leave through `usePushAfterPlayerDismiss`.
+  const handleOpenClimberLogs = useCallback(() => {
+    setClimberLogsClimbUuid(displayedClimbUuid ?? null);
+  }, [displayedClimbUuid]);
+  const handleCloseClimberLogs = useCallback(() => {
+    setClimberLogsClimbUuid(null);
+  }, []);
+  const pushAfterPlayerDismiss = usePushAfterPlayerDismiss(dismissPlayerAndWait);
+  const handleOpenClimberProfile = useCallback(
+    (userId: string) => {
+      pushAfterPlayerDismiss(() => router.push({ pathname: '/users/[userId]', params: { userId } }));
+    },
+    [pushAfterPlayerDismiss],
+  );
+  const handleFindClimbers = useCallback(() => {
+    pushAfterPlayerDismiss(() => router.push('/users/search'));
+  }, [pushAfterPlayerDismiss]);
+
   const handleOpenActions = useCallback(() => {
     // iOS: open the floating reaction menu (over the drawer) instead of the in-drawer
     // bottom sheet. Android keeps the bottom sheet.
@@ -1785,7 +1822,9 @@ export function PlayDrawer({
   // Named because the wall-state callout needs it too: it hangs off the header's
   // measured bottom edge, and that measurement is relative to the a11y-trap
   // wrapper INSIDE this padding, not to the first screen itself.
-  const firstScreenPaddingTop = isPane && !paneTopInset ? spacing[2] : insets.top + spacing[2];
+  // In the pane a docked WallStrip can already own the top inset.
+  const ownsTopInset = !isPane || paneTopInset;
+  const firstScreenPaddingTop = ownsTopInset ? insets.top + spacing[2] : spacing[2];
 
   // When the user expands the Logbook peek, glide it fully into view. Fires on the
   // section's layout (re-firing as a slow logbook fetch grows it) while armed.
@@ -1819,6 +1858,10 @@ export function PlayDrawer({
   const angleSelectorVisible = activeSubDrawer === 'angleSelector';
   const mountClimbActions = useMountedOnFirstOpen(climbActionsVisible);
   const mountAddBetaVideo = useMountedOnFirstOpen(addBetaVideoOpen);
+  const fullLogbookOpen = fullLogbookClimbUuid !== null;
+  const mountFullLogbook = useMountedOnFirstOpen(fullLogbookOpen);
+  const climberLogsOpen = climberLogsClimbUuid !== null && climberLogsClimbUuid === displayedClimbUuid;
+  const mountClimberLogs = useMountedOnFirstOpen(climberLogsOpen);
   const mountReportClimb = useMountedOnFirstOpen(reportClimbOpen);
   const mountRevisionSheet = useMountedOnFirstOpen(revisionSheetOpen);
   const mountAngleSelector = useMountedOnFirstOpen(angleSelectorVisible);
@@ -2167,11 +2210,18 @@ export function PlayDrawer({
                       onLogbookToggle={handleLogbookToggle}
                       onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
                       onOpenRevision={handleOpenRevision}
+                      onOpenFullLogbook={handleOpenFullLogbook}
+                      onOpenClimberLogs={handleOpenClimberLogs}
+                      onOpenClimberProfile={handleOpenClimberProfile}
+                      onFindClimbers={handleFindClimbers}
                     />
                   </View>
                 </>
               )}
             </ScrollView>
+            {ownsTopInset && insets.top > 0 ? (
+              <PlayDrawerStatusBarScrim height={insets.top} scrollY={scrollYSV} />
+            ) : null}
           </Animated.View>
         </GestureDetector>
       )}
@@ -2232,6 +2282,32 @@ export function PlayDrawer({
           setIds={revisionTarget?.boardConfig.setIds ?? setIds}
           revisionNumber={revisionTarget?.revisionNumber ?? null}
           onClose={handleCloseRevision}
+        />
+      )}
+
+      {/* Sub-drawer: the climber's full history on this climb, opened from the
+          Logbook card when it has more than the card shows. Mounted on first open. */}
+      {mountFullLogbook && (
+        <LogbookFullSheet
+          visible={fullLogbookOpen}
+          climbUuid={fullLogbookClimbUuid}
+          boardName={boardName as BoardName}
+          layoutId={layoutId}
+          angle={angle}
+          onClose={handleCloseFullLogbook}
+        />
+      )}
+
+      {/* Sub-drawer: every followed climber's logs on this climb, opened from the
+          Climber logs card's "See all logs" row. Mounted on first open. */}
+      {mountClimberLogs && (
+        <ClimberLogsSheet
+          visible={climberLogsOpen}
+          climb={displayedClimb ?? null}
+          boardName={boardName}
+          angle={angle}
+          onClose={handleCloseClimberLogs}
+          onOpenProfile={handleOpenClimberProfile}
         />
       )}
 

@@ -100,6 +100,7 @@ import {
 import { UPDATE_SPRAY_WALL } from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWall, UpdateSprayWallInput } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../client';
+import { requestSearchBoards, shouldRetryBoardSearch, boardSearchRetryDelay } from '../search-boards-request';
 import { useStoredUserId } from '../../../hooks/use-current-user-id';
 import { withHoldOutlineOverride, withoutHoldOutlineOverride } from './hold-outline-cache';
 import { useGradeSourceSearchInput } from './search-grade-source';
@@ -113,7 +114,6 @@ import {
   UPDATE_PROFILE,
   GET_MY_BOARDS,
   GET_BOARD,
-  SEARCH_BOARDS,
   GET_BOARDS_BY_SERIAL_NUMBERS,
   GET_POPULAR_BOARD_CONFIGS,
   CREATE_BOARD,
@@ -134,7 +134,6 @@ import {
   type UpdateProfileMutationResponse,
   type GetMyBoardsQueryResponse,
   type GetBoardQueryResponse,
-  type SearchBoardsQueryResponse,
   type GetBoardsBySerialNumbersQueryResponse,
   type GetPopularBoardConfigsQueryResponse,
   type CreateBoardMutationResponse,
@@ -331,7 +330,9 @@ export function useBoardBySlug(slug: string | null, options?: { enabled?: boolea
 export function useSearchBoards(input: SearchBoardsInput, enabled = true) {
   return useQuery({
     queryKey: ['searchBoards', input],
-    queryFn: () => getHttpClient().request<SearchBoardsQueryResponse>(SEARCH_BOARDS, { input }),
+    queryFn: ({ signal }) => requestSearchBoards(input, signal),
+    retry: shouldRetryBoardSearch,
+    retryDelay: boardSearchRetryDelay,
     select: (data) => data.searchBoards,
     enabled,
   });
@@ -443,9 +444,9 @@ export function useNearbyBoards(
       layoutFilter ?? null,
       sizeFilter ?? null,
     ],
-    queryFn: () =>
-      getHttpClient().request<SearchBoardsQueryResponse>(SEARCH_BOARDS, {
-        input: {
+    queryFn: ({ signal }) =>
+      requestSearchBoards(
+        {
           latitude: coords?.latitude,
           longitude: coords?.longitude,
           radiusKm,
@@ -455,7 +456,10 @@ export function useNearbyBoards(
           layoutIds: layoutFilter,
           sizeIds: sizeFilter,
         },
-      }),
+        signal,
+      ),
+    retry: shouldRetryBoardSearch,
+    retryDelay: boardSearchRetryDelay,
     select: (data) => data.searchBoards,
     enabled: coords !== null,
     // Keep the previous boards visible while a new center/filter loads so the
@@ -497,18 +501,22 @@ export function useNearbyGyms(
       sizeFilter ?? null,
       multiBoardTypeFilter ?? null,
     ],
-    queryFn: () =>
-      getHttpClient().request<SearchGymsQueryResponse>(SEARCH_GYMS, {
-        input: {
-          latitude: coords?.latitude,
-          longitude: coords?.longitude,
-          radiusKm,
-          limit: 50,
-          query: nameFilter,
-          boardTypes: typeFilter,
-          layoutIds: layoutFilter,
-          sizeIds: sizeFilter,
-          multiBoardTypeOnly: multiBoardTypeFilter,
+    queryFn: ({ signal }) =>
+      getHttpClient().request<SearchGymsQueryResponse>({
+        document: SEARCH_GYMS,
+        signal,
+        variables: {
+          input: {
+            latitude: coords?.latitude,
+            longitude: coords?.longitude,
+            radiusKm,
+            limit: 50,
+            query: nameFilter,
+            boardTypes: typeFilter,
+            layoutIds: layoutFilter,
+            sizeIds: sizeFilter,
+            multiBoardTypeOnly: multiBoardTypeFilter,
+          },
         },
       }),
     select: (data) => data.searchGyms,
@@ -1400,6 +1408,8 @@ export function useUserBetaLinks(
 // Own module: it pulls in the offline source hook (expo-sqlite), which the
 // barrel's unit tests mock out the same way as the other submodules.
 export { useSimilarClimbs } from './use-similar-climbs';
+export { useFollowingClimbLogs, useClimbDwell } from './use-following-climb-logs';
+export { useClimbLogs, useClimbLogsPreview, flattenClimbLogPages } from './use-climb-logs';
 
 /**
  * Per-angle stats for a climb (grade, stars, sends). Every consumer keeps the

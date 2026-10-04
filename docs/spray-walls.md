@@ -441,9 +441,19 @@ touches the slider each look keeps its own dimming, which for Aura Outline is
 none. `withSprayWallDim` applies the value to the options themselves, so the
 previews and the stored bundle cannot disagree.
 
-- **Validated against `@boardsesh/board-look`'s own option lists and slider
-  bounds** (`SetSprayWallRenderSettingsInputSchema`), strict, every knob required.
+- **Validated against `@boardsesh/board-look`'s slider bounds**
+  (`SetSprayWallRenderSettingsInputSchema`), strict, every knob required.
   `mode: 'default'` is refused: a wall default of "use the default" points at itself.
+- **Option knobs take any well-formed name** (`markStyle`, `veil`, …), not only
+  the ones this backend's `@boardsesh/board-look` lists. The app ships on its own
+  train and can offer an option first: its default spray look,
+  `markStyle: 'outline'`, reaches the native train before `main` knows it. Only
+  the app reads the value, and it sanitises a name it does not know to that
+  knob's default.
+- **Read in its own query** (`GET_SPRAY_WALL_LOOK`), never in the shared
+  `SPRAY_WALL_FIELDS`. A field a deployed backend does not have yet fails
+  validation for the whole operation it sits in; in the shared fragment that
+  took down creating, loading and drawing every wall.
 - **On `spray_walls`, not `spray_wall_versions`.** A reset does not need a new look,
   so it is current-state config like `reference_width/height`.
 - **No wall lock.** No hold, version or publish path reads or writes the column, so
@@ -456,6 +466,16 @@ adopts that object as a draft version. The photo's pixel dimensions come off the
 STORED object's metadata, never off the request — they define the canonical frame,
 and a client that lied about them would put every hold on the wall at the wrong
 place.
+
+For hold edits on the existing photo, supply `sourceVersionId` instead of
+`photoId`. Exactly one is required. The source must be this wall's current
+published version, checked under the same wall lock that enforces one open draft.
+Its photo key, pixel dimensions, anchors and homography are copied exactly;
+anchors must be omitted from the request, including when the source has none.
+This path makes no upload or storage-metadata request and leaves the canonical
+frame unchanged. A missing source photo is refused. Holds are inherited through
+the normal version read, keeping their existing ids until an edit supersedes or
+removes one. Old clients that supply an uploaded `photoId` keep the same behavior.
 
 Version 1 defines the frame: with anchors it is the anchor quad's bounding
 rectangle, without them it is the photo's own pixel box. Later versions **inherit**
@@ -617,6 +637,36 @@ survives; and because it starts from the reference, it works in a query that
 never mentions `board_climbs` — `userProfileStats` shares one condition list
 across three aggregates, one of which selects distinct climb uuids straight off
 `boardsesh_ticks`.
+
+`followingClimbAscents` (the play drawer's "Climber logs") takes the predicate
+from `climbLogConditions` in
+`packages/backend/src/graphql/resolvers/social/climb-log-query.ts`, which is the
+one array both its list query and its count query spread. That is deliberate: a
+count without the predicate would tell a follower that people log on a wall they
+cannot see. A climb on a hidden wall answers exactly like a climb nobody has
+logged (empty list, zero counts, no error).
+
+`climbLogs` (the "Everyone" section of the same list) is the PUBLIC sibling: no
+sign-in needed, and the caller names the climb. It spreads the same
+`climbLogConditions` array, and on its one-row-per-climber path the array sits
+inside the window's own WHERE, so a hidden log can neither be returned nor be
+the row that represents a climber. The viewer id handed to the predicate is null
+unless the request is authenticated. A wall the caller cannot see, an unknown
+climb and a board-type mismatch all return the same empty page. It has no row in
+the sweep's allow-list: `spray-visibility-sweep.test.ts` enumerates it like any
+other reader, and `climb-logs.test.ts` runs each wall state against both paths.
+
+The reference form alone is not enough there. It passes a spray tick whose
+`board_climbs` row is missing, for every viewer, and a climb row does go missing:
+deleting a wall is a soft delete that keeps its climbs, but `deleteDraftClimb`
+and account deletion (which removes the deleted user's drafts) hard-delete the
+climb and leave its ticks. With no climb there is no wall to check, so
+`climbLogConditions` adds a second condition that fails closed: a spray tick is
+returned only when its climb row still exists. Other board types keep the lenient
+behaviour, because an Aurora tick can arrive before its climb. The other readers
+in the table above still use the reference form on its own and have not been
+audited for this case. Any new per-climb log reader imports `climbLogConditions`
+rather than writing its own.
 
 Pick by what the query HAS, not by taste:
 
@@ -1435,7 +1485,7 @@ a notice saying what happened. A wall that quietly stopped being visible to thei
 crew with no explanation would read as data loss, and the climbs on it are their
 work.
 
-The rule lands in **four** implementations, which is the thing to keep in step —
+The rule lands in **eleven** implementations, which is the thing to keep in step —
 they do not share a query builder:
 
 1. `viewerCanSeeSprayWall` (by uuid) and 2. `viewerCanSeeSprayWallByLayout` in
@@ -1446,12 +1496,53 @@ they do not share a query builder:
 4. the three SQL predicates in
    `packages/db/src/queries/climbs/spray-visibility.ts`, each carrying
    `AND (sw.hidden_at IS NULL OR ub.owner_id = <viewer>)`. Those are what gate a
-   spray climb's ~15 reads.
+   spray climb's ~15 reads;
+5. `sprayBoardRowIsReadable` in
+   `packages/backend/src/graphql/resolvers/climbs/spray-read-access.ts`, whose
+   `'capability'` half honours an unlisted wall's uuid only while the wall is not
+   hidden. It gates `board(boardUuid)`, `boardLeaderboard` and `searchClimbs` /
+   `holdHeatmap` with a `sprayWallUuid`, which never go through number 1;
+6. `listableSprayWallCondition` in
+   `packages/backend/src/graphql/resolvers/board/spray-wall-listing.ts`, the
+   EXISTS behind `searchBoards`, `gymBoards` and `myBoards`. Its owner escape sits
+   outside the EXISTS, so the owner still lists their own hidden wall;
+7. gym discovery's own EXISTS in
+   `packages/backend/src/graphql/resolvers/social/board-discovery.ts`, with no
+   owner escape at all;
+8. the share card: `renderSprayOgCard` in
+   `packages/backend/src/services/spray-og-card.ts` answers a hidden wall with
+   the private wall's `404` + `no-store` (`docs/og-climb.md`), before a photo URL
+   is derived;
+9. `publicWallPhotoUrl` in `spray-walls.ts`, null on a hidden wall for the owner
+   too, since a private wall has no public URL for anybody;
+10. the climb sitemap's wall source, `buildPublicSprayWallQuery` in
+    `packages/web/app/lib/seo/sitemap/spray-wall-configs.ts`. The sitemap's climb
+    query carries number 4 as well, so this one is the first gate, not the only one;
+11. `assertSprayBoardIsReadable` in `spray-read-access.ts`, the by-layout rule
+    for history, recent climbs and presence stats, and
+    `requireReadablePresenceBoard` in `board-presence/shared.ts`, which loads
+    a numeric board id once and applies that same rule to `boardConnection`
+    and `boardQueuePreview` (query and subscription).
+
+Hiding does NOT delete the wall's `media` copy. Nothing in Boardsesh hands its URL
+out once the wall is hidden, but a URL somebody already copied keeps working for as
+long as that object exists. A share card an edge or an unfurler cached before the
+hide keeps being served until that cache entry expires (a day of freshness at our
+edge, see `docs/og-climb.md`).
 
 Hiding also purges the wall's `feed_items`, the same as deleting it does — feed
 rows are served straight out of that table and would outlive the gate. Unhiding
 does NOT put them back: a feed is a record of what happened when, and
 re-announcing week-old climbs would be a lie. Everything else comes back.
+
+The queue authorizes a `spray`-scoped or global admin before reading or signing
+any preview. It selects the current published version's photo; only a wall
+without a published version falls back to its latest draft. Several reports for
+one wall share one preview and one pair of private-bucket signatures. `photo`
+can be null when there is no version, no configured private bucket, or signing
+fails, so an unavailable preview does not block reviewing the remaining reports.
+Photo URLs expire after 15 minutes: clients must refresh the queue rather than
+persisting its URLs.
 
 The Boards picker mounts `BoardDetailSheet` through a Details action on each
 spray-wall card, plus the active wall's Details control. The active control

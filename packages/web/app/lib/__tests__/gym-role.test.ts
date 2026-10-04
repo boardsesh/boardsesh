@@ -22,6 +22,7 @@ function makeGym(overrides?: Partial<Gym>): Gym {
     canGrantAccess: true,
     canClaim: false,
     isClaimed: true,
+    canClaimByDomain: false,
     ...overrides,
   };
 }

@@ -76,12 +76,19 @@ export function requireJobQueue(): PgBoss {
   return boss;
 }
 
+/**
+ * pg-boss pool per backend replica when `PGBOSS_POOL_SIZE` is unset. Its work is
+ * short timer statements and a handful of once-a-minute jobs, which 2
+ * connections serve; see the connection budget in docs/db-connectivity.md.
+ */
+export const DEFAULT_PGBOSS_POOL_SIZE = 2;
+
 export async function startJobQueue(): Promise<PgBoss> {
   if (boss) return boss;
 
   const instance = createJobQueueClient({
     connectionString: getConnectionConfig().connectionString,
-    poolSize: Number(process.env.PGBOSS_POOL_SIZE ?? 4),
+    poolSize: Number(process.env.PGBOSS_POOL_SIZE ?? DEFAULT_PGBOSS_POOL_SIZE),
     owner: 'backend',
     testBootstrap: process.env.NODE_ENV === 'test',
   });

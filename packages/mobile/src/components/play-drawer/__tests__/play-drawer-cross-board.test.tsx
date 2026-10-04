@@ -178,6 +178,7 @@ vi.mock('../BrowseFrameOverlay', () => ({ BrowseFrameOverlay: () => null }));
 vi.mock('../PanePlaceholder', () => ({ PanePlaceholder: () => null }));
 vi.mock('../BoardRenderUnavailable', () => ({ BoardRenderUnavailable: () => null }));
 vi.mock('../../playback/PlaybackControls', () => ({ PlaybackControls: () => null }));
+vi.mock('../PlayDrawerStatusBarScrim', () => ({ PlayDrawerStatusBarScrim: () => null }));
 vi.mock('../PlayDrawerHeader', () => ({
   LivePlayDrawerHeader: (props: Props) => {
     recorded.headers.push(props);
@@ -205,6 +206,8 @@ vi.mock('../../create-climb/use-create-climb-navigation', () => ({
 }));
 vi.mock('../../AddBetaVideoSheet', () => ({ AddBetaVideoSheet: () => null }));
 vi.mock('../ClimbRevisionSheet', () => ({ ClimbRevisionSheet: () => null }));
+vi.mock('../logbook/LogbookFullSheet', () => ({ LogbookFullSheet: () => null }));
+vi.mock('../ClimberLogsSheet', () => ({ ClimberLogsSheet: () => null }));
 vi.mock('../../report-climb/ReportClimbSheet', () => ({ ReportClimbSheet: () => null }));
 vi.mock('../../ble/BleControlSheetHost', () => ({ BleControlSheetHost: () => null }));
 vi.mock('../../queue-control/RestTimerPillHost', () => ({ RestTimerPillHost: () => null }));

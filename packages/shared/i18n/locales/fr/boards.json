@@ -255,7 +255,10 @@
       "otherBoardsTitle": "Boards à proximité",
       "multiBoardChip": "2+ types de board",
       "editGym": "Modifier la salle",
-      "editBoard": "Modifier la board"
+      "editBoard": "Modifier la board",
+      "updating": "Actualisation des résultats…",
+      "refreshFailed": "Impossible d’actualiser les résultats.",
+      "retry": "Réessayer"
     },
     "myGyms": {
       "moreRowTitle": "Mes salles",

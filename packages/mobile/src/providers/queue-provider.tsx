@@ -109,6 +109,7 @@ import {
   type QueueActionsContextValue,
   type QueuePlaylistSuggestionContextValue,
   type QueueReorderSource,
+  type WidgetNavigationOptions,
 } from './queue/queue-contexts';
 import {
   createBoardFeedSuggestionSource,
@@ -1508,6 +1509,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       shouldAddToQueue: boolean,
       playlistSuggestionSource?: PlaylistSuggestionSource | null,
       insertAfterCurrent?: boolean,
+      suppliedCorrelationId?: string,
     ) => {
       // Activating a climb that isn't in the queue yet (shouldAddToQueue, or the
       // playlist peek minted in nextClimb) introduces it — stamp it before the
@@ -1515,7 +1517,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // the queue is a no-op here: attributeNewItem sees the uuid and leaves it
       // alone, so stepping through the crew's queue never re-authors it (#3995).
       const item = attributeNewItem(rawItem);
-      const correlationId = coordinator.generateCorrelationId();
+      const correlationId = suppliedCorrelationId ?? coordinator.generateCorrelationId();
       dispatch({
         type: 'DELTA_UPDATE_CURRENT_CLIMB',
         // playlistSuggestionSource is client-only state — when present the
@@ -1826,17 +1828,21 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     dispatchSetCurrent(item, converted, undefined, converted);
   }, [dispatchSetCurrent]);
 
-  // Optimistic dispatch for widget Next/Previous taps. The native widget intent
-  // already sent the server mutation (HTTP /api/widget/navigate or the WS
-  // fallback), so we only update the local reducer with the absolute item and
-  // register the correlationId for echo suppression — no fresh JS mutation, and
-  // no relative advance that could double-step against the racing broadcast.
-  const dispatchWidgetNavigation = useCallback((item: ClimbQueueItem, correlationId: string) => {
-    dispatch({
-      type: 'DELTA_UPDATE_CURRENT_CLIMB',
-      payload: { item, shouldAddToQueue: false, correlationId },
-    });
-  }, []);
+  // Select the absolute native target so a racing server echo cannot double-step.
+  // iOS publishes natively; Android forwards the event for JS to publish.
+  const dispatchWidgetNavigation = useCallback(
+    (item: ClimbQueueItem, correlationId: string, options?: WidgetNavigationOptions) => {
+      if (options?.sendMutation) {
+        dispatchSetCurrent(item, false, undefined, undefined, correlationId);
+        return;
+      }
+      dispatch({
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: { item, shouldAddToQueue: false, correlationId },
+      });
+    },
+    [dispatchSetCurrent],
+  );
 
   const mirrorRequestRef = useRef(false);
   /**

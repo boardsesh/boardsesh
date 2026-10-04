@@ -31,7 +31,7 @@ The rule for any sync or batch job: a write that changes nothing still costs WAL
 
 Change IDs (C#) match the audit findings. Rows are in rank order.
 
-**Shipped:** C1, C2, C3, C5, C6, C8, C10, C12, C13 (PR numbers in the Status column). C11 shipped earlier. C7 and C14 shipped in part. **Still open:** C4, C7 (remaining index drops), C9, C14 (remaining job trims), C15.
+**Shipped:** C1, C2, C3, C5, C6, C8, C10, C12, C13 (PR numbers in the Status column). C11 shipped earlier. C7 and C14 shipped in part. **C15 source addressed in #5858; operator rollout and deployment monitoring remain pending. Still open:** C4, C7 (remaining index drops), C9, C14 (remaining job trims).
 
 | Rank | C# | Status | Change | Saved per day | Memory (MB) | Effort | Migr. | Risk | Replica verdict | Offline-only? |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -49,7 +49,7 @@ Change IDs (C#) match the audit findings. Rows are in rank order.
 | 12 | C8 | Shipped #5838 | Discovery rail: cache the top-40 ranking, re-check visibility per request | 280–305 (E) | 0 | S | No | Low | confirmed, smaller | No |
 | 13 | C10 | Shipped #5837 | You page: conditional userTicks joins, stop refetch on tick/resume | 200–500 (E) | 0 | S | No | Low | join trim confirmed | Yes, needs new data (L) |
 | 14 | C11 | Shipped earlier #4968 | Similar-climbs read: already cached (Redis 1 h + singleFlight, #4968) | 0 (done) | 0 | — | No | — | already shipped | Already local on mobile |
-| 15 | C15 | Open | Memory budget: parallel workers 0, smaller pools, pg-boss intervals | ceiling; wait time 500–700 (E) | −270 steady, −500 worst (E) | S | No | Low–Med | not re-tested | No |
+| 15 | C15 | Source addressed #5858; rollout pending | Memory budget: parallel workers 0, smaller pools, pg-boss intervals | ceiling; wait time 500–700 (E) | −270 steady, −500 worst (E) | S | No | Low–Med | not re-tested | No |
 
 ## Details per change
 
@@ -207,9 +207,9 @@ Already shipped. The `similarClimbs` resolver reads through `findSimilarClimbsCa
 ### C15. Memory budget
 
 - Run `ADMIN_DATABASE_URL=... vp run db:verify-serial-plan` (from `packages/db`; the logic lives in `scripts/serial-plan-default.ts`). The repo contract is 0 parallel workers per gather and the live value was 2 (P).
-- After C1: backend pool 4–5, pg-boss 2, web 4, homelab daemons 3.
+- After C1 and this PR's code defaults: backend pool 5 and pg-boss 2; the web pool remains explicitly at 10, and sync daemons remain at 5. A web cap of 4 is a separate operator change; a daemon cap of 3 requires a source change.
 - pg-boss: `flowIntervalSeconds 3600`, `cronMonitorIntervalSeconds 45`, `monitorIntervalSeconds ≤120`.
-- Lower `max_connections` to 60 last.
+- Keep `max_connections=100`. Consider lowering it only after supported pool caps are applied and a week of deploy peaks stays below 45; the projected 67-connection drain exceeds the 57 application slots available at `max_connections=60`.
 
 ## Offline-only candidates
 

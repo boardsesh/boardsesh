@@ -1,15 +1,7 @@
 import { z } from 'zod';
 import { MAX_RING_NUMBERS, MIN_RING_NUMBERS, isValidOutlineRing } from '@boardsesh/board-art-geometry/ring';
 import { MAX_HOLDS_PER_WALL, SPRAY_ANGLES } from '@boardsesh/board-config';
-import {
-  BOARD_RENDER_SETTING_BOUNDS,
-  GLOW_FALLOFF_SETTINGS,
-  HOLD_SHAPE_SETTINGS,
-  MARK_STYLE_SETTINGS,
-  THUMBNAIL_STYLE_SETTINGS,
-  VEIL_SETTINGS,
-  type BoardseshRenderSettings,
-} from '@boardsesh/board-look';
+import { BOARD_RENDER_SETTING_BOUNDS, type BoardseshRenderSettings } from '@boardsesh/board-look';
 import { isSolvableAnchorQuad } from '@boardsesh/spray-wall-geometry';
 import { UUIDSchema } from './primitives';
 
@@ -129,12 +121,21 @@ export const CreateSprayWallInputSchema = z.object({
   // never taken from a client. See docs/spray-walls.md.
 });
 
-export const CreateSprayWallVersionInputSchema = z.object({
-  wallUuid: UUIDSchema,
-  photoId: UUIDSchema,
-  anchors: SprayAnchorsSchema.optional().nullable(),
-  notes: z.string().max(1000).optional().nullable(),
-});
+export const CreateSprayWallVersionInputSchema = z
+  .object({
+    wallUuid: UUIDSchema,
+    photoId: UUIDSchema.optional().nullable(),
+    sourceVersionId: BigIntIdSchema.optional().nullable(),
+    anchors: SprayAnchorsSchema.optional().nullable(),
+    notes: z.string().max(1000).optional().nullable(),
+  })
+  .refine((input) => (input.photoId != null) !== (input.sourceVersionId != null), {
+    message: 'Choose either an uploaded photo or the current published version',
+  })
+  .refine((input) => input.sourceVersionId == null || input.anchors === undefined, {
+    message: 'A reused photo keeps its saved corners; omit anchors',
+    path: ['anchors'],
+  });
 
 export const SprayWallHoldInputSchema = z.object({
   // Present = correct an existing hold's geometry; absent = allocate a new
@@ -329,8 +330,20 @@ function boundedSetting(name: string, bounds: { readonly min: number; readonly m
     .max(bounds.max, range);
 }
 
-function optionSetting<const Options extends readonly [string, ...string[]]>(name: string, options: Options) {
-  return z.enum(options, { error: `${name} must be one of ${options.join(', ')}` });
+/**
+ * An option NAME, not one of the options this backend was built with.
+ *
+ * The app ships on its own train, so it can offer an option (a new mark style)
+ * before the copy of `@boardsesh/board-look` deployed here knows it, and
+ * refusing it would refuse the app's own default look. Nothing on the server
+ * reads these values; the app sanitises the stored look when it reads it, and a
+ * name it does not know draws as that knob's default.
+ */
+const OPTION_NAME = /^[a-z][a-z0-9-]{0,31}$/;
+
+function optionSetting(name: string) {
+  const message = `${name} must be an option name`;
+  return z.string({ error: message }).regex(OPTION_NAME, message);
 }
 
 function flagSetting(name: string) {
@@ -340,29 +353,28 @@ function flagSetting(name: string) {
 /**
  * The full Aura knob bundle, every field required.
  *
- * Built from `@boardsesh/board-look`'s own option lists and slider bounds, so a
- * value the settings screen can produce is always one this accepts, and a knob
- * added there fails the `satisfies` below until it is added here too. Strict,
- * because a key this does not know would be stored and handed back to every
- * client that reads the wall.
+ * Numbers are held to `@boardsesh/board-look`'s own slider bounds; option knobs
+ * only to a well-formed name (see `optionSetting`). A knob added there fails the
+ * `satisfies` below until it is added here too. Strict, because a key this does
+ * not know would be stored and handed back to every client that reads the wall.
  */
 const BoardseshRenderSettingsSchema = z
   .object({
-    glowFalloff: optionSetting('glowFalloff', GLOW_FALLOFF_SETTINGS),
+    glowFalloff: optionSetting('glowFalloff'),
     glowReach: boundedSetting('glowReach', BOARD_RENDER_SETTING_BOUNDS.glowReach),
     plateauShare: boundedSetting('plateauShare', BOARD_RENDER_SETTING_BOUNDS.plateauShare),
-    veil: optionSetting('veil', VEIL_SETTINGS),
+    veil: optionSetting('veil'),
     veilOpacity: boundedSetting('veilOpacity', BOARD_RENDER_SETTING_BOUNDS.veilOpacity),
-    markStyle: optionSetting('markStyle', MARK_STYLE_SETTINGS),
+    markStyle: optionSetting('markStyle'),
     fillOpacity: boundedSetting('fillOpacity', BOARD_RENDER_SETTING_BOUNDS.fillOpacity),
     softDisc: flagSetting('softDisc'),
     smallHoldBoost: flagSetting('smallHoldBoost'),
     ledDots: flagSetting('ledDots'),
     roleGlyphs: flagSetting('roleGlyphs'),
-    thumbnailStyle: optionSetting('thumbnailStyle', THUMBNAIL_STYLE_SETTINGS),
-    holdShape: optionSetting('holdShape', HOLD_SHAPE_SETTINGS),
+    thumbnailStyle: optionSetting('thumbnailStyle'),
+    holdShape: optionSetting('holdShape'),
   })
-  .strict() satisfies z.ZodType<BoardseshRenderSettings>;
+  .strict() satisfies z.ZodType<Record<keyof BoardseshRenderSettings, unknown>>;
 
 /**
  * A wall's stored default look, or null to clear it.

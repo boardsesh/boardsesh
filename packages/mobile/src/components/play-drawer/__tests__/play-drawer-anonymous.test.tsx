@@ -245,6 +245,7 @@ vi.mock('../BoardRenderUnavailable', () => ({ BoardRenderUnavailable: () => null
 vi.mock('../../playback/PlaybackControls', () => ({ PlaybackControls: () => null }));
 // Renders its `leading` slot: that is where the wall-state pill lands, so a mock
 // that swallowed it would hide whether PlayDrawer passes one at all.
+vi.mock('../PlayDrawerStatusBarScrim', () => ({ PlayDrawerStatusBarScrim: () => null }));
 vi.mock('../PlayDrawerHeader', () => ({
   LivePlayDrawerHeader: ({ leading }: { leading?: ReactNode }) => createElement('div', null, leading),
 }));
@@ -270,6 +271,8 @@ vi.mock('../ClimbRevisionSheet', () => ({
     return createElement('div', { 'data-testid': 'revision-sheet' });
   },
 }));
+vi.mock('../logbook/LogbookFullSheet', () => ({ LogbookFullSheet: () => null }));
+vi.mock('../ClimberLogsSheet', () => ({ ClimberLogsSheet: () => null }));
 vi.mock('../../report-climb/ReportClimbSheet', () => ({ ReportClimbSheet: () => null }));
 vi.mock('../../ble/BleControlSheetHost', () => ({ BleControlSheetHost: () => null }));
 vi.mock('../../queue-control/RestTimerPillHost', () => ({ RestTimerPillHost: () => null }));

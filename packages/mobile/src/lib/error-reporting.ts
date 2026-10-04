@@ -8,7 +8,7 @@ import { captureToObserve } from './observe-runtime';
 import {
   isExpectedAuthError,
   isExpectedBetaValidationError,
-  isGraphqlRateLimitedError,
+  readGraphqlRateLimit,
   isGraphqlValidationFailedError,
   readDuplicateBoardError,
   readGraphqlValidationFailedMessage,
@@ -134,6 +134,22 @@ function isExpectedDuplicateBoardError(error: unknown): boolean {
   return readDuplicateBoardError(error) !== null;
 }
 
+// A mixed response can include a real resolver failure alongside throttling.
+// Only suppress a response whose listed errors all describe discovery throttles.
+function hasOnlyDiscoveryRateLimits(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const record = error as { response?: { errors?: unknown }; graphqlErrors?: unknown };
+  const listedErrors = [
+    ...(Array.isArray(record.response?.errors) ? record.response.errors : []),
+    ...(Array.isArray(record.graphqlErrors) ? record.graphqlErrors : []),
+  ];
+  return listedErrors.every(
+    (graphqlError: unknown) => readGraphqlRateLimit(graphqlError)?.operation === 'searchBoards',
+  );
+}
+
+const breadcrumbedDiscoveryThrottles = new WeakSet<object>();
+
 /**
  * Report a *handled* error — one the app caught and surfaced as UX (a toast,
  * inline message, or degraded state) rather than letting crash. Applies the
@@ -150,7 +166,8 @@ function isExpectedDuplicateBoardError(error: unknown): boolean {
  *     for a field the backend does not have) are downgraded to `warning`, tagged
  *     `schema_mismatch`, and fingerprinted by message so each mismatch is its
  *     own Sentry issue instead of one catch-all on the client frame (#5370),
- *   - GraphQL rate-limit rejections (RATE_LIMITED) are downgraded to `warning`
+ *   - board discovery throttling leaves one sanitized breadcrumb per rejection;
+ *   - other GraphQL rate-limit rejections (RATE_LIMITED) are downgraded to `warning`
  *     and tagged `rate_limited` — expected backpressure from typing/panning
  *     discovery searches too fast, not a bug (#3285),
  *   - offline/network failures are dropped entirely and left as a breadcrumb
@@ -192,7 +209,24 @@ export function reportHandledError(error: unknown, context?: ErrorReportContext)
     });
     return;
   }
-  if (isGraphqlRateLimitedError(error)) {
+  const rateLimit = readGraphqlRateLimit(error);
+  if (rateLimit?.operation === 'searchBoards' && hasOnlyDiscoveryRateLimits(error)) {
+    if (typeof error === 'object' && error !== null && !breadcrumbedDiscoveryThrottles.has(error)) {
+      breadcrumbedDiscoveryThrottles.add(error);
+      addErrorBreadcrumb({
+        category: 'graphql',
+        message: 'board discovery throttled',
+        level: 'info',
+        data: {
+          operation: rateLimit.operation,
+          retryAfterSeconds: rateLimit.retryAfterSeconds,
+          source: typeof context?.tags?.source === 'string' ? context.tags.source : null,
+        },
+      });
+    }
+    return;
+  }
+  if (rateLimit) {
     reportError(error, {
       ...context,
       level: 'warning',

@@ -15,6 +15,8 @@ import type { SessionLiveStatsEvent } from '../../lib/graphql/operations';
 /** What triggered a queue reorder — attribution for `SHARED_EVENTS.QueueReordered`. */
 export type QueueReorderSource = 'drag' | 'play-next';
 
+export type WidgetNavigationOptions = { sendMutation?: boolean };
+
 export type StartSessionConfig = {
   name?: string;
   goal?: string;
@@ -92,19 +94,15 @@ type QueueContextValue = {
   setCurrentClimb: (item: ClimbQueueItem, options?: SetCurrentClimbOptions) => void;
   nextClimb: () => void;
   previousClimb: () => void;
-  /**
-   * Apply a widget Next/Previous navigation by absolute index. Dispatches the
-   * current-climb change with the provided correlationId (so the racing
-   * `CurrentClimbChanged` server echo is suppressed) WITHOUT sending a fresh JS
-   * mutation — the native widget intent already sent the server mutation. Using
-   * the absolute item (not a relative `nextClimb`) keeps this idempotent, so it
-   * can't double-advance when the WebSocket echo lands before the Darwin event.
-   * Mirrors web's `dispatchWidgetNavigation`.
-   */
   /** Resolves true only when the server accepted the orientation. */
   mirrorCurrentClimb: (mirrored: boolean, queueItemUuid: string) => Promise<boolean>;
   dispatchWidgetMirror: (event: Extract<WidgetMirrorEvent, { kind: 'confirmed' }>) => Promise<boolean>;
-  dispatchWidgetNavigation: (item: ClimbQueueItem, correlationId: string) => void;
+  /**
+   * Select the absolute native navigation target with its correlation ID.
+   * iOS already publishes natively; Android requests the existing JS mutation
+   * path with sendMutation. Defaults to local-only to preserve iOS behavior.
+   */
+  dispatchWidgetNavigation: (item: ClimbQueueItem, correlationId: string, options?: WidgetNavigationOptions) => void;
   /** Replace the playlist suggestion source that drives swipe-through climbs. */
   setPlaylistSuggestionSource: (source: PlaylistSuggestionSource | null) => void;
   /** Refresh the suggestion source in place (no-op unless it matches the active one). */

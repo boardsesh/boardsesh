@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { PgBoss } from 'pg-boss';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { encrypt } from '@boardsesh/crypto';
 import { BACKGROUND_JOB_QUEUES, type BackgroundWorkerRole } from '@boardsesh/db/background-jobs';

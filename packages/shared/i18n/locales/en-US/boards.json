@@ -255,7 +255,10 @@
       "otherBoardsTitle": "Boards nearby",
       "multiBoardChip": "2+ board types",
       "editGym": "Edit gym",
-      "editBoard": "Edit board"
+      "editBoard": "Edit board",
+      "updating": "Updating results…",
+      "refreshFailed": "Couldn’t update results.",
+      "retry": "Try again"
     },
     "myGyms": {
       "moreRowTitle": "My gyms",

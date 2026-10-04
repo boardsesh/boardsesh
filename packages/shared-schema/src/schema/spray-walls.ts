@@ -206,9 +206,11 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
 
   input CreateSprayWallVersionInput {
     wallUuid: ID!
-    "photoId from POST /api/spray-wall-photos."
-    photoId: ID!
-    "The wall's four corners in this photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. Omit to use the photo frame."
+    "photoId from POST /api/spray-wall-photos. Supply exactly one of photoId and sourceVersionId."
+    photoId: ID
+    "Reuse this wall's current published photo and its saved geometry for hold editing. Supply exactly one of photoId and sourceVersionId."
+    sourceVersionId: ID
+    "The wall's four corners in an uploaded photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. When sourceVersionId is supplied, omit this field entirely; explicit null is rejected."
     anchors: JSON
     notes: String
   }
@@ -275,7 +277,14 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
 
   input SetSprayWallRenderSettingsInput {
     uuid: ID!
-    "A { mode, boardsesh } blob, or null to clear the wall's stored default."
+    """
+    Required: always send the key. A { mode, boardsesh } blob sets the wall's
+    stored default; an explicit null clears it. Omitting the key is rejected
+    rather than read as "leave it alone" — this mutation only ever sets or clears.
+
+    Declared nullable (not JSON!) because a non-null scalar could not carry the
+    null that clears it.
+    """
     renderSettings: JSON
   }
 `;

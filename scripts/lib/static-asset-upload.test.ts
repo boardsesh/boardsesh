@@ -137,6 +137,19 @@ describe('public static asset validation', () => {
     );
   });
 
+  it('cancels a stalled response body when its download deadline expires', async () => {
+    const controller = new AbortController();
+    const cancel = vi.fn();
+    const response = new Response(new ReadableStream({ cancel }));
+    const download = readResponseBodyWithinLimit(response, 42, controller.signal);
+    const assertion = expect(download).rejects.toThrow('Download deadline exceeded');
+
+    controller.abort(new Error('Download deadline exceeded'));
+
+    await assertion;
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
   it('validates signed S3 HEAD metadata including checksums', () => {
     expect(() =>
       assertRemoteStaticAssetMetadata(asset, {

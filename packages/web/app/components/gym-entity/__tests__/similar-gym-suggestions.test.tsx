@@ -54,6 +54,7 @@ const gymFixture = (overrides: Partial<SimilarGym> = {}): SimilarGym => ({
   distanceMeters: 60,
   ownerType: 'SYSTEM',
   isClaimable: true,
+  canClaimByDomain: false,
   providerOrigins: ['kilter'],
   ...overrides,
 });

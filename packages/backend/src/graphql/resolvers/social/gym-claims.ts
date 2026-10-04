@@ -561,9 +561,9 @@ export const socialGymClaimMutations = {
       // leader is display-only here — otherwise that person could point it at a
       // domain they control and a second account of theirs would self-verify in.
       // Checked before the email match so a prober can't learn whether their
-      // address would have matched.
-      // TODO(#4018): both claim dialogs still offer the email form on an
-      // un-vouched gym, so this refusal only surfaces after submit.
+      // address would have matched. The read-side `computeCanClaimByDomain`
+      // helper mirrors these website conditions to choose the claim form
+      // (#4018); this mutation retains enforcement and this refusal order.
       if (!gym.websiteVouchedByOwner) {
         throw new Error(
           "This gym's website hasn't been confirmed by the gym's owner, so we can't verify you by email. Request admin review instead.",

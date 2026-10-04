@@ -109,7 +109,7 @@ cannot silently switch off the recovery.
 Run `vp test run --project deploy-app-subdomain`. The suite parses both config
 files and asserts what Cloudflare would send for concrete paths: the CSP rule
 above, the `noindex` tag, forever-caching on content-hashed assets only, and the
-`200` SPA rewrite for deep links. The `deploy-config` job in
+`200` SPA rewrite for deep links. The `deploy-config` guard step in
 `.github/workflows/ci.yml` runs it on every PR touching this directory, the
 export script, `Dockerfile.web`, or the deploy workflow.
 

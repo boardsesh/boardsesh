@@ -168,6 +168,12 @@ const ANCHORS: [number, number][] = [
 
 const OWNER = 'sweep-owner';
 const STRANGER = 'sweep-stranger';
+/**
+ * Somebody both the owner and the stranger follow, who logged the private
+ * wall's climb. Not a viewer: it exists so the follow-scoped readers have a row
+ * to return, which is what makes their owner half mean something.
+ */
+const FRIEND = 'sweep-friend';
 const ANGLE = 40;
 
 // ---------------------------------------------------------------------------
@@ -561,9 +567,9 @@ function scannableSentinels(argumentValues: Record<string, unknown>): Sentinel[]
  * Two different claims live in this one list, and the reason text says which.
  * Most rows are genuinely inapplicable: the field answers with counts, ids the
  * caller already sent, or rows that are not climbs. But some are **seed gaps** —
- * `recentBetaLinks`, `followingClimbAscents`, `gymKiosk(s)`, the board-presence
- * rows and `eventsReplay` all read state this sweep does not create (an
- * enriched beta link, a follow, a kiosk, a live queue event, Redis). Their negative half still runs and still has to pass;
+ * `recentBetaLinks`, `gymKiosk(s)`, the board-presence rows and `eventsReplay`
+ * all read state this sweep does not create (an enriched beta link, a kiosk, a
+ * live queue event, Redis). Their negative half still runs and still has to pass;
  * what is unproven is the owner half, so seeding what they read is an
  * improvement, not a rule change.
  */
@@ -624,7 +630,6 @@ const NOT_APPLICABLE: Record<string, string> = {
   // spray-wall-api.test.ts drives it directly.
   'Query.activityFeed': 'reads materialised feed_items, which a private wall never writes',
   'Query.sessionGroupedFeed': 'reads materialised feed_items, which a private wall never writes',
-  'Query.followingClimbAscents': 'ascents by people the viewer follows, and the sweep seeds no follows',
 
   // --- session readers --------------------------------------------------------
   'Query.session': 'live room state held in Redis, not a climb read; membership-gated',
@@ -690,7 +695,6 @@ const NOT_APPLICABLE: Record<string, string> = {
     'gated on session membership, which is checked as events arrive; the sweep publishes none',
   'Subscription.queueUpdates': 'same: a queue stream gated per event',
   'Subscription.commentUpdates': 'comment events for an entity id; gated at the write, and the sweep publishes none',
-  'Subscription.boardQueuePreview': 'the queue preview stream; Redis state the sweep does not create',
   'Subscription.controllerEvents': 'controller events for a session; the sweep publishes none',
 };
 
@@ -863,6 +867,7 @@ async function seedWorld(): Promise<SeededWorld> {
 
   await insertUser(OWNER);
   await insertUser(STRANGER);
+  await insertUser(FRIEND);
 
   await db.execute(sql`
     INSERT INTO board_difficulty_grades (board_type, difficulty, boulder_name, route_name, is_listed)
@@ -1029,6 +1034,26 @@ async function seedWorld(): Promise<SeededWorld> {
                                  comment, climbed_at, created_at, updated_at)
     VALUES (${tickUuid}, ${OWNER}, ${savedClimb.uuid}, 'spray', ${ANGLE}, 'send', 18, 3,
             1, false, false, ${sessionId}, ${boardId}, ${TICK_COMMENT}, now(), now(), now())
+  `);
+
+  // The follow-scoped reader (`followingClimbAscents`) answers with logs by
+  // people the VIEWER follows, so the wall needs a log by somebody followed. The
+  // owner follows the friend and must see it. The stranger follows the friend
+  // AND the owner, which is the case the gate exists for: following a climber
+  // must not become a way to read what they logged on a wall you cannot see.
+  // No session and no board on this tick, so the session readers are untouched.
+  await db.execute(sql`
+    INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, difficulty, quality,
+                                 attempt_count, is_mirror, is_benchmark, session_id, board_id,
+                                 comment, climbed_at, created_at, updated_at)
+    VALUES (${uuidv4()}, ${FRIEND}, ${savedClimb.uuid}, 'spray', ${ANGLE}, 'send', 18, 3,
+            1, false, false, NULL, NULL, ${TICK_COMMENT}, now(), now(), now())
+  `);
+  await db.execute(sql`
+    INSERT INTO user_follows (follower_id, following_id, created_at)
+    VALUES (${OWNER}, ${FRIEND}, now()),
+           (${STRANGER}, ${FRIEND}, now()),
+           (${STRANGER}, ${OWNER}, now())
   `);
 
   await db.execute(sql`

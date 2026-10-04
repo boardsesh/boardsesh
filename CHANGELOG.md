@@ -4,10 +4,50 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-10-04
+
+### New
+
+- See how everyone got on with a climb, with the people you follow always first. ([#5975](https://github.com/boardsesh/boardsesh/pull/5975))
+  Open "See all logs" on any climb for the newest log from every climber, with filters for your angle, notes and sends.
+- See how a climb went for the people you follow. ([#5974](https://github.com/boardsesh/boardsesh/pull/5974))
+  Open a climb and scroll down: their notes and any grade they disagree on sit right under your Logbook, and everyone else who sent it is one line of names.
+- Your logbook on a climb is now a few plain lines: where you stand, your tries, sends and sessions, then each day with what you did. ([#5970](https://github.com/boardsesh/boardsesh/pull/5970))
+  Long projects keep the drawer quick: the newest sessions show first and "See full logbook" opens the rest.
+  A climb you have logged no longer says "No tries yet" when you have no signal.
+
+### Fixed
+
+- Close a climb and return to the playlist you were browsing. ([#5927](https://github.com/boardsesh/boardsesh/pull/5927))
+  Generated playlist names and climb counts have room to show.
+- Your crew now follows Next and Previous from Android's session notification. ([#5928](https://github.com/boardsesh/boardsesh/pull/5928))
+
+## 2026-10-03
+
+### App update
+
+A new version shipped to the App Store and Play Store.
+
+### Improved
+
+- Board images stay put during browser updates, and the app follows light or dark appearance changes more reliably. ([#5890](https://github.com/boardsesh/boardsesh/pull/5890))
+
+### Fixed
+
+- The Logbook line on a climb updates as soon as you log a tick ([#5963](https://github.com/boardsesh/boardsesh/pull/5963))
+  Scrolling a climb no longer runs text under the clock
+  The Download button under Similar Climbs fits its card
+- Find gyms and boards without losing your results when searches need to wait. ([#5948](https://github.com/boardsesh/boardsesh/pull/5948))
+- Keep your offline logbook available when storage reconnects during recovery. ([#5946](https://github.com/boardsesh/boardsesh/pull/5946))
+- Empty beta-thumbnail downloads no longer become blank pictures in the feed. ([#4273](https://github.com/boardsesh/boardsesh/pull/4273))
+  Broken images served through the backend proxy show a fallback instead of an empty image.
+- Playlist sync now explains when another Boardsesh account owns a circuit and shows how to recover. ([#4094](https://github.com/boardsesh/boardsesh/pull/4094))
+
 ## 2026-10-02
 
 ### Fixed
 
+- See which Woods climbs you've sent original, mirrored, or both. ([#5926](https://github.com/boardsesh/boardsesh/pull/5926))
 - Keep your Android session going while downloaded boards update in the background. ([#5933](https://github.com/boardsesh/boardsesh/pull/5933))
 
 ## 2026-10-01

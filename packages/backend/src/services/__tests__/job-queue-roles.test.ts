@@ -10,11 +10,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runRefreshClimbGrades, runRefreshClimbNeighbors, type JobDatabase } from '@boardsesh/db/jobs';
 import {
   CLIMB_POPULARITY_REFRESH_QUEUE,
+  CRON_JOB_DELETE_AFTER_SECONDS,
   initializeJobQueueSchema,
   parseWorkerLogin,
   POPULAR_BOARD_CONFIGS_REFRESH_QUEUE,
 } from '@boardsesh/db/job-queue-schema';
-import { BACKGROUND_JOB_QUEUES } from '@boardsesh/db/background-jobs';
+import { BACKGROUND_JOB_QUEUES, BACKGROUND_JOB_RECONCILE_QUEUE } from '@boardsesh/db/background-jobs';
 import { createDb, type DbInstance } from '@boardsesh/db/client';
 import { auroraCredentials, backgroundJobRuns, providerSyncControls } from '@boardsesh/db/schema';
 import { retrySprayDetectionAttempt } from '@boardsesh/db/queries';
@@ -122,6 +123,11 @@ describe('owner-only queue initialization', () => {
       // Production's ACL reconciler removes the default PUBLIC type grant.
       await owner`REVOKE ALL ON TYPE public.spray_detection_status FROM PUBLIC`;
       await initializeJobQueueSchema(drizzle(owner), undefined, role);
+      const cronQueues = ['__pgboss__send-it', SPRAY_DETECTION_RECONCILE_QUEUE, BACKGROUND_JOB_RECONCILE_QUEUE];
+      const retention = await owner<{ name: string; deletion_seconds: number }[]>`
+        SELECT name, deletion_seconds FROM pgboss.queue WHERE name = ANY(${cronQueues}) ORDER BY name`;
+      expect(retention).toHaveLength(cronQueues.length);
+      for (const queue of retention) expect(queue.deletion_seconds).toBe(CRON_JOB_DELETE_AFTER_SECONDS);
       const [typeGrant] =
         await restricted`SELECT has_type_privilege(current_user, 'public.spray_detection_status', 'USAGE') AS permitted`;
       expect(typeGrant.permitted).toBe(true);

@@ -426,10 +426,18 @@ export const queriesTypeDefs = /* GraphQL */ `
       @deprecated(reason: "Use activityFeed query instead")
 
     """
-    Get ticks from followed users for a specific climb.
-    Requires authentication.
+    Logs from followed users on a specific climb: the 100 newest, plus
+    counts that cover all of them. A spray climb the caller cannot see
+    answers like a climb nobody logged. Requires authentication.
     """
     followingClimbAscents(input: FollowingClimbAscentsInput!): FollowingClimbAscentsResult!
+
+    """
+    Everyone's logs on a specific climb, one page at a time. Public. Newest
+    first. A spray climb the caller cannot see answers like a climb nobody
+    logged.
+    """
+    climbLogs(input: ClimbLogsInput!): ClimbLogsResult!
 
     """
     Get global activity feed of all recent ascents.

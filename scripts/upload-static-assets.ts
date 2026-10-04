@@ -2,7 +2,13 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { desiredR2Buckets } from '../infra/cloudflare/config';
 import { STATIC_ASSET_OBJECT_KEYS, STATIC_ASSET_ORIGIN } from '../packages/shared/static-assets/src';
 import type { StaticAssetManifest, StaticAssetRecord } from '../packages/shared/static-assets/src';
@@ -36,6 +42,7 @@ import {
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC_VALIDATION_ATTEMPTS = 6;
 const PUBLIC_VALIDATION_REQUEST_TIMEOUT_MS = 30_000;
+const SIGNED_GET_TIMEOUT_MS = 30_000;
 const MAX_REQUEST_STARTS_PER_SECOND = 5;
 
 function requiredEnvironment(name: string): string {
@@ -113,7 +120,7 @@ async function uploadAsset(
 const delay = (milliseconds: number): Promise<void> =>
   new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 
-async function validateRemoteAsset(
+export async function validateRemoteAsset(
   client: S3Client,
   bucket: string,
   asset: StaticAssetRecord,
@@ -123,12 +130,31 @@ async function validateRemoteAsset(
   const response = await client.send(
     new HeadObjectCommand({ Bucket: bucket, Key: asset.objectKey, ChecksumMode: 'ENABLED' }),
   );
-  assertRemoteStaticAssetMetadata(asset, {
-    bytes: response.ContentLength,
-    contentType: response.ContentType,
-    cacheControl: response.CacheControl,
-    checksumSha256: response.ChecksumSHA256,
-  });
+  let downloadedContents: Uint8Array | undefined;
+  if (!response.ChecksumSHA256) {
+    console.log(`S3 HEAD checksum missing for ${asset.logicalPath}; hashing signed GET bytes.`);
+    await beforeRequest();
+    const signal = AbortSignal.timeout(SIGNED_GET_TIMEOUT_MS);
+    const download = await client.send(new GetObjectCommand({ Bucket: bucket, Key: asset.objectKey }), {
+      abortSignal: signal,
+    });
+    if (!download.Body) throw new Error(`S3 GET body missing for ${asset.logicalPath}`);
+    downloadedContents = await readResponseBodyWithinLimit(
+      new Response(download.Body.transformToWebStream()),
+      asset.bytes,
+      signal,
+    );
+  }
+  assertRemoteStaticAssetMetadata(
+    asset,
+    {
+      bytes: response.ContentLength,
+      contentType: response.ContentType,
+      cacheControl: response.CacheControl,
+      checksumSha256: response.ChecksumSHA256,
+    },
+    downloadedContents,
+  );
 }
 
 /**

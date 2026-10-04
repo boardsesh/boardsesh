@@ -1211,6 +1211,74 @@ export type ClimbInput = {
   uuid: Scalars['ID']['input'];
 };
 
+/** One climber's log on a climb, as the public per-climb list returns it. */
+export type ClimbLogItem = {
+  __typename?: 'ClimbLogItem';
+  /** Board angle */
+  angle: Scalars['Int']['output'];
+  /** Number of tries */
+  attemptCount: Scalars['Int']['output'];
+  /** Board type */
+  boardType: Scalars['String']['output'];
+  /** UUID of the climb the log is stored under */
+  climbUuid: Scalars['String']['output'];
+  /** When the climb was logged */
+  climbedAt: Scalars['String']['output'];
+  /** The climber's note, empty when there is none */
+  comment: Scalars['String']['output'];
+  /** Personal grade id, null when none was given */
+  difficulty?: Maybe<Scalars['Int']['output']>;
+  /** Raw quality, or the climber's synced star rating for this climb and angle when the log has none. Sends and flashes only. */
+  effectiveQuality?: Maybe<Scalars['Int']['output']>;
+  /** Whether the climb was mirrored */
+  isMirror: Scalars['Boolean']['output'];
+  /** Star rating given on the log itself */
+  quality?: Maybe<Scalars['Int']['output']>;
+  /** flash, send or attempt */
+  status: Scalars['String']['output'];
+  /** Avatar URL of the user */
+  userAvatarUrl?: Maybe<Scalars['String']['output']>;
+  /** Display name of the user */
+  userDisplayName?: Maybe<Scalars['String']['output']>;
+  /** User who logged it */
+  userId: Scalars['ID']['output'];
+  /** Tick UUID */
+  uuid: Scalars['ID']['output'];
+};
+
+/** Input for one page of everyone's logs on a climb. */
+export type ClimbLogsInput = {
+  /** Only logs at this angle. Omit for every angle. */
+  angle?: InputMaybe<Scalars['Int']['input']>;
+  /** Board type (kilter, tension, moonboard, spray, ...) */
+  boardType: Scalars['String']['input'];
+  /** Climb UUID */
+  climbUuid: Scalars['String']['input'];
+  /** Opaque keyset cursor from the previous page */
+  cursor?: InputMaybe<Scalars['String']['input']>;
+  /** Signed-in callers only: drop the caller's own logs and logs by people they follow. Ignored when anonymous. */
+  excludeFollowed?: InputMaybe<Scalars['Boolean']['input']>;
+  /** One row per climber: their newest log that passes the filters above. */
+  latestPerClimber?: InputMaybe<Scalars['Boolean']['input']>;
+  /** 1 to 50, default 20 */
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  /** Only flashes and sends. */
+  sendsOnly?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Only logs with a non-empty note. */
+  withNotes?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+/** One page of logs on a climb, newest first. */
+export type ClimbLogsResult = {
+  __typename?: 'ClimbLogsResult';
+  /** Pass back as input.cursor for the next page. Null on the last page. */
+  cursor?: Maybe<Scalars['String']['output']>;
+  /** Whether another page exists */
+  hasMore: Scalars['Boolean']['output'];
+  /** Newest first (climbed at, then id) */
+  items: Array<ClimbLogItem>;
+};
+
 export type ClimbMatchResult = {
   __typename?: 'ClimbMatchResult';
   climbName?: Maybe<Scalars['String']['output']>;
@@ -1881,11 +1949,13 @@ export type CreateSprayWallInput = {
 };
 
 export type CreateSprayWallVersionInput = {
-  /** The wall's four corners in this photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. Omit to use the photo frame. */
+  /** The wall's four corners in an uploaded photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. When sourceVersionId is supplied, omit this field entirely; explicit null is rejected. */
   anchors?: InputMaybe<Scalars['JSON']['input']>;
   notes?: InputMaybe<Scalars['String']['input']>;
-  /** photoId from POST /api/spray-wall-photos. */
-  photoId: Scalars['ID']['input'];
+  /** photoId from POST /api/spray-wall-photos. Supply exactly one of photoId and sourceVersionId. */
+  photoId?: InputMaybe<Scalars['ID']['input']>;
+  /** Reuse this wall's current published photo and its saved geometry for hold editing. Supply exactly one of photoId and sourceVersionId. */
+  sourceVersionId?: InputMaybe<Scalars['ID']['input']>;
   wallUuid: Scalars['ID']['input'];
 };
 
@@ -2382,6 +2452,8 @@ export type FollowingAscentFeedItem = {
   difficultyName?: Maybe<Scalars['String']['output']>;
   /** Number of downvotes on this tick. Null if the resolver doesn't compute it. */
   downvotes?: Maybe<Scalars['Int']['output']>;
+  /** Raw quality, or the climber's synced star rating for this climb and angle when the tick has none. Sends and flashes only. Null if the resolver doesn't compute it. */
+  effectiveQuality?: Maybe<Scalars['Int']['output']>;
   /** Encoded hold frames for thumbnail display */
   frames?: Maybe<Scalars['String']['output']>;
   /** Whether this is a benchmark climb */
@@ -2429,19 +2501,48 @@ export type FollowingAscentsFeedResult = {
   totalCount: Scalars['Int']['output'];
 };
 
+/** How many followed climbers logged a climb at one angle. */
+export type FollowingClimbAscentsAngleCount = {
+  __typename?: 'FollowingClimbAscentsAngleCount';
+  /** Board angle */
+  angle: Scalars['Int']['output'];
+  /** Followed climbers with at least one log at this angle, any status */
+  climberCount: Scalars['Int']['output'];
+  /** Followed climbers with at least one flash or send at this angle */
+  senderCount: Scalars['Int']['output'];
+};
+
 /** Input for fetching followed users' ticks on a specific climb. */
 export type FollowingClimbAscentsInput = {
-  /** Board type (kilter, tension, moonboard) */
+  /** Board type (kilter, tension, moonboard, spray, ...) */
   boardType: Scalars['String']['input'];
   /** Climb UUID */
   climbUuid: Scalars['String']['input'];
 };
 
-/** Unpaginated result: all ticks from followed users for a given climb. */
+/** The 100 most recent logs, plus counts that cover all of them */
 export type FollowingClimbAscentsResult = {
   __typename?: 'FollowingClimbAscentsResult';
-  /** List of feed items */
+  /** Whether more than 100 logs exist. There is no way to page to them. */
+  hasMore: Scalars['Boolean']['output'];
+  /** Newest first, one row per log, every angle, attempts included. At most 100. */
   items: Array<FollowingAscentFeedItem>;
+  /** Counts across all logs, including the ones past the cap */
+  summary: FollowingClimbAscentsSummary;
+};
+
+/**
+ * Counts over every log from followed climbers on a climb. Not bound by the
+ * 100-row cap on the list.
+ */
+export type FollowingClimbAscentsSummary = {
+  __typename?: 'FollowingClimbAscentsSummary';
+  /** One entry per angle that has a log, ascending. Angles with none are absent. */
+  byAngle: Array<FollowingClimbAscentsAngleCount>;
+  /** Followed climbers with at least one log, any angle, any status */
+  climberCount: Scalars['Int']['output'];
+  /** Followed climbers with at least one flash or send, any angle */
+  senderCount: Scalars['Int']['output'];
 };
 
 export type FreezeClimbInput = {
@@ -2848,6 +2949,14 @@ export type Gym = {
   brandPrimaryColor?: Maybe<Scalars['String']['output']>;
   /** Whether the current viewer may start an ownership claim for this gym (signed-in and not already the owner/gym admin) */
   canClaim: Scalars['Boolean']['output'];
+  /**
+   * Whether this gym's website can drive the self-service email claim: a real
+   * (non-free-provider) domain that the gym's OWNER put on the listing. Mirrors
+   * the two refusals in requestGymClaim, so a claim UI can open the form that
+   * can actually succeed instead of dead-ending on submit. Viewer-independent —
+   * unlike canClaim, this says nothing about who is asking.
+   */
+  canClaimByDomain: Scalars['Boolean']['output'];
   /** Whether the current viewer may edit this gym (owner, gym admin, gym editor, or community admin/leader for one of its board types) */
   canEdit: Scalars['Boolean']['output'];
   /** Whether the current viewer may grant/revoke write access to other users (owner, gym admin, or community admin/leader for one of its board types) */
@@ -6004,6 +6113,12 @@ export type Query = {
   climbClassicStatus: ClimbClassicStatus;
   /** Get community status for a specific climb at an angle. */
   climbCommunityStatus: ClimbCommunityStatus;
+  /**
+   * Everyone's logs on a specific climb, one page at a time. Public. Newest
+   * first. A spray climb the caller cannot see answers like a climb nobody
+   * logged.
+   */
+  climbLogs: ClimbLogsResult;
   /** Get proposals for a specific climb. */
   climbProposals: ProposalConnection;
   /**
@@ -6097,8 +6212,9 @@ export type Query = {
    */
   followingAscentsFeed: FollowingAscentsFeedResult;
   /**
-   * Get ticks from followed users for a specific climb.
-   * Requires authentication.
+   * Logs from followed users on a specific climb: the 100 newest, plus
+   * counts that cover all of them. A spray climb the caller cannot see
+   * answers like a climb nobody logged. Requires authentication.
    */
   followingClimbAscents: FollowingClimbAscentsResult;
   /**
@@ -6766,6 +6882,11 @@ export type QueryClimbCommunityStatusArgs = {
   angle: Scalars['Int']['input'];
   boardType: Scalars['String']['input'];
   climbUuid: Scalars['String']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryClimbLogsArgs = {
+  input: ClimbLogsInput;
 };
 
 /** Root query type for all read operations. */
@@ -8492,7 +8613,14 @@ export type SetSprayWallHiddenInput = {
 };
 
 export type SetSprayWallRenderSettingsInput = {
-  /** A { mode, boardsesh } blob, or null to clear the wall's stored default. */
+  /**
+   * Required: always send the key. A { mode, boardsesh } blob sets the wall's
+   * stored default; an explicit null clears it. Omitting the key is rejected
+   * rather than read as "leave it alone" — this mutation only ever sets or clears.
+   *
+   * Declared nullable (not JSON!) because a non-null scalar could not carry the
+   * null that clears it.
+   */
   renderSettings?: InputMaybe<Scalars['JSON']['input']>;
   uuid: Scalars['ID']['input'];
 };
@@ -8742,6 +8870,13 @@ export type SimilarGym = {
   __typename?: 'SimilarGym';
   /** Physical address */
   address?: Maybe<Scalars['String']['output']>;
+  /**
+   * Whether this gym's website can drive the self-service email claim: a real
+   * (non-free-provider) domain that the gym's OWNER put on the listing. Mirrors
+   * the two refusals in requestGymClaim. Answers a different question from
+   * isClaimable, which is about the viewer's standing, not the website.
+   */
+  canClaimByDomain: Scalars['Boolean']['output'];
   /** Distance in metres from the supplied coordinates; null when no coordinates were given. */
   distanceMeters?: Maybe<Scalars['Float']['output']>;
   /** Whether the current viewer can start an ownership claim for this gym. */
@@ -13475,6 +13610,7 @@ export type GetFollowingClimbAscentsQuery = {
   __typename?: 'Query';
   followingClimbAscents: {
     __typename?: 'FollowingClimbAscentsResult';
+    hasMore: boolean;
     items: Array<{
       __typename?: 'FollowingAscentFeedItem';
       uuid: string;
@@ -13487,11 +13623,54 @@ export type GetFollowingClimbAscentsQuery = {
       status: string;
       attemptCount: number;
       quality?: number | null;
+      effectiveQuality?: number | null;
+      difficulty?: number | null;
       comment: string;
       climbedAt: string;
       upvotes?: number | null;
       downvotes?: number | null;
       commentCount?: number | null;
+    }>;
+    summary: {
+      __typename?: 'FollowingClimbAscentsSummary';
+      climberCount: number;
+      senderCount: number;
+      byAngle: Array<{
+        __typename?: 'FollowingClimbAscentsAngleCount';
+        angle: number;
+        climberCount: number;
+        senderCount: number;
+      }>;
+    };
+  };
+};
+
+export type GetClimbLogsQueryVariables = Exact<{
+  input: ClimbLogsInput;
+}>;
+
+export type GetClimbLogsQuery = {
+  __typename?: 'Query';
+  climbLogs: {
+    __typename?: 'ClimbLogsResult';
+    cursor?: string | null;
+    hasMore: boolean;
+    items: Array<{
+      __typename?: 'ClimbLogItem';
+      uuid: string;
+      userId: string;
+      userDisplayName?: string | null;
+      userAvatarUrl?: string | null;
+      climbUuid: string;
+      angle: number;
+      isMirror: boolean;
+      status: string;
+      attemptCount: number;
+      quality?: number | null;
+      effectiveQuality?: number | null;
+      difficulty?: number | null;
+      comment: string;
+      climbedAt: string;
     }>;
   };
 };
@@ -21899,11 +22078,37 @@ export const GetFollowingClimbAscentsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'status' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'quality' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'effectiveQuality' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'upvotes' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'downvotes' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'commentCount' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'summary' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'climberCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'senderCount' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'byAngle' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'climberCount' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'senderCount' } },
+                          ],
+                        },
+                      },
                     ],
                   },
                 },
@@ -21915,6 +22120,69 @@ export const GetFollowingClimbAscentsDocument = {
     },
   ],
 } as unknown as DocumentNode<GetFollowingClimbAscentsQuery, GetFollowingClimbAscentsQueryVariables>;
+export const GetClimbLogsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetClimbLogs' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ClimbLogsInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'climbLogs' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'items' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userDisplayName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userAvatarUrl' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'quality' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'effectiveQuality' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'cursor' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetClimbLogsQuery, GetClimbLogsQueryVariables>;
 export const FollowSetterDocument = {
   kind: 'Document',
   definitions: [

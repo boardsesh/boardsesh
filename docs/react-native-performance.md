@@ -92,6 +92,18 @@ unbounded drain-until-`hasMore` loop quietly fetches and mounts the entire catal
   re-entrant drain. There is no "loop until hasMore" anywhere.
 - `packages/mobile/src/components/play-drawer/BetaVideosSection.tsx` and queue lists use the Gorhom
   `BottomSheetFlatList` so the virtualization cooperates with the sheet's scroll gesture.
+- `packages/mobile/src/components/play-drawer/LogbookSection.tsx` sits inside the play drawer's plain
+  `ScrollView`, so it renders a fixed amount: 6 sessions and 4 logs per session, each log one or
+  two lines of text. Everything past that is in `logbook/LogbookFullSheet.tsx`, a
+  `BottomSheetFlatList`. The caps are constants with no inline expand; raising one puts a growable
+  `.map()` back in the drawer.
+- `packages/mobile/src/components/play-drawer/ClimberLogsSection.tsx` sits inside the play drawer's
+  plain `ScrollView`, so it shows at most four climber rows (`INLINE_CLIMBER_LOG_CAP`), however many
+  the server returned. Climbers with nothing to add (no note, no grade that disagrees) get no row:
+  they share two text lines in the card's footer, capped at three faces and two names
+  (`planClimberLogsCard`, `describeBareNames`), so that part is bounded too. The rest are behind
+  "See all logs" in `ClimberLogsSheet.tsx`, a `BottomSheetFlatList`, where those climbers sit two to
+  a line and each line is one list item.
 
 **Anti-pattern:** `{items.map((item) => <Row key={item.id} item={item} />)}` inside a
 `<ScrollView>` for anything that isn't a fixed, small, known-length list. A fixed footer of 6

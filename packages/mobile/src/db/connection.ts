@@ -25,6 +25,7 @@ import {
   purgeNamespaceForScopeKey,
   scopeSyncMetaKeys,
   offlineBoardKey,
+  isDeadDatabaseHandleError,
 } from '@boardsesh/offline-sync';
 import { spraySizeIdForLayout } from '@boardsesh/board-config';
 import { SPRAY_PHOTO_PENDING_PREFIX } from '../offline/spray-photo-retry';
@@ -592,20 +593,52 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
         // below awaits — a mount landing in that window must start a fresh chain
         // rather than be handed this dead one.
         activeInitialization = null;
-        if (!superseded) {
-          // In production a silent null handle just switches every offline feature off
-          // with no trace — report it so a spike is diagnosable from telemetry. Only the
-          // final attempt reports, so a retried-and-recovered launch stays quiet (it
-          // fires the recovery event above instead).
+        // In production a silent null handle just switches every offline feature off
+        // with no trace — report it so a spike is diagnosable from telemetry. Only the
+        // final attempt reports, so a retried-and-recovered launch stays quiet (it
+        // fires the recovery event above instead).
+        //
+        // A superseded final attempt is not automatically dropped: it can be genuine
+        // lock exhaustion with a remount arriving during the last attempt, and
+        // swallowing that would hide exactly the failure #4314 measures. Preserve
+        // that original error under `kind: 'sqlite-init'` with `superseded: 'true'`.
+        // If it is instead a closed-handle lifecycle artifact, the identity check
+        // after journal-mode read-back below reports it separately without invoking
+        // dead-handle recovery.
+        const journalMode = await readJournalMode(target);
+        // A remount can publish a healthy connection while the diagnostic read above
+        // is pending. Re-check identity at the point of reporting: sending an old
+        // closed-handle error through reportError would synchronously clear the new
+        // handle and start a second recovery chain. Keep real lock exhaustion on the
+        // sqlite-init path, but make a superseded lifecycle artifact telemetry-only.
+        const supersededAtReport =
+          (latestDatabase !== null && latestDatabase !== target) ||
+          (databaseHandle !== null && databaseHandle !== target);
+        const reportExtra = { attempts, retryable: outcome.retryable, elapsedMs: Date.now() - startedAt };
+        if (supersededAtReport && isDeadDatabaseHandleError(outcome.error)) {
+          const failureMessage = outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
+          reportError(new Error('SQLite initialization failed on a superseded closed connection'), {
+            tags: {
+              source: 'offline-sync',
+              kind: 'sqlite-init-superseded',
+              phase: outcome.phase,
+              sqlite_code: outcome.sqliteCode,
+              journal_mode: journalMode,
+              superseded: 'true',
+            },
+            extra: { ...reportExtra, failureMessage },
+          });
+        } else {
           reportError(outcome.error, {
             tags: {
               source: 'offline-sync',
               kind: 'sqlite-init',
               phase: outcome.phase,
               sqlite_code: outcome.sqliteCode,
-              journal_mode: await readJournalMode(target),
+              journal_mode: journalMode,
+              superseded: supersededAtReport ? 'true' : 'false',
             },
-            extra: { attempts, retryable: outcome.retryable, elapsedMs: Date.now() - startedAt },
+            extra: reportExtra,
           });
         }
         // Last thing before the chain stops, and after the awaited read-back above, so

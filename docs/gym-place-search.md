@@ -76,3 +76,25 @@ Type Sydney and select the Australian result. Nearby gyms should include
 and board type, follow pagination, and reload the URL: the selected town must
 remain. Clear the place and search a gym name. Try the homepage, translated
 routes, keyboard selection, and a simulated lookup failure.
+
+## Mobile map discovery
+
+The mobile Gyms map sends the first usable search immediately. Later changes to
+the map position, submitted search, filters, or reset share one trailing 500 ms
+debounce. Gym and board searches use the same final inputs. Small movements and
+programmatic camera echoes do not trigger new searches; superseded requests are
+cancelled.
+
+Board discovery shares the server cooldown across search inputs and hooks. A
+`searchBoards` `RATE_LIMITED` response delays the next attempt by
+`retryAfterSeconds` plus 250 ms, using 60 seconds when the delay is missing or
+invalid. Each board search allows two delayed retries. Changes during cooldown
+replace the pending inputs, and unmounting cancels cooldown waits. The backend
+limit remains 20 requests per minute.
+
+The map and list retain their last successful results while updating or waiting
+for cooldown. The screen labels these results as updating, then offers a retry
+after recovery fails. A successful empty response clears the previous results.
+Expected board discovery throttling leaves a sanitized Sentry breadcrumb with
+only the operation, retry delay, and source, rather than a handled exception in
+Sentry or Observe. Other rate-limited operations still report warnings.
