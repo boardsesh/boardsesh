@@ -468,6 +468,24 @@ describe('ClimbListItemContent lost-holds chip', () => {
     expect(container.textContent).toContain('mobile.lostHolds.chip');
   });
 
+  it('keeps the name apart from lost-hold and any-feet labels', () => {
+    const { container, getByText } = render(
+      <ClimbListItemContent
+        climb={{ ...baseClimb, name: 'A long spray climb name', missingHoldCount: 4, characteristics: ['any_feet'] }}
+        boardName="spray"
+        layoutId={1}
+        sizeId={1}
+        setIds=""
+        angle={40}
+      />,
+    );
+    const name = getByText('A long spray climb name');
+    const chip = chipIcon(container);
+    expect(chip).not.toBeNull();
+    expect(name.parentElement?.contains(chip)).toBe(false);
+    expect(name.parentElement?.textContent).toBe('A long spray climb name');
+  });
+
   it('leaves a climb with every hold still on the wall unmarked', () => {
     // The mutation guard: `> 0`, not `>= 0`. Every climb on every catalogue board
     // reports 0 here, so a relaxed predicate would badge the entire database.
