@@ -53,6 +53,7 @@ import { guardSimulatorCommand } from './lib/ios-simulator-lease';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  appendFileSync,
   closeSync,
   copyFileSync,
   cpSync,
@@ -1082,6 +1083,17 @@ export function findFrozenClockProblems(logText: string, frozenNow: string): str
   return [...new Set(problems)];
 }
 
+/**
+ * Copies the capture's notes into the GitHub step summary, when there is one.
+ *
+ * A note never fails the run, so in the log it sits unread among thousands of
+ * Maestro lines. The summary is the one place a green run's caveats get seen.
+ */
+export function appendNotesToStepSummary(notes: readonly string[], summaryPath: string | undefined): void {
+  if (!summaryPath || notes.length === 0) return;
+  appendFileSync(summaryPath, `${notes.map((note) => `- Screenshot replay note: ${note}`).join('\n')}\n`);
+}
+
 /** Print what `findFrozenClockProblems` found; true when the clock is pinned correctly. */
 function reportFrozenClockProblems(logText: string, frozenNow: string, source: string): boolean {
   const problems = findFrozenClockProblems(logText, frozenNow);
@@ -1100,7 +1112,9 @@ function reportFrozenClockProblems(logText: string, frozenNow: string, source: s
  * does not cover, which is draw distance, not a broken capture).
  */
 function reportScreenshotBackendProblems(logText: string, mode: ScreenshotBackendMode): boolean {
-  for (const note of findScreenshotBackendNotes(logText)) console.log(`${LOG} NOTE: ${note}`);
+  const notes = findScreenshotBackendNotes(logText);
+  for (const note of notes) console.log(`${LOG} NOTE: ${note}`);
+  appendNotesToStepSummary(notes, process.env.GITHUB_STEP_SUMMARY);
   const problems = findScreenshotBackendProblems(logText, { mode });
   if (problems.length === 0) return true;
   for (const problem of problems) console.error(`${LOG} FAILED: ${problem}`);

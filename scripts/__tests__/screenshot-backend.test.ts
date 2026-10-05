@@ -1239,13 +1239,24 @@ describe('screenshot backend', () => {
     it('answers an empty list when NOT ONE requested id was recorded under a recorded scope', async () => {
       // Which chunk an uncovered id lands in is flush timing, so a chunk made
       // only of them must answer like any other batch (Android run 37258958437).
+      await replayBatch('kilter', ['climb-a']);
+      const hitsBefore = backend?.stats().hits ?? 0;
       const response = await replayBatch('kilter', ['climb-y', 'climb-z']);
       expect(response.status).toBe(200);
       expect(await rowsOf(response)).toEqual([]);
       expect(hasLine('composed=0 uncovered=2 ids=climb-y,climb-z')).toBe(true);
+      // Answered, but with no recorded id behind it: not a hit.
+      expect(backend?.stats().hits).toBe(hitsBefore);
+      // Tolerated because another batch of the operation WAS covered.
       expect(findScreenshotBackendProblems(logLines.join('\n'), { mode: 'replay' })).toEqual([]);
       const [note] = findScreenshotBackendNotes(logLines.join('\n'));
       expect(note).toContain('1 of them with no recorded id at all');
+    });
+
+    it('fails the capture when no batch of the operation was covered at all', async () => {
+      await replayBatch('kilter', ['climb-y', 'climb-z']);
+      const problems = findScreenshotBackendProblems(logLines.join('\n'), { mode: 'replay' });
+      expect(problems.some((problem) => problem.includes('ClimbStatsForClimbs was asked for 1 batch(es)'))).toBe(true);
     });
 
     it('still misses a scope nothing was recorded under', async () => {

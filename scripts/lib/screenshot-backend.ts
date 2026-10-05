@@ -719,7 +719,9 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     const { items, unrecordedIds, answeredIds } = collectBatchItems(scope.itemsById, requestedIds);
     const composed = composeBatchedResponse(spec, scope.templateResponse, items);
     if (!composed.ok) return false;
-    hits += 1;
+    // An answer with no recorded id behind it is not a hit; the capture's
+    // problem scanner applies the same rule to the log.
+    if (answeredIds.length > 0) hits += 1;
     emit({
       event: 'hit',
       kind: 'graphql',

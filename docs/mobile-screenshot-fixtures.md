@@ -325,13 +325,22 @@ Two rules keep it honest:
 - **A scope nothing was recorded under still misses** (`reason=no-fixture`):
   another board, another entity type, an older document. That is the "screen
   the recording never reached" signal, and it is exact.
+- **An operation that never gets ONE recorded id across the whole capture
+  fails it.** An empty chunk beside covered ones is timing. Every batch of an
+  operation coming back empty is not: the app is asking about climbs the set
+  does not know. `findScreenshotBackendProblems` sums `composed` per batched
+  operation over the capture (an exact-key hit counts as covered) and reports
+  *"`<Op>` was asked for N batch(es) and the recorded set covers none of the
+  requested ids"*. A `composed=0` answer is also not counted as a `HIT graphql`
+  for the "app never reached the replay backend" check.
 
 What the tolerance costs: for `GetTicks`, `Favorites` and
 `GetBulkVoteSummaries` an uncovered id has no fallback. The row renders as not
 climbed, not favourited, no votes. That is correct for a row the recording never
 drew, and wrong for a visible row whose id the recording somehow never asked
-about. The note is the only signal for that case, so read it when a capture's
-screenshots change.
+about. The whole-capture rule above catches the case where every row is wrong.
+For a single wrong row the note is the only signal, so the capture also writes
+its notes to the GitHub step summary, where a green run's caveats are read.
 
 #### The composer is the safety net, not the fix
 
@@ -380,7 +389,10 @@ list's own id field (`null` when the list holds bare ids), add a row to
 `BATCHED_OPERATIONS` in `scripts/lib/screenshot-fixtures.ts`, and let the drift
 test check the paths against the pinned fixtures. The drift test also tells you
 when one is due: it fails on any operation outside the table that the set
-recorded with more than one distinct list of strings in the same variable. Only add an operation whose response list is a
+recorded with more than one distinct list of strings in the same variable. A
+list that is a filter the screen sets on purpose (board types, tags) is the
+exception: it shapes the whole response, so its exact key is right. Name it in
+`EXACT_KEYED_LIST_VARIABLES` in the drift test, with the reason. Only add an operation whose response list is a
 per-id lookup — never one whose items depend on the batch as a whole (a ranking,
 a page, an aggregate over the set). If its ids come from mounted rows rather than
 from loaded data, widen the batch in screenshot mode too — the composer alone
@@ -890,16 +902,15 @@ fixtures and the manifest's `capture` and `approvedTestUserIds` fields across
 by hand before publishing, and replay both platforms against the result before
 committing the reference.
 
-**The iPhone flow still loses its first attempt on every shard.** That bundle was
-built and checked on Android only. On an iPhone shard's first, cold attempt the
-playlists screen asks for an unfiltered `GetAllUserPlaylists` page
-(`{"input":{"page":0,"pageSize":20}}`) before a board is bound, and the set
-holds only the board-filtered pages. The second attempt does not send it and
-replays clean, so a shard is green only when that one remaining attempt has no
-other trouble. In run 37271848549 three of four iPhone shards passed that way;
-the fourth lost its second attempt to a launch flake and failed the run. The
-iPad shards and Android replay clean first time. A refresh that records the iOS
-flow gives the iPhone shards their retry back.
+**That bundle was built and checked on Android only.** The one iPhone-only
+request it lacked was an unfiltered `GetAllUserPlaylists` page
+(`{"input":{"page":0,"pageSize":20}}`): Discover asked for the climber's
+playlists before the stored active board had been read, then asked again with
+the board filter. That cost every iPhone shard its first attempt, and run
+37271848549 failed when one shard's only remaining attempt hit a launch flake.
+The fix was in the app, not the set: Discover now holds that query until the
+active-board read settles, so the throwaway request is never sent, in a capture
+or on a climber's phone.
 
 **A refresh publishes another immutable snapshot.** The local merge replaces its
 working files; publishing creates a content-hashed object and updates the small
@@ -1018,7 +1029,8 @@ the app stopped sending, or one that has since been recorded or defaulted.
 - **"Remove these from QUERIES_NO_CAPTURE_SENDS"** — an entry went stale. Delete
   it.
 - **"was recorded with N different lists but is keyed by its exact
-  variables"** — add the operation to `BATCHED_OPERATIONS`.
+  variables"** — add the operation to `BATCHED_OPERATIONS`, or, when the list is
+  a deliberate filter, to `EXACT_KEYED_LIST_VARIABLES` in the test.
 - **"is recorded; delete its replay default"** — a refresh recorded a defaulted
   query. The default is now dead; remove it.
 - **"Mobile imports from …, which this test does not read"** — someone imported

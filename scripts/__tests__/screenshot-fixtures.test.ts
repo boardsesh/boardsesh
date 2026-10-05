@@ -882,6 +882,36 @@ describe('findScreenshotBackendProblems', () => {
     expect(problems[0]).toContain('×2');
   });
 
+  it('fails a batched operation that never got one recorded id across the whole capture', () => {
+    // Not timing: every batch of the operation came back empty, so the app is
+    // asking about climbs the set does not know. For ticks nothing else fills
+    // the row in, and the list would shoot with no send marks.
+    const log = [
+      line('HIT graphql Me 0000aaaa1111'),
+      line('HIT graphql GetTicks 0123456789ab composed=0 uncovered=2 ids=climb-y,climb-z'),
+      line('HIT graphql GetTicks 0123456789ac composed=0 uncovered=1 ids=climb-x'),
+    ].join('\n');
+    const problems = findScreenshotBackendProblems(log, { mode: 'replay' });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('GetTicks was asked for 2 batch(es) and the recorded set covers none');
+    expect(problems[0]).toContain('climb-y, climb-z');
+    expect(problems[0]).toContain(RE_RECORD_COMMAND);
+  });
+
+  it('counts an exact-key hit of a batched operation as coverage', () => {
+    const log = [
+      line('HIT graphql GetTicks 0000aaaa1111'),
+      line('HIT graphql GetTicks 0123456789ab composed=0 uncovered=2 ids=climb-y,climb-z'),
+    ].join('\n');
+    expect(findScreenshotBackendProblems(log, { mode: 'replay' })).toEqual([]);
+  });
+
+  it('does not count a composed=0 answer as proof the app reached the recorded set', () => {
+    const log = line('HIT graphql ClimbStatsForClimbs 0123456789ab composed=0 uncovered=2 ids=climb-y,climb-z');
+    const problems = findScreenshotBackendProblems(log, { mode: 'replay' });
+    expect(problems.some((problem) => problem.includes('no HIT graphql lines'))).toBe(true);
+  });
+
   it('does not fail a capture for a batch where no id was covered, and counts it apart in the note', () => {
     // Whether a chunk holds a covered id is flush timing (Android run
     // 37258958437), so it cannot decide a miss. It is still the batch most

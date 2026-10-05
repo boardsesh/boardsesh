@@ -662,6 +662,18 @@ function collectStringListPaths(value: unknown, path: string, found: Map<string,
   }
 }
 
+/**
+ * Operations legitimately recorded with different lists in one variable, as
+ * `operationName -> variable path -> why`.
+ *
+ * The check below cannot tell an id list assembled from mounted rows from a
+ * FILTER the screen sets on purpose (board types, grades, tags). A filter
+ * shapes the whole response, so composing by membership would be wrong for it
+ * and its exact key is the right one. Name the operation and the path here,
+ * with the reason, when the check flags one. Empty today.
+ */
+const EXACT_KEYED_LIST_VARIABLES: Readonly<Record<string, Readonly<Record<string, string>>>> = {};
+
 describe('recorded id lists', () => {
   /**
    * The variables shape that breaks replay without any document changing: a
@@ -679,6 +691,7 @@ describe('recorded id lists', () => {
       const found = new Map<string, string[]>();
       collectStringListPaths(readFixture(entry.file).variables, '', found);
       for (const [path, list] of found) {
+        if (EXACT_KEYED_LIST_VARIABLES[entry.operationName]?.[path] !== undefined) continue;
         const key = `${entry.operationName} variables.${path}`;
         const seen = listsByOperationAndPath.get(key) ?? new Set<string>();
         seen.add(canonicalJson(list));
@@ -691,7 +704,8 @@ describe('recorded id lists', () => {
         ([key, lists]) =>
           `${key} was recorded with ${lists.size} different lists but is keyed by its exact variables. ` +
           'If the app builds that list from mounted rows, replay will ask for a list nobody recorded: add the ' +
-          'operation to BATCHED_OPERATIONS in scripts/lib/screenshot-fixtures.ts.',
+          'operation to BATCHED_OPERATIONS in scripts/lib/screenshot-fixtures.ts. If the list is a filter the ' +
+          'screen sets on purpose, name it in EXACT_KEYED_LIST_VARIABLES in this file, with the reason.',
       );
     expect(failures).toEqual([]);
   });

@@ -150,7 +150,10 @@ ensure_job_queue_schema() {
   echo "Ensuring the job queue schema is installed..."
   (
     cd "$REPO_ROOT/packages/db"
-    DATABASE_URL="postgresql://postgres:password@localhost:5432/main" \
+    # The script resolves DB_URL and POSTGRES_URL too, DB_URL first. Drop both
+    # so a URL exported in the developer's shell cannot redirect or fail this.
+    env -u DB_URL -u POSTGRES_URL \
+      DATABASE_URL="postgresql://postgres:password@localhost:5432/main" \
       "$REPO_ROOT/node_modules/.bin/tsx" scripts/ensure-dev-job-queue-schema.ts
   )
 }

@@ -84,7 +84,7 @@ Common commands:
 - `vp run ota:rollout -- status|set|finish|revert|health` — read and steer per-update rollouts; needs the dashboard admin login
 - `vp run ota:api-probe` — check the live dashboard bundle still has every admin API path our tools call; no login
 - `vp run test:e2e` — Playwright; auto-starts the dev DB + web server
-- `vp run test:e2e:expo-web` — Expo-web smoke; boots the full expo-web stack (backend + Next proxy + Metro web) via the dev orchestrator and runs the `expo-web-smoke` Playwright project against it (heavy; the E2E workflow's `expo-web-smoke` job runs it nightly at 15:23 UTC and on a manual dispatch, not per-PR CI — run locally for pre-push confidence). See `scripts/expo-web-e2e.ts`.
+- `vp run test:e2e:expo-web` — Expo-web smoke; boots the full expo-web stack (backend + Next proxy + Metro web) via the dev orchestrator and runs the `expo-web-smoke` Playwright project against it (heavy; the E2E workflow's `expo-web-smoke` job runs it nightly at 15:23 UTC, posting to the Discord deploy channel when that run fails, and on a manual dispatch, not per-PR CI — run locally for pre-push confidence). See `scripts/expo-web-e2e.ts`.
 
 ### Database
 

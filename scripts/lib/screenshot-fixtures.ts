@@ -1774,13 +1774,34 @@ export function findScreenshotBackendProblems(logText: string, options: { mode: 
   // Only a GraphQL hit counts as "the app actually exercised a screen's data" —
   // an app that only ever authenticated (HIT auth) never reached a screen at
   // all, and must still fail the check below rather than being credited for it.
+  // A `composed=0` answer is not a hit either: like a replay default, it was
+  // answered without one recorded id behind it.
   let graphqlHitCount = 0;
+  // Per batched operation: how many requests were composed, and how many
+  // requested ids the recorded set covered across the whole capture (an
+  // exact-key hit replays a recorded batch verbatim, so it counts as covered).
+  const batchCoverage = new Map<string, { composedBatches: number; covered: number; firstUncoveredIds: string[] }>();
 
   for (const rawLine of logText.split('\n')) {
     const line = parseScreenshotBackendLogLine(rawLine);
     if (!line) continue;
     if (line.event === 'hit') {
-      if (line.kind === 'graphql') graphqlHitCount += 1;
+      if (line.kind !== 'graphql') continue;
+      if (line.composed !== 0) graphqlHitCount += 1;
+      if (batchedOperationSpec(line.operationName) === null) continue;
+      const coverage = batchCoverage.get(line.operationName) ?? {
+        composedBatches: 0,
+        covered: 0,
+        firstUncoveredIds: [],
+      };
+      if (line.composed === null) {
+        coverage.covered += 1;
+      } else {
+        coverage.composedBatches += 1;
+        coverage.covered += line.composed;
+        if (coverage.firstUncoveredIds.length === 0) coverage.firstUncoveredIds = [...line.uncoveredIds];
+      }
+      batchCoverage.set(line.operationName, coverage);
       continue;
     }
     if (!isProblemLine(line, options.mode)) continue;
@@ -1794,6 +1815,23 @@ export function findScreenshotBackendProblems(logText: string, options: { mode: 
   const problems = [...problemCounts.values()].map(
     ({ problem, count }) => `${problem.description}${count > 1 ? ` ×${count}` : ''} — ${problem.remedy}`,
   );
+
+  if (options.mode === 'replay') {
+    // One chunk of uncovered ids beside covered ones is flush timing, and is
+    // tolerated (see `findScreenshotBackendNotes`). An operation that never
+    // got ONE recorded id across the whole capture is not timing: the app is
+    // asking about climbs the set does not know, and for ticks and favourites
+    // nothing else fills the row in, so the list would shoot with no send
+    // marks and the gate would stay green.
+    for (const [operationName, coverage] of batchCoverage) {
+      if (coverage.composedBatches === 0 || coverage.covered > 0) continue;
+      problems.push(
+        `${operationName} was asked for ${coverage.composedBatches} batch(es) and the recorded set covers none of ` +
+          `the requested ids (e.g. ${coverage.firstUncoveredIds.join(', ')}) — the app is asking about rows the ` +
+          `recording never showed; ${RE_RECORD_REMEDY}`,
+      );
+    }
+  }
 
   if (options.mode === 'replay' && graphqlHitCount === 0) {
     problems.push(

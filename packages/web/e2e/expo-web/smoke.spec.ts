@@ -146,7 +146,15 @@ test.describe('expo-web smoke', () => {
     await expect(findBoardButton.or(boundThumbnail).first()).toBeVisible({ timeout: WARM_TIMEOUT_MS });
     if (await findBoardButton.isVisible()) {
       await findBoardButton.click({ force: true });
-      await page.getByRole('radiogroup').getByRole('button').first().click({ force: true });
+      // The carousel carries no accessible name of its own, so scope to the
+      // innermost block that holds both the "Your boards" header and a
+      // radiogroup; any other radiogroup on the page is then out of reach.
+      const yourBoards = page
+        .locator('div')
+        .filter({ has: page.getByText('Your boards', { exact: true }) })
+        .filter({ has: page.getByRole('radiogroup') })
+        .last();
+      await yourBoards.getByRole('radiogroup').getByRole('button').first().click({ force: true });
     }
     // Bound board → the list renders WASM thumbnails. Assert unconditionally so
     // a skipped bind (e.g. the empty-state button got renamed) fails loudly
