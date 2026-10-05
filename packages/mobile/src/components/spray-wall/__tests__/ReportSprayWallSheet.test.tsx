@@ -45,8 +45,23 @@ vi.mock('../../Text', () => ({
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../Button', () => ({
-  Button: ({ title, onPress, disabled }: { title: string; onPress: () => void; disabled?: boolean }) =>
-    createElement('button', { onClick: onPress, disabled }, title),
+  Button: ({
+    title,
+    onPress,
+    disabled,
+    loading,
+  }: {
+    title: string;
+    onPress: () => void;
+    disabled?: boolean;
+    loading?: boolean;
+  }) =>
+    createElement(
+      'button',
+      { onClick: onPress, disabled: disabled || loading },
+      loading ? createElement('span', { role: 'progressbar' }) : null,
+      title,
+    ),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: {}, radii: { button: 10 }, chartColors: { label: '#16111F' } }),
