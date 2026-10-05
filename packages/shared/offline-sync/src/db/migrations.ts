@@ -10,6 +10,20 @@
 // Pure logic: it only touches the structural executor surface in ../database, so a
 // node-based fake (or node:sqlite) can exercise the version bookkeeping without
 // loading native expo-sqlite.
+//
+// DOWNGRADE RULE (docs/offline-sync-plan.md, "Older JS on a newer database"): JS can
+// go backwards on a device. A reverted canary OTA, or a climber leaving the
+// early-updates track, puts an older bundle on a database a newer bundle already
+// migrated. This runner only moves forward, so it REFUSES such a database instead
+// of running against a schema it does not know: see `readSchemaCompatibility`. It
+// never rewrites, re-stamps or deletes the newer file.
+//
+// The other half of the rule is on whoever edits this file: a migration must leave
+// a schema the PREVIOUS stable bundle can still read. Expand first (add a nullable
+// column, a new table, an index); contract (drop, rename, tighten) a release later,
+// once no bundle that reads the old shape can come back. CI holds a PR that changes
+// this file until its description says so (`@boardsesh/pr-body`,
+// offline-migration.ts).
 
 import {
   BOARD_CLIMB_HOLD_POSTINGS,
@@ -235,13 +249,87 @@ async function stampVersion(db: SqlExecutor, version: number): Promise<void> {
 }
 
 /**
+ * Whether this bundle may open a database stamped at `storedVersion`.
+ *
+ * `newer` is the downgrade case: the file was migrated by a bundle that knows
+ * more migrations than this one. It is an OUTCOME, not an error. Nothing is
+ * wrong with the file, and reporting it as a failed init would file it next to
+ * corruption and lock contention, where the only fixes on offer are the wrong
+ * ones.
+ */
+export type SchemaCompatibility = {
+  status: 'compatible' | 'newer';
+  storedVersion: number;
+  supportedVersion: number;
+};
+
+/** The pure half of `readSchemaCompatibility`: compare two version numbers. */
+export function classifySchemaVersion(
+  storedVersion: number,
+  supportedVersion: number = LATEST_SCHEMA_VERSION,
+): SchemaCompatibility {
+  return {
+    status: storedVersion > supportedVersion ? 'newer' : 'compatible',
+    storedVersion,
+    supportedVersion,
+  };
+}
+
+/**
+ * Reads the stored schema version and says whether this bundle may open the file.
+ *
+ * READ-ONLY, which is the point: the caller runs it before any setup DDL, so a
+ * database from a newer bundle is recognised before this one has written a byte
+ * to it. That is why it looks the table up in `sqlite_master` instead of doing
+ * what `runMigrations` does (`CREATE TABLE IF NOT EXISTS schema_version`). A
+ * database with no `schema_version` table is a fresh one, at version 0.
+ */
+export async function readSchemaCompatibility(
+  db: SqlExecutor,
+  supportedVersion: number = LATEST_SCHEMA_VERSION,
+): Promise<SchemaCompatibility> {
+  const table = await db.getFirstAsync<{ name: string }>(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'",
+  );
+  const storedVersion = table ? await getCurrentVersion(db) : 0;
+  return classifySchemaVersion(storedVersion, supportedVersion);
+}
+
+/**
+ * Thrown by anything asked to use a database `readSchemaCompatibility` called
+ * `newer`. A class of its own so a caller can tell "this bundle is too old for
+ * the file" from a real SQLite failure.
+ */
+export class SchemaNewerThanAppError extends Error {
+  readonly storedVersion: number;
+  readonly supportedVersion: number;
+
+  constructor(storedVersion: number, supportedVersion: number) {
+    super(
+      `Offline database is at schema v${storedVersion}; this app version only knows v${supportedVersion}. ` +
+        'Refusing to use it until the app updates.',
+    );
+    this.name = 'SchemaNewerThanAppError';
+    this.storedVersion = storedVersion;
+    this.supportedVersion = supportedVersion;
+  }
+}
+
+/**
  * Brings the database up to LATEST_SCHEMA_VERSION. Applies each pending migration
  * (version > current) in ascending order; every migration's statements, its
  * optional data step, and its version stamp run inside one exclusive transaction,
  * so a crash mid-migration leaves the stored version untouched, rolls back
  * whatever the migration had done, and re-runs cleanly next launch.
+ *
+ * Returns `newer`, having touched nothing, when the file was migrated by a bundle
+ * with more migrations than this one (see the downgrade rule at the top of this
+ * file). A caller that gets `newer` back must not use the database.
  */
-export async function runMigrations(db: OfflineDatabase): Promise<void> {
+export async function runMigrations(db: OfflineDatabase): Promise<SchemaCompatibility> {
+  const compatibility = await readSchemaCompatibility(db);
+  if (compatibility.status === 'newer') return compatibility;
+
   await db.execAsync(SCHEMA_VERSION_TABLE);
 
   const currentVersion = await getCurrentVersion(db);
@@ -261,4 +349,6 @@ export async function runMigrations(db: OfflineDatabase): Promise<void> {
       await stampVersion(txn, migration.version);
     });
   }
+
+  return classifySchemaVersion(LATEST_SCHEMA_VERSION);
 }

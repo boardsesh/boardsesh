@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { useSQLiteContext } from 'expo-sqlite';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { GradeDisplayFormat } from '@boardsesh/play-view';
 import type { ThemeOverride } from '@boardsesh/key-value-storage';
@@ -17,6 +16,7 @@ import { useProfile, useMyBoards, useIsAdmin } from '../../src/lib/graphql/hooks
 import { useQaMenu } from '../../src/lib/qa/use-qa-menu';
 import { useBoardDownloads } from '../../src/offline/use-board-downloads';
 import { isOfflineEngineEnabled } from '../../src/lib/offline-engine';
+import { useOfflineDatabase } from '../../src/db/use-offline-database';
 import { useOfflineSchemaReady } from '../../src/db/use-offline-schema-ready';
 import {
   useSetting,
@@ -189,7 +189,10 @@ export default function MoreScreen() {
   // section is hidden offline — a pending write offline is expected, not a "stuck"
   // problem). A dead-lettered write is one the server rejected or that failed past
   // its retry budget while reachable: worth surfacing with a retry (never a discard).
-  const db = useSQLiteContext();
+  // Not `useSQLiteContext()` directly: the retry below DRAINS the outbox, and on a
+  // database a newer bundle migrated that must be refused, not attempted
+  // (src/db/refused-database).
+  const db = useOfflineDatabase();
   // Handed out as soon as the launch gate opens — after the first init attempt,
   // whatever it did — so on a contended launch it has no tables yet. Both reads
   // below fold readiness into their KEY rather than gating on it: a failed read

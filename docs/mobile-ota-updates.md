@@ -1066,6 +1066,14 @@ PostHog. The reloaded-\* success outcomes are tracked (and the client flushed) *
 reload — `reloadAsync()` restarts the app immediately, so a post-reload capture would be lost;
 delivery is still best-effort since the restart can pre-empt the flush.
 
+The same check and fetch, without the reload, runs once and with no button when the app finds its
+offline database was migrated by a newer bundle than the one running (a reverted canary, or a climber
+who left the early-updates track). The fetched bundle launches on the next cold start. It reports
+through the same `OTA Recovery Attempted` event with `source: schema-downgrade` and a `result` of
+`update-fetched`, `no-fix-available` or `failed`, so filter on a missing `source` to count
+crash-screen recoveries alone. See `docs/offline-sync-plan.md` → "Older JS
+on a newer database".
+
 ## PR-time OTA-compatibility signal
 
 The native gate above answers "should `main` rebuild?". `mobile-ota-check.yml` answers the same

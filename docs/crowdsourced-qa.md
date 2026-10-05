@@ -62,10 +62,27 @@ step that tells the tester to run a command or open a repo path, no risk score, 
 Warnings only: a step over 12 words, a bare score with no reason. A maintainer can apply the **`skip-qa-gate`** label to pass a
 PR unchecked.
 
+One rule depends on what the PR changes rather than on what it says. The workflow lists the PR's
+changed files (`pulls.listFiles`, both names of a rename) and hands them to the script as
+`--changed-files-file`. A PR that changes `packages/shared/offline-sync/src/db/migrations.ts`, the
+phone's SQLite migration list, fails until its description carries a ticked line saying the previous
+stable bundle can read the result:
+
+```
+- [x] Offline DB: the previous stable bundle can read this schema (expand now, contract a release later)
+```
+
+The wording may be edited for the PR; the check wants a ticked box, "previous stable", and "can
+read", outside code fences and comments. The template keeps the line inside its Risk comment, so a PR
+that never touches migrations carries nothing. `skip-qa-gate` does not waive it, because the label
+answers "do testers need a plan" and this answers "does a phone keep its offline data". The failed
+listing step fails the job rather than skipping the rule. Why the rule exists: older JS can land on a
+migrated phone, see `docs/offline-sync-plan.md` → "Older JS on a newer database".
+
 ### One parser
 
 `packages/shared/pr-body` (`@boardsesh/pr-body`) owns the markdown section walker and the rule set
-(`extractSection`, `parseTestPlan`, `parseRisk`, `findDeveloperVoice`, `validatePrBody`). The changelog generator's
+(`extractSection`, `parseTestPlan`, `parseRisk`, `findDeveloperVoice`, `findOfflineMigrationProblem`, `validatePrBody`). The changelog generator's
 `## Release Notes` extraction (`scripts/lib/changelog-transform.ts`), the CI gate, and the backend
 all read PR bodies through it, so a body that passes CI renders the same plan in the app.
 

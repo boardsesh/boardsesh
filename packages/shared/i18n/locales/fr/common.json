@@ -299,6 +299,8 @@
         "errorTitle": "Impossible de mesurer tes téléchargements",
         "errorSubtitle": "Quelque chose a empêché de lire ce qui se trouve sur ce téléphone.",
         "errorRetry": "Réessayer",
+        "downgradeTitle": "Le stockage hors ligne est en pause",
+        "downgradeSubtitle": "Ce téléphone a une version de l'app plus ancienne que celle qui a enregistré tes données. Tes boards téléchargées et les croix en attente de synchronisation sont en sécurité et reviennent à la prochaine mise à jour.",
         "cachedImagesHeader": "Images en cache",
         "cachedImagesArtLabel": "Dessin de la board",
         "cachedImagesPhotosLabel": "Photos",

@@ -3,7 +3,6 @@ import { RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { useSQLiteContext } from 'expo-sqlite';
 import { useQuery } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useMyBoards, useProfile } from '../../src/lib/graphql/hooks';
@@ -27,6 +26,8 @@ import {
   estimateScopeDownload,
 } from '@boardsesh/offline-sync';
 import { reportAbandonedDownloadOnDisable } from '../../src/offline/abandoned-download-terminals';
+import { useOfflineDatabase } from '../../src/db/use-offline-database';
+import { getSchemaDowngrade } from '../../src/db/schema-downgrade';
 import { useBoardDownloads } from '../../src/offline/use-board-downloads';
 import { useSnapshotManifest } from '../../src/offline/use-snapshot-manifest';
 import { useConfirmBoardDownload } from '../../src/offline/use-confirm-board-download';
@@ -125,7 +126,8 @@ export default function ManageBoards() {
   const snapshotManifest = useSnapshotManifest();
   const snapshotManifestRef = useRef(snapshotManifest);
   snapshotManifestRef.current = snapshotManifest;
-  const db = useSQLiteContext();
+  // Not `useSQLiteContext()` directly: see src/db/use-offline-database.
+  const db = useOfflineDatabase();
   const syncStatus = useSyncStatus();
   // Mirrored for the toggle-off handler, which only reads it at tap time: keeping
   // the live status out of that callback's deps means a progress frame can't churn
@@ -283,6 +285,8 @@ export default function ManageBoards() {
   // in the app, and the automatic paths deliberately never ask.
   const handleRetryFastDownload = useCallback(
     async (board: UserBoard) => {
+      // The file belongs to a newer bundle and `db` refuses every call.
+      if (getSchemaDowngrade() !== null) return;
       const scope = offlineBoardScopeForBoard(board);
       const key = offlineBoardKeyForBoard(board);
       const now = Date.now();

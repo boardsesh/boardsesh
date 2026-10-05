@@ -276,7 +276,13 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // either wipe, so in-flight pulls bail before the DELETEs land.
   const clearLocalOfflineUserData = useCallback(async (purgeOfflineBoards: boolean) => {
     const localDb = getDatabaseHandle();
-    if (!localDb) return;
+    if (!localDb) {
+      // No database to clean (init failed, or the file belongs to a newer bundle
+      // and is refused), but the wall photographs are plain files and need none:
+      // see the `finally` below for why they must not outlive a sign-out.
+      clearStoredSprayPhotos();
+      return;
+    }
 
     setSigningOut(true);
     try {

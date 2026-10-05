@@ -569,6 +569,8 @@
         "errorTitle": "No se pudo medir tus descargas",
         "errorSubtitle": "Algo impidió leer lo que hay en este teléfono.",
         "errorRetry": "Inténtalo de nuevo",
+        "downgradeTitle": "El almacenamiento sin conexión está en pausa",
+        "downgradeSubtitle": "Este teléfono tiene una versión de la app más antigua que la que guardó tus datos. Tus plafones descargados y los encadenes pendientes de sincronizar están a salvo y vuelven con la próxima actualización.",
         "cachedImagesHeader": "Imágenes en caché",
         "cachedImagesArtLabel": "Dibujo del plafón",
         "cachedImagesPhotosLabel": "Fotos",

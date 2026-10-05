@@ -37,6 +37,26 @@ describe('pr-test-plan workflow', () => {
     expect(WORKFLOW).not.toMatch(/run:[^\n]*\$\{\{ github\.event\.pull_request\.body \}\}/);
   });
 
+  it('hands the gate the changed files, from a step that cannot be skipped', () => {
+    const listing = WORKFLOW.slice(
+      WORKFLOW.indexOf('- name: List the files this PR changes'),
+      WORKFLOW.indexOf('- name: Check PR has a test plan'),
+    );
+    expect(listing).toContain('github.rest.pulls.listFiles');
+    expect(listing).toContain("fs.writeFileSync('pr-files.txt'");
+    // A rename away from the migration list still has to trip the rule.
+    expect(listing).toContain('previous_filename');
+    // The offline migration rule depends on this list, so a failed listing must
+    // fail the job instead of letting the check run without it.
+    expect(listing).not.toContain('continue-on-error');
+    expect(listing).toMatch(/if:.*!endsWith\(github\.event\.pull_request\.user\.login, '\[bot\]'\)/);
+    expect(WORKFLOW).toContain('--changed-files-file pr-files.txt');
+    // After the checkout, which would otherwise clean the file away.
+    expect(WORKFLOW.indexOf('- name: List the files this PR changes')).toBeGreaterThan(
+      WORKFLOW.indexOf('- uses: actions/checkout@v6'),
+    );
+  });
+
   it('grants only the label write permission needed by the combined policy job', () => {
     expect(WORKFLOW).toMatch(/permissions:\n\s+contents: read\n/);
     expect(WORKFLOW).toMatch(/\s+pull-requests: write\n/);

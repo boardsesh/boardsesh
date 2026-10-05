@@ -299,6 +299,8 @@
         "errorTitle": "Deine Downloads ließen sich nicht messen",
         "errorSubtitle": "Beim Lesen dessen, was auf diesem Handy liegt, kam etwas dazwischen.",
         "errorRetry": "Nochmal versuchen",
+        "downgradeTitle": "Der Offline-Speicher pausiert",
+        "downgradeSubtitle": "Auf diesem Handy läuft eine ältere App-Version als die, die deine Daten gespeichert hat. Deine heruntergeladenen Boards und alle Begehungen, die noch auf die Synchronisierung warten, sind sicher und kommen mit dem nächsten Update zurück.",
         "cachedImagesHeader": "Bilder im Cache",
         "cachedImagesArtLabel": "Board-Grafik",
         "cachedImagesPhotosLabel": "Fotos",

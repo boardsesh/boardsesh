@@ -148,7 +148,11 @@ describe('runMigrations', () => {
       "INSERT INTO boardsesh_ticks (uuid, board_type, climb_uuid, angle, status) VALUES ('keep-me', 'kilter', 'climb-1', 40, 'sent')",
     );
 
-    await expect(runMigrations(db)).resolves.toBeUndefined();
+    await expect(runMigrations(db)).resolves.toEqual({
+      status: 'compatible',
+      storedVersion: LATEST_SCHEMA_VERSION,
+      supportedVersion: LATEST_SCHEMA_VERSION,
+    });
 
     const survivor = await db.getFirstAsync<{ uuid: string }>(
       "SELECT uuid FROM boardsesh_ticks WHERE uuid = 'keep-me'",

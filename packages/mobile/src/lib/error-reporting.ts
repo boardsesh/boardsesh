@@ -1,6 +1,6 @@
 import { isBleWriteTimeoutError } from '@boardsesh/ble-protocol/connection-error';
 import { getErrorStatus, isNetworkError as isSharedNetworkError } from '@boardsesh/offline-sync/error-classification';
-import { isDeadDatabaseHandleError } from '@boardsesh/offline-sync';
+import { isDeadDatabaseHandleError, SchemaNewerThanAppError } from '@boardsesh/offline-sync';
 import { addBreadcrumbToSentry, captureToSentry, type ErrorReportContext } from './sentry';
 import { isBackendUnavailableError } from './connectivity/backend-unavailable-error';
 import { noteDatabaseHandleFailure } from '../db/dead-handle';
@@ -13,6 +13,9 @@ import {
   readDuplicateBoardError,
   readGraphqlValidationFailedMessage,
 } from './graphql/extract-error-message';
+
+/** The `kind` tag of the one report a schema downgrade gets (db/connection.ts). */
+export const SCHEMA_NEWER_REPORT_KIND = 'sqlite-schema-newer';
 
 // Re-exported so the public reporting surface (`{ ErrorReportContext }` from
 // './error-reporting') is unchanged; the type itself lives in './sentry' to keep
@@ -32,6 +35,11 @@ export type { ErrorReportContext };
  * Sentry cannot answer; Sentry keeps the triage detail.
  */
 export function reportError(error: unknown, context?: ErrorReportContext): void {
+  // A call this bundle refused on a database a newer bundle migrated
+  // (db/refused-database). The init chain reports that state once, under the kind
+  // below; every later refusal is the same fact again, from whichever screen
+  // asked, so only the chain's own report goes through.
+  if (error instanceof SchemaNewerThanAppError && context?.tags?.kind !== SCHEMA_NEWER_REPORT_KIND) return;
   // Detection for #5410 hangs off this funnel because it is the one thing every
   // SQLite consumer already reaches: react-query reads and mutations, the sync
   // cycle, tick writes, and the init chain. Hooking `captureToSentry` instead would
@@ -156,6 +164,9 @@ const breadcrumbedDiscoveryThrottles = new WeakSet<object>();
  * noise policy so error tracking stays signal-rich:
  *   - cancellations are dropped entirely,
  *   - backend-unavailable short-circuits are dropped entirely (#4862),
+ *   - calls refused because the offline database belongs to a newer bundle are
+ *     dropped entirely, by `reportError` itself — the init chain reports that
+ *     state once,
  *   - expected auth-required GraphQL failures are dropped entirely,
  *   - expected beta-attach validation rejections are dropped entirely,
  *   - expected board-account credential rejections (wrong password, already

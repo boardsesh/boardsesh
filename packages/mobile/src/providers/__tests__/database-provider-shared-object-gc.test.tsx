@@ -26,7 +26,11 @@ vi.mock('../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('@boardsesh/offline-sync', () => ({
   configureMainConnection: vi.fn(async () => {}),
   ensureMutationQueueTable: vi.fn(async () => {}),
-  runMigrations: vi.fn(async () => {}),
+  // The file is one this bundle can open — the downgrade guard has its own suite
+  // (db/__tests__/connection-schema-downgrade.test.ts).
+  readSchemaCompatibility: vi.fn(async () => ({ status: 'compatible', storedVersion: 1, supportedVersion: 1 })),
+  runMigrations: vi.fn(async () => ({ status: 'compatible', storedVersion: 1, supportedVersion: 1 })),
+  SchemaNewerThanAppError: class SchemaNewerThanAppError extends Error {},
   classifySqliteLockError: () => ({ locked: false, code: null }),
   applyBusyTimeout: vi.fn(async () => {}),
   beginImmediateWrite: vi.fn(async () => {}),
