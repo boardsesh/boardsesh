@@ -7,8 +7,8 @@ import { joinScreenDeadEnd, trackSessionJoinOutcome } from '../lib/session-join-
 
 /**
  * Fire `Session Join Outcome` once for each dead end the join screen shows:
- * session not found, session ended, sign-in needed, or the invite failed to
- * load. A failed join after tapping Join is tracked where it is caught.
+ * session not found, session ended, host away, sign-in needed, or the invite
+ * failed to load. A failed join after tapping Join is tracked where it is caught.
  *
  * Reads the same preview query as the screen (same key, so one request), and
  * fires on a change of outcome, not on every render: a retry that fails again

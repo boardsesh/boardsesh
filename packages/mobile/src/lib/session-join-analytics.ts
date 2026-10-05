@@ -6,8 +6,12 @@ import type { JoinSessionPreview } from './graphql/hooks/use-session-detail';
  * An invite that did NOT end in a join (#6004). A join that worked is
  * `Session Joined`; before this event the four ways an invite could dead-end
  * left no trace, so "invites opened" could not be told from "invites joined".
+ *
+ * `host_away` is a good invite that cannot be joined yet: the session is
+ * running, nobody is connected, and the wall is one the backend only names to
+ * people already in the session.
  */
-export type SessionJoinOutcome = 'not_found' | 'ended' | 'sign_in_needed' | 'error';
+export type SessionJoinOutcome = 'not_found' | 'ended' | 'host_away' | 'sign_in_needed' | 'error';
 
 /** Where it stopped: loading the invite, or the join itself after tapping Join. */
 export type SessionJoinStage = 'preview' | 'join';
@@ -34,8 +38,14 @@ export function joinScreenDeadEnd(state: JoinScreenState): SessionJoinOutcome | 
   if (state.isLoading) return null;
   if (state.isError) return 'error';
   if (!state.session) return 'not_found';
+  if (isSessionPreviewHostAway(state.session)) return 'host_away';
   if (isSessionPreviewEnded(state.session)) return 'ended';
   return null;
+}
+
+/** Running, with nobody connected and no board path to join on. */
+export function isSessionPreviewHostAway(session: JoinSessionPreview): boolean {
+  return session.invite?.state === 'host_away';
 }
 
 /** Ended by its own timestamp, or reported ended by the invite preview. */

@@ -7,7 +7,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { parseBoardPath, parseNamedBoardPath, formatBoardDisplayName } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../src/lib/analytics';
-import { isSessionPreviewEnded, trackSessionJoinOutcome } from '../../src/lib/session-join-analytics';
+import {
+  isSessionPreviewEnded,
+  isSessionPreviewHostAway,
+  trackSessionJoinOutcome,
+} from '../../src/lib/session-join-analytics';
 import { useSessionJoinOutcomeTracking } from '../../src/hooks/use-session-join-outcome-tracking';
 import { Text } from '../../src/components/Text';
 import { Button } from '../../src/components/Button';
@@ -182,6 +186,7 @@ function JoinSessionScreen() {
         if (!operation.wasAlreadyInSession) {
           track(SHARED_EVENTS.SessionJoined, {
             session_id: operation.sessionId,
+            sessionId: operation.sessionId,
             board_name: parsedBoard?.boardName ?? userBoard.boardType,
             layout_id: parsedBoard?.layoutId ?? userBoard.layoutId,
           });
@@ -317,6 +322,28 @@ function JoinSessionScreen() {
           </Text>
           <RequestResourceAccess kind="session" resourceId={sessionId} />
           <Button title={t('common:actions.done')} variant="outlined" onPress={() => router.back()} />
+        </View>
+      </View>
+    );
+  }
+
+  // Running, nobody connected, and no wall to join on: the invite is good, so
+  // say what will fix it instead of "not found".
+  if (isSessionPreviewHostAway(session)) {
+    return (
+      <View style={containerStyle}>
+        <View style={styles.centered}>
+          <Icon name="clock" size={40} color={systemColors.secondaryLabel} />
+          <Text variant="title3" style={styles.centeredTitle}>
+            {t('mobileJoin.hostAway')}
+          </Text>
+          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.centeredTitle}>
+            {session.invite?.hostName
+              ? t('mobileJoin.hostAwayBody', { host: session.invite.hostName })
+              : t('mobileJoin.hostAwayBodyNoHost')}
+          </Text>
+          <Button title={t('mobileJoin.retry')} variant="filled" size="large" onPress={() => void preview.refetch()} />
+          <Button title={t('mobileJoin.cancel')} variant="text" onPress={() => router.back()} />
         </View>
       </View>
     );

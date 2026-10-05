@@ -80,8 +80,14 @@ describe('sessionPreviewFromInvite', () => {
     expect(sessionPreviewFromInvite(invite({ state: 'live' }))).toBeNull();
   });
 
-  it('is null for a dormant session with no board path, which cannot be joined', () => {
-    expect(sessionPreviewFromInvite(invite({ boardPath: null }))).toBeNull();
+  // A private spray wall: the backend says the session is running and keeps
+  // the path. Null here would render "Session not found" for a good invite.
+  it('is host_away, never null, for a dormant session whose board path is withheld', () => {
+    const preview = sessionPreviewFromInvite(invite({ boardPath: null }));
+
+    expect(preview?.invite).toEqual({ state: 'host_away', hostName: 'Alex' });
+    expect(preview?.boardPath).toBe('');
+    expect(preview?.endedAt).toBeNull();
   });
 });
 
@@ -103,6 +109,16 @@ describe('fetchSessionPreview', () => {
     expect(preview?.boardPath).toBe('kilter/1/10/1,20/40');
     expect(preview?.invite).toEqual({ state: 'dormant', hostName: 'Alex' });
     expect(requestMock).toHaveBeenNthCalledWith(2, GET_SESSION_INVITE_PREVIEW, { sessionId: SESSION_ID });
+  });
+
+  it('reports a running session on a withheld wall as host_away instead of not found', async () => {
+    requestMock
+      .mockResolvedValueOnce({ session: null })
+      .mockResolvedValueOnce({ sessionInvitePreview: invite({ boardPath: null, boardName: null }) });
+
+    const preview = await fetchSessionPreview(SESSION_ID, true);
+
+    expect(preview?.invite?.state).toBe('host_away');
   });
 
   it('reports an ended session as ended instead of not found', async () => {
