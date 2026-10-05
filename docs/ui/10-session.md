@@ -205,6 +205,7 @@ Removed in #6004: the `JoinRedirect` spinner, the `/api/internal/join/{sessionId
 
 - A phone with the app opens this screen from the invite link (universal link, App Link, or the app's own scheme). It needs sign-in; a signed-out invitee is sent to login and the link is replayed afterwards.
 - It asks `session` first. When that is null (nobody connected) it asks `sessionInvitePreview`:
+  - **live**: the host connected between the two reads. `session` is asked once more; if it still has nothing, the join card shows with the board and no climber count.
   - **dormant**: the join card, with "nobody connected right now" in place of the climber count.
   - **host away**: the session is running, nobody is connected, and the backend withheld the board path (a spray wall that is not open to everyone). The screen says the host has to open Boardsesh and offers a retry. Once the host is connected, `session` answers with the path and the join card shows.
   - **ended**: "This session has ended".
