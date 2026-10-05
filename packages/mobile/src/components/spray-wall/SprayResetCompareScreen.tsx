@@ -35,7 +35,6 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { SegmentedControl } from '../SegmentedControl';
 import { InteractiveFilterBoard } from '../search/InteractiveFilterBoard';
 import { useTheme } from '../../providers/theme-provider';
-import { useToast } from '../../providers/toast-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { track } from '../../lib/analytics';
@@ -94,7 +93,6 @@ export function SprayResetCompareScreen({
 }: SprayResetCompareScreenProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
-  const { showToast } = useToast();
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
@@ -167,6 +165,7 @@ export function SprayResetCompareScreen({
 
   const effective = review.seeded ? review : null;
 
+  const [commitError, setCommitError] = useState<string | null>(null);
   const [selectedKey, setSelectedKey] = useState<number | null>(null);
   const [pairingIndex, setPairingIndex] = useState<number | null>(null);
 
@@ -223,6 +222,7 @@ export function SprayResetCompareScreen({
   const handleConfirm = useCallback(async () => {
     if (!effective || commit.isPending) return;
     hapticSelection();
+    setCommitError(null);
     const decisions = buildResetCommitDecisions(effective, detections);
     try {
       const result = await commitAsync({ wallUuid, versionId, ...decisions });
@@ -238,9 +238,11 @@ export function SprayResetCompareScreen({
       onCommitted(result);
     } catch (error) {
       reportError(error);
-      showToast(extractGraphqlMessage(error) ?? t('sprayReset.commit.failed'), 'error');
+      // The boards route is a native modal, above the root toast overlay. Keep
+      // failed confirmation feedback beside the action so it stays visible.
+      setCommitError(extractGraphqlMessage(error) ?? t('sprayReset.commit.failed'));
     }
-  }, [effective, commit.isPending, commitAsync, detections, wallUuid, versionId, onCommitted, showToast, t]);
+  }, [effective, commit.isPending, commitAsync, detections, wallUuid, versionId, onCommitted, t]);
 
   const renderInTransform = useCallback(
     () =>
@@ -381,6 +383,11 @@ export function SprayResetCompareScreen({
       <View
         style={[styles.footer, { borderTopColor: systemColors.separator, paddingBottom: insets.bottom + spacing[3] }]}
       >
+        {commitError ? (
+          <Text variant="footnote" color={iosSystemColors.systemRed} accessibilityLiveRegion="polite">
+            {commitError}
+          </Text>
+        ) : null}
         <Button
           title={t('sprayReset.compare.confirm')}
           variant="filled"

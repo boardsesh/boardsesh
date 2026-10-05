@@ -69,6 +69,7 @@ vi.mock('../../../providers/theme-provider', () => ({
     systemColors: { background: '#000', secondaryBackground: '#111', secondaryLabel: '#888', separator: '#222' },
   }),
 }));
+// Root toasts cannot stand in for feedback mounted inside the reset modal.
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 // See SprayWallResetScreen.test.tsx: the builders return `{ name, properties }`
@@ -79,9 +80,6 @@ vi.mock('@boardsesh/analytics', () => ({
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
-vi.mock('../../../lib/graphql/extract-error-message', () => ({
-  extractGraphqlMessage: (error: unknown) => (error as Error)?.message,
-}));
 
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', {}, children),
@@ -203,10 +201,14 @@ describe('SprayResetCompareScreen', () => {
   });
 
   it('shows the proposal error instead of an empty review when propose fails', () => {
-    proposalState.current = { data: null, isPending: false, error: new Error('Network request failed') };
+    proposalState.current = {
+      data: null,
+      isPending: false,
+      error: { response: { errors: [{ message: 'Server refused the proposal' }] } },
+    };
     const { getByText, queryByTestId } = renderScreen();
 
-    expect(getByText('Network request failed')).toBeTruthy();
+    expect(getByText('Server refused the proposal')).toBeTruthy();
     expect(queryByTestId('board')).toBeNull();
   });
 
@@ -253,7 +255,9 @@ describe('SprayResetCompareScreen', () => {
   });
 
   it('keeps the review when the commit is refused', async () => {
-    commitMutateAsync.mockRejectedValueOnce(new Error('SPRAY_WALL_VERSION_SUPERSEDED'));
+    commitMutateAsync.mockRejectedValueOnce({
+      response: { errors: [{ message: 'This reset has already been replaced.' }] },
+    });
     const onCommitted = vi.fn();
     const { getByText, getByTestId } = renderScreen(onCommitted);
 
@@ -262,9 +266,52 @@ describe('SprayResetCompareScreen', () => {
     });
 
     expect(onCommitted).not.toHaveBeenCalled();
+    expect(getByText('This reset has already been replaced.')).toBeTruthy();
     // Still reviewable, so the owner can retry without redoing a hundred rings.
     expect(getByTestId('board')).toBeTruthy();
     expect(getByText('sprayReset.compare.confirm')).toBeTruthy();
+  });
+
+  it('shows transport failure inline and retries the preserved decisions once', async () => {
+    commitMutateAsync.mockRejectedValueOnce(new Error('Network request failed'));
+    const onCommitted = vi.fn();
+    const { getByText, queryByText, getByTestId } = renderScreen(onCommitted);
+
+    // Keep a hold the proposal removed, so preserving the review matters.
+    act(() => boardProps.current?.onHoldTap?.(12));
+    act(() => getByText('sprayReset.hold.stillHere').click());
+    await act(async () => {
+      getByText('sprayReset.compare.confirm').click();
+    });
+
+    expect(getByText('sprayReset.commit.failed')).toBeTruthy();
+    expect(queryByText('Network request failed')).toBeNull();
+    expect(getByTestId('board')).toBeTruthy();
+    expect(onCommitted).not.toHaveBeenCalled();
+    expect(commitMutateAsync).toHaveBeenCalledTimes(1);
+    expect(commitMutateAsync.mock.calls[0][0].removed).toEqual([]);
+
+    let resolveRetry!: (result: {
+      keptCount: number;
+      removedCount: number;
+      addedCount: number;
+      climbsChanged: number;
+    }) => void;
+    commitMutateAsync.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRetry = resolve;
+        }),
+    );
+    act(() => getByText('sprayReset.compare.confirm').click());
+    expect(queryByText('sprayReset.commit.failed')).toBeNull();
+    expect(commitMutateAsync).toHaveBeenCalledTimes(2);
+    expect(commitMutateAsync.mock.calls[1][0]).toEqual(commitMutateAsync.mock.calls[0][0]);
+
+    await act(async () => {
+      resolveRetry({ keptCount: 2, removedCount: 0, addedCount: 1, climbsChanged: 0 });
+    });
+    expect(onCommitted).toHaveBeenCalledTimes(1);
   });
 
   it('warns about a differently framed photo without blocking the commit', () => {
