@@ -2580,14 +2580,16 @@ describe('apply mode', () => {
     expect(callsMatching(calls, 'serviceInstanceDeployV2(')).toHaveLength(0);
   });
 
-  it('sets the redirect variable once its host answers, and never probes when it is already set', async () => {
+  it('sets the redirect variable once its host answers', async () => {
     const stub = railwayStub({ variables: variablesWithOta(otaVariables({ CDN_BASE_URL: null })) });
     const answered = await runCli(['--apply', '--no-wait'], stub, {}, { probePreflightUrl: async () => null });
     expect(answered.error).toBeNull();
     expect(callsMatching(answered.calls, 'variableUpsert').map((call) => call.variables.input)).toEqual([
       expect.objectContaining({ serviceId: OTA_SERVICE_ID, name: 'CDN_BASE_URL', value: OTA_CDN_BASE_URL }),
     ]);
+  });
 
+  it('never probes the host when the redirect variable is already set', async () => {
     const probed: string[] = [];
     const converged = await runCli(
       ['--apply'],

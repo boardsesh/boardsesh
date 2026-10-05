@@ -1106,7 +1106,14 @@ export interface MainDependencies {
   probePreflightUrl?: (url: string) => Promise<string | null>;
 }
 
-/** Any answer below 500 proves the host exists and serves; the status itself is not the point. */
+/**
+ * Any answer below 500 proves the host exists and serves; the status itself is
+ * not the point. A 404 passes on purpose: that is what an attached R2 custom
+ * domain answers at its root. So this catches a host that is not there, and
+ * nothing subtler. A host attached to the wrong bucket, or one that neither
+ * caches nor compresses, still passes; the curl gate in
+ * docs/mobile-ota-updates.md is what covers those.
+ */
 async function defaultProbePreflightUrl(url: string): Promise<string | null> {
   try {
     const response = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(15_000) });
