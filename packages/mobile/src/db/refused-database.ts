@@ -18,9 +18,14 @@ import type { SchemaDowngrade } from './schema-downgrade';
  * Refusing at the connection covers every such call site, including ones added
  * later, instead of asking each to remember a second gate.
  *
- * `…Async` methods reject; everything else throws, because a synchronous caller
- * cannot await a rejection. Non-function members (`databasePath`, `options`) are
- * passed through: they describe the connection without touching the file.
+ * READING a member never throws; only CALLING a method refuses. `…Async` methods
+ * reject, every other method throws, because a synchronous caller cannot await a
+ * rejection. Non-function members (`databasePath`, `options`) are passed through:
+ * they describe the connection without touching the file. So is anything keyed by
+ * a symbol, untouched: those are the runtime's own probes (`Symbol.toPrimitive`,
+ * `Symbol.toStringTag`, an `await` looking for a thenable) and not one of them is a
+ * query. An `await` on the stand-in therefore resolves to it, as it would for the
+ * connection.
  *
  * One stand-in per connection, so a consumer that lists `db` in an effect's deps
  * sees a stable identity.
@@ -34,10 +39,10 @@ export function refuseDatabase(connection: SQLiteDatabase, downgrade: SchemaDown
   const refused = new Proxy(connection, {
     get(target, property) {
       const member: unknown = Reflect.get(target, property, target);
-      if (typeof member !== 'function') return member;
+      if (typeof property === 'symbol' || typeof member !== 'function') return member;
       return () => {
         const error = new SchemaNewerThanAppError(downgrade.storedVersion, downgrade.supportedVersion);
-        if (typeof property === 'string' && property.endsWith('Async')) return Promise.reject(error);
+        if (property.endsWith('Async')) return Promise.reject(error);
         throw error;
       };
     },

@@ -431,9 +431,10 @@ async function attemptInitialization(db: SQLiteDatabase): Promise<InitOutcome> {
     const compatibility = await readSchemaCompatibility(db);
     if (compatibility.status === 'newer') return toSchemaNewerOutcome(compatibility);
     phase = 'wal';
-    // WAL (persists on the file, so every later connection inherits it) + busy_timeout
-    // on the main connection. Runs in autocommit: journal_mode can't change
-    // inside a transaction, and ensureMutationQueueTable/runMigrations open one.
+    // WAL (persists on the file, so every later connection inherits it). It also
+    // sets busy_timeout on the main connection, which by now is a repeat: the
+    // version read above already needed it. Runs in autocommit: journal_mode can't
+    // change inside a transaction, and ensureMutationQueueTable/runMigrations open one.
     // Does not throw on a refused WAL switch — see configureMainConnection.
     await configureMainConnection(db);
     phase = 'queue-table';

@@ -78,4 +78,35 @@ describe('refuseDatabase', () => {
     expect(refuseDatabase(connection, DOWNGRADE)).toBe(refuseDatabase(connection, DOWNGRADE));
     expect(refuseDatabase(other, DOWNGRADE)).not.toBe(refuseDatabase(connection, DOWNGRADE));
   });
+
+  it('never throws on a property read, only on a call', () => {
+    const { connection } = createConnection();
+    const refused = refuseDatabase(connection, DOWNGRADE);
+
+    expect(() => Reflect.get(refused, 'runSync')).not.toThrow();
+    expect(() => Reflect.get(refused, 'getAllAsync')).not.toThrow();
+    expect(() => Reflect.get(refused, 'noSuchMember')).not.toThrow();
+  });
+
+  it('leaves symbol-keyed members alone, so the runtime\u2019s own probes behave as on the connection', () => {
+    const describe = () => 'SQLiteDatabase';
+    const connection = {
+      getAllAsync: vi.fn(async () => []),
+      [Symbol.toPrimitive]: describe,
+      [Symbol.toStringTag]: 'SQLiteDatabase',
+    } as unknown as SQLiteDatabase;
+    const refused = refuseDatabase(connection, DOWNGRADE);
+
+    expect(Reflect.get(refused, Symbol.toPrimitive)).toBe(describe);
+    expect(Object.prototype.toString.call(refused)).toBe('[object SQLiteDatabase]');
+    expect(Reflect.get(refused, Symbol.iterator)).toBeUndefined();
+  });
+
+  it('is not a thenable: awaiting it resolves to the stand-in instead of rejecting', async () => {
+    const { connection } = createConnection();
+    const refused = refuseDatabase(connection, DOWNGRADE);
+
+    expect(Reflect.get(refused, 'then')).toBeUndefined();
+    await expect(Promise.resolve(refused)).resolves.toBe(refused);
+  });
 });

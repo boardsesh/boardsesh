@@ -300,7 +300,7 @@
         "errorSubtitle": "Something got in the way of reading what's on this phone.",
         "errorRetry": "Try again",
         "downgradeTitle": "Offline storage is paused",
-        "downgradeSubtitle": "This phone is on an older version of the app than the one that saved your data. Your downloaded boards and any sends waiting to sync are safe, and come back with the next update.",
+        "downgradeSubtitle": "This phone is on an older version of the app than the one that saved your data. Your downloaded boards and any sends waiting to sync stay on this phone and come back with the next update.",
         "cachedImagesHeader": "Cached images",
         "cachedImagesArtLabel": "Board art",
         "cachedImagesPhotosLabel": "Photos",
