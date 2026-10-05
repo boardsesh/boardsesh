@@ -1091,13 +1091,38 @@ This is the runbook that stood up the live V3 server; it's here for the record a
 replacement. `vp run mobile:ota-setup` scripts the in-repo phases; the cloud actions (bucket,
 Postgres, server, DNS) stay manual. Run it with no argument for the ordered runbook.
 
-> **Storage migration gate:** `infra/cloudflare/config.ts` declares `boardsesh-ota-v3` as a private R2 bucket with
-> no custom domain and with `r2.dev` disabled. That desired state does not prove which provider Railway currently
+> **Storage migration gate:** `infra/cloudflare/config.ts` declares `boardsesh-ota-v3` as an R2 bucket with the
+> custom domain `ota-assets.boardsesh.com` and with `r2.dev` disabled. That desired state does not prove which provider Railway currently
 > uses, because `AWS_BASE_ENDPOINT` and its credentials remain live secrets. Inspect the production service before
 > calling the OTA bucket migrated. If it still points at Tigris, complete the verified copy below before rotating any
 > Railway credential. Then require `/hc` and `/ready` to return 200, publish a test update, and download/install it
 > from a production-configured client. See `docs/cloudflare.md` → **R2 buckets**; no live provider is inferred from
 > the declaration alone.
+
+### Asset delivery from the edge
+
+Until xprem is given a `CDN_BASE_URL`, every asset request costs two hops: `updates.boardsesh.com/assets` reaches
+the Railway server uncached, which answers with a 302 to a presigned `r2.cloudflarestorage.com` URL. Measured from
+Sydney on 2026-10-05, the first hop took 350 to 650 ms per asset and the second served the 20.9 MB iOS bundle
+uncompressed over HTTP/1.1. Fleet `expo.updates.download_time` since the R2 rotation was p50 5.3 s and p90 19.6 s
+(268 samples over 19 hours).
+
+`ota-assets.boardsesh.com` is the public custom domain on the bucket, with a cache rule and a Brotli compression
+rule (`docs/cloudflare.md` → **OTA assets host**). It serves nothing to clients until xprem redirects to it.
+
+**Gate before pointing xprem at the host.** Take two real `cas/` keys from launch assets, one published after
+the R2 rotation and one copied over from Tigris, and require all three for both:
+
+1. `curl -sI https://ota-assets.boardsesh.com/{appId}/cas/{hash}` returns 200.
+2. A second request returns `cf-cache-status: HIT`. A miss that never turns into a hit means the object carries no
+   `Cache-Control`; the migration only copied that header where the Tigris object had one.
+3. With `-H 'accept-encoding: br'` the response carries `content-encoding: br` and the transfer is 7 to 8 MB.
+
+If the third fails, first read the `cf:apply` log of the deploy that shipped the rule. A line saying the token
+cannot read the `http_response_compression` phase, or that Cloudflare refused the write, means the rule does not
+exist: grant `Zone.Response Compression Edit` and re-run. Only when the rule is live and the body is still
+uncompressed is the edge declining to compress `application/octet-stream`. The host is then still faster than the
+presigned path, but settle compression before treating the download-time target as reachable.
 
 ### Tigris → R2 object-copy gate
 
@@ -1107,7 +1132,7 @@ bucket and S3 credentials directly from the `boardsesh-ota-v3` Railway variables
 access keys. The workflow sends no Railway mutation and never changes the live reader. Its S3 client imports no
 delete operation, so neither provider loses an object.
 
-Before running it, add these bucket-scoped Production secrets for the private `boardsesh-ota-v3` R2 bucket:
+Before running it, add these bucket-scoped Production secrets for the `boardsesh-ota-v3` R2 bucket:
 
 - `OTA_R2_AWS_ENDPOINT_URL`
 - `OTA_R2_AWS_ACCESS_KEY_ID`
@@ -1181,7 +1206,7 @@ runtimes and a newly published update, rather than passing on cached Tigris URLs
 configuration and signing identity.
 
 1. **Storage bucket** — an empty S3-compatible bucket `boardsesh-ota-v3` plus a scoped key. The original setup used
-   Tigris (`t3.storage.dev`, region `auto`); the migration target is the private R2 bucket above. Keep it portable
+   Tigris (`t3.storage.dev`, region `auto`); the migration target is the R2 bucket above. Keep it portable
    (see the object-storage rules in `CLAUDE.md`). For a brand-new replacement only, preflight
    put/get/CopyObject with a disposable key, then delete that test key only (retry with
    `AWS_S3_FORCE_PATH_STYLE=true` if CopyObject fails). The migration workflow above uses real inventory and never

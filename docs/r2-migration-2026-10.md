@@ -176,10 +176,10 @@ snapshot bootstrap passed on the Release simulator. The owner waived the
 incomplete Android native gate, as recorded above; signed served delivery checks
 for both platforms remain required for production publication.
 
-The OTA bucket remains private with no custom domain. CDN caching is tracked separately in
-[follow-up #6017](https://github.com/boardsesh/boardsesh/issues/6017). The deployed
-xprem v3.2.5 supports a generic `CDN_BASE_URL`; selecting a public domain or
-authenticated proxy still requires a preview privacy decision and live acceptance.
+At acceptance the OTA bucket was private with no custom domain. CDN caching was tracked in
+[follow-up #6017](https://github.com/boardsesh/boardsesh/issues/6017) and has since been decided: the bucket is
+public by URL at `ota-assets.boardsesh.com`, preview bundles included. See
+[mobile-ota-updates.md](./mobile-ota-updates.md#asset-delivery-from-the-edge) for the delivery path and its gate.
 
 The pre-cutover `expo.updates.download_time` baseline covers September 4 through
 October 4 UTC: 2,620 samples from 1,511 devices, p50 6.371 seconds and p90 22.238

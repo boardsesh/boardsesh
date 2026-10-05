@@ -13,15 +13,39 @@ token setup, CI auto-apply, and the Pages deploy of `app.boardsesh.com`.
 - `boardsesh-static-assets` declares the unchanged public hostname `assets.boardsesh.com`;
   the staging domain `assets-r2.boardsesh.com` remains available for verification.
 - `boardsesh-board-snapshots` stages mobile bootstrap data at `snapshots.boardsesh.com`.
-- `boardsesh-ota-v3` is the private R2 target for XPRem. Verify Railway's live
-  storage endpoint before treating the service as migrated.
+- `boardsesh-ota-v3` holds XPRem's OTA updates and serves them at `ota-assets.boardsesh.com`.
+  Objects are public by URL, named by content hash, edge cached and compressed; see
+  [OTA assets host](#ota-assets-host) below.
 
 See `docs/user-media-storage.md`, `docs/static-assets.md`, `docs/board-snapshots.md`, and
 `docs/mobile-ota-updates.md` for the storage-specific contracts and cutover runbooks.
 
+### OTA assets host
+
+`ota-assets.boardsesh.com` is the custom domain on `boardsesh-ota-v3`. Two rules make it worth having, and both exist
+because the Cloudflare defaults do not apply to these objects:
+
+- **Cache rule** (`boardsesh:ota-assets-edge-cache`): the whole host is cache-eligible. Keys look like
+  `{appId}/cas/<sha256>` with no file extension, so the default extension list skips them. The rule honours the
+  origin header, and xprem uploads with `Cache-Control: max-age=31556926`.
+- **Compression rule** (`boardsesh:ota-assets-compression`, phase `http_response_compression`): Brotli, then gzip.
+  R2 stores every object as `application/octet-stream`, which Cloudflare does not compress on its own. Measured
+  2026-10-05, the iOS Hermes bundle is 20.9 MB raw, 8.1 MB at gzip 6 and 7.2 MB at Brotli 5. The edge compresses
+  on the fly at a level Cloudflare does not publish, so expect 7 to 8 MB. Whether a host-only rule compresses an
+  `application/octet-stream` body at all is not stated in Cloudflare's docs; the gate in
+  `docs/mobile-ota-updates.md` → **Asset delivery from the edge** is what proves it.
+
+The compression phase is the one rule phase marked `optional` in `infra/cloudflare/plan.ts`. A token that cannot
+read it, or whose write is refused, logs a warning and skips the rule instead of failing `cf:apply`, which would
+block the web deploy. The scope it needs is `Zone.Response Compression Edit`, and the production token has not
+been confirmed to carry it. After the first apply has written the rule, set `optional: false`.
+
+Anyone holding an object's URL can download it, production and `pr-*` preview bundles alike. That is accepted: the
+bundle is the compiled form of this public repository. Never store anything in this bucket that is not an OTA asset.
+
 **R2 has two independent public access paths.** A custom domain and the managed `r2.dev` development URL can each
 publish every object in a bucket. The config disables `r2.dev` for every declared bucket; production public buckets
-use only their custom domain. `boardsesh-user-private` and `boardsesh-ota-v3` also declare `customDomain: null`.
+use only their custom domain. `boardsesh-user-private` also declares `customDomain: null`.
 The apply disables a drifted `r2.dev` URL automatically, but reports an unexpected custom domain as `BLOCKED`
 instead of detaching a hostname during a routine converge. Buckets are created when absent and never deleted.
 
@@ -46,6 +70,8 @@ R2 is **account**-scoped, unlike everything else here, so managing it needs two 
   earlier phases still apply and this one 403s — the same partial-convergence
   shape as the WAF and rate-limit phases. **Editing a token replaces all of its
   policies, so re-add every existing scope in the same edit.**
+- `Zone.Response Compression Edit` on `CLOUDFLARE_API_TOKEN`, for the OTA assets compression rule
+  (`http_response_compression`). Without it the phase is skipped with a warning while it is marked optional.
 - `Account.Workers R2 Storage:Edit` on `CLOUDFLARE_API_TOKEN`. Without it, the R2 read fails authorization and is skipped with a warning — the zone config still applies.
 
 R2 degrades to "skip and say so" when the account id or storage scope is absent.
