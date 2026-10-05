@@ -192,12 +192,29 @@ nine crashes in 37 launches):
   (software-mansion/react-native-screens#4413). This repo pins 4.26.2, which
   still has the unguarded code, and our patch for that version touches iOS only.
 - Sentry has no issue naming `pullTransaction` or `MountingCoordinator` in the
-  last 90 days. Native stacks arrive unsymbolicated, so that is weak evidence
-  that real devices are spared. The race is in the release binary too.
+  last 90 days. One SIGSEGV from a real device is on record and cannot be
+  matched or excluded: BOARDSESH-MK (1 event, 2026-09-21, Galaxy S23, release
+  2.5.0), whose stack is five unknown frames. Native stacks arrive
+  unsymbolicated, so the absence is weak evidence that real devices are spared.
+  The race is in the release binary too.
 
-So this is a product bug with a known upstream fix, not a test flake, and the
-fix is a native change (`release/next`). Until it ships, the gate treats it
-like this:
+This is the likeliest cause, not a proven one:
+
+- Nobody disassembled the APK, so the attribution rests on the matching
+  signature and on the source, not on a `react-native-screens` symbol in the
+  backtrace. Every frame is `libreactnative.so`, Hermes or ART.
+- Two capture runs in the same period had no crash in 22 launches (37298803005,
+  37311007551), against 9 in 37 for the failing three. A flat 24% rate makes
+  that unlikely. Fault addresses repeat within one emulator boot, which hints
+  that the odds move with the boot. That is a guess.
+- Reanimated registers a mounting-override delegate too and has an upstream
+  report with the same top frames (on a newer version than ours), so it is not
+  ruled out.
+
+If it is what it looks like, it is a product bug with a known upstream fix, not
+a test flake. The fix is the `react-native-screens` bump or a backport of that
+PR, which is a native change and belongs on `release/next`. Until it ships, the
+gate treats the crash like this:
 
 - A native crash before the app signals home, with zero replay misses, is the
   class **native crash at launch**.
@@ -223,8 +240,9 @@ That is why the post lives in its own `notify` job with
 `release/next`; the nightly always runs on `main`. No test job carries the
 environment, so none of them ever holds its other secrets.
 
-The same fact means the nightly Discord step in `e2e-tests.yml` cannot read the
-webhook: its job has no environment, so it logs a warning and posts nothing.
+`e2e-tests.yml` posts its own red nightly the same way, from a `notify-nightly`
+job. That post used to be a step of the smoke job, which has no environment, so
+it read an empty webhook and never fired.
 
 ## Files
 

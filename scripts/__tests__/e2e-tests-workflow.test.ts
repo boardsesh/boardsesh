@@ -14,7 +14,7 @@ import { parse } from 'yaml';
  */
 
 type Step = { name?: string; if?: string; uses?: string; with?: Record<string, string> };
-type Job = { if?: string; needs?: string[]; steps?: Step[] };
+type Job = { if?: string; needs?: string[]; environment?: string; steps?: Step[] };
 type Workflow = {
   on: {
     schedule?: Array<{ cron: string }>;
@@ -74,8 +74,17 @@ describe('e2e-tests.yml triggers', () => {
     );
   });
 
-  it('posts to Discord only when the nightly run fails', () => {
-    const notify = (workflow.jobs['expo-web-smoke'].steps ?? []).find((step) => step.name?.includes('Discord'));
-    expect(notify?.if).toBe("failure() && github.event_name == 'schedule' && !inputs.called");
+  it('posts to Discord only when the nightly run fails, from a job that can read the webhook', () => {
+    // DISCORD_DEPLOY_WEBHOOK is an environment secret. As a step of the smoke
+    // job (no environment) the post read an empty string and never fired.
+    const notify = workflow.jobs['notify-nightly'];
+    expect(notify.environment).toBe('Production');
+    expect(notify.needs).toEqual(['expo-web-smoke']);
+    expect(notify.if).toBe(
+      "${{ always() && github.event_name == 'schedule' && !inputs.called && needs.expo-web-smoke.result == 'failure' }}",
+    );
+    expect(workflow.jobs['expo-web-smoke'].environment).toBeUndefined();
+    const smokeSteps = workflow.jobs['expo-web-smoke'].steps ?? [];
+    expect(smokeSteps.some((step) => step.name?.includes('Discord'))).toBe(false);
   });
 });

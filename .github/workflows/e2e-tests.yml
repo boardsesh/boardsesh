@@ -529,11 +529,25 @@ jobs:
           path: packages/web/test-results/
           retention-days: 7
 
-      # Nobody watches a scheduled run, so a red nightly says so in the deploy
-      # channel. A dispatch has a person behind it and a call reports to its
-      # caller, so neither posts.
+  # Nobody watches a scheduled run, so a red nightly says so in the deploy
+  # channel. A dispatch has a person behind it and a call reports to its
+  # caller, so neither posts.
+  #
+  # Its own job because of where the webhook lives: DISCORD_DEPLOY_WEBHOOK is an
+  # ENVIRONMENT secret (Production and Native Release), not a repository secret.
+  # As a step of the smoke job, which has no environment, this read an empty
+  # string and could never post. Production's branch policy admits main, which is
+  # the only ref the schedule runs on. The environment sits on this one job so
+  # the smoke itself never holds Production's other secrets.
+  notify-nightly:
+    name: Report a red nightly smoke
+    needs: [expo-web-smoke]
+    if: ${{ always() && github.event_name == 'schedule' && !inputs.called && needs.expo-web-smoke.result == 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: Production
+    steps:
       - name: Tell Discord the nightly smoke failed
-        if: failure() && github.event_name == 'schedule' && !inputs.called
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
