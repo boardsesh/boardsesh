@@ -2523,5 +2523,5 @@ created, published, committed or discarded. An upload retry keeps the exact
 uploaded photo id and corners; it never silently adopts another open draft.
 If that other draft blocks creation, the owner explicitly resumes or discards
 it. Discarding returns to the selected local photo so the next attempt is visible.
-The backend protection in #6044 also refuses plain publishing of new-photo
+The backend protection in #6070 also refuses plain publishing of new-photo
 reset drafts from older clients.

@@ -30,6 +30,7 @@ import { getHttpClient } from '../graphql/client';
 import type { BoardRenderDefault } from '../board-render-settings';
 import { primeSprayWallLook } from './spray-wall-loader';
 import { listRegisteredSprayWalls, unregisterSprayWall } from './spray-wall-registry';
+import { sprayWallWithVersionsQueryKey } from './use-spray-wall-reset';
 
 /** The owner's wall list, invalidated the moment a wall becomes one. */
 export const mySprayWallsQueryKey = ['mySprayWalls'] as const;
@@ -90,7 +91,7 @@ export function useCreateSprayWallVersion() {
     },
     onSuccess: (_version, input) =>
       queryClient.invalidateQueries({
-        queryKey: ['sprayWallWithVersions', input.wallUuid],
+        queryKey: sprayWallWithVersionsQueryKey(input.wallUuid),
       }),
   });
 }

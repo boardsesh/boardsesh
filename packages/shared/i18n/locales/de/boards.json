@@ -1062,7 +1062,7 @@
       "stay": "Weiter bearbeiten",
       "discard": "Änderungen verwerfen"
     },
-    "resetInProgress": "Schließe den Reset mit dem neuen Foto ab oder verwirf ihn, bevor du Griffe bearbeitest."
+    "resetInProgress": "Schließe das Zurücksetzen mit dem neuen Foto ab oder verwirf es, bevor du Griffe bearbeitest."
   },
   "sprayCaps": {
     "holds": "Eine Wand trägt bis zu {{max}} Griffe. Verwirf ein paar und speichere erneut.",
