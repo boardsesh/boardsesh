@@ -27,6 +27,13 @@ describe('setRelativeTimeLocale', () => {
     expect(formatTickRelativeTime(minutesAgo(6))).toBe('il y a 6 minutes');
   });
 
+  it('renders Simplified Chinese for the app-only zh-Hans locale', () => {
+    // dayjs names the locale `zh-cn`; the app id is `zh-Hans`. Without the map
+    // entry this silently falls back to English.
+    setRelativeTimeLocale('zh-Hans');
+    expect(formatTickRelativeTime(minutesAgo(6))).toBe('6 分钟前');
+  });
+
   it('renders English for en-US', () => {
     setRelativeTimeLocale('en-US');
     expect(formatTickRelativeTime(minutesAgo(6))).toBe('6 minutes ago');

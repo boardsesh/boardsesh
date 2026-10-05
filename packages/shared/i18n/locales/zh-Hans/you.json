@@ -1,0 +1,181 @@
+{
+  "metadata": {
+    "dashboard": {
+      "title": "我"
+    }
+  },
+  "tabs": {
+    "progress": "进步",
+    "sessions": "训练",
+    "logbook": "攀爬记录",
+    "social": "社交",
+    "climbs": "线路"
+  },
+  "mobile": {
+    "unknownName": "岩友",
+    "cancel": "取消",
+    "sessions": {
+      "weeklySends": "本周完攀 {{count}} 条",
+      "weekly": {
+        "sessions": "训练",
+        "sends": "完攀",
+        "flashes": "Flash"
+      },
+      "streak": "连续 {{count}} 周",
+      "sectionToday": "今天",
+      "sectionThisWeek": "本周",
+      "sectionEarlier": "更早",
+      "emptyTitle": "还没有训练",
+      "emptyBody": "开始一次训练，你爬的线路就会出现在这里。",
+      "emptyCta": "开始训练"
+    },
+    "social": {
+      "title": "社交",
+      "followers": "粉丝",
+      "following": "关注",
+      "newFollowers": "新粉丝",
+      "findFriends": "找岩友",
+      "searchPlaceholder": "搜索岩友",
+      "clearSearch": "清除搜索",
+      "you": "我",
+      "followAction": "关注",
+      "unfollowAction": "取消关注",
+      "followUser": "关注 {{name}}",
+      "unfollowUser": "取消关注 {{name}}",
+      "followerCount_one": "{{count}} 位粉丝",
+      "followerCount_other": "{{count}} 位粉丝",
+      "followingCount": "关注 {{count}} 人",
+      "recentAscents_one": "本月完攀 {{count}} 条",
+      "recentAscents_other": "本月完攀 {{count}} 条",
+      "emptyFollowers": "还没有粉丝",
+      "emptyFollowing": "还没有关注任何人",
+      "emptyNewFollowers": "暂时没有新粉丝",
+      "searchHint": "至少输入 2 个字符来搜索岩友",
+      "emptySearch": "没有找到岩友",
+      "emptySearchBody": "没有与“{{query}}”匹配的岩友。",
+      "loadError": "岩友加载失败",
+      "retry": "重试",
+      "instagramLink": "Instagram",
+      "instagramOpenError": "无法打开 Instagram"
+    },
+    "profile": {
+      "title": "个人主页",
+      "errorTitle": "主页加载失败",
+      "notFoundTitle": "找不到这位岩友",
+      "notFoundBody": "我们没找到这位岩友。",
+      "noClimbs": "还没有创建线路",
+      "climbsError": "线路加载失败",
+      "betaShelf": {
+        "title": "Beta 视频",
+        "seeAll": "查看全部",
+        "allTitle": "Beta 视频",
+        "empty": "还没有 beta 视频",
+        "emptyBody": "这位岩友分享的 beta 会出现在这里。"
+      }
+    },
+    "comments": {
+      "title": "评论",
+      "empty": "还没有评论，来说第一句吧",
+      "placeholder": "添加评论…",
+      "sendError": "评论没发出去，再试一次。"
+    },
+    "filter": {
+      "title": "筛选",
+      "timeRange": "时间范围",
+      "board": "训练板",
+      "allBoards": "所有训练板",
+      "all": "全部",
+      "year": "年",
+      "month": "月",
+      "week": "周",
+      "done": "完成"
+    },
+    "logbook": {
+      "empty": "攀爬记录还是空的，去记下你的第一次完攀吧。",
+      "emptyFiltered": "没有符合这些筛选条件的线路。",
+      "errorTitle": "攀爬记录加载失败",
+      "errorBody": "检查网络连接后重试。",
+      "retry": "重试",
+      "searchPlaceholder": "搜索你的线路",
+      "filter": "筛选",
+      "sort": "排序",
+      "refine": "细化",
+      "advanced": "高级",
+      "preset": {
+        "latest": "最新",
+        "hardest": "最难"
+      },
+      "flashOnly": "仅 Flash",
+      "grade": "难度",
+      "angle": "角度",
+      "show": "显示",
+      "angleMin": "最小角度",
+      "angleMax": "最大角度",
+      "dateRange": "日期范围",
+      "dateFrom": "从",
+      "dateTo": "到",
+      "dateAny": "不限",
+      "dateSince": "{{date}} 起",
+      "dateUntil": "截至 {{date}}",
+      "benchmarksOnly": "仅基准线路",
+      "reset": "重置",
+      "editTitle": "编辑完攀记录",
+      "statusLabel": "状态",
+      "delete": "删除",
+      "deleteTitle": "删除完攀记录",
+      "deleteConfirm": "这会移除这条攀爬记录，且无法撤销。",
+      "saveError": "修改没保存上，再试一次。",
+      "deleteError": "记录没删掉，再试一次。",
+      "tries_one": "{{count}} 次尝试",
+      "tries_other": "{{count}} 次尝试",
+      "status": {
+        "flash": "Flash",
+        "send": "完攀",
+        "attempt": "尝试",
+        "sends": "完攀",
+        "attempts": "尝试",
+        "both": "全部"
+      },
+      "row": {
+        "project": "项目",
+        "stars": "{{count}}★",
+        "a11ySent": "已完攀",
+        "a11yFlashed": "已 Flash",
+        "a11yCommunityGrade": "社区难度 {{grade}}",
+        "a11yGradeDelta": "你定的难度是 {{logged}}，社区认为是 {{consensus}}",
+        "a11yStars": "评分 {{count}} 星（满分 5 星）",
+        "a11yHasNote": "有备注",
+        "a11yHasBetaVideo": "有 beta 视频",
+        "a11yMirrored": "镜像",
+        "editAction": "编辑记录",
+        "deleteAction": "删除记录",
+        "moreActions": "更多操作"
+      },
+      "day": {
+        "today": "今天",
+        "yesterday": "昨天",
+        "climbs_one": "{{count}} 条线路",
+        "climbs_other": "{{count}} 条线路",
+        "sends_one": "完攀 {{count}} 条",
+        "sends_other": "完攀 {{count}} 条",
+        "top": "最高 {{grade}}"
+      },
+      "chooser": {
+        "editTitle": "要编辑哪条记录？",
+        "deleteTitle": "要删除哪条记录？"
+      }
+    },
+    "boardLink": {
+      "title": "找不到你的 {{boardName}} 完攀记录？",
+      "titleGeneric": "以前在训练板上爬过？",
+      "body": "登录并不会连接你的 {{boardName}} 账号，这是两个独立的账号。关联之后就会开始同步你的完攀记录，同步完成后会显示在这里。",
+      "bodyGeneric": "你的 Kilter 或 Tension 账号和 Boardsesh 是两个独立的账号。关联之后就会开始同步你的完攀记录，同步完成后会显示在这里。",
+      "cta": "关联我的 {{boardName}} 账号",
+      "ctaGeneric": "关联训练板账号",
+      "moonboardTitle": "把你的 MoonBoard 攀爬记录带过来",
+      "moonboardBody": "先向 MoonBoard 申请导出你的数据，再把文件导入这里，就能把 MoonBoard 的历史记录带过来。",
+      "moonboardCta": "导入我的 MoonBoard 攀爬记录",
+      "dismiss": "以后再说"
+    }
+  }
+}

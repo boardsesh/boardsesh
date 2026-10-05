@@ -1,0 +1,44 @@
+{
+  "title": "通知",
+  "empty": "暂时没有通知",
+  "markAllRead": "全部标为已读",
+  "actorSummary": {
+    "fallback": "有人",
+    "secondaryFallback": "有人",
+    "two": "{{first}} 和 {{second}}",
+    "many": "{{first}} 和另外 {{count}} 人",
+    "manyOne": "{{first}} 和另外 1 人"
+  },
+  "items": {
+    "newFollower": "{{actor}} 关注了你",
+    "commentReplyWithBody": "{{actor}} 回复：“{{body}}”",
+    "commentReply": "{{actor}} 回复了你的评论",
+    "commentOnTickWithBody": "{{actor}} 评论：“{{body}}”",
+    "commentOnTick": "{{actor}} 评论了你的完攀",
+    "commentOnClimbWithBody": "{{actor}} 评论：“{{body}}”",
+    "commentOnClimb": "{{actor}} 评论了一条线路",
+    "voteOnTick": "{{actor}} 赞了你的完攀",
+    "voteOnComment": "{{actor}} 赞了你的评论",
+    "proposalCreated": "{{actor}} 发起了一项新提议",
+    "proposalApproved": "{{actor}} 的提议已通过",
+    "proposalRejected": "{{actor}} 的提议未通过",
+    "proposalVote": "{{actor}} 给你的提议投了票",
+    "proposalCreatedHide": "{{actor}} 举报了 {{climb}}",
+    "proposalApprovedHide": "你举报之后，大家已将 {{climb}} 隐藏",
+    "proposalRejectedHide": "你对 {{climb}} 的举报已关闭，线路未被隐藏",
+    "proposalVoteHide": "{{actor}} 赞同你对 {{climb}} 的举报",
+    "proposalOnYourClimb": "{{actor}} 对你的线路 {{climb}} 发起了提议",
+    "proposalOnYourClimbGeneric": "{{actor}} 对你的线路发起了提议",
+    "proposalOnYourClimbHide": "{{actor}} 举报了你的线路 {{climb}}，提议将其移除",
+    "proposalOnYourClimbGrade": "{{actor}} 提议修改你的线路 {{climb}} 的难度",
+    "newClimb": "{{actor}} 创建了一条新线路",
+    "newClimbsSyncedSetter": "{{setter}} 定了新线路",
+    "newClimbsSynced": "{{actor}} 定了新线路",
+    "gymClaimApproved": "你现在是 {{gym}} 的管理者",
+    "gymClaimApprovedGeneric": "岩馆认领已通过，你现在是馆主了",
+    "default": "你有一条新通知"
+  },
+  "errors": {
+    "load": "通知加载失败"
+  }
+}

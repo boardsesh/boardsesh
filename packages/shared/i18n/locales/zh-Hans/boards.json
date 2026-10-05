@@ -1,0 +1,1005 @@
+{
+  "sprayDetection": {
+    "queued": "你的照片已排队等待识别岩点。",
+    "running": "正在照片中查找岩点…",
+    "connection": "无法连接你的识别任务。联网后再试一次。",
+    "failed": "岩点识别没能完成。你的照片已保存。",
+    "resumeHint": "你可以先离开，稍后继续。已发布的墙面保持不变。",
+    "retry": "重试",
+    "manual": "我自己放置岩点",
+    "resume": "继续这次重新布点"
+  },
+  "mobile": {
+    "edit": {
+      "screenTitle": "编辑训练板",
+      "save": "保存更改",
+      "updateError": "修改没保存上，再试一次。",
+      "notFound": "我们没找到那块训练板",
+      "noAccess": "你没有编辑这块训练板的权限",
+      "back": "返回",
+      "configLockedHint": "你没有权限更改这块训练板的布局、尺寸或岩点套组。",
+      "configLockedHintSpray": "墙面的布局就是它的照片。重新拍一张墙面照片才能更改岩点。",
+      "duplicate": {
+        "title": "你已经有这种配置了",
+        "body": "这项修改会让这块训练板与“{{name}}”相同：同样的布局、尺寸和岩点套组。",
+        "bodyWithLocation": "这项修改会让这块训练板与 {{location}} 的“{{name}}”相同：同样的布局、尺寸和岩点套组。",
+        "bodyGeneric": "这项修改与所有者已有的一种训练板配置相同。",
+        "saveAnyway": "仍然保存",
+        "keepEditing": "继续编辑"
+      }
+    },
+    "gymEdit": {
+      "screenTitle": "编辑岩馆",
+      "save": "保存更改",
+      "updateError": "修改没保存上，再试一次。",
+      "updateSuccess": "岩馆已更新",
+      "notFound": "我们没找到那家岩馆",
+      "noAccess": "你没有编辑这家岩馆的权限",
+      "back": "返回",
+      "name": "名称",
+      "namePlaceholder": "岩馆名称",
+      "description": "简介",
+      "descriptionPlaceholder": "告诉岩友墙上有什么",
+      "address": "地址",
+      "addressPlaceholder": "街道、城市",
+      "contactEmail": "联系邮箱",
+      "contactEmailPlaceholder": "hello@gym.com",
+      "contactPhone": "联系电话",
+      "contactPhonePlaceholder": "电话号码",
+      "latitude": "纬度",
+      "longitude": "经度",
+      "coordinatePlaceholder": "十进制度数",
+      "invalidCoordinate": "请输入有效的坐标",
+      "public": "公开岩馆",
+      "publicHint": "在地图上显示，让岩友能找到它",
+      "website": "网站",
+      "websitePlaceholder": "https://yourgym.com",
+      "websiteHint": "有人认领岩馆时，我们会用它来验证归属"
+    },
+    "manage": {
+      "ownedHeader": "你的训练板",
+      "followingHeader": "关注",
+      "deleteTitle": "删除训练板？",
+      "deleteMessage": "要把“{{name}}”从你的训练板中移除吗？此操作无法撤销。",
+      "deleteConfirm": "删除",
+      "cancel": "取消",
+      "deleteError": "这块训练板没删掉，再试一次。",
+      "unfollowError": "没能取消关注这块训练板，再试一次。",
+      "editAria": "编辑 {{name}}",
+      "deleteAria": "删除 {{name}}",
+      "unfollowAria": "取消关注 {{name}}",
+      "unfollowTitle": "取消关注？",
+      "unfollowMessage": "“{{name}}”是你当前使用的训练板。取消关注会把它从你的训练板中移除，并清除当前选择。",
+      "unfollowConfirm": "取消关注",
+      "edit": "编辑",
+      "done": "完成"
+    },
+    "emptyTitle": "还没有训练板",
+    "emptySubtitle": "搜索一块训练板，开始使用",
+    "signInTitle": "登录查看你的训练板",
+    "signInSubtitle": "你的训练板与账号绑定。",
+    "signInCta": "登录",
+    "errorTitle": "训练板加载失败",
+    "errorRetry": "重试",
+    "boardSwitchError": "这块训练板没保存上，再试一次。",
+    "onboardingPrompt": "关注你爬的那面墙，就能开启它的历史记录。",
+    "firstBoard": {
+      "title": "你在哪里爬？",
+      "body": "选择你的训练板以加载线路。连接后，点一条线路就能在墙上点亮它。",
+      "gym": "在岩馆",
+      "gymHint": "选择你岩馆的训练板",
+      "own": "我自己的训练板",
+      "ownHint": "设置你家里的训练板",
+      "sprayWall": "添加我的自由墙",
+      "scan": "扫描我面前的训练板",
+      "scanFootnote": "MoonBoard 和部分 Kilter 控制盒暂时不会显示在这里。",
+      "searching": "正在查找你附近的训练板…",
+      "nearbyEmpty": "20 公里内没有找到",
+      "nearbyError": "附近的训练板加载失败",
+      "findGymOnMap": "在地图上查找你的岩馆",
+      "locationOff": "定位已关闭",
+      "openSettings": "打开设置",
+      "notNow": "以后再说"
+    },
+    "firstConnect": {
+      "card": {
+        "title": "在 {{board}} 上点亮线路",
+        "titleNoName": "在你的训练板上点亮线路",
+        "body": "把这部手机连接到训练板，然后点任意线路即可点亮。",
+        "connect": "连接",
+        "tryAgain": "重试",
+        "noLights": "这面墙没有灯",
+        "notNow": "以后再说",
+        "connecting": "正在连接 {{board}}…",
+        "connectingNoName": "正在连接你的训练板…",
+        "failed": "还没有连接到 {{board}}。准备好后再试一次。",
+        "failedNoName": "还没有连接到你的训练板。准备好后再试一次。"
+      },
+      "pill": "在训练板上点亮",
+      "confirm": {
+        "title": "已连接到 {{board}}",
+        "titleNoName": "已连接到你的训练板",
+        "body": "现在点列表里的线路，就会在墙上点亮它。",
+        "gotIt": "知道了"
+      }
+    },
+    "discovery": {
+      "findNearby": "查找附近",
+      "bluetooth": "蓝牙",
+      "locationDenied": "允许定位",
+      "nearbyTitle": "你附近",
+      "nearbyShowing": "显示附近的",
+      "yourBoardsTitle": "你的训练板",
+      "activeBadge": "使用中",
+      "ownedBadgeAria": "你的训练板",
+      "followingBadgeAria": "已关注",
+      "popularTitle": "热门配置",
+      "findGym": "查找岩馆",
+      "create": "创建训练板",
+      "createTile": "创建",
+      "followed": "已把 {{name}} 加入你的训练板",
+      "followError": "没能把 {{name}} 加入你的训练板",
+      "pinAria": "置顶 {{name}}",
+      "unpinAria": "取消置顶 {{name}}",
+      "pinnedBadgeAria": "已置顶",
+      "pinError": "置顶的训练板没能更新",
+      "addWallTile": "自由墙"
+    },
+    "create": {
+      "screenTitle": "设置你的训练板",
+      "previewHint": "选择布局，我们会显示你的墙面",
+      "adjustable": "可调角度",
+      "anglePreview": "墙面倾斜到 {{angle}}°",
+      "moreOptions": "更多选项",
+      "ownBoard": "这块训练板是我自己的",
+      "public": "公开训练板",
+      "publicHint": "在地图上显示，让你的伙伴能找到它",
+      "unlisted": "不公开列出",
+      "hideLocation": "隐藏精确位置",
+      "location": "位置",
+      "locationPlaceholder": "家、岩馆名称或城市",
+      "useMyLocation": "使用我的位置",
+      "serial": "控制器序列号",
+      "serialPlaceholder": "例如 ABC-12345",
+      "serialHint": "可选。第一次连接时，你的控制器会自动关联。",
+      "save": "保存我的训练板",
+      "createError": "这块训练板没能创建，再试一次。",
+      "limitReached": "你的账号已达到训练板数量上限。删除一块不再使用的训练板后才能添加新的。",
+      "timer": "训练计时器",
+      "timerNone": "未配对计时器",
+      "timerHint": "为这块训练板配对一台 Rogue 健身计时器。当你控制墙面时，每次完攀都会启动它的秒表。",
+      "timerPairCta": "配对计时器",
+      "timerChangeCta": "更换计时器",
+      "timerRemoveCta": "移除",
+      "gym": "岩馆",
+      "gymNone": "不在岩馆",
+      "clearLocation": "清除位置",
+      "lights": "灯光",
+      "hasLeds": "训练板有 LED 灯",
+      "hasLedsHint": "训练板没有灯光套件时请关闭。你的伙伴仍然可以轮流上墙，岩馆屏幕也会显示当前线路。不需要蓝牙。",
+      "duplicate": {
+        "title": "你已经有这种配置了",
+        "body": "你已经有布局、尺寸和岩点套组都相同的“{{name}}”了。",
+        "bodyWithLocation": "你在 {{location}} 已经有布局、尺寸和岩点套组都相同的“{{name}}”了。",
+        "useExisting": "使用那块训练板",
+        "addAnother": "在这里新增一块训练板",
+        "addAnotherHint": "如果这是另一面墙（另一家岩馆、另一个房间），请选这个。",
+        "cancel": "继续编辑",
+        "switchError": "没能切换到那块训练板，再试一次。"
+      }
+    },
+    "custom": {
+      "board": "训练板",
+      "layout": "布局",
+      "size": "尺寸",
+      "sets": "套组",
+      "angle": "角度",
+      "name": "训练板名称"
+    },
+    "bluetooth": {
+      "title": "你附近的训练板",
+      "scanning": "正在扫描训练板…",
+      "resolving": "正在加载训练板…",
+      "noResults": "范围内没有训练板",
+      "unavailable": "打开蓝牙才能扫描"
+    },
+    "boardDetail": {
+      "setActive": "设为当前训练板",
+      "alreadyActive": "当前训练板",
+      "stats": {
+        "ascents": "次完攀",
+        "climbers": "位岩友",
+        "followers": "位粉丝"
+      },
+      "spec": {
+        "layout": "布局",
+        "size": "尺寸",
+        "sets": "套组",
+        "angle": "角度",
+        "adjustable": "可调"
+      },
+      "spray": {
+        "kind": "自由墙",
+        "editHolds": "编辑岩点",
+        "editHoldsHint": "添加、移动或删除你墙上的岩点。",
+        "newPhoto": "新照片",
+        "newPhotoHint": "重新布点后，再拍一张墙面照片。",
+        "shareLink": "分享链接",
+        "shareLinkPublicHint": "任何人都可以打开这面墙。",
+        "shareLinkUnlistedHint": "只有你发给的岩友可以打开。"
+      }
+    },
+    "disambiguation": {
+      "title": "你在哪块训练板上？",
+      "subtitle": "这个序列号被不止一块训练板使用。选择你所在的那面墙。",
+      "yourBoard": "你的训练板",
+      "cancel": "以后再说"
+    },
+    "gyms": {
+      "title": "你附近的岩馆",
+      "subtitle": "点岩馆即可使用它的训练板",
+      "locationNeeded": "分享你的位置以查找附近的岩馆",
+      "grantLocation": "使用我的位置",
+      "locationBlocked": "你的浏览器不肯提供位置。改为在搜索框里输入城镇名吧，这在哪里都能用。",
+      "empty": "附近还没有岩馆",
+      "noBoards": "这里还没有训练板",
+      "boardCount_one": "{{count}} 块训练板",
+      "boardCount_other": "{{count}} 块训练板",
+      "searchPlaceholder": "搜索城市、岩馆或训练板",
+      "showingPlace": "正在显示 {{place}}",
+      "clearSearch": "清除搜索",
+      "closeMap": "关闭",
+      "otherBoardsTitle": "附近的训练板",
+      "multiBoardChip": "2 种以上训练板",
+      "editGym": "编辑岩馆",
+      "editBoard": "编辑训练板",
+      "updating": "正在更新结果…",
+      "refreshFailed": "结果没能更新。",
+      "retry": "重试"
+    },
+    "myGyms": {
+      "moreRowTitle": "我的岩馆",
+      "moreRowSubtitle": "前往你的岩馆并调整详情",
+      "screenTitle": "我的岩馆",
+      "loadError": "你的岩馆加载失败，再试一次。",
+      "retry": "重试",
+      "emptyTitle": "还没有岩馆",
+      "emptyBody": "认领你的岩馆，让它的训练板和信息保持准确。",
+      "findGym": "查找你的岩馆",
+      "kioskHint": "Kiosk 设置要在大屏幕上进行。在浏览器里打开它来设置你的电视。",
+      "kioskHintDismiss": "知道了",
+      "manageKiosks": "管理 Kiosk 和电视",
+      "manageKiosksFor": "管理 {{gym}} 的 Kiosk 和电视",
+      "manageError": "管理后台没能打开。在浏览器里试试。",
+      "manageUnavailable": "这家岩馆还没有开通 Kiosk。",
+      "roleOwner": "所有者",
+      "noAddress": "还没有地址"
+    },
+    "timerPair": {
+      "title": "配对训练计时器",
+      "subtitle": "选择这块训练板旁边的 Rogue 或 Echo 计时器。",
+      "scanning": "正在查找附近的计时器…",
+      "empty": "没有找到计时器。确认计时器已通电并在范围内。",
+      "cancel": "取消"
+    },
+    "gymGrant": {
+      "sectionTitle": "编辑权限",
+      "description": "让你信任的岩友编辑这家岩馆的信息。他们不能删除岩馆，也不能管理成员。",
+      "searchLabel": "搜索岩友",
+      "searchPlaceholder": "按名字搜索",
+      "clearSearch": "清除搜索",
+      "noResults": "没有叫这个名字的岩友",
+      "unknownUser": "未知岩友",
+      "grant": "授权",
+      "grantFor": "授予 {{name}} 编辑权限",
+      "granted": "编辑权限已授予",
+      "grantFailed": "授权失败，再试一次。",
+      "membersTitle": "当前成员",
+      "membersEmpty": "还没有成员",
+      "revoke": "撤销",
+      "revokeFor": "撤销 {{name}} 的编辑权限",
+      "revoked": "编辑权限已撤销",
+      "revokeFailed": "权限撤销失败，再试一次。",
+      "roles": {
+        "admin": "管理员",
+        "editor": "编辑者",
+        "member": "成员"
+      }
+    },
+    "gymClaim": {
+      "title": "认领 {{gym}}",
+      "close": "关闭",
+      "done": "完成",
+      "sectionTitle": "这是你的岩馆？",
+      "sectionDescription": "认领它，让岩馆信息和训练板保持准确。",
+      "claimAction": "认领这家岩馆",
+      "errorGeneric": "出了点问题，再试一次。",
+      "switchToAdmin": "没有工作邮箱？请我们的团队审核",
+      "switchToDomain": "改用工作邮箱验证",
+      "domain": {
+        "description": "你在经营 {{gym}}？输入你在 {{domain}} 的邮箱，我们会发一个确认链接。",
+        "emailLabel": "工作邮箱",
+        "emailPlaceholder": "you@{{domain}}",
+        "submit": "发送验证邮件",
+        "sent": "查看 {{email}} 的收件箱，点链接即可完成。"
+      },
+      "admin": {
+        "description": "告诉我们你在经营 {{gym}}，我们的团队会审核你的认领。",
+        "messageLabel": "留言（可选）",
+        "messagePlaceholder": "任何能帮我们确认你在经营这家岩馆的信息",
+        "submit": "申请审核",
+        "sent": "你的认领已进入审核队列。一有结果我们就会发邮件通知你。"
+      },
+      "approved": {
+        "sent": "{{gym}} 现在由你管理。",
+        "manageCta": "设置你的岩馆",
+        "manageError": "岩馆设置没能打开。在浏览器里试试。"
+      },
+      "protections": {
+        "syncFreeze": "认领之后，你的修改会一直保留，位置同步永远不会覆盖所有者设置的内容。",
+        "transfer": "以后想把岩馆交给别人？发邮件到 {{email}}，我们会帮你转移所有权。"
+      }
+    },
+    "offline": {
+      "available": "可离线使用",
+      "pending": "等待下载",
+      "finalizing": "即将下载完成…",
+      "bootstrapping": "正在下载训练板…",
+      "bootstrapPreparing": "正在准备下载…",
+      "bootstrapDownloading": "正在下载 {{done}} / {{total}}",
+      "bootstrapDownloadingUnknown": "正在下载 {{total}}…",
+      "bootstrapImporting": "正在解包线路…",
+      "snapshotRetrying": "快速下载被中断，下次同步时会重试",
+      "snapshotRetryingAria": "{{name}} 的快速离线下载被中断，下次同步时会重试。",
+      "pagedFallbackPending": "快速下载不可用，慢速下载等待中",
+      "pagedFallbackPendingAria": "{{name}} 的快速离线下载不可用，慢速下载等待中。",
+      "pagedFallbackActive": "快速下载不可用，正在使用慢速下载",
+      "pagedFallbackActiveAria": "{{name}} 的快速离线下载不可用，正在使用慢速下载。",
+      "downloadingCount_one": "正在下载 {{count}} 条线路",
+      "downloadingCount_other": "正在下载 {{count}} 条线路",
+      "makeAvailableAria": "让 {{name}} 可离线使用",
+      "removeAria": "移除 {{name}} 的离线内容",
+      "enableTitle": "下载 {{name}}？",
+      "enableMessage": "下载这块训练板的全部线路，没信号时也能浏览和记录完攀。",
+      "enableMessageWithSize": "约 {{size}}。下载这块训练板的全部线路，没信号时也能浏览和记录完攀。",
+      "enableIndexLine": "相似线路功能最多会在手机上占用约 {{index}}。",
+      "enableConfirm": "下载",
+      "pickerNotice": "没有信号，以下是你已下载的训练板。",
+      "pickerNoticeUnreachable": "暂时连不上你的训练板，以下是你已下载的。",
+      "pickerNoticeOfflineMode": "离线模式已开启。以下是你已下载的训练板。",
+      "pickerEmptyTitle": "还没有下载内容",
+      "pickerEmptyBody": "你设为离线可用的训练板会出现在这里。趁有信号下载一块吧。",
+      "retryFastDownload": "重试快速下载",
+      "retryFastDownloadAria": "重试 {{name}} 的快速下载",
+      "retryFastDownloadTitle": "重试快速下载？",
+      "retryFastDownloadMessage": "一次性下载这块训练板的线路，而不是发出成千上万个小请求。",
+      "retryFastDownloadMessageWithSize": "约 {{size}}，一次性下载，而不是发出成千上万个小请求。",
+      "retryFastDownloadConfirm": "重试",
+      "pickerQueuedNotice": "{{name}} 已排队，恢复联网后会立刻下载。",
+      "nudge": {
+        "notNow": "以后再说",
+        "never": "不再显示",
+        "postSession": {
+          "title": "把 {{name}} 留在手机上",
+          "body": "把完整线路库下载一次，下次岩馆 Wi-Fi 不通时每条线路都在：浏览、筛选、记录完攀，全都可以。",
+          "cta": "下载这块训练板",
+          "allBoardsCta": "让我的所有训练板保持已下载"
+        },
+        "noCatalog": {
+          "title": "没有信号，也没有线路库",
+          "body": "{{name}} 还不在你的手机上，所以这里没什么可搜的。",
+          "cta": "有信号时再下载",
+          "armedToast": "{{name}} 已排队，恢复联网后会立刻下载。"
+        },
+        "spotlight": {
+          "title": "Wi-Fi 到不了的地方也能爬",
+          "body": "训练板下载一次，整个线路库就存在你的手机上。在没有信号的地下室岩馆，搜索、筛选和记录完攀照样能用。",
+          "cta": "选择要下载的训练板"
+        },
+        "similarClimbs": {
+          "title": "相似线路存在你的手机上",
+          "body": "下载 {{name}}，查看共用这些岩点的线路",
+          "cta": "下载 {{name}}"
+        }
+      }
+    },
+    "gymPicker": {
+      "title": "这块训练板在哪里？",
+      "subtitle": "选择它所在的岩馆，让岩友能在地图上找到它。",
+      "searchPlaceholder": "搜索岩馆",
+      "noGym": "不在岩馆",
+      "noGymHint": "它仍会作为独立的标记显示在地图上。",
+      "addNew": "没有我的岩馆",
+      "empty": "附近没有岩馆",
+      "sharedEditHint": "这家岩馆的工作人员将可以编辑这块训练板的信息。",
+      "linkError": "没能关联这家岩馆。它可能离你的训练板太远。你的其他修改已保存。"
+    },
+    "sprayShare": {
+      "title": "分享这面墙",
+      "publicBody": "这面墙是公开的，所以任何人都能打开，它会显示在岩馆页面上，上面的线路也会出现在动态里。",
+      "unlistedBody": "只有收到你这个链接的岩友才能打开这面墙。它不会被列在任何地方。",
+      "copyLink": "复制链接",
+      "share": "分享",
+      "copied": "链接已复制",
+      "qrLabel": "{{name}} 的二维码"
+    },
+    "sprayVisibility": {
+      "label": "谁可以看到",
+      "private": "私密",
+      "unlisted": "仅限链接",
+      "public": "公开",
+      "privateHint": "只有你。你的墙面照片留在你的账号里。",
+      "unlistedHint": "任何拿到链接的人都能进入。这面墙不会列在岩馆页面上，照片也不会出现在公开网络上。",
+      "publicHint": "任何人都能找到这面墙。它会显示在岩馆页面上，上面的线路会出现在动态里，墙面照片也会出现在公开网络上。",
+      "ownerOnlyError": "只有创建这面墙的岩友才能更改谁可以看到它。你的其他修改已保存。",
+      "updateError": "无法更改这面墙的可见范围，再试一次。"
+    }
+  },
+  "boardEntity": {
+    "notFound": "找不到这块训练板",
+    "chips": {
+      "unlisted": "不公开列出",
+      "locationHidden": "位置已隐藏"
+    },
+    "tabs": {
+      "leaderboard": "排行榜",
+      "comments": "评论"
+    },
+    "actions": {
+      "addToGym": "添加到岩馆",
+      "edit": "编辑",
+      "delete": "删除"
+    },
+    "stats": {
+      "ascents": "次完攀",
+      "climbers": "位岩友",
+      "followers": "位粉丝",
+      "comments": "条评论"
+    },
+    "delete": {
+      "title": "删除训练板",
+      "confirm": "删除“{{name}}”？此操作无法撤销。",
+      "cancel": "取消",
+      "delete": "删除"
+    },
+    "snackbar": {
+      "deleted": "训练板已删除",
+      "deleteFailed": "训练板删除失败",
+      "linkedToGym": "训练板已关联到岩馆",
+      "unlinkedFromGym": "训练板已与岩馆取消关联",
+      "linkFailed": "训练板关联岩馆失败"
+    },
+    "comments": {
+      "title": "训练板讨论"
+    },
+    "follow": {
+      "entityLabel": "训练板"
+    }
+  },
+  "boardForm": {
+    "create": {
+      "limitReached": "你的账号已达到训练板数量上限。删除一块不再使用的训练板后才能添加新的。",
+      "nameRequired": "请填写训练板名称"
+    },
+    "fields": {
+      "name": "训练板名称",
+      "slug": "URL 标识",
+      "description": "描述",
+      "location": "位置名称",
+      "serialNumber": "控制器序列号",
+      "defaultAngle": "默认角度",
+      "angleAdjustable": "角度可调",
+      "hasLeds": "训练板有 LED 灯",
+      "isPublic": "公开训练板",
+      "unlisted": "不公开列出",
+      "hideLocation": "不在附近的训练板中显示",
+      "isOwned": "这块训练板是我自己的",
+      "layout": "布局",
+      "size": "尺寸",
+      "holdSets": "岩点套组"
+    },
+    "placeholders": {
+      "description": "描述（可选）",
+      "serialNumber": "例如 ABC-12345",
+      "select": "请选择…"
+    },
+    "helperText": {
+      "unlisted": "不出现在搜索结果中，但可通过直接链接访问",
+      "hideLocation": "不出现在附近训练板的搜索中，除非你关注了搜索者",
+      "hasLeds": "关闭表示没有灯光套件。轮流机制照常可用，岩馆屏幕也仍会显示当前线路。"
+    },
+    "alerts": {
+      "configEditable": "你可以更改布局、尺寸和岩点套组。已记录的线路保持不变。"
+    },
+    "sections": {
+      "details": "训练板信息",
+      "location": "位置",
+      "setup": "配置",
+      "visibility": "可见性"
+    },
+    "edit": {
+      "duplicateTitle": "你已经有这种配置了",
+      "duplicateBody": "这项修改会让这块训练板与“{{name}}”相同：同样的布局、尺寸和岩点套组。",
+      "duplicateBodyWithLocation": "这项修改会让这块训练板与 {{location}} 的“{{name}}”相同：同样的布局、尺寸和岩点套组。",
+      "duplicateBodyGeneric": "这项修改与所有者已有的一种训练板配置相同。",
+      "saveAnyway": "仍然保存",
+      "cancel": "取消"
+    },
+    "serialReuse": {
+      "warning": "这个序列号已属于“{{name}}”。加入那块训练板，大家的完攀和数据就都在同一面墙上。",
+      "warningPrivate": "这个序列号已注册到另一位岩友的私密训练板。",
+      "dialogTitle": "这面墙已经在 Boardsesh 上了",
+      "dialogBody": "序列号 {{serial}} 已注册到“{{name}}”。如果创建重复的训练板，你的完攀和训练就会与已经在那里爬的伙伴们分开。",
+      "dialogBodyPrivate": "序列号 {{serial}} 已注册到另一位岩友的私密训练板。如果这确实是另一面墙，你仍然可以创建自己的。",
+      "useExisting": "使用已有的训练板",
+      "createAnyway": "仍然创建重复的训练板"
+    }
+  },
+  "editBoard": {
+    "title": "编辑训练板",
+    "submitLabel": "保存更改",
+    "snackbar": {
+      "updated": "训练板已更新！",
+      "updateFailed": "训练板更新失败"
+    }
+  },
+  "editGym": {
+    "title": "编辑岩馆",
+    "submitLabel": "保存更改",
+    "snackbar": {
+      "updated": "岩馆已更新！",
+      "updateFailed": "岩馆更新失败"
+    }
+  },
+  "mapLocationPicker": {
+    "locationDisplay": "位置：{{lat}}, {{lng}}",
+    "setOnMap": "在地图上设置位置",
+    "searchPlaceholder": "搜索地址或城市…",
+    "myLocation": "我的位置",
+    "helpText": "点击地图设置训练板的位置，或拖动标记进行调整"
+  },
+  "boardLeaderboard": {
+    "empty": "这个时段还没有活动。",
+    "period": {
+      "week": "周",
+      "month": "月",
+      "year": "年",
+      "all": "全部时间"
+    },
+    "columns": {
+      "climber": "岩友",
+      "sends": "完攀",
+      "flashes": "Flash",
+      "hardest": "最难"
+    }
+  },
+  "boardPill": {
+    "switchHint": "打开训练板切换器"
+  },
+  "gymMemberManagement": {
+    "removeConfirm": "要把这位成员从岩馆移除吗？",
+    "empty": "还没有成员",
+    "unknownUser": "未知用户",
+    "loadMore": "加载更多（{{count}} / {{total}}）",
+    "snackbar": {
+      "removed": "成员已移除",
+      "removeFailed": "成员移除失败"
+    },
+    "remove": "移除",
+    "roles": {
+      "admin": "管理员",
+      "editor": "编辑者",
+      "member": "成员"
+    },
+    "roleHelp": {
+      "title": "各角色的权限",
+      "admin": "管理员管理一切，包括训练板、Kiosk、品牌形象和工作人员。",
+      "editor": "编辑者可以修改岩馆、训练板和 Kiosk，但不能删除岩馆或管理工作人员。",
+      "member": "成员是岩馆的一份子，不能编辑任何内容。"
+    },
+    "grant": {
+      "button": "授予编辑权限",
+      "revoke": "撤销编辑权限",
+      "snackbar": {
+        "granted": "编辑权限已授予",
+        "grantFailed": "授权失败",
+        "revoked": "编辑权限已撤销",
+        "revokeFailed": "权限撤销失败"
+      },
+      "dialog": {
+        "title": "授予编辑权限",
+        "description": "找一位岩友，让 TA 编辑这家岩馆的信息。TA 不能删除岩馆，也不能管理成员。",
+        "searchLabel": "搜索岩友",
+        "searchPlaceholder": "按名字搜索",
+        "change": "更换",
+        "cancel": "取消",
+        "submit": "授予权限"
+      }
+    }
+  },
+  "gymSelector": {
+    "loading": "正在加载岩馆…",
+    "linkToGym": "关联到岩馆",
+    "noGym": "无岩馆",
+    "createNew": "新建"
+  },
+  "similarGyms": {
+    "heading": "你的岩馆可能已经在这里了",
+    "subtitle": "认领你的岩馆来管理它，或者在下方添加新的。",
+    "distanceMeters": "距离 {{meters}} 米",
+    "distanceKm": "距离 {{km}} 公里",
+    "providerBadge": "来自 {{provider}}",
+    "viewGym": "查看岩馆",
+    "claim": "这是我的岩馆，认领它",
+    "createAnyway": "都不是？用下方的按钮添加你的岩馆。"
+  },
+  "gymEntity": {
+    "notFound": "找不到这家岩馆",
+    "tabs": {
+      "members": "成员",
+      "comments": "评论"
+    },
+    "actions": {
+      "edit": "编辑",
+      "delete": "删除",
+      "claim": "认领"
+    },
+    "stats": {
+      "boards": "块训练板",
+      "members": "位成员",
+      "followers": "位粉丝",
+      "comments": "条评论"
+    },
+    "delete": {
+      "title": "删除岩馆",
+      "confirm": "删除“{{name}}”？此操作无法撤销。",
+      "cancel": "取消",
+      "delete": "删除"
+    },
+    "snackbar": {
+      "deleted": "岩馆已删除",
+      "deleteFailed": "岩馆删除失败"
+    },
+    "comments": {
+      "title": "岩馆讨论"
+    },
+    "follow": {
+      "entityLabel": "岩馆"
+    }
+  },
+  "gymForm": {
+    "fields": {
+      "name": "岩馆名称",
+      "slug": "URL 标识",
+      "description": "简介",
+      "hours": "营业时间",
+      "address": "地址",
+      "contactEmail": "联系邮箱",
+      "contactPhone": "联系电话",
+      "isPublic": "公开岩馆",
+      "website": "网站"
+    },
+    "placeholders": {
+      "name": "例如：Boulder World、The Climbing Factory",
+      "description": "简介（可选）",
+      "hours": "例如：周一至周五 7:00-23:00，周六周日 9:00-20:00",
+      "address": "例如：某某路 123 号，某市",
+      "contactEmail": "联系邮箱（可选）",
+      "contactPhone": "联系电话（可选）",
+      "website": "例如：https://yourgym.com"
+    },
+    "actions": {
+      "cancel": "取消"
+    },
+    "create": {
+      "title": "创建岩馆",
+      "submit": "创建岩馆",
+      "authRequired": "需要登录才能创建岩馆",
+      "errorMessage": "岩馆创建失败",
+      "nameRequired": "请填写岩馆名称",
+      "createdNamed": "岩馆“{{name}}”已创建！"
+    },
+    "helpers": {
+      "website": "有人认领这家岩馆时，用来验证归属",
+      "hours": "写一行就行，怎么写都可以。你的岩馆页面会显示你上次确认的日期。"
+    }
+  },
+  "claimGym": {
+    "title": "认领 {{gym}}",
+    "cancel": "取消",
+    "done": "完成",
+    "switchToAdmin": "没有工作邮箱？申请审核",
+    "switchToDomain": "改用工作邮箱验证",
+    "errors": {
+      "generic": "出了点问题，再试一次。",
+      "tokenUnavailable": "我们无法确认你已登录。刷新页面后再试一次。"
+    },
+    "domain": {
+      "description": "你在管理 {{gym}}？输入你在 {{domain}} 的邮箱，我们会发一个确认链接。",
+      "emailLabel": "工作邮箱",
+      "emailPlaceholder": "you@{{domain}}",
+      "submit": "发送验证邮件",
+      "sent": "查看 {{email}} 的收件箱，点击链接即可完成。",
+      "mismatch": "这个邮箱不属于 {{domain}}。请使用岩馆网站域名下的邮箱，或者改为申请审核。"
+    },
+    "admin": {
+      "description": "告诉我们你在管理 {{gym}}，我们的团队会审核你的认领。",
+      "messageLabel": "留言（可选）",
+      "messagePlaceholder": "任何能帮我们确认你在经营这家岩馆的信息",
+      "submit": "申请审核",
+      "sent": "你的认领已进入审核队列。一有结果我们就会发邮件通知你。"
+    },
+    "approved": {
+      "body": "{{gym}} 是你的了。准备好了就来设置吧。",
+      "manageCta": "设置你的岩馆"
+    },
+    "protections": {
+      "syncFreeze": "认领之后，你的修改会一直保留，位置同步永远不会覆盖所有者设置的内容。",
+      "transfer": "以后想把岩馆交给别人？发邮件到 {{email}}，我们会帮你转移所有权。"
+    }
+  },
+  "claimLanding": {
+    "backHome": "返回 Boardsesh",
+    "success": {
+      "title": "岩馆是你的了",
+      "body": "你现在是所有者了。让岩馆信息和训练板保持准确，并邀请伙伴们来帮忙。",
+      "setupCta": "设置你的岩馆"
+    },
+    "error": {
+      "title": "这个链接无效",
+      "reasons": {
+        "invalid": "这个认领链接无效。请从岩馆页面重新开始认领。",
+        "expired": "这个链接已过期。重新开始认领以获取新链接。",
+        "used": "这个链接已被使用过。",
+        "serverError": "我们这边出了点问题。过一会儿再试。"
+      }
+    }
+  },
+  "reportDuplicate": {
+    "cta": "报告重复",
+    "title": "报告重复",
+    "description": "看到 {{gym}} 被列了两次？告诉我们另一条在哪，我们会把它们合并。",
+    "searchLabel": "查找重复的那条",
+    "searchPlaceholder": "岩馆名称",
+    "noResults": "暂时没有匹配。换个名字试试。",
+    "noteLabel": "还有别的吗？（可选）",
+    "notePlaceholder": "你凭什么确定它们是同一家岩馆",
+    "submit": "提交报告",
+    "cancel": "取消",
+    "done": "完成",
+    "sent": "谢谢，我们会看一下并把它们合并。",
+    "alreadyReported": "你已经标记过这一对了。我们正在处理。",
+    "errorGeneric": "出了点问题，再试一次。"
+  },
+  "sprayEditor": {
+    "tools": {
+      "label": "手指的操作方式",
+      "pan": "平移",
+      "add": "添加",
+      "move": "移动",
+      "draw": "描画"
+    },
+    "size": {
+      "s": "S",
+      "m": "M",
+      "l": "L",
+      "xl": "XL"
+    },
+    "threshold": {
+      "label": "置信度阈值",
+      "value": "显示置信度高于 {{percent}}% 的识别结果"
+    },
+    "counts": {
+      "alive_one": "{{count}} 个岩点",
+      "alive_other": "{{count}} 个岩点",
+      "pending": "{{value}} 个待检查",
+      "hidden": "{{value}} 个已隐藏",
+      "unsaved": "{{value}} 个未保存"
+    },
+    "actions": {
+      "merge": "合并",
+      "delete": "删除",
+      "undo": "撤销",
+      "redo": "重做",
+      "accept": "保留",
+      "reject": "丢弃",
+      "acceptAll": "全部保留",
+      "save": "保存墙面"
+    },
+    "status": {
+      "readOnly": "这面墙不是你的，无法编辑。",
+      "pan": "拖动可移动照片。点岩点即可选中。",
+      "add": "点空白墙面添加岩点，或者绕着岩点画一圈。",
+      "move": "把岩点拖到它实际所在的位置。",
+      "draw": "选中一个岩点，然后描出它的边缘。",
+      "oneSelected": "已选中岩点 #{{id}}。",
+      "twoSelected": "已选中两个。合并会把它们变成一个。",
+      "oneSelectedNew": "已选中你新加的岩点。",
+      "manySelected": "已选中 {{value}} 个岩点。删除会把它们全部移除。"
+    },
+    "errors": {
+      "nothingToMove": "先选中一个岩点，再拖动它。",
+      "pickOneToRedraw": "选中一个岩点，然后描出它的边缘。",
+      "mergeNeedsTwo": "选中两个岩点才能合并。",
+      "tooManyHolds": "一面墙最多可有 {{max}} 个岩点。去掉几个再保存。",
+      "saveFailed": "墙面保存失败。",
+      "strokeNotClosed": "这一圈没圈住岩点。请绕着它完整画一圈。",
+      "strokeTooBig": "这一圈比岩点大太多了。放大后沿着岩点本身描。",
+      "strokeTooDetailed": "这一笔细节太多，无法保存。请一笔描完边缘。",
+      "strokeTooShort": "这一笔太短了。请绕着岩点画完整的一圈。",
+      "allHoldsOffWall": "这些岩点落在了墙面之外。把它们移回照片上再保存。",
+      "someHoldsOffWall_one": "{{count}} 个岩点落在墙面之外，没有保存。",
+      "someHoldsOffWall_other": "{{count}} 个岩点落在墙面之外，没有保存。"
+    },
+    "toast": {
+      "saved_one": "已保存 {{count}} 个岩点",
+      "saved_other": "已保存 {{count}} 个岩点"
+    },
+    "empty": {
+      "noPhoto": "这面墙还没有可编辑的照片。"
+    }
+  },
+  "sprayWizard": {
+    "screenTitle": "添加自由墙",
+    "stepCounter": "第 {{current}} 步，共 {{total}} 步",
+    "back": "返回",
+    "meta": {
+      "title": "这是什么墙？",
+      "body": "给它起个名字，说明它有多陡，并选择谁能看到它。",
+      "namePlaceholder": "车库墙",
+      "angle": "角度",
+      "angleHint": "墙面向后倾斜的角度，以 5° 为一档。发布后不可更改。",
+      "publicHint": "关闭后，这面墙和它的照片只有你能看到。",
+      "next": "选择照片",
+      "anglePreview": "墙面 {{angle}} 度"
+    },
+    "photo": {
+      "title": "给墙面拍照",
+      "body": "正对墙面站好，用 1x 拍摄，把整面墙都拍进去。你定的每个岩点都对应这张照片上的像素。",
+      "library": "选择照片",
+      "camera": "拍照",
+      "pickAnother": "换一张照片",
+      "next": "下一步",
+      "cameraDenied": "Boardsesh 需要使用相机才能给墙面拍照。",
+      "failed": "这张照片打不开。换一张试试。"
+    },
+    "anchors": {
+      "title": "标记四角",
+      "body": "把四个圆环拖到墙面的四个角上。如果是正对着拍的，可以跳过。",
+      "hint": "左上、右上、右下、左下。",
+      "crossed": "这几个角交叉了。请按顺序把它们放在墙面四周。",
+      "cornerTopLeft": "左上角",
+      "cornerTopRight": "右上角",
+      "cornerBottomRight": "右下角",
+      "cornerBottomLeft": "左下角",
+      "use": "使用这些角",
+      "skip": "暂时跳过",
+      "clear": "重新标记四角"
+    },
+    "upload": {
+      "title": "正在上传你的照片",
+      "working": "正在上传你的照片…",
+      "percent": "已上传 {{percent}}%",
+      "failed": "照片没能传上去。",
+      "retry": "重试",
+      "checkFailed": "无法确认你的照片是否已传上去。有信号时再试一次。"
+    },
+    "detect": {
+      "title": "正在查找岩点"
+    },
+    "review": {
+      "found": "{{value}} 个岩点待检查",
+      "nothingFound": "什么都没找到。请自己画出岩点。",
+      "manualOnly": "这个版本无法推荐岩点。请自己画出来。",
+      "detectionFailed": "查找岩点时出错了。请自己画出来。",
+      "done": "完成"
+    },
+    "publish": {
+      "title": "添加到你的训练板",
+      "body": "你的岩点已保存。发布这面墙，就可以开始定线了。",
+      "cta": "添加这面墙",
+      "failed": "墙面发布失败。"
+    },
+    "done": {
+      "body": "正在设置你的墙面…"
+    },
+    "leave": {
+      "title": "暂时离开这面墙？",
+      "body": "你的墙面和照片已保存。下次可以从这里继续。",
+      "stay": "继续",
+      "go": "离开"
+    },
+    "resume": {
+      "checking": "正在查找你之前开始的墙面…",
+      "title": "你有一面墙还没做完",
+      "body": "“{{name}}”还没完成。从上次的地方继续，或者重新开始。",
+      "pickUp": "从上次的地方继续",
+      "startOver": "重新开始",
+      "checkFailed": "无法检查那面墙，再试一次。",
+      "retry": "重试"
+    }
+  },
+  "sprayReset": {
+    "screenTitle": "墙面重新布点",
+    "notYours": "这面墙不是你的，无法重新布点。",
+    "nothingPublished": "这面墙还没设置好。请先完成添加。",
+    "openDraft": {
+      "title": "有一次重新布点做到一半",
+      "body": "你保存的照片可以继续使用。在你确认之前，已发布的墙面不会有任何变化。",
+      "discard": "丢弃并重新开始",
+      "discarded": "那次重新布点已丢弃。请拍一张新照片。",
+      "discardFailed": "那次重新布点没能清除，再试一次。"
+    },
+    "photo": {
+      "title": "重新给墙面拍照",
+      "body": "尽量站在第一次拍摄的位置。同一面墙，新的岩点。"
+    },
+    "anchors": {
+      "title": "标记四角",
+      "body": "把四个圆环拖到墙面的四个角上。这一步不能跳过，它用来把新照片与墙上已有的每条线路对齐。",
+      "use": "使用这些角"
+    },
+    "leave": {
+      "title": "离开重新布点？",
+      "body": "你的新照片会保留为草稿。在你确认之前，墙面不会有任何变化。"
+    },
+    "compare": {
+      "working": "正在计算有哪些变化…",
+      "unavailable": "我们没能算出这面墙有哪些变化。",
+      "counts": "保留 {{kept}} · 移除 {{removed}} · 新增 {{added}}",
+      "climbsAffected_one": "{{count}} 条线路少了岩点",
+      "climbsAffected_other": "{{count}} 条线路少了岩点",
+      "aspectWarning": "这张照片的取景和上一张不同。请确认四角都落在了墙角上。",
+      "filterLabel": "显示哪些圆环",
+      "tapHint": "点任意圆环可以改变对它的判断。",
+      "confirm": "确认重新布点",
+      "acceptMoves": "接受所有建议的移动",
+      "noDetections": "没有可比较的内容",
+      "noDetectionsBody": "这部手机没能在新照片中识别出岩点，所以没有可对照的内容。你的照片已保存为草稿。"
+    },
+    "commit": {
+      "failed": "重新布点没有生效。墙面没有任何变化。"
+    },
+    "filter": {
+      "all": "全部",
+      "kept": "保留 {{value}}",
+      "removed": "移除 {{value}}",
+      "new": "新增 {{value}}",
+      "unsure": "不确定 {{value}}"
+    },
+    "hold": {
+      "kept": "岩点 {{id}}：仍在墙上",
+      "removed": "岩点 {{id}}：将被移除",
+      "unsure": "岩点 {{id}}：值得看一眼",
+      "stillHere": "它还在",
+      "gone": "它没了"
+    },
+    "detection": {
+      "new": "之前没有的岩点",
+      "rejected": "不是岩点",
+      "accept": "是岩点",
+      "reject": "不是岩点"
+    },
+    "pairing": {
+      "start": "同一个岩点，移到了这里",
+      "prompt": "点一下那个岩点原来所在的圆环。",
+      "cancel": "算了",
+      "paired": "替换岩点 {{id}}",
+      "unpair": "不是那个岩点",
+      "useSuggestion": "替换岩点 {{id}}"
+    },
+    "done": {
+      "toast": "移除 {{removed}}，新增 {{added}}，{{climbs}} 条线路有变化"
+    }
+  },
+  "sprayCaps": {
+    "holds": "一面墙最多可有 {{max}} 个岩点。去掉几个再保存。",
+    "versions": "一面墙最多保留 {{max}} 次重新布点，这面墙已经用完了。",
+    "walls": "你最多可以保留 {{max}} 面墙。删除一面来腾出位置。",
+    "wallsHint": "你最多可以保留 {{max}} 面墙。"
+  },
+  "sprayHidden": {
+    "body": "有人举报了它，我们已将它从其他人的视野中移除。你仍然可以在这里看到它，上面的内容也都没有被删除。",
+    "title": "这面墙已被隐藏"
+  }
+}
