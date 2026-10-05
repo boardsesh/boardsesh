@@ -699,13 +699,32 @@ The `sessionStatus(sessionId)` query exists solely for this disambiguation:
 - It requires no auth by design: it exposes only existence + ended-state, and auth may not be restored yet at cold start. This is also why mobile can't reuse the web flow described above — the `GET_SESSION_SUMMARY` pre-flight requires an authenticated caller.
 - Client behaviour (`packages/mobile/src/providers/queue-provider.tsx`): anything but `active` (so `ended` or `null`) → clear the stored id; `active` → restore; fetch failure (offline cold start) → restore optimistically so the queue still comes back, since a dead session stays escapable via End Session.
 
+### Invite Preview (`sessionInvitePreview`)
+
+A session invite is a link, `https://www.boardsesh.com/join/{sessionId}`. A phone with the app opens the app's join screen for it. Everyone else lands on the www page, which has to say whose session it is and where to someone with no account. Neither existing query can do that: `session` returns null whenever the live roster is empty and knows nothing about the gym, and `sessionStatus` carries no detail.
+
+`sessionInvitePreview(sessionId)` (`resolvers/sessions/invite-preview.ts`, #6004) answers both callers:
+
+- **No auth, rate limited** (60 a minute under its own operation name). The app is limited per caller. www renders the invite page on the server, so every page view there shares the web server's address and one bucket; the page treats a refusal as "could not load" and still shows the store buttons.
+- **State**, a four-value enum: `live` (running, someone connected), `dormant` (running, nobody connected: the host's phone is asleep or offline, and the session is still joinable), `ended`, and `not_found`. Ended-ness is read the way `sessionStatus` reads it. Presence is read only as a count. An inferred session (rebuilt from tick timing, no board path) is `not_found`: nobody started it and nobody can join it.
+- **What a link holder learns**: the host's display name (the profile name, then the account name, never a value shaped like an email address), the board path that `session` already hands the same caller (withheld when it points at a spray wall an anonymous visitor cannot read), the board's name only when the board is public, listed, not deleted and (for a spray wall) readable by an anonymous visitor, and the gym's name only when the board passes that test, does not hide its location, and the gym itself is public and not deleted. No roster, no participant count, no queue, no user, board or gym ids. An `ended` or `not_found` session returns the state alone.
+- **`isPublic` on the session is not a gate.** It controls live-session listings. `joinSession` lets any link holder into a session with `isPublic: false`, so describing it to them gives away nothing the link does not.
+- The answer never depends on who is asking. A member who needs more has `session`.
+
+Client behaviour:
+
+- **www** (`packages/web/app/join/[sessionId]/`): a server-rendered page with the host, board, gym, both store buttons and plain messages for an ended or missing session. A backend failure renders the invite without details, never "not found". Every branch is `noindex, follow`.
+- **Mobile** (`useSessionPreview(sessionId, { inviteFallback: true })`): the join screen still reads `session` first, for the roster. When that returns null it asks `sessionInvitePreview`, so a dormant session shows a join card ("nobody connected right now") and an ended one says it has ended. Before #6004 both read as "Session not found". A backend older than the query rejects it; the client swallows that and shows not-found, as before.
+
+Pinned by `packages/backend/src/__tests__/session-invite-preview.test.ts` (real rows, mocked presence).
+
 ### Session Query Membership Gate (`session`)
 
 The `session(sessionId)` query serves two audiences with one payload shape, split by membership:
 
 - **Members** get the full payload: queue state, roster, `lastConnectedBoardSerial`, metadata. Membership is resolved by `isSessionMember` (`resolvers/shared/helpers.ts`) — a **single-shot, non-throwing** check, unlike the retrying `requireSessionMember` used by mutations/subscriptions. It short-circuits through: the connection's local context → `distributedState.isConnectionInSession` (cross-instance WS) → a durable `board_session_participants` row when `ctx.userId` is set (primary DB, same predicate as the widget guard). The durable fallback exists because HTTP GraphQL requests are stateless — each gets a fresh `http-<uuid>` connectionId (`yoga.ts`), so connection-based checks can never match an HTTP caller.
 - **Non-members** get a redacted invite-preview instead of an error: session metadata plus the full `users` roster (mobile's join-confirmation screen shows who's climbing before the user commits — `GET_SESSION`), with `queueState: null`, `lastConnectedBoardSerial: null`, `isLeader: false`. The roster-in-preview contract applies to private (`isPublic: false`) sessions too — an invite link is the access token. An **anonymous** HTTP caller who is genuinely in the session also lands here (no stable identity to check durably) — accepted degradation, relevant to mobile's `GET_SESSION_QUEUE_STATE` resync, which already null-guards `session?.queueState`.
-- **Empty live roster** returns `null` before any membership check runs (the dormant-session contract `sessionStatus` disambiguates, above).
+- **Empty live roster** returns `null` before any membership check runs (the dormant-session contract `sessionStatus` disambiguates, above; an invite reader uses `sessionInvitePreview` for the same reason).
 
 The compat matrix is pinned by `packages/backend/src/__tests__/session-query-gate.test.ts`.
 

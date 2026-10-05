@@ -181,10 +181,15 @@ export function useSessionCommands({
             }
           }
           setSessionId(newId);
+          // `isPublic` is the "show this session live" switch, the one
+          // visibility choice a climber makes when starting. It replaced
+          // `isDiscoverable` (#6004), which read `config.discoverable`, a field
+          // no screen sets, so it was `false` on every event ever sent.
           track(SHARED_EVENTS.SessionStarted, {
+            sessionId: newId,
             boardName: activeBoard.boardType,
             hasGoal: !!config?.goal,
-            isDiscoverable: config?.discoverable ?? false,
+            isPublic: config?.isPublic !== false,
           });
           return newId;
         } catch (error) {

@@ -43,9 +43,7 @@ vi.mock('@/app/lib/seo/og', () => ({
   ),
 }));
 
-vi.mock('../join-redirect', () => ({
-  default: (props: { sessionId: string }) => ({ type: 'JoinRedirect', props }),
-}));
+vi.mock('../session-invite', () => ({ fetchSessionInvite: vi.fn() }));
 
 const pageModule = await import('../page');
 const { getSessionOgSummary } = await import('@/app/lib/seo/dynamic-og-data');
@@ -117,5 +115,40 @@ describe('join page metadata', () => {
     });
 
     expect(metadata.title).toBe('Session Not Found | Boardsesh');
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+  });
+
+  it('keeps a found invite out of the index while letting its links be followed', async () => {
+    getSessionOgSummaryMock.mockResolvedValue({
+      sessionType: 'party',
+      sessionName: 'Lunch Laps',
+      leaderName: 'Alex',
+      participantNames: ['Alex'],
+      participantCount: 1,
+      totalSends: 0,
+      gradeRows: [],
+      boardLabel: null,
+      boardAngle: null,
+      boardPreviewPath: null,
+      version: 'abc123',
+      found: true,
+    });
+
+    const metadata = await pageModule.generateMetadata({
+      params: Promise.resolve({ sessionId: 'session-123' }),
+    });
+
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+  });
+
+  it('stays noindex when the summary lookup throws', async () => {
+    getSessionOgSummaryMock.mockRejectedValue(new Error('db down'));
+
+    const metadata = await pageModule.generateMetadata({
+      params: Promise.resolve({ sessionId: 'session-123' }),
+    });
+
+    expect(metadata.title).toBe('Join Session | Boardsesh');
+    expect(metadata.robots).toEqual({ index: false, follow: true });
   });
 });

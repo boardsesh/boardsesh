@@ -1,5 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import { GET_SESSION_DETAIL, type GetSessionDetailQueryResponse } from '@boardsesh/graphql/operations';
+import {
+  GET_SESSION_DETAIL,
+  GET_SESSION_INVITE_PREVIEW,
+  type GetSessionDetailQueryResponse,
+  type GetSessionInvitePreviewResponse,
+} from '@boardsesh/graphql/operations';
+import type { SessionInvitePreview } from '@boardsesh/shared-schema';
 import {
   GET_SESSION,
   GET_SESSION_OWNER,
@@ -30,21 +36,96 @@ export function useSessionDetail(sessionId: string | undefined) {
 }
 
 /**
+ * A session preview as the join screen reads it. `invite` is set only when the
+ * preview was rebuilt from `sessionInvitePreview` because `session` had nothing
+ * to say (see {@link useSessionPreview}).
+ */
+export type JoinSessionPreview = SessionPreview & {
+  invite?: {
+    /**
+     * `dormant`: the session is running and nobody is connected. Joinable.
+     * `ended`: it is over.
+     */
+    state: 'dormant' | 'ended';
+    /** The host's display name, which an empty roster cannot supply. */
+    hostName: string | null;
+  };
+};
+
+/**
+ * Turn an invite preview into the shape the join screen already renders.
+ *
+ * Only what the invite preview knows is real here: the id, the board path, the
+ * state and the host's name. The roster is empty because nobody is connected,
+ * which is the whole reason this path ran. `name`, `color`, `goal`, `startedAt`
+ * and `isPublic` are not part of an invite preview and the join screen reads
+ * none of them; they are filled with their empty values, not guesses.
+ *
+ * Returns null for a missing session, and for a running one with no board path
+ * to join on.
+ */
+export function sessionPreviewFromInvite(invite: SessionInvitePreview): JoinSessionPreview | null {
+  if (invite.state !== 'dormant' && invite.state !== 'ended') return null;
+  if (invite.state === 'dormant' && !invite.boardPath) return null;
+  return {
+    id: invite.sessionId,
+    name: null,
+    boardPath: invite.boardPath ?? '',
+    color: null,
+    goal: null,
+    isPublic: false,
+    startedAt: null,
+    endedAt: null,
+    users: [],
+    invite: { state: invite.state, hostName: invite.hostName },
+  };
+}
+
+/**
  * Read-only session preview for the join-confirmation screen: host, board,
  * participant roster, and whether the session has ended. Does NOT join the
  * session — see `QueueProvider.joinSession`.
+ *
+ * `inviteFallback` is for the join screen only. `session` returns null whenever
+ * the live roster is empty, so an invite opened while the host's phone is
+ * asleep used to read as "Session not found" for a session that was still
+ * running, and an ended one read the same way (#6004). With the option on, a
+ * null answer is followed by `sessionInvitePreview`, which reads the durable
+ * row: a dormant session comes back joinable and an ended one comes back as
+ * ended. It caches under its own key, so the in-session readers of this hook
+ * never see a rebuilt preview.
+ *
+ * A backend that predates `sessionInvitePreview` rejects the second query; that
+ * is swallowed and the answer stays null, which is what this hook returned
+ * before.
  */
-export function useSessionPreview(sessionId: string | undefined) {
-  return useQuery<SessionPreview | null>({
-    queryKey: ['sessionPreview', sessionId],
-    queryFn: () =>
-      getHttpClient()
-        .request<GetSessionQueryResponse>(GET_SESSION, { sessionId })
-        .then((response) => response.session),
+export function useSessionPreview(sessionId: string | undefined, options?: { inviteFallback?: boolean }) {
+  const inviteFallback = options?.inviteFallback === true;
+  return useQuery<JoinSessionPreview | null>({
+    queryKey: inviteFallback ? ['sessionPreview', sessionId, 'inviteFallback'] : ['sessionPreview', sessionId],
+    queryFn: () => fetchSessionPreview(sessionId, inviteFallback),
     enabled: !!sessionId,
     // Preview reflects live presence; keep it fresh while the screen is open.
     staleTime: 10 * 1000,
   });
+}
+
+/** The fetch behind {@link useSessionPreview}. Exported for tests. */
+export async function fetchSessionPreview(
+  sessionId: string | undefined,
+  inviteFallback: boolean,
+): Promise<JoinSessionPreview | null> {
+  const { session } = await getHttpClient().request<GetSessionQueryResponse>(GET_SESSION, { sessionId });
+  if (session || !inviteFallback) return session;
+  try {
+    const { sessionInvitePreview } = await getHttpClient().request<GetSessionInvitePreviewResponse>(
+      GET_SESSION_INVITE_PREVIEW,
+      { sessionId },
+    );
+    return sessionPreviewFromInvite(sessionInvitePreview);
+  } catch {
+    return null;
+  }
 }
 
 /**

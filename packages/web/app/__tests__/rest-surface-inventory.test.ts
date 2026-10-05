@@ -87,7 +87,6 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/internal/climb-search-cache/revalidate/route.ts': 'keep-caller',
   'app/api/internal/controllers/route.ts': 'keep-caller',
   'app/api/internal/set-password/route.ts': 'keep-caller',
-  'app/api/internal/join/[sessionId]/route.ts': 'keep-caller',
   // GET only, and the caller is /settings. The caller-less PUT that used to sit
   // beside it is deleted (#4662): it was never published in the OpenAPI
   // document, so it had no third-party contract to wind down the way the Aurora
@@ -251,6 +250,6 @@ describe('REST surface inventory (issue #1889)', () => {
   it('counts exactly the audited surface', () => {
     // Guards the headline number in issue #1889 itself — a change here means
     // the issue body needs a fresh audit pass, not a quiet reclassification.
-    expect(derived.size).toBe(38);
+    expect(derived.size).toBe(37);
   });
 });

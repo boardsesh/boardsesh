@@ -210,8 +210,27 @@ export const SHARED_EVENTS = {
   // preview with no matching discrete "generate" moment. Use
   // WorkoutGeneratorOpened + SessionQueueGenerated for cross-platform funnels.
   WorkoutGenerated: 'Workout Generated',
-  // Deep-link session join
+  // Deep-link session join. Fires once per GENUINE entry: opening an invite
+  // for the session you are already in does not count (#6004; before that
+  // change it did, so do not compare counts across it).
   SessionJoined: 'Session Joined',
+  // Session invites (#6004). The host's side, from the app's invite sheet:
+  // Sheet Opened { sessionId }, then Shared { sessionId, method: 'copy_link' |
+  // 'system_share', shareTarget? }. iOS reports whether the share sheet was
+  // completed and to which app (`shareTarget`), so a dismissed sheet fires
+  // nothing; Android reports neither, so `system_share` there means the sheet
+  // was opened.
+  SessionInviteSheetOpened: 'Session Invite Sheet Opened',
+  SessionInviteShared: 'Session Invite Shared',
+  // The invitee's side on www: the /join/{id} page rendered for someone
+  // without the app. { sessionId, state: 'live' | 'dormant' | 'ended' |
+  // 'not_found' | 'unavailable', hasHost, hasGym }. A store click from that
+  // page is `App Install Click` with `placement: 'join-page'`.
+  SessionInvitePageViewed: 'Session Invite Page Viewed',
+  // The invitee's side in the app: an invite that did NOT end in a join.
+  // { sessionId, outcome: 'not_found' | 'ended' | 'sign_in_needed' | 'error',
+  // stage: 'preview' | 'join' }. A join that worked is `Session Joined`.
+  SessionJoinOutcome: 'Session Join Outcome',
   // Live sessions ("Climbing now" rail on Home, "Climbing here now" block in
   // the board sheet). `surface` is 'home_rail' | 'board_sheet' on all four
   // surface events. Funnel: Shelf Viewed { surface, count, state } → Card

@@ -96,8 +96,35 @@
       "subtitle": "This session could not be found. It may have been removed."
     }
   },
-  "join": {
-    "joining": "Joining session..."
+  "invitePage": {
+    "eyebrow": "Session invite",
+    "headingWithHost": "{{name}} wants you on the wall",
+    "headingDefault": "You're invited to climb",
+    "leadLive": "The session is live. Get the app to join it.",
+    "leadDormant": "The session is still open. Nobody's connected right now, and you can still join.",
+    "detailsHeading": "The session",
+    "hostLabel": "Started by",
+    "boardLabel": "Board",
+    "gymLabel": "Gym",
+    "installHeading": "Join from your phone",
+    "installBody": "Get the Boardsesh app, then open this link again. You'll land in the session with the crew's queue ready.",
+    "googlePlay": "Get it on Google Play",
+    "appStore": "Download on the App Store",
+    "haveApp": "Already have the app? Open this link on that phone and the session opens.",
+    "getAppHeading": "Start your own session",
+    "getAppBody": "Get the Boardsesh app to start a session and invite the crew.",
+    "ended": {
+      "title": "This session has ended",
+      "lead": "The crew has left the wall."
+    },
+    "notFound": {
+      "title": "We can't find this session",
+      "lead": "The link may be cut short, or the session ended a long time ago. Ask whoever sent it for a fresh invite."
+    },
+    "unavailable": {
+      "lead": "We couldn't load the session details just now. The invite still works in the app."
+    },
+    "learnMore": "See what Boardsesh does"
   },
   "creation": {
     "form": {
@@ -747,6 +774,7 @@
     "retry": "Try again",
     "confirmTitle": "Join {{host}}'s session?",
     "boardLabel": "{{board}} · {{count}} climbing",
+    "boardLabelDormant": "{{board}} · nobody connected right now",
     "join": "Join session",
     "cancel": "Cancel",
     "switchTitle": "Leave your current session?",

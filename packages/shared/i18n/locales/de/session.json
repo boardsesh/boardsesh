@@ -96,8 +96,35 @@
       "subtitle": "Diese Session gibt es nicht. Vielleicht wurde sie gelöscht."
     }
   },
-  "join": {
-    "joining": "Session wird betreten…"
+  "invitePage": {
+    "eyebrow": "Session-Einladung",
+    "headingWithHost": "{{name}} will dich an der Wand sehen",
+    "headingDefault": "Du bist zum Klettern eingeladen",
+    "leadLive": "Die Session läuft gerade. Hol dir die App und mach mit.",
+    "leadDormant": "Die Session ist noch offen. Gerade ist niemand verbunden, du kannst trotzdem beitreten.",
+    "detailsHeading": "Die Session",
+    "hostLabel": "Gestartet von",
+    "boardLabel": "Board",
+    "gymLabel": "Halle",
+    "installHeading": "Mach vom Handy aus mit",
+    "installBody": "Hol dir die Boardsesh-App und öffne diesen Link noch einmal. Du landest direkt in der Session, die Warteschlange der Crew ist schon da.",
+    "googlePlay": "Jetzt bei Google Play",
+    "appStore": "Laden im App Store",
+    "haveApp": "Du hast die App schon? Öffne diesen Link auf dem Handy und die Session geht auf.",
+    "getAppHeading": "Starte deine eigene Session",
+    "getAppBody": "Hol dir die Boardsesh-App, starte eine Session und lade die Crew ein.",
+    "ended": {
+      "title": "Diese Session ist beendet",
+      "lead": "Die Crew ist nicht mehr an der Wand."
+    },
+    "notFound": {
+      "title": "Diese Session finden wir nicht",
+      "lead": "Vielleicht ist der Link unvollständig, oder die Session ist schon lange vorbei. Frag nach einer neuen Einladung."
+    },
+    "unavailable": {
+      "lead": "Die Details zur Session konnten gerade nicht geladen werden. In der App funktioniert die Einladung weiterhin."
+    },
+    "learnMore": "Sieh dir an, was Boardsesh kann"
   },
   "creation": {
     "form": {
@@ -747,6 +774,7 @@
     "retry": "Nochmal versuchen",
     "confirmTitle": "Session von {{host}} beitreten?",
     "boardLabel": "{{board}} · {{count}} dabei",
+    "boardLabelDormant": "{{board}} · gerade niemand verbunden",
     "join": "Session beitreten",
     "cancel": "Abbrechen",
     "switchTitle": "Aktuelle Session verlassen?",

@@ -6444,6 +6444,14 @@ export type Query = {
    */
   sessionHealthExport?: Maybe<SessionHealthExport>;
   /**
+   * What a session invite link points at: host display name, board, gym and
+   * whether the session is live, dormant, ended or missing. No authentication
+   * required and rate limited. Unlike session, it answers for a dormant
+   * session (running, nobody connected) instead of returning null, and it never
+   * returns the roster.
+   */
+  sessionInvitePreview: SessionInvitePreview;
+  /**
    * Lightweight, presence-independent lifecycle check for a session.
    * Reads the durable session row (not live Redis presence), so it tells an
    * ended session apart from one that is merely empty. Returns null when the
@@ -7191,6 +7199,11 @@ export type QuerySessionGroupedFeedArgs = {
 
 /** Root query type for all read operations. */
 export type QuerySessionHealthExportArgs = {
+  sessionId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySessionInvitePreviewArgs = {
   sessionId: Scalars['ID']['input'];
 };
 
@@ -8400,6 +8413,43 @@ export type SessionHealthExportLap = {
   /** Tick UUID */
   tickUuid: Scalars['ID']['output'];
 };
+
+/**
+ * The public face of a session invite: only what an invite page needs to say
+ * whose session it is and where. Readable without signing in by anyone holding
+ * the session id, so it carries no roster, no user ids, no email and no queue.
+ * Every detail field is null unless the state is live or dormant.
+ */
+export type SessionInvitePreview = {
+  __typename?: 'SessionInvitePreview';
+  /** Name of the board the session runs on. Null when no board is attached or the board is not public. */
+  boardName?: Maybe<Scalars['String']['output']>;
+  /** Board path the session runs on, the same value Session.boardPath returns to a link holder */
+  boardPath?: Maybe<Scalars['String']['output']>;
+  /** Name of the gym the board belongs to. Null when the board has no gym or the gym is not public. */
+  gymName?: Maybe<Scalars['String']['output']>;
+  /** Display name of whoever started the session. Null when they have none, or the session was started signed out. */
+  hostName?: Maybe<Scalars['String']['output']>;
+  /** The session id that was asked about */
+  sessionId: Scalars['ID']['output'];
+  /** Where the session is in its life */
+  state: SessionInviteState;
+};
+
+/**
+ * What a session invite link resolves to, for a page that has to explain the
+ * invite to someone who may not have the app. Lowercase values, same convention
+ * as SessionStatus.
+ */
+export type SessionInviteState =
+  /** The session is running but nobody is connected right now (the host's phone is asleep or offline). Still joinable. */
+  | 'dormant'
+  /** The session was ended by its host or by the inactivity sweep */
+  | 'ended'
+  /** The session is running and at least one climber is connected */
+  | 'live'
+  /** No joinable session has this id */
+  | 'not_found';
 
 /**
  * Event when the session's title changes (via updateSession). Recipients update
@@ -13362,6 +13412,23 @@ export type GetSessionSummaryQuery = {
       attempts: number;
     }>;
   } | null;
+};
+
+export type GetSessionInvitePreviewQueryVariables = Exact<{
+  sessionId: Scalars['ID']['input'];
+}>;
+
+export type GetSessionInvitePreviewQuery = {
+  __typename?: 'Query';
+  sessionInvitePreview: {
+    __typename?: 'SessionInvitePreview';
+    sessionId: string;
+    state: SessionInviteState;
+    hostName?: string | null;
+    boardName?: string | null;
+    boardPath?: string | null;
+    gymName?: string | null;
+  };
 };
 
 export type FollowUserMutationVariables = Exact<{
@@ -21512,6 +21579,50 @@ export const GetSessionSummaryDocument = {
     },
   ],
 } as unknown as DocumentNode<GetSessionSummaryQuery, GetSessionSummaryQueryVariables>;
+export const GetSessionInvitePreviewDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetSessionInvitePreview' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'sessionId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'sessionInvitePreview' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'sessionId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'sessionId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'sessionId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'state' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hostName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardPath' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'gymName' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetSessionInvitePreviewQuery, GetSessionInvitePreviewQueryVariables>;
 export const FollowUserDocument = {
   kind: 'Document',
   definitions: [
