@@ -32,7 +32,7 @@ import { BoardConfigChips, type ChipOption } from '../board-discovery/BoardConfi
 import { boardTypeLabel } from '../board-discovery/board-builder-labels';
 import { NoBoardHero } from './NoBoardHero';
 import { NO_BOARD_DOCK_GAP, NoBoardFindBoardDock } from './NoBoardFindBoardDock';
-import { useInfiniteSearchClimbs } from '../../lib/graphql/hooks/use-infinite-search-climbs';
+import { staleTimeUnlessEmpty, useInfiniteSearchClimbs } from '../../lib/graphql/hooks/use-infinite-search-climbs';
 import { ensureBackgroundsCached } from '../../lib/background-image-cache';
 import { getBoardRenderData } from '../../lib/board-details';
 import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
@@ -53,8 +53,11 @@ import {
 export const NO_BOARD_PREVIEW_PAGE_SIZE = 30;
 
 // The popular order barely moves within a session, and a chip the climber has
-// already looked at should come back lit at once.
+// already looked at should come back lit at once. An empty page is the
+// exception: it is also what a search answers with while there is no
+// connection, so it is asked for again once there is one.
 const PREVIEW_STALE_TIME_MS = 60 * 60 * 1000;
+const PREVIEW_SEARCH_OPTIONS = { staleTime: staleTimeUnlessEmpty(PREVIEW_STALE_TIME_MS) };
 
 const PREVIEW_PAGINATION = { page: 0, pageSize: NO_BOARD_PREVIEW_PAGE_SIZE };
 
@@ -92,7 +95,7 @@ type NoBoardClimbsPreviewProps = {
    * that the list shows a failed or empty setup itself. A search by name never
    * reports: a name nobody used is not a setup with no climbs.
    */
-  onSearchSettled: (outcome: NoBoardPreviewSearchOutcome, config: NoBoardPreviewConfig) => void;
+  onSearchSettled: (outcome: NoBoardPreviewSearchOutcome) => void;
   /**
    * What the climber has typed in the Climbs search field. Two characters or
    * more list the setup's climbs with that name in place of the lit board,
@@ -207,9 +210,7 @@ function NoBoardClimbsPreviewComponent({
     isError,
     failureCount,
     refetch,
-  } = useInfiniteSearchClimbs(searchInput, active, {
-    staleTime: PREVIEW_STALE_TIME_MS,
-  });
+  } = useInfiniteSearchClimbs(searchInput, active, PREVIEW_SEARCH_OPTIONS);
   const firstPage = searchPages?.pages[0];
   const climbs = firstPage?.climbs ?? EMPTY_CLIMBS;
   const hasClimbs = climbs.length > 0;
@@ -232,8 +233,9 @@ function NoBoardClimbsPreviewComponent({
   // the setup's own list can set it, since `searching` is false until it has.
   useEffect(() => {
     if (searchOutcome === null || searching) return;
-    onSearchSettled(searchOutcome, config);
+    onSearchSettled(searchOutcome);
     if (searchOutcome === 'ready') setHasShownClimbs(true);
+    // `config` is a dependency on purpose: each setup shown reports once.
   }, [searchOutcome, searching, config, onSearchSettled]);
   const nameHasNoMatch = searching && searchOutcome === 'empty';
   const inlineProblem =
@@ -295,8 +297,10 @@ function NoBoardClimbsPreviewComponent({
   );
   const showHero = heroBox !== null && !searching;
   // `BoardImageNative` has no way to be told to wait, so the hero's board
-  // mounts only once the climber has seen this screen. Set during render: the
-  // frame that becomes active already draws it.
+  // mounts only once the climber has seen this screen. Set during render
+  // (React's "adjust state while rendering" pattern) so the frame that becomes
+  // active already draws it; an effect would show one frame without the board.
+  // It cannot loop: the guard is false for good once the latch is set.
   const [hasBeenActive, setHasBeenActive] = useState(active);
   if (!hasBeenActive && active) setHasBeenActive(true);
 

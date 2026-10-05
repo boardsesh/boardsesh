@@ -112,8 +112,10 @@ export function NoBoardState() {
   // state is mounted (see `holdsNoBoardDecision`): a refetch behind a list the
   // climber is reading must not swap it for a placard. A placard that only
   // describes this moment (offline, a failed read) is decided again on every
-  // render, so the preview arrives once the connection does. Set during render,
-  // so the frame that settles already shows the right branch.
+  // render, so the preview arrives once the connection does. Set during render
+  // (React's "adjust state while rendering" pattern) so the frame that settles
+  // already shows the right branch; an effect would paint one frame of the
+  // other one first. It cannot loop: `held` is only ever set from null.
   const [held, setHeld] = useState<SettledNoBoardDecision | null>(null);
   if (held === null && decision.status !== 'pending' && holdsNoBoardDecision(decision)) setHeld(decision);
 

@@ -18,7 +18,7 @@ type PreviewProps = {
   onClimbPress: (config: NoBoardPreviewConfig, rowIndex: number) => void;
   onHeroPress: (config: NoBoardPreviewConfig) => void;
   searchName?: string;
-  onSearchSettled: (outcome: 'ready' | 'error' | 'empty', config: NoBoardPreviewConfig) => void;
+  onSearchSettled: (outcome: 'ready' | 'error' | 'empty') => void;
   active?: boolean;
 };
 
@@ -176,9 +176,9 @@ describe('NoBoardState', () => {
     // Mounted but still loading: nothing to report yet.
     expect(viewedEvents()).toHaveLength(0);
 
-    act(() => previewProps.current?.onSearchSettled('ready', KILTER));
+    act(() => previewProps.current?.onSearchSettled('ready'));
     // A second setup's search settling (a chip tap) is not a second exposure.
-    act(() => previewProps.current?.onSearchSettled('ready', TENSION));
+    act(() => previewProps.current?.onSearchSettled('ready'));
     rerender(<NoBoardState />);
 
     expect(viewedEvents()).toEqual([
@@ -200,7 +200,7 @@ describe('NoBoardState', () => {
     ['empty', 'no_climbs'],
   ] as const)('falls back to the placard when the search ends in %s', (outcome, fallbackReason) => {
     render(<NoBoardState />);
-    act(() => previewProps.current?.onSearchSettled(outcome, KILTER));
+    act(() => previewProps.current?.onSearchSettled(outcome));
 
     expect(screen.queryByTestId('preview')).toBeNull();
     expect(screen.getByText('Pick your board')).toBeTruthy();
@@ -233,7 +233,7 @@ describe('NoBoardState', () => {
     world.isOffline = false;
     rerender(<NoBoardState />);
     expect(screen.getByTestId('preview')).toBeTruthy();
-    act(() => previewProps.current?.onSearchSettled('ready', KILTER));
+    act(() => previewProps.current?.onSearchSettled('ready'));
 
     expect(viewedEvents().map(([, props]) => [props.variant, props.fallback_reason])).toEqual([
       ['placard', 'offline'],
@@ -266,8 +266,8 @@ describe('NoBoardState', () => {
   // failure is the list's to show; the screen and the exposure stay a preview.
   it.each(['error', 'empty'] as const)('keeps a working preview when a later board type ends in %s', (outcome) => {
     render(<NoBoardState />);
-    act(() => previewProps.current?.onSearchSettled('ready', KILTER));
-    act(() => previewProps.current?.onSearchSettled(outcome, TENSION));
+    act(() => previewProps.current?.onSearchSettled('ready'));
+    act(() => previewProps.current?.onSearchSettled(outcome));
 
     expect(screen.getByTestId('preview')).toBeTruthy();
     expect(screen.queryByTestId('no-board-placard')).toBeNull();
@@ -283,7 +283,7 @@ describe('NoBoardState', () => {
 
     expect(previewProps.current?.active).toBe(false);
     // Even if a cached page reports in, nobody is looking.
-    act(() => previewProps.current?.onSearchSettled('ready', KILTER));
+    act(() => previewProps.current?.onSearchSettled('ready'));
     expect(viewedEvents()).toHaveLength(0);
 
     world.isFocused = true;
@@ -305,7 +305,7 @@ describe('NoBoardState', () => {
 
   it('tries a failed search again when the climber comes back to Climbs', () => {
     const { rerender } = render(<NoBoardState />);
-    act(() => previewProps.current?.onSearchSettled('error', KILTER));
+    act(() => previewProps.current?.onSearchSettled('error'));
     expect(screen.getByTestId('no-board-placard')).toBeTruthy();
 
     world.isFocused = false;
@@ -318,7 +318,7 @@ describe('NoBoardState', () => {
 
   it('keeps the placard on return when the setup simply had no climbs', () => {
     const { rerender } = render(<NoBoardState />);
-    act(() => previewProps.current?.onSearchSettled('empty', KILTER));
+    act(() => previewProps.current?.onSearchSettled('empty'));
 
     world.isFocused = false;
     rerender(<NoBoardState />);
@@ -330,7 +330,7 @@ describe('NoBoardState', () => {
 
   it('keeps a preview that is already showing climbs through a connectivity blip', () => {
     const { rerender } = render(<NoBoardState />);
-    act(() => previewProps.current?.onSearchSettled('ready', KILTER));
+    act(() => previewProps.current?.onSearchSettled('ready'));
     world.isOffline = true;
     rerender(<NoBoardState />);
 
@@ -441,7 +441,7 @@ describe('NoBoardState', () => {
 
     world.profile = failed();
     rerender(<NoBoardState />);
-    act(() => previewProps.current?.onSearchSettled('ready', KILTER));
+    act(() => previewProps.current?.onSearchSettled('ready'));
 
     expect(viewedEvents()[0][1]).toMatchObject({ variant: 'preview', account_age_hours: null });
   });
@@ -450,7 +450,7 @@ describe('NoBoardState', () => {
   // under a climber who is reading it.
   it('does not swap the preview for the placard when a later refetch changes the inputs', () => {
     const { rerender } = render(<NoBoardState />);
-    act(() => previewProps.current?.onSearchSettled('ready', KILTER));
+    act(() => previewProps.current?.onSearchSettled('ready'));
 
     world.boards = ready({ boards: [{}] });
     world.previewEnabled = false;
