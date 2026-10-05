@@ -3,7 +3,7 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, loginProviderProperties } from '@boardsesh/analytics';
 import { classifyNativeAuthFailureReason } from '../../src/lib/native-auth-analytics';
 import { EMAIL_REGEX } from '../../src/lib/auth-validation';
 import { useAuth } from '../../src/providers/auth-provider';
@@ -61,13 +61,13 @@ export default function LoginScreen() {
 
     setError(null);
     setSubmitting(true);
-    track(SHARED_EVENTS.LoginAttempted, { auth_method: 'credentials', flow: 'native' });
+    track(SHARED_EVENTS.LoginAttempted, { ...loginProviderProperties('credentials'), flow: 'native' });
     try {
       const result = await signInWithCredentials(trimmedEmail, password);
       if (!result.success) {
         const credentialsFailureReason = classifyNativeAuthFailureReason(result, 'credentials');
         track(SHARED_EVENTS.LoginFailed, {
-          auth_method: 'credentials',
+          ...loginProviderProperties('credentials'),
           failure_reason: credentialsFailureReason,
           failure_detail: result.error,
         });
@@ -100,12 +100,12 @@ export default function LoginScreen() {
           setError(t('login.toasts.authFailed'));
         }
       } else {
-        trackLoginSucceeded({ auth_method: 'credentials', flow: 'native', screen: 'login' });
+        trackLoginSucceeded({ ...loginProviderProperties('credentials'), flow: 'native', screen: 'login' });
       }
       // On success, AuthProvider flips isAuthenticated and the redirect handles navigation.
     } catch (signInError) {
       track(SHARED_EVENTS.LoginFailed, {
-        auth_method: 'credentials',
+        ...loginProviderProperties('credentials'),
         failure_reason: 'exception',
       });
       throw signInError;

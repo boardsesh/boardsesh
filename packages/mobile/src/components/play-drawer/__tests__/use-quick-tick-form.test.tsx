@@ -55,12 +55,17 @@ vi.mock('@boardsesh/board-config', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@boardsesh/board-config')>();
   return { ...actual, toBoardName: (name: string) => name };
 });
-vi.mock('@boardsesh/analytics', () => ({
-  SHARED_EVENTS: {
-    QuickTickFailed: 'Quick Tick Failed',
-    TickLogged: 'Tick Logged',
-  },
-}));
+vi.mock('@boardsesh/analytics', async (importOriginal) => {
+  // The real `boardTypeProperty`: its closed set is part of what Tick Logged sends.
+  const { boardTypeProperty } = await importOriginal<typeof import('@boardsesh/analytics')>();
+  return {
+    boardTypeProperty,
+    SHARED_EVENTS: {
+      QuickTickFailed: 'Quick Tick Failed',
+      TickLogged: 'Tick Logged',
+    },
+  };
+});
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => toastMock }));
 // The hook reads board-presence flags; mock the provider so the test doesn't
 // pull in its ws-client → expo-secure-store chain (un-mockable native module).
@@ -402,6 +407,21 @@ describe('useQuickTickForm dismiss-analytics plumbing (savedRef / fieldSnapshotR
 });
 
 describe('useQuickTickForm analytics', () => {
+  // A spray wall's layout id is minted per wall, so `layoutId` cannot say
+  // "spray" in PostHog. Without `boardType` a spray-first climber's ticks are
+  // indistinguishable from Kilter ticks and no spray activation can be measured.
+  it('says which board the tick was logged on, so a spray wall is not a Kilter', () => {
+    boardState.current = null;
+    const { getByTestId } = renderForm({ boardName: 'spray', layoutId: 90_412 });
+
+    fireEvent.click(getByTestId('save'));
+
+    expect(track).toHaveBeenCalledWith(
+      SHARED_EVENTS.TickLogged,
+      expect.objectContaining({ boardType: 'spray', layoutId: 90_412 }),
+    );
+  });
+
   it('fires exactly one event per committed tick — the canonical TickLogged', () => {
     boardState.current = null;
     const { getByTestId } = renderForm();
@@ -410,7 +430,12 @@ describe('useQuickTickForm analytics', () => {
 
     expect(track).toHaveBeenCalledWith(
       SHARED_EVENTS.TickLogged,
-      expect.objectContaining({ climbUuid: CLIMB_UUID, platform: 'mobile', surface: 'mobile_quick_tick' }),
+      expect.objectContaining({
+        climbUuid: CLIMB_UUID,
+        boardType: 'kilter',
+        platform: 'mobile',
+        surface: 'mobile_quick_tick',
+      }),
     );
     // The old Tick Button Clicked (save-intent) and Quick Tick Saved
     // (same onSuccess as TickLogged) companions are gone.

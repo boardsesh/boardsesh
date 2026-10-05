@@ -24,7 +24,7 @@ import {
   logbookClimbAngleKey,
 } from '@boardsesh/board-react';
 import { toBoardName, normaliseSetIds } from '@boardsesh/board-config';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, boardTypeProperty } from '@boardsesh/analytics';
 import { clampToNow, MAXIMUM_CLIMBED_AT_REFRESH_MS } from '../logbook/climbed-at';
 import { sameRenderBoard } from '../../lib/boards/climb-render-board';
 import { useGrades } from '../../lib/graphql/hooks';
@@ -389,6 +389,10 @@ export function useQuickTickForm({
             track(SHARED_EVENTS.TickLogged, {
               climbUuid,
               layoutId: layoutId ?? null,
+              // The board the tick was logged on, which is the tick's own board
+              // and not necessarily the active one. `layoutId` cannot classify a
+              // spray wall; this can.
+              ...boardTypeProperty(boardName),
               status,
               platform: 'mobile',
               surface: 'mobile_quick_tick',
@@ -442,6 +446,7 @@ export function useQuickTickForm({
     [
       saveTick,
       climbUuid,
+      boardName,
       angle,
       isMirror,
       isBenchmark,

@@ -3,7 +3,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, useCal
 import { AppState, Platform } from 'react-native';
 import { useSegments, Redirect } from 'expo-router';
 import { onlineManager, useQueryClient } from '@tanstack/react-query';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, loginProviderProperties } from '@boardsesh/analytics';
 import { AppLoadingSplash } from '../components/AppLoadingSplash';
 import { resolveAuthSession, type AuthSessionResult } from '../lib/auth-session';
 import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
@@ -507,7 +507,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         void consumeFreshOAuthPending(returnedOAuth.attemptId).then((marker) => {
           if (!marker || marker.provider !== returnedOAuth.provider) return;
           track(SHARED_EVENTS.LoginSucceeded, {
-            auth_method: marker.provider,
+            ...loginProviderProperties(marker.provider),
             flow: 'web',
             screen: marker.isRegistration ? 'register' : 'login',
             ...(marker.isRegistration ? { is_registration: true } : {}),

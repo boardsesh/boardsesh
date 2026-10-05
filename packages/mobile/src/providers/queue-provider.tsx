@@ -50,7 +50,7 @@ import {
   type ActiveBoardForCompatibility,
 } from '@boardsesh/board-config';
 import { buildSessionBoardPath } from '../lib/boards/session-board-path';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, boardTypeProperty } from '@boardsesh/analytics';
 import { JOIN_SESSION, UPDATE_USERNAME } from '@boardsesh/graphql/operations/queue-session';
 import { getWsClient } from '../lib/graphql/ws-client';
 import { getHttpClient } from '../lib/graphql/client';
@@ -1877,10 +1877,24 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // the caller passes options. Activation passes a source; a fresh
       // climb-list/search open passes null to clear playlist context; re-opening
       // the current climb passes nothing, leaving the source intact.
-      if (options) setPlaylistSuggestionSourceState(options.playlistSuggestionSource);
+      if (options?.playlistSuggestionSource !== undefined) {
+        setPlaylistSuggestionSourceState(options.playlistSuggestionSource);
+      }
+      // A spray wall's layout id is minted per wall, so `layoutId` cannot say
+      // "spray". The board type can, and it is one of nine values. It is the
+      // CLIMB's board, the same thing `Tick Logged` reports: a spray climb
+      // opened from a shared link while a Kilter is the active board is a spray
+      // climb, and a new account with no board bound yet still has one to name.
+      // The active board is the fallback for a climb that does not carry one.
+      const climbBoardType = boardTypeProperty(item.climb.boardType);
       track(SHARED_EVENTS.SetActiveClimb, {
         climbUuid: item.climb.uuid,
         layoutId: activeBoardRef.current?.layoutId,
+        ...(climbBoardType.boardType ? climbBoardType : boardTypeProperty(activeBoardRef.current?.boardType)),
+        // `climb_saved` when the create screen queued a climb it just saved,
+        // null when a climber chose the climb. Saving is not climbing, so the
+        // spray-wall activation measure reads only the null ones.
+        trigger: options?.trigger ?? null,
         source: 'mobile',
         // Which crew's wall just moved, and how many people were watching it.
         // The preview-first work turns this event into the ONE deliberate act

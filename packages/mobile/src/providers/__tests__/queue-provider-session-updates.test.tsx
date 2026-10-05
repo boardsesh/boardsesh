@@ -1541,12 +1541,72 @@ describe('QueueProvider session update subscription', () => {
       SHARED_EVENTS.SetActiveClimb,
       expect.objectContaining({
         climbUuid: 'climb-commit-1',
+        // The climb carries no board type, so the active board's stands in: a
+        // layout id alone cannot say "spray wall".
+        boardType: 'kilter',
+        // A climber chose it; nothing queued it for them.
+        trigger: null,
         sessionId: 'session-1',
         // Distinct humans, the same count `partyMode` is derived from on Climb
         // Added to Queue — not raw connection rows.
         participantCount: 2,
       }),
     );
+  });
+
+  it("reports the climb's own board on Set Active Climb, not the active board's", async () => {
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => expect(snapshots.at(-1)?.sessionId).toBe('session-1'));
+
+    // A friend's spray-wall climb opened from a shared link while a Kilter is
+    // the active board.
+    const sprayItem = makeQueueItem('spray-1', 'climb-spray-1');
+    sprayItem.climb.boardType = 'spray';
+    vi.mocked(track).mockClear();
+    act(() => {
+      snapshots.at(-1)?.setCurrentClimb(sprayItem);
+    });
+
+    expect(vi.mocked(track)).toHaveBeenCalledWith(
+      SHARED_EVENTS.SetActiveClimb,
+      expect.objectContaining({ climbUuid: 'climb-spray-1', boardType: 'spray', trigger: null }),
+    );
+  });
+
+  it('falls back to the active board when the climb names a board that is not one of the nine', async () => {
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => expect(snapshots.at(-1)?.sessionId).toBe('session-1'));
+
+    const oddItem = makeQueueItem('odd-1', 'climb-odd-1');
+    oddItem.climb.boardType = 'the-garage-wall';
+    vi.mocked(track).mockClear();
+    act(() => {
+      snapshots.at(-1)?.setCurrentClimb(oddItem);
+    });
+
+    expect(vi.mocked(track)).toHaveBeenCalledWith(
+      SHARED_EVENTS.SetActiveClimb,
+      expect.objectContaining({ climbUuid: 'climb-odd-1', boardType: 'kilter' }),
+    );
+  });
+
+  it('marks a Set Active Climb that came from saving a climb', async () => {
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => expect(snapshots.at(-1)?.sessionId).toBe('session-1'));
+
+    vi.mocked(track).mockClear();
+    act(() => {
+      snapshots.at(-1)?.setCurrentClimb(makeQueueItem('saved-1', 'climb-saved-1'), { trigger: 'climb_saved' });
+    });
+
+    expect(vi.mocked(track)).toHaveBeenCalledWith(
+      SHARED_EVENTS.SetActiveClimb,
+      expect.objectContaining({ climbUuid: 'climb-saved-1', trigger: 'climb_saved' }),
+    );
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('saved-1');
   });
 
   it('exposes the shared party wall actions through the mobile queue context', async () => {

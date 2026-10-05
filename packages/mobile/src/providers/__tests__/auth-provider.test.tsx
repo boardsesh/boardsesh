@@ -1068,6 +1068,7 @@ describe('AuthProvider Expo-web OAuth completion', () => {
     await waitFor(() =>
       expect(trackMock).toHaveBeenCalledWith('Login Succeeded', {
         auth_method: 'apple',
+        provider: 'apple',
         flow: 'web',
         screen: 'register',
         is_registration: true,
@@ -1100,7 +1101,7 @@ describe('AuthProvider Expo-web OAuth completion', () => {
     await waitFor(() => expect(consumeFreshOAuthPendingMock).toHaveBeenCalledTimes(1));
     expect(trackMock).not.toHaveBeenCalledWith(
       'Login Succeeded',
-      expect.objectContaining({ auth_method: 'google', flow: 'web' }),
+      expect.objectContaining({ auth_method: 'google', provider: 'google', flow: 'web' }),
     );
   });
 });
