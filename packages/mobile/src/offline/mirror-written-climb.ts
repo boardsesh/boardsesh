@@ -16,7 +16,6 @@ import { getOfflineSyncHttpClient } from '../lib/graphql/client';
 import { reportHandledError } from '../lib/error-reporting';
 import { isOfflineEngineEnabled } from '../lib/offline-engine';
 
-// Mobile deployment depends on the additive backend query landing first.
 export const mirrorWrittenClimb: NonNullable<BoardAdapter['afterClimbWrite']> = async (write) => {
   const canWrite = () => write.authEpoch !== undefined && isAuthCredentialGenerationCurrent(write.authEpoch);
   if (write.boardType !== 'spray' || !isOfflineEngineEnabled() || !canWrite()) return;
