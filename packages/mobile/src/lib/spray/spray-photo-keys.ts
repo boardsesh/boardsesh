@@ -36,7 +36,10 @@ export function sprayBackgroundKey(layoutId: number, versionId: SprayVersionIden
 
 /** Parse a `spray/<layoutId>/v<versionId>.jpg` key, or `null` when it is not one. */
 export function parseSprayBackgroundKey(backgroundImageKey: string): SprayPhotoIdentity | null {
-  const match = /^spray\/(\d+)\/v(\d+|local-[0-9a-f-]{36}-[1-9]\d*)\.jpg$/i.exec(backgroundImageKey);
+  const match =
+    /^spray\/(\d+)\/v(\d+|local-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-[1-9]\d*)\.jpg$/i.exec(
+      backgroundImageKey,
+    );
   if (!match) return null;
   const versionId = match[2].startsWith('local-') ? (match[2] as SprayVersionIdentity) : Number(match[2]);
   return isSprayVersionIdentity(versionId) ? { layoutId: Number(match[1]), versionId } : null;
