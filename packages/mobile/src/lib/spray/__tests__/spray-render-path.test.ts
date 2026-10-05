@@ -16,7 +16,9 @@ import { clearSprayWallRegistry, registerSprayWall } from '../spray-wall-registr
 import {
   _clearRenderBoardTargetCacheForTests,
   getPlaylistRenderBoardTarget,
+  resolvePlaylistClimbRenderBoard,
 } from '../../playlists/playlist-climb-render-board';
+import { resolveClimbRenderBoard } from '../../boards/climb-render-board';
 import { overlayRetainIdentity } from '../../overlay-retain-identity';
 import { clearSupersededSprayDrafts } from '../../create-climb-draft-store';
 import type { SprayPhotoHold } from '../spray-hold-geometry';
@@ -59,6 +61,16 @@ afterEach(() => {
   clearCreateBoardHoldsCache();
   clearBoardArtGeometryCache();
   _clearRenderBoardTargetCacheForTests();
+});
+
+describe('historical spray climb compatibility', () => {
+  it('keeps a lost-hold climb on its own wall in the play drawer and playlists', () => {
+    registerWall(2, [HOLDS[1]]);
+    const board = { ...SPRAY_CONFIG, setIds: '1', angle: 40 };
+    const climb = { boardType: 'spray', layoutId: LAYOUT_ID, frames: 'p7r15p8r12', angle: 40, missingHoldCount: 1 };
+    expect(resolveClimbRenderBoard(climb, board)).toMatchObject({ fit: 'exact', incompatible: false });
+    expect(resolvePlaylistClimbRenderBoard(climb, board)).toMatchObject({ fit: 'exact', incompatible: false });
+  });
 });
 
 describe('getBoardRenderData — spray branch', () => {

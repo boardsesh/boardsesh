@@ -12,6 +12,47 @@ const KILTER_L1: ActiveBoardForCompatibility = { boardName: 'kilter', layoutId: 
 const KILTER_HOMEWALL_L8: ActiveBoardForCompatibility = { boardName: 'kilter', layoutId: 8 };
 const MOONBOARD_2016: ActiveBoardForCompatibility = { boardName: 'moonboard', layoutId: 1 };
 
+describe('historical spray climbs on their own wall', () => {
+  const target: BoardCompatibilityTarget = {
+    board_name: 'spray',
+    layout_id: 4200,
+    size_id: 4200,
+    holdsData: [{ id: 8 }],
+  };
+  const climb = { boardType: 'spray', layoutId: 4200, frames: 'p7r15p8r12', missingHoldCount: 1 };
+
+  it('keeps a climb usable after a reset removes one of its holds', () => {
+    expect(canAddClimbToBoard(climb, target)).toEqual({ ok: true });
+  });
+
+  it('still rejects another wall and a known different size', () => {
+    expect(canAddClimbToBoard({ ...climb, layoutId: 4201 }, target)).toEqual({ ok: false, reason: 'layout' });
+    expect(canAddClimbToBoard({ ...climb, compatibleSizeIds: [4201] }, target)).toEqual({ ok: false, reason: 'size' });
+  });
+
+  it('requires an explicit wall identity and a reported lost hold', () => {
+    expect(canAddClimbToBoard({ ...climb, layoutId: null }, target)).toEqual({
+      ok: false,
+      reason: 'holds_out_of_range',
+    });
+    expect(canAddClimbToBoard({ ...climb, boardType: undefined }, target)).toEqual({
+      ok: false,
+      reason: 'holds_out_of_range',
+    });
+    expect(canAddClimbToBoard({ ...climb, missingHoldCount: 0 }, target)).toEqual({
+      ok: false,
+      reason: 'holds_out_of_range',
+    });
+  });
+
+  it('keeps catalogue board containment strict', () => {
+    expect(canAddClimbToBoard({ ...climb, boardType: 'kilter' }, { ...target, board_name: 'kilter' })).toEqual({
+      ok: false,
+      reason: 'holds_out_of_range',
+    });
+  });
+});
+
 type TestQueueItem = { uuid: string; climb: ClimbBoardIdentity & { uuid: string } };
 
 function makeItem(uuid: string, climb: ClimbBoardIdentity = {}): TestQueueItem {

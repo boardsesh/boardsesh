@@ -98,6 +98,17 @@ export function canAddClimbToBoard(
       }
     }
   }
+  // A reset removes holds, but the climb still belongs to this exact wall.
+  // Keep logging, favourites and remix available for known historical climbs.
+  // Require both identity fields so missing metadata cannot bypass containment.
+  if (
+    target.board_name === 'spray' &&
+    climb.boardType === 'spray' &&
+    climb.layoutId === target.layout_id &&
+    (climb.missingHoldCount ?? 0) > 0
+  ) {
+    return { ok: true };
+  }
   const validIds = getValidHoldIds(target);
   if (!validIds) {
     // Target has no usable hold render data — accept the climb rather
