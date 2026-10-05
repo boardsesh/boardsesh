@@ -174,12 +174,12 @@ export function SprayScanPhoto({
             title={retry.label}
             variant="filled"
             size="large"
-            over="content"
+            over="surface"
             onPress={retry.onPress}
             disabled={retry.disabled}
           />
         ) : null}
-        {manual ? <Button title={manual.label} variant="text" over="content" onPress={manual.onPress} /> : null}
+        {manual ? <Button title={manual.label} variant="text" over="surface" onPress={manual.onPress} /> : null}
       </View>
     </View>
   );

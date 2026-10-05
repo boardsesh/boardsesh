@@ -82,11 +82,16 @@ export function useCreateSprayWall() {
  * generic failure: it names the draft that is in the way.
  */
 export function useCreateSprayWallVersion() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (input: CreateSprayWallVersionInput): Promise<SprayWallVersion> => {
       const response = await getHttpClient().request<CreateVersionResponse>(CREATE_SPRAY_WALL_VERSION, { input });
       return response.createSprayWallVersion;
     },
+    onSuccess: (_version, input) =>
+      queryClient.invalidateQueries({
+        queryKey: ['sprayWallWithVersions', input.wallUuid],
+      }),
   });
 }
 

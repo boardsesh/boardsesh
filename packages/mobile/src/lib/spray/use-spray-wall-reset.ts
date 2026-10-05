@@ -107,6 +107,7 @@ export function useCommitSprayWallVersion(layoutId: number) {
       // the badge and the filter both read it off the search payload.
       await queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
       await queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
+      await queryClient.invalidateQueries({ queryKey: sprayWallWithVersionsQueryKey(input.wallUuid) });
     },
   });
 }
@@ -133,6 +134,7 @@ export function useSprayWallWithVersions(wallUuid: string | null) {
       return response.sprayWall;
     },
     enabled: wallUuid != null,
+    refetchOnMount: 'always',
   });
 }
 

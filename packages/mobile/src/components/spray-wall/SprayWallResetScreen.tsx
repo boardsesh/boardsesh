@@ -38,11 +38,13 @@ import { hapticSelection } from '../../lib/haptics';
 import { reportError } from '../../lib/error-reporting';
 import { extractGraphqlCode, extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import { sprayCapFromErrorCode, sprayCapMessage } from '../../lib/spray/spray-cap-copy';
+import { sprayDraftPurpose } from '../../lib/spray/spray-draft-purpose';
+import { sprayHoldEditorHref } from '../../lib/spray/spray-routes';
 import { uploadSprayWallPhoto } from '../../lib/spray/spray-wall-photo-upload';
 import { SprayDetectionStep } from './SprayDetectionStep';
 import { canPhotographWall } from '../../lib/spray/camera-capability';
 import { pickWallPhotoFromCamera, pickWallPhotoFromLibrary, rescalePoint } from '../../lib/spray/wall-photo';
-import { fetchSprayWallVersions, useCreateSprayWallVersion } from '../../lib/spray/use-create-spray-wall';
+import { useCreateSprayWallVersion } from '../../lib/spray/use-create-spray-wall';
 import { useDiscardSprayWallVersion, useSprayWallWithVersions } from '../../lib/spray/use-spray-wall-reset';
 import {
   anchorsAreReady,
@@ -89,6 +91,12 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
 
   const [state, dispatch] = useReducer(resetWallReducer, undefined, initialResetWallState);
   const [pickerBusy, setPickerBusy] = useState(false);
+  const [draftConflict, setDraftConflict] = useState(false);
+  // Keep the exact successful upload across create retries; another photo is never adopted.
+  const uploadedPhotoRef = useRef<{
+    photo: NonNullable<typeof state.photo>;
+    uploaded: Awaited<ReturnType<typeof uploadSprayWallPhoto>>;
+  } | null>(null);
 
   /**
    * Whether the climber has started work this session — a photo picked, or
@@ -99,8 +107,8 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
    * focus, the query going stale), and an upload that LANDED but lost its
    * response leaves a draft on the wall this session does not know about. The
    * next refetch would then swap a climber who is mid-flow — photo chosen,
-   * corners marked — onto "there's a reset half done", throwing both away for a
-   * draft the retry is about to adopt anyway (`runUpload` reconciles).
+   * corners marked — onto "there's a reset half done", throwing both away.
+   * A conflicting draft discovered during upload requires an explicit choice.
    *
    * So the in-progress state stays authoritative until the climber acts. The
    * open-draft screen is for arriving at a blocked wall, not for being moved to
@@ -172,11 +180,16 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
     const startedAt = Date.now();
     const attempt = state.upload.attempts + 1;
     try {
-      const uploaded = await uploadSprayWallPhoto({
-        wallUuid,
-        uri: photo.uri,
-        onProgress: (progress) => dispatch({ type: 'UPLOAD_PROGRESS', progress }),
-      });
+      const savedUpload = uploadedPhotoRef.current;
+      const uploaded =
+        savedUpload?.photo === photo
+          ? savedUpload.uploaded
+          : await uploadSprayWallPhoto({
+              wallUuid,
+              uri: photo.uri,
+              onProgress: (progress) => dispatch({ type: 'UPLOAD_PROGRESS', progress }),
+            });
+      uploadedPhotoRef.current = { photo, uploaded };
       trackSprayEvent(
         sprayWallUploadFinished({
           outcome: 'ok',
@@ -194,18 +207,8 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
         rescalePoint(point, { width: photo.width, height: photo.height }, stored),
       );
 
-      // A retry has to reconcile before it creates. `createSprayWallVersion` can
-      // land on the server and lose its response on the way back — a dropped
-      // connection, a backgrounded app — and the wall then carries a draft this
-      // session does not know about. Creating a second one is refused by the
-      // one-draft-per-wall rule, so the retry would fail forever on a wall that
-      // is actually fine. Adopting the draft that is already there is both the
-      // correct state and the only way out.
-      const version =
-        attempt > 1
-          ? ((await fetchSprayWallVersions(wallUuid))?.versions?.find((row) => row.status === 'DRAFT') ??
-            (await createVersionAsync({ wallUuid, photoId: uploaded.photoId, anchors: storedAnchors })))
-          : await createVersionAsync({ wallUuid, photoId: uploaded.photoId, anchors: storedAnchors });
+      // Backend reconciliation accepts only this exact uploaded object and mapping.
+      const version = await createVersionAsync({ wallUuid, photoId: uploaded.photoId, anchors: storedAnchors });
       dispatch({
         type: 'DRAFT_CREATED',
         draft: {
@@ -229,6 +232,10 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
       // The version cap is the one a reset can actually hit — fifty resets is four
       // years of monthly changes — and it comes back as an English resolver
       // sentence. Branch on the code and say the number instead.
+      if (extractGraphqlCode(error) === 'SPRAY_WALL_DRAFT_ALREADY_OPEN') {
+        await wallQuery.refetch();
+        setDraftConflict(true);
+      }
       const cap = sprayCapFromErrorCode(extractGraphqlCode(error));
       dispatch({
         type: 'UPLOAD_FAILED',
@@ -243,6 +250,7 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
     wallUuid,
     createVersionAsync,
     runDetection,
+    wallQuery.refetch,
     t,
   ]);
 
@@ -353,6 +361,10 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
     hapticSelection();
     try {
       await discardVersionAsync(openDraft.id);
+      setDraftConflict(false);
+      // Keep the chosen new photo and its upload: we discarded the conflicting
+      // saved draft, which references a different object.
+      dispatch({ type: 'DRAFT_DISCARDED' });
       showToast(t('sprayReset.openDraft.discarded'), 'success');
     } catch (error) {
       reportError(error);
@@ -364,7 +376,7 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
   // Render
   // ============================================
 
-  if (wallQuery.isPending) {
+  if (wallQuery.isPending || (!hasStartedWork && wallQuery.isFetching)) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         <ActivityIndicator size="large" />
@@ -403,7 +415,24 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
   // ARRIVAL. Once the climber has picked a photo, a background refetch must not
   // take the screen off them (see `hasStartedWork`), and once `state.draft`
   // exists the open draft IS this flow's.
-  if (openDraft && !hasStartedWork) {
+  if (openDraft && (!hasStartedWork || draftConflict)) {
+    if (sprayDraftPurpose(openDraft, wall.currentVersion) !== 'reset') {
+      return (
+        <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
+          <Text variant="title3" style={styles.centeredText}>
+            {t('sprayReset.openDraft.holdEditTitle')}
+          </Text>
+          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.centeredText}>
+            {t('sprayReset.openDraft.holdEditBody')}
+          </Text>
+          <Button
+            title={t('sprayMaintenance.screenTitle')}
+            onPress={() => router.replace(sprayHoldEditorHref(wallUuid))}
+          />
+          <Button title={t('sprayWizard.back')} variant="text" onPress={() => router.back()} />
+        </View>
+      );
+    }
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         <Text variant="title3" style={styles.centeredText}>
@@ -418,6 +447,7 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
             onPress={() => {
               const { width, height } = openDraft.photo ?? {};
               if (!width || !height) return;
+              setDraftConflict(false);
               dispatch({
                 type: 'DRAFT_CREATED',
                 draft: {

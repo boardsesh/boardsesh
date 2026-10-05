@@ -1,6 +1,7 @@
 import type { SprayWallVersion } from '@boardsesh/graphql/generated/graphql';
+import { sprayDraftPurpose } from './spray-draft-purpose';
 
-type MaintenanceVersion = Pick<SprayWallVersion, 'id' | 'number' | 'status'>;
+type MaintenanceVersion = Pick<SprayWallVersion, 'id' | 'number' | 'status' | 'photo' | 'anchors' | 'homography'>;
 
 export type SprayHoldMaintenanceWall = {
   uuid: string;
@@ -25,7 +26,7 @@ export type SprayHoldMaintenanceTransport = {
 };
 
 export class SprayHoldMaintenanceError extends Error {
-  constructor(public readonly reason: 'unavailable' | 'nothingPublished' | 'draftUnavailable') {
+  constructor(public readonly reason: 'unavailable' | 'nothingPublished' | 'draftUnavailable' | 'resetInProgress') {
     super(reason);
     this.name = 'SprayHoldMaintenanceError';
   }
@@ -40,6 +41,9 @@ function requireEditableWall(wallUuid: string, wall: SprayHoldMaintenanceWall | 
 
 function prepareTarget(wall: SprayHoldMaintenanceWall, version: MaintenanceVersion): PreparedSprayHoldDraft {
   if (version.status !== 'DRAFT') throw new SprayHoldMaintenanceError('draftUnavailable');
+  if (sprayDraftPurpose(version, wall.currentVersion) === 'reset') {
+    throw new SprayHoldMaintenanceError('resetInProgress');
+  }
   return {
     wallUuid: wall.uuid,
     layoutId: wall.layoutId,
@@ -94,6 +98,9 @@ export async function publishSprayHoldDraft(
   const wall = requireEditableWall(draft.wallUuid, await transport.fetchWall(draft.wallUuid));
   const version = findPreparedVersion(wall, draft);
   if (version.status !== 'DRAFT') return;
+  if (sprayDraftPurpose(version, wall.currentVersion) === 'reset') {
+    throw new SprayHoldMaintenanceError('resetInProgress');
+  }
 
   try {
     await transport.publishDraft(draft.versionId);

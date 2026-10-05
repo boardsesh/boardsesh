@@ -97,6 +97,7 @@ export type ResetWallAction =
   | { type: 'DETECTION_UNAVAILABLE' }
   | { type: 'DETECTION_FAILED' }
   | { type: 'COMMITTED' }
+  | { type: 'DRAFT_DISCARDED' }
   | { type: 'BACK' };
 
 const NO_CANDIDATES: readonly SprayHoldCandidate[] = [];
@@ -184,6 +185,9 @@ export function resetBackAction(state: ResetWallState): ResetBackAction {
 
 export function resetWallReducer(state: ResetWallState, action: ResetWallAction): ResetWallState {
   switch (action.type) {
+    case 'DRAFT_DISCARDED':
+      return { ...initialResetWallState(), photo: state.photo };
+
     case 'PHOTO_PICKED':
       // A new photo invalidates the anchors — they were four points on the OTHER
       // picture — and resets the upload, whose attempts counted against a file

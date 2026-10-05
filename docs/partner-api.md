@@ -14,7 +14,8 @@ The examples use production hosts. Everything is HTTPS.
 
 | Host                     | What lives there                                  |
 | ------------------------ | ------------------------------------------------- |
-| `https://boardsesh.com`  | Consent page, workout landing page                |
+| `https://boardsesh.com`  | Consent page                                      |
+| `https://www.boardsesh.com` | Workout landing page and every link that opens the app |
 | `https://ws.boardsesh.com` | Token endpoint, the partner API, nothing else    |
 
 ## How it fits together
@@ -274,7 +275,7 @@ has configured.
   "id": "wk_01J9X7ZQ3M",
   "externalRef": "session_88213",
   "status": "created",
-  "launchUrl": "https://boardsesh.com/w/wk_01J9X7ZQ3M",
+  "launchUrl": "https://www.boardsesh.com/w/wk_01J9X7ZQ3M",
   "appUrl": "com.boardsesh.app://w/wk_01J9X7ZQ3M",
   "expiresAt": "2026-09-25T00:00:00Z",
   "blocks": [
@@ -454,7 +455,7 @@ behind `GET /v1/partner/workouts/{id}`, so a periodic sweep over your
       "size": "12x12"
     },
     "notes": "Felt strong, last round fell apart.",
-    "url": "https://boardsesh.com/session/7b1e5c2f-4a3d-4e8b-9f10-2c6d8a1b3e55"
+    "url": "https://www.boardsesh.com/session/7b1e5c2f-4a3d-4e8b-9f10-2c6d8a1b3e55"
   },
   "totals": {
     "climbs": 18,
@@ -467,7 +468,7 @@ behind `GET /v1/partner/workouts/{id}`, so a periodic sweep over your
     {
       "climbUuid": "3f9c2a1e-...",
       "name": "Slopey Business",
-      "url": "https://boardsesh.com/kilter/8/25/15,17/40/view/3f9c2a1e-...",
+      "url": "https://www.boardsesh.com/kilter/8/25/15,17/40/view/3f9c2a1e-...",
       "grade": { "v": 4, "font": "6B+", "boardLabel": "6B+/V4", "boardsesh": 4.2 },
       "angle": 40,
       "status": "send",

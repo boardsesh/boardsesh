@@ -976,7 +976,9 @@
       "body": "Your saved photo is ready to resume. Nothing on the published wall changes until you confirm the reset.",
       "discard": "Throw it away and start again",
       "discarded": "That reset is gone. Take a new photo.",
-      "discardFailed": "That reset wouldn't clear. Try again."
+      "discardFailed": "That reset wouldn't clear. Try again.",
+      "holdEditTitle": "Hold edits are waiting",
+      "holdEditBody": "Publish or discard your saved hold edits in Edit holds before choosing a new photo."
     },
     "photo": {
       "title": "Photograph the wall again",
@@ -1059,7 +1061,8 @@
       "body": "Your unsaved changes won't be kept. Your saved draft stays available.",
       "stay": "Keep editing",
       "discard": "Discard changes"
-    }
+    },
+    "resetInProgress": "Finish or discard the new-photo reset before editing holds."
   },
   "sprayCaps": {
     "holds": "A wall carries up to {{max}} holds. Drop a few and save again.",

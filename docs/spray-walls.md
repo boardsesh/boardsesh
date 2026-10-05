@@ -1826,8 +1826,10 @@ the API is public and a server rule must not rest on a client convention.
 A share link is `https://www.boardsesh.com/b/<slug>/<angle>/list`, with
 `?wall=<uuid>` on an unlisted wall. iOS takes it into the app through the
 host-wide `applinks:` entitlement. Android's verified intent filters in
-`packages/mobile/app.config.ts` include `/b/` for both `www.boardsesh.com` and
-`boardsesh.com`, alongside `/join`, `/preview` and `/auth/reset-password`.
+`packages/mobile/app.config.ts` include `/b/` on `www.boardsesh.com`, alongside
+`/join`, `/preview`, `/auth/reset-password` and one prefix per board name for
+classic climb links, repeated under `/es`, `/fr` and `/de`. The apex `boardsesh.com` is not claimed on Android: it
+answers `assetlinks.json` with a redirect, which fails verification.
 The native-intent handoff preserves the query string through
 `useLocalSearchParams`. Board adoption awaits `sprayWall(uuid)` with the
 complete board fields, then checks the returned wall UUID and board slug against
@@ -2508,3 +2510,18 @@ registry, runtime geometry and climb thumbnails retain the published wall.
 Only initial setup, before any published version exists, registers its draft
 for the add-wall look carousel. Account and wall-removal generations also
 withdraw local draft payloads; a delayed response cannot restore them.
+
+### Hold maintenance and photo reset draft ownership
+
+The hold editor adopts only initial setup or a draft reusing the exact published
+photo and mapping. Opening it during a photo reset reports that the owner must
+finish or discard the reset first. New photo sends a saved hold-edit draft back
+to Edit holds, without offering detection or comparison.
+
+Version history is fetched fresh on reentry and invalidated when a draft is
+created, published, committed or discarded. An upload retry keeps the exact
+uploaded photo id and corners; it never silently adopts another open draft.
+If that other draft blocks creation, the owner explicitly resumes or discards
+it. Discarding returns to the selected local photo so the next attempt is visible.
+The backend protection in #6044 also refuses plain publishing of new-photo
+reset drafts from older clients.
