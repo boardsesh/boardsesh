@@ -51,7 +51,7 @@ export type SprayWallRenderSettingsValue = BoardRenderDefault;
  *
  * `photoUrl` is a 15-minute presigned signature over an object in the PRIVATE
  * bucket, so it is never persisted anywhere — the photo cache keys on
- * `(layoutId, version)` and re-reads the URL from here whenever it has to fetch.
+ * `(layoutId, versionId)` and re-reads the URL from here whenever it has to fetch.
  */
 export type RegisteredSprayWall = {
   layoutId: number;
@@ -78,6 +78,8 @@ export type RegisteredSprayWall = {
   angle: number | null;
   /** `SprayWallVersion.number`: 1-based and dense per wall. */
   version: number;
+  /** Immutable database row id; discarded version numbers may be reused. */
+  versionId: number;
   photoWidth: number;
   photoHeight: number;
   photoUrl: string;
@@ -326,7 +328,10 @@ export function sprayWallViewerGeneration(): number {
  */
 export function resetSprayWallViewerAccess({ markStale = true }: { markStale?: boolean } = {}): number[] {
   viewerGeneration += 1;
-  if (walls.size === 0) return [];
+  if (walls.size === 0) {
+    notify();
+    return [];
+  }
   const layoutIds: number[] = [];
   for (const [layoutId, wall] of walls) {
     // `markStale: false` keeps the registration fresh, so no surface is invited
@@ -543,7 +548,7 @@ export function ensureSprayWallLoaded(layoutId: number): void {
 }
 
 /**
- * Every `(layoutId, version)` pair the session currently holds.
+ * Every `(layoutId, versionId)` pair the session currently holds.
  *
  * The cache sweeper's live-key protection reads this: a photo belonging to a wall
  * somebody is looking at right now must survive a sweep, and the sweeper has only
@@ -583,7 +588,7 @@ export function subscribeToSprayWalls(listener: () => void): () => void {
  */
 export function sprayCacheToken(boardName: string, layoutId: number): string {
   if (boardName !== SPRAY_BOARD_NAME) return '';
-  return `-sv${walls.get(layoutId)?.version ?? 0}`;
+  return `-svid${walls.get(layoutId)?.versionId ?? 0}`;
 }
 
 /**

@@ -11,7 +11,7 @@
 export const SPRAY_PHOTO_CACHE_DIR_NAME = 'spray-walls';
 
 /**
- * Background manifest keys for a wall look like `spray/<layoutId>/<version>.jpg`.
+ * Background manifest keys for a wall look like `spray/<layoutId>/v<versionId>.jpg`.
  *
  * A path rather than a flat name so it can never collide with a bundled board's
  * manifest key, which is always `<boardName>/...` for one of the eight catalogue
@@ -20,17 +20,17 @@ export const SPRAY_PHOTO_CACHE_DIR_NAME = 'spray-walls';
  */
 export const SPRAY_BACKGROUND_KEY_PREFIX = 'spray/';
 
-export type SprayPhotoIdentity = { layoutId: number; version: number };
+export type SprayPhotoIdentity = { layoutId: number; versionId: number };
 
-export function sprayBackgroundKey(layoutId: number, version: number): string {
-  return `${SPRAY_BACKGROUND_KEY_PREFIX}${layoutId}/${version}.jpg`;
+export function sprayBackgroundKey(layoutId: number, versionId: number): string {
+  return `${SPRAY_BACKGROUND_KEY_PREFIX}${layoutId}/v${versionId}.jpg`;
 }
 
-/** Parse a `spray/<layoutId>/<version>.jpg` key, or `null` when it is not one. */
+/** Parse a `spray/<layoutId>/v<versionId>.jpg` key, or `null` when it is not one. */
 export function parseSprayBackgroundKey(backgroundImageKey: string): SprayPhotoIdentity | null {
-  const match = /^spray\/(\d+)\/(\d+)\.jpg$/.exec(backgroundImageKey);
+  const match = /^spray\/(\d+)\/v(\d+)\.jpg$/.exec(backgroundImageKey);
   if (!match) return null;
-  return { layoutId: Number(match[1]), version: Number(match[2]) };
+  return { layoutId: Number(match[1]), versionId: Number(match[2]) };
 }
 
 /**
@@ -39,7 +39,7 @@ export function parseSprayBackgroundKey(backgroundImageKey: string): SprayPhotoI
  * two different photographs and must never share a file.
  */
 export function sprayPhotoFileName(identity: SprayPhotoIdentity): string {
-  return `${identity.layoutId}-${identity.version}.jpg`;
+  return `${identity.layoutId}-v${identity.versionId}.jpg`;
 }
 
 /**

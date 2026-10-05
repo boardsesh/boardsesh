@@ -2487,3 +2487,24 @@ page emits no `og:image` at all rather than pointing at a URL that answers 404.
 Public walls' climbs are the only spray URLs in a sitemap, and the boards shard
 stays catalogue-only because a wall has no `/list` page to submit. The rule, the
 config source and the SQL belt behind it are in `docs/sitemap.md`.
+
+### Immutable render caches and isolated drafts (#6038)
+
+A discarded draft row can hand its `version_number` to the next draft. Mobile
+photo filenames therefore use `<layout>-v<version-row-id>.jpg`; background keys,
+render memos and overlay thumbnails carry that immutable row id too. Existing
+number-based cache entries are bypassed, so an affected phone recovers without
+manually clearing files. Presigned signature rotation leaves the identity unchanged.
+
+Published reads verify the payload number matches `wall.currentVersion.number`
+and use `wall.currentVersion.id`. Draft reads include the existing version
+history selection and verify that the requested number still belongs to the
+requested draft row id. A reused number resolving to a replacement row is
+unavailable rather than drawn under the discarded row's identity.
+
+Editors and reset comparison keep their mapped draft photo and holds locally.
+Their background and touch targets use that local payload, while the published
+registry, runtime geometry and climb thumbnails retain the published wall.
+Only initial setup, before any published version exists, registers its draft
+for the add-wall look carousel. Account and wall-removal generations also
+withdraw local draft payloads; a delayed response cannot restore them.

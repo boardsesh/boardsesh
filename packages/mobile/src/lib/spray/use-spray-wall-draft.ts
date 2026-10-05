@@ -1,45 +1,18 @@
-// The wall as the EDITOR sees it: one named version, usually a draft (#5441).
-//
-// Every other spray surface reads the published generation, which is what
-// `ensureSprayWallLoaded` fetches and what the registry normally holds. The
-// editor cannot: holds are only writable on a draft, and a draft has its own
-// photograph and therefore its own photo→canonical homography. Seeding the
-// editor from the published payload would show none of the work a previous
-// session already saved to the draft, and would map every hold drawn on one
-// photograph through a matrix solved for another.
-//
-// So this hook asks for the version by NUMBER — `sprayWallRenderData(uuid,
-// version)` takes one — and then puts that payload in the registry under the
-// wall's layout id, using the loader's own `registerRenderData`. Registering
-// rather than keeping it private is the point: `InteractiveFilterBoard` draws
-// the wall through `getBoardRenderData`, which reads the registry synchronously
-// and has no way to be handed a payload. With the draft registered, the board
-// under the editor IS the draft's photograph.
-//
-// The registry keys every cache on the version (`sprayCacheToken`), and a draft's
-// number is one past the published one, so nothing the draft writes can be served
-// back for the published wall. On unmount the published generation is pulled back
-// in through `invalidateSprayWallRenderData` — the SW-07 seam for "this device
-// changed this wall" — so a surface that outlives the editor is neither left
-// drawing an unpublished photo nor served a cached payload from before the
-// session.
-//
-// That seam is deliberately NOT what a hold save calls. It re-registers the
-// PUBLISHED version, which is exactly wrong while the editor is holding the
-// draft: a save would put the published wall back under the climber's hands
-// mid-session. A hold save changes the draft and only the draft, so it
-// invalidates the draft's own key (see `use-spray-hold-writes.ts`) and the
-// published generation waits for the editor to close.
+// Draft geometry stays local to its editor. Only initial, unpublished walls
+// register globally for the add-wall look carousel; published surfaces always
+// retain their published photo and holds.
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { GET_SPRAY_WALL_RENDER_DATA } from '@boardsesh/graphql/operations/spray-walls';
+import { GET_SPRAY_WALL_DRAFT_RENDER_DATA } from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWallRenderData } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../graphql/client';
 import { retryConnectivityNow } from '../connectivity/connectivity-store';
-import { invalidateSprayWallRenderData, registerRenderData } from './spray-wall-loader';
+import { invalidateSprayWallRenderData, mapSprayWallRenderData } from './spray-wall-loader';
 import {
   getSprayWall,
+  registerSprayWall,
+  type RegisteredSprayWall,
   sprayWallRemovalGeneration,
   sprayWallViewerGeneration,
   subscribeToSprayWalls,
@@ -60,8 +33,14 @@ type SprayWallRenderDataResponse = { sprayWallRenderData: SprayWallRenderData | 
 const draftViewerGenerations = new WeakMap<SprayWallRenderData, number>();
 const draftRemovalGenerations = new WeakMap<SprayWallRenderData, number>();
 
-export const sprayWallDraftQueryKey = (wallUuid: string | null, versionNumber: number | null) =>
-  ['sprayWallRenderData', wallUuid, versionNumber] as const;
+export const sprayWallDraftQueryKey = (
+  wallUuid: string | null,
+  versionNumber: number | null,
+  versionId?: string | null,
+) =>
+  versionId === undefined
+    ? (['sprayWallRenderData', wallUuid, versionNumber] as const)
+    : (['sprayWallRenderData', wallUuid, versionNumber, versionId] as const);
 
 /**
  * Short, and deliberately so. The payload carries a 15-minute presigned photo
@@ -81,7 +60,7 @@ const DRAFT_STALE_TIME_MS = 5 * 60 * 1000;
 async function fetchSprayWallDraft(layoutId: number, wallUuid: string | null, versionNumber: number | null) {
   const viewerGeneration = sprayWallViewerGeneration();
   const removalGeneration = sprayWallRemovalGeneration(layoutId);
-  const response = await getHttpClient().request<SprayWallRenderDataResponse>(GET_SPRAY_WALL_RENDER_DATA, {
+  const response = await getHttpClient().request<SprayWallRenderDataResponse>(GET_SPRAY_WALL_DRAFT_RENDER_DATA, {
     uuid: wallUuid,
     version: versionNumber,
   });
@@ -105,15 +84,19 @@ export function prefetchSprayWallDraft(
   layoutId: number,
   wallUuid: string,
   versionNumber: number,
+  versionId: string,
 ): Promise<void> {
   return queryClient.prefetchQuery({
-    queryKey: sprayWallDraftQueryKey(wallUuid, versionNumber),
+    queryKey: sprayWallDraftQueryKey(wallUuid, versionNumber, versionId),
     queryFn: () => fetchSprayWallDraft(layoutId, wallUuid, versionNumber),
     staleTime: DRAFT_STALE_TIME_MS,
+    structuralSharing: false,
   });
 }
 
 export type UseSprayWallDraftResult = {
+  /** Mapped photo and holds owned by this draft surface. */
+  wall: RegisteredSprayWall | null;
   /** Nothing has resolved yet. */
   isLoading: boolean;
   /**
@@ -151,77 +134,74 @@ export function useSprayWallDraft(
   layoutId: number,
   wallUuid: string | null,
   versionNumber: number | null,
+  versionId: string | null,
 ): UseSprayWallDraftResult {
   const query = useQuery({
-    queryKey: sprayWallDraftQueryKey(wallUuid, versionNumber),
+    queryKey: sprayWallDraftQueryKey(wallUuid, versionNumber, versionId),
     queryFn: () => fetchSprayWallDraft(layoutId, wallUuid, versionNumber),
     select: (response) => response.sprayWallRenderData,
-    enabled: wallUuid != null && versionNumber != null,
+    enabled: wallUuid != null && versionNumber != null && versionId != null,
     staleTime: DRAFT_STALE_TIME_MS,
+    structuralSharing: false,
   });
 
   const renderData = query.data ?? null;
+  const accessGeneration = useSyncExternalStore(
+    subscribeToSprayWalls,
+    useCallback(() => `${sprayWallViewerGeneration()}:${sprayWallRemovalGeneration(layoutId)}`, [layoutId]),
+  );
 
-  /**
-   * The verdict on one payload: which payload it was about, and whether the
-   * registry took it.
-   *
-   * Keyed on the payload rather than a bare boolean because the two failures it
-   * has to tell apart look identical to a boolean. "Not registered" means either
-   * "the effect has not run yet" — one render, on the frame the data lands — or
-   * "this payload cannot be drawn at all". Reporting the first as unavailable
-   * flashes a "this wall has no photo" screen for a frame before the editor
-   * appears; reporting the second as loading hangs a spinner forever.
-   */
-  const [verdict, setVerdict] = useState<{ payload: SprayWallRenderData; ok: boolean } | null>(null);
+  const wall = useMemo(() => {
+    void accessGeneration;
+    if (!renderData || versionId == null) return null;
+    const version = renderData.wall.versions?.find((candidate) => candidate.number === versionNumber);
+    if (!version || version.id !== versionId || version.status !== 'DRAFT') return null;
+    if (draftRemovalGenerations.get(renderData) !== sprayWallRemovalGeneration(layoutId)) return null;
+    if (draftViewerGenerations.get(renderData) !== sprayWallViewerGeneration()) return null;
+    return mapSprayWallRenderData(layoutId, renderData, Number(versionId), query.dataUpdatedAt);
+  }, [layoutId, renderData, versionNumber, versionId, query.dataUpdatedAt, accessGeneration]);
 
   useEffect(() => {
-    if (!renderData) return;
-    // `registerRenderData` answers false for a payload that cannot be drawn — no
-    // readable photo size, or a homography with no inverse — which is exactly
-    // the "cannot be edited" the screen shows in words.
-    setVerdict({
-      payload: renderData,
-      ok: registerRenderData(
-        layoutId,
-        renderData,
-        undefined,
-        draftViewerGenerations.get(renderData),
-        draftRemovalGenerations.get(renderData),
-      ),
+    // No published generation exists to protect during initial setup. The look
+    // carousel still uses the ordinary renderer, so it can register this draft.
+    if (!wall || !renderData || renderData.wall.currentVersion != null) return;
+    if (draftRemovalGenerations.get(renderData) !== sprayWallRemovalGeneration(layoutId)) return;
+    if (draftViewerGenerations.get(renderData) !== sprayWallViewerGeneration()) return;
+    registerSprayWall(layoutId, {
+      ...wall,
+      viewerAccess: {
+        canEdit: wall.viewerCanEdit,
+        generation: draftViewerGenerations.get(renderData) ?? -1,
+      },
     });
-  }, [layoutId, renderData]);
+  }, [layoutId, renderData, wall]);
 
   // Captured in a ref so the teardown does not re-run — and therefore does not
   // yank the published wall back mid-session — when the uuid prop settles.
   const queryClient = useQueryClient();
-  const teardownRef = useRef({ queryClient, wallUuid });
-  teardownRef.current = { queryClient, wallUuid };
+  const teardownRef = useRef({ queryClient, wallUuid, published: renderData?.wall.currentVersion != null });
+  teardownRef.current = { queryClient, wallUuid, published: renderData?.wall.currentVersion != null };
 
   useEffect(
     () => () => {
       // Put the published generation back for whatever outlives this screen, and
       // drop the cached payload with it: this device has been writing to the
       // wall, so a payload from before the session is not to be trusted.
-      const { queryClient: client, wallUuid: uuid } = teardownRef.current;
-      if (!uuid) return;
+      const { queryClient: client, wallUuid: uuid, published } = teardownRef.current;
+      if (!uuid || !published) return;
       void invalidateSprayWallRenderData(client, uuid, layoutId);
     },
     [layoutId],
   );
 
-  const asked = wallUuid != null && versionNumber != null;
-  // A payload in hand that has not been ruled on yet is still loading, not
-  // unavailable — that is the one-frame flash.
-  const awaitingVerdict = renderData != null && verdict?.payload !== renderData;
-
+  const asked = wallUuid != null && versionNumber != null && versionId != null;
   // True from the retry tap until its read has started, so the tap is answered
   // with the loading line while the connectivity probe is still out. It counts
   // as loading and never as unavailable: a read that gave up is no longer
   // pending, and without this the tap would flash "no photo to edit yet".
   const [retrying, setRetrying] = useState(false);
-  const isLoading = asked && (retrying || query.isPending || awaitingVerdict);
-  const isUnavailable = asked && !retrying && !query.isPending && !awaitingVerdict && !(verdict?.ok ?? false);
+  const isLoading = asked && (retrying || query.isPending);
+  const isUnavailable = asked && !retrying && !query.isPending && wall == null;
   // `paused` is a retry parked because the phone reads as offline; `isError` is
   // a read that gave up. A retry that is backing off or running is neither.
   const isStalled = asked && !retrying && query.data === undefined && (query.fetchStatus === 'paused' || query.isError);
@@ -236,7 +216,7 @@ export function useSprayWallDraft(
       .catch(() => undefined)
       // `refetch` hands back a parked read as it is, so that one is cancelled
       // first and the new read starts from its first attempt.
-      .then(() => queryClient.cancelQueries({ queryKey: sprayWallDraftQueryKey(wallUuid, versionNumber) }))
+      .then(() => queryClient.cancelQueries({ queryKey: sprayWallDraftQueryKey(wallUuid, versionNumber, versionId) }))
       // A cancel that fails still ends the "retrying" state and still reads:
       // left set, it would hide the stalled screen behind a spinner for good.
       .catch(() => undefined)
@@ -244,57 +224,48 @@ export function useSprayWallDraft(
         setRetrying(false);
         return refetch();
       });
-  }, [queryClient, wallUuid, versionNumber, refetch]);
+  }, [queryClient, wallUuid, versionNumber, versionId, refetch]);
 
   return useMemo(
-    () => ({ isLoading, isUnavailable, isStalled, retry, homography }),
-    [isLoading, isUnavailable, isStalled, retry, homography],
+    () => ({ isLoading, isUnavailable, isStalled, retry, homography, wall }),
+    [isLoading, isUnavailable, isStalled, retry, homography, wall],
   );
 }
 
-/**
- * Put the draft back in the registry whenever something else takes it out, for
- * as long as the caller is mounted.
- *
- * `useSprayWallDraft` registers a payload once, when it lands. That is enough
- * for the editor, but not for a screen that mounts right AFTER another
- * `useSprayWallDraft` instance unmounted: that instance's teardown forces a
- * reload of the PUBLISHED wall (`invalidateSprayWallRenderData`), and on a wall
- * that has never been published that reload resolves to nothing and
- * unregisters it — after this screen's own registration, since it is async. The
- * draft would vanish from under a screen that is still drawing it.
- *
- * Re-registers from the draft query's cached payload, so it costs no request.
- * Runs only when the registered version of THIS wall changes, and settles as
- * soon as it is the draft's again. A payload that cannot be drawn is refused by
- * `registerRenderData`, the registry does not change, and nothing re-runs it
- * until something else registers or drops the wall.
- */
+/** Keep an initial unpublished wall available to its look carousel. */
 export function useKeepSprayDraftRegistered(
   layoutId: number,
   wallUuid: string | null,
   versionNumber: number | null,
+  versionId: string | null,
 ): void {
   const queryClient = useQueryClient();
-  const registeredVersion = useSyncExternalStore(
+  const registeredVersionId = useSyncExternalStore(
     subscribeToSprayWalls,
-    useCallback(() => getSprayWall(layoutId)?.version ?? null, [layoutId]),
+    useCallback(() => getSprayWall(layoutId)?.versionId ?? null, [layoutId]),
   );
 
   useEffect(() => {
     if (wallUuid == null || versionNumber == null) return;
-    if (registeredVersion === versionNumber) return;
+    if (registeredVersionId === Number(versionId)) return;
     const cached = queryClient.getQueryData<SprayWallRenderDataResponse>(
-      sprayWallDraftQueryKey(wallUuid, versionNumber),
+      sprayWallDraftQueryKey(wallUuid, versionNumber, versionId),
     );
     const payload = cached?.sprayWallRenderData;
     if (!payload) return;
-    registerRenderData(
-      layoutId,
-      payload,
-      undefined,
-      draftViewerGenerations.get(payload),
-      draftRemovalGenerations.get(payload),
-    );
-  }, [layoutId, wallUuid, versionNumber, registeredVersion, queryClient]);
+    if (payload.wall.currentVersion != null || versionId == null) return;
+    const version = payload.wall.versions?.find((candidate) => candidate.number === versionNumber);
+    if (!version || version.id !== versionId || version.status !== 'DRAFT') return;
+    if (draftRemovalGenerations.get(payload) !== sprayWallRemovalGeneration(layoutId)) return;
+    if (draftViewerGenerations.get(payload) !== sprayWallViewerGeneration()) return;
+    const wall = mapSprayWallRenderData(layoutId, payload, Number(versionId), Date.now());
+    if (!wall) return;
+    registerSprayWall(layoutId, {
+      ...wall,
+      viewerAccess: {
+        canEdit: wall.viewerCanEdit,
+        generation: draftViewerGenerations.get(payload) ?? -1,
+      },
+    });
+  }, [layoutId, wallUuid, versionNumber, versionId, registeredVersionId, queryClient]);
 }

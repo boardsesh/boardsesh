@@ -101,8 +101,8 @@ export function SprayWallLookStep({ draft, onSaveStarted, onSaveFailed, onConfir
   // which a wall being created does not have — so the preview below would have
   // nothing to draw. The second hook holds it there against that reload, which
   // is async and can land after this screen's own registration.
-  const draftState = useSprayWallDraft(draft.layoutId, draft.wallUuid, draft.versionNumber);
-  useKeepSprayDraftRegistered(draft.layoutId, draft.wallUuid, draft.versionNumber);
+  const draftState = useSprayWallDraft(draft.layoutId, draft.wallUuid, draft.versionNumber, draft.versionId);
+  useKeepSprayDraftRegistered(draft.layoutId, draft.wallUuid, draft.versionNumber, draft.versionId);
 
   const { status: previewStatus, preview } = useSyntheticSprayWallPreview(draft.layoutId);
   const { boardseshRendererAvailable } = useEffectiveBoardRenderSettings();

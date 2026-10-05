@@ -660,6 +660,7 @@ describe('the wall version in the render cache keys', () => {
       wallUuid: 'wall-uuid',
       angle: 40,
       version,
+      versionId: version,
       photoWidth: 1200,
       photoHeight: 1600,
       photoUrl: 'https://private.example/photo',

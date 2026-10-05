@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   StyleSheet,
@@ -30,7 +30,7 @@ import { hapticLight, hapticMedium, hapticSelection, hapticSuccess, hapticWarnin
 import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import { SPRAY_CAP_VALUES } from '../../lib/spray/spray-cap-copy';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
-import { getSprayWall, SPRAY_BOARD_NAME, subscribeToSprayWalls } from '../../lib/spray/spray-wall-registry';
+import { SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
 import { useSprayWallDraft } from '../../lib/spray/use-spray-wall-draft';
 import { useSaveSprayHolds } from '../../lib/spray/use-spray-hold-writes';
 import { SegmentedControl } from '../SegmentedControl';
@@ -247,10 +247,11 @@ export function SprayHoldEditorScreen({
   const { t } = useTranslation('boards');
   const insets = useSafeAreaInsets();
 
-  const { isLoading, isUnavailable, isStalled, retry, homography } = useSprayWallDraft(
+  const { isLoading, isUnavailable, isStalled, retry, homography, wall } = useSprayWallDraft(
     layoutId,
     wallUuid,
     versionNumber,
+    versionId,
   );
   const saveHolds = useSaveSprayHolds();
 
@@ -349,10 +350,6 @@ export function SprayHoldEditorScreen({
   // `loadState` snapshot does NOT move when a wall is re-registered at the same
   // state (which is exactly what a save's refresh does), so the screen has to
   // subscribe to the wall itself or it would keep drawing the pre-save holds.
-  const wall = useSyncExternalStore(
-    subscribeToSprayWalls,
-    useCallback(() => getSprayWall(layoutId), [layoutId]),
-  );
 
   /**
    * A save has landed and the payload carrying what it wrote has not arrived yet.
@@ -1497,6 +1494,7 @@ export function SprayHoldEditorScreen({
       {boardRender.width > 0 ? (
         <View style={[styles.boardSlot, { height: boardRender.slotHeight }]}>
           <InteractiveFilterBoard
+            backgroundPhotoUrl={wall.photoUrl}
             boardName={SPRAY_BOARD_NAME}
             layoutId={layoutId}
             sizeId={layoutId}

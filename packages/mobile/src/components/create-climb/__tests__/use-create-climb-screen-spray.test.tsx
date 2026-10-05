@@ -140,6 +140,7 @@ function registerWall(angle: number) {
     wallUuid: 'wall-uuid',
     angle,
     version: 1,
+    versionId: 1,
     photoWidth: 1200,
     photoHeight: 1600,
     photoUrl: 'https://private.example/photo',
@@ -513,27 +514,27 @@ describe('any feet on a wall', () => {
 describe('the autosave slot follows the wall version', () => {
   it('re-keys the draft slot when the wall lands after the first render', async () => {
     // A cold spray entry renders before the registry has the wall, so the key
-    // folds in `-sv0`. Autosaving into that slot outlives the loader's
+    // folds in `-svid0`. Autosaving into that slot outlives the loader's
     // superseded-draft sweep, which is how a WIP disappears on the next mount.
     // The stubbed key reads `sprayToken`, standing in for the module-level
     // registry the real one reads; the prop is what tells the memo to look again.
     // In production both move together when the wall lands.
-    sprayToken.current = '-sv0';
+    sprayToken.current = '-svid0';
     const { result, rerender } = renderHook(
       ({ token }: { token: string }) => useCreateClimbScreen({ board: SPRAY_BOARD, sprayWallToken: token }),
-      { initialProps: { token: '-sv0' } },
+      { initialProps: { token: '-svid0' } },
     );
 
     act(() => result.current.setName('Cold open'));
     await waitFor(() => expect(draftStore.saveDraft).toHaveBeenCalled());
-    expect(draftStore.saveDraft.mock.calls[0][0]).toContain('-sv0');
+    expect(draftStore.saveDraft.mock.calls[0][0]).toContain('-svid0');
 
     draftStore.saveDraft.mockClear();
-    sprayToken.current = '-sv1';
-    rerender({ token: '-sv1' });
+    sprayToken.current = '-svid1';
+    rerender({ token: '-svid1' });
     act(() => result.current.setName('Wall landed'));
     await waitFor(() => expect(draftStore.saveDraft).toHaveBeenCalled());
-    expect(draftStore.saveDraft.mock.calls.at(-1)?.[0]).toContain('-sv1');
+    expect(draftStore.saveDraft.mock.calls.at(-1)?.[0]).toContain('-svid1');
   });
 });
 

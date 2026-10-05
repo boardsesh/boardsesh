@@ -110,6 +110,7 @@ function registerWall(version: number) {
     wallUuid: 'wall-uuid',
     angle: 40,
     version,
+    versionId: version,
     photoWidth: 1200,
     photoHeight: 1600,
     photoUrl: 'https://private.example/current',

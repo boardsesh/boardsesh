@@ -494,7 +494,13 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   const detectDraft = state.step === 'detect' ? state.draft : null;
   useEffect(() => {
     if (!detectDraft) return;
-    void prefetchSprayWallDraft(queryClient, detectDraft.layoutId, detectDraft.wallUuid, detectDraft.versionNumber);
+    void prefetchSprayWallDraft(
+      queryClient,
+      detectDraft.layoutId,
+      detectDraft.wallUuid,
+      detectDraft.versionNumber,
+      detectDraft.versionId,
+    );
   }, [detectDraft, queryClient]);
 
   // ============================================

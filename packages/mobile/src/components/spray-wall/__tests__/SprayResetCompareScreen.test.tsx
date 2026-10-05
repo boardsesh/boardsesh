@@ -122,7 +122,9 @@ vi.mock('../../../lib/spray/spray-wall-registry', () => ({
   getSprayWall: () => wallState.current,
   subscribeToSprayWalls: () => () => {},
 }));
-vi.mock('../../../lib/spray/use-spray-wall-draft', () => ({ useSprayWallDraft: () => draftState.current }));
+vi.mock('../../../lib/spray/use-spray-wall-draft', () => ({
+  useSprayWallDraft: () => ({ ...draftState.current, wall: wallState.current }),
+}));
 vi.mock('../../../lib/spray/use-spray-wall-reset', () => ({
   useSprayWallResetProposal: () => proposalState.current,
   useCommitSprayWallVersion: () => ({ mutateAsync: commitMutateAsync, isPending: false }),

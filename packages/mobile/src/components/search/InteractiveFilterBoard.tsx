@@ -6,7 +6,7 @@ import React, {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { Image, View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { type SharedValue } from 'react-native-reanimated';
 import { GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
@@ -66,6 +66,8 @@ export type FilterBoardTransformContext = {
 };
 
 type InteractiveFilterBoardProps = {
+  /** Explicit draft photograph; avoids published registry geometry. */
+  backgroundPhotoUrl?: string;
   boardName: BoardName;
   layoutId: number;
   sizeId: number;
@@ -155,6 +157,7 @@ export type FilterBoardControls = {
  * yield idle drags to.
  */
 export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard({
+  backgroundPhotoUrl,
   boardName,
   layoutId,
   sizeId,
@@ -301,16 +304,20 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
       <GestureDetector gesture={pinchGesture}>
         <View style={[styles.clip, { width: renderWidth, height: renderHeight }]}>
           <Animated.View style={[styles.board, animatedZoomStyle]}>
-            <BoardImageNative
-              frames=""
-              boardName={boardName}
-              layoutId={layoutId}
-              sizeId={sizeId}
-              setIds={setIds}
-              boardWidth={boardWidth}
-              boardHeight={boardHeight}
-              mirrored={mirrored}
-            />
+            {backgroundPhotoUrl ? (
+              <Image source={{ uri: backgroundPhotoUrl }} style={StyleSheet.absoluteFill} resizeMode="stretch" />
+            ) : (
+              <BoardImageNative
+                frames=""
+                boardName={boardName}
+                layoutId={layoutId}
+                sizeId={sizeId}
+                setIds={setIds}
+                boardWidth={boardWidth}
+                boardHeight={boardHeight}
+                mirrored={mirrored}
+              />
+            )}
             {holdsFilter ? (
               <SearchHoldFilterRings
                 boardName={boardName}

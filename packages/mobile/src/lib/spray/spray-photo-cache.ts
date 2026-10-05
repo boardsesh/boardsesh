@@ -10,7 +10,7 @@
 //
 //  1. **The URL is never the cache key.** A presigned signature changes on every
 //     read and stops working fifteen minutes later. The file is named
-//     `<layoutId>-<version>.jpg`, which is the identity that actually decides
+//     `<layoutId>-v<versionId>.jpg`, which is the identity that actually decides
 //     whether two reads are the same picture, and the URL is looked up from the
 //     registry at fetch time.
 //  2. **The sync resolver never fetches.** It answers "on disk" or "not yet", the
@@ -50,7 +50,9 @@ export {
  */
 export function liveSprayPhotoFileNames(): Set<string> {
   return new Set(
-    listRegisteredSprayWalls().map((wall) => sprayPhotoFileName({ layoutId: wall.layoutId, version: wall.version })),
+    listRegisteredSprayWalls().map((wall) =>
+      sprayPhotoFileName({ layoutId: wall.layoutId, versionId: wall.versionId }),
+    ),
   );
 }
 
@@ -158,7 +160,7 @@ async function downloadSprayPhoto(
   // unregistered — or whose version moved on while this was queued — has no URL
   // worth fetching, and guessing one is not possible by design.
   const wall = getSprayWall(identity.layoutId);
-  if (!wall || wall.version !== identity.version) return null;
+  if (!wall || wall.versionId !== identity.versionId) return null;
 
   // A signature that has already expired cannot be fetched with, and retrying it
   // would 403 on every pass for the rest of the session while the board showed a

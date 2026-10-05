@@ -32,7 +32,7 @@ export function liveSprayPhotoFileNames(): Set<string> {
 
 function presignedUrl(identity: SprayPhotoIdentity): string | null {
   const wall = getSprayWall(identity.layoutId);
-  if (!wall || wall.version !== identity.version) return null;
+  if (!wall || wall.versionId !== identity.versionId) return null;
   return wall.photoUrl;
 }
 

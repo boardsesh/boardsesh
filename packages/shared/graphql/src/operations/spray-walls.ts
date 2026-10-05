@@ -164,6 +164,28 @@ export const GET_SPRAY_WALL_RENDER_DATA = gql`
   }
 `;
 
+/** Draft reads verify the immutable row id even when a discarded number is reused. */
+export const GET_SPRAY_WALL_DRAFT_RENDER_DATA = gql`
+  query GetSprayWallDraftRenderData($uuid: ID!, $version: Int) {
+    sprayWallRenderData(uuid: $uuid, version: $version) {
+      versionNumber
+      boardWidth
+      boardHeight
+      homography
+      photo {
+        ${SPRAY_WALL_PHOTO_FIELDS}
+      }
+      holds {
+        ${SPRAY_WALL_HOLD_FIELDS}
+      }
+      wall {
+        ${SPRAY_WALL_FIELDS}
+        versions { id number status }
+      }
+    }
+  }
+`;
+
 /**
  * What a LISTING row needs, and nothing that costs a signature.
  *

@@ -32,7 +32,7 @@ vi.mock('expo-image', () => ({
   Image: ({ source, cachePolicy }: { source?: { uri?: string }; cachePolicy?: string }) =>
     createElement('img', { src: source?.uri, 'data-cache-policy': cachePolicy }),
 }));
-vi.mock('react-native-svg', () => ({
+vi.mock('react-native-svidg', () => ({
   default: ({ children, viewBox }: { children?: ReactNode; viewBox?: string }) =>
     createElement('svg', { 'data-viewbox': viewBox }, children),
   Path: ({ d, stroke }: { d?: string; stroke?: string }) =>
@@ -78,6 +78,7 @@ function registerCurrentWall() {
     wallUuid: WALL_UUID,
     angle: 40,
     version: 3,
+    versionId: 3,
     photoWidth: 3000,
     photoHeight: 4000,
     photoUrl: 'https://private.example/current',
@@ -151,7 +152,7 @@ describe('SprayRevisionBoard', () => {
     expect(getSprayWall(LAYOUT_ID)?.version).toBe(3);
     expect(getSprayWall(LAYOUT_ID)?.photoUrl).toBe('https://private.example/current');
     expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(true);
-    expect(sprayCacheToken('spray', LAYOUT_ID)).toBe('-sv3');
+    expect(sprayCacheToken('spray', LAYOUT_ID)).toBe('-svid3');
     expect(listRegisteredSprayWalls()).toHaveLength(1);
     expect(wakes).toBe(0);
   });

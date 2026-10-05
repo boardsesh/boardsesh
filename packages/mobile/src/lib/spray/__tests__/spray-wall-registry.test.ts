@@ -26,6 +26,7 @@ function wall(version: number, holds: SprayPhotoHold[] = DEFAULT_HOLDS) {
     wallUuid: 'wall-uuid',
     angle: 40,
     version,
+    versionId: version,
     photoWidth: 1200,
     photoHeight: 1600,
     photoUrl: `https://private.example/photo?sig=${version}`,
@@ -134,7 +135,14 @@ describe('sprayCacheToken', () => {
 
   it('carries the wall version', () => {
     registerSprayWall(LAYOUT_ID, wall(4));
-    expect(sprayCacheToken('spray', LAYOUT_ID)).toBe('-sv4');
+    expect(sprayCacheToken('spray', LAYOUT_ID)).toBe('-svid4');
+  });
+
+  it('moves when a discarded number is reused for another immutable row', () => {
+    registerSprayWall(LAYOUT_ID, { ...wall(3), versionId: 30 });
+    const discardedToken = sprayCacheToken('spray', LAYOUT_ID);
+    registerSprayWall(LAYOUT_ID, { ...wall(3), versionId: 31 });
+    expect(sprayCacheToken('spray', LAYOUT_ID)).not.toBe(discardedToken);
   });
 
   it('moves when the wall is reset', () => {
@@ -147,9 +155,9 @@ describe('sprayCacheToken', () => {
   it('differs from every real version while the wall is unknown', () => {
     // Nothing is drawn or cached under it — there is no render data — but it must
     // not collide with the first paint after the query lands.
-    expect(sprayCacheToken('spray', 12345)).toBe('-sv0');
+    expect(sprayCacheToken('spray', 12345)).toBe('-svid0');
     registerSprayWall(12345, wall(1));
-    expect(sprayCacheToken('spray', 12345)).not.toBe('-sv0');
+    expect(sprayCacheToken('spray', 12345)).not.toBe('-svid0');
   });
 
   it('keeps two walls apart', () => {
@@ -305,7 +313,7 @@ describe('who can edit the wall (#5955)', () => {
     expect(sprayWallViewerCanEdit('spray', 4201)).toBe(false);
     // Still registered at the same version: nothing on screen goes blank.
     expect(getSprayWall(LAYOUT_ID)).toMatchObject({ version: 3, photoWidth: 1200 });
-    expect(sprayCacheToken('spray', LAYOUT_ID)).toBe('-sv3');
+    expect(sprayCacheToken('spray', LAYOUT_ID)).toBe('-svid3');
     // Marked stale, so the next ask goes back to the server for this account.
     expect(getSprayWall(LAYOUT_ID)?.registeredAtMs).toBe(0);
   });
@@ -320,7 +328,7 @@ describe('who can edit the wall (#5955)', () => {
     });
     try {
       expect(resetSprayWallViewerAccess()).toEqual([]);
-      expect(wakes).toBe(0);
+      expect(wakes).toBe(1);
     } finally {
       unsubscribe();
     }
