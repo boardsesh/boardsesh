@@ -1001,9 +1001,11 @@ jobs:
       - name: Install dependencies
         run: vp install --frozen-lockfile
       - name: Validate the migration folder
+        env:
+          BASE_REF: ${{ github.base_ref || 'main' }}
         run: |
-          git fetch --no-tags --depth=1 origin main
-          vp run check:db-migrations -- --base origin/main
+          git fetch --no-tags --depth=1 origin "$BASE_REF":"refs/remotes/origin/$BASE_REF"
+          vp run check:db-migrations -- --base "origin/$BASE_REF"
       # Guards the failure mode check:db-migrations cannot see: a migration
       # whose `when` lands below drizzle's created_at high-water mark is skipped
       # forever and silently (#2933). Drives drizzle's real migrate() against a
