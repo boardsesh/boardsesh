@@ -12,9 +12,9 @@ name: Refresh Climb Neighbors
 # resumable: a job cut off by the timeout leaves its finished groups and lists
 # recorded, and the next run carries on from there. The board list must match
 # CLIMB_NEIGHBOR_BOARDS (pinned by climb-neighbors-workflow.test.ts).
+# Scheduled runs moved to the homelab batch worker (pg-boss family, #5800);
+# this workflow is manual-only for backfills and dry runs.
 on:
-  schedule:
-    - cron: '45 6 * * *' # 06:45 UTC daily, after the grade refresh
   workflow_dispatch:
     inputs:
       board:
