@@ -30,4 +30,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   qaVerdictSubmittedKey: null,
   earlyUpdates: false,
   otaPinnedBranch: null,
+  otaPinSwitchInFlight: null,
+  otaLeaveOwed: false,
+  otaLeaveBlockedUpdateId: null,
 };

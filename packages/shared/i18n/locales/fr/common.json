@@ -399,11 +399,11 @@
         "offSubtitle": "Les nouveautés dès qu'elles sont prêtes, avant tout le monde",
         "onSubtitle": "Tu reçois les mises à jour anticipées",
         "waitingSubtitle": "Activé, en attente de la prochaine mise à jour anticipée",
-        "leavingSubtitle": "Retour aux mises à jour normales dès que tu es en ligne",
-        "testingBody": "Tu testes un aperçu. Quitte-le d'abord, puis change ce réglage.",
+        "leavingSubtitle": "Désactivé. Les mises à jour normales reprennent dès que la prochaine est prête pour ce téléphone.",
+        "testingBody": "Un aperçu est épinglé sur ce téléphone. Quitte-le d'abord, puis change ce réglage.",
         "footer": "Les mises à jour anticipées peuvent avoir quelques défauts de temps en temps. Les changements s'appliquent à la prochaine ouverture de l'app.",
-        "joinDeferred": "Serveur de mises à jour injoignable. Les mises à jour anticipées démarreront à son retour.",
-        "leaveDeferred": "Impossible de revenir en arrière pour l'instant. Nouvel essai à la prochaine ouverture de l'app."
+        "joinDeferred": "Serveur de mises à jour injoignable. Nouvel essai à la prochaine ouverture de l'app ; les mises à jour anticipées démarrent à l'ouverture suivante.",
+        "leaveDeferred": "Retour impossible pour l'instant. Nouvel essai à la prochaine ouverture de l'app."
       }
     },
     "sendRecovery": {

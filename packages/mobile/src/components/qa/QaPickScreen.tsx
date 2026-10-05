@@ -132,8 +132,11 @@ export function QaPickScreen() {
 
   const surfingAvailable = qaSurfingAvailable();
   // A "Get updates early" member's own track is the early-updates branch, so
-  // the row that leaves previews takes them back there, not to production.
-  const earlyUpdatesMember = useEarlyUpdatesMember();
+  // the row that leaves previews takes them back there, not to production. Only
+  // while the server offers that branch for this binary: without it their track
+  // is production for now, and the row must not say otherwise.
+  const member = useEarlyUpdatesMember();
+  const earlyUpdatesMember = member && branchList !== null && branchList.earlyUpdates !== null;
 
   const handleChannelPick = useCallback(
     (channel: 'staging' | 'production') => {

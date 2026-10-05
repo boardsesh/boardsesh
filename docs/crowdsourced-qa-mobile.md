@@ -59,19 +59,29 @@ whole design, including the expo-updates rule it rests on, is in `docs/mobile-ot
   treats a `pr-beta` bundle like production: a tester on early updates is still offered the pick
   list.
 - **The pin has an owner.** `otaPinnedBranch` records the branch this app last pinned. The three
-  `surfTo*` helpers write it before they surf and put the previous pin back when the surf rejects.
-  While it names a `pr-<n>` or `pr-staging` branch, nothing about early updates touches the header,
-  whichever bundle is running.
+  `surfTo*` helpers write it before they surf and put the previous pin back when the surf rejects
+  or hangs. While a `pr-<n>` or `pr-staging` bundle is the one running, nothing about early updates
+  touches the header.
 - **Leaving goes back to early updates, not production.** For a member (the stored choice, unless
-  the flag says off) the picker's Production row is labelled **Early updates**, and it, **Leave
-  preview** and a filed verdict all call `returnToOwnTrack`, which switches to `pr-beta` with a
-  download and no reload. The toast says the change applies next time the app opens. When the
-  switch cannot be made the preview stays pinned and the usual "could not switch off this preview"
-  toast shows. A non-member's three exits are unchanged.
+  the flag says off) the picker's Production row is labelled **Early updates** while the server
+  offers that branch for this build, and it, **Leave preview** and a filed verdict all call
+  `returnToOwnTrack`, which switches to `pr-beta` with a download and no reload. The toast says the
+  change applies next time the app opens. When the switch cannot be made the preview stays pinned
+  and the usual "could not switch off this preview" toast shows. A non-member's three exits are
+  unchanged, and so are a member's while `pr-beta` is not offered.
 - **The switch is not offered on a preview.** More shows a line saying to leave the preview first.
-- **Branch Surfing switched off unpins safely.** The branch query only reads; `useQaBranches` calls
-  `noteBranchSurfingOff` from an effect, which fetches a regular update before dropping whichever
-  pin is in place. The `earlyUpdates` choice is kept.
+- **A merged PR no longer strands its tester.** A recorded preview pin whose bundle is not the one
+  running makes the launch sync ask the server whether the branch still exists. If it is gone, a
+  member is moved to early updates and everyone else to the regular track. The second can be
+  refused (the regular update is already on disk under the dead pin's stamp); the phone is then on
+  regular updates in effect, and More offers the switch as usual.
+- **Branch Surfing switched off unpins at launch, as before.** The branch request only reads.
+  `QaTesterGate` and the picker's `useQaBranches` both pass a surfing-off answer to
+  `noteBranchSurfingOff`, which fetches a regular update before dropping whichever pin is in place,
+  and tries even with no pin on record. If it cannot finish, the leave is recorded as owed and the
+  launch sync retries it. The gate only makes that request for a tester with the launch prompt on
+  who is not on a preview bundle, the same launches that reached xprem's unpin before. The
+  `earlyUpdates` choice is kept.
 
 ## Where the pieces live
 
@@ -197,9 +207,10 @@ launch with no update id.
 - `qaBriefSeenKey` — the brief has been shown to this account for this branch + bundle.
 - `qaVerdictSubmittedKey` — this account has filed a verdict for this branch + bundle.
 
-`earlyUpdates` (the "Get updates early" choice) and `otaPinnedBranch` (the branch this app last
-pinned) live in the same store but are per device, not per account: the header override they
-describe is device-wide.
+`earlyUpdates` (the "Get updates early" choice), `otaPinnedBranch` (the branch this app last
+pinned) and the three bookkeeping keys beside it (`otaPinSwitchInFlight`, `otaLeaveOwed`,
+`otaLeaveBlockedUpdateId`) live in the same store but are per device, not per account: the header
+override they describe is device-wide.
 
 Keying on the bundle rather than the branch is deliberate: when the author pushes again, that is a
 different thing to test, so the brief shows again and a second verdict is possible.

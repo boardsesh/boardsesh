@@ -156,6 +156,7 @@ const qa = vi.hoisted(() => ({
   // from somewhere else that proves nothing.
   noListKind: 'surfing-off' as 'surfing-off' | 'unavailable',
   staging: null as { lastUpdateAt: string } | null,
+  earlyUpdates: null as { lastUpdateAt: string } | null,
   refusedPrNumber: null as number | null,
 }));
 vi.mock('../../../lib/qa/qa-surf', () => ({
@@ -165,7 +166,7 @@ vi.mock('../../../lib/qa/qa-surf', () => ({
     const branches = await qa.listPrBranches(...args);
     return branches === null
       ? { kind: qa.noListKind }
-      : { kind: 'listed', list: { previews: branches, staging: qa.staging, earlyUpdates: null } };
+      : { kind: 'listed', list: { previews: branches, staging: qa.staging, earlyUpdates: qa.earlyUpdates } };
   },
   surfToPr: qa.surfToPr,
   surfToStaging: qa.surfToStaging,
@@ -241,6 +242,7 @@ beforeEach(() => {
   earlyUpdates.joinEarlyUpdates.mockReset().mockResolvedValue('early-updates-next-launch');
   earlyUpdates.noteBranchSurfingOff.mockReset().mockResolvedValue(undefined);
   qa.noListKind = 'surfing-off';
+  qa.earlyUpdates = null;
 });
 
 describe('QaPickScreen', () => {
@@ -261,6 +263,7 @@ describe('QaPickScreen', () => {
 
   it('takes an early-updates member back to early updates, not to production', async () => {
     earlyUpdates.member = true;
+    qa.earlyUpdates = { lastUpdateAt: '2026-10-05T09:00:00.000Z' };
     qa.listPrBranches.mockResolvedValue([]);
     renderScreen();
 
@@ -276,6 +279,7 @@ describe('QaPickScreen', () => {
 
   it('hands the screen back to a member after the pin, so they can still pick a PR', async () => {
     earlyUpdates.member = true;
+    qa.earlyUpdates = { lastUpdateAt: '2026-10-05T09:00:00.000Z' };
     renderScreen();
 
     fireEvent.click(await screen.findByLabelText('qa.pick.earlyUpdatesTitle'));
@@ -287,6 +291,7 @@ describe('QaPickScreen', () => {
 
   it('says so, and hands the screen back, when the switch to early updates cannot be made', async () => {
     earlyUpdates.member = true;
+    qa.earlyUpdates = { lastUpdateAt: '2026-10-05T09:00:00.000Z' };
     earlyUpdates.joinEarlyUpdates.mockRejectedValue(new Error('Could not reach the update server (502).'));
     renderScreen();
 
@@ -320,7 +325,21 @@ describe('QaPickScreen', () => {
     expect(earlyUpdates.noteBranchSurfingOff).not.toHaveBeenCalled();
   });
 
+  it('keeps the row as Production for a member while the server has no early update for this build', async () => {
+    // Their track is production for now, and tapping it reloads onto it. A row
+    // called "Early updates" promising no reload would be wrong on both counts.
+    earlyUpdates.member = true;
+    renderScreen();
+
+    fireEvent.click(await screen.findByLabelText('qa.pick.productionTitle'));
+
+    expect(screen.queryByLabelText('qa.pick.earlyUpdatesTitle')).toBeNull();
+    expect(qa.surfToProduction).toHaveBeenCalledOnce();
+    expect(earlyUpdates.joinEarlyUpdates).not.toHaveBeenCalled();
+  });
+
   it('never labels the row early updates for someone who has not joined', async () => {
+    qa.earlyUpdates = { lastUpdateAt: '2026-10-05T09:00:00.000Z' };
     renderScreen();
 
     expect(await screen.findByLabelText('qa.pick.productionTitle')).toBeTruthy();

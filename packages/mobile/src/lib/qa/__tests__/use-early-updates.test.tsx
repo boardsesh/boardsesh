@@ -5,12 +5,18 @@ import { renderHook } from '@testing-library/react';
 const state = vi.hoisted(() => ({
   earlyUpdates: false,
   otaPinnedBranch: null as string | null,
+  otaLeaveBlockedUpdateId: null as string | null,
   runningBranch: null as string | null,
   surfingBuild: true,
   flag: 'on' as 'on' | 'off' | 'unknown',
+  flagsFresh: true,
+  userId: 'user-a' as string | undefined,
 }));
 vi.mock('../../../settings/hooks', () => ({
-  useSetting: (key: 'earlyUpdates' | 'otaPinnedBranch') => [state[key], vi.fn()],
+  useSetting: (key: 'earlyUpdates' | 'otaPinnedBranch' | 'otaLeaveBlockedUpdateId') => [state[key], vi.fn()],
+}));
+vi.mock('../../graphql/hooks', () => ({
+  useProfile: () => ({ data: state.userId === undefined ? undefined : { id: state.userId } }),
 }));
 vi.mock('../../ota-branch-surfing-state', () => ({
   useOtaBranchSurfingState: () => ({ surfingBuild: state.surfingBuild, ready: true }),
@@ -18,9 +24,10 @@ vi.mock('../../ota-branch-surfing-state', () => ({
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useEarlyUpdatesFlagState: () => state.flag,
   useFeatureFlagsResolved: () => true,
+  useFeatureFlagsFresh: () => state.flagsFresh,
 }));
 // The real classifier and constants; only the native read is stood in for.
-vi.mock('expo-updates', () => ({ isEmbeddedLaunch: false, manifest: { extra: {} } }));
+vi.mock('expo-updates', () => ({ isEmbeddedLaunch: false, isEmergencyLaunch: false, manifest: { extra: {} } }));
 vi.mock('expo-constants', () => ({ default: { expoConfig: { updates: {} } } }));
 vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
 vi.mock('@xprem/control-center/src/surf', () => ({ surfTo: vi.fn() }));
@@ -31,21 +38,28 @@ vi.mock('../../analytics', () => ({ track: vi.fn() }));
 vi.mock('../qa-surf', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../qa-surf')>()),
   readRunningOtaBranch: () => state.runningBranch,
+  readRunningUpdateId: () => 'running-update',
 }));
 
 import {
   earlyUpdatesRowState,
   isEarlyUpdatesMember,
+  resetEarlyUpdatesIdentityForTests,
   useEarlyUpdatesMember,
   useEarlyUpdatesRow,
+  useEarlyUpdatesSyncEnvironment,
 } from '../use-early-updates';
 
 beforeEach(() => {
   state.earlyUpdates = false;
   state.otaPinnedBranch = null;
   state.runningBranch = null;
+  state.otaLeaveBlockedUpdateId = null;
   state.surfingBuild = true;
   state.flag = 'on';
+  state.flagsFresh = true;
+  state.userId = 'user-a';
+  resetEarlyUpdatesIdentityForTests();
 });
 
 describe('earlyUpdatesRowState', () => {
@@ -65,7 +79,59 @@ describe('earlyUpdatesRowState', () => {
     // A preview pinned before the record existed.
     [true, null, 'preview', 'testing'],
   ] as const)('choice=%s pinned=%s running=%s is %s', (choice, pinnedBranch, runningBranchKind, expected) => {
-    expect(earlyUpdatesRowState({ choice, pinnedBranch, runningBranchKind })).toBe(expected);
+    expect(earlyUpdatesRowState({ choice, pinnedBranch, runningBranchKind, stalePreviewPin: false })).toBe(expected);
+  });
+
+  it('offers the switch again once a preview pin is known to be dead', () => {
+    // The branch is gone and the pin could not be dropped: the phone runs the
+    // regular track's update under it. Nobody is testing anything.
+    const stranded = { pinnedBranch: 'pr-123', runningBranchKind: 'default', stalePreviewPin: true } as const;
+    expect(earlyUpdatesRowState({ ...stranded, choice: false })).toBe('off');
+    expect(earlyUpdatesRowState({ ...stranded, choice: true })).toBe('waiting');
+  });
+
+  it('never calls a preview that is actually running dead', () => {
+    expect(
+      earlyUpdatesRowState({
+        choice: false,
+        pinnedBranch: 'pr-123',
+        runningBranchKind: 'preview',
+        stalePreviewPin: true,
+      }),
+    ).toBe('testing');
+  });
+});
+
+describe('useEarlyUpdatesSyncEnvironment', () => {
+  const read = () => renderHook(() => useEarlyUpdatesSyncEnvironment()).result.current;
+
+  it('confirms an "off" from a fresh response for the account the launch started with', () => {
+    expect(read().flagOffConfirmed).toBe(true);
+  });
+
+  it('does not confirm it from the cached bag', () => {
+    state.flagsFresh = false;
+    expect(read().flagOffConfirmed).toBe(false);
+  });
+
+  it('does not confirm it while signed out, or before the profile has loaded', () => {
+    state.userId = undefined;
+    expect(read().flagOffConfirmed).toBe(false);
+  });
+
+  it('does not confirm it mid sign-out or for a different account in the same launch', () => {
+    // The flag is per account and the pin is per phone. Signing out re-evaluates
+    // the flag for another identity; that is left to the next launch.
+    expect(read().flagOffConfirmed).toBe(true);
+
+    state.userId = undefined;
+    expect(read().flagOffConfirmed).toBe(false);
+
+    state.userId = 'user-b';
+    expect(read().flagOffConfirmed).toBe(false);
+
+    state.userId = 'user-a';
+    expect(read().flagOffConfirmed).toBe(true);
   });
 });
 
@@ -110,7 +176,7 @@ describe('useEarlyUpdatesRow', () => {
     expect(result.current).toEqual({
       show: true,
       state: 'off',
-      environment: { surfingBuild: true, surfingReady: true, flagsResolved: true, flag: 'on' },
+      environment: { surfingBuild: true, surfingReady: true, flagsResolved: true, flag: 'on', flagOffConfirmed: true },
     });
   });
 

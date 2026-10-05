@@ -24,7 +24,7 @@ type EarlyUpdatesSectionInput = {
  * network it does not have: "waiting" after switching on, "switching back"
  * after switching off. The row never claims a track the phone is not on.
  *
- * While a PR preview or staging is running there is no switch, only a line
+ * While a PR preview or staging is pinned there is no switch, only a line
  * saying to leave the preview first. Both use the same request header, so a
  * flip would silently drop the preview a tester is in the middle of.
  */
@@ -71,7 +71,7 @@ export function buildEarlyUpdatesSection(
         onValueChange: (next) => {
           hapticSelection();
           void setEarlyUpdatesChoice(next, environment).then((outcome) => {
-            if (outcome === 'deferred') onDeferred(next);
+            if (outcome === 'deferred' || outcome === 'blocked') onDeferred(next);
           });
         },
       },

@@ -14,7 +14,13 @@ import type { EarlyUpdatesRowState } from '../../lib/qa/use-early-updates';
 // state shows, not the translation.
 const translate = ((key: string) => key) as unknown as TFunction<'common'>;
 
-const ENVIRONMENT = { surfingBuild: true, surfingReady: true, flagsResolved: true, flag: 'on' } as const;
+const ENVIRONMENT = {
+  surfingBuild: true,
+  surfingReady: true,
+  flagsResolved: true,
+  flag: 'on',
+  flagOffConfirmed: false,
+} as const;
 const onDeferred = vi.fn();
 
 function build(state: EarlyUpdatesRowState) {
@@ -80,6 +86,13 @@ describe('buildEarlyUpdatesSection', () => {
     await Promise.resolve();
 
     expect(onDeferred).not.toHaveBeenCalled();
+  });
+
+  it('tells the screen when leaving has to wait for the regular track to publish', async () => {
+    setEarlyUpdatesChoice.mockResolvedValue('blocked');
+    toggleRow('on').onValueChange(false);
+
+    await vi.waitFor(() => expect(onDeferred).toHaveBeenCalledExactlyOnceWith(false));
   });
 
   it.each([true, false])('tells the screen when a flip to %s could not be applied yet', async (next) => {

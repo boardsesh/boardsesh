@@ -673,11 +673,11 @@
         "offSubtitle": "Funciones nuevas en cuanto están listas, antes que nadie",
         "onSubtitle": "Recibes las actualizaciones anticipadas",
         "waitingSubtitle": "Activado, a la espera de la próxima actualización anticipada",
-        "leavingSubtitle": "Volverás a las actualizaciones normales cuando tengas conexión",
-        "testingBody": "Estás probando una vista previa. Sal de ella primero y luego cambia esto.",
+        "leavingSubtitle": "Desactivado. Las actualizaciones normales vuelven cuando la siguiente esté lista para este teléfono.",
+        "testingBody": "Hay una vista previa fijada en este teléfono. Sal de ella primero y luego cambia esto.",
         "footer": "Las actualizaciones anticipadas pueden traer algún fallo de vez en cuando. Los cambios se aplican la próxima vez que abras la app.",
-        "joinDeferred": "No hay conexión con el servidor de actualizaciones. Las actualizaciones anticipadas empezarán cuando vuelva.",
-        "leaveDeferred": "Ahora mismo no se puede volver. Lo intentaremos la próxima vez que abras la app."
+        "joinDeferred": "No hay conexión con el servidor de actualizaciones. Lo intentaremos la próxima vez que abras la app; las actualizaciones anticipadas empiezan la vez siguiente.",
+        "leaveDeferred": "Todavía no se puede volver. Lo intentaremos la próxima vez que abras la app."
       }
     },
     "sendRecovery": {

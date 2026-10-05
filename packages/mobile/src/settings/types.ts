@@ -124,6 +124,25 @@ export type AppSettings = {
    * header and early updates must leave it alone. Written only by `qa-surf.ts`.
    */
   otaPinnedBranch: string | null;
+  /**
+   * A no-reload branch switch is under way: the header override has been
+   * written to `to` and the outcome is not known yet. Cleared when the switch
+   * finishes either way, so finding it at launch means the app was killed in
+   * between, with the override left on `to`.
+   */
+  otaPinSwitchInFlight: { to: string | null } | null;
+  /**
+   * The server switched branch surfing off and the unpin it asks for could not
+   * be completed yet. The launch sync retries it, for a member's pin and a
+   * tester's preview pin alike. Cleared by a completed leave or a deliberate surf.
+   */
+  otaLeaveOwed: boolean;
+  /**
+   * A leave was refused because the update the regular track serves is already
+   * on disk under the pin's stamp and cannot be restamped. Holds that update's
+   * id, so the attempt is not repeated until a different update is running.
+   */
+  otaLeaveBlockedUpdateId: string | null;
 };
 
 export type SettingsKey = keyof AppSettings;

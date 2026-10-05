@@ -101,6 +101,7 @@ import { RootRestTimerPillHost } from '../src/components/queue-control/RestTimer
 import { ConnectivityBanner } from '../src/components/connectivity/ConnectivityBanner';
 import { QaTesterGate } from '../src/components/qa/QaTesterGate';
 import { EarlyUpdatesLaunchSync } from '../src/components/qa/EarlyUpdatesLaunchSync';
+import { checkForUpdateOutsidePinChange, fetchUpdateOutsidePinChange } from '../src/lib/qa/qa-surf';
 import { SendRecoveryGate } from '../src/components/offline/SendRecoveryGate';
 import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
 import { BottomChromeDebugOverlay } from '../src/components/BottomChromeDebugOverlay';
@@ -328,8 +329,11 @@ function CrashScreen({ error, retry }: ErrorBoundaryProps) {
     setRecovery({ kind: 'busy', phase: 'checking' });
     const { result, error: recoveryError } = await performOtaRecovery(
       {
-        checkForUpdate: () => Updates.checkForUpdateAsync(),
-        fetchUpdate: () => Updates.fetchUpdateAsync(),
+        // Queued behind any OTA branch switch (qa-surf.ts): a check or download
+        // that ran in the middle of one would be made, and stamped, under a pin
+        // the switch may be about to take back.
+        checkForUpdate: checkForUpdateOutsidePinChange,
+        fetchUpdate: fetchUpdateOutsidePinChange,
         reload: () => Updates.reloadAsync(),
         isUpdatePending: () => isUpdatePendingRef.current,
       },
@@ -638,11 +642,6 @@ function RootLayout() {
                         {/* Applies Observe flags, then flushes persisted telemetry on
                           foreground transitions once PostHog resolves. Null render. */}
                         <ObserveRuntimeConfigSync />
-                        {/* Brings the OTA branch pin in line with the "Get updates early"
-                          choice once flags and branch surfing are ready: in the
-                          background, after first interactions, never a reload. No
-                          request when they already agree. Null render. */}
-                        <EarlyUpdatesLaunchSync />
                         <AuthProvider onReady={onAuthReady}>
                           <PartyProfileProvider>
                             {/* Stamps the active board's gym on every event. Null render. */}
@@ -939,6 +938,12 @@ function RootLayout() {
                                                             else. A first run outranks it through the seen flag
                                                             it waits for, not through mount order. */}
                                                                     <QaTesterGate />
+                                                                    {/* Brings the OTA branch pin in line with the "Get updates
+                                                            early" choice once flags and branch surfing are ready: in
+                                                            the background, after first interactions, never a reload.
+                                                            No request when they already agree. Beside QaTesterGate
+                                                            because it reads the signed-in profile too. Null render. */}
+                                                                    <EarlyUpdatesLaunchSync />
                                                                     {/* Tells a climber the one-time #5335 recovery found sends
                                                             of theirs that never reached the server. Silent for
                                                             everyone else, which is almost everyone. It and

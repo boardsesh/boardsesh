@@ -9,8 +9,9 @@ import { useEarlyUpdatesSyncEnvironment } from '../../lib/qa/use-early-updates';
  * once per launch. Renders nothing.
  *
  * That is a join the switch could not finish (offline, or the server had no
- * early update for this binary yet), a leave it could not finish, or the
- * feature being switched off for a member. Each needs a download, so this runs
+ * early update for this binary yet), a leave it could not finish, the feature
+ * being switched off for a member, a tester's pin whose branch is gone, or a
+ * pin to drop after an emergency launch. Each needs the network, so this runs
  * after the first interactions, in the background, and never blocks launch or
  * reloads: whatever it changes takes effect the next time the app opens. A
  * phone whose pin already matches its choice makes no request at all.
@@ -20,11 +21,10 @@ import { useEarlyUpdatesSyncEnvironment } from '../../lib/qa/use-early-updates';
  */
 export function EarlyUpdatesLaunchSync() {
   const environment = useEarlyUpdatesSyncEnvironment();
-  const { surfingBuild, surfingReady } = environment;
   const adoptedRef = useRef(false);
 
   useEffect(() => {
-    if (!surfingBuild || !surfingReady) return;
+    if (!environment.surfingBuild || !environment.surfingReady) return;
     // Before the first sync, and only once: the running bundle proves which pin
     // was in force at LAUNCH, and stops proving it the moment anything switches.
     if (!adoptedRef.current) {
@@ -37,7 +37,7 @@ export function EarlyUpdatesLaunchSync() {
       void syncEarlyUpdates(environment);
     });
     return () => interaction.cancel();
-  }, [environment, surfingBuild, surfingReady]);
+  }, [environment]);
 
   return null;
 }

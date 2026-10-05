@@ -207,8 +207,11 @@ diagnostic) applies on native. The whole surface lives in three files:
   through `useEarlyUpdatesFlagState`, the one hook that returns three answers,
   because this flag does more than hide a row. `on` is exactly `true`: the
   switch shows and a phone whose choice is on joins the early-updates branch.
-  `off` is exactly `false`: the switch is hidden and a member is moved back to
-  the regular track at their next online launch, keeping their choice.
+  `off` is exactly `false`: the switch is hidden, and a member is moved back
+  to the regular track, keeping their choice, but only once the `off` is
+  confirmed: it arrived in a response received since the app opened
+  (`useFeatureFlagsFresh`, which compares PostHog's request id with the cached
+  bag's) for the account the launch started with, and at most once per launch.
   `unknown` is no value at all: the switch is hidden and nobody is moved. What
   produces each matters. PostHog answers `false` for any key missing from a
   non-empty flag bag, fresh or cached, so a flag that has not been created

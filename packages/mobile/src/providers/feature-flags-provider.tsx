@@ -18,8 +18,12 @@
 // rollout controls — which is when the `variants` property itself was dropped
 // from the definition type and had to be restored here.
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { readPosthogFeatureFlags, subscribePosthogFeatureFlags } from '../lib/analytics';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  readPosthogFeatureFlags,
+  readPosthogFeatureFlagsRequestId,
+  subscribePosthogFeatureFlags,
+} from '../lib/analytics';
 import { useFeatureFlagOverrides, type FeatureFlagOverrides } from '../lib/feature-flag-overrides';
 import { isDevBuild } from '../lib/is-dev-build';
 import { isOfflineDownloadsEnabled } from './offline-downloads-enabled';
@@ -271,6 +275,17 @@ const FeatureFlagsContext = createContext<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
 const FeatureFlagsResolvedContext = createContext<boolean>(false);
 
 /**
+ * Whether PostHog has answered with a NEW response since the app opened.
+ *
+ * Stricter than "resolved", which is also reached by the timeout and by PostHog
+ * re-emitting its cached bag after a failed request. Read this before doing
+ * something to a climber on a flag being OFF that a stale bag should not be
+ * able to trigger: the cached bag may predate a rollout, or belong to a state
+ * the flag has since left.
+ */
+const FeatureFlagsFreshContext = createContext<boolean>(false);
+
+/**
  * How long a consumer waits for PostHog before treating the bag as final.
  *
  * There has to be a ceiling. PostHog may be unreachable, disabled in this build,
@@ -299,6 +314,10 @@ export function FeatureFlagsProvider({
 }) {
   const [posthogFlags, setPosthogFlags] = useState<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
   const [resolved, setResolved] = useState(false);
+  const [fresh, setFresh] = useState(false);
+  // The response the cached bag came from. Read during the first render, before
+  // the subscription below asks PostHog to reload.
+  const cachedRequestIdRef = useRef(readPosthogFeatureFlagsRequestId());
   const { overrides } = useFeatureFlagOverrides();
 
   useEffect(() => {
@@ -307,6 +326,8 @@ export function FeatureFlagsProvider({
       const nextFlags = readPosthogFeatureFlags(FEATURE_FLAG_DEFINITIONS);
       if (!mounted) return;
       setPosthogFlags((previousFlags) => (featureFlagsEqual(previousFlags, nextFlags) ? previousFlags : nextFlags));
+      const requestId = readPosthogFeatureFlagsRequestId();
+      if (requestId !== undefined && requestId !== cachedRequestIdRef.current) setFresh(true);
     };
 
     refreshFlags();
@@ -348,7 +369,9 @@ export function FeatureFlagsProvider({
   return (
     <FeatureFlagsContext.Provider value={value}>
       <FeatureFlagsResolvedContext.Provider value={resolved || hasStaticFlags}>
-        {children}
+        <FeatureFlagsFreshContext.Provider value={fresh || hasStaticFlags}>
+          {children}
+        </FeatureFlagsFreshContext.Provider>
       </FeatureFlagsResolvedContext.Provider>
     </FeatureFlagsContext.Provider>
   );
@@ -363,6 +386,11 @@ export function FeatureFlagsProvider({
  */
 export function useFeatureFlagsResolved(): boolean {
   return useContext(FeatureFlagsResolvedContext);
+}
+
+/** Whether the flag bag comes from a response received since the app opened. */
+export function useFeatureFlagsFresh(): boolean {
+  return useContext(FeatureFlagsFreshContext);
 }
 
 export function useFeatureFlags(): FeatureFlags {

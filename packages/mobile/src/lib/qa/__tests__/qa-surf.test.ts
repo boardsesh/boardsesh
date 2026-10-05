@@ -15,6 +15,10 @@ const updates = vi.hoisted(() => ({
   manifest: { extra: {} } as unknown,
   updateId: 'running-update' as string | null,
   downloadedId: undefined as string | undefined,
+  isEmbeddedLaunch: false,
+  isEmergencyLaunch: false,
+  busy: { isStartupProcedureRunning: false, isChecking: false, isDownloading: false },
+  stateListeners: new Set<() => void>(),
   setUpdateRequestHeadersOverride: vi.fn(),
   checkForUpdateAsync: vi.fn(),
   fetchUpdateAsync: vi.fn(),
@@ -54,19 +58,37 @@ vi.mock('expo-updates', () => ({
     return updates.updateId;
   },
   get latestContext() {
-    return { downloadedManifest: updates.downloadedId ? { id: updates.downloadedId } : undefined };
+    return { ...updates.busy, downloadedManifest: updates.downloadedId ? { id: updates.downloadedId } : undefined };
   },
-  isEmbeddedLaunch: false,
-  isEmergencyLaunch: false,
-  UpdateCheckResultNotAvailableReason: { NO_UPDATE_AVAILABLE_ON_SERVER: 'noUpdateAvailableOnServer' },
+  addUpdatesStateChangeListener: (listener: () => void) => {
+    updates.stateListeners.add(listener);
+    return { remove: () => updates.stateListeners.delete(listener) };
+  },
+  get isEmbeddedLaunch() {
+    return updates.isEmbeddedLaunch;
+  },
+  get isEmergencyLaunch() {
+    return updates.isEmergencyLaunch;
+  },
+  UpdateCheckResultNotAvailableReason: {
+    NO_UPDATE_AVAILABLE_ON_SERVER: 'noUpdateAvailableOnServer',
+    UPDATE_REJECTED_BY_SELECTION_POLICY: 'updateRejectedBySelectionPolicy',
+  },
   setUpdateRequestHeadersOverride: updates.setUpdateRequestHeadersOverride,
   checkForUpdateAsync: updates.checkForUpdateAsync,
   fetchUpdateAsync: updates.fetchUpdateAsync,
   reloadAsync: updates.reloadAsync,
 }));
-vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
+const platform = vi.hoisted(() => ({ os: 'ios' }));
+vi.mock('react-native', () => ({
+  Platform: {
+    get OS() {
+      return platform.os;
+    },
+  },
+}));
 vi.mock('../../../settings', () => ({
-  getSetting: (key: string) => settings.values[key] ?? null,
+  getSetting: (key: string) => settings.values[key] ?? (key === 'otaLeaveOwed' ? false : null),
   setSetting: settings.setSetting,
 }));
 vi.mock('expo-constants', () => ({ default: { expoConfig: { updates: {} } } }));
@@ -77,15 +99,16 @@ vi.mock('../../legacy-ota-channel-migration', () => ({
 import {
   BRANCH_SURFING_UNAVAILABLE_MESSAGE,
   EARLY_UPDATES_OTA_BRANCH,
-  adoptRunningOtaPin,
+  checkForUpdateOutsidePinChange,
   fetchQaBranches,
+  fetchUpdateOutsidePinChange,
+  PIN_CHANGE_TIMEOUT_MS,
+  UPDATES_IDLE_TIMEOUT_MS,
   joinEarlyUpdatesTrack,
   leaveForProductionTrack,
   otaBranchKind,
   readOtaPinnedBranch,
   resetOtaPinSessionForTests,
-  listPrBranches,
-  listQaBranches,
   qaSurfingAvailable,
   readRefusedPrNumber,
   readRunningPrNumber,
@@ -104,6 +127,37 @@ const SURF_CONFIG = {
 
 type Branch = { name: string; lastUpdateAt: string };
 
+// What the gate and the picker each take from the one answer.
+async function listQaBranches(signal?: AbortSignal) {
+  const answer = await fetchQaBranches(signal);
+  return answer.kind === 'listed' ? answer.list : null;
+}
+async function listPrBranches(signal?: AbortSignal) {
+  return (await listQaBranches(signal))?.previews ?? null;
+}
+
+/**
+ * qa-surf reads the pin the app was LAUNCHED under once, at module load. A case
+ * about that reading sets the launch up first, then loads a fresh copy.
+ */
+async function relaunch(launch: {
+  record?: string | null;
+  runningBranch?: string | null;
+  interrupted?: { to: string | null } | null;
+  emergency?: boolean;
+  embedded?: boolean;
+  os?: 'ios' | 'android';
+}) {
+  settings.values.otaPinnedBranch = launch.record ?? null;
+  settings.values.otaPinSwitchInFlight = launch.interrupted ?? null;
+  updates.manifest = { extra: { branch: launch.runningBranch ?? null } };
+  updates.isEmergencyLaunch = launch.emergency ?? false;
+  updates.isEmbeddedLaunch = launch.embedded ?? launch.emergency ?? false;
+  platform.os = launch.os ?? 'ios';
+  vi.resetModules();
+  return import('../qa-surf');
+}
+
 /** The server's answer to `/branch_lists`. */
 function serveBranches(branches: Branch[]): void {
   fetchMock.mockResolvedValue(new Response(JSON.stringify({ branches, total: branches.length }), { status: 200 }));
@@ -117,6 +171,11 @@ beforeEach(() => {
   resetOtaPinSessionForTests();
   updates.updateId = 'running-update';
   updates.downloadedId = undefined;
+  updates.isEmbeddedLaunch = false;
+  updates.isEmergencyLaunch = false;
+  updates.busy = { isStartupProcedureRunning: false, isChecking: false, isDownloading: false };
+  updates.stateListeners.clear();
+  platform.os = 'ios';
   updates.setUpdateRequestHeadersOverride.mockReset();
   updates.checkForUpdateAsync.mockReset();
   updates.fetchUpdateAsync.mockReset();
@@ -131,6 +190,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe('qaSurfingAvailable', () => {
@@ -271,12 +331,6 @@ describe('listPrBranches', () => {
     expect(settings.setSetting).not.toHaveBeenCalled();
   });
 
-  it('can ask for the newest page only', async () => {
-    serveBranches([]);
-    await fetchQaBranches(undefined, { wholeList: false });
-    expect(fetchMock.mock.calls[0][0]).toBe('https://updates.boardsesh.com/branch_lists');
-  });
-
   it('reads a body of another shape as no list', async () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ unexpected: true }), { status: 200 }));
     await expect(listQaBranches()).resolves.toBeNull();
@@ -407,26 +461,253 @@ describe('surfToPr / surfToStaging / surfToProduction', () => {
   });
 });
 
-describe('adoptRunningOtaPin', () => {
-  it.each(['pr-123', 'pr-staging', 'pr-beta'])('records the pin a running %s bundle proves', (branch) => {
-    // Only an update stamped for the configured headers can launch, so the
-    // running bundle says which pin was in force.
-    updates.manifest = { extra: { branch } };
-    adoptRunningOtaPin();
-    expect(readOtaPinnedBranch()).toBe(branch);
+describe('the pin the app was launched under', () => {
+  it.each(['pr-123', 'pr-staging', 'pr-beta'])('a running %s bundle proves its own pin', async (branch) => {
+    // Only an update stamped for the configured headers can launch.
+    const fresh = await relaunch({ record: null, runningBranch: branch });
+    fresh.adoptRunningOtaPin();
+    expect(fresh.readOtaPinnedBranch()).toBe(branch);
   });
 
-  it('proves nothing on the regular track, and writes nothing', () => {
-    settings.values.otaPinnedBranch = 'pr-beta';
-    adoptRunningOtaPin();
+  it('a bundle from the regular track proves nothing, and nothing is written', async () => {
+    // Either no pin, or a pin the server answered with the channel's own update.
+    const fresh = await relaunch({ record: 'pr-beta' });
+    settings.setSetting.mockClear();
+    fresh.adoptRunningOtaPin();
+    expect(settings.setSetting).not.toHaveBeenCalled();
+    expect(fresh.readOtaPinnedBranch()).toBe('pr-beta');
+  });
+
+  it('a switch killed mid-join that still launched: the journal names the pin', async () => {
+    const fresh = await relaunch({ record: null, interrupted: { to: 'pr-beta' } });
+    fresh.adoptRunningOtaPin();
+
+    expect(fresh.readOtaPinnedBranch()).toBe('pr-beta');
+    expect(settings.values.otaPinSwitchInFlight).toBeNull();
+  });
+
+  it('a switch killed mid-leave: the record stops claiming the pin that was dropped', async () => {
+    const fresh = await relaunch({ record: 'pr-beta', interrupted: { to: null } });
+    fresh.adoptRunningOtaPin();
+
+    expect(fresh.readOtaPinnedBranch()).toBeNull();
+    expect(settings.values.otaPinSwitchInFlight).toBeNull();
+  });
+
+  it('an emergency launch proves nothing: adoption leaves everything for the repair', async () => {
+    const fresh = await relaunch({ record: 'pr-beta', interrupted: { to: 'pr-beta' }, emergency: true });
+    settings.setSetting.mockClear();
+    fresh.adoptRunningOtaPin();
+    expect(settings.setSetting).not.toHaveBeenCalled();
+  });
+});
+
+describe('leaving when there is nothing to download', () => {
+  it('the loader policy turning the check down proves the running bundle needs no pin', async () => {
+    // Even against a record that still says pr-beta (stale after a kill
+    // mid-leave on a build without the journal).
+    const fresh = await relaunch({ record: 'pr-beta' });
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: false, reason: 'updateRejectedBySelectionPolicy' });
+
+    await expect(fresh.leaveForProductionTrack()).resolves.toBe('switched');
+
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenLastCalledWith(null);
+    expect(fresh.readOtaPinnedBranch()).toBeNull();
+  });
+
+  it('a channel with nothing published is NOT launchable when the app launched under a pin', async () => {
+    // iOS: the embedded row may be stamped for the pin being left. Dropping the
+    // pin would then leave nothing launchable, at every cold start, for good.
+    const fresh = await relaunch({ record: 'pr-beta', embedded: true, os: 'ios' });
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: false, reason: 'noUpdateAvailableOnServer' });
+
+    await expect(fresh.leaveForProductionTrack()).resolves.toBe('nothing-to-launch');
+
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenLastCalledWith(
+      expect.objectContaining({ 'xprem-branch': 'pr-beta' }),
+    );
+    expect(fresh.readOtaPinnedBranch()).toBe('pr-beta');
+  });
+
+  it('a channel with nothing published is fine when the app launched with no pin', async () => {
+    const fresh = await relaunch({ record: null });
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: false, reason: 'noUpdateAvailableOnServer' });
+
+    await expect(fresh.leaveForProductionTrack()).resolves.toBe('switched');
+  });
+
+  it("Android's embedded bundle always launched with no pin, whatever the record says", async () => {
+    const fresh = await relaunch({ record: 'pr-beta', embedded: true, os: 'android' });
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: false, reason: 'noUpdateAvailableOnServer' });
+
+    await expect(fresh.leaveForProductionTrack()).resolves.toBe('switched');
+  });
+
+  it('is blocked, by name, when the regular update is on disk under the pin it is leaving', async () => {
+    // The server has been answering the pinned requests with the channel's own
+    // update. It is the one running; it cannot be restamped.
+    const fresh = await relaunch({ record: 'pr-beta' });
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: true, manifest: { id: 'running-update' } });
+
+    await expect(fresh.leaveForProductionTrack()).resolves.toBe('blocked');
+
+    expect(settings.values.otaLeaveBlockedUpdateId).toBe('running-update');
+    expect(updates.fetchUpdateAsync).not.toHaveBeenCalled();
+    expect(fresh.readOtaPinnedBranch()).toBe('pr-beta');
+  });
+
+  it('a later successful switch forgets the block', async () => {
+    settings.values.otaLeaveBlockedUpdateId = 'running-update';
+    settings.values.otaLeaveOwed = true;
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: true, manifest: { id: 'stable-9' } });
+    updates.fetchUpdateAsync.mockResolvedValue({ isNew: true, manifest: { id: 'stable-9' } });
+
+    await expect(leaveForProductionTrack()).resolves.toBe('switched');
+
+    expect(settings.values.otaLeaveBlockedUpdateId).toBeNull();
+    expect(settings.values.otaLeaveOwed).toBe(false);
+  });
+});
+
+describe('a switch waits its turn and gives up', () => {
+  beforeEach(() => {
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: true, manifest: { id: 'beta-1' } });
+    updates.fetchUpdateAsync.mockResolvedValue({ isNew: true, manifest: { id: 'beta-1' } });
+  });
+
+  it('does not write the override while the launch-time check or download is running', async () => {
+    updates.busy = { isStartupProcedureRunning: true, isChecking: false, isDownloading: true };
+    const joining = joinEarlyUpdatesTrack();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(updates.setUpdateRequestHeadersOverride).not.toHaveBeenCalled();
+
+    // Still downloading: a state change that is not "idle" changes nothing.
+    updates.busy = { isStartupProcedureRunning: false, isChecking: false, isDownloading: true };
+    for (const listener of updates.stateListeners) listener();
+    await Promise.resolve();
+    expect(updates.setUpdateRequestHeadersOverride).not.toHaveBeenCalled();
+
+    updates.busy = { isStartupProcedureRunning: false, isChecking: false, isDownloading: false };
+    for (const listener of updates.stateListeners) listener();
+
+    await expect(joining).resolves.toBe('switched');
+    expect(updates.stateListeners.size).toBe(0);
+  });
+
+  it('gives up, having written nothing, when expo-updates never goes idle', async () => {
+    vi.useFakeTimers();
+    updates.busy = { isStartupProcedureRunning: true, isChecking: false, isDownloading: false };
+    const joining = joinEarlyUpdatesTrack();
+    const rejection = expect(joining).rejects.toThrow('expo-updates stayed busy');
+    await vi.advanceTimersByTimeAsync(UPDATES_IDLE_TIMEOUT_MS);
+    await rejection;
+
+    expect(updates.setUpdateRequestHeadersOverride).not.toHaveBeenCalled();
     expect(settings.setSetting).not.toHaveBeenCalled();
   });
 
-  it('does not rewrite a record that is already right', () => {
+  it('a hung native call times out and puts the previous pin back', async () => {
+    vi.useFakeTimers();
+    updates.checkForUpdateAsync.mockReturnValue(new Promise(() => {}));
+    const joining = joinEarlyUpdatesTrack();
+    const rejection = expect(joining).rejects.toThrow('The update server took too long.');
+    await vi.advanceTimersByTimeAsync(PIN_CHANGE_TIMEOUT_MS);
+    await rejection;
+
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenLastCalledWith(null);
+    expect(readOtaPinnedBranch()).toBeNull();
+    expect(settings.values.otaPinSwitchInFlight).toBeNull();
+  });
+
+  it("a hung surf times out too, so it cannot hold a tester's next one for the session", async () => {
+    vi.useFakeTimers();
     settings.values.otaPinnedBranch = 'pr-beta';
-    updates.manifest = { extra: { branch: 'pr-beta' } };
-    adoptRunningOtaPin();
-    expect(settings.setSetting).not.toHaveBeenCalled();
+    surf.surfTo.mockReturnValueOnce(new Promise(() => {})).mockResolvedValue('reloading');
+
+    const stuck = surfToPr(1);
+    const rejection = expect(stuck).rejects.toThrow('The update server took too long.');
+    const next = surfToPr(2);
+    await vi.advanceTimersByTimeAsync(PIN_CHANGE_TIMEOUT_MS);
+    await rejection;
+
+    await expect(next).resolves.toBe('reloading');
+    expect(surf.surfTo).toHaveBeenLastCalledWith(SURF_CONFIG, 'pr-2');
+  });
+
+  it('journals the switch while its outcome is unknown', async () => {
+    updates.checkForUpdateAsync.mockImplementation(async () => {
+      expect(settings.values.otaPinSwitchInFlight).toEqual({ to: 'pr-beta' });
+      return { isAvailable: true, manifest: { id: 'beta-1' } };
+    });
+
+    await joinEarlyUpdatesTrack();
+
+    expect(settings.values.otaPinSwitchInFlight).toBeNull();
+  });
+});
+
+describe('dropPinAfterEmergencyLaunch', () => {
+  it('drops the pin and every record of it before anything that needs a network', async () => {
+    const fresh = await relaunch({ record: 'pr-beta', interrupted: { to: 'pr-beta' }, emergency: true });
+    settings.values.otaLeaveOwed = true;
+    updates.checkForUpdateAsync.mockRejectedValue(new Error('offline'));
+
+    await expect(fresh.dropPinAfterEmergencyLaunch()).rejects.toThrow('offline');
+
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenCalledExactlyOnceWith(null);
+    expect(fresh.readOtaPinnedBranch()).toBeNull();
+    expect(settings.values.otaPinSwitchInFlight).toBeNull();
+    expect(settings.values.otaLeaveOwed).toBe(false);
+  });
+
+  it('then fetches a regular update when it can', async () => {
+    const fresh = await relaunch({ record: 'pr-beta', emergency: true });
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: true, manifest: { id: 'stable-9' } });
+    updates.fetchUpdateAsync.mockResolvedValue({ isNew: true, manifest: { id: 'stable-9' } });
+
+    await fresh.dropPinAfterEmergencyLaunch();
+
+    expect(updates.fetchUpdateAsync).toHaveBeenCalledOnce();
+  });
+});
+
+describe('checks and downloads by other code', () => {
+  it('wait behind a switch in progress', async () => {
+    let finishCheck: (result: unknown) => void = () => {};
+    updates.checkForUpdateAsync.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishCheck = resolve;
+      }),
+    );
+    updates.fetchUpdateAsync.mockResolvedValue({ isNew: true, manifest: { id: 'beta-1' } });
+    const joining = joinEarlyUpdatesTrack();
+    await vi.waitFor(() => expect(updates.checkForUpdateAsync).toHaveBeenCalledOnce());
+
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: false });
+    // Not yet: the queue here is the callers' own, as it is in the app.
+    const changelog = checkForUpdateOutsidePinChange();
+    await Promise.resolve();
+    finishCheck({ isAvailable: true, manifest: { id: 'beta-1' } });
+
+    await expect(joining).resolves.toBe('switched');
+    await expect(changelog).resolves.toEqual({ isAvailable: false });
+  });
+
+  it('a download made after a same-session switch is known to carry the new stamp', async () => {
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: true, manifest: { id: 'beta-1' } });
+    updates.fetchUpdateAsync.mockResolvedValue({ isNew: true, manifest: { id: 'beta-1' } });
+    await joinEarlyUpdatesTrack();
+
+    // The changelog's "check for updates" brings in the next early update.
+    updates.fetchUpdateAsync.mockResolvedValue({ isNew: true, manifest: { id: 'beta-2' } });
+    await fetchUpdateOutsidePinChange();
+    updates.downloadedId = 'beta-2';
+
+    // A leave that is served that very id must see it as stamped for the pin,
+    // not as something the launch-time check fetched for the regular track.
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: true, manifest: { id: 'beta-2' } });
+    await expect(leaveForProductionTrack()).resolves.toBe('blocked');
   });
 });
 
@@ -563,14 +844,6 @@ describe('joinEarlyUpdatesTrack / leaveForProductionTrack', () => {
 
     expect(updates.setUpdateRequestHeadersOverride).toHaveBeenLastCalledWith(EARLY_HEADERS);
     expect(readOtaPinnedBranch()).toBe('pr-beta');
-  });
-
-  it('leaving for a channel that has published nothing is fine: the embedded bundle is that channel', async () => {
-    settings.values.otaPinnedBranch = 'pr-beta';
-    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: false, reason: 'noUpdateAvailableOnServer' });
-
-    await expect(leaveForProductionTrack()).resolves.toBe('switched');
-    expect(readOtaPinnedBranch()).toBeNull();
   });
 
   it('refuses on a build that cannot surf, without touching the headers', async () => {

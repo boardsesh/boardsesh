@@ -28,7 +28,13 @@ const adoptRunningOtaPin = vi.hoisted(() => vi.fn());
 vi.mock('../../../lib/qa/qa-surf', () => ({ adoptRunningOtaPin }));
 
 const environment = vi.hoisted(() => ({
-  current: { surfingBuild: true, surfingReady: true, flagsResolved: true, flag: 'on' as 'on' | 'off' | 'unknown' },
+  current: {
+    surfingBuild: true,
+    surfingReady: true,
+    flagsResolved: true,
+    flag: 'on' as 'on' | 'off' | 'unknown',
+    flagOffConfirmed: false,
+  },
 }));
 vi.mock('../../../lib/qa/use-early-updates', () => ({
   useEarlyUpdatesSyncEnvironment: () => environment.current,
@@ -46,7 +52,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   interactions.pending = [];
   syncEarlyUpdates.mockReset().mockResolvedValue('none');
-  environment.current = { surfingBuild: true, surfingReady: true, flagsResolved: true, flag: 'on' };
+  environment.current = {
+    surfingBuild: true,
+    surfingReady: true,
+    flagsResolved: true,
+    flag: 'on',
+    flagOffConfirmed: false,
+  };
 });
 
 describe('EarlyUpdatesLaunchSync', () => {
