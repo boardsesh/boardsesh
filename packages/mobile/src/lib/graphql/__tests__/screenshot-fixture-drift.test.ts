@@ -454,6 +454,32 @@ describe('the recorded screenshot fixtures', () => {
     expect(failures).toEqual([]);
   });
 
+  it('holds a recording of every document the app sends under a recorded operation name', () => {
+    // Two documents may share an operation name (mobile's GetBoard and the
+    // shared package's select different fields). The check above passes as
+    // long as ONE of them matches, so a screen that switches to the other one
+    // replays as `document-changed` with every PR check green — #6076 did
+    // exactly that to GetBoard.
+    const recordedHashes = new Map<string, Set<string>>();
+    for (const entry of entries) {
+      const hashes = recordedHashes.get(entry.operationName) ?? new Set<string>();
+      hashes.add(entry.documentHash);
+      recordedHashes.set(entry.operationName, hashes);
+    }
+    const failures: string[] = [];
+    for (const [operationName, hashes] of recordedHashes) {
+      for (const registered of registry.get(operationName) ?? []) {
+        if (hashes.has(registered.documentHash)) continue;
+        failures.push(
+          `${operationName} is recorded, but the app can also send a different ${operationName} document from ` +
+            `${registered.source} (${registered.documentHash.slice(0, 12)}) that no fixture holds. Send the recorded ` +
+            `document from that call site, or re-record: ${RE_RECORD_COMMAND}`,
+        );
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+
   it('recomputes each fixture file’s own hashes from its bytes', () => {
     const failures: string[] = [];
     for (const entry of entries) {

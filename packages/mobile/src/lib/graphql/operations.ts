@@ -16,7 +16,6 @@ import type {
   PopularBoardConfigsInput,
   CreateBoardInput,
   SessionSummary,
-  PublicUserProfile,
   FollowConnection,
   TickStatus,
   SessionUser,
@@ -186,27 +185,6 @@ export type UpdateProfileMutationVariables = {
 
 export type UpdateProfileMutationResponse = {
   updateProfile: UserProfile;
-};
-
-export const GET_PUBLIC_PROFILE = gql`
-  query GetPublicProfile($userId: ID!) {
-    publicProfile(userId: $userId) {
-      id
-      displayName
-      avatarUrl
-      followerCount
-      followingCount
-      isFollowedByMe
-    }
-  }
-`;
-
-export type GetPublicProfileQueryVariables = {
-  userId: string;
-};
-
-export type GetPublicProfileQueryResponse = {
-  publicProfile: PublicUserProfile | null;
 };
 
 // ============================================

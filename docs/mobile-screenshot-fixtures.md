@@ -930,6 +930,11 @@ It asserts:
   applies only when `__typename` says it does);
 - the store flow's spine — `GetProfile`, `GetMyBoards`, `SearchClimbs`,
   `GetClimb`, `GetSessionGroupedFeed` — has a fixture;
+- every document the app can send under a recorded operation name is itself
+  recorded. Two documents can share a name (mobile's `GetBoard` and the shared
+  package's select different fields), and the entry check above passes when
+  either matches. #6076 moved `fetchBoardByUuid` to the shared one and every
+  board read replayed as `document-changed` with the PR checks green;
 - every query the app can send is placed (see "A new query has to be placed"
   below);
 - every replay default answers the current document and is not shadowed by a
@@ -999,6 +1004,10 @@ the app stopped sending, or one that has since been recorded or defaulted.
   set was recorded with `--no-pseudonymise`, do not publish it at all.
 - **"which the app no longer sends"** — a stale fixture for a deleted operation.
   Delete it, or re-record with `--fresh`.
+- **"is recorded, but the app can also send a different … document"** — a
+  call site imports a second document with the same operation name. Import the
+  recorded one there, or delete the unused one. Re-record only if the new
+  selection is what the screen needs.
 - **"These queries are new to the screenshot capture"** — a query was added and
   not placed. Follow "A new query has to be placed" above.
 - **"Remove these from QUERIES_NO_CAPTURE_SENDS"** — an entry went stale. Delete
