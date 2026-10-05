@@ -139,8 +139,11 @@ describe('ota-drift.yml', () => {
   });
 
   it('tells an unreadable server from a server that differs', () => {
+    expect(code).toContain('1) echo "result=drift" >> "$GITHUB_OUTPUT" ;;');
     expect(code).toContain('2) echo "result=unreadable" >> "$GITHUB_OUTPUT" ;;');
-    expect(code).toContain('*) echo "result=drift" >> "$GITHUB_OUTPUT" ;;');
+    // A crash of the check is its own finding, never reported as drift.
+    expect(code).toContain('*) echo "result=failed" >> "$GITHUB_OUTPUT" ;;');
+    expect(code).toContain('**OTA drift check failed**');
     expect(code).toContain('**OTA config drift**');
     expect(code).toContain('**OTA server could not be read**');
     expect(code).toContain('**OTA admin API moved**');
@@ -151,7 +154,7 @@ describe('ota-drift.yml', () => {
     expect(code).toContain('DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}');
     expect(code).toContain('allowed_mentions: {parse: []}');
     expect(code.indexOf('Notify Discord')).toBeLessThan(code.indexOf('Fail the run on a finding'));
-    const conditions = code.match(/if: >-\n(?: {10}.*\n){3}/g) ?? [];
+    const conditions = code.match(/if: >-\n(?: {10}.*\n){4}/g) ?? [];
     // The alert and the failure fire on exactly the same findings.
     expect(conditions).toHaveLength(2);
     expect(conditions[0]).toBe(conditions[1]);

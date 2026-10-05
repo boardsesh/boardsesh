@@ -216,7 +216,11 @@ export function buildOtaPlan(desired: OtaDesiredState, live: OtaLiveState): OtaP
     const surfing = current?.branchSurfing ?? { enabled: false, pattern: '' };
     if (surfing.enabled !== channel.branchSurfing.enabled || surfing.pattern !== channel.branchSurfing.pattern) {
       const wanted = channel.branchSurfing.enabled ? 'on' : 'off';
-      const found = current ? `${surfing.enabled ? 'on' : 'off'} with pattern "${surfing.pattern}"` : 'no channel';
+      // The create endpoint takes a name and a branch and nothing else, so a new
+      // channel starts with surfing off and this is always a second step.
+      const found = current
+        ? `found ${surfing.enabled ? 'on' : 'off'} with pattern "${surfing.pattern}"`
+        : 'the channel is created by the step before, with surfing off';
       plan.changes.push({
         kind: 'set-branch-surfing',
         channel: channel.name,
@@ -224,7 +228,7 @@ export function buildOtaPlan(desired: OtaDesiredState, live: OtaLiveState): OtaP
         pattern: channel.branchSurfing.pattern,
         summary:
           `Set Branch Surfing on "${channel.name}" to ${wanted} with pattern ` +
-          `"${channel.branchSurfing.pattern}" (found ${found}).`,
+          `"${channel.branchSurfing.pattern}" (${found}).`,
       });
     }
   }

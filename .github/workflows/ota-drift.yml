@@ -100,8 +100,10 @@ jobs:
             exit 0
           fi
 
-          # Plan mode only. The script retries its reads itself and exits 2 when
-          # the server could not be read at all, 1 when it was read and differs.
+          # Plan mode only. The script retries its reads itself. Exit 1 means the
+          # server was read and differs, and only that; 2 means it could not be
+          # read at all; anything else is the check itself failing, which must
+          # not be reported as somebody having changed the server.
           status=0
           node --experimental-strip-types scripts/ota-apply.ts 2>&1 | tee "$RUNNER_TEMP/ota-drift.log" || status=$?
           {
@@ -113,15 +115,17 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           case "$status" in
             0) echo "result=in-sync" >> "$GITHUB_OUTPUT" ;;
+            1) echo "result=drift" >> "$GITHUB_OUTPUT" ;;
             2) echo "result=unreadable" >> "$GITHUB_OUTPUT" ;;
-            *) echo "result=drift" >> "$GITHUB_OUTPUT" ;;
+            *) echo "result=failed" >> "$GITHUB_OUTPUT" ;;
           esac
 
       - name: Notify Discord
         if: >-
           steps.probe.outputs.result != 'ok' ||
           steps.plan.outputs.result == 'drift' ||
-          steps.plan.outputs.result == 'unreadable'
+          steps.plan.outputs.result == 'unreadable' ||
+          steps.plan.outputs.result == 'failed'
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -140,6 +144,10 @@ jobs:
             headline='**OTA config drift**: updates.boardsesh.com was read and does not match infra/ota/config.ts. Nothing was changed.'
             log="$RUNNER_TEMP/ota-drift.log"
             pattern='drift:|blocked:|pending manual apply:|licence:'
+          elif [ "$PLAN_RESULT" = "failed" ]; then
+            headline='**OTA drift check failed**: the check itself stopped with an error before it could compare the server with infra/ota/config.ts. This is not drift and says nothing about the server.'
+            log="$RUNNER_TEMP/ota-drift.log"
+            pattern='ota-apply'
           elif [ "$PLAN_RESULT" = "unreadable" ]; then
             headline='**OTA server could not be read**: three attempts to log in and read updates.boardsesh.com failed. This is not drift; check the server and the admin login.'
             log="$RUNNER_TEMP/ota-drift.log"
@@ -176,7 +184,8 @@ jobs:
         if: >-
           steps.probe.outputs.result != 'ok' ||
           steps.plan.outputs.result == 'drift' ||
-          steps.plan.outputs.result == 'unreadable'
+          steps.plan.outputs.result == 'unreadable' ||
+          steps.plan.outputs.result == 'failed'
         env:
           PROBE_RESULT: ${{ steps.probe.outputs.result }}
           PLAN_RESULT: ${{ steps.plan.outputs.result }}

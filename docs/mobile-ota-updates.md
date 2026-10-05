@@ -496,9 +496,11 @@ What the tool will not do, whatever the declaration says:
 
 Live rollouts are state, not configuration: every plan lists them and none of them counts as drift.
 
-**Exit codes.** `0` in sync. `1` the server was read and differs, or a write failed. `2` the server
-could not be read after three tries (a failed login, a 5xx, a timeout). The difference matters to
-whoever is paged: `2` is an outage or a rotated password, `1` is somebody's change.
+**Exit codes.** `0` in sync. `1` the server was read and differs, and nothing else. `2` the server
+could not be read after three tries (a failed login, a 5xx, a timeout). `3` the tool itself failed:
+bad arguments, a refused write, an answer it could not parse. The difference matters to whoever is
+paged: `1` is somebody's change, `2` is an outage or a rotated password, `3` is a bug or an API that
+moved.
 
 **Licence.** Branch protection and update health are Enterprise features in the 3.2.5 dashboard.
 Every plan prints the server's licence state. If the server refuses a protection call for that
@@ -520,7 +522,8 @@ what any device may switch to. Neither happens because a PR merged. The allowlis
 A pending change does not fail the push run, and the daily drift check keeps reporting it until
 someone dispatches an apply.
 
-`ota-drift.yml` asks two questions and gives each its own Discord message:
+`ota-drift.yml` asks two questions and gives each finding its own Discord message (API moved,
+server differs, server unreadable, the check itself failed):
 
 1. **Is the admin API still where our client expects it?** `vp run ota:api-probe` downloads the
    public dashboard bundle and checks that every path the client calls is still in it. No login.

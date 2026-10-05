@@ -24,6 +24,7 @@ import type { FakeRoute } from './__tests__/helpers/fake-xprem';
 import { OTA_APP_ID } from './lib/ota-branch-probe';
 import {
   EXIT_DRIFT,
+  EXIT_FAILED,
   EXIT_IN_SYNC,
   EXIT_UNREADABLE,
   ServerUnreadableError,
@@ -476,6 +477,99 @@ describe('ota-apply against a fake server', () => {
   });
 });
 
+describe('a server without the declared channel', () => {
+  /** Branches exist and are protected; the channel does not. Holds what the apply writes. */
+  function channelless() {
+    let channel: { branchName: string; branchSurfing: { enabled: boolean; pattern: string } } | null = null;
+    const routes: Record<string, FakeRoute> = {
+      'GET /api/license': { valid: true, hasKey: true },
+      [`GET ${FAKE_APP}/channels`]: () =>
+        channel ? [{ releaseChannelId: '3', releaseChannelName: 'production', branchId: '1', ...channel }] : [],
+      [`GET ${FAKE_APP}/branches`]: ['production', 'pr-beta', 'pr-staging'].map((branchName, index) => ({
+        branchId: String(index + 1),
+        branchName,
+        protected: true,
+      })),
+      // A new channel starts with surfing off: the create call cannot set it.
+      [`POST ${FAKE_APP}/channels`]: (request) => {
+        const { branchName } = request.body as { branchName: string };
+        channel = { branchName, branchSurfing: { enabled: false, pattern: '' } };
+        return { status: 204 };
+      },
+      [`PUT ${FAKE_APP}/channels/production/branch-surfing`]: (request) => {
+        if (!channel) return { status: 404 };
+        channel = { ...channel, branchSurfing: request.body as { enabled: boolean; pattern: string } };
+        return { status: 204 };
+      },
+    };
+    for (const name of ['production', 'pr-beta', 'pr-staging']) {
+      routes[`GET ${FAKE_APP}/branch/${name}/runtimeVersions`] = [];
+    }
+    return fakeXprem(routes);
+  }
+
+  it('plans the create, then the surfing change, and says where the channel comes from', async () => {
+    const server = channelless();
+    const plan = buildOtaPlan(desiredOtaState, await readLiveState(server.client, desiredOtaState));
+    expect(plan.changes).toEqual([
+      {
+        kind: 'create-channel',
+        channel: 'production',
+        branch: 'production',
+        summary: 'Create channel "production" serving branch "production".',
+      },
+      {
+        kind: 'set-branch-surfing',
+        channel: 'production',
+        enabled: true,
+        pattern: 'pr-*',
+        summary:
+          'Set Branch Surfing on "production" to on with pattern "pr-*" ' +
+          '(the channel is created by the step before, with surfing off).',
+      },
+    ]);
+  });
+
+  it('converges when applied: the second plan is empty', async () => {
+    const server = channelless();
+    const lines: string[] = [];
+    const exitCode = await runOtaApply(server.client, desiredOtaState, {
+      apply: true,
+      only: null,
+      retryDelayMs: 0,
+      log: (line) => lines.push(line),
+    });
+    expect(exitCode).toBe(EXIT_IN_SYNC);
+    expect(writesOf(server)).toEqual([
+      { method: 'POST', path: `${FAKE_APP}/channels`, body: { channelName: 'production', branchName: 'production' } },
+      {
+        method: 'PUT',
+        path: `${FAKE_APP}/channels/production/branch-surfing`,
+        body: { enabled: true, pattern: 'pr-*' },
+      },
+    ]);
+    expect(lines.at(-1)).toBe('[ota-apply] Applied 2 change(s). The server now matches infra/ota/config.ts.');
+    expect(buildOtaPlan(desiredOtaState, await readLiveState(server.client, desiredOtaState))).toEqual({
+      changes: [],
+      blocked: [],
+      reports: [],
+    });
+  });
+
+  it('creates no channel unattended, and says both steps are waiting', async () => {
+    const server = channelless();
+    const lines: string[] = [];
+    const exitCode = await runOtaApply(server.client, desiredOtaState, {
+      ...ADDITIVE_ONLY,
+      retryDelayMs: 0,
+      log: (line) => lines.push(line),
+    });
+    expect(exitCode).toBe(EXIT_IN_SYNC);
+    expect(writesOf(server)).toEqual([]);
+    expect(lines.filter((line) => line.includes('pending manual apply')).length).toBeGreaterThanOrEqual(2);
+  });
+});
+
 describe('an unattended apply (--only)', () => {
   it('treats exactly the additive kinds as safe to apply unattended', () => {
     expect([...ADDITIVE_CHANGE_KINDS]).toEqual(['create-branch', 'protect-branch']);
@@ -637,7 +731,8 @@ describe('reading the server', () => {
     expect((failure as Error).message).toBe(
       'Could not read the OTA server: Admin login failed (HTTP 401): bad credentials',
     );
-    expect(EXIT_UNREADABLE).not.toBe(EXIT_DRIFT);
+    // Three findings, three codes: drift is the only thing that exits 1.
+    expect([EXIT_IN_SYNC, EXIT_DRIFT, EXIT_UNREADABLE, EXIT_FAILED]).toEqual([0, 1, 2, 3]);
   });
 
   it('surfaces an unreadable server from a run, without calling it drift', async () => {

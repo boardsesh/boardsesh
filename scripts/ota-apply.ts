@@ -25,7 +25,8 @@
  *                           the run. This is what an unattended run uses.
  *
  * Exit codes: 0 in sync (or, with --only, nothing left that the run may change),
- * 1 drift or a failed write, 2 the server could not be read after three tries.
+ * 1 the server was read and differs, 2 the server could not be read after three
+ * tries, 3 the tool itself failed (bad arguments, a refused write, a bug).
  *
  * Usage:
  *   OTA_ADMIN_EMAIL=... OTA_ADMIN_PASSWORD=... vp run ota:apply
@@ -59,8 +60,11 @@ const LOG = '[ota-apply]';
 
 /** Exit codes. The drift workflow tells "differs" from "could not look" by them. */
 export const EXIT_IN_SYNC = 0;
+/** The server was read and differs from the declaration. Nothing else exits 1. */
 export const EXIT_DRIFT = 1;
 export const EXIT_UNREADABLE = 2;
+/** The tool itself failed: bad arguments, a refused write, an unexpected answer, a bug. */
+export const EXIT_FAILED = 3;
 
 /** The server could not be read: a failed login, a 5xx, a timeout. Not drift. */
 export class ServerUnreadableError extends Error {
@@ -334,6 +338,6 @@ async function main(): Promise<void> {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   main().catch((error: unknown) => {
     console.error(`${LOG} ${error instanceof Error ? error.message : String(error)}`);
-    process.exitCode = error instanceof ServerUnreadableError ? EXIT_UNREADABLE : EXIT_DRIFT;
+    process.exitCode = error instanceof ServerUnreadableError ? EXIT_UNREADABLE : EXIT_FAILED;
   });
 }
