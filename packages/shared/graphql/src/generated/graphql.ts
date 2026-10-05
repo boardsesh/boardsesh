@@ -341,8 +341,12 @@ export type AscentFeedItem = {
   boardseshConfidence?: Maybe<Scalars['String']['output']>;
   /** Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade) for this ascent's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values. */
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
+  /** The climb's revision now. A log whose climbRevision is lower was made on an earlier version of the climb. Null when the climb is no longer in the catalogue. */
+  climbCurrentRevision?: Maybe<Scalars['Int']['output']>;
   /** Name of the climb */
   climbName: Scalars['String']['output'];
+  /** The climb revision this was logged against. 1 on a climb nobody has edited; null when it is not known (imports, and logs older than the field). */
+  climbRevision?: Maybe<Scalars['Int']['output']>;
   /** UUID of the climb */
   climbUuid: Scalars['String']['output'];
   /** When climbed (ISO 8601) */
@@ -1067,6 +1071,13 @@ export type Climb = {
   framesCount?: Maybe<Scalars['Int']['output']>;
   /** Animation pace between frames, in Aurora's native unit (treated as milliseconds). 0 when not set. */
   framesPace?: Maybe<Scalars['Int']['output']>;
+  /**
+   * The revision at which this climb's holds last changed. Equal to
+   * `revisionNumber` straight after an edit that moved a hold, and behind it
+   * after a rename, a regrade or a pace change. A tick whose `climbRevision` is
+   * at or above this number was climbed on the holds the climb has now.
+   */
+  holdsRevisionNumber?: Maybe<Scalars['Int']['output']>;
   /** Whether this climb is a draft (unpublished) */
   is_draft?: Maybe<Scalars['Boolean']['output']>;
   /** Hidden by community moderation (still openable directly) */
@@ -1115,6 +1126,14 @@ export type Climb = {
   quality_average: Scalars['String']['output'];
   /** Board configuration to draw this climb on, resolved against its setter's boards. Populated by userClimbs; null wherever the board is already known from the route. */
   renderBoard?: Maybe<RenderBoardConfig>;
+  /**
+   * The climb's current revision. 1 for a climb nobody has edited since it was
+   * published, and one higher for every recorded edit after that (the same
+   * numbers `climbRevisions` returns). A client that logs a tick sends this
+   * back as `SaveTickInput.climbRevision`. Null on a fetch path that does not
+   * project the column.
+   */
+  revisionNumber?: Maybe<Scalars['Int']['output']>;
   /** Username of the person who created this climb */
   setter_username: Scalars['String']['output'];
   /** Star rating (0-5), rounded from quality_average */
@@ -1202,6 +1221,8 @@ export type ClimbInput = {
   /** ISO timestamp of when this climb was first published. */
   published_at?: InputMaybe<Scalars['String']['input']>;
   quality_average: Scalars['String']['input'];
+  /** The climb's revision as the queueing client read it (`Climb.revisionNumber`). Round-tripped through the queue so whoever logs a queued climb can say which revision was on the wall without a refetch. Null from a client that predates the field. */
+  revisionNumber?: InputMaybe<Scalars['Int']['input']>;
   setter_username: Scalars['String']['input'];
   stars: Scalars['Float']['input'];
   userAscents?: InputMaybe<Scalars['Int']['input']>;
@@ -1220,6 +1241,10 @@ export type ClimbLogItem = {
   attemptCount: Scalars['Int']['output'];
   /** Board type */
   boardType: Scalars['String']['output'];
+  /** The climb's revision now. A log whose climbRevision is lower was made on an earlier version of the climb. Null when the climb is no longer in the catalogue. */
+  climbCurrentRevision?: Maybe<Scalars['Int']['output']>;
+  /** The climb revision this was logged against. 1 on a climb nobody has edited; null when it is not known (imports, and logs older than the field). */
+  climbRevision?: Maybe<Scalars['Int']['output']>;
   /** UUID of the climb the log is stored under */
   climbUuid: Scalars['String']['output'];
   /** When the climb was logged */
@@ -2436,8 +2461,12 @@ export type FollowingAscentFeedItem = {
   attemptCount: Scalars['Int']['output'];
   /** Board type */
   boardType: Scalars['String']['output'];
+  /** The climb's revision now. A log whose climbRevision is lower was made on an earlier version of the climb. Populated by followingClimbAscents; null on the paginated feeds. */
+  climbCurrentRevision?: Maybe<Scalars['Int']['output']>;
   /** Name of the climb */
   climbName: Scalars['String']['output'];
+  /** The climb revision this was logged against. 1 on a climb nobody has edited; null when it is not known (imports, and logs older than the field). Populated by followingClimbAscents; null on the paginated feeds. */
+  climbRevision?: Maybe<Scalars['Int']['output']>;
   /** UUID of the climb */
   climbUuid: Scalars['String']['output'];
   /** When climbed (ISO 8601) */
@@ -7984,6 +8013,8 @@ export type SaveTickInput = {
   boardType: Scalars['String']['input'];
   /** Specific board entity this tick is on, by uuid. When provided, takes precedence over (layoutId, sizeId, setIds) resolution and lets ticks attach to a board the climber doesn't own (e.g. a seeded gym board). */
   boardUuid?: InputMaybe<Scalars['String']['input']>;
+  /** The `Climb.revisionNumber` the client was showing when the climber logged this. Optional. When it is omitted, is below 1, or names a revision the climb has not reached, the server stores the revision that was live at climbedAt. No integer sent here fails the tick. */
+  climbRevision?: InputMaybe<Scalars['Int']['input']>;
   /** Climb UUID */
   climbUuid: Scalars['String']['input'];
   /** When the climb was attempted (ISO 8601) */
@@ -9736,6 +9767,8 @@ export type Tick = {
   boardseshConfidence?: Maybe<Scalars['String']['output']>;
   /** Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade), for this climb at the tick's angle. Null when no grade row exists. Fills the gap only for ungraded ascents: the user's own tick grade always wins, and the UI keeps the legacy consensus when this is null or 'setter_only'. */
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
+  /** Which revision of the climb this was logged against: a `Climb.revisionNumber`, so 1 on a climb nobody has edited. Null when it is not known, which is every imported tick and every tick older than the field. Set once when the tick is saved; updateTick never changes it. */
+  climbRevision?: Maybe<Scalars['Int']['output']>;
   /** UUID of the climb attempted */
   climbUuid: Scalars['String']['output'];
   /** When the climb was attempted (ISO 8601) */
@@ -9943,8 +9976,12 @@ export type UpdateClimbInput = {
 export type UpdateClimbResult = {
   __typename?: 'UpdateClimbResult';
   createdAt?: Maybe<Scalars['String']['output']>;
+  /** The revision at which the holds last changed, after this save (`Climb.holdsRevisionNumber`). Equal to revisionNumber when this save moved a hold. */
+  holdsRevisionNumber?: Maybe<Scalars['Int']['output']>;
   isDraft: Scalars['Boolean']['output'];
   publishedAt?: Maybe<Scalars['String']['output']>;
+  /** The climb's revision after this save (`Climb.revisionNumber`). One higher than before when the save was a recorded edit, unchanged when it edited a draft or changed nothing. So the editing client can stamp its next tick without refetching the climb. */
+  revisionNumber?: Maybe<Scalars['Int']['output']>;
   uuid: Scalars['ID']['output'];
 };
 

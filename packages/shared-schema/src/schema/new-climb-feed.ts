@@ -210,6 +210,10 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
     createdAt: String
     publishedAt: String
     isDraft: Boolean!
+    "The climb's revision after this save (\`Climb.revisionNumber\`). One higher than before when the save was a recorded edit, unchanged when it edited a draft or changed nothing. So the editing client can stamp its next tick without refetching the climb."
+    revisionNumber: Int
+    "The revision at which the holds last changed, after this save (\`Climb.holdsRevisionNumber\`). Equal to revisionNumber when this save moved a hold."
+    holdsRevisionNumber: Int
   }
 
   """

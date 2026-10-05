@@ -195,6 +195,29 @@ export const MIGRATIONS: Migration[] = [
     version: 10,
     statements: [HOLDS_INDEX_CLIMBS, BOARD_CLIMB_HOLD_SETS, BOARD_CLIMB_HOLD_POSTINGS, INDEX_CLIMBS_SYNC_SEQ],
   },
+  {
+    // Climb revisions on the device (#6023): the revision a tick was logged
+    // against, and on each climb its current revision and the revision at which
+    // its holds last changed. Mirrors of the three Postgres columns that
+    // `syncTicks` and `syncClimbs` now emit.
+    //
+    // All three are nullable with no default, unlike the server's
+    // `revision_number NOT NULL DEFAULT 1`: a row pulled before this migration
+    // has never been told its revision, and NULL says so. A reader must treat
+    // NULL as unknown and never as 1. No `refreshRevision` bump either; see
+    // the comment on `board_climbs` in sync/table-config.ts.
+    //
+    // Expand-only, so the previous bundle can still read the file once it is
+    // allowed to open it. It changes `board_climbs`, an artifact table, so it
+    // moves ARTIFACT_SCHEMA_VERSION to 11: a snapshot built before it lacks two
+    // columns this client has and is refused until the export rebuilds it.
+    version: 11,
+    statements: [
+      'ALTER TABLE boardsesh_ticks ADD COLUMN climb_revision INTEGER;',
+      'ALTER TABLE board_climbs ADD COLUMN revision_number INTEGER;',
+      'ALTER TABLE board_climbs ADD COLUMN holds_revision_number INTEGER;',
+    ],
+  },
 ];
 
 const SCHEMA_VERSION_TABLE = `

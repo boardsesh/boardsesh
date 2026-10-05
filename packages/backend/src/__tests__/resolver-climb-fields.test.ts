@@ -121,6 +121,10 @@ function rawClimbRow(overrides: Record<string, unknown> = {}) {
     compatible_size_ids: [2],
     missingHoldCount: 2,
     missing_hold_count: 2,
+    revisionNumber: 4,
+    revision_number: 4,
+    holdsRevisionNumber: 3,
+    holds_revision_number: 3,
     characteristics: ['no_match'],
     statsAngle: 40,
     angle: 40,
@@ -166,6 +170,12 @@ const REQUIRED_SELECT_KEYS = [
   // three holds, opened from the queue, a playlist or the climb screen, would say
   // it was fine.
   'missing_hold_count',
+  // The climb's revision and its holds epoch (#6023). A list row opens the play
+  // drawer with the payload it was handed, and the tick logged from there sends
+  // `revisionNumber` back, so a projection that drops it leaves that tick to the
+  // server's by-date guess.
+  'revision_number',
+  'holds_revision_number',
 ] as const;
 
 /**
@@ -193,6 +203,10 @@ const REQUIRED_CLIMB_FIELDS: Record<string, unknown> = {
   // falsy, so a zero would make this assertion pass for a projection that dropped
   // the column.
   missingHoldCount: 2,
+  // Two different numbers, and neither of them 1: the column default is 1, so a
+  // fixture of 1 would pass for a mapper that crossed the two or invented one.
+  revisionNumber: 4,
+  holdsRevisionNumber: 3,
   // Where the stats on this row were read from (issue #5405). On an angle-bound
   // board it is not the browsed angle, and a list row that drops it leaves the
   // play drawer unable to say the grade beside it belongs to another angle.
@@ -342,6 +356,8 @@ const ENTRY_POINTS: EntryPoint[] = [
           frames_pace: 900,
           compatible_size_ids: [2],
           missing_hold_count: 2,
+          revision_number: 4,
+          holds_revision_number: 3,
           characteristics: ['no_match'],
           stats_angle: 40,
           ascensionist_count: 5,

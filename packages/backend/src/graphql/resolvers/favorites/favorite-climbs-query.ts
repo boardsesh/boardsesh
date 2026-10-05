@@ -87,6 +87,8 @@ export const favoriteClimbsQuery = {
         // the Intact / Lost holds filter and the remix prompt all read it, so a
         // projection without it tells a climber that a climb they cannot do is fine.
         missing_hold_count: tables.climbs.missingHoldCount,
+        revision_number: tables.climbs.revisionNumber,
+        holds_revision_number: tables.climbs.holdsRevisionNumber,
         // The structured climb rules. Omitting them here does not just blank a
         // badge: the derived `Climb.is_no_match` resolver falls back to the Aurora
         // description convention when the array is absent, and the play drawer
@@ -163,6 +165,8 @@ export const favoriteClimbsQuery = {
       framesPace: result.frames_pace ?? null,
       compatibleSizeIds: result.compatible_size_ids ?? null,
       missingHoldCount: result.missing_hold_count ?? null,
+      revisionNumber: result.revision_number ?? null,
+      holdsRevisionNumber: result.holds_revision_number ?? null,
       characteristics: result.characteristics ?? null,
       // Every row is scoped to this board by the join; carrying it keeps
       // is_no_match from applying Aurora's description convention to a

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { readFileSync } from 'node:fs';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -205,6 +206,22 @@ async function revisionsOf(climbUuid: string): Promise<RevisionRow[]> {
   return [...rows];
 }
 
+type ClimbRevisionColumns = { revision_number: number; holds_revision_number: number; sync_seq: number };
+
+/** The climb's own copy of its revision, the holds epoch, and the cursor `syncClimbs` pages on. */
+async function revisionColumnsOf(climbUuid: string): Promise<ClimbRevisionColumns> {
+  const [row] = (await db.execute(sql`
+    SELECT revision_number, holds_revision_number, sync_seq
+    FROM board_climbs
+    WHERE uuid = ${climbUuid}
+  `)) as unknown as Array<{ revision_number: number; holds_revision_number: number; sync_seq: string | number }>;
+  return {
+    revision_number: row.revision_number,
+    holds_revision_number: row.holds_revision_number,
+    sync_seq: Number(row.sync_seq),
+  };
+}
+
 /** version number -> version id, for one wall. */
 async function versionIdsOf(wall: CreatedWall): Promise<Map<number, number>> {
   const rows = (await db.execute(sql`
@@ -393,6 +410,13 @@ describe('what updateClimb records', () => {
     expect(numbers.at(-1)).toBe(edits + 1);
     expect(revisions[0]).toMatchObject({ name: 'Original name', changes: [] });
     expect(revisions.at(-1)).toMatchObject({ name: `Rename ${edits}` });
+
+    // The climb's own number follows the newest revision, not the row count, and
+    // pruning does not touch it. Renames only, so the holds epoch never moved.
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({
+      revision_number: edits + 1,
+      holds_revision_number: 1,
+    });
   }, 120_000);
 
   it('records a grade-only edit on a spray wall as `grade`', async () => {
@@ -529,6 +553,251 @@ describe('what updateClimb records', () => {
       changes: ['name', 'description'],
       edited_by: SETTER,
     });
+  });
+});
+
+describe('the revision columns on board_climbs (#6023)', () => {
+  it('start at 1 and stay there until a published climb is edited', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const published = await saveSprayClimb(wall, holdIds);
+    const draft = await saveSprayClimb(wall, [holdIds[0], holdIds[1]], { isDraft: true });
+    expect(await revisionColumnsOf(published)).toMatchObject({ revision_number: 1, holds_revision_number: 1 });
+
+    // A draft has no history, so editing one (holds included) and publishing it
+    // leave both numbers alone. So does a save that changes nothing.
+    await editSpray(draft, { frames: framesFor([holdIds[0], holdIds[2]]) });
+    await editSpray(draft, { isDraft: false, name: 'Published name' });
+    await editSpray(published, { name: 'Original name' });
+    expect(await revisionColumnsOf(draft)).toMatchObject({ revision_number: 1, holds_revision_number: 1 });
+    expect(await revisionColumnsOf(published)).toMatchObject({ revision_number: 1, holds_revision_number: 1 });
+  });
+
+  it('move the revision on every edit and the holds epoch only when a hold moves', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const climbUuid = await saveSprayClimb(wall, holdIds);
+
+    // The first edit writes revisions 1 and 2. A rename leaves the holds alone.
+    await editSpray(climbUuid, { name: 'Renamed' });
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 2, holds_revision_number: 1 });
+
+    await editSpray(climbUuid, { frames: framesFor([holdIds[0], holdIds[2]]) });
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 3, holds_revision_number: 3 });
+
+    // Notes, rules and the grade are all revisions of the same holds.
+    await editSpray(climbUuid, { description: 'New notes' });
+    await editSpray(climbUuid, { anyFeet: true });
+    await editSpray(climbUuid, { userGrade: '7a/V6' });
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 6, holds_revision_number: 3 });
+
+    // The same holds in the same roles is not an edit at all.
+    await editSpray(climbUuid, { frames: framesFor([holdIds[0], holdIds[2]]) });
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 6, holds_revision_number: 3 });
+
+    await editSpray(climbUuid, { frames: framesFor(holdIds), name: 'Back on three' });
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 7, holds_revision_number: 7 });
+
+    // Always the newest row's number.
+    expect((await revisionsOf(climbUuid)).at(-1)?.revision_number).toBe(7);
+  });
+
+  it('move both to 2 when the first edit is the one that moves a hold', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const climbUuid = await saveSprayClimb(wall, holdIds);
+
+    await editSpray(climbUuid, { frames: framesFor([holdIds[0], holdIds[1]]) });
+
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 2, holds_revision_number: 2 });
+  });
+
+  it('keep the holds epoch on a pace-only edit, which is still a revision', async () => {
+    const climbUuid = uuidv4().replace(/-/g, '').toUpperCase();
+    const publishedAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    await db.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, name, description, frames, frames_count, frames_pace,
+                                angle, is_draft, is_listed, created_at, published_at, user_id, setter_username)
+      VALUES (${climbUuid}, 'kilter', 1, 'Kilter route', '', 'p1117r12p1140r15', 1, 0,
+              40, false, true, ${publishedAt}, ${publishedAt}, ${SETTER}, 'setter')
+    `);
+
+    await climbMutations.updateClimb(
+      {},
+      { input: { uuid: climbUuid, boardType: 'kilter', framesPace: 900 } },
+      ctxFor(SETTER),
+    );
+
+    expect((await revisionsOf(climbUuid)).map((revision) => revision.changes)).toEqual([[], ['holds']]);
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 2, holds_revision_number: 1 });
+  });
+
+  it('give two concurrent edits the higher number, and the epoch of whichever moved a hold', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const climbUuid = await saveSprayClimb(wall, holdIds);
+
+    // A rename never conflicts with another edit (`climbEditDecisionsAreStale`
+    // ignores the name), so both of these land, in either order.
+    await Promise.all([editSpray(climbUuid, { name: 'Renamed' }), editSpray(climbUuid, { description: 'New notes' })]);
+
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 3, holds_revision_number: 1 });
+  });
+
+  it('re-deliver the climb to syncClimbs on an edit that only touched the stats row', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const climbUuid = await saveSprayClimb(wall, holdIds);
+    const before = await revisionColumnsOf(climbUuid);
+
+    // A spray regrade writes `board_climb_stats`, not `board_climbs`. The
+    // revision write is then the only change to the climb row, and it has to
+    // fire the sync trigger or a phone would keep the old revision number.
+    await editSpray(climbUuid, { userGrade: '7a/V6' });
+
+    const after = await revisionColumnsOf(climbUuid);
+    expect(after.revision_number).toBe(2);
+    expect(after.sync_seq).toBeGreaterThan(before.sync_seq);
+  });
+});
+
+describe('what updateClimb answers with (#6023)', () => {
+  type UpdateAnswer = { revisionNumber: number | null; holdsRevisionNumber: number | null; isDraft: boolean };
+  const edit = async (climbUuid: string, changes: Record<string, unknown>) =>
+    (await editSpray(climbUuid, changes)) as UpdateAnswer;
+
+  it('hands back the revision numbers the save left on the climb', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const climbUuid = await saveSprayClimb(wall, holdIds);
+
+    // A rename: a new revision, same holds.
+    expect(await edit(climbUuid, { name: 'Renamed' })).toMatchObject({ revisionNumber: 2, holdsRevisionNumber: 1 });
+    // A hold moves: both numbers.
+    expect(await edit(climbUuid, { frames: framesFor([holdIds[0], holdIds[2]]) })).toMatchObject({
+      revisionNumber: 3,
+      holdsRevisionNumber: 3,
+    });
+    // A grade-only edit, which never touches the climb row itself.
+    expect(await edit(climbUuid, { userGrade: '7a/V6' })).toMatchObject({ revisionNumber: 4, holdsRevisionNumber: 3 });
+    // A save that changes nothing answers the numbers as they are.
+    expect(await edit(climbUuid, { name: 'Renamed' })).toMatchObject({ revisionNumber: 4, holdsRevisionNumber: 3 });
+
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 4, holds_revision_number: 3 });
+  });
+
+  it('answers 1 and 1 for a draft edit, for the publish, and for a replay of that publish', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const climbUuid = await saveSprayClimb(wall, holdIds, { isDraft: true });
+
+    expect(await edit(climbUuid, { name: 'Draft rename' })).toMatchObject({
+      isDraft: true,
+      revisionNumber: 1,
+      holdsRevisionNumber: 1,
+    });
+    const publish = { isDraft: false, name: 'Published name' };
+    expect(await edit(climbUuid, publish)).toMatchObject({ isDraft: false, revisionNumber: 1, holdsRevisionNumber: 1 });
+    // The double tap: the publish has landed, so this one writes nothing.
+    expect(await edit(climbUuid, publish)).toMatchObject({ isDraft: false, revisionNumber: 1, holdsRevisionNumber: 1 });
+  });
+});
+
+// Migration 0252 ends with an UPDATE that fills the two columns in for climbs
+// edited between the deploy that created `board_climb_revisions` and the one
+// that added the columns. The test database is built from schema-sql.ts, not
+// from the migrations, so the statement is read out of the file and run here.
+describe('the backfill at the end of migration 0252', () => {
+  const backfill = readFileSync(new URL('../../../db/drizzle/0252_tick_climb_revision.sql', import.meta.url), 'utf8')
+    .split('--> statement-breakpoint')
+    .at(-1)!
+    .trim();
+  const runBackfill = () => db.execute(sql.raw(backfill));
+
+  /** A published catalogue climb, with the revision columns as the ALTERs leave them: 1 and 1. */
+  async function insertClimb(): Promise<string> {
+    const climbUuid = uuidv4().replace(/-/g, '').toUpperCase();
+    await db.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, name, frames, is_draft, is_listed, user_id)
+      VALUES (${climbUuid}, 'kilter', 1, 'Backfill climb', 'p1117r12', false, true, ${SETTER})
+    `);
+    return climbUuid;
+  }
+
+  /** Revision rows as the earlier deploy would have written them. Revision 1 always changes nothing. */
+  async function insertRevisions(climbUuid: string, changesPerRevision: Record<number, string[]>): Promise<void> {
+    for (const [revisionNumber, changes] of Object.entries(changesPerRevision)) {
+      await db.execute(sql`
+        INSERT INTO board_climb_revisions (board_type, climb_uuid, revision_number, changes)
+        VALUES ('kilter', ${climbUuid}, ${Number(revisionNumber)}, ${`{${changes.join(',')}}`}::text[])
+      `);
+    }
+  }
+
+  it('is the UPDATE statement alone, with no comment inside it', () => {
+    expect(backfill).toMatch(/^UPDATE "board_climbs"/);
+    expect(backfill).not.toMatch(/--/);
+  });
+
+  it('sets the revision to the newest row and the epoch to the newest row that changed the holds', async () => {
+    const renamedOnly = await insertClimb();
+    const holdsThenRenamed = await insertClimb();
+    const holdsLast = await insertClimb();
+    const pruned = await insertClimb();
+    await insertRevisions(renamedOnly, { 1: [], 2: ['name'], 3: ['description', 'grade'] });
+    await insertRevisions(holdsThenRenamed, { 1: [], 2: ['holds'], 3: ['name'], 4: ['rules'] });
+    await insertRevisions(holdsLast, { 1: [], 2: ['name'], 3: ['name', 'holds'] });
+    // Numbers with a gap after 1, as pruning leaves them.
+    await insertRevisions(pruned, { 1: [], 40: ['holds'], 41: ['name'] });
+
+    await runBackfill();
+
+    expect(await revisionColumnsOf(renamedOnly)).toMatchObject({ revision_number: 3, holds_revision_number: 1 });
+    expect(await revisionColumnsOf(holdsThenRenamed)).toMatchObject({ revision_number: 4, holds_revision_number: 2 });
+    expect(await revisionColumnsOf(holdsLast)).toMatchObject({ revision_number: 3, holds_revision_number: 3 });
+    expect(await revisionColumnsOf(pruned)).toMatchObject({ revision_number: 41, holds_revision_number: 40 });
+  });
+
+  it('leaves a climb with no revision rows alone, and does nothing on a second run', async () => {
+    const unedited = await insertClimb();
+    const edited = await insertClimb();
+    await insertRevisions(edited, { 1: [], 2: ['holds'] });
+    const uneditedBefore = await revisionColumnsOf(unedited);
+
+    await runBackfill();
+    const editedAfterFirstRun = await revisionColumnsOf(edited);
+    await runBackfill();
+
+    // Not rewritten at all: `sync_seq` is where it was, so no phone re-pulls it.
+    expect(await revisionColumnsOf(unedited)).toEqual(uneditedBefore);
+    // The second run found nothing that differed, so it did not fire the sync trigger again.
+    expect(editedAfterFirstRun).toMatchObject({ revision_number: 2, holds_revision_number: 2 });
+    expect(await revisionColumnsOf(edited)).toEqual(editedAfterFirstRun);
+  });
+
+  it('re-delivers a climb it changes, and agrees with what the code writes for the same edits', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const climbUuid = await saveSprayClimb(wall, holdIds);
+    await editSpray(climbUuid, { frames: framesFor([holdIds[0], holdIds[2]]) });
+    await editSpray(climbUuid, { name: 'Renamed' });
+    const written = await revisionColumnsOf(climbUuid);
+    expect(written).toMatchObject({ revision_number: 3, holds_revision_number: 2 });
+
+    // Put the row back to how the ALTERs would have left it had these edits been
+    // made before the columns existed.
+    await db.execute(
+      sql`UPDATE board_climbs SET revision_number = 1, holds_revision_number = 1 WHERE uuid = ${climbUuid}`,
+    );
+    const reset = await revisionColumnsOf(climbUuid);
+    await runBackfill();
+
+    const backfilled = await revisionColumnsOf(climbUuid);
+    expect(backfilled).toMatchObject({ revision_number: 3, holds_revision_number: 2 });
+    expect(backfilled.sync_seq).toBeGreaterThan(reset.sync_seq);
+  });
+
+  it('puts the epoch one edit too high after a pace-only edit, which `changes` cannot tell from a hold moving', async () => {
+    // The limit the migration's header describes, pinned so nobody reads the
+    // backfill as exact. The code leaves the epoch at 1 for this edit.
+    const climbUuid = await insertClimb();
+    await insertRevisions(climbUuid, { 1: [], 2: ['holds'] });
+
+    await runBackfill();
+
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 2, holds_revision_number: 2 });
   });
 });
 

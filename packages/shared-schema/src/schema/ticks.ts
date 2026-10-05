@@ -27,6 +27,8 @@ export const ticksTypeDefs = /* GraphQL */ `
     boardType: String!
     "UUID of the climb attempted"
     climbUuid: String!
+    "Which revision of the climb this was logged against: a \`Climb.revisionNumber\`, so 1 on a climb nobody has edited. Null when it is not known, which is every imported tick and every tick older than the field. Set once when the tick is saved; updateTick never changes it."
+    climbRevision: Int
     "Board angle when attempted"
     angle: Int!
     "Whether the climb was mirrored"
@@ -91,6 +93,8 @@ export const ticksTypeDefs = /* GraphQL */ `
     boardType: String!
     "Climb UUID"
     climbUuid: String!
+    "The \`Climb.revisionNumber\` the client was showing when the climber logged this. Optional. When it is omitted, is below 1, or names a revision the climb has not reached, the server stores the revision that was live at climbedAt. No integer sent here fails the tick."
+    climbRevision: Int
     "Board angle"
     angle: Int!
     "Whether climb was mirrored"

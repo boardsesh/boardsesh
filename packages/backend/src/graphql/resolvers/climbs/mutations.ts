@@ -31,6 +31,7 @@ import {
   climbEditDecisionsAreStale,
   lockClimbForRevision,
   recordClimbRevision,
+  type ClimbRevisionNumbers,
 } from './climb-revisions';
 import { deleteClimbDependentRows } from './climb-cleanup';
 import {
@@ -97,6 +98,13 @@ export function climbEditWindowApplies(boardType: string): boolean {
 
 type SaveClimbArgs = { input: unknown };
 type DeleteDraftClimbArgs = { uuid: unknown; boardType: unknown };
+
+/**
+ * What `updateClimb`'s transaction hands back: the climb's revision numbers once
+ * it has committed, and `replayedPublishAt` only when the call turned out to be
+ * a publish that had already landed and so wrote nothing.
+ */
+type UpdateClimbOutcome = ClimbRevisionNumbers & { replayedPublishAt?: string | null };
 
 function generateClimbUuid(): string {
   // Match Aurora-style uppercase UUID without dashes
@@ -1063,7 +1071,7 @@ export const climbMutations = {
       !nextIsDraft && (transitioningToPublished || framesChanged || rulesChanged) && nextFramesCount === 1;
     const gateSignature = shouldGate ? buildHoldSignature(nextHoldEntries) : '';
 
-    const outcome = await db.transaction(async (tx): Promise<{ alreadyPublishedAt: string | null } | null> => {
+    const outcome = await db.transaction(async (tx): Promise<UpdateClimbOutcome> => {
       if (shouldGate) {
         await acquireDuplicateGateLock(tx, boardType, existing.layoutId, gateSignature, {
           ruleSignature: nextRuleSignature,
@@ -1145,7 +1153,11 @@ export const climbMutations = {
               buildStoredRuleSignature(boardType, beforeEdit.characteristics, beforeEdit.description)) &&
           (sprayGradeToSeed === null || sprayGradeToSeed === beforeEdit.difficultyId);
         if (replaysLandedPublish) {
-          return { alreadyPublishedAt: beforeEdit.publishedAt };
+          return {
+            replayedPublishAt: beforeEdit.publishedAt,
+            revisionNumber: beforeEdit.revisionNumber,
+            holdsRevisionNumber: beforeEdit.holdsRevisionNumber,
+          };
         }
         throw new GraphQLError('This climb changed while you were editing it. Reload it and try again.', {
           extensions: { code: CLIMB_EDIT_CONFLICT_ERROR_CODE },
@@ -1314,24 +1326,25 @@ export const climbMutations = {
 
       // Last, so it reads the row and the stats row this edit just wrote. The
       // editor is the CALLER, who on a spray wall may not be the setter.
-      await recordClimbRevision(tx, {
+      return recordClimbRevision(tx, {
         boardType,
         climbUuid: validated.uuid,
         before: beforeEdit,
         editorId: ctx.userId!,
         sprayTarget,
       });
-      return null;
     });
 
     // A replayed publish: the first one did the work, announced the climb and
     // busted the cache. Hand back the state it left.
-    if (outcome) {
+    if ('replayedPublishAt' in outcome) {
       return {
         uuid: validated.uuid,
         createdAt: existing.createdAt,
-        publishedAt: outcome.alreadyPublishedAt,
+        publishedAt: outcome.replayedPublishAt,
         isDraft: false,
+        revisionNumber: outcome.revisionNumber,
+        holdsRevisionNumber: outcome.holdsRevisionNumber,
       };
     }
 
@@ -1377,6 +1390,10 @@ export const climbMutations = {
       createdAt: existing.createdAt,
       publishedAt: nextPublishedAt,
       isDraft: nextIsDraft,
+      // What the editing client stamps its next tick with (#6023), read under
+      // the row lock, so it does not have to refetch the climb to learn it.
+      revisionNumber: outcome.revisionNumber,
+      holdsRevisionNumber: outcome.holdsRevisionNumber,
     };
   },
 

@@ -36,8 +36,9 @@ Schema changes must cover already-downloaded rows as well as DDL: when adding a 
 bump the table's `refreshRevision` and add the field to its cumulative `refreshColumns` list in
 `table-config.ts` so old checkpoints cannot skip its backfill or certify an incomplete response.
 See [snapshot compatibility and catalog refresh](board-snapshots.md#refreshing-fields-skipped-by-older-apps).
-There is one documented exception — `board_climbs.missing_hold_count`, whose reasoning is in that table's section
-below and turns on the new field being NULL for every row that was already downloaded.
+There are two documented exceptions, both on `board_climbs` and both reasoned in that table's section below:
+`missing_hold_count`, which is NULL for every row that was already downloaded, and the two climb revision columns
+(`revision_number`, `holds_revision_number`), where a row that is never re-delivered is a climb on revision 1.
 The client tolerates additive columns from newer producers; tests enforce exact column/PK parity for the
 current migration, configuration, resolver, and export contracts.
 
@@ -212,9 +213,14 @@ composite-keyed sync table must keep this true (or version the encoding).
 - Scope: `user_id = $userId`. Seq: `id`. updated_at: **exists**. Hook: **yes** (`saveTick`).
 - Local PK: **`uuid`** (client-generated = idempotency key). table-config: `['uuid']` ✓ (already correct).
 - Del: trigger emits `record_id = OLD.uuid` (1 segment).
-- Columns (snake*case): `uuid` (PK), `user_id`, `board_type`, `climb_uuid`, `angle`, `is_mirror`, `status`,
-  `attempt_count`, `quality`, `difficulty`, `is_benchmark`, `comment`, `climbed_at`, `session_id`, `created_at`, `updated_at`.
+- Columns (snake*case): `uuid` (PK), `user_id`, `board_type`, `climb_uuid`, `climb_revision` (schema v11), `angle`,
+  `is_mirror`, `status`, `attempt_count`, `quality`, `difficulty`, `is_benchmark`, `comment`, `climbed_at`,
+  `session_id`, `created_at`, `updated_at`.
   (Skip aurora*\_/kilter\_\_ bookkeeping, `board_id`, `inferred_session_id`.) Index `(climb_uuid, board_type, angle)` for logbook reads.
+- `climb_revision` is a nullable INTEGER: the climb revision the tick was logged against, 1 on a climb nobody has
+  edited (#6023, [spray-walls.md](spray-walls.md#which-revision-a-tick-was-logged-on)). NULL means unknown. That is
+  every import, every tick older than the column, and locally also every tick this phone pulled before schema v11,
+  whatever the server holds for it: a tick is only re-delivered when it changes, so those rows stay NULL.
 
 ### `playlists` — `syncPlaylists` (user data)
 
@@ -278,7 +284,8 @@ composite-keyed sync table must keep this true (or version the encoding).
   `edge_left`, `edge_right`, `edge_bottom`, `edge_top`, `angle`, `frames_count`, `frames_pace`, `frames`,
   `is_draft`, `is_listed`, `is_hidden` (schema v5, community-hidden flag), `created_at`, `published_at`, `user_id`, `required_set_ids` (JSON text),
   `compatible_size_ids` (JSON text), `characteristics` (JSON text, schema v2), `hold_fingerprint`,
-  `missing_hold_count` (schema v7), `updated_at`, `sync_seq`.
+  `missing_hold_count` (schema v7), `revision_number` and `holds_revision_number` (schema v11), `updated_at`,
+  `sync_seq`.
 - `missing_hold_count` is a nullable INTEGER — how many of a climb's holds have since come off the wall — and is
   spray-only in practice: it is NULL for every climb on the catalogue boards, because holds do not come off a
   Kilter. It is what lets `search-climbs-local.ts` answer the Intact / Lost-holds filter (SW-12) offline instead
@@ -290,6 +297,17 @@ composite-keyed sync table must keep this true (or version the encoding).
   predicate is NULL-safe (`COALESCE(missing_hold_count, 0)`, the same "unknown reads as intact" rule the server's
   `holdIntegrityCondition` applies), so a row pulled before v7 reads as intact rather than as wrong. Both
   conditions a bump exists to protect are therefore already met.
+- `revision_number` and `holds_revision_number` are the climb's current revision and the revision at which its
+  holds last changed (#6023). On the server both are `NOT NULL DEFAULT 1`; on the device both are nullable
+  INTEGERs, because a row pulled before schema v11 has never been told its revision.
+- They were also added **without** bumping `refreshRevision`. Only an edit moves either number off 1, and an edit
+  bumps the row's `sync_seq`, so every climb whose number is not 1 comes down the ordinary cursor. A row that is
+  never re-delivered is a climb nobody has edited. Its local NULL costs nothing: a tick logged from it sends no
+  revision and the server stores 1. A bump would re-crawl every downloaded catalogue to write a 1 beside each
+  climb.
+- A local reader must still treat NULL as unknown, not as 1. A climb edited while the phone ran a bundle older
+  than v11 was re-delivered to code that dropped the two fields, and it stays NULL until its next edit. The
+  server's by-date fallback stamps a tick on that climb correctly; a reader that assumed 1 would not.
 - LIVE: `syncEnabledBoards` holds `"boardType:layoutId:sizeId"` scope keys (My Boards → offline toggle), so a
   download is a fixed (type, layout, size) superset — all sets — that stays cacheable across users. Climb
   **search + detail** are **local-first**: whenever a scope is downloaded they read these tables

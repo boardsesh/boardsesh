@@ -117,7 +117,7 @@ these grants. A table the appliers start writing fails that test first.
 
 | Grant | Tables |
 | --- | --- |
-| SELECT | `boardsesh_ticks (id, user_id, board_type, climb_uuid, angle, status, origin, quality, difficulty, climbed_at, updated_at, kilter_id, kilter_synced_at, kilter_detached_at)`, `board_climbs (uuid, board_type, user_id)`, `users (id, name)`, `user_profiles (user_id, display_name)` |
+| SELECT | `boardsesh_ticks (id, user_id, board_type, climb_uuid, angle, status, origin, quality, difficulty, climbed_at, updated_at, kilter_id, kilter_synced_at, kilter_detached_at, climb_revision)`, `board_climbs (uuid, board_type, user_id, holds_revision_number)`, `users (id, name)`, `user_profiles (user_id, display_name)` |
 | SELECT, INSERT, UPDATE | `board_climb_stats` |
 | SELECT, INSERT, UPDATE, DELETE | `climb_stats_recompute_pending` (UPDATE because the drain reads it `FOR UPDATE SKIP LOCKED`; INSERT because every recompute batch first upserts a marker per key to hold its lock) |
 

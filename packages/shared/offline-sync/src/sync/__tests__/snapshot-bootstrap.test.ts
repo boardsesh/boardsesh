@@ -12,6 +12,19 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+// Keep LATEST_SCHEMA_VERSION one above ARTIFACT_SCHEMA_VERSION for every importer
+// in this file, the code under test included. The real two are equal whenever
+// the newest migration changed an artifact table (v11 did), and then "an
+// artifact below LATEST but at the artifact floor" cannot be built, so nothing
+// would notice the bootstrap comparing against LATEST. Same technique as
+// snapshot-forward-compatibility.test.ts. `runMigrations` reads its own
+// module-local constant, so the database is still migrated to the real latest.
+vi.mock('../../db/migrations', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../db/migrations')>();
+  return { ...original, LATEST_SCHEMA_VERSION: original.ARTIFACT_SCHEMA_VERSION + 1 };
+});
+
 import type { QueryInvalidator } from '../../database';
 import {
   pullSync,
@@ -1119,9 +1132,12 @@ describe('pullSync snapshot bootstrap', () => {
   });
 
   it('imports an artifact stamped below LATEST_SCHEMA_VERSION but at ARTIFACT_SCHEMA_VERSION or above', async () => {
-    // v10 added only device-side tables, so a v9 artifact carries every column
-    // this client has. Rejecting it would send every download to the paged crawl
-    // until the export republished.
+    // A device-only migration raises LATEST and leaves the artifact floor where
+    // it was, so an artifact one version behind carries every column this client
+    // has. Rejecting it would send every download to the paged crawl until the
+    // export republished. LATEST is mocked one above the real floor (see the
+    // top of this file) so the two numbers differ whatever the newest real
+    // migration touched.
     expect(ARTIFACT_SCHEMA_VERSION).toBeLessThan(LATEST_SCHEMA_VERSION);
     const filePath = join(workDir, 'older-device-schema.db');
     buildArtifact({

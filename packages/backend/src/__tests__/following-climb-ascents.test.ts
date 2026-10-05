@@ -250,6 +250,35 @@ describe('followingClimbAscents through the schema', () => {
     expect(item).toMatchObject({ climbName: CLIMB_NAME, isNoMatch: false, boardType: BOARD });
   });
 
+  // #6023. Not in the shipped document yet, so asked for with a document of
+  // its own. The climb row this resolver already joins supplies the current
+  // revision, which for a log stored under a retired uuid is the canonical's.
+  it('answers the revision each log was made on beside the climb’s current one', async () => {
+    await db.execute(sql`UPDATE board_climbs SET revision_number = 3 WHERE uuid = ${CLIMB_UUID}`);
+    await db.execute(sql`
+      INSERT INTO board_climb_aliases (board_type, alias_uuid, canonical_uuid, source)
+      VALUES (${BOARD}, 'fca-retired-revision', ${CLIMB_UUID}, 'test')
+    `);
+    const onRevisionTwo = await insertTick({ userId: ALEX, climbRevision: 2 });
+    const unknown = await insertTick({ userId: BEA, climbRevision: null });
+    const underRetiredUuid = await insertTick({ userId: CAL, climbUuid: 'fca-retired-revision', climbRevision: null });
+
+    const document = `query Revisions($input: FollowingClimbAscentsInput!) {
+      followingClimbAscents(input: $input) { items { uuid climbRevision climbCurrentRevision } }
+    }`;
+    const { errors, answer } = await run(document, VIEWER, BOARD, CLIMB_UUID);
+
+    expect(errors).toEqual([]);
+    const items = (answer as { items: Array<{ uuid: string }> }).items;
+    expect(new Map(items.map((item) => [item.uuid, item]))).toEqual(
+      new Map([
+        [onRevisionTwo, { uuid: onRevisionTwo, climbRevision: 2, climbCurrentRevision: 3 }],
+        [unknown, { uuid: unknown, climbRevision: null, climbCurrentRevision: 3 }],
+        [underRetiredUuid, { uuid: underRetiredUuid, climbRevision: null, climbCurrentRevision: 3 }],
+      ]),
+    );
+  });
+
   it('skips the counts for a document that does not select them', async () => {
     await insertTick();
 

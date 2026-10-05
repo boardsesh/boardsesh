@@ -402,10 +402,11 @@ layout artifact but intentionally outside the enabled size.
   the next live threshold scan rebuilds the stale-schema artifact.
 - **`ARTIFACT_SCHEMA_VERSION`** is derived from the migrations. It is the highest version with a statement
   naming `board_climbs`, `board_climb_stats` or `board_climb_grades` (the same whole-word match the export
-  uses to pick artifact DDL, minus `DEVICE_ONLY_STATEMENTS`). It is 7 today (`missing_hold_count`). A
-  migration that touches only device-side tables (v8 spray walls, v9 followed authors, v10 holds index)
-  raises `LATEST_SCHEMA_VERSION` but not this, so older artifacts stay importable and downloads keep
-  coming from the CDN. The required-columns check below remains the backstop: an artifact that lacks a
+  uses to pick artifact DDL, minus `DEVICE_ONLY_STATEMENTS`). It is 11 today (the climb revision columns
+  on `board_climbs`, #6023). It was 7 (`missing_hold_count`) through v10: a migration that touches only
+  device-side tables (v8 spray walls, v9 followed authors, v10 holds index) raises
+  `LATEST_SCHEMA_VERSION` but not this, so older artifacts stay importable and downloads keep coming
+  from the CDN. The required-columns check below remains the backstop: an artifact that lacks a
   configured client column is refused whatever version it is stamped with.
 - Schema **v5** adds `board_climbs.is_hidden` (the community-hidden flag). A client on v5 meeting a v4
   artifact hits exactly that stale path: it rejects the artifact and crawls the scope page by page until the
@@ -428,6 +429,15 @@ needs no format change, because an artifact never had these statements.
 
 v10 changes no artifact table, so it does not move `ARTIFACT_SCHEMA_VERSION`. v10 clients import v9
 artifacts, and v9 clients import v10 ones. No staleness window applies.
+
+### v11 does move it
+
+Schema **v11** adds `board_climbs.revision_number` and `board_climbs.holds_revision_number` (and
+`boardsesh_ticks.climb_revision`, which is not an artifact table). That is a change to an artifact table,
+so `ARTIFACT_SCHEMA_VERSION` becomes 11 and the
+[schema-bump staleness window](#schema-bump-staleness-window) applies once: a v11 client refuses every
+artifact built at v10 or below and crawls the scope page by page until the export has rebuilt it. A v10
+client meeting a v11 artifact imports it and drops the two columns it does not have.
 
 ### Compatible additions and missing columns
 
