@@ -627,6 +627,8 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         const captureWhenReady = createConsentBoundAnalyticsRunner();
         void consumeFreshOAuthPending(returnedOAuth.attemptId).then((marker) => {
           if (!marker || marker.provider !== returnedOAuth.provider) return;
+          // Tracked directly, not through `trackLoginSucceeded`: this path sends
+          // no account-age props, no `account_age_read` and no follow-up event.
           captureWhenReady(() =>
             track(
               SHARED_EVENTS.LoginSucceeded,
