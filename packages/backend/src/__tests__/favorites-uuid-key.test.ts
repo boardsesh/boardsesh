@@ -27,7 +27,7 @@ const TENSION_CLIMB = 'fav-key-tension-climb';
 const ORPHAN_CLIMB = 'fav-key-orphan-climb';
 const graphSchema = buildSchema(typeDefs.join('\n'));
 const favoritesRekeyMigration = readFileSync(
-  new URL('../../../db/drizzle/0250_favorites_key_by_climb_uuid.sql', import.meta.url),
+  new URL('../../../db/drizzle/0251_favorites_key_by_climb_uuid.sql', import.meta.url),
   'utf8',
 );
 
