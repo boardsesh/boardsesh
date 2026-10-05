@@ -30,6 +30,7 @@ import { SPRAY_MAYBE_FLOOR } from './spray-hold-tools';
 export type SeedableWall = {
   wallUuid: string;
   version: number;
+  versionId: number;
   /** When the registry took this payload. Distinguishes a post-save refetch from a photo refresh. */
   registeredAtMs?: number;
   holds: readonly {
@@ -108,7 +109,7 @@ export function seedIncludesCandidates(reason: SeedReason): boolean {
  * candidates back into the pending list.
  */
 export function sprayEditorSeedKey(wall: SeedableWall | null): string | null {
-  return wall ? `${wall.wallUuid}:${wall.version}` : null;
+  return wall ? `${wall.wallUuid}:${wall.versionId}` : null;
 }
 
 /**

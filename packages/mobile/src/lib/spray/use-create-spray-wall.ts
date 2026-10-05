@@ -29,6 +29,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../graphql/client';
 import type { BoardRenderDefault } from '../board-render-settings';
 import { primeSprayWallLook } from './spray-wall-loader';
+import { listRegisteredSprayWalls, unregisterSprayWall } from './spray-wall-registry';
 
 /** The owner's wall list, invalidated the moment a wall becomes one. */
 export const mySprayWallsQueryKey = ['mySprayWalls'] as const;
@@ -138,8 +139,15 @@ export function useDiscardSprayWallDraft() {
       if (versionId) await client.request(DISCARD_SPRAY_WALL_VERSION, { input: { versionId } });
       await client.request(DELETE_SPRAY_WALL, { uuid: wallUuid });
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
+    onSuccess: async (_result, { wallUuid }) => {
+      // Initial drafts stay registered between editor and look steps. Explicit
+      // Start over deletes that wall, so withdraw its geometry at this boundary.
+      for (const wall of listRegisteredSprayWalls()) {
+        if (wall.wallUuid === wallUuid) unregisterSprayWall(wall.layoutId);
+      }
+      await queryClient.cancelQueries({ queryKey: ['sprayWallRenderData', wallUuid] });
+      queryClient.removeQueries({ queryKey: ['sprayWallRenderData', wallUuid] });
+      await queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
     },
   });
 }

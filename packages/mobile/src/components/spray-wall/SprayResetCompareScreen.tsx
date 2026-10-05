@@ -23,7 +23,7 @@
 //     it, and the climbs number disappears the moment the owner changes the
 //     removal set it was computed for (nothing on the phone can recompute it).
 
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -42,7 +42,7 @@ import { hapticSelection } from '../../lib/haptics';
 import { reportError } from '../../lib/error-reporting';
 import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
-import { getSprayWall, SPRAY_BOARD_NAME, subscribeToSprayWalls } from '../../lib/spray/spray-wall-registry';
+import { SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
 import { useSprayWallDraft } from '../../lib/spray/use-spray-wall-draft';
 import { useCommitSprayWallVersion, useSprayWallResetProposal } from '../../lib/spray/use-spray-wall-reset';
 import type { SprayHoldCandidate } from '../outline-editor/spray-hold-editor-types';
@@ -103,14 +103,14 @@ export function SprayResetCompareScreen({
 
   // Registers the DRAFT under the wall's layout id, so the board below draws the
   // new photograph rather than the published one.
-  const { isLoading: draftLoading, isUnavailable, homography } = useSprayWallDraft(layoutId, wallUuid, versionNumber);
+  const {
+    isLoading: draftLoading,
+    isUnavailable,
+    homography,
+    wall,
+  } = useSprayWallDraft(layoutId, wallUuid, versionNumber, versionId);
   const commit = useCommitSprayWallVersion(layoutId);
   const commitAsync = commit.mutateAsync;
-
-  const wall = useSyncExternalStore(
-    subscribeToSprayWalls,
-    useCallback(() => getSprayWall(layoutId), [layoutId]),
-  );
 
   // One array, used to draw AND to ask. The proposal answers in indices into it,
   // so a second copy built for either purpose would be a second numbering.
@@ -335,6 +335,7 @@ export function SprayResetCompareScreen({
 
       <View style={styles.boardSection}>
         <InteractiveFilterBoard
+          backgroundPhotoUrl={wall.photoUrl}
           boardName={SPRAY_BOARD_NAME}
           layoutId={layoutId}
           sizeId={layoutId}

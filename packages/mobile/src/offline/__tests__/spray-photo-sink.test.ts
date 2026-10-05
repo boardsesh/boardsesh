@@ -250,6 +250,7 @@ describe('sprayWallDeletedSink', () => {
       wallUuid: 'wall-4',
       angle: 40,
       version: 1,
+      versionId: 1,
       photoWidth: 100,
       photoHeight: 100,
       photoUrl: PHOTO_URL,

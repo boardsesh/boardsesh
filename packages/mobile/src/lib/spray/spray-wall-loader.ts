@@ -156,6 +156,35 @@ function reportDroppedHolds(renderData: SprayWallRenderData, expected: number, m
   });
 }
 
+/** Map one payload without replacing the published wall or its runtime geometry. */
+export function mapSprayWallRenderData(
+  layoutId: number,
+  renderData: SprayWallRenderData,
+  versionId: number,
+  receivedAtMs: number,
+) {
+  const dimensions = photoDimensions(renderData);
+  const canonicalHolds = toCanonicalHolds(renderData);
+  const holds = mapCanonicalHoldsToPhoto(renderData.homography, canonicalHolds);
+  if (!holds || !dimensions || !Number.isSafeInteger(versionId) || versionId <= 0) return null;
+  return {
+    layoutId,
+    wallUuid: renderData.wall.uuid,
+    angle: renderData.wall.board?.angle ?? null,
+    version: renderData.versionNumber,
+    versionId,
+    photoWidth: dimensions.width,
+    photoHeight: dimensions.height,
+    photoUrl: renderData.photo.url,
+    photoThumbUrl: renderData.photo.thumbUrl ?? null,
+    photoExpiresAt: renderData.photo.expiresAt,
+    holds,
+    renderSettings: null,
+    viewerCanEdit: renderData.wall.viewerCanEdit === true,
+    registeredAtMs: receivedAtMs,
+  };
+}
+
 /**
  * Put one wall's published version in the registry, mapped into its photo's pixels.
  *
@@ -179,6 +208,10 @@ export function registerRenderData(
     sprayWallRemovalGeneration(layoutId) !== fetchedUnderRemovalGeneration
   )
     return false;
+  const currentVersion = renderData.wall.currentVersion;
+  if (!currentVersion || currentVersion.number !== renderData.versionNumber) return false;
+  const versionId = Number(currentVersion.id);
+  if (!Number.isSafeInteger(versionId) || versionId <= 0) return false;
   const dimensions = photoDimensions(renderData);
   const canonicalHolds = toCanonicalHolds(renderData);
   const holds = mapCanonicalHoldsToPhoto(renderData.homography, canonicalHolds);
@@ -197,6 +230,7 @@ export function registerRenderData(
     // on `RegisteredSprayWall` for why a missing angle registers anyway.
     angle: renderData.wall.board?.angle ?? null,
     version: renderData.versionNumber,
+    versionId,
     photoWidth: dimensions.width,
     photoHeight: dimensions.height,
     photoUrl: renderData.photo.url,

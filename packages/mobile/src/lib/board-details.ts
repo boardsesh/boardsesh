@@ -281,7 +281,7 @@ function getSprayRenderData(params: { layoutId: number; sizeId: number }): Board
     edgeRight: boardWidth,
     edgeBottom: 0,
     edgeTop: boardHeight,
-    backgroundImageKeys: [sprayBackgroundKey(layoutId, wall.version)],
+    backgroundImageKeys: [sprayBackgroundKey(layoutId, wall.versionId)],
     holdsData,
   };
 }

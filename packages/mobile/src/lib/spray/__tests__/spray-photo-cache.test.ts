@@ -90,7 +90,7 @@ const { deleteCachedSprayWallPhotos, ensureSprayPhotoCached, resetSprayPhotoCach
 const { sprayPartialPhotoFileName, sprayPhotoFileName } = await import('../spray-photo-keys');
 
 const LAYOUT_ID = 4200;
-const IDENTITY = { layoutId: LAYOUT_ID, version: 1 };
+const IDENTITY = { layoutId: LAYOUT_ID, versionId: 1 };
 const FINAL_URI = `file:///cache/spray-walls/${sprayPhotoFileName(IDENTITY)}`;
 const PART_URI = `file:///cache/spray-walls/${sprayPartialPhotoFileName(IDENTITY)}`;
 
@@ -102,6 +102,7 @@ function registerWall(expiresAt: string) {
     wallUuid: 'wall-uuid',
     angle: 40,
     version: 1,
+    versionId: 1,
     photoWidth: 1200,
     photoHeight: 1600,
     photoUrl: 'https://private.example/photo?sig=1',
@@ -165,6 +166,14 @@ describe('deleteCachedSprayWallPhotos', () => {
 });
 
 describe('ensureSprayPhotoCached', () => {
+  it('ignores a legacy photo cached under the reused version number', async () => {
+    registerWall(FUTURE);
+    fsState.files.set('file:///cache/spray-walls/4200-1.jpg', { exists: true });
+    expect(tryGetSprayPhotoPathSync(IDENTITY)).toBeNull();
+    expect(await ensureSprayPhotoCached(IDENTITY)).toBe(FINAL_URI.replace('file://', ''));
+    expect(fsState.downloads).toHaveLength(1);
+  });
+
   it('stages under .part and moves the finished file into place', async () => {
     registerWall(FUTURE);
 
@@ -245,7 +254,7 @@ describe('ensureSprayPhotoCached', () => {
 
   it('does not fetch when the version asked for is not the one registered', async () => {
     registerWall(FUTURE);
-    await expect(ensureSprayPhotoCached({ layoutId: LAYOUT_ID, version: 2 })).resolves.toBeNull();
+    await expect(ensureSprayPhotoCached({ layoutId: LAYOUT_ID, versionId: 2 })).resolves.toBeNull();
     expect(fsState.downloads).toHaveLength(0);
   });
 

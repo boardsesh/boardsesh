@@ -160,6 +160,16 @@ export function useDiscardSprayWallVersion(wallUuid: string | null) {
       });
       return response.discardSprayWallVersion;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: sprayWallWithVersionsQueryKey(wallUuid) }),
+    onSuccess: async () => {
+      await queryClient.cancelQueries({
+        queryKey: ['sprayWallRenderData', wallUuid],
+        predicate: (query) => typeof query.queryKey[2] === 'number',
+      });
+      queryClient.removeQueries({
+        queryKey: ['sprayWallRenderData', wallUuid],
+        predicate: (query) => typeof query.queryKey[2] === 'number',
+      });
+      await queryClient.invalidateQueries({ queryKey: sprayWallWithVersionsQueryKey(wallUuid) });
+    },
   });
 }

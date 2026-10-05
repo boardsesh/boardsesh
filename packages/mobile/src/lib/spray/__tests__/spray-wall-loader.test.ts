@@ -57,7 +57,7 @@ function fakeQueryClient(): Parameters<typeof loadSprayWall>[0] {
 function renderDataPayload(overrides: Record<string, unknown> = {}) {
   return {
     sprayWallRenderData: {
-      wall: { uuid: WALL_UUID, board: { angle: 25 } },
+      wall: { uuid: WALL_UUID, board: { angle: 25 }, currentVersion: { id: '2', number: 2 } },
       versionNumber: 2,
       boardWidth: 1200,
       boardHeight: 1600,
@@ -74,6 +74,7 @@ function existingWall() {
     wallUuid: WALL_UUID,
     angle: 40,
     version: 1,
+    versionId: 1,
     photoWidth: 1200,
     photoHeight: 1600,
     photoUrl: 'https://private.example/old',
@@ -235,11 +236,11 @@ describe('loadSprayWall', () => {
   });
 
   it('registers whether the viewer can edit the wall, and only on a literal true', async () => {
-    requestMock
-      .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
-      .mockResolvedValueOnce(
-        renderDataPayload({ wall: { uuid: WALL_UUID, board: { angle: 25 }, viewerCanEdit: true } }),
-      );
+    requestMock.mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } }).mockResolvedValueOnce(
+      renderDataPayload({
+        wall: { uuid: WALL_UUID, board: { angle: 25 }, currentVersion: { id: '2', number: 2 }, viewerCanEdit: true },
+      }),
+    );
     await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
     expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(true);
 
@@ -278,7 +279,9 @@ describe('loadSprayWall', () => {
     requestMock.mockImplementation(async (operation: unknown) => {
       if (operation === sprayOperations.GET_SPRAY_WALL_BY_LAYOUT) return { sprayWallByLayout: { uuid: WALL_UUID } };
       if (operation === sprayOperations.GET_SPRAY_WALL_RENDER_DATA) {
-        return renderDataPayload({ wall: { uuid: WALL_UUID, board: { angle: 25 }, viewerCanEdit: true } });
+        return renderDataPayload({
+          wall: { uuid: WALL_UUID, board: { angle: 25 }, currentVersion: { id: '2', number: 2 }, viewerCanEdit: true },
+        });
       }
       return { sprayWall: null };
     });
@@ -300,9 +303,18 @@ describe('loadSprayWall', () => {
         renderDataRequests += 1;
         if (renderDataRequests === 1) {
           resetSprayWallViewerAccess();
-          return renderDataPayload({ wall: { uuid: WALL_UUID, board: { angle: 25 }, viewerCanEdit: true } });
+          return renderDataPayload({
+            wall: {
+              uuid: WALL_UUID,
+              board: { angle: 25 },
+              currentVersion: { id: '2', number: 2 },
+              viewerCanEdit: true,
+            },
+          });
         }
-        return renderDataPayload({ wall: { uuid: WALL_UUID, board: { angle: 25 }, viewerCanEdit: false } });
+        return renderDataPayload({
+          wall: { uuid: WALL_UUID, board: { angle: 25 }, currentVersion: { id: '2', number: 2 }, viewerCanEdit: false },
+        });
       }
       return { sprayWall: null };
     });
@@ -322,7 +334,9 @@ describe('loadSprayWall', () => {
       if (operation === sprayOperations.GET_SPRAY_WALL_BY_LAYOUT) return { sprayWallByLayout: { uuid: WALL_UUID } };
       if (operation === sprayOperations.GET_SPRAY_WALL_RENDER_DATA) {
         resetSprayWallViewerAccess();
-        return renderDataPayload({ wall: { uuid: WALL_UUID, board: { angle: 25 }, viewerCanEdit: true } });
+        return renderDataPayload({
+          wall: { uuid: WALL_UUID, board: { angle: 25 }, currentVersion: { id: '2', number: 2 }, viewerCanEdit: true },
+        });
       }
       return { sprayWall: null };
     });
@@ -437,7 +451,9 @@ describe('loadSprayWall', () => {
     // The wall editor's draft registers render data it fetched itself, with no
     // viewer generation. That draws the wall and says nothing about Edit.
     const { registerRenderData } = await import('../spray-wall-loader');
-    const payload = renderDataPayload({ wall: { uuid: WALL_UUID, board: { angle: 25 }, viewerCanEdit: true } });
+    const payload = renderDataPayload({
+      wall: { uuid: WALL_UUID, board: { angle: 25 }, currentVersion: { id: '2', number: 2 }, viewerCanEdit: true },
+    });
     registerRenderData(LAYOUT_ID, payload.sprayWallRenderData as never, null);
     expect(getSprayWall(LAYOUT_ID)?.version).toBe(2);
     expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(false);
@@ -450,9 +466,12 @@ describe('loadSprayWall', () => {
     // rather than a fabricated number, so `authoringAngle` falls back to the
     // caller instead of failing every publish on the server's angle check.
     const payload = renderDataPayload();
-    requestMock
-      .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
-      .mockResolvedValueOnce({ sprayWallRenderData: { ...payload.sprayWallRenderData, wall: { uuid: WALL_UUID } } });
+    requestMock.mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } }).mockResolvedValueOnce({
+      sprayWallRenderData: {
+        ...payload.sprayWallRenderData,
+        wall: { uuid: WALL_UUID, currentVersion: { id: '2', number: 2 } },
+      },
+    });
 
     await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
 
