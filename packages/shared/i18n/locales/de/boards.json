@@ -976,7 +976,9 @@
       "body": "Dein gespeichertes Foto wartet auf dich. Die veröffentlichte Wand ändert sich erst, wenn du das Zurücksetzen bestätigst.",
       "discard": "Wegwerfen und neu anfangen",
       "discarded": "Das Zurücksetzen ist weg. Mach ein neues Foto.",
-      "discardFailed": "Das Zurücksetzen ließ sich nicht löschen. Versuch es nochmal."
+      "discardFailed": "Das Zurücksetzen ließ sich nicht löschen. Versuch es nochmal.",
+      "holdEditTitle": "Griffänderungen warten auf dich",
+      "holdEditBody": "Veröffentliche oder verwirf deine gespeicherten Änderungen unter Griffe bearbeiten, bevor du ein neues Foto auswählst."
     },
     "photo": {
       "title": "Fotografiere die Wand nochmal",
@@ -1059,7 +1061,8 @@
       "body": "Deine ungespeicherten Änderungen gehen verloren. Dein gespeicherter Entwurf bleibt verfügbar.",
       "stay": "Weiter bearbeiten",
       "discard": "Änderungen verwerfen"
-    }
+    },
+    "resetInProgress": "Schließe den Reset mit dem neuen Foto ab oder verwirf ihn, bevor du Griffe bearbeitest."
   },
   "sprayCaps": {
     "holds": "Eine Wand trägt bis zu {{max}} Griffe. Verwirf ein paar und speichere erneut.",

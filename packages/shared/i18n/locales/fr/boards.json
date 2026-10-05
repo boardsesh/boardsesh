@@ -976,7 +976,9 @@
       "body": "Ta photo est enregistrée pour reprendre. Le mur publié ne change pas avant ta confirmation.",
       "discard": "La jeter et recommencer",
       "discarded": "Cette réinitialisation est partie. Prends une nouvelle photo.",
-      "discardFailed": "Cette réinitialisation ne s'efface pas. Réessaie."
+      "discardFailed": "Cette réinitialisation ne s'efface pas. Réessaie.",
+      "holdEditTitle": "Des modifications de prises sont en attente",
+      "holdEditBody": "Publie ou abandonne les modifications enregistrées dans Modifier les prises avant de choisir une nouvelle photo."
     },
     "photo": {
       "title": "Photographie le mur à nouveau",
@@ -1059,7 +1061,8 @@
       "body": "Tes modifications non enregistrées seront perdues. Ton brouillon enregistré reste disponible.",
       "stay": "Continuer à modifier",
       "discard": "Abandonner les modifications"
-    }
+    },
+    "resetInProgress": "Termine ou abandonne la réouverture avec la nouvelle photo avant de modifier les prises."
   },
   "sprayCaps": {
     "holds": "Un mur porte jusqu’à {{max}} prises. Écartes-en quelques-unes et enregistre à nouveau.",

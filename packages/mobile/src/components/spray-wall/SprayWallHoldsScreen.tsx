@@ -226,7 +226,9 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
         ? t('sprayMaintenance.unavailable')
         : failure.reason === 'nothingPublished'
           ? t('sprayMaintenance.nothingPublished')
-          : t('sprayMaintenance.draftUnavailable')
+          : failure.reason === 'resetInProgress'
+            ? t('sprayMaintenance.resetInProgress')
+            : t('sprayMaintenance.draftUnavailable')
       : schemaOrUncodedError
         ? t('sprayMaintenance.temporarilyUnavailable')
         : (graphqlMessage ??
