@@ -23,7 +23,9 @@ const mocks = vi.hoisted(() => ({
   clearStoredCreatedSessionId: vi.fn(() => Promise.resolve()),
   execute: vi.fn(() => Promise.resolve({})),
   request: vi.fn(),
+  setStoredSessionId: vi.fn((_sessionId: string) => Promise.resolve()),
   setStoredSessionVisibility: vi.fn((_sessionId: string, _isPublic: boolean) => Promise.resolve()),
+  clearStoredQueueSnapshot: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('../../../lib/active-board-store', () => ({
@@ -43,7 +45,7 @@ vi.mock('../../../lib/session-store', () => ({
   clearStoredCreatedSessionId: mocks.clearStoredCreatedSessionId,
   clearStoredSessionId: mocks.clearStoredSessionId,
   setStoredCreatedSessionId: () => Promise.resolve(),
-  setStoredSessionId: () => Promise.resolve(),
+  setStoredSessionId: mocks.setStoredSessionId,
   setStoredSessionVisibility: mocks.setStoredSessionVisibility,
 }));
 vi.mock('../../../lib/queue-snapshot-store', () => ({ clearStoredQueueSnapshot: mocks.clearStoredQueueSnapshot }));
@@ -101,7 +103,7 @@ function renderSessionCommands() {
     onSessionContextChanging: vi.fn(),
     dispatch: vi.fn(),
     setPlaylistSuggestionSourceState: vi.fn(),
-    setActiveBoard: vi.fn(() => Promise.resolve()),
+    setActiveBoard: vi.fn(() => Promise.resolve(true)),
     locallyEndingSessionIdRef: { current: null },
     suppressedRemoteEndSessionIdRef: { current: null },
   };
@@ -118,6 +120,8 @@ describe('useSessionCommands — createSessionWithConfig boardPath', () => {
   beforeEach(() => {
     mocks.storedActiveBoard = null;
     mocks.request.mockReset().mockResolvedValue({ createSession: { id: 'session-1' } });
+    mocks.setStoredSessionId.mockClear();
+    mocks.clearStoredQueueSnapshot.mockClear();
   });
 
   it('names a gym-linked board so every joiner lands on the same board row', async () => {
@@ -159,7 +163,10 @@ describe('useSessionCommands — createSessionWithConfig boardPath', () => {
     const fetchBoardBySlug = vi.fn(async () => hostBoard);
     const joinedBoard = await resolveBoardForSession(boardPath, {
       // A matching owned LED board must not replace the host's physical wall.
-      ownedBoards: [{ ...homeBoard(), uuid: 'joiners-own-board', hasLeds: true }],
+      loadOwnedBoards: async () => ({
+        viewerId: 'joiner',
+        boards: [{ ...homeBoard(), uuid: 'joiners-own-board', hasLeds: true }],
+      }),
       createBoard,
       fetchBoardBySlug,
     });
@@ -172,9 +179,68 @@ describe('useSessionCommands — createSessionWithConfig boardPath', () => {
     expect(createBoard).not.toHaveBeenCalled();
     expect(joiner.params.setActiveBoard).toHaveBeenCalledWith(
       expect.objectContaining({ uuid: hostBoard.uuid, hasLeds: false }),
+      expect.any(Function),
     );
     expect(joiner.params.setSessionId).toHaveBeenCalledWith(sessionToJoin);
     expect(joiner.params.onSessionContextChanging).toHaveBeenCalledTimes(1);
+    expect(joiner.params.setActiveBoard.mock.invocationCallOrder[0]).toBeLessThan(
+      joiner.params.onSessionContextChanging.mock.invocationCallOrder[0],
+    );
+    expect(joiner.params.onSessionContextChanging.mock.invocationCallOrder[0]).toBeLessThan(
+      joiner.params.setSessionId.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('does not claim the session after the auth generation expires during active-board persistence', async () => {
+    let resolveActiveBoardWrite: (accepted: boolean) => void = () => {};
+    const activeBoardWrite = new Promise<boolean>((resolve) => {
+      resolveActiveBoardWrite = resolve;
+    });
+    const { result, params } = renderSessionCommands();
+    vi.mocked(params.setActiveBoard).mockReturnValueOnce(activeBoardWrite);
+    let operationCurrent = true;
+
+    let joinResult = true;
+    const pendingJoin = result.current.joinSession('session-next', {
+      boardPath: 'kilter/8/17/27,28/40',
+      userBoard: homeBoard(),
+      isOperationCurrent: () => operationCurrent,
+    });
+    expect(params.setActiveBoard).toHaveBeenCalledWith(homeBoard(), expect.any(Function));
+
+    operationCurrent = false;
+    resolveActiveBoardWrite(true);
+    await act(async () => {
+      joinResult = await pendingJoin;
+    });
+
+    expect(joinResult).toBe(false);
+    expect(params.sessionIdRef.current).toBeNull();
+    expect(params.setSessionId).not.toHaveBeenCalled();
+    expect(params.onSessionContextChanging).not.toHaveBeenCalled();
+    expect(mocks.setStoredSessionId).not.toHaveBeenCalled();
+    expect(mocks.clearStoredQueueSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('does not publish a session when the active-board write is superseded', async () => {
+    const { result, params } = renderSessionCommands();
+    vi.mocked(params.setActiveBoard).mockResolvedValueOnce(false);
+
+    let joinResult = true;
+    await act(async () => {
+      joinResult = await result.current.joinSession('session-next', {
+        boardPath: 'kilter/8/17/27,28/40',
+        userBoard: homeBoard(),
+        isOperationCurrent: () => true,
+      });
+    });
+
+    expect(joinResult).toBe(false);
+    expect(params.sessionIdRef.current).toBeNull();
+    expect(params.onSessionContextChanging).not.toHaveBeenCalled();
+    expect(params.setSessionId).not.toHaveBeenCalled();
+    expect(mocks.setStoredSessionId).not.toHaveBeenCalled();
+    expect(mocks.clearStoredQueueSnapshot).not.toHaveBeenCalled();
   });
 });
 

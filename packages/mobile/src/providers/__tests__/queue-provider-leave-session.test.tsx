@@ -98,7 +98,7 @@ vi.mock('../../lib/active-board-store', () => ({ getStoredActiveBoard: activeBoa
 vi.mock('../../lib/graphql/use-active-board', () => ({
   getActiveBoardWriteGeneration: () => 0,
   useActiveBoard: () => ({ data: activeBoard.stored }),
-  useSetActiveBoard: () => vi.fn(async () => {}),
+  useSetActiveBoard: () => vi.fn(async () => true),
 }));
 vi.mock('../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: http.request }) }));
 vi.mock('../../lib/analytics', () => ({ track: vi.fn(), registerRenderSuperProperties: vi.fn() }));

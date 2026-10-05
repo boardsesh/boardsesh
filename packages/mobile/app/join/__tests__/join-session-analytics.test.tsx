@@ -7,9 +7,10 @@ const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 
 const queue = vi.hoisted(() => ({
   sessionId: null as string | null,
-  joinSession: vi.fn(async () => {}),
+  joinSession: vi.fn(async () => true),
   clearSession: vi.fn(async () => {}),
 }));
+const authGeneration = vi.hoisted(() => ({ value: 0 }));
 
 const router = vi.hoisted(() => ({ replace: vi.fn(), back: vi.fn() }));
 // The route's search params. `source` is set by a live-session card.
@@ -86,6 +87,10 @@ vi.mock('../../../src/providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: {}, brandColors: {} }),
 }));
 vi.mock('../../../src/providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
+vi.mock('../../../src/lib/auth-store', () => ({
+  captureAuthCredentialGeneration: () => authGeneration.value,
+  isAuthCredentialGenerationCurrent: (generation: number) => generation === authGeneration.value,
+}));
 vi.mock('../../../src/providers/queue-provider', () => ({
   useQueueSessionId: () => ({ sessionId: queue.sessionId }),
   useQueueActions: () => ({
@@ -96,10 +101,14 @@ vi.mock('../../../src/providers/queue-provider', () => ({
 vi.mock('../../../src/providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../src/lib/graphql/hooks', () => ({
   useSessionPreview: () => preview,
-  useMyBoards: () => ({ data: { boards: [] }, refetch: vi.fn(async () => ({ data: { boards: [] } })) }),
   useCreateBoard: () => ({ mutateAsync: vi.fn(async () => ({})) }),
   useBoardBySlug: () => slugBoardQuery,
+  fetchAllMyOwnedBoards: vi.fn(async () => ({ viewerId: 'viewer-1', boards: [] })),
   fetchBoardBySlug: vi.fn(async () => null),
+  fetchBoardByUuid: vi.fn(async () => null),
+}));
+vi.mock('../../../src/lib/graphql/hooks/fetch-all-my-owned-boards', () => ({
+  fetchAllMyOwnedBoards: vi.fn(async () => ({ viewerId: 'viewer-1', boards: [] })),
 }));
 vi.mock('../../../src/lib/board-path-to-user-board', () => ({
   resolveBoardForSession: boardResolver.resolveBoardForSession,
@@ -110,6 +119,7 @@ import JoinSessionScreen from '../[sessionId]';
 
 beforeEach(() => {
   analytics.track.mockClear();
+  authGeneration.value = 0;
   queue.sessionId = null;
   queue.joinSession.mockClear();
   router.replace.mockClear();

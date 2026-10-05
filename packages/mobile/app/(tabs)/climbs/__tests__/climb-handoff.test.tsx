@@ -37,10 +37,11 @@ vi.mock('../../../../src/lib/graphql/use-active-board', () => ({ useSetActiveBoa
 vi.mock('../../../../src/lib/graphql/hooks', () => ({
   useClimb: () => ({ data: loadedClimb.current, isError: false, isSuccess: !!loadedClimb.current }),
   useCreateBoard: () => ({ mutateAsync: vi.fn() }),
-  fetchAllMyBoards: vi.fn(),
+  fetchAllMyOwnedBoards: vi.fn(),
   fetchBoardBySlug: vi.fn(),
   fetchBoardByUuid: vi.fn(),
 }));
+vi.mock('../../../../src/lib/graphql/hooks/fetch-all-my-owned-boards', () => ({ fetchAllMyOwnedBoards: vi.fn() }));
 vi.mock('../../../../src/lib/board-path-to-user-board', () => ({
   findOwnedBoardForSession: vi.fn(),
   parseBoardConfigFromPath: vi.fn(),

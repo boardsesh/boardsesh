@@ -9,12 +9,17 @@
 // a full UserBoard (uuid/slug/isAngleAdjustable).
 //
 // The pure logic (parse + owned-reuse + the create-input it would build) is
-// factored out so it can be unit-tested without React/GraphQL. The join screen
-// wires the real `useMyBoards` data + `useCreateBoard` mutation into `deps`.
+// factored out so it can be unit-tested without React/GraphQL. Callers wire the
+// authenticated owner snapshot + `useCreateBoard` mutation into `deps`.
 
 import type { CreateBoardInput, UserBoard } from '@boardsesh/shared-schema';
 import { parseBoardPath, parseNamedBoardPath, formatBoardDisplayName } from '@boardsesh/board-config';
 import { findOwnedBoardForConfig } from '../components/board-discovery/board-items';
+
+export type OwnedBoardSnapshot = {
+  viewerId: string;
+  boards: UserBoard[];
+};
 
 /** A board config parsed out of a session boardPath, with a concrete angle. */
 export type ResolvedBoardConfig = {
@@ -27,8 +32,18 @@ export type ResolvedBoardConfig = {
 };
 
 export type ResolveBoardDeps = {
-  /** The boards the signed-in user already owns (from `useMyBoards`). */
-  ownedBoards: UserBoard[];
+  /** False when this join or route resolution was superseded while awaiting I/O. */
+  isOperationCurrent?: () => boolean;
+  /**
+   * The account-verified board list, loaded on demand. `myBoards` also includes
+   * followed boards, so resolution must match each row's `ownerId` to `viewerId`.
+   * A failed or unverifiable load rejects rather than creating a board from an
+   * unknown ownership state.
+   *
+   * Called lazily, and only for the tuple form — a named board (`/b/{slug}`)
+   * resolves by slug and never reads the owned list.
+   */
+  loadOwnedBoards: () => Promise<OwnedBoardSnapshot>;
   /** Persists a new board server-side and returns the full UserBoard. */
   createBoard: (input: CreateBoardInput) => Promise<UserBoard>;
   /** Resolve a named board (`/b/{slug}`) to its full entity, or null when the
@@ -99,11 +114,23 @@ export function buildCreateBoardInput(config: ResolvedBoardConfig): CreateBoardI
  *   1. Parse the path → config (throws on an unparseable / angle-less path).
  *   2. Reuse a matching owned board (angle overridden from the path), or
  *   3. Create a new board via `deps.createBoard`.
+ *
+ * A rejected or malformed `deps.loadOwnedBoards()` propagates: "you own no
+ * boards" and "we couldn't verify which boards you own" must not collapse into
+ * the same input to step 2 and mint a duplicate or adopt a followed board.
  */
 export async function resolveBoardForSession(boardPath: string, deps: ResolveBoardDeps): Promise<UserBoard> {
+  const assertOperationCurrent = () => {
+    if (deps.isOperationCurrent && !deps.isOperationCurrent()) {
+      throw new Error('Session board resolution was superseded');
+    }
+  };
+
+  assertOperationCurrent();
   const named = parseNamedBoardPath(boardPath);
   if (named) {
     const board = await deps.fetchBoardBySlug(named.slug);
+    assertOperationCurrent();
     if (!board) {
       throw new Error(`Cannot resolve a board from session boardPath: ${boardPath}`);
     }
@@ -116,8 +143,24 @@ export async function resolveBoardForSession(boardPath: string, deps: ResolveBoa
     throw new Error(`Cannot resolve a board from session boardPath: ${boardPath}`);
   }
 
-  const owned = findOwnedBoardForSession(deps.ownedBoards, config);
+  const snapshot = await deps.loadOwnedBoards();
+  assertOperationCurrent();
+  if (typeof snapshot.viewerId !== 'string' || snapshot.viewerId.trim().length === 0) {
+    throw new Error('Cannot resolve a board without a verified account owner');
+  }
+  if (!Array.isArray(snapshot.boards)) {
+    throw new Error('Cannot resolve a board without a verified owned-board list');
+  }
+  if (snapshot.boards.some((board) => typeof board.ownerId !== 'string' || board.ownerId.trim().length === 0)) {
+    throw new Error('Cannot verify ownership for every board in the list');
+  }
+
+  const viewerBoards = snapshot.boards.filter((board) => board.ownerId === snapshot.viewerId);
+  const owned = findOwnedBoardForSession(viewerBoards, config);
   if (owned) return owned;
 
-  return deps.createBoard(buildCreateBoardInput(config));
+  assertOperationCurrent();
+  const createdBoard = await deps.createBoard(buildCreateBoardInput(config));
+  assertOperationCurrent();
+  return createdBoard;
 }
