@@ -17,6 +17,7 @@ import {
   OTA_ASSETS_CACHE_RULE_DESCRIPTION,
   OTA_ASSETS_COMPRESSION_RULE_DESCRIPTION,
   COMPRESSION_RULE_PHASE,
+  CACHE_RULE_PHASE,
   USER_EXPORT_LIFECYCLE_RULE,
   desiredR2Buckets,
   BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION,
@@ -1952,6 +1953,66 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
     // One PUT per phase, not one per drifted rule — the rulesets API only offers
     // a whole-phase write.
     expect(written).toHaveLength(MANAGED_RULE_PHASES.length);
+  });
+
+  it('skips an optional phase whose write is refused and still converges R2', async () => {
+    // A token can read a phase it may not write. Rules apply before R2, so a
+    // thrown 403 here would leave the OTA custom domain unattached and fail the
+    // production deploy over a rule nothing depends on yet.
+    const requests = stubCloudflareApi(dnsResponses(liveApexDnsRecord()));
+    vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'account-1');
+    const stubbedFetch = globalThis.fetch as unknown as (
+      input: string,
+      init?: { method?: string; body?: string },
+    ) => Response;
+    vi.stubGlobal('fetch', (input: string, init?: { method?: string; body?: string }) => {
+      if (init?.method === 'PUT' && new URL(input).pathname === phaseEntrypoint(COMPRESSION_RULE_PHASE)) {
+        return new Response(
+          JSON.stringify({ success: false, errors: [{ code: 10_000, message: 'Authentication error' }] }),
+          {
+            status: 403,
+          },
+        );
+      }
+      return stubbedFetch(input, init);
+    });
+
+    expect(await runCloudflareApply(['--apply'])).toBe(0);
+
+    const otaAttach = requests.filter(
+      (request) => request.method === 'POST' && request.pathname.includes('/boardsesh-ota-v3/domains/custom'),
+    );
+    expect(otaAttach).toHaveLength(1);
+    expect(otaAttach[0].body).toMatchObject({ domain: OTA_ASSETS_HOSTNAME });
+    const warnings = vi.mocked(console.warn).mock.calls.map(([message]) => String(message));
+    expect(warnings.some((message) => message.includes(COMPRESSION_RULE_PHASE) && message.includes('HTTP 403'))).toBe(
+      true,
+    );
+    const logs = vi.mocked(console.log).mock.calls.map(([message]) => String(message));
+    expect(
+      logs.some((message) => message.startsWith('[cf-apply] applied:') && message.includes('Compression rule')),
+    ).toBe(false);
+  });
+
+  it('still fails the run when a long-standing phase refuses its write', async () => {
+    stubCloudflareApi(dnsResponses(liveApexDnsRecord()));
+    const stubbedFetch = globalThis.fetch as unknown as (
+      input: string,
+      init?: { method?: string; body?: string },
+    ) => Response;
+    vi.stubGlobal('fetch', (input: string, init?: { method?: string; body?: string }) => {
+      if (init?.method === 'PUT' && new URL(input).pathname === phaseEntrypoint(CACHE_RULE_PHASE)) {
+        return new Response(
+          JSON.stringify({ success: false, errors: [{ code: 10_000, message: 'Authentication error' }] }),
+          {
+            status: 403,
+          },
+        );
+      }
+      return stubbedFetch(input, init);
+    });
+
+    await expect(runCloudflareApply(['--apply'])).rejects.toThrow();
   });
 
   it('converges each R2 bucket once, however many attributes drifted', async () => {
