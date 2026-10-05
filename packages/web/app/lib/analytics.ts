@@ -195,9 +195,15 @@ export function track(name: string, properties?: EventProperties): void {
  * properties (#6027).
  *
  * posthog-js-lite never parses campaign params, so nothing on www said where a
- * visit came from. Sending them as plain event properties is enough: PostHog
- * derives the session's `$entry_utm_source` and the person's
- * `$initial_utm_source` from the first event that carries them.
+ * visit came from. Sending them as plain event properties is enough for the
+ * session: PostHog derives `$entry_utm_source` from the first event that
+ * carries them.
+ *
+ * It does NOT give a signed-out visitor a person property. This client sets no
+ * `personProfiles`, so it runs on the SDK default `identified_only` and every
+ * anonymous event goes out with `$process_person_profile: false`. The person's
+ * `$initial_utm_source` exists only for someone identified on www. Break www
+ * traffic down by the session property or by the event's own `utm_source`.
  *
  * They go on `$pageview` and on every `track()` event, `App Install Click`
  * included, so a store click can be broken down by the source that brought the

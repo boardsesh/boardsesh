@@ -36,6 +36,7 @@ describe('resolveStoreLinkAttribution', () => {
       campaign: 'www',
       content: 'hero',
       inboundTagged: false,
+      inboundNamed: false,
     });
   });
 
@@ -46,6 +47,7 @@ describe('resolveStoreLinkAttribution', () => {
       campaign: 'gym-boulderwelt-munich',
       content: 'gym-page',
       inboundTagged: false,
+      inboundNamed: false,
     });
   });
 
@@ -58,6 +60,7 @@ describe('resolveStoreLinkAttribution', () => {
       campaign: 'gym-boulderwelt-munich',
       content: 'gym-page.poster',
       inboundTagged: false,
+      inboundNamed: false,
     });
   });
 
@@ -111,6 +114,7 @@ describe('resolveStoreLinkAttribution', () => {
       campaign: 'spray-launch',
       content: 'hero',
       inboundTagged: true,
+      inboundNamed: true,
     });
   });
 
@@ -129,6 +133,7 @@ describe('resolveStoreLinkAttribution', () => {
       campaign: 'gym-bloclab',
       content: 'gym-page',
       inboundTagged: true,
+      inboundNamed: true,
     });
   });
 
@@ -138,6 +143,51 @@ describe('resolveStoreLinkAttribution', () => {
       medium: 'web',
       campaign: 'www',
       inboundTagged: true,
+      inboundNamed: true,
+    });
+  });
+
+  it.each(['organic', 'Organic', 'ORGANIC', '(not set)', '(Not Set)'])(
+    "keeps our medium when the visitor's is %s, which the app reads as a Play organic install",
+    (reservedMedium) => {
+      // A gym tagging its Google Business Profile link. Source and campaign are
+      // theirs; the medium is the one value that would hide the install.
+      const inbound = { utm_source: 'google', utm_medium: reservedMedium, utm_campaign: 'gbp' };
+
+      expect(resolveStoreLinkAttribution({ placement: 'gym-page', gymSlug: 'bloclab', inbound })).toEqual({
+        source: 'google',
+        medium: 'web',
+        campaign: 'gbp',
+        content: 'gym-page',
+        inboundTagged: true,
+        inboundNamed: true,
+      });
+      expect(
+        resolveStoreLinkAttribution({ placement: 'gym-page', gymSlug: 'bloclab', qrMedium: 'poster', inbound }).medium,
+      ).toBe('qr');
+    },
+  );
+
+  it('is not tagged by a reserved medium on its own', () => {
+    expect(resolveStoreLinkAttribution({ placement: 'hero', inbound: { utm_medium: 'organic' } })).toEqual(
+      resolveStoreLinkAttribution({ placement: 'hero' }),
+    );
+  });
+
+  it('still reads a bare Google Ads click as cpc when the link also said organic', () => {
+    expect(
+      resolveStoreLinkAttribution({ placement: 'hero', inbound: { gclid: 'EAIaIQobChMI', utm_medium: 'organic' } }),
+    ).toMatchObject({ source: 'google', medium: 'cpc' });
+  });
+
+  it('is tagged but not named by a visitor who brought only a medium', () => {
+    expect(resolveStoreLinkAttribution({ placement: 'hero', inbound: { utm_medium: 'social' } })).toEqual({
+      source: 'boardsesh',
+      medium: 'social',
+      campaign: 'www',
+      content: 'hero',
+      inboundTagged: true,
+      inboundNamed: false,
     });
   });
 
@@ -159,6 +209,7 @@ describe('resolveStoreLinkAttribution', () => {
       campaign: 'www',
       content: 'hero',
       inboundTagged: true,
+      inboundNamed: true,
     });
   });
 
@@ -175,6 +226,7 @@ describe('resolveStoreLinkAttribution', () => {
       campaign: 'www',
       content: 'hero',
       inboundTagged: false,
+      inboundNamed: false,
     });
   });
 
@@ -261,6 +313,31 @@ describe('buildPlayStoreUrl', () => {
     expect(referrer.get('utm_medium')).toBe('social');
     expect(referrer.get('utm_campaign')).toBe('spray-launch');
     expect(referrer.get('utm_content')).toBe('hero');
+  });
+
+  it.each([
+    { utm_source: 'google', utm_medium: 'organic', utm_campaign: 'gbp' },
+    { utm_source: 'google', utm_medium: 'Organic' },
+    { utm_medium: 'organic' },
+    { utm_medium: '(not set)' },
+    { utm_source: 'instagram', utm_medium: 'social' },
+    { gclid: 'EAIaIQobChMI' },
+    {},
+  ])('never builds a referrer the app files as organic or unknown: %o', (inbound) => {
+    // The rule in `classifyInstallChannel`
+    // (packages/mobile/src/lib/install-referrer.ts), restated because the
+    // mobile module cannot be imported here: a medium of `organic` is organic
+    // whatever else the referrer says, and a referrer with no usable source,
+    // medium or campaign is unknown. Every www button has to land in `campaign`.
+    const referrer = installReferrer(buildPlayStoreUrl({ placement: 'gym-page', gymSlug: 'bloclab', inbound }));
+    const medium = referrer.get('utm_medium');
+    const hasValue = (param: string | null) => param !== null && param !== '' && param !== '(not set)';
+
+    expect(medium?.toLowerCase()).not.toBe('organic');
+    expect(hasValue(referrer.get('utm_source'))).toBe(true);
+    expect(hasValue(medium)).toBe(true);
+    expect(hasValue(referrer.get('utm_campaign'))).toBe(true);
+    expect(referrer.get('utm_content')).toBe('gym-page');
   });
 
   it('does not copy the ad click id into the link', () => {
@@ -351,6 +428,27 @@ describe('appStoreCampaignToken', () => {
     expect(
       appStoreCampaignToken({ placement: 'gym-page', gymSlug: 'bloclab', inbound: { utm_source: 'instagram' } }),
     ).toBe('instagram');
+  });
+
+  it('is the link id when the visitor tagged a medium and nothing else', () => {
+    // Our own source would make the token `boardsesh` on every button, which
+    // names neither where the visitor came from nor what they pressed.
+    expect(appStoreCampaignToken({ placement: 'hero', inbound: { utm_medium: 'social' } })).toBe('hero');
+    expect(appStoreCampaignToken({ placement: 'help', inbound: { utm_medium: 'email' } })).toBe('help');
+    expect(
+      appStoreCampaignToken({
+        placement: 'gym-page',
+        gymSlug: 'bloclab',
+        qrMedium: 'poster',
+        inbound: { utm_medium: 'social', utm_content: 'creative-7' },
+      }),
+    ).toBe('gym-page.poster');
+  });
+
+  it("names a visitor's campaign when their link had no source", () => {
+    expect(appStoreCampaignToken({ placement: 'hero', inbound: { utm_campaign: 'spray-launch' } })).toBe(
+      'boardsesh-spray-launch',
+    );
   });
 
   it('reads a bare Google Ads click as google', () => {

@@ -15,6 +15,7 @@
 //             on a tagged link
 //   medium    `web` for a click on a page, `qr` when the page was reached by
 //             scanning a printed code, or the visitor's own `utm_medium`
+//             (except `organic` and `(not set)`, which Play reserves)
 //   campaign  `www`, `gym-<slug>` on a gym page, the caller's own campaign, or
 //             the visitor's own `utm_campaign`
 //   content   the LINK ID: which button was pressed. Always ours, never the
@@ -50,6 +51,19 @@ export const STORE_LINK_DEFAULT_CAMPAIGN = 'www';
 /** What a bare Google Ads click id stands for when the landing URL has no `utm_source`. */
 export const GOOGLE_ADS_SOURCE = 'google';
 export const GOOGLE_ADS_MEDIUM = 'cpc';
+
+/**
+ * Mediums a store link never takes from the visitor, compared lowercased.
+ *
+ * Play writes `utm_medium=organic` itself for an install from a store search,
+ * and `(not set)` when it has no referrer, and the app reads them that way:
+ * `classifyInstallChannel` in `packages/mobile/src/lib/install-referrer.ts`
+ * files ANY referrer whose medium is `organic` as an organic install before it
+ * looks at the source or the campaign. A gym that tags its Google Business
+ * Profile link `utm_medium=organic` would otherwise turn every install from our
+ * button into a Play organic one, on every binary already shipped.
+ */
+const RESERVED_PLAY_MEDIUMS: ReadonlySet<string> = new Set(['organic', '(not set)']);
 
 /** Apple's limit on the `ct` campaign token. */
 export const APP_STORE_CAMPAIGN_TOKEN_MAX_LENGTH = 30;
@@ -92,6 +106,12 @@ export type StoreLinkAttribution = {
   content: string;
   /** Whether the visitor's own tags set any of source, medium or campaign. */
   inboundTagged: boolean;
+  /**
+   * Whether the visitor's tags NAME where they came from: a source or a
+   * campaign. A medium alone (`?utm_medium=social`) does not, and neither does
+   * one we refused to carry.
+   */
+  inboundNamed: boolean;
 };
 
 /** `utm_campaign` value for one gym. `gym-` prefixed so campaigns from other surfaces stay distinguishable. */
@@ -118,13 +138,21 @@ export function storeLinkId(placement: AppInstallPlacement, qrMedium?: GymQrMedi
  * A landing URL with a `gclid` and no `utm_source` is a Google Ads click, so it
  * reads as `google` / `cpc` instead of falling back to `boardsesh`. The click id
  * itself is not copied into the link.
+ *
+ * One medium is never taken from the visitor: `organic` (any case), or Play's
+ * own `(not set)`. See `RESERVED_PLAY_MEDIUMS`. Ours stays in its place, and the
+ * visitor's source and campaign still carry through.
  */
 export function resolveStoreLinkAttribution(input: StoreLinkInput): StoreLinkAttribution {
   const inbound = input.inbound ?? null;
   const isBareAdsClick = Boolean(inbound?.gclid) && !inbound?.utm_source;
 
   const inboundSource = inbound?.utm_source ?? (isBareAdsClick ? GOOGLE_ADS_SOURCE : undefined);
-  const inboundMedium = inbound?.utm_medium ?? (isBareAdsClick ? GOOGLE_ADS_MEDIUM : undefined);
+  const taggedMedium =
+    inbound?.utm_medium && !RESERVED_PLAY_MEDIUMS.has(inbound.utm_medium.toLowerCase())
+      ? inbound.utm_medium
+      : undefined;
+  const inboundMedium = taggedMedium ?? (isBareAdsClick ? GOOGLE_ADS_MEDIUM : undefined);
   const inboundCampaign = inbound?.utm_campaign;
 
   const ownMedium = input.qrMedium ? STORE_LINK_MEDIUM_QR : STORE_LINK_MEDIUM_WEB;
@@ -137,6 +165,7 @@ export function resolveStoreLinkAttribution(input: StoreLinkInput): StoreLinkAtt
     campaign: inboundCampaign ?? ownCampaign,
     content: storeLinkId(input.placement, input.qrMedium),
     inboundTagged: inboundSource !== undefined || inboundMedium !== undefined || inboundCampaign !== undefined,
+    inboundNamed: inboundSource !== undefined || inboundCampaign !== undefined,
   };
 }
 
@@ -203,16 +232,19 @@ function toCampaignToken(rawToken: string): string {
  * One token is all Apple gives, and App Analytics hides a campaign until it has
  * at least 5 first-time downloads, so the token stays coarse:
  *
- *  - a visitor who arrived on a tagged link reports that: `<source>-<campaign>`,
- *    or `<source>` when their link named no campaign;
+ *  - a visitor whose link named a source or a campaign reports that:
+ *    `<source>-<campaign>`, or `<source>` when it named no campaign;
  *  - everyone else reports the link id (`hero`, `gym-page`, `gym-page.poster`).
+ *    That includes a link tagged with a medium and nothing else: the source
+ *    would be our own `boardsesh` on every button, which names neither the
+ *    visitor's origin nor the placement.
  *
  * A single gym never appears here. `gym-<slug>` would use the 30 characters and
  * no one gym reaches 5 downloads from its page.
  */
 export function appStoreCampaignToken(input: StoreLinkInput): string {
   const attribution = resolveStoreLinkAttribution(input);
-  if (!attribution.inboundTagged) return toCampaignToken(attribution.content);
+  if (!attribution.inboundNamed) return toCampaignToken(attribution.content);
 
   const inboundName = input.inbound?.utm_campaign
     ? `${attribution.source}-${attribution.campaign}`

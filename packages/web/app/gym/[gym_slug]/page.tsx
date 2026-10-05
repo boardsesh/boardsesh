@@ -26,7 +26,7 @@ import {
 } from '@boardsesh/graphql/operations';
 import { disambiguateBoardSubtitles, stripGymNamePrefix } from '@boardsesh/board-config';
 import { parseGymQrLanding } from '@boardsesh/analytics';
-import { gymQrAttributionQuery } from '@/app/lib/gym-attribution';
+import { gymRedirectAttributionQuery } from '@/app/lib/gym-attribution';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
 import { getLocale } from '@/app/lib/i18n/get-locale';
@@ -261,15 +261,19 @@ export default async function GymPage(props: GymRouteProps) {
   // `?tab=`. A poster is laminated and stuck to a wall; the gym it names can be
   // merged into another listing a year later, and without this the 308 dropped
   // the query and every scan of that poster landed unattributed and fired no
-  // `Gym QR Scanned`. Only `src` and `medium` are re-emitted, and only after the
+  // `Gym QR Scanned`. `src` and `medium` are re-emitted only after the
   // contract's parser has accepted them, so a crafted `?medium=evil` cannot ride
   // through a redirect to a URL we publish.
+  //
+  // The campaign params (`utm_*`, `gclid`) ride along too (#6027): a gym's bio
+  // link to an old slug would otherwise land looking like direct traffic.
+  // Nothing else a link carries is echoed.
   //
   // The slug is percent-encoded now that a query rides behind it: a `#` in one
   // would open a fragment and swallow the params, the same case `gymQrUrl`
   // already guards when it builds the printed URL.
   if (gym.slug && gym.slug !== gym_slug) {
-    permanentRedirect(`/gym/${encodeURIComponent(gym.slug)}${gymQrAttributionQuery(searchParams)}`);
+    permanentRedirect(`/gym/${encodeURIComponent(gym.slug)}${gymRedirectAttributionQuery(searchParams)}`);
   }
 
   const locale = await getLocale();

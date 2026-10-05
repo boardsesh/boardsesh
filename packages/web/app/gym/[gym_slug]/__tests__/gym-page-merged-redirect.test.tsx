@@ -122,10 +122,29 @@ describe('merged-gym 308 redirect', () => {
       redirectTargetFor('old-city', {
         src: 'qr',
         medium: 'poster',
-        utm_campaign: 'someone-elses',
         next: 'https://evil.example.com',
         claim: '1',
+        tab: 'members',
       }),
     ).resolves.toBe('/gym/boulderwelt-city?src=qr&medium=poster');
+  });
+
+  it("keeps a gym's tagged bio link tagged after its slug changes", async () => {
+    // #6027. Without this the visit reached the canonical page as direct
+    // traffic: no `utm_source` on its pageview, and a store link that said
+    // `boardsesh` / `web`.
+    executeAuthenticatedGraphQL.mockResolvedValue({ gymBySlug: mergedGym('boulderwelt-neu') });
+
+    await expect(
+      redirectTargetFor('old-neu', { utm_source: 'instagram', utm_medium: 'social', next: 'https://evil.example.com' }),
+    ).resolves.toBe('/gym/boulderwelt-neu?utm_source=instagram&utm_medium=social');
+  });
+
+  it('carries a scan and its campaign params together', async () => {
+    executeAuthenticatedGraphQL.mockResolvedValue({ gymBySlug: mergedGym('boulderwelt-alt') });
+
+    await expect(
+      redirectTargetFor('old-alt', { src: 'qr', medium: 'poster', utm_campaign: 'spring-open-day' }),
+    ).resolves.toBe('/gym/boulderwelt-alt?src=qr&medium=poster&utm_campaign=spring-open-day');
   });
 });

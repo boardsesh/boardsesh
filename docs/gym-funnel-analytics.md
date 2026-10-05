@@ -227,6 +227,17 @@ rides through a redirect into a URL we publish. Its entire reachable output is
 three fixed strings plus the empty one, and it returns `''` rather than `'?'`, so
 an ordinary visit still redirects to a clean URL.
 
+Since #6027 the merged-twin 308 also carries the campaign params a visit landed
+with (`utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`,
+`gclid`), through `gymRedirectAttributionQuery`. A gym's bio link to an old slug
+(`/gym/old-slug?utm_source=instagram&utm_medium=social`) used to arrive on the
+canonical page as direct traffic. It is still an allowlist: those six names
+only, each value trimmed and capped at 200 characters and re-encoded, so
+`?next=` and `?claim=` are dropped as before. Carrying them gives a crafted link
+nothing it did not have, since the same params on the canonical URL are read
+with no redirect involved. The `/b/{slug}` redirect still carries the QR pair
+only.
+
 Known gap, worth knowing before anyone reads a kiosk number: the board list
 (`/b/{slug}/{angle}/list`) has no equivalent of `stripGymQrParams`, so the params
 stay in the address bar after a kiosk scan. A climber who then shares that URL
@@ -364,7 +375,9 @@ scanned anything.
 A visitor who landed on a tagged link (`?utm_source=instagram&utm_medium=social`
 on a gym's own bio link, say) keeps their source and medium in the store link.
 Their `utm_campaign` wins too when they brought one; otherwise the campaign
-stays `gym-<slug>`. The link id is always ours. That upgrade happens after
+stays `gym-<slug>`. The link id is always ours. A `utm_medium` of `organic` or
+`(not set)` is the one tag not carried: the app would file the install as a
+Play organic one (see `docs/growth-metrics.md`, "Store links"). That upgrade happens after
 hydration, so the server HTML never depends on the visitor.
 
 `qr` installs from before the #6027 deploy are gym-page clicks of any kind. Do

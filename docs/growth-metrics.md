@@ -593,8 +593,17 @@ an Instagram bio).
 `utm_campaign`, `utm_content`, `utm_term` and `gclid` off the landing URL, and
 `analytics.ts` sends whichever were present as plain event properties on
 `$pageview` and on every `track()` event (`App Install Click`, `Climb Handoff
-Clicked`, the gym funnel). PostHog derives the session's `$entry_utm_source` and
-the person's `$initial_utm_source` from those; we set neither ourselves.
+Clicked`, the gym funnel). PostHog derives the session's `$entry_utm_source`
+from those; we do not set it ourselves.
+
+**Break www traffic down by the session property `$entry_utm_source` or by the
+event property `utm_source`. Not by the person property `$initial_utm_source`.**
+The www client sets no `personProfiles`, so it runs on the SDK default
+`identified_only`: an event from a signed-out visitor is sent with
+`$process_person_profile: false` and writes no person property. Almost all
+landing traffic is signed out, so a breakdown on `$initial_utm_source` shows
+close to nothing for www while the tagged visits are all there on the session.
+The person property exists only for someone who is identified on www.
 
 - **Read once per page load, from the landing URL, and kept in memory.** A
   client-side navigation keeps it. A full page load (a locale switch, a hard
@@ -631,7 +640,7 @@ Every store button on www builds its URL with `buildStoreUrl` in
 | Value    | Untagged visit                                   | Visitor arrived on a tagged link     |
 | -------- | ------------------------------------------------ | ------------------------------------ |
 | source   | `boardsesh`                                      | their `utm_source`                   |
-| medium   | `web` for a click on a page, `qr` after scanning a printed code | their `utm_medium`    |
+| medium   | `web` for a click on a page, `qr` after scanning a printed code | their `utm_medium`, unless it is `organic` or `(not set)` |
 | campaign | `www`, or `gym-<slug>` on a gym page             | their `utm_campaign`                 |
 | link id  | the button's `placement`, plus `.poster` / `.kiosk` / `.board` after a scan | the same: the link id is always ours |
 
@@ -639,6 +648,13 @@ The visitor's tags win field by field. A gym that links its page from Instagram
 with a source and medium but no campaign still reports `gym-<slug>`. A landing
 URL with a `gclid` and no `utm_source` reads as `google` / `cpc`; the click id
 itself is not copied into the store link.
+
+A visitor's `utm_medium` of `organic` (any case) or `(not set)` is not carried;
+the link keeps `web` or `qr`. Play writes those two values itself, and the app
+files any referrer whose medium is `organic` as `install_channel = 'organic'`
+before it reads the source or campaign. A gym that tags its Google Business
+Profile link `utm_medium=organic` would otherwise move every install from our
+button out of the `campaign` count. Its source and campaign still carry.
 
 Link ids today: `hero`, `help`, `gym-page`, `gym-page.poster`. Reserved for the
 store buttons still to come (`AppInstallPlacement` in
@@ -680,7 +696,9 @@ reaches the app, so nothing reaches PostHog.
 
 - `ct` is the link id for an untagged visit (`hero`, `gym-page`,
   `gym-page.poster`), and `<utm_source>-<utm_campaign>` (or just the source) for
-  a tagged one. Characters outside letters, digits, `.`, `_` and `-` become `-`.
+  a visit whose link named a source or a campaign. A link tagged with a medium
+  and nothing else keeps the link id. Characters outside letters, digits, `.`,
+  `_` and `-` become `-`.
 - A single gym never appears in `ct`. App Analytics hides a campaign until it
   has at least 5 first-time downloads, which no one gym's page reaches, so all
   gyms share `gym-page` and `gym-page.poster`.

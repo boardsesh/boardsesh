@@ -20,6 +20,7 @@ import {
   type GymQrMedium,
   type GymQrSearchParams,
 } from '@boardsesh/analytics';
+import { INBOUND_CAMPAIGN_PARAMS, parseInboundCampaign } from '@/app/lib/inbound-campaign';
 import { absoluteUrl } from '@/app/lib/seo/base-url';
 
 /**
@@ -74,4 +75,41 @@ export function gymQrAttributionQuery(searchParams: GymQrSearchParams): string {
   params.set(GYM_QR_SRC_PARAM, GYM_QR_SRC_VALUE);
   params.set(GYM_QR_MEDIUM_PARAM, landing.medium);
   return `?${params.toString()}`;
+}
+
+/**
+ * The query string a gym-page redirect carries to the canonical URL: the QR
+ * pair from `gymQrAttributionQuery`, then the campaign params the visit landed
+ * with (`utm_*`, `gclid`), or `''` when the request has neither (#6027).
+ *
+ * A gym's own bio link (`/gym/old-slug?utm_source=instagram&utm_medium=social`)
+ * outlives a slug change the same way a poster does. The 308 used to drop
+ * everything but the QR pair, so the visit reached the canonical page looking
+ * like direct traffic: no `utm_source` on its `$pageview`, none on `App Install
+ * Click`, and a store link that said `boardsesh` / `web`.
+ *
+ * Still an allowlist. Only the six names in `INBOUND_CAMPAIGN_PARAMS` come out,
+ * each value trimmed and capped by `parseInboundCampaign` and re-encoded here,
+ * so `?next=`, `?claim=` and anything else a crafted link carries is dropped as
+ * before. Carrying the campaign params hands a crafted link nothing new: the
+ * same params on the canonical URL are read by the page with no redirect
+ * involved. A repeated param keeps its first value, as it does in the browser.
+ */
+export function gymRedirectAttributionQuery(searchParams: GymQrSearchParams): string {
+  const requested = new URLSearchParams();
+  for (const param of INBOUND_CAMPAIGN_PARAMS) {
+    const requestedValue = searchParams[param];
+    const firstValue = Array.isArray(requestedValue) ? requestedValue[0] : requestedValue;
+    if (firstValue !== undefined) requested.set(param, firstValue);
+  }
+  const campaign = parseInboundCampaign(requested.toString());
+
+  const redirectParams = new URLSearchParams(gymQrAttributionQuery(searchParams));
+  for (const param of INBOUND_CAMPAIGN_PARAMS) {
+    const campaignValue = campaign?.[param];
+    if (campaignValue) redirectParams.set(param, campaignValue);
+  }
+
+  const query = redirectParams.toString();
+  return query ? `?${query}` : '';
 }
