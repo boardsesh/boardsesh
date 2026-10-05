@@ -210,6 +210,35 @@ walls. Until then, expect `medium: 'poster'` and only `poster` in PostHog — a
 the kiosk QR needs a new target; the params and the builders in
 `app/lib/gym-attribution.ts` survive that move unchanged.
 
+### A scan only counts if the page loads: iOS and the association file
+
+`Gym QR Scanned` fires from a tracker on the www gym page, so a scan that never
+loads that page is never counted. On an iPhone with Boardsesh installed that
+used to be every scan. The iOS association file claimed `/*` for the app, the
+app has a `/gyms` directory but no `/gym/{slug}` screen, and an unmatched link
+falls through `+not-found` to Home. The climber saw the app's Home tab and
+PostHog saw nothing.
+
+`app/lib/apple-app-site-association.ts` now lists `/gym` in
+`WEB_ONLY_PATH_PREFIXES`, which emits `NOT /gym/*` plus one entry per locale
+prefix (`NOT /es/gym/*`, `NOT /fr/gym/*`, `NOT /de/gym/*`) above the catch-all.
+That keeps the gym page, `/gym/{slug}/poster` and `/gym/{slug}/manage` in the
+browser. `/gyms` is not matched and still opens the app.
+
+Three things to know before reading an iOS scan count:
+
+- **The change is not instant.** Phones do not fetch the file from www. Apple's
+  CDN does, and a phone asks the CDN on install, on app update and about once a
+  week after that. Allow a week before treating "no iOS scans" as a real zero.
+  `https://app-site-association.cdn-apple.com/a/v1/www.boardsesh.com` shows the
+  copy Apple is serving.
+- **Android was never affected.** The store build only opens `/join`,
+  `/preview` and `/auth/reset-password` in the app, so a poster scan has always
+  reached the web page there.
+- **If the app ever gets a `/gym/{slug}` screen**, removing the exclusion sends
+  scans back into the app, and the scan event then has to fire from the app
+  too. `/poster` and `/manage` would still need to stay on the web.
+
 ### Carrying the params through a redirect
 
 Two redirects would otherwise silently unattribute a scan, and both now re-emit
