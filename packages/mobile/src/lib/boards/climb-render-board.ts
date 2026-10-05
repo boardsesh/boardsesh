@@ -55,6 +55,7 @@ export type ClimbRenderBoardClimb = {
   angle?: number | null;
   frames?: string | null;
   compatibleSizeIds?: readonly number[] | null;
+  missingHoldCount?: number | null;
 };
 
 function drawOnActiveBoard(boardConfig: BoardConfig): ClimbRenderBoardResult {
@@ -86,6 +87,7 @@ function toResolverInput(climb: ClimbRenderBoardClimb, fallbackAngle: number): C
     layoutId: climb.layoutId,
     frames: climb.frames,
     compatibleSizeIds: climb.compatibleSizeIds,
+    missingHoldCount: climb.missingHoldCount,
     // The angle the climb was graded at — that's the angle its own board should
     // be drawn at when it falls back off the active one.
     angle: typeof climb.angle === 'number' ? climb.angle : fallbackAngle,

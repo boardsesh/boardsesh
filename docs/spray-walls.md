@@ -1266,6 +1266,11 @@ they pressed Confirm.
 `Climb.missingHoldCount` reaches three mobile surfaces, and the rule across all
 three is that a broken climb stays findable and stays playable:
 
+Compatibility treats a reported lost hold on the same spray layout as historical
+content. The play drawer and playlist rows keep logging, queue and favourite
+actions available. A different wall or known incompatible size still fails the
+normal compatibility checks; catalogue-board hold containment remains strict.
+
 - the climb-row chip ("2 holds gone"), beside the Hidden chip and in the same
   neutral grey — colour in that row means grade and nothing else;
 - the **Holds** filter in the climb filter sheet (All / Intact only / Lost
