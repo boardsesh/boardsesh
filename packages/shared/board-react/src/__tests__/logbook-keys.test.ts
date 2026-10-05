@@ -4,6 +4,7 @@ import {
   mergeLogbookEntries,
   accumulatedLogbookQueryKey,
   fetchLogbookQueryKeyPrefix,
+  withTickRevisions,
   type LogbookEntry,
 } from '../logbook-keys';
 
@@ -135,5 +136,49 @@ describe('logbook query keys', () => {
   it('produces distinct, inert keys for a null (unresolved) board', () => {
     expect(accumulatedLogbookQueryKey(null)).toEqual(['logbook', null, 'accumulated']);
     expect(fetchLogbookQueryKeyPrefix(null)).toEqual(['logbook', null, 'fetch']);
+  });
+});
+
+describe('climb version on a logbook entry (#6023)', () => {
+  const sourceTick = {
+    uuid: 'tick-1',
+    climbUuid: 'climb-1',
+    angle: 40,
+    isMirror: false,
+    status: 'send' as const,
+    attemptCount: 2,
+    quality: null,
+    difficulty: null,
+    comment: '',
+    climbedAt: '2026-10-01T10:00:00.000Z',
+  };
+
+  it('carries a known version from the source tick', () => {
+    expect(toLogbookEntry({ ...sourceTick, climbRevision: 3 }).climb_revision).toBe(3);
+  });
+
+  it('adds no version key when the source has none', () => {
+    expect('climb_revision' in toLogbookEntry(sourceTick)).toBe(false);
+    expect('climb_revision' in toLogbookEntry({ ...sourceTick, climbRevision: null })).toBe(false);
+  });
+
+  it('joins local versions onto entries by tick uuid', () => {
+    const entries = [toLogbookEntry(sourceTick), toLogbookEntry({ ...sourceTick, uuid: 'tick-2' })];
+    const joined = withTickRevisions(entries, new Map([['tick-2', 4]]));
+
+    expect(joined[0]).toBe(entries[0]);
+    expect(joined[0].climb_revision).toBeUndefined();
+    expect(joined[1].climb_revision).toBe(4);
+  });
+
+  it('keeps a version the entry already has', () => {
+    const entries = [toLogbookEntry({ ...sourceTick, climbRevision: 2 })];
+    expect(withTickRevisions(entries, new Map([['tick-1', 9]]))[0].climb_revision).toBe(2);
+  });
+
+  it('returns the same array when there is nothing to join', () => {
+    const entries = [toLogbookEntry(sourceTick)];
+    expect(withTickRevisions(entries, new Map())).toBe(entries);
+    expect(withTickRevisions(entries, new Map([['another-tick', 2]]))).toBe(entries);
   });
 });

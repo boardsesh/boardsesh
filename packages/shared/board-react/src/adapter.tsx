@@ -96,6 +96,16 @@ export type BoardAdapter = {
     helpers: { queryClient: QueryClient; executeHttp: ExecuteHttp },
   ) => Promise<SaveTickMutationResponse['saveTick'] | null>;
   /**
+   * Optional read of which climb version each of the climber's own ticks was
+   * logged on, keyed by tick uuid, for the given climbs. Mobile answers from
+   * its SQLite copy of the ticks. `GetTicks` cannot select
+   * `Tick.climbRevision` while the screenshot fixtures pin its text, so this
+   * is where a fetched logbook row gets its version (#6023). Ticks with no
+   * known version are left out of the map. May reject; the logbook then keeps
+   * its rows without versions.
+   */
+  readLocalTickRevisions?: (boardType: string, climbUuids: string[]) => Promise<ReadonlyMap<string, number>>;
+  /**
    * Optional post-save side-effect. Web wires `clearTickDraft` (IndexedDB);
    * mobile has no tick-draft store today and may omit it.
    */

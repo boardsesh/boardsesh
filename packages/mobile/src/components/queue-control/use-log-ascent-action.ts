@@ -88,6 +88,7 @@ export function useLogAscentAction(climb: Climb) {
       setIds: boardConfig.setIds,
       sessionId,
       consensusGradeName: climb.difficulty,
+      climbRevision: climb.revisionNumber,
     });
   }, [openLogAscent, boardConfig, sessionId, climb, angle, isMirror]);
 

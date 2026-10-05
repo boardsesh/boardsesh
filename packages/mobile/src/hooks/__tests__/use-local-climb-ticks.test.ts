@@ -235,6 +235,39 @@ describe('useLocalClimbTicks', () => {
     });
   });
 
+  // #6023: which version of the climb each tick was logged on.
+  describe('the climb version', () => {
+    async function setTickRevision(uuid: string, climbRevision: number | null): Promise<void> {
+      await db!.runAsync('UPDATE boardsesh_ticks SET climb_revision = ? WHERE uuid = ?', [climbRevision, uuid]);
+    }
+
+    it('rides the entry when the tick has one, and is absent when it does not', async () => {
+      await insertTick({ uuid: 'stamped', climbedAt: '2026-05-30T10:00:00.000Z' });
+      await insertTick({ uuid: 'unknown', climbedAt: '2026-05-31T10:00:00.000Z' });
+      await setTickRevision('stamped', 2);
+
+      const entries = (await runHook()) ?? [];
+      const byUuid = new Map(entries.map((entry) => [entry.uuid, entry]));
+
+      expect(byUuid.get('stamped')?.climb_revision).toBe(2);
+      expect(byUuid.get('unknown')).toBeDefined();
+      expect('climb_revision' in (byUuid.get('unknown') ?? {})).toBe(false);
+    });
+
+    it('does not split one ascent stored twice when only one copy has a version', async () => {
+      // The version is not part of "the same ascent": it stays out of the
+      // GROUP BY, and the collapsed row keeps the version any copy carries.
+      await insertTick({ uuid: 'twin-a' });
+      await insertTick({ uuid: 'twin-b' });
+      await setTickRevision('twin-b', 4);
+
+      const entries = (await runHook()) ?? [];
+
+      expect(entries.map((entry) => entry.uuid)).toEqual(['twin-a']);
+      expect(entries[0]?.climb_revision).toBe(4);
+    });
+  });
+
   it.each([
     ['the caller turned it off', () => runHook('kilter', 'climb-1', false)],
     ['the offline engine is off', () => ((offlineEnabled = false), runHook())],

@@ -97,6 +97,18 @@ vi.mock('../../../providers/rogue-timer-provider', () => ({
   useOptionalRogueTimer: () => null,
 }));
 vi.mock('../../../hooks/use-local-ticks', () => ({ useLocalPendingTicks: () => ({ data: 0 }) }));
+// The phone's own copy of the climb's version numbers (#6023). Undefined by
+// default: the board is not downloaded, or the row predates the columns.
+const localRevisionState = vi.hoisted(() => ({
+  current: undefined as { revisionNumber: number | null; holdsRevisionNumber: number | null } | undefined,
+  calls: [] as Array<{ boardName: unknown; climbUuid: unknown; enabled: boolean }>,
+}));
+vi.mock('../../../hooks/use-local-climb-revision', () => ({
+  useLocalClimbRevision: (boardName: unknown, climbUuid: unknown, enabled: boolean) => {
+    localRevisionState.calls.push({ boardName, climbUuid, enabled });
+    return enabled ? localRevisionState.current : undefined;
+  },
+}));
 // Connectivity drives which save-failure message the form shows (issue #4315).
 const connectivityState = vi.hoisted(() => ({ isOffline: false }));
 vi.mock('../../../hooks/use-is-offline', () => ({ useIsOffline: () => connectivityState.isOffline }));
@@ -223,6 +235,8 @@ beforeEach(() => {
   presenceState.boardId = null;
   activeBoardState.current = null;
   connectivityState.isOffline = false;
+  localRevisionState.current = undefined;
+  localRevisionState.calls = [];
   vi.mocked(track).mockClear();
   resetRestTimerStoreForTests();
 });
@@ -449,6 +463,49 @@ describe('useQuickTickForm analytics', () => {
 // company the moment the queue holds climbs from more than one wall, and the
 // tick has to follow the climb — a tick stamped with the wrong wall shows up in
 // that wall's "Now on the wall" feed as a problem nobody climbed there.
+// #6023: every tick says which version of the climb it was logged on, when the
+// app knows. Unknown must be an ABSENT key: a backend from before the field
+// rejects the key, and the server picks the version itself when it is missing.
+describe('useQuickTickForm climb version', () => {
+  it('sends the version the displayed climb carries, without asking the phone', () => {
+    boardState.current = null;
+    localRevisionState.current = { revisionNumber: 9, holdsRevisionNumber: 9 };
+    const { getByTestId } = renderForm({ climbRevision: 4 });
+
+    fireEvent.click(getByTestId('save'));
+
+    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ climbRevision: 4 });
+    // The local read is switched off when the climb has its own number.
+    expect(localRevisionState.calls.every((call) => call.enabled === false)).toBe(true);
+  });
+
+  it('falls back to the phone’s copy for a climb that arrived without a version', () => {
+    boardState.current = null;
+    localRevisionState.current = { revisionNumber: 3, holdsRevisionNumber: 2 };
+    const { getByTestId } = renderForm();
+
+    fireEvent.click(getByTestId('attempt'));
+
+    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ climbRevision: 3, status: 'attempt' });
+    expect(localRevisionState.calls.at(-1)).toEqual({ boardName: 'kilter', climbUuid: CLIMB_UUID, enabled: true });
+  });
+
+  it.each([
+    ['nothing is known anywhere', undefined, undefined],
+    ['the climb carries null and the phone has no row', null, undefined],
+    ['the phone’s row predates the columns', undefined, { revisionNumber: null, holdsRevisionNumber: null }],
+    ['the carried value is not a positive integer', 0, undefined],
+  ])('omits the climbRevision key when %s', (_label, climbRevision, localNumbers) => {
+    boardState.current = null;
+    localRevisionState.current = localNumbers;
+    const { getByTestId } = renderForm({ climbRevision });
+
+    fireEvent.click(getByTestId('save'));
+
+    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('climbRevision');
+  });
+});
+
 describe('useQuickTickForm board attribution', () => {
   /** The wall the climber is standing at, as `useActiveBoard` reports it. */
   const ACTIVE_BOARD = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: ANGLE };

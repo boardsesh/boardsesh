@@ -163,6 +163,8 @@ export const UPDATE_CLIMB_MUTATION = gql`
       createdAt
       publishedAt
       isDraft
+      revisionNumber
+      holdsRevisionNumber
     }
   }
 `;

@@ -43,6 +43,8 @@ type LogAscentSheetProps = {
   setIds?: string;
   sessionId?: string | null;
   consensusGradeName?: string;
+  /** `Climb.revisionNumber` of the climb being logged, when the caller has it. */
+  climbRevision?: number | null;
 };
 
 export function LogAscentSheet({
@@ -61,6 +63,7 @@ export function LogAscentSheet({
   setIds,
   sessionId,
   consensusGradeName,
+  climbRevision,
 }: LogAscentSheetProps) {
   const { t } = useTranslation('climbs');
 
@@ -105,6 +108,7 @@ export function LogAscentSheet({
     setIds,
     sessionId,
     consensusGradeName,
+    climbRevision,
     onDismiss: handleClose,
     savedRef,
     fieldSnapshotRef,

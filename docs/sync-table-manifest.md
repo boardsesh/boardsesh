@@ -305,9 +305,16 @@ composite-keyed sync table must keep this true (or version the encoding).
   never re-delivered is a climb nobody has edited. Its local NULL costs nothing: a tick logged from it sends no
   revision and the server stores 1. A bump would re-crawl every downloaded catalogue to write a 1 beside each
   climb.
-- A local reader must still treat NULL as unknown, not as 1. A climb edited while the phone ran a bundle older
-  than v11 was re-delivered to code that dropped the two fields, and it stays NULL until its next edit. The
-  server's by-date fallback stamps a tick on that climb correctly; a reader that assumed 1 would not.
+- A local reader that STAMPS a tick must treat NULL as unknown, not as 1. A climb edited while the phone ran a
+  bundle older than v11 was re-delivered to code that dropped the two fields, and it stays NULL until its next
+  edit. The server's by-date fallback stamps a tick on that climb correctly; a reader that assumed 1 would not.
+  The tick form does this: a NULL `revision_number` sends no `climbRevision` at all.
+- The local "sent" comparison is the one place NULL reads as 1, on both sides
+  (`tickOnCurrentHoldsLocalSql`, `packages/mobile/src/db/queries/climb-revisions-local.ts`). A NULL
+  `holds_revision_number` then lets every tick count, which is how the list behaved before the column. The cost is
+  bounded to that same case: a climb whose holds moved while the phone ran a pre-v11 bundle keeps reading as sent
+  on the device until the row is delivered again. A bare `>=` against NULL would instead read every climb on a
+  pre-v11 download as never sent.
 - LIVE: `syncEnabledBoards` holds `"boardType:layoutId:sizeId"` scope keys (My Boards → offline toggle), so a
   download is a fixed (type, layout, size) superset — all sets — that stays cacheable across users. Climb
   **search + detail** are **local-first**: whenever a scope is downloaded they read these tables

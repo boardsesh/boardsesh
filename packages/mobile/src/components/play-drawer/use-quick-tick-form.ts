@@ -24,6 +24,7 @@ import {
   logbookClimbAngleKey,
 } from '@boardsesh/board-react';
 import { toBoardName, normaliseSetIds } from '@boardsesh/board-config';
+import { knownClimbRevision } from '@boardsesh/logbook';
 import { SHARED_EVENTS, boardTypeProperty } from '@boardsesh/analytics';
 import { clampToNow, MAXIMUM_CLIMBED_AT_REFRESH_MS } from '../logbook/climbed-at';
 import { sameRenderBoard } from '../../lib/boards/climb-render-board';
@@ -37,6 +38,7 @@ import { nowMs } from '../../lib/clock';
 import { noteRestTimerTick } from '../../lib/rest-timer-store';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useLocalPendingTicks } from '../../hooks/use-local-ticks';
+import { useLocalClimbRevision } from '../../hooks/use-local-climb-revision';
 import { useIsOffline } from '../../hooks/use-is-offline';
 import { track } from '../../lib/analytics';
 import { hapticSuccess, hapticError } from '../../lib/haptics';
@@ -72,6 +74,12 @@ export type QuickTickFormInput = {
   // difficulty id here via the loaded grades list so the consensus chip can be
   // outlined without being preselected.
   consensusGradeName?: string;
+  /**
+   * The version of the climb on screen (`Climb.revisionNumber`), when the climb
+   * carries one. Without it the form asks the phone's own copy of the climb, and
+   * if that does not know either the tick is sent with no version (#6023).
+   */
+  climbRevision?: number | null;
   onDismiss: () => void;
   // Optional analytics plumbing for LogAscentSheet's dismiss tracking. Both are
   // refs (not state) so updating them never triggers a re-render.
@@ -120,6 +128,7 @@ export function useQuickTickForm({
   setIds,
   sessionId,
   consensusGradeName,
+  climbRevision,
   onDismiss,
   savedRef,
   fieldSnapshotRef,
@@ -253,6 +262,15 @@ export function useQuickTickForm({
     return (boardLogbook.logbookByClimbAngle.get(logbookClimbAngleKey(climbUuid, angle))?.length ?? 0) > 0;
   }, [boardLogbook, climbUuid, angle, localPendingTicks]);
 
+  // Which version of the climb this tick is on. A climb that came through a
+  // shared queue has lost its number (see `useLocalClimbRevision`), so the
+  // phone's copy answers for it; the read is skipped when the climb has one.
+  const displayedClimbRevision = knownClimbRevision(climbRevision);
+  const localRevisionNumbers = useLocalClimbRevision(boardName, climbUuid, displayedClimbRevision === null);
+  // The climb's own number, else the phone's copy, else nothing: an unknown
+  // version sends no `climbRevision` key and the server picks.
+  const tickClimbRevision = displayedClimbRevision ?? knownClimbRevision(localRevisionNumbers?.revisionNumber);
+
   const [tickState, setTickState] = useState(createInitialTickState);
   const [comment, setComment] = useState('');
   // The climb date/time to log. Defaults to now; the Date/Time fields let the
@@ -378,6 +396,8 @@ export function useQuickTickForm({
           ...(setIds ? { setIds } : {}),
           ...(selectedBoardUuid ? { boardUuid: selectedBoardUuid } : {}),
           ...(tickBoardId != null ? { boardId: tickBoardId } : {}),
+          // Only when known: an absent key lets the server pick the version.
+          ...(tickClimbRevision === null ? {} : { climbRevision: tickClimbRevision }),
         },
         {
           onSuccess: () => {
@@ -457,6 +477,7 @@ export function useQuickTickForm({
       setIds,
       tickBoardId,
       selectedBoardUuid,
+      tickClimbRevision,
       tickState,
       comment,
       climbedAt,

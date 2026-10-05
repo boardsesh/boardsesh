@@ -92,6 +92,36 @@ describe('getClimbLocal — Boardsesh grade join', () => {
   });
 });
 
+// #6023: the detail read carries the climb's version numbers, so a tick logged
+// from a climb opened offline names the version on screen.
+describe('getClimbLocal — climb version numbers', () => {
+  let db: TestSqliteDb;
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await runMigrations(db);
+  });
+
+  it('carries revision_number and holds_revision_number through to the climb', async () => {
+    await insertClimb(db, 'edited');
+    await db.runAsync('UPDATE board_climbs SET revision_number = 5, holds_revision_number = 3 WHERE uuid = ?', [
+      'edited',
+    ]);
+
+    const climb = await getClimbLocal(db, { boardName: 'kilter', layoutId: 1, angle: 40, climbUuid: 'edited' });
+    expect(climb?.revisionNumber).toBe(5);
+    expect(climb?.holdsRevisionNumber).toBe(3);
+  });
+
+  it('reads null for a row pulled before the columns existed', async () => {
+    await insertClimb(db, 'pre-v11');
+
+    const climb = await getClimbLocal(db, { boardName: 'kilter', layoutId: 1, angle: 40, climbUuid: 'pre-v11' });
+    expect(climb?.revisionNumber).toBeNull();
+    expect(climb?.holdsRevisionNumber).toBeNull();
+  });
+});
+
 describe('getClimbLocal — spray-wall hold integrity', () => {
   let db: TestSqliteDb;
 

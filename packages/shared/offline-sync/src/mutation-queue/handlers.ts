@@ -1,4 +1,5 @@
 import type { PendingMutation } from './queue';
+import { graphqlErrorNamesInputField } from './error-classification';
 
 export type GraphQLFetch = <T>(query: string, variables?: Record<string, unknown>) => Promise<T>;
 
@@ -43,6 +44,43 @@ export const UPDATE_TICK_INPUT_FIELDS = [
   'climbedAt',
   'angle',
 ] as const;
+
+/**
+ * Input fields a queued mutation may carry that the server can do without.
+ *
+ * A queued write can outlive the backend it was written for in one direction
+ * only: the app updates over the air, and a rollback or a slow deploy can put
+ * it in front of a backend that does not know a field yet. GraphQL rejects an
+ * unknown input field outright, the rejection is permanent, and the write
+ * dead-letters. For a tick that means a lost send.
+ *
+ * A field belongs here only when leaving it out gives a correct write:
+ * `SaveTickInput.climbRevision` is optional, and without it the server stores
+ * the version that was live when the climb was climbed (#6023).
+ */
+const DROPPABLE_INPUT_FIELDS: Record<string, readonly string[]> = {
+  SaveTick: ['climbRevision'],
+};
+
+/**
+ * The same variables without the droppable fields this rejection names, or
+ * null when the rejection is about something else (or nothing was dropped), in
+ * which case the original error stands.
+ */
+function withoutRejectedInputFields(
+  mutationName: string,
+  variables: Record<string, unknown>,
+  error: unknown,
+): Record<string, unknown> | null {
+  const droppable = DROPPABLE_INPUT_FIELDS[mutationName];
+  const input = variables.input;
+  if (!droppable || input === null || typeof input !== 'object') return null;
+  const rejected = droppable.filter((field) => field in input && graphqlErrorNamesInputField(error, field));
+  if (rejected.length === 0) return null;
+  const trimmedInput: Record<string, unknown> = { ...(input as Record<string, unknown>) };
+  for (const field of rejected) delete trimmedInput[field];
+  return { ...variables, input: trimmedInput };
+}
 
 function buildDispatch(mutation: PendingMutation): MutationDispatch {
   let payload: Record<string, unknown>;
@@ -219,5 +257,14 @@ export async function processMutation(mutation: PendingMutation, graphqlFetch: G
   if (!query) {
     throw new Error(`No GraphQL mutation defined for "${mutationName}"`);
   }
-  await graphqlFetch(query, variables);
+  try {
+    await graphqlFetch(query, variables);
+  } catch (error) {
+    // One retry, without the optional field the server said it does not know.
+    // Any other failure, and a failure of the retry, is thrown as it came so
+    // the drainer classifies it the way it always has.
+    const trimmedVariables = withoutRejectedInputFields(mutationName, variables, error);
+    if (!trimmedVariables) throw error;
+    await graphqlFetch(query, trimmedVariables);
+  }
 }

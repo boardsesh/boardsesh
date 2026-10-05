@@ -9,6 +9,7 @@ type Entry = {
   status: string;
   is_ascent: boolean;
   tries: number;
+  climb_revision?: number | null;
 };
 
 const ctrl = vi.hoisted(() => ({ board: null as { logbookByClimbAngle: Map<string, Entry[]> } | null }));
@@ -76,5 +77,47 @@ describe('useAscentStatus', () => {
     ]);
     expect(renderHook(() => useAscentStatus('a', 40, true)).result.current).toBe('mirror-send');
     expect(renderHook(() => useAscentStatus('a', 40, false)).result.current).toBe('send');
+  });
+
+  // #6023: a tick logged before the climb's holds last moved does not mark the
+  // climb sent or attempted. The real `isTickOnCurrentHolds` decides.
+  describe('ticks on the climb’s current holds', () => {
+    it('drops a tick older than the version the holds last moved at', () => {
+      ctrl.board = boardFrom([entry({ status: 'send', climb_revision: 2 })]);
+
+      expect(renderHook(() => useAscentStatus('a', 40, undefined, 3)).result.current).toBeNull();
+    });
+
+    it('keeps a tick at or above it, and picks among the survivors only', () => {
+      ctrl.board = boardFrom([
+        entry({ status: 'send-on-old-holds', climb_revision: 1 }),
+        entry({ status: 'attempt-on-current-holds', climb_revision: 3 }),
+      ]);
+
+      expect(renderHook(() => useAscentStatus('a', 40, undefined, 3)).result.current).toBe('attempt-on-current-holds');
+    });
+
+    it('reads a tick with no version as version 1', () => {
+      ctrl.board = boardFrom([entry({ status: 'send' })]);
+
+      expect(renderHook(() => useAscentStatus('a', 40, undefined, 1)).result.current).toBe('send');
+      expect(renderHook(() => useAscentStatus('a', 40, undefined, 2)).result.current).toBeNull();
+    });
+
+    it.each([null, undefined])('counts every tick when the climb’s holds version is %s', (holdsRevisionNumber) => {
+      ctrl.board = boardFrom([entry({ status: 'send', climb_revision: null })]);
+
+      expect(renderHook(() => useAscentStatus('a', 40, undefined, holdsRevisionNumber)).result.current).toBe('send');
+    });
+
+    it('applies per mirror direction', () => {
+      ctrl.board = boardFrom([
+        entry({ is_mirror: true, status: 'mirror-send', climb_revision: 1 }),
+        entry({ is_mirror: false, status: 'send', climb_revision: 2 }),
+      ]);
+
+      expect(renderHook(() => useAscentStatus('a', 40, true, 2)).result.current).toBeNull();
+      expect(renderHook(() => useAscentStatus('a', 40, false, 2)).result.current).toBe('send');
+    });
   });
 });

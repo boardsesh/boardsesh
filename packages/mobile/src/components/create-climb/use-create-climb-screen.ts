@@ -528,6 +528,19 @@ export function useCreateClimbScreen({
   }, [feetFollowPaint, litUpHoldsMap]);
 
   const [savedClimb, setSavedClimb] = useState<SavedClimbSnapshot | null>(null);
+  // The saved row's version numbers (#6023): what the climb is on and the
+  // version at which its holds last moved. Seeded from the climb being edited
+  // and replaced by what `updateClimb` returns, so the climb this screen puts
+  // on the queue names the version the setter just saved and a send logged
+  // straight after an edit is stamped with it. A ref, not state: it is read
+  // only when a queue item is built, and the save path builds one in the same
+  // tick it learns the numbers. Kept out of `SavedClimbSnapshot` because that
+  // is persisted with the draft, where a version would go stale.
+  const savedRevisionRef = useRef<{
+    uuid: string;
+    revisionNumber: number | null;
+    holdsRevisionNumber: number | null;
+  } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [publishDuplicateError, setPublishDuplicateError] = useState<PublishDuplicateError | null>(null);
@@ -825,6 +838,11 @@ export function useCreateClimbScreen({
       isDraft: serverIsDraft,
     };
     setSavedClimb(serverSnapshot);
+    savedRevisionRef.current = {
+      uuid: editClimb.uuid,
+      revisionNumber: editClimb.revisionNumber ?? null,
+      holdsRevisionNumber: editClimb.holdsRevisionNumber ?? null,
+    };
     setFramesPaceMs(serverPaceMs);
     setRouteMode(serverFrames.length > 1);
     setSavedSignature(serverSignature);
@@ -1377,6 +1395,14 @@ export function useCreateClimbScreen({
       published_at: savedClimb?.publishedAt ?? null,
       userAscents: 0,
       userAttempts: 0,
+      // Only for the row these numbers were read for. A fresh save, a fork or
+      // an angle change mints another uuid and starts with no known version.
+      ...(savedRevisionRef.current?.uuid === uuid
+        ? {
+            revisionNumber: savedRevisionRef.current.revisionNumber,
+            holdsRevisionNumber: savedRevisionRef.current.holdsRevisionNumber,
+          }
+        : {}),
       framesCount: frameCount,
       // Mirrors what Save writes, so the queue plays a WIP route at the pace the
       // setter dialled rather than at the default. Null on a boulder: 0/null both
@@ -1606,6 +1632,13 @@ export function useCreateClimbScreen({
           isDraft: result.isDraft,
         };
         setSavedClimb(nextSavedClimb);
+        // Before `syncSavedToQueue` below builds the queue item. A backend that
+        // returned no numbers leaves the version unknown rather than stale.
+        savedRevisionRef.current = {
+          uuid: result.uuid,
+          revisionNumber: result.revisionNumber ?? null,
+          holdsRevisionNumber: result.holdsRevisionNumber ?? null,
+        };
         // Match web's schema exactly (create-climb-form.tsx) so PostHog funnels
         // that group by these props line up across platforms. `boardLayout` is the
         // resolved layout NAME (same value web sends), not the numeric id.

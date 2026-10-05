@@ -2202,15 +2202,95 @@ climb detail, favourites, playlists and the setter's climb lists. `syncTicks` an
 and the phone stores them from on-device schema v11, where all three are
 nullable: a row pulled before v11 reads NULL, which means unknown and not 1.
 
-Not built yet:
+#### What the app sends
 
-- The app does not send `climbRevision`, and its queries do not select the new
-  fields. Until it does, every tick gets the fallback.
-- The app's own "sent" marks do not read the holds epoch yet. Search on the
-  device and the sent glyph on a list row are worked out from local ticks, so
-  a climb still shows as sent there after its holds move.
-- `ClimbInput.revisionNumber` is accepted on a queue climb and stored, but no
-  client writes it and the queue subscriptions do not return it.
+The app calls a revision a **version**. That is the only word a climber sees.
+
+The tick form (`use-quick-tick-form.ts`) sends `climbRevision` when it knows
+which version of the climb is on screen, and leaves the key out when it does
+not. It is never sent as null. A backend from before the field rejects the key,
+and an absent key is the case the server already handles with the fallback.
+
+Where the number comes from, in order:
+
+1. The climb on screen, when it carries `revisionNumber`.
+2. The phone's own copy of the climb (`board_climbs.revision_number`), read once
+   per opened form by `useLocalClimbRevision`.
+3. Nowhere. The tick is sent with no version.
+
+A climb carries its number when it was read from the phone (a downloaded board:
+search, climb detail), when a network search or detail answer was filled in
+from the phone's copy (`fillClimbRevisionNumbersLocal`, one read per page), and
+right after the setter's own edit, where `updateClimb` returns it and the create
+screen puts it on the climb it queues. On a board that is not downloaded the
+phone has no copy, the form sends no version, and the server stores the version
+that was live at `climbedAt`. Online that is the same answer.
+
+Offline, the version is written twice: into the local `boardsesh_ticks` row
+(`climb_revision`) and into the queued `SaveTick` payload. If the backend that
+finally receives the queued tick does not know the field, the outbox handler
+sends it once more without it (`handlers.ts`, `DROPPABLE_INPUT_FIELDS`), so the
+send is delivered instead of dead-lettered.
+
+#### Why the version comes from the phone and not from the query
+
+`SearchClimbs`, `GetClimb`, `GetTicks` and the queue documents (`QueueUpdates`,
+`JoinSession`, `GetSessionQueueState`) are pinned by the App Store screenshot
+fixtures, which key a recording on the document text
+(`docs/mobile-screenshot-fixtures.md`). They cannot select `revisionNumber` or
+`climbRevision` until the fixtures are recorded again. Until then:
+
+- A climb's numbers come from `syncClimbs` (the phone's `board_climbs` row).
+- A tick's version in the play drawer's own history comes from `syncTicks`: the
+  shared logbook joins the phone's `boardsesh_ticks.climb_revision` onto the
+  `GetTicks` rows by tick uuid (`BoardAdapter.readLocalTickRevisions`). A tick
+  the phone has not pulled yet has no version until the logbook is read again.
+- A queue item keeps `revisionNumber` and `holdsRevisionNumber` on the phone
+  that queued it, and does not send them. `ClimbInput.revisionNumber` is
+  accepted by the server, but no queue document returns it, so a climb that has
+  been through a shared queue arrives without it and the tick form uses step 2
+  above. `queue-climb-field-contract.test.ts` still lists the field as
+  server-ready for this reason.
+
+Adding the fields to those documents, and removing the local joins, is the
+follow-up once the fixtures are re-recorded.
+
+#### Where the app says "Earlier version"
+
+A log shows the words **Earlier version** when its version is known and lower
+than the version the climb is on now. Any edit counts, a rename included: the
+tag says the climb has changed since, not that the send stopped counting. No
+version numbers are shown. A log with no known version shows nothing.
+
+| Surface | Source of the two versions |
+| --- | --- |
+| Play drawer, your own history (`LogbookEntryRow`) | The tick from the phone's copy; the climb from the phone's copy |
+| Play drawer, other climbers' logs (`ClimberLogRow`) | `climbRevision` and `climbCurrentRevision` on `climbLogs` and `followingClimbAscents` |
+| You tab, the flat logbook (`LogbookRow`) | The same two fields on `userAscentsFeed` |
+| You tab, the grouped logbook | No tag. `GetUserGroupedAscentsFeed` is a pinned document. |
+| Session detail and the session feed | No tag, for the same reason. |
+
+The tag is plain text. Opening the version a log was made on needs the version
+sheet from #5973, which is on `release/next` and not on `main`; making the tag a
+button is the follow-up when it lands.
+
+#### The app's own "sent" marks
+
+Two places work "sent" out on the phone, and both follow the holds epoch:
+
+- Search on a downloaded board (`search-climbs-local.ts`): hide or show sent,
+  hide or show attempted, rated by me, my minimum rating, and the per-row
+  `userAscents` / `userAttempts`. The SQL is written once
+  (`tickOnCurrentHoldsLocalSql`, `climb-revisions-local.ts`) and COALESCEs both
+  sides to 1, because on the phone the climb's column is nullable too. The
+  personal grade is not filtered, as on the server.
+- The sent glyph on a list row (`useAscentStatus`), through
+  `isTickOnCurrentHolds` in `@boardsesh/logbook`. The row passes the climb's
+  `holdsRevisionNumber`; a row whose source does not carry it (a playlist, a
+  queue row) counts every tick, as before.
+
+The Flash or Send label on the tick form still counts any earlier log on the
+climb as history, old holds included.
 
 ### What a moved hold resets
 

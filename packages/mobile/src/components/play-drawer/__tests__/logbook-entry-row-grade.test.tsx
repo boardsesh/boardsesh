@@ -175,3 +175,55 @@ describe('LogbookEntryRow direction tags', () => {
     expect(container.textContent).not.toMatch(/mobile.logbook.(originalTag|mirroredTag)/);
   });
 });
+
+// #6023: a log made before the climb was last edited says so, in words.
+describe('LogbookEntryRow earlier version tag', () => {
+  const renderVersioned = (climbRevision: number | null | undefined, climbCurrentRevision: number | null | undefined) =>
+    render(
+      createElement(LogbookEntryRow, {
+        entry: makeEntry({ climb_revision: climbRevision }),
+        showMirrorTag: false,
+        climbCurrentRevision,
+      }),
+    );
+
+  it('tags a log on a lower version than the climb is on now', () => {
+    const { container } = renderVersioned(1, 3);
+
+    expect(container.textContent).toContain(' · mobile.logbook.earlierVersionTag');
+    expect(rowLabel(container)).toContain('mobile.logbook.earlierVersionA11y');
+  });
+
+  it('shows no tag on the current version', () => {
+    const { container } = renderVersioned(3, 3);
+
+    expect(container.textContent).not.toContain('earlierVersionTag');
+    expect(rowLabel(container)).not.toContain('earlierVersionA11y');
+  });
+
+  it.each([
+    ['the log has no version', null, 3],
+    ['the log has no version key at all', undefined, 3],
+    ['the climb’s version is unknown', 1, null],
+    ['the screen passes no climb version', 1, undefined],
+  ])('shows no tag when %s', (_label, climbRevision, climbCurrentRevision) => {
+    const { container } = renderVersioned(climbRevision, climbCurrentRevision);
+
+    expect(container.textContent).not.toContain('earlierVersionTag');
+    expect(rowLabel(container)).not.toContain('earlierVersionA11y');
+  });
+
+  it('sits after the mirror tag, and prints no version number', () => {
+    const { container } = render(
+      createElement(LogbookEntryRow, {
+        entry: makeEntry({ climb_revision: 8, is_mirror: true }),
+        showMirrorTag: true,
+        climbCurrentRevision: 9,
+      }),
+    );
+
+    expect(container.textContent).toContain('mobile.logbook.mirroredTag · mobile.logbook.earlierVersionTag');
+    // The row's only digits are its try count and the 12:00 clock time.
+    expect(container.textContent).not.toMatch(/[89]/);
+  });
+});

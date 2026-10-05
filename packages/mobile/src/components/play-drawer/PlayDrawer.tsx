@@ -2334,6 +2334,8 @@ export function PlayDrawer({
               // defaults to what the app now shows. Only the DEFAULT changes — the saved
               // tick value stays on the Aurora scale and null until the climber picks.
               consensusGradeName={resolveTickDefaultGradeName(tickClimb, boardseshActive) ?? tickClimb.difficulty}
+              // The version of the climb on screen, when it carries one.
+              climbRevision={tickClimb.revisionNumber}
             />
           );
         })()}

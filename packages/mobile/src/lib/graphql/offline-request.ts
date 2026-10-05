@@ -5,6 +5,7 @@ import { getDatabaseHandle } from '../../db';
 import { isOfflineEngineEnabled } from '../offline-engine';
 import { searchClimbsLocal, countClimbsLocal, isOfflineSearchSupported } from '../../db/queries/search-climbs-local';
 import { getClimbLocal } from '../../db/queries/get-climb-local';
+import { fillClimbRevisionNumbersLocal } from '../../db/queries/climb-revisions-local';
 import { getBoardseshGradeLocal, getBoardseshGradesForAnglesLocal } from '../../db/queries/get-boardsesh-grade-local';
 import { getSetterStatsLocal } from '../../db/queries/get-setter-stats-local';
 import { getHoldHeatmapLocalWithCount } from '../../db/queries/get-hold-heatmap-local';
@@ -115,6 +116,10 @@ type OfflineOperation<TVariables, TResponse> = {
   // presence event referencing a climb newer than the board download). An
   // empty search result is a real answer, not a miss — search ops omit this.
   isLocalMiss?: (response: TResponse) => boolean;
+  // Add what only the phone knows to an answer that came over the network.
+  // Never changes what the server said, only fills fields it left out. A throw
+  // here is swallowed: the network answer stands as it came.
+  enrichNetworkResponse?: (db: SQLiteDatabase, variables: TVariables, response: TResponse) => Promise<TResponse>;
 };
 
 // Generics erased at storage; `never` params keep the assignment legal
@@ -171,6 +176,32 @@ async function searchUnavailableReason(
 
 const searchBoardName = ({ input }: SearchClimbsQueryVariables) => input.boardName;
 
+// `SearchClimbs` and `GetClimb` cannot select `revisionNumber` /
+// `holdsRevisionNumber`: the App Store screenshot fixtures pin both documents
+// by hash (docs/mobile-screenshot-fixtures.md). A climb read over the network
+// therefore gets its version numbers from the phone's own `board_climbs` row,
+// one indexed read per page. A climb the phone does not hold stays without
+// them, and a tick on it is sent with no version (#6023).
+async function fillSearchRevisionNumbers(
+  db: SQLiteDatabase,
+  { input }: SearchClimbsQueryVariables,
+  response: SearchClimbsQueryResponse,
+): Promise<SearchClimbsQueryResponse> {
+  const climbs = await fillClimbRevisionNumbersLocal(db, input.boardName, response.searchClimbs.climbs);
+  if (climbs === response.searchClimbs.climbs) return response;
+  return { ...response, searchClimbs: { ...response.searchClimbs, climbs: [...climbs] } };
+}
+
+async function fillDetailRevisionNumbers(
+  db: SQLiteDatabase,
+  variables: GetClimbQueryVariables,
+  response: GetClimbQueryResponse,
+): Promise<GetClimbQueryResponse> {
+  if (!response.climb) return response;
+  const [climb] = await fillClimbRevisionNumbersLocal(db, variables.boardName, [response.climb]);
+  return climb === response.climb ? response : { ...response, climb };
+}
+
 registerOfflineOperation<SearchClimbsQueryVariables, SearchClimbsQueryResponse>({
   document: SEARCH_CLIMBS,
   surface: 'search',
@@ -179,6 +210,7 @@ registerOfflineOperation<SearchClimbsQueryVariables, SearchClimbsQueryResponse>(
   canServeLocal: canServeSearchLocal,
   resolveLocal: async (db, { input }) => ({ searchClimbs: await searchClimbsLocal(db, input) }),
   offlineFallback: () => ({ searchClimbs: { climbs: [], hasMore: false } }),
+  enrichNetworkResponse: fillSearchRevisionNumbers,
 });
 
 registerOfflineOperation<SearchClimbsQueryVariables, SearchClimbsCountQueryResponse>({
@@ -207,6 +239,7 @@ registerOfflineOperation<GetClimbQueryVariables, GetClimbQueryResponse>({
   }),
   offlineFallback: () => ({ climb: null }),
   isLocalMiss: (response) => response.climb === null,
+  enrichNetworkResponse: fillDetailRevisionNumbers,
 });
 
 // Setter stats: who set on this board configuration (#5407). No filter-support
@@ -489,7 +522,8 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
   }
 
   try {
-    return await getHttpClient().request<TResponse>(document, variables);
+    const networkResponse = await getHttpClient().request<TResponse>(document, variables);
+    return await enrichNetworkResponse(operation, localDb, variables, networkResponse);
   } catch (networkError) {
     // The request reached the network and failed. If it's a registered op whose
     // board is downloaded, serve local instead — this catches the "connected but
@@ -521,6 +555,27 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
       }
     }
     throw networkError;
+  }
+}
+
+/**
+ * Run a registered op's `enrichNetworkResponse` over a network answer. Its own
+ * try/catch on purpose: the caller's catch treats any throw as "the network
+ * failed" and would swap a good answer for a local rescue.
+ */
+async function enrichNetworkResponse<TResponse>(
+  operation: OfflineOperation<never, unknown> | undefined,
+  resolvedDb: SQLiteDatabase | null,
+  variables: Variables | undefined,
+  networkResponse: TResponse,
+): Promise<TResponse> {
+  if (!operation?.enrichNetworkResponse || variables === undefined) return networkResponse;
+  try {
+    const db = resolvedDb ?? getDatabaseHandle();
+    if (!db) return networkResponse;
+    return (await operation.enrichNetworkResponse(db, variables as never, networkResponse as never)) as TResponse;
+  } catch {
+    return networkResponse;
   }
 }
 

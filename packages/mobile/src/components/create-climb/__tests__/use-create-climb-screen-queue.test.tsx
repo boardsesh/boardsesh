@@ -204,6 +204,66 @@ describe('create-climb queue hand-off carries board identity', () => {
     expect(climb.layoutId).toBe(8);
   });
 
+  // #6023: a send logged straight after an edit has to name the version the
+  // setter just saved, and the queue item is where the tick form reads it.
+  it('puts the version numbers updateClimb returns on the queued climb', async () => {
+    board.saveClimb.mockResolvedValue({ uuid: 'saved-rev', createdAt: null, publishedAt: null, isDraft: true });
+    board.updateClimb.mockResolvedValue({
+      uuid: 'saved-rev',
+      createdAt: null,
+      publishedAt: null,
+      isDraft: true,
+      revisionNumber: 3,
+      holdsRevisionNumber: 2,
+    });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.setName('First Save'));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    // A fresh save returns no numbers, so the version is unknown and no tick
+    // would send one.
+    expect(lastQueuedItem().climb.revisionNumber).toBeUndefined();
+    expect(lastQueuedItem().climb.holdsRevisionNumber).toBeUndefined();
+
+    act(() => result.current.setName('Second Save'));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(board.updateClimb).toHaveBeenCalledTimes(1);
+    const { climb } = lastQueuedItem();
+    expect(climb.uuid).toBe('saved-rev');
+    expect(climb.revisionNumber).toBe(3);
+    expect(climb.holdsRevisionNumber).toBe(2);
+    // Local only: the wire shape must not grow a field an older backend rejects.
+    expect('revisionNumber' in toClimbInput(climb)).toBe(false);
+
+    // Set Active on the same saved row keeps them.
+    act(() => result.current.handleSetActive());
+    expect(lastQueuedItem().climb.revisionNumber).toBe(3);
+  });
+
+  it('leaves the version unknown when updateClimb returns no numbers', async () => {
+    board.saveClimb.mockResolvedValue({ uuid: 'saved-old', createdAt: null, publishedAt: null, isDraft: true });
+    board.updateClimb.mockResolvedValue({ uuid: 'saved-old', createdAt: null, publishedAt: null, isDraft: true });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.setName('First Save'));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    act(() => result.current.setName('Second Save'));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(board.updateClimb).toHaveBeenCalledTimes(1);
+    expect(lastQueuedItem().climb.revisionNumber).toBeNull();
+    expect(lastQueuedItem().climb.holdsRevisionNumber).toBeNull();
+  });
+
   it('sends both toggled characteristics to saveClimb, and null when neither is set', async () => {
     board.saveClimb.mockResolvedValue({ uuid: 'saved-2', createdAt: null, publishedAt: null, isDraft: true });
     const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));

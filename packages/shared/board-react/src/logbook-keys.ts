@@ -27,6 +27,14 @@ export type LogbookEntry = {
   upvotes: number;
   downvotes: number;
   commentCount: number;
+  /**
+   * The version of the climb this was logged on (`Tick.climbRevision`), 1 on a
+   * climb nobody has edited. Null or absent when it is not known: an import, a
+   * tick older than the field, or a row read from `GetTicks`, which cannot
+   * select the field yet and gets it from the platform's local copy instead
+   * (`BoardAdapter.readLocalTickRevisions`).
+   */
+  climb_revision?: number | null;
 };
 
 /**
@@ -58,6 +66,7 @@ export type LogbookSourceTick = {
   upvotes?: number | null;
   downvotes?: number | null;
   commentCount?: number | null;
+  climbRevision?: number | null;
 };
 
 export function toLogbookEntry(tick: LogbookSourceTick): LogbookEntry {
@@ -80,7 +89,29 @@ export function toLogbookEntry(tick: LogbookSourceTick): LogbookEntry {
     upvotes: tick.upvotes ?? 0,
     downvotes: tick.downvotes ?? 0,
     commentCount: tick.commentCount ?? 0,
+    ...(tick.climbRevision == null ? {} : { climb_revision: tick.climbRevision }),
   };
+}
+
+/**
+ * Put locally known versions onto logbook entries that arrived without one.
+ * An entry that already has a version keeps it. Returns the same array when
+ * nothing changed.
+ */
+export function withTickRevisions(
+  entries: LogbookEntry[],
+  revisionByTickUuid: ReadonlyMap<string, number>,
+): LogbookEntry[] {
+  if (revisionByTickUuid.size === 0) return entries;
+  let changed = false;
+  const next = entries.map((entry) => {
+    if (entry.climb_revision != null) return entry;
+    const revision = revisionByTickUuid.get(entry.uuid);
+    if (revision === undefined) return entry;
+    changed = true;
+    return { ...entry, climb_revision: revision };
+  });
+  return changed ? next : entries;
 }
 
 export function mergeLogbookEntries(existing: LogbookEntry[], incoming: LogbookEntry[]): LogbookEntry[] {

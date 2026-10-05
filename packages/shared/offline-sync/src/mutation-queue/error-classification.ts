@@ -109,6 +109,49 @@ export function hasGraphqlErrorCode(error: unknown, code: string, depth = 0): bo
   return false;
 }
 
+function graphqlErrorsNameInputField(errors: unknown, fieldPattern: RegExp): boolean {
+  if (!Array.isArray(errors)) return false;
+  for (const entry of errors as Array<{ message?: unknown }>) {
+    if (typeof entry?.message === 'string' && fieldPattern.test(entry.message)) return true;
+  }
+  return false;
+}
+
+/**
+ * Did the server answer with a GraphQL error whose message names this input
+ * field? That is what a backend from before the field existed says about it:
+ * `Variable "$input" got invalid value ...; Field "climbRevision" is not
+ * defined by type "SaveTickInput".`
+ *
+ * Reads the same shapes as `hasGraphqlErrorCode`: a top-level `errors` array,
+ * graphql-request's `error.response.errors`, and a bounded `.cause` walk. Only
+ * GraphQL error entries are read, never the thrown error's own `message`:
+ * graphql-request puts the whole request, variables included, in that string,
+ * so it names every field that was sent.
+ *
+ * The field name is matched as a whole word, so `climbRevision` does not match
+ * `climbRevisionNote`. The caller decides what to do with the answer; this is
+ * not a permanence verdict (`isPermanentRejection` still says yes for these).
+ */
+export function graphqlErrorNamesInputField(error: unknown, fieldName: string, depth = 0): boolean {
+  if (error === null || typeof error !== 'object') return false;
+  const errorRecord = error as Record<string, unknown>;
+  const fieldPattern = new RegExp(`(^|[^A-Za-z0-9_])${fieldName}([^A-Za-z0-9_]|$)`);
+
+  if (depth < MAX_CAUSE_DEPTH) {
+    const cause = errorRecord.cause;
+    if (cause !== undefined && cause !== error && graphqlErrorNamesInputField(cause, fieldName, depth + 1)) return true;
+  }
+
+  if (graphqlErrorsNameInputField(errorRecord.errors, fieldPattern)) return true;
+
+  const response = errorRecord.response;
+  if (response !== null && typeof response === 'object') {
+    if (graphqlErrorsNameInputField((response as Record<string, unknown>).errors, fieldPattern)) return true;
+  }
+  return false;
+}
+
 // Locale-independent markers that identify a transport/offline failure regardless
 // of device language. These are stable IDENTIFIERS, not localized prose:
 //   - the fetch/polyfill wrapper strings ("Network request failed", "Network

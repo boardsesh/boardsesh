@@ -7,6 +7,7 @@ import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping
 import { climbNameLikePattern } from '@boardsesh/climb-filters';
 import { getGradeLabel, getClimbStars } from '../../lib/grade-label';
 import { followedAuthorsLocalCondition } from './followed-authors-local';
+import { tickOnCurrentHoldsLocalSql } from './climb-revisions-local';
 
 /**
  * On-device climb search over local SQLite (board_climbs ⋈ board_climb_stats),
@@ -278,9 +279,15 @@ export function gradeValueSql(displayDifficulty: string, gradeSource: ClimbSearc
   return `CAST(ROUND(${coalesced}) AS INTEGER)`;
 }
 
+// Every "has this climber sent / tried / rated it" check below reads only ticks
+// logged on the holds the climb has now (#6023), the same rule the server
+// applies in create-climb-filters.ts. A send from before a hold moved belongs
+// to a different climb. The personal GRADE further down is not filtered, as on
+// the server: a grade given to an older version is still the climber's grade.
 function ticksExists(negated: boolean, statusSql: string): string {
   return `${negated ? 'NOT EXISTS' : 'EXISTS'} (SELECT 1 FROM boardsesh_ticks t
-    WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND ${ownedTicks('t')} AND ${statusSql})`;
+    WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND ${ownedTicks('t')} AND ${statusSql}
+    AND ${tickOnCurrentHoldsLocalSql('t')})`;
 }
 
 // ---------------------------------------------------------------------------
@@ -596,12 +603,14 @@ export function buildJoinAndWhere(
         WHERE rating_below.climb_uuid = c.uuid AND rating_below.board_type = ? AND rating_below.angle = ?
         AND ${ownedTicks('rating_below')}
         AND rating_below.quality IS NOT NULL AND rating_below.quality < ?
+        AND ${tickOnCurrentHoldsLocalSql('rating_below')}
         AND NOT EXISTS (SELECT 1 FROM boardsesh_ticks rating_newer
           WHERE rating_newer.climb_uuid = rating_below.climb_uuid
           AND rating_newer.board_type = rating_below.board_type
           AND rating_newer.angle = rating_below.angle
           AND ${ownedTicks('rating_newer')}
           AND rating_newer.quality IS NOT NULL
+          AND ${tickOnCurrentHoldsLocalSql('rating_newer')}
           AND (rating_newer.climbed_at > rating_below.climbed_at
             OR (rating_newer.climbed_at = rating_below.climbed_at
               AND rating_newer.updated_at > rating_below.updated_at))))`,
@@ -676,6 +685,13 @@ export type LocalClimbRow = {
    *  NULL on every catalogue-board climb and on rows pulled before the column
    *  existed; read as 0 — "no reset has taken anything off this climb". */
   missing_hold_count: number | null;
+  /** `board_climbs.revision_number` and `holds_revision_number` (migration
+   *  v11): the version the climb is on and the version at which its holds last
+   *  moved. NULL on a row pulled before the columns existed and not delivered
+   *  again since, which reads as unknown. Optional so a reader that does not
+   *  select them still type-checks. */
+  revision_number?: number | null;
+  holds_revision_number?: number | null;
   characteristics: string | null;
   created_at: string | null;
   published_at: string | null;
@@ -776,6 +792,10 @@ export function mapRowToClimb(
     // is nullable for exactly the same rows, and a badge that reads "0 holds
     // lost" is not the same statement as "this is not a spray climb".
     missingHoldCount: row.missing_hold_count ?? null,
+    // Left NULL when the phone does not know. The tick form then sends no
+    // version and the server works it out; the sent glyph reads NULL as 1.
+    revisionNumber: row.revision_number ?? null,
+    holdsRevisionNumber: row.holds_revision_number ?? null,
     is_no_match: resolveClimbNoMatch(boardType, characteristics, row.description),
     characteristics,
     published_at: row.published_at,
@@ -838,10 +858,10 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
 
   const userAscentsSelect = `(SELECT COUNT(*) FROM boardsesh_ticks t
     WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND ${ownedTicks('t')}
-    AND t.status IN ${COMPLETED_STATUSES}) AS user_ascents`;
+    AND t.status IN ${COMPLETED_STATUSES} AND ${tickOnCurrentHoldsLocalSql('t')}) AS user_ascents`;
   const userAttemptsSelect = `(SELECT COUNT(*) FROM boardsesh_ticks t
     WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND ${ownedTicks('t')}
-    AND t.status = 'attempt') AS user_attempts`;
+    AND t.status = 'attempt' AND ${tickOnCurrentHoldsLocalSql('t')}) AS user_attempts`;
 
   // Random uses the seeded mixer (order direction is meaningless); every other
   // sort uses its column + direction. Both keep the c.uuid DESC secondary tiebreak.
@@ -857,7 +877,7 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   const query = `
     SELECT
       c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.is_hidden,
-      c.missing_hold_count, c.characteristics,
+      c.missing_hold_count, c.revision_number, c.holds_revision_number, c.characteristics,
       c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
       ${eff('ascensionist_count')} AS ascensionist_count,
       ${eff('display_difficulty')} AS display_difficulty,
