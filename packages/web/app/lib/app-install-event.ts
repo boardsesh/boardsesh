@@ -29,6 +29,10 @@ export type AppInstallSource = 'app-store' | 'google-play' | 'capacitor-retireme
  *
  * `gym-page` is produced by `app/gym/[gym_slug]/gym-install-cta.tsx` (#4379),
  * and is the only placement that also sets `gymSlug`.
+ *
+ * These are www's values only. The browser app fires the same event with
+ * `browser-app-<surface>` placements from its own builder,
+ * `packages/mobile/src/lib/store-links.ts`.
  */
 export type AppInstallPlacement = 'hero' | 'gym-page';
 

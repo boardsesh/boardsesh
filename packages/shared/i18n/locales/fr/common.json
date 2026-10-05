@@ -577,6 +577,13 @@
       "errorTitle": "Impossible de charger ça",
       "errorBody": "Ça n'est pas passé. Réessaie.",
       "retry": "Réessayer"
+    },
+    "storePrompt": {
+      "title": "Prends l'appli Boardsesh",
+      "body": "Allume ta board et fais la croix sur chaque bloc, même hors ligne.",
+      "googlePlay": "Disponible sur Google Play",
+      "appStore": "Télécharger dans l'App Store",
+      "dismiss": "Pas maintenant"
     }
   },
   "lightControl": {

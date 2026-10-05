@@ -11,6 +11,7 @@ import { useTheme } from '../../src/providers/theme-provider';
 import { useNativeOAuthSignIn } from '../../src/hooks/use-native-oauth-sign-in';
 import { AuthFieldset } from '../../src/components/AuthFieldset';
 import { Button } from '../../src/components/Button';
+import { AppStorePrompt } from '../../src/components/AppStorePrompt';
 import { track } from '../../src/lib/analytics';
 import { useTrackLoginSucceeded } from '../../src/lib/login-analytics';
 import { reportError } from '../../src/lib/error-reporting';
@@ -278,6 +279,10 @@ export default function LoginScreen() {
             <Text style={[styles.footerLink, { color: theme.systemColors.accent }]}>{t('login.links.discord')}</Text>
           </Pressable>
         </View>
+
+        {/* Browser app on a phone only; nothing on native or on a desktop. Last
+            on the screen so it never pushes the sign-in buttons down. */}
+        <AppStorePrompt surface="login" />
       </ScrollView>
     </KeyboardAvoidingView>
   );
