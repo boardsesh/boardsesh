@@ -381,6 +381,18 @@ describe('sessionInvitePreview (real DB)', () => {
       expect(JSON.stringify(result)).not.toContain('@');
     });
 
+    it('drops an address with no dot after the @, and falls back to the account name', async () => {
+      await db.execute(sql`UPDATE user_profiles SET display_name = 'alex@localhost' WHERE user_id = ${HOST_ID}`);
+      try {
+        const result = await preview(SESSION.live);
+
+        expect(result.hostName).toBe('Account Name');
+        expect(JSON.stringify(result)).not.toContain('@');
+      } finally {
+        await db.execute(sql`UPDATE user_profiles SET display_name = '  Alex Honnold  ' WHERE user_id = ${HOST_ID}`);
+      }
+    });
+
     it('keeps a handle-style display name that merely contains an @', async () => {
       await db.execute(sql`UPDATE user_profiles SET display_name = '@alexclimbs' WHERE user_id = ${HOST_ID}`);
       try {
