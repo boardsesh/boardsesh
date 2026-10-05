@@ -5,7 +5,12 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import buildExpoConfig, { ANDROID_BOARD_LINK_PREFIXES } from '../packages/mobile/app.config';
+import buildExpoConfig, {
+  ANDROID_BOARD_LINK_PREFIXES,
+  ANDROID_LINK_LOCALE_SEGMENTS,
+  ANDROID_LOCALISED_BOARD_LINK_PREFIXES,
+} from '../packages/mobile/app.config';
+import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from '../packages/shared/i18n/src/config';
 import { SUPPORTED_BOARDS } from '../packages/shared-schema/src/types/board-config';
 
 // Guards the env the three mobile workflows share, for two reasons:
@@ -937,6 +942,42 @@ describe('Android App Links (verified intent filters)', () => {
       host: 'www.boardsesh.com',
       pathPrefix: `/${board}/`,
     });
+  });
+
+  it('claims one locale segment per non-default web locale', () => {
+    // Web serves the default locale at the root and every other one under its
+    // own path segment. A locale missing here means that site's climb links open
+    // Chrome on Android while the same link opens the app on iOS.
+    const prefixedLocales = SUPPORTED_LOCALES.filter((locale) => locale !== DEFAULT_LOCALE);
+    expect([...ANDROID_LINK_LOCALE_SEGMENTS].sort()).toEqual([...prefixedLocales].sort());
+    expect(ANDROID_LOCALISED_BOARD_LINK_PREFIXES).toHaveLength(prefixedLocales.length * SUPPORTED_BOARDS.length);
+  });
+
+  it('opens a locale-prefixed climb link for every board and locale', () => {
+    const linkData = verifiedLinkData();
+    for (const locale of SUPPORTED_LOCALES.filter((candidate) => candidate !== DEFAULT_LOCALE)) {
+      for (const board of SUPPORTED_BOARDS) {
+        expect(linkData).toContainEqual({
+          scheme: 'https',
+          host: 'www.boardsesh.com',
+          pathPrefix: `/${locale}/${board}/`,
+        });
+      }
+    }
+  });
+
+  it('claims nothing under a locale except board links', () => {
+    // /es/auth/..., /es/b/... and the bare /es/ landing stay in the browser: the
+    // app's locale retry drops the query string an unlisted wall link needs, and
+    // a locale-wide prefix would be a catch-all for a quarter of the site.
+    const boardSegments = new Set<string>(SUPPORTED_BOARDS);
+    const localeSegments = new Set<string>(SUPPORTED_LOCALES);
+    for (const { pathPrefix } of verifiedLinkData()) {
+      const [, firstSegment, secondSegment] = (pathPrefix ?? '').split('/');
+      if (!localeSegments.has(firstSegment ?? '')) continue;
+      expect(boardSegments.has(secondSegment ?? ''), `${pathPrefix} is not a board link`).toBe(true);
+      expect(pathPrefix?.endsWith('/')).toBe(true);
+    }
   });
 
   it('keeps the join, spray wall, preview and password-reset links', () => {

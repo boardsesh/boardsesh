@@ -43,6 +43,19 @@ export const ANDROID_BOARD_LINK_PREFIXES = [
   '/spray/',
 ] as const;
 
+// The web app keeps a non-default locale in the path, so a climber on the
+// Spanish site copies https://www.boardsesh.com/es/kilter/.../view/{climb}.
+// app/+not-found.tsx already strips that segment and retries, which is how iOS
+// opens these links; Android has to claim each one by name. Board links only:
+// the retry drops the query string, and an unlisted wall's /b/ link needs its
+// ?wall= to open. Hardcoded for the same reason as the board list above, and
+// held to SUPPORTED_LOCALES minus the default by the same parity test.
+export const ANDROID_LINK_LOCALE_SEGMENTS = ['es', 'fr', 'de'] as const;
+
+export const ANDROID_LOCALISED_BOARD_LINK_PREFIXES: readonly string[] = ANDROID_LINK_LOCALE_SEGMENTS.flatMap((locale) =>
+  ANDROID_BOARD_LINK_PREFIXES.map((boardPrefix) => `/${locale}${boardPrefix}`),
+);
+
 type WebPlatformResolution = {
   platforms: NonNullable<ExpoConfig['platforms']>;
   web?: NonNullable<ExpoConfig['web']>;
@@ -493,8 +506,9 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // https://www.boardsesh.com/join/{sessionId} and
       // https://www.boardsesh.com/preview/pr-N, plus every classic board link
       // (https://www.boardsesh.com/{board}/.../{angle}/list and .../view/{climb})
-      // through ANDROID_BOARD_LINK_PREFIXES. A board path the app has no route
-      // for falls through +not-found to Home.
+      // through ANDROID_BOARD_LINK_PREFIXES, and the same links under /es, /fr
+      // and /de. A board path the app has no route for falls through
+      // +not-found to Home.
       // www only, never the apex: boardsesh.com answers assetlinks.json with a
       // 301 to www, which Google's verifier rejects, and on Android 11 and older
       // one unverified host fails verification for every host in the app. No
@@ -515,7 +529,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
             { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/join' },
             { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/preview' },
             { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/b/' },
-            ...ANDROID_BOARD_LINK_PREFIXES.map((pathPrefix) => ({
+            ...[...ANDROID_BOARD_LINK_PREFIXES, ...ANDROID_LOCALISED_BOARD_LINK_PREFIXES].map((pathPrefix) => ({
               scheme: 'https',
               host: 'www.boardsesh.com',
               pathPrefix,

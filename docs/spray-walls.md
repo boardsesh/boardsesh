@@ -1828,7 +1828,7 @@ A share link is `https://www.boardsesh.com/b/<slug>/<angle>/list`, with
 host-wide `applinks:` entitlement. Android's verified intent filters in
 `packages/mobile/app.config.ts` include `/b/` on `www.boardsesh.com`, alongside
 `/join`, `/preview`, `/auth/reset-password` and one prefix per board name for
-classic climb links. The apex `boardsesh.com` is not claimed on Android: it
+classic climb links, repeated under `/es`, `/fr` and `/de`. The apex `boardsesh.com` is not claimed on Android: it
 answers `assetlinks.json` with a redirect, which fails verification.
 The native-intent handoff preserves the query string through
 `useLocalSearchParams`. Board adoption awaits `sprayWall(uuid)` with the
