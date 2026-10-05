@@ -36,6 +36,15 @@ env:
   EXPO_PUBLIC_USE_RN_FETCH: '1'
 
 jobs:
+  reject_non_main:
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Require the reviewed default branch
+        run: |
+          echo '::error::Dispatch this guarded workflow from main.'
+          exit 1
   reader:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest

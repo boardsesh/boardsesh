@@ -172,6 +172,9 @@ describe('frozen reader fails closed', () => {
     expect(() => validateManifest({ ...manifest, extra: { branch: 'pr-6008' } }, 'ios', '2026-01-01')).toThrow();
     expect(() => validateManifest({ ...manifest, assets: null }, 'ios', '2026-01-01')).toThrow();
     expect(() => validateManifest(manifest, 'ios', 'invalid')).toThrow();
+    expect(() =>
+      validateManifest({ ...manifest, createdAt: new Date(Date.now() + 120000).toISOString() }, 'ios', '2026-01-01'),
+    ).toThrow('not newly published');
   });
   it('streams signed delivery and rejects altered assets or foreign storage', async () => {
     const hash = createHash('sha256').update(bundle).digest('base64url');
@@ -208,6 +211,51 @@ describe('frozen reader fails closed', () => {
       );
       Reflect.deleteProperty(manifest, 'launchAsset');
       await expect(verifyDelivery('ios', start, certificate, expectedSha, [])).rejects.toThrow('Expected object');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it('stops delivered asset verification when the aggregate byte limit is crossed', async () => {
+    const largeAsset = Buffer.alloc(64 * 1024 * 1024);
+    const assetHash = createHash('sha256').update(largeAsset).digest('base64url');
+    const bucket = 'https://boardsesh-ota-v3.7e9cab940b939f124941596d68fe0199.r2.cloudflarestorage.com';
+    const manifest = {
+      runtimeVersion: RUNTIMES.ios,
+      id: '00000000-0000-4000-8000-000000000000',
+      createdAt: new Date().toISOString(),
+      extra: { branch: 'production' },
+      assets: Array.from({ length: 5 }, (_, index) => ({ url: `${bucket}/asset-${index}`, hash: assetHash })),
+      launchAsset: { url: `${bucket}/launch`, hash: createHash('sha256').update(bundle).digest('base64url') },
+    };
+    const fakeFetch = vi.fn(async (request: string | URL | Request) => {
+      const url = String(request);
+      if (url.includes('/manifest'))
+        return new Response(signed(JSON.stringify(manifest)), {
+          headers: { 'content-type': 'multipart/mixed; boundary=fixture' },
+        });
+      if (url.endsWith('/launch')) return new Response(bundle);
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(largeAsset);
+            controller.close();
+          },
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', fakeFetch);
+    try {
+      await expect(
+        verifyDelivery(
+          'ios',
+          new Date(Date.now() - 10000).toISOString(),
+          certificate,
+          createHash('sha256').update(bundle).digest('hex'),
+          Array.from({ length: 5 }, () => assetHash),
+        ),
+      ).rejects.toThrow('Total delivered assets exceeded byte limit');
+      expect(fakeFetch).toHaveBeenCalledTimes(6);
+      expect(fakeFetch.mock.calls.map(([request]) => String(request))).not.toContain(`${bucket}/asset-4`);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -265,6 +313,8 @@ describe('frozen reader fails closed', () => {
     const workflow = readFileSync(join(REPO_ROOT, '.github/workflows/r2-frozen-reader-publication.yml'), 'utf8');
     expect(workflow).not.toMatch(/\n  (push|schedule|workflow_call):/);
     expect(workflow).toContain("if: github.ref == 'refs/heads/main'");
+    expect(workflow).toContain("if: github.ref != 'refs/heads/main'");
+    expect(workflow).toContain('Dispatch this guarded workflow from main.');
     expect(workflow).toContain('environment: Production');
     expect(workflow).toContain('default: true');
     expect(workflow).toContain('queue: max');
