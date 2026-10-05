@@ -10,6 +10,8 @@ import {
   promoteArchivedOta,
   validateExport,
 } from './mobile-ota-promote';
+import { parsePromoteArgs } from './mobile-ota-promote';
+import type { RolloutReader } from './mobile-ota-promote';
 
 const APP_ID = '007e6fd7-f200-448c-9449-8d48ba5d51fc';
 const COMMIT = 'a'.repeat(40);
@@ -669,5 +671,397 @@ describe('exact-byte production promotion', () => {
     expect(
       server.calls.some((call) => call.url.searchParams.get('platform') === 'android' && call.init.method === 'PUT'),
     ).toBe(false);
+  });
+});
+
+// --- Branch targets and rollout mode -------------------------------------------
+
+type Platform = 'ios' | 'android';
+const LEASE_IDS: Record<Platform, number> = { ios: 101, android: 102 };
+
+/** The fetchServer above, for any target branch, with the rollout echo a 3.2 server sends. */
+function branchServer(
+  fixture: ReturnType<typeof stageFixture>,
+  branch: string,
+  behaviour: {
+    echoRollout?: boolean;
+    requestStatus?: Partial<Record<Platform, number>>;
+    finalizeStatus?: Partial<Record<Platform, number>>;
+    onFinalize?: (platform: Platform) => void;
+    onRequest?: (platform: Platform) => void;
+  } = {},
+) {
+  const calls: { url: URL; init: RequestInit }[] = [];
+  const fetchImpl = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    const url = requestUrl(input);
+    calls.push({ url, init });
+    const platform = (url.searchParams.get('platform') ?? new Headers(init.headers).get('expo-platform')) as Platform;
+    if (url.pathname === `/${APP_ID}/requestUploadUrl/${branch}`) {
+      behaviour.onRequest?.(platform);
+      const status = behaviour.requestStatus?.[platform];
+      if (status !== undefined) return new Response('', { status });
+      const rolloutPercentage = url.searchParams.get('rolloutPercentage');
+      return Response.json({
+        updateId: LEASE_IDS[platform],
+        ...(rolloutPercentage !== null && behaviour.echoRollout !== false
+          ? { rolloutPercentage: Number(rolloutPercentage) }
+          : {}),
+        uploadRequests: [
+          {
+            requestUploadUrl: `https://bucket.example/${platform}/bundle`,
+            fileName: 'main.hbc',
+            filePath: `_expo/static/js/${platform}/main.hbc`,
+          },
+        ],
+      });
+    }
+    if (url.pathname === `/${APP_ID}/markUpdateAsUploaded/${branch}`) {
+      behaviour.onFinalize?.(platform);
+      return new Response('', { status: behaviour.finalizeStatus?.[platform] ?? 200 });
+    }
+    if (url.pathname === '/manifest') {
+      const headers = new Headers(init.headers);
+      const expoClient = JSON.parse(readFileSync(join(fixture.root, platform, 'expoConfig.json'), 'utf8')) as unknown;
+      return Response.json({
+        id: BASELINE_IDS[platform],
+        runtimeVersion: RUNTIME,
+        launchAsset: { hash: Buffer.from(fixture.hashes[platform], 'hex').toString('base64url') },
+        assets: [
+          {
+            hash: createHash('sha256')
+              .update(Buffer.from([1, 2, 3]))
+              .digest('base64url'),
+          },
+        ],
+        // The server names the branch it served: the channel's own for an empty header.
+        extra: { branch: headers.get('xprem-branch') || 'production', expoClient },
+      });
+    }
+    if (url.hostname === 'bucket.example') return new Response('', { status: 200 });
+    throw new Error(`Unexpected request: ${init.method ?? 'GET'} ${url.href}`);
+  }) as unknown as typeof fetch;
+  const manifestCalls = () => calls.filter((call) => call.url.pathname === '/manifest');
+  return { fetchImpl, calls, manifestCalls };
+}
+
+/** The admin API as rollout mode reads it. `live` is what each platform is rolling out. */
+function rolloutReader(live: Partial<Record<Platform, { updateId: number; commitHash: string; percentage: number }>>) {
+  const reads: string[] = [];
+  const reader: RolloutReader = {
+    getUpdateRollout: async (branch, runtimeVersion) => {
+      reads.push(`rollout ${branch} ${runtimeVersion}`);
+      const updates = (['ios', 'android'] as const).flatMap((platform) => {
+        const update = live[platform];
+        return update
+          ? [
+              {
+                updateId: update.updateId,
+                controlUpdateId: null,
+                platform,
+                percentage: update.percentage,
+                createdAt: null,
+              },
+            ]
+          : [];
+      });
+      return { active: updates.length > 0, updates };
+    },
+    getUpdateDetails: async (_branch, _runtimeVersion, updateId) => {
+      reads.push(`details ${updateId}`);
+      const update = Object.values(live).find((candidate) => candidate?.updateId === updateId);
+      return { updateId, updateUUID: null, commitHash: update?.commitHash ?? null, platform: null };
+    },
+  };
+  return { reader, reads, live };
+}
+
+function promoteOptions(fixture: ReturnType<typeof stageFixture>, fetchImpl: typeof fetch) {
+  return {
+    receiptPath: fixture.receiptPath,
+    iosExport: fixture.iosExport,
+    androidExport: fixture.androidExport,
+    manifestUrl: 'https://updates.example/manifest',
+    token: 'test-token',
+    fetchImpl,
+    verificationDelaysMs: [],
+  };
+}
+
+describe('promotion to a named branch', () => {
+  it.each(['production', 'pr-beta', 'pr-staging'])(
+    'always probes through the production channel when targeting %s',
+    async (branch) => {
+      const fixture = stageFixture();
+      const server = branchServer(fixture, branch);
+      await promoteArchivedOta({ ...promoteOptions(fixture, server.fetchImpl), branch });
+
+      const probes = server.manifestCalls().map((call) => new Headers(call.init.headers));
+      expect(probes.length).toBeGreaterThan(0);
+      for (const headers of probes) {
+        // The channel is baked into every binary. Only the branch header moves.
+        expect(headers.get('expo-channel-name')).toBe('production');
+        expect(headers.get('xprem-branch')).toBe(branch === 'production' ? '' : branch);
+      }
+      const controlPaths = server.calls
+        .map((call) => call.url.pathname)
+        .filter((pathname) => pathname.startsWith(`/${APP_ID}/`));
+      expect(new Set(controlPaths)).toEqual(
+        new Set([`/${APP_ID}/requestUploadUrl/${branch}`, `/${APP_ID}/markUpdateAsUploaded/${branch}`]),
+      );
+    },
+  );
+
+  it('sends no rollout parameter and makes no admin call unless asked', async () => {
+    const fixture = stageFixture();
+    const server = branchServer(fixture, 'production');
+    await promoteArchivedOta(promoteOptions(fixture, server.fetchImpl));
+    const leaseRequests = server.calls.filter((call) => call.url.pathname.includes('/requestUploadUrl/'));
+    expect(leaseRequests).toHaveLength(2);
+    for (const call of leaseRequests) {
+      expect([...call.url.searchParams.keys()].sort()).toEqual([
+        'commitHash',
+        'platform',
+        'publishGroup',
+        'runtimeVersion',
+      ]);
+    }
+    expect(server.calls.some((call) => call.url.pathname.startsWith('/api/'))).toBe(false);
+  });
+
+  it('refuses a manifest served from a branch other than the target', async () => {
+    const fixture = stageFixture();
+    // A server with surfing off answers a pinned request with the channel's own branch.
+    const server = branchServer(fixture, 'pr-beta');
+    const surfingOff = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const headers = new Headers(init.headers);
+      headers.set('xprem-branch', '');
+      return server.fetchImpl(input, { ...init, headers });
+    }) as unknown as typeof fetch;
+    await expect(promoteArchivedOta({ ...promoteOptions(fixture, surfingOff), branch: 'pr-beta' })).rejects.toThrow(
+      'ios manifest is not from the pr-beta branch.',
+    );
+  });
+
+  it('captures the baseline of the branch it is told to', async () => {
+    const fixture = stageFixture();
+    const server = branchServer(fixture, 'pr-beta');
+    await expect(
+      captureProductionBaseline({
+        manifestUrl: 'https://updates.example/manifest',
+        appId: APP_ID,
+        runtimeVersions: { ios: RUNTIME, android: RUNTIME },
+        branch: 'pr-beta',
+        fetchImpl: server.fetchImpl,
+      }),
+    ).resolves.toEqual(BASELINE_IDS);
+    for (const call of server.manifestCalls()) {
+      const headers = new Headers(call.init.headers);
+      expect(headers.get('expo-channel-name')).toBe('production');
+      expect(headers.get('xprem-branch')).toBe('pr-beta');
+    }
+  });
+
+  it('parses --branch and --rollout-percentage, and keeps the old defaults', () => {
+    const paths = ['--receipt', 'r.json', '--ios-export', 'ios', '--android-export', 'android'];
+    expect(parsePromoteArgs(paths)).toEqual({
+      receipt: 'r.json',
+      iosExport: 'ios',
+      androidExport: 'android',
+      branch: 'production',
+      rolloutPercentage: null,
+    });
+    expect(parsePromoteArgs([...paths, '--branch', 'pr-beta', '--rollout-percentage', '5'])).toMatchObject({
+      branch: 'pr-beta',
+      rolloutPercentage: 5,
+    });
+    expect(() => parsePromoteArgs([...paths, '--rollout-percentage', '100'])).toThrow('whole number from 1 to 99');
+    expect(() => parsePromoteArgs([...paths, '--rollout-percentage', '2.5'])).toThrow('whole number from 1 to 99');
+    expect(() => parsePromoteArgs([...paths, '--branch', '../production'])).toThrow('Invalid branch name');
+    expect(() => parsePromoteArgs([...paths, '--branch'])).toThrow('--branch needs a value.');
+    expect(() => parsePromoteArgs(['--receipt'])).toThrow('--receipt needs a path.');
+    const capture = ['--capture-baseline', '--app-id', APP_ID, '--ios-runtime', RUNTIME, '--android-runtime', RUNTIME];
+    expect(parseCaptureArgs([...capture, '--out', 'b.json']).branch).toBe('production');
+    expect(parseCaptureArgs([...capture, '--out', 'b.json', '--branch', 'pr-beta']).branch).toBe('pr-beta');
+  });
+});
+
+describe('promotion as a rollout', () => {
+  it('asks for the percentage and confirms through the rollout, not the manifest', async () => {
+    const fixture = stageFixture();
+    const admin = rolloutReader({});
+    const server = branchServer(fixture, 'production', {
+      onFinalize: (platform) => {
+        admin.live[platform] = { updateId: LEASE_IDS[platform], commitHash: COMMIT, percentage: 5 };
+      },
+    });
+    const connect = vi.fn(async () => admin.reader);
+    await promoteArchivedOta({
+      ...promoteOptions(fixture, server.fetchImpl),
+      rollout: { percentage: 5, connect },
+    });
+    expect(connect).toHaveBeenCalledWith(APP_ID);
+    const leaseRequests = server.calls.filter((call) => call.url.pathname.includes('/requestUploadUrl/'));
+    expect(leaseRequests.map((call) => call.url.searchParams.get('rolloutPercentage'))).toEqual(['5', '5']);
+
+    // Every manifest read is a baseline check made before that platform's finalize.
+    const paths = server.calls.map((call) => call.url.pathname);
+    expect(paths.lastIndexOf('/manifest')).toBeLessThan(
+      paths.lastIndexOf(`/${APP_ID}/markUpdateAsUploaded/production`),
+    );
+    expect(admin.reads.filter((read) => read.startsWith('rollout')).length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('stops before uploading when the lease does not echo the percentage', async () => {
+    const fixture = stageFixture();
+    const server = branchServer(fixture, 'production', { echoRollout: false });
+    await expect(
+      promoteArchivedOta({
+        ...promoteOptions(fixture, server.fetchImpl),
+        rollout: { percentage: 5, connect: async () => rolloutReader({}).reader },
+      }),
+    ).rejects.toThrow('ios upload lease ignored the rollout percentage; refusing a full publish.');
+    expect(server.calls.some((call) => call.init.method === 'PUT')).toBe(false);
+    expect(server.calls.some((call) => call.url.pathname.includes('/markUpdateAsUploaded/'))).toBe(false);
+  });
+
+  it('treats its own live rollout as done on a re-run, without publishing again', async () => {
+    const fixture = stageFixture();
+    const server = branchServer(fixture, 'production');
+    const admin = rolloutReader({
+      ios: { updateId: 101, commitHash: COMMIT.toUpperCase(), percentage: 5 },
+      android: { updateId: 102, commitHash: COMMIT, percentage: 10 },
+    });
+    await promoteArchivedOta({
+      ...promoteOptions(fixture, server.fetchImpl),
+      rollout: { percentage: 5, connect: async () => admin.reader },
+    });
+    expect(server.calls).toEqual([]);
+  });
+
+  it('finishes the other platform when only one rollout started', async () => {
+    const fixture = stageFixture();
+    const admin = rolloutReader({ ios: { updateId: 101, commitHash: COMMIT, percentage: 5 } });
+    const server = branchServer(fixture, 'production', {
+      onFinalize: (platform) => {
+        admin.live[platform] = { updateId: LEASE_IDS[platform], commitHash: COMMIT, percentage: 5 };
+      },
+    });
+    await promoteArchivedOta({
+      ...promoteOptions(fixture, server.fetchImpl),
+      rollout: { percentage: 5, connect: async () => admin.reader },
+    });
+    const published = server.calls
+      .filter((call) => call.url.pathname.includes('/requestUploadUrl/'))
+      .map((call) => call.url.searchParams.get('platform'));
+    expect(published).toEqual(['android']);
+  });
+
+  it('refuses when the live rollout belongs to another update', async () => {
+    const fixture = stageFixture();
+    const server = branchServer(fixture, 'production');
+    const admin = rolloutReader({ ios: { updateId: 900, commitHash: 'c'.repeat(40), percentage: 25 } });
+    await expect(
+      promoteArchivedOta({
+        ...promoteOptions(fixture, server.fetchImpl),
+        rollout: { percentage: 5, connect: async () => admin.reader },
+      }),
+    ).rejects.toThrow('ios production has an active rollout of another update (900); promotion was refused.');
+    expect(server.calls).toEqual([]);
+  });
+
+  it('counts a 409 on the lease request as success when the rollout is its own', async () => {
+    const fixture = stageFixture();
+    const admin = rolloutReader({});
+    const server = branchServer(fixture, 'production', {
+      requestStatus: { ios: 409 },
+      // Another run of this same commit won the race for iOS.
+      onRequest: (platform) => {
+        if (platform === 'ios') admin.live.ios = { updateId: 555, commitHash: COMMIT, percentage: 5 };
+      },
+      onFinalize: (platform) => {
+        admin.live[platform] = { updateId: LEASE_IDS[platform], commitHash: COMMIT, percentage: 5 };
+      },
+    });
+    await promoteArchivedOta({
+      ...promoteOptions(fixture, server.fetchImpl),
+      rollout: { percentage: 5, connect: async () => admin.reader },
+    });
+    const finalized = server.calls
+      .filter((call) => call.url.pathname.includes('/markUpdateAsUploaded/'))
+      .map((call) => call.url.searchParams.get('platform'));
+    expect(finalized).toEqual(['android']);
+  });
+
+  it('counts a 409 on finalize as success only when the rollout carries its lease id', async () => {
+    const fixture = stageFixture();
+    const mine = rolloutReader({});
+    const retried = branchServer(fixture, 'production', {
+      finalizeStatus: { ios: 409, android: 409 },
+      onFinalize: (platform) => {
+        mine.live[platform] = { updateId: LEASE_IDS[platform], commitHash: COMMIT, percentage: 5 };
+      },
+    });
+    await promoteArchivedOta({
+      ...promoteOptions(fixture, retried.fetchImpl),
+      rollout: { percentage: 5, connect: async () => mine.reader },
+    });
+
+    const theirs = rolloutReader({});
+    const raced = branchServer(fixture, 'production', {
+      finalizeStatus: { ios: 409 },
+      onFinalize: () => {
+        theirs.live.ios = { updateId: 900, commitHash: COMMIT, percentage: 5 };
+      },
+    });
+    await expect(
+      promoteArchivedOta({
+        ...promoteOptions(fixture, raced.fetchImpl),
+        rollout: { percentage: 5, connect: async () => theirs.reader },
+      }),
+    ).rejects.toThrow('active rollout of another update (900)');
+  });
+
+  it('still fails closed on a 409 when no rollout is its own', async () => {
+    const fixture = stageFixture();
+    const server = branchServer(fixture, 'production', { requestStatus: { ios: 409 } });
+    await expect(
+      promoteArchivedOta({
+        ...promoteOptions(fixture, server.fetchImpl),
+        rollout: { percentage: 5, connect: async () => rolloutReader({}).reader },
+      }),
+    ).rejects.toThrow('ios production has an active rollout; promotion was refused.');
+  });
+
+  it('fails when the branch already serves the files in full, because no rollout can start', async () => {
+    const fixture = stageFixture();
+    const server = branchServer(fixture, 'production', { requestStatus: { ios: 406 } });
+    await expect(
+      promoteArchivedOta({
+        ...promoteOptions(fixture, server.fetchImpl),
+        rollout: { percentage: 5, connect: async () => rolloutReader({}).reader },
+      }),
+    ).rejects.toThrow('there is no rollout to start');
+  });
+
+  it('fails when the rollout never shows up after finalize', async () => {
+    const fixture = stageFixture();
+    const server = branchServer(fixture, 'production');
+    await expect(
+      promoteArchivedOta({
+        ...promoteOptions(fixture, server.fetchImpl),
+        rollout: { percentage: 5, connect: async () => rolloutReader({}).reader },
+      }),
+    ).rejects.toThrow('ios production shows no rollout for update 101 after promotion.');
+  });
+
+  it('rejects a percentage outside 1 to 99', async () => {
+    const fixture = stageFixture();
+    const server = branchServer(fixture, 'production');
+    await expect(
+      promoteArchivedOta({
+        ...promoteOptions(fixture, server.fetchImpl),
+        rollout: { percentage: 100, connect: async () => rolloutReader({}).reader },
+      }),
+    ).rejects.toThrow('whole number from 1 to 99');
   });
 });

@@ -1314,6 +1314,16 @@ export default defineConfig({
         cache: false,
       },
 
+      // xprem control plane as code: the production channel's branch and Branch
+      // Surfing, and the long-lived branches and their protection. Plans by
+      // default and exits non-zero on drift; forward `-- --apply` to converge.
+      // Never deletes and never touches a per-PR preview branch.
+      // See scripts/ota-apply.ts + docs/mobile-ota-updates.md.
+      'ota:apply': {
+        command: 'tsx scripts/ota-apply.ts',
+        cache: false,
+      },
+
       // Reports newer xprem releases — stable and prerelease tracked separately so
       // a beta never displaces a stable upgrade — and rewrites the repo onto one
       // with `-- --write <version>`. Drives .github/workflows/ota-image-bump.yml.

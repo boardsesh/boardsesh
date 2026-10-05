@@ -1,0 +1,102 @@
+name: OTA Config Apply
+
+# Config-as-code for the xprem control plane at updates.boardsesh.com: which
+# branch the production channel serves, Branch Surfing, and the long-lived
+# branches and their protection. The declaration is infra/ota/config.ts.
+#
+# Merging a change to the declaration is what applies it. A manual run plans by
+# default and applies only when asked.
+#
+# The tool never deletes, never lifts protection, never touches a per-PR preview
+# branch, and refuses to remap a channel while a rollout is live. It publishes
+# nothing: no update moves because this ran.
+#
+# See docs/mobile-ota-updates.md, "Managing xprem as code". The daily read-only
+# check is ota-drift.yml.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/ota/**'
+      - 'scripts/ota-apply.ts'
+      - 'scripts/lib/xprem-admin.mts'
+      - 'scripts/lib/ota-rollout.ts'
+      - 'scripts/lib/ota-branch-probe.ts'
+      - '.github/workflows/ota-apply.yml'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'plan prints the diff and changes nothing; apply makes the server match'
+        type: choice
+        options:
+          - plan
+          - apply
+        default: plan
+
+permissions:
+  contents: read
+
+concurrency:
+  # One writer at a time, and never cancelled: an apply interrupted between
+  # creating a branch and protecting it leaves the half-state the next run
+  # would have to explain.
+  group: ota-config-apply
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    # A plan is about 90 GETs (one per runtime version of each declared branch)
+    # and an apply a handful of writes on top. Ten minutes is a hung server.
+    timeout-minutes: 10
+    # Holds the dashboard admin login. Restricted to `main`, and every job that
+    # uses it checks out `main` and installs nothing.
+    environment: ota-stable-release
+    steps:
+      # Always `main`, whatever ref the run was dispatched from: the code that
+      # receives the admin login is only ever code that was reviewed and merged.
+      - name: Checkout main
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          persist-credentials: false
+
+      # No dependency install: scripts/ota-apply.ts and everything it imports
+      # use node built-ins only, so no package's install script runs in a job
+      # that holds the admin login.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
+
+      - name: Plan or apply the declared state
+        env:
+          # The email is not a secret in the other OTA environments, where it is a
+          # variable; accept either so the owner can store it whichever way.
+          OTA_ADMIN_EMAIL: ${{ secrets.OTA_ADMIN_EMAIL || vars.OTA_ADMIN_EMAIL }}
+          OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
+          APPLY: ${{ github.event_name == 'push' || inputs.mode == 'apply' }}
+          NODE_NO_WARNINGS: '1'
+        run: |
+          set -euo pipefail
+
+          # An environment that has not been given the login yet must not look
+          # like a failed apply. Say so where a human will read it, and stop.
+          if [ -z "${OTA_ADMIN_EMAIL:-}" ] || [ -z "${OTA_ADMIN_PASSWORD:-}" ]; then
+            echo "::notice::OTA_ADMIN_EMAIL or OTA_ADMIN_PASSWORD is not set in the ota-stable-release environment; skipping."
+            echo "Skipped: the \`ota-stable-release\` environment has no \`OTA_ADMIN_EMAIL\` / \`OTA_ADMIN_PASSWORD\`. Nothing was read or changed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          flags=()
+          if [ "$APPLY" = "true" ]; then flags+=(--apply); fi
+
+          status=0
+          node --experimental-strip-types scripts/ota-apply.ts "${flags[@]}" 2>&1 | tee "$RUNNER_TEMP/ota-apply.log" || status=$?
+          {
+            echo '### OTA config'
+            echo ''
+            echo '```'
+            cat "$RUNNER_TEMP/ota-apply.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

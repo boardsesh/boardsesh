@@ -11,15 +11,21 @@
 const DEFAULT_APP_ID = '007e6fd7-f200-448c-9449-8d48ba5d51fc';
 const LOG = '[ota-preview-cleanup]';
 
+// Loaded with a dynamic import of an .mts file, never a static import. This script
+// has no import or export of its own, so node parses it as CommonJS and prints
+// nothing. A static import would make it an ES module under a package.json with
+// no "type", and node would warn about that on stderr on every run.
+const loadAdmin = () => import('./lib/xprem-admin.mts');
+
 function fail(message: string): never {
   console.error(`${LOG} ${message}`);
   process.exit(1);
 }
 
-function resolveBaseUrl(): string {
+async function resolveBaseUrl(): Promise<string> {
   const configuredUrl = process.env.OTA_BASE_URL || process.env.EXPO_UPDATES_URL;
   if (!configuredUrl) fail('Set OTA_BASE_URL (or EXPO_UPDATES_URL).');
-  return configuredUrl.replace(/\/manifest\/?$/, '').replace(/\/+$/, '');
+  return (await loadAdmin()).adminBaseUrl(configuredUrl);
 }
 
 function parseBranch(args: string[]): string | null {
@@ -35,16 +41,7 @@ async function login(baseUrl: string): Promise<string> {
   const email = process.env.OTA_ADMIN_EMAIL;
   const password = process.env.OTA_ADMIN_PASSWORD;
   if (!email || !password) fail('Delete needs OTA_ADMIN_EMAIL + OTA_ADMIN_PASSWORD.');
-
-  const response = await fetch(`${baseUrl}/auth/login`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ email, password }).toString(),
-  });
-  if (!response.ok) fail(`Admin login failed (HTTP ${response.status}): ${(await response.text()).slice(0, 200)}`);
-  const payload = (await response.json()) as { token?: string };
-  if (!payload.token) fail('Admin login returned no token.');
-  return payload.token;
+  return (await loadAdmin()).adminLogin({ baseUrl, email, password });
 }
 
 async function deleteResource(baseUrl: string, token: string, path: string, label: string): Promise<void> {
@@ -84,7 +81,7 @@ async function main(): Promise<void> {
   if (command !== 'delete') fail(`Unknown command "${command ?? ''}". Expected: delete.`);
   const branch = parseBranch(rest);
   if (!branch) fail('Delete needs --branch <pr-number>.');
-  await deletePreview(resolveBaseUrl(), process.env.OTA_APP_ID || DEFAULT_APP_ID, branch);
+  await deletePreview(await resolveBaseUrl(), process.env.OTA_APP_ID || DEFAULT_APP_ID, branch);
 }
 
 main().catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)));

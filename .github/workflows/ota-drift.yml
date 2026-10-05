@@ -1,0 +1,116 @@
+name: OTA Config Drift
+
+# The daily read-only check that the xprem control plane still matches
+# infra/ota/config.ts. It plans and never applies: an unattended job reports a
+# difference, it does not change the server every binary talks to. Drift is fixed
+# by a reviewed change to the declaration, or by a manual apply (ota-apply.yml).
+#
+# What it catches is a dashboard edit: Branch Surfing widened to `*`, the channel
+# pointed at another branch, protection lifted from `pr-staging`.
+#
+# See docs/mobile-ota-updates.md, "Managing xprem as code".
+on:
+  schedule:
+    - cron: '17 5 * * *' # 05:17 UTC daily; off the hour, where scheduled runs queue
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A read, so a newer run may replace an older one. Its own group: it must never
+  # queue behind or cancel an apply.
+  group: ota-config-drift
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Holds the dashboard admin login. Restricted to `main`, and every job that
+    # uses it checks out `main` and installs nothing.
+    environment: ota-stable-release
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          persist-credentials: false
+
+      # No dependency install: the script uses node built-ins only.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
+
+      - name: Plan against the live server
+        id: plan
+        env:
+          OTA_ADMIN_EMAIL: ${{ secrets.OTA_ADMIN_EMAIL || vars.OTA_ADMIN_EMAIL }}
+          OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
+          NODE_NO_WARNINGS: '1'
+        run: |
+          set -euo pipefail
+
+          # An environment that has not been given the login yet is not drift.
+          if [ -z "${OTA_ADMIN_EMAIL:-}" ] || [ -z "${OTA_ADMIN_PASSWORD:-}" ]; then
+            echo "::notice::OTA_ADMIN_EMAIL or OTA_ADMIN_PASSWORD is not set in the ota-stable-release environment; skipping."
+            echo "Skipped: the \`ota-stable-release\` environment has no \`OTA_ADMIN_EMAIL\` / \`OTA_ADMIN_PASSWORD\`. Nothing was read." >> "$GITHUB_STEP_SUMMARY"
+            echo "result=skipped" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # No --apply, ever, in this workflow. Exit 1 is drift or a failed read;
+          # both are worth a human, so both alert.
+          status=0
+          node --experimental-strip-types scripts/ota-apply.ts 2>&1 | tee "$RUNNER_TEMP/ota-drift.log" || status=$?
+          {
+            echo '### OTA config drift check'
+            echo ''
+            echo '```'
+            cat "$RUNNER_TEMP/ota-drift.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$status" -eq 0 ]; then
+            echo "result=in-sync" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=drift" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Notify Discord
+        if: steps.plan.outputs.result == 'drift'
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DRIFT_LOG: ${{ runner.temp }}/ota-drift.log
+        run: |
+          set -uo pipefail
+
+          # The plan's own lines: channel and branch names and percentages. The
+          # script never prints the login, and the message is built with jq so the
+          # body is JSON-encoded, not interpolated. Discord drops a message over
+          # 2000 characters whole, so trim the detail and never the run link.
+          detail="$(grep -E 'drift:|blocked:|\[ota-apply\] [A-Z]' "$DRIFT_LOG" 2>/dev/null \
+            | sed 's/`//g' | cut -c1-240 | head -n 12 | head -c 1200 || true)"
+          if [ -z "$detail" ]; then
+            detail='The check produced no plan. See the run log.'
+          fi
+
+          if [ -z "${DISCORD_DEPLOY_WEBHOOK:-}" ]; then
+            echo "::warning::The OTA server differs from infra/ota/config.ts but DISCORD_DEPLOY_WEBHOOK is not readable in this environment. The report is in the job summary and the run is red."
+            exit 0
+          fi
+
+          content="$(printf '**OTA config drift**: updates.boardsesh.com no longer matches infra/ota/config.ts. Nothing was changed.\n```\n%s\n```\n<%s>' \
+            "$detail" "$RUN_URL")"
+          # allowed_mentions.parse=[] blocks pings from anything spliced into the
+          # body. A webhook failure must not hide the drift, so it only warns.
+          jq -n --arg content "$content" '{content: $content, allowed_mentions: {parse: []}}' \
+            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
+              echo "::warning::Failed to post the Discord notification (see status above)"
+
+      # Discord is best-effort; the red run is the durable record.
+      - name: Fail the run on drift
+        if: steps.plan.outputs.result == 'drift'
+        run: |
+          echo "::error::The OTA server differs from infra/ota/config.ts. See the job summary."
+          exit 1

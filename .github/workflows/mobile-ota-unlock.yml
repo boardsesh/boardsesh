@@ -1,0 +1,131 @@
+name: Mobile OTA Unlock
+
+# Reverts a live canary on one branch and runtime version, so the next publish
+# there is accepted. xprem refuses a publish (409) while a rollout is live on the
+# same branch and runtime version.
+#
+# It reverts and never finishes. Finishing would deliver an update nobody has
+# judged to every device; reverting republishes the previous update, and the
+# devices that took the canary return to it on their next check.
+#
+# Finding no live rollout is a clean no-op, so a caller can run this
+# unconditionally before it publishes.
+#
+# Reusable (`workflow_call`) and dispatchable. Nothing calls it yet.
+# See docs/mobile-ota-updates.md, "Managing xprem as code".
+on:
+  workflow_call:
+    inputs:
+      branch:
+        description: 'xprem branch holding the rollout'
+        type: string
+        default: production
+      runtime_version:
+        description: 'Runtime version (40-character fingerprint) the caller is about to publish to'
+        type: string
+        required: true
+      platform:
+        description: 'ios, android or all'
+        type: string
+        default: all
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'xprem branch holding the rollout'
+        type: string
+        default: production
+      runtime_version:
+        description: 'Runtime version (40-character fingerprint)'
+        type: string
+        required: true
+      platform:
+        description: 'Which platform to revert'
+        type: choice
+        options:
+          - all
+          - ios
+          - android
+        default: all
+
+permissions:
+  contents: read
+
+concurrency:
+  # Per branch, and never cancelled: a revert interrupted halfway has reverted one
+  # platform and left the other rolling out.
+  group: mobile-ota-unlock-${{ inputs.branch }}
+  cancel-in-progress: false
+
+jobs:
+  revert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Holds the dashboard admin login. Restricted to `main`, and every job that
+    # uses it checks out `main` and installs nothing.
+    environment: ota-stable-release
+    steps:
+      # Always `main`, whatever ref the caller runs on: a release branch or a
+      # backport must not be able to change the code that receives the login.
+      - name: Checkout main
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          persist-credentials: false
+
+      # No dependency install: the script uses node built-ins only.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
+
+      - name: Revert the live rollout
+        env:
+          OTA_ADMIN_EMAIL: ${{ secrets.OTA_ADMIN_EMAIL || vars.OTA_ADMIN_EMAIL }}
+          OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
+          OTA_BRANCH: ${{ inputs.branch }}
+          OTA_RUNTIME_VERSION: ${{ inputs.runtime_version }}
+          OTA_PLATFORM: ${{ inputs.platform }}
+          NODE_NO_WARNINGS: '1'
+        run: |
+          set -euo pipefail
+
+          # Inputs reach the shell through the environment, never by
+          # interpolation, and are checked before anything uses them.
+          if ! printf '%s' "$OTA_BRANCH" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*$'; then
+            echo "::error::Invalid branch name."
+            exit 1
+          fi
+          if ! printf '%s' "$OTA_RUNTIME_VERSION" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::runtime_version must be a 40-character fingerprint."
+            exit 1
+          fi
+          case "$OTA_PLATFORM" in
+            all | ios | android) ;;
+            *)
+              echo "::error::platform must be ios, android or all."
+              exit 1
+              ;;
+          esac
+
+          # An environment that has not been given the login yet must not fail
+          # its caller. If a rollout is live anyway, the server still refuses the
+          # caller's publish, so skipping here cannot let one through.
+          if [ -z "${OTA_ADMIN_EMAIL:-}" ] || [ -z "${OTA_ADMIN_PASSWORD:-}" ]; then
+            echo "::notice::OTA_ADMIN_EMAIL or OTA_ADMIN_PASSWORD is not set in the ota-stable-release environment; skipping."
+            echo "Skipped: the \`ota-stable-release\` environment has no \`OTA_ADMIN_EMAIL\` / \`OTA_ADMIN_PASSWORD\`. Nothing was read or reverted." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          status=0
+          node --experimental-strip-types scripts/mobile-ota-rollout.ts revert \
+            --branch "$OTA_BRANCH" \
+            --runtime-version "$OTA_RUNTIME_VERSION" \
+            --platform "$OTA_PLATFORM" \
+            --if-live 2>&1 | tee "$RUNNER_TEMP/ota-unlock.log" || status=$?
+          {
+            echo '### OTA unlock'
+            echo ''
+            echo '```'
+            cat "$RUNNER_TEMP/ota-unlock.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

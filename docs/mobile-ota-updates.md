@@ -424,7 +424,8 @@ client requesting an unmapped channel gets `No branch mapping found`. Mapping is
 **dashboard-admin operation**: the app-scoped `eoo_` publish key can list branches/channels but
 **cannot map** (it 403s with "This action requires a dashboard session").
 
-- **Production** is mapped once, by hand, in the dashboard — nothing on `main` remaps it.
+- **Production** maps to the `production` branch. The mapping is declared in `infra/ota/config.ts`
+  and checked by `vp run ota:apply` (see [Managing xprem as code](#managing-xprem-as-code)).
 - **PR previews and staging are branches, not channels.** The production channel enables xprem Branch
   Surfing with the narrow pattern `pr-*`; the picker sends `xprem-branch: pr-N` for a PR or
   `xprem-branch: pr-staging` for the staged main update. No extra channel mapping is created.
@@ -448,6 +449,111 @@ client requesting an unmapped channel gets `No branch mapping found`. Mapping is
 - **Green-field consequence:** a legacy v1 client that sends **no** `expo-app-id` header gets an
   HTTP 400 from V3. That's correct — only new header-carrying V3 builds ever hit V3; old binaries
   pointed at V2, which no longer exists.
+
+### Managing xprem as code
+
+The channel mapping, Branch Surfing and branch protection used to exist only as dashboard state. They
+are now declared in `infra/ota/config.ts`, and `vp run ota:apply` compares that declaration with the
+server. It follows the Railway tool (`infra/railway/`, `vp run railway:apply`): typed desired state,
+a pure plan function (`infra/ota/plan.ts`), and all I/O in the script.
+
+```bash
+OTA_ADMIN_EMAIL=... OTA_ADMIN_PASSWORD=... vp run ota:apply             # plan: print the diff, exit 1 on drift
+OTA_ADMIN_EMAIL=... OTA_ADMIN_PASSWORD=... vp run ota:apply -- --apply  # make the server match
+```
+
+What is declared:
+
+| What | Declared value |
+| --- | --- |
+| Channel `production` | serves branch `production` |
+| Branch Surfing on `production` | on, pattern `pr-*` |
+| Branch `production` | exists, protected |
+| Branch `pr-beta` | exists, protected |
+| Branch `pr-staging` | exists, protected |
+| Release policy | canary steps 5, 10, 25, 50; 4 h per step; 20 h minimum soak; 15 devices per platform before a verdict |
+
+A protected branch cannot be deleted by anyone until the flag is lifted in the dashboard.
+`pr-staging` and `pr-beta` carry the `pr-` prefix so the single surfing glob covers them, which
+leaves the PR-number check in `scripts/ota-preview-cleanup.ts` as the only thing between a cleanup
+run and those branches. Protection is the second lock.
+
+What the tool will not do, whatever the declaration says:
+
+1. Delete a channel, a branch or an update.
+2. Touch a per-PR preview branch (`pr-<number>`). Declaring one is rejected before the server is read.
+3. Lift protection from a branch.
+4. Remap a channel while a rollout is live on it or on either branch involved.
+5. Change anything it finds on the server that is not declared. It prints those and leaves them.
+
+Live rollouts are state, not configuration: every plan lists them and none of them counts as drift.
+
+**CI.** `ota-apply.yml` applies on a push to `main` that touches `infra/ota/**` or the tool, and
+plans on a manual run unless `mode: apply` is chosen. `ota-drift.yml` plans once a day and posts to
+Discord when the server has moved. Both run in the `ota-stable-release` GitHub environment, check
+out `main`, and install nothing: every script they run uses node built-ins only, so no package's
+install script executes in a job that holds the admin login. Until that environment holds
+`OTA_ADMIN_EMAIL` and `OTA_ADMIN_PASSWORD`, each job writes one "Skipped" line to its summary and
+ends green.
+
+#### The admin API these tools use
+
+xprem documents the publish protocol and not the API its dashboard calls. `scripts/lib/xprem-admin.mts`
+is a client for that API, and its header lists every path, method and payload with the dashboard
+bundle and server version they were read from. `scripts/lib/xprem-admin.test.ts` pins each request,
+so an endpoint that moves in a server upgrade fails one named assertion. Re-read the bundle on every
+`OTA_SERVER_VERSION` bump: `curl https://updates.boardsesh.com/dashboard/` names the current
+`./assets/index-*.js`, and the client class is the one with an `appScope()` method.
+
+Two things in that API are easy to get wrong:
+
+- **Two id spaces.** The rollout endpoints and `expectedUpdateId` use the numeric update id
+  (`17911745123242`). Health is keyed on the UUID-shaped id a device reports
+  (`43d5c1d5-ade8-62d9-1d01-9ffa9a169620`). `mobile-ota-rollout.ts` resolves one to the other.
+- **Remapping a channel is addressed by branch id**, not name:
+  `POST /api/apps/{app}/branch/{branchId}/updateChannelBranchMapping`.
+
+#### Rollouts: `scripts/mobile-ota-rollout.ts`
+
+```bash
+node --experimental-strip-types scripts/mobile-ota-rollout.ts status
+node --experimental-strip-types scripts/mobile-ota-rollout.ts set    --runtime-version <rtv> --percentage 25
+node --experimental-strip-types scripts/mobile-ota-rollout.ts finish --runtime-version <rtv>
+node --experimental-strip-types scripts/mobile-ota-rollout.ts revert --runtime-version <rtv>
+node --experimental-strip-types scripts/mobile-ota-rollout.ts health --runtime-version <rtv>
+```
+
+All of them take `--branch` (default `production`), `--platform ios|android|all` and the admin login
+in the environment.
+
+- `status` without `--runtime-version` walks **every** runtime version of the branch. A rollout
+  belongs to one branch, one runtime version and one platform, and a release-train merge-back can
+  leave one behind on a runtime version nothing publishes to any more.
+- `set`, `finish` and `revert` read the rollout first and send the update id they found as
+  `expectedUpdateId`, so the server refuses the write if the rollout was replaced in between.
+  `--expected-update-id` also refuses to act on any rollout but the one named.
+- `finish` delivers the update to everyone. `revert` republishes the previous update as a new one;
+  devices that took the canary return to it on their next check.
+- `health` prints a verdict per platform: `healthy`, `unhealthy` or `insufficient-evidence`. The
+  thresholds are in `infra/ota/config.ts`. Too few devices is never read as healthy. `unhealthy` is
+  the one verdict allowed below the device floor, because a crash-looping update falls back to the
+  embedded bundle and its devices stop counting as "on the update".
+
+`mobile-ota-unlock.yml` wraps `revert --if-live` as a reusable job for publishers that must not be
+refused by a live canary. Nothing calls it yet.
+
+#### Promoting to another branch, or as a rollout
+
+`scripts/mobile-ota-promote.ts` takes two optional flags. With neither, it behaves as before.
+
+- `--branch <name>` promotes to that branch (and `--capture-baseline --branch <name>` captures its
+  baseline). The probe still sends `expo-channel-name: production` and reaches the branch with the
+  `xprem-branch` header, the way a pinned device does.
+- `--rollout-percentage <1-99>` starts the update as a rollout. The anonymous manifest shows one
+  device's view and cannot confirm a rollout, so this mode reads the rollout through the admin API
+  and needs `OTA_ADMIN_EMAIL` and `OTA_ADMIN_PASSWORD` next to `EOO_TOKEN`. It is safe to re-run: a
+  platform whose own rollout is already live counts as done, and a rollout of any other update is
+  refused.
 
 ### Fingerprint parity — the one rule that matters
 
@@ -1640,8 +1746,9 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
     production publish on `main` needs it), which any same-repo PR workflow can read. For hard
     same-repo enforcement, keep `EOO_TOKEN` only on `ota-preview` and the `main` production
     environment, drop the repo-level copy, and configure required reviewers on `ota-preview`.
-    Production channel mapping stays a one-time dashboard action, so no admin creds ever touch
-    `main`.
+    Production channel mapping is declared in `infra/ota/config.ts`. The jobs that apply and check
+    it hold the admin login through a third environment, `ota-stable-release`, and run `main`'s
+    code with no dependency install.
 - **Readiness signal.** Each publish posts a sticky PR comment (branch name + picker steps) and a
   GitHub **Deployment** to the `pr-preview` environment so the PR shows a green "ready" marker; the
   cleanup marks it inactive on close.

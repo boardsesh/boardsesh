@@ -11,6 +11,17 @@
  *
  * vp exec tsx scripts/mobile-ota-promote.ts --receipt ota-stage/receipt.json \
  *   --ios-export ota-stage/ios --android-export ota-stage/android
+ *
+ * `--branch <name>` (default `production`) promotes to another branch of the same
+ * channel, and `--capture-baseline` takes the same flag. The channel is always
+ * `production`: it is baked into every binary, and a device reaches another
+ * branch only through the `xprem-branch` header.
+ *
+ * `--rollout-percentage <1-99>` starts the update as a rollout to that share of
+ * devices. A rollout cannot be confirmed through the anonymous manifest, which
+ * serves one device's view, so this mode reads the rollout itself and needs the
+ * admin login (`OTA_ADMIN_EMAIL`, `OTA_ADMIN_PASSWORD`) next to `EOO_TOKEN`. It
+ * is safe to re-run: a platform whose own rollout is already live counts as done.
  */
 
 import { createHash, randomUUID } from 'node:crypto';
@@ -18,6 +29,8 @@ import { existsSync, lstatSync, readFileSync, realpathSync, statSync, writeFileS
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
+import { adminClientFromEnvironment, sameId } from './lib/xprem-admin.mts';
+import type { XpremAdminClient } from './lib/xprem-admin.mts';
 
 export type OtaPlatform = 'ios' | 'android';
 
@@ -75,6 +88,30 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 // `a96bbffc-e084-91c9-61ee-0107f5b6857b` on 2026-09-26. App IDs stay strict.
 const UPDATE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHA256 = /^[0-9a-f]{64}$/i;
+const BRANCH_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/**
+ * The channel every binary bakes into `expo-channel-name`. Every promotion probes
+ * through it, whatever branch it targets: a branch other than the channel's own
+ * is reached with the `xprem-branch` header, never with another channel.
+ */
+const CHANNEL = 'production';
+
+/** The branch the channel maps to, and the target when no `--branch` is given. */
+const DEFAULT_BRANCH = 'production';
+
+function branchName(input: string): string {
+  if (!BRANCH_NAME.test(input)) throw new Error(`Invalid branch name: ${JSON.stringify(input)}.`);
+  return input;
+}
+
+/** The branch as it starts a sentence. `Production` for the default, so its messages are unchanged. */
+function sentenceLabel(branch: string): string {
+  return branch === DEFAULT_BRANCH ? 'Production' : `Branch ${branch}`;
+}
+
+/** What rollout mode reads from the admin API. */
+export type RolloutReader = Pick<XpremAdminClient, 'getUpdateRollout' | 'getUpdateDetails'>;
 const COMMIT_SHA = /^[0-9a-f]{40}$/i;
 
 function object(input: unknown, label: string): Record<string, unknown> {
@@ -254,21 +291,42 @@ export function buildUploadFiles(exportFiles: ValidatedExport): UploadFileItem[]
   return [...configFiles, launchAsset, ...assets];
 }
 
-export function parsePromoteArgs(argv: string[]): { receipt: string; iosExport: string; androidExport: string } {
+export function parsePromoteArgs(argv: string[]): {
+  receipt: string;
+  iosExport: string;
+  androidExport: string;
+  branch: string;
+  rolloutPercentage: number | null;
+} {
+  const pathFlags = ['--receipt', '--ios-export', '--android-export'];
   const args: Record<string, string> = {};
   for (let index = 0; index < argv.length; index++) {
     const flag = argv[index];
     if (flag === '--') continue;
-    if (!['--receipt', '--ios-export', '--android-export'].includes(flag))
+    if (![...pathFlags, '--branch', '--rollout-percentage'].includes(flag))
       throw new Error(`Unknown argument: ${flag}.`);
     const argument = argv[++index];
-    if (!argument || argument.startsWith('--')) throw new Error(`${flag} needs a path.`);
+    if (!argument || argument.startsWith('--'))
+      throw new Error(`${flag} needs a ${pathFlags.includes(flag) ? 'path' : 'value'}.`);
     args[flag] = argument;
   }
   if (!args['--receipt'] || !args['--ios-export'] || !args['--android-export']) {
     throw new Error('Provide --receipt, --ios-export, and --android-export.');
   }
-  return { receipt: args['--receipt'], iosExport: args['--ios-export'], androidExport: args['--android-export'] };
+  let rolloutPercentage: number | null = null;
+  if (args['--rollout-percentage'] !== undefined) {
+    rolloutPercentage = Number(args['--rollout-percentage']);
+    if (!Number.isInteger(rolloutPercentage) || rolloutPercentage < 1 || rolloutPercentage > 99) {
+      throw new Error('--rollout-percentage must be a whole number from 1 to 99.');
+    }
+  }
+  return {
+    receipt: args['--receipt'],
+    iosExport: args['--ios-export'],
+    androidExport: args['--android-export'],
+    branch: branchName(args['--branch'] ?? DEFAULT_BRANCH),
+    rolloutPercentage,
+  };
 }
 
 export function parseCaptureArgs(argv: string[]): {
@@ -276,12 +334,13 @@ export function parseCaptureArgs(argv: string[]): {
   iosRuntime: string;
   androidRuntime: string;
   out: string;
+  branch: string;
 } {
   const args: Record<string, string> = {};
   for (let index = 0; index < argv.length; index++) {
     const flag = argv[index];
     if (flag === '--capture-baseline') continue;
-    if (!['--app-id', '--ios-runtime', '--android-runtime', '--out'].includes(flag)) {
+    if (!['--app-id', '--ios-runtime', '--android-runtime', '--out', '--branch'].includes(flag)) {
       throw new Error(`Unknown capture argument: ${flag}.`);
     }
     const argument = argv[++index];
@@ -297,7 +356,7 @@ export function parseCaptureArgs(argv: string[]): {
   if (!androidRuntime || !/^[0-9a-f]{40}$/i.test(androidRuntime))
     throw new Error('--android-runtime must be a fingerprint SHA.');
   if (!out) throw new Error('--out is required.');
-  return { appId, iosRuntime, androidRuntime, out };
+  return { appId, iosRuntime, androidRuntime, out, branch: branchName(args['--branch'] ?? DEFAULT_BRANCH) };
 }
 
 export function uploadServerBase(manifestUrl: string): URL {
@@ -315,8 +374,8 @@ export function uploadServerBase(manifestUrl: string): URL {
   return parsed;
 }
 
-function controlUrl(base: URL, appId: string, action: string): URL {
-  return new URL(`${base.toString().replace(/\/$/, '')}/${appId}/${action}/production`);
+function controlUrl(base: URL, appId: string, action: string, branch: string): URL {
+  return new URL(`${base.toString().replace(/\/$/, '')}/${appId}/${action}/${branch}`);
 }
 
 function isLocalUpload(target: URL, base: URL, appId: string): boolean {
@@ -476,7 +535,7 @@ async function uploadLeaseFiles(
   }
 }
 
-function parseServedManifest(responseText: string): Record<string, unknown> | null {
+function parseServedManifest(responseText: string, branch: string): Record<string, unknown> | null {
   // xprem serves multipart/mixed for signed manifests, plain JSON for others.
   // A recognized noUpdateAvailable directive is the only evidence of absence.
   let noUpdateAvailable = false;
@@ -491,10 +550,11 @@ function parseServedManifest(responseText: string): Record<string, unknown> | nu
     }
     if (candidate.launchAsset !== undefined) return candidate;
     if (candidate.type === 'noUpdateAvailable') noUpdateAvailable = true;
-    if (candidate.type === 'rollBackToEmbedded') throw new Error('Production is serving a rollback directive.');
+    if (candidate.type === 'rollBackToEmbedded')
+      throw new Error(`${sentenceLabel(branch)} is serving a rollback directive.`);
   }
   if (noUpdateAvailable) return null;
-  throw new Error('Production did not serve an Expo update manifest.');
+  throw new Error(`${sentenceLabel(branch)} did not serve an Expo update manifest.`);
 }
 
 async function readProductionManifest(
@@ -503,6 +563,7 @@ async function readProductionManifest(
   runtimeVersion: string,
   appId: string,
   fetchImpl: typeof fetch,
+  branch: string,
 ): Promise<Record<string, unknown> | null> {
   const response = await fetchWithRetry(fetchImpl, manifestUrl, {
     method: 'GET',
@@ -510,20 +571,23 @@ async function readProductionManifest(
       'expo-protocol-version': '1',
       'expo-platform': platform,
       'expo-runtime-version': runtimeVersion,
-      'expo-channel-name': 'production',
+      'expo-channel-name': CHANNEL,
       'expo-app-id': appId,
-      'xprem-branch': '',
+      // Empty asks for the channel's own branch, which is what a store binary
+      // sends. Any other branch is surfed to by name, the way a device pinned to
+      // it would.
+      'xprem-branch': branch === DEFAULT_BRANCH ? '' : branch,
       Accept: 'multipart/mixed',
     },
     redirect: 'error',
   });
-  await requireSuccess(response, `${platform} production manifest probe`);
-  const manifest = parseServedManifest(await response.text());
+  await requireSuccess(response, `${platform} ${branch} manifest probe`);
+  const manifest = parseServedManifest(await response.text(), branch);
   if (manifest === null) return null;
   if (manifest.runtimeVersion !== runtimeVersion)
-    throw new Error(`${platform} production runtimeVersion differs from staged runtime.`);
-  const extra = object(manifest.extra, 'Production manifest extra');
-  if (extra.branch !== 'production') throw new Error(`${platform} manifest is not from the production branch.`);
+    throw new Error(`${platform} ${branch} runtimeVersion differs from staged runtime.`);
+  const extra = object(manifest.extra, `${sentenceLabel(branch)} manifest extra`);
+  if (extra.branch !== branch) throw new Error(`${platform} manifest is not from the ${branch} branch.`);
   return manifest;
 }
 
@@ -533,11 +597,12 @@ async function productionUpdateId(
   runtimeVersion: string,
   appId: string,
   fetchImpl: typeof fetch,
+  branch: string,
 ): Promise<string | null> {
-  const manifest = await readProductionManifest(manifestUrl, platform, runtimeVersion, appId, fetchImpl);
+  const manifest = await readProductionManifest(manifestUrl, platform, runtimeVersion, appId, fetchImpl, branch);
   if (manifest === null) return null;
-  const id = string(manifest.id, `${platform} production update ID`);
-  if (!UPDATE_ID.test(id)) throw new Error(`${platform} production update ID must be a UUID-shaped ID.`);
+  const id = string(manifest.id, `${platform} ${branch} update ID`);
+  if (!UPDATE_ID.test(id)) throw new Error(`${platform} ${branch} update ID must be a UUID-shaped ID.`);
   return id;
 }
 
@@ -545,11 +610,14 @@ export async function captureProductionBaseline(options: {
   manifestUrl: string;
   appId: string;
   runtimeVersions: Record<OtaPlatform, string>;
+  /** The branch whose served update is the baseline. Defaults to `production`. */
+  branch?: string;
   fetchImpl?: typeof fetch;
 }): Promise<Record<OtaPlatform, string | null>> {
   if (!UUID.test(options.appId)) throw new Error('Capture app ID must be a UUID.');
   uploadServerBase(options.manifestUrl);
   const fetchImpl = options.fetchImpl ?? fetch;
+  const branch = branchName(options.branch ?? DEFAULT_BRANCH);
   const baseline = {} as Record<OtaPlatform, string | null>;
   for (const platform of ['ios', 'android'] as const) {
     const runtimeVersion = options.runtimeVersions[platform];
@@ -560,6 +628,7 @@ export async function captureProductionBaseline(options: {
       runtimeVersion,
       options.appId,
       fetchImpl,
+      branch,
     );
   }
   return baseline;
@@ -570,6 +639,7 @@ async function verifyServedExport(
   exportFiles: ValidatedExport,
   runtimeVersion: string,
   fetchImpl: typeof fetch,
+  branch: string,
 ): Promise<void> {
   const manifest = await readProductionManifest(
     manifestUrl,
@@ -577,22 +647,24 @@ async function verifyServedExport(
     runtimeVersion,
     exportFiles.appId,
     fetchImpl,
+    branch,
   );
-  if (manifest === null) throw new Error(`${exportFiles.platform} production has no update after promotion.`);
-  const extra = object(manifest.extra, 'Production manifest extra');
+  if (manifest === null) throw new Error(`${exportFiles.platform} ${branch} has no update after promotion.`);
+  const extra = object(manifest.extra, `${sentenceLabel(branch)} manifest extra`);
   if (!isDeepStrictEqual(extra.expoClient, exportFiles.expoConfig)) {
-    throw new Error(`${exportFiles.platform} production Expo config differs from stage.`);
+    throw new Error(`${exportFiles.platform} ${branch} Expo config differs from stage.`);
   }
-  const launchAsset = object(manifest.launchAsset, 'Production launchAsset');
+  const launchAsset = object(manifest.launchAsset, `${sentenceLabel(branch)} launchAsset`);
   const bundleFile = exportFiles.files.get(exportFiles.bundlePath);
   if (!bundleFile) throw new Error(`${exportFiles.platform} export bundle disappeared.`);
   const bundleHash = createHash('sha256').update(readFileSync(bundleFile.absolutePath)).digest('base64url');
   if (launchAsset.hash !== bundleHash)
-    throw new Error(`${exportFiles.platform} production bundle hash differs from stage.`);
-  if (!Array.isArray(manifest.assets))
-    throw new Error(`${exportFiles.platform} production manifest has no asset list.`);
+    throw new Error(`${exportFiles.platform} ${branch} bundle hash differs from stage.`);
+  if (!Array.isArray(manifest.assets)) throw new Error(`${exportFiles.platform} ${branch} manifest has no asset list.`);
   const servedHashes = manifest.assets
-    .map((assetInput: unknown) => string(object(assetInput, 'Production asset').hash, 'Production asset hash'))
+    .map((assetInput: unknown) =>
+      string(object(assetInput, `${sentenceLabel(branch)} asset`).hash, `${sentenceLabel(branch)} asset hash`),
+    )
     .sort();
   const stagedHashes = exportFiles.assetPaths
     .map((assetPath) => {
@@ -602,7 +674,7 @@ async function verifyServedExport(
     })
     .sort();
   if (JSON.stringify(servedHashes) !== JSON.stringify(stagedHashes)) {
-    throw new Error(`${exportFiles.platform} production asset hashes differ from stage.`);
+    throw new Error(`${exportFiles.platform} ${branch} asset hashes differ from stage.`);
   }
 }
 
@@ -612,14 +684,15 @@ async function verifyServedExportWithRetry(
   runtimeVersion: string,
   fetchImpl: typeof fetch,
   delaysMs: readonly number[],
+  branch: string,
 ): Promise<void> {
   for (let attempt = 0; attempt <= delaysMs.length; attempt++) {
     try {
-      await verifyServedExport(manifestUrl, exportFiles, runtimeVersion, fetchImpl);
+      await verifyServedExport(manifestUrl, exportFiles, runtimeVersion, fetchImpl, branch);
       return;
     } catch (error) {
       if (attempt === delaysMs.length) throw error;
-      console.warn(`[ota-promote] ${exportFiles.platform}: production manifest not yet confirmed; retrying.`);
+      console.warn(`[ota-promote] ${exportFiles.platform}: ${branch} manifest not yet confirmed; retrying.`);
       await sleep(delaysMs[attempt]);
     }
   }
@@ -631,10 +704,26 @@ export async function promoteArchivedOta(options: {
   androidExport: string;
   manifestUrl: string;
   token: string;
+  /** The branch to promote to. Defaults to `production`. */
+  branch?: string;
+  /**
+   * Start the update as a rollout to this share of devices instead of publishing
+   * it to everyone. `connect` opens the admin API for the app the exports name,
+   * which is how the rollout is confirmed.
+   */
+  rollout?: { percentage: number; connect: (appId: string) => Promise<RolloutReader> };
   fetchImpl?: typeof fetch;
   verificationDelaysMs?: readonly number[];
 }): Promise<void> {
   if (!options.token) throw new Error('EOO_TOKEN is required.');
+  const branch = branchName(options.branch ?? DEFAULT_BRANCH);
+  const rolloutPercentage = options.rollout?.percentage ?? null;
+  if (
+    rolloutPercentage !== null &&
+    (!Number.isInteger(rolloutPercentage) || rolloutPercentage < 1 || rolloutPercentage > 99)
+  ) {
+    throw new Error('A rollout percentage must be a whole number from 1 to 99.');
+  }
   const receipt = parseStageReceipt(JSON.parse(readFileSync(options.receiptPath, 'utf8')) as unknown);
   const exports = {
     ios: validateExport(options.iosExport, 'ios', receipt.platforms.ios.bundleSha256),
@@ -645,9 +734,12 @@ export async function promoteArchivedOta(options: {
   const appId = exports.ios.appId;
   const base = uploadServerBase(options.manifestUrl);
   const fetchImpl = options.fetchImpl ?? fetch;
+  const verificationDelaysMs = options.verificationDelaysMs ?? [1_000, 2_000, 4_000, 8_000];
+  const rolloutReader = options.rollout ? await options.rollout.connect(appId) : null;
   const publishGroup = randomUUID();
-  // null: the server answered 406, so production already serves exactly these files.
-  const leases = {} as Record<OtaPlatform, UploadLease | null>;
+  // null: the server answered 406, so the branch already serves exactly these files.
+  // 'rolling': rollout mode found this platform's own rollout already live.
+  const leases = {} as Record<OtaPlatform, UploadLease | null | 'rolling'>;
   let lastUploadStart = 0;
   const paceUpload = async (): Promise<void> => {
     // Match this repo's eoas --upload-rate 5 setting, including retry attempts.
@@ -664,28 +756,87 @@ export async function promoteArchivedOta(options: {
       receipt.platforms[platform].runtimeVersion,
       appId,
       fetchImpl,
+      branch,
     );
     if (current !== expected) {
       throw new Error(
-        `${platform} production update changed since staging began ` +
+        `${platform} ${branch} update changed since staging began ` +
           `(baseline ${expected ?? 'none'}, current ${current ?? 'none'}); refusing stale OTA promotion.`,
       );
     }
   };
 
+  /**
+   * Rollout mode's answer to "is the rollout that is live on this platform mine?".
+   * False when none is live. Throws when one is live and belongs to another
+   * update, because nothing can be published over it.
+   *
+   * With a lease the answer is exact: the lease and the rollout carry the same
+   * numeric update id. Without one (the server refused before issuing a lease, or
+   * this is a re-run) the update is identified by the commit it was built from.
+   */
+  const ownRolloutIsLive = async (
+    reader: RolloutReader,
+    platform: OtaPlatform,
+    leaseUpdateId: string | null,
+  ): Promise<boolean> => {
+    const runtimeVersion = receipt.platforms[platform].runtimeVersion;
+    const rollout = await reader.getUpdateRollout(branch, runtimeVersion);
+    const live = rollout.active ? rollout.updates.find((update) => update.platform === platform) : undefined;
+    if (!live) return false;
+    const own =
+      leaseUpdateId === null
+        ? (await reader.getUpdateDetails(branch, runtimeVersion, live.updateId)).commitHash?.toLowerCase() ===
+          receipt.commitHash.toLowerCase()
+        : sameId(live.updateId, leaseUpdateId);
+    if (!own) {
+      throw new Error(
+        `${platform} ${branch} has an active rollout of another update (${live.updateId}); promotion was refused.`,
+      );
+    }
+    console.log(
+      `[ota-promote] ${platform}: update ${live.updateId} is rolling out to ${live.percentage}% on ${branch}.`,
+    );
+    return true;
+  };
+
+  const confirmRolloutStarted = async (
+    reader: RolloutReader,
+    platform: OtaPlatform,
+    leaseUpdateId: string,
+  ): Promise<void> => {
+    for (let attempt = 0; attempt <= verificationDelaysMs.length; attempt++) {
+      if (await ownRolloutIsLive(reader, platform, leaseUpdateId)) return;
+      if (attempt === verificationDelaysMs.length) {
+        throw new Error(`${platform} ${branch} shows no rollout for update ${leaseUpdateId} after promotion.`);
+      }
+      console.warn(`[ota-promote] ${platform}: ${branch} rollout not yet confirmed; retrying.`);
+      await sleep(verificationDelaysMs[attempt]);
+    }
+  };
+
+  // Rollout mode first asks whether a platform's own rollout is already live: a
+  // re-run after a partial failure must not trip over the baseline it moved, and
+  // must not publish the same bytes a second time.
+  for (const platform of ['ios', 'android'] as const) {
+    if (rolloutReader && (await ownRolloutIsLive(rolloutReader, platform, null))) leases[platform] = 'rolling';
+  }
+
   // Both platforms must still match their pre-stage baseline before creating
   // either production upload lease. A no-update directive is an explicit null;
   // malformed responses and rollback directives are never treated as null.
-  await assertBaselineUnchanged('ios');
-  await assertBaselineUnchanged('android');
+  if (leases.ios !== 'rolling') await assertBaselineUnchanged('ios');
+  if (leases.android !== 'rolling') await assertBaselineUnchanged('android');
 
   // Validate both server responses before sending any archived bytes.
   for (const platform of ['ios', 'android'] as const) {
-    const requestUrl = controlUrl(base, appId, 'requestUploadUrl');
+    if (leases[platform] === 'rolling') continue;
+    const requestUrl = controlUrl(base, appId, 'requestUploadUrl', branch);
     requestUrl.searchParams.set('runtimeVersion', receipt.platforms[platform].runtimeVersion);
     requestUrl.searchParams.set('platform', platform);
     requestUrl.searchParams.set('commitHash', receipt.commitHash);
     requestUrl.searchParams.set('publishGroup', publishGroup);
+    if (rolloutPercentage !== null) requestUrl.searchParams.set('rolloutPercentage', String(rolloutPercentage));
     const response = await fetchWithRetry(fetchImpl, requestUrl, {
       method: 'POST',
       headers: { Authorization: `Bearer ${options.token}`, 'Content-Type': 'application/json' },
@@ -695,9 +846,20 @@ export async function promoteArchivedOta(options: {
       }),
       redirect: 'error',
     });
-    if (response.status === 409)
-      throw new Error(`${platform} production has an active rollout; promotion was refused.`);
+    if (response.status === 409) {
+      // A rollout started between the check above and this request. Mine is
+      // success; anyone else's throws inside ownRolloutIsLive.
+      if (rolloutReader && (await ownRolloutIsLive(rolloutReader, platform, null))) {
+        await response.body?.cancel();
+        leases[platform] = 'rolling';
+        continue;
+      }
+      throw new Error(`${platform} ${branch} has an active rollout; promotion was refused.`);
+    }
     if (response.status === 406) {
+      if (rolloutReader) {
+        throw new Error(`${platform} ${branch} already serves these files to everyone; there is no rollout to start.`);
+      }
       // Since 3.2.0 "no changes" is answered here, before any upload. The served
       // manifest is still verified below, so this cannot hide a wrong update.
       await response.body?.cancel();
@@ -705,18 +867,26 @@ export async function promoteArchivedOta(options: {
       continue;
     }
     await requireSuccess(response, `${platform} upload request`);
-    leases[platform] = parseUploadLease((await response.json()) as unknown, exports[platform].files, base, appId);
+    const leaseInput = (await response.json()) as unknown;
+    // An old server ignores unknown query parameters, so a lease that does not
+    // echo the percentage means finalizing it would publish to every device.
+    // Stop before a byte is uploaded (eoas 3.2.5 makes the same check).
+    if (rolloutPercentage !== null && object(leaseInput, 'Upload lease').rolloutPercentage === undefined) {
+      throw new Error(`${platform} upload lease ignored the rollout percentage; refusing a full publish.`);
+    }
+    leases[platform] = parseUploadLease(leaseInput, exports[platform].files, base, appId);
   }
 
   for (const platform of ['ios', 'android'] as const) {
     const lease = leases[platform];
+    if (lease === 'rolling') continue;
     if (lease === null) {
-      console.log(`[ota-promote] ${platform}: production already serves these files; verifying only.`);
+      console.log(`[ota-promote] ${platform}: ${branch} already serves these files; verifying only.`);
     } else {
       // Recheck immediately before each platform's first production PUT.
       await assertBaselineUnchanged(platform);
       await uploadLeaseFiles(lease, exports[platform], base, appId, options.token, fetchImpl, paceUpload);
-      const finalizeUrl = controlUrl(base, appId, 'markUpdateAsUploaded');
+      const finalizeUrl = controlUrl(base, appId, 'markUpdateAsUploaded', branch);
       finalizeUrl.searchParams.set('platform', platform);
       finalizeUrl.searchParams.set('updateId', lease.updateId);
       finalizeUrl.searchParams.set('runtimeVersion', receipt.platforms[platform].runtimeVersion);
@@ -725,16 +895,31 @@ export async function promoteArchivedOta(options: {
         headers: { Authorization: `Bearer ${options.token}`, 'Content-Type': 'application/json' },
         redirect: 'error',
       });
-      if (response.status === 409)
-        throw new Error(`${platform} production has an active rollout; promotion was refused.`);
-      if (response.status !== 406) await requireSuccess(response, `${platform} production finalize`);
+      if (response.status === 409) {
+        // In rollout mode a retried finalize can meet the rollout its own first
+        // attempt started. The lease id says exactly whose it is.
+        if (!rolloutReader || !(await ownRolloutIsLive(rolloutReader, platform, lease.updateId))) {
+          throw new Error(`${platform} ${branch} has an active rollout; promotion was refused.`);
+        }
+      } else if (response.status !== 406) {
+        await requireSuccess(response, `${platform} ${branch} finalize`);
+      }
+    }
+    if (rolloutReader && lease !== null) {
+      await confirmRolloutStarted(rolloutReader, platform, lease.updateId);
+      console.log(
+        `[ota-promote] ${platform}: archived bundle ${receipt.platforms[platform].bundleSha256} ` +
+          `rolling out to ${rolloutPercentage}% on ${branch}.`,
+      );
+      continue;
     }
     await verifyServedExportWithRetry(
       options.manifestUrl,
       exports[platform],
       receipt.platforms[platform].runtimeVersion,
       fetchImpl,
-      options.verificationDelaysMs ?? [1_000, 2_000, 4_000, 8_000],
+      verificationDelaysMs,
+      branch,
     );
     console.log(`[ota-promote] ${platform}: archived bundle ${receipt.platforms[platform].bundleSha256} promoted.`);
   }
@@ -747,18 +932,31 @@ async function main(): Promise<void> {
       manifestUrl: process.env.EXPO_UPDATES_URL ?? '',
       appId: args.appId,
       runtimeVersions: { ios: args.iosRuntime, android: args.androidRuntime },
+      branch: args.branch,
     });
     writeFileSync(args.out, `${JSON.stringify(baseline)}\n`, { flag: 'wx' });
-    console.log(`[ota-promote] Captured production baseline: ${args.out}`);
+    console.log(`[ota-promote] Captured ${args.branch} baseline: ${args.out}`);
     return;
   }
   const args = parsePromoteArgs(process.argv.slice(2));
+  const manifestUrl = process.env.EXPO_UPDATES_URL ?? '';
+  const { rolloutPercentage } = args;
   await promoteArchivedOta({
     receiptPath: args.receipt,
     iosExport: args.iosExport,
     androidExport: args.androidExport,
-    manifestUrl: process.env.EXPO_UPDATES_URL ?? '',
+    manifestUrl,
     token: process.env.EOO_TOKEN ?? '',
+    branch: args.branch,
+    ...(rolloutPercentage === null
+      ? {}
+      : {
+          rollout: {
+            percentage: rolloutPercentage,
+            connect: (appId: string) =>
+              adminClientFromEnvironment({ appId, defaultBaseUrl: manifestUrl, environment: process.env }),
+          },
+        }),
   });
 }
 
