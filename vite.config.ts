@@ -1324,6 +1324,14 @@ export default defineConfig({
         cache: false,
       },
 
+      // Read-only: downloads the public dashboard bundle and checks that every
+      // admin API path scripts/lib/xprem-admin.mts calls is still in it. No
+      // login. Run it after an xprem upgrade; the daily drift workflow does.
+      'ota:api-probe': {
+        command: 'tsx scripts/ota-admin-api-probe.ts',
+        cache: false,
+      },
+
       // Reports newer xprem releases — stable and prerelease tracked separately so
       // a beta never displaces a stable upgrade — and rewrites the repo onto one
       // with `-- --write <version>`. Drives .github/workflows/ota-image-bump.yml.

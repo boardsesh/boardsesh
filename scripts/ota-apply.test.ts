@@ -1,6 +1,6 @@
 /// <reference types="node" />
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   EARLY_UPDATES_BRANCH,
   PREVIEW_BRANCH_PATTERN,
@@ -10,12 +10,29 @@ import {
   otaReleasePolicy,
 } from '../infra/ota/config';
 import type { OtaDesiredState } from '../infra/ota/config';
-import { assertDeclarable, branchesNeedingRolloutRead, buildOtaPlan, hasDrift } from '../infra/ota/plan';
-import type { OtaLiveState } from '../infra/ota/plan';
+import {
+  ADDITIVE_CHANGE_KINDS,
+  OTA_CHANGE_KINDS,
+  assertDeclarable,
+  branchesNeedingRolloutRead,
+  buildOtaPlan,
+  hasDrift,
+} from '../infra/ota/plan';
+import type { OtaChangeKind, OtaLiveState } from '../infra/ota/plan';
 import { FAKE_APP, fakeXprem } from './__tests__/helpers/fake-xprem';
 import type { FakeRoute } from './__tests__/helpers/fake-xprem';
 import { OTA_APP_ID } from './lib/ota-branch-probe';
-import { formatPlan, parseApplyArgs, readLiveState, runOtaApply } from './ota-apply';
+import {
+  EXIT_DRIFT,
+  EXIT_IN_SYNC,
+  EXIT_UNREADABLE,
+  ServerUnreadableError,
+  formatPlan,
+  parseApplyArgs,
+  readLiveState,
+  runOtaApply,
+  withReadRetries,
+} from './ota-apply';
 
 const RTV = 'b'.repeat(40);
 
@@ -80,6 +97,8 @@ describe('the declaration', () => {
         evidenceFloorDevicesPerPlatform: 15,
         minFaultyDevicesToFail: 3,
         maxFaultyRateOverControlPercent: 2,
+        maxFaultyRatePercent: 5,
+        smallSampleFaultyRatePercent: 30,
       },
     });
     // The ramp must fit inside the soak, or a canary could be finished mid-ramp.
@@ -151,13 +170,25 @@ describe('buildOtaPlan', () => {
     const live: OtaLiveState = { channels: [], branches: [], updateRollouts: [] };
     expect(buildOtaPlan(desiredOtaState, live).changes.map((change) => change.kind)).toEqual([
       'create-branch',
-      'protect-branch',
+      'create-branch',
       'create-branch',
       'protect-branch',
-      'create-branch',
+      'protect-branch',
       'protect-branch',
       'create-channel',
       'set-branch-surfing',
+    ]);
+  });
+
+  it('plans every create before any protect, so a refused protection cannot block a create', () => {
+    const live = inSync();
+    live.branches = [{ name: 'production', protected: false }];
+    expect(summaries(live)).toEqual([
+      'Create branch "pr-beta".',
+      'Create branch "pr-staging".',
+      'Protect branch "production" against deletion.',
+      'Protect branch "pr-beta" against deletion.',
+      'Protect branch "pr-staging" against deletion.',
     ]);
   });
 
@@ -280,12 +311,20 @@ describe('buildOtaPlan', () => {
 });
 
 /** A fake server holding the state the apply mutates, so a second read sees the first run's writes. */
-function statefulServer(initial: { protectedBranches: string[]; branches: string[]; surfingPattern: string }) {
+function statefulServer(initial: {
+  protectedBranches: string[];
+  branches: string[];
+  surfingPattern: string;
+  license?: FakeRoute;
+  /** Branches whose protection call the server refuses, and how. */
+  refuseProtection?: Record<string, { status: number; body?: unknown }>;
+}) {
   const branches = new Map(initial.branches.map((name, index) => [name, { branchId: String(index + 1), name }]));
   const protectedBranches = new Set(initial.protectedBranches);
   let surfing = { enabled: true, pattern: initial.surfingPattern };
   let mappedBranchId = '1';
   const routes: Record<string, FakeRoute> = {
+    'GET /api/license': initial.license ?? { valid: true, hasKey: true },
     [`GET ${FAKE_APP}/channels`]: () => [
       {
         releaseChannelId: '3',
@@ -314,6 +353,8 @@ function statefulServer(initial: { protectedBranches: string[]; branches: string
   };
   for (const name of ['production', 'pr-beta', 'pr-staging']) {
     routes[`PUT ${FAKE_APP}/branches/${name}/protection`] = () => {
+      const refusal = initial.refuseProtection?.[name];
+      if (refusal) return refusal;
       protectedBranches.add(name);
       return { status: 204 };
     };
@@ -335,6 +376,31 @@ function statefulServer(initial: { protectedBranches: string[]; branches: string
 }
 
 const TODAY = { branches: ['production', 'pr-staging'], protectedBranches: [], surfingPattern: 'pr-*' };
+const ALL_PROTECTED = {
+  branches: ['production', 'pr-staging', 'pr-beta'],
+  protectedBranches: ['production', 'pr-staging', 'pr-beta'],
+  surfingPattern: 'pr-*',
+};
+const ADDITIVE_ONLY = { apply: true, only: [...ADDITIVE_CHANGE_KINDS] };
+
+function writesOf(server: { requests: { method: string; path: string; body: unknown }[] }) {
+  return server.requests
+    .filter((request) => request.method !== 'GET')
+    .map(({ method, path, body }) => ({ method, path, body }));
+}
+
+async function run(
+  server: ReturnType<typeof statefulServer>,
+  args: { apply: boolean; only: OtaChangeKind[] | null },
+): Promise<{ exitCode: number; lines: string[] }> {
+  const lines: string[] = [];
+  const exitCode = await runOtaApply(server.client, desiredOtaState, {
+    ...args,
+    retryDelayMs: 0,
+    log: (line) => lines.push(line),
+  });
+  return { exitCode, lines };
+}
 
 describe('ota-apply against a fake server', () => {
   it('reads channels, branches and the rollouts of every runtime version', async () => {
@@ -358,32 +424,28 @@ describe('ota-apply against a fake server', () => {
     expect(server.log()).toContain(`GET ${FAKE_APP}/branch/pr-staging/runtimeVersion/${RTV}/rollout`);
   });
 
-  it('plans without writing, and exits 1 on drift', async () => {
+  it('plans without writing, reports the licence, and exits 1 on drift', async () => {
     const server = statefulServer(TODAY);
-    const lines: string[] = [];
-    const exitCode = await runOtaApply(server.client, desiredOtaState, {
-      apply: false,
-      log: (line) => lines.push(line),
-    });
-    expect(exitCode).toBe(1);
+    const { exitCode, lines } = await run(server, { apply: false, only: null });
+    expect(exitCode).toBe(EXIT_DRIFT);
     expect(server.requests.every((request) => request.method === 'GET')).toBe(true);
     expect(lines).toEqual([
-      '[ota-apply] drift: Protect branch "production" against deletion.',
       '[ota-apply] drift: Create branch "pr-beta".',
+      '[ota-apply] drift: Protect branch "production" against deletion.',
       '[ota-apply] drift: Protect branch "pr-beta" against deletion.',
       '[ota-apply] drift: Protect branch "pr-staging" against deletion.',
+      '[ota-apply] licence: valid. Branch protection is available.',
       '[ota-apply] 4 change(s) pending. Re-run with --apply to make them.',
     ]);
   });
 
   it('applies the plan in order, confirms it, and is a no-op the second time', async () => {
     const server = statefulServer(TODAY);
-    const log = (): void => {};
-    await expect(runOtaApply(server.client, desiredOtaState, { apply: true, log })).resolves.toBe(0);
-    const writes = server.requests.filter((request) => request.method !== 'GET');
-    expect(writes.map(({ method, path, body }) => ({ method, path, body }))).toEqual([
-      { method: 'PUT', path: `${FAKE_APP}/branches/production/protection`, body: { protected: true } },
+    expect((await run(server, { apply: true, only: null })).exitCode).toBe(EXIT_IN_SYNC);
+    // The create comes before every protect, so a refused protection cannot block it.
+    expect(writesOf(server)).toEqual([
       { method: 'POST', path: `${FAKE_APP}/branches`, body: { branchName: 'pr-beta' } },
+      { method: 'PUT', path: `${FAKE_APP}/branches/production/protection`, body: { protected: true } },
       { method: 'PUT', path: `${FAKE_APP}/branches/pr-beta/protection`, body: { protected: true } },
       { method: 'PUT', path: `${FAKE_APP}/branches/pr-staging/protection`, body: { protected: true } },
     ]);
@@ -391,20 +453,15 @@ describe('ota-apply against a fake server', () => {
     expect(server.requests.some((request) => request.method === 'DELETE')).toBe(false);
 
     const before = server.requests.length;
-    await expect(runOtaApply(server.client, desiredOtaState, { apply: true, log })).resolves.toBe(0);
+    expect((await run(server, { apply: true, only: null })).exitCode).toBe(EXIT_IN_SYNC);
     expect(server.requests.slice(before).every((request) => request.method === 'GET')).toBe(true);
   });
 
-  it('remaps a channel by branch id and fixes the surfing pattern', async () => {
-    const server = statefulServer({
-      branches: ['production', 'pr-staging', 'pr-beta'],
-      protectedBranches: ['production', 'pr-staging', 'pr-beta'],
-      surfingPattern: '*',
-    });
+  it('remaps a channel by branch id and fixes the surfing pattern when a person applies', async () => {
+    const server = statefulServer({ ...ALL_PROTECTED, surfingPattern: '*' });
     server.remap('2');
-    await expect(runOtaApply(server.client, desiredOtaState, { apply: true, log: () => {} })).resolves.toBe(0);
-    const writes = server.requests.filter((request) => request.method !== 'GET');
-    expect(writes.map(({ method, path, body }) => ({ method, path, body }))).toEqual([
+    expect((await run(server, { apply: true, only: null })).exitCode).toBe(EXIT_IN_SYNC);
+    expect(writesOf(server)).toEqual([
       {
         method: 'POST',
         path: `${FAKE_APP}/branch/1/updateChannelBranchMapping`,
@@ -417,10 +474,201 @@ describe('ota-apply against a fake server', () => {
       },
     ]);
   });
+});
 
-  it('parses its one flag', () => {
-    expect(parseApplyArgs([])).toEqual({ apply: false });
-    expect(parseApplyArgs(['--', '--apply'])).toEqual({ apply: true });
+describe('an unattended apply (--only)', () => {
+  it('treats exactly the additive kinds as safe to apply unattended', () => {
+    expect([...ADDITIVE_CHANGE_KINDS]).toEqual(['create-branch', 'protect-branch']);
+    expect([...OTA_CHANGE_KINDS].sort()).toEqual(
+      ['create-branch', 'create-channel', 'map-channel', 'protect-branch', 'set-branch-surfing'].sort(),
+    );
+  });
+
+  it('creates and protects branches, and leaves everything fleet-affecting for a person', async () => {
+    const server = statefulServer({ ...TODAY, surfingPattern: '*' });
+    server.remap('2');
+    const { exitCode, lines } = await run(server, ADDITIVE_ONLY);
+
+    // Not red: declining to move the fleet is the intended outcome.
+    expect(exitCode).toBe(EXIT_IN_SYNC);
+    expect(writesOf(server).map(({ method, path }) => `${method} ${path}`)).toEqual([
+      `POST ${FAKE_APP}/branches`,
+      `PUT ${FAKE_APP}/branches/production/protection`,
+      `PUT ${FAKE_APP}/branches/pr-beta/protection`,
+      `PUT ${FAKE_APP}/branches/pr-staging/protection`,
+    ]);
+    // The channel was neither remapped nor had its surfing changed.
+    expect(server.log().some((entry) => entry.includes('updateChannelBranchMapping'))).toBe(false);
+    expect(server.log().some((entry) => entry.includes('branch-surfing'))).toBe(false);
+
+    // The whole plan is printed first, with the withheld changes named as such.
+    expect(lines.slice(0, 7)).toEqual([
+      '[ota-apply] drift: Create branch "pr-beta".',
+      '[ota-apply] drift: Protect branch "production" against deletion.',
+      '[ota-apply] drift: Protect branch "pr-beta" against deletion.',
+      '[ota-apply] drift: Protect branch "pr-staging" against deletion.',
+      '[ota-apply] pending manual apply: Map channel "production" to branch "production" (serves "pr-staging" today).',
+      '[ota-apply] pending manual apply: Set Branch Surfing on "production" to on with pattern "pr-*" (found on with pattern "*").',
+      '[ota-apply] licence: valid. Branch protection is available.',
+    ]);
+    expect(lines.slice(-3)).toEqual([
+      '[ota-apply] Applied what an unattended run may. Left for a manual apply:',
+      '[ota-apply] pending manual apply: Map channel "production" to branch "production" (serves "pr-staging" today).',
+      '[ota-apply] pending manual apply: Set Branch Surfing on "production" to on with pattern "pr-*" (found on with pattern "*").',
+    ]);
+  });
+
+  it('keeps reporting what it left: a later plan-only run still exits 1', async () => {
+    const server = statefulServer({ ...ALL_PROTECTED, surfingPattern: '*' });
+    expect((await run(server, ADDITIVE_ONLY)).exitCode).toBe(EXIT_IN_SYNC);
+    expect(writesOf(server)).toEqual([]);
+    // What the daily drift job sees.
+    expect((await run(server, { apply: false, only: null })).exitCode).toBe(EXIT_DRIFT);
+  });
+
+  it('never creates a channel unattended', async () => {
+    const live: OtaLiveState = { channels: [], branches: [], updateRollouts: [] };
+    const allowed = buildOtaPlan(desiredOtaState, live).changes.filter((change) =>
+      ADDITIVE_CHANGE_KINDS.includes(change.kind),
+    );
+    expect(allowed.map((change) => change.kind)).toEqual([
+      'create-branch',
+      'create-branch',
+      'create-branch',
+      'protect-branch',
+      'protect-branch',
+      'protect-branch',
+    ]);
+  });
+
+  it('parses --apply and --only, and refuses --only on its own', () => {
+    expect(parseApplyArgs([])).toEqual({ apply: false, only: null });
+    expect(parseApplyArgs(['--', '--apply'])).toEqual({ apply: true, only: null });
+    expect(parseApplyArgs(['--apply', '--only', 'create-branch,protect-branch'])).toEqual(ADDITIVE_ONLY);
+    expect(() => parseApplyArgs(['--only', 'create-branch'])).toThrow('--only narrows --apply');
+    expect(() => parseApplyArgs(['--apply', '--only'])).toThrow('--only needs a comma-separated list');
+    expect(() => parseApplyArgs(['--apply', '--only', 'delete-branch'])).toThrow('Unknown change kind "delete-branch"');
     expect(() => parseApplyArgs(['--force'])).toThrow('Unknown argument: --force');
+  });
+});
+
+describe('licence', () => {
+  it('says so in the plan when the licence is not valid', async () => {
+    const server = statefulServer({
+      ...TODAY,
+      license: { valid: false, hasKey: true, validationErrorCode: 'expired' },
+    });
+    const { lines } = await run(server, { apply: false, only: null });
+    expect(lines).toContain(
+      '[ota-apply] licence: NOT valid (expired). Branch protection is an Enterprise feature; the server is expected to refuse it.',
+    );
+  });
+
+  it('carries on when the licence cannot be read', async () => {
+    const server = statefulServer({ ...ALL_PROTECTED, license: { status: 404 } });
+    const { exitCode, lines } = await run(server, { apply: false, only: null });
+    expect(exitCode).toBe(EXIT_IN_SYNC);
+    expect(lines[1]).toContain('[ota-apply] licence: could not be read (Read licence failed (HTTP 404))');
+  });
+
+  it('reports a protection refused for the licence as its own condition, after creating the branch', async () => {
+    const refusal = { status: 403, body: { detail: 'forbidden' } };
+    const server = statefulServer({
+      ...TODAY,
+      license: { valid: false, hasKey: false },
+      refuseProtection: { production: refusal, 'pr-beta': refusal, 'pr-staging': refusal },
+    });
+    const { exitCode, lines } = await run(server, ADDITIVE_ONLY);
+
+    // pr-beta exists even though no protection call was accepted.
+    expect(writesOf(server)[0]).toEqual({
+      method: 'POST',
+      path: `${FAKE_APP}/branches`,
+      body: { branchName: 'pr-beta' },
+    });
+    expect(writesOf(server)).toHaveLength(4);
+    expect(exitCode).toBe(EXIT_DRIFT);
+    expect(lines).toContain(
+      '[ota-apply] licence: the server refused to protect "pr-beta". Branch protection needs a valid ' +
+        'Enterprise licence on this server; nothing else failed. The branch exists and stays deletable.',
+    );
+    expect(lines.filter((line) => line.includes('refused to protect'))).toHaveLength(3);
+  });
+
+  it('recognises a licence refusal from the answer alone when the licence reads as valid', async () => {
+    const server = statefulServer({
+      ...ALL_PROTECTED,
+      protectedBranches: ['production', 'pr-beta'],
+      refuseProtection: { 'pr-staging': { status: 402, body: { detail: 'Enterprise license required' } } },
+    });
+    const { exitCode, lines } = await run(server, ADDITIVE_ONLY);
+    expect(exitCode).toBe(EXIT_DRIFT);
+    expect(lines.some((line) => line.includes('refused to protect "pr-staging"'))).toBe(true);
+  });
+
+  it('does not dress up any other refusal as a licence problem', async () => {
+    const server = statefulServer({
+      ...ALL_PROTECTED,
+      protectedBranches: ['production', 'pr-beta'],
+      refuseProtection: { 'pr-staging': { status: 403, body: { detail: 'missing permission branch:protect' } } },
+    });
+    await expect(run(server, ADDITIVE_ONLY)).rejects.toThrow('Set protection on branch "pr-staging" failed (HTTP 403)');
+  });
+});
+
+describe('reading the server', () => {
+  it('retries a failed read and then succeeds', async () => {
+    let failures = 2;
+    const read = vi.fn(async () => {
+      if (failures-- > 0) throw new Error('HTTP 502');
+      return 'state';
+    });
+    await expect(withReadRetries(read, { delayMs: 0 })).resolves.toBe('state');
+    expect(read).toHaveBeenCalledTimes(3);
+  });
+
+  it('gives up after three tries with an error that is not drift', async () => {
+    const read = vi.fn(async () => {
+      throw new Error('Admin login failed (HTTP 401): bad credentials');
+    });
+    const failure = await withReadRetries(read, { delayMs: 0 }).catch((error: unknown) => error);
+    expect(read).toHaveBeenCalledTimes(3);
+    expect(failure).toBeInstanceOf(ServerUnreadableError);
+    expect((failure as Error).message).toBe(
+      'Could not read the OTA server: Admin login failed (HTTP 401): bad credentials',
+    );
+    expect(EXIT_UNREADABLE).not.toBe(EXIT_DRIFT);
+  });
+
+  it('surfaces an unreadable server from a run, without calling it drift', async () => {
+    const server = fakeXprem({
+      [`GET ${FAKE_APP}/channels`]: { status: 503 },
+      [`GET ${FAKE_APP}/branches`]: [],
+    });
+    await expect(
+      runOtaApply(server.client, desiredOtaState, { apply: false, only: null, retryDelayMs: 0, log: () => {} }),
+    ).rejects.toBeInstanceOf(ServerUnreadableError);
+    expect(server.log().filter((entry) => entry.endsWith('/channels'))).toHaveLength(3);
+  });
+
+  it('refuses to map a channel to a legacy branch that has no id', async () => {
+    const server = fakeXprem({
+      'GET /api/license': { valid: true, hasKey: true },
+      [`GET ${FAKE_APP}/channels`]: [
+        { releaseChannelId: '3', releaseChannelName: 'production', branchName: 'pr-staging', branchId: '2' },
+      ],
+      [`GET ${FAKE_APP}/branches`]: [
+        { branchId: '', branchName: 'production', protected: true },
+        { branchId: '2', branchName: 'pr-staging', protected: true },
+        { branchId: '3', branchName: 'pr-beta', protected: true },
+      ],
+      [`GET ${FAKE_APP}/branch/production/runtimeVersions`]: [],
+      [`GET ${FAKE_APP}/branch/pr-staging/runtimeVersions`]: [],
+      [`GET ${FAKE_APP}/branch/pr-beta/runtimeVersions`]: [],
+      [`PUT ${FAKE_APP}/channels/production/branch-surfing`]: { status: 204 },
+    });
+    await expect(
+      runOtaApply(server.client, desiredOtaState, { apply: true, only: null, retryDelayMs: 0, log: () => {} }),
+    ).rejects.toThrow('Branch "production" has no id on the server, so "production" cannot be mapped to it.');
   });
 });

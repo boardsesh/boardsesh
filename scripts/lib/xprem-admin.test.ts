@@ -12,8 +12,10 @@ import {
 } from './xprem-admin.mts';
 
 // The admin-session API is undocumented: every path, method and payload here was
-// read from the dashboard bundle named in xprem-admin.mts. These tests are the
-// record of that reading. A server bump that moves one fails exactly one of them.
+// read from the dashboard bundle named in xprem-admin.mts. These tests pin the
+// requests OUR client makes, against a fake server, so an accidental edit to the
+// client fails here. They cannot notice the real server changing: that is the
+// job of scripts/ota-admin-api-probe.ts, which reads the live bundle.
 
 const RTV = 'b'.repeat(40);
 const ROLLOUT = `${FAKE_APP}/branch/production/runtimeVersion/${RTV}/rollout`;
@@ -116,12 +118,32 @@ describe('admin client requests', () => {
       [`GET ${FAKE_APP}/branches`]: [
         { branchId: '7', branchName: 'production', protected: true },
         { branchId: 12033, branchName: 'pr-staging' },
+        // The dashboard labels a branch with an empty id "Legacy".
+        { branchId: '', branchName: 'old', protected: false },
       ],
     });
     await expect(server.client.getBranches()).resolves.toEqual([
       { branchId: '7', branchName: 'production', protected: true },
       { branchId: 12033, branchName: 'pr-staging', protected: false },
+      { branchId: null, branchName: 'old', protected: false },
     ]);
+  });
+
+  it('reads the licence, which is not app-scoped', async () => {
+    const server = fakeXprem({
+      'GET /api/license': { valid: false, hasKey: true, validationErrorCode: 'expired', graceEndsAt: null },
+    });
+    await expect(server.client.getLicense()).resolves.toEqual({
+      valid: false,
+      hasKey: true,
+      validationErrorCode: 'expired',
+    });
+    const licensed = fakeXprem({ 'GET /api/license': { valid: true, hasKey: true, orgName: 'Boardsesh' } });
+    await expect(licensed.client.getLicense()).resolves.toEqual({
+      valid: true,
+      hasKey: true,
+      validationErrorCode: null,
+    });
   });
 
   it('pins every write: path, method and payload', async () => {

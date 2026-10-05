@@ -17,11 +17,18 @@
  * `production`: it is baked into every binary, and a device reaches another
  * branch only through the `xprem-branch` header.
  *
- * `--rollout-percentage <1-99>` starts the update as a rollout to that share of
- * devices. A rollout cannot be confirmed through the anonymous manifest, which
- * serves one device's view, so this mode reads the rollout itself and needs the
- * admin login (`OTA_ADMIN_EMAIL`, `OTA_ADMIN_PASSWORD`) next to `EOO_TOKEN`. It
- * is safe to re-run: a platform whose own rollout is already live counts as done.
+ * `--rollout-percentage <1-99> --rollout-receipt <path>` starts the update as a
+ * rollout to that share of devices. A rollout cannot be confirmed through the
+ * anonymous manifest, which serves one device's view, so this mode reads the
+ * rollout itself and needs the admin login (`OTA_ADMIN_EMAIL`,
+ * `OTA_ADMIN_PASSWORD`) next to `EOO_TOKEN`. For the same reason it does NOT run
+ * the served-bytes check the default mode ends with: it confirms that the leased
+ * update is rolling out, and the bytes are covered only by the content hashes
+ * the server validated at upload.
+ *
+ * It is safe to re-run. The update ids it was leased are written to the rollout
+ * receipt, and a platform whose live rollout carries its recorded id (and its
+ * commit) counts as done. Any other live rollout is refused.
  */
 
 import { createHash, randomUUID } from 'node:crypto';
@@ -297,8 +304,9 @@ export function parsePromoteArgs(argv: string[]): {
   androidExport: string;
   branch: string;
   rolloutPercentage: number | null;
+  rolloutReceipt: string | null;
 } {
-  const pathFlags = ['--receipt', '--ios-export', '--android-export'];
+  const pathFlags = ['--receipt', '--ios-export', '--android-export', '--rollout-receipt'];
   const args: Record<string, string> = {};
   for (let index = 0; index < argv.length; index++) {
     const flag = argv[index];
@@ -320,12 +328,17 @@ export function parsePromoteArgs(argv: string[]): {
       throw new Error('--rollout-percentage must be a whole number from 1 to 99.');
     }
   }
+  const rolloutReceipt = args['--rollout-receipt'] ?? null;
+  if ((rolloutPercentage === null) !== (rolloutReceipt === null)) {
+    throw new Error('--rollout-percentage and --rollout-receipt go together.');
+  }
   return {
     receipt: args['--receipt'],
     iosExport: args['--ios-export'],
     androidExport: args['--android-export'],
     branch: branchName(args['--branch'] ?? DEFAULT_BRANCH),
     rolloutPercentage,
+    rolloutReceipt,
   };
 }
 
@@ -698,6 +711,28 @@ async function verifyServedExportWithRetry(
   }
 }
 
+/**
+ * The update ids an earlier run of this promotion was leased, from its rollout
+ * receipt. Empty when there is no file yet, or when the file belongs to another
+ * commit or branch: ids from a different promotion prove nothing about this one.
+ */
+function readRolloutReceipt(path: string, branch: string, receipt: StageReceipt): Partial<Record<OtaPlatform, string>> {
+  if (!existsSync(path)) return {};
+  const raw = object(JSON.parse(readFileSync(path, 'utf8')) as unknown, 'Rollout receipt');
+  if (raw.branch !== branch || raw.commitHash !== receipt.commitHash) return {};
+  const updateIds = object(raw.updateIds, 'Rollout receipt updateIds');
+  const recorded: Partial<Record<OtaPlatform, string>> = {};
+  for (const platform of ['ios', 'android'] as const) {
+    const updateId = updateIds[platform];
+    if (updateId === undefined) continue;
+    if (typeof updateId !== 'string' || !/^\d+$/.test(updateId)) {
+      throw new Error(`Rollout receipt ${platform} update id is not a numeric id.`);
+    }
+    recorded[platform] = updateId;
+  }
+  return recorded;
+}
+
 export async function promoteArchivedOta(options: {
   receiptPath: string;
   iosExport: string;
@@ -709,9 +744,11 @@ export async function promoteArchivedOta(options: {
   /**
    * Start the update as a rollout to this share of devices instead of publishing
    * it to everyone. `connect` opens the admin API for the app the exports name,
-   * which is how the rollout is confirmed.
+   * which is how the rollout is confirmed. `receiptPath` is a small JSON file
+   * this writes the leased update ids to, and reads on a re-run to recognise its
+   * own rollout; keep it with the stage receipt between attempts.
    */
-  rollout?: { percentage: number; connect: (appId: string) => Promise<RolloutReader> };
+  rollout?: { percentage: number; receiptPath: string; connect: (appId: string) => Promise<RolloutReader> };
   fetchImpl?: typeof fetch;
   verificationDelaysMs?: readonly number[];
 }): Promise<void> {
@@ -766,14 +803,30 @@ export async function promoteArchivedOta(options: {
     }
   };
 
+  // The update ids this promotion was leased, per platform, from the rollout
+  // receipt of an earlier run of the same commit to the same branch.
+  const recordedUpdateIds: Partial<Record<OtaPlatform, string>> = options.rollout
+    ? readRolloutReceipt(options.rollout.receiptPath, branch, receipt)
+    : {};
+  const recordLease = (platform: OtaPlatform, updateId: string): void => {
+    if (!options.rollout) return;
+    recordedUpdateIds[platform] = updateId;
+    writeFileSync(
+      options.rollout.receiptPath,
+      `${JSON.stringify({ branch, commitHash: receipt.commitHash, updateIds: recordedUpdateIds })}\n`,
+    );
+  };
+
   /**
    * Rollout mode's answer to "is the rollout that is live on this platform mine?".
-   * False when none is live. Throws when one is live and belongs to another
-   * update, because nothing can be published over it.
+   * False when none is live. Throws when one is live and cannot be shown to be
+   * this promotion's, because nothing can be published over it.
    *
-   * With a lease the answer is exact: the lease and the rollout carry the same
-   * numeric update id. Without one (the server refused before issuing a lease, or
-   * this is a re-run) the update is identified by the commit it was built from.
+   * "Mine" needs the numeric update id the server leased to this promotion: the
+   * lease in hand, or on a re-run the id an earlier run wrote to the rollout
+   * receipt. A re-run additionally checks the commit the live update was built
+   * from. The commit alone is never enough: the update details expose no content
+   * hash, and two different exports can share a commit.
    */
   const ownRolloutIsLive = async (
     reader: RolloutReader,
@@ -784,11 +837,12 @@ export async function promoteArchivedOta(options: {
     const rollout = await reader.getUpdateRollout(branch, runtimeVersion);
     const live = rollout.active ? rollout.updates.find((update) => update.platform === platform) : undefined;
     if (!live) return false;
-    const own =
-      leaseUpdateId === null
-        ? (await reader.getUpdateDetails(branch, runtimeVersion, live.updateId)).commitHash?.toLowerCase() ===
-          receipt.commitHash.toLowerCase()
-        : sameId(live.updateId, leaseUpdateId);
+    const expectedUpdateId = leaseUpdateId ?? recordedUpdateIds[platform] ?? null;
+    let own = expectedUpdateId !== null && sameId(live.updateId, expectedUpdateId);
+    if (own && leaseUpdateId === null) {
+      const details = await reader.getUpdateDetails(branch, runtimeVersion, live.updateId);
+      own = details.commitHash?.toLowerCase() === receipt.commitHash.toLowerCase();
+    }
     if (!own) {
       throw new Error(
         `${platform} ${branch} has an active rollout of another update (${live.updateId}); promotion was refused.`,
@@ -874,7 +928,11 @@ export async function promoteArchivedOta(options: {
     if (rolloutPercentage !== null && object(leaseInput, 'Upload lease').rolloutPercentage === undefined) {
       throw new Error(`${platform} upload lease ignored the rollout percentage; refusing a full publish.`);
     }
-    leases[platform] = parseUploadLease(leaseInput, exports[platform].files, base, appId);
+    const lease = parseUploadLease(leaseInput, exports[platform].files, base, appId);
+    // Written before a byte is uploaded: if this run dies after finalize, the
+    // next one still knows which update id was its own.
+    recordLease(platform, lease.updateId);
+    leases[platform] = lease;
   }
 
   for (const platform of ['ios', 'android'] as const) {
@@ -940,7 +998,7 @@ async function main(): Promise<void> {
   }
   const args = parsePromoteArgs(process.argv.slice(2));
   const manifestUrl = process.env.EXPO_UPDATES_URL ?? '';
-  const { rolloutPercentage } = args;
+  const { rolloutPercentage, rolloutReceipt } = args;
   await promoteArchivedOta({
     receiptPath: args.receipt,
     iosExport: args.iosExport,
@@ -948,13 +1006,25 @@ async function main(): Promise<void> {
     manifestUrl,
     token: process.env.EOO_TOKEN ?? '',
     branch: args.branch,
-    ...(rolloutPercentage === null
+    ...(rolloutPercentage === null || rolloutReceipt === null
       ? {}
       : {
           rollout: {
             percentage: rolloutPercentage,
+            receiptPath: rolloutReceipt,
+            // Only the login comes from the environment. The server is the one
+            // EXPO_UPDATES_URL names, exactly as for the publish calls: an admin
+            // read against any other host would confirm a rollout on a server
+            // the bytes were never sent to.
             connect: (appId: string) =>
-              adminClientFromEnvironment({ appId, defaultBaseUrl: manifestUrl, environment: process.env }),
+              adminClientFromEnvironment({
+                appId,
+                defaultBaseUrl: manifestUrl,
+                environment: {
+                  OTA_ADMIN_EMAIL: process.env.OTA_ADMIN_EMAIL,
+                  OTA_ADMIN_PASSWORD: process.env.OTA_ADMIN_PASSWORD,
+                },
+              }),
           },
         }),
   });

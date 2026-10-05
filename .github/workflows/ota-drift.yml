@@ -1,12 +1,21 @@
 name: OTA Config Drift
 
-# The daily read-only check that the xprem control plane still matches
-# infra/ota/config.ts. It plans and never applies: an unattended job reports a
-# difference, it does not change the server every binary talks to. Drift is fixed
-# by a reviewed change to the declaration, or by a manual apply (ota-apply.yml).
+# The daily read-only check on the xprem control plane. Two questions:
 #
-# What it catches is a dashboard edit: Branch Surfing widened to `*`, the channel
-# pointed at another branch, protection lifted from `pr-staging`.
+#   1. Is the admin API still where our client expects it? Answered without any
+#      login, from the dashboard's public JavaScript bundle. An xprem upgrade that
+#      moves an endpoint goes red here within a day.
+#   2. Does the server still match infra/ota/config.ts? It plans and never
+#      applies: an unattended job reports a difference, it does not change the
+#      server every binary talks to.
+#
+# What the second catches is a dashboard edit: Branch Surfing widened to `*`, the
+# channel pointed at another branch, protection lifted from `pr-staging`. It also
+# keeps reporting whatever a push to main left as "pending manual apply".
+#
+# "Could not read the server" and "the server differs" are different findings
+# with different messages: the first is usually an outage or a rotated password,
+# the second is somebody's change.
 #
 # See docs/mobile-ota-updates.md, "Managing xprem as code".
 on:
@@ -27,20 +36,52 @@ jobs:
   drift:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Holds the dashboard admin login. Restricted to `main`, and every job that
-    # uses it checks out `main` and installs nothing.
+    # Holds the dashboard admin login. The owner creates this environment with a
+    # deployment-branch policy of `main` BEFORE adding its secrets; see the docs
+    # for the list. The first step below refuses any other ref regardless.
     environment: ota-stable-release
     steps:
+      # Before anything reads a secret. A scheduled run is always on main.
+      - name: Refuse any ref but main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::This workflow holds the OTA admin login and only runs from main. Dispatch it with --ref main."
+          exit 1
+
       - name: Checkout main
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: main
           persist-credentials: false
 
-      # No dependency install: the script uses node built-ins only.
+      # No dependency install: the scripts use node built-ins only.
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22.x'
+
+      # No login: two anonymous GETs of the public dashboard files. Runs whether
+      # or not the environment has been given its secrets.
+      - name: Probe the admin API
+        id: probe
+        env:
+          NODE_NO_WARNINGS: '1'
+        run: |
+          set -uo pipefail
+
+          status=0
+          node --experimental-strip-types scripts/ota-admin-api-probe.ts 2>&1 | tee "$RUNNER_TEMP/ota-probe.log" || status=$?
+          {
+            echo '### OTA admin API probe'
+            echo ''
+            echo '```'
+            cat "$RUNNER_TEMP/ota-probe.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          case "$status" in
+            0) echo "result=ok" >> "$GITHUB_OUTPUT" ;;
+            2) echo "result=unavailable" >> "$GITHUB_OUTPUT" ;;
+            *) echo "result=moved" >> "$GITHUB_OUTPUT" ;;
+          esac
 
       - name: Plan against the live server
         id: plan
@@ -49,18 +90,18 @@ jobs:
           OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
           NODE_NO_WARNINGS: '1'
         run: |
-          set -euo pipefail
+          set -uo pipefail
 
           # An environment that has not been given the login yet is not drift.
           if [ -z "${OTA_ADMIN_EMAIL:-}" ] || [ -z "${OTA_ADMIN_PASSWORD:-}" ]; then
             echo "::notice::OTA_ADMIN_EMAIL or OTA_ADMIN_PASSWORD is not set in the ota-stable-release environment; skipping."
-            echo "Skipped: the \`ota-stable-release\` environment has no \`OTA_ADMIN_EMAIL\` / \`OTA_ADMIN_PASSWORD\`. Nothing was read." >> "$GITHUB_STEP_SUMMARY"
+            echo "Skipped: the \`ota-stable-release\` environment has no \`OTA_ADMIN_EMAIL\` / \`OTA_ADMIN_PASSWORD\`. The server was not read." >> "$GITHUB_STEP_SUMMARY"
             echo "result=skipped" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # No --apply, ever, in this workflow. Exit 1 is drift or a failed read;
-          # both are worth a human, so both alert.
+          # Plan mode only. The script retries its reads itself and exits 2 when
+          # the server could not be read at all, 1 when it was read and differs.
           status=0
           node --experimental-strip-types scripts/ota-apply.ts 2>&1 | tee "$RUNNER_TEMP/ota-drift.log" || status=$?
           {
@@ -70,47 +111,75 @@ jobs:
             cat "$RUNNER_TEMP/ota-drift.log"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          if [ "$status" -eq 0 ]; then
-            echo "result=in-sync" >> "$GITHUB_OUTPUT"
-          else
-            echo "result=drift" >> "$GITHUB_OUTPUT"
-          fi
+          case "$status" in
+            0) echo "result=in-sync" >> "$GITHUB_OUTPUT" ;;
+            2) echo "result=unreadable" >> "$GITHUB_OUTPUT" ;;
+            *) echo "result=drift" >> "$GITHUB_OUTPUT" ;;
+          esac
 
       - name: Notify Discord
-        if: steps.plan.outputs.result == 'drift'
+        if: >-
+          steps.probe.outputs.result != 'ok' ||
+          steps.plan.outputs.result == 'drift' ||
+          steps.plan.outputs.result == 'unreadable'
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          DRIFT_LOG: ${{ runner.temp }}/ota-drift.log
+          PROBE_RESULT: ${{ steps.probe.outputs.result }}
+          PLAN_RESULT: ${{ steps.plan.outputs.result }}
         run: |
           set -uo pipefail
 
-          # The plan's own lines: channel and branch names and percentages. The
-          # script never prints the login, and the message is built with jq so the
-          # body is JSON-encoded, not interpolated. Discord drops a message over
-          # 2000 characters whole, so trim the detail and never the run link.
-          detail="$(grep -E 'drift:|blocked:|\[ota-apply\] [A-Z]' "$DRIFT_LOG" 2>/dev/null \
-            | sed 's/`//g' | cut -c1-240 | head -n 12 | head -c 1200 || true)"
+          # One headline per finding, most specific first. They are different
+          # problems with different owners, so they must not read the same.
+          if [ "$PROBE_RESULT" = "moved" ]; then
+            headline='**OTA admin API moved**: the dashboard bundle no longer contains a path our tools call. Do not run ota:apply or the rollout tools until the client is re-read.'
+            log="$RUNNER_TEMP/ota-probe.log"
+            pattern='MISSING|dashboard bundle'
+          elif [ "$PLAN_RESULT" = "drift" ]; then
+            headline='**OTA config drift**: updates.boardsesh.com was read and does not match infra/ota/config.ts. Nothing was changed.'
+            log="$RUNNER_TEMP/ota-drift.log"
+            pattern='drift:|blocked:|pending manual apply:|licence:'
+          elif [ "$PLAN_RESULT" = "unreadable" ]; then
+            headline='**OTA server could not be read**: three attempts to log in and read updates.boardsesh.com failed. This is not drift; check the server and the admin login.'
+            log="$RUNNER_TEMP/ota-drift.log"
+            pattern='Could not read'
+          else
+            headline='**OTA dashboard bundle unavailable**: the public dashboard files could not be downloaded, so the admin API check did not run.'
+            log="$RUNNER_TEMP/ota-probe.log"
+            pattern='ota-api-probe'
+          fi
+
+          # The scripts' own lines: names, paths and percentages. Neither prints
+          # the login, and the message is built with jq so the body is
+          # JSON-encoded, not interpolated. Discord drops a message over 2000
+          # characters whole, so trim the detail and never the run link.
+          detail="$(grep -E "$pattern" "$log" 2>/dev/null | sed 's/`//g' | cut -c1-240 | head -n 12 | head -c 1200 || true)"
           if [ -z "$detail" ]; then
-            detail='The check produced no plan. See the run log.'
+            detail='No detail was captured. See the run log.'
           fi
 
           if [ -z "${DISCORD_DEPLOY_WEBHOOK:-}" ]; then
-            echo "::warning::The OTA server differs from infra/ota/config.ts but DISCORD_DEPLOY_WEBHOOK is not readable in this environment. The report is in the job summary and the run is red."
+            echo "::warning::The OTA drift check has a finding but DISCORD_DEPLOY_WEBHOOK is not set in the ota-stable-release environment. The report is in the job summary and the run is red."
             exit 0
           fi
 
-          content="$(printf '**OTA config drift**: updates.boardsesh.com no longer matches infra/ota/config.ts. Nothing was changed.\n```\n%s\n```\n<%s>' \
-            "$detail" "$RUN_URL")"
+          content="$(printf '%s\n```\n%s\n```\n<%s>' "$headline" "$detail" "$RUN_URL")"
           # allowed_mentions.parse=[] blocks pings from anything spliced into the
-          # body. A webhook failure must not hide the drift, so it only warns.
+          # body. A webhook failure must not hide the finding, so it only warns.
           jq -n --arg content "$content" '{content: $content, allowed_mentions: {parse: []}}' \
             | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
               echo "::warning::Failed to post the Discord notification (see status above)"
 
       # Discord is best-effort; the red run is the durable record.
-      - name: Fail the run on drift
-        if: steps.plan.outputs.result == 'drift'
+      - name: Fail the run on a finding
+        if: >-
+          steps.probe.outputs.result != 'ok' ||
+          steps.plan.outputs.result == 'drift' ||
+          steps.plan.outputs.result == 'unreadable'
+        env:
+          PROBE_RESULT: ${{ steps.probe.outputs.result }}
+          PLAN_RESULT: ${{ steps.plan.outputs.result }}
         run: |
-          echo "::error::The OTA server differs from infra/ota/config.ts. See the job summary."
+          echo "::error::OTA drift check: admin API probe is '$PROBE_RESULT', config plan is '$PLAN_RESULT'. See the job summary."
           exit 1

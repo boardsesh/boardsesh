@@ -60,6 +60,25 @@ export type OtaPlannedChange =
   | { kind: 'map-channel'; channel: string; branch: string; summary: string }
   | { kind: 'set-branch-surfing'; channel: string; enabled: boolean; pattern: string; summary: string };
 
+export type OtaChangeKind = OtaPlannedChange['kind'];
+
+/** Every kind the plan can produce. The apply tool validates `--only` against it. */
+export const OTA_CHANGE_KINDS: readonly OtaChangeKind[] = [
+  'create-branch',
+  'protect-branch',
+  'create-channel',
+  'map-channel',
+  'set-branch-surfing',
+];
+
+/**
+ * The kinds that only add: a new empty branch, and a flag that stops a branch
+ * being deleted. Neither changes what any device is served, so these are the
+ * only kinds an unattended run may apply. The rest move the fleet (a remap), or
+ * widen what devices may switch to (surfing), and wait for a person.
+ */
+export const ADDITIVE_CHANGE_KINDS: readonly OtaChangeKind[] = ['create-branch', 'protect-branch'];
+
 export interface OtaPlan {
   /** Drift the tool will converge with --apply, in the order it must be applied. */
   changes: OtaPlannedChange[];
@@ -133,16 +152,20 @@ export function buildOtaPlan(desired: OtaDesiredState, live: OtaLiveState): OtaP
   const liveBranches = new Map(live.branches.map((branch) => [branch.name, branch]));
   const liveChannels = new Map(live.channels.map((channel) => [channel.name, channel]));
 
-  // Branches first: a channel can only be mapped to a branch that exists.
+  // Every create comes before any protect. Protection can be refused (it is a
+  // licensed feature), and a refusal must not stop a missing branch from being
+  // created. Branches come before channels: a channel maps to a branch that exists.
   for (const branch of desired.branches) {
-    const current = liveBranches.get(branch.name);
-    if (!current) {
+    if (!liveBranches.has(branch.name)) {
       plan.changes.push({
         kind: 'create-branch',
         branch: branch.name,
         summary: `Create branch "${branch.name}".`,
       });
     }
+  }
+  for (const branch of desired.branches) {
+    const current = liveBranches.get(branch.name);
     if (branch.protected && !current?.protected) {
       plan.changes.push({
         kind: 'protect-branch',

@@ -12,10 +12,16 @@
  *   server:  xprem 3.2.5 (OTA_SERVER_VERSION in infra/railway/config.ts)
  *   read on: 2026-10-05
  *
- * Re-read the bundle on every server bump (the `ota-image-bump` PR checklist):
- * `curl https://updates.boardsesh.com/dashboard/` names the current
- * `./assets/index-*.js`. scripts/lib/xprem-admin.test.ts pins every request this
- * file makes, so a path that moved shows up as one failing assertion to update.
+ * Two checks stand behind that reading, and they cover different things:
+ *   - scripts/lib/xprem-admin.test.ts pins the requests THIS file makes, against
+ *     a fake server. It catches an accidental edit here. It cannot notice the
+ *     real server changing.
+ *   - scripts/ota-admin-api-probe.ts (`vp run ota:api-probe`) downloads the live
+ *     dashboard bundle and checks that every path in {@link XPREM_BUNDLE_MARKERS}
+ *     is still in it. The daily drift workflow runs it, so a server upgrade that
+ *     moves an endpoint goes red within a day.
+ * Neither proves a response shape. Those are parsed strictly below, so a changed
+ * shape fails loudly on first use.
  *
  * `{app}` is `/api/apps/{appId}`. Names are URL-encoded path segments.
  *
@@ -26,6 +32,12 @@
  *   POST {app}/channels                          { channelName, branchName? }
  *   PUT  {app}/channels/{channel}/branch-surfing { enabled, pattern }   (an empty pattern is refused)
  *   GET  {app}/branches                          -> [{ branchId, branchName, protected }]
+ *        `branchId` can be empty: the dashboard labels such a branch "Legacy".
+ *   GET  /api/license                            -> { valid, hasKey, orgName?, validationFailedAt?,
+ *                                                     validationErrorCode?, graceEndsAt? }
+ *        Branch protection and update health are Enterprise features: without a
+ *        valid licence the dashboard shows them locked. How the server words a
+ *        refusal is not in the bundle.
  *   POST {app}/branches                          { branchName } -> { branchId }
  *   PUT  {app}/branches/{branch}/protection      { protected }
  *   POST {app}/branch/{branchId}/updateChannelBranchMapping
@@ -79,7 +91,8 @@ export interface XpremChannel {
 }
 
 export interface XpremBranch {
-  branchId: XpremId;
+  /** Null for a "Legacy" branch, which the server lists without an id. */
+  branchId: XpremId | null;
   branchName: string;
   protected: boolean;
 }
@@ -124,6 +137,51 @@ export interface XpremHealthHistory {
   source: string | null;
   latest: Record<string, XpremUpdateIssues>;
 }
+
+export interface XpremLicense {
+  /** True when Enterprise features (branch protection, update health) are unlocked. */
+  valid: boolean;
+  hasKey: boolean;
+  /** Set when the last validation against the licence server failed. */
+  validationErrorCode: string | null;
+}
+
+/**
+ * Strings that must appear in the dashboard bundle for this client to still be
+ * talking to the API the dashboard talks to: one per endpoint or payload key
+ * used below. Checked against the live bundle by scripts/ota-admin-api-probe.ts.
+ *
+ * They are fragments of the bundle's own template literals, so each is written
+ * the way the minified source spells it.
+ */
+export const XPREM_BUNDLE_MARKERS: readonly { marker: string; usedFor: string }[] = [
+  { marker: '"/auth/login"', usedFor: 'admin login' },
+  { marker: '"/api/license"', usedFor: 'licence read' },
+  { marker: '`/api/apps/${encodeURIComponent(this.appId)}`', usedFor: 'app scope' },
+  { marker: '}/channels`', usedFor: 'list and create channels' },
+  { marker: '/branch-surfing`', usedFor: 'set Branch Surfing' },
+  { marker: '}/branches`', usedFor: 'list and create branches' },
+  { marker: '/protection`', usedFor: 'protect a branch' },
+  { marker: '/updateChannelBranchMapping`', usedFor: 'map a channel to a branch' },
+  { marker: '/runtimeVersions`', usedFor: 'list runtime versions' },
+  { marker: '/rollout`', usedFor: 'read and set a rollout' },
+  { marker: '/rollout/revert`', usedFor: 'revert a rollout' },
+  { marker: '/updates/${encodeURIComponent(', usedFor: 'update details' },
+  { marker: '/identity/update-health?ids=', usedFor: 'update health' },
+  { marker: '/observe/update-health/history?', usedFor: 'update health history' },
+  { marker: 'expectedUpdateId', usedFor: 'rollout write payload' },
+  { marker: 'releaseChannelId', usedFor: 'channel mapping payload' },
+  { marker: 'branchName:', usedFor: 'create-branch payload' },
+  { marker: 'protected:', usedFor: 'protection payload' },
+];
+
+/** The markers a bundle no longer contains. Empty means the API is where this client expects it. */
+export function missingBundleMarkers(bundleSource: string): { marker: string; usedFor: string }[] {
+  return XPREM_BUNDLE_MARKERS.filter(({ marker }) => !bundleSource.includes(marker));
+}
+
+/** How long one request may take before it is abandoned. The server answers in well under a second. */
+const REQUEST_TIMEOUT_MS = 30_000;
 
 /** A non-2xx answer from the server. `status` is what callers branch on (409 = live rollout). */
 export class XpremApiError extends Error {
@@ -202,7 +260,7 @@ function parseChannel(input: unknown): XpremChannel {
 function parseBranch(input: unknown): XpremBranch {
   const raw = record(input, 'branch');
   return {
-    branchId: id(raw.branchId, 'branch branchId'),
+    branchId: optionalId(raw.branchId),
     branchName: text(raw.branchName, 'branch branchName'),
     protected: raw.protected === true,
   };
@@ -252,6 +310,7 @@ export async function adminLogin(options: AdminLoginOptions): Promise<string> {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ email: options.email, password: options.password }).toString(),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!response.ok) {
     throw new Error(`Admin login failed (HTTP ${response.status}): ${(await response.text()).slice(0, 200)}`);
@@ -290,6 +349,7 @@ export function createXpremAdminClient(options: XpremAdminClientOptions) {
         ...(body === undefined ? {} : { 'content-type': 'application/json' }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) {
       throw new XpremApiError(action, response.status, (await response.text()).slice(0, 300));
@@ -300,6 +360,16 @@ export function createXpremAdminClient(options: XpremAdminClientOptions) {
   }
 
   return {
+    /** The server's licence state. Not app-scoped. */
+    async getLicense(): Promise<XpremLicense> {
+      const raw = record(await request('Read licence', 'GET', '/api/license'), 'licence');
+      return {
+        valid: raw.valid === true,
+        hasKey: raw.hasKey === true,
+        validationErrorCode: optionalText(raw.validationErrorCode),
+      };
+    },
+
     async getChannels(): Promise<XpremChannel[]> {
       return list(await request('List channels', 'GET', `${app}/channels`), 'channel list').map(parseChannel);
     },

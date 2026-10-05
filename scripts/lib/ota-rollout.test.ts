@@ -173,6 +173,68 @@ describe('setRolloutPercentage', () => {
   });
 });
 
+describe('a rollout that changes under the tool', () => {
+  const target = { branch: 'production', runtimeVersion: IOS_RTV, platform: 'all' as const };
+  /** Live on the first read, gone on every read after it. */
+  const vanishing = (): ReturnType<typeof fakeXprem> => {
+    let reads = 0;
+    return fakeXprem({
+      [`GET ${rolloutPath(IOS_RTV)}`]: () =>
+        reads++ === 0
+          ? { active: true, updates: [{ updateId: 11, platform: 'ios', percentage: 50 }] }
+          : { active: false },
+    });
+  };
+
+  it('finish does not report success for a rollout that vanished before its first write', async () => {
+    const server = vanishing();
+    await expect(setRolloutPercentage(server.client, target, 100)).rejects.toThrow(
+      'Update 11 stopped rolling out on "production" before anything was written. Nothing was changed.',
+    );
+    expect(server.requests.every((request) => request.method === 'GET')).toBe(true);
+  });
+
+  it('finish tolerates a second platform that its own first write ended', async () => {
+    let live = [
+      { updateId: 11, platform: 'ios', percentage: 50 },
+      { updateId: 12, platform: 'android', percentage: 50 },
+    ];
+    const server = fakeXprem({
+      [`GET ${rolloutPath(IOS_RTV)}`]: () => ({ active: live.length > 0, updates: live }),
+      // A server whose single write finishes every platform on the runtime version.
+      [`PUT ${rolloutPath(IOS_RTV)}`]: () => {
+        live = [];
+        return { status: 204 };
+      },
+    });
+    const finished = await setRolloutPercentage(server.client, target, 100);
+    expect(finished.map((rollout) => rollout.platform)).toEqual(['ios']);
+    expect(server.requests.filter((request) => request.method === 'PUT')).toHaveLength(1);
+  });
+
+  it('revert fails on a vanished rollout, unless nothing live is an acceptable answer', async () => {
+    await expect(revertRollout(vanishing().client, target)).rejects.toThrow('stopped rolling out');
+    const tolerant = vanishing();
+    await expect(revertRollout(tolerant.client, target, { allowNone: true })).resolves.toEqual([]);
+    expect(tolerant.requests.every((request) => request.method === 'GET')).toBe(true);
+  });
+
+  it('revert with allowNone answers from one read when nothing is live', async () => {
+    const server = fakeXprem({ [`GET ${rolloutPath(IOS_RTV)}`]: { active: false } });
+    await expect(revertRollout(server.client, target, { allowNone: true })).resolves.toEqual([]);
+    expect(server.requests).toHaveLength(1);
+    await expect(revertRollout(server.client, target)).rejects.toThrow('No live rollout');
+  });
+
+  it('revert with allowNone still fails when the write is refused and the rollout is still live', async () => {
+    const server = fakeXprem({
+      [`GET ${rolloutPath(IOS_RTV)}`]: { active: true, updates: [{ updateId: 11, platform: 'ios', percentage: 50 }] },
+      [`POST ${rolloutPath(IOS_RTV)}/revert`]: { status: 500, body: { detail: 'boom' } },
+    });
+    await expect(revertRollout(server.client, target, { allowNone: true })).rejects.toThrow('HTTP 500');
+  });
+});
+
 describe('revertRollout', () => {
   it('posts to the revert endpoint with the live update id', async () => {
     const server = fakeXprem(statefulRollout(ANDROID_RTV, [{ updateId: 31, platform: 'android', percentage: 50 }]));
@@ -192,24 +254,64 @@ describe('revertRollout', () => {
 
 describe('judgeCanary', () => {
   const control = { devicesOnUpdate: 300, successfulDevices: 297, faultyDevices: 3 };
+  const verdict = (
+    canary: Parameters<typeof judgeCanary>[0],
+    against: Parameters<typeof judgeCanary>[1] = control,
+  ): string => judgeCanary(canary, against, POLICY).verdict;
 
   it('is healthy with enough devices and a faulty rate within the margin of the control', () => {
     const canary = { devicesOnUpdate: 40, successfulDevices: 39, faultyDevices: 1 };
-    expect(judgeCanary(canary, control, POLICY).verdict).toBe('healthy');
-  });
-
-  it('is unhealthy when the faulty rate clears the margin on enough faulty devices', () => {
-    const canary = { devicesOnUpdate: 40, successfulDevices: 34, faultyDevices: 6 };
     expect(judgeCanary(canary, control, POLICY)).toEqual({
-      verdict: 'unhealthy',
-      reason: 'Canary is 15.0% faulty (6 of 40) against an allowed 3.0%.',
+      verdict: 'healthy',
+      reason: 'Canary is 2.5% faulty (1 of 40) against an allowed 3.0% (control at 1.0%).',
     });
   });
 
-  it('calls a crash-looping canary unhealthy below the evidence floor', () => {
-    // Faulty devices fall back to the embedded bundle and stop counting as on the update.
-    const canary = { devicesOnUpdate: 1, successfulDevices: 1, faultyDevices: 4 };
-    expect(judgeCanary(canary, control, POLICY).verdict).toBe('unhealthy');
+  it('is unhealthy when the faulty rate clears the allowed rate on enough faulty devices', () => {
+    const canary = { devicesOnUpdate: 40, successfulDevices: 34, faultyDevices: 6 };
+    expect(judgeCanary(canary, control, POLICY)).toEqual({
+      verdict: 'unhealthy',
+      reason: 'Canary is 15.0% faulty (6 of 40) against an allowed 3.0% (control at 1.0%).',
+    });
+  });
+
+  // The three cases a review reproduced as "healthy" before the control was
+  // required to be large enough to mean something, and capped.
+  it.each([
+    ['15 of 15 faulty against a control of 1 of 1', [15, 0, 15], [1, 0, 1]],
+    ['20 of 20 faulty against a control of 3 of 3', [20, 0, 20], [3, 0, 3]],
+    ['7 of 15 faulty against a control of 1 of 2', [15, 8, 7], [2, 1, 1]],
+  ] as const)('is unhealthy: %s', (_label, canaryCounts, controlCounts) => {
+    const cohort = ([devicesOnUpdate, successfulDevices, faultyDevices]: readonly number[]) => ({
+      devicesOnUpdate,
+      successfulDevices,
+      faultyDevices,
+    });
+    expect(verdict(cohort(canaryCounts), cohort(controlCounts))).toBe('unhealthy');
+  });
+
+  it('ignores a control below the evidence floor, however it looks', () => {
+    const canary = { devicesOnUpdate: 40, successfulDevices: 38, faultyDevices: 2 };
+    const tinyBadControl = { devicesOnUpdate: 14, successfulDevices: 0, faultyDevices: 14 };
+    // 5.0% against 0% + 2 points: over, on two faulty devices, so it holds.
+    expect(judgeCanary(canary, tinyBadControl, POLICY)).toEqual({
+      verdict: 'insufficient-evidence',
+      reason:
+        'Canary is 5.0% faulty (2 of 40) against an allowed 2.0% (no usable control), on fewer than 3 faulty devices.',
+    });
+  });
+
+  it('caps the allowed rate, so a broken control cannot wave a broken canary through', () => {
+    const brokenControl = { devicesOnUpdate: 300, successfulDevices: 150, faultyDevices: 150 };
+    const canary = { devicesOnUpdate: 50, successfulDevices: 45, faultyDevices: 5 };
+    expect(judgeCanary(canary, brokenControl, POLICY)).toEqual({
+      verdict: 'unhealthy',
+      reason: 'Canary is 10.0% faulty (5 of 50) against an allowed 5.0% (control at 50.0%).',
+    });
+    // Within the cap, a canary no worse than a rough control passes.
+    const roughControl = { devicesOnUpdate: 300, successfulDevices: 288, faultyDevices: 12 };
+    const steady = { devicesOnUpdate: 50, successfulDevices: 48, faultyDevices: 2 };
+    expect(verdict(steady, roughControl)).toBe('healthy');
   });
 
   it('never treats too little evidence as healthy', () => {
@@ -218,62 +320,110 @@ describe('judgeCanary', () => {
       verdict: 'insufficient-evidence',
       reason: '14 device(s) have reported on the canary; 15 are needed.',
     });
-    expect(judgeCanary(null, control, POLICY).verdict).toBe('insufficient-evidence');
+    expect(verdict(null)).toBe('insufficient-evidence');
     // Devices are on the update, but none has reported an outcome yet.
-    const silent = { devicesOnUpdate: 60, successfulDevices: 0, faultyDevices: 0 };
-    expect(judgeCanary(silent, control, POLICY).verdict).toBe('insufficient-evidence');
+    expect(verdict({ devicesOnUpdate: 60, successfulDevices: 0, faultyDevices: 0 })).toBe('insufficient-evidence');
+    // Nothing at all.
+    expect(verdict({ devicesOnUpdate: 0, successfulDevices: 0, faultyDevices: 0 })).toBe('insufficient-evidence');
   });
 
-  it('holds, and does not pass, a canary over the margin on too few faulty devices', () => {
-    const canary = { devicesOnUpdate: 20, successfulDevices: 18, faultyDevices: 2 };
-    expect(judgeCanary(canary, control, POLICY).verdict).toBe('insufficient-evidence');
+  it('below the floor, is unhealthy only on enough faulty devices at a very high rate', () => {
+    // 4 of 10 = 40%, at or over the 30% small-sample threshold, on 4 faulty devices.
+    expect(verdict({ devicesOnUpdate: 10, successfulDevices: 6, faultyDevices: 4 })).toBe('unhealthy');
+    // 3 of 12 = 25%: far over the allowed rate, but under the small-sample threshold.
+    expect(verdict({ devicesOnUpdate: 12, successfulDevices: 9, faultyDevices: 3 })).toBe('insufficient-evidence');
+    // 2 of 2 = 100%, on fewer than three faulty devices.
+    expect(verdict({ devicesOnUpdate: 2, successfulDevices: 0, faultyDevices: 2 })).toBe('insufficient-evidence');
   });
 
-  it('judges against the control, so a fleet that is already faulty does not fail the canary', () => {
-    const roughControl = { devicesOnUpdate: 300, successfulDevices: 270, faultyDevices: 30 };
-    const canary = { devicesOnUpdate: 50, successfulDevices: 45, faultyDevices: 5 };
-    expect(judgeCanary(canary, roughControl, POLICY).verdict).toBe('healthy');
-    expect(judgeCanary(canary, control, POLICY).verdict).toBe('unhealthy');
+  it('holds, and does not pass, a canary over the allowed rate on too few faulty devices', () => {
+    expect(verdict({ devicesOnUpdate: 20, successfulDevices: 18, faultyDevices: 2 })).toBe('insufficient-evidence');
   });
 
   it('treats a missing control as a 0% baseline, making the margin an absolute cap', () => {
     const clean = { devicesOnUpdate: 100, successfulDevices: 99, faultyDevices: 1 };
     const rough = { devicesOnUpdate: 100, successfulDevices: 95, faultyDevices: 5 };
-    expect(judgeCanary(clean, null, POLICY).verdict).toBe('healthy');
-    expect(judgeCanary(rough, null, POLICY).verdict).toBe('unhealthy');
+    expect(verdict(clean, null)).toBe('healthy');
+    expect(verdict(rough, null)).toBe('unhealthy');
+  });
+
+  it('refuses to judge numbers it cannot trust', () => {
+    const usable = { devicesOnUpdate: 40, successfulDevices: 40, faultyDevices: 0 };
+    expect(verdict(usable)).toBe('healthy');
+    for (const broken of [
+      { ...usable, devicesOnUpdate: Number.NaN },
+      { ...usable, successfulDevices: Number.NaN },
+      { ...usable, faultyDevices: Number.POSITIVE_INFINITY },
+      { ...usable, successfulDevices: -1 },
+      { ...usable, faultyDevices: '3' as unknown as number },
+      // More faulty devices than devices on the update.
+      { devicesOnUpdate: 5, successfulDevices: 30, faultyDevices: 6 },
+    ]) {
+      expect(verdict(broken), JSON.stringify(broken)).toBe('insufficient-evidence');
+    }
+    // An unusable control is no control: the cap still applies.
+    const nanControl = { devicesOnUpdate: 300, successfulDevices: Number.NaN, faultyDevices: 3 };
+    expect(verdict(usable, nanControl)).toBe('healthy');
+    expect(verdict({ devicesOnUpdate: 50, successfulDevices: 45, faultyDevices: 5 }, nanControl)).toBe('unhealthy');
+    // A policy with a hole in it judges nothing.
+    expect(judgeCanary(usable, control, { ...POLICY, maxFaultyRatePercent: Number.NaN }).verdict).toBe(
+      'insufficient-evidence',
+    );
   });
 });
 
 describe('readRolloutHealth', () => {
-  it('resolves numeric update ids to UUIDs and judges each platform', async () => {
-    const canaryUUID = '43d5c1d5-ade8-62d9-1d01-9ffa9a169620';
-    const controlUUID = '2d55b3b3-cc04-1a38-217b-92ec1ff5d2ff';
+  it('resolves numeric update ids to UUIDs and judges each platform on its own numbers', async () => {
+    const uuids = {
+      iosCanary: '43d5c1d5-ade8-62d9-1d01-9ffa9a169620',
+      iosControl: '2d55b3b3-cc04-1a38-217b-92ec1ff5d2ff',
+      androidCanary: 'aaaaaaaa-ade8-62d9-1d01-9ffa9a169620',
+      androidControl: 'bbbbbbbb-cc04-1a38-217b-92ec1ff5d2ff',
+    };
     const updates = `${FAKE_APP}/branch/production/runtimeVersion/${IOS_RTV}/updates`;
+    const healthy = { devicesOnUpdate: 30, successfulDevices: 30, faultyDevices: 0 };
+    const bigControl = { devicesOnUpdate: 200, successfulDevices: 199, faultyDevices: 1 };
+    const history = (uuid: string, runtimeIssues: number) => ({
+      source: 'snapshots',
+      updates: { [uuid]: [{ timestamp: '2026-10-05T04:46:00Z', updateIssues: 0, runtimeIssues }] },
+    });
     const server = fakeXprem({
       [`GET ${rolloutPath(IOS_RTV)}`]: {
         active: true,
-        updates: [{ updateId: 11, controlUpdateId: 10, platform: 'ios', percentage: 50 }],
+        updates: [
+          { updateId: 11, controlUpdateId: 10, platform: 'ios', percentage: 50 },
+          { updateId: 21, controlUpdateId: 20, platform: 'android', percentage: 50 },
+        ],
       },
-      [`GET ${updates}/11`]: { updateId: 11, updateUUID: canaryUUID },
-      [`GET ${updates}/10`]: { updateId: 10, updateUUID: controlUUID },
-      [`GET ${FAKE_APP}/identity/update-health?ids=${canaryUUID}%2C${controlUUID}`]: {
+      [`GET ${updates}/11`]: { updateId: 11, updateUUID: uuids.iosCanary },
+      [`GET ${updates}/10`]: { updateId: 10, updateUUID: uuids.iosControl },
+      [`GET ${updates}/21`]: { updateId: 21, updateUUID: uuids.androidCanary },
+      [`GET ${updates}/20`]: { updateId: 20, updateUUID: uuids.androidControl },
+      [`GET ${FAKE_APP}/identity/update-health?ids=${uuids.iosCanary}%2C${uuids.iosControl}`]: {
+        updates: { [uuids.iosCanary]: healthy, [uuids.iosControl]: bigControl },
+      },
+      [`GET ${FAKE_APP}/identity/update-health?ids=${uuids.androidCanary}%2C${uuids.androidControl}`]: {
         updates: {
-          [canaryUUID]: { devicesOnUpdate: 30, successfulDevices: 30, faultyDevices: 0 },
-          [controlUUID]: { devicesOnUpdate: 200, successfulDevices: 199, faultyDevices: 1 },
+          [uuids.androidCanary]: { devicesOnUpdate: 30, successfulDevices: 22, faultyDevices: 8 },
+          [uuids.androidControl]: bigControl,
         },
       },
-      [`GET ${FAKE_APP}/observe/update-health/history?ids=${canaryUUID}`]: {
-        source: 'snapshots',
-        updates: { [canaryUUID]: [{ timestamp: '2026-10-05T04:46:00Z', updateIssues: 0, runtimeIssues: 2 }] },
-      },
+      [`GET ${FAKE_APP}/observe/update-health/history?ids=${uuids.iosCanary}`]: history(uuids.iosCanary, 2),
+      [`GET ${FAKE_APP}/observe/update-health/history?ids=${uuids.androidCanary}`]: history(uuids.androidCanary, 9),
     });
-    const [health] = await readRolloutHealth(server.client, 'production', IOS_RTV, POLICY);
-    expect(health).toMatchObject({
-      canaryUpdateUUID: canaryUUID,
-      controlUpdateUUID: controlUUID,
-      canary: { devicesOnUpdate: 30, successfulDevices: 30, faultyDevices: 0 },
+    const [ios, android] = await readRolloutHealth(server.client, 'production', IOS_RTV, POLICY);
+    expect(ios).toMatchObject({
+      canaryUpdateUUID: uuids.iosCanary,
+      controlUpdateUUID: uuids.iosControl,
+      canary: healthy,
       canaryIssues: { updateIssues: 0, runtimeIssues: 2 },
       judgement: { verdict: 'healthy' },
+    });
+    // One platform passing says nothing about the other.
+    expect(android).toMatchObject({
+      rollout: { platform: 'android' },
+      canaryIssues: { updateIssues: 0, runtimeIssues: 9 },
+      judgement: { verdict: 'unhealthy' },
     });
   });
 

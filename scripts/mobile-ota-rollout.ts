@@ -195,15 +195,10 @@ export async function runRolloutCommand(
   }
 
   if (args.command === 'revert') {
-    if (args.ifLive) {
-      const live = (await readRollout(client, target.branch, target.runtimeVersion)).filter(
-        (rollout) => args.platform === 'all' || rollout.platform === args.platform,
-      );
-      if (live.length === 0) {
-        return [`${LOG} No live rollout on "${args.branch}" runtime ${target.runtimeVersion}. Nothing to revert.`];
-      }
+    const reverted = await revertRollout(client, target, { allowNone: args.ifLive });
+    if (reverted.length === 0) {
+      return [`${LOG} No live rollout on "${args.branch}" runtime ${target.runtimeVersion}. Nothing to revert.`];
     }
-    const reverted = await revertRollout(client, target);
     return reverted.map((rollout) => `${LOG} Reverted ${describe(rollout)}.`);
   }
 

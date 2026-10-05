@@ -120,6 +120,8 @@
     "lib/ota-branch-probe.ts",
     "__tests__/helpers/fake-xprem.ts",
     "ota-apply.ts",
+    "ota-admin-api-probe.ts",
+    "ota-admin-api-probe.test.ts",
     "ota-apply.test.ts",
     "mobile-ota-rollout.ts",
     "mobile-ota-rollout.test.ts",

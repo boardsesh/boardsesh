@@ -462,7 +462,7 @@ OTA_ADMIN_EMAIL=... OTA_ADMIN_PASSWORD=... vp run ota:apply             # plan: 
 OTA_ADMIN_EMAIL=... OTA_ADMIN_PASSWORD=... vp run ota:apply -- --apply  # make the server match
 ```
 
-What is declared:
+What the tool converges:
 
 | What | Declared value |
 | --- | --- |
@@ -471,12 +471,20 @@ What is declared:
 | Branch `production` | exists, protected |
 | Branch `pr-beta` | exists, protected |
 | Branch `pr-staging` | exists, protected |
-| Release policy | canary steps 5, 10, 25, 50; 4 h per step; 20 h minimum soak; 15 devices per platform before a verdict |
+
+On 2026-10-05 the server differed from this in four ways: `pr-beta` did not exist, and none of the
+three branches was protected. The first apply creates one empty branch and sets three flags.
 
 A protected branch cannot be deleted by anyone until the flag is lifted in the dashboard.
 `pr-staging` and `pr-beta` carry the `pr-` prefix so the single surfing glob covers them, which
 leaves the PR-number check in `scripts/ota-preview-cleanup.ts` as the only thing between a cleanup
 run and those branches. Protection is the second lock.
+
+The same file declares a **release policy that nothing acts on yet**: canary steps 5, 10, 25, 50,
+4 hours per step, a 20 hour minimum soak and a 22:00 UTC daily window. They are written down so the
+stable-release workflow can read them when it lands. Only the health thresholds are in use today,
+by `mobile-ota-rollout.ts health`, and every one of them is provisional until the fleet's normal
+faulty-device rate has been measured.
 
 What the tool will not do, whatever the declaration says:
 
@@ -488,22 +496,78 @@ What the tool will not do, whatever the declaration says:
 
 Live rollouts are state, not configuration: every plan lists them and none of them counts as drift.
 
-**CI.** `ota-apply.yml` applies on a push to `main` that touches `infra/ota/**` or the tool, and
-plans on a manual run unless `mode: apply` is chosen. `ota-drift.yml` plans once a day and posts to
-Discord when the server has moved. Both run in the `ota-stable-release` GitHub environment, check
-out `main`, and install nothing: every script they run uses node built-ins only, so no package's
-install script executes in a job that holds the admin login. Until that environment holds
-`OTA_ADMIN_EMAIL` and `OTA_ADMIN_PASSWORD`, each job writes one "Skipped" line to its summary and
-ends green.
+**Exit codes.** `0` in sync. `1` the server was read and differs, or a write failed. `2` the server
+could not be read after three tries (a failed login, a 5xx, a timeout). The difference matters to
+whoever is paged: `2` is an outage or a rotated password, `1` is somebody's change.
+
+**Licence.** Branch protection and update health are Enterprise features in the 3.2.5 dashboard.
+Every plan prints the server's licence state. If the server refuses a protection call for that
+reason, the run says so in those words, still creates any missing branch (every create is planned
+before any protect), and exits `1`.
+
+#### What runs unattended, and what waits for a person
+
+| Trigger | What it may change |
+| --- | --- |
+| Push to `main` touching `infra/ota/**` | Additive only: create a declared branch, protect a declared branch. It prints the whole plan and lists everything else as `pending manual apply`. |
+| `ota-apply.yml` dispatched with `mode: plan` (the default) | Nothing. |
+| `ota-apply.yml` dispatched with `mode: apply` | Everything declared: also remapping the channel, changing Branch Surfing, creating a channel. |
+| `ota-drift.yml`, daily at 05:17 UTC | Nothing. It reports. |
+
+Remapping the channel moves the whole fleet to another branch, and widening Branch Surfing changes
+what any device may switch to. Neither happens because a PR merged. The allowlist is the script's
+`--only create-branch,protect-branch` flag, which is unit-tested; the workflow only chooses the mode.
+A pending change does not fail the push run, and the daily drift check keeps reporting it until
+someone dispatches an apply.
+
+`ota-drift.yml` asks two questions and gives each its own Discord message:
+
+1. **Is the admin API still where our client expects it?** `vp run ota:api-probe` downloads the
+   public dashboard bundle and checks that every path the client calls is still in it. No login.
+2. **Does the server match the declaration?** A plan, never an apply.
+
+#### One-time setup: the `ota-stable-release` environment
+
+The three workflows (`ota-apply.yml`, `ota-drift.yml`, `mobile-ota-unlock.yml`) take the admin login
+from a GitHub environment named `ota-stable-release`. **It does not exist until the owner creates
+it.** A job that names a missing environment makes GitHub create it with no protection at all, so
+do this in order:
+
+1. Create the environment `ota-stable-release`.
+2. Set its deployment branches to **Selected branches**, with `main` as the only one.
+3. Only then add:
+
+| Name | Kind | Used for |
+| --- | --- | --- |
+| `OTA_ADMIN_PASSWORD` | secret | the dashboard admin login |
+| `OTA_ADMIN_EMAIL` | secret or variable | the dashboard admin login |
+| `DISCORD_DEPLOY_WEBHOOK` | secret | the drift alert |
+
+`DISCORD_DEPLOY_WEBHOOK` exists today only in the `Production` environment, and a job reads one
+environment. Without a copy in `ota-stable-release` the drift job goes red and says so in its
+summary, and nothing reaches Discord.
+
+Each workflow also refuses, in its first step, to run from any ref but `main`. It checks out `main`
+and installs nothing: every script it runs uses node built-ins only, so no package's install script
+executes in a job that holds the admin login. Until the environment holds the login, each job
+writes one "Skipped" line to its summary and ends green.
 
 #### The admin API these tools use
 
 xprem documents the publish protocol and not the API its dashboard calls. `scripts/lib/xprem-admin.mts`
 is a client for that API, and its header lists every path, method and payload with the dashboard
-bundle and server version they were read from. `scripts/lib/xprem-admin.test.ts` pins each request,
-so an endpoint that moves in a server upgrade fails one named assertion. Re-read the bundle on every
-`OTA_SERVER_VERSION` bump: `curl https://updates.boardsesh.com/dashboard/` names the current
-`./assets/index-*.js`, and the client class is the one with an `appScope()` method.
+bundle and server version they were read from. Two checks stand behind it, and they cover different
+things:
+
+- `scripts/lib/xprem-admin.test.ts` pins the requests **our client** makes, against a fake server.
+  It catches an accidental edit to the client. It cannot notice the real server changing.
+- `vp run ota:api-probe` reads the **live** dashboard bundle and fails when a path the client calls
+  is no longer in it. The daily drift workflow runs it, so an upgrade that moves an endpoint goes
+  red within a day. Run it by hand after any `OTA_SERVER_VERSION` bump.
+
+Neither proves a response shape. The client parses responses strictly, so a changed shape fails
+loudly the first time it is read. None of this has been exercised against the live server with an
+admin login yet.
 
 Two things in that API are easy to get wrong:
 
@@ -511,7 +575,8 @@ Two things in that API are easy to get wrong:
   (`17911745123242`). Health is keyed on the UUID-shaped id a device reports
   (`43d5c1d5-ade8-62d9-1d01-9ffa9a169620`). `mobile-ota-rollout.ts` resolves one to the other.
 - **Remapping a channel is addressed by branch id**, not name:
-  `POST /api/apps/{app}/branch/{branchId}/updateChannelBranchMapping`.
+  `POST /api/apps/{app}/branch/{branchId}/updateChannelBranchMapping`. A "Legacy" branch has no
+  id, and the tool refuses to map a channel to one.
 
 #### Rollouts: `scripts/mobile-ota-rollout.ts`
 
@@ -531,29 +596,51 @@ in the environment.
   leave one behind on a runtime version nothing publishes to any more.
 - `set`, `finish` and `revert` read the rollout first and send the update id they found as
   `expectedUpdateId`, so the server refuses the write if the rollout was replaced in between.
-  `--expected-update-id` also refuses to act on any rollout but the one named.
+  `--expected-update-id` also refuses to act on any rollout but the one named. A rollout that
+  disappears before the command's own first write is an error, not a success.
 - `finish` delivers the update to everyone. `revert` republishes the previous update as a new one;
-  devices that took the canary return to it on their next check.
-- `health` prints a verdict per platform: `healthy`, `unhealthy` or `insufficient-evidence`. The
-  thresholds are in `infra/ota/config.ts`. Too few devices is never read as healthy. `unhealthy` is
-  the one verdict allowed below the device floor, because a crash-looping update falls back to the
-  embedded bundle and its devices stop counting as "on the update".
+  devices that took the canary return to it on their next check. `revert --if-live` treats "nothing
+  is rolling out" as success.
+- `health` prints a verdict per platform: `healthy`, `unhealthy` or `insufficient-evidence`.
 
-`mobile-ota-unlock.yml` wraps `revert --if-live` as a reusable job for publishers that must not be
-refused by a live canary. Nothing calls it yet.
+How a canary is judged (`judgeCanary`, thresholds in `infra/ota/config.ts`):
+
+1. Counts that are not finite numbers, or more faulty devices than devices on the update, are not
+   evidence.
+2. The allowed faulty-device rate is the control's rate plus 2 points, capped at 5%. A control with
+   fewer than 15 reporting devices counts as 0%, so a tiny or broken control cannot raise the bar.
+3. Below 15 reporting devices the canary is never healthy. It is unhealthy only on 3 or more faulty
+   devices at 30% or more; otherwise there is not enough evidence.
+4. From 15 devices up: over the allowed rate on 3 or more faulty devices is unhealthy, over it on
+   fewer is not enough evidence, and anything else is healthy.
+
+Launch and JS issue counts are printed and not judged: whether the server reports them as running
+totals or per-minute counts is not known yet.
+
+`mobile-ota-unlock.yml` wraps `revert --if-live` for publishers that must not be refused by a live
+canary. It takes the iOS and the Android runtime version in one run. It is dispatch-only: a
+reusable workflow is loaded from the caller's ref, so a release branch could change the steps that
+run with the admin login. Callers will start it with
+`gh workflow run mobile-ota-unlock.yml --ref main`. Nothing calls it yet.
 
 #### Promoting to another branch, or as a rollout
 
-`scripts/mobile-ota-promote.ts` takes two optional flags. With neither, it behaves as before.
+`scripts/mobile-ota-promote.ts` takes optional flags. With none of them, it behaves as before.
 
 - `--branch <name>` promotes to that branch (and `--capture-baseline --branch <name>` captures its
   baseline). The probe still sends `expo-channel-name: production` and reaches the branch with the
   `xprem-branch` header, the way a pinned device does.
-- `--rollout-percentage <1-99>` starts the update as a rollout. The anonymous manifest shows one
-  device's view and cannot confirm a rollout, so this mode reads the rollout through the admin API
-  and needs `OTA_ADMIN_EMAIL` and `OTA_ADMIN_PASSWORD` next to `EOO_TOKEN`. It is safe to re-run: a
-  platform whose own rollout is already live counts as done, and a rollout of any other update is
-  refused.
+- `--rollout-percentage <1-99> --rollout-receipt <path>` starts the update as a rollout. The
+  anonymous manifest shows one device's view and cannot confirm a rollout, so this mode reads the
+  rollout through the admin API and needs `OTA_ADMIN_EMAIL` and `OTA_ADMIN_PASSWORD` next to
+  `EOO_TOKEN`. Admin and publish calls go to the same server, the one `EXPO_UPDATES_URL` names.
+- **Rollout mode does not run the served-bytes check** that the default mode ends with. It confirms
+  that the update it was leased is rolling out at the requested percentage. The bytes are covered
+  only by the content hashes the server validated at upload.
+- It is safe to re-run. The update ids it was leased are written to the rollout receipt before any
+  upload. On a re-run, a platform whose live rollout carries its recorded id, built from its commit,
+  counts as done. A live rollout it cannot tie to its own receipt is refused, even when it was built
+  from the same commit, so keep the receipt file with the stage receipt between attempts.
 
 ### Fingerprint parity — the one rule that matters
 
@@ -1747,8 +1834,9 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
     same-repo enforcement, keep `EOO_TOKEN` only on `ota-preview` and the `main` production
     environment, drop the repo-level copy, and configure required reviewers on `ota-preview`.
     Production channel mapping is declared in `infra/ota/config.ts`. The jobs that apply and check
-    it hold the admin login through a third environment, `ota-stable-release`, and run `main`'s
-    code with no dependency install.
+    it take the admin login from a third environment, `ota-stable-release`, which the owner must
+    create with a deployment-branch policy of `main` before adding secrets. They run `main`'s code
+    with no dependency install.
 - **Readiness signal.** Each publish posts a sticky PR comment (branch name + picker steps) and a
   GitHub **Deployment** to the `pr-preview` environment so the PR shows a green "ready" marker; the
   cleanup marks it inactive on close.

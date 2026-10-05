@@ -141,6 +141,17 @@ describe('runRolloutCommand', () => {
     expect(server.requests.every((request) => request.method === 'GET')).toBe(true);
   });
 
+  it('revert --if-live succeeds when the rollout ends between its read and its write', async () => {
+    let reads = 0;
+    const server = fakeXprem({
+      [`GET ${rolloutPath('production', RTV)}`]: () => (reads++ === 0 ? LIVE : { active: false }),
+    });
+    const args = parseRolloutArgs(['revert', '--runtime-version', RTV, '--if-live']);
+    await expect(runRolloutCommand(server.client, args, POLICY)).resolves.toEqual([
+      `[ota-rollout] No live rollout on "production" runtime ${RTV}. Nothing to revert.`,
+    ]);
+  });
+
   it('health judges named updates by UUID', async () => {
     const canary = '43d5c1d5-ade8-62d9-1d01-9ffa9a169620';
     const control = '2d55b3b3-cc04-1a38-217b-92ec1ff5d2ff';

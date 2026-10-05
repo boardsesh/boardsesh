@@ -109,9 +109,11 @@ export const desiredOtaState: OtaDesiredState = {
 
 export interface OtaHealthPolicy {
   /**
-   * Devices per platform that must have reported an outcome on the canary
-   * (successful plus faulty) before it can be called healthy. Below it the answer
-   * is "not enough evidence", which holds the rollout and never finishes it.
+   * Devices per platform that must have reported an outcome (successful plus
+   * faulty) before a cohort's numbers are trusted. Below it a canary can be
+   * called unhealthy on overwhelming evidence, never healthy; and a control this
+   * small is ignored, because one faulty device out of one is a 100% baseline
+   * that would wave any canary through.
    */
   evidenceFloorDevicesPerPlatform: number;
   /**
@@ -121,6 +123,18 @@ export interface OtaHealthPolicy {
   minFaultyDevicesToFail: number;
   /** How far, in percentage points, the canary's faulty-device rate may sit above the control's. */
   maxFaultyRateOverControlPercent: number;
+  /**
+   * The faulty-device rate no canary may exceed, whatever the control shows. The
+   * margin above is relative, so without this cap a control that is itself
+   * broken would raise the bar for the update meant to replace it.
+   */
+  maxFaultyRatePercent: number;
+  /**
+   * The faulty-device rate at which a canary below the evidence floor is already
+   * called unhealthy. High on purpose: with a handful of devices a few points
+   * over the cap is noise, and a third of them failing is not.
+   */
+  smallSampleFaultyRatePercent: number;
 }
 
 export interface OtaReleasePolicy {
@@ -139,7 +153,11 @@ export interface OtaReleasePolicy {
  * How a stable release is ramped and judged.
  *
  * Declared here rather than in repository variables so a change to a threshold is
- * a reviewed PR with a diff. Read by scripts/mobile-ota-rollout.ts today.
+ * a reviewed PR with a diff.
+ *
+ * Only `health` is read today, by `mobile-ota-rollout.ts health`. The steps, the
+ * step hours, the soak and the daily window are declared policy that nothing
+ * acts on until the stable-release workflow lands.
  */
 export const otaReleasePolicy: OtaReleasePolicy = {
   // Ends at 50, not 100: the last step is a soak on half the fleet, and finishing
@@ -154,10 +172,20 @@ export const otaReleasePolicy: OtaReleasePolicy = {
   minimumSoakHours: 20,
   // One fixed tick a day, so there is one canary a day and never two at once.
   dailyWindowUtcHour: 22,
+  // Every number below is provisional. Nobody has measured the fleet's normal
+  // faulty-device rate yet; set them from a week of real control cohorts.
   health: {
-    // A first guess, to be revisited after a week of real canaries.
+    // About 450 devices check in a day, so a 50% canary reaches a few dozen per
+    // platform. 15 is what the smaller platform can plausibly reach in a day.
     evidenceFloorDevicesPerPlatform: 15,
+    // Two faulty devices can be two unlucky phones. Three is a pattern.
     minFaultyDevicesToFail: 3,
+    // Room for noise between two cohorts of a few dozen devices each.
     maxFaultyRateOverControlPercent: 2,
+    // One device in twenty failing to run an update is a bad release by any
+    // baseline. Also what bounds a canary when its control is unusable.
+    maxFaultyRatePercent: 5,
+    // Three of ten devices failing is enough to stop without waiting for fifteen.
+    smallSampleFaultyRatePercent: 30,
   },
 };
