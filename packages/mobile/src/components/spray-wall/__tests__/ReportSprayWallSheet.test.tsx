@@ -49,7 +49,7 @@ vi.mock('../../Button', () => ({
     createElement('button', { onClick: onPress, disabled }, title),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: {}, radii: { button: 10 } }),
+  useTheme: () => ({ systemColors: {}, radii: { button: 10 }, chartColors: { label: '#16111F' } }),
 }));
 vi.mock('../../../lib/connectivity/use-connectivity', () => ({
   useConnectivity: () => ({ effectiveOffline: state.offline }),
