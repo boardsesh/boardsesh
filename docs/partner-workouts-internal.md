@@ -122,11 +122,14 @@ stored as SHA-256), and 302s to the redirect URI with `code` and the untouched
 
 Two things outside the page have to move first. The iOS association file at
 `packages/web/app/.well-known/apple-app-site-association/route.ts` claims every
-path except `/api/*`, `/_next/*`, `/monitoring` and `/.well-known/*`, which
+path except `/api/*`, `/_next/*`, `/monitoring`, `/.well-known/*` and the gym
+pages under `/gym/*`, which
 means `https://boardsesh.com/oauth/authorize` opens the native app today and
-lands on `+not-found`. Add `NOT /oauth/*`, and ship it in its own PR well
-ahead of the rest: Apple's CDN only refetches the file on install or update,
-so existing installs keep the old rule until then. And
+lands on `+not-found`. Add `/oauth` to `WEB_ONLY_PATH_PREFIXES` in
+`packages/web/app/lib/apple-app-site-association.ts`, and ship it in its own PR well
+ahead of the rest: phones ask Apple's CDN for the file on install, on app
+update and about once a week after that, so existing installs keep the old rule
+for up to a week. And
 `packages/web/app/auth/login/auth-page-content.tsx` pushes `callbackUrl` with
 no origin check; constrain it to a same-origin relative path before
 `/oauth/authorize` becomes a new caller of it.
