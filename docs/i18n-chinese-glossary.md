@@ -4,7 +4,7 @@ Terminology for Simplified Chinese (`zh-Hans`) text, aimed at mainland board cli
 
 Today this covers the store listing only: `fastlane/metadata/zh-Hans/` (App Store) and `fastlane/metadata/android/zh-CN/` (Play). The app catalogs are not translated yet, so the app a Chinese reader installs is in English. Both descriptions say so in their second paragraph (`App 界面目前为英文，中文版正在翻译中。`); keep that line until the catalogs ship. The English source is the matching `en-US` folder.
 
-> **Authority: none yet.** Every term below is a proposal written by an agent. No native-speaking climber has read it. Until one has, treat the "Open questions" section as blocking, and do not ship Chinese text that depends on an unanswered question. When a reviewer settles a term, record their name here the way the German, French and Spanish glossaries do.
+> **Authority: none yet. Review requested, not done.** Every term below is a proposal written by an agent. No native-speaking climber has read it. The owner of the Tension Lab gym was asked for a native read on 2026-10-05; nothing has come back yet. Until a reviewer has answered, treat the "Open questions" section as blocking, and do not ship Chinese text that depends on an unanswered question. When a reviewer settles a term, record their name here the way the German, French and Spanish glossaries do.
 
 ## Script and region
 
@@ -95,8 +95,13 @@ Same rule as every other locale: describe compatibility, never affiliation.
 ## Store listing rules
 
 - No donation or payment mentions in store text.
-- Character caps are counted in characters, and Chinese runs far shorter than English: name 30, subtitle 30, keywords 100, promotional text 170, Play title 30, short description 80, Play changelog 500. `scripts/store-metadata-limits.test.ts` enforces them and the file-set parity with `en-US`.
-- Write Chinese search keywords rather than translating the English ones. Do not repeat a word already in the name or subtitle.
+- Caps are counted in characters, and Chinese runs far shorter than English: name 30, subtitle 30, promotional text 170, Play title 30, short description 80, Play changelog 500. `scripts/store-metadata-limits.test.ts` enforces them and the file-set parity with `en-US`.
+- **The App Store keyword field is the exception: 100 UTF-8 bytes, not 100 characters.** A Chinese character is 3 bytes and a comma is 1, so the field holds about 33 Chinese characters, or roughly 12 terms once brand names are in. The test counts bytes for `keywords.txt` in every locale.
+  - Source: Apple's App Store Connect help, [Platform version information](https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information), says of Keywords "You can provide up to 100 bytes of content". Every other field on that page is "limited to N characters". Read 2026-10-05.
+  - How sure: the wording is Apple's own, but whether App Store Connect counts a Chinese character as 3 is not confirmed. Several ASO guides say it counts characters and that Chinese gets the full 100; one tool author reports a Polish field of 83 characters and 111 bytes being refused. `deliver` does no length check, so the first real answer comes at upload. Bytes is the reading that cannot be refused or cut off.
+  - If a reviewer with App Store Connect access sees the Chinese field accepted past 100 bytes, record that here with the date and loosen the test.
+- Write Chinese search keywords rather than translating the English ones. Do not repeat a word already in the name or subtitle (`训练` is in the subtitle, so it is not a keyword).
+- Terms cut to fit the byte cap, in the order to bring them back if room appears: `完攀`, `kilterboard`.
 
 ## Open questions for the reviewer
 
@@ -110,7 +115,7 @@ These are the choices an agent cannot verify. Each one changes several strings.
 6. **Take the wall.** `接管这面墙` is a literal reading of a feature name. Does it make sense without seeing the feature?
 7. **Match.** `并手` for a matching rule on a hold. Is `并点` or `match` more common on boards?
 8. **Send.** `完攀` is the standard written term. Do board climbers write `完成`, `红点` or `send` instead?
-9. **Search keywords.** Which words do people type to find a board app: `月板`, `K板`, `智能板`, `攀岩板`? The keyword field has about 20 characters left.
+9. **Search keywords.** Which words do people type to find a board app: `月板`, `K板`, `智能板`, `攀岩板`? The field is capped at 100 bytes and uses 96, so adding a term means dropping one: which of the current thirteen is weakest?
 10. **Tab and button names.** The listing glosses `Progress（进度）`, `Discover（发现）`, `Climbs（线路）`, `Previous（上一条）`, `Next（下一条）` and `Rest timer（休息计时器）`. The app catalogs must use the same Chinese once they are translated.
 11. **Volume (workout type).** The text uses `刷量`. Is `量训练` or `训练量` what a climber would call a high-volume session, and is `刷量` too slangy for a store page?
 12. **Route.** A route on a board is a longer climb played frame by frame, as opposed to a boulder. The text uses `长线路`. Is `路线`, `耐力线` or plain `Route` clearer?
