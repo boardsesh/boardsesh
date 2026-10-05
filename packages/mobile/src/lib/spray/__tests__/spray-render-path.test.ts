@@ -254,6 +254,14 @@ describe('spray background keys', () => {
     expect(parseSprayBackgroundKey('woods/woods12x12.webp')).toBeNull();
     expect(parseSprayBackgroundKey('spray/4200/3.webp')).toBeNull();
   });
+
+  it('round-trips a local mirror identity and rejects a misgrouped UUID', () => {
+    const versionId = 'local-0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d-2' as const;
+    expect(parseSprayBackgroundKey(sprayBackgroundKey(4200, versionId))).toEqual({ layoutId: 4200, versionId });
+    // 36 hex-or-hyphen characters, but not 8-4-4-4-12.
+    expect(parseSprayBackgroundKey(`spray/4200/vlocal-${'-'.repeat(36)}-2.jpg`)).toBeNull();
+    expect(parseSprayBackgroundKey('spray/4200/vlocal-0a1b2c3d4e5f-4a6b-8c7d-9e0f1a2b3c4d-0-2.jpg')).toBeNull();
+  });
 });
 
 describe('planSprayPhotoSweep', () => {
