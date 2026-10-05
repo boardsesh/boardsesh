@@ -296,7 +296,10 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
           // the carousel layer is the culprit. overlayTestID anchors on the painted
           // holds overlay.
           <View style={[styles.boardWrapper, boardBox]} {...boardSurfaceAnchor} {...boardAccessibility}>
-            <ScreenshotSmokeMarker route="play-drawer" count={countLitHolds(currentFrames)} />
+            {/* Inlined, not `isScreenshotMode`: the strip must not lean on constant propagation. */}
+            {process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? (
+              <ScreenshotSmokeMarker route="play-drawer" count={countLitHolds(currentFrames)} />
+            ) : null}
             <BoardImageNative
               accessible={false}
               frames={currentFrameOverride ?? currentFrames}
