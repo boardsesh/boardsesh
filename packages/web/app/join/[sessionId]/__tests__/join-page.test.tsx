@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import { __resetSessionInboundCampaignForTests } from '@/app/lib/inbound-campaign';
@@ -133,6 +133,37 @@ describe('session invite page', () => {
     expect(storeHref('Get it on Google Play')).not.toContain('no-such-session');
   });
 
+  it('keeps the text of a link that names no session out of the landing event', async () => {
+    await renderPage({ state: 'not_found', ...withoutDetails }, 'some arbitrary text a crawler sent');
+
+    expect(trackBeforeNavigation).toHaveBeenCalledWith('Session Invite Page Viewed', {
+      state: 'not_found',
+      hasHost: false,
+      hasGym: false,
+    });
+  });
+
+  it.each(['live', 'dormant', 'unavailable'] as const)(
+    'offers to open a %s invite in the app, for a visitor whose browser skipped the app',
+    async (state) => {
+      await renderPage(invite({ state }));
+
+      const openInApp = screen.getByText('Open in the app').closest('a');
+      expect(openInApp?.getAttribute('href')).toBe(`com.boardsesh.app://join/${SESSION_ID}`);
+
+      fireEvent.click(openInApp as HTMLAnchorElement);
+      expect(trackBeforeNavigation).toHaveBeenCalledWith('Session Invite Open In App Clicked', {
+        sessionId: SESSION_ID,
+      });
+    },
+  );
+
+  it.each(['ended', 'not_found'] as const)('does not offer to open a %s invite in the app', async (state) => {
+    await renderPage({ state, ...withoutDetails });
+
+    expect(screen.queryByText('Open in the app')).toBeNull();
+  });
+
   it('keeps the invite standing when the lookup failed, without calling the session missing', async () => {
     await renderPage({ state: 'unavailable', ...withoutDetails });
 
@@ -144,8 +175,8 @@ describe('session invite page', () => {
     expect(playReferrer().get('utm_content')).toBe(`join-page.${SESSION_ID}`);
   });
 
-  it.each(['live', 'dormant', 'ended', 'not_found', 'unavailable'] as const)(
-    'reports the landing for a %s invite',
+  it.each(['live', 'dormant', 'ended', 'unavailable'] as const)(
+    'reports the landing for a %s invite, with the session it names',
     async (state) => {
       await renderPage(invite({ state }));
 

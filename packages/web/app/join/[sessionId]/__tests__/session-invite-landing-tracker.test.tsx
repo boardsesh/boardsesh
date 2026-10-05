@@ -8,9 +8,14 @@ vi.mock('@/app/lib/analytics', () => ({ track: vi.fn(), trackBeforeNavigation })
 const { default: SessionInviteLandingTracker, __resetReportedLandingsForTests } =
   await import('../session-invite-landing-tracker');
 
+function visit(sessionId: string) {
+  window.history.replaceState(null, '', `/join/${sessionId}`);
+}
+
 beforeEach(() => {
   trackBeforeNavigation.mockClear();
   __resetReportedLandingsForTests();
+  visit('session-1');
 });
 
 describe('SessionInviteLandingTracker', () => {
@@ -36,15 +41,25 @@ describe('SessionInviteLandingTracker', () => {
 
   it('counts a different session as its own landing', () => {
     render(<SessionInviteLandingTracker sessionId="session-1" state="live" hasHost hasGym />);
+    visit('session-2');
     render(<SessionInviteLandingTracker sessionId="session-2" state="ended" hasHost={false} hasGym={false} />);
 
     expect(trackBeforeNavigation).toHaveBeenCalledTimes(2);
   });
 
+  it('sends no session id for a link that names no session', () => {
+    visit('whatever-was-in-the-url');
+    render(<SessionInviteLandingTracker state="not_found" hasHost={false} hasGym={false} />);
+
+    expect(trackBeforeNavigation).toHaveBeenCalledWith('Session Invite Page Viewed', {
+      state: 'not_found',
+      hasHost: false,
+      hasGym: false,
+    });
+  });
+
   it('renders nothing', () => {
-    const { container } = render(
-      <SessionInviteLandingTracker sessionId="session-1" state="not_found" hasHost={false} hasGym={false} />,
-    );
+    const { container } = render(<SessionInviteLandingTracker state="not_found" hasHost={false} hasGym={false} />);
 
     expect(container.innerHTML).toBe('');
   });

@@ -13,6 +13,7 @@ import { PageShell } from '@/app/components/ui/page-shell';
 import { fetchSessionInvite } from './session-invite';
 import SessionInviteInstallCta from './session-invite-install-cta';
 import SessionInviteLandingTracker from './session-invite-landing-tracker';
+import SessionInviteOpenApp from './session-invite-open-app';
 
 type Props = {
   params: Promise<{ sessionId: string }>;
@@ -128,8 +129,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  * board and at which gym, with both store buttons, and says plainly when a
  * session has ended or the link names nothing.
  *
- * A phone WITH the app never gets here: the universal link (iOS) and the
- * `/join` App Link (Android) open the app's own join screen first.
+ * A phone WITH the app normally never gets here: the universal link (iOS) and
+ * the `/join` App Link (Android) open the app's own join screen first. The
+ * exception is a link tapped inside another app's built-in browser, which
+ * skips both; `SessionInviteOpenApp` is for that visitor.
  *
  * Always a 200, including for a missing session. The page still has something
  * to offer that visitor (the app), which a 404 page would not, and every branch
@@ -145,7 +148,8 @@ export default async function JoinSessionPage({ params }: Props) {
   // `unavailable` means the lookup failed, not that the session is gone: keep
   // the invite framing and the id, and drop only the details we could not read.
   const isInviteOpen = isJoinable || invite.state === 'unavailable';
-  // A missing session has no id worth carrying into install data.
+  // A missing session has no id worth carrying into install data or analytics:
+  // it is whatever text sat in the URL.
   const linkSessionId = invite.state === 'not_found' ? undefined : sessionId;
 
   let title: string;
@@ -181,7 +185,7 @@ export default async function JoinSessionPage({ params }: Props) {
   return (
     <PageShell title={title} lead={lead} eyebrow={t('invitePage.eyebrow')}>
       <SessionInviteLandingTracker
-        sessionId={sessionId}
+        sessionId={linkSessionId}
         state={invite.state}
         hasHost={invite.hostName !== null}
         hasGym={invite.gymName !== null}
@@ -232,6 +236,7 @@ export default async function JoinSessionPage({ params }: Props) {
             {t('invitePage.haveApp')}
           </Typography>
         )}
+        {isInviteOpen && <SessionInviteOpenApp sessionId={sessionId} label={t('invitePage.openInApp')} />}
       </Box>
 
       <MuiLink component={LocaleLink} href="/">

@@ -6,14 +6,19 @@ import { trackBeforeNavigation } from '@/app/lib/analytics';
 import type { SessionInvitePageState } from './session-invite';
 
 type SessionInviteLandingTrackerProps = {
-  sessionId: string;
+  /**
+   * The session the invite names. Left out when the link names no session:
+   * that id is whatever sat in the URL (a typo, a crawler's guess), and it has
+   * no business in analytics. Same rule as the store link's session id.
+   */
+  sessionId?: string;
   state: SessionInvitePageState;
   hasHost: boolean;
   hasGym: boolean;
 };
 
 /**
- * Landings already reported. React StrictMode mounts every effect twice in
+ * Landings already reported, keyed by the page path. React StrictMode mounts every effect twice in
  * development against a fresh component instance, so a ref would not hold;
  * module scope does. Same arrangement as `GymQrLandingTracker`.
  */
@@ -41,9 +46,15 @@ export default function SessionInviteLandingTracker({
   hasGym,
 }: SessionInviteLandingTrackerProps) {
   useEffect(() => {
-    if (reportedLandings.has(sessionId)) return;
-    reportedLandings.add(sessionId);
-    void trackBeforeNavigation(SHARED_EVENTS.SessionInvitePageViewed, { sessionId, state, hasHost, hasGym });
+    const landingKey = window.location.pathname;
+    if (reportedLandings.has(landingKey)) return;
+    reportedLandings.add(landingKey);
+    void trackBeforeNavigation(SHARED_EVENTS.SessionInvitePageViewed, {
+      ...(sessionId ? { sessionId } : {}),
+      state,
+      hasHost,
+      hasGym,
+    });
   }, [sessionId, state, hasHost, hasGym]);
 
   return null;

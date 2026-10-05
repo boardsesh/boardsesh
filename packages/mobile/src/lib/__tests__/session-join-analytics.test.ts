@@ -63,6 +63,14 @@ describe('joinScreenDeadEnd', () => {
     expect(joinScreenDeadEnd(state({ session: null }))).toBe('not_found');
   });
 
+  it('is host_away, not not_found, for a running session with no wall to join on', () => {
+    expect(
+      joinScreenDeadEnd(
+        state({ session: session({ boardPath: '', invite: { state: 'host_away', hostName: 'Alex' } }) }),
+      ),
+    ).toBe('host_away');
+  });
+
   it('is ended by the timestamp or by the invite preview', () => {
     expect(joinScreenDeadEnd(state({ session: session({ endedAt: '2026-10-05T10:00:00Z' }) }))).toBe('ended');
     expect(joinScreenDeadEnd(state({ session: session({ invite: { state: 'ended', hostName: null } }) }))).toBe(

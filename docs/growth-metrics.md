@@ -731,10 +731,11 @@ existed, and it over-counted.
 | ---- | ----- | ----- | ---------- |
 | Host opens the invite sheet | `Session Invite Sheet Opened` | app | `sessionId` |
 | Host sends the link | `Session Invite Shared` | app | `sessionId`, `method` (`copy_link`, `system_share`), `shareTarget` (iOS only) |
-| Invitee without the app lands on www | `Session Invite Page Viewed` | www | `sessionId`, `state` (`live`, `dormant`, `ended`, `not_found`, `unavailable`), `hasHost`, `hasGym` |
+| Invitee without the app lands on www | `Session Invite Page Viewed` | www | `sessionId` (absent for `not_found`), `state` (`live`, `dormant`, `ended`, `not_found`, `unavailable`), `hasHost`, `hasGym` |
 | Invitee taps a store button | `App Install Click` | www | `placement: 'join-page'`, `sessionId`, `platform` |
-| Invitee joins | `Session Joined` | app | `session_id`, `board_name`, `layout_id` |
-| Invitee hits a dead end | `Session Join Outcome` | app | `sessionId`, `outcome` (`not_found`, `ended`, `sign_in_needed`, `error`), `stage` (`preview`, `join`) |
+| Invitee with the app taps "Open in the app" on www | `Session Invite Open In App Clicked` | www | `sessionId` |
+| Invitee joins | `Session Joined` | app | `sessionId` (and the older `session_id`, same value), `board_name`, `layout_id` |
+| Invitee hits a dead end | `Session Join Outcome` | app | `sessionId`, `outcome` (`not_found`, `ended`, `host_away`, `sign_in_needed`, `error`), `stage` (`preview`, `join`) |
 
 Read it with these limits:
 
@@ -745,9 +746,22 @@ Read it with these limits:
 - **A QR scan is invisible.** The invite sheet shows the code as soon as it
   opens. A scan happens on someone else's phone, so the host's side records
   `Sheet Opened` and nothing more.
-- **www only sees invitees without the app.** An installed phone opens the app
-  directly and never loads the page, so `Session Invite Page Viewed` is not
-  "invites opened". It is "invites opened by someone who needs the app".
+- **www mostly sees invitees without the app.** An installed phone opens the
+  app directly and never loads the page, so `Session Invite Page Viewed` is not
+  "invites opened". It is "invites opened by someone who needs the app", plus
+  the people whose link opened inside another app's built-in browser, which
+  skips the app. `Session Invite Open In App Clicked` counts those who then
+  asked for the app; it is a click, not proof the app opened.
+- **Tie the funnel together on `sessionId`.** Every step carries it, `Session
+  Joined` included from the #6004 deploy on. Joins before that deploy only have
+  `session_id`. A landing on a link that names no session (`state: not_found`)
+  has no `sessionId` at all: the text in such a URL is arbitrary and is kept
+  out of analytics.
+- **`host_away` is a good invite that cannot be joined yet.** The session is
+  running, nobody is connected, and its wall is a spray wall that is not open
+  to everyone, so the backend does not hand the board path to a link holder.
+  The screen asks for the host to open the app. Count it apart from
+  `not_found`.
 - **`Session Joined` changed meaning.** It used to fire again for someone
   already in the session who opened the invite. It now fires once per genuine
   entry. Do not compare counts across the deploy.

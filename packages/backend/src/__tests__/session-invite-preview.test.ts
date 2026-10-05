@@ -68,6 +68,8 @@ const SESSION = {
   privateGym: `${PREFIX}-private-gym`,
   sprayBoard: `${PREFIX}-spray-board`,
   sprayPathOnly: `${PREFIX}-spray-path-only`,
+  spraySlugOnly: `${PREFIX}-spray-slug-only`,
+  privateNamedBoard: `${PREFIX}-private-named-board`,
   emailNamedHost: `${PREFIX}-email-named-host`,
   namelessHost: `${PREFIX}-nameless-host`,
   noCreator: `${PREFIX}-no-creator`,
@@ -460,6 +462,42 @@ describe('sessionInvitePreview (real DB)', () => {
       expect(pathOnly.state).toBe('dormant');
       expect(pathOnly.boardPath).toBeNull();
       expect(JSON.stringify(pathOnly)).not.toContain('4242');
+    });
+
+    it('withholds the path of a hidden spray wall named only by its slug, with no board row attached', async () => {
+      const spraySlugPath = `/b/${PREFIX}-board-spray/40`;
+      await db.execute(sql`
+        INSERT INTO board_sessions (id, board_path, created_by_user_id, status)
+        VALUES (${SESSION.spraySlugOnly}, ${spraySlugPath}, ${HOST_ID}, 'active')
+      `);
+
+      spray.readableByAnyone = true;
+      expect((await preview(SESSION.spraySlugOnly)).boardPath).toBe(spraySlugPath);
+
+      spray.readableByAnyone = false;
+      const hidden = await preview(SESSION.spraySlugOnly);
+      expect(hidden.state).toBe('dormant');
+      expect(hidden.boardPath).toBeNull();
+      expect(JSON.stringify(hidden)).not.toContain(`${PREFIX}-board-spray`);
+    });
+
+    // ACCEPTED exposure, pinned so a change to it is a decision and not an
+    // accident: the name of a private board is withheld, its slug path is not.
+    // The app cannot join a dormant session without the path. See the resolver
+    // docblock.
+    it('returns the slug path of a private named board while withholding its name', async () => {
+      const privateSlugPath = `/b/${PREFIX}-board-private/40`;
+      await db.execute(sql`
+        INSERT INTO board_sessions (id, board_path, created_by_user_id, status, board_id)
+        VALUES (${SESSION.privateNamedBoard}, ${privateSlugPath}, ${HOST_ID}, 'active', ${boardIds.private})
+      `);
+
+      const result = await preview(SESSION.privateNamedBoard);
+
+      expect(result.state).toBe('dormant');
+      expect(result.boardName).toBeNull();
+      expect(result.gymName).toBeNull();
+      expect(result.boardPath).toBe(privateSlugPath);
     });
 
     it('answers for a session that is not shown in live listings, as joining by link already does', async () => {

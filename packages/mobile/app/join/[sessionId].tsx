@@ -6,7 +6,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { parseBoardPath, parseNamedBoardPath, formatBoardDisplayName } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../src/lib/analytics';
-import { isSessionPreviewEnded, trackSessionJoinOutcome } from '../../src/lib/session-join-analytics';
+import {
+  isSessionPreviewEnded,
+  isSessionPreviewHostAway,
+  trackSessionJoinOutcome,
+} from '../../src/lib/session-join-analytics';
 import { useSessionJoinOutcomeTracking } from '../../src/hooks/use-session-join-outcome-tracking';
 import { Text } from '../../src/components/Text';
 import { Button } from '../../src/components/Button';
@@ -124,6 +128,9 @@ export default function JoinSessionScreen() {
       if (!alreadyInSession) {
         track(SHARED_EVENTS.SessionJoined, {
           session_id: session.id,
+          // Same id under the name the invite events use, so one funnel can
+          // hold host and joiner to the same session.
+          sessionId: session.id,
           board_name: parsedBoard?.boardName ?? userBoard.boardType,
           layout_id: parsedBoard?.layoutId ?? userBoard.layoutId,
         });
@@ -233,6 +240,28 @@ export default function JoinSessionScreen() {
             {t('mobileJoin.notFound')}
           </Text>
           <Button title={t('mobileJoin.cancel')} variant="filled" size="large" onPress={() => router.back()} />
+        </View>
+      </View>
+    );
+  }
+
+  // Running, nobody connected, and no wall to join on: the invite is good, so
+  // say what will fix it instead of "not found".
+  if (isSessionPreviewHostAway(session)) {
+    return (
+      <View style={containerStyle}>
+        <View style={styles.centered}>
+          <Icon name="clock" size={40} color={systemColors.secondaryLabel} />
+          <Text variant="title3" style={styles.centeredTitle}>
+            {t('mobileJoin.hostAway')}
+          </Text>
+          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.centeredTitle}>
+            {session.invite?.hostName
+              ? t('mobileJoin.hostAwayBody', { host: session.invite.hostName })
+              : t('mobileJoin.hostAwayBodyNoHost')}
+          </Text>
+          <Button title={t('mobileJoin.retry')} variant="filled" size="large" onPress={() => void preview.refetch()} />
+          <Button title={t('mobileJoin.cancel')} variant="text" onPress={() => router.back()} />
         </View>
       </View>
     );
