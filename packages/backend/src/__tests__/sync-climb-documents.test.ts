@@ -60,8 +60,37 @@ describe('saved climb canonical mirror', () => {
     });
   });
 
+  it('mirrors the compact UUID returned by the real saveClimb mutation', async () => {
+    const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
+    const saved = await climbMutations.saveClimb(
+      {},
+      {
+        input: {
+          boardType: 'kilter',
+          layoutId: LAYOUT_ID,
+          name: 'Real saved climb',
+          description: '',
+          isDraft: true,
+          frames: 'p1r12',
+          angle: 40,
+        },
+      },
+      context(SETTER),
+    );
+    expect(saved.uuid).toMatch(/^[0-9A-F]{32}$/);
+    expect(
+      await syncClimbDocuments({}, { ...scope, boardType: 'kilter', climbUuid: saved.uuid }, context(SETTER)),
+    ).toMatchObject({
+      viewerId: SETTER,
+      climb: { uuid: saved.uuid, name: 'Real saved climb', is_draft: true },
+      stats: [],
+    });
+  });
+
   it('requires authentication and the exact scope, while published spray rows retain ordinary read access', async () => {
     await expect(syncClimbDocuments({}, scope, context(null))).rejects.toThrow();
+    await expect(syncClimbDocuments({}, { ...scope, climbUuid: '' }, context(SETTER))).rejects.toThrow();
+    await expect(syncClimbDocuments({}, { ...scope, climbUuid: 'F'.repeat(51) }, context(SETTER))).rejects.toThrow();
     expect(await syncClimbDocuments({}, scope, context(OWNER))).toMatchObject({
       viewerId: OWNER,
       climb: { user_id: SETTER },

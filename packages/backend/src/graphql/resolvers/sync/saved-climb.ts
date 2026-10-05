@@ -6,6 +6,7 @@ import { db } from '../../../db/client';
 import { requireAuthenticated } from '../shared/helpers';
 import {
   BoardNameSchema,
+  ExternalUUIDSchema,
   SyncRequiredBoardScopeIdSchema,
   UUIDSchema,
   validateInput,
@@ -82,7 +83,7 @@ export async function syncClimbDocuments(
   requireAuthenticated(ctx);
   const validBoardType = validateInput(BoardNameSchema, boardType, 'boardType');
   const validLayoutId = validateInput(SyncRequiredBoardScopeIdSchema, layoutId, 'layoutId');
-  const validClimbUuid = validateInput(UUIDSchema, climbUuid, 'climbUuid');
+  const validClimbUuid = validateInput(ExternalUUIDSchema, climbUuid, 'climbUuid');
   const validWallUuid = sprayWallUuid == null ? null : validateInput(UUIDSchema, sprayWallUuid, 'sprayWallUuid');
 
   return db.transaction(
