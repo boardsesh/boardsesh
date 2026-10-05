@@ -231,7 +231,8 @@ export function useSessionCommands({
     async (options?: { notifyServer?: boolean }) => {
       const sessionToClear = sessionIdRef.current;
       const activeBoardGeneration = getActiveBoardWriteGeneration();
-      // Cancel pending content writes before the leave request can wait on I/O.
+      // This callback only resets the mutation lane. Solo queues also have
+      // pending content writes, so invalidate them before LEAVE can await I/O.
       onSessionContextChanging();
       // When the user intentionally leaves a session (switching into another via
       // the join-confirm dialog), tell the backend so peers see them leave NOW —
@@ -266,6 +267,8 @@ export function useSessionCommands({
       // Await removal instead of relying on the debounced solo save: an
       // immediate relaunch after deleting a board must not restore its climb.
       await snapshotRemoval;
+      // Teardown assigned null above; any non-null room now belongs to a
+      // newer join, even if it happens to reuse the old room ID.
       if (sessionIdRef.current !== null || getActiveBoardWriteGeneration() !== activeBoardGeneration) return;
       // Enqueue both removals before yielding. Session-store serializes them
       // with new joins/starts, so a newer session's persisted identity wins.

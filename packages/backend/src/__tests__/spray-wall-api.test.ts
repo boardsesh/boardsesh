@@ -3906,6 +3906,17 @@ describe('sharing a wall: public promotion, demotion and gym listing', () => {
       entityId: climbUuid,
     });
 
+    // Cleanup reuses layout IDs, so historical tombstones may match this scope.
+    const previousTombstones = await db
+      .select()
+      .from(syncDeletions)
+      .where(
+        and(
+          eq(syncDeletions.tableName, 'spray_walls'),
+          eq(syncDeletions.recordId, String(wall.layoutId)),
+          eq(syncDeletions.userId, OWNER),
+        ),
+      );
     expect(await socialBoardMutations.deleteBoard({}, { boardUuid: wall.uuid }, ctxFor(OWNER))).toBe(true);
 
     const [deletedWall] = await db.select().from(sprayWalls).where(eq(sprayWalls.layoutId, wall.layoutId));
@@ -3928,7 +3939,7 @@ describe('sharing a wall: public promotion, demotion and gym listing', () => {
             eq(syncDeletions.userId, OWNER),
           ),
         ),
-    ).toHaveLength(1);
+    ).toHaveLength(previousTombstones.length + 1);
     expect(await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))).toBeNull();
   });
 

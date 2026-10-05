@@ -410,6 +410,7 @@ export default function BoardSelection() {
         return;
       }
       const wasActive = activeBoard?.uuid === board.uuid;
+      // Capture at action time: a render-time value can miss a queued board write.
       const activeBoardGeneration = getActiveBoardWriteGeneration();
       if (action === 'delete') {
         const confirmed = await confirm({

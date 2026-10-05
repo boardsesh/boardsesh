@@ -6,7 +6,8 @@
 import { readFileSync } from 'node:fs';
 
 // Install the real wall deletion triggers so resolver tests exercise offline
-// tombstones as well as the row's deleted_at flag.
+// tombstones as well as the row's deleted_at flag. Install at the schema tail
+// after all referenced tables exist; trigger installation has no DDL ordering dependency.
 const sprayWallDeletionSchema = readFileSync(
   new URL('../../../db/drizzle/0228_spray_walls_sync_deletions.sql', import.meta.url),
   'utf8',
