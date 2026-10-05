@@ -39,7 +39,6 @@ import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-in
 import { useToast } from '../../providers/toast-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
-import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
 import { reportError } from '../../lib/error-reporting';
 import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
@@ -276,7 +275,7 @@ export function SprayResetCompareScreen({
 
   if (view === 'loading') {
     return (
-      <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
+      <View style={[styles.centered, { backgroundColor: systemColors.background, paddingTop: headerInset }]}>
         <ActivityIndicator size="large" />
         <Text variant="subheadline" color={systemColors.secondaryLabel}>
           {t('sprayReset.compare.working')}
@@ -287,7 +286,7 @@ export function SprayResetCompareScreen({
 
   if (view === 'no-detections') {
     return (
-      <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
+      <View style={[styles.centered, { backgroundColor: systemColors.background, paddingTop: headerInset }]}>
         <Text variant="title3" style={styles.centeredText}>
           {t('sprayReset.compare.noDetections')}
         </Text>
@@ -300,7 +299,7 @@ export function SprayResetCompareScreen({
 
   if (view === 'unavailable' || !wall || !effective || !counts) {
     return (
-      <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
+      <View style={[styles.centered, { backgroundColor: systemColors.background, paddingTop: headerInset }]}>
         <Text variant="headline" style={styles.centeredText}>
           {proposalQuery.error
             ? (extractGraphqlMessage(proposalQuery.error) ?? t('sprayReset.compare.unavailable'))

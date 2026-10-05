@@ -162,14 +162,14 @@ const PROPOSAL = {
   aspectMismatch: false,
 };
 
-function renderScreen(onCommitted = vi.fn()) {
+function renderScreen(onCommitted = vi.fn(), candidates = CANDIDATES) {
   return render(
     createElement(SprayResetCompareScreen, {
       wallUuid: 'wall-1',
       layoutId: 9001,
       versionId: '42',
       versionNumber: 2,
-      candidates: CANDIDATES,
+      candidates,
       onCommitted,
     }),
   );
@@ -194,6 +194,29 @@ beforeEach(() => {
 });
 
 describe('SprayResetCompareScreen', () => {
+  describe.each([
+    { header: 'transparent', inset: 100 },
+    { header: 'opaque', inset: 0 },
+  ])('$header header fallback states', ({ inset }) => {
+    it.each(['loading', 'no-detections', 'unavailable'] as const)(
+      'uses the measured header inset while %s',
+      (state) => {
+        headerInset.current = inset;
+        if (state === 'loading') draftState.current = { isLoading: true, isUnavailable: false, homography: null };
+        if (state === 'unavailable')
+          proposalState.current = { data: null, isPending: false, error: new Error('Network request failed') };
+        const screen = renderScreen(vi.fn(), state === 'no-detections' ? [] : CANDIDATES);
+
+        if (state === 'loading') expect(screen.getByTestId('spinner')).toBeTruthy();
+        if (state === 'no-detections') expect(screen.getByText('sprayReset.compare.noDetections')).toBeTruthy();
+        if (state === 'unavailable') expect(screen.getByText('Network request failed')).toBeTruthy();
+        expect(screen.queryByTestId('board')).toBeNull();
+        const screenStyle = JSON.parse(screen.container.firstElementChild!.getAttribute('data-native-style')!);
+        expect(screenStyle).toContainEqual({ backgroundColor: '#000', paddingTop: inset });
+      },
+    );
+  });
+
   it('spins while the wall loads rather than claiming nothing was found', () => {
     // `detections` is empty until the homography lands, so the empty state and
     // "still loading" are indistinguishable from the inside.
