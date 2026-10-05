@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { GET_BOARD } from '@boardsesh/graphql/operations/boards';
+import { GET_BOARD } from '../../graphql/operations';
 
 const request = vi.hoisted(() => vi.fn());
 vi.mock('../../graphql/client', () => ({ getHttpClient: () => ({ request }) }));

@@ -25,6 +25,7 @@ import {
 import {
   FIXTURE_SIZE_NOTE_BYTES,
   RE_RECORD_COMMAND,
+  REPLAY_DEFAULT_RESPONSES,
   findScreenshotBackendNotes,
   findScreenshotBackendProblems,
   fixtureSizeNote,
@@ -1235,15 +1236,67 @@ describe('screenshot backend', () => {
       expect(note).toContain('ClimbStatsForClimbs answered 1 batch(es) with 1 uncovered id(s)');
     });
 
-    it('still misses when NOT ONE requested id was recorded — that is an uncaptured screen', async () => {
+    it('answers an empty list when NOT ONE requested id was recorded under a recorded scope', async () => {
+      // Which chunk an uncovered id lands in is flush timing, so a chunk made
+      // only of them must answer like any other batch (Android run 37258958437).
+      await replayBatch('kilter', ['climb-a']);
+      const hitsBefore = backend?.stats().hits ?? 0;
       const response = await replayBatch('kilter', ['climb-y', 'climb-z']);
       expect(response.status).toBe(200);
+      expect(await rowsOf(response)).toEqual([]);
+      expect(hasLine('composed=0 uncovered=2 ids=climb-y,climb-z')).toBe(true);
+      // Answered, but with no recorded id behind it: not a hit.
+      expect(backend?.stats().hits).toBe(hitsBefore);
+      // Tolerated because another batch of the operation WAS covered.
+      expect(findScreenshotBackendProblems(logLines.join('\n'), { mode: 'replay' })).toEqual([]);
+      const [note] = findScreenshotBackendNotes(logLines.join('\n'));
+      expect(note).toContain('1 of them with no recorded id at all');
+    });
+
+    it('fails the capture when no batch of the operation was covered at all', async () => {
+      await replayBatch('kilter', ['climb-y', 'climb-z']);
+      const problems = findScreenshotBackendProblems(logLines.join('\n'), { mode: 'replay' });
+      expect(problems.some((problem) => problem.includes('ClimbStatsForClimbs was asked for 1 batch(es)'))).toBe(true);
+    });
+
+    it('still misses a scope nothing was recorded under', async () => {
+      // No moonboard batch was ever recorded: that is a board the recording
+      // never reached, not draw distance, so nothing is composed for it.
+      const response = await replayBatch('moonboard', ['climb-a']);
+      expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({ errors: [{ extensions: { code: 'SCREENSHOT_FIXTURE_MISS' } }] });
-      expect(hasLine('reason=unrecorded-ids ids=climb-y,climb-z')).toBe(true);
+      expect(hasLine('MISS graphql ClimbStatsForClimbs')).toBe(true);
+      expect(hasLine('reason=no-fixture')).toBe(true);
       const [problem] = findScreenshotBackendProblems(logLines.join('\n'), { mode: 'replay' });
-      expect(problem).toContain('ClimbStatsForClimbs asked for a batch where NO id was recorded: climb-y, climb-z');
-      expect(problem).toContain('"boardName":"kilter"');
+      expect(problem).toContain('no recorded response for ClimbStatsForClimbs');
+      expect(problem).toContain('"boardName":"moonboard"');
       expect(problem).toContain(RE_RECORD_COMMAND);
+    });
+
+    it('composes a response list of bare ids, for an operation whose items are the ids themselves', async () => {
+      const favoritesQuery =
+        'query Favorites($boardName: String!, $climbUuids: [String!]!, $angle: Int!) {\n' +
+        '  favorites(boardName: $boardName, climbUuids: $climbUuids, angle: $angle)\n}';
+      const favorites = (climbUuids: string[]): Promise<Response> =>
+        postGraphql({
+          operationName: 'Favorites',
+          query: favoritesQuery,
+          variables: { boardName: 'kilter', climbUuids, angle: 40 },
+        });
+      await stop();
+      await start({ mode: 'record' });
+      upstream.nextGraphqlResponse = { status: 200, body: { data: { favorites: ['climb-a'] } } };
+      await favorites(['climb-a', 'climb-b']);
+      upstream.nextGraphqlResponse = { status: 200, body: { data: { favorites: ['climb-d'] } } };
+      await favorites(['climb-c', 'climb-d']);
+      await stop();
+      await start({ mode: 'replay' });
+
+      const response = await favorites(['climb-d', 'climb-b', 'climb-a']);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ data: { favorites: ['climb-d', 'climb-a'] } });
+      expect(hasLine('HIT graphql Favorites')).toBe(true);
+      expect(hasLine('composed=3')).toBe(true);
     });
 
     it('counts a composed hit as a graphql hit for the problem scanner', async () => {
@@ -1251,6 +1304,63 @@ describe('screenshot backend', () => {
       // A composed answer is the only graphql traffic here, so the "app never
       // reached the replay backend" check must be satisfied by it alone.
       expect(findScreenshotBackendProblems(logLines.join('\n'), { mode: 'replay' })).toEqual([]);
+    });
+  });
+
+  // An operation the recorded set holds nothing for may carry a declared
+  // answer — see REPLAY_DEFAULT_RESPONSES in scripts/lib/screenshot-fixtures.ts.
+  describe('replay defaults', () => {
+    const ADMIN_FLAG_QUERY = 'query ProfileAdminFlag {\n  profile {\n    id\n    isAdmin\n  }\n}';
+    const adminFlag = (): Promise<Response> =>
+      postGraphql({ operationName: 'ProfileAdminFlag', query: ADMIN_FLAG_QUERY, variables: {} });
+
+    const recordSomethingElse = async (): Promise<void> => {
+      upstream.nextGraphqlResponse = { status: 200, body: { data: { me: { id: 'user-1' } } } };
+      await postGraphql({ operationName: 'Me', query: 'query Me { me { id } }', variables: {} });
+    };
+
+    it('answers an operation with no fixture at all from its declared default, and says so', async () => {
+      await start({ mode: 'record', fresh: true });
+      await recordSomethingElse();
+      await stop();
+      await start({ mode: 'replay' });
+
+      const response = await adminFlag();
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual(REPLAY_DEFAULT_RESPONSES.ProfileAdminFlag.response);
+      expect(hasLine('DEFAULT graphql ProfileAdminFlag')).toBe(true);
+      expect(findScreenshotBackendNotes(logLines.join('\n'))).toEqual([
+        'ProfileAdminFlag has no recorded fixture; answered 1 request(s) with its replay default.',
+      ]);
+    });
+
+    it('replays the recorded answer once the operation has a fixture', async () => {
+      await start({ mode: 'record', fresh: true });
+      upstream.nextGraphqlResponse = {
+        status: 200,
+        body: { data: { profile: { id: 'user-1', isAdmin: true } } },
+      };
+      await adminFlag();
+      await stop();
+      await start({ mode: 'replay' });
+
+      expect(await (await adminFlag()).json()).toEqual({ data: { profile: { id: 'user-1', isAdmin: true } } });
+      expect(hasLine('DEFAULT graphql')).toBe(false);
+    });
+
+    it('misses an operation with no fixture and no declared default', async () => {
+      await start({ mode: 'record', fresh: true });
+      await recordSomethingElse();
+      await stop();
+      await start({ mode: 'replay' });
+
+      const response = await postGraphql({
+        operationName: 'GetProfile',
+        query: 'query GetProfile { profile { id } }',
+        variables: {},
+      });
+      expect(await response.json()).toMatchObject({ errors: [{ extensions: { code: 'SCREENSHOT_FIXTURE_MISS' } }] });
+      expect(hasLine('MISS graphql GetProfile')).toBe(true);
     });
   });
 

@@ -10,6 +10,7 @@ import { runInNewContext } from 'node:vm';
 import { parseAllDocuments } from 'yaml';
 
 import {
+  appendNotesToStepSummary,
   buildBackendArgs,
   buildAndroidMaestroArgs,
   buildScreenshotEnv,
@@ -1258,5 +1259,28 @@ describe('reportRecordingSummary', () => {
     } as unknown as ScreenshotBackendSession;
     expect(RECORDING_STATUS_UNREACHABLE_MESSAGE).toMatch(/did not answer .*status/);
     expect(reportRecordingSummary(unreachableSession)).toBe(false);
+  });
+});
+
+describe('appendNotesToStepSummary', () => {
+  const summaryDir = mkdtempSync(join(tmpdir(), 'screenshot-notes-'));
+  afterEach(() => rmSync(summaryDir, { recursive: true, force: true }));
+
+  it('appends one bullet per note to the step summary', () => {
+    mkdirSync(summaryDir, { recursive: true });
+    const summaryPath = join(summaryDir, 'summary.md');
+    writeFileSync(summaryPath, 'existing\n');
+    appendNotesToStepSummary(['first note', 'second note'], summaryPath);
+    expect(readFileSync(summaryPath, 'utf8')).toBe(
+      'existing\n- Screenshot replay note: first note\n- Screenshot replay note: second note\n',
+    );
+  });
+
+  it('writes nothing without notes or without a summary file', () => {
+    mkdirSync(summaryDir, { recursive: true });
+    const summaryPath = join(summaryDir, 'summary.md');
+    appendNotesToStepSummary([], summaryPath);
+    appendNotesToStepSummary(['a note'], undefined);
+    expect(readdirSync(summaryDir)).toEqual([]);
   });
 });

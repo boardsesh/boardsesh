@@ -1,11 +1,41 @@
 name: E2E Tests
 
+# Three ways in, and only a manual dispatch runs the whole suite:
+#   - workflow_dispatch: everything (typecheck, build, the 8 e2e shards, the
+#     Expo-web smoke).
+#   - schedule: the Expo-web smoke alone, nightly on main. Nothing waits on it
+#     and nothing is gated by it; it exists so the suite cannot rot unseen for
+#     six weeks again (it last ran 2026-08-22 before this).
+#   - workflow_call: the Expo-web smoke alone, at the commit the caller names.
+#     The mobile OTA gate calls it this way.
+# A called workflow sees its CALLER's event name, so "this is a call" is read
+# off `inputs.called`: only workflow_call defines it, and it defaults to true
+# there. It is deliberately not read off `inputs.ref`, because a caller that
+# passed an empty ref would then look like a dispatch and run everything. The
+# smoke job fails fast on that instead.
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '23 15 * * *' # daily, 15:23 UTC
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit, branch or tag to run the Expo-web smoke at.
+        required: true
+        type: string
+      called:
+        description: Marks the run as a workflow_call. Leave it at its default.
+        required: false
+        type: boolean
+        default: true
 
+# The event and the called ref are part of the group so a nightly run, a
+# dispatch and a gate call on the same branch never cancel one another. A call
+# never cancels: a second gate asking about the same ref must not kill the
+# first one's answer.
 concurrency:
-  group: e2e-${{ github.ref }}
-  cancel-in-progress: true
+  group: e2e-${{ github.ref }}-${{ inputs.called && inputs.ref || github.event_name }}
+  cancel-in-progress: ${{ !inputs.called }}
 
 # `runner.os` isn't available in workflow-level `env`, so the node_modules
 # cache key is duplicated across jobs. Keep the shape identical — any drift
@@ -20,6 +50,8 @@ jobs:
   # ---------------------------------------------------------------------------
   typecheck:
     name: Typecheck (fail-fast)
+    # Full-suite job: manual dispatch only (see the trigger notes at the top).
+    if: github.event_name == 'workflow_dispatch' && !inputs.called
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -70,6 +102,8 @@ jobs:
   # ---------------------------------------------------------------------------
   build:
     name: Build packages (shared by e2e + screenshots)
+    # Full-suite job: manual dispatch only (see the trigger notes at the top).
+    if: github.event_name == 'workflow_dispatch' && !inputs.called
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # Build inside the same container the e2e shards use. Matches the
@@ -420,10 +454,23 @@ jobs:
   expo-web-smoke:
     name: Expo-web smoke
     needs: [typecheck]
+    # On a dispatch the typecheck is a fail-fast gate in front of a 45-minute
+    # job. The nightly schedule and a workflow_call skip the typecheck, and a
+    # skipped need would skip this job too without the explicit condition.
+    if: ${{ !cancelled() && (needs.typecheck.result == 'success' || needs.typecheck.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      - name: Refuse a call without a ref
+        if: inputs.called && !inputs.ref
+        run: |
+          echo "::error::e2e-tests.yml was called with an empty ref. Pass the commit to test."
+          exit 1
+
       - uses: actions/checkout@v6
+        with:
+          # Empty outside a workflow_call, which checks out the triggering commit.
+          ref: ${{ inputs.ref }}
 
       - uses: voidzero-dev/setup-vp@v1
         with:
@@ -482,6 +529,25 @@ jobs:
           path: packages/web/test-results/
           retention-days: 7
 
+      # Nobody watches a scheduled run, so a red nightly says so in the deploy
+      # channel. A dispatch has a person behind it and a call reports to its
+      # caller, so neither posts.
+      - name: Tell Discord the nightly smoke failed
+        if: failure() && github.event_name == 'schedule' && !inputs.called
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DISCORD_DEPLOY_WEBHOOK:-}" ]; then
+            echo "::warning::The nightly Expo-web smoke failed but DISCORD_DEPLOY_WEBHOOK is not readable here."
+            exit 0
+          fi
+          jq -n --arg content "The nightly Expo-web smoke failed on main: ${RUN_URL}" \
+            '{content: $content, allowed_mentions: {parse: []}}' \
+            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
+              echo "::warning::Failed to post the Discord notification (see status above)"
+
   # ---------------------------------------------------------------------------
   # Screenshots — like an e2e shard but runs the three screenshot Playwright
   # projects. `needs: e2e` sequences it after the functional tests so the
@@ -494,7 +560,7 @@ jobs:
     # `always()` so a failing e2e shard doesn't suppress the screenshot
     # capture — screenshots are informational, not a merge gate. Paired
     # with `continue-on-error: true` for soft-fail semantics.
-    if: always() && github.event_name == 'pull_request'
+    if: always() && github.event_name == 'pull_request' && !inputs.called
     continue-on-error: true
     timeout-minutes: 20
     runs-on: ubuntu-latest
