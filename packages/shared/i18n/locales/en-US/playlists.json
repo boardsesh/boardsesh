@@ -42,6 +42,12 @@
       "pinFailed": "Failed to pin playlist",
       "unpinFailed": "Failed to unpin playlist"
     },
+    "savedCard": {
+      "title": "Pick up your saved climbs",
+      "body": "Everything you hearted is in Liked Climbs, ready for this session.",
+      "open": "See saved climbs",
+      "dismiss": "Dismiss"
+    },
     "smart": {
       "fiveStars": {
         "title": "Five Stars",

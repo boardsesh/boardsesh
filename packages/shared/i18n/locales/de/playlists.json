@@ -42,6 +42,12 @@
       "pinFailed": "Die Playlist ließ sich nicht anpinnen",
       "unpinFailed": "Die Playlist ließ sich nicht abpinnen"
     },
+    "savedCard": {
+      "title": "Hol dir deine gespeicherten Boulder",
+      "body": "Alle Boulder mit deinem Herz liegen in „Gelikte Boulder“, bereit für diese Session.",
+      "open": "Gespeicherte Boulder ansehen",
+      "dismiss": "Schließen"
+    },
     "smart": {
       "fiveStars": {
         "title": "Fünf Sterne",

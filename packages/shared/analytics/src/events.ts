@@ -604,6 +604,40 @@ export const SHARED_EVENTS = {
   FirstRunCardAction: 'First Run Card Action',
   BoardLightsDeclined: 'Board Lights Declined',
 
+  // Mobile-only, save for next session (#6002). Hearts already store "climbs I
+  // want next time"; these measure the feedback and the way back. No arm and no
+  // holdout: read them before/after the OTA. Kill switch:
+  // `save-next-session-kill`. `Favorite Toggle` gained `connected` (this
+  // phone's Bluetooth link at the tap) in the same change; always filter it on
+  // `action = 'added'`.
+  //
+  // SmartPlaylistOpened: a smart-playlist detail screen mounted for a known
+  // type. `$screen` keeps `/discover/smart/[type]` verbatim, so this is the
+  // only event that names the list. Props: { type: the SmartPlaylistType
+  // ('LIKED_CLIMBS', 'FIVE_STARS', ...), source: 'discover' | 'save_prompt' |
+  // 'saved_card' | 'other' ('other' = a deep link or a caller that passed no
+  // source) }. Once per mount.
+  //
+  // SavePromptShown: the play drawer's "Saved" line showed after a heart was
+  // added. At most three times per phone. Props: { source: 'play_drawer_heart',
+  // connected (this phone's Bluetooth link at the tap, which also picks the
+  // copy), phone_has_connected (true once this phone has ever connected to a
+  // board, from the connect-step store; null when that has not been read) }.
+  // SavePromptTapped: "View" on that line. Props: { source, connected }.
+  //
+  // SavedClimbsCardShown: the "saved climbs" card showed in the Climbs list
+  // header. Once per launch. It shows while the active board has at least one
+  // liked climb, until its X is tapped. Props: { board_type,
+  // phone_has_connected }. No count: the only count the app has is across all
+  // boards.
+  // SavedClimbsCardAction: a tap on that card. Props: { action: 'open' |
+  // 'dismiss', board_type }. 'dismiss' is the X and is for good on that phone.
+  SmartPlaylistOpened: 'Smart Playlist Opened',
+  SavePromptShown: 'Save Prompt Shown',
+  SavePromptTapped: 'Save Prompt Tapped',
+  SavedClimbsCardShown: 'Saved Climbs Card Shown',
+  SavedClimbsCardAction: 'Saved Climbs Card Action',
+
   // Mobile-only, iOS 26 Liquid Glass iPhones (#5654): the one-time tip "To get
   // back to your climbs, tap the magnifier in the tab bar". There the Climbs tab
   // is the tab bar's search-role magnifier, set apart from the other tabs, and

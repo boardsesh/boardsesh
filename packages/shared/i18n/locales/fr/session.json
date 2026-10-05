@@ -479,6 +479,12 @@
       "open": "Ouvrir",
       "openAria": "Ouvrir la file"
     },
+    "savedNotice": {
+      "saved": "Gardé dans Voies aimées",
+      "savedForNextSession": "Gardé pour ta prochaine session",
+      "view": "Voir",
+      "viewAria": "Voir les blocs gardés"
+    },
     "boardPresence": {
       "title": "Sur le mur maintenant",
       "stripA11yLabel": "Sur le mur : {{name}}, {{grade}}",

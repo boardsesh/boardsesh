@@ -38,6 +38,20 @@ const recorded = vi.hoisted(() => ({
   scroll: [] as Props[],
   headerLayout: undefined as ((event: LayoutChangeEvent) => void) | undefined,
 }));
+// The heart's wiring (#6002): what the drawer tells its inline notice, and what
+// it falls back to when the notice declines the error.
+const heart = vi.hoisted(() => ({
+  mutate: vi.fn(),
+  showToast: vi.fn(),
+  track: vi.fn(),
+  push: vi.fn(),
+  inlineError: true,
+  localConnected: false,
+  noticeProps: [] as Array<{ climbUuid: string; onView: () => void }>,
+  showSaved: vi.fn(),
+  showError: vi.fn(),
+  hide: vi.fn(),
+}));
 const setCurrentClimb = vi.hoisted(() => vi.fn());
 const dismissGestureRef = vi.hoisted(() => ({ current: undefined as unknown }));
 const queueState = vi.hoisted(() => ({
@@ -94,7 +108,24 @@ vi.mock('react-native-reanimated', () => ({
   useSharedValue: (initial: unknown) => ({ value: initial }),
   runOnJS: (fn: unknown) => fn,
 }));
-vi.mock('expo-router', () => ({ router: { dismiss: vi.fn() } }));
+vi.mock('expo-router', () => ({ router: { dismiss: vi.fn(), push: heart.push } }));
+vi.mock('../SavedClimbNotice', async () => {
+  const { forwardRef, useImperativeHandle } = await import('react');
+  return {
+    SavedClimbNotice: forwardRef<unknown, { climbUuid: string; onView: () => void }>((props, ref) => {
+      heart.noticeProps.push(props);
+      useImperativeHandle(ref, () => ({
+        showSaved: heart.showSaved,
+        showError: () => {
+          heart.showError();
+          return heart.inlineError;
+        },
+        hide: heart.hide,
+      }));
+      return null;
+    }),
+  };
+});
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'random-uuid' }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
@@ -134,7 +165,7 @@ vi.mock('@boardsesh/analytics', () => ({
     QuickTickOpened: 'Quick Tick Opened',
   },
 }));
-vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
+vi.mock('../../../lib/analytics', () => ({ track: heart.track }));
 
 // --- Children ----------------------------------------------------------------
 // The heatmap reads the saved search from secure storage and the offline
@@ -230,12 +261,12 @@ vi.mock('../../../providers/queue-provider', () => ({
 }));
 vi.mock('../../../providers/bluetooth-provider', () => ({ useOptionalBluetoothContext: () => null }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
-vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
+vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: heart.showToast }) }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   // The preview angle re-anchor asks for the climb at the live angle; nothing
   // here pins a preview at another angle, so it never resolves.
   useClimb: () => ({ data: undefined }),
-  useToggleFavorite: () => ({ mutate: vi.fn() }),
+  useToggleFavorite: () => ({ mutate: heart.mutate }),
   useFavoriteStatus: (boardName: string, uuid: string | null, angle: number) => {
     recorded.favoriteStatus.push({ boardName, uuid, angle });
     return { data: undefined };
@@ -267,7 +298,7 @@ vi.mock('../use-wall-climb', () => ({ useWallClimb: () => ({ uuid: null, name: n
 vi.mock('../../ble/use-lightbulb-control', () => ({
   useLightbulbControl: (options: { canRelay?: boolean; onRelayToHolder?: () => void }) => {
     recorded.lightbulb.push(options);
-    return { lit: false, localConnected: false, pending: false, onPress: vi.fn() };
+    return { lit: false, localConnected: heart.localConnected, pending: false, onPress: vi.fn() };
   },
 }));
 vi.mock('../copy-climb-name', () => ({ copyClimbName: vi.fn() }));
@@ -335,6 +366,9 @@ beforeEach(() => {
   recorded.lightbulb = [];
   recorded.scroll = [];
   recorded.headerLayout = undefined;
+  heart.noticeProps = [];
+  heart.inlineError = true;
+  heart.localConnected = false;
   queueState.queue = [];
   queueState.currentClimbQueueItem = null;
   navigation.state = { nextItem: null, prevItem: null, canNext: false, canPrevious: false };
@@ -605,5 +639,114 @@ describe('PlayDrawer draws the climb on its own board (#5099)', () => {
     // The pill changes the SELECTED board's angle — it must not offer to move a
     // wall the climber is not on.
     expect(recorded.actionBar.at(-1)?.currentAngle).toBe(TWELVE_BY_TWELVE.angle);
+  });
+});
+
+// Save for next session (#6002). The notice itself is unit-tested next to
+// itself; this pins the joins in the real drawer: the heart tells the notice,
+// the event says whether a board was connected, a failed heart is reported
+// inline, and "View" leaves for the liked list.
+describe('PlayDrawer heart feedback', () => {
+  type MutateCallbacks = {
+    onSuccess: (response: { toggleFavorite: { favorited: boolean } }) => void;
+    onError: () => void;
+  };
+
+  function pressHeart(): MutateCallbacks {
+    act(() => {
+      (recorded.actionBar.at(-1)?.onToggleFavorite as () => void)();
+    });
+    const callbacks = heart.mutate.mock.calls.at(-1)?.[1] as MutateCallbacks | undefined;
+    if (!callbacks) throw new Error('the heart never reached the mutation');
+    return callbacks;
+  }
+
+  beforeEach(() => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+  });
+
+  it('hands the notice the climb on screen', () => {
+    renderDrawer();
+
+    expect(heart.noticeProps.at(-1)?.climbUuid).toBe(TWELVE_CLIMB.uuid);
+  });
+
+  it.each([
+    ['away from the wall', false],
+    ['connected to a board', true],
+  ])('shows the saved line on an add and tags the event: %s', (_label, connected) => {
+    heart.localConnected = connected;
+    renderDrawer();
+
+    pressHeart();
+
+    expect(heart.showSaved).toHaveBeenCalledTimes(1);
+    expect(heart.showSaved).toHaveBeenCalledWith(connected);
+    expect(heart.hide).not.toHaveBeenCalled();
+    expect(heart.track).toHaveBeenCalledWith(
+      'Favorite Toggle',
+      expect.objectContaining({ action: 'added', source: 'mobile_play_drawer', connected }),
+    );
+  });
+
+  it('takes the saved line down when the heart is removed again', () => {
+    renderDrawer();
+    pressHeart();
+    heart.showSaved.mockClear();
+
+    pressHeart();
+
+    expect(heart.showSaved).not.toHaveBeenCalled();
+    expect(heart.hide).toHaveBeenCalledTimes(1);
+    expect(heart.track).toHaveBeenLastCalledWith('Favorite Toggle', expect.objectContaining({ action: 'removed' }));
+  });
+
+  it('takes the saved line down when the server says the climb is not liked after all', () => {
+    renderDrawer();
+    const { onSuccess } = pressHeart();
+
+    act(() => onSuccess({ toggleFavorite: { favorited: false } }));
+
+    expect(heart.hide).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the saved line up when the server confirms the add', () => {
+    renderDrawer();
+    const { onSuccess } = pressHeart();
+
+    act(() => onSuccess({ toggleFavorite: { favorited: true } }));
+
+    expect(heart.hide).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed heart inline, not through the toast behind the modal', () => {
+    renderDrawer();
+    const { onError } = pressHeart();
+
+    act(() => onError());
+
+    expect(heart.showError).toHaveBeenCalledTimes(1);
+    expect(heart.showToast).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the toast when the notice is switched off', () => {
+    heart.inlineError = false;
+    renderDrawer();
+    const { onError } = pressHeart();
+
+    act(() => onError());
+
+    expect(heart.showToast).toHaveBeenCalledWith('playView.favoriteError', 'error');
+  });
+
+  it('opens the liked list from View, tagged as the save prompt', () => {
+    renderDrawer();
+
+    act(() => heart.noticeProps.at(-1)?.onView());
+
+    expect(heart.push).toHaveBeenCalledWith({
+      pathname: '/(tabs)/discover/smart/[type]',
+      params: { type: 'LIKED_CLIMBS', source: 'save_prompt' },
+    });
   });
 });

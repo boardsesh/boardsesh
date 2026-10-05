@@ -85,6 +85,8 @@ import { LogbookFullSheet } from './logbook/LogbookFullSheet';
 import { useFullLogbookSheet } from './logbook/use-full-logbook-sheet';
 import { ClimberLogsSheet } from './ClimberLogsSheet';
 import { usePushAfterPlayerDismiss } from './use-push-after-player-dismiss';
+import { SavedClimbNotice, type SavedClimbNoticeHandle } from './SavedClimbNotice';
+import { smartPlaylistHref } from '../../lib/smart-playlists';
 import { ReportClimbSheet } from '../report-climb/ReportClimbSheet';
 import { BleControlSheetHost } from '../ble/BleControlSheetHost';
 import { RestTimerPillHost } from '../queue-control/RestTimerPillHost';
@@ -1542,6 +1544,9 @@ export function PlayDrawer({
     }
   }, [displayedClimbUuid, isMirrored, sharesMirrorState, currentClimbQueueItem, mirrorCurrentClimb]);
 
+  // The heart's own line of feedback (#6002). Driven through a ref so a notice
+  // appearing and timing out never re-renders the drawer.
+  const savedNoticeRef = useRef<SavedClimbNoticeHandle>(null);
   const handleToggleFavorite = useCallback(() => {
     if (!displayedClimb) return;
     hapticSuccess();
@@ -1554,7 +1559,12 @@ export function PlayDrawer({
       boardName,
       layoutId,
       source: 'mobile_play_drawer',
+      connected: bluetoothConnected,
     });
+    // Shown on the tap, not on the server's answer: the heart already flipped
+    // optimistically, and offline the answer can be minutes away.
+    if (nextIsFavorited) savedNoticeRef.current?.showSaved(bluetoothConnected);
+    else savedNoticeRef.current?.hide();
     toggleFavoriteMutate(
       {
         input: {
@@ -1570,6 +1580,8 @@ export function PlayDrawer({
         // guess was wrong.
         onSuccess: (response) => {
           setFavoriteOverride(response.toggleFavorite.favorited);
+          // The server disagreed with the optimistic add: "Saved" would be wrong.
+          if (nextIsFavorited && !response.toggleFavorite.favorited) savedNoticeRef.current?.hide();
         },
         // Roll back the optimistic flip and tell the user it didn't stick, rather
         // than leaving the heart diverged from the server. Only undo OUR flip,
@@ -1578,11 +1590,25 @@ export function PlayDrawer({
         // current state with this tap's stale previous value.
         onError: () => {
           setFavoriteOverride((current) => resolveFavoriteRollback(current, nextIsFavorited, previousOverride));
-          showToast(t('playView.favoriteError'), 'error');
+          // Inline, because the root toast overlay sits behind the `/play`
+          // modal. The toast stays as the fallback when the notice is switched
+          // off (`save-next-session-kill`) or not mounted.
+          if (!savedNoticeRef.current?.showError()) showToast(t('playView.favoriteError'), 'error');
         },
       },
     );
-  }, [displayedClimb, isFavorited, favoriteOverride, boardName, layoutId, angle, toggleFavoriteMutate, showToast, t]);
+  }, [
+    displayedClimb,
+    isFavorited,
+    favoriteOverride,
+    boardName,
+    layoutId,
+    angle,
+    bluetoothConnected,
+    toggleFavoriteMutate,
+    showToast,
+    t,
+  ]);
 
   const handleLightbulbLongPress = useCallback(() => {
     if (!bluetooth?.isConnected) return;
@@ -1670,6 +1696,11 @@ export function PlayDrawer({
   );
   const handleFindClimbers = useCallback(() => {
     pushAfterPlayerDismiss(() => router.push('/users/search'));
+  }, [pushAfterPlayerDismiss]);
+  // "View" on the saved notice: the liked list is a tab-stack route, so it too
+  // would land beneath the `/play` modal unless the player goes first.
+  const handleViewSavedClimbs = useCallback(() => {
+    pushAfterPlayerDismiss(() => router.push(smartPlaylistHref('LIKED_CLIMBS', 'save_prompt')));
   }, [pushAfterPlayerDismiss]);
 
   const handleOpenActions = useCallback(() => {
@@ -2015,6 +2046,16 @@ export function PlayDrawer({
                             setIds={setIds}
                             climbUuid={displayedClimb.uuid}
                             climbName={displayedClimb.name}
+                          />
+                        )}
+                        {/* The heart's feedback, over the bottom edge of the board
+                            art: zero layout cost, and clear of the controls below.
+                            A signed-out reader has no heart, so no notice. */}
+                        {isAnonymous ? null : (
+                          <SavedClimbNotice
+                            ref={savedNoticeRef}
+                            climbUuid={displayedClimb.uuid}
+                            onView={handleViewSavedClimbs}
                           />
                         )}
                       </View>

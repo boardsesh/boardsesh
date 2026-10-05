@@ -479,6 +479,12 @@
       "open": "Abrir",
       "openAria": "Abrir cola"
     },
+    "savedNotice": {
+      "saved": "Guardado en Bloques favoritos",
+      "savedForNextSession": "Guardado para tu próxima sesión",
+      "view": "Ver",
+      "viewAria": "Ver bloques guardados"
+    },
     "boardPresence": {
       "title": "Ahora en el muro",
       "stripA11yLabel": "En el muro: {{name}}, {{grade}}",

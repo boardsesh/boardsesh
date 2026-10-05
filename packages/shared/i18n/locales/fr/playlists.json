@@ -42,6 +42,12 @@
       "pinFailed": "Échec de l'épinglage de la playlist",
       "unpinFailed": "Échec du désépinglage de la playlist"
     },
+    "savedCard": {
+      "title": "Retrouvez vos blocs gardés",
+      "body": "Tout ce que vous avez aimé est dans Voies aimées, prêt pour cette session.",
+      "open": "Voir les blocs gardés",
+      "dismiss": "Fermer"
+    },
     "smart": {
       "fiveStars": {
         "title": "Cinq étoiles",

@@ -211,6 +211,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'Emergency kill switch for the connect-step test (#5654): the "Light climbs on" card on Climbs, the "Light it on the board" pill in the play view, and the one-time "Connected to" confirmation. With it on, no new account is enrolled and everyone already enrolled gets the plain bulb back. Unresolved reads as enabled; the gate waits for flags to resolve before it enrols anyone.',
   },
   {
+    key: 'save-next-session-kill',
+    label: 'Disable save for next session',
+    description:
+      'Emergency kill switch for save for next session (#6002): the "Saved" line the play view shows after a heart, and the "saved climbs" card on Climbs. With it on, hearts work exactly as before and a failed heart goes back to the toast. Unresolved reads as enabled; the card waits for flags to resolve before it shows.',
+  },
+  {
     key: 'first-connect-cta-arm',
     label: 'Force the connect-step arm (QA)',
     description:
@@ -514,6 +520,17 @@ export function useFirstBoardPickerEnabled(): boolean {
  */
 export function useFirstConnectCtaEnabled(): boolean {
   return useFeatureFlag('first-connect-cta-kill') !== true;
+}
+
+/**
+ * Kill switch for save for next session (#6002): the play view's "Saved" line
+ * after a heart and the "saved climbs" card on Climbs. It ships to everyone
+ * with no experiment arm, so this is the way to take it back without a
+ * release. Unresolved reads as "not killed"; the card waits for
+ * `useFeatureFlagsResolved()` so it never flashes for a fleet it is off for.
+ */
+export function useSaveNextSessionEnabled(): boolean {
+  return useFeatureFlag('save-next-session-kill') !== true;
 }
 
 /**

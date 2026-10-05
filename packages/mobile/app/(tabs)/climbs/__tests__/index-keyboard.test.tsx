@@ -157,6 +157,7 @@ vi.mock('../../../../src/components/onboarding/OnboardingTipBanner', () => ({
 }));
 // The connect-step card has its own suite; it reaches the Bluetooth provider,
 // which this suite has no reason to load.
+vi.mock('../../../../src/components/SavedClimbsCard', () => ({ SavedClimbsCard: () => null }));
 vi.mock('../../../../src/components/onboarding/FirstConnectCard', () => ({
   FirstConnectCard: () => null,
   useFirstConnectCardExpected: () => false,

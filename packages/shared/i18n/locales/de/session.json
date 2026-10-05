@@ -479,6 +479,12 @@
       "open": "Öffnen",
       "openAria": "Warteschlange öffnen"
     },
+    "savedNotice": {
+      "saved": "In „Gelikte Boulder“ gespeichert",
+      "savedForNextSession": "Für deine nächste Session gespeichert",
+      "view": "Ansehen",
+      "viewAria": "Gespeicherte Boulder ansehen"
+    },
     "boardPresence": {
       "title": "Jetzt an der Wand",
       "stripA11yLabel": "An der Wand: {{name}}, {{grade}}",

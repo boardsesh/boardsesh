@@ -674,6 +674,45 @@ an ordinary pick: no `Onboarding Board Activated`, no reveal banner.
   tip, against Android, using `$screen` views. `Climbs Tab Tip Shown` is the exposure count; the tip
   goes away when they tap back to Climbs or close it, and never shows again on that device.
 
+## Appendix D — 2026-10-05 save for next session (#6002)
+
+Hearts already store "climbs I want next time" (852 people hearted from the play view in 28 days).
+What was missing is feedback and a way back, so this adds no new save action:
+
+- The play view shows "Saved for your next session · View" after a heart is added ("Saved to Liked
+  Climbs" while this phone is connected to a board), at most three times per phone. "View" closes
+  the player and opens Liked Climbs. A heart that fails to save now says so in the same place; the
+  old toast is a root overlay, which by `toast-provider.tsx`'s own note sits behind the `/play`
+  modal (not confirmed on a device).
+- Climbs gets a "saved climbs" card in the list header while the active board has at least one liked
+  climb. One action opens Liked Climbs; the X hides it for good on that phone. It waits behind the
+  connect card and both one-shot tips, and shows no count (the only count is across all boards).
+
+No arm and no holdout: read these before and after the OTA. Kill switch: `save-next-session-kill`.
+
+| Event | Properties | Emit site | Volume |
+| --- | --- | --- | --- |
+| `Smart Playlist Opened` | `type` (`LIKED_CLIMBS`, `FIVE_STARS`, ...), `source` (`discover` / `save_prompt` / `saved_card` / `other`; `other` is a deep link or a caller with no source) | `app/(tabs)/discover/smart/[type].tsx` | Once per mount of a known type |
+| `Save Prompt Shown` | `source` (`play_drawer_heart`), `connected` (this phone's Bluetooth link at the tap; it also picks the copy), `phone_has_connected` (this phone has ever connected, from the connect-step store; null when unread) | `SavedClimbNotice.tsx` | At most 3 per phone |
+| `Save Prompt Tapped` | `source`, `connected` | `SavedClimbNotice.tsx` ("View") | One per tap |
+| `Saved Climbs Card Shown` | `board_type`, `phone_has_connected` | `SavedClimbsCard.tsx` | Once per launch |
+| `Saved Climbs Card Action` | `action` (`open` / `dismiss`), `board_type` | `SavedClimbsCard.tsx` | One per tap |
+| `Favorite Toggle` (changed) | adds `connected` on mobile (both sources, `mobile_play_drawer` and `mobile_climb_actions`) | `PlayDrawer.tsx`, `use-climb-actions.ts` | Unchanged |
+
+Reading it:
+
+- **The way back**: people with `Smart Playlist Opened` where `type = 'LIKED_CLIMBS'`, per week,
+  split on `source`. There is no baseline for this event; before it, `$screen`
+  `/discover/smart/[type]` covered every smart list at once (386 people in 28 days), so that is the
+  ceiling for "before".
+- **Saved away from the wall**: `Favorite Toggle` with `action = 'added'` and `connected = false`.
+  Always filter on `action = 'added'`; a removal is the same event.
+- **Did it reach the wall?** Among people with `Save Prompt Shown` or `Saved Climbs Card Shown`
+  where `phone_has_connected = false`, the share with `Bluetooth Connection Success` in the next 14
+  days. It is a before/after read with no control group, so treat it as directional.
+- `Save Prompt Shown` undercounts hearts on purpose (three per phone). Use `Favorite Toggle` for
+  how often people heart.
+
 ## Board account linking
 
 Mobile Connected apps emits `Board Account Link Started` on credential submission,

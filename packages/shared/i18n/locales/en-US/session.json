@@ -479,6 +479,12 @@
       "open": "Open",
       "openAria": "Open queue"
     },
+    "savedNotice": {
+      "saved": "Saved to Liked Climbs",
+      "savedForNextSession": "Saved for your next session",
+      "view": "View",
+      "viewAria": "View saved climbs"
+    },
     "boardPresence": {
       "title": "Now on the wall",
       "stripA11yLabel": "On the wall: {{name}}, {{grade}}",
