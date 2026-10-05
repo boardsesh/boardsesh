@@ -25,7 +25,8 @@ import {
  * generic fallback toast.
  */
 export function useSaveClimb(boardName: BoardName | null) {
-  const { isAuthenticated, executeWs, showError } = useBoardAdapter();
+  const { isAuthenticated, executeWs, showError, afterClimbWrite, captureAuthEpoch, isAuthEpochCurrent } =
+    useBoardAdapter();
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -38,10 +39,27 @@ export function useSaveClimb(boardName: BoardName | null) {
       }
 
       const variables: SaveClimbMutationVariables = { input: toSaveClimbInput(boardName, options) };
+      const authEpoch = captureAuthEpoch?.();
       const result = await executeWs<SaveClimbMutationResponse, SaveClimbMutationVariables>({
         query: SAVE_CLIMB_MUTATION,
         variables,
       });
+      if (authEpoch === undefined || isAuthEpochCurrent?.(authEpoch) !== false) {
+        try {
+          await afterClimbWrite?.({
+            boardType: boardName,
+            climbUuid: result.saveClimb.uuid,
+            layoutId: options.layout_id,
+            sizeId: options.size_id,
+            sprayWallUuid: options.spray_wall_uuid,
+            authEpoch,
+          });
+        } catch {
+          // The server committed successfully. A local refresh failure must
+          // never make the editor retry a successful create as a second climb.
+          showError?.('localClimbRefreshFailed');
+        }
+      }
       return result.saveClimb;
     },
     onSuccess: () => {
@@ -72,7 +90,8 @@ export function useSaveClimb(boardName: BoardName | null) {
  * enforces both rules.
  */
 export function useUpdateClimb() {
-  const { isAuthenticated, executeWs, showError } = useBoardAdapter();
+  const { isAuthenticated, executeWs, showError, afterClimbWrite, captureAuthEpoch, isAuthEpochCurrent } =
+    useBoardAdapter();
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -82,10 +101,23 @@ export function useUpdateClimb() {
       }
 
       const variables: UpdateClimbMutationVariables = { input };
+      const authEpoch = captureAuthEpoch?.();
       const result = await executeWs<UpdateClimbMutationResponse, UpdateClimbMutationVariables>({
         query: UPDATE_CLIMB_MUTATION,
         variables,
       });
+      if (authEpoch === undefined || isAuthEpochCurrent?.(authEpoch) !== false) {
+        try {
+          await afterClimbWrite?.({
+            boardType: input.boardType,
+            climbUuid: result.updateClimb.uuid,
+            sprayWallUuid: input.sprayWallUuid ?? undefined,
+            authEpoch,
+          });
+        } catch {
+          showError?.('localClimbRefreshFailed');
+        }
+      }
       return result.updateClimb;
     },
     onSuccess: (result) => {

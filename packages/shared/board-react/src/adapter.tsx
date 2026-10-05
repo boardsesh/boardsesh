@@ -44,6 +44,15 @@ export type BoardAdapter = {
   isAuthLoading: boolean;
   executeHttp: ExecuteHttp;
   executeWs: ExecuteWs;
+  /** Await local mirroring after remote success, before query invalidation. */
+  afterClimbWrite?: (write: {
+    boardType: string;
+    climbUuid: string;
+    layoutId?: number;
+    sizeId?: number;
+    sprayWallUuid?: string;
+    authEpoch?: number;
+  }) => Promise<void>;
   /**
    * Returns the platform-specific active-session id used as the default
    * when a SaveTickOptions call omits `sessionId`. Web reads from
@@ -101,7 +110,7 @@ export type BoardAdapter = {
 };
 
 /** Stable identifiers for fallback-toast errors the shared hooks can raise. */
-export type BoardErrorReason = 'saveClimbFailed' | 'updateClimbFailed';
+export type BoardErrorReason = 'saveClimbFailed' | 'updateClimbFailed' | 'localClimbRefreshFailed';
 
 const BoardAdapterContext = createContext<BoardAdapter | undefined>(undefined);
 

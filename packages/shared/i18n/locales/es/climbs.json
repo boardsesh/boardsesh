@@ -215,7 +215,8 @@
       "publishDuplicateNamed": "Este patrón de presas coincide con \"{{name}}\". Activa Borrador para guardarlo sin publicar, o cambia una presa.",
       "publishDuplicateUnnamed": "Este patrón de presas coincide con un bloque existente. Activa Borrador para guardarlo sin publicar, o cambia una presa.",
       "viewMatchingClimb": "Ver bloque coincidente",
-      "saveFailedFallback": "No se pudo guardar el bloque. Inténtalo de nuevo."
+      "saveFailedFallback": "No se pudo guardar el bloque. Inténtalo de nuevo.",
+      "localRefreshFailed": "Vía guardada. No se pudo actualizar la lista descargada. Reconéctate para actualizarla."
     },
     "fields": {
       "description": "Descripción (opcional)"

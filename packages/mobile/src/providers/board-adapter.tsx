@@ -27,6 +27,7 @@ import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } fr
 import { reportHandledError } from '../lib/error-reporting';
 import { getWsClient } from '../lib/graphql/ws-client';
 import { drainMutationQueue, isOnline, subscribeMutationDelivery, triggerSync } from '../offline/offline-sync-adapter';
+import { mirrorWrittenClimb } from '../offline/mirror-written-climb';
 import { useSnapshotSource } from '../offline/use-snapshot-source';
 import { getSetting } from '../settings';
 import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
@@ -79,7 +80,11 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
   // adapter's context value stable (so subtree consumers don't re-render
   // on every locale flip) while still picking up the latest references.
   const showErrorRef = useRef<BoardAdapter['showError']>(undefined);
-  showErrorRef.current = () => {
+  showErrorRef.current = (reason) => {
+    if (reason === 'localClimbRefreshFailed') {
+      showToast(t('createClimbForm.alerts.localRefreshFailed'), 'error');
+      return;
+    }
     // Both reasons share the same fallback copy on mobile today. Switch
     // here if/when reason-specific messages are needed.
     showToast(t('createClimbForm.alerts.saveFailedFallback'), 'error');
@@ -91,6 +96,7 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
       isAuthLoading: isLoading,
       executeHttp: (query, variables) => getHttpClient().request(query, variables),
       executeWs: ({ query, variables }) => execute(getWsClient(), { query, variables }),
+      afterClimbWrite: mirrorWrittenClimb,
       resolveActiveSessionId: () => sessionIdRef.current,
       captureAuthEpoch: captureAuthCredentialGeneration,
       isAuthEpochCurrent: isAuthCredentialGenerationCurrent,

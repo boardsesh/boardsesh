@@ -221,7 +221,8 @@
       "publishDuplicateNamed": "This hold pattern matches \"{{name}}\". Toggle Draft to save it without publishing, or change a hold.",
       "publishDuplicateUnnamed": "This hold pattern matches an existing climb. Toggle Draft to save it without publishing, or change a hold.",
       "viewMatchingClimb": "View matching climb",
-      "saveFailedFallback": "Failed to save climb. Please try again."
+      "saveFailedFallback": "Failed to save climb. Please try again.",
+      "localRefreshFailed": "Climb saved. Your downloaded list couldn't refresh. Reconnect to refresh it."
     },
     "fields": {
       "description": "Description (optional)"
