@@ -6,6 +6,7 @@ import * as Application from 'expo-application';
 import * as Updates from 'expo-updates';
 import { resolveAppEnvironment } from '../app-environment';
 import { readOtaBranch } from '../ota-telemetry';
+import { otaBranchKind } from '../qa/pr-branch';
 import { isPreviewBuild } from '../preview-build';
 
 export type ConnectStepBuild = {
@@ -13,8 +14,9 @@ export type ConnectStepBuild = {
   nativeVersion: string | null;
   /**
    * A store or TestFlight binary running production JS. False for a dev build,
-   * an EAS preview build and a `pr-*` OTA preview: whoever signs up there is
-   * testing the app, not arriving at it.
+   * an EAS preview build and a PR or staging OTA preview: whoever signs up
+   * there is testing the app, not arriving at it. The early-updates branch
+   * counts as production: its phones belong to ordinary climbers.
    */
   productionBuild: boolean;
 };
@@ -31,7 +33,10 @@ export function isConnectStepProductionBuild(input: {
 }): boolean {
   if (input.devBuild || input.previewBuild) return false;
   if (input.appEnvironment !== 'production') return false;
-  return input.otaBranch?.startsWith('pr-') !== true;
+  // Classified, not prefix-matched: the early-updates branch is named `pr-beta`
+  // and is not a preview.
+  const branchKind = otaBranchKind(input.otaBranch);
+  return branchKind !== 'preview' && branchKind !== 'staging';
 }
 
 export function readConnectStepBuild(): ConnectStepBuild {

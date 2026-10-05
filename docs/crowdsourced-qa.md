@@ -14,7 +14,7 @@ Three pieces, landing in this order:
    asked to pick a PR at startup; this defaults to off. Anyone can open a preview manually,
    read the plan, and file a verdict from the user drawer.
 
-The pick screen's spine is xprem's branch list, not GitHub: `listPrBranches` asks
+The pick screen's spine is xprem's branch list, not GitHub: `fetchQaBranches` asks
 `GET /branch_lists?all=1` for **every** `pr-<n>` branch published for this build's exact
 runtimeVersion and platform, and the backend only decorates what comes back. Asking for all of it is
 load-bearing — xprem's default answer is the newest 50, sized for its own control panel where a

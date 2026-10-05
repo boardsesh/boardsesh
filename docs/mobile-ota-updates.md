@@ -428,7 +428,8 @@ client requesting an unmapped channel gets `No branch mapping found`. Mapping is
 - **PR previews and staging are branches, not channels.** The production channel enables xprem Branch
   Surfing with the narrow pattern `pr-*`; the picker sends `xprem-branch: pr-N` for a PR or
   `xprem-branch: pr-staging` for the staged main update. No extra channel mapping is created.
-  Production in the picker clears the branch override. Staging is intentionally selectable
+  Production in the picker clears the branch override. `pr-beta` is a third long-lived branch
+  under the same pattern: the early-updates track ("Early updates" below). Staging is intentionally selectable
   before the backend schema is promoted, so it is for testers; the staging export itself
   is promoted byte-for-byte after the schema gate. The `pr-` S3 lifecycle rule also
   covers staging assets, so a stale staging update expires after 14 days.
@@ -1506,7 +1507,249 @@ Diagnostics for tester accounts.
 
 Telemetry keeps `ota_channel=production` and reads the selected branch from
 `Updates.manifest.extra.branch`, recording it as `branch` on the OTA status event and `ota_branch`
-in PostHog/Sentry. Diagnostic eligibility uses the same manifest field.
+in PostHog/Sentry. Diagnostic eligibility uses the same manifest field, classified by
+`otaBranchKind` in `qa-surf.ts` (`pr-<n>` and `pr-staging` are previews; `pr-beta` is not).
+
+## Early updates ("Get updates early")
+
+A switch in More → **App updates** that any climber on a surfing-capable binary can turn on. A phone
+with it on sends `xprem-branch: pr-beta` (`EARLY_UPDATES_OTA_BRANCH`) and so follows the branch that
+receives every merge to `main`; a phone with it off follows `production`. It is called "early
+updates" everywhere a climber can read it, never "beta": in this app beta means climb beta.
+
+**Status: shipped dark.** The row is behind the `early-updates` PostHog flag (see
+`docs/feature-flags.md` → "Mobile flags"), which does not exist yet, and nothing publishes to
+`pr-beta` yet. Until both happen no climber sees the row and no device sends the header. The flag
+must stay off until the device checks in the PR that added this (#6101) have been done on an iOS and
+an Android store build: everything below rests on native expo-updates behaviour that unit tests
+model but cannot prove.
+
+### Known cost: the first launch after every store update (Android)
+
+Read this before turning the flag on. It cannot be fixed from JS.
+
+On Android the embedded bundle's database row always carries the headers baked into the build, so
+it is never launchable under a pin. A member who updates the app from the store therefore opens the
+new binary with **nothing launchable**: online, the splash screen blocks on a full OTA download with
+no time cap; offline, the app emergency-launches the embedded bundle. Today that happens only to
+testers pinned to a preview. With this feature it happens to every Android member at every native
+release. After an emergency launch the sync drops the pin without needing a network, so the launch
+after is an ordinary one on the regular track, and the member rejoins once online.
+
+iOS does not pay this cost, for a reason that has its own edge (next section): it inserts the new
+embedded row under the pin and launches it normally.
+
+### The rules the design rests on
+
+All read from expo-updates 57; `ota-track-sequences.test.ts` models each and cites its source.
+
+1. **Launch.** A cold start launches only an update whose stamped request headers **equal** the
+   headers configured now (`LauncherSelectionPolicyFilterAware`, both platforms).
+2. **Stamp.** A download stamps the update with the headers in force. An update id already on disk
+   is not restamped, and `fetchUpdateAsync` still reports `isNew: true` for it (iOS `AppLoader`,
+   Android `Loader.processUpdate`).
+3. **Load.** A served update counts as available when the launched update's stamp no longer matches
+   the configured headers, whatever its commit time; otherwise only when it is newer
+   (`LoaderSelectionPolicyFilterAware`).
+4. **Embedded.** Android inserts the embedded row with the baked headers (`EmbeddedUpdate.kt`) and
+   never reaps it. iOS inserts it with the headers in force at insertion
+   (`UpdatesDatabase.addUpdate`), only when nothing else is launchable or it is newer, and reaps it
+   like any other row. So on iOS it may carry a pin's stamp, a baked stamp, or be gone.
+5. **Reaper.** After launch, updates older than the launched one are deleted but for one. Android
+   keeps the newest of them; iOS keeps the last one it iterated.
+
+So writing the header override does not mean "follow that branch from the next launch". It means
+"at the next launch, refuse everything on disk that was not downloaded under exactly these headers".
+Consequences:
+
+- **A pin is only kept once an update stamped for it is on disk.** A switch waits for expo-updates
+  to be idle, writes the override, checks, downloads, and keeps the pin only if that left a stamped
+  update. Anything else puts the previous override back.
+- **The server falling back is the dangerous answer, not an error.** When xprem does not have the
+  requested branch for this binary it serves the channel's own update. That is usually the update
+  already running, under the old stamp; expo-updates reports it "downloaded" and it still cannot
+  launch. So joining asks `/branch_lists` (the whole list) for the branch first, and after the check
+  it refuses an update id it knows is on disk under another stamp.
+- **Leaving works without waiting for a newer build** (rule 3): the regular track's current update
+  launches at the next open even though it is older than the early update that was running.
+- **Leaving is refused when it would leave nothing launchable.** On iOS a store update while pinned
+  inserts the embedded row under the pin (rule 4). If the regular track has published nothing for
+  that binary yet, dropping the pin would leave nothing launchable at every cold start, with nothing
+  to repair it. So "no update on the server" only counts as leavable when the app was launched with
+  no pin.
+
+### The pieces
+
+| Piece | File |
+| --- | --- |
+| Header writes, the pin record and journal, the queue, `/branch_lists` | `src/lib/qa/qa-surf.ts` |
+| The sync decision (pure), the sync, the switch, leaving a preview | `src/lib/qa/early-updates.ts` |
+| Launch sync (renders nothing) | `src/components/qa/EarlyUpdatesLaunchSync.tsx` |
+| Row state for More, membership, the flag-off confirmation | `src/lib/qa/use-early-updates.ts` |
+| The picker's branch query and its surfing-off effect | `src/lib/qa/use-qa-branches.ts` |
+| The More section | `src/components/early-updates-section.ts` |
+| The model of the rules above, and every sequence run against it per platform | `src/lib/qa/__tests__/ota-track-sequences.test.ts` |
+
+### State
+
+Settings (MMKV, per device):
+
+- `earlyUpdates`: the **choice**. The switch writes it at once, so it responds instantly offline.
+- `otaPinnedBranch`: the **pin record**, the branch this app last pinned, null for none.
+  expo-updates cannot read the override back. `pr-beta` also means an update stamped for that pin
+  is on disk. `pr-<n>` / `pr-staging` means a tester's preview owns the header. Only `qa-surf.ts`
+  writes it.
+- `otaPinSwitchInFlight`: a journal. Set to `{ to }` just before a no-reload switch writes the
+  override and cleared when the switch finishes either way. Found at launch, it means the app was
+  killed in between with the override left on `to`.
+- `otaLeaveOwed`: the server switched Branch Surfing off and the unpin could not be completed yet.
+- `otaLeaveBlockedUpdateId`: a leave was refused on this update id (see "Leaving can be blocked").
+
+At launch, before the first sync, `adoptRunningOtaPin` makes the record match what the launch
+proved: a `pr-*` bundle names its own pin, and a journal names the pin an interrupted switch left
+behind. After an emergency launch nothing is proven and nothing is adopted.
+
+### The sync
+
+`syncEarlyUpdates` moves the pin towards the choice. It runs behind the switch and once per launch
+(`EarlyUpdatesLaunchSync`, after the first interactions, in the background), never reloads, never
+throws, and makes no request when there is nothing to do. `decideEarlyUpdatesSync`, in order:
+
+| Condition | Action |
+| --- | --- |
+| This launch was an emergency launch | **repair**: write "no override" and clear every record of a pin, at once and with no request. Only if there was any sign of a pin (a record, an interrupted switch, or the choice) is a regular update then fetched. Before flags resolve, whoever owns the pin, once per launch. For a climber who never had a pin this is a no-op: an emergency launch has many causes that have nothing to do with branches. |
+| A leave is owed to the server | leave |
+| Pin record `pr-beta`, choice off | leave |
+| Pin record `pr-beta`, flag `off` and confirmed | leave, at most once per launch |
+| Pin record `pr-beta`, otherwise | nothing |
+| Pin record `pr-<n>` / `pr-staging`, that bundle running | nothing: the pin is the tester's |
+| Pin record `pr-<n>` / `pr-staging`, another bundle running | ask `/branch_lists`. Still offered: nothing. Gone (the PR merged): join for a member, leave for everyone else |
+| No pin, choice on, flag `on` | join: ask `/branch_lists`, then switch |
+| Anything else | nothing |
+
+A leave that was refused on the update still running is skipped in every row above.
+
+**A flag `off` is only acted on when confirmed**: it came in a response received since the app
+opened (PostHog's request id differs from the cached bag's), for the account that was signed in when
+the launch started. A cached bag, a failed request re-emitting it, a sign-out, and a different
+account signing in mid-session all leave a member where they are; hiding the row needs none of this.
+
+A join that cannot finish leaves the phone exactly where it was: offline (`deferred`), or the server
+not offering the branch for this binary (`waiting`, normal right after a native release until the
+first merge publishes for the new fingerprint). A leave that cannot finish leaves the phone pinned
+with its stamped update. Both are tried again at the next launch. A join that could not start
+online therefore takes two more opens: one to switch, one to launch the early update.
+
+### What a cold start launches
+
+| Choice | Pin record | On disk | A cold start launches |
+| --- | --- | --- | --- |
+| off | none | regular updates, or none | the newest regular update, or the embedded bundle |
+| on | none (join waiting for a network, the flag, or the branch) | the same | the same: the phone is on the regular track until the join lands |
+| on | `pr-beta` | at least one update stamped `pr-beta` | the newest update stamped `pr-beta` |
+| off | `pr-beta` (leave waiting) | the same | the newest update stamped `pr-beta`, until the leave lands |
+| any | `pr-<n>` / `pr-staging` | whatever the tester's surf downloaded | not ours while the server still offers that branch |
+
+No row has a pin without an update stamped for it. What can still put a phone there:
+
+| Situation | Android | iOS |
+| --- | --- | --- |
+| Store update to a new binary while pinned | Every time. Online: splash blocks on a full download. Offline: emergency launch, then repaired. | Launches the new embedded bundle normally; it now carries the pin's stamp. |
+| App killed mid-join | Online: one blocking download, then normal. Offline: emergency launch; the sync drops the pin with no network, so the next open is the regular update. | If the embedded row has been reaped (two or more OTAs launched): the embedded bundle, normally, which is the build's ORIGINAL JS, at every open until a network arrives. Otherwise as Android. |
+| App killed mid-leave | Launches the regular update; the journal clears the stale record, so it does not flap back. | The same. |
+
+None of the launch-time behaviour can be changed from JS: the decision is made before any JS runs.
+The kill window is not "seconds": native runs checks and downloads one after another, so a switch
+that started while the launch-time download was running would sit pinned for all of it. The switch
+therefore waits for `isStartupProcedureRunning`, `isChecking` and `isDownloading` to be false before
+writing anything, and every native call it awaits has a 3-minute JS timeout after which the
+previous override is put back.
+
+A pre-existing case this change does not touch: a PR surf that answers `nothing-to-load` keeps its
+pin with nothing stamped for it.
+
+### Leaving can be blocked
+
+While the server does not have `pr-beta` for a binary, it answers a pinned phone with the regular
+track's update, and the launch-time check downloads it **under the pin's stamp**. That update can
+then never launch without the pin (rule 2), so a leave is refused on it (`blocked`), the pin stays,
+and the attempt is not repeated until a different update is running.
+
+What that state is, honestly: the phone runs the regular track's JS, launches normally, and keeps
+getting regular updates, all under a `pr-beta` stamp. The leave completes on its own once the server
+offers `pr-beta` again (so pinned launches stop pre-fetching regular updates) and the regular track
+then publishes. No safe way to force it from JS was found: dropping the pin would launch the
+embedded bundle on Android (the build's original JS) until the next regular release, and may leave
+nothing launchable on iOS. The same applies to a non-member whose PR preview branch was deleted: the
+dead pin cannot be dropped, the phone is on regular updates in effect, and the switch in More is
+offered as usual (joining needs no leave).
+
+### Coexisting with PR previews
+
+Previews and early updates share the one `xprem-branch` header, so they take turns.
+
+- Picking a PR or Staging replaces the pin. The three `surfTo*` helpers write the pin record first
+  (a surf that reloads never returns to write it) and put the previous pin back, record and headers,
+  when xprem's surf rejects or hangs. xprem restores from its own session memory on a failed surf,
+  which knows nothing of a pin made by an earlier session or by a no-reload switch.
+- The sync stands down while a tester's bundle is running, and that includes the flag going off.
+- Leaving is where a member differs. `returnToOwnTrack` (the picker's own-track row, the brief's
+  **Leave preview**, the verdict sheet) joins early updates for a member, with no reload. A member
+  is the stored choice unless the flag says off. If the switch cannot be made (offline), the preview
+  pin stays and the screen says so. When the server does not offer `pr-beta` for this binary the
+  member's track is production for now: the picker row then reads **Production**, and the exit
+  reloads onto it as it does for everyone else.
+- A tester whose PR merged without a verdict used to be stranded on a pin to a deleted branch. The
+  sync now asks the server about any recorded preview pin whose bundle is not the one running.
+- The switch is not offered while a preview or staging bundle is running or pinned. The row becomes
+  a line saying to leave the preview first, because a flip would silently drop it.
+
+### Branch Surfing switched off
+
+`/branch_lists` answers `404` with `xprem-branch-surfing: off`. `qa-surf.ts` makes that request
+itself (`fetchQaBranches`), where it used to call xprem's `listBranches`, for two reasons: xprem
+folds that answer and any other 404 into one `null`, and it clears the pin on the spot, which is
+the bare unpin the rules above forbid. `fetchQaBranches` only reads. `noteBranchSurfingOff` is
+called from the two places that ask: `QaTesterGate` (a tester's launch, as before) and the picker's
+`useQaBranches` effect. It does a proper leave, attempted even with no pin on record, since a build
+older than the record may have pinned. When the leave cannot be completed it is recorded as owed and
+the launch sync retries it, for a member and a tester's preview pin alike. The `earlyUpdates` choice
+is kept: joining asks for the branch first, so nothing re-pins while surfing stays off. A 404
+without the header changes nothing.
+
+### Other code that checks for updates (not queued yet)
+
+The changelog's "check for updates" and the crash screen's recovery ("Check for a fix") call
+`Updates.checkForUpdateAsync` / `fetchUpdateAsync` directly, exactly as before this feature. They
+are **not** in the pin-change queue (`runPinChangeExclusively`), so one of them running in the
+middle of a no-reload switch is made, and stamped, under an override the switch may be about to take
+back, and a download of theirs after a same-session switch is attributed to the launch-time pin.
+
+That is deliberate while the flag is off: with no switch in the fleet the queue would protect
+nothing, and it would let a stuck pin change stall the last-resort recovery button. **Routing both
+through the queue (with the timeout) is owed before the flag is turned on.**
+
+### Telemetry
+
+`Early Updates Toggled` `{ enabled }` fires on a deliberate flip only (`EARLY_UPDATES_TOGGLED_EVENT`
+in `src/lib/ota-telemetry.ts`). Everything the sync does is silent. Which branch a phone actually
+runs is `ota_branch`, already on every event, and `isEmergencyLaunch` on `OTA Update Status` is the
+signal to watch for the Android cost above. A `pr-beta` bundle's `environment` tag comes from the
+env the bundle was exported with, not from the branch name, so whatever publishes to `pr-beta` must
+leave `EXPO_PUBLIC_SENTRY_ENVIRONMENT` unset or members drop out of the production population.
+
+### Known gaps
+
+- `isConnectStepProductionBuild` still treats every `pr-*` branch as a preview, so a new account on
+  an early-updates phone is not enrolled in the connect-step test.
+- The stamp bookkeeping knows about the running update, an update the launch-time check downloaded,
+  and downloads made through `qa-surf.ts`. An older update left on disk under another stamp is
+  invisible to JS. It can only matter if the server reuses an update id across branches.
+- If the pin record and the native override ever disagree with no journal to explain it (a device
+  restore that brings back one and not the other), the row can say "on" for a phone on the regular
+  track. That state launches normally.
+- Whether xprem manifests carry `expo-manifest-filters` is unverified. The "check turned down by the
+  loader policy proves the running bundle needs no pin" inference assumes they do not.
 
 ## Per-PR preview branches (self-hosted)
 
@@ -1676,7 +1919,9 @@ repo-level secret for the Android fingerprint).
 
 ## Deferred
 
-- **`beta` channel**: TestFlight on `beta`, App Store on `production`, promote at GA.
+- **`beta` channel**: TestFlight on `beta`, App Store on `production`, promote at GA. Not to be
+  confused with the `pr-beta` *branch* on the `production` channel, which is the early-updates track
+  ("Early updates" above) and needs no second channel.
 - **In-app `BranchSwitcher`** (`src/components/BranchSwitcherScreen.tsx`, gated on
   `isPreviewBuild()` in `src/lib/preview-build.ts`) switches branches **device-locally** on a preview
   build — it overrides the `expo-channel-name` request header via the same `channel-switch.ts` state

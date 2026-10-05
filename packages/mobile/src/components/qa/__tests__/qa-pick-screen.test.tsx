@@ -152,20 +152,42 @@ const qa = vi.hoisted(() => ({
   surfToPr: vi.fn(),
   surfToStaging: vi.fn(),
   surfToProduction: vi.fn(),
+  // What a null list stands for: the server's own "surfing is off", or a 404
+  // from somewhere else that proves nothing.
+  noListKind: 'surfing-off' as 'surfing-off' | 'unavailable',
   staging: null as { lastUpdateAt: string } | null,
+  earlyUpdates: null as { lastUpdateAt: string } | null,
   refusedPrNumber: null as number | null,
 }));
 vi.mock('../../../lib/qa/qa-surf', () => ({
   qaSurfingAvailable: () => qa.surfingAvailable,
   listPrBranches: qa.listPrBranches,
-  listQaBranches: async (...args: unknown[]) => {
+  fetchQaBranches: async (...args: unknown[]) => {
     const branches = await qa.listPrBranches(...args);
-    return branches === null ? null : { previews: branches, staging: qa.staging };
+    return branches === null
+      ? { kind: qa.noListKind }
+      : { kind: 'listed', list: { previews: branches, staging: qa.staging, earlyUpdates: qa.earlyUpdates } };
   },
   surfToPr: qa.surfToPr,
   surfToStaging: qa.surfToStaging,
   surfToProduction: qa.surfToProduction,
   readRefusedPrNumber: () => qa.refusedPrNumber,
+}));
+
+// Membership of "Get updates early", and what leaving a preview does for a
+// member, are covered where they live (use-early-updates, early-updates,
+// ota-track-sequences). Here only what the screen does with the answer matters,
+// so `returnToOwnTrack` keeps its contract: production for everyone else, a
+// no-reload switch to early updates for a member.
+const earlyUpdates = vi.hoisted(() => ({
+  member: false,
+  joinEarlyUpdates: vi.fn(),
+  noteBranchSurfingOff: vi.fn(),
+}));
+vi.mock('../../../lib/qa/use-early-updates', () => ({ useEarlyUpdatesMember: () => earlyUpdates.member }));
+vi.mock('../../../lib/qa/early-updates', () => ({
+  returnToOwnTrack: async (member: boolean) => (member ? earlyUpdates.joinEarlyUpdates() : qa.surfToProduction()),
+  noteBranchSurfingOff: earlyUpdates.noteBranchSurfingOff,
 }));
 
 const previews = vi.hoisted(() => ({
@@ -216,6 +238,11 @@ beforeEach(() => {
   qa.surfToPr.mockReset().mockResolvedValue('reloading');
   qa.surfToStaging.mockReset().mockResolvedValue('reloading');
   qa.surfToProduction.mockReset().mockResolvedValue('reloading');
+  earlyUpdates.member = false;
+  earlyUpdates.joinEarlyUpdates.mockReset().mockResolvedValue('early-updates-next-launch');
+  earlyUpdates.noteBranchSurfingOff.mockReset().mockResolvedValue(undefined);
+  qa.noListKind = 'surfing-off';
+  qa.earlyUpdates = null;
 });
 
 describe('QaPickScreen', () => {
@@ -233,6 +260,92 @@ describe('QaPickScreen', () => {
     fireEvent.click(await screen.findByLabelText('qa.pick.productionTitle'));
     expect(qa.surfToProduction).toHaveBeenCalledOnce();
   });
+
+  it('takes an early-updates member back to early updates, not to production', async () => {
+    earlyUpdates.member = true;
+    qa.earlyUpdates = { lastUpdateAt: '2026-10-05T09:00:00.000Z' };
+    qa.listPrBranches.mockResolvedValue([]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByLabelText('qa.pick.earlyUpdatesTitle'));
+
+    // No production surf, so no reload.
+    expect(earlyUpdates.joinEarlyUpdates).toHaveBeenCalledOnce();
+    expect(qa.surfToProduction).not.toHaveBeenCalled();
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('qa.pick.earlyUpdatesNextLaunch', 'info'));
+    expect(screen.getByText('qa.pick.earlyUpdatesBody')).toBeTruthy();
+    expect(screen.queryByLabelText('qa.pick.productionTitle')).toBeNull();
+  });
+
+  it('hands the screen back to a member after the pin, so they can still pick a PR', async () => {
+    earlyUpdates.member = true;
+    qa.earlyUpdates = { lastUpdateAt: '2026-10-05T09:00:00.000Z' };
+    renderScreen();
+
+    fireEvent.click(await screen.findByLabelText('qa.pick.earlyUpdatesTitle'));
+    await waitFor(() => expect(showToast).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByLabelText('#4792 pr-4792'));
+    expect(qa.surfToPr).toHaveBeenCalledExactlyOnceWith(4792);
+  });
+
+  it('says so, and hands the screen back, when the switch to early updates cannot be made', async () => {
+    earlyUpdates.member = true;
+    qa.earlyUpdates = { lastUpdateAt: '2026-10-05T09:00:00.000Z' };
+    earlyUpdates.joinEarlyUpdates.mockRejectedValue(new Error('Could not reach the update server (502).'));
+    renderScreen();
+
+    fireEvent.click(await screen.findByLabelText('qa.pick.earlyUpdatesTitle'));
+
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('Could not reach the update server (502).', 'error'));
+    fireEvent.click(screen.getByLabelText('#4792 pr-4792'));
+    expect(qa.surfToPr).toHaveBeenCalledExactlyOnceWith(4792);
+  });
+
+  it('acts once on the server switching surfing off, outside the query', async () => {
+    qa.listPrBranches.mockResolvedValue(null);
+    renderScreen();
+
+    expect(await screen.findByText('Previews are switched off')).toBeTruthy();
+    await waitFor(() => expect(earlyUpdates.noteBranchSurfingOff).toHaveBeenCalledOnce());
+  });
+
+  it("does not unpin anything on a 404 the server didn't decide", async () => {
+    qa.listPrBranches.mockResolvedValue(null);
+    qa.noListKind = 'unavailable';
+    renderScreen();
+
+    expect(await screen.findByText('Previews are switched off')).toBeTruthy();
+    expect(earlyUpdates.noteBranchSurfingOff).not.toHaveBeenCalled();
+  });
+
+  it('does not act on surfing-off while the list is being served', async () => {
+    renderScreen();
+    expect(await screen.findByText('pr-4792')).toBeTruthy();
+    expect(earlyUpdates.noteBranchSurfingOff).not.toHaveBeenCalled();
+  });
+
+  it('keeps the row as Production for a member while the server has no early update for this build', async () => {
+    // Their track is production for now, and tapping it reloads onto it. A row
+    // called "Early updates" promising no reload would be wrong on both counts.
+    earlyUpdates.member = true;
+    renderScreen();
+
+    fireEvent.click(await screen.findByLabelText('qa.pick.productionTitle'));
+
+    expect(screen.queryByLabelText('qa.pick.earlyUpdatesTitle')).toBeNull();
+    expect(qa.surfToProduction).toHaveBeenCalledOnce();
+    expect(earlyUpdates.joinEarlyUpdates).not.toHaveBeenCalled();
+  });
+
+  it('never labels the row early updates for someone who has not joined', async () => {
+    qa.earlyUpdates = { lastUpdateAt: '2026-10-05T09:00:00.000Z' };
+    renderScreen();
+
+    expect(await screen.findByLabelText('qa.pick.productionTitle')).toBeTruthy();
+    expect(screen.queryByLabelText('qa.pick.earlyUpdatesTitle')).toBeNull();
+  });
+
   it('renders a tappable row per loadable branch even with no PR metadata', async () => {
     // The branch list is the spine: GitHub being down must not cost a tester
     // the ability to load the branch.

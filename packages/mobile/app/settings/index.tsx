@@ -14,6 +14,7 @@ import { openExternalUrl } from '../../src/lib/open-url';
 import { useConfirmSignOut } from '../../src/hooks/use-confirm-sign-out';
 import { useProfile, useMyBoards, useIsAdmin } from '../../src/lib/graphql/hooks';
 import { useQaMenu } from '../../src/lib/qa/use-qa-menu';
+import { useEarlyUpdatesRow } from '../../src/lib/qa/use-early-updates';
 import { useBoardDownloads } from '../../src/offline/use-board-downloads';
 import { isOfflineEngineEnabled } from '../../src/lib/offline-engine';
 import { useOfflineDatabase } from '../../src/db/use-offline-database';
@@ -44,6 +45,7 @@ import { getHttpClient } from '../../src/lib/graphql/client';
 import { hapticLight, hapticSelection } from '../../src/lib/haptics';
 import { getDevMetadataSection } from '../../src/components/dev-metadata-section';
 import { buildOfflineModeRow } from '../../src/components/offline-mode-row';
+import { buildEarlyUpdatesSection } from '../../src/components/early-updates-section';
 import { useBottomChromeDiagnosticsEligible } from '../../src/components/BottomChromeDebugOverlay';
 import { MoreForm } from '../../src/components/MoreForm';
 import type { MoreButtonRow, MoreFormModel, MoreRow, MoreSection } from '../../src/components/MoreForm.types';
@@ -306,6 +308,9 @@ export default function MoreScreen() {
   // tester/admin-only. `show` is the binary's ability to surf, so a build that
   // cannot load a preview still hides it.
   const { show: showQaPreviews, prNumber: qaPrNumber } = useQaMenu();
+  // "Get updates early" (docs/mobile-ota-updates.md). Open to every climber on a
+  // build that can surf, once the `early-updates` flag is on.
+  const earlyUpdates = useEarlyUpdatesRow();
 
   // Dev, testers and admins. The section can no longer come out empty: the
   // "Force server unreachable" switch below is available to everyone who passes
@@ -918,6 +923,20 @@ export default function MoreScreen() {
       },
     ],
   });
+
+  if (earlyUpdates.show) {
+    sections.push(
+      buildEarlyUpdatesSection(t, {
+        state: earlyUpdates.state,
+        environment: earlyUpdates.environment,
+        onDeferred: (enabled) =>
+          showToast(
+            t(enabled ? 'mobile.settings.earlyUpdates.joinDeferred' : 'mobile.settings.earlyUpdates.leaveDeferred'),
+            'info',
+          ),
+      }),
+    );
+  }
 
   // PR previews — the everyone-facing entry into the crowdsourced-QA flow. The
   // screen is also where "Previews are switched off" / "Nothing to test right

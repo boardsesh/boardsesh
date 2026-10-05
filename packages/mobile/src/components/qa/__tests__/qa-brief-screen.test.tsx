@@ -90,6 +90,22 @@ vi.mock('../../../lib/qa/qa-surf', () => ({
   surfToProduction: qa.surfToProduction,
 }));
 
+// Membership of "Get updates early", and what leaving a preview does for a
+// member, are covered where they live (use-early-updates, early-updates,
+// ota-track-sequences). Here only what the screen does with the answer matters,
+// so `returnToOwnTrack` keeps its contract: production for everyone else, a
+// no-reload switch to early updates for a member.
+const earlyUpdates = vi.hoisted(() => ({
+  member: false,
+  joinEarlyUpdates: vi.fn(),
+  noteBranchSurfingOff: vi.fn(),
+}));
+vi.mock('../../../lib/qa/use-early-updates', () => ({ useEarlyUpdatesMember: () => earlyUpdates.member }));
+vi.mock('../../../lib/qa/early-updates', () => ({
+  returnToOwnTrack: async (member: boolean) => (member ? earlyUpdates.joinEarlyUpdates() : qa.surfToProduction()),
+  noteBranchSurfingOff: earlyUpdates.noteBranchSurfingOff,
+}));
+
 const previews = vi.hoisted(() => ({ data: [] as unknown[], isPending: false }));
 vi.mock('../../../lib/qa/use-qa-previews', () => ({
   useQaPreviews: () => ({ data: previews.data, isPending: previews.isPending }),
@@ -129,6 +145,9 @@ beforeEach(() => {
   qa.runningPrNumber = 4792;
   qa.surfingAvailable = true;
   qa.surfToProduction.mockReset().mockResolvedValue('nothing-to-load');
+  earlyUpdates.member = false;
+  earlyUpdates.joinEarlyUpdates.mockReset().mockResolvedValue('early-updates-next-launch');
+  earlyUpdates.noteBranchSurfingOff.mockReset().mockResolvedValue(undefined);
   profileState.id = 'user-1';
   profileState.isTester = true;
 });
@@ -219,6 +238,43 @@ describe('QaBriefScreen', () => {
 
     expect(trackMock).toHaveBeenCalledWith('QA Preview Left', { prNumber: 4792 });
     await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('Back on production at the next update', 'info'));
+  });
+
+  it('puts an early-updates member back on early updates, not on production', async () => {
+    earlyUpdates.member = true;
+    render(<QaBriefScreen />);
+
+    fireEvent.click(screen.getByText('Leave preview'));
+
+    await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('qa.shared.backOnEarlyUpdates', 'info'));
+    expect(earlyUpdates.joinEarlyUpdates).toHaveBeenCalledOnce();
+    expect(qa.surfToProduction).not.toHaveBeenCalled();
+  });
+
+  it('keeps a member on the preview, and says so, when the switch cannot be made', async () => {
+    earlyUpdates.member = true;
+    earlyUpdates.joinEarlyUpdates.mockRejectedValue(new Error('offline'));
+    render(<QaBriefScreen />);
+
+    fireEvent.click(screen.getByText('Leave preview'));
+
+    await vi.waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('Could not switch off this preview — try again', 'error'),
+    );
+  });
+
+  it('leaves the button busy while the app reloads onto the other bundle', async () => {
+    // Re-arming it would offer a second surf to a screen that is being torn down.
+    qa.surfToProduction.mockResolvedValue('reloading');
+    render(<QaBriefScreen />);
+
+    fireEvent.click(screen.getByText('Leave preview'));
+    await vi.waitFor(() => expect(qa.surfToProduction).toHaveBeenCalledOnce());
+    await Promise.resolve();
+
+    fireEvent.click(screen.getByText('Leave preview'));
+    expect(qa.surfToProduction).toHaveBeenCalledOnce();
+    expect(showToast).not.toHaveBeenCalled();
   });
 
   it('blames the pin, not the verdict, when the surf back throws', async () => {

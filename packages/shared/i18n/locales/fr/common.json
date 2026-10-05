@@ -397,6 +397,18 @@
         "pickSubtitle": "Essaie une nouveauté avant sa sortie et dis-nous ce que ça donne",
         "testPlanTitle": "Plan de test #{{prNumber}}",
         "testPlanSubtitle": "Ce qu'il faut essayer sur l'aperçu en cours"
+      },
+      "earlyUpdates": {
+        "sectionTitle": "Mises à jour de l'app",
+        "title": "Recevoir les mises à jour en avance",
+        "offSubtitle": "Les nouveautés dès qu'elles sont prêtes, avant tout le monde",
+        "onSubtitle": "Tu reçois les mises à jour anticipées",
+        "waitingSubtitle": "Activé, en attente de la prochaine mise à jour anticipée",
+        "leavingSubtitle": "Désactivé. Les mises à jour normales reprennent dès que la prochaine est prête pour ce téléphone.",
+        "testingBody": "Un aperçu est épinglé sur ce téléphone. Quitte-le d'abord, puis change ce réglage.",
+        "footer": "Les mises à jour anticipées peuvent avoir quelques défauts de temps en temps. Les changements s'appliquent à la prochaine ouverture de l'app.",
+        "joinDeferred": "Serveur de mises à jour injoignable. Nouvel essai à la prochaine ouverture de l'app ; les mises à jour anticipées démarrent à l'ouverture suivante.",
+        "leaveDeferred": "Retour impossible pour l'instant. Nouvel essai à la prochaine ouverture de l'app."
       }
     },
     "sendRecovery": {
@@ -684,7 +696,8 @@
   "qa": {
     "shared": {
       "backOnProduction": "De retour en production à la prochaine mise à jour",
-      "leaveFailed": "Impossible de désactiver cet aperçu — réessaie"
+      "leaveFailed": "Impossible de désactiver cet aperçu — réessaie",
+      "backOnEarlyUpdates": "Retour aux mises à jour anticipées à la prochaine ouverture de l'app"
     },
     "pick": {
       "title": "Tester un PR",
@@ -716,7 +729,10 @@
       "noMatchBody": "Rien de publié pour cette version ne correspond à « {{query}} ».",
       "trySurfAction": "Essayer quand même la #{{prNumber}}",
       "trySurfHint": "Elle n'a peut-être pas de preview que cette version peut charger.",
-      "notServableToast": "Pas de preview de la #{{prNumber}} pour cette version — il lui faut peut-être un rebase sur main"
+      "notServableToast": "Pas de preview de la #{{prNumber}} pour cette version — il lui faut peut-être un rebase sur main",
+      "earlyUpdatesTitle": "Mises à jour anticipées",
+      "earlyUpdatesBody": "Reviens aux mises à jour anticipées. S'applique à la prochaine ouverture de l'app.",
+      "earlyUpdatesNextLaunch": "Les mises à jour anticipées reprennent à la prochaine ouverture de l'app"
     },
     "brief": {
       "screenTitle": "Quoi tester",

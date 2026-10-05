@@ -12,10 +12,11 @@ vi.mock('../../lib/graphql/hooks/use-followed-authors', () => ({
 }));
 
 // The analytics barrel reaches posthog-react-native; stub it so the module scan
-// never parses it. The two flag readers are what FeatureFlagsProvider itself
+// never parses it. The three flag readers are what FeatureFlagsProvider itself
 // imports from here.
 vi.mock('../../lib/analytics', () => ({
   readPosthogFeatureFlags: () => ({}),
+  readPosthogFeatureFlagsRequestId: () => undefined,
   subscribePosthogFeatureFlags: () => () => {},
 }));
 

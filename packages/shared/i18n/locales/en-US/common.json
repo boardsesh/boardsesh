@@ -397,6 +397,18 @@
         "pickSubtitle": "Try a change before it ships and tell us how it went",
         "testPlanTitle": "Test plan #{{prNumber}}",
         "testPlanSubtitle": "What to try on the preview you're running"
+      },
+      "earlyUpdates": {
+        "sectionTitle": "App updates",
+        "title": "Get updates early",
+        "offSubtitle": "New features as soon as they land, before everyone else",
+        "onSubtitle": "You're on early updates",
+        "waitingSubtitle": "On, waiting for the next early update",
+        "leavingSubtitle": "Switched off. Regular updates take over once the next one is ready for this phone.",
+        "testingBody": "A preview is pinned on this phone. Leave it first, then change this.",
+        "footer": "Early updates can have rough edges now and then. Changes here apply next time you open the app.",
+        "joinDeferred": "Can't reach the update server. We'll try again next time you open the app; early updates start the time after.",
+        "leaveDeferred": "Can't switch back yet. We'll try again next time you open the app."
       }
     },
     "sendRecovery": {
@@ -684,7 +696,8 @@
   "qa": {
     "shared": {
       "backOnProduction": "Back on production at the next update",
-      "leaveFailed": "Could not switch off this preview — try again"
+      "leaveFailed": "Could not switch off this preview — try again",
+      "backOnEarlyUpdates": "Back on early updates next time you open the app"
     },
     "pick": {
       "title": "Test a PR",
@@ -716,7 +729,10 @@
       "noMatchBody": "Nothing published for this build matches “{{query}}”.",
       "trySurfAction": "Try #{{prNumber}} anyway",
       "trySurfHint": "It may not have a preview this build can load.",
-      "notServableToast": "No preview of #{{prNumber}} for this build — it may need a rebase onto main"
+      "notServableToast": "No preview of #{{prNumber}} for this build — it may need a rebase onto main",
+      "earlyUpdatesTitle": "Early updates",
+      "earlyUpdatesBody": "Go back to early updates. Applies next time you open the app.",
+      "earlyUpdatesNextLaunch": "Early updates are back on next time you open the app"
     },
     "brief": {
       "screenTitle": "What to test",

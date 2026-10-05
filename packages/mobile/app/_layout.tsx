@@ -101,6 +101,7 @@ import { RestTimerRuntime } from '../src/components/queue-control/RestTimerRunti
 import { RootRestTimerPillHost } from '../src/components/queue-control/RestTimerPillHost';
 import { ConnectivityBanner } from '../src/components/connectivity/ConnectivityBanner';
 import { QaTesterGate } from '../src/components/qa/QaTesterGate';
+import { EarlyUpdatesLaunchSync } from '../src/components/qa/EarlyUpdatesLaunchSync';
 import { SendRecoveryGate } from '../src/components/offline/SendRecoveryGate';
 import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
 import { BottomChromeDebugOverlay } from '../src/components/BottomChromeDebugOverlay';
@@ -947,6 +948,12 @@ function RootLayout() {
                                                             else. A first run outranks it through the seen flag
                                                             it waits for, not through mount order. */}
                                                                     <QaTesterGate />
+                                                                    {/* Brings the OTA branch pin in line with the "Get updates
+                                                            early" choice once flags and branch surfing are ready: in
+                                                            the background, after first interactions, never a reload.
+                                                            No request when they already agree. Beside QaTesterGate
+                                                            because it reads the signed-in profile too. Null render. */}
+                                                                    <EarlyUpdatesLaunchSync />
                                                                     {/* Tells a climber the one-time #5335 recovery found sends
                                                             of theirs that never reached the server. Silent for
                                                             everyone else, which is almost everyone. It and

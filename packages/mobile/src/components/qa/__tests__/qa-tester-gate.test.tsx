@@ -7,6 +7,10 @@ const segmentsCtrl = vi.hoisted(() => ({ segments: ['(tabs)', 'climbs'] as strin
 const hasSeenOnboardingMock = vi.hoisted(() => vi.fn());
 const getInitialURLMock = vi.hoisted(() => vi.fn());
 const listPrBranchesMock = vi.hoisted(() => vi.fn());
+// What a null list stands for: the server's own "surfing is off", or a 404 from
+// somewhere else that proves nothing.
+const branchesCtrl = vi.hoisted(() => ({ noListKind: 'surfing-off' as 'surfing-off' | 'unavailable' }));
+const noteBranchSurfingOffMock = vi.hoisted(() => vi.fn());
 const readRunningPrNumberMock = vi.hoisted(() => vi.fn());
 const readRunningOtaBranchMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
@@ -47,11 +51,17 @@ vi.mock('../../../lib/ota-branch-surfing-state', () => ({
   useOtaBranchSurfingState: () => surfingCtrl,
 }));
 vi.mock('../../../lib/qa/qa-surf', () => ({
-  listPrBranches: listPrBranchesMock,
+  fetchQaBranches: async () => {
+    const branches = await listPrBranchesMock();
+    return branches === null
+      ? { kind: branchesCtrl.noListKind }
+      : { kind: 'listed', list: { previews: branches, staging: null, earlyUpdates: null } };
+  },
   readRunningPrNumber: readRunningPrNumberMock,
   readRunningOtaBranch: readRunningOtaBranchMock,
   STAGING_OTA_BRANCH: 'pr-staging',
 }));
+vi.mock('../../../lib/qa/early-updates', () => ({ noteBranchSurfingOff: noteBranchSurfingOffMock }));
 vi.mock('../../../settings', () => ({
   getSetting: (key: string) => settingsStore.values[key] ?? null,
   setSetting: setSettingMock,
@@ -84,6 +94,8 @@ beforeEach(() => {
   hasSeenOnboardingMock.mockReset().mockResolvedValue(true);
   getInitialURLMock.mockReset().mockResolvedValue(null);
   listPrBranchesMock.mockReset().mockResolvedValue(branchList(4792, 4800));
+  branchesCtrl.noListKind = 'surfing-off';
+  noteBranchSurfingOffMock.mockReset().mockResolvedValue(undefined);
   readRunningPrNumberMock.mockReset().mockReturnValue(null);
   readRunningOtaBranchMock.mockReset().mockReturnValue(null);
   settingsStore.values = { qaPromptOnLaunch: true };
@@ -130,6 +142,32 @@ describe('QaTesterGate on production', () => {
     render(<QaTesterGate />);
     await waitFor(() => expect(listPrBranchesMock).toHaveBeenCalled());
     expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it('acts on surfing being switched off, at launch, without the picker open', async () => {
+    // This is the one branch-list request a launch makes. xprem's own
+    // listBranches unpinned on this answer; the gate has to hear it now.
+    listPrBranchesMock.mockResolvedValue(null);
+    render(<QaTesterGate />);
+
+    await waitFor(() => expect(noteBranchSurfingOffMock).toHaveBeenCalledOnce());
+  });
+
+  it("does not unpin on a 404 the server didn't decide", async () => {
+    listPrBranchesMock.mockResolvedValue(null);
+    branchesCtrl.noListKind = 'unavailable';
+    render(<QaTesterGate />);
+
+    await waitFor(() => expect(listPrBranchesMock).toHaveBeenCalled());
+    await Promise.resolve();
+    expect(noteBranchSurfingOffMock).not.toHaveBeenCalled();
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it('does not unpin while the list is being served', async () => {
+    render(<QaTesterGate />);
+    await waitFor(() => expect(pushMock).toHaveBeenCalledTimes(1));
+    expect(noteBranchSurfingOffMock).not.toHaveBeenCalled();
   });
 
   it('reports an unreachable update server instead of surfacing it', async () => {

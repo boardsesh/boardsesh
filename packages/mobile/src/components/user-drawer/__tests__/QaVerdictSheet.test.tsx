@@ -164,6 +164,22 @@ vi.mock('../../../lib/qa/qa-surf', () => ({
   surfToProduction: qa.surfToProduction,
 }));
 
+// Membership of "Get updates early", and what leaving a preview does for a
+// member, are covered where they live (use-early-updates, early-updates,
+// ota-track-sequences). Here only what the screen does with the answer matters,
+// so `returnToOwnTrack` keeps its contract: production for everyone else, a
+// no-reload switch to early updates for a member.
+const earlyUpdates = vi.hoisted(() => ({
+  member: false,
+  joinEarlyUpdates: vi.fn(),
+  noteBranchSurfingOff: vi.fn(),
+}));
+vi.mock('../../../lib/qa/use-early-updates', () => ({ useEarlyUpdatesMember: () => earlyUpdates.member }));
+vi.mock('../../../lib/qa/early-updates', () => ({
+  returnToOwnTrack: async (member: boolean) => (member ? earlyUpdates.joinEarlyUpdates() : qa.surfToProduction()),
+  noteBranchSurfingOff: earlyUpdates.noteBranchSurfingOff,
+}));
+
 const previews = vi.hoisted(() => ({
   data: [{ prNumber: 4792, title: 'Ask testers to try a PR preview', risk: 3 }] as unknown[],
   mutateAsync: vi.fn(),
@@ -213,6 +229,9 @@ beforeEach(() => {
   qa.runningPrNumber = 4792;
   qa.surfingAvailable = true;
   qa.surfToProduction.mockReset().mockResolvedValue('nothing-to-load');
+  earlyUpdates.member = false;
+  earlyUpdates.joinEarlyUpdates.mockReset().mockResolvedValue('early-updates-next-launch');
+  earlyUpdates.noteBranchSurfingOff.mockReset().mockResolvedValue(undefined);
   previews.data = [{ prNumber: 4792, title: 'Ask testers to try a PR preview', risk: 3 }];
   previews.mutateAsync.mockReset().mockResolvedValue({ id: 'verdict-1' });
   previews.lastOptions = undefined;
@@ -266,6 +285,22 @@ describe('QaVerdictSheet approve path', () => {
 
     sheet.fullyDismissed?.();
     expect(qa.surfToProduction).toHaveBeenCalledTimes(1);
+  });
+
+  it('moves an early-updates member back to early updates once their verdict is in', async () => {
+    // Production would be the wrong track for them, and the launch sync stands
+    // down while the preview pin is in place.
+    earlyUpdates.member = true;
+    const { container } = renderSheet();
+    fireEvent.click(submitButton(container));
+
+    await vi.waitFor(() => expect(sheet.dismiss).toHaveBeenCalled());
+    expect(earlyUpdates.joinEarlyUpdates).not.toHaveBeenCalled();
+
+    sheet.fullyDismissed?.();
+    expect(earlyUpdates.joinEarlyUpdates).toHaveBeenCalledOnce();
+    expect(qa.surfToProduction).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('qa.shared.backOnEarlyUpdates', 'info'));
   });
 
   it('stays on the sheet when the verdict does not reach the backend', async () => {

@@ -397,6 +397,18 @@
         "pickSubtitle": "Probier eine Änderung vor dem Release und sag uns, wie sie läuft",
         "testPlanTitle": "Testplan #{{prNumber}}",
         "testPlanSubtitle": "Was du in der laufenden Vorschau ausprobieren sollst"
+      },
+      "earlyUpdates": {
+        "sectionTitle": "App-Updates",
+        "title": "Updates früher bekommen",
+        "offSubtitle": "Neue Funktionen, sobald sie fertig sind, vor allen anderen",
+        "onSubtitle": "Du bekommst frühe Updates",
+        "waitingSubtitle": "An, wartet auf das nächste frühe Update",
+        "leavingSubtitle": "Aus. Die normalen Updates übernehmen, sobald das nächste für dieses Handy bereit ist.",
+        "testingBody": "Auf diesem Handy ist eine Vorschau festgelegt. Verlass sie zuerst und ändere das dann.",
+        "footer": "Frühe Updates können ab und zu noch Ecken und Kanten haben. Änderungen greifen beim nächsten Öffnen der App.",
+        "joinDeferred": "Der Update-Server ist nicht erreichbar. Wir versuchen es beim nächsten Öffnen der App wieder; frühe Updates starten beim Öffnen danach.",
+        "leaveDeferred": "Zurückwechseln geht noch nicht. Wir versuchen es beim nächsten Öffnen der App wieder."
       }
     },
     "sendRecovery": {
@@ -684,7 +696,8 @@
   "qa": {
     "shared": {
       "backOnProduction": "Zurück auf Produktion bei der nächsten Aktualisierung",
-      "leaveFailed": "Diese Vorschau konnte nicht deaktiviert werden — versuch es noch mal"
+      "leaveFailed": "Diese Vorschau konnte nicht deaktiviert werden — versuch es noch mal",
+      "backOnEarlyUpdates": "Beim nächsten Öffnen der App bekommst du wieder frühe Updates"
     },
     "pick": {
       "title": "PR testen",
@@ -716,7 +729,10 @@
       "noMatchBody": "Nichts, was für diesen Build veröffentlicht wurde, passt zu „{{query}}“.",
       "trySurfAction": "#{{prNumber}} trotzdem laden",
       "trySurfHint": "Vielleicht gibt es keine Preview, die dieser Build laden kann.",
-      "notServableToast": "Keine Preview von #{{prNumber}} für diesen Build — sie braucht vielleicht einen Rebase auf main"
+      "notServableToast": "Keine Preview von #{{prNumber}} für diesen Build — sie braucht vielleicht einen Rebase auf main",
+      "earlyUpdatesTitle": "Frühe Updates",
+      "earlyUpdatesBody": "Zurück zu den frühen Updates. Greift beim nächsten Öffnen der App.",
+      "earlyUpdatesNextLaunch": "Frühe Updates laufen beim nächsten Öffnen der App wieder"
     },
     "brief": {
       "screenTitle": "Was du testen sollst",

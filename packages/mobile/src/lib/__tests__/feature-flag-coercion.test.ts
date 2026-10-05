@@ -4,7 +4,7 @@ const posthogClientMocks = vi.hoisted(() => ({ getPostHogClient: vi.fn() }));
 
 vi.mock('../posthog-client', () => ({ getPostHogClient: posthogClientMocks.getPostHogClient }));
 
-import { readPosthogFeatureFlags, registerRenderSuperProperties } from '../analytics';
+import { readPosthogFeatureFlags, readPosthogFeatureFlagsRequestId, registerRenderSuperProperties } from '../analytics';
 
 // readPosthogFeatureFlags is the only exported surface over
 // coerceFeatureFlagValue, so these tests exercise the coercion through it:
@@ -139,5 +139,37 @@ describe('registerRenderSuperProperties', () => {
         glowFalloffSource: 'default',
       }),
     ).not.toThrow();
+  });
+});
+
+// What tells a fresh flag response from the cached bag (useFeatureFlagsFresh).
+// The method and the field are PostHogCore's own: `getFeatureFlagDetails()` in
+// posthog-core.d.ts, `requestId` stored from each /flags response.
+describe('readPosthogFeatureFlagsRequestId', () => {
+  it('reads the request id of the response the flag bag came from', () => {
+    posthogClientMocks.getPostHogClient.mockReturnValue({
+      getFeatureFlagDetails: () => ({ flags: {}, requestId: 'response-1' }),
+    });
+    expect(readPosthogFeatureFlagsRequestId()).toBe('response-1');
+  });
+
+  it('is undefined with no flags loaded yet', () => {
+    posthogClientMocks.getPostHogClient.mockReturnValue({ getFeatureFlagDetails: () => undefined });
+    expect(readPosthogFeatureFlagsRequestId()).toBeUndefined();
+  });
+
+  it('is undefined on a client without the method, so nothing ever counts as fresh', () => {
+    // The documented fallback, and the safe direction: a member is never moved
+    // off their track on a flag answer that cannot be dated.
+    posthogClientMocks.getPostHogClient.mockReturnValue({ getFeatureFlag: () => false });
+    expect(readPosthogFeatureFlagsRequestId()).toBeUndefined();
+  });
+
+  it('is undefined for a request id that is not a string, and with analytics disabled', () => {
+    posthogClientMocks.getPostHogClient.mockReturnValue({ getFeatureFlagDetails: () => ({ requestId: 42 }) });
+    expect(readPosthogFeatureFlagsRequestId()).toBeUndefined();
+
+    posthogClientMocks.getPostHogClient.mockReturnValue(null);
+    expect(readPosthogFeatureFlagsRequestId()).toBeUndefined();
   });
 });
