@@ -169,6 +169,7 @@ describe('durable export producers and restricted workers', () => {
     await expect(restricted`SELECT id FROM aurora_credentials LIMIT 1`).rejects.toThrow('permission denied');
     await expect(restricted`SELECT public_photo_key FROM spray_walls LIMIT 1`).rejects.toThrow('permission denied');
     await expect(restricted`SELECT latitude FROM user_boards LIMIT 1`).rejects.toThrow('permission denied');
+    await expect(restricted`SELECT is_unlisted FROM user_boards LIMIT 1`).rejects.toThrow('permission denied');
     await expect(restricted`SELECT role FROM gym_members LIMIT 1`).rejects.toThrow('permission denied');
     await expect(restricted`UPDATE board_climbs SET name = name WHERE false`).rejects.toThrow('permission denied');
     await expect(restricted`DELETE FROM background_job_runs WHERE false`).rejects.toThrow('permission denied');

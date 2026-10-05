@@ -87,6 +87,10 @@ export function sprayClimbVisibilityCondition(
   wallUuid?: string | null,
 ): SQL {
   const viewer = userId ?? null;
+  // PostgreSQL checks column privileges before evaluating boolean branches.
+  // Default readers, including restricted export workers, must not reference
+  // is_unlisted unless this call actually supplies a wall capability.
+  const unlistedCapability = wallUuid == null ? sql`` : sql`OR (ub.is_unlisted AND ub.uuid = ${wallUuid}::text)`;
   return sql`(
     ${columns.boardType} IS DISTINCT FROM 'spray'
     OR EXISTS (
@@ -99,7 +103,7 @@ export function sprayClimbVisibilityCondition(
         AND (sw.hidden_at IS NULL OR (${viewer}::text IS NOT NULL AND ub.owner_id = ${viewer}::text))
         AND (
           ub.is_public
-          OR (ub.is_unlisted AND ub.uuid = ${wallUuid ?? null}::text)
+          ${unlistedCapability}
           OR (
             ${viewer}::text IS NOT NULL
             AND (
