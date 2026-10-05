@@ -20,6 +20,7 @@ import {
 } from '../../lib/graphql/extract-error-message';
 import { fetchSprayWallVersions, mySprayWallsQueryKey } from '../../lib/spray/use-create-spray-wall';
 import { sprayWallWithVersionsQueryKey } from '../../lib/spray/use-spray-wall-reset';
+import { refreshPublishedSprayClimbs } from '../../lib/spray/refresh-published-spray-climbs';
 import {
   fetchSprayWallRenderData,
   invalidateSprayWallRenderData,
@@ -143,7 +144,7 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: sprayWallWithVersionsQueryKey(prepared.wallUuid) }),
         queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey }),
-        queryClient.invalidateQueries({ queryKey: ['searchClimbs'] }),
+        refreshPublishedSprayClimbs(queryClient, prepared.layoutId),
       ]);
       if (!mountedRef.current) return;
       setFinished(true);
