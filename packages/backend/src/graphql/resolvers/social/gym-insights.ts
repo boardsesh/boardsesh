@@ -3,6 +3,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { sprayTickClimbExistsCondition } from '../shared/spray-tick-visibility';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { GymStatsInputSchema } from '../../../validation/schemas';
 import {
@@ -148,6 +149,10 @@ export const socialGymInsightsQueries = {
               { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
               null,
             ),
+            // The row also carries the climb UUID. A spray climb that was
+            // hard-deleted has no wall left to check, so its sends are not
+            // listed either. `null` viewer, so nobody is exempt.
+            sprayTickClimbExistsCondition(null),
           ),
         )
         .groupBy(

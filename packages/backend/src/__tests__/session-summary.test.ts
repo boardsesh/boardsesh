@@ -69,6 +69,8 @@ vi.mock('@boardsesh/db/queries', () => ({
   // The spray wall visibility predicate. These tests mock the query builder, so the
   // fragment is never rendered — the module just has to export it.
   sprayClimbVisibilityCondition: () => ({ __sprayVisibility: true }),
+  // …and its fail-closed half for a spray tick whose climb row is gone (#6031).
+  sprayReferenceClimbExistsCondition: () => ({ __sprayClimbExists: true }),
 }));
 
 // Mock drizzle-orm functions to prevent errors from passing mock schema objects

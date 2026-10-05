@@ -14,6 +14,7 @@ import {
   sprayReferenceClimbExistsCondition,
   sprayReferenceVisibilityCondition,
 } from '@boardsesh/db/queries';
+import { sprayTickClimbExistsCondition } from '../shared/spray-tick-visibility';
 import { toConfidenceTier, notAuroraTwinDuplicate, withSerialPlan } from '@boardsesh/db/queries';
 import { requireAuthenticated, applyRateLimit, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import { fetchOwnerBoards, toTickBoardCandidate } from '../shared/render-board';
@@ -129,6 +130,8 @@ function buildAscentClimbConditions(validated: AscentFeedFilterInput, viewerUser
       { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
       viewerUserId,
     ),
+    // …and a spray log whose climb was hard-deleted, for everybody but its author.
+    sprayTickClimbExistsCondition(viewerUserId),
     ...(validated.layoutIds && validated.layoutIds.length > 0
       ? [inArray(dbSchema.boardClimbs.layoutId, validated.layoutIds)]
       : []),
@@ -403,6 +406,10 @@ export const tickQueries = {
         { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
         viewerUserId,
       ),
+      // That last part is right for the other boards ("Unknown Climb") and wrong
+      // for spray, where a missing climb means a hard-deleted one: only the
+      // climber who logged it keeps seeing the entry.
+      sprayTickClimbExistsCondition(viewerUserId),
     ];
 
     // Fetch ticks with layoutId from unified board_climbs table. We surface

@@ -700,11 +700,51 @@ server render fetches the stats with no viewer, so the owner's first paint omits
 the log until the signed-in client fetch replaces it; the same already holds for
 their logs on a private wall.
 
-**Not covered:** the logbook readers that LEFT JOIN `board_climbs` and use the
-column form (`userTicks`, the ascents feeds, the session feed, detail and
-summary). `IS DISTINCT FROM 'spray'` is true for a missing climb, so they still
-return a spray tick whose climb was hard-deleted, as "Unknown Climb", to anyone.
-That is #6031.
+**The logbook readers** LEFT JOIN `board_climbs` and use the column form, and
+`IS DISTINCT FROM 'spray'` is true for a missing climb. That is right for the
+other boards, where such a log renders as "Unknown Climb", and wrong for spray.
+They carry `sprayTickClimbExistsCondition(viewer)`
+(`packages/backend/src/graphql/resolvers/shared/spray-tick-visibility.ts`), which
+is the reference condition above keyed on the tick, with the author exemption
+(#6031):
+
+| Reader | A log on a hard-deleted spray climb |
+| --- | --- |
+| `userTicks`, `userAscentsFeed`, `userGroupedAscentsFeed` | the climber who logged it only; rows, totals and groups |
+| `globalAscentsFeed` | the climber who logged it only |
+| `followingAscentsFeed` | nobody: the feed lists the people a viewer follows, never the viewer |
+| `sessionDetail` | the climber who logged it only; a session of nothing else answers null to everybody else |
+| the session summary's hardest send | the climber who logged it only |
+| `gymStats` top climbs | nobody (the reader has no viewer) |
+
+**The session cards** (`sessionGroupedFeed`, and the crew feed built on it)
+choose a tick first and join `board_climbs` afterwards: the session's hardest
+send, a day's highlight, the featured beta. A wall rule in that join only nulls
+the climb's columns. The tick that was chosen still carries its own uuid, climb
+uuid and comment, and a beta link its url, so for a live private wall as much as
+for a deleted climb the card handed those to anybody. The whole rule,
+`sprayTickVisibleSql(alias, viewer)`, now sits where the tick is CHOSEN:
+
+| Query in `social/session-feed.ts` | What it leaves out for a viewer who may not see the wall |
+| --- | --- |
+| `fetchHardestSendsBatch`, the `ranked` CTE | the send is not a candidate; the next hardest visible send is picked |
+| `daily_hardest` in `getSessionFeed` | the log is not the day's highlight; a day of nothing else has no card |
+| `fetchSessionFeaturedBetaRows`, `fetchDailyFeaturedBetaRows` | the beta link is not a candidate |
+| `fetchTickHighlightsByUuid` | a uuid that reached it some other way is not hydrated |
+
+Still not gated, and the same for a live private wall and a deleted climb:
+
+- the session cards' and the session summary's COUNTS (tick count, sends, grade
+  distribution, board types, participants) include every tick in the session;
+- `sessionDetail`'s participant list is built from every tick, while its rows
+  and totals are filtered;
+- `userTickCountsByBoard` returns a count per board type, spray included. Its
+  own comment calls counts non-sensitive, so that one is a product decision;
+- `comments` on a tick, `climbCommunityStatus` and `voteSummary` answer a caller
+  who already holds the uuid.
+
+The smart-playlist ref queries can still count a reference to a deleted climb in
+`totalCount`; no row is returned.
 
 Pick by what the query HAS, not by taste:
 
