@@ -186,17 +186,24 @@ October 4 UTC: 2,620 samples from 1,511 devices, p50 6.371 seconds and p90 22.23
 seconds. Report post-cutover measurements with their sample count and observation
 window; do not infer a production improvement from isolated test downloads.
 
-The later field observation contains 70 download events from 69 people and
+The fixed field window, October 4 at 08:00:49 UTC through October 5 at
+02:19:03 UTC (end excluded), contains 70 download events from 69 people and
 69 sessions, all for older Android runtime
-`154bc941c504727afc914057aed2edff2c096576` and update
+`154bc941c504727afc914057aed2edff2c096576`, predominantly update
 `e0571860-9082-d39d-c762-e6dc61310f67`. The verified historical 2.5.0 APK
 uses `https://updates.boardsesh.com/manifest`, the same app ID, and the production
 channel. Its matching current signed manifest and all 426 referenced private R2
 assets passed full verification. This supports the inference that those field
 downloads use R2, while the events themselves do not record the hostname.
-It does not establish native acceptance for the newly published Android store
-runtime. The separate status/launch observation contains 162 events from
-103 people and 161 sessions.
+The dominant update accounts for 69 downloads from 68 people and 68 sessions.
+One download belongs to historical update
+`794486bd-a3fd-4523-d4b8-781dc30281cb`, whose full delivery was not reverified
+in this field check. The final six hours contain 23 downloads from 23 people and
+23 sessions. These are unique people and sessions, not a physical-device count.
+This does not establish native acceptance for the newly published Android store
+runtime. The separate status/launch observation contains 165 events from
+105 people and 164 sessions, with zero emergency launches. These events have no
+transfer-duration metric, so they cannot supply a new p50/p90 comparison.
 
 Retain the Tigris bucket and its concealed credentials in the Boardsesh vault. New
 R2 publications require reverse copy and verification before a storage rollback;
