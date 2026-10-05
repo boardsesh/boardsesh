@@ -105,13 +105,14 @@ and leaves its DNS record to R2. The legacy Tigris CNAME is absent from
 The cache and unconditional CORS response-header rules cover both the live
 and staging domains.
 
-**Merge gate:** the live cutover has not been performed by this config change.
-Before merging or applying it, verify the full historical inventory on staging,
-freeze and drain Production Deploy, attach the live domain to the verified R2
-bucket, and rotate all five `STATIC_ASSETS_*` Production credentials together.
-Keep Production Deploy frozen until the cutover commit is on main; an older
-main converge would restore the Tigris CNAME. Follow
-[the complete runbook](./static-assets.md#moving-to-r2-in-progress).
+**Live cutover accepted October 4, 2026:** the domain is active on R2, all 426
+historical objects passed full integrity verification, all 421 current public
+catalog objects passed verification, and all five `STATIC_ASSETS_*` Production
+credentials target R2. The cutover configuration is merged; its dry run reports
+no drift. Follow [the complete runbook](./static-assets.md#cutover) and
+[the acceptance record](./r2-migration-2026-10.md#static-assets-accepted).
+Production Deploy must remain frozen until the separate OTA/native acceptance gates
+pass; it is also an OTA publisher.
 
 Retain the Tigris bucket, credentials and staging domain. If R2 has accepted new
 writes, reverse-copy and verify those hashes before routing back to Tigris.
@@ -252,8 +253,8 @@ has passed against `RAILWAY_WEB_ORIGIN`.
 
    No `settings` block. Cloudflare always flattens a **proxied** CNAME (the
    public answer is its own anycast address), so `flatten_cname` is not a field
-   we own on this record — unlike the DNS-only `assets` CNAME, where the literal
-   answer has to stay visible for Tigris to verify it. For the same reason the
+   we own on this record — unlike the historical DNS-only Tigris `assets` CNAME,
+   where the literal answer had to stay visible for Tigris to verify it. For the same reason the
    zone-wide "Flatten all CNAMEs" guard does not apply to www; a test pins that.
 
 3. Update the two places in `scripts/cloudflare-apply.test.ts` that pin today's
@@ -377,10 +378,9 @@ What it manages (and nothing else on the zone):
 - **DNS** — records with different ownership boundaries:
   - `ws` and `www`: only the proxied flag → orange cloud. Their target/type/content
     are not managed and the records must already exist.
-  - `assets`: the full DNS-only CNAME shape shown above. It is created when
-    missing and its owned fields (including disabled CNAME flattening) are
-    corrected when drifted. The tool refuses to apply while zone-wide CNAME
-    flattening would override that record.
+  - `assets`: R2 owns the live custom-domain record. It is absent from
+    `dnsRecords`; the historical Tigris DNS-only record above is restored only
+    by a separately verified rollback change.
   - the apex `boardsesh.com`: the full proxied, originless `A 192.0.2.0` shape
     shown above, so the redirect rule can answer it.
 
@@ -929,9 +929,10 @@ CLOUDFLARE_API_TOKEN=... vp run cf:apply -- --apply
 CLOUDFLARE_API_TOKEN=... vp run cf:apply -- --apply --allow-zone-ssl
 ```
 
-That one apply covers both DNS records plus the cache/WAF phases. A missing
+That one apply covers managed DNS records, R2 domains, and the cache/WAF phases. A missing
 `ws` record remains a hard error because this repo does not know its origin
-target; a missing `assets` record is an ordinary planned create.
+target. The static-assets domain is converged through the R2 custom-domain API,
+rather than by creating a Tigris CNAME.
 
 `CLOUDFLARE_ZONE_ID` is optional — when unset, the zone id is resolved by name.
 
@@ -1058,8 +1059,8 @@ that touch `infra/cloudflare/` or the apply script (and on manual dispatch),
 reading `CLOUDFLARE_API_TOKEN` from the GitHub **Production** environment
 secrets: `gh secret set CLOUDFLARE_API_TOKEN --env Production`. A failing job
 means unapplied drift — run the dry-run locally to see the plan.
-The assets DNS record is included in the same job; no dashboard DNS step is
-needed after the Tigris-side custom domain registration.
+R2 custom-domain convergence is included in the same job; the live assets domain
+does not require a separate Tigris registration or manually managed DNS record.
 
 A **blocked** zone-SSL change is the one failure a merge cannot clear: pushes
 deliberately resolve `--allow-zone-ssl` to empty, so `cf:apply` re-plans the same

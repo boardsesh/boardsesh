@@ -27,7 +27,7 @@ affected layout so a bulk gap does not remain in the first-download path.
 The homelab batch worker's `export-board-snapshots` family owns the **07:15 UTC** nightly and
 **:07, :22, :37, :52** live scans. That ownership cutover was confirmed in #5912 on September 30.
 GitHub Actions is disabled operationally and its retired schedules are removed from the repository.
-Its remaining manual trigger is a complete R2 rehearsal while the worker still publishes Tigris.
+Its remaining manual trigger supports a complete R2 rehearsal before worker rotation.
 An explicit `Production` variable, `SNAPSHOT_PUBLISHER_STORAGE_TARGET=tigris`, enables that rehearsal;
 unset or `r2` blocks it before any export. This is an operator gate, not a lock shared with the worker.
 Before rotating the worker to R2, set the variable to `r2`, disable Actions, and drain queued/in-progress
@@ -35,19 +35,23 @@ Actions runs. The old queued August 19 run (`32214742569`) remains unresolved: G
 reject it as not in progress. Keep the workflow disabled until that legacy Tigris publisher is proven
 unable to start; do not claim the queue is drained from those failed cancellation attempts.
 Exactly one publisher may own each storage target and prefix at a time.
+The permanent worker now uses R2 and the Production variable is `r2`, blocking
+further rehearsals. Backend snapshot scheduling was restored after normal
+producer acceptance; see the [live acceptance record](r2-migration-2026-10.md).
 
 **Dual-publish.** The nightly runs the export **twice**, targeting two prefixes via `--key-prefix`
 (default `board-snapshots/v1`):
 
 - `board-snapshots/v1-gzip` — `--gzip`, ~2.6× smaller (`kilter:1` 271 MB → 103 MB as of 2026-07-27).
   **This is what the fleet reads**: every mobile workflow's `EXPO_PUBLIC_SNAPSHOT_BASE_URL` points here.
-- `board-snapshots/v1` — **identity**-encoded, exactly the pre-gzip run. Nothing points at it any more; it
-  stays live as the one-revert rollback target and as the public dataset base
+- `board-snapshots/v1` — **identity**-encoded, exactly the pre-gzip run. It stays
+  live as the rollback target; public dataset consumers use `v1-gzip`
   (`docs/board-snapshots-dataset.md`).
 
 Each prefix is a self-contained, single-encoding manifest: the merge and prune logic below scope entirely
-to whichever prefix the run targets, so a gzip run never reads or prunes the identity prefix. A later
-cleanup drops the identity pass and deletes the `v1` prefix (see Rollout plan).
+to whichever prefix the run targets, so a gzip run never reads or prunes the identity prefix.
+The migration retains both passes and prefixes. Removing either requires separate
+explicit approval.
 
 **Live threshold refresh.** The 15-minute schedule targets only `board-snapshots/v1-gzip`, the prefix the
 fleet reads, with `--refresh-threshold 500`. For every discovered layout it reads the published manifest
@@ -227,11 +231,11 @@ target; the R2 rehearsal (`storage_target: r2`) stays a `workflow_dispatch` of t
   artifact back into memory; the 120 s heartbeat window covers them with a wide margin.
 
 **Environment** on the batch container is managed through blackheathdc-ansible's vault and deployment.
-The current producer still uses the legacy Tigris `AWS_S3_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`,
-`AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL`, `AWS_DEFAULT_REGION`, and
-`SNAPSHOT_PUBLIC_BASE_URL=https://boardsesh-board-snapshots.t3.tigrisfiles.io`.
-The live R2 producer rotation is a separate, uncompleted gate; repository preparation does not rotate it.
-At rotation, set the complete named-bucket configuration together:
+The permanent worker uses the complete named R2 configuration below. Its actual
+production storage client passed signed and public manifest reads; normal nightly
+and live job acceptance is tracked in `docs/r2-migration-2026-10.md`. Legacy Tigris
+`AWS_*` settings remain in the complete rollback configuration. Set these named
+configuration fields together when deploying a replacement worker:
 
 - `SNAPSHOTS_S3_BUCKET_NAME=boardsesh-board-snapshots` and `SNAPSHOTS_AWS_REGION=auto`.
 - `SNAPSHOTS_AWS_ENDPOINT_URL` to the scoped R2 account endpoint and the matching
@@ -285,8 +289,8 @@ never overlap:
    `node --import tsx packages/backend/src/workers/operator.ts enqueue export-board-snapshots '{"mode":"nightly"}'`.
    Every `[export-snapshots] uploaded` line must carry a `deletionsReplayFrom`, and the starting line
    `readsAllStats: true`. Record the run's duration on the homelab uplink (`started_at` to
-   `finished_at` on its ledger row) in the cutover PR; Actions took 10 to 14 minutes. If it fails,
-   `gh workflow enable export-board-snapshots.yml` puts the workflow back.
+   `finished_at` on its ledger row) in the cutover PR; Actions took 10 to 14 minutes.
+   That original Actions fallback is retired; use the sole-worker rollback below.
 4. As soon as that nightly succeeds, add the family to the backend's `BATCH_FAMILIES_ENABLED` and
    redeploy, so the live prefix goes no longer than one deploy without a scan.
 5. The cutover PR deletes the workflow's `schedule:`, updates
@@ -304,8 +308,12 @@ SELECT id, status FROM background_job_runs
 WHERE family = 'export-board-snapshots' AND status IN ('queued', 'running', 'retrying');
 ```
 
-returns nothing. Only then restore the workflow's Tigris `schedule:` (a revert of step 5) and
-`gh workflow enable` it.
+returns nothing. Restore the complete legacy Tigris worker configuration, including
+both public bases, and run a full operator nightly with `skipPrune: true`. Verify
+the fresh manifests, artifacts, deletion replay boundaries, grades, and catalog
+before restoring the backend family's schedules. Keep Actions and DR publishing
+disabled; do not recreate a second publisher. If reader bases have changed, follow
+the [storage rollback procedure](#moving-the-snapshot-bucket-to-r2).
 
 ### Storage layout and cache headers
 
@@ -1300,7 +1308,7 @@ pre-refresh object. It checks every current layout artifact against the same met
 set -euo pipefail
 snapshot_check_dir="$(mktemp -d)"
 snapshot_manifest="$snapshot_check_dir/manifest.json"
-manifest_url='https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-gzip/manifest.json'
+manifest_url='https://snapshots.boardsesh.com/board-snapshots/v1-gzip/manifest.json'
 manifest_cache_tag="$(date +%s)"
 latest_schema_version="$(vp node --import tsx -e \
   "import('./packages/shared/offline-sync/src/db/migrations.ts').then(({ LATEST_SCHEMA_VERSION }) => console.log(LATEST_SCHEMA_VERSION))")"
@@ -1377,7 +1385,7 @@ watermark; only a verified live gzip replay boundary carries the stronger long-t
 The manual R2 rehearsal uses GitHub `Production` secrets `DATABASE_URL`,
 `SNAPSHOTS_R2_AWS_ENDPOINT_URL`, `SNAPSHOTS_R2_AWS_ACCESS_KEY_ID`, and
 `SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY`, with the required producer-target variable described below.
-Legacy Tigris `AWS_*` credentials belong to the current homelab producer and its rollback configuration;
+Legacy Tigris `AWS_*` credentials belong to the homelab producer's rollback configuration;
 Actions no longer consumes them. `SYNC_STABILITY_WINDOW_SECONDS` remains an optional variable
 passthrough and must match the backend's configured stability window.
 
@@ -1390,17 +1398,21 @@ unauthenticated. Tigris serves public objects **only** on the bucket's virtual-h
 (`https://<bucket>.t3.tigrisfiles.io/<key>`); the S3 endpoint's path-style form that `getPublicUrl`
 builds (`https://t3.storage.dev/<bucket>/<key>`) returns 403 for anonymous GETs even on a public
 bucket. The exporter therefore uses `SNAPSHOT_PUBLIC_BASE_URL` (not a secret) to embed public URLs.
-The active Tigris producer stays aligned with the shipped mobile bases. The isolated R2 rehearsal
-sets both singular `SNAPSHOT_PUBLIC_BASE_URL` and plural `SNAPSHOTS_PUBLIC_BASE_URL` to
-`https://snapshots.boardsesh.com`, while shipped readers intentionally stay Tigris until the reader gate.
+The permanent R2 producer sets both singular `SNAPSHOT_PUBLIC_BASE_URL` and plural
+`SNAPSHOTS_PUBLIC_BASE_URL` to `https://snapshots.boardsesh.com`. Existing shipped
+readers retain their baked Tigris base until the verified reader OTA is installed.
 After cutover, the mobile value is `${SNAPSHOT_PUBLIC_BASE_URL}/board-snapshots/v1-gzip`.
 
 ### Moving the snapshot bucket to R2
 
-**Preparation is implemented; live producer and reader cutover remain uncompleted.** The migration is a
-full re-export from the primary, not an object copy. The homelab worker and every shipped app still use
-Tigris. Keep mobile workflow bases and both developer-database defaults there until a complete R2 export
-passes the gate below. No object or bucket deletion belongs in the migration.
+**The R2 rehearsal, permanent worker rotation, and normal producer are verified.** The migration is a full re-export
+from the primary, not an object copy. The worker uses R2; existing shipped apps keep
+their baked Tigris base until they install the verified reader OTA. All 68 rehearsal
+and normal nightly artifacts passed the gate below. Nightly/live evidence and reader rollout
+are recorded in [the migration acceptance record](r2-migration-2026-10.md).
+No object or bucket deletion belongs in the migration. The following procedure
+documents the ordered migration gates; do not reopen a rehearsal against an active
+R2 producer.
 
 1. Run `vp run cf:apply -- --apply` twice to create/converge the R2 bucket, `snapshots.boardsesh.com`,
    CORS, and cache/header rules. Add bucket-scoped `SNAPSHOTS_R2_AWS_ENDPOINT_URL`,
@@ -1428,7 +1440,8 @@ passes the gate below. No object or bucket deletion belongs in the migration.
    `https://snapshots.boardsesh.com/board-snapshots/v1-gzip`, both dev-database defaults to
    `https://snapshots.boardsesh.com`, and public dataset/runbook URLs. Publish the mobile OTA only after
    producer verification. Prove fresh iOS/Android board downloads use snapshots, and browser/dev-database
-   consumers work. Retain Tigris read access for at least 30 days and compare 404/download-failure telemetry.
+   consumers work. Retain Tigris read access for at least 30 days after actual production reader
+   publication and compare 404/download-failure telemetry.
    Removing its data remains a separate, explicitly approved operation.
 
 The verifier is read-only against storage and Postgres (it uses no database connection); its only writes
@@ -1496,8 +1509,8 @@ build with no incremental state, so re-running it is always safe and always suff
 partial-catalogue mode to get stuck in — the export either publishes a complete artifact or leaves
 the last one in place.
 
-If it fails repeatedly, the likely causes are the ones the per-layout passes share (Production
-secrets, the Tigris endpoint) rather than anything catalogue-specific — it reads ~816k rows from
+If it fails repeatedly, the likely causes are the ones the per-layout passes share (named storage
+credentials or the account endpoint) rather than anything catalogue-specific — it reads ~816k rows from
 fourteen tables in one REPEATABLE READ transaction and writes a single ~12 MB object.
 
 ### Format-version bump procedure
@@ -1604,7 +1617,7 @@ can ever see it.
   "generatedAt": "2026-08-26T07:16:04.221Z",
   "artifact": {
     "key": "board-snapshots/v1-catalog/2026-08-26T07-15-58-102Z.db",
-    "url": "https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-catalog/...",
+    "url": "https://snapshots.boardsesh.com/board-snapshots/v1-catalog/...",
     "bytes": 12685503,
     "uncompressedBytes": 63229952,
     "contentEncoding": "gzip",
@@ -1620,7 +1633,7 @@ sees a key that is not on S3 yet.
 
 ## Rollout plan
 
-1. **Build configuration**: confirm `EXPO_PUBLIC_SNAPSHOT_BASE_URL` is set to the real Tigris bucket URL
+1. **Build configuration**: confirm `EXPO_PUBLIC_SNAPSHOT_BASE_URL` is set to the R2 gzip directory URL
    in every native build. With the env var missing, the app intentionally uses the paged crawl (see Mobile
    wiring above).
 2. **Two pre-release manual verifications**:
@@ -1647,16 +1660,17 @@ fleet was never regressed while transparent decode was unverified:
    `SnapshotPermanentMissError`. iOS 26.5.2: via the `pr-3816` gzip OTA preview — fresh downloads took the
    snapshot path and Sentry reported no `kind: 'snapshot-bootstrap'` "arrived still gzip-compressed".
 3. **Cutover — shipped.** `EXPO_PUBLIC_SNAPSHOT_BASE_URL` points at `.../board-snapshots/v1-gzip` in **all
-   six** mobile fingerprint workflows — `mobile-ota-production.yml`, `ios-testflight-rn.yml`,
-   `android-apk-rn.yml`, `mobile-ota-check.yml`, `mobile-ota-preview.yml`, `mobile-ota-backport.yml`. They
+   seven** mobile fingerprint workflows — `mobile-ota-production.yml`, `ios-testflight-rn.yml`,
+   `android-apk-rn.yml`, `mobile-ota-check.yml`, `mobile-ota-preview.yml`, `mobile-ota-backport.yml`,
+   `mobile-store-draft.yml`. They
    must move together: `scripts/mobile-ci-env-parity.test.ts` requires the var byte-identical across them
    (a single-workflow change fails CI, and the `pr-<number>` preview branch bakes the same env as
    production, so there is no "preview-only" pointer). It's a bundle-only var, so the cutover rode the
    production OTA rather than a native release; any straggler where decode fails degrades to the paged
    crawl, never a crash.
-4. **Cleanup (not done yet).** Once the fleet has migrated, drop the identity pass from the export workflow
-   and delete the `board-snapshots/v1` artifacts + manifest. `docs/board-snapshots-dataset.md` publishes
-   `v1` URLs to outside users, so that doc has to be repointed at `v1-gzip` in the same change.
+4. **Retention.** Keep the identity pass and `board-snapshots/v1` artifacts and
+   manifest available for rollback. Public dataset consumers use `v1-gzip`.
+   Removing the identity prefix or legacy Tigris data requires separate explicit approval.
 
-**Rollback**: point the six workflows back at `v1` (identity is still published nightly) — a one-commit
+**Rollback**: point the seven workflows back at `v1` (identity is still published nightly) — a one-commit
 revert, no export change needed.
