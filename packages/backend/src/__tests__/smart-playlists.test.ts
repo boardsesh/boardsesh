@@ -300,6 +300,13 @@ describe('smartPlaylist resolver', () => {
       expect(rendered).toMatch(/sent\.board_type\s*=\s*boardsesh_ticks\.board_type/i);
       expect(rendered).toMatch(/sent\.climb_uuid\s*=\s*boardsesh_ticks\.climb_uuid/i);
       expect(rendered).toMatch(/sent\.status\s+IN\s*\(\s*'flash'\s*,\s*'send'\s*\)/i);
+      // Only a send on the climb's current holds counts as sent (#6023).
+      expect(rendered).toMatch(/COALESCE\(\s*sent\.climb_revision\s*, 1\) >=/);
+    }
+    // The epoch comes from the climb row each tick is joined to, once per query.
+    for (const calls of [pageCalls, countCalls]) {
+      expect(calls.leftJoin).toHaveLength(1);
+      expect(calls.leftJoin[0][0]).toBe(dbSchema.boardClimbs);
     }
 
     // Sanity: notInArray is no longer used anywhere (we replaced it with NOT EXISTS).

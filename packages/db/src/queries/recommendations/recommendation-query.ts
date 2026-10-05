@@ -1,4 +1,5 @@
 import { sql, type SQL } from 'drizzle-orm';
+import { tickAliasOnCurrentHoldsSql } from '../climb-stats/holds-epoch';
 import type { RecommendationQueryParams, RecommendationType } from './types';
 
 /** Postgres int[] literal, safe for empty arrays (`&&` against `{}` is false). */
@@ -119,7 +120,11 @@ function catalogConditions(params: RecommendationQueryParams): SQL[] {
   return conditions;
 }
 
-/** "Find NEW climbs": the user has not sent this climb at the target angle. */
+/**
+ * "Find NEW climbs": the user has not sent this climb at the target angle. A
+ * send from before the climb's holds last moved is not a send of this climb
+ * (#6023, holds-epoch.ts), so the climb is new to them again.
+ */
 function notSentByCondition(userId: string, angle: number): SQL {
   return sql`NOT EXISTS (
       SELECT 1 FROM boardsesh_ticks t
@@ -128,6 +133,7 @@ function notSentByCondition(userId: string, angle: number): SQL {
         AND t.climb_uuid = bc.uuid
         AND t.angle = ${angle}
         AND t.status IN ('flash', 'send')
+        AND ${tickAliasOnCurrentHoldsSql('t', sql`bc.holds_revision_number`)}
     )`;
 }
 
@@ -272,6 +278,10 @@ export function buildRecommendationCountSql(params: RecommendationQueryParams): 
  *
  * FRESH has no stats bounds, so it skips the stats join entirely: a LEFT JOIN on
  * the stats primary key reads no column and cannot change the count.
+ *
+ * "Sent" is the same set `notSentByCondition` excludes, or the subtraction is
+ * wrong: only sends on the climb's current holds. The inner join that reads the
+ * epoch is on the `board_climbs` primary key, one probe per sent tick.
  */
 export function buildRecommendationSentOverlapSql(params: RecommendationQueryParams, userId: string): SQL {
   const { angle, boardType } = params.target;
@@ -282,10 +292,13 @@ export function buildRecommendationSentOverlapSql(params: RecommendationQueryPar
     SELECT COUNT(*)::int AS count
     FROM (
       SELECT DISTINCT t.climb_uuid FROM boardsesh_ticks t
+      JOIN board_climbs sent_climb
+        ON sent_climb.board_type = t.board_type AND sent_climb.uuid = t.climb_uuid
       WHERE t.user_id = ${userId}
         AND t.board_type = ${boardType}
         AND t.angle = ${angle}
         AND t.status IN ('flash', 'send')
+        AND ${tickAliasOnCurrentHoldsSql('t', sql`sent_climb.holds_revision_number`)}
     ) sent
     JOIN board_climbs bc ON bc.uuid = sent.climb_uuid
     ${

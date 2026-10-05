@@ -2206,10 +2206,87 @@ Not built yet:
 
 - The app does not send `climbRevision`, and its queries do not select the new
   fields. Until it does, every tick gets the fallback.
-- Climb stats do not read `holds_revision_number`. Ascent counts, grades and
-  stars still include ticks from before the holds moved.
+- The app's own "sent" marks do not read the holds epoch yet. Search on the
+  device and the sent glyph on a list row are worked out from local ticks, so
+  a climb still shows as sent there after its holds move.
 - `ClimbInput.revisionNumber` is accepted on a queue climb and stored, but no
   client writes it and the queue subscriptions do not return it.
+
+### What a moved hold resets
+
+A climb's sends, stars and first ascent belong to its holds. When an edit moves
+a hold they start over, on every board. The rule is one comparison, written once
+in `packages/db/src/queries/climb-stats/holds-epoch.ts`: a tick counts when
+
+```sql
+COALESCE(tick.climb_revision, 1) >= board_climbs.holds_revision_number
+```
+
+A tick with no revision counts as revision 1. That is exact: such a tick is an
+import or older than the column, and no climb had a revision before the column
+existed. A tick whose climb has no `board_climbs` row is compared with 1 too.
+
+| An edit that changes | Sends, stars, first ascent, sent marks |
+| --- | --- |
+| The holds, or the number of frames | Start over |
+| Name, notes, grade, angle, rules, pace | Unchanged |
+
+On a climb whose holds never moved the epoch is 1 and every tick counts, so
+catalogue boards behave as they always did. A catalogue climb can only be edited
+by its setter in the first 24 hours.
+
+What reads the rule:
+
+| Surface | After a hold moves |
+| --- | --- |
+| `board_climb_stats.ascensionist_count` and the Boardsesh count behind it | Zero until someone sends the new holds |
+| `fa_username`, `fa_at` on a Boardsesh-owned climb | Empty until someone sends the new holds. Then that climber. |
+| `quality_average` and the Boardsesh star votes | Only ratings from sends of the new holds |
+| Search filters: hide or show sent, hide or show attempted, rated by me, my minimum rating | Read only ticks on the new holds |
+| Recommendations ("find new climbs") | The climb is offered again |
+| The Projects smart playlist and its card count | A project is a climb tried on its current holds and not sent on them. A send of the old holds does not make it a project, and neither does an old attempt. |
+| `boardClimbRecentSenders` (the wall's recent senders for a climb) | Only senders of the new holds |
+
+What does not:
+
+- **The grade.** On a spray wall the grade is the setter's and no tick changes
+  it. On other boards a Boardsesh-owned climb's grade is the average of every
+  graded send, old holds included. Filtering it would leave the climb ungraded
+  after an edit until someone logged a graded send, and an ungraded climb drops
+  out of grade-filtered search.
+- **Anything that counts what a climber has done.** Profile totals and
+  percentiles, leaderboards, gym insights, a board's send totals, session
+  summaries, the Five stars and Most repeated playlists, feeds, and logbook
+  lists. A send of an older version is still a send by that climber. The lists
+  that show a tick (`climbLogs`, `followingClimbAscents`, the ascent feeds)
+  return `climbRevision` and `climbCurrentRevision` so a client can label it.
+- **The climber's personal grade** on a search row, which is their latest
+  graded tick on any version.
+
+`updateClimb` does the reset. When `recordClimbRevision` reports that the holds
+epoch moved, it recomputes `board_climb_stats` for every angle of the climb that
+has a flash or a send, in the same transaction
+(`recomputeStatsAfterHoldsChange`, `climbs/holds-change-stats.ts`). The new
+holds and the zeroed numbers commit together. An angle nobody has sent is left
+alone: there is nothing to reset, and a recompute there would write an empty
+tick average over a grade a setter seeded. After the commit the same keys go
+through the debounced recompute, which publishes `climbStatsUpdated`.
+
+The old ticks are not changed or deleted. They stay in every logbook with the
+revision they were logged on.
+
+Three things to know:
+
+- A send that is being saved at the instant the edit commits can have its
+  recompute read the old epoch and write the old count back. The debounced
+  recompute two seconds later corrects it. Both are in-process timers, so a
+  deploy in that window leaves the old numbers until the next tick on the
+  climb. The hourly self-heal does not catch it: it looks for a tick newer than
+  its stats row, and here the stats row is the newer one.
+- `board_climb_popularity` needs nothing. Its incremental refresh re-reads
+  climbs whose stats row has a new `updated_at`, and the reset writes the row.
+- Cached anonymous search pages keep the old ascent count for up to 24 hours,
+  the same as after any send. Spray searches are never cached.
 
 ### In the app
 

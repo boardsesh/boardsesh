@@ -18,7 +18,7 @@ import type { BoardName } from '@boardsesh/board-constants';
 import { fingerprintFromHolds } from '@boardsesh/kilter-sync/sync';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { recomputeMissingHoldCountForClimb } from '@boardsesh/db/queries';
+import { recomputeMissingHoldCountForClimb, type ClimbStatsKey } from '@boardsesh/db/queries';
 import { UNIFIED_TABLES, isValidBoardName } from '../../../db/queries/util/table-select';
 import { publishSocialEvent } from '../../../events';
 import { notifyClimbRevalidated } from '../../../lib/web-revalidate';
@@ -34,6 +34,7 @@ import {
   type ClimbRevisionNumbers,
 } from './climb-revisions';
 import { deleteClimbDependentRows } from './climb-cleanup';
+import { queueHoldsChangeStatsRefresh, recomputeStatsAfterHoldsChange } from './holds-change-stats';
 import {
   SPRAY_CLIMB_CODES,
   assertSprayAngleMatchesWall,
@@ -1071,6 +1072,10 @@ export const climbMutations = {
       !nextIsDraft && (transitioningToPublished || framesChanged || rulesChanged) && nextFramesCount === 1;
     const gateSignature = shouldGate ? buildHoldSignature(nextHoldEntries) : '';
 
+    // The stats keys a holds change recomputed inside the transaction, kept for
+    // the post-commit refresh.
+    let holdsChangeStatsKeys: ClimbStatsKey[] = [];
+
     const outcome = await db.transaction(async (tx): Promise<UpdateClimbOutcome> => {
       if (shouldGate) {
         await acquireDuplicateGateLock(tx, boardType, existing.layoutId, gateSignature, {
@@ -1326,13 +1331,22 @@ export const climbMutations = {
 
       // Last, so it reads the row and the stats row this edit just wrote. The
       // editor is the CALLER, who on a spray wall may not be the setter.
-      return recordClimbRevision(tx, {
+      const revisionNumbers = await recordClimbRevision(tx, {
         boardType,
         climbUuid: validated.uuid,
         before: beforeEdit,
         editorId: ctx.userId!,
         sprayTarget,
       });
+      // A moved hold starts the climb's sends, first ascent and stars over
+      // (#6023). The epoch only ever moves to a new, higher revision, so a
+      // different number than the locked row held means this edit moved it. In
+      // this transaction, so the new epoch and the stats that read it commit
+      // together.
+      if (revisionNumbers.holdsRevisionNumber !== beforeEdit.holdsRevisionNumber) {
+        holdsChangeStatsKeys = await recomputeStatsAfterHoldsChange(tx, boardType, validated.uuid);
+      }
+      return revisionNumbers;
     });
 
     // A replayed publish: the first one did the work, announced the climb and
@@ -1351,6 +1365,8 @@ export const climbMutations = {
     // Tell the web app to drop the cached climb-view render so the edit
     // shows up immediately instead of waiting for the 1h TTL.
     void notifyClimbRevalidated(validated.uuid);
+
+    queueHoldsChangeStatsRefresh(holdsChangeStatsKeys);
 
     // On a draft → published transition, announce the new climb so follower
     // feeds pick it up, the same way saveClimb does.

@@ -15,6 +15,7 @@ import {
   boardBetaLinks,
 } from '../../schema/index';
 import { hasNameQuery, type BoardRouteParams, type ClimbSearchParams } from './types';
+import { tickAliasOnCurrentHoldsSql, tickOnCurrentHoldsSql } from '../climb-stats/holds-epoch';
 import { followedAuthorCondition } from './followed-authors';
 import { climbHoldPlacementMatchSql } from './placement-match';
 import {
@@ -991,6 +992,14 @@ export const createClimbFilters = (
               )}]::int[]`,
         ];
 
+  // Every personal check below reads only ticks logged on the holds the climb
+  // has now (#6023, holds-epoch.ts): a send, an attempt or a rating from before
+  // a hold moved belongs to a different climb. The epoch is a column of the
+  // board_climbs row each subquery is already correlated to, so this adds a
+  // compare and no lookup. Epoch 1 (a climb whose holds never moved) passes
+  // every tick.
+  const tickOnCurrentHolds = tickOnCurrentHoldsSql(boardseshTicks.climbRevision, boardClimbs.holdsRevisionNumber);
+
   // Personal progress filter conditions
   const personalProgressConditions: SQL[] = [];
   if (userId) {
@@ -1004,6 +1013,7 @@ export const createClimbFilters = (
           AND ${boardseshTicks.boardType} = ${params.board_name}
           AND ${boardseshTicks.angle} = ${params.angle}
           AND ${boardseshTicks.status} = 'attempt'
+          AND ${tickOnCurrentHolds}
         )`,
       );
     }
@@ -1017,6 +1027,7 @@ export const createClimbFilters = (
           AND ${boardseshTicks.boardType} = ${params.board_name}
           AND ${boardseshTicks.angle} = ${params.angle}
           AND ${boardseshTicks.status} IN ('flash', 'send')
+          AND ${tickOnCurrentHolds}
         )`,
       );
     }
@@ -1031,6 +1042,7 @@ export const createClimbFilters = (
           AND ${boardseshTicks.boardType} = ${params.board_name}
           AND ${boardseshTicks.angle} = ${params.angle}
           AND ${boardseshTicks.status} = 'attempt'
+          AND ${tickOnCurrentHolds}
         )`,
       );
     }
@@ -1044,6 +1056,7 @@ export const createClimbFilters = (
           AND ${boardseshTicks.boardType} = ${params.board_name}
           AND ${boardseshTicks.angle} = ${params.angle}
           AND ${boardseshTicks.status} IN ('flash', 'send')
+          AND ${tickOnCurrentHolds}
         )`,
       );
     }
@@ -1068,6 +1081,7 @@ export const createClimbFilters = (
           AND ${boardseshTicks.boardType} = ${params.board_name}
           AND ${boardseshTicks.angle} = ${params.angle}
           AND ${boardseshTicks.quality} IS NOT NULL
+          AND ${tickOnCurrentHolds}
         )`,
       );
     }
@@ -1088,6 +1102,7 @@ export const createClimbFilters = (
           AND rating_below.angle = ${params.angle}
           AND rating_below.quality IS NOT NULL
           AND rating_below.quality < ${searchParams.minUserRating}
+          AND ${tickAliasOnCurrentHoldsSql('rating_below', boardClimbs.holdsRevisionNumber)}
           AND NOT EXISTS (
             SELECT 1 FROM ${boardseshTicks} AS rating_newer
             WHERE rating_newer.climb_uuid = rating_below.climb_uuid
@@ -1095,6 +1110,7 @@ export const createClimbFilters = (
             AND rating_newer.board_type = rating_below.board_type
             AND rating_newer.angle = rating_below.angle
             AND rating_newer.quality IS NOT NULL
+            AND ${tickAliasOnCurrentHoldsSql('rating_newer', boardClimbs.holdsRevisionNumber)}
             AND (rating_newer.climbed_at, rating_newer.id) > (rating_below.climbed_at, rating_below.id)
           )
         )`,
@@ -1113,6 +1129,7 @@ export const createClimbFilters = (
         AND ${boardseshTicks.boardType} = ${params.board_name}
         AND ${boardseshTicks.angle} = ${params.angle}
         AND ${boardseshTicks.status} IN ('flash', 'send')
+        AND ${tickOnCurrentHolds}
       )`,
       userAttempts: sql<number>`(
         SELECT COUNT(*)
@@ -1122,6 +1139,7 @@ export const createClimbFilters = (
         AND ${boardseshTicks.boardType} = ${params.board_name}
         AND ${boardseshTicks.angle} = ${params.angle}
         AND ${boardseshTicks.status} = 'attempt'
+        AND ${tickOnCurrentHolds}
       )`,
     };
   };

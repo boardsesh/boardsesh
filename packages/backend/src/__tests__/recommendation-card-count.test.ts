@@ -204,6 +204,17 @@ describe('recommendation count SQL', () => {
     expect(crowd).not.toContain('LEFT JOIN board_climb_stats');
   });
 
+  it('reads only sends on the climb’s current holds, in the exclusion and in the overlap (#6023)', () => {
+    // The two halves must agree or `catalog count - overlap` is not the excluded count.
+    const excluded = render(buildRecommendationCountSql(paramsFor('RECOMMENDED_FRESH')));
+    expect(excluded).toContain('COALESCE(t.climb_revision, 1) >= bc.holds_revision_number');
+    const overlap = render(buildRecommendationSentOverlapSql(paramsFor('RECOMMENDED_FRESH'), 'user-1'));
+    expect(overlap).toContain('COALESCE(t.climb_revision, 1) >= sent_climb.holds_revision_number');
+    expect(overlap).toMatch(
+      /JOIN board_climbs sent_climb\s+ON sent_climb\.board_type = t\.board_type AND sent_climb\.uuid = t\.climb_uuid/,
+    );
+  });
+
   it('leaves the ranked page query unchanged in shape', () => {
     const rendered = render(buildRecommendationRefsSql(paramsFor('RECOMMENDED_CROWD_FAVORITES'), 0, 20));
     expect(rendered).toContain('COALESCE(s.quality_average, 0) >=');

@@ -640,6 +640,32 @@ void describe('createClimbFilters: personal progress filters are scoped to the c
     assert.match(sql, /'attempt'/);
   });
 
+  void it('reads only ticks on the climb’s current holds in every personal check (#6023)', () => {
+    // One compare against the board_climbs row the subquery is already
+    // correlated to. No lookup in board_climb_revisions.
+    const onCurrentHolds = /COALESCE\(climb_revision, 1\) >= holds_revision_number/;
+    for (const filter of [
+      'hideCompleted',
+      'hideAttempted',
+      'showOnlyCompleted',
+      'showOnlyAttempted',
+      'onlyRatedByMe',
+    ]) {
+      const rendered = progressSql({ [filter]: true });
+      assert.match(rendered, onCurrentHolds, filter);
+      assert.doesNotMatch(rendered, /board_climb_revisions/, filter);
+    }
+    // The latest-rating anti-join filters both the offending rating and the
+    // newer one that would supersede it.
+    const minRating = progressSql({ minUserRating: 3 });
+    assert.match(minRating, /COALESCE\(rating_below\.climb_revision, 1\) >= holds_revision_number/);
+    assert.match(minRating, /COALESCE\(rating_newer\.climb_revision, 1\) >= holds_revision_number/);
+
+    const selects = createClimbFilters(angleParams, baseSearch, userId).getUserLogbookSelects();
+    assert.match(sqlToString(selects.userAscents), onCurrentHolds);
+    assert.match(sqlToString(selects.userAttempts), onCurrentHolds);
+  });
+
   void it('skips personal progress conditions entirely when no userId is supplied', () => {
     const f = createClimbFilters(angleParams, { hideCompleted: true });
     assert.equal(f.personalProgressConditions.length, 0);

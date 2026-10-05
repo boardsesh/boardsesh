@@ -1,8 +1,11 @@
 import { eq, and, desc, sql, inArray, max, type SQL } from 'drizzle-orm';
 import { type ConnectionContext, type Climb } from '@boardsesh/shared-schema';
 import {
+  holdsEpochOrFirstSql,
   isRecommendationType,
   RECOMMENDATION_TYPES,
+  tickAliasOnCurrentHoldsSql,
+  tickOnCurrentHoldsSql,
   withSerialPlan,
   type RecommendationType,
 } from '@boardsesh/db/queries';
@@ -81,6 +84,10 @@ function smartBaseConditions(
  * not via Drizzle column interpolation, so the predicate doesn't accidentally
  * resolve both sides to the inner alias if Drizzle ever rewrites the outer
  * `from(boardseshTicks)` to use an alias.
+ *
+ * Only a send on the climb's current holds counts as sent (#6023): the inner
+ * tick is compared with {@link projectClimbHoldsEpoch}, a column of the
+ * `board_climbs` row the outer query joined, so the test adds no lookup.
  */
 function notSentExists(userId: string): SQL {
   return sql`NOT EXISTS (
@@ -90,7 +97,29 @@ function notSentExists(userId: string): SQL {
       AND sent.board_type = boardsesh_ticks.board_type
       AND sent.climb_uuid = boardsesh_ticks.climb_uuid
       AND sent.status IN ('flash', 'send')
+      AND ${tickAliasOnCurrentHoldsSql('sent', projectClimbHoldsEpoch)}
   )`;
+}
+
+/**
+ * The PROJECTS queries LEFT JOIN each tick to its climb on the `board_climbs`
+ * primary key, to read the climb's holds epoch. LEFT, because a tick can name a
+ * climb that has no row, and that tick stays in the playlist's count as before.
+ */
+const projectClimbJoin = and(
+  eq(dbSchema.boardClimbs.boardType, dbSchema.boardseshTicks.boardType),
+  eq(dbSchema.boardClimbs.uuid, dbSchema.boardseshTicks.climbUuid),
+);
+const projectClimbHoldsEpoch = holdsEpochOrFirstSql(dbSchema.boardClimbs.holdsRevisionNumber);
+
+/**
+ * A project is a climb the user has logged on its current holds and not sent on
+ * them (#6023). Both halves read the epoch: without the first, moving a hold
+ * would turn every climb the user had already sent into a project they never
+ * tried.
+ */
+function projectConditions(userId: string): SQL[] {
+  return [tickOnCurrentHoldsSql(dbSchema.boardseshTicks.climbRevision, projectClimbHoldsEpoch), notSentExists(userId)];
 }
 
 /**
@@ -180,7 +209,8 @@ async function selectSmartClimbRefs(
       total: sql<number>`SUM(${dbSchema.boardseshTicks.attemptCount})::int`,
     })
     .from(dbSchema.boardseshTicks)
-    .where(and(...conditions, notSentExists(userId)))
+    .leftJoin(dbSchema.boardClimbs, projectClimbJoin)
+    .where(and(...conditions, ...projectConditions(userId)))
     .groupBy(dbSchema.boardseshTicks.climbUuid, dbSchema.boardseshTicks.boardType)
     .orderBy(desc(sql`SUM(${dbSchema.boardseshTicks.attemptCount})`))
     .limit(pageSize)
@@ -251,7 +281,8 @@ async function countSmartClimbRefs(
       count: sql<number>`COUNT(DISTINCT (${dbSchema.boardseshTicks.boardType}, ${dbSchema.boardseshTicks.climbUuid}))::int`,
     })
     .from(dbSchema.boardseshTicks)
-    .where(and(...conditions, notSentExists(userId)));
+    .leftJoin(dbSchema.boardClimbs, projectClimbJoin)
+    .where(and(...conditions, ...projectConditions(userId)));
   return row?.count ?? 0;
 }
 
@@ -435,14 +466,21 @@ export const mySmartPlaylistCounts = async (
   return withSerialPlan(db, async (tx) => {
     const result = await tx.execute<{ type: SmartPlaylistType; count: number }>(sql`
       WITH base AS (
-        SELECT climb_uuid, board_type, quality, attempt_count, status
-        FROM ${dbSchema.boardseshTicks}
-        WHERE user_id = ${userId}
+        -- on_current_holds (#6023) feeds the projects count only, so it matches
+        -- the PROJECTS page; the other two cards count every tick. The join is
+        -- on the board_climbs primary key.
+        SELECT t.climb_uuid, t.board_type, t.quality, t.attempt_count, t.status,
+               ${tickAliasOnCurrentHoldsSql('t', holdsEpochOrFirstSql(sql`tick_climb.holds_revision_number`))} AS on_current_holds
+        FROM ${dbSchema.boardseshTicks} AS t
+        LEFT JOIN ${dbSchema.boardClimbs} AS tick_climb
+          ON tick_climb.board_type = t.board_type AND tick_climb.uuid = t.climb_uuid
+        WHERE t.user_id = ${userId}
       ),
       sent AS (
         SELECT DISTINCT climb_uuid, board_type
         FROM base
         WHERE status IN ('flash', 'send')
+          AND on_current_holds
       ),
       five_stars AS (
         SELECT COUNT(DISTINCT (board_type, climb_uuid))::int AS count
@@ -464,7 +502,8 @@ export const mySmartPlaylistCounts = async (
         -- per-page paged-query semantics in selectSmartClimbRefs.
         SELECT COUNT(DISTINCT (board_type, climb_uuid))::int AS count
         FROM base
-        WHERE NOT EXISTS (
+        WHERE on_current_holds
+          AND NOT EXISTS (
           SELECT 1 FROM sent
           WHERE sent.climb_uuid = base.climb_uuid
             AND sent.board_type = base.board_type
