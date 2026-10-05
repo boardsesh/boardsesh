@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs';
+import { URL as FileURL } from 'node:url';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { SharedValue } from 'react-native-reanimated';
@@ -220,10 +221,7 @@ describe('Add Draw pointer lifecycle', () => {
     expect(stroke.end).toHaveBeenCalledTimes(1);
   });
   it('opts Add into stationary taps while leaving Trace on its default path', () => {
-    const source = readFileSync(
-      `${process.cwd()}/packages/mobile/src/components/outline-editor/SprayHoldEditorScreen.tsx`,
-      'utf8',
-    );
+    const source = readFileSync(new FileURL('../SprayHoldEditorScreen.tsx', import.meta.url), 'utf8');
     const addSection = source.slice(source.indexOf("if (tool === 'add')"), source.indexOf("if (tool === 'trace')"));
     expect(addSection).toContain('acceptStationaryTaps');
     const traceSection = source.slice(source.indexOf("if (tool === 'trace')"));
