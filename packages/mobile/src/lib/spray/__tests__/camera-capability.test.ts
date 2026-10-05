@@ -1,9 +1,32 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// The module reads the BINARY's version at import time; the pure comparison
-// below is what this file pins, so the native read is stubbed out of the way.
-vi.mock('expo-application', () => ({ nativeApplicationVersion: '2.5.0', nativeBuildVersion: '1' }));
-import { FIRST_VERSION_WITH_WALL_CAMERA, supportsWallCamera } from '../camera-capability';
+// The module reads the BINARY's version and the DEVICE's camera at call time;
+// both are hoisted getters so a case can set them before asking. The pure
+// comparison and the hardware rule below are what this file pins, so the real
+// native modules stay stubbed out of the way.
+const binary = vi.hoisted(() => ({ version: '2.6.0' as string | null, isDevice: true }));
+vi.mock('expo-application', () => ({
+  get nativeApplicationVersion() {
+    return binary.version;
+  },
+  nativeBuildVersion: '1',
+}));
+vi.mock('expo-device', () => ({
+  get isDevice() {
+    return binary.isDevice;
+  },
+}));
+import {
+  canPhotographWall,
+  FIRST_VERSION_WITH_WALL_CAMERA,
+  hasUsableCameraSource,
+  supportsWallCamera,
+} from '../camera-capability';
+
+beforeEach(() => {
+  binary.version = '2.6.0';
+  binary.isDevice = true;
+});
 
 describe('supportsWallCamera', () => {
   it('allows the version that first shipped the permission', () => {
@@ -38,5 +61,68 @@ describe('supportsWallCamera', () => {
     expect(supportsWallCamera('3', '2.6.0')).toBe(true);
     expect(supportsWallCamera('2.6', '2.6.0')).toBe(true);
     expect(supportsWallCamera('2.5', '2.6.0')).toBe(false);
+  });
+});
+
+describe('hasUsableCameraSource', () => {
+  it('keeps the camera on a real iOS device', () => {
+    expect(hasUsableCameraSource('ios', true)).toBe(true);
+  });
+
+  it('refuses the iOS simulator, whose camera source aborts the process', () => {
+    // #6050: expo-image-picker sets `sourceType = .camera` unguarded, and an
+    // ObjC exception from UIImagePickerController is not catchable in JS.
+    expect(hasUsableCameraSource('ios', false)).toBe(false);
+  });
+
+  it('keeps the camera on Android even in an emulator', () => {
+    // Android has no abort to dodge — a picker with nothing to launch rejects
+    // into the promise — and the emulator's virtual camera is a QA path, so
+    // only the iOS exclusion applies.
+    expect(hasUsableCameraSource('android', false)).toBe(true);
+    expect(hasUsableCameraSource('android', true)).toBe(true);
+  });
+
+  it('keeps the camera where the OS is not iOS', () => {
+    expect(hasUsableCameraSource('web', true)).toBe(true);
+    expect(hasUsableCameraSource('macos', true)).toBe(true);
+  });
+});
+
+describe('canPhotographWall', () => {
+  it('refuses the iOS simulator even on a binary the version gate vouches for', () => {
+    binary.version = FIRST_VERSION_WITH_WALL_CAMERA;
+    binary.isDevice = false;
+    expect(canPhotographWall('ios')).toBe(false);
+  });
+
+  it('allows a real iOS device on a vouched binary', () => {
+    binary.version = FIRST_VERSION_WITH_WALL_CAMERA;
+    binary.isDevice = true;
+    expect(canPhotographWall('ios')).toBe(true);
+  });
+
+  it('refuses an old binary wherever it runs', () => {
+    // The permission gate stays first: on a 2.5.x binary the camera was never
+    // an option, device or simulator alike.
+    binary.version = '2.5.0';
+    binary.isDevice = true;
+    expect(canPhotographWall('ios')).toBe(false);
+    binary.isDevice = false;
+    expect(canPhotographWall('ios')).toBe(false);
+  });
+
+  it('keeps the Android emulator, which has a virtual camera', () => {
+    binary.version = FIRST_VERSION_WITH_WALL_CAMERA;
+    binary.isDevice = false;
+    expect(canPhotographWall('android')).toBe(true);
+  });
+
+  it('refuses a binary whose version cannot be read', () => {
+    // The asymmetric-cost rule from `supportsWallCamera` holds through the
+    // composition: unknown means no button.
+    binary.version = null;
+    binary.isDevice = true;
+    expect(canPhotographWall('ios')).toBe(false);
   });
 });

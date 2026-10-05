@@ -148,9 +148,11 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   const updateVisibility = useUpdateSprayWallVisibility();
   const updateVisibilityAsync = updateVisibility.mutateAsync;
 
-  // The camera is a property of the BINARY, not of this bundle: SW-02 put the
-  // usage description in 2.6.0 and this slice rides an OTA into older ones too.
-  const cameraAvailable = useMemo(() => canPhotographWall(), []);
+  // The camera is a property of the BINARY and of the DEVICE, not of this
+  // bundle: SW-02 put the usage description in 2.6.0, and an iOS simulator has
+  // no camera to open — a picker launched into it aborts the app. Both gates
+  // live in `canPhotographWall`.
+  const cameraAvailable = useMemo(() => canPhotographWall(Platform.OS), []);
 
   const discardDraft = useDiscardSprayWallDraft();
   const discardDraftAsync = discardDraft.mutateAsync;
