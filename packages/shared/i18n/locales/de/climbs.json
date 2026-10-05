@@ -221,7 +221,8 @@
       "publishDuplicateNamed": "Dieses Griff-Muster passt zu „{{name}}“. Schalte auf Entwurf, um ihn ohne Veröffentlichung zu speichern, oder ändere einen Griff.",
       "publishDuplicateUnnamed": "Dieses Griff-Muster passt zu einem bestehenden Boulder. Schalte auf Entwurf, um ihn ohne Veröffentlichung zu speichern, oder ändere einen Griff.",
       "viewMatchingClimb": "Passenden Boulder ansehen",
-      "saveFailedFallback": "Boulder konnte nicht gespeichert werden. Versuch es nochmal."
+      "saveFailedFallback": "Boulder konnte nicht gespeichert werden. Versuch es nochmal.",
+      "localRefreshFailed": "Boulder gespeichert. Die heruntergeladene Liste konnte nicht aktualisiert werden. Verbinde dich erneut, um sie zu aktualisieren."
     },
     "fields": {
       "description": "Beschreibung (optional)"

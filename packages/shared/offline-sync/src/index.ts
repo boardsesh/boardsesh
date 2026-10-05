@@ -382,3 +382,5 @@ export {
   purgeNamespaceForScopeKey,
 } from './offline-board-key';
 export type { OfflineBoardScope, OfflineBoardLike } from './offline-board-key';
+
+export { mirrorSavedClimb } from './sync/saved-climb-mirror';
