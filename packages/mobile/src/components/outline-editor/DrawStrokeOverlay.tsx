@@ -30,6 +30,8 @@ type DrawStrokeOverlayProps = {
    * value, not an in-place push.
    */
   pointsSV: SharedValue<number[]>;
+  /** Add mode accepts stationary taps; Trace keeps its existing pan recognizer. */
+  acceptStationaryTaps?: boolean;
   /**
    * True when the finger-draw toggle is on. Off (the default) only an Apple
    * Pencil / stylus draws, and every finger touch falls through to the board's
@@ -95,11 +97,16 @@ type DrawStrokeOverlayProps = {
  * Absolute event coordinates, never `translationX/Y`: a delta would accumulate
  * the zoom scale twice.
  *
+ * Add opts into a Manual recognizer that samples the owned raw pointer,
+ * avoiding Pan centroid movement and committing stationary matching UP events.
+ * Trace retains the Pan behavior above.
+ *
  * `runOnJS` fires at most twice per stroke (start, then end or cancel) — never
  * per frame.
  */
 export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   pointsSV,
+  acceptStationaryTaps = false,
   fingerDrawSV,
   scaleSV,
   translateXSV,
@@ -125,6 +132,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   // Set when a finger stroke is dropped for a pinch, so a pan that RNGH still
   // reports as a success cannot commit the cleared stroke.
   const abandonedSV = useSharedValue(false);
+  const ownerPointerIdSV = useSharedValue(-1);
   useEffect(() => {
     boardScaleSV.value = boardScale;
   }, [boardScale, boardScaleSV]);
@@ -137,6 +145,103 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   const handleCancel = () => callbacksRef.current.onStrokeCancel();
 
   const gesture = useMemo(() => {
+    if (acceptStationaryTaps) {
+      // A manually activated UIPan recognizer need not deliver onStart/onEnd
+      // for a stationary touch. Add owns raw pointer events instead: DOWN seeds
+      // a stroke and its matching UP commits it, including a zero-length tap.
+      const appendSample = (screenX: number, screenY: number) => {
+        'worklet';
+        const centreX = containerWidthSV.value / 2;
+        const centreY = containerHeightSV.value / 2;
+        const boardX = ((screenX - translateXSV.value - centreX) / scaleSV.value + centreX) * boardScaleSV.value;
+        const boardY = ((screenY - translateYSV.value - centreY) / scaleSV.value + centreY) * boardScaleSV.value;
+        const current = pointsSV.value;
+        const count = current.length;
+        if (count >= MAX_STROKE_NUMBERS) return;
+        if (count > 0) {
+          const deltaX = boardX - current[count - 2];
+          const deltaY = boardY - current[count - 1];
+          if (deltaX * deltaX + deltaY * deltaY < MIN_SAMPLE_DISTANCE_SQUARED) return;
+        }
+        pointsSV.value = [...current, boardX, boardY];
+      };
+      const cancelStroke = () => {
+        'worklet';
+        if (!isDrawingSV.value) return;
+        // Clear ownership before fail/end: either can synchronously finalize.
+        isDrawingSV.value = false;
+        ownerPointerIdSV.value = -1;
+        pointsSV.value = [];
+        runOnJS(handleCancel)();
+      };
+      const manual = Gesture.Manual()
+        .onTouchesDown((event, manager) => {
+          'worklet';
+          if (isDrawingSV.value) {
+            // Ignore palm touches before considering a second finger pinch.
+            if (strokeIsStylusSV.value) return;
+            cancelStroke();
+            manager.fail();
+            return;
+          }
+          const isStylus = event.pointerType === STYLUS_POINTER_TYPE;
+          const pointer = event.changedTouches[0];
+          if (!pointer || (!isStylus && (!fingerDrawSV.value || event.numberOfTouches > 1))) {
+            manager.fail();
+            return;
+          }
+          ownerPointerIdSV.value = pointer.id;
+          strokeIsStylusSV.value = isStylus;
+          isDrawingSV.value = true;
+          pointsSV.value = [];
+          appendSample(pointer.x, pointer.y);
+          runOnJS(handleStart)();
+          manager.begin();
+          manager.activate();
+        })
+        .onTouchesMove((event, manager) => {
+          'worklet';
+          if (!isDrawingSV.value) return;
+          if (!strokeIsStylusSV.value && event.numberOfTouches > 1) {
+            cancelStroke();
+            manager.fail();
+            return;
+          }
+          const pointer = event.changedTouches.find((touch) => touch.id === ownerPointerIdSV.value);
+          if (pointer) appendSample(pointer.x, pointer.y);
+        })
+        .onTouchesUp((event, manager) => {
+          'worklet';
+          if (!isDrawingSV.value) return;
+          // The released pointer is absent from allTouches, even on final UP.
+          const pointer = event.changedTouches.find((touch) => touch.id === ownerPointerIdSV.value);
+          if (!pointer) return;
+          appendSample(pointer.x, pointer.y);
+          isDrawingSV.value = false;
+          ownerPointerIdSV.value = -1;
+          runOnJS(handleEnd)(pointsSV.value);
+          manager.end();
+        })
+        .onTouchesCancelled((event, manager) => {
+          'worklet';
+          if (!isDrawingSV.value) return;
+          if (
+            event.changedTouches.length > 0 &&
+            !event.changedTouches.some((touch) => touch.id === ownerPointerIdSV.value)
+          )
+            return;
+          cancelStroke();
+          manager.fail();
+        })
+        .onFinalize(() => {
+          'worklet';
+          // Unexpected native interruption cancels once; an UP/fail has already
+          // released ownership and cannot be committed again by late callbacks.
+          cancelStroke();
+        });
+      manual.simultaneousWithExternalGesture(pinchRef);
+      return manual;
+    }
     const pan = Gesture.Pan()
       .minPointers(1)
       .manualActivation(true)
@@ -215,6 +320,8 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
     // handleStart/handleEnd/handleCancel are intentionally not deps — they're
     // captured once and read render-scoped values through callbacksRef.
   }, [
+    acceptStationaryTaps,
+    ownerPointerIdSV,
     pointsSV,
     fingerDrawSV,
     scaleSV,

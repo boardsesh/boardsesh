@@ -1349,6 +1349,7 @@ export function SprayHoldEditorScreen({
         return (
           <DrawStrokeOverlay
             pointsSV={draftPointsSV}
+            acceptStationaryTaps
             fingerDrawSV={addDrawSV}
             scaleSV={scaleSV}
             translateXSV={context.translateXSV}

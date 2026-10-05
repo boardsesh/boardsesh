@@ -898,7 +898,11 @@ What the editor does with a wall is decided by this document rather than by tast
   (`boardsesh_spray_editor_add_shape`, default Draw).
   - Draw: one finger drags round the hold, and the stroke goes through the same
     `holdFromStroke` then `buildOutlineRing` chain as Trace. A stroke that stays
-    within 10 screen pt is a tap and drops a circle at the median radius. If a
+    within 10 screen pt is a tap and drops a circle at the median radius. Add
+    captures raw pointer DOWN and matching UP with a Manual gesture, so a
+    stationary tap or long press commits without waiting for Pan movement.
+    Cancellation releases that pointer before handing a pinch back. Trace
+    keeps its existing Pan recognizer. If a
     second finger lands during a finger stroke, the stroke is dropped and the
     pinch zooms (Trace works the same way); a Pencil stroke still ignores a
     resting palm.
