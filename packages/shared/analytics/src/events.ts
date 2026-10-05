@@ -10,24 +10,44 @@
 export const SHARED_EVENTS = {
   // Auth
   LoginAttempted: 'Login Attempted',
-  // Mobile also stamps three props on it (#5654):
+  // Every login event (Attempted, Succeeded, Failed, Cancelled, and Signup
+  // Completed) carries `auth_method` ('credentials' | 'google' | 'apple') and,
+  // from mobile, `provider` ('email' | 'google' | 'apple'): the same fact with
+  // the email value spelled the way an analyst looks for it. Both come from
+  // `loginProviderProperties` (login-provider.ts) so they cannot disagree.
+  //
+  // Mobile also stamps four props on Login Succeeded (#5654, #6027):
   // - `screen`: 'login' | 'register', the auth screen it fired from.
   // - `is_new_account`: the account is at most 24 h old, compared in ms.
   // - `account_age_hours`: whole hours since the account was created, rounded
   //   down. This is the one definition of the prop for every event that
   //   carries it (packages/mobile/src/lib/account-age.ts).
-  // The last two come from the profile's `createdAt`, because the native token
-  // responses carry no creation time, and are null when it can't be read. The
-  // read happens after the tokens land, so the event waits for it (up to 5 s)
-  // and is backdated to the moment sign-in succeeded. Backdating moves only the
-  // timestamp: session props such as `$screen_name` are read at capture, after
-  // the wait, so they usually name the first signed-in screen. Split by
-  // `screen`, not `$screen_name`. See packages/mobile/src/lib/login-analytics.ts.
+  // - `account_age_read`: 'ok' | 'timeout' | 'empty' | 'error', how the wait
+  //   for the creation time went.
+  // The two age props come from the profile's `createdAt`, because the native
+  // token responses carry no creation time, and are null when it is not known
+  // in time. The read happens after the tokens land, so the event waits for it
+  // (up to 5 s) and is backdated to the moment sign-in succeeded. Backdating
+  // moves only the timestamp: session props such as `$screen_name` are read at
+  // capture, after the wait, so they usually name the first signed-in screen.
+  // Split by `screen`, not `$screen_name`. See
+  // packages/mobile/src/lib/login-analytics.ts.
+  // A null there is not the end: see Login Account Age Resolved below. Count a
+  // sign-up as `is_new_account = true` on EITHER event.
   // Two paths skip the wait and send the event without the age props: the Expo
   // web Apple/Google cookie return (AuthProvider, `flow: 'web'`) carries only
-  // `screen`, and www's own Login Succeeded carries none of the three. So a
-  // missing prop means one of those paths; a failed profile read sends null.
+  // `screen`, and www's own Login Succeeded carries none of them. So a missing
+  // prop means one of those paths; a creation time not known in time sends null.
   LoginSucceeded: 'Login Succeeded',
+  // Mobile only (#6027). Fired after a Login Succeeded that went out with
+  // `is_new_account: null`, when the account's creation time arrives within two
+  // minutes of sign-in. Carries that login's own props (`auth_method`,
+  // `provider`, `flow`, `screen`, `is_registration`), the two age props, now
+  // filled, and `resolved_after_ms` (sign-in to answer). Backdated to the same
+  // instant as its Login Succeeded, so the pair lands in the same day and week.
+  // It never fires alone and never twice for one sign-in. On store version
+  // 2.5.0 the null it repairs was 42% of logins (week of 2026-09-28).
+  LoginAccountAgeResolved: 'Login Account Age Resolved',
   LoginFailed: 'Login Failed',
   // A user dismissing the provider sheet or the browser is intent, not a failure.
   // Kept distinct from LoginFailed so the failure metric isn't inflated by cancels.
@@ -106,6 +126,10 @@ export const SHARED_EVENTS = {
   // into one bucket costs. Counts and a reason string, never climb identity;
   // whether a tick preceded it is a session + timestamp join against `Tick Logged`.
   QueueSwipeTrackDormant: 'Queue Swipe Track Dormant',
+  // Props: { climbUuid, layoutId, boardType, source, sessionId,
+  // participantCount }. `boardType` (#6027) is one of the nine board types or
+  // null (`boardTypeProperty`, board-type-property.ts); it is what tells a
+  // spray wall from a Kilter, because a spray layout id is minted per wall.
   SetActiveClimb: 'Set Active Climb',
   SessionStarted: 'Session Started',
   SessionEnded: 'Session Ended',
@@ -167,6 +191,10 @@ export const SHARED_EVENTS = {
   AddToPlaylist: 'Add to Playlist',
   RemoveFromPlaylist: 'Remove from Playlist',
   // Create climb
+  // Props: { boardLayout, boardType, isDraft, holdCount }. `boardLayout` is the
+  // layout's catalogue name and is the EMPTY STRING for a spray wall, whose
+  // layout is not in the static table. Do not classify on that: `boardType`
+  // (#6027, one of the nine board types or null) is the classifier.
   ClimbCreated: 'Climb Created',
   ClimbUpdated: 'Climb Updated',
   ClimbCreateFailed: 'Climb Create Failed',
@@ -263,6 +291,8 @@ export const SHARED_EVENTS = {
   // status, platform: 'web' | 'mobile', surface: 'web_full_form' |
   // 'web_quick_modal' | 'mobile_quick_tick' }, plus the tick detail
   // (attemptCount, hasQuality, hasDifficulty, difficulty, grade, hasComment).
+  // Mobile adds `boardType` (#6027): one of the nine board types or null, from
+  // `boardTypeProperty`. `layoutId` alone cannot say "spray wall".
   TickLogged: 'Tick Logged',
   // Bluetooth / hardware
   BluetoothConnectionSuccess: 'Bluetooth Connection Success',

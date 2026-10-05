@@ -1539,6 +1539,8 @@ describe('QueueProvider session update subscription', () => {
       SHARED_EVENTS.SetActiveClimb,
       expect.objectContaining({
         climbUuid: 'climb-commit-1',
+        // The active board's type: a layout id alone cannot say "spray wall".
+        boardType: 'kilter',
         sessionId: 'session-1',
         // Distinct humans, the same count `partyMode` is derived from on Climb
         // Added to Queue — not raw connection rows.

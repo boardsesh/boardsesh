@@ -19,6 +19,19 @@ export {
   type ReconcileAnalyticsIdentityInput,
 } from './reconcile-identity';
 export { SHARED_EVENTS, type SharedEventKey, type SharedEventName } from './events';
+// Props shared by more than one event, built in one place so the emitters agree.
+export {
+  ANALYTICS_BOARD_TYPES,
+  boardTypeProperty,
+  type AnalyticsBoardType,
+  type BoardTypeProperty,
+} from './board-type-property';
+export {
+  loginProviderProperties,
+  type LoginAuthMethod,
+  type LoginProvider,
+  type LoginProviderProperties,
+} from './login-provider';
 // Board render mode telemetry (issue #2202). Cross-platform (SHARED_EVENTS),
 // unlike the gym funnel below — mobile fires every one of these today.
 export {

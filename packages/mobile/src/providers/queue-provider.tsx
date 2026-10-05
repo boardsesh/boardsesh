@@ -50,7 +50,7 @@ import {
   type ActiveBoardForCompatibility,
 } from '@boardsesh/board-config';
 import { buildSessionBoardPath } from '../lib/boards/session-board-path';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, boardTypeProperty } from '@boardsesh/analytics';
 import { JOIN_SESSION, UPDATE_USERNAME } from '@boardsesh/graphql/operations/queue-session';
 import { getWsClient } from '../lib/graphql/ws-client';
 import { getHttpClient } from '../lib/graphql/client';
@@ -1881,6 +1881,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       track(SHARED_EVENTS.SetActiveClimb, {
         climbUuid: item.climb.uuid,
         layoutId: activeBoardRef.current?.layoutId,
+        // A spray wall's layout id is minted per wall, so the id above cannot
+        // say "spray". The board type can, and it is one of nine values.
+        ...boardTypeProperty(activeBoardRef.current?.boardType),
         source: 'mobile',
         // Which crew's wall just moved, and how many people were watching it.
         // The preview-first work turns this event into the ONE deliberate act

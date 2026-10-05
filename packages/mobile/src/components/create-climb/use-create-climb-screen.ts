@@ -28,7 +28,7 @@ import { useBoardActions, isDuplicateClimbError } from '@boardsesh/board-react';
 import { DEFAULT_PACE_MS, clampAuthoredPaceMs, resolveStoredPaceMs } from '@boardsesh/playback-react';
 import { GraphQLOperationError } from '@boardsesh/graphql-client';
 import { getLayoutName } from '@boardsesh/board-constants/product-sizes';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, boardTypeProperty } from '@boardsesh/analytics';
 import { track } from '../../lib/analytics';
 import { trackBoardConnectTapped } from '../../lib/analytics-board-connect';
 import { useAuth } from '../../providers/auth-provider';
@@ -1636,9 +1636,12 @@ export function useCreateClimbScreen({
           isDraft,
         };
         setSavedClimb(nextSavedClimb);
-        // Match web's schema exactly (create-climb-form.tsx). See ClimbUpdated above.
+        // Web's schema (create-climb-form.tsx, see ClimbUpdated above) plus
+        // `boardType`: `boardLayout` is the empty string for a spray wall, whose
+        // layout is not in the static table, so it cannot say which board.
         track(SHARED_EVENTS.ClimbCreated, {
           boardLayout,
+          ...boardTypeProperty(board.boardName),
           isDraft,
           holdCount,
         });

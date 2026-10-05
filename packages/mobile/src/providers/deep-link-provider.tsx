@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import * as Linking from 'expo-linking';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { reportHandledError } from '../lib/error-reporting';
 import { isLegacyPreviewLink } from '../lib/legacy-preview-link';
+import { RELAXES_ANONYMOUS_ROUTES } from '../lib/routing/anonymous-auth-gate';
+import { isBoardLinkPath, parseBoardLinkPath } from '../lib/routing/board-deep-link';
 import { useAuth } from './auth-provider';
 
 // Stash for a join that arrived before the user was signed in. The auth gate
@@ -12,6 +14,44 @@ import { useAuth } from './auth-provider';
 // and replay it once auth flips to authenticated.
 const PENDING_JOIN_KEY = 'boardsesh_pending_join_session_id';
 const PENDING_LEGACY_PREVIEW_KEY = 'boardsesh_pending_legacy_preview';
+// A board or climb link (`/{board}/…`, `/b/{slug}/…`) that arrived signed out,
+// stored as `{ path, stashedAt }`. Same reason as the join stash, and the path
+// a new climber takes: tap a shared climb, install, sign up, tap it again.
+const PENDING_BOARD_LINK_KEY = 'boardsesh_pending_board_link';
+
+/**
+ * A stashed board link is followed for a day. A join is asked for again on
+ * arrival, so an old one is harmless; a climb link opens straight away, and
+ * landing someone on a climb they tapped last week, at a sign-in they did for
+ * another reason, would read as the app misbehaving.
+ */
+export const PENDING_BOARD_LINK_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+// The launch URL is the same for the life of the process, and this provider
+// remounts on every sign-in and sign-out (the auth gate swaps the tree). Without
+// this, signing out hours after opening the app from a climb link would stash
+// that link again and the next sign-in would land on it. One launch, one stash.
+let handledLaunchBoardUrl: string | null = null;
+
+type PendingBoardLink = { path: string; stashedAt: number };
+
+/** The stored link, or null when the value is not one we wrote or has expired. */
+function readPendingBoardLink(stored: string | null, nowMs: number): string | null {
+  if (!stored) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stored);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const { path, stashedAt } = parsed as Partial<PendingBoardLink>;
+  if (typeof stashedAt !== 'number' || !Number.isFinite(stashedAt)) return null;
+  const ageMs = nowMs - stashedAt;
+  // A negative age is a clock that moved back; treat it as unknown, not fresh.
+  if (ageMs < 0 || ageMs > PENDING_BOARD_LINK_MAX_AGE_MS) return null;
+  return isBoardLinkPath(path) ? path : null;
+}
 
 // Loose UUID-ish guard: 8-4-4-4-12 hex, the shape our session ids take. Rejects
 // obvious garbage (`http`, `..`, empty) before we push a route that would just
@@ -73,6 +113,9 @@ export function parseJoinSessionId(url: string): string | null {
  * Auth survival: a link that arrives while signed out is stashed in AsyncStorage
  * and replayed once `useAuth().isAuthenticated` flips true (the auth gate routes
  * the cold-start to login first). Clears the stash on consume.
+ *
+ * Board and climb links get the auth survival and nothing else: signed in, Expo
+ * Router has already opened the route, so this provider leaves them alone.
  */
 export function DeepLinkProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -130,26 +173,49 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
     }
   }, [navigateToLegacyPreviewDestination]);
 
+  const handleBoardLink = useCallback(async (url: string, boardPath: string, isLaunchUrl: boolean) => {
+    // The browser app keeps the path itself, as `?next=` on the login URL.
+    if (RELAXES_ANONYMOUS_ROUTES) return;
+    if (isLaunchUrl) {
+      if (handledLaunchBoardUrl === url) return;
+      handledLaunchBoardUrl = url;
+    }
+    // Signed in: Expo Router has already opened the route.
+    if (isAuthenticatedRef.current) return;
+    try {
+      const pendingBoardLink: PendingBoardLink = { path: boardPath, stashedAt: Date.now() };
+      await AsyncStorage.setItem(PENDING_BOARD_LINK_KEY, JSON.stringify(pendingBoardLink));
+    } catch (error) {
+      if (__DEV__) console.warn('[deep-link] failed to stash pending board link', error);
+      reportHandledError(error, { tags: { source: 'deep-link', op: 'stash-pending-board-link' } });
+    }
+  }, []);
+
   const handleUrl = useCallback(
-    (url: string | null) => {
+    (url: string | null, isLaunchUrl: boolean) => {
       if (!url) return;
       const sessionId = parseJoinSessionId(url);
       if (sessionId) {
         void handleSessionId(sessionId);
         return;
       }
-      if (isLegacyPreviewLink(url)) void handleLegacyPreview();
+      if (isLegacyPreviewLink(url)) {
+        void handleLegacyPreview();
+        return;
+      }
+      const boardPath = parseBoardLinkPath(url);
+      if (boardPath) void handleBoardLink(url, boardPath, isLaunchUrl);
     },
-    [handleLegacyPreview, handleSessionId],
+    [handleBoardLink, handleLegacyPreview, handleSessionId],
   );
 
   // Cold start + warm links.
   useEffect(() => {
     let cancelled = false;
     void Linking.getInitialURL().then((url) => {
-      if (!cancelled) handleUrl(url);
+      if (!cancelled) handleUrl(url, true);
     });
-    const subscription = Linking.addEventListener('url', ({ url }) => handleUrl(url));
+    const subscription = Linking.addEventListener('url', ({ url }) => handleUrl(url, false));
     return () => {
       cancelled = true;
       subscription.remove();
@@ -201,6 +267,30 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [isAuthenticated, navigateToLegacyPreviewDestination]);
+
+  // Open the board or climb a signed-out link pointed at, once, after sign-in.
+  // The stored path is checked again before it reaches the router: it has to be
+  // one this build would have written, and no older than a day.
+  useEffect(() => {
+    if (!isAuthenticated || RELAXES_ANONYMOUS_ROUTES) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const stored = await AsyncStorage.getItem(PENDING_BOARD_LINK_KEY);
+        if (cancelled || !stored) return;
+        await AsyncStorage.removeItem(PENDING_BOARD_LINK_KEY);
+        const boardPath = readPendingBoardLink(stored, Date.now());
+        // `boardPath` is a validated app path; typed routes can't know that.
+        if (!cancelled && boardPath) router.navigate(boardPath as Href);
+      } catch (error) {
+        if (__DEV__) console.warn('[deep-link] failed to consume pending board link', error);
+        reportHandledError(error, { tags: { source: 'deep-link', op: 'consume-pending-board-link' } });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, router]);
 
   return <>{children}</>;
 }

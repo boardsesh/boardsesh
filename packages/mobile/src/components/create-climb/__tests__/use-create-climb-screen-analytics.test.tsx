@@ -191,10 +191,12 @@ describe('useCreateClimbScreen analytics', () => {
     await nameAndSave(result);
 
     expect(board.saveClimb).toHaveBeenCalledTimes(1);
-    // Same schema AND values as web's `Climb Created` (create-climb-form.tsx):
-    // { boardLayout: <resolved layout name>, isDraft, holdCount }.
+    // Web's `Climb Created` schema and values (create-climb-form.tsx):
+    // { boardLayout: <resolved layout name>, isDraft, holdCount }, plus the
+    // board type, which is what tells a spray wall's climb from any other.
     expect(analytics.track).toHaveBeenCalledWith('Climb Created', {
       boardLayout: EXPECTED_BOARD_LAYOUT,
+      boardType: 'kilter',
       isDraft: true,
       holdCount: 3,
     });

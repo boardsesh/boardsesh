@@ -1534,6 +1534,15 @@ Two rules, both enforced by a test in
   is a number, a boolean, or a member of a closed string union, and the test
   reads the payloads back field by field rather than trusting the types.
 
+Three older events also fire on a wall and now say so (#6027): `Tick Logged`,
+`Set Active Climb` and `Climb Created` carry `boardType`, built by
+`boardTypeProperty` in `packages/shared/analytics/src/board-type-property.ts`.
+Its value is one of the nine board types or null and nothing else, so it stays
+inside the second rule: a wall's name, slug or uuid passed to it comes out as
+null. It is what makes a spray session countable at all, because a wall's
+`layoutId` is created with the wall. The spray-wall activation definition built
+on it is in `docs/growth-metrics.md`.
+
 ## Rolling the flag out
 
 The whole surface is behind the mobile flag `spray-walls`
