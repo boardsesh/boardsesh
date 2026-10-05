@@ -30,6 +30,7 @@ const routerMock = vi.hoisted(() => ({ push: vi.fn(), dismissTo: vi.fn() }));
 const toastMock = vi.hoisted(() => ({ showToast: vi.fn() }));
 const setActiveBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const clearActiveBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const clearSessionMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const deleteBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const unfollowBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const pinBoardMock = vi.hoisted(() => vi.fn());
@@ -57,6 +58,7 @@ const state = vi.hoisted(() => ({
   myBoards: [] as unknown[],
   nearbyBoards: [] as unknown[],
   willFollow: false,
+  activeBoardGeneration: 0,
   deletePending: null as string | null,
   unfollowPending: null as string | null,
 }));
@@ -95,6 +97,10 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
+vi.mock('../../../src/providers/queue-provider', () => ({
+  useQueueActions: () => ({ clearSession: clearSessionMock }),
+}));
+
 vi.mock('expo-router', () => ({
   useRouter: () => routerMock,
   useLocalSearchParams: () => ({ source: state.source }),
@@ -117,6 +123,10 @@ vi.mock('react-i18next', () => ({
         'mobile.manage.deleteAria': 'Delete {{name}}',
         'mobile.manage.unfollowAria': 'Unfollow {{name}}',
         'mobile.manage.deleteTitle': 'Delete board?',
+        'mobile.manage.deleteWallTitle': 'Delete spray wall?',
+        'mobile.manage.deleteWallMessage':
+          'Delete "{{name}}"? Its photos and climbs will no longer be available. This cannot be undone.',
+        'mobile.manage.deleteSuccess': '"{{name}}" deleted',
         'mobile.manage.deleteConfirm': 'Delete',
         'mobile.manage.unfollowTitle': 'Stop following?',
         'mobile.manage.unfollowConfirm': 'Unfollow',
@@ -178,7 +188,8 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
 vi.mock('../../../src/lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: state.activeBoard }),
   useSetActiveBoard: () => setActiveBoardMock,
-  useClearActiveBoard: () => clearActiveBoardMock,
+  useClearActiveBoardIfCurrentGeneration: () => clearActiveBoardMock,
+  getActiveBoardWriteGeneration: () => state.activeBoardGeneration,
 }));
 vi.mock('../../../src/hooks/use-current-user-id', () => ({
   useStoredUserId: () => ({ userId: state.storedUserId, isLoading: false }),
@@ -301,11 +312,13 @@ const { default: BoardSelection } = await import('../index');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  clearSessionMock.mockResolvedValue(undefined);
   deleteBoardMock.mockResolvedValue(undefined);
   unfollowBoardMock.mockResolvedValue(undefined);
   confirmMock.mockResolvedValue(true);
   carouselProps.last = null;
   bluetoothSheetProps.last = null;
+  state.activeBoardGeneration = 0;
   state.source = undefined;
   state.profile = { id: 'me' };
   state.storedUserId = undefined;
@@ -519,6 +532,7 @@ describe('deleting a board', () => {
     expect(forgetOfflineBoardMock).toHaveBeenCalledWith('mine');
     // Not the active board, so the selection is left alone.
     expect(clearActiveBoardMock).not.toHaveBeenCalled();
+    expect(clearSessionMock).not.toHaveBeenCalled();
     // The carousel has just reflowed under a finger still over a red button.
     await waitFor(() => expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy());
   });
@@ -530,6 +544,46 @@ describe('deleting a board', () => {
     fireEvent.click(screen.getByRole('button', { name: 'delete Marco garage' }));
 
     await waitFor(() => expect(clearActiveBoardMock).toHaveBeenCalledTimes(1));
+    expect(clearSessionMock).toHaveBeenCalledWith({ notifyServer: true });
+    expect(clearSessionMock.mock.invocationCallOrder[0]).toBeGreaterThan(deleteBoardMock.mock.invocationCallOrder[0]);
+    expect(clearSessionMock.mock.invocationCallOrder[0]).toBeLessThan(clearActiveBoardMock.mock.invocationCallOrder[0]);
+  });
+
+  it('preserves a newer active selection while deletion is in flight', async () => {
+    state.activeBoard = myWall;
+    let finishDelete: (() => void) | undefined;
+    deleteBoardMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDelete = resolve;
+        }),
+    );
+    render(createElement(BoardSelection));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'delete Marco garage' }));
+    await waitFor(() => expect(deleteBoardMock).toHaveBeenCalledWith('mine'));
+    state.activeBoardGeneration += 1;
+    await act(async () => {
+      finishDelete?.();
+    });
+    expect(clearSessionMock).not.toHaveBeenCalled();
+    expect(clearActiveBoardMock).not.toHaveBeenCalled();
+  });
+
+  it('names the spray wall photos and climbs in the confirmation', async () => {
+    state.myBoards = [{ ...myWall, boardType: 'spray' }];
+    render(createElement(BoardSelection));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'delete Marco garage' }));
+
+    await waitFor(() => expect(deleteBoardMock).toHaveBeenCalledWith('mine'));
+    expect(confirmMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Delete spray wall?',
+        message: 'Delete "Marco garage"? Its photos and climbs will no longer be available. This cannot be undone.',
+      }),
+    );
+    await waitFor(() => expect(toastMock.showToast).toHaveBeenCalledWith('"Marco garage" deleted', 'success'));
   });
 
   it('does nothing when the confirm is declined', async () => {
@@ -554,6 +608,7 @@ describe('deleting a board', () => {
     // The board is still on the server, so its offline snapshot must survive.
     expect(forgetOfflineBoardMock).not.toHaveBeenCalled();
     expect(clearActiveBoardMock).not.toHaveBeenCalled();
+    expect(clearSessionMock).not.toHaveBeenCalled();
   });
 });
 
@@ -566,6 +621,7 @@ describe('unfollowing a board', () => {
     expect(confirmMock).not.toHaveBeenCalled();
     expect(forgetOfflineBoardMock).toHaveBeenCalledWith('gym');
     expect(clearActiveBoardMock).not.toHaveBeenCalled();
+    expect(clearSessionMock).not.toHaveBeenCalled();
   });
 
   // The one unfollow with a side effect beyond the list, and the one that bites
@@ -577,7 +633,8 @@ describe('unfollowing a board', () => {
 
     await waitFor(() => expect(unfollowBoardMock).toHaveBeenCalledWith('gym'));
     expect(confirmMock).toHaveBeenCalledTimes(1);
-    expect(clearActiveBoardMock).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(clearActiveBoardMock).toHaveBeenCalledTimes(1));
+    expect(clearSessionMock).toHaveBeenCalledWith({ notifyServer: true });
   });
 
   it('does nothing when that confirm is declined', async () => {
@@ -589,6 +646,7 @@ describe('unfollowing a board', () => {
     await waitFor(() => expect(confirmMock).toHaveBeenCalledTimes(1));
     expect(unfollowBoardMock).not.toHaveBeenCalled();
     expect(clearActiveBoardMock).not.toHaveBeenCalled();
+    expect(clearSessionMock).not.toHaveBeenCalled();
   });
 
   it('surfaces a failure', async () => {

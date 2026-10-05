@@ -1,3 +1,6 @@
+vi.mock('../../../src/providers/queue-provider', () => ({
+  useQueueActions: () => ({ clearSession: vi.fn(async () => {}) }),
+}));
 // @vitest-environment jsdom
 //
 // #5654: the launch gate opens /boards?source=onboarding&firstBoard=1 for a new
@@ -133,9 +136,10 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
 }));
 
 vi.mock('../../../src/lib/graphql/use-active-board', () => ({
+  getActiveBoardWriteGeneration: () => 0,
   useActiveBoard: () => ({ data: null }),
   useSetActiveBoard: () => setActiveBoardMock,
-  useClearActiveBoard: () => vi.fn(),
+  useClearActiveBoardIfCurrentGeneration: () => vi.fn(),
 }));
 vi.mock('../../../src/hooks/use-current-user-id', () => ({
   useStoredUserId: () => ({ userId: undefined, isLoading: false }),

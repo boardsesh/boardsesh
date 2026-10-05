@@ -72,7 +72,10 @@
       "unfollowMessage": "„{{name}}“ ist dein aktives Board. Wenn du nicht mehr folgst, verschwindet es aus deinen Boards und die Auswahl wird gelöscht.",
       "unfollowConfirm": "Nicht mehr folgen",
       "edit": "Bearbeiten",
-      "done": "Fertig"
+      "done": "Fertig",
+      "deleteWallTitle": "Spraywall löschen?",
+      "deleteWallMessage": "„{{name}}“ löschen? Die Fotos und Boulder sind danach nicht mehr verfügbar. Das lässt sich nicht rückgängig machen.",
+      "deleteSuccess": "„{{name}}“ gelöscht"
     },
     "emptyTitle": "Noch keine Boards",
     "emptySubtitle": "Such ein Board und leg los",

@@ -2287,6 +2287,7 @@ export const socialBoardMutations = {
       .select({
         id: dbSchema.userBoards.id,
         ownerId: dbSchema.userBoards.ownerId,
+        boardType: dbSchema.userBoards.boardType,
         isPublic: dbSchema.userBoards.isPublic,
       })
       .from(dbSchema.userBoards)
@@ -2301,12 +2302,22 @@ export const socialBoardMutations = {
       throw new Error('Not authorized to delete this board');
     }
 
-    // Freeze it too, so a later sync can't resurrect the board the owner
-    // deliberately removed (the board upsert clears deletedAt).
-    await db
-      .update(dbSchema.userBoards)
-      .set({ deletedAt: new Date(), syncFrozenAt: new Date() })
-      .where(eq(dbSchema.userBoards.id, board.id));
+    if (isSprayBoardType(board.boardType)) {
+      // Every caller, including older apps, must tombstone the wall and retract
+      // its feed and public photo. Load lazily because spray-walls uses board
+      // authorization helpers from this module. Keep the owner check above:
+      // generic board deletion must not grant gym editors wall deletion.
+      const { sprayWallMutations } = await import('../board/spray-walls');
+      await sprayWallMutations.deleteSprayWall(_, { uuid: boardUuid }, ctx);
+    } else {
+      // Freeze it too, so a later sync can't resurrect the board the owner
+      // deliberately removed (the board upsert clears deletedAt).
+      const deletedAt = new Date();
+      await db
+        .update(dbSchema.userBoards)
+        .set({ deletedAt, syncFrozenAt: deletedAt })
+        .where(eq(dbSchema.userBoards.id, board.id));
+    }
 
     // Same reasoning as the public→private flip in updateBoard: a soft-deleted
     // board drops out of the anon-readable set, so the preview producer goes

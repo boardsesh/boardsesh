@@ -1741,6 +1741,19 @@ whose edge box contains the climb's, **with no layout scoping**. On spray every
 wall's size row IS an edge box, so left alone the column would come out naming
 other walls' sizes as well as its own.
 
+### Deleting a wall from the Boards picker
+
+The generic `deleteBoard` mutation delegates spray boards to `deleteSprayWall`
+after checking ownership. Both wall and board rows are tombstoned together,
+including `sync_frozen_at`, feed retraction and public-photo cleanup. Older apps
+using the generic mutation receive the same wall cleanup.
+
+Removing the active board also leaves this device's shared session and clears
+its queue, current climb and playlist source. The solo snapshot is removed
+before the picker finishes, so relaunching cannot restore the deleted wall's
+climb. Removing another board leaves the active queue alone. The confirmation
+names the wall's photos and climbs, and a successful delete shows a toast.
+
 ### Turning a wall private has to RETRACT, not just stop
 
 Two things outlive a visibility change and both are handled in the same transaction

@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { and, eq, sql } from 'drizzle-orm';
-import { sprayWallHolds, sprayWallVersions, sprayWalls } from '@boardsesh/db/schema';
+import {
+  feedItems,
+  syncDeletions,
+  userBoards,
+  sprayWallHolds,
+  sprayWallVersions,
+  sprayWalls,
+} from '@boardsesh/db/schema';
 import type { ClimbSearchInput, ConnectionContext } from '@boardsesh/shared-schema';
 import { SPRAY_WALL_WRITE_LOCK_NAMESPACE } from '@boardsesh/shared-schema';
 
@@ -3885,6 +3892,56 @@ describe('sharing a wall: public promotion, demotion and gym listing', () => {
     expect(await publicPhotoKeyOf(wall.layoutId)).toBeNull();
     expect(deletedPublicKeys).toContain(publicKey);
     expect(publicBucketObjects.size).toBe(0);
+  });
+
+  it('generic picker deletion tombstones the wall and removes its feed and public photo', async () => {
+    const { wall, climbUuid } = await wallWithAClimb({ isPublic: true });
+    const publicKey = await publicPhotoKeyOf(wall.layoutId);
+    expect(publicKey).not.toBeNull();
+    await db.insert(feedItems).values({
+      recipientId: STRANGER,
+      actorId: OWNER,
+      type: 'new_climb',
+      entityType: 'climb',
+      entityId: climbUuid,
+    });
+
+    expect(await socialBoardMutations.deleteBoard({}, { boardUuid: wall.uuid }, ctxFor(OWNER))).toBe(true);
+
+    const [deletedWall] = await db.select().from(sprayWalls).where(eq(sprayWalls.layoutId, wall.layoutId));
+    const [deletedBoard] = await db.select().from(userBoards).where(eq(userBoards.uuid, wall.uuid));
+    expect(deletedWall.deletedAt).not.toBeNull();
+    expect(deletedBoard.deletedAt).toEqual(deletedWall.deletedAt);
+    expect(deletedBoard.syncFrozenAt).toEqual(deletedWall.deletedAt);
+    expect(deletedWall.publicPhotoKey).toBeNull();
+    expect(deletedPublicKeys).toContain(publicKey);
+    expect(publicBucketObjects.size).toBe(0);
+    expect(await db.select().from(feedItems).where(eq(feedItems.entityId, climbUuid))).toHaveLength(0);
+    expect(
+      await db
+        .select()
+        .from(syncDeletions)
+        .where(
+          and(
+            eq(syncDeletions.tableName, 'spray_walls'),
+            eq(syncDeletions.recordId, String(wall.layoutId)),
+            eq(syncDeletions.userId, OWNER),
+          ),
+        ),
+    ).toHaveLength(1);
+    expect(await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))).toBeNull();
+  });
+
+  it('generic picker deletion keeps the owner authorization guard', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    const gym = await gymWith(STRANGER, 'admin');
+    await db.update(userBoards).set({ gymId: gym.id }).where(eq(userBoards.uuid, wall.uuid));
+
+    await expect(socialBoardMutations.deleteBoard({}, { boardUuid: wall.uuid }, ctxFor(STRANGER))).rejects.toThrow(
+      'Not authorized to delete this board',
+    );
+    const [stillLive] = await db.select().from(sprayWalls).where(eq(sprayWalls.layoutId, wall.layoutId));
+    expect(stillLive.deletedAt).toBeNull();
   });
 
   it('refuses a visibility change from anyone but the wall owner', async () => {

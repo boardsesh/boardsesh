@@ -68,17 +68,37 @@ export async function getStoredQueueSnapshot(_owner?: UserStorageOwner | null): 
   return dropBoardFeedSource(await getPreference<LocalQueueSnapshot>(QUEUE_SNAPSHOT_KEY));
 }
 
+// Storage writes are ordered so an in-flight save cannot finish after a clear.
+// A generation also fences callbacks whose debounce was scheduled before clear.
+let queueSnapshotGeneration = 0;
+let queueSnapshotWriteQueue: Promise<void> = Promise.resolve();
+
+export function getQueueSnapshotGeneration(): number {
+  return queueSnapshotGeneration;
+}
+
+function enqueueSnapshotWrite(write: () => Promise<void>): Promise<void> {
+  const operation = queueSnapshotWriteQueue.then(write, write);
+  queueSnapshotWriteQueue = operation.catch(() => undefined);
+  return operation;
+}
+
 export function setStoredQueueSnapshot(
   snapshot: Omit<LocalQueueSnapshot, 'savedAt'>,
   _owner?: UserStorageOwner | null,
+  expectedGeneration = queueSnapshotGeneration,
 ): Promise<void> {
-  return setPreference<LocalQueueSnapshot>(QUEUE_SNAPSHOT_KEY, {
-    ...snapshot,
-    playlistSuggestionSource: capSuggestionSource(snapshot.playlistSuggestionSource),
-    savedAt: new Date().toISOString(),
+  return enqueueSnapshotWrite(async () => {
+    if (expectedGeneration !== queueSnapshotGeneration) return;
+    await setPreference<LocalQueueSnapshot>(QUEUE_SNAPSHOT_KEY, {
+      ...snapshot,
+      playlistSuggestionSource: capSuggestionSource(snapshot.playlistSuggestionSource),
+      savedAt: new Date().toISOString(),
+    });
   });
 }
 
 export function clearStoredQueueSnapshot(_owner?: UserStorageOwner | null): Promise<void> {
-  return removePreference(QUEUE_SNAPSHOT_KEY);
+  queueSnapshotGeneration += 1;
+  return enqueueSnapshotWrite(() => removePreference(QUEUE_SNAPSHOT_KEY));
 }
