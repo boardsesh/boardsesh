@@ -335,7 +335,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       storageOwner?: UserStorageOwner | null,
       {
         purgeOfflineBoards = false,
-        wasAuthenticated = true,
+        wasAuthenticated = false,
       }: { purgeOfflineBoards?: boolean; wasAuthenticated?: boolean } = {},
     ): Promise<boolean> => {
       if (!isAuthTransitionCurrent(transitionEpoch)) return false;
@@ -516,7 +516,9 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
           setCurrentUserStorageOwner(null);
           authStateRef.current = { ...authStateRef.current, isLoading: true };
           setIsLoading(true);
-          const cleanedPreviousUser = await runSignedOutCleanup(transitionEpoch, previousStorageOwner);
+          const cleanedPreviousUser = await runSignedOutCleanup(transitionEpoch, previousStorageOwner, {
+            wasAuthenticated: true,
+          });
           if (!cleanedPreviousUser || !isAuthTransitionCurrent(transitionEpoch)) return false;
         }
         setCurrentUserStorageOwner(nextStorageOwner);
@@ -630,7 +632,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
               setIsAuthenticated(false);
               setIsLoading(true);
               const cleanedPreviousUser = previousStorageOwner
-                ? await runSignedOutCleanup(transitionEpoch, previousStorageOwner)
+                ? await runSignedOutCleanup(transitionEpoch, previousStorageOwner, { wasAuthenticated: true })
                 : isAuthTransitionCurrent(transitionEpoch);
               if (!cleanedPreviousUser || !isAuthTransitionCurrent(transitionEpoch)) return;
               authenticatedStorageOwnerRef.current = null;
