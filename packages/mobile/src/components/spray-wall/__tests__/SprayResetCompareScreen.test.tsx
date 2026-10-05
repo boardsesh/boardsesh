@@ -90,9 +90,6 @@ vi.mock('@boardsesh/analytics', () => ({
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
-vi.mock('../../../lib/graphql/extract-error-message', () => ({
-  extractGraphqlMessage: (error: unknown) => (error as Error)?.message,
-}));
 
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', {}, children),
@@ -162,6 +159,8 @@ const PROPOSAL = {
   aspectMismatch: false,
 };
 
+const SERVER_PROPOSAL_ERROR = { response: { errors: [{ message: 'Server refused the proposal' }] } };
+
 function renderScreen(onCommitted = vi.fn(), candidates = CANDIDATES) {
   return render(
     createElement(SprayResetCompareScreen, {
@@ -204,12 +203,12 @@ describe('SprayResetCompareScreen', () => {
         headerInset.current = inset;
         if (state === 'loading') draftState.current = { isLoading: true, isUnavailable: false, homography: null };
         if (state === 'unavailable')
-          proposalState.current = { data: null, isPending: false, error: new Error('Network request failed') };
+          proposalState.current = { data: null, isPending: false, error: SERVER_PROPOSAL_ERROR };
         const screen = renderScreen(vi.fn(), state === 'no-detections' ? [] : CANDIDATES);
 
         if (state === 'loading') expect(screen.getByTestId('spinner')).toBeTruthy();
         if (state === 'no-detections') expect(screen.getByText('sprayReset.compare.noDetections')).toBeTruthy();
-        if (state === 'unavailable') expect(screen.getByText('Network request failed')).toBeTruthy();
+        if (state === 'unavailable') expect(screen.getByText('Server refused the proposal')).toBeTruthy();
         expect(screen.queryByTestId('board')).toBeNull();
         const screenStyle = JSON.parse(screen.container.firstElementChild!.getAttribute('data-native-style')!);
         expect(screenStyle).toContainEqual({ backgroundColor: '#000', paddingTop: expectedPaddingTop });
@@ -245,10 +244,10 @@ describe('SprayResetCompareScreen', () => {
   });
 
   it('shows the proposal error instead of an empty review when propose fails', () => {
-    proposalState.current = { data: null, isPending: false, error: new Error('Network request failed') };
+    proposalState.current = { data: null, isPending: false, error: SERVER_PROPOSAL_ERROR };
     const { getByText, queryByTestId } = renderScreen();
 
-    expect(getByText('Network request failed')).toBeTruthy();
+    expect(getByText('Server refused the proposal')).toBeTruthy();
     expect(queryByTestId('board')).toBeNull();
   });
 
