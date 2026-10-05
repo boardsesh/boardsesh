@@ -6,7 +6,8 @@
 > prose below — the App Name, Short Description, Full Description, and What's New
 > copy live in `title.txt`, `short_description.txt`, `full_description.txt`, and
 > `changelogs/default.txt` respectively. The listing is localized: `en-US`
-> (default), `es-ES`, `fr-FR`, and `de-DE` each have their own folder under
+> (default), `es-ES`, `fr-FR`, `de-DE`, and `zh-CN` (Simplified Chinese; text
+> only, see `docs/i18n-chinese-glossary.md`) each have their own folder under
 > `fastlane/metadata/android/`, and `supply` uploads every locale folder it finds.
 > The changelogs ride the AAB instead (`android-apk-rn.yml` stages every locale
 > into `whatsnew-<locale>`), because the `android metadata` lane runs with
