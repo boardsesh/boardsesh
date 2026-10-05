@@ -378,7 +378,9 @@
         "subtitle": "Bloques populares en un plafón {{board}} a {{angle}}°. Elige tu plafón para abrirlos e iluminarlos.",
         "boardTypeGroup": "Tipo de plafón",
         "rowHint": "Abre el selector de plafones. Elige tu plafón para abrir este bloque.",
-        "footer": "Elige tu plafón para ver el resto."
+        "footer": "Elige tu plafón para ver el resto.",
+        "loadError": "No se pudieron cargar estos bloques.",
+        "retry": "Reintentar"
       },
       "noClimbs": {
         "title": "No se encontraron bloques",

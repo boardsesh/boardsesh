@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useIsFocused, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { Text } from '../Text';
@@ -23,14 +23,16 @@ import { useIsOffline } from '../../hooks/use-is-offline';
 import { useMyBoards, usePopularBoardConfigs, useProfile } from '../../lib/graphql/hooks';
 import { track } from '../../lib/analytics';
 import { nowMs } from '../../lib/clock';
-import { accountAgeHours } from '../../lib/onboarding/onboarding-gate-analytics';
+import { accountAgeHours } from '../../lib/account-age';
 import { noBoardPickerHref } from '../../lib/boards/first-board-mode';
 import {
   decideNoBoardState,
+  holdsNoBoardDecision,
+  isProfileSettled,
   resolvePreviewConfigs,
-  type NoBoardDecision,
   type NoBoardPreviewConfig,
   type NoBoardQueryStatus,
+  type SettledNoBoardDecision,
 } from '../../lib/boards/no-board-preview';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
@@ -39,7 +41,8 @@ import { spacing } from '../../theme/tokens';
 // so all three share one cache entry.
 const POPULAR_CONFIGS_INPUT = { limit: 12 };
 
-type SettledNoBoardDecision = Exclude<NoBoardDecision, { status: 'pending' }>;
+/** Why a preview that was decided on never got its climbs on screen. */
+type PreviewSearchFailure = 'search_error' | 'no_climbs';
 
 function queryStatus(hasData: boolean, isError: boolean): NoBoardQueryStatus {
   if (hasData) return 'ready';
@@ -49,6 +52,11 @@ function queryStatus(hasData: boolean, isError: boolean): NoBoardQueryStatus {
 export function NoBoardState() {
   const router = useRouter();
   const { t } = useTranslation('climbs');
+  // Climbs is the app's entry tab, so this mounts underneath whatever is pushed
+  // over it: the launch gate's first-board picker for a new account, most of
+  // all. Nothing is searched and nothing is reported until the climber is
+  // actually looking at it.
+  const isFocused = useIsFocused();
   const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const isOffline = useIsOffline();
   const flagsResolved = useFeatureFlagsResolved();
@@ -60,12 +68,18 @@ export function NoBoardState() {
   const boardsStatus = queryStatus(boardConnection !== undefined, isBoardsError);
   const ownedBoardCount = boardConnection?.boards.length ?? 0;
 
-  const { data: profile, isPending: isProfilePending } = useProfile({ enabled: isAuthenticated });
+  const {
+    data: profile,
+    isPending: isProfilePending,
+    isFetching: isProfileFetching,
+  } = useProfile({ enabled: isAuthenticated });
   const accountCreatedAt = profile?.createdAt;
 
   // Only asked for once the preview is still possible: a climber with boards of
-  // their own never pays for it here.
-  const previewPossible = isAuthenticated && previewEnabled && boardsStatus === 'ready' && ownedBoardCount === 0;
+  // their own never pays for it here, and neither does anyone while the kill
+  // switch could still land (an unresolved flag bag reads as "enabled").
+  const previewPossible =
+    isAuthenticated && flagsResolved && previewEnabled && boardsStatus === 'ready' && ownedBoardCount === 0;
   const { data: popularConnection, isError: isPopularError } = usePopularBoardConfigs(POPULAR_CONFIGS_INPUT, {
     enabled: previewPossible,
   });
@@ -80,52 +94,77 @@ export function NoBoardState() {
     previewEnabled,
     boardsStatus,
     ownedBoardCount,
-    profileSettled: !isProfilePending,
+    profileSettled: isProfileSettled({
+      hasProfile: !!profile,
+      isPending: isProfilePending,
+      isFetching: isProfileFetching,
+    }),
     popularStatus: queryStatus(popularConnection !== undefined, isPopularError),
     previewConfigs,
   });
 
-  // The first settled answer is held for as long as this state is on screen. A
-  // refetch or a connectivity blip behind it must not swap a list the climber
-  // is reading for a placard, or the other way round. Set during render, so the
-  // frame that settles already shows the right branch.
+  // An answer that later reads cannot make wrong is held for as long as this
+  // state is mounted (see `holdsNoBoardDecision`): a refetch behind a list the
+  // climber is reading must not swap it for a placard. A placard that only
+  // describes this moment (offline, a failed read) is decided again on every
+  // render, so the preview arrives once the connection does. Set during render,
+  // so the frame that settles already shows the right branch.
   const [held, setHeld] = useState<SettledNoBoardDecision | null>(null);
-  if (held === null && decision.status !== 'pending') setHeld(decision);
+  if (held === null && decision.status !== 'pending' && holdsNoBoardDecision(decision)) setHeld(decision);
 
-  // The preview has shown climbs. Until then it is a spinner, and a search that
-  // fails, comes back empty, or cannot start hands the screen back to the placard.
+  // The preview has shown climbs. From then on it stays: a later board type
+  // whose search fails is the list's own problem to show, not a reason to take
+  // the whole screen away.
   const [previewReady, setPreviewReady] = useState(false);
-  if (held?.status === 'preview' && !previewReady && isOffline) {
-    setHeld({ status: 'placard', fallbackReason: 'offline', ownedBoardCount: held.ownedBoardCount });
-  }
+  // The first search failed or came back empty, so the placard is back.
+  const [searchFailure, setSearchFailure] = useState<PreviewSearchFailure | null>(null);
 
   const handleSearchSettled = useCallback((outcome: NoBoardPreviewSearchOutcome) => {
     if (outcome === 'ready') {
       setPreviewReady(true);
       return;
     }
-    setHeld({
-      status: 'placard',
-      fallbackReason: outcome === 'error' ? 'search_error' : 'no_climbs',
-      ownedBoardCount: 0,
-    });
+    setSearchFailure(outcome === 'error' ? 'search_error' : 'no_climbs');
   }, []);
 
-  // Exposure, once per mount, for what the climber actually got: a placard as
-  // soon as it is decided, a preview once its climbs are on screen.
-  const viewedRef = useRef(false);
+  // A failed search gets another go each time the climber comes back to
+  // Climbs. An empty one does not: the same setup would come back empty again.
+  const wasFocusedRef = useRef(isFocused);
   useEffect(() => {
-    if (viewedRef.current || held === null) return;
-    if (held.status === 'preview' && !previewReady) return;
-    viewedRef.current = true;
+    if (isFocused && !wasFocusedRef.current) {
+      setSearchFailure((failure) => (failure === 'search_error' ? null : failure));
+    }
+    wasFocusedRef.current = isFocused;
+  }, [isFocused]);
+
+  // What is on screen. Until a held preview has its first climbs it is only a
+  // spinner, so a lost connection or a failed search hands the screen back to
+  // the placard. Offline is read live, so the preview returns with the signal.
+  let shown: SettledNoBoardDecision | null = held ?? (decision.status === 'pending' ? null : decision);
+  if (held?.status === 'preview' && !previewReady) {
+    const fallbackReason = isOffline ? 'offline' : searchFailure;
+    if (fallbackReason) shown = { status: 'placard', fallbackReason, ownedBoardCount: held.ownedBoardCount };
+  }
+
+  // Exposure, for what the climber actually got and only while they can see
+  // it: a placard as soon as it is decided, a preview once its climbs are on
+  // screen. Once per variant per mount, so a placard that a returning
+  // connection turns into a preview reports both, in that order. A preview
+  // never goes back to a placard once reported.
+  const reportedVariantRef = useRef<SettledNoBoardDecision['status'] | null>(null);
+  useEffect(() => {
+    if (!isFocused || shown === null) return;
+    if (shown.status === 'preview' && !previewReady) return;
+    if (reportedVariantRef.current === shown.status) return;
+    reportedVariantRef.current = shown.status;
     track(SHARED_EVENTS.ClimbsNoBoardStateViewed, {
-      variant: held.status,
-      owned_board_count: held.ownedBoardCount,
+      variant: shown.status,
+      owned_board_count: shown.ownedBoardCount,
       account_age_hours: accountAgeHours(accountCreatedAt, nowMs()),
-      preview_board_type: held.status === 'preview' ? held.configs[0].boardName : null,
-      fallback_reason: held.status === 'placard' ? held.fallbackReason : null,
+      preview_board_type: shown.status === 'preview' ? shown.configs[0].boardName : null,
+      fallback_reason: shown.status === 'placard' ? shown.fallbackReason : null,
     });
-  }, [held, previewReady, accountCreatedAt]);
+  }, [isFocused, shown, previewReady, accountCreatedAt]);
 
   // The picker's no-board entry (#5654): a climber with no boards at all gets
   // "Where do you climb?" there, with the gym search, the builder and the
@@ -147,10 +186,11 @@ export function NoBoardState() {
     [router],
   );
 
-  if (held?.status === 'preview') {
+  if (shown?.status === 'preview') {
     return (
       <NoBoardClimbsPreview
-        configs={held.configs}
+        configs={shown.configs}
+        active={isFocused}
         onFindBoard={handleFindBoard}
         onClimbPress={handlePreviewClimbPress}
         onSearchSettled={handleSearchSettled}

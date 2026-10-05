@@ -684,14 +684,23 @@ switch `no-board-preview-kill` is on) keeps the placard. No experiment arm: read
 
 | Event | Properties | Emit site | Volume |
 | --- | --- | --- | --- |
-| `Climbs No Board State Viewed` | `variant` (`placard` / `preview`), `owned_board_count` (null when the board list could not be read), `account_age_hours` (null when the profile could not), `preview_board_type` (the board type listed first; null on a placard), `fallback_reason` (null on a preview; `kill_switch` / `signed_out` / `offline` / `boards_unknown` / `has_boards` / `no_config` / `search_error` / `no_climbs`) | `NoBoardState.tsx` | Once per mount of Climbs' no-board state |
+| `Climbs No Board State Viewed` | `variant` (`placard` / `preview`), `owned_board_count` (null when the board list could not be read), `account_age_hours` (null when the profile could not), `preview_board_type` (the board type listed first; null on a placard), `fallback_reason` (null on a preview; `kill_switch` / `signed_out` / `offline` / `boards_unknown` / `has_boards` / `no_config` / `search_error` / `no_climbs`) | `NoBoardState.tsx` | Once per variant per mount of Climbs' no-board state, while Climbs is focused |
 | `No Board Preview Climb Tapped` | `board_type`, `row_index` (0-based) | `NoBoardState.tsx` | Per row tap |
 | `Board Picker Opened` (changed) | adds `trigger` (`cta` = Find my board, `preview_row` = a climb in the preview; null outside `source = no_board`) | `use-board-picker-analytics.ts` | Unchanged |
 
 - **Exposure is what they got, not what was planned.** The event waits for the board list, the
   flags and the profile (or an offline phone), and a preview waits for its first page of climbs. A
-  search that fails or comes back empty reports `variant = placard` with `search_error` /
+  first search that fails or comes back empty reports `variant = placard` with `search_error` /
   `no_climbs`. Someone who leaves Climbs before that settles is not counted.
+- **Only while Climbs is on screen.** The no-board state also mounts underneath the launch gate's
+  first-board picker. Nothing is searched or reported there until the picker closes, so a newcomer
+  who binds straight from that picker has no exposure and is not a preview conversion.
+- **Up to two events per mount.** A placard shown for a passing reason (`offline`, `boards_unknown`,
+  `no_config`, `search_error`) is decided again, and the preview that replaces it reports its own
+  exposure. Count preview exposures by `variant = preview`, not by a person's first event.
+  `has_boards` and `kill_switch` are held for the mount.
+- **A later board type that fails stays a preview.** Once climbs have shown, a chip whose search
+  fails or is empty shows that in the list, with **Try again**. No second event.
 - **Bind rate**: of people with `Climbs No Board State Viewed` and `owned_board_count = 0`, the share
   with `Board Picker Selection Completed`, `Onboarding Board Activated`, `Board Created` or
   `Board Create Reused Existing` within 7 days. The event did not exist before the preview shipped,

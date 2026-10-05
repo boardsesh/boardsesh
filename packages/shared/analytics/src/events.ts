@@ -616,11 +616,18 @@ export const SHARED_EVENTS = {
   // Mobile-only: Climbs with no board bound. Until now that state fired nothing,
   // so nobody could say how many climbers saw "Pick your board" and left.
   //
-  // ClimbsNoBoardStateViewed: once per mount of that state, for everyone, with
-  // `no-board-preview-kill` on or off. It waits for the board list, the flags
-  // and the profile to settle (or for the phone to read as offline), and for a
-  // preview it waits for the first page of climbs, so `variant` is what the
-  // climber actually got. A climber who leaves before that fires nothing. Props:
+  // ClimbsNoBoardStateViewed: what that state showed, for everyone, with
+  // `no-board-preview-kill` on or off. Fired only while Climbs is the focused
+  // screen: the state also mounts underneath the launch gate's first-board
+  // picker, and a climber who binds from there never saw it. It waits for the
+  // board list, the flags and the profile to settle (or for the phone to read
+  // as offline), and for a preview it waits for the first page of climbs, so
+  // `variant` is what the climber actually got. A climber who leaves before
+  // that fires nothing. Once per variant per mount: usually one event, two
+  // (placard, then preview) when a placard shown for a passing reason
+  // (`offline`, `boards_unknown`, `no_config`, `search_error`) gives way to the
+  // preview once the read works. Count preview exposures by `variant =
+  // 'preview'`, not by the first event. Props:
   // { variant: 'placard' | 'preview', owned_board_count (null when the list
   // could not be read), account_age_hours (null when the profile could not),
   // preview_board_type (the board type listed first, null on a placard),

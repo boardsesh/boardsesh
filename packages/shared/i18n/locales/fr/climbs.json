@@ -378,7 +378,9 @@
         "subtitle": "Des blocs populaires sur une board {{board}} à {{angle}}°. Choisis ta board pour les ouvrir et les allumer.",
         "boardTypeGroup": "Type de board",
         "rowHint": "Ouvre le sélecteur de board. Choisis ta board pour ouvrir ce bloc.",
-        "footer": "Choisis ta board pour voir la suite."
+        "footer": "Choisis ta board pour voir la suite.",
+        "loadError": "Impossible de charger ces blocs.",
+        "retry": "Réessayer"
       },
       "noClimbs": {
         "title": "Aucun bloc trouvé",

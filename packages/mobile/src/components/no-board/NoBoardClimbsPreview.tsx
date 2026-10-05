@@ -49,8 +49,18 @@ type NoBoardClimbsPreviewProps = {
   onFindBoard: () => void;
   /** A climb was tapped. `rowIndex` is its 0-based place in the list. */
   onClimbPress: (config: NoBoardPreviewConfig, rowIndex: number) => void;
-  /** The shown setup's search finished. The owner falls back on anything but `ready`. */
+  /**
+   * The shown setup's search finished. Until one setup has come back `ready`
+   * the owner is expected to take the preview away on anything else; after
+   * that the list shows a failed or empty setup itself.
+   */
   onSearchSettled: (outcome: NoBoardPreviewSearchOutcome, config: NoBoardPreviewConfig) => void;
+  /**
+   * False while the climber cannot see the preview (another screen is over
+   * it). Nothing is searched and no board art is fetched until it is true.
+   * Defaults to true.
+   */
+  active?: boolean;
 };
 
 type PreviewRowProps = {
@@ -101,6 +111,7 @@ function NoBoardClimbsPreviewComponent({
   onFindBoard,
   onClimbPress,
   onSearchSettled,
+  active = true,
 }: NoBoardClimbsPreviewProps) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
@@ -118,26 +129,49 @@ function NoBoardClimbsPreviewComponent({
     [config],
   );
   // `fetchNextPage` is never called: one page is the whole preview.
-  const { data: searchPages, isError } = useInfiniteSearchClimbs(searchInput, true, {
+  const {
+    data: searchPages,
+    isError,
+    failureCount,
+    refetch,
+  } = useInfiniteSearchClimbs(searchInput, active, {
     staleTime: PREVIEW_STALE_TIME_MS,
   });
   const firstPage = searchPages?.pages[0];
   const climbs = firstPage?.climbs ?? EMPTY_CLIMBS;
 
+  // The first failed attempt already counts as an error. React Query would
+  // retry twice more before saying so itself, and that is seconds of spinner
+  // on a backend that is not answering. The retries carry on behind whatever
+  // is shown instead, and a late success fills the cache.
+  const searchFailed = isError || failureCount > 0;
   const searchOutcome: NoBoardPreviewSearchOutcome | null = firstPage
     ? climbs.length > 0
       ? 'ready'
       : 'empty'
-    : isError
+    : searchFailed
       ? 'error'
       : null;
   useEffect(() => {
     if (searchOutcome !== null) onSearchSettled(searchOutcome, config);
   }, [searchOutcome, config, onSearchSettled]);
 
+  // Climbs have been on screen. Before that a failed or empty search is the
+  // owner's cue to take the preview away, so only a spinner shows. After it,
+  // the climber chose another board type from a working list: that setup's
+  // failure is shown in place, with the chips still there to go back.
+  const [hasShownClimbs, setHasShownClimbs] = useState(false);
+  if (!hasShownClimbs && searchOutcome === 'ready') setHasShownClimbs(true);
+  const inlineProblem =
+    hasShownClimbs && (searchOutcome === 'error' || searchOutcome === 'empty') ? searchOutcome : null;
+  const handleRetry = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+
   // Thumbnails draw over the board art for this setup. On a real board the
   // Climbs screen warms it; nothing has for a setup nobody bound.
   useEffect(() => {
+    if (!active) return undefined;
     const task = InteractionManager.runAfterInteractions(() => {
       void ensureBackgroundsCached({
         boardName: config.boardName,
@@ -150,7 +184,7 @@ function NoBoardClimbsPreviewComponent({
     return () => {
       task.cancel();
     };
-  }, [config, colorScheme]);
+  }, [active, config, colorScheme]);
 
   const boardTypeOptions = useMemo<ChipOption<number>[]>(
     () =>
@@ -179,6 +213,16 @@ function NoBoardClimbsPreviewComponent({
   );
 
   const listContentStyle = useMemo(() => ({ paddingBottom: scrollBottomPadding }), [scrollBottomPadding]);
+  const footerText = t('mobile.emptyState.noBoardPreview.footer');
+  const footerColor = systemColors.secondaryLabel;
+  const listFooter = useMemo(
+    () => (
+      <Text variant="footnote" color={footerColor} style={styles.footer}>
+        {footerText}
+      </Text>
+    ),
+    [footerText, footerColor],
+  );
   const hasClimbs = climbs.length > 0;
 
   return (
@@ -220,15 +264,26 @@ function NoBoardClimbsPreviewComponent({
           keyExtractor={previewRowKey}
           contentInsetAdjustmentBehavior="never"
           contentContainerStyle={listContentStyle}
-          ListFooterComponent={
-            <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footer}>
-              {t('mobile.emptyState.noBoardPreview.footer')}
-            </Text>
-          }
+          ListFooterComponent={listFooter}
         />
+      ) : inlineProblem ? (
+        <View testID="no-board-preview-problem" style={styles.loading}>
+          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.problemText}>
+            {inlineProblem === 'error'
+              ? t('mobile.emptyState.noBoardPreview.loadError')
+              : t('mobile.emptyState.noClimbs.title')}
+          </Text>
+          <Button
+            testID="no-board-preview-retry"
+            title={t('mobile.emptyState.noBoardPreview.retry')}
+            onPress={handleRetry}
+            variant="tonal"
+            size="medium"
+          />
+        </View>
       ) : (
-        // Loading, and the moment between a failed or empty search and the
-        // owner swapping this for the placard.
+        // Loading, and the moment between a first search that failed or came
+        // back empty and the owner swapping this for the placard.
         <View style={styles.loading}>
           <ActivityIndicator />
         </View>
@@ -266,5 +321,10 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: spacing[3],
+    paddingHorizontal: spacing[4],
+  },
+  problemText: {
+    textAlign: 'center',
   },
 });

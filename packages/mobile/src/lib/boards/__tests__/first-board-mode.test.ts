@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   FIRST_BOARD_PICKER_HREF,
-  NO_BOARD_PICKER_HREF,
+  NO_BOARD_PICKER_SOURCE,
   isFirstBoardMode,
   isNoBoardEntry,
   noBoardPickerHref,
@@ -30,13 +30,13 @@ describe('isFirstBoardMode', () => {
 
 describe('isNoBoardEntry', () => {
   it("is on for the href Climbs' Find my board pushes", () => {
-    expect(isNoBoardEntry(NO_BOARD_PICKER_HREF.params)).toBe(true);
+    expect(isNoBoardEntry(noBoardPickerHref('cta').params)).toBe(true);
   });
 
   // The no-board entry is an ordinary pick, never onboarding: it must not turn
   // on first-board mode, which closes out first-run on the bind.
   it('is not first-board mode', () => {
-    expect(isFirstBoardMode(NO_BOARD_PICKER_HREF.params)).toBe(false);
+    expect(isFirstBoardMode(noBoardPickerHref('cta').params)).toBe(false);
     expect(isNoBoardEntry(FIRST_BOARD_PICKER_HREF.params)).toBe(false);
     expect(isNoBoardEntry({})).toBe(false);
   });
@@ -118,7 +118,7 @@ describe('noBoardPickerHref', () => {
 describe('noBoardPickerTrigger', () => {
   // A link from a build that predates the param carries none.
   it('is null for the untagged no-board entry', () => {
-    expect(noBoardPickerTrigger(NO_BOARD_PICKER_HREF.params)).toBeNull();
+    expect(noBoardPickerTrigger({ source: NO_BOARD_PICKER_SOURCE })).toBeNull();
   });
 
   it('is null for a value this build does not know', () => {

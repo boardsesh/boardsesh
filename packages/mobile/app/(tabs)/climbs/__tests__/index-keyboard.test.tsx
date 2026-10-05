@@ -147,6 +147,7 @@ vi.mock('expo-router', () => ({
   useRouter: () => ({ push: mocks.push }),
   useLocalSearchParams: () => mocks.searchParams,
   useFocusEffect: () => {},
+  useIsFocused: () => true,
 }));
 
 // The onboarding reveal banner + its storage pull expo-haptics / expo-secure-store
@@ -345,7 +346,7 @@ vi.mock('../../../../src/lib/graphql/hooks', () => ({
   useMyBoards: () => ({ data: undefined }),
   // Read by the real `NoBoardState` below. With the board list never arriving
   // it stays on the placard, which is the branch this file exercises.
-  useProfile: () => ({ data: undefined, isPending: false }),
+  useProfile: () => ({ data: undefined, isPending: false, isFetching: false }),
   usePopularBoardConfigs: () => ({ data: undefined, isError: false }),
 }));
 // `NoBoardState` runs for real, so binding a board on the mounted screen swaps
@@ -353,10 +354,6 @@ vi.mock('../../../../src/lib/graphql/hooks', () => ({
 // preview list has its own suite and would pull the board thumbnails in here.
 vi.mock('../../../../src/components/no-board/NoBoardClimbsPreview', () => ({
   NoBoardClimbsPreview: () => null,
-}));
-// Keeps expo-updates out of this graph; no exposure fires while the board list is pending.
-vi.mock('../../../../src/lib/onboarding/onboarding-gate-analytics', () => ({
-  accountAgeHours: () => null,
 }));
 // Screenshot-only board roster. Real in a capture build; here it would be the
 // screen's only live useQuery, and this test renders without a QueryClientProvider.

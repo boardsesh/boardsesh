@@ -378,7 +378,9 @@
         "subtitle": "Beliebte Boulder auf einem {{board}} Board bei {{angle}}°. Wähl dein Board, um sie zu öffnen und am Board zu beleuchten.",
         "boardTypeGroup": "Board-Typ",
         "rowHint": "Öffnet die Board-Auswahl. Wähl dein Board, um diesen Boulder zu öffnen.",
-        "footer": "Wähl dein Board, um den Rest zu sehen."
+        "footer": "Wähl dein Board, um den Rest zu sehen.",
+        "loadError": "Diese Boulder konnten nicht geladen werden.",
+        "retry": "Erneut versuchen"
       },
       "noClimbs": {
         "title": "Keine Boulder gefunden",

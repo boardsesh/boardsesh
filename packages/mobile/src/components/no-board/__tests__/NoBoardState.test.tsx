@@ -11,12 +11,13 @@ import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import type { NoBoardPreviewConfig } from '../../../lib/boards/no-board-preview';
 
 type Children = { children?: ReactNode };
-type QueryResult<TData> = { data: TData | undefined; isError: boolean; isPending: boolean };
+type QueryResult<TData> = { data: TData | undefined; isError: boolean; isPending: boolean; isFetching: boolean };
 type PreviewProps = {
   configs: readonly NoBoardPreviewConfig[];
   onFindBoard: () => void;
   onClimbPress: (config: NoBoardPreviewConfig, rowIndex: number) => void;
   onSearchSettled: (outcome: 'ready' | 'error' | 'empty', config: NoBoardPreviewConfig) => void;
+  active?: boolean;
 };
 
 const trackMock = vi.hoisted(() => vi.fn());
@@ -30,11 +31,16 @@ const hookOptions = vi.hoisted(() => ({
 const world = vi.hoisted(() => ({
   auth: { isAuthenticated: true, isLoading: false },
   isOffline: false,
+  isFocused: true,
   flagsResolved: true,
   previewEnabled: true,
-  boards: { data: undefined, isError: false, isPending: true } as QueryResult<{ boards: unknown[] }>,
-  profile: { data: undefined, isError: false, isPending: true } as QueryResult<{ createdAt?: string }>,
-  popular: { data: undefined, isError: false, isPending: true } as QueryResult<{ configs: PopularBoardConfig[] }>,
+  boards: { data: undefined, isError: false, isPending: true, isFetching: true } as QueryResult<{ boards: unknown[] }>,
+  profile: { data: undefined, isError: false, isPending: true, isFetching: true } as QueryResult<{
+    createdAt?: string;
+  }>,
+  popular: { data: undefined, isError: false, isPending: true, isFetching: true } as QueryResult<{
+    configs: PopularBoardConfig[];
+  }>,
   previewConfigs: [] as NoBoardPreviewConfig[],
 }));
 
@@ -43,7 +49,10 @@ vi.mock('react-native', () => ({
     createElement('div', { 'data-testid': testID }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
-vi.mock('expo-router', () => ({ useRouter: () => ({ push: pushMock }) }));
+vi.mock('expo-router', () => ({
+  useRouter: () => ({ push: pushMock }),
+  useIsFocused: () => world.isFocused,
+}));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => {
@@ -98,10 +107,6 @@ vi.mock('../../../lib/graphql/hooks', () => ({
 vi.mock('../../../lib/analytics', () => ({ track: trackMock }));
 // 50 hours after the account below was created.
 vi.mock('../../../lib/clock', () => ({ nowMs: () => Date.parse('2026-10-03T02:00:00Z') }));
-vi.mock('../../../lib/onboarding/onboarding-gate-analytics', () => ({
-  accountAgeHours: (createdAt: string | null | undefined, atMs: number) =>
-    createdAt ? Math.floor((atMs - Date.parse(createdAt)) / 3_600_000) : null,
-}));
 // The catalogue-backed resolution has its own suite; the real decision runs.
 vi.mock('../../../lib/boards/no-board-preview', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../lib/boards/no-board-preview')>()),
@@ -117,19 +122,20 @@ const KILTER: NoBoardPreviewConfig = { boardName: 'kilter', layoutId: 1, sizeId:
 const TENSION: NoBoardPreviewConfig = { boardName: 'tension', layoutId: 9, sizeId: 1, setIds: '8,9', angle: 40 };
 
 function ready<TData>(data: TData): QueryResult<TData> {
-  return { data, isError: false, isPending: false };
+  return { data, isError: false, isPending: false, isFetching: false };
 }
 function failed<TData>(): QueryResult<TData> {
-  return { data: undefined, isError: true, isPending: false };
+  return { data: undefined, isError: true, isPending: false, isFetching: false };
 }
 function loading<TData>(): QueryResult<TData> {
-  return { data: undefined, isError: false, isPending: true };
+  return { data: undefined, isError: false, isPending: true, isFetching: true };
 }
 
 /** A signed-in, online account with no boards and two previewable setups. */
 function zeroBoardNewcomer() {
   world.auth = { isAuthenticated: true, isLoading: false };
   world.isOffline = false;
+  world.isFocused = true;
   world.flagsResolved = true;
   world.previewEnabled = true;
   world.boards = ready({ boards: [] });
@@ -209,6 +215,111 @@ describe('NoBoardState', () => {
 
     expect(screen.getByTestId('no-board-placard')).toBeTruthy();
     expect(viewedEvents()[0][1]).toMatchObject({ variant: 'placard', fallback_reason: 'offline' });
+  });
+
+  // Climbs stays mounted for the whole session: a launch in a signal gap must
+  // not cost the climber the preview until they relaunch.
+  it('brings the preview in once the connection is back, and reports both', () => {
+    world.isOffline = true;
+    const { rerender } = render(<NoBoardState />);
+    expect(screen.getByTestId('no-board-placard')).toBeTruthy();
+
+    world.isOffline = false;
+    rerender(<NoBoardState />);
+    expect(screen.getByTestId('preview')).toBeTruthy();
+    act(() => previewProps.current?.onSearchSettled('ready', KILTER));
+
+    expect(viewedEvents().map(([, props]) => [props.variant, props.fallback_reason])).toEqual([
+      ['placard', 'offline'],
+      ['preview', null],
+    ]);
+  });
+
+  it('decides again after the board list recovers from a failed read', () => {
+    world.boards = failed();
+    const { rerender } = render(<NoBoardState />);
+    expect(screen.getByTestId('no-board-placard')).toBeTruthy();
+
+    world.boards = ready({ boards: [] });
+    rerender(<NoBoardState />);
+    expect(screen.getByTestId('preview')).toBeTruthy();
+  });
+
+  it('gets the preview back when a connection lost mid-search returns', () => {
+    const { rerender } = render(<NoBoardState />);
+    world.isOffline = true;
+    rerender(<NoBoardState />);
+    expect(screen.getByTestId('no-board-placard')).toBeTruthy();
+
+    world.isOffline = false;
+    rerender(<NoBoardState />);
+    expect(screen.getByTestId('preview')).toBeTruthy();
+  });
+
+  // The climber picked another board type from a working list. That setup's
+  // failure is the list's to show; the screen and the exposure stay a preview.
+  it.each(['error', 'empty'] as const)('keeps a working preview when a later board type ends in %s', (outcome) => {
+    render(<NoBoardState />);
+    act(() => previewProps.current?.onSearchSettled('ready', KILTER));
+    act(() => previewProps.current?.onSearchSettled(outcome, TENSION));
+
+    expect(screen.getByTestId('preview')).toBeTruthy();
+    expect(screen.queryByTestId('no-board-placard')).toBeNull();
+    expect(viewedEvents().map(([, props]) => props.variant)).toEqual(['preview']);
+  });
+
+  // Climbs is the entry tab, so the launch gate's first-board picker opens over
+  // this for a new account. Someone who binds from that picker never saw the
+  // preview and must not count as a preview conversion.
+  it('searches nothing and reports nothing while another screen is over it', () => {
+    world.isFocused = false;
+    const { rerender } = render(<NoBoardState />);
+
+    expect(previewProps.current?.active).toBe(false);
+    // Even if a cached page reports in, nobody is looking.
+    act(() => previewProps.current?.onSearchSettled('ready', KILTER));
+    expect(viewedEvents()).toHaveLength(0);
+
+    world.isFocused = true;
+    rerender(<NoBoardState />);
+    expect(previewProps.current?.active).toBe(true);
+    expect(viewedEvents().map(([, props]) => props.variant)).toEqual(['preview']);
+  });
+
+  it('does not report a covered placard either', () => {
+    world.isFocused = false;
+    world.boards = ready({ boards: [{}] });
+    const { rerender } = render(<NoBoardState />);
+    expect(viewedEvents()).toHaveLength(0);
+
+    world.isFocused = true;
+    rerender(<NoBoardState />);
+    expect(viewedEvents()).toHaveLength(1);
+  });
+
+  it('tries a failed search again when the climber comes back to Climbs', () => {
+    const { rerender } = render(<NoBoardState />);
+    act(() => previewProps.current?.onSearchSettled('error', KILTER));
+    expect(screen.getByTestId('no-board-placard')).toBeTruthy();
+
+    world.isFocused = false;
+    rerender(<NoBoardState />);
+    world.isFocused = true;
+    rerender(<NoBoardState />);
+
+    expect(screen.getByTestId('preview')).toBeTruthy();
+  });
+
+  it('keeps the placard on return when the setup simply had no climbs', () => {
+    const { rerender } = render(<NoBoardState />);
+    act(() => previewProps.current?.onSearchSettled('empty', KILTER));
+
+    world.isFocused = false;
+    rerender(<NoBoardState />);
+    world.isFocused = true;
+    rerender(<NoBoardState />);
+
+    expect(screen.getByTestId('no-board-placard')).toBeTruthy();
   });
 
   it('keeps a preview that is already showing climbs through a connectivity blip', () => {
@@ -374,6 +485,29 @@ describe('NoBoardState', () => {
       pathname: '/boards',
       params: { source: 'no_board', trigger: 'preview_row' },
     });
+  });
+
+  // Sign-in invalidates the `null` profile the signed-out tree cached, so the
+  // query is not pending while the real one loads. Reporting then would send a
+  // null age for exactly the fresh sign-ups this event is cut by.
+  it('waits out a profile refetch over a cached null before reporting', () => {
+    world.boards = ready({ boards: [{}] });
+    world.profile = { data: undefined, isError: false, isPending: false, isFetching: true };
+    const { rerender } = render(<NoBoardState />);
+    expect(viewedEvents()).toHaveLength(0);
+
+    world.profile = ready({ createdAt: '2026-09-30T23:30:00Z' });
+    rerender(<NoBoardState />);
+    expect(viewedEvents()[0][1]).toMatchObject({ variant: 'placard', account_age_hours: 50 });
+  });
+
+  // An unresolved flag bag reads as "enabled"; the request would be wasted
+  // whenever the kill switch then lands.
+  it('does not ask for the popular list until the flags have resolved', () => {
+    world.flagsResolved = false;
+    render(<NoBoardState />);
+
+    expect(hookOptions.popular).toHaveBeenLastCalledWith({ limit: 12 }, { enabled: false });
   });
 
   it('only reads the board list and the profile for a signed-in climber', () => {

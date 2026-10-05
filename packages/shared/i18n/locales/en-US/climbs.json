@@ -378,7 +378,9 @@
         "subtitle": "Popular climbs on a {{board}} board at {{angle}}°. Pick your board to open them and light them up.",
         "boardTypeGroup": "Board type",
         "rowHint": "Opens the board picker. Pick your board to open this climb.",
-        "footer": "Pick your board to see the rest."
+        "footer": "Pick your board to see the rest.",
+        "loadError": "Couldn't load these climbs.",
+        "retry": "Try again"
       },
       "noClimbs": {
         "title": "No climbs found",
