@@ -37,6 +37,8 @@ import { requireBoardGymLinkAccess, resolveCanonicalGymByUuid } from '../social/
 import { syncLocationGeography } from '../social/location-geography';
 import {
   boundingSize,
+  classifySprayDraft,
+  sameSprayGeometry,
   homographyFromAnchors,
   IDENTITY_HOMOGRAPHY,
   isValidAnchorQuad,
@@ -141,6 +143,8 @@ export const SPRAY_WALL_CODES = {
   anglePublished: 'SPRAY_WALL_ANGLE_PUBLISHED',
   publishWouldGoBackwards: 'SPRAY_WALL_PUBLISH_BACKWARDS',
   draftAlreadyOpen: 'SPRAY_WALL_DRAFT_ALREADY_OPEN',
+  draftPurposeMismatch: 'SPRAY_WALL_DRAFT_PURPOSE_MISMATCH',
+  resetReviewRequired: 'SPRAY_WALL_RESET_REVIEW_REQUIRED',
   sourceVersionNotCurrent: 'SPRAY_WALL_SOURCE_VERSION_NOT_CURRENT',
   anchorsRequired: 'SPRAY_WALL_ANCHORS_REQUIRED',
   visibilityOwnerOnly: 'SPRAY_WALL_VISIBILITY_OWNER_ONLY',
@@ -627,6 +631,30 @@ async function loadDraftVersion(
     });
   }
   return version;
+}
+
+/** The published source is re-read under the wall lock for every publishing decision. */
+async function draftPurpose(executor: SprayWriteExecutor, wallId: number, version: SprayWallVersionRow) {
+  const [published] = await executor
+    .select({ version: dbSchema.sprayWallVersions })
+    .from(dbSchema.sprayWalls)
+    .innerJoin(dbSchema.sprayWallVersions, eq(dbSchema.sprayWalls.currentVersionId, dbSchema.sprayWallVersions.id))
+    .where(eq(dbSchema.sprayWalls.id, wallId))
+    .limit(1);
+  const photo = (row: SprayWallVersionRow) => ({
+    photoIdentity: row.photoKey,
+    width: row.photoWidth,
+    height: row.photoHeight,
+    anchors: row.anchors,
+    homography: row.homography,
+  });
+  return classifySprayDraft(photo(version), published ? photo(published.version) : null);
+}
+
+function wrongDraftPurposeError() {
+  return new GraphQLError('This draft belongs to a different wall-editing flow. Reopen the matching editor.', {
+    extensions: { code: SPRAY_WALL_CODES.draftPurposeMismatch },
+  });
 }
 
 /**
@@ -1417,6 +1445,7 @@ export const sprayWallQueries = {
     // reviewed a whole screen of decisions. Same check, same error, one step
     // earlier. No lock: nothing is written, and the commit re-reads under one.
     const draft = await loadDraftVersion(db, wall.id, validated.versionId);
+    if ((await draftPurpose(db, wall.id, draft)) === 'hold-edit') throw wrongDraftPurposeError();
     assertResetVersionIsAnchored(draft);
 
     // The wall as CLIMBERS see it — alive at `current_version_id` — which is what
@@ -1794,14 +1823,6 @@ export const sprayWallMutations = {
         .from(dbSchema.sprayWallVersions)
         .where(eq(dbSchema.sprayWallVersions.wallId, wall.id));
 
-      if (Number(versionCount) >= MAX_VERSIONS_PER_WALL) {
-        throw new GraphQLError(
-          `This wall has reached the limit of ${MAX_VERSIONS_PER_WALL} photos. ` +
-            `Each one keeps its own hold generation, so there is nothing to prune automatically.`,
-          { extensions: { code: SPRAY_WALL_CODES.versionLimitReached } },
-        );
-      }
-
       // ONE active draft per wall.
       //
       // Without it two drafts can each mark the SAME inherited hold removed, and
@@ -1814,11 +1835,23 @@ export const sprayWallMutations = {
       // The way out is `publishSprayWallVersion` or `discardSprayWallVersion`; the
       // error names the draft so a client can offer both.
       const [openDraft] = await tx
-        .select({ id: dbSchema.sprayWallVersions.id, versionNumber: dbSchema.sprayWallVersions.versionNumber })
+        .select()
         .from(dbSchema.sprayWallVersions)
         .where(and(eq(dbSchema.sprayWallVersions.wallId, wall.id), eq(dbSchema.sprayWallVersions.status, 'draft')))
         .limit(1);
       if (openDraft) {
+        // Retrying the same uploaded photo after a lost response is idempotent.
+        // Another photo, mapping or editor's draft must never be silently adopted.
+        if (
+          uploadedPhoto &&
+          openDraft.photoKey === uploadedPhoto.key &&
+          openDraft.photoWidth === uploadedPhoto.width &&
+          openDraft.photoHeight === uploadedPhoto.height &&
+          sameSprayGeometry(openDraft.anchors, validated.anchors ?? null) &&
+          openDraft.notes === (validated.notes ?? null)
+        ) {
+          return openDraft;
+        }
         throw new GraphQLError(
           `This wall already has an unfinished photo (version ${openDraft.versionNumber}). ` +
             `Publish it or discard it before starting another.`,
@@ -1829,6 +1862,14 @@ export const sprayWallMutations = {
               draftVersionNumber: openDraft.versionNumber,
             },
           },
+        );
+      }
+
+      if (Number(versionCount) >= MAX_VERSIONS_PER_WALL) {
+        throw new GraphQLError(
+          `This wall has reached the limit of ${MAX_VERSIONS_PER_WALL} photos. ` +
+            `Each one keeps its own hold generation, so there is nothing to prune automatically.`,
+          { extensions: { code: SPRAY_WALL_CODES.versionLimitReached } },
         );
       }
 
@@ -2595,6 +2636,7 @@ export const sprayWallMutations = {
       // generation and move every climb set on it.
       await lockWallForWrite(tx, wall.id);
       const version = await loadDraftVersion(tx, wall.id, validated.versionId);
+      if ((await draftPurpose(tx, wall.id, version)) === 'hold-edit') throw wrongDraftPurposeError();
       assertResetVersionIsAnchored(version);
 
       // The decisions are re-validated against the wall as it is NOW, not against
@@ -2845,6 +2887,12 @@ export const sprayWallMutations = {
       // this path and `commitSprayWallVersion` cannot drift on what publishing
       // means — the supersede, the hold count, the catalogue image and the
       // integrity recompute are one sequence with one owner.
+      const draft = await loadDraftVersion(tx, found.wall.id, found.version.id);
+      if ((await draftPurpose(tx, found.wall.id, draft)) === 'reset') {
+        throw new GraphQLError('Review and confirm this reset before publishing the new photo.', {
+          extensions: { code: SPRAY_WALL_CODES.resetReviewRequired },
+        });
+      }
       return publishDraftUnderLock(tx, found.wall, found.version.id);
     });
     const published = publishedDraft.version;

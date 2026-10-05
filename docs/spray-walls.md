@@ -541,6 +541,24 @@ because a draft has never been published: no climb can reference its work. The
 discard un-marks what the draft removed, drops the holds it added (catalogue rows
 included), then deletes the version row.
 
+### Drafts belong to one editing flow
+
+The single open draft is either initial setup, hold maintenance, or a photo reset.
+Hold maintenance reuses the current published private photo key and its exact
+pixel dimensions, anchors and homography. Any other photo or mapping requires
+reset review. This is inferred from immutable photo identity, so existing drafts
+need no migration. Expiring URL signatures never determine identity.
+
+The plain publish endpoint accepts initial setup and hold maintenance only.
+Photo resets publish through `commitSprayWallVersion`; propose and commit refuse
+hold-maintenance drafts. Initial setup may still use the commit endpoint for its
+first publication, including its saved visibility choice. Publishing checks the current source again under the
+wall lock, so an older client cannot bypass comparison through “Publish holds”.
+Creating a version with the same uploaded photo, dimensions, corners and notes
+returns its existing draft after a lost response. A different upload or mapping
+still receives `SPRAY_WALL_DRAFT_ALREADY_OPEN` and must be explicitly resumed or
+discarded.
+
 ### The version state machine
 
 | From | To | How |

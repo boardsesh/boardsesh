@@ -48,3 +48,5 @@ export {
   pairCost,
   suggestMoves,
 } from './match';
+
+export { classifySprayDraft, sameSprayGeometry, type SprayDraftPurpose, type SprayVersionPhoto } from './draft-purpose';

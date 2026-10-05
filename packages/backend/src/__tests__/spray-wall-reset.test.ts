@@ -1217,7 +1217,13 @@ describe('remixClimb', () => {
     const parent = await saveClimbOn(wall, 'Tango', [holdIds[0], holdIds[1]]);
 
     // The hold editor's claim, made while hold 1 is still on the wall.
-    const editorDraft = await openDraft(wall);
+    const publishedWall = await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER));
+    const editorVersion = await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, sourceVersionId: publishedWall!.currentVersion!.id } },
+      ctxFor(OWNER),
+    );
+    const editorDraft = editorVersion.id;
     await sprayWallMutations.upsertSprayWallHolds(
       {},
       {
