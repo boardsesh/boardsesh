@@ -260,6 +260,18 @@ describe('NoBoardClimbsPreview', () => {
     expect(onClimbPress).toHaveBeenCalledExactlyOnceWith(TENSION, 0);
   });
 
+  it('starts the next board type at the top of a fresh list', () => {
+    // FlashList keeps its scroll offset when only its data changes, so a
+    // climber at the end of one board's climbs would land at the end of the
+    // next. A list per setup is a new node, and a new node starts at the top.
+    renderPreview();
+    const kilterList = screen.getByTestId('list');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tension' }));
+
+    expect(screen.getByTestId('list')).not.toBe(kilterList);
+  });
+
   it('shows no chips when there is only one board type to offer', () => {
     renderPreview([KILTER]);
 
