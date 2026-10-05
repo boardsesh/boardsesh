@@ -74,6 +74,7 @@ const activeBoardState = vi.hoisted(() => ({
     setIds: string;
     angle: number;
   } | null,
+  isLoading: false,
 }));
 const communityHook = vi.hoisted(() => ({
   popular: [] as PlaylistItem[],
@@ -93,6 +94,8 @@ const pinPlaylist = vi.hoisted(() => vi.fn());
 const unpinPlaylist = vi.hoisted(() => vi.fn());
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
 const discoverOptions = vi.hoisted(() => [] as DiscoverOptions[]);
+type UserPlaylistsOptions = { token: string | null; boardType?: string; layoutId?: number };
+const userPlaylistsOptions = vi.hoisted(() => [] as UserPlaylistsOptions[]);
 const asyncStorage = vi.hoisted(() => ({
   storage: new Map<string, string>(),
   getItem: vi.fn(async (key: string) => asyncStorage.storage.get(key) ?? null),
@@ -102,7 +105,10 @@ const asyncStorage = vi.hoisted(() => ({
 }));
 
 vi.mock('@boardsesh/playlists-react', () => ({
-  useUserPlaylists: () => userHook,
+  useUserPlaylists: (options: UserPlaylistsOptions) => {
+    userPlaylistsOptions.push(options);
+    return userHook;
+  },
   useDiscoverPlaylists: (options: DiscoverOptions) => {
     discoverOptions.push(options);
     return options.generatedRecommendation ? exactForYouHook : communityHook;
@@ -385,6 +391,8 @@ beforeEach(() => {
   connectivityState.reason = null;
   focusState.callback = undefined;
   activeBoardState.data = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 };
+  activeBoardState.isLoading = false;
+  userPlaylistsOptions.length = 0;
   userHook.playlists = [];
   userHook.isLoading = false;
   userHook.hasError = false;
@@ -562,6 +570,37 @@ describe('DiscoverLibrary followed setter playlists', () => {
     const { container, queryByText } = renderHub();
     expect(container.querySelector('[data-offline-state]')).not.toBeNull();
     expect(queryByText('library.empty.title')).toBeNull();
+  });
+});
+
+describe('DiscoverLibrary owned playlists and the active board', () => {
+  it('holds the owned-playlists query until the stored active board has been read', () => {
+    // A cold start reads the board from storage. Asking before it lands sends
+    // an unfiltered page that is dropped the moment the board filter arrives.
+    activeBoardState.data = null;
+    activeBoardState.isLoading = true;
+
+    renderHub();
+
+    expect(userPlaylistsOptions.length).toBeGreaterThan(0);
+    for (const options of userPlaylistsOptions) expect(options.token).toBeNull();
+  });
+
+  it('asks for the active board\u2019s playlists once the board has resolved', () => {
+    renderHub();
+
+    expect(userPlaylistsOptions.at(-1)).toMatchObject({ token: 'token', boardType: 'kilter', layoutId: 1 });
+  });
+
+  it('asks for every board\u2019s playlists when the read settles with no active board', () => {
+    activeBoardState.data = null;
+
+    renderHub();
+
+    const options = userPlaylistsOptions.at(-1);
+    expect(options?.token).toBe('token');
+    expect(options?.boardType).toBeUndefined();
+    expect(options?.layoutId).toBeUndefined();
   });
 });
 
