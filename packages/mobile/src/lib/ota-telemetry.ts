@@ -15,7 +15,7 @@ export const OTA_UPDATE_STATUS_EVENT = 'OTA Update Status';
 export const OTA_UPDATE_DOWNLOADED_EVENT = 'OTA Update Downloaded';
 
 // Fired when a climber flips "Get updates early" in More. Props: { enabled }.
-// Only the deliberate flip: the launch re-pin and a server-side switch-off are
+// Only the deliberate flip: the launch sync and a server-side switch-off are
 // silent. Which branch a phone actually runs is `ota_branch` on every event.
 export const EARLY_UPDATES_TOGGLED_EVENT = 'Early Updates Toggled';
 

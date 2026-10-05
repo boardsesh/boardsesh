@@ -29,5 +29,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   qaBriefSeenKey: null,
   qaVerdictSubmittedKey: null,
   earlyUpdates: false,
-  earlyUpdatesPinClearedByFlag: false,
+  otaPinnedBranch: null,
 };

@@ -1,49 +1,40 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TFunction } from 'i18next';
 
-const setEarlyUpdatesMembership = vi.hoisted(() => vi.fn());
-vi.mock('../../lib/qa/early-updates', () => ({ setEarlyUpdatesMembership }));
+const setEarlyUpdatesChoice = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/qa/early-updates', () => ({ setEarlyUpdatesChoice }));
 
 const hapticSelection = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/haptics', () => ({ hapticSelection }));
 
-const reportHandledError = vi.hoisted(() => vi.fn());
-vi.mock('../../lib/error-reporting', () => ({ reportHandledError }));
-
-vi.mock('../../lib/format-relative-time', () => ({
-  formatRelativeTime: (iso: string | null) => (iso ? '2 hours ago' : ''),
-}));
-
 import { buildEarlyUpdatesSection } from '../early-updates-section';
+import type { EarlyUpdatesRowState } from '../../lib/qa/use-early-updates';
 
-// The key (plus any interpolation) is the useful assertion: what can silently
-// break is which line a state shows, not the translation.
-const translate = ((key: string, values?: Record<string, unknown>) =>
-  values ? `${key} ${JSON.stringify(values)}` : key) as unknown as TFunction<'common'>;
+// The key is the useful assertion: what can silently break is which line a
+// state shows, not the translation.
+const translate = ((key: string) => key) as unknown as TFunction<'common'>;
 
-const onToggleFailed = vi.fn();
+const ENVIRONMENT = { surfingBuild: true, surfingReady: true, flagsResolved: true, flag: 'on' } as const;
+const onDeferred = vi.fn();
 
-function toggleRow(input: Partial<Parameters<typeof buildEarlyUpdatesSection>[1]> = {}) {
-  const section = buildEarlyUpdatesSection(translate, {
-    member: false,
-    availability: 'unknown',
-    lastUpdateAt: null,
-    onToggleFailed,
-    ...input,
-  });
-  const [row] = section.rows;
+function build(state: EarlyUpdatesRowState) {
+  return buildEarlyUpdatesSection(translate, { state, environment: ENVIRONMENT, onDeferred });
+}
+
+function toggleRow(state: EarlyUpdatesRowState) {
+  const [row] = build(state).rows;
   if (row.kind !== 'toggle') throw new Error('expected a toggle row');
-  return { section, row };
+  return row;
 }
 
 describe('buildEarlyUpdatesSection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    setEarlyUpdatesMembership.mockReset();
+    setEarlyUpdatesChoice.mockReset().mockResolvedValue('joined');
   });
 
-  it('is one switch under its own heading, with the terms in the footer', () => {
-    const { section, row } = toggleRow();
+  it('is one row under its own heading, with the terms in the footer', () => {
+    const section = build('off');
 
     expect(section).toMatchObject({
       key: 'earlyUpdates',
@@ -51,68 +42,50 @@ describe('buildEarlyUpdatesSection', () => {
       footer: 'mobile.settings.earlyUpdates.footer',
     });
     expect(section.rows).toHaveLength(1);
-    expect(row.label).toBe('mobile.settings.earlyUpdates.title');
+    expect(section.rows[0]).toMatchObject({ kind: 'toggle', label: 'mobile.settings.earlyUpdates.title' });
   });
 
-  it('off: says what joining gets you', () => {
-    const { row } = toggleRow({ member: false });
-
-    expect(row.value).toBe(false);
-    expect(row.subtitle).toBe('mobile.settings.earlyUpdates.offSubtitle');
+  it.each([
+    ['off', false, 'mobile.settings.earlyUpdates.offSubtitle'],
+    ['on', true, 'mobile.settings.earlyUpdates.onSubtitle'],
+    // The switch shows the choice; the line says the phone is not there yet.
+    ['waiting', true, 'mobile.settings.earlyUpdates.waitingSubtitle'],
+    ['leaving', false, 'mobile.settings.earlyUpdates.leavingSubtitle'],
+  ] as const)('%s: switch %s, line %s', (state, value, subtitle) => {
+    expect(toggleRow(state)).toMatchObject({ value, subtitle });
   });
 
-  it('on: says when the latest early update landed', () => {
-    const { row } = toggleRow({ member: true, availability: 'offered', lastUpdateAt: '2026-10-05T09:00:00.000Z' });
+  it('offers no switch while a preview is running, and says to leave it first', () => {
+    // Both use the one request header, so a flip would drop the preview.
+    const [row] = build('testing').rows;
 
-    expect(row.value).toBe(true);
-    expect(row.subtitle).toBe('mobile.settings.earlyUpdates.onSubtitleLatest {"when":"2 hours ago"}');
+    expect(row).toEqual({
+      kind: 'info',
+      key: 'earlyUpdates',
+      label: 'mobile.settings.earlyUpdates.title',
+      body: 'mobile.settings.earlyUpdates.testingBody',
+    });
   });
 
-  it('on, but the server has nothing for this binary: waiting, never plain on', () => {
-    const { row } = toggleRow({ member: true, availability: 'waiting' });
+  it.each([true, false])('routes a flip to %s through the choice, with what the sync needs', (next) => {
+    toggleRow(next ? 'off' : 'on').onValueChange(next);
 
-    expect(row.value).toBe(true);
-    expect(row.subtitle).toBe('mobile.settings.earlyUpdates.waitingSubtitle');
-  });
-
-  it('on, with no answer from the update server: claims nothing about the branch', () => {
-    const { row } = toggleRow({ member: true, availability: 'unknown' });
-
-    expect(row.value).toBe(true);
-    expect(row.subtitle).toBe('mobile.settings.earlyUpdates.onSubtitle');
-  });
-
-  it('on, with a timestamp that does not parse: falls back to the plain line', () => {
-    const { row } = toggleRow({ member: true, availability: 'offered', lastUpdateAt: null });
-
-    expect(row.subtitle).toBe('mobile.settings.earlyUpdates.onSubtitle');
-  });
-
-  it('never shows a stale timestamp to someone who is not a member', () => {
-    const { row } = toggleRow({ member: false, availability: 'offered', lastUpdateAt: '2026-10-05T09:00:00.000Z' });
-
-    expect(row.subtitle).toBe('mobile.settings.earlyUpdates.offSubtitle');
-  });
-
-  it.each([true, false])('routes a flip to %s through the membership switch', (next) => {
-    toggleRow({ member: !next }).row.onValueChange(next);
-
-    expect(setEarlyUpdatesMembership).toHaveBeenCalledExactlyOnceWith(next);
+    expect(setEarlyUpdatesChoice).toHaveBeenCalledExactlyOnceWith(next, ENVIRONMENT);
     expect(hapticSelection).toHaveBeenCalledOnce();
-    expect(onToggleFailed).not.toHaveBeenCalled();
   });
 
-  it('says so, and reports it, when the switch cannot be applied', () => {
-    const failure = new Error('Branch surfing is unavailable on this build');
-    setEarlyUpdatesMembership.mockImplementation(() => {
-      throw failure;
-    });
+  it.each(['joined', 'left', 'waiting', 'none'])('says nothing extra when the sync ends %s', async (outcome) => {
+    setEarlyUpdatesChoice.mockResolvedValue(outcome);
+    toggleRow('off').onValueChange(true);
+    await Promise.resolve();
 
-    toggleRow().row.onValueChange(true);
+    expect(onDeferred).not.toHaveBeenCalled();
+  });
 
-    expect(onToggleFailed).toHaveBeenCalledOnce();
-    expect(reportHandledError).toHaveBeenCalledExactlyOnceWith(failure, {
-      tags: { source: 'ota', op: 'early-updates-toggle' },
-    });
+  it.each([true, false])('tells the screen when a flip to %s could not be applied yet', async (next) => {
+    setEarlyUpdatesChoice.mockResolvedValue('deferred');
+    toggleRow(next ? 'off' : 'on').onValueChange(next);
+
+    await vi.waitFor(() => expect(onDeferred).toHaveBeenCalledExactlyOnceWith(next));
   });
 });

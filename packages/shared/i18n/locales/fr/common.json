@@ -397,11 +397,13 @@
         "sectionTitle": "Mises à jour de l'app",
         "title": "Recevoir les mises à jour en avance",
         "offSubtitle": "Les nouveautés dès qu'elles sont prêtes, avant tout le monde",
-        "onSubtitle": "Tu reçois les mises à jour en avance",
-        "onSubtitleLatest": "Tu reçois les mises à jour en avance. Dernière : {{when}}",
-        "waitingSubtitle": "Activé, en attente de la prochaine mise à jour en avance",
-        "footer": "Les mises à jour en avance peuvent avoir quelques défauts de temps en temps. Les changements s'appliquent à la prochaine ouverture de l'app. Si tu désactives l'option, tu retrouves les mises à jour normales en deux jours environ.",
-        "toggleFailed": "Impossible de modifier les mises à jour en avance. Réessaie."
+        "onSubtitle": "Tu reçois les mises à jour anticipées",
+        "waitingSubtitle": "Activé, en attente de la prochaine mise à jour anticipée",
+        "leavingSubtitle": "Retour aux mises à jour normales dès que tu es en ligne",
+        "testingBody": "Tu testes un aperçu. Quitte-le d'abord, puis change ce réglage.",
+        "footer": "Les mises à jour anticipées peuvent avoir quelques défauts de temps en temps. Les changements s'appliquent à la prochaine ouverture de l'app.",
+        "joinDeferred": "Serveur de mises à jour injoignable. Les mises à jour anticipées démarreront à son retour.",
+        "leaveDeferred": "Impossible de revenir en arrière pour l'instant. Nouvel essai à la prochaine ouverture de l'app."
       }
     },
     "sendRecovery": {
@@ -690,7 +692,7 @@
     "shared": {
       "backOnProduction": "De retour en production à la prochaine mise à jour",
       "leaveFailed": "Impossible de désactiver cet aperçu — réessaie",
-      "backOnEarlyUpdates": "Retour aux mises à jour en avance à la prochaine ouverture de l'app"
+      "backOnEarlyUpdates": "Retour aux mises à jour anticipées à la prochaine ouverture de l'app"
     },
     "pick": {
       "title": "Tester un PR",
@@ -723,9 +725,9 @@
       "trySurfAction": "Essayer quand même la #{{prNumber}}",
       "trySurfHint": "Elle n'a peut-être pas de preview que cette version peut charger.",
       "notServableToast": "Pas de preview de la #{{prNumber}} pour cette version — il lui faut peut-être un rebase sur main",
-      "earlyUpdatesTitle": "Mises à jour en avance",
-      "earlyUpdatesBody": "Reviens aux mises à jour en avance. S'applique à la prochaine ouverture de l'app.",
-      "earlyUpdatesNextLaunch": "Les mises à jour en avance reprennent à la prochaine ouverture de l'app"
+      "earlyUpdatesTitle": "Mises à jour anticipées",
+      "earlyUpdatesBody": "Reviens aux mises à jour anticipées. S'applique à la prochaine ouverture de l'app.",
+      "earlyUpdatesNextLaunch": "Les mises à jour anticipées reprennent à la prochaine ouverture de l'app"
     },
     "brief": {
       "screenTitle": "Quoi tester",

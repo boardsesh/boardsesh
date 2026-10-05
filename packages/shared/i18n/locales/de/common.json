@@ -398,10 +398,12 @@
         "title": "Updates früher bekommen",
         "offSubtitle": "Neue Funktionen, sobald sie fertig sind, vor allen anderen",
         "onSubtitle": "Du bekommst frühe Updates",
-        "onSubtitleLatest": "Du bekommst frühe Updates. Letztes: {{when}}",
         "waitingSubtitle": "An, wartet auf das nächste frühe Update",
-        "footer": "Frühe Updates können ab und zu noch Ecken und Kanten haben. Änderungen greifen beim nächsten Öffnen der App. Wenn du das ausschaltest, bist du in etwa zwei Tagen wieder bei den normalen Updates.",
-        "toggleFailed": "Frühe Updates ließen sich nicht ändern. Versuch es nochmal."
+        "leavingSubtitle": "Wechselt zurück zu den normalen Updates, sobald du online bist",
+        "testingBody": "Du testest gerade eine Vorschau. Verlass sie zuerst und ändere das dann.",
+        "footer": "Frühe Updates können ab und zu noch Ecken und Kanten haben. Änderungen greifen beim nächsten Öffnen der App.",
+        "joinDeferred": "Der Update-Server ist nicht erreichbar. Frühe Updates starten, sobald er wieder da ist.",
+        "leaveDeferred": "Zurückwechseln geht gerade nicht. Wir versuchen es beim nächsten Öffnen der App wieder."
       }
     },
     "sendRecovery": {

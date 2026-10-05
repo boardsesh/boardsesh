@@ -672,10 +672,12 @@
         "title": "Recibe las actualizaciones antes",
         "offSubtitle": "Funciones nuevas en cuanto están listas, antes que nadie",
         "onSubtitle": "Recibes las actualizaciones anticipadas",
-        "onSubtitleLatest": "Recibes las actualizaciones anticipadas. La última: {{when}}",
         "waitingSubtitle": "Activado, a la espera de la próxima actualización anticipada",
-        "footer": "Las actualizaciones anticipadas pueden traer algún fallo de vez en cuando. Los cambios se aplican la próxima vez que abras la app. Si lo desactivas, vuelves a las actualizaciones normales en unos dos días.",
-        "toggleFailed": "No se pudieron cambiar las actualizaciones anticipadas. Inténtalo de nuevo."
+        "leavingSubtitle": "Volverás a las actualizaciones normales cuando tengas conexión",
+        "testingBody": "Estás probando una vista previa. Sal de ella primero y luego cambia esto.",
+        "footer": "Las actualizaciones anticipadas pueden traer algún fallo de vez en cuando. Los cambios se aplican la próxima vez que abras la app.",
+        "joinDeferred": "No hay conexión con el servidor de actualizaciones. Las actualizaciones anticipadas empezarán cuando vuelva.",
+        "leaveDeferred": "Ahora mismo no se puede volver. Lo intentaremos la próxima vez que abras la app."
       }
     },
     "sendRecovery": {

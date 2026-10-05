@@ -1,65 +1,43 @@
 import { useEffect, useRef } from 'react';
-import { reportHandledError } from '../../lib/error-reporting';
-import { useOtaBranchSurfingState } from '../../lib/ota-branch-surfing-state';
-import {
-  applyEarlyUpdatesPin,
-  clearEarlyUpdatesPinForFlag,
-  decideEarlyUpdatesLaunch,
-} from '../../lib/qa/early-updates';
-import { otaBranchKind, readRunningOtaBranch } from '../../lib/qa/qa-surf';
-import { useEarlyUpdatesFlagState, useFeatureFlagsResolved } from '../../providers/feature-flags-provider';
-import { getSetting } from '../../settings';
+import { InteractionManager } from 'react-native';
+import { syncEarlyUpdates } from '../../lib/qa/early-updates';
+import { adoptRunningOtaPin } from '../../lib/qa/qa-surf';
+import { useEarlyUpdatesSyncEnvironment } from '../../lib/qa/use-early-updates';
 
 /**
- * Keeps a member's early-updates pin in place across launches. Renders nothing.
+ * Brings the phone's OTA branch pin in line with the "Get updates early" choice
+ * once per launch. Renders nothing.
  *
- * The pin is a native header override nothing can read back, and other code
- * clears it for good reasons of its own (a failed surf restoring, the one-time
- * channel migration). So once per launch this re-applies it from the stored
- * choice. It only ever sets or clears request headers: no update check, no
- * download, no reload, no network. What the headers select arrives the next
- * time the app opens.
+ * That is a join the switch could not finish (offline, or the server had no
+ * early update for this binary yet), a leave it could not finish, or the
+ * feature being switched off for a member. Each needs a download, so this runs
+ * after the first interactions, in the background, and never blocks launch or
+ * reloads: whatever it changes takes effect the next time the app opens. A
+ * phone whose pin already matches its choice makes no request at all.
  *
- * Waits for the feature flags and for the surfing migration; the policy is
- * `decideEarlyUpdatesLaunch`. The stored choice is read inside the effect, not
- * subscribed to, because the switch in More applies its own pin. Subscribing
- * would run this a second time behind every flip.
+ * The policy is `decideEarlyUpdatesSync`; the cold-start table at the top of
+ * `early-updates.ts` says what launches in every state this can leave behind.
  */
 export function EarlyUpdatesLaunchSync() {
-  const flagsResolved = useFeatureFlagsResolved();
-  const flag = useEarlyUpdatesFlagState();
-  const { surfingBuild, ready: surfingReady } = useOtaBranchSurfingState();
-  // Once per launch. A flag that resolves late (stale cache first, the real
-  // answer a moment after) re-runs the effect, and the pin is idempotent, but
-  // there is no reason to write the same headers twice.
-  const pinnedRef = useRef(false);
+  const environment = useEarlyUpdatesSyncEnvironment();
+  const { surfingBuild, surfingReady } = environment;
+  const adoptedRef = useRef(false);
 
   useEffect(() => {
-    const action = decideEarlyUpdatesLaunch({
-      surfingBuild,
-      surfingReady,
-      flagsResolved,
-      flag,
-      member: getSetting('earlyUpdates'),
-      pinClearedByFlag: getSetting('earlyUpdatesPinClearedByFlag'),
-      runningBranchKind: otaBranchKind(readRunningOtaBranch()),
-    });
-    if (action !== 'pin' && action !== 'clear') return;
-    if (action === 'pin' && pinnedRef.current) return;
-
-    try {
-      if (action === 'pin') {
-        applyEarlyUpdatesPin();
-      } else {
-        clearEarlyUpdatesPinForFlag();
-      }
-      pinnedRef.current = action === 'pin';
-    } catch (error) {
-      // A launch-time header write must never become a visible error. The
-      // choice is still stored, so the next launch tries again.
-      reportHandledError(error, { tags: { source: 'ota', op: `early-updates-${action}` } });
+    if (!surfingBuild || !surfingReady) return;
+    // Before the first sync, and only once: the running bundle proves which pin
+    // was in force at LAUNCH, and stops proving it the moment anything switches.
+    if (!adoptedRef.current) {
+      adoptedRef.current = true;
+      adoptRunningOtaPin();
     }
-  }, [surfingBuild, surfingReady, flagsResolved, flag]);
+    // Re-run when the flag lands or changes. `syncEarlyUpdates` decides from
+    // the pin record, so a repeat with nothing left to do is a no-op.
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      void syncEarlyUpdates(environment);
+    });
+    return () => interaction.cancel();
+  }, [environment, surfingBuild, surfingReady]);
 
   return null;
 }

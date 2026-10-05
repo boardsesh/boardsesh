@@ -638,9 +638,10 @@ function RootLayout() {
                         {/* Applies Observe flags, then flushes persisted telemetry on
                           foreground transitions once PostHog resolves. Null render. */}
                         <ObserveRuntimeConfigSync />
-                        {/* Re-applies a "Get updates early" member's OTA branch pin once
-                          flags and branch surfing are ready. Header writes only: no
-                          update check, no reload. Null render. */}
+                        {/* Brings the OTA branch pin in line with the "Get updates early"
+                          choice once flags and branch surfing are ready: in the
+                          background, after first interactions, never a reload. No
+                          request when they already agree. Null render. */}
                         <EarlyUpdatesLaunchSync />
                         <AuthProvider onReady={onAuthReady}>
                           <PartyProfileProvider>

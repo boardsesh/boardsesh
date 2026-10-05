@@ -109,19 +109,21 @@ export type AppSettings = {
    */
   qaVerdictSubmittedKey: string | null;
   /**
-   * "Get updates early": this phone follows the early-updates OTA branch. The
-   * choice only. The pin itself is a native request-header override that cannot
-   * be read back, so `EarlyUpdatesLaunchSync` re-applies it at launch from this
-   * value. Written only after the pin call succeeded. Per device, not per
-   * account: the override it mirrors is device-wide too.
+   * "Get updates early": what the climber asked for, and nothing more. Whether
+   * the phone is actually on the early-updates OTA branch is `otaPinnedBranch`;
+   * the two differ while a switch is waiting for a network or for the server to
+   * have an early update for this binary. Per device, not per account: the
+   * header override behind it is device-wide too.
    */
   earlyUpdates: boolean;
   /**
-   * The pin has been cleared once because the `early-updates` flag is off. Stops
-   * a later launch from clearing a PR-preview pin a tester set in the meantime.
-   * Reset whenever the pin is applied again.
+   * The OTA branch this app last pinned (`xprem-branch`), or null for the
+   * build's own channel. A record, because expo-updates cannot read the
+   * override back. `pr-beta` here also means an update downloaded under that
+   * pin is on disk; `pr-<n>` / `pr-staging` mean a tester's preview owns the
+   * header and early updates must leave it alone. Written only by `qa-surf.ts`.
    */
-  earlyUpdatesPinClearedByFlag: boolean;
+  otaPinnedBranch: string | null;
 };
 
 export type SettingsKey = keyof AppSettings;

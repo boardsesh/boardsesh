@@ -13,12 +13,22 @@ const config = vi.hoisted(() => ({
 const updates = vi.hoisted(() => ({
   isEnabled: true,
   manifest: { extra: {} } as unknown,
+  updateId: 'running-update' as string | null,
+  downloadedId: undefined as string | undefined,
   setUpdateRequestHeadersOverride: vi.fn(),
   checkForUpdateAsync: vi.fn(),
   fetchUpdateAsync: vi.fn(),
   reloadAsync: vi.fn(),
 }));
-const settings = vi.hoisted(() => ({ setSetting: vi.fn() }));
+const settings = vi.hoisted(() => {
+  const values: Record<string, unknown> = {};
+  return {
+    values,
+    setSetting: vi.fn((key: string, value: unknown) => {
+      values[key] = value;
+    }),
+  };
+});
 const fetchMock = vi.hoisted(() => vi.fn());
 // `__DEV__` is substituted textually by both Metro and Vitest, so the dev branch
 // can only be exercised through this helper — which is exactly why qa-surf
@@ -40,13 +50,25 @@ vi.mock('expo-updates', () => ({
   get manifest() {
     return updates.manifest;
   },
+  get updateId() {
+    return updates.updateId;
+  },
+  get latestContext() {
+    return { downloadedManifest: updates.downloadedId ? { id: updates.downloadedId } : undefined };
+  },
+  isEmbeddedLaunch: false,
+  isEmergencyLaunch: false,
+  UpdateCheckResultNotAvailableReason: { NO_UPDATE_AVAILABLE_ON_SERVER: 'noUpdateAvailableOnServer' },
   setUpdateRequestHeadersOverride: updates.setUpdateRequestHeadersOverride,
   checkForUpdateAsync: updates.checkForUpdateAsync,
   fetchUpdateAsync: updates.fetchUpdateAsync,
   reloadAsync: updates.reloadAsync,
 }));
 vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
-vi.mock('../../../settings', () => ({ setSetting: settings.setSetting }));
+vi.mock('../../../settings', () => ({
+  getSetting: (key: string) => settings.values[key] ?? null,
+  setSetting: settings.setSetting,
+}));
 vi.mock('expo-constants', () => ({ default: { expoConfig: { updates: {} } } }));
 vi.mock('../../legacy-ota-channel-migration', () => ({
   isBranchSurfingBuild: migration.isBranchSurfingBuild,
@@ -55,9 +77,13 @@ vi.mock('../../legacy-ota-channel-migration', () => ({
 import {
   BRANCH_SURFING_UNAVAILABLE_MESSAGE,
   EARLY_UPDATES_OTA_BRANCH,
-  clearOtaBranchPin,
+  adoptRunningOtaPin,
+  fetchQaBranches,
+  joinEarlyUpdatesTrack,
+  leaveForProductionTrack,
   otaBranchKind,
-  pinEarlyUpdates,
+  readOtaPinnedBranch,
+  resetOtaPinSessionForTests,
   listPrBranches,
   listQaBranches,
   qaSurfingAvailable,
@@ -86,7 +112,11 @@ function serveBranches(branches: Branch[]): void {
 beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
   fetchMock.mockReset();
-  settings.setSetting.mockReset();
+  settings.setSetting.mockClear();
+  for (const key of Object.keys(settings.values)) delete settings.values[key];
+  resetOtaPinSessionForTests();
+  updates.updateId = 'running-update';
+  updates.downloadedId = undefined;
   updates.setUpdateRequestHeadersOverride.mockReset();
   updates.checkForUpdateAsync.mockReset();
   updates.fetchUpdateAsync.mockReset();
@@ -218,22 +248,33 @@ describe('listPrBranches', () => {
     await expect(listPrBranches()).resolves.toBeNull();
   });
 
-  it('unpins and ends early-updates membership when the server switches surfing off', async () => {
-    // The server asked every device to drop its pin. A membership left on would
-    // have the launch re-pin put it straight back.
+  it('tells the server switching surfing off apart from any other 404', async () => {
     fetchMock.mockResolvedValue(new Response('', { status: 404, headers: { 'xprem-branch-surfing': 'off' } }));
-    await listQaBranches();
-    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenCalledExactlyOnceWith(null);
-    expect(settings.setSetting).toHaveBeenCalledExactlyOnceWith('earlyUpdates', false);
+    await expect(fetchQaBranches()).resolves.toEqual({ kind: 'surfing-off' });
+
+    // A proxy, an old server or a path-based deployment. Evidence of nothing.
+    fetchMock.mockResolvedValue(new Response('', { status: 404 }));
+    await expect(fetchQaBranches()).resolves.toEqual({ kind: 'unavailable' });
   });
 
-  it("leaves the pin and the membership alone on a 404 the server didn't decide", async () => {
-    // A proxy, an old server or a path-based deployment. Not evidence of
-    // anything, so nothing the climber chose may change on it.
+  it('only reads: no answer touches the pin or a setting', async () => {
+    // It is a query function. Acting on surfing-off is noteBranchSurfingOff's
+    // job, and a bare unpin here would leave nothing launchable.
+    fetchMock.mockResolvedValue(new Response('', { status: 404, headers: { 'xprem-branch-surfing': 'off' } }));
+    await listQaBranches();
     fetchMock.mockResolvedValue(new Response('', { status: 404 }));
-    await expect(listQaBranches()).resolves.toBeNull();
+    await listQaBranches();
+    serveBranches([{ name: 'pr-beta', lastUpdateAt: '2026-10-05T09:00:00.000Z' }]);
+    await listQaBranches();
+
     expect(updates.setUpdateRequestHeadersOverride).not.toHaveBeenCalled();
     expect(settings.setSetting).not.toHaveBeenCalled();
+  });
+
+  it('can ask for the newest page only', async () => {
+    serveBranches([]);
+    await fetchQaBranches(undefined, { wholeList: false });
+    expect(fetchMock.mock.calls[0][0]).toBe('https://updates.boardsesh.com/branch_lists');
   });
 
   it('reads a body of another shape as no list', async () => {
@@ -292,80 +333,13 @@ describe('otaBranchKind', () => {
   });
 });
 
-describe('pinEarlyUpdates', () => {
-  const BUILD_HEADERS = {
-    'expo-channel-name': 'baked-at-export',
-    'expo-app-id': 'baked-app-id',
-    'xprem-branch': '',
-    'xprem-surf-blocked': '',
-    'x-extra': 'kept',
-  };
-
-  it('sets the header set xprem itself builds for that branch', async () => {
-    const surfConfig = { ...SURF_CONFIG, requestHeaders: BUILD_HEADERS };
-    config.readConfig.mockReturnValue(surfConfig);
-
-    // Ask the real xprem what it would send, by letting its surfTo run against
-    // the same mocked expo-updates with nothing to load.
-    const realSurf = await vi.importActual<typeof import('@xprem/control-center/src/surf')>(
-      '@xprem/control-center/src/surf',
-    );
-    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: false });
-    await realSurf.surfTo(surfConfig, EARLY_UPDATES_OTA_BRANCH);
-    const xpremHeaders: unknown = updates.setUpdateRequestHeadersOverride.mock.calls[0][0];
-    updates.setUpdateRequestHeadersOverride.mockReset();
-
-    pinEarlyUpdates();
-
-    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenCalledExactlyOnceWith(xpremHeaders);
-    // And spelled out, so a change in xprem cannot quietly move both sides.
-    expect(xpremHeaders).toEqual({
-      'expo-channel-name': 'production',
-      'expo-app-id': 'app-id',
-      'xprem-branch': 'pr-beta',
-      'x-extra': 'kept',
-    });
-  });
-
-  it('checks nothing, downloads nothing and never reloads', () => {
-    config.readConfig.mockReturnValue({ ...SURF_CONFIG, requestHeaders: BUILD_HEADERS });
-    pinEarlyUpdates();
-    expect(updates.checkForUpdateAsync).not.toHaveBeenCalled();
-    expect(updates.fetchUpdateAsync).not.toHaveBeenCalled();
-    expect(updates.reloadAsync).not.toHaveBeenCalled();
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(surf.surfTo).not.toHaveBeenCalled();
-  });
-
-  it('refuses on a build that cannot surf, without touching the headers', () => {
-    migration.isBranchSurfingBuild.mockReturnValue(false);
-    expect(() => pinEarlyUpdates()).toThrow(BRANCH_SURFING_UNAVAILABLE_MESSAGE);
-    expect(updates.setUpdateRequestHeadersOverride).not.toHaveBeenCalled();
-  });
-});
-
-describe('clearOtaBranchPin', () => {
-  it('drops the override with no check and no reload', () => {
-    clearOtaBranchPin();
-    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenCalledExactlyOnceWith(null);
-    expect(updates.checkForUpdateAsync).not.toHaveBeenCalled();
-    expect(updates.reloadAsync).not.toHaveBeenCalled();
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it('refuses on a build that cannot surf', () => {
-    migration.isBranchSurfingBuild.mockReturnValue(false);
-    expect(() => clearOtaBranchPin()).toThrow(BRANCH_SURFING_UNAVAILABLE_MESSAGE);
-    expect(updates.setUpdateRequestHeadersOverride).not.toHaveBeenCalled();
-  });
-});
-
-describe('surfToPr / surfToProduction', () => {
+describe('surfToPr / surfToStaging / surfToProduction', () => {
   it('pins the staged branch without remapping production', async () => {
     surf.surfTo.mockResolvedValue('reloading');
     await expect(surfToStaging()).resolves.toBe('reloading');
     expect(surf.surfTo).toHaveBeenCalledWith(SURF_CONFIG, 'pr-staging');
   });
+
   it('pins the PR branch and reports the outcome', async () => {
     surf.surfTo.mockResolvedValue('reloading');
     await expect(surfToPr(4792)).resolves.toBe('reloading');
@@ -385,5 +359,224 @@ describe('surfToPr / surfToProduction', () => {
     await expect(surfToPr(1)).rejects.toThrow(BRANCH_SURFING_UNAVAILABLE_MESSAGE);
     await expect(surfToProduction()).rejects.toThrow(BRANCH_SURFING_UNAVAILABLE_MESSAGE);
     expect(surf.surfTo).not.toHaveBeenCalled();
+    // And leaves the record alone: nothing was pinned.
+    expect(settings.setSetting).not.toHaveBeenCalled();
+  });
+
+  it('records who owns the pin BEFORE the surf, because a reload never returns', async () => {
+    surf.surfTo.mockImplementation(async () => {
+      expect(readOtaPinnedBranch()).toBe('pr-4792');
+      return 'reloading';
+    });
+    await surfToPr(4792);
+    expect(readOtaPinnedBranch()).toBe('pr-4792');
+  });
+
+  it('keeps the record when the surf loaded nothing: the pin is still in place', async () => {
+    surf.surfTo.mockResolvedValue('nothing-to-load');
+    await surfToStaging();
+    expect(readOtaPinnedBranch()).toBe('pr-staging');
+  });
+
+  it('clears the record on the way back to production', async () => {
+    settings.values.otaPinnedBranch = 'pr-4792';
+    surf.surfTo.mockResolvedValue('nothing-to-load');
+    await surfToProduction();
+    expect(readOtaPinnedBranch()).toBeNull();
+  });
+
+  it('puts the previous pin back, record and headers, when the surf rejects', async () => {
+    settings.values.otaPinnedBranch = 'pr-beta';
+    surf.surfTo.mockRejectedValue(new Error('Could not reach the update server (502).'));
+
+    await expect(surfToPr(4792)).rejects.toThrow('Could not reach the update server (502).');
+
+    expect(readOtaPinnedBranch()).toBe('pr-beta');
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenLastCalledWith({
+      'expo-channel-name': 'production',
+      'expo-app-id': 'app-id',
+      'xprem-branch': 'pr-beta',
+    });
+  });
+
+  it('puts "no pin" back as no override at all', async () => {
+    surf.surfTo.mockRejectedValue(new Error('offline'));
+    await expect(surfToPr(4792)).rejects.toThrow('offline');
+    expect(readOtaPinnedBranch()).toBeNull();
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenLastCalledWith(null);
+  });
+});
+
+describe('adoptRunningOtaPin', () => {
+  it.each(['pr-123', 'pr-staging', 'pr-beta'])('records the pin a running %s bundle proves', (branch) => {
+    // Only an update stamped for the configured headers can launch, so the
+    // running bundle says which pin was in force.
+    updates.manifest = { extra: { branch } };
+    adoptRunningOtaPin();
+    expect(readOtaPinnedBranch()).toBe(branch);
+  });
+
+  it('proves nothing on the regular track, and writes nothing', () => {
+    settings.values.otaPinnedBranch = 'pr-beta';
+    adoptRunningOtaPin();
+    expect(settings.setSetting).not.toHaveBeenCalled();
+  });
+
+  it('does not rewrite a record that is already right', () => {
+    settings.values.otaPinnedBranch = 'pr-beta';
+    updates.manifest = { extra: { branch: 'pr-beta' } };
+    adoptRunningOtaPin();
+    expect(settings.setSetting).not.toHaveBeenCalled();
+  });
+});
+
+describe('joinEarlyUpdatesTrack / leaveForProductionTrack', () => {
+  const BUILD_HEADERS = {
+    'expo-channel-name': 'baked-at-export',
+    'expo-app-id': 'baked-app-id',
+    'xprem-branch': '',
+    'xprem-surf-blocked': '',
+    'x-extra': 'kept',
+  };
+  const EARLY_HEADERS = {
+    'expo-channel-name': 'production',
+    'expo-app-id': 'app-id',
+    'xprem-branch': 'pr-beta',
+    'x-extra': 'kept',
+  };
+
+  beforeEach(() => {
+    config.readConfig.mockReturnValue({ ...SURF_CONFIG, requestHeaders: BUILD_HEADERS });
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: true, manifest: { id: 'beta-1' } });
+    updates.fetchUpdateAsync.mockResolvedValue({ isNew: true, manifest: { id: 'beta-1' } });
+  });
+
+  it('pins with the header set xprem itself builds for that branch', async () => {
+    // Ask the real xprem what it would send, by letting its surfTo run against
+    // the same mocked expo-updates with nothing to load.
+    const realSurf = await vi.importActual<typeof import('@xprem/control-center/src/surf')>(
+      '@xprem/control-center/src/surf',
+    );
+    updates.checkForUpdateAsync.mockResolvedValueOnce({ isAvailable: false });
+    await realSurf.surfTo({ ...SURF_CONFIG, requestHeaders: BUILD_HEADERS }, EARLY_UPDATES_OTA_BRANCH);
+    const xpremHeaders: unknown = updates.setUpdateRequestHeadersOverride.mock.calls[0][0];
+    updates.setUpdateRequestHeadersOverride.mockClear();
+
+    await joinEarlyUpdatesTrack();
+
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenCalledExactlyOnceWith(xpremHeaders);
+    // And spelled out, so a change in xprem cannot quietly move both sides.
+    expect(xpremHeaders).toEqual(EARLY_HEADERS);
+  });
+
+  it('checks and downloads under the new pin, records it, and never reloads', async () => {
+    await expect(joinEarlyUpdatesTrack()).resolves.toBe('switched');
+
+    const pinOrder = updates.setUpdateRequestHeadersOverride.mock.invocationCallOrder[0];
+    expect(pinOrder).toBeLessThan(updates.checkForUpdateAsync.mock.invocationCallOrder[0]);
+    expect(updates.fetchUpdateAsync).toHaveBeenCalledOnce();
+    expect(readOtaPinnedBranch()).toBe('pr-beta');
+    expect(updates.reloadAsync).not.toHaveBeenCalled();
+    expect(surf.surfTo).not.toHaveBeenCalled();
+  });
+
+  it('records the pin only after the download', async () => {
+    updates.fetchUpdateAsync.mockImplementation(async () => {
+      expect(readOtaPinnedBranch()).toBeNull();
+      return { isNew: true, manifest: { id: 'beta-1' } };
+    });
+    await joinEarlyUpdatesTrack();
+    expect(readOtaPinnedBranch()).toBe('pr-beta');
+  });
+
+  it.each([
+    ['the check throws', () => updates.checkForUpdateAsync.mockRejectedValue(new Error('offline'))],
+    ['the download throws', () => updates.fetchUpdateAsync.mockRejectedValue(new Error('offline'))],
+  ])('puts the previous pin back and rejects when %s', async (_label, arrange) => {
+    arrange();
+
+    await expect(joinEarlyUpdatesTrack()).rejects.toThrow('offline');
+
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenLastCalledWith(null);
+    expect(readOtaPinnedBranch()).toBeNull();
+  });
+
+  it("puts a tester's preview pin back exactly when a join from it fails", async () => {
+    settings.values.otaPinnedBranch = 'pr-4792';
+    updates.checkForUpdateAsync.mockRejectedValue(new Error('offline'));
+
+    await expect(joinEarlyUpdatesTrack()).rejects.toThrow('offline');
+
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenLastCalledWith({
+      ...EARLY_HEADERS,
+      'xprem-branch': 'pr-4792',
+    });
+    expect(readOtaPinnedBranch()).toBe('pr-4792');
+  });
+
+  it.each([
+    ['the update already running', () => (updates.updateId = 'beta-1')],
+    ['an update the launch-time check already downloaded', () => (updates.downloadedId = 'beta-1')],
+  ])('refuses %s: it is on disk under another stamp and would not launch', async (_label, arrange) => {
+    // What the server sends when it does not have the branch for this binary:
+    // the channel's own update. expo-updates would report it "downloaded"
+    // without restamping it.
+    arrange();
+
+    await expect(joinEarlyUpdatesTrack()).resolves.toBe('nothing-to-launch');
+
+    expect(updates.fetchUpdateAsync).not.toHaveBeenCalled();
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenLastCalledWith(null);
+    expect(readOtaPinnedBranch()).toBeNull();
+  });
+
+  it('refuses a download that produced nothing', async () => {
+    updates.fetchUpdateAsync.mockResolvedValue({ isNew: false });
+    await expect(joinEarlyUpdatesTrack()).resolves.toBe('nothing-to-launch');
+    expect(readOtaPinnedBranch()).toBeNull();
+  });
+
+  it('refuses when the server has nothing newer and the running bundle is not stamped for the pin', async () => {
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: false, reason: 'updateRejectedBySelectionPolicy' });
+    await expect(joinEarlyUpdatesTrack()).resolves.toBe('nothing-to-launch');
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenLastCalledWith(null);
+  });
+
+  it('leaving clears the override, downloads a regular update and records no pin', async () => {
+    settings.values.otaPinnedBranch = 'pr-beta';
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: true, manifest: { id: 'stable-2' } });
+    updates.fetchUpdateAsync.mockResolvedValue({ isNew: true, manifest: { id: 'stable-2' } });
+
+    await expect(leaveForProductionTrack()).resolves.toBe('switched');
+
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenCalledExactlyOnceWith(null);
+    expect(updates.fetchUpdateAsync).toHaveBeenCalledOnce();
+    expect(readOtaPinnedBranch()).toBeNull();
+    expect(updates.reloadAsync).not.toHaveBeenCalled();
+  });
+
+  it('leaving offline puts the early-updates pin back and keeps the record', async () => {
+    settings.values.otaPinnedBranch = 'pr-beta';
+    updates.checkForUpdateAsync.mockRejectedValue(new Error('offline'));
+
+    await expect(leaveForProductionTrack()).rejects.toThrow('offline');
+
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenLastCalledWith(EARLY_HEADERS);
+    expect(readOtaPinnedBranch()).toBe('pr-beta');
+  });
+
+  it('leaving for a channel that has published nothing is fine: the embedded bundle is that channel', async () => {
+    settings.values.otaPinnedBranch = 'pr-beta';
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: false, reason: 'noUpdateAvailableOnServer' });
+
+    await expect(leaveForProductionTrack()).resolves.toBe('switched');
+    expect(readOtaPinnedBranch()).toBeNull();
+  });
+
+  it('refuses on a build that cannot surf, without touching the headers', async () => {
+    migration.isBranchSurfingBuild.mockReturnValue(false);
+    await expect(joinEarlyUpdatesTrack()).rejects.toThrow(BRANCH_SURFING_UNAVAILABLE_MESSAGE);
+    await expect(leaveForProductionTrack()).rejects.toThrow(BRANCH_SURFING_UNAVAILABLE_MESSAGE);
+    expect(updates.setUpdateRequestHeadersOverride).not.toHaveBeenCalled();
   });
 });

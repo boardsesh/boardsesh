@@ -157,21 +157,27 @@ const qa = vi.hoisted(() => ({
   runningPrNumber: 4792 as number | null,
   surfingAvailable: true,
   surfToProduction: vi.fn(),
-  pinEarlyUpdates: vi.fn(),
 }));
 vi.mock('../../../lib/qa/qa-surf', () => ({
   qaSurfingAvailable: () => qa.surfingAvailable,
   readRunningPrNumber: () => qa.runningPrNumber,
   surfToProduction: qa.surfToProduction,
-  pinEarlyUpdates: qa.pinEarlyUpdates,
 }));
 
-// Membership of "Get updates early" is a flag plus a stored choice. Both are
-// covered where they live; here only what a member's screen does differs.
-const earlyUpdates = vi.hoisted(() => ({ member: false }));
-vi.mock('../../../lib/qa/use-early-updates', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../lib/qa/use-early-updates')>()),
-  useEarlyUpdatesMember: () => earlyUpdates.member,
+// Membership of "Get updates early", and what leaving a preview does for a
+// member, are covered where they live (use-early-updates, early-updates,
+// ota-track-sequences). Here only what the screen does with the answer matters,
+// so `returnToOwnTrack` keeps its contract: production for everyone else, a
+// no-reload switch to early updates for a member.
+const earlyUpdates = vi.hoisted(() => ({
+  member: false,
+  joinEarlyUpdates: vi.fn(),
+  noteBranchSurfingOff: vi.fn(),
+}));
+vi.mock('../../../lib/qa/use-early-updates', () => ({ useEarlyUpdatesMember: () => earlyUpdates.member }));
+vi.mock('../../../lib/qa/early-updates', () => ({
+  returnToOwnTrack: async (member: boolean) => (member ? earlyUpdates.joinEarlyUpdates() : qa.surfToProduction()),
+  noteBranchSurfingOff: earlyUpdates.noteBranchSurfingOff,
 }));
 
 const previews = vi.hoisted(() => ({
@@ -223,8 +229,9 @@ beforeEach(() => {
   qa.runningPrNumber = 4792;
   qa.surfingAvailable = true;
   qa.surfToProduction.mockReset().mockResolvedValue('nothing-to-load');
-  qa.pinEarlyUpdates.mockReset();
   earlyUpdates.member = false;
+  earlyUpdates.joinEarlyUpdates.mockReset().mockResolvedValue('early-updates-next-launch');
+  earlyUpdates.noteBranchSurfingOff.mockReset().mockResolvedValue(undefined);
   previews.data = [{ prNumber: 4792, title: 'Ask testers to try a PR preview', risk: 3 }];
   previews.mutateAsync.mockReset().mockResolvedValue({ id: 'verdict-1' });
   previews.lastOptions = undefined;
@@ -280,18 +287,18 @@ describe('QaVerdictSheet approve path', () => {
     expect(qa.surfToProduction).toHaveBeenCalledTimes(1);
   });
 
-  it('re-pins an early-updates member once their verdict is in', async () => {
-    // Clearing the pin here would strand a member: the preview bundle keeps
-    // running, and the launch re-pin stands down on a preview bundle.
+  it('moves an early-updates member back to early updates once their verdict is in', async () => {
+    // Production would be the wrong track for them, and the launch sync stands
+    // down while the preview pin is in place.
     earlyUpdates.member = true;
     const { container } = renderSheet();
     fireEvent.click(submitButton(container));
 
     await vi.waitFor(() => expect(sheet.dismiss).toHaveBeenCalled());
-    expect(qa.pinEarlyUpdates).not.toHaveBeenCalled();
+    expect(earlyUpdates.joinEarlyUpdates).not.toHaveBeenCalled();
 
     sheet.fullyDismissed?.();
-    expect(qa.pinEarlyUpdates).toHaveBeenCalledOnce();
+    expect(earlyUpdates.joinEarlyUpdates).toHaveBeenCalledOnce();
     expect(qa.surfToProduction).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('qa.shared.backOnEarlyUpdates', 'info'));
   });

@@ -217,7 +217,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'early-updates',
     label: 'Early updates',
     description:
-      'The "Get updates early" switch in More: a phone that turns it on follows the pr-beta OTA branch, which gets every merge to main. A POSITIVE rollout flag, not a kill switch, because it has to ship hidden: unresolved hides the row and leaves every pin alone. Turning it off in PostHog after climbers joined hides the row, clears their pin once at the next launch and keeps their choice, so they are back on early updates when it is turned on again.',
+      'The "Get updates early" switch in More: a phone that turns it on gets every merge to main ahead of the daily stable release. A POSITIVE rollout flag, not a kill switch, because it has to ship hidden: with no value at all the row is hidden and nobody is moved. Turning it off in PostHog after climbers joined hides the row, moves them back to the regular track at their next online launch and keeps their choice, so they rejoin when it is turned on again.',
   },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
@@ -577,10 +577,15 @@ export function useSprayWallsEnabled(): boolean {
  *
  * Three answers on purpose. A POSITIVE flag, because the feature ships hidden
  * and a `*-kill` switch reads unresolved as on. But "off" here does more than
- * hide a row: it clears a member's branch pin. That must only follow PostHog
- * actually saying off, never an answer that has not arrived (an offline launch,
- * PostHog unreachable), or a member in a basement gym would be dropped from the
- * track at every launch with no signal.
+ * hide a row: it moves a member back to the regular track. That must only
+ * follow a flag bag that says off, never an empty one.
+ *
+ * What each answer actually is: `on` is exactly `true`. `off` is exactly
+ * `false`, which PostHog gives for any key missing from a NON-EMPTY bag, fresh
+ * or cached, so a flag that does not exist yet reads off. `unknown` is no value
+ * at all: PostHog has never loaded flags on this install (first launch with no
+ * network, analytics unavailable). A failed request does not produce it on an
+ * install that has loaded flags before; that re-emits the cached bag.
  */
 export type EarlyUpdatesFlagState = 'on' | 'off' | 'unknown';
 

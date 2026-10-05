@@ -82,6 +82,9 @@ export function QaBriefScreen() {
     track(QA_PREVIEW_LEFT_EVENT, { prNumber: runningPrNumber });
     void returnToOwnTrack(earlyUpdatesMember)
       .then((outcome) => {
+        // The app is restarting onto the other bundle; this screen is about to
+        // be torn down and has nothing left to show.
+        if (outcome === 'reloading') return;
         setLeaving(false);
         // Production is not *newer* than a fresh pr-N bundle, so the running JS
         // usually stays until production publishes again. The pin is gone either

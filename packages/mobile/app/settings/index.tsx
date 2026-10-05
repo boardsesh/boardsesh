@@ -15,7 +15,7 @@ import { openExternalUrl } from '../../src/lib/open-url';
 import { useConfirmSignOut } from '../../src/hooks/use-confirm-sign-out';
 import { useProfile, useMyBoards, useIsAdmin } from '../../src/lib/graphql/hooks';
 import { useQaMenu } from '../../src/lib/qa/use-qa-menu';
-import { useEarlyUpdates } from '../../src/lib/qa/use-early-updates';
+import { useEarlyUpdatesRow } from '../../src/lib/qa/use-early-updates';
 import { useBoardDownloads } from '../../src/offline/use-board-downloads';
 import { isOfflineEngineEnabled } from '../../src/lib/offline-engine';
 import { useOfflineSchemaReady } from '../../src/db/use-offline-schema-ready';
@@ -307,7 +307,7 @@ export default function MoreScreen() {
   const { show: showQaPreviews, prNumber: qaPrNumber } = useQaMenu();
   // "Get updates early" (docs/mobile-ota-updates.md). Open to every climber on a
   // build that can surf, once the `early-updates` flag is on.
-  const earlyUpdates = useEarlyUpdates();
+  const earlyUpdates = useEarlyUpdatesRow();
 
   // Dev, testers and admins. The section can no longer come out empty: the
   // "Force server unreachable" switch below is available to everyone who passes
@@ -924,10 +924,13 @@ export default function MoreScreen() {
   if (earlyUpdates.show) {
     sections.push(
       buildEarlyUpdatesSection(t, {
-        member: earlyUpdates.member,
-        availability: earlyUpdates.availability,
-        lastUpdateAt: earlyUpdates.lastUpdateAt,
-        onToggleFailed: () => showToast(t('mobile.settings.earlyUpdates.toggleFailed'), 'error'),
+        state: earlyUpdates.state,
+        environment: earlyUpdates.environment,
+        onDeferred: (enabled) =>
+          showToast(
+            t(enabled ? 'mobile.settings.earlyUpdates.joinDeferred' : 'mobile.settings.earlyUpdates.leaveDeferred'),
+            'info',
+          ),
       }),
     );
   }

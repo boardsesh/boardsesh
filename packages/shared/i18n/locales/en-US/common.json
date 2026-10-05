@@ -398,10 +398,12 @@
         "title": "Get updates early",
         "offSubtitle": "New features as soon as they land, before everyone else",
         "onSubtitle": "You're on early updates",
-        "onSubtitleLatest": "You're on early updates. Latest one: {{when}}",
         "waitingSubtitle": "On, waiting for the next early update",
-        "footer": "Early updates can have rough edges now and then. Changes here apply next time you open the app. Switch this off and you're back on the regular track within about two days.",
-        "toggleFailed": "Couldn't change early updates. Try again."
+        "leavingSubtitle": "Switching back to regular updates once you're online",
+        "testingBody": "You're testing a preview. Leave it first, then change this.",
+        "footer": "Early updates can have rough edges now and then. Changes here apply next time you open the app.",
+        "joinDeferred": "Can't reach the update server. Early updates start once it's back.",
+        "leaveDeferred": "Can't switch back right now. We'll try again next time you open the app."
       }
     },
     "sendRecovery": {

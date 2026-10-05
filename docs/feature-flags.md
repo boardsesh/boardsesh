@@ -203,19 +203,22 @@ diagnostic) applies on native. The whole surface lives in three files:
   anything a rollback has to undo, and a wall already created stays created.
   Full table: `docs/spray-walls.md` → "Rolling the flag out".
   `early-updates` is a POSITIVE rollout flag for the "Get updates early" switch
-  in More (the `pr-beta` OTA branch; see `docs/mobile-ota-updates.md` → "Early
-  updates"). It is read through `useEarlyUpdatesFlagState`, the one hook that
-  returns three answers, because this flag does more than hide a row:
-  `on` (exactly `true`) shows the switch and lets a member's pin be re-applied
-  at launch; `off` (exactly `false`, which is PostHog saying so, including a
-  cached answer) hides the switch and clears a member's pin once; `unknown`
-  (no value at all: PostHog never answered and nothing is cached) hides the
-  switch and leaves every pin alone. It is deliberately NOT a `*-kill` switch.
-  A kill switch reads unresolved as "feature on", and this one had to ship
-  hidden with no flag created yet. The cost of the positive direction is that
-  an install which can never reach PostHog never sees the switch. Turning the
-  flag off keeps each member's stored choice, so they are back on early
-  updates the launch after it is turned on again.
+  in More (see `docs/mobile-ota-updates.md` → "Early updates"). It is read
+  through `useEarlyUpdatesFlagState`, the one hook that returns three answers,
+  because this flag does more than hide a row. `on` is exactly `true`: the
+  switch shows and a phone whose choice is on joins the early-updates branch.
+  `off` is exactly `false`: the switch is hidden and a member is moved back to
+  the regular track at their next online launch, keeping their choice.
+  `unknown` is no value at all: the switch is hidden and nobody is moved. What
+  produces each matters. PostHog answers `false` for any key missing from a
+  non-empty flag bag, fresh or cached, so a flag that has not been created
+  reads `off`, and so does a response that left this flag out. A failed request
+  on an install that has loaded flags before re-emits the cached bag, so it
+  reads whatever was cached, not `unknown`. `unknown` is only an install that
+  has never loaded flags. It is deliberately NOT a `*-kill` switch: a kill
+  switch reads unresolved as "feature on", and this one had to ship hidden
+  with no flag created yet. Keep it off until the device checks listed in
+  #6101 are done.
 - **Live read**: `readPosthogFeatureFlags` in `packages/mobile/src/lib/analytics.ts`.
 - **Dev override**: `packages/mobile/src/lib/feature-flag-overrides.ts` — an
   on-device `Record<string, boolean | string>`, persisted to AsyncStorage,
