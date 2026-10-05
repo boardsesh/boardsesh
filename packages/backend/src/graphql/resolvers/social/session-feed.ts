@@ -131,7 +131,7 @@ export async function getSessionFeed(
     if (!ctx) throw new Error('Authentication required to perform this operation');
     requireAuthenticated(ctx);
   }
-  const viewerUserId = ctx?.userId ?? null;
+  const viewerUserId = ctx?.isAuthenticated ? (ctx.userId ?? null) : null;
   if (userId && !(await canViewActivityIdentity(userId, viewerUserId)))
     return { sessions: [], cursor: null, hasMore: false };
   if (validatedInput.boardUuid && !(await canAccessResource('board', validatedInput.boardUuid, viewerUserId)))
@@ -251,7 +251,7 @@ export async function getSessionFeed(
             -- next one is picked instead. The card anchors its votes and comments
             -- on this tick's uuid, so the uuid itself must be one they may see. A
             -- day of nothing else produces no card (the INNER JOIN below).
-            WHERE ${sprayTickVisibleSql('dt', ctx?.userId)}
+            WHERE ${sprayTickVisibleSql('dt', viewerUserId)}
           ) ranked
           WHERE rank = 1
         ),
@@ -452,6 +452,7 @@ export async function getSessionFeed(
 
   const [
     participantMap,
+    dailyParticipantMap,
     gradeDistMap,
     dailyGradeDistMap,
     metaMap,
@@ -460,20 +461,21 @@ export async function getSessionFeed(
     dailyHardestSendMap,
     featuredBetaMap,
   ] = await Promise.all([
-    fetchParticipantsBatch(sessionIds, filterOptions, ctx?.userId),
+    fetchParticipantsBatch(sessionIds, filterOptions, viewerUserId),
+    fetchDailyParticipantsBatch(dailyHighlightKeys, filterOptions, viewerUserId),
     fetchGradeDistributionBatch(sessionIds, filterOptions),
     fetchDailyGradeDistributionBatch(dailyHighlightKeys, filterOptions),
     fetchSessionMetaBatch(sessionIds),
     fetchBoardTypesBatch(sessionIds, filterOptions),
-    fetchHardestSendsBatch(sessionIds, filterOptions, ctx?.userId),
-    fetchTickHighlightsByUuid(dailyHighlightTickUuids, ctx?.userId, pagination?.snapshotAt),
-    fetchFeaturedBetaBatch(sessionIds, dailyHighlightKeys, filterOptions, ctx?.userId),
+    fetchHardestSendsBatch(sessionIds, filterOptions, viewerUserId),
+    fetchTickHighlightsByUuid(dailyHighlightTickUuids, viewerUserId, pagination?.snapshotAt),
+    fetchFeaturedBetaBatch(sessionIds, dailyHighlightKeys, filterOptions, viewerUserId),
   ]);
 
   const sessions: SessionFeedItem[] = await Promise.all(
     resultRows.map(async (row) => {
       const isDailyHighlight = row.session_type === 'daily_highlight';
-      const participants = isDailyHighlight ? buildDailyParticipants(row) : (participantMap.get(row.session_id) ?? []);
+      const participants = isDailyHighlight ? (dailyParticipantMap.get(row.session_id) ?? []) : (participantMap.get(row.session_id) ?? []);
       const gradeDistribution = isDailyHighlight
         ? (dailyGradeDistMap.get(row.session_id) ?? [])
         : (gradeDistMap.get(row.session_id) ?? []);
@@ -576,6 +578,7 @@ export const sessionFeedQueries = {
     ctx?: ConnectionContext,
   ): Promise<SessionDetail | null> => {
     if (!sessionId) return null;
+    const viewerUserId = ctx?.isAuthenticated ? (ctx.userId ?? null) : null;
     const dailySession = parseDailySessionId(sessionId);
     if (dailySession) {
       if (!(await canViewActivityIdentity(dailySession.userId, ctx?.userId))) return null;
@@ -681,12 +684,12 @@ export const sessionFeedQueries = {
           // private wall's viewers.
           sprayClimbVisibilityCondition(
             { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
-            ctx?.userId,
+            viewerUserId,
           ),
           // …and a spray log whose climb was hard-deleted is its author's alone.
           // A session of nothing but those answers null below, like any session
           // the viewer can see no tick of.
-          sprayTickClimbExistsCondition(ctx?.userId),
+          sprayTickClimbExistsCondition(viewerUserId),
         ),
       )
       .orderBy(desc(dbSchema.boardseshTicks.climbedAt));
@@ -876,7 +879,7 @@ export const sessionFeedQueries = {
 
     const participants = dailySession
       ? await fetchDailyDetailParticipants(dailySession.userId, totalSends, totalFlashes, totalAttempts)
-      : await fetchParticipants(sessionId, userIds, ctx?.userId);
+      : await fetchParticipants(sessionId, userIds, viewerUserId);
     const gradeDistribution = buildGradeDistributionFromTicks(tickRows);
 
     // Timestamps
@@ -931,7 +934,6 @@ export const sessionFeedQueries = {
     const goal = dailySession ? null : partySession?.goal || null;
     const notes = dailySession ? null : partySession?.notes || null;
     const ownerUserId = dailySession ? dailySession.userId : partySession?.createdByUserId || null;
-    const viewerUserId = ctx?.isAuthenticated ? (ctx.userId ?? null) : null;
     const [healthKitWorkout] =
       viewerUserId && !dailySession
         ? await dbRead
@@ -981,7 +983,7 @@ export const sessionFeedQueries = {
 async function fetchParticipants(
   sessionId: string,
   userIds: string[],
-  viewerId?: string,
+  viewerUserId: string | null | undefined,
 ): Promise<SessionFeedParticipant[]> {
   if (userIds.length === 0) return [];
 
@@ -1000,7 +1002,12 @@ async function fetchParticipants(
     LEFT JOIN users u ON u.id = t.user_id
     LEFT JOIN user_profiles up ON up.user_id = t.user_id
     WHERE t.session_id = ${sessionId}
-      AND ${tickPrivacyCondition(viewerId, alias(dbSchema.boardseshTicks, 't'))}
+      AND ${tickPrivacyCondition(viewerUserId, alias(dbSchema.boardseshTicks, 't'))}
+      AND t.user_id IN (${sql.join(
+        userIds.map((userId) => sql`${userId}`),
+        sql`, `,
+      )})
+      AND ${sprayTickVisibleSql('t', viewerUserId)}
     GROUP BY t.user_id, up.display_name, u.name, up.avatar_url, u.image
     ORDER BY sends DESC
   `);
@@ -1064,7 +1071,7 @@ async function fetchDailyDetailParticipants(
 async function fetchParticipantsBatch(
   sessionIds: string[],
   { boardIdFilter, snapshotAt }: SessionFeedFilterOptions,
-  viewerId?: string,
+  viewerUserId: string | null | undefined,
 ): Promise<Map<string, SessionFeedParticipant[]>> {
   if (sessionIds.length === 0) return new Map();
 
@@ -1090,7 +1097,8 @@ async function fetchParticipantsBatch(
       sql`, `,
     )})`}
       ${batchTickFilter}
-      AND ${tickPrivacyCondition(viewerId, alias(dbSchema.boardseshTicks, 't'))}
+      AND ${tickPrivacyCondition(viewerUserId, alias(dbSchema.boardseshTicks, 't'))}
+      AND ${sprayTickVisibleSql('t', viewerUserId)}
     GROUP BY t.session_id, t.user_id, up.display_name, u.name, up.avatar_url, u.image
     ORDER BY sends DESC
   `);
@@ -1273,18 +1281,37 @@ async function fetchBoardTypesBatch(
   return map;
 }
 
-function buildDailyParticipants(row: SessionFeedRow): SessionFeedParticipant[] {
-  if (!row.daily_user_id) return [];
-  return [
-    {
-      userId: row.daily_user_id,
-      displayName: row.daily_display_name,
-      avatarUrl: row.daily_avatar_url,
-      sends: Number(row.total_sends),
-      flashes: Number(row.total_flashes),
-      attempts: Number(row.total_attempts),
-    },
-  ];
+async function fetchDailyParticipantsBatch(
+  keys: DailyHighlightKey[],
+  { boardIdFilter, snapshotAt }: SessionFeedFilterOptions,
+  viewerUserId: string | null | undefined,
+): Promise<Map<string, SessionFeedParticipant[]>> {
+  if (keys.length === 0) return new Map();
+  const dailyRows = await dbRead.execute(sql`
+    WITH daily_keys(session_id, user_id, day) AS (VALUES ${sql.join(
+      keys.map((key) => sql`(${key.sessionId}, ${key.userId}, ${key.day}::date)`),
+      sql`, `,
+    )})
+    SELECT daily_keys.session_id,
+      t.user_id AS "userId", COALESCE(up.display_name, u.name) AS "displayName",
+      COALESCE(up.avatar_url, u.image) AS "avatarUrl",
+      COUNT(*) FILTER (WHERE t.status IN ('flash', 'send'))::int AS sends,
+      COUNT(*) FILTER (WHERE t.status = 'flash')::int AS flashes,
+      (COALESCE(SUM(GREATEST(t.attempt_count - 1, 0)) FILTER (WHERE t.status = 'send'), 0)
+        + COALESCE(SUM(t.attempt_count) FILTER (WHERE t.status = 'attempt'), 0))::int AS attempts
+    FROM daily_keys
+    JOIN boardsesh_ticks t ON t.user_id = daily_keys.user_id AND t.climbed_at::date = daily_keys.day AND t.session_id IS NULL
+    LEFT JOIN users u ON u.id = t.user_id
+    LEFT JOIN user_profiles up ON up.user_id = t.user_id
+    WHERE ${sprayTickVisibleSql('t', viewerUserId)} ${tickScopeFilter(boardIdFilter, snapshotAt)}
+    GROUP BY daily_keys.session_id, t.user_id, up.display_name, u.name, up.avatar_url, u.image
+  `);
+  const participantsBySession = new Map<string, SessionFeedParticipant[]>();
+  for (const participant of rowsFromResult<SessionFeedParticipant & { session_id: string }>(dailyRows)) {
+    const { session_id: sessionId, ...details } = participant;
+    participantsBySession.set(sessionId, [details]);
+  }
+  return participantsBySession;
 }
 
 type TickHighlightRow = {

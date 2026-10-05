@@ -1123,7 +1123,24 @@ a climb and never join `board_climbs` at all:
 | Shape | Where | Used by |
 | --- | --- | --- |
 | `sprayReferenceVisibilityCondition({ boardType, climbUuid }, userId)` | in the WHERE, over the referencing table | the smart-playlist ref queries, `browseProposals`, `globalCommentFeed`, `userProfileStats`, `followingClimbAscents`, `climbLogs` |
-| `sprayClimbUuidIsReadable(climbUuid, userId)` | before the query | `comments`, `climbProposals` — the uuid-keyed threads |
+| `sprayClimbUuidIsReadable(climbUuid, userId)` | before the query | `climbProposals` — the uuid-keyed proposal reader |
+
+Social reads also use `readableSocialEntityIds` in
+`packages/backend/src/graphql/resolvers/social/entity-read-access.ts`. Comments,
+single and bulk vote summaries resolve tick, proposal, comment and playlist-climb
+references back to their wall before returning prose or vote data. Comment chains
+are bounded and fail closed on cycles. A tick on a deleted spray climb remains
+readable to its author. Bare climb threads have no retained board type, so the
+product policy hides **every deleted-climb thread**, including catalogue-board
+archives; a UUID alone cannot recover that access. Known spray community/classic
+status readers return the same neutral shape for missing or inaccessible climbs.
+
+Public session cards and summaries retain anonymous send/tick/grade totals.
+Named participants and their per-person counts include only readable ticks;
+private-only participants are omitted. Public board-type totals keep counting
+private activity. Smart-playlist selection and count queries share both wall
+visibility and deleted-spray-reference predicates, with the referencing author's
+exemption for retained logbook/favourite totals.
 
 It is phrased "there is **no INVISIBLE** spray climb behind this reference"
 rather than "there is a visible climb", so a reference whose climb row has gone

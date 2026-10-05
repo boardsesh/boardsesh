@@ -15,7 +15,7 @@ import {
 import { logger } from '../../../utils/logger';
 import { encodeOffsetCursor, decodeOffsetCursor } from '../../../utils/feed-cursor';
 import { sprayClimbVisibilityCondition, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
-import { sprayClimbUuidIsReadable, sprayProposalUuidIsReadable } from '../climbs/spray-read-access';
+import { readableSocialEntityIds } from './entity-read-access';
 import { validateEntityExists } from './entity-validation';
 import { lockReferencedClimb } from '../climbs/spray-climb-lock';
 import { publishSocialEvent } from '../../../events/index';
@@ -96,17 +96,8 @@ export const socialCommentQueries = {
     if (!(await canReadSocialEntity(entityType, entityId, authenticatedUserId))) {
       return { comments: [], totalCount: 0, hasMore: false };
     }
-
-    // A climb comment thread is keyed on the climb uuid alone, so holding the
-    // uuid was the whole of the claim. On a spray wall it is not: the wall
-    // decides. The empty page, never an error — a different shape would say
-    // which uuids are climbs on a private wall.
-    if (entityType === 'climb' && !(await sprayClimbUuidIsReadable(entityId, authenticatedUserId))) {
-      return { comments: [], totalCount: 0, hasMore: false };
-    }
-    // And a PROPOSAL thread is prose about a climb: a `hide` proposal stores its
-    // reason as a comment on itself. One hop further out, same answer.
-    if (entityType === 'proposal' && !(await sprayProposalUuidIsReadable(entityId, authenticatedUserId))) {
+    // Holding a thread UUID does not grant access to the wall behind it.
+    if (!(await readableSocialEntityIds(entityType, [entityId], authenticatedUserId)).has(entityId)) {
       return { comments: [], totalCount: 0, hasMore: false };
     }
 
