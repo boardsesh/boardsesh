@@ -319,6 +319,9 @@ export async function purgeDeletedSprayWallPhotos({
   wallIds,
 }: PurgeDeletedSprayWallPhotosOptions = {}): Promise<SprayWallPhotoPurgeResult> {
   const startedAt = Date.now();
+  if (wallIds?.length === 0) {
+    return { wallsPurged: 0, objectsDeleted: 0, wallsConsidered: 0, durationMs: 0 };
+  }
   const cutoff = new Date(now.getTime() - SPRAY_WALL_PHOTO_RETENTION_DAYS * 24 * 60 * 60 * 1000);
 
   // `lt`, not `lte`: a wall deleted exactly at the cutoff is inside the window by

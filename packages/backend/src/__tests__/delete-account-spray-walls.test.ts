@@ -209,6 +209,20 @@ function ctx(userId: string): ConnectionContext {
 }
 
 describe('deleteAccount spray walls (real resolver, rolled-back database)', () => {
+  it('does not query storage or SQL for an explicitly empty account purge', async () => {
+    const select = vi.spyOn(realDb, 'select').mockImplementationOnce(() => {
+      throw new Error('empty purge queried SQL');
+    });
+    try {
+      expect(await purgeDeletedSprayWallPhotos({ wallIds: [] })).toMatchObject({
+        wallsPurged: 0,
+        objectsDeleted: 0,
+        wallsConsidered: 0,
+      });
+    } finally {
+      select.mockRestore();
+    }
+  });
   it('serializes account creation and deletion across independent database connections', async () => {
     const accountId = randomUUID();
     let releaseOwner!: () => void;

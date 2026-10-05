@@ -406,7 +406,17 @@ export async function handleSprayWallPhotoUpload(req: IncomingMessage, res: Serv
         const eraseUpload = async () => {
           const erased = await Promise.allSettled(writtenKeys.map((writtenKey) => deleteFromS3('private', writtenKey)));
           if (erased.every((result) => result.status === 'fulfilled')) return;
-          await markDeletedSprayWallPhotoRetry(uploadedWallUuid);
+          try {
+            await markDeletedSprayWallPhotoRetry(uploadedWallUuid);
+          } catch (retryError) {
+            // Cleanup is best effort; a second SQL failure must not prevent
+            // sending the upload's original error response.
+            logger.error(
+              'Failed to record withdrawn spray photo cleanup retry',
+              { wallUuid: uploadedWallUuid },
+              retryError,
+            );
+          }
         };
 
         try {

@@ -128,7 +128,14 @@ function closeServer(server: Server): Promise<void> {
 
 function uploadPhoto(
   baseUrl: string,
-  opts: { token?: string; wallUuid?: string; bytes?: Buffer; mimeType?: string; fileName?: string },
+  opts: {
+    token?: string;
+    wallUuid?: string;
+    bytes?: Buffer;
+    mimeType?: string;
+    fileName?: string;
+    signal?: AbortSignal;
+  },
 ): Promise<Response> {
   const formData = new FormData();
   if (opts.wallUuid !== undefined) formData.set('wallUuid', opts.wallUuid);
@@ -142,6 +149,7 @@ function uploadPhoto(
     method: 'POST',
     headers: opts.token ? { Authorization: `Bearer ${opts.token}` } : {},
     body: formData,
+    signal: opts.signal,
   });
 }
 
@@ -340,6 +348,32 @@ describe('POST /api/spray-wall-photos', () => {
       vi.restoreAllMocks();
     },
   );
+
+  it('sends an error response even when object erasure and recording its retry both fail', async () => {
+    uploadRace.failDelete = true;
+    uploadRace.onUpload = async () => {
+      await db.execute(
+        sql`UPDATE spray_walls SET deleted_at = now(), photos_purged_at = now() WHERE board_uuid = ${wallUuid}`,
+      );
+      vi.spyOn(db, 'select').mockImplementationOnce(() => {
+        throw new Error('synthetic ownership lookup failure');
+      });
+      vi.spyOn(db, 'transaction').mockRejectedValueOnce(new Error('synthetic retry transaction failure'));
+    };
+    try {
+      const response = await uploadPhoto(baseUrl, {
+        token: OWNER,
+        wallUuid,
+        bytes: await plainPng(),
+        mimeType: 'image/png',
+        signal: AbortSignal.timeout(1500),
+      });
+      expect(response.status).toBe(500);
+      expect(await response.json()).toMatchObject({ error: 'Failed to save the wall photo' });
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
 
   it('refuses a stranger and a missing token', async () => {
     const stranger = await uploadPhoto(baseUrl, {
