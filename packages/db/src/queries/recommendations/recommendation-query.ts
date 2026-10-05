@@ -286,7 +286,9 @@ export function buildRecommendationCountSql(params: RecommendationQueryParams): 
  * "Sent" is the same set `notSentByCondition` excludes, or the subtraction is
  * wrong: only sends on the climb's current holds. The subquery keeps the newest
  * revision the viewer sent each climb on, and the row is kept when that reaches
- * the epoch of the `board_climbs` row the query joins anyway.
+ * the epoch of the `board_climbs` row the query joins anyway. The subquery is
+ * grouped, and joined, on the board type as well as the uuid, so a send never
+ * pairs with a climb on another board whatever the catalogue filter says.
  */
 export function buildRecommendationSentOverlapSql(params: RecommendationQueryParams, userId: string): SQL {
   const { angle, boardType } = params.target;
@@ -296,15 +298,15 @@ export function buildRecommendationSentOverlapSql(params: RecommendationQueryPar
   return sql`
     SELECT COUNT(*)::int AS count
     FROM (
-      SELECT t.climb_uuid, MAX(${tickAliasRevisionOrFirstSql('t')}) AS latest_sent_revision
+      SELECT t.board_type, t.climb_uuid, MAX(${tickAliasRevisionOrFirstSql('t')}) AS latest_sent_revision
       FROM boardsesh_ticks t
       WHERE t.user_id = ${userId}
         AND t.board_type = ${boardType}
         AND t.angle = ${angle}
         AND t.status IN ('flash', 'send')
-      GROUP BY t.climb_uuid
+      GROUP BY t.board_type, t.climb_uuid
     ) sent
-    JOIN board_climbs bc ON bc.uuid = sent.climb_uuid
+    JOIN board_climbs bc ON bc.board_type = sent.board_type AND bc.uuid = sent.climb_uuid
     ${
       bounds
         ? sql`JOIN board_climb_stats s

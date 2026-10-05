@@ -640,6 +640,18 @@ void describe('createClimbFilters: personal progress filters are scoped to the c
     assert.match(sql, /'attempt'/);
   });
 
+  void it('scopes the personal rating filters to the angle column too', () => {
+    const rated = progressSql({ onlyRatedByMe: true });
+    assert.match(rated, /EXISTS/);
+    assert.doesNotMatch(rated, /NOT EXISTS/);
+    assert.match(rated, /angle\s*=/);
+    // Both ticks of the latest-rating anti-join: the offending rating at the
+    // browsed angle, and the newer one that supersedes it at the same angle.
+    const minRating = progressSql({ minUserRating: 3 });
+    assert.match(minRating, /rating_below\.angle\s*=/);
+    assert.match(minRating, /rating_newer\.angle = rating_below\.angle/);
+  });
+
   void it('reads only ticks on the climb’s current holds in every personal check (#6023)', () => {
     // One compare against the board_climbs row the subquery is already
     // correlated to. No lookup in board_climb_revisions.

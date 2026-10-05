@@ -106,10 +106,16 @@ type DeleteDraftClimbArgs = { uuid: unknown; boardType: unknown };
 
 /**
  * What `updateClimb`'s transaction hands back: the climb's revision numbers once
- * it has committed, and `replayedPublishAt` only when the call turned out to be
- * a publish that had already landed and so wrote nothing.
+ * it has committed; `replayedPublishAt` only when the call turned out to be a
+ * publish that had already landed and so wrote nothing; and the stats keys a
+ * holds change recomputed, for the refresh that follows the commit. Returned
+ * rather than assigned from inside the callback, so those keys exist only for a
+ * transaction that committed.
  */
-type UpdateClimbOutcome = ClimbRevisionNumbers & { replayedPublishAt?: string | null };
+type UpdateClimbOutcome = ClimbRevisionNumbers & {
+  replayedPublishAt?: string | null;
+  holdsChangeStatsKeys: ClimbStatsKey[];
+};
 
 function generateClimbUuid(): string {
   // Match Aurora-style uppercase UUID without dashes
@@ -1076,10 +1082,6 @@ export const climbMutations = {
       !nextIsDraft && (transitioningToPublished || framesChanged || rulesChanged) && nextFramesCount === 1;
     const gateSignature = shouldGate ? buildHoldSignature(nextHoldEntries) : '';
 
-    // The stats keys a holds change recomputed inside the transaction, kept for
-    // the post-commit refresh.
-    let holdsChangeStatsKeys: ClimbStatsKey[] = [];
-
     const outcome = await db.transaction(async (tx): Promise<UpdateClimbOutcome> => {
       if (shouldGate) {
         await acquireDuplicateGateLock(tx, boardType, existing.layoutId, gateSignature, {
@@ -1164,6 +1166,7 @@ export const climbMutations = {
         if (replaysLandedPublish) {
           return {
             replayedPublishAt: beforeEdit.publishedAt,
+            holdsChangeStatsKeys: [],
             revisionNumber: beforeEdit.revisionNumber,
             holdsRevisionNumber: beforeEdit.holdsRevisionNumber,
           };
@@ -1360,11 +1363,11 @@ export const climbMutations = {
       // different number than the locked row held means this edit moved it. In
       // this transaction, so the new epoch and the stats that read it commit
       // together.
-      if (revisionNumbers.holdsRevisionNumber !== beforeEdit.holdsRevisionNumber) {
+      const holdsEpochMoved = revisionNumbers.holdsRevisionNumber !== beforeEdit.holdsRevisionNumber;
+      if (holdsEpochMoved) {
         await recomputeStatsAfterHoldsChange(tx, sentStatsKeys);
-        holdsChangeStatsKeys = sentStatsKeys;
       }
-      return revisionNumbers;
+      return { ...revisionNumbers, holdsChangeStatsKeys: holdsEpochMoved ? sentStatsKeys : [] };
     });
 
     // A replayed publish: the first one did the work, announced the climb and
@@ -1384,7 +1387,7 @@ export const climbMutations = {
     // shows up immediately instead of waiting for the 1h TTL.
     void notifyClimbRevalidated(validated.uuid);
 
-    queueHoldsChangeStatsRefresh(holdsChangeStatsKeys);
+    queueHoldsChangeStatsRefresh(outcome.holdsChangeStatsKeys);
 
     // On a draft → published transition, announce the new climb so follower
     // feeds pick it up, the same way saveClimb does.
