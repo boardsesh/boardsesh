@@ -96,8 +96,36 @@
       "subtitle": "Cette session est introuvable. Elle a peut-être été supprimée."
     }
   },
-  "join": {
-    "joining": "On te connecte…"
+  "invitePage": {
+    "eyebrow": "Invitation à une session",
+    "headingWithHost": "{{name}} t'attend au mur",
+    "headingDefault": "On t'attend au mur",
+    "leadLive": "La session est en direct. Prends l'appli pour la rejoindre.",
+    "leadDormant": "La session est toujours ouverte. Personne n'est connecté pour l'instant, mais tu peux la rejoindre.",
+    "detailsHeading": "La session",
+    "hostLabel": "Lancée par",
+    "boardLabel": "Board",
+    "gymLabel": "Salle",
+    "installHeading": "Rejoins depuis ton téléphone",
+    "installBody": "Prends l'appli Boardsesh, puis rouvre ce lien. Tu arrives dans la session, avec la file d'attente de la crew déjà prête.",
+    "googlePlay": "Disponible sur Google Play",
+    "appStore": "Télécharger dans l'App Store",
+    "haveApp": "Tu as déjà l'appli sur ce téléphone ? Ouvre la session dedans. Sur un ordinateur, ouvre ce lien sur ton téléphone.",
+    "openInApp": "Ouvrir dans l'appli",
+    "getAppHeading": "Lance ta propre session",
+    "getAppBody": "Prends l'appli Boardsesh pour lancer une session et inviter la crew.",
+    "ended": {
+      "title": "Cette session est terminée",
+      "lead": "La crew a quitté le mur."
+    },
+    "notFound": {
+      "title": "Session introuvable",
+      "lead": "Le lien est peut-être incomplet, ou la session est terminée depuis longtemps. Demande une nouvelle invitation à la personne qui te l'a envoyée."
+    },
+    "unavailable": {
+      "lead": "Impossible de charger les détails de la session pour l'instant. L'invitation fonctionne toujours dans l'appli."
+    },
+    "learnMore": "Découvre ce que fait Boardsesh"
   },
   "creation": {
     "form": {
@@ -743,10 +771,14 @@
     "loading": "Chargement de la session…",
     "notFound": "Session introuvable",
     "ended": "Cette session est terminée",
+    "hostAway": "La session est en cours, mais personne n'est connecté",
+    "hostAwayBody": "Demandez à {{host}} d'ouvrir Boardsesh, puis réessayez.",
+    "hostAwayBodyNoHost": "Demandez à la personne qui vous a invité d'ouvrir Boardsesh, puis réessayez.",
     "error": "Impossible de charger cette session",
     "retry": "Réessayer",
     "confirmTitle": "Rejoindre la session de {{host}} ?",
     "boardLabel": "{{board}} · {{count}} en train de grimper",
+    "boardLabelDormant": "{{board}} · personne de connecté pour l'instant",
     "join": "Rejoindre la session",
     "cancel": "Annuler",
     "switchTitle": "Quitter votre session actuelle ?",

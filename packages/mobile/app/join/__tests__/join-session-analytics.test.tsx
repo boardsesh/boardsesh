@@ -137,6 +137,7 @@ describe('JoinSessionScreen analytics', () => {
     await waitFor(() =>
       expect(analytics.track).toHaveBeenCalledWith('Session Joined', {
         session_id: 'session-42',
+        sessionId: 'session-42',
         board_name: 'kilter',
         layout_id: 1,
       }),
@@ -164,6 +165,7 @@ describe('JoinSessionScreen analytics', () => {
     await waitFor(() =>
       expect(analytics.track).toHaveBeenCalledWith('Session Joined', {
         session_id: 'session-42',
+        sessionId: 'session-42',
         board_name: 'moonboard',
         layout_id: 3,
       }),

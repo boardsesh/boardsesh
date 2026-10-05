@@ -42,7 +42,7 @@ The Start Session drawer is the entry point for creating a new climbing session.
 1. Resolves `boardPath` and `navigateUrl` from selection (named board, custom path, or current route).
 2. Calls `createSession(formData, boardPath)`.
 3. Merges existing same-board queue with generated queue; sets initial queue for the new session.
-4. Sets the session cookie via `setClimbSessionCookie`.
+4. (Removed in #6004: this step set a `boardsesh-climb-session-id` cookie. Nothing read it after the climbing UI moved to the app, and the helper is deleted.)
 5. Calls `activateSession` with board details and parsed params.
 6. Navigates to `navigateUrl` via `router.push`.
 7. Fires `registerSessionStart` and analytics.
@@ -174,30 +174,43 @@ The `SeshSettingsDrawer` (`sesh-settings-drawer.tsx`) is the session management 
 
 **Angle change:** replaces the angle segment in the current URL pathname, preserving query string from `window.location.search`.
 
-**Stop session:** calls `deactivateSession()` + `clearClimbSessionCookie()`, toggles to stopped state showing close button instead of stop button.
+**Stop session:** calls `deactivateSession()`, toggles to stopped state showing close button instead of stop button.
 
 **Tour mode:** accepts `tourMockSession` prop (a `SessionDetail` with fake participants and ticks from `getMockSessionDetail()`) and `tourActiveSection` to force collapsible sections during onboarding.
 
 ### Session Join Flow (`/join/[sessionId]`)
 
-**Server-side (`page.tsx`):**
+**Server-side (`page.tsx`), since #6004:**
 
-- Generates rich OG metadata: title "Join {leaderName}'s session | Boardsesh" or "Join a climbing session | Boardsesh", description with send count and board info, OG image via `/api/og/session?sessionId=...&variant=join`.
-- `robots: { index: false, follow: true }` (join pages are not indexed).
-- Renders a `<noscript>` fallback with `<meta httpEquiv="refresh">` pointing to `/api/internal/join/{sessionId}`.
+The page is what someone sees when they were sent an invite and have no app. A phone with the app never reaches it: the universal link (iOS) and the `/join` App Link (Android) open the app's join screen first.
 
-**Client-side (`JoinRedirect`):**
+- Generates rich OG metadata: title "Join {leaderName} on the wall | Boardsesh" or "Join the crew on the wall | Boardsesh", description with send count and board info, OG image via `/api/og/session?sessionId=...&variant=join`.
+- `robots: { index: false, follow: true }` on every branch (join pages are not indexed).
+- Looks the invite up through the backend's unauthenticated `sessionInvitePreview` query (`session-invite.ts`) and renders inside `PageShell`:
+  - **live / dormant**: who started it, the board (and angle), the gym when there is one, both store buttons, and an "Open in the app" button for someone who already has it. A dormant session says nobody is connected right now and that it can still be joined.
+  - **ended**: "This session has ended", with the store buttons under "Start your own session".
+  - **not found** (unknown or malformed id): "We can't find this session", same store buttons.
+  - **lookup failed** (backend down or rate limited): the invite without details. Never "not found".
+- Always a 200. A missing session still has something to offer the visitor, which a 404 page would not.
 
-- Full-screen centred layout: `CircularProgress` (48px) + "Joining session..." text.
-- `useEffect` immediately sets `window.location.href` to the join API endpoint.
-- The API endpoint handles session joining server-side and redirects the user to the board page with the session cookie set.
+**Client islands:**
 
-**Mobile adaptation:**
+- `SessionInviteInstallCta`: both store buttons, always, as real anchors. Links come from `buildStoreUrl` with `placement: 'join-page'`, campaign `session-invite`, and the session id in the Google Play link id (`utm_content=join-page.<session id>`). The App Store token stays `join-page`. Each click fires `App Install Click` with `placement: 'join-page'` and `sessionId`.
+- `SessionInviteOpenApp`: an anchor to `com.boardsesh.app://join/{sessionId}`, shown for a live, dormant or lookup-failed invite. A link tapped inside another app's built-in browser (Instagram, WhatsApp) skips the universal link and the App Link, so the phone never offers the app; this link asks for it by the app's own scheme. Fires `Session Invite Open In App Clicked`. Without the app it opens nothing, so it sits below the store buttons as the secondary action.
+- `SessionInviteLandingTracker`: one `Session Invite Page Viewed` per landing (`sessionId` unless the state is `not_found`, `state`, `hasHost`, `hasGym`), sent through `trackBeforeNavigation` so it is flushed before a store button or the app takes the visitor away.
 
-- Deep link handling: `/join/{sessionId}` URLs should be registered as universal links / app links.
-- The join flow can use `expo-linking` to handle the deep link and call the `joinSession` mutation directly.
-- Show a native loading screen during the join process.
-- On success, navigate to the board page with the session activated.
+Removed in #6004: the `JoinRedirect` spinner, the `/api/internal/join/{sessionId}` 307 to the board list, and the `boardsesh-climb-session-id` cookie that route and the middleware's `?session=` rewrite set. The rewrite still strips `?session=` from old URLs; it no longer keeps the id.
+
+**In the app (`packages/mobile/app/join/[sessionId].tsx`):**
+
+- A phone with the app opens this screen from the invite link (universal link, App Link, or the app's own scheme). It needs sign-in; a signed-out invitee is sent to login and the link is replayed afterwards.
+- It asks `session` first. When that is null (nobody connected) it asks `sessionInvitePreview`:
+  - **live**: the host connected between the two reads. `session` is asked once more; if it still has nothing, the join card shows with the board and no climber count.
+  - **dormant**: the join card, with "nobody connected right now" in place of the climber count.
+  - **host away**: the session is running, nobody is connected, and the backend withheld the board path (a spray wall that is not open to everyone). The screen says the host has to open Boardsesh and offers a retry. Once the host is connected, `session` answers with the path and the join card shows.
+  - **ended**: "This session has ended".
+  - **not found**: neither query knows the id.
+- Dead ends fire `Session Join Outcome`; a join fires `Session Joined`. See `docs/growth-metrics.md`.
 
 ### Data Layer
 

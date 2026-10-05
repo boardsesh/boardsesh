@@ -9,6 +9,7 @@ import {
   buildPlayStoreUrl,
   buildStoreUrl,
   gymInstallCampaign,
+  playStoreLinkId,
   resolveStoreLinkAttribution,
   storeLinkId,
 } from '../store-links';
@@ -247,6 +248,47 @@ describe('storeLinkId', () => {
   it('is unique per placement', () => {
     const linkIds = APP_INSTALL_PLACEMENTS.map((placement) => storeLinkId(placement));
     expect(new Set(linkIds).size).toBe(APP_INSTALL_PLACEMENTS.length);
+  });
+});
+
+describe('a session invite link (linkDetail)', () => {
+  const SESSION_ID = '550e8400-e29b-41d4-a716-446655440000';
+  const invite = { placement: 'join-page', campaign: 'session-invite', linkDetail: SESSION_ID } as const;
+
+  it('appends the session id to the Play link id', () => {
+    expect(playStoreLinkId(invite)).toBe(`join-page.${SESSION_ID}`);
+    expect(playStoreLinkId({ placement: 'join-page' })).toBe('join-page');
+  });
+
+  it('carries the session id to the app in the referrer utm_content', () => {
+    const referrer = installReferrer(buildPlayStoreUrl(invite));
+
+    expect(referrer.get('utm_content')).toBe(`join-page.${SESSION_ID}`);
+    expect(referrer.get('utm_campaign')).toBe('session-invite');
+    expect(referrer.get('utm_source')).toBe('boardsesh');
+    expect(referrer.get('utm_medium')).toBe('web');
+  });
+
+  it('ignores a detail that is not letters, digits and hyphens', () => {
+    for (const linkDetail of ['', 'bad id!', 'a&utm_source=evil', 'a.b', '../x', 'a b']) {
+      expect(playStoreLinkId({ placement: 'join-page', linkDetail })).toBe('join-page');
+    }
+  });
+
+  it('keeps the session id out of the App Store token', () => {
+    expect(appStoreCampaignToken(invite)).toBe('join-page');
+    expect(new URL(buildAppStoreUrl(invite)).searchParams.get('ct')).toBe('join-page');
+    expect(buildAppStoreUrl(invite)).not.toContain(SESSION_ID);
+  });
+
+  it('still lets a tagged visitor name the campaign, and keeps the session in the link id', () => {
+    const referrer = installReferrer(
+      buildPlayStoreUrl({ ...invite, inbound: { utm_source: 'whatsapp', utm_campaign: 'crew-night' } }),
+    );
+
+    expect(referrer.get('utm_source')).toBe('whatsapp');
+    expect(referrer.get('utm_campaign')).toBe('crew-night');
+    expect(referrer.get('utm_content')).toBe(`join-page.${SESSION_ID}`);
   });
 });
 

@@ -637,6 +637,8 @@ const NOT_APPLICABLE: Record<string, string> = {
   'Query.session': 'live room state held in Redis, not a climb read; membership-gated',
   'Query.eventsReplay': 'the event buffer requires Redis, which the sweep does not run',
   'Query.sessionStatus': 'one enum: whether the session is active',
+  'Query.sessionInvitePreview':
+    'the same answer for every caller by design, the owner included: it names a spray wall (and returns its board path) only when an ANONYMOUS visitor could read it, so there is no owner-only half to prove; the gate is pinned in session-invite-preview.test.ts',
   'Query.followedLiveSessions':
     'lists only LIVE sessions (a live connection, or a Redis session key), and the sweep opens neither; the spray gates (followed/selected wall, board name, current climb) are pinned by the spray-wall block in live-sessions.test.ts',
   'Query.boardLiveSessions':

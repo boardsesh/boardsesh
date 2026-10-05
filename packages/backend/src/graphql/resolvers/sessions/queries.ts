@@ -2,16 +2,24 @@ import type {
   ConnectionContext,
   EventsReplayResponse,
   SessionHealthExport,
+  SessionInvitePreview,
   SessionStatus,
 } from '@boardsesh/shared-schema';
 import { eq } from 'drizzle-orm';
 import { roomManager, type DiscoverableSession } from '../../../services/room-manager';
 import { pubsub } from '../../../pubsub/index';
-import { validateInput, requireSessionMember, requireAuthenticated, isSessionMember } from '../shared/helpers';
+import {
+  validateInput,
+  requireSessionMember,
+  requireAuthenticated,
+  isSessionMember,
+  applyRateLimit,
+} from '../shared/helpers';
 import { SessionIdSchema, LatitudeSchema, LongitudeSchema, RadiusMetersSchema } from '../../../validation/schemas';
 import { generateSessionHealthExport, generateSessionSummary } from './session-summary';
 import { getDistributedState } from '../../../services/distributed-state';
 import { buildSessionPayload } from './helpers';
+import { resolveSessionInvitePreview } from './invite-preview';
 import { dbRead } from '../../../db/client';
 import { sessions } from '../../../db/schema';
 
@@ -205,5 +213,28 @@ export const sessionQueries = {
     // 'active': a dormant row is exactly the restore-safe case this query
     // exists to preserve (#2683).
     return row.status === 'ended' || row.endedAt != null ? 'ended' : 'active';
+  },
+
+  /**
+   * What a session invite link points at, for the www invite page and the app's
+   * join screen (#6004). No auth: the reader is someone who was sent a link and
+   * may have neither an account nor the app. What it returns, and why each
+   * field is safe to hand a stranger, is documented on
+   * `resolveSessionInvitePreview`.
+   *
+   * Rate limited because it is public and does a five-table read plus a
+   * presence lookup. 60 a minute is per caller for the app, but www renders the
+   * invite page on the server, so every page view there shares the web
+   * server's address and one bucket; the page treats a refusal as "could not
+   * load" and still shows the store buttons.
+   */
+  sessionInvitePreview: async (
+    _: unknown,
+    { sessionId }: { sessionId: string },
+    ctx: ConnectionContext,
+  ): Promise<SessionInvitePreview> => {
+    await applyRateLimit(ctx, 60, 'sessionInvitePreview');
+    validateInput(SessionIdSchema, sessionId, 'sessionId');
+    return resolveSessionInvitePreview(sessionId);
   },
 };

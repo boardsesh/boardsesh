@@ -6447,6 +6447,14 @@ export type Query = {
    */
   sessionHealthExport?: Maybe<SessionHealthExport>;
   /**
+   * What a session invite link points at: host display name, board, gym and
+   * whether the session is live, dormant, ended or missing. No authentication
+   * required and rate limited. Unlike session, it answers for a dormant
+   * session (running, nobody connected) instead of returning null, and it never
+   * returns the roster.
+   */
+  sessionInvitePreview: SessionInvitePreview;
+  /**
    * Lightweight, presence-independent lifecycle check for a session.
    * Reads the durable session row (not live Redis presence), so it tells an
    * ended session apart from one that is merely empty. Returns null when the
@@ -7194,6 +7202,11 @@ export type QuerySessionGroupedFeedArgs = {
 
 /** Root query type for all read operations. */
 export type QuerySessionHealthExportArgs = {
+  sessionId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySessionInvitePreviewArgs = {
   sessionId: Scalars['ID']['input'];
 };
 
@@ -8403,6 +8416,43 @@ export type SessionHealthExportLap = {
   /** Tick UUID */
   tickUuid: Scalars['ID']['output'];
 };
+
+/**
+ * The public face of a session invite: only what an invite page needs to say
+ * whose session it is and where. Readable without signing in by anyone holding
+ * the session id, so it carries no roster, no user ids, no email and no queue.
+ * Every detail field is null unless the state is live or dormant.
+ */
+export type SessionInvitePreview = {
+  __typename?: 'SessionInvitePreview';
+  /** Name of the board the session runs on. Null when no board is attached or the board is not public. */
+  boardName?: Maybe<Scalars['String']['output']>;
+  /** Board path the session runs on, the same value Session.boardPath returns to a link holder */
+  boardPath?: Maybe<Scalars['String']['output']>;
+  /** Name of the gym the board belongs to. Null when the board has no gym or the gym is not public. */
+  gymName?: Maybe<Scalars['String']['output']>;
+  /** Display name of whoever started the session. Null when they have none, or the session was started signed out. */
+  hostName?: Maybe<Scalars['String']['output']>;
+  /** The session id that was asked about */
+  sessionId: Scalars['ID']['output'];
+  /** Where the session is in its life */
+  state: SessionInviteState;
+};
+
+/**
+ * What a session invite link resolves to, for a page that has to explain the
+ * invite to someone who may not have the app. Lowercase values, same convention
+ * as SessionStatus.
+ */
+export type SessionInviteState =
+  /** The session is running but nobody is connected right now (the host's phone is asleep or offline). Still joinable. */
+  | 'dormant'
+  /** The session was ended by its host or by the inactivity sweep */
+  | 'ended'
+  /** The session is running and at least one climber is connected */
+  | 'live'
+  /** No joinable session has this id */
+  | 'not_found';
 
 /**
  * Event when the session's title changes (via updateSession). Recipients update
@@ -10852,6 +10902,8 @@ export type ResolversTypes = ResolversObject<{
   SessionHardestClimb: ResolverTypeWrapper<SessionHardestClimb>;
   SessionHealthExport: ResolverTypeWrapper<SessionHealthExport>;
   SessionHealthExportLap: ResolverTypeWrapper<SessionHealthExportLap>;
+  SessionInvitePreview: ResolverTypeWrapper<SessionInvitePreview>;
+  SessionInviteState: SessionInviteState;
   SessionNameChanged: ResolverTypeWrapper<SessionNameChanged>;
   SessionParticipant: ResolverTypeWrapper<SessionParticipant>;
   SessionRosterSnapshot: ResolverTypeWrapper<SessionRosterSnapshot>;
@@ -11298,6 +11350,7 @@ export type ResolversParentTypes = ResolversObject<{
   SessionHardestClimb: SessionHardestClimb;
   SessionHealthExport: SessionHealthExport;
   SessionHealthExportLap: SessionHealthExportLap;
+  SessionInvitePreview: SessionInvitePreview;
   SessionNameChanged: SessionNameChanged;
   SessionParticipant: SessionParticipant;
   SessionRosterSnapshot: SessionRosterSnapshot;
@@ -15145,6 +15198,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QuerySessionHealthExportArgs, 'sessionId'>
   >;
+  sessionInvitePreview?: Resolver<
+    ResolversTypes['SessionInvitePreview'],
+    ParentType,
+    ContextType,
+    RequireFields<QuerySessionInvitePreviewArgs, 'sessionId'>
+  >;
   sessionStatus?: Resolver<
     Maybe<ResolversTypes['SessionStatus']>,
     ParentType,
@@ -15920,6 +15979,19 @@ export type SessionHealthExportLapResolvers<
   grade?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   status?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   tickUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SessionInvitePreviewResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SessionInvitePreview'] = ResolversParentTypes['SessionInvitePreview'],
+> = ResolversObject<{
+  boardName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  boardPath?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  gymName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  hostName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  sessionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  state?: Resolver<ResolversTypes['SessionInviteState'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -16992,6 +17064,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   SessionHardestClimb?: SessionHardestClimbResolvers<ContextType>;
   SessionHealthExport?: SessionHealthExportResolvers<ContextType>;
   SessionHealthExportLap?: SessionHealthExportLapResolvers<ContextType>;
+  SessionInvitePreview?: SessionInvitePreviewResolvers<ContextType>;
   SessionNameChanged?: SessionNameChangedResolvers<ContextType>;
   SessionParticipant?: SessionParticipantResolvers<ContextType>;
   SessionRosterSnapshot?: SessionRosterSnapshotResolvers<ContextType>;

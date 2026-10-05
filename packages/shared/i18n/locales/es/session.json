@@ -96,8 +96,36 @@
       "subtitle": "No se pudo encontrar esta sesión. Puede que haya sido eliminada."
     }
   },
-  "join": {
-    "joining": "Uniéndote a la sesión..."
+  "invitePage": {
+    "eyebrow": "Invitación a una sesión",
+    "headingWithHost": "{{name}} te quiere en la pared",
+    "headingDefault": "Te han invitado a escalar",
+    "leadLive": "La sesión está en directo. Consigue la app para unirte.",
+    "leadDormant": "La sesión sigue abierta. Ahora mismo no hay nadie conectado, pero puedes unirte.",
+    "detailsHeading": "La sesión",
+    "hostLabel": "Iniciada por",
+    "boardLabel": "Plafón",
+    "gymLabel": "Rocódromo",
+    "installHeading": "Únete desde el móvil",
+    "installBody": "Consigue la app de Boardsesh y vuelve a abrir este enlace. Entrarás en la sesión con la cola del grupo ya lista.",
+    "googlePlay": "Disponible en Google Play",
+    "appStore": "Descárgala en el App Store",
+    "haveApp": "¿Ya tienes la app en este móvil? Abre la sesión en ella. Si estás en un ordenador, abre este enlace en el móvil.",
+    "openInApp": "Abrir en la app",
+    "getAppHeading": "Empieza tu propia sesión",
+    "getAppBody": "Consigue la app de Boardsesh para empezar una sesión e invitar al grupo.",
+    "ended": {
+      "title": "Esta sesión ha terminado",
+      "lead": "El grupo ya ha dejado la pared."
+    },
+    "notFound": {
+      "title": "No encontramos esta sesión",
+      "lead": "Puede que el enlace esté incompleto o que la sesión terminara hace tiempo. Pide una invitación nueva a quien te la envió."
+    },
+    "unavailable": {
+      "lead": "No hemos podido cargar los detalles de la sesión. La invitación sigue funcionando en la app."
+    },
+    "learnMore": "Descubre qué hace Boardsesh"
   },
   "creation": {
     "form": {
@@ -743,10 +771,14 @@
     "loading": "Cargando sesión…",
     "notFound": "Sesión no encontrada",
     "ended": "Esta sesión ha terminado",
+    "hostAway": "La sesión sigue en marcha, pero no hay nadie conectado",
+    "hostAwayBody": "Pídele a {{host}} que abra Boardsesh y vuelve a intentarlo.",
+    "hostAwayBodyNoHost": "Pídele a quien te invitó que abra Boardsesh y vuelve a intentarlo.",
     "error": "No se pudo cargar esta sesión",
     "retry": "Reintentar",
     "confirmTitle": "¿Unirte a la sesión de {{host}}?",
     "boardLabel": "{{board}} · {{count}} escalando",
+    "boardLabelDormant": "{{board}} · nadie conectado ahora mismo",
     "join": "Unirse a la sesión",
     "cancel": "Cancelar",
     "switchTitle": "¿Salir de tu sesión actual?",

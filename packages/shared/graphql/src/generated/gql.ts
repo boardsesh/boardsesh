@@ -129,6 +129,7 @@ type Documents = {
   '\n  \n  mutation EndSession($sessionId: ID!, $timezone: String, $notes: String) {\n    endSession(sessionId: $sessionId, timezone: $timezone, notes: $notes) {\n      ...SessionSummaryFields\n    }\n  }\n': typeof types.EndSessionDocument;
   '\n  mutation UpdateSession($input: UpdateSessionInput!) {\n    updateSession(input: $input) {\n      sessionId\n      name\n      notes\n      isPublic\n    }\n  }\n': typeof types.UpdateSessionDocument;
   '\n  \n  query GetSessionSummary($sessionId: ID!) {\n    sessionSummary(sessionId: $sessionId) {\n      ...SessionSummaryFields\n    }\n  }\n': typeof types.GetSessionSummaryDocument;
+  '\n  query GetSessionInvitePreview($sessionId: ID!) {\n    sessionInvitePreview(sessionId: $sessionId) {\n      sessionId\n      state\n      hostName\n      boardName\n      boardPath\n      gymName\n    }\n  }\n': typeof types.GetSessionInvitePreviewDocument;
   '\n  mutation FollowUser($input: FollowInput!) {\n    followUser(input: $input)\n  }\n': typeof types.FollowUserDocument;
   '\n  mutation UnfollowUser($input: FollowInput!) {\n    unfollowUser(input: $input)\n  }\n': typeof types.UnfollowUserDocument;
   '\n  query GetPublicProfile($userId: ID!) {\n    publicProfile(userId: $userId) {\n      id\n      displayName\n      avatarUrl\n      instagramUrl\n      followerCount\n      followingCount\n      isFollowedByMe\n    }\n  }\n': typeof types.GetPublicProfileDocument;
@@ -396,6 +397,8 @@ const documents: Documents = {
     types.UpdateSessionDocument,
   '\n  \n  query GetSessionSummary($sessionId: ID!) {\n    sessionSummary(sessionId: $sessionId) {\n      ...SessionSummaryFields\n    }\n  }\n':
     types.GetSessionSummaryDocument,
+  '\n  query GetSessionInvitePreview($sessionId: ID!) {\n    sessionInvitePreview(sessionId: $sessionId) {\n      sessionId\n      state\n      hostName\n      boardName\n      boardPath\n      gymName\n    }\n  }\n':
+    types.GetSessionInvitePreviewDocument,
   '\n  mutation FollowUser($input: FollowInput!) {\n    followUser(input: $input)\n  }\n': types.FollowUserDocument,
   '\n  mutation UnfollowUser($input: FollowInput!) {\n    unfollowUser(input: $input)\n  }\n':
     types.UnfollowUserDocument,
@@ -1173,6 +1176,12 @@ export function graphql(
 export function graphql(
   source: '\n  \n  query GetSessionSummary($sessionId: ID!) {\n    sessionSummary(sessionId: $sessionId) {\n      ...SessionSummaryFields\n    }\n  }\n',
 ): (typeof documents)['\n  \n  query GetSessionSummary($sessionId: ID!) {\n    sessionSummary(sessionId: $sessionId) {\n      ...SessionSummaryFields\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query GetSessionInvitePreview($sessionId: ID!) {\n    sessionInvitePreview(sessionId: $sessionId) {\n      sessionId\n      state\n      hostName\n      boardName\n      boardPath\n      gymName\n    }\n  }\n',
+): (typeof documents)['\n  query GetSessionInvitePreview($sessionId: ID!) {\n    sessionInvitePreview(sessionId: $sessionId) {\n      sessionId\n      state\n      hostName\n      boardName\n      boardPath\n      gymName\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

@@ -210,8 +210,37 @@ export const SHARED_EVENTS = {
   // preview with no matching discrete "generate" moment. Use
   // WorkoutGeneratorOpened + SessionQueueGenerated for cross-platform funnels.
   WorkoutGenerated: 'Workout Generated',
-  // Deep-link session join
+  // Deep-link session join. Fires once per GENUINE entry: opening an invite
+  // for the session you are already in does not count (#6004; before that
+  // change it did, so do not compare counts across it). Carries the id as both
+  // `session_id` (its original name) and `sessionId` (what the invite events
+  // below use), so the invite funnel can hold every step to one session.
   SessionJoined: 'Session Joined',
+  // Session invites (#6004). The host's side, from the app's invite sheet:
+  // Sheet Opened { sessionId }, then Shared { sessionId, method: 'copy_link' |
+  // 'system_share', shareTarget? }. iOS reports whether the share sheet was
+  // completed and to which app (`shareTarget`), so a dismissed sheet fires
+  // nothing; Android reports neither, so `system_share` there means the sheet
+  // was opened.
+  SessionInviteSheetOpened: 'Session Invite Sheet Opened',
+  SessionInviteShared: 'Session Invite Shared',
+  // The invitee's side on www: the /join/{id} page rendered for someone
+  // without the app. { sessionId, state: 'live' | 'dormant' | 'ended' |
+  // 'not_found' | 'unavailable', hasHost, hasGym }. `sessionId` is left out
+  // for `not_found`: that id is arbitrary text from the URL. A store click from
+  // that page is `App Install Click` with `placement: 'join-page'`.
+  SessionInvitePageViewed: 'Session Invite Page Viewed',
+  // Same page, the "Open in the app" button: for someone who has the app and
+  // landed on www anyway (a link tapped in another app's built-in browser).
+  // { sessionId }. A click, not proof the app opened.
+  SessionInviteOpenInAppClicked: 'Session Invite Open In App Clicked',
+  // The invitee's side in the app: an invite that did NOT end in a join.
+  // { sessionId, outcome: 'not_found' | 'ended' | 'host_away' |
+  // 'sign_in_needed' | 'error', stage: 'preview' | 'join' }. `host_away` is a
+  // good invite that cannot be joined yet: nobody is connected and the wall is
+  // not one the backend names to a link holder. A join that worked is
+  // `Session Joined`.
+  SessionJoinOutcome: 'Session Join Outcome',
   // Live sessions ("Climbing now" rail on Home, "Climbing here now" block in
   // the board sheet). `surface` is 'home_rail' | 'board_sheet' on all four
   // surface events. Funnel: Shelf Viewed { surface, count, state } → Card

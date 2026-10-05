@@ -3,7 +3,6 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { SUPPORTED_BOARDS } from './app/lib/board-data';
 import { getClimbViewPageCacheTTL, getListPageCacheTTL } from './app/lib/list-page-cache';
 import { isCrawlerUserAgent } from './app/lib/is-crawler';
-import { CLIMB_SESSION_COOKIE } from './app/lib/climb-session-cookie';
 import { PATHNAME_HEADER } from './app/lib/request-pathname-header';
 import { isSecureCookieContext } from './app/lib/auth/secure-cookies';
 import { resolveCrossSubdomainAuthCors } from './app/lib/auth/cross-subdomain-cors';
@@ -99,8 +98,8 @@ export function middleware(request: NextRequest) {
     expoWebResponse.headers.set('X-Frame-Options', 'SAMEORIGIN');
     expoWebResponse.headers.set('X-Content-Type-Options', 'nosniff');
     expoWebResponse.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-    // HSTS only in a secure (HTTPS) context — matching the climb-session cookie's
-    // Secure gate. Over local http it's ignored anyway, and Metro deliberately
+    // HSTS only in a secure (HTTPS) context, the same gate the Secure cookie
+    // flag uses. Over local http it's ignored anyway, and Metro deliberately
     // never sends it for direct dev requests.
     if (isSecureCookieContext()) {
       expoWebResponse.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
@@ -178,22 +177,18 @@ export function middleware(request: NextRequest) {
     }
   }
 
-  // Backward compat: redirect old ?session= URLs to clean URLs with cookie.
-  // The redirect cost (~150ms) is far less than a CDN cache miss (1.3-1.6s).
+  // Backward compat: redirect old ?session= URLs to the clean URL. A session
+  // id in the query string gives every visitor their own CDN cache key, and the
+  // redirect cost (~150ms) is far less than a cache miss (1.3-1.6s).
+  //
+  // The id is dropped, not kept. It used to be parked in a cookie, but the
+  // climbing UI that read it moved to the app (W-16), so nothing on www could
+  // act on it. A session invite is `/join/{id}` now.
   const sessionParam = request.nextUrl.searchParams.get('session');
   if (sessionParam) {
     const cleanUrl = request.nextUrl.clone();
     cleanUrl.searchParams.delete('session');
-    const response = NextResponse.redirect(cleanUrl, 307);
-    response.cookies.set(CLIMB_SESSION_COOKIE, sessionParam, {
-      path: '/',
-      sameSite: 'lax',
-      // Mark Secure on HTTPS deployments so the cookie is never sent over
-      // plaintext; skipped in local http dev so it still round-trips there.
-      secure: isSecureCookieContext(),
-      maxAge: 86400,
-    });
-    return response;
+    return NextResponse.redirect(cleanUrl, 307);
   }
 
   // Detect locale from URL prefix. API routes don't carry a locale prefix —
