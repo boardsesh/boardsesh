@@ -163,6 +163,13 @@ function buildStaticFeatureFlags(): FeatureFlags | undefined {
 
 const STATIC_FEATURE_FLAGS = buildStaticFeatureFlags();
 
+// THROWAWAY, never merge: a deliberately broken update for the OTA boot check's
+// red proof (ci/mobile-ota-boot-check). The root layout throws while its module
+// loads, so the bundle cannot draw a first screen.
+if (Date.now() > 0) {
+  throw new Error('OTA boot check red proof: this update must not boot.');
+}
+
 function OtaBranchSurfingInitializer() {
   // Fingerprint-bound required headers distinguish Branch Surfing-capable
   // binaries from EAS previews. Updates.channel cannot do that: a legacy
