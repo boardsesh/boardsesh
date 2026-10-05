@@ -1699,7 +1699,7 @@ after the update was published would be told "no update available", so the scrip
 - The published bundle loads as Hermes bytecode and runs far enough to draw a first screen.
 - The native updater accepts the update: signature, runtime version, every asset downloaded.
 - The update is served to a binary pinned to that branch, at that runtime version.
-- The verdict turns red on a bundle that throws at startup (see "Proof" below).
+- The verdict turns red on a bundle that throws at startup (see "Proof, and what a run costs" below).
 
 ### What it does not prove
 
@@ -1713,6 +1713,31 @@ after the update was published would be told "no update available", so the scrip
   debug-signed and built without the maps key.
 - **A phone that already ran other updates.** Every run is a fresh install.
 - **Real-device limits**: memory, a slow network, a full disk.
+
+### Proof, and what a run costs
+
+Measured on 2026-10-05, from PR #6131, on `macos-26` and `ubuntu-latest`:
+
+| Run | What it tested | iOS | Android |
+| --- | --- | --- | --- |
+| [37319204398](https://github.com/boardsesh/boardsesh/actions/runs/37319204398) | `pr-staging` head for main `042b342`, no cached binary | pass, 34 min (22 min build) | 20 min build, then a workflow bug stopped it |
+| [37325498650](https://github.com/boardsesh/boardsesh/actions/runs/37325498650) | the same, binaries cached | pass, 7 min | pass, 3 min |
+| [37326533621](https://github.com/boardsesh/boardsesh/actions/runs/37326533621) | `pr-6129`, a preview whose root layout throws while its module loads | fail, 8 min | fail, 19 min (the branch is in Android's cache key, so it built) |
+
+In the red run both platforms downloaded the broken update, launched it, and recorded one failed
+launch and no first screen. expo-updates then recovered: Android fell back to the embedded bundle,
+and iOS fetched the update the server falls back to. The app was on screen and alive either way,
+which is why the verdict is read from the update's own counters and not from "is the app running".
+
+The four captures in `scripts/__tests__/fixtures/ota-boot-check/` are from local runs of the same
+two updates, and the unit tests replay them through the verdict.
+
+Only that one failure class was produced on purpose. A bundle that is not valid Hermes bytecode, a
+missing asset and a bad signature all end in the same two readings (not on disk, or a failed launch),
+but none of them has been made to happen.
+
+A daily run is one macOS job and one Linux job: about 7 minutes of macOS and 3 of Linux while the
+native inputs stand still, and about 35 and 25 on the day they change.
 
 ### Running it by hand
 
