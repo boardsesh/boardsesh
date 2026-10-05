@@ -698,7 +698,7 @@ No arm and no holdout: read these before and after the OTA. Kill switch: `save-n
 | `Smart Playlist Opened` | `type` (`LIKED_CLIMBS`, `FIVE_STARS`, ...), `source` (`discover` / `save_prompt` / `saved_card` / `other`; `other` is a deep link or a caller with no source) | `app/(tabs)/discover/smart/[type].tsx` | Once per mount of a known type |
 | `Save Prompt Shown` | `source` (`play_drawer_heart`), `connected` (this phone's Bluetooth link at the tap; it also picks the copy), `phone_has_connected` (this phone has ever connected, from the connect-step store; null when unread) | `SavedClimbNotice.tsx` | At most 3 per phone |
 | `Save Prompt Tapped` | `source`, `connected` | `SavedClimbNotice.tsx` ("View") | One per tap |
-| `Saved Climbs Card Shown` | `board_type`, `phone_has_connected` | `SavedClimbsCard.tsx` | Once per launch |
+| `Saved Climbs Card Shown` | `board_type`, `phone_has_connected` | `SavedClimbsCard.tsx` | Once per launch for each signed-in account |
 | `Saved Climbs Card Action` | `action` (`open` / `dismiss`), `board_type` | `SavedClimbsCard.tsx` | One per tap |
 | `Favorite Toggle` (changed) | adds `connected` on mobile (both sources, `mobile_play_drawer` and `mobile_climb_actions`) | `PlayDrawer.tsx`, `use-climb-actions.ts` | Unchanged |
 
