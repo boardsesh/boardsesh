@@ -7,7 +7,9 @@
 //  - every dead end (not found, ended, sign-in needed, failed to load, failed
 //    to join) fires one `Session Join Outcome`;
 //  - a DORMANT session (running, nobody connected) shows the join card, not
-//    "Session not found".
+//    "Session not found";
+//  - a running session whose wall the backend will not name says the host has
+//    to be connected, with a retry, and is not "Session not found" either.
 //
 // The live-session funnel and the plain join stay in
 // `join-session-analytics.test.tsx`.
@@ -29,7 +31,7 @@ type PreviewData = {
   boardPath: string;
   endedAt: string | null;
   users: Array<{ id: string; username: string; avatarUrl: null; isLeader: boolean }>;
-  invite?: { state: 'dormant' | 'ended'; hostName: string | null };
+  invite?: { state: 'dormant' | 'host_away' | 'ended'; hostName: string | null };
 };
 
 function liveSession(): PreviewData {
@@ -157,6 +159,7 @@ describe('JoinSessionScreen: Session Joined', () => {
 
     expect(analytics.track).toHaveBeenCalledWith('Session Joined', {
       session_id: 'session-42',
+      sessionId: 'session-42',
       board_name: 'kilter',
       layout_id: 1,
     });
@@ -195,6 +198,32 @@ describe('JoinSessionScreen: Session Join Outcome', () => {
     expect(container.textContent).toContain('mobileJoin.ended');
     expect(container.textContent).not.toContain('mobileJoin.notFound');
     expect(outcomes()[0][1]).toEqual({ sessionId: 'session-42', outcome: 'ended', stage: 'preview' });
+  });
+
+  it('says the host has to be connected, with a retry, when a running session has no wall to join on', () => {
+    preview.data = { ...liveSession(), boardPath: '', users: [], invite: { state: 'host_away', hostName: 'Alex' } };
+    preview.refetch.mockClear();
+
+    const { container } = render(createElement(JoinSessionScreen));
+
+    expect(container.textContent).toContain('mobileJoin.hostAway');
+    expect(container.textContent).toContain('mobileJoin.hostAwayBody:Alex');
+    expect(container.textContent).not.toContain('mobileJoin.notFound');
+    expect(container.textContent).not.toContain('mobileJoin.join');
+    expect(outcomes()).toEqual([
+      ['Session Join Outcome', { sessionId: 'session-42', outcome: 'host_away', stage: 'preview' }],
+    ]);
+
+    buttons.presses[0]();
+    expect(preview.refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks for whoever sent the invite when the host has no name to show', () => {
+    preview.data = { ...liveSession(), boardPath: '', users: [], invite: { state: 'host_away', hostName: null } };
+
+    const { container } = render(createElement(JoinSessionScreen));
+
+    expect(container.textContent).toContain('mobileJoin.hostAwayBodyNoHost');
   });
 
   it('reports sign_in_needed for a signed-out climber', () => {

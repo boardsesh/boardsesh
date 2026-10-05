@@ -44,9 +44,13 @@ export type JoinSessionPreview = SessionPreview & {
   invite?: {
     /**
      * `dormant`: the session is running and nobody is connected. Joinable.
+     * `host_away`: running, nobody connected, and the backend would not say
+     * which wall it is on (a spray wall that is not open to everyone). It
+     * cannot be joined from here; it can once the host is connected again,
+     * because `session` then answers with the path.
      * `ended`: it is over.
      */
-    state: 'dormant' | 'ended';
+    state: 'dormant' | 'host_away' | 'ended';
     /** The host's display name, which an empty roster cannot supply. */
     hostName: string | null;
   };
@@ -61,12 +65,13 @@ export type JoinSessionPreview = SessionPreview & {
  * and `isPublic` are not part of an invite preview and the join screen reads
  * none of them; they are filled with their empty values, not guesses.
  *
- * Returns null for a missing session, and for a running one with no board path
- * to join on.
+ * Returns null for a missing session only. A running session with no board
+ * path comes back as `host_away`, never null: null renders "Session not found",
+ * which is the wrong thing to tell someone whose invite is good (#6004).
  */
 export function sessionPreviewFromInvite(invite: SessionInvitePreview): JoinSessionPreview | null {
   if (invite.state !== 'dormant' && invite.state !== 'ended') return null;
-  if (invite.state === 'dormant' && !invite.boardPath) return null;
+  const state = invite.state === 'dormant' && !invite.boardPath ? 'host_away' : invite.state;
   return {
     id: invite.sessionId,
     name: null,
@@ -77,7 +82,7 @@ export function sessionPreviewFromInvite(invite: SessionInvitePreview): JoinSess
     startedAt: null,
     endedAt: null,
     users: [],
-    invite: { state: invite.state, hostName: invite.hostName },
+    invite: { state, hostName: invite.hostName },
   };
 }
 
@@ -91,8 +96,9 @@ export function sessionPreviewFromInvite(invite: SessionInvitePreview): JoinSess
  * asleep used to read as "Session not found" for a session that was still
  * running, and an ended one read the same way (#6004). With the option on, a
  * null answer is followed by `sessionInvitePreview`, which reads the durable
- * row: a dormant session comes back joinable and an ended one comes back as
- * ended. It caches under its own key, so the in-session readers of this hook
+ * row: a dormant session comes back joinable, an ended one comes back as
+ * ended, and one whose wall the backend will not name comes back as
+ * `host_away`. It caches under its own key, so the in-session readers of this hook
  * never see a rebuilt preview.
  *
  * A backend that predates `sessionInvitePreview` rejects the second query; that
