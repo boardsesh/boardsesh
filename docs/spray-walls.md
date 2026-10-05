@@ -2263,6 +2263,7 @@ What reads the rule:
 | Search filters: hide or show sent, hide or show attempted, rated by me, my minimum rating | Read only ticks on the new holds |
 | Recommendations ("find new climbs") | The climb is offered again |
 | The Projects smart playlist and its card count | A project is a climb tried on its current holds and not sent on them. A send of the old holds does not make it a project, and neither does an old attempt. The list is still ordered by total attempts on every version. |
+| ↳ how it reads the epoch | Not from each climb's row. It joins the logbook against `board_climbs_holds_moved_idx` (migration 0253), a partial index holding only the climbs whose `holds_revision_number` is above 1. A climb that is not in it is at epoch 1. `climbHoldsEverMovedSql` in `holds-epoch.ts` is the predicate a query must repeat to use it. `boardClimbRecentSenders` reads its one epoch the same way. |
 | `boardClimbRecentSenders` (the wall's recent senders for a climb) | Only senders of the new holds |
 
 What does not:

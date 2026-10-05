@@ -1,6 +1,7 @@
 import { eq, and, desc, sql, inArray, max, type SQL } from 'drizzle-orm';
 import { type ConnectionContext, type Climb } from '@boardsesh/shared-schema';
 import {
+  climbHoldsEverMovedSql,
   holdsEpochOrFirstSql,
   isRecommendationType,
   latestTickOnCurrentHoldsSql,
@@ -105,12 +106,19 @@ function loggedClimbsSubquery(conditions: SQL[]) {
 type LoggedClimbs = ReturnType<typeof loggedClimbsSubquery>;
 
 /**
- * Each logged climb's own `board_climbs` row, on its primary key. A LEFT join:
- * a tick can name a climb that has no row, and that climb stays in the count as
- * it always has, at epoch 1.
+ * Joins each logged climb to its `board_climbs` row ONLY when an edit has moved
+ * that climb's holds. Repeating the index predicate lets Postgres answer the
+ * join from `board_climbs_holds_moved_idx`, a few pages, instead of one
+ * primary-key probe into the table per logged climb (19,258 buffers for a
+ * 6,009-tick logbook, on pages that are slow when cold). A LEFT join: a climb
+ * with no match, edited never or missing altogether, is at epoch 1.
  */
 function loggedClimbJoin(logged: LoggedClimbs) {
-  return and(eq(dbSchema.boardClimbs.boardType, logged.boardType), eq(dbSchema.boardClimbs.uuid, logged.climbUuid));
+  return and(
+    eq(dbSchema.boardClimbs.boardType, logged.boardType),
+    eq(dbSchema.boardClimbs.uuid, logged.climbUuid),
+    climbHoldsEverMovedSql(dbSchema.boardClimbs.holdsRevisionNumber),
+  );
 }
 
 /**
@@ -492,12 +500,14 @@ export const mySmartPlaylistCounts = async (
       ),
       projects AS (
         -- The same rule as the PROJECTS page (isProjectCondition): tried on the
-        -- current holds, not sent on them. board_climbs is read once per logged
-        -- climb, on its primary key, and only by this card.
+        -- current holds, not sent on them. The join reads only the climbs whose
+        -- holds have moved (board_climbs_holds_moved_idx); the rest are at
+        -- epoch 1. Only this card pays for it.
         SELECT COUNT(*)::int AS count
         FROM logged
         LEFT JOIN ${dbSchema.boardClimbs} AS logged_climb
           ON logged_climb.board_type = logged.board_type AND logged_climb.uuid = logged.climb_uuid
+         AND ${climbHoldsEverMovedSql(sql`logged_climb.holds_revision_number`)}
         WHERE ${latestTickOnCurrentHoldsSql(sql`logged.latest_revision`, holdsEpochOrFirstSql(sql`logged_climb.holds_revision_number`))}
           AND NOT ${latestTickOnCurrentHoldsSql(sql`logged.latest_sent_revision`, holdsEpochOrFirstSql(sql`logged_climb.holds_revision_number`))}
       ),

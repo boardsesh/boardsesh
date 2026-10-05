@@ -278,6 +278,8 @@ describe('smartPlaylist resolver', () => {
       // One board_climbs lookup per logged climb, and the two-sided epoch test.
       expect(calls.leftJoin).toHaveLength(1);
       expect(calls.leftJoin[0][0]).toBe(dbSchema.boardClimbs);
+      // Only climbs whose holds have moved: the partial-index predicate.
+      expect(sqlText(calls.leftJoin[0][1])).toMatch(/ > 1/);
       expect(calls.where).toHaveLength(1);
       const rendered = sqlText(calls.where[0][0]);
       expect(rendered).toMatch(/COALESCE\(, 0\) >= COALESCE\(, 1\)\s+AND NOT COALESCE\(, 0\) >= COALESCE\(, 1\)/);
@@ -669,6 +671,9 @@ describe('mySmartPlaylistCounts resolver', () => {
     expect(rendered).toMatch(
       /logged_climb\.board_type = logged\.board_type AND logged_climb\.uuid = logged\.climb_uuid/,
     );
+    // The join repeats the partial-index predicate, so it reads only the climbs
+    // whose holds have moved and never probes board_climbs once per climb.
+    expect(rendered).toMatch(/logged\.climb_uuid\s+AND logged_climb\.holds_revision_number > 1/);
     // Tried on the current holds, and not sent on them (#6023).
     expect(rendered).toMatch(
       /COALESCE\(logged\.latest_revision, 0\) >= COALESCE\(logged_climb\.holds_revision_number, 1\)\s+AND NOT COALESCE\(logged\.latest_sent_revision, 0\) >= COALESCE\(logged_climb\.holds_revision_number, 1\)/,

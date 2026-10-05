@@ -83,7 +83,27 @@ export function tickAliasOnCurrentHoldsSql(tickAlias: TickTableAlias, holdsEpoch
 }
 
 /**
- * The holds epoch of a climb that may have no `board_climbs` row: the result of
+ * "An edit has moved this climb's holds at least once": the predicate of the
+ * partial index `board_climbs_holds_moved_idx` (migration 0253), which holds
+ * `(board_type, uuid, holds_revision_number)` for exactly these climbs.
+ *
+ * For a read that needs the epoch of every climb in a climber's logbook. Almost
+ * all of those climbs are at epoch 1, where every tick counts, so the read joins
+ * the logbook against this small set instead of probing `board_climbs` once per
+ * climb: a query that repeats this predicate on its `board_climbs` reference can
+ * be answered from the index alone. A climb that is not in the set gets epoch 1
+ * from {@link holdsEpochOrFirstSql}, which is the same answer its row would give.
+ *
+ * Not for a query that already has the climb's row (search, the recompute):
+ * there the epoch is a column it has read anyway.
+ */
+export function climbHoldsEverMovedSql(holdsRevisionNumber: SQLWrapper): SQL {
+  return sql`${holdsRevisionNumber} > 1`;
+}
+
+/**
+ * The holds epoch of a climb that may have no `board_climbs` row, or whose row
+ * was left out by {@link climbHoldsEverMovedSql}: the result of
  * a LEFT JOIN or a scalar subquery on the primary key. No row means epoch 1.
  * A tick can carry any string as its climb uuid, so the row is not guaranteed.
  */

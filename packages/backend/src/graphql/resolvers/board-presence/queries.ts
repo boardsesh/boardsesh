@@ -7,7 +7,12 @@ import type {
   BoardPresenceStats,
   BoardConnectionHolder,
 } from '@boardsesh/shared-schema';
-import { holdsEpochOrFirstSql, resolveCanonicalClimbUuid, tickOnCurrentHoldsSql } from '@boardsesh/db/queries';
+import {
+  climbHoldsEverMovedSql,
+  holdsEpochOrFirstSql,
+  resolveCanonicalClimbUuid,
+  tickOnCurrentHoldsSql,
+} from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { pubsub } from '../../../pubsub/index';
@@ -217,13 +222,15 @@ export const boardPresenceQueries = {
     const latestSentAt = max(dbSchema.boardseshTicks.climbedAt);
     // Only sends on the holds the climb has now (#6023): someone who sent it
     // before a hold moved sent a different climb. The epoch is the canonical
-    // climb's, read once by primary key. A tick still stored under an alias
-    // uuid is an import with no revision, which reads as revision 1.
+    // climb's, read once, and from the small index of climbs whose holds have
+    // moved: a climb that is not in it is at epoch 1. A tick still stored under
+    // an alias uuid is an import with no revision, which reads as revision 1.
     const canonicalHoldsEpoch = holdsEpochOrFirstSql(sql`(
       SELECT ${dbSchema.boardClimbs.holdsRevisionNumber}
       FROM ${dbSchema.boardClimbs}
       WHERE ${dbSchema.boardClimbs.boardType} = ${board.boardType}
         AND ${dbSchema.boardClimbs.uuid} = ${canonicalClimbUuid}
+        AND ${climbHoldsEverMovedSql(dbSchema.boardClimbs.holdsRevisionNumber)}
     )`);
 
     const rows = await db

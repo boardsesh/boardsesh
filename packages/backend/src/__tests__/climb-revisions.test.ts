@@ -1231,6 +1231,54 @@ describe('a moved hold restarts the climb’s sends, first ascent and stars (#60
     expect(await projectsOf(STRANGER)).toEqual(noProject);
   });
 
+  it('finds the edited climbs among the unedited ones in a logbook', async () => {
+    // Projects reads the holds epoch through the index of edited climbs only, so
+    // every other climb must come out at epoch 1 without its row being read.
+    const { wall, holdIds } = await createPublishedWall({ isPublic: true });
+    const [first, second, third] = holdIds;
+    const holdSets = [
+      [first, second, third],
+      [first, second],
+      [first, third],
+      [second, third],
+      [second, first],
+      [third, first],
+    ];
+    const climbUuids: string[] = [];
+    for (const [index, holdSet] of holdSets.entries()) {
+      climbUuids.push(await saveSprayClimb(wall, holdSet, { name: `Climb ${index}` }));
+    }
+    const [sentThenEdited, sentOnly, triedThenEdited, ...triedOnly] = climbUuids;
+    for (const climbUuid of climbUuids) await logTick(climbUuid, STRANGER, 'attempt');
+    await logTick(sentThenEdited, STRANGER, 'send');
+    await logTick(sentOnly, STRANGER, 'send');
+
+    /** Page, total and library card, which must always describe the same set. */
+    const projects = async () => {
+      const playlist = (await playlistQueries.smartPlaylist(
+        {},
+        { input: { type: 'PROJECTS', userId: STRANGER, boardName: 'spray' } },
+        ctxFor(STRANGER),
+      )) as { climbs: Array<{ uuid: string }>; totalCount: number };
+      const cards = await playlistQueries.mySmartPlaylistCounts({}, {}, ctxFor(STRANGER));
+      const uuids = playlist.climbs.map((climb) => climb.uuid).sort();
+      expect(playlist.totalCount).toBe(uuids.length);
+      expect(cards.find((card) => card.type === 'PROJECTS')?.count).toBe(uuids.length);
+      return uuids;
+    };
+
+    expect(await projects()).toEqual([triedThenEdited, ...triedOnly].sort());
+
+    await editSpray(sentThenEdited, { frames: framesFor([third, second, first]) });
+    await editSpray(triedThenEdited, { frames: framesFor([third, second]) });
+    // The two edited climbs leave the list until their new holds are tried; the
+    // four nobody edited are untouched.
+    expect(await projects()).toEqual([...triedOnly].sort());
+
+    await logTick(sentThenEdited, STRANGER, 'attempt');
+    expect(await projects()).toEqual([sentThenEdited, ...triedOnly].sort());
+  });
+
   it('does not touch the stats row of a climb nobody has sent', async () => {
     const { wall, holdIds } = await createPublishedWall({ isPublic: true });
     const climbUuid = await saveSprayClimb(wall, holdIds);

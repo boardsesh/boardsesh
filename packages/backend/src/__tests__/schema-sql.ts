@@ -258,6 +258,8 @@ export const schemaSQL = `
   );
 
   CREATE INDEX IF NOT EXISTS "board_climbs_hold_fingerprint_idx" ON "board_climbs" ("board_type", "layout_id", "hold_fingerprint");
+  -- Migration 0253: the climbs whose holds an edit has moved (#6023).
+  CREATE INDEX IF NOT EXISTS "board_climbs_holds_moved_idx" ON "board_climbs" ("board_type", "uuid", "holds_revision_number") WHERE "holds_revision_number" > 1;
 
   CREATE TABLE IF NOT EXISTS "board_climb_aliases" (
     "board_type" text NOT NULL,
