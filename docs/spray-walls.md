@@ -1540,8 +1540,10 @@ Three older events also fire on a wall and now say so (#6027): `Tick Logged`,
 Its value is one of the nine board types or null and nothing else, so it stays
 inside the second rule: a wall's name, slug or uuid passed to it comes out as
 null. It is what makes a spray session countable at all, because a wall's
-`layoutId` is created with the wall. The spray-wall activation definition built
-on it is in `docs/growth-metrics.md`.
+`layoutId` is created with the wall. `Set Active Climb` also carries `trigger`,
+`climb_saved` or null: saving a climb on a wall puts it on the queue, and that
+is not the same act as choosing a climb to climb. The spray-wall activation
+definition built on both is in `docs/growth-metrics.md`.
 
 ## Rolling the flag out
 

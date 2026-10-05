@@ -6,6 +6,7 @@ import { reportHandledError } from '../lib/error-reporting';
 import { isLegacyPreviewLink } from '../lib/legacy-preview-link';
 import { RELAXES_ANONYMOUS_ROUTES } from '../lib/routing/anonymous-auth-gate';
 import { isBoardLinkPath, parseBoardLinkPath } from '../lib/routing/board-deep-link';
+import { clearBoardLinkReplay, setBoardLinkReplay } from '../lib/routing/board-link-replay';
 import { useAuth } from './auth-provider';
 
 // Stash for a join that arrived before the user was signed in. The auth gate
@@ -271,24 +272,34 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
   // Open the board or climb a signed-out link pointed at, once, after sign-in.
   // The stored path is checked again before it reaches the router: it has to be
   // one this build would have written, and no older than a day.
+  //
+  // The read is handed to the onboarding gate as a promise (`board-link-replay`)
+  // so the first-board picker is never pushed over the climb it opens.
   useEffect(() => {
-    if (!isAuthenticated || RELAXES_ANONYMOUS_ROUTES) return;
+    if (!isAuthenticated || RELAXES_ANONYMOUS_ROUTES) {
+      clearBoardLinkReplay();
+      return;
+    }
     let cancelled = false;
-    void (async () => {
+    const replayed = (async (): Promise<boolean> => {
       try {
         const stored = await AsyncStorage.getItem(PENDING_BOARD_LINK_KEY);
-        if (cancelled || !stored) return;
+        if (cancelled || !stored) return false;
         await AsyncStorage.removeItem(PENDING_BOARD_LINK_KEY);
         const boardPath = readPendingBoardLink(stored, Date.now());
+        if (!boardPath) return false;
         // No `cancelled` check from here: the stash is already gone, so backing
         // out now would lose the climb for good. Same as the join replay above.
         // `boardPath` is a validated app path; typed routes can't know that.
-        if (boardPath) router.navigate(boardPath as Href);
+        router.navigate(boardPath as Href);
+        return true;
       } catch (error) {
         if (__DEV__) console.warn('[deep-link] failed to consume pending board link', error);
         reportHandledError(error, { tags: { source: 'deep-link', op: 'consume-pending-board-link' } });
+        return false;
       }
     })();
+    setBoardLinkReplay(replayed);
     return () => {
       cancelled = true;
     };

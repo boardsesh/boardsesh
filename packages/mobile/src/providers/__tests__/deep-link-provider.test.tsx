@@ -46,6 +46,7 @@ vi.mock('../../lib/routing/anonymous-auth-gate', () => ({
 }));
 
 import { DeepLinkProvider, PENDING_BOARD_LINK_MAX_AGE_MS } from '../deep-link-provider';
+import { clearBoardLinkReplay, didReplayBoardLink } from '../../lib/routing/board-link-replay';
 
 const PENDING_LEGACY_PREVIEW_KEY = 'boardsesh_pending_legacy_preview';
 const LEGACY_PREVIEW_LINK = 'https://www.boardsesh.com/preview/pr-1234';
@@ -57,6 +58,7 @@ beforeEach(() => {
   authState.isAuthenticated = false;
   gate.relaxesAnonymousRoutes = false;
   store.clear();
+  clearBoardLinkReplay();
 });
 
 describe('DeepLinkProvider — legacy OTA preview links', () => {
@@ -285,6 +287,49 @@ describe('DeepLinkProvider — board and climb links', () => {
     await settleProvider();
 
     expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  // The onboarding gate reads this before it pushes the first-board picker, so
+  // a new account is not shown "Where do you climb?" over the shared climb.
+  it('tells the onboarding gate when a sign-in opened a stashed climb', async () => {
+    const climbPath = nextClimbPath();
+    store.set(PENDING_BOARD_LINK_KEY, JSON.stringify({ path: climbPath, stashedAt: Date.now() }));
+    authState.isAuthenticated = true;
+
+    render(createElement(DeepLinkProvider, { children: null }));
+
+    // Asked straight after mount, while the stash read is still in flight.
+    await expect(didReplayBoardLink()).resolves.toBe(true);
+    expect(navigateMock).toHaveBeenCalledWith(climbPath);
+  });
+
+  it('tells the onboarding gate "no" when a sign-in had nothing stashed, or only an expired link', async () => {
+    authState.isAuthenticated = true;
+    const nothingStashed = render(createElement(DeepLinkProvider, { children: null }));
+    await expect(didReplayBoardLink()).resolves.toBe(false);
+    nothingStashed.unmount();
+
+    store.set(
+      PENDING_BOARD_LINK_KEY,
+      JSON.stringify({ path: '/b/the-garage', stashedAt: Date.now() - PENDING_BOARD_LINK_MAX_AGE_MS - 1_000 }),
+    );
+    render(createElement(DeepLinkProvider, { children: null }));
+    await expect(didReplayBoardLink()).resolves.toBe(false);
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it('forgets the last sign-in once signed out, so the next account starts from "no"', async () => {
+    store.set(PENDING_BOARD_LINK_KEY, JSON.stringify({ path: nextClimbPath(), stashedAt: Date.now() }));
+    authState.isAuthenticated = true;
+    const signedIn = render(createElement(DeepLinkProvider, { children: null }));
+    await expect(didReplayBoardLink()).resolves.toBe(true);
+
+    signedIn.unmount();
+    authState.isAuthenticated = false;
+    render(createElement(DeepLinkProvider, { children: null }));
+    await settleProvider();
+
+    await expect(didReplayBoardLink()).resolves.toBe(false);
   });
 
   it('does not put a join link in the board stash', async () => {

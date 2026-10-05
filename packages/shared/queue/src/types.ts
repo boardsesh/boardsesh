@@ -94,8 +94,21 @@ export type PlaylistSuggestionSource = {
   climbs: Climb[];
 };
 
+/**
+ * Why a climb became the current one, when it was not the climber choosing it.
+ * `climb_saved` is the create screen putting a just-saved climb on the queue:
+ * nobody picked a climb to climb, so a measure of "made a climb active" has to
+ * be able to leave it out.
+ */
+export type SetCurrentClimbTrigger = 'climb_saved';
+
 export type SetCurrentClimbOptions = {
-  playlistSuggestionSource: PlaylistSuggestionSource | null;
+  /**
+   * The playlist the climb was activated from, or null to clear that context.
+   * Left out, the context is untouched, the same as passing no options.
+   */
+  playlistSuggestionSource?: PlaylistSuggestionSource | null;
+  trigger?: SetCurrentClimbTrigger;
 };
 
 /**

@@ -201,6 +201,9 @@ describe('useCreateClimbScreen analytics', () => {
       holdCount: 3,
     });
     expect(analytics.track).not.toHaveBeenCalledWith('Climb Create Failed', expect.anything());
+    // The save queues the climb, which fires `Set Active Climb`. It is marked
+    // as a save so that event still means "a climber chose this climb" (#6027).
+    expect(queue.setCurrentClimb).toHaveBeenCalledWith(expect.anything(), { trigger: 'climb_saved' });
     // #3471: create/edit/publish share one success path with useDeleteDraftClimb's
     // key set — the Open Drafts table AND the Climbs tab's infinite list must both
     // refresh, not just the plain searchClimbs cache.

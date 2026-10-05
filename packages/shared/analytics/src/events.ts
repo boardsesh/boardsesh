@@ -126,10 +126,15 @@ export const SHARED_EVENTS = {
   // into one bucket costs. Counts and a reason string, never climb identity;
   // whether a tick preceded it is a session + timestamp join against `Tick Logged`.
   QueueSwipeTrackDormant: 'Queue Swipe Track Dormant',
-  // Props: { climbUuid, layoutId, boardType, source, sessionId,
+  // Props: { climbUuid, layoutId, boardType, trigger, source, sessionId,
   // participantCount }. `boardType` (#6027) is one of the nine board types or
   // null (`boardTypeProperty`, board-type-property.ts); it is what tells a
-  // spray wall from a Kilter, because a spray layout id is minted per wall.
+  // spray wall from a Kilter, because a spray layout id is minted per wall. It
+  // is the board of the CLIMB made current, as on `Tick Logged`, and falls back
+  // to the active board when the climb carries none; `layoutId` is still the
+  // active board's. `trigger` (#6027) is 'climb_saved' when the create screen
+  // queued a climb it had just saved, and null when a climber chose the climb.
+  // Before the #6027 OTA a save fired this event with nothing to tell it apart.
   SetActiveClimb: 'Set Active Climb',
   SessionStarted: 'Session Started',
   SessionEnded: 'Session Ended',
@@ -506,7 +511,8 @@ export const SHARED_EVENTS = {
   //
   // Props: { outcome: 'presented' | 'would_present' | 'skipped' | 'stalled',
   // reason: 'new_account' | 'no_board' | 'has_board' | 'deep_link_segment' |
-  // 'launched_by_url' | 'launched_by_notification' | 'segment_after_reads' |
+  // 'launched_by_url' | 'launched_by_notification' | 'replayed_board_link' |
+  // 'segment_after_reads' |
   // 'not_ready' | 'board_unresolved' | 'reads_pending', step: 'first_board' |
   // 'intro' | 'board' | null, had_board and seen_flag (boolean, or null when not read
   // yet), account_age_hours (whole hours since the account was created; the

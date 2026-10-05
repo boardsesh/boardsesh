@@ -1416,7 +1416,11 @@ export function useCreateClimbScreen({
       // route. A draft save leaves the drawer open, so without this the creator's
       // debounced preview would snatch the wall straight back to one frame.
       setHandedOff(true);
-      setCurrentClimb(climbToQueueItem(buildProvisionalClimb(uuid, framesString), { uuid }));
+      // Marked as a save, not a choice: `Set Active Climb` is otherwise the one
+      // deliberate "this climb, now" act, and a save must not count as it.
+      setCurrentClimb(climbToQueueItem(buildProvisionalClimb(uuid, framesString), { uuid }), {
+        trigger: 'climb_saved',
+      });
     },
     [buildProvisionalClimb, setCurrentClimb],
   );

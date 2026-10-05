@@ -4,6 +4,7 @@ import { router, useSegments } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { hasSeenOnboarding, markOnboardingSeen } from '../../lib/onboarding/onboarding-storage';
 import { DEEP_LINK_SEGMENTS } from '../../lib/deep-link-segments';
+import { didReplayBoardLink } from '../../lib/routing/board-link-replay';
 import { useProfile } from '../../lib/graphql/hooks';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { reportError } from '../../lib/error-reporting';
@@ -120,7 +121,7 @@ function isProfileSettled(profileQuery: {
  * - An account at most 7 days old with no board gets the board picker in
  *   first-board mode ("Where do you climb?"), at most twice per account, never
  *   offline, never over a launch that came from a link or a tapped
- *   notification, and never with `first-board-picker-kill` on. It is skippable,
+ *   notification, never over a shared climb opened after sign-in, and never with `first-board-picker-kill` on. It is skippable,
  *   and a bind from it lands on Climbs. Logged as `presented`.
  * - Every other climber without a board gets the log-only `would_present` the
  *   gate gave everyone before, with `picker_verdict` saying why the picker
@@ -367,6 +368,27 @@ export function OnboardingGate() {
           decide({
             outcome: 'skipped',
             reason: 'launched_by_notification',
+            step: null,
+            hadBoard: hasBoardRef.current,
+            seenFlag: null,
+            pickerVerdict: null,
+            pickerTimesShown: null,
+          });
+          return;
+        }
+
+        // A shared climb tapped while signed out is opened after sign-in by the
+        // deep-link provider (#6027). That link was tapped with the app already
+        // open, so there is no launch URL, and it lands on a board route, which
+        // is not a deep-link segment. Same intent, same answer: the climber
+        // signed up to see that climb, so nothing is pushed over it. Awaited,
+        // because the provider's read of its stash can still be in flight.
+        const replayedBoardLink = await didReplayBoardLink();
+        if (cancelled) return;
+        if (replayedBoardLink) {
+          decide({
+            outcome: 'skipped',
+            reason: 'replayed_board_link',
             step: null,
             hadBoard: hasBoardRef.current,
             seenFlag: null,

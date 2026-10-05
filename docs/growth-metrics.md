@@ -75,10 +75,16 @@ these, checked in this order:
 | ----- | ---- | -------------------------------: |
 | Lightpanda | `$raw_user_agent` contains `Lightpanda` | 633 |
 | Emulator | `$raw_user_agent` contains `Android SDK built` | 9 |
-| Windows crawler, arm 1 | UA contains `Windows NT` and `Chrome/15x`, exactly one pageview, and its referring domain is `www.boardsesh.com` | 645 |
-| Other self-referred single page | exactly one pageview whose referring domain is `boardsesh.com`, any other UA | 8 |
+| Windows crawler, arm 1 | UA contains `Windows NT` and `Chrome/15x`, exactly one pageview, and its referring domain contains `boardsesh.com` | 645 |
+| Other self-referred single page | exactly one pageview whose referring domain contains `boardsesh.com`, any other UA | 8 |
 | Windows crawler, arm 2 | UA contains `Windows NT` and `Chrome/15x`, country `US`, at most two pageviews, no `App Install Click` | 94 |
 | Kept | everything else | 274 |
+
+"Contains `boardsesh.com`" is a substring test (`ILIKE '%boardsesh.com%'` in
+the query below), and the counts in the table were measured with it. In this
+window it means `www.boardsesh.com` in practice, but it also matches the apex
+and any other host with that string in its name. Rebuild a tile with the same
+test, not an exact match, or the class counts will not reconcile with these.
 
 The Windows crawler is one actor with two shapes, and both arms are needed.
 Arm 1 is a page loaded with our own site as its referrer and nothing after it:
@@ -159,7 +165,7 @@ their own definition:
 | Step | Events | Filter |
 | ---- | ------ | ------ |
 | 1. Created or took a wall | `Board Created` or `Wall Taken` | `boardType = 'spray'` on `Board Created`; `boardName = 'spray'` on `Wall Taken` |
-| 2. Lit or ticked a climb | `Set Active Climb` or `Tick Logged` | `boardType = 'spray'` |
+| 2. Lit or ticked a climb | `Set Active Climb` or `Tick Logged` | `boardType = 'spray'`; on `Set Active Climb` also `trigger` is not `climb_saved` |
 
 Ordered, unique people, native production, internal cohort excluded, both steps
 inside 7 days of the first-ever `$screen`.
@@ -167,6 +173,20 @@ inside 7 days of the first-ever `$screen`.
 "Lit" on a wall with no lights is `Set Active Climb`: the climber made a climb
 the one on the wall. "Took" is `Wall Taken`, the "I'm on it" turn on a wall
 with no light kit.
+
+Saving a climb also fires `Set Active Climb`, because the create screen puts
+the saved climb on the queue. Those carry `trigger = 'climb_saved'` and are
+left out of step 2. Every spray wall starts empty and the first thing anyone
+does on one is set a climb, so with saves counted step 2 would read "saved a
+climb" for nearly everyone and could not tell a climber who came back from one
+who did not. In HogQL the filter is
+`coalesce(toString(properties.trigger), '') != 'climb_saved'`: `trigger` is
+null on a climb the climber chose.
+
+`boardType` on both step 2 events is the climb's own board, not the board the
+app has active. A spray climb opened from a shared link by someone whose active
+board is a Kilter counts as spray. `Set Active Climb` falls back to the active
+board only when the climb carries no board type.
 
 Read it with these limits:
 
@@ -184,7 +204,8 @@ Read it with these limits:
   count different first sessions.
 
 `Climb Created` carries `boardType` too. Setting a climb is not part of the
-definition; count it as its own measure. Its `boardLayout` is the empty string
+definition, which is why the save's own `Set Active Climb` is filtered out
+above; count it as its own measure. Its `boardLayout` is the empty string
 on a spray wall, which is an accident of the layout table and not a classifier.
 
 ## Acquisition
@@ -352,6 +373,6 @@ finished the period shown as final. Mark the current, unfinished period.
 | 2026-07-27 | Native people start being tracked before sign-in ("new people" regime 2 begins) |
 | 2026-09-07 | Throwaway persons from 2.3.0 and 2.3.1 stop ("new people" regime 3 begins) |
 | 2026-09-26 | The www crawler rule applies from here (first day of the window it was measured on) |
-| #6027 mobile OTA | `Login Account Age Resolved` starts; login events carry `provider` and `account_age_read`; `Tick Logged`, `Set Active Climb` and `Climb Created` carry `boardType` |
+| #6027 mobile OTA | `Login Account Age Resolved` starts; login events carry `provider` and `account_age_read`; `Tick Logged`, `Set Active Climb` and `Climb Created` carry `boardType`; `Set Active Climb` carries `trigger` (`climb_saved` on a save); `Onboarding Gate Evaluated` gains the skip reason `replayed_board_link` |
 
 None of these repairs past data. Annotate them; do not backfill.
