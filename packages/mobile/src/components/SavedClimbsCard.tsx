@@ -128,7 +128,16 @@ function SavedClimbsCardBody({ boardType, style }: SavedClimbsCardBodyProps) {
         </Pressable>
       </View>
       <View style={styles.actions}>
-        <Button title={t('library.savedCard.open')} variant="filled" size="small" onPress={handleOpen} />
+        {/* The card can mount while the list is scrolled (a heart from the
+            player, or the liked check answering late), so its button opts out
+            of the container safe-area inset. See Button.types.ts. */}
+        <Button
+          title={t('library.savedCard.open')}
+          variant="filled"
+          size="small"
+          onPress={handleOpen}
+          ignoreContainerSafeArea
+        />
       </View>
     </View>
   );

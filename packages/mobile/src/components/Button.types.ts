@@ -51,6 +51,16 @@ export type ButtonProps = {
   over?: ButtonSurface;
   /** See {@link ButtonRole}. */
   role?: ButtonRole;
+  /**
+   * iOS only. Set it on a button that can mount while it is scrolled out of
+   * view, such as one in a list header that appears after a network answer.
+   * Each iOS button is its own SwiftUI host, and a host that mounts above the
+   * top of the screen insets its label by the safe area and keeps that inset
+   * when it scrolls back: the label then sits about 50pt below the button's
+   * own frame. With this on the host ignores every safe-area edge, not only
+   * the keyboard. No effect on Android or web.
+   */
+  ignoreContainerSafeArea?: boolean;
   /** Native test identifier (used by Maestro screenshot flows). */
   testID?: string;
   style?: ViewStyle;
