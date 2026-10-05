@@ -1,0 +1,566 @@
+{
+  "export": {
+    "title": "导出攀爬数据",
+    "description": "把你的攀爬历史、线路单和线路保存为 JSON。请选择一种训练板类型。",
+    "weekly": "每个 UTC 周，我们为每种训练板准备一份快照。下周之前的下载都会复用这份快照。",
+    "expiry": "文件在创建 14 天后过期。每次在浏览器下载都会使用一个有效期 5 分钟的新链接。",
+    "boardType": "训练板类型",
+    "sprayWalls": "自由墙",
+    "format": "文件格式",
+    "boardseshFormat": "Boardsesh JSON",
+    "auroraFormat": "Aurora JSON",
+    "boardseshDescription": "你在这种训练板上的完整 Boardsesh 攀爬存档，包括攀爬记录、线路单和你创建的线路。",
+    "auroraDescription": "Aurora 格式的攀爬数据，供兼容工具或客服团队使用。下载这个文件并不会把历史记录转入官方训练板应用。",
+    "signIn": "登录后才能导出你的攀爬数据。",
+    "notRequested": "本周还没有准备导出。",
+    "generate": "准备导出",
+    "retry": "重试",
+    "generating": "正在准备你的攀爬数据…",
+    "pollStopped": "导出仍在准备中。点“刷新”再查看一次。",
+    "ready": "你的导出已准备好",
+    "exportedAt": "快照创建时间：{{date}}",
+    "expiresAt": "文件过期时间：{{date}}",
+    "refreshAt": "{{date}} 起可获取新的快照。",
+    "retryAt": "请在 {{date}} 之后重试。",
+    "download": "下载 JSON",
+    "refresh": "刷新",
+    "offline": "连接网络后才能准备或下载导出。",
+    "unavailable": "导出功能暂时不可用，请稍后再试。",
+    "failed": "导出没能准备好，再试一次。",
+    "archiveInvalid": "这份已保存的导出无法读取。请联系客服，或下周再试。",
+    "tooLarge": "这份导出太大，无法准备。请联系客服获取帮助。",
+    "loadFailed": "无法查看导出状态。刷新后重试。",
+    "requestFailed": "无法准备导出，再试一次。",
+    "downloadFailed": "无法打开下载。点“下载 JSON”获取新链接。",
+    "rateLimited": "导出请求太频繁，请稍后再试。",
+    "outboxReadFailed": "无法确认你的改动是否已同步。请重试后再导出。",
+    "unsyncedTitle": "部分改动尚未同步",
+    "unsyncedMessage": "这台设备上有未同步的改动（{{count}} 项）。可以等同步完成后一并导出，或者只导出已同步的数据。这份快照会一直复用到下周。",
+    "exportSynced": "导出已同步的数据",
+    "waitForSync": "等待同步",
+    "fileExpired": "这个文件已过期。刷新以查看是否有新的导出。",
+    "formatUnavailable": "当前导出不提供这种格式。"
+  },
+  "metadata": {
+    "settings": {
+      "title": "设置",
+      "description": "管理你的 Boardsesh 账号、个人资料和偏好设置"
+    }
+  },
+  "title": "设置",
+  "loading": {
+    "profileError": "个人资料加载失败"
+  },
+  "profile": {
+    "subtitle": "自定义你在 Boardsesh 上的展示方式",
+    "editAction": "编辑个人资料",
+    "avatar": {
+      "upload": "上传",
+      "change": "更换",
+      "hintMobile": "会自动裁剪为正方形并压缩。"
+    },
+    "displayName": {
+      "label": "显示名称",
+      "placeholder": "输入你的显示名称"
+    },
+    "email": {
+      "label": "邮箱",
+      "help": "邮箱无法更改"
+    },
+    "save": "保存更改",
+    "saved": "设置已保存",
+    "saveError": "设置保存失败",
+    "validation": {
+      "displayNameTooLong": "显示名称必须少于 100 个字符",
+      "compressionFailed": "压缩失败，请换一张小一点的图片"
+    },
+    "avatarUploadFailed": "头像上传失败"
+  },
+  "appHandoff": {
+    "title": "其余功能都在应用里",
+    "subtitle": "个人资料、已连接的应用和账号删除都在 Boardsesh 应用里。",
+    "cta": "打开应用"
+  },
+  "deleteAccount": {
+    "title": "删除账号",
+    "button": "删除账号",
+    "dialog": {
+      "warning": "此操作不可恢复。你的个人资料、线路草稿、攀爬记录和其他所有数据都会被删除，且无法找回。",
+      "checking": "正在检查你的线路…",
+      "publishedClimbs_one": "你有 <strong>{{count}}</strong> 条已发布的线路，删除账号后它们会保留。",
+      "publishedClimbs_other": "你有 <strong>{{count}}</strong> 条已发布的线路，删除账号后它们会保留。",
+      "removeSetterName": "从已发布的线路中移除我的定线员名字",
+      "confirmInstruction": "输入 <strong>DELETE</strong> 以确认。",
+      "confirmPlaceholder": "DELETE",
+      "cancel": "取消",
+      "confirm": "删除我的账号"
+    },
+    "error": "账号删除失败，请重试。"
+  },
+  "password": {
+    "enabledTitle": "邮箱密码登录",
+    "enabledDescription": "已为 {{email}} 启用密码登录",
+    "title": "邮箱密码登录",
+    "description": "设置密码后可以用邮箱登录。在不支持 Google 登录的浏览器里（例如 Boardsesh iOS 应用）会很有用。",
+    "linkedProviderInfo_one": "你当前通过 {{providers}} 登录。设置密码不会影响你的 {{providers}} 登录。",
+    "linkedProviderInfo_other": "你当前通过 {{providers}} 登录。设置密码不会影响你的第三方登录。",
+    "passwordLabel": "密码",
+    "passwordPlaceholder": "密码（至少 8 个字符）",
+    "confirmLabel": "确认密码",
+    "confirmPlaceholder": "确认密码",
+    "submit": "设置密码",
+    "success": "密码已设置！现在可以用邮箱和密码登录了。",
+    "validation": {
+      "enterPassword": "请输入密码",
+      "tooShort": "密码至少需要 8 个字符",
+      "tooLong": "密码必须少于 128 个字符",
+      "confirmRequired": "请确认密码",
+      "mismatch": "两次输入的密码不一致",
+      "saveError": "密码设置失败",
+      "retryError": "密码设置失败，请重试。"
+    }
+  },
+  "controllers": {
+    "title": "ESP32 控制器",
+    "subtitle": "注册 ESP32 设备，通过蓝牙桥接控制你的训练板。这样你就能在使用 Kilter/Tension 官方应用的同时使用 BoardSesh。",
+    "empty": "还没有注册控制器。添加一个 ESP32，即可搭配官方应用使用 BoardSesh。",
+    "add": "添加控制器",
+    "card": {
+      "unnamed": "未命名控制器",
+      "board": "训练板：",
+      "layout": "布局：",
+      "layoutValue": "{{layoutId}} / 尺寸 {{sizeId}}",
+      "lastSeen": "最近在线：",
+      "delete": "删除控制器",
+      "deleteConfirm": {
+        "title": "删除控制器",
+        "description": "确定要删除这个控制器吗？此操作无法撤销。",
+        "ok": "是的，删除",
+        "cancel": "取消"
+      }
+    },
+    "status": {
+      "online": "在线",
+      "offline": "离线",
+      "neverConnected": "从未连接",
+      "never": "从未",
+      "justNow": "刚刚",
+      "minutesAgo_one": "{{count}} 分钟前",
+      "minutesAgo_other": "{{count}} 分钟前",
+      "hoursAgo_one": "{{count}} 小时前",
+      "hoursAgo_other": "{{count}} 小时前"
+    },
+    "register": {
+      "title": "注册 ESP32 控制器",
+      "description": "注册一个新的 ESP32 控制器，用来接收 BoardSesh 发出的 LED 指令。你会得到一个 API 密钥，用于在设备上配置。",
+      "nameLabel": "控制器名称（可选）",
+      "namePlaceholder": "例如：客厅的训练板",
+      "boardLabel": "训练板类型",
+      "layoutLabel": "布局",
+      "sizeLabel": "尺寸",
+      "setsLabel": "岩点套组",
+      "submit": "注册控制器",
+      "submitting": "注册中…",
+      "registerError": "控制器注册失败"
+    },
+    "apiKey": {
+      "title": "控制器已注册",
+      "warningTitle": "现在就保存这个 API 密钥！",
+      "warning": "这个密钥只会显示这一次。如果弄丢了，就需要删除控制器并重新注册。",
+      "registered": "你的控制器 <strong>{{name}}</strong> 已注册。",
+      "instruction": "在 ESP32 配置中输入这个 API 密钥：",
+      "copy": "复制 API 密钥",
+      "done": "完成",
+      "copySuccess": "API 密钥已复制到剪贴板",
+      "copyError": "复制失败，请手动选中并复制"
+    },
+    "deleteSuccess": "控制器已删除",
+    "deleteError": "控制器删除失败"
+  },
+  "aurora": {
+    "title": "训练板账号",
+    "card": {
+      "boardSuffix": "Board",
+      "username": "用户名：",
+      "lastSynced": "上次同步：",
+      "never": "从未",
+      "kilterAuroraTitle": "Kilter（Aurora）",
+      "kilterAuroraCopy": "用过 Aurora 开发的旧版 Kilter 应用？导入一份 JSON 导出文件，或者发邮件给 Aurora Climbing 申请你的数据。",
+      "kilterNewTitle": "Kilter（新版）",
+      "kilterNewCopy": "用你的 Kilter 邮箱和密码登录，把你的完攀、尝试、评分和线路集同步到 Boardsesh。",
+      "kilterSignIn": "登录 Kilter",
+      "reconnect": "重新连接",
+      "notConnected": "未连接。关联你的 {{boardName}} 账号把完攀记录带过来，或者从 JSON 导出文件导入。",
+      "link": "关联",
+      "import": "导入",
+      "requestData": "申请你的数据",
+      "unlink": "取消关联",
+      "unlinkConfirm": {
+        "title": "移除账号关联",
+        "description": "确定要取消关联你的 {{boardName}} 账号吗？",
+        "ok": "是的，取消关联"
+      },
+      "syncNow": "立即同步"
+    },
+    "status": {
+      "connected": "已连接",
+      "error": "出错",
+      "expired": "已过期",
+      "syncing": "同步中",
+      "duplicateAccountCircuits": "线路集没有同步：另一个 Boardsesh 账号也连接了这个训练板账号，所以你们双方的线路单同步都已暂停。你的完攀和评分仍会正常同步。",
+      "syncingHint": "同步中，过一会儿再来看看",
+      "foreignAccountCircuits": "这个账号的线路集没有同步，因为对应的线路单属于另一个 Boardsesh 账号。你的完攀和评分仍会正常同步。请联系 Boardsesh 客服处理线路单归属问题。",
+      "ambiguousAccountCircuits": "线路集没有同步，因为对应的线路单有多个 Boardsesh 所有者。你的完攀和评分仍会正常同步。请联系 Boardsesh 客服处理线路单归属问题。"
+    },
+    "unsynced": {
+      "title_one": "{{count}} 项待同步",
+      "title_other": "{{count}} 项待同步",
+      "ascents_one": "{{count}} 条完攀",
+      "ascents_other": "{{count}} 条完攀",
+      "climbs_one": "{{count}} 条线路",
+      "climbs_other": "{{count}} 条线路"
+    },
+    "linkDialog": {
+      "title": "关联 {{boardName}} 账号",
+      "description": "按你登录 {{boardName}} 本身的方式登录：用你的 {{boardName}} 用户名，而不是邮箱。你的账号密码会先加密再保存。",
+      "usernameLabel": "用户名",
+      "usernamePlaceholder": "输入你的用户名",
+      "passwordLabel": "密码",
+      "passwordPlaceholder": "输入你的密码",
+      "submit": "关联账号",
+      "submitting": "关联中…",
+      "linkError": "账号关联失败",
+      "linkSuccess": "{{boardName}} 已关联。同步完成后会显示你的完攀记录。",
+      "accountAlreadyLinked": "另一位 Boardsesh 用户已经关联了这个账号。如果这是你的账号，请先在对方账号中取消关联，然后重试。"
+    },
+    "kilterLinkDialog": {
+      "title": "登录 Kilter",
+      "description": "输入你的 Kilter 邮箱和密码。密码只用来换取安全令牌，不会被保存。",
+      "emailPlaceholder": "输入你的邮箱",
+      "passwordHelp": "适用于你现有的 Kilter 账号。开启了两步验证或只能用第三方登录的账号无法这样登录，请改用“导入”。"
+    },
+    "unlinkError": "取消关联失败",
+    "unlinkPartial": "我们这边已经断开，但 Kilter 应用可能仍处于登录状态。想彻底断开的话，请在 Kilter 那边也退出登录。",
+    "loadRetry": "重试",
+    "import": {
+      "steps": {
+        "climbs": "正在导入线路草稿",
+        "resolving": "正在匹配线路名称",
+        "dedup": "正在检查重复项",
+        "ascents": "正在导入完攀",
+        "attempts": "正在导入尝试",
+        "circuits": "正在导入线路集"
+      },
+      "tooLarge": "文件太大（最大 200MB）。请确认你选对了文件。",
+      "parseError": "JSON 文件解析失败。请检查文件格式。",
+      "readError": "文件读取失败，请重试。",
+      "failed": "导入失败",
+      "successCount": "成功导入 {{count}} 项",
+      "partialWarning": "导入只完成了一部分，详见下方",
+      "dialog": {
+        "previewTitle": "导入 Aurora 数据",
+        "importingTitle": "正在导入 Aurora 数据…",
+        "completeTitle": "导入完成",
+        "errorTitle": "导入失败",
+        "previewIntro": "把 <strong>{{username}}</strong> 的数据导入 <strong>{{boardName}}</strong>：",
+        "draftClimbs": "{{count}} 条线路草稿",
+        "ascents": "{{count}} 条完攀",
+        "attempts": "{{count}} 次尝试",
+        "circuits": "{{count}} 个线路集",
+        "previewNote": "线路会按名称匹配。匹配不上的会在导入后列出。重复导入同一个文件不会产生重复记录。",
+        "cancel": "取消",
+        "confirm": "导入",
+        "close": "关闭",
+        "errorTitleShort": "导入失败"
+      },
+      "results": {
+        "draftClimbs": "线路草稿",
+        "draftClimbsSummary": "导入 {{imported}}，跳过 {{skipped}}，失败 {{failed}}",
+        "ascents": "完攀",
+        "ascentsSummary": "导入 {{imported}}，跳过 {{skipped}}（已存在），未匹配 {{failed}}",
+        "attempts": "尝试",
+        "attemptsSummary": "导入 {{imported}}，跳过 {{skipped}}（已存在），未匹配 {{failed}}",
+        "circuits": "线路集",
+        "circuitsSummary": "导入 {{imported}}，跳过 {{skipped}}，失败 {{failed}}",
+        "unresolvedAscentsTitle_one": "{{count}} 条完攀没有匹配到线路",
+        "unresolvedAscentsTitle_other": "{{count}} 条完攀没有匹配到线路",
+        "unresolvedAttemptsTitle_one": "{{count}} 次尝试没有匹配到线路",
+        "unresolvedAttemptsTitle_other": "{{count}} 次尝试没有匹配到线路",
+        "unresolvedCircuitsTitle_one": "线路集中有 {{count}} 条线路没能匹配",
+        "unresolvedCircuitsTitle_other": "线路集中有 {{count}} 条线路没能匹配",
+        "unresolvedMore": "…还有 {{count}} 项",
+        "partialTitle": "导入被中断",
+        "partialBody": "部分数据可能没有导入。重复导入同一个文件是安全的，会把缺的补上。"
+      }
+    },
+    "kilterEmail": {
+      "subject": "Kilterboard data",
+      "namePlaceholder": "[YOUR NAME]",
+      "emailPlaceholder": "[YOUR EMAIL]",
+      "body": "Hey there!\n\nEx-app user here. I was wondering if I could get a copy of my data so I can save my logbooks and other data for personal tracking records.\n\nMy username is {{name}}, and this should be under this email ({{email}}).\n\nThanks!\n\n{{name}}"
+    },
+    "moonboard": {
+      "title": "MoonBoard",
+      "copy": "手上有 MoonBoard 的 CSV 导出文件？在这里导入。还没有文件？发邮件给 MoonBoard 申请你的数据。",
+      "import": "导入数据",
+      "requestData": "申请你的数据",
+      "requestDataDialog": {
+        "title": "申请内容已复制",
+        "message": "你的数据申请已复制到剪贴板。打开邮箱，新建一封发给 MoonBoard 的邮件，然后粘贴进去。",
+        "confirm": "打开邮箱",
+        "cancel": "以后再说"
+      },
+      "email": {
+        "subject": "Subject access request – MoonBoard account data",
+        "body": "Name: [full name]\nMoonBoard username: [username]\nAccount email: [email address]\n\nMy MoonBoard logbook is personal data because it records my climbing activity and sporting achievements and is linked to my identifiable account. Please treat this as a UK GDPR subject access request and, where applicable, a data portability request. ICO guidance on personal data, subject access requests, data portability, and response time limits is linked below for reference:\nhttps://ico.org.uk/for-the-public/time-limits-for-responding-to-data-protection-rights-requests/\n\nPlease include all personal data linked to my MoonBoard account, including where available:\n\naccount/profile details;\nusername and account identifiers;\nproblems I have created or logged;\nsends, ascents, benchmarks, grades, repeats, attempts, dates, and session/history data;\nfavourites, saved problems, custom problems, and user-generated content linked to my account;\nboard/setup preferences and app/service usage data linked to my account;\nany related metadata or identifiers associated with my MoonBoard profile.\n\nThe ICO’s guidance says organisations should respond to subject access requests without undue delay and within one month. If you require identity verification, clarification, or a secure delivery method, please let me know promptly.\n\nWhere technically feasible, I would prefer the export in CSV or JSON format. Alternatively, please provide the data in another structured, commonly used, machine-readable format.\n\nPlease confirm receipt of this request and the date by which you expect to respond.\n\nKind regards,\n[name]"
+      },
+      "csvImport": {
+        "parseError": "无法读取这个 MoonBoard CSV。请确认它以 ProblemId,Grade,Tries,Attempts,Rating,Date 开头。",
+        "parserUnavailable": "这个版本暂时还不支持 MoonBoard CSV 导入。",
+        "failed": "MoonBoard 导入失败，再试一次。",
+        "successCount": "已导入 {{count}} 条 MoonBoard 攀爬记录",
+        "partialWarning": "MoonBoard 导入只完成了一部分。重复导入这个文件是安全的。",
+        "interrupted": "MoonBoard 导入中途停止了。重复导入这个文件是安全的。",
+        "steps": {
+          "resolving": "正在匹配 MoonBoard 线路",
+          "dedup": "正在检查重复项",
+          "ascents": "正在导入完攀",
+          "attempts": "正在导入尝试",
+          "recomputing": "正在更新 MoonBoard 数据统计",
+          "importing": "正在导入 MoonBoard 数据"
+        }
+      },
+      "importDialog": {
+        "previewTitle": "导入 MoonBoard CSV",
+        "importingTitle": "正在导入 MoonBoard 数据…",
+        "completeTitle": "MoonBoard 导入完成",
+        "errorTitle": "MoonBoard 导入失败",
+        "previewIntro": "把这份 MoonBoard 导出文件导入 Boardsesh：",
+        "previewIntroWithUser": "把 {{username}} 的 MoonBoard 数据导入 Boardsesh：",
+        "rows": "{{count}} 行 CSV",
+        "sends": "{{count}} 条完攀",
+        "flashes": "{{count}} 条 Flash",
+        "attempts": "{{count}} 次尝试",
+        "projects": "{{count}} 个项目",
+        "fails": "{{count}} 次失败",
+        "angleNote": "导入的记录会按 {{angle}}° 保存。",
+        "previewNote": "项目和失败的行会记为尝试。Session Flash 的行会记为一次尝试的完攀。"
+      },
+      "importResults": {
+        "ascents": "完攀",
+        "ascentsSummary": "导入 {{imported}}，跳过 {{skipped}}（已存在），未匹配 {{failed}}",
+        "attempts": "尝试",
+        "attemptsSummary": "导入 {{imported}}，跳过 {{skipped}}（已存在），未匹配 {{failed}}",
+        "unresolvedTitle": "{{count}} 条 MoonBoard 线路没能匹配",
+        "partialBody": "部分 MoonBoard 数据可能没有导入。重复导入同一个文件是安全的，会把缺的补上。"
+      }
+    },
+    "mobile": {
+      "connectedAs": "已连接：{{name}}",
+      "connected": "已连接",
+      "notConnected": "未连接",
+      "kilterNotAllowed": "这个账号暂未开通 Kilter 同步。",
+      "linkSuccess": "{{boardName}} 已关联。同步完成后会显示你的完攀记录。",
+      "unlinkSuccess": "{{boardName}} 已取消关联",
+      "unlinkPartial": "{{boardName}} 已在这里移除，但对方平台的登录状态可能仍然有效。",
+      "invalidCredentials": "用户名或密码不正确。",
+      "invalidCredentialsKilter": "邮箱或密码不正确。",
+      "rateLimited": "尝试次数太多，请稍后再试。",
+      "requestFailed": "关联没能保存，再试一次。",
+      "loadFailed": "训练板账号加载失败。",
+      "importMissingUser": "请选择一个 Aurora JSON 导出文件。",
+      "importBoardWarning": "这看起来是 {{layoutName}}。确认无误再导入 {{boardName}}。",
+      "importPreviewIntro": "把 {{username}} 的数据导入 {{boardName}}：",
+      "importPartial": "导入只完成了一部分。重复导入这个文件是安全的。",
+      "importFailed": "导入失败，再试一次。",
+      "importInterrupted": "导入中途停止了。重复导入这个文件是安全的。",
+      "requestDataFailed": "无法打开邮箱，再试一次。",
+      "requestDataCopyFailed": "申请内容没复制上，再试一次。",
+      "passwordHelp": "你的账号密码会先加密再保存。",
+      "syncNowRateLimited": "慢一点，你刚刚才请求过。一分钟后再试。",
+      "syncNowUnavailable": "“立即同步”暂未开放。你的攀爬记录仍会自动同步。",
+      "syncNowNotLinked": "重新连接这个账号后才能同步。",
+      "syncNowFailed": "同步没能开始，过一会儿再试。"
+    }
+  },
+  "feedbackDialog": {
+    "titleRating": "给 Boardsesh 评分",
+    "titleBug": "报告 bug",
+    "submitRating": "提交",
+    "submitBug": "提交 bug 报告",
+    "successRating": "谢谢，已记录。",
+    "successBug": "bug 已记录，谢谢。",
+    "errorRating": "没提交上，过一会儿再试。",
+    "closeAria": "关闭",
+    "joinDiscord": "加入 Discord"
+  },
+  "feedbackForm": {
+    "bugPlaceholder": "你当时在做什么？你期望看到什么，实际看到了什么？",
+    "ratingPlaceholder": "想说点什么？",
+    "remainingChars": "还需要 {{count}} 个字符",
+    "sessionRecordingLabel": "开启会话录制",
+    "sessionRecordingDescription": "开启会话录制并重现这个 bug，能帮我们更快修好它。之后可以随时关闭。",
+    "bluetoothBugLabel": "我遇到了蓝牙问题",
+    "bluetoothBugDescription": "扫描附近的训练板，并把它们广播的信息发给我们，方便我们排查你的训练板为什么连不上。不会控制任何训练板，我们只是监听。",
+    "contactConsentLabel": "可以就此联系你吗？",
+    "contactConsentDescription": "我们会把问题链接通过邮件发给你，需要更多细节时再跟进。",
+    "starRating_one": "{{count}} 星",
+    "starRating_other": "{{count}} 星"
+  },
+  "boardConfigMismatch": {
+    "title": "训练板配置不匹配",
+    "mobileCurrentLabel": "你当前的配置：{{config}}",
+    "mobileRecordedLabel": "这个控制器记录的配置：{{config}}",
+    "mobileConfigValue": "{{board}} 布局 {{layoutId}}，尺寸 {{sizeId}}，套组 {{setIds}}",
+    "mobileUnknownConfig": "未知的训练板配置",
+    "skippedSpillToast_one": "已跳过 {{name}}，它是为另一块训练板定的",
+    "skippedSpillToast_other": "已跳过 {{count}} 条为另一块训练板定的线路",
+    "skippedOnBoardSwitchToast_one": "已滑过 {{name}}，它是为另一块训练板定的",
+    "skippedOnBoardSwitchToast_other": "已滑过 {{count}} 条为另一块训练板定的线路",
+    "queueOffBoardToast_one": "没有可以滑到的线路了：{{name}} 是为另一块训练板定的",
+    "queueOffBoardToast_other": "没有可以滑到的线路了：队列里有 {{count}} 条线路是为另一块训练板定的",
+    "mobileSwitchFailed": "无法切换到那块训练板的配置。试试“仍然连接”。",
+    "cancel": "取消",
+    "mobileConnectAnyway": "仍然连接",
+    "mobileConnectAnywayWarning": "我们的记录显示这个控制器属于另一种训练板配置。仍然连接可能会点错岩点。",
+    "mobileSwitchSetup": "切换训练板配置",
+    "mobileUseRecordedSetup": "使用记录的配置"
+  },
+  "devicePicker": {
+    "lastConnected": "上次连接的训练板",
+    "unknownDevice": "未知设备",
+    "lastConnectedAt": "上次连接：{{time}}"
+  },
+  "auroraImport": {
+    "unlinkSuccessToast": "账号已取消关联",
+    "uploadAriaLabel": "上传 Aurora JSON 导出文件"
+  },
+  "ble": {
+    "scanning": "正在扫描附近的训练板…",
+    "searchingForBoard": "正在搜索你的 {{board}}…",
+    "searchingForSavedBoard": "正在搜索你的训练板…",
+    "searchAnyBoard": "搜索任意训练板",
+    "writing": "正在点亮训练板…",
+    "selectBoard": "选择训练板",
+    "devicesFound_one": "找到 {{count}} 块训练板",
+    "devicesFound_other": "找到 {{count}} 块训练板",
+    "noDevicesFound": "附近没有找到训练板",
+    "differentBoardType": "这些训练板看起来和你配置的 {{board}} 不是同一种。",
+    "troubleshootTitle": "没看到你的训练板？",
+    "troubleshootTips": "确认它已通电并处于唤醒状态。一块训练板同一时间只能连接一部手机，所以请先断开其他设备。靠近一些，或者把蓝牙关掉再打开。",
+    "locationHintTitle": "Android 需要定位权限才能发现训练板",
+    "locationHintBody": "在 Android 12 及以上版本，未允许定位权限时蓝牙扫描结果会被隐藏。Boardsesh 不会用你的位置来寻找训练板，后续更新会彻底取消这项要求。",
+    "locationHintGrant": "允许定位",
+    "locationHintGranted": "定位已允许。关闭此页面并重新连接，就能看到你的训练板。",
+    "locationServicesHintTitle": "定位服务已关闭",
+    "locationServicesHintBody": "在 Android 11 及以下版本，定位服务关闭时蓝牙扫描结果会被隐藏，即使已授予权限也是如此。Boardsesh 不会追踪你的位置，只是需要打开这个开关才能发现附近的训练板。",
+    "locationServicesHintEnable": "打开定位",
+    "locationServicesHintEnabled": "定位已打开。关闭此页面并重新连接，就能看到你的训练板。",
+    "cancel": "取消",
+    "connectBoard": "连接训练板",
+    "relightBoard": "重新点亮训练板",
+    "autoDisconnect": {
+      "title": "自动断开",
+      "description": "在所选时长内没有显示任何线路时，自动断开与训练板的连接。",
+      "enabledLabel": "自动断开",
+      "enabledDescription": "计时结束后，让其他岩友可以连接。",
+      "timeoutLabel": "断开时间",
+      "toggleTitle": "自动断开",
+      "toggleSubtitle": "无操作 {{timeout}}后断开",
+      "toggleAccessibility": "开关自动断开",
+      "timeoutOptions": {
+        "10": "10 秒",
+        "15": "15 秒",
+        "30": "30 秒",
+        "45": "45 秒",
+        "60": "1 分钟",
+        "120": "2 分钟",
+        "300": "5 分钟",
+        "600": "10 分钟"
+      }
+    },
+    "lighting": {
+      "title": "训练板点亮",
+      "description": "选择哪些操作会自动点亮已连接的训练板。",
+      "onSwipeLabel": "滑动时点亮线路",
+      "onSwipeDescription": "在播放视图中滑动切换线路时点亮训练板。",
+      "onTapLabel": "点按列表时点亮线路",
+      "onTapDescription": "从线路列表中选择线路时点亮训练板。"
+    },
+    "turnOff": "熄灭训练板",
+    "holdForControls": "长按打开训练板控制",
+    "sendFailedTitle": "训练板没能点亮",
+    "connectionFailedTitle": "连接失败",
+    "permissionRequired": "需要蓝牙权限",
+    "errorPermissionDenied": "请允许蓝牙权限以连接训练板。",
+    "blockedTitle": "Boardsesh 的蓝牙权限被禁用",
+    "blockedBody": "请在“设置”中允许 Boardsesh 使用蓝牙，才能在训练板上点亮线路。",
+    "blockedBodyNearbyDevices": "请在“设置”中允许 Boardsesh 访问附近的设备，才能在训练板上点亮线路。",
+    "blockedBodyLocation": "请在“设置”中允许 Boardsesh 使用定位。Android 需要它才能通过蓝牙找到你的训练板。",
+    "openSettings": "打开设置",
+    "scanAgain": "重新扫描",
+    "errorLedMissing": "无法点亮训练板：这种训练板配置缺少 LED 数据。",
+    "errorIncompatible": "这条线路属于另一种训练板配置。",
+    "errorTooManyHolds": "同时点亮的岩点太多，超出了这块训练板 LED 控制器的上限。",
+    "noLedsCta": "这面墙没有灯",
+    "noLedsBody": "那就接管墙面吧。这里的每个人都能看到你正在爬的线路，岩馆的屏幕上也会显示。",
+    "takeWall": "接管墙面",
+    "releaseWall": "让出墙面",
+    "barControl": {
+      "connectedLabel": "训练板已连接，由你控制",
+      "connectedHint": "打开训练板控制",
+      "peerLabel": "在 {{name}} 的墙上",
+      "peerLabelAnonymous": "在墙上",
+      "peerHint": "打开墙上的线路",
+      "disconnectedLabel": "训练板已断开",
+      "disconnectedHint": "连接训练板",
+      "wallHeldLabel": "墙面由你控制",
+      "wallHeldHint": "让出墙面",
+      "wallOpenLabel": "墙面空闲",
+      "wallOpenHint": "接管墙面"
+    },
+    "relayToWall": "把你的线路放到墙上",
+    "peerDrivingBoard": "有其他人正在控制训练板"
+  },
+  "integrations": {
+    "title": "已连接的应用",
+    "appleHealth": {
+      "title": "Apple 健康",
+      "autoSave": "自动保存训练",
+      "autoSaveDescription": "结束的训练会作为攀岩体能训练添加到 Apple 健康，并附带估算的卡路里。",
+      "permissionDenied": "健康访问权限已关闭。请在“设置”中允许 Boardsesh 写入体能训练。",
+      "openSettings": "打开设置"
+    },
+    "strava": {
+      "title": "Strava",
+      "connect": "连接 Strava",
+      "connectedAs": "已连接：{{name}}",
+      "connected": "已连接",
+      "autoSync": "自动上传训练",
+      "autoSyncDescription": "结束的训练会作为攀岩活动出现在你的 Strava 动态里。",
+      "disconnect": "断开连接",
+      "disconnectConfirmTitle": "断开 Strava？",
+      "disconnectConfirmBody": "新的训练将不再上传到 Strava。已上传的活动会保留在 Strava 上。",
+      "reconnect": "重新连接",
+      "expired": "连接已过期。重新连接以继续上传。"
+    },
+    "toast": {
+      "connected": "Strava 已连接",
+      "connectFailed": "无法连接 Strava",
+      "disconnected": "Strava 已断开",
+      "disconnectFailed": "Strava 没能断开，再试一次。"
+    }
+  },
+  "watchPairing": {
+    "title": "配对 Garmin 手表",
+    "subtitle": "在手腕上掌控你的训练",
+    "description": "在 Garmin 手表上启动 Boardsesh 活动，然后输入这个验证码，把手表关联到你的账号。",
+    "generate": "获取配对码",
+    "regenerate": "换一个",
+    "codeInstruction": "在手表上输入这个配对码",
+    "expiresIn": "{{seconds}} 秒后过期",
+    "expired": "配对码已过期，重新获取一个",
+    "generating": "正在获取配对码…",
+    "error": "配对码获取失败，再试一次。"
+  }
+}

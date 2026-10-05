@@ -1,0 +1,956 @@
+{
+  "authors": {
+    "selectHint": "勾选即可筛选线路。点名字可浏览。",
+    "selectedCount": "已选 {{count}} 个",
+    "viaUserFollow": "来自你关注的人",
+    "followingHint": "包含你关注的人关联的账号。点“关注”可直接收藏定线员。",
+    "follow": "关注",
+    "unfollow": "取消关注",
+    "following": "已关注",
+    "allSetters": "所有定线员",
+    "followingClimbs": "我关注的人定的线路",
+    "playlistSubtitle": "这块训练板上的所有线路 · 最新在前",
+    "signIn": "登录后才能关注这位定线员",
+    "syncNeeded": "连接一次，即可同步你的关注和关联的定线员。",
+    "followError": "关注状态没能更新，再试一次。",
+    "loadError": "这些线路加载失败。",
+    "empty": "这位定线员在这块训练板上还没有线路。",
+    "chooseBoard": "选择训练板",
+    "retry": "重试",
+    "newClimb": "新线路",
+    "newClimbCount_one": "1 条新线路",
+    "newClimbCount_other": "{{count}} 条新线路",
+    "seeAllClimbs": "查看全部 {{count}} 条"
+  },
+  "sends_one": "{{formattedCount}} 次完攀",
+  "sends_other": "{{formattedCount}} 次完攀",
+  "metadata": {
+    "list": {
+      "title": "{{boardName}} {{angle}}° 的线路",
+      "description": "浏览 {{boardName}} 在 {{angle}}° 的线路",
+      "fallbackTitle": "线路",
+      "fallbackDescription": "浏览线路",
+      "paginatedTitle": "{{boardName}} {{angle}}° 的线路 — 第 {{page}} 页"
+    },
+    "view": {
+      "title": "{{climbName}} - {{grade}}",
+      "description": "{{climbName}} - {{grade}}，定线：{{setter}}。星级：{{quality}}/5。完攀：{{ascents}}",
+      "imageAlt": "{{boardName}} 训练板上的 {{climbName}} - {{grade}}",
+      "fallbackTitle": "线路",
+      "fallbackDescription": "查看线路详情和 beta 视频",
+      "seoHeading": "{{climbName}} — {{grade}}",
+      "seoSummary": "{{boardName}} {{layoutName}} 线路",
+      "seoSetterSuffix": "，定线：{{setter}}",
+      "seoAscentsSuffix": "。已记录 {{ascents}} 次完攀"
+    },
+    "import": {
+      "title": "导入线路",
+      "description": "从截图导入 MoonBoard 线路"
+    }
+  },
+  "list": {
+    "noMore": "没有更多线路了",
+    "frontDoor": {
+      "heading": "{{boardName}} {{angle}}° 的线路",
+      "intro": "这种 {{boardName}} 配置在 {{angle}}° 上的全部线路，按攀爬次数从多到少排列。点任意一条，可查看训练板渲染图、各角度的难度和 beta。",
+      "empty": "这块训练板上还没有线路。",
+      "cta": "爬这块训练板",
+      "pagination": {
+        "aria": "分页",
+        "previous": "上一页",
+        "next": "下一页",
+        "pageLabel": "第 {{page}} 页"
+      }
+    }
+  },
+  "header": {},
+  "share": {
+    "actionLabel": "分享"
+  },
+  "angleSelector": {
+    "selectAngle": "选择角度"
+  },
+  "search": {
+    "placeholders": {
+      "climbs": "搜索线路…"
+    },
+    "summary": {
+      "routesOnly": "仅路线",
+      "bouldersAndRoutes": "抱石和路线"
+    },
+    "holds": {
+      "include": "包含",
+      "exclude": "排除"
+    }
+  },
+  "actions": {
+    "playlist": {
+      "toast": {
+        "added": "已加入线路单",
+        "removed": "已从线路单移除",
+        "addFailed": "加入线路单失败",
+        "removeFailed": "从线路单移除失败",
+        "addFailedNamed": "没能加入“{{playlist}}”",
+        "removeFailedNamed": "没能从“{{playlist}}”移除",
+        "createFailed": "线路单创建失败"
+      },
+      "validation": {
+        "nameRequired": "请输入线路单名称"
+      },
+      "popover": {
+        "title": "加入线路单",
+        "empty": "还没有线路单",
+        "createNew": "创建新线路单",
+        "signInBlurb": "登录后才能创建和管理线路单"
+      },
+      "create": {
+        "namePlaceholder": "例如：小边硬线",
+        "submit": "创建"
+      }
+    }
+  },
+  "card": {
+    "title": {
+      "noClimbSelected": "未选择线路",
+      "project": "项目",
+      "projectAtAngle": "项目 @ {{angle}}°",
+      "setBy": "定线：{{setter}}",
+      "setByWithSends": "定线：{{setter}} - {{sends}}",
+      "draftBy": "{{setter}} 的草稿"
+    },
+    "method": {
+      "footless": "无脚",
+      "footlessKickboard": "无脚 + 脚踏板",
+      "noKickboard": "不用脚踏板"
+    },
+    "anyFeet": "脚点不限"
+  },
+  "boardseshGrade": {
+    "title": "Boardsesh 难度",
+    "moonboardBody": "我们还没有 MoonBoard 的社区难度数据。在 Boardsesh 上记录你的 Moon 完攀，帮忙解锁它。",
+    "woodsBody": "我们还没有 Woods Board 的社区难度数据。在 Boardsesh 上记录你的 Woods 完攀，帮忙解锁它。",
+    "loadError": "难度暂时加载不出来。",
+    "byAngle": "各角度的实际难度",
+    "summaryLocal": "本板",
+    "matchesBoard": "与旧难度一致",
+    "localOnlyNote": "跨训练板的完攀还不够，暂时无法统一标定。",
+    "setterCall": "定线员给的难度",
+    "hero": {
+      "thisBoard": "旧难度",
+      "everywhere": "Boardsesh 难度",
+      "thisBoardOnly": "Boardsesh 难度",
+      "approx": "约 {{amount}}"
+    },
+    "payoff": {
+      "softer": "比旧难度软 {{amount}}。",
+      "stiffer": "比旧难度硬 {{amount}}。"
+    },
+    "trust": {
+      "confirmedSingle_one": "已确认 · {{count}} 次完攀",
+      "confirmedSingle_other": "已确认 · {{count}} 次完攀",
+      "confirmedRange_one": "通常为 {{low}}–{{high}} · {{count}} 次完攀",
+      "confirmedRange_other": "通常为 {{low}}–{{high}} · {{count}} 次完攀",
+      "provisionalSingle_one": "仍在收敛 · {{count}} 次完攀",
+      "provisionalSingle_other": "仍在收敛 · {{count}} 次完攀",
+      "provisionalRange_one": "仍在收敛 · 可能为 {{low}}–{{high}} · {{count}} 次完攀",
+      "provisionalRange_other": "仍在收敛 · 可能为 {{low}}–{{high}} · {{count}} 次完攀",
+      "setter": "完攀不足 3 次，无法统一标定"
+    },
+    "estimate": {
+      "label": "估算",
+      "body": "还没有人爬过这个角度，这个数字是根据有人爬过的角度的难度推算出来的。",
+      "bodyRange": "还没有人爬过这个角度，可能为 {{low}}–{{high}}，根据有人爬过的角度推算。"
+    },
+    "moonboardAngle": {
+      "label": "估算",
+      "body": "还没有人在这个角度爬过，难度是根据另一个角度的情况算出来的。",
+      "bodyRange": "还没有人在这个角度爬过，可能为 {{low}}–{{high}}，根据另一个角度的情况算出。"
+    },
+    "moonboardWideAngle": {
+      "label": "粗略估算",
+      "body": "还没有人爬过这个角度，这是根据其他训练板在更陡或更缓角度下的一般变化做出的粗略估算。",
+      "bodyRange": "还没有人爬过这个角度，可能为 {{low}}–{{high}}，这是根据其他训练板在更陡或更缓角度下的一般变化做出的粗略估算。"
+    },
+    "dumbbell": {
+      "legendBoardsesh": "Boardsesh 难度",
+      "legendCrowd": "旧难度",
+      "legendSize": "点越大 = 完攀越多",
+      "tapCaption_one": "{{angle}}° · 旧难度 {{crowd}} · Boardsesh 难度 {{boardsesh}} · {{count}} 次完攀",
+      "tapCaption_other": "{{angle}}° · 旧难度 {{crowd}} · Boardsesh 难度 {{boardsesh}} · {{count}} 次完攀",
+      "tapCaptionAgree_one": "{{angle}}° · 两种难度一致 · {{grade}} · {{count}} 次完攀",
+      "tapCaptionAgree_other": "{{angle}}° · 两种难度一致 · {{grade}} · {{count}} 次完攀",
+      "tapCaptionEstimated": "{{angle}}° · Boardsesh 难度 {{boardsesh}} · 估算值，尚无人完攀",
+      "singleAngle_one": "{{angle}}° · 旧难度 {{crowd}} · Boardsesh 难度 {{boardsesh}} · {{count}} 次完攀",
+      "singleAngle_other": "{{angle}}° · 旧难度 {{crowd}} · Boardsesh 难度 {{boardsesh}} · {{count}} 次完攀",
+      "crowdOnlyNote": "跨训练板的完攀还不够，暂时无法按角度对比。"
+    },
+    "yours": {
+      "label": "你的难度",
+      "meta": "{{angle}}°",
+      "boardGrade": "训练板难度",
+      "community": "社区难度",
+      "matches": "你认同这个难度。",
+      "emptyBody": "觉得难度标低了？给它定一个你自己的难度。不用完攀也可以。"
+    }
+  },
+  "similarClimbs": {
+    "loadError": "相似线路加载失败。",
+    "emptyDefault": "还没有相似线路。",
+    "emptyOnLayout": "这种布局上没有相似线路。",
+    "untitledClimb": "未命名线路"
+  },
+  "multiboardList": {
+    "noClimbsFound": "没有找到线路",
+    "popular": "热门",
+    "new": "最新",
+    "count_one": "{{count}} 条线路",
+    "count_other": "{{count}} 条线路"
+  },
+  "createClimbForm": {
+    "draftBadge": "草稿",
+    "namePlaceholder": "线路名称",
+    "descriptionPlaceholder": "添加 beta 或关于这条线路的备注…",
+    "dismiss": "忽略",
+    "cannotOpen": {
+      "boardCannotAuthor": "你暂时还不能在这块训练板上定线。",
+      "boardConfigIncomplete": "训练板信息缺失或无效。重新选择训练板后再定线。",
+      "noUsableBoard": "先选择训练板，再定线。",
+      "boardTypeUnsupported": "这个应用版本暂时还不能在那块训练板上定线。换一块训练板吧。"
+    },
+    "alerts": {
+      "publishDuplicateNamed": "这组岩点和“{{name}}”相同。打开“草稿”可保存而不发布，或者改动一个岩点。",
+      "publishDuplicateUnnamed": "这组岩点和已有的一条线路相同。打开“草稿”可保存而不发布，或者改动一个岩点。",
+      "viewMatchingClimb": "查看相同的线路",
+      "saveFailedFallback": "线路保存失败，请重试。"
+    },
+    "fields": {
+      "description": "描述（可选）"
+    },
+    "holds": {
+      "start": "起步点",
+      "hand": "手点",
+      "finish": "结束点",
+      "total": "合计"
+    },
+    "validation": {
+      "needsStartFinish": "一条有效的线路至少需要 1 个起步点和 1 个结束点"
+    }
+  },
+  "draftsDrawer": {
+    "count_one": "{{count}} 条草稿",
+    "count_other": "{{count}} 条草稿",
+    "loadError": "草稿加载失败，再试一次。",
+    "empty": {
+      "title": "还没有草稿"
+    },
+    "delete": {
+      "tooltip": "删除草稿",
+      "title": "删除这条草稿？",
+      "description": "这会移除已保存的草稿。已发布的线路不受影响。",
+      "confirm": "删除",
+      "success": "草稿已删除。",
+      "error": "这条草稿没删掉，再试一次。"
+    }
+  },
+  "holdTypePicker": {
+    "toolbarAriaLabel": "岩点类型",
+    "applyModeAriaLabel": "设为包含或排除",
+    "clear": "清除",
+    "searchHelp": "选择 1 种或多种岩点类型，然后点其他任意位置关闭选择器",
+    "includeAriaSuffix": "包含",
+    "excludeAriaSuffix": "排除",
+    "states": {
+      "starting": "起步点",
+      "hand": "手点",
+      "finish": "结束点",
+      "foot": "脚点",
+      "any": "任意"
+    }
+  },
+  "moonboardImport": {
+    "picker": {
+      "title": "选择你的 MoonBoard",
+      "hint": "选择你要导入的训练板和角度，然后把截图拖进来。",
+      "angleOption": "{{angle}}°"
+    },
+    "card": {
+      "skipping": "跳过",
+      "duplicate": "跳过：已存在",
+      "duplicateNamed": "跳过：已存在，名为“{{name}}”",
+      "removeAction": "移除",
+      "removeDescription": "这条线路不会被导入。"
+    },
+    "bulk": {
+      "title": "导入 MoonBoard 线路 - {{layoutName}} @ {{angle}}°",
+      "loginRequired": "请登录后保存线路",
+      "loginRequiredTitle": "需要登录",
+      "loginRequiredBody": "请登录后将线路保存到数据库。",
+      "logIn": "登录",
+      "uploadPrompt": "点击或把截图文件拖到这里",
+      "uploadHelp": "支持 MoonBoard 应用的截图。一次拖入多个文件即可批量导入。",
+      "processing": "正在处理截图…",
+      "checkingDuplicates": "正在将导入的线路与已有的 MoonBoard 线路比对…",
+      "reviewBeforeSaving": "检查下面的线路。保存前可以编辑或移除任意一条。",
+      "saveAll": "全部保存（{{count}}）",
+      "clearAndRestart": "清空并重新开始",
+      "contributeImages": "贡献图片以提高识别准确率",
+      "tryAgain": "重试",
+      "saveFailed": "线路保存失败，请重试。"
+    }
+  },
+  "moonboardEditModal": {
+    "title": "编辑线路",
+    "nameLabel": "线路名称",
+    "nameRequired": "请输入名称",
+    "save": "保存更改",
+    "setter": "定线员：{{setter}}",
+    "grade": "难度：{{grade}}",
+    "angle": "角度：{{angle}}°",
+    "unknown": "未知"
+  },
+  "mobile": {
+    "moderation": {
+      "title": "管理",
+      "moreSectionTitle": "社区",
+      "moreRowSubtitle": "为被举报的线路和难度修改投票",
+      "pinnedFromNotification": "来自你的通知",
+      "hiddenChip": "已隐藏",
+      "supersededChip": "已被取代",
+      "unknownClimb": "未命名线路",
+      "unknownClimber": "有人",
+      "openClimb": "打开 {{climb}}",
+      "loadError": "队列加载失败",
+      "voteError": "你的投票没保存上",
+      "resolveError": "没能处理",
+      "reasonsLoadError": "原因加载失败",
+      "noReasons": "还没有人填写原因",
+      "moreReasons_one": "还有 {{count}} 条原因",
+      "moreReasons_other": "还有 {{count}} 条原因",
+      "reporters_one": "{{count}} 位举报者",
+      "reporters_other": "{{count}} 位举报者",
+      "empty": {
+        "title": "没有需要处理的内容",
+        "subtitle": "大家的举报和难度提议会出现在这里。长按线路即可举报。"
+      },
+      "unavailable": {
+        "title": "管理功能目前已关闭",
+        "subtitle": "下次更新后再来看看。"
+      },
+      "filter": {
+        "open": "进行中",
+        "all": "全部",
+        "thisBoard": "这块训练板",
+        "allBoards": "所有训练板",
+        "statusLabel": "状态",
+        "boardLabel": "训练板"
+      },
+      "type": {
+        "hide": "隐藏线路",
+        "unhide": "取消隐藏线路",
+        "grade": "难度 {{from}} → {{to}}",
+        "classic": "经典：{{value}}",
+        "benchmark": "基准线路：{{value}}",
+        "unknown": "社区提议"
+      },
+      "confirm": {
+        "approve": {
+          "title": "通过这项提议？",
+          "message": "这项修改会对所有人生效。",
+          "hideMessage": "这条线路会从所有人的列表中消失。",
+          "unhideMessage": "这条线路会重新出现在所有人的列表中。"
+        },
+        "reject": {
+          "title": "驳回这项提议？",
+          "message": "举报会被关闭，不会有任何改动。"
+        },
+        "confirm": "确认"
+      }
+    },
+    "emptyState": {
+      "noBoard": {
+        "title": "选择你的训练板",
+        "subtitle": "选择你爬的那面墙，浏览上面的线路并点亮它们。",
+        "cta": "查找我的训练板"
+      },
+      "noClimbs": {
+        "title": "没有找到线路",
+        "subtitle": "试着调整一下训练板设置"
+      },
+      "unsetWall": {
+        "title": "这面墙上还没有人定线",
+        "subtitle": "选好岩点，起个名字，这面墙就有了第一条线路。",
+        "cta": "定第一条线路"
+      },
+      "noMatches": {
+        "title": "没有匹配结果",
+        "description": "没有与“{{query}}”匹配的内容"
+      },
+      "offlineFilter": {
+        "title": "这个筛选需要信号",
+        "titleServer": "这个筛选需要我们的服务器",
+        "titleOfflineMode": "这个筛选需要你联网",
+        "subtitle": "草稿、beta、区域和岩点筛选只能在线使用。清除它，就能继续浏览已下载的训练板。",
+        "cta": "清除筛选"
+      },
+      "offlineNoCatalog": {
+        "title": "离线时这里没有内容",
+        "subtitle": "这块训练板的线路不在你的手机上，所以没有网络时无从搜索。"
+      },
+      "offlineCatalogQueued": {
+        "title": "已排队等待下载",
+        "subtitle": "恢复联网后 {{name}} 会立刻下载，这些线路就会出现在搜索里。"
+      },
+      "boardRestoreFailed": {
+        "title": "无法恢复你的训练板",
+        "description": "再试一次，回到你的线路。"
+      }
+    },
+    "detail": {
+      "notFound": "找不到这条线路",
+      "backToHome": "返回首页"
+    },
+    "logAscent": {
+      "errorMessage": "完攀没能保存，请重试。",
+      "offlineErrorMessage": "离线时没能保存这条完攀。手机存储正忙，过一会儿再试。",
+      "savedToast": "记录已保存"
+    },
+    "tick": {
+      "dateLabel": "日期",
+      "timeLabel": "时间",
+      "gradeLabel": "我的难度",
+      "gradeHelp": "从现在起你在这条线路上看到的难度。不用完攀也可以。",
+      "starsLabel": "星级",
+      "triesLabel": "尝试次数",
+      "noteLabel": "备注",
+      "notePlaceholder": "爬得怎么样？",
+      "noteAria": "记录备注",
+      "statusLabel": "状态",
+      "angleLabel": "角度",
+      "attempt": "尝试",
+      "save": "保存",
+      "deleteRow": "删除这条完攀记录",
+      "closeAria": "关闭",
+      "futureTimeAdjusted": "未来的时间已调整为现在。",
+      "consensusMeta": "共识难度 {{grade}} · {{angle}}°",
+      "angleMeta": "{{angle}}°",
+      "fallbackTitle": "记录完攀",
+      "status": {
+        "flash": "Flash",
+        "send": "完攀",
+        "attempt": "尝试"
+      },
+      "logAscentAria": "记录{{status}}",
+      "setTriesAria_one": "设为 {{count}} 次尝试",
+      "setTriesAria_other": "设为 {{count}} 次尝试",
+      "moreTriesAria": "再加一次尝试"
+    },
+    "filter": {
+      "climbType": {
+        "label": "线路类型",
+        "all": "全部",
+        "boulders": "抱石",
+        "routes": "路线"
+      },
+      "title": "筛选",
+      "sortBy": "排序方式",
+      "grade": "难度",
+      "gradeRange": "难度范围",
+      "anyAscents": "不限",
+      "minRating": "最低星级",
+      "anyRating": "不限",
+      "myRating": "我的星级",
+      "myRatingDescription": "你在这个角度给的星级",
+      "onlyRatedByMe": "只看我评过星的线路",
+      "ratedByMeShort": "我评过星的",
+      "apply": "应用筛选",
+      "reset": "重置",
+      "section": {
+        "name": "线路名称",
+        "difficulty": "难度",
+        "quality": "质量",
+        "theClimb": "线路特征",
+        "sort": "排序"
+      },
+      "popularity": "热度",
+      "collection": {
+        "label": "合集",
+        "any": "不限"
+      },
+      "holdIntegrity": {
+        "label": "岩点",
+        "any": "全部",
+        "intact": "仅完整",
+        "broken": "有岩点缺失"
+      },
+      "pin": "固定到快捷方式",
+      "unpin": "从快捷方式移除",
+      "established2plus": "完攀 2 次以上",
+      "benchmark": "基准线路",
+      "showCount_one": "显示 {{count}} 条线路",
+      "showCount_other": "显示 {{count}} 条线路",
+      "countNote": "每条线路只计一次，不按角度重复计算。",
+      "sort": {
+        "ascents": "完攀数",
+        "quality": "质量",
+        "difficulty": "难度",
+        "name": "名称",
+        "popular": "热门",
+        "creation": "最新",
+        "random": "随机",
+        "reshuffle": "重新打乱"
+      },
+      "sortOrderLabel": "顺序",
+      "sortOrder": {
+        "asc": "升序",
+        "desc": "降序"
+      },
+      "status": {
+        "drafts": "草稿",
+        "established": "已有人完攀"
+      },
+      "accuracy": {
+        "label": "难度准确度",
+        "description": "社区对难度的认同程度",
+        "off": "关闭",
+        "loose": "宽松",
+        "moderate": "适中",
+        "tight": "严格"
+      },
+      "progress": {
+        "label": "进度",
+        "all": "全部",
+        "untried": "没试过",
+        "projects": "项目",
+        "sent": "已完攀",
+        "unsent": "未完攀"
+      },
+      "setters": "定线员",
+      "none": "无",
+      "tall": "仅高线路",
+      "tallClimbs": "高线路",
+      "tallDescription": "爬到墙顶",
+      "tallLockedHint": "已锁定。长按“高”标签解锁。",
+      "wide": "仅宽线路",
+      "wideClimbs": "宽线路",
+      "wideDescription": "使用 10x10 侧边扩展",
+      "wideLockedHint": "已锁定。长按“宽”标签解锁。",
+      "betaVideos": "仅有 beta 视频",
+      "betaVideosShort": "🎥 Beta",
+      "betaVideosDescription": "只看有 beta 视频的线路",
+      "otherAngles": "其他角度",
+      "otherAnglesDescription": "显示在其他角度定的线路",
+      "searchSetters": "搜索定线员",
+      "noSetters": "还没有定线员",
+      "clearAll": "全部清除",
+      "drafts": "我的草稿",
+      "popularityUnrepeated": "无人重复"
+    },
+    "search": {
+      "recentFilters": "最近",
+      "clearRecent": "清除",
+      "gradeRange": "{{min}}–{{max}}",
+      "gradeMin": "{{grade}}+",
+      "gradeMax": "≤{{grade}}",
+      "ascents": "{{count}}+ 🧗",
+      "rating": "{{count}}+ ⭐",
+      "myRating": "我评 {{count}}+ ⭐",
+      "more": "还有 {{count}} 项",
+      "setterName": "定线：{{setter}}",
+      "settersCount_one": "{{count}} 位定线员",
+      "settersCount_other": "{{count}} 位定线员",
+      "climbsCount_one": "{{count}} 条线路",
+      "climbsCount_other": "{{count}} 条线路",
+      "gradeClear": "不限",
+      "filters": "筛选",
+      "filterCountAria": "筛选，{{count}} 项生效",
+      "filterHint": "打开全部线路筛选",
+      "gradeAction": "设置难度范围",
+      "gradeOpenHint": "打开难度选择器",
+      "gradeCloseHint": "关闭难度选择器",
+      "boardSwitcherHint": "打开训练板切换器",
+      "allClimbs": "全部线路",
+      "clearRecentSearches": "清除最近的搜索",
+      "chips": {
+        "filtersWithCount": "筛选 · {{count}}",
+        "tall": "高",
+        "wide": "宽",
+        "lock": "锁定",
+        "unlock": "解锁"
+      },
+      "removeFilterAria": "移除 {{filter}}"
+    },
+    "gradeRail": {
+      "setFilterAria": "将难度筛选设为 {{grade}}",
+      "selectedFilterAria": "已选择 {{grade}} 难度筛选",
+      "rangeFilterAria": "{{grade}} 在所选难度范围内",
+      "anyGradeAria": "已选择不限难度",
+      "clearFilterAria": "清除难度筛选",
+      "closeAria": "关闭难度选择器",
+      "rangeHint": "再点一个难度即可设为范围",
+      "setLogGradeAria": "将记录的难度设为 {{grade}}",
+      "selectedLogGradeAria": "已选择记录难度 {{grade}}",
+      "consensusGradeAria": "{{grade}}，共识难度"
+    },
+    "climbRow": {
+      "addToQueue": "加入队列",
+      "toggleFavorite": "切换收藏",
+      "favorited": "已收藏",
+      "share": "分享线路",
+      "moreActions": "更多操作",
+      "projectFallback": "项目",
+      "directionStatus": "{{direction}}：{{status}}",
+      "ascentStatus": {
+        "flash": "已 Flash",
+        "send": "已完攀",
+        "attempt": "试过"
+      },
+      "noMatch": "禁止并手",
+      "campus": "Campus",
+      "anyFeet": "脚点不限",
+      "noKickboard": "不用脚踏板",
+      "benchmark": "基准线路",
+      "method": {
+        "footless": "无脚",
+        "footlessKickboard": "无脚 + 脚踏板",
+        "noKickboard": "不用脚踏板"
+      },
+      "setAngleMarker": "定于 {{angle}}°",
+      "setAngleMarkerAria": "难度和完攀数来自 {{angle}} 度"
+    },
+    "climbRules": {
+      "matchingAllowed": "允许并手",
+      "noMatching": "禁止并手",
+      "matchingUnknown": "未记录并手规则",
+      "anyFeet": "脚点不限",
+      "markedHoldsOnly": "仅限标记的岩点",
+      "noFeet": "不用脚",
+      "feetUnknown": "未记录脚点规则",
+      "spoken": "规则：{{matching}}，{{feet}}"
+    },
+    "report": {
+      "title": "举报线路",
+      "close": "关闭举报",
+      "kind": {
+        "label": "哪里有问题？",
+        "hide": "隐藏这条线路",
+        "grade": "难度不对",
+        "hideHint": "垃圾线路、重复或根本爬不了。举报够多时，它会对所有人隐藏。",
+        "gradeHint": "选择你认为它应得的难度。"
+      },
+      "sameGrade": "这已经是当前难度了",
+      "reasonPlaceholder": "告诉大家原因（至少 10 个字符）",
+      "reasonAria": "举报原因",
+      "reasonRemaining": "还需要 {{count}} 个字符",
+      "reasonCount": "{{count}}/500",
+      "submit": "提交举报",
+      "submitError": "举报没提交上",
+      "toast": {
+        "reported": "已举报。隐藏需 {{required}} 票，已有 {{current}} 票",
+        "reportedGrade": "已提议修改难度。大家会投票决定",
+        "alreadyReported": "你已经举报过这条线路"
+      }
+    },
+    "hidden": {
+      "short": "已隐藏",
+      "chip": "已隐藏",
+      "banner": "已被社区隐藏"
+    },
+    "lostHolds": {
+      "chip_one": "缺 {{count}} 个岩点",
+      "chip_other": "缺 {{count}} 个岩点",
+      "chipAria_one": "{{count}} 个岩点已不在墙上",
+      "chipAria_other": "{{count}} 个岩点已不在墙上",
+      "banner_one": "这条线路有 {{count}} 个岩点已经没了",
+      "banner_other": "这条线路有 {{count}} 个岩点已经没了",
+      "bannerBody": "用墙上现有的岩点改编它。",
+      "remix": "改编"
+    },
+    "climbActions": {
+      "preview": "预览",
+      "playNext": "下一条播放",
+      "copyLink": "复制链接",
+      "linkCopied": "链接已复制",
+      "nameCopied": "名称已复制",
+      "copyNameError": "名称没复制上",
+      "copyNameHint": "长按复制名称",
+      "tick": "记录一次",
+      "addBetaVideo": "添加 beta 视频",
+      "openInApp": "在 Aurora 应用中打开",
+      "fork": "改编这条线路",
+      "edit": "编辑线路",
+      "editEntry": "编辑攀爬记录",
+      "report": "举报线路",
+      "closeOverlay": "关闭线路操作",
+      "openQueue": "打开队列"
+    },
+    "create": {
+      "brush": {
+        "start": "起步点",
+        "hand": "手点",
+        "finish": "结束点",
+        "foot": "脚点",
+        "erase": "擦除"
+      },
+      "counts": {
+        "start": "起步点：{{count}}/2",
+        "finish": "结束点：{{count}}/2"
+      },
+      "actions": {
+        "clear": "清除岩点",
+        "setActive": "放到墙上",
+        "setActiveHint": "先添加一个起步点和一个结束点",
+        "undo": "撤销",
+        "redo": "重做",
+        "newClimb": "新建线路",
+        "close": "关闭",
+        "closeHint": "你的草稿会留在这部手机上。"
+      },
+      "frames": {
+        "counter": "{{index}}/{{total}}"
+      },
+      "playback": {
+        "addFrame": "添加帧",
+        "addFrameHint": "复制第 {{index}} 帧，并把副本放在它后面",
+        "deleteFrameA11y": "删除第 {{index}} 帧，共 {{total}} 帧",
+        "deleteFrameBlocked": "删除帧：路线至少要保留一帧",
+        "deleteFrameHint": "撤销按钮在下方的工具栏里",
+        "frameDeleted": "帧已删除。还剩 {{total}} 帧。"
+      },
+      "holdRole": {
+        "title": "设置岩点角色",
+        "clear": "清除"
+      },
+      "settings": {
+        "draftLabel": "保存为草稿",
+        "draftDescription": "草稿在你发布之前保持私密。",
+        "noMatchLabel": "禁止并手",
+        "noMatchDescription": "双手不能并在同一个岩点上",
+        "noKickboardLabel": "不用脚踏板",
+        "noKickboardDescription": "脚不能踩脚踏板",
+        "campusLabel": "Campus（不用脚）",
+        "campusDescription": "只用手，不允许用脚",
+        "anyFeetLabel": "脚点不限",
+        "anyFeetDescription": "脚可以踩任何岩点，不限于标记的岩点"
+      },
+      "drafts": {
+        "holds_one": "{{count}} 个岩点",
+        "holds_other": "{{count}} 个岩点",
+        "sectionTitle": "未完成的草稿",
+        "frames_one": "{{count}} 帧",
+        "frames_other": "{{count}} 帧"
+      },
+      "unavailable": {
+        "title": "这里暂时还不能定线",
+        "subtitle": "这种训练板布局不支持创建线路。",
+        "wrongSize": "这条线路是在另一种训练板尺寸上定的。切换尺寸后才能编辑。"
+      },
+      "fab": {
+        "ariaLabel": "创建线路"
+      },
+      "header": {
+        "newClimb": "新线路"
+      },
+      "save": {
+        "idle": "保存",
+        "login": "登录后保存",
+        "saving": "保存中…",
+        "done": "已保存",
+        "draftToast": "草稿已保存",
+        "publishedToast": "线路已发布"
+      },
+      "autosave": {
+        "onDevice": "草稿已保存在这部手机上",
+        "inAccount": "草稿已保存到你的账号",
+        "unsyncedEdits": "最新的修改只在这部手机上",
+        "notStored": "登录以保留这条草稿",
+        "saveFailed": "没能保存到你的账号。点“保存”重试。",
+        "keptToast": "草稿已留在这部手机上。重新打开创建器即可继续完成。"
+      },
+      "newClimb": {
+        "confirm": {
+          "title": "重新开始？",
+          "message": "这条还没存进你的草稿。新建线路会丢弃它。",
+          "action": "重新开始"
+        }
+      },
+      "publish": {
+        "blocked": "添加一个起步点和一个结束点才能发布",
+        "gradeBlocked": "选择你的难度才能发布"
+      },
+      "wallSizeMismatch": "把当前训练板切换到这个 Woods 尺寸才能点亮。",
+      "routeMenu": {
+        "open": "更多线路操作",
+        "makeRoute": "改为路线",
+        "makeBoulder": "改为抱石",
+        "makeBoulderBlocked": "改为抱石：请先删除多余的帧"
+      },
+      "grade": {
+        "label": "你的难度",
+        "required": "发布必填",
+        "optional": "草稿可不填"
+      }
+    },
+    "holdFilter": {
+      "title": "岩点类型",
+      "include": "包含",
+      "exclude": "排除",
+      "applyModeLabel": "包含或排除",
+      "includedSuffix": "已包含",
+      "excludedSuffix": "已排除",
+      "hint": "点训练板上的岩点，按它们必须是哪种类型来筛选。",
+      "summaryCount_one": "{{count}} 个岩点",
+      "summaryCount_other": "{{count}} 个岩点",
+      "type": {
+        "starting": "起步点",
+        "hand": "手点",
+        "finish": "结束点",
+        "foot": "脚点",
+        "any": "任意"
+      }
+    },
+    "zoneFilter": {
+      "title": "训练板区域",
+      "summaryActive": "已开启",
+      "enable": "添加区域",
+      "clearZone": "清除区域",
+      "allHolds": "所有岩点",
+      "anyHold": "任意岩点",
+      "modeLabel": "哪些岩点必须在区域内",
+      "hint": "添加一个区域，查找只在训练板某一部分内的线路。",
+      "activeHint": "拖动方框和四角来设定区域。所有岩点都必须在区域内；切换到“任意岩点”可保留只有部分岩点伸入区域的线路。",
+      "regionLabel": "训练板区域",
+      "regionHint": "上下滑动可在训练板上移动区域。",
+      "corner": {
+        "topLeft": "左上角",
+        "topRight": "右上角",
+        "bottomLeft": "左下角",
+        "bottomRight": "右下角",
+        "hint": "上下滑动可从这个角放大或缩小区域。"
+      }
+    },
+    "crossBoardAdd": {
+      "title": "这条线路在 {{board}} 上",
+      "message": "你的队列在另一块训练板上。可以仍然加入，它会等到你换到 {{board}} 上；也可以现在就切换过去。",
+      "addAnyway": "仍然加入",
+      "switchBoard": "切换到 {{board}}",
+      "switchFailed": "没能切换到 {{board}}，再试一次。",
+      "cancel": "取消"
+    },
+    "setterNotes": {
+      "title": "定线员备注"
+    },
+    "heatmap": {
+      "toggle": "热力图",
+      "modeLabel": "岩点着色依据",
+      "modes": {
+        "climbs": "线路数",
+        "startsFinishes": "起步点和结束点",
+        "grade": "难度"
+      },
+      "legend": {
+        "fewClimbs": "线路少",
+        "manyClimbs": "线路多",
+        "easier": "更简单",
+        "harder": "更难",
+        "allEqual": "每个岩点的使用次数相同"
+      },
+      "climbCount_one": "{{formattedCount}} 条线路",
+      "climbCount_other": "{{formattedCount}} 条线路",
+      "firstRun": {
+        "climbsDark": "越亮的岩点出现在越多线路里",
+        "climbsLight": "越深的岩点出现在越多线路里",
+        "startsFinishesDark": "越亮的岩点越常作为起步点和结束点",
+        "startsFinishesLight": "越深的岩点越常作为起步点和结束点",
+        "grade": "紫色岩点多出现在较难的线路，黄色多出现在较简单的线路"
+      },
+      "wholeBoard": "整块训练板",
+      "holdPicksSkipped": "{{summary}} · 离线时已忽略岩点选择",
+      "wholeBoardHint": "改为统计训练板上的全部线路",
+      "useFiltersHint": "只统计符合筛选条件的线路",
+      "filterUnsupported": "离线时热力图无法跟随这些筛选。点标签查看整块训练板。",
+      "empty": "没有符合这些筛选条件的线路。",
+      "loadFailed": "热力图没加载出来。一分钟后再试。",
+      "needsDownload": "下载这块训练板，看看哪些岩点用得多。",
+      "downloadLine": "下载 {{name}}，看看哪些岩点用得多",
+      "download": "下载",
+      "unavailable": "热力图暂时不可用。"
+    }
+  },
+  "frontDoor": {
+    "breadcrumb": {
+      "aria": "面包屑导航",
+      "home": "Boardsesh",
+      "board": "{{boardName}}",
+      "list": "{{angle}}° 的线路"
+    },
+    "boardImageAlt": "{{climbName}} 点亮在 {{boardName}} {{layoutName}} 上，{{angle}}°",
+    "setterLink": "{{setter}} 的更多线路",
+    "facts": {
+      "grade": "难度",
+      "setter": "定线员",
+      "ascents": "完攀",
+      "quality": "质量",
+      "angle": "角度",
+      "board": "训练板",
+      "firstAscent": "首攀",
+      "firstAscentUnknown": "未记录",
+      "unknown": "未知",
+      "angleValue": "{{angle}}°",
+      "qualityValue": "{{quality}}（满分 5）",
+      "firstAscentValue": "{{setter}}，{{date}}"
+    },
+    "setterNotes": {
+      "heading": "定线员备注"
+    },
+    "angles": {
+      "heading": "同一条线路，其他角度",
+      "link": "{{angle}}° · {{grade}}",
+      "current": "{{angle}}° · {{grade}} — 当前位置"
+    },
+    "beta": {
+      "heading": "Beta 视频",
+      "empty": "还没有人拍 beta。",
+      "unavailable": "这次 beta 没加载出来。刷新页面重试。"
+    },
+    "community": {
+      "heading": "社区"
+    },
+    "similar": {
+      "heading": "类似的线路",
+      "unavailable": "类似的线路没加载出来。正在重试…"
+    },
+    "cta": {
+      "climbThis": "爬这条",
+      "ariaLabel": "在 Boardsesh 应用中打开 {{climbName}}",
+      "helper": "打开应用、点亮岩点、记录完攀。"
+    }
+  },
+  "spray": {
+    "unknownGrade": "未定级",
+    "unknownSetter": "未知定线员",
+    "heading": "{{climbName}} — {{grade}}",
+    "summary": "位于 {{wallName}}，一面 {{angle}}°、有 {{holdCount}} 个岩点的自由墙。",
+    "setterLine": "定线：{{setter}}。已记录 {{ascents}} 次完攀。",
+    "ascentsLine": "已记录 {{ascents}} 次完攀。",
+    "setterNotesHeading": "定线员备注",
+    "keepLookingHeading": "继续看看",
+    "setterLink": "{{setter}} 的更多线路",
+    "gymsLink": "查找有训练板的岩馆",
+    "homeLink": "Boardsesh 首页",
+    "photoAlt": "{{climbName}}，{{grade}}，点亮在自由墙 {{wallName}} 上",
+    "noPhoto": "这面墙还没有可显示的照片。",
+    "metadata": {
+      "title": "{{wallName}} 上的 {{climbName}} {{grade}} | 自由墙",
+      "description": "{{climbName}}，{{grade}}，位于自由墙 {{wallName}}，{{angle}}°，定线：{{setter}}。在墙面照片上查看岩点。"
+    },
+    "wall": {
+      "summary": "一面 {{angle}}°、有 {{holdCount}} 个岩点的自由墙。",
+      "photoAlt": "自由墙 {{wallName}}",
+      "openInApp": "在 Boardsesh 应用中打开这面墙，浏览上面的线路、自己定线并记录完攀。",
+      "metadata": {
+        "title": "{{wallName}} | 自由墙",
+        "description": "{{wallName}}，一面 {{angle}}° 的自由墙。查看墙面，并在 Boardsesh 应用中打开。"
+      }
+    }
+  }
+}

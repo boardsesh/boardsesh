@@ -1,0 +1,909 @@
+{
+  "languageSwitcher": {
+    "ariaLabelWithCurrent": "语言：{{language}}"
+  },
+  "auth": {
+    "mustBeSignedIn": "需要先登录"
+  },
+  "mobile": {
+    "avatar": {
+      "viewProfile": "查看 {{name}} 的主页",
+      "thisClimber": "这位岩友"
+    },
+    "settings": {
+      "title": "设置",
+      "library": "收藏库",
+      "development": "开发",
+      "dev": {
+        "forceServerUnreachable": "强制服务器不可达",
+        "forceServerUnreachableDescription": "假装服务器宕机，用来测试横幅和离线表现。"
+      },
+      "metroServersTitle": "Metro 服务器",
+      "metroServersSubtitle": "在 Tailnet 打包服务器之间切换",
+      "boardLook": {
+        "title": "训练板外观",
+        "rowSubtitleShort": "训练板的渲染方式，以及颜色和形状",
+        "rendererUnavailable": {
+          "title": "更新应用",
+          "body": "这个版本还画不出 Aura 外观。更新 Boardsesh 即可解锁，目前你的训练板以经典样式渲染。"
+        },
+        "mode": {
+          "title": "渲染",
+          "options": {
+            "classic": "经典",
+            "aura": "Aura"
+          }
+        },
+        "presets": {
+          "title": "预设",
+          "custom": "自定义",
+          "aura": "Aura",
+          "auraBold": "Aura 醒目",
+          "auraSubtle": "Aura 柔和",
+          "modernClassic": "现代经典",
+          "maxContrast": "最高对比度",
+          "descriptions": {
+            "aura": "点亮的岩点在调暗的墙面上发光。",
+            "auraSubtle": "更柔和的光晕，紧贴每个岩点。",
+            "modernClassic": "你熟悉的圆圈，配上调暗的墙面。",
+            "maxContrast": "最强的遮罩和实心岩点。",
+            "auraBold": "更宽、更硬朗的光晕，隔着整个房间也看得清。",
+            "classic": "Boardsesh 一直使用的圆圈标记。",
+            "custom": "自己调整外观的每个部分。"
+          },
+          "activeBadge": "使用中",
+          "position": "第 {{index}} 个，共 {{total}} 个",
+          "showFullSize": "全尺寸显示 {{look}}",
+          "carouselAccessibility": "训练板外观预览"
+        },
+        "glowVeil": {
+          "title": "光晕与遮罩",
+          "falloff": {
+            "title": "光晕衰减",
+            "options": {
+              "default": "默认",
+              "soft": "柔和",
+              "plateau": "平台"
+            }
+          },
+          "reach": {
+            "title": "光晕范围",
+            "value": "{{value}}x"
+          },
+          "plateauShare": {
+            "title": "平台占比",
+            "value": "{{value}}%"
+          },
+          "veil": {
+            "title": "训练板遮罩",
+            "options": {
+              "auto": "自动",
+              "off": "关闭",
+              "soft": "柔和",
+              "strong": "强",
+              "custom": "自定义"
+            }
+          },
+          "veilOpacity": {
+            "title": "遮罩强度",
+            "value": "{{value}}%"
+          }
+        },
+        "marks": {
+          "title": "标记",
+          "holdShape": {
+            "title": "岩点形状",
+            "options": {
+              "silhouette": "轮廓",
+              "circle": "圆圈"
+            }
+          },
+          "style": {
+            "title": "标记样式",
+            "options": {
+              "glow": "光晕",
+              "glowFill": "光晕 + 填充",
+              "fill": "填充"
+            }
+          },
+          "fillOpacity": {
+            "title": "填充强度",
+            "value": "{{value}}%"
+          },
+          "softDisc": {
+            "label": "柔光圆盘",
+            "subtitle": "在每个标记下方添加柔光圆盘。"
+          },
+          "smallHoldBoost": {
+            "label": "小岩点增强",
+            "subtitle": "给小岩点更大的光晕，免得它们看不见。"
+          },
+          "ledDots": {
+            "label": "遮盖 LED 点",
+            "subtitle": "隐藏训练板底图上未点亮岩点的明亮 LED 点。"
+          },
+          "thumbnailStyle": {
+            "title": "列表缩略图样式",
+            "options": {
+              "fill": "填充",
+              "glow": "光晕"
+            }
+          }
+        },
+        "accessibility": {
+          "title": "无障碍",
+          "classicOnlyNote": "标记形状、笔刷和大小只对经典渲染生效。在 Boardsesh 里，点亮岩点自身的轮廓就是形状。想用形状来区分的话，请打开下方的角色符号。",
+          "roleGlyphs": {
+            "label": "角色符号",
+            "note": "给每个点亮的岩点加上一个形状（圆环、横杠或 X），不靠颜色也能轻松分清角色。"
+          },
+          "cvdPalette": {
+            "presets": {
+              "protanopia": "红色盲",
+              "deuteranopia": "绿色盲",
+              "tritanopia": "蓝黄色盲"
+            }
+          },
+          "rowSubtitleDefault": "默认颜色和形状",
+          "rowSubtitleOverridden_one": "已自定义 {{count}} 个标记",
+          "rowSubtitleOverridden_other": "已自定义 {{count}} 个标记"
+        },
+        "resetAll": "重置训练板外观",
+        "intro": {
+          "title": "选择你的训练板外观",
+          "subtitle": "我们新增了更好的训练板渲染方式，但不会强加给你。左右滑动，选一个你喜欢的，或者完全自定义。",
+          "accessibilityNote": "你在这里的选择不会覆盖你的无障碍设置",
+          "changeLaterNote": "你可以随时在设置页面更改",
+          "saveNamed": "使用 {{look}}",
+          "customCta": "去设置",
+          "replayTitle": "重新选择训练板外观",
+          "replaySubtitle": "重新询问你想要哪种外观，不会改动你的颜色"
+        },
+        "customLook": {
+          "title": "自定义外观",
+          "rowSubtitle": "当前：{{look}}",
+          "rowSubtitleCustom": "你自己的调校"
+        },
+        "resetAllNote": "把外观和所有调校恢复为默认。你设置的岩点颜色和形状保持不变。",
+        "suggestion": {
+          "increaseContrast": {
+            "titleIos": "“增强对比度”已开启",
+            "titleAndroid": "“高对比度文字”已开启",
+            "body": "最高对比度会填满每个点亮的岩点，并压暗后面的墙面，让岩点更突出。",
+            "apply": "使用最高对比度"
+          },
+          "grayscale": {
+            "title": "你的手机正在以灰度显示",
+            "body": "角色符号会给每个点亮的岩点加上形状，这样不靠颜色也能分清起步点、手点、结束点和脚点。训练板本身的 LED 不会改变。",
+            "apply": "打开角色符号"
+          },
+          "dismiss": "以后再说",
+          "dismissAccessibility": "忽略这条建议"
+        }
+      },
+      "accessibility": {
+        "title": "无障碍",
+        "markersTitle": "岩点标记",
+        "resetAll": "重置岩点标记",
+        "save": "保存标记",
+        "rowAccessibility": "{{role}}，{{mode}}",
+        "rowSubtitle": "{{colorMode}}，{{shape}}",
+        "pickerSubtitle": "先设置亮度，再设置饱和度和色相。",
+        "shapeLabel": "形状",
+        "modeLabel": "岩点颜色模式",
+        "defaultCopy": "Boardsesh 会对这类岩点使用默认颜色，并在蓝牙覆盖设置中跳过它。",
+        "hexLabel": "十六进制",
+        "invalidHex": "请使用类似 #33ccff 的十六进制颜色。",
+        "mode": {
+          "default": "默认",
+          "user": "自定义颜色"
+        },
+        "sliders": {
+          "lightness": "亮度",
+          "saturation": "饱和度",
+          "hue": "色相"
+        },
+        "shapes": {
+          "circle": "圆形",
+          "triangleUp": "正三角",
+          "triangleDown": "倒三角",
+          "square": "方形",
+          "diamond": "菱形",
+          "octagon": "八边形"
+        },
+        "cvd": {
+          "title": "色盲检查",
+          "subtitle": "为四种岩点角色选一套配色，并先在你自己的训练板上看看效果。",
+          "openLarger": "打开更大的预览",
+          "verdict": {
+            "clear": "四种角色都很容易区分。",
+            "close": "{{vision}}：{{first}}和{{second}}看起来很接近。试试上方的色觉配色。",
+            "faint": "{{role}}标记和训练板融在一起了。试试上方的色觉配色。"
+          }
+        },
+        "brush": {
+          "title": "笔刷粗细",
+          "subtitle": "调整叠加标记轮廓的粗细。",
+          "value": "{{value}}x",
+          "save": "保存粗细",
+          "rowAccessibility": "笔刷粗细，{{value}}x"
+        },
+        "size": {
+          "title": "标记大小",
+          "subtitle": "调整叠加标记形状的大小。",
+          "value": "{{value}}x",
+          "save": "保存大小",
+          "rowAccessibility": "标记大小，{{value}}x"
+        },
+        "roles": {
+          "starting": "起步点",
+          "hand": "手点",
+          "finish": "结束点",
+          "foot": "脚点"
+        },
+        "palettes": {
+          "carouselAccessibility": "色觉配色",
+          "cards": {
+            "default": {
+              "title": "默认",
+              "subtitle": "Boardsesh 自带的颜色。"
+            },
+            "protanopia": {
+              "subtitle": "红色看起来偏暗时也能分清。"
+            },
+            "deuteranopia": {
+              "subtitle": "红绿混淆时也能分清。"
+            },
+            "tritanopia": {
+              "subtitle": "蓝黄混淆时也能分清。"
+            },
+            "custom": {
+              "title": "自定义",
+              "subtitle": "你自己的颜色。"
+            }
+          }
+        }
+      },
+      "storage": {
+        "title": "存储",
+        "rowLabel": "管理存储",
+        "rowSubtitle": "查看下载内容占了多少空间，清掉不需要的",
+        "intro": "下载的训练板会占用这部手机的空间。把不爬的清掉吧。",
+        "offNote": "离线下载目前已关闭。你仍然可以清除这部手机上已有的内容。",
+        "totalLabel": "离线训练板",
+        "freeLabel": "手机可用空间",
+        "boardsHeader": "已下载的训练板",
+        "reservedHeader": "预留空间",
+        "reservedNote": "你移除的训练板仍在这部手机上占用 {{size}}。释放它需要一些操作空间，所以空间紧张时可能会失败。",
+        "compact": "释放 {{size}}",
+        "rowCaption_one": "约 {{size}} · {{count, number}} 条线路",
+        "rowCaption_other": "约 {{size}} · {{count, number}} 条线路",
+        "unknownScope": "布局 {{layoutId}} · 尺寸 {{sizeId}}",
+        "keptOffline": "已保留离线",
+        "notKeptOffline": "不再保留离线，但仍在占用空间",
+        "estimateNote": "训练板大小为估算值。同一布局的两种尺寸共用线路，所以加起来不等于总量。",
+        "remove": "移除",
+        "removeAria": "从这部手机移除 {{name}}",
+        "cancel": "取消",
+        "removeTitle": "移除 {{name}}？",
+        "removeMessage": "可释放约 {{size}}，并不再离线保留这块训练板。你的完攀和线路单都还在，想要时随时可以重新下载。",
+        "removeConfirm": "移除",
+        "removeError": "这块训练板没能移除，再试一次。",
+        "compactFailed": "线路已移除，但文件没能缩小。腾出一些空间后再试一次。",
+        "removeAll": "移除所有下载",
+        "removeAllTitle": "移除所有下载内容？",
+        "removeAllMessage": "可释放约 {{size}}，并关闭所有训练板的下载。你的完攀和线路单都还在，它们保存在你的账号里，而不是这部手机上。",
+        "removeAllConfirm": "全部移除",
+        "emptyTitle": "还没有下载内容",
+        "emptySubtitle": "把训练板设为离线可用，它就会出现在这里。",
+        "errorTitle": "无法统计你的下载内容",
+        "errorSubtitle": "读取这部手机上的内容时出了点问题。",
+        "errorRetry": "重试",
+        "cachedImagesHeader": "缓存的图片",
+        "cachedImagesArtLabel": "训练板底图",
+        "cachedImagesPhotosLabel": "照片",
+        "cachedImagesNote": "训练板底图会在你浏览时重新绘制，照片会在联网后重新加载，所以清除它只会让你多等一会儿，不会丢数据。空间不足时，手机也可能自动清除它。",
+        "clearCachedImages": "清除缓存的图片",
+        "clearCachedImagesTitle": "清除缓存的图片？",
+        "clearCachedImagesMessage": "可释放约 {{size}}。训练板底图会在你浏览时重新绘制，照片会在联网后重新加载。你的完攀、线路单和已下载的训练板都还在。",
+        "clearCachedImagesConfirm": "清除",
+        "clearCachedImagesDone": "缓存的图片已清除。",
+        "clearCachedImagesPartial": "训练板底图已清除，但照片还在。打开应用后再试一次。",
+        "clearCachedImagesError": "缓存的图片没能清除，再试一次。"
+      },
+      "appearance": {
+        "title": "外观",
+        "system": "跟随系统",
+        "light": "浅色",
+        "dark": "深色"
+      },
+      "gradeFormat": {
+        "title": "难度格式",
+        "description": "选择应用中线路难度的显示方式。",
+        "vGrade": "V 级",
+        "font": "法式",
+        "both": "两者都显示"
+      },
+      "displayOptions": {
+        "title": "显示",
+        "playlistTags": "显示线路单标签",
+        "playlistTagsDescription": "直接在列表里看到每条线路属于哪些线路单。",
+        "quickActionsButton": "显示快捷操作按钮",
+        "quickActionsButtonDescription": "给每条线路加一个 ⋮ 按钮，可打开队列、记录、线路单等操作。你也可以随时长按。",
+        "boardseshGrades": "显示 Boardsesh 难度",
+        "boardseshGradesDescription": "根据各训练板上的真实完攀数据算出的难度。完攀数量足够之前，沿用定线员给的难度。",
+        "personalGrades": "使用我的难度",
+        "personalGradesDescription": "显示你给线路定的难度，而不是大家的，并按它排序和筛选。"
+      },
+      "offline": {
+        "title": "离线",
+        "offlineMode": "离线模式",
+        "offlineModeDescription": "在你关闭此开关之前，停止与 Boardsesh 服务器通信。已下载的训练板照常可用，完攀会在手机上排队等待。",
+        "autoDownload": "保留训练板离线可用",
+        "autoDownloadDescription": "下载你用过的每块训练板，没信号时也能浏览线路和记录完攀。新的训练板会自动下载。",
+        "downloadingAll_one": "正在下载 1 块训练板以供离线使用",
+        "downloadingAll_other": "正在下载 {{count}} 块训练板以供离线使用",
+        "pendingFooter_one": "1 项改动等待同步。恢复联网后会立刻发出。",
+        "pendingFooter_other": "{{count}} 项改动等待同步。恢复联网后会立刻发出。",
+        "syncingFooter_one": "正在同步 1 项改动…",
+        "syncingFooter_other": "正在同步 {{count}} 项改动…"
+      },
+      "language": {
+        "title": "语言",
+        "system": "跟随系统",
+        "description": "“跟随系统”会使用你设备的语言。",
+        "contributeTitle": "帮忙翻译 Boardsesh",
+        "contributeSubtitle": "这些翻译来自社区。在 GitHub 上打开{{language}}文件，就能修正或添加词句。"
+      },
+      "diagnostics": {
+        "title": "隐私",
+        "recording": "帮助我们改进",
+        "recordingDescription": "发送匿名且打码的会话录制，帮我们更快修掉 bug。你输入的内容和照片都会被隐藏。随时可以关闭。"
+      },
+      "integrations": {
+        "title": "已连接的应用",
+        "subtitle": "训练板账号、Apple 健康",
+        "subtitleWithStrava": "训练板账号、Apple 健康、Strava"
+      },
+      "syncIssues": {
+        "title": "同步问题",
+        "description_one": "1 项改动没能同步。点重试立即发送。",
+        "description_other": "{{count}} 项改动没能同步。点重试立即发送。",
+        "retry": "重试同步"
+      },
+      "signOut": {
+        "title": "退出登录？",
+        "message": "需要重新登录才能回到你的攀爬记录和训练板。",
+        "messageOffline": "退出登录会把你下载的训练板和离线攀爬记录从这部手机上移除。下次登录时需要重新下载。",
+        "pendingMessage_one": "有 1 项改动尚未同步。我们会先尝试发送，发不出去的会被丢弃。",
+        "pendingMessage_other": "有 {{count}} 项改动尚未同步。我们会先尝试发送，发不出去的会被丢弃。",
+        "failedMessage_one": "有 1 项改动没能同步，退出登录会将其删除。想保留的话，请先取消并点“重试同步”。",
+        "failedMessage_other": "有 {{count}} 项改动没能同步，退出登录会将其删除。想保留的话，请先取消并点“重试同步”。",
+        "confirm": "退出登录",
+        "cancel": "取消",
+        "failureTitle": "退出登录未确认",
+        "failure": "Boardsesh 无法确认是否已退出登录。离开这台设备之前，请重新联网并再次退出登录。"
+      },
+      "previews": {
+        "title": "预览",
+        "promptOnLaunchTitle": "启动时显示预览",
+        "promptOnLaunchSubtitle": "下次启动 Boardsesh 时生效",
+        "pickTitle": "测试 PR 预览",
+        "pickSubtitle": "在改动上线前先试用，并告诉我们效果如何",
+        "testPlanTitle": "测试计划 #{{prNumber}}",
+        "testPlanSubtitle": "在你运行的预览版上该试些什么"
+      }
+    },
+    "sendRecovery": {
+      "title_one": "1 条完攀正在路上",
+      "title_other": "{{count}} 条完攀正在路上",
+      "body_one": "你记录了它，但它没有送达我们这里。我们已经找到并重新放回队列。一联网就会上传，不需要再记一次。",
+      "body_other": "你记录了它们，但它们没有送达我们这里。我们已经找到并重新放回队列。一联网就会上传，不需要再记一次。",
+      "dismiss": "知道了"
+    },
+    "about": {
+      "title": "关于",
+      "heroTitle": "Boardsesh",
+      "heroBody": "用手机掌控你的训练板：找线路、排好要爬的线、点亮墙面，让训练一直不停。",
+      "sectionTitle": "Boardsesh 是做什么的",
+      "whatItDoesTitle": "爬线不用来回切换应用",
+      "whatItDoesBody": "在一个地方搜索、排队、点亮、记录和分享线路，让你专注在墙上。",
+      "boardsTitle": "为你的训练板而生",
+      "boardsBody": "Boardsesh 支持在你的 Kilter、Tension 和 MoonBoard 上训练，但不会假装自己是官方应用。",
+      "openTitle": "公开构建",
+      "openBody": "这个项目是开源的，岩友们可以反馈不顺手的地方、提出功能需求，并一起决定接下来做什么。",
+      "independentBody": "Boardsesh 与 Aurora Climbing、Kilter、Tension、Moon Climbing 或任何训练板制造商均无关联，也未获其背书。",
+      "viewOnGithub": "在 GitHub 上查看",
+      "joinDiscord": "加入 Discord",
+      "partnerTitle": "与我们正式合作",
+      "partnerBody": "Boardsesh 以第三方的身份兼容 Kilter、Tension 和 MoonBoard。如果你是训练板制造商，想一起做点官方的东西，我们很乐意聊聊。",
+      "acknowledgementsLink": "致谢",
+      "acknowledgementsLinkBody": "Boardsesh 背后的人"
+    },
+    "acknowledgements": {
+      "title": "致谢",
+      "intro": "Boardsesh 能存在，全靠那些开发它、支持它、还要忍受没完没了的训练板话题的人。谢谢你们。",
+      "contributorsTitle": "贡献者",
+      "contributorsBody": "每一位在 GitHub 上提交过代码、修复和想法的人。",
+      "sponsorsTitle": "赞助者",
+      "sponsorsBody": "通过 GitHub Sponsors 让项目持续运转的岩友们。",
+      "sponsorsEmpty": "还没有赞助者，想做第一个吗？",
+      "privateSponsorsThanks": "还有 {{count}} 位匿名赞助者，同样感谢你们",
+      "becomeSponsor": "支持 Boardsesh",
+      "supportFallback": "Boardsesh 免费，由社区出资支持。{{url}}",
+      "poweredByTitle": "技术支持",
+      "xpremBody": "Mercure Technologies 为 Boardsesh 提供了 xprem 的企业许可，这是我们空中更新背后的服务器。正因为有它，修复才能直接到达你的手机，不必等应用商店审核，你也才能在“新功能”里试用预览版。",
+      "personalTitle": "个人致谢",
+      "discordTitle": "Discord 上的每一位",
+      "discordBody": "感谢你们的 beta、热情和 bug 报告。点按加入。",
+      "friendsTitle": "伙伴们",
+      "friendsBody": "{{names}}，谢谢你们还愿意和我一起训练，尽管我老是逼大家做测试而不是爬线。你们在真实场景里的反馈，实实在在地帮 Boardsesh 定下了方向。",
+      "alexBody": "感谢你在退休后还从地球另一端给出设计建议，希望有一天我们的攀爬之路能再次相交。",
+      "dogBody": "感谢 Scout 一直以来的情感支持，她才是 Boardsesh 真正的 MVP。虽然她根本不爬，只想做一只海滩狗。",
+      "ossLicensesLink": "开源许可",
+      "ossLicensesBody": "Boardsesh 所依赖的开源软件"
+    },
+    "licenses": {
+      "title": "开源许可",
+      "intro": "Boardsesh 使用了这些开源软件包。感谢它们的维护者。",
+      "viewSource": "查看源码",
+      "close": "关闭"
+    },
+    "onboarding": {
+      "replaySection": "新手引导",
+      "replayTitle": "重看新手引导",
+      "replaySubtitle": "再看一遍新手引导",
+      "replayError": "新手引导没能重新打开，再试一次。",
+      "prompt": {
+        "title": "实时查看墙上点亮了什么",
+        "body": "关注你岩馆的训练板，Boardsesh 就会显示此刻点亮的线路：谁点亮的、难度、谁定的线、最近的完攀。你什么都不用启动，它就在那儿。",
+        "footnote": "上墙之后，还有伙伴训练、训练计划生成器和完攀追踪。",
+        "continue": "选择我的训练板"
+      },
+      "board": {
+        "title": "你在哪种训练板上爬？",
+        "body": "每块训练板都有自己的历史。选你爬的那块，就能看到上面其他人最近完攀了什么。",
+        "offlineHint": "点箭头把训练板保存在这部手机上。它会秒开，岩馆 Wi-Fi 不给力时也照样能用。",
+        "findAnother": "查找其他训练板",
+        "findFirst": "查找我的训练板",
+        "offlineSkip": "暂时跳过",
+        "downloadAria": "把 {{name}} 保存在这部手机上"
+      },
+      "boardRevealTip": "点按查看其他 Boardsesh 用户在这面墙上点亮过什么。",
+      "quickActionsTip": "长按线路可使用快捷操作，比如队列、记录和线路单。",
+      "tips": {
+        "workout": "创建训练计划：容量、金字塔、阶梯或难度专项。设定难度，预览每一趟，然后一条一条爬完。",
+        "crew": "和朋友一起爬？开始一次训练，共用一个队列。谁都可以点亮下一条，不用传手机。",
+        "record": "你的完攀会在“进步”里绘成图表：难度分布和最难完攀。从 Aurora 导入你的 Kilter 和 Tension 攀爬记录，带着历史数据开始。",
+        "accessory": "底部的栏始终显示训练板上当前的线路。在那里切换线路。",
+        "climbsTab": "想回到线路列表，点标签栏里的放大镜。"
+      },
+      "link": {
+        "title": "把你的 {{boardName}} 完攀记录带过来",
+        "body": "你的 {{boardName}} 账号和 Boardsesh 是分开的，即使用的是同一个邮箱。关联账号后，可同步的完攀会进入你的攀爬记录。同步时间和历史记录范围因情况而异。",
+        "footnote": "关联时需要填你的 {{boardName}} 用户名，而不是邮箱。",
+        "continue": "关联我的 {{boardName}} 账号",
+        "skip": "以后再说",
+        "skipHint": "你随时可以在“设置 › 已连接的应用”中完成。"
+      }
+    },
+    "nav": {
+      "home": "首页",
+      "boards": "训练板",
+      "climbs": "线路",
+      "wall": "墙上",
+      "profile": "我的",
+      "holdFilter": "岩点类型",
+      "zoneFilter": "训练板区域",
+      "setters": "定线员"
+    },
+    "changelog": {
+      "title": "新功能",
+      "intro": "最近的更新和修复，最新的在前。",
+      "currentBuild": "你使用的是 {{date}} 的版本",
+      "currentBuildVersion": "你使用的是 {{version}} 版本",
+      "category": {
+        "new": "新增",
+        "improved": "改进",
+        "fixed": "修复"
+      },
+      "viewPr": "在 GitHub 上查看",
+      "empty": "还没有更新记录，我们光顾着爬了。下次完攀之后再来看看。",
+      "nativeRelease": {
+        "title": "应用更新",
+        "appStore": "新版本已上架 App Store。",
+        "playStore": "新版本已上架 Play 商店。"
+      },
+      "checkForUpdates": "检查更新",
+      "checking": "检查中…",
+      "downloading": "下载中…",
+      "upToDate": {
+        "title": "已是最新",
+        "message": "你已经在使用最新版本。"
+      },
+      "updateReady": {
+        "title": "更新已就绪",
+        "message": "现在重启 Boardsesh 以使用最新版本？",
+        "restart": "重启",
+        "later": "稍后"
+      },
+      "checkError": {
+        "title": "无法检查更新",
+        "message": "获取最新版本时出了点问题。过一会儿再试。"
+      }
+    },
+    "connectivity": {
+      "serverDown": {
+        "title": "我们的服务器出了点问题",
+        "body": "你的攀爬不会丢。现在记录的完攀会先存在手机上，等我们恢复后再发出。",
+        "pill": "服务器故障",
+        "retry": "重试",
+        "stillDown": "仍未恢复。我们会持续检查并自动重连。",
+        "stayOffline": "保持离线"
+      },
+      "noSignal": {
+        "title": "没有信号",
+        "body": "已下载的训练板仍可浏览、搜索和记录。完攀会存在手机上，等你恢复联网。",
+        "pill": "没有信号"
+      },
+      "offlineMode": {
+        "title": "离线模式已开启",
+        "body": "在你关闭它之前，不再与 Boardsesh 服务器通信。已下载的训练板照常可用。",
+        "pill": "离线模式",
+        "goOnline": "恢复联网"
+      },
+      "pending_one": "1 项改动等待中",
+      "pending_other": "{{count}} 项改动等待中",
+      "recovering": {
+        "backOnline": "已恢复联网",
+        "syncing_one": "已恢复联网。正在同步 1 项改动…",
+        "syncing_other": "已恢复联网。正在同步 {{count}} 项改动…",
+        "synced": "全部已同步",
+        "needsRetry_one": "1 项改动需要重试",
+        "needsRetry_other": "{{count}} 项改动需要重试",
+        "openSyncIssues": "打开同步问题"
+      },
+      "needsConnection": "需要联网",
+      "expand": "显示连接详情",
+      "dismiss": "隐藏"
+    },
+    "offlineState": {
+      "title": "没有信号",
+      "body": "这项内容需要联网。你下载过的训练板仍可离线浏览、搜索和记录。",
+      "serverTitle": "暂时连不上 Boardsesh",
+      "serverBody": "这项内容需要我们的服务器。已下载的训练板仍可浏览、搜索和记录，你的完攀会先存在手机上。",
+      "offlineModeTitle": "离线模式已开启",
+      "offlineModeBody": "这项内容需要联网。在横幅或“设置”里关闭离线模式即可加载。",
+      "errorTitle": "加载失败",
+      "errorBody": "没加载出来，再试一次。",
+      "retry": "重试"
+    }
+  },
+  "lightControl": {
+    "turnOffAll": "熄灭所有灯",
+    "lightAdjacentHolds": "点亮上方的岩点",
+    "lightAdjacentHoldsHelp": "在每个点亮的起步点和手点上方加一颗较暗的 LED。需要带附加 LED 功能的 MoonBoard 控制器。",
+    "disconnect": "断开训练板"
+  },
+  "bluetooth": {
+    "boardNotFound": "找不到你的训练板。确认它已开机并在附近。如果有另一部手机连着它，请先在那边断开。",
+    "connectFailed": "连接失败。靠近训练板后再试一次。",
+    "serviceMissing": "已连接，但训练板没有响应。断电重启后再试一次。",
+    "unavailable": "蓝牙已关闭。打开蓝牙才能连接训练板。",
+    "unknownError": "无法连接你的训练板，再试一次。"
+  },
+  "actions": {
+    "yes": "是",
+    "no": "否",
+    "cancel": "取消",
+    "clear": "清除",
+    "delete": "删除",
+    "edit": "编辑",
+    "close": "关闭",
+    "back": "返回",
+    "done": "完成",
+    "retry": "重试",
+    "loading": "加载中…"
+  },
+  "ariaLabels": {
+    "close": "关闭",
+    "back": "返回",
+    "openStatsFilters": "打开数据筛选",
+    "shareProfile": "分享个人主页",
+    "settings": "设置",
+    "notifications": "通知",
+    "userMenu": "用户菜单",
+    "startClimbing": "在应用里开始攀爬",
+    "home": "Boardsesh 首页",
+    "yourProfile": "你的个人主页",
+    "openMenu": "打开菜单"
+  },
+  "header": {
+    "you": "我",
+    "profile": "个人主页",
+    "statistics": "数据统计",
+    "sessions": "训练",
+    "createdClimbs": "创建的线路",
+    "auroraMigration": "带上你的攀爬记录",
+    "startClimbing": "开始攀爬",
+    "signIn": "登录",
+    "nav": {
+      "gyms": "岩馆",
+      "playlists": "线路单",
+      "about": "关于",
+      "help": "帮助"
+    },
+    "navLabel": "主导航"
+  },
+  "share": {
+    "profileTitle": "{{name}} 的攀爬主页",
+    "profileText": "来 Boardsesh 看看 {{name}} 的攀爬主页",
+    "viewedFallbackName": "岩友",
+    "linkCopied": "链接已复制到剪贴板！",
+    "shareFailed": "分享失败"
+  },
+  "myBoards": {
+    "title": "管理训练板"
+  },
+  "myGyms": {
+    "roleOwner": "所有者",
+    "roleAdmin": "管理员",
+    "roleEditor": "编辑者",
+    "roleMember": "成员"
+  },
+  "userDrawer": {
+    "signIn": "登录",
+    "changeBoard": "更换训练板",
+    "myPlaylists": "我的线路单",
+    "about": "关于",
+    "whatsNew": "新功能",
+    "newBadge": "新",
+    "rateBoardsesh": "给 Boardsesh 评分",
+    "reportBug": "报告 bug",
+    "joinDiscord": "加入 Discord",
+    "logout": "退出登录",
+    "qa": {
+      "pick": "测试 PR 预览",
+      "finishTesting": "结束测试 #{{prNumber}}",
+      "testPlan": "测试计划 #{{prNumber}}",
+      "badge": "QA"
+    }
+  },
+  "qa": {
+    "shared": {
+      "backOnProduction": "下次更新时回到正式版",
+      "leaveFailed": "无法关闭这个预览，再试一次"
+    },
+    "pick": {
+      "title": "测试 PR",
+      "skip": "跳过",
+      "emptyTitle": "现在没有可测试的内容",
+      "emptyBody": "还没有 PR 为这个版本发布预览。下次推送后再来看看。",
+      "surfingOffTitle": "预览已关闭",
+      "surfingOffBody": "这个渠道目前不提供 PR 预览。",
+      "unreachableTitle": "无法连接更新服务器",
+      "draftChip": "草稿",
+      "approvedChip": "你已通过",
+      "declinedChip": "你已拒绝",
+      "headChangedChip": "之后代码有更新",
+      "crashedChip": "启动时崩溃",
+      "nothingNewToast": "这个版本上 #{{prNumber}} 没有新内容，它下次发布的内容会在重启后生效",
+      "stagingTitle": "预发布版",
+      "stagingBody": "在下一次移动端更新进入正式版之前先试用。",
+      "productionTitle": "正式版",
+      "productionBody": "之后使用正式更新；在更新的版本发布之前，当前包可能会保留。",
+      "stagingNextLaunch": "已选择预发布版，它的下一次更新会在重启后生效",
+      "productionNextLaunch": "已选择正式版；在更新的版本发布之前，当前包可能会保留",
+      "buildingChip": "构建中",
+      "buildingNewerChip": "正在构建新版本",
+      "buildingToast": "仍在发布中，包就绪后会出现在这里",
+      "buildingHint": "这个预览仍在发布中，暂时无法加载",
+      "searchPlaceholder": "按标题或编号搜索",
+      "clearSearch": "清除搜索",
+      "noMatchTitle": "没有匹配的 PR",
+      "noMatchBody": "这个版本已发布的内容里没有与“{{query}}”匹配的。",
+      "trySurfAction": "仍然试试 #{{prNumber}}",
+      "trySurfHint": "它可能没有这个版本能加载的预览。",
+      "notServableToast": "这个版本没有 #{{prNumber}} 的预览，它可能需要变基到 main"
+    },
+    "brief": {
+      "screenTitle": "测试内容",
+      "startLabel": "开始测试",
+      "finishLabel": "结束测试",
+      "githubLabel": "在 GitHub 上打开",
+      "leaveLabel": "退出预览",
+      "noPlanText": "这个 PR 还没有测试计划。在 GitHub 上打开它，自行判断吧。",
+      "unknownPr": "PR #{{prNumber}} 已关闭或不存在。这里没有可测试的内容。",
+      "onProductionTitle": "你在正式版上",
+      "onProductionBody": "选择一个 PR 预览来开始测试。",
+      "riskLabel": "风险 {{risk}}/5"
+    },
+    "verdict": {
+      "sheetTitle": "测得怎么样？",
+      "approveLabel": "通过",
+      "declineLabel": "拒绝",
+      "verdictGroupLabel": "结论",
+      "approvePlaceholder": "有什么值得一提的吗？（可选）",
+      "declinePlaceholder": "哪里出了问题？写上步骤会很有帮助。",
+      "submitLabel": "提交结论",
+      "leaveLabel": "不留反馈，直接退出预览",
+      "submitError": "结论没提交上，再试一次",
+      "notOnPreview": "你在正式版上，没有可提交结论的内容。",
+      "verdictSentToast": "结论已提交到 #{{prNumber}}",
+      "moreCharsNeeded_one": "还需要 {{count}} 个字符",
+      "moreCharsNeeded_other": "还需要 {{count}} 个字符"
+    }
+  },
+  "screenshots": {
+    "addLabel": "添加",
+    "addAria": "添加截图",
+    "removeAria": "移除截图",
+    "attachedCount_one": "已附加 {{count}} 张截图",
+    "attachedCount_other": "已附加 {{count}} 张截图",
+    "publicWarning": "你附加的截图会公开发布到 GitHub。",
+    "pickFailed": "无法读取这张截图，换一张吧。",
+    "uploadFailed": "截图没能上传，你的报告还在这里。"
+  },
+  "loading": {
+    "messages": [
+      "正在设置你的训练板…",
+      "正在配置线路…",
+      "正在准备墙面…",
+      "正在加载岩点套组…",
+      "马上就能开爬…",
+      "正在预热 LED…",
+      "正在同步训练板配置…",
+      "正在校准难度…",
+      "正在找攀爬的感觉…",
+      "正在检查线路状况…"
+    ]
+  },
+  "emptyState": {
+    "default": "暂无数据"
+  },
+  "comment": {
+    "placeholder": "添加评论…",
+    "replyPlaceholder": "写下回复…",
+    "thoughtsPlaceholder": "分享你的想法…",
+    "submit": "发布",
+    "save": "保存",
+    "cancel": "取消",
+    "signInPrompt": "登录后才能评论。",
+    "discussionTitle": "讨论",
+    "empty": "还没有评论。来说点什么吧。",
+    "deleted": "[已删除]",
+    "edited": "（已编辑）",
+    "userFallback": "用户",
+    "reply": "回复",
+    "showRepliesOne": "显示 1 条回复",
+    "showRepliesMany": "显示 {{count}} 条回复",
+    "count_one": "{{count}} 条评论",
+    "count_other": "{{count}} 条评论",
+    "sort": {
+      "new": "最新",
+      "top": "最高赞",
+      "controversial": "有争议",
+      "hot": "热门"
+    },
+    "delete": {
+      "title": "删除评论",
+      "description": "确定要删除这条评论吗？此操作无法撤销。",
+      "confirm": "删除",
+      "editAria": "编辑评论",
+      "deleteAria": "删除评论"
+    },
+    "errors": {
+      "post": "评论发布失败",
+      "update": "评论更新失败",
+      "delete": "评论删除失败",
+      "reply": "回复发布失败",
+      "loadReplies": "回复加载失败"
+    }
+  },
+  "vote": {
+    "upvote": "顶",
+    "downvote": "踩",
+    "like": "赞",
+    "unlike": "取消赞",
+    "signInPrompt": "登录后才能投票",
+    "failed": "投票失败"
+  },
+  "proposal": {
+    "trigger": "提议修改",
+    "drawerTitle": "创建提议",
+    "submit": "创建提议",
+    "submitting": "创建中…",
+    "cancel": "取消",
+    "types": {
+      "grade": "难度",
+      "classic": "经典",
+      "benchmark": "基准线路",
+      "hide": "隐藏线路"
+    },
+    "fields": {
+      "angle": "角度",
+      "proposedGrade": "提议的难度",
+      "proposedStatus": "提议的状态",
+      "reasonLabel": "原因（可选）",
+      "reasonPlaceholder": "你为什么认为需要这项修改？",
+      "yes": "是",
+      "no": "否"
+    },
+    "hints": {
+      "classic": "经典提议适用于所有角度。",
+      "benchmark": "基准线路提议按角度分别处理。",
+      "hide": "隐藏提议适用于所有角度。"
+    },
+    "outlierWarning": "与相邻角度相比，这个角度的难度看起来是个异常值。如果这项提议与相邻角度的数据一致，可能会被自动通过。",
+    "validation": {
+      "signIn": "登录后才能创建提议",
+      "signInToVote": "登录后才能给提议投票",
+      "missingValue": "请输入提议的值",
+      "sameGrade": "提议的难度与当前难度相同",
+      "noData": "提议创建失败：没有返回数据",
+      "failed": "提议创建失败",
+      "failedToVote": "投票失败",
+      "failedToResolve": "提议处理失败",
+      "failedToDelete": "提议删除失败"
+    },
+    "created": "提议已创建"
+  },
+  "follow": {
+    "follow": "关注",
+    "following": "已关注",
+    "unfollow": "取消关注"
+  },
+  "betaVideos": {
+    "empty": "还没有 beta 视频"
+  },
+  "moonboardImport": {
+    "removeConfirmTitle": "移除这条线路？"
+  },
+  "ascents": {
+    "deleteTitle": "删除完攀记录",
+    "deleteDescription": "确定吗？此操作无法撤销。",
+    "statusFlash": "Flash",
+    "statusSend": "完攀",
+    "statusAttempt": "尝试",
+    "flashed_one": "已 Flash",
+    "flashed_other": "{{count}} 次 Flash",
+    "sent_one": "已完攀",
+    "sent_other": "{{count}} 次完攀",
+    "attempts_one": "1 次尝试",
+    "attempts_other": "{{count}} 次尝试"
+  },
+  "board": {
+    "resetZoom": "重置缩放"
+  },
+  "capacitorRetirement": {
+    "title": "Boardsesh 有新应用了",
+    "description": "这个版本已停用。下载重新打造的 Boardsesh，你的攀爬记录、训练和伙伴都会跟着过来。",
+    "cta": "获取新应用",
+    "fallbackCta": "改为打开商店页面"
+  },
+  "footer": {
+    "tagline": "你的训练板，一个应用。换训练板，不用换应用。",
+    "navLabel": "页脚",
+    "trademarkNote": "兼容 Kilter、Tension 和 MoonBoard。与 Aurora Climbing 或 Moon Climbing 无关联。",
+    "links": {
+      "home": "首页",
+      "about": "关于",
+      "support": "支持 Boardsesh",
+      "help": "帮助",
+      "docs": "开发者文档",
+      "playlists": "线路单",
+      "auroraMigration": "带上你的攀爬记录",
+      "legal": "法律信息",
+      "privacy": "隐私",
+      "gymsKilter": "有 Kilter 训练板的岩馆",
+      "gymsTension": "有 Tension 训练板的岩馆",
+      "gymsMoonboard": "有 MoonBoard 的岩馆",
+      "gyms": "所有岩馆和墙面"
+    },
+    "groups": {
+      "findAGym": "查找岩馆",
+      "explore": "探索",
+      "smallPrint": "细则"
+    }
+  }
+}

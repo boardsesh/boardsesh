@@ -1,0 +1,221 @@
+{
+  "crewLoadMore": "查看更多动态",
+  "activityFeed": {
+    "signInPrompt": "登录后可查看你关注的岩友的专属动态。"
+  },
+  "mobile": {
+    "home": {
+      "betaOpenError": "这个 beta 视频打不开。",
+      "betaCardLabel": "打开 beta 视频",
+      "feedTitle": "伙伴动态",
+      "signInTitle": "登录查看你的动态",
+      "signInBody": "关注岩友，就能在这里看到他们的训练和每日完攀。",
+      "searchAction": "找岩友",
+      "emptyTitle": "还没有训练",
+      "emptyBody": "关注岩友，这里就会出现他们的训练和每日完攀。",
+      "sessionsTitle": "最近的训练",
+      "boardEmptyTitle": "{{board}} 上现在很安静",
+      "boardEmptyBody": "来做第一个记录训练的人，或者看看大家都在爬什么。",
+      "boardEmptyCta": "看看大家",
+      "scope": {
+        "myCrew": "我的伙伴",
+        "everyone": "所有人",
+        "findGym": "查找附近的岩馆",
+        "hint": "切换你看到谁的线路"
+      }
+    },
+    "liveSessions": {
+      "title": "正在攀爬",
+      "liveCount_one": "{{count}} 场进行中",
+      "liveCount_other": "{{count}} 场进行中",
+      "live": "进行中",
+      "quiet": "安静",
+      "names": {
+        "two": "{{first}} 和 {{second}}",
+        "you": "你",
+        "youAnd": "你和 {{name}}",
+        "justYou": "目前只有你",
+        "someone": "一位岩友"
+      },
+      "boardLine": "{{board}} · {{angle}}°",
+      "boardYouFollow": "你关注的训练板",
+      "onClimb": "正在爬 {{climb}}",
+      "onClimbGrade": "正在爬 {{climb}} · {{grade}}",
+      "sends_one": "完攀 {{count}} 条",
+      "sends_other": "完攀 {{count}} 条",
+      "elapsed": {
+        "minutes": "{{minutes}} 分钟",
+        "hours": "{{hours}} 小时",
+        "hoursMinutes": "{{hours}} 小时 {{minutes}} 分钟",
+        "justStarted": "刚刚开始"
+      },
+      "actions": {
+        "join": "加入",
+        "open": "打开",
+        "invite": "邀请"
+      },
+      "start": {
+        "title": "开始训练",
+        "body": "关注你的人可以在这里看到并加入。",
+        "cta": "开始训练",
+        "bleTitle": "你在 {{board}} 上",
+        "bleBody": "开始一次训练，让伙伴们加入。"
+      },
+      "find": {
+        "title": "叫上你的伙伴",
+        "body": "关注岩友，他们进行中的训练就会出现在这里。",
+        "cta": "找岩友"
+      },
+      "error": "无法加载正在攀爬的人。",
+      "offline": "没有信号。恢复联网后，训练会重新显示。",
+      "offlineMode": "离线模式已开启。关闭后，训练会重新显示。",
+      "board": {
+        "header": "此刻在这里攀爬",
+        "more_one": "还有 {{count}} 场",
+        "more_other": "还有 {{count}} 场",
+        "emptyTitle": "这里没有人在训练。",
+        "emptyBody": "开始一次训练，这面墙前的任何人都能加入。",
+        "emptyBodyLitBy": "{{name}} 正在墙上。开始一次训练，{{name}} 就能加入你的队列。",
+        "emptyCta": "在这里开始训练"
+      },
+      "a11y": {
+        "namesOthers_one": "{{name}} 和另外 {{count}} 人",
+        "namesOthers_other": "{{name}} 和另外 {{count}} 人",
+        "youOthers_one": "你和另外 {{count}} 人",
+        "youOthers_other": "你和另外 {{count}} 人",
+        "liveOn": "正在 {{board}} 上进行",
+        "liveNow": "正在进行",
+        "quietOn": "{{board}} 上暂时安静",
+        "quietNow": "暂时安静",
+        "boardAngle": "{{board}}，{{angle}} 度",
+        "started": "{{elapsed}}前开始",
+        "minutes_one": "{{count}} 分钟",
+        "minutes_other": "{{count}} 分钟",
+        "hours_one": "{{count}} 小时",
+        "hours_other": "{{count}} 小时",
+        "hardest": "最难 {{grade}}",
+        "hint": "打开这场训练",
+        "invite": "邀请岩友加入你的训练",
+        "justStarted": "刚刚开始"
+      }
+    }
+  },
+  "ascentsFeed": {
+    "mirrored": "镜像",
+    "setBy": "定线：{{name}}",
+    "benchmark": "基准线路",
+    "empty": "还没有完攀记录"
+  },
+  "betaVideos": {
+    "shareBeta": "分享 beta",
+    "addedToast": "视频已添加到 beta",
+    "addError": "视频没加上，再试一次。",
+    "urlPlaceholder": "Instagram 或 TikTok 链接",
+    "urlLabel": "Beta 视频链接",
+    "urlLabelForClimb": "{{name}} 的 beta 视频链接",
+    "defaultHelper": "粘贴公开的 Instagram Reel/帖子或 TikTok 链接，让大家看到你的 beta。",
+    "cancel": "取消",
+    "copyAndOpenInstagram": "复制并打开 Instagram",
+    "instagramCopyFailed": "文案没复制上，再试一次。",
+    "instagramCopiedAndOpened": "文案已复制，粘贴到 Instagram 即可。",
+    "instagramCopiedOnly": "文案已复制到剪贴板。",
+    "steps": {
+      "optional": "可选",
+      "step1Title": "打开 Instagram 并复制你的文案",
+      "step2Title": "在你的帖子里复制分享链接",
+      "step3Title": "把链接粘贴到下方"
+    }
+  },
+  "emptyStates": {
+    "followClimbers": "关注几位岩友，这里就热闹了",
+    "findClimbers": "找岩友",
+    "noRecentActivity": "最近还没有动态"
+  },
+  "errors": {
+    "loadFeed": "动态加载失败，请重试。",
+    "loadActivity": "动态加载失败"
+  },
+  "feedCommentButton": {
+    "commentsTitle": "评论"
+  },
+  "feedItemComment": {
+    "commented": "评论了"
+  },
+  "feedItemNewClimb": {
+    "createdClimb": "创建了一条新线路"
+  },
+  "followerCount": {
+    "followingLabel": "关注"
+  },
+  "freezeDialog": {
+    "reasonLabel": "原因（可选）",
+    "reasonPlaceholder": "为什么冻结/解冻这条线路？"
+  },
+  "freezeIndicator": {
+    "frozen": "这条线路已冻结，不再接受新提议。",
+    "reasonPrefix": "原因：{{reason}}"
+  },
+  "proposalCard": {
+    "quotedReason": "“{{reason}}”",
+    "support": "支持",
+    "oppose": "反对",
+    "approve": "通过",
+    "reject": "驳回",
+    "deleteProposal": "删除提议",
+    "deleteDialog": {
+      "title": "删除已通过的提议",
+      "description": "这会撤销该提议带来的改动（例如难度修改、基准/经典状态），并将其永久删除。此操作无法撤销。"
+    }
+  },
+  "proposalSection": {
+    "title": "社区提议",
+    "noOpen": "没有进行中的提议"
+  },
+  "proposalVoteBar": {
+    "approved": "已通过",
+    "rejected": "已驳回",
+    "votesNeeded": "需要 {{required}} 票，已有 {{current}} 票",
+    "opposed": "{{count}} 票反对"
+  },
+  "sessionFeedCard": {
+    "climbCount_one": "{{count}} 条线路",
+    "climbCount_other": "{{count}} 条线路",
+    "sendsCount_one": "完攀 {{count}} 条",
+    "sendsCount_other": "完攀 {{count}} 条",
+    "flashesCount_one": "Flash {{count}} 条",
+    "flashesCount_other": "Flash {{count}} 条",
+    "hardestGrade": "最难 {{grade}}",
+    "status": {
+      "flash": "Flash",
+      "send": "完攀",
+      "attempt": "尝试"
+    },
+    "hardest": "最难",
+    "betaEyebrow": "Beta",
+    "betaBy": "{{name}} 的 beta",
+    "gradeSpread": "难度范围 {{min}} 到 {{max}}，完攀 {{sends}} 条",
+    "unknownClimb": "未知线路",
+    "attempts_one": "{{count}} 次尝试",
+    "attempts_other": "{{count}} 次尝试",
+    "openHint": "打开这场训练",
+    "openHardestClimb": "打开 {{climb}}"
+  },
+  "socialActions": {
+    "upvoteWithCount_one": "点赞，{{count}} 个赞",
+    "upvoteWithCount_other": "点赞，{{count}} 个赞",
+    "removeUpvoteWithCount_one": "取消点赞，{{count}} 个赞",
+    "removeUpvoteWithCount_other": "取消点赞，{{count}} 个赞",
+    "openCommentsWithCount_one": "打开评论，{{count}} 条评论",
+    "openCommentsWithCount_other": "打开评论，{{count}} 条评论"
+  },
+  "socialFeedItem": {
+    "climbed": "爬了"
+  },
+  "userSmartCard": {
+    "follower_one": "{{count}} 位粉丝",
+    "follower_other": "{{count}} 位粉丝",
+    "following": "关注 {{count}} 人",
+    "distinctClimb_one": "{{count}} 条不同线路",
+    "distinctClimb_other": "{{count}} 条不同线路"
+  }
+}

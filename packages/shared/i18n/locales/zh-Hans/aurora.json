@@ -1,0 +1,54 @@
+{
+  "metadata": {
+    "migration": {
+      "title": "从旧版 Kilter 应用迁移",
+      "description": "Aurora 后端关停后，把你的 Kilter 训练板数据迁移到 Boardsesh。"
+    }
+  },
+  "migration": {
+    "whatHappened": {
+      "title": "发生了什么",
+      "lead": "Aurora 的 Kilter 后端已经关停。如果不导出，你的线路单、攀爬记录和线路草稿会随之消失。",
+      "body": "3 月 25 日，Kilter 训练板应用突然消失，原因是 Aurora 毫无预兆地关停了它的 Kilter 后端。Kilter 随即仓促推出了仍处于测试阶段的自家应用，但这两家相争，最后吃亏的是用户。详情请阅读：",
+      "articleTitle": "Kilter Board 应用毫无预兆地消失了。真相是这样的。",
+      "articleDescription": "多年来，攀岩界最成功的训练板一直在和自己的应用开发商交战。如今，为此买单的是攀岩者。",
+      "articleSource": "climbing.com",
+      "articleAlt": "Kilter Board 应用毫无预兆地消失了",
+      "ledRisk": "这种依赖单一供应商的风险早在两年前就已显现：当时由于 Kilter 与 Aurora 之间的法律纠纷，你甚至买不到 Kilter 岩点用的 LED 套件。",
+      "boardseshIntroPrefix": "为了消除这种风险，",
+      "boardseshLink": "Boardsesh",
+      "boardseshIntroSuffix": " 应运而生，它是所有训练板应用的开源替代品。Boardsesh 保存着自己的一份线路数据库，并将逐步支持所有训练板。它可以轻松自行部署，并会提供数据导出功能。"
+    },
+    "howToMigrate": {
+      "title": "如何迁移",
+      "step1": {
+        "title": "申请导出你的数据",
+        "body": "给 Aurora 发邮件，申请导出你的数据。你会收到一个 JSON 文件，里面有你的完攀、尝试和线路集。",
+        "cta": "发邮件至 peter@auroraclimbing.com"
+      },
+      "step2": {
+        "title": "创建 Boardsesh 账号",
+        "signedInAs": "已登录：{{email}}",
+        "body": "创建账号或登录，这样我们才有地方存放你的数据。",
+        "cta": "登录或创建账号",
+        "modalTitle": "登录以迁移你的数据",
+        "modalDescription": "创建账号或登录，以导入你的 Aurora 数据。"
+      },
+      "step3": {
+        "title": "导入你的数据",
+        "signInFirst": "请先登录，再导入数据。",
+        "body": "Kilter 后端已关停，因此 Kilter 只能通过 JSON 导入。对于 Tension，关联账号后每 12 小时会自动同步一次数据，你始终有一份备份。"
+      },
+      "step4": {
+        "title": "你的 Boardsesh 个人主页",
+        "signInFirst": "请先登录，再查看个人主页。"
+      }
+    },
+    "getHelp": {
+      "title": "获取帮助",
+      "body": "Boardsesh 是开源的。欢迎提交 bug、提出功能建议，或者直接来问问题。",
+      "discord": "Discord — 加入社区，获取帮助、参与讨论",
+      "github": "GitHub — github.com/boardsesh/boardsesh"
+    }
+  }
+}
