@@ -59,8 +59,12 @@ function stateOnly(sessionId: string, state: 'ended' | 'not_found'): SessionInvi
   return { sessionId, state, hostName: null, boardName: null, boardPath: null, gymName: null };
 }
 
-/** Something@something.tld, with no spaces: the shape of an address, not of a handle like "@alex". */
-const EMAIL_SHAPED = /^\S+@\S+\.\S+$/;
+/**
+ * Something@something, with no spaces: the shape of an address, not of a handle
+ * like "@alex". No dot is asked for after the @, so `user@localhost` is caught
+ * too; a real name lost to this rule falls through to the next candidate.
+ */
+const EMAIL_SHAPED = /^\S+@\S+$/;
 
 /**
  * A name fit to show a stranger, or null.
