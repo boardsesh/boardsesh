@@ -186,10 +186,17 @@ jobs:
           path: boot-check-binary
           key: ${{ steps.key.outputs.key }}
 
-      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+      # The check needs Node and nothing else; the toolchain is only for a build.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: steps.cache.outputs.cache-hit == 'true'
         with:
           node-version: '22.x'
-          cache: ${{ steps.cache.outputs.cache-hit != 'true' }}
+
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          node-version: '22.x'
+          cache: true
 
       - name: Install dependencies
         if: steps.cache.outputs.cache-hit != 'true'

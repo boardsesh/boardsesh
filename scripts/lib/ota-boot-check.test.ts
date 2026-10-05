@@ -346,6 +346,8 @@ describe('logs', () => {
       '10-06 00:40:30.101  5012  5046 E AndroidRuntime: FATAL EXCEPTION: mqt_v_js',
       '10-06 00:40:30.101  5012  5046 E AndroidRuntime: com.facebook.react.common.JavascriptException: Error: boom',
       '10-06 00:40:30.300  5012  5012 E SQLiteLog: (1) no such table: x',
+      // A console.error, logged by the update when its sinkholed analytics host refuses a flush.
+      "10-05 14:23:38.114  3668  3727 E ReactNativeJS: 'Error while flushing PostHog', { [PostHogFetchNetworkError: Network error while fetching PostHog]",
     ].join('\n');
     expect(findFatalLogLines('android', androidLog)).toHaveLength(2);
     const iosLog = [

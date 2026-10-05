@@ -424,13 +424,14 @@ const FATAL_LOG_PATTERNS: Record<BootPlatform, readonly RegExp[]> = {
     /RCTFatal/,
     /\bfatal error\b/i,
   ],
+  // Not every `E ReactNativeJS` line: that tag is any console.error, and the
+  // sinkholed analytics hosts make the update log one for each failed flush.
   android: [
     /FATAL EXCEPTION/,
     /Fatal signal \d+/,
-    /E\/?\s*ReactNativeJS/,
-    /E ReactNativeJS/,
     /com\.facebook\.react\.common\.JavascriptException/,
-    /Process: com\.boardsesh\.app.*has died|Process com\.boardsesh\.app \(pid \d+\) has died/,
+    /\[global-error-capture\] FATAL/,
+    /Process com\.boardsesh\.app \(pid \d+\) has died/,
   ],
 };
 
