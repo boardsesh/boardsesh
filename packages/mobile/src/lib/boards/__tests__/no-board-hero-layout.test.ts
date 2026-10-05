@@ -19,12 +19,12 @@ describe('computeNoBoardHeroBox', () => {
     expect(computeNoBoardHeroBox({ ...PRO, hasChips: true, aspect: PORTRAIT })).toEqual({ width: 274, height: 380 });
   });
 
-  // 667 - 20 - 90 - 50 - 190: the board, the caption and a peek of the next
-  // row all fit above the docked button.
+  // 667 - 20 - 90 - 50 - 230: the board, the caption, and the next row's
+  // thumbnail top and name all fit above the docked button.
   it('shrinks the board on an iPhone SE so the caption and a row still fit', () => {
     const box = computeNoBoardHeroBox({ ...SE, hasChips: true, aspect: PORTRAIT });
 
-    expect(box.height).toBe(317);
+    expect(box.height).toBe(277);
     expect(box.height).toBeGreaterThanOrEqual(200);
   });
 
@@ -77,21 +77,28 @@ describe('sceneBackgroundHex', () => {
 describe('noBoardStageColors', () => {
   // `expo-linear-gradient` cannot take a PlatformColor, and a fade through
   // `transparent` passes through grey.
-  it('is all concrete colours, with clear ends that keep their hue', () => {
+  it('is all concrete colours, with a clear end that keeps its hue', () => {
     const stage = noBoardStageColors('#000000', '#A78BFA', 'dark');
 
-    expect(stage.top).toMatch(/^#[0-9A-Fa-f]{6}$/);
-    expect(stage.top).not.toBe('#000000');
+    expect(stage.glow).toMatch(/^#[0-9A-Fa-f]{6}$/);
+    expect(stage.glow).not.toBe('#000000');
     expect(stage.background).toBe('#000000');
     expect(stage.backgroundClear).toBe('rgba(0, 0, 0, 0)');
-    expect(stage.backgroundDock).toBe('rgba(0, 0, 0, 0.92)');
-    expect(stage.topClear).toMatch(/^rgba\(\d+, \d+, \d+, 0\)$/);
+    expect(stage.cardBorder).toMatch(/^rgba\(/);
   });
 
   it('tints a light page less than a dark one', () => {
     const light = noBoardStageColors('#FFFFFF', '#6D28D9', 'light');
 
-    // 10% violet over white stays a pale lavender.
-    expect(light.top.toUpperCase()).toBe('#F0EAFB');
+    // 16% violet over white stays a pale lavender.
+    expect(light.glow.toUpperCase()).toBe('#E8DDF9');
+  });
+
+  // A pale wall on a white page: the card edge is the brand violet, not the
+  // system separator.
+  it('edges the board in violet on a light page', () => {
+    const light = noBoardStageColors('#FFFFFF', '#6D28D9', 'light');
+
+    expect(light.cardBorder).toBe('rgba(109, 40, 217, 0.3)');
   });
 });

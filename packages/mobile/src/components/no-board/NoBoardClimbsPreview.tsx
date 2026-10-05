@@ -26,6 +26,7 @@ import { Text } from '../Text';
 import { Button } from '../Button';
 import { ClimbListItemContent } from '../ClimbListItemContent';
 import { ClimbListRowSkeleton } from '../ClimbListRowSkeleton';
+import { THUMBNAIL_WIDTH } from '../ClimbListThumbnail';
 import { climbListRowStyles } from '../climb-list-row-styles';
 import { BoardConfigChips, type ChipOption } from '../board-discovery/BoardConfigChips';
 import { boardTypeLabel } from '../board-discovery/board-builder-labels';
@@ -36,6 +37,7 @@ import { ensureBackgroundsCached } from '../../lib/background-image-cache';
 import { getBoardRenderData } from '../../lib/board-details';
 import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
+import { useConnectivityBannerHeight } from '../../lib/connectivity-banner-inset-store';
 import { useAppColorScheme, useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import type { NoBoardPreviewConfig } from '../../lib/boards/no-board-preview';
@@ -65,9 +67,10 @@ const SKELETON_ROW_KEYS = ['first', 'second', 'third', 'fourth'] as const;
 
 const STAGE_START = { x: 0.5, y: 0 } as const;
 const STAGE_END = { x: 0.5, y: 1 } as const;
-// The violet is gone by 70% of the way down the header, so the caption's last
-// line and the first row sit on the plain background.
-const STAGE_LOCATIONS = [0, 0.7] as const;
+// A glow behind the board, not a tint from the top: it starts from the plain
+// background under the status bar and is gone again before the caption's last
+// line, so the first row sits on the plain background too.
+const STAGE_LOCATIONS = [0, 0.4, 0.9] as const;
 
 /** How a setup's search ended, reported once per setup shown. */
 export type NoBoardPreviewSearchOutcome = 'ready' | 'error' | 'empty';
@@ -125,7 +128,7 @@ const PreviewRow = memo(function PreviewRow({ climb, rowIndex, config, accessibi
       accessibilityHint={accessibilityHint}
       style={{ backgroundColor: systemColors.background }}
     >
-      <View style={climbListRowStyles.contentRow}>
+      <View style={[climbListRowStyles.contentRow, styles.rowGutter]}>
         <ClimbListItemContent
           climb={climb}
           boardName={config.boardName}
@@ -138,7 +141,7 @@ const PreviewRow = memo(function PreviewRow({ climb, rowIndex, config, accessibi
           showAscentStatus={false}
         />
       </View>
-      <View style={[climbListRowStyles.separator, { backgroundColor: systemColors.separator }]} />
+      <View style={[climbListRowStyles.separator, styles.rowSeparator, { backgroundColor: systemColors.separator }]} />
     </Pressable>
   );
 });
@@ -162,6 +165,11 @@ function NoBoardClimbsPreviewComponent({
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const { scrollBottomPadding, floatingControlBottom } = useBottomChromeMetrics();
+  // The board is sized against the chrome as it is without the connectivity
+  // banner. The banner comes and goes with the backend, and a board that
+  // shrank and grew with it would jump under the climber's thumb.
+  const connectivityBannerHeight = useConnectivityBannerHeight();
+  const restingControlBottom = floatingControlBottom - connectivityBannerHeight;
 
   const [selectedIndex, setSelectedIndex] = useState(0);
   // The list can only shrink if the owner swaps it, which it does not do
@@ -278,12 +286,12 @@ function NoBoardClimbsPreviewComponent({
             windowWidth,
             windowHeight,
             insetTop: insets.top,
-            floatingControlBottom,
+            floatingControlBottom: restingControlBottom,
             hasChips,
             aspect: boardRenderData.boardWidth / boardRenderData.boardHeight,
           })
         : null,
-    [boardRenderData, windowWidth, windowHeight, insets.top, floatingControlBottom, hasChips],
+    [boardRenderData, windowWidth, windowHeight, insets.top, restingControlBottom, hasChips],
   );
   const showHero = heroBox !== null && !searching;
   // `BoardImageNative` has no way to be told to wait, so the hero's board
@@ -329,16 +337,18 @@ function NoBoardClimbsPreviewComponent({
     () => noBoardStageColors(sceneBackgroundHex(variant, colorScheme, Platform.OS), brandColors.primary, colorScheme),
     [variant, colorScheme, brandColors.primary],
   );
-  const stageColors = useMemo(() => [stage.top, stage.background] as const, [stage]);
-  // Everything scrolls, so rows pass under the status bar. The cap is the
-  // stage's own top colour: invisible at the top of the list, and a solid band
-  // behind the clock once the rows are under it.
+  const stageColors = useMemo(() => [stage.background, stage.glow, stage.background] as const, [stage]);
+  // Everything scrolls, so rows pass under the status bar. The cap is the page
+  // background, solid behind the clock with a short fade under it: nothing to
+  // see at the top of the list, and no band of its own once the rows are
+  // under it.
   const statusCapHeight = insets.top + spacing[3];
-  const statusCapColors = useMemo(() => [stage.top, stage.top, stage.topClear] as const, [stage]);
+  const statusCapColors = useMemo(() => [stage.background, stage.background, stage.backgroundClear] as const, [stage]);
   const statusCapLocations = useMemo(
     () => [0, statusCapHeight > 0 ? insets.top / statusCapHeight : 0, 1] as const,
     [insets.top, statusCapHeight],
   );
+  const stageStyle = useMemo(() => [styles.stage, { top: insets.top }], [insets.top]);
 
   const heroHint = t('mobile.emptyState.noBoardPreview.heroHint');
   const boardTypeGroupLabel = t('mobile.emptyState.noBoardPreview.boardTypeGroup');
@@ -354,21 +364,40 @@ function NoBoardClimbsPreviewComponent({
   const headerTopPadding = insets.top + spacing[2];
   const separatorColor = systemColors.separator;
   const secondaryLabelColor = systemColors.secondaryLabel;
+  const labelColor = systemColors.label;
   const heroLoading = !hasClimbs && inlineProblem === null;
 
   const listHeader = useMemo(
     () => (
       <View style={[styles.header, { paddingTop: headerTopPadding, borderBottomColor: separatorColor }]}>
-        <LinearGradient
-          pointerEvents="none"
-          colors={stageColors}
-          locations={STAGE_LOCATIONS}
-          start={STAGE_START}
-          end={STAGE_END}
-          style={StyleSheet.absoluteFill}
-        />
+        {showHero ? (
+          <LinearGradient
+            pointerEvents="none"
+            colors={stageColors}
+            locations={STAGE_LOCATIONS}
+            start={STAGE_START}
+            end={STAGE_END}
+            style={stageStyle}
+          />
+        ) : null}
         {hasChips ? (
           <BoardConfigChips groupLabel={boardTypeGroupLabel} options={boardTypeOptions} onSelect={setSelectedIndex} />
+        ) : null}
+        {/* Above the board, not under it: the connectivity banner covers the
+            bottom of the screen in exactly the moments this shows. */}
+        {problemText ? (
+          <View testID="no-board-preview-problem" style={styles.problem}>
+            <Text variant="subheadline" color={labelColor} style={styles.problemText}>
+              {problemText}
+            </Text>
+            <Button
+              testID="no-board-preview-retry"
+              title={retryTitle}
+              onPress={handleRetry}
+              variant="tonal"
+              size="medium"
+            />
+          </View>
         ) : null}
         {showHero && heroBox && boardRenderData ? (
           <NoBoardHero
@@ -377,6 +406,7 @@ function NoBoardClimbsPreviewComponent({
             loading={heroLoading}
             mountBoard={hasBeenActive}
             box={heroBox}
+            cardBorderColor={stage.cardBorder}
             boardWidth={boardRenderData.boardWidth}
             boardHeight={boardRenderData.boardHeight}
             onPress={handleHeroPress}
@@ -393,27 +423,16 @@ function NoBoardClimbsPreviewComponent({
             {noMatchText}
           </Text>
         ) : null}
-        {problemText ? (
-          <View testID="no-board-preview-problem" style={styles.problem}>
-            <Text variant="subheadline" color={secondaryLabelColor} style={styles.problemText}>
-              {problemText}
-            </Text>
-            <Button
-              testID="no-board-preview-retry"
-              title={retryTitle}
-              onPress={handleRetry}
-              variant="tonal"
-              size="medium"
-            />
-          </View>
-        ) : null}
       </View>
     ),
     [
       headerTopPadding,
       separatorColor,
       secondaryLabelColor,
+      labelColor,
       stageColors,
+      stageStyle,
+      stage.cardBorder,
       hasChips,
       boardTypeGroupLabel,
       boardTypeOptions,
@@ -441,7 +460,7 @@ function NoBoardClimbsPreviewComponent({
   const listEmpty = useMemo(
     () =>
       showSkeleton ? (
-        <View testID="no-board-preview-skeleton">
+        <View testID="no-board-preview-skeleton" style={styles.skeletonGutter}>
           {SKELETON_ROW_KEYS.map((skeletonKey) => (
             <ClimbListRowSkeleton key={skeletonKey} />
           ))}
@@ -498,7 +517,7 @@ function NoBoardClimbsPreviewComponent({
         title={t('mobile.emptyState.noBoard.cta')}
         onPress={onFindBoard}
         fadeFrom={stage.backgroundClear}
-        fadeTo={stage.backgroundDock}
+        fadeTo={stage.background}
       />
     </View>
   );
@@ -519,6 +538,24 @@ const styles = StyleSheet.create({
     paddingBottom: spacing[4],
     gap: spacing[3],
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  stage: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  // Rows keep the page's 16-point gutter, so their thumbnails line up with the
+  // board's card and their grades with the lit climb's.
+  rowGutter: {
+    paddingHorizontal: NO_BOARD_HERO_GUTTER,
+  },
+  rowSeparator: {
+    marginLeft: THUMBNAIL_WIDTH + NO_BOARD_HERO_GUTTER + spacing[3],
+  },
+  // The skeleton row brings 8 points of its own.
+  skeletonGutter: {
+    paddingHorizontal: NO_BOARD_HERO_GUTTER - spacing[2],
   },
   statusCap: {
     position: 'absolute',
