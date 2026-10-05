@@ -31,10 +31,12 @@ describe('spray wizard board roster refresh', () => {
   it('refreshes the picker after Start over deletes initial setup', async () => {
     const client = new QueryClient();
     client.setQueryData(['myBoards', undefined], { boards: [{ uuid: 'wall' }] });
+    client.setQueryData(['myBoards', { offset: 20 }], { boards: [{ uuid: 'wall' }] });
     request.mockResolvedValue({});
     const hook = renderHook(useDiscardSprayWallDraft, { wrapper: queryWrapper(client) });
     await act(() => hook.result.current.mutateAsync({ wallUuid: 'wall', versionId: '17' }));
     expect(request).toHaveBeenCalledTimes(2);
     expect(client.getQueryState(['myBoards', undefined])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(['myBoards', { offset: 20 }])?.isInvalidated).toBe(true);
   });
 });
