@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   EARLY_UPDATES_BRANCH,
   PREVIEW_BRANCH_PATTERN,
+  ROLLOUT_PROOF_BRANCH,
   STABLE_BRANCH,
   STAGING_BRANCH,
   desiredOtaState,
@@ -216,6 +217,26 @@ describe('buildOtaPlan', () => {
     ]);
   });
 
+  it('notes the rollout-proof scratch branch by name, and never calls it drift', () => {
+    // Not a per-PR preview branch: `pr-` followed by something that is no PR number.
+    expect(PREVIEW_BRANCH_PATTERN.test(ROLLOUT_PROOF_BRANCH)).toBe(false);
+    const live = inSync();
+    live.branches.push({ name: ROLLOUT_PROOF_BRANCH, protected: false });
+    live.updateRollouts = [];
+    const plan = buildOtaPlan(desiredOtaState, live);
+    expect(hasDrift(plan)).toBe(false);
+    expect(plan.changes).toEqual([]);
+    expect(plan.blocked).toEqual([]);
+    expect(plan.reports).toEqual([
+      'Branch "pr-rollout-proof" exists: the scratch branch of the rollout proof (scripts/ota-rollout-proof.ts). ' +
+        'It holds synthetic updates no device can run. Left alone.',
+    ]);
+    // Its rollouts are not read either: it is not a branch the plan reasons about.
+    expect(branchesNeedingRolloutRead(desiredOtaState, live)).not.toContain(ROLLOUT_PROOF_BRANCH);
+    // And absent, it is not missing: nothing plans to create it.
+    expect(buildOtaPlan(desiredOtaState, inSync()).changes).toEqual([]);
+  });
+
   it('reports a live rollout without calling it drift', () => {
     const live = inSync();
     live.updateRollouts = [
@@ -278,6 +299,9 @@ describe('buildOtaPlan', () => {
     expect(() => assertDeclarable(withBranch('pr-123'))).toThrow('is a per-PR preview branch');
     expect(() => buildOtaPlan(withBranch('pr-123'), inSync())).toThrow('is a per-PR preview branch');
     expect(() => assertDeclarable(withBranch('production'))).toThrow('declared twice');
+    expect(() => assertDeclarable(withBranch(ROLLOUT_PROOF_BRANCH))).toThrow(
+      'is the rollout-proof scratch branch and cannot be declared',
+    );
     const [channel] = desiredOtaState.channels;
     expect(() => assertDeclarable({ ...desiredOtaState, channels: [{ ...channel, branch: 'undeclared' }] })).toThrow(
       'which is not a declared branch',

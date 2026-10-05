@@ -532,8 +532,8 @@ server differs, server unreadable, the check itself failed):
 
 #### One-time setup: the `ota-stable-release` environment
 
-The three workflows (`ota-apply.yml`, `ota-drift.yml`, `mobile-ota-unlock.yml`) take the admin login
-from a GitHub environment named `ota-stable-release`. **It does not exist until the owner creates
+The four workflows (`ota-apply.yml`, `ota-drift.yml`, `mobile-ota-unlock.yml`,
+`ota-rollout-proof.yml`) take the admin login from a GitHub environment named `ota-stable-release`. **It does not exist until the owner creates
 it.** A job that names a missing environment makes GitHub create it with no protection at all, so
 do this in order:
 
@@ -551,6 +551,10 @@ All three are **secrets**, the email included. The preview environments keep the
 variable, and a variable is printed in logs unmasked; these jobs read it from `secrets` only and
 mask it again before their first command. None of the tools prints the email, and a refused login's
 error has it removed from whatever the server answered.
+
+`ota-rollout-proof.yml` also needs the publish token, `EOO_TOKEN`, and the `EXPO_UPDATES_URL`
+variable. Both are repository-level, so a job in this environment already sees them and nothing has
+to be added. If `EOO_TOKEN` is ever moved into another environment, that workflow fails and names it.
 
 `DISCORD_DEPLOY_WEBHOOK` exists today only in the `Production` environment, and a job reads one
 environment. Without a copy in `ota-stable-release` the drift job goes red and says so in its
@@ -643,6 +647,97 @@ totals or per-minute counts is not known yet.
 7. How the server words a refusal of a licensed feature.
 8. That a rollout names the update it replaced (`controlUpdateId`) whenever one existed. The
    promote re-run check refuses when it is missing.
+
+##### Running the throwaway-branch proof
+
+`scripts/ota-rollout-proof.ts` runs that sequence against the live server, on a scratch branch, and
+prints what the server did. It is dispatch-only and asks for the branch name to be typed:
+
+```bash
+gh workflow run ota-rollout-proof.yml --ref main -f confirm=pr-rollout-proof
+```
+
+It takes three to five minutes. The transcript is the run's summary page, and the same transcript
+plus a `result.json` are in the `ota-rollout-proof` artifact (kept 30 days).
+
+What keeps it away from the fleet:
+
+- **The branch is `pr-rollout-proof` and nothing else.** The script refuses any other name, a
+  declared long-lived branch, and a branch the server maps to any channel. `infra/ota/config.ts`
+  names it (`ROLLOUT_PROOF_BRANCH`) and deliberately does not declare it.
+- **The runtime version is minted per run** (`rollout-proof-<UTC timestamp>-<random>`). No binary
+  has it, so no device can be served anything the proof publishes. A fingerprint is refused.
+- **Every request passes an allowlist before it is sent.** Reads, the login, and writes addressed
+  to that branch and that runtime version. A request for `production`, for another runtime version,
+  to a channel or to Branch Surfing is refused in the script and never reaches the server.
+- **The updates are a comment.** Each one is `metadata.json`, `expoConfig.json` and a three-line
+  `.js` file that says it is a rollout proof.
+
+The steps, each ending `PASS` (an expectation held), `FAIL` (it did not) or `OBSERVED` (a question
+with no right answer, written down):
+
+| Step | What it does |
+| --- | --- |
+| guards | Signs in, reads the channels, refuses if any serves the branch. |
+| a | Publishes update A at 100% for iOS and Android. Checks it is the head and that a manifest probe is answered from the branch. |
+| b | Publishes update B at 10%. Records the lease echo and the shape of `GET …/rollout`. |
+| c | Asks the manifest as a device with no client id, then as 40 simulated devices, twice. |
+| d | Tries a publish, a republish and a rollback while the rollout is live. Each should be a 409. |
+| e | Raises to 25%, then 50%. Checks that devices are only ever added. |
+| f | Reads health for B and A. |
+| g | Reverts. Records what the new head is, then publishes update C to show the lock is gone. |
+| h-start | Publishes update D at 10%. |
+| i | Sends `PUT …/rollout` and `revert` with a wrong `expectedUpdateId`, as a string and as a number. |
+| h-finish | Finishes D, checks everyone is served it, publishes update E. |
+| j | Says whether one write moved both platforms, from how many writes the lib needed. |
+
+A step that needs a broken step is `SKIPPED`. The summary table always lists every step. The run
+ends red if any step failed.
+
+**The manifest probes.** They send the headers a store binary sends (`expo-channel-name:
+production`) plus `xprem-branch: pr-rollout-proof`, so they depend on Branch Surfing offering the
+branch. Step a checks that first, by looking for `extra.branch` in the answer. If the probe is not
+answered from the branch, steps c, e, g and h-finish skip their device checks and say so. They do
+not count "no update" as "control".
+
+**The simulated devices are not UUIDs by default.** The server buckets a rollout on a hash of the
+raw `EAS-Client-ID`, and its Observe check-in only registers a device whose id parses as a UUID. So
+ids like `rollout-proof-…-device-07` sample the rollout without adding 40 phantom devices to the
+device registry. If the 50% step reports that no simulated device got the canary, dispatch again
+with `-f uuid_client_ids=true`, which sends random UUIDs and does register them.
+
+**What it leaves behind.** The branch `pr-rollout-proof`, one runtime version per run, and six
+small updates per platform under it (A to E, and the copy of A that the revert publishes). Nothing
+is deleted: removing the branch afterwards is the owner's call (dashboard, Branches). Its update
+folders sit under the `pr-` storage prefix, which the bucket lifecycle rule expires after 14 days.
+The bundles themselves are a few bytes each in the app's content-addressed store (`{appId}/cas/`),
+and any bundle patches the server computes between them land under `{appId}/bsdiff/`. That rule
+covers neither. `vp run ota:apply` and the daily drift check report the branch as a note and never
+as drift.
+
+**What it cannot establish.** Items 5 and 6 of the list above need a real device that runs an
+update, fails and falls back. Nothing runs these updates, so the proof records the shape of the
+health answers for an update with no devices and stops there.
+
+**What the server source says to expect.** xprem is public, and
+`mercuretechnologies/xprem` at the `v3.2.5` tag reads as follows. This is a reading, not a result:
+
+- The publish lock is per branch and runtime version, across platforms
+  (`HasActiveRolloutUpdate`). `requestUploadUrl`, `republish` and `rollback` all check it first and
+  answer 409.
+- A rollout row is per platform, and `PUT …/rollout` and `revert` act on every active row of the
+  branch and runtime version. One call moves both platforms when they share a runtime version.
+- `expectedUpdateId` is decoded as a JSON **string**. A number is a 400 ("invalid request body")
+  before any comparison, and a wrong string is a 409. `GET …/rollout` serialises `updateId` as a
+  string, so echoing it back unchanged is correct.
+- A request with no `EAS-Client-ID` is never in a rollout and is served the control.
+- `revert` republishes each control as a new update with an empty commit hash, or publishes a
+  roll-back-to-embedded directive when the rollout had no control.
+
+##### Results
+
+Not run yet. The answers to the eight questions above are filled in here from the first run's
+transcript, with the run's URL and date. Until then nothing in this section is known.
 
 `mobile-ota-unlock.yml` wraps `revert --if-live` for publishers that must not be refused by a live
 canary. It takes the iOS and the Android runtime version in one run. It is dispatch-only: a

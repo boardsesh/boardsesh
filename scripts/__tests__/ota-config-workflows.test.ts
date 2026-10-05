@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { ADDITIVE_CHANGE_KINDS } from '../../infra/ota/plan';
 
 /**
- * The three workflows that hold the xprem dashboard admin login through the
+ * The four workflows that hold the xprem dashboard admin login through the
  * `ota-stable-release` environment. That login can remap the channel the whole
  * fleet is on, so the shape of these jobs is pinned and not left to review:
  * they run `main`'s code, install nothing, pin every action, and do nothing at
@@ -15,7 +15,11 @@ import { ADDITIVE_CHANGE_KINDS } from '../../infra/ota/plan';
 
 const REPO_ROOT = resolve(import.meta.dirname, '..', '..');
 const WORKFLOWS_DIR = join(REPO_ROOT, '.github', 'workflows');
-const ADMIN_WORKFLOWS = ['ota-apply.yml', 'ota-drift.yml', 'mobile-ota-unlock.yml'] as const;
+const ADMIN_WORKFLOWS = ['ota-apply.yml', 'ota-drift.yml', 'mobile-ota-unlock.yml', 'ota-rollout-proof.yml'] as const;
+
+/** The first command in a workflow that uses the admin login. */
+const FIRST_ADMIN_CALL =
+  /node --experimental-strip-types scripts\/(ota-apply|mobile-ota-rollout|ota-rollout-proof)\.ts/;
 
 const readWorkflow = (name: string): string => readFileSync(join(WORKFLOWS_DIR, name), 'utf8');
 
@@ -74,7 +78,7 @@ describe.each(ADMIN_WORKFLOWS)('%s', (name) => {
 
   it('is a clear green no-op when the environment has no login', () => {
     const guard = code.indexOf('if [ -z "${OTA_ADMIN_EMAIL:-}" ] || [ -z "${OTA_ADMIN_PASSWORD:-}" ]; then');
-    const firstAdminCall = code.search(/node --experimental-strip-types scripts\/(ota-apply|mobile-ota-rollout)\.ts/);
+    const firstAdminCall = code.search(FIRST_ADMIN_CALL);
     expect(guard).toBeGreaterThan(0);
     expect(guard).toBeLessThan(firstAdminCall);
     const skip = code.slice(guard, firstAdminCall);
@@ -88,7 +92,7 @@ describe.each(ADMIN_WORKFLOWS)('%s', (name) => {
     // A variable is printed in the clear.
     expect(code).not.toContain('vars.OTA_ADMIN');
     const mask = code.indexOf('echo "::add-mask::$OTA_ADMIN_EMAIL"');
-    const firstAdminCall = code.search(/node --experimental-strip-types scripts\/(ota-apply|mobile-ota-rollout)\.ts/);
+    const firstAdminCall = code.search(FIRST_ADMIN_CALL);
     expect(mask).toBeGreaterThan(0);
     expect(mask).toBeLessThan(firstAdminCall);
     // The mask is the first command of the step that receives the login.
@@ -227,6 +231,104 @@ describe('mobile-ota-unlock.yml', () => {
   });
 });
 
+describe('ota-rollout-proof.yml', () => {
+  const code = withoutComments(readWorkflow('ota-rollout-proof.yml'));
+  const stepNamed = (name: string): string => {
+    const start = code.indexOf(`      - name: ${name}\n`);
+    expect(start, name).toBeGreaterThan(0);
+    const next = code.indexOf('\n      - ', start + 1);
+    return code.slice(start, next === -1 ? undefined : next);
+  };
+
+  it('is dispatch-only: no push, no schedule, no call from another workflow', () => {
+    expect(code).toMatch(/^on:\n {2}workflow_dispatch:\n/m);
+    expect(code).not.toMatch(/^ {2}(push|schedule|workflow_call|workflow_run|pull_request|pull_request_target):/m);
+    const callers = readdirSync(WORKFLOWS_DIR)
+      .filter((file) => file !== 'ota-rollout-proof.yml')
+      .filter((file) => withoutComments(readWorkflow(file)).includes('ota-rollout-proof'));
+    expect(callers).toEqual([]);
+  });
+
+  it('requires the branch name to be typed, and checks it before any secret is in scope', () => {
+    expect(code).toMatch(/^ {6}confirm:\n(?: {8}.*\n)*? {8}required: true\n/m);
+    const confirmStep = stepNamed('Require the typed confirmation');
+    expect(confirmStep).toContain('CONFIRM: ${{ inputs.confirm }}');
+    expect(confirmStep).toContain('if [ "$CONFIRM" != "pr-rollout-proof" ]; then');
+    expect(confirmStep).toContain('exit 1');
+    expect(confirmStep).not.toContain('secrets.');
+    expect(confirmStep).not.toContain('vars.');
+    // Second step, straight after the ref guard, and ahead of the checkout.
+    const order = [
+      'Refuse any ref but main',
+      'Require the typed confirmation',
+      'Checkout main',
+      'Run the rollout proof',
+    ];
+    const positions = order.map((name) => code.indexOf(`      - name: ${name}\n`));
+    expect(positions.every((position) => position > 0)).toBe(true);
+    expect([...positions].sort((left, right) => left - right)).toEqual(positions);
+    expect(code.slice(0, positions[2])).not.toContain('secrets.');
+  });
+
+  it('gives secrets to one step only', () => {
+    const steps = code
+      .slice(code.indexOf('    steps:\n'))
+      .split(/^ {6}- /m)
+      .slice(1);
+    const withSecrets = steps.filter((step) => step.includes('secrets.'));
+    expect(withSecrets).toHaveLength(1);
+    expect(withSecrets[0]).toContain('name: Run the rollout proof');
+  });
+
+  it('takes the publish token from secrets and the server from the repository variable', () => {
+    const run = stepNamed('Run the rollout proof');
+    expect(run).toContain('EOO_TOKEN: ${{ secrets.EOO_TOKEN }}');
+    expect(run).toContain('EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}');
+    expect(run).toContain('if [ -n "${EOO_TOKEN:-}" ]; then echo "::add-mask::$EOO_TOKEN"; fi');
+  });
+
+  it('fails, naming the secret, when the publish token is not visible to the job', () => {
+    const run = stepNamed('Run the rollout proof');
+    const guard = run.indexOf('if [ -z "${EOO_TOKEN:-}" ]; then');
+    expect(guard).toBeGreaterThan(0);
+    expect(guard).toBeLessThan(run.search(FIRST_ADMIN_CALL));
+    const refusal = run.slice(guard, run.indexOf('fi\n', guard));
+    expect(refusal).toContain('::error::The EOO_TOKEN secret is not visible to this job.');
+    expect(refusal).toContain('>> "$GITHUB_STEP_SUMMARY"');
+    expect(refusal).toContain('exit 1');
+  });
+
+  it('never names a branch, a runtime version or a percentage: the script fixes all three', () => {
+    const run = stepNamed('Run the rollout proof');
+    expect(run).not.toContain('--branch');
+    expect(run).not.toContain('--runtime-version');
+    expect(run).not.toContain('production');
+    expect(run).not.toMatch(/scripts\/(mobile-ota-promote|mobile-ota-rollout|ota-apply|mobile-publish)\b/);
+  });
+
+  it('passes inputs through the environment, never into the script text', () => {
+    const runBlocks = code.split(/^ {8}run: \|$/m).slice(1);
+    expect(runBlocks.length).toBeGreaterThan(0);
+    for (const block of runBlocks) expect(block.split(/^ {6}- /m)[0]).not.toContain('${{');
+  });
+
+  it('has its own concurrency group and never cancels a running proof', () => {
+    expect(code).toMatch(/concurrency:\n {2}group: ota-rollout-proof\n {2}cancel-in-progress: false/);
+    const sharers = readdirSync(WORKFLOWS_DIR)
+      .filter((file) => file !== 'ota-rollout-proof.yml')
+      .filter((file) => /group:\s*['"]?ota-rollout-proof\b/.test(withoutComments(readWorkflow(file))));
+    expect(sharers).toEqual([]);
+  });
+
+  it('uploads the transcript and the result even when the proof fails', () => {
+    const upload = stepNamed('Upload the result');
+    expect(upload).toContain('if: always()');
+    expect(upload).toMatch(/uses: actions\/upload-artifact@[0-9a-f]{40}/);
+    expect(upload).toContain('path: ${{ runner.temp }}/ota-rollout-proof/');
+    expect(stepNamed('Run the rollout proof')).toContain('--out-dir "$RUNNER_TEMP/ota-rollout-proof"');
+  });
+});
+
 describe('release behaviour', () => {
   it('leaves every existing publish path on its defaults', () => {
     for (const name of ['production-deploy.yml', 'mobile-ota-production.yml', 'mobile-ota-backport.yml']) {
@@ -234,6 +336,7 @@ describe('release behaviour', () => {
       expect(code, name).not.toContain('--rollout-percentage');
       expect(code, name).not.toContain('mobile-ota-rollout');
       expect(code, name).not.toContain('ota-apply');
+      expect(code, name).not.toContain('ota-rollout-proof');
       // The promote and the baseline capture still target the default branch.
       expect(code, name).not.toContain('pr-beta');
     }

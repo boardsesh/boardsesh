@@ -51,6 +51,10 @@
  *        { percentage, expectedUpdateId }        percentage 100 finishes the rollout
  *   POST {app}/branch/{branch}/runtimeVersion/{rtv}/rollout/revert
  *        { expectedUpdateId }                    republishes the previous update as a new one
+ *   GET  {app}/branch/{branch}/runtimeVersion/{rtv}/updates?limit={1-100}
+ *        -> { items: [{ updateId, updateUUID, commitHash, platform, createdAt, message?,
+ *                       rolloutPercentage?, controlUpdateId?, publishGroup? }], nextCursor }
+ *        A server older than 3.1.2 answers with the bare list.
  *   GET  {app}/branch/{branch}/runtimeVersion/{rtv}/updates/{updateId}
  *        -> { updateId, updateUUID, commitHash, platform, ... }
  *   GET  {app}/identity/update-health?ids={uuid,uuid}
@@ -117,6 +121,21 @@ export interface XpremUpdateDetails {
   platform: string | null;
 }
 
+/** One row of a runtime version's update list. */
+export interface XpremUpdateListItem {
+  updateId: XpremId;
+  /** The id a device reports. The server lists a roll-back-to-embedded directive under a label, not a UUID. */
+  updateUUID: string | null;
+  platform: string;
+  commitHash: string | null;
+  message: string | null;
+  createdAt: string | null;
+  /** Set while this update is rolling out. */
+  rolloutPercentage: number | null;
+  /** The update a rollout replaced. The server keeps it after the rollout ends. */
+  controlUpdateId: XpremId | null;
+}
+
 /** Device counts for one update, as `identity/update-health` reports them now. */
 export interface XpremUpdateHealth {
   devicesOnUpdate: number;
@@ -166,6 +185,7 @@ export const XPREM_BUNDLE_MARKERS: readonly { marker: string; usedFor: string }[
   { marker: '/runtimeVersions`', usedFor: 'list runtime versions' },
   { marker: '/rollout`', usedFor: 'read and set a rollout' },
   { marker: '/rollout/revert`', usedFor: 'revert a rollout' },
+  { marker: '/updates?${', usedFor: 'list updates' },
   { marker: '/updates/${encodeURIComponent(', usedFor: 'update details' },
   { marker: '/identity/update-health?ids=', usedFor: 'update health' },
   { marker: '/observe/update-health/history?', usedFor: 'update health history' },
@@ -473,6 +493,29 @@ export function createXpremAdminClient(options: XpremAdminClientOptions) {
 
     async revertUpdateRollout(branch: string, runtimeVersion: string, expectedUpdateId: XpremId): Promise<void> {
       await request('Revert rollout', 'POST', `${rolloutPath(branch, runtimeVersion)}/revert`, { expectedUpdateId });
+    },
+
+    /** The newest updates of one runtime version, every platform together. One page. */
+    async getUpdates(branch: string, runtimeVersion: string, limit = 50): Promise<XpremUpdateListItem[]> {
+      const query = new URLSearchParams({ limit: String(limit) });
+      const path = `${app}/branch/${segment(branch)}/runtimeVersion/${segment(runtimeVersion)}/updates?${query.toString()}`;
+      const listed = await request('List updates', 'GET', path);
+      const items = Array.isArray(listed)
+        ? listed
+        : jsonArray(jsonObject(listed, 'update list').items, 'update list items');
+      return items.map((entry): XpremUpdateListItem => {
+        const update = jsonObject(entry, 'listed update');
+        return {
+          updateId: xpremId(update.updateId, 'listed update updateId'),
+          updateUUID: optionalString(update.updateUUID),
+          platform: nonEmptyString(update.platform, 'listed update platform'),
+          commitHash: optionalString(update.commitHash),
+          message: optionalString(update.message),
+          createdAt: optionalString(update.createdAt),
+          rolloutPercentage: typeof update.rolloutPercentage === 'number' ? update.rolloutPercentage : null,
+          controlUpdateId: optionalXpremId(update.controlUpdateId),
+        };
+      });
     },
 
     async getUpdateDetails(branch: string, runtimeVersion: string, updateId: XpremId): Promise<XpremUpdateDetails> {

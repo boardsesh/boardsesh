@@ -12,12 +12,13 @@
 //   2. Never touch a per-PR preview branch. A declaration that names one is
 //      rejected, and a live one is counted and otherwise ignored.
 //   3. Anything live that the config does not declare is reported and left alone.
+//      That includes the rollout-proof scratch branch, which is named as such.
 //   4. Never loosen. Protection is set and never cleared.
 //   5. A channel is not remapped while a rollout is live on it or on either branch
 //      involved: moving the fleet's branch mid-canary would leave the rollout
 //      judging devices that are no longer served it.
 
-import { PREVIEW_BRANCH_PATTERN } from './config.ts';
+import { PREVIEW_BRANCH_PATTERN, ROLLOUT_PROOF_BRANCH } from './config.ts';
 import type { OtaDesiredState } from './config.ts';
 
 export interface LiveChannel {
@@ -103,6 +104,11 @@ export function assertDeclarable(desired: OtaDesiredState): void {
   for (const branch of desired.branches) {
     if (PREVIEW_BRANCH_PATTERN.test(branch.name)) {
       throw new Error(`Branch "${branch.name}" is a per-PR preview branch and cannot be declared.`);
+    }
+    if (branch.name === ROLLOUT_PROOF_BRANCH) {
+      // Declared, it would be created, protected and reported missing every day
+      // until someone ran the proof.
+      throw new Error(`Branch "${branch.name}" is the rollout-proof scratch branch and cannot be declared.`);
     }
     if (declared.has(branch.name)) throw new Error(`Branch "${branch.name}" is declared twice.`);
     declared.add(branch.name);
@@ -239,7 +245,12 @@ export function buildOtaPlan(desired: OtaDesiredState, live: OtaLiveState): OtaP
   const undeclaredBranches = live.branches.filter((branch) => !declaredBranches.has(branch.name));
   const previewBranches = undeclaredBranches.filter((branch) => PREVIEW_BRANCH_PATTERN.test(branch.name));
   for (const branch of undeclaredBranches) {
-    if (!PREVIEW_BRANCH_PATTERN.test(branch.name)) {
+    if (branch.name === ROLLOUT_PROOF_BRANCH) {
+      plan.reports.push(
+        `Branch "${branch.name}" exists: the scratch branch of the rollout proof (scripts/ota-rollout-proof.ts). ` +
+          'It holds synthetic updates no device can run. Left alone.',
+      );
+    } else if (!PREVIEW_BRANCH_PATTERN.test(branch.name)) {
       plan.reports.push(`Branch "${branch.name}" exists on the server and is not declared. Left alone.`);
     }
   }
