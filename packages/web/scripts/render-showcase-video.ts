@@ -16,7 +16,7 @@
  *                            [--no-donation-line] [--work-dir <dir>]
  */
 import { chromium, type Page } from '@playwright/test';
-import sharp from 'sharp';
+import sharp, { type OverlayOptions } from 'sharp';
 import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -249,7 +249,7 @@ async function composeBoardScreen(cached: CachedClimb, output: string, queue?: I
   const boardImage = sharp(readFileSync(cached.imagePath));
   const { width, height } = await boardImage.metadata();
   const screen = renderedBoardScreen(cached.climb, { width, height });
-  const layers: sharp.OverlayOptions[] = [
+  const layers: OverlayOptions[] = [
     {
       input: await boardImage.clone().resize(screen.board.width, screen.board.height).png().toBuffer(),
       left: screen.board.left,
@@ -927,7 +927,7 @@ async function renderStills(cut: Cut, measure: boolean): Promise<void> {
   const rendition = cut.uses[0].rendition.id;
   try {
     for (const [groupIndex, { group, frames }] of cutStills(cut).entries()) {
-      const tiles: sharp.OverlayOptions[] = [];
+      const tiles: OverlayOptions[] = [];
       for (const [index, still] of frames.entries()) {
         await renderFrame(page, still.frame);
         violations.push(...(await safeAreaViolations(page, cut, still.frame)));

@@ -1,4 +1,4 @@
-import sharp from 'sharp';
+import sharp, { type JpegOptions, type OverlayOptions, type PngOptions, type Sharp, type WebpOptions } from 'sharp';
 import {
   createOgBackgroundBuffer,
   getBackgroundRelPaths,
@@ -9,29 +9,29 @@ import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH, placeOgBoard } from './headers';
 import type { BoundedLru } from './lru';
 import type { OutputFormat, RenderableBoardDetails } from './types';
 
-const THUMBNAIL_WEBP_OPTIONS: sharp.WebpOptions = {
+const THUMBNAIL_WEBP_OPTIONS: WebpOptions = {
   quality: 60,
   alphaQuality: 70,
   effort: 4,
 };
 
-const DEFAULT_WEBP_OPTIONS: sharp.WebpOptions = {
+const DEFAULT_WEBP_OPTIONS: WebpOptions = {
   quality: 80,
 };
 
-const DEFAULT_PNG_OPTIONS: sharp.PngOptions = {
+const DEFAULT_PNG_OPTIONS: PngOptions = {
   compressionLevel: 9,
   adaptiveFiltering: true,
 };
 
-const THUMBNAIL_JPEG_OPTIONS: sharp.JpegOptions = {
+const THUMBNAIL_JPEG_OPTIONS: JpegOptions = {
   quality: 85,
   chromaSubsampling: '4:4:4',
   progressive: false,
   optimiseScans: false,
 };
 
-const DEFAULT_JPEG_OPTIONS: sharp.JpegOptions = {
+const DEFAULT_JPEG_OPTIONS: JpegOptions = {
   quality: 90,
   chromaSubsampling: '4:4:4',
   mozjpeg: true,
@@ -41,13 +41,13 @@ const DEFAULT_JPEG_OPTIONS: sharp.JpegOptions = {
  * OG social-card JPEG encode: mozjpeg at quality 85 with full chroma so hold
  * rings stay crisp (~50–80KB at 1200×630).
  */
-export const OG_JPEG_OPTIONS: sharp.JpegOptions = {
+export const OG_JPEG_OPTIONS: JpegOptions = {
   quality: 85,
   chromaSubsampling: '4:4:4',
   mozjpeg: true,
 };
 
-function getJpegOptions(thumbnail: boolean): sharp.JpegOptions {
+function getJpegOptions(thumbnail: boolean): JpegOptions {
   return thumbnail ? THUMBNAIL_JPEG_OPTIONS : DEFAULT_JPEG_OPTIONS;
 }
 
@@ -105,7 +105,7 @@ export type RenderBoardImageParams = {
    * rather than drawn into the backdrop: a per-climb string in the backdrop
    * would turn the per-board `ogBase` cache into a per-climb one.
    */
-  cardLayers?: readonly sharp.OverlayOptions[];
+  cardLayers?: readonly OverlayOptions[];
 };
 
 export type RenderTimings = {
@@ -140,8 +140,8 @@ type EncodedImage = {
  * social canvas composite.
  */
 async function encodeRendered(
-  image: sharp.Sharp,
-  options: { isOgVariant: boolean; format: OutputFormat; thumbnail: boolean; webpOptions: sharp.WebpOptions },
+  image: Sharp,
+  options: { isOgVariant: boolean; format: OutputFormat; thumbnail: boolean; webpOptions: WebpOptions },
 ): Promise<EncodedImage> {
   const { isOgVariant, format, thumbnail, webpOptions } = options;
   if (!isOgVariant && format === 'webp') {
@@ -264,7 +264,7 @@ export async function renderBoardImageBuffer({
   let cache: RenderBoardImageResult['cache'] = 'none';
 
   const overlayOnlyImage = () => sharp(overlayBuffer, { raw: rawPlane });
-  const overlayWebpOptions: sharp.WebpOptions = thumbnail ? THUMBNAIL_WEBP_OPTIONS : { lossless: true };
+  const overlayWebpOptions: WebpOptions = thumbnail ? THUMBNAIL_WEBP_OPTIONS : { lossless: true };
   const bgRelPaths = includeBackground ? getBackgroundRelPaths(boardDetails, thumbnail, colorScheme) : [];
 
   if (includeBackground && isOgVariant && dimBackground === 0) {
@@ -323,9 +323,7 @@ export async function renderBoardImageBuffer({
     const results = await Promise.allSettled(
       bgFsPaths.map((fsPath) => sharp(fsPath).resize(width, height, { fit: 'fill' }).toBuffer()),
     );
-    const [firstBg, ...restBgs] = results
-      .filter((result): result is PromiseFulfilledResult<Buffer> => result.status === 'fulfilled')
-      .map((result) => result.value);
+    const [firstBg, ...restBgs] = results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
 
     if (firstBg) {
       imageBuffer = await sharp(firstBg)
@@ -489,9 +487,7 @@ export async function composeOgBaseBuffer(params: {
   const results = await Promise.allSettled(
     bgFsPaths.map((fsPath) => sharp(fsPath).resize(boardWidth, boardHeight, { fit: 'fill' }).toBuffer()),
   );
-  const resizedBoardPhotos = results
-    .filter((result): result is PromiseFulfilledResult<Buffer> => result.status === 'fulfilled')
-    .map((result) => result.value);
+  const resizedBoardPhotos = results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
 
   const backdrop = sharp(createOgBackgroundBuffer({ left, top, width: boardWidth, height: boardHeight })).composite(
     resizedBoardPhotos.map((buf) => ({ input: buf, left, top, blend: 'over' as const })),
@@ -510,7 +506,7 @@ export async function encodeOgImage(params: {
   overlay: { buffer: Buffer; width: number; height: number; left: number; top: number };
   format: OutputFormat;
   /** Climb-identity text layers, composited above the overlay. */
-  cardLayers?: readonly sharp.OverlayOptions[];
+  cardLayers?: readonly OverlayOptions[];
 }): Promise<{ buffer: Buffer; contentType: string }> {
   const { base, overlay, format, cardLayers = [] } = params;
   const composited = sharp(base, {

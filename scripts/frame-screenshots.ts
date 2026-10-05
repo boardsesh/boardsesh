@@ -12,7 +12,7 @@ import {
 } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import sharp from 'sharp';
+import sharp, { type OverlayOptions, type OutputInfo } from 'sharp';
 import { brandColors, brandColorsDark, materialSurfaces } from '../packages/shared/velvet-tokens/src/index';
 import {
   findGooglePlayImageOffenders,
@@ -220,7 +220,7 @@ export async function frameComposition(
       { raw: sources[1], left: width * 0.405, top: screenshotTop + height * 0.13, width: width * 0.565 },
     );
   }
-  const layers: sharp.OverlayOptions[] = [
+  const layers: OverlayOptions[] = [
     { input: wordmark.data, left: margin, top },
     { input: headline.data, left: margin, top: headlineTop },
     { input: description.data, left: margin, top: descriptionTop },
@@ -296,7 +296,7 @@ async function frameLandscape(
   const copyTop = Math.round((height - copyHeight) / 2);
   const headlineTop = copyTop + wordmark.info.height + headlineGap;
   const descriptionTop = headlineTop + headline.info.height + descriptionGap;
-  const layers: sharp.OverlayOptions[] = [
+  const layers: OverlayOptions[] = [
     { input: wordmark.data, left: margin, top: copyTop },
     { input: headline.data, left: margin, top: headlineTop },
     { input: description.data, left: margin, top: descriptionTop },
@@ -374,7 +374,7 @@ interface FramePaint {
   height: number;
   colors: MaterialSurface;
   /** Copy layers, already positioned. Panels are composited over them in order. */
-  layers: sharp.OverlayOptions[];
+  layers: OverlayOptions[];
   panels: readonly NativePanel[];
   unit: number;
 }
@@ -443,7 +443,7 @@ export async function frameDirectory(options: FrameDirectoryOptions): Promise<st
   const staging = mkdtempSync(join(dirname(output), '.framing-'));
   const manifest: PresentationManifest = { version: PRESENTATION_VERSION, locale: options.locale, files: {} };
   try {
-    const thumbnails: Array<{ data: Buffer; info: sharp.OutputInfo }> = [];
+    const thumbnails: Array<{ data: Buffer; info: OutputInfo }> = [];
     for (const recipe of recipes) {
       const name = recipe.output;
       const buffers = recipe.sources.map((source) => capturesByName.get(source)!);
