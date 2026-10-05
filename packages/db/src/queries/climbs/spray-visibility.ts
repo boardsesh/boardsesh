@@ -73,14 +73,25 @@ export type SprayVisibilityColumns = {
 
 /**
  * `true` for every non-spray climb, and for a spray climb whose wall the viewer
- * may see by layout id.
+ * may see by layout id. An optional wall UUID grants the existing unlisted
+ * capability; callers without that capability retain the by-layout rule.
  *
- * Pass `userId` as null for an anonymous reader — then only public walls pass.
+ * Pass `userId` as null for an anonymous reader — then only public walls pass
+ * unless the caller explicitly supplies an unlisted wall capability.
  * Anything the caller can reach without signing in has to pass null, not a
  * hopeful value.
  */
-export function sprayClimbVisibilityCondition(columns: SprayVisibilityColumns, userId: string | null | undefined): SQL {
+export function sprayClimbVisibilityCondition(
+  columns: SprayVisibilityColumns,
+  userId: string | null | undefined,
+  wallUuid?: string | null,
+): SQL {
   const viewer = userId ?? null;
+  // PostgreSQL checks column privileges before evaluating boolean branches.
+  // Default readers, including restricted export workers, must not reference
+  // is_unlisted unless this call actually supplies a wall capability.
+  // This optional fragment owns its leading OR; absent capabilities add no branch.
+  const unlistedCapability = wallUuid == null ? sql`` : sql`OR (ub.is_unlisted AND ub.uuid = ${wallUuid}::text)`;
   return sql`(
     ${columns.boardType} IS DISTINCT FROM 'spray'
     OR EXISTS (
@@ -93,6 +104,7 @@ export function sprayClimbVisibilityCondition(columns: SprayVisibilityColumns, u
         AND (sw.hidden_at IS NULL OR (${viewer}::text IS NOT NULL AND ub.owner_id = ${viewer}::text))
         AND (
           ub.is_public
+          ${unlistedCapability}
           OR (
             ${viewer}::text IS NOT NULL
             AND (

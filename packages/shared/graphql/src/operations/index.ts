@@ -31,3 +31,5 @@ export * from './spray-walls';
 // directly via `@boardsesh/graphql/operations/queue-session`.
 // account.ts and proposals.ts are also imported directly (matches the
 // original web layout before the move).
+
+export * from './saved-climb-sync';

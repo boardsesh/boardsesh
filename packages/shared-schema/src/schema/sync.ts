@@ -32,6 +32,14 @@ export const syncTypeDefs = /* GraphQL */ `
     syncSeq: String!
   }
 
+  "Canonical saved-climb documents from one snapshot, without changing a pull cursor."
+  type SyncClimbDocuments {
+    "Authenticated account owning the client mirror, independent of the setter."
+    viewerId: ID!
+    climb: JSON!
+    stats: [JSON!]!
+  }
+
   """
   One page of synced rows. \`documents\` are snake_case JSON objects whose keys
   match the mobile local columns.

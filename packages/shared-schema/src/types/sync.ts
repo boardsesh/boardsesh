@@ -30,3 +30,10 @@ export type SyncDeletionsResult = {
   cursor: SyncCursor;
   hasMore: boolean;
 };
+
+export type SyncClimbDocuments = {
+  viewerId: string;
+  /** Canonical snake_case column sets are defined in the saved-climb resolver. */
+  climb: unknown;
+  stats: unknown[];
+};

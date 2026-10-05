@@ -9,6 +9,7 @@ import { logger } from '../../../utils/logger';
 import { requireAuthenticated } from '../shared/helpers';
 import { isSprayBoardType, sprayLayoutIsReadable } from '../climbs/spray-read-access';
 import { normalizeRow, toIso, type RawRow } from './row-normalize';
+import { syncClimbDocuments } from './saved-climb';
 import {
   validateInput,
   SyncCursorInputSchema,
@@ -341,6 +342,7 @@ async function enrichSprayWallDocument(document: RawRow): Promise<RawRow> {
 }
 
 export const syncQueries = {
+  syncClimbDocuments,
   /**
    * Pull the authenticated user's ticks. Local PK = uuid (the idempotency key).
    * Seq = id. Skips aurora_/kilter_ sync bookkeeping, board_id, inferred_session_id.
