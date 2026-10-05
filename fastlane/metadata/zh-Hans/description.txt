@@ -1,5 +1,7 @@
 搜一条线路，看着墙亮起来。少看手机，多爬墙。
 
+App 界面目前为英文，中文版正在翻译中。
+
 【你爬的每块训练板，一个 App 就够】
 Kilter、Tension 和 MoonBoard 各有各的 App，只管自家的板。Boardsesh 把它们放到一处，还兼容 Woods、Decoy、Touchstone、Grasshopper 和 So iLL。你在每块板上的攀爬记录都在这里。
 
@@ -14,16 +16,16 @@ Kilter、Tension 和 MoonBoard 各有各的 App，只管自家的板。Boardsesh
 iOS 实时活动让你在锁屏上就能看到墙上是哪条线路，不用解锁就能换线。
 
 【生成训练计划】
-选择容量、金字塔、阶梯或专攻难度，设定目标难度和热身，预览线路，然后一条一条点亮到墙上。
+选择刷量、金字塔、阶梯或专攻难度，设定目标难度和热身，预览线路，然后一条一条点亮到墙上。
 
 【记录你的攀爬】
-记录完攀、Flash 和尝试，训练结束后查看时长、难度分布和最难的一次完攀，并在“进度”页看着完攀数和难度一路上涨。
+记录完攀、Flash 和尝试，训练结束后查看时长、难度分布和最难的一次完攀，并在 Progress（进度）页看着完攀数和难度一路上涨。
 
 【把过去的记录带过来】
 把训练保存到 Apple“健康”，并从 Aurora Climbing 导入你以往在 Kilter 和 Tension 上的攀爬记录。
 
 【发现更多线路】
-关注岩友和定线员，搜索攀岩者，并把“发现”里的线路清单置顶。
+关注岩友和定线员，搜索攀岩者，并把 Discover（发现）里的线路清单置顶。
 
 支持的训练板：Kilter、Tension、MoonBoard（2010、2016、2024、Masters 2017、Masters 2019）、Woods（12x12、8x10）、Decoy、Touchstone、Grasshopper 和 So iLL。
 

@@ -2,7 +2,7 @@
 
 Terminology for Simplified Chinese (`zh-Hans`) text, aimed at mainland board climbers. **Follow this for every Chinese string you add or edit.** An agent will not reliably know the word a Chinese climber uses at the wall, so the choices are written down here.
 
-Today this covers the store listing only: `fastlane/metadata/zh-Hans/` (App Store) and `fastlane/metadata/android/zh-CN/` (Play). The app catalogs are not translated yet. The English source is the matching `en-US` folder.
+Today this covers the store listing only: `fastlane/metadata/zh-Hans/` (App Store) and `fastlane/metadata/android/zh-CN/` (Play). The app catalogs are not translated yet, so the app a Chinese reader installs is in English. Both descriptions say so in their second paragraph (`App 界面目前为英文，中文版正在翻译中。`); keep that line until the catalogs ship. The English source is the matching `en-US` folder.
 
 > **Authority: none yet.** Every term below is a proposal written by an agent. No native-speaking climber has read it. Until one has, treat the "Open questions" section as blocking, and do not ship Chinese text that depends on an unanswered question. When a reviewer settles a term, record their name here the way the German, French and Spanish glossaries do.
 
@@ -22,7 +22,7 @@ Informal **你**, never **您**. Same voice as the German _du_ and the Spanish _
 - One half-width space between Chinese and a Latin word or number (`兼容 Woods`, `5,000 多条线路`). No space next to full-width punctuation.
 - Section headings in listing text use `【 】`, which is how Chinese store listings mark what English does with capitals.
 - `keywords.txt` is the exception: half-width commas, no spaces. App Store Connect splits on the half-width comma.
-- UI names quoted from the app go in `“ ”` (`“进度”页`, `“镜像”按钮`).
+- **UI names are written the way the app shows them, which today is English**, followed by a Chinese gloss in full-width brackets: `Progress（进度）页`, `Climbs（线路）页`, `Rest timer（休息计时器）`. A multi-word label keeps its quotes: `“Fixed window”（固定间隔）`. Copy the label from the `en-US` catalog, not from the English release notes, which sometimes paraphrase it. Once the app catalogs are translated, switch to the Chinese name alone in `“ ”`.
 
 ## Never **发送** for a climbing send
 
@@ -60,7 +60,9 @@ Putting a climb on the wall is always **点亮**, including where English says "
 | crew                     | 岩友                            | Open question 3                                                       |
 | climber (search results) | 攀岩者                          |                                                                       |
 | session                  | 训练 (`开一场训练`)             | Open question 2                                                       |
-| workout                  | 训练计划                        | Volume 容量, Pyramid 金字塔, Ladder 阶梯, Grade Focus 专攻难度        |
+| workout                  | 训练计划                        | Volume 刷量 (never 容量, which is storage capacity; open question 11), Pyramid 金字塔, Ladder 阶梯, Grade Focus 专攻难度 |
+| route (multi-frame)      | 长线路                          | Open question 12                                                      |
+| rest timer               | 休息计时器                      |                                                                       |
 | queue                    | 队列                            |                                                                       |
 | logbook, history         | 攀爬记录                        |                                                                       |
 | playlist                 | 线路清单                        | Open question 5                                                       |
@@ -109,10 +111,13 @@ These are the choices an agent cannot verify. Each one changes several strings.
 7. **Match.** `并手` for a matching rule on a hold. Is `并点` or `match` more common on boards?
 8. **Send.** `完攀` is the standard written term. Do board climbers write `完成`, `红点` or `send` instead?
 9. **Search keywords.** Which words do people type to find a board app: `月板`, `K板`, `智能板`, `攀岩板`? The keyword field has about 20 characters left.
-10. **Tab names.** The listing quotes `“进度”` (Progress), `“发现”` (Discover) and `“线路”` (Climbs). These must match the app once it is translated.
+10. **Tab and button names.** The listing glosses `Progress（进度）`, `Discover（发现）`, `Climbs（线路）`, `Previous（上一条）`, `Next（下一条）` and `Rest timer（休息计时器）`. The app catalogs must use the same Chinese once they are translated.
+11. **Volume (workout type).** The text uses `刷量`. Is `量训练` or `训练量` what a climber would call a high-volume session, and is `刷量` too slangy for a store page?
+12. **Route.** A route on a board is a longer climb played frame by frame, as opposed to a boulder. The text uses `长线路`. Is `路线`, `耐力线` or plain `Route` clearer?
 
 ## Process
 
 - The listing folders must keep the exact `en-US` file set. URLs and the app name are copied unchanged.
-- Update the Chinese release notes with every release, next to the other locales (`docs/mobile-store-release.md`).
+- Update the Chinese release notes with every release, next to the other locales (`docs/mobile-store-release.md`). They are translated from the `en-US` notes on `release/next`, and the heading must name the version that is being prepared.
+- **Chinese notes must name the same version as the `en-US` notes on the branch you merge into.** The `ios metadata` lane writes every locale folder onto whichever App Store version is editable; it does not look at the version in `app.config.ts`. A push to `main` while the train's version is in Prepare for Submission overwrites that draft's What's New in every locale with `main`'s text.
 - See `docs/i18n-german-glossary.md`, `docs/i18n-french-glossary.md` and `docs/i18n-spanish-glossary.md` for the counterparts.
