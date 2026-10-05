@@ -1826,8 +1826,10 @@ the API is public and a server rule must not rest on a client convention.
 A share link is `https://www.boardsesh.com/b/<slug>/<angle>/list`, with
 `?wall=<uuid>` on an unlisted wall. iOS takes it into the app through the
 host-wide `applinks:` entitlement. Android's verified intent filters in
-`packages/mobile/app.config.ts` include `/b/` for both `www.boardsesh.com` and
-`boardsesh.com`, alongside `/join`, `/preview` and `/auth/reset-password`.
+`packages/mobile/app.config.ts` include `/b/` on `www.boardsesh.com`, alongside
+`/join`, `/preview`, `/auth/reset-password` and one prefix per board name for
+classic climb links, repeated under `/es`, `/fr` and `/de`. The apex `boardsesh.com` is not claimed on Android: it
+answers `assetlinks.json` with a redirect, which fails verification.
 The native-intent handoff preserves the query string through
 `useLocalSearchParams`. Board adoption awaits `sprayWall(uuid)` with the
 complete board fields, then checks the returned wall UUID and board slug against

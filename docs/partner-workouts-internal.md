@@ -322,10 +322,13 @@ button that fires the custom scheme, store links, and `robots: noindex`. It
 never shows the blocks or notes, because the page is reachable by anyone with
 the id and the workout may carry a coach's private notes.
 
-Android is the honest gap. `packages/mobile/app.config.ts` only lists `/join`,
-`/preview` and `/auth/reset-password` in its intent filters, so
-`https://boardsesh.com/w/...` opens Chrome until a native build adds a
-`pathPrefix: '/w'` entry. That is a release/next change. Meanwhile the scheme
+Android is the honest gap. `packages/mobile/app.config.ts` lists `/join`,
+`/preview`, `/b/`, `/auth/reset-password` and the board-name prefixes in its
+intent filters, so `https://www.boardsesh.com/w/...` opens Chrome until a
+native build adds a `{ host: 'www.boardsesh.com', pathPrefix: '/w/' }` entry.
+That is a release/next change. The launch link must use the `www` host: the
+apex answers `assetlinks.json` with a redirect, so Android cannot verify it and
+the manifest never claims it. Meanwhile the scheme
 works on every build, which is why the partner doc tells them to try
 `appUrl` first and why the web page has a scheme button.
 
