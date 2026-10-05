@@ -35,11 +35,13 @@ because the Cloudflare defaults do not apply to these objects:
   `application/octet-stream` body at all is not stated in Cloudflare's docs; the gate in
   `docs/mobile-ota-updates.md` → **Asset delivery from the edge** is what proves it.
 
-The compression phase is the one rule phase marked `optional` in `infra/cloudflare/plan.ts`. A token that cannot
-read it, or whose write is refused, logs a warning and skips the rule instead of failing `cf:apply`, which would
-block the web deploy. The scope it needs is `Zone.Response Compression Edit`. The first apply on 2026-10-05
-skipped the phase because the production token lacked it; the scope was granted the same day. After an apply has
-written the rule, set `optional: false`.
+The scope the compression phase needs is `Zone.Response Compression Edit`. The first apply on 2026-10-05 skipped
+the phase because the production token lacked it; the scope was granted and the rule written the same day.
+Measured from Sydney afterwards, the iOS bundle transferred at 7.94 MB for a Brotli request and 8.07 MB for gzip,
+against 20.87 MB uncompressed, and both decoded to the stored SHA-256. The phase is no longer `optional`: a token
+that loses the scope now fails `cf:apply`. A new phase can still be marked `optional` in
+`infra/cloudflare/plan.ts` while its scope is rolled out, which turns an unreadable phase or a refused write into
+a warning.
 
 Anyone holding an object's URL can download it, production and `pr-*` preview bundles alike. That is accepted: the
 bundle is the compiled form of this public repository. Never store anything in this bucket that is not an OTA asset.
@@ -72,7 +74,7 @@ R2 is **account**-scoped, unlike everything else here, so managing it needs two 
   shape as the WAF and rate-limit phases. **Editing a token replaces all of its
   policies, so re-add every existing scope in the same edit.**
 - `Zone.Response Compression Edit` on `CLOUDFLARE_API_TOKEN`, for the OTA assets compression rule
-  (`http_response_compression`). Without it the phase is skipped with a warning while it is marked optional.
+  (`http_response_compression`). Without it `cf:apply` fails on this phase.
 - `Account.Workers R2 Storage:Edit` on `CLOUDFLARE_API_TOKEN`. Without it, the R2 read fails authorization and is skipped with a warning — the zone config still applies.
 
 R2 degrades to "skip and say so" when the account id or storage scope is absent.
