@@ -179,12 +179,15 @@ export function SprayResetCompareScreen({
     if (!wall) return { width: 0, height: 0 };
     const boardAspect = wall.photoWidth / wall.photoHeight;
     const availableWidth = windowWidth - spacing[4] * 2;
-    const availableHeight = Math.max(200, windowHeight - headerInset - insets.bottom - CHROME_BUDGET);
+    const availableHeight = Math.max(
+      200,
+      windowHeight - Math.max(headerInset, insets.top) - insets.bottom - CHROME_BUDGET,
+    );
     if (availableWidth / availableHeight > boardAspect) {
       return { width: availableHeight * boardAspect, height: availableHeight };
     }
     return { width: availableWidth, height: availableWidth / boardAspect };
-  }, [wall, windowWidth, windowHeight, headerInset, insets.bottom]);
+  }, [wall, windowWidth, windowHeight, headerInset, insets.top, insets.bottom]);
 
   /**
    * Both kinds of ring as one tap surface.

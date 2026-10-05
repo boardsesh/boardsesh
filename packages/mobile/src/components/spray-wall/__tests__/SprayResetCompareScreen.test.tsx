@@ -46,6 +46,7 @@ const wallState = vi.hoisted(() => ({
 }));
 /** The board's props, so a test can fire a ring tap the way a finger does. */
 const headerInset = vi.hoisted(() => ({ current: 0 }));
+const safeAreaInsets = vi.hoisted(() => ({ top: 0, bottom: 0 }));
 const boardProps = vi.hoisted(() => ({
   current: null as null | {
     onHoldTap?: (key: number) => void;
@@ -66,7 +67,7 @@ vi.mock('react-native', () => ({
 vi.mock('../../../hooks/use-transparent-header-inset', () => ({
   useTransparentHeaderInset: () => headerInset.current,
 }));
-vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
+vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => safeAreaInsets }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) => (options ? `${key}:${JSON.stringify(options)}` : key),
@@ -178,6 +179,8 @@ beforeEach(() => {
   commitMutateAsync.mockClear();
   boardProps.current = null;
   headerInset.current = 0;
+  safeAreaInsets.top = 0;
+  safeAreaInsets.bottom = 0;
   draftState.current = { isLoading: false, isUnavailable: false, homography: [1, 0, 0, 0, 1, 0, 0, 0, 1] };
   proposalState.current = { data: PROPOSAL, isPending: false, error: null };
   wallState.current = {
@@ -252,6 +255,17 @@ describe('SprayResetCompareScreen', () => {
 
     const screenStyle = JSON.parse(container.firstElementChild!.getAttribute('data-native-style')!);
     expect(screenStyle).toContainEqual({ backgroundColor: '#000', paddingTop: 0 });
+  });
+
+  it('preserves safe-area photo fit beneath an opaque header', () => {
+    safeAreaInsets.top = 30;
+    wallState.current = { ...wallState.current!, photoWidth: 500, photoHeight: 1000 };
+    const { container } = renderScreen();
+
+    const screenStyle = JSON.parse(container.firstElementChild!.getAttribute('data-native-style')!);
+    expect(screenStyle).toContainEqual({ backgroundColor: '#000', paddingTop: 0 });
+    expect(boardProps.current?.renderHeight).toBe(370);
+    expect(boardProps.current?.renderWidth).toBe(185);
   });
 
   it('opens the panel for the ring under the finger', () => {
