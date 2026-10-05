@@ -258,6 +258,9 @@ function NoBoardClimbsPreviewComponent({
       </View>
       {hasClimbs ? (
         <FlashList
+          // One list per setup: a chip switch starts the new board's climbs at
+          // the top instead of wherever the last list was scrolled to.
+          key={config.boardName}
           testID="no-board-preview-list"
           data={climbs}
           renderItem={renderRow}
