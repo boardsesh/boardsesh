@@ -108,6 +108,20 @@ export type AppSettings = {
    * testing something already signed off.
    */
   qaVerdictSubmittedKey: string | null;
+  /**
+   * "Get updates early": this phone follows the early-updates OTA branch. The
+   * choice only. The pin itself is a native request-header override that cannot
+   * be read back, so `EarlyUpdatesLaunchSync` re-applies it at launch from this
+   * value. Written only after the pin call succeeded. Per device, not per
+   * account: the override it mirrors is device-wide too.
+   */
+  earlyUpdates: boolean;
+  /**
+   * The pin has been cleared once because the `early-updates` flag is off. Stops
+   * a later launch from clearing a PR-preview pin a tester set in the meantime.
+   * Reset whenever the pin is applied again.
+   */
+  earlyUpdatesPinClearedByFlag: boolean;
 };
 
 export type SettingsKey = keyof AppSettings;

@@ -47,6 +47,26 @@ Signed out, the pick list still works: the branch list is an unauthenticated dev
 rows render as bare `pr-N` without their PR metadata. Dev clients and any binary without the surfing
 headers see none of it.
 
+## Testers who also get updates early
+
+"Get updates early" (More → **App updates**, behind the `early-updates` flag) pins a phone to the
+`pr-beta` branch. It shares the one `xprem-branch` header with previews, so the two take turns. The
+whole design is in `docs/mobile-ota-updates.md` → "Early updates"; what changes for QA:
+
+- **`pr-beta` is never a PR.** `parsePrBranch` rejects it, `otaBranchKind` names it
+  `early-updates`, and `listQaBranches` reports it beside `staging`, never in `previews`. The gate
+  treats a `pr-beta` bundle like production: a tester on early updates is still offered the pick
+  list.
+- **Picking a preview or Staging replaces the early-updates pin**, and the launch re-pin
+  (`EarlyUpdatesLaunchSync`) stands down while a `pr-<n>` or `pr-staging` bundle is running, so a
+  tester is never pulled off the PR they are testing.
+- **Leaving goes back to early updates, not production.** For a member the picker's Production row
+  is labelled **Early updates**, and it, **Leave preview** and a filed verdict all call
+  `returnToOwnTrack`, which pins `pr-beta` with no update check and no reload. The toast says the
+  change applies next time the app opens. A non-member's three exits are unchanged.
+- **Branch Surfing switched off ends membership.** The same `/branch_lists` answer that puts up
+  "Previews are switched off" clears the pin and sets `earlyUpdates` to false.
+
 ## Where the pieces live
 
 | Piece                                           | File                                                                             |
@@ -56,6 +76,8 @@ headers see none of it.
 | Pick list / brief screens                       | `src/components/qa/Qa{Pick,Brief}Screen.tsx` (routes: `app/qa/{pick,brief}.tsx`) |
 | Verdict sheet                                   | `src/components/user-drawer/QaVerdictSheet.tsx`                                  |
 | xprem wrapper (the only deep-import site)       | `src/lib/qa/qa-surf.ts`                                                          |
+| Early updates: launch decision, membership, leaving a preview | `src/lib/qa/early-updates.ts`, `src/lib/qa/use-early-updates.ts`       |
+| Early updates: launch re-pin (renders nothing)  | `src/components/qa/EarlyUpdatesLaunchSync.tsx`                                   |
 | Branch-name parsing, session keys, row ordering | `src/lib/qa/{pr-branch,qa-keys,qa-pick-rows}.ts`                                 |
 | Search parsing, filtering, list state           | `src/lib/qa/qa-pick-rows.ts` (`parsePrQuery`, `filterQaPickRows`, `qaPickListState`) |
 | The search field itself                         | `src/components/SearchField.tsx` (shared with climber search)                    |
@@ -168,6 +190,9 @@ launch with no update id.
 - `qaBriefSeenKey` — the brief has been shown to this account for this branch + bundle.
 - `qaVerdictSubmittedKey` — this account has filed a verdict for this branch + bundle.
 
+`earlyUpdates` (the "Get updates early" choice) and `earlyUpdatesPinClearedByFlag` live in the same
+store but are per device, not per account: the header override they mirror is device-wide.
+
 Keying on the bundle rather than the branch is deliberate: when the author pushes again, that is a
 different thing to test, so the brief shows again and a second verdict is possible.
 
@@ -189,6 +214,9 @@ verdict, and telling them apart is the point: a surf failure is our bug, leaving
 "Test a PR preview", the dev row on More — emits nothing when it is closed, and a non-tester bounced
 off the route guard emits nothing either. Otherwise the denominator counted prompts that were never
 shown and prompted → picked/skipped stopped adding up.
+
+`Early Updates Toggled` `{ enabled }` is not part of this funnel. It fires when a climber flips
+"Get updates early" and is defined with the OTA events in `src/lib/ota-telemetry.ts`.
 
 ## In a dev build
 

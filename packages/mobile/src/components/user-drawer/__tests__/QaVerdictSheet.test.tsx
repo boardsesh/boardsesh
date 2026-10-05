@@ -157,11 +157,21 @@ const qa = vi.hoisted(() => ({
   runningPrNumber: 4792 as number | null,
   surfingAvailable: true,
   surfToProduction: vi.fn(),
+  pinEarlyUpdates: vi.fn(),
 }));
 vi.mock('../../../lib/qa/qa-surf', () => ({
   qaSurfingAvailable: () => qa.surfingAvailable,
   readRunningPrNumber: () => qa.runningPrNumber,
   surfToProduction: qa.surfToProduction,
+  pinEarlyUpdates: qa.pinEarlyUpdates,
+}));
+
+// Membership of "Get updates early" is a flag plus a stored choice. Both are
+// covered where they live; here only what a member's screen does differs.
+const earlyUpdates = vi.hoisted(() => ({ member: false }));
+vi.mock('../../../lib/qa/use-early-updates', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../lib/qa/use-early-updates')>()),
+  useEarlyUpdatesMember: () => earlyUpdates.member,
 }));
 
 const previews = vi.hoisted(() => ({
@@ -213,6 +223,8 @@ beforeEach(() => {
   qa.runningPrNumber = 4792;
   qa.surfingAvailable = true;
   qa.surfToProduction.mockReset().mockResolvedValue('nothing-to-load');
+  qa.pinEarlyUpdates.mockReset();
+  earlyUpdates.member = false;
   previews.data = [{ prNumber: 4792, title: 'Ask testers to try a PR preview', risk: 3 }];
   previews.mutateAsync.mockReset().mockResolvedValue({ id: 'verdict-1' });
   previews.lastOptions = undefined;
@@ -266,6 +278,22 @@ describe('QaVerdictSheet approve path', () => {
 
     sheet.fullyDismissed?.();
     expect(qa.surfToProduction).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-pins an early-updates member once their verdict is in', async () => {
+    // Clearing the pin here would strand a member: the preview bundle keeps
+    // running, and the launch re-pin stands down on a preview bundle.
+    earlyUpdates.member = true;
+    const { container } = renderSheet();
+    fireEvent.click(submitButton(container));
+
+    await vi.waitFor(() => expect(sheet.dismiss).toHaveBeenCalled());
+    expect(qa.pinEarlyUpdates).not.toHaveBeenCalled();
+
+    sheet.fullyDismissed?.();
+    expect(qa.pinEarlyUpdates).toHaveBeenCalledOnce();
+    expect(qa.surfToProduction).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('qa.shared.backOnEarlyUpdates', 'info'));
   });
 
   it('stays on the sheet when the verdict does not reach the backend', async () => {

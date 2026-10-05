@@ -152,6 +152,7 @@ const qa = vi.hoisted(() => ({
   surfToPr: vi.fn(),
   surfToStaging: vi.fn(),
   surfToProduction: vi.fn(),
+  pinEarlyUpdates: vi.fn(),
   staging: null as { lastUpdateAt: string } | null,
   refusedPrNumber: null as number | null,
 }));
@@ -160,12 +161,21 @@ vi.mock('../../../lib/qa/qa-surf', () => ({
   listPrBranches: qa.listPrBranches,
   listQaBranches: async (...args: unknown[]) => {
     const branches = await qa.listPrBranches(...args);
-    return branches === null ? null : { previews: branches, staging: qa.staging };
+    return branches === null ? null : { previews: branches, staging: qa.staging, earlyUpdates: null };
   },
   surfToPr: qa.surfToPr,
   surfToStaging: qa.surfToStaging,
   surfToProduction: qa.surfToProduction,
+  pinEarlyUpdates: qa.pinEarlyUpdates,
   readRefusedPrNumber: () => qa.refusedPrNumber,
+}));
+
+// Membership of "Get updates early" is a flag plus a stored choice. Both are
+// covered where they live; here only what a member's screen does differs.
+const earlyUpdates = vi.hoisted(() => ({ member: false }));
+vi.mock('../../../lib/qa/use-early-updates', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../lib/qa/use-early-updates')>()),
+  useEarlyUpdatesMember: () => earlyUpdates.member,
 }));
 
 const previews = vi.hoisted(() => ({
@@ -216,6 +226,8 @@ beforeEach(() => {
   qa.surfToPr.mockReset().mockResolvedValue('reloading');
   qa.surfToStaging.mockReset().mockResolvedValue('reloading');
   qa.surfToProduction.mockReset().mockResolvedValue('reloading');
+  qa.pinEarlyUpdates.mockReset();
+  earlyUpdates.member = false;
 });
 
 describe('QaPickScreen', () => {
@@ -233,6 +245,52 @@ describe('QaPickScreen', () => {
     fireEvent.click(await screen.findByLabelText('qa.pick.productionTitle'));
     expect(qa.surfToProduction).toHaveBeenCalledOnce();
   });
+
+  it('takes an early-updates member back to early updates, not to production', async () => {
+    earlyUpdates.member = true;
+    qa.listPrBranches.mockResolvedValue([]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByLabelText('qa.pick.earlyUpdatesTitle'));
+
+    // Pin only: no production surf, so no update check and no reload.
+    expect(qa.pinEarlyUpdates).toHaveBeenCalledOnce();
+    expect(qa.surfToProduction).not.toHaveBeenCalled();
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('qa.pick.earlyUpdatesNextLaunch', 'info'));
+    expect(screen.getByText('qa.pick.earlyUpdatesBody')).toBeTruthy();
+    expect(screen.queryByLabelText('qa.pick.productionTitle')).toBeNull();
+  });
+
+  it('hands the screen back to a member after the pin, so they can still pick a PR', async () => {
+    earlyUpdates.member = true;
+    renderScreen();
+
+    fireEvent.click(await screen.findByLabelText('qa.pick.earlyUpdatesTitle'));
+    await waitFor(() => expect(showToast).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByLabelText('#4792 pr-4792'));
+    expect(qa.surfToPr).toHaveBeenCalledExactlyOnceWith(4792);
+  });
+
+  it('says so when the early-updates pin cannot be applied', async () => {
+    earlyUpdates.member = true;
+    qa.pinEarlyUpdates.mockImplementation(() => {
+      throw new Error('Branch surfing is unavailable on this build');
+    });
+    renderScreen();
+
+    fireEvent.click(await screen.findByLabelText('qa.pick.earlyUpdatesTitle'));
+
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('Branch surfing is unavailable on this build', 'error'));
+  });
+
+  it('never labels the row early updates for someone who has not joined', async () => {
+    renderScreen();
+
+    expect(await screen.findByLabelText('qa.pick.productionTitle')).toBeTruthy();
+    expect(screen.queryByLabelText('qa.pick.earlyUpdatesTitle')).toBeNull();
+  });
+
   it('renders a tappable row per loadable branch even with no PR metadata', async () => {
     // The branch list is the spine: GitHub being down must not cost a tester
     // the ability to load the branch.

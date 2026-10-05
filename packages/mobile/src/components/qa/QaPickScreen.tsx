@@ -18,14 +18,13 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
+import { listQaBranches, qaSurfingAvailable, readRefusedPrNumber, surfToPr, surfToStaging } from '../../lib/qa/qa-surf';
+import { returnToOwnTrack } from '../../lib/qa/early-updates';
 import {
-  listQaBranches,
-  qaSurfingAvailable,
-  readRefusedPrNumber,
-  surfToPr,
-  surfToProduction,
-  surfToStaging,
-} from '../../lib/qa/qa-surf';
+  QA_BRANCHES_QUERY_KEY,
+  QA_BRANCHES_STALE_TIME_MS,
+  useEarlyUpdatesMember,
+} from '../../lib/qa/use-early-updates';
 import { parsePrNumberList } from '../../lib/qa/pr-branch';
 import {
   buildQaPickRows,
@@ -81,9 +80,9 @@ export function QaPickScreen() {
   const seedPrNumbers = useMemo(() => parsePrNumberList(params.prNumbers), [params.prNumbers]);
 
   const branchesQuery = useQuery({
-    queryKey: ['qaPrBranches'],
+    queryKey: QA_BRANCHES_QUERY_KEY,
     queryFn: ({ signal }) => listQaBranches(signal),
-    staleTime: 30_000,
+    staleTime: QA_BRANCHES_STALE_TIME_MS,
     retry: 1,
   });
   const branchList = branchesQuery.data ?? null;
@@ -139,6 +138,9 @@ export function QaPickScreen() {
   );
 
   const surfingAvailable = qaSurfingAvailable();
+  // A "Get updates early" member's own track is the early-updates branch, so
+  // the row that leaves previews takes them back there, not to production.
+  const earlyUpdatesMember = useEarlyUpdatesMember();
 
   const handleChannelPick = useCallback(
     (channel: 'staging' | 'production') => {
@@ -146,14 +148,18 @@ export function QaPickScreen() {
       surfInFlightRef.current = true;
       pickedRef.current = true;
       setSurfingChannel(channel);
-      const switchBranch = channel === 'staging' ? surfToStaging : surfToProduction;
-      void switchBranch()
+      const switchBranch = channel === 'staging' ? surfToStaging() : returnToOwnTrack(earlyUpdatesMember);
+      void switchBranch
         .then((outcome) => {
-          if (outcome === 'nothing-to-load') {
-            surfInFlightRef.current = false;
-            setSurfingChannel(null);
-            showToast(t(channel === 'staging' ? 'qa.pick.stagingNextLaunch' : 'qa.pick.productionNextLaunch'), 'info');
+          // 'reloading' never gets here in practice: the app is restarting.
+          if (outcome === 'reloading') return;
+          surfInFlightRef.current = false;
+          setSurfingChannel(null);
+          if (outcome === 'early-updates-next-launch') {
+            showToast(t('qa.pick.earlyUpdatesNextLaunch'), 'info');
+            return;
           }
+          showToast(t(channel === 'staging' ? 'qa.pick.stagingNextLaunch' : 'qa.pick.productionNextLaunch'), 'info');
         })
         .catch((error: unknown) => {
           surfInFlightRef.current = false;
@@ -163,7 +169,7 @@ export function QaPickScreen() {
           showToast(error instanceof Error && error.message ? error.message : t('qa.pick.unreachableTitle'), 'error');
         });
     },
-    [showToast, surfingAvailable, t],
+    [earlyUpdatesMember, showToast, surfingAvailable, t],
   );
 
   const handlePick = useCallback(
@@ -383,12 +389,14 @@ export function QaPickScreen() {
             feedback="opacity"
             disabled={rowsDisabled}
             accessibilityRole="button"
-            accessibilityLabel={t('qa.pick.productionTitle')}
+            accessibilityLabel={t(earlyUpdatesMember ? 'qa.pick.earlyUpdatesTitle' : 'qa.pick.productionTitle')}
             style={[styles.row, styles.channelRow, { backgroundColor: systemColors.elevatedSurface }]}
           >
-            <Text variant="body">{t('qa.pick.productionTitle')}</Text>
+            <Text variant="body">
+              {t(earlyUpdatesMember ? 'qa.pick.earlyUpdatesTitle' : 'qa.pick.productionTitle')}
+            </Text>
             <Text variant="footnote" color={systemColors.secondaryLabel}>
-              {t('qa.pick.productionBody')}
+              {t(earlyUpdatesMember ? 'qa.pick.earlyUpdatesBody' : 'qa.pick.productionBody')}
             </Text>
           </PressableSurface>
         </View>

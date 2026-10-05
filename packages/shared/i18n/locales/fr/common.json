@@ -392,6 +392,16 @@
         "pickSubtitle": "Essaie une nouveauté avant sa sortie et dis-nous ce que ça donne",
         "testPlanTitle": "Plan de test #{{prNumber}}",
         "testPlanSubtitle": "Ce qu'il faut essayer sur l'aperçu en cours"
+      },
+      "earlyUpdates": {
+        "sectionTitle": "Mises à jour de l'app",
+        "title": "Recevoir les mises à jour en avance",
+        "offSubtitle": "Les nouveautés dès qu'elles sont prêtes, avant tout le monde",
+        "onSubtitle": "Tu reçois les mises à jour en avance",
+        "onSubtitleLatest": "Tu reçois les mises à jour en avance. Dernière : {{when}}",
+        "waitingSubtitle": "Activé, en attente de la prochaine mise à jour en avance",
+        "footer": "Les mises à jour en avance peuvent avoir quelques défauts de temps en temps. Les changements s'appliquent à la prochaine ouverture de l'app. Si tu désactives l'option, tu retrouves les mises à jour normales en deux jours environ.",
+        "toggleFailed": "Impossible de modifier les mises à jour en avance. Réessaie."
       }
     },
     "sendRecovery": {
@@ -679,7 +689,8 @@
   "qa": {
     "shared": {
       "backOnProduction": "De retour en production à la prochaine mise à jour",
-      "leaveFailed": "Impossible de désactiver cet aperçu — réessaie"
+      "leaveFailed": "Impossible de désactiver cet aperçu — réessaie",
+      "backOnEarlyUpdates": "Retour aux mises à jour en avance à la prochaine ouverture de l'app"
     },
     "pick": {
       "title": "Tester un PR",
@@ -711,7 +722,10 @@
       "noMatchBody": "Rien de publié pour cette version ne correspond à « {{query}} ».",
       "trySurfAction": "Essayer quand même la #{{prNumber}}",
       "trySurfHint": "Elle n'a peut-être pas de preview que cette version peut charger.",
-      "notServableToast": "Pas de preview de la #{{prNumber}} pour cette version — il lui faut peut-être un rebase sur main"
+      "notServableToast": "Pas de preview de la #{{prNumber}} pour cette version — il lui faut peut-être un rebase sur main",
+      "earlyUpdatesTitle": "Mises à jour en avance",
+      "earlyUpdatesBody": "Reviens aux mises à jour en avance. S'applique à la prochaine ouverture de l'app.",
+      "earlyUpdatesNextLaunch": "Les mises à jour en avance reprennent à la prochaine ouverture de l'app"
     },
     "brief": {
       "screenTitle": "Quoi tester",

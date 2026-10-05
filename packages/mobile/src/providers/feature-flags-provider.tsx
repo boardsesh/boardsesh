@@ -213,6 +213,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'QA only. Puts the signed-in account in the treatment (card + pill) or control arm of the connect-step test, whatever its age, build or app version, and starts this phone from a clean slate as if it had never connected. Takes effect right away. Only the on-device choice here counts; a PostHog value for this key is ignored. Forced exposures are tagged arm_forced and left out of the analysis. Default lets the account hash decide.',
     variants: ['treatment', 'control'],
   },
+  {
+    key: 'early-updates',
+    label: 'Early updates',
+    description:
+      'The "Get updates early" switch in More: a phone that turns it on follows the pr-beta OTA branch, which gets every merge to main. A POSITIVE rollout flag, not a kill switch, because it has to ship hidden: unresolved hides the row and leaves every pin alone. Turning it off in PostHog after climbers joined hides the row, clears their pin once at the next launch and keeps their choice, so they are back on early updates when it is turned on again.',
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the
@@ -564,6 +570,27 @@ export function useSharedSessionBrowseEnabled(): boolean {
  */
 export function useSprayWallsEnabled(): boolean {
   return useFeatureFlag('spray-walls') === true;
+}
+
+/**
+ * The "Get updates early" switch (the `pr-beta` OTA branch).
+ *
+ * Three answers on purpose. A POSITIVE flag, because the feature ships hidden
+ * and a `*-kill` switch reads unresolved as on. But "off" here does more than
+ * hide a row: it clears a member's branch pin. That must only follow PostHog
+ * actually saying off, never an answer that has not arrived (an offline launch,
+ * PostHog unreachable), or a member in a basement gym would be dropped from the
+ * track at every launch with no signal.
+ */
+export type EarlyUpdatesFlagState = 'on' | 'off' | 'unknown';
+
+export function earlyUpdatesFlagState(flagValue: boolean | string | undefined): EarlyUpdatesFlagState {
+  if (flagValue === true) return 'on';
+  return flagValue === false ? 'off' : 'unknown';
+}
+
+export function useEarlyUpdatesFlagState(): EarlyUpdatesFlagState {
+  return earlyUpdatesFlagState(useFeatureFlag('early-updates'));
 }
 
 function featureFlagsEqual(leftFlags: FeatureFlags, rightFlags: FeatureFlags): boolean {

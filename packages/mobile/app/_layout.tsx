@@ -100,6 +100,7 @@ import { RestTimerRuntime } from '../src/components/queue-control/RestTimerRunti
 import { RootRestTimerPillHost } from '../src/components/queue-control/RestTimerPillHost';
 import { ConnectivityBanner } from '../src/components/connectivity/ConnectivityBanner';
 import { QaTesterGate } from '../src/components/qa/QaTesterGate';
+import { EarlyUpdatesLaunchSync } from '../src/components/qa/EarlyUpdatesLaunchSync';
 import { SendRecoveryGate } from '../src/components/offline/SendRecoveryGate';
 import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
 import { BottomChromeDebugOverlay } from '../src/components/BottomChromeDebugOverlay';
@@ -637,6 +638,10 @@ function RootLayout() {
                         {/* Applies Observe flags, then flushes persisted telemetry on
                           foreground transitions once PostHog resolves. Null render. */}
                         <ObserveRuntimeConfigSync />
+                        {/* Re-applies a "Get updates early" member's OTA branch pin once
+                          flags and branch surfing are ready. Header writes only: no
+                          update check, no reload. Null render. */}
+                        <EarlyUpdatesLaunchSync />
                         <AuthProvider onReady={onAuthReady}>
                           <PartyProfileProvider>
                             {/* Stamps the active board's gym on every event. Null render. */}

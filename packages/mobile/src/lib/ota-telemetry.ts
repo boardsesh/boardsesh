@@ -14,6 +14,11 @@ export const OTA_UPDATE_STATUS_EVENT = 'OTA Update Status';
 // Together they form the published → downloaded → applied funnel.
 export const OTA_UPDATE_DOWNLOADED_EVENT = 'OTA Update Downloaded';
 
+// Fired when a climber flips "Get updates early" in More. Props: { enabled }.
+// Only the deliberate flip: the launch re-pin and a server-side switch-off are
+// silent. Which branch a phone actually runs is `ota_branch` on every event.
+export const EARLY_UPDATES_TOGGLED_EVENT = 'Early Updates Toggled';
+
 // The raw expo-updates constants the status event is built from. Nullable string
 // and Date fields accept `undefined` too so the mapper can run against the
 // disabled-Updates state (dev / Expo Go), where they are absent.

@@ -428,7 +428,8 @@ client requesting an unmapped channel gets `No branch mapping found`. Mapping is
 - **PR previews and staging are branches, not channels.** The production channel enables xprem Branch
   Surfing with the narrow pattern `pr-*`; the picker sends `xprem-branch: pr-N` for a PR or
   `xprem-branch: pr-staging` for the staged main update. No extra channel mapping is created.
-  Production in the picker clears the branch override. Staging is intentionally selectable
+  Production in the picker clears the branch override. `pr-beta` is a third long-lived branch
+  under the same pattern: the early-updates track ("Early updates" below). Staging is intentionally selectable
   before the backend schema is promoted, so it is for testers; the staging export itself
   is promoted byte-for-byte after the schema gate. The `pr-` S3 lifecycle rule also
   covers staging assets, so a stale staging update expires after 14 days.
@@ -1498,7 +1499,98 @@ Diagnostics for tester accounts.
 
 Telemetry keeps `ota_channel=production` and reads the selected branch from
 `Updates.manifest.extra.branch`, recording it as `branch` on the OTA status event and `ota_branch`
-in PostHog/Sentry. Diagnostic eligibility uses the same manifest field.
+in PostHog/Sentry. Diagnostic eligibility uses the same manifest field, classified by
+`otaBranchKind` in `qa-surf.ts` (`pr-<n>` and `pr-staging` are previews; `pr-beta` is not).
+
+## Early updates ("Get updates early")
+
+A switch in More → **App updates** that any climber on a surfing-capable binary can turn on. A phone
+with it on sends `xprem-branch: pr-beta` (`EARLY_UPDATES_OTA_BRANCH`) and so follows the branch that
+receives every merge to `main`; a phone with it off follows `production`. It is called "early
+updates" everywhere a climber can read it, never "beta": in this app beta means climb beta.
+
+**Status: shipped dark.** The row is behind the `early-updates` PostHog flag (see
+`docs/feature-flags.md` → "Mobile flags"), which does not exist yet, and nothing publishes to
+`pr-beta` yet. Until both happen no climber sees the row and no device sends the header.
+
+The pieces:
+
+| Piece | File |
+| --- | --- |
+| Pin-only header writes, branch classification, `/branch_lists` | `src/lib/qa/qa-surf.ts` |
+| The launch decision (pure) and the membership switch | `src/lib/qa/early-updates.ts` |
+| Launch re-pin (renders nothing) | `src/components/qa/EarlyUpdatesLaunchSync.tsx` |
+| Row state for More, membership for the QA screens | `src/lib/qa/use-early-updates.ts` |
+| The More section | `src/components/early-updates-section.ts` |
+
+**The switch never restarts the app.** It calls `pinEarlyUpdates()` or `clearOtaBranchPin()`, which
+only write the request-header override: no `checkForUpdateAsync`, no download, no reload, no
+network. That is why it is safe with a queue running and a board connected, why it works offline,
+and why the copy says changes apply next time the app opens. It does not use xprem's `surfTo`: that
+checks for an update at once, and when the check fails it restores the pin it remembers from the
+current JS session, which on an offline cold start is nothing at all.
+
+**Choice and pin are two things.** The choice is the `earlyUpdates` setting (MMKV, per device),
+written only after the header write succeeded. The pin is the native override, which persists but
+cannot be read back and which other code clears: xprem restoring after a failed surf, the one-time
+channel migration. So once per launch, after the feature flags have resolved and
+`OtaBranchSurfingInitializer` reports ready, `EarlyUpdatesLaunchSync` runs
+`decideEarlyUpdatesLaunch` and re-applies the pin from the choice. It makes no network call and
+never reloads; what it pins arrives on the launch after.
+
+| Stored choice | `early-updates` flag | Running bundle | Launch action |
+| --- | --- | --- | --- |
+| off | any | any | nothing |
+| on | on | `production`, `pr-beta` | re-pin `pr-beta` |
+| on | on | `pr-<n>`, `pr-staging` | nothing (a tester chose that branch) |
+| on | off (PostHog said so) | `production`, `pr-beta` | clear the pin, once; the choice is kept |
+| on | no answer (offline, unreachable) | any | nothing |
+
+"Once" is the `earlyUpdatesPinClearedByFlag` marker: after the first clear the override may be a
+tester's PR pin, which is not ours to drop. The marker resets when the pin is applied again. One
+consequence of reading a missing flag as off: a PostHog response that leaves this flag out drops a
+member's pin for one launch, and the next launch with the flag present puts it back.
+
+**Coexisting with PR previews.** Picking a PR or Staging replaces the pin, as it always did, and the
+launch re-pin stands down while such a bundle is running. Leaving is where a member differs: the
+picker's Production row reads **Early updates** for a member, and it, the brief's **Leave preview**
+and the verdict sheet all go through `returnToOwnTrack`, which pins `pr-beta` for a member instead
+of clearing the pin. That matters because leaving a preview usually loads nothing (the preview
+bundle is newer), so the preview keeps running, and the launch re-pin does not act on a preview
+bundle. Without the explicit pin a member would sit on `production` until it published something
+newer than the preview. The switch itself always wins: turning it on pins `pr-beta` even on a
+preview bundle, and turning it off clears whatever is pinned.
+
+**Whether the server is serving the branch.** `listQaBranches` reports `earlyUpdates` (with
+`lastUpdateAt`) when `/branch_lists` offers `pr-beta` for this binary's runtime version and
+platform. The row then shows one of three states: off; on, with how long ago the latest early update
+landed; or on and waiting for the next early update. Waiting is normal right after a native release,
+until the first merge publishes for the new fingerprint. A member in that state is served
+`production` by the server (an unknown or unserved `xprem-branch` falls back to the channel's own
+branch), which is the right degrade. The list is fetched only for members, and shares the picker's
+query key.
+
+**Branch Surfing switched off.** `/branch_lists` answers `404` with `xprem-branch-surfing: off`.
+`qa-surf.ts` makes that request itself, where it used to call xprem's `listBranches`, because xprem
+folds that answer and any other 404 into one `null`. On the server's own 404 it clears the override
+(as xprem did) and sets `earlyUpdates` to false, so the launch re-pin does not undo what the server
+asked for. A 404 without the header changes nothing.
+
+**Leaving is not a rollback.** expo-updates will not load an update older than the one running, so a
+phone that leaves keeps its current bundle until `production` passes it: about two days with a
+daily stable release that soaks for a day. The copy says exactly that, and does not offer leaving as
+the fix for a broken early update. The fix for a broken early update is server-side: republish the
+previous update on `pr-beta`, which is newer and so loads on pinned phones.
+
+**Telemetry.** `Early Updates Toggled` `{ enabled }` fires on a deliberate flip only
+(`EARLY_UPDATES_TOGGLED_EVENT` in `src/lib/ota-telemetry.ts`). The launch re-pin, the flag clear and
+a surfing-off answer are silent. Which branch a phone actually runs is `ota_branch`, already on
+every event. A `pr-beta` bundle's `environment` tag comes from the env the bundle was exported with,
+not from the branch name, so whatever publishes to `pr-beta` must leave
+`EXPO_PUBLIC_SENTRY_ENVIRONMENT` unset or members drop out of the production population.
+
+**Known gap.** `isConnectStepProductionBuild` still treats every `pr-*` branch as a preview, so a
+new account on an early-updates phone is not enrolled in the connect-step test.
 
 ## Per-PR preview branches (self-hosted)
 
@@ -1668,7 +1760,9 @@ repo-level secret for the Android fingerprint).
 
 ## Deferred
 
-- **`beta` channel**: TestFlight on `beta`, App Store on `production`, promote at GA.
+- **`beta` channel**: TestFlight on `beta`, App Store on `production`, promote at GA. Not to be
+  confused with the `pr-beta` *branch* on the `production` channel, which is the early-updates track
+  ("Early updates" above) and needs no second channel.
 - **In-app `BranchSwitcher`** (`src/components/BranchSwitcherScreen.tsx`, gated on
   `isPreviewBuild()` in `src/lib/preview-build.ts`) switches branches **device-locally** on a preview
   build — it overrides the `expo-channel-name` request header via the same `channel-switch.ts` state

@@ -83,11 +83,21 @@ const qa = vi.hoisted(() => ({
   runningPrNumber: 4792 as number | null,
   surfingAvailable: true,
   surfToProduction: vi.fn(),
+  pinEarlyUpdates: vi.fn(),
 }));
 vi.mock('../../../lib/qa/qa-surf', () => ({
   qaSurfingAvailable: () => qa.surfingAvailable,
   readRunningPrNumber: () => qa.runningPrNumber,
   surfToProduction: qa.surfToProduction,
+  pinEarlyUpdates: qa.pinEarlyUpdates,
+}));
+
+// Membership of "Get updates early" is a flag plus a stored choice. Both are
+// covered where they live; here only what a member's screen does differs.
+const earlyUpdates = vi.hoisted(() => ({ member: false }));
+vi.mock('../../../lib/qa/use-early-updates', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../lib/qa/use-early-updates')>()),
+  useEarlyUpdatesMember: () => earlyUpdates.member,
 }));
 
 const previews = vi.hoisted(() => ({ data: [] as unknown[], isPending: false }));
@@ -129,6 +139,8 @@ beforeEach(() => {
   qa.runningPrNumber = 4792;
   qa.surfingAvailable = true;
   qa.surfToProduction.mockReset().mockResolvedValue('nothing-to-load');
+  qa.pinEarlyUpdates.mockReset();
+  earlyUpdates.member = false;
   profileState.id = 'user-1';
   profileState.isTester = true;
 });
@@ -219,6 +231,17 @@ describe('QaBriefScreen', () => {
 
     expect(trackMock).toHaveBeenCalledWith('QA Preview Left', { prNumber: 4792 });
     await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('Back on production at the next update', 'info'));
+  });
+
+  it('puts an early-updates member back on early updates, not on production', async () => {
+    earlyUpdates.member = true;
+    render(<QaBriefScreen />);
+
+    fireEvent.click(screen.getByText('Leave preview'));
+
+    await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('qa.shared.backOnEarlyUpdates', 'info'));
+    expect(qa.pinEarlyUpdates).toHaveBeenCalledOnce();
+    expect(qa.surfToProduction).not.toHaveBeenCalled();
   });
 
   it('blames the pin, not the verdict, when the surf back throws', async () => {

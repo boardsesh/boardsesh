@@ -85,7 +85,8 @@
   "qa": {
     "shared": {
       "backOnProduction": "De vuelta en producción en la próxima actualización",
-      "leaveFailed": "No se pudo desactivar esta vista previa — inténtalo de nuevo"
+      "leaveFailed": "No se pudo desactivar esta vista previa — inténtalo de nuevo",
+      "backOnEarlyUpdates": "Vuelves a las actualizaciones anticipadas la próxima vez que abras la app"
     },
     "pick": {
       "title": "Prueba un PR",
@@ -117,7 +118,10 @@
       "noMatchBody": "Nada de lo publicado para esta versión coincide con «{{query}}».",
       "trySurfAction": "Probar igualmente el #{{prNumber}}",
       "trySurfHint": "Puede que no tenga una preview que esta versión pueda cargar.",
-      "notServableToast": "No hay preview del #{{prNumber}} para esta versión — quizá necesite un rebase sobre main"
+      "notServableToast": "No hay preview del #{{prNumber}} para esta versión — quizá necesite un rebase sobre main",
+      "earlyUpdatesTitle": "Actualizaciones anticipadas",
+      "earlyUpdatesBody": "Vuelve a las actualizaciones anticipadas. Se aplica la próxima vez que abras la app.",
+      "earlyUpdatesNextLaunch": "Las actualizaciones anticipadas vuelven la próxima vez que abras la app"
     },
     "brief": {
       "screenTitle": "Qué probar",
@@ -662,6 +666,16 @@
         "pickSubtitle": "Prueba un cambio antes de que salga y cuéntanos qué tal",
         "testPlanTitle": "Plan de pruebas #{{prNumber}}",
         "testPlanSubtitle": "Qué probar en la vista previa que tienes abierta"
+      },
+      "earlyUpdates": {
+        "sectionTitle": "Actualizaciones de la app",
+        "title": "Recibe las actualizaciones antes",
+        "offSubtitle": "Funciones nuevas en cuanto están listas, antes que nadie",
+        "onSubtitle": "Recibes las actualizaciones anticipadas",
+        "onSubtitleLatest": "Recibes las actualizaciones anticipadas. La última: {{when}}",
+        "waitingSubtitle": "Activado, a la espera de la próxima actualización anticipada",
+        "footer": "Las actualizaciones anticipadas pueden traer algún fallo de vez en cuando. Los cambios se aplican la próxima vez que abras la app. Si lo desactivas, vuelves a las actualizaciones normales en unos dos días.",
+        "toggleFailed": "No se pudieron cambiar las actualizaciones anticipadas. Inténtalo de nuevo."
       }
     },
     "sendRecovery": {

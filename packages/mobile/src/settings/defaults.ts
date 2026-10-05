@@ -28,4 +28,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   qaPromptOnLaunch: false,
   qaBriefSeenKey: null,
   qaVerdictSubmittedKey: null,
+  earlyUpdates: false,
+  earlyUpdatesPinClearedByFlag: false,
 };
