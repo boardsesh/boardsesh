@@ -72,6 +72,7 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'HoldOutlines',
   'ProposeSprayWallReset',
   'QaPreviews',
+  'SavedClimbDocuments',
   'SearchBoards',
   'SearchClimbsCount',
   'SearchGyms',
