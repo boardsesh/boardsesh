@@ -20,6 +20,21 @@ export type FakeAnswer = { status: number; body?: unknown } | unknown[] | Record
 
 export type FakeRoute = FakeAnswer | ((request: RecordedRequest) => FakeAnswer);
 
+/**
+ * A request body as the server would read it: any JSON is parsed (objects,
+ * arrays, scalars), so an assertion compares values and can never pass by
+ * comparing two raw strings. Only a body that is not JSON, such as the login
+ * form, stays a string.
+ */
+function parsedBody(body: RequestInit['body']): unknown {
+  if (typeof body !== 'string') return body;
+  try {
+    return JSON.parse(body) as unknown;
+  } catch {
+    return body;
+  }
+}
+
 function isStatusAnswer(answer: FakeAnswer): answer is { status: number; body?: unknown } {
   return !Array.isArray(answer) && typeof (answer as { status?: unknown }).status === 'number';
 }
@@ -42,7 +57,7 @@ export function fakeXprem(routes: Record<string, FakeRoute>): {
     const request: RecordedRequest = {
       method: init.method ?? 'GET',
       path: `${url.pathname}${url.search}`,
-      body: typeof init.body === 'string' && init.body.startsWith('{') ? (JSON.parse(init.body) as unknown) : init.body,
+      body: parsedBody(init.body),
       headers: Object.fromEntries(new Headers(init.headers).entries()),
     };
     requests.push(request);

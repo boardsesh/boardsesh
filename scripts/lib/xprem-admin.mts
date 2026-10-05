@@ -216,101 +216,102 @@ export function sameId(left: XpremId, right: XpremId): boolean {
   return String(left) === String(right);
 }
 
-function record(input: unknown, label: string): Record<string, unknown> {
+function jsonObject(input: unknown, label: string): Record<string, unknown> {
   if (input === null || typeof input !== 'object' || Array.isArray(input)) {
     throw new Error(`xprem ${label} is not an object.`);
   }
   return input as Record<string, unknown>;
 }
 
-function list(input: unknown, label: string): unknown[] {
+function jsonArray(input: unknown, label: string): unknown[] {
   if (!Array.isArray(input)) throw new Error(`xprem ${label} is not a list.`);
   return input;
 }
 
-function text(input: unknown, label: string): string {
+function nonEmptyString(input: unknown, label: string): string {
   if (typeof input !== 'string' || input === '') throw new Error(`xprem ${label} is not a non-empty string.`);
   return input;
 }
 
-function optionalText(input: unknown): string | null {
+function optionalString(input: unknown): string | null {
   return typeof input === 'string' && input !== '' ? input : null;
 }
 
-function count(input: unknown, label: string): number {
+function nonNegativeNumber(input: unknown, label: string): number {
   if (typeof input !== 'number' || !Number.isFinite(input) || input < 0) {
     throw new Error(`xprem ${label} is not a non-negative number.`);
   }
   return input;
 }
 
-function id(input: unknown, label: string): XpremId {
+function xpremId(input: unknown, label: string): XpremId {
   if (typeof input === 'number' && Number.isSafeInteger(input)) return input;
   if (typeof input === 'string' && input !== '') return input;
   throw new Error(`xprem ${label} is not an id.`);
 }
 
-function optionalId(input: unknown): XpremId | null {
+function optionalXpremId(input: unknown): XpremId | null {
   if (typeof input === 'number' && Number.isSafeInteger(input)) return input;
   return typeof input === 'string' && input !== '' ? input : null;
 }
 
 function parseChannel(input: unknown): XpremChannel {
-  const raw = record(input, 'channel');
-  const surfing = raw.branchSurfing == null ? null : record(raw.branchSurfing, 'channel branchSurfing');
-  const rollout = raw.rollout == null ? null : record(raw.rollout, 'channel rollout');
+  const channelJson = jsonObject(input, 'channel');
+  const surfing =
+    channelJson.branchSurfing == null ? null : jsonObject(channelJson.branchSurfing, 'channel branchSurfing');
+  const rollout = channelJson.rollout == null ? null : jsonObject(channelJson.rollout, 'channel rollout');
   return {
-    releaseChannelId: id(raw.releaseChannelId, 'channel releaseChannelId'),
-    releaseChannelName: text(raw.releaseChannelName, 'channel releaseChannelName'),
-    branchId: optionalId(raw.branchId),
-    branchName: optionalText(raw.branchName),
+    releaseChannelId: xpremId(channelJson.releaseChannelId, 'channel releaseChannelId'),
+    releaseChannelName: nonEmptyString(channelJson.releaseChannelName, 'channel releaseChannelName'),
+    branchId: optionalXpremId(channelJson.branchId),
+    branchName: optionalString(channelJson.branchName),
     branchSurfing: surfing && {
       enabled: surfing.enabled === true,
       pattern: typeof surfing.pattern === 'string' ? surfing.pattern : '',
     },
     rollout: rollout && {
-      percentage: count(rollout.percentage, 'channel rollout percentage'),
-      rolloutBranchName: text(rollout.rolloutBranchName, 'channel rollout rolloutBranchName'),
+      percentage: nonNegativeNumber(rollout.percentage, 'channel rollout percentage'),
+      rolloutBranchName: nonEmptyString(rollout.rolloutBranchName, 'channel rollout rolloutBranchName'),
     },
   };
 }
 
 function parseBranch(input: unknown): XpremBranch {
-  const raw = record(input, 'branch');
+  const branchJson = jsonObject(input, 'branch');
   return {
-    branchId: optionalId(raw.branchId),
-    branchName: text(raw.branchName, 'branch branchName'),
-    protected: raw.protected === true,
+    branchId: optionalXpremId(branchJson.branchId),
+    branchName: nonEmptyString(branchJson.branchName, 'branch branchName'),
+    protected: branchJson.protected === true,
   };
 }
 
 function parseRollout(input: unknown): XpremRollout {
-  const raw = record(input, 'rollout');
-  if (typeof raw.active !== 'boolean') throw new Error('xprem rollout has no boolean `active`.');
+  const rolloutJson = jsonObject(input, 'rollout');
+  if (typeof rolloutJson.active !== 'boolean') throw new Error('xprem rollout has no boolean `active`.');
   // The dashboard reads `updates` only when `active` is true, so an inactive
   // answer is allowed to omit it.
-  const updates = raw.active ? list(raw.updates, 'rollout updates') : [];
+  const updates = rolloutJson.active ? jsonArray(rolloutJson.updates, 'rollout updates') : [];
   return {
-    active: raw.active,
+    active: rolloutJson.active,
     updates: updates.map((entry): XpremRolloutUpdate => {
-      const update = record(entry, 'rollout update');
+      const update = jsonObject(entry, 'rollout update');
       return {
-        updateId: id(update.updateId, 'rollout updateId'),
-        controlUpdateId: optionalId(update.controlUpdateId),
-        platform: text(update.platform, 'rollout platform'),
-        percentage: count(update.percentage, 'rollout percentage'),
-        createdAt: optionalText(update.createdAt),
+        updateId: xpremId(update.updateId, 'rollout updateId'),
+        controlUpdateId: optionalXpremId(update.controlUpdateId),
+        platform: nonEmptyString(update.platform, 'rollout platform'),
+        percentage: nonNegativeNumber(update.percentage, 'rollout percentage'),
+        createdAt: optionalString(update.createdAt),
       };
     }),
   };
 }
 
 function parseHealth(input: unknown, label: string): XpremUpdateHealth {
-  const raw = record(input, label);
+  const healthJson = jsonObject(input, label);
   return {
-    devicesOnUpdate: count(raw.devicesOnUpdate, `${label} devicesOnUpdate`),
-    successfulDevices: count(raw.successfulDevices, `${label} successfulDevices`),
-    faultyDevices: count(raw.faultyDevices, `${label} faultyDevices`),
+    devicesOnUpdate: nonNegativeNumber(healthJson.devicesOnUpdate, `${label} devicesOnUpdate`),
+    successfulDevices: nonNegativeNumber(healthJson.successfulDevices, `${label} successfulDevices`),
+    faultyDevices: nonNegativeNumber(healthJson.faultyDevices, `${label} faultyDevices`),
   };
 }
 
@@ -331,7 +332,9 @@ export async function adminLogin(options: AdminLoginOptions): Promise<string> {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!response.ok) {
-    const detail = (await response.text()).slice(0, 200);
+    // The server's answer can quote the login it rejected. The email is not
+    // printed anywhere by these tools, so it is taken out of the detail too.
+    const detail = (await response.text()).slice(0, 200).split(options.email).join('[email]');
     // The server looked at the login and said no. Trying again cannot help.
     if (response.status === 401 || response.status === 403) {
       throw new AdminLoginRefusedError(response.status, detail);
@@ -385,16 +388,16 @@ export function createXpremAdminClient(options: XpremAdminClientOptions) {
   return {
     /** The server's licence state. Not app-scoped. */
     async getLicense(): Promise<XpremLicense> {
-      const raw = record(await request('Read licence', 'GET', '/api/license'), 'licence');
+      const licenseJson = jsonObject(await request('Read licence', 'GET', '/api/license'), 'licence');
       return {
-        valid: raw.valid === true,
-        hasKey: raw.hasKey === true,
-        validationErrorCode: optionalText(raw.validationErrorCode),
+        valid: licenseJson.valid === true,
+        hasKey: licenseJson.hasKey === true,
+        validationErrorCode: optionalString(licenseJson.validationErrorCode),
       };
     },
 
     async getChannels(): Promise<XpremChannel[]> {
-      return list(await request('List channels', 'GET', `${app}/channels`), 'channel list').map(parseChannel);
+      return jsonArray(await request('List channels', 'GET', `${app}/channels`), 'channel list').map(parseChannel);
     },
 
     async createChannel(channelName: string, branchName: string): Promise<void> {
@@ -411,15 +414,15 @@ export function createXpremAdminClient(options: XpremAdminClientOptions) {
     },
 
     async getBranches(): Promise<XpremBranch[]> {
-      return list(await request('List branches', 'GET', `${app}/branches`), 'branch list').map(parseBranch);
+      return jsonArray(await request('List branches', 'GET', `${app}/branches`), 'branch list').map(parseBranch);
     },
 
     async createBranch(branchName: string): Promise<XpremId> {
-      const created = record(
+      const created = jsonObject(
         await request(`Create branch "${branchName}"`, 'POST', `${app}/branches`, { branchName }),
         'created branch',
       );
-      return id(created.branchId, 'created branch branchId');
+      return xpremId(created.branchId, 'created branch branchId');
     },
 
     async setBranchProtection(branchName: string, isProtected: boolean): Promise<void> {
@@ -446,8 +449,8 @@ export function createXpremAdminClient(options: XpremAdminClientOptions) {
 
     async getRuntimeVersions(branch: string): Promise<string[]> {
       const path = `${app}/branch/${segment(branch)}/runtimeVersions`;
-      return list(await request(`List runtime versions of "${branch}"`, 'GET', path), 'runtime version list').map(
-        (entry) => text(record(entry, 'runtime version').runtimeVersion, 'runtimeVersion'),
+      return jsonArray(await request(`List runtime versions of "${branch}"`, 'GET', path), 'runtime version list').map(
+        (entry) => nonEmptyString(jsonObject(entry, 'runtime version').runtimeVersion, 'runtimeVersion'),
       );
     },
 
@@ -474,20 +477,20 @@ export function createXpremAdminClient(options: XpremAdminClientOptions) {
 
     async getUpdateDetails(branch: string, runtimeVersion: string, updateId: XpremId): Promise<XpremUpdateDetails> {
       const path = `${app}/branch/${segment(branch)}/runtimeVersion/${segment(runtimeVersion)}/updates/${segment(updateId)}`;
-      const raw = record(await request('Read update details', 'GET', path), 'update details');
+      const detailsJson = jsonObject(await request('Read update details', 'GET', path), 'update details');
       return {
-        updateId: optionalId(raw.updateId) ?? updateId,
-        updateUUID: optionalText(raw.updateUUID),
-        commitHash: optionalText(raw.commitHash),
-        platform: optionalText(raw.platform),
+        updateId: optionalXpremId(detailsJson.updateId) ?? updateId,
+        updateUUID: optionalString(detailsJson.updateUUID),
+        commitHash: optionalString(detailsJson.commitHash),
+        platform: optionalString(detailsJson.platform),
       };
     },
 
     /** Current device counts per update UUID. An update the server has no row for is absent. */
     async getUpdateHealth(updateUUIDs: readonly string[]): Promise<Record<string, XpremUpdateHealth>> {
       const path = `${app}/identity/update-health?ids=${encodeURIComponent(updateUUIDs.join(','))}`;
-      const raw = record(await request('Read update health', 'GET', path), 'update health');
-      const updates = record(raw.updates ?? {}, 'update health updates');
+      const healthByUpdate = jsonObject(await request('Read update health', 'GET', path), 'update health');
+      const updates = jsonObject(healthByUpdate.updates ?? {}, 'update health updates');
       return Object.fromEntries(
         Object.entries(updates).map(([updateUUID, entry]) => [updateUUID, parseHealth(entry, 'update health entry')]),
       );
@@ -497,16 +500,16 @@ export function createXpremAdminClient(options: XpremAdminClientOptions) {
     async getUpdateHealthHistory(updateUUIDs: readonly string[]): Promise<XpremHealthHistory> {
       const query = new URLSearchParams({ ids: updateUUIDs.join(',') });
       const path = `${app}/observe/update-health/history?${query.toString()}`;
-      const raw = record(await request('Read update health history', 'GET', path), 'update health history');
-      const updates = record(raw.updates ?? {}, 'update health history updates');
+      const historyJson = jsonObject(await request('Read update health history', 'GET', path), 'update health history');
+      const updates = jsonObject(historyJson.updates ?? {}, 'update health history updates');
       const latest: Record<string, XpremUpdateIssues> = {};
       for (const [updateUUID, pointsInput] of Object.entries(updates)) {
-        const points = list(pointsInput, 'update health history points').map((pointInput) => {
-          const point = record(pointInput, 'update health history point');
+        const points = jsonArray(pointsInput, 'update health history points').map((pointInput) => {
+          const point = jsonObject(pointInput, 'update health history point');
           return {
-            timestamp: text(point.timestamp, 'history point timestamp'),
-            updateIssues: count(point.updateIssues, 'history point updateIssues'),
-            runtimeIssues: count(point.runtimeIssues, 'history point runtimeIssues'),
+            timestamp: nonEmptyString(point.timestamp, 'history point timestamp'),
+            updateIssues: nonNegativeNumber(point.updateIssues, 'history point updateIssues'),
+            runtimeIssues: nonNegativeNumber(point.runtimeIssues, 'history point runtimeIssues'),
           };
         });
         // ISO 8601 timestamps in one zone sort as plain strings. localeCompare
@@ -516,7 +519,7 @@ export function createXpremAdminClient(options: XpremAdminClientOptions) {
           .at(-1);
         if (newest) latest[updateUUID] = newest;
       }
-      return { source: optionalText(raw.source), latest };
+      return { source: optionalString(historyJson.source), latest };
     },
   };
 }

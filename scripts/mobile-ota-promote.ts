@@ -37,7 +37,7 @@ import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { adminClientFromEnvironment, sameId } from './lib/xprem-admin.mts';
-import type { XpremAdminClient } from './lib/xprem-admin.mts';
+import type { XpremAdminClient, XpremId } from './lib/xprem-admin.mts';
 
 export type OtaPlatform = 'ios' | 'android';
 
@@ -711,26 +711,44 @@ async function verifyServedExportWithRetry(
   }
 }
 
+/** What an earlier run of this promotion left in its rollout receipt. */
+interface RolloutRecord {
+  /** The numeric update id the server leased, per platform. */
+  updateIds: Partial<Record<OtaPlatform, string>>;
+  /**
+   * The update each platform's rollout replaced: the staged baseline at the
+   * moment the lease was taken, as a manifest id (the update UUID), or null when
+   * the runtime version had no update yet. This is the rollout's control.
+   */
+  baselineUpdateIds: Partial<Record<OtaPlatform, string | null>>;
+}
+
 /**
- * The update ids an earlier run of this promotion was leased, from its rollout
- * receipt. Empty when there is no file yet, or when the file belongs to another
- * commit or branch: ids from a different promotion prove nothing about this one.
+ * The rollout receipt of an earlier run. Empty when there is no file yet, or
+ * when the file belongs to another commit or branch: ids from a different
+ * promotion prove nothing about this one.
  */
-function readRolloutReceipt(path: string, branch: string, receipt: StageReceipt): Partial<Record<OtaPlatform, string>> {
-  if (!existsSync(path)) return {};
-  const raw = object(JSON.parse(readFileSync(path, 'utf8')) as unknown, 'Rollout receipt');
-  if (raw.branch !== branch || raw.commitHash !== receipt.commitHash) return {};
-  const updateIds = object(raw.updateIds, 'Rollout receipt updateIds');
-  const recorded: Partial<Record<OtaPlatform, string>> = {};
+function readRolloutReceipt(path: string, branch: string, receipt: StageReceipt): RolloutRecord {
+  const record: RolloutRecord = { updateIds: {}, baselineUpdateIds: {} };
+  if (!existsSync(path)) return record;
+  const receiptJson = object(JSON.parse(readFileSync(path, 'utf8')) as unknown, 'Rollout receipt');
+  if (receiptJson.branch !== branch || receiptJson.commitHash !== receipt.commitHash) return record;
+  const updateIds = object(receiptJson.updateIds, 'Rollout receipt updateIds');
+  const baselineUpdateIds = object(receiptJson.baselineUpdateIds, 'Rollout receipt baselineUpdateIds');
   for (const platform of ['ios', 'android'] as const) {
     const updateId = updateIds[platform];
     if (updateId === undefined) continue;
     if (typeof updateId !== 'string' || !/^\d+$/.test(updateId)) {
       throw new Error(`Rollout receipt ${platform} update id is not a numeric id.`);
     }
-    recorded[platform] = updateId;
+    const baselineUpdateId = baselineUpdateIds[platform];
+    if (baselineUpdateId !== null && (typeof baselineUpdateId !== 'string' || !UPDATE_ID.test(baselineUpdateId))) {
+      throw new Error(`Rollout receipt ${platform} baseline update id must be a UUID-shaped ID or null.`);
+    }
+    record.updateIds[platform] = updateId;
+    record.baselineUpdateIds[platform] = baselineUpdateId;
   }
-  return recorded;
+  return record;
 }
 
 export async function promoteArchivedOta(options: {
@@ -803,18 +821,56 @@ export async function promoteArchivedOta(options: {
     }
   };
 
-  // The update ids this promotion was leased, per platform, from the rollout
-  // receipt of an earlier run of the same commit to the same branch.
-  const recordedUpdateIds: Partial<Record<OtaPlatform, string>> = options.rollout
+  // What an earlier run of the same commit to the same branch was leased, and
+  // which update each of its rollouts replaced.
+  const rolloutRecord: RolloutRecord = options.rollout
     ? readRolloutReceipt(options.rollout.receiptPath, branch, receipt)
-    : {};
+    : { updateIds: {}, baselineUpdateIds: {} };
   const recordLease = (platform: OtaPlatform, updateId: string): void => {
     if (!options.rollout) return;
-    recordedUpdateIds[platform] = updateId;
+    rolloutRecord.updateIds[platform] = updateId;
+    // The lease is only requested after the baseline was confirmed unchanged, so
+    // the staged baseline is the update this rollout is about to replace.
+    rolloutRecord.baselineUpdateIds[platform] = receipt.baselineProductionUpdateIds[platform];
     writeFileSync(
       options.rollout.receiptPath,
-      `${JSON.stringify({ branch, commitHash: receipt.commitHash, updateIds: recordedUpdateIds })}\n`,
+      `${JSON.stringify({ branch, commitHash: receipt.commitHash, ...rolloutRecord })}\n`,
     );
+  };
+
+  /**
+   * A re-run cannot ask "is the branch unchanged since staging?" about a
+   * platform whose own rollout is live: this promotion changed it, and the
+   * anonymous manifest shows one device's side of the rollout. The question that
+   * replaces it is "did my rollout replace the update I staged against?". The
+   * server names the update a rollout replaced (its control), and the receipt
+   * recorded the baseline when the lease was taken, so the two must be the same
+   * update. If they are not, something else was published in between and this
+   * rollout is not the one that was staged and tested.
+   */
+  const assertRolloutReplacedBaseline = async (
+    reader: RolloutReader,
+    platform: OtaPlatform,
+    live: { updateId: XpremId; controlUpdateId: XpremId | null },
+  ): Promise<void> => {
+    const runtimeVersion = receipt.platforms[platform].runtimeVersion;
+    const recordedBaseline = rolloutRecord.baselineUpdateIds[platform] ?? null;
+    const controlUpdateUUID =
+      live.controlUpdateId === null
+        ? null
+        : (await reader.getUpdateDetails(branch, runtimeVersion, live.controlUpdateId)).updateUUID;
+    if (live.controlUpdateId !== null && controlUpdateUUID === null) {
+      throw new Error(
+        `${platform} ${branch} rollout ${live.updateId} replaced update ${live.controlUpdateId}, which the server ` +
+          'cannot identify; refusing to treat the rollout as the staged one.',
+      );
+    }
+    if ((controlUpdateUUID ?? '').toLowerCase() !== (recordedBaseline ?? '').toLowerCase()) {
+      throw new Error(
+        `${platform} ${branch} rollout ${live.updateId} replaced ${controlUpdateUUID ?? 'no update'}, not the staged ` +
+          `baseline ${recordedBaseline ?? 'none'}; refusing to treat the rollout as the staged one.`,
+      );
+    }
   };
 
   /**
@@ -825,8 +881,9 @@ export async function promoteArchivedOta(options: {
    * "Mine" needs the numeric update id the server leased to this promotion: the
    * lease in hand, or on a re-run the id an earlier run wrote to the rollout
    * receipt. A re-run additionally checks the commit the live update was built
-   * from. The commit alone is never enough: the update details expose no content
-   * hash, and two different exports can share a commit.
+   * from, and that the rollout replaced the staged baseline. The commit alone is
+   * never enough: the update details expose no content hash, and two different
+   * exports can share a commit.
    */
   const ownRolloutIsLive = async (
     reader: RolloutReader,
@@ -837,7 +894,7 @@ export async function promoteArchivedOta(options: {
     const rollout = await reader.getUpdateRollout(branch, runtimeVersion);
     const live = rollout.active ? rollout.updates.find((update) => update.platform === platform) : undefined;
     if (!live) return false;
-    const expectedUpdateId = leaseUpdateId ?? recordedUpdateIds[platform] ?? null;
+    const expectedUpdateId = leaseUpdateId ?? rolloutRecord.updateIds[platform] ?? null;
     let own = expectedUpdateId !== null && sameId(live.updateId, expectedUpdateId);
     if (own && leaseUpdateId === null) {
       const details = await reader.getUpdateDetails(branch, runtimeVersion, live.updateId);
@@ -848,6 +905,9 @@ export async function promoteArchivedOta(options: {
         `${platform} ${branch} has an active rollout of another update (${live.updateId}); promotion was refused.`,
       );
     }
+    // With a lease in hand the baseline was checked against the manifest moments
+    // ago, before the first upload. Without one this is the only baseline check.
+    if (leaseUpdateId === null) await assertRolloutReplacedBaseline(reader, platform, live);
     console.log(
       `[ota-promote] ${platform}: update ${live.updateId} is rolling out to ${live.percentage}% on ${branch}.`,
     );
@@ -870,8 +930,9 @@ export async function promoteArchivedOta(options: {
   };
 
   // Rollout mode first asks whether a platform's own rollout is already live: a
-  // re-run after a partial failure must not trip over the baseline it moved, and
-  // must not publish the same bytes a second time.
+  // re-run after a partial failure must not publish the same bytes a second time.
+  // Such a platform skips the manifest baseline check below on purpose, and gets
+  // assertRolloutReplacedBaseline in its place: see there for why.
   for (const platform of ['ios', 'android'] as const) {
     if (rolloutReader && (await ownRolloutIsLive(rolloutReader, platform, null))) leases[platform] = 'rolling';
   }

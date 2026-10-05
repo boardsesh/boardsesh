@@ -76,7 +76,8 @@ jobs:
 
       - name: Revert the live rollouts
         env:
-          OTA_ADMIN_EMAIL: ${{ secrets.OTA_ADMIN_EMAIL || vars.OTA_ADMIN_EMAIL }}
+          # A secret, never a variable: a variable is not masked in logs.
+          OTA_ADMIN_EMAIL: ${{ secrets.OTA_ADMIN_EMAIL }}
           OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
           OTA_BRANCH: ${{ inputs.branch }}
           IOS_RUNTIME_VERSION: ${{ inputs.ios_runtime_version }}
@@ -84,6 +85,11 @@ jobs:
           NODE_NO_WARNINGS: '1'
         run: |
           set -euo pipefail
+
+          # The login email is a secret here and is masked as one. Mask it again
+          # explicitly before anything else can print it: a value that was ever
+          # moved to a variable would otherwise reach the log in the clear.
+          if [ -n "${OTA_ADMIN_EMAIL:-}" ]; then echo "::add-mask::$OTA_ADMIN_EMAIL"; fi
 
           # Inputs reach the shell through the environment, never by
           # interpolation, and are checked before anything uses them.

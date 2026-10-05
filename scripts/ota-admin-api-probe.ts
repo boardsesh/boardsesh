@@ -68,22 +68,22 @@ export async function probeAdminApi(baseUrl: string, fetchImpl: typeof fetch = f
   return { bundleName, missing: missingBundleMarkers(bundleSource) };
 }
 
-export function formatProbe(result: ProbeResult): string[] {
-  const lines = [`${LOG} dashboard bundle: ${result.bundleName}`];
-  if (result.bundleName !== BUNDLE_LAST_READ) {
+export function formatProbe(probe: ProbeResult): string[] {
+  const lines = [`${LOG} dashboard bundle: ${probe.bundleName}`];
+  if (probe.bundleName !== BUNDLE_LAST_READ) {
     lines.push(
       `${LOG} note: the client was written against ${BUNDLE_LAST_READ}. A new bundle is normal after a server upgrade.`,
     );
   }
-  if (result.missing.length === 0) {
+  if (probe.missing.length === 0) {
     lines.push(`${LOG} All ${XPREM_BUNDLE_MARKERS.length} admin API markers are present.`);
     return lines;
   }
-  for (const { marker, usedFor } of result.missing) {
+  for (const { marker, usedFor } of probe.missing) {
     lines.push(`${LOG} MISSING: ${marker} (used for: ${usedFor})`);
   }
   lines.push(
-    `${LOG} ${result.missing.length} marker(s) are gone from the dashboard bundle. ` +
+    `${LOG} ${probe.missing.length} marker(s) are gone from the dashboard bundle. ` +
       'Re-read it and update scripts/lib/xprem-admin.mts before trusting ota:apply or the rollout tools.',
   );
   return lines;
@@ -91,9 +91,9 @@ export function formatProbe(result: ProbeResult): string[] {
 
 async function main(): Promise<void> {
   const baseUrl = adminBaseUrl(process.env.OTA_BASE_URL || process.env.EXPO_UPDATES_URL || DEFAULT_BASE_URL);
-  const result = await probeAdminApi(baseUrl);
-  for (const line of formatProbe(result)) console.log(line);
-  process.exitCode = result.missing.length === 0 ? 0 : 1;
+  const probe = await probeAdminApi(baseUrl);
+  for (const line of formatProbe(probe)) console.log(line);
+  process.exitCode = probe.missing.length === 0 ? 0 : 1;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

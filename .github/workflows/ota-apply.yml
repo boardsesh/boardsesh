@@ -87,15 +87,20 @@ jobs:
 
       - name: Plan or apply the declared state
         env:
-          # The email is not a secret in the other OTA environments, where it is a
-          # variable; accept either so the owner can store it whichever way.
-          OTA_ADMIN_EMAIL: ${{ secrets.OTA_ADMIN_EMAIL || vars.OTA_ADMIN_EMAIL }}
+          # A secret, never a variable: a variable is not masked in logs, and
+          # the email is half of the login to the server the whole fleet uses.
+          OTA_ADMIN_EMAIL: ${{ secrets.OTA_ADMIN_EMAIL }}
           OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
           EVENT_NAME: ${{ github.event_name }}
           MODE: ${{ inputs.mode }}
           NODE_NO_WARNINGS: '1'
         run: |
           set -euo pipefail
+
+          # The login email is a secret here and is masked as one. Mask it again
+          # explicitly before anything else can print it: a value that was ever
+          # moved to a variable would otherwise reach the log in the clear.
+          if [ -n "${OTA_ADMIN_EMAIL:-}" ]; then echo "::add-mask::$OTA_ADMIN_EMAIL"; fi
 
           # An environment that has not been given the login yet must not look
           # like a failed apply. Say so where a human will read it, and stop.

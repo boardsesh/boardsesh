@@ -86,11 +86,17 @@ jobs:
       - name: Plan against the live server
         id: plan
         env:
-          OTA_ADMIN_EMAIL: ${{ secrets.OTA_ADMIN_EMAIL || vars.OTA_ADMIN_EMAIL }}
+          # A secret, never a variable: a variable is not masked in logs.
+          OTA_ADMIN_EMAIL: ${{ secrets.OTA_ADMIN_EMAIL }}
           OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
           NODE_NO_WARNINGS: '1'
         run: |
           set -uo pipefail
+
+          # The login email is a secret here and is masked as one. Mask it again
+          # explicitly before anything else can print it: a value that was ever
+          # moved to a variable would otherwise reach the log in the clear.
+          if [ -n "${OTA_ADMIN_EMAIL:-}" ]; then echo "::add-mask::$OTA_ADMIN_EMAIL"; fi
 
           # An environment that has not been given the login yet is not drift.
           if [ -z "${OTA_ADMIN_EMAIL:-}" ] || [ -z "${OTA_ADMIN_PASSWORD:-}" ]; then
@@ -122,7 +128,8 @@ jobs:
 
       - name: Notify Discord
         if: >-
-          steps.probe.outputs.result != 'ok' ||
+          steps.probe.outputs.result == 'moved' ||
+          steps.probe.outputs.result == 'unavailable' ||
           steps.plan.outputs.result == 'drift' ||
           steps.plan.outputs.result == 'unreadable' ||
           steps.plan.outputs.result == 'failed'
@@ -156,10 +163,15 @@ jobs:
             headline='**OTA server could not be read**: three attempts to log in and read updates.boardsesh.com failed. This is not drift; check the server and the admin login.'
             log="$RUNNER_TEMP/ota-drift.log"
             pattern='Could not read'
-          else
+          elif [ "$PROBE_RESULT" = "unavailable" ]; then
             headline='**OTA dashboard bundle unavailable**: the public dashboard files could not be downloaded, so the admin API check did not run.'
             log="$RUNNER_TEMP/ota-probe.log"
             pattern='ota-api-probe'
+          else
+            # Unreachable while the step condition above lists the same values.
+            # Kept so a value added there and forgotten here is said out loud.
+            echo "::warning::No Discord message is defined for probe '$PROBE_RESULT' / plan '$PLAN_RESULT'."
+            exit 0
           fi
 
           # The scripts' own lines: names, paths and percentages. Neither prints
@@ -183,10 +195,19 @@ jobs:
             | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
               echo "::warning::Failed to post the Discord notification (see status above)"
 
+      # An empty probe result means the probe step never wrote one: it was
+      # skipped or cancelled, which only happens when an earlier step failed and
+      # the job is already red for that reason. It is not a finding about the
+      # server, so it sends no alert; it is noted so the summary is not silent.
+      - name: Note a probe that did not run
+        if: always() && steps.probe.outputs.result == ''
+        run: echo "The admin API probe did not run in this job, so it says nothing about the dashboard bundle." >> "$GITHUB_STEP_SUMMARY"
+
       # Discord is best-effort; the red run is the durable record.
       - name: Fail the run on a finding
         if: >-
-          steps.probe.outputs.result != 'ok' ||
+          steps.probe.outputs.result == 'moved' ||
+          steps.probe.outputs.result == 'unavailable' ||
           steps.plan.outputs.result == 'drift' ||
           steps.plan.outputs.result == 'unreadable' ||
           steps.plan.outputs.result == 'failed'

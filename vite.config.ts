@@ -1324,6 +1324,14 @@ export default defineConfig({
         cache: false,
       },
 
+      // Read and steer per-update rollouts on the xprem server: status, set,
+      // finish, revert, health. Needs the dashboard admin login.
+      // See scripts/mobile-ota-rollout.ts + docs/mobile-ota-updates.md.
+      'ota:rollout': {
+        command: 'tsx scripts/mobile-ota-rollout.ts',
+        cache: false,
+      },
+
       // Read-only: downloads the public dashboard bundle and checks that every
       // admin API path scripts/lib/xprem-admin.mts calls is still in it. No
       // login. Run it after an xprem upgrade; the daily drift workflow does.

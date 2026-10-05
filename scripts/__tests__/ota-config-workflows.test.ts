@@ -82,6 +82,26 @@ describe.each(ADMIN_WORKFLOWS)('%s', (name) => {
     expect(skip).toContain('exit 0');
   });
 
+  it('takes the whole login from secrets and masks the email before anything can print it', () => {
+    expect(code).toContain('OTA_ADMIN_EMAIL: ${{ secrets.OTA_ADMIN_EMAIL }}');
+    expect(code).toContain('OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}');
+    // A variable is printed in the clear.
+    expect(code).not.toContain('vars.OTA_ADMIN');
+    const mask = code.indexOf('echo "::add-mask::$OTA_ADMIN_EMAIL"');
+    const firstAdminCall = code.search(/node --experimental-strip-types scripts\/(ota-apply|mobile-ota-rollout)\.ts/);
+    expect(mask).toBeGreaterThan(0);
+    expect(mask).toBeLessThan(firstAdminCall);
+    // The mask is the first command of the step that receives the login.
+    const stepStart = code.lastIndexOf('        run: |', mask);
+    const beforeMask = code
+      .slice(stepStart, mask)
+      .split('\n')
+      .slice(1)
+      .map((line) => line.trim())
+      .filter((line) => line !== '' && !line.startsWith('set -'));
+    expect(beforeMask).toEqual(['if [ -n "${OTA_ADMIN_EMAIL:-}" ]; then']);
+  });
+
   it('is never triggered by a pull request', () => {
     expect(code).not.toMatch(/^ {2}pull_request(_target)?:/m);
   });
@@ -157,10 +177,14 @@ describe('ota-drift.yml', () => {
     expect(code).toContain('DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}');
     expect(code).toContain('allowed_mentions: {parse: []}');
     expect(code.indexOf('Notify Discord')).toBeLessThan(code.indexOf('Fail the run on a finding'));
-    const conditions = code.match(/if: >-\n(?: {10}.*\n){4}/g) ?? [];
+    const conditions = code.match(/if: >-\n(?: {10}.*\n){5}/g) ?? [];
     // The alert and the failure fire on exactly the same findings.
     expect(conditions).toHaveLength(2);
     expect(conditions[0]).toBe(conditions[1]);
+    // Only on explicit values. An empty output (a step that never ran) must not
+    // match, which any `!= 'ok'` comparison would.
+    expect(code).not.toMatch(/outputs\.result != /);
+    expect(code).toContain("if: always() && steps.probe.outputs.result == ''");
   });
 });
 

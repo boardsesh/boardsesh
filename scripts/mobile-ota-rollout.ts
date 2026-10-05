@@ -152,7 +152,7 @@ export function parseRolloutArgs(argv: string[]): RolloutArgs {
   };
 }
 
-function describe(rollout: ActiveRollout): string {
+function rolloutLine(rollout: ActiveRollout): string {
   return `${rollout.branch} ${rollout.platform} runtime ${rollout.runtimeVersion}: update ${rollout.updateId} at ${rollout.percentage}%`;
 }
 
@@ -177,7 +177,7 @@ export async function runRolloutCommand(
     ).filter((rollout) => args.platform === 'all' || rollout.platform === args.platform);
     if (args.json) return [JSON.stringify({ branch: args.branch, rollouts }, null, 2)];
     if (rollouts.length === 0) return [`${LOG} No live rollout on "${args.branch}".`];
-    return rollouts.map((rollout) => `${LOG} ${describe(rollout)}`);
+    return rollouts.map((rollout) => `${LOG} ${rolloutLine(rollout)}`);
   }
 
   if (args.command === 'health') {
@@ -190,7 +190,7 @@ export async function runRolloutCommand(
     if (args.json) return [JSON.stringify({ branch: args.branch, health }, null, 2)];
     if (health.length === 0) return [`${LOG} No live rollout on "${args.branch}" runtime ${target.runtimeVersion}.`];
     return health.map(
-      (entry) => `${LOG} ${describe(entry.rollout)}: ${entry.judgement.verdict}. ${entry.judgement.reason}`,
+      (entry) => `${LOG} ${rolloutLine(entry.rollout)}: ${entry.judgement.verdict}. ${entry.judgement.reason}`,
     );
   }
 
@@ -199,14 +199,14 @@ export async function runRolloutCommand(
     if (reverted.length === 0) {
       return [`${LOG} No live rollout on "${args.branch}" runtime ${target.runtimeVersion}. Nothing to revert.`];
     }
-    return reverted.map((rollout) => `${LOG} Reverted ${describe(rollout)}.`);
+    return reverted.map((rollout) => `${LOG} Reverted ${rolloutLine(rollout)}.`);
   }
 
   const percentage = args.command === 'finish' ? 100 : (args.percentage ?? 0);
   const changed = await setRolloutPercentage(client, target, percentage);
   if (changed.length === 0) return [`${LOG} Already at ${percentage}%. Nothing was changed.`];
   return changed.map((rollout) =>
-    args.command === 'finish' ? `${LOG} Finished ${describe(rollout)}.` : `${LOG} Raised ${describe(rollout)}.`,
+    args.command === 'finish' ? `${LOG} Finished ${rolloutLine(rollout)}.` : `${LOG} Raised ${rolloutLine(rollout)}.`,
   );
 }
 

@@ -744,9 +744,28 @@ function branchServer(
   return { fetchImpl, calls, manifestCalls };
 }
 
-/** The admin API as rollout mode reads it. `live` is what each platform is rolling out. */
-function rolloutReader(live: Partial<Record<Platform, { updateId: number; commitHash: string; percentage: number }>>) {
+/** The numeric ids of the updates the fixture's baselines are, as the server would number them. */
+const CONTROL_IDS: Record<Platform, number> = { ios: 91, android: 92 };
+
+interface LiveRollout {
+  updateId: number;
+  commitHash: string;
+  percentage: number;
+  /** The update this rollout replaced. Defaults to the platform's staged baseline. */
+  controlUpdateId?: number | null;
+}
+
+/**
+ * The admin API as rollout mode reads it. `live` is what each platform is rolling
+ * out. Update 91 and 92 are the staged baselines; `otherUpdates` names any more.
+ */
+function rolloutReader(live: Partial<Record<Platform, LiveRollout>>, otherUpdates: Record<number, string | null> = {}) {
   const reads: string[] = [];
+  const updateUUIDs: Record<number, string | null> = {
+    [CONTROL_IDS.ios]: BASELINE_IDS.ios,
+    [CONTROL_IDS.android]: BASELINE_IDS.android,
+    ...otherUpdates,
+  };
   const reader: RolloutReader = {
     getUpdateRollout: async (branch, runtimeVersion) => {
       reads.push(`rollout ${branch} ${runtimeVersion}`);
@@ -756,7 +775,7 @@ function rolloutReader(live: Partial<Record<Platform, { updateId: number; commit
           ? [
               {
                 updateId: update.updateId,
-                controlUpdateId: null,
+                controlUpdateId: update.controlUpdateId === undefined ? CONTROL_IDS[platform] : update.controlUpdateId,
                 platform,
                 percentage: update.percentage,
                 createdAt: null,
@@ -769,7 +788,12 @@ function rolloutReader(live: Partial<Record<Platform, { updateId: number; commit
     getUpdateDetails: async (_branch, _runtimeVersion, updateId) => {
       reads.push(`details ${updateId}`);
       const update = Object.values(live).find((candidate) => candidate?.updateId === updateId);
-      return { updateId, updateUUID: null, commitHash: update?.commitHash ?? null, platform: null };
+      return {
+        updateId,
+        updateUUID: updateUUIDs[Number(updateId)] ?? null,
+        commitHash: update?.commitHash ?? null,
+        platform: null,
+      };
     },
   };
   return { reader, reads, live };
@@ -781,11 +805,22 @@ const rolloutReceiptPath = (fixture: ReturnType<typeof stageFixture>): string =>
 function writeRolloutReceipt(
   fixture: ReturnType<typeof stageFixture>,
   updateIds: Partial<Record<Platform, string>>,
-  overrides: { branch?: string; commitHash?: string } = {},
+  overrides: {
+    branch?: string;
+    commitHash?: string;
+    baselineUpdateIds?: Partial<Record<Platform, string | null>>;
+  } = {},
 ): void {
   writeFileSync(
     rolloutReceiptPath(fixture),
-    JSON.stringify({ branch: 'production', commitHash: COMMIT, updateIds, ...overrides }),
+    JSON.stringify({
+      branch: 'production',
+      commitHash: COMMIT,
+      updateIds,
+      // The update each rollout replaced: the staged baseline, as the first run recorded it.
+      baselineUpdateIds: BASELINE_IDS,
+      ...overrides,
+    }),
   );
 }
 
@@ -902,6 +937,13 @@ describe('promotion to a named branch', () => {
     const capture = ['--capture-baseline', '--app-id', APP_ID, '--ios-runtime', RUNTIME, '--android-runtime', RUNTIME];
     expect(parseCaptureArgs([...capture, '--out', 'b.json']).branch).toBe('production');
     expect(parseCaptureArgs([...capture, '--out', 'b.json', '--branch', 'pr-beta']).branch).toBe('pr-beta');
+    // A branch name goes into a URL path: anything that could leave it is refused.
+    for (const invalid of ['../production', 'pr beta', 'pr-beta/x', '-pr-beta', 'pr-beta?x=1']) {
+      expect(() => parseCaptureArgs([...capture, '--out', 'b.json', '--branch', invalid]), invalid).toThrow(
+        'Invalid branch name',
+      );
+    }
+    expect(() => parseCaptureArgs([...capture, '--out', 'b.json', '--branch'])).toThrow('--branch needs a value.');
   });
 });
 
@@ -934,6 +976,8 @@ describe('promotion as a rollout', () => {
       branch: 'production',
       commitHash: COMMIT,
       updateIds: { ios: '101', android: '102' },
+      // And the update each rollout replaced, for the re-run's baseline check.
+      baselineUpdateIds: BASELINE_IDS,
     });
   });
 
@@ -954,7 +998,7 @@ describe('promotion as a rollout', () => {
     expect(server.calls.some((call) => call.url.pathname.includes('/markUpdateAsUploaded/'))).toBe(false);
   });
 
-  it('treats its own live rollout as done on a re-run, without publishing again', async () => {
+  it('on a re-run with both rollouts live, checks each replaced its staged baseline and publishes nothing', async () => {
     const fixture = stageFixture();
     const server = branchServer(fixture, 'production');
     const admin = rolloutReader({
@@ -966,10 +1010,71 @@ describe('promotion as a rollout', () => {
       ...promoteOptions(fixture, server.fetchImpl),
       rollout: { percentage: 5, receiptPath: rolloutReceiptPath(fixture), connect: async () => admin.reader },
     });
+    // No manifest read, no lease, no upload: the manifest baseline check is
+    // replaced, not skipped. Each platform's control update was looked up.
+    expect(server.calls).toEqual([]);
+    expect(admin.reads).toEqual(expect.arrayContaining(['details 101', 'details 91', 'details 102', 'details 92']));
+  });
+
+  it('on a re-run, refuses a live rollout of its own that replaced some other update', async () => {
+    const fixture = stageFixture();
+    const server = branchServer(fixture, 'production');
+    // Update 77 was published between staging and this rollout: the rollout is
+    // this promotion's, but it is not layered on what was staged and tested.
+    const admin = rolloutReader(
+      { ios: { updateId: 101, commitHash: COMMIT, percentage: 5, controlUpdateId: 77 } },
+      { 77: '77777777-7777-9777-6777-777777777777' },
+    );
+    writeRolloutReceipt(fixture, { ios: '101' });
+    await expect(
+      promoteArchivedOta({
+        ...promoteOptions(fixture, server.fetchImpl),
+        rollout: { percentage: 5, receiptPath: rolloutReceiptPath(fixture), connect: async () => admin.reader },
+      }),
+    ).rejects.toThrow(
+      `ios production rollout 101 replaced 77777777-7777-9777-6777-777777777777, not the staged baseline ${BASELINE_IDS.ios}; refusing to treat the rollout as the staged one.`,
+    );
     expect(server.calls).toEqual([]);
   });
 
-  it('finishes the other platform when only one rollout started', async () => {
+  it('on a re-run, refuses when the replaced update is missing or cannot be identified', async () => {
+    for (const [controlUpdateId, message] of [
+      [null, `replaced no update, not the staged baseline ${BASELINE_IDS.ios}`],
+      [78, 'replaced update 78, which the server cannot identify'],
+    ] as const) {
+      const fixture = stageFixture();
+      const server = branchServer(fixture, 'production');
+      const admin = rolloutReader({ ios: { updateId: 101, commitHash: COMMIT, percentage: 5, controlUpdateId } });
+      writeRolloutReceipt(fixture, { ios: '101' });
+      await expect(
+        promoteArchivedOta({
+          ...promoteOptions(fixture, server.fetchImpl),
+          rollout: { percentage: 5, receiptPath: rolloutReceiptPath(fixture), connect: async () => admin.reader },
+        }),
+      ).rejects.toThrow(message);
+    }
+  });
+
+  it('on a re-run, accepts a first-ever rollout on a runtime version: no baseline, no control', async () => {
+    const fixture = stageFixture();
+    const server = branchServer(fixture, 'production');
+    const admin = rolloutReader({
+      ios: { updateId: 101, commitHash: COMMIT, percentage: 5, controlUpdateId: null },
+      android: { updateId: 102, commitHash: COMMIT, percentage: 5 },
+    });
+    writeRolloutReceipt(
+      fixture,
+      { ios: '101', android: '102' },
+      { baselineUpdateIds: { ios: null, android: BASELINE_IDS.android } },
+    );
+    await promoteArchivedOta({
+      ...promoteOptions(fixture, server.fetchImpl),
+      rollout: { percentage: 5, receiptPath: rolloutReceiptPath(fixture), connect: async () => admin.reader },
+    });
+    expect(server.calls).toEqual([]);
+  });
+
+  it('on a re-run with one rollout live, checks that one against its baseline and publishes the other', async () => {
     const fixture = stageFixture();
     const admin = rolloutReader({ ios: { updateId: 101, commitHash: COMMIT, percentage: 5 } });
     writeRolloutReceipt(fixture, { ios: '101' });
@@ -986,6 +1091,19 @@ describe('promotion as a rollout', () => {
       .filter((call) => call.url.pathname.includes('/requestUploadUrl/'))
       .map((call) => call.url.searchParams.get('platform'));
     expect(published).toEqual(['android']);
+    // iOS: judged by what its rollout replaced, never by the manifest.
+    expect(admin.reads).toContain('details 91');
+    const manifestPlatforms = server.manifestCalls().map((call) => new Headers(call.init.headers).get('expo-platform'));
+    expect(new Set(manifestPlatforms)).toEqual(new Set(['android']));
+    // Android: still held to the manifest baseline before its lease and its upload.
+    expect(manifestPlatforms.length).toBeGreaterThanOrEqual(2);
+    // The receipt now names both, each with the update it replaced.
+    expect(JSON.parse(readFileSync(rolloutReceiptPath(fixture), 'utf8'))).toEqual({
+      branch: 'production',
+      commitHash: COMMIT,
+      updateIds: { ios: '101', android: '102' },
+      baselineUpdateIds: BASELINE_IDS,
+    });
   });
 
   it('does not accept the commit alone as proof that a live rollout is its own', async () => {

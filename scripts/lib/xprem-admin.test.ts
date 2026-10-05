@@ -50,6 +50,25 @@ describe('admin login', () => {
     ).rejects.toThrow('Admin login returned no token.');
   });
 
+  it('never repeats the login email, even when the server quotes it back', async () => {
+    for (const status of [401, 403, 500]) {
+      const server = fakeXprem({
+        'POST /auth/login': { status, body: { detail: 'no account for ops@example.test here' } },
+      });
+      const failure = await adminLogin({
+        baseUrl: FAKE_BASE_URL,
+        email: 'ops@example.test',
+        password: 'hunter2-sentinel',
+        fetchImpl: server.fetchImpl,
+      }).catch((error: unknown) => error);
+      const message = (failure as Error).message;
+      expect(message, String(status)).toContain(`Admin login failed (HTTP ${status})`);
+      expect(message, String(status)).toContain('no account for [email] here');
+      expect(message, String(status)).not.toContain('ops@example.test');
+      expect(message, String(status)).not.toContain('hunter2-sentinel');
+    }
+  });
+
   it('derives the server origin from a manifest URL', () => {
     expect(adminBaseUrl('https://updates.example/manifest')).toBe('https://updates.example');
     expect(adminBaseUrl('https://updates.example/manifest/')).toBe('https://updates.example');
@@ -271,6 +290,25 @@ describe('admin client requests', () => {
   it('rejects a list endpoint that answers with something else', async () => {
     const server = fakeXprem({ [`GET ${FAKE_APP}/channels`]: { channels: [] } });
     await expect(server.client.getChannels()).rejects.toThrow('xprem channel list is not a list.');
+  });
+});
+
+describe('the fake server these tests use', () => {
+  it('parses every JSON body, so an assertion never compares raw strings', async () => {
+    const server = fakeXprem({ 'POST /any': { status: 204 } });
+    for (const body of ['[1,{"a":2}]', '{"a":1}', '"text"', '7', 'null']) {
+      await server.fetchImpl(`${FAKE_BASE_URL}/any`, { method: 'POST', body });
+    }
+    await server.fetchImpl(`${FAKE_BASE_URL}/any`, { method: 'POST', body: 'email=a%40b&password=c' });
+    expect(server.requests.map((request) => request.body)).toEqual([
+      [1, { a: 2 }],
+      { a: 1 },
+      'text',
+      7,
+      null,
+      // Not JSON: the login form stays the string it was sent as.
+      'email=a%40b&password=c',
+    ]);
   });
 });
 

@@ -540,11 +540,16 @@ do this in order:
 2. Set its deployment branches to **Selected branches**, with `main` as the only one.
 3. Only then add:
 
-| Name | Kind | Used for |
-| --- | --- | --- |
-| `OTA_ADMIN_PASSWORD` | secret | the dashboard admin login |
-| `OTA_ADMIN_EMAIL` | secret or variable | the dashboard admin login |
-| `DISCORD_DEPLOY_WEBHOOK` | secret | the drift alert |
+| Environment secret | Used for |
+| --- | --- |
+| `OTA_ADMIN_EMAIL` | the dashboard admin login |
+| `OTA_ADMIN_PASSWORD` | the dashboard admin login |
+| `DISCORD_DEPLOY_WEBHOOK` | the drift alert |
+
+All three are **secrets**, the email included. The preview environments keep the email in a
+variable, and a variable is printed in logs unmasked; these jobs read it from `secrets` only and
+mask it again before their first command. None of the tools prints the email, and a refused login's
+error has it removed from whatever the server answered.
 
 `DISCORD_DEPLOY_WEBHOOK` exists today only in the `Production` environment, and a job reads one
 environment. Without a copy in `ota-stable-release` the drift job goes red and says so in its
@@ -635,6 +640,8 @@ totals or per-minute counts is not known yet.
    above assumes it does not.
 6. Whether `updateIssues` and `runtimeIssues` are running totals or per-minute counts.
 7. How the server words a refusal of a licensed feature.
+8. That a rollout names the update it replaced (`controlUpdateId`) whenever one existed. The
+   promote re-run check refuses when it is missing.
 
 `mobile-ota-unlock.yml` wraps `revert --if-live` for publishers that must not be refused by a live
 canary. It takes the iOS and the Android runtime version in one run. It is dispatch-only: a
@@ -656,10 +663,16 @@ run with the admin login. Callers will start it with
 - **Rollout mode does not run the served-bytes check** that the default mode ends with. It confirms
   that the update it was leased is rolling out at the requested percentage. The bytes are covered
   only by the content hashes the server validated at upload.
-- It is safe to re-run. The update ids it was leased are written to the rollout receipt before any
-  upload. On a re-run, a platform whose live rollout carries its recorded id, built from its commit,
-  counts as done. A live rollout it cannot tie to its own receipt is refused, even when it was built
-  from the same commit, so keep the receipt file with the stage receipt between attempts.
+- It is safe to re-run. Before any upload it writes the rollout receipt: the update id it was
+  leased per platform, and the update each rollout is about to replace (the staged baseline). On a
+  re-run, a platform whose live rollout carries its recorded id, built from its commit, counts as
+  done. A live rollout it cannot tie to its own receipt is refused, even when it was built from the
+  same commit, so keep the receipt file with the stage receipt between attempts.
+- A platform whose own rollout is already live is **not** checked against the anonymous manifest:
+  this promotion changed what the branch serves, and the manifest shows one device's side of a
+  rollout. It is checked against the server's record of what the rollout replaced instead. That
+  update must be the baseline in the receipt. If something else was published in between, the
+  re-run refuses.
 
 ### Fingerprint parity — the one rule that matters
 

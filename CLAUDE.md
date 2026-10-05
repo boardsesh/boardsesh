@@ -80,6 +80,9 @@ Common commands:
 - `vp run check:mobile-simulator`, `vp run mobile:screenshot` — macOS only
 - `vp run mobile:ios` — local Expo iOS build with the shared Boardsesh Xcode cache
 - `vp run mobile:publish` — EAS Update for current branch
+- `vp run ota:apply` — plan the xprem control plane against `infra/ota/config.ts` (`-- --apply` to converge); needs the dashboard admin login
+- `vp run ota:rollout -- status|set|finish|revert|health` — read and steer per-update rollouts; needs the dashboard admin login
+- `vp run ota:api-probe` — check the live dashboard bundle still has every admin API path our tools call; no login
 - `vp run test:e2e` — Playwright; auto-starts the dev DB + web server
 - `vp run test:e2e:expo-web` — Expo-web smoke; boots the full expo-web stack (backend + Next proxy + Metro web) via the dev orchestrator and runs the `expo-web-smoke` Playwright project against it (heavy; runs in the manually-dispatched E2E workflow's `expo-web-smoke` job, not per-PR CI — run locally for pre-push confidence). See `scripts/expo-web-e2e.ts`.
 
