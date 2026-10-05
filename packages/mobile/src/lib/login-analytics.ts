@@ -184,6 +184,9 @@ export function watchAccountCreatedAt(
   void (async () => {
     for (const rereadDelayMs of [0, ...PROFILE_REREAD_DELAYS_MS]) {
       if (rereadDelayMs > 0) {
+        // `finish` calls whichever `wakeReread` is current, and it is assigned
+        // here before the timer is armed, so a finish during the wait always
+        // ends this wait and never an earlier one.
         await new Promise<void>((resolve) => {
           wakeReread = resolve;
           rereadTimeoutId = setTimeout(resolve, rereadDelayMs);

@@ -280,8 +280,10 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
         if (cancelled || !stored) return;
         await AsyncStorage.removeItem(PENDING_BOARD_LINK_KEY);
         const boardPath = readPendingBoardLink(stored, Date.now());
+        // No `cancelled` check from here: the stash is already gone, so backing
+        // out now would lose the climb for good. Same as the join replay above.
         // `boardPath` is a validated app path; typed routes can't know that.
-        if (!cancelled && boardPath) router.navigate(boardPath as Href);
+        if (boardPath) router.navigate(boardPath as Href);
       } catch (error) {
         if (__DEV__) console.warn('[deep-link] failed to consume pending board link', error);
         reportHandledError(error, { tags: { source: 'deep-link', op: 'consume-pending-board-link' } });
