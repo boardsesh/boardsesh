@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-05T09:55:51.276Z",
+  "generatedAt": "2026-10-05T11:48:08.829Z",
   "entries": [
+    {
+      "prNumber": 6108,
+      "category": "fixed",
+      "title": "Photographing a wall no longer closes the app on devices with no camera",
+      "mergedAt": "2026-10-05T11:46:08Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6108"
+    },
     {
       "prNumber": 6068,
       "category": "fixed",

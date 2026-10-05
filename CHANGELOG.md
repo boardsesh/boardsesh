@@ -21,6 +21,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Photographing a wall no longer closes the app on devices with no camera ([#6108](https://github.com/boardsesh/boardsesh/pull/6108))
 - Scan a gym poster with your iPhone and land on that gym's page, not the app's Home tab. ([#6068](https://github.com/boardsesh/boardsesh/pull/6068))
 - Your new climbs appear immediately on downloaded spray walls, without restarting the app. ([#6088](https://github.com/boardsesh/boardsesh/pull/6088))
 - Your browser queue stays cleared after removing a wall, and new queued climbs survive a quick switch. ([#6093](https://github.com/boardsesh/boardsesh/pull/6093))
