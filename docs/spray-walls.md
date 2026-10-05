@@ -320,6 +320,15 @@ Three rules in that flow are not obvious from the API and are easy to undo:
   button, and `publishSprayWallVersion` refuses a version that has already
   published — so a shared retry would turn a failed board bind into a dead end.
 
+The wizard always exposes a header close control, including cold deep links
+without a back stack. It returns to the resolved source tab when no back route
+exists, and native removal prevention runs the same busy, unsaved-edit and
+stale-confirmation checks for header and footer exits. The editor and Look
+surfaces reserve the transparent header's measured height. When a Look preview
+cannot be drawn, the creator can still select any offered look and save it.
+Photo replacement controls precede the preview so portrait photos cannot hide
+them below the fold.
+
 ## Caps
 
 | Cap | Value | Why |
