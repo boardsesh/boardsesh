@@ -290,7 +290,15 @@ export const SHARED_EVENTS = {
   // invisible in telemetry. Props: { surface: 'connect' | 'quickstart_scan',
   // platform, androidApiLevel, androidLocationPermissionGranted }, plus
   // `boardName` on the 'connect' surface only (the quickstart scan runs before
-  // any board is chosen, so it has none to report).
+  // any board is chosen, so it has none to report). The 'connect' surface also
+  // sends `attempt` and `permission_status` (#6003):
+  //  - `permission_status`: 'denied' (Android will show its dialog again; the
+  //    climber sees an alert with Try again) or 'blocked' (it won't; they see
+  //    Open Settings).
+  //  - `attempt`: 1 for a connect the climber started, 2 or more for one started
+  //    from Try again. It counts within one chain of retries, so cancelling the
+  //    alert and tapping the bulb again is attempt 1.
+  // Both are absent on 'quickstart_scan' and on bundles from before the retry.
   BluetoothPermissionDenied: 'Bluetooth Permission Denied',
   // Mobile-only (#5654): a connect or the /boards quickstart scan stopped because
   // Bluetooth can't be used, and the climber was told why. Fires with the alert or
