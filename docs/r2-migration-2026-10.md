@@ -57,9 +57,8 @@ and render checks, with both replicas registering 14 families and 13 schedules.
 Automatic live run `a998008a-92e8-441f-afe3-c49bfe2e069a` started within three
 seconds and completed in 47.60 seconds at 09:08 UTC, with the same six-hour lease
 and no retries, age skip, or competing-run skip. It checked all 23 layouts and
-left all manifests unchanged. Scheduling is restored. Reader release still
-requires actual native update installation and a fresh R2 snapshot import;
-the linked acceptance issue records those gates. A real browser cross-origin
+left all manifests unchanged. Scheduling is restored. Reader PR #5989 merged as
+`6daaba710c220f9a3c5244b58d70a8bcda1b1bfa`. A real browser cross-origin
 fetch also decoded a gzip artifact into SQLite; its decoded hash and row counts
 matched an independent download and SQLite integrity check.
 
@@ -69,6 +68,88 @@ both legacy public bases. An image-only rollback is insufficient. Follow the
 [snapshot rollback runbook](board-snapshots.md#moving-the-snapshot-bucket-to-r2).
 Three scheduled nightly observations and comparable download metrics are tracked
 in [stability follow-up #6018](https://github.com/boardsesh/boardsesh/issues/6018).
+
+### Native reader acceptance and owner waiver
+
+The current production JavaScript source is frozen at
+`6cab8437bb7875e3a84ea228365c344428a6ca3c`, preserving already deployed fixes.
+The reviewed manual publisher resolves the original full runtimes naturally;
+it does not override fingerprints or publish the newer release train's native
+contract into the old cohort. Both actual Linux dry runs passed:
+[iOS](https://github.com/boardsesh/boardsesh/actions/runs/37247310643) and
+[Android](https://github.com/boardsesh/boardsesh/actions/runs/37247329899).
+
+The iOS Release simulator launched signed current-source QA update
+`de8d9831-8387-60b2-9a55-5e2e05f3cb4a` on runtime
+`c2643067d9b4f56009900f1954305ca73ea799d1`. A previously empty Tension
+`9:4` scope completed one normal download, with bootstrap and scope-complete
+markers, no paged fallback, SQLite integrity, grades, and ordered checkpoints.
+The deletion boundary remained conservative and unchanged.
+
+Read-only descriptors captured both actual decoded native bodies: core
+47,935,488 bytes, SHA-256
+`a9bed04d838f7fb36b170227d709ad5e11342b0b22af506420e9936218951b15`;
+grades 14,639,104 bytes, SHA-256
+`4126f485963905d701e4e9c60f024e171f9a1d3de15614fa101778377ce43667`.
+Both matched the verified public artifacts and SQLite metadata. Matching
+completion sidecars were not observed; full captured bodies and the completed
+native import provide separate evidence. The earlier Kilter import's body
+hashes were not captured and are excluded from this integrity claim.
+
+This is Release simulator acceptance, not a physical App Store device test.
+Android native acceptance remains incomplete after emulator and debug transport
+failures. The owner explicitly accepted the passed iOS basis and waived the
+remaining Android gate. No Android native update
+installation or fresh bootstrap pass is claimed. Production publication and
+restoration receipts are recorded separately from this QA acceptance.
+
+### Production reader publication
+
+[The iOS production run](https://github.com/boardsesh/boardsesh/actions/runs/37253720340)
+passed on October 5. It published update
+`7da0d206-20c9-005f-e80f-27589b430511`, created at 02:06:26 UTC, on the
+unchanged iOS runtime. Both cold and publisher exports matched the served
+Hermes SHA-256
+`57fa1a5648558156fce23bf5aa249fc7589be6bdc2fb2c4e2adf775827424283`.
+The new signed manifest and all 389 private R2 assets, totaling 41,428,090 bytes,
+passed full verification; the required source-map upload passed.
+
+A subsequent iOS Release simulator cold restart recorded two successful SDK
+launches and zero failed launches for this production update. Both active native
+controller records identified that same update and runtime at 02:12:23 UTC.
+The previously empty production Tension `10:6` scope then completed one normal
+download: 56,050 scoped climbs, 58,346 scoped stats, bootstrap and scope-complete
+markers, and no attempts or paged fallback. SQLite integrity passed, with 56,704
+scoped grades. Climbs and stats matched their actual ordered checkpoint pairs
+at `2026-10-05T02:09:45.264749Z`, sequences `1856672` and `414194288`;
+the grades pair matched sequence `8206477`. The conservative deletion boundary
+remained unchanged at sequence `188163`.
+
+Read-only descriptors captured the freshly published Tension 10 core body,
+36,720,640 bytes, SHA-256
+`2943c5976189cbd3d577f636c86ed2d578daffcc2739b2ca1f802e242bfb0315`,
+and grades body, 10,608,640 bytes, SHA-256
+`5575b6969124f72c1a44ecca53d5e1c1e23ffb8a179722cc6cb90889fa739fef`.
+Both matched current verified public artifacts built at 01:23:24.686 UTC,
+with SQLite integrity, metadata, and row counts. Matching sidecars were not
+observed; the full-body proof and completed native import are separate checks.
+
+[The Android production run](https://github.com/boardsesh/boardsesh/actions/runs/37254050894)
+also passed. Update `4a8fb895-f191-404c-4689-c6fd4296da58` was created at
+02:12:59 UTC on the unchanged runtime
+`04b545294d879a2a9d1fb2ac46a807d3175b39d6`. Cold, publisher, and served
+Hermes SHA-256 matched
+`3075845f5f93ed16f56a6505680f0201c182a293a618c2764904d9b06e5ca7fe`.
+Its signed manifest and all 426 private R2 assets, totaling 42,504,016 bytes,
+passed full verification; source-map upload passed. This proves served Android
+production delivery, not the waived Android native installation/bootstrap gate.
+
+Both production jobs triggered from merged reader commit
+`6daaba710c220f9a3c5244b58d70a8bcda1b1bfa`. The guarded workflow, helper,
+tests, TypeScript configuration, and root package/lock/workspace configuration
+were byte-identical to reviewed guard commit
+`0c56a04d71669d9239fdfc8b64f64cc765803850`; the immutable source remained
+`6cab8437bb7875e3a84ea228365c344428a6ca3c`.
 
 ## OTA: storage and historical delivery accepted
 
@@ -90,9 +171,10 @@ Four historical signed production manifests passed against their Tigris baseline
 current and older iOS and Android runtimes. Every one of the 1,630 referenced assets
 (167,624,808 bytes) passed full SHA-256 verification through fresh URLs for the
 correct private R2 account and bucket. Update identities, runtimes, branches, and
-signatures were preserved. A new isolated update must also install on
-production-configured iOS and Android clients before restoring the six publishing
-workflows; the linked native acceptance issue records that result.
+signatures were preserved. New current-source iOS QA installation and fresh
+snapshot bootstrap passed on the Release simulator. The owner waived the
+incomplete Android native gate, as recorded above; signed served delivery checks
+for both platforms remain required for production publication.
 
 The OTA bucket remains private with no custom domain. CDN caching is tracked separately in
 [follow-up #6017](https://github.com/boardsesh/boardsesh/issues/6017). The deployed
@@ -104,6 +186,18 @@ October 4 UTC: 2,620 samples from 1,511 devices, p50 6.371 seconds and p90 22.23
 seconds. Report post-cutover measurements with their sample count and observation
 window; do not infer a production improvement from isolated test downloads.
 
+The later field observation contains 70 download events from 69 people and
+69 sessions, all for older Android runtime
+`154bc941c504727afc914057aed2edff2c096576` and update
+`e0571860-9082-d39d-c762-e6dc61310f67`. The verified historical 2.5.0 APK
+uses `https://updates.boardsesh.com/manifest`, the same app ID, and the production
+channel. Its matching current signed manifest and all 426 referenced private R2
+assets passed full verification. This supports the inference that those field
+downloads use R2, while the events themselves do not record the hostname.
+It does not establish native acceptance for the newly published Android store
+runtime. The separate status/launch observation contains 162 events from
+103 people and 161 sessions.
+
 Retain the Tigris bucket and its concealed credentials in the Boardsesh vault. New
 R2 publications require reverse copy and verification before a storage rollback;
 restoring only the endpoint would strand updates added after cutover. Follow the
@@ -111,7 +205,20 @@ restoring only the endpoint would strand updates added after cutover. Follow the
 
 ## Retention and automation
 
-No legacy objects, buckets, or credentials have been deleted. Deletion requires a
-separate explicit approval. Restore the original publishing and deployment controls
-only after their live acceptance gates pass. Retired snapshot Actions publishing
-stays disabled; the homelab worker remains the sole snapshot producer.
+Publishing and deployment controls were restored on October 5, from
+02:21:54.242266 through 02:22:05.555540 UTC. Fresh inventories found no
+queued, pending, waiting, requested, or running writer jobs in either repository,
+including no in-flight worker-image deployment. The Ansible receiver was enabled
+first, then `HOMELAB_DEPLOY_ENABLED=true`, then the six paused writer workflows,
+with `production-deploy.yml` restored last. No old run was replayed and no new
+publication or deployment was dispatched as part of restoration.
+
+Retired snapshot Actions workflow `313375890` stays disabled; the homelab batch
+worker remains the sole snapshot producer, with Railway providing its scheduler.
+No legacy object, bucket, or credential has been deleted. Deletion requires a
+separate explicit approval.
+
+The 30-day reader retention clock starts at the later verified platform publication,
+October 5, 2026 at 02:12:59 UTC. Keep legacy snapshot reads and rollback credentials
+available through at least November 4, 2026 at 02:12:59 UTC. Reaching that date
+does not authorize deleting any object, bucket, or credential.

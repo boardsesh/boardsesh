@@ -1639,9 +1639,12 @@ Download the public acceptance receipts immediately after each run and retain th
 with the migration evidence until acceptance is complete. GitHub artifacts expire
 after seven days; receipts created before a failed step are also uploaded.
 
-A successful run is a publication check. Native launch and a fresh offline-board R2
-bootstrap still gate migration completion and restoration of paused publishing
-workflows. Keep all legacy objects and credentials during the retention period;
+A successful run is a publication check. For the October 2026 migration, native
+launch and a fresh offline-board R2 bootstrap passed on the iOS Release simulator.
+The owner explicitly waived incomplete Android native acceptance after emulator
+failures; this does not claim an Android native pass. The actual production and
+restoration results belong in [the acceptance record](r2-migration-2026-10.md).
+Keep all legacy objects and credentials during the retention period;
 see [the R2 reader acceptance PR](https://github.com/boardsesh/boardsesh/pull/5989) and issue #5912. An already
 published R2 update requires reverse copy and complete verification before an OTA
 storage rollback; changing only the endpoint is insufficient.
