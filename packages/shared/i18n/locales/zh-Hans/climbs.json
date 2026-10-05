@@ -221,7 +221,8 @@
       "publishDuplicateNamed": "这组岩点和“{{name}}”相同。打开“草稿”可保存而不发布，或者改动一个岩点。",
       "publishDuplicateUnnamed": "这组岩点和已有的一条线路相同。打开“草稿”可保存而不发布，或者改动一个岩点。",
       "viewMatchingClimb": "查看相同的线路",
-      "saveFailedFallback": "线路保存失败，请重试。"
+      "saveFailedFallback": "线路保存失败，请重试。",
+      "localRefreshFailed": "线路已保存，但已下载的列表没能刷新。重新联网后再刷新。"
     },
     "fields": {
       "description": "描述（可选）"
