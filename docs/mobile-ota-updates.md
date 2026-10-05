@@ -117,8 +117,17 @@ What the retry has to respect:
   version PR, so `OTA_SERVER_VERSION`, `EOAS_PACKAGE_SPEC` and the promote script move back
   together (the version-parity test fails on a partial revert), and then republishing the current
   JS with the old CLI. The 3.2 schema changes can stay; 3.1.2 ignores the new tables and column.
-- **Bundle diffing stays off.** `BUNDLE_DIFFING` is unset. Patches are served from the server itself
-  rather than the CDN, and each diff job peaks at about six times the bundle size in memory.
+- **Bundle diffing is on** (`BUNDLE_DIFFING=true`). On each publish xprem computes a bsdiff patch from
+  each of the five previous updates on the same branch, runtime and platform, and keeps one only when
+  it is at most 30% of the gzipped bundle. expo-updates has asked for patches by default since
+  56.0.13, so no build was needed. A device more than five updates behind gets the full bundle, and
+  `main` publishes about 14 updates a day, so patches mostly help climbers who open the app several
+  times a day. Each diff job peaks at about six times the bundle size in memory (about 125 MB) and
+  two run at once.
+- **Patches come from the server, never the CDN.** `BUNDLE_DIFFING_CDN_REDIRECT` stays unset.
+  expo-updates rejects a patch without the `im: bsdiff` and `expo-base-update-id` response headers
+  and does not fall back to the full bundle. The edge would need a Worker to add the second one,
+  because the value comes from the request path. Unsetting `BUNDLE_DIFFING` is the kill switch.
 
 After any bump: re-verify `/hc` = 200, `/ready` = 200, a header-carrying manifest + asset probe, and
 run `eoas doctor`.
@@ -1108,7 +1117,9 @@ uncompressed over HTTP/1.1. Fleet `expo.updates.download_time` since the R2 rota
 (268 samples over 19 hours).
 
 `ota-assets.boardsesh.com` is the public custom domain on the bucket, with a cache rule and a Brotli compression
-rule (`docs/cloudflare.md` → **OTA assets host**). It serves nothing to clients until xprem redirects to it.
+rule (`docs/cloudflare.md` → **OTA assets host**). xprem redirects asset requests to it because
+`CDN_BASE_URL` is set on the Railway service (`infra/railway/config.ts`). Unset that variable and xprem goes
+back to presigned bucket URLs on its next deploy; nothing in the bucket changes either way.
 
 **Gate before pointing xprem at the host.** Take two real `cas/` keys from launch assets, one published after
 the R2 rotation and one copied over from Tigris, and require all three for both:
@@ -1657,7 +1668,8 @@ Production job resolves both original full fingerprints twice on Linux, cold exp
 with the public R2 snapshot base, and checks the compiled Hermes bundle before any
 publishing credential is provided. A production dispatch uses the same immutable
 source and shared production FIFO lane, requires source-map upload, and verifies the
-new signed production manifest and every delivered private R2 asset. The workflow
+new signed production manifest and every delivered R2 asset, whether xprem redirects to the
+presigned bucket URL or to `ota-assets.boardsesh.com`. The workflow
 cannot accept another source commit or runtime.
 
 Download the public acceptance receipts immediately after each run and retain them

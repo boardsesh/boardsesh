@@ -305,6 +305,12 @@ describe('frozen reader fails closed', () => {
       target = 'https://foreign.example/private-fixture';
       await expect(verifyDelivery('ios', start, certificate, expectedSha, [])).rejects.toThrow('redirect target');
       expect(fakeFetch).toHaveBeenCalledTimes(8);
+      // With CDN_BASE_URL set, xprem redirects to the public R2 domain under
+      // this app's prefix. Another app's prefix on the same host is foreign.
+      target = 'https://ota-assets.boardsesh.com/007e6fd7-f200-448c-9449-8d48ba5d51fc/cas/public-fixture';
+      await verifyDelivery('ios', start, certificate, expectedSha, []);
+      target = 'https://ota-assets.boardsesh.com/another-app/cas/public-fixture';
+      await expect(verifyDelivery('ios', start, certificate, expectedSha, [])).rejects.toThrow('redirect target');
     } finally {
       vi.unstubAllGlobals();
     }

@@ -91,6 +91,15 @@ export const OTA_IMAGE = `${OTA_IMAGE_REPOSITORY}:v${OTA_SERVER_VERSION}`;
 /** Public origin of the OTA server. Also the value of its own BASE_URL. */
 export const OTA_BASE_URL = 'https://updates.boardsesh.com';
 
+/**
+ * The public R2 custom domain xprem redirects asset requests to.
+ *
+ * Repeated rather than imported from infra/cloudflare, which owns the host:
+ * the two tools share no code. scripts/__tests__/railway-config-inventory.test.ts
+ * fails if the two literals drift.
+ */
+export const OTA_CDN_BASE_URL = 'https://ota-assets.boardsesh.com';
+
 /** The port xprem listens on inside the container, and the custom domain's target. */
 export const OTA_CONTAINER_PORT = 8080;
 
@@ -493,6 +502,20 @@ export const OTA_REQUIRED_VARS: RequiredEnvVar[] = [
     name: 'AWS_REGION',
     value: 'auto',
     reason: 'The configured S3-compatible backend uses its automatic region selector.',
+  },
+  {
+    name: 'CDN_BASE_URL',
+    value: OTA_CDN_BASE_URL,
+    reason:
+      'Asset requests redirect to the edge-cached, compressed R2 domain instead of a presigned bucket URL. ' +
+      'Unset it to fall back to presigned delivery at once.',
+  },
+  {
+    name: 'BUNDLE_DIFFING',
+    value: 'true',
+    reason:
+      'Serves a bsdiff patch instead of the full Hermes bundle to a device at most five updates behind. ' +
+      'BUNDLE_DIFFING_CDN_REDIRECT stays unset: the edge does not add the patch headers expo-updates requires.',
   },
   {
     name: 'AWS_BASE_ENDPOINT',
