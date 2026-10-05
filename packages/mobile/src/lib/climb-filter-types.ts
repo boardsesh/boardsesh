@@ -12,8 +12,9 @@ export type { SortOption };
 
 /**
  * Sanitizes the whole auth-gated "Your progress" section for a signed-out user.
- * That section — the `drafts` status, the personal progress lens (the four
- * per-user tick flags) and the personal rating filters — is hidden when signed
+ * That section — the `drafts` status, the Liked collection, the personal
+ * progress lens (the four per-user tick flags) and the personal rating
+ * filters — is hidden when signed
  * out, so a value left over from a prior signed-in session would filter the
  * results with no visible control to change it. Coerce `drafts`→`any` (the
  * option is also gated out of the status picker) and clear the tick flags and
@@ -31,7 +32,8 @@ export function statusForAuth(filters: ClimbFilters, isAuthenticated: boolean): 
     filters.showOnlyCompleted ||
     filters.minUserRating != null ||
     filters.onlyRatedByMe ||
-    filters.onlyFollowedAuthors;
+    filters.onlyFollowedAuthors ||
+    filters.onlyFavorited;
   if (!needsStatusReset && !needsProgressReset) return filters;
   return {
     ...filters,
@@ -43,6 +45,7 @@ export function statusForAuth(filters: ClimbFilters, isAuthenticated: boolean): 
     minUserRating: undefined,
     onlyRatedByMe: undefined,
     onlyFollowedAuthors: undefined,
+    onlyFavorited: undefined,
   };
 }
 

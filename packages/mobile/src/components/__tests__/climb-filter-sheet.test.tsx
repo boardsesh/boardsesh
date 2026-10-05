@@ -1551,6 +1551,7 @@ describe('ClimbFilterSheet flat sections', () => {
     // Collection still shows (Any / Benchmarks), but the auth-only My drafts option is dropped.
     expect(queryByTestId('segment-benchmarks')).not.toBeNull();
     expect(queryByTestId('segment-drafts')).toBeNull();
+    expect(queryByTestId('segment-liked')).toBeNull();
   });
 
   // Personal rating filters (#2645) live inside the auth-gated Your progress
@@ -1636,6 +1637,32 @@ describe('ClimbFilterSheet flat sections', () => {
     const call = onSelectionChange.mock.calls.at(-1);
     expect(call?.[0]).toMatchObject({ status: 'any' });
     expect(call?.[1]).toMatchObject({ onlyBenchmarks: true });
+  });
+
+  it('selecting Collection "Liked" sets onlyFavorited and clears drafts and benchmarks (#6002)', () => {
+    const onSelectionChange = vi.fn();
+    const { getByTestId } = renderFilterSheet({ onSelectionChange });
+
+    fireEvent.click(getByTestId('segment-drafts'));
+    fireEvent.click(getByTestId('segment-benchmarks'));
+    fireEvent.click(getByTestId('segment-liked'));
+    expect(onSelectionChange).toHaveBeenCalledTimes(3);
+    const call = onSelectionChange.mock.calls.at(-1);
+    expect((call?.[0] as ClimbFilters).onlyFavorited).toBe(true);
+    expect((call?.[0] as ClimbFilters).status).toBe('any');
+    expect((call?.[1] as { onlyBenchmarks?: boolean }).onlyBenchmarks).toBeUndefined();
+  });
+
+  it('selecting Collection "Benchmarks" clears Liked', () => {
+    const onSelectionChange = vi.fn();
+    const { getByTestId } = renderFilterSheet({ onSelectionChange });
+
+    fireEvent.click(getByTestId('segment-liked'));
+    fireEvent.click(getByTestId('segment-benchmarks'));
+    expect(onSelectionChange).toHaveBeenCalledTimes(2);
+    const call = onSelectionChange.mock.calls.at(-1);
+    expect((call?.[0] as ClimbFilters).onlyFavorited).toBeUndefined();
+    expect((call?.[1] as { onlyBenchmarks?: boolean }).onlyBenchmarks).toBe(true);
   });
 });
 

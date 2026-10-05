@@ -16,6 +16,7 @@ type PlayFavoriteOptions = {
   boardName: string;
   layoutId: number;
   angle: number;
+  bluetoothConnected: boolean;
   serverFavorited: boolean | undefined;
   // Already privacy/credential-scoped by the deferred enhancement host. This
   // hook adds no query observers or provider subscriptions to opening.
@@ -29,6 +30,7 @@ export function usePlayFavorite({
   boardName,
   layoutId,
   angle,
+  bluetoothConnected,
   serverFavorited,
   toggleFavoriteMutate,
   showToast,
@@ -53,6 +55,7 @@ export function usePlayFavorite({
         boardName,
         layoutId,
         source,
+        connected: bluetoothConnected,
       });
       toggleFavoriteMutate(
         {
@@ -82,7 +85,18 @@ export function usePlayFavorite({
         },
       );
     },
-    [displayedClimb, isFavorited, favoriteOverride, boardName, layoutId, angle, toggleFavoriteMutate, showToast, t],
+    [
+      displayedClimb,
+      isFavorited,
+      favoriteOverride,
+      boardName,
+      layoutId,
+      angle,
+      bluetoothConnected,
+      toggleFavoriteMutate,
+      showToast,
+      t,
+    ],
   );
 
   // The action bar's heart.

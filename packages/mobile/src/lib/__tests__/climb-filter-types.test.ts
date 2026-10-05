@@ -52,6 +52,13 @@ describe('statusForAuth', () => {
     expect(result.onlyRatedByMe).toBeUndefined();
   });
 
+  it('clears the Liked collection when signed out (#6002)', () => {
+    const result = statusForAuth({ ...DEFAULT_FILTERS, onlyFavorited: true }, false);
+    expect(result.onlyFavorited).toBeUndefined();
+    const kept: ClimbFilters = { ...DEFAULT_FILTERS, onlyFavorited: true };
+    expect(statusForAuth(kept, true)).toBe(kept);
+  });
+
   it('leaves the personal rating filters alone when signed in (same reference)', () => {
     const filters: ClimbFilters = { ...DEFAULT_FILTERS, minUserRating: 4 };
     expect(statusForAuth(filters, true)).toBe(filters);

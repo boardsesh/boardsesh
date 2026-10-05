@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/queue';
@@ -19,7 +19,12 @@ const smartMocks = vi.hoisted(() => ({
   allClimbs: [{ uuid: 'c-1', name: 'Boulder' }] as unknown as Climb[],
 }));
 
-vi.mock('expo-router', () => ({ useLocalSearchParams: () => ({ type: 'liked' }) }));
+const routeMock = vi.hoisted(() => ({ params: { type: 'liked' } as { type: string; source?: string } }));
+const trackMock = vi.hoisted(() => vi.fn());
+const presetMock = vi.hoisted(() => ({ known: true }));
+
+vi.mock('expo-router', () => ({ useLocalSearchParams: () => routeMock.params }));
+vi.mock('../../../../../src/lib/analytics', () => ({ track: trackMock }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 vi.mock('@boardsesh/playlists-react', () => ({
@@ -81,14 +86,22 @@ vi.mock('../../../../../src/lib/playlists/use-playlist-render-board', () => ({
   usePlaylistRenderBoard: () => ({ renderBoard: null }),
 }));
 vi.mock('../../../../../src/lib/climb-types', () => ({ toQueueClimbs: (climbs: unknown) => climbs }));
-vi.mock('../../../../../src/lib/smart-playlists', () => ({
-  smartPlaylistByType: () => ({
-    type: 'LIKED_CLIMBS',
-    titleI18nKey: 'library.smart.likedClimbs.title',
-    color: '#f00',
-    icon: 'favorite',
-  }),
-}));
+vi.mock('../../../../../src/lib/smart-playlists', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../../src/lib/smart-playlists')>();
+  return {
+    // The real parser: the screen must not send a made-up source to PostHog.
+    parseSmartPlaylistOpenSource: actual.parseSmartPlaylistOpenSource,
+    smartPlaylistByType: () =>
+      presetMock.known
+        ? {
+            type: 'LIKED_CLIMBS',
+            titleI18nKey: 'library.smart.likedClimbs.title',
+            color: '#f00',
+            icon: 'favorite',
+          }
+        : null,
+  };
+});
 vi.mock('../../../../../src/lib/graphql/hooks', () => ({ useProfile: () => ({ data: { id: 'u-1' } }) }));
 vi.mock('../../../../../src/lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: smartMocks.activeBoard, isPending: false }),
@@ -166,5 +179,43 @@ describe('SmartPlaylistDetail queue replacement wiring', () => {
     rerender(<SmartPlaylistDetail />);
     expect(smartMocks.queryOptions).not.toHaveProperty('boardName');
     expect(smartMocks.queryOptions).not.toHaveProperty('boardUuid');
+  });
+});
+
+// `$screen` keeps `/discover/smart/[type]` verbatim, so this event is the only
+// thing that tells a Liked Climbs open from any other smart list (#6002).
+describe('SmartPlaylistDetail open event', () => {
+  beforeEach(() => {
+    routeMock.params = { type: 'liked' };
+    presetMock.known = true;
+    sessionMock.isShared = false;
+    trackMock.mockClear();
+  });
+
+  it.each([
+    ['Discover', 'discover', 'discover'],
+    ['a deep link with no source', undefined, 'other'],
+    ['a source nobody defined', 'somewhere_else', 'other'],
+  ])('names the list and where it was opened from: %s', (_label, source, expected) => {
+    routeMock.params = source === undefined ? { type: 'liked' } : { type: 'liked', source };
+    render(<SmartPlaylistDetail />);
+
+    expect(trackMock).toHaveBeenCalledTimes(1);
+    expect(trackMock).toHaveBeenCalledWith('Smart Playlist Opened', { type: 'LIKED_CLIMBS', source: expected });
+  });
+
+  it('fires once per mount, not once per render', () => {
+    const { rerender } = render(<SmartPlaylistDetail />);
+    rerender(<SmartPlaylistDetail />);
+    rerender(<SmartPlaylistDetail />);
+
+    expect(trackMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays quiet for a type the app does not know', () => {
+    presetMock.known = false;
+    render(<SmartPlaylistDetail />);
+
+    expect(trackMock).not.toHaveBeenCalled();
   });
 });

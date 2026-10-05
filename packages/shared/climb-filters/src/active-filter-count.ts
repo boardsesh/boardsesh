@@ -27,6 +27,7 @@ export function countActiveFiltersBeyondGrade(filters: ClimbFilterState, boardFi
   // are independent levers, each clearable on its own from the receipt row.
   if (filters.minUserRating != null) count += 1;
   if (filters.onlyRatedByMe) count += 1;
+  if (filters.onlyFavorited) count += 1;
   // Climb-type defaults to boulders-only; "active" = routes on or boulders off.
   if ((filters.boulders ?? true) !== true || (filters.routes ?? false) !== false) count += 1;
   if (

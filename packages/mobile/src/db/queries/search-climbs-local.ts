@@ -149,6 +149,10 @@ export function isOfflineSearchSupported(input: ClimbSearchInput): boolean {
   // A spray wall's retired-by-reset rule IS expressible: migration v12 mirrors
   // `board_climbs.retired_by_reset` on the device, and `buildJoinAndWhere`
   // applies it. No fall-back clause here on purpose.
+  // Liked climbs (`onlyFavorited`, #6002) ARE expressible: the hearts are synced
+  // into `user_favorites`, and buildJoinAndWhere carries the EXISTS. The read is
+  // user-scoped, so `canServeSearchLocal` (offline-request.ts) also requires the
+  // local user data to be complete and this climber's before it serves locally.
   const { hasHoldState } = parseHoldsFilter(input.holdsFilter);
   if (hasHoldState) return false;
   return true;
@@ -627,6 +631,27 @@ export function buildJoinAndWhere(
       input.minUserRating,
       ownerUserId,
     );
+  }
+
+  // Liked climbs (#6002), mirroring `onlyFavorited` in create-climb-filters.ts:
+  // a heart belongs to the climb, not the angle it was given at, so there is no
+  // angle condition — the (board_name, climb_uuid) prefix of the primary key
+  // answers it. The owner rule is the ticks' (see `ownedTicks`). With no owner
+  // stamp nobody is signed in to own a heart, so the filter matches nothing,
+  // the same `false` the server renders without a userId. The base clauses
+  // above already drop unlisted, draft and community-hidden climbs, as the
+  // server's search does.
+  if (input.onlyFavorited) {
+    if (ownerUserId === null) {
+      push('0 = 1');
+    } else {
+      push(
+        `EXISTS (SELECT 1 FROM user_favorites f
+          WHERE f.board_name = ? AND f.climb_uuid = c.uuid AND ${ownedTicks('f')})`,
+        boardType,
+        ownerUserId,
+      );
+    }
   }
 
   return { joinSql, whereSql: conditions.join(' AND '), joinBinds, whereBinds };

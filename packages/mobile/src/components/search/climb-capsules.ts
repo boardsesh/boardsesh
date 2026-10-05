@@ -85,7 +85,7 @@ export function buildClimbCapsules(
     canFilterProgress,
     collection,
     onChangeCollection,
-    canFilterDrafts,
+    canFilterPersonalCollections,
     isSprayWall,
     sortBy,
     sortActive,
@@ -199,18 +199,17 @@ export function buildClimbCapsules(
     });
   }
 
-  // Collection ▾: Any / Benchmarks / My drafts (drafts auth-gated, benchmarks
-  // hidden on a spray wall unless already active).
+  // Collection ▾: Any / Benchmarks / My drafts / Liked (personal collections
+  // auth-gated, benchmarks hidden on a spray wall unless already active).
   if (isPinned('collection')) {
     capsules.push({
       kind: 'menu',
       key: 'collection',
       label: collection === 'any' ? t('mobile.filter.collection.label') : collectionChipLabel(collection, t),
       active: collection !== 'any',
-      options: visibleCollectionValues({ canFilterDrafts, isSprayWall, current: collection }).map((value) => ({
-        value,
-        label: collectionChipLabel(value, t),
-      })),
+      options: visibleCollectionValues({ canFilterPersonalCollections, isSprayWall, current: collection }).map(
+        (value) => ({ value, label: collectionChipLabel(value, t) }),
+      ),
       selected: collection,
       onSelect: (value) => {
         if (isCollectionFilter(value)) onChangeCollection(value);

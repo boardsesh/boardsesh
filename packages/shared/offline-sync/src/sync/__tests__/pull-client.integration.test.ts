@@ -238,6 +238,7 @@ describe('sync layer — real-DDL integration', () => {
         updated_at: '2024-05-29T08:00:00Z',
       });
       expect(await readCheckpoint(db, 'checkpoint:user_favorites')).toEqual(cursor);
+      expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbsCount'] });
     });
 
     it('user_follows: following_id PK + follower_id + timestamps round-trip', async () => {

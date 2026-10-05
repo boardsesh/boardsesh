@@ -44,7 +44,7 @@ function makeProps(overrides: Partial<FilterChipRowProps> = {}): FilterChipRowPr
     canFilterProgress: true,
     collection: 'any',
     onChangeCollection: vi.fn(),
-    canFilterDrafts: true,
+    canFilterPersonalCollections: true,
     isSprayWall: false,
     sortBy: DEFAULT_CLIMB_FILTER_STATE.sortBy,
     sortActive: false,
@@ -186,12 +186,12 @@ describe('buildClimbCapsules: every chip pinned and set', () => {
     expect(selected('sort')).toBe('quality');
   });
 
-  it('keeps the menus at their old option sets', () => {
+  it('offers the supported options in each menu', () => {
     const capsules = buildClimbCapsules(props, mockT, null);
     const values = (key: string) => capsuleByKey(capsules, key, 'menu').options.map(({ value }) => value);
     expect(values('accuracy')).toEqual(['off', '0.2', '0.1', '0.05']);
     expect(values('progress')).toEqual(['all', 'unsent', 'untried', 'projects', 'sent']);
-    expect(values('collection')).toEqual(['any', 'benchmarks', 'drafts']);
+    expect(values('collection')).toEqual(['any', 'benchmarks', 'drafts', 'liked']);
     expect(values('climbType')).toEqual(['boulders', 'routes', 'both']);
     expect(values('popularity')).toEqual(['any', '2', '10', '100', '1000']);
     expect(values('rating')).toEqual(['any', '1', '2', '3', '4', '5']);
@@ -213,14 +213,30 @@ describe('buildClimbCapsules: every chip pinned and set', () => {
     expect(labels('rating')[0]).toBe('mobile.filter.anyRating');
   });
 
-  it('drops My drafts when signed out and Benchmarks on a spray wall', () => {
-    const signedOut = buildClimbCapsules(makeProps({ canFilterDrafts: false }), mockT, null);
+  it('drops personal collections when signed out and Benchmarks on a spray wall', () => {
+    const signedOut = buildClimbCapsules(makeProps({ canFilterPersonalCollections: false }), mockT, null);
     expect(capsuleByKey(signedOut, 'collection', 'menu').options.map(({ value }) => value)).toEqual([
       'any',
       'benchmarks',
     ]);
     const spray = buildClimbCapsules(makeProps({ isSprayWall: true }), mockT, null);
-    expect(capsuleByKey(spray, 'collection', 'menu').options.map(({ value }) => value)).toEqual(['any', 'drafts']);
+    expect(capsuleByKey(spray, 'collection', 'menu').options.map(({ value }) => value)).toEqual([
+      'any',
+      'drafts',
+      'liked',
+    ]);
+  });
+
+  it('labels and selects Liked when it is active', () => {
+    const liked = capsuleByKey(
+      buildClimbCapsules(makeProps({ collection: 'liked' }), mockT, null),
+      'collection',
+      'menu',
+    );
+    expect(liked.label).toBe('mobile.filter.collection.liked');
+    expect(liked.active).toBe(true);
+    expect(liked.selected).toBe('liked');
+    expect(liked.options.find(({ value }) => value === 'liked')?.label).toBe('mobile.filter.collection.liked');
   });
 });
 
@@ -379,11 +395,12 @@ describe('buildClimbCapsules: what each capsule commits', () => {
     menu(capsules, 'accuracy').onSelect('0.05');
     menu(capsules, 'progress').onSelect('sent');
     menu(capsules, 'collection').onSelect('drafts');
+    menu(capsules, 'collection').onSelect('liked');
     menu(capsules, 'climbType').onSelect('both');
     menu(capsules, 'sort').onSelect('random');
     expect(props.onChangeAccuracy.mock.calls).toEqual([['off'], ['0.05']]);
     expect(props.onChangeProgress.mock.calls).toEqual([['sent']]);
-    expect(props.onChangeCollection.mock.calls).toEqual([['drafts']]);
+    expect(props.onChangeCollection.mock.calls).toEqual([['drafts'], ['liked']]);
     expect(props.onChangeClimbType.mock.calls).toEqual([['both']]);
     expect(props.onChangeSort.mock.calls).toEqual([['random']]);
   });

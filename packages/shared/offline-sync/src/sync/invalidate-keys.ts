@@ -62,10 +62,11 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   user_playlist_pins: [['userPlaylists'], ['playlist']],
 
   // ['searchClimbs'] / ['infiniteSearchClimbs'] — the heart on each list row.
+  // ['searchClimbsCount'] — the Liked collection's filtered result count.
   // ['favoriteStatus'] — the per-climb heart, which must refetch AFTER a queued
   //   favorite lands: the optimistic write at enqueue time can otherwise be
   //   overwritten by a network refetch that raced the drain.
-  user_favorites: [['searchClimbs'], ['infiniteSearchClimbs'], ['favoriteStatus']],
+  user_favorites: [['searchClimbs'], ['infiniteSearchClimbs'], ['searchClimbsCount'], ['favoriteStatus']],
 
   // Follow changes affect Following searches on every board. This platform-neutral
   // table map knows query prefixes, not each client's filter-bearing key shape,

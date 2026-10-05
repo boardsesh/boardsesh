@@ -36,6 +36,7 @@ function options() {
     boardName: 'kilter',
     layoutId: 1,
     angle: 40,
+    bluetoothConnected: false,
     serverFavorited: false,
     toggleFavoriteMutate: vi.fn<Mutate>(),
     showToast: vi.fn(),
@@ -96,6 +97,16 @@ describe('usePlayFavorite', () => {
     act(() => errorFor(initial.toggleFavoriteMutate, 0));
     expect(result.current.isFavorited).toBe(false);
     expect(initial.showToast).toHaveBeenCalledWith('playView.favoriteError', 'error');
+  });
+
+  it('tags heart and menu toggles with this phone’s current connection', () => {
+    const initial = options();
+    const { result, rerender } = renderHook((props) => usePlayFavorite(props), { initialProps: initial });
+    act(() => result.current.handleToggleFavorite());
+    expect(effects.track).toHaveBeenLastCalledWith('Favorite Toggle', expect.objectContaining({ connected: false }));
+    rerender({ ...initial, bluetoothConnected: true });
+    act(() => result.current.handleToggleFavoriteFromMenu());
+    expect(effects.track).toHaveBeenLastCalledWith('Favorite Toggle', expect.objectContaining({ connected: true }));
   });
 
   // The heart and ⋯'s row are one toggle, but two places to tap it.

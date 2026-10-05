@@ -485,7 +485,8 @@
       "popularity": "Popularité",
       "collection": {
         "label": "Collection",
-        "any": "Toutes"
+        "any": "Toutes",
+        "liked": "Aimées"
       },
       "pinChip": "Épingler {{name}} dans la rangée du haut",
       "unpinChip": "Retirer {{name}} de la rangée du haut",

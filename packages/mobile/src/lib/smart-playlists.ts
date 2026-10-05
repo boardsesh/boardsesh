@@ -102,6 +102,25 @@ const BY_TYPE = new Map<SmartPlaylistType, SmartPlaylistPresentation>(
   SMART_PLAYLISTS.map((preset) => [preset.type, preset]),
 );
 
+/**
+ * Where a smart-playlist open came from, for `Smart Playlist Opened`. The
+ * screen event keeps `[type]` verbatim, so without this a Liked Climbs open
+ * cannot be told from any other smart list, or its entry point named.
+ */
+export type SmartPlaylistOpenSource = 'discover' | 'other';
+
+const OPEN_SOURCES: readonly SmartPlaylistOpenSource[] = ['discover', 'other'];
+
+/** A deep link or an old caller carries no source: that reads as `other`. */
+export function parseSmartPlaylistOpenSource(raw: unknown): SmartPlaylistOpenSource {
+  return OPEN_SOURCES.find((source) => source === raw) ?? 'other';
+}
+
+/** The smart-playlist detail route, tagged with the surface that opened it. */
+export function smartPlaylistHref(type: SmartPlaylistType, source: SmartPlaylistOpenSource) {
+  return { pathname: '/(tabs)/discover/smart/[type]', params: { type, source } } as const;
+}
+
 /** Resolve a smart-playlist type to its presentation, or null when unknown. */
 export function smartPlaylistByType(type: string): SmartPlaylistPresentation | null {
   return BY_TYPE.get(type as SmartPlaylistType) ?? null;

@@ -32,7 +32,6 @@ import {
   normalizeRetiredFilters,
   flagsToProgress,
   progressToFlags,
-  applyStatusChange,
   newSortSeed,
   DEFAULT_CLIMB_FILTER_STATE,
   DEFAULT_CLIMB_BOARD_FILTER_STATE,
@@ -69,6 +68,7 @@ import { chipKindToTokenKeys } from '../../../src/lib/pinnable-chips';
 import { usePinnedChips } from '../../../src/lib/pinned-chips-store';
 import { SPRAY_BOARD_NAME } from '../../../src/lib/spray/spray-wall-registry';
 import {
+  collectionPatch,
   getCollectionFilter,
   getClimbTypeFilter,
   type CollectionFilter,
@@ -1849,14 +1849,13 @@ function ClimbListInner() {
     (value: ProgressFilter) => patchFilters(progressToFlags(value)),
     [patchFilters],
   );
-  // Collection — Benchmarks (board filter) + My drafts (status), mutually
-  // exclusive. Sets one, clears the other; only a lingering 'drafts' status is
-  // cleared (projects/Unrepeated lives in Popularity and can coexist).
+  // Collection — Benchmarks (board filter), My drafts (status) and Liked
+  // (onlyFavorited), mutually exclusive: picking one clears the other two.
   const handleChangeCollection = useCallback(
     (value: CollectionFilter) => {
-      patchBoardFilters({ onlyBenchmarks: value === 'benchmarks' || undefined });
-      if (value === 'drafts') patchFilters(applyStatusChange(filters, 'drafts'));
-      else if (filters.status === 'drafts') patchFilters(applyStatusChange(filters, 'any'));
+      const patch = collectionPatch(value, filters);
+      patchBoardFilters(patch.boardFilters);
+      patchFilters(patch.filters);
     },
     [patchBoardFilters, patchFilters, filters],
   );
@@ -2061,7 +2060,7 @@ function ClimbListInner() {
           canFilterProgress={isAuthenticated}
           collection={getCollectionFilter(filters, boardFilters)}
           onChangeCollection={handleChangeCollection}
-          canFilterDrafts={isAuthenticated}
+          canFilterPersonalCollections={isAuthenticated}
           isSprayWall={boardName === SPRAY_BOARD_NAME}
           sortBy={filters.sortBy}
           sortActive={sortActive}

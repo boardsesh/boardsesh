@@ -99,6 +99,16 @@ describe('getBaseFilterParts — extended fields', () => {
     showOnlyCompleted: () => 'Only completed',
   };
 
+  it('emits a liked part only when a liked label is supplied', () => {
+    expect(
+      getBaseFilterParts({ onlyFavorited: true }, mockGrades, { ...extendedLabels, liked: () => 'Liked' }),
+    ).toEqual(['Liked']);
+    expect(getBaseFilterParts({ onlyFavorited: true }, mockGrades, extendedLabels)).toEqual([]);
+    expect(
+      getBaseFilterParts({ onlyFavorited: false }, mockGrades, { ...extendedLabels, liked: () => 'Liked' }),
+    ).toEqual([]);
+  });
+
   it('emits a setters part when setter array is non-empty', () => {
     expect(getBaseFilterParts({ setter: ['alice', 'bob'] }, mockGrades, extendedLabels)).toEqual(['2 setters']);
   });

@@ -82,6 +82,7 @@ export function Button({
   over,
   role = 'default',
   maxFontSizeMultiplier,
+  ignoreContainerSafeArea = false,
   testID,
   style,
 }: ButtonProps) {
@@ -177,10 +178,16 @@ export function Button({
   // at the tick sheet's 65% detent the action row still sits ~4pt under the
   // keyboard edge until #5772 raises the sheet to 92% on note focus. With this
   // prop that sliver is covered instead of re-laid-out.
+  //
+  // `"all"` (opt-in, `ignoreContainerSafeArea`): a host that mounts while it
+  // is scrolled above the top of the screen also takes the container's
+  // safe-area inset and keeps it, so its label draws below its own frame once
+  // it scrolls back. Seen on a button in the Climbs list header that mounted
+  // while the list was scrolled, on an iPhone SE simulator.
   return (
     <Host
       matchContents={buttonMatchContents(style)}
-      ignoreSafeArea="keyboard"
+      ignoreSafeArea={ignoreContainerSafeArea ? 'all' : 'keyboard'}
       colorScheme={colorScheme}
       style={style}
       testID={testID}

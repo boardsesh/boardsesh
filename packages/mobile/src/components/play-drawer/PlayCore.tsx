@@ -596,6 +596,7 @@ export function PlayCore({
     angle,
     serverFavorited,
     toggleFavoriteMutate,
+    bluetoothConnected: bluetooth?.isConnected ?? false,
     showToast,
     t,
   });

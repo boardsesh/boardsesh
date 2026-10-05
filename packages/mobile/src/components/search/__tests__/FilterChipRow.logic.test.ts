@@ -150,6 +150,7 @@ describe('collectionChipLabel', () => {
   it('labels each collection value', () => {
     expect(collectionChipLabel('benchmarks', mockT)).toBe('mobile.filter.benchmark');
     expect(collectionChipLabel('drafts', mockT)).toBe('mobile.filter.drafts');
+    expect(collectionChipLabel('liked', mockT)).toBe('mobile.filter.collection.liked');
     expect(collectionChipLabel('any', mockT)).toBe('mobile.filter.collection.any');
   });
 });

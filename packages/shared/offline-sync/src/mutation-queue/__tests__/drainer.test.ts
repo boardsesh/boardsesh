@@ -572,7 +572,7 @@ describe('drainMutationQueue', () => {
 
     function expectFavoriteBatch(queryClient: ReturnType<typeof recordingQueryClient>, staleOnly = false) {
       expect(queryClient.invalidateQueries.mock.calls.map(([filters]) => filters)).toEqual(
-        ['searchClimbs', 'infiniteSearchClimbs', 'favoriteStatus'].map((head) =>
+        ['searchClimbs', 'infiniteSearchClimbs', 'searchClimbsCount', 'favoriteStatus'].map((head) =>
           staleOnly ? { queryKey: [head], refetchType: 'none' } : { queryKey: [head] },
         ),
       );
@@ -749,6 +749,7 @@ describe('drainMutationQueue', () => {
       expect(queryClient.invalidateQueries.mock.calls.map(([filters]) => filters)).toEqual([
         { queryKey: ['searchClimbs'] },
         { queryKey: ['infiniteSearchClimbs'], refetchType: 'none' },
+        { queryKey: ['searchClimbsCount'], refetchType: 'none' },
         { queryKey: ['favoriteStatus'], refetchType: 'none' },
       ]);
     });
@@ -771,7 +772,7 @@ describe('drainMutationQueue', () => {
       await expect(drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, ONLINE)).rejects.toThrow(failure);
       await Promise.all(nestedDrains);
 
-      expect(drainingSnapshots).toEqual([true, true, true]);
+      expect(drainingSnapshots).toEqual([true, true, true, true]);
       expectFavoriteBatch(queryClient);
       expect(mockPeekPending).toHaveBeenCalledTimes(2);
       expect(mockMarkCompleted).toHaveBeenCalledTimes(1);
@@ -820,6 +821,7 @@ describe('drainMutationQueue', () => {
 
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['favoriteStatus'] });
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbs'] });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbsCount'] });
   });
 
   it('does not invalidate queries for unknown tables', async () => {

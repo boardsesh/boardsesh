@@ -89,7 +89,7 @@ const PROPS: FilterChipRowProps = {
   canFilterProgress: true,
   collection: 'any',
   onChangeCollection: noop,
-  canFilterDrafts: true,
+  canFilterPersonalCollections: true,
   isSprayWall: false,
   sortBy: 'ascents',
   sortActive: false,

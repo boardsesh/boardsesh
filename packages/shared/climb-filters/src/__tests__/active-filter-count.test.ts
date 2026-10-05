@@ -35,6 +35,12 @@ describe('countActiveFilters', () => {
     expect(countActiveFilters(filters)).toBe(countActiveFiltersBeyondGrade(filters));
   });
 
+  it('counts the liked-climbs filter as one filter', () => {
+    const filters = { ...DEFAULT_CLIMB_FILTER_STATE, onlyFavorited: true };
+    expect(countActiveFiltersBeyondGrade(filters)).toBe(1);
+    expect(countActiveFilters(filters)).toBe(1);
+  });
+
   it('counts the other-angles switch as one filter', () => {
     const filters = { ...DEFAULT_CLIMB_FILTER_STATE, includeOtherAngles: true };
     expect(countActiveFiltersBeyondGrade(filters)).toBe(1);

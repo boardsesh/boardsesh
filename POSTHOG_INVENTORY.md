@@ -726,6 +726,23 @@ readiness while the update downloads. Native app only. The name lives in
   could not be read. `skipped_failed_update` means a stored update that already failed to launch was
   not reloaded onto again.
 
+## Appendix D — 2026-10-06 Liked climbs on Climbs (#6002)
+
+Hearts already store "climbs I want next time". The way back is Climbs → Collection → Liked, which
+filters the climb list to the climber's hearts on the active board. These rows measure it.
+
+| Event | Properties | Emit site | Volume |
+| --- | --- | --- | --- |
+| `Smart Playlist Opened` | `type` (`LIKED_CLIMBS`, `FIVE_STARS`, ...), `source` (`discover` / `other`; `other` is a deep link or a caller with no source) | `app/(tabs)/discover/smart/[type].tsx` | Once per mount of a known type |
+| `Favorite Toggle` (changed) | adds `connected` on mobile (`mobile_play_drawer`, `play_drawer_menu`, and `mobile_climb_actions`) | `use-play-favorite.ts`, `use-climb-actions.ts` | Unchanged |
+
+Reading it:
+
+- **The Liked Climbs list**: people with `Smart Playlist Opened` where `type = 'LIKED_CLIMBS'`, per
+  week. Before this event, `$screen` `/discover/smart/[type]` covered every smart list at once.
+- **Saved away from the wall**: `Favorite Toggle` with `action = 'added'` and `connected = false`.
+  Always filter on `action = 'added'`; a removal is the same event.
+
 ## Board account linking
 
 Mobile Connected apps emits `Board Account Link Started` on credential submission,

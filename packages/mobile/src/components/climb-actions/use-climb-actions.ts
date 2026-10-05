@@ -35,6 +35,8 @@ import { useSprayWallIsArchived } from '../../lib/spray/use-spray-wall-archive';
 import { canDeleteClimb } from './delete-climb-rules';
 import { useDeleteClimbAction } from './use-delete-climb-action';
 
+import { useBluetoothConnectedStatus } from '../../lib/ble/bluetooth-status-store';
+
 export type ClimbActionId =
   | 'preview'
   | 'queue'
@@ -229,6 +231,10 @@ export function useClimbActions({
   // wall changes, so gating the Play next row on it costs the menu nothing.
   const activeClimbUuid = useActiveClimbUuid();
   const { mutate: toggleFavoriteMutate } = useToggleFavorite();
+  // This phone's Bluetooth link, for `Favorite Toggle` only (#6002): a heart
+  // added away from the wall is a "save for next session". One menu is mounted
+  // at a time, so the subscription is a single listener.
+  const bluetoothConnected = useBluetoothConnectedStatus();
   const {
     openPlayDrawer,
     openLogAscent,
@@ -387,6 +393,7 @@ export function useClimbActions({
           boardName,
           layoutId,
           source: analyticsSource ?? 'mobile_climb_actions',
+          connected: bluetoothConnected,
         });
         // Pass the state the row just rendered from: it flips the heart in the
         // climb list optimistically, and it's what the offline local-first path
@@ -628,6 +635,7 @@ export function useClimbActions({
     addToQueue,
     playNext,
     toggleFavoriteMutate,
+    bluetoothConnected,
     isFavorited,
     toggleFavoriteOverride,
     analyticsSource,

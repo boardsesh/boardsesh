@@ -485,7 +485,8 @@
       "popularity": "Popularity",
       "collection": {
         "label": "Collection",
-        "any": "Any"
+        "any": "Any",
+        "liked": "Liked"
       },
       "pinChip": "Pin {{name}} to the top row",
       "unpinChip": "Unpin {{name}} from the top row",

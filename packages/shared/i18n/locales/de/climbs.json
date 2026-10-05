@@ -485,7 +485,8 @@
       "popularity": "Beliebtheit",
       "collection": {
         "label": "Sammlung",
-        "any": "Beliebig"
+        "any": "Beliebig",
+        "liked": "Gelikt"
       },
       "pinChip": "{{name}} oben in der Leiste anpinnen",
       "unpinChip": "{{name}} aus der oberen Leiste entfernen",

@@ -42,7 +42,12 @@ import { filterSheetStyles } from './filter-sheet/filter-sheet-styles';
 import { usePinnedChips } from '../lib/pinned-chips-store';
 import { PINNABLE_CHIP_KINDS, type PinnableChipKind } from '../lib/pinnable-chips';
 import { SPRAY_BOARD_NAME } from '../lib/spray/spray-wall-registry';
-import { getCollectionFilter, getClimbTypeFilter, type CollectionFilter } from '../lib/collection-filter';
+import {
+  collectionPatch,
+  getCollectionFilter,
+  getClimbTypeFilter,
+  type CollectionFilter,
+} from '../lib/collection-filter';
 import { useTheme } from '../providers/theme-provider';
 import { useManagedSheet } from '../providers/sheet-presentation-provider';
 import { androidSafeSnapPoints } from './sheet-snap-points';
@@ -450,23 +455,14 @@ export function ClimbFilterSheet({
     },
     [updateFilters],
   );
-  // Collection — a single-select over Benchmarks (board filter) + My drafts
-  // (status), which are mutually exclusive. Selecting one clears the other; only a
-  // lingering *drafts* status is cleared (never 'projects'/Unrepeated, which lives
-  // in the Popularity group and can coexist with Benchmarks).
+  // Collection — a single-select over Benchmarks (board filter), My drafts
+  // (status) and Liked (onlyFavorited), which are mutually exclusive. Selecting
+  // one clears the other two (see collectionPatch).
   const handleCollectionChange = useCallback(
     (collection: CollectionFilter) => {
       const filters = selectedFiltersRef.current;
-      const nextFilters =
-        collection === 'drafts'
-          ? { ...filters, ...applyStatusChange(filters, 'drafts') }
-          : filters.status === 'drafts'
-            ? { ...filters, ...applyStatusChange(filters, 'any') }
-            : filters;
-      publishSelection(nextFilters, {
-        ...selectedBoardFiltersRef.current,
-        onlyBenchmarks: collection === 'benchmarks' || undefined,
-      });
+      const patch = collectionPatch(collection, filters);
+      publishSelection({ ...filters, ...patch.filters }, { ...selectedBoardFiltersRef.current, ...patch.boardFilters });
     },
     [publishSelection],
   );
@@ -476,8 +472,13 @@ export function ClimbFilterSheet({
     () => [
       { key: 'any' as const, label: t('mobile.filter.collection.any') },
       ...(offerBenchmarks ? [{ key: 'benchmarks' as const, label: t('mobile.filter.benchmark') }] : []),
-      // My drafts is auth-only, matching the old drafts toggle's gating.
-      ...(isAuthenticated ? [{ key: 'drafts' as const, label: t('mobile.filter.drafts') }] : []),
+      // My drafts and Liked are auth-only: both are the climber's own climbs.
+      ...(isAuthenticated
+        ? [
+            { key: 'drafts' as const, label: t('mobile.filter.drafts') },
+            { key: 'liked' as const, label: t('mobile.filter.collection.liked') },
+          ]
+        : []),
     ],
     [t, isAuthenticated, offerBenchmarks],
   );
@@ -906,9 +907,8 @@ export function ClimbFilterSheet({
 
             {/* 4 · QUALITY — benchmarks, min rating, popularity (incl. Unrepeated). */}
             <FilterSheetSection title={t('mobile.filter.section.quality')}>
-              {/* Collection — Benchmarks (board filter) + My drafts (status) folded
-                  into one single-select; they're mutually exclusive. My drafts is
-                  offered only when signed in (auth-gated like the old drafts toggle). */}
+              {/* Collection — Benchmarks, My drafts and Liked are mutually
+                  exclusive. Personal collections are offered only when signed in. */}
               <FilterLabelRow label={t('mobile.filter.collection.label')} {...pinProps('collection')} />
               <View style={filterSheetStyles.controlGap} />
               <SegmentedControl

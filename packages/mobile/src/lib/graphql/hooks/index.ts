@@ -1175,6 +1175,7 @@ export function useToggleFavorite() {
       }
       void queryClient.invalidateQueries({ queryKey: SEARCH_CLIMBS_QUERY_KEY });
       void queryClient.invalidateQueries({ queryKey: INFINITE_SEARCH_CLIMBS_QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: SEARCH_CLIMBS_COUNT_QUERY_KEY });
       // Bust the per-climb favorite-status cache so a re-open reflects the new
       // state from the server, not a stale 5-min-cached value. Skipped on the
       // local-queue path, where the server does not know about the toggle yet —
