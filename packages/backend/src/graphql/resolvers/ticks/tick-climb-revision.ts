@@ -144,5 +144,5 @@ export async function resolveTickClimbRevision(params: {
         lte(dbSchema.boardClimbRevisions.createdAt, new Date(climbedAt)),
       ),
     );
-  return liveAtClimbedAt?.revisionNumber ?? 1;
+  return liveAtClimbedAt.revisionNumber ?? 1;
 }
