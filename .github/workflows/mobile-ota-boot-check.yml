@@ -335,7 +335,7 @@ jobs:
 
       - name: Free disk space for the emulator
         run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost || true
           rm -rf packages/mobile/android ~/.gradle/caches || true
           df -h /
 

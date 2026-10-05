@@ -270,6 +270,42 @@ describe.each(['ios', 'android'] as const)('a real %s run that booted', (platfor
   });
 });
 
+describe.each([
+  { platform: 'ios', ranInstead: 'another update' },
+  { platform: 'android', ranInstead: 'the embedded bundle' },
+] as const)('a real $platform run of an update that throws at startup', ({ platform, ranInstead }) => {
+  const capture = loadCapture(`${platform}-red`);
+  const evidence = evidenceFromCapture(capture);
+  const verdict = judgeBoot(evidence);
+
+  it('fails', () => {
+    expect(verdict.passed).toBe(false);
+    expect(verdict.secondsToFirstScreen).toBeNull();
+    expect(verdict.launchedUpdateId).not.toBe(capture.expectedUpdateId);
+  });
+
+  it('says the update was downloaded, launched, and failed', () => {
+    const broken = evidence.afterSecondLaunch.find((row) => row.id === capture.expectedUpdateId);
+    expect(broken).toMatchObject({ ready: true, successfulLaunchCount: 0, failedLaunchCount: 1 });
+    // expo-updates' error recovery then put something else on screen: the
+    // embedded bundle on Android, an update the server fell back to on iOS.
+    expect(verdict.failures).toEqual([
+      expect.stringContaining(`The second launch ran ${ranInstead}`),
+      `expo-updates recorded 1 failed launch(es) of ${capture.expectedUpdateId}: its JS threw before the first screen.`,
+      expect.stringMatching(/^The device log has \d+ crash line\(s\)\.$/),
+    ]);
+    expect(verdict.embeddedLaunch).toBe(platform === 'android');
+  });
+
+  it('carries the thrown error in the evidence', () => {
+    expect(capture.fatalLogLines.length).toBeGreaterThan(0);
+    expect(evidence.updatesLogErrors.length).toBeGreaterThan(0);
+    const report = formatVerdict(platform, 'pr-6129', evidence, verdict);
+    expect(report).toContain(`FAIL: ${platform} boot check on pr-6129`);
+    expect(report).toContain('first screen      never drawn');
+  });
+});
+
 describe('logs', () => {
   it('reads expo-updates log lines with and without the level marker', () => {
     const ios =

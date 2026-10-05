@@ -654,14 +654,15 @@ export function formatVerdict(
     `  process           ${evidence.processAliveAtEnd ? 'alive' : 'gone'} after ${evidence.watchedSeconds}s`,
     `  crash log lines   ${verdict.fatalLogLines.length}`,
   ];
-  for (const line of verdict.fatalLogLines) lines.push(`    ${line}`);
+  // A JS error is one crash line per stack frame; the first few say what threw.
+  for (const line of verdict.fatalLogLines.slice(0, 4)) lines.push(`    ${line.slice(0, 240)}`);
   lines.push('  updates on the device after the second launch:');
   if (evidence.afterSecondLaunch.length === 0) lines.push('    none');
   for (const row of evidence.afterSecondLaunch) lines.push(`    ${describeRow(row, evidence.embeddedUpdateId)}`);
   if (evidence.updatesLogErrors.length > 0) {
     lines.push('  expo-updates errors during the second launch:');
     for (const entry of evidence.updatesLogErrors.slice(0, 10)) {
-      lines.push(`    [${entry.level}/${entry.code}] ${entry.message.slice(0, 300)}`);
+      lines.push(`    [${entry.level}/${entry.code}] ${entry.message.replaceAll(/\s+/g, ' ').slice(0, 300)}`);
     }
   }
   for (const failure of verdict.failures) lines.push(`  why: ${failure}`);
