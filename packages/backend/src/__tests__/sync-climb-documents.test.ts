@@ -71,6 +71,26 @@ describe('saved climb canonical mirror', () => {
     expect(await syncClimbDocuments({}, { ...scope, climbUuid: WRONG_UUID }, context(SETTER))).toBeNull();
   });
 
+  it('keeps catalogue document reads author-only for published climbs and drafts', async () => {
+    await db.execute(sql`INSERT INTO board_climbs
+      (uuid, board_type, layout_id, name, user_id, is_draft, is_listed)
+      VALUES (${WRONG_UUID}, 'kilter', ${LAYOUT_ID}, 'Catalogue climb', ${SETTER}, false, true)`);
+    const catalogueScope = { ...scope, boardType: 'kilter', climbUuid: WRONG_UUID };
+    expect(await syncClimbDocuments({}, catalogueScope, context(SETTER))).toMatchObject({
+      viewerId: SETTER,
+      climb: { user_id: SETTER, board_type: 'kilter' },
+    });
+    expect(await syncClimbDocuments({}, catalogueScope, context(OWNER))).toBeNull();
+    await db.execute(sql`UPDATE board_climbs SET is_draft = true
+      WHERE uuid = ${WRONG_UUID} AND board_type = 'kilter'`);
+    expect(await syncClimbDocuments({}, catalogueScope, context(SETTER))).not.toBeNull();
+    expect(await syncClimbDocuments({}, catalogueScope, context(OWNER))).toBeNull();
+    await expect(syncClimbDocuments({}, { ...scope, layoutId: 0 }, context(SETTER))).rejects.toThrow();
+    await expect(
+      syncClimbDocuments({}, { ...scope, layoutId: null } as unknown as typeof scope, context(SETTER)),
+    ).rejects.toThrow();
+  });
+
   it('never exposes another setter draft, including to its public or private wall owner', async () => {
     await db.execute(sql`UPDATE board_climbs SET is_draft = true WHERE uuid = ${CLIMB_UUID}`);
     expect(await syncClimbDocuments({}, scope, context(OWNER))).toBeNull();

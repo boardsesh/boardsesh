@@ -4,7 +4,12 @@ import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import type { ConnectionContext, SyncClimbDocuments } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import { requireAuthenticated } from '../shared/helpers';
-import { BoardNameSchema, SyncBoardScopeIdSchema, UUIDSchema, validateInput } from '../../../validation/schemas';
+import {
+  BoardNameSchema,
+  SyncRequiredBoardScopeIdSchema,
+  UUIDSchema,
+  validateInput,
+} from '../../../validation/schemas';
 import { normalizeRow } from './row-normalize';
 
 // Match the ordinary pull's documents. Cast timestamps and sequences to text
@@ -76,8 +81,7 @@ export async function syncClimbDocuments(
 ): Promise<SyncClimbDocuments | null> {
   requireAuthenticated(ctx);
   const validBoardType = validateInput(BoardNameSchema, boardType, 'boardType');
-  const validLayoutId = validateInput(SyncBoardScopeIdSchema, layoutId, 'layoutId');
-  if (validLayoutId == null) throw new Error('layoutId is required');
+  const validLayoutId = validateInput(SyncRequiredBoardScopeIdSchema, layoutId, 'layoutId');
   const validClimbUuid = validateInput(UUIDSchema, climbUuid, 'climbUuid');
   const validWallUuid = sprayWallUuid == null ? null : validateInput(UUIDSchema, sprayWallUuid, 'sprayWallUuid');
 
