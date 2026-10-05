@@ -81,8 +81,9 @@ A person can also set a higher version with a commit on the train.
    PRs target `main`. The OTA compatibility check reports a native change on `main`
    without blocking it.
 2. **Update the localized release notes** for `en-US`, `es-ES`, `es-MX`, `fr-FR`,
-   and `de-DE` on the train, before the final native change, so the automatic
-   builds carry the intended copy.
+   `de-DE`, and Simplified Chinese (`zh-Hans` for the App Store, `zh-CN` for Play)
+   on the train, before the final native change, so the automatic builds carry the
+   intended copy.
 3. **QA the uploaded builds**, then **close the train** (below). The merge-back is
    what submits both stores for review.
 
