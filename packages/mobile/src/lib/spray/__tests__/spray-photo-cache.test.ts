@@ -50,7 +50,7 @@ vi.mock('expo-file-system', () => {
     constructor(parent: { uri: string } | string, name?: string) {
       const base = typeof parent === 'string' ? parent : parent.uri;
       this.name = name ?? base;
-      this.uri = `file://${base}/${this.name}`;
+      this.uri = name === undefined ? base : `file://${base}/${this.name}`;
     }
     get exists() {
       return fsState.files.get(this.uri)?.exists ?? false;
@@ -265,5 +265,32 @@ describe('ensureSprayPhotoCached', () => {
     expect(tryGetSprayPhotoPathSync(IDENTITY)).toBe(FINAL_URI.replace('file://', ''));
     await ensureSprayPhotoCached(IDENTITY);
     expect(fsState.downloads).toHaveLength(0);
+  });
+});
+
+describe('durable offline photos', () => {
+  it('uses the owner-gated stored file without downloading and withdraws on account change', async () => {
+    const versionId = 'local-00000000-0000-4000-8000-000000000001-2' as const;
+    fsState.files.set('file:///photos/wall.jpg', { exists: true });
+    registerSprayWall(LAYOUT_ID, {
+      wallUuid: 'wall',
+      angle: null,
+      version: 2,
+      versionId,
+      photoWidth: 1200,
+      photoHeight: 900,
+      photoUrl: 'file:///photos/wall.jpg',
+      localPhotoPath: '/photos/wall.jpg',
+      photoThumbUrl: null,
+      photoExpiresAt: PAST,
+      holds: [],
+    });
+    const identity = { layoutId: LAYOUT_ID, versionId };
+    expect(tryGetSprayPhotoPathSync(identity)).toBe('/photos/wall.jpg');
+    expect(await ensureSprayPhotoCached(identity)).toBe('/photos/wall.jpg');
+    expect(fsState.downloads).toHaveLength(0);
+    const { resetSprayWallViewerAccess } = await import('../spray-wall-registry');
+    resetSprayWallViewerAccess();
+    expect(tryGetSprayPhotoPathSync(identity)).toBeNull();
   });
 });

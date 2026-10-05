@@ -2333,6 +2333,26 @@ carry the climb names, frames and grades of somebody's garage, and
 too, and `getSprayWallLocal` refuses to serve unless the `local_user_id` stamp
 names the climber asking — the defence that survives a wipe that failed.
 
+**Offline cold starts hydrate the published registry.** The loader reads the
+owner-stamped `spray_walls` mirror while connectivity is unavailable or a
+recognized transport request fails. It requires a published generation, valid
+homography and a durable photo. Native image decoding supplies the photo's pixel
+size; reference dimensions describe the canonical frame and are not substituted.
+Canonical holds are mapped back into photo pixels before registration.
+
+The local cache identity is `local-<photo UUID>-<published number>`, separate
+from the online database row ID namespace. Published numbers never repeat, so a
+same-photo hold edit also changes geometry caches. Offline registrations expose
+read-only permission and use the durable file directly, without downloading a
+`file://` URL. Account changes withdraw them; owner and removal generations are
+checked across every read and native image decode.
+
+Reconnect forces server revalidation for every requested wall, including one
+whose local photo was missing. A reconnect during image decoding is handled by
+the completing load itself. An authoritative absent or inaccessible wall removes
+the offline registration rather than reusing the local mirror. Draft editor data
+never writes this mirror: sync emits only the wall's current published version.
+
 **One known gap, tracked as #5490.** The delete tombstone is scoped to the wall's
 owner, so a gym member or public-wall viewer who mirrored a wall never receives
 it: `syncSprayWalls` stops serving them the wall, but nothing tells their device

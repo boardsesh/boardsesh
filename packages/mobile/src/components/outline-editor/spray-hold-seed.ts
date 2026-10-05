@@ -22,6 +22,7 @@
  * waiting for its payload.
  */
 
+import type { SprayVersionIdentity } from '../../lib/spray/spray-photo-keys';
 import type { SprayHoldCandidate } from './spray-hold-editor-types';
 import type { SprayEditorHold } from './spray-hold-editor-reducer';
 import { SPRAY_MAYBE_FLOOR } from './spray-hold-tools';
@@ -30,7 +31,7 @@ import { SPRAY_MAYBE_FLOOR } from './spray-hold-tools';
 export type SeedableWall = {
   wallUuid: string;
   version: number;
-  versionId: number;
+  versionId: SprayVersionIdentity;
   /** When the registry took this payload. Distinguishes a post-save refetch from a photo refresh. */
   registeredAtMs?: number;
   holds: readonly {

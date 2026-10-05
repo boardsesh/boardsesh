@@ -13,6 +13,8 @@
 // uuid never changes, while its render payload carries presigned photo URLs that
 // expire in fifteen minutes and holds that change on every reset.
 
+import { getConnectivitySnapshot, subscribeConnectivity } from '../connectivity/connectivity-store';
+import { isNetworkError } from '@boardsesh/offline-sync/error-classification';
 import type { QueryClient } from '@tanstack/react-query';
 import {
   GET_SPRAY_WALL_BY_LAYOUT,
@@ -32,6 +34,7 @@ import {
   sprayWallViewerGeneration,
   unregisterSprayWall,
   sprayWallRemovalGeneration,
+  subscribeToSprayWalls,
   type SprayWallRenderSettingsValue,
 } from './spray-wall-registry';
 import { clearSupersededSprayDrafts } from '../create-climb-draft-store';
@@ -394,7 +397,7 @@ export function fetchSprayWallRenderData(
  * genuinely not there (deleted, invisible, nothing published), which is the same
  * outcome from a surface's point of view but not worth retrying against.
  */
-export async function loadSprayWall(
+async function loadSprayWallOnline(
   queryClient: QueryClient,
   layoutId: number,
   options?: { force?: boolean },
@@ -444,6 +447,44 @@ export async function loadSprayWall(
   const look = await lookRead;
   if (sprayWallRemovalGeneration(layoutId) !== removalGeneration) return;
   registerRenderData(layoutId, renderData, look, viewerGeneration, removalGeneration);
+}
+
+/** Online authority wins; local mirrors are only a transport-unavailable fallback. */
+export async function loadSprayWall(
+  queryClient: QueryClient,
+  layoutId: number,
+  options?: { force?: boolean },
+): Promise<void> {
+  const viewerGeneration = sprayWallViewerGeneration();
+  const removalGeneration = sprayWallRemovalGeneration(layoutId);
+  const loadLocal = async () => {
+    const { loadLocalSprayWall } = await import('./spray-wall-local-loader');
+    const hydrated = await loadLocalSprayWall(layoutId, viewerGeneration, removalGeneration);
+    // Reconnect may occur while native photo decoding owns the registry's
+    // in-flight slot. Its refresh is skipped, so this load must finish the
+    // authority read itself rather than leaving the fallback fresh for 10 min.
+    if (hydrated && !getConnectivitySnapshot().effectiveOffline) {
+      try {
+        await loadSprayWallOnline(queryClient, layoutId, { force: true });
+      } catch (error) {
+        if (!isNetworkError(error)) {
+          unregisterSprayWall(layoutId);
+          throw error;
+        }
+      }
+    }
+    return hydrated;
+  };
+  if (getConnectivitySnapshot().effectiveOffline) {
+    if (!(await loadLocal())) throw new Error('Downloaded spray wall photo unavailable');
+    return;
+  }
+  try {
+    await loadSprayWallOnline(queryClient, layoutId, options);
+  } catch (error) {
+    if ((getConnectivitySnapshot().effectiveOffline || isNetworkError(error)) && (await loadLocal())) return;
+    throw error;
+  }
 }
 
 /**
@@ -511,9 +552,41 @@ export function dropSprayWallViewerAccess(): void {
  * per-row render-board resolvers — can then ask for a wall by layout id.
  */
 export function installSprayWallLoader(queryClient: QueryClient): () => void {
-  const loader = (layoutId: number, options?: { force?: boolean }) => loadSprayWall(queryClient, layoutId, options);
+  const requestedLayouts = new Map<number, { viewerGeneration: number; removalGeneration: number }>();
+  const pruneRemovedRequests = () => {
+    for (const [layoutId, requestedUnder] of requestedLayouts) {
+      if (
+        requestedUnder.viewerGeneration !== sprayWallViewerGeneration() ||
+        requestedUnder.removalGeneration !== sprayWallRemovalGeneration(layoutId)
+      )
+        requestedLayouts.delete(layoutId);
+    }
+  };
+  const unsubscribeRegistry = subscribeToSprayWalls(pruneRemovedRequests);
+  const loader = (layoutId: number, options?: { force?: boolean }) => {
+    requestedLayouts.set(layoutId, {
+      viewerGeneration: sprayWallViewerGeneration(),
+      removalGeneration: sprayWallRemovalGeneration(layoutId),
+    });
+    return loadSprayWall(queryClient, layoutId, options);
+  };
   setSprayWallLoader(loader);
+  let wasOffline = getConnectivitySnapshot().effectiveOffline;
+  const unsubscribe = subscribeConnectivity(() => {
+    const offline = getConnectivitySnapshot().effectiveOffline;
+    const reconnected = wasOffline && !offline;
+    wasOffline = offline;
+    if (!reconnected) return;
+    pruneRemovedRequests();
+    for (const layoutId of requestedLayouts.keys()) {
+      void queryClient.invalidateQueries({ queryKey: sprayWallByLayoutQueryKey(layoutId) });
+      refreshSprayWall(layoutId);
+    }
+  });
   return () => {
+    unsubscribe();
+    unsubscribeRegistry();
+    requestedLayouts.clear();
     setSprayWallLoader(null);
   };
 }
