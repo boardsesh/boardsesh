@@ -1,5 +1,5 @@
 import { gql } from 'graphql-request';
-import type { SessionSummary } from '@boardsesh/shared-schema';
+import type { SessionInvitePreview, SessionSummary } from '@boardsesh/shared-schema';
 
 // ============================================
 // Fragments
@@ -79,6 +79,23 @@ export const GET_SESSION_SUMMARY = gql`
   }
 `;
 
+// What a session invite link points at, for someone who may have neither an
+// account nor the app (#6004). Unauthenticated and rate limited. It answers for
+// a dormant session (running, nobody connected), which `session` cannot: that
+// query returns null for any empty roster.
+export const GET_SESSION_INVITE_PREVIEW = gql`
+  query GetSessionInvitePreview($sessionId: ID!) {
+    sessionInvitePreview(sessionId: $sessionId) {
+      sessionId
+      state
+      hostName
+      boardName
+      boardPath
+      gymName
+    }
+  }
+`;
+
 // ============================================
 // Types
 // ============================================
@@ -115,4 +132,12 @@ export type GetSessionSummaryVariables = {
 
 export type GetSessionSummaryResponse = {
   sessionSummary: SessionSummary | null;
+};
+
+export type GetSessionInvitePreviewVariables = {
+  sessionId: string;
+};
+
+export type GetSessionInvitePreviewResponse = {
+  sessionInvitePreview: SessionInvitePreview;
 };

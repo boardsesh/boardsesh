@@ -86,6 +86,17 @@ export type StoreLinkInput = {
    */
   campaign?: string;
   /**
+   * The one thing this button is about, when a campaign is too coarse for it:
+   * the session an invite page is for. Appended to the Google Play link id
+   * (`join-page.<session id>`), where the app can read it back from the install
+   * referrer. Letters, digits and hyphens only; anything else is ignored.
+   *
+   * Never sent to the App Store. `ct` holds 30 characters and App Analytics
+   * hides a campaign with fewer than 5 downloads, so a per-session token would
+   * be cut short and then never shown.
+   */
+  linkDetail?: string;
+  /**
    * The printed medium the page was reached through, from `parseGymQrLanding`.
    * `null` or absent for a visit that did not come off a code.
    */
@@ -102,7 +113,11 @@ export type StoreLinkAttribution = {
   source: string;
   medium: string;
   campaign: string;
-  /** The link id. `<placement>`, or `<placement>.<printed medium>` after a scan. */
+  /**
+   * The link id as Google Play carries it. `<placement>`,
+   * `<placement>.<printed medium>` after a scan, or `<placement>.<detail>` for a
+   * button with a `linkDetail`.
+   */
   content: string;
   /** Whether the visitor's own tags set any of source, medium or campaign. */
   inboundTagged: boolean;
@@ -126,6 +141,19 @@ export function gymInstallCampaign(gymSlug: string): string {
  */
 export function storeLinkId(placement: AppInstallPlacement, qrMedium?: GymQrMedium | null): string {
   return qrMedium ? `${placement}.${qrMedium}` : placement;
+}
+
+/** What a `linkDetail` may hold. A session id is a UUID or a hyphenated name, so this is all it needs. */
+const LINK_DETAIL_PATTERN = /^[A-Za-z0-9-]+$/;
+
+/**
+ * The link id Google Play carries: `storeLinkId`, plus the button's
+ * `linkDetail` when it has a usable one. `join-page.<session id>` on a session
+ * invite page.
+ */
+export function playStoreLinkId(input: Pick<StoreLinkInput, 'placement' | 'qrMedium' | 'linkDetail'>): string {
+  const linkId = storeLinkId(input.placement, input.qrMedium);
+  return input.linkDetail && LINK_DETAIL_PATTERN.test(input.linkDetail) ? `${linkId}.${input.linkDetail}` : linkId;
 }
 
 /**
@@ -163,7 +191,7 @@ export function resolveStoreLinkAttribution(input: StoreLinkInput): StoreLinkAtt
     source: inboundSource ?? STORE_LINK_SOURCE,
     medium: inboundMedium ?? ownMedium,
     campaign: inboundCampaign ?? ownCampaign,
-    content: storeLinkId(input.placement, input.qrMedium),
+    content: playStoreLinkId(input),
     inboundTagged: inboundSource !== undefined || inboundMedium !== undefined || inboundCampaign !== undefined,
     inboundNamed: inboundSource !== undefined || inboundCampaign !== undefined,
   };
@@ -234,7 +262,8 @@ function toCampaignToken(rawToken: string): string {
  *
  *  - a visitor whose link named a source or a campaign reports that:
  *    `<source>-<campaign>`, or `<source>` when it named no campaign;
- *  - everyone else reports the link id (`hero`, `gym-page`, `gym-page.poster`).
+ *  - everyone else reports the link id (`hero`, `gym-page`, `gym-page.poster`,
+ *    `join-page`), without any `linkDetail`.
  *    That includes a link tagged with a medium and nothing else: the source
  *    would be our own `boardsesh` on every button, which names neither the
  *    visitor's origin nor the placement.
@@ -244,12 +273,15 @@ function toCampaignToken(rawToken: string): string {
  */
 export function appStoreCampaignToken(input: StoreLinkInput): string {
   const attribution = resolveStoreLinkAttribution(input);
-  if (!attribution.inboundNamed) return toCampaignToken(attribution.content);
+  // The link id WITHOUT a `linkDetail`: one session never reaches the 5
+  // downloads App Analytics needs, and its id would not fit in 30 characters.
+  const linkId = storeLinkId(input.placement, input.qrMedium);
+  if (!attribution.inboundNamed) return toCampaignToken(linkId);
 
   const inboundName = input.inbound?.utm_campaign
     ? `${attribution.source}-${attribution.campaign}`
     : attribution.source;
-  return toCampaignToken(inboundName) || toCampaignToken(attribution.content);
+  return toCampaignToken(inboundName) || toCampaignToken(linkId);
 }
 
 /**
