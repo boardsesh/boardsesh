@@ -451,9 +451,10 @@ describe('submitQaVerdict', () => {
       const row = await readVerdictRow(verdict.id);
       expect(Number(row.github_comment_id)).toBe(555);
       expect(row.github_comment_url).toBe('https://github.com/boardsesh/boardsesh/pull/4792#issuecomment-555');
+      // The label is applied after the comment row is saved. Wait for both
+      // effects before the next test resets mocks and clears the verdict table.
+      expect(applyQaLabelMock).toHaveBeenCalledWith(4792, 'approved');
     });
-
-    expect(applyQaLabelMock).toHaveBeenCalledWith(4792, 'approved');
     const [, body] = postVerdictCommentMock.mock.calls[0];
     expect(body).toContain('### ✅ QA approved by Nic');
     expect(body).toContain(`<!-- boardsesh-qa-verdict:${verdict.id} -->`);
