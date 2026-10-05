@@ -108,9 +108,11 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
    */
   const hasStartedWork = state.photo != null || state.draft != null;
 
-  // The camera is a property of the BINARY, not of this bundle: SW-02 put the
-  // usage description in 2.6.0 and this slice rides an OTA into older ones too.
-  const cameraAvailable = useMemo(() => canPhotographWall(), []);
+  // The camera is a property of the BINARY and of the DEVICE, not of this
+  // bundle: SW-02 put the usage description in 2.6.0, and an iOS simulator has
+  // no camera to open — a picker launched into it aborts the app. Both gates
+  // live in `canPhotographWall`.
+  const cameraAvailable = useMemo(() => canPhotographWall(Platform.OS), []);
 
   const previewWidth = Math.min(MAX_PREVIEW_WIDTH, windowWidth - spacing[4] * 2);
 

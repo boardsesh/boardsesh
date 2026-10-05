@@ -105,9 +105,10 @@ export async function pickWallPhotoFromLibrary(): Promise<WallPhotoLibraryResult
 /**
  * Photograph the wall and compress the result.
  *
- * ONLY call this on a binary that `canPhotographWall()` vouches for. Without
- * `NSCameraUsageDescription` iOS does not deny the request, it terminates the
- * process, so the gate belongs before the call and not inside it.
+ * ONLY call this on a binary-and-device that `canPhotographWall()` vouches for.
+ * Without `NSCameraUsageDescription`, or on an iOS simulator with no camera,
+ * iOS does not deny the request, it terminates the process, so the gate belongs
+ * before the call and not inside it.
  */
 export async function pickWallPhotoFromCamera(): Promise<WallPhotoCameraResult> {
   const permission = await ImagePicker.requestCameraPermissionsAsync();
