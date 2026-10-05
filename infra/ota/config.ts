@@ -19,6 +19,7 @@
 //   - Live rollouts. They are state, not configuration. The tool reports them.
 //   - Per-PR preview branches (`pr-<number>`). They are created by a publish and
 //     removed by scripts/ota-preview-cleanup.ts; this tool never touches one.
+//   - The rollout-proof scratch branch (`pr-rollout-proof`): see ROLLOUT_PROOF_BRANCH.
 //   - Bundle diffing. It is a server variable, declared in infra/railway/config.ts.
 //   - API keys and the admin account, which are secrets.
 //
@@ -43,6 +44,25 @@ export const EARLY_UPDATES_BRANCH = 'pr-beta';
 
 /** Where main's export is staged and verified before its bytes are promoted. */
 export const STAGING_BRANCH = 'pr-staging';
+
+/**
+ * The scratch branch of the rollout proof (scripts/ota-rollout-proof.ts). It
+ * holds synthetic updates under runtime versions no binary has, so that the
+ * rollout calls can be exercised against the live server without a device ever
+ * being served one. Test-only and unprotected on purpose: deleting it must stay
+ * possible.
+ *
+ * It is deliberately NOT in `desiredOtaState.branches`. A declared branch is
+ * created when missing and counts as drift until it exists, and this one exists
+ * only after someone has run the proof. ./plan.ts reports it as a note when it
+ * is there, refuses a declaration that names it, and the proof refuses to run
+ * against any branch that IS declared.
+ *
+ * The `pr-` prefix is what lets Branch Surfing serve it to the proof's own
+ * manifest probes and puts its files under the storage lifecycle rule. It is not
+ * a per-PR preview branch (no PR number), so the preview cleanup never lists it.
+ */
+export const ROLLOUT_PROOF_BRANCH = 'pr-rollout-proof';
 
 export interface OtaBranchDesired {
   name: string;

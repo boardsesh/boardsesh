@@ -238,6 +238,55 @@ describe('admin client requests', () => {
     });
   });
 
+  it('lists the updates of a runtime version, from a page or from the bare list an old server sends', async () => {
+    const UPDATES = `GET ${FAKE_APP}/branch/production/runtimeVersion/${RTV}/updates?limit=50`;
+    const rollingOut = {
+      updateUUID: '43d5c1d5-ade8-62d9-1d01-9ffa9a169620',
+      updateId: '202',
+      createdAt: '2026-10-05T22:00:00.000Z',
+      commitHash: 'a'.repeat(40),
+      platform: 'ios',
+      message: 'fix: the thing',
+      rolloutPercentage: 5,
+      controlUpdateId: '201',
+    };
+    // A revert republishes with an empty commit and no message.
+    const republished = {
+      updateUUID: 'Rollback to embedded',
+      updateId: 203,
+      createdAt: '',
+      commitHash: '',
+      platform: 'android',
+    };
+    const paged = fakeXprem({ [UPDATES]: { items: [rollingOut, republished], nextCursor: null } });
+    await expect(paged.client.getUpdates('production', RTV)).resolves.toEqual([
+      {
+        updateId: '202',
+        updateUUID: '43d5c1d5-ade8-62d9-1d01-9ffa9a169620',
+        platform: 'ios',
+        commitHash: 'a'.repeat(40),
+        message: 'fix: the thing',
+        createdAt: '2026-10-05T22:00:00.000Z',
+        rolloutPercentage: 5,
+        controlUpdateId: '201',
+      },
+      {
+        updateId: 203,
+        updateUUID: 'Rollback to embedded',
+        platform: 'android',
+        commitHash: null,
+        message: null,
+        createdAt: null,
+        rolloutPercentage: null,
+        controlUpdateId: null,
+      },
+    ]);
+    const bare = fakeXprem({ [UPDATES]: [rollingOut] });
+    await expect(bare.client.getUpdates('production', RTV)).resolves.toHaveLength(1);
+    const broken = fakeXprem({ [UPDATES]: { items: 'nope' } });
+    await expect(broken.client.getUpdates('production', RTV)).rejects.toThrow('xprem update list items is not a list.');
+  });
+
   it('reads an inactive rollout that carries no update list', async () => {
     const server = fakeXprem({ [`GET ${ROLLOUT}`]: { active: false } });
     await expect(server.client.getUpdateRollout('production', RTV)).resolves.toEqual({ active: false, updates: [] });

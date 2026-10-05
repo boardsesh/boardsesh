@@ -32,14 +32,34 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, lstatSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
+import {
+  DEFAULT_BRANCH,
+  UPDATE_ID,
+  UUID,
+  buildUploadFiles,
+  finalizeUpload,
+  object,
+  parseServedManifest,
+  parseUploadLease,
+  requestManifest,
+  requestUploadLease,
+  requireSuccess,
+  sentenceLabel,
+  sleep,
+  string,
+  uploadLeaseFiles,
+  uploadServerBase,
+  validateExport,
+} from './lib/ota-publish-protocol.ts';
+import type { OtaPlatform, PublishTarget, UploadLease, ValidatedExport } from './lib/ota-publish-protocol.ts';
 import { adminClientFromEnvironment, sameId } from './lib/xprem-admin.mts';
 import type { XpremAdminClient, XpremId } from './lib/xprem-admin.mts';
 
-export type OtaPlatform = 'ios' | 'android';
+export { validateExport };
 
 export interface StageReceipt {
   commitHash: string;
@@ -48,90 +68,17 @@ export interface StageReceipt {
   baselineProductionUpdateIds: Record<OtaPlatform, string | null>;
 }
 
-interface ExportFile {
-  relativePath: string;
-  absolutePath: string;
-}
-
-interface ValidatedExport {
-  platform: OtaPlatform;
-  appId: string;
-  files: Map<string, ExportFile>;
-  bundlePath: string;
-  assetPaths: string[];
-  assetExtensions: Map<string, string>;
-  expoConfig: Record<string, unknown>;
-}
-
-interface UploadRequest {
-  requestUploadUrl: string;
-  fileName: string;
-  filePath: string;
-  headers?: Record<string, string>;
-}
-
-interface UploadLease {
-  updateId: string;
-  uploadRequests: UploadRequest[];
-}
-
-/** What a published file is to the update, as the server reads it (eoas 3.2.4 FileRole). */
-export type UploadFileRole = 'launch' | 'asset' | 'config';
-
-/** One entry of the requestUploadUrl `files` list (eoas 3.2.4 FileUploadItem). */
-export interface UploadFileItem {
-  path: string;
-  /** SHA-256, base64url without padding: the manifest hash and the object key under {appId}/cas/. */
-  hash: string;
-  /** MD5 hex: the on-device cache key expo-updates uses. Absent for config files. */
-  key?: string;
-  ext?: string;
-  role: UploadFileRole;
-}
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-// xprem derives update IDs from content hashes, so they have the 8-4-4-4-12 shape
-// without RFC 4122 version and variant digits: production served
-// `a96bbffc-e084-91c9-61ee-0107f5b6857b` on 2026-09-26. App IDs stay strict.
-const UPDATE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHA256 = /^[0-9a-f]{64}$/i;
 const BRANCH_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-
-/**
- * The channel every binary bakes into `expo-channel-name`. Every promotion probes
- * through it, whatever branch it targets: a branch other than the channel's own
- * is reached with the `xprem-branch` header, never with another channel.
- */
-const CHANNEL = 'production';
-
-/** The branch the channel maps to, and the target when no `--branch` is given. */
-const DEFAULT_BRANCH = 'production';
 
 function branchName(input: string): string {
   if (!BRANCH_NAME.test(input)) throw new Error(`Invalid branch name: ${JSON.stringify(input)}.`);
   return input;
 }
 
-/** The branch as it starts a sentence. `Production` for the default, so its messages are unchanged. */
-function sentenceLabel(branch: string): string {
-  return branch === DEFAULT_BRANCH ? 'Production' : `Branch ${branch}`;
-}
-
 /** What rollout mode reads from the admin API. */
 export type RolloutReader = Pick<XpremAdminClient, 'getUpdateRollout' | 'getUpdateDetails'>;
 const COMMIT_SHA = /^[0-9a-f]{40}$/i;
-
-function object(input: unknown, label: string): Record<string, unknown> {
-  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
-    throw new Error(`${label} must be an object.`);
-  }
-  return input as Record<string, unknown>;
-}
-
-function string(input: unknown, label: string): string {
-  if (typeof input !== 'string') throw new Error(`${label} must be a string.`);
-  return input;
-}
 
 export function parseStageReceipt(input: unknown): StageReceipt {
   const raw = object(input, 'Stage receipt');
@@ -159,143 +106,6 @@ export function parseStageReceipt(input: unknown): StageReceipt {
     baselineProductionUpdateIds[platform] = updateId;
   }
   return { commitHash, message, platforms: parsedPlatforms, baselineProductionUpdateIds };
-}
-
-function normalizedPath(input: string): string {
-  if (!input || input.includes('\0') || input.includes('\\') || isAbsolute(input) || /^[a-z]:[/\\]/i.test(input)) {
-    throw new Error(`Unsafe Expo export path: ${JSON.stringify(input)}.`);
-  }
-  const segments = input.split('/');
-  if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
-    throw new Error(`Expo export path is not normalized: ${input}.`);
-  }
-  return input;
-}
-
-function regularExportFile(root: string, declaredPath: string): ExportFile {
-  const relativePath = normalizedPath(declaredPath);
-  let current = root;
-  for (const segment of relativePath.split('/')) {
-    current = join(current, segment);
-    if (!existsSync(current)) throw new Error(`Expo export file is missing: ${relativePath}.`);
-    if (lstatSync(current).isSymbolicLink())
-      throw new Error(`Expo export path contains a symbolic link: ${relativePath}.`);
-  }
-  if (!statSync(current).isFile()) throw new Error(`Expo export path is not a regular file: ${relativePath}.`);
-  const relativeRealPath = relative(root, realpathSync(current));
-  if (relativeRealPath === '..' || relativeRealPath.startsWith(`..${sep}`) || isAbsolute(relativeRealPath)) {
-    throw new Error(`Expo export path escapes archive: ${relativePath}.`);
-  }
-  return { relativePath, absolutePath: current };
-}
-
-export function validateExport(
-  exportDir: string,
-  platform: OtaPlatform,
-  expectedBundleSha256: string,
-): ValidatedExport {
-  const absoluteRoot = resolve(exportDir);
-  if (!existsSync(absoluteRoot) || !statSync(absoluteRoot).isDirectory() || lstatSync(absoluteRoot).isSymbolicLink()) {
-    throw new Error(`${platform} export directory is missing or symbolic.`);
-  }
-  const root = realpathSync(absoluteRoot);
-  const metadataFile = regularExportFile(root, 'metadata.json');
-  const expoConfigFile = regularExportFile(root, 'expoConfig.json');
-  const metadata = object(JSON.parse(readFileSync(metadataFile.absolutePath, 'utf8')) as unknown, 'metadata.json');
-  if (metadata.version !== 0 || metadata.bundler !== 'metro') throw new Error('Expo metadata must be Metro version 0.');
-  const fileMetadata = object(metadata.fileMetadata, 'metadata.json fileMetadata');
-  if (Object.keys(fileMetadata).length !== 1 || !(platform in fileMetadata)) {
-    throw new Error(`${platform} export must contain exactly one platform's metadata.`);
-  }
-  const platformMetadata = object(fileMetadata[platform], `${platform} metadata`);
-  const bundlePath = string(platformMetadata.bundle, `${platform} bundle`);
-  if (!/\.(?:js|hbc)$/.test(bundlePath)) throw new Error(`${platform} bundle must be JavaScript or Hermes bytecode.`);
-  if (!Array.isArray(platformMetadata.assets)) throw new Error(`${platform} metadata assets must be an array.`);
-
-  const files = new Map<string, ExportFile>();
-  const assetPaths: string[] = [];
-  const assetExtensions = new Map<string, string>();
-  const addFile = (declaredPath: string): void => {
-    const file = regularExportFile(root, declaredPath);
-    if (files.has(file.relativePath)) throw new Error(`Duplicate Expo export path: ${file.relativePath}.`);
-    files.set(file.relativePath, file);
-  };
-  addFile('metadata.json');
-  addFile('expoConfig.json');
-  addFile(bundlePath);
-  for (const [index, assetInput] of platformMetadata.assets.entries()) {
-    const asset = object(assetInput, `${platform} asset ${index}`);
-    const assetPath = string(asset.path, `${platform} asset ${index} path`);
-    const extension = string(asset.ext, `${platform} asset ${index} ext`);
-    // `expo export` writes assets under their content hash with no extension
-    // (`assets/0a328cd9…`) and records the type in `ext`. Accept that shape, or a
-    // path whose own extension agrees with `ext`; reject anything else.
-    const assetName = assetPath.split('/').pop() ?? '';
-    const dot = assetName.lastIndexOf('.');
-    const shapeMatches = dot === -1 ? /^[0-9a-f]{32}$/i.test(assetName) : assetName.slice(dot + 1) === extension;
-    if (!/^[a-z0-9]+$/i.test(extension) || !shapeMatches)
-      throw new Error(`${platform} asset extension mismatch: ${assetPath}.`);
-    addFile(assetPath);
-    assetPaths.push(assetPath);
-    assetExtensions.set(assetPath, extension);
-  }
-
-  const bundle = files.get(bundlePath);
-  if (!bundle || statSync(bundle.absolutePath).size === 0) throw new Error(`${platform} bundle is empty.`);
-  const actualHash = createHash('sha256').update(readFileSync(bundle.absolutePath)).digest('hex');
-  if (actualHash !== expectedBundleSha256.toLowerCase())
-    throw new Error(`${platform} bundle SHA-256 differs from stage receipt.`);
-
-  const expoConfig = object(
-    JSON.parse(readFileSync(expoConfigFile.absolutePath, 'utf8')) as unknown,
-    'expoConfig.json',
-  );
-  const updates = object(expoConfig.updates, 'expoConfig.json updates');
-  const requestHeaders = object(updates.requestHeaders, 'expoConfig.json updates.requestHeaders');
-  const appId = string(requestHeaders['expo-app-id'], 'expo-app-id');
-  if (!UUID.test(appId)) throw new Error('expo-app-id must be a UUID.');
-  return { platform, appId, files, bundlePath, assetPaths, assetExtensions, expoConfig };
-}
-
-function fileDigest(absolutePath: string): { hash: string; key: string } {
-  const bytes = readFileSync(absolutePath);
-  return {
-    hash: createHash('sha256').update(bytes).digest('base64url'),
-    key: createHash('md5').update(bytes).digest('hex'),
-  };
-}
-
-/**
- * The `files` list eoas 3.2.4 sends for one platform (buildUploadFiles +
- * computeFilesRequests): the two config files, the launch bundle and each asset,
- * each with its digest and role. The server validates every entry and refuses a
- * publish without exactly one launch asset.
- */
-export function buildUploadFiles(exportFiles: ValidatedExport): UploadFileItem[] {
-  const fileAt = (relativePath: string): ExportFile => {
-    const file = exportFiles.files.get(relativePath);
-    if (!file) throw new Error(`${exportFiles.platform} export file disappeared: ${relativePath}.`);
-    return file;
-  };
-  const configFiles = ['metadata.json', 'expoConfig.json'].map((relativePath): UploadFileItem => ({
-    path: relativePath,
-    hash: fileDigest(fileAt(relativePath).absolutePath).hash,
-    role: 'config',
-  }));
-  const launchAsset: UploadFileItem = {
-    path: exportFiles.bundlePath,
-    ...fileDigest(fileAt(exportFiles.bundlePath).absolutePath),
-    // eoas stamps every launch bundle `hbc`, whatever its path says.
-    ext: 'hbc',
-    role: 'launch',
-  };
-  const assets = exportFiles.assetPaths.map((assetPath): UploadFileItem => ({
-    path: assetPath,
-    ...fileDigest(fileAt(assetPath).absolutePath),
-    ext: exportFiles.assetExtensions.get(assetPath),
-    role: 'asset',
-  }));
-  return [...configFiles, launchAsset, ...assets];
 }
 
 export function parsePromoteArgs(argv: string[]): {
@@ -372,204 +182,6 @@ export function parseCaptureArgs(argv: string[]): {
   return { appId, iosRuntime, androidRuntime, out, branch: branchName(args['--branch'] ?? DEFAULT_BRANCH) };
 }
 
-export function uploadServerBase(manifestUrl: string): URL {
-  const parsed = new URL(manifestUrl);
-  if (
-    parsed.protocol !== 'https:' &&
-    !(parsed.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(parsed.hostname))
-  ) {
-    throw new Error('EXPO_UPDATES_URL must be HTTPS (HTTP is allowed only for localhost).');
-  }
-  if (!parsed.pathname.endsWith('/manifest') || parsed.search || parsed.hash) {
-    throw new Error('EXPO_UPDATES_URL must end in /manifest without a query or fragment.');
-  }
-  parsed.pathname = parsed.pathname.slice(0, -'/manifest'.length);
-  return parsed;
-}
-
-function controlUrl(base: URL, appId: string, action: string, branch: string): URL {
-  return new URL(`${base.toString().replace(/\/$/, '')}/${appId}/${action}/${branch}`);
-}
-
-function isLocalUpload(target: URL, base: URL, appId: string): boolean {
-  return (
-    target.origin === base.origin && target.pathname === `${base.pathname.replace(/\/$/, '')}/${appId}/uploadLocalFile`
-  );
-}
-
-function parseUploadLease(input: unknown, exportFiles: Map<string, ExportFile>, base: URL, appId: string): UploadLease {
-  const lease = object(input, 'Upload lease');
-  const updateIdRaw = lease.updateId;
-  const updateId =
-    typeof updateIdRaw === 'number' && Number.isSafeInteger(updateIdRaw)
-      ? String(updateIdRaw)
-      : typeof updateIdRaw === 'string' && /^\d+$/.test(updateIdRaw)
-        ? updateIdRaw
-        : null;
-  if (!updateId) throw new Error('Upload lease has no valid updateId.');
-  if (!Array.isArray(lease.uploadRequests)) throw new Error('Upload lease has no uploadRequests array.');
-  const seen = new Set<string>();
-  const uploadRequests = lease.uploadRequests.map((itemInput, index): UploadRequest => {
-    const item = object(itemInput, `Upload request ${index}`);
-    const filePath = string(item.filePath, `Upload request ${index} filePath`);
-    const fileName = string(item.fileName, `Upload request ${index} fileName`);
-    if (!exportFiles.has(filePath) || normalizedPath(filePath) !== filePath || fileName !== basename(filePath)) {
-      throw new Error(`Upload request ${index} is not an exported file: ${filePath}.`);
-    }
-    if (seen.has(filePath)) throw new Error(`Duplicate upload request for ${filePath}.`);
-    seen.add(filePath);
-    const requestUploadUrl = string(item.requestUploadUrl, `Upload request ${index} URL`);
-    const target = new URL(requestUploadUrl);
-    if (target.protocol !== 'https:' && !(target.protocol === 'http:' && isLocalUpload(target, base, appId))) {
-      throw new Error(`Upload request ${index} uses an unsafe URL.`);
-    }
-    if (target.username || target.password || target.hash)
-      throw new Error(`Upload request ${index} URL has unsafe components.`);
-    let headers: Record<string, string> | undefined;
-    if (item.headers !== undefined) {
-      const rawHeaders = object(item.headers, `Upload request ${index} headers`);
-      headers = {};
-      for (const [key, header] of Object.entries(rawHeaders)) {
-        if (!/^[A-Za-z0-9-]+$/.test(key) || typeof header !== 'string' || /[\r\n]/.test(header)) {
-          throw new Error(`Upload request ${index} has an invalid header.`);
-        }
-        headers[key] = header;
-      }
-    }
-    return { requestUploadUrl, fileName, filePath, headers };
-  });
-  // xprem stores files by content hash and skips any it already holds, so
-  // uploadRequests can legitimately be only a subset of requested files.
-  return { updateId, uploadRequests };
-}
-
-function contentType(filePath: string, assetExtension?: string): string {
-  const extension = (assetExtension ?? filePath.split('.').pop())?.toLowerCase();
-  if (extension === 'json' || extension === 'map') return 'application/json';
-  if (extension === 'xml') return 'application/xml';
-  if (extension === 'js') return 'application/javascript';
-  if (extension === 'png') return 'image/png';
-  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
-  if (extension === 'webp') return 'image/webp';
-  if (extension === 'svg') return 'image/svg+xml';
-  if (extension === 'ttf') return 'font/ttf';
-  if (extension === 'otf') return 'font/otf';
-  return 'application/octet-stream';
-}
-
-async function requireSuccess(response: Response, action: string): Promise<void> {
-  if (!response.ok) throw new Error(`${action} failed (${response.status}): ${(await response.text()).slice(0, 300)}.`);
-}
-
-const sleep = (delayMs: number): Promise<void> => new Promise((done) => setTimeout(done, delayMs));
-
-async function fetchWithRetry(
-  fetchImpl: typeof fetch,
-  input: RequestInfo | URL,
-  init: RequestInit | (() => RequestInit),
-  beforeAttempt?: () => Promise<void>,
-): Promise<Response> {
-  for (let attempt = 0; attempt < 4; attempt++) {
-    try {
-      await beforeAttempt?.();
-      // Multipart bodies are streams. Rebuild them for each local-bucket retry.
-      const response = await fetchImpl(input, typeof init === 'function' ? init() : init);
-      if (response.status !== 429 && response.status < 500) return response;
-      if (attempt === 3) return response;
-      await response.body?.cancel();
-      const retryAfterSeconds = Number(response.headers.get('Retry-After'));
-      const delayMs =
-        Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
-          ? Math.min(retryAfterSeconds * 1_000, 10_000)
-          : 1_000 * 2 ** attempt;
-      await sleep(delayMs);
-    } catch (error) {
-      if (attempt === 3) throw error;
-      await sleep(1_000 * 2 ** attempt);
-    }
-  }
-  throw new Error('OTA request retry loop exhausted.');
-}
-
-async function uploadLeaseFiles(
-  lease: UploadLease,
-  exportFiles: ValidatedExport,
-  base: URL,
-  appId: string,
-  token: string,
-  fetchImpl: typeof fetch,
-  paceUpload: () => Promise<void>,
-): Promise<void> {
-  for (const request of lease.uploadRequests) {
-    const file = exportFiles.files.get(request.filePath);
-    if (!file) throw new Error(`Unvalidated upload file: ${request.filePath}.`);
-    const bytes = readFileSync(file.absolutePath);
-    if (isLocalUpload(new URL(request.requestUploadUrl), base, appId)) {
-      await requireSuccess(
-        await fetchWithRetry(
-          fetchImpl,
-          request.requestUploadUrl,
-          () => {
-            const form = new FormData();
-            form.append(request.fileName, new Blob([bytes]), request.fileName);
-            return {
-              method: 'PUT',
-              // Since 3.2.0 the local-bucket upload token travels in a header the
-              // lease names, alongside the publish credential.
-              headers: { ...request.headers, Authorization: `Bearer ${token}` },
-              body: form,
-              redirect: 'error',
-            };
-          },
-          paceUpload,
-        ),
-        `Local upload ${request.filePath}`,
-      );
-    } else {
-      await requireSuccess(
-        await fetchWithRetry(
-          fetchImpl,
-          request.requestUploadUrl,
-          {
-            method: 'PUT',
-            headers: {
-              'Content-Type': contentType(request.filePath, exportFiles.assetExtensions.get(request.filePath)),
-              'Cache-Control': 'max-age=31556926',
-              ...request.headers,
-            },
-            body: bytes,
-            redirect: 'error',
-          },
-          paceUpload,
-        ),
-        `Asset upload ${request.filePath}`,
-      );
-    }
-  }
-}
-
-function parseServedManifest(responseText: string, branch: string): Record<string, unknown> | null {
-  // xprem serves multipart/mixed for signed manifests, plain JSON for others.
-  // A recognized noUpdateAvailable directive is the only evidence of absence.
-  let noUpdateAvailable = false;
-  for (const part of responseText.split(/\r?\n--[^\r\n]+/)) {
-    const body = part.includes('\r\n\r\n') ? part.slice(part.indexOf('\r\n\r\n') + 4).trim() : part.trim();
-    let candidate: Record<string, unknown>;
-    try {
-      candidate = object(JSON.parse(body) as unknown, 'Manifest');
-    } catch {
-      // Multipart signature and metadata parts are not update manifests.
-      continue;
-    }
-    if (candidate.launchAsset !== undefined) return candidate;
-    if (candidate.type === 'noUpdateAvailable') noUpdateAvailable = true;
-    if (candidate.type === 'rollBackToEmbedded')
-      throw new Error(`${sentenceLabel(branch)} is serving a rollback directive.`);
-  }
-  if (noUpdateAvailable) return null;
-  throw new Error(`${sentenceLabel(branch)} did not serve an Expo update manifest.`);
-}
-
 async function readProductionManifest(
   manifestUrl: string,
   platform: OtaPlatform,
@@ -578,22 +190,7 @@ async function readProductionManifest(
   fetchImpl: typeof fetch,
   branch: string,
 ): Promise<Record<string, unknown> | null> {
-  const response = await fetchWithRetry(fetchImpl, manifestUrl, {
-    method: 'GET',
-    headers: {
-      'expo-protocol-version': '1',
-      'expo-platform': platform,
-      'expo-runtime-version': runtimeVersion,
-      'expo-channel-name': CHANNEL,
-      'expo-app-id': appId,
-      // Empty asks for the channel's own branch, which is what a store binary
-      // sends. Any other branch is surfed to by name, the way a device pinned to
-      // it would.
-      'xprem-branch': branch === DEFAULT_BRANCH ? '' : branch,
-      Accept: 'multipart/mixed',
-    },
-    redirect: 'error',
-  });
+  const response = await requestManifest({ manifestUrl, platform, runtimeVersion, appId, branch, fetchImpl });
   await requireSuccess(response, `${platform} ${branch} manifest probe`);
   const manifest = parseServedManifest(await response.text(), branch);
   if (manifest === null) return null;
@@ -789,6 +386,7 @@ export async function promoteArchivedOta(options: {
   const appId = exports.ios.appId;
   const base = uploadServerBase(options.manifestUrl);
   const fetchImpl = options.fetchImpl ?? fetch;
+  const target: PublishTarget = { base, appId, branch, token: options.token, fetchImpl };
   const verificationDelaysMs = options.verificationDelaysMs ?? [1_000, 2_000, 4_000, 8_000];
   const rolloutReader = options.rollout ? await options.rollout.connect(appId) : null;
   const publishGroup = randomUUID();
@@ -946,20 +544,14 @@ export async function promoteArchivedOta(options: {
   // Validate both server responses before sending any archived bytes.
   for (const platform of ['ios', 'android'] as const) {
     if (leases[platform] === 'rolling') continue;
-    const requestUrl = controlUrl(base, appId, 'requestUploadUrl', branch);
-    requestUrl.searchParams.set('runtimeVersion', receipt.platforms[platform].runtimeVersion);
-    requestUrl.searchParams.set('platform', platform);
-    requestUrl.searchParams.set('commitHash', receipt.commitHash);
-    requestUrl.searchParams.set('publishGroup', publishGroup);
-    if (rolloutPercentage !== null) requestUrl.searchParams.set('rolloutPercentage', String(rolloutPercentage));
-    const response = await fetchWithRetry(fetchImpl, requestUrl, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${options.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        files: buildUploadFiles(exports[platform]),
-        ...(receipt.message ? { message: receipt.message } : {}),
-      }),
-      redirect: 'error',
+    const response = await requestUploadLease(target, {
+      platform,
+      runtimeVersion: receipt.platforms[platform].runtimeVersion,
+      commitHash: receipt.commitHash,
+      publishGroup,
+      rolloutPercentage,
+      files: buildUploadFiles(exports[platform]),
+      message: receipt.message,
     });
     if (response.status === 409) {
       // A rollout started between the check above and this request. Mine is
@@ -1004,15 +596,11 @@ export async function promoteArchivedOta(options: {
     } else {
       // Recheck immediately before each platform's first production PUT.
       await assertBaselineUnchanged(platform);
-      await uploadLeaseFiles(lease, exports[platform], base, appId, options.token, fetchImpl, paceUpload);
-      const finalizeUrl = controlUrl(base, appId, 'markUpdateAsUploaded', branch);
-      finalizeUrl.searchParams.set('platform', platform);
-      finalizeUrl.searchParams.set('updateId', lease.updateId);
-      finalizeUrl.searchParams.set('runtimeVersion', receipt.platforms[platform].runtimeVersion);
-      const response = await fetchWithRetry(fetchImpl, finalizeUrl, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${options.token}`, 'Content-Type': 'application/json' },
-        redirect: 'error',
+      await uploadLeaseFiles(lease, exports[platform], target, paceUpload);
+      const response = await finalizeUpload(target, {
+        platform,
+        runtimeVersion: receipt.platforms[platform].runtimeVersion,
+        updateId: lease.updateId,
       });
       if (response.status === 409) {
         // In rollout mode a retried finalize can meet the rollout its own first

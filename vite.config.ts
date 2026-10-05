@@ -1332,6 +1332,17 @@ export default defineConfig({
         cache: false,
       },
 
+      // The throwaway-branch proof for rollouts: publishes synthetic updates to
+      // the `pr-rollout-proof` scratch branch under a runtime version no binary
+      // has, runs start / set / finish / revert against the LIVE server and
+      // prints what it did. Needs the admin login and the publish token. Run it
+      // through .github/workflows/ota-rollout-proof.yml, not from a laptop.
+      // See scripts/ota-rollout-proof.ts + docs/mobile-ota-updates.md.
+      'ota:rollout-proof': {
+        command: 'tsx scripts/ota-rollout-proof.ts',
+        cache: false,
+      },
+
       // Read-only: downloads the public dashboard bundle and checks that every
       // admin API path scripts/lib/xprem-admin.mts calls is still in it. No
       // login. Run it after an xprem upgrade; the daily drift workflow does.
