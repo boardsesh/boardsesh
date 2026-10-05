@@ -21,6 +21,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Read climb names beside lost-holds labels, and refresh downloaded climbs after publishing a reset. ([#6122](https://github.com/boardsesh/boardsesh/pull/6122))
 - Signing out or deleting a spray wall clears its cached photos and hold previews. Downloads finishing afterward cannot bring those previews back. ([#6128](https://github.com/boardsesh/boardsesh/pull/6128))
 - Photographing a wall no longer closes the app on devices with no camera ([#6108](https://github.com/boardsesh/boardsesh/pull/6108))
 - Scan a gym poster with your iPhone and land on that gym's page, not the app's Home tab. ([#6068](https://github.com/boardsesh/boardsesh/pull/6068))

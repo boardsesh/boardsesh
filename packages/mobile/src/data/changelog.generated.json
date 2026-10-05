@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-05T22:29:44.320Z",
+  "generatedAt": "2026-10-05T23:03:04.598Z",
   "entries": [
+    {
+      "prNumber": 6122,
+      "category": "fixed",
+      "title": "Read climb names beside lost-holds labels, and refresh downloaded climbs after publishing a reset.",
+      "mergedAt": "2026-10-05T23:00:31Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6122"
+    },
     {
       "prNumber": 6128,
       "category": "fixed",
