@@ -13,6 +13,10 @@ import {
   ASSETS_HOSTNAME,
   ASSETS_STAGING_HOSTNAME,
   SNAPSHOTS_HOSTNAME,
+  OTA_ASSETS_HOSTNAME,
+  OTA_ASSETS_CACHE_RULE_DESCRIPTION,
+  OTA_ASSETS_COMPRESSION_RULE_DESCRIPTION,
+  COMPRESSION_RULE_PHASE,
   USER_EXPORT_LIFECYCLE_RULE,
   desiredR2Buckets,
   BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION,
@@ -759,6 +763,7 @@ describe('www.boardsesh.com under Cloudflare management (#4655)', () => {
       redirectRules: [],
       requestHeaderRules: [],
       responseHeaderRules: [],
+      compressionRules: [],
       ssl: desired.ssl,
     };
     const flattenedZone: LiveState = {
@@ -2350,11 +2355,13 @@ describe('a rule phase this token cannot read', () => {
     expect(changes.some((change) => change.resource === 'cache-rule')).toBe(true);
   });
 
-  it('has no optional rule phases after transform scope confirmation', () => {
+  it('tolerates an unreadable phase only for the compression rollout', () => {
     // Both header-transform phases use the same confirmed production-token
     // scope, so losing it must fail loudly instead of degrading either rule.
+    // The compression phase is new and unconfirmed against that token; remove
+    // it from this list when plan.ts flips it to `optional: false`.
     const optional = MANAGED_RULE_PHASES.filter((phase) => phase.optional).map((phase) => phase.resource);
-    expect(optional).toEqual([]);
+    expect(optional).toEqual(['compression-rule']);
   });
 });
 
@@ -2566,7 +2573,7 @@ describe('desiredR2Buckets', () => {
     expect(assets?.cors?.allowedOrigins).toEqual(['*']);
   });
 
-  it('prepares public snapshots and keeps OTA objects private', () => {
+  it('prepares public snapshots and serves OTA objects from their own host', () => {
     const snapshots = desiredR2Buckets.find((bucket) => bucket.name === 'boardsesh-board-snapshots');
     const ota = desiredR2Buckets.find((bucket) => bucket.name === 'boardsesh-ota-v3');
 
@@ -2576,7 +2583,53 @@ describe('desiredR2Buckets', () => {
       allowedMethods: ['GET', 'HEAD'],
       maxAgeSeconds: 86_400,
     });
-    expect(ota?.customDomain).toBeNull();
+    expect(ota?.customDomain).toBe(OTA_ASSETS_HOSTNAME);
+    // r2.dev stays off: the custom domain is the only public path, so the
+    // cache and compression rules below apply to every public read.
+    expect(ota?.r2DevDomainEnabled).toBe(false);
+  });
+
+  it('edge-caches and compresses the whole OTA assets host', () => {
+    // `cas/<sha256>` keys have no file extension and are stored as
+    // application/octet-stream, so neither Cloudflare default applies: without
+    // these two rules every bundle is an uncached, uncompressed 20.9 MB read.
+    const cacheRule = desired.cacheRules.find((rule) => rule.description === OTA_ASSETS_CACHE_RULE_DESCRIPTION);
+    const compressionRule = desired.compressionRules.find(
+      (rule) => rule.description === OTA_ASSETS_COMPRESSION_RULE_DESCRIPTION,
+    );
+
+    expect(cacheRule?.expression).toBe(`http.host eq "${OTA_ASSETS_HOSTNAME}"`);
+    expect(cacheRule?.action_parameters).toEqual({
+      cache: true,
+      edge_ttl: { mode: 'bypass_by_default' },
+      browser_ttl: { mode: 'respect_origin' },
+    });
+    expect(compressionRule).toEqual({
+      description: OTA_ASSETS_COMPRESSION_RULE_DESCRIPTION,
+      expression: `http.host eq "${OTA_ASSETS_HOSTNAME}"`,
+      action: 'compress_response',
+      action_parameters: { algorithms: [{ name: 'brotli' }, { name: 'gzip' }] },
+      enabled: true,
+    });
+  });
+
+  it('plans the compression rule in its own phase and re-plans a changed algorithm list', () => {
+    expect(MANAGED_RULE_PHASES.find((phase) => phase.resource === 'compression-rule')?.phase).toBe(
+      COMPRESSION_RULE_PHASE,
+    );
+
+    const missing = diffManagedRules([], desired.compressionRules, 'compression-rule');
+    expect(missing).toHaveLength(1);
+    expect(missing[0].summary).toContain('missing — will create');
+
+    const gzipOnly = matchingLiveRules(desired.compressionRules).map((rule) => ({
+      ...rule,
+      action_parameters: { algorithms: [{ name: 'gzip' }] },
+    }));
+    expect(diffManagedRules(gzipOnly, desired.compressionRules, 'compression-rule')).toHaveLength(1);
+    expect(
+      diffManagedRules(matchingLiveRules(desired.compressionRules), desired.compressionRules, 'compression-rule'),
+    ).toEqual([]);
   });
 
   it('caches snapshot paths and sets CORS independently of request headers', () => {

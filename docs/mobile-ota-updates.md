@@ -1091,13 +1091,34 @@ This is the runbook that stood up the live V3 server; it's here for the record a
 replacement. `vp run mobile:ota-setup` scripts the in-repo phases; the cloud actions (bucket,
 Postgres, server, DNS) stay manual. Run it with no argument for the ordered runbook.
 
-> **Storage migration gate:** `infra/cloudflare/config.ts` declares `boardsesh-ota-v3` as a private R2 bucket with
-> no custom domain and with `r2.dev` disabled. That desired state does not prove which provider Railway currently
+> **Storage migration gate:** `infra/cloudflare/config.ts` declares `boardsesh-ota-v3` as an R2 bucket with the
+> custom domain `ota-assets.boardsesh.com` and with `r2.dev` disabled. That desired state does not prove which provider Railway currently
 > uses, because `AWS_BASE_ENDPOINT` and its credentials remain live secrets. Inspect the production service before
 > calling the OTA bucket migrated. If it still points at Tigris, complete the verified copy below before rotating any
 > Railway credential. Then require `/hc` and `/ready` to return 200, publish a test update, and download/install it
 > from a production-configured client. See `docs/cloudflare.md` → **R2 buckets**; no live provider is inferred from
 > the declaration alone.
+
+### Asset delivery from the edge
+
+Until xprem is given a `CDN_BASE_URL`, every asset request costs two hops: `updates.boardsesh.com/assets` reaches
+the Railway server uncached, which answers with a 302 to a presigned `r2.cloudflarestorage.com` URL. Measured from
+Sydney on 2026-10-05, the first hop took 350 to 650 ms per asset and the second served the 20.9 MB iOS bundle
+uncompressed over HTTP/1.1. Fleet `expo.updates.download_time` since the R2 rotation was p50 5.3 s and p90 19.6 s
+(268 samples over 19 hours).
+
+`ota-assets.boardsesh.com` is the public custom domain on the bucket, with a cache rule and a Brotli compression
+rule (`docs/cloudflare.md` → **OTA assets host**). It serves nothing to clients until xprem redirects to it.
+
+**Gate before pointing xprem at the host.** Take a real `cas/` key from a manifest's launch asset and require all
+three:
+
+1. `curl -sI https://ota-assets.boardsesh.com/{appId}/cas/{hash}` returns 200.
+2. A second request returns `cf-cache-status: HIT`.
+3. With `-H 'accept-encoding: br'` the response carries `content-encoding: br` and the transfer is about 6 to 7 MB.
+
+If the third fails, the edge is not compressing an `application/octet-stream` body of that size. The host is still
+faster than the presigned path, but settle compression before treating the download-time target as reachable.
 
 ### Tigris → R2 object-copy gate
 

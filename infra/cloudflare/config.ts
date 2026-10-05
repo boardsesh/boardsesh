@@ -229,6 +229,17 @@ export const DYNAMIC_REDIRECT_RULE_PHASE = 'http_request_dynamic_redirect';
  */
 export const RESPONSE_HEADER_RULE_PHASE = 'http_response_headers_transform';
 
+/**
+ * Compression Rules phase.
+ *
+ * Cloudflare compresses by content type, and `application/octet-stream` is not
+ * on its default list. R2 stores every OTA object under that type, so without a
+ * rule here the 20.9 MB Hermes bundle goes out byte for byte (measured
+ * 2026-10-05: the same size for identity, gzip, br and zstd requests). Brotli
+ * takes it to roughly 6 to 7 MB.
+ */
+export const COMPRESSION_RULE_PHASE = 'http_response_compression';
+
 /** Request-header rewrites sent from Cloudflare to origins. */
 export const REQUEST_HEADER_RULE_PHASE = 'http_request_late_transform';
 
@@ -404,6 +415,20 @@ export interface ResponseHeaderRuleDesired {
 }
 
 /**
+ * A Compression rule. Cloudflare picks the first listed algorithm the client's
+ * `Accept-Encoding` allows, and sends the body uncompressed when none match.
+ */
+export interface CompressionRuleDesired {
+  description: string;
+  expression: string;
+  action: 'compress_response';
+  action_parameters: {
+    algorithms: readonly { name: 'zstd' | 'brotli' | 'gzip' }[];
+  };
+  enabled: boolean;
+}
+
+/**
  * A Request Header Transform rule. The expression value is evaluated at the
  * edge, so the origin receives Cloudflare's country lookup rather than a value
  * supplied by the client.
@@ -440,6 +465,8 @@ export interface CloudflareDesiredState {
   requestHeaderRules: RequestHeaderRuleDesired[];
   /** Order is not significant: matched by expression, like cache rules. */
   responseHeaderRules: ResponseHeaderRuleDesired[];
+  /** Order is not significant: each rule is scoped to its own host. */
+  compressionRules: CompressionRuleDesired[];
   ssl: SslDesired;
 }
 
@@ -920,6 +947,27 @@ export const SNAPSHOTS_CORS_HEADER_RULE_DESCRIPTION =
   'boardsesh:snapshots-cors-header (managed by scripts/cloudflare-apply.ts)';
 export const SNAPSHOTS_CORS_HEADER_EXPRESSION = `http.host eq "${SNAPSHOTS_HOSTNAME}"`;
 
+/**
+ * Public R2 custom domain for OTA update assets.
+ *
+ * xprem answers each asset request on `updates.boardsesh.com` with a redirect
+ * here once its `CDN_BASE_URL` points at this host (infra/railway). Objects are
+ * immutable and named by the SHA-256 of their content (`{appId}/cas/<hash>`),
+ * so a cached copy can never go stale and nothing ever needs purging.
+ */
+export const OTA_ASSETS_HOSTNAME = 'ota-assets.boardsesh.com';
+
+export const OTA_ASSETS_CACHE_RULE_DESCRIPTION =
+  'boardsesh:ota-assets-edge-cache (managed by scripts/cloudflare-apply.ts)';
+/**
+ * The whole host, because `cas/<hash>` keys have no file extension and
+ * Cloudflare only caches a fixed extension list by default.
+ */
+export const OTA_ASSETS_CACHE_EXPRESSION = `http.host eq "${OTA_ASSETS_HOSTNAME}"`;
+export const OTA_ASSETS_COMPRESSION_RULE_DESCRIPTION =
+  'boardsesh:ota-assets-compression (managed by scripts/cloudflare-apply.ts)';
+export const OTA_ASSETS_COMPRESSION_EXPRESSION = `http.host eq "${OTA_ASSETS_HOSTNAME}"`;
+
 export const OBSERVE_COUNTRY_HEADER_RULE_DESCRIPTION =
   'boardsesh:observe-country-header (managed by scripts/cloudflare-apply.ts)';
 export const OBSERVE_COUNTRY_HEADER_EXPRESSION = `http.host eq "${UPDATES_HOSTNAME}"`;
@@ -1029,9 +1077,13 @@ export const desiredR2Buckets: readonly R2BucketDesired[] = [
     r2DevDomainEnabled: false,
     cors: PUBLIC_READ_CORS,
   },
-  // XPRem owns object access for OTA updates. The bucket must stay private;
-  // updates.boardsesh.com is the application endpoint, not an object domain.
-  { name: 'boardsesh-ota-v3', customDomain: null, r2DevDomainEnabled: false },
+  // OTA update assets. Public by URL: an object is reachable by anyone who
+  // holds its content hash, which covers production and `pr-*` preview bundles
+  // alike. The JS is the compiled form of this public repository, so the URL
+  // being the only capability is acceptable. xprem still owns every write, and
+  // updates.boardsesh.com stays the endpoint clients are built against.
+  // No CORS: only the native expo-updates client reads these.
+  { name: 'boardsesh-ota-v3', customDomain: OTA_ASSETS_HOSTNAME, r2DevDomainEnabled: false },
 ];
 
 export const desiredCloudflareState: CloudflareDesiredState = {
@@ -1197,6 +1249,20 @@ export const desiredCloudflareState: CloudflareDesiredState = {
       },
       enabled: true,
     },
+    {
+      description: OTA_ASSETS_CACHE_RULE_DESCRIPTION,
+      expression: OTA_ASSETS_CACHE_EXPRESSION,
+      action: 'set_cache_settings',
+      action_parameters: {
+        cache: true,
+        // xprem uploads `cas/` objects with `Cache-Control: max-age=31556926`,
+        // so honouring the origin gives a one-year edge TTL, and a 404 for a
+        // key that does not exist yet is never cached.
+        edge_ttl: { mode: 'bypass_by_default' },
+        browser_ttl: { mode: 'respect_origin' },
+      },
+      enabled: true,
+    },
   ],
   wafRules: [
     // MUST stay first — see the ordering contract on CloudflareDesiredState.wafRules.
@@ -1310,6 +1376,19 @@ export const desiredCloudflareState: CloudflareDesiredState = {
         headers: {
           'access-control-allow-origin': { operation: 'set', value: '*' },
         },
+      },
+      enabled: true,
+    },
+  ],
+  compressionRules: [
+    {
+      description: OTA_ASSETS_COMPRESSION_RULE_DESCRIPTION,
+      expression: OTA_ASSETS_COMPRESSION_EXPRESSION,
+      action: 'compress_response',
+      action_parameters: {
+        // Both native clients advertise Brotli (URLSession on iOS, OkHttp's
+        // Brotli interceptor on Android); gzip is the fallback.
+        algorithms: [{ name: 'brotli' }, { name: 'gzip' }],
       },
       enabled: true,
     },
