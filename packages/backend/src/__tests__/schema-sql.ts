@@ -5,6 +5,14 @@
 
 import { readFileSync } from 'node:fs';
 
+// Install the real wall deletion triggers so resolver tests exercise offline
+// tombstones as well as the row's deleted_at flag. Install at the schema tail
+// after all referenced tables exist; trigger installation has no DDL ordering dependency.
+const sprayWallDeletionSchema = readFileSync(
+  new URL('../../../db/drizzle/0228_spray_walls_sync_deletions.sql', import.meta.url),
+  'utf8',
+);
+
 // Exercise the generated migration instead of maintaining a second detection schema.
 const detectionSchema = readFileSync(
   new URL('../../../db/drizzle/0234_shallow_the_phantom.sql', import.meta.url),
@@ -2033,4 +2041,5 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "rejected_reason" text,
     CONSTRAINT "board_climb_ingest_skips_board_type_climb_uuid_pk" PRIMARY KEY ("board_type", "climb_uuid")
   );
+  ${sprayWallDeletionSchema}
 `;

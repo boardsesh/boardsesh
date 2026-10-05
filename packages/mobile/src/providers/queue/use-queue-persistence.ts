@@ -1,6 +1,10 @@
 import { useEffect, useRef, useCallback } from 'react';
 import type { ClimbQueueItem, PlaylistSuggestionSource, QueueAction, QueueState } from '@boardsesh/queue';
-import { getStoredQueueSnapshot, setStoredQueueSnapshot } from '../../lib/queue-snapshot-store';
+import {
+  getStoredQueueSnapshot,
+  setStoredQueueSnapshot,
+  getQueueSnapshotGeneration,
+} from '../../lib/queue-snapshot-store';
 import { getStoredSessionId, clearStoredSessionId } from '../../lib/session-store';
 import { getHttpClient } from '../../lib/graphql/client';
 import { SESSION_STATUS, type SessionStatusQueryResponse } from '../../lib/graphql/operations';
@@ -85,8 +89,9 @@ export function useQueuePersistence({
   useEffect(() => {
     let cancelled = false;
     const hydrateLocalSnapshot = async () => {
+      const snapshotGeneration = getQueueSnapshotGeneration();
       const snapshot = await getStoredQueueSnapshot();
-      if (cancelled || !snapshot) return;
+      if (cancelled || !snapshot || snapshotGeneration !== getQueueSnapshotGeneration()) return;
       // The user may have started acting — or a session may have appeared —
       // before the async load resolved; never clobber newer state.
       if (sessionIdRef.current !== null) return;
@@ -171,12 +176,17 @@ export function useQueuePersistence({
   // it; the debounce coalesces mutation bursts (swipes, clear-queue removals).
   useEffect(() => {
     if (!snapshotHydratedRef.current || sessionId !== null || !activeBoardSettled) return undefined;
+    const snapshotGeneration = getQueueSnapshotGeneration();
     const persistTimeout = setTimeout(() => {
-      void setStoredQueueSnapshot({
-        queue,
-        currentClimbQueueItem,
-        playlistSuggestionSource,
-      });
+      void setStoredQueueSnapshot(
+        {
+          queue,
+          currentClimbQueueItem,
+          playlistSuggestionSource,
+        },
+        undefined,
+        snapshotGeneration,
+      );
     }, SOLO_QUEUE_SAVE_DEBOUNCE_MS);
     return () => clearTimeout(persistTimeout);
   }, [queue, currentClimbQueueItem, playlistSuggestionSource, sessionId, activeBoardSettled]);

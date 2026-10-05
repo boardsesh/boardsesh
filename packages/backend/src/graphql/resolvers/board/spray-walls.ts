@@ -3100,7 +3100,10 @@ export const sprayWallMutations = {
         .update(dbSchema.sprayWalls)
         .set({ deletedAt, updatedAt: deletedAt, publicPhotoKey: null })
         .where(eq(dbSchema.sprayWalls.id, wall.id));
-      await tx.update(dbSchema.userBoards).set({ deletedAt }).where(eq(dbSchema.userBoards.id, board.id));
+      await tx
+        .update(dbSchema.userBoards)
+        .set({ deletedAt, syncFrozenAt: deletedAt })
+        .where(eq(dbSchema.userBoards.id, board.id));
     });
 
     // AFTER the commit, never before: a delete inside the transaction would destroy

@@ -7,6 +7,7 @@ import type { ClimbQueueItem, PlaylistSuggestionSource, QueueAction, QueueState 
 import type { SessionSummary, UserBoard } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../../lib/graphql/client';
 import { getStoredActiveBoard } from '../../lib/active-board-store';
+import { getActiveBoardWriteGeneration } from '../../lib/graphql/use-active-board';
 import { getWsClient } from '../../lib/graphql/ws-client';
 import {
   CREATE_SESSION,
@@ -228,6 +229,11 @@ export function useSessionCommands({
 
   const clearSession = useCallback(
     async (options?: { notifyServer?: boolean }) => {
+      const sessionToClear = sessionIdRef.current;
+      const activeBoardGeneration = getActiveBoardWriteGeneration();
+      // This callback only resets the mutation lane. Solo queues also have
+      // pending content writes, so invalidate them before LEAVE can await I/O.
+      onSessionContextChanging();
       // When the user intentionally leaves a session (switching into another via
       // the join-confirm dialog), tell the backend so peers see them leave NOW —
       // the driver/presence release shouldn't wait on the 60s disconnect grace
@@ -243,11 +249,14 @@ export function useSessionCommands({
           if (__DEV__) console.warn('[queue] leaveSession on switch failed', error);
         }
       }
+      // A new room or board selected while LEAVE was in flight owns the state
+      // now; an old removal must not clear that newer selection.
+      if (sessionIdRef.current !== sessionToClear || getActiveBoardWriteGeneration() !== activeBoardGeneration) return;
+      const snapshotRemoval = clearStoredQueueSnapshot();
       // Any pending seed-failure guard belongs to the session we're tearing down
       // (it's keyed by id, so a stale value can't match the next session anyway —
       // this just keeps the ref tidy).
       seedFailedSessionIdRef.current = null;
-      if (sessionIdRef.current !== null) onSessionContextChanging();
       sessionIdRef.current = null;
       setSessionId(null);
       dispatch({
@@ -255,11 +264,15 @@ export function useSessionCommands({
         payload: { queue: [], currentClimbQueueItem: null },
       });
       setPlaylistSuggestionSourceState(null);
-      await clearStoredSessionId();
-      // Provenance belongs to the session we're tearing down. It's keyed by
-      // session id so a stale value could never match the next one anyway —
-      // this just keeps the store tidy.
-      await clearStoredCreatedSessionId();
+      // Await removal instead of relying on the debounced solo save: an
+      // immediate relaunch after deleting a board must not restore its climb.
+      await snapshotRemoval;
+      // Teardown assigned null above; any non-null room now belongs to a
+      // newer join, even if it happens to reuse the old room ID.
+      if (sessionIdRef.current !== null || getActiveBoardWriteGeneration() !== activeBoardGeneration) return;
+      // Enqueue both removals before yielding. Session-store serializes them
+      // with new joins/starts, so a newer session's persisted identity wins.
+      await Promise.all([clearStoredSessionId(), clearStoredCreatedSessionId()]);
     },
     [onSessionContextChanging],
   );
