@@ -90,6 +90,7 @@ export function sprayClimbVisibilityCondition(
   // PostgreSQL checks column privileges before evaluating boolean branches.
   // Default readers, including restricted export workers, must not reference
   // is_unlisted unless this call actually supplies a wall capability.
+  // This optional fragment owns its leading OR; absent capabilities add no branch.
   const unlistedCapability = wallUuid == null ? sql`` : sql`OR (ub.is_unlisted AND ub.uuid = ${wallUuid}::text)`;
   return sql`(
     ${columns.boardType} IS DISTINCT FROM 'spray'

@@ -5,6 +5,7 @@ import { db } from '../db/client';
 import { syncClimbDocuments } from '../graphql/resolvers/sync/saved-climb';
 
 // The ordinary pull must defer fresh writes; this exact-UUID mirror must not.
+// Configure stability before import: the resolver captures this setting at module load.
 process.env.SYNC_STABILITY_WINDOW_SECONDS = '30';
 const { syncQueries } = await import('../graphql/resolvers/sync/queries');
 process.env.SYNC_STABILITY_WINDOW_SECONDS = '0';
