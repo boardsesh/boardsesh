@@ -1,4 +1,3 @@
-import { syncClimbDocuments } from './saved-climb';
 import { sql, type SQL } from 'drizzle-orm';
 import type { ConnectionContext, SyncResult, SyncDeletionsResult, SyncCursorInput } from '@boardsesh/shared-schema';
 import { isSizeScopedBoard } from '@boardsesh/board-config';
@@ -10,6 +9,7 @@ import { logger } from '../../../utils/logger';
 import { requireAuthenticated } from '../shared/helpers';
 import { isSprayBoardType, sprayLayoutIsReadable } from '../climbs/spray-read-access';
 import { normalizeRow, toIso, type RawRow } from './row-normalize';
+import { syncClimbDocuments } from './saved-climb';
 import {
   validateInput,
   SyncCursorInputSchema,

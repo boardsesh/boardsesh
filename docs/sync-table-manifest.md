@@ -400,10 +400,12 @@ Postgres timestamp/sequence precision match ordinary pull documents.
 
 The exact UUID, board type and layout must match. Authors can mirror their own
 drafts; every other spray row must be published and pass the existing wall
-visibility rule. Other authors' drafts are never returned, even to wall owners. An explicitly supplied matching unlisted wall UUID grants
-that existing capability; hidden/deleted/private/inaccessible rows return null.
+visibility rule. Other authors' drafts are never returned, even to wall owners.
+An explicitly supplied matching unlisted wall UUID grants that existing
+capability; hidden/deleted/private/inaccessible rows return null.
 This read bypasses the ordinary pull stability window for one saved UUID, and
 returns no cursor or checkpoint. `viewerId` names the authenticated account
-owning the local mirror; the document's `user_id` remains the original setter. Clients must mirror both tables atomically and
-protect newer local rows against older pull responses; mobile deployment of the
-consumer follows backend deployment of this query.
+owning the local mirror; the document's `user_id` remains the original setter.
+Clients must mirror both tables atomically and protect newer local rows against
+older pull responses; mobile deployment of the consumer follows backend
+deployment of this query.
