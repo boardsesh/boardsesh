@@ -116,8 +116,7 @@ export type NoBoardDecision =
  * working connection, with a setup to show. Everything else keeps the placard.
  *
  * `pending` means "ask again": a value this depends on has not arrived. The
- * caller keeps the placard up meanwhile and holds the first settled answer, so
- * the screen changes at most once.
+ * caller keeps the placard up meanwhile.
  *
  * Offline is checked ahead of the flags and the board list, because none of
  * those reads can finish without a connection.
@@ -148,4 +147,39 @@ export function decideNoBoardState(input: NoBoardStateInput): NoBoardDecision {
     return { status: 'placard', fallbackReason: 'no_config', ownedBoardCount: 0 };
   }
   return { status: 'preview', configs: input.previewConfigs, ownedBoardCount: 0 };
+}
+
+export type SettledNoBoardDecision = Exclude<NoBoardDecision, { status: 'pending' }>;
+
+/**
+ * Whether a settled answer is kept for as long as the no-board state is
+ * mounted. Climbs stays mounted for the whole app session, so only an answer
+ * that later reads cannot make wrong is kept:
+ *
+ * - a preview, so a refetch never pulls the list out from under its reader;
+ * - `has_boards` and `kill_switch`, which are facts about the account and the
+ *   build's flags, not about this moment.
+ *
+ * `offline`, `boards_unknown`, `no_config` and `signed_out` describe a moment.
+ * A climber who opened the app in a signal gap must get the preview once the
+ * connection is back, not after a relaunch, so those are decided again.
+ */
+export function holdsNoBoardDecision(decision: SettledNoBoardDecision): boolean {
+  if (decision.status === 'preview') return true;
+  return decision.fallbackReason === 'has_boards' || decision.fallbackReason === 'kill_switch';
+}
+
+/**
+ * Whether the profile read behind `account_age_hours` has an answer. A sign-in
+ * invalidates a profile query that cached `null` for the signed-out tree, so
+ * that query is not pending while the real profile is still on its way: a
+ * refetch over nothing counts as not settled.
+ */
+export function isProfileSettled(profileQuery: {
+  hasProfile: boolean;
+  isPending: boolean;
+  isFetching: boolean;
+}): boolean {
+  if (profileQuery.isPending) return false;
+  return profileQuery.hasProfile || !profileQuery.isFetching;
 }

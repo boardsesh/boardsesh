@@ -11,6 +11,8 @@ import {
 } from '@boardsesh/board-config';
 import {
   decideNoBoardState,
+  holdsNoBoardDecision,
+  isProfileSettled,
   resolvePreviewConfigs,
   type NoBoardPreviewConfig,
   type NoBoardStateInput,
@@ -242,5 +244,46 @@ describe('decideNoBoardState', () => {
       fallbackReason: 'signed_out',
       ownedBoardCount: null,
     });
+  });
+});
+
+// Climbs stays mounted for the whole session, so a held answer lasts until a
+// relaunch. Only the ones a later read cannot make wrong may be held.
+describe('holdsNoBoardDecision', () => {
+  it('holds a preview, so a refetch never swaps the list away', () => {
+    expect(holdsNoBoardDecision({ status: 'preview', configs: [KILTER_PREVIEW], ownedBoardCount: 0 })).toBe(true);
+  });
+
+  it.each(['has_boards', 'kill_switch'] as const)('holds a %s placard', (fallbackReason) => {
+    expect(holdsNoBoardDecision({ status: 'placard', fallbackReason, ownedBoardCount: 0 })).toBe(true);
+  });
+
+  // A launch in a signal gap must not cost the climber the preview until relaunch.
+  it.each(['offline', 'boards_unknown', 'no_config', 'signed_out'] as const)(
+    'decides a %s placard again',
+    (fallbackReason) => {
+      expect(holdsNoBoardDecision({ status: 'placard', fallbackReason, ownedBoardCount: null })).toBe(false);
+    },
+  );
+});
+
+describe('isProfileSettled', () => {
+  it('is not settled while the first read is pending', () => {
+    expect(isProfileSettled({ hasProfile: false, isPending: true, isFetching: true })).toBe(false);
+  });
+
+  // Sign-in invalidates the `null` the signed-out tree cached: not pending, but
+  // the real profile is still on its way.
+  it('is not settled while a refetch runs over a cached null', () => {
+    expect(isProfileSettled({ hasProfile: false, isPending: false, isFetching: true })).toBe(false);
+  });
+
+  it('is settled with a profile in hand, refetching or not', () => {
+    expect(isProfileSettled({ hasProfile: true, isPending: false, isFetching: true })).toBe(true);
+    expect(isProfileSettled({ hasProfile: true, isPending: false, isFetching: false })).toBe(true);
+  });
+
+  it('is settled once the read has finished with nothing', () => {
+    expect(isProfileSettled({ hasProfile: false, isPending: false, isFetching: false })).toBe(true);
   });
 });

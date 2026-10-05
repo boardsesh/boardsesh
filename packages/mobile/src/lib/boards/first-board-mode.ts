@@ -22,12 +22,6 @@ export const FIRST_BOARD_PICKER_HREF = {
 /** The picker's `source` when Climbs' "Pick your board" empty state opened it. */
 export const NO_BOARD_PICKER_SOURCE = 'no_board';
 
-/** Where Climbs' "Find my board" goes. */
-export const NO_BOARD_PICKER_HREF = {
-  pathname: '/boards',
-  params: { source: NO_BOARD_PICKER_SOURCE },
-} as const;
-
 /**
  * What the climber tapped on Climbs' no-board state to open the picker: "Find
  * my board" (`cta`, on the placard or pinned above the preview), or a climb in
@@ -37,11 +31,11 @@ export const NO_BOARD_PICKER_HREF = {
  */
 export type NoBoardPickerTrigger = 'cta' | 'preview_row';
 
-/** `NO_BOARD_PICKER_HREF` tagged with what opened it. */
+/** Where Climbs' no-board state sends the climber, tagged with what they tapped. */
 export function noBoardPickerHref(trigger: NoBoardPickerTrigger) {
   return {
-    pathname: NO_BOARD_PICKER_HREF.pathname,
-    params: { ...NO_BOARD_PICKER_HREF.params, trigger },
+    pathname: '/boards',
+    params: { source: NO_BOARD_PICKER_SOURCE, trigger },
   } as const;
 }
 

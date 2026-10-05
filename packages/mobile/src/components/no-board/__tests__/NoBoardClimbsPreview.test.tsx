@@ -11,9 +11,14 @@ import type { NoBoardPreviewConfig } from '../../../lib/boards/no-board-preview'
 
 type Children = { children?: ReactNode };
 type PreviewClimb = { uuid: string; name: string };
-type SearchResult = { data: { pages: { climbs: PreviewClimb[] }[] } | undefined; isError: boolean };
+type SearchResult = {
+  data: { pages: { climbs: PreviewClimb[] }[] } | undefined;
+  isError: boolean;
+  failureCount?: number;
+};
 
 const searchMock = vi.hoisted(() => vi.fn());
+const refetchMock = vi.hoisted(() => vi.fn(async () => undefined));
 const ensureBackgroundsMock = vi.hoisted(() => vi.fn(async () => null));
 const rowContentProps = vi.hoisted(() => vi.fn());
 const searchResults = vi.hoisted(() => ({ byBoard: {} as Record<string, SearchResult> }));
@@ -79,8 +84,8 @@ vi.mock('react-i18next', () => ({
 }));
 vi.mock('../../Text', () => ({ Text: ({ children }: Children) => createElement('span', null, children) }));
 vi.mock('../../Button', () => ({
-  Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
-    createElement('button', { type: 'button', onClick: onPress }, title),
+  Button: ({ title, onPress, testID }: { title: string; onPress: () => void; testID?: string }) =>
+    createElement('button', { type: 'button', onClick: onPress, 'data-testid': testID }, title),
 }));
 vi.mock('../../ClimbListItemContent', () => ({
   ClimbListItemContent: (props: { climb: PreviewClimb }) => {
@@ -114,7 +119,8 @@ vi.mock('../../board-discovery/BoardConfigChips', () => ({
 vi.mock('../../../lib/graphql/hooks/use-infinite-search-climbs', () => ({
   useInfiniteSearchClimbs: (input: ClimbSearchInput, enabled: boolean, options: unknown) => {
     searchMock(input, enabled, options);
-    return searchResults.byBoard[input.boardName] ?? { data: undefined, isError: false };
+    const result = searchResults.byBoard[input.boardName] ?? { data: undefined, isError: false };
+    return { failureCount: 0, ...result, refetch: refetchMock };
   },
 }));
 vi.mock('../../../lib/background-image-cache', () => ({ ensureBackgroundsCached: ensureBackgroundsMock }));
@@ -143,10 +149,11 @@ const onFindBoard = vi.fn();
 const onClimbPress = vi.fn();
 const onSearchSettled = vi.fn();
 
-function renderPreview(configs: readonly NoBoardPreviewConfig[] = [KILTER, TENSION]) {
+function renderPreview(configs: readonly NoBoardPreviewConfig[] = [KILTER, TENSION], active?: boolean) {
   return render(
     <NoBoardClimbsPreview
       configs={configs}
+      active={active}
       onFindBoard={onFindBoard}
       onClimbPress={onClimbPress}
       onSearchSettled={onSearchSettled}
@@ -289,6 +296,69 @@ describe('NoBoardClimbsPreview', () => {
     renderPreview();
 
     expect(onSearchSettled).toHaveBeenCalledExactlyOnceWith(outcome, KILTER);
+  });
+
+  // React Query retries twice more before `isError`. That is seconds of
+  // spinner on a backend that is not answering.
+  it('calls the first failed attempt an error, without waiting out the retries', () => {
+    searchResults.byBoard = { kilter: { data: undefined, isError: false, failureCount: 1 } };
+    renderPreview();
+
+    expect(onSearchSettled).toHaveBeenCalledExactlyOnceWith('error', KILTER);
+  });
+
+  // Before any climbs have shown, the owner takes the preview away on a
+  // failure, so nothing but the spinner is drawn in between.
+  it('shows only the spinner when the first setup fails', () => {
+    searchResults.byBoard = { kilter: { data: undefined, isError: true } };
+    renderPreview();
+
+    expect(screen.getByTestId('spinner')).toBeTruthy();
+    expect(screen.queryByTestId('no-board-preview-problem')).toBeNull();
+  });
+
+  it('shows a later board type that fails in place, with a way to try again and the chips still up', () => {
+    searchResults.byBoard = { kilter: climbsFor(['Jwb']), tension: { data: undefined, isError: true } };
+    renderPreview();
+    fireEvent.click(screen.getByRole('button', { name: 'Tension' }));
+
+    expect(screen.getByText("Couldn't load these climbs.")).toBeTruthy();
+    expect(screen.queryByTestId('spinner')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(refetchMock).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Kilter' }));
+    expect(screen.getByText('Jwb')).toBeTruthy();
+  });
+
+  it('says so in place when a later board type has no climbs', () => {
+    searchResults.byBoard = { kilter: climbsFor(['Jwb']), tension: climbsFor([]) };
+    renderPreview();
+    fireEvent.click(screen.getByRole('button', { name: 'Tension' }));
+
+    expect(screen.getByText('No climbs found')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Find my board' })).toBeTruthy();
+  });
+
+  // Covered by another screen: no search, no board art, until it is seen.
+  it('searches nothing and fetches no board art while it is not active', () => {
+    searchResults.byBoard = {};
+    const { rerender } = renderPreview([KILTER], false);
+
+    expect(searchMock).toHaveBeenLastCalledWith(expect.anything(), false, expect.anything());
+    expect(ensureBackgroundsMock).not.toHaveBeenCalled();
+
+    rerender(
+      <NoBoardClimbsPreview
+        configs={[KILTER]}
+        active
+        onFindBoard={onFindBoard}
+        onClimbPress={onClimbPress}
+        onSearchSettled={onSearchSettled}
+      />,
+    );
+    expect(searchMock).toHaveBeenLastCalledWith(expect.anything(), true, expect.anything());
+    expect(ensureBackgroundsMock).toHaveBeenCalledOnce();
   });
 
   it('ends the list by pointing back at the picker', () => {
