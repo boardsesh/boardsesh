@@ -47,7 +47,9 @@ vi.mock('../../Button', () => ({
   Button: ({ title, onPress, disabled }: { title: string; onPress: () => void; disabled?: boolean }) =>
     createElement('button', { onClick: onPress, disabled }, title),
 }));
-vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: {} }) }));
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: {}, chartColors: { label: '#16111F' } }),
+}));
 vi.mock('../../../lib/connectivity/use-connectivity', () => ({
   useConnectivity: () => ({ effectiveOffline: state.offline }),
 }));

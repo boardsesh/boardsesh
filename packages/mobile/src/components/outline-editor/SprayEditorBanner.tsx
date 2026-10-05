@@ -46,7 +46,7 @@ export const SprayEditorBanner = React.memo(function SprayEditorBanner({
           {message}
         </Text>
         {actionLabel && onAction ? (
-          <Button title={actionLabel} variant="text" size="small" over="content" onPress={onAction} />
+          <Button title={actionLabel} variant="text" size="small" over="surface" onPress={onAction} />
         ) : null}
       </View>
       {accessory ? <View style={styles.accessory}>{accessory}</View> : null}

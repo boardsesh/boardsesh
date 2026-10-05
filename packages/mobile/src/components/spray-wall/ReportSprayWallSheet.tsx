@@ -24,12 +24,13 @@ export function ReportSprayWallSheet({
 }) {
   const { t } = useTranslation('boards');
   const { t: tCommon } = useTranslation('common');
-  const { systemColors } = useTheme();
+  const { systemColors, chartColors } = useTheme();
   const { canReport } = useSprayModerationAccess();
   const { effectiveOffline } = useConnectivity();
   const report = useReportSprayWall();
   const inFlight = useRef(false);
   const [reason, setReason] = useState<SprayWallReportReason | null>(null);
+  const submitDisabled = !reason || effectiveOffline || report.isPending;
   const labels: Record<SprayWallReportReason, string> = {
     INAPPROPRIATE: t('sprayModeration.reasons.inappropriate'),
     NOT_A_WALL: t('sprayModeration.reasons.notAWall'),
@@ -63,7 +64,11 @@ export function ReportSprayWallSheet({
           <Button
             title={t('sprayModeration.submit')}
             onPress={submit}
-            disabled={!reason || effectiveOffline}
+            variant={submitDisabled ? 'tonal' : 'filled'}
+            // SwiftUI needs the plain-string palette instead of PlatformColor.
+            tintColor={submitDisabled ? chartColors.label : undefined}
+            over="surface"
+            disabled={submitDisabled}
             loading={report.isPending}
           />
         )
