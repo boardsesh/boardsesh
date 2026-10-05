@@ -1,4 +1,5 @@
 import type { SqlExecutor } from '@boardsesh/offline-sync';
+import { localRevisionMatchingFrames } from '../../lib/tick-climb-revision';
 
 /**
  * Climb revisions on the device (#6023).
@@ -37,6 +38,12 @@ export type LocalClimbRevisionNumbers = {
   revisionNumber: number | null;
   /** `board_climbs.holds_revision_number`; null when the phone has not been told. */
   holdsRevisionNumber: number | null;
+  /**
+   * `board_climbs.frames` of the same row, read in the same statement. The
+   * version is only a witness for a climb showing these holds; see
+   * `localRevisionMatchingFrames`.
+   */
+  frames: string | null;
 };
 
 // SQLite's default bound-parameter limit is 999 on older builds. Two binds are
@@ -57,9 +64,10 @@ function positiveIntegerOrNull(value: number | null | undefined): number | null 
 }
 
 /**
- * The revision numbers the phone holds for a set of climbs, keyed by climb
- * uuid. One primary-key read per 400 climbs; a climb the phone has no row for,
- * or holds neither number for, is left out of the map.
+ * The revision numbers the phone holds for a set of climbs, with the frames of
+ * the same row, keyed by climb uuid. One primary-key read per 400 climbs; a
+ * climb the phone has no row for, or holds neither number for, is left out of
+ * the map.
  */
 export async function readClimbRevisionNumbersLocal(
   db: SqlExecutor,
@@ -70,10 +78,11 @@ export async function readClimbRevisionNumbersLocal(
   for (const chunk of chunkUuids(climbUuids)) {
     const rows = await db.getAllAsync<{
       uuid: string;
+      frames: string | null;
       revision_number: number | null;
       holds_revision_number: number | null;
     }>(
-      `SELECT uuid, revision_number, holds_revision_number
+      `SELECT uuid, frames, revision_number, holds_revision_number
        FROM board_climbs
        WHERE board_type = ? AND uuid IN (${chunk.map(() => '?').join(', ')})
          AND (revision_number IS NOT NULL OR holds_revision_number IS NOT NULL)`,
@@ -83,6 +92,7 @@ export async function readClimbRevisionNumbersLocal(
       numbersByClimb.set(row.uuid, {
         revisionNumber: positiveIntegerOrNull(row.revision_number),
         holdsRevisionNumber: positiveIntegerOrNull(row.holds_revision_number),
+        frames: row.frames ?? null,
       });
     }
   }
@@ -91,7 +101,17 @@ export async function readClimbRevisionNumbersLocal(
 
 /**
  * Which version each of the climber's own ticks on these climbs was logged on,
- * keyed by tick uuid. Ticks with no known version are left out.
+ * keyed by tick uuid. Three answers, and callers must keep them apart
+ * (`isTickOnCurrentHolds` in `@boardsesh/logbook`):
+ *
+ * - a number: the tick's version.
+ * - `null`: the phone holds the tick, the server delivered it, and it has no
+ *   version. That is an import or a tick older than the field, and it reads as
+ *   version 1.
+ * - no key: the phone cannot say. Either it holds no row for the tick (not
+ *   pulled yet), or the row is this phone's own write that the server has not
+ *   answered for: a tick still in the outbox has a NULL version only because
+ *   the app did not know one when it was logged, not because it has none.
  *
  * `ownerUserId` is the `local_user_id` stamp, as in every other local tick
  * read (docs/offline-reads.md): rows a failed sign-out wipe left behind must
@@ -102,20 +122,21 @@ export async function readTickRevisionsLocal(
   boardType: string,
   climbUuids: readonly string[],
   ownerUserId: string | null,
-): Promise<Map<string, number>> {
-  const revisionByTick = new Map<string, number>();
+): Promise<Map<string, number | null>> {
+  const revisionByTick = new Map<string, number | null>();
   for (const chunk of chunkUuids(climbUuids)) {
     const rows = await db.getAllAsync<{ uuid: string; climb_revision: number | null }>(
-      `SELECT uuid, climb_revision
-       FROM boardsesh_ticks
-       WHERE board_type = ? AND climb_uuid IN (${chunk.map(() => '?').join(', ')})
-         AND (user_id = ? OR user_id IS NULL)
-         AND climb_revision IS NOT NULL`,
+      `SELECT t.uuid, t.climb_revision
+       FROM boardsesh_ticks t
+       WHERE t.board_type = ? AND t.climb_uuid IN (${chunk.map(() => '?').join(', ')})
+         AND (t.user_id = ? OR t.user_id IS NULL)
+         AND (t.climb_revision IS NOT NULL OR NOT EXISTS (
+           SELECT 1 FROM pending_mutations m
+           WHERE m.idempotency_key = t.uuid AND m.table_name = 'boardsesh_ticks'))`,
       [boardType, ...chunk, ownerUserId],
     );
     for (const row of rows) {
-      const revision = positiveIntegerOrNull(row.climb_revision);
-      if (revision !== null) revisionByTick.set(row.uuid, revision);
+      revisionByTick.set(row.uuid, positiveIntegerOrNull(row.climb_revision));
     }
   }
   return revisionByTick;
@@ -123,6 +144,7 @@ export async function readTickRevisionsLocal(
 
 type ClimbWithRevisionNumbers = {
   uuid: string;
+  frames?: string | null;
   revisionNumber?: number | null;
   holdsRevisionNumber?: number | null;
 };
@@ -135,6 +157,20 @@ type ClimbWithRevisionNumbers = {
  * so a climb read over the network carries no number. The phone's own copy of
  * the climb does, once the board is downloaded. A number the climb already
  * carries wins; a climb the phone does not hold is returned as it came.
+ *
+ * The two numbers are filled under different rules, because they are used for
+ * different things:
+ *
+ * - `revisionNumber` is what a tick is stamped with, so it is filled only when
+ *   the phone's row has the same frames as the climb (see
+ *   `localRevisionMatchingFrames`). A network answer newer than the phone's
+ *   last pull keeps no number, and its ticks are sent without one.
+ * - `holdsRevisionNumber` is only ever compared against the climber's own
+ *   ticks to decide whether a send still counts, and it is filled whatever the
+ *   frames. The phone's value is a past value of a number that only goes up,
+ *   so it is never above the true one, and a threshold that is too low can only
+ *   count a tick that should have been dropped, never drop one that counts. A
+ *   frames check here would swap a low threshold for none at all.
  *
  * Returns the same array when nothing changed, so a caller's memo holds.
  */
@@ -151,10 +187,11 @@ export async function fillClimbRevisionNumbersLocal<TClimb extends ClimbWithRevi
     missing.map((climb) => climb.uuid),
   );
   if (numbersByClimb.size === 0) return climbs;
-  return climbs.map((climb) => {
+  let changed = false;
+  const filled = climbs.map((climb) => {
     const local = numbersByClimb.get(climb.uuid);
     if (!local) return climb;
-    const revisionNumber = climb.revisionNumber ?? local.revisionNumber;
+    const revisionNumber = climb.revisionNumber ?? localRevisionMatchingFrames(local, climb.frames);
     const holdsRevisionNumber = climb.holdsRevisionNumber ?? local.holdsRevisionNumber;
     if (
       revisionNumber === (climb.revisionNumber ?? null) &&
@@ -162,6 +199,8 @@ export async function fillClimbRevisionNumbersLocal<TClimb extends ClimbWithRevi
     ) {
       return climb;
     }
+    changed = true;
     return { ...climb, revisionNumber, holdsRevisionNumber };
   });
+  return changed ? filled : climbs;
 }

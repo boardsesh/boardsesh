@@ -12176,8 +12176,6 @@ export type UpdateClimbMutation = {
     createdAt?: string | null;
     publishedAt?: string | null;
     isDraft: boolean;
-    revisionNumber?: number | null;
-    holdsRevisionNumber?: number | null;
   };
 };
 
@@ -18504,8 +18502,6 @@ export const UpdateClimbDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'publishedAt' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'isDraft' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'revisionNumber' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'holdsRevisionNumber' } },
               ],
             },
           },

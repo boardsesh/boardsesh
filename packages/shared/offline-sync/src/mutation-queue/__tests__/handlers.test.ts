@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import type { UpdateTickInput } from '@boardsesh/shared-schema/generated';
 
 import { processMutation, UPDATE_TICK_INPUT_FIELDS } from '../handlers';
-import { graphqlErrorNamesInputField, isPermanentRejection } from '../error-classification';
+import { graphqlErrorRejectsUnknownInputField, isPermanentRejection } from '../error-classification';
 import type { PendingMutation } from '../queue';
 
 // Compile-time drift guard: the whitelist must name exactly UpdateTickInput's
@@ -189,6 +189,24 @@ describe('boardsesh_ticks create dispatch: climbRevision (#6023)', () => {
     expect(isPermanentRejection(validationError)).toBe(true);
   });
 
+  // The regression the anchored match exists for: graphql-js prints the whole
+  // input in the message, so this rejection names `climbRevision: 3` while
+  // being about the status. Retrying without the version would not fix it.
+  it('does not retry an unrelated input rejection whose message quotes climbRevision: 3', async () => {
+    const validationError = graphqlClientError(
+      'Variable "$input" got invalid value { status: "sent", attemptCount: 2, climbRevision: 3 }; ' +
+        'Value "sent" does not exist in "TickStatus" enum at "input.status".',
+    );
+    const graphqlFetch = vi.fn().mockRejectedValue(validationError);
+    const mutation = pendingMutation({
+      operation: 'create',
+      payload: JSON.stringify({ ...tickInput, climbRevision: 3 }),
+    });
+
+    await expect(processMutation(mutation, graphqlFetch)).rejects.toBe(validationError);
+    expect(graphqlFetch).toHaveBeenCalledTimes(1);
+  });
+
   it('does not retry when the tick carried no climbRevision to drop', async () => {
     const rejection = graphqlClientError(unknownFieldMessage);
     const graphqlFetch = vi.fn().mockRejectedValue(rejection);
@@ -224,20 +242,47 @@ describe('boardsesh_ticks create dispatch: climbRevision (#6023)', () => {
   });
 });
 
-describe('graphqlErrorNamesInputField', () => {
-  it('matches the field as a whole word in a GraphQL error entry', () => {
+describe('graphqlErrorRejectsUnknownInputField', () => {
+  it('matches the unknown-field clause for exactly that field', () => {
     const named = { errors: [{ message: 'Field "climbRevision" is not defined by type "SaveTickInput".' }] };
-    expect(graphqlErrorNamesInputField(named, 'climbRevision')).toBe(true);
+    expect(graphqlErrorRejectsUnknownInputField(named, 'climbRevision')).toBe(true);
     const longerName = { errors: [{ message: 'Field "climbRevisionNote" is not defined by type "SaveTickInput".' }] };
-    expect(graphqlErrorNamesInputField(longerName, 'climbRevision')).toBe(false);
+    expect(graphqlErrorRejectsUnknownInputField(longerName, 'climbRevision')).toBe(false);
+  });
+
+  // graphql-js prints the whole input object in a coercion message, so the
+  // field name appears in a rejection that is about something else entirely.
+  it('does not match a rejection that only quotes the field inside the printed input', () => {
+    const aboutAnotherField = {
+      response: {
+        errors: [
+          {
+            message:
+              'Variable "$input" got invalid value "sent" at "input.status"; Value "sent" does not exist in "TickStatus" enum. ' +
+              'Input was { status: "sent", climbRevision: 3 }.',
+          },
+        ],
+      },
+    };
+    expect(graphqlErrorRejectsUnknownInputField(aboutAnotherField, 'climbRevision')).toBe(false);
+
+    const anotherUnknownField = {
+      errors: [
+        {
+          message:
+            'Variable "$input" got invalid value { climbRevision: 3, colour: "red" }; Field "colour" is not defined by type "SaveTickInput".',
+        },
+      ],
+    };
+    expect(graphqlErrorRejectsUnknownInputField(anotherUnknownField, 'climbRevision')).toBe(false);
   });
 
   it('follows a wrapped cause and ignores non-errors', () => {
     const wrapped = new Error('send failed', {
-      cause: { response: { errors: [{ message: 'Unknown field climbRevision' }] } },
+      cause: { response: { errors: [{ message: 'Field "climbRevision" is not defined by type "SaveTickInput".' }] } },
     });
-    expect(graphqlErrorNamesInputField(wrapped, 'climbRevision')).toBe(true);
-    expect(graphqlErrorNamesInputField(null, 'climbRevision')).toBe(false);
-    expect(graphqlErrorNamesInputField('climbRevision', 'climbRevision')).toBe(false);
+    expect(graphqlErrorRejectsUnknownInputField(wrapped, 'climbRevision')).toBe(true);
+    expect(graphqlErrorRejectsUnknownInputField(null, 'climbRevision')).toBe(false);
+    expect(graphqlErrorRejectsUnknownInputField('Field "climbRevision" is not defined', 'climbRevision')).toBe(false);
   });
 });

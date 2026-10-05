@@ -4,6 +4,7 @@ import {
   mergeLogbookEntries,
   accumulatedLogbookQueryKey,
   fetchLogbookQueryKeyPrefix,
+  mergeTickRevision,
   withTickRevisions,
   type LogbookEntry,
 } from '../logbook-keys';
@@ -157,9 +158,12 @@ describe('climb version on a logbook entry (#6023)', () => {
     expect(toLogbookEntry({ ...sourceTick, climbRevision: 3 }).climb_revision).toBe(3);
   });
 
-  it('adds no version key when the source has none', () => {
+  it('adds no version key when the source did not look', () => {
     expect('climb_revision' in toLogbookEntry(sourceTick)).toBe(false);
-    expect('climb_revision' in toLogbookEntry({ ...sourceTick, climbRevision: null })).toBe(false);
+  });
+
+  it('keeps null, which says the source looked and the tick has no version', () => {
+    expect(toLogbookEntry({ ...sourceTick, climbRevision: null }).climb_revision).toBeNull();
   });
 
   it('joins local versions onto entries by tick uuid', () => {
@@ -171,14 +175,97 @@ describe('climb version on a logbook entry (#6023)', () => {
     expect(joined[1].climb_revision).toBe(4);
   });
 
-  it('keeps a version the entry already has', () => {
-    const entries = [toLogbookEntry({ ...sourceTick, climbRevision: 2 })];
-    expect(withTickRevisions(entries, new Map([['tick-1', 9]]))[0].climb_revision).toBe(2);
+  it('keeps the three local answers apart: a number, a row with none, and no row', () => {
+    const entries = ['with-version', 'row-without', 'no-row'].map((uuid) => toLogbookEntry({ ...sourceTick, uuid }));
+    const joined = withTickRevisions(
+      entries,
+      new Map<string, number | null>([
+        ['with-version', 3],
+        ['row-without', null],
+      ]),
+    );
+
+    expect(joined[0].climb_revision).toBe(3);
+    expect(joined[1].climb_revision).toBeNull();
+    expect('climb_revision' in joined[2]).toBe(false);
+  });
+
+  it('never trades what an entry knows for less', () => {
+    const known = [toLogbookEntry({ ...sourceTick, climbRevision: 2 })];
+    expect(withTickRevisions(known, new Map<string, number | null>([['tick-1', null]]))).toBe(known);
+    // A later number is the server's own answer, pulled since. It wins.
+    expect(withTickRevisions(known, new Map([['tick-1', 4]]))[0].climb_revision).toBe(4);
+  });
+
+  it.each([
+    [undefined, 3, 3],
+    [null, 3, 3],
+    [2, 3, 3],
+    [undefined, null, null],
+    [2, null, 2],
+    [2, undefined, 2],
+    [null, undefined, null],
+    [undefined, undefined, undefined],
+  ])('mergeTickRevision(%s, %s) is %s', (existing, incoming, expected) => {
+    expect(mergeTickRevision(existing, incoming)).toBe(expected);
   });
 
   it('returns the same array when there is nothing to join', () => {
     const entries = [toLogbookEntry(sourceTick)];
     expect(withTickRevisions(entries, new Map())).toBe(entries);
     expect(withTickRevisions(entries, new Map([['another-tick', 2]]))).toBe(entries);
+  });
+});
+
+// #6023: a row that is already in the accumulated logbook must not keep "version
+// not known" for the rest of the session once a later read has the answer.
+describe('mergeLogbookEntries: upgrading the climb version of a cached row', () => {
+  const cached = (uuid: string, climbRevision?: number | null): LogbookEntry =>
+    toLogbookEntry({
+      uuid,
+      climbUuid: 'climb-1',
+      angle: 40,
+      isMirror: false,
+      status: 'send',
+      attemptCount: 1,
+      quality: null,
+      difficulty: null,
+      comment: '',
+      climbedAt: '2026-10-01T10:00:00.000Z',
+      ...(climbRevision === undefined ? {} : { climbRevision }),
+    });
+
+  it('gives a cached row the version a later read has, and keeps everything else about it', () => {
+    const existing = [{ ...cached('tick-1'), comment: 'edited locally' }, cached('tick-2')];
+    const merged = mergeLogbookEntries(existing, [cached('tick-1', 2)]);
+
+    expect(merged).not.toBe(existing);
+    expect(merged[0]).toEqual({ ...existing[0], climb_revision: 2 });
+    expect(merged[1]).toBe(existing[1]);
+    expect(merged).toHaveLength(2);
+  });
+
+  it('upgrades "not known" to "known to have none"', () => {
+    const merged = mergeLogbookEntries([cached('tick-1')], [cached('tick-1', null)]);
+    expect(merged[0].climb_revision).toBeNull();
+  });
+
+  it('does not downgrade a known version when a later read knows less', () => {
+    const existing = [cached('tick-1', 3)];
+    expect(mergeLogbookEntries(existing, [cached('tick-1')])).toBe(existing);
+    expect(mergeLogbookEntries(existing, [cached('tick-1', null)])).toBe(existing);
+  });
+
+  it('upgrades and appends in one pass', () => {
+    const merged = mergeLogbookEntries([cached('tick-1')], [cached('tick-1', 2), cached('tick-9', 1)]);
+    expect(merged.map((entry) => [entry.uuid, entry.climb_revision])).toEqual([
+      ['tick-1', 2],
+      ['tick-9', 1],
+    ]);
+  });
+
+  it('keeps the existing reference when a duplicate brings nothing new', () => {
+    const existing = [cached('tick-1', 2)];
+    expect(mergeLogbookEntries(existing, [cached('tick-1', 2)])).toBe(existing);
   });
 });

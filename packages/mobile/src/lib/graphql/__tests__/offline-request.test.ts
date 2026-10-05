@@ -96,7 +96,11 @@ vi.mock('../../connectivity/connectivity-store', () => ({
 
 const fakeDb = { tag: 'db' };
 
-import { offlineAwareRequest, registerOfflineOperationForTests } from '../offline-request';
+import {
+  NETWORK_ENRICHMENT_BUDGET_MS,
+  offlineAwareRequest,
+  registerOfflineOperationForTests,
+} from '../offline-request';
 import { setOfflineEngineEnabled, __resetOfflineEngineForTests } from '../../offline-engine';
 import {
   SEARCH_CLIMBS,
@@ -461,6 +465,97 @@ describe('offlineAwareRequest — climb version numbers on a network answer', ()
 
     expect(result.searchClimbs.climbs).toEqual([{ uuid: 'net' }]);
     expect(fillClimbRevisionNumbersLocal).not.toHaveBeenCalled();
+  });
+
+  // The network already answered. A busy SQLite file (a snapshot import, a
+  // sync page) must not hold the screen back for a number it can live without.
+  it('hands over the network answer un-enriched when the local read outlasts its budget', async () => {
+    vi.useFakeTimers();
+    try {
+      setOnline(true);
+      isBoardDownloadedLocally.mockResolvedValue(false);
+      let finishLocalRead: (climbs: unknown[]) => void = () => {};
+      fillClimbRevisionNumbersLocal.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finishLocalRead = resolve;
+          }),
+      );
+
+      let settled: SearchClimbsQueryResponse | undefined;
+      const pending = offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput }).then(
+        (response) => {
+          settled = response;
+          return response;
+        },
+      );
+
+      await vi.advanceTimersByTimeAsync(NETWORK_ENRICHMENT_BUDGET_MS - 1);
+      expect(settled).toBeUndefined();
+
+      await vi.advanceTimersByTimeAsync(1);
+      const result = await pending;
+      expect(result.searchClimbs.climbs).toEqual([{ uuid: 'net' }]);
+      expect(result.searchClimbs.hasMore).toBe(true);
+
+      // The late read changes nothing and raises nothing.
+      finishLocalRead(versioned([{ uuid: 'net' }]));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(result.searchClimbs.climbs).toEqual([{ uuid: 'net' }]);
+      expect(searchClimbsLocal).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('swallows a local read that rejects after the budget ran out', async () => {
+    vi.useFakeTimers();
+    try {
+      setOnline(true);
+      isBoardDownloadedLocally.mockResolvedValue(false);
+      let failLocalRead: (error: Error) => void = () => {};
+      fillClimbRevisionNumbersLocal.mockImplementation(
+        () =>
+          new Promise((_resolve, reject) => {
+            failLocalRead = reject;
+          }),
+      );
+
+      const pending = offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+      await vi.advanceTimersByTimeAsync(NETWORK_ENRICHMENT_BUDGET_MS);
+      expect((await pending).searchClimbs.climbs).toEqual([{ uuid: 'net' }]);
+
+      failLocalRead(new Error('database is locked'));
+      await vi.advanceTimersByTimeAsync(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('leaves no timer behind when the local read answers in time', async () => {
+    vi.useFakeTimers();
+    try {
+      setOnline(true);
+      isBoardDownloadedLocally.mockResolvedValue(false);
+
+      await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('skips the local read outright when the offline engine is off', async () => {
+    setOnline(true);
+    setOfflineEngineEnabled(false);
+
+    const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(result.searchClimbs.climbs).toEqual([{ uuid: 'net' }]);
+    expect(fillClimbRevisionNumbersLocal).not.toHaveBeenCalled();
+    // Not even a handle lookup on behalf of the enrichment.
+    expect(getDatabaseHandle).not.toHaveBeenCalled();
   });
 
   it('does not touch a local answer: the local readers select the numbers themselves', async () => {

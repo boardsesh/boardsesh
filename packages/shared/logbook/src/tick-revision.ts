@@ -9,8 +9,9 @@
  * Two questions, with different answers for a missing number:
  *
  * - "Does this tick still count as a send of the climb?" follows the server's
- *   rule in `packages/db/src/queries/climb-stats/holds-epoch.ts`, where a
- *   missing number is version 1 on both sides.
+ *   rule in `packages/db/src/queries/climb-stats/holds-epoch.ts`, where a tick
+ *   with no version is version 1. A tick the app cannot say anything about is
+ *   a third case and counts (see `isTickOnCurrentHolds`).
  * - "Should the row say it was an earlier version?" needs both numbers to be
  *   known. A tag printed on a guess would be wrong more often than it helps.
  */
@@ -24,12 +25,25 @@ export function knownClimbRevision(revision: RevisionNumber): number | null {
 
 /**
  * True when the tick was logged on the holds the climb has now, so it still
- * counts toward "sent" and "attempted". A missing number on either side reads
- * as version 1: a tick with none is an import or older than the field, and a
- * climb with none has not been delivered with it yet. On a climb whose holds
- * never moved this is true for every tick.
+ * counts toward "sent" and "attempted".
+ *
+ * The tick's version has three states, and the last two are different:
+ *
+ * - a number: that version.
+ * - `null`: the tick is known to carry no version. It is an import or older
+ *   than the field, both logged before any climb had been edited, so it reads
+ *   as version 1. This is the server's rule.
+ * - `undefined`: the app does not know whether the tick has a version. Its row
+ *   came from a document that cannot select the field and the phone holds no
+ *   copy of the tick to ask. The tick COUNTS. Reading it as version 1 would
+ *   turn a send on the current holds into "not sent" for as long as the phone
+ *   had not pulled it.
+ *
+ * A climb with no holds version reads as version 1: it has not been delivered
+ * with the number yet, and every tick counts on it as it did before the field.
  */
 export function isTickOnCurrentHolds(tickRevision: RevisionNumber, holdsRevisionNumber: RevisionNumber): boolean {
+  if (tickRevision === undefined) return true;
   return (knownClimbRevision(tickRevision) ?? 1) >= (knownClimbRevision(holdsRevisionNumber) ?? 1);
 }
 

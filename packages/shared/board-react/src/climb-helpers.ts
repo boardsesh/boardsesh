@@ -59,9 +59,6 @@ export type UpdateClimbResponse = {
   createdAt?: string | null;
   publishedAt?: string | null;
   isDraft: boolean;
-  /** The climb's version after this save, and the version at which its holds last moved (#6023). */
-  revisionNumber?: number | null;
-  holdsRevisionNumber?: number | null;
 };
 
 /**

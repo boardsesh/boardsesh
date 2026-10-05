@@ -29,10 +29,16 @@ export type LogbookEntry = {
   commentCount: number;
   /**
    * The version of the climb this was logged on (`Tick.climbRevision`), 1 on a
-   * climb nobody has edited. Null or absent when it is not known: an import, a
-   * tick older than the field, or a row read from `GetTicks`, which cannot
-   * select the field yet and gets it from the platform's local copy instead
-   * (`BoardAdapter.readLocalTickRevisions`).
+   * climb nobody has edited. Three states (see `isTickOnCurrentHolds` in
+   * `@boardsesh/logbook`):
+   *
+   * - a number: that version.
+   * - `null`: the tick is known to carry none (an import, or older than the
+   *   field). Reads as version 1.
+   * - absent: not known. The row came from `GetTicks`, which cannot select the
+   *   field yet, and the platform's local copy of the tick
+   *   (`BoardAdapter.readLocalTickRevisions`) had no row for it. Such a tick
+   *   still counts as sent.
    */
   climb_revision?: number | null;
 };
@@ -89,39 +95,77 @@ export function toLogbookEntry(tick: LogbookSourceTick): LogbookEntry {
     upvotes: tick.upvotes ?? 0,
     downvotes: tick.downvotes ?? 0,
     commentCount: tick.commentCount ?? 0,
-    ...(tick.climbRevision == null ? {} : { climb_revision: tick.climbRevision }),
+    // `null` is kept: it says the source looked and the tick has no version.
+    // An absent field stays absent, which says nobody looked.
+    ...(tick.climbRevision === undefined ? {} : { climb_revision: tick.climbRevision }),
   };
 }
 
 /**
- * Put locally known versions onto logbook entries that arrived without one.
- * An entry that already has a version keeps it. Returns the same array when
- * nothing changed.
+ * Which of two readings of one tick's version to keep. A later reading can know
+ * more than an earlier one (the phone pulled the tick in between), never less:
+ * a number beats everything, "known to have none" beats "not known", and
+ * nothing replaces a value with `undefined`.
+ */
+export function mergeTickRevision(
+  existing: number | null | undefined,
+  incoming: number | null | undefined,
+): number | null | undefined {
+  if (typeof incoming === 'number') return incoming;
+  if (incoming === null && existing === undefined) return null;
+  return existing;
+}
+
+/**
+ * Put the platform's local reading of each tick's version onto logbook entries.
+ *
+ * The map holds a number for a tick with a version, `null` for a tick the
+ * platform holds a copy of that has none, and no key for a tick it holds no
+ * copy of. An entry never loses what it already knows (`mergeTickRevision`).
+ * Returns the same array when nothing changed.
  */
 export function withTickRevisions(
   entries: LogbookEntry[],
-  revisionByTickUuid: ReadonlyMap<string, number>,
+  revisionByTickUuid: ReadonlyMap<string, number | null>,
 ): LogbookEntry[] {
   if (revisionByTickUuid.size === 0) return entries;
   let changed = false;
   const next = entries.map((entry) => {
-    if (entry.climb_revision != null) return entry;
-    const revision = revisionByTickUuid.get(entry.uuid);
-    if (revision === undefined) return entry;
+    const revision = mergeTickRevision(entry.climb_revision, revisionByTickUuid.get(entry.uuid));
+    if (revision === entry.climb_revision) return entry;
     changed = true;
     return { ...entry, climb_revision: revision };
   });
   return changed ? next : entries;
 }
 
+/**
+ * Add a fetched batch to the accumulated logbook. A row already there stays as
+ * it is, with one exception: its climb version. A later read of the same tick
+ * can know the version when the first did not (the platform pulled the tick in
+ * between), and a row that kept "not known" for the rest of the session would
+ * misread a send (#6023). The upgrade only ever adds knowledge
+ * (`mergeTickRevision`). Returns the same array when nothing changed.
+ */
 export function mergeLogbookEntries(existing: LogbookEntry[], incoming: LogbookEntry[]): LogbookEntry[] {
   if (incoming.length === 0) return existing;
 
-  const existingUuids = new Set(existing.map((entry) => entry.uuid));
-  const uniqueIncoming = incoming.filter((entry) => !existingUuids.has(entry.uuid));
+  const incomingByUuid = new Map(incoming.map((entry) => [entry.uuid, entry]));
+  let upgraded = false;
+  const merged = existing.map((entry) => {
+    const later = incomingByUuid.get(entry.uuid);
+    if (!later) return entry;
+    incomingByUuid.delete(entry.uuid);
+    const revision = mergeTickRevision(entry.climb_revision, later.climb_revision);
+    if (revision === entry.climb_revision) return entry;
+    upgraded = true;
+    return { ...entry, climb_revision: revision };
+  });
 
-  if (uniqueIncoming.length === 0) return existing;
-  return [...existing, ...uniqueIncoming];
+  // What is left in the map is new. `incoming` order is kept.
+  const uniqueIncoming = incoming.filter((entry) => incomingByUuid.get(entry.uuid) === entry);
+  if (uniqueIncoming.length === 0) return upgraded ? merged : existing;
+  return [...merged, ...uniqueIncoming];
 }
 
 // `boardName | null` so a not-yet-resolved board (mobile boot, web's loose

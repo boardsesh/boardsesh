@@ -109,45 +109,57 @@ export function hasGraphqlErrorCode(error: unknown, code: string, depth = 0): bo
   return false;
 }
 
-function graphqlErrorsNameInputField(errors: unknown, fieldPattern: RegExp): boolean {
+function graphqlErrorsRejectUnknownInputField(errors: unknown, unknownFieldPattern: RegExp): boolean {
   if (!Array.isArray(errors)) return false;
   for (const entry of errors as Array<{ message?: unknown }>) {
-    if (typeof entry?.message === 'string' && fieldPattern.test(entry.message)) return true;
+    if (typeof entry?.message === 'string' && unknownFieldPattern.test(entry.message)) return true;
   }
   return false;
 }
 
 /**
- * Did the server answer with a GraphQL error whose message names this input
- * field? That is what a backend from before the field existed says about it:
- * `Variable "$input" got invalid value ...; Field "climbRevision" is not
- * defined by type "SaveTickInput".`
+ * Did the server reject this request because it does not know this input field?
+ * That is what a backend from before the field existed answers, in graphql-js's
+ * own words:
+ *
+ *   Variable "$input" got invalid value { ..., climbRevision: 3 }; Field
+ *   "climbRevision" is not defined by type "SaveTickInput".
+ *
+ * The match is anchored on the `Field "<name>" is not defined` clause, never on
+ * the field name alone. graphql-js prints the WHOLE input object in every
+ * coercion message, so a rejection about some other field (`Value "sent" does
+ * not exist in "TickStatus" enum`) also contains `climbRevision: 3` whenever
+ * the tick carried one. Matching the bare name would call every `$input`
+ * rejection an unknown-field one, and the caller would retry a write that is
+ * wrong for another reason.
  *
  * Reads the same shapes as `hasGraphqlErrorCode`: a top-level `errors` array,
  * graphql-request's `error.response.errors`, and a bounded `.cause` walk. Only
  * GraphQL error entries are read, never the thrown error's own `message`:
- * graphql-request puts the whole request, variables included, in that string,
- * so it names every field that was sent.
+ * graphql-request puts the whole request, variables included, in that string.
  *
- * The field name is matched as a whole word, so `climbRevision` does not match
- * `climbRevisionNote`. The caller decides what to do with the answer; this is
- * not a permanence verdict (`isPermanentRejection` still says yes for these).
+ * The caller decides what to do with the answer; this is not a permanence
+ * verdict (`isPermanentRejection` still says yes for these).
  */
-export function graphqlErrorNamesInputField(error: unknown, fieldName: string, depth = 0): boolean {
+export function graphqlErrorRejectsUnknownInputField(error: unknown, fieldName: string, depth = 0): boolean {
   if (error === null || typeof error !== 'object') return false;
   const errorRecord = error as Record<string, unknown>;
-  const fieldPattern = new RegExp(`(^|[^A-Za-z0-9_])${fieldName}([^A-Za-z0-9_]|$)`);
+  const unknownFieldPattern = new RegExp(`Field "${fieldName}" is not defined`);
 
   if (depth < MAX_CAUSE_DEPTH) {
     const cause = errorRecord.cause;
-    if (cause !== undefined && cause !== error && graphqlErrorNamesInputField(cause, fieldName, depth + 1)) return true;
+    if (cause !== undefined && cause !== error && graphqlErrorRejectsUnknownInputField(cause, fieldName, depth + 1)) {
+      return true;
+    }
   }
 
-  if (graphqlErrorsNameInputField(errorRecord.errors, fieldPattern)) return true;
+  if (graphqlErrorsRejectUnknownInputField(errorRecord.errors, unknownFieldPattern)) return true;
 
   const response = errorRecord.response;
   if (response !== null && typeof response === 'object') {
-    if (graphqlErrorsNameInputField((response as Record<string, unknown>).errors, fieldPattern)) return true;
+    if (graphqlErrorsRejectUnknownInputField((response as Record<string, unknown>).errors, unknownFieldPattern)) {
+      return true;
+    }
   }
   return false;
 }

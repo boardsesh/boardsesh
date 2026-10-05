@@ -559,9 +559,25 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
 }
 
 /**
+ * How long a network answer waits for the phone's own tables before it is
+ * handed over as it came. The enrichment is one primary-key read and normally
+ * returns in a few milliseconds; the budget is for the times SQLite is busy (a
+ * snapshot import or a sync page holds the file), where a screen that already
+ * has its answer must not sit behind it.
+ */
+export const NETWORK_ENRICHMENT_BUDGET_MS = 150;
+
+/**
  * Run a registered op's `enrichNetworkResponse` over a network answer. Its own
  * try/catch on purpose: the caller's catch treats any throw as "the network
  * failed" and would swap a good answer for a local rescue.
+ *
+ * Skipped outright when the offline engine is off (Expo web, where there is no
+ * local database to ask) or there is no handle. Otherwise the read races
+ * `NETWORK_ENRICHMENT_BUDGET_MS`; when the budget wins, the network answer goes
+ * out un-enriched and the late read is dropped. A climb without its version
+ * numbers is the ordinary case for a board that is not downloaded, so every
+ * consumer already handles it.
  */
 async function enrichNetworkResponse<TResponse>(
   operation: OfflineOperation<never, unknown> | undefined,
@@ -570,12 +586,28 @@ async function enrichNetworkResponse<TResponse>(
   networkResponse: TResponse,
 ): Promise<TResponse> {
   if (!operation?.enrichNetworkResponse || variables === undefined) return networkResponse;
+  if (!isOfflineEngineEnabled()) return networkResponse;
+  const db = resolvedDb ?? getDatabaseHandle();
+  if (!db) return networkResponse;
+
+  let budgetTimer: ReturnType<typeof setTimeout> | undefined;
+  const budget = new Promise<TResponse>((resolve) => {
+    budgetTimer = setTimeout(() => resolve(networkResponse), NETWORK_ENRICHMENT_BUDGET_MS);
+  });
   try {
-    const db = resolvedDb ?? getDatabaseHandle();
-    if (!db) return networkResponse;
-    return (await operation.enrichNetworkResponse(db, variables as never, networkResponse as never)) as TResponse;
+    const enriched = operation.enrichNetworkResponse(
+      db,
+      variables as never,
+      networkResponse as never,
+    ) as Promise<TResponse>;
+    // A read that loses the race still settles later. Swallow its rejection so
+    // it cannot surface as an unhandled one.
+    enriched.catch(() => undefined);
+    return await Promise.race([enriched, budget]);
   } catch {
     return networkResponse;
+  } finally {
+    clearTimeout(budgetTimer);
   }
 }
 

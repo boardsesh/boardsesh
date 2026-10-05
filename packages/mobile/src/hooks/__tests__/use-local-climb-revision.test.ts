@@ -29,8 +29,8 @@ import { localClimbRevisionQueryKey, useLocalClimbRevision } from '../use-local-
 
 async function insertClimb(uuid: string, revisionNumber: number | null, holdsRevisionNumber: number | null) {
   await db!.runAsync(
-    `INSERT INTO board_climbs (uuid, board_type, layout_id, name, is_listed, is_draft, revision_number, holds_revision_number)
-     VALUES (?, 'kilter', 1, ?, 1, 0, ?, ?)`,
+    `INSERT INTO board_climbs (uuid, board_type, layout_id, name, frames, is_listed, is_draft, revision_number, holds_revision_number)
+     VALUES (?, 'kilter', 1, ?, 'p1r12p2r13', 1, 0, ?, ?)`,
     [uuid, uuid, revisionNumber, holdsRevisionNumber],
   );
 }
@@ -48,7 +48,8 @@ describe('useLocalClimbRevision (#6023)', () => {
 
     useLocalClimbRevision('kilter', 'edited', true);
 
-    expect(await lastQuery.result).toEqual({ revisionNumber: 4, holdsRevisionNumber: 3 });
+    // With the frames of the same row: the version only stands for those holds.
+    expect(await lastQuery.result).toEqual({ revisionNumber: 4, holdsRevisionNumber: 3, frames: 'p1r12p2r13' });
   });
 
   it.each([

@@ -100,11 +100,15 @@ export type BoardAdapter = {
    * logged on, keyed by tick uuid, for the given climbs. Mobile answers from
    * its SQLite copy of the ticks. `GetTicks` cannot select
    * `Tick.climbRevision` while the screenshot fixtures pin its text, so this
-   * is where a fetched logbook row gets its version (#6023). Ticks with no
-   * known version are left out of the map. May reject; the logbook then keeps
-   * its rows without versions.
+   * is where a fetched logbook row gets its version (#6023).
+   *
+   * Three answers per tick, and the difference matters to whether a send still
+   * counts: a number for a tick with a version, `null` for a tick the platform
+   * holds a copy of that has none (it reads as version 1), and NO KEY for a
+   * tick the platform holds no copy of (unknown, and the tick still counts).
+   * May reject; the logbook then keeps its rows without versions.
    */
-  readLocalTickRevisions?: (boardType: string, climbUuids: string[]) => Promise<ReadonlyMap<string, number>>;
+  readLocalTickRevisions?: (boardType: string, climbUuids: string[]) => Promise<ReadonlyMap<string, number | null>>;
   /**
    * Optional post-save side-effect. Web wires `clearTickDraft` (IndexedDB);
    * mobile has no tick-draft store today and may omit it.

@@ -126,6 +126,11 @@ export type LogAscentInput = {
    * then asks the phone's own copy of the climb (#6023).
    */
   climbRevision?: number | null;
+  /**
+   * The frames the caller is showing (`Climb.frames`). The tick form uses the
+   * phone's copy of the climb's version only when that copy has these holds.
+   */
+  climbFrames?: string | null;
 };
 
 export function boardConfigsMatch(left: BoardConfig | null, right: BoardConfig | null): boolean {
@@ -1166,6 +1171,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
               sessionId={logAscentData.sessionId}
               consensusGradeName={logAscentData.consensusGradeName}
               climbRevision={logAscentData.climbRevision}
+              climbFrames={logAscentData.climbFrames}
             />
           ) : null}
           {betaVideoData ? (

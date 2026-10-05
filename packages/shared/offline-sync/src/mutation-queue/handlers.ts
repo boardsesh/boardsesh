@@ -1,5 +1,5 @@
 import type { PendingMutation } from './queue';
-import { graphqlErrorNamesInputField } from './error-classification';
+import { graphqlErrorRejectsUnknownInputField } from './error-classification';
 
 export type GraphQLFetch = <T>(query: string, variables?: Record<string, unknown>) => Promise<T>;
 
@@ -75,7 +75,7 @@ function withoutRejectedInputFields(
   const droppable = DROPPABLE_INPUT_FIELDS[mutationName];
   const input = variables.input;
   if (!droppable || input === null || typeof input !== 'object') return null;
-  const rejected = droppable.filter((field) => field in input && graphqlErrorNamesInputField(error, field));
+  const rejected = droppable.filter((field) => field in input && graphqlErrorRejectsUnknownInputField(error, field));
   if (rejected.length === 0) return null;
   const trimmedInput: Record<string, unknown> = { ...(input as Record<string, unknown>) };
   for (const field of rejected) delete trimmedInput[field];

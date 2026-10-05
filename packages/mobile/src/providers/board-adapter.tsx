@@ -65,7 +65,7 @@ function toSavedTickShape(
   };
 }
 
-const NO_TICK_REVISIONS: ReadonlyMap<string, number> = new Map();
+const NO_TICK_REVISIONS: ReadonlyMap<string, number | null> = new Map();
 
 /**
  * Which climb version each of the climber's own ticks on these climbs was
@@ -77,7 +77,10 @@ const NO_TICK_REVISIONS: ReadonlyMap<string, number> = new Map();
  * behind can never match a tick the server just returned for this climber.
  * The owner predicate is kept anyway, as on every local tick read.
  */
-async function readLocalTickRevisions(boardType: string, climbUuids: string[]): Promise<ReadonlyMap<string, number>> {
+async function readLocalTickRevisions(
+  boardType: string,
+  climbUuids: string[],
+): Promise<ReadonlyMap<string, number | null>> {
   const db = getDatabaseHandle();
   if (!db) return NO_TICK_REVISIONS;
   return readTickRevisionsLocal(db, boardType, climbUuids, await getLocalUserId(db));

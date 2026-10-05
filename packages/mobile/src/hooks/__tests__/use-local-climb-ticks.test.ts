@@ -139,6 +139,8 @@ describe('useLocalClimbTicks', () => {
         upvotes: 0,
         downvotes: 0,
         commentCount: 0,
+        // The phone holds this tick and it has no version: null, not absent.
+        climb_revision: null,
       },
     ]);
   });
@@ -241,17 +243,16 @@ describe('useLocalClimbTicks', () => {
       await db!.runAsync('UPDATE boardsesh_ticks SET climb_revision = ? WHERE uuid = ?', [climbRevision, uuid]);
     }
 
-    it('rides the entry when the tick has one, and is absent when it does not', async () => {
+    it('rides the entry when the tick has one, and is null when the row has none', async () => {
       await insertTick({ uuid: 'stamped', climbedAt: '2026-05-30T10:00:00.000Z' });
-      await insertTick({ uuid: 'unknown', climbedAt: '2026-05-31T10:00:00.000Z' });
+      await insertTick({ uuid: 'without', climbedAt: '2026-05-31T10:00:00.000Z' });
       await setTickRevision('stamped', 2);
 
       const entries = (await runHook()) ?? [];
       const byUuid = new Map(entries.map((entry) => [entry.uuid, entry]));
 
       expect(byUuid.get('stamped')?.climb_revision).toBe(2);
-      expect(byUuid.get('unknown')).toBeDefined();
-      expect('climb_revision' in (byUuid.get('unknown') ?? {})).toBe(false);
+      expect(byUuid.get('without')?.climb_revision).toBeNull();
     });
 
     it('does not split one ascent stored twice when only one copy has a version', async () => {

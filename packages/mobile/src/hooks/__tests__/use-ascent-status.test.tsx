@@ -97,11 +97,21 @@ describe('useAscentStatus', () => {
       expect(renderHook(() => useAscentStatus('a', 40, undefined, 3)).result.current).toBe('attempt-on-current-holds');
     });
 
-    it('reads a tick with no version as version 1', () => {
-      ctrl.board = boardFrom([entry({ status: 'send' })]);
+    it('reads a tick known to have no version (null) as version 1', () => {
+      ctrl.board = boardFrom([entry({ status: 'send', climb_revision: null })]);
 
       expect(renderHook(() => useAscentStatus('a', 40, undefined, 1)).result.current).toBe('send');
       expect(renderHook(() => useAscentStatus('a', 40, undefined, 2)).result.current).toBeNull();
+    });
+
+    // The second-device case: the phone has not pulled the tick, so the join
+    // had no row to read. It must keep counting, or a send on the current
+    // holds reads unsent until the pull lands.
+    it('counts a tick whose version is not known (no key), whatever the holds version', () => {
+      ctrl.board = boardFrom([entry({ status: 'send' })]);
+
+      expect(renderHook(() => useAscentStatus('a', 40, undefined, 2)).result.current).toBe('send');
+      expect(renderHook(() => useAscentStatus('a', 40, undefined, 7)).result.current).toBe('send');
     });
 
     it.each([null, undefined])('counts every tick when the climb’s holds version is %s', (holdsRevisionNumber) => {

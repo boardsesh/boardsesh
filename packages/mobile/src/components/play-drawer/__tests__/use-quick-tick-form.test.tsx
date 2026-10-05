@@ -100,7 +100,9 @@ vi.mock('../../../hooks/use-local-ticks', () => ({ useLocalPendingTicks: () => (
 // The phone's own copy of the climb's version numbers (#6023). Undefined by
 // default: the board is not downloaded, or the row predates the columns.
 const localRevisionState = vi.hoisted(() => ({
-  current: undefined as { revisionNumber: number | null; holdsRevisionNumber: number | null } | undefined,
+  current: undefined as
+    | { revisionNumber: number | null; holdsRevisionNumber: number | null; frames: string | null }
+    | undefined,
   calls: [] as Array<{ boardName: unknown; climbUuid: unknown; enabled: boolean }>,
 }));
 vi.mock('../../../hooks/use-local-climb-revision', () => ({
@@ -467,10 +469,13 @@ describe('useQuickTickForm analytics', () => {
 // app knows. Unknown must be an ABSENT key: a backend from before the field
 // rejects the key, and the server picks the version itself when it is missing.
 describe('useQuickTickForm climb version', () => {
+  const FRAMES = 'p1r12p2r13p3r14';
+  const MOVED_FRAMES = 'p1r12p2r13p9r14';
+
   it('sends the version the displayed climb carries, without asking the phone', () => {
     boardState.current = null;
-    localRevisionState.current = { revisionNumber: 9, holdsRevisionNumber: 9 };
-    const { getByTestId } = renderForm({ climbRevision: 4 });
+    localRevisionState.current = { revisionNumber: 9, holdsRevisionNumber: 9, frames: FRAMES };
+    const { getByTestId } = renderForm({ climbRevision: 4, climbFrames: FRAMES });
 
     fireEvent.click(getByTestId('save'));
 
@@ -479,10 +484,10 @@ describe('useQuickTickForm climb version', () => {
     expect(localRevisionState.calls.every((call) => call.enabled === false)).toBe(true);
   });
 
-  it('falls back to the phone’s copy for a climb that arrived without a version', () => {
+  it('falls back to the phone’s copy when it has the same holds as the climb on screen', () => {
     boardState.current = null;
-    localRevisionState.current = { revisionNumber: 3, holdsRevisionNumber: 2 };
-    const { getByTestId } = renderForm();
+    localRevisionState.current = { revisionNumber: 3, holdsRevisionNumber: 2, frames: FRAMES };
+    const { getByTestId } = renderForm({ climbFrames: FRAMES });
 
     fireEvent.click(getByTestId('attempt'));
 
@@ -490,15 +495,41 @@ describe('useQuickTickForm climb version', () => {
     expect(localRevisionState.calls.at(-1)).toEqual({ boardName: 'kilter', climbUuid: CLIMB_UUID, enabled: true });
   });
 
+  // The server stores any in-range version as sent, so a wrong one is worse
+  // than none. Each of these is a case where the phone's row cannot be shown
+  // to be the climb on screen.
   it.each([
-    ['nothing is known anywhere', undefined, undefined],
-    ['the climb carries null and the phone has no row', null, undefined],
-    ['the phone’s row predates the columns', undefined, { revisionNumber: null, holdsRevisionNumber: null }],
-    ['the carried value is not a positive integer', 0, undefined],
-  ])('omits the climbRevision key when %s', (_label, climbRevision, localNumbers) => {
+    [
+      'the climb on screen is newer than the phone’s row (a network answer after the setter moved a hold)',
+      { climbFrames: MOVED_FRAMES },
+      { revisionNumber: 3, holdsRevisionNumber: 3, frames: FRAMES },
+    ],
+    [
+      'the climb on screen is older than the phone’s row (a queue item from before an edit)',
+      { climbFrames: FRAMES },
+      { revisionNumber: 4, holdsRevisionNumber: 4, frames: MOVED_FRAMES },
+    ],
+    ['the caller passed no frames to compare', {}, { revisionNumber: 3, holdsRevisionNumber: 3, frames: FRAMES }],
+    [
+      'the phone’s row has no frames',
+      { climbFrames: FRAMES },
+      { revisionNumber: 3, holdsRevisionNumber: 3, frames: null },
+    ],
+    ['nothing is known anywhere', { climbFrames: FRAMES }, undefined],
+    [
+      'the phone’s row predates the columns',
+      { climbFrames: FRAMES },
+      { revisionNumber: null, holdsRevisionNumber: null, frames: FRAMES },
+    ],
+    [
+      'the carried value is not a positive integer and the phone has no row',
+      { climbRevision: 0, climbFrames: FRAMES },
+      undefined,
+    ],
+  ])('omits the climbRevision key when %s', (_label, formInput, localNumbers) => {
     boardState.current = null;
     localRevisionState.current = localNumbers;
-    const { getByTestId } = renderForm({ climbRevision });
+    const { getByTestId } = renderForm(formInput);
 
     fireEvent.click(getByTestId('save'));
 

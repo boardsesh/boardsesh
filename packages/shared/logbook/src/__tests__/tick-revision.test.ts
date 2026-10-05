@@ -24,15 +24,24 @@ describe('isTickOnCurrentHolds', () => {
     expect(isTickOnCurrentHolds(2, 3)).toBe(false);
   });
 
-  it('reads a tick with no version as version 1', () => {
+  it('reads a tick KNOWN to have no version (null) as version 1', () => {
     expect(isTickOnCurrentHolds(null, 1)).toBe(true);
-    expect(isTickOnCurrentHolds(undefined, 2)).toBe(false);
+    expect(isTickOnCurrentHolds(null, 2)).toBe(false);
+  });
+
+  it('counts a tick whose version is not known (undefined), whatever the holds version', () => {
+    // The phone has no copy of the tick to ask. Reading it as version 1 would
+    // turn a send on the current holds into "not sent" until the next pull.
+    expect(isTickOnCurrentHolds(undefined, 1)).toBe(true);
+    expect(isTickOnCurrentHolds(undefined, 2)).toBe(true);
+    expect(isTickOnCurrentHolds(undefined, 9)).toBe(true);
   });
 
   it('reads a climb with no number as version 1, so every tick counts', () => {
     expect(isTickOnCurrentHolds(null, null)).toBe(true);
     expect(isTickOnCurrentHolds(1, undefined)).toBe(true);
     expect(isTickOnCurrentHolds(5, null)).toBe(true);
+    expect(isTickOnCurrentHolds(undefined, undefined)).toBe(true);
   });
 
   it('counts every tick on a climb whose holds never moved', () => {
