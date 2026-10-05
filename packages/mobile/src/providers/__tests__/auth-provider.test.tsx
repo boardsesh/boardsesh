@@ -2092,6 +2092,7 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
     getAuthTokenMock.mockResolvedValue(null);
     isAnalyticsPinnedToAPersonMock.mockReturnValue(false);
     resetAnalyticsMock.mockClear();
+    resetOfflineUsageSignalMock.mockClear();
 
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
@@ -2106,6 +2107,9 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
 
     await waitFor(() => expect(clearStoredActiveBoardMock).toHaveBeenCalledTimes(2));
     expect(resetAnalyticsMock).not.toHaveBeenCalled();
+    // No account boundary, so the offline-usage rollup keeps its counters too:
+    // the two resets go together or not at all.
+    expect(resetOfflineUsageSignalMock).not.toHaveBeenCalled();
   });
 
   // A session that died while the app was closed: the SDK still holds the last
@@ -2114,6 +2118,7 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
     getAuthTokenMock.mockResolvedValue(null);
     isAnalyticsPinnedToAPersonMock.mockReturnValue(true);
     resetAnalyticsMock.mockClear();
+    resetOfflineUsageSignalMock.mockClear();
     // The real reset() un-pins the SDK, so a second check finds it anonymous.
     resetAnalyticsMock.mockImplementation(() => {
       isAnalyticsPinnedToAPersonMock.mockReturnValue(false);
@@ -2131,6 +2136,7 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
 
     await waitFor(() => expect(clearStoredActiveBoardMock).toHaveBeenCalledTimes(2));
     expect(resetAnalyticsMock).toHaveBeenCalledTimes(1);
+    expect(resetOfflineUsageSignalMock).toHaveBeenCalledTimes(1);
   });
 
   it('bounds a hung web cold-start cleanup so the loading gate still releases', async () => {

@@ -6,9 +6,9 @@ import type { ObserveRuntimeOverrides } from './observe-config';
  *
  * Deliberately dependency-free — no `expo-observe`, no react-native —
  * because `error-reporting.ts` reads this, and error-reporting is imported by
- * a large part of the app that the node-env test runner loads. Importing the SDK directly there drags in Expo's winter
- * runtime (`Cannot find module './ImportMetaRegistry'`) and takes 33 test files
- * down with it.
+ * a large part of the app that the node-env test runner loads. Importing the
+ * SDK directly there drags in Expo's winter runtime (`Cannot find module
+ * './ImportMetaRegistry'`) and takes 33 test files down with it.
  *
  * Unregistered is the normal state under test and on Expo web, so every call
  * here is a no-op rather than an error.

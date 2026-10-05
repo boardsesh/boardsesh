@@ -311,7 +311,9 @@ For the split rate, add `any(properties.$os) AS os` to the subquery, move both
 - **A newcomer cohort must exclude the phantoms.** Add
   `person_id NOT IN (<the query above>)`, or keep only people whose
   `Login Succeeded` has `is_new_account = true`. The second is cheaper but is
-  null on embedded JS and before the 2026-09-21 OTA.
+  null on embedded JS and before the 2026-09-21 OTA, and from the #6027 OTA the
+  flag can arrive on `Login Account Age Resolved` instead ("Counting sign-ups"
+  below).
 - **This holds for cohorts after #6078 too**, until the split rate above is
   seen to drop on bundles that carry it.
 - **Past phantoms stay.** No fix merges them. PostHog merges can't be undone,
@@ -337,7 +339,8 @@ number uses another one.
 - Android newcomer cohorts take store builds only (`$app_build`; 2.5.0 is
   2001108). Test and Play pre-launch builds add people who almost never scan.
 - `Signup Completed` is email registration only. Apple and Google sign-ups show
-  up as `Login Succeeded` with `is_new_account`.
+  up as `is_new_account = true` on `Login Succeeded` or `Login Account Age
+  Resolved` ("Counting sign-ups" below).
 - A database read of board-active (an account with a light or a tick) counts
   accounts, not PostHog people. Don't mix the two in one rate.
 - Report the Activation funnel below next to any narrower measure, so two

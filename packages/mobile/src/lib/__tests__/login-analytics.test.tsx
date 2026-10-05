@@ -419,6 +419,39 @@ describe('useTrackLoginSucceeded', () => {
     );
   });
 
+  // The identity rules (packages/shared/analytics/src/reconcile-identity.ts).
+  // Both events can be captured before the sign-in's one `$identify`, while the
+  // SDK is still on its anonymous id: the 5 s wait and the identify are settled
+  // by the same profile read, in either order. That is safe only while they
+  // stay plain captures. A `$set` here, or the account's email, would write
+  // person properties onto the anonymous person before the merge.
+  it('sends both sign-up events as plain captures, with no person properties and no email', async () => {
+    const queryClient = createTestQueryClient();
+    graphql.request.mockReturnValue(new Promise(() => {}));
+    const { result } = renderTracker(queryClient);
+
+    await act(async () => {
+      result.current({ auth_method: 'credentials', provider: 'email', flow: 'native', screen: 'register' });
+      await vi.advanceTimersByTimeAsync(PROFILE_READ_TIMEOUT_MS);
+      // The profile that settles the late event names the account's email.
+      queryClient.setQueryData(['profile'], {
+        profile: { id: 'user-1', email: 'climber@example.com', createdAt: isoBeforeSignIn(90_000) },
+      });
+      await vi.runAllTimersAsync();
+    });
+
+    expect(analytics.track.mock.calls.map(([eventName]) => eventName)).toEqual([
+      'Login Succeeded',
+      'Login Account Age Resolved',
+    ]);
+    for (const [, eventProperties] of analytics.track.mock.calls) {
+      expect(eventProperties).not.toHaveProperty('$set');
+      expect(eventProperties).not.toHaveProperty('$set_once');
+      expect(eventProperties).not.toHaveProperty('email');
+      expect(JSON.stringify(eventProperties)).not.toContain('climber@example.com');
+    }
+  });
+
   it('sends no follow-up when Login Succeeded already knew the account age', async () => {
     const queryClient = createTestQueryClient();
     graphql.request.mockResolvedValue({ profile: { createdAt: isoBeforeSignIn(20_000) } });

@@ -190,11 +190,14 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // signed-out check on a settled, signed-out app has nothing to do here.
   const resetAnalyticsForSignedOutTransition = useCallback(() => {
     if (!authStateRef.current.isLoading) return;
-    if (isAnalyticsPinnedToAPerson()) resetAnalytics();
+    if (!isAnalyticsPinnedToAPerson()) return;
+    resetAnalytics();
     // The offline-usage rollup's suppression map is in-memory and not keyed by
     // user, so a same-day account switch would otherwise inherit the previous
     // user's counters and the new user's first offline day would never fire
-    // (#4317).
+    // (#4317). It goes with the analytics reset and only with it: both mark an
+    // account boundary, and a signed-out cold start with no account to leave
+    // has none.
     resetOfflineUsageSignal();
   }, []);
 
