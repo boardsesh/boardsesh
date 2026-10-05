@@ -3051,8 +3051,9 @@ async function performPullSync(
   const isOnline = options?.isOnline ?? (() => true);
   if (!isOnline()) return reportInterruptedCycle();
 
-  // The enqueue token is threaded through every phase. A sign-out or scope
-  // removal while waiting behind another pull must retain its original epoch.
+  // The enqueue token covers the queue wait AND every phase; never rebase per table.
+  // enabledBoards stays the captured snapshot after a namespace purge advances.
+  // A new token would let later tables re-download a removed scope.
   // GLOBAL: sign-out, a global wipe, backgrounding, or connectivity loss. A board
   // purge is deliberately absent — it cannot invalidate the user tables, the
   // deletions cursor, or another board's rows, so it ends that scope's work
