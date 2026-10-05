@@ -2222,14 +2222,32 @@ in `packages/db/src/queries/climb-stats/holds-epoch.ts`: a tick counts when
 COALESCE(tick.climb_revision, 1) >= board_climbs.holds_revision_number
 ```
 
-A tick with no revision counts as revision 1. That is exact: such a tick is an
-import or older than the column, and no climb had a revision before the column
-existed. A tick whose climb has no `board_climbs` row is compared with 1 too.
+A tick with no revision counts as revision 1. A tick whose climb has no
+`board_climbs` row is compared with 1 too.
+
+- For a tick older than the column that is exact: no climb had a revision
+  before the column existed.
+- For an imported tick (Aurora, Kilter, JSON, MoonBoard) it is a choice, and it
+  can be wrong one way. If a setter moves a hold on a Boardsesh-owned catalogue
+  climb and someone's send of the new holds arrives later by import, the import
+  has no revision, reads as 1, and does not count as a send of the current
+  holds. Their "sent" mark and the first ascent stay off until they log it in
+  Boardsesh. This is accepted: an import never adds to the Boardsesh ascent
+  count in any case, the window is the setter's 24 hours after publishing, and
+  spray walls, where edits have no limit, have no imports.
 
 | An edit that changes | Sends, stars, first ascent, sent marks |
 | --- | --- |
-| The holds, or the number of frames | Start over |
+| Which holds are lit, a hold's role, or the number of frames | Start over |
 | Name, notes, grade, angle, rules, pace | Unchanged |
+| Only the order the holds are listed in the frames string | Unchanged, and no revision is recorded |
+
+"The holds" means the parsed set: each frame's holds with their roles
+(`holdsMoved`, `climbs/climb-revisions.ts`). The app sends the frames string
+again on every save, written in ascending hold-id order. A stored string from
+another encoder lists the same holds in a different order, and comparing the
+strings would turn a rename into a reset. In a multi-frame climb a hold that
+moves from one frame to another is a change.
 
 On a climb whose holds never moved the epoch is 1 and every tick counts, so
 catalogue boards behave as they always did. A catalogue climb can only be edited
@@ -2244,7 +2262,7 @@ What reads the rule:
 | `quality_average` and the Boardsesh star votes | Only ratings from sends of the new holds |
 | Search filters: hide or show sent, hide or show attempted, rated by me, my minimum rating | Read only ticks on the new holds |
 | Recommendations ("find new climbs") | The climb is offered again |
-| The Projects smart playlist and its card count | A project is a climb tried on its current holds and not sent on them. A send of the old holds does not make it a project, and neither does an old attempt. |
+| The Projects smart playlist and its card count | A project is a climb tried on its current holds and not sent on them. A send of the old holds does not make it a project, and neither does an old attempt. The list is still ordered by total attempts on every version. |
 | `boardClimbRecentSenders` (the wall's recent senders for a climb) | Only senders of the new holds |
 
 What does not:
@@ -2263,26 +2281,58 @@ What does not:
 - **The climber's personal grade** on a search row, which is their latest
   graded tick on any version.
 
-`updateClimb` does the reset. When `recordClimbRevision` reports that the holds
-epoch moved, it recomputes `board_climb_stats` for every angle of the climb that
-has a flash or a send, in the same transaction
-(`recomputeStatsAfterHoldsChange`, `climbs/holds-change-stats.ts`). The new
-holds and the zeroed numbers commit together. An angle nobody has sent is left
-alone: there is nothing to reset, and a recompute there would write an empty
-tick average over a grade a setter seeded. After the commit the same keys go
-through the debounced recompute, which publishes `climbStatsUpdated`.
+`updateClimb` does the reset, in its own transaction, in three steps
+(`climbs/holds-change-stats.ts`):
+
+1. Before it writes anything, if the request changes the frames string or the
+   frame count, it lists the angles of the climb that have a flash or a send
+   and writes one row per angle to `climb_stats_recompute_pending`
+   (`markStatsKeysForHoldsChange`).
+2. Once `recordClimbRevision` has moved the holds epoch, it recomputes
+   `board_climb_stats` for those angles (`recomputeStatsAfterHoldsChange`).
+   The new holds and the zeroed numbers commit together.
+3. After the commit the same keys go through the debounced recompute, which
+   publishes `climbStatsUpdated`.
+
+An angle nobody has sent is left alone: there is nothing to reset, and a
+recompute there would write an empty tick average over a grade a setter seeded.
+
+The pending rows from step 1 are not deleted by the edit. They do two things:
+
+- **They serialise the edit with the batched recomputes.** The hourly
+  self-heal, a sync's deferred flush and the pending drain all lock the same
+  rows, in the same `(board_type, climb_uuid, angle)` order, before they read a
+  tick. A batch touching one of these keys either finishes before the edit goes
+  on, or waits for it to commit and reads the new epoch. Because the edit takes
+  the pending rows before any stats row, as the batches do, the two cannot wait
+  on each other.
+- **They get the key recomputed once more.** The next self-heal pass drains
+  them (rows older than 2 minutes, hourly). That corrects a writer that takes no
+  pending row and read the old epoch: a `saveTick` recompute, or a sync that
+  recomputes inside its own write transaction, landing its count after the edit
+  committed. The debounced recompute from step 3 normally fixes that within two
+  seconds, but it is an in-process timer and a deploy drops it.
+
+A save that re-sends the same holds in another order also writes the pending
+rows (step 1 runs before the diff is known). The drain then recomputes a key
+that has not changed, which writes nothing.
 
 The old ticks are not changed or deleted. They stay in every logbook with the
 revision they were logged on.
 
-Three things to know:
+Known limits:
 
-- A send that is being saved at the instant the edit commits can have its
-  recompute read the old epoch and write the old count back. The debounced
-  recompute two seconds later corrects it. Both are in-process timers, so a
-  deploy in that window leaves the old numbers until the next tick on the
-  climb. The hourly self-heal does not catch it: it looks for a tick newer than
-  its stats row, and here the stats row is the newer one.
+- A stale count can last until the next self-heal pass, up to about an hour,
+  when the two-second timer was lost. It can outlast that pass only if the
+  stale write lands after the drain ran, which needs a statement that started
+  before the edit committed and was still running when the drain got to it.
+  Then the next tick on the climb corrects it.
+- A deadlock is possible, and rare, between a holds edit of a climb sent at two
+  or more angles and a sync that recomputes two of those angles inside its own
+  write transaction, with no pending rows. Postgres ends it after a second by
+  failing one side. If that is the edit, nothing is written and the climber
+  sees the save fail; saving again works. A spray wall has one fixed angle, so
+  in practice this needs a catalogue climb inside its 24 hour window.
 - `board_climb_popularity` needs nothing. Its incremental refresh re-reads
   climbs whose stats row has a new `updated_at`, and the reset writes the row.
 - Cached anonymous search pages keep the old ascent count for up to 24 hours,

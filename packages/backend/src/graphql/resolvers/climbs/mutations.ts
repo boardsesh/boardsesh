@@ -34,7 +34,11 @@ import {
   type ClimbRevisionNumbers,
 } from './climb-revisions';
 import { deleteClimbDependentRows } from './climb-cleanup';
-import { queueHoldsChangeStatsRefresh, recomputeStatsAfterHoldsChange } from './holds-change-stats';
+import {
+  markStatsKeysForHoldsChange,
+  queueHoldsChangeStatsRefresh,
+  recomputeStatsAfterHoldsChange,
+} from './holds-change-stats';
 import {
   SPRAY_CLIMB_CODES,
   assertSprayAngleMatchesWall,
@@ -1169,6 +1173,19 @@ export const climbMutations = {
         });
       }
 
+      // A request that changes the frames string or the frame count may move
+      // the holds epoch, which restarts the climb's stats (#6023). Mark the
+      // affected stats keys now, before this edit writes any stats row: see
+      // `markStatsKeysForHoldsChange` for why the order matters. Whether the
+      // holds really moved is `recordClimbRevision`'s call, at the end; this is
+      // a superset of it (the same holds re-sent in another order also lands
+      // here). A draft has no revisions and no epoch to move.
+      const holdsMayMove =
+        !beforeEdit.isDraft &&
+        (framesChanged ||
+          (validated.framesCount !== undefined && validated.framesCount !== (beforeEdit.framesCount ?? 1)));
+      const sentStatsKeys = holdsMayMove ? await markStatsKeysForHoldsChange(tx, boardType, validated.uuid) : [];
+
       // Build the update set from provided fields only.
       const updateSet: Record<string, unknown> = {
         isDraft: nextIsDraft,
@@ -1344,7 +1361,8 @@ export const climbMutations = {
       // this transaction, so the new epoch and the stats that read it commit
       // together.
       if (revisionNumbers.holdsRevisionNumber !== beforeEdit.holdsRevisionNumber) {
-        holdsChangeStatsKeys = await recomputeStatsAfterHoldsChange(tx, boardType, validated.uuid);
+        await recomputeStatsAfterHoldsChange(tx, sentStatsKeys);
+        holdsChangeStatsKeys = sentStatsKeys;
       }
       return revisionNumbers;
     });

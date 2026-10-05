@@ -1118,6 +1118,18 @@ describe('a moved hold restarts the climb’s sends, first ascent and stars (#60
     expect(await searchWall(wall, STRANGER, { onlyRatedByMe: true })).toEqual([climbUuid]);
     expect(await searchWall(wall, SETTER, { showOnlyAttempted: true })).toEqual([climbUuid]);
     expect(await searchWall(wall, SETTER, { hideAttempted: true })).toEqual([]);
+    // STRANGER's latest rating is 3, OWNER's is 5.
+    expect(await searchWall(wall, STRANGER, { minUserRating: 4 })).toEqual([]);
+    expect(await searchWall(wall, OWNER, { minUserRating: 4 })).toEqual([climbUuid]);
+
+    // The same three holds in the same roles, listed in another order, which is
+    // what a client with a different frames encoder sends on any save. Not an
+    // edit: no revision, and nothing restarts.
+    const [first, second, third] = holdIds;
+    await editSpray(climbUuid, { frames: `p${third}r3p${first}r1p${second}r2` });
+    expect(await revisionsOf(climbUuid)).toEqual([]);
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 1, holds_revision_number: 1 });
+    expect(await statsOf('spray', climbUuid)).toMatchObject({ ascensionist_count: 2, quality_average: 4 });
 
     // A rename, new notes and a regrade are edits of the same climb: nothing restarts.
     await editSpray(climbUuid, { name: 'Renamed', description: 'New notes' });
@@ -1149,6 +1161,16 @@ describe('a moved hold restarts the climb’s sends, first ascent and stars (#60
     expect(await searchWall(wall, STRANGER, { onlyRatedByMe: true })).toEqual([]);
     expect(await searchWall(wall, SETTER, { showOnlyAttempted: true })).toEqual([]);
     expect(await searchWall(wall, SETTER, { hideAttempted: true })).toEqual([climbUuid]);
+    // The rating of 3 was for the old holds, so it no longer hides the climb.
+    expect(await searchWall(wall, STRANGER, { minUserRating: 4 })).toEqual([climbUuid]);
+
+    // The edit left its key in the pending table, so the next self-heal pass
+    // recomputes it once more. That is what corrects a recompute that read the
+    // old epoch and wrote after this edit committed.
+    const pending = (await db.execute(sql`
+      SELECT angle FROM climb_stats_recompute_pending WHERE board_type = 'spray' AND climb_uuid = ${climbUuid}
+    `)) as unknown as Array<{ angle: number }>;
+    expect(pending.map((row) => row.angle)).toEqual([40]);
 
     // The old ticks are still in the logbook, on the revision they were logged on.
     const oldTicks = (await db.execute(sql`
@@ -1166,6 +1188,8 @@ describe('a moved hold restarts the climb’s sends, first ascent and stars (#60
     });
     expect(await searchWall(wall, STRANGER, { showOnlyCompleted: true })).toEqual([climbUuid]);
     expect(await searchWall(wall, OWNER, { showOnlyCompleted: true })).toEqual([]);
+    // And a rating of the new holds counts again.
+    expect(await searchWall(wall, STRANGER, { minUserRating: 4 })).toEqual([]);
   });
 
   it('lists a climb as a project only on tries of its current holds', async () => {

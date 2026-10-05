@@ -219,7 +219,9 @@ export function climbEditDecisionsAreStale(
  *  - on the Aurora boards the "No match" description prefix is a rule, not prose,
  *    so it is stripped before descriptions are compared and counted under `rules`
  *    instead. Without that, the first edit to move the legacy prefix into the
- *    `characteristics` array would report a description change nobody made.
+ *    `characteristics` array would report a description change nobody made;
+ *  - the same holds in the same roles are the same holds, whatever order the
+ *    frames string lists them in (see {@link holdsMoved}).
  */
 export function diffClimbRevisionStates(
   boardType: BoardName,
@@ -232,11 +234,9 @@ export function diffClimbRevisionStates(
   const changes: ClimbRevisionChange[] = [];
   if ((before.name ?? '') !== (after.name ?? '')) changes.push('name');
   if (prose(before.description) !== prose(after.description)) changes.push('description');
-  if (
-    (before.frames ?? '') !== (after.frames ?? '') ||
-    (before.framesCount ?? 1) !== (after.framesCount ?? 1) ||
-    (before.framesPace ?? 0) !== (after.framesPace ?? 0)
-  ) {
+  // The same hold test that moves the holds epoch, so a save that only re-encodes
+  // the frames string records nothing here and resets nothing there.
+  if (holdsMoved(boardType, before, after) || (before.framesPace ?? 0) !== (after.framesPace ?? 0)) {
     changes.push('holds');
   }
   if (before.difficultyId !== after.difficultyId) changes.push('grade');
@@ -251,8 +251,26 @@ export function diffClimbRevisionStates(
 }
 
 /**
- * Whether the holds themselves differ between two states: the frames, or how
- * many frames there are.
+ * One frames string as a set of holds: every (frame, hold, role) it lights,
+ * sorted, so two strings that list the same holds in a different order are equal.
+ * Frame numbers are kept, so the same holds in a different frame are different.
+ */
+function holdSetKey(boardType: BoardName, frames: string | null): string {
+  return parseFramesToHoldEntries(boardType, frames)
+    .map((entry) => `${entry.frameNumber}:${entry.holdId}:${entry.holdState}`)
+    .sort()
+    .join(' ');
+}
+
+/**
+ * Whether the holds themselves differ between two states: which holds are lit
+ * in which role in each frame, or how many frames there are.
+ *
+ * Compared as parsed hold sets, never as strings. The app re-sends `frames` on
+ * every save, encoded in ascending hold-id order, and a stored string from
+ * another encoder (an import, an older client) lists the same holds in another
+ * order. A string comparison would call that rename a hold change, and since
+ * #6023 a hold change restarts the climb's sends.
  *
  * Narrower than the `holds` entry {@link diffClimbRevisionStates} reports, which
  * also covers `framesPace`. The pace is how fast a multi-frame route plays, not
@@ -261,10 +279,13 @@ export function diffClimbRevisionStates(
  * `board_climbs.holds_revision_number` (#6023).
  */
 export function holdsMoved(
+  boardType: BoardName,
   before: Pick<ClimbRevisionState, 'frames' | 'framesCount'>,
   after: Pick<ClimbRevisionState, 'frames' | 'framesCount'>,
 ): boolean {
-  return (before.frames ?? '') !== (after.frames ?? '') || (before.framesCount ?? 1) !== (after.framesCount ?? 1);
+  if ((before.framesCount ?? 1) !== (after.framesCount ?? 1)) return true;
+  if ((before.frames ?? '') === (after.frames ?? '')) return false;
+  return holdSetKey(boardType, before.frames) !== holdSetKey(boardType, after.frames);
 }
 
 /** The wall's published version id, read under the wall lock. */
@@ -469,7 +490,7 @@ export async function recordClimbRevision(
   // on the stats row), because `syncClimbs` has to re-deliver the new number.
   const recorded: ClimbRevisionNumbers = {
     revisionNumber: nextRevisionNumber,
-    holdsRevisionNumber: holdsMoved(before, after) ? nextRevisionNumber : before.holdsRevisionNumber,
+    holdsRevisionNumber: holdsMoved(boardType, before, after) ? nextRevisionNumber : before.holdsRevisionNumber,
   };
   await executor
     .update(dbSchema.boardClimbs)

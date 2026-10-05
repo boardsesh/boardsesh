@@ -1,5 +1,9 @@
 import { sql, type SQL } from 'drizzle-orm';
-import { tickAliasOnCurrentHoldsSql } from '../climb-stats/holds-epoch';
+import {
+  latestTickOnCurrentHoldsSql,
+  tickAliasOnCurrentHoldsSql,
+  tickAliasRevisionOrFirstSql,
+} from '../climb-stats/holds-epoch';
 import type { RecommendationQueryParams, RecommendationType } from './types';
 
 /** Postgres int[] literal, safe for empty arrays (`&&` against `{}` is false). */
@@ -280,8 +284,9 @@ export function buildRecommendationCountSql(params: RecommendationQueryParams): 
  * the stats primary key reads no column and cannot change the count.
  *
  * "Sent" is the same set `notSentByCondition` excludes, or the subtraction is
- * wrong: only sends on the climb's current holds. The inner join that reads the
- * epoch is on the `board_climbs` primary key, one probe per sent tick.
+ * wrong: only sends on the climb's current holds. The subquery keeps the newest
+ * revision the viewer sent each climb on, and the row is kept when that reaches
+ * the epoch of the `board_climbs` row the query joins anyway.
  */
 export function buildRecommendationSentOverlapSql(params: RecommendationQueryParams, userId: string): SQL {
   const { angle, boardType } = params.target;
@@ -291,14 +296,13 @@ export function buildRecommendationSentOverlapSql(params: RecommendationQueryPar
   return sql`
     SELECT COUNT(*)::int AS count
     FROM (
-      SELECT DISTINCT t.climb_uuid FROM boardsesh_ticks t
-      JOIN board_climbs sent_climb
-        ON sent_climb.board_type = t.board_type AND sent_climb.uuid = t.climb_uuid
+      SELECT t.climb_uuid, MAX(${tickAliasRevisionOrFirstSql('t')}) AS latest_sent_revision
+      FROM boardsesh_ticks t
       WHERE t.user_id = ${userId}
         AND t.board_type = ${boardType}
         AND t.angle = ${angle}
         AND t.status IN ('flash', 'send')
-        AND ${tickAliasOnCurrentHoldsSql('t', sql`sent_climb.holds_revision_number`)}
+      GROUP BY t.climb_uuid
     ) sent
     JOIN board_climbs bc ON bc.uuid = sent.climb_uuid
     ${
@@ -308,5 +312,6 @@ export function buildRecommendationSentOverlapSql(params: RecommendationQueryPar
         : sql``
     }
     WHERE ${sql.join(conditions, sql` AND `)}
+      AND ${latestTickOnCurrentHoldsSql(sql`sent.latest_sent_revision`, sql`bc.holds_revision_number`)}
   `;
 }

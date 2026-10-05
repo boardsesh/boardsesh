@@ -3,9 +3,9 @@ import { type ConnectionContext, type Climb } from '@boardsesh/shared-schema';
 import {
   holdsEpochOrFirstSql,
   isRecommendationType,
+  latestTickOnCurrentHoldsSql,
   RECOMMENDATION_TYPES,
-  tickAliasOnCurrentHoldsSql,
-  tickOnCurrentHoldsSql,
+  tickRevisionOrFirstSql,
   withSerialPlan,
   type RecommendationType,
 } from '@boardsesh/db/queries';
@@ -71,55 +71,58 @@ function smartBaseConditions(
 }
 
 /**
- * SQL fragment: "no flash/send tick exists for this (userId, board_type, climb_uuid)
- * triple." Matches by `(board_type, climb_uuid)` rather than `climb_uuid` alone so
- * a sent Kilter climb doesn't accidentally exclude a different Tension climb that
- * happens to share the same UUID. Always includes the board-type match — when
- * `boardName` is provided we additionally constrain the side that's being filtered
- * (the outer query) to that board, but the existence test itself is always
- * board-aware.
+ * The climbs a user has logged, one row per (board_type, climb_uuid), with what
+ * the PROJECTS rule needs from their ticks: the newest climb revision they
+ * logged at all, and the newest they sent (NULL when they never sent it).
  *
- * Correlation is via explicit table-qualified identifiers (`sent.board_type` for
- * the inner aliased copy, `boardsesh_ticks.board_type` for the outer scope),
- * not via Drizzle column interpolation, so the predicate doesn't accidentally
- * resolve both sides to the inner alias if Drizzle ever rewrites the outer
- * `from(boardseshTicks)` to use an alias.
+ * Grouped on both columns rather than `climb_uuid` alone, so a sent Kilter climb
+ * never stands in for a Tension climb that shares its uuid.
  *
- * Only a send on the climb's current holds counts as sent (#6023): the inner
- * tick is compared with {@link projectClimbHoldsEpoch}, a column of the
- * `board_climbs` row the outer query joined, so the test adds no lookup.
+ * Aggregated BEFORE the climb's holds epoch is read, so the queries below look
+ * `board_climbs` up once per climb. Reading it per tick cost 24,464 buffers
+ * against 428 for a 6,009-tick logbook, on every library page load.
  */
-function notSentExists(userId: string): SQL {
-  return sql`NOT EXISTS (
-    SELECT 1
-    FROM boardsesh_ticks AS sent
-    WHERE sent.user_id = ${userId}
-      AND sent.board_type = boardsesh_ticks.board_type
-      AND sent.climb_uuid = boardsesh_ticks.climb_uuid
-      AND sent.status IN ('flash', 'send')
-      AND ${tickAliasOnCurrentHoldsSql('sent', projectClimbHoldsEpoch)}
-  )`;
+function loggedClimbsSubquery(conditions: SQL[]) {
+  const tickRevision = tickRevisionOrFirstSql(dbSchema.boardseshTicks.climbRevision);
+  return db
+    .select({
+      climbUuid: dbSchema.boardseshTicks.climbUuid,
+      boardType: dbSchema.boardseshTicks.boardType,
+      total: sql<number>`SUM(${dbSchema.boardseshTicks.attemptCount})::int`.as('total'),
+      latestRevision: sql<number>`MAX(${tickRevision})`.as('latest_revision'),
+      latestSentRevision: sql<
+        number | null
+      >`MAX(${tickRevision}) FILTER (WHERE ${dbSchema.boardseshTicks.status} IN ('flash', 'send'))`.as(
+        'latest_sent_revision',
+      ),
+    })
+    .from(dbSchema.boardseshTicks)
+    .where(and(...conditions))
+    .groupBy(dbSchema.boardseshTicks.climbUuid, dbSchema.boardseshTicks.boardType)
+    .as('logged');
+}
+
+type LoggedClimbs = ReturnType<typeof loggedClimbsSubquery>;
+
+/**
+ * Each logged climb's own `board_climbs` row, on its primary key. A LEFT join:
+ * a tick can name a climb that has no row, and that climb stays in the count as
+ * it always has, at epoch 1.
+ */
+function loggedClimbJoin(logged: LoggedClimbs) {
+  return and(eq(dbSchema.boardClimbs.boardType, logged.boardType), eq(dbSchema.boardClimbs.uuid, logged.climbUuid));
 }
 
 /**
- * The PROJECTS queries LEFT JOIN each tick to its climb on the `board_climbs`
- * primary key, to read the climb's holds epoch. LEFT, because a tick can name a
- * climb that has no row, and that tick stays in the playlist's count as before.
- */
-const projectClimbJoin = and(
-  eq(dbSchema.boardClimbs.boardType, dbSchema.boardseshTicks.boardType),
-  eq(dbSchema.boardClimbs.uuid, dbSchema.boardseshTicks.climbUuid),
-);
-const projectClimbHoldsEpoch = holdsEpochOrFirstSql(dbSchema.boardClimbs.holdsRevisionNumber);
-
-/**
  * A project is a climb the user has logged on its current holds and not sent on
- * them (#6023). Both halves read the epoch: without the first, moving a hold
- * would turn every climb the user had already sent into a project they never
- * tried.
+ * them (#6023, holds-epoch.ts). Both halves read the epoch: without the first,
+ * moving a hold would turn every climb the user had already sent into a project
+ * they never tried.
  */
-function projectConditions(userId: string): SQL[] {
-  return [tickOnCurrentHoldsSql(dbSchema.boardseshTicks.climbRevision, projectClimbHoldsEpoch), notSentExists(userId)];
+function isProjectCondition(logged: LoggedClimbs): SQL {
+  const holdsEpoch = holdsEpochOrFirstSql(dbSchema.boardClimbs.holdsRevisionNumber);
+  return sql`${latestTickOnCurrentHoldsSql(logged.latestRevision, holdsEpoch)}
+    AND NOT ${latestTickOnCurrentHoldsSql(logged.latestSentRevision, holdsEpoch)}`;
 }
 
 /**
@@ -197,22 +200,16 @@ async function selectSmartClimbRefs(
     return rows.map((row) => ({ climbUuid: row.climbUuid, boardType: row.boardType }));
   }
 
-  // PROJECTS — climbs the user has logged but never sent on this (board, climb).
-  // The NOT EXISTS check matches on both board_type and climb_uuid, so a sent
-  // Kilter climb doesn't accidentally exclude a Tension climb with the same
-  // UUID. We don't add `status = 'attempt'` because a climb that survives the
-  // NOT EXISTS has no flash/send rows for this board by definition.
+  // PROJECTS — climbs the user has tried on their current holds and not sent on
+  // them, most attempts first. The attempt total counts every tick on the
+  // climb, older versions included: it only orders the list.
+  const logged = loggedClimbsSubquery(conditions);
   const rows = await db
-    .select({
-      climbUuid: dbSchema.boardseshTicks.climbUuid,
-      boardType: dbSchema.boardseshTicks.boardType,
-      total: sql<number>`SUM(${dbSchema.boardseshTicks.attemptCount})::int`,
-    })
-    .from(dbSchema.boardseshTicks)
-    .leftJoin(dbSchema.boardClimbs, projectClimbJoin)
-    .where(and(...conditions, ...projectConditions(userId)))
-    .groupBy(dbSchema.boardseshTicks.climbUuid, dbSchema.boardseshTicks.boardType)
-    .orderBy(desc(sql`SUM(${dbSchema.boardseshTicks.attemptCount})`))
+    .select({ climbUuid: logged.climbUuid, boardType: logged.boardType })
+    .from(logged)
+    .leftJoin(dbSchema.boardClimbs, loggedClimbJoin(logged))
+    .where(isProjectCondition(logged))
+    .orderBy(desc(logged.total))
     .limit(pageSize)
     .offset(offset);
   return rows.map((row) => ({ climbUuid: row.climbUuid, boardType: row.boardType }));
@@ -276,13 +273,12 @@ async function countSmartClimbRefs(
     return row?.count ?? 0;
   }
 
+  const logged = loggedClimbsSubquery(conditions);
   const [row] = await db
-    .select({
-      count: sql<number>`COUNT(DISTINCT (${dbSchema.boardseshTicks.boardType}, ${dbSchema.boardseshTicks.climbUuid}))::int`,
-    })
-    .from(dbSchema.boardseshTicks)
-    .leftJoin(dbSchema.boardClimbs, projectClimbJoin)
-    .where(and(...conditions, ...projectConditions(userId)));
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(logged)
+    .leftJoin(dbSchema.boardClimbs, loggedClimbJoin(logged))
+    .where(isProjectCondition(logged));
   return row?.count ?? 0;
 }
 
@@ -446,7 +442,7 @@ export const smartPlaylist = async (
  * the cards on the library page.
  *
  * Single roundtrip via CTEs — Postgres scans `boardsesh_ticks` once for the
- * shared `base` and `sent` CTEs, then derives all three counts. Drizzle's
+ * shared `base` CTE, then derives all three counts. Drizzle's
  * query builder can't express co-defined CTEs reused across siblings, hence
  * `db.execute(sql\`...\`)` (the sanctioned escape hatch in CLAUDE.md).
  */
@@ -466,21 +462,19 @@ export const mySmartPlaylistCounts = async (
   return withSerialPlan(db, async (tx) => {
     const result = await tx.execute<{ type: SmartPlaylistType; count: number }>(sql`
       WITH base AS (
-        -- on_current_holds (#6023) feeds the projects count only, so it matches
-        -- the PROJECTS page; the other two cards count every tick. The join is
-        -- on the board_climbs primary key.
-        SELECT t.climb_uuid, t.board_type, t.quality, t.attempt_count, t.status,
-               ${tickAliasOnCurrentHoldsSql('t', holdsEpochOrFirstSql(sql`tick_climb.holds_revision_number`))} AS on_current_holds
-        FROM ${dbSchema.boardseshTicks} AS t
-        LEFT JOIN ${dbSchema.boardClimbs} AS tick_climb
-          ON tick_climb.board_type = t.board_type AND tick_climb.uuid = t.climb_uuid
-        WHERE t.user_id = ${userId}
+        SELECT climb_uuid, board_type, quality, attempt_count, status, climb_revision
+        FROM ${dbSchema.boardseshTicks}
+        WHERE user_id = ${userId}
       ),
-      sent AS (
-        SELECT DISTINCT climb_uuid, board_type
+      -- One row per logged climb, as loggedClimbsSubquery builds for the
+      -- PROJECTS page: the newest revision logged, and the newest sent.
+      logged AS (
+        SELECT climb_uuid, board_type,
+               MAX(${tickRevisionOrFirstSql(sql`climb_revision`)}) AS latest_revision,
+               MAX(${tickRevisionOrFirstSql(sql`climb_revision`)})
+                 FILTER (WHERE status IN ('flash', 'send')) AS latest_sent_revision
         FROM base
-        WHERE status IN ('flash', 'send')
-          AND on_current_holds
+        GROUP BY climb_uuid, board_type
       ),
       five_stars AS (
         SELECT COUNT(DISTINCT (board_type, climb_uuid))::int AS count
@@ -497,17 +491,15 @@ export const mySmartPlaylistCounts = async (
         ) r
       ),
       projects AS (
-        -- Match sent on (climb_uuid, board_type) so a Kilter send doesn't
-        -- exclude a Tension climb sharing the same UUID; mirrors the
-        -- per-page paged-query semantics in selectSmartClimbRefs.
-        SELECT COUNT(DISTINCT (board_type, climb_uuid))::int AS count
-        FROM base
-        WHERE on_current_holds
-          AND NOT EXISTS (
-          SELECT 1 FROM sent
-          WHERE sent.climb_uuid = base.climb_uuid
-            AND sent.board_type = base.board_type
-        )
+        -- The same rule as the PROJECTS page (isProjectCondition): tried on the
+        -- current holds, not sent on them. board_climbs is read once per logged
+        -- climb, on its primary key, and only by this card.
+        SELECT COUNT(*)::int AS count
+        FROM logged
+        LEFT JOIN ${dbSchema.boardClimbs} AS logged_climb
+          ON logged_climb.board_type = logged.board_type AND logged_climb.uuid = logged.climb_uuid
+        WHERE ${latestTickOnCurrentHoldsSql(sql`logged.latest_revision`, holdsEpochOrFirstSql(sql`logged_climb.holds_revision_number`))}
+          AND NOT ${latestTickOnCurrentHoldsSql(sql`logged.latest_sent_revision`, holdsEpochOrFirstSql(sql`logged_climb.holds_revision_number`))}
       ),
       liked_climbs AS (
         SELECT COUNT(DISTINCT (board_name, climb_uuid))::int AS count

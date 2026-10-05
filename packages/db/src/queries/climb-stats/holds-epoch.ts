@@ -17,10 +17,16 @@ import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
  * climber.
  *
  * The NULL rule: a tick with no revision counts as revision 1. NULL is every
- * imported tick and every tick older than the column, and all of those were
- * logged on a climb nobody had edited yet, because revisions did not exist
- * before the column did. A missing `board_climbs` row has epoch 1 for the same
- * reason (see {@link holdsEpochOrFirstSql}).
+ * imported tick and every tick older than the column. For the old ticks that is
+ * exact: revisions did not exist before the column did. For an import it is a
+ * choice. An Aurora or Kilter logbook entry that arrives after the holds of a
+ * Boardsesh-owned catalogue climb moved may have been climbed on the new holds,
+ * and it still reads as revision 1, so that climber's "sent" mark and first
+ * ascent on the climb stay off until they log it in Boardsesh. That is accepted:
+ * an import never adds to the Boardsesh ascensionist count anyway, the window is
+ * the setter's 24 hours after publishing, and spray walls, where edits have no
+ * limit, have no imports at all. A missing `board_climbs` row has epoch 1 (see
+ * {@link holdsEpochOrFirstSql}).
  *
  * On a climb whose holds never moved the epoch is 1, so the predicate is true
  * for every tick and nothing changes. That is every catalogue climb outside its
@@ -35,7 +41,32 @@ import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
  * or alias the caller scans.
  */
 export function tickOnCurrentHoldsSql(tickClimbRevision: SQLWrapper, holdsEpoch: SQLWrapper): SQL {
-  return sql`COALESCE(${tickClimbRevision}, 1) >= ${holdsEpoch}`;
+  return sql`${tickRevisionOrFirstSql(tickClimbRevision)} >= ${holdsEpoch}`;
+}
+
+/**
+ * A tick's revision with the NULL rule applied. For a caller that aggregates
+ * before it compares: `MAX(...)` of this over a climber's ticks on one climb,
+ * then {@link latestTickOnCurrentHoldsSql} against the epoch. That costs one
+ * `board_climbs` lookup per climb instead of one per tick.
+ */
+export function tickRevisionOrFirstSql(tickClimbRevision: SQLWrapper): SQL {
+  return sql`COALESCE(${tickClimbRevision}, 1)`;
+}
+
+/** {@link tickRevisionOrFirstSql} for a raw-SQL query that names its tick table by alias. */
+export function tickAliasRevisionOrFirstSql(tickAlias: TickTableAlias): SQL {
+  return tickRevisionOrFirstSql(sql.raw(`${tickAlias}.climb_revision`));
+}
+
+/**
+ * "At least one of these ticks is on the current holds", given the highest
+ * {@link tickRevisionOrFirstSql} among them. Equivalent to
+ * {@link tickOnCurrentHoldsSql} holding for some tick of the group. NULL, no
+ * tick in the group at all, is false.
+ */
+export function latestTickOnCurrentHoldsSql(latestTickRevision: SQLWrapper, holdsEpoch: SQLWrapper): SQL {
+  return sql`COALESCE(${latestTickRevision}, 0) >= ${holdsEpoch}`;
 }
 
 /**
@@ -44,11 +75,11 @@ export function tickOnCurrentHoldsSql(tickClimbRevision: SQLWrapper, holdsEpoch:
  * `StatsTableAlias` in real-catalog-data.ts). Adding an alias is a one-line edit
  * here.
  */
-export type TickTableAlias = 'bt' | 'bt_u' | 'bt2' | 't' | 'sent' | 'rating_below' | 'rating_newer';
+export type TickTableAlias = 'bt' | 'bt_u' | 'bt2' | 't' | 'rating_below';
 
 /** {@link tickOnCurrentHoldsSql} for a raw-SQL query that names its tick table by alias. */
 export function tickAliasOnCurrentHoldsSql(tickAlias: TickTableAlias, holdsEpoch: SQLWrapper): SQL {
-  return tickOnCurrentHoldsSql(sql.raw(`${tickAlias}.climb_revision`), holdsEpoch);
+  return sql`${tickAliasRevisionOrFirstSql(tickAlias)} >= ${holdsEpoch}`;
 }
 
 /**

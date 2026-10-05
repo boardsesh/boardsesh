@@ -117,7 +117,9 @@ type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
  *     existed.
  * updateClimb recomputes a climb's keys in the transaction that moves its epoch
  * (holds-change-stats.ts in the backend), so the epoch and the stats commit
- * together.
+ * together. It marks those keys in climb_stats_recompute_pending first: a
+ * recompute here whose statement read the old epoch can still write after that
+ * commit, and the drain of the marker is what recomputes the key again.
  *
  * The defensive seed is GUARDED on the climb existing in board_climbs (#3528)
  * AND a matching non-detached flash/send tick still existing at the key.

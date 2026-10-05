@@ -1093,6 +1093,14 @@ export const createClimbFilters = (
       // and a climb the user never rated has no offending tick, so it stays
       // visible (pair with onlyRatedByMe to drop those too). The (climbed_at,
       // id) row comparison breaks same-timestamp ties by insertion order.
+      //
+      // The holds epoch (#6023) is tested on the offending rating only. On the
+      // superseding one it puts a reference to board_climbs, two query levels
+      // up, inside the inner NOT EXISTS, and with that Postgres stopped
+      // unnesting it (EXPLAIN on the dev DB): the per-candidate subplan
+      // described above came back.
+      // Nothing is lost: a rating newer than one on the current holds is on the
+      // current holds too, apart from a tick whose date was edited backwards.
       personalProgressConditions.push(
         sql`NOT EXISTS (
           SELECT 1 FROM ${boardseshTicks} AS rating_below
@@ -1110,39 +1118,12 @@ export const createClimbFilters = (
             AND rating_newer.board_type = rating_below.board_type
             AND rating_newer.angle = rating_below.angle
             AND rating_newer.quality IS NOT NULL
-            AND ${tickAliasOnCurrentHoldsSql('rating_newer', boardClimbs.holdsRevisionNumber)}
             AND (rating_newer.climbed_at, rating_newer.id) > (rating_below.climbed_at, rating_below.id)
           )
         )`,
       );
     }
   }
-
-  // User-specific logbook data selectors using boardsesh_ticks
-  const getUserLogbookSelects = () => {
-    return {
-      userAscents: sql<number>`(
-        SELECT COUNT(*)
-        FROM ${boardseshTicks}
-        WHERE ${boardseshTicks.climbUuid} = ${boardClimbs.uuid}
-        AND ${boardseshTicks.userId} = ${userId || ''}
-        AND ${boardseshTicks.boardType} = ${params.board_name}
-        AND ${boardseshTicks.angle} = ${params.angle}
-        AND ${boardseshTicks.status} IN ('flash', 'send')
-        AND ${tickOnCurrentHolds}
-      )`,
-      userAttempts: sql<number>`(
-        SELECT COUNT(*)
-        FROM ${boardseshTicks}
-        WHERE ${boardseshTicks.climbUuid} = ${boardClimbs.uuid}
-        AND ${boardseshTicks.userId} = ${userId || ''}
-        AND ${boardseshTicks.boardType} = ${params.board_name}
-        AND ${boardseshTicks.angle} = ${params.angle}
-        AND ${boardseshTicks.status} = 'attempt'
-        AND ${tickOnCurrentHolds}
-      )`,
-    };
-  };
 
   return {
     // True only when this is genuinely a user's drafts query (onlyDrafts AND a
@@ -1241,7 +1222,6 @@ export const createClimbFilters = (
       eq(boardClimbHolds.climbUuid, boardClimbs.uuid),
       eq(boardClimbHolds.boardType, params.board_name),
     ],
-    getUserLogbookSelects,
     // Raw parts
     baseConditions,
     browsedAngleConditions,

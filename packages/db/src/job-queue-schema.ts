@@ -204,10 +204,10 @@ const CLIMB_STATS_SELF_HEAL_GRANTS: readonly WorkerTableGrant[] = [
       'kilter_id',
       'kilter_synced_at',
       'kilter_detached_at',
-      // The holds epoch (#6023): the recompute will count only ticks at or
-      // above board_climbs.holds_revision_number. Granted with the columns, one
-      // deploy ahead of the code that reads them, because a new worker image
-      // can start before the migrator has re-granted.
+      // The holds epoch (#6023): the recompute counts only ticks at or above
+      // board_climbs.holds_revision_number (`climb-stats/holds-epoch.ts`).
+      // Granted with the columns, one deploy ahead of this reader, because a
+      // new worker image can start before the migrator has re-granted.
       'climb_revision',
     ],
   },
