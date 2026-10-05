@@ -4,6 +4,7 @@ import { getOutboxSummary } from '@boardsesh/offline-sync';
 import { useAuth } from '../providers/auth-provider';
 import { useConfirm } from '../providers/dialog-provider';
 import { getDatabaseHandle } from '../db';
+import { getSchemaDowngrade } from '../db/schema-downgrade';
 import { hasDownloadedBoardData } from '../db/queries/board-download-status';
 import { reportError } from '../lib/error-reporting';
 import { showSignOutFailure } from '../lib/sign-out-failure-alert';
@@ -45,6 +46,14 @@ import { showSignOutFailure } from '../lib/sign-out-failure-alert';
  * expiry — reach the cleanup directly and have no meaningful moment to ask (the token
  * is already dead), so putting the dialog in the provider would mean an opt-out flag
  * on every one of them.
+ *
+ * One state gets a different dialog: the offline database belongs to a newer app
+ * version than the one running (db/schema-downgrade). Nothing can be read from it,
+ * so none of the sentences above can be composed, and sign-out cannot drain or
+ * wipe it either. The rows stay in the file under the owner stamp, which clears
+ * them, queued sends included, if a DIFFERENT account is the next to sign in on a
+ * version that can open it. That is the one thing worth saying, so the dialog says
+ * it, with staying as the default and leaving as the destructive choice.
  */
 /**
  * Run one dialog probe on its own. A read that fails costs its own sentence and
@@ -75,6 +84,19 @@ export function useConfirmSignOut(): () => Promise<void> {
     if (inFlightRef.current) return;
     inFlightRef.current = true;
     try {
+      if (getSchemaDowngrade() !== null) {
+        const leaving = await confirm({
+          title: t('mobile.settings.signOut.title'),
+          message: t('mobile.settings.signOut.downgradeMessage'),
+          confirmLabel: t('mobile.settings.signOut.downgradeConfirm'),
+          cancelLabel: t('mobile.settings.signOut.downgradeCancel'),
+          destructive: true,
+        });
+        if (!leaving) return;
+        await signOut('manual');
+        return;
+      }
+
       // No handle means offline storage never initialised this session, so there is
       // nothing local to lose. A read failure is not a reason to skip the warning —
       // that probe falls back to "nothing to report" and the dialog still opens.

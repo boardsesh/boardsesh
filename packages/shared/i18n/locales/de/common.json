@@ -299,6 +299,8 @@
         "errorTitle": "Deine Downloads ließen sich nicht messen",
         "errorSubtitle": "Beim Lesen dessen, was auf diesem Handy liegt, kam etwas dazwischen.",
         "errorRetry": "Nochmal versuchen",
+        "downgradeTitle": "Der Offline-Speicher pausiert",
+        "downgradeSubtitle": "Auf diesem Handy läuft eine ältere App-Version als die, die deine Daten gespeichert hat. Deine heruntergeladenen Boards und alle Begehungen, die noch auf die Synchronisierung warten, bleiben auf diesem Handy und kommen mit dem nächsten Update zurück.",
         "cachedImagesHeader": "Bilder im Cache",
         "cachedImagesArtLabel": "Board-Grafik",
         "cachedImagesPhotosLabel": "Fotos",
@@ -381,6 +383,9 @@
         "failedMessage_other": "{{count}} Änderungen konnten nicht synchronisiert werden und werden beim Abmelden gelöscht. Brich ab und tippe erst auf „Sync wiederholen“, wenn du sie behalten willst.",
         "confirm": "Abmelden",
         "cancel": "Abbrechen",
+        "downgradeMessage": "Dieses Handy wartet auf ein App-Update, bevor es deine Offline-Daten öffnen kann. Meldet sich hier vorher jemand anderes an, gehen alle Begehungen verloren, die auf diesem Handy noch auf die Synchronisierung warten.",
+        "downgradeConfirm": "Trotzdem abmelden",
+        "downgradeCancel": "Angemeldet bleiben",
         "failureTitle": "Abmeldung nicht bestätigt",
         "failure": "Boardsesh konnte die Abmeldung nicht bestätigen. Verbinde dich neu und melde dich nochmal ab, bevor du dieses Gerät aus der Hand gibst."
       },

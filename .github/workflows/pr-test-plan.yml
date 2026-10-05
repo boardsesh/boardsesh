@@ -1,7 +1,9 @@
 name: PR Test Plan
 
 # Fails a PR whose description has no usable `## Test plan` (1–5 numbered steps)
-# or no `Risk: N/5 — why` line. Testers read the plan verbatim in the mobile app
+# or no `Risk: N/5 — why` line, and a PR that changes the phone's SQLite migration
+# list without a ticked statement that the previous stable bundle can read the
+# result (docs/offline-sync-plan.md, "Older JS on a newer database"). Testers read the plan verbatim in the mobile app
 # (the crowdsourced-QA flow, docs/crowdsourced-qa.md), so the rules are the
 # reader's: short, numbered, one action and one expected result per step. The
 # rule set is `validatePrBody` in @boardsesh/pr-body, run by
@@ -205,6 +207,24 @@ jobs:
       - name: Install dependencies
         if: ${{ !endsWith(github.event.pull_request.user.login, '[bot]') }}
         run: vp install --frozen-lockfile
+      - name: List the files this PR changes
+        if: ${{ !endsWith(github.event.pull_request.user.login, '[bot]') }}
+        # Blocking, unlike the label steps above: the gate below needs this list
+        # to know whether the PR changes the offline migration list, and a rule
+        # that is skipped whenever the listing fails is not a rule.
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              ...context.repo, pull_number: context.payload.pull_request.number, per_page: 100,
+            });
+            // Both names of a rename: moving the migration list is changing it.
+            const paths = files.flatMap((file) =>
+              file.previous_filename ? [file.filename, file.previous_filename] : [file.filename],
+            );
+            fs.writeFileSync('pr-files.txt', paths.join('\n') + '\n');
+            core.info(`Wrote ${paths.length} changed path(s) to pr-files.txt.`);
       - name: Check PR has a test plan and a risk score
         if: ${{ !endsWith(github.event.pull_request.user.login, '[bot]') }}
         env:
@@ -214,4 +234,4 @@ jobs:
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels) }}
         run: |
           printf '%s' "$PR_BODY" > pr-body.txt
-          vp run check:pr-test-plan -- --body-file pr-body.txt
+          vp run check:pr-test-plan -- --body-file pr-body.txt --changed-files-file pr-files.txt

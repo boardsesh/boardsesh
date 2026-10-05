@@ -322,9 +322,12 @@ export {
   ARTIFACT_SCHEMA_VERSION,
   ARTIFACT_TABLES,
   artifactSchemaVersion,
+  classifySchemaVersion,
+  readSchemaCompatibility,
+  SchemaNewerThanAppError,
 } from './db/migrations';
 export { SnapshotSchemaCompatibilityError, type SchemaDriftReport } from './sync/schema-compatibility';
-export type { Migration } from './db/migrations';
+export type { Migration, SchemaCompatibility } from './db/migrations';
 export {
   OFFLINE_DB_BUSY_TIMEOUT_MS,
   OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS,

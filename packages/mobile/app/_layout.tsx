@@ -77,6 +77,7 @@ import { glassStackScreenOptions } from '../src/theme/navigation';
 import { reportError, reportHandledError } from '../src/lib/error-reporting';
 import { track, getAnalyticsClient } from '../src/lib/analytics';
 import { performOtaRecovery, type OtaRecoveryPhase } from '../src/lib/ota-recovery';
+import { watchForSchemaDowngrade } from '../src/lib/schema-downgrade-recovery';
 import { isChunkLoadError, markRootLayoutLoaded } from '../src/lib/chunk-load-recovery';
 import { ChunkLoadErrorScreen } from '../src/components/ChunkLoadErrorScreen';
 import { loadRequiredFonts } from '../src/lib/required-fonts';
@@ -119,6 +120,19 @@ markStartup('root.module.ready');
 // down. No-op on native (#5611).
 markRootLayoutLoaded();
 void SplashScreen.preventAutoHideAsync();
+
+// Older JS on a database newer JS migrated (a reverted canary OTA, a climber
+// leaving the early-updates track): the database lifecycle refuses the file, and
+// this downloads whatever newer bundle the OTA server has, for the next cold
+// start. Registered here, before `DatabaseProvider` can mount and find it.
+watchForSchemaDowngrade({
+  // The check/fetch calls throw ERR_UPDATES_DISABLED in dev.
+  updatesEnabled: Updates.isEnabled && !__DEV__,
+  checkForUpdate: () => Updates.checkForUpdateAsync(),
+  fetchUpdate: () => Updates.fetchUpdateAsync(),
+  track,
+  reportFailure: (error) => reportHandledError(error, { tags: { source: 'schema-downgrade-recovery' } }),
+});
 
 // The screenshots build is a Debug dev-client (__DEV__ true) so it can load its
 // JS from Metro; a stray warning would pop a LogBox toast into a captured

@@ -15,6 +15,7 @@
 import { useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useOfflineDatabase } from '../db/use-offline-database';
+import { getSchemaDowngrade } from '../db/schema-downgrade';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import {
   estimateScopeDownload,
@@ -79,6 +80,9 @@ export function useConfirmBoardDownload() {
       board: UserBoard,
       options?: { trigger?: OfflineDownloadTrigger; source?: ToggleSource },
     ): Promise<boolean> => {
+      // The file belongs to a newer bundle and `db` refuses every call: nothing
+      // can be downloaded into it until the app updates (db/schema-downgrade).
+      if (getSchemaDowngrade() !== null) return false;
       const scope = offlineBoardScopeForBoard(board);
       const key = offlineBoardKeyForBoard(board);
       // How big is this download? Only the snapshot path can answer honestly, and

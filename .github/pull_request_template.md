@@ -46,6 +46,14 @@ One line: `Risk: N/5 — why`. Testers see the score next to the PR.
   3  new screen, shared package, backend resolver
   4  data writes, offline sync, auth-adjacent, publish pipeline
   5  BLE, OTA/native config, migrations with backfill (BLE also needs a Fable review)
+
+Only if this PR changes packages/shared/offline-sync/src/db/migrations.ts (the phone's
+SQLite schema): older app JS can land on a phone your migration already ran on, so the
+previous stable bundle must still be able to read the result. Add columns, tables and
+indexes now; drop or rename a release later. Then copy this line below the risk score,
+outside this comment. CI (`pr-test-plan`) fails without it, and no label waives it.
+
+- [x] Offline DB: the previous stable bundle can read this schema (expand now, contract a release later)
 -->
 
 Risk: /5 —

@@ -27,6 +27,7 @@ type ManageRowProps = {
   canRetryFastDownload?: boolean;
   onRetryFastDownload?: (board: UserBoard) => void;
   onToggleOffline: (board: UserBoard) => void;
+  offlineControlsDisabled?: boolean;
 };
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn() }));
@@ -360,6 +361,7 @@ vi.mock('../../../src/components/board-discovery/BoardManageRow', () => ({
     canRetryFastDownload,
     onRetryFastDownload,
     onToggleOffline,
+    offlineControlsDisabled,
   }: ManageRowProps) =>
     createElement(
       'div',
@@ -370,6 +372,7 @@ vi.mock('../../../src/components/board-discovery/BoardManageRow', () => ({
         'data-download-notice': downloadNotice ?? '',
         'data-download-stage': downloadProgress?.stage ?? '',
         'data-can-retry-fast': String(!!canRetryFastDownload),
+        'data-offline-controls-disabled': String(!!offlineControlsDisabled),
       },
       rowBoard.name,
       createElement(
@@ -388,9 +391,11 @@ vi.mock('../../../src/components/board-discovery/BoardManageRow', () => ({
 }));
 
 const { default: ManageBoards } = await import('../manage');
+const { resetSchemaDowngradeForTests, setSchemaDowngrade } = await import('../../../src/db/schema-downgrade');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetSchemaDowngradeForTests();
   confirmMock.mockResolvedValue(false);
   estimateScopeDownloadMock.mockReturnValue({ kind: 'unknown' });
   state.isOffline = false;
@@ -1346,5 +1351,43 @@ describe('My Boards: retrying the fast download (#4313)', () => {
 
     await waitFor(() => expect(confirmMock).toHaveBeenCalled());
     expect(retryFastDownloadMock).not.toHaveBeenCalled();
+  });
+});
+
+// Older JS on a database newer JS migrated (a reverted canary OTA, leaving early
+// updates): nothing can be downloaded this session, and the screen has to say so
+// instead of leaving controls that do nothing.
+describe('My Boards while offline storage is paused', () => {
+  beforeEach(() => {
+    state.profileId = 'me';
+    state.myBoards = {
+      data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+  });
+
+  it('leaves the download controls enabled on a database this app version can open', () => {
+    const { container } = render(createElement(ManageBoards));
+
+    expect(container.querySelector('[data-board="net-1"]')?.getAttribute('data-offline-controls-disabled')).toBe(
+      'false',
+    );
+    expect(screen.queryByText('mobile.settings.storage.downgradeTitle')).toBeNull();
+  });
+
+  it('disables every row\u2019s download controls and explains why, in the words Storage uses', () => {
+    setSchemaDowngrade({ storedVersion: 11, supportedVersion: 10 });
+
+    const { container } = render(createElement(ManageBoards));
+
+    expect(container.querySelector('[data-board="net-1"]')?.getAttribute('data-offline-controls-disabled')).toBe(
+      'true',
+    );
+    expect(screen.getByText('mobile.settings.storage.downgradeTitle')).toBeTruthy();
+    expect(screen.getByText('mobile.settings.storage.downgradeSubtitle')).toBeTruthy();
+    // Creating a board needs no local database.
+    expect(screen.getByRole('button', { name: 'Create a board' })).toBeTruthy();
   });
 });
