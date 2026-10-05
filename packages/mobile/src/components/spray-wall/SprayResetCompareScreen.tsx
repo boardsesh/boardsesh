@@ -275,7 +275,9 @@ export function SprayResetCompareScreen({
 
   if (view === 'loading') {
     return (
-      <View style={[styles.centered, { backgroundColor: systemColors.background, paddingTop: headerInset }]}>
+      <View
+        style={[styles.centered, { backgroundColor: systemColors.background, paddingTop: headerInset + spacing[4] }]}
+      >
         <ActivityIndicator size="large" />
         <Text variant="subheadline" color={systemColors.secondaryLabel}>
           {t('sprayReset.compare.working')}
@@ -286,7 +288,9 @@ export function SprayResetCompareScreen({
 
   if (view === 'no-detections') {
     return (
-      <View style={[styles.centered, { backgroundColor: systemColors.background, paddingTop: headerInset }]}>
+      <View
+        style={[styles.centered, { backgroundColor: systemColors.background, paddingTop: headerInset + spacing[4] }]}
+      >
         <Text variant="title3" style={styles.centeredText}>
           {t('sprayReset.compare.noDetections')}
         </Text>
@@ -299,7 +303,9 @@ export function SprayResetCompareScreen({
 
   if (view === 'unavailable' || !wall || !effective || !counts) {
     return (
-      <View style={[styles.centered, { backgroundColor: systemColors.background, paddingTop: headerInset }]}>
+      <View
+        style={[styles.centered, { backgroundColor: systemColors.background, paddingTop: headerInset + spacing[4] }]}
+      >
         <Text variant="headline" style={styles.centeredText}>
           {proposalQuery.error
             ? (extractGraphqlMessage(proposalQuery.error) ?? t('sprayReset.compare.unavailable'))

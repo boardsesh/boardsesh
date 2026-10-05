@@ -195,9 +195,9 @@ beforeEach(() => {
 
 describe('SprayResetCompareScreen', () => {
   describe.each([
-    { header: 'transparent', inset: 100 },
-    { header: 'opaque', inset: 0 },
-  ])('$header header fallback states', ({ inset }) => {
+    { header: 'transparent', inset: 100, expectedPaddingTop: 116 },
+    { header: 'opaque', inset: 0, expectedPaddingTop: 16 },
+  ])('$header header fallback states', ({ inset, expectedPaddingTop }) => {
     it.each(['loading', 'no-detections', 'unavailable'] as const)(
       'uses the measured header inset while %s',
       (state) => {
@@ -212,7 +212,7 @@ describe('SprayResetCompareScreen', () => {
         if (state === 'unavailable') expect(screen.getByText('Network request failed')).toBeTruthy();
         expect(screen.queryByTestId('board')).toBeNull();
         const screenStyle = JSON.parse(screen.container.firstElementChild!.getAttribute('data-native-style')!);
-        expect(screenStyle).toContainEqual({ backgroundColor: '#000', paddingTop: inset });
+        expect(screenStyle).toContainEqual({ backgroundColor: '#000', paddingTop: expectedPaddingTop });
       },
     );
   });
