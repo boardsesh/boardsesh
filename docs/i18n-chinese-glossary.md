@@ -127,7 +127,9 @@ Describe compatibility, never affiliation: 兼容 Kilter, not "Kilter 官方应�
 
 ## Plurals
 
-Chinese has one plural category, `other`. i18next reads the `_other` key for every count and never reads `_one`. Key parity still requires `_one` to exist, so give it the same text as `_other`. Keep `{{count}}` in both unless the English `_one` hardcodes the number.
+Chinese has one plural category, `other`. i18next reads the `_other` key for every count and never reads `_one`. Key parity still requires `_one` to exist. Give it the same text as `_other`, unless the English `_one` hardcodes the number or drops a placeholder: placeholder parity then forces `_one` to differ ("1 条完攀正在路上" beside "{{count}} 条完攀正在路上").
+
+Because `_other` is the string a climber with exactly one item reads, write it number-neutral: no 它们, 这些 or 他们. "记录已保存，但没有送达我们这里。", not "你记录了它们…". `catalog-completeness.test.ts` fails on those pronouns in a `_other` string.
 
 ## Rules that are not about words
 

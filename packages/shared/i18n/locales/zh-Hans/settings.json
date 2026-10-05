@@ -87,8 +87,8 @@
     "dialog": {
       "warning": "此操作不可恢复。你的个人资料、线路草稿、攀爬记录和其他所有数据都会被删除，且无法找回。",
       "checking": "正在检查你的线路…",
-      "publishedClimbs_one": "你有 <strong>{{count}}</strong> 条已发布的线路，删除账号后它们会保留。",
-      "publishedClimbs_other": "你有 <strong>{{count}}</strong> 条已发布的线路，删除账号后它们会保留。",
+      "publishedClimbs_one": "你有 <strong>{{count}}</strong> 条已发布的线路，删除账号后会保留。",
+      "publishedClimbs_other": "你有 <strong>{{count}}</strong> 条已发布的线路，删除账号后会保留。",
       "removeSetterName": "从已发布的线路中移除我的定线员名字",
       "confirmInstruction": "输入 <strong>DELETE</strong> 以确认。",
       "confirmPlaceholder": "DELETE",
