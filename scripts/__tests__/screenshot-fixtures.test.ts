@@ -652,7 +652,6 @@ describe('log grammar', () => {
         operationName: 'SyncTicks',
         hash12: '0123456789ab',
         reason: 'no-fixture',
-        unrecordedIds: [],
         variables: '{"cursor":null}',
       },
     ],
@@ -664,7 +663,6 @@ describe('log grammar', () => {
         operationName: 'SyncTicks',
         hash12: '0123456789ab',
         reason: 'document-changed',
-        unrecordedIds: [],
         variables: '{}',
       },
     ],
@@ -676,7 +674,6 @@ describe('log grammar', () => {
         operationName: 'anonymous',
         hash12: '0123456789ab',
         reason: 'anonymous-operation',
-        unrecordedIds: [],
         variables: '{}',
       },
     ],
@@ -688,21 +685,12 @@ describe('log grammar', () => {
         operationName: 'SyncTicks',
         hash12: '0123456789ab',
         reason: 'unreadable-fixture',
-        unrecordedIds: [],
         variables: '{}',
       },
     ],
     [
-      'MISS graphql ClimbStatsForClimbs 0123456789ab reason=unrecorded-ids ids=climb-y,climb-z variables={"boardName":"kilter","climbUuids":["climb-y","climb-z"]}',
-      {
-        event: 'miss',
-        kind: 'graphql',
-        operationName: 'ClimbStatsForClimbs',
-        hash12: '0123456789ab',
-        reason: 'unrecorded-ids',
-        unrecordedIds: ['climb-y', 'climb-z'],
-        variables: '{"boardName":"kilter","climbUuids":["climb-y","climb-z"]}',
-      },
+      'DEFAULT graphql ProfileAdminFlag 0123456789ab',
+      { event: 'default', operationName: 'ProfileAdminFlag', hash12: '0123456789ab' },
     ],
     ['MISS static /static/avatars/a.jpg', { event: 'miss', kind: 'static', subject: '/static/avatars/a.jpg' }],
     ['MISS route GET /api/v1/climbs', { event: 'miss', kind: 'route', method: 'GET', path: '/api/v1/climbs' }],
@@ -786,7 +774,6 @@ describe('log grammar', () => {
       operationName: 'SyncTicks',
       hash12: '0123456789ab',
       reason: 'no-fixture',
-      unrecordedIds: [],
       variables: '',
     });
   });
@@ -895,17 +882,36 @@ describe('findScreenshotBackendProblems', () => {
     expect(problems[0]).toContain('×2');
   });
 
-  it('fails a batch where NOT ONE id was covered — that is a screen nobody recorded', () => {
+  it('does not fail a capture for a batch where no id was covered, and counts it apart in the note', () => {
+    // Whether a chunk holds a covered id is flush timing (Android run
+    // 37258958437), so it cannot decide a miss. It is still the batch most
+    // worth a look, so the note says how many there were.
+    const log = [
+      line('HIT graphql ClimbStatsForClimbs 0123456789ab composed=2 uncovered=18 ids=climb-c'),
+      line('HIT graphql ClimbStatsForClimbs 0123456789ac composed=0 uncovered=2 ids=climb-y,climb-z'),
+    ].join('\n');
+    expect(findScreenshotBackendProblems(log, { mode: 'replay' })).toEqual([]);
+    expect(findScreenshotBackendNotes(log)).toEqual([
+      'ClimbStatsForClimbs answered 2 batch(es) with 20 uncovered id(s), 1 of them with no recorded id at all — ' +
+        'rows the recording never asked about; re-record if a visible row shows blank or wrong data.',
+    ]);
+  });
+
+  it('mentions an operation answered from its replay default, without failing the capture', () => {
     const log = [
       line('HIT graphql Me 0000aaaa1111'),
-      line(
-        'MISS graphql ClimbStatsForClimbs 0123456789ab reason=unrecorded-ids ids=climb-y,climb-z variables={"boardName":"kilter"}',
-      ),
+      line('DEFAULT graphql ProfileAdminFlag 44136fa355b3'),
+      line('DEFAULT graphql ProfileAdminFlag 44136fa355b3'),
     ].join('\n');
-    const [problem] = findScreenshotBackendProblems(log, { mode: 'replay' });
-    expect(problem).toContain('ClimbStatsForClimbs asked for a batch where NO id was recorded: climb-y, climb-z');
-    expect(problem).toContain('was never captured');
-    expect(problem).toContain(RE_RECORD_COMMAND);
+    expect(findScreenshotBackendProblems(log, { mode: 'replay' })).toEqual([]);
+    expect(findScreenshotBackendNotes(log)).toEqual([
+      'ProfileAdminFlag has no recorded fixture; answered 2 request(s) with its replay default.',
+    ]);
+  });
+
+  it('does not count a replay default as proof the app reached the recorded set', () => {
+    const log = line('DEFAULT graphql ProfileAdminFlag 44136fa355b3');
+    expect(findScreenshotBackendProblems(log, { mode: 'replay' })).toHaveLength(1);
   });
 
   it('does not fail a capture for a partly-covered batch', () => {
@@ -1066,8 +1072,8 @@ describe('findScreenshotBackendNotes', () => {
     const notes = findScreenshotBackendNotes(log);
     expect(notes).toHaveLength(2);
     expect(notes[0]).toBe(
-      'ClimbStatsForClimbs answered 2 batch(es) with 3 uncovered id(s) — rows mounted beyond the fold; ' +
-        're-record if a visible row shows blank stats.',
+      'ClimbStatsForClimbs answered 2 batch(es) with 3 uncovered id(s) — rows the recording never asked about; ' +
+        're-record if a visible row shows blank or wrong data.',
     );
     expect(notes[1]).toContain('GetBulkVoteSummaries answered 1 batch(es) with 3 uncovered id(s)');
   });

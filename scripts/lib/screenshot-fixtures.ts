@@ -818,21 +818,26 @@ export type BatchedOperationSpec = {
   idsVariablePath: string;
   /** Dot path inside the recorded response body of the list of items. */
   responseListPath: string;
-  /** Field on each response item carrying the id it answers for. */
-  responseIdField: string;
+  /**
+   * Field on each response item carrying the id it answers for, or `null` when
+   * the response list holds the ids themselves (`favorites` answers with the
+   * bare uuids of the requested climbs that are favourited).
+   */
+  responseIdField: string | null;
 };
 
 /**
  * Operations whose variables carry a LIST OF IDS assembled at runtime, so an
  * exact-variables key can never be stable for them.
  *
- * Both entries are viewport batches: `useQueries` over chunks of whatever rows
- * had mounted when the batch flushed
- * (`packages/mobile/src/lib/graphql/hooks/use-social.ts` for the vote
- * summaries, `fetchClimbStatsForClimbs` in
- * `packages/mobile/src/providers/board-adapter.tsx` for the stats). Replay is
- * instant, so the app scrolls and flushes on a different schedule than the
- * recording did and asks for id subsets the recording never sent as one batch.
+ * Every entry is a viewport batch: a chunk of whatever rows had mounted when
+ * the batch flushed (`packages/mobile/src/lib/graphql/hooks/use-social.ts` for
+ * the vote summaries, `fetchClimbStatsForClimbs` in
+ * `packages/mobile/src/providers/board-adapter.tsx` for the stats, the logbook
+ * and favourites reads behind every climb list for `GetTicks` and `Favorites`).
+ * Replay is instant, so the app scrolls and flushes on a different schedule
+ * than the recording did and asks for id subsets the recording never sent as
+ * one batch.
  *
  * The fix is to key these by MEMBERSHIP: every recorded batch of the operation
  * is decomposed into id -> its recorded items, and a request is answered by
@@ -864,6 +869,22 @@ export const BATCHED_OPERATIONS: Readonly<Record<string, BatchedOperationSpec>> 
     idsVariablePath: 'input.entityIds',
     responseListPath: 'data.bulkVoteSummaries',
     responseIdField: 'entityId',
+  },
+  // query GetTicks($input: GetTicksInput!)
+  // — packages/shared/graphql/src/operations/ticks.ts. The viewer's own ticks
+  // on the listed climbs; one climb yields one row per tick.
+  GetTicks: {
+    idsVariablePath: 'input.climbUuids',
+    responseListPath: 'data.ticks',
+    responseIdField: 'climbUuid',
+  },
+  // query Favorites($boardName: String!, $climbUuids: [String!]!, $angle: Int!)
+  // — packages/shared/graphql/src/operations/favorites.ts. Answers with the
+  // subset of the requested uuids that are favourited, as bare strings.
+  Favorites: {
+    idsVariablePath: 'climbUuids',
+    responseListPath: 'data.favorites',
+    responseIdField: null,
   },
 };
 
@@ -922,6 +943,14 @@ export function batchScopeKey(operationName: string, spec: BatchedOperationSpec,
   return canonicalJson(withoutIds);
 }
 
+/** The id one response item answers for, or `null` when the item does not carry one. */
+function batchItemId(spec: BatchedOperationSpec, item: unknown): string | null {
+  if (spec.responseIdField === null) return typeof item === 'string' ? item : null;
+  if (typeof item !== 'object' || item === null || Array.isArray(item)) return null;
+  const id = (item as Record<string, unknown>)[spec.responseIdField];
+  return typeof id === 'string' ? id : null;
+}
+
 /**
  * One recorded batch decomposed into id -> the items recorded for it. `null`
  * when the response has no list at `responseListPath`.
@@ -941,9 +970,8 @@ export function indexBatchItemsById(
   const itemsById = new Map<string, unknown[]>();
   for (const id of recordedIds) itemsById.set(id, []);
   for (const item of items) {
-    if (typeof item !== 'object' || item === null || Array.isArray(item)) continue;
-    const id = (item as Record<string, unknown>)[spec.responseIdField];
-    if (typeof id !== 'string') continue;
+    const id = batchItemId(spec, item);
+    if (id === null) continue;
     const bucket = itemsById.get(id);
     if (bucket) bucket.push(item);
     else itemsById.set(id, [item]);
@@ -998,6 +1026,57 @@ export function composeBatchedResponse(
   const composed = cloneJsonValue(templateResponse) as Record<string, unknown>;
   if (!setDotPath(composed, spec.responseListPath, [...items])) return { ok: false };
   return { ok: true, response: composed };
+}
+
+// ---------------------------------------------------------------------------
+// Replay defaults
+// ---------------------------------------------------------------------------
+
+/** One operation replay may answer without a recording, and why that is honest. */
+export type ReplayDefaultResponse = {
+  /** The whole response body, `data` envelope included, as a fixture stores it. */
+  response: unknown;
+  /** Why this answer is true of the recording account whatever was recorded. */
+  reason: string;
+};
+
+/**
+ * Queries replay answers with a fixed body when the recorded set holds NO
+ * fixture for them.
+ *
+ * A new query on a screen the capture visits is a replay miss on every run
+ * until the set is re-recorded, and a re-record is an operational task against
+ * PROD (see docs/mobile-screenshot-fixtures.md). For a query whose honest
+ * answer for the screenshots account never depends on what was recorded, that
+ * cost buys nothing, so its answer is declared here instead.
+ *
+ * Only add a query when BOTH of these hold:
+ *  - the answer is the same for the recording account on every screen (a
+ *    capability flag, an empty inbox) — never a list or a count a screenshot
+ *    shows;
+ *  - the app already renders correctly on that answer.
+ *
+ * The moment a fixture for the operation is recorded, the default stops
+ * applying and the ordinary keyed lookup takes over, changed variables
+ * included. The drift test (`screenshot-fixture-drift.test.ts`) fails on an
+ * entry the app no longer sends, on one that is also recorded, and on a body
+ * that does not answer the current document.
+ */
+export const REPLAY_DEFAULT_RESPONSES: Readonly<Record<string, ReplayDefaultResponse>> = {
+  // query ProfileAdminFlag — packages/mobile/src/lib/graphql/operations.ts.
+  // `useCatalogQuerySourceState` asks it for every board that is not
+  // downloaded, so it fires on most captured screens. `useIsAdmin` reads a
+  // null profile as "not an admin", the same answer the server gives the
+  // screenshots account.
+  ProfileAdminFlag: {
+    response: { data: { profile: null } },
+    reason: 'the screenshots account is not an admin',
+  },
+};
+
+/** This operation's replay default, or `null` when it has none. */
+export function replayDefaultResponse(operationName: string): ReplayDefaultResponse | null {
+  return Object.hasOwn(REPLAY_DEFAULT_RESPONSES, operationName) ? REPLAY_DEFAULT_RESPONSES[operationName] : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1261,24 +1340,13 @@ export function validateScreenshotFixtureManifest(value: unknown): ScreenshotFix
 // Log grammar
 // ---------------------------------------------------------------------------
 
-export type GraphqlMissReason =
-  | 'no-fixture'
-  | 'document-changed'
-  | 'anonymous-operation'
-  | 'unreadable-fixture'
-  /**
-   * A batched operation (see `BATCHED_OPERATIONS`) asked for a scope that was
-   * recorded, but not ONE of its ids was covered. A partly-covered batch is
-   * answered instead — see `collectBatchItems` and the uncovered-ids note.
-   */
-  | 'unrecorded-ids';
+export type GraphqlMissReason = 'no-fixture' | 'document-changed' | 'anonymous-operation' | 'unreadable-fixture';
 
 const GRAPHQL_MISS_REASONS: readonly GraphqlMissReason[] = [
   'no-fixture',
   'document-changed',
   'anonymous-operation',
   'unreadable-fixture',
-  'unrecorded-ids',
 ];
 
 /**
@@ -1292,8 +1360,8 @@ const GRAPHQL_MISS_REASONS: readonly GraphqlMissReason[] = [
  */
 export const MISS_VARIABLES_LOG_LIMIT = 600;
 
-/** How many unrecorded ids a `reason=unrecorded-ids` miss names before it stops. */
-export const MISS_UNRECORDED_IDS_LOG_LIMIT = 10;
+/** How many uncovered ids a composed hit names before it stops. */
+export const UNCOVERED_IDS_LOG_LIMIT = 10;
 
 /**
  * The variables of a miss, canonically and with the ignored paths stripped —
@@ -1305,9 +1373,9 @@ export function formatMissVariables(operationName: string, variables: unknown): 
   return canonical.length <= MISS_VARIABLES_LOG_LIMIT ? canonical : `${canonical.slice(0, MISS_VARIABLES_LOG_LIMIT)}…`;
 }
 
-/** The ids a `reason=unrecorded-ids` line names, capped. */
-export function cappedUnrecordedIds(ids: readonly string[]): string[] {
-  return ids.slice(0, MISS_UNRECORDED_IDS_LOG_LIMIT);
+/** The uncovered ids a composed hit names, capped. */
+export function cappedUncoveredIds(ids: readonly string[]): string[] {
+  return ids.slice(0, UNCOVERED_IDS_LOG_LIMIT);
 }
 
 /**
@@ -1333,14 +1401,22 @@ export type ScreenshotBackendLogLine =
       /**
        * How many requested ids a batched hit was composed from recorded
        * batches (see `BATCHED_OPERATIONS`). `null` for an ordinary
-       * exact-key hit, which is every non-batched operation.
+       * exact-key hit, which is every non-batched operation. `0` is a batch
+       * where no requested id was covered, answered with an empty list.
        */
       composed: number | null;
       /** How many requested ids no recorded batch covered. 0 on any other hit. */
       uncoveredCount: number;
-      /** Up to `MISS_UNRECORDED_IDS_LOG_LIMIT` of those ids, for the note. */
+      /** Up to `UNCOVERED_IDS_LOG_LIMIT` of those ids, for the note. */
       uncoveredIds: readonly string[];
     }
+  /**
+   * An operation with no recorded fixture at all, answered with its declared
+   * `REPLAY_DEFAULT_RESPONSES` entry. Its own event rather than a hit: it
+   * proves nothing about the recorded set, so it must not count toward "the
+   * app reached the replay backend".
+   */
+  | { event: 'default'; operationName: string; hash12: string }
   | { event: 'hit'; kind: 'static'; subject: string }
   | { event: 'hit'; kind: 'auth'; route: AuthRoute }
   | {
@@ -1349,14 +1425,6 @@ export type ScreenshotBackendLogLine =
       operationName: string;
       hash12: string;
       reason: GraphqlMissReason;
-      /**
-       * Requested ids no recorded batch covers, capped at
-       * `MISS_UNRECORDED_IDS_LOG_LIMIT`. Empty unless the reason is
-       * `unrecorded-ids`. An id carrying whitespace would split the log field;
-       * these are GraphQL id scalars (uuids), and the same ids also appear
-       * inside `variables`, so the parser tolerates it rather than guarding it.
-       */
-      unrecordedIds: readonly string[];
       /** Canonical variables JSON, ignored paths stripped — see `formatMissVariables`. */
       variables: string;
     }
@@ -1419,12 +1487,12 @@ export function formatScreenshotBackendLine(line: ScreenshotBackendLogLine): str
             return `HIT auth ${line.route}`;
         }
         break;
+      case 'default':
+        return `DEFAULT graphql ${line.operationName} ${line.hash12}`;
       case 'miss':
         switch (line.kind) {
-          case 'graphql': {
-            const ids = line.unrecordedIds.length > 0 ? ` ids=${line.unrecordedIds.join(',')}` : '';
-            return `MISS graphql ${line.operationName} ${line.hash12} reason=${line.reason}${ids} variables=${line.variables}`;
-          }
+          case 'graphql':
+            return `MISS graphql ${line.operationName} ${line.hash12} reason=${line.reason} variables=${line.variables}`;
           case 'static':
             return `MISS static ${line.subject}`;
           case 'route':
@@ -1466,12 +1534,11 @@ const READY_PATTERN =
 const HIT_GRAPHQL_PATTERN = /^HIT graphql (\S+) (\S+)(?: composed=(\d+)(?: uncovered=(\d+) ids=(.*))?)?$/;
 const HIT_STATIC_PATTERN = /^HIT static (\S+)$/;
 const HIT_AUTH_PATTERN = /^HIT auth (\S+)$/;
-// `ids=` is non-greedy and `variables=` takes the rest of the line: the ids are
-// GraphQL id scalars and the variables are single-line JSON, but only one of
-// the two can safely be last. Both tails stay optional so a log written by an
-// older backend build (hash only) still parses — an unparsed MISS line would
-// vanish from `findScreenshotBackendProblems` and pass a broken capture.
-const MISS_GRAPHQL_PATTERN = /^MISS graphql (\S+) (\S+) reason=([a-z-]+)(?: ids=(.*?))?(?: variables=(.*))?$/;
+const DEFAULT_GRAPHQL_PATTERN = /^DEFAULT graphql (\S+) (\S+)$/;
+// `variables=` takes the rest of the line (single-line JSON) and stays optional
+// so a hash-only line still parses — an unparsed MISS line would vanish from
+// `findScreenshotBackendProblems` and pass a broken capture.
+const MISS_GRAPHQL_PATTERN = /^MISS graphql (\S+) (\S+) reason=([a-z-]+)(?: variables=(.*))?$/;
 const MISS_STATIC_PATTERN = /^MISS static (\S+)$/;
 const MISS_ROUTE_PATTERN = /^MISS route (\S+) (\S+)$/;
 const MISS_AUTH_PATTERN = /^MISS auth email=(\S*) expected=(\S*)$/;
@@ -1534,17 +1601,18 @@ export function parseScreenshotBackendLogLine(line: string): ScreenshotBackendLo
   const hitAuth = HIT_AUTH_PATTERN.exec(body);
   if (hitAuth && isAuthRoute(hitAuth[1])) return { event: 'hit', kind: 'auth', route: hitAuth[1] };
 
+  const defaulted = DEFAULT_GRAPHQL_PATTERN.exec(body);
+  if (defaulted) return { event: 'default', operationName: defaulted[1], hash12: defaulted[2] };
+
   const missGraphql = MISS_GRAPHQL_PATTERN.exec(body);
   if (missGraphql && isGraphqlMissReason(missGraphql[3])) {
-    const ids = missGraphql[4];
     return {
       event: 'miss',
       kind: 'graphql',
       operationName: missGraphql[1],
       hash12: missGraphql[2],
       reason: missGraphql[3],
-      unrecordedIds: ids === undefined || ids.length === 0 ? [] : ids.split(','),
-      variables: missGraphql[5] ?? '',
+      variables: missGraphql[4] ?? '',
     };
   }
 
@@ -1655,11 +1723,6 @@ function describeProblem(line: ScreenshotBackendLogLine): ScreenshotBackendProbl
                 description: `the recorded response for ${line.operationName} could not be read (${variables})`,
                 remedy: `the fixture file is missing or malformed; ${RE_RECORD_REMEDY}`,
               };
-            case 'unrecorded-ids':
-              return {
-                description: `${line.operationName} asked for a batch where NO id was recorded: ${line.unrecordedIds.join(', ')} (${variables})`,
-                remedy: `the screen those rows are on was never captured — add it to the flow and ${RE_RECORD_REMEDY}`,
-              };
           }
           break;
         }
@@ -1743,30 +1806,45 @@ export function findScreenshotBackendProblems(logText: string, options: { mode: 
 /**
  * What a capture should MENTION but not fail on.
  *
- * Today that is one thing: a batched operation answered with some of its ids
- * uncovered by the recorded set (see the tolerance rule on
- * `collectBatchItems`'s caller in screenshot-backend.ts). Uncovered ids are
- * routine and self-correcting — a list mounts rows past the fold, a shuffled
- * pool picks differently — and the rows they belong to still render from the
- * search payload's own bootstrap values, so they cannot blank a visible screen.
- * Failing a capture on them would make the gate flap on draw distance; hiding
- * them would lose the one signal that says a re-record is due.
+ * Two things. A batched operation answered with some of its ids uncovered by
+ * the recorded set (see the tolerance rule on `collectBatchItems`'s caller in
+ * screenshot-backend.ts): uncovered ids are routine — a list mounts rows past
+ * the fold, a shuffled pool picks differently — and failing a capture on them
+ * would make the gate flap on draw distance, while hiding them would lose the
+ * one signal that says a re-record is due. And an operation answered from
+ * `REPLAY_DEFAULT_RESPONSES`, so a default never works unseen.
  *
- * One line per operation, counting the batches and the ids.
+ * One line per operation, counting the batches and the ids. Batches where no
+ * requested id was covered are counted apart: they are the ones worth opening
+ * the screenshot for.
  */
 export function findScreenshotBackendNotes(logText: string): string[] {
-  const uncoveredByOperation = new Map<string, { batches: number; ids: number }>();
+  const uncoveredByOperation = new Map<string, { batches: number; ids: number; emptyBatches: number }>();
+  const defaultedByOperation = new Map<string, number>();
   for (const rawLine of logText.split('\n')) {
     const line = parseScreenshotBackendLogLine(rawLine);
-    if (!line || line.event !== 'hit' || line.kind !== 'graphql' || line.uncoveredCount === 0) continue;
-    const seen = uncoveredByOperation.get(line.operationName) ?? { batches: 0, ids: 0 };
+    if (!line) continue;
+    if (line.event === 'default') {
+      defaultedByOperation.set(line.operationName, (defaultedByOperation.get(line.operationName) ?? 0) + 1);
+      continue;
+    }
+    if (line.event !== 'hit' || line.kind !== 'graphql' || line.uncoveredCount === 0) continue;
+    const seen = uncoveredByOperation.get(line.operationName) ?? { batches: 0, ids: 0, emptyBatches: 0 };
     seen.batches += 1;
     seen.ids += line.uncoveredCount;
+    if (line.composed === 0) seen.emptyBatches += 1;
     uncoveredByOperation.set(line.operationName, seen);
   }
-  return [...uncoveredByOperation.entries()].map(
-    ([operationName, { batches, ids }]) =>
-      `${operationName} answered ${batches} batch(es) with ${ids} uncovered id(s) — rows mounted beyond the fold; ` +
-      `re-record if a visible row shows blank stats.`,
+  const uncoveredNotes = [...uncoveredByOperation.entries()].map(([operationName, { batches, ids, emptyBatches }]) => {
+    const empty = emptyBatches > 0 ? `, ${emptyBatches} of them with no recorded id at all` : '';
+    return (
+      `${operationName} answered ${batches} batch(es) with ${ids} uncovered id(s)${empty} — rows the recording ` +
+      `never asked about; re-record if a visible row shows blank or wrong data.`
+    );
+  });
+  const defaultNotes = [...defaultedByOperation.entries()].map(
+    ([operationName, count]) =>
+      `${operationName} has no recorded fixture; answered ${count} request(s) with its replay default.`,
   );
+  return [...uncoveredNotes, ...defaultNotes];
 }

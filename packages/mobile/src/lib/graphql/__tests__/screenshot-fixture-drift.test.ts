@@ -31,7 +31,7 @@ import { join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
-import { buildSchema, parse, validate, type DocumentNode, type GraphQLSchema } from 'graphql';
+import { Kind, buildSchema, parse, validate, type DocumentNode, type GraphQLSchema } from 'graphql';
 import { typeDefs } from '@boardsesh/shared-schema';
 import { listSyncPullDocuments } from '@boardsesh/offline-sync';
 
@@ -58,6 +58,7 @@ import * as sharedQueueSession from '@boardsesh/graphql/operations/queue-session
 
 import {
   BATCHED_OPERATIONS,
+  REPLAY_DEFAULT_RESPONSES,
   RE_RECORD_COMMAND,
   batchRequestIds,
   canonicalJson,
@@ -72,6 +73,7 @@ import {
 } from '../../../../../../scripts/lib/screenshot-fixtures';
 import { fixtureSnapshotDirectory } from '../../../../../../scripts/lib/screenshot-fixture-snapshot';
 import { checkSelectionCoverage } from './fixture-selection-coverage';
+import { QUERIES_NO_CAPTURE_SENDS } from './screenshot-unsent-queries';
 
 const MOBILE_OPERATIONS_PATH = 'packages/mobile/src/lib/graphql/operations.ts';
 const MOBILE_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -570,7 +572,7 @@ describe('BATCHED_OPERATIONS', () => {
   it.each(batchedEntries)('%s resolves its id list and item ids in every recorded fixture', (operationName, spec) => {
     const entries = manifest.graphql.filter((entry) => entry.operationName === operationName);
     // Not a precondition to skip on: an empty list would make this vacuous, and
-    // both operations are recorded many times over by the store flow.
+    // every batched operation is recorded many times over by the store flow.
     expect(entries.length).toBeGreaterThan(0);
     let fixturesThatDecomposedSomething = 0;
     for (const entry of entries) {
@@ -614,6 +616,141 @@ describe('BATCHED_OPERATIONS', () => {
         `responseListPath "${spec.responseListPath}" / responseIdField "${spec.responseIdField}" cannot be right`,
     ).toBeGreaterThan(0);
   });
+});
+
+// ---------------------------------------------------------------------------
+// (d2) A recorded runtime id list is keyed by membership
+// ---------------------------------------------------------------------------
+
+/** Every dot path in `variables` holding a non-empty list of strings, with that list. */
+function collectStringListPaths(value: unknown, path: string, found: Map<string, string[]>): void {
+  if (Array.isArray(value)) {
+    if (value.length > 0 && value.every((element): element is string => typeof element === 'string')) {
+      found.set(path, value);
+    }
+    return;
+  }
+  if (typeof value !== 'object' || value === null) return;
+  for (const [key, child] of Object.entries(value)) {
+    collectStringListPaths(child, path ? `${path}.${key}` : key, found);
+  }
+}
+
+describe('recorded id lists', () => {
+  /**
+   * The variables shape that breaks replay without any document changing: a
+   * list of ids the app assembles from whatever rows are mounted. Its exact
+   * contents depend on flush timing, so an exact-variables key matches on one
+   * run and misses on the next (`GetTicks` did, on every iPhone capture from
+   * 2026-09-19). The recorded set shows the shape directly — one operation,
+   * the same list variable, different lists — so it is checked here, on the PR
+   * that pins the set, instead of by the capture that misses.
+   */
+  it('keys every operation recorded with varying string lists by membership', () => {
+    const listsByOperationAndPath = new Map<string, Set<string>>();
+    for (const entry of manifest.graphql) {
+      if (Object.hasOwn(BATCHED_OPERATIONS, entry.operationName)) continue;
+      const found = new Map<string, string[]>();
+      collectStringListPaths(readFixture(entry.file).variables, '', found);
+      for (const [path, list] of found) {
+        const key = `${entry.operationName} variables.${path}`;
+        const seen = listsByOperationAndPath.get(key) ?? new Set<string>();
+        seen.add(canonicalJson(list));
+        listsByOperationAndPath.set(key, seen);
+      }
+    }
+    const failures = [...listsByOperationAndPath.entries()]
+      .filter(([, lists]) => lists.size > 1)
+      .map(
+        ([key, lists]) =>
+          `${key} was recorded with ${lists.size} different lists but is keyed by its exact variables. ` +
+          'If the app builds that list from mounted rows, replay will ask for a list nobody recorded: add the ' +
+          'operation to BATCHED_OPERATIONS in scripts/lib/screenshot-fixtures.ts.',
+      );
+    expect(failures).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (d3) Every query is recorded, answered by a default, or declared unsent
+// ---------------------------------------------------------------------------
+
+/** `query`, `mutation` or `subscription`, read off the parsed document. */
+function operationKind(document: string): string {
+  const definition = parse(document).definitions.find((candidate) => candidate.kind === Kind.OPERATION_DEFINITION);
+  if (!definition || definition.kind !== Kind.OPERATION_DEFINITION) {
+    throw new Error('A registered document holds no operation definition.');
+  }
+  return definition.operation;
+}
+
+const registeredQueryNames = [...registry.entries()]
+  .filter(([, documents]) => documents.some((registered) => operationKind(registered.document) === 'query'))
+  .map(([operationName]) => operationName);
+
+/**
+ * The PR-time half of the replay miss gate.
+ *
+ * A replay capture fails on any query the pinned set cannot answer, but it runs
+ * on a simulator after a native deploy — days after the PR that added the
+ * query. Nothing static knows which screen sends which query (a hook three
+ * imports away from a visited route is as live as one inside it), so this does
+ * the cheapest sound thing instead: every query the app can send has to be in
+ * exactly one of three places, and adding a query is what forces the choice.
+ *
+ *  - RECORDED: the pinned set holds a fixture for it.
+ *  - DEFAULTED: `REPLAY_DEFAULT_RESPONSES` declares its answer.
+ *  - UNSENT: `QUERIES_NO_CAPTURE_SENDS` says no captured screen sends it.
+ *
+ * Mutations and subscriptions are out of scope: a capture taps almost nothing,
+ * and passive subscriptions have their own rule in the replay backend.
+ */
+describe('queries the capture flows can reach', () => {
+  const recorded = new Set(manifest.graphql.map((entry) => entry.operationName));
+  const defaulted = new Set(Object.keys(REPLAY_DEFAULT_RESPONSES));
+  const declaredUnsent = new Set<string>(QUERIES_NO_CAPTURE_SENDS);
+
+  it('places every query the app can send', () => {
+    const unplaced = registeredQueryNames
+      .filter((name) => !recorded.has(name) && !defaulted.has(name) && !declaredUnsent.has(name))
+      .sort();
+    expect(
+      unplaced,
+      'These queries are new to the screenshot capture. For each one, decide: does a screen the capture flows visit ' +
+        '(packages/mobile/.maestro) send it? If NOT, add it to QUERIES_NO_CAPTURE_SENDS in ' +
+        'screenshot-unsent-queries.ts. If it DOES and its answer for the screenshots account never depends on ' +
+        'recorded data, add it to REPLAY_DEFAULT_RESPONSES in scripts/lib/screenshot-fixtures.ts. Otherwise the set ' +
+        'needs it recorded — see "When to re-record" in docs/mobile-screenshot-fixtures.md.',
+    ).toEqual([]);
+  });
+
+  it('keeps the unsent list to queries that are still unrecorded and still sent by the app', () => {
+    const stale = QUERIES_NO_CAPTURE_SENDS.filter(
+      (name) => !registeredQueryNames.includes(name) || recorded.has(name) || defaulted.has(name),
+    );
+    expect(
+      stale,
+      'Remove these from QUERIES_NO_CAPTURE_SENDS: the app no longer sends them as a query, or they are now recorded or defaulted.',
+    ).toEqual([]);
+    expect([...QUERIES_NO_CAPTURE_SENDS]).toEqual([...declaredUnsent].sort());
+  });
+
+  it.each(Object.entries(REPLAY_DEFAULT_RESPONSES))(
+    'the replay default for %s answers the current document and no fixture shadows it',
+    (operationName, replayDefault) => {
+      const documents = registry.get(operationName) ?? [];
+      expect(documents.length, `${operationName} is not an operation the app sends`).toBeGreaterThan(0);
+      // The backend only falls back to a default when the set holds nothing for
+      // the operation, so a recorded one makes the entry dead.
+      expect(recorded.has(operationName), `${operationName} is recorded; delete its replay default`).toBe(false);
+      for (const registered of documents) {
+        expect(operationKind(registered.document)).toBe('query');
+        const response = replayDefault.response as { data?: unknown };
+        expect(response.data).toBeDefined();
+        expect(checkSelectionCoverage(schema, parse(registered.document), response.data, {})).toEqual([]);
+      }
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------

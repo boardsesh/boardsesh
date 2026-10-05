@@ -29,13 +29,13 @@ const COLD_LOAD_TIMEOUT_MS = 180_000;
 const WARM_TIMEOUT_MS = 30_000;
 
 /** The five Material tab-bar entries, in mobile's canonical order. */
-const TAB_NAMES = ['Home', 'Climbs', 'Record', 'Discover', 'Profile'] as const;
+const TAB_NAMES = ['Home', 'Climbs', 'Session', 'Discover', 'Profile'] as const;
 
 /** The seeded shared board the suite binds through the board sheet (see e2e/SEED_CONTRACT.md). */
 const SEEDED_BOARD_NAME = 'Dyno Den';
 
 /** Android-tablet destinations: the wall view is promoted into the rail. */
-const DESKTOP_TAB_NAMES = ['Home', 'Climbs', 'Record', 'On the Wall', 'Discover', 'Profile'] as const;
+const DESKTOP_TAB_NAMES = ['Home', 'Climbs', 'Session', 'On the Wall', 'Discover', 'Profile'] as const;
 
 /**
  * Console/page-error budget: the smoke fails on error classes that historically
@@ -106,6 +106,8 @@ test.describe('expo-web smoke', () => {
   test('home feed renders WASM board thumbnails; climbs tab shows the follow-your-wall state', async ({ page }) => {
     const fatalErrors = collectFatalConsoleErrors(page);
     await ensureSignedIn(page);
+    // The app opens on Climbs (`getAppEntryTab`), so the feed needs a tap.
+    await tabButton(page, 'Home').click();
     // WASM overlay renders resolve to blob: object URLs inside expo-image
     // <img>s — the Home feed's session cards carry them without any board
     // context.
@@ -125,10 +127,12 @@ test.describe('expo-web smoke', () => {
   });
 
   /**
-   * Binds one of the test user's seeded Kilter boards via the board sheet so
-   * the Climbs tab has a list and play-drawer actions aren't blocked by the
+   * Binds one of the test user's seeded boards via the board sheet so the
+   * Climbs tab has a list and play-drawer actions aren't blocked by the
    * switch-board overlay (feed climbs live on other boards). Fresh contexts
-   * start unbound; the exact followed-board sample can vary across seed images.
+   * start unbound. The sheet lists the account's boards as a "Your boards"
+   * radiogroup; which boards the seed image puts there can vary, so this takes
+   * the first one rather than naming it.
    */
   async function bindSeededBoard(page: Page): Promise<void> {
     await tabButton(page, 'Climbs').click();
@@ -142,10 +146,7 @@ test.describe('expo-web smoke', () => {
     await expect(findBoardButton.or(boundThumbnail).first()).toBeVisible({ timeout: WARM_TIMEOUT_MS });
     if (await findBoardButton.isVisible()) {
       await findBoardButton.click({ force: true });
-      await page
-        .getByRole('button', { name: /\bkilter$/i })
-        .first()
-        .click({ force: true });
+      await page.getByRole('radiogroup').getByRole('button').first().click({ force: true });
     }
     // Bound board → the list renders WASM thumbnails. Assert unconditionally so
     // a skipped bind (e.g. the empty-state button got renamed) fails loudly
@@ -247,26 +248,7 @@ test.describe('expo-web smoke', () => {
     await ensureSignedIn(page);
 
     // Bind a board so the Climbs tab renders a long enough list to scroll.
-    // Tolerates both states `bindSeededBoard` doesn't need to: a fresh account
-    // (no boards yet — pick the "kilter" search result) and this seed image's
-    // actual state, where the Aurora-synced account already has boards under
-    // "Your boards" the instant the picker opens (tap one to bind it here).
-    await tabButton(page, 'Climbs').click();
-    const findBoardButton = page.getByRole('button', { name: 'Find my board' });
-    const boundThumbnail = page.locator('img[src^="blob:"]').first();
-    await expect(findBoardButton.or(boundThumbnail).first()).toBeVisible({ timeout: WARM_TIMEOUT_MS });
-    if (await findBoardButton.isVisible()) {
-      await findBoardButton.click({ force: true });
-      const kilterResult = page.getByRole('button', { name: /\bkilter$/i }).first();
-      const ownedBoard = page.getByRole('button', { name: new RegExp(SEEDED_BOARD_NAME, 'i') }).first();
-      await expect(kilterResult.or(ownedBoard).first()).toBeVisible({ timeout: WARM_TIMEOUT_MS });
-      if (await ownedBoard.isVisible()) {
-        await ownedBoard.click({ force: true });
-      } else {
-        await kilterResult.click({ force: true });
-      }
-    }
-    await expect(boundThumbnail).toBeVisible({ timeout: 60_000 });
+    await bindSeededBoard(page);
 
     const list = page.getByTestId('climb-list');
     await expect(list).toBeVisible({ timeout: WARM_TIMEOUT_MS });

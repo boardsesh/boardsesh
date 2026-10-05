@@ -38,7 +38,7 @@ import {
   batchRequestIds,
   batchScopeKey,
   batchedOperationSpec,
-  cappedUnrecordedIds,
+  cappedUncoveredIds,
   collectBatchItems,
   composeBatchedResponse,
   emptyManifest,
@@ -51,6 +51,7 @@ import {
   indexBatchItemsById,
   pseudonymiseResponse,
   redactIgnoredVariablePaths,
+  replayDefaultResponse,
   resolveOperationName,
   sortManifestEntries,
   sortedQueryString,
@@ -680,11 +681,22 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
    * covered ids and nothing for the rest is a shape the real server produces
    * too — a climb with no stats simply has no row.
    *
-   * The one thing that still misses is a batch where NOT ONE id was covered:
-   * that is not draw distance, it is a screen the recording never reached.
+   * A batch where NOT ONE id was covered is answered the same way, with an
+   * empty list. It used to miss, on the theory that only a screen the
+   * recording never reached could produce one. Run 37258958437 showed
+   * otherwise: the same twenty Grasshopper ids were asked for on all three
+   * attempts, two of them covered, and the attempt where the read coordinator
+   * happened to split the eighteen uncovered ids into a chunk of their own
+   * failed the capture. Whether a chunk holds a covered id is flush timing, so
+   * it cannot be what decides a miss. The hit line carries `composed=0`, and
+   * the capture's note counts those batches apart.
    *
-   * Returns true when it answered (composed, or a miss), false when this
-   * request is not composable at all and belongs on the ordinary miss path.
+   * What still misses is a SCOPE nothing was recorded under — another board,
+   * another entity type, an older document — which falls through to
+   * `no-fixture` below.
+   *
+   * Returns true when it answered, false when this request is not composable
+   * at all and belongs on the ordinary miss path.
    */
   const replayComposedBatch = (
     sendResponse: SendGraphqlResponse,
@@ -692,7 +704,6 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     documentHash: string,
     hash12: string,
     variables: unknown,
-    missGraphql: (loggedName: string, reason: GraphqlMissReason, unrecordedIds?: readonly string[]) => void,
   ): boolean => {
     const spec = batchedOperationSpec(operationName);
     if (!spec) return false;
@@ -706,10 +717,6 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     if (!scope) return false;
 
     const { items, unrecordedIds, answeredIds } = collectBatchItems(scope.itemsById, requestedIds);
-    if (answeredIds.length === 0) {
-      missGraphql(operationName, 'unrecorded-ids', cappedUnrecordedIds(unrecordedIds));
-      return true;
-    }
     const composed = composeBatchedResponse(spec, scope.templateResponse, items);
     if (!composed.ok) return false;
     hits += 1;
@@ -720,7 +727,7 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       hash12,
       composed: answeredIds.length,
       uncoveredCount: unrecordedIds.length,
-      uncoveredIds: cappedUnrecordedIds(unrecordedIds),
+      uncoveredIds: cappedUncoveredIds(unrecordedIds),
     });
     sendResponse(JSON.stringify(composed.response));
     return true;
@@ -737,11 +744,7 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     const loggedVariables = formatMissVariables(operationName ?? '', parsedBody.variables);
 
     /** Every miss carries GraphQL `errors`; HTTP sends 200 — see `handleGraphql`. */
-    const missGraphql = (
-      loggedName: string,
-      reason: GraphqlMissReason,
-      unrecordedIds: readonly string[] = [],
-    ): void => {
+    const missGraphql = (loggedName: string, reason: GraphqlMissReason): void => {
       misses += 1;
       emit({
         event: 'miss',
@@ -749,7 +752,6 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
         operationName: loggedName,
         hash12,
         reason,
-        unrecordedIds,
         variables: loggedVariables,
       });
       sendResponse(JSON.stringify(fixtureMissBody(loggedName, hash12)));
@@ -766,9 +768,14 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       // own recorded bytes. Only a batch nobody recorded as a whole is composed
       // out of the recorded ones — see `BATCHED_OPERATIONS` for why membership,
       // not the exact id list, is the stable key for these.
-      if (
-        replayComposedBatch(sendResponse, operationName, key.documentHash, hash12, parsedBody.variables, missGraphql)
-      ) {
+      if (replayComposedBatch(sendResponse, operationName, key.documentHash, hash12, parsedBody.variables)) return;
+      // A declared default answers only an operation the set holds NOTHING for.
+      // Once it has a fixture, an unrecorded variables set is a real miss.
+      const hasRecordedFixture = manifest.graphql.some((recorded) => recorded.operationName === operationName);
+      const replayDefault = hasRecordedFixture ? null : replayDefaultResponse(operationName);
+      if (replayDefault) {
+        emit({ event: 'default', operationName, hash12 });
+        sendResponse(JSON.stringify(replayDefault.response));
         return;
       }
       missGraphql(operationName, 'no-fixture');

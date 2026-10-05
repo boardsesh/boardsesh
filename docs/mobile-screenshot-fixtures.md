@@ -41,7 +41,9 @@ broken answer is not a fixture. First recording of a key wins; a repeat logs
 
 **replay** never makes an outbound request. It answers every GraphQL POST from
 disk, hands out synthetic auth tokens for the recorded account, serves the
-recorded asset bytes, and 404s anything it has no handler for.
+recorded asset bytes, and 404s anything it has no handler for. The one answer
+that does not come from disk is a declared default for a query the set holds
+nothing for (see "Replay defaults").
 
 Before it serves anything, replay **proves the fixture set readable**: every
 graphql fixture the manifest names is read and parsed and checked against the
@@ -252,21 +254,26 @@ rather than refusing the fixture, while any other `password` / `secret` /
 
 ### Batched operations are keyed by membership, not by the exact id list
 
-Two operations carry a LIST OF IDS assembled at runtime, and for those an
+Four operations carry a LIST OF IDS assembled at runtime, and for those an
 exact-variables key can never be stable:
 
 | Operation | ids at | items at | item id field |
 | --- | --- | --- | --- |
 | `ClimbStatsForClimbs` | `climbUuids` | `data.climbStatsForClimbs` | `climbUuid` |
 | `GetBulkVoteSummaries` | `input.entityIds` | `data.bulkVoteSummaries` | `entityId` |
+| `GetTicks` | `input.climbUuids` | `data.ticks` | `climbUuid` |
+| `Favorites` | `climbUuids` | `data.favorites` | none: the items are the ids |
 
-Both are viewport batches — `useQueries` over chunks of whatever rows had
-mounted when the batch flushed
-(`packages/mobile/src/lib/graphql/hooks/use-social.ts` for the vote summaries,
-`fetchClimbStatsForClimbs` in `packages/mobile/src/providers/board-adapter.tsx`
-for the stats). Replay answers instantly, so the app scrolls and flushes on a
-different schedule than the recording did and asks for id subsets the recording
-never sent as one batch. Android run 34240391447 failed on exactly that.
+All four are viewport batches: chunks of whatever rows had mounted when the
+batch flushed (`packages/mobile/src/lib/graphql/hooks/use-social.ts` for the
+vote summaries, `fetchClimbStatsForClimbs` in
+`packages/mobile/src/providers/board-adapter.tsx` for the stats, the logbook
+and favourites reads behind every climb list for the last two). Replay answers
+instantly, so the app scrolls and flushes on a different schedule than the
+recording did and asks for id subsets the recording never sent as one batch.
+Android run 34240391447 failed on exactly that, and `GetTicks` failed every
+iPhone capture from 2026-09-19 until it joined the table: the request was a
+recorded Tension batch with one id fewer.
 
 So replay composes them. **The exact key is still tried first** — a batch that
 was recorded verbatim replays its own recorded bytes. Only when that misses does
@@ -306,9 +313,25 @@ Two rules keep it honest:
   `NOTE:` per operation — *"answered N batch(es) with M uncovered id(s) — rows
   mounted beyond the fold; re-record if a visible row shows blank stats"* —
   printed by the capture and failing nothing.
-- **A batch where NOT ONE requested id was covered still misses**
-  (`reason=unrecorded-ids ids=<up to 10>`). That is not draw distance, it is a
-  screen the recording never reached, and the failure says so.
+- **A batch where NOT ONE requested id was covered is answered the same way**,
+  with an empty list and `composed=0`. It used to miss, on the theory that only
+  a screen the recording never reached could produce one. Android run
+  37258958437 showed otherwise: all three attempts asked for the same twenty
+  Grasshopper ids, two of them covered, and the one attempt where the read
+  coordinator split the eighteen uncovered ids into a chunk of their own failed
+  the capture. Whether a chunk holds a covered id is flush timing, so it cannot
+  decide a miss. The note counts these batches apart
+  (*"…, 1 of them with no recorded id at all"*).
+- **A scope nothing was recorded under still misses** (`reason=no-fixture`):
+  another board, another entity type, an older document. That is the "screen
+  the recording never reached" signal, and it is exact.
+
+What the tolerance costs: for `GetTicks`, `Favorites` and
+`GetBulkVoteSummaries` an uncovered id has no fallback. The row renders as not
+climbed, not favourited, no votes. That is correct for a row the recording never
+drew, and wrong for a visible row whose id the recording somehow never asked
+about. The note is the only signal for that case, so read it when a capture's
+screenshots change.
 
 #### The composer is the safety net, not the fix
 
@@ -353,13 +376,44 @@ single-climb read). Widening the batch shrinks the gap; the composer's tolerance
 for uncovered ids is what closes it.
 
 Adding one: read the operation document for the id list's path and the response
-list's own id field, add a row to `BATCHED_OPERATIONS` in
-`scripts/lib/screenshot-fixtures.ts`, and let the drift test check the paths
-against the pinned fixtures. Only add an operation whose response list is a
+list's own id field (`null` when the list holds bare ids), add a row to
+`BATCHED_OPERATIONS` in `scripts/lib/screenshot-fixtures.ts`, and let the drift
+test check the paths against the pinned fixtures. The drift test also tells you
+when one is due: it fails on any operation outside the table that the set
+recorded with more than one distinct list of strings in the same variable. Only add an operation whose response list is a
 per-id lookup — never one whose items depend on the batch as a whole (a ranking,
 a page, an aggregate over the set). If its ids come from mounted rows rather than
 from loaded data, widen the batch in screenshot mode too — the composer alone
 cannot cover an id nothing ever recorded.
+
+### Replay defaults
+
+A new query on a screen the capture visits misses on every replay until the set
+is re-recorded. For most queries that is right: the screenshot shows the answer.
+For a few, the honest answer for the screenshots account is the same whatever
+was recorded, and re-recording to learn it buys nothing.
+
+`REPLAY_DEFAULT_RESPONSES` in `scripts/lib/screenshot-fixtures.ts` declares those
+answers. Today it holds one:
+
+| Operation | Answer | Why it is honest |
+| --- | --- | --- |
+| `ProfileAdminFlag` | `{ "data": { "profile": null } }` | The screenshots account is not an admin, and `useIsAdmin` reads a null profile as "no". |
+
+`ProfileAdminFlag` gained a caller on 2026-09-26
+(`useCatalogQuerySourceState`, which asks it for every board that is not
+downloaded) and failed every capture after it, sixteen times per Android run.
+
+A default applies only while the set holds **no fixture at all** for the
+operation. Record it once and the ordinary keyed lookup takes over, changed
+variables included. Replay logs each use as `DEFAULT graphql <Op> <hash12>`,
+never as a `HIT`, so a run answered only by defaults still fails the "app never
+reached the replay backend" check, and the capture prints one `NOTE:` per
+defaulted operation.
+
+Add one only when both hold: the answer is the same for the recording account
+on every screen (a capability flag, an empty inbox, never a list or a count a
+screenshot shows), and the app already renders correctly on it.
 
 Static assets are keyed on the original pathname plus its query sorted into a
 stable order. PROD answers `/static/*` with a `302` to a CDN; the recorder
@@ -541,8 +595,8 @@ HIT graphql <Op> <hash12> composed=<n>
 HIT graphql <Op> <hash12> composed=<n> uncovered=<m> ids=<id,id,…>
 HIT static <path?query>
 HIT auth credentials|refresh
+DEFAULT graphql <Op> <hash12>
 MISS graphql <Op> <hash12> reason=no-fixture|document-changed|anonymous-operation|unreadable-fixture variables=<canonical json>
-MISS graphql <Op> <hash12> reason=unrecorded-ids ids=<id,id,…> variables=<canonical json>
 MISS static <path?query>
 MISS route <METHOD> <path>
 MISS auth email=<e> expected=<e>
@@ -562,15 +616,15 @@ A `MISS graphql` line carries the **canonical variables** it missed on, stripped
 of the ignored paths exactly as the key was, elided past
 `MISS_VARIABLES_LOG_LIMIT` (600 characters) with `…`. Before that the line held
 only the 12-character hash, and diagnosing a CI failure meant brute-forcing the
-hash offline. `ids=` names up to `MISS_UNRECORDED_IDS_LOG_LIMIT` (10) of the
-requested ids no recorded batch covers, and appears only on
-`reason=unrecorded-ids`. Both tails are optional in the parser, so a log written
-by an older backend build still parses — an unparsed `MISS` would vanish from
-`findScreenshotBackendProblems` and pass a broken capture.
+hash offline. The tail is optional in the parser, so a hash-only line still
+parses — an unparsed `MISS` would vanish from `findScreenshotBackendProblems`
+and pass a broken capture. On a composed `HIT`, `ids=` names up to
+`UNCOVERED_IDS_LOG_LIMIT` (10) of the requested ids no recorded batch covers.
 
 Only a `HIT graphql` line counts toward the "the app never reached the replay
-backend" check — an app that only ever authenticated (`HIT auth`) never actually
-exercised a screen's data, so that alone must still fail the check. `WS error`
+backend" check — an app that only ever authenticated (`HIT auth`) or was only
+answered by defaults (`DEFAULT graphql`) never actually exercised a screen's
+recorded data, so that alone must still fail the check. `WS error`
 is never a problem line — it logs a malformed frame the `ws` server rejected
 (bad RSV bits, an unmasked client frame, …) so it is visible in the log, but one
 bad client frame must not fail the capture or take the process down.
@@ -803,15 +857,44 @@ dispatch explicitly asks it to. To refresh the set, dispatch again with
 live` is the old direct-to-PROD path (no fixtures at all), kept as an escape
 hatch for debugging against real data.
 
-### Refresh cadence and history
+### When to re-record
 
-**Re-record only when something forces it.** Two things do: the drift test fails
-(a document moved, or a recorded response no longer covers the current
-selection), or a screen in the store flow changed enough that its screenshots
-are wrong. Nothing else — not a stale-looking date, not a feed that has moved on
-in PROD. A replay capture is deterministic precisely because the set does not
-drift underneath it, and a re-record for its own sake costs a CI recording run
-and a fresh round of determinism checking.
+**Re-record only when something forces it.** Three things do:
+
+- the drift test fails on a recorded fixture (a document moved, or a recorded
+  response no longer covers the current selection);
+- a captured screen gained a query whose answer the screenshot shows, so it can
+  be neither a replay default nor an unsent query (see "The drift test");
+- a screen in the store flow changed enough that its screenshots are wrong.
+
+Nothing else — not a stale-looking date, not a feed that has moved on in PROD. A
+replay capture is deterministic precisely because the set does not drift
+underneath it, and a re-record for its own sake costs a CI recording run and a
+fresh round of determinism checking.
+
+**Check the other two fixes first.** A miss on an operation whose variables hold
+a runtime id list wants a `BATCHED_OPERATIONS` row, not a recording: a new
+recording would hold today's exact lists and miss again on the next timing
+change. A miss on a query with one honest answer for the screenshots account
+wants a replay default. Both land in the PR that caused the miss and need no
+PROD access.
+
+**The pinned set is not a plain recording, and the loop above cannot rebuild
+it.** The snapshot pinned on 2026-09-19 is the Android campaign bundle: it holds
+a shared session, its `QueueUpdates` and `SessionUpdates` snapshots, and demo
+sends that exist in no production account (see "Routes" above). A `--fresh`
+recording against PROD holds none of that, and publishing one would drop the
+Android capture back to the legacy eight-shot flow. Until the campaign bundle
+has its own build step, a refresh means: record, then carry the campaign
+fixtures and the manifest's `capture` and `approvedTestUserIds` fields across
+by hand before publishing, and replay both platforms against the result before
+committing the reference.
+
+**iPhone captures are still short of fixtures.** That bundle was built and
+checked on Android only. The iPhone flow asks for an unfiltered
+`GetAllUserPlaylists` page (`{"input":{"page":0,"pageSize":20}}`) that it does
+not hold, so the iPhone shards miss until the next refresh records the iOS flow
+too. The iPad shards and Android replay clean.
 
 **A refresh publishes another immutable snapshot.** The local merge replaces its
 working files; publishing creates a content-hashed object and updates the small
@@ -847,12 +930,58 @@ It asserts:
   applies only when `__typename` says it does);
 - the store flow's spine — `GetProfile`, `GetMyBoards`, `SearchClimbs`,
   `GetClimb`, `GetSessionGroupedFeed` — has a fixture;
+- every query the app can send is placed (see "A new query has to be placed"
+  below);
+- every replay default answers the current document and is not shadowed by a
+  recorded fixture;
+- no operation outside `BATCHED_OPERATIONS` was recorded with more than one
+  distinct list of strings in the same variable — the shape of a runtime id
+  list, which an exact-variables key cannot replay;
 - no fixture holds a real person's name, handle, avatar or email for anyone but
   the recording account (see "What is pseudonymised"). Of every failure in that
   list this is the only one a re-record cannot undo — by the time it is noticed
   the name is already in the public snapshot.
 
 Everything past the first bullet skips itself while there is no `manifest.json`.
+
+### A new query has to be placed
+
+A replay capture fails on any query the set cannot answer, but a capture runs on
+a simulator after a native deploy, days after the PR that added the query.
+`ProfileAdminFlag` landed on 2026-09-26 and nothing said so until a capture failed
+on it on 2026-10-03. The drift test
+moves the decision to the PR. Every **query** in the registry must be in exactly
+one of three places:
+
+| Place | Where | Meaning |
+| --- | --- | --- |
+| recorded | the pinned set | replay answers it from a fixture |
+| defaulted | `REPLAY_DEFAULT_RESPONSES` (`scripts/lib/screenshot-fixtures.ts`) | replay answers it with a declared body |
+| unsent | `QUERIES_NO_CAPTURE_SENDS` (`screenshot-unsent-queries.ts` beside the test) | no captured screen sends it |
+
+Add a query to the app and the test fails until you pick one. It runs in the
+ordinary mobile test project: Linux, no secrets, no simulator.
+
+**What it cannot do.** Nothing static knows which screen sends which query. A
+hook three imports from a visited route fires as surely as one inside it, and an
+import-graph walk from the routes the flows visit reaches nearly every query
+through the providers. So the test does not decide whether a screen is visited.
+It forces the author to, at the moment they know the answer. A wrong "unsent"
+still passes here and fails the next capture, the same as before this check
+existed; the check removes the case where nobody was asked.
+
+Also out of scope:
+
+- **Mutations and subscriptions.** A capture taps almost nothing, and passive
+  subscriptions have their own rule in the replay backend.
+- **A recorded query sent with new variables** (a filter added, a page size
+  changed). The fixture key moves and replay misses with `no-fixture`. The one
+  variables shape the test does catch is the runtime id list, above.
+
+The starting `QUERIES_NO_CAPTURE_SENDS` is every query that was neither recorded
+nor missed by the last full replay captures before the check landed (Android run
+37258958437, iOS run 37200023911). The test also fails on a stale entry: a query
+the app stopped sending, or one that has since been recorded or defaulted.
 
 ### When it fails
 
@@ -870,6 +999,14 @@ Everything past the first bullet skips itself while there is no `manifest.json`.
   set was recorded with `--no-pseudonymise`, do not publish it at all.
 - **"which the app no longer sends"** — a stale fixture for a deleted operation.
   Delete it, or re-record with `--fresh`.
+- **"These queries are new to the screenshot capture"** — a query was added and
+  not placed. Follow "A new query has to be placed" above.
+- **"Remove these from QUERIES_NO_CAPTURE_SENDS"** — an entry went stale. Delete
+  it.
+- **"was recorded with N different lists but is keyed by its exact
+  variables"** — add the operation to `BATCHED_OPERATIONS`.
+- **"is recorded; delete its replay default"** — a refresh recorded a defaulted
+  query. The default is now dead; remove it.
 - **"Mobile imports from …, which this test does not read"** — someone imported
   from a new `@boardsesh/graphql/operations/*` module. Add it to
   `SHARED_OPERATION_MODULES` in the test.
