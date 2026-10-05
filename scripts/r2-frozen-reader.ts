@@ -155,6 +155,20 @@ export function isPrivateR2Url(url: URL): boolean {
         url.pathname.startsWith('/boardsesh-ota-v3/')))
   );
 }
+/**
+ * The public R2 custom domain xprem redirects to once CDN_BASE_URL is set.
+ * Scoped to this app's prefix, so no other object on the host is accepted.
+ */
+export function isOtaCdnUrl(url: URL): boolean {
+  return (
+    url.protocol === 'https:' &&
+    !url.username &&
+    !url.password &&
+    !url.port &&
+    url.hostname === 'ota-assets.boardsesh.com' &&
+    url.pathname.startsWith('/007e6fd7-f200-448c-9449-8d48ba5d51fc/')
+  );
+}
 async function readPrivateR2Asset(url: URL): Promise<Buffer> {
   if (isPrivateR2Url(url))
     return boundedBody(await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(120000) }), 64 * 1024 * 1024);
@@ -180,7 +194,7 @@ async function readPrivateR2Asset(url: URL): Promise<Buffer> {
   await redirect.body?.cancel();
   if (!location) throw new Error('Missing private R2 redirect target');
   const target = new URL(location, url);
-  if (!isPrivateR2Url(target)) throw new Error('Unexpected private R2 redirect target');
+  if (!isPrivateR2Url(target) && !isOtaCdnUrl(target)) throw new Error('Unexpected private R2 redirect target');
   // A single explicit hop; no request headers or authentication forwarded.
   return boundedBody(await fetch(target, { redirect: 'error', signal: AbortSignal.timeout(120000) }), 64 * 1024 * 1024);
 }
