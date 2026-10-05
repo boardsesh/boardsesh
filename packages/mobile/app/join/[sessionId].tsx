@@ -282,6 +282,14 @@ export default function JoinSessionScreen() {
     );
   }
 
+  // The line under the card's title. A preview rebuilt from the invite has no
+  // roster: `dormant` says nobody is connected, and `live` (the host came back
+  // mid-load) names the board alone instead of counting an empty list as "0".
+  let boardLine: string;
+  if (session.invite?.state === 'dormant') boardLine = t('mobileJoin.boardLabelDormant', { board: boardLabel });
+  else if (session.invite?.state === 'live') boardLine = boardLabel;
+  else boardLine = t('mobileJoin.boardLabel', { board: boardLabel, count: session.users.length });
+
   // Loaded + active — confirmation card.
   return (
     <View style={[containerStyle, styles.confirmContainer]}>
@@ -290,9 +298,7 @@ export default function JoinSessionScreen() {
           {t('mobileJoin.confirmTitle', { host: session.invite?.hostName ?? hostName })}
         </Text>
         <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.boardLabel}>
-          {session.invite?.state === 'dormant'
-            ? t('mobileJoin.boardLabelDormant', { board: boardLabel })
-            : t('mobileJoin.boardLabel', { board: boardLabel, count: session.users.length })}
+          {boardLine}
         </Text>
 
         <View style={styles.avatarRow}>

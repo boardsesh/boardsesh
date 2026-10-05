@@ -76,8 +76,18 @@ describe('sessionPreviewFromInvite', () => {
     expect(sessionPreviewFromInvite(invite({ state: 'not_found', boardPath: null }))).toBeNull();
   });
 
-  it('is null for a live invite: a live session answers through `session`, with its roster', () => {
-    expect(sessionPreviewFromInvite(invite({ state: 'live' }))).toBeNull();
+  // Reached only when `session` said nothing twice while the invite said
+  // live. Null here would render "Session not found" for a running session.
+  it('keeps a live invite joinable, with the roster unknown', () => {
+    const preview = sessionPreviewFromInvite(invite({ state: 'live' }));
+
+    expect(preview?.invite).toEqual({ state: 'live', hostName: 'Alex' });
+    expect(preview?.boardPath).toBe('kilter/1/10/1,20/40');
+    expect(preview?.users).toEqual([]);
+  });
+
+  it('is host_away for a live invite whose board path is withheld', () => {
+    expect(sessionPreviewFromInvite(invite({ state: 'live', boardPath: null }))?.invite?.state).toBe('host_away');
   });
 
   // A private spray wall: the backend says the session is running and keeps
@@ -109,6 +119,40 @@ describe('fetchSessionPreview', () => {
     expect(preview?.boardPath).toBe('kilter/1/10/1,20/40');
     expect(preview?.invite).toEqual({ state: 'dormant', hostName: 'Alex' });
     expect(requestMock).toHaveBeenNthCalledWith(2, GET_SESSION_INVITE_PREVIEW, { sessionId: SESSION_ID });
+  });
+
+  // The host's phone woke between the two reads: `session` was null, then the
+  // invite said live. This used to render "Session not found".
+  it('asks `session` again when the host reconnects between the two reads', async () => {
+    requestMock
+      .mockResolvedValueOnce({ session: null })
+      .mockResolvedValueOnce({ sessionInvitePreview: invite({ state: 'live' }) })
+      .mockResolvedValueOnce({ session: liveSession });
+
+    expect(await fetchSessionPreview(SESSION_ID, true)).toEqual(liveSession);
+    expect(requestMock).toHaveBeenCalledTimes(3);
+    expect(requestMock).toHaveBeenNthCalledWith(3, GET_SESSION, { sessionId: SESSION_ID });
+  });
+
+  it('joins on the invite preview when `session` is still empty on the second ask', async () => {
+    requestMock
+      .mockResolvedValueOnce({ session: null })
+      .mockResolvedValueOnce({ sessionInvitePreview: invite({ state: 'live' }) })
+      .mockResolvedValueOnce({ session: null });
+
+    const preview = await fetchSessionPreview(SESSION_ID, true);
+
+    expect(preview?.invite).toEqual({ state: 'live', hostName: 'Alex' });
+    expect(preview?.boardPath).toBe('kilter/1/10/1,20/40');
+  });
+
+  it('joins on the invite preview when the second ask fails', async () => {
+    requestMock
+      .mockResolvedValueOnce({ session: null })
+      .mockResolvedValueOnce({ sessionInvitePreview: invite({ state: 'live' }) })
+      .mockRejectedValueOnce(new Error('Network request failed'));
+
+    expect((await fetchSessionPreview(SESSION_ID, true))?.invite?.state).toBe('live');
   });
 
   it('reports a running session on a withheld wall as host_away instead of not found', async () => {

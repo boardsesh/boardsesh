@@ -31,7 +31,7 @@ type PreviewData = {
   boardPath: string;
   endedAt: string | null;
   users: Array<{ id: string; username: string; avatarUrl: null; isLeader: boolean }>;
-  invite?: { state: 'dormant' | 'host_away' | 'ended'; hostName: string | null };
+  invite?: { state: 'live' | 'dormant' | 'host_away' | 'ended'; hostName: string | null };
 };
 
 function liveSession(): PreviewData {
@@ -305,6 +305,19 @@ describe('JoinSessionScreen: dormant session', () => {
 
     expect(container.textContent).toContain('mobileJoin.confirmTitle:Alex');
     expect(container.textContent).toContain('mobileJoin.boardLabelDormant');
+    expect(container.textContent).not.toContain('mobileJoin.notFound');
+    expect(outcomes()).toEqual([]);
+  });
+
+  // The host reconnected mid-load and `session` still had no roster: the card
+  // is joinable and must not count an unknown roster as nobody.
+  it('shows the join card without a head count for a live invite with no roster', () => {
+    preview.data = { ...dormant(), invite: { state: 'live', hostName: 'Alex' } };
+
+    const { container } = render(createElement(JoinSessionScreen));
+
+    expect(container.textContent).toContain('mobileJoin.confirmTitle:Alex');
+    expect(container.textContent).not.toContain('mobileJoin.boardLabel');
     expect(container.textContent).not.toContain('mobileJoin.notFound');
     expect(outcomes()).toEqual([]);
   });

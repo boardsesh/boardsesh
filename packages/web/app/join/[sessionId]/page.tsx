@@ -23,13 +23,28 @@ type Props = {
 // ended, missing, or when the lookup itself failed.
 const NO_INDEX_FOLLOW = { index: false, follow: true } as const;
 
+/**
+ * The session id as the visitor typed it. Whether the router hands over the
+ * segment decoded or raw, a stray `%` must not throw: `/join/abc%2525` would
+ * otherwise take the whole page down, in metadata and in the body. Text that
+ * cannot be decoded is kept as it came; it then fails the id check and reads
+ * as "not found".
+ */
+function readSessionIdParam(rawSessionId: string): string {
+  try {
+    return decodeURIComponent(rawSessionId);
+  } catch {
+    return rawSessionId;
+  }
+}
+
 const DIFFICULTY_TO_GRADE: Record<number, string> = Object.fromEntries(
   BOULDER_GRADES.map((g) => [g.difficulty_id, g.font_grade]),
 );
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { sessionId: rawSessionId } = await params;
-  const sessionId = decodeURIComponent(rawSessionId);
+  const sessionId = readSessionIdParam(rawSessionId);
   const { t } = await getServerTranslation('session');
 
   const buildJoinHeadline = (leaderName: string | null): string =>
@@ -140,7 +155,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  */
 export default async function JoinSessionPage({ params }: Props) {
   const { sessionId: rawSessionId } = await params;
-  const sessionId = decodeURIComponent(rawSessionId);
+  const sessionId = readSessionIdParam(rawSessionId);
   const { t } = await getServerTranslation('session');
 
   const invite = await fetchSessionInvite(sessionId);

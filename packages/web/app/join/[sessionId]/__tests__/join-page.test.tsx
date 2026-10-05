@@ -17,7 +17,8 @@ vi.mock('@/app/lib/i18n/server', () => ({
     locale: 'en-US',
   })),
 }));
-vi.mock('@/app/lib/seo/dynamic-og-data', () => ({ getSessionOgSummary: vi.fn() }));
+const getSessionOgSummary = vi.hoisted(() => vi.fn());
+vi.mock('@/app/lib/seo/dynamic-og-data', () => ({ getSessionOgSummary }));
 vi.mock('@/app/lib/board-data', () => ({ BOULDER_GRADES: [] }));
 vi.mock('@/app/components/i18n/locale-link', () => ({
   default: ({ href, children }: { href: string; children?: React.ReactNode }) => <a href={href}>{children}</a>,
@@ -29,7 +30,7 @@ vi.mock('@/app/lib/analytics', () => ({ track: vi.fn(), trackBeforeNavigation })
 const fetchSessionInvite = vi.hoisted(() => vi.fn());
 vi.mock('../session-invite', () => ({ fetchSessionInvite }));
 
-const JoinSessionPage = (await import('../page')).default;
+const { default: JoinSessionPage, generateMetadata } = await import('../page');
 const { __resetReportedLandingsForTests } = await import('../session-invite-landing-tracker');
 
 const SESSION_ID = '550e8400-e29b-41d4-a716-446655440000';
@@ -191,6 +192,35 @@ describe('session invite page', () => {
     await renderPage(invite(), encodeURIComponent(SESSION_ID));
 
     expect(fetchSessionInvite).toHaveBeenCalledWith(SESSION_ID);
+  });
+
+  // `/join/abc%2525`: the router decodes once and hands over `abc%25`, or hands
+  // over the raw text. Either way a `%` that starts no escape must not throw.
+  it.each(['abc%', 'abc%2', '%E0%A4%A', 'abc%2525'])(
+    'renders "not found" instead of throwing for the undecodable id %s',
+    async (sessionId) => {
+      await renderPage({ state: 'not_found', ...withoutDetails }, sessionId);
+
+      expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(
+        tFromCatalog('session', 'invitePage.notFound.title'),
+      );
+      expect(fetchSessionInvite).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('hands text it cannot decode to the lookup as it came', async () => {
+    await renderPage({ state: 'not_found', ...withoutDetails }, 'abc%');
+
+    expect(fetchSessionInvite).toHaveBeenCalledWith('abc%');
+  });
+
+  it.each(['abc%', '%E0%A4%A'])('builds metadata instead of throwing for the undecodable id %s', async (sessionId) => {
+    getSessionOgSummary.mockResolvedValue({ found: false });
+
+    const metadata = await generateMetadata({ params: Promise.resolve({ sessionId }) });
+
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+    expect(getSessionOgSummary).toHaveBeenCalledWith(sessionId);
   });
 
   it('links on to the home page with a real anchor', async () => {

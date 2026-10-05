@@ -43,6 +43,8 @@ export function useSessionDetail(sessionId: string | undefined) {
 export type JoinSessionPreview = SessionPreview & {
   invite?: {
     /**
+     * `live`: someone connected between the two reads and `session` still had
+     * nothing on a second ask. Joinable, with the roster unknown.
      * `dormant`: the session is running and nobody is connected. Joinable.
      * `host_away`: running, nobody connected, and the backend would not say
      * which wall it is on (a spray wall that is not open to everyone). It
@@ -50,7 +52,7 @@ export type JoinSessionPreview = SessionPreview & {
      * because `session` then answers with the path.
      * `ended`: it is over.
      */
-    state: 'dormant' | 'host_away' | 'ended';
+    state: 'live' | 'dormant' | 'host_away' | 'ended';
     /** The host's display name, which an empty roster cannot supply. */
     hostName: string | null;
   };
@@ -65,13 +67,20 @@ export type JoinSessionPreview = SessionPreview & {
  * and `isPublic` are not part of an invite preview and the join screen reads
  * none of them; they are filled with their empty values, not guesses.
  *
+ * `boardPath` is `''` when the backend gave none (an ended session, or a
+ * withheld wall). `SessionPreview.boardPath` is a plain string for every other
+ * reader, so it is not widened here; both of those states are dead ends the
+ * join screen shows before it reads the path.
+ *
  * Returns null for a missing session only. A running session with no board
  * path comes back as `host_away`, never null: null renders "Session not found",
- * which is the wrong thing to tell someone whose invite is good (#6004).
+ * which is the wrong thing to tell someone whose invite is good (#6004). A
+ * `live` invite is a running session too; see {@link fetchSessionPreview} for
+ * how one gets here.
  */
 export function sessionPreviewFromInvite(invite: SessionInvitePreview): JoinSessionPreview | null {
-  if (invite.state !== 'dormant' && invite.state !== 'ended') return null;
-  const state = invite.state === 'dormant' && !invite.boardPath ? 'host_away' : invite.state;
+  if (invite.state === 'not_found') return null;
+  const state = invite.state !== 'ended' && !invite.boardPath ? 'host_away' : invite.state;
   return {
     id: invite.sessionId,
     name: null,
@@ -98,7 +107,9 @@ export function sessionPreviewFromInvite(invite: SessionInvitePreview): JoinSess
  * null answer is followed by `sessionInvitePreview`, which reads the durable
  * row: a dormant session comes back joinable, an ended one comes back as
  * ended, and one whose wall the backend will not name comes back as
- * `host_away`. It caches under its own key, so the in-session readers of this hook
+ * `host_away`. If the host connects between the two reads the invite says
+ * `live`; `session` is then asked once more, and the invite preview stands in
+ * if it still has nothing. It caches under its own key, so the in-session readers of this hook
  * never see a rebuilt preview.
  *
  * A backend that predates `sessionInvitePreview` rejects the second query; that
@@ -128,6 +139,15 @@ export async function fetchSessionPreview(
       GET_SESSION_INVITE_PREVIEW,
       { sessionId },
     );
+    if (sessionInvitePreview.state === 'live') {
+      // The host connected between the two reads. `session` has the roster
+      // now, so ask it again; if it still has nothing (or fails), the invite
+      // preview is enough to join on.
+      const retried = await getHttpClient()
+        .request<GetSessionQueryResponse>(GET_SESSION, { sessionId })
+        .catch(() => null);
+      if (retried?.session) return retried.session;
+    }
     return sessionPreviewFromInvite(sessionInvitePreview);
   } catch {
     return null;

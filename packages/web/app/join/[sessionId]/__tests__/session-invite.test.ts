@@ -6,7 +6,7 @@ vi.mock('server-only', () => ({}));
 const executeAuthenticatedGraphQL = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/graphql/server-graphql', () => ({ executeAuthenticatedGraphQL }));
 
-const { fetchSessionInvite, inviteBoardAngle, inviteBoardLabel, sessionInviteFromPreview } =
+const { describeLookupFailure, fetchSessionInvite, inviteBoardAngle, inviteBoardLabel, sessionInviteFromPreview } =
   await import('../session-invite');
 
 const SESSION_ID = '550e8400-e29b-41d4-a716-446655440000';
@@ -130,5 +130,43 @@ describe('fetchSessionInvite', () => {
       boardAngle: null,
       gymName: null,
     });
+  });
+
+  // A graphql-request error prints the request (the session id) and the whole
+  // response in its message. None of that may reach the server log.
+  it('logs the failure class, status and codes, never the request or the session id', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    consoleError.mockClear();
+    const clientError = Object.assign(
+      new Error(`Rate limit exceeded: {"request":{"variables":{"sessionId":"${SESSION_ID}"}}}`),
+      {
+        name: 'ClientError',
+        response: { status: 429, errors: [{ message: 'Rate limit exceeded', extensions: { code: 'RATE_LIMITED' } }] },
+        request: { query: 'query', variables: { sessionId: SESSION_ID } },
+      },
+    );
+    executeAuthenticatedGraphQL.mockRejectedValue(clientError);
+
+    expect((await fetchSessionInvite(SESSION_ID)).state).toBe('unavailable');
+
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith('fetchSessionInvite failed:', {
+      name: 'ClientError',
+      status: 429,
+      codes: ['RATE_LIMITED'],
+    });
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(SESSION_ID);
+  });
+});
+
+describe('describeLookupFailure', () => {
+  it('names a plain error and nothing else', () => {
+    expect(describeLookupFailure(new TypeError('fetch failed'))).toEqual({ name: 'TypeError' });
+  });
+
+  it('copes with a thrown value that is not an error', () => {
+    expect(describeLookupFailure('boom')).toEqual({ name: 'string' });
+    expect(describeLookupFailure(null)).toEqual({ name: 'object' });
+    expect(describeLookupFailure({ response: { errors: [{ extensions: {} }, 'odd'] } })).toEqual({ name: 'unknown' });
   });
 });
