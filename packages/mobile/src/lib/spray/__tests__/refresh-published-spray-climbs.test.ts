@@ -62,7 +62,12 @@ describe('published spray climb refresh', () => {
     await expect(refreshPublishedSprayClimbs(queryClient, 9001)).resolves.toBeUndefined();
     expect(mocks.report).toHaveBeenCalledWith(failure);
     expect(mocks.pull).toHaveBeenCalledTimes(1);
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['infiniteSearchClimbs'] });
+    expect(invalidate.mock.calls.map(([options]) => options?.queryKey)).toEqual([
+      ['searchClimbs'],
+      ['infiniteSearchClimbs'],
+      ['searchClimbsCount'],
+      ['climb'],
+    ]);
   });
 
   it.each(['not downloaded', 'schema unavailable', 'downloads disabled'])(
@@ -75,7 +80,12 @@ describe('published spray climb refresh', () => {
       const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
       await refreshPublishedSprayClimbs(queryClient, 9001);
       expect(mocks.pull).not.toHaveBeenCalled();
-      expect(invalidate).toHaveBeenCalledWith({ queryKey: ['infiniteSearchClimbs'] });
+      expect(invalidate.mock.calls.map(([options]) => options?.queryKey)).toEqual([
+        ['searchClimbs'],
+        ['infiniteSearchClimbs'],
+        ['searchClimbsCount'],
+        ['climb'],
+      ]);
     },
   );
 });
