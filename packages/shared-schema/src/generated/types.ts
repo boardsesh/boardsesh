@@ -6532,6 +6532,8 @@ export type Query = {
    * the same spot. Merged-twin candidates first, then nearest. Capped at 25.
    */
   strayBoardsForGym: Array<StrayBoard>;
+  /** Read a saved climb immediately: own drafts or published spray climbs on accessible walls. */
+  syncClimbDocuments?: Maybe<SyncClimbDocuments>;
   /**
    * Pull Boardsesh grades for a board type, changed since the cursor (reference data).
    * Optional layoutId/sizeId scope grades to the climbs of that layout/size via board_climbs.
@@ -7270,6 +7272,14 @@ export type QuerySprayWallReportsArgs = {
 /** Root query type for all read operations. */
 export type QueryStrayBoardsForGymArgs = {
   gymUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySyncClimbDocumentsArgs = {
+  boardType: Scalars['String']['input'];
+  climbUuid: Scalars['ID']['input'];
+  layoutId: Scalars['Int']['input'];
+  sprayWallUuid?: InputMaybe<Scalars['ID']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -9578,6 +9588,15 @@ export type SubscriptionSessionUpdatesArgs = {
   sessionId: Scalars['ID']['input'];
 };
 
+/** Canonical saved-climb documents from one snapshot, without changing a pull cursor. */
+export type SyncClimbDocuments = {
+  __typename?: 'SyncClimbDocuments';
+  climb: Scalars['JSON']['output'];
+  stats: Array<Scalars['JSON']['output']>;
+  /** Authenticated account owning the client mirror, independent of the setter. */
+  viewerId: Scalars['ID']['output'];
+};
+
 /**
  * Composite sync cursor returned by a pull. Feed it back as SyncCursorInput on
  * the next page.
@@ -10893,6 +10912,7 @@ export type ResolversTypes = ResolversObject<{
   SubmitAppFeedbackInput: SubmitAppFeedbackInput;
   SubmitQaVerdictInput: SubmitQaVerdictInput;
   Subscription: ResolverTypeWrapper<{}>;
+  SyncClimbDocuments: ResolverTypeWrapper<SyncClimbDocuments>;
   SyncCursor: ResolverTypeWrapper<SyncCursor>;
   SyncCursorInput: SyncCursorInput;
   SyncDeletion: ResolverTypeWrapper<SyncDeletion>;
@@ -11329,6 +11349,7 @@ export type ResolversParentTypes = ResolversObject<{
   SubmitAppFeedbackInput: SubmitAppFeedbackInput;
   SubmitQaVerdictInput: SubmitQaVerdictInput;
   Subscription: {};
+  SyncClimbDocuments: SyncClimbDocuments;
   SyncCursor: SyncCursor;
   SyncCursorInput: SyncCursorInput;
   SyncDeletion: SyncDeletion;
@@ -15214,6 +15235,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryStrayBoardsForGymArgs, 'gymUuid'>
   >;
+  syncClimbDocuments?: Resolver<
+    Maybe<ResolversTypes['SyncClimbDocuments']>,
+    ParentType,
+    ContextType,
+    RequireFields<QuerySyncClimbDocumentsArgs, 'boardType' | 'climbUuid' | 'layoutId'>
+  >;
   syncClimbGrades?: Resolver<
     ResolversTypes['SyncResult'],
     ParentType,
@@ -16420,6 +16447,16 @@ export type SubscriptionResolvers<
   >;
 }>;
 
+export type SyncClimbDocumentsResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SyncClimbDocuments'] = ResolversParentTypes['SyncClimbDocuments'],
+> = ResolversObject<{
+  climb?: Resolver<ResolversTypes['JSON'], ParentType, ContextType>;
+  stats?: Resolver<Array<ResolversTypes['JSON']>, ParentType, ContextType>;
+  viewerId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type SyncCursorResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['SyncCursor'] = ResolversParentTypes['SyncCursor'],
@@ -16990,6 +17027,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   SprayWallVersion?: SprayWallVersionResolvers<ContextType>;
   StrayBoard?: StrayBoardResolvers<ContextType>;
   Subscription?: SubscriptionResolvers<ContextType>;
+  SyncClimbDocuments?: SyncClimbDocumentsResolvers<ContextType>;
   SyncCursor?: SyncCursorResolvers<ContextType>;
   SyncDeletion?: SyncDeletionResolvers<ContextType>;
   SyncDeletionsResult?: SyncDeletionsResultResolvers<ContextType>;

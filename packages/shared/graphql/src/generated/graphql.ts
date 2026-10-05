@@ -6529,6 +6529,8 @@ export type Query = {
    * the same spot. Merged-twin candidates first, then nearest. Capped at 25.
    */
   strayBoardsForGym: Array<StrayBoard>;
+  /** Read a saved climb immediately: own drafts or published spray climbs on accessible walls. */
+  syncClimbDocuments?: Maybe<SyncClimbDocuments>;
   /**
    * Pull Boardsesh grades for a board type, changed since the cursor (reference data).
    * Optional layoutId/sizeId scope grades to the climbs of that layout/size via board_climbs.
@@ -7267,6 +7269,14 @@ export type QuerySprayWallReportsArgs = {
 /** Root query type for all read operations. */
 export type QueryStrayBoardsForGymArgs = {
   gymUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySyncClimbDocumentsArgs = {
+  boardType: Scalars['String']['input'];
+  climbUuid: Scalars['ID']['input'];
+  layoutId: Scalars['Int']['input'];
+  sprayWallUuid?: InputMaybe<Scalars['ID']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -9573,6 +9583,15 @@ export type SubscriptionQueueUpdatesArgs = {
 /** Root subscription type for real-time updates. */
 export type SubscriptionSessionUpdatesArgs = {
   sessionId: Scalars['ID']['input'];
+};
+
+/** Canonical saved-climb documents from one snapshot, without changing a pull cursor. */
+export type SyncClimbDocuments = {
+  __typename?: 'SyncClimbDocuments';
+  climb: Scalars['JSON']['output'];
+  stats: Array<Scalars['JSON']['output']>;
+  /** Authenticated account owning the client mirror, independent of the setter. */
+  viewerId: Scalars['ID']['output'];
 };
 
 /**
@@ -13178,6 +13197,23 @@ export type SubmitQaVerdictMutation = {
     createdAt: string;
     githubCommentUrl?: string | null;
   };
+};
+
+export type SavedClimbDocumentsQueryVariables = Exact<{
+  boardType: Scalars['String']['input'];
+  layoutId: Scalars['Int']['input'];
+  climbUuid: Scalars['ID']['input'];
+  sprayWallUuid?: InputMaybe<Scalars['ID']['input']>;
+}>;
+
+export type SavedClimbDocumentsQuery = {
+  __typename?: 'Query';
+  syncClimbDocuments?: {
+    __typename?: 'SyncClimbDocuments';
+    viewerId: string;
+    climb: unknown;
+    stats: Array<unknown>;
+  } | null;
 };
 
 export type SessionSummaryFieldsFragment = {
@@ -21140,6 +21176,77 @@ export const SubmitQaVerdictDocument = {
     },
   ],
 } as unknown as DocumentNode<SubmitQaVerdictMutation, SubmitQaVerdictMutationVariables>;
+export const SavedClimbDocumentsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'SavedClimbDocuments' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'layoutId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuid' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'sprayWallUuid' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'syncClimbDocuments' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardType' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'layoutId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'layoutId' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'climbUuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuid' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'sprayWallUuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'sprayWallUuid' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'viewerId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climb' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'stats' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SavedClimbDocumentsQuery, SavedClimbDocumentsQueryVariables>;
 export const EndSessionDocument = {
   kind: 'Document',
   definitions: [

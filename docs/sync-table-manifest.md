@@ -388,3 +388,22 @@ Multi-segment `record_id`s only ever join columns whose value domains exclude `:
 `board_name`∈{kilter,tension}, `angle`∈int, `climb_uuid`/`playlist_uuid`=uuids, `board_type`∈{kilter,tension}.
 Single-segment encodings (`uuid`, `following_id`, `setter_username`, `playlist_uuid`) are never split. So
 splitting on `:` with a fixed expected segment count is safe. `pull-client.ts` already guards mismatched counts.
+
+## Exact saved-climb documents
+
+`syncClimbDocuments(boardType, layoutId, climbUuid, sprayWallUuid?)` is an
+additive authenticated read for the author's own climb or a published spray
+climb on a wall the viewer may read. It returns
+one canonical `board_climbs` document and all matching `board_climb_stats`
+documents from a repeatable-read primary snapshot. Its snake_case columns and
+Postgres timestamp/sequence precision match ordinary pull documents.
+
+The exact UUID, board type and layout must match. Authors can mirror their own
+drafts; every other spray row must be published and pass the existing wall
+visibility rule. Other authors' drafts are never returned, even to wall owners. An explicitly supplied matching unlisted wall UUID grants
+that existing capability; hidden/deleted/private/inaccessible rows return null.
+This read bypasses the ordinary pull stability window for one saved UUID, and
+returns no cursor or checkpoint. `viewerId` names the authenticated account
+owning the local mirror; the document's `user_id` remains the original setter. Clients must mirror both tables atomically and
+protect newer local rows against older pull responses; mobile deployment of the
+consumer follows backend deployment of this query.

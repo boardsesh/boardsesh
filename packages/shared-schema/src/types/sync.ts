@@ -30,3 +30,9 @@ export type SyncDeletionsResult = {
   cursor: SyncCursor;
   hasMore: boolean;
 };
+
+export type SyncClimbDocuments = {
+  viewerId: string;
+  climb: unknown;
+  stats: unknown[];
+};

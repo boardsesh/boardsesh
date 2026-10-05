@@ -1,3 +1,4 @@
+import { syncClimbDocuments } from './saved-climb';
 import { sql, type SQL } from 'drizzle-orm';
 import type { ConnectionContext, SyncResult, SyncDeletionsResult, SyncCursorInput } from '@boardsesh/shared-schema';
 import { isSizeScopedBoard } from '@boardsesh/board-config';
@@ -341,6 +342,7 @@ async function enrichSprayWallDocument(document: RawRow): Promise<RawRow> {
 }
 
 export const syncQueries = {
+  syncClimbDocuments,
   /**
    * Pull the authenticated user's ticks. Local PK = uuid (the idempotency key).
    * Seq = id. Skips aurora_/kilter_ sync bookkeeping, board_id, inferred_session_id.
