@@ -225,6 +225,21 @@ describe('pruneStoredSprayPhotos', () => {
     expect(pruneStoredSprayPhotos([])).toBe(0);
     expect(names()).toHaveLength(1);
   });
+
+  it('keeps generation staging for a live key and deletes orphan or malformed staging', () => {
+    const liveName = sprayPhotoStoreFileName(KEY_V2);
+    const livePartial = `${liveName}-launch123-1-2-3-4.part`;
+    for (const name of [
+      livePartial,
+      `${sprayPhotoStoreFileName(KEY_V1)}-launch123-1-2-3-4.part`,
+      `${liveName}-not-a-generation.part`,
+    ]) {
+      files.set(`${DIR}/${name}`, { contents: 'half' });
+    }
+
+    expect(pruneStoredSprayPhotos([KEY_V2])).toBe(2);
+    expect(names()).toEqual([livePartial]);
+  });
 });
 
 describe('deleteStoredSprayPhoto', () => {

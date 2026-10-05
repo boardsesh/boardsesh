@@ -107,7 +107,11 @@ const walls = new Map<number, RegisteredSprayWall>();
 const subscribers = new Set<() => void>();
 let privacyCleanup: ((layoutId?: number) => void) | null = null;
 
-/** Platform I/O is injected by spray-privacy-cleanup, keeping this module pure. */
+/**
+ * Platform I/O is injected by spray-privacy-cleanup, keeping this module pure.
+ * AuthProvider imports that module at app bootstrap, before any wall surface;
+ * registry-only consumers retain memory withdrawal without platform I/O.
+ */
 export function setSprayWallPrivacyCleanup(cleanup: (layoutId?: number) => void): void {
   privacyCleanup = cleanup;
 }

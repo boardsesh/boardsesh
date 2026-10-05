@@ -198,6 +198,8 @@ async function downloadSprayPhoto(
  */
 export function deleteStoredSprayPhoto(photoKey: string | null | undefined): void {
   if (!photoKey) return;
+  // Keep the revoked epoch until sign-out advances storeGeneration. Removing it
+  // here would reset the effective epoch to zero and admit an old completion.
   keyGenerations.set(photoKey, (keyGenerations.get(photoKey) ?? 0) + 1);
   deleteQuietly(storeFile(photoKey));
   deleteQuietly(partialFile(photoKey));
@@ -254,8 +256,12 @@ export function pruneStoredSprayPhotos(liveKeys: Iterable<string>): number {
       const keyName = isPartial ? name.slice(0, -'.part'.length) : name;
       if (!isPartial && keepNames.has(keyName)) continue;
       // A `.part` for a live key is a download that may be in flight right now.
-      if (isPartial && (keepNames.has(keyName) || [...keepNames].some((name) => keyName.startsWith(`${name}-`))))
-        continue;
+      if (isPartial) {
+        // writeGeneration appends nonce + four counters. Parse that suffix once
+        // so a directory walk never scans every live key for every partial.
+        const generatedKeyName = /^(.*)-[a-z0-9]+-\d+-\d+-\d+-\d+$/.exec(keyName)?.[1];
+        if (keepNames.has(keyName) || (generatedKeyName != null && keepNames.has(generatedKeyName))) continue;
+      }
       try {
         entry.delete();
         deleted += 1;
