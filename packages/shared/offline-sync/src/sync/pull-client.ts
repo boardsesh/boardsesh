@@ -1,4 +1,4 @@
-import type { OfflineDatabase, QueryInvalidator, SqlExecutor, SqlValue } from '../database';
+import type { OfflineDatabase, QueryInvalidator, SqlExecutor } from '../database';
 import type { SyncCursorInput, SyncResult, SyncDeletionsResult } from '../types';
 import { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from './table-config';
 import {
@@ -87,8 +87,15 @@ import {
   resetUserDataForLostCoverage,
 } from './deletions-coverage';
 import { classifySqliteLockError } from '../db/lock-errors';
-import { buildMultiRowInsertSql, multiRowChunkSize, runPullWrite } from './pull-write';
-import { ensureHoldIndex, removeClimbFromHoldIndex, type HoldRowParser } from '../holds-index/hold-index';
+import { runPullWrite } from './pull-write';
+import { writePullDocuments } from './document-writer';
+export { toSqliteValue } from './document-writer';
+import {
+  ensureHoldIndex,
+  clearLayoutHoldIndex,
+  removeClimbFromHoldIndex,
+  type HoldRowParser,
+} from '../holds-index/hold-index';
 // Re-exported: the export job and the package index have always imported it from here.
 export { multiRowChunkSize } from './pull-write';
 import { getPendingCount } from '../mutation-queue/queue';
@@ -114,7 +121,7 @@ import {
  * expected snapshot columns are rejected separately before rows can be changed.
  */
 export type { SchemaDriftReporter } from './schema-compatibility';
-import { reportExtraColumn, type SchemaDriftReporter } from './schema-compatibility';
+import { type SchemaDriftReporter } from './schema-compatibility';
 import { scopedInvalidateFilters } from './invalidate-keys';
 
 /**
@@ -724,23 +731,6 @@ export function listSyncPullDocuments(): SyncPullDocument[] {
   return [...tableDocuments, { operationName: 'SyncDeletions', document: SYNC_DELETIONS_QUERY }];
 }
 
-/**
- * Coerces a synced document value to what the SQLite bridge accepts:
- * booleans as 0/1 (SQLite has no BOOLEAN type), Date values as ISO strings,
- * objects/arrays as their JSON string (frames, characteristics, etc. are stored
- * as TEXT), null/undefined as NULL (undefined means "document omitted this
- * column" — same bind as an explicit null), everything else passed through
- * unchanged. Exported so the snapshot export job can reuse the exact same
- * coercion off the same synced documents without re-deriving it.
- */
-export function toSqliteValue(value: unknown): SqlValue {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'boolean') return value ? 1 : 0;
-  if (value instanceof Date) return value.toISOString();
-  if (typeof value === 'object') return JSON.stringify(value);
-  return value as SqlValue;
-}
-
 async function upsertDocuments(
   db: OfflineDatabase,
   tableName: string,
@@ -761,51 +751,6 @@ async function upsertDocuments(
 ): Promise<boolean> {
   if (documents.length === 0) return true;
 
-  // Unknown columns are SKIPPED, not fatal: the backend deploys before OTA
-  // clients update, so a newly-added server column must not brick every older
-  // client's sync loop. SQL safety is unaffected — the statement's column list
-  // below is derived from the allowlist intersection, never from document keys.
-  // Drift still surfaces in telemetry (once per table+column per app launch),
-  // so a resolver emitting a misnamed column stays observable.
-  const allowedColumnSet = new Set(allowedColumns);
-  const transientColumnSet = new Set(transientColumns);
-  for (const document of documents) {
-    const unknownColumns = Object.keys(document).filter(
-      (column) => !allowedColumnSet.has(column) && !transientColumnSet.has(column),
-    );
-    for (const unknownColumn of unknownColumns) {
-      reportExtraColumn(onSchemaDrift, { origin: 'pull', tableName, column: unknownColumn });
-    }
-  }
-
-  // Columns are the union of allowed columns present anywhere in the page (not
-  // per-document) — this was already true before batching, since this filter
-  // ran once over the whole `documents` array. Batching depends on it: every
-  // row in a multi-row VALUES clause must bind the same column list. A
-  // document missing a page-wide column binds NULL for it below, same as the
-  // single-row INSERT OR REPLACE did (INSERT OR REPLACE still does a whole-row
-  // replace, so this matches today's semantics, not just today's SQL shape).
-  const columns = allowedColumns.filter((column) =>
-    documents.some((document) => Object.prototype.hasOwnProperty.call(document, column)),
-  );
-  if (columns.length === 0) {
-    throw new Error(`Sync document for ${tableName} did not contain any allowed columns`);
-  }
-
-  const chunkSize = multiRowChunkSize(columns.length);
-  // At most two distinct row counts occur in a page (full chunks + a smaller
-  // final chunk), so caching the built SQL by row count avoids rebuilding the
-  // same multi-row VALUES string for every full chunk.
-  const sqlByRowCount = new Map<number, string>();
-  const sqlForRowCount = (rowCount: number): string => {
-    let sql = sqlByRowCount.get(rowCount);
-    if (!sql) {
-      sql = buildMultiRowInsertSql(tableName, columns, rowCount, page?.preserveNewerRows);
-      sqlByRowCount.set(rowCount, sql);
-    }
-    return sql;
-  };
-
   // One exclusive transaction per page (≤ PAGE_LIMIT rows): a big board pull is
   // thousands of pages, and a per-50-row transaction multiplied every page's
   // commit overhead by 10 while giving the drainer no meaningful extra window —
@@ -817,16 +762,15 @@ async function upsertDocuments(
     // attempt's verdict into this one.
     committed = false;
     if (page && !page.canWrite()) return;
-    for (let chunkStart = 0; chunkStart < documents.length; chunkStart += chunkSize) {
-      const chunk = documents.slice(chunkStart, chunkStart + chunkSize);
-      const values: SqlValue[] = [];
-      for (const document of chunk) {
-        for (const column of columns) {
-          values.push(toSqliteValue(document[column]));
-        }
-      }
-      await transaction.runAsync(sqlForRowCount(chunk.length), values);
-    }
+    await writePullDocuments(
+      transaction,
+      tableName,
+      documents,
+      allowedColumns,
+      transientColumns,
+      page?.preserveNewerRows ?? false,
+      onSchemaDrift,
+    );
     await page?.afterUpsert(transaction);
     committed = true;
   });
@@ -956,8 +900,16 @@ async function syncTable(
         onSchemaDrift,
         {
           canWrite,
-          preserveNewerRows: !!refresh,
+          preserveNewerRows:
+            !!refresh ||
+            (boardScope?.boardType === 'spray' && (tableName === 'board_climbs' || tableName === 'board_climb_stats')),
           afterUpsert: async (transaction) => {
+            if (tableName === 'board_climbs' && boardScope?.boardType === 'spray') {
+              // A targeted saved-row mirror can move the derived index ahead
+              // of delayed ordinary or refresh rows. Rebuild bounded spray
+              // layouts on next use, and fence in-flight index work atomically.
+              await clearLayoutHoldIndex(transaction, boardScope.boardType, boardScope.layoutId);
+            }
             if (!refresh) await setCheckpoint(transaction, checkpointKey, result.cursor);
             if (clearDownloadCoverage && boardScope) {
               await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [

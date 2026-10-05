@@ -1,6 +1,55 @@
 {
-  "generatedAt": "2026-10-05T03:00:37.100Z",
+  "generatedAt": "2026-10-05T04:51:04.532Z",
   "entries": [
+    {
+      "prNumber": 6088,
+      "category": "fixed",
+      "title": "Your new climbs appear immediately on downloaded spray walls, without restarting the app.",
+      "mergedAt": "2026-10-05T04:48:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6088"
+    },
+    {
+      "prNumber": 6093,
+      "category": "fixed",
+      "title": "Your browser queue stays cleared after removing a wall, and new queued climbs survive a quick switch.",
+      "mergedAt": "2026-10-05T04:09:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6093"
+    },
+    {
+      "prNumber": 6091,
+      "category": "improved",
+      "title": "Updates download faster, so the newest version is ready sooner when you open the app.",
+      "mergedAt": "2026-10-05T03:59:37Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6091"
+    },
+    {
+      "prNumber": 6069,
+      "category": "new",
+      "title": "Using Boardsesh in your phone's browser? There's now a link to get the app from the App Store or Google Play.",
+      "mergedAt": "2026-10-05T03:32:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6069"
+    },
+    {
+      "prNumber": 6074,
+      "category": "fixed",
+      "title": "Tap a shared climb before signing in and it opens once you're in.",
+      "mergedAt": "2026-10-05T03:30:57Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6074"
+    },
+    {
+      "prNumber": 6063,
+      "category": "fixed",
+      "title": "Log, queue and favourite your spray climbs after holds come off the wall.",
+      "mergedAt": "2026-10-05T03:30:43Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6063"
+    },
+    {
+      "prNumber": 6082,
+      "category": "fixed",
+      "title": "Your board picker shows walls ready to climb. Resume unfinished walls in Add a wall, and close an editor when its wall photo cannot load.",
+      "mergedAt": "2026-10-05T03:30:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6082"
+    },
     {
       "prNumber": 6067,
       "category": "fixed",
@@ -6173,6 +6222,19 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-10-05T13:37:36+11:00",
+      "sha": "ce06f3ef7821f2641b4e1d736af3776d93fa6394",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "8624152895000c330497160a9f561e17ce4bb9b7",
+        "ios": "7c1871c18f50ea805ea5409d498f48bdd01779c9"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-10-04T23:31:48+11:00",

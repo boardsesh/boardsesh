@@ -6,12 +6,26 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-10-05
 
+### App update
+
+A new version shipped to the App Store and Play Store.
+
+### New
+
+- Using Boardsesh in your phone's browser? There's now a link to get the app from the App Store or Google Play. ([#6069](https://github.com/boardsesh/boardsesh/pull/6069))
+
 ### Improved
 
+- Updates download faster, so the newest version is ready sooner when you open the app. ([#6091](https://github.com/boardsesh/boardsesh/pull/6091))
 - [x] none ([#6085](https://github.com/boardsesh/boardsesh/pull/6085))
 
 ### Fixed
 
+- Your new climbs appear immediately on downloaded spray walls, without restarting the app. ([#6088](https://github.com/boardsesh/boardsesh/pull/6088))
+- Your browser queue stays cleared after removing a wall, and new queued climbs survive a quick switch. ([#6093](https://github.com/boardsesh/boardsesh/pull/6093))
+- Tap a shared climb before signing in and it opens once you're in. ([#6074](https://github.com/boardsesh/boardsesh/pull/6074))
+- Log, queue and favourite your spray climbs after holds come off the wall. ([#6063](https://github.com/boardsesh/boardsesh/pull/6063))
+- Your board picker shows walls ready to climb. Resume unfinished walls in Add a wall, and close an editor when its wall photo cannot load. ([#6082](https://github.com/boardsesh/boardsesh/pull/6082))
 - Delete your spray wall without its last climb lingering on the bar. ([#6067](https://github.com/boardsesh/boardsesh/pull/6067))
 - Your new unlisted or public wall has its share link as soon as you publish it. ([#6076](https://github.com/boardsesh/boardsesh/pull/6076))
 - Browse and search downloaded climbs after relaunching offline, including spray walls. ([#6079](https://github.com/boardsesh/boardsesh/pull/6079))

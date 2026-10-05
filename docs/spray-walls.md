@@ -2121,3 +2121,30 @@ page emits no `og:image` at all rather than pointing at a URL that answers 404.
 Public walls' climbs are the only spray URLs in a sitemap, and the boards shard
 stays catalogue-only because a wall has no `/list` page to submit. The rule, the
 config source and the SQL belt behind it are in `docs/sitemap.md`.
+
+
+### Newly saved climbs on downloaded walls
+
+After a successful spray climb save or edit, mobile awaits an exact-UUID canonical
+mirror before invalidating the downloaded climb list. `syncClimbDocuments`
+requires the exact board type and layout, and the existing wall visibility rule (including an explicitly supplied unlisted wall
+UUID). Climb and stats documents come from one repeatable-read primary snapshot,
+including the real server `updated_at` and `sync_seq` values. Authors can mirror
+their own drafts; other readable spray rows must be published. This supports
+wall owners editing another setter's published climb without exposing anybody
+else's draft. The response's authenticated `viewerId` gates the local account
+stamp, while the climb keeps its original `user_id` attribution.
+
+The SQLite mirror writes both tables in one transaction through the ordinary
+pull document writer. It checks download coverage, the local account owner,
+auth credential generation, and purge generation; it never changes pull
+checkpoints or bypasses the ordinary pull stability window. Ordinary climb and
+stats pulls preserve newer mirrored spray rows when an older response arrives later.
+Each ordinary or refresh spray climb page also clears its derived holds index in the same
+transaction. This fences an in-flight index build and lets delayed older rows
+enter heatmaps and similar-climb searches even if a mirrored row advanced the
+index watermark. The next index read rebuilds the bounded spray layout;
+catalogue walls retain their existing incremental index behavior.
+If the mirror fails, the remote save still succeeds and the app asks the climber
+to reconnect to refresh their downloaded list. Mobile release depends on the
+additive backend query being deployed first.

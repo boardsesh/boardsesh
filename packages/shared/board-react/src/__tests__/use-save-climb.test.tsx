@@ -179,3 +179,71 @@ describe('useUpdateClimb (shared)', () => {
     );
   });
 });
+
+describe('saved climb post-write mirror ordering', () => {
+  it('awaits mirror completion before invalidating downloaded queries', async () => {
+    let finishMirror!: () => void;
+    const mirror = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishMirror = resolve;
+        }),
+    );
+    const executeWs = vi.fn().mockResolvedValue({ saveClimb: { uuid: 'saved-uuid' } }) as unknown as ExecuteWs;
+    const { wrapper, queryClient } = createWrapper({ executeWs, afterClimbWrite: mirror });
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    const { result } = renderHook(() => useSaveClimb('spray'), { wrapper });
+    let pending!: Promise<unknown>;
+    await act(async () => {
+      pending = result.current.mutateAsync(climbOptions());
+    });
+    await waitFor(() => expect(mirror).toHaveBeenCalledOnce());
+    expect(invalidate).not.toHaveBeenCalled();
+    await act(async () => {
+      finishMirror();
+      await pending;
+    });
+    expect(invalidatedRoots(invalidate.mock.calls)).toContain('infiniteSearchClimbs');
+  });
+
+  it('keeps successful save and update results when their local mirror fails', async () => {
+    const mirror = vi.fn().mockRejectedValue(new Error('SQLite unavailable'));
+    const showError = vi.fn();
+    const executeWs = vi.fn().mockResolvedValue({
+      saveClimb: { uuid: 'saved-uuid' },
+      updateClimb: { uuid: 'updated-uuid' },
+    }) as unknown as ExecuteWs;
+    const { wrapper } = createWrapper({ executeWs, afterClimbWrite: mirror, showError });
+    const save = renderHook(() => useSaveClimb('spray'), { wrapper });
+    const update = renderHook(() => useUpdateClimb(), { wrapper });
+    await act(async () => {
+      expect(await save.result.current.mutateAsync(climbOptions())).toEqual({ uuid: 'saved-uuid' });
+      expect(await update.result.current.mutateAsync({ uuid: 'updated-uuid', boardType: 'spray' })).toEqual({
+        uuid: 'updated-uuid',
+      });
+    });
+    expect(executeWs).toHaveBeenCalledTimes(2);
+    expect(showError.mock.calls).toEqual([['localClimbRefreshFailed'], ['localClimbRefreshFailed']]);
+    await waitFor(() => {
+      expect(save.result.current.isSuccess).toBe(true);
+      expect(update.result.current.isSuccess).toBe(true);
+    });
+  });
+
+  it('does not mirror a remote save after an account generation transition', async () => {
+    const mirror = vi.fn();
+    const executeWs = vi.fn().mockResolvedValue({ saveClimb: { uuid: 'saved-uuid' } }) as unknown as ExecuteWs;
+    const { wrapper } = createWrapper({
+      executeWs,
+      afterClimbWrite: mirror,
+      captureAuthEpoch: () => 5,
+      isAuthEpochCurrent: () => false,
+    });
+    const { result } = renderHook(() => useSaveClimb('spray'), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync(climbOptions());
+    });
+    expect(mirror).not.toHaveBeenCalled();
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  });
+});
