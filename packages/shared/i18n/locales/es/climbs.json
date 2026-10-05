@@ -374,11 +374,14 @@
         "cta": "Buscar mi plafón"
       },
       "noBoardPreview": {
-        "title": "Echa un vistazo",
-        "subtitle": "Bloques populares en un plafón {{board}} a {{angle}}°. Elige tu plafón para abrirlos e iluminarlos.",
+        "heroEyebrow": "El bloque con más encadenes en un plafón {{board}} a {{angle}}°",
+        "heroEyebrow_moonboard": "El bloque con más encadenes en un MoonBoard a {{angle}}°",
+        "heroHint": "Abre el selector de plafones. Elige tu plafón para iluminar este bloque.",
         "boardTypeGroup": "Tipo de plafón",
         "rowHint": "Abre el selector de plafones. Elige tu plafón para abrir este bloque.",
-        "footer": "Elige tu plafón para ver el resto.",
+        "footer": "Estos son los {{shown}} primeros. Busca tu plafón para ver todos sus bloques.",
+        "searchTitle": "Bloques que coinciden con «{{name}}»",
+        "searchEmpty": "Ningún bloque se llama «{{name}}» en este plafón.",
         "loadError": "No se pudieron cargar estos bloques.",
         "retry": "Reintentar"
       },

@@ -19,6 +19,7 @@ import { Button } from '../Button';
 import { NoBoardClimbsPreview, type NoBoardPreviewSearchOutcome } from './NoBoardClimbsPreview';
 import { useAuth } from '../../providers/auth-provider';
 import { useFeatureFlagsResolved, useNoBoardPreviewEnabled } from '../../providers/feature-flags-provider';
+import { useOptionalClimbSearch } from '../../providers/climb-search-provider';
 import { useIsOffline } from '../../hooks/use-is-offline';
 import { useMyBoards, usePopularBoardConfigs, useProfile } from '../../lib/graphql/hooks';
 import { track } from '../../lib/analytics';
@@ -61,6 +62,10 @@ export function NoBoardState() {
   const isOffline = useIsOffline();
   const flagsResolved = useFeatureFlagsResolved();
   const previewEnabled = useNoBoardPreviewEnabled();
+  // What is typed in the Climbs search field, which stays up over this state.
+  // The preview lists the climbs with that name; the placard has no use for it.
+  // Optional, so this still mounts where there is no Climbs search at all.
+  const searchName = useOptionalClimbSearch()?.name ?? '';
 
   // The roster the drawer host keeps warm (same key), so this is usually a
   // cache read.
@@ -137,8 +142,8 @@ export function NoBoardState() {
     wasFocusedRef.current = isFocused;
   }, [isFocused]);
 
-  // What is on screen. Until a held preview has its first climbs it is only a
-  // spinner, so a lost connection or a failed search hands the screen back to
+  // What is on screen. Until a held preview has its first climbs it is only an
+  // unlit wall and skeleton rows, so a lost connection or a failed search hands the screen back to
   // the placard. Offline is read live, so the preview returns with the signal.
   let shown: SettledNoBoardDecision | null = held ?? (decision.status === 'pending' ? null : decision);
   if (held?.status === 'preview' && !previewReady) {
@@ -186,6 +191,16 @@ export function NoBoardState() {
     [router],
   );
 
+  // The lit board at the top of the preview is the first climb of the page, so
+  // it reports as place 0 of the same event and opens the same picker.
+  const handlePreviewHeroPress = useCallback(
+    (config: NoBoardPreviewConfig) => {
+      track(SHARED_EVENTS.NoBoardPreviewClimbTapped, { board_type: config.boardName, row_index: 0 });
+      router.push(noBoardPickerHref('preview_hero'));
+    },
+    [router],
+  );
+
   if (shown?.status === 'preview') {
     return (
       <NoBoardClimbsPreview
@@ -193,6 +208,8 @@ export function NoBoardState() {
         active={isFocused}
         onFindBoard={handleFindBoard}
         onClimbPress={handlePreviewClimbPress}
+        onHeroPress={handlePreviewHeroPress}
+        searchName={searchName}
         onSearchSettled={handleSearchSettled}
       />
     );

@@ -678,15 +678,17 @@ an ordinary pick: no `Onboarding Board Activated`, no reveal banner.
 
 An account with no boards at all now gets a read-only list of climbs on Climbs instead of the
 "Pick your board" placard: one page of 30 from the most used setup, a chip per board type the
-popular list carries, and **Find my board** pinned on top. Tapping a climb opens the picker. Nothing
-is bound. Everyone else with no board bound (their own boards exist, they are offline, the kill
+popular list carries, and **Find my board** docked above the tab bar. The most sent climb is drawn
+lit on a large board at the top; the other 29 are rows. Tapping the board or a row opens the picker.
+Typing a name in the Climbs search field lists that setup's climbs with the name in place of the
+board (no event of its own). Nothing is bound. Everyone else with no board bound (their own boards exist, they are offline, the kill
 switch `no-board-preview-kill` is on) keeps the placard. No experiment arm: read it before/after.
 
 | Event | Properties | Emit site | Volume |
 | --- | --- | --- | --- |
 | `Climbs No Board State Viewed` | `variant` (`placard` / `preview`), `owned_board_count` (null when the board list could not be read), `account_age_hours` (null when the profile could not), `preview_board_type` (the board type listed first; null on a placard), `fallback_reason` (null on a preview; `kill_switch` / `signed_out` / `offline` / `boards_unknown` / `has_boards` / `no_config` / `search_error` / `no_climbs`) | `NoBoardState.tsx` | Once per variant per mount of Climbs' no-board state, while Climbs is focused |
-| `No Board Preview Climb Tapped` | `board_type`, `row_index` (0-based) | `NoBoardState.tsx` | Per row tap |
-| `Board Picker Opened` (changed) | adds `trigger` (`cta` = Find my board, `preview_row` = a climb in the preview; null outside `source = no_board`) | `use-board-picker-analytics.ts` | Unchanged |
+| `No Board Preview Climb Tapped` | `board_type`, `row_index` (0-based place among the climbs shown: `0` is the lit board at the top, rows run `1` to `29` under it; a name search has no board, so its rows start at `0`) | `NoBoardState.tsx` | Per tap on the board or a row |
+| `Board Picker Opened` (changed) | adds `trigger` (`cta` = Find my board, `preview_hero` = the lit board at the top of the preview, `preview_row` = a row under it; null outside `source = no_board`) | `use-board-picker-analytics.ts` | Unchanged |
 
 - **Exposure is what they got, not what was planned.** The event waits for the board list, the
   flags and the profile (or an offline phone), and a preview waits for its first page of climbs. A
@@ -706,8 +708,8 @@ switch `no-board-preview-kill` is on) keeps the placard. No experiment arm: read
   `Board Create Reused Existing` within 7 days. The event did not exist before the preview shipped,
   so there is no measured "before": the baseline is the proxies on #5654, or a window with the kill
   switch on.
-- **Row taps that end nowhere**: `Board Picker Opened` with `trigger = preview_row` and no pick
-  after it. A high share means the tap reads as bait and the preview needs a real climb view.
+- **Climb taps that end nowhere**: `Board Picker Opened` with `trigger = preview_row` or
+  `preview_hero` and no pick after it. A high share means the tap reads as bait and the preview needs a real climb view.
 - MoonBoard gets no chip while the popular list carries only Kilter and Tension setups.
 
 ## Board account linking

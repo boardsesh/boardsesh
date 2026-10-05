@@ -24,12 +24,19 @@ export const NO_BOARD_PICKER_SOURCE = 'no_board';
 
 /**
  * What the climber tapped on Climbs' no-board state to open the picker: "Find
- * my board" (`cta`, on the placard or pinned above the preview), or a climb in
- * the read-only preview (`preview_row`). Carried as the `trigger` route param
- * and reported on `Board Picker Opened`, so a row tap that ends in a closed
- * picker can be told from a deliberate "Find my board".
+ * my board" (`cta`, on the placard or docked under the preview), the big lit
+ * board at the top of the preview (`preview_hero`), or a climb in the list
+ * below it (`preview_row`). Carried as the `trigger` route param and reported
+ * on `Board Picker Opened`, so a climb tap that ends in a closed picker can be
+ * told from a deliberate "Find my board".
  */
-export type NoBoardPickerTrigger = 'cta' | 'preview_row';
+export type NoBoardPickerTrigger = 'cta' | 'preview_row' | 'preview_hero';
+
+const NO_BOARD_PICKER_TRIGGERS: readonly string[] = [
+  'cta',
+  'preview_row',
+  'preview_hero',
+] satisfies readonly NoBoardPickerTrigger[];
 
 /** Where Climbs' no-board state sends the climber, tagged with what they tapped. */
 export function noBoardPickerHref(trigger: NoBoardPickerTrigger) {
@@ -46,7 +53,8 @@ export function noBoardPickerHref(trigger: NoBoardPickerTrigger) {
  */
 export function noBoardPickerTrigger(params: { source?: string; trigger?: string }): NoBoardPickerTrigger | null {
   if (!isNoBoardEntry(params)) return null;
-  return params.trigger === 'cta' || params.trigger === 'preview_row' ? params.trigger : null;
+  const { trigger } = params;
+  return trigger !== undefined && NO_BOARD_PICKER_TRIGGERS.includes(trigger) ? (trigger as NoBoardPickerTrigger) : null;
 }
 
 /**

@@ -374,11 +374,14 @@
         "cta": "Find my board"
       },
       "noBoardPreview": {
-        "title": "Have a look around",
-        "subtitle": "Popular climbs on a {{board}} board at {{angle}}°. Pick your board to open them and light them up.",
+        "heroEyebrow": "Most sent on a {{board}} board at {{angle}}°",
+        "heroEyebrow_moonboard": "Most sent on a MoonBoard at {{angle}}°",
+        "heroHint": "Opens the board picker. Pick your board to light this climb up.",
         "boardTypeGroup": "Board type",
         "rowHint": "Opens the board picker. Pick your board to open this climb.",
-        "footer": "Pick your board to see the rest.",
+        "footer": "That's the top {{shown}}. Find your board to see every climb on it.",
+        "searchTitle": "Climbs matching \"{{name}}\"",
+        "searchEmpty": "No climb called \"{{name}}\" on this board.",
         "loadError": "Couldn't load these climbs.",
         "retry": "Try again"
       },

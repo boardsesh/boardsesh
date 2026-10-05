@@ -112,6 +112,7 @@ describe('noBoardPickerHref', () => {
   it('round-trips through the route params', () => {
     expect(noBoardPickerTrigger(noBoardPickerHref('cta').params)).toBe('cta');
     expect(noBoardPickerTrigger(noBoardPickerHref('preview_row').params)).toBe('preview_row');
+    expect(noBoardPickerTrigger(noBoardPickerHref('preview_hero').params)).toBe('preview_hero');
   });
 });
 

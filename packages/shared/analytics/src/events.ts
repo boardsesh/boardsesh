@@ -639,7 +639,8 @@ export const SHARED_EVENTS = {
   //
   // NoBoardPreviewClimbTapped: a tap on a climb in the read-only preview. It
   // opens the board picker, not the climb. Props: { board_type, row_index
-  // (0-based) }. The demand signal for a guest play view (#5654).
+  // (0-based place among the climbs shown; 0 is the lit board at the top, rows
+  // start at 1 under it) }. The demand signal for a guest play view (#5654).
   ClimbsNoBoardStateViewed: 'Climbs No Board State Viewed',
   NoBoardPreviewClimbTapped: 'No Board Preview Climb Tapped',
   BetaVideoAdded: 'Beta Video Added',
@@ -768,9 +769,10 @@ export const SHARED_EVENTS = {
   // gym map opened on its own, from Home or My gyms; the map pushed from the
   // picker's "Find gym" reports no opening, the picker did).
   // hadActiveBoard is null when storage could not be read, not false.
-  // trigger (mobile, source no_board only): 'cta' = "Find my board", 'preview_row'
-  // = a climb in the no-board preview; null for every other source and for
-  // builds that predate it.
+  // trigger (mobile, source no_board only): 'cta' = "Find my board",
+  // 'preview_hero' = the big lit board at the top of the no-board preview,
+  // 'preview_row' = a climb in the list under it; null for every other source
+  // and for builds that predate it.
   BoardPickerOpened: 'Board Picker Opened',
   // Existing-board selection in that picker, only after a successful write.
   // sameBoard compares UUIDs; sameConfig compares board type/layout/size/sets.

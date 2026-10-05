@@ -216,6 +216,8 @@ vi.mock('../../../../src/providers/climb-search-provider', () => ({
     patchFilters: vi.fn(),
     patchBoardFilters: vi.fn(),
   }),
+  // The no-board state reads the typed name from here.
+  useOptionalClimbSearch: () => mocks.searchState,
 }));
 
 vi.mock('../../../../src/components/ClimbListRow', () => ({
