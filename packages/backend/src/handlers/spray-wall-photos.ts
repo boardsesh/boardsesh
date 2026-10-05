@@ -441,17 +441,16 @@ export async function handleSprayWallPhotoUpload(req: IncomingMessage, res: Serv
               [SPRAY_PHOTO_HEIGHT_METADATA_KEY]: String(normalised.height),
             },
           });
+          if ((await loadOwnedWall(wallUuid, authenticatedUserId)).outcome !== 'ok') {
+            await eraseUpload();
+            respondJson(res, 404, { error: 'Spray wall not found' });
+            resolve();
+            return;
+          }
         } catch (saveError) {
           await eraseUpload();
           logger.error('Failed to save spray wall photo:', saveError);
           respondJson(res, 500, { error: 'Failed to save the wall photo' });
-          resolve();
-          return;
-        }
-
-        if ((await loadOwnedWall(wallUuid, authenticatedUserId)).outcome !== 'ok') {
-          await eraseUpload();
-          respondJson(res, 404, { error: 'Spray wall not found' });
           resolve();
           return;
         }

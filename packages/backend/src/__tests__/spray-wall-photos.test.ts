@@ -313,6 +313,34 @@ describe('POST /api/spray-wall-photos', () => {
     expect(uploadedObjects).toHaveLength(2);
   });
 
+  it.each([false, true])(
+    'cleans up a late upload if its ownership recheck throws (erase fails: %s)',
+    async (failDelete) => {
+      uploadRace.failDelete = failDelete;
+      uploadRace.onUpload = async () => {
+        await db.execute(
+          sql`UPDATE spray_walls SET deleted_at = now(), photos_purged_at = now() WHERE board_uuid = ${wallUuid}`,
+        );
+        vi.spyOn(db, 'select').mockImplementationOnce(() => {
+          throw new Error('synthetic final ownership lookup failure');
+        });
+      };
+      const response = await uploadPhoto(baseUrl, {
+        token: OWNER,
+        wallUuid,
+        bytes: await plainPng(),
+        mimeType: 'image/png',
+      });
+      expect(response.status).toBe(500);
+      expect(uploadedObjects).toHaveLength(failDelete ? 2 : 0);
+      if (failDelete) {
+        const rows = await db.execute(sql`SELECT photos_purged_at FROM spray_walls WHERE board_uuid = ${wallUuid}`);
+        expect(Array.from(rows)[0].photos_purged_at).toBeNull();
+      }
+      vi.restoreAllMocks();
+    },
+  );
+
   it('refuses a stranger and a missing token', async () => {
     const stranger = await uploadPhoto(baseUrl, {
       token: STRANGER,
