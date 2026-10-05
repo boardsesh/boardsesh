@@ -1,15 +1,15 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import type { SearchClimbsQueryResponse } from '../../operations';
 
 const requestMock = vi.fn();
 
-vi.mock('../../client', () => ({
-  getHttpClient: () => ({ request: requestMock }),
+vi.mock('../../offline-request', () => ({
+  offlineAwareRequest: (query: unknown, variables: unknown) => requestMock(query, variables),
 }));
 
 // The live flag bag, keyed like FEATURE_FLAG_DEFINITIONS. Empty = every flag
@@ -42,10 +42,10 @@ const baseInput: ClimbSearchInput = {
   name: 'Moonage',
 };
 
-function wrapper() {
+function wrapper(networkMode: 'offlineFirst' | 'online' = 'online') {
   const queryClient = new QueryClient({
     defaultOptions: {
-      queries: { retry: false },
+      queries: { retry: false, networkMode },
     },
   });
 
@@ -68,6 +68,38 @@ function makeResponse(page: number): SearchClimbsQueryResponse {
     },
   };
 }
+
+describe('cold offline downloaded-board search', () => {
+  afterEach(() => onlineManager.setOnline(true));
+
+  it.each(['kilter', 'spray'] as const)('runs the first and next %s pages while offline', async (boardName) => {
+    // The request adapter owns local-versus-server selection. This guards the
+    // real hook reaching that adapter at all, with the app provider's defaults.
+    requestMock.mockReset();
+    requestMock.mockImplementation(async (_query: unknown, variables: { input: ClimbSearchInput }) =>
+      makeResponse(variables.input.page ?? 0),
+    );
+    onlineManager.setOnline(false);
+    const { result, unmount } = renderHook(() => useInfiniteSearchClimbs({ ...baseInput, boardName }), {
+      wrapper: wrapper('offlineFirst'),
+    });
+    try {
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+        expect(result.current.data?.pages).toHaveLength(1);
+      });
+      expect(requestMock).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await result.current.fetchNextPage();
+      });
+      await waitFor(() => expect(result.current.data?.pages).toHaveLength(2));
+      expect(requestMock).toHaveBeenCalledTimes(2);
+      expect(lastInput()).toMatchObject({ page: 1, boardName });
+    } finally {
+      unmount();
+    }
+  });
+});
 
 describe('useInfiniteSearchClimbs', () => {
   beforeEach(() => {
