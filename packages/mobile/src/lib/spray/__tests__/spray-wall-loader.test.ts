@@ -68,13 +68,13 @@ afterEach(() => {
 
 describe('loadSprayWall', () => {
   it.each(['identity', 'render'] as const)(
-    'does not register a %s response completing after sign-out',
+    'does not register the %s response completing after sign-out',
     async (stage) => {
       let resolveRequest!: (response: unknown) => void;
       const delayed = new Promise((resolve) => {
         resolveRequest = resolve;
       });
-      if (stage === 'identity') requestMock.mockReturnValueOnce(delayed);
+      if (stage === 'identity') requestMock.mockReturnValueOnce(delayed).mockResolvedValue(renderDataPayload());
       else requestMock.mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } }).mockReturnValueOnce(delayed);
       const loading = loadSprayWall(fakeQueryClient(), LAYOUT_ID);
       await vi.waitFor(() => expect(requestMock).toHaveBeenCalledTimes(stage === 'identity' ? 1 : 2));
