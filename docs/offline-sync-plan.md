@@ -8,6 +8,13 @@ Offline data layer for the React Native mobile app. Uses `expo-sqlite` for the l
 
 > **Where the code lives.** The engine (mutation queue + drainer, pull client, checkpoints, table config, SQLite DDL/migrations) is the platform-free package **`@boardsesh/offline-sync`** (`packages/shared/offline-sync`). The mobile app binds its platform seams — expo-sqlite handle, NetInfo/AppState triggers, `onlineManager` connectivity, Sentry telemetry — in `packages/mobile/src/offline/offline-sync-adapter.ts`; mobile code calls `drainMutationQueue`/`startSyncScheduler`/`triggerSync`/`pullSync` via that adapter only, never from the package directly. Expo-specific pieces (DB lifecycle/`connection.ts`, local read queries, the sync-status store, hooks, the bridge component) stay in `packages/mobile`.
 
+`pullSync` serializes concurrent callers per database handle, including direct
+publication refreshes and scheduler pulls. Each caller awaits its own FIFO cycle;
+its scope and purge token are captured before waiting. Scheduler event coalescing
+remains separate: repeated events produce at most one queued scheduler follow-up.
+Mutation draining writes the outbox and may overlap a direct pull; this gate
+serializes pull cycles, not all sync activity.
+
 This document records the evaluation of four approaches and why `expo-sqlite` + custom mutation queue is the recommendation. The plan was refined through 4 rounds of review by paired Opus agents (8 review agents total, 100+ findings).
 
 ## Alternatives evaluated
