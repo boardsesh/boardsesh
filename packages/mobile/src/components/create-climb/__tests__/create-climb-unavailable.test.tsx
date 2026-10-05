@@ -86,5 +86,6 @@ describe('closing the spray climb editor without geometry', () => {
     fireEvent.click(screen.getByRole('button', { name: 'actions.close' }));
     expect(state.replace).toHaveBeenCalledWith('/(tabs)/climbs');
     expect(state.back).not.toHaveBeenCalled();
+    expect(state.notify).toHaveBeenCalledOnce();
   });
 });
