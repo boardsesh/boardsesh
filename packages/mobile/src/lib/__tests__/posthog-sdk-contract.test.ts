@@ -16,6 +16,10 @@ describe('posthog-react-native contract', () => {
       fileURLToPath(new URL('../../../node_modules/posthog-react-native/dist/posthog-rn.js', import.meta.url)),
       'utf8',
     );
-    expect(builtClient).toContain('key:"ready"');
+    // Any way a bundler can define the method: a property descriptor
+    // (`key:"ready"`, whitespace and quote style vary by minifier), a class
+    // method (`ready(` / `async ready(`), or a prototype assignment.
+    const readyDefinition = /key\s*:\s*["']ready["']|(?:^|[\s,{;])(?:async\s+)?ready\s*\(|\.prototype\.ready\s*=/;
+    expect(builtClient).toMatch(readyDefinition);
   });
 });
