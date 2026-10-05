@@ -139,38 +139,67 @@ change with the window. Keep the window on the tile and in the query the same.
 
 ## Identity-split pitfall
 
-Until the identity-split fix, a returning climber who signed in on a fresh
-install was counted twice: once as their account, and once as a "newcomer" who
-logged in, saw one screen and never came back.
+A returning climber who signs in on a fresh install is counted twice: once as
+their account, and once as a "newcomer" who logged in, saw one screen and never
+came back. The anonymous person keeps `Login Succeeded` and often one `$screen`
+(`/climbs` or `/home`), and everything after that lands on the account's older
+person.
 
-The app starts every install on an anonymous id (the party-profile UUID). On
-sign-in it used to send `alias(userId)` and then `identify(userId)`. When the
-account already had a PostHog person, the two never merged. The anonymous
-person kept `Login Succeeded` and often one `$screen` (`/climbs` or `/home`),
-and everything after that landed on the account's older person. Why PostHog
-refuses that merge is not confirmed; the split itself is measured.
+**This is not fixed yet.** The app no longer sends `alias()` on sign-in, which
+was the first suspect, but the production data below points somewhere else.
 
-It hits Android harder. The likely reason: the UUID lives in secure storage,
-which survives an uninstall on iOS and not on Android, so an Android reinstall
-mints a new one.
+### What is measured
 
-| 2026-09-08 to 2026-10-01, native production            | Android        | iOS            |
-| ------------------------------------------------------- | -------------- | -------------- |
-| Alias pairs that ended on two persons (#6003 analysis)   | 87/467 (18.6%) | 57/898 (6.3%)  |
-| Sign-ins that ended on two persons (the query below)     | 97/990 (9.8%)  | 63/1,754 (3.6%) |
+Native production, 2026-09-08 to 2026-10-01, internal cohort not excluded:
 
-The two rows count the same splits against different denominators, and neither
-excludes the internal cohort. The first only exists while the app sends
-`$create_alias`, so track the second from here on. Target after the fix: under
-2% on both platforms.
+| Measure                                                             | Android        | iOS             |
+| ------------------------------------------------------------------- | -------------- | --------------- |
+| Alias pairs that ended on two persons (#6003 analysis)              | 87/467 (18.6%) | 57/898 (6.3%)   |
+| Anonymous ids whose identity switch ended on two persons (query below) | 97/990 (9.8%)  | 63/1,754 (3.6%) |
+| The same, minus persons that carry an `email`                        | 91/990 (9.2%)  | 54/1,754 (3.1%) |
 
-The fix drops `alias()` and keeps `identify()`, which carries the anonymous id
-as `$anon_distinct_id` (`packages/shared/analytics/src/reconcile-identity.ts`).
+- The first row only exists while the app sends `$create_alias`. Track the
+  third from here on. Target once the split is fixed: under 2% on both.
+- The denominator is distinct anonymous ids that were switched to another id.
+  It is not a count of sign-ins: the `identify()` the app sends for the party
+  UUID while signed out is in there too, and it never splits.
+- Every one of the 161 flagged persons has two or more distinct ids. None is a
+  lone anonymous person.
+- Every native `$identify` in the window that changes identity carries an
+  SDK-minted anonymous id (UUID v7) as `$anon_distinct_id`. None carries the
+  party UUID (v4). About half of those anonymous ids are attached to two ids in
+  turn: first the party UUID, then the account.
+
+### Likely cause (not proven)
+
+The app means to start every install on the party-profile UUID and to send one
+`identify(userId)` on sign-in, carrying that UUID. What production shows is a
+different sequence:
+
+1. The SDK is on its own anonymous id, not the party UUID.
+2. While signed out, the app sends `identify(partyUuid)`. That is a real
+   `$identify`, so PostHog marks the anonymous person identified.
+3. On sign-in, `identify(userId)` carries the SDK's id again. When the account
+   already has a person, PostHog won't merge an identified person into it.
+
+A brand-new account has no person yet, so step 3 just adds the id and nothing
+splits. That matches who the phantoms are. PostHog's refusal in step 3 is read
+from its documented merge rules and has not been observed directly, and why
+the SDK is not on the party UUID is not known.
+
+It hits Android harder. The likely reason: the party UUID and the session live
+in secure storage, which survives an uninstall on iOS and not on Android, so
+an Android reinstall has to sign in again.
+
+Web does not have this problem: signed out, it resets and never identifies the
+anonymous id (`packages/web/app/components/providers/analytics-identity.tsx`).
+The mobile routine is `packages/shared/analytics/src/reconcile-identity.ts`;
+its tests pin the sequence above as a known gap.
 
 ### Finding the phantoms
 
-A phantom is a person whose distinct id shows up as `$anon_distinct_id` on a
-native `$identify` that belongs to a different person.
+A phantom is a person with no `email` whose distinct id shows up as
+`$anon_distinct_id` on a native `$identify` that belongs to a different person.
 
 ```sql
 SELECT DISTINCT anon.person_id AS phantom_person_id
@@ -183,34 +212,39 @@ FROM (
       AND properties.$lib = 'posthog-react-native'
       AND properties.environment = 'production'
       AND properties.$anon_distinct_id != distinct_id
+      -- native events carry `environment` from 2026-07-25; narrow this to
+      -- the cohort's own window where you can
       AND timestamp >= toDateTime('2026-07-25 00:00:00')
     GROUP BY anon_distinct_id, account_person_id
 ) AS switches
 INNER JOIN person_distinct_ids AS anon
     ON anon.distinct_id = switches.anon_distinct_id
 WHERE anon.person_id != switches.account_person_id
+  AND coalesce(anon.person.properties.email, '') = ''
 ```
 
-For the split rate, drop the `WHERE`, add `any(properties.$os) AS os` to the
-subquery, and select `uniqIf(anon.person_id, anon.person_id !=
-switches.account_person_id)` over `uniq(switches.anon_distinct_id)` per `os`.
-Split it by OTA bundle as well: a store binary keeps aliasing on its embedded
-JS until its first OTA lands.
+The `email` line matters. Without it the query also flags real accounts: the
+previous account after a sign-out and a sign-in to another account on the same
+device (15 of the 161 in the window above). Excluding those from a cohort would
+drop real climbers.
+
+For the split rate, add `any(properties.$os) AS os` to the subquery, move both
+`WHERE` conditions into a `uniqIf(anon.person_id, ...)`, and divide by
+`uniq(switches.anon_distinct_id)` per `os`. Split it by OTA bundle as well.
 
 ### Rules
 
-- **A newcomer cohort that starts before the fix must exclude the phantoms.**
-  Add `person_id NOT IN (<the query above>)`, or keep only people whose
+- **A newcomer cohort must exclude the phantoms.** Add
+  `person_id NOT IN (<the query above>)`, or keep only people whose
   `Login Succeeded` has `is_new_account = true`. The second is cheaper but is
   null on embedded JS and before the 2026-09-21 OTA.
-- **Expect a step on the fix date.** Android newcomer counts fall by roughly
-  13% and conversion rises, with no product change behind either.
-- **Past phantoms stay.** The fix does not merge them. PostHog merges can't be
-  undone, so nobody should try to repair them by hand.
-- **Still split after the fix:** signing out and signing in to another account
-  on the same device. The signed-out step identifies the anonymous id, and
-  PostHog won't merge a person it already treats as identified. This is rarer
-  than a reinstall and is not fixed.
+- **This holds for cohorts after the alias removal too**, until the split rate
+  above is seen to drop.
+- **Past phantoms stay.** No fix merges them. PostHog merges can't be undone,
+  so nobody should try to repair them by hand.
+- **Signing out and into another account on one device** leaves the first
+  account's person holding the anonymous id. That is a real account, not a
+  phantom, and it is not fixed either.
 
 ## Newcomer, bind, board-active
 
@@ -486,6 +520,6 @@ finished the period shown as final. Mark the current, unfinished period.
 | 2026-09-07 | Throwaway persons from 2.3.0 and 2.3.1 stop ("new people" regime 3 begins) |
 | 2026-09-26 | The www crawler rule applies from here (first day of the window it was measured on) |
 | #6027 mobile OTA | `Login Account Age Resolved` starts; login events carry `provider` and `account_age_read`; `Tick Logged`, `Set Active Climb` and `Climb Created` carry `boardType`; `Set Active Climb` carries `trigger` (`climb_saved` on a save); `Onboarding Gate Evaluated` gains the skip reason `replayed_board_link` |
-| identity-split fix OTA | The app stops sending `$create_alias`; returning climbers on a fresh install stop showing up as newcomers (see "Identity-split pitfall") |
+| alias-removal OTA (fill in the date and PR number when it ships) | The app stops sending `$create_alias`. The identity split is not expected to stop on this date (see "Identity-split pitfall") |
 
 None of these repairs past data. Annotate them; do not backfill.

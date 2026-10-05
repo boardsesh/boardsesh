@@ -31,7 +31,6 @@ Boardsesh has comprehensive PostHog instrumentation across both web (Next.js) an
 - `track(name, properties?, options?)` — Wraps Vercel + PostHog capture
 - `identify(distinctId, properties?)` — Sets authenticated user ID
 - `setPersonProperties(set?, setOnce?)` — Upserts person properties
-- `alias(newId)` — Creates $create_alias event for anonymous→auth merge
 - `pageview(url)` — Captures $pageview with sanitized pathname
 - `capturePosthog(name, properties)` — PostHog-only bypass
 
@@ -69,10 +68,10 @@ disappears for the rest of the launch after a sign-out.
 - **Sign-in:** `identify(userId, { email })` and nothing else. It carries the
   anonymous id as `$anon_distinct_id`, which is what merges the pre-login
   events into the account's person
-- **No `alias()` on either client.** Web dropped it because `$create_alias` can
-  merge two real people. Mobile dropped it because, sent ahead of `identify()`,
-  it left returning climbers on a fresh install split across two persons
-  (`docs/growth-metrics.md`, "Identity-split pitfall")
+- **No `alias()` on either client.** `$create_alias` can merge two real
+  people, and `identify()` already carries the anonymous id
+- **Open:** on mobile, returning climbers on a fresh install still split across
+  two persons (`docs/growth-metrics.md`, "Identity-split pitfall")
 - **Person Properties:**
   - `email` (on login)
   - `language` (synced on locale change via `setPersonProperties()`)
@@ -433,12 +432,11 @@ disappears for the rest of the launch after a sign-out.
 
 ### Client-Side (Web)
 
-- `/packages/web/app/lib/analytics.ts` — Core track/identify/alias functions
+- `/packages/web/app/lib/analytics.ts` — Core track/identify functions
 - `/packages/web/app/lib/analytics.server.ts` — Server-side wrapper (Vercel only)
 - `/packages/web/app/components/analytics-client.tsx` — Web Vitals capture
-- `/packages/web/app/components/party-manager/party-profile-context.tsx` — Identity lifecycle
+- `/packages/web/app/components/providers/analytics-identity.tsx` — Identity lifecycle
 - `/packages/web/app/lib/analytics-paths.ts` — URL sanitization rules
-- `/packages/web/app/lib/posthog-alias-storage.ts` — Alias deduplication
 
 ### Server-Side (Backend)
 

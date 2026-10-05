@@ -4,7 +4,7 @@
 // posthog-client.ts reads this slot when constructing the PostHog client, so
 // the SDK's app-lifecycle autocapture (Application Installed/Opened) can
 // bootstrap its anonymous distinct_id to the same stable id
-// PartyProfileProvider later identifies/aliases the authenticated user onto.
+// PartyProfileProvider later identifies the authenticated user from.
 //
 // Deliberately dependency-free (no expo-secure-store, no react-native) so
 // importing it from posthog-client.ts/analytics.ts doesn't pull the RN

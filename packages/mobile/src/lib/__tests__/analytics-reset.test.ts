@@ -17,7 +17,6 @@ vi.mock('@boardsesh/analytics', () => ({
     capture: vi.fn(),
     identify: vi.fn(),
     setPersonProperties: vi.fn(),
-    alias: vi.fn(),
     reset: sharedAnalyticsMocks.reset,
   }),
 }));

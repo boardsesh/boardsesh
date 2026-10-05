@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 const mocks = vi.hoisted(() => ({
   PostHog: vi.fn(),
   posthog: {
-    alias: vi.fn(),
     capture: vi.fn(),
     flush: vi.fn(async () => {}),
     identify: vi.fn(),
@@ -383,15 +382,13 @@ describe('analytics wrapper', () => {
     expect(mocks.posthog.capture).toHaveBeenCalledWith('$pageview', { $current_url: '/b/kilter' });
   });
 
-  it('identifies, aliases, and resets through PostHog', async () => {
-    const { alias, identify, reset } = await import('../analytics');
+  it('identifies and resets through PostHog', async () => {
+    const { identify, reset } = await import('../analytics');
 
     expect(identify('profile-1', { email: 'one@example.com' })).toBe(true);
-    expect(alias('user-1')).toBe(true);
     expect(reset()).toBe(true);
 
     expect(mocks.posthog.identify).toHaveBeenCalledWith('profile-1', { email: 'one@example.com' });
-    expect(mocks.posthog.alias).toHaveBeenCalledWith('user-1');
     expect(mocks.posthog.reset).toHaveBeenCalledTimes(1);
   });
 
@@ -422,14 +419,13 @@ describe('analytics wrapper', () => {
 
   it('skips all analytics calls on admin pages', async () => {
     setWindowLocation('https://boardsesh.com/admin/retention');
-    const { alias, capturePosthog, identify, pageview, reset, track } = await import('../analytics');
+    const { capturePosthog, identify, pageview, reset, track } = await import('../analytics');
 
     track('Admin Event');
     pageview('/admin/retention');
 
     expect(capturePosthog('Admin PostHog Event')).toBe(false);
     expect(identify('profile-1')).toBe(false);
-    expect(alias('user-1')).toBe(false);
     expect(reset()).toBe(false);
     expect(mocks.PostHog).not.toHaveBeenCalled();
     expect(mocks.posthog.capture).not.toHaveBeenCalled();

@@ -5,20 +5,22 @@ import type { AnalyticsProperties } from './client';
 // The rule: `identify()` is the only call that links an anonymous person to an
 // account. Never send `alias()` / `$create_alias` from here.
 //
-// `identify(userId)` already carries the anonymous id as `$anon_distinct_id`,
-// and PostHog merges that anonymous person into the account's person. This
-// routine used to send `alias(userId)` first. When the account already had a
-// PostHog person (a returning climber on a fresh install), the two never
-// merged: the anonymous person kept the login and its first screen and read as
-// a brand-new climber who left after one screen. Measured 2026-09-08 to
-// 2026-10-01, 18.6% of Android and 6.3% of iOS sign-ins split that way. See
-// "Identity-split pitfall" in docs/growth-metrics.md.
-//
-// Web dropped `alias()` first, for a second reason: `$create_alias` has no
-// guard against merging two real people. Its identity effect is not this
-// routine. Read the header of
+// `identify(userId)` already carries the SDK's anonymous id as
+// `$anon_distinct_id`, which is what PostHog merges on. `$create_alias` adds
+// nothing to that and has no guard against merging two real people, which is
+// why web dropped it first. Read the header of
 // packages/web/app/components/providers/analytics-identity.tsx before changing
-// either one.
+// either routine.
+//
+// Open problem, NOT fixed here: returning climbers who sign in on a fresh
+// install still end up on two PostHog persons. The suspect is the
+// `identify(profileId)` this routine sends while signed out. Whenever the SDK's
+// anonymous id is not `profileId` (after a `reset()`, or when the bootstrap did
+// not take), that call is a real `$identify` and PostHog then treats the
+// anonymous person as identified and refuses to merge it into an account that
+// already has a person. Web avoids it by never identifying the anonymous id.
+// The numbers and the query are in "Identity-split pitfall" in
+// docs/growth-metrics.md; the tests under "SDK anonymous id" pin the sequence.
 
 // The subset of the analytics client the reconciler drives. Returns are `unknown`
 // so platforms can inject either the void SDK methods or the boolean-returning
@@ -79,8 +81,10 @@ export function reconcileAnalyticsIdentity(input: ReconcileAnalyticsIdentityInpu
     if (lastDistinctId && lastDistinctId !== profileId) {
       client.reset();
     }
-    // Anchor on the anonymous id first, so the identify below carries it as
-    // `$anon_distinct_id` and PostHog merges anon → user.
+    // Anchor on the anonymous id first, so events between here and the switch
+    // sit on the party UUID. Note the switch below carries the SDK's own
+    // anonymous id as `$anon_distinct_id`, which is the party UUID only when
+    // the SDK was bootstrapped to it (see "Open problem" in the header).
     if (lastDistinctId !== profileId) {
       client.identify(profileId);
     }

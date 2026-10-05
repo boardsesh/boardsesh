@@ -43,8 +43,7 @@ describe('reconcileAnalyticsIdentity', () => {
     // The identity-split case: a returning climber signs in on a fresh install.
     // The device is anchored on its anonymous UUID (the SDK is bootstrapped with
     // it and the signed-out launch reconciled to it). The only call allowed is
-    // identify(USER), which carries the UUID as $anon_distinct_id. An alias()
-    // ahead of it is what left a phantom newcomer behind.
+    // identify(USER): no alias() ahead of it.
     const client = recordingClient(PROFILE);
 
     const next = reconcileAnalyticsIdentity({
@@ -60,27 +59,10 @@ describe('reconcileAnalyticsIdentity', () => {
     expect(client.calls).toEqual([['identify', USER, { email: 'a@b.com' }]]);
   });
 
-  it('sends the same single identify on every sign-in, with no per-device memory', () => {
-    // The alias step was deduped through a persisted store. With it gone, two
-    // sign-ins from the same anonymous anchor must look identical.
-    const firstClient = recordingClient(PROFILE);
-    const secondClient = recordingClient(PROFILE);
-    const input = {
-      profileId: PROFILE,
-      authUserId: USER,
-      isAuthenticated: true,
-      lastDistinctId: PROFILE,
-    };
-
-    reconcileAnalyticsIdentity({ ...input, client: firstClient });
-    reconcileAnalyticsIdentity({ ...input, client: secondClient });
-
-    expect(firstClient.calls).toEqual([['identify', USER, undefined]]);
-    expect(secondClient.calls).toEqual(firstClient.calls);
-  });
-
   it('keeps the merge call off the client contract', () => {
-    // The reconciler can only call what IdentityClient declares. If this
+    // The reconciler can only call what IdentityClient declares. The guard is
+    // the @ts-expect-error below, so it fires under `vp run typecheck`, not
+    // under vitest: the runtime assertion only keeps this a valid test. If the
     // directive stops being needed, someone has put the merge call back on the
     // contract: read the header of reconcile-identity.ts before going further.
     const client: IdentityClient = {
@@ -227,6 +209,136 @@ describe('reconcileAnalyticsIdentity', () => {
     expect(calls).toEqual([
       ['identify', PROFILE, undefined],
       ['identify', USER, undefined],
+    ]);
+  });
+});
+
+// A model of what @posthog/core 1.48.8 does with identify() and reset(), so the
+// tests below can assert the `$identify` events that reach PostHog and not only
+// the calls the reconciler makes. Mirrors posthog-core.js: `$anon_distinct_id`
+// is read from the persisted anonymous id BEFORE the identity moves; an
+// identify() to the id the SDK already holds sends `$set`, never `$identify`;
+// reset() clears both ids and the next read mints a fresh anonymous id.
+type WireEvent = { event: '$identify' | '$set'; distinctId: string; anonDistinctId?: string };
+
+function sdkModel(initial: { anonymousId: string | null; distinctId?: string | null }, mintedIds: string[]) {
+  let anonymousId = initial.anonymousId;
+  let distinctId = initial.distinctId ?? null;
+  const pendingMints = [...mintedIds];
+  const sent: WireEvent[] = [];
+
+  function readAnonymousId(): string {
+    if (!anonymousId) {
+      const minted = pendingMints.shift();
+      if (!minted) throw new Error('sdkModel ran out of minted anonymous ids');
+      anonymousId = minted;
+    }
+    return anonymousId;
+  }
+
+  const client: IdentityClient = {
+    getDistinctId() {
+      return distinctId ?? readAnonymousId();
+    },
+    identify(nextDistinctId) {
+      const previousDistinctId = distinctId ?? readAnonymousId();
+      const anonDistinctId = readAnonymousId();
+      if (nextDistinctId === previousDistinctId) {
+        sent.push({ event: '$set', distinctId: nextDistinctId });
+        return;
+      }
+      anonymousId = previousDistinctId;
+      distinctId = nextDistinctId;
+      sent.push({ event: '$identify', distinctId: nextDistinctId, anonDistinctId });
+    },
+    reset() {
+      anonymousId = null;
+      distinctId = null;
+    },
+  };
+
+  return { client, sent };
+}
+
+function signOutThenIn(
+  sdk: ReturnType<typeof sdkModel>,
+  startingDistinctId: string | null,
+  options: { skipSignedOutLaunch?: boolean } = {},
+): void {
+  let lastDistinctId = startingDistinctId;
+  if (!options.skipSignedOutLaunch) {
+    lastDistinctId = reconcileAnalyticsIdentity({
+      profileId: PROFILE,
+      authUserId: null,
+      isAuthenticated: false,
+      lastDistinctId,
+      client: sdk.client,
+    });
+  }
+  reconcileAnalyticsIdentity({
+    profileId: PROFILE,
+    authUserId: USER,
+    isAuthenticated: true,
+    lastDistinctId,
+    client: sdk.client,
+  });
+}
+
+const MINTED = 'sdk-minted-anon';
+
+describe('reconcileAnalyticsIdentity: SDK anonymous id on the sign-in $identify', () => {
+  it('bootstrapped install: the sign-in $identify carries the party UUID, and nothing identifies it first', () => {
+    // The clean path. The SDK's anonymous id IS the party UUID, so the
+    // signed-out identify(profileId) is only a $set and the anonymous person is
+    // never marked identified. PostHog can merge it into the account.
+    const sdk = sdkModel({ anonymousId: PROFILE }, []);
+
+    signOutThenIn(sdk, null);
+
+    expect(sdk.sent).toEqual([
+      { event: '$set', distinctId: PROFILE },
+      { event: '$identify', distinctId: USER, anonDistinctId: PROFILE },
+    ]);
+  });
+
+  // The next three pin today's behaviour in the states where the SDK's
+  // anonymous id is NOT the party UUID. Each one sends $identify(PROFILE) while
+  // signed out, which marks the anonymous person identified, and then a sign-in
+  // $identify whose $anon_distinct_id is the minted id and not the party UUID.
+  // That is the suspected cause of the identity split (see the module header),
+  // so a change that fixes it is expected to rewrite these expectations.
+  it('KNOWN GAP after a sign-out: reset() drops the bootstrap, so the anonymous person gets identified', () => {
+    const sdk = sdkModel({ anonymousId: PROFILE, distinctId: OTHER_USER }, [MINTED]);
+
+    signOutThenIn(sdk, OTHER_USER);
+
+    expect(sdk.sent).toEqual([
+      { event: '$identify', distinctId: PROFILE, anonDistinctId: MINTED },
+      { event: '$identify', distinctId: USER, anonDistinctId: MINTED },
+    ]);
+  });
+
+  it('KNOWN GAP when the SDK persisted its own anonymous id: same two $identify events', () => {
+    // Bootstrap only fills an empty slot, so an anonymous id the SDK minted on
+    // an earlier launch wins over the party UUID.
+    const sdk = sdkModel({ anonymousId: MINTED }, []);
+
+    signOutThenIn(sdk, null);
+
+    expect(sdk.sent).toEqual([
+      { event: '$identify', distinctId: PROFILE, anonDistinctId: MINTED },
+      { event: '$identify', distinctId: USER, anonDistinctId: MINTED },
+    ]);
+  });
+
+  it('KNOWN GAP on a signed-in cold start with a minted anonymous id: the anchor step identifies the party UUID', () => {
+    const sdk = sdkModel({ anonymousId: MINTED }, []);
+
+    signOutThenIn(sdk, null, { skipSignedOutLaunch: true });
+
+    expect(sdk.sent).toEqual([
+      { event: '$identify', distinctId: PROFILE, anonDistinctId: MINTED },
+      { event: '$identify', distinctId: USER, anonDistinctId: MINTED },
     ]);
   });
 });

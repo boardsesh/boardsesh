@@ -285,13 +285,6 @@ export function setPersonProperties(set?: PosthogProperties, setOnce?: PosthogPr
   return core.setPersonProperties(set, setOnce);
 }
 
-// Sends a $create_alias event linking the current distinct_id to `newId`.
-// Use this on signup/login to merge the anonymous IndexedDB UUID into the
-// authenticated user UUID, then call identify(newId) to switch.
-export function alias(newId: string): boolean {
-  return core.alias(newId);
-}
-
 // PostHog's reset() clears the distinct id AND every registered super
 // property, but getPosthog() caches the singleton, so the registration done at
 // construction never runs again. Re-register `environment` and `$raw_user_agent`

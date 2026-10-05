@@ -46,8 +46,9 @@ let hasReportedIdentityFailure = false;
  *    already identified. `$create_alias` has no such protection: firing it
  *    while the client is pinned to another user's id merges two real people,
  *    irreversibly. Dropping the call removes the whole failure class instead of
- *    guarding it. Mobile dropped it later, for a different symptom: sent ahead
- *    of `identify()`, it left returning climbers split across two persons (see
+ *    guarding it. Mobile dropped it later. Mobile still
+ *    splits returning climbers across two persons, most likely because it
+ *    identifies its anonymous id while signed out, which web never does (see
  *    "Identity-split pitfall" in `docs/growth-metrics.md`).
  *  - **Signed out means `reset()` and nothing else.** The shared routine
  *    follows its reset with `identify(anonId)`, which flips the SDK back to
