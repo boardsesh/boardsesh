@@ -62,6 +62,11 @@ export function portInUse(port: number): boolean {
 // home. The reach-home wait counts new lines alongside the Metro `$screen /home`
 // marker — a signal that survives Metro's log forwarding dying.
 export const READINESS_LOG_PATH = join(tmpdir(), 'boardsesh-screenshot-ready.log');
+// The smoke flow's pings (`/smoke?kind=content&route=…&count=…`, or `kind=error`),
+// one request URL per line, written by the same readiness server. Kept apart
+// from READINESS_LOG_PATH because that file is a counter: every line in it means
+// "reached home". Parsed by scripts/lib/mobile-smoke.ts.
+export const SMOKE_PING_LOG_PATH = join(tmpdir(), 'boardsesh-screenshot-smoke-pings.log');
 // `logPath` is parameterized for tests only, so they never touch the real log a
 // concurrent capture run might be counting.
 export function screenshotReadinessCount(logPath: string = READINESS_LOG_PATH): number {
@@ -96,12 +101,16 @@ export function readinessServerReachable(): boolean {
  */
 export function startReadinessServer(): ChildProcess {
   writeFileSync(READINESS_LOG_PATH, '');
+  writeFileSync(SMOKE_PING_LOG_PATH, '');
   const serverCode = [
     `const http = require('http');`,
     `const fs = require('fs');`,
     `http.createServer((request, response) => {`,
     `  if (request.url && request.url.indexOf('/ready') === 0) {`,
     `    fs.appendFileSync(${JSON.stringify(READINESS_LOG_PATH)}, 'x\\n');`,
+    `  }`,
+    `  if (request.url && request.url.indexOf('/smoke') === 0) {`,
+    `    fs.appendFileSync(${JSON.stringify(SMOKE_PING_LOG_PATH)}, request.url + '\\n');`,
     `  }`,
     `  response.statusCode = 204;`,
     `  response.end();`,
@@ -307,12 +316,21 @@ export function homeReadyMarkerCount(): number {
  *   - the Metro `$screen /home` marker (fast, but lost when Metro's log forwarding
  *     dies mid-run with ERR_STREAM_UNABLE_TO_PIPE), and
  *   - a direct GET from the app to the readiness server (survives that).
+ *
+ * `giveUpWhen` ends the wait early with `false`. The smoke passes "the app's
+ * process has died" so a launch crash costs seconds, not the whole timeout.
  */
-export function waitForHomeReady(markerBaseline = 0, readyBaseline = 0, timeoutSeconds = 180): boolean {
+export function waitForHomeReady(
+  markerBaseline = 0,
+  readyBaseline = 0,
+  timeoutSeconds = 180,
+  giveUpWhen?: () => boolean,
+): boolean {
   const deadline = Date.now() + timeoutSeconds * 1000;
   while (Date.now() < deadline) {
     if (homeReadyMarkerCount() > markerBaseline) return true;
     if (screenshotReadinessCount() > readyBaseline) return true;
+    if (giveUpWhen?.()) return false;
     sleepSeconds(2);
   }
   return false;

@@ -51,6 +51,7 @@ import { HomeStartupCommit } from '../../../src/lib/profiling/HomeStartupCommit'
 import { STARTUP_PROFILING_ENABLED } from '../../../src/lib/profiling/startup-profile';
 import { homeEmptyStartupOutcome } from '../../../src/lib/profiling/startup-collector';
 import { useHasBeenFocused } from '../../../src/hooks/use-has-been-focused';
+import { ScreenshotSmokeMarker } from '../../../src/components/ScreenshotSmokeMarker';
 
 const INITIAL_FEED_SKELETON_KEYS = ['home-feed-skeleton-1', 'home-feed-skeleton-2', 'home-feed-skeleton-3'];
 const NEXT_PAGE_FEED_SKELETON_KEYS = ['home-feed-footer-skeleton-1', 'home-feed-footer-skeleton-2'];
@@ -417,6 +418,9 @@ export default function HomeTab() {
 
   return (
     <View testID="home-screen" style={[styles.flex, { backgroundColor: systemColors.background }]}>
+      {process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? (
+        <ScreenshotSmokeMarker route="/home" count={feedItems.length} />
+      ) : null}
       <ReadableColumn style={styles.flex}>
         <FlashList
           ref={listRef}

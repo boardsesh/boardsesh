@@ -21,7 +21,7 @@ import { guardSimulatorCommand } from './lib/ios-simulator-lease';
  * Android PNGs land in app-stores/google/screenshots/<device>/.
  *
  * Usage:
- *   vp run mobile:screenshots -- [--platform ios] [--flow app-store|onboarding|help]
+ *   vp run mobile:screenshots -- [--platform ios] [--flow app-store|onboarding|help|smoke]
  *                                 [--backend local|prod] [--devices common|phones|ipads|<comma-list>]
  *                                 [--locales all|<comma-list>] [--device "iPhone 16 Pro Max"]
  *                                 [--variant material|liquidGlass] [--shutdown]
@@ -77,6 +77,7 @@ import {
   METRO_LOG_PATH,
   METRO_PORT,
   SCREENSHOT_READY_PORT,
+  SMOKE_PING_LOG_PATH,
   dumpMetroLogTail,
   homeReadyMarkerCount,
   metroDevClientUrl,
@@ -102,6 +103,24 @@ import {
 } from './lib/android-dev-client';
 import { ANDROID_DEV_PACKAGE } from './lib/android-app';
 import { readScreenshotFixtureManifest } from './lib/screenshot-backend';
+import {
+  IOS_CRASH_LOG_PREDICATE,
+  SMOKE_FAILURE_LABELS,
+  SMOKE_ROUTES,
+  bestSmokeCounts,
+  buildSmokeResult,
+  classifySmokeFailure,
+  findAndroidNativeCrashes,
+  findIosNativeCrashes,
+  findSmokePingProblems,
+  parseSmokePingLog,
+  shouldRetrySmoke,
+  smokePingsSettled,
+  type NativeCrash,
+  type SmokeAttempt,
+  type SmokePing,
+  type SmokeResult,
+} from './lib/mobile-smoke';
 import {
   DEFAULT_SCREENSHOT_FIXTURES_DIR,
   RE_RECORD_COMMAND,
@@ -204,11 +223,16 @@ export type ScreenshotPlatform = 'ios' | 'android' | 'all';
  *
  * `app-store` is the only FRAMED flow — it is the one `collectScreenshots` runs
  * through `screenshot:frame` (captions, device frames, the recipe table in
- * `scripts/lib/screenshot-presentation.ts`) and the only one whose captures are
- * required to carry a board-render log line. `onboarding` and `help` write raw,
+ * `scripts/lib/screenshot-presentation.ts`). `onboarding` and `help` write raw,
  * uncaptioned PNGs straight to the shard directory.
+ *
+ * `smoke` is not a capture at all: it is the mobile E2E gate's navigation smoke
+ * (docs/mobile-e2e-gate.md). It walks a few screens, takes no screenshots and
+ * writes nothing under `app-stores/`; the run is judged on the app's own pings,
+ * the device log and the replay backend's log, and the answer lands in the
+ * result file `smokeResultPath()` names.
  */
-export type ScreenshotFlow = 'app-store' | 'onboarding' | 'help';
+export type ScreenshotFlow = 'app-store' | 'onboarding' | 'help' | 'smoke';
 export type ScreenshotBackend = 'local' | 'prod';
 /**
  * Whether this capture talks to a real backend (`off`), proxies one while
@@ -392,7 +416,7 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
         index++;
         break;
       case '--flow':
-        options.flow = expectEnum(flag, value, ['app-store', 'onboarding', 'help']) as ScreenshotFlow;
+        options.flow = expectEnum(flag, value, ['app-store', 'onboarding', 'help', 'smoke']) as ScreenshotFlow;
         index++;
         break;
       case '--backend':
@@ -473,6 +497,17 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
       default:
         throw new Error(`Unknown argument: ${flag}`);
     }
+  }
+
+  if (options.flow === 'smoke') {
+    // One result file and one retry budget per invocation, so one platform.
+    if (options.platform === 'all') {
+      throw new Error('--flow smoke runs one platform per invocation; pass --platform ios or --platform android');
+    }
+    // The pinned fixture set was recorded on the iPhone in en-US, and the smoke
+    // can only ask for what that set holds. An explicit flag still wins.
+    if (!args.includes('--device') && !args.includes('--devices')) options.devices = [...PHONE_IOS_DEVICE_NAMES];
+    if (!args.includes('--locales')) options.appLocales = ['en-US'];
   }
 
   // Replay has nothing to discard and record is the only mode that writes, so a
@@ -606,6 +641,12 @@ export function buildScreenshotEnv(
     // survives Metro's log-forwarding dying mid-run.
     EXPO_PUBLIC_SCREENSHOT_READY_URL: `http://localhost:${SCREENSHOT_READY_PORT}/ready`,
   };
+  if (options.flow === 'smoke') {
+    // Only the smoke gets this, so a store capture makes exactly the requests it
+    // always has. With it set, each smoke-visited screen reports its content
+    // count and the crash screen reports itself (src/lib/screenshot-smoke.ts).
+    env.EXPO_PUBLIC_SCREENSHOT_SMOKE_URL = `http://localhost:${SCREENSHOT_READY_PORT}/smoke`;
+  }
   if (appLocale) {
     env.EXPO_PUBLIC_SCREENSHOT_LOCALE = appLocale;
   }
@@ -1015,6 +1056,7 @@ function reportScreenshotRenderProblems(logText: string, options: ScreenshotOpti
     renderMode: options.renderMode,
     // Only the store flow is board-backed; the onboarding flow shoots screens
     // that never mount a board, so a missing render line there is expected.
+    // (The smoke opens a board too, and checks the same line in judgeSmokeAttempt.)
     requireRenderLine: options.flow === 'app-store',
   });
   if (problems.length === 0) {
@@ -1522,6 +1564,214 @@ export function collectScreenshots(
   return saved;
 }
 
+// ---------------------------------------------------------------------------
+// The E2E gate's navigation smoke (`--flow smoke`). The decisions are pure and
+// live in scripts/lib/mobile-smoke.ts; this half reads the files and prints.
+// ---------------------------------------------------------------------------
+
+/** How long after Maestro finishes a screen may still deliver its content ping. */
+const SMOKE_PING_WAIT_SECONDS = 60;
+/** How long a rebooted emulator gets to report `sys.boot_completed`. */
+const ANDROID_REBOOT_TIMEOUT_SECONDS = 300;
+/**
+ * The simulator's log for the app, streamed for the whole smoke: SpringBoard's
+ * exit line and the app's own native logging. See findIosNativeCrashes.
+ */
+export const IOS_DEVICE_LOG_PATH = join(tmpdir(), 'boardsesh-screenshot-ios-device.log');
+
+/**
+ * Where the smoke writes its verdict. The workflow reads this file rather than
+ * the exit code, because the exit code cannot say WHY a run failed and the
+ * gate counts one failure class (the launch crash) separately.
+ */
+export function smokeResultPath(env: NodeJS.ProcessEnv = process.env): string {
+  return env.SMOKE_RESULT_PATH || join(ROOT_DIR, '.boardsesh', 'smoke-result.json');
+}
+
+/**
+ * Every attempt this invocation has judged. Module-level for the same reason as
+ * `freshConsumedThisRun`: the retry budget belongs to the process, and the
+ * platform runners below return an exit code, not a record.
+ */
+const smokeAttempts: SmokeAttempt[] = [];
+
+function readTextIfPresent(path: string): string {
+  return existsSync(path) ? readFileSync(path, 'utf8') : '';
+}
+
+/** The pings so far, waiting until every route has reported or the bound passes. */
+function waitForSmokePings(): SmokePing[] {
+  const deadline = Date.now() + SMOKE_PING_WAIT_SECONDS * 1000;
+  for (;;) {
+    const pings = parseSmokePingLog(readTextIfPresent(SMOKE_PING_LOG_PATH));
+    if (smokePingsSettled(pings, SMOKE_ROUTES) || Date.now() >= deadline) return pings;
+    runCapture('sleep', ['1']);
+  }
+}
+
+function describeNativeCrash(crash: NativeCrash): string {
+  const timing = crash.secondsAfterStart === null ? '' : ` (${crash.secondsAfterStart}s after the process started)`;
+  const frames = crash.frames.length > 0 ? `\n      ${crash.frames.join('\n      ')}` : '';
+  return `the app's process died${timing}: ${crash.headline}${frames}`;
+}
+
+/** Keep the files a failed attempt was judged on, next to the other debug artifacts. */
+function preserveSmokeEvidence(attemptNumber: number): void {
+  const debugDir = process.env.SCREENSHOT_DEBUG_DIR;
+  if (!debugDir) return;
+  const target = join(debugDir, `smoke-attempt-${attemptNumber}`);
+  mkdirSync(target, { recursive: true });
+  for (const [source, name] of [
+    [SMOKE_PING_LOG_PATH, 'smoke-pings.log'],
+    [LOGCAT_LOG_PATH, 'logcat.txt'],
+    [IOS_DEVICE_LOG_PATH, 'ios-device.log'],
+    [METRO_LOG_PATH, 'metro.log'],
+    [SCREENSHOT_BACKEND_LOG_PATH, 'screenshot-backend.log'],
+  ] as const) {
+    if (existsSync(source)) copyFileSync(source, join(target, name));
+  }
+  console.error(`${LOG} kept the evidence for smoke attempt ${attemptNumber} in ${target}`);
+}
+
+interface SmokeAttemptInput {
+  options: ScreenshotOptions;
+  nativeCrashes: NativeCrash[];
+  reachedHome: boolean;
+  /** Maestro's exit code; null when the run never got that far. */
+  maestroStatus: number | null;
+  /** Where the app's own `[screenshot]` lines land: Metro's tee on iOS, logcat on Android. */
+  captureLog: string;
+  backendSession: ScreenshotBackendSession | null;
+  backendLogBaseline: number;
+}
+
+/**
+ * Judge one smoke attempt, print the reasons, and record it. Returns the exit
+ * code the platform runner hands back.
+ */
+function judgeSmokeAttempt(input: SmokeAttemptInput): number {
+  const flowRan = input.maestroStatus === 0 && input.nativeCrashes.length === 0;
+  const pings = flowRan ? waitForSmokePings() : parseSmokePingLog(readTextIfPresent(SMOKE_PING_LOG_PATH));
+  const pingProblems = findSmokePingProblems(pings, SMOKE_ROUTES);
+
+  let backendProblems: string[] = [];
+  if (input.backendSession) {
+    const backendLog = readScreenshotBackendLogSince(input.backendLogBaseline);
+    const notes = findScreenshotBackendNotes(backendLog);
+    for (const note of notes) console.log(`${LOG} NOTE: ${note}`);
+    appendNotesToStepSummary(notes, process.env.GITHUB_STEP_SUMMARY);
+    backendProblems = findScreenshotBackendProblems(backendLog, { mode: input.backendSession.mode });
+  }
+
+  // Only worth reading once the flow got to the end: a run that died earlier
+  // never opened the board, and "no render line" would bury the real reason.
+  const captureLogProblems = flowRan
+    ? [
+        ...findScreenshotRenderProblems(input.captureLog, {
+          renderMode: input.options.renderMode,
+          requireRenderLine: true,
+        }),
+        ...(input.backendSession ? findFrozenClockProblems(input.captureLog, input.backendSession.frozenNow) : []),
+      ]
+    : [];
+
+  const failureClass = classifySmokeFailure({
+    nativeCrashes: input.nativeCrashes,
+    reachedHome: input.reachedHome,
+    backendProblems,
+    pingProblems,
+    maestroStatus: input.maestroStatus,
+    captureLogProblems,
+  });
+
+  const problems = [
+    ...input.nativeCrashes.map(describeNativeCrash),
+    ...pingProblems.errors,
+    ...backendProblems,
+    ...(input.reachedHome ? [] : ['the app never signalled home (auto sign-in or bundle load).']),
+    ...(input.maestroStatus !== null && input.maestroStatus !== 0
+      ? [`Maestro exited with ${input.maestroStatus}: a flow step did not hold.`]
+      : []),
+    ...pingProblems.content,
+    ...captureLogProblems,
+  ];
+  const counts = [...bestSmokeCounts(pings)].map(([route, count]) => ({ route, count }));
+  smokeAttempts.push({ failureClass, problems: failureClass === null ? [] : problems, pings: counts });
+
+  const countSummary = counts.map(({ route, count }) => `${route}=${count}`).join(', ') || 'none';
+  if (failureClass === null) {
+    console.log(`${LOG} Smoke passed. Content pings: ${countSummary}.`);
+    return 0;
+  }
+  console.error(`${LOG} FAILED: smoke attempt ${smokeAttempts.length}: ${SMOKE_FAILURE_LABELS[failureClass]}.`);
+  for (const problem of problems) console.error(`${LOG}   - ${problem}`);
+  console.error(`${LOG}   content pings received: ${countSummary}.`);
+  preserveSmokeEvidence(smokeAttempts.length);
+  return 1;
+}
+
+/** Stream the simulator's crash-relevant log lines to IOS_DEVICE_LOG_PATH until killed. */
+function startIosDeviceLogStream(udid: string): ChildProcess {
+  writeFileSync(IOS_DEVICE_LOG_PATH, '');
+  const logFile = openSync(IOS_DEVICE_LOG_PATH, 'a');
+  const stream = spawn(
+    'xcrun',
+    ['simctl', 'spawn', udid, 'log', 'stream', '--style', 'compact', '--predicate', IOS_CRASH_LOG_PREDICATE],
+    { stdio: ['ignore', logFile, 'ignore'] },
+  );
+  closeSync(logFile);
+  stream.on('error', (error) => console.error(`${LOG} simulator log stream failed to start: ${error.message}`));
+  return stream;
+}
+
+/**
+ * Put the device back to a cold state before the one retry a launch crash earns.
+ * A reinstall alone reuses the same booted system; the crash's odds have moved
+ * with the boot in every run on record, so the retry starts from a new one.
+ */
+function freshBootForSmokeRetry(options: ScreenshotOptions): void {
+  if (options.platform === 'ios') {
+    for (const screenshotDevice of resolveIosScreenshotDevices(options.devices, options.orientation)) {
+      runCapture('xcrun', ['simctl', 'shutdown', findOrCreateIosDevice(screenshotDevice).udid]);
+    }
+    return;
+  }
+  const deviceId = resolveAndroidDeviceId();
+  if (!deviceId) throw new Error('no Android device to reboot for the smoke retry');
+  console.log(`${LOG} Rebooting ${deviceId}...`);
+  runCapture('adb', ['-s', deviceId, 'reboot']);
+  runCapture('adb', ['-s', deviceId, 'wait-for-device']);
+  const deadline = Date.now() + ANDROID_REBOOT_TIMEOUT_SECONDS * 1000;
+  while (runCapture('adb', ['-s', deviceId, 'shell', 'getprop', 'sys.boot_completed']).stdout.trim() !== '1') {
+    if (Date.now() >= deadline) throw new Error(`${deviceId} did not finish booting after the smoke retry reboot`);
+    runCapture('sleep', ['2']);
+  }
+  // Dismiss the keyguard, as the emulator action does after its own boot.
+  runCapture('adb', ['-s', deviceId, 'shell', 'input', 'keyevent', '82']);
+}
+
+/** The smoke's verdict as a step-summary section. */
+export function renderSmokeSummary(result: SmokeResult): string {
+  const lines = [`### Navigation smoke (${result.platform}): ${result.passed ? 'passed' : 'failed'}`, ''];
+  result.attempts.forEach((attempt, index) => {
+    const outcome = attempt.failureClass === null ? 'passed' : SMOKE_FAILURE_LABELS[attempt.failureClass];
+    const counts = attempt.pings.map(({ route, count }) => `${route}=${count}`).join(', ') || 'none';
+    lines.push(`- Attempt ${index + 1}: ${outcome}. Content pings: ${counts}.`);
+    // First line only: a backtrace belongs in the log, not the summary.
+    for (const problem of attempt.problems) lines.push(`  - ${problem.split('\n')[0]}`);
+  });
+  return `${lines.join('\n')}\n`;
+}
+
+function writeSmokeResult(platform: 'ios' | 'android'): void {
+  const result = buildSmokeResult(platform, smokeAttempts);
+  const resultPath = smokeResultPath();
+  mkdirSync(dirname(resultPath), { recursive: true });
+  writeFileSync(resultPath, `${JSON.stringify(result, null, 2)}\n`);
+  console.log(`${LOG} Wrote the smoke result to ${resultPath}.`);
+  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, renderSmokeSummary(result));
+}
+
 function flowFileForPlatform(options: ScreenshotOptions, platform: 'ios' | 'android'): string {
   const platformFlowFile = join(MAESTRO_DIR, `${options.flow}-${platform}.yaml`);
   if (existsSync(platformFlowFile)) return platformFlowFile;
@@ -1622,6 +1872,11 @@ function captureIosDevice(
   // Every exit below this point but the last is a failure, and the finally block
   // cannot see a return value — so the last statement of the try flips this.
   let captureSucceeded = false;
+  // The smoke watches the device log from before launch to the end of the flow.
+  const deviceLogStream = options.flow === 'smoke' ? startIosDeviceLogStream(device.udid) : null;
+  const smokeCrashes = (): NativeCrash[] => findIosNativeCrashes(readTextIfPresent(IOS_DEVICE_LOG_PATH));
+  // A dead process will not reach home, so stop waiting for it (smoke only).
+  const giveUpOnCrash = deviceLogStream ? () => smokeCrashes().length > 0 : undefined;
   try {
     // Metro is already up and pre-warmed by runIos (once per locale, before this
     // per-device loop), so this goes straight to launching the app.
@@ -1670,12 +1925,24 @@ function captureIosDevice(
     // Generous per-wait budget: a CI cold bundle build alone is ~35-60s, on top of a
     // slow simulator boot + auto-sign-in, so 45s (the old iPhone value) timed out before
     // the app could ever get home.
-    let reachedHome = waitForHomeReady(homeReadyBaseline, readinessBaseline, 120);
-    for (let attempt = 1; attempt <= 3 && !reachedHome; attempt += 1) {
+    let reachedHome = waitForHomeReady(homeReadyBaseline, readinessBaseline, 120, giveUpOnCrash);
+    for (let attempt = 1; attempt <= 3 && !reachedHome && !giveUpOnCrash?.(); attempt += 1) {
       console.log(`${LOG} Not home yet; terminating and re-launching (attempt ${attempt}/3)...`);
       runCapture('xcrun', ['simctl', 'terminate', device.udid, APP_ID]);
       runCapture('xcrun', ['simctl', 'launch', device.udid, APP_ID], simulatorLaunchEnv());
-      reachedHome = waitForHomeReady(homeReadyBaseline, readinessBaseline, 120);
+      reachedHome = waitForHomeReady(homeReadyBaseline, readinessBaseline, 120, giveUpOnCrash);
+    }
+    if (!reachedHome && options.flow === 'smoke') {
+      dumpMetroLogTail();
+      return judgeSmokeAttempt({
+        options,
+        nativeCrashes: smokeCrashes(),
+        reachedHome: false,
+        maestroStatus: null,
+        captureLog: '',
+        backendSession,
+        backendLogBaseline,
+      });
     }
     if (!reachedHome) {
       console.error(`${LOG} FAILED: app did not reach the home screen (auto sign-in / bundle load).`);
@@ -1726,6 +1993,20 @@ function captureIosDevice(
       process.env,
       captureDir,
     );
+    if (options.flow === 'smoke') {
+      // No screenshots to collect: the run is judged on evidence, pass or fail.
+      const smokeStatus = judgeSmokeAttempt({
+        options,
+        nativeCrashes: smokeCrashes(),
+        reachedHome: true,
+        maestroStatus,
+        captureLog: readTextIfPresent(METRO_LOG_PATH),
+        backendSession,
+        backendLogBaseline,
+      });
+      captureSucceeded = smokeStatus === 0;
+      return smokeStatus;
+    }
     if (maestroStatus !== 0) {
       console.error(`${LOG} FAILED: Maestro exited with ${maestroStatus}.`);
       return maestroStatus;
@@ -1776,6 +2057,7 @@ function captureIosDevice(
     for (const file of saved) console.log(`${LOG}   ${file}`);
     captureSucceeded = true;
   } finally {
+    deviceLogStream?.kill();
     if (!captureSucceeded) preserveFailedRunArtifacts(captureDir);
     rmSync(captureDir, { force: true, recursive: true });
     clearStatusBar(device.udid);
@@ -1956,6 +2238,12 @@ function runAndroid(options: ScreenshotOptions): number {
     );
     return 1;
   }
+  // The smoke is judged on what happens between launch and home, and only the
+  // dev-client path launches the app from here.
+  if (options.flow === 'smoke' && !options.devClient) {
+    console.error(`${LOG} FAILED: --flow smoke needs --dev-client on Android.`);
+    return 1;
+  }
 
   // The dev-client APK carries no JS, so it resolves through the shared APK
   // cache (download the latest rn-android-dev-* release, or build one) and runs
@@ -2001,6 +2289,7 @@ function runAndroid(options: ScreenshotOptions): number {
   let devClientSession: DevClientSession | null = null;
   let backendSession: ScreenshotBackendSession | null = null;
   let backendLogBaseline = 0;
+  const smokeCrashes = (): NativeCrash[] => findAndroidNativeCrashes(readTextIfPresent(LOGCAT_LOG_PATH), packageId);
   try {
     if (options.fixtures !== 'off') backendSession = startScreenshotBackend(options);
     if (options.devClient) {
@@ -2026,7 +2315,25 @@ function runAndroid(options: ScreenshotOptions): number {
       ];
       connectDevClient('adb', deviceId, reversePorts);
       backendLogBaseline = screenshotBackendLogLineCount();
-      if (!launchDevClientToHome('adb', deviceId, { logPrefix: LOG })) {
+      const reachedHome = launchDevClientToHome('adb', deviceId, {
+        logPrefix: LOG,
+        // A dead process will not reach home, so stop waiting for it (smoke only).
+        giveUpWhen: options.flow === 'smoke' ? () => smokeCrashes().length > 0 : undefined,
+      });
+      if (!reachedHome && options.flow === 'smoke') {
+        // Give the crash dumper a moment to finish writing its backtrace.
+        runCapture('sleep', ['5']);
+        return judgeSmokeAttempt({
+          options,
+          nativeCrashes: smokeCrashes(),
+          reachedHome: false,
+          maestroStatus: null,
+          captureLog: '',
+          backendSession,
+          backendLogBaseline,
+        });
+      }
+      if (!reachedHome) {
         console.error(`${LOG} FAILED: dev-client never reached home`);
         return 1;
       }
@@ -2045,6 +2352,24 @@ function runAndroid(options: ScreenshotOptions): number {
       process.env,
       captureDir,
     );
+    if (options.flow === 'smoke') {
+      // No screenshots to collect: the run is judged on evidence, pass or fail.
+      // The settled read waits for the board's render line, which only a flow
+      // that ran to the end can have produced.
+      const captureLog =
+        maestroStatus === 0 ? (readSettledLogcat(logcatStream) ?? '') : readTextIfPresent(LOGCAT_LOG_PATH);
+      const smokeStatus = judgeSmokeAttempt({
+        options,
+        nativeCrashes: smokeCrashes(),
+        reachedHome: true,
+        maestroStatus,
+        captureLog,
+        backendSession,
+        backendLogBaseline,
+      });
+      captureSucceeded = smokeStatus === 0;
+      return smokeStatus;
+    }
     if (maestroStatus !== 0) {
       console.error(`${LOG} FAILED: Maestro exited with ${maestroStatus}.`);
       return maestroStatus;
@@ -2423,16 +2748,55 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
   const platforms: Array<'ios' | 'android'> = options.platform === 'all' ? ['ios', 'android'] : [options.platform];
 
   for (const platform of platforms) {
-    try {
-      const status = platform === 'ios' ? runIos(options) : runAndroid(options);
-      if (status !== 0) return status;
-    } catch (error) {
-      console.error(`${LOG} FAILED: ${error instanceof Error ? error.message : String(error)}`);
-      return 1;
-    }
+    const status = options.flow === 'smoke' ? runSmoke(options, platform) : runPlatform(options, platform);
+    if (status !== 0) return status;
   }
 
   return 0;
+}
+
+function runPlatform(options: ScreenshotOptions, platform: 'ios' | 'android'): number {
+  try {
+    return platform === 'ios' ? runIos(options) : runAndroid(options);
+  } catch (error) {
+    console.error(`${LOG} FAILED: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  }
+}
+
+/**
+ * One smoke attempt, plus the single fresh-boot retry a launch crash earns, then
+ * the result file. Every other failure class is final on the first attempt: a
+ * retry there would hide exactly what the gate exists to report.
+ */
+function runSmoke(options: ScreenshotOptions, platform: 'ios' | 'android'): number {
+  const attempt = (): number => {
+    const judgedBefore = smokeAttempts.length;
+    const status = runPlatform(options, platform);
+    // A failure that never reached judgeSmokeAttempt happened before the app
+    // launched (no device, a failed install, a port in use).
+    if (status !== 0 && smokeAttempts.length === judgedBefore) {
+      smokeAttempts.push({
+        failureClass: 'setup',
+        problems: ['the run failed before the app launched; see the FAILED line above.'],
+        pings: [],
+      });
+    }
+    return status;
+  };
+
+  let status = attempt();
+  if (status !== 0 && shouldRetrySmoke(smokeAttempts)) {
+    console.warn(`${LOG} The app died natively at launch with no replay miss; retrying once from a fresh boot.`);
+    try {
+      freshBootForSmokeRetry(options);
+      status = attempt();
+    } catch (error) {
+      console.error(`${LOG} FAILED: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  writeSmokeResult(platform);
+  return status;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

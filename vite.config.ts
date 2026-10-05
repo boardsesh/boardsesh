@@ -1247,6 +1247,12 @@ export default defineConfig({
         command: 'tsx scripts/screenshot-probe-scope.ts',
         cache: false,
       },
+      // The verdict of mobile-e2e-gate.yml: reads each job's result and prints
+      // the one line and the table. See docs/mobile-e2e-gate.md.
+      'mobile:e2e-gate-verdict': {
+        command: 'tsx scripts/mobile-e2e-gate-verdict.ts',
+        cache: false,
+      },
       'mobile:publish': {
         command: 'tsx scripts/mobile-publish.ts',
         cache: false,

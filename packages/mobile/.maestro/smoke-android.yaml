@@ -1,0 +1,64 @@
+appId: ${APP_ID}
+name: e2e gate smoke android
+---
+# The mobile E2E gate's navigation smoke (docs/mobile-e2e-gate.md), not a store
+# capture: it takes no screenshots. It asks one question of the commit's JS:
+# does the app boot, sign in, and put real content on its main screens?
+#
+# Route list: home -> profile -> climbs -> first climb's play drawer. Every
+# screen here is one the app-store flow already visits, with the same deep link,
+# because the smoke replays the pinned fixture set (--fixtures replay) and any
+# request that set does not hold fails the run. That is also why the order is
+# not the tab order: the play drawer overlays the app once it opens, so it goes
+# last, exactly as it does in the store flow.
+#
+# Left out, because no recorded flow covers them on both platforms: the queue
+# sheet (the only recording that opens it is inside a joined party session,
+# reached by text-matched taps), anything behind a tap, and every write.
+#
+# No `launchApp`: the orchestrator has already launched the dev-client and
+# waited for home, and every cold start is one more draw of the launch crash
+# described in the doc. Assertions are testIDs only, never text, so neither the
+# locale nor the recorded data can move them.
+#
+# The orchestrator checks a second, independent signal after this flow: each
+# screen pings it with a content count (src/components/ScreenshotSmokeMarker.tsx).
+
+# Home: the signed-in feed, with at least one real session card.
+- extendedWaitUntil:
+    visible:
+      id: 'home-screen'
+    timeout: 90000
+- extendedWaitUntil:
+    visible:
+      id: 'session-feed-card'
+    timeout: 90000
+
+# Profile: the progress tab past its loading spinner, with the board overview.
+- openLink: com.boardsesh.app://profile
+- extendedWaitUntil:
+    visible:
+      id: 'progress-tab-loaded'
+    timeout: 90000
+- extendedWaitUntil:
+    visible:
+      id: 'profile-board-overview'
+    timeout: 60000
+
+# Climbs: a real row, not a skeleton.
+- openLink: com.boardsesh.app://climbs
+- extendedWaitUntil:
+    visible:
+      id: 'climbs-screen'
+    timeout: 60000
+- extendedWaitUntil:
+    visible:
+      id: 'climb-row'
+    timeout: 60000
+
+# Open the first climb: the play drawer with the holds overlay painted.
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=0
+- extendedWaitUntil:
+    visible:
+      id: 'play-drawer-board-overlay'
+    timeout: 60000

@@ -19,6 +19,8 @@ import { computeContainedBoardSize, CAROUSEL_LAYER_Z } from './play-drawer-layou
 import { ResetZoomButton } from '../board-controls/ResetZoomButton';
 import { UpcomingBoardPrefetch } from './UpcomingBoardPrefetch';
 import { useShowcaseAnchor } from '../../lib/showcase-anchor';
+import { ScreenshotSmokeMarker } from '../ScreenshotSmokeMarker';
+import { countLitHolds } from '../../lib/screenshot-smoke';
 
 type BoardRenderData = {
   boardWidth: number;
@@ -294,6 +296,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
           // the carousel layer is the culprit. overlayTestID anchors on the painted
           // holds overlay.
           <View style={[styles.boardWrapper, boardBox]} {...boardSurfaceAnchor} {...boardAccessibility}>
+            <ScreenshotSmokeMarker route="play-drawer" count={countLitHolds(currentFrames)} />
             <BoardImageNative
               accessible={false}
               frames={currentFrameOverride ?? currentFrames}
