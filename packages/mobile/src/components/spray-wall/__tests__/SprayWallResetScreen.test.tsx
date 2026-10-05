@@ -17,7 +17,9 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
-const wallQueryState = vi.hoisted(() => ({ current: { data: null as unknown, isPending: false } }));
+const wallQueryState = vi.hoisted(() => ({
+  current: { data: null, isPending: false } as { data: unknown; isPending: boolean; isFetching?: boolean },
+}));
 const pickResult = vi.hoisted(() => ({
   current: { outcome: 'picked', photo: { uri: 'file:///w.jpg', width: 2048, height: 1536 } } as unknown,
 }));
@@ -347,5 +349,60 @@ describe('reset draft ownership and retry identity', () => {
     expect(createMutateAsync).toHaveBeenCalledTimes(1);
     await act(async () => mounted.getByText('sprayDetection.resume').click());
     expect(mounted.getByTestId('detection').getAttribute('data-version')).toBe('older');
+  });
+});
+
+describe('fresh history and discard recovery', () => {
+  it('waits for fresh history before offering cached draft actions', () => {
+    wallQueryState.current = {
+      data: { ...EDITABLE_WALL, versions: [{ id: 'stale', number: 2, status: 'DRAFT' }] },
+      isPending: false,
+      isFetching: true,
+    };
+    const mounted = renderScreen();
+    expect(mounted.getByTestId('spinner')).toBeTruthy();
+    expect(mounted.queryByText('sprayDetection.resume')).toBeNull();
+    wallQueryState.current = { data: EDITABLE_WALL, isPending: false, isFetching: false };
+    mounted.rerender(createElement(SprayWallResetScreen, { wallUuid: 'wall-1' }));
+    expect(mounted.queryByTestId('spinner')).toBeNull();
+    expect(mounted.getByText('sprayWizard.photo.next')).toBeTruthy();
+  });
+
+  it('discards a conflicting draft and retries with the chosen photo upload', async () => {
+    const { uploadSprayWallPhoto } = await import('../../../lib/spray/spray-wall-photo-upload');
+    vi.mocked(uploadSprayWallPhoto).mockReset().mockResolvedValue({
+      photoId: 'chosen-photo',
+      width: 800,
+      height: 600,
+      determinate: true,
+    });
+    createMutateAsync
+      .mockRejectedValueOnce({ extensions: { code: 'SPRAY_WALL_DRAFT_ALREADY_OPEN' } })
+      .mockResolvedValueOnce({ id: 'replacement', number: 2 });
+    refetchWall.mockImplementation(async () => {
+      wallQueryState.current = {
+        data: { ...EDITABLE_WALL, versions: [{ id: 'older', number: 2, status: 'DRAFT' }] },
+        isPending: false,
+      };
+    });
+    discardMutateAsync.mockImplementationOnce(async () => {
+      wallQueryState.current = { data: EDITABLE_WALL, isPending: false };
+      return true;
+    });
+    const mounted = renderScreen();
+    await act(async () => mounted.getByText('sprayWizard.photo.library').click());
+    act(() => mounted.getByText('sprayWizard.photo.next').click());
+    act(() => markerProps.current?.onChange?.(SQUARE));
+    await act(async () => mounted.getByText('sprayReset.anchors.use').click());
+    await act(async () => mounted.getByText('sprayReset.openDraft.discard').click());
+    expect(discardMutateAsync).toHaveBeenCalledWith('older');
+    expect(mounted.getByText('sprayWizard.photo.next').getAttribute('data-disabled')).toBe('false');
+    act(() => mounted.getByText('sprayWizard.photo.next').click());
+    act(() => markerProps.current?.onChange?.(SQUARE));
+    await act(async () => mounted.getByText('sprayReset.anchors.use').click());
+    expect(uploadSprayWallPhoto).toHaveBeenCalledTimes(1);
+    expect(createMutateAsync).toHaveBeenCalledTimes(2);
+    expect(createMutateAsync.mock.calls[1]?.[0]).toEqual(createMutateAsync.mock.calls[0]?.[0]);
+    expect(mounted.getByTestId('detection').getAttribute('data-version')).toBe('replacement');
   });
 });
