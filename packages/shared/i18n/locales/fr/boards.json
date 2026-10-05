@@ -1062,7 +1062,7 @@
       "stay": "Continuer à modifier",
       "discard": "Abandonner les modifications"
     },
-    "resetInProgress": "Termine ou abandonne la réouverture avec la nouvelle photo avant de modifier les prises."
+    "resetInProgress": "Termine ou abandonne la réinitialisation avec la nouvelle photo avant de modifier les prises."
   },
   "sprayCaps": {
     "holds": "Un mur porte jusqu’à {{max}} prises. Écartes-en quelques-unes et enregistre à nouveau.",
