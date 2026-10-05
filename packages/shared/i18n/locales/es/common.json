@@ -847,6 +847,13 @@
       "errorTitle": "No hemos podido cargarlo",
       "errorBody": "No ha llegado. Vuelve a intentarlo.",
       "retry": "Reintentar"
+    },
+    "storePrompt": {
+      "title": "Consigue la app de Boardsesh",
+      "body": "Enciende tu plafón y registra cada encadene, incluso sin conexión.",
+      "googlePlay": "Disponible en Google Play",
+      "appStore": "Descárgala en el App Store",
+      "dismiss": "Ahora no"
     }
   },
   "lightControl": {

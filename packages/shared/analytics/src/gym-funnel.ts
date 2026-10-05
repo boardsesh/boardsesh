@@ -153,9 +153,10 @@ export type GymQrMedium = (typeof GYM_QR_MEDIUMS)[number];
  *    alongside it. #4374's AC2 describes only the two new properties; it is not
  *    asking for `source` to be repurposed.
  *
- *    `App Install Click` is web-only with no mobile counterpart, so its builder
- *    does NOT belong in this shared package. It lands in
- *    packages/web/app/lib/app-install-event.ts in the wiring PR.
+ *    `App Install Click` has no native counterpart, so its builder does NOT
+ *    belong in this shared package. www's lands in
+ *    packages/web/app/lib/app-install-event.ts; the browser app's store prompt
+ *    has its own in packages/mobile/src/lib/store-links.ts.
  *  - `directions` — there is no directions CTA on the gym page. The address is
  *    rendered as plain text (gym/[gym_slug]/page.tsx), not a map link.
  *  - `report-listing` — belongs to #4385 and is out of scope for this epic tier.

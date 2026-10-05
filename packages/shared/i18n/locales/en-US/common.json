@@ -577,6 +577,13 @@
       "errorTitle": "Couldn't load this",
       "errorBody": "That didn't come through. Give it another go.",
       "retry": "Try again"
+    },
+    "storePrompt": {
+      "title": "Get the Boardsesh app",
+      "body": "Light up your board and log every send, even with no signal.",
+      "googlePlay": "Get it on Google Play",
+      "appStore": "Download on the App Store",
+      "dismiss": "Not now"
     }
   },
   "lightControl": {

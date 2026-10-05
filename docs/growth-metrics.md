@@ -85,6 +85,17 @@ These are separate counts. None of them is a funnel of the same people.
 | iOS install source   | none                                                       | Apple gives us no referrer. Show iOS as unknown; do not infer it.                                 |
 | New-user activation  | the Activation funnel above                                 | Counts people, not installs.                                                                      |
 
+`App Install Click` comes from two populations: www, and the store prompt in the
+browser app (phone browsers only, on the signed-out climb view, the login screen
+and Home). A store-click tile has to union both. Browser-app clicks carry
+`placement` = `browser-app-climb-view`, `browser-app-login` or
+`browser-app-home`, with the same `platform` and `source` values as www. Their
+store links are tagged `utm_source=boardsesh`, `utm_medium=browser-app`,
+`utm_campaign=<climb-view|login|home>`: on Android that arrives as
+`install_medium = browser-app` and `install_campaign`; on iOS it is the App
+Store campaign token `ct=browser-app-<surface>`, which App Analytics only shows
+once the link also carries the provider token (`pt`, not set yet).
+
 `Install Attributed` fires whenever the Play referrer has any `utm_*` param.
 Play stamps organic installs too (`utm_source=google-play&utm_medium=organic`),
 so 584 of the 663 people who fired it from 2026-08-23 to 2026-09-19 were
