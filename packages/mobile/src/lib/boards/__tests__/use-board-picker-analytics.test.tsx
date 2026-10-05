@@ -41,6 +41,7 @@ describe('board picker analytics', () => {
       returnTo: '/(tabs)/record',
       hadActiveBoard: true,
       restoreFailed: false,
+      trigger: null,
     });
   });
 
@@ -57,6 +58,25 @@ describe('board picker analytics', () => {
       }),
     );
     expect(track).toHaveBeenCalledWith('Board Picker Opened', expect.objectContaining({ source: 'no_board' }));
+  });
+
+  // A tap on a climb in the no-board preview opens the same picker. `trigger`
+  // tells it from "Find my board", and is null everywhere else.
+  it('carries what opened the no-board entry', () => {
+    renderHook(() =>
+      useBoardPickerAnalytics({
+        activeBoard: null,
+        restoreFailed: false,
+        returnTo: '/(tabs)/climbs',
+        fromOnboarding: false,
+        fromNoBoard: true,
+        trigger: 'preview_row',
+      }),
+    );
+    expect(track).toHaveBeenCalledWith(
+      'Board Picker Opened',
+      expect.objectContaining({ source: 'no_board', trigger: 'preview_row' }),
+    );
   });
 
   it('records unknown rather than no board when restoration fails', () => {

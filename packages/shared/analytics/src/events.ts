@@ -613,6 +613,28 @@ export const SHARED_EVENTS = {
   // Props: { fromTab: 'home' | 'record' | 'discover' | 'profile' | other tab
   //          segment (where the climber was when it showed) }.
   ClimbsTabTipShown: 'Climbs Tab Tip Shown',
+  // Mobile-only: Climbs with no board bound. Until now that state fired nothing,
+  // so nobody could say how many climbers saw "Pick your board" and left.
+  //
+  // ClimbsNoBoardStateViewed: once per mount of that state, for everyone, with
+  // `no-board-preview-kill` on or off. It waits for the board list, the flags
+  // and the profile to settle (or for the phone to read as offline), and for a
+  // preview it waits for the first page of climbs, so `variant` is what the
+  // climber actually got. A climber who leaves before that fires nothing. Props:
+  // { variant: 'placard' | 'preview', owned_board_count (null when the list
+  // could not be read), account_age_hours (null when the profile could not),
+  // preview_board_type (the board type listed first, null on a placard),
+  // fallback_reason: null on a preview, else 'kill_switch' | 'signed_out' |
+  // 'offline' | 'boards_unknown' | 'has_boards' (their active board was only
+  // cleared) | 'no_config' (no previewable setup) | 'search_error' |
+  // 'no_climbs' }. The preview is for `owned_board_count = 0` only, so read the
+  // bind rate on that slice.
+  //
+  // NoBoardPreviewClimbTapped: a tap on a climb in the read-only preview. It
+  // opens the board picker, not the climb. Props: { board_type, row_index
+  // (0-based) }. The demand signal for a guest play view (#5654).
+  ClimbsNoBoardStateViewed: 'Climbs No Board State Viewed',
+  NoBoardPreviewClimbTapped: 'No Board Preview Climb Tapped',
   BetaVideoAdded: 'Beta Video Added',
   // Board ENTITY creation — adding a wall to your boards (distinct from the
   // board-presence events below, which are about being on one). Added with
@@ -739,6 +761,9 @@ export const SHARED_EVENTS = {
   // gym map opened on its own, from Home or My gyms; the map pushed from the
   // picker's "Find gym" reports no opening, the picker did).
   // hadActiveBoard is null when storage could not be read, not false.
+  // trigger (mobile, source no_board only): 'cta' = "Find my board", 'preview_row'
+  // = a climb in the no-board preview; null for every other source and for
+  // builds that predate it.
   BoardPickerOpened: 'Board Picker Opened',
   // Existing-board selection in that picker, only after a successful write.
   // sameBoard compares UUIDs; sameConfig compares board type/layout/size/sets.

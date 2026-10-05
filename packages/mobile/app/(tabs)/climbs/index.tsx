@@ -107,7 +107,7 @@ import { resolveScreenshotBoard } from '../../../src/lib/screenshot-board-select
 import { useScreenshotBoards } from '../../../src/hooks/use-screenshot-boards';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../../../src/lib/create-board-holds';
 import { shouldShowUnsetWallEmptyState } from '../../../src/lib/spray/unset-wall-empty-state';
-import { NO_BOARD_PICKER_HREF } from '../../../src/lib/boards/first-board-mode';
+import { NoBoardState } from '../../../src/components/no-board/NoBoardState';
 import { FollowedAuthorsUnavailableError } from '../../../src/lib/followed-authors-error';
 import { useActiveBoard, useSetActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { OnboardingTipBanner } from '../../../src/components/onboarding/OnboardingTipBanner';
@@ -1755,34 +1755,14 @@ function ClimbListInner() {
   }
 
   if (isBoardResolved && activeBoard === null) {
+    // Placard or read-only preview, decided inside `NoBoardState`. Its hooks
+    // (the board list, the flags, the popular setups) live in that child on
+    // purpose: one more hook on this screen, above or below this return, moves
+    // the hook count when a board binds (BOARDSESH-K1 / BOARDSESH-K2).
     return (
       <>
         <Stack.Screen options={stackOptions} />
-        <View style={styles.emptyContainer}>
-          <Icon name="boards" size={48} color={iosSystemColors.systemGray4} />
-          <Text variant="headline" style={styles.emptyTitle}>
-            {t('mobile.emptyState.noBoard.title')}
-          </Text>
-          <Text variant="subheadline" style={styles.emptySubtitle}>
-            {t('mobile.emptyState.noBoard.subtitle')}
-          </Text>
-          {/* Board selection is a modal now. When BLE serial auto-detect lands it
-              calls useSetActiveBoard(); useActiveBoard() then flips this screen to
-              the climb list with no extra wiring here. */}
-          <Button
-            title={t('mobile.emptyState.noBoard.cta')}
-            // The picker's no-board entry (#5654): a climber with no boards at all
-            // gets "Where do you climb?" there, with the gym search, the builder
-            // and the Bluetooth scan; one whose active board was only cleared gets
-            // their list. Deliberately NOT tagged as onboarding: this empty state
-            // shows any time no board is bound, not just first-run, so a bind from
-            // it must not fire the activation event or arm the reveal banner.
-            onPress={() => router.push(NO_BOARD_PICKER_HREF)}
-            variant="filled"
-            size="large"
-            style={styles.emptyCta}
-          />
-        </View>
+        <NoBoardState />
       </>
     );
   }

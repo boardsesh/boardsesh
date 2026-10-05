@@ -674,6 +674,33 @@ an ordinary pick: no `Onboarding Board Activated`, no reveal banner.
   tip, against Android, using `$screen` views. `Climbs Tab Tip Shown` is the exposure count; the tip
   goes away when they tap back to Climbs or close it, and never shows again on that device.
 
+### No-board climbs preview
+
+An account with no boards at all now gets a read-only list of climbs on Climbs instead of the
+"Pick your board" placard: one page of 30 from the most used setup, a chip per board type the
+popular list carries, and **Find my board** pinned on top. Tapping a climb opens the picker. Nothing
+is bound. Everyone else with no board bound (their own boards exist, they are offline, the kill
+switch `no-board-preview-kill` is on) keeps the placard. No experiment arm: read it before/after.
+
+| Event | Properties | Emit site | Volume |
+| --- | --- | --- | --- |
+| `Climbs No Board State Viewed` | `variant` (`placard` / `preview`), `owned_board_count` (null when the board list could not be read), `account_age_hours` (null when the profile could not), `preview_board_type` (the board type listed first; null on a placard), `fallback_reason` (null on a preview; `kill_switch` / `signed_out` / `offline` / `boards_unknown` / `has_boards` / `no_config` / `search_error` / `no_climbs`) | `NoBoardState.tsx` | Once per mount of Climbs' no-board state |
+| `No Board Preview Climb Tapped` | `board_type`, `row_index` (0-based) | `NoBoardState.tsx` | Per row tap |
+| `Board Picker Opened` (changed) | adds `trigger` (`cta` = Find my board, `preview_row` = a climb in the preview; null outside `source = no_board`) | `use-board-picker-analytics.ts` | Unchanged |
+
+- **Exposure is what they got, not what was planned.** The event waits for the board list, the
+  flags and the profile (or an offline phone), and a preview waits for its first page of climbs. A
+  search that fails or comes back empty reports `variant = placard` with `search_error` /
+  `no_climbs`. Someone who leaves Climbs before that settles is not counted.
+- **Bind rate**: of people with `Climbs No Board State Viewed` and `owned_board_count = 0`, the share
+  with `Board Picker Selection Completed`, `Onboarding Board Activated`, `Board Created` or
+  `Board Create Reused Existing` within 7 days. The event did not exist before the preview shipped,
+  so there is no measured "before": the baseline is the proxies on #5654, or a window with the kill
+  switch on.
+- **Row taps that end nowhere**: `Board Picker Opened` with `trigger = preview_row` and no pick
+  after it. A high share means the tap reads as bait and the preview needs a real climb view.
+- MoonBoard gets no chip while the popular list carries only Kilter and Tension setups.
+
 ## Board account linking
 
 Mobile Connected apps emits `Board Account Link Started` on credential submission,

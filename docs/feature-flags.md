@@ -163,6 +163,15 @@ diagnostic) applies on native. The whole surface lives in three files:
   got before the picker. Find my board and every other way into the picker keep
   working. The gate waits for
   `useFeatureFlagsResolved()` before it decides, like the others.
+  `no-board-preview-kill` (read through `useNoBoardPreviewEnabled`,
+  unresolved = enabled) takes down the read-only climbs preview that Climbs
+  shows an account with no boards. With it on, everyone with no board bound
+  gets the "Pick your board" placard, as before the preview shipped. There is
+  no experiment arm: every zero-board account that is online and has a
+  previewable setup gets the preview, and the read is before/after.
+  `Climbs No Board State Viewed` fires either way, with
+  `fallback_reason: 'kill_switch'` while the switch is on. `NoBoardState`
+  waits for `useFeatureFlagsResolved()` before it leaves the placard.
   `first-connect-cta-kill` (read through `useFirstConnectCtaEnabled`,
   unresolved = enabled) takes down the connect-step A/B test (#5654, PR 7):
   no new account is enrolled, and every enrolled one gets the plain bulb back

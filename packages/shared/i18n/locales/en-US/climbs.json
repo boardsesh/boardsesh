@@ -373,6 +373,13 @@
         "subtitle": "Choose the wall you climb on to browse its climbs and light them up.",
         "cta": "Find my board"
       },
+      "noBoardPreview": {
+        "title": "Have a look around",
+        "subtitle": "Popular climbs on a {{board}} board at {{angle}}°. Pick your board to open them and light them up.",
+        "boardTypeGroup": "Board type",
+        "rowHint": "Opens the board picker. Pick your board to open this climb.",
+        "footer": "Pick your board to see the rest."
+      },
       "noClimbs": {
         "title": "No climbs found",
         "subtitle": "Try adjusting your board settings"
