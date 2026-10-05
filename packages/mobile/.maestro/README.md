@@ -63,6 +63,11 @@ directly into its shots — no Maestro element races a transient auth screen.
   board sheet, board view, the climb-actions menu and the preview drawer. Raw
   uncaptioned PNGs — only `--flow app-store` goes through `screenshot:frame`.
 
+- `smoke.yaml` / `smoke-android.yaml` — not a capture. The mobile E2E gate's navigation smoke
+  (`--flow smoke`): home, profile, climbs and the first climb's play drawer, no screenshots.
+  Android asserts testIDs; iOS only navigates, and the app's own content pings are the
+  assertion. See `docs/mobile-e2e-gate.md`.
+
 ## Required env
 
 - `SCREENSHOT_USER_EMAIL` — test account email (default `test@boardsesh.com`).
