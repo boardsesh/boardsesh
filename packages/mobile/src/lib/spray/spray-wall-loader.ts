@@ -34,6 +34,7 @@ import {
   sprayWallViewerGeneration,
   unregisterSprayWall,
   sprayWallRemovalGeneration,
+  subscribeToSprayWalls,
   type SprayWallRenderSettingsValue,
 } from './spray-wall-registry';
 import { clearSupersededSprayDrafts } from '../create-climb-draft-store';
@@ -551,9 +552,22 @@ export function dropSprayWallViewerAccess(): void {
  * per-row render-board resolvers — can then ask for a wall by layout id.
  */
 export function installSprayWallLoader(queryClient: QueryClient): () => void {
-  const requestedLayouts = new Set<number>();
+  const requestedLayouts = new Map<number, { viewerGeneration: number; removalGeneration: number }>();
+  const pruneRemovedRequests = () => {
+    for (const [layoutId, requestedUnder] of requestedLayouts) {
+      if (
+        requestedUnder.viewerGeneration !== sprayWallViewerGeneration() ||
+        requestedUnder.removalGeneration !== sprayWallRemovalGeneration(layoutId)
+      )
+        requestedLayouts.delete(layoutId);
+    }
+  };
+  const unsubscribeRegistry = subscribeToSprayWalls(pruneRemovedRequests);
   const loader = (layoutId: number, options?: { force?: boolean }) => {
-    requestedLayouts.add(layoutId);
+    requestedLayouts.set(layoutId, {
+      viewerGeneration: sprayWallViewerGeneration(),
+      removalGeneration: sprayWallRemovalGeneration(layoutId),
+    });
     return loadSprayWall(queryClient, layoutId, options);
   };
   setSprayWallLoader(loader);
@@ -563,13 +577,16 @@ export function installSprayWallLoader(queryClient: QueryClient): () => void {
     const reconnected = wasOffline && !offline;
     wasOffline = offline;
     if (!reconnected) return;
-    for (const layoutId of requestedLayouts) {
+    pruneRemovedRequests();
+    for (const layoutId of requestedLayouts.keys()) {
       void queryClient.invalidateQueries({ queryKey: sprayWallByLayoutQueryKey(layoutId) });
       refreshSprayWall(layoutId);
     }
   });
   return () => {
     unsubscribe();
+    unsubscribeRegistry();
+    requestedLayouts.clear();
     setSprayWallLoader(null);
   };
 }

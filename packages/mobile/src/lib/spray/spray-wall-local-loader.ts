@@ -34,7 +34,7 @@ export async function loadLocalSprayWall(
     const userId = await readLocalUserId();
     if (!userId || !stillCurrent()) return false;
     const wall = await getSprayWallLocal(db, layoutId, userId);
-    if (!wall || !Number.isSafeInteger(wall.version) || wall.version == null || wall.version < 1 || !wall.homography)
+    if (!wall || wall.version == null || !Number.isSafeInteger(wall.version) || wall.version < 1 || !wall.homography)
       return false;
     // Server-generated keys bind the photo to this wall and supply immutable
     // identity. A published number never repeats, including same-photo hold edits.

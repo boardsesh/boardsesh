@@ -787,3 +787,35 @@ it('revalidates after a reconnect during the local decode in-flight slot', async
   expect(getSprayWall(LAYOUT_ID)).toBeNull();
   teardown();
 });
+
+describe('reconnect request ownership', () => {
+  it('retains a same-account unavailable local wall for reconnect', async () => {
+    offlineState.offline = true;
+    offlineState.localLoad.mockResolvedValue(false);
+    const teardown = installSprayWallLoader(fakeQueryClient());
+    const { ensureSprayWallLoaded, getSprayWallLoadState } = await import('../spray-wall-registry');
+    ensureSprayWallLoaded(LAYOUT_ID);
+    await vi.waitFor(() => expect(getSprayWallLoadState(LAYOUT_ID)).toBe('unavailable'));
+    requestMock.mockResolvedValue({ sprayWallByLayout: null });
+    offlineState.offline = false;
+    for (const notify of offlineState.subscribers) notify();
+    await vi.waitFor(() => expect(requestMock).toHaveBeenCalled());
+    teardown();
+  });
+
+  it.each(['account transition', 'wall removal'])('prunes unavailable requests after %s', async (transition) => {
+    offlineState.offline = true;
+    offlineState.localLoad.mockResolvedValue(false);
+    const teardown = installSprayWallLoader(fakeQueryClient());
+    const { ensureSprayWallLoaded, getSprayWallLoadState } = await import('../spray-wall-registry');
+    ensureSprayWallLoaded(LAYOUT_ID);
+    await vi.waitFor(() => expect(getSprayWallLoadState(LAYOUT_ID)).toBe('unavailable'));
+    if (transition === 'wall removal') unregisterSprayWall(LAYOUT_ID);
+    else resetSprayWallViewerAccess();
+    offlineState.offline = false;
+    for (const notify of offlineState.subscribers) notify();
+    expect(invalidateQueriesMock).not.toHaveBeenCalled();
+    expect(requestMock).not.toHaveBeenCalled();
+    teardown();
+  });
+});
