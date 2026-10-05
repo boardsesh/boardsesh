@@ -16,6 +16,7 @@
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { BOARD_FEED_SUGGESTION_SOURCE_ID } from './playlists/board-feed-suggestion-source';
 import { getPreference, setPreference, removePreference } from './preference-store';
+import { createQueueSnapshotWriteLane } from './queue-snapshot-write-lane';
 import type { UserStorageOwner } from './user-storage-owner';
 
 const QUEUE_SNAPSHOT_KEY = 'boardsesh_local_queue_snapshot_v1';
@@ -68,37 +69,24 @@ export async function getStoredQueueSnapshot(_owner?: UserStorageOwner | null): 
   return dropBoardFeedSource(await getPreference<LocalQueueSnapshot>(QUEUE_SNAPSHOT_KEY));
 }
 
-// Storage writes are ordered so an in-flight save cannot finish after a clear.
-// A generation also fences callbacks whose debounce was scheduled before clear.
-let queueSnapshotGeneration = 0;
-let queueSnapshotWriteQueue: Promise<void> = Promise.resolve();
+const snapshotWriteLane = createQueueSnapshotWriteLane();
 
-export function getQueueSnapshotGeneration(): number {
-  return queueSnapshotGeneration;
-}
-
-function enqueueSnapshotWrite(write: () => Promise<void>): Promise<void> {
-  const operation = queueSnapshotWriteQueue.then(write, write);
-  queueSnapshotWriteQueue = operation.catch(() => undefined);
-  return operation;
-}
+export const getQueueSnapshotGeneration = snapshotWriteLane.getGeneration;
 
 export function setStoredQueueSnapshot(
   snapshot: Omit<LocalQueueSnapshot, 'savedAt'>,
   _owner?: UserStorageOwner | null,
-  expectedGeneration = queueSnapshotGeneration,
+  expectedGeneration = getQueueSnapshotGeneration(),
 ): Promise<void> {
-  return enqueueSnapshotWrite(async () => {
-    if (expectedGeneration !== queueSnapshotGeneration) return;
+  return snapshotWriteLane.write(async () => {
     await setPreference<LocalQueueSnapshot>(QUEUE_SNAPSHOT_KEY, {
       ...snapshot,
       playlistSuggestionSource: capSuggestionSource(snapshot.playlistSuggestionSource),
       savedAt: new Date().toISOString(),
     });
-  });
+  }, expectedGeneration);
 }
 
 export function clearStoredQueueSnapshot(_owner?: UserStorageOwner | null): Promise<void> {
-  queueSnapshotGeneration += 1;
-  return enqueueSnapshotWrite(() => removePreference(QUEUE_SNAPSHOT_KEY));
+  return snapshotWriteLane.clear(() => removePreference(QUEUE_SNAPSHOT_KEY));
 }
