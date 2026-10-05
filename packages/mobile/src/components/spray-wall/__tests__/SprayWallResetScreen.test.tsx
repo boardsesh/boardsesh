@@ -17,11 +17,15 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
-const wallQueryState = vi.hoisted(() => ({ current: { data: null as unknown, isPending: false } }));
+const wallQueryState = vi.hoisted(() => ({
+  current: { data: null, isPending: false } as { data: unknown; isPending: boolean; isFetching?: boolean },
+}));
 const pickResult = vi.hoisted(() => ({
   current: { outcome: 'picked', photo: { uri: 'file:///w.jpg', width: 2048, height: 1536 } } as unknown,
 }));
 const discardMutateAsync = vi.hoisted(() => vi.fn(async () => true));
+const createMutateAsync = vi.hoisted(() => vi.fn());
+const refetchWall = vi.hoisted(() => vi.fn());
 /** The corner marker's props, so a test can hand the screen four corners. */
 const markerProps = vi.hoisted(() => ({ current: null as null | { onChange?: (quad: unknown) => void } }));
 
@@ -37,7 +41,7 @@ vi.mock('react-native', () => ({
 
 vi.mock('expo-image', () => ({ Image: () => createElement('img', { 'data-testid': 'preview' }) }));
 vi.mock('expo-router', () => ({
-  useRouter: () => ({ back: vi.fn() }),
+  useRouter: () => ({ back: vi.fn(), replace: vi.fn() }),
   useNavigation: () => ({ addListener: () => () => {}, dispatch: vi.fn() }),
 }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
@@ -68,7 +72,7 @@ vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/graphql/extract-error-message', () => ({
   extractGraphqlMessage: (e: unknown) => (e as Error)?.message,
-  extractGraphqlCode: () => undefined,
+  extractGraphqlCode: (error: unknown) => (error as { extensions?: { code?: string } })?.extensions?.code,
 }));
 
 vi.mock('../../Text', () => ({
@@ -122,11 +126,10 @@ vi.mock('../../../lib/spray/wall-photo', () => ({
   rescalePoint: (point: [number, number]) => point,
 }));
 vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
-  useCreateSprayWallVersion: () => ({ mutateAsync: vi.fn() }),
-  fetchSprayWallVersions: vi.fn(),
+  useCreateSprayWallVersion: () => ({ mutateAsync: createMutateAsync }),
 }));
 vi.mock('../../../lib/spray/use-spray-wall-reset', () => ({
-  useSprayWallWithVersions: () => wallQueryState.current,
+  useSprayWallWithVersions: () => ({ ...wallQueryState.current, refetch: refetchWall }),
   useDiscardSprayWallVersion: () => ({ mutateAsync: discardMutateAsync, isPending: false }),
 }));
 
@@ -152,6 +155,8 @@ const renderScreen = () => render(createElement(SprayWallResetScreen, { wallUuid
 beforeEach(() => {
   markerProps.current = null;
   discardMutateAsync.mockClear();
+  createMutateAsync.mockReset();
+  refetchWall.mockReset();
   pickResult.current = { outcome: 'picked', photo: { uri: 'file:///w.jpg', width: 2048, height: 1536 } };
   wallQueryState.current = { data: EDITABLE_WALL, isPending: false };
 });
@@ -279,5 +284,125 @@ describe('SprayWallResetScreen', () => {
 
     expect(getByText('sprayReset.photo.title')).toBeTruthy();
     expect(getByText('sprayWizard.photo.next').getAttribute('data-disabled')).toBe('true');
+  });
+});
+
+describe('reset draft ownership and retry identity', () => {
+  it('routes a hold-edit draft back to Edit holds without offering reset detection', () => {
+    const photo = { url: 'https://private.example/spray-walls/aaaa/bbbb.jpg?signature=one', width: 800, height: 600 };
+    const geometry = { photo, anchors: null, homography: [1, 0, 0, 0, 1, 0, 0, 0, 1] };
+    wallQueryState.current = {
+      data: {
+        ...EDITABLE_WALL,
+        currentVersion: { ...EDITABLE_WALL.currentVersion, ...geometry },
+        versions: [{ id: '2', number: 2, status: 'DRAFT', ...geometry }],
+      },
+      isPending: false,
+    };
+    const mounted = renderScreen();
+    expect(mounted.getByText('sprayReset.openDraft.holdEditTitle')).toBeTruthy();
+    expect(mounted.queryByText('sprayDetection.resume')).toBeNull();
+    expect(mounted.queryByText('sprayReset.openDraft.discard')).toBeNull();
+  });
+
+  it('retries the same uploaded object after a lost create response', async () => {
+    const { uploadSprayWallPhoto } = await import('../../../lib/spray/spray-wall-photo-upload');
+    vi.mocked(uploadSprayWallPhoto)
+      .mockReset()
+      .mockResolvedValue({ photoId: 'chosen-photo', width: 800, height: 600, determinate: true });
+    createMutateAsync.mockRejectedValueOnce(new Error('lost response')).mockResolvedValueOnce({ id: '2', number: 2 });
+    const mounted = renderScreen();
+    await act(async () => mounted.getByText('sprayWizard.photo.library').click());
+    act(() => mounted.getByText('sprayWizard.photo.next').click());
+    act(() => markerProps.current?.onChange?.(SQUARE));
+    await act(async () => mounted.getByText('sprayReset.anchors.use').click());
+    await act(async () => mounted.getByText('sprayWizard.upload.retry').click());
+    expect(uploadSprayWallPhoto).toHaveBeenCalledTimes(1);
+    expect(createMutateAsync).toHaveBeenCalledTimes(2);
+    expect(createMutateAsync.mock.calls[1]?.[0]).toEqual(createMutateAsync.mock.calls[0]?.[0]);
+    expect(createMutateAsync.mock.calls[1]?.[0].photoId).toBe('chosen-photo');
+    expect(mounted.getByTestId('detection').getAttribute('data-version')).toBe('2');
+  });
+
+  it('offers explicit recovery when an older draft blocks the chosen photo', async () => {
+    const { uploadSprayWallPhoto } = await import('../../../lib/spray/spray-wall-photo-upload');
+    vi.mocked(uploadSprayWallPhoto)
+      .mockReset()
+      .mockResolvedValue({ photoId: 'chosen-photo', width: 800, height: 600, determinate: true });
+    createMutateAsync.mockRejectedValue({ extensions: { code: 'SPRAY_WALL_DRAFT_ALREADY_OPEN' } });
+    refetchWall.mockImplementation(async () => {
+      wallQueryState.current = {
+        data: {
+          ...EDITABLE_WALL,
+          versions: [{ id: 'older', number: 2, status: 'DRAFT', photo: { width: 800, height: 600 } }],
+        },
+        isPending: false,
+      };
+    });
+    const mounted = renderScreen();
+    await act(async () => mounted.getByText('sprayWizard.photo.library').click());
+    act(() => mounted.getByText('sprayWizard.photo.next').click());
+    act(() => markerProps.current?.onChange?.(SQUARE));
+    await act(async () => mounted.getByText('sprayReset.anchors.use').click());
+    expect(mounted.getByText('sprayReset.openDraft.title')).toBeTruthy();
+    expect(mounted.queryByTestId('detection')).toBeNull();
+    expect(createMutateAsync).toHaveBeenCalledTimes(1);
+    await act(async () => mounted.getByText('sprayDetection.resume').click());
+    expect(mounted.getByTestId('detection').getAttribute('data-version')).toBe('older');
+  });
+});
+
+describe('fresh history and discard recovery', () => {
+  it('waits for fresh history before offering cached draft actions', () => {
+    wallQueryState.current = {
+      data: { ...EDITABLE_WALL, versions: [{ id: 'stale', number: 2, status: 'DRAFT' }] },
+      isPending: false,
+      isFetching: true,
+    };
+    const mounted = renderScreen();
+    expect(mounted.getByTestId('spinner')).toBeTruthy();
+    expect(mounted.queryByText('sprayDetection.resume')).toBeNull();
+    wallQueryState.current = { data: EDITABLE_WALL, isPending: false, isFetching: false };
+    mounted.rerender(createElement(SprayWallResetScreen, { wallUuid: 'wall-1' }));
+    expect(mounted.queryByTestId('spinner')).toBeNull();
+    expect(mounted.getByText('sprayWizard.photo.next')).toBeTruthy();
+  });
+
+  it('discards a conflicting draft and retries with the chosen photo upload', async () => {
+    const { uploadSprayWallPhoto } = await import('../../../lib/spray/spray-wall-photo-upload');
+    vi.mocked(uploadSprayWallPhoto).mockReset().mockResolvedValue({
+      photoId: 'chosen-photo',
+      width: 800,
+      height: 600,
+      determinate: true,
+    });
+    createMutateAsync
+      .mockRejectedValueOnce({ extensions: { code: 'SPRAY_WALL_DRAFT_ALREADY_OPEN' } })
+      .mockResolvedValueOnce({ id: 'replacement', number: 2 });
+    refetchWall.mockImplementation(async () => {
+      wallQueryState.current = {
+        data: { ...EDITABLE_WALL, versions: [{ id: 'older', number: 2, status: 'DRAFT' }] },
+        isPending: false,
+      };
+    });
+    discardMutateAsync.mockImplementationOnce(async () => {
+      wallQueryState.current = { data: EDITABLE_WALL, isPending: false };
+      return true;
+    });
+    const mounted = renderScreen();
+    await act(async () => mounted.getByText('sprayWizard.photo.library').click());
+    act(() => mounted.getByText('sprayWizard.photo.next').click());
+    act(() => markerProps.current?.onChange?.(SQUARE));
+    await act(async () => mounted.getByText('sprayReset.anchors.use').click());
+    await act(async () => mounted.getByText('sprayReset.openDraft.discard').click());
+    expect(discardMutateAsync).toHaveBeenCalledWith('older');
+    expect(mounted.getByText('sprayWizard.photo.next').getAttribute('data-disabled')).toBe('false');
+    act(() => mounted.getByText('sprayWizard.photo.next').click());
+    act(() => markerProps.current?.onChange?.(SQUARE));
+    await act(async () => mounted.getByText('sprayReset.anchors.use').click());
+    expect(uploadSprayWallPhoto).toHaveBeenCalledTimes(1);
+    expect(createMutateAsync).toHaveBeenCalledTimes(2);
+    expect(createMutateAsync.mock.calls[1]?.[0]).toEqual(createMutateAsync.mock.calls[0]?.[0]);
+    expect(mounted.getByTestId('detection').getAttribute('data-version')).toBe('replacement');
   });
 });

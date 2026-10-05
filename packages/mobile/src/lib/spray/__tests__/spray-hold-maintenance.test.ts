@@ -7,8 +7,19 @@ import {
   type SprayHoldMaintenanceWall,
 } from '../spray-hold-maintenance';
 
-const publishedVersion = { id: 'published-1', number: 1, status: 'PUBLISHED' as const };
-const draftVersion = { id: 'draft-2', number: 2, status: 'DRAFT' as const };
+const photoGeometry = {
+  photo: {
+    url: 'https://private.example/spray-walls/aaaa/bbbb.jpg?signature=one',
+    width: 1200,
+    height: 900,
+    expiresAt: '',
+    thumbUrl: null,
+  },
+  anchors: null,
+  homography: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+};
+const publishedVersion = { ...photoGeometry, id: 'published-1', number: 1, status: 'PUBLISHED' as const };
+const draftVersion = { ...photoGeometry, id: 'draft-2', number: 2, status: 'DRAFT' as const };
 const preparedDraft: PreparedSprayHoldDraft = {
   wallUuid: 'wall-1',
   layoutId: 42,
@@ -185,5 +196,38 @@ describe('publishSprayHoldDraft', () => {
     requests.fetchWall.mockResolvedValue(wall({ viewerCanEdit: false, versions: [draftVersion] }));
     await expect(publishSprayHoldDraft(preparedDraft, requests)).rejects.toMatchObject({ reason: 'unavailable' });
     expect(requests.publishDraft).not.toHaveBeenCalled();
+  });
+});
+
+const resetVersion = {
+  ...draftVersion,
+  photo: { ...photoGeometry.photo, url: 'https://private.example/spray-walls/aaaa/cccc.jpg' },
+};
+
+describe('reset drafts cannot enter hold maintenance', () => {
+  it('refuses an existing reset before preparing or publishing it', async () => {
+    const requests = transport();
+    requests.fetchWall.mockResolvedValue(wall({ versions: [publishedVersion, resetVersion] }));
+    await expect(prepareSprayHoldDraft('wall-1', requests)).rejects.toMatchObject({ reason: 'resetInProgress' });
+    await expect(publishSprayHoldDraft(preparedDraft, requests)).rejects.toMatchObject({ reason: 'resetInProgress' });
+    expect(requests.createDraft).not.toHaveBeenCalled();
+    expect(requests.publishDraft).not.toHaveBeenCalled();
+  });
+
+  it('never adopts a racing reset while recovering a create failure', async () => {
+    const requests = transport();
+    requests.createDraft.mockRejectedValue(new Error('another editor created a reset'));
+    requests.fetchWall.mockResolvedValueOnce(wall()).mockResolvedValueOnce(wall({ versions: [resetVersion] }));
+    await expect(prepareSprayHoldDraft('wall-1', requests)).rejects.toMatchObject({ reason: 'resetInProgress' });
+  });
+
+  it('ignores rotated URL signatures when resuming legitimate hold edits', async () => {
+    const requests = transport();
+    const rotated = {
+      ...draftVersion,
+      photo: { ...photoGeometry.photo, url: photoGeometry.photo.url.replace('one', 'two') },
+    };
+    requests.fetchWall.mockResolvedValue(wall({ versions: [rotated] }));
+    await expect(prepareSprayHoldDraft('wall-1', requests)).resolves.toEqual(preparedDraft);
   });
 });

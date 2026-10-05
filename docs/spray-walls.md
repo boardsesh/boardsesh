@@ -2489,3 +2489,19 @@ page emits no `og:image` at all rather than pointing at a URL that answers 404.
 Public walls' climbs are the only spray URLs in a sitemap, and the boards shard
 stays catalogue-only because a wall has no `/list` page to submit. The rule, the
 config source and the SQL belt behind it are in `docs/sitemap.md`.
+
+
+### Hold maintenance and photo reset draft ownership
+
+The hold editor adopts only initial setup or a draft reusing the exact published
+photo and mapping. Opening it during a photo reset reports that the owner must
+finish or discard the reset first. New photo sends a saved hold-edit draft back
+to Edit holds, without offering detection or comparison.
+
+Version history is fetched fresh on reentry and invalidated when a draft is
+created, published, committed or discarded. An upload retry keeps the exact
+uploaded photo id and corners; it never silently adopts another open draft.
+If that other draft blocks creation, the owner explicitly resumes or discards
+it. Discarding returns to the selected local photo so the next attempt is visible.
+The backend protection in #6044 also refuses plain publishing of new-photo
+reset drafts from older clients.
