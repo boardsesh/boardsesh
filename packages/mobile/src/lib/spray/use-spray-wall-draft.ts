@@ -31,12 +31,14 @@
 // invalidates the draft's own key (see `use-spray-hold-writes.ts`) and the
 // published generation waits for the editor to close.
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { GET_SPRAY_WALL_RENDER_DATA } from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWallRenderData } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../graphql/client';
 import { invalidateSprayWallRenderData, registerRenderData } from './spray-wall-loader';
+import { subscribeToSprayWalls } from './spray-wall-registry';
+import { sprayPrivacyGeneration } from './spray-privacy-generation';
 
 type SprayWallRenderDataResponse = { sprayWallRenderData: SprayWallRenderData | null };
 
@@ -76,19 +78,29 @@ export function useSprayWallDraft(
   wallUuid: string | null,
   versionNumber: number | null,
 ): UseSprayWallDraftResult {
+  const privacyGeneration = useSyncExternalStore(
+    subscribeToSprayWalls,
+    useCallback(() => sprayPrivacyGeneration(layoutId), [layoutId]),
+  );
+  const entryGeneration = useRef({ layoutId, generation: privacyGeneration });
+  if (entryGeneration.current.layoutId !== layoutId)
+    entryGeneration.current = { layoutId, generation: privacyGeneration };
+  const hasAccess = entryGeneration.current.generation === privacyGeneration;
   const query = useQuery({
-    queryKey: sprayWallDraftQueryKey(wallUuid, versionNumber),
-    queryFn: () =>
-      getHttpClient().request<SprayWallRenderDataResponse>(GET_SPRAY_WALL_RENDER_DATA, {
+    queryKey: [...sprayWallDraftQueryKey(wallUuid, versionNumber), privacyGeneration],
+    queryFn: async () => {
+      const response = await getHttpClient().request<SprayWallRenderDataResponse>(GET_SPRAY_WALL_RENDER_DATA, {
         uuid: wallUuid,
         version: versionNumber,
-      }),
+      });
+      return privacyGeneration === sprayPrivacyGeneration(layoutId) ? response : { sprayWallRenderData: null };
+    },
     select: (response) => response.sprayWallRenderData,
-    enabled: wallUuid != null && versionNumber != null,
+    enabled: hasAccess && wallUuid != null && versionNumber != null,
     staleTime: DRAFT_STALE_TIME_MS,
   });
 
-  const renderData = query.data ?? null;
+  const renderData = hasAccess ? (query.data ?? null) : null;
 
   /**
    * The verdict on one payload: which payload it was about, and whether the
@@ -104,12 +116,12 @@ export function useSprayWallDraft(
   const [verdict, setVerdict] = useState<{ payload: SprayWallRenderData; ok: boolean } | null>(null);
 
   useEffect(() => {
-    if (!renderData) return;
+    if (!renderData || privacyGeneration !== sprayPrivacyGeneration(layoutId)) return;
     // `registerRenderData` answers false for a payload that cannot be drawn — no
     // readable photo size, or a homography with no inverse — which is exactly
     // the "cannot be edited" the screen shows in words.
     setVerdict({ payload: renderData, ok: registerRenderData(layoutId, renderData) });
-  }, [layoutId, renderData]);
+  }, [layoutId, renderData, privacyGeneration]);
 
   // Captured in a ref so the teardown does not re-run — and therefore does not
   // yank the published wall back mid-session — when the uuid prop settles.
@@ -123,10 +135,10 @@ export function useSprayWallDraft(
       // drop the cached payload with it: this device has been writing to the
       // wall, so a payload from before the session is not to be trusted.
       const { queryClient: client, wallUuid: uuid } = teardownRef.current;
-      if (!uuid) return;
+      if (!uuid || privacyGeneration !== sprayPrivacyGeneration(layoutId)) return;
       void invalidateSprayWallRenderData(client, uuid, layoutId);
     },
-    [layoutId],
+    [layoutId, privacyGeneration],
   );
 
   const asked = wallUuid != null && versionNumber != null;
@@ -135,8 +147,8 @@ export function useSprayWallDraft(
   const awaitingVerdict = renderData != null && verdict?.payload !== renderData;
 
   return {
-    isLoading: asked && (query.isPending || awaitingVerdict),
-    isUnavailable: asked && !query.isPending && !awaitingVerdict && !(verdict?.ok ?? false),
+    isLoading: asked && hasAccess && (query.isPending || awaitingVerdict),
+    isUnavailable: asked && (!hasAccess || (!query.isPending && !awaitingVerdict && !(verdict?.ok ?? false))),
     homography: renderData?.homography ?? null,
   };
 }

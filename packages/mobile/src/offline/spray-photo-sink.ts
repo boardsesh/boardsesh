@@ -1,4 +1,6 @@
 import type { DocumentsPulledSink, RowsDeletedSink } from '@boardsesh/offline-sync';
+import { clearSprayWallPrivateCaches } from '../lib/spray/spray-privacy-cleanup';
+import { sprayPrivacyGeneration } from '../lib/spray/spray-privacy-generation';
 import {
   SPRAY_PHOTO_STORE_AVAILABLE,
   deleteStoredSprayPhoto,
@@ -36,11 +38,14 @@ import { clearSprayPhotoPending, recordSprayPhotoFailure } from './spray-photo-r
  */
 export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, documents, db }) => {
   if (tableName !== 'spray_walls') return;
+  const generation = sprayPrivacyGeneration();
 
   for (const document of documents) {
     const photoKey = document.photo_key;
     const photoUrl = document.photo_url;
     const layoutId = typeof document.layout_id === 'number' ? document.layout_id : Number(document.layout_id);
+    // A photograph without a valid wall identity cannot be fenced per wall.
+    if (!Number.isFinite(layoutId)) continue;
     // A wall with no published version has neither; a backend with no private
     // bucket configured sends the key and no URL. Both are "nothing to fetch",
     // not an error — the wall still syncs its holds.
@@ -60,8 +65,12 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
     // for — and that one goes through `recordSprayPhotoFailure` below.
     if (typeof photoUrl !== 'string' || !photoUrl) continue;
 
-    if (await storeSprayPhoto(photoKey, photoUrl)) {
-      if (Number.isFinite(layoutId)) await clearSprayPhotoPending(db, layoutId);
+    const wallGeneration = sprayPrivacyGeneration(layoutId);
+    const stored = await storeSprayPhoto(photoKey, photoUrl, layoutId);
+    if (generation !== sprayPrivacyGeneration()) return;
+    if (wallGeneration !== sprayPrivacyGeneration(layoutId)) continue;
+    if (stored) {
+      await clearSprayPhotoPending(db, layoutId);
       continue;
     }
 
@@ -74,7 +83,7 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
     //
     // Not on a platform with no store at all: web would otherwise rewind on
     // every cycle forever to fetch bytes it has nowhere to put.
-    if (SPRAY_PHOTO_STORE_AVAILABLE && Number.isFinite(layoutId)) {
+    if (SPRAY_PHOTO_STORE_AVAILABLE) {
       try {
         await recordSprayPhotoFailure(db, layoutId, photoKey);
       } catch (error) {
@@ -112,6 +121,7 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
   const rows = await db.getAllAsync<{ photo_key: string | null }>(
     'SELECT photo_key FROM spray_walls WHERE photo_key IS NOT NULL',
   );
+  if (generation !== sprayPrivacyGeneration()) return;
   pruneStoredSprayPhotos(rows.map((row) => row.photo_key).filter((key): key is string => !!key));
 };
 
@@ -134,6 +144,9 @@ export const sprayWallDeletedSink: RowsDeletedSink = async ({ tableName, rows, d
     // The wall is gone, so a pending-photo marker for it describes nothing and
     // would keep rewinding a cursor for a row that will never be served again.
     const layoutId = typeof row.layout_id === 'number' ? row.layout_id : Number(row.layout_id);
-    if (Number.isFinite(layoutId)) await clearSprayPhotoPending(db, layoutId);
+    if (Number.isFinite(layoutId)) {
+      clearSprayWallPrivateCaches(layoutId);
+      await clearSprayPhotoPending(db, layoutId);
+    }
   }
 };

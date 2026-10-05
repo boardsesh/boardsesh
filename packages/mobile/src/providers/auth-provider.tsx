@@ -45,6 +45,7 @@ import {
 } from '../lib/onboarding/onboarding-storage';
 import { clearUserData, purgeLocalDataForSignOut, getDatabaseHandle } from '../db';
 import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
+import { clearSprayWallPrivateCaches } from '../lib/spray/spray-privacy-cleanup';
 import { resetSyncStatus } from '../sync/sync-status';
 import { setSetting, clearOfflineBoards } from '../settings';
 import { getOutboxSummary, setSigningOut } from '@boardsesh/offline-sync';
@@ -275,6 +276,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // a 271MB Kilter download (issue #3621). setSigningOut bumps the wipe epoch around
   // either wipe, so in-flight pulls bail before the DELETEs land.
   const clearLocalOfflineUserData = useCallback(async (purgeOfflineBoards: boolean) => {
+    clearSprayWallPrivateCaches();
     const localDb = getDatabaseHandle();
     if (!localDb) {
       // No database to clean (init failed, or the file belongs to a newer bundle

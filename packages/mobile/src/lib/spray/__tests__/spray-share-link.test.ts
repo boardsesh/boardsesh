@@ -6,7 +6,7 @@ vi.mock('../../graphql/client', () => ({
   getHttpClient: () => ({ request }),
 }));
 
-import { adoptSprayWallFromLink, sprayWallByLayoutQueryKey } from '../spray-wall-loader';
+import { adoptSprayWallFromLink, loadSprayWall, sprayWallByLayoutQueryKey } from '../spray-wall-loader';
 import { isWallUuidParam } from '../use-spray-wall-link';
 import {
   clearSprayWallRegistry,
@@ -69,6 +69,68 @@ describe('adoptSprayWallFromLink', () => {
     // Nothing at all in the by-layout cache — not an entry holding null, which a
     // later `fetchSprayWallUuid` would read as "this wall is gone" and stop asking.
     expect(queryClient.getQueryCache().findAll({ queryKey: ['sprayWallByLayout'] })).toHaveLength(0);
+  });
+
+  it('rejects a late link response after an explicit wall withdrawal', async () => {
+    const wall = { uuid: WALL_UUID, layoutId: 4242 };
+    let finishRequest!: (response: { sprayWall: typeof wall }) => void;
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRequest = resolve;
+        }),
+    );
+    const queryClient = makeQueryClient();
+    const loader = vi.fn(async () => {});
+    setSprayWallLoader(loader);
+    const adoption = adoptSprayWallFromLink(queryClient, WALL_UUID);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+
+    unregisterSprayWall(4242);
+    finishRequest({ sprayWall: wall });
+
+    await expect(adoption).resolves.toBeNull();
+    expect(queryClient.getQueryCache().findAll({ queryKey: ['sprayWallByLayout'] })).toHaveLength(0);
+    expect(loader).not.toHaveBeenCalled();
+  });
+
+  it('accepts an unlisted link when concurrent cold by-layout discovery misses', async () => {
+    const wall = { uuid: WALL_UUID, layoutId: 4242 };
+    let finishRequest!: (response: { sprayWall: typeof wall }) => void;
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRequest = resolve;
+        }),
+    );
+    request.mockResolvedValueOnce({ sprayWallByLayout: null });
+    const queryClient = makeQueryClient();
+    const loader = vi.fn(async () => {});
+    setSprayWallLoader(loader);
+    const adoption = adoptSprayWallFromLink(queryClient, WALL_UUID);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+
+    await loadSprayWall(queryClient, 4242);
+    expect(getSprayWallLoadState(4242)).toBe('unavailable');
+    finishRequest({ sprayWall: wall });
+
+    await expect(adoption).resolves.toBe(4242);
+    expect(queryClient.getQueryData(sprayWallByLayoutQueryKey(4242))).toEqual({ sprayWallByLayout: wall });
+    expect(loader).toHaveBeenCalledWith(4242, { force: true });
+  });
+
+  it('revalidates a previously cached link after wall withdrawal', async () => {
+    request
+      .mockResolvedValueOnce({ sprayWall: { uuid: WALL_UUID, layoutId: 4242 } })
+      .mockResolvedValueOnce({ sprayWall: null });
+    const queryClient = makeQueryClient();
+    await expect(adoptSprayWallFromLink(queryClient, WALL_UUID)).resolves.toBe(4242);
+
+    unregisterSprayWall(4242);
+
+    await expect(adoptSprayWallFromLink(queryClient, WALL_UUID)).resolves.toBeNull();
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(queryClient.getQueryData(sprayWallByLayoutQueryKey(4242))).toBeUndefined();
   });
 });
 

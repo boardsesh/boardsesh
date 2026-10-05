@@ -1349,6 +1349,46 @@ work, and the banner already answers the question the missing holds raise.
 
 ## Photo privacy
 
+### Device cleanup
+
+Sign-out withdraws every registered wall and clears renderer photographs in
+`{cache}/spray-walls`, durable offline photographs in
+`{document}/spray-wall-photos`, and spray PNGs in `board-thumbnails`. Catalogue
+board PNGs remain. Removing a downloaded wall or receiving its deletion
+tombstone withdraws only that layout, including all cached photo versions and
+its overlays. A loader discovering that a wall is no longer readable uses the
+same withdrawal path. Filesystem cleanup still runs without an offline database
+and when the SQLite sign-out wipe fails.
+
+Session and per-wall generations fence pending downloads and render results.
+Partial photo downloads use generation-specific destinations; a late transfer
+removes its own partial rather than publishing it or erasing a replacement.
+Selective renderer cleanup recognizes legacy wall/version names and staging
+names with the producer's launch nonce and two epoch counters. Offline photo
+sinks skip rows with non-finite layout IDs rather than persist unfenced photos.
+Spray overlay destinations include a launch nonce and privacy generation, so a
+late native render cannot overwrite another session's PNG. Stale completions
+delete their own PNG and never enter the synchronous overlay index. Warm-up
+rejects legacy spray PNGs and those from earlier launches. Catalogue cache keys
+remain unchanged.
+
+Registry withdrawal preserves the installed loader and subscribers. Loader
+replacement and teardown fence pending work independently, and query keys
+include privacy generations so a new session cannot join an old request.
+The installed loader also removes all cached epochs of the withdrawn wall's
+layout identity, UUID identity, published/draft render data and version history.
+Known version IDs allow selective reset-proposal removal; a version-only pending
+proposal without cached wall history cannot be mapped to a layout and is not
+covered by single-wall removal. Global withdrawal removes these spray query
+families. Other walls and catalogue queries survive selective withdrawal.
+Removal destroys matching pending queries, preventing late responses from
+recaching payloads. A link response whose layout was unknown at withdrawal is
+removed by its exact old query key when its revocation check fails.
+Persisted editor drafts keep version-only keys, allowing recovery after an app
+restart. Cleanup is best effort: failed filesystem deletion is retried by later
+withdrawal or cache sweeping; a crash during native I/O can leave a partial until
+the next cleanup.
+
 Wall photos go to the **`private`** R2 bucket and are read through **15-minute
 presigned URLs** (`presignGetObject` in `packages/backend/src/storage/s3.ts`).
 `media` is world-readable under guessable keys (`docs/user-media-storage.md`), so

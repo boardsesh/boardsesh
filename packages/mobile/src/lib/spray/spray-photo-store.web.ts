@@ -29,7 +29,11 @@ export function tryGetStoredSprayPhotoPathSync(_photoKey: string | null | undefi
   return null;
 }
 
-export async function storeSprayPhoto(_photoKey: string, _photoUrl: string): Promise<string | null> {
+export async function storeSprayPhoto(
+  _photoKey: string,
+  _photoUrl: string,
+  _layoutId?: number,
+): Promise<string | null> {
   return null;
 }
 

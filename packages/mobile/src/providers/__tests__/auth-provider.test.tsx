@@ -304,6 +304,8 @@ const getDatabaseHandleMock = vi.fn((): unknown => null);
 // full one an explicit sign-out runs. Which one a given path picks is the regression
 // guard of issue #3621, so both are recorded rather than stubbed anonymously.
 const clearStoredSprayPhotosMock = vi.hoisted(() => vi.fn(() => {}));
+const clearSprayPrivateCachesMock = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/spray/spray-privacy-cleanup', () => ({ clearSprayWallPrivateCaches: clearSprayPrivateCachesMock }));
 // The wall photographs live on the filesystem, not in SQLite, so the row wipe
 // cannot take them — sign-out has to call this too or the previous account's
 // picture stays decodable on a shared phone (#5448).
@@ -1263,6 +1265,7 @@ describe('AuthProvider sign-out offline data wipe', () => {
     clearUserDataMock.mockClear();
     clearUserDataMock.mockResolvedValue(undefined);
     clearStoredSprayPhotosMock.mockClear();
+    clearSprayPrivateCachesMock.mockClear();
     purgeLocalDataForSignOutMock.mockClear();
     purgeLocalDataForSignOutMock.mockResolvedValue({
       pendingDiscarded: 0,
@@ -1324,6 +1327,17 @@ describe('AuthProvider sign-out offline data wipe', () => {
     });
 
     expect(clearStoredSprayPhotosMock).toHaveBeenCalled();
+    expect(clearSprayPrivateCachesMock).toHaveBeenCalledWith();
+  });
+
+  it('withdraws render caches and durable photos even without an offline database', async () => {
+    const result = await renderSignedIn();
+    getDatabaseHandleMock.mockReturnValue(null);
+    await act(async () => {
+      await result.current.signOut();
+    });
+    expect(clearSprayPrivateCachesMock).toHaveBeenCalledWith();
+    expect(clearStoredSprayPhotosMock).toHaveBeenCalled();
   });
 
   it('deletes the stored wall photographs when a 401 forces a sign-out', async () => {
@@ -1353,6 +1367,7 @@ describe('AuthProvider sign-out offline data wipe', () => {
     });
 
     expect(clearStoredSprayPhotosMock).toHaveBeenCalled();
+    expect(clearSprayPrivateCachesMock).toHaveBeenCalledWith();
   });
 
   it('still deletes the photographs when the selective wipe rejects', async () => {
@@ -1367,6 +1382,7 @@ describe('AuthProvider sign-out offline data wipe', () => {
     });
 
     await waitFor(() => expect(clearStoredSprayPhotosMock).toHaveBeenCalled());
+    expect(clearSprayPrivateCachesMock).toHaveBeenCalledWith();
   });
 
   it('wipes the downloaded catalogs when the account is deleted', async () => {

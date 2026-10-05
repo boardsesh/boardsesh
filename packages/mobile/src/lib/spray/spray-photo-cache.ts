@@ -19,6 +19,7 @@
 //     the download.
 
 import { Directory, File, Paths } from 'expo-file-system';
+import { sprayPrivacyGeneration } from './spray-privacy-generation';
 import { getSprayWall, listRegisteredSprayWalls, refreshSprayWall } from './spray-wall-registry';
 import { releaseDownloadTaskAfterNativeCompletion, retainDownloadTask } from '../../offline/download-task-retention';
 import {
@@ -76,8 +77,11 @@ function photoFile(identity: SprayPhotoIdentity): File {
  * only a completed one is moved into place. iOS already stages its own temp
  * file; this makes the two platforms behave the same.
  */
-function partialPhotoFile(identity: SprayPhotoIdentity): File {
-  return new File(new Directory(Paths.cache, SPRAY_PHOTO_CACHE_DIR_NAME), sprayPartialPhotoFileName(identity));
+function partialPhotoFile(identity: SprayPhotoIdentity, generation: string): File {
+  return new File(
+    new Directory(Paths.cache, SPRAY_PHOTO_CACHE_DIR_NAME),
+    `${generation}-${sprayPartialPhotoFileName(identity)}`,
+  );
 }
 
 /** Delete a file if it is there, swallowing the race where it is not. */
@@ -133,21 +137,22 @@ export function tryGetSprayPhotoPathSync(identity: SprayPhotoIdentity): string |
  * source to fall back to.
  */
 export async function ensureSprayPhotoCached(identity: SprayPhotoIdentity): Promise<string | null> {
-  const key = sprayPhotoFileName(identity);
+  const generation = sprayPrivacyGeneration(identity.layoutId);
+  const key = `${generation}:${sprayPhotoFileName(identity)}`;
   const alreadyOnDisk = tryGetSprayPhotoPathSync(identity);
   if (alreadyOnDisk) return alreadyOnDisk;
 
   const inFlight = pendingDownloads.get(key);
   if (inFlight) return inFlight;
 
-  const download = downloadSprayPhoto(identity, key).finally(() => {
-    pendingDownloads.delete(key);
+  const download = downloadSprayPhoto(identity, generation).finally(() => {
+    if (pendingDownloads.get(key) === download) pendingDownloads.delete(key);
   });
   pendingDownloads.set(key, download);
   return download;
 }
 
-async function downloadSprayPhoto(identity: SprayPhotoIdentity, key: string): Promise<string | null> {
+async function downloadSprayPhoto(identity: SprayPhotoIdentity, generation: string): Promise<string | null> {
   // The registry is the only holder of a live signature. A wall that has been
   // unregistered — or whose version moved on while this was queued — has no URL
   // worth fetching, and guessing one is not possible by design.
@@ -165,7 +170,7 @@ async function downloadSprayPhoto(identity: SprayPhotoIdentity, key: string): Pr
   }
 
   const destination = photoFile(identity);
-  const partial = partialPhotoFile(identity);
+  const partial = partialPhotoFile(identity, generation);
   try {
     const directory = new Directory(Paths.cache, SPRAY_PHOTO_CACHE_DIR_NAME);
     directory.create({ intermediates: true, idempotent: true });
@@ -177,6 +182,10 @@ async function downloadSprayPhoto(identity: SprayPhotoIdentity, key: string): Pr
     deleteQuietly(destination);
 
     await runRetainedDownload(wall.photoUrl, partial);
+    if (generation !== sprayPrivacyGeneration(identity.layoutId)) {
+      deleteQuietly(partial);
+      return null;
+    }
 
     // Resolved BEFORE the move, so nothing can throw between a completed
     // `moveSync` and the memo write. Reading the uri afterwards would leave the
@@ -184,12 +193,12 @@ async function downloadSprayPhoto(identity: SprayPhotoIdentity, key: string): Pr
     // `destination` — a file that is, by then, the correct one.
     const path = toPath(destination.uri);
     partial.moveSync(destination);
-    resolvedPaths.set(key, path);
+    resolvedPaths.set(sprayPhotoFileName(identity), path);
     return path;
   } catch {
     // Never leave a truncated body behind under either name.
     deleteQuietly(partial);
-    deleteQuietly(destination);
+    if (generation === sprayPrivacyGeneration(identity.layoutId)) deleteQuietly(destination);
     return null;
   }
 }
@@ -246,6 +255,32 @@ function isExpired(expiresAt: string): boolean {
  */
 export function clearSprayPhotoPathCache(): void {
   resolvedPaths.clear();
+}
+
+/** Erase every version and partial for one withdrawn wall, or all on sign-out. */
+export function deleteCachedSprayPhotos(layoutId?: number): void {
+  if (layoutId == null) resolvedPaths.clear();
+  else for (const key of resolvedPaths.keys()) if (key.startsWith(`${layoutId}-`)) resolvedPaths.delete(key);
+  try {
+    const directory = new Directory(Paths.cache, SPRAY_PHOTO_CACHE_DIR_NAME);
+    if (!directory.exists) return;
+    if (layoutId == null) directory.delete();
+    else {
+      // Match legacy names and the producer's nonce/session/wall staging prefix.
+      const wallPhotoPattern = new RegExp(`^(?:[a-z0-9]+-\\d+-\\d+-)?${layoutId}-\\d+\\.jpg(?:\\.part)?$`);
+      for (const entry of directory.list()) {
+        if (wallPhotoPattern.test(entry.name)) {
+          try {
+            entry.delete();
+          } catch {
+            /* Best effort; next withdrawal retries. */
+          }
+        }
+      }
+    }
+  } catch {
+    /* Cleanup must not prevent sign-out. */
+  }
 }
 
 /** Forget both the memo and any in-flight download. Tests only. */

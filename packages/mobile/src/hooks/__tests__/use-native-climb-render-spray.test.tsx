@@ -13,6 +13,13 @@ import { renderHook, waitFor } from '@testing-library/react';
 // staleness shows the previous generation's overlay over the new photograph.
 
 vi.mock('../../providers/theme-provider', () => ({ useAppColorScheme: () => 'light' }));
+const deletedOverlays = vi.hoisted(() => vi.fn());
+vi.mock('../overlay-cache-warmup', () => ({
+  listOverlayCacheEntries: () => null,
+  onOverlayCacheHydrated: () => {},
+  overlayCacheEntryExists: () => true,
+  deleteOverlayCacheEntry: deletedOverlays,
+}));
 
 vi.mock('expo-file-system', () => ({
   Directory: vi.fn(() => ({ exists: false, list: () => [] })),
@@ -43,9 +50,11 @@ vi.mock('../../lib/background-image-cache', () => ({
 
 vi.mock('../../lib/error-reporting', () => ({ reportError: vi.fn(), addErrorBreadcrumb: vi.fn() }));
 
-const { useNativeClimbRender, _resetWarmupForTests } = await import('../use-native-climb-render');
-const { clearSprayWallRegistry, registerSprayWall, setSprayWallLoader } =
+const { useNativeClimbRender, _resetWarmupForTests, getOrStartInflightRender, buildCacheKey } =
+  await import('../use-native-climb-render');
+const { clearSprayWallRegistry, registerSprayWall, setSprayWallLoader, withdrawAllSprayWalls, unregisterSprayWall } =
   await import('../../lib/spray/spray-wall-registry');
+const { getRenderedOverlay } = await import('../../lib/overlay-index');
 
 const LAYOUT_ID = 4200;
 const SPRAY_BOARD = {
@@ -99,6 +108,7 @@ beforeEach(() => {
   getBoardRenderDataMock.mockReset();
   getBoardRenderDataMock.mockImplementation(renderDataFromRegistry);
   ensureBackgroundsCachedMock.mockClear();
+  deletedOverlays.mockClear();
 });
 
 afterEach(() => {
@@ -106,6 +116,42 @@ afterEach(() => {
 });
 
 describe('useNativeClimbRender reacts to the spray registry', () => {
+  it('uses a new native destination after sign-out and removes a late old render without touching the new one', async () => {
+    registerWall(1);
+    const oldKey = buildCacheKey('spray', LAYOUT_ID, LAYOUT_ID, '1', 'p7r2', true);
+    let finishOld!: (uri: string) => void;
+    const oldRender = getOrStartInflightRender(
+      oldKey,
+      () =>
+        new Promise((resolve) => {
+          finishOld = resolve;
+        }),
+    );
+    const oldResult = oldRender.catch((error: unknown) => error);
+    withdrawAllSprayWalls();
+    registerWall(1);
+    const newKey = buildCacheKey('spray', LAYOUT_ID, LAYOUT_ID, '1', 'p7r2', true);
+    expect(newKey).not.toBe(oldKey);
+    const newUri = `file:///cache/board-thumbnails/${newKey}.png`;
+    await getOrStartInflightRender(newKey, async () => newUri);
+    const oldUri = `file:///cache/board-thumbnails/${oldKey}.png`;
+    finishOld(oldUri);
+    expect(await oldResult).toMatchObject({ name: 'RenderCancelledError' });
+    expect(deletedOverlays).toHaveBeenCalledWith(oldUri);
+    expect(deletedOverlays).not.toHaveBeenCalledWith(newUri);
+    expect(getRenderedOverlay(oldKey)).toBeUndefined();
+    expect(getRenderedOverlay(newKey)?.uri).toBe(newUri);
+  });
+
+  it('never dispatches an already withdrawn spray key, while catalogue keys remain usable', async () => {
+    const key = buildCacheKey('spray', LAYOUT_ID, LAYOUT_ID, '1', 'p7r2', true);
+    unregisterSprayWall(LAYOUT_ID);
+    const start = vi.fn(async () => 'file:///late.png');
+    await expect(getOrStartInflightRender(key, start)).rejects.toMatchObject({ name: 'RenderCancelledError' });
+    expect(start).not.toHaveBeenCalled();
+    const catalogue = buildCacheKey('kilter', 1, 1, '1', 'p7r2', true);
+    await expect(getOrStartInflightRender(catalogue, start)).resolves.toMatchObject({ uri: 'file:///late.png' });
+  });
   it('picks the wall up when it lands after mount', async () => {
     // Mounted with nothing registered: the board key carries `-sv0` and there is
     // no render data behind it.

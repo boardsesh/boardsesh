@@ -51,3 +51,7 @@ export function clearSprayPhotoPathCache(): void {
 export function resetSprayPhotoCacheForTests(): void {
   // Same: nothing is memoised in a browser.
 }
+
+export function deleteCachedSprayPhotos(_layoutId?: number): void {
+  // The browser twin reads the live registry and owns no filesystem copy.
+}

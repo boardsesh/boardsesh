@@ -51,26 +51,26 @@ describe('useSprayWallToken', () => {
   it('re-renders its caller when the wall lands', async () => {
     setSprayWallLoader(async () => {});
     const { result } = renderHook(() => useSprayWallToken('spray', LAYOUT_ID));
-    expect(result.current).toBe('-sv0');
+    expect(result.current).toMatch(/^-sv0-pr\d+-\d+$/);
 
     act(() => {
       registerSprayWall(LAYOUT_ID, wallPayload(1));
     });
 
-    await waitFor(() => expect(result.current).toBe('-sv1'));
+    await waitFor(() => expect(result.current).toMatch(/^-sv1-pr\d+-\d+$/));
   });
 
   it('re-renders on a reset', async () => {
     setSprayWallLoader(async () => {});
     registerSprayWall(LAYOUT_ID, wallPayload(1));
     const { result } = renderHook(() => useSprayWallToken('spray', LAYOUT_ID));
-    expect(result.current).toBe('-sv1');
+    expect(result.current).toMatch(/^-sv1-pr\d+-\d+$/);
 
     act(() => {
       registerSprayWall(LAYOUT_ID, wallPayload(2));
     });
 
-    await waitFor(() => expect(result.current).toBe('-sv2'));
+    await waitFor(() => expect(result.current).toMatch(/^-sv2-pr\d+-\d+$/));
   });
 
   it('asks for nothing and stays empty on a catalogue board', async () => {

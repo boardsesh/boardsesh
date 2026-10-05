@@ -27,6 +27,13 @@
 //     one is moved into place.
 
 import { Directory, File, Paths } from 'expo-file-system';
+import { sprayPrivacyGeneration } from './spray-privacy-generation';
+
+let storeGeneration = 0;
+const keyGenerations = new Map<string, number>();
+function writeGeneration(photoKey: string, layoutId?: number): string {
+  return `${sprayPrivacyGeneration(layoutId)}-${storeGeneration}-${keyGenerations.get(photoKey) ?? 0}`;
+}
 
 /** Directory under `Paths.document` holding one file per mirrored wall photo. */
 export const SPRAY_PHOTO_STORE_DIR_NAME = 'spray-wall-photos';
@@ -64,8 +71,8 @@ function storeFile(photoKey: string): File {
   return new File(storeDirectory(), sprayPhotoStoreFileName(photoKey));
 }
 
-function partialFile(photoKey: string): File {
-  return new File(storeDirectory(), `${sprayPhotoStoreFileName(photoKey)}.part`);
+function partialFile(photoKey: string, generation?: string): File {
+  return new File(storeDirectory(), `${sprayPhotoStoreFileName(photoKey)}${generation ? `-${generation}` : ''}.part`);
 }
 
 function deleteQuietly(file: File): void {
@@ -123,7 +130,9 @@ const downloadsInFlight = new Map<string, Promise<string | null>>();
  * reset fetches exactly one new file. Concurrent calls for one key share a
  * single download — see `downloadsInFlight`.
  */
-export function storeSprayPhoto(photoKey: string, photoUrl: string): Promise<string | null> {
+export function storeSprayPhoto(photoKey: string, photoUrl: string, layoutId?: number): Promise<string | null> {
+  const generation = writeGeneration(photoKey, layoutId);
+  const downloadKey = `${generation}:${photoKey}`;
   const existing = tryGetStoredSprayPhotoPathSync(photoKey);
   if (existing) return Promise.resolve(existing);
 
@@ -135,21 +144,26 @@ export function storeSprayPhoto(photoKey: string, photoUrl: string): Promise<str
   // there is no legitimate payload this rejects.
   if (!photoUrl.startsWith('https://')) return Promise.resolve(null);
 
-  const inFlight = downloadsInFlight.get(photoKey);
+  const inFlight = downloadsInFlight.get(downloadKey);
   // The URL is deliberately not compared: two signatures over the same key are
   // the same picture, and the newer caller wants the bytes, not its own request.
   if (inFlight) return inFlight;
 
-  const download = downloadSprayPhoto(photoKey, photoUrl).finally(() => {
-    downloadsInFlight.delete(photoKey);
+  const download = downloadSprayPhoto(photoKey, photoUrl, generation, layoutId).finally(() => {
+    if (downloadsInFlight.get(downloadKey) === download) downloadsInFlight.delete(downloadKey);
   });
-  downloadsInFlight.set(photoKey, download);
+  downloadsInFlight.set(downloadKey, download);
   return download;
 }
 
-async function downloadSprayPhoto(photoKey: string, photoUrl: string): Promise<string | null> {
+async function downloadSprayPhoto(
+  photoKey: string,
+  photoUrl: string,
+  generation: string,
+  layoutId?: number,
+): Promise<string | null> {
   const destination = storeFile(photoKey);
-  const partial = partialFile(photoKey);
+  const partial = partialFile(photoKey, generation);
   try {
     storeDirectory().create({ intermediates: true, idempotent: true });
     // Leftovers from a download this process did not finish: a `.part` was never
@@ -157,11 +171,15 @@ async function downloadSprayPhoto(photoKey: string, photoUrl: string): Promise<s
     deleteQuietly(partial);
 
     const downloaded = await File.downloadFileAsync(photoUrl, partial, { idempotent: true });
+    if (generation !== writeGeneration(photoKey, layoutId)) {
+      deleteQuietly(partial);
+      return null;
+    }
     downloaded.moveSync(destination);
     return destination.uri.replace(/^file:\/\//, '');
   } catch {
     deleteQuietly(partial);
-    deleteQuietly(destination);
+    if (generation === writeGeneration(photoKey, layoutId)) deleteQuietly(destination);
     return null;
   }
 }
@@ -180,8 +198,27 @@ async function downloadSprayPhoto(photoKey: string, photoUrl: string): Promise<s
  */
 export function deleteStoredSprayPhoto(photoKey: string | null | undefined): void {
   if (!photoKey) return;
+  // Keep the revoked epoch until sign-out advances storeGeneration. Removing it
+  // here would reset the effective epoch to zero and admit an old completion.
+  keyGenerations.set(photoKey, (keyGenerations.get(photoKey) ?? 0) + 1);
   deleteQuietly(storeFile(photoKey));
   deleteQuietly(partialFile(photoKey));
+  try {
+    const directory = storeDirectory();
+    if (!directory.exists) return;
+    const name = sprayPhotoStoreFileName(photoKey);
+    for (const entry of directory.list()) {
+      if (entry.name.startsWith(`${name}-`) && entry.name.endsWith('.part')) {
+        try {
+          entry.delete();
+        } catch {
+          /* A completing download retries removal. */
+        }
+      }
+    }
+  } catch {
+    /* Best effort, like the final file removal. */
+  }
 }
 
 /**
@@ -219,7 +256,12 @@ export function pruneStoredSprayPhotos(liveKeys: Iterable<string>): number {
       const keyName = isPartial ? name.slice(0, -'.part'.length) : name;
       if (!isPartial && keepNames.has(keyName)) continue;
       // A `.part` for a live key is a download that may be in flight right now.
-      if (isPartial && keepNames.has(keyName)) continue;
+      if (isPartial) {
+        // writeGeneration appends nonce + four counters. Parse that suffix once
+        // so a directory walk never scans every live key for every partial.
+        const generatedKeyName = /^(.*)-[a-z0-9]+-\d+-\d+-\d+-\d+$/.exec(keyName)?.[1];
+        if (keepNames.has(keyName) || (generatedKeyName != null && keepNames.has(generatedKeyName))) continue;
+      }
       try {
         entry.delete();
         deleted += 1;
@@ -242,6 +284,8 @@ export function pruneStoredSprayPhotos(liveKeys: Iterable<string>): number {
  * account — and it would still be there after the rows that name it are gone.
  */
 export function clearStoredSprayPhotos(): void {
+  storeGeneration += 1;
+  keyGenerations.clear();
   try {
     const directory = storeDirectory();
     if (directory.exists) directory.delete();
