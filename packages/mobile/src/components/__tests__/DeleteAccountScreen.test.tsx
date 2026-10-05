@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, fireEvent, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 // DeleteAccountScreen drives the App Store-required account-deletion flow, so
@@ -11,8 +11,11 @@ import { createElement, type ReactNode } from 'react';
 // stub the leaf components + providers so this stays a focused unit test.
 
 const ctrl = vi.hoisted(() => ({
-  infoData: undefined as number | undefined,
+  infoData: undefined as { publishedClimbCount: number; hasActiveStripeSubscription: boolean } | undefined,
   infoLoading: false,
+  infoFetching: false,
+  infoError: false,
+  refetchInfo: vi.fn(),
   mutateAsync: vi.fn(),
   signOut: vi.fn(),
   showToast: vi.fn(),
@@ -61,7 +64,13 @@ vi.mock('../../providers/theme-provider', () => ({
 vi.mock('../../providers/toast-provider', () => ({ useToast: () => ({ showToast: ctrl.showToast }) }));
 vi.mock('../../providers/auth-provider', () => ({ useAuth: () => ({ signOut: ctrl.signOut }) }));
 vi.mock('../../lib/graphql/hooks', () => ({
-  useDeleteAccountInfo: () => ({ data: ctrl.infoData, isLoading: ctrl.infoLoading }),
+  useDeleteAccountInfo: () => ({
+    data: ctrl.infoData,
+    isLoading: ctrl.infoLoading,
+    isFetching: ctrl.infoFetching,
+    isError: ctrl.infoError,
+    refetch: ctrl.refetchInfo,
+  }),
   useDeleteAccount: () => ({ mutateAsync: ctrl.mutateAsync }),
 }));
 
@@ -94,8 +103,11 @@ const CONFIRM_BTN = 'deleteAccount.dialog.confirm';
 const CONFIRM_PLACEHOLDER = 'deleteAccount.dialog.confirmPlaceholder';
 
 beforeEach(() => {
-  ctrl.infoData = 0;
+  ctrl.infoData = { publishedClimbCount: 0, hasActiveStripeSubscription: false };
   ctrl.infoLoading = false;
+  ctrl.infoFetching = false;
+  ctrl.infoError = false;
+  ctrl.refetchInfo.mockReset().mockResolvedValue(undefined);
   ctrl.mutateAsync.mockReset().mockResolvedValue(true);
   ctrl.signOut.mockReset().mockResolvedValue(undefined);
   ctrl.showToast.mockReset();
@@ -130,19 +142,73 @@ describe('DeleteAccountScreen', () => {
     expect(queryByTestId('setter-toggle')).toBeNull();
   });
 
+  it.each([undefined, { publishedClimbCount: 2, hasActiveStripeSubscription: true }])(
+    'blocks deletion after an info error even with cached warnings: %j',
+    (cachedInfo) => {
+      ctrl.infoData = cachedInfo;
+      ctrl.infoError = true;
+      const { getByTestId, getByPlaceholderText, getByText } = render(<DeleteAccountScreen />);
+      typeConfirm(getByPlaceholderText, 'DELETE');
+      expect(getByText('deleteAccount.dialog.infoError')).toBeTruthy();
+      expect((getByTestId(CONFIRM_BTN) as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.click(getByTestId(CONFIRM_BTN));
+      expect(ctrl.mutateAsync).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps deletion blocked during retry, then shows recovered billing and setter choices', async () => {
+    ctrl.infoData = undefined;
+    ctrl.infoError = true;
+    let finishRetry: (() => void) | undefined;
+    ctrl.refetchInfo.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRetry = resolve;
+        }),
+    );
+    const { getByTestId, getByPlaceholderText, getByText, rerender } = render(<DeleteAccountScreen />);
+    typeConfirm(getByPlaceholderText, 'DELETE');
+    fireEvent.click(getByTestId('common:actions.retry'));
+    expect(ctrl.refetchInfo).toHaveBeenCalledOnce();
+    ctrl.infoFetching = true;
+    rerender(<DeleteAccountScreen />);
+    expect((getByTestId('common:actions.retry') as HTMLButtonElement).disabled).toBe(true);
+    expect((getByTestId(CONFIRM_BTN) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(getByTestId(CONFIRM_BTN));
+    expect(ctrl.mutateAsync).not.toHaveBeenCalled();
+    await act(async () => {
+      ctrl.infoFetching = false;
+      ctrl.infoError = false;
+      ctrl.infoData = { publishedClimbCount: 3, hasActiveStripeSubscription: true };
+      finishRetry?.();
+    });
+    rerender(<DeleteAccountScreen />);
+    expect(getByText('deleteAccount.dialog.stripeCancellation')).toBeTruthy();
+    expect(getByTestId('setter-toggle')).toBeTruthy();
+    expect((getByTestId(CONFIRM_BTN) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('requires available info even when an empty result does not expose an error flag', () => {
+    ctrl.infoData = undefined;
+    const { getByTestId, getByPlaceholderText } = render(<DeleteAccountScreen />);
+    typeConfirm(getByPlaceholderText, 'DELETE');
+    expect((getByTestId(CONFIRM_BTN) as HTMLButtonElement).disabled).toBe(true);
+    expect(getByTestId('common:actions.retry')).toBeTruthy();
+  });
+
   it('shows the setter-name toggle only when there are published climbs', () => {
-    ctrl.infoData = 0;
+    ctrl.infoData = { publishedClimbCount: 0, hasActiveStripeSubscription: false };
     const withoutClimbs = render(<DeleteAccountScreen />);
     expect(withoutClimbs.queryByTestId('setter-toggle')).toBeNull();
     withoutClimbs.unmount();
 
-    ctrl.infoData = 3;
+    ctrl.infoData = { publishedClimbCount: 3, hasActiveStripeSubscription: false };
     const withClimbs = render(<DeleteAccountScreen />);
     expect(withClimbs.queryByTestId('setter-toggle')).not.toBeNull();
   });
 
   it('deletes with the chosen setter-name option then signs out', async () => {
-    ctrl.infoData = 2;
+    ctrl.infoData = { publishedClimbCount: 2, hasActiveStripeSubscription: false };
     const { getByTestId, getByPlaceholderText } = render(<DeleteAccountScreen />);
 
     fireEvent.click(getByTestId('setter-toggle')); // opt in to removing setter name

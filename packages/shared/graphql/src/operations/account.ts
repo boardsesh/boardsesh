@@ -5,12 +5,13 @@ export const GET_DELETE_ACCOUNT_INFO = gql`
   query GetDeleteAccountInfo {
     deleteAccountInfo {
       publishedClimbCount
+      hasActiveStripeSubscription
     }
   }
 `;
 
 export type GetDeleteAccountInfoQueryResponse = {
-  deleteAccountInfo: Pick<DeleteAccountInfo, 'publishedClimbCount'>;
+  deleteAccountInfo: Pick<DeleteAccountInfo, 'publishedClimbCount' | 'hasActiveStripeSubscription'>;
 };
 
 export const DELETE_ACCOUNT = gql`

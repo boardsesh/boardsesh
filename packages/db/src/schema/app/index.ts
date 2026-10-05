@@ -45,3 +45,4 @@ export * from './spray-walls';
 export * from './background-job-runs';
 export * from './provider-sync-controls';
 export * from './climb-stats-recompute-pending';
+export * from './supporters';

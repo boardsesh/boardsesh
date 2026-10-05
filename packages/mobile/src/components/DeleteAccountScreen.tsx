@@ -63,18 +63,25 @@ export function DeleteAccountScreen() {
   const infoQuery = useDeleteAccountInfo();
   const deleteAccount = useDeleteAccount();
 
-  // On a failed info fetch, `data` is undefined → treat as no published climbs
-  // (hide the setter-name option) but still allow deletion, matching web.
-  const publishedClimbCount = infoQuery.data ?? 0;
+  // Load the choices and billing warning before allowing account deletion.
+  const isInfoChecking = infoQuery.isLoading || infoQuery.isFetching;
+  const isInfoUnavailable = isInfoChecking || infoQuery.isError || !infoQuery.data;
+  const publishedClimbCount = infoQuery.data?.publishedClimbCount ?? 0;
+  const hasActiveStripeSubscription = infoQuery.data?.hasActiveStripeSubscription ?? false;
   const hasPublishedClimbs = publishedClimbCount > 0;
   const isConfirmed = confirmText === CONFIRM_PHRASE;
+
+  const handleRetryInfo = () => {
+    if (isDeleting || isInfoChecking) return;
+    void infoQuery.refetch();
+  };
 
   const handleDelete = async () => {
     // Block until the climb-info fetch settles: while it's loading,
     // publishedClimbCount reads as 0, so the setter-name option is hidden. Letting
     // the delete through here would submit removeSetterName:false and leave the
     // setter name on preserved climbs without the user ever seeing the choice.
-    if (!isConfirmed || isDeleting || infoQuery.isLoading) return;
+    if (!isConfirmed || isDeleting || isInfoUnavailable) return;
     let accountDeleted = false;
     try {
       setIsDeleting(true);
@@ -115,10 +122,32 @@ export function DeleteAccountScreen() {
         </Text>
       </View>
 
-      {infoQuery.isLoading ? (
+      {isInfoChecking ? (
         <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.checking}>
           {t('deleteAccount.dialog.checking')}
         </Text>
+      ) : null}
+
+      {infoQuery.isError || (!infoQuery.data && !isInfoChecking) ? (
+        <View style={[styles.card, styles.infoError, { backgroundColor: systemColors.secondaryBackground }]}>
+          <Text variant="body" color={systemColors.secondaryLabel}>
+            {t('deleteAccount.dialog.infoError')}
+          </Text>
+          <Button
+            title={t('common:actions.retry')}
+            variant="outlined"
+            onPress={handleRetryInfo}
+            disabled={isDeleting || isInfoChecking}
+          />
+        </View>
+      ) : null}
+
+      {hasActiveStripeSubscription ? (
+        <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
+          <Text variant="body" color={systemColors.secondaryLabel}>
+            {t('deleteAccount.dialog.stripeCancellation')}
+          </Text>
+        </View>
       ) : null}
 
       {hasPublishedClimbs ? (
@@ -171,7 +200,7 @@ export function DeleteAccountScreen() {
           onPress={() => {
             void handleDelete();
           }}
-          disabled={!isConfirmed || isDeleting || infoQuery.isLoading}
+          disabled={!isConfirmed || isDeleting || isInfoUnavailable}
           loading={isDeleting}
         />
         <Button
@@ -201,6 +230,10 @@ const styles = StyleSheet.create({
   section: {
     gap: spacing[3],
     marginTop: spacing[5],
+  },
+  infoError: {
+    marginTop: spacing[3],
+    gap: spacing[3],
   },
   checking: {
     marginHorizontal: spacing[4],

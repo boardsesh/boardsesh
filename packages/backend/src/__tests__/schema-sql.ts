@@ -6,6 +6,10 @@
 import { readFileSync } from 'node:fs';
 
 // Exercise the generated migration instead of maintaining a second detection schema.
+const supportSchema =
+  readFileSync(new URL('../../../db/drizzle/0251_stripe_supporters.sql', import.meta.url), 'utf8') +
+  '\n' +
+  readFileSync(new URL('../../../db/drizzle/0252_gigantic_roland_deschain.sql', import.meta.url), 'utf8');
 const detectionSchema = readFileSync(
   new URL('../../../db/drizzle/0234_shallow_the_phantom.sql', import.meta.url),
   'utf8',
@@ -33,6 +37,7 @@ const providerSyncControlsSchema = readFileSync(
 );
 
 export const schemaSQL = `
+  DROP TABLE IF EXISTS "stripe_support_operations", "stripe_support_claims", "stripe_supporters";
   DROP TABLE IF EXISTS "board_session_queues" CASCADE;
   DROP TABLE IF EXISTS "session_health_kit_workouts" CASCADE;
   DROP TABLE IF EXISTS "board_session_participants" CASCADE;
@@ -2033,4 +2038,5 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "rejected_reason" text,
     CONSTRAINT "board_climb_ingest_skips_board_type_climb_uuid_pk" PRIMARY KEY ("board_type", "climb_uuid")
   );
+${supportSchema}
 `;

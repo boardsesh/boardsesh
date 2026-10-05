@@ -82,6 +82,7 @@ import { integrationMutations } from './integrations/mutations';
 import { betaLinkQueries } from './beta-videos/queries';
 import { instagramBetaImportQueries } from './beta-videos/instagram-beta-import';
 import { syncQueries } from './sync/queries';
+import { supportMutations, supportQueries } from './support';
 import { resolveClimbNoMatch } from './shared/helpers';
 import { resolveClimbLostHolds, type ClimbLostHoldsParent } from './climbs/lost-holds';
 
@@ -142,6 +143,7 @@ export const resolvers = {
     ...syncQueries,
     ...feedbackQueries,
     ...qaQueries,
+    ...supportQueries,
   },
 
   Mutation: {
@@ -183,6 +185,7 @@ export const resolvers = {
     ...qaMutations,
     ...boardPresenceResolvers.Mutation,
     ...integrationMutations,
+    ...supportMutations,
   },
 
   Subscription: {

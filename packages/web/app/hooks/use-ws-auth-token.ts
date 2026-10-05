@@ -6,6 +6,8 @@ import { useSession } from 'next-auth/react';
 type WsAuthResponse = {
   token: string | null;
   authenticated: boolean;
+  userId?: string;
+  authSessionId?: string;
   error?: string;
 };
 
@@ -22,14 +24,16 @@ async function fetchWsAuthToken(): Promise<WsAuthResponse> {
  * Uses TanStack Query for deduplication and caching — all callers
  * share a single fetch via the shared query key.
  *
- * Includes the NextAuth session status in the query key so the token
- * is automatically re-fetched when the user logs in or out.
+ * Keys tokens by both the account and login identity so another account or
+ * a new login cannot reuse a still-fresh token from a previous session.
  */
 export function useWsAuthToken(enabled = true) {
-  const { status } = useSession();
+  const { data: session, status } = useSession();
+  const sessionUserId = session?.user?.id ?? null;
+  const authSessionId = session?.authSessionId ?? null;
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['wsAuthToken', status],
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ['wsAuthToken', status, sessionUserId, authSessionId],
     queryFn: async () => {
       const result = await fetchWsAuthToken();
       // A logged-in NextAuth session must yield a token. A null here is a
@@ -39,8 +43,17 @@ export function useWsAuthToken(enabled = true) {
       // `authToken: null`: it connects the session anonymously, so every
       // reconnect becomes a fresh connection-keyed participant (a ghost) and
       // inflates the crew/peer count into a false "party".
-      if (status === 'authenticated' && !result.token) {
+      if (status === 'authenticated' && (!result.token || !result.authenticated)) {
         throw new Error('ws-auth returned no token for an authenticated session');
+      }
+      if (
+        result.authenticated &&
+        (status !== 'authenticated' ||
+          !sessionUserId ||
+          result.userId !== sessionUserId ||
+          (result.authSessionId ?? null) !== authSessionId)
+      ) {
+        throw new Error('ws-auth returned a token for a different session identity');
       }
       return result;
     },
@@ -67,5 +80,6 @@ export function useWsAuthToken(enabled = true) {
     isAuthenticated: enabled ? (data?.authenticated ?? false) : false,
     isLoading: enabled && (isLoading || status === 'loading'),
     error: enabled ? errorMessage : null,
+    refetch,
   };
 }

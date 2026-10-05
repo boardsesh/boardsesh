@@ -1,5 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { parse } from 'graphql';
+import {
+  deduplicatePublicSupporters,
+  fetchAllPublicSupporters,
+  PUBLIC_SUPPORTERS_MAX_PAGES,
+  PUBLIC_SUPPORTERS_PAGE_SIZE,
+  type PublicSupporter,
+} from '../operations/support';
 
 // Smoke tests over the hand-written operation strings. The dedicated
 // schema-validation suite at packages/backend/src/__tests__/operations-schema-validation.test.ts
@@ -31,6 +38,7 @@ const operationModules: Array<{ name: string; load: () => Promise<Record<string,
   { name: 'queue-session', load: () => import('../operations/queue-session') },
   { name: 'sessions', load: () => import('../operations/sessions') },
   { name: 'social', load: () => import('../operations/social') },
+  { name: 'support', load: () => import('../operations/support') },
   { name: 'ticks', load: () => import('../operations/ticks') },
 ];
 
@@ -49,6 +57,75 @@ describe('every operation string is valid GraphQL', () => {
       // failure message would require regex juggling, so let parse() report.
       expect(() => parse(operation)).not.toThrow();
     }
+  });
+});
+
+describe('supporter pagination', () => {
+  it('requests every page without dropping supporters', async () => {
+    const supporters = Array.from({ length: PUBLIC_SUPPORTERS_PAGE_SIZE + 1 }, (_, index): PublicSupporter => ({
+      userId: `user-${index}`,
+      displayName: `Supporter ${index}`,
+      supportedAt: new Date(index).toISOString(),
+    }));
+    const requestPage = vi.fn(async ({ limit, offset }: { limit: number; offset: number }) => ({
+      publicSupporters: supporters.slice(offset, offset + limit),
+    }));
+
+    await expect(fetchAllPublicSupporters(requestPage)).resolves.toEqual(supporters);
+    expect(requestPage).toHaveBeenNthCalledWith(1, { limit: PUBLIC_SUPPORTERS_PAGE_SIZE, offset: 0 });
+    expect(requestPage).toHaveBeenNthCalledWith(2, {
+      limit: PUBLIC_SUPPORTERS_PAGE_SIZE,
+      offset: PUBLIC_SUPPORTERS_PAGE_SIZE,
+    });
+  });
+
+  it('deduplicates overlapping pages while preserving first appearance and continuing pagination', async () => {
+    const firstPage = Array.from({ length: PUBLIC_SUPPORTERS_PAGE_SIZE }, (_, index): PublicSupporter => ({
+      userId: `user-${index}`,
+      displayName: `Supporter ${index}`,
+      supportedAt: new Date(index).toISOString(),
+    }));
+    const newSupporter: PublicSupporter = {
+      userId: 'new-user',
+      displayName: 'New supporter',
+      supportedAt: '2026-10-01',
+    };
+    const requestPage = vi
+      .fn()
+      .mockResolvedValueOnce({ publicSupporters: firstPage })
+      .mockResolvedValueOnce({
+        publicSupporters: [{ ...firstPage.at(-1)!, displayName: 'Changed later' }, newSupporter],
+      });
+    await expect(fetchAllPublicSupporters(requestPage)).resolves.toEqual([...firstPage, newSupporter]);
+    expect(requestPage).toHaveBeenCalledTimes(2);
+    expect(requestPage).toHaveBeenLastCalledWith({
+      limit: PUBLIC_SUPPORTERS_PAGE_SIZE,
+      offset: PUBLIC_SUPPORTERS_PAGE_SIZE,
+    });
+  });
+
+  it('keeps the first supporter object without changing input order or contents', () => {
+    const firstSupporter: PublicSupporter = { userId: 'first', displayName: 'First', supportedAt: '2026-10-01' };
+    const nextSupporter: PublicSupporter = { userId: 'next', displayName: 'Next', supportedAt: '2026-10-02' };
+    const duplicateSupporter = { ...firstSupporter, displayName: 'Duplicate' };
+    const supporters = [firstSupporter, nextSupporter, duplicateSupporter];
+    expect(deduplicatePublicSupporters(supporters)).toEqual([firstSupporter, nextSupporter]);
+    expect(deduplicatePublicSupporters(supporters)[0]).toBe(firstSupporter);
+    expect(supporters).toEqual([firstSupporter, nextSupporter, duplicateSupporter]);
+  });
+
+  it('stops after the public supporter page ceiling', async () => {
+    const fullPage = Array.from({ length: PUBLIC_SUPPORTERS_PAGE_SIZE }, (_, index): PublicSupporter => ({
+      userId: `user-${index}`,
+      displayName: `Supporter ${index}`,
+      supportedAt: new Date(index).toISOString(),
+    }));
+    const requestPage = vi.fn().mockResolvedValue({ publicSupporters: fullPage });
+
+    const supporters = await fetchAllPublicSupporters(requestPage);
+
+    expect(requestPage).toHaveBeenCalledTimes(PUBLIC_SUPPORTERS_MAX_PAGES);
+    expect(supporters).toHaveLength(PUBLIC_SUPPORTERS_PAGE_SIZE);
   });
 });
 

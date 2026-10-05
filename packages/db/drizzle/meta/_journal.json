@@ -1758,6 +1758,20 @@
       "when": 1790987038165,
       "tag": "0250_drop_unused_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 251,
+      "version": "7",
+      "when": 1791167570429,
+      "tag": "0251_stripe_supporters",
+      "breakpoints": true
+    },
+    {
+      "idx": 252,
+      "version": "7",
+      "when": 1791167570430,
+      "tag": "0252_gigantic_roland_deschain",
+      "breakpoints": true
     }
   ]
 }

@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
+import type { PublicSupporter } from '@boardsesh/graphql/operations/support';
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn() }));
 const openUrl = vi.hoisted(() => ({ openExternalUrl: vi.fn() }));
@@ -9,6 +10,16 @@ const discord = vi.hoisted(() => ({ openDiscordInvite: vi.fn() }));
 // Donation links are region-gated (see src/lib/donation-links.ts). Flipped per
 // test: allowed renders the CTA, not-allowed renders unlinked text.
 const donationLinks = vi.hoisted(() => ({ allowed: false }));
+const publicSupporters = vi.hoisted(() => ({
+  additionalPages: [] as PublicSupporter[][],
+  refetch: vi.fn(),
+  fetchNextPage: vi.fn(),
+  hasNextPage: true,
+  isFetching: false,
+  isFetchNextPageError: false,
+  isError: null as boolean | null,
+  items: [{ userId: 'stripe-user', displayName: 'Stripe Climber', avatarUrl: null, supportedAt: '2026-09-22' }],
+}));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
@@ -16,6 +27,30 @@ vi.mock('react-native', () => ({
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('section', null, children),
   StyleSheet: { create: (styles: unknown) => styles },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+}));
+
+vi.mock('@shopify/flash-list', () => ({
+  FlashList: ({
+    data,
+    renderItem,
+    ListHeaderComponent,
+    ListFooterComponent,
+    onEndReached,
+  }: {
+    data: Array<{ userId: string }>;
+    renderItem: (row: { item: { userId: string } }) => ReactNode;
+    ListHeaderComponent: ReactNode;
+    ListFooterComponent: ReactNode;
+    onEndReached: () => void;
+  }) =>
+    createElement(
+      'section',
+      null,
+      ListHeaderComponent,
+      ...data.map((item) => createElement('div', { key: item.userId }, renderItem({ item }))),
+      createElement('button', { onClick: onEndReached, type: 'button' }, 'Reach end'),
+      ListFooterComponent,
+    ),
 }));
 
 vi.mock('expo-router', () => ({ Stack: { Screen: () => null }, useRouter: () => routerMock }));
@@ -57,6 +92,22 @@ vi.mock('../../src/lib/donation-links', () => ({
   SUPPORT_URL: 'https://www.boardsesh.com/support',
   SUPPORT_URL_DISPLAY: 'boardsesh.com/support',
   useDonationLinksAllowed: () => donationLinks.allowed,
+}));
+vi.mock('../../src/lib/graphql/hooks/use-public-supporters', () => ({
+  usePublicSupporters: () => ({
+    data: {
+      pages: [
+        { publicSupporters: publicSupporters.items },
+        ...publicSupporters.additionalPages.map((supporters) => ({ publicSupporters: supporters })),
+      ],
+    },
+    fetchNextPage: publicSupporters.fetchNextPage,
+    hasNextPage: publicSupporters.hasNextPage,
+    isFetching: publicSupporters.isFetching,
+    isFetchNextPageError: publicSupporters.isFetchNextPageError,
+    isError: publicSupporters.isError ?? publicSupporters.isFetchNextPageError,
+    refetch: publicSupporters.refetch,
+  }),
 }));
 
 vi.mock('../../src/components/Button', () => ({
@@ -104,6 +155,16 @@ beforeEach(() => {
   openUrl.openExternalUrl.mockClear();
   discord.openDiscordInvite.mockClear();
   donationLinks.allowed = false;
+  publicSupporters.additionalPages = [];
+  publicSupporters.refetch.mockReset().mockResolvedValue(undefined);
+  publicSupporters.fetchNextPage.mockReset();
+  publicSupporters.hasNextPage = true;
+  publicSupporters.isFetching = false;
+  publicSupporters.isFetchNextPageError = false;
+  publicSupporters.isError = null;
+  publicSupporters.items = [
+    { userId: 'stripe-user', displayName: 'Stripe Climber', avatarUrl: null, supportedAt: '2026-09-22' },
+  ];
 });
 
 describe('AcknowledgementsScreen', () => {
@@ -121,6 +182,80 @@ describe('AcknowledgementsScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Shuying Zhang' }));
 
     expect(openUrl.openExternalUrl).toHaveBeenCalledWith('https://github.com/bluejayio', 'acknowledgements');
+  });
+
+  it('opens a Stripe supporter in their Boardsesh profile', () => {
+    render(<AcknowledgementsScreen />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stripe Climber' }));
+
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/users/[userId]',
+      params: { userId: 'stripe-user' },
+    });
+  });
+
+  it('renders each supporter once when loaded pages overlap, retaining the first profile label', () => {
+    publicSupporters.additionalPages = [
+      [
+        { ...publicSupporters.items[0], displayName: 'Duplicate Stripe Climber' },
+        { userId: 'next-supporter', displayName: 'Next Climber', supportedAt: '2026-10-01' },
+      ],
+    ];
+    render(<AcknowledgementsScreen />);
+    expect(screen.getAllByRole('button', { name: 'Stripe Climber' })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Duplicate Stripe Climber' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Next Climber' }));
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/users/[userId]', params: { userId: 'next-supporter' } });
+  });
+
+  it('fetches one page on end reach and blocks overlapping requests', async () => {
+    let finishPage: (() => void) | undefined;
+    publicSupporters.fetchNextPage.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishPage = resolve;
+        }),
+    );
+    render(<AcknowledgementsScreen />);
+    expect(publicSupporters.fetchNextPage).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Reach end' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reach end' }));
+    expect(publicSupporters.fetchNextPage).toHaveBeenCalledTimes(1);
+    finishPage?.();
+  });
+
+  it('keeps loaded supporter profiles after a later page fails', () => {
+    publicSupporters.isFetchNextPageError = true;
+    render(<AcknowledgementsScreen />);
+    fireEvent.click(screen.getByRole('button', { name: 'Stripe Climber' }));
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/users/[userId]', params: { userId: 'stripe-user' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reach end' }));
+    expect(publicSupporters.fetchNextPage).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'actions.retry' }));
+    expect(publicSupporters.fetchNextPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers Retry defensively when only the next-page error flag is set', () => {
+    publicSupporters.isError = false;
+    publicSupporters.isFetchNextPageError = true;
+    render(<AcknowledgementsScreen />);
+    expect(screen.getByRole('button', { name: 'Stripe Climber' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Reach end' }));
+    expect(publicSupporters.fetchNextPage).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'actions.retry' }));
+    expect(publicSupporters.fetchNextPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries the initial supporter fetch when no profiles have loaded', () => {
+    publicSupporters.items = [];
+    publicSupporters.isError = true;
+    publicSupporters.isFetchNextPageError = false;
+    render(<AcknowledgementsScreen />);
+    expect(screen.queryByRole('button', { name: 'Stripe Climber' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'actions.retry' }));
+    expect(publicSupporters.refetch).toHaveBeenCalledOnce();
+    expect(publicSupporters.fetchNextPage).not.toHaveBeenCalled();
   });
 
   it('thanks private sponsors as an anonymous count', () => {
