@@ -840,7 +840,7 @@ export async function runCloudflareApply(argv: string[] = process.argv.slice(2))
       // resource throws here instead of falling out of the chain and reporting
       // "applied" for a write that never happened.
       const phase = resolveRulePhase(change.resource);
-      if (!appliedPhases.has(phase.phase)) {
+      if (!appliedPhases.has(phase.phase) && !refusedPhases.has(phase.phase)) {
         const { rules } = upsertCacheRule(phase.selectLive(live), [...phase.selectDesired(desired)]);
         try {
           await applyPhaseRules(token, zoneId, phase.phase, rules);
