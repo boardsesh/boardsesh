@@ -12,8 +12,13 @@ import { useGradeSourceSearchInput } from './search-grade-source';
 
 type SearchClimbsBoardScope = Pick<ClimbSearchInput, 'boardName' | 'layoutId' | 'sizeId' | 'setIds'>;
 
+type SearchClimbsCacheEntry = {
+  state: { data: InfiniteData<SearchClimbsQueryResponse, number> | undefined };
+};
+
 export type InfiniteSearchClimbsOptions = {
-  staleTime?: number;
+  /** A fixed freshness, or one decided per cached result (see `staleTimeUnlessEmpty`). */
+  staleTime?: number | ((query: SearchClimbsCacheEntry) => number);
   gcTime?: number;
   /**
    * Keep the previous results on screen (as placeholder data) while a new
@@ -28,6 +33,24 @@ export type InfiniteSearchClimbsOptions = {
 // memoized-select fast path applies instead of re-running per render.
 function selectSearchClimbPages(rawPages: InfiniteData<SearchClimbsQueryResponse, number>) {
   return { pages: rawPages.pages.map((page) => page.searchClimbs), pageParams: rawPages.pageParams };
+}
+
+/**
+ * A `staleTime` for a long-lived list: `staleTimeMs` for a first page with
+ * climbs on it, and stale at once for one without.
+ *
+ * With no connection and no downloaded board, `offlineAwareRequest` answers a
+ * search with an empty page, and React Query caches that as a success. Under a
+ * long fixed `staleTime` the empty page would outlive the outage: nothing asks
+ * again when the connection returns, so a board with thousands of climbs keeps
+ * reading "no climbs". An empty page that is never fresh is asked for again on
+ * reconnect and the next time it is shown.
+ */
+export function staleTimeUnlessEmpty(staleTimeMs: number): (query: SearchClimbsCacheEntry) => number {
+  return (query) => {
+    const firstPage = query.state.data?.pages[0];
+    return firstPage && firstPage.searchClimbs.climbs.length === 0 ? 0 : staleTimeMs;
+  };
 }
 
 function getSearchClimbsQueryKey(input: ClimbSearchInput) {

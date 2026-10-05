@@ -170,6 +170,9 @@ vi.mock('../../board-discovery/BoardConfigChips', () => ({
     ),
 }));
 vi.mock('../../../lib/graphql/hooks/use-infinite-search-climbs', () => ({
+  // A marker in place of the real function, so a test can see which rule the
+  // preview asked for. The rule itself is tested with the hook.
+  staleTimeUnlessEmpty: (staleTimeMs: number) => ({ unlessEmptyMs: staleTimeMs }),
   useInfiniteSearchClimbs: (input: ClimbSearchInput, enabled: boolean, options: unknown) => {
     searchMock(input, enabled, options);
     const result = (input.name ? searchResults.byName[input.name] : searchResults.byBoard[input.boardName]) ?? {
@@ -289,7 +292,9 @@ describe('NoBoardClimbsPreview', () => {
         sortOrder: 'desc',
       }),
       true,
-      expect.anything(),
+      // Cached for an hour, except an empty page: that is also what a search
+      // answers with while there is no connection.
+      { staleTime: { unlessEmptyMs: 60 * 60 * 1000 } },
     );
   });
 
@@ -496,7 +501,7 @@ describe('NoBoardClimbsPreview', () => {
     searchResults.byBoard = { kilter: result };
     renderPreview();
 
-    expect(onSearchSettled).toHaveBeenCalledExactlyOnceWith(outcome, KILTER);
+    expect(onSearchSettled).toHaveBeenCalledExactlyOnceWith(outcome);
   });
 
   // React Query retries twice more before `isError`. That is seconds of
@@ -505,7 +510,7 @@ describe('NoBoardClimbsPreview', () => {
     searchResults.byBoard = { kilter: { data: undefined, isError: false, failureCount: 1 } };
     renderPreview();
 
-    expect(onSearchSettled).toHaveBeenCalledExactlyOnceWith('error', KILTER);
+    expect(onSearchSettled).toHaveBeenCalledExactlyOnceWith('error');
   });
 
   // Before any climbs have shown, the owner takes the preview away on a
@@ -616,7 +621,7 @@ describe('NoBoardClimbsPreview', () => {
       expect(screen.getByText('No climb called "zzzz" on this board.')).toBeTruthy();
       expect(screen.queryByTestId('no-board-preview-problem')).toBeNull();
       expect(screen.queryByTestId('skeleton-row')).toBeNull();
-      expect(onSearchSettled).toHaveBeenCalledExactlyOnceWith('ready', KILTER);
+      expect(onSearchSettled).toHaveBeenCalledExactlyOnceWith('ready');
     });
 
     it('shows skeleton rows while the name is being looked up', () => {
@@ -631,7 +636,7 @@ describe('NoBoardClimbsPreview', () => {
       renderPreview(undefined, true, 'pin');
 
       expect(screen.getByTestId('no-board-preview-problem').textContent).toContain("Couldn't load these climbs.");
-      expect(onSearchSettled).toHaveBeenCalledExactlyOnceWith('ready', KILTER);
+      expect(onSearchSettled).toHaveBeenCalledExactlyOnceWith('ready');
     });
 
     it('brings the lit board back when the field is cleared', () => {
@@ -666,7 +671,7 @@ describe('NoBoardClimbsPreview', () => {
         expect.anything(),
         expect.anything(),
       );
-      expect(onSearchSettled).toHaveBeenCalledExactlyOnceWith('empty', KILTER);
+      expect(onSearchSettled).toHaveBeenCalledExactlyOnceWith('empty');
     });
   });
 });
