@@ -1363,6 +1363,9 @@ and when the SQLite sign-out wipe fails.
 Session and per-wall generations fence pending downloads and render results.
 Partial photo downloads use generation-specific destinations; a late transfer
 removes its own partial rather than publishing it or erasing a replacement.
+Selective renderer cleanup recognizes legacy wall/version names and staging
+names with the producer's launch nonce and two epoch counters. Offline photo
+sinks skip rows with non-finite layout IDs rather than persist unfenced photos.
 Spray overlay destinations include a launch nonce and privacy generation, so a
 late native render cannot overwrite another session's PNG. Stale completions
 delete their own PNG and never enter the synchronous overlay index. Warm-up

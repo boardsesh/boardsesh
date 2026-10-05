@@ -265,9 +265,11 @@ export function deleteCachedSprayPhotos(layoutId?: number): void {
     const directory = new Directory(Paths.cache, SPRAY_PHOTO_CACHE_DIR_NAME);
     if (!directory.exists) return;
     if (layoutId == null) directory.delete();
-    else
+    else {
+      // Match legacy names and the producer's nonce/session/wall staging prefix.
+      const wallPhotoPattern = new RegExp(`^(?:[a-z0-9]+-\\d+-\\d+-)?${layoutId}-\\d+\\.jpg(?:\\.part)?$`);
       for (const entry of directory.list()) {
-        if (new RegExp(`^(?:.*-)?${layoutId}-\\d+\\.jpg(?:\\.part)?$`).test(entry.name)) {
+        if (wallPhotoPattern.test(entry.name)) {
           try {
             entry.delete();
           } catch {
@@ -275,6 +277,7 @@ export function deleteCachedSprayPhotos(layoutId?: number): void {
           }
         }
       }
+    }
   } catch {
     /* Cleanup must not prevent sign-out. */
   }

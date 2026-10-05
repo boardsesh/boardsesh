@@ -102,8 +102,8 @@ const PART_URI = `file:///cache/spray-walls/${sprayPartialPhotoFileName(IDENTITY
 const FUTURE = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 const PAST = new Date(Date.now() - 60 * 1000).toISOString();
 
-function registerWall(expiresAt: string) {
-  registerSprayWall(LAYOUT_ID, {
+function registerWall(expiresAt: string, layoutId = LAYOUT_ID) {
+  registerSprayWall(layoutId, {
     wallUuid: 'wall-uuid',
     angle: 40,
     version: 1,
@@ -134,6 +134,28 @@ afterEach(() => {
 });
 
 describe('ensureSprayPhotoCached', () => {
+  it('selects real generation-scoped partials and legacy names while preserving another wall and unknown prefixes', async () => {
+    const otherIdentity = { layoutId: 4201, version: 1 };
+    registerWall(FUTURE);
+    registerWall(FUTURE, otherIdentity.layoutId);
+    fsState.downloadResult = 'hang';
+    const targetDownload = ensureSprayPhotoCached(IDENTITY);
+    const otherDownload = ensureSprayPhotoCached(otherIdentity);
+    const targetPartial = fsState.downloads[0].destination;
+    const otherPartial = fsState.downloads[1].destination;
+    const unknownPrefix = `file:///cache/spray-walls/unrelated-${sprayPartialPhotoFileName(IDENTITY)}`;
+    for (const uri of [targetPartial, otherPartial, FINAL_URI, PART_URI, unknownPrefix])
+      fsState.files.set(uri, { exists: true });
+    registry.unregisterSprayWall(LAYOUT_ID);
+    deleteCachedSprayPhotos(LAYOUT_ID);
+    const survivingNames = [...fsState.files.keys()];
+    fsState.downloadResult = 'resolve';
+    for (const resolveTransfer of fsState.pendingResolvers.splice(0)) resolveTransfer();
+    await Promise.all([targetDownload, otherDownload]);
+    expect(survivingNames.sort()).toEqual([otherPartial, unknownPrefix].sort());
+    expect(fsState.files.has(FINAL_URI)).toBe(false);
+    expect(fsState.files.has(`file:///cache/spray-walls/${sprayPhotoFileName(otherIdentity)}`)).toBe(true);
+  });
   it.each(['resolve', 'reject'] as const)(
     'discards a late withdrawn download without deleting the new session’s photo (%s)',
     async (completion) => {

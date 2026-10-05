@@ -85,6 +85,18 @@ beforeEach(async () => {
 });
 
 describe('sprayWallPhotoSink', () => {
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 'not-a-layout'])(
+    'skips photographs whose layout identity is non-finite (%s)',
+    async (layoutId) => {
+      await insertWallRow();
+      await pull([wallDocument({ layout_id: layoutId })]);
+      expect(stored).toEqual([]);
+      expect(await getCheckpoint(db, CHECKPOINT_KEY)).not.toBeNull();
+      expect(
+        await db.getFirstAsync('SELECT key FROM sync_meta WHERE key LIKE ?', ['spray-photo-pending:%']),
+      ).toBeNull();
+    },
+  );
   it('stores the photograph the page carried', async () => {
     await insertWallRow();
 

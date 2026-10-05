@@ -44,6 +44,8 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
     const photoKey = document.photo_key;
     const photoUrl = document.photo_url;
     const layoutId = typeof document.layout_id === 'number' ? document.layout_id : Number(document.layout_id);
+    // A photograph without a valid wall identity cannot be fenced per wall.
+    if (!Number.isFinite(layoutId)) continue;
     // A wall with no published version has neither; a backend with no private
     // bucket configured sends the key and no URL. Both are "nothing to fetch",
     // not an error — the wall still syncs its holds.
@@ -63,12 +65,12 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
     // for — and that one goes through `recordSprayPhotoFailure` below.
     if (typeof photoUrl !== 'string' || !photoUrl) continue;
 
-    const wallGeneration = sprayPrivacyGeneration(Number.isFinite(layoutId) ? layoutId : undefined);
-    const stored = await storeSprayPhoto(photoKey, photoUrl, Number.isFinite(layoutId) ? layoutId : undefined);
+    const wallGeneration = sprayPrivacyGeneration(layoutId);
+    const stored = await storeSprayPhoto(photoKey, photoUrl, layoutId);
     if (generation !== sprayPrivacyGeneration()) return;
-    if (wallGeneration !== sprayPrivacyGeneration(Number.isFinite(layoutId) ? layoutId : undefined)) continue;
+    if (wallGeneration !== sprayPrivacyGeneration(layoutId)) continue;
     if (stored) {
-      if (Number.isFinite(layoutId)) await clearSprayPhotoPending(db, layoutId);
+      await clearSprayPhotoPending(db, layoutId);
       continue;
     }
 
@@ -81,7 +83,7 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
     //
     // Not on a platform with no store at all: web would otherwise rewind on
     // every cycle forever to fetch bytes it has nowhere to put.
-    if (SPRAY_PHOTO_STORE_AVAILABLE && Number.isFinite(layoutId)) {
+    if (SPRAY_PHOTO_STORE_AVAILABLE) {
       try {
         await recordSprayPhotoFailure(db, layoutId, photoKey);
       } catch (error) {

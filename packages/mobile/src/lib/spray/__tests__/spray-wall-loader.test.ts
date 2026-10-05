@@ -73,6 +73,17 @@ function deferredResponse() {
   return { promise, resolve };
 }
 
+beforeEach(() => {
+  clearSprayWallRegistry();
+  requestMock.mockReset();
+  reportHandledErrorMock.mockReset();
+  invalidateQueriesMock.mockClear();
+});
+
+afterEach(() => {
+  clearSprayWallRegistry();
+});
+
 describe('withdrawal erases React Query payloads', () => {
   it('continues registry and query withdrawal if another cleanup subscriber fails', () => {
     const unsubscribeBroken = subscribeToSprayWallWithdrawals(() => {
@@ -258,17 +269,6 @@ describe('withdrawal erases React Query payloads', () => {
     queryClient.clear();
     previousClient.clear();
   });
-});
-
-beforeEach(() => {
-  clearSprayWallRegistry();
-  requestMock.mockReset();
-  reportHandledErrorMock.mockReset();
-  invalidateQueriesMock.mockClear();
-});
-
-afterEach(() => {
-  clearSprayWallRegistry();
 });
 
 describe('loadSprayWall', () => {
