@@ -3,7 +3,10 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import buildExpoConfig, { ANDROID_BOARD_LINK_PREFIXES } from '../packages/mobile/app.config';
+import { SUPPORTED_BOARDS } from '../packages/shared-schema/src/types/board-config';
 
 // Guards the env the three mobile workflows share, for two reasons:
 //
@@ -258,7 +261,6 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
   it('keeps retired Android preview links as a compatibility ingress', () => {
     const appConfig = readFileSync(resolve(REPO_ROOT, 'packages/mobile/app.config.ts'), 'utf8');
     expect(appConfig).toContain("host: 'www.boardsesh.com', pathPrefix: '/preview'");
-    expect(appConfig).toContain("host: 'boardsesh.com', pathPrefix: '/preview'");
   });
 
   it('preserves the legacy channel env when resolving frozen release anchors', () => {
@@ -899,5 +901,71 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     const preview = readWorkflow(OTA_PREVIEW);
     expect(preview).toMatch(/GOOGLE_MAPS_API_KEY:\s*\$\{\{\s*secrets\.GOOGLE_MAPS_API_KEY\s*\}\}/);
     expect((preview.match(/GOOGLE_MAPS_API_KEY:/g) ?? []).length).toBe(1);
+  });
+});
+
+describe('Android App Links (verified intent filters)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  type LinkData = { scheme?: string; host?: string; pathPrefix?: string; pathPattern?: string; path?: string };
+
+  function verifiedLinkData(): LinkData[] {
+    // An empty TAILSCALE_HOSTS makes app.config.ts skip its `tailscale status`
+    // subprocess, so building the config here stays hermetic on a dev machine.
+    vi.stubEnv('TAILSCALE_HOSTS', '');
+    const config = buildExpoConfig({
+      config: {},
+      projectRoot: resolve(REPO_ROOT, 'packages/mobile'),
+    } as Parameters<typeof buildExpoConfig>[0]);
+    return (config.android?.intentFilters ?? [])
+      .filter((filter) => filter.autoVerify === true)
+      .flatMap((filter) => (Array.isArray(filter.data) ? filter.data : filter.data ? [filter.data] : []));
+  }
+
+  it('claims one prefix per supported board, and nothing else from that list', () => {
+    // A shared climb is https://www.boardsesh.com/{board}/.../view/{climb}. A board
+    // missing here means its share links open Chrome instead of the app, with no
+    // failing build to say so.
+    expect([...ANDROID_BOARD_LINK_PREFIXES].sort()).toEqual(SUPPORTED_BOARDS.map((board) => `/${board}/`).sort());
+  });
+
+  it.each([...SUPPORTED_BOARDS])('opens www %s climb and list links in the app', (board) => {
+    expect(verifiedLinkData()).toContainEqual({
+      scheme: 'https',
+      host: 'www.boardsesh.com',
+      pathPrefix: `/${board}/`,
+    });
+  });
+
+  it('keeps the join, spray wall, preview and password-reset links', () => {
+    const prefixes = verifiedLinkData().map((entry) => entry.pathPrefix);
+    expect(prefixes).toEqual(expect.arrayContaining(['/join', '/b/', '/preview', '/auth/reset-password']));
+  });
+
+  it('claims www only, because the apex cannot be verified', () => {
+    // https://boardsesh.com/.well-known/assetlinks.json is a 301 to www, which
+    // Google's verifier rejects. On Android 11 and older one unverified host
+    // fails verification for every host, so an apex entry here would stop the
+    // www links opening the app on those phones.
+    const hosts = new Set(verifiedLinkData().map((entry) => entry.host));
+    expect([...hosts]).toEqual(['www.boardsesh.com']);
+  });
+
+  it('never claims a path that carries the OAuth callback', () => {
+    // #1797: a catch-all prefix pulled /api/auth/callback/google into the app and
+    // broke Google sign-in. Every entry must be a prefix, and none may be a
+    // prefix of the callback or of the native OAuth start page.
+    const browserOnlyPaths = ['/api/auth/callback/google', '/api/auth/native/callback', '/auth/native-start'];
+    for (const entry of verifiedLinkData()) {
+      expect(entry.pathPattern).toBeUndefined();
+      expect(entry.path).toBeUndefined();
+      const { pathPrefix } = entry;
+      expect(pathPrefix, 'an entry without a pathPrefix claims the whole host').toBeTruthy();
+      for (const browserOnlyPath of browserOnlyPaths) {
+        expect(browserOnlyPath.startsWith(pathPrefix ?? ''), `${pathPrefix} captures ${browserOnlyPath}`).toBe(false);
+      }
+    }
   });
 });

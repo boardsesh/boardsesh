@@ -19,6 +19,30 @@ export function localeStringsPath(language: string): string {
   return `./locales/${language}.json`;
 }
 
+// One Android App Link prefix per board name, so a shared climb or list link
+// (https://www.boardsesh.com/{board}/{layout}/{size}/{sets}/{angle}/view/{climb})
+// opens the app. The trailing slash keeps a prefix to whole path segments:
+// '/spray/' must not claim '/spray-walls'. Never collapse these into a catch-all
+// '/': that pulled /api/auth/callback/google out of Chrome Custom Tabs and broke
+// Google sign-in (#1797).
+//
+// Hardcoded rather than imported from SUPPORTED_BOARDS: this file is evaluated
+// by Expo's config loader, EAS and the fingerprint tooling, which do not all
+// resolve TypeScript-source workspace packages, and today it imports nothing
+// outside node builtins. scripts/mobile-ci-env-parity.test.ts fails when the two
+// lists differ, so a tenth board cannot ship without its prefix.
+export const ANDROID_BOARD_LINK_PREFIXES = [
+  '/kilter/',
+  '/tension/',
+  '/moonboard/',
+  '/decoy/',
+  '/touchstone/',
+  '/grasshopper/',
+  '/soill/',
+  '/woods/',
+  '/spray/',
+] as const;
+
 type WebPlatformResolution = {
   platforms: NonNullable<ExpoConfig['platforms']>;
   web?: NonNullable<ExpoConfig['web']>;
@@ -467,7 +491,15 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // App Links for board shares, the multiplayer join flow and retired OTA preview links:
       // https://www.boardsesh.com/b/{slug}/{angle}/list (including ?wall= for unlisted walls),
       // https://www.boardsesh.com/join/{sessionId} and
-      // https://www.boardsesh.com/preview/pr-N (plus the apex domain).
+      // https://www.boardsesh.com/preview/pr-N, plus every classic board link
+      // (https://www.boardsesh.com/{board}/.../{angle}/list and .../view/{climb})
+      // through ANDROID_BOARD_LINK_PREFIXES. A board path the app has no route
+      // for falls through +not-found to Home.
+      // www only, never the apex: boardsesh.com answers assetlinks.json with a
+      // 301 to www, which Google's verifier rejects, and on Android 11 and older
+      // one unverified host fails verification for every host in the app. No
+      // share builder emits an apex link. iOS keeps applinks:boardsesh.com
+      // because Apple's CDN follows that redirect.
       // The preview ingress remains for old shared links; +native-intent maps it
       // to What's New, where xprem's marker is the only branch picker.
       // autoVerify lets Android open the link directly in the app once the
@@ -481,21 +513,20 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
           autoVerify: true,
           data: [
             { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/join' },
-            { scheme: 'https', host: 'boardsesh.com', pathPrefix: '/join' },
             { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/preview' },
-            { scheme: 'https', host: 'boardsesh.com', pathPrefix: '/preview' },
             { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/b/' },
-            { scheme: 'https', host: 'boardsesh.com', pathPrefix: '/b/' },
+            ...ANDROID_BOARD_LINK_PREFIXES.map((pathPrefix) => ({
+              scheme: 'https',
+              host: 'www.boardsesh.com',
+              pathPrefix,
+            })),
           ],
           category: ['BROWSABLE', 'DEFAULT'],
         },
         {
           action: 'VIEW',
           autoVerify: true,
-          data: [
-            { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/auth/reset-password' },
-            { scheme: 'https', host: 'boardsesh.com', pathPrefix: '/auth/reset-password' },
-          ],
+          data: [{ scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/auth/reset-password' }],
           category: ['BROWSABLE', 'DEFAULT'],
         },
       ],
