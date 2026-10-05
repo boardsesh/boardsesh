@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { PATHNAME_HEADER } from '../lib/request-pathname-header';
 import { SMART_APP_BANNER_META_NAME } from '../lib/smart-app-banner';
@@ -99,5 +102,57 @@ describe('root layout Smart App Banner', () => {
     const banner = await bannerFor({ [PATHNAME_HEADER]: '/authors' });
 
     expect(banner?.get('app-argument')).toBe('https://www.boardsesh.com/authors');
+  });
+});
+
+/**
+ * The tag lives in the root layout's `metadata.other`, and Next replaces
+ * `other` whole when a nested layout or page sets its own: no merge, no type
+ * error, no warning. So a segment that adds one custom meta tag would drop the
+ * banner from its pages, and the tests above (which only call the root
+ * `generateMetadata`) would stay green.
+ *
+ * Read as source: importing every route file needs a database.
+ */
+describe('nothing below the root layout replaces metadata.other', () => {
+  const APP_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+  const ROOT_LAYOUT_FILE = 'layout.tsx';
+  const SOURCE_FILE = /\.tsx?$/;
+  const TEST_FILE = /\.test\.tsx?$/;
+  /** A file that builds or types Next metadata. */
+  const BUILDS_METADATA = /\bMetadata\b|\bgenerateMetadata\b/;
+  /** `other: {`, `other?: ...` in a returned shape, or `metadata.other = ...`. */
+  const SETS_OTHER = /(?:^|[\s{,(])other\??\s*:|\.other\s*=[^=]/m;
+
+  function sourceFilesUnder(directory: string): string[] {
+    return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const entryPath = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        return entry.name === '__tests__' || entry.name === 'node_modules' ? [] : sourceFilesUnder(entryPath);
+      }
+      return SOURCE_FILE.test(entry.name) && !TEST_FILE.test(entry.name) ? [entryPath] : [];
+    });
+  }
+
+  const metadataFiles = sourceFilesUnder(APP_ROOT)
+    .map((filePath) => ({ file: relative(APP_ROOT, filePath), source: readFileSync(filePath, 'utf8') }))
+    .filter(({ source }) => BUILDS_METADATA.test(source));
+
+  it('finds the root layout, so the scan is looking at real files', () => {
+    const rootLayoutSource = metadataFiles.find(({ file }) => file === ROOT_LAYOUT_FILE)?.source;
+
+    expect(rootLayoutSource).toBeDefined();
+    expect(SETS_OTHER.test(rootLayoutSource ?? '')).toBe(true);
+    expect(metadataFiles.length).toBeGreaterThan(20);
+  });
+
+  it('leaves `other` to the root layout', () => {
+    const offenders = metadataFiles
+      .filter(({ file, source }) => file !== ROOT_LAYOUT_FILE && SETS_OTHER.test(source))
+      .map(({ file }) => file);
+
+    // A file listed here drops the Smart App Banner from its pages. Spread the
+    // root's entry into its `other`, or move the banner out of `metadata.other`.
+    expect(offenders).toEqual([]);
   });
 });
