@@ -1,8 +1,8 @@
 // Store links for the Expo browser app (app.boardsesh.com), tagged so an
 // install that starts here can be told apart from one that starts on www (#6027).
 //
-// The convention is the one www's store-link builder uses, so both read out of
-// the same PostHog person properties and the same Play acquisition report:
+// These tags go on the store URL only, where Play's install referrer and its
+// acquisition report read them:
 //
 //   utm_source   = boardsesh        (who sent the click)
 //   utm_medium   = browser-app      (which property: www links say otherwise)
@@ -24,9 +24,8 @@
 // Pure TS, no platform imports: only the `.web.tsx` prompt imports this, so it
 // never reaches a native bundle.
 
-// Same two URLs as `app.config.ts` and `packages/web/app/lib/store-urls.ts`.
-// Neither file can be imported from here (one is build-time config, the other
-// lives in the web package), and `store-links.test.ts` pins the three together.
+// Same two URLs as `app.config.ts`, which is build-time config and cannot be
+// imported from here. `store-links.test.ts` pins the two together.
 export const IOS_APP_STORE_URL = 'https://apps.apple.com/app/boardsesh/id6761350784';
 export const ANDROID_PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.boardsesh.app';
 
@@ -105,6 +104,12 @@ export function storeUrlForBrowserApp(platform: StorePlatform, surface: StorePro
 // values so one tile counts store clicks across both properties. They stay
 // separable: these arrive with `$lib = posthog-react-native` and
 // `environment = production-web`, and `placement` is prefixed `browser-app-`.
+//
+// The event carries NO `utm_*` properties. Those names are reserved for the
+// campaign that brought a visitor IN: PostHog copies them onto the person
+// (`utm_source`, and `$initial_utm_source` set once), so the outbound link's
+// tags there would label a store clicker as acquired by "boardsesh". The
+// `placement` already says which property and which screen.
 export const APP_INSTALL_CLICK_EVENT = 'App Install Click';
 
 export type BrowserAppInstallClickProperties = {
@@ -112,9 +117,6 @@ export type BrowserAppInstallClickProperties = {
   /** Historic www values. PH-13 breaks down on this, so they are not renamed here. */
   source: 'app-store' | 'google-play';
   placement: `browser-app-${StorePromptSurface}`;
-  utm_source: typeof BROWSER_APP_UTM_SOURCE;
-  utm_medium: typeof BROWSER_APP_UTM_MEDIUM;
-  utm_campaign: StorePromptSurface;
 };
 
 export function buildBrowserAppInstallClickProperties(
@@ -125,8 +127,5 @@ export function buildBrowserAppInstallClickProperties(
     platform,
     source: platform === 'android' ? 'google-play' : 'app-store',
     placement: `browser-app-${surface}`,
-    utm_source: BROWSER_APP_UTM_SOURCE,
-    utm_medium: BROWSER_APP_UTM_MEDIUM,
-    utm_campaign: surface,
   };
 }

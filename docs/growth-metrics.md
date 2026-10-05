@@ -80,7 +80,7 @@ These are separate counts. None of them is a funnel of the same people.
 | Measure              | Event / property                                         | What it means                                                                                     |
 | -------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | Landing visits       | www `$pageview`, by page group                             | Visits, after the crawler caveats above.                                                         |
-| Store clicks         | `App Install Click` (www), by `platform` and `source`      | Someone tapped a store button. Not an install.                                                    |
+| Store clicks         | `App Install Click` (www and browser app), by `platform` and `source` | Someone tapped a store button. Not an install.                                                    |
 | Android install source | person properties `install_source` / `install_medium` / `install_campaign`, classified with the expression below | From the Play Install Referrer, once per install. `campaign`, `organic` or `unknown`. |
 | iOS install source   | none                                                       | Apple gives us no referrer. Show iOS as unknown; do not infer it.                                 |
 | New-user activation  | the Activation funnel above                                 | Counts people, not installs.                                                                      |
@@ -89,8 +89,11 @@ These are separate counts. None of them is a funnel of the same people.
 browser app (phone browsers only, on the signed-out climb view, the login screen
 and Home). A store-click tile has to union both. Browser-app clicks carry
 `placement` = `browser-app-climb-view`, `browser-app-login` or
-`browser-app-home`, with the same `platform` and `source` values as www. Their
-store links are tagged `utm_source=boardsesh`, `utm_medium=browser-app`,
+`browser-app-home`, with the same `platform` and `source` values as www. The
+event carries no `utm_*` properties: PostHog reads those as the campaign that
+brought a visitor in and copies them to the person, so a store click must not
+set them. Break browser-app clicks down by `placement`. The tags live on the
+store links only, which carry `utm_source=boardsesh`, `utm_medium=browser-app`,
 `utm_campaign=<climb-view|login|home>`: on Android that arrives as
 `install_medium = browser-app` and `install_campaign`; on iOS it is the App
 Store campaign token `ct=browser-app-<surface>`, which App Analytics only shows

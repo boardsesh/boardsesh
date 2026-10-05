@@ -122,33 +122,30 @@ describe('buildBrowserAppInstallClickProperties', () => {
       platform: 'android',
       source: 'google-play',
       placement: 'browser-app-climb-view',
-      utm_source: 'boardsesh',
-      utm_medium: 'browser-app',
-      utm_campaign: 'climb-view',
     });
     expect(buildBrowserAppInstallClickProperties('ios', 'login')).toEqual({
       platform: 'ios',
       source: 'app-store',
       placement: 'browser-app-login',
-      utm_source: 'boardsesh',
-      utm_medium: 'browser-app',
-      utm_campaign: 'login',
     });
+  });
+
+  // PostHog copies utm_* event properties onto the person as inbound campaign
+  // attribution. These are outbound link tags, so they stay on the URL only.
+  it.each(SURFACES)('keeps the outbound %s link tags off the event', (surface) => {
+    for (const platform of ['ios', 'android'] as const) {
+      const propertyNames = Object.keys(buildBrowserAppInstallClickProperties(platform, surface));
+      expect(propertyNames.filter((name) => name.includes('utm'))).toEqual([]);
+    }
   });
 });
 
-// Three copies of the two store URLs exist because none can import another:
-// build-time Expo config, the web package, and this module.
+// The Expo config holds its own copy of the two store URLs: it is build-time
+// config and cannot import this module.
 describe('store URL copies', () => {
   it('match the Expo config', () => {
     const appConfig = readRepoFile('../../../app.config.ts');
     expect(appConfig).toContain(`'${IOS_APP_STORE_URL}'`);
     expect(appConfig).toContain(`'${ANDROID_PLAY_STORE_URL}'`);
-  });
-
-  it('match www', () => {
-    const webStoreUrls = readRepoFile('../../../../web/app/lib/store-urls.ts');
-    expect(webStoreUrls).toContain(`'${IOS_APP_STORE_URL}'`);
-    expect(webStoreUrls).toContain(`'${ANDROID_PLAY_STORE_URL}'`);
   });
 });

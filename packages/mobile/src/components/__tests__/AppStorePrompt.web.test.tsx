@@ -83,9 +83,6 @@ describe('AppStorePrompt.web', () => {
       platform: 'android',
       source: 'google-play',
       placement: 'browser-app-climb-view',
-      utm_source: 'boardsesh',
-      utm_medium: 'browser-app',
-      utm_campaign: 'climb-view',
     });
     const openedUrl = new URL(openURL.mock.calls[0]?.[0] ?? '');
     expect(openedUrl.hostname).toBe('play.google.com');
