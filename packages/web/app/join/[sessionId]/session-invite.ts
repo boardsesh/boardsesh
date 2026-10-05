@@ -66,6 +66,28 @@ export function sessionInviteFromPreview(preview: SessionInvitePreview): Session
 }
 
 /**
+ * What to log when the lookup fails: the error's class, the HTTP status and the
+ * GraphQL error codes. Never the error itself. A `graphql-request` error carries
+ * the request (the session id, which is the invite's whole secret) and the full
+ * response in both its message and its fields.
+ */
+export function describeLookupFailure(error: unknown): { name: string; status?: number; codes?: string[] } {
+  if (typeof error !== 'object' || error === null) return { name: typeof error };
+  const name = error instanceof Error ? error.name : 'unknown';
+  const response: unknown = 'response' in error ? error.response : undefined;
+  if (typeof response !== 'object' || response === null) return { name };
+  const status = 'status' in response && typeof response.status === 'number' ? response.status : undefined;
+  const graphqlErrors: unknown[] = 'errors' in response && Array.isArray(response.errors) ? response.errors : [];
+  const codes = graphqlErrors.flatMap((graphqlError) => {
+    if (typeof graphqlError !== 'object' || graphqlError === null || !('extensions' in graphqlError)) return [];
+    const extensions: unknown = graphqlError.extensions;
+    if (typeof extensions !== 'object' || extensions === null || !('code' in extensions)) return [];
+    return typeof extensions.code === 'string' ? [extensions.code] : [];
+  });
+  return { name, ...(status === undefined ? {} : { status }), ...(codes.length > 0 ? { codes } : {}) };
+}
+
+/**
  * Look up an invite. Never throws.
  *
  * A malformed id is `not_found` without a round trip: it cannot name a session,
@@ -80,7 +102,7 @@ export async function fetchSessionInvite(sessionId: string): Promise<SessionInvi
     });
     return sessionInviteFromPreview(response.sessionInvitePreview);
   } catch (error) {
-    console.error('fetchSessionInvite failed:', error);
+    console.error('fetchSessionInvite failed:', describeLookupFailure(error));
     return withoutDetails('unavailable');
   }
 }
