@@ -269,6 +269,19 @@ describe('planSprayPhotoSweep', () => {
     expect(plan).toEqual({ deleteNames: ['4200-v1.jpg'], freedBytes: 900 });
   });
 
+  it('ages out legacy numeric filenames while retaining the immutable live photo', () => {
+    const plan = planSprayPhotoSweep({
+      entries: [
+        { name: '4200-3.jpg', sizeBytes: 900, modifiedAtMs: 0 },
+        { name: '4200-v31.jpg', sizeBytes: 900, modifiedAtMs: 0 },
+      ],
+      nowMs: NOW,
+      maxAgeMs: SPRAY_PHOTO_MAX_AGE_MS,
+      protectedNames: new Set(['4200-v31.jpg']),
+    });
+    expect(plan).toEqual({ deleteNames: ['4200-3.jpg'], freedBytes: 900 });
+  });
+
   it('never deletes the photo of a wall on screen, however old the file is', () => {
     const plan = planSprayPhotoSweep({
       entries: [{ name: '4200-v1.jpg', sizeBytes: 900, modifiedAtMs: 0 }],

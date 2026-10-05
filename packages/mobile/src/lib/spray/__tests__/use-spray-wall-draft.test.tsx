@@ -153,6 +153,22 @@ describe('draft render ownership', () => {
     await waitFor(() => expect(getSprayWall(LAYOUT_ID)?.versionId).toBe(30));
   });
 
+  it('never reports unavailable on the frame a valid draft payload lands', async () => {
+    requestMock.mockResolvedValue({ sprayWallRenderData: payload() });
+    const seen: boolean[] = [];
+    const { result } = renderHook(
+      () => {
+        const draft = useSprayWallDraft(LAYOUT_ID, 'wall-1', 3, '30');
+        seen.push(draft.isUnavailable);
+        return draft;
+      },
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.wall?.versionId).toBe(30));
+    expect(result.current.isLoading).toBe(false);
+    expect(seen).not.toContain(true);
+  });
+
   it('withdraws local draft state when the account changes', async () => {
     requestMock.mockResolvedValue({ sprayWallRenderData: payload() });
     const { result } = renderHook(() => useSprayWallDraft(LAYOUT_ID, 'wall-1', 3, '30'), { wrapper });
@@ -161,6 +177,7 @@ describe('draft render ownership', () => {
       resetSprayWallViewerAccess();
     });
     expect(result.current.wall).toBeNull();
+    expect(result.current.isUnavailable).toBe(true);
   });
 
   it('shows unavailable for an unreadable photo and never fetches without an id', async () => {

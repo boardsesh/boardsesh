@@ -201,6 +201,9 @@ export function useSprayWallDraft(
   // pending, and without this the tap would flash "no photo to edit yet".
   const [retrying, setRetrying] = useState(false);
   const isLoading = asked && (retrying || query.isPending);
+  // An account/removal transition withdraws private draft geometry immediately.
+  // The caller must retry under the current account; delaying that verdict by
+  // an effect would expose a stale account's editor for another frame.
   const isUnavailable = asked && !retrying && !query.isPending && wall == null;
   // `paused` is a retry parked because the phone reads as offline; `isError` is
   // a read that gave up. A retry that is backing off or running is neither.
