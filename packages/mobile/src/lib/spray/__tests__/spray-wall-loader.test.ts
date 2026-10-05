@@ -11,8 +11,9 @@ const reportHandledErrorMock = vi.hoisted(() => vi.fn());
 const invalidateQueriesMock = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock('../../error-reporting', () => ({ reportHandledError: reportHandledErrorMock }));
 
-const { clearSprayWallRegistry, getSprayWall, registerSprayWall } = await import('../spray-wall-registry');
-const { loadSprayWall } = await import('../spray-wall-loader');
+const { clearSprayWallRegistry, getSprayWall, registerSprayWall, withdrawAllSprayWalls, ensureSprayWallLoaded } =
+  await import('../spray-wall-registry');
+const { loadSprayWall, installSprayWallLoader, invalidateSprayWallRenderData } = await import('../spray-wall-loader');
 
 const LAYOUT_ID = 4200;
 const WALL_UUID = 'wall-uuid';
@@ -66,6 +67,68 @@ afterEach(() => {
 });
 
 describe('loadSprayWall', () => {
+  it.each(['identity', 'render'] as const)(
+    'does not register a %s response completing after sign-out',
+    async (stage) => {
+      let resolveRequest!: (response: unknown) => void;
+      const delayed = new Promise((resolve) => {
+        resolveRequest = resolve;
+      });
+      if (stage === 'identity') requestMock.mockReturnValueOnce(delayed);
+      else requestMock.mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } }).mockReturnValueOnce(delayed);
+      const loading = loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+      await vi.waitFor(() => expect(requestMock).toHaveBeenCalledTimes(stage === 'identity' ? 1 : 2));
+      withdrawAllSprayWalls();
+      resolveRequest(stage === 'identity' ? { sprayWallByLayout: { uuid: WALL_UUID } } : renderDataPayload());
+      await loading;
+      expect(getSprayWall(LAYOUT_ID)).toBeNull();
+      expect(requestMock).toHaveBeenCalledTimes(stage === 'identity' ? 1 : 2);
+    },
+  );
+
+  it('teardown rejects a loader already awaiting a render response', async () => {
+    let resolveRequest!: (response: unknown) => void;
+    const delayed = new Promise((resolve) => {
+      resolveRequest = resolve;
+    });
+    requestMock.mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } }).mockReturnValueOnce(delayed);
+    const teardown = installSprayWallLoader(fakeQueryClient());
+    const loading = loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+    await vi.waitFor(() => expect(requestMock).toHaveBeenCalledTimes(2));
+    teardown();
+    resolveRequest(renderDataPayload());
+    await loading;
+    expect(getSprayWall(LAYOUT_ID)).toBeNull();
+  });
+
+  it('an old teardown cannot detach the replacement loader or clear its registrations', async () => {
+    const oldTeardown = installSprayWallLoader(fakeQueryClient());
+    installSprayWallLoader(fakeQueryClient());
+    registerExistingWall();
+    oldTeardown();
+    expect(getSprayWall(LAYOUT_ID)).not.toBeNull();
+    requestMock
+      .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
+      .mockResolvedValueOnce(renderDataPayload());
+    ensureSprayWallLoaded(LAYOUT_ID + 1);
+    await vi.waitFor(() => expect(getSprayWall(LAYOUT_ID + 1)).not.toBeNull());
+  });
+
+  it('does not refresh a wall when invalidation completes after sign-out', async () => {
+    let completeInvalidation!: () => void;
+    invalidateQueriesMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          completeInvalidation = resolve;
+        }),
+    );
+    installSprayWallLoader(fakeQueryClient());
+    const invalidating = invalidateSprayWallRenderData(fakeQueryClient(), WALL_UUID, LAYOUT_ID);
+    withdrawAllSprayWalls();
+    completeInvalidation();
+    await invalidating;
+    expect(requestMock).not.toHaveBeenCalled();
+  });
   it('registers the wall it fetched', async () => {
     requestMock
       .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
@@ -153,7 +216,9 @@ describe('loadSprayWall', () => {
 
     await loadSprayWall(queryClient, LAYOUT_ID, { force: true });
 
-    expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['sprayWallRenderData', WALL_UUID] });
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: ['sprayWallRenderData', WALL_UUID, expect.any(String)],
+    });
   });
 
   it('reports a wall that lost a material share of its holds', async () => {

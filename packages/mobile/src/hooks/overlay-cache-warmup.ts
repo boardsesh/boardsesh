@@ -29,6 +29,15 @@ export function listOverlayCacheEntries(cacheDirName: string): OverlayCacheEntry
   return cacheDir.list() as OverlayCacheEntry[];
 }
 
+export function deleteOverlayCacheEntry(uri: string): void {
+  try {
+    const file = new File(uri);
+    if (file.exists) file.delete();
+  } catch {
+    /* A stale completion cannot fail sign-out. */
+  }
+}
+
 /**
  * Confirm that a URI handed back by the native renderer still names a file.
  * Cache-pruning and OS storage pressure can remove an individual PNG after the

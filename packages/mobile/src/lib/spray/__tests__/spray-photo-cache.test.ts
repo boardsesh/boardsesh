@@ -37,6 +37,17 @@ vi.mock('expo-file-system', () => {
     create() {
       fsState.directoryCreated += 1;
     }
+    delete() {
+      for (const uri of fsState.files.keys()) if (uri.startsWith(`file://${this.uri}/`)) fsState.files.delete(uri);
+    }
+    list() {
+      return [...fsState.files.keys()]
+        .filter((uri) => uri.startsWith(`file://${this.uri}/`))
+        .map((uri) => ({
+          name: uri.slice(`file://${this.uri}/`.length),
+          delete: () => fsState.files.delete(uri),
+        }));
+    }
   }
   class MockFileImpl {
     uri: string;
@@ -79,7 +90,7 @@ vi.mock('expo-file-system', () => {
 
 const { clearSprayWallRegistry, registerSprayWall } = await import('../spray-wall-registry');
 const registry = await import('../spray-wall-registry');
-const { ensureSprayPhotoCached, resetSprayPhotoCacheForTests, tryGetSprayPhotoPathSync } =
+const { ensureSprayPhotoCached, resetSprayPhotoCacheForTests, tryGetSprayPhotoPathSync, deleteCachedSprayPhotos } =
   await import('../spray-photo-cache');
 const { sprayPartialPhotoFileName, sprayPhotoFileName } = await import('../spray-photo-keys');
 
@@ -123,12 +134,44 @@ afterEach(() => {
 });
 
 describe('ensureSprayPhotoCached', () => {
+  it.each(['resolve', 'reject'] as const)(
+    'discards a late withdrawn download without deleting the new session’s photo (%s)',
+    async (completion) => {
+      registerWall(FUTURE);
+      fsState.downloadResult = 'hang';
+      const oldDownload = ensureSprayPhotoCached(IDENTITY);
+      registry.withdrawAllSprayWalls();
+      deleteCachedSprayPhotos();
+      registerWall(FUTURE);
+      fsState.downloadResult = 'resolve';
+      expect(await ensureSprayPhotoCached(IDENTITY)).not.toBeNull();
+      fsState.downloadResult = completion;
+      fsState.pendingResolvers.shift()!();
+      expect(await oldDownload).toBeNull();
+      expect(fsState.files.has(FINAL_URI)).toBe(true);
+      expect(fsState.files.size).toBe(1);
+      expect(fsState.downloads[0].destination).not.toBe(fsState.downloads[1].destination);
+    },
+  );
+
+  it('removes all versions of one wall while preserving another wall', () => {
+    fsState.files.set(FINAL_URI, { exists: true });
+    fsState.files.set('file:///cache/spray-walls/4200-2.jpg', { exists: true });
+    fsState.files.set('file:///cache/spray-walls/4201-1.jpg', { exists: true });
+    expect(tryGetSprayPhotoPathSync(IDENTITY)).not.toBeNull();
+    registry.unregisterSprayWall(LAYOUT_ID);
+    deleteCachedSprayPhotos(LAYOUT_ID);
+    expect(tryGetSprayPhotoPathSync(IDENTITY)).toBeNull();
+    expect([...fsState.files.keys()]).toEqual(['file:///cache/spray-walls/4201-1.jpg']);
+  });
+
   it('stages under .part and moves the finished file into place', async () => {
     registerWall(FUTURE);
 
     const path = await ensureSprayPhotoCached(IDENTITY);
 
-    expect(fsState.downloads).toEqual([{ url: 'https://private.example/photo?sig=1', destination: PART_URI }]);
+    expect(fsState.downloads[0]).toMatchObject({ url: 'https://private.example/photo?sig=1' });
+    expect(fsState.downloads[0].destination.endsWith(`-${sprayPartialPhotoFileName(IDENTITY)}`)).toBe(true);
     expect(path).toBe(FINAL_URI.replace('file://', ''));
     expect(fsState.files.has(FINAL_URI)).toBe(true);
     expect(fsState.files.has(PART_URI)).toBe(false);

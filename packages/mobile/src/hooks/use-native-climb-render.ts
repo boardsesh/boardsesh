@@ -10,7 +10,13 @@ import {
   type BoardRenderImageLoadFailureKind,
   type BoardRenderNativeFailureKind,
 } from '@boardsesh/analytics';
-import { listOverlayCacheEntries, onOverlayCacheHydrated, overlayCacheEntryExists } from './overlay-cache-warmup';
+import {
+  listOverlayCacheEntries,
+  onOverlayCacheHydrated,
+  overlayCacheEntryExists,
+  deleteOverlayCacheEntry,
+} from './overlay-cache-warmup';
+import { isSprayOverlayCurrent, sprayPrivacyGeneration } from '../lib/spray/spray-privacy-generation';
 import { RENDERER_VERSION } from './renderer-version';
 import {
   HOLD_STATE_MAP,
@@ -42,6 +48,7 @@ import { sweepBoardArtCache } from '../lib/sweep-caches';
 import { measureFreeCacheSpaceBytes } from '../lib/cache-dir-io';
 import {
   isRenderCancelled,
+  RenderCancelledError,
   requestRender,
   setRenderConcurrency,
   _resetRenderSchedulerForTests,
@@ -1017,7 +1024,7 @@ function warmupRenderedOverlaysOnce(): void {
       // File and Directory instances; File has a .name like "<key>.png".
       const name = entry.name;
       if (!name || !name.endsWith('.png')) continue;
-      if (!name.startsWith(currentVersionPrefix)) {
+      if (!name.startsWith(currentVersionPrefix) || !isSprayOverlayCurrent(name.slice(0, -'.png'.length))) {
         // Stale leftover from a prior RENDERER_VERSION. Best-effort delete;
         // any failure (permissions, race with another writer) is non-fatal
         // — the file simply lingers until the OS reclaims cache space.
@@ -1079,6 +1086,7 @@ export function getOrStartInflightRender(
   cacheKey: string,
   startRender: () => Promise<string>,
 ): Promise<RenderedOverlayEntry> {
+  if (!isSprayOverlayCurrent(cacheKey)) return Promise.reject(new RenderCancelledError(cacheKey));
   const existing = inflightRenders.get(cacheKey);
   if (existing) return existing;
 
@@ -1091,7 +1099,13 @@ export function getOrStartInflightRender(
     }
   }
 
-  const promise = startRender().then((uri) => cacheRenderedOverlay(cacheKey, uri));
+  const promise = startRender().then((uri) => {
+    if (!isSprayOverlayCurrent(cacheKey)) {
+      deleteOverlayCacheEntry(uri);
+      throw new RenderCancelledError(cacheKey);
+    }
+    return cacheRenderedOverlay(cacheKey, uri);
+  });
   inflightRenders.set(cacheKey, promise);
   // Run cleanup as a detached handler so it doesn't change the promise
   // returned to callers, and so callers that only attach .then can still
@@ -1446,7 +1460,8 @@ export function buildCacheKey(
   // `_{boardName}_{layoutId}_{sizeId}_` run `overlayNameMatchesScope` reaps by
   // are both upstream of it and stay intact.
   const boardArt = boardArtPending ? '_geopending' : '';
-  return `v${RENDERER_VERSION}_${style}_w${width}_${boardName}_${layoutId}_${sizeId}_${canonicalSetIds}${spray}_${framesHash}${boardArt}`;
+  const privacy = boardName === 'spray' ? `_pg${sprayPrivacyGeneration(layoutId)}` : '';
+  return `v${RENDERER_VERSION}_${style}_w${width}_${boardName}_${layoutId}_${sizeId}_${canonicalSetIds}${spray}_${framesHash}${boardArt}${privacy}`;
 }
 
 /**

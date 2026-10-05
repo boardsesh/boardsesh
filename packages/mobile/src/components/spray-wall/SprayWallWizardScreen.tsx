@@ -246,7 +246,11 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
       if (choice === 'startOver') {
         const plan = startOverPlan(resumable, full.versions ?? []);
         try {
-          await discardDraftAsync({ versionId: plan.discardVersionId, wallUuid: plan.deleteWallUuid });
+          await discardDraftAsync({
+            versionId: plan.discardVersionId,
+            wallUuid: plan.deleteWallUuid,
+            layoutId: full.layoutId,
+          });
         } catch (error) {
           // Best-effort, deliberately. A start-over that cannot reach the server
           // must still let the climber build their wall; the stray row is what

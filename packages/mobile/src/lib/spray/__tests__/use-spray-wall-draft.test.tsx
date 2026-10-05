@@ -11,7 +11,7 @@
 // a spinner forever. The verdict is therefore keyed on the payload, and this file
 // is what stops a future refactor collapsing it back to a boolean.
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -26,6 +26,7 @@ vi.mock('../spray-wall-loader', () => ({
 }));
 
 import { useSprayWallDraft } from '../use-spray-wall-draft';
+import { withdrawAllSprayWalls } from '../spray-wall-registry';
 
 const RENDER_DATA = {
   versionNumber: 3,
@@ -47,6 +48,35 @@ beforeEach(() => {
 });
 
 describe('useSprayWallDraft', () => {
+  it('cannot register an old draft response after sign-out changes its query generation', async () => {
+    let completeOld!: (response: unknown) => void;
+    requestMock
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          completeOld = resolve;
+        }),
+      )
+      .mockResolvedValue({ sprayWallRenderData: null });
+    const { result } = renderHook(() => useSprayWallDraft(4001, 'wall-1', 3), { wrapper });
+    await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+    act(() => withdrawAllSprayWalls());
+    await act(async () => {
+      completeOld({ sprayWallRenderData: RENDER_DATA });
+    });
+    await waitFor(() => expect(result.current.isUnavailable).toBe(true));
+    expect(requestMock).toHaveBeenCalledTimes(1);
+    expect(registerRenderDataMock).not.toHaveBeenCalled();
+  });
+
+  it('does not refresh an old editor’s wall when sign-out and unmount happen together', () => {
+    requestMock.mockReturnValue(new Promise(() => {}));
+    const { unmount } = renderHook(() => useSprayWallDraft(4001, 'wall-1', 3), { wrapper });
+    act(() => {
+      withdrawAllSprayWalls();
+      unmount();
+    });
+    expect(invalidateMock).not.toHaveBeenCalled();
+  });
   it('never reports the wall unavailable on the frame its payload lands', async () => {
     // The flash. `isUnavailable` must not be true at ANY point on the way from
     // loading to ready, because the screen renders a hard error on it.

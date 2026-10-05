@@ -129,7 +129,7 @@ describe('sprayCacheToken', () => {
 
   it('carries the wall version', () => {
     registerSprayWall(LAYOUT_ID, wall(4));
-    expect(sprayCacheToken('spray', LAYOUT_ID)).toBe('-sv4');
+    expect(sprayCacheToken('spray', LAYOUT_ID)).toMatch(/^-sv4-pr\d+-\d+$/);
   });
 
   it('moves when the wall is reset', () => {
@@ -142,9 +142,10 @@ describe('sprayCacheToken', () => {
   it('differs from every real version while the wall is unknown', () => {
     // Nothing is drawn or cached under it — there is no render data — but it must
     // not collide with the first paint after the query lands.
-    expect(sprayCacheToken('spray', 12345)).toBe('-sv0');
+    const unknownToken = sprayCacheToken('spray', 12345);
+    expect(unknownToken).toMatch(/^-sv0-pr\d+-\d+$/);
     registerSprayWall(12345, wall(1));
-    expect(sprayCacheToken('spray', 12345)).not.toBe('-sv0');
+    expect(sprayCacheToken('spray', 12345)).not.toBe(unknownToken);
   });
 
   it('keeps two walls apart', () => {

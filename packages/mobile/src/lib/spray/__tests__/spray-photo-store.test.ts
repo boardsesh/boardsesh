@@ -21,9 +21,10 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 type FakeFile = { contents: string };
 
-const { files, downloadedUrls } = vi.hoisted(() => ({
+const { files, downloadedUrls, transfers } = vi.hoisted(() => ({
   files: new Map<string, FakeFile>(),
   downloadedUrls: [] as string[],
+  transfers: { suspended: false, pending: [] as (() => void)[] },
 }));
 
 // Both classes address by their full joined uri, so a file's identity is its
@@ -42,7 +43,7 @@ vi.mock('expo-file-system', () => {
       // Directories are implied by their files in this fake.
     }
     delete(): void {
-      for (const path of [...files.keys()]) {
+      for (const path of files.keys()) {
         if (path.startsWith(`${this.uri}/`)) files.delete(path);
       }
     }
@@ -81,10 +82,14 @@ vi.mock('expo-file-system', () => {
       destination: { uri: string },
     ): Promise<{ moveSync: (to: { uri: string }) => void; uri: string }> {
       downloadedUrls.push(url);
-      files.set(destination.uri, { contents: url });
-      return Promise.resolve(
-        new File(destination.uri) as unknown as { moveSync: (to: { uri: string }) => void; uri: string },
-      );
+      return new Promise((resolve) => {
+        const finish = () => {
+          files.set(destination.uri, { contents: url });
+          resolve(new File(destination.uri));
+        };
+        if (transfers.suspended) transfers.pending.push(finish);
+        else finish();
+      });
     }
   }
 
@@ -244,6 +249,28 @@ describe('deleteStoredSprayPhoto', () => {
 });
 
 describe('clearStoredSprayPhotos', () => {
+  it('rejects a late old-session completion without erasing the new session’s same-key photo', async () => {
+    transfers.suspended = true;
+    const oldDownload = storeSprayPhoto(KEY_V1, 'https://old.example/photo');
+    clearStoredSprayPhotos();
+    transfers.suspended = false;
+    await storeSprayPhoto(KEY_V1, 'https://new.example/photo');
+    transfers.pending.shift()!();
+    expect(await oldDownload).toBeNull();
+    expect(files.get(pathFor(KEY_V1))?.contents).toBe('https://new.example/photo');
+    expect(names()).toEqual([sprayPhotoStoreFileName(KEY_V1)]);
+  });
+
+  it('rejects a late completion for a deleted key while preserving another wall', async () => {
+    await storeSprayPhoto(KEY_V2, 'https://other.example/photo');
+    transfers.suspended = true;
+    const oldDownload = storeSprayPhoto(KEY_V1, 'https://old.example/photo');
+    deleteStoredSprayPhoto(KEY_V1);
+    transfers.suspended = false;
+    transfers.pending.shift()!();
+    expect(await oldDownload).toBeNull();
+    expect(names()).toEqual([sprayPhotoStoreFileName(KEY_V2)]);
+  });
   it('takes every photograph, whoever it belonged to', async () => {
     await storeSprayPhoto(KEY_V2, 'https://private.example/a?sig=2');
     await storeSprayPhoto(KEY_OTHER, 'https://private.example/b?sig=1');

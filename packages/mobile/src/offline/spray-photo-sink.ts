@@ -1,4 +1,6 @@
 import type { DocumentsPulledSink, RowsDeletedSink } from '@boardsesh/offline-sync';
+import { clearSprayWallPrivateCaches } from '../lib/spray/spray-privacy-cleanup';
+import { sprayPrivacyGeneration } from '../lib/spray/spray-privacy-generation';
 import {
   SPRAY_PHOTO_STORE_AVAILABLE,
   deleteStoredSprayPhoto,
@@ -36,6 +38,7 @@ import { clearSprayPhotoPending, recordSprayPhotoFailure } from './spray-photo-r
  */
 export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, documents, db }) => {
   if (tableName !== 'spray_walls') return;
+  const generation = sprayPrivacyGeneration();
 
   for (const document of documents) {
     const photoKey = document.photo_key;
@@ -60,7 +63,11 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
     // for — and that one goes through `recordSprayPhotoFailure` below.
     if (typeof photoUrl !== 'string' || !photoUrl) continue;
 
-    if (await storeSprayPhoto(photoKey, photoUrl)) {
+    const wallGeneration = sprayPrivacyGeneration(Number.isFinite(layoutId) ? layoutId : undefined);
+    const stored = await storeSprayPhoto(photoKey, photoUrl, Number.isFinite(layoutId) ? layoutId : undefined);
+    if (generation !== sprayPrivacyGeneration()) return;
+    if (wallGeneration !== sprayPrivacyGeneration(Number.isFinite(layoutId) ? layoutId : undefined)) continue;
+    if (stored) {
       if (Number.isFinite(layoutId)) await clearSprayPhotoPending(db, layoutId);
       continue;
     }
@@ -112,6 +119,7 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
   const rows = await db.getAllAsync<{ photo_key: string | null }>(
     'SELECT photo_key FROM spray_walls WHERE photo_key IS NOT NULL',
   );
+  if (generation !== sprayPrivacyGeneration()) return;
   pruneStoredSprayPhotos(rows.map((row) => row.photo_key).filter((key): key is string => !!key));
 };
 
@@ -134,6 +142,9 @@ export const sprayWallDeletedSink: RowsDeletedSink = async ({ tableName, rows, d
     // The wall is gone, so a pending-photo marker for it describes nothing and
     // would keep rewinding a cursor for a row that will never be served again.
     const layoutId = typeof row.layout_id === 'number' ? row.layout_id : Number(row.layout_id);
-    if (Number.isFinite(layoutId)) await clearSprayPhotoPending(db, layoutId);
+    if (Number.isFinite(layoutId)) {
+      clearSprayWallPrivateCaches(layoutId);
+      await clearSprayPhotoPending(db, layoutId);
+    }
   }
 };

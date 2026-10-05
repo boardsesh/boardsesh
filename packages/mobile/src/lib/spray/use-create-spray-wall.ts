@@ -26,6 +26,7 @@ import type {
 } from '@boardsesh/graphql/generated/graphql';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../graphql/client';
+import { clearSprayWallPrivateCaches } from './spray-privacy-cleanup';
 
 /** The owner's wall list, invalidated the moment a wall becomes one. */
 export const mySprayWallsQueryKey = ['mySprayWalls'] as const;
@@ -123,10 +124,19 @@ export async function fetchSprayWallVersions(uuid: string): Promise<CreatedSpray
 export function useDiscardSprayWallDraft() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ versionId, wallUuid }: { versionId: string | null; wallUuid: string }): Promise<void> => {
+    mutationFn: async ({
+      versionId,
+      wallUuid,
+      layoutId,
+    }: {
+      versionId: string | null;
+      wallUuid: string;
+      layoutId: number;
+    }): Promise<void> => {
       const client = getHttpClient();
       if (versionId) await client.request(DISCARD_SPRAY_WALL_VERSION, { input: { versionId } });
       await client.request(DELETE_SPRAY_WALL, { uuid: wallUuid });
+      clearSprayWallPrivateCaches(layoutId);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });

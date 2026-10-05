@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { getCheckpoint, getCheckpointKey, runMigrations, setCheckpoint } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
+const clearPrivateCaches = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/spray/spray-privacy-cleanup', () => ({ clearSprayWallPrivateCaches: clearPrivateCaches }));
 
 /**
  * The two sinks that keep a wall's photograph in step with its row (#5448).
@@ -70,6 +72,7 @@ const pull = (documents: Record<string, unknown>[], tableName = 'spray_walls') =
   sprayWallPhotoSink({ tableName, documents, db });
 
 beforeEach(async () => {
+  clearPrivateCaches.mockClear();
   db = createTestDatabase();
   await runMigrations(db);
   stored.length = 0;
@@ -224,6 +227,7 @@ describe('sprayWallDeletedSink', () => {
     });
 
     expect(deleted).toEqual([PHOTO_KEY]);
+    expect(clearPrivateCaches).toHaveBeenCalledWith(LAYOUT_ID);
   });
 
   it('clears the wall’s pending-photo state', async () => {
