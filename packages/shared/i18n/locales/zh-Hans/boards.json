@@ -72,7 +72,10 @@
       "unfollowMessage": "“{{name}}”是你当前使用的训练板。取消关注会把它从你的训练板中移除，并清除当前选择。",
       "unfollowConfirm": "取消关注",
       "edit": "编辑",
-      "done": "完成"
+      "done": "完成",
+      "deleteWallTitle": "删除自由墙？",
+      "deleteWallMessage": "删除“{{name}}”？它的照片和线路将无法再访问。此操作无法撤销。",
+      "deleteSuccess": "已删除“{{name}}”"
     },
     "emptyTitle": "还没有训练板",
     "emptySubtitle": "搜索一块训练板，开始使用",
