@@ -1372,6 +1372,15 @@ remain unchanged.
 Registry withdrawal preserves the installed loader and subscribers. Loader
 replacement and teardown fence pending work independently, and query keys
 include privacy generations so a new session cannot join an old request.
+The installed loader also removes all cached epochs of the withdrawn wall's
+layout identity, UUID identity, published/draft render data and version history.
+Known version IDs allow selective reset-proposal removal; a version-only pending
+proposal without cached wall history cannot be mapped to a layout and is not
+covered by single-wall removal. Global withdrawal removes these spray query
+families. Other walls and catalogue queries survive selective withdrawal.
+Removal destroys matching pending queries, preventing late responses from
+recaching payloads. A link response whose layout was unknown at withdrawal is
+removed by its exact old query key when its revocation check fails.
 Persisted editor drafts keep version-only keys, allowing recovery after an app
 restart. Cleanup is best effort: failed filesystem deletion is retried by later
 withdrawal or cache sweeping; a crash during native I/O can leave a partial until

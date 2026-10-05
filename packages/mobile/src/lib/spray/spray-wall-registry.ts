@@ -105,6 +105,7 @@ const walls = new Map<number, RegisteredSprayWall>();
 
 /** Listeners woken when a wall is registered, re-registered or dropped. */
 const subscribers = new Set<() => void>();
+const withdrawalSubscribers = new Set<(layoutId?: number, wallUuid?: string) => void>();
 let privacyCleanup: ((layoutId?: number) => void) | null = null;
 
 /**
@@ -114,6 +115,24 @@ let privacyCleanup: ((layoutId?: number) => void) | null = null;
  */
 export function setSprayWallPrivacyCleanup(cleanup: (layoutId?: number) => void): void {
   privacyCleanup = cleanup;
+}
+
+/** Query owners erase payloads while the withdrawn identity is still available. */
+export function subscribeToSprayWallWithdrawals(listener: (layoutId?: number, wallUuid?: string) => void): () => void {
+  withdrawalSubscribers.add(listener);
+  return () => {
+    withdrawalSubscribers.delete(listener);
+  };
+}
+
+function notifyWithdrawal(layoutId?: number): void {
+  for (const subscriber of withdrawalSubscribers) {
+    try {
+      subscriber(layoutId, layoutId == null ? undefined : walls.get(layoutId)?.wallUuid);
+    } catch {
+      // A query owner's failure must not prevent file and geometry withdrawal.
+    }
+  }
 }
 
 function notify(): void {
@@ -178,6 +197,7 @@ export function getSprayWall(layoutId: number): RegisteredSprayWall | null {
 /** Drop a wall and its runtime geometry, so the render path reports no board rather than a stale one. */
 export function unregisterSprayWall(layoutId: number): void {
   revokeSprayPrivacy(layoutId);
+  notifyWithdrawal(layoutId);
   privacyCleanup?.(layoutId);
   inFlightLoads.delete(layoutId);
   deferredRequests.delete(layoutId);
@@ -463,6 +483,7 @@ export function sprayVersionToken(boardName: string, layoutId: number): string {
  */
 export function withdrawAllSprayWalls(): void {
   revokeSprayPrivacy();
+  notifyWithdrawal();
   privacyCleanup?.();
   for (const layoutId of walls.keys()) unregisterRuntimeGeometry(sprayGeometryKey(layoutId));
   walls.clear();
@@ -477,4 +498,5 @@ export function clearSprayWallRegistry(): void {
   loaderGeneration += 1;
   sprayWallLoader = null;
   subscribers.clear();
+  withdrawalSubscribers.clear();
 }

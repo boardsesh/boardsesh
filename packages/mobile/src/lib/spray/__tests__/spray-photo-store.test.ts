@@ -117,6 +117,10 @@ const KEY_V2 = 'spray-walls/wall-a/photo-2.jpg';
 const KEY_OTHER = 'spray-walls/wall-b/photo-1.jpg';
 
 beforeEach(() => {
+  transfers.suspended = false;
+  transfers.pending.length = 0;
+  // Advance the real epoch before clearing fixtures; never reset epochs to zero.
+  clearStoredSprayPhotos();
   files.clear();
   downloadedUrls.length = 0;
 });
