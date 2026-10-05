@@ -143,7 +143,11 @@ export async function readableSocialEntityIds(
       }
       return readableIds;
     }
-    default:
+    case 'board':
+    case 'gym':
+    case 'session':
       return new Set(entityIds);
+    default:
+      return new Set();
   }
 }

@@ -1190,15 +1190,15 @@ The readers in the table above were audited for this case in #5981:
 | --- | --- |
 | `followingClimbAscents`, `climbLogs` | hidden from everybody (`climbLogConditions`) |
 | `browseProposals`, `climbProposals` | hidden from everybody; `climbProposals` answers the empty page |
-| `comments` on a proposal | empty page (`sprayProposalUuidIsReadable`) |
+| `comments` on a proposal | empty page; social root access requires a readable, live climb |
 | `globalCommentFeed`, proposal threads | hidden from everybody: the proposal carries its board type |
 | `globalCommentFeed`, climb comments | hidden from everybody, **on every board** (below) |
 | `userProfileStats` | hidden from everybody but the climber whose log it is |
 | `activityFeed` | hidden from everybody. A comment on a proposal fans out with the climb's name, frames and layout id in the feed row's metadata; the row's own `boardType` says spray once the climb cannot |
-| the smart-playlist ref queries | not gated. Hydration reads `board_climbs`, so no row is returned; only `totalCount` can include it |
+| the smart-playlist ref queries | rows and counts require a live spray climb, except for the referencing author |
 | the stats and grade readers (`climbStatsForAngles` and friends) | nothing to read: the stats rows are deleted with the climb, and the recompute seed only inserts for a climb that has a row |
-| `comments` on a climb or a tick, keyed by uuid | not gated. A comment has no board type, and the caller must already hold the uuid |
-| `climbCommunityStatus`, `voteSummary` | not gated. Numbers for a uuid the caller already holds (`openProposalCount`, `communityGrade`, vote counts) |
+| `comments` on a climb or a tick, keyed by uuid | climb threads are hidden on every board after deletion; a spray tick thread is readable only to its author |
+| `climbCommunityStatus`, `voteSummary` | missing spray metadata and unreadable social roots return neutral counts and grades |
 
 A comment row has no board type, so there is no spray-only version of the rule
 for a climb comment. `globalCommentFeed` lists a climb comment only while its
@@ -1208,8 +1208,9 @@ climb still has a `board_climbs` row. That hides more than spray:
 - a comment on an upstream climb that `clearAuroraBoard` removed and a re-import
   did not restore.
 
-Both stay readable through `comments(entityType: climb)` for a caller holding
-the uuid. There is no alias arm: a deduplicated climb keeps its `board_climbs`
+Both are also hidden through `comments(entityType: climb)`, even when a caller
+holds the uuid. This includes catalogue archives by the product decision in
+#6037. There is no alias arm: a deduplicated climb keeps its `board_climbs`
 row (the MoonBoard merges delist the loser and repoint its comments at the
 survivor), so no comment sits under an alias uuid that has no row. The
 board-filtered feed already required the row, so the two paths now agree.
@@ -1219,8 +1220,9 @@ read the replica like their neighbours. A spray climb created inside the
 replication lag answers the empty page for its proposals until the replica has
 the row.
 
-`userProfileStats` is the one reader with the author exemption. The others list
-rows written by other people, so nobody is exempt. A profile's totals are the
+`userProfileStats`, author-facing smart-playlist references and tick-root social
+reads retain the author exemption. Bare deleted-climb threads have no exemption.
+A profile's totals are the
 climber's own numbers, their logbook still lists the log as "Unknown Climb", and
 totals that dropped it would disagree with that logbook. The web profile's
 server render fetches the stats with no viewer, so the owner's first paint omits
@@ -1259,19 +1261,20 @@ for a deleted climb the card handed those to anybody. The whole rule,
 | `fetchSessionFeaturedBetaRows`, `fetchDailyFeaturedBetaRows` | the beta link is not a candidate |
 | `fetchTickHighlightsByUuid` | a uuid that reached it some other way is not hydrated |
 
-Still not gated, and the same for a live private wall and a deleted climb:
+The #6037 product decision retains anonymous aggregates while hiding private
+details and named activity:
 
-- the session cards' and the session summary's COUNTS (tick count, sends, grade
-  distribution, board types, participants) include every tick in the session;
-- `sessionDetail`'s participant list is built from every tick, while its rows
-  and totals are filtered;
-- `userTickCountsByBoard` returns a count per board type, spray included. Its
-  own comment calls counts non-sensitive, so that one is a product decision;
-- `comments` on a tick, `climbCommunityStatus` and `voteSummary` answer a caller
-  who already holds the uuid.
+- session cards and summaries retain aggregate sends, tick counts, grade
+  distributions and board-type totals;
+- named participants and their counts use only readable ticks; private-only
+  participants disappear, and daily participant counts stay within that day;
+- `sessionDetail` uses readable ticks for participants, rows and totals;
+- `userTickCountsByBoard` retains anonymous board-type counts, spray included;
+- tick comments, nested comments, playlist-climb discussions, community metadata
+  and votes require a readable root; holding a UUID does not grant access.
 
-The smart-playlist ref queries can still count a reference to a deleted climb in
-`totalCount`; no row is returned.
+Smart-playlist rows and totals share the live-spray-reference rule. The author
+can retain their own deleted-climb reference; other viewers cannot count it.
 
 Pick by what the query HAS, not by taste:
 

@@ -15,7 +15,7 @@ import type {
   GraphQLSchema,
   GraphQLType,
 } from 'graphql';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import type { ConnectionContext, SocialEntityType } from '@boardsesh/shared-schema';
 
 /**
  * A schema-wide sweep: every climb reader in the SDL, run against ONE private
@@ -2454,6 +2454,16 @@ describe('private spray social references and anonymous aggregates', () => {
       expect(
         await ask6037(ctxFor(OWNER), document, { input: { type, userId: OWNER, boardName: 'spray' } }),
       ).toMatchObject({ smartPlaylist: { totalCount: 2, meta: { climbCount: 2 } } });
+    }
+  });
+
+  it('fails closed for unknown social roots while allowing established general threads', async () => {
+    const { readableSocialEntityIds } = await import('../graphql/resolvers/social/entity-read-access');
+    expect(await readableSocialEntityIds('future_private_root' as SocialEntityType, [privateTickUuid], null)).toEqual(
+      new Set(),
+    );
+    for (const entityType of ['board', 'gym', 'session'] as const) {
+      expect(await readableSocialEntityIds(entityType, [publicTickUuid], null)).toEqual(new Set([publicTickUuid]));
     }
   });
 
