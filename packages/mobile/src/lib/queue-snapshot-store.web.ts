@@ -6,6 +6,8 @@ import { userScopedStorageKey } from './user-storage-owner.web';
 
 const QUEUE_SNAPSHOT_KEY = 'boardsesh_local_queue_snapshot_v1';
 const MAX_PERSISTED_SUGGESTION_CLIMBS = 100;
+// Queue lifecycle generations are global, matching native: a clear fences old
+// callbacks across account transitions, while storage keys remain owner-scoped.
 const snapshotWriteLane = createQueueSnapshotWriteLane();
 
 export const getQueueSnapshotGeneration = snapshotWriteLane.getGeneration;

@@ -108,6 +108,22 @@ describe('browser queue snapshot write boundaries', () => {
     expect(await store.getStoredQueueSnapshot()).toMatchObject(snapshot);
   });
 
+  it('fences an older pending write for another owner when clearing', async () => {
+    const store = await import('../queue-snapshot-store.web');
+    const ownerA = storage.owner;
+    const barrier = deferred();
+    storage.writeBarrier = barrier.promise;
+    const firstSave = store.setStoredQueueSnapshot(snapshot);
+    await vi.waitFor(() => expect(storage.started).toHaveBeenCalledOnce());
+    storage.owner = { userId: 'b', authSessionId: 'b-login' };
+    const staleOtherOwnerSave = store.setStoredQueueSnapshot(snapshot);
+    const removal = store.clearStoredQueueSnapshot(ownerA);
+    barrier.release();
+    await Promise.all([firstSave, staleOtherOwnerSave, removal]);
+    expect(await store.getStoredQueueSnapshot()).toBeNull();
+    expect(storage.started).toHaveBeenCalledOnce();
+  });
+
   it('recovers after a rejected write and fences clears without an owner', async () => {
     const store = await import('../queue-snapshot-store.web');
     storage.failWrite = true;
