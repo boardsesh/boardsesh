@@ -130,6 +130,7 @@ export function useDiscardSprayWallDraft() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
+      void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
     },
   });
 }
@@ -175,6 +176,7 @@ export function usePublishSprayWallVersion() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
+      void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
     },
   });
 }

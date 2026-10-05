@@ -4112,13 +4112,8 @@ describe('a wall with no published version is listed to nobody but its owner', (
     expect(search.totalCount).toBe(1);
   });
 
-  it('keeps the owner escape in myBoards — your own half-built wall stays in your list', async () => {
-    // `listableSprayWallCondition(userId)` is the only reason this row survives
-    // the filter, and it lives in the WHERE the COUNT and the page share. Without
-    // the escape a climber would photograph a wall and watch it vanish from their
-    // own board list until they published it.
+  it('keeps unfinished walls out of myBoards but available for resuming setup', async () => {
     const wall = await unpublishedPublicWall('Mine, unfinished');
-
     const listed = async (userId: string) =>
       (await socialBoardQueries.myBoards({}, { input: { limit: 50, offset: 0 } }, ctxFor(userId))) as {
         boards: Array<{ uuid: string }>;
@@ -4126,19 +4121,35 @@ describe('a wall with no published version is listed to nobody but its owner', (
       };
 
     const owner = await listed(OWNER);
-    expect(owner.boards.map((board) => board.uuid)).toContain(wall.uuid);
-    expect(owner.totalCount).toBeGreaterThan(0);
+    expect(owner.boards.map((board) => board.uuid)).not.toContain(wall.uuid);
+    expect(owner.totalCount).toBe(0);
+    const resumable = (await sprayWallQueries.mySprayWalls({}, {}, ctxFor(OWNER))) as Array<{ uuid: string }>;
+    expect(resumable.map((draftWall) => draftWall.uuid)).toContain(wall.uuid);
 
-    // A follower of the wall gets the same list treatment as anybody else: the
-    // escape is the OWNER, not merely "someone who can see it".
     await db.execute(sql`
       INSERT INTO board_follows (user_id, board_uuid, created_at)
       VALUES (${STRANGER}, ${wall.uuid}, now())
       ON CONFLICT DO NOTHING
     `);
     const follower = await listed(STRANGER);
-    expect(follower.boards.map((board) => board.uuid)).not.toContain(wall.uuid);
+    expect(follower.boards).toHaveLength(0);
     expect(follower.totalCount).toBe(0);
+
+    const draft = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId: registerUploadedPhoto(wall.uuid), anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+    const versionId = draft.id;
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId } }, ctxFor(OWNER));
+    const publishedOwner = await listed(OWNER);
+    expect(publishedOwner.boards.map((board) => board.uuid)).toContain(wall.uuid);
+    expect(publishedOwner.totalCount).toBe(1);
+    expect((await listed(STRANGER)).totalCount).toBe(1);
+
+    await db.execute(sql`UPDATE spray_walls SET hidden_at = now() WHERE board_uuid = ${wall.uuid}`);
+    expect((await listed(OWNER)).totalCount).toBe(1);
+    expect((await listed(STRANGER)).totalCount).toBe(0);
   });
 
   it('leaves catalogue boards alone', async () => {
