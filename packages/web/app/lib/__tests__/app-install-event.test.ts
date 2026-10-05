@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vite-plus/test';
-import { APP_INSTALL_CLICK_EVENT, buildAppInstallClickProperties } from '../app-install-event';
+import { APP_INSTALL_CLICK_EVENT, APP_INSTALL_PLACEMENTS, buildAppInstallClickProperties } from '../app-install-event';
 
 describe('buildAppInstallClickProperties', () => {
   // These five objects are the payloads the pre-existing call sites emitted
@@ -46,6 +46,48 @@ describe('buildAppInstallClickProperties', () => {
     expect('placement' in properties).toBe(false);
     expect('gymSlug' in properties).toBe(false);
     expect('mode' in properties).toBe(false);
+    expect('qrMedium' in properties).toBe(false);
+  });
+
+  it('adds the printed medium when the click follows a scan', () => {
+    expect(
+      buildAppInstallClickProperties({
+        platform: 'android',
+        source: 'google-play',
+        placement: 'gym-page',
+        gymSlug: 'boulderwelt',
+        qrMedium: 'poster',
+      }),
+    ).toEqual({
+      platform: 'android',
+      source: 'google-play',
+      placement: 'gym-page',
+      gymSlug: 'boulderwelt',
+      qrMedium: 'poster',
+    });
+  });
+
+  it('carries the placement the /help store pair now sends', () => {
+    expect(
+      buildAppInstallClickProperties({ platform: 'ios', source: 'app-store', placement: 'help', mode: 'install' }),
+    ).toEqual({ platform: 'ios', source: 'app-store', placement: 'help', mode: 'install' });
+  });
+
+  it('lists every placement exactly once, with the two historic ones unchanged', () => {
+    // A placement is also the store link's id, so these strings end up in
+    // install data. Add to the list; never rename a member.
+    expect(APP_INSTALL_PLACEMENTS).toEqual([
+      'hero',
+      'gym-page',
+      'help',
+      'climb-view',
+      'climb-list',
+      'spray-climb',
+      'gyms-directory',
+      'join-page',
+      'site-banner',
+    ]);
+    expect(new Set(APP_INSTALL_PLACEMENTS).size).toBe(APP_INSTALL_PLACEMENTS.length);
   });
 
   it('carries the gym-page placement and slug the gym CTA will need', () => {

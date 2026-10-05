@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GRAPHQL_EMPTY_RESPONSE_ERROR_NAME } from '@boardsesh/offline-sync/error-classification';
+import { SchemaNewerThanAppError } from '@boardsesh/offline-sync';
+import { SCHEMA_NEWER_REPORT_KIND } from '../../db/schema-downgrade';
 import { reportError, reportHandledError } from '../error-reporting';
 import { addBreadcrumbToSentry, captureToSentry } from '../sentry';
 import { resetObserveRuntimeForTests, setObserveRuntime } from '../observe-runtime';
@@ -445,6 +447,22 @@ describe('reportError', () => {
     const error = new Error('x');
     reportError(error, { level: 'error', tags: { source: 's' } });
     expect(mockedCaptureToSentry).toHaveBeenCalledWith(error, { level: 'error', tags: { source: 's' } });
+  });
+
+  describe('a call refused on a database a newer bundle migrated', () => {
+    it('is dropped, from the raw funnel and the handled one alike', () => {
+      reportError(new SchemaNewerThanAppError(11, 10), { tags: { source: 'offline-sync', kind: 'cache-clear' } });
+      reportError(new SchemaNewerThanAppError(11, 10));
+      reportHandledError(new SchemaNewerThanAppError(11, 10), { tags: { source: 'react-query' } });
+      expect(mockedCaptureToSentry).not.toHaveBeenCalled();
+    });
+
+    it('lets the init chain report the state itself, once, under its own kind', () => {
+      const error = new SchemaNewerThanAppError(11, 10);
+      const context = { level: 'warning' as const, tags: { source: 'offline-sync', kind: SCHEMA_NEWER_REPORT_KIND } };
+      reportError(error, context);
+      expect(mockedCaptureToSentry).toHaveBeenCalledWith(error, context);
+    });
   });
 });
 

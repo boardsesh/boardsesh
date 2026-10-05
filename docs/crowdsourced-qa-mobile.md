@@ -47,6 +47,42 @@ Signed out, the pick list still works: the branch list is an unauthenticated dev
 rows render as bare `pr-N` without their PR metadata. Dev clients and any binary without the surfing
 headers see none of it.
 
+## Testers who also get updates early
+
+"Get updates early" (More → **App updates**, behind the `early-updates` flag) pins a phone to the
+`pr-beta` branch. It shares the one `xprem-branch` header with previews, so the two take turns. The
+whole design, including the expo-updates rule it rests on, is in `docs/mobile-ota-updates.md` →
+"Early updates"; what changes for QA:
+
+- **`pr-beta` is never a PR.** `parsePrBranch` rejects it, `otaBranchKind` names it
+  `early-updates`, and the branch list reports it beside `staging`, never in `previews`. The gate
+  treats a `pr-beta` bundle like production: a tester on early updates is still offered the pick
+  list.
+- **The pin has an owner.** `otaPinnedBranch` records the branch this app last pinned. The three
+  `surfTo*` helpers write it before they surf and put the previous pin back when the surf rejects
+  or hangs. While a `pr-<n>` or `pr-staging` bundle is the one running, nothing about early updates
+  touches the header.
+- **Leaving goes back to early updates, not production.** For a member (the stored choice, unless
+  the flag says off) the picker's Production row is labelled **Early updates** while the server
+  offers that branch for this build, and it, **Leave preview** and a filed verdict all call
+  `returnToOwnTrack`, which switches to `pr-beta` with a download and no reload. The toast says the
+  change applies next time the app opens. When the switch cannot be made the preview stays pinned
+  and the usual "could not switch off this preview" toast shows. A non-member's three exits are
+  unchanged, and so are a member's while `pr-beta` is not offered.
+- **The switch is not offered on a preview.** More shows a line saying to leave the preview first.
+- **A merged PR no longer strands its tester.** A recorded preview pin whose bundle is not the one
+  running makes the launch sync ask the server whether the branch still exists. If it is gone, a
+  member is moved to early updates and everyone else to the regular track. The second can be
+  refused (the regular update is already on disk under the dead pin's stamp); the phone is then on
+  regular updates in effect, and More offers the switch as usual.
+- **Branch Surfing switched off unpins at launch, as before.** The branch request only reads.
+  `QaTesterGate` and the picker's `useQaBranches` both pass a surfing-off answer to
+  `noteBranchSurfingOff`, which fetches a regular update before dropping whichever pin is in place,
+  and tries even with no pin on record. If it cannot finish, the leave is recorded as owed and the
+  launch sync retries it. The gate only makes that request for a tester with the launch prompt on
+  who is not on a preview bundle, the same launches that reached xprem's unpin before. The
+  `earlyUpdates` choice is kept.
+
 ## Where the pieces live
 
 | Piece                                           | File                                                                             |
@@ -56,6 +92,9 @@ headers see none of it.
 | Pick list / brief screens                       | `src/components/qa/Qa{Pick,Brief}Screen.tsx` (routes: `app/qa/{pick,brief}.tsx`) |
 | Verdict sheet                                   | `src/components/user-drawer/QaVerdictSheet.tsx`                                  |
 | xprem wrapper (the only deep-import site)       | `src/lib/qa/qa-surf.ts`                                                          |
+| Early updates: sync decision, the switch, leaving a preview | `src/lib/qa/early-updates.ts`, `src/lib/qa/use-early-updates.ts`         |
+| Early updates: launch sync (renders nothing)    | `src/components/qa/EarlyUpdatesLaunchSync.tsx`                                   |
+| The picker's branch query + surfing-off effect  | `src/lib/qa/use-qa-branches.ts`                                                  |
 | Branch-name parsing, session keys, row ordering | `src/lib/qa/{pr-branch,qa-keys,qa-pick-rows}.ts`                                 |
 | Search parsing, filtering, list state           | `src/lib/qa/qa-pick-rows.ts` (`parsePrQuery`, `filterQaPickRows`, `qaPickListState`) |
 | The search field itself                         | `src/components/SearchField.tsx` (shared with climber search)                    |
@@ -168,6 +207,11 @@ launch with no update id.
 - `qaBriefSeenKey` — the brief has been shown to this account for this branch + bundle.
 - `qaVerdictSubmittedKey` — this account has filed a verdict for this branch + bundle.
 
+`earlyUpdates` (the "Get updates early" choice), `otaPinnedBranch` (the branch this app last
+pinned) and the three bookkeeping keys beside it (`otaPinSwitchInFlight`, `otaLeaveOwed`,
+`otaLeaveBlockedUpdateId`) live in the same store but are per device, not per account: the header
+override they describe is device-wide.
+
 Keying on the bundle rather than the branch is deliberate: when the author pushes again, that is a
 different thing to test, so the brief shows again and a second verdict is possible.
 
@@ -189,6 +233,9 @@ verdict, and telling them apart is the point: a surf failure is our bug, leaving
 "Test a PR preview", the dev row on More — emits nothing when it is closed, and a non-tester bounced
 off the route guard emits nothing either. Otherwise the denominator counted prompts that were never
 shown and prompted → picked/skipped stopped adding up.
+
+`Early Updates Toggled` `{ enabled }` is not part of this funnel. It fires when a climber flips
+"Get updates early" and is defined with the OTA events in `src/lib/ota-telemetry.ts`.
 
 ## In a dev build
 

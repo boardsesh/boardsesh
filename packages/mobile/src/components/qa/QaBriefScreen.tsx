@@ -14,7 +14,9 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { openExternalUrl } from '../../lib/open-url';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
-import { qaSurfingAvailable, readRunningPrNumber, surfToProduction } from '../../lib/qa/qa-surf';
+import { qaSurfingAvailable, readRunningPrNumber } from '../../lib/qa/qa-surf';
+import { returnToOwnTrack } from '../../lib/qa/early-updates';
+import { useEarlyUpdatesMember } from '../../lib/qa/use-early-updates';
 import { riskTone, type QaRiskTone } from '../../lib/qa/qa-pick-rows';
 import { useQaPreviews } from '../../lib/qa/use-qa-previews';
 import { QA_PREVIEW_LEFT_EVENT, QA_SURF_FAILED_EVENT, surfFailureReason } from '../../lib/qa/qa-analytics';
@@ -53,6 +55,8 @@ export function QaBriefScreen() {
 
   const [leaving, setLeaving] = useState(false);
   const surfingAvailable = qaSurfingAvailable();
+  // A "Get updates early" member leaves a preview for early updates, not production.
+  const earlyUpdatesMember = useEarlyUpdatesMember();
 
   // Same sequencing as the user-drawer route: the verdict sheet is mounted at
   // the drawer provider's root and presents off the root view controller, so it
@@ -76,13 +80,17 @@ export function QaBriefScreen() {
     if (!surfingAvailable || leaving) return;
     setLeaving(true);
     track(QA_PREVIEW_LEFT_EVENT, { prNumber: runningPrNumber });
-    void surfToProduction()
+    void returnToOwnTrack(earlyUpdatesMember)
       .then((outcome) => {
+        // The app is restarting onto the other bundle; this screen is about to
+        // be torn down and has nothing left to show.
+        if (outcome === 'reloading') return;
         setLeaving(false);
         // Production is not *newer* than a fresh pr-N bundle, so the running JS
         // usually stays until production publishes again. The pin is gone either
         // way, which is what actually matters.
         if (outcome === 'nothing-to-load') showToast(t('qa.shared.backOnProduction'), 'info');
+        if (outcome === 'early-updates-next-launch') showToast(t('qa.shared.backOnEarlyUpdates'), 'info');
       })
       .catch((error: unknown) => {
         setLeaving(false);
@@ -90,7 +98,7 @@ export function QaBriefScreen() {
         track(QA_SURF_FAILED_EVENT, { prNumber: null, reason: surfFailureReason(error) });
         showToast(t('qa.shared.leaveFailed'), 'error');
       });
-  }, [leaving, runningPrNumber, showToast, surfingAvailable, t]);
+  }, [earlyUpdatesMember, leaving, runningPrNumber, showToast, surfingAvailable, t]);
 
   const containerStyle = [styles.root, { backgroundColor: systemColors.groupedBackground, paddingTop: insets.top }];
 

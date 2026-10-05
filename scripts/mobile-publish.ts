@@ -420,7 +420,7 @@ async function publishToSelfHostedBranch(
   // update). We deliberately do NOT pass --channel: in eoas@3 it's a DEPRECATED
   // client-side no-op — it only sets RELEASE_CHANNEL during config resolution; it
   // is NOT sent to the server, does NOT create a channel, and does NOT drive
-  // rollouts. Production's channel→branch mapping is a one-time dashboard action;
+  // rollouts. Production's channel→branch mapping is declared in infra/ota/config.ts;
   // per-PR previews use branch surfing. Progressive rollouts are branch + runtimeVersion scoped
   // (--rollout-percentage targets a branch's runtimeVersion), not channel scoped.
   // EOAS_PACKAGE_SPEC pins the CLI to the deployed server's version; the two

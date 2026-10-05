@@ -1,0 +1,139 @@
+name: Mobile OTA Unlock
+
+# Reverts a live canary on one branch, so the next publish there is accepted.
+# xprem refuses a publish (409) while a rollout is live on the same branch and
+# runtime version.
+#
+# It reverts and never finishes. Finishing would deliver an update nobody has
+# judged to every device; reverting republishes the previous update, and the
+# devices that took the canary return to it on their next check.
+#
+# iOS and Android resolve different runtime versions, so one release is two
+# rollouts. Give both and one run reverts both. Finding no live rollout on a
+# runtime version is a clean no-op, so a caller can run this unconditionally
+# before it publishes.
+#
+# Dispatch-only, on purpose. A reusable workflow would be loaded from the
+# CALLER's ref, so a release branch or a backport could change the steps that run
+# with the admin login. Other workflows start it with
+#
+#   gh workflow run mobile-ota-unlock.yml --ref main -f ios_runtime_version=... -f android_runtime_version=...
+#
+# so the workflow file and the scripts both come from main. Nothing does yet.
+# See docs/mobile-ota-updates.md, "Managing xprem as code".
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'xprem branch holding the rollout'
+        type: string
+        default: production
+      ios_runtime_version:
+        description: 'iOS runtime version (40-character fingerprint); leave empty to skip iOS'
+        type: string
+        default: ''
+      android_runtime_version:
+        description: 'Android runtime version (40-character fingerprint); leave empty to skip Android'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+# No concurrency group, deliberately. GitHub keeps at most one run waiting per
+# group and cancels an older waiting run when a newer one arrives, so with a group
+# a third request would silently cancel the second, and that caller's publish
+# would then be refused. Runs may overlap instead, which is safe: every revert
+# names the update it expects (`expectedUpdateId`), the server refuses a write
+# against a rollout that has already changed, and "already reverted" is success.
+
+jobs:
+  revert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Holds the dashboard admin login. The owner creates this environment with a
+    # deployment-branch policy of `main` BEFORE adding its secrets; see the docs
+    # for the list. The first step below refuses any other ref regardless.
+    environment: ota-stable-release
+    steps:
+      # Before anything reads a secret.
+      - name: Refuse any ref but main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::This workflow holds the OTA admin login and only runs from main. Dispatch it with --ref main."
+          exit 1
+
+      - name: Checkout main
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          persist-credentials: false
+
+      # No dependency install: the script uses node built-ins only.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
+
+      - name: Revert the live rollouts
+        env:
+          # A secret, never a variable: a variable is not masked in logs.
+          OTA_ADMIN_EMAIL: ${{ secrets.OTA_ADMIN_EMAIL }}
+          OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
+          OTA_BRANCH: ${{ inputs.branch }}
+          IOS_RUNTIME_VERSION: ${{ inputs.ios_runtime_version }}
+          ANDROID_RUNTIME_VERSION: ${{ inputs.android_runtime_version }}
+          NODE_NO_WARNINGS: '1'
+        run: |
+          set -euo pipefail
+
+          # The login email is a secret here and is masked as one. Mask it again
+          # explicitly before anything else can print it: a value that was ever
+          # moved to a variable would otherwise reach the log in the clear.
+          if [ -n "${OTA_ADMIN_EMAIL:-}" ]; then echo "::add-mask::$OTA_ADMIN_EMAIL"; fi
+
+          # Inputs reach the shell through the environment, never by
+          # interpolation, and are checked before anything uses them.
+          if ! printf '%s' "$OTA_BRANCH" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*$'; then
+            echo "::error::Invalid branch name."
+            exit 1
+          fi
+          if [ -z "$IOS_RUNTIME_VERSION" ] && [ -z "$ANDROID_RUNTIME_VERSION" ]; then
+            echo "::error::Give ios_runtime_version, android_runtime_version, or both."
+            exit 1
+          fi
+          for runtime_version in "$IOS_RUNTIME_VERSION" "$ANDROID_RUNTIME_VERSION"; do
+            if [ -n "$runtime_version" ] && ! printf '%s' "$runtime_version" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "::error::A runtime version must be a 40-character fingerprint."
+              exit 1
+            fi
+          done
+
+          # An environment that has not been given the login yet must not fail
+          # its caller. If a rollout is live anyway, the server still refuses the
+          # caller's publish, so skipping here cannot let one through.
+          if [ -z "${OTA_ADMIN_EMAIL:-}" ] || [ -z "${OTA_ADMIN_PASSWORD:-}" ]; then
+            echo "::notice::OTA_ADMIN_EMAIL or OTA_ADMIN_PASSWORD is not set in the ota-stable-release environment; skipping."
+            echo "Skipped: the \`ota-stable-release\` environment has no \`OTA_ADMIN_EMAIL\` / \`OTA_ADMIN_PASSWORD\`. Nothing was read or reverted." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Every platform live on each named runtime version is reverted. Both
+          # are attempted even when the first fails, so one stuck platform does
+          # not leave the other rolling out; the job still ends red.
+          status=0
+          : > "$RUNNER_TEMP/ota-unlock.log"
+          for runtime_version in "$IOS_RUNTIME_VERSION" "$ANDROID_RUNTIME_VERSION"; do
+            if [ -z "$runtime_version" ]; then continue; fi
+            node --experimental-strip-types scripts/mobile-ota-rollout.ts revert \
+              --branch "$OTA_BRANCH" \
+              --runtime-version "$runtime_version" \
+              --if-live 2>&1 | tee -a "$RUNNER_TEMP/ota-unlock.log" || status=1
+          done
+          {
+            echo '### OTA unlock'
+            echo ''
+            echo '```'
+            cat "$RUNNER_TEMP/ota-unlock.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

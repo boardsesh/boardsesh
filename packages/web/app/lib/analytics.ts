@@ -1,8 +1,9 @@
 import * as Sentry from '@sentry/nextjs';
 import { PostHog } from 'posthog-js-lite';
 import { createAnalytics } from '@boardsesh/analytics';
-import { analyticsPathname, isAdminAnalyticsUrl } from './analytics-paths';
+import { isAdminAnalyticsUrl } from './analytics-paths';
 import { getBackendHttpUrl } from './backend-url';
+import { getSessionInboundCampaign, type InboundCampaign } from './inbound-campaign';
 import { isAutomatedCrawlerUserAgent } from './is-crawler';
 import { isProductionHost } from './production-hosts';
 
@@ -186,7 +187,36 @@ export function track(name: string, properties?: EventProperties): void {
   // PostHog is the only sink. It stays hostname-gated inside getPosthog(), so a
   // dev or preview build sends nothing at all — set NEXT_PUBLIC_ANALYTICS_DEBUG=1
   // to see what a call would have carried.
-  core.track(name, properties);
+  core.track(name, withInboundCampaign(properties));
+}
+
+/**
+ * Add the campaign this visit landed with (`utm_*`, `gclid`) to an event's
+ * properties (#6027).
+ *
+ * posthog-js-lite never parses campaign params, so nothing on www said where a
+ * visit came from. Sending them as plain event properties is enough for the
+ * session: PostHog derives `$entry_utm_source` from the first event that
+ * carries them.
+ *
+ * It does NOT give a signed-out visitor a person property. This client sets no
+ * `personProfiles`, so it runs on the SDK default `identified_only` and every
+ * anonymous event goes out with `$process_person_profile: false`. The person's
+ * `$initial_utm_source` exists only for someone identified on www. Break www
+ * traffic down by the session property or by the event's own `utm_source`.
+ *
+ * They go on `$pageview` and on every `track()` event, `App Install Click`
+ * included, so a store click can be broken down by the source that brought the
+ * visitor. The caller's own properties win a key collision. An untagged visit
+ * gets its properties back untouched — `undefined` stays `undefined` — so no
+ * existing payload changes.
+ */
+function withInboundCampaign(): InboundCampaign | undefined;
+function withInboundCampaign(properties: EventProperties | undefined): EventProperties | undefined;
+function withInboundCampaign(properties?: EventProperties): EventProperties | undefined {
+  const inboundCampaign = getSessionInboundCampaign();
+  if (!inboundCampaign) return properties;
+  return { ...inboundCampaign, ...properties };
 }
 
 /**
@@ -339,7 +369,10 @@ export function pageview(url: string): void {
 
   const posthog = getPosthog();
   if (!posthog) return;
-  posthog.capture('$pageview', { $current_url: analyticsPathname(url) });
+  // No `$current_url` here. The SDK stamps the full `location.href` on every
+  // event and spreads its own properties AFTER the caller's (@posthog/core
+  // `enrichProperties`), so a pathname passed in was always overwritten.
+  posthog.capture('$pageview', withInboundCampaign());
 }
 
 function coerceFeatureFlagBoolean(value: unknown): boolean | undefined {

@@ -10,7 +10,8 @@ import { getSetting, setSetting, useSetting } from '../../settings';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
 import { decideQaGate, type QaGateInput } from '../../lib/qa/qa-gate-decision';
-import { listPrBranches, readRunningOtaBranch, readRunningPrNumber, STAGING_OTA_BRANCH } from '../../lib/qa/qa-surf';
+import { fetchQaBranches, readRunningOtaBranch, readRunningPrNumber, STAGING_OTA_BRANCH } from '../../lib/qa/qa-surf';
+import { noteBranchSurfingOff } from '../../lib/qa/early-updates';
 import { qaSessionKey } from '../../lib/qa/qa-keys';
 import { prBranchName } from '../../lib/qa/pr-branch';
 import { LAUNCH_ORIGIN, QA_BRIEF_SHOWN_EVENT, QA_PREVIEW_PROMPTED_EVENT } from '../../lib/qa/qa-analytics';
@@ -157,7 +158,12 @@ export function QaTesterGate() {
         let prNumbers: number[] = [];
         if (runningPrNumber === null) {
           try {
-            const branches = await listPrBranches();
+            const answer = await fetchQaBranches();
+            // The server switched surfing off, which asks a pinned device to
+            // unpin. This is the one request a tester's launch makes without
+            // opening the picker, so it is where that has to be heard.
+            if (answer.kind === 'surfing-off') void noteBranchSurfingOff();
+            const branches = answer.kind === 'listed' ? answer.list.previews : null;
             prBranchCount = branches === null ? null : branches.length;
             prNumbers = branches?.map((branch) => branch.prNumber) ?? [];
           } catch (error) {

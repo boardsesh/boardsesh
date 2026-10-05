@@ -1,9 +1,8 @@
-import * as Updates from 'expo-updates';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSetting } from '../settings';
 import { isPreviewBuild } from '../lib/preview-build';
-import { readOtaBranch } from '../lib/ota-telemetry';
+import { otaBranchKind, readRunningOtaBranch } from '../lib/qa/qa-surf';
 import { useBottomChromeMetrics } from '../hooks/use-bottom-chrome-metrics';
 import { useNativeTabBar } from '../hooks/use-bottom-accessory';
 import { useTheme } from '../providers/theme-provider';
@@ -30,17 +29,20 @@ import { usePublishedWindowInsetBottom } from '../lib/window-inset-store';
  *
  * Off unless BOTH hold: the persisted "Bottom chrome diagnostics" toggle
  * (More → Diagnostics) is on, and the session is diagnostic-eligible — a dev
- * build, an EAS preview build, or a `pr-<N>` OTA channel override (the per-PR
- * preview a production install can switch onto).
+ * build, an EAS preview build, or a `pr-<N>` / staging OTA branch (the previews
+ * a production install can switch onto).
  */
 
 /**
  * Whether this session may surface bottom-chrome diagnostics at all. Also gates
  * the settings row that flips the persisted toggle, so production users outside
- * a pr- preview never see either.
+ * a preview never see either. The early-updates branch is named `pr-beta` but
+ * its members are ordinary climbers, so it is classified, not prefix-matched.
  */
 export function useBottomChromeDiagnosticsEligible(): boolean {
-  return __DEV__ || isPreviewBuild() || readOtaBranch(Updates.manifest)?.startsWith('pr-') === true;
+  if (__DEV__ || isPreviewBuild()) return true;
+  const runningBranchKind = otaBranchKind(readRunningOtaBranch());
+  return runningBranchKind === 'preview' || runningBranchKind === 'staging';
 }
 
 export function BottomChromeDebugOverlay() {

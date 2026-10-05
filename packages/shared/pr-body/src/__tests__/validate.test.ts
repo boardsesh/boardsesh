@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { OFFLINE_MIGRATIONS_PATH, OFFLINE_MIGRATION_ACK_LINE } from '../offline-migration';
 import { SKIP_QA_GATE_LABEL, validatePrBody } from '../validate';
 
 const GOOD = [
@@ -90,5 +91,42 @@ describe('validatePrBody', () => {
     expect(result.ok).toBe(true);
     expect(result.errors).toEqual([]);
     expect(result.warnings).toEqual(['"skip-qa-gate" label present — test plan and risk not checked.']);
+  });
+
+  describe('offline migration statement', () => {
+    it('asks nothing of a PR that leaves the migration list alone', () => {
+      expect(validatePrBody(GOOD, [], ['packages/mobile/app/_layout.tsx']).errors).toEqual([]);
+      expect(validatePrBody(GOOD).errors).toEqual([]);
+    });
+
+    it('fails a PR that changes the migration list without the statement', () => {
+      const result = validatePrBody(GOOD, [], [OFFLINE_MIGRATIONS_PATH]);
+      expect(result.ok).toBe(false);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain(OFFLINE_MIGRATIONS_PATH);
+      expect(result.errors[0]).toContain(OFFLINE_MIGRATION_ACK_LINE);
+    });
+
+    it('passes once the statement is ticked', () => {
+      const result = validatePrBody(`${GOOD}\n\n${OFFLINE_MIGRATION_ACK_LINE}`, [], [OFFLINE_MIGRATIONS_PATH]);
+      expect(result.ok).toBe(true);
+      expect(result.errors).toEqual([]);
+    });
+
+    it('reports it next to the other problems rather than instead of them', () => {
+      const result = validatePrBody('## Summary\nnothing else', [], [OFFLINE_MIGRATIONS_PATH]);
+      expect(result.errors).toHaveLength(3);
+      expect(result.errors[0]).toContain(OFFLINE_MIGRATIONS_PATH);
+    });
+
+    it('is not waived by the skip label, which only covers the test plan and risk', () => {
+      const result = validatePrBody('## Summary\nnothing', [SKIP_QA_GATE_LABEL], [OFFLINE_MIGRATIONS_PATH]);
+      expect(result.ok).toBe(false);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain(OFFLINE_MIGRATIONS_PATH);
+
+      const ticked = validatePrBody(OFFLINE_MIGRATION_ACK_LINE, [SKIP_QA_GATE_LABEL], [OFFLINE_MIGRATIONS_PATH]);
+      expect(ticked.ok).toBe(true);
+    });
   });
 });

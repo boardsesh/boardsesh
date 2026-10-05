@@ -142,6 +142,17 @@ describe('BoardManageRow offline toggle gating', () => {
     expect(offlineToggleProps.last?.state).toBe('off');
   });
 
+  it('leaves the toggle enabled by default', () => {
+    render(<BoardManageRow {...rowProps} downloadState="off" />);
+    expect(offlineToggleProps.last?.disabled).toBe(false);
+  });
+
+  it('keeps the toggle in place but disabled while offline storage is paused', () => {
+    const { queryByTestId } = render(<BoardManageRow {...rowProps} downloadState="off" offlineControlsDisabled />);
+    expect(queryByTestId('offline-toggle')).not.toBeNull();
+    expect(offlineToggleProps.last?.disabled).toBe(true);
+  });
+
   it('renders no toggle and no offline caption when downloadState is undefined (flag off)', () => {
     const { queryByTestId, queryByText } = render(<BoardManageRow {...rowProps} downloadState={undefined} />);
     expect(queryByTestId('offline-toggle')).toBeNull();

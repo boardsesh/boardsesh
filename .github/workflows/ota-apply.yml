@@ -1,0 +1,131 @@
+name: OTA Config Apply
+
+# Config-as-code for the xprem control plane at updates.boardsesh.com: which
+# branch the production channel serves, Branch Surfing, and the long-lived
+# branches and their protection. The declaration is infra/ota/config.ts.
+#
+# Three modes, by how much they may change:
+#
+#   push to main       Unattended, so additive only: it creates a declared branch
+#                      that is missing and protects a declared branch. It prints
+#                      the whole plan, and anything that would change what devices
+#                      are served (remapping the channel, changing Branch Surfing,
+#                      creating a channel) is listed as "pending manual apply" and
+#                      left alone. The daily drift check keeps reporting it.
+#   dispatch, plan     Prints the plan. Changes nothing. The default.
+#   dispatch, apply    A person asked: makes every declared change.
+#
+# The tool never deletes, never lifts protection, never touches a per-PR preview
+# branch, and refuses to remap a channel while a rollout is live. It publishes
+# nothing: no update moves because this ran.
+#
+# See docs/mobile-ota-updates.md, "Managing xprem as code". The daily read-only
+# check is ota-drift.yml.
+on:
+  push:
+    branches: [main]
+    # The declaration only. A change to the tool is not a change to what the
+    # server should look like, and must not trigger a write against it.
+    paths:
+      - 'infra/ota/**'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'plan prints the diff and changes nothing; apply makes the server match'
+        type: choice
+        options:
+          - plan
+          - apply
+        default: plan
+
+permissions:
+  contents: read
+
+concurrency:
+  # One writer at a time, and a running apply is never cancelled: interrupted
+  # between two writes it leaves a half-state the next run has to explain. GitHub
+  # keeps at most one run waiting in a group and drops an older waiting run when a
+  # newer one arrives. That is safe here: every run applies main's current
+  # declaration, so the newest waiting run does everything the dropped one would.
+  group: ota-config-apply
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    # A plan is about 90 GETs (one per runtime version of each declared branch)
+    # and an apply a handful of writes on top. Ten minutes is a hung server.
+    timeout-minutes: 10
+    # Holds the dashboard admin login. The owner creates this environment with a
+    # deployment-branch policy of `main` BEFORE adding its secrets; see the docs
+    # for the list. The first step below refuses any other ref regardless.
+    environment: ota-stable-release
+    steps:
+      # Before anything reads a secret. The environment's branch policy is the
+      # real gate; this makes the refusal explicit, and holds if the policy is
+      # ever loosened or the environment recreated without one.
+      - name: Refuse any ref but main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::This workflow holds the OTA admin login and only runs from main. Dispatch it with --ref main."
+          exit 1
+
+      # Always `main`: the code that receives the admin login is only ever code
+      # that was reviewed and merged.
+      - name: Checkout main
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          persist-credentials: false
+
+      # No dependency install: scripts/ota-apply.ts and everything it imports
+      # use node built-ins only, so no package's install script runs in a job
+      # that holds the admin login.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
+
+      - name: Plan or apply the declared state
+        env:
+          # A secret, never a variable: a variable is not masked in logs, and
+          # the email is half of the login to the server the whole fleet uses.
+          OTA_ADMIN_EMAIL: ${{ secrets.OTA_ADMIN_EMAIL }}
+          OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
+          EVENT_NAME: ${{ github.event_name }}
+          MODE: ${{ inputs.mode }}
+          NODE_NO_WARNINGS: '1'
+        run: |
+          set -euo pipefail
+
+          # The login email is a secret here and is masked as one. Mask it again
+          # explicitly before anything else can print it: a value that was ever
+          # moved to a variable would otherwise reach the log in the clear.
+          if [ -n "${OTA_ADMIN_EMAIL:-}" ]; then echo "::add-mask::$OTA_ADMIN_EMAIL"; fi
+
+          # An environment that has not been given the login yet must not look
+          # like a failed apply. Say so where a human will read it, and stop.
+          if [ -z "${OTA_ADMIN_EMAIL:-}" ] || [ -z "${OTA_ADMIN_PASSWORD:-}" ]; then
+            echo "::notice::OTA_ADMIN_EMAIL or OTA_ADMIN_PASSWORD is not set in the ota-stable-release environment; skipping."
+            echo "Skipped: the \`ota-stable-release\` environment has no \`OTA_ADMIN_EMAIL\` / \`OTA_ADMIN_PASSWORD\`. Nothing was read or changed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Which changes a run may make is decided by the script's --only
+          # allowlist, which is unit-tested. This only picks the mode.
+          flags=()
+          if [ "$EVENT_NAME" = "push" ]; then
+            flags+=(--apply --only "create-branch,protect-branch")
+          elif [ "$MODE" = "apply" ]; then
+            flags+=(--apply)
+          fi
+
+          status=0
+          node --experimental-strip-types scripts/ota-apply.ts "${flags[@]}" 2>&1 | tee "$RUNNER_TEMP/ota-apply.log" || status=$?
+          {
+            echo '### OTA config'
+            echo ''
+            echo '```'
+            cat "$RUNNER_TEMP/ota-apply.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

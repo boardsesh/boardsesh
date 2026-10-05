@@ -19,7 +19,9 @@ import { setSetting } from '../../settings';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
 import { clearScreenshotUploadCache, uploadFeedbackScreenshots } from '../../lib/feedback/screenshot-upload';
-import { qaSurfingAvailable, readRunningPrNumber, surfToProduction } from '../../lib/qa/qa-surf';
+import { qaSurfingAvailable, readRunningPrNumber } from '../../lib/qa/qa-surf';
+import { returnToOwnTrack } from '../../lib/qa/early-updates';
+import { useEarlyUpdatesMember } from '../../lib/qa/use-early-updates';
 import { prBranchName } from '../../lib/qa/pr-branch';
 import { qaSessionKey } from '../../lib/qa/qa-keys';
 import { useQaPreviews, useSubmitQaVerdict } from '../../lib/qa/use-qa-previews';
@@ -88,6 +90,8 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
   const [screenshotUris, setScreenshotUris] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const surfingAvailable = qaSurfingAvailable();
+  // A "Get updates early" member leaves a preview for early updates, not production.
+  const earlyUpdatesMember = useEarlyUpdatesMember();
 
   const trimmedComment = comment.trim();
   const remainingDeclineChars = Math.max(0, DECLINE_COMMENT_MIN_LENGTH - trimmedComment.length);
@@ -102,12 +106,13 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
 
   const leavePreview = useCallback(() => {
     if (!surfingAvailable) return;
-    void surfToProduction()
+    void returnToOwnTrack(earlyUpdatesMember)
       .then((outcome) => {
         // Production is not *newer* than a fresh pr-N bundle, so the running JS
         // usually stays put until production publishes again. The branch pin is
         // gone either way, which is the part that matters.
         if (outcome === 'nothing-to-load') showToast(t('qa.shared.backOnProduction'), 'info');
+        if (outcome === 'early-updates-next-launch') showToast(t('qa.shared.backOnEarlyUpdates'), 'info');
       })
       .catch((error: unknown) => {
         reportHandledError(error, { tags: { source: 'qa', op: 'surf-to-production' } });
@@ -118,7 +123,7 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
         // to Sentry and to the event's `reason` rather than into the tester's face.
         showToast(t('qa.shared.leaveFailed'), 'error');
       });
-  }, [showToast, surfingAvailable, t]);
+  }, [earlyUpdatesMember, showToast, surfingAvailable, t]);
 
   const handleFullyDismissed = useCallback(() => {
     if (!leaveAfterDismissRef.current) return;

@@ -18,8 +18,12 @@
 // rollout controls — which is when the `variants` property itself was dropped
 // from the definition type and had to be restored here.
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { readPosthogFeatureFlags, subscribePosthogFeatureFlags } from '../lib/analytics';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  readPosthogFeatureFlags,
+  readPosthogFeatureFlagsRequestId,
+  subscribePosthogFeatureFlags,
+} from '../lib/analytics';
 import { useFeatureFlagOverrides, type FeatureFlagOverrides } from '../lib/feature-flag-overrides';
 import { isDevBuild } from '../lib/is-dev-build';
 import { isOfflineDownloadsEnabled } from './offline-downloads-enabled';
@@ -213,6 +217,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'QA only. Puts the signed-in account in the treatment (card + pill) or control arm of the connect-step test, whatever its age, build or app version, and starts this phone from a clean slate as if it had never connected. Takes effect right away. Only the on-device choice here counts; a PostHog value for this key is ignored. Forced exposures are tagged arm_forced and left out of the analysis. Default lets the account hash decide.',
     variants: ['treatment', 'control'],
   },
+  {
+    key: 'early-updates',
+    label: 'Early updates',
+    description:
+      'The "Get updates early" switch in More: a phone that turns it on gets every merge to main ahead of the daily stable release. A POSITIVE rollout flag, not a kill switch, because it has to ship hidden: with no value at all the row is hidden and nobody is moved. Turning it off in PostHog after climbers joined hides the row, moves them back to the regular track at their next online launch and keeps their choice, so they rejoin when it is turned on again.',
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the
@@ -265,6 +275,17 @@ const FeatureFlagsContext = createContext<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
 const FeatureFlagsResolvedContext = createContext<boolean>(false);
 
 /**
+ * Whether PostHog has answered with a NEW response since the app opened.
+ *
+ * Stricter than "resolved", which is also reached by the timeout and by PostHog
+ * re-emitting its cached bag after a failed request. Read this before doing
+ * something to a climber on a flag being OFF that a stale bag should not be
+ * able to trigger: the cached bag may predate a rollout, or belong to a state
+ * the flag has since left.
+ */
+const FeatureFlagsFreshContext = createContext<boolean>(false);
+
+/**
  * How long a consumer waits for PostHog before treating the bag as final.
  *
  * There has to be a ceiling. PostHog may be unreachable, disabled in this build,
@@ -293,6 +314,10 @@ export function FeatureFlagsProvider({
 }) {
   const [posthogFlags, setPosthogFlags] = useState<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
   const [resolved, setResolved] = useState(false);
+  const [fresh, setFresh] = useState(false);
+  // The response the cached bag came from. Read during the first render, before
+  // the subscription below asks PostHog to reload.
+  const cachedRequestIdRef = useRef(readPosthogFeatureFlagsRequestId());
   const { overrides } = useFeatureFlagOverrides();
 
   useEffect(() => {
@@ -301,6 +326,8 @@ export function FeatureFlagsProvider({
       const nextFlags = readPosthogFeatureFlags(FEATURE_FLAG_DEFINITIONS);
       if (!mounted) return;
       setPosthogFlags((previousFlags) => (featureFlagsEqual(previousFlags, nextFlags) ? previousFlags : nextFlags));
+      const requestId = readPosthogFeatureFlagsRequestId();
+      if (requestId !== undefined && requestId !== cachedRequestIdRef.current) setFresh(true);
     };
 
     refreshFlags();
@@ -342,7 +369,9 @@ export function FeatureFlagsProvider({
   return (
     <FeatureFlagsContext.Provider value={value}>
       <FeatureFlagsResolvedContext.Provider value={resolved || hasStaticFlags}>
-        {children}
+        <FeatureFlagsFreshContext.Provider value={fresh || hasStaticFlags}>
+          {children}
+        </FeatureFlagsFreshContext.Provider>
       </FeatureFlagsResolvedContext.Provider>
     </FeatureFlagsContext.Provider>
   );
@@ -357,6 +386,11 @@ export function FeatureFlagsProvider({
  */
 export function useFeatureFlagsResolved(): boolean {
   return useContext(FeatureFlagsResolvedContext);
+}
+
+/** Whether the flag bag comes from a response received since the app opened. */
+export function useFeatureFlagsFresh(): boolean {
+  return useContext(FeatureFlagsFreshContext);
 }
 
 export function useFeatureFlags(): FeatureFlags {
@@ -564,6 +598,32 @@ export function useSharedSessionBrowseEnabled(): boolean {
  */
 export function useSprayWallsEnabled(): boolean {
   return useFeatureFlag('spray-walls') === true;
+}
+
+/**
+ * The "Get updates early" switch (the `pr-beta` OTA branch).
+ *
+ * Three answers on purpose. A POSITIVE flag, because the feature ships hidden
+ * and a `*-kill` switch reads unresolved as on. But "off" here does more than
+ * hide a row: it moves a member back to the regular track. That must only
+ * follow a flag bag that says off, never an empty one.
+ *
+ * What each answer actually is: `on` is exactly `true`. `off` is exactly
+ * `false`, which PostHog gives for any key missing from a NON-EMPTY bag, fresh
+ * or cached, so a flag that does not exist yet reads off. `unknown` is no value
+ * at all: PostHog has never loaded flags on this install (first launch with no
+ * network, analytics unavailable). A failed request does not produce it on an
+ * install that has loaded flags before; that re-emits the cached bag.
+ */
+export type EarlyUpdatesFlagState = 'on' | 'off' | 'unknown';
+
+export function earlyUpdatesFlagState(flagValue: boolean | string | undefined): EarlyUpdatesFlagState {
+  if (flagValue === true) return 'on';
+  return flagValue === false ? 'off' : 'unknown';
+}
+
+export function useEarlyUpdatesFlagState(): EarlyUpdatesFlagState {
+  return earlyUpdatesFlagState(useFeatureFlag('early-updates'));
 }
 
 function featureFlagsEqual(leftFlags: FeatureFlags, rightFlags: FeatureFlags): boolean {

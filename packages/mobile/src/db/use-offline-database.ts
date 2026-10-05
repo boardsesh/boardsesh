@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from 'react';
 import { useSQLiteContext, type SQLiteDatabase } from 'expo-sqlite';
 import { getDatabaseHandle, subscribeDatabaseHandle } from './connection';
+import { refuseDatabase } from './refused-database';
+import { getSchemaDowngrade, subscribeSchemaDowngrade } from './schema-downgrade';
 
 /**
  * The database a `useSQLiteContext()` consumer should actually use.
@@ -18,9 +20,17 @@ import { getDatabaseHandle, subscribeDatabaseHandle } from './connection';
  * migrations have run, and a read-only consumer still wants a connection then (see
  * the contract in ./schema-ready). Consumers that WRITE must still gate on
  * `useOfflineSchemaReady()`; this hook decides WHICH connection, not WHETHER.
+ *
+ * The one case where the answer is "neither": the file was migrated by a newer
+ * bundle than this one (./schema-downgrade). The provider's connection is live
+ * and its tables exist, so the fallback above would let this bundle read and
+ * write a schema it does not know. It gets a connection that refuses every call
+ * instead — see ./refused-database.
  */
 export function useOfflineDatabase(): SQLiteDatabase {
   const provided = useSQLiteContext();
   const published = useSyncExternalStore(subscribeDatabaseHandle, getDatabaseHandle, () => null);
+  const downgrade = useSyncExternalStore(subscribeSchemaDowngrade, getSchemaDowngrade, () => null);
+  if (downgrade !== null) return refuseDatabase(provided, downgrade);
   return published ?? provided;
 }

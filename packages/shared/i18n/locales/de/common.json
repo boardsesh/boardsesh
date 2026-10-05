@@ -299,6 +299,8 @@
         "errorTitle": "Deine Downloads ließen sich nicht messen",
         "errorSubtitle": "Beim Lesen dessen, was auf diesem Handy liegt, kam etwas dazwischen.",
         "errorRetry": "Nochmal versuchen",
+        "downgradeTitle": "Der Offline-Speicher pausiert",
+        "downgradeSubtitle": "Auf diesem Handy läuft eine ältere App-Version als die, die deine Daten gespeichert hat. Deine heruntergeladenen Boards und alle Begehungen, die noch auf die Synchronisierung warten, bleiben auf diesem Handy und kommen mit dem nächsten Update zurück.",
         "cachedImagesHeader": "Bilder im Cache",
         "cachedImagesArtLabel": "Board-Grafik",
         "cachedImagesPhotosLabel": "Fotos",
@@ -381,6 +383,9 @@
         "failedMessage_other": "{{count}} Änderungen konnten nicht synchronisiert werden und werden beim Abmelden gelöscht. Brich ab und tippe erst auf „Sync wiederholen“, wenn du sie behalten willst.",
         "confirm": "Abmelden",
         "cancel": "Abbrechen",
+        "downgradeMessage": "Dieses Handy wartet auf ein App-Update, bevor es deine Offline-Daten öffnen kann. Meldet sich hier vorher jemand anderes an, gehen alle Begehungen verloren, die auf diesem Handy noch auf die Synchronisierung warten.",
+        "downgradeConfirm": "Trotzdem abmelden",
+        "downgradeCancel": "Angemeldet bleiben",
         "failureTitle": "Abmeldung nicht bestätigt",
         "failure": "Boardsesh konnte die Abmeldung nicht bestätigen. Verbinde dich neu und melde dich nochmal ab, bevor du dieses Gerät aus der Hand gibst."
       },
@@ -392,6 +397,18 @@
         "pickSubtitle": "Probier eine Änderung vor dem Release und sag uns, wie sie läuft",
         "testPlanTitle": "Testplan #{{prNumber}}",
         "testPlanSubtitle": "Was du in der laufenden Vorschau ausprobieren sollst"
+      },
+      "earlyUpdates": {
+        "sectionTitle": "App-Updates",
+        "title": "Updates früher bekommen",
+        "offSubtitle": "Neue Funktionen, sobald sie fertig sind, vor allen anderen",
+        "onSubtitle": "Du bekommst frühe Updates",
+        "waitingSubtitle": "An, wartet auf das nächste frühe Update",
+        "leavingSubtitle": "Aus. Die normalen Updates übernehmen, sobald das nächste für dieses Handy bereit ist.",
+        "testingBody": "Auf diesem Handy ist eine Vorschau festgelegt. Verlass sie zuerst und ändere das dann.",
+        "footer": "Frühe Updates können ab und zu noch Ecken und Kanten haben. Änderungen greifen beim nächsten Öffnen der App.",
+        "joinDeferred": "Der Update-Server ist nicht erreichbar. Wir versuchen es beim nächsten Öffnen der App wieder; frühe Updates starten beim Öffnen danach.",
+        "leaveDeferred": "Zurückwechseln geht noch nicht. Wir versuchen es beim nächsten Öffnen der App wieder."
       }
     },
     "sendRecovery": {
@@ -679,7 +696,8 @@
   "qa": {
     "shared": {
       "backOnProduction": "Zurück auf Produktion bei der nächsten Aktualisierung",
-      "leaveFailed": "Diese Vorschau konnte nicht deaktiviert werden — versuch es noch mal"
+      "leaveFailed": "Diese Vorschau konnte nicht deaktiviert werden — versuch es noch mal",
+      "backOnEarlyUpdates": "Beim nächsten Öffnen der App bekommst du wieder frühe Updates"
     },
     "pick": {
       "title": "PR testen",
@@ -711,7 +729,10 @@
       "noMatchBody": "Nichts, was für diesen Build veröffentlicht wurde, passt zu „{{query}}“.",
       "trySurfAction": "#{{prNumber}} trotzdem laden",
       "trySurfHint": "Vielleicht gibt es keine Preview, die dieser Build laden kann.",
-      "notServableToast": "Keine Preview von #{{prNumber}} für diesen Build — sie braucht vielleicht einen Rebase auf main"
+      "notServableToast": "Keine Preview von #{{prNumber}} für diesen Build — sie braucht vielleicht einen Rebase auf main",
+      "earlyUpdatesTitle": "Frühe Updates",
+      "earlyUpdatesBody": "Zurück zu den frühen Updates. Greift beim nächsten Öffnen der App.",
+      "earlyUpdatesNextLaunch": "Frühe Updates laufen beim nächsten Öffnen der App wieder"
     },
     "brief": {
       "screenTitle": "Was du testen sollst",
