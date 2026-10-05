@@ -206,9 +206,9 @@ Vitest via `vp test`. Backend tests auto-start postgres+redis via `packages/back
 
 ### Internationalisation
 
-Supported locales: `en-US` (root), `es` (`/es/*`), `fr` (`/fr/*`), `de` (`/de/*`). Path-based detection via middleware (`packages/web/middleware.ts`). Catalogs in `packages/shared/i18n/locales/<locale>/<namespace>.json` (`@boardsesh/i18n`, shared by web and mobile). Namespaces: `common`, `marketing`, `auth`, and friends — add new ones to `ALL_NAMESPACES` in `packages/shared/i18n/src/config.ts` (web re-exports it as `SEED_NAMESPACES`; mobile ships the `MOBILE_NAMESPACES` subset).
+Web locales (`WEB_LOCALES`): `en-US` (root), `es` (`/es/*`), `fr` (`/fr/*`), `de` (`/de/*`). App-only locales (`APP_ONLY_LOCALES`): `zh-Hans` (Simplified Chinese) — the mobile app renders it, www has no `/zh-Hans` route, sitemap row or hreflang. Path-based detection via middleware (`packages/web/middleware.ts`). Catalogs in `packages/shared/i18n/locales/<locale>/<namespace>.json` (`@boardsesh/i18n`, shared by web and mobile). Namespaces: `common`, `marketing`, `auth`, and friends — add new ones to `ALL_NAMESPACES` in `packages/shared/i18n/src/config.ts` (web re-exports it as `SEED_NAMESPACES`; mobile ships the `MOBILE_NAMESPACES` subset).
 
-- **Add every new key to every locale.** `catalog-completeness.test.ts` in `@boardsesh/i18n` enforces parity per namespace.
+- **Add every new key to every locale.** `catalog-completeness.test.ts` in `@boardsesh/i18n` enforces parity per namespace. That includes `zh-Hans` for the twelve `MOBILE_NAMESPACES` (`common`, `auth`, `climbs`, `session`, `profile`, `settings`, `playlists`, `notifications`, `feed`, `you`, `boards`, `aurora`): a key added to one of those in `en-US`/`es`/`fr`/`de` only fails CI. The web-only namespaces must stay out of the `zh-Hans` folder.
 - Server: `const { t } = await getServerTranslation('marketing')`.
 - Client: `const { t } = useTranslation('marketing')`.
 - Internal links: `<LocaleLink>` from `@/app/components/i18n/locale-link` (not raw `next/link`). MUI: `<MuiLink component={LocaleLink} href="...">`.
@@ -218,13 +218,15 @@ Supported locales: `en-US` (root), `es` (`/es/*`), `fr` (`/fr/*`), `de` (`/de/*`
 - **Don't translate** code samples in `<pre>` blocks, brand names (Boardsesh, Kilter, Tension, MoonBoard), or user-generated content.
 - Linter hard-fails on `t(variable)` / `t('a' + b)` — use string literals or template literals only.
 
-Adding a new locale: update `SUPPORTED_LOCALES` and friends in `packages/shared/i18n/src/config.ts`, add catalog dir, language switcher, sitemap.
+Adding a new locale: in `packages/shared/i18n/src/config.ts`, add it to `WEB_LOCALES` (web and app: also the catalog dir for every namespace, language switcher, sitemap) or to `APP_ONLY_LOCALES` (app only: a catalog dir with the `MOBILE_NAMESPACES` files, nothing on www). `SUPPORTED_LOCALES` is derived from the two — never edit it directly, and web code reads `WEB_LOCALES`.
 
 **Spanish terminology:** Spanish translations follow a fixed glossary. Most importantly, a climbing board is **"plafón"** (masculine — _el plafón_, plural _plafones_), never "tabla"/"tablero"/"tabla de escalada" or raw English "board"; fix article/adjective agreement when you swap the word. Brand product names ("Kilter Board", "Tension Board", "MoonBoard") stay as-is. Full terminology, grammar rules, and exceptions: **`docs/i18n-spanish-glossary.md`** — follow it for every Spanish string you add.
 
 **French terminology:** French translations follow a fixed glossary too. Most importantly, a climbing send is never **« envoyer »** — French climbers don't "send" a climb. The send status/verb is **« Enchaîné » / enchaîner**, the noun send is **« la croix »** (invariable: _dix croix_; « faire la croix » = tick it in the logbook), and lighting a climb on the wall is **« allumer »**, not « envoyer ». Attempts on a climb are « essais », never « tentatives ». Full terminology and exceptions: **`docs/i18n-french-glossary.md`** — follow it for every French string you add.
 
 **German terminology:** German translations follow a fixed glossary. Product UI uses informal **du** and gender-star role nouns (`Routenbauer*in`). A climbing send is never **senden** — status/button is **Getoppt**, counts use **Begehung/Begehungen**, and lighting holds on the wall is **Board beleuchten**. The device is **Board** (neuter — _das Board_). Full terminology and exceptions: **`docs/i18n-german-glossary.md`** — follow it for every German string you add.
+
+**Chinese terminology:** Simplified Chinese (`zh-Hans`, app only) follows a fixed glossary. Address the climber as **你**, never 您. A climbing send is never **发送** (that is transmitting data) — the send noun, verb and status is **完攀** (**已完攀** on the chip), and lighting a climb on the wall is **点亮**. Chinese has one plural category: i18next reads `_other` for every count, so `_other` must read correctly for one item (no 它们/这些), and `_one` exists only for key parity. The terms are an agent's first draft, not yet confirmed by a native-speaking climber. Full terminology and exceptions: **`docs/i18n-chinese-glossary.md`** — follow it for every Chinese string you add.
 
 ### Copy & microcopy
 

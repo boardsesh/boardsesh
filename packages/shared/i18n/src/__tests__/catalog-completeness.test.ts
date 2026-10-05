@@ -136,8 +136,7 @@ describe('app-only locale catalogs', () => {
 describe('Simplified Chinese plural forms', () => {
   // Chinese has one plural category (`other`). i18next resolves every count to
   // the `_other` key, so `_one` is never read, but key parity keeps it in the
-  // file. It must carry a count-safe string: a `_one` that hardcodes "1" while
-  // `_other` interpolates is fine in English and wrong the day someone copies it.
+  // file.
   it('gives every _one key an _other sibling', () => {
     for (const namespace of mobileNamespaceFiles) {
       const keys = new Set(collectKeys(loadCatalog('zh-Hans', namespace)));
@@ -145,6 +144,18 @@ describe('Simplified Chinese plural forms', () => {
         .filter((key) => key.endsWith('_one'))
         .filter((key) => !keys.has(key.replace(/_one$/, '_other')));
       expect({ namespace, orphans }).toEqual({ namespace, orphans: [] });
+    }
+  });
+
+  // `_other` is what a climber with exactly one item reads, so it cannot use a
+  // plural pronoun ("you logged them" for a single send).
+  it('keeps plural pronouns out of every _other string', () => {
+    const pluralPronoun = /它们|他们|她们|这些|那些/;
+    for (const namespace of mobileNamespaceFiles) {
+      const pluralOnly = collectStrings(loadCatalog('zh-Hans', namespace))
+        .filter(([key, text]) => key.endsWith('_other') && pluralPronoun.test(text))
+        .map(([key]) => key);
+      expect({ namespace, pluralOnly }).toEqual({ namespace, pluralOnly: [] });
     }
   });
 });
