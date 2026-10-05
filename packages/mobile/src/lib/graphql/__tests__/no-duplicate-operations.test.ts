@@ -61,7 +61,7 @@ const OPERATION_DEFINITION_PATTERN = /\b(?:query|mutation|subscription)\s+([A-Za
  * above)" is not a definition. Pure, so it can be exercised with inline samples.
  */
 export function operationNamesDefinedIn(sourceText: string): Set<string> {
-  const withoutComments = sourceText.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const withoutComments = sourceText.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
   const names = new Set<string>();
   for (const match of withoutComments.matchAll(OPERATION_DEFINITION_PATTERN)) names.add(match[1]);
   return names;
@@ -156,6 +156,7 @@ describe('operationNamesDefinedIn', () => {
     const source = [
       '// the mutation SaveTick (see ticks.ts) is sent by the outbox',
       '/**\n * query GetBoard(\n */',
+      'const retries = 3; // one per subscription QueueUpdates(sessionId) attempt',
       'const NOTHING = 1;',
     ].join('\n');
     expect(operationNamesDefinedIn(source).size).toBe(0);

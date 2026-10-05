@@ -183,38 +183,6 @@ export type GetSessionHealthExportQueryResponse = {
   sessionHealthExport: SessionHealthExport | null;
 };
 
-export const GET_NEARBY_SESSIONS = gql`
-  query GetNearbySessions($latitude: Float!, $longitude: Float!, $radiusMeters: Float) {
-    nearbySessions(latitude: $latitude, longitude: $longitude, radiusMeters: $radiusMeters) {
-      id
-      name
-      boardPath
-      participantCount
-      distance
-      color
-    }
-  }
-`;
-
-export type GetNearbySessionsQueryVariables = {
-  latitude: number;
-  longitude: number;
-  radiusMeters?: number;
-};
-
-export type DiscoverableSessionItem = {
-  id: string;
-  name: string | null;
-  boardPath: string;
-  participantCount: number;
-  distance: number;
-  color: string | null;
-};
-
-export type GetNearbySessionsQueryResponse = {
-  nearbySessions: DiscoverableSessionItem[];
-};
-
 // Read-only session preview, used by the join-confirmation screen to show the
 // host, board, and participant count before the user commits to joining. The
 // `session` query does not join the session — joining happens via JOIN_SESSION
