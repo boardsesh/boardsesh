@@ -3,7 +3,10 @@ import type { SprayWallVersion } from '@boardsesh/graphql/generated/graphql';
 
 export type SprayDraftVersion = Pick<SprayWallVersion, 'photo' | 'anchors' | 'homography'>;
 
-/** Both bucket URL styles resolve to the same immutable private object key. */
+/** Both bucket URL styles resolve to the same immutable private object key.
+ * The photo upload handler stores every original as spray-walls/<wall>/<photo>.jpg.
+ * Other paths fail closed instead of guessing a draft purpose.
+ */
 export function sprayPhotoObjectIdentity(url: string | null | undefined): string | null {
   if (!url) return null;
   try {

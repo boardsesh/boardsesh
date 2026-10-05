@@ -362,6 +362,8 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
     try {
       await discardVersionAsync(openDraft.id);
       setDraftConflict(false);
+      // Keep the chosen new photo and its upload: we discarded the conflicting
+      // saved draft, which references a different object.
       dispatch({ type: 'DRAFT_DISCARDED' });
       showToast(t('sprayReset.openDraft.discarded'), 'success');
     } catch (error) {

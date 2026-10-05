@@ -125,7 +125,6 @@ vi.mock('../../../lib/spray/wall-photo', () => ({
 }));
 vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
   useCreateSprayWallVersion: () => ({ mutateAsync: createMutateAsync }),
-  fetchSprayWallVersions: vi.fn(),
 }));
 vi.mock('../../../lib/spray/use-spray-wall-reset', () => ({
   useSprayWallWithVersions: () => ({ ...wallQueryState.current, refetch: refetchWall }),
