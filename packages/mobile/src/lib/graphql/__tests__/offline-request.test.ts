@@ -30,7 +30,9 @@ const {
   getSimilarClimbsLocal,
   ensureHoldIndex,
   getHoldHeatmapLocalWithCount,
+  fillClimbRevisionNumbersLocal,
 } = vi.hoisted(() => ({
+  fillClimbRevisionNumbersLocal: vi.fn(),
   getHoldHeatmapLocalWithCount: vi.fn(),
   getSimilarClimbsLocal: vi.fn(),
   ensureHoldIndex: vi.fn(),
@@ -63,6 +65,7 @@ vi.mock('../../../db/queries/search-climbs-local', () => ({
   isOfflineSearchSupported,
 }));
 vi.mock('../../../db/queries/get-climb-local', () => ({ getClimbLocal }));
+vi.mock('../../../db/queries/climb-revisions-local', () => ({ fillClimbRevisionNumbersLocal }));
 vi.mock('../../../db/queries/get-boardsesh-grade-local', () => ({
   getBoardseshGradeLocal,
   getBoardseshGradesForAnglesLocal,
@@ -93,7 +96,11 @@ vi.mock('../../connectivity/connectivity-store', () => ({
 
 const fakeDb = { tag: 'db' };
 
-import { offlineAwareRequest, registerOfflineOperationForTests } from '../offline-request';
+import {
+  NETWORK_ENRICHMENT_BUDGET_MS,
+  offlineAwareRequest,
+  registerOfflineOperationForTests,
+} from '../offline-request';
 import { setOfflineEngineEnabled, __resetOfflineEngineForTests } from '../../offline-engine';
 import {
   SEARCH_CLIMBS,
@@ -183,6 +190,11 @@ beforeEach(() => {
   getBoardseshGradesForAnglesLocal.mockResolvedValue([{ angle: 40, ...localGrade }]);
   isClimbLayoutDownloadedLocally.mockResolvedValue(true);
   getClimbStatsHistoryLocal.mockResolvedValue([localStatsEntry]);
+  // The phone holds none of the network climbs unless a test says otherwise:
+  // the fill hands back the array it was given.
+  fillClimbRevisionNumbersLocal.mockImplementation(
+    async (_db: unknown, _boardType: string, climbs: unknown[]) => climbs,
+  );
   request.mockResolvedValue({
     climbStatsHistory: [{ ...localStatsEntry, ascensionistCount: 99 }],
     searchClimbs: { climbs: [{ uuid: 'net' }], hasMore: true, totalCount: 99 },
@@ -378,6 +390,247 @@ describe('offlineAwareRequest — GET_CLIMB', () => {
     const result = await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars);
     expect(result).toEqual({ climb: null });
     expect(request).not.toHaveBeenCalled();
+  });
+});
+
+// #6023. SearchClimbs and GetClimb cannot select `revisionNumber` /
+// `holdsRevisionNumber` while the screenshot fixtures pin their text, so a climb
+// read over the network gets them from the phone's own copy of the climb.
+describe('offlineAwareRequest — climb version numbers on a network answer', () => {
+  const versioned = (climbs: Array<{ uuid: string }>) =>
+    climbs.map((climb) => ({ ...climb, revisionNumber: 4, holdsRevisionNumber: 3 }));
+
+  it('fills a network search page from the phone, in one call for the whole page', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+    fillClimbRevisionNumbersLocal.mockImplementation(async (_db, _boardType, climbs) => versioned(climbs));
+
+    const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(fillClimbRevisionNumbersLocal).toHaveBeenCalledTimes(1);
+    expect(fillClimbRevisionNumbersLocal).toHaveBeenCalledWith(fakeDb, 'kilter', [{ uuid: 'net' }]);
+    expect(result.searchClimbs.climbs).toEqual([{ uuid: 'net', revisionNumber: 4, holdsRevisionNumber: 3 }]);
+    // The rest of the server's answer is untouched.
+    expect(result.searchClimbs.hasMore).toBe(true);
+  });
+
+  it('hands back the network response itself when the phone holds none of the climbs', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+    const networkResponse = { searchClimbs: { climbs: [{ uuid: 'net' }], hasMore: false } };
+    request.mockResolvedValue(networkResponse);
+
+    expect(await offlineAwareRequest(SEARCH_CLIMBS, { input: searchInput })).toBe(networkResponse);
+  });
+
+  it('fills a network climb detail', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+    fillClimbRevisionNumbersLocal.mockImplementation(async (_db, _boardType, climbs) => versioned(climbs));
+
+    const result = await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars);
+
+    expect(fillClimbRevisionNumbersLocal).toHaveBeenCalledWith(fakeDb, 'kilter', [{ uuid: 'net-detail' }]);
+    expect(result.climb).toEqual({ uuid: 'net-detail', revisionNumber: 4, holdsRevisionNumber: 3 });
+  });
+
+  it('does not ask the phone about a climb the server did not find', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+    request.mockResolvedValue({ climb: null });
+
+    const result = await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars);
+
+    expect(result.climb).toBeNull();
+    expect(fillClimbRevisionNumbersLocal).not.toHaveBeenCalled();
+  });
+
+  it('keeps the network answer when the local read throws, and does not run the local rescue', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+    fillClimbRevisionNumbersLocal.mockRejectedValue(new Error('database is locked'));
+
+    const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(result.searchClimbs.climbs).toEqual([{ uuid: 'net' }]);
+    expect(searchClimbsLocal).not.toHaveBeenCalled();
+    expect(recordOfflineRead).not.toHaveBeenCalled();
+  });
+
+  it('keeps the network answer when there is no database handle', async () => {
+    setOnline(true);
+    getDatabaseHandle.mockReturnValue(null);
+
+    const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(result.searchClimbs.climbs).toEqual([{ uuid: 'net' }]);
+    expect(fillClimbRevisionNumbersLocal).not.toHaveBeenCalled();
+  });
+
+  // The network already answered. A busy SQLite file (a snapshot import, a
+  // sync page) must not hold the screen back for a number it can live without.
+  it('hands over the network answer un-enriched when the local read outlasts its budget', async () => {
+    vi.useFakeTimers();
+    try {
+      setOnline(true);
+      isBoardDownloadedLocally.mockResolvedValue(false);
+      let finishLocalRead: (climbs: unknown[]) => void = () => {};
+      fillClimbRevisionNumbersLocal.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finishLocalRead = resolve;
+          }),
+      );
+
+      let settled: SearchClimbsQueryResponse | undefined;
+      const pending = offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput }).then(
+        (response) => {
+          settled = response;
+          return response;
+        },
+      );
+
+      await vi.advanceTimersByTimeAsync(NETWORK_ENRICHMENT_BUDGET_MS - 1);
+      expect(settled).toBeUndefined();
+
+      await vi.advanceTimersByTimeAsync(1);
+      const result = await pending;
+      expect(result.searchClimbs.climbs).toEqual([{ uuid: 'net' }]);
+      expect(result.searchClimbs.hasMore).toBe(true);
+
+      // The late read changes nothing and raises nothing.
+      finishLocalRead(versioned([{ uuid: 'net' }]));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(result.searchClimbs.climbs).toEqual([{ uuid: 'net' }]);
+      expect(searchClimbsLocal).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('swallows a local read that rejects after the budget ran out', async () => {
+    vi.useFakeTimers();
+    try {
+      setOnline(true);
+      isBoardDownloadedLocally.mockResolvedValue(false);
+      let failLocalRead: (error: Error) => void = () => {};
+      fillClimbRevisionNumbersLocal.mockImplementation(
+        () =>
+          new Promise((_resolve, reject) => {
+            failLocalRead = reject;
+          }),
+      );
+
+      const pending = offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+      await vi.advanceTimersByTimeAsync(NETWORK_ENRICHMENT_BUDGET_MS);
+      expect((await pending).searchClimbs.climbs).toEqual([{ uuid: 'net' }]);
+
+      failLocalRead(new Error('database is locked'));
+      await vi.advanceTimersByTimeAsync(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('leaves no timer behind when the local read answers in time', async () => {
+    vi.useFakeTimers();
+    try {
+      setOnline(true);
+      isBoardDownloadedLocally.mockResolvedValue(false);
+
+      await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('skips the local read outright when the offline engine is off', async () => {
+    setOnline(true);
+    setOfflineEngineEnabled(false);
+
+    const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(result.searchClimbs.climbs).toEqual([{ uuid: 'net' }]);
+    expect(fillClimbRevisionNumbersLocal).not.toHaveBeenCalled();
+    // Not even a handle lookup on behalf of the enrichment.
+    expect(getDatabaseHandle).not.toHaveBeenCalled();
+  });
+
+  // Any registered enrichment, not only the two real ones: whatever it does
+  // wrong, the caller gets the network's own object back.
+  describe('a registered enrichNetworkResponse that fails', () => {
+    type EnrichVars = { boardName: string };
+    type EnrichResponse = { items: string[] };
+    const ENRICH_DOC = 'query EnrichmentFailureProbe { items }';
+    const networkAnswer: EnrichResponse = { items: ['net'] };
+
+    async function requestWithEnrichment(enrichNetworkResponse: () => Promise<EnrichResponse>) {
+      const resolveLocal = vi.fn();
+      const unregister = registerOfflineOperationForTests<EnrichVars, EnrichResponse>({
+        document: ENRICH_DOC,
+        surface: 'search',
+        boardNameOf: ({ boardName }) => boardName,
+        canServeLocal: async () => false,
+        resolveLocal,
+        offlineFallback: () => ({ items: [] }),
+        enrichNetworkResponse,
+      });
+      try {
+        setOnline(true);
+        request.mockResolvedValue(networkAnswer);
+        const result = await offlineAwareRequest<EnrichResponse>(ENRICH_DOC, { boardName: 'kilter' });
+        return { result, resolveLocal };
+      } finally {
+        unregister();
+      }
+    }
+
+    it('returns the raw network answer when it throws synchronously', async () => {
+      const enrich = vi.fn((): Promise<EnrichResponse> => {
+        throw new Error('thrown before any promise existed');
+      });
+
+      const { result, resolveLocal } = await requestWithEnrichment(enrich);
+
+      expect(enrich).toHaveBeenCalledTimes(1);
+      expect(result).toBe(networkAnswer);
+      // Not mistaken for a network failure: no local rescue, no offline lane.
+      expect(resolveLocal).not.toHaveBeenCalled();
+      expect(recordOfflineRead).not.toHaveBeenCalled();
+    });
+
+    it('returns the raw network answer when it rejects', async () => {
+      const enrich = vi.fn(async (): Promise<EnrichResponse> => {
+        throw new Error('database is locked');
+      });
+
+      const { result, resolveLocal } = await requestWithEnrichment(enrich);
+
+      expect(enrich).toHaveBeenCalledTimes(1);
+      expect(result).toBe(networkAnswer);
+      expect(resolveLocal).not.toHaveBeenCalled();
+      expect(recordOfflineRead).not.toHaveBeenCalled();
+    });
+  });
+
+  it('does not touch a local answer: the local readers select the numbers themselves', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(fillClimbRevisionNumbersLocal).not.toHaveBeenCalled();
+  });
+
+  it('leaves operations with no climbs in them alone', async () => {
+    setOnline(true);
+    isBoardTypeDownloadedLocally.mockResolvedValue(false);
+
+    await offlineAwareRequest(BOARDSESH_GRADE, gradeVars);
+
+    expect(fillClimbRevisionNumbersLocal).not.toHaveBeenCalled();
   });
 });
 

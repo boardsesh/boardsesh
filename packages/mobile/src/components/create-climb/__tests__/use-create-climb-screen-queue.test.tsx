@@ -124,9 +124,10 @@ vi.mock('../brush-roles', () => ({
   getPaintRoles: () => ['HAND', 'STARTING', 'FINISH'],
 }));
 
-import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
+import { initialState, queueReducer, type Climb, type ClimbQueueItem, type QueueState } from '@boardsesh/queue';
 import { DEFAULT_PACE_MS } from '@boardsesh/playback-react';
 import { climbToQueueItem, toClimbInput } from '../../../lib/climb-to-queue-item';
+import { resolveTickClimbRevision } from '../../../lib/tick-climb-revision';
 import { useCreateClimbScreen } from '../use-create-climb-screen';
 
 const kilterBoard = { boardName: 'kilter' as const, layoutId: 8, sizeId: 17, setIds: '26,27', angle: 40 };
@@ -147,6 +148,8 @@ beforeEach(() => {
   board.saveClimb.mockReset();
   board.updateClimb.mockReset();
   createClimb.frameCount = 1;
+  createClimb.generateFramesString.mockReturnValue('p1r12p2r13p3r14');
+  queue.setCurrentClimb.mockReset();
 });
 
 describe('create-climb queue hand-off carries board identity', () => {
@@ -489,5 +492,177 @@ describe('climbToQueueItem board identity at the queue boundary', () => {
       is_draft: false,
       published_at: '2026-07-01T00:00:00Z',
     });
+  });
+});
+
+// #6023. The climb the editor puts on the queue is what the tick form reads when
+// the setter logs a send, and the server stores any in-range version the app
+// sends, as sent. So the question this block answers is: after the editor has
+// touched a climb, what version does the NEXT tick name?
+//
+// It runs through the REAL queue reducer. An earlier version of these tests
+// asserted on the item handed to a mocked `setCurrentClimb`, and passed on an
+// item the reducer throws away: a local set-current for the uuid that is
+// already current is a no-op, so the second save's item never reaches the
+// queue. The tick is resolved by the real `resolveTickClimbRevision`, the same
+// function the tick form calls.
+describe('create-climb queue hand-off: the version the next tick names (#6023)', () => {
+  const FIRST_SAVE_FRAMES = 'p1r12p2r13p3r14';
+  const SECOND_SAVE_FRAMES = 'p1r12p2r13p9r14';
+  const WIP_FRAMES = 'p1r12p2r13p7r14';
+
+  let queueState: QueueState<Record<string, never>>;
+  let correlationCounter = 0;
+
+  /** What the tick form would send for the climb the queue is showing. */
+  function versionTheNextTickNames(local: { frames: string | null; revisionNumber: number | null } | undefined) {
+    const displayed = queueState.currentClimbQueueItem?.climb;
+    return resolveTickClimbRevision({
+      displayedRevision: displayed?.revisionNumber,
+      displayedFrames: displayed?.frames,
+      local,
+    });
+  }
+
+  beforeEach(() => {
+    queueState = initialState({});
+    correlationCounter = 0;
+    // The same action `dispatchSetCurrent` in queue-provider.tsx dispatches for
+    // `setCurrentClimb(item)`: a local update, added to the queue, with a
+    // correlation id.
+    queue.setCurrentClimb.mockImplementation((item: ClimbQueueItem) => {
+      correlationCounter += 1;
+      queueState = queueReducer(queueState, {
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: {
+          item,
+          shouldAddToQueue: true,
+          isServerEvent: false,
+          correlationId: `correlation-${correlationCounter}`,
+          insertAfterCurrent: true,
+          pruneSuggestedAfterCurrent: true,
+        },
+      });
+    });
+  });
+
+  async function saveWithFrames(
+    result: { current: ReturnType<typeof useCreateClimbScreen> },
+    name: string,
+    frames: string,
+  ) {
+    createClimb.generateFramesString.mockReturnValue(frames);
+    act(() => result.current.setName(name));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+  }
+
+  it('edit, save, move a hold, save again, then tick: no stale version is sent', async () => {
+    board.saveClimb.mockResolvedValue({ uuid: 'climb-x', createdAt: null, publishedAt: null, isDraft: true });
+    board.updateClimb.mockResolvedValue({ uuid: 'climb-x', createdAt: null, publishedAt: null, isDraft: true });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    await saveWithFrames(result, 'First Save', FIRST_SAVE_FRAMES);
+    await saveWithFrames(result, 'Second Save', SECOND_SAVE_FRAMES);
+    expect(board.updateClimb).toHaveBeenCalledTimes(1);
+    // Both saves offered the queue an item.
+    expect(queue.setCurrentClimb).toHaveBeenCalledTimes(2);
+
+    // The reducer kept the FIRST save's item: same uuid, already current.
+    const current = queueState.currentClimbQueueItem;
+    expect(current?.climb.uuid).toBe('climb-x');
+    expect(current?.climb.frames).toBe(FIRST_SAVE_FRAMES);
+    expect(queueState.queue).toHaveLength(1);
+    // And it carries no version of its own.
+    expect(current?.climb.revisionNumber).toBeUndefined();
+    expect(current?.climb.holdsRevisionNumber).toBeUndefined();
+
+    // The server is on the second save now (version N+2, holds moved at N+2),
+    // and the phone's copy was refreshed to match. The queue still shows the
+    // first save's holds, so the phone's version is not theirs: nothing is
+    // sent, and the server stores the version live when the climb was climbed.
+    expect(versionTheNextTickNames({ frames: SECOND_SAVE_FRAMES, revisionNumber: 3 })).toBeNull();
+    // Same answer when the phone's copy was never refreshed (the board is not
+    // downloaded, so the save was not mirrored) and still holds an older state.
+    expect(versionTheNextTickNames({ frames: 'p1r12p2r13', revisionNumber: 1 })).toBeNull();
+    // And when the phone has no copy at all.
+    expect(versionTheNextTickNames(undefined)).toBeNull();
+  });
+
+  it('after one save, a tick names the phone’s version only because the holds match', async () => {
+    board.saveClimb.mockResolvedValue({ uuid: 'climb-y', createdAt: null, publishedAt: null, isDraft: true });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    await saveWithFrames(result, 'Only Save', FIRST_SAVE_FRAMES);
+
+    expect(queueState.currentClimbQueueItem?.climb.revisionNumber).toBeUndefined();
+    // The phone's copy is the row this save wrote: same holds, so its version
+    // is the version on screen.
+    expect(versionTheNextTickNames({ frames: FIRST_SAVE_FRAMES, revisionNumber: 1 })).toBe(1);
+  });
+
+  it('Set Active with unsaved work-in-progress holds: no version is sent', async () => {
+    board.saveClimb.mockResolvedValue({ uuid: 'climb-z', createdAt: null, publishedAt: null, isDraft: true });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+    await saveWithFrames(result, 'Saved Once', FIRST_SAVE_FRAMES);
+
+    // Leave the saved climb current, move on in the queue, then come back to
+    // the editor's work in progress with Set Active.
+    const otherItem = climbToQueueItem({ ...queueState.currentClimbQueueItem!.climb, uuid: 'another' } as Climb, {
+      uuid: 'another-item',
+    });
+    act(() => {
+      queue.setCurrentClimb(otherItem);
+    });
+    expect(queueState.currentClimbQueueItem?.uuid).toBe('another-item');
+
+    createClimb.generateFramesString.mockReturnValue(WIP_FRAMES);
+    act(() => result.current.handleSetActive());
+
+    // The saved row's uuid is reused, and its item is still in the queue, so
+    // the reducer makes the WIP item current without adding it again.
+    const current = queueState.currentClimbQueueItem;
+    expect(current?.climb.uuid).toBe('climb-z');
+    expect(current?.climb.frames).toBe(WIP_FRAMES);
+    expect(current?.climb.revisionNumber).toBeUndefined();
+
+    // The phone holds the SAVED holds at version 1. The wall shows the unsaved
+    // ones. No version.
+    expect(versionTheNextTickNames({ frames: FIRST_SAVE_FRAMES, revisionNumber: 1 })).toBeNull();
+  });
+
+  it('Set Active on a climb that was never saved: no version is sent', () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+    createClimb.generateFramesString.mockReturnValue(WIP_FRAMES);
+
+    act(() => result.current.setName('Never Saved'));
+    act(() => result.current.handleSetActive());
+
+    expect(queueState.currentClimbQueueItem?.climb.frames).toBe(WIP_FRAMES);
+    expect(queueState.currentClimbQueueItem?.climb.revisionNumber).toBeUndefined();
+    expect(versionTheNextTickNames(undefined)).toBeNull();
+  });
+
+  it('the editor never puts a version on the climb it queues, whatever updateClimb returns', async () => {
+    board.saveClimb.mockResolvedValue({ uuid: 'climb-v', createdAt: null, publishedAt: null, isDraft: true });
+    // A backend that answers with numbers the document does not even select.
+    board.updateClimb.mockResolvedValue({
+      uuid: 'climb-v',
+      createdAt: null,
+      publishedAt: null,
+      isDraft: true,
+      revisionNumber: 3,
+      holdsRevisionNumber: 3,
+    });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    await saveWithFrames(result, 'First Save', FIRST_SAVE_FRAMES);
+    await saveWithFrames(result, 'Second Save', SECOND_SAVE_FRAMES);
+
+    for (const [item] of queue.setCurrentClimb.mock.calls as Array<[ClimbQueueItem]>) {
+      expect(item.climb.revisionNumber).toBeUndefined();
+      expect(item.climb.holdsRevisionNumber).toBeUndefined();
+    }
   });
 });

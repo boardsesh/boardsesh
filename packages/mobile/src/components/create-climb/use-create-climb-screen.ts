@@ -1377,6 +1377,14 @@ export function useCreateClimbScreen({
       published_at: savedClimb?.publishedAt ?? null,
       userAscents: 0,
       userAttempts: 0,
+      // No `revisionNumber` / `holdsRevisionNumber`, on purpose (#6023). This
+      // climb is what the editor holds, which is not what any saved version
+      // holds: unsaved paint, or a save the queue never took (a local
+      // set-current for the uuid that is already current is a no-op in the
+      // reducer, so a second save leaves the first save's item in place). A
+      // version here would be stamped on the setter's next send and stored as
+      // sent. Without one the tick form sends none unless the phone's copy of
+      // the climb has these exact frames, and the server works it out.
       framesCount: frameCount,
       // Mirrors what Save writes, so the queue plays a WIP route at the pace the
       // setter dialled rather than at the default. Null on a boulder: 0/null both

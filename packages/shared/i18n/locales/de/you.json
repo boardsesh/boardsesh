@@ -147,6 +147,8 @@
         "a11yHasNote": "hat Notiz",
         "a11yHasBetaVideo": "hat Beta-Video",
         "a11yMirrored": "gespiegelt",
+        "earlierVersion": "Frühere Version",
+        "a11yEarlierVersion": "auf einer früheren Version dieses Boulders geklettert",
         "editAction": "Eintrag bearbeiten",
         "deleteAction": "Eintrag löschen",
         "moreActions": "Weitere Aktionen"

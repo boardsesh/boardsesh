@@ -351,3 +351,79 @@ describe('ClimberLogEarlierFoldRow', () => {
     expect(elsewhere.getByText('mobile.climberLogs.foldSendsAtAngle:{"count":6,"angle":35}')).toBeTruthy();
   });
 });
+
+// #6023: another climber's log made before the climb was last edited says
+// "Earlier version" beside its time. The two versions ride each log.
+describe('earlier version tag on climber logs', () => {
+  const EARLIER = { climbRevision: 1, climbCurrentRevision: 3 };
+  const CURRENT = { climbRevision: 3, climbCurrentRevision: 3 };
+
+  it('tags a row whose lead log is on a lower version, in the text and for a screen reader', () => {
+    const { container, getAllByRole } = renderRow(groupOf(log({ comment: 'beta', ...EARLIER })));
+
+    expect(container.textContent).toContain(' · mobile.climberLogs.earlierVersionTag');
+    expect(getAllByRole('button')[0].getAttribute('aria-label')).toContain('mobile.climberLogs.earlierVersionA11y');
+    // No version numbers in the UI.
+    expect(container.textContent).not.toContain('climbRevision');
+  });
+
+  it.each([
+    ['the log is on the current version', CURRENT],
+    ['the log has no version', { climbRevision: null, climbCurrentRevision: 3 }],
+    ['the climb’s version is unknown', { climbRevision: 1, climbCurrentRevision: null }],
+    ['the server sent neither field', {}],
+  ])('shows no tag when %s', (_label, versions) => {
+    const { container, getAllByRole } = renderRow(groupOf(log({ comment: 'beta', ...versions })));
+
+    expect(container.textContent).not.toContain('earlierVersionTag');
+    expect(getAllByRole('button')[0].getAttribute('aria-label')).not.toContain('earlierVersionA11y');
+  });
+
+  it('follows the lead log: a send on the current version is not tagged for an older try', () => {
+    const { container } = renderRow(
+      groupOf(
+        log({ status: 'attempt', comment: 'old holds', climbedAt: '2026-01-10T18:00:00', ...EARLIER }),
+        log({ status: 'send', climbedAt: '2026-03-09T18:00:00', ...CURRENT }),
+      ),
+    );
+
+    expect(container.textContent).not.toContain('earlierVersionTag');
+  });
+
+  it('tags a bare cell and gives its line room for the tag', () => {
+    const group = groupOf(log({ userId: 'ana', userDisplayName: 'ana_p', ...EARLIER }));
+    const { container, getAllByRole } = render(
+      createElement(ClimberLogBareRow, { groups: [group], wide: false, boardAngle: 40, onPressClimber: vi.fn() }),
+    );
+
+    expect(container.textContent).toContain(' · mobile.climberLogs.earlierVersionTag');
+    expect(getAllByRole('button')[0].getAttribute('aria-label')).toContain('mobile.climberLogs.earlierVersionA11y');
+    const tagged = Array.from(container.querySelectorAll('span')).find(
+      (span) => span.getAttribute('data-lines') === '2' && span.textContent?.includes('earlierVersionTag'),
+    );
+    expect(tagged).toBeTruthy();
+  });
+
+  it('keeps a bare cell on one line when there is no tag', () => {
+    const group = groupOf(log({ userId: 'ana', userDisplayName: 'ana_p', ...CURRENT }));
+    const { container } = render(
+      createElement(ClimberLogBareRow, { groups: [group], wide: false, boardAngle: 40, onPressClimber: vi.fn() }),
+    );
+
+    expect(container.textContent).not.toContain('earlierVersionTag');
+    expect(container.querySelector('span[data-lines="2"]')).toBeNull();
+  });
+
+  it('tags one of a climber’s earlier logs on its own line', () => {
+    const tagged = render(
+      createElement(ClimberLogEarlierRow, { log: log(EARLIER), boardAngle: 40, climbGradeId: CLIMB_GRADE }),
+    );
+    expect(tagged.container.textContent).toContain(' · mobile.climberLogs.earlierVersionTag');
+    tagged.unmount();
+
+    const untagged = render(
+      createElement(ClimberLogEarlierRow, { log: log(CURRENT), boardAngle: 40, climbGradeId: CLIMB_GRADE }),
+    );
+    expect(untagged.container.textContent).not.toContain('earlierVersionTag');
+  });
+});

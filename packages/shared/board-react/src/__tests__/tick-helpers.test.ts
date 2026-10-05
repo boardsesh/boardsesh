@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildOptimisticTickEntry,
   applySavedTickToLogbook,
+  climbRevisionToSend,
   rollbackOptimisticTick,
   type SaveTickOptions,
 } from '../tick-helpers';
@@ -117,5 +118,29 @@ describe('rollbackOptimisticTick', () => {
     const existing = [entry('a'), entry('b')];
     const result = rollbackOptimisticTick(existing, 'temp-x');
     expect(result.map((item) => item.uuid)).toEqual(['a', 'b']);
+  });
+});
+
+describe('climbRevisionToSend (#6023)', () => {
+  it('sends a positive integer as it is', () => {
+    expect(climbRevisionToSend(1)).toBe(1);
+    expect(climbRevisionToSend(12)).toBe(12);
+  });
+
+  it('sends nothing for an unknown or unusable version', () => {
+    for (const value of [undefined, null, 0, -3, 2.5, Number.NaN]) {
+      expect(climbRevisionToSend(value)).toBeUndefined();
+    }
+  });
+});
+
+describe('buildOptimisticTickEntry: climb version (#6023)', () => {
+  it('carries the version the tick is sent with', () => {
+    expect(buildOptimisticTickEntry({ ...baseOptions, climbRevision: 4 }, 'temp-1').climb_revision).toBe(4);
+  });
+
+  it('has no version key when none is known', () => {
+    expect('climb_revision' in buildOptimisticTickEntry(baseOptions, 'temp-1')).toBe(false);
+    expect('climb_revision' in buildOptimisticTickEntry({ ...baseOptions, climbRevision: null }, 'temp-1')).toBe(false);
   });
 });

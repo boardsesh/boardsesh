@@ -147,6 +147,8 @@
         "a11yHasNote": "tiene nota",
         "a11yHasBetaVideo": "con vídeo de beta",
         "a11yMirrored": "en espejo",
+        "earlierVersion": "Versión anterior",
+        "a11yEarlierVersion": "escalado en una versión anterior de este bloque",
         "editAction": "Editar registro",
         "deleteAction": "Eliminar registro",
         "moreActions": "Más acciones"

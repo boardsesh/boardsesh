@@ -82,6 +82,91 @@ const DRAWER_EMPTY_CLIMB = ['climb-empty'];
 const DRAWER_OTHER_CLIMB = ['climb-9'];
 
 describe('useLogbook (shared)', () => {
+  // #6023: GetTicks cannot select Tick.climbRevision while the screenshot
+  // fixtures pin its text, so the platform's local copy supplies it.
+  it('joins the platform’s local tick versions onto a fetched batch, in one read', async () => {
+    const { executeHttp } = mockTicksTransport();
+    const readLocalTickRevisions = vi.fn(async () => new Map([['tick-climb-2', 3]]));
+    const { wrapper } = createWrapper({ executeHttp, readLocalTickRevisions });
+
+    const list = renderHook(() => useLogbook('kilter', LIST_BATCH), { wrapper });
+    await waitFor(() => expect(list.result.current.fetchedUuids.has('climb-2')).toBe(true));
+
+    expect(readLocalTickRevisions).toHaveBeenCalledTimes(1);
+    expect(readLocalTickRevisions).toHaveBeenCalledWith('kilter', LIST_BATCH);
+    const byUuid = new Map(list.result.current.logbook.map((entry) => [entry.uuid, entry]));
+    expect(byUuid.get('tick-climb-2')?.climb_revision).toBe(3);
+    expect(byUuid.get('tick-climb-1')?.climb_revision).toBeUndefined();
+  });
+
+  // The second-device case: the GetTicks batch lands before the platform has
+  // pulled the ticks, so the first join finds no local row. The pull then
+  // invalidates ['logbook'], the batch is read again, and this time the join
+  // has the version. The cached row must take it.
+  it('gives a cached row its version when the join only has it on a later read', async () => {
+    const { executeHttp } = mockTicksTransport();
+    let pulled = false;
+    const readLocalTickRevisions = vi.fn(async () =>
+      pulled ? new Map<string, number | null>([['tick-climb-1', 2]]) : new Map<string, number | null>(),
+    );
+    const { wrapper, queryClient } = createWrapper({ executeHttp, readLocalTickRevisions });
+
+    const list = renderHook(() => useLogbook('kilter', LIST_BATCH), { wrapper });
+    await waitFor(() => expect(list.result.current.fetchedUuids.has('climb-1')).toBe(true));
+    const before = list.result.current.logbook.find((entry) => entry.uuid === 'tick-climb-1');
+    // Not known, so the tick still counts as sent (isTickOnCurrentHolds).
+    expect(before && 'climb_revision' in before).toBe(false);
+
+    pulled = true;
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['logbook'] });
+    });
+
+    await waitFor(() =>
+      expect(list.result.current.logbook.find((entry) => entry.uuid === 'tick-climb-1')?.climb_revision).toBe(2),
+    );
+    // Still one row per tick.
+    expect(uuidsOf(list.result.current.logbook).filter((uuid) => uuid === 'tick-climb-1')).toHaveLength(1);
+  });
+
+  it('keeps "the phone holds this tick and it has no version" apart from "the phone has no row"', async () => {
+    const { executeHttp } = mockTicksTransport();
+    const readLocalTickRevisions = vi.fn(async () => new Map<string, number | null>([['tick-climb-1', null]]));
+    const { wrapper } = createWrapper({ executeHttp, readLocalTickRevisions });
+
+    const list = renderHook(() => useLogbook('kilter', LIST_BATCH), { wrapper });
+    await waitFor(() => expect(list.result.current.fetchedUuids.has('climb-2')).toBe(true));
+
+    const byUuid = new Map(list.result.current.logbook.map((entry) => [entry.uuid, entry]));
+    expect(byUuid.get('tick-climb-1')?.climb_revision).toBeNull();
+    expect('climb_revision' in (byUuid.get('tick-climb-2') ?? {})).toBe(false);
+  });
+
+  it('keeps the rows when the local version read fails', async () => {
+    const { executeHttp } = mockTicksTransport();
+    const readLocalTickRevisions = vi.fn(async () => {
+      throw new Error('database is locked');
+    });
+    const { wrapper } = createWrapper({ executeHttp, readLocalTickRevisions });
+
+    const drawer = renderHook(() => useLogbook('kilter', DRAWER_CLIMB), { wrapper });
+    await waitFor(() => expect(drawer.result.current.fetchedUuids.has('climb-1')).toBe(true));
+
+    expect(uuidsOf(drawer.result.current.logbook)).toEqual(['tick-climb-1']);
+    expect(drawer.result.current.error).toBeNull();
+  });
+
+  it('skips the local read for a batch with no ticks', async () => {
+    const { executeHttp } = mockTicksTransport();
+    const readLocalTickRevisions = vi.fn(async () => new Map<string, number>());
+    const { wrapper } = createWrapper({ executeHttp, readLocalTickRevisions });
+
+    const drawer = renderHook(() => useLogbook('kilter', DRAWER_EMPTY_CLIMB), { wrapper });
+    await waitFor(() => expect(drawer.result.current.fetchedUuids.has('climb-empty')).toBe(true));
+
+    expect(readLocalTickRevisions).not.toHaveBeenCalled();
+  });
+
   it('reports a climb another instance fetched in a batch, and sends no second request for it', async () => {
     const { executeHttp, requestedClimbUuids } = mockTicksTransport();
     const { wrapper } = createWrapper({ executeHttp });

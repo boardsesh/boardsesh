@@ -769,6 +769,11 @@ export type SaveTickMutationVariables = {
     layoutId?: number;
     sizeId?: number;
     setIds?: string;
+    /**
+     * The `Climb.revisionNumber` the climber was looking at. Present only when
+     * the app knows it; an absent key lets the server pick the version (#6023).
+     */
+    climbRevision?: number | null;
   };
 };
 

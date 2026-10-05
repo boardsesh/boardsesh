@@ -39,7 +39,7 @@ export async function getClimbLocal(db: OfflineDatabase, input: GetClimbLocalInp
   const query = `
     SELECT
       c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.is_hidden,
-      c.missing_hold_count, c.characteristics,
+      c.missing_hold_count, c.revision_number, c.holds_revision_number, c.characteristics,
       c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
       ${eff('ascensionist_count')} AS ascensionist_count,
       ${eff('display_difficulty')} AS display_difficulty,

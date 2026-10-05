@@ -568,6 +568,60 @@ describe('useSaveTick (shared)', () => {
     expect(roots).toContain('searchClimbsCount');
   });
 
+  // #6023: the version of the climb on screen rides the tick, but only when
+  // the app knows it. A backend from before the field rejects the key itself.
+  it('sends climbRevision when the caller knows the climb version', async () => {
+    const executeHttp = vi.fn().mockResolvedValue({ saveTick: savedTick({ uuid: 'real-rev' }) });
+    const { wrapper, queryClient } = createWrapper({ executeHttp: executeHttp as unknown as ExecuteHttp });
+    queryClient.setQueryData(accumulatedLogbookQueryKey('kilter'), []);
+    const { result } = renderHook(() => useSaveTick('kilter'), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync(tickOptions({ climbRevision: 3 }));
+    });
+
+    const [, variables] = executeHttp.mock.calls[0] as [string, { input: Record<string, unknown> }];
+    expect(variables.input.climbRevision).toBe(3);
+    // The saved row keeps the version it was sent with: the SaveTick document
+    // does not select the field.
+    const cache = queryClient.getQueryData<LogbookEntry[]>(accumulatedLogbookQueryKey('kilter'));
+    expect(cache).toEqual([expect.objectContaining({ uuid: 'real-rev', climb_revision: 3 })]);
+  });
+
+  it.each([undefined, null, 0, -1, 1.5])('omits the climbRevision key entirely for %s', async (climbRevision) => {
+    const executeHttp = vi.fn().mockResolvedValue({ saveTick: savedTick() });
+    const { wrapper, queryClient } = createWrapper({ executeHttp: executeHttp as unknown as ExecuteHttp });
+    queryClient.setQueryData(accumulatedLogbookQueryKey('kilter'), []);
+    const { result } = renderHook(() => useSaveTick('kilter'), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync(tickOptions({ climbRevision }));
+    });
+
+    const [, variables] = executeHttp.mock.calls[0] as [string, { input: Record<string, unknown> }];
+    expect('climbRevision' in variables.input).toBe(false);
+    const cache = queryClient.getQueryData<LogbookEntry[]>(accumulatedLogbookQueryKey('kilter'));
+    expect(cache?.[0]?.climb_revision).toBeUndefined();
+  });
+
+  it('hands the offline save path the same climbRevision it would have sent', async () => {
+    const saveTickOffline = vi.fn().mockResolvedValue(savedTick({ uuid: 'queued-rev' }));
+    const executeHttp = vi.fn();
+    const { wrapper, queryClient } = createWrapper({
+      executeHttp: executeHttp as unknown as ExecuteHttp,
+      saveTickOffline,
+    });
+    queryClient.setQueryData(accumulatedLogbookQueryKey('kilter'), []);
+    const { result } = renderHook(() => useSaveTick('kilter'), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync(tickOptions({ climbRevision: 5 }));
+    });
+
+    expect(executeHttp).not.toHaveBeenCalled();
+    expect(saveTickOffline.mock.calls[0][0].input.climbRevision).toBe(5);
+  });
+
   it('forwards a resolved presence boardId when provided', async () => {
     const executeHttp = vi.fn().mockResolvedValue({ saveTick: savedTick({ uuid: 'real-42' }) });
     const { wrapper } = createWrapper({ executeHttp: executeHttp as unknown as ExecuteHttp });

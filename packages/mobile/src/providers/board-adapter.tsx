@@ -32,7 +32,13 @@ import { useSnapshotSource } from '../offline/use-snapshot-source';
 import { getSetting } from '../settings';
 import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
 import { enqueueTickOutboxOnly, writeTickLocal } from '../hooks/use-offline-mutations';
-import { isDatabaseLockedError, OFFLINE_LOCAL_WRITE_BUDGET_MS, type GraphQLFetch } from '@boardsesh/offline-sync';
+import {
+  getLocalUserId,
+  isDatabaseLockedError,
+  OFFLINE_LOCAL_WRITE_BUDGET_MS,
+  type GraphQLFetch,
+} from '@boardsesh/offline-sync';
+import { readTickRevisionsLocal } from '../db/queries/climb-revisions-local';
 import { SHARED_EVENTS, sanitizeErrorForAnalytics } from '@boardsesh/analytics';
 import { track } from '../lib/analytics';
 
@@ -57,6 +63,27 @@ function toSavedTickShape(
     comment: input.comment,
     climbedAt: input.climbedAt,
   };
+}
+
+const NO_TICK_REVISIONS: ReadonlyMap<string, number | null> = new Map();
+
+/**
+ * Which climb version each of the climber's own ticks on these climbs was
+ * logged on, from the phone's copy of the ticks (#6023). `GetTicks` cannot
+ * carry the field while the screenshot fixtures pin its text, so the shared
+ * logbook joins this map onto the server's rows by tick uuid.
+ *
+ * A tick uuid is unique across accounts, so a row a failed sign-out wipe left
+ * behind can never match a tick the server just returned for this climber.
+ * The owner predicate is kept anyway, as on every local tick read.
+ */
+async function readLocalTickRevisions(
+  boardType: string,
+  climbUuids: string[],
+): Promise<ReadonlyMap<string, number | null>> {
+  const db = getDatabaseHandle();
+  if (!db) return NO_TICK_REVISIONS;
+  return readTickRevisionsLocal(db, boardType, climbUuids, await getLocalUserId(db));
 }
 
 export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
@@ -188,6 +215,7 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
         };
       },
       subscribeOfflineMutationDelivery: subscribeMutationDelivery,
+      readLocalTickRevisions,
       scheduleTask: (callback, delayMs) => {
         const timer = setTimeout(callback, delayMs);
         return () => clearTimeout(timer);

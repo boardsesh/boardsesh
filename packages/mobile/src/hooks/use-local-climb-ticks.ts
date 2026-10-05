@@ -26,6 +26,7 @@ type LocalTickRow = {
   difficulty: number | null;
   comment: string | null;
   climbed_at: string;
+  climb_revision: number | null;
 };
 
 /**
@@ -49,6 +50,13 @@ type LocalTickRow = {
  * Aurora sometimes stores one ascent several times, and the sync carries every
  * copy. The server hides them with `notAuroraTwinDuplicate`; here, rows sharing
  * the full natural key and an identical payload collapse to `MIN(uuid)`.
+ *
+ * `climb_revision` is read as `MAX(...)` and kept out of the GROUP BY. The
+ * group says "the same ascent stored twice", and which version it was on is
+ * not part of that: the copies are imports, which carry no version. Grouping
+ * by it would split one ascent into two rows if only one copy were ever
+ * stamped; MAX skips NULLs, so the collapsed row keeps a version when any copy
+ * has one.
  */
 export function useLocalClimbTicks(
   boardName: string | null,
@@ -74,7 +82,8 @@ export function useLocalClimbTicks(
       if (!(await canServeLocalUserData(db, viewerId))) return null;
       const ownerUserId = await getLocalUserId(db);
       const rows = await db.getAllAsync<LocalTickRow>(
-        `SELECT MIN(uuid) AS uuid, angle, is_mirror, status, attempt_count, quality, difficulty, comment, climbed_at
+        `SELECT MIN(uuid) AS uuid, angle, is_mirror, status, attempt_count, quality, difficulty, comment, climbed_at,
+           MAX(climb_revision) AS climb_revision
          FROM boardsesh_ticks
          WHERE climb_uuid = ? AND board_type = ?
            AND (user_id = ? OR user_id IS NULL)
@@ -95,6 +104,7 @@ export function useLocalClimbTicks(
           difficulty: row.difficulty,
           comment: row.comment ?? '',
           climbedAt: row.climbed_at,
+          climbRevision: row.climb_revision,
         }),
       );
     },
