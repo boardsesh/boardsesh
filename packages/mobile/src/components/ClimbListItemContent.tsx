@@ -519,6 +519,21 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
     );
   }
 
+  const missingHoldCount =
+    typeof climb.missingHoldCount === 'number' && climb.missingHoldCount > 0 ? climb.missingHoldCount : undefined;
+  const hasLostHolds = missingHoldCount !== undefined;
+  const nameAttributes = (
+    <>
+      <ClimbAttributeIcons
+        benchmarkDifficulty={climb.benchmark_difficulty}
+        characteristics={climb.characteristics}
+        isNoMatch={climb.is_no_match}
+      />
+      {climb.is_hidden ? <HiddenChip /> : null}
+      {hasLostHolds ? <LostHoldsChip count={missingHoldCount} /> : null}
+    </>
+  );
+
   return (
     <>
       {/* Left: portrait thumbnail with ascent badge */}
@@ -539,16 +554,9 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
           <Text variant="body" numberOfLines={1} style={styles.climbName}>
             {climb.name}
           </Text>
-          <ClimbAttributeIcons
-            benchmarkDifficulty={climb.benchmark_difficulty}
-            characteristics={climb.characteristics}
-            isNoMatch={climb.is_no_match}
-          />
-          {climb.is_hidden ? <HiddenChip /> : null}
-          {typeof climb.missingHoldCount === 'number' && climb.missingHoldCount > 0 ? (
-            <LostHoldsChip count={climb.missingHoldCount} />
-          ) : null}
+          {!hasLostHolds ? nameAttributes : null}
         </View>
+        {hasLostHolds ? <View style={styles.attributesRow}>{nameAttributes}</View> : null}
         {primarySubtitleOverride === undefined ? (
           <LiveClimbSubtitle
             boardName={boardName}
@@ -614,6 +622,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     minWidth: 0,
+  },
+  attributesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 2,
   },
   climbName: {
     fontWeight: '600',
