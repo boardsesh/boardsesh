@@ -32,7 +32,7 @@ vi.mock('expo-image', () => ({
   Image: ({ source, cachePolicy }: { source?: { uri?: string }; cachePolicy?: string }) =>
     createElement('img', { src: source?.uri, 'data-cache-policy': cachePolicy }),
 }));
-vi.mock('react-native-svidg', () => ({
+vi.mock('react-native-svg', () => ({
   default: ({ children, viewBox }: { children?: ReactNode; viewBox?: string }) =>
     createElement('svg', { 'data-viewbox': viewBox }, children),
   Path: ({ d, stroke }: { d?: string; stroke?: string }) =>

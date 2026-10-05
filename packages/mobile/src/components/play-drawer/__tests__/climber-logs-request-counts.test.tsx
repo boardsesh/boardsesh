@@ -50,6 +50,7 @@ vi.mock('../CommunitySection', () => ({ CommunitySection: () => null }));
 vi.mock('../SimilarClimbsSection', () => ({ SimilarClimbsSection: () => null }));
 vi.mock('../BoardseshGradeSection', () => ({ BoardseshGradeSection: () => null }));
 vi.mock('../SetterNotesSection', () => ({ SetterNotesSection: () => null }));
+vi.mock('../RevisionsSection', () => ({ RevisionsSection: () => null }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ brandColors: { primary: '#primary' }, systemColors: {} }),
 }));

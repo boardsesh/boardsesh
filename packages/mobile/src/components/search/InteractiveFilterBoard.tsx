@@ -6,7 +6,8 @@ import React, {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { Image, View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { Image } from 'expo-image';
 import Animated, { type SharedValue } from 'react-native-reanimated';
 import { GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
@@ -305,7 +306,12 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
         <View style={[styles.clip, { width: renderWidth, height: renderHeight }]}>
           <Animated.View style={[styles.board, animatedZoomStyle]}>
             {backgroundPhotoUrl ? (
-              <Image source={{ uri: backgroundPhotoUrl }} style={StyleSheet.absoluteFill} resizeMode="stretch" />
+              <Image
+                source={{ uri: backgroundPhotoUrl }}
+                style={StyleSheet.absoluteFill}
+                contentFit="fill"
+                cachePolicy="memory"
+              />
             ) : (
               <BoardImageNative
                 frames=""

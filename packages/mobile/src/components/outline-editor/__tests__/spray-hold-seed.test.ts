@@ -23,6 +23,7 @@ function wallWith(version: number, holdIds: number[], registeredAtMs = 1_000): S
   return {
     wallUuid: 'wall-1',
     version,
+    versionId: version,
     registeredAtMs,
     holds: holdIds.map((id) => ({ id, cx: id * 10, cy: 50, r: 12 })),
   };
@@ -56,6 +57,13 @@ describe('seedReason', () => {
   it('seeds a new version of the same wall', () => {
     const next = wallWith(4, [1, 2]);
     expect(seedReason(settled(next, { seededKey: sprayEditorSeedKey(wall), seededWall: wall }))).toBe('new-version');
+  });
+
+  it('seeds a replacement draft even when its version number is reused', () => {
+    const replacement = { ...wall, versionId: 99 };
+    expect(seedReason(settled(replacement, { seededKey: sprayEditorSeedKey(wall), seededWall: wall }))).toBe(
+      'new-version',
+    );
   });
 
   it('seeds when a different detector run arrives', () => {
@@ -151,6 +159,7 @@ describe('buildEditorSeed', () => {
     const wall: SeedableWall = {
       wallUuid: 'wall-1',
       version: 2,
+      versionId: 2,
       holds: [
         { id: 1, cx: 10, cy: 10, r: 8, source: 'AUTO', confidence: 0.81 },
         { id: 2, cx: 20, cy: 20, r: 8, source: 'MANUAL', confidence: null },
