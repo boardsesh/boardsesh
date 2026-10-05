@@ -3,7 +3,7 @@ import { PostHog } from 'posthog-js-lite';
 import { createAnalytics } from '@boardsesh/analytics';
 import { isAdminAnalyticsUrl } from './analytics-paths';
 import { getBackendHttpUrl } from './backend-url';
-import { getSessionInboundCampaign } from './inbound-campaign';
+import { getSessionInboundCampaign, type InboundCampaign } from './inbound-campaign';
 import { isAutomatedCrawlerUserAgent } from './is-crawler';
 import { isProductionHost } from './production-hosts';
 
@@ -205,6 +205,8 @@ export function track(name: string, properties?: EventProperties): void {
  * gets its properties back untouched — `undefined` stays `undefined` — so no
  * existing payload changes.
  */
+function withInboundCampaign(): InboundCampaign | undefined;
+function withInboundCampaign(properties: EventProperties | undefined): EventProperties | undefined;
 function withInboundCampaign(properties?: EventProperties): EventProperties | undefined {
   const inboundCampaign = getSessionInboundCampaign();
   if (!inboundCampaign) return properties;
@@ -364,8 +366,7 @@ export function pageview(url: string): void {
   // No `$current_url` here. The SDK stamps the full `location.href` on every
   // event and spreads its own properties AFTER the caller's (@posthog/core
   // `enrichProperties`), so a pathname passed in was always overwritten.
-  const inboundCampaign = getSessionInboundCampaign();
-  posthog.capture('$pageview', inboundCampaign ? { ...inboundCampaign } : undefined);
+  posthog.capture('$pageview', withInboundCampaign());
 }
 
 function coerceFeatureFlagBoolean(value: unknown): boolean | undefined {
