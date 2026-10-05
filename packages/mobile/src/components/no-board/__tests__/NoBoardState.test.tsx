@@ -16,6 +16,8 @@ type PreviewProps = {
   configs: readonly NoBoardPreviewConfig[];
   onFindBoard: () => void;
   onClimbPress: (config: NoBoardPreviewConfig, rowIndex: number) => void;
+  onHeroPress: (config: NoBoardPreviewConfig) => void;
+  searchName?: string;
   onSearchSettled: (outcome: 'ready' | 'error' | 'empty', config: NoBoardPreviewConfig) => void;
   active?: boolean;
 };
@@ -32,6 +34,8 @@ const world = vi.hoisted(() => ({
   auth: { isAuthenticated: true, isLoading: false },
   isOffline: false,
   isFocused: true,
+  // What the Climbs search provider holds, or null where there is none.
+  climbSearch: null as { name: string } | null,
   flagsResolved: true,
   previewEnabled: true,
   boards: { data: undefined, isError: false, isPending: true, isFetching: true } as QueryResult<{ boards: unknown[] }>,
@@ -89,6 +93,7 @@ vi.mock('../../../providers/feature-flags-provider', () => ({
   useFeatureFlagsResolved: () => world.flagsResolved,
   useNoBoardPreviewEnabled: () => world.previewEnabled,
 }));
+vi.mock('../../../providers/climb-search-provider', () => ({ useOptionalClimbSearch: () => world.climbSearch }));
 vi.mock('../../../hooks/use-is-offline', () => ({ useIsOffline: () => world.isOffline }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useMyBoards: (input: unknown, options: unknown) => {
@@ -136,6 +141,7 @@ function zeroBoardNewcomer() {
   world.auth = { isAuthenticated: true, isLoading: false };
   world.isOffline = false;
   world.isFocused = true;
+  world.climbSearch = null;
   world.flagsResolved = true;
   world.previewEnabled = true;
   world.boards = ready({ boards: [] });
@@ -485,6 +491,32 @@ describe('NoBoardState', () => {
       pathname: '/boards',
       params: { source: 'no_board', trigger: 'preview_row' },
     });
+  });
+
+  // The lit board at the top is the first climb of the page: same event, place
+  // 0, and its own trigger so it can be told from a row.
+  it('sends a tap on the lit board to the picker as place 0, with its own trigger', () => {
+    render(<NoBoardState />);
+    act(() => previewProps.current?.onHeroPress(KILTER));
+
+    expect(trackMock).toHaveBeenCalledWith('No Board Preview Climb Tapped', { board_type: 'kilter', row_index: 0 });
+    expect(pushMock).toHaveBeenCalledExactlyOnceWith({
+      pathname: '/boards',
+      params: { source: 'no_board', trigger: 'preview_hero' },
+    });
+  });
+
+  it('hands the preview what is typed in the Climbs search field', () => {
+    world.climbSearch = { name: 'moon' };
+    render(<NoBoardState />);
+
+    expect(previewProps.current?.searchName).toBe('moon');
+  });
+
+  it('mounts with no Climbs search around it, with nothing typed', () => {
+    render(<NoBoardState />);
+
+    expect(previewProps.current?.searchName).toBe('');
   });
 
   // Sign-in invalidates the `null` profile the signed-out tree cached, so the
