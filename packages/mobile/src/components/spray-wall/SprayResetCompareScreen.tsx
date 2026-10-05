@@ -35,6 +35,7 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { SegmentedControl } from '../SegmentedControl';
 import { InteractiveFilterBoard } from '../search/InteractiveFilterBoard';
 import { useTheme } from '../../providers/theme-provider';
+import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
 import { useToast } from '../../providers/toast-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
@@ -96,6 +97,7 @@ export function SprayResetCompareScreen({
   const { systemColors } = useTheme();
   const { showToast } = useToast();
   const insets = useSafeAreaInsets();
+  const headerInset = useTransparentHeaderInset();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
   // Registers the DRAFT under the wall's layout id, so the board below draws the
@@ -177,12 +179,12 @@ export function SprayResetCompareScreen({
     if (!wall) return { width: 0, height: 0 };
     const boardAspect = wall.photoWidth / wall.photoHeight;
     const availableWidth = windowWidth - spacing[4] * 2;
-    const availableHeight = Math.max(200, windowHeight - insets.top - insets.bottom - CHROME_BUDGET);
+    const availableHeight = Math.max(200, windowHeight - headerInset - insets.bottom - CHROME_BUDGET);
     if (availableWidth / availableHeight > boardAspect) {
       return { width: availableHeight * boardAspect, height: availableHeight };
     }
     return { width: availableWidth, height: availableWidth / boardAspect };
-  }, [wall, windowWidth, windowHeight, insets.top, insets.bottom]);
+  }, [wall, windowWidth, windowHeight, headerInset, insets.bottom]);
 
   /**
    * Both kinds of ring as one tap surface.
@@ -306,7 +308,7 @@ export function SprayResetCompareScreen({
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: systemColors.background }]}>
+    <View style={[styles.container, { backgroundColor: systemColors.background, paddingTop: headerInset }]}>
       <View style={[styles.header, { borderBottomColor: systemColors.separator }]}>
         <Text variant="headline" accessibilityLiveRegion="polite">
           {t('sprayReset.compare.counts', {

@@ -45,17 +45,27 @@ const wallState = vi.hoisted(() => ({
   },
 }));
 /** The board's props, so a test can fire a ring tap the way a finger does. */
+const headerInset = vi.hoisted(() => ({ current: 0 }));
 const boardProps = vi.hoisted(() => ({
-  current: null as null | { onHoldTap?: (key: number) => void; holdTargets?: { id: number }[] },
+  current: null as null | {
+    onHoldTap?: (key: number) => void;
+    holdTargets?: { id: number }[];
+    renderWidth?: number;
+    renderHeight?: number;
+  },
 }));
 
 vi.mock('react-native', () => ({
   StyleSheet: { absoluteFill: {}, hairlineWidth: 1, create: (styles: unknown) => styles },
-  View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
+  View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+    createElement('div', { 'data-native-style': JSON.stringify(style) }, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   useWindowDimensions: () => ({ width: 400, height: 800 }),
 }));
 
+vi.mock('../../../hooks/use-transparent-header-inset', () => ({
+  useTransparentHeaderInset: () => headerInset.current,
+}));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -110,7 +120,12 @@ vi.mock('../../SegmentedControl', () => ({
     ),
 }));
 vi.mock('../../search/InteractiveFilterBoard', () => ({
-  InteractiveFilterBoard: (props: { onHoldTap?: (key: number) => void; holdTargets?: { id: number }[] }) => {
+  InteractiveFilterBoard: (props: {
+    onHoldTap?: (key: number) => void;
+    holdTargets?: { id: number }[];
+    renderWidth?: number;
+    renderHeight?: number;
+  }) => {
     boardProps.current = props;
     return createElement('div', { 'data-testid': 'board' });
   },
@@ -162,6 +177,7 @@ function renderScreen(onCommitted = vi.fn()) {
 beforeEach(() => {
   commitMutateAsync.mockClear();
   boardProps.current = null;
+  headerInset.current = 0;
   draftState.current = { isLoading: false, isUnavailable: false, homography: [1, 0, 0, 0, 1, 0, 0, 0, 1] };
   proposalState.current = { data: PROPOSAL, isPending: false, error: null };
   wallState.current = {
@@ -217,6 +233,25 @@ describe('SprayResetCompareScreen', () => {
     expect(getByTestId('filter')).toBeTruthy();
     expect(getByText(/sprayReset\.compare\.counts/)).toBeTruthy();
     expect(getByText('sprayReset.compare.confirm')).toBeTruthy();
+  });
+
+  it('keeps the summary below a transparent header and fits the board beneath it', () => {
+    headerInset.current = 100;
+    // A tall photo makes available height, rather than width, limit the board.
+    wallState.current = { ...wallState.current!, photoWidth: 500, photoHeight: 1000 };
+    const { container } = renderScreen();
+
+    const screenStyle = JSON.parse(container.firstElementChild!.getAttribute('data-native-style')!);
+    expect(screenStyle).toContainEqual({ backgroundColor: '#000', paddingTop: 100 });
+    expect(boardProps.current?.renderHeight).toBe(300);
+    expect(boardProps.current?.renderWidth).toBe(150);
+  });
+
+  it('adds no header padding when the header is opaque', () => {
+    const { container } = renderScreen();
+
+    const screenStyle = JSON.parse(container.firstElementChild!.getAttribute('data-native-style')!);
+    expect(screenStyle).toContainEqual({ backgroundColor: '#000', paddingTop: 0 });
   });
 
   it('opens the panel for the ring under the finger', () => {
