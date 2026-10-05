@@ -161,6 +161,10 @@ GATE_JOBS: >-
 - **blocking**: a failure fails the `verdict` job, and the job failing, being
   cancelled or not running makes `passed` false.
 
+An advisory job that fails still fails: its row is red, and GitHub shows the
+whole run as failed. Only the `verdict` job and the `passed` output ignore it.
+Read those two, not the run's colour.
+
 `passed` is true only when every blocking job passed. With nothing blocking it
 is vacuously true, and the verdict line says so ("nothing is blocking yet").
 

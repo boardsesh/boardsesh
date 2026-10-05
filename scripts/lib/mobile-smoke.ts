@@ -10,6 +10,8 @@
  * unit-tested without a simulator. See docs/mobile-e2e-gate.md.
  */
 
+import { NO_GRAPHQL_HIT_PROBLEM } from './screenshot-fixtures';
+
 /**
  * The screens the smoke visits, by the name each one pings with. Shared by both
  * platforms: the flows differ (testIDs on Android, deep links on iOS), the
@@ -268,6 +270,18 @@ export interface SmokeEvidence {
   maestroStatus: number | null;
   /** Render-mode and frozen-clock problems read from the capture log. */
   captureLogProblems: readonly string[];
+}
+
+/**
+ * The backend's problems that count against a smoke attempt.
+ *
+ * An app that never got home made no requests, so the backend reports "no HIT
+ * graphql lines". That silence follows from whatever stopped the app. Left in,
+ * it reads as a replay miss, turns every launch crash into a plain "native
+ * crash" and denies it its retry (it did, in gate run 37327200472).
+ */
+export function replayProblemsForSmoke(backendProblems: readonly string[], reachedHome: boolean): string[] {
+  return backendProblems.filter((problem) => reachedHome || problem !== NO_GRAPHQL_HIT_PROBLEM);
 }
 
 export function classifySmokeFailure(evidence: SmokeEvidence): SmokeFailureClass | null {

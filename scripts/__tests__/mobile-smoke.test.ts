@@ -9,6 +9,7 @@ import {
   findIosNativeCrashes,
   findSmokePingProblems,
   parseSmokePingLog,
+  replayProblemsForSmoke,
   shouldRetrySmoke,
   smokePingsSettled,
   type SmokeAttempt,
@@ -16,6 +17,7 @@ import {
 } from '../lib/mobile-smoke';
 import { parseArgs, buildScreenshotEnv, renderSmokeSummary, smokeResultPath } from '../mobile-screenshots';
 import { SCREENSHOT_READY_PORT } from '../lib/metro-dev-server';
+import { NO_GRAPHQL_HIT_PROBLEM } from '../lib/screenshot-fixtures';
 
 const ALL_PRESENT = [
   '/smoke?kind=content&route=%2Fhome&count=0',
@@ -170,6 +172,29 @@ describe('classifySmokeFailure', () => {
     expect(classifySmokeFailure({ ...CLEAN, maestroStatus: 1, pingProblems: missingPing })).toBe('flow');
     expect(classifySmokeFailure({ ...CLEAN, pingProblems: missingPing })).toBe('no-content');
     expect(classifySmokeFailure({ ...CLEAN, captureLogProblems: ['no render line'] })).toBe('capture-log');
+  });
+});
+
+describe('replayProblemsForSmoke', () => {
+  const miss = 'MISS graphql GetBoard';
+
+  it('does not hold the silence of an app that never got home against the recorded set', () => {
+    expect(replayProblemsForSmoke([NO_GRAPHQL_HIT_PROBLEM], false)).toEqual([]);
+    // So a crash before home, with nothing else wrong, keeps its own class.
+    expect(
+      classifySmokeFailure({
+        ...CLEAN,
+        nativeCrashes: [CRASH],
+        reachedHome: false,
+        maestroStatus: null,
+        backendProblems: replayProblemsForSmoke([NO_GRAPHQL_HIT_PROBLEM], false),
+      }),
+    ).toBe('native-crash-at-launch');
+  });
+
+  it('keeps a real miss, and keeps the silence once the app did get home', () => {
+    expect(replayProblemsForSmoke([miss, NO_GRAPHQL_HIT_PROBLEM], false)).toEqual([miss]);
+    expect(replayProblemsForSmoke([NO_GRAPHQL_HIT_PROBLEM], true)).toEqual([NO_GRAPHQL_HIT_PROBLEM]);
   });
 });
 

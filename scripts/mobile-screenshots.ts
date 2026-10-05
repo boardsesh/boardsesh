@@ -114,6 +114,7 @@ import {
   findIosNativeCrashes,
   findSmokePingProblems,
   parseSmokePingLog,
+  replayProblemsForSmoke,
   shouldRetrySmoke,
   smokePingsSettled,
   type NativeCrash,
@@ -1660,7 +1661,10 @@ function judgeSmokeAttempt(input: SmokeAttemptInput): number {
     const notes = findScreenshotBackendNotes(backendLog);
     for (const note of notes) console.log(`${LOG} NOTE: ${note}`);
     appendNotesToStepSummary(notes, process.env.GITHUB_STEP_SUMMARY);
-    backendProblems = findScreenshotBackendProblems(backendLog, { mode: input.backendSession.mode });
+    backendProblems = replayProblemsForSmoke(
+      findScreenshotBackendProblems(backendLog, { mode: input.backendSession.mode }),
+      input.reachedHome,
+    );
   }
 
   // Only worth reading once the flow got to the end: a run that died earlier
