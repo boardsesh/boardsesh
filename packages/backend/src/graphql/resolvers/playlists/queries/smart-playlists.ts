@@ -145,23 +145,25 @@ async function selectSmartClimbRefs(
   if (type === 'LIKED_CLIMBS') {
     const favConditions: SQL[] = [
       eq(dbSchema.userFavorites.userId, userId),
-      // Favourites are the other reference source — same rule, same reason.
+      // Use the joined catalog type: legacy favorite board names can be stale,
+      // which must not bypass private-spray filtering in the playlist.
       sprayReferenceVisibilityCondition(
-        { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
+        { boardType: dbSchema.boardClimbs.boardType, climbUuid: dbSchema.userFavorites.climbUuid },
         viewerUserId,
       ),
     ];
     if (boardName) {
-      favConditions.push(eq(dbSchema.userFavorites.boardName, boardName));
+      favConditions.push(eq(dbSchema.boardClimbs.boardType, boardName));
     }
     const rows = await db
       .select({
         climbUuid: dbSchema.userFavorites.climbUuid,
-        boardType: dbSchema.userFavorites.boardName,
+        boardType: dbSchema.boardClimbs.boardType,
       })
       .from(dbSchema.userFavorites)
+      .innerJoin(dbSchema.boardClimbs, eq(dbSchema.boardClimbs.uuid, dbSchema.userFavorites.climbUuid))
       .where(and(...favConditions))
-      .groupBy(dbSchema.userFavorites.climbUuid, dbSchema.userFavorites.boardName)
+      .groupBy(dbSchema.userFavorites.climbUuid, dbSchema.boardClimbs.boardType)
       .orderBy(desc(max(dbSchema.userFavorites.createdAt)))
       .limit(pageSize)
       .offset(offset);
@@ -228,20 +230,22 @@ async function countSmartClimbRefs(
   if (type === 'LIKED_CLIMBS') {
     const favConditions: SQL[] = [
       eq(dbSchema.userFavorites.userId, userId),
-      // Favourites are the other reference source — same rule, same reason.
+      // Match the page query's catalog type so stale legacy names cannot
+      // bypass private-spray filtering or inflate this total count.
       sprayReferenceVisibilityCondition(
-        { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
+        { boardType: dbSchema.boardClimbs.boardType, climbUuid: dbSchema.userFavorites.climbUuid },
         viewerUserId,
       ),
     ];
     if (boardName) {
-      favConditions.push(eq(dbSchema.userFavorites.boardName, boardName));
+      favConditions.push(eq(dbSchema.boardClimbs.boardType, boardName));
     }
     const [row] = await db
       .select({
-        count: sql<number>`COUNT(DISTINCT (${dbSchema.userFavorites.boardName}, ${dbSchema.userFavorites.climbUuid}))::int`,
+        count: sql<number>`COUNT(DISTINCT (${dbSchema.boardClimbs.boardType}, ${dbSchema.userFavorites.climbUuid}))::int`,
       })
       .from(dbSchema.userFavorites)
+      .innerJoin(dbSchema.boardClimbs, eq(dbSchema.boardClimbs.uuid, dbSchema.userFavorites.climbUuid))
       .where(and(...favConditions));
     return row?.count ?? 0;
   }
@@ -471,9 +475,14 @@ export const mySmartPlaylistCounts = async (
         )
       ),
       liked_climbs AS (
-        SELECT COUNT(DISTINCT (board_name, climb_uuid))::int AS count
-        FROM ${dbSchema.userFavorites}
-        WHERE user_id = ${userId}
+        -- Board comes from the catalog join now that favorites are keyed by
+        -- (user_id, climb_uuid); matches countSmartClimbRefs' LIKED_CLIMBS branch
+        -- so the card and the list agree. Orphan favorites (no board_climbs row)
+        -- are excluded from both.
+        SELECT COUNT(DISTINCT (bc.board_type, uf.climb_uuid))::int AS count
+        FROM ${dbSchema.userFavorites} uf
+        JOIN ${dbSchema.boardClimbs} bc ON bc.uuid = uf.climb_uuid
+        WHERE uf.user_id = ${userId}
       )
       SELECT 'FIVE_STARS'::text AS type, count FROM five_stars
       UNION ALL

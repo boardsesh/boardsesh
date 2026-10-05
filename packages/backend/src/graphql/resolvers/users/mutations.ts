@@ -1,6 +1,7 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import * as Sentry from '@sentry/node';
+import { executeFirstRow } from '@boardsesh/db/client';
 import type {
   ConnectionContext,
   UserProfile,
@@ -266,6 +267,14 @@ export const userMutations = {
     const userId = ctx.userId!;
 
     await db.transaction(async (tx) => {
+      // Serialize account deletion with the favorites re-key migration. The
+      // migration takes ACCESS EXCLUSIVE on user_favorites while it creates
+      // the archive; this lock is compatible with normal writers but waits for
+      // that DDL. Under READ COMMITTED, the archive check below then sees the
+      // migration's committed table instead of racing its creation.
+      await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL READ COMMITTED`);
+      await tx.execute(sql`LOCK TABLE public.user_favorites IN ROW EXCLUSIVE MODE`);
+
       // Find this user's draft climbs first — the dependent-row cleanup below
       // needs the (boardType, uuid) pairs, and it must run before the drafts
       // themselves are deleted or the rows it targets would already be gone.
@@ -296,6 +305,20 @@ export const userMutations = {
           .update(dbSchema.boardClimbs)
           .set({ setterUsername: null })
           .where(and(eq(dbSchema.boardClimbs.userId, userId), eq(dbSchema.boardClimbs.isDraft, false)));
+      }
+
+      // This archive intentionally has no user FK: removing a favorite must
+      // retain old angle variants until legacy offline clients receive their
+      // deletion tombstones. Account deletion is different — no client can
+      // continue syncing for a deleted account, so remove its archive rows in
+      // this transaction. The table is absent on databases that have not yet
+      // applied the favorites rekey migration.
+      const favoriteArchive = await executeFirstRow<{ present: boolean }>(
+        tx,
+        sql`SELECT to_regclass('public.user_favorites_dedup_backup_0194') IS NOT NULL AS present`,
+      );
+      if (favoriteArchive?.present) {
+        await tx.execute(sql`DELETE FROM public.user_favorites_dedup_backup_0194 WHERE user_id = ${userId}`);
       }
 
       // Delete the user row — all related tables with onDelete: cascade

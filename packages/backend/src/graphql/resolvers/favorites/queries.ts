@@ -33,7 +33,8 @@ export const favoriteQueries = {
   },
 
   /**
-   * Get count of favorited climbs per board for the current user
+   * Retained for shipped clients. Resolve board identity from the catalog,
+   * matching the favorite-climb list after the UUID rekey.
    */
   userFavoritesCounts: async (
     _: unknown,
@@ -44,18 +45,19 @@ export const favoriteQueries = {
 
     const results = await db
       .select({
-        boardName: dbSchema.userFavorites.boardName,
+        boardName: dbSchema.boardClimbs.boardType,
         count: sql<number>`COUNT(DISTINCT ${dbSchema.userFavorites.climbUuid})::int`,
       })
       .from(dbSchema.userFavorites)
+      .innerJoin(dbSchema.boardClimbs, eq(dbSchema.boardClimbs.uuid, dbSchema.userFavorites.climbUuid))
       .where(eq(dbSchema.userFavorites.userId, ctx.userId!))
-      .groupBy(dbSchema.userFavorites.boardName);
+      .groupBy(dbSchema.boardClimbs.boardType);
 
     return results;
   },
 
   /**
-   * Get board names where the current user has playlists or favorites
+   * Retained for shipped clients: boards with playlists or catalog favorites.
    */
   userActiveBoards: async (_: unknown, __: unknown, ctx: ConnectionContext): Promise<string[]> => {
     requireAuthenticated(ctx);
@@ -71,8 +73,9 @@ export const favoriteQueries = {
 
     // Get distinct board names from favorites
     const favoriteBoards = await db
-      .selectDistinct({ boardName: dbSchema.userFavorites.boardName })
+      .selectDistinct({ boardName: dbSchema.boardClimbs.boardType })
       .from(dbSchema.userFavorites)
+      .innerJoin(dbSchema.boardClimbs, eq(dbSchema.boardClimbs.uuid, dbSchema.userFavorites.climbUuid))
       .where(eq(dbSchema.userFavorites.userId, userId));
 
     // Combine and deduplicate
