@@ -44,12 +44,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import {
-  PREVIEW_BRANCH_PATTERN,
-  ROLLOUT_PROOF_BRANCH,
-  desiredOtaState,
-  otaReleasePolicy,
-} from '../infra/ota/config.ts';
+import { ROLLOUT_PROOF_BRANCH, desiredOtaState, otaReleasePolicy } from '../infra/ota/config.ts';
 import type { OtaDesiredState, OtaHealthPolicy } from '../infra/ota/config.ts';
 import {
   buildUploadFiles,
@@ -120,9 +115,6 @@ export function assertProofBranch(branch: string, desired: Pick<OtaDesiredState,
   if (branch !== ROLLOUT_PROOF_BRANCH) {
     throw new Error(`The rollout proof only runs against "${ROLLOUT_PROOF_BRANCH}", not "${branch}".`);
   }
-  if (PREVIEW_BRANCH_PATTERN.test(branch)) {
-    throw new Error(`"${branch}" is a per-PR preview branch. The rollout proof never publishes to one.`);
-  }
   if (desired.branches.some((declared) => declared.name === branch)) {
     throw new Error(
       `"${branch}" is a declared long-lived branch in infra/ota/config.ts. The rollout proof refuses to publish to it.`,
@@ -165,19 +157,27 @@ export function assertBranchNotServed(branch: string, channels: readonly XpremCh
 
 const REDACTED_KEYS = /token|password|secret|authorization|signature|email|requestUploadUrl|^headers$/i;
 
-/** Remove known secrets, emails, bearer credentials and JWTs from a string. */
+/**
+ * Remove known secrets, emails, bearer credentials, JWTs and presigned-URL
+ * parameters from a string. `secrets` is read on every call, so a credential
+ * learned later (the session token) is covered by pushing it onto the list. Each
+ * secret is also removed in its URL-encoded form.
+ */
 export function createMasker(secrets: readonly (string | undefined)[]): (text: string) => string {
-  // Longest first, so a secret that contains another is replaced whole.
-  const known = secrets
-    .filter((secret): secret is string => typeof secret === 'string' && secret.length >= 4)
-    .sort((left, right) => right.length - left.length);
   return (text) => {
+    // Longest first, so a secret that contains another is replaced whole.
+    const known = secrets
+      .filter((secret): secret is string => typeof secret === 'string' && secret.length >= 4)
+      .flatMap((secret) => [secret, encodeURIComponent(secret)])
+      .sort((left, right) => right.length - left.length);
     let masked = text;
     for (const secret of known) masked = masked.split(secret).join('[masked]');
     return masked
+      .replace(/X-Amz-[A-Za-z-]+=[^&\s"'<]+/gi, 'X-Amz-[masked]')
+      .replace(/<(AWSAccessKeyId|StringToSign|SignatureProvided|CanonicalRequest)>[^<]*</gi, '<$1>[masked]<')
       .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/g, 'Bearer [masked]')
       .replace(/eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/g, '[jwt]')
-      .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[email]');
+      .replace(/[A-Za-z0-9._+-]+(?:@|%40)[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[email]');
   };
 }
 
@@ -228,13 +228,19 @@ export interface ProofFetch {
   mark: () => number;
   /** What was recorded after a mark, without taking it. */
   since: (mark: number) => Exchange[];
+  /** Let the storage URLs of one parsed lease through the allowlist. */
+  allowUploads: (lease: UploadLease) => void;
   /** While `task` runs, identical requests are folded into one line with a count. */
   folded: <Result>(task: () => Promise<Result>) => Promise<Result>;
 }
 
 function requestParts(input: RequestInfo | URL, init: RequestInit | undefined): { url: URL; method: string } {
-  const url = new URL(input instanceof URL ? input.href : typeof input === 'string' ? input : input.url);
-  return { url, method: (init?.method ?? 'GET').toUpperCase() };
+  // A Request object carries its own method and headers, which `init` does not
+  // show. Judging one by `init` alone would let a write through as a read.
+  if (typeof input !== 'string' && !(input instanceof URL)) {
+    throw new Error('Refused before sending: the proof only sends requests given as a URL.');
+  }
+  return { url: new URL(input), method: (init?.method ?? 'GET').toUpperCase() };
 }
 
 /**
@@ -247,12 +253,19 @@ function requestParts(input: RequestInfo | URL, init: RequestInit | undefined): 
  */
 export function requestRefusal(
   request: { url: URL; method: string; headers: Headers },
-  scope: { base: URL; appId: string; branch: string; runtimeVersion: string },
+  scope: {
+    base: URL;
+    appId: string;
+    branch: string;
+    runtimeVersion: string;
+    /** The exact storage URLs a lease for the proof branch named. Nothing else off-server is sent. */
+    leasedUploads: ReadonlySet<string>;
+  },
 ): string | null {
   const { url, method } = request;
   if (url.origin !== scope.base.origin) {
-    // The only foreign requests are the presigned storage uploads a lease names.
-    return method === 'PUT' && url.protocol === 'https:' ? null : `${method} to another origin`;
+    if (method !== 'PUT' || url.protocol !== 'https:') return `${method} to another origin`;
+    return scope.leasedUploads.has(url.href) ? null : 'an upload to a URL no lease named';
   }
   const prefix = scope.base.pathname.replace(/\/$/, '');
   if (!url.pathname.startsWith(`${prefix}/`)) return 'a path outside the update server';
@@ -284,10 +297,10 @@ export function requestRefusal(
     if (method === 'POST' && rest === 'rollout/revert') return null;
     return `${method} ${rest} is not a call the proof makes`;
   }
-  const publish = new RegExp(
-    `^/${scope.appId}/(requestUploadUrl|markUpdateAsUploaded|republish|rollback)/${scope.branch}$`,
+  const publishPaths = ['requestUploadUrl', 'markUpdateAsUploaded', 'republish', 'rollback'].map(
+    (action) => `/${scope.appId}/${action}/${scope.branch}`,
   );
-  if (method === 'POST' && publish.test(path)) {
+  if (method === 'POST' && publishPaths.includes(path)) {
     return url.searchParams.get('runtimeVersion') === scope.runtimeVersion
       ? null
       : 'a publish call for another runtime version';
@@ -308,6 +321,7 @@ export function createProofFetch(options: {
   fetchImpl: typeof fetch;
 }): ProofFetch {
   let exchanges: Exchange[] = [];
+  const leasedUploads = new Set<string>();
   /** Where the current fold began, or null outside one. Only its own lines are merged. */
   let foldStart: number | null = null;
 
@@ -329,7 +343,7 @@ export function createProofFetch(options: {
 
   const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const { url, method } = requestParts(input, init);
-    const refusal = requestRefusal({ url, method, headers: new Headers(init?.headers) }, options);
+    const refusal = requestRefusal({ url, method, headers: new Headers(init?.headers) }, { ...options, leasedUploads });
     if (refusal) throw new Error(`Refused before sending: ${refusal} (${method} ${url.origin}${url.pathname}).`);
     const response = await options.fetchImpl(input, init);
     const onServer = url.origin === options.base.origin;
@@ -357,6 +371,9 @@ export function createProofFetch(options: {
       const taken = exchanges;
       exchanges = [];
       return taken;
+    },
+    allowUploads: (lease) => {
+      for (const upload of lease.uploadRequests) leasedUploads.add(new URL(upload.requestUploadUrl).href);
     },
     mark: () => exchanges.length,
     since: (mark) => exchanges.slice(mark),
@@ -549,7 +566,8 @@ export async function runSteps(
       skippedBecause: null,
       findings,
       exchanges: takeExchanges(),
-      data,
+      // Recorded values are parsed fields today. Masked anyway: they go into the artifact.
+      data: JSON.parse(mask(JSON.stringify(data))) as Record<string, unknown>,
     });
   }
   return results;
@@ -574,6 +592,8 @@ interface PublishedUpdate {
 
 type PublishOutcome =
   | { kind: 'published'; updates: Record<OtaPlatform, PublishedUpdate> }
+  /** A lease was handed out and deliberately not used. */
+  | { kind: 'leased' }
   | { kind: 'refused'; stage: 'lease' | 'finalize'; platform: OtaPlatform; status: number; body: string };
 
 type ProbeAnswer =
@@ -657,7 +677,8 @@ export async function runRolloutProof(options: ProofOptions): Promise<ProofRepor
 
   const base = uploadServerBase(options.manifestUrl);
   const appId = desiredOtaState.appId;
-  const mask = createMasker([options.adminEmail, options.adminPassword, options.publishToken]);
+  const secrets = [options.adminEmail, options.adminPassword, options.publishToken];
+  const mask = createMasker(secrets);
   const proofFetch = createProofFetch({
     base,
     appId,
@@ -753,10 +774,21 @@ export async function runRolloutProof(options: ProofOptions): Promise<ProofRepor
         echoedRolloutPercentage: echoed,
       };
     }
-    if (leaseOnly) return { kind: 'published', updates };
+    if (leaseOnly) return { kind: 'leased' };
     for (const platform of PLATFORMS) {
       const { lease } = leases[platform];
-      await uploadLeaseFiles(lease, exports[platform].files, publishTarget, paceUpload);
+      proofFetch.allowUploads(lease);
+      try {
+        await uploadLeaseFiles(lease, exports[platform].files, publishTarget, paceUpload);
+      } catch (error) {
+        // A storage refusal quotes the request back, access key id included.
+        // Keep the file and the status, and drop the body.
+        const reason = error instanceof Error ? error.message : String(error);
+        const status = /^(.*? failed \(\d{3}\))/.exec(reason)?.[1];
+        throw new Error(
+          `${platform} update ${label}: ${status ?? 'a file upload failed before the storage answered'}.`,
+        );
+      }
       const response = await finalizeUpload(publishTarget, { platform, runtimeVersion, updateId: lease.updateId });
       if (!response.ok) {
         return { kind: 'refused', stage: 'finalize', platform, status: response.status, body: await response.text() };
@@ -775,6 +807,7 @@ export async function runRolloutProof(options: ProofOptions): Promise<ProofRepor
     rolloutPercentage: number | null,
   ): Promise<Record<OtaPlatform, PublishedUpdate>> => {
     const outcome = await publishSynthetic(label, rolloutPercentage);
+    if (outcome.kind === 'leased') return recorder.block(`Update ${label} was leased and not published.`);
     if (outcome.kind === 'refused') {
       return recorder.block(
         `Publishing update ${label} was refused at ${outcome.stage} for ${outcome.platform}: HTTP ${outcome.status}, ` +
@@ -920,6 +953,7 @@ export async function runRolloutProof(options: ProofOptions): Promise<ProofRepor
           password: options.adminPassword,
           fetchImpl,
         });
+        secrets.push(token);
         client = createXpremAdminClient({ baseUrl: adminBase, appId, token, fetchImpl });
         const channels = await client.getChannels();
         assertBranchNotServed(branch, channels);
@@ -1091,14 +1125,14 @@ export async function runRolloutProof(options: ProofOptions): Promise<ProofRepor
       title: 'Publish, republish and rollback while the rollout is live',
       needs: ['b'],
       run: async (recorder) => {
-        const attempt = await publishSynthetic('C-blocked', null, true);
-        if (attempt.kind === 'refused') {
+        const blocked = await publishSynthetic('C-blocked', null, true);
+        if (blocked.kind === 'refused') {
           recorder.expect(
-            attempt.status === 409,
-            `Publishing at 100% during the rollout is refused with HTTP 409 at ${attempt.stage} (${attempt.platform}). ` +
-              `Body: ${JSON.stringify(attempt.body.slice(0, 300))}.`,
-            `Publishing during the rollout was refused with HTTP ${attempt.status}, not 409, at ${attempt.stage} ` +
-              `(${attempt.platform}). Body: ${JSON.stringify(attempt.body.slice(0, 300))}.`,
+            blocked.status === 409,
+            `Publishing at 100% during the rollout is refused with HTTP 409 at ${blocked.stage} (${blocked.platform}). ` +
+              `Body: ${JSON.stringify(blocked.body.slice(0, 300))}.`,
+            `Publishing during the rollout was refused with HTTP ${blocked.status}, not 409, at ${blocked.stage} ` +
+              `(${blocked.platform}). Body: ${JSON.stringify(blocked.body.slice(0, 300))}.`,
           );
         } else {
           recorder.fail(
@@ -1273,7 +1307,7 @@ export async function runRolloutProof(options: ProofOptions): Promise<ProofRepor
         }
         const unlocked = await publishSynthetic('C', null);
         if (unlocked.kind === 'published') recorder.pass('Publishing is unlocked: update C at 100% was accepted.');
-        else {
+        else if (unlocked.kind === 'refused') {
           recorder.fail(
             `Publishing is still locked after revert: C was refused with HTTP ${unlocked.status} at ${unlocked.stage}.`,
           );
@@ -1320,10 +1354,13 @@ export async function runRolloutProof(options: ProofOptions): Promise<ProofRepor
         const setStatus = await refusal(() =>
           admin().setUpdateRolloutPercentage(branch, runtimeVersion, 20, wrongAsString),
         );
+        // 409 and nothing else: a 404 or a 500 is a refusal too, and says nothing about the guard.
         recorder.expect(
-          setStatus !== null,
-          `PUT …/rollout with a wrong expectedUpdateId (sent as a string) is refused with HTTP ${setStatus}.`,
-          'PUT …/rollout with a wrong expectedUpdateId was ACCEPTED. The guard does not protect a write.',
+          setStatus === 409,
+          'PUT …/rollout with a wrong expectedUpdateId (sent as a string) is refused with HTTP 409.',
+          setStatus === null
+            ? 'PUT …/rollout with a wrong expectedUpdateId was ACCEPTED. The guard does not protect a write.'
+            : `PUT …/rollout with a wrong expectedUpdateId answered HTTP ${setStatus}, not the 409 of the guard.`,
         );
         const numberStatus = await refusal(() =>
           admin().setUpdateRolloutPercentage(branch, runtimeVersion, 20, wrongAsNumber),
@@ -1339,9 +1376,11 @@ export async function runRolloutProof(options: ProofOptions): Promise<ProofRepor
         );
         const revertStatus = await refusal(() => admin().revertUpdateRollout(branch, runtimeVersion, wrongAsString));
         recorder.expect(
-          revertStatus !== null,
-          `POST …/rollout/revert with a wrong expectedUpdateId is refused with HTTP ${revertStatus}.`,
-          'POST …/rollout/revert with a wrong expectedUpdateId was ACCEPTED.',
+          revertStatus === 409,
+          'POST …/rollout/revert with a wrong expectedUpdateId is refused with HTTP 409.',
+          revertStatus === null
+            ? 'POST …/rollout/revert with a wrong expectedUpdateId was ACCEPTED.'
+            : `POST …/rollout/revert with a wrong expectedUpdateId answered HTTP ${revertStatus}, not the 409 of the guard.`,
         );
         const after = await readRollout(admin(), branch, runtimeVersion);
         recorder.expect(
@@ -1387,9 +1426,26 @@ export async function runRolloutProof(options: ProofOptions): Promise<ProofRepor
         }
         const unlocked = await publishSynthetic('E', null);
         if (unlocked.kind === 'published') recorder.pass('Publishing is unlocked: update E at 100% was accepted.');
-        else {
+        else if (unlocked.kind === 'refused') {
           recorder.fail(
             `Publishing is still locked after finish: E was refused with HTTP ${unlocked.status} at ${unlocked.stage}.`,
+          );
+        }
+      },
+    },
+    {
+      // Needs only the sign-in: its job is the run where an earlier step broke
+      // and left a rollout live on the scratch branch.
+      id: 'cleanup',
+      title: 'Leave no rollout live on the scratch branch',
+      needs: ['guards'],
+      run: async (recorder) => {
+        const reverted = await revertRollout(admin(), target, { allowNone: true });
+        if (reverted.length === 0) recorder.pass('No rollout was live at the end of the sequence.');
+        else {
+          recorder.observe(
+            `A rollout was still live at the end (${describeRollouts(reverted)}), left by a step that did not ` +
+              'complete. It was reverted, so the next run starts clean.',
           );
         }
       },

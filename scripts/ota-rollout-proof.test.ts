@@ -137,6 +137,7 @@ describe('the request allowlist', () => {
     appId: OTA_APP_ID,
     branch: ROLLOUT_PROOF_BRANCH,
     runtimeVersion: RUNTIME,
+    leasedUploads: new Set(['https://bucket.example/key?sig=1']),
   };
   const app = `/api/apps/${OTA_APP_ID}`;
   const refusal = (method: string, path: string, headers: Record<string, string> = {}): string | null =>
@@ -198,6 +199,18 @@ describe('the request allowlist', () => {
     ['deleting an update', 'DELETE', `${app}/branch/${ROLLOUT_PROOF_BRANCH}/runtimeVersion/${RUNTIME}/updates/1`],
     ['a read from another origin', 'GET', 'https://example.com/anything'],
     ['an upload over plain http', 'PUT', 'http://bucket.example/key'],
+    ['an upload to a URL no lease named', 'PUT', 'https://bucket.example/other?sig=1'],
+    // The same server under another spelling of its host is another origin, and no lease names it.
+    [
+      'a rollout write smuggled as an upload',
+      'PUT',
+      `https://updates.example./api/apps/${OTA_APP_ID}/branch/production/runtimeVersion/${RUNTIME}/rollout`,
+    ],
+    [
+      'a branch name that only a pattern would match',
+      'POST',
+      `/${OTA_APP_ID}/rollback/prXrollout-proof?runtimeVersion=${RUNTIME}`,
+    ],
   ])('refuses %s', (_what, method, path) => {
     expect(refusal(method, path)).not.toBeNull();
   });
@@ -227,8 +240,22 @@ describe('the request allowlist', () => {
         method: 'POST',
       }),
     ).rejects.toThrow('Refused before sending');
+    // A Request object carries its own method, which the allowlist could not see.
+    await expect(
+      proofFetch.fetchImpl(new Request(`${FAKE_BASE_URL}/api/apps/${OTA_APP_ID}/channels`, { method: 'POST' })),
+    ).rejects.toThrow('the proof only sends requests given as a URL');
+    // An upload is sent only to a URL a lease named.
+    await expect(proofFetch.fetchImpl('https://bucket.example/key?sig=1', { method: 'PUT' })).rejects.toThrow(
+      'an upload to a URL no lease named',
+    );
     expect(sent).toBe(0);
     expect(proofFetch.takeExchanges()).toEqual([]);
+    proofFetch.allowUploads({
+      updateId: '1',
+      uploadRequests: [{ requestUploadUrl: 'https://bucket.example/key?sig=1', fileName: 'key', filePath: 'key' }],
+    });
+    await proofFetch.fetchImpl('https://bucket.example/key?sig=1', { method: 'PUT' });
+    expect(sent).toBe(1);
   });
 });
 
@@ -245,6 +272,26 @@ describe('masking', () => {
     expect(masked).not.toContain(PUBLISH_TOKEN);
     expect(masked).not.toContain('eyJhbGci');
     expect(masked).not.toContain('someone@else.example');
+  });
+
+  it('removes a secret in its URL-encoded form, and the parameters of a presigned URL', () => {
+    const withSymbols = createMasker(['hunter2!pw/x', 'me@boardsesh.example']);
+    const masked = withSymbols(
+      'form email=me%40boardsesh.example&password=hunter2!pw%2Fx then ' +
+        'https://bucket.example/k?X-Amz-Credential=AKIAEXAMPLE%2F20261005&X-Amz-Signature=abc123 and ' +
+        '<Error><AWSAccessKeyId>AKIAEXAMPLE</AWSAccessKeyId><StringToSign>AWS4 secret-ish</StringToSign></Error>',
+    );
+    for (const leaked of ['hunter2', 'boardsesh.example', 'AKIAEXAMPLE', 'abc123', 'secret-ish']) {
+      expect(masked, leaked).not.toContain(leaked);
+    }
+  });
+
+  it('covers a credential that is only learned later', () => {
+    const secrets = ['first-secret'];
+    const later = createMasker(secrets);
+    expect(later('opaque-session-token')).toBe('opaque-session-token');
+    secrets.push('opaque-session-token');
+    expect(later('saw opaque-session-token')).toBe('saw [masked]');
   });
 
   it('redacts credential-bearing keys and keeps the type of an id', () => {
@@ -487,6 +534,7 @@ describe('the sequence against a fake server', () => {
       'h-start',
       'i',
       'h-finish',
+      'cleanup',
       'j',
     ]);
     expect(outcomes(report)).toEqual({
@@ -501,6 +549,7 @@ describe('the sequence against a fake server', () => {
       'h-start': 'PASS',
       i: 'PASS',
       'h-finish': 'PASS',
+      cleanup: 'PASS',
       j: 'OBSERVED',
     });
     expect(report.ok).toBe(true);
@@ -664,7 +713,7 @@ describe('the sequence against a fake server', () => {
     );
     // j needs no earlier step and has nothing to report.
     expect(report.steps.slice(1).map((step) => step.outcome)).toEqual([
-      ...Array.from({ length: 10 }, () => 'SKIPPED'),
+      ...Array.from({ length: 11 }, () => 'SKIPPED'),
       'OBSERVED',
     ]);
     expect(server.requests.filter((request) => request.method !== 'GET').map((request) => request.path)).toEqual([
@@ -712,6 +761,17 @@ describe('the sequence against a fake server', () => {
     );
     expect(findings(report, 'd')).not.toContain('FAIL');
     expect(outcomes(report).d).toBe('PASS');
+  });
+
+  it('does not take any refusal of a wrong expectedUpdateId for the guard: only a 409 passes', async () => {
+    const { report } = await runAgainst({ wrongExpectedIdStatus: 500 });
+    expect(outcomes(report)).toMatchObject({ i: 'FAIL', 'h-finish': 'PASS', cleanup: 'PASS' });
+    expect(findings(report, 'i')).toContain(
+      'FAIL: PUT …/rollout with a wrong expectedUpdateId answered HTTP 500, not the 409 of the guard.',
+    );
+    expect(findings(report, 'i')).toContain(
+      'FAIL: POST …/rollout/revert with a wrong expectedUpdateId answered HTTP 500, not the 409 of the guard.',
+    );
   });
 
   it('stops after a refused first publish and still reports every step', async () => {

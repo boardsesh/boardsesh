@@ -667,8 +667,8 @@ What keeps it away from the fleet:
   names it (`ROLLOUT_PROOF_BRANCH`) and deliberately does not declare it.
 - **The runtime version is minted per run** (`rollout-proof-<UTC timestamp>-<random>`). No binary
   has it, so no device can be served anything the proof publishes. A fingerprint is refused.
-- **Every request passes an allowlist before it is sent.** Reads, the login, and writes addressed
-  to that branch and that runtime version. A request for `production`, for another runtime version,
+- **Every request passes an allowlist before it is sent.** Reads, the login, writes addressed
+  to that branch and that runtime version, and file uploads to the exact URLs a lease named. A request for `production`, for another runtime version,
   to a channel or to Branch Surfing is refused in the script and never reaches the server.
 - **The updates are a comment.** Each one is `metadata.json`, `expoConfig.json` and a three-line
   `.js` file that says it is a rollout proof.
@@ -689,6 +689,7 @@ with no right answer, written down):
 | h-start | Publishes update D at 10%. |
 | i | Sends `PUT …/rollout` and `revert` with a wrong `expectedUpdateId`, as a string and as a number. |
 | h-finish | Finishes D, checks everyone is served it, publishes update E. |
+| cleanup | Reverts a rollout that a broken step left live. Normally there is none. |
 | j | Says whether one write moved both platforms, from how many writes the lib needed. |
 
 A step that needs a broken step is `SKIPPED`. The summary table always lists every step. The run

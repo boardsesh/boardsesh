@@ -80,7 +80,7 @@ export const UPDATE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
  * through it, whatever branch it targets: a branch other than the channel's own
  * is reached with the `xprem-branch` header, never with another channel.
  */
-export const CHANNEL = 'production';
+const CHANNEL = 'production';
 
 /** The branch the channel maps to, and the target when no branch is named. */
 export const DEFAULT_BRANCH = 'production';
@@ -335,7 +335,7 @@ export async function requireSuccess(response: Response, action: string): Promis
 
 export const sleep = (delayMs: number): Promise<void> => new Promise((done) => setTimeout(done, delayMs));
 
-export async function fetchWithRetry(
+async function fetchWithRetry(
   fetchImpl: typeof fetch,
   input: RequestInfo | URL,
   init: RequestInit | (() => RequestInit),

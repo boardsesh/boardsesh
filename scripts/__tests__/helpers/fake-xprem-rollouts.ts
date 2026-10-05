@@ -33,6 +33,8 @@ export interface RolloutServerQuirks {
   surfingOff?: boolean;
   /** Every publish request is refused with this status. */
   refusePublishWith?: number;
+  /** The status a rollout write with a wrong `expectedUpdateId` gets, in place of 409. */
+  wrongExpectedIdStatus?: number;
   /** Republish and rollback are refused with this status: a publish token limited to publishing. */
   refuseRepublishWith?: number;
   /** What the update list answers, in place of the real list. */
@@ -93,7 +95,10 @@ export function fakeRolloutServer(quirks: RolloutServerQuirks = {}): ReturnType<
     if (expected !== undefined && typeof expected !== 'string') return PROBLEM(400, 'invalid request body');
     if (active().length === 0) return PROBLEM(404, 'no active rollout for this branch and runtime version');
     if (expected !== undefined && !active().some((row) => String(row.id) === expected)) {
-      return PROBLEM(409, 'the rollout changed since this page was loaded; reload and retry');
+      return PROBLEM(
+        quirks.wrongExpectedIdStatus ?? 409,
+        'the rollout changed since this page was loaded; reload and retry',
+      );
     }
     return null;
   };
