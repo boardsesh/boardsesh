@@ -18,9 +18,3 @@ export const partyProfileStorage: PartyProfileStorage = {
     await AsyncStorage.setItem(PARTY_PROFILE_KEY, JSON.stringify(profile));
   },
 };
-
-// IndexedDB has no synchronous API. The web analytics bootstrap defers identity
-// reconciliation to PartyProfileProvider's async load instead.
-export function getOrCreatePartyProfileIdSync(): null {
-  return null;
-}

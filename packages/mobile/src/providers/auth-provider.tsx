@@ -22,7 +22,7 @@ import {
   type RegistrationResult,
 } from '../lib/auth';
 import { SCREENSHOT_USER_EMAIL, SCREENSHOT_USER_PASSWORD } from '../lib/screenshot-mode';
-import { reset as resetAnalytics, track } from '../lib/analytics';
+import { isAnalyticsPinnedToAPerson, reset as resetAnalytics, track } from '../lib/analytics';
 import { resetOfflineUsageSignal } from '../offline/offline-usage-signal';
 import { reportError, reportHandledError } from '../lib/error-reporting';
 import { setOnForcedSignOut } from '../lib/auth-interceptor';
@@ -172,16 +172,33 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     return result;
   }, []);
 
+  // The signed-out path that is NOT a sign-out: a checkAuth that finds no
+  // session, which is every cold start of a signed-out install. Two of those
+  // can resolve in one launch while `isLoading` is still true (the mount check
+  // and the AppState `active` check are separate calls and native does not
+  // queue them), and each used to reset. A reset on an SDK that is already
+  // anonymous throws its anonymous id away and mints another, so the id that
+  // carried the pre-login events was gone before the sign-in that should have
+  // merged it. Reset only when the SDK is pinned to a person — a session that
+  // died while the app was closed — which is what this call is for. If the SDK
+  // has not loaded its storage yet this reads false, and the identity effect in
+  // party-profile-provider.tsx does the same reset once it has.
+  //
+  // Only `isLoading` is tested: this is reached when the session was not
+  // authenticated (an authenticated one takes runSignedOutCleanup), so the one
+  // open question is whether this is the launch's first answer. A later
+  // signed-out check on a settled, signed-out app has nothing to do here.
   const resetAnalyticsForSignedOutTransition = useCallback(() => {
-    const authState = authStateRef.current;
-    if (authState.isLoading || authState.isAuthenticated) {
-      resetAnalytics();
-      // The offline-usage rollup's suppression map is in-memory and not keyed by
-      // user, so a same-day account switch would otherwise inherit the previous
-      // user's counters and the new user's first offline day would never fire
-      // (#4317).
-      resetOfflineUsageSignal();
-    }
+    if (!authStateRef.current.isLoading) return;
+    if (!isAnalyticsPinnedToAPerson()) return;
+    resetAnalytics();
+    // The offline-usage rollup's suppression map is in-memory and not keyed by
+    // user, so a same-day account switch would otherwise inherit the previous
+    // user's counters and the new user's first offline day would never fire
+    // (#4317). It goes with the analytics reset and only with it: both mark an
+    // account boundary, and a signed-out cold start with no account to leave
+    // has none.
+    resetOfflineUsageSignal();
   }, []);
 
   // Persisted (SecureStore/AsyncStorage-backed) per-user state that outlives a
@@ -310,7 +327,10 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     async (
       transitionEpoch: number,
       storageOwner?: UserStorageOwner | null,
-      { purgeOfflineBoards = false }: { purgeOfflineBoards?: boolean } = {},
+      {
+        purgeOfflineBoards = false,
+        wasAuthenticated = true,
+      }: { purgeOfflineBoards?: boolean; wasAuthenticated?: boolean } = {},
     ): Promise<boolean> => {
       if (!isAuthTransitionCurrent(transitionEpoch)) return false;
       // What the wipe below is about to delete. clearUserData DELETEs
@@ -361,7 +381,15 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // a login screen whose own sign-in request is blocked — the climber would
       // be locked out of the app by a setting they cannot reach from there.
       setOfflineMode(false, 'sign_out');
-      resetAnalytics();
+      // A session that was live, or an SDK still pinned to a person, has an
+      // identity to forget. A second forced sign-out in one launch (two 401s, or
+      // a remote sign-out after a forced one) has neither: the first one already
+      // reset, and resetting again would throw away the anonymous id the next
+      // sign-in merges on. `wasAuthenticated` keeps the case the pinned test
+      // alone would miss: a sign-out while the user id was still loading, when
+      // the SDK is anonymous but its events belong to the account that is
+      // leaving and must not merge into the next one.
+      if (wasAuthenticated || isAnalyticsPinnedToAPerson()) resetAnalytics();
       if (!isAuthTransitionCurrent(transitionEpoch)) return false;
       // Reset the per-user "downloaded boards" list so the next account on a shared
       // device doesn't inherit the previous user's offline selection. After a
@@ -415,10 +443,12 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         return true;
       }
 
-      const needsFullCleanup =
-        forceFullCleanup ||
-        authStateRef.current.isAuthenticated ||
-        (Platform.OS === 'web' && previousStorageOwner !== null);
+      // Read before the web branch below publishes the signed-out state. Web
+      // callers may already have flipped the flag, so the storage owner, which
+      // is cleared only when a cleanup completes, answers there.
+      const wasAuthenticated =
+        authStateRef.current.isAuthenticated || (Platform.OS === 'web' && previousStorageOwner !== null);
+      const needsFullCleanup = forceFullCleanup || wasAuthenticated;
       // On web, publish the confirmed anonymous state before any storage await.
       // This unmounts authenticated consumers promptly, while epoch checks stop
       // this transition from writing after a newer login. Native keeps its
@@ -431,7 +461,10 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
 
       let completed: boolean;
       if (needsFullCleanup) {
-        completed = await runSignedOutCleanup(transitionEpoch, previousStorageOwner, { purgeOfflineBoards });
+        completed = await runSignedOutCleanup(transitionEpoch, previousStorageOwner, {
+          purgeOfflineBoards,
+          wasAuthenticated,
+        });
       } else {
         if (!isAuthTransitionCurrent(transitionEpoch)) return false;
         resetAnalyticsForSignedOutTransition();

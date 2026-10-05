@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 vi.mock('expo-secure-store', () => {
@@ -37,9 +37,8 @@ vi.mock('../auth-provider', () => ({
 }));
 
 // The provider now reads the authenticated profile (useProfile) and reconciles
-// PostHog identity, which pulls in the AsyncStorage-backed alias-dedupe store.
-// Stub both so this suite stays focused on party-profile loading and runs in the
-// node/jsdom env without a QueryClient or native AsyncStorage.
+// PostHog identity. Stub the profile read so this suite runs in the node/jsdom
+// env without a QueryClient.
 const { useProfileMock } = vi.hoisted(() => ({
   useProfileMock: vi.fn<
     () => {
@@ -58,9 +57,6 @@ const { useProfileMock } = vi.hoisted(() => ({
   >(() => ({ data: undefined })),
 }));
 vi.mock('../../lib/graphql/hooks', () => ({ useProfile: useProfileMock }));
-vi.mock('../../lib/analytics-alias-store', () => ({
-  aliasDedupeStore: { hasRecordedAlias: () => false, recordAlias: () => {} },
-}));
 
 // The cohort-person-properties effect also reads the home board and connected
 // integrations — both pull in real GraphQL hooks / AsyncStorage transitively.
@@ -72,19 +68,69 @@ const { useHomeBoardMock, useIntegrationStatusesMock } = vi.hoisted(() => ({
 vi.mock('../../lib/graphql/hooks/use-home-board', () => ({ useHomeBoard: useHomeBoardMock }));
 vi.mock('../../lib/graphql/hooks/use-integrations', () => ({ useIntegrationStatuses: useIntegrationStatusesMock }));
 
-// identify/alias/reset are exercised for real elsewhere in this suite (they're
-// no-ops with no PostHog key in the test env); setPersonProperties is mocked
-// here so the cohort-person-properties effect's call is directly assertable.
-const { setPersonPropertiesMock } = vi.hoisted(() => ({ setPersonPropertiesMock: vi.fn() }));
+// setPersonProperties is mocked so the cohort-person-properties effect's call is
+// directly assertable. identify, reset and setPersonProperties also record into
+// one ordered list, `wireCalls`, with the distinct id each went out under, so
+// the tests can assert the exact sequence PostHog would receive. They move a
+// small model of the SDK's two ids the way @posthog/core does, because the
+// provider decides what to send by reading those ids back. The mock exposes no
+// merge call besides identify: the provider must not import one (see the header
+// of packages/shared/analytics/src/reconcile-identity.ts).
+const { setPersonPropertiesMock, identityCalls, wireCalls, sdk } = vi.hoisted(() => ({
+  setPersonPropertiesMock: vi.fn(),
+  identityCalls: [] as Array<[method: string, ...args: unknown[]]>,
+  // Every call that puts something on the wire, in order: [method, distinct id
+  // the event is sent under].
+  wireCalls: [] as Array<[method: string, sentAs: string]>,
+  sdk: {
+    // False models dev / no PostHog key: there is no client at all.
+    enabled: true,
+    // False models the first moments of a launch, before the SDK has read its
+    // storage: it cannot say who it is and onAnalyticsReady defers.
+    loaded: true,
+    anonymousId: 'sdk-anon-1' as string,
+    distinctId: null as string | null,
+    resets: 0,
+    pendingReady: [] as Array<() => void>,
+  },
+}));
 vi.mock('../../lib/analytics', () => ({
-  identify: vi.fn(),
-  alias: vi.fn(),
-  reset: vi.fn(),
-  setPersonProperties: setPersonPropertiesMock,
-  // Feeds reconcileAnalyticsIdentity's cold-start guard. Null here means "the SDK
-  // reports no persisted distinct_id", so these tests keep exercising the full
-  // anon → user switch rather than the skip path.
-  getAnalyticsClient: () => null,
+  identify: (distinctId: string, properties?: unknown) => {
+    identityCalls.push(['identify', distinctId, properties]);
+    const previousDistinctId = sdk.distinctId ?? sdk.anonymousId;
+    if (distinctId === previousDistinctId) return;
+    sdk.anonymousId = previousDistinctId;
+    sdk.distinctId = distinctId;
+    wireCalls.push(['$identify', distinctId]);
+  },
+  reset: () => {
+    identityCalls.push(['reset']);
+    sdk.resets += 1;
+    sdk.anonymousId = `sdk-anon-after-reset-${sdk.resets}`;
+    sdk.distinctId = null;
+  },
+  setPersonProperties: (...args: unknown[]) => {
+    wireCalls.push(['$set', sdk.distinctId ?? sdk.anonymousId]);
+    setPersonPropertiesMock(...args);
+  },
+  getAnalyticsIdentity: () =>
+    sdk.enabled && sdk.loaded ? { distinctId: sdk.distinctId ?? sdk.anonymousId, anonymousId: sdk.anonymousId } : null,
+  // Like the real one: runs the callback before returning once the SDK is
+  // loaded, and waits for the load otherwise (`finishSdkLoad` below).
+  onAnalyticsReady: (callback: () => void) => {
+    if (!sdk.enabled) return () => {};
+    if (sdk.loaded) {
+      callback();
+      return () => {};
+    }
+    let cancelled = false;
+    sdk.pendingReady.push(() => {
+      if (!cancelled) callback();
+    });
+    return () => {
+      cancelled = true;
+    };
+  },
 }));
 
 import { PartyProfileProvider, usePartyProfile } from '../party-profile-provider';
@@ -116,6 +162,14 @@ describe('PartyProfileProvider', () => {
     useHomeBoardMock.mockReturnValue({ board: null, boards: [], isResolving: false });
     useIntegrationStatusesMock.mockReturnValue({ data: undefined });
     setPersonPropertiesMock.mockClear();
+    identityCalls.length = 0;
+    wireCalls.length = 0;
+    sdk.enabled = true;
+    sdk.loaded = true;
+    sdk.pendingReady.length = 0;
+    sdk.anonymousId = 'sdk-anon-1';
+    sdk.distinctId = null;
+    sdk.resets = 0;
     useAuthMock.mockReset();
     useAuthMock.mockReturnValue(makeAuthMock());
   });
@@ -271,6 +325,234 @@ describe('PartyProfileProvider', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     expect(setPersonPropertiesMock).not.toHaveBeenCalled();
+  });
+
+  // Lets any effect a re-render queued run.
+  async function settleIdentity(): Promise<void> {
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+
+  // The SDK finishes reading its storage: waiting callbacks run in the order
+  // they registered, as promise continuations do.
+  async function finishSdkLoad(): Promise<void> {
+    await act(async () => {
+      sdk.loaded = true;
+      const waiting = sdk.pendingReady.splice(0);
+      for (const run of waiting) run();
+    });
+  }
+
+  function renderProvider() {
+    const wrapper = ({ children }: { children: ReactNode }) => <PartyProfileProvider>{children}</PartyProfileProvider>;
+    return renderHook(() => usePartyProfile(), { wrapper });
+  }
+
+  it('sends no identity call for a signed-out device, and never uses the party UUID as an analytics id', async () => {
+    const { result, rerender } = renderProvider();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await settleIdentity();
+    rerender();
+    await settleIdentity();
+
+    expect(result.current.profile?.id).toBe('test-uuid');
+    expect(identityCalls).toEqual([]);
+    expect(sdk.anonymousId).toBe('sdk-anon-1');
+  });
+
+  it('signs a climber in with one identify and nothing else', async () => {
+    // Fresh install, then sign-in to an account. The SDK is on its own
+    // anonymous id; the sign-in must add exactly identify(user), which is the
+    // call that lets PostHog merge the two.
+    const { result, rerender } = renderProvider();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await settleIdentity();
+    expect(identityCalls).toEqual([]);
+
+    // The session lands before the profile fetch: hold, send nothing.
+    useAuthMock.mockReturnValue(makeAuthMock({ isAuthenticated: true }));
+    rerender();
+    await settleIdentity();
+    expect(identityCalls).toEqual([]);
+
+    useProfileMock.mockReturnValue({ data: { id: 'user-1', email: 'climber@example.com' } });
+    rerender();
+    await settleIdentity();
+
+    expect(identityCalls).toEqual([['identify', 'user-1', { email: 'climber@example.com' }]]);
+    // The anonymous id that carried the pre-login events is the one merged.
+    expect(sdk.anonymousId).toBe('sdk-anon-1');
+
+    // Later renders must not send it again.
+    rerender();
+    await settleIdentity();
+    expect(identityCalls).toHaveLength(1);
+  });
+
+  it('sends nothing on a cold start already identified as this user', async () => {
+    sdk.distinctId = 'user-1';
+    useAuthMock.mockReturnValue(makeAuthMock({ isAuthenticated: true }));
+    useProfileMock.mockReturnValue({ data: { id: 'user-1', email: 'climber@example.com' } });
+
+    const { result } = renderProvider();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await settleIdentity();
+
+    expect(identityCalls).toEqual([]);
+  });
+
+  it('resets once on sign-out and does not identify', async () => {
+    sdk.distinctId = 'user-1';
+    useAuthMock.mockReturnValue(makeAuthMock({ isAuthenticated: true }));
+    useProfileMock.mockReturnValue({ data: { id: 'user-1', email: 'climber@example.com' } });
+    const { result, rerender } = renderProvider();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await settleIdentity();
+
+    useAuthMock.mockReturnValue(makeAuthMock({ isAuthenticated: false }));
+    useProfileMock.mockReturnValue({ data: undefined });
+    rerender();
+    await settleIdentity();
+    rerender();
+    await settleIdentity();
+
+    expect(identityCalls).toEqual([['reset']]);
+  });
+
+  it('does not reset again when AuthProvider already reset during its sign-out cleanup', async () => {
+    // Native publishes the signed-out state after its cleanup has reset the SDK.
+    useAuthMock.mockReturnValue(makeAuthMock({ isAuthenticated: false }));
+    const { result } = renderProvider();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await settleIdentity();
+
+    expect(identityCalls).toEqual([]);
+  });
+
+  it('resets before identifying when the SDK is pinned to another account', async () => {
+    sdk.distinctId = 'user-other';
+    useAuthMock.mockReturnValue(makeAuthMock({ isAuthenticated: true }));
+    useProfileMock.mockReturnValue({ data: { id: 'user-1', email: 'climber@example.com' } });
+
+    const { result } = renderProvider();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await settleIdentity();
+
+    expect(identityCalls).toEqual([['reset'], ['identify', 'user-1', { email: 'climber@example.com' }]]);
+  });
+
+  it('clears an install the old routine left pinned to its party UUID, once', async () => {
+    // What an OTA finds on a signed-out device that ran the previous bundle.
+    sdk.distinctId = 'test-uuid';
+    const { result, rerender } = renderProvider();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await settleIdentity();
+    rerender();
+    await settleIdentity();
+
+    expect(identityCalls).toEqual([['reset']]);
+  });
+
+  it('waits for auth to resolve before touching identity', async () => {
+    sdk.distinctId = 'user-1';
+    useAuthMock.mockReturnValue(makeAuthMock({ isAuthenticated: false, isLoading: true }));
+    const { result } = renderProvider();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await settleIdentity();
+
+    // A still-loading session reads as signed out; resetting here would throw
+    // a signed-in climber's identity away on every launch.
+    expect(identityCalls).toEqual([]);
+  });
+
+  it('drops a reconcile that the next auth state superseded before the SDK was ready', async () => {
+    sdk.loaded = false;
+    sdk.distinctId = 'user-1';
+    useAuthMock.mockReturnValue(makeAuthMock({ isAuthenticated: false }));
+    const { rerender } = renderProvider();
+    // Before the SDK has loaded, auth flips to signed in as user-1.
+    useAuthMock.mockReturnValue(makeAuthMock({ isAuthenticated: true }));
+    useProfileMock.mockReturnValue({ data: { id: 'user-1', email: 'climber@example.com' } });
+    rerender();
+    await finishSdkLoad();
+
+    expect(identityCalls).toEqual([]);
+  });
+
+  // The profile that carries the cohort traits is the same one that triggers
+  // the identify, so both effects fire in one commit. The traits include the
+  // account's email: sent first, they would land on the anonymous person, and
+  // reach the account only if PostHog then agreed to merge the two.
+  it('identifies before it sets person properties on sign-in, and sets them on the user', async () => {
+    const { result, rerender } = renderProvider();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await settleIdentity();
+
+    useAuthMock.mockReturnValue(makeAuthMock({ isAuthenticated: true }));
+    useProfileMock.mockReturnValue({ data: { id: 'user-1', email: 'climber@example.com', isTester: false } });
+    rerender();
+    await settleIdentity();
+
+    expect(wireCalls).toEqual([
+      ['$identify', 'user-1'],
+      ['$set', 'user-1'],
+    ]);
+  });
+
+  it('keeps that order when the SDK finishes loading after the profile arrived', async () => {
+    sdk.loaded = false;
+    useAuthMock.mockReturnValue(makeAuthMock({ isAuthenticated: true }));
+    useProfileMock.mockReturnValue({ data: { id: 'user-1', email: 'climber@example.com', isTester: false } });
+    const { result } = renderProvider();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(wireCalls).toEqual([]);
+
+    await finishSdkLoad();
+
+    expect(wireCalls).toEqual([
+      ['$identify', 'user-1'],
+      ['$set', 'user-1'],
+    ]);
+  });
+
+  it('never sets person properties on the id a previous account or the old routine left behind', async () => {
+    // Pinned to another id (an old-bundle install on its party UUID, or the last
+    // account) when this user's profile lands.
+    sdk.distinctId = 'test-uuid';
+    useAuthMock.mockReturnValue(makeAuthMock({ isAuthenticated: true }));
+    useProfileMock.mockReturnValue({ data: { id: 'user-1', email: 'climber@example.com', isTester: false } });
+    const { result } = renderProvider();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await settleIdentity();
+
+    expect(identityCalls.map(([method]) => method)).toEqual(['reset', 'identify']);
+    expect(wireCalls).toEqual([
+      ['$identify', 'user-1'],
+      ['$set', 'user-1'],
+    ]);
+  });
+
+  it('sets person properties without an identify on a cold start already on this user', async () => {
+    sdk.distinctId = 'user-1';
+    useAuthMock.mockReturnValue(makeAuthMock({ isAuthenticated: true }));
+    useProfileMock.mockReturnValue({ data: { id: 'user-1', email: 'climber@example.com', isTester: false } });
+    const { result } = renderProvider();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await settleIdentity();
+
+    expect(wireCalls).toEqual([['$set', 'user-1']]);
+  });
+
+  it('does nothing when analytics is disabled', async () => {
+    sdk.enabled = false;
+    useAuthMock.mockReturnValue(makeAuthMock({ isAuthenticated: true }));
+    useProfileMock.mockReturnValue({ data: { id: 'user-1', email: 'climber@example.com' } });
+    const { result } = renderProvider();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await settleIdentity();
+
+    expect(identityCalls).toEqual([]);
   });
 
   it('usePartyProfile throws when called outside a provider', () => {

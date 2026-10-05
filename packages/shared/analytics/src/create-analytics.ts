@@ -16,7 +16,6 @@ export type AnalyticsApi = {
   capture(name: string, properties?: AnalyticsEventProperties): boolean;
   identify(distinctId: string, properties?: AnalyticsEventProperties): boolean;
   setPersonProperties(set?: AnalyticsEventProperties, setOnce?: AnalyticsEventProperties): boolean;
-  alias(newId: string): boolean;
   reset(): boolean;
 };
 
@@ -76,12 +75,6 @@ export function createAnalytics(
       const client = resolveClient();
       if (!client) return false;
       client.setPersonProperties(sanitizeForPosthog(set), sanitizeForPosthog(setOnce));
-      return true;
-    },
-    alias(newId) {
-      const client = resolveClient();
-      if (!client) return false;
-      client.alias(newId);
       return true;
     },
     reset() {
