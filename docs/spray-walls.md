@@ -317,6 +317,13 @@ Three rules in that flow are not obvious from the API and are easy to undo:
   button, and `publishSprayWallVersion` refuses a version that has already
   published — so a shared retry would turn a failed board bind into a dead end.
 
+The wizard and reset share `useSprayLeaveGuard`: `usePreventRemove` registers
+native dismissal prevention before a gesture can remove the screen, and carries
+that protection up to the containing Boards modal. Cancelling keeps the flow
+mounted; confirming redispatches the original navigation action. Footer exits
+use the same guard, so they ask once. Both routes disable the native back-button
+history menu, which does not support removal prevention.
+
 ## Caps
 
 | Cap | Value | Why |
