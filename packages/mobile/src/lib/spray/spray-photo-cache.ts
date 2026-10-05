@@ -109,6 +109,15 @@ function toPath(uri: string): string {
  * initialiser.
  */
 export function tryGetSprayPhotoPathSync(identity: SprayPhotoIdentity): string | null {
+  if (typeof identity.versionId === 'string') {
+    const wall = getSprayWall(identity.layoutId);
+    if (!wall || wall.versionId !== identity.versionId || !wall.localPhotoPath) return null;
+    try {
+      return new File(`file://${wall.localPhotoPath}`).exists ? wall.localPhotoPath : null;
+    } catch {
+      return null;
+    }
+  }
   const key = sprayPhotoFileName(identity);
   const cached = resolvedPaths.get(key);
   if (cached) return cached;
@@ -139,6 +148,8 @@ export async function ensureSprayPhotoCached(identity: SprayPhotoIdentity): Prom
   const key = sprayPhotoFileName(identity);
   const alreadyOnDisk = tryGetSprayPhotoPathSync(identity);
   if (alreadyOnDisk) return alreadyOnDisk;
+  // Local mirrors never download or loop on their deliberately expired URL.
+  if (typeof identity.versionId === 'string') return null;
 
   const inFlight = pendingDownloads.get(key);
   if (inFlight) return inFlight.promise;

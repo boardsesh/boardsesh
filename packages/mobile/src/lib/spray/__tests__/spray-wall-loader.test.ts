@@ -8,6 +8,15 @@ import { DEFAULT_BOARDSESH_RENDER_SETTINGS } from '@boardsesh/board-look';
 // draft store and error reporter both reach native modules. Mocked so the
 // loader's own decisions — which are all about what to register and what to
 // withdraw — can be exercised.
+const offlineState = vi.hoisted(() => ({ offline: false, subscribers: new Set<() => void>(), localLoad: vi.fn() }));
+vi.mock('../../connectivity/connectivity-store', () => ({
+  getConnectivitySnapshot: () => ({ effectiveOffline: offlineState.offline }),
+  subscribeConnectivity: (listener: () => void) => {
+    offlineState.subscribers.add(listener);
+    return () => offlineState.subscribers.delete(listener);
+  },
+}));
+vi.mock('../spray-wall-local-loader', () => ({ loadLocalSprayWall: offlineState.localLoad }));
 const requestMock = vi.hoisted(() => vi.fn());
 vi.mock('../../graphql/client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
 vi.mock('../spray-photo-cache', () => ({ deleteCachedSprayWallPhotos: () => {} }));
@@ -37,6 +46,7 @@ const {
   clearSprayWallLooks,
   dropSprayWallViewerAccess,
   loadSprayWall,
+  installSprayWallLoader,
   primeSprayWallLook,
   refreshSprayWallViewerAccess,
 } = await import('../spray-wall-loader');
@@ -101,6 +111,8 @@ function lookRequests(): number {
 }
 
 beforeEach(() => {
+  offlineState.offline = false;
+  offlineState.localLoad.mockReset();
   clearSprayWallRegistry();
   clearSprayWallLooks();
   requestMock.mockReset();
@@ -702,4 +714,76 @@ describe('loadSprayWall', () => {
 
     expect(reportHandledErrorMock).not.toHaveBeenCalled();
   });
+});
+
+describe('offline loader selection and reconnect', () => {
+  it('hydrates offline without issuing paused React Query network reads', async () => {
+    offlineState.offline = true;
+    offlineState.localLoad.mockResolvedValue(true);
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+    expect(offlineState.localLoad).toHaveBeenCalledOnce();
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back on a recognized transport failure without treating auth denial as offline', async () => {
+    requestMock.mockRejectedValue(new TypeError('Network request failed'));
+    offlineState.localLoad.mockResolvedValue(true);
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+    expect(offlineState.localLoad).toHaveBeenCalledOnce();
+    offlineState.localLoad.mockClear();
+    requestMock.mockRejectedValueOnce({ response: { status: 403 } });
+    await expect(loadSprayWall(fakeQueryClient(), LAYOUT_ID)).rejects.toEqual({ response: { status: 403 } });
+    expect(offlineState.localLoad).not.toHaveBeenCalled();
+  });
+
+  it('does not fall back when the server authoritatively withdraws access', async () => {
+    requestMock.mockResolvedValue({ sprayWallByLayout: null });
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+    expect(offlineState.localLoad).not.toHaveBeenCalled();
+    expect(getSprayWall(LAYOUT_ID)).toBeNull();
+  });
+
+  it('reconnect replaces the local registration with server authority', async () => {
+    offlineState.offline = true;
+    offlineState.localLoad.mockImplementation(async () => {
+      registerExistingWall();
+      return true;
+    });
+    const teardown = installSprayWallLoader(fakeQueryClient());
+    // Drive the installed registry loader so the requested layout is tracked.
+    const { ensureSprayWallLoaded } = await import('../spray-wall-registry');
+    ensureSprayWallLoaded(LAYOUT_ID);
+    await vi.waitFor(() => expect(getSprayWall(LAYOUT_ID)).not.toBeNull());
+    requestMock.mockResolvedValue({ sprayWallByLayout: null });
+    offlineState.offline = false;
+    for (const notify of offlineState.subscribers) notify();
+    await vi.waitFor(() => expect(getSprayWall(LAYOUT_ID)).toBeNull());
+    teardown();
+    expect(offlineState.subscribers.size).toBe(0);
+  });
+});
+
+it('revalidates after a reconnect during the local decode in-flight slot', async () => {
+  offlineState.offline = true;
+  let finishLocal: (() => void) | undefined;
+  offlineState.localLoad.mockImplementation(
+    () =>
+      new Promise<boolean>((resolve) => {
+        finishLocal = () => {
+          registerExistingWall();
+          resolve(true);
+        };
+      }),
+  );
+  const teardown = installSprayWallLoader(fakeQueryClient());
+  const { ensureSprayWallLoaded } = await import('../spray-wall-registry');
+  ensureSprayWallLoaded(LAYOUT_ID);
+  await vi.waitFor(() => expect(finishLocal).toBeDefined());
+  requestMock.mockResolvedValue({ sprayWallByLayout: null });
+  offlineState.offline = false;
+  for (const notify of offlineState.subscribers) notify();
+  finishLocal?.();
+  await vi.waitFor(() => expect(requestMock).toHaveBeenCalled());
+  expect(getSprayWall(LAYOUT_ID)).toBeNull();
+  teardown();
 });

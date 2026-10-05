@@ -375,3 +375,11 @@ describe('immutable spray photo namespace', () => {
     );
   });
 });
+
+it('keeps a local immutable photo identity distinct from online row IDs', () => {
+  const versionId = 'local-00000000-0000-4000-8000-000000000001-2' as const;
+  expect(parseSprayBackgroundKey(sprayBackgroundKey(4200, versionId))).toEqual({ layoutId: 4200, versionId });
+  expect(sprayBackgroundKey(4200, versionId)).not.toBe(sprayBackgroundKey(4200, 2));
+  expect(parseSprayBackgroundKey('spray/4200/vlocal-../../private-2.jpg')).toBeNull();
+  expect(parseSprayBackgroundKey('spray/4200/vlocal-not-a-uuid-2.jpg')).toBeNull();
+});

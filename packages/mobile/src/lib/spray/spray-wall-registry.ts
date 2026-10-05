@@ -1,3 +1,4 @@
+import type { SprayVersionIdentity } from './spray-photo-keys';
 // The walls this session knows how to draw (issue #5440).
 //
 // Every other board's geometry is bundled: `getBoardRenderData` reads generated
@@ -79,7 +80,9 @@ export type RegisteredSprayWall = {
   /** `SprayWallVersion.number`: 1-based and dense per wall. */
   version: number;
   /** Immutable database row id; discarded version numbers may be reused. */
-  versionId: number;
+  versionId: SprayVersionIdentity;
+  /** Durable mirror file; only present on an owner-gated offline registration. */
+  localPhotoPath?: string;
   photoWidth: number;
   photoHeight: number;
   photoUrl: string;
@@ -334,6 +337,11 @@ export function resetSprayWallViewerAccess({ markStale = true }: { markStale?: b
   }
   const layoutIds: number[] = [];
   for (const [layoutId, wall] of walls) {
+    if (wall.localPhotoPath) {
+      layoutIds.push(layoutId);
+      unregisterSprayWall(layoutId);
+      continue;
+    }
     // `markStale: false` keeps the registration fresh, so no surface is invited
     // to refetch the wall. For a caller that knows the account is gone but not
     // that a request sent now would carry a token (`dropSprayWallViewerAccess`).

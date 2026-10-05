@@ -36,15 +36,11 @@ import { assertLocalUserDataOwner, type OfflineDatabase } from '@boardsesh/offli
  *
  * ## Who calls this
  *
- * Nobody in this branch, and that is deliberate rather than an oversight. The
- * consumer is SW-07's spray wall loader (#5440, `spray-wall-loader.ts` /
- * `setSprayWallLoader`), whose network path asks `sprayWallRenderData` and falls
- * back when the query fails — that seam is on a branch this one is stacked
- * beside, not under. The shape below is the registry's
- * (`RegisteredSprayWall` minus the two presigned-URL fields, which no offline
- * read can produce): the photo comes off disk through
- * `tryGetStoredSprayPhotoPathSync(photoKey)` instead. Wiring the fallback is one
- * call and lands in the PR that merges second.
+ * The spray wall loader hydrates the registry only while the network is
+ * unavailable. It requires a published number, homography and durable photo,
+ * decodes the actual photo size, and registers a read-only local identity.
+ * Reconnect revalidates against server authority; draft queries never write this
+ * table and only the current published version is emitted by syncSprayWalls.
  */
 export type LocalSprayWall = {
   layoutId: number;

@@ -20,17 +20,26 @@ export const SPRAY_PHOTO_CACHE_DIR_NAME = 'spray-walls';
  */
 export const SPRAY_BACKGROUND_KEY_PREFIX = 'spray/';
 
-export type SprayPhotoIdentity = { layoutId: number; versionId: number };
+/** Local published mirrors have no database row id; their photo UUID and published number are immutable together. */
+export type SprayVersionIdentity = number | `local-${string}`;
+export type SprayPhotoIdentity = { layoutId: number; versionId: SprayVersionIdentity };
 
-export function sprayBackgroundKey(layoutId: number, versionId: number): string {
+export function isSprayVersionIdentity(identity: SprayVersionIdentity): boolean {
+  if (typeof identity === 'number') return Number.isSafeInteger(identity) && identity > 0;
+  const match = /^local-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-([1-9]\d*)$/i.exec(identity);
+  return match != null && Number.isSafeInteger(Number(match[1]));
+}
+
+export function sprayBackgroundKey(layoutId: number, versionId: SprayVersionIdentity): string {
   return `${SPRAY_BACKGROUND_KEY_PREFIX}${layoutId}/v${versionId}.jpg`;
 }
 
 /** Parse a `spray/<layoutId>/v<versionId>.jpg` key, or `null` when it is not one. */
 export function parseSprayBackgroundKey(backgroundImageKey: string): SprayPhotoIdentity | null {
-  const match = /^spray\/(\d+)\/v(\d+)\.jpg$/.exec(backgroundImageKey);
+  const match = /^spray\/(\d+)\/v(\d+|local-[0-9a-f-]{36}-[1-9]\d*)\.jpg$/i.exec(backgroundImageKey);
   if (!match) return null;
-  return { layoutId: Number(match[1]), versionId: Number(match[2]) };
+  const versionId = match[2].startsWith('local-') ? (match[2] as SprayVersionIdentity) : Number(match[2]);
+  return isSprayVersionIdentity(versionId) ? { layoutId: Number(match[1]), versionId } : null;
 }
 
 /**
