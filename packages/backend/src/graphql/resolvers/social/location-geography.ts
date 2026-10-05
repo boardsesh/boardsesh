@@ -50,9 +50,12 @@ export async function syncLocationGeography({
       );
     } else {
       await db.execute(
-        hasCoordinates
-          ? sql`UPDATE user_boards SET location = ST_MakePoint(${longitude}, ${latitude})::geography WHERE id = ${id}`
-          : sql`UPDATE user_boards SET location = NULL WHERE id = ${id}`,
+        // This runs after commit. Derive from the locked current row rather
+        // than resurrecting coordinates captured before a concurrent deletion.
+        sql`UPDATE user_boards SET location = CASE
+          WHEN deleted_at IS NULL AND latitude IS NOT NULL AND longitude IS NOT NULL
+          THEN ST_MakePoint(longitude, latitude)::geography
+          ELSE NULL END WHERE id = ${id}`,
       );
     }
   } catch (error) {

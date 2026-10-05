@@ -868,6 +868,13 @@ export async function refreshPublicWallPhoto(
     // than the orphan, which SW-17 sweeps. Only the "no row back" path above knows
     // the write did not happen, and only it deletes.
     logger.error('Failed to refresh a public spray wall photo after a publish', { boardUuid, nextKey }, error);
+    // An uncertain live-wall write must retain its copy. If account deletion
+    // won, reopen its durable purge instead: the copy may postdate that purge.
+    try {
+      await markDeletedSprayWallPhotoRetry(boardUuid);
+    } catch (retryError) {
+      logger.error('Failed to reopen deleted spray wall photo cleanup', { boardUuid }, retryError);
+    }
   }
 }
 

@@ -2178,6 +2178,7 @@ export const socialBoardMutations = {
         // row to C2, producing an unchecked S+C2 duplicate.
         const [lockedBoard] = rowsFromResult<{
           serialNumber: string | null;
+          ownerId: string;
           boardType: string;
           layoutId: number | string;
           sizeId: number | string;
@@ -2186,6 +2187,7 @@ export const socialBoardMutations = {
         }>(
           await tx.execute(sql`
             SELECT serial_number AS "serialNumber",
+                   owner_id AS "ownerId",
                    board_type AS "boardType",
                    layout_id AS "layoutId",
                    size_id AS "sizeId",
@@ -2197,6 +2199,14 @@ export const socialBoardMutations = {
           `),
         );
         if (!lockedBoard) {
+          throw new Error('Board not found');
+        }
+        // A staged edit must not restore or repopulate an account-deletion
+        // tombstone after its owner has been detached.
+        if (
+          lockedBoard.boardType === 'spray' &&
+          (lockedBoard.ownerId !== board.ownerId || (lockedBoard.deletedAt === null) !== (board.deletedAt === null))
+        ) {
           throw new Error('Board not found');
         }
 

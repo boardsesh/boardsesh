@@ -10,6 +10,8 @@ const fixture = vi.hoisted(() => ({
   transaction: null as Transaction | null,
   failStorage: false,
   failBeforeCommit: false,
+  failRefreshStatement: false,
+  beforeTransaction: null as (() => Promise<void>) | null,
   onList: null as (() => Promise<void>) | null,
   onCopy: null as (() => Promise<void>) | null,
   objects: new Map<string, Set<string>>(),
@@ -22,6 +24,17 @@ vi.mock('../db/client', async (importOriginal) => {
     db: new Proxy(original.db, {
       get(target, property) {
         const active = fixture.transaction ?? target;
+        if (property === 'execute' && fixture.failRefreshStatement) {
+          return () => Promise.reject(new Error('synthetic refresh SQL failure'));
+        }
+        if (property === 'transaction' && fixture.beforeTransaction && fixture.transaction) {
+          return async (callback: (tx: Transaction) => Promise<unknown>) => {
+            const beforeTransaction = fixture.beforeTransaction!;
+            fixture.beforeTransaction = null;
+            await beforeTransaction();
+            return fixture.transaction!.transaction(callback);
+          };
+        }
         if (property === 'transaction' && fixture.failBeforeCommit && fixture.transaction) {
           return (callback: (tx: Transaction) => Promise<unknown>) =>
             fixture.transaction!.transaction(async (nested) => {
@@ -67,7 +80,10 @@ const { userMutations } = await import('../graphql/resolvers/users/mutations');
 const { purgeDeletedSprayWallPhotos } = await import('../graphql/resolvers/board/spray-wall-moderation');
 const { SYSTEM_BOARD_OWNER_ID, isBoardAnonReadable } = await import('../graphql/resolvers/board-presence/shared');
 const { sprayClimbVisibilityCondition } = await import('@boardsesh/db/queries');
-const { sprayWallMutations } = await import('../graphql/resolvers/board/spray-walls');
+const { sprayWallMutations, refreshPublicWallPhoto } = await import('../graphql/resolvers/board/spray-walls');
+const { socialBoardMutations } = await import('../graphql/resolvers/social/boards');
+const { syncLocationGeography } = await import('../graphql/resolvers/social/location-geography');
+const { lockSprayWallAccount } = await import('../services/spray-account-lock');
 
 const ROLLBACK = new Error('rollback synthetic account fixture');
 async function rolledBack(run: (tx: Transaction) => Promise<void>) {
@@ -76,6 +92,8 @@ async function rolledBack(run: (tx: Transaction) => Promise<void>) {
       fixture.transaction = tx;
       fixture.failStorage = false;
       fixture.failBeforeCommit = false;
+      fixture.failRefreshStatement = false;
+      fixture.beforeTransaction = null;
       fixture.onList = null;
       fixture.onCopy = null;
       fixture.objects.clear();
@@ -176,7 +194,7 @@ async function seed(tx: Transaction) {
       climbedAt: new Date().toISOString(),
       boardId: board.id,
     });
-    walls.push({ wall, board, climbUuid, tickUuid });
+    walls.push({ wall, board, version, climbUuid, tickUuid });
     for (const bucket of ['private', 'media']) {
       const objects = fixture.objects.get(bucket) ?? new Set<string>();
       for (const suffix of ['photo.jpg', 'photo.jpg@280.jpg', 'abandoned.jpg'])
@@ -191,6 +209,110 @@ function ctx(userId: string): ConnectionContext {
 }
 
 describe('deleteAccount spray walls (real resolver, rolled-back database)', () => {
+  it('serializes account creation and deletion across independent database connections', async () => {
+    const accountId = randomUUID();
+    let releaseOwner!: () => void;
+    let ownerReady!: () => void;
+    const released = new Promise<void>((resolve) => {
+      releaseOwner = resolve;
+    });
+    const ready = new Promise<void>((resolve) => {
+      ownerReady = resolve;
+    });
+    const owner = realDb.transaction(async (tx) => {
+      await lockSprayWallAccount(tx, accountId);
+      ownerReady();
+      await released;
+    });
+    await ready;
+    let waitingPid!: number;
+    let waiterReady!: () => void;
+    const started = new Promise<void>((resolve) => {
+      waiterReady = resolve;
+    });
+    const waiter = realDb.transaction(async (tx) => {
+      const rows = await tx.execute(sql`SELECT pg_backend_pid() AS pid`);
+      waitingPid = Number(Array.from(rows)[0].pid);
+      waiterReady();
+      await lockSprayWallAccount(tx, accountId);
+    });
+    await started;
+    try {
+      let blocked = false;
+      for (let attempt = 0; attempt < 100 && !blocked; attempt += 1) {
+        const rows = await realDb.execute(sql`SELECT EXISTS (
+          SELECT 1 FROM pg_locks WHERE pid = ${waitingPid} AND locktype = 'advisory' AND NOT granted) AS blocked`);
+        blocked = Array.from(rows)[0].blocked === true;
+        if (!blocked) await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      expect(blocked).toBe(true);
+    } finally {
+      releaseOwner();
+      await Promise.all([owner, waiter]);
+    }
+  });
+  it('derives a delayed geography write from current coordinates and keeps deleted coordinates erased', async () => {
+    await rolledBack(async (tx) => {
+      // Temporary shadow objects exercise the real UPDATE without installing
+      // PostGIS or changing the shared test schema. Point stands in for geography.
+      await tx.execute(sql`CREATE TEMP TABLE user_boards (
+        id integer, latitude double precision, longitude double precision,
+        deleted_at timestamptz, location point) ON COMMIT DROP`);
+      const geographySchema = sql.identifier(`synthetic_geo_${randomUUID().replaceAll('-', '')}`);
+      await tx.execute(sql`CREATE SCHEMA ${geographySchema}`);
+      await tx.execute(sql`CREATE DOMAIN ${geographySchema}.geography AS point`);
+      await tx.execute(sql`CREATE FUNCTION ${geographySchema}.st_makepoint(double precision, double precision)
+        RETURNS point LANGUAGE SQL AS 'SELECT point($1, $2)'`);
+      await tx.execute(sql`SET LOCAL search_path = ${geographySchema}, pg_temp, public`);
+      await tx.execute(sql`INSERT INTO user_boards VALUES (1, NULL, NULL, now(), NULL), (2, 3, 4, NULL, NULL)`);
+      for (const id of [1, 2]) {
+        await syncLocationGeography({ table: 'user_boards', id, latitude: 1, longitude: 2, operation: 'stale edit' });
+      }
+      const rows = await tx.execute(sql`SELECT id, location::text AS location FROM user_boards ORDER BY id`);
+      expect(Array.from(rows)).toEqual([
+        { id: 1, location: null },
+        { id: 2, location: '(4,3)' },
+      ]);
+    });
+  });
+  it('rejects a restoration staged before account deletion scrubs and detaches the wall', async () => {
+    await rolledBack(async (tx) => {
+      const { owner, walls } = await seed(tx);
+      const { board } = walls[1];
+      fixture.beforeTransaction = async () => {
+        await userMutations.deleteAccount({}, { input: { removeSetterName: false } }, ctx(owner));
+      };
+      await expect(
+        socialBoardMutations.updateBoard(
+          {},
+          { input: { boardUuid: board.uuid, name: 'Restored private home' } },
+          ctx(owner),
+        ),
+      ).rejects.toThrow('Board not found');
+      const [retained] = await tx.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
+      expect(retained.name).toBe('Deleted wall');
+      expect(retained.deletedAt).not.toBeNull();
+      expect(await isBoardAnonReadable(retained.id)).toBe(false);
+    });
+  });
+
+  it('reopens erasure when a late public refresh has an uncertain SQL result', async () => {
+    await rolledBack(async (tx) => {
+      const { owner, walls } = await seed(tx);
+      const { board, wall, version } = walls[0];
+      fixture.onCopy = async () => {
+        await userMutations.deleteAccount({}, { input: { removeSetterName: false } }, ctx(owner));
+        fixture.failRefreshStatement = true;
+      };
+      await refreshPublicWallPhoto(wall.id, board.uuid, version.photoKey!, version.id);
+      fixture.failRefreshStatement = false;
+      const [retained] = await tx.select().from(dbSchema.sprayWalls).where(eq(dbSchema.sprayWalls.id, wall.id));
+      expect(retained.photosPurgedAt).toBeNull();
+      expect([...fixture.objects.get('media')!].some((key) => key.includes(board.uuid))).toBe(true);
+      await purgeDeletedSprayWallPhotos({ wallIds: [wall.id] });
+      expect([...fixture.objects.get('media')!].some((key) => key.includes(board.uuid))).toBe(false);
+    });
+  });
   it('deletes an owner with live and deleted walls, erases photos, preserves others’ logs and hides tombstones', async () => {
     await rolledBack(async (tx) => {
       const { owner, walls } = await seed(tx);
