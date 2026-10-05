@@ -171,6 +171,18 @@ describe('Add Draw pointer lifecycle', () => {
     expect(stroke.end).not.toHaveBeenCalled();
     expect(stroke.manager.fail).toHaveBeenCalledTimes(1);
   });
+  it('cancels a system interruption with no changed pointers before late UP/finalize', () => {
+    const stroke = mount();
+    stroke.send('down');
+    stroke.manager.fail.mockImplementation(() => stroke.send('finalize'));
+    stroke.send('cancel', event([], []));
+    stroke.send('up', upEvent([touch()], []));
+    stroke.send('finalize');
+    expect(stroke.cancel).toHaveBeenCalledTimes(1);
+    expect(stroke.points.value).toEqual([]);
+    expect(stroke.end).not.toHaveBeenCalled();
+    expect(stroke.manager.fail).toHaveBeenCalledTimes(1);
+  });
   it('declines two fingers together and disabled finger drawing without starting', () => {
     const stroke = mount();
     stroke.send('down', event([touch(), touch(8)]));
