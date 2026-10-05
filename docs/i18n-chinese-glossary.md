@@ -4,13 +4,15 @@ Fixed terminology for Simplified Chinese (`zh-Hans`) translations. **Follow this
 
 Catalogs live in `packages/shared/i18n/locales/zh-Hans/`. The English source is `en-US/`.
 
-> **Authority: none yet.** Every term below is a first draft written by an agent, not confirmed by a native-speaking climber. Until a reviewer is named here, treat the table as a consistency rule (use the same word everywhere), not as proof the word is right. When a reviewer corrects a term, change it here first, then in the catalogs.
+> **Authority: review requested, none yet.** A native-speaker review was requested on 2026-10-05 from the Tension Lab gym owner; no answer is recorded here yet. Every term below is a first draft written by an agent, not confirmed by a native-speaking climber. Until the review lands and the reviewer is named here, treat the table as a consistency rule (use the same word everywhere), not as proof the word is right. When a reviewer corrects a term, change it here first, then in the catalogs.
 
 ## Scope: the app only
 
 `zh-Hans` is an app-only locale (`APP_ONLY_LOCALES` in `packages/shared/i18n/src/config.ts`). It ships the twelve `MOBILE_NAMESPACES` and nothing else. There is no `/zh-Hans` page on www, and the web-only namespaces (`marketing`, `admin`, `gyms`, `kiosk`) must not be added to the `zh-Hans` folder: `catalog-completeness.test.ts` fails if they appear.
 
 Traditional Chinese (`zh-Hant`, `zh-TW`, `zh-HK`, `zh-MO`) is not translated. Those devices get English, not Simplified.
+
+A bare `zh` device tag, with no script and no region, resolves to Simplified. That is by design: CLDR's likely-subtags table expands `zh` to `zh-Hans-CN`, and `match-device-locale.ts` follows it. The Traditional guard needs something to read: a `Hant` script subtag, or a `TW`, `HK` or `MO` region. A phone that reports only `zh` gives it neither, so a Traditional reader on such a device (some older Android builds) gets Simplified and has to pick English under Settings → Language. `zh-SG` and `zh-MY` read as Simplified for the same reason.
 
 ## Address and tone
 

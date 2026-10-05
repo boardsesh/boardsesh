@@ -577,6 +577,13 @@
       "errorTitle": "加载失败",
       "errorBody": "没加载出来，再试一次。",
       "retry": "重试"
+    },
+    "storePrompt": {
+      "title": "下载 Boardsesh 应用",
+      "body": "点亮你的训练板，记录每一次完攀，没有信号也能用。",
+      "googlePlay": "在 Google Play 下载",
+      "appStore": "在 App Store 下载",
+      "dismiss": "以后再说"
     }
   },
   "lightControl": {
