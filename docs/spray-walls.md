@@ -1456,7 +1456,8 @@ they do not share a query builder:
 6. `listableSprayWallCondition` in
    `packages/backend/src/graphql/resolvers/board/spray-wall-listing.ts`, the
    EXISTS behind `searchBoards`, `gymBoards` and `myBoards`. Its owner escape sits
-   outside the EXISTS, so the owner still lists their own hidden wall;
+   outside the default EXISTS. The climbing picker uses the stricter published
+   EXISTS with its owner exception inside, retaining hidden published walls;
 7. gym discovery's own EXISTS in
    `packages/backend/src/graphql/resolvers/social/board-discovery.ts`, with no
    owner escape at all;
@@ -1699,22 +1700,28 @@ ahead of backend and `gymSprayWalls` is not a field yet. On `null` the filter is
 skipped and the walls keep their old row in the boards section, so neither deploy
 order makes a gym's walls disappear from its page.
 
-### An unpublished wall is listed to nobody but its owner
+### The climbing picker requires a published wall
 
 `is_public` and the first publish are two separate moments: the API lets a caller
 create a wall public and photograph it afterwards, and in between the row is a
 public board with no photo, no holds and no climbs. So every listing that can
 return a spray wall carries one more rule — a wall whose
-`spray_walls.current_version_id` is NULL is listed only to its owner.
+`spray_walls.current_version_id` is NULL is unavailable to other climbers.
+The normal `myBoards` picker excludes it for the owner too: unfinished walls
+belong in `mySprayWalls`, where the add-wall flow can resume them.
 
 `listableSprayWallCondition(viewerId)`
 (`resolvers/board/spray-wall-listing.ts`) is that rule as SQL, and it is applied
 in `searchBoards` (both the proximity and the text path), `gymBoards` and
-`myBoards`; `gymSprayWalls` applies the row-level twin `sprayWallIsListable`,
+`myBoards` with `{ requirePublished: true }`; `gymSprayWalls` applies the row-level twin `sprayWallIsListable`,
 having already joined the wall. SQL rather than a post-filter because
 `searchBoards` and `myBoards` each run a COUNT beside the page: a filter that
 dropped rows from the page alone would leave the count promising results the last
-page does not have.
+page does not have. The picker additionally verifies the current version is
+published and belongs to the same wall. Owners still see their hidden published
+walls. Publish and wizard discard invalidate every cached `myBoards` page.
+If hold geometry cannot load, the climb editor offers Close, including while
+loading; a cold route without history returns to the climbs tab.
 
 The app creates walls private and shares them after the first publish (SW-09), but
 the API is public and a server rule must not rest on a client convention.

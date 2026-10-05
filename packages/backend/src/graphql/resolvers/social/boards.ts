@@ -1060,9 +1060,13 @@ export const socialBoardQueries = {
     const matchCondition = followedCondition ? or(ownerCondition, followedCondition)! : ownerCondition;
     // In the WHERE the COUNT and the paged read share, never a post-filter:
     // dropping rows from the page alone would leave the count promising results
-    // the last page does not have. `userId` is the owner escape, so the caller's
-    // own half-built walls stay in their list (SW-14).
-    const whereClause = and(matchCondition, isNull(dbSchema.userBoards.deletedAt), listableSprayWallCondition(userId));
+    // the last page does not have. Unfinished walls stay in mySprayWalls for
+    // resuming setup; this climbing picker requires a published generation.
+    const whereClause = and(
+      matchCondition,
+      isNull(dbSchema.userBoards.deletedAt),
+      listableSprayWallCondition(userId, { requirePublished: true }),
+    );
 
     const [countResult] = await db.select({ count: count() }).from(dbSchema.userBoards).where(whereClause);
 
