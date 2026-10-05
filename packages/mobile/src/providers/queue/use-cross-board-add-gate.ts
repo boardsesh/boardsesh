@@ -8,7 +8,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import { boardLooselyMatches } from '../../lib/boards/board-matches';
 import { useSetActiveBoard } from '../../lib/graphql/use-active-board';
 import { myBoardsQueryKey } from '../../lib/graphql/query-keys';
-import type { GetMyBoardsQueryResponse } from '../../lib/graphql/operations';
+import type { GetMyBoardsQueryResponse } from '@boardsesh/graphql/operations';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
 import { useToast } from '../toast-provider';

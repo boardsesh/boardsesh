@@ -1,6 +1,6 @@
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../client';
-import { GET_MY_BOARDS, type GetMyBoardsQueryResponse } from '../operations';
+import { GET_MY_BOARDS, type GetMyBoardsQueryResponse } from '@boardsesh/graphql/operations';
 
 /** The server's maximum `myBoards` page (`MyBoardsInputSchema`); its default is 20. */
 const MY_BOARDS_PAGE_SIZE = 50;

@@ -2,44 +2,51 @@ import { gql } from 'graphql-request';
 import type { SessionSummary } from '@boardsesh/shared-schema';
 
 // ============================================
-// Fragments
+// Field lists
 // ============================================
 
-export const SESSION_SUMMARY_FIELDS = gql`
-  fragment SessionSummaryFields on SessionSummary {
-    sessionId
-    totalSends
-    totalFlashes
-    totalAttempts
-    gradeDistribution {
-      grade
-      flash
-      send
-      attempt
-    }
-    hardestClimb {
-      climbUuid
-      climbName
-      grade
-      frames
-      layoutId
-      boardType
-      isMirror
-    }
-    participants {
-      userId
-      displayName
-      avatarUrl
-      sends
-      flashes
-      attempts
-    }
-    startedAt
-    endedAt
-    durationMinutes
-    goal
-    notes
+// Interpolated as a plain string, not a GraphQL fragment, and the field ORDER
+// is load-bearing: `GetSessionSummary` is replayed from recorded fixtures keyed
+// on the query text (docs/mobile-screenshot-fixtures.md), and that set cannot
+// be re-recorded.
+const SESSION_SUMMARY_FIELDS = `
+  sessionId
+  totalSends
+  totalFlashes
+  totalAttempts
+  gradeDistribution {
+    grade
+    flash
+    send
+    attempt
   }
+  hardestClimb {
+    climbUuid
+    climbName
+    grade
+    frames
+    layoutId
+    boardType
+    renderBoard {
+      layoutId
+      sizeId
+      setIds
+    }
+    isMirror
+  }
+  participants {
+    userId
+    displayName
+    avatarUrl
+    sends
+    flashes
+    attempts
+  }
+  startedAt
+  endedAt
+  durationMinutes
+  goal
+  notes
 `;
 
 // ============================================
@@ -47,10 +54,9 @@ export const SESSION_SUMMARY_FIELDS = gql`
 // ============================================
 
 export const END_SESSION = gql`
-  ${SESSION_SUMMARY_FIELDS}
   mutation EndSession($sessionId: ID!, $timezone: String, $notes: String) {
     endSession(sessionId: $sessionId, timezone: $timezone, notes: $notes) {
-      ...SessionSummaryFields
+      ${SESSION_SUMMARY_FIELDS}
     }
   }
 `;
@@ -71,10 +77,9 @@ export const UPDATE_SESSION = gql`
 // ============================================
 
 export const GET_SESSION_SUMMARY = gql`
-  ${SESSION_SUMMARY_FIELDS}
   query GetSessionSummary($sessionId: ID!) {
     sessionSummary(sessionId: $sessionId) {
-      ...SessionSummaryFields
+      ${SESSION_SUMMARY_FIELDS}
     }
   }
 `;

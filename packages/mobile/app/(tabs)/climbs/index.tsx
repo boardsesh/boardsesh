@@ -102,7 +102,7 @@ import { useConnectivity } from '../../../src/lib/connectivity/use-connectivity'
 import { offlineReasonFor, type OfflineQueryReason } from '../../../src/hooks/use-offline-query-state';
 import { useOfflineCatalogState } from '../../../src/offline/use-offline-catalog-state';
 import { OfflineCatalogCta } from '../../../src/components/offline/OfflineCatalogCta';
-import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../../../src/lib/graphql/operations';
+import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '@boardsesh/graphql/operations';
 import { usePlaylistActivation } from '../../../src/lib/playlists/use-playlist-activation';
 import { useFrozenSearchBasis } from '../../../src/lib/playlists/use-frozen-search-basis';
 import { toQueueClimb, toQueueClimbs } from '../../../src/lib/climb-types';

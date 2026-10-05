@@ -19,7 +19,7 @@ vi.mock('../../client', () => ({
 }));
 
 import { fetchAllMyBoards } from '../fetch-all-my-boards';
-import { GET_MY_BOARDS } from '../../operations';
+import { GET_MY_BOARDS } from '@boardsesh/graphql/operations';
 
 /** A `myBoards` page whose rows carry distinct uuids, so ordering is assertable. */
 function myBoardsPage(count: number, hasMore: boolean, firstIndex = 0) {

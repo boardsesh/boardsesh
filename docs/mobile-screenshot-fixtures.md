@@ -999,9 +999,17 @@ It asserts:
   `GetClimb`, `GetSessionGroupedFeed` — has a fixture;
 - every document the app can send under a recorded operation name is itself
   recorded. Two documents can share a name (mobile's `GetBoard` and the shared
-  package's select different fields), and the entry check above passes when
-  either matches. #6076 moved `fetchBoardByUuid` to the shared one and every
-  board read replayed as `document-changed` with the PR checks green;
+  package's used to select different fields), and the entry check above passes
+  when either matches. #6076 moved `fetchBoardByUuid` to the shared one and
+  every board read replayed as `document-changed` with the PR checks green.
+  `no-duplicate-operations.test.ts`, beside the drift test, now stops the cause:
+  a mobile file may not define an operation a shared package already defines.
+  The recorded text of `GetBoard`, `GetMyBoards`, `SearchClimbs`, `GetClimb` and
+  `GetSessionSummary` lives in `@boardsesh/graphql`, so a field added to one of
+  them there changes what the app sends and misses its fixture. A client that
+  needs an extra field on a recorded operation gets its own named operation
+  (`GetEmbedBoard`). `QueueUpdates` and `SessionUpdates` are the two names still
+  defined on both sides; that test's `KNOWN_DUPLICATES` says why;
 - every query the app can send is placed (see "A new query has to be placed"
   below);
 - every replay default answers the current document and is not shadowed by a

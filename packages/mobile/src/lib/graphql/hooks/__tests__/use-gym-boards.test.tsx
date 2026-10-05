@@ -16,7 +16,7 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { GET_GYM_BOARDS_FOR_SWITCHER } from '@boardsesh/graphql/operations/gyms';
-import type { GetMyBoardsQueryResponse } from '../../operations';
+import type { GetMyBoardsQueryResponse } from '@boardsesh/graphql/operations';
 import { gymBoardsQueryKey, GYM_BOARDS_QUERY_KEY, myBoardsQueryKey } from '../../query-keys';
 
 const requestMock = vi.hoisted(() => vi.fn());

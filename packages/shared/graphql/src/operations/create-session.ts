@@ -24,6 +24,7 @@ export const CREATE_SESSION = gql`
 // ============================================
 
 export type CreateSessionInput = {
+  audience?: 'public' | 'followers' | 'invite_only';
   boardPath: string;
   latitude: number;
   longitude: number;
@@ -33,6 +34,15 @@ export type CreateSessionInput = {
   isPermanent?: boolean;
   boardIds?: number[];
   color?: string;
+  /**
+   * Whether the session shows up in live-session listings. Absent means public
+   * server-side, so callers send it only to make a session private.
+   */
+  isPublic?: boolean;
+};
+
+export type CreateSessionVariables = {
+  input: CreateSessionInput;
 };
 
 export type CreateSessionResponse = {

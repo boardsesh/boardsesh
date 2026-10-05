@@ -113,43 +113,19 @@ import {
 import {
   GET_PROFILE,
   UPDATE_PROFILE,
-  GET_MY_BOARDS,
   GET_BOARD,
-  GET_BOARDS_BY_SERIAL_NUMBERS,
-  GET_POPULAR_BOARD_CONFIGS,
-  CREATE_BOARD,
   GET_GRADES,
   GET_ANGLES,
   GET_SETTER_STATS,
-  SEARCH_CLIMBS,
-  SEARCH_CLIMBS_COUNT,
-  GET_CLIMB,
-  type SearchClimbsQueryResponse,
-  type SearchClimbsCountQueryResponse,
-  type GetClimbQueryResponse,
-  GET_SESSION_SUMMARY,
   GET_SESSION_HEALTH_EXPORT,
-  END_SESSION,
-  TOGGLE_FAVORITE,
   type GetProfileQueryResponse,
   type UpdateProfileMutationResponse,
-  type GetMyBoardsQueryResponse,
   type GetBoardQueryResponse,
-  type GetBoardsBySerialNumbersQueryResponse,
-  type GetPopularBoardConfigsQueryResponse,
-  type CreateBoardMutationResponse,
   type GetGradesQueryResponse,
   type GetAnglesQueryResponse,
   type GetSetterStatsQueryResponse,
-  type GetClimbQueryVariables,
-  type GetSessionSummaryQueryResponse,
-  type GetSessionSummaryQueryVariables,
   type GetSessionHealthExportQueryResponse,
   type GetSessionHealthExportQueryVariables,
-  type EndSessionMutationVariables,
-  type EndSessionMutationResponse,
-  type ToggleFavoriteMutationVariables,
-  type ToggleFavoriteMutationResponse,
   GET_HOLD_OUTLINES,
   UPSERT_HOLD_OUTLINE_OVERRIDE,
   DELETE_HOLD_OUTLINE_OVERRIDE,
@@ -157,6 +133,32 @@ import {
   type UpsertHoldOutlineOverrideMutationResponse,
   type DeleteHoldOutlineOverrideMutationResponse,
 } from '../operations';
+import {
+  GET_MY_BOARDS,
+  GET_BOARDS_BY_SERIAL_NUMBERS,
+  GET_POPULAR_BOARD_CONFIGS,
+  CREATE_BOARD,
+  SEARCH_CLIMBS,
+  SEARCH_CLIMBS_COUNT,
+  GET_CLIMB,
+  type SearchClimbsQueryResponse,
+  type SearchClimbsCountQueryResponse,
+  type GetClimbQueryResponse,
+  GET_SESSION_SUMMARY,
+  END_SESSION,
+  TOGGLE_FAVORITE,
+  type GetMyBoardsQueryResponse,
+  type GetBoardsBySerialNumbersQueryResponse,
+  type GetPopularBoardConfigsQueryResponse,
+  type CreateBoardMutationResponse,
+  type GetClimbQueryVariables,
+  type GetSessionSummaryResponse,
+  type GetSessionSummaryVariables,
+  type EndSessionVariables,
+  type EndSessionResponse,
+  type ToggleFavoriteMutationVariables,
+  type ToggleFavoriteMutationResponse,
+} from '@boardsesh/graphql/operations';
 
 type ToggleFavoriteVariables = ToggleFavoriteMutationVariables & {
   currentlyFavorited?: boolean;
@@ -1038,9 +1040,9 @@ export function useSessionSummary(sessionId: string | null) {
   return useQuery({
     queryKey: ['sessionSummary', sessionId],
     queryFn: () =>
-      getHttpClient().request<GetSessionSummaryQueryResponse>(GET_SESSION_SUMMARY, {
+      getHttpClient().request<GetSessionSummaryResponse>(GET_SESSION_SUMMARY, {
         sessionId,
-      } as GetSessionSummaryQueryVariables),
+      } as GetSessionSummaryVariables),
     select: (data) => data.sessionSummary,
     enabled: !!sessionId,
   });
@@ -1064,8 +1066,8 @@ export function useSessionHealthExport(sessionId: string | null) {
 
 export function useEndSession() {
   return useMutation({
-    mutationFn: async (variables: EndSessionMutationVariables) => {
-      const response = await getHttpClient().request<EndSessionMutationResponse>(END_SESSION, variables);
+    mutationFn: async (variables: EndSessionVariables) => {
+      const response = await getHttpClient().request<EndSessionResponse>(END_SESSION, variables);
       return response.endSession;
     },
   });

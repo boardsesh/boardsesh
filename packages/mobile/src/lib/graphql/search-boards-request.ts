@@ -1,5 +1,5 @@
 import type { SearchBoardsInput } from '@boardsesh/graphql/generated/graphql';
-import { SEARCH_BOARDS, type SearchBoardsQueryResponse } from './operations';
+import { SEARCH_BOARDS, type SearchBoardsQueryResponse } from '@boardsesh/graphql/operations';
 import { getHttpClient } from './client';
 import { readGraphqlRateLimit } from './extract-error-message';
 import { createAbortError } from './request-timeout';

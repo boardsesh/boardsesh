@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
-import { SEARCH_CLIMBS } from '../../../../lib/graphql/operations';
+import { SEARCH_CLIMBS } from '@boardsesh/graphql/operations';
 import type { PreviewFetchContext } from '../workout-preview-pool';
 
 // Keep expo-crypto (pulled in via workout-preview-pool → climb-to-queue-item)

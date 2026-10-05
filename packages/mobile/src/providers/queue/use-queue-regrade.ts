@@ -5,7 +5,7 @@ import type { ClimbQueueItem, ClimbRegradePatch, PlaylistSuggestionSource, Queue
 import { findNextQueueItemWithSuggestions, findPreviousQueueItemWithSuggestions } from '@boardsesh/play-view';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { offlineAwareRequest } from '../../lib/graphql/offline-request';
-import { GET_CLIMB, type GetClimbQueryResponse } from '../../lib/graphql/operations';
+import { GET_CLIMB, type GetClimbQueryResponse } from '@boardsesh/graphql/operations';
 
 type UseQueueRegradeParams = {
   privacyRevocationGeneration?: number;

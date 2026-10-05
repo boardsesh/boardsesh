@@ -116,7 +116,7 @@ import {
   type SearchClimbsCountQueryResponse,
   type GetClimbQueryResponse,
   type GetClimbQueryVariables,
-} from '../operations';
+} from '@boardsesh/graphql/operations';
 import {
   HOLD_HEATMAP_QUERY,
   type HoldHeatmapQueryResponse,

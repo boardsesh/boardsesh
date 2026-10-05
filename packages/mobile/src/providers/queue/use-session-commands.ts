@@ -12,9 +12,9 @@ import { getWsClient } from '../../lib/graphql/ws-client';
 import {
   CREATE_SESSION,
   END_SESSION,
-  type CreateSessionMutationResponse,
-  type EndSessionMutationResponse,
-} from '../../lib/graphql/operations';
+  type CreateSessionResponse,
+  type EndSessionResponse,
+} from '@boardsesh/graphql/operations';
 import { getDeviceTimezone } from '../../lib/device-timezone';
 import {
   clearStoredCreatedSessionId,
@@ -111,7 +111,7 @@ export function useSessionCommands({
         const boardPath = buildSessionBoardPath(activeBoard);
 
         try {
-          const response = await getHttpClient().request<CreateSessionMutationResponse>(CREATE_SESSION, {
+          const response = await getHttpClient().request<CreateSessionResponse>(CREATE_SESSION, {
             input: {
               boardPath,
               latitude: 0,
@@ -289,7 +289,7 @@ export function useSessionCommands({
 
       try {
         locallyEndingSessionIdRef.current = currentSessionId;
-        const response = await getHttpClient().request<EndSessionMutationResponse>(END_SESSION, {
+        const response = await getHttpClient().request<EndSessionResponse>(END_SESSION, {
           sessionId: currentSessionId,
           // Device IANA zone so the backend can export wall-clock local times
           // to platforms like Strava.

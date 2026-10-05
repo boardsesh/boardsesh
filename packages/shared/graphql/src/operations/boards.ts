@@ -52,10 +52,11 @@ export type GetBoardDiscoveryQueryVariables = { input?: BoardDiscoveryInput };
  * The one board selection. Every document that returns a `UserBoard` selects
  * this, so a board read through any of them carries the same fields.
  *
- * The field ORDER is load-bearing: `GetBoard` is replayed from recorded
- * fixtures keyed on the query text (docs/mobile-screenshot-fixtures.md), and
- * that set cannot be re-recorded. Append a field at the end and the screenshot
- * drift test tells you the recorded `GetBoard` no longer matches.
+ * The field ORDER is load-bearing: `GetBoard` and `GetMyBoards` are replayed
+ * from recorded fixtures keyed on the query text
+ * (docs/mobile-screenshot-fixtures.md), and that set cannot be re-recorded.
+ * Append a field at the end and the screenshot drift test tells you the
+ * recorded documents no longer match.
  */
 export const BOARD_FIELDS = `
   sprayImport {
@@ -110,8 +111,10 @@ export const BOARD_FIELDS = `
 
 /**
  * `BOARD_FIELDS` plus the numeric `boardId` the wall-presence feed is keyed on.
- * Kept out of `BOARD_FIELDS` itself only because the recorded `GetBoard` text
- * does not select it.
+ * Kept out of `BOARD_FIELDS` itself because the recorded `GetBoard` and
+ * `GetMyBoards` texts do not select it. Today only the gym-website embed reads
+ * `boardId` off a `UserBoard` selected here (`GetEmbedBoard`); add it to a
+ * document when a caller starts reading it, not before.
  */
 const BOARD_FIELDS_WITH_BOARD_ID = `${BOARD_FIELDS}  boardId
 `;
@@ -149,7 +152,7 @@ export const GET_MY_BOARDS = gql`
   query GetMyBoards($input: MyBoardsInput) {
     myBoards(input: $input) {
       boards {
-        ${BOARD_FIELDS_WITH_BOARD_ID}
+        ${BOARD_FIELDS}
       }
       totalCount
       hasMore
@@ -169,7 +172,7 @@ export const SEARCH_BOARDS = gql`
   query SearchBoards($input: SearchBoardsInput!) {
     searchBoards(input: $input) {
       boards {
-        ${BOARD_FIELDS_WITH_BOARD_ID}
+        ${BOARD_FIELDS}
       }
       totalCount
       hasMore
@@ -222,6 +225,10 @@ export const GET_POPULAR_BOARD_CONFIGS = gql`
   }
 `;
 
+// Sent by the Bluetooth serial resolver (packages/mobile/src/lib/ble/resolve-serials.ts)
+// as well as the board create/quickstart flows. Nothing reads `boardId` off its
+// result today; the selection is left exactly as the BLE path has been sending
+// it, because changing that request needs a Bluetooth review (see CLAUDE.md).
 export const GET_BOARDS_BY_SERIAL_NUMBERS = gql`
   query GetBoardsBySerialNumbers($serialNumbers: [String!]!, $boardType: String) {
     boardsBySerialNumbers(serialNumbers: $serialNumbers, boardType: $boardType) {
@@ -253,7 +260,7 @@ export const GET_MY_BOARD_SERIAL_CONFIGS = gql`
 export const CREATE_BOARD = gql`
   mutation CreateBoard($input: CreateBoardInput!) {
     createBoard(input: $input) {
-      ${BOARD_FIELDS_WITH_BOARD_ID}
+      ${BOARD_FIELDS}
     }
   }
 `;

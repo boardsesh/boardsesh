@@ -45,19 +45,17 @@ import {
   type BoardseshGradesForAnglesVariables,
   type BoardseshGradesForAnglesResponse,
 } from '@boardsesh/graphql/operations';
+import { GET_SETTER_STATS, type GetSetterStatsQueryVariables, type GetSetterStatsQueryResponse } from './operations';
 import {
   SEARCH_CLIMBS,
   SEARCH_CLIMBS_COUNT,
   GET_CLIMB,
-  GET_SETTER_STATS,
   type SearchClimbsQueryVariables,
   type SearchClimbsQueryResponse,
   type SearchClimbsCountQueryResponse,
   type GetClimbQueryResponse,
   type GetClimbQueryVariables,
-  type GetSetterStatsQueryVariables,
-  type GetSetterStatsQueryResponse,
-} from './operations';
+} from '@boardsesh/graphql/operations';
 
 /**
  * Source selection for climb reads — **local-first**. Whenever the active board's
