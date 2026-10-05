@@ -17,9 +17,10 @@ const HERO_MAX_HEIGHT = 380;
 
 // What shares the first screen with the board, in points: the chip row (44)
 // and its gap (12) when there is more than one board type, the caption block
-// (78), and enough of the next row to show there is a list (56).
-const FIXED_WITH_CHIPS = 190;
-const FIXED_WITHOUT_CHIPS = 146;
+// (78), and enough of the next row to show there is a list: its thumbnail
+// top and its name (96).
+const FIXED_WITH_CHIPS = 230;
+const FIXED_WITHOUT_CHIPS = 186;
 
 export type NoBoardHeroBox = { width: number; height: number };
 
@@ -60,32 +61,29 @@ export function sceneBackgroundHex(variant: UiVariant, colorScheme: 'light' | 'd
   return androidFallbackColors[colorScheme].background;
 }
 
-const STAGE_TINT = { light: 0.1, dark: 0.22 } as const;
-const DOCK_FADE_ALPHA = 0.92;
+const STAGE_TINT = { light: 0.16, dark: 0.22 } as const;
 
 export type NoBoardStageColors = {
-  /** Top of the stage: the brand violet over the background, opaque. */
-  top: string;
+  /** The stage at its strongest: the brand violet over the background, opaque. */
+  glow: string;
   background: string;
-  /** `top` at zero alpha, for a fade that does not pass through grey. */
-  topClear: string;
-  /** The background at zero alpha and at the dock's strength. */
+  /** The background at zero alpha, for a fade that does not pass through grey. */
   backgroundClear: string;
-  backgroundDock: string;
+  /** The hairline round the board's card. */
+  cardBorder: string;
 };
 
-/** The colours behind the hero and under the dock, all concrete. */
+/** The colours behind the hero, over the status bar and under the dock, all concrete. */
 export function noBoardStageColors(
   background: string,
   brandPrimary: string,
   colorScheme: 'light' | 'dark',
 ): NoBoardStageColors {
-  const top = blendOpaque(brandPrimary, background, STAGE_TINT[colorScheme]);
   return {
-    top,
+    glow: blendOpaque(brandPrimary, background, STAGE_TINT[colorScheme]),
     background,
-    topClear: withAlpha(top, 0),
     backgroundClear: withAlpha(background, 0),
-    backgroundDock: withAlpha(background, DOCK_FADE_ALPHA),
+    // A pale wall on a white page needs more than the system separator.
+    cardBorder: colorScheme === 'light' ? withAlpha(brandPrimary, 0.3) : withAlpha('#FFFFFF', 0.14),
   };
 }

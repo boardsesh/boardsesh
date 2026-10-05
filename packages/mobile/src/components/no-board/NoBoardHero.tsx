@@ -33,6 +33,8 @@ type NoBoardHeroProps = {
   mountBoard: boolean;
   /** The points the board is drawn at. */
   box: NoBoardHeroBox;
+  /** The card's hairline. */
+  cardBorderColor: string;
   /** The board's own size, from its render data. */
   boardWidth: number;
   boardHeight: number;
@@ -46,6 +48,7 @@ function NoBoardHeroComponent({
   loading,
   mountBoard,
   box,
+  cardBorderColor,
   boardWidth,
   boardHeight,
   onPress,
@@ -68,24 +71,29 @@ function NoBoardHeroComponent({
       accessibilityHint={accessibilityHint}
       style={styles.root}
     >
-      <View style={[styles.frame, { width: box.width, height: box.height, borderColor: systemColors.separator }]}>
+      <View style={[styles.frame, { width: box.width, height: box.height, borderColor: cardBorderColor }]}>
         <View style={[styles.clip, { backgroundColor: systemColors.secondaryBackground }]}>
           {mountBoard ? (
-            <BoardImageNative
-              frames={frames}
-              boardName={config.boardName}
-              layoutId={config.layoutId}
-              sizeId={config.sizeId}
-              setIds={config.setIds}
-              boardWidth={boardWidth}
-              boardHeight={boardHeight}
-              mirrored={climb?.mirrored ?? false}
-              renderWidth={overlayRenderWidth}
-              backgroundVariant="full"
-              recyclingKey={frames}
-              overlayTestID="no-board-preview-hero-lit"
-              style={{ width: box.width, height: box.height }}
-            />
+            // Lighting a climb dims every hold that is not on it. An unlit wall
+            // at full strength would make the climb's arrival read as the
+            // lights going down, so the wall waits dimmed.
+            <View style={climb ? undefined : styles.unlit}>
+              <BoardImageNative
+                frames={frames}
+                boardName={config.boardName}
+                layoutId={config.layoutId}
+                sizeId={config.sizeId}
+                setIds={config.setIds}
+                boardWidth={boardWidth}
+                boardHeight={boardHeight}
+                mirrored={climb?.mirrored ?? false}
+                renderWidth={overlayRenderWidth}
+                backgroundVariant="full"
+                recyclingKey={frames}
+                overlayTestID="no-board-preview-hero-lit"
+                style={{ width: box.width, height: box.height }}
+              />
+            </View>
           ) : null}
         </View>
       </View>
@@ -147,8 +155,8 @@ const styles = StyleSheet.create({
   root: {
     alignSelf: 'stretch',
   },
-  // The border is what tells a pale wall from a white page in light mode. It
-  // sits on the outer view; the clip is inside it so the corners stay clean.
+  // The border is what tells a pale wall from a white page in light mode. It sits
+  // on the outer view; the clip is inside it so the corners stay clean.
   frame: {
     alignSelf: 'center',
     borderRadius: borderRadius.xl,
@@ -160,6 +168,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  unlit: {
+    opacity: 0.4,
   },
   caption: {
     marginTop: spacing[3],
@@ -185,12 +196,11 @@ const styles = StyleSheet.create({
     width: '62%',
     height: 24,
     borderRadius: borderRadius.full,
-    opacity: 0.55,
   },
   statsPlaceholder: {
     width: '44%',
     height: 14,
     borderRadius: borderRadius.full,
-    opacity: 0.4,
+    opacity: 0.7,
   },
 });

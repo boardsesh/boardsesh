@@ -4,7 +4,7 @@
 // and reads no auth, so this suite mounts it with nothing but those props. The
 // hero and the dock are the real components; only the board drawing is stubbed.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactElement, type ReactNode } from 'react';
 import climbsCatalog from '@boardsesh/i18n/locales/en-US/climbs.json';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
@@ -25,6 +25,9 @@ const rowContentProps = vi.hoisted(() => vi.fn());
 const boardImageProps = vi.hoisted(() => vi.fn());
 const renderDataMock = vi.hoisted(() => vi.fn());
 const windowSize = vi.hoisted(() => ({ width: 393, height: 852 }));
+const chromeMetrics = vi.hoisted(() => ({ scrollBottomPadding: 120, floatingControlBottom: 90 }));
+// What the component subscribed with, by event name.
+const keyboardListeners = vi.hoisted(() => new Map<string, () => void>());
 // The setup's own list by board type, and a name search by the name asked for.
 const searchResults = vi.hoisted(() => ({
   byBoard: {} as Record<string, SearchResult>,
@@ -48,6 +51,13 @@ vi.mock('react-native', () => ({
     ),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1, absoluteFill: {} },
   Platform: { OS: 'ios' },
+  Keyboard: {
+    isVisible: () => false,
+    addListener: (eventName: string, listener: () => void) => {
+      keyboardListeners.set(eventName, listener);
+      return { remove: () => keyboardListeners.delete(eventName) };
+    },
+  },
   PixelRatio: { get: () => 3 },
   useWindowDimensions: () => windowSize,
   // Runs the task at once: the suite has no interactions to wait out.
@@ -120,6 +130,7 @@ vi.mock('../../ClimbListItemContent', () => ({
   LiveClimbGrade: () => createElement('span', { 'data-testid': 'hero-grade' }),
   LiveClimbSubtitle: () => createElement('span', { 'data-testid': 'hero-stats' }),
 }));
+vi.mock('../../ClimbListThumbnail', () => ({ THUMBNAIL_WIDTH: 76 }));
 vi.mock('../../ClimbListRowSkeleton', () => ({
   ClimbListRowSkeleton: () => createElement('div', { 'data-testid': 'skeleton-row' }),
 }));
@@ -170,7 +181,7 @@ vi.mock('../../../lib/graphql/hooks/use-infinite-search-climbs', () => ({
 }));
 vi.mock('../../../lib/background-image-cache', () => ({ ensureBackgroundsCached: ensureBackgroundsMock }));
 vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
-  useBottomChromeMetrics: () => ({ scrollBottomPadding: 120, floatingControlBottom: 90 }),
+  useBottomChromeMetrics: () => chromeMetrics,
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
@@ -190,6 +201,8 @@ vi.mock('../../../theme/tokens', () => ({
 }));
 
 const { NoBoardClimbsPreview, NO_BOARD_PREVIEW_PAGE_SIZE } = await import('../NoBoardClimbsPreview');
+const { publishConnectivityBannerHeight, __resetConnectivityBannerHeightForTests } =
+  await import('../../../lib/connectivity-banner-inset-store');
 
 const KILTER: NoBoardPreviewConfig = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
 const TENSION: NoBoardPreviewConfig = { boardName: 'tension', layoutId: 9, sizeId: 1, setIds: '8,9', angle: 35 };
@@ -245,6 +258,10 @@ describe('NoBoardClimbsPreview', () => {
     vi.clearAllMocks();
     windowSize.width = 393;
     windowSize.height = 852;
+    chromeMetrics.scrollBottomPadding = 120;
+    chromeMetrics.floatingControlBottom = 90;
+    keyboardListeners.clear();
+    __resetConnectivityBannerHeightForTests();
     // A portrait wall, about the shape of a Kilter 12x12.
     renderDataMock.mockReturnValue({ boardWidth: 1080, boardHeight: 1500 });
     searchResults.byName = {};
@@ -321,7 +338,7 @@ describe('NoBoardClimbsPreview', () => {
     windowSize.height = 667;
     renderPreview();
 
-    expect(lastBoardImage().style).toEqual({ width: 209, height: 290 });
+    expect(lastBoardImage().style).toEqual({ width: 180, height: 250 });
   });
 
   it('says which board and angle the lit climb is from, with no title or paragraph above it', () => {
@@ -345,6 +362,33 @@ describe('NoBoardClimbsPreview', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Find my board' }));
     expect(onFindBoard).toHaveBeenCalledOnce();
     expect(screen.getByTestId('no-board-preview-find-board')).toBeTruthy();
+  });
+
+  // The keys are translucent: a button left under them glows through.
+  it('takes the dock away while the keyboard is up, and brings it back after', () => {
+    renderPreview();
+
+    act(() => keyboardListeners.get('keyboardWillShow')?.());
+    expect(screen.queryByTestId('no-board-preview-find-board')).toBeNull();
+
+    act(() => keyboardListeners.get('keyboardWillHide')?.());
+    expect(screen.getByTestId('no-board-preview-find-board')).toBeTruthy();
+  });
+
+  // The banner floats above the bottom chrome and lifts everything anchored to
+  // it. A dock lifted that far lands on the board's caption, and a board sized
+  // against the lifted chrome shrinks under the climber.
+  it('gives the connectivity banner the bottom of the screen: no dock, and the board keeps its size', () => {
+    windowSize.width = 375;
+    windowSize.height = 667;
+    renderPreview();
+    const sizeBefore = lastBoardImage().style;
+
+    chromeMetrics.floatingControlBottom = 90 + 170;
+    act(() => publishConnectivityBannerHeight(170));
+
+    expect(screen.queryByTestId('no-board-preview-find-board')).toBeNull();
+    expect(lastBoardImage().style).toEqual(sizeBefore);
   });
 
   // The tap opens the picker, not the climb, and the board says so up front.
@@ -414,8 +458,8 @@ describe('NoBoardClimbsPreview', () => {
     renderPreview([KILTER]);
 
     expect(screen.queryByRole('group')).toBeNull();
-    // 44 points more than with chips: 667 - 47 - 90 - 50 - 146.
-    expect(lastBoardImage().style.height).toBe(334);
+    // 44 points more than with chips: 667 - 47 - 90 - 50 - 186.
+    expect(lastBoardImage().style.height).toBe(294);
   });
 
   it('warms the board art for the setup it shows', () => {
