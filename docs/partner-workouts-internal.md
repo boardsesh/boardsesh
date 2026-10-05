@@ -127,8 +127,9 @@ pages under `/gym/*`, which
 means `https://boardsesh.com/oauth/authorize` opens the native app today and
 lands on `+not-found`. Add `/oauth` to `WEB_ONLY_PATH_PREFIXES` in
 `packages/web/app/lib/apple-app-site-association.ts`, and ship it in its own PR well
-ahead of the rest: Apple's CDN only refetches the file on install or update,
-so existing installs keep the old rule until then. And
+ahead of the rest: phones ask Apple's CDN for the file on install, on app
+update and about once a week after that, so existing installs keep the old rule
+for up to a week. And
 `packages/web/app/auth/login/auth-page-content.tsx` pushes `callbackUrl` with
 no origin check; constrain it to a same-origin relative path before
 `/oauth/authorize` becomes a new caller of it.
