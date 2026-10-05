@@ -46,8 +46,8 @@ vi.mock('react-native-gesture-handler', () => {
 import { DrawStrokeOverlay } from '../DrawStrokeOverlay';
 
 const touch = (id = 7, x = 40, y = 60) => ({ id, x, y, absoluteX: x, absoluteY: y });
-// RNGH's actual event shape: UP owns changedTouches while allTouches contains
-// only pointers still down. Never synthesize Pan onStart for stationary touches.
+// Never synthesize Pan onStart for stationary touches. iOS snapshots
+// allTouches before unregistering UP pointers; numberOfTouches is already reduced.
 function event(changedTouches = [touch()], allTouches = changedTouches, pointerType = 0): GestureTouchEvent {
   return {
     handlerTag: 1,
@@ -57,6 +57,17 @@ function event(changedTouches = [touch()], allTouches = changedTouches, pointerT
     changedTouches,
     allTouches,
     pointerType,
+  };
+}
+function upEvent(
+  changedTouches = [touch()],
+  remainingTouches: ReturnType<typeof touch>[] = [],
+  pointerType = 0,
+): GestureTouchEvent {
+  return {
+    ...event(changedTouches, [...remainingTouches, ...changedTouches], pointerType),
+    eventType: 3,
+    numberOfTouches: remainingTouches.length,
   };
 }
 function shared<T>(initial: T): SharedValue<T> {
@@ -119,7 +130,7 @@ describe('Add Draw pointer lifecycle', () => {
       vi.advanceTimersByTime(60_000);
       vi.useRealTimers();
     }
-    stroke.send('up', event([touch()], []));
+    stroke.send('up', upEvent([touch()], []));
     stroke.send('finalize');
     expect(stroke.end).toHaveBeenCalledExactlyOnceWith([80, 90]);
     expect(stroke.cancel).not.toHaveBeenCalled();
@@ -129,20 +140,20 @@ describe('Add Draw pointer lifecycle', () => {
     const stroke = mount();
     stroke.send('down');
     stroke.send('move', event([touch(7, 44, 60)]));
-    stroke.send('up', event([touch(7, 48, 60)], []));
+    stroke.send('up', upEvent([touch(7, 48, 60)], []));
     expect(stroke.end).toHaveBeenCalledExactlyOnceWith([80, 90, 84, 90, 88, 90]);
   });
   it('ignores mismatched UP and late UP from the preceding pointer', () => {
     const stroke = mount();
     stroke.send('down');
-    stroke.send('up', event([touch(8)], [touch()]));
+    stroke.send('up', upEvent([touch(8)], [touch()]));
     stroke.send('cancel', event([touch(8)], [touch()]));
     expect(stroke.end).not.toHaveBeenCalled();
-    stroke.send('up', event([touch()], []));
+    stroke.send('up', upEvent([touch()], []));
     stroke.send('down', event([touch(9)]));
-    stroke.send('up', event([touch()], [touch(9)]));
+    stroke.send('up', upEvent([touch()], [touch(9)]));
     expect(stroke.end).toHaveBeenCalledTimes(1);
-    stroke.send('up', event([touch(9)], []));
+    stroke.send('up', upEvent([touch(9)], []));
     expect(stroke.end).toHaveBeenCalledTimes(2);
   });
   it.each(['second finger', 'cancel'])('cancels once on %s before late UP/finalize', (reason) => {
@@ -153,7 +164,7 @@ describe('Add Draw pointer lifecycle', () => {
       reason === 'cancel' ? 'cancel' : 'down',
       reason === 'cancel' ? event([touch()], []) : event([touch(8)], [touch(), touch(8)]),
     );
-    stroke.send('up', event([touch()], []));
+    stroke.send('up', upEvent([touch()], []));
     stroke.send('finalize');
     expect(stroke.cancel).toHaveBeenCalledTimes(1);
     expect(stroke.points.value).toEqual([]);
@@ -175,10 +186,10 @@ describe('Add Draw pointer lifecycle', () => {
     stroke.send('down', event([touch()], [touch()], 1));
     stroke.send('down', event([touch(8, 90, 90)], [touch(), touch(8)]));
     stroke.send('move', event([touch(8, 95, 95)], [touch(), touch(8)]));
-    stroke.send('up', event([touch(8)], [touch()]));
+    stroke.send('up', upEvent([touch(8)], [touch()]));
     stroke.send('cancel', event([touch(8)], [touch()]));
     expect(stroke.end).not.toHaveBeenCalled();
-    stroke.send('up', event([touch()], [], 1));
+    stroke.send('up', upEvent([touch()], [], 1));
     expect(stroke.end).toHaveBeenCalledExactlyOnceWith([80, 90]);
     expect(stroke.cancel).not.toHaveBeenCalled();
   });
@@ -186,13 +197,13 @@ describe('Add Draw pointer lifecycle', () => {
     const stroke = mount();
     stroke.manager.end.mockImplementation(() => stroke.send('finalize'));
     stroke.send('down');
-    stroke.send('up', event([touch()], []));
+    stroke.send('up', upEvent([touch()], []));
     expect(stroke.end).toHaveBeenCalledTimes(1);
     expect(stroke.cancel).not.toHaveBeenCalled();
     stroke.send('down');
     stroke.send('finalize');
     stroke.send('finalize');
-    stroke.send('up', event([touch()], []));
+    stroke.send('up', upEvent([touch()], []));
     expect(stroke.cancel).toHaveBeenCalledTimes(1);
     expect(stroke.end).toHaveBeenCalledTimes(1);
   });

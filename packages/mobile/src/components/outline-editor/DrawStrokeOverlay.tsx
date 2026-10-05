@@ -213,7 +213,8 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
         .onTouchesUp((event, manager) => {
           'worklet';
           if (!isDrawingSV.value) return;
-          // The released pointer is absent from allTouches, even on final UP.
+          // changedTouches identifies the released pointer even when iOS
+          // allTouches still includes it in the pre-unregister snapshot.
           const pointer = event.changedTouches.find((touch) => touch.id === ownerPointerIdSV.value);
           if (!pointer) return;
           appendSample(pointer.x, pointer.y);
