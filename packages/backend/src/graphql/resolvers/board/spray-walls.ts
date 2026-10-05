@@ -32,7 +32,7 @@ import { rowsFromResult } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
 import { logger } from '../../../utils/logger';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
-import { enrichBoards, generateUniqueSlug, requireBoardEditAccess } from '../social/boards';
+import { canEditBoard, enrichBoards, generateUniqueSlug, requireBoardEditAccess } from '../social/boards';
 import { requireBoardGymLinkAccess, resolveCanonicalGymByUuid } from '../social/gyms';
 import { syncLocationGeography } from '../social/location-geography';
 import {
@@ -529,12 +529,7 @@ async function toGraphQLWall(
 /** Whether the caller can edit, without throwing — the `viewerCanEdit` field. */
 async function computeCanEdit(ctx: ConnectionContext, board: UserBoardRow): Promise<boolean> {
   if (!ctx.isAuthenticated || !ctx.userId) return false;
-  try {
-    await requireBoardEditAccess(ctx, board);
-    return true;
-  } catch {
-    return false;
-  }
+  return canEditBoard(ctx.userId, board);
 }
 
 /**

@@ -944,7 +944,8 @@ async function seedWorld(): Promise<SeededWorld> {
         boardType: 'spray',
         layoutId: wall.layoutId,
         name: CLIMB_NAME,
-        description: CLIMB_DESCRIPTION,
+        // Not the sentinel yet: the edit below puts it there.
+        description: 'Before the edit',
         isDraft: false,
         frames,
         angle: ANGLE,
@@ -953,6 +954,17 @@ async function seedWorld(): Promise<SeededWorld> {
     },
     ctxFor(OWNER),
   )) as { uuid: string };
+
+  // ONE edit, so the climb has a revision history for `climbRevisions` to
+  // answer with. A climb nobody has edited has no revision rows at all, the
+  // owner would see nothing through that field, and its gate would be unproven.
+  // The edit is what writes the sentinel description, so every other reader
+  // still finds the climb exactly as it did before: name, description, frames.
+  await climbMutations.updateClimb(
+    {},
+    { input: { uuid: savedClimb.uuid, boardType: 'spray', description: CLIMB_DESCRIPTION } },
+    ctxFor(OWNER),
+  );
 
   // A SECOND climb on the same wall, sharing two holds, so a hold-overlap read
   // has something to find. (`similarClimbs` itself answers a non-admin from
@@ -1247,6 +1259,7 @@ describe('the spray-wall visibility sweep', () => {
     for (const key of [
       'Query.sprayWallByLayout',
       'Query.climb',
+      'Query.climbRevisions',
       'Query.searchClimbs',
       'Query.userTicks',
       'Query.boardDiscovery',

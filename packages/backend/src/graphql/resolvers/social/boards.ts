@@ -285,9 +285,26 @@ function boardIsRoleEditable(board: { isPublic: boolean; ownerId: string }): boo
 }
 
 /**
- * Authorize editing a board: the caller must be the board owner, a community
- * admin/leader for the board's type (public/catalog boards only), or the
- * owner/admin of the board's linked gym. Throws when none apply.
+ * Whether this user may edit a board: the board owner, a community admin/leader
+ * for the board's type (public/catalog boards only), or the owner/admin of the
+ * board's linked gym.
+ *
+ * The rule itself, non-throwing. `requireBoardEditAccess` is this plus a throw,
+ * so the two cannot drift. `updateClimb` reads it to decide whether somebody who
+ * is not a spray climb's setter may still edit it (#5955).
+ */
+export async function canEditBoard(
+  userId: string,
+  board: Pick<typeof dbSchema.userBoards.$inferSelect, 'ownerId' | 'isPublic' | 'boardType' | 'gymId'>,
+): Promise<boolean> {
+  if (board.ownerId === userId) return true;
+  if (boardIsRoleEditable(board) && (await hasAdminOrLeader(userId, board.boardType))) return true;
+  if (board.gymId != null && (await viewerCanAdminGym(board.gymId, userId))) return true;
+  return false;
+}
+
+/**
+ * Authorize editing a board, by `canEditBoard`'s rule. Throws when it refuses.
  *
  * Exported so the spray wall API uses this rule UNCHANGED rather than growing a
  * second one (epic decision 2026-09-14: ownership grants editing a wall, with no
@@ -299,12 +316,7 @@ export async function requireBoardEditAccess(
   ctx: ConnectionContext,
   board: typeof dbSchema.userBoards.$inferSelect,
 ): Promise<void> {
-  const userId = ctx.userId!;
-
-  if (board.ownerId === userId) return;
-  if (boardIsRoleEditable(board) && (await hasAdminOrLeader(userId, board.boardType))) return;
-  if (board.gymId != null && (await viewerCanAdminGym(board.gymId, userId))) return;
-
+  if (await canEditBoard(ctx.userId!, board)) return;
   throw new Error('Not authorized to update this board');
 }
 

@@ -101,7 +101,8 @@ export const ClimbInputSchema = z.object({
   // the queue so peers can gate the Edit affordance locally.
   is_draft: z.boolean().nullish(),
   // ISO timestamp of first publish; used by clients to enforce the 24h
-  // post-publish edit window without a second round-trip.
+  // post-publish edit window without a second round-trip (catalogue boards
+  // only; a spray climb has no window).
   published_at: z.string().max(100).nullish(),
   userAscents: z.number().min(0).nullish(),
   userAttempts: z.number().min(0).nullish(),

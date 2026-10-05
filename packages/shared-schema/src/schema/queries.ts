@@ -961,6 +961,14 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     bulkVoteSummaries(input: BulkVoteSummaryInput!): [VoteSummary!]!
 
+    """
+    The edit history of a published climb, newest first. At most 50 rows.
+
+    Empty for a climb nobody has edited, for a draft, and for a spray climb on a
+    wall the caller cannot see.
+    """
+    climbRevisions(boardType: String!, climbUuid: String!): [ClimbRevision!]!
+
     # ============================================
     # Beta Link Queries
     # ============================================

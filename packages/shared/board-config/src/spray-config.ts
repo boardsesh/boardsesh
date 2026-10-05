@@ -88,6 +88,19 @@ export const MAX_HOLDS_PER_WALL = 1500;
 export const MAX_VERSIONS_PER_WALL = 50;
 
 /**
+ * Revisions kept per climb, on every board (not only spray).
+ *
+ * A published spray climb can be edited with no time limit, so its history has to
+ * be bounded somewhere. Editing is never refused at the cap: the oldest edit is
+ * dropped and revision 1, the climb as first published, is always kept. Fifty is
+ * a rename a week for a year.
+ *
+ * Here with the other spray caps because unlimited spray edits are the reason the
+ * cap exists; a catalogue board's 24 hour edit window keeps it far below this.
+ */
+export const MAX_REVISIONS_PER_CLIMB = 50;
+
+/**
  * How long a deleted wall's photographs survive the delete, in days.
  *
  * Deleting a wall is a soft delete — the catalogue rows and every climb ever set

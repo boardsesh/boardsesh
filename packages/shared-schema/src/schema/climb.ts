@@ -367,4 +367,50 @@ export const climbTypeDefs = /* GraphQL */ `
     faAt: String
     syncSeq: String!
   }
+
+  "Who made an edit to a climb."
+  type ClimbRevisionEditor {
+    id: ID!
+    displayName: String
+    avatarUrl: String
+  }
+
+  """
+  One state a published climb has been in: the climb as it stood after an edit.
+
+  The highest-numbered revision is always the climb as it is now. Revision 1 is
+  the climb as it was first published. A climb nobody has edited has no
+  revisions at all. Numbers are not always consecutive: past 50 revisions the
+  oldest edits are dropped (revision 1 is always kept).
+
+  Read-only. A revision cannot be restored, queued or lit up.
+  """
+  type ClimbRevision {
+    revisionNumber: Int!
+    "True for the newest revision, which matches the live climb."
+    isCurrent: Boolean!
+    "When the edit was made. For revision 1, when the climb was published."
+    createdAt: String!
+    name: String
+    description: String
+    frames: String
+    angle: Int
+    "The setter grade at this revision. Spray walls only; null on every other board."
+    difficultyId: Int
+    """
+    What this revision changed against the one before it: any of name,
+    description, holds, grade, angle, rules. Empty for revision 1.
+    """
+    changes: [String!]!
+    "Who made the edit. Null when that account has since been deleted."
+    editor: ClimbRevisionEditor
+    "True when the editor is the climb's setter, false for a spray wall's editor."
+    editedBySetter: Boolean!
+    """
+    Spray walls only: the wall version (photo) this revision was drawn on, to pass
+    as sprayWallRenderData's version. Null on every other board, and on a first
+    revision whose version could not be worked out.
+    """
+    sprayWallVersionNumber: Int
+  }
 `;
