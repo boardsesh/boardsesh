@@ -15,10 +15,11 @@
 // component (`SprayResetCompareScreen`), so it is still testable on its own and
 // still gets the whole screen when it is showing.
 
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
-import { useNavigation, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
+import { useSprayLeaveGuard } from './use-spray-leave-guard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { sprayWallPhotoPicked, sprayWallUploadFinished } from '@boardsesh/analytics';
@@ -53,13 +54,6 @@ import {
   shouldConfirmLeave,
   type ResetWallStep,
 } from './reset-wall-machine';
-
-/** The `beforeRemove` payload this screen re-dispatches once the climber confirms. */
-type NavigationRemoveEvent = { preventDefault: () => void; data: { action: unknown } };
-type NavigationRemoveSubscribe = (
-  event: 'beforeRemove',
-  listener: (event: NavigationRemoveEvent) => void,
-) => () => void;
 
 /** Widest the photo preview is ever drawn. Past this it is a wall on a coffee table. */
 const MAX_PREVIEW_WIDTH = 520;
@@ -258,79 +252,22 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
   // Leaving
   // ============================================
 
-  /**
-   * Ask before a removal that would cost something, then let it through.
-   *
-   * Called from ONE place — the `beforeRemove` listener below — because that is
-   * the one place every exit passes through. It is not a helper the footer may
-   * also call: doing that is exactly the double prompt this screen had.
-   */
-  const confirmLeave = useCallback(
-    (onConfirm: () => void) => {
-      if (!shouldConfirmLeave(state)) {
-        onConfirm();
-        return;
-      }
-      Alert.alert(t('sprayReset.leave.title'), t('sprayReset.leave.body'), [
-        { text: t('sprayWizard.leave.stay'), style: 'cancel' },
-        { text: t('sprayWizard.leave.go'), onPress: onConfirm },
-      ]);
-    },
-    [state, t],
-  );
+  useSprayLeaveGuard(shouldConfirmLeave(state), {
+    title: t('sprayReset.leave.title'),
+    body: t('sprayReset.leave.body'),
+    stay: t('sprayWizard.leave.stay'),
+    leave: t('sprayWizard.leave.go'),
+  });
 
   const goBack = useCallback(() => {
     if (isBusy(state)) return;
-    // Pops WITHOUT asking, and that is not a missing guard: popping fires
-    // `beforeRemove`, which asks. Asking here as well put two identical alerts on
-    // one tap, and the second one's "Stay" undid the answer the climber had just
-    // given to the first. One exit, one question — `resetBackAction` has no
-    // branch that could prompt, and the listener below owns the only one.
+    // Route exits pass through the native removal guard exactly once.
     if (resetBackAction(state) === 'pop-route') {
       router.back();
       return;
     }
     dispatch({ type: 'BACK' });
   }, [state, router]);
-
-  /**
-   * The same question for every way out this screen does not draw.
-   *
-   * The footer's Back was guarded and nothing else was: the header's back
-   * button, the iOS back gesture and Android's Back key all remove the route
-   * outright — including mid-upload or with unsaved review edits. Recognition
-   * itself now survives leaving: the stored draft resumes its durable job.
-   *
-   * `beforeRemove` is the one place all of them pass through — the footer's Back
-   * included, since it pops the route like everything else. So this is the SOLE
-   * guard: it replaced a `BackHandler` listener that asked a second time for one
-   * Android press, and the footer no longer pre-prompts for the same reason. Two
-   * guards on one exit ask twice, and the second alert's "Stay" silently undoes
-   * the answer given to the first.
-   *
-   * The event's own action is re-dispatched on confirm, so the exit the climber
-   * chose is the exit they get.
-   */
-  const navigation = useNavigation();
-  const confirmLeaveRef = useRef(confirmLeave);
-  confirmLeaveRef.current = confirmLeave;
-  const stateRef = useRef(state);
-  stateRef.current = state;
-
-  useEffect(() => {
-    // Typed loosely on purpose, exactly as `SprayWallWizardScreen` does:
-    // `useNavigation()` here is the Expo Router stack's navigation object, and
-    // the payload is what has to be re-dispatched to let the removal through.
-    const subscribe = (navigation as unknown as { addListener?: NavigationRemoveSubscribe }).addListener;
-    if (typeof subscribe !== 'function') return;
-    return subscribe.call(navigation, 'beforeRemove', (event: NavigationRemoveEvent) => {
-      if (!shouldConfirmLeave(stateRef.current)) return;
-      event.preventDefault();
-      confirmLeaveRef.current(() => {
-        (navigation as unknown as { dispatch: (action: unknown) => void }).dispatch(event.data.action);
-      });
-    });
-  }, [navigation]);
 
   const handleCommitted = useCallback(
     (summary: { removedCount: number; addedCount: number; climbsChanged: number }) => {

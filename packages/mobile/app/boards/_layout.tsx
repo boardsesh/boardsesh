@@ -86,7 +86,10 @@ export default function BoardsLayout() {
           full-screen pan-and-pinch surfaces, which `docs/mobile-sheets-vs-routes.md`
           rule 3 keeps off a sheet's own drag. Flag-gated inside the screen — the
           route existing is not the same as the feature being reachable. */}
-      <Stack.Screen name="spray/new" options={{ title: tBoards('sprayWizard.screenTitle') }} />
+      <Stack.Screen
+        name="spray/new"
+        options={{ title: tBoards('sprayWizard.screenTitle'), headerBackButtonMenuEnabled: false }}
+      />
       {/* Resetting a wall — a new photograph of a wall that already carries
           climbs. Same route-not-sheet reasoning as the flow above: the corner
           markers and the compare view are both full-screen pan-and-pinch
@@ -100,7 +103,10 @@ export default function BoardsLayout() {
           here would be a duplicate the moment that lands — and a worse one, since
           the wall uuid is on the detail sheet and not on this stack. Until then
           the route is exercised by its tests and reachable by deep link. */}
-      <Stack.Screen name="spray/reset" options={{ title: tBoards('sprayReset.screenTitle') }} />
+      <Stack.Screen
+        name="spray/reset"
+        options={{ title: tBoards('sprayReset.screenTitle'), headerBackButtonMenuEnabled: false }}
+      />
     </Stack>
   );
 }
