@@ -6,7 +6,7 @@
  *
  * Kept in a dependency-light module (no `next/*`, no `server-only`) so the edge
  * middleware can import the constant without pulling a heavier module into its
- * bundle — mirroring `climb-session-cookie.ts`. Middleware always overwrites the
- * header, so a client-supplied value can never reach a server component.
+ * bundle. Middleware always overwrites the header, so a client-supplied value
+ * can never reach a server component.
  */
 export const PATHNAME_HEADER = 'x-boardsesh-pathname';

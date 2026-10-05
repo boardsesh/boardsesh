@@ -39,8 +39,8 @@ export type AppInstallSource = 'app-store' | 'google-play' | 'capacitor-retireme
  *  - `gyms-directory`: `/gyms` and its three board pages.
  *  - `site-banner`: the iOS Smart App Banner (`smart-app-banner.ts`). It is a
  *    campaign token only; Safari reports no tap, so no click carries it.
- *  - `join-page`: reserved for the session invite page (#6004), so that button
- *    and its store link share one vocabulary from the first commit.
+ *  - `join-page`: the session invite page, `app/join/[sessionId]` (#6004), the
+ *    only placement that also sets `sessionId`.
  *
  * The placement is also the store link's id (`utm_content` on Google Play, `ct`
  * on the App Store, see `store-links.ts`), so a value here is a string that ends
@@ -90,6 +90,12 @@ export type AppInstallClickInput = {
    * come off a code. Matches the `.poster` suffix on the store link's id.
    */
   qrMedium?: GymQrMedium;
+  /**
+   * The session an invite page is for. Only ever set with `placement:
+   * 'join-page'`, and only for an id that named a real session. Matches the
+   * `.<session id>` suffix on the Google Play link id.
+   */
+  sessionId?: string;
 };
 
 export type AppInstallClickProperties = {
@@ -99,6 +105,7 @@ export type AppInstallClickProperties = {
   mode?: AppInstallMode;
   gymSlug?: string;
   qrMedium?: GymQrMedium;
+  sessionId?: string;
 };
 
 export function buildAppInstallClickProperties(input: AppInstallClickInput): AppInstallClickProperties {
@@ -109,5 +116,6 @@ export function buildAppInstallClickProperties(input: AppInstallClickInput): App
     ...(input.mode === undefined ? {} : { mode: input.mode }),
     ...(input.gymSlug === undefined ? {} : { gymSlug: input.gymSlug }),
     ...(input.qrMedium === undefined ? {} : { qrMedium: input.qrMedium }),
+    ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
   };
 }

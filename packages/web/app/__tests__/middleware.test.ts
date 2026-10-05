@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
-import { CLIMB_SESSION_COOKIE } from '@/app/lib/climb-session-cookie';
 import { DEFAULT_LOCALE, LOCALE_COOKIE, LOCALE_HEADER } from '@/app/lib/i18n/config';
 import { PATHNAME_HEADER } from '@/app/lib/request-pathname-header';
 
@@ -523,11 +522,9 @@ describe('middleware session redirect', () => {
     expect(location).toBe('http://localhost:3000/some/page');
   });
 
-  it('sets the climb session cookie on redirect', () => {
+  it('drops the session id instead of parking it in a cookie nothing reads', () => {
     const response = middleware(makeRequest('/b/kilter-original-12x12/40/list?session=abc-123'));
-    const setCookie = response.headers.get('set-cookie');
-    expect(setCookie).toContain(CLIMB_SESSION_COOKIE);
-    expect(setCookie).toContain('abc-123');
+    expect(response.headers.get('set-cookie')).toBeNull();
   });
 
   it('preserves other query params when stripping session', () => {
@@ -691,7 +688,6 @@ describe('middleware Expo web support namespace carve-out', () => {
 
     expect(response.status).toBe(307);
     expect(response.headers.get('location')).toBe('http://localhost:3000/some/page');
-    expect(response.headers.get('set-cookie')).toContain(CLIMB_SESSION_COOKIE);
   });
 });
 

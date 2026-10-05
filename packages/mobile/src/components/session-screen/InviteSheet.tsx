@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { Share, StyleSheet, View } from 'react-native';
 import { ModalSheet } from '../ModalSheet';
 import { useTranslation } from 'react-i18next';
@@ -14,6 +14,11 @@ import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { hapticSelection } from '../../lib/haptics';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { buildSessionShareUrl } from '../../lib/session-share';
+import {
+  trackSessionInviteLinkCopied,
+  trackSessionInviteSheetOpened,
+  trackSessionInviteSystemShare,
+} from '../../lib/session-invite-analytics';
 
 type InviteSheetProps = {
   visible: boolean;
@@ -35,17 +40,30 @@ export function InviteSheet({ visible, onDismiss, sessionId }: InviteSheetProps)
 
   const shareUrl = useMemo(() => buildSessionShareUrl(sessionId), [sessionId]);
 
+  // The sheet is always mounted and toggled through `visible`, so "opened" is
+  // the false -> true edge, once per open. Showing the QR is part of opening:
+  // the code is on screen the moment the sheet is, and a scan leaves no trace
+  // on this phone, so there is no separate QR event to fire.
+  useEffect(() => {
+    if (visible && sessionId) trackSessionInviteSheetOpened(sessionId);
+  }, [visible, sessionId]);
+
   const handleCopyLink = useCallback(() => {
     hapticSelection();
     void Clipboard.setStringAsync(shareUrl).then(() => {
       showToast(t('mobile.session.inviteCopied'), 'success');
+      trackSessionInviteLinkCopied(sessionId);
     });
-  }, [shareUrl, showToast, t]);
+  }, [sessionId, shareUrl, showToast, t]);
 
   const handleShare = useCallback(() => {
     hapticSelection();
-    void Share.share({ message: shareUrl, url: shareUrl });
-  }, [shareUrl]);
+    void Share.share({ message: shareUrl, url: shareUrl })
+      .then((result) => trackSessionInviteSystemShare(sessionId, result))
+      // A rejected share is the platform refusing to open the sheet; there is
+      // nothing to count and nothing the climber can do about it here.
+      .catch(() => {});
+  }, [sessionId, shareUrl]);
 
   return (
     <ModalSheet
