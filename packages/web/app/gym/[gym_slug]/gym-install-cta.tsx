@@ -6,8 +6,9 @@ import Button from '@mui/material/Button';
 import InstallMobileOutlined from '@mui/icons-material/InstallMobileOutlined';
 import { track } from '@/app/lib/analytics';
 import { APP_INSTALL_CLICK_EVENT, buildAppInstallClickProperties } from '@/app/lib/app-install-event';
-import { playStoreUrlForGym } from '@/app/lib/gym-attribution';
-import { IOS_APP_STORE_URL } from '@/app/lib/store-urls';
+import { buildStoreUrl, type StoreLinkInput } from '@/app/lib/store-links';
+import { useInboundCampaign } from '@/app/hooks/use-inbound-campaign';
+import type { GymQrMedium } from '@boardsesh/analytics';
 
 type GymInstallCtaProps = {
   /**
@@ -17,6 +18,13 @@ type GymInstallCtaProps = {
    * campaigns.
    */
   gymSlug: string;
+  /**
+   * The printed medium this page was reached through, parsed by the server from
+   * `?src=qr&medium=…`, or `null` for a visit that did not come off a code. It
+   * arrives as a prop because `GymQrLandingTracker` strips those params from the
+   * address bar on mount, so reading them here would lose the scan.
+   */
+  qrMedium?: GymQrMedium | null;
   /**
    * Store button labels, already translated by the server component that
    * renders this island — same arrangement as `GymPageCtaLink`. Passing them in
@@ -41,9 +49,15 @@ type GymInstallCtaProps = {
  * are. Both open in a new tab, so the document is not unloading and a plain
  * `track()` lands without a flush-before-navigation dance.
  *
- * Only the Play link carries attribution. Play reads it back through the
- * Install Referrer API; Apple has no equivalent here and iOS attribution is
- * explicitly out of scope (#3402), so the App Store URL is unchanged.
+ * Both links say where they came from, through `buildStoreUrl` (#6027). A
+ * click on the page reports `utm_medium=web`; a click after scanning a printed
+ * code reports `utm_medium=qr` and names the code in the link id
+ * (`gym-page.poster`), so a poster's installs can be told from the page's own.
+ * Play reads its copy back through the Install Referrer API, per install. The
+ * App Store gets a campaign token that App Analytics counts in aggregate.
+ *
+ * The server renders the link for the scan (or no scan) it saw. A visitor who
+ * arrived on a tagged link gets that source added after hydration.
  *
  * TWO DELIBERATE VISUAL RULES, both of which look like polish and are not:
  *
@@ -56,7 +70,13 @@ type GymInstallCtaProps = {
  *    platform (PH-13), so a filled Play button next to an outlined App Store one
  *    would tilt the split this CTA was built to measure.
  */
-export default function GymInstallCta({ gymSlug, googlePlayLabel, appStoreLabel }: GymInstallCtaProps) {
+export default function GymInstallCta({ gymSlug, qrMedium, googlePlayLabel, appStoreLabel }: GymInstallCtaProps) {
+  const inboundCampaign = useInboundCampaign();
+  const storeLink: StoreLinkInput = { placement: 'gym-page', gymSlug, qrMedium, inbound: inboundCampaign };
+  // Absent, not `null`, when there was no scan: the click payload of a plain
+  // gym-page visit stays exactly what it was.
+  const scanProperties = qrMedium ? { qrMedium } : {};
+
   const handlePlayClick = () => {
     track(
       APP_INSTALL_CLICK_EVENT,
@@ -65,6 +85,7 @@ export default function GymInstallCta({ gymSlug, googlePlayLabel, appStoreLabel 
         source: 'google-play',
         placement: 'gym-page',
         gymSlug,
+        ...scanProperties,
       }),
     );
   };
@@ -77,6 +98,7 @@ export default function GymInstallCta({ gymSlug, googlePlayLabel, appStoreLabel 
         source: 'app-store',
         placement: 'gym-page',
         gymSlug,
+        ...scanProperties,
       }),
     );
   };
@@ -85,7 +107,7 @@ export default function GymInstallCta({ gymSlug, googlePlayLabel, appStoreLabel 
     <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
       <Button
         component="a"
-        href={playStoreUrlForGym(gymSlug)}
+        href={buildStoreUrl('android', storeLink)}
         target="_blank"
         rel="noopener noreferrer"
         onClick={handlePlayClick}
@@ -97,7 +119,7 @@ export default function GymInstallCta({ gymSlug, googlePlayLabel, appStoreLabel 
       </Button>
       <Button
         component="a"
-        href={IOS_APP_STORE_URL}
+        href={buildStoreUrl('ios', storeLink)}
         target="_blank"
         rel="noopener noreferrer"
         onClick={handleAppStoreClick}

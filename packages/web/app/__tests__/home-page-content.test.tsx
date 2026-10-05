@@ -2,9 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test'
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 import enMarketing from '@boardsesh/i18n/locales/en-US/marketing.json';
-import { IOS_APP_STORE_URL, ANDROID_PLAY_STORE_URL } from '@/app/lib/store-urls';
+import { buildStoreUrl } from '@/app/lib/store-links';
+import { __resetSessionInboundCampaignForTests } from '@/app/lib/inbound-campaign';
 import { APP_URL } from '@/app/lib/app-origin';
 import { discoveryBoard } from '@/app/__test-helpers__/board-discovery-fixture';
+
+// Every hero store link names the hero as its placement (#6027).
+const HERO_PLAY_STORE_URL = buildStoreUrl('android', { placement: 'hero' });
+const HERO_APP_STORE_URL = buildStoreUrl('ios', { placement: 'hero' });
 
 // --- Mocks ---
 
@@ -178,7 +183,7 @@ describe('HomePageContent', () => {
       expect(await screen.findByRole('link', { name: /install from app store/i })).toBeTruthy();
       fireEvent.click(await screen.findByRole('link', { name: /get it on google play/i }));
       expect(screen.getByRole('link', { name: /get it on google play|update the app/i }).getAttribute('href')).toBe(
-        ANDROID_PLAY_STORE_URL,
+        HERO_PLAY_STORE_URL,
       );
     });
 
@@ -189,7 +194,7 @@ describe('HomePageContent', () => {
       const button = await screen.findByRole('link', { name: /install from app store/i });
       fireEvent.click(button);
 
-      expect(button.getAttribute('href')).toBe(IOS_APP_STORE_URL);
+      expect(button.getAttribute('href')).toBe(HERO_APP_STORE_URL);
       expect(button.getAttribute('rel')).toBe('noopener noreferrer');
       expect(mockTrack).toHaveBeenCalledWith('App Install Click', {
         platform: 'ios',
@@ -210,7 +215,7 @@ describe('HomePageContent', () => {
       fireEvent.click(button);
 
       expect(screen.getByRole('link', { name: /get it on google play|update the app/i }).getAttribute('href')).toBe(
-        ANDROID_PLAY_STORE_URL,
+        HERO_PLAY_STORE_URL,
       );
       expect(mockTrack).toHaveBeenCalledWith('App Install Click', {
         platform: 'android',
@@ -218,6 +223,28 @@ describe('HomePageContent', () => {
         placement: 'hero',
         mode: 'install',
       });
+    });
+
+    it("carries a tagged visitor's source into the store link", async () => {
+      // The page renders the untagged link first (it has to match the server
+      // HTML), then upgrades it once the landing campaign is known.
+      __resetSessionInboundCampaignForTests();
+      window.history.replaceState(null, '', '/?utm_source=instagram&utm_medium=social&utm_campaign=spray-launch');
+      setUserAgent(ANDROID_UA);
+      render(<HomePageContent {...defaultProps} />);
+
+      const button = await screen.findByRole('link', { name: /get it on google play/i });
+      const referrer = new URLSearchParams(
+        new URL(button.getAttribute('href') ?? '').searchParams.get('referrer') ?? '',
+      );
+
+      expect(referrer.get('utm_source')).toBe('instagram');
+      expect(referrer.get('utm_medium')).toBe('social');
+      expect(referrer.get('utm_campaign')).toBe('spray-launch');
+      expect(referrer.get('utm_content')).toBe('hero');
+
+      window.history.replaceState(null, '', '/');
+      __resetSessionInboundCampaignForTests();
     });
 
     it('shows an update CTA for a retired iOS native app, pointed at the App Store', async () => {
@@ -228,7 +255,7 @@ describe('HomePageContent', () => {
       const button = await screen.findByRole('link', { name: /update the app/i });
       fireEvent.click(button);
 
-      expect(button.getAttribute('href')).toBe(IOS_APP_STORE_URL);
+      expect(button.getAttribute('href')).toBe(HERO_APP_STORE_URL);
       expect(button.getAttribute('rel')).toBe('noopener noreferrer');
       expect(mockTrack).toHaveBeenCalledWith('App Install Click', {
         platform: 'ios',
@@ -247,7 +274,7 @@ describe('HomePageContent', () => {
       fireEvent.click(button);
 
       expect(screen.getByRole('link', { name: /get it on google play|update the app/i }).getAttribute('href')).toBe(
-        ANDROID_PLAY_STORE_URL,
+        HERO_PLAY_STORE_URL,
       );
       expect(mockTrack).toHaveBeenCalledWith('App Install Click', {
         platform: 'android',

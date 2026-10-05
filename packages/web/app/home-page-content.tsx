@@ -11,7 +11,8 @@ import BluetoothOutlined from '@mui/icons-material/BluetoothOutlined';
 import LocalOfferOutlined from '@mui/icons-material/LocalOfferOutlined';
 import PlaceOutlined from '@mui/icons-material/PlaceOutlined';
 import WarningAmberOutlined from '@mui/icons-material/WarningAmberOutlined';
-import { IOS_APP_STORE_URL, ANDROID_PLAY_STORE_URL } from '@/app/lib/store-urls';
+import { useInboundCampaign } from '@/app/hooks/use-inbound-campaign';
+import { buildStoreUrl } from '@/app/lib/store-links';
 import { resolveHeroInstall } from '@/app/lib/hero-install';
 import { useTranslation } from 'react-i18next';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -88,6 +89,8 @@ export default function HomePageContent({
   // every other locale keeps the phone stack.
   const showsHeroVideo = i18n.language === 'en-US';
   const { platform: installPlatform, nativeStore } = useInstallPlatform();
+  // A visitor who landed on a tagged link keeps that source in the store link.
+  const inboundCampaign = useInboundCampaign();
 
   // Hero CTA drives app installs. The store, label and icon follow the detected
   // platform — except on desktop, where there is no phone OS to infer and the
@@ -96,7 +99,7 @@ export default function HomePageContent({
   const HeroInstallIcon = heroInstall.mode === 'update' ? SystemUpdateOutlined : InstallMobileOutlined;
   const heroInstallButtons = heroInstall.stores.map((store, index) => ({
     store,
-    url: store === 'android' ? ANDROID_PLAY_STORE_URL : IOS_APP_STORE_URL,
+    url: buildStoreUrl(store, { placement: 'hero', inbound: inboundCampaign }),
     source: store === 'android' ? ('google-play' as const) : ('app-store' as const),
     label:
       heroInstall.mode === 'update'
