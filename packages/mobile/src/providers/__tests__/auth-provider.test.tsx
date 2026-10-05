@@ -191,7 +191,11 @@ vi.mock('../../lib/error-reporting', () => ({
 }));
 
 const resetAnalyticsMock = vi.hoisted(() => vi.fn());
+// Whether the PostHog SDK is pinned to a person. The signed-out cold-start path
+// only resets when it is; the sign-out paths reset regardless.
+const isAnalyticsPinnedToAPersonMock = vi.hoisted(() => vi.fn(() => false));
 vi.mock('../../lib/analytics', () => ({
+  isAnalyticsPinnedToAPerson: isAnalyticsPinnedToAPersonMock,
   reset: resetAnalyticsMock,
   track: (...args: unknown[]) => trackMock(...args),
 }));
@@ -1920,6 +1924,9 @@ describe('AuthProvider forced sign-out registration', () => {
 
 describe('AuthProvider.checkAuth signed-out cleanup', () => {
   beforeEach(() => {
+    resetAnalyticsMock.mockReset();
+    isAnalyticsPinnedToAPersonMock.mockReset();
+    isAnalyticsPinnedToAPersonMock.mockReturnValue(false);
     getAuthTokenMock.mockReset();
     isTokenExpiringSoonMock.mockReset();
     authSignOutMock.mockReset();
@@ -2044,6 +2051,56 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
     expect(clearStoredSessionIdMock).toHaveBeenCalledTimes(1);
     expect(resetHttpClientMock).not.toHaveBeenCalled();
     expect(disposeWsClientMock).not.toHaveBeenCalled();
+  });
+
+  // The identity split. A signed-out cold start used to reset analytics, and it
+  // did so once per checkAuth: the mount check and the AppState `active` check
+  // both resolve while the provider is still loading. Each reset threw away the
+  // SDK's anonymous id, so the id carrying the pre-login events was gone before
+  // the sign-in that should have merged it.
+  it('leaves an anonymous analytics SDK alone on a signed-out cold start, however many checks run', async () => {
+    getAuthTokenMock.mockResolvedValue(null);
+    isAnalyticsPinnedToAPersonMock.mockReturnValue(false);
+    resetAnalyticsMock.mockClear();
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{null}</AuthProvider>
+      </QueryClientProvider>,
+    );
+    // The foreground check iOS fires straight after launch, racing the mount check.
+    act(() => {
+      appStateState.listener?.('active');
+    });
+
+    await waitFor(() => expect(clearStoredActiveBoardMock).toHaveBeenCalledTimes(2));
+    expect(resetAnalyticsMock).not.toHaveBeenCalled();
+  });
+
+  // A session that died while the app was closed: the SDK still holds the last
+  // user's id, and the next climber on this phone must not inherit it.
+  it('resets analytics on a signed-out cold start when the SDK is still pinned to a person', async () => {
+    getAuthTokenMock.mockResolvedValue(null);
+    isAnalyticsPinnedToAPersonMock.mockReturnValue(true);
+    resetAnalyticsMock.mockClear();
+    // The real reset() un-pins the SDK, so a second check finds it anonymous.
+    resetAnalyticsMock.mockImplementation(() => {
+      isAnalyticsPinnedToAPersonMock.mockReturnValue(false);
+    });
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{null}</AuthProvider>
+      </QueryClientProvider>,
+    );
+    act(() => {
+      appStateState.listener?.('active');
+    });
+
+    await waitFor(() => expect(clearStoredActiveBoardMock).toHaveBeenCalledTimes(2));
+    expect(resetAnalyticsMock).toHaveBeenCalledTimes(1);
   });
 
   it('bounds a hung web cold-start cleanup so the loading gate still releases', async () => {

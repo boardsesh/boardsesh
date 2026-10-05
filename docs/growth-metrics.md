@@ -145,8 +145,10 @@ came back. The anonymous person keeps `Login Succeeded` and often one `$screen`
 (`/climbs` or `/home`), and everything after that lands on the account's older
 person.
 
-**This is not fixed yet.** The app no longer sends `alias()` on sign-in, which
-was the first suspect, but the production data below points somewhere else.
+**A fix ships with #6078, and it is not yet confirmed on a device.** The app
+used to tell PostHog that its signed-out anonymous person was an identified
+one. It no longer does. Whether the split rate below drops is the test: see
+"What is still unproven".
 
 ### What is measured
 
@@ -161,8 +163,12 @@ Native production, 2026-09-08 to 2026-10-01, internal cohort not excluded:
 - The first row only exists while the app sends `$create_alias`. Track the
   third from here on. Target once the split is fixed: under 2% on both.
 - The denominator is distinct anonymous ids that were switched to another id.
-  It is not a count of sign-ins: the `identify()` the app sends for the party
-  UUID while signed out is in there too, and it never splits.
+  Before #6078 it is not a count of sign-ins: the `identify()` the app sent for
+  the party UUID while signed out is in there too, and it never splits. From
+  #6078 on the app sends no such call, so the denominator is close to sign-ins
+  and roughly halves. Do not compare the rate across that date without
+  recomputing the old one on sign-in switches only (`distinct_id` is not a
+  UUID v4).
 - Every one of the 161 flagged persons has two or more distinct ids. None is a
   lone anonymous person.
 - Every native `$identify` in the window that changes identity carries an
@@ -170,31 +176,78 @@ Native production, 2026-09-08 to 2026-10-01, internal cohort not excluded:
   party UUID (v4). About half of those anonymous ids are attached to two ids in
   turn: first the party UUID, then the account.
 
-### Likely cause (not proven)
+### What the app did (observed)
 
-The app means to start every install on the party-profile UUID and to send one
-`identify(userId)` on sign-in, carrying that UUID. What production shows is a
-different sequence:
+A control run on the bundle before #6078: three pristine simulator installs
+and one relaunch, read back from production PostHog.
 
-1. The SDK is on its own anonymous id, not the party UUID.
-2. While signed out, the app sends `identify(partyUuid)`. That is a real
-   `$identify`, so PostHog marks the anonymous person identified.
-3. On sign-in, `identify(userId)` carries the SDK's id again. When the account
-   already has a person, PostHog won't merge an identified person into it.
+1. Signed out, before any sign-in, each launch sent
+   `$identify(distinct_id = party UUID v4, $anon_distinct_id = SDK-minted v7)`.
+   No `$set` and no `$create_alias` was involved.
+2. PostHog created the party person with `is_identified = 1`.
+3. Every signed-out cold start repeated it with a new v7 id.
 
-A brand-new account has no person yet, so step 3 just adds the id and nothing
-splits. That matches who the phantoms are. PostHog's refusal in step 3 is read
-from its documented merge rules and has not been observed directly, and why
-the SDK is not on the party UUID is not known.
+Real devices show the same shape: over three days, 626 of 794 native
+`$identify` events had a v4 `distinct_id` and a v7 `$anon_distinct_id`.
 
-It hits Android harder. The likely reason: the party UUID and the session live
-in secure storage, which survives an uninstall on iOS and not on Android, so
-an Android reinstall has to sign in again.
+Three things in the app produced it:
 
-Web does not have this problem: signed out, it resets and never identifies the
-anonymous id (`packages/web/app/components/providers/analytics-identity.tsx`).
-The mobile routine is `packages/shared/analytics/src/reconcile-identity.ts`;
-its tests pin the sequence above as a known gap.
+- **The signed-out branch identified the party UUID.** The SDK was on its own
+  v7 id, so `identify(partyUuid)` was a real identity change.
+- **The bootstrap never took.** The client was meant to start on the party
+  UUID, but the slot it read was still empty when the client was built:
+  expo-router loads `app/(tabs)/_layout.tsx`, which reaches the PostHog client,
+  before the root layout that filled the slot (about 1.2 s too late).
+- **Every signed-out cold start reset the SDK, twice.** `AuthProvider` reset
+  analytics on any session check that found no session while it was still
+  loading, and two of those ran per launch about 150 ms apart. Each reset threw
+  the anonymous id away and the SDK minted another. The two calls are most
+  likely the mount check and the `AppState` `active` check, which native does
+  not queue; that pairing is read from the code and was not instrumented.
+
+### What the app does now
+
+The party-profile UUID is no longer an analytics id. The rules are in the
+header of `packages/shared/analytics/src/reconcile-identity.ts`, and web
+follows the same ones
+(`packages/web/app/components/providers/analytics-identity.tsx`):
+
+- Signed out, the SDK stays on its own anonymous id. The app sends no
+  `identify()`.
+- `reset()` runs only when the SDK is pinned to a person: a sign-out, or a
+  session that died while the app was closed. A signed-out cold start on an
+  anonymous SDK resets nothing, so the anonymous id survives relaunches.
+- Sign-in is one `identify(userId, { email })`. Its `$anon_distinct_id` is the
+  anonymous id that carried the pre-login events, and nothing has identified
+  that id before.
+- The bootstrap is gone.
+
+An install that ran the old bundle while signed out arrives pinned to its
+party UUID. The first launch on the new bundle resets it once. Its old party
+person stays in PostHog as it is, and the device starts a new anonymous id.
+That is one extra anonymous person per upgraded signed-out install, on the
+day the OTA lands, and no more after it.
+
+Feature flags read before sign-in are keyed on the SDK's anonymous id. Before,
+they ended up keyed on the party UUID, because the app identified as it on
+every launch, and that id survived a sign-out. The anonymous id holds across
+launches too, so a percentage rollout still gives one answer per install, but
+it changes at a sign-out. Upgraded signed-out installs are re-bucketed once,
+by the reset above.
+
+### What is still unproven
+
+- **The merge refusal.** The split needs a third step: on sign-in,
+  `identify(userId)` carries an anonymous id that belongs to an identified
+  person, and PostHog won't merge an identified person into an account that
+  already has one. That is PostHog's documented rule and it matches who the
+  phantoms are (a brand-new account has no person yet, so nothing splits), but
+  it has not been watched happening. A device sign-in test is pending.
+- **That the rate drops.** Nothing here is confirmed until the third row of
+  the table falls on bundles from #6078 on.
+- **Why Android is worse.** The likely reason: the session lives in secure
+  storage, which survives an uninstall on iOS and not on Android, so an Android
+  reinstall has to sign in again.
 
 ### Finding the phantoms
 
@@ -238,8 +291,8 @@ For the split rate, add `any(properties.$os) AS os` to the subquery, move both
   `person_id NOT IN (<the query above>)`, or keep only people whose
   `Login Succeeded` has `is_new_account = true`. The second is cheaper but is
   null on embedded JS and before the 2026-09-21 OTA.
-- **This holds for cohorts after the alias removal too**, until the split rate
-  above is seen to drop.
+- **This holds for cohorts after #6078 too**, until the split rate above is
+  seen to drop on bundles that carry it.
 - **Past phantoms stay.** No fix merges them. PostHog merges can't be undone,
   so nobody should try to repair them by hand.
 - **Signing out and into another account on one device** leaves the first
@@ -520,6 +573,6 @@ finished the period shown as final. Mark the current, unfinished period.
 | 2026-09-07 | Throwaway persons from 2.3.0 and 2.3.1 stop ("new people" regime 3 begins) |
 | 2026-09-26 | The www crawler rule applies from here (first day of the window it was measured on) |
 | #6027 mobile OTA | `Login Account Age Resolved` starts; login events carry `provider` and `account_age_read`; `Tick Logged`, `Set Active Climb` and `Climb Created` carry `boardType`; `Set Active Climb` carries `trigger` (`climb_saved` on a save); `Onboarding Gate Evaluated` gains the skip reason `replayed_board_link` |
-| alias-removal OTA (fill in the date and PR number when it ships) | The app stops sending `$create_alias`. The identity split is not expected to stop on this date (see "Identity-split pitfall") |
+| #6078 OTA (fill in the date when it ships) | The app stops sending `$create_alias` and stops identifying signed-out installs. Native `$identify` volume drops by most of its total, upgraded signed-out installs each start one new anonymous person, and the identity split is expected to fall from this date (see "Identity-split pitfall") |
 
 None of these repairs past data. Annotate them; do not backfill.

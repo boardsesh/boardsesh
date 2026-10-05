@@ -62,16 +62,20 @@ disappears for the rest of the launch after a sign-out.
 `/packages/shared/analytics/src/reconcile-identity.ts` driven by
 `/packages/mobile/src/providers/party-profile-provider.tsx` (mobile)
 
-- **Anonymous ID:** the SDK's own anonymous id on web; the party-profile UUID
-  on mobile
+- **Anonymous ID:** the SDK's own anonymous id, on web and mobile. The
+  party-profile UUID is a party-session peer id and not an analytics id
+- **Signed out:** no `identify()`. `reset()` only when the SDK is still pinned
+  to a person
 - **Authenticated ID:** `users.id` on both
 - **Sign-in:** `identify(userId, { email })` and nothing else. It carries the
   anonymous id as `$anon_distinct_id`, which is what merges the pre-login
   events into the account's person
 - **No `alias()` on either client.** `$create_alias` can merge two real
   people, and `identify()` already carries the anonymous id
-- **Open:** on mobile, returning climbers on a fresh install still split across
-  two persons (`docs/growth-metrics.md`, "Identity-split pitfall")
+- **To confirm:** mobile used to identify its signed-out anonymous person,
+  which split returning climbers on a fresh install across two persons. #6078
+  stops that; the split rate has not been re-measured yet
+  (`docs/growth-metrics.md`, "Identity-split pitfall")
 - **Person Properties:**
   - `email` (on login)
   - `language` (synced on locale change via `setPersonProperties()`)

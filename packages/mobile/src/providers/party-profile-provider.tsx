@@ -4,7 +4,8 @@
 // while omitting web-only concerns such as OAuth-pending drain, NextAuth session
 // bridging, and locale person-property sync.
 // The party profile itself is just `{ id: UUID }` — used as a stable peer
-// identity for the WebSocket party session. username/avatarUrl are surfaced
+// identity for the WebSocket party session. It is NOT a PostHog id: analytics
+// identity is the SDK's own anonymous id until sign-in, then the user id. username/avatarUrl are surfaced
 // for API parity but resolve to undefined until mobile fetches the user's
 // profile from the backend.
 //
@@ -13,13 +14,13 @@
 // currently mix the party-UUID identity and the authenticated user profile
 // in this single provider; the issue lays out the cleaner split.
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { randomUUID } from 'expo-crypto';
 import { ensureProfile, type PartyProfile } from '@boardsesh/party-profile';
 import { reconcileAnalyticsIdentity, buildCohortPersonProperties } from '@boardsesh/analytics';
 import { toBoardName } from '@boardsesh/board-config';
 import { partyProfileStorage } from '../lib/party-profile-store';
-import { getAnalyticsClient, identify, reset, setPersonProperties } from '../lib/analytics';
+import { getAnalyticsIdentity, identify, onAnalyticsReady, reset, setPersonProperties } from '../lib/analytics';
 import { useProfile } from '../lib/graphql/hooks';
 import { useHomeBoard } from '../lib/graphql/hooks/use-home-board';
 import { useIntegrationStatuses } from '../lib/graphql/hooks/use-integrations';
@@ -49,7 +50,6 @@ export function PartyProfileProvider({ children }: { children: ReactNode }) {
   const { data: userProfile } = useProfile({ enabled: isAuthenticated });
   const { board: homeBoard } = useHomeBoard();
   const { data: integrationStatuses } = useIntegrationStatuses();
-  const lastAnalyticsDistinctId = useRef<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -70,37 +70,41 @@ export function PartyProfileProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Wire PostHog identity: the party-profile UUID is the anonymous distinct_id;
-  // once the authenticated user id resolves we identify as the user, and that
-  // identify carries the UUID so PostHog merges the pre-login events into the
-  // account's person (the same person web identifies, same PostHog project).
-  // The reset/identify state machine is the shared, pure
-  // reconcileAnalyticsIdentity from @boardsesh/analytics. It sends no alias();
-  // its header says why.
-  const profileId = profile?.id;
+  // Wire PostHog identity. Signed out, the SDK stays on its own anonymous id and
+  // nothing is sent. Once the authenticated user id resolves we identify as the
+  // user, and that identify carries the SDK's anonymous id so PostHog merges the
+  // pre-login events into the account's person (the same person web identifies,
+  // same PostHog project). The state machine is the shared, pure
+  // reconcileAnalyticsIdentity from @boardsesh/analytics; its header has the
+  // rules and why the party-profile UUID is no longer part of this.
   const authUserId = userProfile?.id ?? null;
   const authEmail = userProfile?.email ?? null;
 
   useEffect(() => {
-    // Skip while the party UUID is still loading, and while auth is still
-    // resolving (mirrors web's `sessionStatus === 'loading'` guard) so we never
-    // reconcile against a half-known state. When the session is authenticated
-    // but the user id hasn't been fetched yet, we pass the *raw* isAuthenticated
-    // so reconcileAnalyticsIdentity holds (no identify) rather than momentarily
-    // re-identifying a returning user as the anonymous UUID; the
-    // identify(user) switch then fires once authUserId lands.
-    if (!profileId || isAuthLoading) return;
-    lastAnalyticsDistinctId.current = reconcileAnalyticsIdentity({
-      profileId,
-      authUserId,
-      authEmail,
-      isAuthenticated,
-      lastDistinctId: lastAnalyticsDistinctId.current,
-      // getDistinctId lets a cold start skip the anon → user round-trip the SDK
-      // has already persisted from a previous launch.
-      client: { identify, reset, getDistinctId: () => getAnalyticsClient()?.getDistinctId() ?? null },
+    // Skip while auth is still resolving (mirrors web's
+    // `sessionStatus === 'loading'` guard) so we never reconcile against a
+    // half-known state. When the session is authenticated but the user id
+    // hasn't been fetched yet, we pass the *raw* isAuthenticated so
+    // reconcileAnalyticsIdentity holds; the identify(user) switch then fires
+    // once authUserId lands.
+    if (isAuthLoading) return;
+    // The routine reads who the SDK thinks it is, and the SDK only knows after
+    // it has loaded its storage. A signed-out auth check can finish first, so
+    // wait rather than reconcile against empty ids.
+    return onAnalyticsReady(() => {
+      reconcileAnalyticsIdentity({
+        authUserId,
+        authEmail,
+        isAuthenticated,
+        client: {
+          identify,
+          reset,
+          getDistinctId: () => getAnalyticsIdentity()?.distinctId ?? null,
+          getAnonymousId: () => getAnalyticsIdentity()?.anonymousId ?? null,
+        },
+      });
     });
-  }, [profileId, isAuthLoading, isAuthenticated, authUserId, authEmail]);
+  }, [isAuthLoading, isAuthenticated, authUserId, authEmail]);
 
   const hasUserProfile = !!userProfile;
   const isTester = userProfile?.isTester ?? null;

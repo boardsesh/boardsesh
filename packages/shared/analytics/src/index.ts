@@ -14,6 +14,7 @@ export {
 } from './create-analytics';
 export {
   reconcileAnalyticsIdentity,
+  type AnalyticsIdentityAction,
   type IdentityClient,
   type ReconcileAnalyticsIdentityInput,
 } from './reconcile-identity';

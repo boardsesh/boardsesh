@@ -4,10 +4,9 @@ import type { ObserveRuntimeOverrides } from './observe-config';
  * Pure in-memory slot for the expo-observe SDK, registered by
  * `observe-bootstrap.ts` (imported once, from app/_layout.tsx).
  *
- * Deliberately dependency-free — no `expo-observe`, no react-native — for the
- * same reason `analytics-bootstrap-id.ts` is: `error-reporting.ts` reads this,
- * and error-reporting is imported by a large part of the app that the node-env
- * test runner loads. Importing the SDK directly there drags in Expo's winter
+ * Deliberately dependency-free — no `expo-observe`, no react-native —
+ * because `error-reporting.ts` reads this, and error-reporting is imported by
+ * a large part of the app that the node-env test runner loads. Importing the SDK directly there drags in Expo's winter
  * runtime (`Cannot find module './ImportMetaRegistry'`) and takes 33 test files
  * down with it.
  *

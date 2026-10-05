@@ -34,11 +34,12 @@ let hasReportedIdentityFailure = false;
  * ## Why this is not `reconcileAnalyticsIdentity`
  *
  * Mobile drives the shared reconciler from `@boardsesh/analytics`, and both
- * platforms still agree on the person — both identify with `users.id`, the same
- * value `getPosthogDistinctId()` hands the server-side flag read. What differs
- * is the substrate underneath. Mobile's anonymous identity is a party-profile
- * UUID it owns and re-identifies as after a sign-out; web's is the SDK's own
- * anonymous id. One rule is common to both, and one is web's alone:
+ * platforms agree on the person — both identify with `users.id`, the same
+ * value `getPosthogDistinctId()` hands the server-side flag read — and on the
+ * anonymous id, which is the SDK's own on both. The two routines follow the
+ * same rules. They stay separate because web re-sends `identify()` on every
+ * hard load to guarantee the `email` person property (see the effect below)
+ * and has the admin / embed exclusions, neither of which mobile wants.
  *
  *  - **No `alias()`, on either platform.** `identify()` already merges the
  *    anonymous person into the authenticated one by sending
@@ -46,16 +47,16 @@ let hasReportedIdentityFailure = false;
  *    already identified. `$create_alias` has no such protection: firing it
  *    while the client is pinned to another user's id merges two real people,
  *    irreversibly. Dropping the call removes the whole failure class instead of
- *    guarding it. Mobile dropped it later. Mobile still
- *    splits returning climbers across two persons, most likely because it
- *    identifies its anonymous id while signed out, which web never does (see
- *    "Identity-split pitfall" in `docs/growth-metrics.md`).
- *  - **Signed out means `reset()` and nothing else.** The shared routine
- *    follows its reset with `identify(anonId)`, which flips the SDK back to
+ *    guarding it.
+ *  - **Signed out means `reset()` and nothing else, and only when pinned.**
+ *    Following the reset with `identify(anonId)` flips the SDK back to
  *    `PersonMode: 'identified'`, creates a junk identified person per sign-out,
- *    and stamps `$is_identified: true` on every later anonymous event. Letting
- *    the SDK mint its own anonymous id after a reset keeps
- *    `distinctId === anonymousId` a truthful test for "anonymous".
+ *    and stamps `$is_identified: true` on every later anonymous event. Mobile
+ *    did exactly that with its party-profile UUID until #6078, and it split
+ *    returning climbers across two persons (see "Identity-split pitfall" in
+ *    `docs/growth-metrics.md`). Letting the SDK mint its own anonymous id
+ *    after a reset keeps `distinctId === anonymousId` a truthful test for
+ *    "anonymous".
  */
 export default function AnalyticsIdentity() {
   const { data: session, status } = useSession();

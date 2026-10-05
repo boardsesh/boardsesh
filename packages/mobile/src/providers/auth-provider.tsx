@@ -22,7 +22,7 @@ import {
   type RegistrationResult,
 } from '../lib/auth';
 import { SCREENSHOT_USER_EMAIL, SCREENSHOT_USER_PASSWORD } from '../lib/screenshot-mode';
-import { reset as resetAnalytics, track } from '../lib/analytics';
+import { isAnalyticsPinnedToAPerson, reset as resetAnalytics, track } from '../lib/analytics';
 import { resetOfflineUsageSignal } from '../offline/offline-usage-signal';
 import { reportError, reportHandledError } from '../lib/error-reporting';
 import { setOnForcedSignOut } from '../lib/auth-interceptor';
@@ -172,10 +172,21 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     return result;
   }, []);
 
+  // The signed-out path that is NOT a sign-out: a checkAuth that finds no
+  // session, which is every cold start of a signed-out install. Two of those
+  // can resolve in one launch while `isLoading` is still true (the mount check
+  // and the AppState `active` check are separate calls and native does not
+  // queue them), and each used to reset. A reset on an SDK that is already
+  // anonymous throws its anonymous id away and mints another, so the id that
+  // carried the pre-login events was gone before the sign-in that should have
+  // merged it. Reset only when the SDK is pinned to a person — a session that
+  // died while the app was closed — which is what this call is for. If the SDK
+  // has not loaded its storage yet this reads false, and the identity effect in
+  // party-profile-provider.tsx does the same reset once it has.
   const resetAnalyticsForSignedOutTransition = useCallback(() => {
     const authState = authStateRef.current;
     if (authState.isLoading || authState.isAuthenticated) {
-      resetAnalytics();
+      if (isAnalyticsPinnedToAPerson()) resetAnalytics();
       // The offline-usage rollup's suppression map is in-memory and not keyed by
       // user, so a same-day account switch would otherwise inherit the previous
       // user's counters and the new user's first offline day would never fire

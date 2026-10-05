@@ -50,6 +50,52 @@ export function getAnalyticsClient(): PostHog | null {
   return getClient();
 }
 
+// Who the SDK says this device is, read from its persisted state. Null when
+// there is no client (dev / no key) or the SDK has not loaded its storage yet:
+// both ids come back empty until then, and an empty id answers nothing.
+//
+// Reading the anonymous id mints and persists one when there is none. That is
+// the SDK's own lazy behaviour and it would happen on the next capture anyway.
+export function getAnalyticsIdentity(): { distinctId: string; anonymousId: string } | null {
+  const client = getClient();
+  if (!client) return null;
+  const distinctId = client.getDistinctId();
+  const anonymousId = client.getAnonymousId();
+  if (!distinctId || !anonymousId) return null;
+  return { distinctId, anonymousId };
+}
+
+// True when the SDK is pinned to a person: `identify()` moved its distinct id
+// off its anonymous id. False when it is anonymous, and false when it cannot
+// say yet. Callers use this to decide whether a reset() has anything to forget,
+// so "cannot say" must not read as "reset": a reset on an anonymous SDK throws
+// away the anonymous id a later sign-in needs to merge on. The identity effect
+// in party-profile-provider.tsx waits for the SDK and covers that case.
+export function isAnalyticsPinnedToAPerson(): boolean {
+  const identity = getAnalyticsIdentity();
+  return identity !== null && identity.distinctId !== identity.anonymousId;
+}
+
+// Runs `callback` once the SDK has loaded its persisted state, which is when
+// getAnalyticsIdentity() starts answering. Never runs it when analytics is
+// disabled. Returns a cancel function for effect cleanup.
+export function onAnalyticsReady(callback: () => void): () => void {
+  const client = getClient();
+  if (!client) return () => {};
+  let cancelled = false;
+  void client
+    .ready()
+    .then(() => {
+      if (!cancelled) callback();
+    })
+    .catch((error: unknown) => {
+      if (__DEV__) console.warn('[analytics] SDK did not become ready', error);
+    });
+  return () => {
+    cancelled = true;
+  };
+}
+
 // Register PostHog super properties — values stamped onto every subsequent event
 // from this client until unregistered / reset. OtaUpdateTracker uses this to tag
 // the OTA cohort (update id, embedded-vs-OTA, fingerprint) onto all events so any
