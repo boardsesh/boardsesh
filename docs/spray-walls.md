@@ -324,8 +324,9 @@ Three rules in that flow are not obvious from the API and are easy to undo:
 | `MAX_SPRAY_WALLS_PER_USER` | 10 | Each wall costs a private-bucket photo per version plus a catalogue layout row. Well past what a home climber or a gym needs, low enough that a scripted account cannot fill the bucket. |
 | `MAX_HOLDS_PER_WALL` | 1500 | A dense commercial spray wall runs 400–800 holds. The cap bounds what a detector run, a hold-editor session and a reset match hold in memory at once. |
 | `MAX_VERSIONS_PER_WALL` | 50 | A wall reset monthly for four years stays inside it. Every version keeps its own photo and its own hold generation. |
+| `MAX_REVISIONS_PER_CLIMB` | 50 | A spray climb can be edited with no time limit, so its history needs a bound. A rename every week for a year stays inside it. Applies to every board, but only a spray climb can get near it. |
 
-All three are reachable by ordinary use — ten walls is a gym with a lot of bays,
+The first three are reachable by ordinary use — ten walls is a gym with a lot of bays,
 1,500 holds is a dense commercial spray wall, fifty resets is four years of
 monthly changes — so each is **said out loud with its number** rather than met as
 "Something went wrong":
@@ -335,6 +336,7 @@ monthly changes — so each is **said out loud with its number** rather than met
 | Walls | A hint on the create step, BEFORE it bites (`sprayCaps.wallsHint`), and the refusal itself. Meeting the cap on the publish step with a photo already uploaded is the worst moment to learn it. |
 | Holds | The hold editor's save refusal (`sprayEditor.errors.tooManyHolds`). |
 | Versions | The reset flow's upload failure (`sprayCaps.versions`). |
+| Revisions | Nowhere. This cap never refuses an edit: at 50 the oldest edit is dropped and the original is kept, so there is nothing to tell the climber. See [Climb revisions](#climb-revisions). |
 
 The numbers come from `spray-config.ts` through
 `packages/mobile/src/lib/spray/spray-cap-copy.ts`, never typed into a catalog
@@ -632,7 +634,7 @@ a climb and never join `board_climbs` at all:
 | Shape | Where | Used by |
 | --- | --- | --- |
 | `sprayReferenceVisibilityCondition({ boardType, climbUuid }, userId)` | in the WHERE, over the referencing table | the smart-playlist ref queries, `browseProposals`, `globalCommentFeed`, `userProfileStats`, `followingClimbAscents`, `climbLogs` |
-| `sprayClimbUuidIsReadable(climbUuid, userId)` | before the query | `comments`, `climbProposals` — the uuid-keyed threads |
+| `sprayClimbUuidIsReadable(climbUuid, userId)` | before the query | `comments`, `climbProposals` — the uuid-keyed threads; `climbRevisions`, a climb's edit history |
 
 It is phrased "there is **no INVISIBLE** spray climb behind this reference"
 rather than "there is a visible climb", so a reference whose climb row has gone
@@ -1920,6 +1922,257 @@ decision 2026-09-14: private-wall ticks are the owner's logbook). A feed event
 carries the climb's name and its wall's layout id to every follower, so firing one
 for a private wall would announce the existence of somebody's home wall to people
 who cannot open it.
+
+## Editing a climb
+
+On the catalogue boards a published climb can be edited by its setter for 24
+hours and then locks. A catalogue board is shared by everyone who owns one, so a
+published climb is something other people have already sent and logged.
+
+A spray wall is one physical wall, and its holds move. A climb set last year may
+need a new start hold next week. So on spray (#5955):
+
+| The climb is | Who can edit it | For how long |
+| --- | --- | --- |
+| A draft | Its setter | Always |
+| Published | Its setter, or anyone who can edit the wall | Always |
+
+"Anyone who can edit the wall" is `canEditBoard` in `social/boards.ts`, the same
+rule that guards the wall's holds, with nothing added for climbs:
+
+- the wall's owner;
+- the owner or an admin of the gym the wall is linked to (a gym `editor` cannot);
+- a community admin or leader for spray, on a public wall only.
+
+`requireBoardEditAccess` is that function plus a throw, so the two cannot drift.
+
+Four things the rule is careful about:
+
+- **The setter stays the setter.** `updateClimb` never writes `user_id` or
+  `setter_username`, and a regrade goes on the climb's stats row with
+  `fa_username` left as it was. A wall owner who fixes your climb has not taken
+  it. Who made each edit is in the revision history instead.
+- **A draft is its setter's alone.** A wall editor cannot edit or publish
+  somebody else's draft. Publishing announces a new climb to followers, and it
+  would announce it under the wrong name.
+- **An editor has to be able to see the wall too.** The setter's edit needs
+  `viewerCanWriteSprayClimbs`, as before. Anyone else needs that and
+  `canEditBoard`.
+- **One refusal for every stranger.** A caller who is neither the setter nor a
+  wall editor gets `You can only update your own climbs` with the code
+  `CLIMB_EDIT_NOT_ALLOWED`, whether the wall is
+  private, the wall is public, or the climb is a draft. It is the message the
+  mutation always gave, and it does not say that a wall exists.
+
+Not changed: a climb that has lost holds to a reset still cannot be saved until
+the edit moves it onto holds that are on the wall (`assertSprayHoldsAreAlive`
+runs on every spray edit). An edit never moves `published_at`.
+
+### The Edit action in the app
+
+The app offers Edit from one shared rule, `canEditClimb` in
+`@boardsesh/create-climb-react`, used by both menus (`ClimbActionsSheet` and
+`use-climb-actions.ts`). It is the table above plus the catalogue rule (setter
+only, 24 hours).
+
+It is a hint. `updateClimb` decides.
+
+- **Where "can edit the wall" comes from.** `RegisteredSprayWall.viewerCanEdit`
+  in the spray registry, filled from `sprayWallRenderData.wall.viewerCanEdit`.
+  Only a literal `true` counts, and a re-registration never inherits the last
+  answer.
+- **Which climbs it covers.** Only climbs on that wall. A queue can hold a climb
+  from another wall or from Kilter; when the climb carries `boardType` or
+  `layoutId` and they say it is somewhere else, a wall editor is not offered
+  Edit on it.
+- **How stale it can be.** Ten minutes, the registry's revalidation window.
+  `useSprayWallViewerCanEdit` asks for the wall each time a menu mounts, which
+  is what re-reads it.
+- **Account changes.** The registry is module state and outlives a sign-out, and
+  the app tree below `AuthProvider` is replaced on every auth change, so the
+  reset lives in `AuthProvider`. Signing in, and the signed-out cleanup beside
+  `queryClient.clear()`, call `refreshSprayWallViewerAccess`: every wall reads
+  "cannot edit" at once and is refetched. A flip to signed-out with no cleanup
+  only calls `dropSprayWallViewerAccess`, which fetches nothing. A native
+  keychain failure flips that way, and a request sent then carries no token, so
+  a private wall would resolve null and be withdrawn from the live player.
+- **A request that crosses the account change.** The registry counts account
+  changes (`sprayWallViewerGeneration`). A fetch notes the number before it
+  leaves, and it is part of the published render-data query key, as an object
+  (`{ viewerGeneration }`), so it can never equal the hold editor's draft key,
+  whose third segment is a version number. Two accounts never share a request
+  or a cache entry. A payload that lands under a different number registers the
+  wall but not its `viewerCanEdit`, and is stamped stale. `loadSprayWall` asks
+  once more by itself when it sees the number moved. The hold editor's draft
+  and its publish reload pass the generation they fetched under too, so the
+  owner keeps Edit while and after editing holds.
+- **When the hint is wrong.** A role taken away inside the window still shows
+  Edit. The save is refused and nothing is lost. `updateClimb` gives each
+  refusal an `extensions.code` (`CLIMB_EDIT_NOT_ALLOWED`,
+  `CLIMB_EDIT_WINDOW_EXPIRED`, `CLIMB_NOT_EDITABLE`, `CLIMB_EDIT_CONFLICT`) and
+  the editor shows a translated line for each. The server's own sentence is
+  never shown; a failure with no known code gets the generic line.
+- **Two saves crossing.** `CLIMB_EDIT_CONFLICT` shows "Someone else just changed
+  this climb. Reopen it to see the latest." There is no automatic retry, and the
+  working copy stays on screen and in the autosave slot. Tapping Save again
+  re-reads the climb and can succeed.
+- **The setter stays the setter in the queue too.** The queue row the editor
+  builds after a save takes `userId` and `setter_username` from the climb being
+  edited (`resolveProvisionalSetter`), not from whoever saved. A row with no `userId`
+  whose setter name is the saver's own keeps the saver's id, as before.
+
+## Climb revisions
+
+Unlimited edits mean a climb you sent last month may not be the climb that is
+there today. So every edit to a published climb is kept, on every board, in
+`board_climb_revisions` (`packages/db/src/schema/app/climb-revisions.ts`). On a
+catalogue board the 24 hour window means a climb collects a handful of revisions
+at most. On spray it can collect up to the cap.
+
+### What a row is
+
+A row is the climb **as it stood after an edit**: name, description, frames,
+frame count and pace, angle, rules, and on spray the setter grade. It also
+carries what the edit changed (`name`, `description`, `holds`, `grade`, `angle`,
+`rules`), who made it, and when.
+
+Rows are written lazily, by `updateClimb` only:
+
+| Event | Rows written |
+| --- | --- |
+| A climb is saved or published | 0. The live `board_climbs` row is its only revision. |
+| A draft is edited | 0. History starts when the climb is published. |
+| A draft is published by `updateClimb` | 0, even when the same call also edits it. |
+| A published climb is edited for the first time | 2. Revision 1 is the climb as it was published, dated to `published_at` and credited to the setter. Revision 2 is the new state. |
+| A published climb is edited again | 1. |
+| A save changes nothing | 0. |
+
+So the highest-numbered row always matches the live climb, and a climb with no
+rows has never been edited. There was no backfill: an edit made before this
+shipped left no row.
+
+"Changes nothing" is judged on what a climber would call different. A missing and
+an empty description are the same. On the Aurora boards the `No match`
+description prefix counts as a rule, not as description text.
+
+### The cap
+
+`MAX_REVISIONS_PER_CLIMB` is 50. Past it the oldest edit is deleted and revision
+1 is always kept, so the original is always there to compare against. An edit is
+never refused for being one too many. Revision numbers are never reused, so a
+pruned climb's numbers have a gap after 1.
+
+### Two editors at once
+
+The setter and the wall owner can save at the same moment. Inside its
+transaction `updateClimb` takes the wall lock, then locks the climb row
+(`lockClimbForRevision`, `SELECT … FOR NO KEY UPDATE`) and reads it. The second
+edit waits for the first to commit, and its "before" is the first edit's result.
+Both sides of the diff are read under that lock, never taken from the row the
+resolver loaded before the transaction. Two saves give two consecutive revision
+numbers, and each row names only its own change.
+
+The order is wall, then row. A reset holds the wall lock while it rewrites
+`missing_hold_count` on the wall's climbs, so taking the row first would be a
+deadlock.
+
+The resolver makes its decisions (did the holds change, does the duplicate gate
+run) from the row it loaded before the transaction. So the locked row is compared
+with that row on `isDraft`, `frames`, `framesCount`, `angle`, `characteristics`
+and, on the Aurora boards, `description`. If any differ, another edit landed in
+between: the save is refused with "This climb changed while you were editing it"
+(`extensions.code` `CLIMB_EDIT_CONFLICT`) and nothing is written. `name` and
+`framesPace` are not compared, because they feed no decision.
+
+The decisions are not recomputed under the lock. The duplicate-gate lock is keyed
+on the hold signature and is taken before the wall lock, so recomputing would
+mean taking it while holding the row, which reverses the lock order.
+
+One case succeeds instead: a publish that arrives after the same publish already
+landed (a double tap). When every field the request carries equals the locked
+row, `updateClimb` returns the published climb and writes nothing: no revision,
+no second `climb.created`.
+
+### Which wall photo a revision belongs to
+
+A spray revision stores the wall version it was drawn on, so an old revision can
+be shown on the photograph it was set against.
+
+- A revision written by an edit takes the wall's current version, read under the
+  wall lock.
+- Revision 1 is written later than the state it describes, possibly several
+  resets later, so its version is worked out: of the versions in which every one
+  of the climb's holds was on the wall, the newest one published at or before
+  the climb's `published_at`. If none is that old, the oldest version that had
+  all the holds. If no version ever had them all, the column is NULL and the app
+  shows the revision without a board.
+
+The foreign key to `spray_wall_versions` is `RESTRICT`. Only a draft version is
+ever deleted and a revision only points at a version that was published, so the
+restriction should never fire.
+
+### Reading them
+
+`climbRevisions(boardType, climbUuid)` returns the rows newest first, with
+`isCurrent` on the top row, the editor's name and avatar, `editedBySetter`, and
+`sprayWallVersionNumber` to pass to `sprayWallRenderData`. No pagination: the cap
+is 50.
+
+It answers an empty list, never an error, for a climb nobody has edited, for a
+draft, and for a spray climb on a wall the caller cannot see
+(`sprayClimbUuidIsReadable`, the same gate as `betaLinks`). Someone holding only
+a share link to an unlisted wall gets the empty list in v1. The visibility sweep
+(`spray-visibility-sweep.test.ts`) edits its sentinel climb once so that this
+field is proven to show the owner the history and a stranger nothing.
+
+Revisions are read-only. There is no restore, and an old revision cannot be
+queued or lit up.
+
+### In the app
+
+The server half (table, `updateClimb`, the `climbRevisions` query) is on `main`.
+The app half below ships with the release train (#5973 on `release/next`).
+
+The play drawer shows an **Edit history** section (`RevisionsSection`) after
+Community and before Similar climbs. It renders nothing unless the query has two
+or more rows, so most climbs never show it. Loading, failed and offline also
+render nothing. It is collapsed by default and its summary counts edits from the
+newest revision number, so pruned edits still count.
+
+Five rows show inline and "Show all" reveals the rest, up to
+`MAX_REVISIONS_PER_CLIMB`. A full history carries a one-line note with that
+number, read through `spray-cap-copy.ts`.
+
+A row opens `ClimbRevisionSheet`: board, name, grade (spray only), notes, date,
+editor, and Older / Newer. It is mounted inside `PlayDrawer` and opened by a
+handler the drawer owns, because a root sheet presents behind the `/play` modal.
+The file imports nothing from the queue, Bluetooth or the editor.
+
+The board is drawn one of two ways (`pickRevisionBoardPath`):
+
+| Revision | Drawn by |
+| --- | --- |
+| Any catalogue board | `BoardImageNative`, with the revision's frames |
+| Spray, same wall version as the registered wall | `BoardImageNative` |
+| Spray, a different wall version | `SprayRevisionBoard` |
+| Spray, no wall version on record | Nothing. One line: "This wall photo is no longer available" |
+
+`SprayRevisionBoard` fetches `sprayWallRenderData(uuid, version)` itself, under
+its own query key, and **never writes the spray registry**. The registry holds
+one version per wall and the play drawer under the sheet draws from it, so
+registering an old version would swap the photo and holds under the live player.
+It draws the photo with `expo-image` (memory cache only, the URL is a 15 minute
+signature) and the holds as rings in one SVG layer.
+
+With no connection the sheet and the old-version board show the offline placard,
+never "photo no longer available".
+
+### Known limits
+
+- The old-photo preview draws plain rings, not the wall's stored look.
+- No history for edits made before this shipped.
+- The data export does not include revisions.
+- Deleting a climb deletes its revisions (the foreign key cascades).
 
 ## Setting a climb on a wall (the editor)
 

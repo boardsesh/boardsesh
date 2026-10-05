@@ -5463,6 +5463,197 @@ describe('a wall keeps the visibility picked at creation through a resumed publi
   });
 });
 
+describe('who may edit a climb on a spray wall (#5955)', () => {
+  const REFUSAL = 'You can only update your own climbs';
+
+  /** A climb `setter` set on OWNER's wall. Public unless overridden, so a non-owner can set on it. */
+  async function climbSetBy(
+    setter: string,
+    { isDraft = false, wallOverrides = { isPublic: true } as Record<string, unknown> } = {},
+  ) {
+    const { wall, holdIds } = await createPublishedWall(OWNER, wallOverrides);
+    const saved = (await climbMutations.saveClimb(
+      {},
+      {
+        input: {
+          boardType: 'spray',
+          layoutId: wall.layoutId,
+          name: 'As the setter left it',
+          isDraft,
+          frames: framesFor(holdIds),
+          angle: 40,
+          userGrade: '6b/V4',
+        },
+      },
+      ctxFor(setter),
+    )) as { uuid: string };
+    publishedEvents.length = 0;
+    return { wall, holdIds, climbUuid: saved.uuid };
+  }
+
+  const rename = (climbUuid: string, editor: string, extra: Record<string, unknown> = {}) =>
+    climbMutations.updateClimb(
+      {},
+      { input: { uuid: climbUuid, boardType: 'spray', name: 'Edited', ...extra } },
+      ctxFor(editor),
+    );
+
+  async function climbRow(climbUuid: string) {
+    const [row] = (await db.execute(sql`
+      SELECT c.name, c.user_id, c.setter_username, c.is_draft, c.published_at,
+             (SELECT count(*)::int FROM board_climb_revisions r WHERE r.climb_uuid = c.uuid) AS revisions
+      FROM board_climbs c WHERE c.uuid = ${climbUuid}
+    `)) as unknown as Array<{
+      name: string;
+      user_id: string;
+      setter_username: string;
+      is_draft: boolean;
+      published_at: string | null;
+      revisions: number;
+    }>;
+    return row;
+  }
+
+  /** Link the wall to a gym OWNER owns, with `member` holding `role` in it. */
+  async function linkWallToGym(wallUuid: string, member: string, role: 'admin' | 'editor' | 'member') {
+    const gymUuid = uuidv4();
+    const [gym] = (await db.execute(sql`
+      INSERT INTO gyms (uuid, name, slug, owner_id, is_public, created_at, updated_at)
+      VALUES (${gymUuid}, 'Spray Gym', ${gymUuid}, ${OWNER}, true, now(), now())
+      RETURNING id
+    `)) as unknown as Array<{ id: number }>;
+    await db.execute(sql`
+      INSERT INTO gym_members (gym_id, user_id, role, created_at)
+      VALUES (${gym.id}, ${member}, ${role}, now())
+    `);
+    await db.execute(sql`UPDATE user_boards SET gym_id = ${gym.id} WHERE uuid = ${wallUuid}`);
+  }
+
+  it('lets the setter edit long after the 24 hours a catalogue board allows', async () => {
+    const { climbUuid } = await climbSetBy(STRANGER);
+    const longAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    await db.execute(sql`UPDATE board_climbs SET published_at = ${longAgo} WHERE uuid = ${climbUuid}`);
+
+    await rename(climbUuid, STRANGER);
+
+    const row = await climbRow(climbUuid);
+    expect(row).toMatchObject({ name: 'Edited', user_id: STRANGER, is_draft: false });
+    // An edit does not restart anything: the climb was published when it was.
+    expect(row.published_at).toBe(longAgo);
+    expect(row.revisions).toBe(2);
+  });
+
+  it('lets the wall owner edit another setter’s climb, and the setter stays the setter', async () => {
+    const { climbUuid } = await climbSetBy(STRANGER);
+    const before = await climbRow(climbUuid);
+
+    await rename(climbUuid, OWNER, { userGrade: '7a/V6', description: 'Start matched on the jug' });
+
+    const after = await climbRow(climbUuid);
+    expect(after).toMatchObject({
+      name: 'Edited',
+      user_id: STRANGER,
+      setter_username: before.setter_username,
+      published_at: before.published_at,
+    });
+    expect(after.setter_username).toBe(`User ${STRANGER}`);
+
+    // The regrade lands on the climb's stats row, still credited to the setter.
+    const [stats] = (await db.execute(sql`
+      SELECT display_difficulty, fa_username FROM board_climb_stats WHERE climb_uuid = ${climbUuid}
+    `)) as unknown as Array<{ display_difficulty: number; fa_username: string }>;
+    expect(Number(stats.display_difficulty)).toBe(22);
+    expect(stats.fa_username).toBe(`User ${STRANGER}`);
+
+    // An edit is not a new climb, whoever makes it.
+    expect(publishedEvents.filter((event) => event.type === 'climb.created')).toEqual([]);
+  });
+
+  it('lets an admin of the wall’s gym edit, and refuses a gym editor', async () => {
+    // The shared board rule, unchanged: a gym `editor` edits the gym's page, not
+    // its walls (epic decision 2026-09-14), so they do not edit its climbs either.
+    const { wall, climbUuid } = await climbSetBy(STRANGER);
+    await linkWallToGym(wall.uuid, GYM_EDITOR, 'editor');
+    await expect(rename(climbUuid, GYM_EDITOR)).rejects.toThrow(REFUSAL);
+    // The code is the contract a client translates; the sentence is for older clients.
+    await expect(rename(climbUuid, GYM_EDITOR)).rejects.toMatchObject({
+      extensions: { code: 'CLIMB_EDIT_NOT_ALLOWED' },
+    });
+    expect(await climbRow(climbUuid)).toMatchObject({ name: 'As the setter left it', revisions: 0 });
+
+    await db.execute(sql`UPDATE gym_members SET role = 'admin' WHERE user_id = ${GYM_EDITOR}`);
+    await rename(climbUuid, GYM_EDITOR);
+    expect(await climbRow(climbUuid)).toMatchObject({ name: 'Edited', user_id: STRANGER, revisions: 2 });
+  });
+
+  it('refuses a stranger who can see the wall, with the message it always gave', async () => {
+    const { climbUuid } = await climbSetBy(OWNER);
+
+    await expect(rename(climbUuid, STRANGER)).rejects.toThrow(REFUSAL);
+    await expect(rename(climbUuid, OUTSIDER, { userGrade: '7a/V6' })).rejects.toThrow(REFUSAL);
+
+    expect(await climbRow(climbUuid)).toMatchObject({ name: 'As the setter left it', revisions: 0 });
+  });
+
+  it('refuses a stranger on a private wall with the SAME message, not "wall not found"', async () => {
+    // The refusal must not say whether the climb's wall exists, or that the uuid
+    // belongs to a spray climb on a wall the caller cannot see.
+    const { wall, climbUuid } = await climbSetBy(OWNER, { wallOverrides: {} });
+
+    await expect(rename(climbUuid, STRANGER)).rejects.toThrow(REFUSAL);
+    // Presenting the wall's uuid buys nothing either: the wall is private, not unlisted.
+    await expect(rename(climbUuid, STRANGER, { sprayWallUuid: wall.uuid })).rejects.toThrow(REFUSAL);
+
+    expect(await climbRow(climbUuid)).toMatchObject({ name: 'As the setter left it', revisions: 0 });
+  });
+
+  it('refuses a climber who can set on an unlisted wall but cannot edit it', async () => {
+    // The share link is the right to SET climbs on the wall. It is not the right
+    // to edit other people's.
+    const { wall, climbUuid } = await climbSetBy(OWNER, { wallOverrides: { isUnlisted: true } });
+
+    await expect(rename(climbUuid, STRANGER, { sprayWallUuid: wall.uuid })).rejects.toThrow(REFUSAL);
+    expect(await climbRow(climbUuid)).toMatchObject({ name: 'As the setter left it', revisions: 0 });
+  });
+
+  it('does not let the wall owner touch, or publish, another setter’s draft', async () => {
+    const { climbUuid } = await climbSetBy(STRANGER, { isDraft: true });
+
+    await expect(rename(climbUuid, OWNER)).rejects.toThrow(REFUSAL);
+    await expect(rename(climbUuid, OWNER, { isDraft: false })).rejects.toThrow(REFUSAL);
+
+    expect(await climbRow(climbUuid)).toMatchObject({
+      name: 'As the setter left it',
+      user_id: STRANGER,
+      is_draft: true,
+      published_at: null,
+      revisions: 0,
+    });
+    expect(publishedEvents.filter((event) => event.type === 'climb.created')).toEqual([]);
+
+    // The setter still can, and the wall owner can edit it once it is published.
+    await rename(climbUuid, STRANGER, { isDraft: false });
+    await rename(climbUuid, OWNER, { name: 'Edited by the owner' });
+    expect(await climbRow(climbUuid)).toMatchObject({
+      name: 'Edited by the owner',
+      user_id: STRANGER,
+      is_draft: false,
+    });
+  });
+
+  it('still refuses the setter once the wall is no longer theirs to see', async () => {
+    // Unchanged by #5955: an edit needs the wall, and a wall that went private
+    // answers a non-member "not found" like every other read of it.
+    const { wall, climbUuid } = await climbSetBy(STRANGER);
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: false } }, ctxFor(OWNER));
+
+    await expect(rename(climbUuid, STRANGER)).rejects.toThrow(/spray wall could not be found/i);
+    // The wall owner still can.
+    await rename(climbUuid, OWNER);
+    expect(await climbRow(climbUuid)).toMatchObject({ name: 'Edited', user_id: STRANGER });
+  });
+});
+
 describe('draft purpose separates hold editing and photo resets', () => {
   it('refuses to publish a reset through the hold-editor endpoint', async () => {
     const { wall, versionId } = await createPublishedWall(OWNER);
