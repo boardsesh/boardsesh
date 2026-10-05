@@ -144,6 +144,9 @@ describe('ota-drift.yml', () => {
     // A crash of the check is its own finding, never reported as drift.
     expect(code).toContain('*) echo "result=failed" >> "$GITHUB_OUTPUT" ;;');
     expect(code).toContain('**OTA drift check failed**');
+    // A refused login is named as that: the server is up, the password is wrong.
+    expect(code).toContain('**OTA admin login refused**');
+    expect(code).toContain("grep -q 'Admin login failed (HTTP 40[13])'");
     expect(code).toContain('**OTA config drift**');
     expect(code).toContain('**OTA server could not be read**');
     expect(code).toContain('**OTA admin API moved**');

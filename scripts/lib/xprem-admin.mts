@@ -194,6 +194,24 @@ export class XpremApiError extends Error {
   }
 }
 
+/**
+ * The server refused the admin login (401 or 403): a wrong or rotated password,
+ * or a disabled account. A configuration fault, not an outage, so callers must
+ * not retry it or report it as an unreachable server.
+ */
+export class AdminLoginRefusedError extends Error {
+  status: number;
+
+  constructor(status: number, detail: string) {
+    super(
+      `Admin login failed (HTTP ${status}): the server refused OTA_ADMIN_EMAIL / OTA_ADMIN_PASSWORD` +
+        `${detail ? `: ${detail}` : '.'}`,
+    );
+    this.name = 'AdminLoginRefusedError';
+    this.status = status;
+  }
+}
+
 export function sameId(left: XpremId, right: XpremId): boolean {
   return String(left) === String(right);
 }
@@ -313,7 +331,12 @@ export async function adminLogin(options: AdminLoginOptions): Promise<string> {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!response.ok) {
-    throw new Error(`Admin login failed (HTTP ${response.status}): ${(await response.text()).slice(0, 200)}`);
+    const detail = (await response.text()).slice(0, 200);
+    // The server looked at the login and said no. Trying again cannot help.
+    if (response.status === 401 || response.status === 403) {
+      throw new AdminLoginRefusedError(response.status, detail);
+    }
+    throw new Error(`Admin login failed (HTTP ${response.status}): ${detail}`);
   }
   const payload = (await response.json()) as { token?: unknown };
   if (typeof payload.token !== 'string' || payload.token === '') throw new Error('Admin login returned no token.');
@@ -486,7 +509,11 @@ export function createXpremAdminClient(options: XpremAdminClientOptions) {
             runtimeIssues: count(point.runtimeIssues, 'history point runtimeIssues'),
           };
         });
-        const newest = points.sort((left, right) => left.timestamp.localeCompare(right.timestamp)).at(-1);
+        // ISO 8601 timestamps in one zone sort as plain strings. localeCompare
+        // would apply the runner's collation, which is not the order wanted here.
+        const newest = points
+          .sort((left, right) => (left.timestamp < right.timestamp ? -1 : left.timestamp > right.timestamp ? 1 : 0))
+          .at(-1);
         if (newest) latest[updateUUID] = newest;
       }
       return { source: optionalText(raw.source), latest };

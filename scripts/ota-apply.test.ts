@@ -19,9 +19,10 @@ import {
   hasDrift,
 } from '../infra/ota/plan';
 import type { OtaChangeKind, OtaLiveState } from '../infra/ota/plan';
-import { FAKE_APP, fakeXprem } from './__tests__/helpers/fake-xprem';
+import { FAKE_APP, FAKE_BASE_URL, fakeXprem } from './__tests__/helpers/fake-xprem';
 import type { FakeRoute } from './__tests__/helpers/fake-xprem';
 import { OTA_APP_ID } from './lib/ota-branch-probe';
+import { AdminLoginRefusedError, adminClientFromEnvironment } from './lib/xprem-admin.mts';
 import {
   EXIT_DRIFT,
   EXIT_FAILED,
@@ -723,16 +724,51 @@ describe('reading the server', () => {
 
   it('gives up after three tries with an error that is not drift', async () => {
     const read = vi.fn(async () => {
-      throw new Error('Admin login failed (HTTP 401): bad credentials');
+      throw new Error('Admin login failed (HTTP 502): bad gateway');
     });
     const failure = await withReadRetries(read, { delayMs: 0 }).catch((error: unknown) => error);
     expect(read).toHaveBeenCalledTimes(3);
     expect(failure).toBeInstanceOf(ServerUnreadableError);
     expect((failure as Error).message).toBe(
-      'Could not read the OTA server: Admin login failed (HTTP 401): bad credentials',
+      'Could not read the OTA server: Admin login failed (HTTP 502): bad gateway',
     );
     // Three findings, three codes: drift is the only thing that exits 1.
     expect([EXIT_IN_SYNC, EXIT_DRIFT, EXIT_UNREADABLE, EXIT_FAILED]).toEqual([0, 1, 2, 3]);
+  });
+
+  it.each([401, 403])('does not retry a login the server refused with %i, or call it unreadable', async (status) => {
+    const server = fakeXprem({ 'POST /auth/login': { status, body: { detail: 'invalid credentials' } } });
+    const connect = vi.fn(() =>
+      adminClientFromEnvironment({
+        appId: 'app-1',
+        defaultBaseUrl: FAKE_BASE_URL,
+        environment: { OTA_ADMIN_EMAIL: 'ops@example.test', OTA_ADMIN_PASSWORD: 'rotated' },
+        fetchImpl: server.fetchImpl,
+      }),
+    );
+    const failure = await withReadRetries(connect, { delayMs: 0 }).catch((error: unknown) => error);
+    // One attempt: asking again cannot make a wrong password right.
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(server.requests).toHaveLength(1);
+    expect(failure).toBeInstanceOf(AdminLoginRefusedError);
+    expect(failure).not.toBeInstanceOf(ServerUnreadableError);
+    expect((failure as Error).message).toContain(
+      `Admin login failed (HTTP ${status}): the server refused OTA_ADMIN_EMAIL / OTA_ADMIN_PASSWORD`,
+    );
+  });
+
+  it('still retries a login that failed because the server is down', async () => {
+    const server = fakeXprem({ 'POST /auth/login': { status: 503 } });
+    const connect = vi.fn(() =>
+      adminClientFromEnvironment({
+        appId: 'app-1',
+        defaultBaseUrl: FAKE_BASE_URL,
+        environment: { OTA_ADMIN_EMAIL: 'ops@example.test', OTA_ADMIN_PASSWORD: 'secret' },
+        fetchImpl: server.fetchImpl,
+      }),
+    );
+    await expect(withReadRetries(connect, { delayMs: 0 })).rejects.toBeInstanceOf(ServerUnreadableError);
+    expect(connect).toHaveBeenCalledTimes(3);
   });
 
   it('surfaces an unreadable server from a run, without calling it drift', async () => {

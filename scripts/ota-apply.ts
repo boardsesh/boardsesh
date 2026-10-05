@@ -26,7 +26,8 @@
  *
  * Exit codes: 0 in sync (or, with --only, nothing left that the run may change),
  * 1 the server was read and differs, 2 the server could not be read after three
- * tries, 3 the tool itself failed (bad arguments, a refused write, a bug).
+ * tries, 3 the tool itself failed (bad arguments, a refused login, a refused
+ * write, a bug). A refused login is never retried.
  *
  * Usage:
  *   OTA_ADMIN_EMAIL=... OTA_ADMIN_PASSWORD=... vp run ota:apply
@@ -53,7 +54,7 @@ import {
 } from '../infra/ota/plan.ts';
 import type { OtaChangeKind, OtaLiveState, OtaPlan, OtaPlannedChange } from '../infra/ota/plan.ts';
 import { listActiveRollouts } from './lib/ota-rollout.ts';
-import { XpremApiError, adminClientFromEnvironment, sameId } from './lib/xprem-admin.mts';
+import { AdminLoginRefusedError, XpremApiError, adminClientFromEnvironment, sameId } from './lib/xprem-admin.mts';
 import type { XpremAdminClient } from './lib/xprem-admin.mts';
 
 const LOG = '[ota-apply]';
@@ -90,6 +91,9 @@ export async function withReadRetries<Result>(
     try {
       return await read();
     } catch (error) {
+      // A refused login is not a server that might answer next time. It is
+      // rethrown as it is, so it ends the run as a tool failure with its own words.
+      if (error instanceof AdminLoginRefusedError) throw error;
       if (attempt >= attempts) throw new ServerUnreadableError(error);
       await sleep(delayMs);
     }

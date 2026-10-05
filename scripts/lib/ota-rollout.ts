@@ -20,7 +20,7 @@
  */
 
 import type { OtaHealthPolicy } from '../../infra/ota/config.ts';
-import { mapWithConcurrency, sameId } from './xprem-admin.mts';
+import { XpremApiError, mapWithConcurrency, sameId } from './xprem-admin.mts';
 import type { XpremAdminClient, XpremId, XpremRolloutUpdate, XpremUpdateHealth } from './xprem-admin.mts';
 
 /** Requests in flight while walking a branch's runtime versions. `production` has about 80. */
@@ -97,6 +97,14 @@ function noLiveRollout(target: RolloutTarget): Error {
   );
 }
 
+/** What a write does, in the words an error needs: the past tense, and the command to run again. */
+interface WriteAction {
+  /** "finished", "raised to 25%", "reverted". */
+  done: string;
+  /** The CLI subcommand and its own flags: "finish", "set --percentage 25", "revert". */
+  command: string;
+}
+
 /**
  * Apply `write` to each targeted rollout, re-reading before every write.
  *
@@ -107,11 +115,17 @@ function noLiveRollout(target: RolloutTarget): Error {
  * skipped only AFTER this run has written something: then it is this run's own
  * effect. Vanishing before the first write is somebody else's change, and the
  * caller is told instead of being handed a success it did not earn.
+ *
+ * A write that fails after an earlier one succeeded leaves the platforms in
+ * different states. That is reported as exactly that: which platform is done,
+ * which is not, and the command that finishes the job. Running it converges,
+ * because a platform that is already done is no longer a target.
  */
 async function writeEach(
   client: XpremAdminClient,
   target: RolloutTarget,
   planned: ActiveRollout[],
+  action: WriteAction,
   alreadyDone: (current: ActiveRollout) => boolean,
   write: (current: ActiveRollout) => Promise<void>,
 ): Promise<ActiveRollout[]> {
@@ -127,7 +141,21 @@ async function writeEach(
       );
     }
     if (alreadyDone(current)) continue;
-    await write(current);
+    try {
+      await write(current);
+    } catch (error) {
+      if (written.length === 0) throw error;
+      // 404 after this run's own write: the earlier call ended this rollout too.
+      if (error instanceof XpremApiError && error.status === 404) continue;
+      const doneNames = written.map((entry) => `${entry.platform} (update ${entry.updateId})`).join(', ');
+      throw new Error(
+        `Split state on "${target.branch}" runtime ${target.runtimeVersion}: ${doneNames} was ${action.done}, ` +
+          `and ${current.platform} (update ${current.updateId}) was NOT and is still at ${current.percentage}%. ` +
+          `Cause: ${error instanceof Error ? error.message : String(error)}. To finish the job, run: ` +
+          `node --experimental-strip-types scripts/mobile-ota-rollout.ts ${action.command} --branch ${target.branch} ` +
+          `--runtime-version ${target.runtimeVersion} --platform ${current.platform}`,
+      );
+    }
     written.push(current);
   }
   return written;
@@ -154,6 +182,9 @@ export async function setRolloutPercentage(
     client,
     target,
     targeted,
+    percentage === 100
+      ? { done: 'finished', command: 'finish' }
+      : { done: `raised to ${percentage}%`, command: `set --percentage ${percentage}` },
     (current) => current.percentage === percentage,
     (current) => client.setUpdateRolloutPercentage(target.branch, target.runtimeVersion, percentage, current.updateId),
   );
@@ -182,13 +213,14 @@ export async function revertRollout(
       client,
       target,
       targeted,
+      { done: 'reverted', command: 'revert' },
       () => false,
       (current) => client.revertUpdateRollout(target.branch, target.runtimeVersion, current.updateId),
     );
   } catch (error) {
     // It ended between the read above and the write: with allowNone that is the
     // state the caller asked for. Confirm it with a fresh read before saying so.
-    if (!options.allowNone) throw error;
+    if (!options.allowNone || (error instanceof Error && error.message.startsWith('Split state'))) throw error;
     const stillLive = matchingTarget(await readRollout(client, target.branch, target.runtimeVersion), target);
     if (stillLive.length > 0) throw error;
     return [];

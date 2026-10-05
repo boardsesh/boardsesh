@@ -212,6 +212,105 @@ describe('a rollout that changes under the tool', () => {
     expect(server.requests.filter((request) => request.method === 'PUT')).toHaveLength(1);
   });
 
+  it.each([
+    ['finish', 100, 'finished', 'finish'],
+    ['set', 25, 'raised to 25%', 'set --percentage 25'],
+  ] as const)(
+    '%s reports a split state when the second platform fails, and a re-run converges',
+    async (_command, percentage, done, rerun) => {
+      let live = [
+        { updateId: 11, platform: 'ios', percentage: 10 },
+        { updateId: 12, platform: 'android', percentage: 10 },
+      ];
+      let androidFailures = 1;
+      const server = fakeXprem({
+        [`GET ${rolloutPath(IOS_RTV)}`]: () => ({ active: live.length > 0, updates: live }),
+        [`PUT ${rolloutPath(IOS_RTV)}`]: (request) => {
+          const body = request.body as { percentage: number; expectedUpdateId: number };
+          if (body.expectedUpdateId === 12 && androidFailures-- > 0) return { status: 500, body: { detail: 'boom' } };
+          live =
+            body.percentage === 100
+              ? live.filter((update) => update.updateId !== body.expectedUpdateId)
+              : live.map((update) =>
+                  update.updateId === body.expectedUpdateId ? { ...update, percentage: body.percentage } : update,
+                );
+          return { status: 204 };
+        },
+      });
+
+      const failure = await setRolloutPercentage(server.client, target, percentage).catch((error: unknown) => error);
+      expect((failure as Error).message).toBe(
+        `Split state on "production" runtime ${IOS_RTV}: ios (update 11) was ${done}, ` +
+          'and android (update 12) was NOT and is still at 10%. ' +
+          'Cause: Set rollout percentage failed (HTTP 500): {"detail":"boom"}. To finish the job, run: ' +
+          `node --experimental-strip-types scripts/mobile-ota-rollout.ts ${rerun} --branch production ` +
+          `--runtime-version ${IOS_RTV} --platform android`,
+      );
+
+      // The same command again: iOS is no longer a target, Android is written.
+      const converged = await setRolloutPercentage(server.client, target, percentage);
+      expect(converged.map((rollout) => rollout.platform)).toEqual(['android']);
+      expect(live.every((update) => update.percentage === percentage)).toBe(true);
+      // And once more is a clean no-op or a clear "nothing live", never a second write.
+      const writesBefore = server.requests.filter((request) => request.method === 'PUT').length;
+      await setRolloutPercentage(server.client, target, percentage).catch(() => []);
+      expect(server.requests.filter((request) => request.method === 'PUT')).toHaveLength(writesBefore);
+    },
+  );
+
+  it('revert reports a split state the same way, even with allowNone, and a re-run converges', async () => {
+    let live = [
+      { updateId: 11, platform: 'ios', percentage: 50 },
+      { updateId: 12, platform: 'android', percentage: 50 },
+    ];
+    let androidFailures = 1;
+    const server = fakeXprem({
+      [`GET ${rolloutPath(IOS_RTV)}`]: () => ({ active: live.length > 0, updates: live }),
+      [`POST ${rolloutPath(IOS_RTV)}/revert`]: (request) => {
+        const body = request.body as { expectedUpdateId: number };
+        if (body.expectedUpdateId === 12 && androidFailures-- > 0) return { status: 409, body: { detail: 'busy' } };
+        live = live.filter((update) => update.updateId !== body.expectedUpdateId);
+        return { status: 204 };
+      },
+    });
+    await expect(revertRollout(server.client, target, { allowNone: true })).rejects.toThrow(
+      'ios (update 11) was reverted, and android (update 12) was NOT and is still at 50%.',
+    );
+    await expect(revertRollout(server.client, target, { allowNone: true })).resolves.toMatchObject([
+      { platform: 'android' },
+    ]);
+    expect(live).toEqual([]);
+    await expect(revertRollout(server.client, target, { allowNone: true })).resolves.toEqual([]);
+  });
+
+  it('treats a 404 on the second platform as its own first write having ended it', async () => {
+    const both = [
+      { updateId: 11, platform: 'ios', percentage: 50 },
+      { updateId: 12, platform: 'android', percentage: 50 },
+    ];
+    const server = fakeXprem({
+      // A server whose reads lag: Android still shows as rolling out after the
+      // first revert ended both platforms.
+      [`GET ${rolloutPath(IOS_RTV)}`]: { active: true, updates: both },
+      [`POST ${rolloutPath(IOS_RTV)}/revert`]: (request) =>
+        (request.body as { expectedUpdateId: number }).expectedUpdateId === 12 ? { status: 404 } : { status: 204 },
+    });
+    const reverted = await revertRollout(server.client, target);
+    expect(reverted.map((rollout) => rollout.platform)).toEqual(['ios']);
+  });
+
+  it('revert refuses a live rollout that is not the update named', async () => {
+    const server = fakeXprem({
+      [`GET ${rolloutPath(IOS_RTV)}`]: { active: true, updates: [{ updateId: 11, platform: 'ios', percentage: 50 }] },
+    });
+    for (const options of [{}, { allowNone: true }]) {
+      await expect(revertRollout(server.client, { ...target, expectedUpdateId: '99' }, options)).rejects.toThrow(
+        'The live rollout is update 11, not 99. Nothing was changed.',
+      );
+    }
+    expect(server.requests.every((request) => request.method === 'GET')).toBe(true);
+  });
+
   it('revert fails on a vanished rollout, unless nothing live is an acceptable answer', async () => {
     await expect(revertRollout(vanishing().client, target)).rejects.toThrow('stopped rolling out');
     const tolerant = vanishing();
@@ -343,6 +442,40 @@ describe('judgeCanary', () => {
     expect(verdict({ devicesOnUpdate: 12, successfulDevices: 9, faultyDevices: 3 })).toBe('insufficient-evidence');
     // 2 of 2 = 100%, on fewer than three faulty devices.
     expect(verdict({ devicesOnUpdate: 2, successfulDevices: 0, faultyDevices: 2 })).toBe('insufficient-evidence');
+  });
+
+  it('fires the small-sample rule at exactly its threshold, and not just under it', () => {
+    expect(POLICY.smallSampleFaultyRatePercent).toBe(30);
+    // 3 of 10 is exactly 30.0%.
+    expect(verdict({ devicesOnUpdate: 10, successfulDevices: 7, faultyDevices: 3 })).toBe('unhealthy');
+    // 3 of 11 is 27.3%.
+    expect(verdict({ devicesOnUpdate: 11, successfulDevices: 8, faultyDevices: 3 })).toBe('insufficient-evidence');
+    // 2 of 6 is 33.3%, over the threshold, on fewer than three faulty devices.
+    expect(verdict({ devicesOnUpdate: 6, successfulDevices: 4, faultyDevices: 2 })).toBe('insufficient-evidence');
+  });
+
+  it('allows a rate exactly at the cap and exactly at the margin, and fails one device over', () => {
+    expect(POLICY.maxFaultyRatePercent).toBe(5);
+    // Control at 4.0%: plus 2 points would allow 6.0%, so the 5.0% cap applies.
+    const roughControl = { devicesOnUpdate: 300, successfulDevices: 288, faultyDevices: 12 };
+    expect(
+      judgeCanary({ devicesOnUpdate: 100, successfulDevices: 95, faultyDevices: 5 }, roughControl, POLICY),
+    ).toEqual({
+      verdict: 'healthy',
+      reason:
+        'Healthy: 5.0% faulty (5 of 100 reporting devices), within the 5.0% cap (control at 4.0% plus 2 points would allow 6.0%).',
+    });
+    expect(verdict({ devicesOnUpdate: 100, successfulDevices: 94, faultyDevices: 6 }, roughControl)).toBe('unhealthy');
+    // Control at 3.0% lands the margin exactly on the cap: the margin is named, not the cap.
+    const controlAtThree = { devicesOnUpdate: 300, successfulDevices: 291, faultyDevices: 9 };
+    expect(
+      judgeCanary({ devicesOnUpdate: 100, successfulDevices: 95, faultyDevices: 5 }, controlAtThree, POLICY).reason,
+    ).toBe(
+      'Healthy: 5.0% faulty (5 of 100 reporting devices), within the allowed 5.0% (control at 3.0% plus 2 points).',
+    );
+    // No control: exactly the 2-point margin passes, one more device does not.
+    expect(verdict({ devicesOnUpdate: 150, successfulDevices: 147, faultyDevices: 3 }, null)).toBe('healthy');
+    expect(verdict({ devicesOnUpdate: 150, successfulDevices: 146, faultyDevices: 4 }, null)).toBe('unhealthy');
   });
 
   it('holds, and does not pass, a canary over the allowed rate on too few faulty devices', () => {

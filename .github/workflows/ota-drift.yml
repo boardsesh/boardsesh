@@ -144,6 +144,10 @@ jobs:
             headline='**OTA config drift**: updates.boardsesh.com was read and does not match infra/ota/config.ts. Nothing was changed.'
             log="$RUNNER_TEMP/ota-drift.log"
             pattern='drift:|blocked:|pending manual apply:|licence:'
+          elif [ "$PLAN_RESULT" = "failed" ] && grep -q 'Admin login failed (HTTP 40[13])' "$RUNNER_TEMP/ota-drift.log"; then
+            headline='**OTA admin login refused**: updates.boardsesh.com rejected OTA_ADMIN_EMAIL / OTA_ADMIN_PASSWORD from the ota-stable-release environment. The server is reachable; the password was probably rotated. This is not drift.'
+            log="$RUNNER_TEMP/ota-drift.log"
+            pattern='Admin login failed'
           elif [ "$PLAN_RESULT" = "failed" ]; then
             headline='**OTA drift check failed**: the check itself stopped with an error before it could compare the server with infra/ota/config.ts. This is not drift and says nothing about the server.'
             log="$RUNNER_TEMP/ota-drift.log"
