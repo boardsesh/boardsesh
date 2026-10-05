@@ -29,22 +29,6 @@ vi.mock('react-native', () => ({
     return createElement('div', { 'data-margin-top': marginTop }, children);
   },
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  Pressable: ({
-    children,
-    onPress,
-    accessibilityState,
-    disabled,
-  }: {
-    children?: ReactNode;
-    onPress: () => void;
-    accessibilityState?: { selected: boolean };
-    disabled?: boolean;
-  }) =>
-    createElement(
-      'button',
-      { onClick: onPress, role: 'radio', 'aria-checked': accessibilityState?.selected, disabled },
-      children,
-    ),
 }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 vi.mock('react-i18next', () => ({
@@ -67,6 +51,33 @@ vi.mock('../../Text', () => ({
 vi.mock('../../Button', () => ({
   Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
     createElement('button', { onClick: onPress }, title),
+}));
+vi.mock('../../RadioGroup', () => ({
+  RadioGroup: ({
+    options,
+    value,
+    onChange,
+  }: {
+    options: { value: string; label: string }[];
+    value: string;
+    onChange: (id: string) => void;
+  }) =>
+    createElement(
+      'div',
+      null,
+      options.map((option) =>
+        createElement(
+          'button',
+          {
+            key: option.value,
+            role: 'radio',
+            'aria-checked': option.value === value,
+            onClick: () => onChange(option.value),
+          },
+          option.label,
+        ),
+      ),
+    ),
 }));
 vi.mock('../../ValueSlider', () => ({ ValueSlider: () => null }));
 vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => null }));

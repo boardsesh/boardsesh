@@ -22,7 +22,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   AccessibilityInfo,
-  Pressable,
   ScrollView,
   StyleSheet,
   View,
@@ -33,6 +32,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Button } from '../Button';
+import { RadioGroup } from '../RadioGroup';
 import { ValueSlider } from '../ValueSlider';
 import { adjustValue, notchIndex } from '../value-slider.logic';
 import { ActivityIndicator } from '../ActivityIndicator';
@@ -216,6 +216,17 @@ export function SprayWallLookStep({
     t,
   ]);
 
+  const fallbackOptions = useMemo(
+    () => options.map((option) => ({ value: option.id, label: tCommon(option.labelI18nKey) })),
+    [options, tCommon],
+  );
+  const selectFallbackLook = useCallback(
+    (id: BoardLookOptionId) => {
+      if (!saving) setSelectedId(id);
+    },
+    [saving],
+  );
+
   const selectedLabel = selectedOption ? tCommon(selectedOption.labelI18nKey) : '';
 
   return (
@@ -262,24 +273,13 @@ export function SprayWallLookStep({
                 </Text>
               </>
             )}
-            {options.map((option) => (
-              <Pressable
-                key={option.id}
-                onPress={() => setSelectedId(option.id)}
-                disabled={saving}
-                accessibilityRole="radio"
-                accessibilityState={{ selected: selectedId === option.id, disabled: saving }}
-                style={[
-                  styles.lookOption,
-                  {
-                    backgroundColor:
-                      selectedId === option.id ? systemColors.secondaryBackground : systemColors.background,
-                  },
-                ]}
-              >
-                <Text variant="body">{tCommon(option.labelI18nKey)}</Text>
-              </Pressable>
-            ))}
+            <View
+              style={styles.fallbackChoices}
+              pointerEvents={saving ? 'none' : 'auto'}
+              accessibilityState={{ disabled: saving }}
+            >
+              <RadioGroup options={fallbackOptions} value={selectedId} onChange={selectFallbackLook} />
+            </View>
           </ScrollView>
         )}
       </View>
@@ -357,9 +357,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: spacing[4],
   },
-  lookOption: {
+  fallbackChoices: {
     alignSelf: 'stretch',
-    padding: spacing[3],
   },
   placeholder: {
     alignItems: 'center',
