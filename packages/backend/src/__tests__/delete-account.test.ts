@@ -35,6 +35,11 @@ const { mockDb, txCalls } = vi.hoisted(() => {
 vi.mock('../db/client', () => ({
   db: mockDb,
 }));
+// These existing tests isolate draft cleanup; the real spray/FK contract is in
+// delete-account-spray-walls.test.ts against rolled-back synthetic rows.
+vi.mock('../graphql/resolvers/users/delete-account-spray-walls', () => ({
+  deleteAccountSprayWalls: vi.fn(async () => []),
+}));
 
 function makeAuthCtx(userId = 'user-1'): ConnectionContext {
   return {

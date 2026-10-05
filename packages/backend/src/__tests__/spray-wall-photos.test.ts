@@ -7,9 +7,10 @@ import { sql } from 'drizzle-orm';
 import sharp from 'sharp';
 
 const validateTokenMock = vi.hoisted(() => vi.fn());
-const { uploadedObjects, isS3ConfiguredMock } = vi.hoisted(() => ({
+const { uploadedObjects, isS3ConfiguredMock, uploadRace } = vi.hoisted(() => ({
   uploadedObjects: [] as Array<{ bucket: string; key: string; body: Buffer; contentType: string; options: unknown }>,
   isS3ConfiguredMock: vi.fn(() => true),
+  uploadRace: { onUpload: null as (() => Promise<void>) | null, failDelete: false },
 }));
 
 vi.mock('../middleware/auth', () => ({
@@ -23,7 +24,13 @@ vi.mock('../storage/s3', () => ({
   isS3Configured: isS3ConfiguredMock,
   uploadToS3: vi.fn(async (bucket: string, body: Buffer, key: string, contentType: string, options: unknown = {}) => {
     uploadedObjects.push({ bucket, key, body, contentType, options });
+    if (!key.includes('@') && uploadRace.onUpload) await uploadRace.onUpload();
     return { key };
+  }),
+  deleteFromS3: vi.fn(async (_bucket: string, key: string) => {
+    if (uploadRace.failDelete) throw new Error('synthetic erase failure');
+    const index = uploadedObjects.findIndex((object) => object.key === key);
+    if (index >= 0) uploadedObjects.splice(index, 1);
   }),
 }));
 
@@ -154,6 +161,8 @@ afterEach(async () => {
 });
 
 beforeEach(async () => {
+  uploadRace.onUpload = null;
+  uploadRace.failDelete = false;
   await db.execute(sql`TRUNCATE TABLE "spray_walls", "user_boards" RESTART IDENTITY CASCADE`);
   await Promise.all(ALL_USERS.map(insertUser));
   uploadedObjects.length = 0;
@@ -265,6 +274,43 @@ describe('POST /api/spray-wall-photos', () => {
     expect(response.status).toBe(200);
     const { photoId } = (await response.json()) as { photoId: string };
     expect(uploadedObjects.some((object) => object.key === `spray-walls/${wallUuid}/${photoId}.jpg`)).toBe(true);
+  });
+
+  it('erases a photo and variant when the wall is deleted during upload', async () => {
+    uploadRace.onUpload = async () => {
+      await db.execute(
+        sql`UPDATE spray_walls SET deleted_at = now(), photos_purged_at = now() WHERE board_uuid = ${wallUuid}`,
+      );
+    };
+    const response = await uploadPhoto(baseUrl, {
+      token: OWNER,
+      wallUuid,
+      bytes: await plainPng(),
+      mimeType: 'image/png',
+    });
+    expect(response.status).toBe(404);
+    expect(uploadedObjects).toEqual([]);
+  });
+
+  it('restores a durable purge retry when withdrawn upload cleanup fails', async () => {
+    uploadRace.failDelete = true;
+    uploadRace.onUpload = async () => {
+      await db.execute(
+        sql`UPDATE spray_walls SET deleted_at = now(), photos_purged_at = now() WHERE board_uuid = ${wallUuid}`,
+      );
+    };
+    const response = await uploadPhoto(baseUrl, {
+      token: OWNER,
+      wallUuid,
+      bytes: await plainPng(),
+      mimeType: 'image/png',
+    });
+    expect(response.status).toBe(404);
+    const [wall] = (await db.execute(
+      sql`SELECT photos_purged_at FROM spray_walls WHERE board_uuid = ${wallUuid}`,
+    )) as unknown as Array<{ photos_purged_at: Date | null }>;
+    expect(wall.photos_purged_at).toBeNull();
+    expect(uploadedObjects).toHaveLength(2);
   });
 
   it('refuses a stranger and a missing token', async () => {

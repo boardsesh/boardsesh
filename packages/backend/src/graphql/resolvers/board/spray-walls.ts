@@ -1,8 +1,11 @@
 import { v4 as uuidv4 } from 'uuid';
 import { GraphQLError } from 'graphql';
-import { and, asc, count, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { SPRAY_WALL_WRITE_LOCK_NAMESPACE } from '@boardsesh/shared-schema';
+import { lockWallForWrite } from '../../../services/spray-wall-lock';
+export { lockWallForWrite } from '../../../services/spray-wall-lock';
+import { lockSprayWallAccount } from '../../../services/spray-account-lock';
+import { markDeletedSprayWallPhotoRetry } from '../../../services/spray-photo-erasure-retry';
 import {
   MAX_HOLDS_PER_WALL,
   MAX_SPRAY_WALLS_PER_USER,
@@ -573,36 +576,6 @@ async function resolveReadableVersion(
 }
 
 /**
- * Advisory-lock namespace for spray wall writes. `pg_advisory_xact_lock`'s
- * single-int8 form shares one global lock space with every other advisory-lock
- * caller in the cluster, so this uses the two-int form with an arbitrary
- * namespace — `0x53505259` is ASCII "SPRY". Mirrors
- * `CLIMB_DUPLICATE_LOCK_NAMESPACE` in `climbs/climb-similarity.ts`.
- */
-const SPRAY_WALL_LOCK_NAMESPACE = SPRAY_WALL_WRITE_LOCK_NAMESPACE;
-
-/**
- * Serialize every write that changes a wall's holds or its published version.
- *
- * Editing holds and publishing are TOCTOU by nature: the edit reads "this version
- * is a draft" and then writes, and a publish landing in between turns that write
- * into a silent mutation of a PUBLISHED generation — moving every climb set on it.
- * The lock is keyed on the wall rather than the version because the two sides race
- * on different rows (a version row and the wall's `current_version_id`), so a
- * per-version lock would not make them queue.
- *
- * Transaction-scoped, so it releases on commit or rollback with nothing to clean
- * up. Take it as the FIRST statement in the transaction, before any read whose
- * answer the write depends on.
- */
-export async function lockWallForWrite(
-  tx: { execute: (query: SQL) => Promise<unknown> },
-  wallId: number,
-): Promise<void> {
-  await tx.execute(sql`SELECT pg_advisory_xact_lock(${SPRAY_WALL_LOCK_NAMESPACE}, ${wallId})`);
-}
-
-/**
  * The version being edited, asserted to be a DRAFT of this wall.
  *
  * Published and superseded versions are immutable: a climb set against a
@@ -757,6 +730,16 @@ async function deletePublicWallPhoto(key: string | null | undefined): Promise<vo
     await deleteFromS3('media', key);
   } catch (error) {
     logger.error('Failed to delete a spray wall public photo copy', { key }, error);
+    // Public copies staged before deletion can finish after the prefix purge.
+    // Failed cleanup must re-open that tombstone's durable retry marker.
+    const wallUuid = /^spray-walls\/([^/]+)\//.exec(key)?.[1];
+    if (wallUuid) {
+      try {
+        await markDeletedSprayWallPhotoRetry(wallUuid);
+      } catch (retryError) {
+        logger.error('Failed to mark withdrawn public photo for erasure retry', { wallUuid }, retryError);
+      }
+    }
   }
 }
 
@@ -1668,6 +1651,13 @@ export const sprayWallMutations = {
     const slug = await generateUniqueSlug(validated.name);
 
     const created = await db.transaction(async (tx) => {
+      await lockSprayWallAccount(tx, userId);
+      const [account] = await tx
+        .select({ id: dbSchema.users.id })
+        .from(dbSchema.users)
+        .where(eq(dbSchema.users.id, userId))
+        .limit(1);
+      if (!account) throw notFoundError();
       // ONE sequence value is BOTH the layout id and the size id: a wall has
       // exactly one size, itself.
       const { layoutId, sizeId } = await allocateWallIds(tx);
@@ -2179,7 +2169,11 @@ export const sprayWallMutations = {
         }
 
         const [boardNow] = await tx
-          .select({ isPublic: dbSchema.userBoards.isPublic })
+          .select({
+            isPublic: dbSchema.userBoards.isPublic,
+            deletedAt: dbSchema.userBoards.deletedAt,
+            ownerId: dbSchema.userBoards.ownerId,
+          })
           .from(dbSchema.userBoards)
           .where(eq(dbSchema.userBoards.id, board.id))
           .limit(1);
@@ -2191,11 +2185,17 @@ export const sprayWallMutations = {
             hiddenAt: dbSchema.sprayWalls.hiddenAt,
             pendingIsPublic: dbSchema.sprayWalls.pendingIsPublic,
             pendingIsUnlisted: dbSchema.sprayWalls.pendingIsUnlisted,
+            deletedAt: dbSchema.sprayWalls.deletedAt,
           })
           .from(dbSchema.sprayWalls)
           .where(eq(dbSchema.sprayWalls.id, wall.id))
           .limit(1);
 
+        // A copy was staged outside the lock. Account or wall deletion may have
+        // withdrawn ownership while it was copying; catch below erases the copy.
+        if (!boardNow || !wallNow || boardNow.deletedAt || wallNow.deletedAt || boardNow.ownerId !== board.ownerId) {
+          throw notFoundError();
+        }
         await tx.update(dbSchema.userBoards).set(updates).where(eq(dbSchema.userBoards.id, board.id));
 
         if (losingPublic) {
