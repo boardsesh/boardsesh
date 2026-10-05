@@ -605,17 +605,33 @@ in the environment.
 
 How a canary is judged (`judgeCanary`, thresholds in `infra/ota/config.ts`):
 
-1. Counts that are not finite numbers, or more faulty devices than devices on the update, are not
-   evidence.
-2. The allowed faulty-device rate is the control's rate plus 2 points, capped at 5%. A control with
+1. Counts that are not finite, non-negative numbers are not evidence.
+2. More faulty devices than devices on the update is treated as a crash loop: an update that
+   crashes at launch falls back to the embedded bundle, so its devices stop counting as on the
+   update. On 3 or more faulty devices that is unhealthy; on fewer there is not enough evidence.
+3. The allowed faulty-device rate is the control's rate plus 2 points, capped at 5%. A control with
    fewer than 15 reporting devices counts as 0%, so a tiny or broken control cannot raise the bar.
-3. Below 15 reporting devices the canary is never healthy. It is unhealthy only on 3 or more faulty
+4. Below 15 reporting devices the canary is never healthy. It is unhealthy only on 3 or more faulty
    devices at 30% or more; otherwise there is not enough evidence.
-4. From 15 devices up: over the allowed rate on 3 or more faulty devices is unhealthy, over it on
+5. From 15 devices up: over the allowed rate on 3 or more faulty devices is unhealthy, over it on
    fewer is not enough evidence, and anything else is healthy.
+
+Every verdict comes with a reason that names the rule behind it.
 
 Launch and JS issue counts are printed and not judged: whether the server reports them as running
 totals or per-minute counts is not known yet.
+
+**What the throwaway-branch proof must establish** before any of this decides a release:
+
+1. The full sequence on a scratch branch: start a rollout, publish refused, rollback refused,
+   revert, publish accepted.
+2. What an anonymous manifest request is served while a rollout is live.
+3. Whether `expectedUpdateId` must be sent as a number or a string.
+4. Whether one rollout write moves every platform that shares a runtime version.
+5. Whether a device that fell back to the embedded bundle still counts in `devicesOnUpdate`. Rule 2
+   above assumes it does not.
+6. Whether `updateIssues` and `runtimeIssues` are running totals or per-minute counts.
+7. How the server words a refusal of a licensed feature.
 
 `mobile-ota-unlock.yml` wraps `revert --if-live` for publishers that must not be refused by a live
 canary. It takes the iOS and the Android runtime version in one run. It is dispatch-only: a

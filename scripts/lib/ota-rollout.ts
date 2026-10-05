@@ -203,22 +203,22 @@ export interface CanaryJudgement {
 }
 
 interface JudgedCohort {
+  devicesOnUpdate: number;
+  /** Devices that reported an outcome: successful plus faulty. */
   judged: number;
   faulty: number;
   ratePercent: number;
 }
 
-/**
- * A cohort's numbers, or null when they cannot be trusted: a count that is not a
- * finite non-negative number, or more faulty devices than devices on the update.
- */
+const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
+/** A cohort's numbers, or null when a count is not a finite non-negative number. */
 function judgedCohort(health: XpremUpdateHealth | null): JudgedCohort | null {
   if (!health) return null;
-  const counts = [health.devicesOnUpdate, health.successfulDevices, health.faultyDevices];
-  if (counts.some((value) => typeof value !== 'number' || !Number.isFinite(value) || value < 0)) return null;
-  if (health.faultyDevices > health.devicesOnUpdate) return null;
+  if (![health.devicesOnUpdate, health.successfulDevices, health.faultyDevices].every(isCount)) return null;
   const judged = health.successfulDevices + health.faultyDevices;
   return {
+    devicesOnUpdate: health.devicesOnUpdate,
     judged,
     faulty: health.faultyDevices,
     ratePercent: judged === 0 ? 0 : (100 * health.faultyDevices) / judged,
@@ -233,15 +233,21 @@ function judgedCohort(health: XpremUpdateHealth | null): JudgedCohort | null {
  * canary per platform, so "unsure" is the common case and finishing on it would
  * make the canary decorative.
  *
- * The rules, in order:
- *   1. Numbers that cannot be trusted are not evidence.
- *   2. The allowed faulty rate is the control's rate plus a margin, capped at an
+ * The rules, in order. Every reason names the rule that produced the verdict,
+ * because it is read by someone deciding whether to revert.
+ *   1. Counts that are not finite, non-negative numbers are not evidence.
+ *   2. More faulty devices than devices on the update is the signature of the
+ *      failure a canary exists to catch: an update that crashes at launch falls
+ *      back to the embedded bundle, so its devices stop counting as "on the
+ *      update" while their failures are still recorded. On enough faulty devices
+ *      that is unhealthy; on fewer it is not yet evidence.
+ *   3. The allowed faulty rate is the control's rate plus a margin, capped at an
  *      absolute maximum. A control with fewer reporting devices than the evidence
  *      floor counts as 0%: one faulty device out of one is a 100% baseline that
  *      would pass any canary, and so would a control that is itself broken.
- *   3. Below the evidence floor the only possible verdicts are "not enough" and,
+ *   4. Below the evidence floor the only possible verdicts are "not enough" and,
  *      on enough faulty devices at a rate far above anything normal, "unhealthy".
- *   4. At or above the floor: over the allowed rate on enough faulty devices is
+ *   5. At or above the floor: over the allowed rate on enough faulty devices is
  *      unhealthy; over it on too few is "not enough"; otherwise healthy.
  */
 export function judgeCanary(
@@ -256,47 +262,88 @@ export function judgeCanary(
     policy.maxFaultyRatePercent,
     policy.smallSampleFaultyRatePercent,
   ];
-  if (thresholds.some((value) => typeof value !== 'number' || !Number.isFinite(value) || value < 0)) {
-    return { verdict: 'insufficient-evidence', reason: 'The health policy holds a value that is not a number.' };
+  if (!thresholds.every(isCount)) {
+    return {
+      verdict: 'insufficient-evidence',
+      reason: 'Not judged: the health policy holds a value that is not a finite, non-negative number.',
+    };
   }
   if (!canary) {
-    return { verdict: 'insufficient-evidence', reason: 'The server reports no health for the canary update.' };
+    return {
+      verdict: 'insufficient-evidence',
+      reason: 'Not enough evidence: the server reports no health for the canary update.',
+    };
   }
   const cohort = judgedCohort(canary);
   if (!cohort) {
     return {
       verdict: 'insufficient-evidence',
-      reason: 'The canary health counts are not usable numbers, or report more faulty devices than devices.',
+      reason: 'Not enough evidence: the canary health counts are not finite, non-negative numbers.',
     };
   }
-  const controlCohort = judgedCohort(control);
-  const controlIsUsable = controlCohort !== null && controlCohort.judged >= policy.evidenceFloorDevicesPerPlatform;
-  const controlRate = controlIsUsable ? controlCohort.ratePercent : 0;
-  const allowedRate = Math.min(controlRate + policy.maxFaultyRateOverControlPercent, policy.maxFaultyRatePercent);
-  const baseline = controlIsUsable ? `control at ${controlRate.toFixed(1)}%` : 'no usable control';
-  const rates =
-    `${cohort.ratePercent.toFixed(1)}% faulty (${cohort.faulty} of ${cohort.judged}) ` +
-    `against an allowed ${allowedRate.toFixed(1)}% (${baseline})`;
-  const enoughFaulty = cohort.faulty >= policy.minFaultyDevicesToFail;
+  const floor = policy.evidenceFloorDevicesPerPlatform;
+  const minFaulty = policy.minFaultyDevicesToFail;
 
-  if (cohort.judged < policy.evidenceFloorDevicesPerPlatform) {
+  if (cohort.faulty > cohort.devicesOnUpdate) {
+    // The rate is taken against the larger of the two counts, so it cannot read over 100%.
+    const denominator = Math.max(cohort.devicesOnUpdate, cohort.faulty);
+    const counts =
+      `${cohort.faulty} faulty device(s) against ${cohort.devicesOnUpdate} on the update ` +
+      `(${((100 * cohort.faulty) / denominator).toFixed(1)}% of ${denominator})`;
+    const signature =
+      'More faulty devices than devices on the update is what a crash loop that falls back to the embedded bundle produces';
+    return cohort.faulty >= minFaulty
+      ? {
+          verdict: 'unhealthy',
+          reason: `Unhealthy: ${counts}. ${signature}, and ${cohort.faulty} meets the minimum of ${minFaulty} faulty devices.`,
+        }
+      : {
+          verdict: 'insufficient-evidence',
+          reason: `Not enough evidence: ${counts}. ${signature}, but ${cohort.faulty} is below the minimum of ${minFaulty} faulty devices.`,
+        };
+  }
+
+  const controlCohort = judgedCohort(control);
+  const controlIsUsable = controlCohort !== null && controlCohort.judged >= floor;
+  const controlRate = controlIsUsable ? controlCohort.ratePercent : 0;
+  const relativeAllowance = controlRate + policy.maxFaultyRateOverControlPercent;
+  const allowedRate = Math.min(relativeAllowance, policy.maxFaultyRatePercent);
+  const baseline = controlIsUsable ? `control at ${controlRate.toFixed(1)}%` : 'no usable control, so 0%';
+  const margin = `${baseline} plus ${policy.maxFaultyRateOverControlPercent} points`;
+  // Name the rule that set the allowance: the margin over the control, or the cap.
+  const allowance =
+    relativeAllowance > policy.maxFaultyRatePercent
+      ? `the ${policy.maxFaultyRatePercent.toFixed(1)}% cap (${margin} would allow ${relativeAllowance.toFixed(1)}%)`
+      : `the allowed ${allowedRate.toFixed(1)}% (${margin})`;
+  const observed = `${cohort.ratePercent.toFixed(1)}% faulty (${cohort.faulty} of ${cohort.judged} reporting devices)`;
+  const enoughFaulty = cohort.faulty >= minFaulty;
+
+  if (cohort.judged < floor) {
     if (enoughFaulty && cohort.ratePercent >= policy.smallSampleFaultyRatePercent) {
-      return { verdict: 'unhealthy', reason: `Canary is ${rates}, on a small sample.` };
+      return {
+        verdict: 'unhealthy',
+        reason:
+          `Unhealthy on a small sample: ${observed} against the ${policy.smallSampleFaultyRatePercent}% small-sample ` +
+          `threshold, on at least ${minFaulty} faulty devices. Only ${cohort.judged} of the ${floor} devices a normal verdict needs have reported.`,
+      };
     }
     return {
       verdict: 'insufficient-evidence',
-      reason: `${cohort.judged} device(s) have reported on the canary; ${policy.evidenceFloorDevicesPerPlatform} are needed.`,
+      reason: `Not enough evidence: ${cohort.judged} device(s) have reported on the canary and ${floor} are needed.`,
     };
   }
   if (cohort.ratePercent > allowedRate) {
     return enoughFaulty
-      ? { verdict: 'unhealthy', reason: `Canary is ${rates}.` }
+      ? {
+          verdict: 'unhealthy',
+          reason: `Unhealthy: ${observed}, over ${allowance}, on at least ${minFaulty} faulty devices.`,
+        }
       : {
           verdict: 'insufficient-evidence',
-          reason: `Canary is ${rates}, on fewer than ${policy.minFaultyDevicesToFail} faulty devices.`,
+          reason: `Not enough evidence: ${observed} is over ${allowance}, but on fewer than ${minFaulty} faulty devices.`,
         };
   }
-  return { verdict: 'healthy', reason: `Canary is ${rates}.` };
+  return { verdict: 'healthy', reason: `Healthy: ${observed}, within ${allowance}.` };
 }
 
 export interface RolloutHealth {
@@ -347,12 +394,20 @@ export async function readRolloutHealth(
   policy: OtaHealthPolicy,
 ): Promise<RolloutHealth[]> {
   const rollouts = await readRollout(client, branch, runtimeVersion);
+  const uuidOf = async (updateId: XpremId | null): Promise<string | null> =>
+    updateId === null ? null : (await client.getUpdateDetails(branch, runtimeVersion, updateId)).updateUUID;
+  // Every platform's canary and control at once: they are independent reads.
+  const resolved = await Promise.all(
+    rollouts.map(async (rollout) => {
+      const [canaryUpdateUUID, controlUpdateUUID] = await Promise.all([
+        uuidOf(rollout.updateId),
+        uuidOf(rollout.controlUpdateId),
+      ]);
+      return { rollout, canaryUpdateUUID, controlUpdateUUID };
+    }),
+  );
   const results: RolloutHealth[] = [];
-  for (const rollout of rollouts) {
-    const uuidOf = async (updateId: XpremId): Promise<string | null> =>
-      (await client.getUpdateDetails(branch, runtimeVersion, updateId)).updateUUID;
-    const canaryUpdateUUID = await uuidOf(rollout.updateId);
-    const controlUpdateUUID = rollout.controlUpdateId === null ? null : await uuidOf(rollout.controlUpdateId);
+  for (const { rollout, canaryUpdateUUID, controlUpdateUUID } of resolved) {
     if (canaryUpdateUUID === null) {
       results.push({
         rollout,
@@ -363,7 +418,7 @@ export async function readRolloutHealth(
         canaryIssues: null,
         judgement: {
           verdict: 'insufficient-evidence',
-          reason: `Update ${rollout.updateId} has no update UUID, so its health cannot be read.`,
+          reason: `Not enough evidence: update ${rollout.updateId} has no update UUID, so its health cannot be read.`,
         },
       });
       continue;

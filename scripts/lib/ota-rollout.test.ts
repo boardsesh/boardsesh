@@ -263,7 +263,8 @@ describe('judgeCanary', () => {
     const canary = { devicesOnUpdate: 40, successfulDevices: 39, faultyDevices: 1 };
     expect(judgeCanary(canary, control, POLICY)).toEqual({
       verdict: 'healthy',
-      reason: 'Canary is 2.5% faulty (1 of 40) against an allowed 3.0% (control at 1.0%).',
+      reason:
+        'Healthy: 2.5% faulty (1 of 40 reporting devices), within the allowed 3.0% (control at 1.0% plus 2 points).',
     });
   });
 
@@ -271,7 +272,8 @@ describe('judgeCanary', () => {
     const canary = { devicesOnUpdate: 40, successfulDevices: 34, faultyDevices: 6 };
     expect(judgeCanary(canary, control, POLICY)).toEqual({
       verdict: 'unhealthy',
-      reason: 'Canary is 15.0% faulty (6 of 40) against an allowed 3.0% (control at 1.0%).',
+      reason:
+        'Unhealthy: 15.0% faulty (6 of 40 reporting devices), over the allowed 3.0% (control at 1.0% plus 2 points), on at least 3 faulty devices.',
     });
   });
 
@@ -297,7 +299,7 @@ describe('judgeCanary', () => {
     expect(judgeCanary(canary, tinyBadControl, POLICY)).toEqual({
       verdict: 'insufficient-evidence',
       reason:
-        'Canary is 5.0% faulty (2 of 40) against an allowed 2.0% (no usable control), on fewer than 3 faulty devices.',
+        'Not enough evidence: 5.0% faulty (2 of 40 reporting devices) is over the allowed 2.0% (no usable control, so 0% plus 2 points), but on fewer than 3 faulty devices.',
     });
   });
 
@@ -306,7 +308,8 @@ describe('judgeCanary', () => {
     const canary = { devicesOnUpdate: 50, successfulDevices: 45, faultyDevices: 5 };
     expect(judgeCanary(canary, brokenControl, POLICY)).toEqual({
       verdict: 'unhealthy',
-      reason: 'Canary is 10.0% faulty (5 of 50) against an allowed 5.0% (control at 50.0%).',
+      reason:
+        'Unhealthy: 10.0% faulty (5 of 50 reporting devices), over the 5.0% cap (control at 50.0% plus 2 points would allow 52.0%), on at least 3 faulty devices.',
     });
     // Within the cap, a canary no worse than a rough control passes.
     const roughControl = { devicesOnUpdate: 300, successfulDevices: 288, faultyDevices: 12 };
@@ -318,7 +321,7 @@ describe('judgeCanary', () => {
     const spotless = { devicesOnUpdate: 14, successfulDevices: 14, faultyDevices: 0 };
     expect(judgeCanary(spotless, control, POLICY)).toEqual({
       verdict: 'insufficient-evidence',
-      reason: '14 device(s) have reported on the canary; 15 are needed.',
+      reason: 'Not enough evidence: 14 device(s) have reported on the canary and 15 are needed.',
     });
     expect(verdict(null)).toBe('insufficient-evidence');
     // Devices are on the update, but none has reported an outcome yet.
@@ -329,7 +332,13 @@ describe('judgeCanary', () => {
 
   it('below the floor, is unhealthy only on enough faulty devices at a very high rate', () => {
     // 4 of 10 = 40%, at or over the 30% small-sample threshold, on 4 faulty devices.
-    expect(verdict({ devicesOnUpdate: 10, successfulDevices: 6, faultyDevices: 4 })).toBe('unhealthy');
+    // The reason quotes the threshold that fired, not the control-based allowance.
+    expect(judgeCanary({ devicesOnUpdate: 10, successfulDevices: 6, faultyDevices: 4 }, control, POLICY)).toEqual({
+      verdict: 'unhealthy',
+      reason:
+        'Unhealthy on a small sample: 40.0% faulty (4 of 10 reporting devices) against the 30% small-sample ' +
+        'threshold, on at least 3 faulty devices. Only 10 of the 15 devices a normal verdict needs have reported.',
+    });
     // 3 of 12 = 25%: far over the allowed rate, but under the small-sample threshold.
     expect(verdict({ devicesOnUpdate: 12, successfulDevices: 9, faultyDevices: 3 })).toBe('insufficient-evidence');
     // 2 of 2 = 100%, on fewer than three faulty devices.
@@ -347,6 +356,47 @@ describe('judgeCanary', () => {
     expect(verdict(rough, null)).toBe('unhealthy');
   });
 
+  it('calls more faulty devices than devices on the update a crash loop, on enough faulty devices', () => {
+    // A crash at launch falls back to the embedded bundle: the device stops
+    // counting as on the update while its failure is still recorded.
+    expect(judgeCanary({ devicesOnUpdate: 1, successfulDevices: 1, faultyDevices: 4 }, control, POLICY)).toEqual({
+      verdict: 'unhealthy',
+      reason:
+        'Unhealthy: 4 faulty device(s) against 1 on the update (100.0% of 4). More faulty devices than devices on ' +
+        'the update is what a crash loop that falls back to the embedded bundle produces, and 4 meets the minimum of 3 faulty devices.',
+    });
+    // Nothing reported successful at all, and nothing left on the update.
+    expect(verdict({ devicesOnUpdate: 0, successfulDevices: 0, faultyDevices: 20 })).toBe('unhealthy');
+    // Holds whatever the control looks like: this rule does not compare rates.
+    expect(verdict({ devicesOnUpdate: 2, successfulDevices: 40, faultyDevices: 3 }, null)).toBe('unhealthy');
+  });
+
+  it('does not call it a crash loop on fewer faulty devices than the minimum', () => {
+    expect(judgeCanary({ devicesOnUpdate: 1, successfulDevices: 30, faultyDevices: 2 }, control, POLICY)).toEqual({
+      verdict: 'insufficient-evidence',
+      reason:
+        'Not enough evidence: 2 faulty device(s) against 1 on the update (100.0% of 2). More faulty devices than ' +
+        'devices on the update is what a crash loop that falls back to the embedded bundle produces, but 2 is below the minimum of 3 faulty devices.',
+    });
+    expect(verdict({ devicesOnUpdate: 0, successfulDevices: 0, faultyDevices: 1 })).toBe('insufficient-evidence');
+  });
+
+  it('names the rule behind every verdict', () => {
+    const reasons = [
+      judgeCanary(null, control, POLICY),
+      judgeCanary({ devicesOnUpdate: Number.NaN, successfulDevices: 1, faultyDevices: 0 }, control, POLICY),
+      judgeCanary({ devicesOnUpdate: 40, successfulDevices: 40, faultyDevices: 0 }, control, {
+        ...POLICY,
+        minFaultyDevicesToFail: Number.NaN,
+      }),
+    ].map((judgement) => judgement.reason);
+    expect(reasons).toEqual([
+      'Not enough evidence: the server reports no health for the canary update.',
+      'Not enough evidence: the canary health counts are not finite, non-negative numbers.',
+      'Not judged: the health policy holds a value that is not a finite, non-negative number.',
+    ]);
+  });
+
   it('refuses to judge numbers it cannot trust', () => {
     const usable = { devicesOnUpdate: 40, successfulDevices: 40, faultyDevices: 0 };
     expect(verdict(usable)).toBe('healthy');
@@ -356,8 +406,6 @@ describe('judgeCanary', () => {
       { ...usable, faultyDevices: Number.POSITIVE_INFINITY },
       { ...usable, successfulDevices: -1 },
       { ...usable, faultyDevices: '3' as unknown as number },
-      // More faulty devices than devices on the update.
-      { devicesOnUpdate: 5, successfulDevices: 30, faultyDevices: 6 },
     ]) {
       expect(verdict(broken), JSON.stringify(broken)).toBe('insufficient-evidence');
     }
@@ -425,6 +473,35 @@ describe('readRolloutHealth', () => {
       canaryIssues: { updateIssues: 0, runtimeIssues: 9 },
       judgement: { verdict: 'unhealthy' },
     });
+  });
+
+  it('holds a platform whose canary has no update UUID, without reading health for it', async () => {
+    const controlUUID = '2d55b3b3-cc04-1a38-217b-92ec1ff5d2ff';
+    const updates = `${FAKE_APP}/branch/production/runtimeVersion/${IOS_RTV}/updates`;
+    const server = fakeXprem({
+      [`GET ${rolloutPath(IOS_RTV)}`]: {
+        active: true,
+        updates: [{ updateId: 11, controlUpdateId: 10, platform: 'ios', percentage: 5 }],
+      },
+      // Details exist, but carry no UUID: health is keyed on it, so there is nothing to ask for.
+      [`GET ${updates}/11`]: { updateId: 11 },
+      [`GET ${updates}/10`]: { updateId: 10, updateUUID: controlUUID },
+    });
+    await expect(readRolloutHealth(server.client, 'production', IOS_RTV, POLICY)).resolves.toEqual([
+      {
+        rollout: expect.objectContaining({ platform: 'ios', updateId: 11 }),
+        canaryUpdateUUID: null,
+        controlUpdateUUID: controlUUID,
+        canary: null,
+        control: null,
+        canaryIssues: null,
+        judgement: {
+          verdict: 'insufficient-evidence',
+          reason: 'Not enough evidence: update 11 has no update UUID, so its health cannot be read.',
+        },
+      },
+    ]);
+    expect(server.log().some((entry) => entry.includes('update-health'))).toBe(false);
   });
 
   it('reports insufficient evidence when the server has no health row for the canary', async () => {

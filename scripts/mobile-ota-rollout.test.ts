@@ -166,7 +166,7 @@ describe('runRolloutCommand', () => {
     });
     const args = parseRolloutArgs(['health', '--update-id', canary, '--control-update-id', control]);
     await expect(runRolloutCommand(server.client, args, POLICY)).resolves.toEqual([
-      `[ota-rollout] ${canary}: insufficient-evidence. 6 device(s) have reported on the canary; 15 are needed.`,
+      `[ota-rollout] ${canary}: insufficient-evidence. Not enough evidence: 6 device(s) have reported on the canary and 15 are needed.`,
     ]);
   });
 });
