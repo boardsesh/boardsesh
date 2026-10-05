@@ -18,7 +18,7 @@ import type { BoardName } from '@boardsesh/board-constants';
 import { fingerprintFromHolds } from '@boardsesh/kilter-sync/sync';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { recomputeMissingHoldCountForClimb } from '@boardsesh/db/queries';
+import { recomputeMissingHoldCountForClimb, type ClimbStatsKey } from '@boardsesh/db/queries';
 import { UNIFIED_TABLES, isValidBoardName } from '../../../db/queries/util/table-select';
 import { publishSocialEvent } from '../../../events';
 import { notifyClimbRevalidated } from '../../../lib/web-revalidate';
@@ -34,6 +34,11 @@ import {
   type ClimbRevisionNumbers,
 } from './climb-revisions';
 import { deleteClimbDependentRows } from './climb-cleanup';
+import {
+  markStatsKeysForHoldsChange,
+  queueHoldsChangeStatsRefresh,
+  recomputeStatsAfterHoldsChange,
+} from './holds-change-stats';
 import {
   SPRAY_CLIMB_CODES,
   assertSprayAngleMatchesWall,
@@ -101,10 +106,16 @@ type DeleteDraftClimbArgs = { uuid: unknown; boardType: unknown };
 
 /**
  * What `updateClimb`'s transaction hands back: the climb's revision numbers once
- * it has committed, and `replayedPublishAt` only when the call turned out to be
- * a publish that had already landed and so wrote nothing.
+ * it has committed; `replayedPublishAt` only when the call turned out to be a
+ * publish that had already landed and so wrote nothing; and the stats keys a
+ * holds change recomputed, for the refresh that follows the commit. Returned
+ * rather than assigned from inside the callback, so those keys exist only for a
+ * transaction that committed.
  */
-type UpdateClimbOutcome = ClimbRevisionNumbers & { replayedPublishAt?: string | null };
+type UpdateClimbOutcome = ClimbRevisionNumbers & {
+  replayedPublishAt?: string | null;
+  holdsChangeStatsKeys: ClimbStatsKey[];
+};
 
 function generateClimbUuid(): string {
   // Match Aurora-style uppercase UUID without dashes
@@ -1155,6 +1166,7 @@ export const climbMutations = {
         if (replaysLandedPublish) {
           return {
             replayedPublishAt: beforeEdit.publishedAt,
+            holdsChangeStatsKeys: [],
             revisionNumber: beforeEdit.revisionNumber,
             holdsRevisionNumber: beforeEdit.holdsRevisionNumber,
           };
@@ -1163,6 +1175,19 @@ export const climbMutations = {
           extensions: { code: CLIMB_EDIT_CONFLICT_ERROR_CODE },
         });
       }
+
+      // A request that changes the frames string or the frame count may move
+      // the holds epoch, which restarts the climb's stats (#6023). Mark the
+      // affected stats keys now, before this edit writes any stats row: see
+      // `markStatsKeysForHoldsChange` for why the order matters. Whether the
+      // holds really moved is `recordClimbRevision`'s call, at the end; this is
+      // a superset of it (the same holds re-sent in another order also lands
+      // here). A draft has no revisions and no epoch to move.
+      const holdsMayMove =
+        !beforeEdit.isDraft &&
+        (framesChanged ||
+          (validated.framesCount !== undefined && validated.framesCount !== (beforeEdit.framesCount ?? 1)));
+      const sentStatsKeys = holdsMayMove ? await markStatsKeysForHoldsChange(tx, boardType, validated.uuid) : [];
 
       // Build the update set from provided fields only.
       const updateSet: Record<string, unknown> = {
@@ -1326,13 +1351,23 @@ export const climbMutations = {
 
       // Last, so it reads the row and the stats row this edit just wrote. The
       // editor is the CALLER, who on a spray wall may not be the setter.
-      return recordClimbRevision(tx, {
+      const revisionNumbers = await recordClimbRevision(tx, {
         boardType,
         climbUuid: validated.uuid,
         before: beforeEdit,
         editorId: ctx.userId!,
         sprayTarget,
       });
+      // A moved hold starts the climb's sends, first ascent and stars over
+      // (#6023). The epoch only ever moves to a new, higher revision, so a
+      // different number than the locked row held means this edit moved it. In
+      // this transaction, so the new epoch and the stats that read it commit
+      // together.
+      const holdsEpochMoved = revisionNumbers.holdsRevisionNumber !== beforeEdit.holdsRevisionNumber;
+      if (holdsEpochMoved) {
+        await recomputeStatsAfterHoldsChange(tx, sentStatsKeys);
+      }
+      return { ...revisionNumbers, holdsChangeStatsKeys: holdsEpochMoved ? sentStatsKeys : [] };
     });
 
     // A replayed publish: the first one did the work, announced the climb and
@@ -1351,6 +1386,8 @@ export const climbMutations = {
     // Tell the web app to drop the cached climb-view render so the edit
     // shows up immediately instead of waiting for the 1h TTL.
     void notifyClimbRevalidated(validated.uuid);
+
+    queueHoldsChangeStatsRefresh(outcome.holdsChangeStatsKeys);
 
     // On a draft → published transition, announce the new climb so follower
     // feeds pick it up, the same way saveClimb does.

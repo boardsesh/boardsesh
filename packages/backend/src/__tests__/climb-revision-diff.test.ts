@@ -110,23 +110,61 @@ describe('diffClimbRevisionStates', () => {
 
 describe('holdsMoved', () => {
   it('is false for two identical states', () => {
-    expect(holdsMoved(published(), published())).toBe(false);
+    expect(holdsMoved('spray', published(), published())).toBe(false);
   });
 
-  it('is true when the frames or the frame count differ', () => {
-    expect(holdsMoved(published(), published({ frames: 'p1r1p3r3' }))).toBe(true);
-    expect(holdsMoved(published(), published({ framesCount: 2 }))).toBe(true);
+  it('is true when a hold is added, removed or swapped, or the frame count differs', () => {
+    expect(holdsMoved('spray', published(), published({ frames: 'p1r1p3r3' }))).toBe(true);
+    expect(holdsMoved('spray', published(), published({ frames: 'p1r1p2r3p3r2' }))).toBe(true);
+    expect(holdsMoved('spray', published(), published({ frames: 'p1r1' }))).toBe(true);
+    expect(holdsMoved('spray', published(), published({ framesCount: 2 }))).toBe(true);
+  });
+
+  it('is false for the same holds listed in a different order', () => {
+    // The app re-encodes frames in ascending hold-id order on every save. A
+    // stored string from another encoder must not read as a hold change, or a
+    // rename would restart the climb's sends.
+    expect(holdsMoved('spray', published({ frames: 'p2r3p1r1' }), published({ frames: 'p1r1p2r3' }))).toBe(false);
+    expect(
+      holdsMoved(
+        'kilter',
+        published({ frames: 'p1140r15p1117r12p1200r13' }),
+        published({ frames: 'p1117r12p1140r15p1200r13' }),
+      ),
+    ).toBe(false);
+    // And so the diff records no edit for it either.
+    expect(
+      diffClimbRevisionStates('spray', published({ frames: 'p2r3p1r1' }), published({ frames: 'p1r1p2r3' })),
+    ).toEqual([]);
+  });
+
+  it('is true when only a role changes', () => {
+    expect(holdsMoved('spray', published(), published({ frames: 'p1r1p2r2' }))).toBe(true);
+    expect(diffClimbRevisionStates('spray', published(), published({ frames: 'p1r1p2r2' }))).toEqual(['holds']);
+  });
+
+  it('compares a multi-frame climb frame by frame', () => {
+    const route = published({ frames: 'p1117r12p1140r15,p1200r13', framesCount: 2 });
+    // The same holds, reordered inside each frame.
+    expect(holdsMoved('kilter', route, published({ frames: 'p1140r15p1117r12,p1200r13', framesCount: 2 }))).toBe(false);
+    // A hold that moves to the other frame is a different route.
+    expect(holdsMoved('kilter', route, published({ frames: 'p1117r12,p1140r15p1200r13', framesCount: 2 }))).toBe(true);
+    // So is a hold added to one frame.
+    expect(
+      holdsMoved('kilter', route, published({ frames: 'p1117r12p1140r15,p1200r13p1201r13', framesCount: 2 })),
+    ).toBe(true);
   });
 
   it('is false for a pace-only edit, which the diff still reports under `holds`', () => {
     const slower = published({ framesPace: 900 });
     expect(diffClimbRevisionStates('kilter', published(), slower)).toEqual(['holds']);
-    expect(holdsMoved(published(), slower)).toBe(false);
+    expect(holdsMoved('kilter', published(), slower)).toBe(false);
   });
 
   it('is false for every edit that leaves the holds where they were', () => {
     expect(
       holdsMoved(
+        'spray',
         published(),
         published({
           name: 'Renamed',
@@ -140,7 +178,7 @@ describe('holdsMoved', () => {
   });
 
   it('treats a missing frame count as 1 and missing frames as empty', () => {
-    expect(holdsMoved(published({ framesCount: null }), published({ framesCount: 1 }))).toBe(false);
-    expect(holdsMoved(published({ frames: null }), published({ frames: '' }))).toBe(false);
+    expect(holdsMoved('spray', published({ framesCount: null }), published({ framesCount: 1 }))).toBe(false);
+    expect(holdsMoved('spray', published({ frames: null }), published({ frames: '' }))).toBe(false);
   });
 });

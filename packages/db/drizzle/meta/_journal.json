@@ -1772,6 +1772,13 @@
       "when": 1791203098580,
       "tag": "0252_tick_climb_revision",
       "breakpoints": true
+    },
+    {
+      "idx": 253,
+      "version": "7",
+      "when": 1791207959498,
+      "tag": "0253_climb_holds_moved_index",
+      "breakpoints": true
     }
   ]
 }

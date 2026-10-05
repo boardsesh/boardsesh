@@ -86,6 +86,40 @@ listed under "Batch families", the provider roles' below. Runtime users must
 never be migration owners. The existing runtime and detector grant contracts
 remain supported.
 
+### A new worker image can start before the migrator has run
+
+A push to `main` starts two workflows that do not wait for each other:
+
+| Workflow | What it does | When the new code is live |
+| --- | --- | --- |
+| `background-worker-image.yml` | builds the worker image, then `dispatch-homelab` tells the homelab to deploy that digest | as soon as one image build finishes |
+| `production-deploy.yml` | builds the web and backend images, then `migrate` (migrations, then `initializeJobQueueSchema` with `MIGRATION_WORKER_ROLES`), then the deploys | `migrate` needs both image builds and runs under the Production environment, where a run can sit parked |
+
+So the worker can win, and with one build against two it is the likelier
+side. A worker job that reads a column the same push
+adds, or needs a grant the same push adds, fails with `column does not exist`
+or `permission denied` from the homelab deploy until `migrate` finishes. The
+job's own retry and its next schedule slot recover it; nothing is written wrong
+in between. If the production run is parked, the gap lasts as long as the park.
+
+To keep that gap at zero, ship the schema and the grant one merge ahead of the
+code that needs them:
+
+1. the PR that adds a column also adds it to every column-level grant list in
+   `WORKER_ROLE_DATA_GRANTS` whose role will read it. The migrator creates the
+   column and applies the grants in the same run, in that order;
+2. the PR whose worker code reads the column merges after that deploy is done.
+
+The climb revision columns (#6023) are the worked example. Migration 0252 added
+`boardsesh_ticks.climb_revision` and `board_climbs.holds_revision_number`; the
+recompute that `climb-stats-self-heal` runs as `maintenance-delivery` started
+reading both one PR later, and that role holds column grants. The two columns
+belong in `CLIMB_STATS_SELF_HEAL_GRANTS` from the PR that carries 0252.
+
+A role with a whole-table grant (`batch` on `board_climbs`, the provider roles)
+needs no grant change for a new column, but its jobs still hit the
+missing-column half of this if they select it before `migrate` has run.
+
 `interactive-import` and `routine-provider` share the provider sync list
 (`PROVIDER_SYNC_GRANTS`):
 

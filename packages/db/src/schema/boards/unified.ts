@@ -432,6 +432,17 @@ export const boardClimbs = pgTable(
       .where(sql`${table.userId} IS NOT NULL`),
     // Index for climb name lookups (used by JSON import to resolve names to UUIDs)
     nameIdx: index('board_climbs_name_idx').on(table.boardType, table.name),
+    // The climbs whose holds have ever been moved by an edit (#6023): a tiny set
+    // beside the catalogue. Per-climber reads that need the holds epoch of every
+    // climb in a logbook (the Projects playlist) join this index instead of
+    // probing board_climbs once per climb, so a logbook of unedited climbs never
+    // touches the table. A climb absent from it has epoch 1. The key carries the
+    // epoch itself, so the read can stay inside the index. Queries must repeat
+    // the predicate to use it: `climbHoldsEverMovedSql` in holds-epoch.ts.
+    // Built out-of-band in production (see the migration's header).
+    holdsMovedIdx: index('board_climbs_holds_moved_idx')
+      .on(table.boardType, table.uuid, table.holdsRevisionNumber)
+      .where(sql`${table.holdsRevisionNumber} > 1`),
     // Note: a GIN index on compatible_size_ids already exists from migration 0073
     // (board_climbs_compatible_size_ids_idx); the recommendation size filter uses
     // `compatible_size_ids @> ARRAY[sizeId]` so it can use that existing index.

@@ -1,0 +1,24 @@
+-- The climbs whose holds an edit has moved (#6023), keyed so a climber's logbook
+-- can be joined against it: holds_revision_number > 1 on a handful of rows
+-- beside 900k+ at 1. The Projects playlist and its library card need the holds
+-- epoch of every climb a climber has logged; probing board_climbs once per climb
+-- for it cost ~19,000 buffers on a 6,000-tick logbook, on a table whose cold
+-- pages are slow to read (docs/postgres-query-costs.md). Joined against this
+-- index the same read stays inside a few index pages. A climb absent from the
+-- index has epoch 1.
+--
+-- Drizzle's Postgres migrator wraps migrations in a transaction, so
+-- CREATE INDEX CONCURRENTLY is not valid here (same constraint as
+-- 0121_add_quality_search_covering_index and 0240_yielding_hellion). The index
+-- itself is tiny, but building it scans all of board_climbs, which is large and
+-- write-hot in production, under a SHARE lock that blocks every climb write for
+-- the whole scan. Build it concurrently out-of-band there first:
+--
+--   CREATE INDEX CONCURRENTLY "board_climbs_holds_moved_idx" ON "board_climbs"
+--     USING btree ("board_type","uuid","holds_revision_number")
+--     WHERE "board_climbs"."holds_revision_number" > 1;
+--
+-- and this migration is then the idempotent dev/test parity no-op. The column
+-- arrives with 0252, so that has to be applied before the out-of-band build.
+-- Full pattern: docs/db-migrations.md, "Indexes on a large, write-hot table".
+CREATE INDEX IF NOT EXISTS "board_climbs_holds_moved_idx" ON "board_climbs" USING btree ("board_type","uuid","holds_revision_number") WHERE "board_climbs"."holds_revision_number" > 1;

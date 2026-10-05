@@ -7,7 +7,15 @@ const { mockDb, mockPublishSocialEvent, insertCalls, lockedClimb, mockRecordClim
   // What `lockClimbForRevision` answers: the draft flag of the climb row the test
   // last scripted. See the `climb-revisions` mock below.
   const lockedClimb: { current: Record<string, unknown> | null } = { current: null };
-  const mockRecordClimbRevision = vi.fn().mockResolvedValue({ revisionNumber: 1, holdsRevisionNumber: 1 });
+  // Answers what the real one does for a save that records nothing: the locked
+  // row's own numbers. `updateClimb` puts them on its result and compares the
+  // holds epoch with the locked row's to decide whether to restart the stats.
+  const mockRecordClimbRevision = vi.fn(
+    async (_executor: unknown, params: { before: { revisionNumber?: number; holdsRevisionNumber?: number } }) => ({
+      revisionNumber: params.before.revisionNumber,
+      holdsRevisionNumber: params.before.holdsRevisionNumber,
+    }),
+  );
 
   const mockDb = {
     select: vi.fn(),
