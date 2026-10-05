@@ -11,7 +11,7 @@ Boardsesh has comprehensive PostHog instrumentation across both web (Next.js) an
 - Client: PostHog JS Lite, localStorage persistence, IndexedDB-backed anonymous IDs
 - Server: PostHog Node SDK with configurable flush/timeout
 - Proxy: `/api/posthog` reverse proxy to `us.i.posthog.com`
-- Identity: Anonymous → Authenticated merge via `alias()` on login
+- Identity: Anonymous → Authenticated merge via `identify()` on login. Neither client sends `alias()` (see "Identity & Lifecycle")
 
 ---
 
@@ -59,14 +59,20 @@ disappears for the rest of the launch after a sign-out.
 
 ### Identity & Lifecycle
 
-**File:** `/packages/web/app/components/party-manager/party-profile-context.tsx`
+**Files:** `/packages/web/app/components/providers/analytics-identity.tsx` (web),
+`/packages/shared/analytics/src/reconcile-identity.ts` driven by
+`/packages/mobile/src/providers/party-profile-provider.tsx` (mobile)
 
-- **Anonymous ID:** IndexedDB-backed `party-profile.id` (UUID)
-- **Authenticated ID:** `session.user.id`
-- **Alias Flow:**
-  1. On mount: `identify(profileId)` with anonymous UUID
-  2. On login: `alias(userId)` to merge, then `identify(userId, { email })`
-  3. Dedupe via localStorage `posthog-aliases` to prevent double-alias on reload
+- **Anonymous ID:** the SDK's own anonymous id on web; the party-profile UUID
+  on mobile
+- **Authenticated ID:** `users.id` on both
+- **Sign-in:** `identify(userId, { email })` and nothing else. It carries the
+  anonymous id as `$anon_distinct_id`, which is what merges the pre-login
+  events into the account's person
+- **No `alias()` on either client.** Web dropped it because `$create_alias` can
+  merge two real people. Mobile dropped it because, sent ahead of `identify()`,
+  it left returning climbers on a fresh install split across two persons
+  (`docs/growth-metrics.md`, "Identity-split pitfall")
 - **Person Properties:**
   - `email` (on login)
   - `language` (synced on locale change via `setPersonProperties()`)
@@ -321,8 +327,7 @@ disappears for the rest of the launch after a sign-out.
 ### Strengths
 
 1. **Identity Cohesion:**
-   - Proper anonymous → authenticated merge via alias + IndexedDB
-   - Deduplication prevents double-alias on reload
+   - Anonymous → authenticated merge through `identify()` alone, on web and mobile
    - Email and language person properties tracked
 
 2. **First-Party Analytics:**

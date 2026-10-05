@@ -37,15 +37,18 @@ let hasReportedIdentityFailure = false;
  * platforms still agree on the person — both identify with `users.id`, the same
  * value `getPosthogDistinctId()` hands the server-side flag read. What differs
  * is the substrate underneath. Mobile's anonymous identity is a party-profile
- * UUID it owns and can hand to `alias()`; web's is the SDK's own anonymous id,
- * and web therefore needs two behaviours the shared routine cannot express:
+ * UUID it owns and re-identifies as after a sign-out; web's is the SDK's own
+ * anonymous id. One rule is common to both, and one is web's alone:
  *
- *  - **No `alias()`.** `identify()` already merges the anonymous person into
- *    the authenticated one by sending `$anon_distinct_id`, and PostHog refuses
- *    that merge when the source is already identified. `$create_alias` has no
- *    such protection: firing it while the client is pinned to another user's id
- *    merges two real people, irreversibly. Dropping the call removes the whole
- *    failure class instead of guarding it.
+ *  - **No `alias()`, on either platform.** `identify()` already merges the
+ *    anonymous person into the authenticated one by sending
+ *    `$anon_distinct_id`, and PostHog refuses that merge when the source is
+ *    already identified. `$create_alias` has no such protection: firing it
+ *    while the client is pinned to another user's id merges two real people,
+ *    irreversibly. Dropping the call removes the whole failure class instead of
+ *    guarding it. Mobile dropped it later, for a different symptom: sent ahead
+ *    of `identify()`, it left returning climbers split across two persons (see
+ *    "Identity-split pitfall" in `docs/growth-metrics.md`).
  *  - **Signed out means `reset()` and nothing else.** The shared routine
  *    follows its reset with `identify(anonId)`, which flips the SDK back to
  *    `PersonMode: 'identified'`, creates a junk identified person per sign-out,

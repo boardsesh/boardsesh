@@ -19,8 +19,7 @@ import { ensureProfile, type PartyProfile } from '@boardsesh/party-profile';
 import { reconcileAnalyticsIdentity, buildCohortPersonProperties } from '@boardsesh/analytics';
 import { toBoardName } from '@boardsesh/board-config';
 import { partyProfileStorage } from '../lib/party-profile-store';
-import { alias, getAnalyticsClient, identify, reset, setPersonProperties } from '../lib/analytics';
-import { aliasDedupeStore } from '../lib/analytics-alias-store';
+import { getAnalyticsClient, identify, reset, setPersonProperties } from '../lib/analytics';
 import { useProfile } from '../lib/graphql/hooks';
 import { useHomeBoard } from '../lib/graphql/hooks/use-home-board';
 import { useIntegrationStatuses } from '../lib/graphql/hooks/use-integrations';
@@ -71,12 +70,13 @@ export function PartyProfileProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Wire PostHog identity the same way web does (party-profile-context.tsx): the
-  // party-profile UUID is the anonymous distinct_id; once the authenticated user
-  // id resolves we alias it to the user and switch identity, so a person's
-  // pre-login mobile events — and their web events, same PostHog project — merge.
-  // The reset/identify/alias state machine is the shared, pure
-  // reconcileAnalyticsIdentity from @boardsesh/analytics.
+  // Wire PostHog identity: the party-profile UUID is the anonymous distinct_id;
+  // once the authenticated user id resolves we identify as the user, and that
+  // identify carries the UUID so PostHog merges the pre-login events into the
+  // account's person (the same person web identifies, same PostHog project).
+  // The reset/identify state machine is the shared, pure
+  // reconcileAnalyticsIdentity from @boardsesh/analytics. It sends no alias();
+  // its header says why.
   const profileId = profile?.id;
   const authUserId = userProfile?.id ?? null;
   const authEmail = userProfile?.email ?? null;
@@ -87,7 +87,7 @@ export function PartyProfileProvider({ children }: { children: ReactNode }) {
     // reconcile against a half-known state. When the session is authenticated
     // but the user id hasn't been fetched yet, we pass the *raw* isAuthenticated
     // so reconcileAnalyticsIdentity holds (no identify) rather than momentarily
-    // re-identifying a returning user as the anonymous UUID; the alias →
+    // re-identifying a returning user as the anonymous UUID; the
     // identify(user) switch then fires once authUserId lands.
     if (!profileId || isAuthLoading) return;
     lastAnalyticsDistinctId.current = reconcileAnalyticsIdentity({
@@ -98,8 +98,7 @@ export function PartyProfileProvider({ children }: { children: ReactNode }) {
       lastDistinctId: lastAnalyticsDistinctId.current,
       // getDistinctId lets a cold start skip the anon → user round-trip the SDK
       // has already persisted from a previous launch.
-      client: { identify, alias, reset, getDistinctId: () => getAnalyticsClient()?.getDistinctId() ?? null },
-      aliasStore: aliasDedupeStore,
+      client: { identify, reset, getDistinctId: () => getAnalyticsClient()?.getDistinctId() ?? null },
     });
   }, [profileId, isAuthLoading, isAuthenticated, authUserId, authEmail]);
 

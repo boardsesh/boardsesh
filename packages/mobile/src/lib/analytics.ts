@@ -172,7 +172,7 @@ const analytics = createAnalytics(getClient, {
   onDebug: __DEV__ ? (name, properties) => console.info('[analytics]', name, properties ?? {}) : undefined,
 });
 
-export const { track, identify, setPersonProperties, alias } = analytics;
+export const { track, identify, setPersonProperties } = analytics;
 
 /**
  * Stamp the board-render A/B state (issue #2202) as PostHog super properties,

@@ -137,6 +137,104 @@ GROUP BY class
 The classes are per person over the window you query, so a person's class can
 change with the window. Keep the window on the tile and in the query the same.
 
+## Identity-split pitfall
+
+Until the identity-split fix, a returning climber who signed in on a fresh
+install was counted twice: once as their account, and once as a "newcomer" who
+logged in, saw one screen and never came back.
+
+The app starts every install on an anonymous id (the party-profile UUID). On
+sign-in it used to send `alias(userId)` and then `identify(userId)`. When the
+account already had a PostHog person, the two never merged. The anonymous
+person kept `Login Succeeded` and often one `$screen` (`/climbs` or `/home`),
+and everything after that landed on the account's older person. Why PostHog
+refuses that merge is not confirmed; the split itself is measured.
+
+It hits Android harder. The likely reason: the UUID lives in secure storage,
+which survives an uninstall on iOS and not on Android, so an Android reinstall
+mints a new one.
+
+| 2026-09-08 to 2026-10-01, native production            | Android        | iOS            |
+| ------------------------------------------------------- | -------------- | -------------- |
+| Alias pairs that ended on two persons (#6003 analysis)   | 87/467 (18.6%) | 57/898 (6.3%)  |
+| Sign-ins that ended on two persons (the query below)     | 97/990 (9.8%)  | 63/1,754 (3.6%) |
+
+The two rows count the same splits against different denominators, and neither
+excludes the internal cohort. The first only exists while the app sends
+`$create_alias`, so track the second from here on. Target after the fix: under
+2% on both platforms.
+
+The fix drops `alias()` and keeps `identify()`, which carries the anonymous id
+as `$anon_distinct_id` (`packages/shared/analytics/src/reconcile-identity.ts`).
+
+### Finding the phantoms
+
+A phantom is a person whose distinct id shows up as `$anon_distinct_id` on a
+native `$identify` that belongs to a different person.
+
+```sql
+SELECT DISTINCT anon.person_id AS phantom_person_id
+FROM (
+    SELECT
+        properties.$anon_distinct_id AS anon_distinct_id,
+        person_id AS account_person_id
+    FROM events
+    WHERE event = '$identify'
+      AND properties.$lib = 'posthog-react-native'
+      AND properties.environment = 'production'
+      AND properties.$anon_distinct_id != distinct_id
+      AND timestamp >= toDateTime('2026-07-25 00:00:00')
+    GROUP BY anon_distinct_id, account_person_id
+) AS switches
+INNER JOIN person_distinct_ids AS anon
+    ON anon.distinct_id = switches.anon_distinct_id
+WHERE anon.person_id != switches.account_person_id
+```
+
+For the split rate, drop the `WHERE`, add `any(properties.$os) AS os` to the
+subquery, and select `uniqIf(anon.person_id, anon.person_id !=
+switches.account_person_id)` over `uniq(switches.anon_distinct_id)` per `os`.
+Split it by OTA bundle as well: a store binary keeps aliasing on its embedded
+JS until its first OTA lands.
+
+### Rules
+
+- **A newcomer cohort that starts before the fix must exclude the phantoms.**
+  Add `person_id NOT IN (<the query above>)`, or keep only people whose
+  `Login Succeeded` has `is_new_account = true`. The second is cheaper but is
+  null on embedded JS and before the 2026-09-21 OTA.
+- **Expect a step on the fix date.** Android newcomer counts fall by roughly
+  13% and conversion rises, with no product change behind either.
+- **Past phantoms stay.** The fix does not merge them. PostHog merges can't be
+  undone, so nobody should try to repair them by hand.
+- **Still split after the fix:** signing out and signing in to another account
+  on the same device. The signed-out step identifies the anonymous id, and
+  PostHog won't merge a person it already treats as identified. This is rarer
+  than a reinstall and is not fixed.
+
+## Newcomer, bind, board-active
+
+Three words every activation read uses. Use these meanings, and say so when a
+number uses another one.
+
+| Term         | Meaning                                                                                                                                             |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Newcomer     | A person whose first-ever event, across every `$lib` and `environment`, is within 1 hour of their first native production event. Phantoms excluded (above), internal cohort excluded. |
+| Bind         | The person got a board to climb on: any of `Onboarding Board Activated`, `Board Picker Selection Completed`, `Board Created`, `Board Create Reused Existing`. |
+| Board-active | The person lit a climb on a board: at least one `Climb Sent to Board Success` in the window. Name the window ("board-active in 28 days").            |
+
+- "First" has to be first-ever. The first production-tagged event is not: 20
+  to 35% of those people were already climbing on an older build or the old web
+  client. PostHog's own "first time" filter has the same flaw.
+- Android newcomer cohorts take store builds only (`$app_build`; 2.5.0 is
+  2001108). Test and Play pre-launch builds add people who almost never scan.
+- `Signup Completed` is email registration only. Apple and Google sign-ups show
+  up as `Login Succeeded` with `is_new_account`.
+- A database read of board-active (an account with a light or a tick) counts
+  accounts, not PostHog people. Don't mix the two in one rate.
+- Report the Activation funnel below next to any narrower measure, so two
+  reads can be compared.
+
 ## Funnels
 
 All ordered, unique people, the native production population, internal cohort
@@ -388,5 +486,6 @@ finished the period shown as final. Mark the current, unfinished period.
 | 2026-09-07 | Throwaway persons from 2.3.0 and 2.3.1 stop ("new people" regime 3 begins) |
 | 2026-09-26 | The www crawler rule applies from here (first day of the window it was measured on) |
 | #6027 mobile OTA | `Login Account Age Resolved` starts; login events carry `provider` and `account_age_read`; `Tick Logged`, `Set Active Climb` and `Climb Created` carry `boardType`; `Set Active Climb` carries `trigger` (`climb_saved` on a save); `Onboarding Gate Evaluated` gains the skip reason `replayed_board_link` |
+| identity-split fix OTA | The app stops sending `$create_alias`; returning climbers on a fresh install stop showing up as newcomers (see "Identity-split pitfall") |
 
 None of these repairs past data. Annotate them; do not backfill.

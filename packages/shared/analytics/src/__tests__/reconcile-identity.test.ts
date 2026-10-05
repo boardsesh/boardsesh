@@ -1,13 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { reconcileAnalyticsIdentity, type AliasDedupeStore, type IdentityClient } from '../reconcile-identity';
+import { reconcileAnalyticsIdentity, type IdentityClient } from '../reconcile-identity';
 
-function recordingClient(
-  aliasReturns?: unknown,
-  persistedDistinctId?: string | null,
-): IdentityClient & {
-  calls: Array<[string, ...unknown[]]>;
-} {
-  const calls: Array<[string, ...unknown[]]> = [];
+type RecordedCall = [method: string, ...args: unknown[]];
+
+function recordingClient(persistedDistinctId?: string | null): IdentityClient & { calls: RecordedCall[] } {
+  const calls: RecordedCall[] = [];
   return {
     calls,
     getDistinctId() {
@@ -19,33 +16,16 @@ function recordingClient(
     reset() {
       calls.push(['reset']);
     },
-    alias(newId) {
-      calls.push(['alias', newId]);
-      return aliasReturns;
-    },
-  };
-}
-
-function memoryAliasStore(): AliasDedupeStore & { pairs: Set<string> } {
-  const pairs = new Set<string>();
-  return {
-    pairs,
-    hasRecordedAlias(profileId, userId) {
-      return pairs.has(`${profileId}->${userId}`);
-    },
-    recordAlias(profileId, userId) {
-      pairs.add(`${profileId}->${userId}`);
-    },
   };
 }
 
 const PROFILE = 'anon-uuid';
 const USER = 'user-123';
+const OTHER_USER = 'user-456';
 
 describe('reconcileAnalyticsIdentity', () => {
   it('identifies as the anonymous profile when signed out', () => {
     const client = recordingClient();
-    const aliasStore = memoryAliasStore();
 
     const next = reconcileAnalyticsIdentity({
       profileId: PROFILE,
@@ -53,16 +33,19 @@ describe('reconcileAnalyticsIdentity', () => {
       isAuthenticated: false,
       lastDistinctId: null,
       client,
-      aliasStore,
     });
 
     expect(next).toBe(PROFILE);
     expect(client.calls).toEqual([['identify', PROFILE, undefined]]);
   });
 
-  it('aliases anon → user exactly once and switches identity on login', () => {
-    const client = recordingClient();
-    const aliasStore = memoryAliasStore();
+  it('fresh device + existing account → exactly identify(USER)', () => {
+    // The identity-split case: a returning climber signs in on a fresh install.
+    // The device is anchored on its anonymous UUID (the SDK is bootstrapped with
+    // it and the signed-out launch reconciled to it). The only call allowed is
+    // identify(USER), which carries the UUID as $anon_distinct_id. An alias()
+    // ahead of it is what left a phantom newcomer behind.
+    const client = recordingClient(PROFILE);
 
     const next = reconcileAnalyticsIdentity({
       profileId: PROFILE,
@@ -71,34 +54,43 @@ describe('reconcileAnalyticsIdentity', () => {
       isAuthenticated: true,
       lastDistinctId: PROFILE,
       client,
-      aliasStore,
     });
 
     expect(next).toBe(USER);
-    expect(client.calls).toEqual([
-      ['alias', USER],
-      ['identify', USER, { email: 'a@b.com' }],
-    ]);
-    expect(aliasStore.hasRecordedAlias(PROFILE, USER)).toBe(true);
+    expect(client.calls).toEqual([['identify', USER, { email: 'a@b.com' }]]);
   });
 
-  it('does not re-alias on a subsequent run once recorded', () => {
-    const aliasStore = memoryAliasStore();
-    aliasStore.recordAlias(PROFILE, USER);
-    const client = recordingClient();
-
-    reconcileAnalyticsIdentity({
+  it('sends the same single identify on every sign-in, with no per-device memory', () => {
+    // The alias step was deduped through a persisted store. With it gone, two
+    // sign-ins from the same anonymous anchor must look identical.
+    const firstClient = recordingClient(PROFILE);
+    const secondClient = recordingClient(PROFILE);
+    const input = {
       profileId: PROFILE,
       authUserId: USER,
-      authEmail: 'a@b.com',
       isAuthenticated: true,
       lastDistinctId: PROFILE,
-      client,
-      aliasStore,
-    });
+    };
 
-    expect(client.calls.some(([method]) => method === 'alias')).toBe(false);
-    expect(client.calls).toEqual([['identify', USER, { email: 'a@b.com' }]]);
+    reconcileAnalyticsIdentity({ ...input, client: firstClient });
+    reconcileAnalyticsIdentity({ ...input, client: secondClient });
+
+    expect(firstClient.calls).toEqual([['identify', USER, undefined]]);
+    expect(secondClient.calls).toEqual(firstClient.calls);
+  });
+
+  it('keeps the merge call off the client contract', () => {
+    // The reconciler can only call what IdentityClient declares. If this
+    // directive stops being needed, someone has put the merge call back on the
+    // contract: read the header of reconcile-identity.ts before going further.
+    const client: IdentityClient = {
+      identify() {},
+      reset() {},
+      // @ts-expect-error IdentityClient must not declare alias()
+      alias() {},
+    };
+
+    expect(Object.keys(client)).toContain('identify');
   });
 
   it('is a no-op when already identified as the user', () => {
@@ -109,7 +101,6 @@ describe('reconcileAnalyticsIdentity', () => {
       isAuthenticated: true,
       lastDistinctId: USER,
       client,
-      aliasStore: memoryAliasStore(),
     });
 
     expect(next).toBe(USER);
@@ -124,31 +115,27 @@ describe('reconcileAnalyticsIdentity', () => {
       isAuthenticated: false,
       lastDistinctId: USER,
       client,
-      aliasStore: memoryAliasStore(),
     });
 
     expect(next).toBe(PROFILE);
     expect(client.calls).toEqual([['reset'], ['identify', PROFILE, undefined]]);
   });
 
-  it('does not record the alias pair when the client reports alias failed (false)', () => {
-    const client = recordingClient(false);
-    const aliasStore = memoryAliasStore();
-
-    reconcileAnalyticsIdentity({
+  it('resets, re-anchors on the anonymous profile, then switches when the account changes', () => {
+    const client = recordingClient(OTHER_USER);
+    const next = reconcileAnalyticsIdentity({
       profileId: PROFILE,
       authUserId: USER,
       isAuthenticated: true,
-      lastDistinctId: PROFILE,
+      lastDistinctId: OTHER_USER,
       client,
-      aliasStore,
     });
 
-    expect(client.calls.some(([method]) => method === 'alias')).toBe(true);
-    expect(aliasStore.hasRecordedAlias(PROFILE, USER)).toBe(false);
+    expect(next).toBe(USER);
+    expect(client.calls).toEqual([['reset'], ['identify', PROFILE, undefined], ['identify', USER, undefined]]);
   });
 
-  it('first-run authenticated identifies anon then aliases then switches', () => {
+  it('first-run authenticated anchors on the anonymous profile then switches', () => {
     const client = recordingClient();
     const next = reconcileAnalyticsIdentity({
       profileId: PROFILE,
@@ -157,13 +144,11 @@ describe('reconcileAnalyticsIdentity', () => {
       isAuthenticated: true,
       lastDistinctId: null,
       client,
-      aliasStore: memoryAliasStore(),
     });
 
     expect(next).toBe(USER);
     expect(client.calls).toEqual([
       ['identify', PROFILE, undefined],
-      ['alias', USER],
       ['identify', USER, { email: 'a@b.com' }],
     ]);
   });
@@ -176,7 +161,6 @@ describe('reconcileAnalyticsIdentity', () => {
       isAuthenticated: true,
       lastDistinctId: PROFILE,
       client,
-      aliasStore: memoryAliasStore(),
     });
 
     expect(next).toBe(PROFILE);
@@ -187,9 +171,7 @@ describe('reconcileAnalyticsIdentity', () => {
     // The ref is null at every mount, but the SDK persists distinct_id across
     // launches. Without the guard this fires identify(anon) then identify(user)
     // on every single launch — the bulk of the project's $identify volume.
-    const client = recordingClient(undefined, USER);
-    const aliasStore = memoryAliasStore();
-    aliasStore.recordAlias(PROFILE, USER);
+    const client = recordingClient(USER);
 
     const next = reconcileAnalyticsIdentity({
       profileId: PROFILE,
@@ -198,7 +180,6 @@ describe('reconcileAnalyticsIdentity', () => {
       isAuthenticated: true,
       lastDistinctId: null,
       client,
-      aliasStore,
     });
 
     expect(next).toBe(USER);
@@ -206,8 +187,7 @@ describe('reconcileAnalyticsIdentity', () => {
   });
 
   it('still runs the full anon → user switch when the SDK holds a different id', () => {
-    const client = recordingClient(undefined, PROFILE);
-    const aliasStore = memoryAliasStore();
+    const client = recordingClient(PROFILE);
 
     const next = reconcileAnalyticsIdentity({
       profileId: PROFILE,
@@ -216,22 +196,25 @@ describe('reconcileAnalyticsIdentity', () => {
       isAuthenticated: true,
       lastDistinctId: null,
       client,
-      aliasStore,
     });
 
     expect(next).toBe(USER);
     expect(client.calls).toEqual([
       ['identify', PROFILE, undefined],
-      ['alias', USER],
       ['identify', USER, { email: 'climber@example.com' }],
     ]);
   });
 
   it('falls back to the old behaviour when the client cannot report a distinct id', () => {
-    const client = recordingClient();
-    delete (client as { getDistinctId?: unknown }).getDistinctId;
-    const aliasStore = memoryAliasStore();
-    aliasStore.recordAlias(PROFILE, USER);
+    const calls: RecordedCall[] = [];
+    const client: IdentityClient = {
+      identify(distinctId, properties) {
+        calls.push(['identify', distinctId, properties]);
+      },
+      reset() {
+        calls.push(['reset']);
+      },
+    };
 
     reconcileAnalyticsIdentity({
       profileId: PROFILE,
@@ -239,10 +222,9 @@ describe('reconcileAnalyticsIdentity', () => {
       isAuthenticated: true,
       lastDistinctId: null,
       client,
-      aliasStore,
     });
 
-    expect(client.calls).toEqual([
+    expect(calls).toEqual([
       ['identify', PROFILE, undefined],
       ['identify', USER, undefined],
     ]);

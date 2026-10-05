@@ -37,9 +37,8 @@ vi.mock('../auth-provider', () => ({
 }));
 
 // The provider now reads the authenticated profile (useProfile) and reconciles
-// PostHog identity, which pulls in the AsyncStorage-backed alias-dedupe store.
-// Stub both so this suite stays focused on party-profile loading and runs in the
-// node/jsdom env without a QueryClient or native AsyncStorage.
+// PostHog identity. Stub the profile read so this suite runs in the node/jsdom
+// env without a QueryClient.
 const { useProfileMock } = vi.hoisted(() => ({
   useProfileMock: vi.fn<
     () => {
@@ -58,9 +57,6 @@ const { useProfileMock } = vi.hoisted(() => ({
   >(() => ({ data: undefined })),
 }));
 vi.mock('../../lib/graphql/hooks', () => ({ useProfile: useProfileMock }));
-vi.mock('../../lib/analytics-alias-store', () => ({
-  aliasDedupeStore: { hasRecordedAlias: () => false, recordAlias: () => {} },
-}));
 
 // The cohort-person-properties effect also reads the home board and connected
 // integrations — both pull in real GraphQL hooks / AsyncStorage transitively.
@@ -72,14 +68,22 @@ const { useHomeBoardMock, useIntegrationStatusesMock } = vi.hoisted(() => ({
 vi.mock('../../lib/graphql/hooks/use-home-board', () => ({ useHomeBoard: useHomeBoardMock }));
 vi.mock('../../lib/graphql/hooks/use-integrations', () => ({ useIntegrationStatuses: useIntegrationStatusesMock }));
 
-// identify/alias/reset are exercised for real elsewhere in this suite (they're
-// no-ops with no PostHog key in the test env); setPersonProperties is mocked
-// here so the cohort-person-properties effect's call is directly assertable.
-const { setPersonPropertiesMock } = vi.hoisted(() => ({ setPersonPropertiesMock: vi.fn() }));
+// setPersonProperties is mocked so the cohort-person-properties effect's call is
+// directly assertable. identify/reset record into one ordered list so the
+// identity tests can assert the exact sequence PostHog would receive. The mock
+// exposes no merge call besides identify: the provider must not import one (see
+// the header of packages/shared/analytics/src/reconcile-identity.ts).
+const { setPersonPropertiesMock, identityCalls } = vi.hoisted(() => ({
+  setPersonPropertiesMock: vi.fn(),
+  identityCalls: [] as Array<[method: string, ...args: unknown[]]>,
+}));
 vi.mock('../../lib/analytics', () => ({
-  identify: vi.fn(),
-  alias: vi.fn(),
-  reset: vi.fn(),
+  identify: (distinctId: string, properties?: unknown) => {
+    identityCalls.push(['identify', distinctId, properties]);
+  },
+  reset: () => {
+    identityCalls.push(['reset']);
+  },
   setPersonProperties: setPersonPropertiesMock,
   // Feeds reconcileAnalyticsIdentity's cold-start guard. Null here means "the SDK
   // reports no persisted distinct_id", so these tests keep exercising the full
@@ -116,6 +120,7 @@ describe('PartyProfileProvider', () => {
     useHomeBoardMock.mockReturnValue({ board: null, boards: [], isResolving: false });
     useIntegrationStatusesMock.mockReturnValue({ data: undefined });
     setPersonPropertiesMock.mockClear();
+    identityCalls.length = 0;
     useAuthMock.mockReset();
     useAuthMock.mockReturnValue(makeAuthMock());
   });
@@ -271,6 +276,41 @@ describe('PartyProfileProvider', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     expect(setPersonPropertiesMock).not.toHaveBeenCalled();
+  });
+
+  it('identifies a signed-out device as its party-profile UUID', async () => {
+    const wrapper = ({ children }: { children: ReactNode }) => <PartyProfileProvider>{children}</PartyProfileProvider>;
+    const { result } = renderHook(() => usePartyProfile(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(identityCalls).toEqual([['identify', 'test-uuid', undefined]]);
+  });
+
+  it('signs a climber in with one identify and nothing else', async () => {
+    // Fresh install, then sign-in to an account. The device is anchored on its
+    // anonymous UUID first; the sign-in must add exactly identify(user), which
+    // is the call that lets PostHog merge the two.
+    const wrapper = ({ children }: { children: ReactNode }) => <PartyProfileProvider>{children}</PartyProfileProvider>;
+    const { result, rerender } = renderHook(() => usePartyProfile(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(identityCalls).toEqual([['identify', 'test-uuid', undefined]]);
+
+    // The session lands before the profile fetch: hold, send nothing.
+    useAuthMock.mockReturnValue(makeAuthMock({ isAuthenticated: true }));
+    rerender();
+    expect(identityCalls).toEqual([['identify', 'test-uuid', undefined]]);
+
+    useProfileMock.mockReturnValue({ data: { id: 'user-1', email: 'climber@example.com' } });
+    rerender();
+
+    expect(identityCalls).toEqual([
+      ['identify', 'test-uuid', undefined],
+      ['identify', 'user-1', { email: 'climber@example.com' }],
+    ]);
+
+    // Later renders must not send it again.
+    rerender();
+    expect(identityCalls).toHaveLength(2);
   });
 
   it('usePartyProfile throws when called outside a provider', () => {
