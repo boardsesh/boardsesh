@@ -1,6 +1,28 @@
 {
-  "generatedAt": "2026-10-05T23:03:04.598Z",
+  "generatedAt": "2026-10-05T23:47:15.385Z",
   "entries": [
+    {
+      "prNumber": 6116,
+      "category": "fixed",
+      "title": "See the reset summary and framing warning above your wall photo.",
+      "mergedAt": "2026-10-05T23:40:25Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6116"
+    },
+    {
+      "prNumber": 6132,
+      "category": "new",
+      "title": "Your logbook shows when a tick was on an earlier version of a climb",
+      "mergedAt": "2026-10-05T23:35:28Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6132",
+      "body": "A spray climb's sends and stars start again when its holds change"
+    },
+    {
+      "prNumber": 6126,
+      "category": "new",
+      "title": "The climber-facing note ships with the app PR for #6023, which is where the sent mark and the version tag appear.",
+      "mergedAt": "2026-10-05T23:34:42Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6126"
+    },
     {
       "prNumber": 6122,
       "category": "fixed",

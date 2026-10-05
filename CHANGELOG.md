@@ -12,6 +12,9 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- Your logbook shows when a tick was on an earlier version of a climb ([#6132](https://github.com/boardsesh/boardsesh/pull/6132))
+  A spray climb's sends and stars start again when its holds change
+- The climber-facing note ships with the app PR for #6023, which is where the sent mark and the version tag appear. ([#6126](https://github.com/boardsesh/boardsesh/pull/6126))
 - Using Boardsesh in your phone's browser? There's now a link to get the app from the App Store or Google Play. ([#6069](https://github.com/boardsesh/boardsesh/pull/6069))
 
 ### Improved
@@ -21,6 +24,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- See the reset summary and framing warning above your wall photo. ([#6116](https://github.com/boardsesh/boardsesh/pull/6116))
 - Read climb names beside lost-holds labels, and refresh downloaded climbs after publishing a reset. ([#6122](https://github.com/boardsesh/boardsesh/pull/6122))
 - Signing out or deleting a spray wall clears its cached photos and hold previews. Downloads finishing afterward cannot bring those previews back. ([#6128](https://github.com/boardsesh/boardsesh/pull/6128))
 - Photographing a wall no longer closes the app on devices with no camera ([#6108](https://github.com/boardsesh/boardsesh/pull/6108))
