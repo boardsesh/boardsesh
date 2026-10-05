@@ -448,7 +448,8 @@
       "collaboratorsPublicHint": "Anyone who can see this public wall can edit published climbs.",
       "collaboratorsUnlistedHint": "Anyone with the share link can edit published climbs.",
       "collaboratorsPrivateHint": "Anyone who can set climbs on this wall can edit published climbs.",
-      "ownerOnlyHint": "Only the climber who set this wall up can change who can edit climbs."
+      "ownerOnlyHint": "Only the climber who set this wall up can change who can edit climbs.",
+      "ownerOnlyError": "Only the climber who set this wall up can change who can edit climbs. Your other changes saved."
     }
   },
   "boardEntity": {

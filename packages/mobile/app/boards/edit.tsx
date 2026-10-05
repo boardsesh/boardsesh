@@ -258,10 +258,13 @@ function EditBoardForm({ board }: { board: UserBoard }) {
             });
             visibilityApplied = true;
           } catch (error) {
-            visibilityError =
-              isSprayWallVisibilityOwnerOnlyError(error) || isSprayWallClimbEditPolicyOwnerOnlyError(error)
-                ? t('mobile.sprayVisibility.ownerOnlyError')
-                : (extractGraphqlMessage(error) ?? t('mobile.sprayVisibility.updateError'));
+            if (isSprayWallClimbEditPolicyOwnerOnlyError(error)) {
+              visibilityError = t('mobile.sprayClimbEditPolicy.ownerOnlyError');
+            } else if (isSprayWallVisibilityOwnerOnlyError(error)) {
+              visibilityError = t('mobile.sprayVisibility.ownerOnlyError');
+            } else {
+              visibilityError = extractGraphqlMessage(error) ?? t('mobile.sprayVisibility.updateError');
+            }
           }
         }
 

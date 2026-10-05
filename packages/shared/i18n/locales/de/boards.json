@@ -448,7 +448,8 @@
       "collaboratorsPublicHint": "Jede*r, die oder der dieses öffentliche Board sehen kann, kann veröffentlichte Boulder bearbeiten.",
       "collaboratorsUnlistedHint": "Wer den Link hat, kann veröffentlichte Boulder bearbeiten.",
       "collaboratorsPrivateHint": "Wer Boulder an diesem Board schrauben kann, kann veröffentlichte Boulder bearbeiten.",
-      "ownerOnlyHint": "Nur wer dieses Board aufgebaut hat, kann ändern, wer Boulder bearbeiten kann."
+      "ownerOnlyHint": "Nur wer dieses Board aufgebaut hat, kann ändern, wer Boulder bearbeiten kann.",
+      "ownerOnlyError": "Nur wer dieses Board aufgebaut hat, kann ändern, wer Boulder bearbeiten kann. Deine anderen Änderungen sind gespeichert."
     }
   },
   "boardEntity": {

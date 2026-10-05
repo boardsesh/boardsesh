@@ -5775,6 +5775,18 @@ describe('who may edit a climb on a spray wall (#5955)', () => {
     // Without sprayWallUuid capability, OUTSIDER cannot edit
     await expect(rename(climbUuid, OUTSIDER)).rejects.toThrow(REFUSAL);
   });
+
+  it('still refuses outsiders on a private wall even when policy is collaborators (#6025)', async () => {
+    const { wall, climbUuid } = await climbSetBy(OWNER, { wallOverrides: {} });
+    await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: wall.uuid, climbEditPolicy: 'COLLABORATORS' } },
+      ctxFor(OWNER),
+    );
+
+    // Private wall refuses outsider completely
+    await expect(rename(climbUuid, OUTSIDER)).rejects.toThrow(REFUSAL);
+  });
 });
 
 describe('draft purpose separates hold editing and photo resets', () => {

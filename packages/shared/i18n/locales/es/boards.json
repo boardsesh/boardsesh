@@ -442,13 +442,14 @@
     },
     "sprayClimbEditPolicy": {
       "label": "Quién puede editar bloques",
-      "setter": "Solo quien equipa",
+      "setter": "Solo el setter",
       "collaborators": "Quien pueda equipar",
-      "setterHint": "Solo quien equipó el bloque y los editores del plafón pueden editar bloques.",
+      "setterHint": "Solo el setter del bloque y los editores del plafón pueden editar bloques.",
       "collaboratorsPublicHint": "Cualquiera que pueda ver este plafón público puede editar bloques publicados.",
       "collaboratorsUnlistedHint": "Cualquiera con el enlace puede editar bloques publicados.",
       "collaboratorsPrivateHint": "Cualquiera que pueda equipar en este plafón puede editar bloques publicados.",
-      "ownerOnlyHint": "Solo quien montó este plafón puede cambiar quién edita los bloques."
+      "ownerOnlyHint": "Solo quien montó este plafón puede cambiar quién edita los bloques.",
+      "ownerOnlyError": "Solo quien montó este plafón puede cambiar quién edita los bloques. El resto de tus cambios se han guardado."
     }
   },
   "boardEntity": {

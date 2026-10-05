@@ -815,6 +815,10 @@ export const climbMutations = {
         sprayTarget = await requireVisibleSprayWall(existing.layoutId, ctx.userId!, validated.sprayWallUuid);
       } else if (!currentlyDraft) {
         const visibleWall = await findVisibleSprayWall(existing.layoutId, ctx.userId!, validated.sprayWallUuid);
+        // `findVisibleSprayWall` already asserted `viewerCanWriteSprayClimbs` (the caller may set
+        // climbs on this wall). When the wall's climbEditPolicy is 'collaborators', that write access
+        // authorizes editing published climbs (#6025); otherwise, only callers with board-level
+        // edit access (`canEditBoard`: owner, gym admin, community leader on public wall) may edit.
         if (
           visibleWall &&
           (visibleWall.climbEditPolicy === 'collaborators' || (await canEditBoard(ctx.userId!, visibleWall.board)))

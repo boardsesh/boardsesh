@@ -520,7 +520,7 @@ describe('EditBoard — spray wall visibility', () => {
     fireEvent.click(screen.getByText('submit'));
 
     await waitFor(() => expect(screen.getByTestId('error')).toBeTruthy());
-    expect(screen.getByTestId('error').textContent).toBe('mobile.sprayVisibility.ownerOnlyError');
+    expect(screen.getByTestId('error').textContent).toBe('mobile.sprayClimbEditPolicy.ownerOnlyError');
     expect(updateBoardMock).toHaveBeenCalledTimes(1);
     expect(backMock).not.toHaveBeenCalled();
   });
