@@ -26,6 +26,7 @@ import { ChromeIconButton } from '../../src/components/ChromeIconButton';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { GymMap, type GymMapHandle, type GymMapMarker } from '../../src/components/gym-directory/GymMap';
 import { GymListPanel, type GymListPanelHandle } from '../../src/components/gym-directory/GymListPanel';
+import { BoardDemandSheet } from '../../src/components/board-discovery/BoardDemandSheet';
 import { GymLocationPrompt } from '../../src/components/gym-directory/GymLocationPrompt';
 import { ClaimGymSheet } from '../../src/components/gym-directory/ClaimGymSheet';
 import { WallFinderFilterChips } from '../../src/components/gym-directory/WallFinderFilterChips';
@@ -114,6 +115,11 @@ export default function GymDiscovery() {
   // starts clean each open, and cleared when the sheet fully dismisses.
   const [claimTargetGym, setClaimTargetGym] = useState<Gym | null>(null);
   const claimSheetRef = useRef<ManagedSheetHandle>(null);
+  // "Can't find your board?" from the empty result list (issue #6062). The
+  // finder's no-match row is the purest demand signal this app has: somebody
+  // searched for a board, at a place, and we had nothing for them.
+  const [demandOpen, setDemandOpen] = useState(false);
+  const openCantFindBoard = useCallback(() => setDemandOpen(true), []);
 
   // `inputText` is the raw field; `appliedFilter` is the applied filter sent to the
   // backend (name + the board-type chips' selected `boardTypes`).
@@ -571,6 +577,8 @@ export default function GymDiscovery() {
         onEditBoard={onEditBoard}
         onClaimGym={onClaimGym}
         noBoardsLabel={t('mobile.gyms.noBoards')}
+        emptyActionLabel={t('mobile.demand.trigger')}
+        onEmptyAction={openCantFindBoard}
         searchSlot={searchField}
         placeCaption={placeCaption}
         filterSlot={filterSlot}
@@ -587,6 +595,8 @@ export default function GymDiscovery() {
           onClosed={onClaimSheetClosed}
         />
       ) : null}
+
+      <BoardDemandSheet visible={demandOpen} surface="gym_directory" onClose={() => setDemandOpen(false)} />
     </View>
   );
 }

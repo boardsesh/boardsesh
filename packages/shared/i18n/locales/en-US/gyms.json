@@ -84,7 +84,20 @@
     "emptyTitle": "Nothing matches that yet",
     "emptyBody": "Try a shorter search, or drop the board filter and browse every gym.",
     "emptyClearSearch": "Clear the search",
-    "emptyBrowseAll": "Browse every gym"
+    "emptyBrowseAll": "Browse every gym",
+    "cantFindBoard": "Can't find your board?",
+    "demandTitle": "What are you looking for?",
+    "demandBody": "Pick what is missing. We count every answer to decide which boards come next.",
+    "demandGymBoard": "My gym has a board that isn't listed",
+    "demandBrand": "My gym has a brand Boardsesh doesn't drive",
+    "demandSpray": "I want my own wall to light up",
+    "demandNoBoard": "I don't have a board yet",
+    "demandOther": "Something else",
+    "demandSend": "Send",
+    "demandClose": "Close",
+    "demandThanksTitle": "Thanks — counted.",
+    "demandThanksBody": "Your answer goes on the demand list. When it becomes a board, you'll find it here.",
+    "demandTellMore": "Name the board on the support page"
   },
   "error": {
     "title": "We can't reach the gym list right now",

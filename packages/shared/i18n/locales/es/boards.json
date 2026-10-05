@@ -106,6 +106,20 @@
       "openSettings": "Abrir Ajustes",
       "notNow": "Ahora no"
     },
+    "demand": {
+      "trigger": "¿No encuentras tu plafón?",
+      "title": "¿Qué estás buscando?",
+      "body": "Elige qué falta. Contamos cada respuesta para decidir qué plafones llegan después.",
+      "gymBoardNotListed": "Mi rocódromo tiene un plafón que no está en la lista",
+      "unsupportedBrand": "Mi rocódromo usa una marca que Boardsesh no controla",
+      "sprayWall": "Quiero iluminar mi propia pared",
+      "noBoardYet": "Aún no tengo plafón",
+      "other": "Otra cosa",
+      "send": "Enviar",
+      "done": "Listo",
+      "thanksTitle": "Gracias, contamos.",
+      "thanksBody": "Tu respuesta se añade a la lista de demanda. Cuando se convierta en plafón, lo verás aquí."
+    },
     "firstConnect": {
       "card": {
         "title": "Ilumina bloques en {{board}}",

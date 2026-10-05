@@ -106,6 +106,20 @@
       "openSettings": "Einstellungen öffnen",
       "notNow": "Nicht jetzt"
     },
+    "demand": {
+      "trigger": "Du findest dein Board nicht?",
+      "title": "Wonach suchst du?",
+      "body": "Sag, was fehlt. Wir zählen jede Antwort und entscheiden danach, welche Boards als Nächstes kommen.",
+      "gymBoardNotListed": "Meine Halle hat ein Board, das nicht gelistet ist",
+      "unsupportedBrand": "Meine Halle nutzt eine Marke, die Boardsesh nicht steuert",
+      "sprayWall": "Ich möchte meine eigene Wand beleuchten",
+      "noBoardYet": "Ich habe noch kein Board",
+      "other": "Etwas anderes",
+      "send": "Senden",
+      "done": "Fertig",
+      "thanksTitle": "Danke – notiert.",
+      "thanksBody": "Deine Antwort kommt auf die Nachfrage-Liste. Wenn daraus ein Board wird, findest du es hier."
+    },
     "firstConnect": {
       "card": {
         "title": "{{board}}: Boulder beleuchten",

@@ -96,6 +96,19 @@ export {
   type SprayRemixSurface,
   type ClimbRemixedFromBrokenProps,
 } from './spray-wall-events';
+// Unmet board demand (issue #6062). Cross-platform name, mobile sheet and web
+// dialog both fire it. Two closed-set fields only — the climber's free text
+// goes to the feedback pipeline, never to PostHog.
+export {
+  boardDemandReported,
+  needsBoardDemandFollowUp,
+  BOARD_DEMAND_REASONS,
+  BOARD_DEMAND_SURFACES,
+  type BoardDemandPayload,
+  type BoardDemandReason,
+  type BoardDemandSurface,
+  type BoardDemandReportedProps,
+} from './board-demand-events';
 export {
   buildCohortPersonProperties,
   type CohortProfileInput,

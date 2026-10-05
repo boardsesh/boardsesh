@@ -47,6 +47,7 @@ import GymDirectoryCard from './gym-directory-card';
 import GymDirectoryClaimLink from './gym-directory-claim-link';
 import GymDirectoryFilters from './gym-directory-filters';
 import GymDirectoryNearMe from './gym-directory-near-me';
+import BoardDemandDialog from './board-demand-dialog';
 import GymDirectoryPagination from './gym-directory-pagination';
 import GymDirectorySearchForm from './gym-directory-search-form';
 import GymDirectorySearchTracker from './gym-directory-search-tracker';
@@ -305,6 +306,11 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
                       {t('results.emptyBrowseAll')}
                     </Button>
                   )}
+                  {/* Third way out of a no-match search: the one that keeps the
+                      miss on the record instead of losing the visitor (issue
+                      #6062). Always rendered — a bare `/gyms` with no gyms at
+                      all is still demand. */}
+                  <BoardDemandDialog />
                 </>
               }
             />

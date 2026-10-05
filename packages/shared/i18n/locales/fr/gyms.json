@@ -84,7 +84,20 @@
     "emptyTitle": "Rien ne correspond pour l'instant",
     "emptyBody": "Essaie une recherche plus courte, ou enlève le filtre de board et parcours toutes les salles.",
     "emptyClearSearch": "Efface la recherche",
-    "emptyBrowseAll": "Parcours toutes les salles"
+    "emptyBrowseAll": "Parcours toutes les salles",
+    "cantFindBoard": "Tu ne trouves pas ta board ?",
+    "demandTitle": "Que cherches-tu ?",
+    "demandBody": "Choisis ce qui manque. On compte chaque réponse pour décider des prochaines boards.",
+    "demandGymBoard": "Ma salle a une board qui ne figure pas dans la liste",
+    "demandBrand": "Ma salle utilise une marque que Boardsesh ne pilote pas",
+    "demandSpray": "Je veux illuminer mon propre mur",
+    "demandNoBoard": "Je n'ai pas encore de board",
+    "demandOther": "Autre chose",
+    "demandSend": "Envoyer",
+    "demandClose": "Fermer",
+    "demandThanksTitle": "Merci, c'est compté.",
+    "demandThanksBody": "Ta réponse rejoint la liste de demande. Quand elle deviendra une board, tu la trouveras ici.",
+    "demandTellMore": "Nomme la board sur la page support"
   },
   "error": {
     "title": "On n'arrive pas à charger la liste des salles pour le moment",

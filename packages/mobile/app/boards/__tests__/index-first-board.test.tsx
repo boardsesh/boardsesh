@@ -261,7 +261,8 @@ vi.mock('../../../src/components/board-discovery/BluetoothQuickstartSheet', () =
   BluetoothQuickstartSheet: () => null,
 }));
 vi.mock('../../../src/components/board-discovery/BoardDetailSheet', () => ({ BoardDetailSheet: () => null }));
-
+// Its ModalSheet stack needs RN exports this file's react-native mock omits.
+vi.mock('../../../src/components/board-discovery/BoardDemandSheet', () => ({ BoardDemandSheet: () => null }));
 vi.mock('../../../src/components/board-discovery/BoardCarousel', () => ({
   BoardCarousel: (props: { items: CarouselItem[]; onSelect: (item: CarouselItem) => void }) => {
     carouselProps.last = props;

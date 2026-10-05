@@ -84,7 +84,20 @@
     "emptyTitle": "Dazu passt noch nichts",
     "emptyBody": "Versuch eine kürzere Suche oder nimm den Board-Filter raus und stöber durch alle Hallen.",
     "emptyClearSearch": "Suche zurücksetzen",
-    "emptyBrowseAll": "Alle Hallen durchstöbern"
+    "emptyBrowseAll": "Alle Hallen durchstöbern",
+    "cantFindBoard": "Du findest dein Board nicht?",
+    "demandTitle": "Wonach suchst du?",
+    "demandBody": "Sag, was fehlt. Wir zählen jede Antwort und entscheiden danach, welche Boards als Nächstes kommen.",
+    "demandGymBoard": "Meine Halle hat ein Board, das nicht gelistet ist",
+    "demandBrand": "Meine Halle nutzt eine Marke, die Boardsesh nicht steuert",
+    "demandSpray": "Ich möchte meine eigene Wand beleuchten",
+    "demandNoBoard": "Ich habe noch kein Board",
+    "demandOther": "Etwas anderes",
+    "demandSend": "Senden",
+    "demandClose": "Schließen",
+    "demandThanksTitle": "Danke – notiert.",
+    "demandThanksBody": "Deine Antwort kommt auf die Nachfrage-Liste. Wenn daraus ein Board wird, findest du es hier.",
+    "demandTellMore": "Nenn das Board auf der Support-Seite"
   },
   "error": {
     "title": "Wir kommen gerade nicht an die Hallenliste ran",

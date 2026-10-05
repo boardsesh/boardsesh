@@ -1407,6 +1407,17 @@ export const SHARED_EVENTS = {
   // a query on the toggle tap. The queue depth is already on the drain and
   // offline-read events.
   OfflineModeToggled: 'Offline Mode Toggled',
+
+  // Unmet board demand, reported from the surfaces where a user looks for a
+  // board and stops finding one (issue #6062). One event per submitted form,
+  // never per keystroke. This is the funnel's missing top edge: a visitor who
+  // never creates a wall produces no spray-wall event at all, so "I searched my
+  // gym and it isn't here" is the only record that the demand existed.
+  //
+  // Payload builders live in `./board-demand-events`. Two closed-set fields,
+  // `reason` and `surface` — the form's free text belongs to the feedback
+  // pipeline and never reaches this event.
+  BoardDemandReported: 'Board Demand Reported',
 } as const;
 
 export type SharedEventKey = keyof typeof SHARED_EVENTS;
