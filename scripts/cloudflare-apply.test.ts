@@ -1955,58 +1955,23 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
     expect(written).toHaveLength(MANAGED_RULE_PHASES.length);
   });
 
-  it('skips an optional phase whose write is refused and still converges R2', async () => {
-    // A token can read a phase it may not write. Rules apply before R2, so a
-    // thrown 403 here would leave the OTA custom domain unattached and fail the
-    // production deploy over a rule nothing depends on yet.
-    const requests = stubCloudflareApi(dnsResponses(liveApexDnsRecord()));
-    vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'account-1');
-    const stubbedFetch = globalThis.fetch as unknown as (
-      input: string,
-      init?: { method?: string; body?: string },
-    ) => Response;
-    vi.stubGlobal('fetch', (input: string, init?: { method?: string; body?: string }) => {
-      if (init?.method === 'PUT' && new URL(input).pathname === phaseEntrypoint(COMPRESSION_RULE_PHASE)) {
-        return new Response(
-          JSON.stringify({ success: false, errors: [{ code: 10_000, message: 'Authentication error' }] }),
-          {
-            status: 403,
-          },
-        );
-      }
-      return stubbedFetch(input, init);
-    });
-
-    expect(await runCloudflareApply(['--apply'])).toBe(0);
-
-    const otaAttach = requests.filter(
-      (request) => request.method === 'POST' && request.pathname.includes('/boardsesh-ota-v3/domains/custom'),
-    );
-    expect(otaAttach).toHaveLength(1);
-    expect(otaAttach[0].body).toMatchObject({ domain: OTA_ASSETS_HOSTNAME });
-    const warnings = vi.mocked(console.warn).mock.calls.map(([message]) => String(message));
-    expect(warnings.some((message) => message.includes(COMPRESSION_RULE_PHASE) && message.includes('HTTP 403'))).toBe(
-      true,
-    );
-    const logs = vi.mocked(console.log).mock.calls.map(([message]) => String(message));
-    expect(
-      logs.some((message) => message.startsWith('[cf-apply] applied:') && message.includes('Compression rule')),
-    ).toBe(false);
-  });
-
-  it('still fails the run when a long-standing phase refuses its write', async () => {
+  it.each([
+    ['the compression phase', COMPRESSION_RULE_PHASE],
+    ['a long-standing phase', CACHE_RULE_PHASE],
+  ])('fails the run when %s refuses its write', async (_label, refusedPhase) => {
+    // No phase is optional any more, so a refused write is a lost scope and must
+    // stop the deploy. The skip-and-warn path in the apply loop only applies to
+    // a phase the registry marks optional while its scope is being rolled out.
     stubCloudflareApi(dnsResponses(liveApexDnsRecord()));
     const stubbedFetch = globalThis.fetch as unknown as (
       input: string,
       init?: { method?: string; body?: string },
     ) => Response;
     vi.stubGlobal('fetch', (input: string, init?: { method?: string; body?: string }) => {
-      if (init?.method === 'PUT' && new URL(input).pathname === phaseEntrypoint(CACHE_RULE_PHASE)) {
+      if (init?.method === 'PUT' && new URL(input).pathname === phaseEntrypoint(refusedPhase)) {
         return new Response(
           JSON.stringify({ success: false, errors: [{ code: 10_000, message: 'Authentication error' }] }),
-          {
-            status: 403,
-          },
+          { status: 403 },
         );
       }
       return stubbedFetch(input, init);
@@ -2416,13 +2381,12 @@ describe('a rule phase this token cannot read', () => {
     expect(changes.some((change) => change.resource === 'cache-rule')).toBe(true);
   });
 
-  it('tolerates an unreadable phase only for the compression rollout', () => {
-    // Both header-transform phases use the same confirmed production-token
-    // scope, so losing it must fail loudly instead of degrading either rule.
-    // The compression phase is new and unconfirmed against that token; remove
-    // it from this list when plan.ts flips it to `optional: false`.
+  it('has no optional rule phases after every scope was confirmed', () => {
+    // Each phase's scope has been confirmed against the production token by an
+    // apply that wrote it, so losing one must fail loudly instead of degrading
+    // a rule.
     const optional = MANAGED_RULE_PHASES.filter((phase) => phase.optional).map((phase) => phase.resource);
-    expect(optional).toEqual(['compression-rule']);
+    expect(optional).toEqual([]);
   });
 });
 
