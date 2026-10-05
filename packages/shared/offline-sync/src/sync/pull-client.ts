@@ -2793,8 +2793,8 @@ async function runBootstrapPhase(params: {
  *
  * `beginGlobalPurge()` is deliberately NOT called: it bumps the global wipe
  * epoch, which would abort the very cycle that is supposed to rebuild. It isn't
- * needed here — the scheduler single-flights pullSync, so no other pull page is
- * on the wire, and the drainer writes only to pending_mutations, which this
+ * needed here — the exported pullSync gate serializes cycles on this database,
+ * so no other pull page is on the wire, and the drainer writes only to pending_mutations, which this
  * reset never touches.
  */
 async function enforceDeletionsCoverage(
@@ -2901,10 +2901,42 @@ async function enforceDeletionsCoverage(
   options?.onCoverageEvaluated?.({ verdict, markerAgeDays, outcome: 'reset' });
 }
 
-export async function pullSync(
+// Scheduler cycles and explicit download/publication refreshes share this gate.
+// Keep each caller's cycle: joining an older pull could miss its newer publication.
+const pullTails = new WeakMap<OfflineDatabase, Promise<void>>();
+
+export function pullSync(
   db: OfflineDatabase,
   queryClient: QueryInvalidator,
   graphqlFetch: <T>(query: string, variables?: Record<string, unknown>) => Promise<T>,
+  options?: SyncOptions,
+): Promise<void> {
+  // Capture authority and scope before waiting: a queued request must never
+  // adopt a later sign-in or re-download a scope removed during that wait.
+  const purgeToken = capturePurgeToken();
+  const signingOutAtEnqueue = isSigningOut();
+  const cycleOptions = options ? { ...options, enabledBoards: options.enabledBoards?.slice() } : undefined;
+  const previous = pullTails.get(db);
+  const start = () => performPullSync(db, queryClient, graphqlFetch, purgeToken, signingOutAtEnqueue, cycleOptions);
+  const result = (previous ?? Promise.resolve()).then(start);
+  // Only the queue tail swallows failure; the caller retains the original rejection.
+  const tail = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  pullTails.set(db, tail);
+  void tail.then(() => {
+    if (pullTails.get(db) === tail) pullTails.delete(db);
+  });
+  return result;
+}
+
+async function performPullSync(
+  db: OfflineDatabase,
+  queryClient: QueryInvalidator,
+  graphqlFetch: <T>(query: string, variables?: Record<string, unknown>) => Promise<T>,
+  purgeToken: PurgeToken,
+  signingOutAtEnqueue: boolean,
   options?: SyncOptions,
 ): Promise<void> {
   let totalDocuments = 0;
@@ -2921,7 +2953,8 @@ export async function pullSync(
   // Mirrors drainMutationQueue's entry guard: don't even start the snapshot
   // bootstrap phase below (which runs before the first cycleAborted() check)
   // when the app is already backgrounded.
-  if (isBackgrounded()) return reportInterruptedCycle();
+  if (signingOutAtEnqueue || isSigningOut() || hasPurgeLanded(purgeToken) || isBackgrounded())
+    return reportInterruptedCycle();
 
   // Offline: every request this cycle would make is already lost, and the
   // bootstrap phase would spend a Sentry event per enabled-but-undownloaded
@@ -2931,28 +2964,8 @@ export async function pullSync(
   const isOnline = options?.isOnline ?? (() => true);
   if (!isOnline()) return reportInterruptedCycle();
 
-  // Captured ONCE for the whole cycle and threaded into every phase, so a wipe or a
-  // purge aborts exactly the work it can invalidate rather than just whichever table
-  // is mid-flight. The token carries the global epoch AND a copy of every
-  // per-namespace purge epoch, so one capture answers for every scope this cycle
-  // will touch (issue #4370).
-  //
-  // Capturing once matters because `enabledBoards` is a snapshot taken before the
-  // cycle began. Removing a board (see removeBoardScopeData) drops it from that
-  // setting and bumps that namespace's epoch — but this cycle is still iterating the
-  // STALE list. If each table re-baselined its own token, every table after the one
-  // that aborted would capture the post-bump value, sail through its guard, and
-  // happily re-download the scope whose rows are being deleted right now, writing
-  // checkpoints past them. The user taps Remove and the catalog comes back.
-  //
-  // Sign-out never hit this because `isSigningOut()` is a persistent flag that stays
-  // true for every subsequent table; the epoch alone is not a substitute for it.
-  //
-  // Captured immediately after the entry guard and BEFORE the coverage phase's
-  // awaits: that phase can spend a network probe plus a multi-table wipe, and a
-  // purge landing inside that window must read as "not my token" rather than be
-  // adopted as this cycle's own baseline.
-  const purgeToken = capturePurgeToken();
+  // The enqueue token is threaded through every phase. A sign-out or scope
+  // removal while waiting behind another pull must retain its original epoch.
   // GLOBAL: sign-out, a global wipe, backgrounding, or connectivity loss. A board
   // purge is deliberately absent — it cannot invalidate the user tables, the
   // deletions cursor, or another board's rows, so it ends that scope's work
