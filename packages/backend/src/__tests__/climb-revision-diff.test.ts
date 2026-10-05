@@ -20,6 +20,8 @@ const published = (overrides: Partial<ClimbRevisionState> = {}): ClimbRevisionSt
   angle: 40,
   characteristics: null,
   difficultyId: 18,
+  revisionNumber: 1,
+  holdsRevisionNumber: 1,
   ...overrides,
 });
 

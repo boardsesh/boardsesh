@@ -8013,7 +8013,7 @@ export type SaveTickInput = {
   boardType: Scalars['String']['input'];
   /** Specific board entity this tick is on, by uuid. When provided, takes precedence over (layoutId, sizeId, setIds) resolution and lets ticks attach to a board the climber doesn't own (e.g. a seeded gym board). */
   boardUuid?: InputMaybe<Scalars['String']['input']>;
-  /** The `Climb.revisionNumber` the client was showing when the climber logged this. Optional. When it is omitted, or names a revision the climb has not reached, the server stores the revision that was live at climbedAt. A tick is never rejected over this value. */
+  /** The `Climb.revisionNumber` the client was showing when the climber logged this. Optional. When it is omitted, is below 1, or names a revision the climb has not reached, the server stores the revision that was live at climbedAt. No integer sent here fails the tick. */
   climbRevision?: InputMaybe<Scalars['Int']['input']>;
   /** Climb UUID */
   climbUuid: Scalars['String']['input'];
@@ -9976,8 +9976,12 @@ export type UpdateClimbInput = {
 export type UpdateClimbResult = {
   __typename?: 'UpdateClimbResult';
   createdAt?: Maybe<Scalars['String']['output']>;
+  /** The revision at which the holds last changed, after this save (`Climb.holdsRevisionNumber`). Equal to revisionNumber when this save moved a hold. */
+  holdsRevisionNumber?: Maybe<Scalars['Int']['output']>;
   isDraft: Scalars['Boolean']['output'];
   publishedAt?: Maybe<Scalars['String']['output']>;
+  /** The climb's revision after this save (`Climb.revisionNumber`). One higher than before when the save was a recorded edit, unchanged when it edited a draft or changed nothing. So the editing client can stamp its next tick without refetching the climb. */
+  revisionNumber?: Maybe<Scalars['Int']['output']>;
   uuid: Scalars['ID']['output'];
 };
 

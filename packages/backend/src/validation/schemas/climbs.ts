@@ -137,8 +137,10 @@ export const ClimbInputSchema = z.object({
   // `board_climbs.revision_number` as the queueing client read it (#6023).
   // Round-trips through the queue so the peer who logs a queued climb can say
   // which revision was on the wall, without a refetch. Null from a client that
-  // predates the field.
-  revisionNumber: z.number().int().positive().nullish(),
+  // predates the field. `.catch(null)`: `parseArrayTolerant` drops the whole
+  // queue slot on a schema failure, and a bad revision is no reason to lose a
+  // climb from everyone's queue.
+  revisionNumber: z.number().int().positive().nullish().catch(null),
 });
 
 /**

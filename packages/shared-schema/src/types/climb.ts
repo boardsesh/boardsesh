@@ -460,4 +460,8 @@ export type UpdateClimbResult = {
   /** ISO timestamp of when the row was first published (null while still a draft) */
   publishedAt?: string | null;
   isDraft: boolean;
+  /** `board_climbs.revision_number` after this save. */
+  revisionNumber?: number | null;
+  /** `board_climbs.holds_revision_number` after this save. */
+  holdsRevisionNumber?: number | null;
 };

@@ -12,6 +12,19 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+// Keep LATEST_SCHEMA_VERSION one above ARTIFACT_SCHEMA_VERSION for every importer
+// in this file, the code under test included. The real two are equal whenever
+// the newest migration changed an artifact table (v11 did), and then "an
+// artifact below LATEST but at the artifact floor" cannot be built, so nothing
+// would notice the bootstrap comparing against LATEST. Same technique as
+// snapshot-forward-compatibility.test.ts. `runMigrations` reads its own
+// module-local constant, so the database is still migrated to the real latest.
+vi.mock('../../db/migrations', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../db/migrations')>();
+  return { ...original, LATEST_SCHEMA_VERSION: original.ARTIFACT_SCHEMA_VERSION + 1 };
+});
+
 import type { QueryInvalidator } from '../../database';
 import {
   pullSync,
@@ -1118,15 +1131,14 @@ describe('pullSync snapshot bootstrap', () => {
     expect(await db.getFirstAsync('SELECT 1 AS n FROM board_climbs LIMIT 1')).toBeNull();
   });
 
-  it('imports an artifact stamped at ARTIFACT_SCHEMA_VERSION, whatever LATEST_SCHEMA_VERSION is', async () => {
-    // The floor is the last migration that changed an artifact table, not the
-    // newest migration: a device-only migration after it must not send every
-    // download to the paged crawl until the export republished. Today the two
-    // are the same number (v11 added the climb revision columns to
-    // `board_climbs`), so this pins the boundary itself; that a device-only
-    // migration leaves the floor where it was is `artifactSchemaVersion`'s own
-    // test in migrations.test.ts.
-    expect(ARTIFACT_SCHEMA_VERSION).toBeLessThanOrEqual(LATEST_SCHEMA_VERSION);
+  it('imports an artifact stamped below LATEST_SCHEMA_VERSION but at ARTIFACT_SCHEMA_VERSION or above', async () => {
+    // A device-only migration raises LATEST and leaves the artifact floor where
+    // it was, so an artifact one version behind carries every column this client
+    // has. Rejecting it would send every download to the paged crawl until the
+    // export republished. LATEST is mocked one above the real floor (see the
+    // top of this file) so the two numbers differ whatever the newest real
+    // migration touched.
+    expect(ARTIFACT_SCHEMA_VERSION).toBeLessThan(LATEST_SCHEMA_VERSION);
     const filePath = join(workDir, 'older-device-schema.db');
     buildArtifact({
       filePath,
@@ -1134,7 +1146,7 @@ describe('pullSync snapshot bootstrap', () => {
       stats: [],
       climbsWatermark: CLIMBS_WATERMARK,
       statsWatermark: STATS_WATERMARK,
-      schemaVersion: ARTIFACT_SCHEMA_VERSION,
+      schemaVersion: LATEST_SCHEMA_VERSION - 1,
     });
 
     await bootstrapScopeFromSnapshot({ db, scope: SCOPE_KILTER_5, scopeKey: 'kilter:1:5', filePath });
@@ -1143,7 +1155,7 @@ describe('pullSync snapshot bootstrap', () => {
     expect(climbs).toEqual([{ uuid: 'c1' }]);
   });
 
-  it('still refuses an artifact that lacks a column this client requires, even one stamped current', async () => {
+  it('still refuses an older-schema artifact that lacks a column this client requires', async () => {
     // The column check stays the real safety net, whatever version is stamped.
     const filePath = join(workDir, 'missing-column.db');
     buildArtifact({
@@ -1152,7 +1164,7 @@ describe('pullSync snapshot bootstrap', () => {
       stats: [],
       climbsWatermark: CLIMBS_WATERMARK,
       statsWatermark: STATS_WATERMARK,
-      schemaVersion: ARTIFACT_SCHEMA_VERSION,
+      schemaVersion: LATEST_SCHEMA_VERSION - 1,
     });
     const artifact = new DatabaseSync(filePath);
     artifact.exec('ALTER TABLE board_climbs DROP COLUMN missing_hold_count');

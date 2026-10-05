@@ -16,9 +16,11 @@ import { logger } from '../../../utils/logger';
  * climbed on 3. The server's own answer, "the revision that was live at
  * `climbedAt`", is the fallback for a client that does not send one.
  *
- * Nothing here may fail a tick. A refusal that is not retryable dead-letters the
- * send in the offline drainer, and a wrong revision number costs far less than a
- * lost send. Every doubtful value is replaced, never rejected.
+ * No integer the client sends may fail a tick. A refusal that is not retryable
+ * dead-letters the send in the offline drainer, and a wrong revision number
+ * costs far less than a lost send. Every doubtful value is replaced, never
+ * rejected. (A value that is not an integer at all never gets this far: the
+ * GraphQL `Int` scalar refuses it as a malformed request, like any other field.)
  */
 
 export type TickClimbRevisionDecision = {
@@ -94,7 +96,12 @@ export function decideTickClimbRevision(params: {
  * revision: the highest revision created at or before `climbedAt`, or 1 when the
  * tick predates them all.
  *
- * Never throws. A failed read stores NULL, which is what "unknown" means.
+ * A database error propagates, like `resolveCanonicalClimbUuid`'s. It reaches
+ * the client as the masked `INTERNAL_SERVER_ERROR`, which the offline drainer
+ * classifies as retryable (`isRetryable` in `@boardsesh/offline-sync`), and a
+ * replay is idempotent on the tick uuid, so the send is delivered again and
+ * stamped properly. Storing NULL instead would save the tick now and leave it
+ * without a revision for good, to spare a retry that costs nothing.
  */
 export async function resolveTickClimbRevision(params: {
   boardType: string;
@@ -107,39 +114,35 @@ export async function resolveTickClimbRevision(params: {
   climbedAt: string;
 }): Promise<number | null> {
   const { boardType, inputClimbUuid, canonicalClimbUuid, clientRevision, climbedAt } = params;
-  try {
-    const [climb] = await db
-      .select({ revisionNumber: dbSchema.boardClimbs.revisionNumber })
-      .from(dbSchema.boardClimbs)
-      .where(and(eq(dbSchema.boardClimbs.uuid, canonicalClimbUuid), eq(dbSchema.boardClimbs.boardType, boardType)))
-      .limit(1);
+  const [climb] = await db
+    .select({ revisionNumber: dbSchema.boardClimbs.revisionNumber })
+    .from(dbSchema.boardClimbs)
+    .where(and(eq(dbSchema.boardClimbs.uuid, canonicalClimbUuid), eq(dbSchema.boardClimbs.boardType, boardType)))
+    .limit(1);
 
-    const decision = decideTickClimbRevision({
-      currentRevision: climb?.revisionNumber ?? null,
-      clientRevision,
-      aliasRemapped: canonicalClimbUuid !== inputClimbUuid,
-    });
-    if (decision.clientRevisionAhead) {
-      logger.warn(
-        `[saveTick] client sent climbRevision=${clientRevision} past the current ${climb?.revisionNumber} — ` +
-          `using the revision live at climbedAt: ${boardType}/${canonicalClimbUuid}`,
-      );
-    }
-    if (decision.kind === 'store') return decision.revision;
-
-    const [liveAtClimbedAt] = await db
-      .select({ revisionNumber: max(dbSchema.boardClimbRevisions.revisionNumber) })
-      .from(dbSchema.boardClimbRevisions)
-      .where(
-        and(
-          eq(dbSchema.boardClimbRevisions.climbUuid, canonicalClimbUuid),
-          eq(dbSchema.boardClimbRevisions.boardType, boardType),
-          lte(dbSchema.boardClimbRevisions.createdAt, new Date(climbedAt)),
-        ),
-      );
-    return liveAtClimbedAt?.revisionNumber ?? 1;
-  } catch (error) {
-    logger.error('[saveTick] climb revision lookup failed — storing the tick with no revision:', error);
-    return null;
+  const decision = decideTickClimbRevision({
+    currentRevision: climb?.revisionNumber ?? null,
+    clientRevision,
+    aliasRemapped: canonicalClimbUuid !== inputClimbUuid,
+  });
+  if (decision.clientRevisionAhead) {
+    logger.warn(
+      `[saveTick] client sent climbRevision=${clientRevision} past the current ${climb?.revisionNumber} — ` +
+        (decision.kind === 'store' ? `storing ${decision.revision}` : 'storing the revision live at climbedAt') +
+        `: ${boardType}/${canonicalClimbUuid}`,
+    );
   }
+  if (decision.kind === 'store') return decision.revision;
+
+  const [liveAtClimbedAt] = await db
+    .select({ revisionNumber: max(dbSchema.boardClimbRevisions.revisionNumber) })
+    .from(dbSchema.boardClimbRevisions)
+    .where(
+      and(
+        eq(dbSchema.boardClimbRevisions.climbUuid, canonicalClimbUuid),
+        eq(dbSchema.boardClimbRevisions.boardType, boardType),
+        lte(dbSchema.boardClimbRevisions.createdAt, new Date(climbedAt)),
+      ),
+    );
+  return liveAtClimbedAt?.revisionNumber ?? 1;
 }

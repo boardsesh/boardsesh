@@ -89,9 +89,11 @@ describe('SaveTickInputSchema.climbRevision', () => {
     expect(SaveTickInputSchema.parse({ ...tick, climbRevision: null }).climbRevision).toBeNull();
   });
 
-  // A rejected send dead-letters in the offline drainer, so no value of this
-  // field may fail the parse. Anything unusable becomes "not sent".
-  it.each([[0], [-1], [1.5], ['2'], [Number.NaN], [{}]])('drops %s instead of failing the tick', (bad) => {
+  // A rejected send dead-letters in the offline drainer, so no integer may fail
+  // the parse. 0 and the negatives are the whole set of bad values the GraphQL
+  // `Int` scalar lets through to here; what it does with the rest is pinned
+  // through the real schema in save-tick-climb-revision.test.ts.
+  it.each([[0], [-1], [-2147483648]])('drops %s instead of failing the tick', (bad) => {
     const parsed = SaveTickInputSchema.safeParse({ ...tick, climbRevision: bad });
 
     expect(parsed.success).toBe(true);

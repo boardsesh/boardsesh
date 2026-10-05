@@ -1,8 +1,30 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { createRequire } from 'node:module';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import type * as GraphQLModule from 'graphql';
+import { betaLinkIdentity, type ConnectionContext } from '@boardsesh/shared-schema';
 import { setupWorkerDatabase } from './worker-db';
+
+// The real lookup, with a switch to make the next call fail the way a database
+// error would. Everything else in this file runs it untouched.
+const { revisionLookupFailure } = vi.hoisted(() => ({ revisionLookupFailure: { next: null as Error | null } }));
+vi.mock('../graphql/resolvers/ticks/tick-climb-revision', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../graphql/resolvers/ticks/tick-climb-revision')>();
+  return {
+    ...original,
+    resolveTickClimbRevision: async (params: Parameters<typeof original.resolveTickClimbRevision>[0]) => {
+      const failure = revisionLookupFailure.next;
+      revisionLookupFailure.next = null;
+      if (failure) throw failure;
+      return original.resolveTickClimbRevision(params);
+    },
+  };
+});
+
+// The beta-link path below goes through the rate limiter.
+vi.mock('../utils/rate-limiter', () => ({ checkRateLimit: vi.fn(), resetAllRateLimits: vi.fn() }));
+vi.mock('../utils/redis-rate-limiter', () => ({ checkRateLimitRedis: vi.fn().mockResolvedValue(undefined) }));
 
 // Side effects saveTick and updateTick fire after the write; none of them are
 // under test and they would otherwise pull in Redis / the social event bus.
@@ -19,7 +41,14 @@ vi.mock('../services/analytics/posthog', () => ({ captureBackendEvent: vi.fn(() 
 
 import { db } from '../db/client';
 import { tickMutations } from '../graphql/resolvers/ticks/mutations';
+import { schema } from '../graphql/index';
 import { logger } from '../utils/logger';
+
+// `graphql` resolves to two module instances under the test transform. The
+// schema was built with the CJS copy, so `execute` has to come from the same
+// one. See spray-visibility-sweep.test.ts for the long version.
+const requireFromHere = createRequire(import.meta.url);
+const { execute, parse } = requireFromHere('graphql') as typeof GraphQLModule;
 
 const USER_ID = 'u-tick-revision';
 const BOARD = 'moonboard';
@@ -135,6 +164,7 @@ describe('saveTick stamps the climb revision', () => {
 
   afterAll(async () => {
     await db.execute(sql`DELETE FROM boardsesh_ticks WHERE user_id = ${USER_ID}`);
+    await db.execute(sql`DELETE FROM board_beta_links WHERE climb_uuid LIKE ${`${PREFIX}%`}`);
     await db.execute(sql`DELETE FROM board_climb_aliases WHERE alias_uuid LIKE ${`${PREFIX}%`}`);
     await db.execute(sql`DELETE FROM board_climb_revisions WHERE climb_uuid LIKE ${`${PREFIX}%`}`);
     await db.execute(sql`DELETE FROM board_climbs WHERE uuid LIKE ${`${PREFIX}%`}`);
@@ -245,7 +275,7 @@ describe('saveTick stamps the climb revision', () => {
     expect(tick.climbRevision).toBe(1);
   });
 
-  it.each([[0], [-3], [2.5], [null]])('saves the tick when the client sends %s, and falls back', async (bad) => {
+  it.each([[0], [-3], [null]])('saves the tick when the client sends %s, and falls back', async (bad) => {
     const tick = await saveTick(EDITED, { climbRevision: bad, climbedAt: DURING_REVISION_2 });
 
     expect(tick.climbRevision).toBe(2);
@@ -301,5 +331,93 @@ describe('saveTick stamps the climb revision', () => {
 
     expect(updated.climbRevision).toBe(2);
     expect(await storedRevision(tick.uuid)).toBe(2);
+  });
+
+  // What the wire can actually deliver, through the executable schema. "No
+  // integer fails the tick" is the resolver's promise; a value that is not an
+  // `Int` at all is refused by GraphQL before any resolver runs, the same as a
+  // malformed `angle` would be.
+  describe('through the schema', () => {
+    const SAVE_TICK = `mutation Save($input: SaveTickInput!) {
+      saveTick(input: $input) { uuid climbRevision }
+    }`;
+    const send = (input: Record<string, unknown>) =>
+      execute({ schema, document: parse(SAVE_TICK), variableValues: { input }, contextValue: authCtx() });
+    const tickCount = async () => {
+      const rows = (await db.execute(
+        sql`SELECT count(*)::int AS count FROM boardsesh_ticks WHERE user_id = ${USER_ID}`,
+      )) as unknown as Array<{ count: number }>;
+      return Number([...rows][0].count);
+    };
+
+    it.each([[0], [-1]])('accepts %s and stores the fallback', async (climbRevision) => {
+      const result = await send(tickInput(EDITED, { climbRevision, climbedAt: DURING_REVISION_2 }));
+
+      expect(result.errors ?? []).toEqual([]);
+      expect((result.data as { saveTick: SavedTick }).saveTick.climbRevision).toBe(2);
+      expect(await tickCount()).toBe(1);
+    });
+
+    it.each([[2.5], ['2'], [2147483648], [{}]])(
+      'refuses %j as a malformed request, before the resolver',
+      async (bad) => {
+        const result = await send(tickInput(EDITED, { climbRevision: bad }));
+
+        expect(result.errors).toHaveLength(1);
+        expect(result.errors?.[0].message).toMatch(/climbRevision/);
+        expect(result.data ?? null).toBeNull();
+        expect(await tickCount()).toBe(0);
+      },
+    );
+  });
+
+  // A database error in the lookup is not swallowed. The client sees a masked
+  // INTERNAL_SERVER_ERROR, which the offline drainer retries, and the replay is
+  // idempotent on the tick uuid, so the send lands with a real revision instead
+  // of being saved once with NULL for good.
+  describe('when the lookup fails', () => {
+    it('fails the save, stores nothing, and stamps the replay', async () => {
+      const uuid = uuidv4();
+      revisionLookupFailure.next = new Error('connection terminated unexpectedly');
+
+      await expect(saveTick(EDITED, { uuid, climbedAt: DURING_REVISION_2 })).rejects.toThrow(
+        'connection terminated unexpectedly',
+      );
+      expect(await storedRevision(uuid)).toBeUndefined();
+
+      const replay = await saveTick(EDITED, { uuid, climbedAt: DURING_REVISION_2 });
+      expect(replay.climbRevision).toBe(2);
+      expect(await storedRevision(uuid)).toBe(2);
+    });
+
+    it('leaves no unhandled rejection when something else fails the save first', async () => {
+      // The lookup runs alongside the board and beta-link work and is awaited
+      // after it. Here the beta link is refused (the video is already on another
+      // climb) before that await is reached, so the lookup's own rejection has
+      // nobody waiting for it.
+      const videoUrl = 'https://www.tiktok.com/@climber/video/7234567890123456789';
+      await db.execute(sql`
+        INSERT INTO board_beta_links (board_type, climb_uuid, link, video_identity, is_listed)
+        VALUES (${BOARD}, ${UNEDITED}, ${videoUrl}, ${betaLinkIdentity(videoUrl)}, true)
+      `);
+      const unhandled = vi.fn();
+      process.on('unhandledRejection', unhandled);
+      try {
+        const uuid = uuidv4();
+        revisionLookupFailure.next = new Error('connection terminated unexpectedly');
+
+        await expect(saveTick(EDITED, { uuid, videoUrl })).rejects.toThrow(/already attached/);
+        // The lookup was started and did reject: the switch has been consumed.
+        expect(revisionLookupFailure.next).toBeNull();
+        // Node reports an unhandled rejection after the microtask queue drains.
+        await new Promise<void>((resolve) => setTimeout(resolve, 20));
+
+        expect(unhandled).not.toHaveBeenCalled();
+        expect(await storedRevision(uuid)).toBeUndefined();
+      } finally {
+        process.off('unhandledRejection', unhandled);
+        await db.execute(sql`DELETE FROM board_beta_links WHERE climb_uuid = ${UNEDITED}`);
+      }
+    });
   });
 });

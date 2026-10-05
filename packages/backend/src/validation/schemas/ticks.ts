@@ -51,11 +51,14 @@ export const SaveTickInputSchema = z
     boardType: BoardNameSchema,
     climbUuid: ExternalUUIDSchema,
     // The climb revision the client displayed when the climber logged this
-    // (#6023). `.catch(null)` because this field must never fail a tick: a
-    // rejected send dead-letters in the offline drainer, so a value that is not
-    // a positive integer is dropped and the server works the revision out from
-    // `climbedAt` instead. An in-range check against the climb's current
-    // revision happens in the resolver, which is where that number is known.
+    // (#6023). `.catch(null)` because no integer the client sends may fail a
+    // tick: a rejected send dead-letters in the offline drainer, so 0 or a
+    // negative number is dropped and the server works the revision out from
+    // `climbedAt` instead. Those are the only bad values that reach this schema.
+    // Anything that is not a 32-bit integer (2.5, "2", an object) is refused
+    // earlier by the GraphQL `Int` scalar, as a malformed request. An in-range
+    // check against the climb's current revision happens in the resolver, which
+    // is where that number is known.
     climbRevision: z.number().int().positive().optional().nullable().catch(null),
     angle: z.number().int().min(-5).max(90),
     isMirror: z.boolean(),

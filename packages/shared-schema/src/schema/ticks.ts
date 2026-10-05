@@ -93,7 +93,7 @@ export const ticksTypeDefs = /* GraphQL */ `
     boardType: String!
     "Climb UUID"
     climbUuid: String!
-    "The \`Climb.revisionNumber\` the client was showing when the climber logged this. Optional. When it is omitted, or names a revision the climb has not reached, the server stores the revision that was live at climbedAt. A tick is never rejected over this value."
+    "The \`Climb.revisionNumber\` the client was showing when the climber logged this. Optional. When it is omitted, is below 1, or names a revision the climb has not reached, the server stores the revision that was live at climbedAt. No integer sent here fails the tick."
     climbRevision: Int
     "Board angle"
     angle: Int!

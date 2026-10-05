@@ -224,6 +224,18 @@ describe('queue climb field parity: GraphQL ClimbInput <-> backend Zod schema', 
 
     expect(result.success).toBe(true);
   });
+
+  // Same failure mode, different field: a revision that is not a positive
+  // integer costs the queued climb its revision, not its place in the queue.
+  it.each([[0], [-1], [1.5], ['3']])('drops a revisionNumber of %j rather than the queue slot', (revisionNumber) => {
+    const result = ClimbQueueItemSchema.safeParse({
+      uuid: 'queue-slot-1',
+      climb: { uuid: 'aurora-climb-uuid-fixture', angle: 40, revisionNumber },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.climb.revisionNumber).toBeNull();
+  });
 });
 
 describe('queue climb field parity: the two READ paths', () => {

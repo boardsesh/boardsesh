@@ -2156,6 +2156,13 @@ To make that one cheap read, `board_climbs` carries two numbers of its own.
 
 Both are `NOT NULL DEFAULT 1`. A tick whose `climb_revision` is at or above the
 climb's `holds_revision_number` was climbed on the holds the climb has now.
+`updateClimb` answers with both numbers as the save left them, so the app that
+made the edit knows the new revision without fetching the climb again.
+
+Climbs edited before the columns existed were filled in once, by migration
+0252, from their revision rows. For those climbs the holds number is a best
+reading of the `changes` lists: a pace-only edit is listed there as `holds`, so
+it can sit one edit too high, and a pruned revision cannot be counted at all.
 
 `saveTick` takes an optional `climbRevision`: the revision the client was
 showing when the climber logged it. The client is the better witness. A send
@@ -2167,7 +2174,7 @@ still climbed on 3. What the server stores (`resolveTickClimbRevision`):
 | The climb has no `board_climbs` row | NULL |
 | The client sent a revision from 1 up to the current one | That revision, even if its row has been pruned |
 | The client sent a revision above the current one | The fallback, and a warning in the log |
-| The client sent nothing, or something that is not a positive whole number | The fallback |
+| The client sent nothing, or 0, or a negative number | The fallback |
 | The uuid the client sent was an alias of another climb | The fallback. The client's number was counted on the retired row. |
 
 The fallback is the revision that was live when the climb was climbed: 1 when
@@ -2176,9 +2183,16 @@ before `climbedAt`, or 1 when the tick is older than all of them. With pruned
 revisions in between it answers the newest row that survives, which can be
 lower than the true one.
 
-A tick is never refused because of this value. A refused send is dead-lettered
-by the offline drainer and lost, and a wrong revision number costs much less
-than that. A failed lookup stores NULL.
+No whole number the client sends gets a tick refused. A refused send is
+dead-lettered by the offline drainer and lost, and a wrong revision number costs
+much less than that. Something that is not a whole number at all (`2.5`, `"2"`)
+is a malformed request and GraphQL rejects it before `saveTick` runs, the same as
+it would for any other field.
+
+If the database read behind the lookup fails, the save fails with it. The app's
+outbox retries that kind of error and a retry of the same tick uuid is safe, so
+the send arrives later with its revision, where storing it at once with NULL
+would have left it without one for good.
 
 Readers: `Tick.climbRevision`, and `climbRevision` with `climbCurrentRevision`
 (the climb's `revision_number` now) on the rows of `climbLogs`,

@@ -45,7 +45,14 @@ export type ClimbRevisionState = {
   characteristics: string[] | null;
   /** The setter grade. Spray only; null on every other board. */
   difficultyId: number | null;
+  /** `board_climbs.revision_number`. Bookkeeping, not editable state: the diff ignores it. */
+  revisionNumber: number;
+  /** `board_climbs.holds_revision_number`. Bookkeeping too. */
+  holdsRevisionNumber: number;
 };
+
+/** A climb's revision and its holds epoch, as `updateClimb` hands them back. */
+export type ClimbRevisionNumbers = Pick<ClimbRevisionState, 'revisionNumber' | 'holdsRevisionNumber'>;
 
 async function readClimbRevisionState(
   executor: DrizzleExecutor,
@@ -66,6 +73,8 @@ async function readClimbRevisionState(
       framesPace: dbSchema.boardClimbs.framesPace,
       angle: dbSchema.boardClimbs.angle,
       characteristics: dbSchema.boardClimbs.characteristics,
+      revisionNumber: dbSchema.boardClimbs.revisionNumber,
+      holdsRevisionNumber: dbSchema.boardClimbs.holdsRevisionNumber,
     })
     .from(dbSchema.boardClimbs)
     .where(and(eq(dbSchema.boardClimbs.uuid, climbUuid), eq(dbSchema.boardClimbs.boardType, boardType)))
@@ -388,6 +397,9 @@ function publishedDate(state: ClimbRevisionState): Date {
  *
  * A recorded edit also moves `board_climbs.revision_number` to the new number,
  * and `holds_revision_number` with it when {@link holdsMoved}.
+ *
+ * Returns the two numbers as they stand once this call is done: moved when it
+ * recorded an edit, and the locked row's own otherwise.
  */
 export async function recordClimbRevision(
   executor: DrizzleExecutor,
@@ -399,15 +411,20 @@ export async function recordClimbRevision(
     editorId: string;
     sprayTarget: Pick<SprayClimbTarget, 'wallId'> | null;
   },
-): Promise<void> {
+): Promise<ClimbRevisionNumbers> {
   const { boardType, climbUuid, before, editorId, sprayTarget } = params;
-  if (before.isDraft) return;
+  // The row is locked from `before` to here, so nothing else has moved these.
+  const unchanged: ClimbRevisionNumbers = {
+    revisionNumber: before.revisionNumber,
+    holdsRevisionNumber: before.holdsRevisionNumber,
+  };
+  if (before.isDraft) return unchanged;
 
   const after = await readClimbRevisionState(executor, boardType, climbUuid, false);
-  if (!after || after.isDraft) return;
+  if (!after || after.isDraft) return unchanged;
 
   const changes = diffClimbRevisionStates(boardType, before, after);
-  if (changes.length === 0) return;
+  if (changes.length === 0) return unchanged;
 
   const revisionKey = and(
     eq(dbSchema.boardClimbRevisions.climbUuid, climbUuid),
@@ -450,12 +467,13 @@ export async function recordClimbRevision(
   // all. It fires `trg_board_climbs_set_sync_fields` once more, which is wanted
   // when the caller's UPDATE changed nothing on the row (a spray regrade lives
   // on the stats row), because `syncClimbs` has to re-deliver the new number.
+  const recorded: ClimbRevisionNumbers = {
+    revisionNumber: nextRevisionNumber,
+    holdsRevisionNumber: holdsMoved(before, after) ? nextRevisionNumber : before.holdsRevisionNumber,
+  };
   await executor
     .update(dbSchema.boardClimbs)
-    .set({
-      revisionNumber: nextRevisionNumber,
-      ...(holdsMoved(before, after) ? { holdsRevisionNumber: nextRevisionNumber } : {}),
-    })
+    .set(recorded)
     .where(and(eq(dbSchema.boardClimbs.uuid, climbUuid), eq(dbSchema.boardClimbs.boardType, boardType)));
 
   // Prune. Revision 1 is never a candidate, so the climb as first published is
@@ -477,4 +495,5 @@ export async function recordClimbRevision(
       ),
     );
   }
+  return recorded;
 }

@@ -64,8 +64,8 @@ export type SaveTickInput = {
   boardType: string;
   climbUuid: string;
   // The `Climb.revisionNumber` the client was showing. Optional: the server
-  // falls back to the revision live at `climbedAt`, and never rejects a tick
-  // over this value.
+  // falls back to the revision live at `climbedAt`, and no integer sent here
+  // fails the tick.
   climbRevision?: number | null;
   angle: number;
   isMirror: boolean;
