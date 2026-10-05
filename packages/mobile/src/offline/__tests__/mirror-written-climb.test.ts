@@ -80,6 +80,15 @@ describe('mirror a written climb on the downloaded active board', () => {
     expect(mocks.mirror).not.toHaveBeenCalled();
     expect(mocks.report).not.toHaveBeenCalled();
   });
+  it('reports an unavailable canonical response without writing local rows', async () => {
+    mocks.request.mockResolvedValue({ syncClimbDocuments: null });
+    await expect(mirrorWrittenClimb(write)).rejects.toThrow('Saved climb is unavailable for local mirroring');
+    expect(mocks.mirror).not.toHaveBeenCalled();
+    expect(mocks.report).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Saved climb is unavailable for local mirroring' }),
+      { tags: { source: 'offline-sync', kind: 'saved-climb-mirror' } },
+    );
+  });
   it('reports a mirror failure to the shared successful-save fallback', async () => {
     const failure = new Error('SQLite unavailable');
     mocks.mirror.mockRejectedValue(failure);

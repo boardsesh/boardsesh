@@ -15,7 +15,7 @@ export function toSqliteValue(value: unknown): SqlValue {
 export async function writePullDocuments(
   transaction: SqlExecutor,
   tableName: string,
-  documents: Record<string, unknown>[],
+  documents: readonly Record<string, unknown>[],
   allowedColumns: readonly string[],
   transientColumns: readonly string[],
   preserveNewerRows: boolean,

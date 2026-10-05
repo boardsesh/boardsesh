@@ -39,7 +39,7 @@ export const mirrorWrittenClimb: NonNullable<BoardAdapter['afterClimbWrite']> = 
       boardType: write.boardType,
       layoutId: board.layoutId,
       climbUuid: write.climbUuid,
-      sprayWallUuid: write.sprayWallUuid ?? (board.boardType === 'spray' ? board.uuid : null),
+      sprayWallUuid: write.sprayWallUuid ?? board.uuid,
     });
     if (!canMirror()) return;
     if (!response.syncClimbDocuments) throw new Error('Saved climb is unavailable for local mirroring');

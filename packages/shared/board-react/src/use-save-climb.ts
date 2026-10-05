@@ -108,6 +108,9 @@ export function useUpdateClimb() {
       });
       if (authEpoch === undefined || isAuthEpochCurrent?.(authEpoch) !== false) {
         try {
+          // UpdateClimbInput has no layout field. The mobile mirror
+          // validates the canonical row against the downloaded active board;
+          // a different scope uses the successful-save refresh fallback below.
           await afterClimbWrite?.({
             boardType: input.boardType,
             climbUuid: result.updateClimb.uuid,

@@ -60,7 +60,7 @@ export async function mirrorSavedClimb(
         await writePullDocuments(
           transaction,
           tableName,
-          [...documents],
+          documents,
           config.localColumns,
           config.transientColumns ?? [],
           true,
