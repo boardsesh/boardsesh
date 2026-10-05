@@ -20,11 +20,19 @@
 // a finished wall from being published.
 
 import { useCallback, useMemo, useState } from 'react';
-import { AccessibilityInfo, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import {
+  AccessibilityInfo,
+  ScrollView,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+  type LayoutChangeEvent,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Button } from '../Button';
+import { RadioGroup } from '../RadioGroup';
 import { ValueSlider } from '../ValueSlider';
 import { adjustValue, notchIndex } from '../value-slider.logic';
 import { ActivityIndicator } from '../ActivityIndicator';
@@ -32,6 +40,7 @@ import { BoardLookCarousel } from '../board-look/BoardLookCarousel';
 import { RailIndexDots } from '../board-look/RailIndexDots';
 import { captionBlockHeight, captionLineHeights, resolveHeroThumb } from '../board-look/board-look-card-metrics';
 import { useTheme } from '../../providers/theme-provider';
+import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
 import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { hapticSelection } from '../../lib/haptics';
@@ -77,6 +86,7 @@ function adjustDim(value: number, direction: 1 | -1): number {
 
 type SprayWallLookStepProps = {
   draft: CreatedWallDraft;
+  stepCounter: string;
   /**
    * The save is in flight. The flow treats it as busy, so nothing can leave
    * under it: a Leave answered mid-save would pop the route, then the save's
@@ -89,11 +99,18 @@ type SprayWallLookStepProps = {
   onConfirmed: () => void;
 };
 
-export function SprayWallLookStep({ draft, onSaveStarted, onSaveFailed, onConfirmed }: SprayWallLookStepProps) {
+export function SprayWallLookStep({
+  draft,
+  stepCounter,
+  onSaveStarted,
+  onSaveFailed,
+  onConfirmed,
+}: SprayWallLookStepProps) {
   const { t } = useTranslation('boards');
   const { t: tCommon } = useTranslation('common');
   const { systemColors, textStyles } = useTheme();
   const insets = useSafeAreaInsets();
+  const headerInset = useTransparentHeaderInset();
   const { width: windowWidth, fontScale } = useWindowDimensions();
 
   // The draft back in the registry. The editor's own `useSprayWallDraft`
@@ -199,11 +216,25 @@ export function SprayWallLookStep({ draft, onSaveStarted, onSaveFailed, onConfir
     t,
   ]);
 
+  const fallbackOptions = useMemo(
+    () => options.map((option) => ({ value: option.id, label: tCommon(option.labelI18nKey) })),
+    [options, tCommon],
+  );
+  const selectFallbackLook = useCallback(
+    (id: BoardLookOptionId) => {
+      if (!saving) setSelectedId(id);
+    },
+    [saving],
+  );
+
   const selectedLabel = selectedOption ? tCommon(selectedOption.labelI18nKey) : '';
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { marginTop: headerInset }]}>
       <View style={styles.header}>
+        <Text variant="footnote" color={systemColors.secondaryLabel}>
+          {stepCounter}
+        </Text>
         <Text variant="title3">{t('sprayWizard.look.title')}</Text>
         <Text variant="subheadline" color={systemColors.secondaryLabel}>
           {t('sprayWizard.look.body')}
@@ -229,7 +260,7 @@ export function SprayWallLookStep({ draft, onSaveStarted, onSaveFailed, onConfir
             showDescriptions={false}
           />
         ) : (
-          <View style={styles.placeholder}>
+          <ScrollView contentContainerStyle={styles.placeholder} showsVerticalScrollIndicator>
             {draftState.isUnavailable || previewStatus === 'unavailable' ? (
               <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.centered}>
                 {t('sprayWizard.look.unavailable')}
@@ -242,7 +273,14 @@ export function SprayWallLookStep({ draft, onSaveStarted, onSaveFailed, onConfir
                 </Text>
               </>
             )}
-          </View>
+            <View
+              style={styles.fallbackChoices}
+              pointerEvents={saving ? 'none' : 'auto'}
+              accessibilityState={{ disabled: saving }}
+            >
+              <RadioGroup options={fallbackOptions} value={selectedId} onChange={selectFallbackLook} />
+            </View>
+          </ScrollView>
         )}
       </View>
 
@@ -318,6 +356,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     paddingVertical: spacing[4],
+  },
+  fallbackChoices: {
+    alignSelf: 'stretch',
   },
   placeholder: {
     alignItems: 'center',
