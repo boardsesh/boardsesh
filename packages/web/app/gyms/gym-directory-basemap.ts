@@ -31,13 +31,15 @@ export function attachDirectoryBasemap(
     setDark(false);
   };
 
-  void Promise.all([import('maplibre-gl/dist/maplibre-gl.css'), import('@maplibre/maplibre-gl-leaflet')])
-    .then(() => {
+  void Promise.all([
+    import('maplibre-gl'),
+    import('maplibre-gl/dist/maplibre-gl.css'),
+    import('@maplibre/maplibre-gl-leaflet'),
+  ])
+    .then(([maplibre, , adapter]) => {
       if (disposed) return;
-      // The adapter augments Leaflet's CommonJS default object, rather than the
-      // namespace wrapper returned by an ESM dynamic import.
-      const leafletRuntime = (leaflet as typeof Leaflet & { default?: typeof Leaflet }).default ?? leaflet;
-      const vector = leafletRuntime.maplibreGL({
+      maplibre.setWorkerUrl('/maplibre/maplibre-gl-worker.mjs');
+      const vector = adapter.maplibreGL({
         style: DARK_MAP_STYLE,
         attributionControl: { customAttribution: DARK_ATTRIBUTION },
       });

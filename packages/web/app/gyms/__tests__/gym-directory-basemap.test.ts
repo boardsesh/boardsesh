@@ -2,8 +2,14 @@ import { describe, expect, it, vi, beforeEach } from 'vite-plus/test';
 import type * as Leaflet from 'leaflet';
 import { attachDirectoryBasemap, DARK_MAP_STYLE } from '../gym-directory-basemap';
 
+const { maplibreGL, setWorkerUrl } = vi.hoisted(() => ({
+  maplibreGL: vi.fn(),
+  setWorkerUrl: vi.fn(),
+}));
+
+vi.mock('maplibre-gl', () => ({ setWorkerUrl }));
 vi.mock('maplibre-gl/dist/maplibre-gl.css', () => ({}));
-vi.mock('@maplibre/maplibre-gl-leaflet', () => ({}));
+vi.mock('@maplibre/maplibre-gl-leaflet', () => ({ maplibreGL }));
 
 const map = {} as Leaflet.Map;
 const listeners = new Map<string, () => void>();
@@ -21,14 +27,14 @@ const vector = {
   onRemove: vi.fn(),
 };
 const raster = { addTo: vi.fn(), remove: vi.fn() };
-const maplibreGL = vi.fn(() => vector);
 const tileLayer = vi.fn(() => raster);
-const leaflet = { default: { maplibreGL }, tileLayer } as unknown as typeof Leaflet;
+const leaflet = { tileLayer } as unknown as typeof Leaflet;
 const setDark = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
   listeners.clear();
+  maplibreGL.mockReturnValue(vector);
   vector.getMaplibreMap.mockReturnValue(renderer);
   vector.addTo.mockReturnValue(vector);
   vector.remove.mockImplementation(() => undefined);
@@ -40,6 +46,8 @@ describe('directory basemap', () => {
   it('loads the dark style with all provider attributions, and cleans up listeners', async () => {
     const dispose = attachDirectoryBasemap(map, leaflet, setDark);
     await vi.waitFor(() => expect(setDark).toHaveBeenCalledWith(true));
+    expect(setWorkerUrl).toHaveBeenCalledWith('/maplibre/maplibre-gl-worker.mjs');
+    expect(setWorkerUrl.mock.invocationCallOrder[0]).toBeLessThan(maplibreGL.mock.invocationCallOrder[0]);
     const options = maplibreGL.mock.calls[0] as unknown as [
       { style: string; attributionControl: { customAttribution: string } },
     ];
