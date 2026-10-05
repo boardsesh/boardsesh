@@ -207,6 +207,10 @@ function FirstConnectCardBody({ boardName, boardHasLights, style }: FirstConnect
             : t('mobile.firstConnect.card.failedNoName')}
         </Text>
       ) : null}
+      {/* Both buttons opt out of the container safe area: the card can mount
+          while Climbs is scrolled (the wall frees up, or enrolment resolves
+          late), and an iOS button host that mounts off screen keeps a ~50pt
+          inset on its label. Same fix as the saved-climbs card (#6002). */}
       <View style={styles.actions}>
         <Button
           title={attempt === 'failed' ? t('mobile.firstConnect.card.tryAgain') : t('mobile.firstConnect.card.connect')}
@@ -216,8 +220,15 @@ function FirstConnectCardBody({ boardName, boardHasLights, style }: FirstConnect
           loading={busy}
           disabled={busy}
           onPress={handleConnect}
+          ignoreContainerSafeArea
         />
-        <Button title={t('mobile.firstConnect.card.noLights')} variant="text" size="small" onPress={handleNoLights} />
+        <Button
+          title={t('mobile.firstConnect.card.noLights')}
+          variant="text"
+          size="small"
+          onPress={handleNoLights}
+          ignoreContainerSafeArea
+        />
       </View>
     </View>
   );

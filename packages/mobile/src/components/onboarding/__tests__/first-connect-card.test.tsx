@@ -76,8 +76,27 @@ vi.mock('../../Text', () => ({
 }));
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }) }));
 vi.mock('../../Button', () => ({
-  Button: ({ title, onPress, loading }: { title: string; onPress: () => void; loading?: boolean }) =>
-    createElement('button', { type: 'button', onClick: onPress, 'data-loading': String(Boolean(loading)) }, title),
+  Button: ({
+    title,
+    onPress,
+    loading,
+    ignoreContainerSafeArea,
+  }: {
+    title: string;
+    onPress: () => void;
+    loading?: boolean;
+    ignoreContainerSafeArea?: boolean;
+  }) =>
+    createElement(
+      'button',
+      {
+        type: 'button',
+        onClick: onPress,
+        'data-loading': String(Boolean(loading)),
+        'data-ignore-container-safe-area': String(Boolean(ignoreContainerSafeArea)),
+      },
+      title,
+    ),
 }));
 vi.mock('../../ble/use-lightbulb-control', () => ({
   useLightbulbControl: (options: unknown) => {
@@ -170,6 +189,18 @@ describe('FirstConnectCard', () => {
     expect(screen.getByText('Connect')).toBeTruthy();
     expect(screen.getByText('This wall has no lights')).toBeTruthy();
     expect(screen.getByLabelText('Not now')).toBeTruthy();
+  });
+
+  // The card can mount while Climbs is scrolled, and an iOS button host that
+  // mounts off screen keeps the safe-area inset on its label (#6002).
+  it('opts both buttons out of the container safe area', () => {
+    const { container } = renderCard();
+
+    const buttons = [...container.querySelectorAll('button[data-loading]')];
+    expect(buttons).toHaveLength(2);
+    for (const button of buttons) {
+      expect(button.getAttribute('data-ignore-container-safe-area')).toBe('true');
+    }
   });
 
   it('counts this launch against its two', () => {
