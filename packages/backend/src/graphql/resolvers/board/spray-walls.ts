@@ -76,6 +76,7 @@ import {
   SetSprayWallRenderSettingsInputSchema,
   UpdateSprayWallInputSchema,
   SPRAY_VERSION_STATUS_WIRE_NAME,
+  SPRAY_CLIMB_EDIT_POLICY_WIRE_NAME,
   UpsertSprayWallHoldsInputSchema,
   UUIDSchema,
 } from '../../../validation/schemas';
@@ -148,6 +149,7 @@ export const SPRAY_WALL_CODES = {
   sourceVersionNotCurrent: 'SPRAY_WALL_SOURCE_VERSION_NOT_CURRENT',
   anchorsRequired: 'SPRAY_WALL_ANCHORS_REQUIRED',
   visibilityOwnerOnly: 'SPRAY_WALL_VISIBILITY_OWNER_ONLY',
+  climbEditPolicyOwnerOnly: 'SPRAY_WALL_CLIMB_EDIT_POLICY_OWNER_ONLY',
 } as const;
 
 type SprayWallRow = typeof dbSchema.sprayWalls.$inferSelect;
@@ -479,6 +481,7 @@ async function toGraphQLWall(
   canEdit: boolean,
   preloadedVersions?: SprayWallVersionRow[],
   preloadedDeltas?: Map<number, { added: number; removed: number }>,
+  presentedWallUuid?: string | null,
 ) {
   const { wall, board } = loaded;
 
@@ -506,6 +509,7 @@ async function toGraphQLWall(
   // `visibleVersions` and this find only misses on a wall that has no published
   // version yet.
   const currentVersion = versions.find((version) => version.id === String(wall.currentVersionId)) ?? null;
+  const viewerCanEditClimbs = await computeCanEditClimbs(userId, wall, board, canEdit, presentedWallUuid);
 
   return {
     uuid: board.uuid,
@@ -519,11 +523,33 @@ async function toGraphQLWall(
     holdCount: wall.holdCount,
     publicPhotoUrl: publicWallPhotoUrl(board, wall),
     viewerCanEdit: canEdit,
+    climbEditPolicy: SPRAY_CLIMB_EDIT_POLICY_WIRE_NAME[wall.climbEditPolicy ?? 'setter'],
+    viewerCanEditClimbs,
     // Only ever non-null for the owner: `loadVisibleWall` refuses a hidden wall to
     // everybody else, so nobody else can reach this field to read it.
     hiddenAt: wall.hiddenAt ? wall.hiddenAt.toISOString() : null,
     renderSettings: wall.renderSettings ?? null,
   };
+}
+
+/**
+ * Whether the viewer can edit published climbs on this wall (#6025).
+ * True for wall editors (canEdit), and — when policy is 'collaborators' — also
+ * for anyone who can set climbs on the wall (viewerCanWriteSprayClimbs).
+ */
+async function computeCanEditClimbs(
+  userId: string | null | undefined,
+  wall: SprayWallRow,
+  board: UserBoardRow,
+  canEdit: boolean,
+  presentedWallUuid?: string | null,
+): Promise<boolean> {
+  if (canEdit) return true;
+  if (!userId) return false;
+  if (wall.climbEditPolicy === 'collaborators') {
+    return viewerCanWriteSprayClimbs(wall, board, userId, presentedWallUuid);
+  }
+  return false;
 }
 
 /** Whether the caller can edit, without throwing — the `viewerCanEdit` field. */
@@ -1273,7 +1299,14 @@ export const sprayWallQueries = {
 
     const loaded = await loadVisibleWall(validatedUuid, ctx.userId);
     if (!loaded) return null;
-    return toGraphQLWall(loaded, ctx.userId, await computeCanEdit(ctx, loaded.board));
+    return toGraphQLWall(
+      loaded,
+      ctx.userId,
+      await computeCanEdit(ctx, loaded.board),
+      undefined,
+      undefined,
+      loaded.board.uuid,
+    );
   },
 
   sprayWallByLayout: async (_: unknown, { layoutId }: { layoutId: unknown }, ctx: ConnectionContext) => {
@@ -1314,7 +1347,7 @@ export const sprayWallQueries = {
     const versionNumberById = await loadVersionNumbers(loaded.wall.id);
 
     return {
-      wall: await toGraphQLWall(loaded, ctx.userId, canEdit),
+      wall: await toGraphQLWall(loaded, ctx.userId, canEdit, undefined, undefined, loaded.board.uuid),
       versionNumber: versionRow.versionNumber,
       // A wall always has a frame by the time it has a photo — `createSprayWallVersion`
       // writes both in one transaction — so the photo fallbacks here only fire for
@@ -1735,6 +1768,7 @@ export const sprayWallMutations = {
           referenceWidth: null,
           referenceHeight: null,
           holdCount: 0,
+          ...(validated.climbEditPolicy ? { climbEditPolicy: validated.climbEditPolicy } : {}),
           // The visibility the climber picked, held server-side until the first
           // publish applies it. It used to live only in the wizard's React state,
           // so a climber who closed the app and resumed the wall published it
@@ -2065,6 +2099,12 @@ export const sprayWallMutations = {
       });
     }
 
+    if (validated.climbEditPolicy !== undefined && board.ownerId !== ctx.userId) {
+      throw new GraphQLError('Only the climber who set this wall up can change who can edit climbs', {
+        extensions: { code: SPRAY_WALL_CODES.climbEditPolicyOwnerOnly },
+      });
+    }
+
     // The angle is the one field a published wall cannot change. `board_climb_stats`
     // is keyed by angle and every tick recorded so far sits at the old one, so
     // moving it would orphan the wall's whole history — the climbs would still be
@@ -2191,7 +2231,9 @@ export const sprayWallMutations = {
           .where(eq(dbSchema.sprayWalls.id, wall.id))
           .limit(1);
 
-        await tx.update(dbSchema.userBoards).set(updates).where(eq(dbSchema.userBoards.id, board.id));
+        if (Object.keys(updates).length > 0) {
+          await tx.update(dbSchema.userBoards).set(updates).where(eq(dbSchema.userBoards.id, board.id));
+        }
 
         if (losingPublic) {
           const retracted = await purgeSprayWallFeedItems(tx, wall.layoutId);
@@ -2263,6 +2305,10 @@ export const sprayWallMutations = {
         } else if (losingPublic) {
           wallUpdates.publicPhotoKey = null;
           if (wallNow?.publicPhotoKey) orphanedPublicKeys.push(wallNow.publicPhotoKey);
+        }
+
+        if (validated.climbEditPolicy !== undefined) {
+          wallUpdates.climbEditPolicy = validated.climbEditPolicy;
         }
 
         await tx.update(dbSchema.sprayWalls).set(wallUpdates).where(eq(dbSchema.sprayWalls.id, wall.id));

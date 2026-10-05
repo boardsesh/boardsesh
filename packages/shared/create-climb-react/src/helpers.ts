@@ -86,8 +86,14 @@ export type CanEditClimbInput = {
    * Whether the viewer can edit the WALL the climb is on (`SprayWall.viewerCanEdit`).
    * Only read on spray. Unknown is `false`: the Edit action stays hidden until the
    * wall says otherwise.
+   * Kept for backwards compatibility; viewerCanEditClimbs takes precedence when provided.
    */
   viewerCanEditWall?: boolean | null;
+  /**
+   * Whether the viewer can edit climbs on this wall (`SprayWall.viewerCanEditClimbs`, #6025).
+   * Only read on spray. Takes precedence over `viewerCanEditWall`.
+   */
+  viewerCanEditClimbs?: boolean | null;
   /**
    * The layout of the wall `viewerCanEditWall` was read for. With it, a climb
    * that says it is on a different wall is not offered to a wall editor.
@@ -117,6 +123,7 @@ export function canEditClimb({
   boardType,
   currentUserId,
   viewerCanEditWall,
+  viewerCanEditClimbs,
   wallLayoutId,
   now = Date.now(),
 }: CanEditClimbInput): boolean {
@@ -125,9 +132,10 @@ export function canEditClimb({
   const isSetter = !!climb.userId && climb.userId === currentUserId;
 
   if (!isSetter) {
+    const canEditOtherClimbs = viewerCanEditClimbs ?? viewerCanEditWall;
     // Somebody else's draft is theirs alone, wall editor or not: publishing it
     // would announce a new climb under the wrong name.
-    if (boardType !== SPRAY_BOARD_TYPE || viewerCanEditWall !== true || isDraft) return false;
+    if (boardType !== SPRAY_BOARD_TYPE || canEditOtherClimbs !== true || isDraft) return false;
     // Editing a wall is not editing every climb seen while standing at it. A
     // queue can still hold a climb from another wall, or from Kilter, and that
     // climb says so. A row that does not carry the field is taken on trust:

@@ -1959,6 +1959,8 @@ export type CreateSessionInput = {
 export type CreateSprayWallInput = {
   /** Fixed for the wall's life: stats are keyed by angle and a spray wall does not adjust. */
   angle: Scalars['Int']['input'];
+  /** Who can edit climbs on this wall. Defaults to SETTER. */
+  climbEditPolicy?: InputMaybe<SprayClimbEditPolicy>;
   description?: InputMaybe<Scalars['String']['input']>;
   /** Attach the wall to a gym the caller may link boards to. */
   gymUuid?: InputMaybe<Scalars['ID']['input']>;
@@ -9012,6 +9014,13 @@ export type SocialEntityType =
 
 export type SortMode = 'controversial' | 'hot' | 'new' | 'top';
 
+/**
+ * Who may edit published climbs on this wall (#6025).
+ * SETTER: only the setter and wall editors.
+ * COLLABORATORS: anyone who can set climbs on the wall can also edit published climbs.
+ */
+export type SprayClimbEditPolicy = 'COLLABORATORS' | 'SETTER';
+
 export type SprayDetectionCandidate = {
   __typename?: 'SprayDetectionCandidate';
   confidence: Scalars['Float']['output'];
@@ -9077,6 +9086,8 @@ export type SprayRemixSeed = {
 export type SprayWall = {
   __typename?: 'SprayWall';
   board: UserBoard;
+  /** Who may edit published climbs on this wall (#6025). */
+  climbEditPolicy: SprayClimbEditPolicy;
   /** The published version climbers see. Null until the first publish. */
   currentVersion?: Maybe<SprayWallVersion>;
   /**
@@ -9132,6 +9143,12 @@ export type SprayWall = {
    * them: they can edit the gym's page and not a wall's holds.
    */
   viewerCanEdit: Scalars['Boolean']['output'];
+  /**
+   * Whether the signed-in viewer can edit published climbs on this wall (#6025).
+   * True for wall editors, and — when climbEditPolicy is COLLABORATORS — also
+   * for anyone who can set climbs on the wall.
+   */
+  viewerCanEditClimbs: Scalars['Boolean']['output'];
 };
 
 /** Put this detection on the wall as a new hold, with a new catalogue id. */
@@ -10110,6 +10127,8 @@ export type UpdateSprayWallInput = {
    * rather than cascaded.
    */
   angle?: InputMaybe<Scalars['Int']['input']>;
+  /** Who can edit climbs on this wall. Only the wall creator may change this (#6025). */
+  climbEditPolicy?: InputMaybe<SprayClimbEditPolicy>;
   description?: InputMaybe<Scalars['String']['input']>;
   /** Attach the wall to a gym the caller may link boards to, or pass null to detach. */
   gymUuid?: InputMaybe<Scalars['ID']['input']>;

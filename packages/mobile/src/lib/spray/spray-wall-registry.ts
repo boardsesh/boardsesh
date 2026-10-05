@@ -117,6 +117,12 @@ export type RegisteredSprayWall = {
    */
   viewerCanEdit: boolean;
   /**
+   * Whether the signed-in viewer can edit published climbs on this wall
+   * (`SprayWall.viewerCanEditClimbs`, #6025): wall editors, plus anyone who can
+   * set climbs when the wall's climbEditPolicy is 'collaborators'.
+   */
+  viewerCanEditClimbs: boolean;
+  /**
    * When this registration was made, for revalidation. Stamped by
    * `registerSprayWall`, never by the caller — a caller-supplied timestamp is a
    * caller that can accidentally pin a wall as fresh forever.
@@ -241,7 +247,10 @@ export function registerSprayWall(
   // payload was FETCHED under. Left out means "cannot edit": an answer that does
   // not say the viewer may edit, or cannot say whose answer it is, must not put
   // an Edit action on screen. Never carried over from the previous registration.
-  wall: Omit<RegisteredSprayWall, 'layoutId' | 'registeredAtMs' | 'renderSettings' | 'viewerCanEdit'> & {
+  wall: Omit<
+    RegisteredSprayWall,
+    'layoutId' | 'registeredAtMs' | 'renderSettings' | 'viewerCanEdit' | 'viewerCanEditClimbs'
+  > & {
     renderSettings?: SprayWallRenderSettingsValue | null;
     viewerAccess?: SprayWallViewerAccess;
   },
@@ -265,6 +274,7 @@ export function registerSprayWall(
     ...registration,
     renderSettings,
     viewerCanEdit: viewerAccess?.canEdit === true && !fetchedForAnotherViewer,
+    viewerCanEditClimbs: (viewerAccess?.canEditClimbs ?? viewerAccess?.canEdit) === true && !fetchedForAnotherViewer,
     layoutId,
     registeredAtMs: fetchedForAnotherViewer ? 0 : now(),
   });
@@ -318,11 +328,20 @@ export function sprayWallViewerCanEdit(boardName: string, layoutId: number): boo
 }
 
 /**
+ * Whether the viewer can edit published climbs on this wall (#6025). `false` for
+ * every catalogue board and for a wall that is not registered.
+ */
+export function sprayWallViewerCanEditClimbs(boardName: string, layoutId: number): boolean {
+  if (boardName !== SPRAY_BOARD_NAME) return false;
+  return walls.get(layoutId)?.viewerCanEditClimbs === true;
+}
+
+/**
  * Who-can-edit, with the viewer generation its payload was fetched under.
  * `generation` is read with `sprayWallViewerGeneration()` BEFORE the request
  * goes out, never after it comes back.
  */
-export type SprayWallViewerAccess = { canEdit: boolean; generation: number };
+export type SprayWallViewerAccess = { canEdit: boolean; canEditClimbs?: boolean; generation: number };
 
 /**
  * Counts account changes. Bumped by `resetSprayWallViewerAccess`.
@@ -375,7 +394,12 @@ export function resetSprayWallViewerAccess({ markStale = true }: { markStale?: b
     // `markStale: false` keeps the registration fresh, so no surface is invited
     // to refetch the wall. For a caller that knows the account is gone but not
     // that a request sent now would carry a token (`dropSprayWallViewerAccess`).
-    walls.set(layoutId, { ...wall, viewerCanEdit: false, registeredAtMs: markStale ? 0 : wall.registeredAtMs });
+    walls.set(layoutId, {
+      ...wall,
+      viewerCanEdit: false,
+      viewerCanEditClimbs: false,
+      registeredAtMs: markStale ? 0 : wall.registeredAtMs,
+    });
     layoutIds.push(layoutId);
   }
   notify();

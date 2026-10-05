@@ -18,7 +18,7 @@ import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
 import { CLIMB_SHARE_BASE_URL } from '../lib/env';
 import { track } from '../lib/analytics';
-import { useSprayWallViewerCanEdit } from '../lib/spray/use-spray-wall';
+import { useSprayWallViewerCanEditClimbs } from '../lib/spray/use-spray-wall';
 import { dismissManagedSheetAndWait, type ManagedSheetHandle } from '../providers/sheet-presentation-provider';
 
 type ClimbActionsSheetProps = {
@@ -214,12 +214,12 @@ function ClimbActionsSheet({
 
   // Who may edit is one shared rule (`canEditClimb`): the setter, for 24h after
   // publish on a catalogue board and always on a spray wall, plus anyone who can
-  // edit the wall on a published spray climb. A hint only; the server decides.
-  const viewerCanEditWall = useSprayWallViewerCanEdit(boardName, layoutId);
+  // edit climbs on the wall on a published spray climb. A hint only; the server decides.
+  const viewerCanEditClimbs = useSprayWallViewerCanEditClimbs(boardName, layoutId);
   const canEdit = useMemo(() => {
     if (!getBoardCapabilities(boardName).climbCreation) return false;
-    return canEditClimb({ climb, boardType: boardName, currentUserId, viewerCanEditWall, wallLayoutId: layoutId });
-  }, [climb, currentUserId, boardName, layoutId, viewerCanEditWall]);
+    return canEditClimb({ climb, boardType: boardName, currentUserId, viewerCanEditClimbs, wallLayoutId: layoutId });
+  }, [climb, currentUserId, boardName, layoutId, viewerCanEditClimbs]);
 
   // Sized for the climb preview row plus the action list (a couple more rows show
   // for owners / Aurora-app climbs); the modal pans down to close.

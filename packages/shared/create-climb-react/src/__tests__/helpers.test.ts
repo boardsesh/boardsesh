@@ -236,6 +236,32 @@ describe('canEditClimb', () => {
     expect(canEditClimb({ climb, boardType: 'kilter', currentUserId: SETTER, now: NOW })).toBe(false);
     expect(canEditClimb({ climb, boardType: 'spray', currentUserId: SETTER, now: NOW })).toBe(true);
   });
+
+  it('prefers viewerCanEditClimbs over viewerCanEditWall (#6025)', () => {
+    // Wall cannot be edited by viewer (viewerCanEditWall: false), but climbs CAN be edited (viewerCanEditClimbs: true)
+    expect(
+      canEditClimb({
+        climb: old,
+        boardType: 'spray',
+        currentUserId: OTHER,
+        viewerCanEditWall: false,
+        viewerCanEditClimbs: true,
+        now: NOW,
+      }),
+    ).toBe(true);
+
+    // Wall CAN be edited (viewerCanEditWall: true), but viewerCanEditClimbs is explicitly false
+    expect(
+      canEditClimb({
+        climb: old,
+        boardType: 'spray',
+        currentUserId: OTHER,
+        viewerCanEditWall: true,
+        viewerCanEditClimbs: false,
+        now: NOW,
+      }),
+    ).toBe(false);
+  });
 });
 
 describe('buildInitialFrames', () => {

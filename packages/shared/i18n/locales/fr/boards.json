@@ -439,6 +439,16 @@
       "publicHint": "N'importe qui peut trouver le mur. Il apparaît sur la page de la salle, ses blocs arrivent dans le feed, et la photo du mur part sur le web ouvert.",
       "ownerOnlyError": "Seul le grimpeur qui a monté ce mur peut changer qui le voit. Tes autres modifications sont enregistrées.",
       "updateError": "Impossible de changer qui voit ce mur. Réessaie."
+    },
+    "sprayClimbEditPolicy": {
+      "label": "Qui peut modifier les blocs",
+      "setter": "Ouvreur seul",
+      "collaborators": "Quiconque peut ouvrir",
+      "setterHint": "Seul l'ouvreur du bloc et les gestionnaires du mur peuvent modifier les blocs.",
+      "collaboratorsPublicHint": "Toute personne qui peut voir ce mur public peut modifier les blocs publiés.",
+      "collaboratorsUnlistedHint": "Toute personne avec le lien de partage peut modifier les blocs publiés.",
+      "collaboratorsPrivateHint": "Toute personne qui peut ouvrir sur ce mur peut modifier les blocs publiés.",
+      "ownerOnlyHint": "Seul le grimpeur qui a monté ce mur peut changer qui modifie les blocs."
     }
   },
   "boardEntity": {

@@ -11,6 +11,7 @@ import {
   sprayCacheToken,
   sprayGeometryKey,
   sprayWallViewerCanEdit,
+  sprayWallViewerCanEditClimbs,
   sprayWallViewerGeneration,
   subscribeToSprayWalls,
   unregisterSprayWall,
@@ -294,6 +295,18 @@ describe('who can edit the wall (#5955)', () => {
     registerSprayWall(LAYOUT_ID, { ...wall(1), viewerAccess: canEditNow() });
     expect(sprayWallViewerCanEdit('kilter', LAYOUT_ID)).toBe(false);
     expect(sprayWallViewerCanEdit('spray', 999)).toBe(false);
+  });
+
+  it('supports separate climb edit permission (#6025)', () => {
+    registerSprayWall(LAYOUT_ID, {
+      ...wall(1),
+      viewerAccess: { canEdit: false, canEditClimbs: true, generation: sprayWallViewerGeneration() },
+    });
+    expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(false);
+    expect(sprayWallViewerCanEditClimbs('spray', LAYOUT_ID)).toBe(true);
+
+    resetSprayWallViewerAccess();
+    expect(sprayWallViewerCanEditClimbs('spray', LAYOUT_ID)).toBe(false);
   });
 
   it('drops every wall to "cannot edit" on an account change, and keeps the wall drawable', () => {

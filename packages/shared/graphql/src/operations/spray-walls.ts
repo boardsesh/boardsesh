@@ -73,6 +73,8 @@ const SPRAY_WALL_ENTITY_FIELDS = `
   holdCount
   publicPhotoUrl
   viewerCanEdit
+  climbEditPolicy
+  viewerCanEditClimbs
   # Only ever non-null for the OWNER — a hidden wall does not resolve for anybody
   # else — so a client can render the notice off its presence alone (SW-17).
   hiddenAt

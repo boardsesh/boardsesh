@@ -19,6 +19,16 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
   }
 
   """
+  Who may edit published climbs on this wall (#6025).
+  SETTER: only the setter and wall editors.
+  COLLABORATORS: anyone who can set climbs on the wall can also edit published climbs.
+  """
+  enum SprayClimbEditPolicy {
+    SETTER
+    COLLABORATORS
+  }
+
+  """
   A wall photo, behind short-lived presigned URLs.
 
   Spray-wall photos live in the PRIVATE bucket, never the public \`media\` one:
@@ -147,6 +157,16 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     """
     viewerCanEdit: Boolean!
     """
+    Who may edit published climbs on this wall (#6025).
+    """
+    climbEditPolicy: SprayClimbEditPolicy!
+    """
+    Whether the signed-in viewer can edit published climbs on this wall (#6025).
+    True for wall editors, and — when climbEditPolicy is COLLABORATORS — also
+    for anyone who can set climbs on the wall.
+    """
+    viewerCanEditClimbs: Boolean!
+    """
     When an admin hid this wall, ISO 8601, or null for the overwhelmingly common
     case.
 
@@ -202,6 +222,8 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     latitude: Float
     longitude: Float
     hideLocation: Boolean
+    "Who can edit climbs on this wall. Defaults to SETTER."
+    climbEditPolicy: SprayClimbEditPolicy
   }
 
   input CreateSprayWallVersionInput {
@@ -273,6 +295,8 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     rather than cascaded.
     """
     angle: Int
+    "Who can edit climbs on this wall. Only the wall creator may change this (#6025)."
+    climbEditPolicy: SprayClimbEditPolicy
   }
 
   input SetSprayWallRenderSettingsInput {

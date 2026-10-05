@@ -70,6 +70,8 @@ vi.mock('@boardsesh/play-view/readable-url-utils', () => ({
 // own tests.
 vi.mock('../../lib/spray/use-spray-wall', () => ({
   useSprayWallViewerCanEdit: (boardName: string | null | undefined) => boardName === 'spray' && ctrl.viewerCanEditWall,
+  useSprayWallViewerCanEditClimbs: (boardName: string | null | undefined) =>
+    boardName === 'spray' && ctrl.viewerCanEditWall,
 }));
 vi.mock('@boardsesh/analytics', () => ({ SHARED_EVENTS: {} }));
 vi.mock('../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));

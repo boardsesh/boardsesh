@@ -61,6 +61,21 @@ export const SPRAY_VERSION_STATUS_WIRE_NAME = {
   superseded: 'SUPERSEDED',
 } as const;
 
+/** Wire name ↔ stored value for a wall's climb-edit policy (#6025), mirroring the pgEnum. */
+export const SPRAY_CLIMB_EDIT_POLICY_BY_WIRE_NAME = {
+  SETTER: 'setter',
+  COLLABORATORS: 'collaborators',
+} as const;
+
+export const SPRAY_CLIMB_EDIT_POLICY_WIRE_NAME = {
+  setter: 'SETTER',
+  collaborators: 'COLLABORATORS',
+} as const;
+
+export const SprayClimbEditPolicySchema = z
+  .enum(['SETTER', 'COLLABORATORS'])
+  .transform((wireName) => SPRAY_CLIMB_EDIT_POLICY_BY_WIRE_NAME[wireName]);
+
 /**
  * The four wall corners as tapped in one photo, TL/TR/BR/BL.
  *
@@ -114,6 +129,7 @@ export const CreateSprayWallInputSchema = z.object({
   latitude: z.number().min(-90).max(90).optional().nullable(),
   longitude: z.number().min(-180).max(180).optional().nullable(),
   hideLocation: z.boolean().optional(),
+  climbEditPolicy: SprayClimbEditPolicySchema.optional(),
   // `hasLeds` is deliberately ABSENT and must stay absent. A spray wall has no
   // firmware to encode for, and BLE suppression today is the per-row
   // `has_leds` data rather than the board type (`scanFamilyForBoard('spray')`
@@ -312,6 +328,7 @@ export const UpdateSprayWallInputSchema = z
         `A spray wall's angle must be one of ${SPRAY_ANGLES.join(', ')}`,
       )
       .optional(),
+    climbEditPolicy: SprayClimbEditPolicySchema.optional(),
   })
   // An update that changes nothing is a client bug, and answering it with a
   // success teaches the client that its no-op worked.

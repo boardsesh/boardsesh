@@ -51,7 +51,12 @@ const startOfToday = () => {
   day.setHours(0, 0, 0, 0);
   return day.getTime();
 };
-const DAY_MS = 24 * 60 * 60 * 1000;
+const startOfYesterday = () => {
+  const day = new Date();
+  day.setDate(day.getDate() - 1);
+  day.setHours(0, 0, 0, 0);
+  return day.getTime();
+};
 
 const stats = (overrides: Partial<LogbookDayStats> = {}): LogbookDayStats => ({
   climbCount: 6,
@@ -67,7 +72,7 @@ describe('LogbookDayDivider', () => {
     expect(today.textContent).toContain('mobile.logbook.day.today');
 
     const { container: yesterday } = render(
-      createElement(LogbookDayDivider, { dayStartMs: startOfToday() - DAY_MS, stats: null }),
+      createElement(LogbookDayDivider, { dayStartMs: startOfYesterday(), stats: null }),
     );
     expect(yesterday.textContent).toContain('mobile.logbook.day.yesterday');
   });

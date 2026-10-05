@@ -43,12 +43,14 @@ const state = vi.hoisted(() => ({
 
 const board = {
   uuid: 'board-uuid',
+  ownerId: 'owner-id',
   layoutId: 3,
   sizeId: 1,
   setIds: '5,6,7',
   name: 'Klimmuur MoonBoard',
   gymUuid: null,
   canEdit: true,
+  isOwned: true,
 } as unknown as UserBoard;
 
 /** A graphql-request ClientError carrying the server's duplicate rejection. */
@@ -93,7 +95,8 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
     },
     isLoading: false,
   }),
-  useProfile: () => ({ data: { displayName: 'Marco' } }),
+  useProfile: () => ({ data: { id: 'owner-id', displayName: 'Marco' } }),
+  useSprayWallByUuid: () => ({ data: { climbEditPolicy: 'SETTER' }, isLoading: false }),
   useUpdateBoard: () => ({ mutateAsync: updateBoardMock }),
   useLinkBoardToGym: () => ({ mutateAsync: linkBoardToGymMock }),
   useUpdateSprayWall: () => ({ mutateAsync: updateSprayWallMock }),
@@ -134,9 +137,31 @@ vi.mock('../../../src/components/board-discovery/board-builder-labels', () => ({
 }));
 
 vi.mock('../../../src/components/board-discovery/BoardForm', () => ({
-  BoardForm: ({ onSubmit, errorMessage }: { onSubmit: () => void; errorMessage?: string | null }) =>
+  BoardForm: ({
+    onSubmit,
+    errorMessage,
+    onSelectClimbEditPolicy,
+    climbEditPolicyDisabled,
+  }: {
+    onSubmit: () => void;
+    errorMessage?: string | null;
+    onSelectClimbEditPolicy?: (policy: 'setter' | 'collaborators') => void;
+    climbEditPolicyDisabled?: boolean;
+  }) =>
     createElement('div', null, [
       createElement('button', { key: 'submit', type: 'button', onClick: onSubmit }, 'submit'),
+      onSelectClimbEditPolicy
+        ? createElement(
+            'button',
+            {
+              key: 'collaborators',
+              type: 'button',
+              disabled: climbEditPolicyDisabled,
+              onClick: () => onSelectClimbEditPolicy('collaborators'),
+            },
+            'collaborators',
+          )
+        : null,
       errorMessage ? createElement('span', { key: 'error', 'data-testid': 'error' }, errorMessage) : null,
     ]),
 }));
@@ -465,5 +490,38 @@ describe('EditBoard — spray wall visibility', () => {
     await waitFor(() => expect(updateBoardMock).toHaveBeenCalledTimes(1));
     expect(updateBoardMock.mock.calls[0][0].isPublic).toBe(true);
     expect(updateSprayWallMock).not.toHaveBeenCalled();
+  });
+
+  it('sends changed climbEditPolicy to updateSprayWall (#6025)', async () => {
+    state.boardIsPublic = true;
+    state.builderIsPublic = true;
+    state.boardIsUnlisted = false;
+    editSprayWall({ isPublic: true, isUnlisted: false });
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('collaborators'));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(updateSprayWallMock).toHaveBeenCalledTimes(1));
+    expect(updateSprayWallMock).toHaveBeenCalledWith({
+      uuid: 'board-uuid',
+      climbEditPolicy: 'COLLABORATORS',
+    });
+  });
+
+  it('reports climbEditPolicy owner-only rejection inline (#6025)', async () => {
+    state.boardIsPublic = true;
+    state.builderIsPublic = true;
+    editSprayWall({ isPublic: true, isUnlisted: false });
+    updateSprayWallMock.mockRejectedValueOnce({
+      response: { errors: [{ message: 'nope', extensions: { code: 'SPRAY_WALL_CLIMB_EDIT_POLICY_OWNER_ONLY' } }] },
+    });
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('collaborators'));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(screen.getByTestId('error')).toBeTruthy());
+    expect(screen.getByTestId('error').textContent).toBe('mobile.sprayVisibility.ownerOnlyError');
+    expect(updateBoardMock).toHaveBeenCalledTimes(1);
+    expect(backMock).not.toHaveBeenCalled();
   });
 });

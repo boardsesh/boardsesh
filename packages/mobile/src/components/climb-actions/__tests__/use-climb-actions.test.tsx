@@ -36,6 +36,8 @@ vi.mock('expo-web-browser', () => ({ openBrowserAsync: vi.fn(async () => {}) }))
 // own tests.
 vi.mock('../../../lib/spray/use-spray-wall', () => ({
   useSprayWallViewerCanEdit: (boardName: string | null | undefined) => boardName === 'spray' && ctrl.viewerCanEditWall,
+  useSprayWallViewerCanEditClimbs: (boardName: string | null | undefined) =>
+    boardName === 'spray' && ctrl.viewerCanEditWall,
 }));
 vi.mock('@boardsesh/analytics', () => ({ SHARED_EVENTS: {} }));
 vi.mock('../../../providers/drawer-host-provider', () => ({

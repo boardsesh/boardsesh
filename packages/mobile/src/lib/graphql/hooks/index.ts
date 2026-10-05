@@ -97,7 +97,7 @@ import {
   type RecordBoardOpenedMutationResponse,
   type GetBoardBySlugQueryResponse,
 } from '@boardsesh/graphql/operations/boards';
-import { UPDATE_SPRAY_WALL } from '@boardsesh/graphql/operations/spray-walls';
+import { GET_SPRAY_WALL, UPDATE_SPRAY_WALL } from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWall, UpdateSprayWallInput } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../client';
 import { requestSearchBoards, shouldRetryBoardSearch, boardSearchRetryDelay } from '../search-boards-request';
@@ -257,6 +257,20 @@ export function useBoard(boardUuid: string | null) {
  * uuid) while a plain-deleted board resolves to `null`.
  */
 export { fetchBoardByUuid } from './fetch-board-by-uuid';
+
+/**
+ * Fetch one spray wall by uuid (including its climbEditPolicy and version metadata).
+ */
+export function useSprayWallByUuid(uuid: string | null | undefined) {
+  return useQuery({
+    queryKey: ['sprayWall', uuid],
+    queryFn: async () => {
+      const response = await getHttpClient().request<{ sprayWall: SprayWall | null }>(GET_SPRAY_WALL, { uuid });
+      return response.sprayWall;
+    },
+    enabled: !!uuid,
+  });
+}
 
 // `fetchAllMyBoards` — the paginated companion to `fetchBoardByUuid` — lives in
 // its own module rather than here: the walk needs a unit test, and this barrel
