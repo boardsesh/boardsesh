@@ -4,6 +4,7 @@ export function createQueueSnapshotWriteLane() {
   let writeQueue: Promise<void> = Promise.resolve();
 
   function enqueue(write: () => Promise<void>): Promise<void> {
+    // A failed storage operation must not block the next queued write or clear.
     const operation = writeQueue.then(write, write);
     writeQueue = operation.catch(() => undefined);
     return operation;
