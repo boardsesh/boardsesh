@@ -1282,6 +1282,14 @@ export default defineConfig({
         command: 'tsx scripts/mobile-ota-surf-doctor.ts',
         cache: false,
       },
+      // Installs a release build on a booted simulator or emulator, pinned to
+      // an update branch, launches it twice and fails unless the second launch
+      // ran the update staged for the given commit. No credentials.
+      // See scripts/mobile-ota-boot-check.ts + docs/mobile-ota-updates.md.
+      'mobile:ota-boot-check': {
+        command: 'tsx scripts/mobile-ota-boot-check.ts',
+        cache: false,
+      },
       'mobile:ota-rollback': {
         command: 'tsx scripts/mobile-ota-rollback.ts',
         cache: false,

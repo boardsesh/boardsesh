@@ -127,7 +127,7 @@ function seconds(input: string | undefined, fallback: number, flag: string): num
   return parsed;
 }
 
-export function parseBootCheckArgs(argv: readonly string[], environment: NodeJS.ProcessEnv): BootCheckOptions {
+export function parseBootCheckArgs(argv: readonly string[], updatesUrl: string | undefined): BootCheckOptions {
   const { values, switches } = flagValues(
     argv,
     [
@@ -160,7 +160,7 @@ export function parseBootCheckArgs(argv: readonly string[], environment: NodeJS.
     branch: assertBranchName(required('--branch')),
     expectCommit: required('--expect-commit'),
     receiptPath: resolve(required('--receipt')),
-    manifestUrl: values.get('--manifest-url') ?? environment.EXPO_UPDATES_URL ?? DEFAULT_MANIFEST_URL,
+    manifestUrl: values.get('--manifest-url') ?? updatesUrl ?? DEFAULT_MANIFEST_URL,
     device: values.get('--device') ?? '',
     evidenceDir: evidenceDir === undefined ? null : resolve(evidenceDir),
     downloadTimeoutSeconds: seconds(values.get('--download-timeout'), 240, '--download-timeout'),
@@ -565,7 +565,7 @@ function pinAndroidProject(argv: readonly string[]): number {
 async function main(argv: readonly string[]): Promise<number> {
   const args = argv.filter((argument) => argument !== '--');
   if (args[0] === 'pin-android-project') return pinAndroidProject(args.slice(1));
-  const options = parseBootCheckArgs(args, process.env);
+  const options = parseBootCheckArgs(args, process.env.EXPO_UPDATES_URL);
   let exitCode: number;
   try {
     exitCode = await runBootCheck(options);

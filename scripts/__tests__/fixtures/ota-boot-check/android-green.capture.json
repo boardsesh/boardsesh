@@ -1,0 +1,27 @@
+{
+  "platform": "android",
+  "branch": "pr-staging",
+  "commit": "042b342adb84c91a3cc43f9ab408809c35365016",
+  "capture": {
+    "expectedUpdateId": "d76cef91-ba43-9446-350d-2b3f853986d3",
+    "embeddedUpdateId": "f01d56d5-d093-4834-99f8-abc664da5479",
+    "updatesAfterFirstLaunch": "[{\"id\":\"f01d56d5d093483499f8abc664da5479\",\"status\":1,\"commit_time\":1791200768000,\"last_accessed\":1791207618323,\"runtime_version\":\"154bc941c504727afc914057aed2edff2c096576\",\"successful_launch_count\":1,\"failed_launch_count\":0,\"headers\":\"{\\\"expo-app-id\\\":\\\"007e6fd7-f200-448c-9449-8d48ba5d51fc\\\",\\\"expo-channel-name\\\":\\\"production\\\",\\\"xprem-branch\\\":\\\"pr-staging\\\"}\"},\n{\"id\":\"d76cef91ba439446350d2b3f853986d3\",\"status\":1,\"commit_time\":1791201253000,\"last_accessed\":1791207625038,\"runtime_version\":\"154bc941c504727afc914057aed2edff2c096576\",\"successful_launch_count\":0,\"failed_launch_count\":0,\"headers\":\"{\\\"expo-app-id\\\":\\\"007e6fd7-f200-448c-9449-8d48ba5d51fc\\\",\\\"expo-channel-name\\\":\\\"production\\\",\\\"xprem-branch\\\":\\\"pr-staging\\\"}\"}]\n",
+    "updatesAfterSecondLaunch": "[{\"id\":\"f01d56d5d093483499f8abc664da5479\",\"status\":1,\"commit_time\":1791200768000,\"last_accessed\":1791207618323,\"runtime_version\":\"154bc941c504727afc914057aed2edff2c096576\",\"successful_launch_count\":1,\"failed_launch_count\":0,\"headers\":\"{\\\"expo-app-id\\\":\\\"007e6fd7-f200-448c-9449-8d48ba5d51fc\\\",\\\"expo-channel-name\\\":\\\"production\\\",\\\"xprem-branch\\\":\\\"pr-staging\\\"}\"},\n{\"id\":\"d76cef91ba439446350d2b3f853986d3\",\"status\":1,\"commit_time\":1791201253000,\"last_accessed\":1791207631231,\"runtime_version\":\"154bc941c504727afc914057aed2edff2c096576\",\"successful_launch_count\":1,\"failed_launch_count\":0,\"headers\":\"{\\\"expo-app-id\\\":\\\"007e6fd7-f200-448c-9449-8d48ba5d51fc\\\",\\\"expo-channel-name\\\":\\\"production\\\",\\\"xprem-branch\\\":\\\"pr-staging\\\"}\"}]\n",
+    "secondLaunchStartedAtMs": 1791207629000,
+    "secondsToFirstScreen": 2.934,
+    "processAliveAtEnd": true,
+    "watchedSeconds": 30,
+    "updatesLog": "{\"timestamp\":1791207629669,\"message\":\"Updates state change: StartStartup, context = {isStartupProcedureRunning=true, isUpdateAvailable=false, isUpdatePending=false, isChecking=false, isDownloading=false, isRestarting=false, restartCount=0, downloadProgress=0.0, sequenceNumber=1}\",\"code\":\"None\",\"level\":\"info\"}\n{\"timestamp\":1791207629822,\"message\":\"Updates state change: Check, context = {isStartupProcedureRunning=true, isUpdateAvailable=false, isUpdatePending=false, isChecking=true, isDownloading=false, isRestarting=false, restartCount=0, downloadProgress=0.0, sequenceNumber=2}\",\"code\":\"None\",\"level\":\"info\"}\n{\"timestamp\":1791207630659,\"message\":\"UpdatesModule: getConstants called\",\"code\":\"None\",\"level\":\"info\"}\n{\"timestamp\":1791207631224,\"message\":\"Updates state change: CheckCompleteUnavailable, context = {isStartupProcedureRunning=true, isUpdateAvailable=false, isUpdatePending=false, isChecking=false, isDownloading=false, isRestarting=false, restartCount=0, downloadProgress=0.0, sequenceNumber=3, lastCheckForUpdateTime=Tue Oct 06 00:40:31 GMT+11:00 2026}\",\"code\":\"None\",\"level\":\"info\"}\n{\"timestamp\":1791207631259,\"message\":\"UpdatesController onBackgroundUpdateFinished: No update available\",\"code\":\"NoUpdatesAvailable\",\"level\":\"info\"}\n{\"timestamp\":1791207631259,\"message\":\"ErrorRecovery: remote load status changed: IDLE\",\"code\":\"None\",\"level\":\"info\"}\n{\"timestamp\":1791207631298,\"message\":\"Updates state change: EndStartup, context = {isStartupProcedureRunning=false, isUpdateAvailable=false, isUpdatePending=false, isChecking=false, isDownloading=false, isRestarting=false, restartCount=0, downloadProgress=0.0, sequenceNumber=4, lastCheckForUpdateTime=Tue Oct 06 00:40:31 GMT+11:00 2026}\",\"code\":\"None\",\"level\":\"info\"}",
+    "fatalLogLines": []
+  },
+  "verdict": {
+    "passed": true,
+    "expectedUpdateId": "d76cef91-ba43-9446-350d-2b3f853986d3",
+    "launchedUpdateId": "d76cef91-ba43-9446-350d-2b3f853986d3",
+    "embeddedLaunch": false,
+    "emergencyLaunch": false,
+    "secondsToFirstScreen": 2.934,
+    "fatalLogLines": [],
+    "failures": []
+  }
+}
