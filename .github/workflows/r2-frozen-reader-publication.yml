@@ -159,9 +159,10 @@ jobs:
           GOOGLE_MAPS_API_KEY: ${{ inputs.platform == 'android' && secrets.GOOGLE_MAPS_API_KEY || '' }}
         run: vp exec tsx scripts/r2-frozen-reader.ts delivery frozen "$PLATFORM" frozen/packages/mobile/dist "$RUNNER_TEMP/r2-reader-proof/production-delivery.json" "$R2_STARTED_AT"
       - name: Preserve public acceptance receipts
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: r2-frozen-reader-${{ inputs.platform }}-${{ github.run_id }}
           path: ${{ runner.temp }}/r2-reader-proof/*.json
           retention-days: 7
-          if-no-files-found: error
+          if-no-files-found: warn

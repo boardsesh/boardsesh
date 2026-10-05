@@ -1635,6 +1635,10 @@ source and shared production FIFO lane, requires source-map upload, and verifies
 new signed production manifest and every delivered private R2 asset. The workflow
 cannot accept another source commit or runtime.
 
+Download the public acceptance receipts immediately after each run and retain them
+with the migration evidence until acceptance is complete. GitHub artifacts expire
+after seven days; receipts created before a failed step are also uploaded.
+
 A successful run is a publication check. Native launch and a fresh offline-board R2
 bootstrap still gate migration completion and restoration of paused publishing
 workflows. Keep all legacy objects and credentials during the retention period;
