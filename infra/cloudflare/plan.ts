@@ -226,10 +226,11 @@ export const MANAGED_RULE_PHASES = [
     label: 'Compression rule',
     selectLive: (live) => live.rules['compression-rule'],
     selectDesired: (desired) => desired.compressionRules,
-    // New phase, and the production token has not been confirmed to carry
-    // Zone.Response Compression Edit. A failed cf:apply blocks the web deploy,
-    // so an unreadable or unwritable phase is skipped with a warning for now.
-    // Flip to false once one apply has written the rule.
+    // New phase. The first apply (2026-10-05) skipped it: the production token
+    // lacked Zone.Response Compression Edit, which was granted the same day. A
+    // failed cf:apply blocks the web deploy, so an unreadable or unwritable
+    // phase stays a warning until one apply has written the rule. Then flip
+    // this to false.
     optional: true,
   },
 ] as const satisfies readonly ManagedRulePhase[];

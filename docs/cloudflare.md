@@ -37,8 +37,9 @@ because the Cloudflare defaults do not apply to these objects:
 
 The compression phase is the one rule phase marked `optional` in `infra/cloudflare/plan.ts`. A token that cannot
 read it, or whose write is refused, logs a warning and skips the rule instead of failing `cf:apply`, which would
-block the web deploy. The scope it needs is `Zone.Response Compression Edit`, and the production token has not
-been confirmed to carry it. After the first apply has written the rule, set `optional: false`.
+block the web deploy. The scope it needs is `Zone.Response Compression Edit`. The first apply on 2026-10-05
+skipped the phase because the production token lacked it; the scope was granted the same day. After an apply has
+written the rule, set `optional: false`.
 
 Anyone holding an object's URL can download it, production and `pr-*` preview bundles alike. That is accepted: the
 bundle is the compiled form of this public repository. Never store anything in this bucket that is not an OTA asset.
