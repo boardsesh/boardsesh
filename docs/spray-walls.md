@@ -1225,6 +1225,19 @@ its removals would badge every climb through them as broken with no way back.
 There is no status that would work: `superseded` is read as landed, so a discarded
 draft's work would take effect, which is the abandoned-draft bug made permanent.
 
+### Refresh after publication
+
+After a reset commits, `refreshPublishedSprayClimbs` refreshes climb integrity
+before the local-first climb list refetches. For a downloaded wall, it awaits
+one `pullSync` invocation scoped to `spray:<layoutId>:<layoutId>`; the existing
+engine owns bounded delta paging. It then invalidates `searchClimbs`,
+`infiniteSearchClimbs`, `searchClimbsCount`, and `climb`. Walls that are not
+downloaded, or whose SQLite schema or offline engine is unavailable, skip the
+pull and still invalidate those readers. An offline or backgrounded pull can
+be deferred by the engine; a thrown refresh error is reported without turning
+an already committed reset into a failed publication. Freshness then waits for
+a later successful sync.
+
 ### Climb integrity
 
 `board_climbs.missing_hold_count` is how many of a climb's holds now carry a landed
