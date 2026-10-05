@@ -29,6 +29,33 @@ export const NO_BOARD_PICKER_HREF = {
 } as const;
 
 /**
+ * What the climber tapped on Climbs' no-board state to open the picker: "Find
+ * my board" (`cta`, on the placard or pinned above the preview), or a climb in
+ * the read-only preview (`preview_row`). Carried as the `trigger` route param
+ * and reported on `Board Picker Opened`, so a row tap that ends in a closed
+ * picker can be told from a deliberate "Find my board".
+ */
+export type NoBoardPickerTrigger = 'cta' | 'preview_row';
+
+/** `NO_BOARD_PICKER_HREF` tagged with what opened it. */
+export function noBoardPickerHref(trigger: NoBoardPickerTrigger) {
+  return {
+    pathname: NO_BOARD_PICKER_HREF.pathname,
+    params: { ...NO_BOARD_PICKER_HREF.params, trigger },
+  } as const;
+}
+
+/**
+ * The picker's `trigger` param as a known value, or null. Null is every opening
+ * that is not Climbs' no-board entry, a link from a build that predates the
+ * param, and any value this build does not know.
+ */
+export function noBoardPickerTrigger(params: { source?: string; trigger?: string }): NoBoardPickerTrigger | null {
+  if (!isNoBoardEntry(params)) return null;
+  return params.trigger === 'cta' || params.trigger === 'preview_row' ? params.trigger : null;
+}
+
+/**
  * The builder route's `preset` param when "My own board" opened it: open with a
  * layout and size chosen (see `presetBoardConfig`). Lives here, with the other
  * picker params, so the picker does not load the board catalogue to name it.

@@ -66,6 +66,7 @@ import {
   BUILDER_PRESET_PARAM_VALUE,
   isFirstBoardMode,
   isNoBoardEntry,
+  noBoardPickerTrigger,
   type FirstBoardEntry,
 } from '../../src/lib/boards/first-board-mode';
 import { firstBoardGymState } from '../../src/lib/boards/first-board-gym-state';
@@ -84,10 +85,11 @@ export default function BoardSelection() {
   const { isAuthenticated, refreshAuthState } = useAuth();
   const bottomChrome = useBottomChromeMetrics();
   const router = useRouter();
-  const { returnTo, source, firstBoard } = useLocalSearchParams<{
+  const { returnTo, source, firstBoard, trigger } = useLocalSearchParams<{
     returnTo?: string;
     source?: string;
     firstBoard?: string;
+    trigger?: string;
   }>();
   const boardReturnTo = resolveBoardReturnTo(returnTo);
   // Arriving from the first-run framing screen: this is the activation flow, so
@@ -119,6 +121,7 @@ export default function BoardSelection() {
     returnTo: boardReturnTo,
     fromOnboarding,
     fromNoBoard,
+    trigger: noBoardPickerTrigger({ source, trigger }),
   });
   const clearActiveBoard = useClearActiveBoardIfCurrentGeneration();
   const { clearSession } = useQueueActions();
