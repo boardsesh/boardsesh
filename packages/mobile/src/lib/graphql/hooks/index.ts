@@ -256,10 +256,7 @@ export function useBoard(boardUuid: string | null) {
  * merged-away uuid resolves to the surviving canonical board (a *different*
  * uuid) while a plain-deleted board resolves to `null`.
  */
-export async function fetchBoardByUuid(boardUuid: string): Promise<UserBoard | null> {
-  const data = await getHttpClient().request<GetBoardQueryResponse>(GET_BOARD, { boardUuid });
-  return data.board;
-}
+export { fetchBoardByUuid } from './fetch-board-by-uuid';
 
 // `fetchAllMyBoards` — the paginated companion to `fetchBoardByUuid` — lives in
 // its own module rather than here: the walk needs a unit test, and this barrel

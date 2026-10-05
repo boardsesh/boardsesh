@@ -52,6 +52,7 @@ import { reportError } from '../../lib/error-reporting';
 import { extractGraphqlCode, extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import { SPRAY_CAP_VALUES, sprayCapFromErrorCode, sprayCapMessage } from '../../lib/spray/spray-cap-copy';
 import { useActivateBoard } from '../../lib/boards/use-activate-board';
+import { activatePublishedSprayWall } from '../../lib/spray/activate-published-spray-wall';
 import type { BoardReturnTo } from '../../lib/boards/board-return-to';
 import { invalidateSprayWallRenderData } from '../../lib/spray/spray-wall-loader';
 import {
@@ -155,7 +156,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   const discardDraftAsync = discardDraft.mutateAsync;
 
   /**
-   * The wall's `user_boards` row, as `useActivateBoard` needs it.
+   * The initial board row, kept for creation analytics.
    *
    * A ref and not machine state because it is a PAYLOAD rather than an identity:
    * the machine holds which wall this is (and must, so a retry cannot mint a
@@ -527,17 +528,14 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
         await updateVisibilityAsync({ uuid: draft.wallUuid, ...visibility });
       }
 
-      // Binds the wall as the active board and dismisses back to the tab the
-      // flow was opened from, where the Climbs empty state takes over. A wall
-      // whose board payload never arrived is still published — it just is not
-      // switched to, which the board picker fixes in one tap.
-      if (board) await finish(board);
-      else router.back();
+      // Fetch the published visibility before persisting the active board.
+      // A failed read leaves the published latch set, so retry only binds.
+      await activatePublishedSprayWall(queryClient, draft.wallUuid, finish);
     } catch (error) {
       reportError(error);
       dispatch({ type: 'PUBLISH_FAILED', message: capOrServerMessage(error, t('sprayWizard.publish.failed')) });
     }
-  }, [state, publishVersionAsync, updateVisibilityAsync, queryClient, builder, finish, router, t]);
+  }, [state, publishVersionAsync, updateVisibilityAsync, queryClient, builder, finish, t]);
 
   /** Ask, then run `onConfirm` — or run it straight away when there is nothing to ask about. */
   const confirmLeave = useCallback(
