@@ -506,6 +506,8 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       if (returnedOAuth && returnedOAuth.error === null) {
         void consumeFreshOAuthPending(returnedOAuth.attemptId).then((marker) => {
           if (!marker || marker.provider !== returnedOAuth.provider) return;
+          // Tracked directly, not through `trackLoginSucceeded`: this path sends
+          // no account-age props, no `account_age_read` and no follow-up event.
           track(SHARED_EVENTS.LoginSucceeded, {
             ...loginProviderProperties(marker.provider),
             flow: 'web',

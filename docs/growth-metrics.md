@@ -331,6 +331,9 @@ ORDER BY week
 ```
 
 - "New" means the account was at most 24 hours old at sign-in.
+- `2026-10-05` in the query is the day the OTA went out, not a rolling date.
+  Keep it as the floor: before it there is no `Login Account Age Resolved`, so
+  earlier weeks undercount on this query.
 - `Signup Completed` is email sign-up only. Apple and Google find or create the
   account in one step and fire no sign-up event, so `Signup Completed` alone
   undercounts by most of the total.
