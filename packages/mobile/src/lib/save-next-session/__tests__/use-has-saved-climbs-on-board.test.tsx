@@ -8,6 +8,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GET_SMART_PLAYLIST } from '@boardsesh/graphql/operations/playlists';
+import { invalidateKeysForTable } from '@boardsesh/offline-sync';
 
 const requestMock = vi.hoisted(() => vi.fn());
 vi.mock('../../graphql/client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
@@ -103,5 +104,26 @@ describe('useHasSavedClimbsOnBoard', () => {
     requestMock.mockResolvedValue(likedPage(0));
     await queryClient.invalidateQueries({ queryKey: HAS_SAVED_CLIMBS_QUERY_KEY });
     await waitFor(() => expect(result.current).toBe(false));
+  });
+
+  it('is refreshed when a queued heart reaches the server', async () => {
+    // Every native heart takes the local queue, so the drainer's table map is
+    // the only invalidation the card gets on a phone.
+    const drainKeys = invalidateKeysForTable('user_favorites') ?? [];
+    expect(drainKeys).toContainEqual([...HAS_SAVED_CLIMBS_QUERY_KEY]);
+
+    requestMock.mockResolvedValue(likedPage(0));
+    const { wrapper, queryClient } = setup();
+    const { result } = renderHook(() => useHasSavedClimbsOnBoard({ userId: 'user-1', boardType: 'kilter' }), {
+      wrapper,
+    });
+    await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+    expect(result.current).toBe(false);
+
+    // What the drainer does once the write lands.
+    requestMock.mockResolvedValue(likedPage(1));
+    await Promise.all(drainKeys.map((queryKey) => queryClient.invalidateQueries({ queryKey: [...queryKey] })));
+
+    await waitFor(() => expect(result.current).toBe(true));
   });
 });

@@ -88,7 +88,9 @@ function SavedClimbsCardBody({ boardType, style }: SavedClimbsCardBodyProps) {
 
   const handleOpen = useCallback(() => {
     track(SHARED_EVENTS.SavedClimbsCardAction, { action: 'open', board_type: boardType });
-    router.push(smartPlaylistHref('LIKED_CLIMBS', 'saved_card'));
+    // Cross-tab push: `withAnchor` loads the Discover library underneath when
+    // that tab was never opened, so back (and the tab itself) has somewhere to go.
+    router.push(smartPlaylistHref('LIKED_CLIMBS', 'saved_card'), { withAnchor: true });
   }, [boardType]);
 
   const handleDismiss = useCallback(() => {

@@ -608,8 +608,9 @@ export const SHARED_EVENTS = {
   // want next time"; these measure the feedback and the way back. No arm and no
   // holdout: read them before/after the OTA. Kill switch:
   // `save-next-session-kill`. `Favorite Toggle` gained `connected` (this
-  // phone's Bluetooth link at the tap) in the same change; always filter it on
-  // `action = 'added'`.
+  // phone's Bluetooth link at the tap) on both live mobile sites
+  // (`mobile_play_drawer`, `mobile_climb_actions`) in the same change; always
+  // filter it on `action = 'added'`.
   //
   // SmartPlaylistOpened: a smart-playlist detail screen mounted for a known
   // type. `$screen` keeps `/discover/smart/[type]` verbatim, so this is the

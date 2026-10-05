@@ -47,6 +47,8 @@ const heart = vi.hoisted(() => ({
   push: vi.fn(),
   inlineError: true,
   localConnected: false,
+  // What `useFavoriteStatus` has answered; undefined is "still loading".
+  serverFavorited: false as boolean | undefined,
   noticeProps: [] as Array<{ climbUuid: string; onView: () => void }>,
   showSaved: vi.fn(),
   showError: vi.fn(),
@@ -269,7 +271,7 @@ vi.mock('../../../lib/graphql/hooks', () => ({
   useToggleFavorite: () => ({ mutate: heart.mutate }),
   useFavoriteStatus: (boardName: string, uuid: string | null, angle: number) => {
     recorded.favoriteStatus.push({ boardName, uuid, angle });
-    return { data: undefined };
+    return { data: heart.serverFavorited };
   },
 }));
 vi.mock('../../../hooks/use-display-grade', () => ({ useDisplayGrade: () => ({ boardseshActive: false }) }));
@@ -369,6 +371,7 @@ beforeEach(() => {
   heart.noticeProps = [];
   heart.inlineError = true;
   heart.localConnected = false;
+  heart.serverFavorited = false;
   queueState.queue = [];
   queueState.currentClimbQueueItem = null;
   navigation.state = { nextItem: null, prevItem: null, canNext: false, canPrevious: false };
@@ -689,6 +692,16 @@ describe('PlayDrawer heart feedback', () => {
     );
   });
 
+  it('holds the saved line back while the heart state is still loading', () => {
+    // The tap may be removing a like the status query has not reported yet.
+    heart.serverFavorited = undefined;
+    renderDrawer();
+
+    pressHeart();
+
+    expect(heart.showSaved).not.toHaveBeenCalled();
+  });
+
   it('takes the saved line down when the heart is removed again', () => {
     renderDrawer();
     pressHeart();
@@ -744,9 +757,13 @@ describe('PlayDrawer heart feedback', () => {
 
     act(() => heart.noticeProps.at(-1)?.onView());
 
-    expect(heart.push).toHaveBeenCalledWith({
-      pathname: '/(tabs)/discover/smart/[type]',
-      params: { type: 'LIKED_CLIMBS', source: 'save_prompt' },
-    });
+    expect(heart.push).toHaveBeenCalledWith(
+      {
+        pathname: '/(tabs)/discover/smart/[type]',
+        params: { type: 'LIKED_CLIMBS', source: 'save_prompt' },
+      },
+      // The Discover library loads underneath when that tab was never opened.
+      { withAnchor: true },
+    );
   });
 });

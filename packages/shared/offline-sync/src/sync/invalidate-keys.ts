@@ -60,7 +60,10 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   // ['favoriteStatus'] — the per-climb heart, which must refetch AFTER a queued
   //   favorite lands: the optimistic write at enqueue time can otherwise be
   //   overwritten by a network refetch that raced the drain.
-  user_favorites: [['searchClimbs'], ['infiniteSearchClimbs'], ['favoriteStatus']],
+  // ['hasSavedClimbsOnBoard'] — the Climbs "saved climbs" card's gate. Every
+  //   native heart goes through the queue, so this is the only place a first
+  //   heart (or removing the last one) reaches the card.
+  user_favorites: [['searchClimbs'], ['infiniteSearchClimbs'], ['favoriteStatus'], ['hasSavedClimbsOnBoard']],
 
   // Follow changes affect Following searches on every board. This platform-neutral
   // table map knows query prefixes, not each client's filter-bearing key shape,

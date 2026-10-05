@@ -44,7 +44,7 @@
     },
     "savedCard": {
       "title": "Pick up your saved climbs",
-      "body": "Everything you hearted is in Liked Climbs, ready for this session.",
+      "body": "Everything you hearted is waiting in Liked Climbs.",
       "open": "See saved climbs",
       "dismiss": "Dismiss"
     },

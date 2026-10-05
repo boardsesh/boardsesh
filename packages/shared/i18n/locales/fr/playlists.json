@@ -43,9 +43,9 @@
       "unpinFailed": "Échec du désépinglage de la playlist"
     },
     "savedCard": {
-      "title": "Retrouvez vos blocs gardés",
-      "body": "Tout ce que vous avez aimé est dans Voies aimées, prêt pour cette session.",
-      "open": "Voir les blocs gardés",
+      "title": "Retrouvez vos blocs enregistrés",
+      "body": "Tout ce que vous avez aimé vous attend dans Voies aimées.",
+      "open": "Voir les blocs enregistrés",
       "dismiss": "Fermer"
     },
     "smart": {

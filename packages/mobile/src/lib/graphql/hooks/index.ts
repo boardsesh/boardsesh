@@ -1182,6 +1182,8 @@ export function useToggleFavorite() {
         });
         // The Climbs "saved climbs" card asks whether this board has any liked
         // climb at all; a first heart, or removing the last one, changes that.
+        // Expo web only: a native heart is queued, and the drainer invalidates
+        // this key through `TABLE_INVALIDATE_KEYS.user_favorites` when it lands.
         void queryClient.invalidateQueries({ queryKey: HAS_SAVED_CLIMBS_QUERY_KEY });
       }
     },

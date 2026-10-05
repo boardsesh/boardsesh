@@ -120,7 +120,7 @@ describe('SavedClimbsCard', () => {
     const { container } = renderCard();
 
     expect(screen.getByRole('heading').textContent).toBe('Pick up your saved climbs');
-    expect(screen.getByText('Everything you hearted is in Liked Climbs, ready for this session.')).toBeTruthy();
+    expect(screen.getByText('Everything you hearted is waiting in Liked Climbs.')).toBeTruthy();
     expect(screen.getByText('See saved climbs')).toBeTruthy();
     expect(screen.getByLabelText('Dismiss')).toBeTruthy();
     expect(container.textContent).not.toMatch(/\d/);
@@ -185,10 +185,14 @@ describe('SavedClimbsCard', () => {
     fireEvent.click(screen.getByText('See saved climbs'));
 
     expect(trackMock).toHaveBeenCalledWith('Saved Climbs Card Action', { action: 'open', board_type: 'kilter' });
-    expect(pushMock).toHaveBeenCalledWith({
-      pathname: '/(tabs)/discover/smart/[type]',
-      params: { type: 'LIKED_CLIMBS', source: 'saved_card' },
-    });
+    expect(pushMock).toHaveBeenCalledWith(
+      {
+        pathname: '/(tabs)/discover/smart/[type]',
+        params: { type: 'LIKED_CLIMBS', source: 'saved_card' },
+      },
+      // The Discover library loads underneath when that tab was never opened.
+      { withAnchor: true },
+    );
     expect(storeCtrl.dismiss).not.toHaveBeenCalled();
   });
 

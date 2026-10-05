@@ -676,16 +676,19 @@ an ordinary pick: no `Onboarding Board Activated`, no reveal banner.
 
 ## Appendix D — 2026-10-05 save for next session (#6002)
 
-Hearts already store "climbs I want next time" (852 people hearted from the play view in 28 days).
+Hearts already store "climbs I want next time" (852 people hearted from the play view in 28 days, as counted in the #6002 analysis and not re-queried for this change).
 What was missing is feedback and a way back, so this adds no new save action:
 
 - The play view shows "Saved for your next session · View" after a heart is added ("Saved to Liked
   Climbs" while this phone is connected to a board), at most three times per phone. "View" closes
-  the player and opens Liked Climbs. A heart that fails to save now says so in the same place; the
-  old toast is a root overlay, which by `toast-provider.tsx`'s own note sits behind the `/play`
-  modal (not confirmed on a device).
+  the player and opens Liked Climbs. It is held back while the heart's state is still loading, so a
+  tap that turns out to remove a like never spends a show. On Expo web a heart that fails to save
+  says so in the same place. On phones every heart is queued locally and resolves at once, so a
+  failed sync does not reach this line.
 - Climbs gets a "saved climbs" card in the list header while the active board has at least one liked
-  climb. One action opens Liked Climbs; the X hides it for good on that phone. It waits behind the
+  climb. One action opens Liked Climbs, which lists hearts from every board; the X hides the card
+  for good on that phone. On phones the card's check refreshes when the queued heart reaches the
+  server (the `user_favorites` entry in the offline-sync invalidation map). It waits behind the
   connect card and both one-shot tips, and shows no count (the only count is across all boards).
 
 No arm and no holdout: read these before and after the OTA. Kill switch: `save-next-session-kill`.
@@ -703,7 +706,7 @@ Reading it:
 
 - **The way back**: people with `Smart Playlist Opened` where `type = 'LIKED_CLIMBS'`, per week,
   split on `source`. There is no baseline for this event; before it, `$screen`
-  `/discover/smart/[type]` covered every smart list at once (386 people in 28 days), so that is the
+  `/discover/smart/[type]` covered every smart list at once (386 people in 28 days, same analysis-time caveat), so that is the
   ceiling for "before".
 - **Saved away from the wall**: `Favorite Toggle` with `action = 'added'` and `connected = false`.
   Always filter on `action = 'added'`; a removal is the same event.

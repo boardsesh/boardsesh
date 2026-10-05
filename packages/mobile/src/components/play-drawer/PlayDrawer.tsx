@@ -1562,8 +1562,12 @@ export function PlayDrawer({
       connected: bluetoothConnected,
     });
     // Shown on the tap, not on the server's answer: the heart already flipped
-    // optimistically, and offline the answer can be minutes away.
-    if (nextIsFavorited) savedNoticeRef.current?.showSaved(bluetoothConnected);
+    // optimistically, and offline the answer can be minutes away. Not while the
+    // heart's real state is still unknown, though: a tap that lands before the
+    // status loads may be removing a like, and "Saved" would spend one of the
+    // three shows on it.
+    const favoriteStateKnown = favoriteOverride !== null || serverFavorited !== undefined;
+    if (nextIsFavorited && favoriteStateKnown) savedNoticeRef.current?.showSaved(bluetoothConnected);
     else savedNoticeRef.current?.hide();
     toggleFavoriteMutate(
       {
@@ -1601,6 +1605,7 @@ export function PlayDrawer({
     displayedClimb,
     isFavorited,
     favoriteOverride,
+    serverFavorited,
     boardName,
     layoutId,
     angle,
@@ -1700,7 +1705,9 @@ export function PlayDrawer({
   // "View" on the saved notice: the liked list is a tab-stack route, so it too
   // would land beneath the `/play` modal unless the player goes first.
   const handleViewSavedClimbs = useCallback(() => {
-    pushAfterPlayerDismiss(() => router.push(smartPlaylistHref('LIKED_CLIMBS', 'save_prompt')));
+    // `withAnchor`: keep the Discover library under the list when the tab was
+    // never opened this launch.
+    pushAfterPlayerDismiss(() => router.push(smartPlaylistHref('LIKED_CLIMBS', 'save_prompt'), { withAnchor: true }));
   }, [pushAfterPlayerDismiss]);
 
   const handleOpenActions = useCallback(() => {

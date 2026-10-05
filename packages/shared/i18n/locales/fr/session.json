@@ -480,10 +480,10 @@
       "openAria": "Ouvrir la file"
     },
     "savedNotice": {
-      "saved": "Gardé dans Voies aimées",
-      "savedForNextSession": "Gardé pour ta prochaine session",
+      "saved": "Enregistré dans Voies aimées",
+      "savedForNextSession": "Enregistré pour ta prochaine session",
       "view": "Voir",
-      "viewAria": "Voir les blocs gardés"
+      "viewAria": "Voir les blocs enregistrés"
     },
     "boardPresence": {
       "title": "Sur le mur maintenant",
