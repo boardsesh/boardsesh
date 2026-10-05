@@ -19,6 +19,7 @@ import {
   readTimestampFractionalSeconds,
 } from '../../../validation/schemas';
 import { resolveBoardFromPath } from '../social/boards';
+import { sprayWallMayAnnounceByLayout } from '../shared/spray-wall-announce';
 import { boardConfigMatchesTick, findActiveBoardById, isSharedConfigFeedBoard } from '../board-presence/shared';
 import { queueBoardStatsPublish } from '../board-presence/stats';
 import { publishSocialEvent } from '../../../events';
@@ -854,6 +855,47 @@ export const tickMutations = {
     // climbUuid, so an edit can never move a tick to a different climb.
     const climbUuid = await resolveCanonicalClimbUuid(db, validatedInput.boardType, validatedInput.climbUuid);
 
+    // A spray tick must name a climb that exists AND whose wall the climber can
+    // see (#6032). The other eight board types are deliberately exempt: an Aurora
+    // tick can legitimately arrive before its climb (the catalogue syncs on its
+    // own schedule), and `boardsesh_ticks` has no FK to `board_climbs` for that
+    // reason. A spray climb is created in THIS database and can never be queued
+    // by the offline outbox either (`saveClimb` is not an outbox mutation), so a
+    // spray tick naming a missing climb is never legitimate — it is either a
+    // made-up uuid or a replay whose climb was hard-deleted in the meantime
+    // (`deleteDraftClimb`, account deletion). Rejecting those is also how the
+    // orphaned-tick rows #5981 has to mask on the read side stop being created.
+    //
+    // `boardUuid` rides along as the unlisted-wall capability, matching the read
+    // side (`sprayLayoutIsReadableWithCapability`): a share-link holder ticks the
+    // wall they can open, and everybody else gets the same "Climb not found" a
+    // missing row gives — not "forbidden", which would confirm the uuid exists.
+    //
+    // CLIMB_NOT_FOUND is on the offline drainer's permanent-rejection list, so a
+    // replayed tick whose climb is gone dead-letters on attempt one instead of
+    // burning ten retries it can never win. The check reads the PRIMARY (not the
+    // replica): a climb created moments ago must be tickable immediately.
+    if (validatedInput.boardType === 'spray') {
+      const [sprayTargetClimb] = await db
+        .select({ uuid: dbSchema.boardClimbs.uuid })
+        .from(dbSchema.boardClimbs)
+        .where(
+          and(
+            eq(dbSchema.boardClimbs.uuid, climbUuid),
+            sprayClimbVisibilityCondition(
+              { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+              userId,
+              validatedInput.boardUuid ?? null,
+            ),
+          ),
+        )
+        .limit(1);
+
+      if (!sprayTargetClimb) {
+        throw new GraphQLError('Climb not found', { extensions: { code: 'CLIMB_NOT_FOUND' } });
+      }
+    }
+
     // Which revision of the climb this send was on (#6023). Read once, here, and
     // written only by the insert below: a replay returns the stored row from the
     // pre-check above or from the conflict path, so it keeps the value its first
@@ -1543,24 +1585,7 @@ async function publishAscentEvent(
       //
       // Silently skipped rather than failed: the tick itself is saved and correct,
       // and there is nothing for the climber to do about the feed.
-      if (tick.boardType === 'spray' && climbData?.layoutId != null) {
-        const [wallVisibility] = await db
-          .select({ isPublic: dbSchema.userBoards.isPublic, hiddenAt: dbSchema.sprayWalls.hiddenAt })
-          .from(dbSchema.sprayWalls)
-          .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.sprayWalls.boardUuid))
-          .where(
-            and(
-              eq(dbSchema.sprayWalls.layoutId, climbData.layoutId),
-              isNull(dbSchema.sprayWalls.deletedAt),
-              isNull(dbSchema.userBoards.deletedAt),
-            ),
-          )
-          .limit(1);
-        // A wall an admin hid (SW-17) is private for this purpose too. Hiding
-        // purges the feed rows that already exist; without this, the next tick
-        // would put the wall straight back into the feed it was taken out of.
-        if (!wallVisibility?.isPublic || wallVisibility.hiddenAt != null) return;
-      }
+      if (tick.boardType === 'spray' && !(await sprayWallMayAnnounceByLayout(climbData?.layoutId))) return;
 
       const [userProfile] = await db
         .select({

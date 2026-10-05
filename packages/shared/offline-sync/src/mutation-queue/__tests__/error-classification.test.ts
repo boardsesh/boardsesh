@@ -760,9 +760,19 @@ describe('permanent GraphQL verdicts served over HTTP 200 (issue #5295)', () => 
     expect(Array.from(PERMANENT_GRAPHQL_ERROR_CODES).sort()).toEqual([
       'BAD_REQUEST',
       'BAD_USER_INPUT',
+      'CLIMB_NOT_FOUND',
       'FORBIDDEN',
       'GRAPHQL_VALIDATION_FAILED',
     ]);
+  });
+
+  it('dead-letters CLIMB_NOT_FOUND — the spray tick whose climb is gone can never win a retry', () => {
+    // `saveTick` answers this for a spray tick naming a missing climb or a wall
+    // the climber cannot see (#6032). Spray climbs are never queued by the
+    // outbox, so a replay that used to find the climb (hard-deleted since) is
+    // a permanent verdict, not a "later".
+    expect(isPermanentRejection(graphqlRejection('CLIMB_NOT_FOUND'))).toBe(true);
+    expect(isRetryable(graphqlRejection('CLIMB_NOT_FOUND'))).toBe(false);
   });
 
   it('dead-letters each of them on the first attempt', () => {

@@ -56,7 +56,7 @@ export const socialProposalMutations = {
       throw new Error('A reason of at least 10 characters is required for hide proposals');
     }
 
-    const target = await loadTargetClimb(climbUuid, boardType);
+    const target = await loadTargetClimb(climbUuid, boardType, proposerId);
     await assertNotFrozen(climbUuid, angle ?? null, boardType);
 
     const currentValue = await resolveCurrentValue({
@@ -200,7 +200,7 @@ export const socialProposalMutations = {
     // The schema guarantees a grade label on the grade path.
     const proposedValue = kind === 'hide' ? 'true' : proposedGrade!;
 
-    const target = await loadTargetClimb(climbUuid, boardType);
+    const target = await loadTargetClimb(climbUuid, boardType, reporterId);
     await assertNotFrozen(climbUuid, angle, boardType);
 
     const outcome = await withProposalLock(climbUuid, type, async (tx) => {
