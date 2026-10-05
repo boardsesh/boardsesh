@@ -424,21 +424,24 @@ These are separate counts. None of them is a funnel of the same people.
 | Measure              | Event / property                                         | What it means                                                                                     |
 | -------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | Landing visits       | www `$pageview`, by page group                             | Visits, after the crawler caveats above.                                                         |
-| Store clicks         | `App Install Click` (www and browser app), by `platform` and `source` | Someone tapped a store button. Not an install.                                                    |
+| Landing source       | www `$pageview` and every www `track()` event: `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`, `gclid` | The tags on the URL the visit landed on. Absent on an untagged visit. See "Campaign params on www". |
+| Store clicks         | `App Install Click` (www and browser app), by `platform`, `source` and `placement` | Someone tapped a store button. Not an install. |
 | Android install source | person properties `install_source` / `install_medium` / `install_campaign`, classified with the expression below | From the Play Install Referrer, once per install. `campaign`, `organic` or `unknown`. |
-| iOS install source   | none                                                       | Apple gives us no referrer. Show iOS as unknown; do not infer it.                                 |
+| iOS install source   | App Store Connect App Analytics, by campaign (`ct`)          | Aggregate download counts per campaign token. Nothing per person, and nothing in PostHog: Apple gives the app no referrer. Show iOS as unknown in PostHog; do not infer it. |
 | New-user activation  | the Activation funnel above                                 | Counts people, not installs.                                                                      |
-| Android link id      | `utm_content` inside person property `install_referrer_raw` ("Link ids on Android installs" below) | Which published link an install came from. Empty until www links carry one. |
+| Android link id      | `utm_content` inside person property `install_referrer_raw` ("Link ids on Android installs" below) | Which published link an install came from: on www, the button's `placement` ("Store links" below). Empty before the #6027 web deploy. |
 | Sign-ups             | `is_new_account = true` on `Login Succeeded` or `Login Account Age Resolved` ("Counting sign-ups" below) | New accounts, native only. |
 
 `App Install Click` comes from two populations: www, and the store prompt in the
 browser app (phone browsers only, on the signed-out climb view, the login screen
 and Home). A store-click tile has to union both. Browser-app clicks carry
 `placement` = `browser-app-climb-view`, `browser-app-login` or
-`browser-app-home`, with the same `platform` and `source` values as www. The
-event carries no `utm_*` properties: PostHog reads those as the campaign that
-brought a visitor in and copies them to the person, so a store click must not
-set them. Break browser-app clicks down by `placement`. The tags live on the
+`browser-app-home`, with the same `platform` and `source` values as www. A
+browser-app click carries no `utm_*` properties: PostHog reads those as the
+campaign that brought a visitor in and copies them to the person, so a store
+click must not set its own link's tags on the event. (A www click can carry
+`utm_*`, but only the tags of the URL the visitor landed on, never the store
+link's. See "Campaign params on www".) Break clicks down by `placement`. The tags live on the
 store links only, which carry `utm_source=boardsesh`, `utm_medium=browser-app`,
 `utm_campaign=<climb-view|login|home>`: on Android that arrives as
 `install_medium = browser-app` and `install_campaign`; on iOS it is the App
@@ -503,8 +506,8 @@ ORDER BY people DESC
   `NULL != ''` as true, so `extract(…) != ''` matches every person with no
   referrer at all.
 - On 2026-10-05 this returns no rows: 2,138 people have `install_referrer_raw`
-  and none of them has a `utm_content`, because no link we publish sets one
-  yet. The www store-link change in #6027 is what fills it. The same
+  and none of them has a `utm_content`, because no link we published set one.
+  The www store links fill it from the #6027 web deploy ("Store links" below). The same
   expression on `utm_term` finds 46 people, so the extraction itself works.
 - `install_referrer_raw` and the other `install_*` values are person
   properties. They are not on the `Install Attributed` event.
@@ -579,6 +582,116 @@ annotate both boundaries.
 Which 2.3.x change minted the throwaway ids was not traced in code. The dates
 come from the data.
 
+## Campaign params on www
+
+www runs posthog-js-lite, which never parses campaign params. Until #6027 no www
+event or person had a `utm_*` property: 0 of 6,661 sessions in the 28 days to
+2026-10-05 had `$entry_utm_source`, although tagged links did arrive (ChatGPT,
+an Instagram bio).
+
+`packages/web/app/lib/inbound-campaign.ts` now reads `utm_source`, `utm_medium`,
+`utm_campaign`, `utm_content`, `utm_term` and `gclid` off the landing URL, and
+`analytics.ts` sends whichever were present as plain event properties on
+`$pageview` and on every `track()` event (`App Install Click`, `Climb Handoff
+Clicked`, the gym funnel). PostHog derives the session's `$entry_utm_source` and
+the person's `$initial_utm_source` from those; we set neither ourselves.
+
+- **Read once per page load, from the landing URL, and kept in memory.** A
+  client-side navigation keeps it. A full page load (a locale switch, a hard
+  reload on a later page) starts over from that page's URL. Nothing is written
+  to browser storage.
+- **Not on `$web_vitals`.** That event goes through `capturePosthog`, not
+  `track()`.
+- **An untagged visit sends none of the keys.** Filter on `utm_source IS NOT
+  NULL`; do not expect an empty string.
+- **No `$current_url` override.** `pageview()` used to pass the pathname as
+  `$current_url`. The SDK spreads its own properties after the caller's, so
+  every www event has always carried the full URL, query string included. The
+  override was removed; the data did not change.
+- Values are trimmed and capped at 200 characters. Param names are
+  case-sensitive.
+
+Annotate the deploy date: `utm_*` on www starts there and is not backfilled. For
+earlier visits, parse `$current_url`.
+
+**`utm_content` on a www event is the landing tag, not the store link id.** A
+visitor who arrives on `?utm_content=ad-creative` and taps the hero button sends
+`App Install Click` with `utm_content = 'ad-creative'` and `placement = 'hero'`,
+and opens a store link whose `utm_content` is `hero`. The link id lives in the
+store URL only, and after an install in `install_referrer_raw`. To join clicks
+to installs, match the event's `placement` to the `utm_content` extracted from
+`install_referrer_raw`. Joining event `utm_content` to install `utm_content`
+gives wrong rows for every tagged visitor.
+
+## Store links
+
+Every store button on www builds its URL with `buildStoreUrl` in
+`packages/web/app/lib/store-links.ts`. A link says four things:
+
+| Value    | Untagged visit                                   | Visitor arrived on a tagged link     |
+| -------- | ------------------------------------------------ | ------------------------------------ |
+| source   | `boardsesh`                                      | their `utm_source`                   |
+| medium   | `web` for a click on a page, `qr` after scanning a printed code | their `utm_medium`    |
+| campaign | `www`, or `gym-<slug>` on a gym page             | their `utm_campaign`                 |
+| link id  | the button's `placement`, plus `.poster` / `.kiosk` / `.board` after a scan | the same: the link id is always ours |
+
+The visitor's tags win field by field. A gym that links its page from Instagram
+with a source and medium but no campaign still reports `gym-<slug>`. A landing
+URL with a `gclid` and no `utm_source` reads as `google` / `cpc`; the click id
+itself is not copied into the store link.
+
+Link ids today: `hero`, `help`, `gym-page`, `gym-page.poster`. Reserved for the
+store buttons still to come (`AppInstallPlacement` in
+`packages/web/app/lib/app-install-event.ts`): `climb-view`, `climb-list`,
+`spray-climb`, `gyms-directory`, `join-page`, `site-banner`. The link id equals
+the `placement` on the matching `App Install Click`, so clicks and installs
+join on it: event `placement` on one side, the `utm_content` inside
+`install_referrer_raw` on the other. Do not use the event's own `utm_content`
+property for this; that is the visitor's landing tag ("Campaign params on www").
+
+**`utm_medium=qr` changed meaning with #6027.** Before it, every gym-page Play
+link said `qr`, whether or not a code was scanned. After it, `qr` means the page
+was reached from a printed code and a plain click on a gym page says `web`.
+Annotate the deploy date and do not compare `qr` counts across it. The 3 tagged
+installs in the 28 days before the change are gym-page clicks of unknown kind.
+
+The Capacitor retirement screen keeps its bare store URLs. It sends someone who
+already has the app to update it, which is not an install.
+
+### Google Play
+
+The four values go into the `referrer` param, which Play hands the app through
+the Install Referrer API, and are repeated as bare `utm_*` params for
+readability. The app parses source, medium and campaign into `install_source`,
+`install_medium` and `install_campaign`, and keeps the whole string as
+`install_referrer_raw`. The link id is read from that string, so it works for
+every store binary already installed, with no app change. The query is under
+"Link ids on Android installs" above; add `install_source`, `install_medium`
+and `install_campaign` from the same person to break it down further.
+
+Counts are small: 3 tagged Android installs in the 28 days to 2026-10-04.
+
+### App Store
+
+An App Store link carries `ct` (a campaign token of at most 30 characters),
+`mt=8`, and `pt` (the App Store Connect provider id) when the build has one.
+Apple reports downloads per campaign in App Analytics, in aggregate. Nothing
+reaches the app, so nothing reaches PostHog.
+
+- `ct` is the link id for an untagged visit (`hero`, `gym-page`,
+  `gym-page.poster`), and `<utm_source>-<utm_campaign>` (or just the source) for
+  a tagged one. Characters outside letters, digits, `.`, `_` and `-` become `-`.
+- A single gym never appears in `ct`. App Analytics hides a campaign until it
+  has at least 5 first-time downloads, which no one gym's page reaches, so all
+  gyms share `gym-page` and `gym-page.poster`.
+- **`pt` comes from `NEXT_PUBLIC_APP_STORE_PROVIDER_ID`**, a build-time variable
+  of the web service. It must be digits only; anything else is ignored. **It is
+  not set yet**: the provider id has to be read out of App Store Connect (it is
+  the `pt` value in a campaign link generated there). Until it is set, links
+  carry `ct` and `mt` with no `pt`, and App Analytics attributes nothing.
+  Setting it needs a rebuild of the web service, like every `NEXT_PUBLIC_`
+  variable.
+
 ## Retention
 
 Weekly or monthly, with the start and return events named on the tile, the
@@ -598,5 +711,7 @@ finished the period shown as final. Mark the current, unfinished period.
 | 2026-09-26 | The www crawler rule applies from here (first day of the window it was measured on) |
 | #6027 mobile OTA | `Login Account Age Resolved` starts; login events carry `provider` and `account_age_read`; `Tick Logged`, `Set Active Climb` and `Climb Created` carry `boardType`; `Set Active Climb` carries `trigger` (`climb_saved` on a save); `Onboarding Gate Evaluated` gains the skip reason `replayed_board_link` |
 | #6078 OTA (fill in the date when it ships) | The app stops sending `$create_alias` and stops identifying signed-out installs. Native `$identify` volume drops by most of its total, upgraded signed-out installs each start one new anonymous person, and the identity split is expected to fall from this date (see "Identity-split pitfall") |
+| #6027 web deploy | www events carry `utm_*` and `gclid`; every Play link carries a link id (`utm_content`); `utm_medium=qr` on a gym install starts meaning a scan; `App Install Click` on /help starts sending `placement: 'help'` |
+| `NEXT_PUBLIC_APP_STORE_PROVIDER_ID` set | App Store campaign links start counting in App Analytics |
 
 None of these repairs past data. Annotate them; do not backfill.

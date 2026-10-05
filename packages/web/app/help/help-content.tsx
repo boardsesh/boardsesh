@@ -101,7 +101,7 @@ export default function HelpContent() {
               </ProseList>
               {/* Store links, not the web app: Bluetooth only works from the native app. */}
               <Box sx={{ mt: 2 }}>
-                <MarketingInstallLinks />
+                <MarketingInstallLinks placement="help" />
               </Box>
             </PageSection>
           </Box>

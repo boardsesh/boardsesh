@@ -493,6 +493,7 @@ export default async function GymPage(props: GymRouteProps) {
               </Typography>
               <GymInstallCta
                 gymSlug={gym.slug || gym_slug}
+                qrMedium={qrLanding?.medium ?? null}
                 googlePlayLabel={t('gymPage.install.googlePlay')}
                 appStoreLabel={t('gymPage.install.appStore')}
               />

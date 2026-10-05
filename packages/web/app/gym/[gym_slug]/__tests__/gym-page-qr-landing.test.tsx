@@ -118,6 +118,26 @@ describe('gym page QR landing', () => {
     expect(ctas[0]?.props).toMatchObject({ gymSlug: 'landing-cta' });
   });
 
+  it('tells the install CTA about the scan, so its store links can say qr', async () => {
+    // The tracker strips `src` and `medium` from the address bar on mount, so
+    // the CTA cannot read them itself: the server has to hand the medium over.
+    executeAuthenticatedGraphQL.mockResolvedValue({ gymBySlug: gym('landing-scan') });
+
+    const ctas = findAll(await renderPage('landing-scan', { src: 'qr', medium: 'poster' }), GymInstallCta);
+
+    expect(ctas[0]?.props).toMatchObject({ gymSlug: 'landing-scan', qrMedium: 'poster' });
+  });
+
+  it('tells the install CTA there was no scan on an ordinary visit', async () => {
+    executeAuthenticatedGraphQL.mockResolvedValue({ gymBySlug: gym('landing-plain') });
+
+    const plainVisit = findAll(await renderPage('landing-plain', {}), GymInstallCta);
+    const badMedium = findAll(await renderPage('landing-plain', { src: 'qr', medium: 'billboard' }), GymInstallCta);
+
+    expect(plainVisit[0]?.props).toMatchObject({ qrMedium: null });
+    expect(badMedium[0]?.props).toMatchObject({ qrMedium: null });
+  });
+
   it('falls back to the URL slug when the gym has an empty slug', async () => {
     // `||`, not `??`: an empty-string slug skips the merged-twin 308 above
     // (a truthiness guard) and would otherwise name the campaign `gym-`.
