@@ -82,6 +82,15 @@ let initAttempted = false;
 export function buildPostHogOptions(postHogHost: string): PostHogOptions {
   return {
     host: postHogHost,
+    // Every event builds a person, signed out included. The SDK default,
+    // `identified_only`, sends signed-out events personless until something
+    // identifies or sets a person property. The app never ran that way: its old
+    // signed-out identify() switched person processing on at every launch. That
+    // call is gone (reconcile-identity.ts, rule 2), so this keeps what it did for
+    // person counts and `person.properties` breakdowns on signed-out traffic.
+    // It does not mark anyone identified: an anonymous person made this way
+    // still merges into an account on sign-in.
+    personProfiles: 'always',
     // The app already emits explicit $screen events plus reviewed product
     // events. SDK lifecycle autocapture adds high-volume foreground/background
     // noise and does not help answer product or BLE reliability questions.

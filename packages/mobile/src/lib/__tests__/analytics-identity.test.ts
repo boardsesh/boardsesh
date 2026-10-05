@@ -65,14 +65,28 @@ describe('onAnalyticsReady', () => {
     vi.clearAllMocks();
   });
 
-  it('runs the callback only after the SDK is ready', async () => {
-    let markReady: () => void = () => {};
+  // An SDK that is still loading its storage: both ids read empty until
+  // `markReady`, exactly as @posthog/core answers before it is initialised.
+  function loadingClient() {
+    const ids = { distinctId: '', anonymousId: '' };
+    let resolveReady: () => void = () => {};
     const ready = new Promise<void>((resolve) => {
-      markReady = resolve;
+      resolveReady = resolve;
     });
-    posthogClientMocks.getPostHogClient.mockReturnValue(
-      fakeClient({ distinctId: 'anon-1', anonymousId: 'anon-1' }, ready),
-    );
+    return {
+      client: fakeClient(ids, ready),
+      ready,
+      markReady: () => {
+        ids.distinctId = 'anon-1';
+        ids.anonymousId = 'anon-1';
+        resolveReady();
+      },
+    };
+  }
+
+  it('runs the callback only after the SDK is ready', async () => {
+    const { client, markReady } = loadingClient();
+    posthogClientMocks.getPostHogClient.mockReturnValue(client);
     const { onAnalyticsReady } = await import('../analytics');
     const callback = vi.fn();
 
@@ -84,14 +98,27 @@ describe('onAnalyticsReady', () => {
     await vi.waitFor(() => expect(callback).toHaveBeenCalledOnce());
   });
 
-  it('does not run a cancelled callback', async () => {
-    let markReady: () => void = () => {};
-    const ready = new Promise<void>((resolve) => {
-      markReady = resolve;
+  // The provider's two effects run in one commit. The identity effect has to
+  // finish before the person-properties effect starts, and it can only do that
+  // if nothing is deferred once the SDK is loaded.
+  it('runs the callback before returning when the SDK is already loaded', async () => {
+    const ready = vi.fn(() => Promise.resolve());
+    posthogClientMocks.getPostHogClient.mockReturnValue({
+      ...fakeClient({ distinctId: 'anon-1', anonymousId: 'anon-1' }),
+      ready,
     });
-    posthogClientMocks.getPostHogClient.mockReturnValue(
-      fakeClient({ distinctId: 'anon-1', anonymousId: 'anon-1' }, ready),
-    );
+    const { onAnalyticsReady } = await import('../analytics');
+    const callback = vi.fn();
+
+    onAnalyticsReady(callback);
+
+    expect(callback).toHaveBeenCalledOnce();
+    expect(ready).not.toHaveBeenCalled();
+  });
+
+  it('does not run a cancelled callback', async () => {
+    const { client, ready, markReady } = loadingClient();
+    posthogClientMocks.getPostHogClient.mockReturnValue(client);
     const { onAnalyticsReady } = await import('../analytics');
     const callback = vi.fn();
 

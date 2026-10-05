@@ -1397,6 +1397,36 @@ describe('AuthProvider sign-out offline data wipe', () => {
     expect(purgeLocalDataForSignOutMock).not.toHaveBeenCalled();
   });
 
+  // Two 401s in one launch, or a remote sign-out after a forced one. The first
+  // cleanup forgets the account. By the second the SDK is already anonymous and
+  // nobody is signed in, so a reset would only throw away the anonymous id the
+  // next sign-in merges on.
+  it('resets analytics once when a forced sign-out fires twice', async () => {
+    resetAnalyticsMock.mockClear();
+    clearOfflineBoardsMock.mockClear();
+    // Anonymous throughout: the user id had not loaded, so the SDK was never
+    // identified. The first reset must still happen, on the live session alone.
+    isAnalyticsPinnedToAPersonMock.mockReturnValue(false);
+    await renderSignedIn();
+    await waitFor(() => expect(setOnForcedSignOutMock).toHaveBeenCalled());
+    const forceSignOut = setOnForcedSignOutMock.mock.calls.at(-1)?.[0] as (() => void) | undefined;
+
+    await act(async () => {
+      forceSignOut?.();
+      await Promise.resolve();
+    });
+    // clearOfflineBoards runs after the reset, so each cleanup is past it here.
+    await waitFor(() => expect(clearOfflineBoardsMock).toHaveBeenCalledTimes(1));
+    expect(resetAnalyticsMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      forceSignOut?.();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(clearOfflineBoardsMock).toHaveBeenCalledTimes(2));
+    expect(resetAnalyticsMock).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the downloaded catalogs when checkAuth finds the session expired', async () => {
     const result = await renderSignedIn();
 

@@ -220,7 +220,21 @@ follows the same ones
 - Sign-in is one `identify(userId, { email })`. Its `$anon_distinct_id` is the
   anonymous id that carried the pre-login events, and nothing has identified
   that id before.
+- The account's person properties (`email`, `role`, `primary_board` and the
+  rest of the cohort set) go out after that `identify()`, under the user id.
+  They are held back while the SDK is on any other id, so an account's email
+  never lands on an anonymous person.
+- A second forced sign-out in one launch (two 401s) resets nothing: the first
+  one already did, and the anonymous id it left is the one the next sign-in
+  merges.
 - The bootstrap is gone.
+- The client runs with `personProfiles: 'always'`, so signed-out events still
+  build a person and carry `$process_person_profile: true`, as they did before.
+  The old signed-out `identify()` had switched that on as a side effect;
+  without the setting, signed-out installs would have gone personless (the SDK
+  default is `identified_only`) and signed-out person counts would have stepped
+  down on the OTA date. An anonymous person built this way is not identified
+  (`$is_identified: false`), so it can still merge on sign-in.
 
 An install that ran the old bundle while signed out arrives pinned to its
 party UUID. The first launch on the new bundle resets it once. Its old party
@@ -234,6 +248,13 @@ every launch, and that id survived a sign-out. The anonymous id holds across
 launches too, so a percentage rollout still gives one answer per install, but
 it changes at a sign-out. Upgraded signed-out installs are re-bucketed once,
 by the reset above.
+
+Super properties persist with the SDK and a reset clears them. Signed-out cold
+starts no longer reset, so one left over from the last launch rides the first
+events of the next until the app sets it again. Gym and OTA properties are
+re-registered at every launch. `arm_connect_step` is the one that can be stale:
+it stays until the first-connect host binds the (signed-out) account and
+unregisters it. Signed-in launches always had this window.
 
 ### What is still unproven
 

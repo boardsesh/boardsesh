@@ -80,6 +80,22 @@ export function PartyProfileProvider({ children }: { children: ReactNode }) {
   const authUserId = userProfile?.id ?? null;
   const authEmail = userProfile?.email ?? null;
 
+  // Stateless and safe to repeat: it reads the SDK's ids on every run and does
+  // nothing when they already match the auth state.
+  const reconcileIdentity = useCallback(() => {
+    reconcileAnalyticsIdentity({
+      authUserId,
+      authEmail,
+      isAuthenticated,
+      client: {
+        identify,
+        reset,
+        getDistinctId: () => getAnalyticsIdentity()?.distinctId ?? null,
+        getAnonymousId: () => getAnalyticsIdentity()?.anonymousId ?? null,
+      },
+    });
+  }, [authUserId, authEmail, isAuthenticated]);
+
   useEffect(() => {
     // Skip while auth is still resolving (mirrors web's
     // `sessionStatus === 'loading'` guard) so we never reconcile against a
@@ -90,21 +106,10 @@ export function PartyProfileProvider({ children }: { children: ReactNode }) {
     if (isAuthLoading) return;
     // The routine reads who the SDK thinks it is, and the SDK only knows after
     // it has loaded its storage. A signed-out auth check can finish first, so
-    // wait rather than reconcile against empty ids.
-    return onAnalyticsReady(() => {
-      reconcileAnalyticsIdentity({
-        authUserId,
-        authEmail,
-        isAuthenticated,
-        client: {
-          identify,
-          reset,
-          getDistinctId: () => getAnalyticsIdentity()?.distinctId ?? null,
-          getAnonymousId: () => getAnalyticsIdentity()?.anonymousId ?? null,
-        },
-      });
-    });
-  }, [isAuthLoading, isAuthenticated, authUserId, authEmail]);
+    // wait rather than reconcile against empty ids. Once the SDK is loaded the
+    // callback runs before this returns.
+    return onAnalyticsReady(reconcileIdentity);
+  }, [isAuthLoading, reconcileIdentity]);
 
   const hasUserProfile = !!userProfile;
   const isTester = userProfile?.isTester ?? null;
@@ -119,21 +124,34 @@ export function PartyProfileProvider({ children }: { children: ReactNode }) {
   // tester-vs-regular splits). Own effect, mirroring web's `language` person-
   // property effect, so it only re-fires when one of these traits actually
   // changes rather than on every identity-effect re-run.
+  //
+  // These carry the account's email, so they must reach PostHog under the
+  // account's id and never under whatever id the SDK held before. The profile
+  // that fills them is the same one that triggers the identify, so both effects
+  // fire in one commit. The callback reconciles first (a no-op when the identity
+  // effect already did) and then sends only if the SDK is on this user. That
+  // holds whichever effect runs first and whether or not the SDK was loaded.
   useEffect(() => {
-    if (isAuthLoading || !isAuthenticated || !hasUserProfile) return;
-    const { set, setOnce } = buildCohortPersonProperties({
-      isTester,
-      createdAt,
-      email: authEmail,
-      primaryBoard,
-      favoriteCount,
-      integrationsConnectedCount,
+    if (isAuthLoading || !isAuthenticated || !hasUserProfile || !authUserId) return;
+    return onAnalyticsReady(() => {
+      reconcileIdentity();
+      if (getAnalyticsIdentity()?.distinctId !== authUserId) return;
+      const { set, setOnce } = buildCohortPersonProperties({
+        isTester,
+        createdAt,
+        email: authEmail,
+        primaryBoard,
+        favoriteCount,
+        integrationsConnectedCount,
+      });
+      setPersonProperties(set, setOnce);
     });
-    setPersonProperties(set, setOnce);
   }, [
     isAuthLoading,
     isAuthenticated,
     hasUserProfile,
+    authUserId,
+    reconcileIdentity,
     isTester,
     createdAt,
     favoriteCount,

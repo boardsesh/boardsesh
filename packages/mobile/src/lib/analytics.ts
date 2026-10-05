@@ -79,9 +79,22 @@ export function isAnalyticsPinnedToAPerson(): boolean {
 // Runs `callback` once the SDK has loaded its persisted state, which is when
 // getAnalyticsIdentity() starts answering. Never runs it when analytics is
 // disabled. Returns a cancel function for effect cleanup.
+//
+// Synchronous when the SDK is already loaded, which is every call after the
+// first few hundred milliseconds of a launch. Callers depend on that: two
+// effects in one commit run in declaration order only if neither is deferred,
+// and party-profile-provider.tsx needs its identify() on the wire before the
+// person properties that belong to the identified user.
+//
+// `ready()` is marked @internal in the SDK typings. It only awaits the storage
+// preload. analytics-identity.test.ts pins that the SDK still exports it.
 export function onAnalyticsReady(callback: () => void): () => void {
   const client = getClient();
   if (!client) return () => {};
+  if (getAnalyticsIdentity() !== null) {
+    callback();
+    return () => {};
+  }
   let cancelled = false;
   void client
     .ready()

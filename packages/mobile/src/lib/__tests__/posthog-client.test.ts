@@ -101,6 +101,14 @@ describe('buildPostHogOptions', () => {
     expect(options.host).toBe('https://us.i.posthog.com');
   });
 
+  // The old signed-out identify() switched person processing on as a side
+  // effect. With it gone, the SDK default would send signed-out events
+  // personless and signed-out person counts would step down on the OTA date.
+  it('builds a person for every event, signed out included', () => {
+    const options = buildPostHogOptions('https://us.i.posthog.com');
+    expect(options.personProfiles).toBe('always');
+  });
+
   it('always configures session replay masking', () => {
     const options = buildPostHogOptions('https://us.i.posthog.com');
     expect(options.sessionReplayConfig).toEqual({

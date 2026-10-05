@@ -70,6 +70,8 @@ disappears for the rest of the launch after a sign-out.
 - **Sign-in:** `identify(userId, { email })` and nothing else. It carries the
   anonymous id as `$anon_distinct_id`, which is what merges the pre-login
   events into the account's person
+- **Person profiles (mobile):** `personProfiles: 'always'`, so signed-out
+  events build an un-identified person, as they did before #6078
 - **No `alias()` on either client.** `$create_alias` can merge two real
   people, and `identify()` already carries the anonymous id
 - **To confirm:** mobile used to identify its signed-out anonymous person,
