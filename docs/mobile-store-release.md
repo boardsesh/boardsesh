@@ -48,7 +48,8 @@ When using a train, cut it from `main` and merge it back after store acceptance.
 
 2. **Land the release identity on the train, before the final native change.**
    Bump `version` in `packages/mobile/app.config.ts` and update the localized iOS
-   and Android release notes for `en-US`, `es-ES`, `es-MX`, `fr-FR`, and `de-DE`.
+   and Android release notes for `en-US`, `es-ES`, `es-MX`, `fr-FR`, and `de-DE`,
+   plus Simplified Chinese (`zh-Hans` for the App Store, `zh-CN` for Play).
    Those PRs target `release/next`. Keep this order so the automatic builds carry
    the intended version and copy. The version no longer moves the fingerprint, so
    landing it first does not cost the store fleet its OTAs; it just means the
