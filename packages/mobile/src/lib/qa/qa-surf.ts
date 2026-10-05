@@ -12,7 +12,20 @@ import { BRANCH_HEADER, readConfig, readLoadedState, type SurfConfig } from '@xp
 import { isBranchSurfingBuild } from '../legacy-ota-channel-migration';
 import { readOtaBranch } from '../ota-telemetry';
 import { getSetting, setSetting } from '../../settings';
-import { parsePrBranch, prBranchName } from './pr-branch';
+import {
+  EARLY_UPDATES_OTA_BRANCH,
+  STAGING_OTA_BRANCH,
+  otaBranchKind,
+  parsePrBranch,
+  prBranchName,
+  type OtaBranchKind,
+} from './pr-branch';
+
+// The branch names and their classifier are pure and live in pr-branch.ts, so
+// code that only needs to CLASSIFY a branch does not load xprem and
+// expo-updates to do it. Re-exported because this is where everything that
+// pins a branch already looks for them.
+export { EARLY_UPDATES_OTA_BRANCH, STAGING_OTA_BRANCH, otaBranchKind, type OtaBranchKind };
 
 export type { SurfOutcome };
 
@@ -24,34 +37,12 @@ export type QaPrBranch = {
   lastUpdateAt: string;
 };
 
-// Fits the production channel's existing `pr-*` branch-surfing pattern while
-// remaining distinct from numbered PR previews.
-export const STAGING_OTA_BRANCH = 'pr-staging';
-// The "Get updates early" track: every merge to main, ahead of the daily stable
-// release. Named to fit the same `pr-*` surfing pattern, and like staging it is
-// NOT a pull request. Every place that lists or classifies branches has to say
-// so explicitly, because the numbered-PR pattern already drops it silently.
-export const EARLY_UPDATES_OTA_BRANCH = 'pr-beta';
-
 export type QaBranchList = {
   previews: QaPrBranch[];
   staging: { lastUpdateAt: string } | null;
   /** Set when the server has an early update this binary can run. */
   earlyUpdates: { lastUpdateAt: string } | null;
 };
-
-/**
- * What kind of branch a bundle came from. `'default'` is the build's own
- * channel (xprem reports no branch for it) plus anything this app does not
- * publish on purpose.
- */
-export type OtaBranchKind = 'default' | 'preview' | 'staging' | 'early-updates';
-
-export function otaBranchKind(branch: string | null): OtaBranchKind {
-  if (branch === EARLY_UPDATES_OTA_BRANCH) return 'early-updates';
-  if (branch === STAGING_OTA_BRANCH) return 'staging';
-  return parsePrBranch(branch) === null ? 'default' : 'preview';
-}
 
 export const BRANCH_SURFING_UNAVAILABLE_MESSAGE = 'Branch surfing is unavailable on this build';
 
@@ -305,21 +296,17 @@ function readLaunchPin(): Pin | undefined {
   return getSetting('otaPinnedBranch');
 }
 
-// The override as this session last wrote it, starting from the launch pin.
-let sessionPin: Pin | undefined = launchPin;
 // Updates this session downloaded, and the pin each was downloaded under.
-const stampedThisSession = new Map<string, Pin | undefined>();
+const stampedThisSession = new Map<string, Pin>();
 
-/** Test seam: forget what earlier cases wrote and downloaded. */
+/** Test seam: forget what earlier cases downloaded. */
 export function resetOtaPinSessionForTests(): void {
-  sessionPin = launchPin;
   stampedThisSession.clear();
 }
 
 /** Write the override for a branch; null is no override at all (the build's own headers). */
 function writePin(config: SurfConfig, pin: Pin): void {
   Updates.setUpdateRequestHeadersOverride(pin === null ? null : headersForBranch(config, pin));
-  sessionPin = pin;
 }
 
 type DiskKnowledge = { onDisk: false } | { onDisk: true; stamp: Pin | undefined };
@@ -355,19 +342,26 @@ export function adoptRunningOtaPin(): void {
   if (readOtaPinnedBranch() !== launchPin) setSetting('otaPinnedBranch', launchPin);
 }
 
-// One pin change at a time, across everything that makes one or downloads under
-// one: a tester's surf, the early-updates sync, the switch in More, "check for
-// updates" in the changelog, the crash screen's recovery. Two interleaved would
-// stamp a download with the other one's headers, or record a pin that the other
-// had just replaced.
+// One pin change at a time, across everything that makes one: a tester's surf,
+// the early-updates sync, the switch in More. Two interleaved would stamp a
+// download with the other one's headers, or record a pin that the other had
+// just replaced.
+//
+// NOT in the queue: the changelog's "check for updates" and the crash screen's
+// recovery, which call expo-updates directly. A check or download of theirs
+// that lands in the middle of a switch is made, and stamped, under a pin the
+// switch may be about to take back. Routing them through here is owed before
+// the `early-updates` flag is turned on; it was left out while the feature is
+// dark because it would let a stuck switch stall the last-resort recovery
+// button for a fleet that has no switch to protect.
 let pinChangeQueue: Promise<unknown> = Promise.resolve();
 
 /**
- * Run a task after every earlier one has settled. The surfs and the two
- * `...OutsidePinChange` calls below queue themselves; `joinEarlyUpdatesTrack`,
- * `leaveForProductionTrack` and `dropPinAfterEmergencyLaunch` do not, so a
- * caller can decide and act inside one turn. Never call a self-queueing
- * function from inside a task: it would wait on itself.
+ * Run a task after every earlier one has settled. The surfs below queue
+ * themselves; `joinEarlyUpdatesTrack`, `leaveForProductionTrack` and
+ * `fetchRegularUpdateAfterEmergencyLaunch` do not, so a caller can decide and
+ * act inside one turn. Never call a surf from inside a task: it would wait on
+ * itself.
  */
 export function runPinChangeExclusively<Result>(task: () => Promise<Result>): Promise<Result> {
   const run = pinChangeQueue.then(task, task);
@@ -431,7 +425,6 @@ async function surfOwningPin(branch: Pin): Promise<SurfOutcome> {
   const config = requireSurfConfig();
   const pinnedBefore = readOtaPinnedBranch();
   setSetting('otaPinnedBranch', branch);
-  sessionPin = branch;
   try {
     const outcome = await rejectAfter(
       surfTo(config, branch),
@@ -474,31 +467,6 @@ export async function surfToProduction(): Promise<SurfOutcome> {
 /** Pin the tester-only staged main bundle; production is never remapped. */
 export async function surfToStaging(): Promise<SurfOutcome> {
   return runPinChangeExclusively(() => surfOwningPin(STAGING_OTA_BRANCH));
-}
-
-/**
- * `checkForUpdateAsync` for callers that are not changing the pin (the
- * changelog's "check for updates", the crash screen's recovery). Queued, so it
- * never runs under a pin a switch has written and may yet take back.
- */
-export function checkForUpdateOutsidePinChange(): Promise<Updates.UpdateCheckResult> {
-  return runPinChangeExclusively(() => Updates.checkForUpdateAsync());
-}
-
-/**
- * `fetchUpdateAsync` for the same callers. Queued for the same reason, and it
- * notes which pin the download was stamped under, so a later switch does not
- * mistake it for something the launch-time check fetched.
- */
-export function fetchUpdateOutsidePinChange(): Promise<Updates.UpdateFetchResult> {
-  return runPinChangeExclusively(async () => {
-    const pendingBefore = readPendingUpdateId();
-    const fetched = await Updates.fetchUpdateAsync();
-    if (fetched.isNew && !knownOnDisk(fetched.manifest.id, pendingBefore).onDisk) {
-      stampedThisSession.set(fetched.manifest.id, sessionPin);
-    }
-    return fetched;
-  });
 }
 
 type LaunchableVerdict = { launchable: true } | { launchable: false; blockedOnUpdateId?: string };
@@ -620,18 +588,36 @@ export async function leaveForProductionTrack(): Promise<TrackSwitchOutcome> {
 
 /**
  * This launch was an emergency launch: nothing on disk matched the configured
- * headers. Whatever pin caused that is dropped at once, with no download first,
- * because the alternative is the same emergency launch at every open for as
- * long as the phone is offline. With no pin, Android always has its embedded
- * row and iOS has whatever was stamped before the pin. A regular update is then
- * fetched if the network allows. Call inside `runPinChangeExclusively`.
+ * headers. Whatever pin may have caused that is dropped at once, with no
+ * download and no waiting, because the alternative is the same emergency launch
+ * at every open for as long as the phone is offline. With no pin, Android
+ * always has its embedded row and iOS has whatever was stamped before the pin.
+ *
+ * Synchronous, and safe for a phone that never had a pin: an emergency launch
+ * happens to any climber for reasons that have nothing to do with branches (a
+ * crashing update), and for them this writes "no override" over no override.
+ *
+ * Returns whether there was any sign of a pin: a record, an interrupted switch,
+ * or the early-updates choice. Only then is `fetchRegularUpdateAfterEmergencyLaunch`
+ * worth its network and its turn in the queue.
  */
-export async function dropPinAfterEmergencyLaunch(): Promise<void> {
+export function dropPinAfterEmergencyLaunch(): boolean {
   const config = requireSurfConfig();
+  const pinEvidence =
+    readOtaPinnedBranch() !== null || getSetting('otaPinSwitchInFlight') !== null || getSetting('earlyUpdates');
   writePin(config, null);
   if (readOtaPinnedBranch() !== null) setSetting('otaPinnedBranch', null);
   if (getSetting('otaPinSwitchInFlight') !== null) setSetting('otaPinSwitchInFlight', null);
   settleOwedLeave();
+  return pinEvidence;
+}
+
+/**
+ * After `dropPinAfterEmergencyLaunch` found a pin: fetch a regular update so
+ * the next cold start has current JS, not just the embedded bundle. Best
+ * effort; it throws offline. Call inside `runPinChangeExclusively`.
+ */
+export async function fetchRegularUpdateAfterEmergencyLaunch(): Promise<void> {
   await waitForUpdatesIdle();
   const check = await rejectAfter(
     Updates.checkForUpdateAsync(),

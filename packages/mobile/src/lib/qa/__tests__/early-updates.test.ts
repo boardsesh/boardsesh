@@ -14,6 +14,7 @@ const surf = vi.hoisted(() => ({
   joinEarlyUpdatesTrack: vi.fn(),
   leaveForProductionTrack: vi.fn(),
   dropPinAfterEmergencyLaunch: vi.fn(),
+  fetchRegularUpdateAfterEmergencyLaunch: vi.fn(),
   surfToProduction: vi.fn(),
 }));
 vi.mock('expo-updates', () => ({ isEmbeddedLaunch: false, isEmergencyLaunch: false, manifest: { extra: {} } }));
@@ -36,6 +37,7 @@ vi.mock('../qa-surf', async (importOriginal) => ({
   joinEarlyUpdatesTrack: surf.joinEarlyUpdatesTrack,
   leaveForProductionTrack: surf.leaveForProductionTrack,
   dropPinAfterEmergencyLaunch: surf.dropPinAfterEmergencyLaunch,
+  fetchRegularUpdateAfterEmergencyLaunch: surf.fetchRegularUpdateAfterEmergencyLaunch,
   surfToProduction: surf.surfToProduction,
 }));
 
@@ -113,7 +115,9 @@ beforeEach(() => {
   surf.fetchQaBranches.mockReset().mockResolvedValue(listed());
   surf.joinEarlyUpdatesTrack.mockReset().mockResolvedValue('switched');
   surf.leaveForProductionTrack.mockReset().mockResolvedValue('switched');
-  surf.dropPinAfterEmergencyLaunch.mockReset().mockResolvedValue(undefined);
+  // true: there was a sign of a pin, so a regular update is worth fetching.
+  surf.dropPinAfterEmergencyLaunch.mockReset().mockReturnValue(true);
+  surf.fetchRegularUpdateAfterEmergencyLaunch.mockReset().mockResolvedValue(undefined);
   surf.surfToProduction.mockReset().mockResolvedValue('nothing-to-load');
   for (const key of Object.keys(store.values)) delete store.values[key];
 });
@@ -401,10 +405,26 @@ describe('syncEarlyUpdates', () => {
       surf.pinnedBranch = 'pr-beta';
     });
 
-    it('drops the pin, and does not join in the same breath', async () => {
+    it('drops the pin, fetches a regular update, and does not join in the same breath', async () => {
       await expect(syncEarlyUpdates(ENVIRONMENT)).resolves.toBe('left');
 
       expect(surf.dropPinAfterEmergencyLaunch).toHaveBeenCalledOnce();
+      expect(surf.fetchRegularUpdateAfterEmergencyLaunch).toHaveBeenCalledOnce();
+      expect(surf.joinEarlyUpdatesTrack).not.toHaveBeenCalled();
+    });
+
+    it('with no sign of a pin: no request at all, and the queue is not held', async () => {
+      // Any climber can have an emergency launch, for reasons that have nothing
+      // to do with branches. For them this must cost nothing.
+      surf.pinnedBranch = null;
+      store.values.earlyUpdates = false;
+      surf.dropPinAfterEmergencyLaunch.mockReturnValue(false);
+
+      await expect(syncEarlyUpdates(ENVIRONMENT)).resolves.toBe('none');
+
+      expect(surf.fetchRegularUpdateAfterEmergencyLaunch).not.toHaveBeenCalled();
+      expect(surf.fetchQaBranches).not.toHaveBeenCalled();
+      expect(surf.leaveForProductionTrack).not.toHaveBeenCalled();
       expect(surf.joinEarlyUpdatesTrack).not.toHaveBeenCalled();
     });
 
@@ -415,7 +435,7 @@ describe('syncEarlyUpdates', () => {
 
     it('repairs once: the rest of the launch decides as an ordinary one', async () => {
       // The pin is dropped before the part that can fail.
-      surf.dropPinAfterEmergencyLaunch.mockRejectedValue(new Error('offline'));
+      surf.fetchRegularUpdateAfterEmergencyLaunch.mockRejectedValue(new Error('offline'));
       await expect(syncEarlyUpdates(ENVIRONMENT)).resolves.toBe('deferred');
       surf.pinnedBranch = null;
 

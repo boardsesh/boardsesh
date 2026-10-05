@@ -88,7 +88,8 @@ vi.mock('react-native', () => ({
   },
 }));
 vi.mock('../../../settings', () => ({
-  getSetting: (key: string) => settings.values[key] ?? (key === 'otaLeaveOwed' ? false : null),
+  getSetting: (key: string) =>
+    settings.values[key] ?? (key === 'otaLeaveOwed' || key === 'earlyUpdates' ? false : null),
   setSetting: settings.setSetting,
 }));
 vi.mock('expo-constants', () => ({ default: { expoConfig: { updates: {} } } }));
@@ -99,9 +100,7 @@ vi.mock('../../legacy-ota-channel-migration', () => ({
 import {
   BRANCH_SURFING_UNAVAILABLE_MESSAGE,
   EARLY_UPDATES_OTA_BRANCH,
-  checkForUpdateOutsidePinChange,
   fetchQaBranches,
-  fetchUpdateOutsidePinChange,
   PIN_CHANGE_TIMEOUT_MS,
   UPDATES_IDLE_TIMEOUT_MS,
   joinEarlyUpdatesTrack,
@@ -648,66 +647,71 @@ describe('a switch waits its turn and gives up', () => {
 });
 
 describe('dropPinAfterEmergencyLaunch', () => {
-  it('drops the pin and every record of it before anything that needs a network', async () => {
+  it('drops the pin and every record of it, synchronously, with no request', async () => {
     const fresh = await relaunch({ record: 'pr-beta', interrupted: { to: 'pr-beta' }, emergency: true });
     settings.values.otaLeaveOwed = true;
-    updates.checkForUpdateAsync.mockRejectedValue(new Error('offline'));
 
-    await expect(fresh.dropPinAfterEmergencyLaunch()).rejects.toThrow('offline');
+    expect(fresh.dropPinAfterEmergencyLaunch()).toBe(true);
 
     expect(updates.setUpdateRequestHeadersOverride).toHaveBeenCalledExactlyOnceWith(null);
     expect(fresh.readOtaPinnedBranch()).toBeNull();
     expect(settings.values.otaPinSwitchInFlight).toBeNull();
     expect(settings.values.otaLeaveOwed).toBe(false);
+    expect(updates.checkForUpdateAsync).not.toHaveBeenCalled();
+    expect(updates.fetchUpdateAsync).not.toHaveBeenCalled();
   });
 
-  it('then fetches a regular update when it can', async () => {
-    const fresh = await relaunch({ record: 'pr-beta', emergency: true });
-    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: true, manifest: { id: 'stable-9' } });
-    updates.fetchUpdateAsync.mockResolvedValue({ isNew: true, manifest: { id: 'stable-9' } });
+  it.each([
+    ['a pin record', { record: 'pr-123' }, {}],
+    ['an interrupted switch', { interrupted: { to: 'pr-beta' } }, {}],
+    ['the early-updates choice', {}, { earlyUpdates: true }],
+  ] as const)('reports %s as evidence of a pin', async (_label, launch, stored) => {
+    const fresh = await relaunch({ ...launch, emergency: true });
+    Object.assign(settings.values, stored);
 
-    await fresh.dropPinAfterEmergencyLaunch();
+    expect(fresh.dropPinAfterEmergencyLaunch()).toBe(true);
+  });
 
-    expect(updates.fetchUpdateAsync).toHaveBeenCalledOnce();
+  it('reports no evidence for a phone that never had a pin, and writes no setting', async () => {
+    // An emergency launch has many causes that have nothing to do with branches.
+    const fresh = await relaunch({ emergency: true });
+    settings.setSetting.mockClear();
+
+    expect(fresh.dropPinAfterEmergencyLaunch()).toBe(false);
+
+    // "No override" over no override: harmless, and it covers an override this
+    // app has no record of.
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenCalledExactlyOnceWith(null);
+    expect(settings.setSetting).not.toHaveBeenCalled();
   });
 });
 
-describe('checks and downloads by other code', () => {
-  it('wait behind a switch in progress', async () => {
-    let finishCheck: (result: unknown) => void = () => {};
-    updates.checkForUpdateAsync.mockReturnValueOnce(
-      new Promise((resolve) => {
-        finishCheck = resolve;
-      }),
-    );
-    updates.fetchUpdateAsync.mockResolvedValue({ isNew: true, manifest: { id: 'beta-1' } });
-    const joining = joinEarlyUpdatesTrack();
-    await vi.waitFor(() => expect(updates.checkForUpdateAsync).toHaveBeenCalledOnce());
+describe('fetchRegularUpdateAfterEmergencyLaunch', () => {
+  it('downloads the regular update the server has', async () => {
+    const fresh = await relaunch({ emergency: true });
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: true, manifest: { id: 'stable-9' } });
+    updates.fetchUpdateAsync.mockResolvedValue({ isNew: true, manifest: { id: 'stable-9' } });
 
-    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: false });
-    // Not yet: the queue here is the callers' own, as it is in the app.
-    const changelog = checkForUpdateOutsidePinChange();
-    await Promise.resolve();
-    finishCheck({ isAvailable: true, manifest: { id: 'beta-1' } });
+    await fresh.fetchRegularUpdateAfterEmergencyLaunch();
 
-    await expect(joining).resolves.toBe('switched');
-    await expect(changelog).resolves.toEqual({ isAvailable: false });
+    expect(updates.fetchUpdateAsync).toHaveBeenCalledOnce();
+    expect(updates.reloadAsync).not.toHaveBeenCalled();
   });
 
-  it('a download made after a same-session switch is known to carry the new stamp', async () => {
-    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: true, manifest: { id: 'beta-1' } });
-    updates.fetchUpdateAsync.mockResolvedValue({ isNew: true, manifest: { id: 'beta-1' } });
-    await joinEarlyUpdatesTrack();
+  it('downloads nothing when the server has nothing new', async () => {
+    const fresh = await relaunch({ emergency: true });
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: false, reason: 'noUpdateAvailableOnServer' });
 
-    // The changelog's "check for updates" brings in the next early update.
-    updates.fetchUpdateAsync.mockResolvedValue({ isNew: true, manifest: { id: 'beta-2' } });
-    await fetchUpdateOutsidePinChange();
-    updates.downloadedId = 'beta-2';
+    await fresh.fetchRegularUpdateAfterEmergencyLaunch();
 
-    // A leave that is served that very id must see it as stamped for the pin,
-    // not as something the launch-time check fetched for the regular track.
-    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: true, manifest: { id: 'beta-2' } });
-    await expect(leaveForProductionTrack()).resolves.toBe('blocked');
+    expect(updates.fetchUpdateAsync).not.toHaveBeenCalled();
+  });
+
+  it('throws offline, for the caller to swallow', async () => {
+    const fresh = await relaunch({ emergency: true });
+    updates.checkForUpdateAsync.mockRejectedValue(new Error('offline'));
+
+    await expect(fresh.fetchRegularUpdateAfterEmergencyLaunch()).rejects.toThrow('offline');
   });
 });
 

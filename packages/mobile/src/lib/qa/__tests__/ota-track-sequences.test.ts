@@ -313,6 +313,8 @@ async function openApp() {
 
 describe.each(['ios', 'android'] as const)('on %s', (platform: Platform) => {
   beforeEach(async () => {
+    // Spies on the expo-updates stand-in must not carry into the next case.
+    vi.restoreAllMocks();
     vi.stubGlobal('fetch', fetchMock);
     fetchMock.mockReset();
     device.platform = platform;
@@ -571,8 +573,7 @@ describe.each(['ios', 'android'] as const)('on %s', (platform: Platform) => {
       expect(relaunch.launched).toBe('stable-3');
 
       // No write-check-restore cycle while the same update is running.
-      const { checkForUpdateAsync } = await import('expo-updates');
-      const check = vi.fn(checkForUpdateAsync);
+      const check = vi.spyOn(await import('expo-updates'), 'checkForUpdateAsync');
       expect(await relaunch.earlyUpdates.syncEarlyUpdates(ENVIRONMENT)).toBe('none');
       expect(check).not.toHaveBeenCalled();
       expect(device.override).toEqual(PINNED_EARLY);
@@ -747,6 +748,25 @@ describe.each(['ios', 'android'] as const)('on %s', (platform: Platform) => {
       expect(await earlyUpdates.syncEarlyUpdates(ENVIRONMENT)).toBe('left');
       expect(device.override).toBeNull();
       expect(device.settings.otaPinnedBranch).toBeNull();
+    });
+  });
+
+  describe('an emergency launch that has nothing to do with branches', () => {
+    it('costs a climber who never had a pin no request and no wait', async () => {
+      // A crashing update, a corrupted download: any climber can land here.
+      const { earlyUpdates } = await openApp();
+      device.emergencyLaunch = true;
+      const updates = await import('expo-updates');
+      const check = vi.spyOn(updates, 'checkForUpdateAsync');
+      const fetchUpdate = vi.spyOn(updates, 'fetchUpdateAsync');
+      fetchMock.mockClear();
+
+      expect(await earlyUpdates.syncEarlyUpdates(ENVIRONMENT)).toBe('none');
+
+      expect(check).not.toHaveBeenCalled();
+      expect(fetchUpdate).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(device.override).toBeNull();
     });
   });
 
@@ -957,33 +977,6 @@ describe.each(['ios', 'android'] as const)('on %s', (platform: Platform) => {
       // And switching early updates on works from here.
       expect(await relaunch.earlyUpdates.setEarlyUpdatesChoice(true, ENVIRONMENT)).toBe('joined');
       expect(coldStart()).toBe('beta-1');
-    });
-  });
-
-  describe('other code that checks for updates', () => {
-    it('a changelog download after a same-session join is attributed to the new pin', async () => {
-      const { surf, earlyUpdates } = await openApp();
-      await earlyUpdates.setEarlyUpdatesChoice(true, ENVIRONMENT);
-      publish('pr-beta', 'beta-2', 30);
-
-      expect(await surf.checkForUpdateOutsidePinChange()).toMatchObject({ isAvailable: true });
-      await surf.fetchUpdateOutsidePinChange();
-
-      // Leaving must still work, and the phone must not think beta-2 belongs to
-      // the regular track.
-      expect(await earlyUpdates.setEarlyUpdatesChoice(false, ENVIRONMENT)).toBe('left');
-      expect(coldStart()).toBe('stable-2');
-    });
-
-    it('waits its turn behind a switch in progress', async () => {
-      const { surf, earlyUpdates } = await openApp();
-      const order: string[] = [];
-
-      const joining = earlyUpdates.setEarlyUpdatesChoice(true, ENVIRONMENT).then(() => order.push('join'));
-      const checking = surf.checkForUpdateOutsidePinChange().then(() => order.push('check'));
-      await Promise.all([joining, checking]);
-
-      expect(order).toEqual(['join', 'check']);
     });
   });
 });

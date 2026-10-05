@@ -26,7 +26,6 @@ import { reportError } from '../src/lib/error-reporting';
 import { formatRelativeTime } from '../src/lib/format-relative-time';
 import { hapticError } from '../src/lib/haptics';
 import { openExternalUrl } from '../src/lib/open-url';
-import { checkForUpdateOutsidePinChange, fetchUpdateOutsidePinChange } from '../src/lib/qa/qa-surf';
 import { useConfirm } from '../src/providers/dialog-provider';
 import { useTheme } from '../src/providers/theme-provider';
 import { borderRadius, spacing } from '../src/theme/tokens';
@@ -177,15 +176,14 @@ const CheckForUpdatesButton = memo(function CheckForUpdatesButton() {
   const handlePress = useCallback(async () => {
     try {
       setStatus('checking');
-      // Both queued behind any OTA branch switch; see qa-surf.ts.
-      const check = await checkForUpdateOutsidePinChange();
+      const check = await Updates.checkForUpdateAsync();
       if (!check.isAvailable) {
         setStatus('idle');
         Alert.alert(t('mobile.changelog.upToDate.title'), t('mobile.changelog.upToDate.message'));
         return;
       }
       setStatus('downloading');
-      await fetchUpdateOutsidePinChange();
+      await Updates.fetchUpdateAsync();
       setStatus('idle');
       const confirmed = await confirm({
         title: t('mobile.changelog.updateReady.title'),

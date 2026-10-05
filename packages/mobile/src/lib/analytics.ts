@@ -211,6 +211,14 @@ export function readPosthogFeatureFlags(
  * with the bag, so on a cold start it names the CACHED response until a new
  * one lands. A change in it is the only way to tell a fresh answer from the
  * cached bag being re-emitted after a failed request.
+ *
+ * `getFeatureFlagDetails()` is public on PostHogCore (posthog-core.d.ts:
+ * `getFeatureFlagDetails(): PostHogFeatureFlagDetails | undefined`), which
+ * stores `requestId` from every `/flags` response alongside the flags. On a
+ * client without it this reads undefined forever, flags never count as fresh,
+ * and the one thing gated on that (moving an early-updates member off their
+ * track because the flag says off) never happens. That is the safe direction:
+ * the row still hides, and nobody is moved on evidence that cannot be dated.
  */
 export function readPosthogFeatureFlagsRequestId(): string | undefined {
   const posthog = getClient();

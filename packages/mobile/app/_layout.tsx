@@ -101,7 +101,6 @@ import { RootRestTimerPillHost } from '../src/components/queue-control/RestTimer
 import { ConnectivityBanner } from '../src/components/connectivity/ConnectivityBanner';
 import { QaTesterGate } from '../src/components/qa/QaTesterGate';
 import { EarlyUpdatesLaunchSync } from '../src/components/qa/EarlyUpdatesLaunchSync';
-import { checkForUpdateOutsidePinChange, fetchUpdateOutsidePinChange } from '../src/lib/qa/qa-surf';
 import { SendRecoveryGate } from '../src/components/offline/SendRecoveryGate';
 import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
 import { BottomChromeDebugOverlay } from '../src/components/BottomChromeDebugOverlay';
@@ -329,11 +328,8 @@ function CrashScreen({ error, retry }: ErrorBoundaryProps) {
     setRecovery({ kind: 'busy', phase: 'checking' });
     const { result, error: recoveryError } = await performOtaRecovery(
       {
-        // Queued behind any OTA branch switch (qa-surf.ts): a check or download
-        // that ran in the middle of one would be made, and stamped, under a pin
-        // the switch may be about to take back.
-        checkForUpdate: checkForUpdateOutsidePinChange,
-        fetchUpdate: fetchUpdateOutsidePinChange,
+        checkForUpdate: () => Updates.checkForUpdateAsync(),
+        fetchUpdate: () => Updates.fetchUpdateAsync(),
         reload: () => Updates.reloadAsync(),
         isUpdatePending: () => isUpdatePendingRef.current,
       },

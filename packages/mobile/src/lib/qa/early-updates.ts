@@ -57,6 +57,7 @@ import {
   STAGING_OTA_BRANCH,
   dropPinAfterEmergencyLaunch,
   fetchQaBranches,
+  fetchRegularUpdateAfterEmergencyLaunch,
   joinEarlyUpdatesTrack,
   leaveForProductionTrack,
   otaBranchKind,
@@ -207,6 +208,9 @@ async function joinWhenOffered(): Promise<EarlyUpdatesSyncOutcome> {
  * A tester's pin whose bundle is not running. If the server no longer offers
  * the branch, nobody is testing it: go back to the track this phone normally
  * follows, the way leaving the preview by hand would.
+ *
+ * Throws what the branch request and the switch throw (offline, a hung native
+ * call). `syncEarlyUpdates`, its only caller, turns that into `deferred`.
  */
 async function leaveVanishedPreview(pinnedBranch: string, member: boolean): Promise<EarlyUpdatesSyncOutcome> {
   const answer = await fetchQaBranches();
@@ -250,7 +254,11 @@ export function syncEarlyUpdates(environment: EarlyUpdatesSyncEnvironment): Prom
         // Marked first: the pin is dropped before anything that can fail, and
         // the rest of this launch must decide as if it were an ordinary one.
         repairedThisLaunch = true;
-        await dropPinAfterEmergencyLaunch();
+        // An emergency launch happens to any climber, mostly for reasons that
+        // have nothing to do with branches. With no sign of a pin this stops
+        // here: no request, and the queue is free again at once.
+        if (!dropPinAfterEmergencyLaunch()) return 'none';
+        await fetchRegularUpdateAfterEmergencyLaunch();
         return 'left';
       }
       if (action === 'join') return await joinWhenOffered();

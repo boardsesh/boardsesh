@@ -1609,7 +1609,7 @@ throws, and makes no request when there is nothing to do. `decideEarlyUpdatesSyn
 
 | Condition | Action |
 | --- | --- |
-| This launch was an emergency launch | **repair**: drop the override and every record of it at once, then fetch a regular update if the network allows. Before flags resolve, whoever owns the pin. Once per launch. |
+| This launch was an emergency launch | **repair**: write "no override" and clear every record of a pin, at once and with no request. Only if there was any sign of a pin (a record, an interrupted switch, or the choice) is a regular update then fetched. Before flags resolve, whoever owns the pin, once per launch. For a climber who never had a pin this is a no-op: an emergency launch has many causes that have nothing to do with branches. |
 | A leave is owed to the server | leave |
 | Pin record `pr-beta`, choice off | leave |
 | Pin record `pr-beta`, flag `off` and confirmed | leave, at most once per launch |
@@ -1709,13 +1709,17 @@ the launch sync retries it, for a member and a tester's preview pin alike. The `
 is kept: joining asks for the branch first, so nothing re-pins while surfing stays off. A 404
 without the header changes nothing.
 
-### Other code that checks for updates
+### Other code that checks for updates (not queued yet)
 
-The changelog's "check for updates" and the crash screen's recovery call
-`checkForUpdateOutsidePinChange` / `fetchUpdateOutsidePinChange`. Every pin change and every such
-call goes through one queue (`runPinChangeExclusively`), so none of them runs under an override a
-switch has written and may yet take back, and a download made after a same-session switch is
-attributed to the right pin.
+The changelog's "check for updates" and the crash screen's recovery ("Check for a fix") call
+`Updates.checkForUpdateAsync` / `fetchUpdateAsync` directly, exactly as before this feature. They
+are **not** in the pin-change queue (`runPinChangeExclusively`), so one of them running in the
+middle of a no-reload switch is made, and stamped, under an override the switch may be about to take
+back, and a download of theirs after a same-session switch is attributed to the launch-time pin.
+
+That is deliberate while the flag is off: with no switch in the fleet the queue would protect
+nothing, and it would let a stuck pin change stall the last-resort recovery button. **Routing both
+through the queue (with the timeout) is owed before the flag is turned on.**
 
 ### Telemetry
 
