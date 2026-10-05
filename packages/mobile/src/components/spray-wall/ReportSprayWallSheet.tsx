@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { SprayWallReportReason } from '@boardsesh/graphql/operations/spray-walls';
 import { ModalSheet } from '../ModalSheet';
@@ -24,12 +24,13 @@ export function ReportSprayWallSheet({
 }) {
   const { t } = useTranslation('boards');
   const { t: tCommon } = useTranslation('common');
-  const { systemColors } = useTheme();
+  const { systemColors, radii } = useTheme();
   const { canReport } = useSprayModerationAccess();
   const { effectiveOffline } = useConnectivity();
   const report = useReportSprayWall();
   const inFlight = useRef(false);
   const [reason, setReason] = useState<SprayWallReportReason | null>(null);
+  const submitDisabled = !reason || effectiveOffline || report.isPending;
   const labels: Record<SprayWallReportReason, string> = {
     INAPPROPRIATE: t('sprayModeration.reasons.inappropriate'),
     NOT_A_WALL: t('sprayModeration.reasons.notAWall'),
@@ -59,13 +60,26 @@ export function ReportSprayWallSheet({
       footer={
         report.isSuccess || !canReport ? (
           <Button title={tCommon('actions.done')} onPress={onClose} />
+        ) : submitDisabled ? (
+          // SwiftUI dims even an explicit disabled foreground; keep the unavailable
+          // action readable while retaining disabled button semantics.
+          <Pressable
+            disabled
+            accessibilityRole="button"
+            accessibilityLabel={t('sprayModeration.submit')}
+            accessibilityState={{ disabled: true, busy: report.isPending }}
+            style={[
+              styles.disabledSubmit,
+              { backgroundColor: systemColors.tertiaryBackground, borderRadius: radii.button },
+            ]}
+          >
+            {report.isPending ? <ActivityIndicator color={systemColors.label} /> : null}
+            <Text color={systemColors.label} style={styles.submitLabel}>
+              {t('sprayModeration.submit')}
+            </Text>
+          </Pressable>
         ) : (
-          <Button
-            title={t('sprayModeration.submit')}
-            onPress={submit}
-            disabled={!reason || effectiveOffline}
-            loading={report.isPending}
-          />
+          <Button title={t('sprayModeration.submit')} onPress={submit} />
         )
       }
     >
@@ -106,4 +120,14 @@ const styles = StyleSheet.create({
   body: { padding: spacing[4], gap: spacing[3] },
   reason: { flexDirection: 'row', alignItems: 'center', minHeight: 48, gap: spacing[3] },
   label: { flex: 1 },
+  disabledSubmit: {
+    minHeight: 44,
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[2],
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[2],
+  },
+  submitLabel: { fontWeight: '600' },
 });

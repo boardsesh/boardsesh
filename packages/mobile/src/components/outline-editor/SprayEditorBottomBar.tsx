@@ -143,7 +143,7 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
             <Button
               title={t('sprayEditor.menu.keepMaybes')}
               variant="text"
-              over="content"
+              over="surface"
               onPress={menuActions.keepMaybes}
             />
           ) : null}
@@ -151,7 +151,7 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
             <Button
               title={showMaybes ? t('sprayEditor.menu.hideMaybes') : t('sprayEditor.menu.showMaybes')}
               variant="text"
-              over="content"
+              over="surface"
               onPress={menuActions.toggleMaybes}
             />
           ) : null}
@@ -159,10 +159,10 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
             title={t('sprayEditor.menu.startOver')}
             variant="text"
             role="destructive"
-            over="content"
+            over="surface"
             onPress={menuActions.startOver}
           />
-          <Button title={t('sprayEditor.menu.close')} variant="text" role="cancel" over="content" onPress={closeMenu} />
+          <Button title={t('sprayEditor.menu.close')} variant="text" role="cancel" over="surface" onPress={closeMenu} />
         </View>
       ) : null}
 

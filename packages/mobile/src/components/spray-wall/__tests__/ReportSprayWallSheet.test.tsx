@@ -14,6 +14,7 @@ const mutate = vi.hoisted(() => vi.fn());
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('react-native', () => ({
   Platform: { OS: 'android' },
+  ActivityIndicator: () => createElement('span', { role: 'progressbar' }),
   View: ({ children }: { children: ReactNode }) => createElement('div', null, children),
   Pressable: ({
     children,
@@ -26,7 +27,7 @@ vi.mock('react-native', () => ({
     onPress: () => void;
     disabled?: boolean;
     accessibilityLabel: string;
-    accessibilityState: { checked: boolean };
+    accessibilityState: { checked?: boolean; disabled?: boolean; busy?: boolean };
   }) =>
     createElement(
       'button',
@@ -44,10 +45,27 @@ vi.mock('../../Text', () => ({
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../Button', () => ({
-  Button: ({ title, onPress, disabled }: { title: string; onPress: () => void; disabled?: boolean }) =>
-    createElement('button', { onClick: onPress, disabled }, title),
+  Button: ({
+    title,
+    onPress,
+    disabled,
+    loading,
+  }: {
+    title: string;
+    onPress: () => void;
+    disabled?: boolean;
+    loading?: boolean;
+  }) =>
+    createElement(
+      'button',
+      { onClick: onPress, disabled: disabled || loading },
+      loading ? createElement('span', { role: 'progressbar' }) : null,
+      title,
+    ),
 }));
-vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: {} }) }));
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: {}, radii: { button: 10 }, chartColors: { label: '#16111F' } }),
+}));
 vi.mock('../../../lib/connectivity/use-connectivity', () => ({
   useConnectivity: () => ({ effectiveOffline: state.offline }),
 }));
@@ -72,7 +90,7 @@ describe('ReportSprayWallSheet', () => {
     ['other', 'OTHER'],
   ])('submits fixed reason %s and prevents same-turn duplicates', (label, reason) => {
     const screen = render(<ReportSprayWallSheet wallUuid="wall-a" wallName="Crew wall" onClose={vi.fn()} />);
-    expect((screen.getByText('sprayModeration.submit') as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByText('sprayModeration.submit').closest('button') as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByLabelText(`sprayModeration.reasons.${label}`));
     fireEvent.click(screen.getByText('sprayModeration.submit'));
     fireEvent.click(screen.getByText('sprayModeration.submit'));
@@ -90,6 +108,14 @@ describe('ReportSprayWallSheet', () => {
     expect(screen.getByLabelText('sprayModeration.reasons.personalInfo').getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(screen.getByText('sprayModeration.submit'));
     expect(mutate).toHaveBeenCalledTimes(2);
+  });
+  it('keeps the pending report disabled and announces its progress', () => {
+    state.isPending = true;
+    const screen = render(<ReportSprayWallSheet wallUuid="wall-a" wallName="Crew wall" onClose={vi.fn()} />);
+    expect((screen.getByText('sprayModeration.submit').closest('button') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole('progressbar')).toBeTruthy();
+    fireEvent.click(screen.getByText('sprayModeration.submit'));
+    expect(mutate).not.toHaveBeenCalled();
   });
   it('blocks reporting offline or after access is withdrawn', () => {
     state.offline = true;
