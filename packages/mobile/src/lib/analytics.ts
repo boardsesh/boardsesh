@@ -87,7 +87,8 @@ export function isAnalyticsPinnedToAPerson(): boolean {
 // person properties that belong to the identified user.
 //
 // `ready()` is marked @internal in the SDK typings. It only awaits the storage
-// preload. analytics-identity.test.ts pins that the SDK still exports it.
+// preload. posthog-sdk-contract.test.ts pins that the shipped SDK build still
+// has it, so an SDK bump that drops the method fails a test, not a launch.
 export function onAnalyticsReady(callback: () => void): () => void {
   const client = getClient();
   if (!client) return () => {};
