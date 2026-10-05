@@ -20,6 +20,7 @@ const storeCtrl = vi.hoisted(() => ({
 const flagsCtrl = vi.hoisted(() => ({ enabled: true, resolved: true }));
 const savedCtrl = vi.hoisted(() => ({ hasSaved: true, asked: vi.fn() }));
 const deviceCtrl = vi.hoisted(() => ({ device: { connectedAt: null } as { connectedAt: number | null } | null }));
+const profileCtrl = vi.hoisted(() => ({ userId: 'user-1' }));
 
 vi.mock('react-native', () => ({
   View: ({ children }: Children) => createElement('div', null, children),
@@ -56,7 +57,7 @@ vi.mock('../Button', () => ({
 }));
 vi.mock('../../lib/analytics', () => ({ track: trackMock }));
 vi.mock('../../lib/clock', () => ({ nowMs: () => 42 }));
-vi.mock('../../lib/graphql/hooks', () => ({ useProfile: () => ({ data: { id: 'user-1' } }) }));
+vi.mock('../../lib/graphql/hooks', () => ({ useProfile: () => ({ data: { id: profileCtrl.userId } }) }));
 vi.mock('../../lib/onboarding/first-connect-store', () => ({
   getFirstConnectSnapshot: () => ({ device: deviceCtrl.device }),
 }));
@@ -107,6 +108,7 @@ describe('SavedClimbsCard', () => {
     savedCtrl.hasSaved = true;
     savedCtrl.asked.mockClear();
     deviceCtrl.device = { connectedAt: null };
+    profileCtrl.userId = 'user-1';
     trackMock.mockClear();
     pushMock.mockClear();
     resetSavedClimbsCardForTests();
@@ -142,6 +144,26 @@ describe('SavedClimbsCard', () => {
       board_type: 'kilter',
       phone_has_connected: false,
     });
+  });
+
+  it('logs it again for a second account signed in on the same launch', () => {
+    renderCard();
+    cleanup();
+
+    // Sign-out and sign-in as someone else, without restarting the app.
+    profileCtrl.userId = 'user-2';
+    renderCard();
+    cleanup();
+    renderCard();
+
+    expect(trackMock).toHaveBeenCalledTimes(2);
+
+    // The first climber coming back on this launch was already counted.
+    cleanup();
+    profileCtrl.userId = 'user-1';
+    renderCard();
+
+    expect(trackMock).toHaveBeenCalledTimes(2);
   });
 
   it('renders nothing, and logs nothing, when the board has no liked climb', () => {

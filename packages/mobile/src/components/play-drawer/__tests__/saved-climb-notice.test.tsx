@@ -183,6 +183,28 @@ describe('SavedClimbNotice', () => {
     expect(container.textContent).toBe('');
   });
 
+  it('leaves nothing behind when the drawer closes with the four seconds still running', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { handle, unmount, onView } = renderNotice();
+
+    act(() => handle().showSaved(false));
+    expect(vi.getTimerCount()).toBe(1);
+    trackMock.mockClear();
+
+    unmount();
+    // The pending auto-dismiss went with the component, so nothing is left that
+    // could set state on it later.
+    expect(vi.getTimerCount()).toBe(0);
+
+    vi.advanceTimersByTime(10_000);
+
+    // And nothing fired: no React complaint, no callback, no event.
+    expect(consoleError).not.toHaveBeenCalled();
+    expect(onView).not.toHaveBeenCalled();
+    expect(trackMock).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
   it('stops after the phone has used its three shows, and clears a stale line', () => {
     storeCtrl.showsLeft = 1;
     const { handle, container } = renderNotice();

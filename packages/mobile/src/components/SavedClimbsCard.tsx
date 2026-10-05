@@ -34,9 +34,11 @@ type SavedClimbsCardProps = {
   style?: StyleProp<ViewStyle>;
 };
 
-// `Saved Climbs Card Shown` is a once-per-launch event, and the Climbs list
-// remounts its header on every board switch and tab return.
-let shownTrackedThisLaunch = false;
+// `Saved Climbs Card Shown` fires once per launch for each account, and the
+// Climbs list remounts its header on every board switch and tab return. Keyed
+// by account, not a single flag: a second climber signing in on the same launch
+// sees the card for the first time and must be counted too.
+const shownTrackedThisLaunch = new Set<string>();
 
 /**
  * The way back to hearted climbs (#6002): a card at the top of the Climbs list
@@ -74,17 +76,19 @@ function SavedClimbsCardBody({ boardType, style }: SavedClimbsCardBodyProps) {
   const { t } = useTranslation('playlists');
   const { variant, systemColors, brandColors, m3SurfaceContainers } = useTheme();
   const { data: profile } = useProfile();
-  const visible = useHasSavedClimbsOnBoard({ userId: profile?.id ?? null, boardType });
+  const userId = profile?.id ?? null;
+  const visible = useHasSavedClimbsOnBoard({ userId, boardType });
 
   useEffect(() => {
-    if (!visible || shownTrackedThisLaunch) return;
-    shownTrackedThisLaunch = true;
+    // `visible` is only ever true for a known account.
+    if (!visible || userId === null || shownTrackedThisLaunch.has(userId)) return;
+    shownTrackedThisLaunch.add(userId);
     const device = getFirstConnectSnapshot().device;
     track(SHARED_EVENTS.SavedClimbsCardShown, {
       board_type: boardType,
       phone_has_connected: device ? device.connectedAt !== null : null,
     });
-  }, [visible, boardType]);
+  }, [visible, userId, boardType]);
 
   const handleOpen = useCallback(() => {
     track(SHARED_EVENTS.SavedClimbsCardAction, { action: 'open', board_type: boardType });
@@ -148,7 +152,7 @@ export const SavedClimbsCard = memo(SavedClimbsCardComponent);
 /** Test-only: a fresh launch for the once-per-launch `Shown` event. */
 export function resetSavedClimbsCardForTests(): void {
   if (process.env.NODE_ENV !== 'test') return;
-  shownTrackedThisLaunch = false;
+  shownTrackedThisLaunch.clear();
 }
 
 const styles = StyleSheet.create({

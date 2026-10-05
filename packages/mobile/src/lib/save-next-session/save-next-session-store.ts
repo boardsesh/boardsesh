@@ -108,9 +108,18 @@ export function ensureSaveNextSessionLoaded(): void {
 
 /**
  * Asks for one of the notice's three shows. Returns true, and counts it, when
- * there is one left. Synchronous, because it runs in the heart's tap handler:
- * until the stored count has been read the answer is "no", which costs at most
- * the very first heart of a launch its notice and can never overshoot the cap.
+ * there is one left. Synchronous, because it runs in the heart's tap handler.
+ *
+ * Accepted trade-off: while the stored count has not been read, the answer is
+ * "no". A heart that beats the storage read (the play drawer starts the read
+ * when it mounts, so in practice only the first heart of a launch can) gets no
+ * notice, and that skipped notice does NOT use up one of the three shows:
+ * nothing is counted or written, so the phone still gets all three later.
+ * After a failed read the answer stays "no" and every ask starts a new read.
+ *
+ * This is deliberate. Do not turn it into a blocking read: the tap handler
+ * cannot wait on storage, and showing before the count is known could overshoot
+ * the cap.
  */
 export function claimSavedClimbNoticeShow(): boolean {
   if (snapshot === null) {
@@ -124,16 +133,26 @@ export function claimSavedClimbNoticeShow(): boolean {
   return true;
 }
 
-/** The X on the Climbs card: gone for good on this phone. */
+/**
+ * The X on the Climbs card: gone for good on this phone.
+ *
+ * Idempotent: the first call wins and writes once; a second tap, however close
+ * behind, changes nothing. The check and the publish below run in one
+ * synchronous step against the live snapshot, never against a value read
+ * before an await, so two overlapping calls cannot both pass the check.
+ */
 export async function dismissSavedClimbsCard(atMs: number): Promise<void> {
-  let current: SaveNextSessionState;
-  try {
-    current = await loadSaveNextSession();
-  } catch (error: unknown) {
-    reportError(error);
-    // Unreadable storage: still hide the card for this launch.
-    current = snapshot ?? EMPTY_SAVE_NEXT_SESSION_STATE;
+  // The card only renders once the state is in memory, so a real tap skips this
+  // and the dismissal lands inside the tap itself.
+  if (snapshot === null) {
+    try {
+      await loadSaveNextSession();
+    } catch (error: unknown) {
+      // Unreadable storage: still hide the card for this launch.
+      reportError(error);
+    }
   }
+  const current = snapshot ?? EMPTY_SAVE_NEXT_SESSION_STATE;
   if (current.cardDismissedAt !== null) return;
   const next: SaveNextSessionState = { ...current, cardDismissedAt: atMs };
   publish(next);

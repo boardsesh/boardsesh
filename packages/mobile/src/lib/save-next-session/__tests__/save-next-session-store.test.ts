@@ -4,6 +4,7 @@ const storage = vi.hoisted(() => ({
   values: new Map<string, unknown>(),
   failReads: false,
   failWrites: false,
+  writes: 0,
 }));
 const reportErrorMock = vi.hoisted(() => vi.fn());
 
@@ -13,6 +14,7 @@ vi.mock('../../preference-store', () => ({
     return storage.values.has(key) ? structuredClone(storage.values.get(key)) : null;
   },
   setPreference: async (key: string, value: unknown) => {
+    storage.writes += 1;
     if (storage.failWrites) throw new Error('write failed');
     storage.values.set(key, structuredClone(value));
   },
@@ -36,6 +38,7 @@ describe('save-next-session store', () => {
     storage.values.clear();
     storage.failReads = false;
     storage.failWrites = false;
+    storage.writes = 0;
     reportErrorMock.mockClear();
     resetSaveNextSessionStoreForTests();
   });
@@ -123,6 +126,28 @@ describe('save-next-session store', () => {
       await dismissSavedClimbsCard(900);
 
       expect(getSaveNextSessionSnapshot()?.cardDismissedAt).toBe(500);
+    });
+
+    it('writes once when two taps land before the stored state has been read', async () => {
+      storage.values.set(STORAGE_KEY, { noticeShows: 2, cardDismissedAt: null });
+
+      await Promise.all([dismissSavedClimbsCard(500), dismissSavedClimbsCard(501)]);
+      await vi.waitFor(() => expect(storage.values.get(STORAGE_KEY)).toEqual({ noticeShows: 2, cardDismissedAt: 500 }));
+
+      expect(getSaveNextSessionSnapshot()).toEqual({ noticeShows: 2, cardDismissedAt: 500 });
+      expect(storage.writes).toBe(1);
+    });
+
+    it('writes once when two taps land back to back with the state in memory', async () => {
+      await loadSaveNextSession();
+
+      const first = dismissSavedClimbsCard(500);
+      // The first tap has already landed, before anything was awaited.
+      expect(getSaveNextSessionSnapshot()?.cardDismissedAt).toBe(500);
+      await Promise.all([first, dismissSavedClimbsCard(501)]);
+      await vi.waitFor(() => expect(storage.values.get(STORAGE_KEY)).toEqual({ noticeShows: 0, cardDismissedAt: 500 }));
+
+      expect(storage.writes).toBe(1);
     });
 
     it('still hides the card for this launch when storage cannot be read', async () => {

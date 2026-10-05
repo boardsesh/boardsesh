@@ -60,6 +60,24 @@ Use instead:
 - **kickboard**, **campus** — climb-rule characteristics (« Sans kickboard », « Campus (sans pieds) »). No established French climbing-gym translation; do **not** render "kickboard" as « planche » or « planche du bas » — that reintroduces the « planche »/board-device ambiguity this glossary bans above.
 - **JSON keys** (`send`, `sends`, `statSent`, …) and **ICU placeholders** (`{{board}}`, `{{sends}}`). Only translate values.
 
+## A saved climb is « enregistré »
+
+A climb the climber hearts is kept for later, and the app calls that climb **saved**. In French it is **« enregistré »** (verb: enregistrer). The heart itself stays « aimer », and the list it fills keeps its name, « Voies aimées ».
+
+| English                         | French                               |
+| ------------------------------- | ------------------------------------ |
+| saved (a hearted climb, kept)   | enregistré (verb: enregistrer)       |
+| saved climbs                    | blocs enregistrés                    |
+| Saved for your next session     | Enregistré pour ta prochaine session |
+| See saved climbs                | Voir les blocs enregistrés           |
+| Everything you hearted          | Tout ce que tu as aimé               |
+
+« Enregistré » agrees with its noun when one is present: _un bloc enregistré_, _tes voies enregistrées_. A bare notice defaults to the masculine « Enregistré ».
+
+These strings are mobile strings, and mobile strings address the climber as **tu**: « ta prochaine session », « Retrouve tes blocs enregistrés », « Tout ce que tu as aimé ». Write a new saved-climb string with tu. Some older strings in the shared catalogs still say « vous »; match the register of the mobile strings around the one you are adding.
+
+Do not confuse it with logging a send: « Enregistrer une croix » (above) records an ascent in the logbook, while « Enregistré » on a hearted climb means it is kept for later.
+
 ## The board device is « la board » (feminine)
 
 Every string names the board device **« board »**, feminine: _la board, une board, les boards_, with feminine agreement (_la board connectée_, _une board trouvée_). That is what French board climbers say and how French climbing media writes it (La Fabrique Verticale: « la board », « une Kilterboard ») — it patterns with « la planche », like skate and snowboard French. Do **not** use « planche » (wrong) or « panneau » (translationese) for the device; « panneau » survives only in the UI-panel sense (« Panneau d'administration »). Brand names stay in English (above) and take feminine agreement when an article is needed: _la board Kilter_. One exception: « le Kilter Homewall » stays masculine — it reads as a wall (« le mur »), not a board.
