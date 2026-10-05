@@ -25,7 +25,12 @@ import {
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 import { getDatabaseHandle, initializeDatabase, setDatabaseHandle } from '../connection';
 import { isSchemaReady } from '../schema-ready';
-import { getSchemaDowngrade, resetSchemaDowngradeForTests, subscribeSchemaDowngrade } from '../schema-downgrade';
+import {
+  SCHEMA_NEWER_REPORT_KIND,
+  getSchemaDowngrade,
+  resetSchemaDowngradeForTests,
+  subscribeSchemaDowngrade,
+} from '../schema-downgrade';
 import { resetDatabaseInitializationForTests } from '../testing';
 
 type TestDatabase = TestSqliteDb & SQLiteDatabase;
@@ -133,7 +138,7 @@ describe('initializeDatabase on a database from a newer bundle', () => {
       level: 'warning',
       tags: {
         source: 'offline-sync',
-        kind: 'sqlite-schema-newer',
+        kind: SCHEMA_NEWER_REPORT_KIND,
         stored_schema_version: NEWER_VERSION,
         supported_schema_version: LATEST_SCHEMA_VERSION,
       },

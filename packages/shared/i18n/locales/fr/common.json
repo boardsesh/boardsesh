@@ -383,6 +383,9 @@
         "failedMessage_other": "{{count}} modifications n'ont pas pu se synchroniser, et la déconnexion les supprime. Annule et lance Réessayer la synchronisation d'abord si tu veux les garder.",
         "confirm": "Se déconnecter",
         "cancel": "Annuler",
+        "downgradeMessage": "Ce téléphone attend une mise à jour de l'app pour pouvoir ouvrir tes données hors ligne. Si quelqu'un d'autre se connecte ici avant cette mise à jour, les croix encore en attente de synchronisation sur ce téléphone sont perdues.",
+        "downgradeConfirm": "Se déconnecter quand même",
+        "downgradeCancel": "Rester connecté",
         "failureTitle": "Déconnexion non confirmée",
         "failure": "Boardsesh n'a pas pu confirmer la déconnexion. Reconnecte-toi et déconnecte-toi à nouveau avant de laisser cet appareil."
       },

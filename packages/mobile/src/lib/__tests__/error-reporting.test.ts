@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GRAPHQL_EMPTY_RESPONSE_ERROR_NAME } from '@boardsesh/offline-sync/error-classification';
 import { SchemaNewerThanAppError } from '@boardsesh/offline-sync';
-import { SCHEMA_NEWER_REPORT_KIND, reportError, reportHandledError } from '../error-reporting';
+import { SCHEMA_NEWER_REPORT_KIND } from '../../db/schema-downgrade';
+import { reportError, reportHandledError } from '../error-reporting';
 import { addBreadcrumbToSentry, captureToSentry } from '../sentry';
 import { resetObserveRuntimeForTests, setObserveRuntime } from '../observe-runtime';
 

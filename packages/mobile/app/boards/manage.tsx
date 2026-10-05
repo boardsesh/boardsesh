@@ -27,7 +27,7 @@ import {
 } from '@boardsesh/offline-sync';
 import { reportAbandonedDownloadOnDisable } from '../../src/offline/abandoned-download-terminals';
 import { useOfflineDatabase } from '../../src/db/use-offline-database';
-import { getSchemaDowngrade } from '../../src/db/schema-downgrade';
+import { useOfflineSchemaDowngrade } from '../../src/db/use-offline-schema-downgrade';
 import { useBoardDownloads } from '../../src/offline/use-board-downloads';
 import { useSnapshotManifest } from '../../src/offline/use-snapshot-manifest';
 import { useConfirmBoardDownload } from '../../src/offline/use-confirm-board-download';
@@ -76,6 +76,11 @@ const getItemType = (item: ManageItem) => item.type;
 export default function ManageBoards() {
   const router = useRouter();
   const { t, i18n } = useTranslation('boards');
+  const { t: tCommon } = useTranslation('common');
+  // The offline database belongs to a newer app version, so nothing can be
+  // downloaded into it this session. The rows keep their download controls,
+  // disabled, and the header says why — the same words Storage uses.
+  const offlineStoragePaused = useOfflineSchemaDowngrade() !== null;
   const { isAuthenticated, refreshAuthState } = useAuth();
   const { systemColors, brandColors } = useTheme();
   const confirm = useConfirm();
@@ -285,8 +290,6 @@ export default function ManageBoards() {
   // in the app, and the automatic paths deliberately never ask.
   const handleRetryFastDownload = useCallback(
     async (board: UserBoard) => {
-      // The file belongs to a newer bundle and `db` refuses every call.
-      if (getSchemaDowngrade() !== null) return;
       const scope = offlineBoardScopeForBoard(board);
       const key = offlineBoardKeyForBoard(board);
       const now = Date.now();
@@ -491,6 +494,7 @@ export default function ManageBoards() {
           canRetryFastDownload={canRetryFastDownload}
           onRetryFastDownload={handleRetryFastDownload}
           onToggleOffline={handleToggleOffline}
+          offlineControlsDisabled={offlineStoragePaused}
         />
       );
     },
@@ -508,6 +512,7 @@ export default function ManageBoards() {
       snapshotSourceAvailable,
       handleToggleOffline,
       handleRetryFastDownload,
+      offlineStoragePaused,
     ],
   );
 
@@ -590,6 +595,14 @@ export default function ManageBoards() {
             </View>
           ) : items.length > 0 ? (
             <View style={styles.listHeader}>
+              {offlineStoragePaused && offlineDownloadsEnabled ? (
+                <View style={styles.pausedNotice}>
+                  <Text variant="headline">{tCommon('mobile.settings.storage.downgradeTitle')}</Text>
+                  <Text variant="subheadline" style={styles.offlineNotice}>
+                    {tCommon('mobile.settings.storage.downgradeSubtitle')}
+                  </Text>
+                </View>
+              ) : null}
               <Button title={t('mobile.discovery.create')} variant="outlined" onPress={onCreate} />
             </View>
           ) : null
@@ -625,6 +638,10 @@ const styles = StyleSheet.create({
   },
   offlineNotice: {
     opacity: 0.7,
+  },
+  pausedNotice: {
+    gap: spacing[1],
+    paddingBottom: spacing[3],
   },
   sectionHeader: {
     paddingHorizontal: spacing[4],

@@ -383,6 +383,9 @@
         "failedMessage_other": "{{count}} changes couldn't sync, and signing out deletes them. Cancel and hit Retry sync first if you want to keep them.",
         "confirm": "Sign out",
         "cancel": "Cancel",
+        "downgradeMessage": "This phone is waiting on an app update before it can open your offline data. If someone else signs in here before that update, any sends still waiting to sync on this phone are lost.",
+        "downgradeConfirm": "Sign out anyway",
+        "downgradeCancel": "Stay signed in",
         "failureTitle": "Sign-out wasn't confirmed",
         "failure": "Boardsesh couldn't confirm sign-out. Reconnect and sign out again before leaving this device."
       },

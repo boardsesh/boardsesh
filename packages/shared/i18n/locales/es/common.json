@@ -653,6 +653,9 @@
         "failedMessage_other": "{{count}} cambios no se pudieron sincronizar y al cerrar sesión se borran. Cancela y pulsa Reintentar sincronización primero si quieres conservarlos.",
         "confirm": "Cerrar sesión",
         "cancel": "Cancelar",
+        "downgradeMessage": "Este teléfono espera una actualización de la app para poder abrir tus datos sin conexión. Si otra persona inicia sesión aquí antes de esa actualización, se pierden los encadenes que aún esperan sincronizarse en este teléfono.",
+        "downgradeConfirm": "Cerrar sesión igualmente",
+        "downgradeCancel": "Seguir con la sesión",
         "failureTitle": "No se confirmó el cierre de sesión",
         "failure": "Boardsesh no pudo confirmar el cierre de sesión. Vuelve a conectarte y cierra sesión de nuevo antes de dejar este dispositivo."
       },

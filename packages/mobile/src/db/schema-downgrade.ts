@@ -19,6 +19,14 @@
 // One-way for the process: a database cannot get older, so once set this only
 // goes back to null in tests.
 
+/**
+ * The `kind` tag of the one report a schema downgrade gets. Here, in the leaf both
+ * sides import, because `connection.ts` writes it and `lib/error-reporting` reads
+ * it (to let that one report through and drop every later refusal), and the
+ * connection suites mock `lib/error-reporting` whole.
+ */
+export const SCHEMA_NEWER_REPORT_KIND = 'sqlite-schema-newer';
+
 export type SchemaDowngrade = {
   /** The version stamped in the file. */
   storedVersion: number;

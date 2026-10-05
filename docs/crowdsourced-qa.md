@@ -76,7 +76,8 @@ The wording may be edited for the PR; the check wants a ticked box, "previous st
 read", outside code fences and comments. The template keeps the line inside its Risk comment, so a PR
 that never touches migrations carries nothing. `skip-qa-gate` does not waive it, because the label
 answers "do testers need a plan" and this answers "does a phone keep its offline data". The failed
-listing step fails the job rather than skipping the rule. Why the rule exists: older JS can land on a
+listing step fails the job rather than skipping the rule. Bot PRs skip it with the rest of the job;
+Dependabot only bumps npm manifests and lockfiles, so it cannot change that file. Why the rule exists: older JS can land on a
 migrated phone, see `docs/offline-sync-plan.md` → "Older JS on a newer database".
 
 ### One parser

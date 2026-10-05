@@ -4,6 +4,7 @@ import { isDeadDatabaseHandleError, SchemaNewerThanAppError } from '@boardsesh/o
 import { addBreadcrumbToSentry, captureToSentry, type ErrorReportContext } from './sentry';
 import { isBackendUnavailableError } from './connectivity/backend-unavailable-error';
 import { noteDatabaseHandleFailure } from '../db/dead-handle';
+import { SCHEMA_NEWER_REPORT_KIND } from '../db/schema-downgrade';
 import { captureToObserve } from './observe-runtime';
 import {
   isExpectedAuthError,
@@ -13,9 +14,6 @@ import {
   readDuplicateBoardError,
   readGraphqlValidationFailedMessage,
 } from './graphql/extract-error-message';
-
-/** The `kind` tag of the one report a schema downgrade gets (db/connection.ts). */
-export const SCHEMA_NEWER_REPORT_KIND = 'sqlite-schema-newer';
 
 // Re-exported so the public reporting surface (`{ ErrorReportContext }` from
 // './error-reporting') is unchanged; the type itself lives in './sentry' to keep

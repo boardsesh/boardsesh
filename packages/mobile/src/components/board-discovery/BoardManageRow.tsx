@@ -60,6 +60,12 @@ type BoardManageRowProps = {
   canRetryFastDownload?: boolean;
   onRetryFastDownload?: (board: UserBoard) => void;
   onToggleOffline: (board: UserBoard) => void;
+  /**
+   * True when offline storage is paused for the session (the database belongs to
+   * a newer app version, see db/schema-downgrade). The toggle and the retry stay
+   * where they are, dimmed and not tappable; the screen says why in its header.
+   */
+  offlineControlsDisabled?: boolean;
 };
 
 /**
@@ -82,6 +88,7 @@ function BoardManageRowComponent({
   canRetryFastDownload = false,
   onRetryFastDownload,
   onToggleOffline,
+  offlineControlsDisabled = false,
 }: BoardManageRowProps) {
   const { t, i18n } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
@@ -266,10 +273,16 @@ function BoardManageRowComponent({
         {canRetryFastDownload && onRetryFastDownload ? (
           <Pressable
             onPress={() => onRetryFastDownload(board)}
+            disabled={offlineControlsDisabled}
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel={t('mobile.offline.retryFastDownloadAria', { name: board.name })}
-            style={({ pressed }) => [styles.retryFastDownload, pressed && styles.pressed]}
+            accessibilityState={{ disabled: offlineControlsDisabled }}
+            style={({ pressed }) => [
+              styles.retryFastDownload,
+              pressed && styles.pressed,
+              offlineControlsDisabled && styles.controlDisabled,
+            ]}
           >
             <Text variant="caption1" color={brandColors.primary}>
               {t('mobile.offline.retryFastDownload')}
@@ -283,6 +296,7 @@ function BoardManageRowComponent({
           state={downloadState}
           onPress={() => onToggleOffline(board)}
           accessibilityLabel={offlineToggleAria}
+          disabled={offlineControlsDisabled}
         />
       ) : null}
 
@@ -311,6 +325,9 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.5,
+  },
+  controlDisabled: {
+    opacity: 0.4,
   },
   retryFastDownload: {
     alignSelf: 'flex-start',

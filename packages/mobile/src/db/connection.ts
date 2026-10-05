@@ -35,7 +35,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { reportError } from '../lib/error-reporting';
 import { track } from '../lib/analytics';
 import { setSchemaReady } from './schema-ready';
-import { setSchemaDowngrade, type SchemaDowngrade } from './schema-downgrade';
+import { SCHEMA_NEWER_REPORT_KIND, setSchemaDowngrade, type SchemaDowngrade } from './schema-downgrade';
 import { pinDatabase } from './connection-pin';
 import { registerDeadHandleRecovery, type DeadHandleOrigin } from './dead-handle';
 import type { SqliteHandleFailure } from '@boardsesh/offline-sync';
@@ -489,11 +489,11 @@ function noteSchemaDowngrade(downgrade: SchemaDowngrade): void {
     level: 'warning',
     tags: {
       source: 'offline-sync',
-      kind: 'sqlite-schema-newer',
+      kind: SCHEMA_NEWER_REPORT_KIND,
       stored_schema_version: downgrade.storedVersion,
       supported_schema_version: downgrade.supportedVersion,
     },
-    fingerprint: ['sqlite-schema-newer'],
+    fingerprint: [SCHEMA_NEWER_REPORT_KIND],
   });
 }
 
