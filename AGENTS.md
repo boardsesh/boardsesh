@@ -259,6 +259,8 @@ Adding a new locale: update `SUPPORTED_LOCALES` and friends in `packages/shared/
 
 **German terminology:** German translations follow a fixed glossary. Product UI uses informal **du** and gender-star role nouns (`Routenbauer*in`). A climbing send is never **senden** — status/button is **Getoppt**, counts use **Begehung/Begehungen**, and lighting holds on the wall is **Board beleuchten**. The device is **Board** (neuter — _das Board_). Full terminology and exceptions: **`docs/i18n-german-glossary.md`** — follow it for every German string you add.
 
+**Chinese terminology:** Simplified Chinese (`zh-Hans`) exists as store listing text only (`fastlane/metadata/zh-Hans/`, `fastlane/metadata/android/zh-CN/`); the app is not translated yet. A climbing send is never **发送** — it is **完攀**, and lighting a climb on the wall is **点亮**. Address the reader as **你**. UI names are written in English as the app shows them, with a Chinese gloss (`Progress（进度）页`). No native-speaking climber has signed off the terms yet, so the glossary's open questions are blocking. Full terminology: **`docs/i18n-chinese-glossary.md`** — follow it for every Chinese string you add.
+
 ### Copy & microcopy
 
 - Describe what the user gets, not what the feature does.
