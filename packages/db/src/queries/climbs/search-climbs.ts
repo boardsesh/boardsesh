@@ -65,6 +65,8 @@ type RawSelectResult = {
   // wall. NULL on every catalogue board, and on a spray row the recompute has
   // never touched — both mean intact.
   missing_hold_count: number | null;
+  revision_number: number | null;
+  holds_revision_number: number | null;
   // doublePrecision COALESCE comes back as a real JS number (like benchmark_difficulty);
   // confidence is text. Both null when the climb has no board_climb_grades row at this angle.
   boardsesh_difficulty: number | null;
@@ -125,6 +127,8 @@ function mapResultToClimbRow(result: RawSelectResult, params: BoardRouteParams, 
     framesPace: result.frames_pace ?? null,
     compatibleSizeIds: result.compatible_size_ids ?? null,
     missingHoldCount: result.missing_hold_count ?? null,
+    revisionNumber: result.revision_number ?? null,
+    holdsRevisionNumber: result.holds_revision_number ?? null,
     // COALESCE(universal_grade, local_grade) is doublePrecision → real JS number, but
     // coerce defensively so a stringly-typed driver value can't string-concatenate.
     boardseshDifficulty: result.boardsesh_difficulty == null ? null : Number(result.boardsesh_difficulty),
@@ -465,6 +469,8 @@ export function statsDrivenClimbFields() {
     // Carried on every search row so a spray list can badge a climb that lost a
     // hold without a second round trip — the badge is on the row, not the detail.
     missing_hold_count: boardClimbs.missingHoldCount,
+    revision_number: boardClimbs.revisionNumber,
+    holds_revision_number: boardClimbs.holdsRevisionNumber,
   };
 }
 
@@ -571,6 +577,8 @@ async function joinGradesToRankedPage(
       frames_pace: rankedPage.frames_pace,
       compatible_size_ids: rankedPage.compatible_size_ids,
       missing_hold_count: rankedPage.missing_hold_count,
+      revision_number: rankedPage.revision_number,
+      holds_revision_number: rankedPage.holds_revision_number,
       // Boardsesh grade at the searched angle, for the page's rows only.
       boardsesh_difficulty: sql<
         number | null
@@ -1032,6 +1040,8 @@ async function runStandardSearch(
     // Carried on every search row so a spray list can badge a climb that lost a
     // hold without a second round trip — the badge is on the row, not the detail.
     missing_hold_count: boardClimbs.missingHoldCount,
+    revision_number: boardClimbs.revisionNumber,
+    holds_revision_number: boardClimbs.holdsRevisionNumber,
     // Boardsesh grade at the searched angle (params.angle). Surfaced flattened so
     // list rows carry it without a per-climb boardseshGrade round-trip.
     boardsesh_difficulty: sql<

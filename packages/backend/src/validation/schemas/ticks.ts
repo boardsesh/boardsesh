@@ -50,6 +50,13 @@ export const SaveTickInputSchema = z
     uuid: z.string().uuid('Invalid UUID format').optional(),
     boardType: BoardNameSchema,
     climbUuid: ExternalUUIDSchema,
+    // The climb revision the client displayed when the climber logged this
+    // (#6023). `.catch(null)` because this field must never fail a tick: a
+    // rejected send dead-letters in the offline drainer, so a value that is not
+    // a positive integer is dropped and the server works the revision out from
+    // `climbedAt` instead. An in-range check against the climb's current
+    // revision happens in the resolver, which is where that number is known.
+    climbRevision: z.number().int().positive().optional().nullable().catch(null),
     angle: z.number().int().min(-5).max(90),
     isMirror: z.boolean(),
     status: TickStatusSchema,

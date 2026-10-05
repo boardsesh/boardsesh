@@ -210,6 +210,8 @@ type AscentFeedRow = {
   comment: string;
   climbedAt: string;
   frames: string | null;
+  climbRevision: number | null;
+  climbCurrentRevision: number | null;
   hasBetaVideo: boolean;
 };
 
@@ -336,6 +338,7 @@ export const tickQueries = {
         userId: tick.userId,
         boardType: tick.boardType,
         climbUuid: tick.climbUuid,
+        climbRevision: tick.climbRevision,
         angle: tick.angle,
         isMirror: tick.isMirror,
         status: tick.status,
@@ -480,6 +483,7 @@ export const tickQueries = {
         userId: tick.userId,
         boardType: tick.boardType,
         climbUuid: tick.climbUuid,
+        climbRevision: tick.climbRevision,
         angle: tick.angle,
         isMirror: tick.isMirror,
         status: tick.status,
@@ -594,6 +598,7 @@ export const tickQueries = {
         setterUsername: dbSchema.boardClimbs.setterUsername,
         layoutId: dbSchema.boardClimbs.layoutId,
         frames: dbSchema.boardClimbs.frames,
+        climbCurrentRevision: dbSchema.boardClimbs.revisionNumber,
         // Which sizes/sets the climb physically fits — drives renderBoard below.
         compatibleSizeIds: dbSchema.boardClimbs.compatibleSizeIds,
         requiredSetIds: dbSchema.boardClimbs.requiredSetIds,
@@ -781,6 +786,7 @@ export const tickQueries = {
         setterUsername,
         layoutId,
         frames,
+        climbCurrentRevision,
         compatibleSizeIds,
         requiredSetIds,
         boardName,
@@ -846,6 +852,8 @@ export const tickQueries = {
           comment: tick.comment || '',
           climbedAt: tick.climbedAt,
           frames,
+          climbRevision: tick.climbRevision,
+          climbCurrentRevision,
           hasBetaVideo: climbsWithBeta.has(`${tick.boardType}:${tick.climbUuid}`),
         };
       },
@@ -1034,6 +1042,7 @@ export const tickQueries = {
         setterUsername: dbSchema.boardClimbs.setterUsername,
         layoutId: dbSchema.boardClimbs.layoutId,
         frames: dbSchema.boardClimbs.frames,
+        climbCurrentRevision: dbSchema.boardClimbs.revisionNumber,
         // Which sizes/sets the climb physically fits — drives renderBoard below.
         compatibleSizeIds: dbSchema.boardClimbs.compatibleSizeIds,
         requiredSetIds: dbSchema.boardClimbs.requiredSetIds,
@@ -1134,6 +1143,8 @@ export const tickQueries = {
       comment: string;
       climbedAt: string;
       frames: string | null;
+      climbRevision: number | null;
+      climbCurrentRevision: number | null;
       hasBetaVideo: boolean;
     };
 
@@ -1183,6 +1194,7 @@ export const tickQueries = {
       setterUsername,
       layoutId,
       frames,
+      climbCurrentRevision,
       compatibleSizeIds,
       requiredSetIds,
       difficultyName,
@@ -1253,6 +1265,8 @@ export const tickQueries = {
         comment: tick.comment || '',
         climbedAt: tick.climbedAt,
         frames,
+        climbRevision: tick.climbRevision,
+        climbCurrentRevision,
         hasBetaVideo: climbsWithBeta.has(`${tick.boardType}:${tick.climbUuid}`),
       };
 

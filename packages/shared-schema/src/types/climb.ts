@@ -97,6 +97,12 @@ export type Climb = {
   // off the wall. Spray walls only: null/undefined on every catalogue board, and
   // on any spray row a reset has never touched. Both mean intact.
   missingHoldCount?: number | null;
+  // `board_climbs.revision_number`: the climb's current revision, 1 when it has
+  // never been edited. Null/undefined on a fetch path that does not project it.
+  revisionNumber?: number | null;
+  // `board_climbs.holds_revision_number`: the revision at which the holds last
+  // changed. A tick at or above it was climbed on the holds the climb has now.
+  holdsRevisionNumber?: number | null;
 };
 
 // Input type for Climb (matches GraphQL ClimbInput)
@@ -147,6 +153,9 @@ export type ClimbInput = {
   // queueable and stays playable, and the peer showing it has to be able to say
   // so. Null/undefined on every catalogue board, where holds do not come off.
   missingHoldCount?: number | null;
+  // The climb's revision as the queueing client read it, round-tripped through
+  // the queue so whoever logs a queued climb can send it with the tick.
+  revisionNumber?: number | null;
 };
 
 /**

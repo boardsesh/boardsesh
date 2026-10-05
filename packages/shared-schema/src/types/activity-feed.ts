@@ -81,6 +81,10 @@ export type FollowingAscentFeedItem = {
   upvotes?: number | null;
   downvotes?: number | null;
   commentCount?: number | null;
+  // `boardsesh_ticks.climb_revision` and the climb's `revision_number` now.
+  // Populated by followingClimbAscents only.
+  climbRevision?: number | null;
+  climbCurrentRevision?: number | null;
 };
 
 export type AscentFeedItem = {
@@ -117,6 +121,11 @@ export type AscentFeedItem = {
   comment: string;
   climbedAt: string;
   frames?: string | null;
+  // `boardsesh_ticks.climb_revision` and the climb's `revision_number` now. A
+  // log on a lower revision than the current one was made on an earlier version
+  // of the climb. Null/undefined means unknown.
+  climbRevision?: number | null;
+  climbCurrentRevision?: number | null;
 };
 
 export type AscentFeedInput = {
@@ -212,6 +221,11 @@ export type ClimbLogItem = {
   difficulty?: number | null;
   comment: string;
   climbedAt: string;
+  // `boardsesh_ticks.climb_revision` and the climb's `revision_number` now. A
+  // log on a lower revision than the current one was made on an earlier version
+  // of the climb. Null/undefined means unknown.
+  climbRevision?: number | null;
+  climbCurrentRevision?: number | null;
 };
 
 export type ClimbLogsResult = {

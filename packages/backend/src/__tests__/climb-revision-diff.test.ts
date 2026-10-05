@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 // database client. Nothing here touches it.
 vi.mock('../db/client', () => ({ db: {}, dbRead: {} }));
 
-const { diffClimbRevisionStates } = await import('../graphql/resolvers/climbs/climb-revisions');
+const { diffClimbRevisionStates, holdsMoved } = await import('../graphql/resolvers/climbs/climb-revisions');
 type ClimbRevisionState = import('../graphql/resolvers/climbs/climb-revisions').ClimbRevisionState;
 
 const published = (overrides: Partial<ClimbRevisionState> = {}): ClimbRevisionState => ({
@@ -103,5 +103,42 @@ describe('diffClimbRevisionStates', () => {
         published({ description: 'No match\nSit start', characteristics: null }),
       ),
     ).toEqual(['description']);
+  });
+});
+
+describe('holdsMoved', () => {
+  it('is false for two identical states', () => {
+    expect(holdsMoved(published(), published())).toBe(false);
+  });
+
+  it('is true when the frames or the frame count differ', () => {
+    expect(holdsMoved(published(), published({ frames: 'p1r1p3r3' }))).toBe(true);
+    expect(holdsMoved(published(), published({ framesCount: 2 }))).toBe(true);
+  });
+
+  it('is false for a pace-only edit, which the diff still reports under `holds`', () => {
+    const slower = published({ framesPace: 900 });
+    expect(diffClimbRevisionStates('kilter', published(), slower)).toEqual(['holds']);
+    expect(holdsMoved(published(), slower)).toBe(false);
+  });
+
+  it('is false for every edit that leaves the holds where they were', () => {
+    expect(
+      holdsMoved(
+        published(),
+        published({
+          name: 'Renamed',
+          description: 'New notes',
+          angle: 45,
+          difficultyId: 22,
+          characteristics: ['any_feet'],
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('treats a missing frame count as 1 and missing frames as empty', () => {
+    expect(holdsMoved(published({ framesCount: null }), published({ framesCount: 1 }))).toBe(false);
+    expect(holdsMoved(published({ frames: null }), published({ frames: '' }))).toBe(false);
   });
 });

@@ -23,6 +23,7 @@ describe('buildLogPushItem', () => {
       userId: 'user-1',
       boardType: 'kilter',
       climbUuid: 'climb-uuid-1',
+      climbRevision: null,
       angle: 40,
       isMirror: false,
       origin: 'native',

@@ -251,6 +251,8 @@ export const schemaSQL = `
     "hold_fingerprint" text,
     "characteristics" text[],
     "missing_hold_count" integer,
+    "revision_number" integer DEFAULT 1 NOT NULL,
+    "holds_revision_number" integer DEFAULT 1 NOT NULL,
     "updated_at" timestamp DEFAULT now() NOT NULL,
     "sync_seq" bigserial NOT NULL
   );
@@ -435,6 +437,7 @@ export const schemaSQL = `
     "user_id" text NOT NULL,
     "board_type" text NOT NULL,
     "climb_uuid" text NOT NULL,
+    "climb_revision" integer,
     "angle" integer NOT NULL,
     "is_mirror" boolean DEFAULT false,
     "origin" tick_origin NOT NULL DEFAULT 'native',

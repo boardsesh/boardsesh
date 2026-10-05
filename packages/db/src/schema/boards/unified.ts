@@ -372,6 +372,16 @@ export const boardClimbs = pgTable(
     // Recomputed per wall by `recomputeMissingHoldCounts` (SW-04) whenever a
     // reset commits.
     missingHoldCount: integer('missing_hold_count'),
+    // The climb's current revision (#6023): the highest `revision_number` it
+    // has in `board_climb_revisions`, or 1 when it has never been edited.
+    // Written by `recordClimbRevision` in the same transaction as the revision
+    // row, so a tick can be stamped from this row without reading that table.
+    revisionNumber: integer('revision_number').notNull().default(1),
+    // The revision at which the holds last changed (frames or frame count), the
+    // "holds epoch". A rename, regrade or pace change moves `revisionNumber` and
+    // leaves this alone. Ticks stamped at or after it were climbed on the holds
+    // the climb has now.
+    holdsRevisionNumber: integer('holds_revision_number').notNull().default(1),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     syncSeq: bigserial('sync_seq', { mode: 'number' }).notNull(),
   },

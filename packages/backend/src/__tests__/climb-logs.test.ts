@@ -597,6 +597,85 @@ describe('the fields on a row', () => {
   });
 });
 
+// #6023. The shipped document does not select these two fields yet, so they are
+// asked for with a document of this file's own.
+describe('the climb revision on a row', () => {
+  const REVISION_DOCUMENT = `query ClimbLogRevisions($input: ClimbLogsInput!) {
+    climbLogs(input: $input) { items { uuid climbRevision climbCurrentRevision } }
+  }`;
+  type RevisionItem = { uuid: string; climbRevision: number | null; climbCurrentRevision: number | null };
+
+  async function askRevisions(input: Partial<ClimbLogsInput> = {}, viewer: string | null = null) {
+    const result = await execute({
+      schema,
+      document: parse(REVISION_DOCUMENT),
+      variableValues: { input: { boardType: BOARD, climbUuid: CLIMB_UUID, ...input } },
+      contextValue: ctxFor(viewer),
+    });
+    expect((result.errors ?? []).map((error) => error.message)).toEqual([]);
+    const { items } = (result.data as { climbLogs: { items: RevisionItem[] } }).climbLogs;
+    return new Map(items.map((item) => [item.uuid, [item.climbRevision, item.climbCurrentRevision]]));
+  }
+
+  it.each([{ latestPerClimber: false }, { latestPerClimber: true }])(
+    'answers the revision each log was made on beside the current one ($latestPerClimber)',
+    async (filters) => {
+      await db.execute(sql`UPDATE board_climbs SET revision_number = 3 WHERE uuid = ${CLIMB_UUID}`);
+      const onRevisionTwo = await insertTick({ userId: BEA, climbRevision: 2 });
+      const onCurrent = await insertTick({ userId: CAL, climbRevision: 3 });
+      const unknown = await insertTick({ userId: DEE, climbRevision: null });
+
+      expect(await askRevisions(filters)).toEqual(
+        new Map([
+          [onRevisionTwo, [2, 3]],
+          [onCurrent, [3, 3]],
+          [unknown, [null, 3]],
+        ]),
+      );
+    },
+  );
+
+  it('answers 1 as the current revision of a climb nobody has edited', async () => {
+    const tick = await insertTick({ climbRevision: 1 });
+
+    expect(await askRevisions()).toEqual(new Map([[tick, [1, 1]]]));
+  });
+
+  it('answers the canonical climb’s revision for a log stored under a retired uuid', async () => {
+    await db.execute(sql`UPDATE board_climbs SET revision_number = 4 WHERE uuid = ${CLIMB_UUID}`);
+    await db.execute(sql`
+      INSERT INTO board_climb_aliases (board_type, alias_uuid, canonical_uuid, source)
+      VALUES (${BOARD}, 'cl-retired-revision', ${CLIMB_UUID}, 'test')
+    `);
+    try {
+      const tick = await insertTick({ climbUuid: 'cl-retired-revision', climbRevision: null });
+
+      // Asked for by either uuid, the answer is the same.
+      expect(await askRevisions()).toEqual(new Map([[tick, [null, 4]]]));
+      expect(await askRevisions({ climbUuid: 'cl-retired-revision' })).toEqual(new Map([[tick, [null, 4]]]));
+    } finally {
+      await db.execute(sql`DELETE FROM board_climb_aliases WHERE alias_uuid = 'cl-retired-revision'`);
+    }
+  });
+
+  it('answers no current revision for a log on a climb the catalogue does not have', async () => {
+    const tick = await insertTick({ climbUuid: 'cl-not-in-catalogue', climbRevision: null });
+
+    expect(await askRevisions({ climbUuid: 'cl-not-in-catalogue' })).toEqual(new Map([[tick, [null, null]]]));
+  });
+
+  it('gives a stranger nothing on a private wall, the current revision included', async () => {
+    const { climbUuid } = await seedWall({ isPublic: false });
+    await db.execute(sql`UPDATE board_climbs SET revision_number = 5 WHERE uuid = ${climbUuid}`);
+
+    expect(await askRevisions({ boardType: 'spray', climbUuid }, STRANGER)).toEqual(new Map());
+    expect([...(await askRevisions({ boardType: 'spray', climbUuid }, WALL_OWNER)).values()]).toEqual([
+      [null, 5],
+      [null, 5],
+    ]);
+  });
+});
+
 describe('which climb', () => {
   it('gives the empty answer for a climb nobody has logged and for an unknown uuid', async () => {
     await insertTick();

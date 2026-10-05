@@ -241,6 +241,23 @@ export function diffClimbRevisionStates(
   return changes;
 }
 
+/**
+ * Whether the holds themselves differ between two states: the frames, or how
+ * many frames there are.
+ *
+ * Narrower than the `holds` entry {@link diffClimbRevisionStates} reports, which
+ * also covers `framesPace`. The pace is how fast a multi-frame route plays, not
+ * where the holds are, so a pace-only edit is a revision but the climb is still
+ * the same climb to anyone who sent it. This is what moves
+ * `board_climbs.holds_revision_number` (#6023).
+ */
+export function holdsMoved(
+  before: Pick<ClimbRevisionState, 'frames' | 'framesCount'>,
+  after: Pick<ClimbRevisionState, 'frames' | 'framesCount'>,
+): boolean {
+  return (before.frames ?? '') !== (after.frames ?? '') || (before.framesCount ?? 1) !== (after.framesCount ?? 1);
+}
+
 /** The wall's published version id, read under the wall lock. */
 async function currentWallVersionId(executor: DrizzleExecutor, wallId: number): Promise<number | null> {
   // Re-entrant within the transaction, so this costs nothing when the caller
@@ -368,6 +385,9 @@ function publishedDate(state: ClimbRevisionState): Date {
  *
  * Past `MAX_REVISIONS_PER_CLIMB` the oldest rows other than revision 1 are
  * deleted. An edit is never refused for being one too many.
+ *
+ * A recorded edit also moves `board_climbs.revision_number` to the new number,
+ * and `holds_revision_number` with it when {@link holdsMoved}.
  */
 export async function recordClimbRevision(
   executor: DrizzleExecutor,
@@ -422,6 +442,21 @@ export async function recordClimbRevision(
     changes,
     editedBy: editorId,
   });
+
+  // Keep the climb's own copy of its revision in step with the row just written
+  // (#6023), so `saveTick` can stamp a tick with one primary-key read. A second
+  // UPDATE rather than columns on the caller's: the number is only known here,
+  // after the stats row is read back and the diff says this save was an edit at
+  // all. It fires `trg_board_climbs_set_sync_fields` once more, which is wanted
+  // when the caller's UPDATE changed nothing on the row (a spray regrade lives
+  // on the stats row), because `syncClimbs` has to re-deliver the new number.
+  await executor
+    .update(dbSchema.boardClimbs)
+    .set({
+      revisionNumber: nextRevisionNumber,
+      ...(holdsMoved(before, after) ? { holdsRevisionNumber: nextRevisionNumber } : {}),
+    })
+    .where(and(eq(dbSchema.boardClimbs.uuid, climbUuid), eq(dbSchema.boardClimbs.boardType, boardType)));
 
   // Prune. Revision 1 is never a candidate, so the climb as first published is
   // always there to compare the latest against.

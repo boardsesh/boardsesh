@@ -87,6 +87,21 @@ export const climbTypeDefs = /* GraphQL */ `
     """
     missingHoldCount: Int
     """
+    The climb's current revision. 1 for a climb nobody has edited since it was
+    published, and one higher for every recorded edit after that (the same
+    numbers \`climbRevisions\` returns). A client that logs a tick sends this
+    back as \`SaveTickInput.climbRevision\`. Null on a fetch path that does not
+    project the column.
+    """
+    revisionNumber: Int
+    """
+    The revision at which this climb's holds last changed. Equal to
+    \`revisionNumber\` straight after an edit that moved a hold, and behind it
+    after a rename, a regrade or a pace change. A tick whose \`climbRevision\` is
+    at or above this number was climbed on the holds the climb has now.
+    """
+    holdsRevisionNumber: Int
+    """
     The holds this climb was set on that are no longer on the wall, carrying the
     geometry they had while they were — so a client can draw ghost rings where
     they used to be and the climber can see what the reset took.
@@ -178,6 +193,8 @@ export const climbTypeDefs = /* GraphQL */ `
     compatibleSizeIds: [Int!]
     "How many of this climb's holds are no longer on the wall after a spray-wall reset. Round-tripped through the queue because a broken climb stays queueable and stays playable, and the peer showing it has to be able to say so — a queued row that dropped this would be the one surface pretending the climb was whole. Null on every catalogue board."
     missingHoldCount: Int
+    "The climb's revision as the queueing client read it (\`Climb.revisionNumber\`). Round-tripped through the queue so whoever logs a queued climb can say which revision was on the wall without a refetch. Null from a client that predates the field."
+    revisionNumber: Int
   }
 
   # ============================================

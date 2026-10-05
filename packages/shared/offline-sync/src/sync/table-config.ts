@@ -76,6 +76,9 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
       'user_id',
       'board_type',
       'climb_uuid',
+      // The climb revision the tick was logged against (#6023). NULL on a tick
+      // pulled before schema v11 and on every import; both mean unknown.
+      'climb_revision',
       'angle',
       'is_mirror',
       'status',
@@ -201,6 +204,24 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
       // applies. The two conditions a bump exists to protect are therefore both
       // already met, and paying for it would be a catalogue replay for nothing.
       'missing_hold_count',
+      // The climb's current revision and the revision at which its holds last
+      // changed (#6023).
+      //
+      // ALSO ADDED WITHOUT BUMPING `refreshRevision` / `refreshColumns`. The
+      // server default is 1 and only an edit moves it, and an edit bumps the
+      // row's `sync_seq`, so every climb whose number is not 1 is re-delivered
+      // by the ordinary cursor. A row that is never re-delivered is a climb
+      // nobody has edited, and its NULL here is safe: a tick logged from it
+      // sends no revision and the server stores 1. A bump would re-crawl every
+      // downloaded catalogue to write a 1 beside each climb.
+      //
+      // One gap, which is why a local reader must take NULL as unknown and not
+      // as 1: a climb edited while this phone ran an older bundle was
+      // re-delivered to code that dropped the two fields, and stays NULL until
+      // its next edit. The server's by-date fallback still stamps that tick
+      // correctly.
+      'revision_number',
+      'holds_revision_number',
       'updated_at',
       'sync_seq',
     ],

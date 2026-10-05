@@ -1118,11 +1118,15 @@ describe('pullSync snapshot bootstrap', () => {
     expect(await db.getFirstAsync('SELECT 1 AS n FROM board_climbs LIMIT 1')).toBeNull();
   });
 
-  it('imports an artifact stamped below LATEST_SCHEMA_VERSION but at ARTIFACT_SCHEMA_VERSION or above', async () => {
-    // v10 added only device-side tables, so a v9 artifact carries every column
-    // this client has. Rejecting it would send every download to the paged crawl
-    // until the export republished.
-    expect(ARTIFACT_SCHEMA_VERSION).toBeLessThan(LATEST_SCHEMA_VERSION);
+  it('imports an artifact stamped at ARTIFACT_SCHEMA_VERSION, whatever LATEST_SCHEMA_VERSION is', async () => {
+    // The floor is the last migration that changed an artifact table, not the
+    // newest migration: a device-only migration after it must not send every
+    // download to the paged crawl until the export republished. Today the two
+    // are the same number (v11 added the climb revision columns to
+    // `board_climbs`), so this pins the boundary itself; that a device-only
+    // migration leaves the floor where it was is `artifactSchemaVersion`'s own
+    // test in migrations.test.ts.
+    expect(ARTIFACT_SCHEMA_VERSION).toBeLessThanOrEqual(LATEST_SCHEMA_VERSION);
     const filePath = join(workDir, 'older-device-schema.db');
     buildArtifact({
       filePath,
@@ -1130,7 +1134,7 @@ describe('pullSync snapshot bootstrap', () => {
       stats: [],
       climbsWatermark: CLIMBS_WATERMARK,
       statsWatermark: STATS_WATERMARK,
-      schemaVersion: LATEST_SCHEMA_VERSION - 1,
+      schemaVersion: ARTIFACT_SCHEMA_VERSION,
     });
 
     await bootstrapScopeFromSnapshot({ db, scope: SCOPE_KILTER_5, scopeKey: 'kilter:1:5', filePath });
@@ -1139,7 +1143,7 @@ describe('pullSync snapshot bootstrap', () => {
     expect(climbs).toEqual([{ uuid: 'c1' }]);
   });
 
-  it('still refuses an older-schema artifact that lacks a column this client requires', async () => {
+  it('still refuses an artifact that lacks a column this client requires, even one stamped current', async () => {
     // The column check stays the real safety net, whatever version is stamped.
     const filePath = join(workDir, 'missing-column.db');
     buildArtifact({
@@ -1148,7 +1152,7 @@ describe('pullSync snapshot bootstrap', () => {
       stats: [],
       climbsWatermark: CLIMBS_WATERMARK,
       statsWatermark: STATS_WATERMARK,
-      schemaVersion: LATEST_SCHEMA_VERSION - 1,
+      schemaVersion: ARTIFACT_SCHEMA_VERSION,
     });
     const artifact = new DatabaseSync(filePath);
     artifact.exec('ALTER TABLE board_climbs DROP COLUMN missing_hold_count');

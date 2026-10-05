@@ -134,6 +134,11 @@ export const ClimbInputSchema = z.object({
   // playable, and the peer showing it has to be able to say why the board is
   // drawing fewer holds than the setter painted. Null on every catalogue board.
   missingHoldCount: z.number().int().min(0).nullish(),
+  // `board_climbs.revision_number` as the queueing client read it (#6023).
+  // Round-trips through the queue so the peer who logs a queued climb can say
+  // which revision was on the wall, without a refetch. Null from a client that
+  // predates the field.
+  revisionNumber: z.number().int().positive().nullish(),
 });
 
 /**

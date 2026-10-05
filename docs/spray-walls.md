@@ -2128,6 +2128,75 @@ field is proven to show the owner the history and a stranger nothing.
 Revisions are read-only. There is no restore, and an old revision cannot be
 queued or lit up.
 
+### Which revision a tick was logged on
+
+A send on revision 2 of a climb is not a send of revision 5 if the holds moved
+in between. So every tick records the revision it was logged against (#6023),
+in `boardsesh_ticks.climb_revision`:
+
+| Value | Meaning |
+| --- | --- |
+| 1 | The climb had never been edited, or the tick was on it as first published. |
+| 2 and up | That revision, the same number `climbRevisions` returns. |
+| NULL | Not known. Every imported tick (Aurora, Kilter, JSON, MoonBoard) and every tick older than the column. |
+
+The number is set once, when `saveTick` inserts the row. `updateTick` never
+changes it, not even when the edit moves `climbedAt`. A replayed `saveTick`
+returns the row as first stored. There is no foreign key to
+`board_climb_revisions`: a climb nobody has edited has no rows there, and rows
+past the cap are pruned, so a tick can name a revision whose row is gone.
+
+To make that one cheap read, `board_climbs` carries two numbers of its own.
+`recordClimbRevision` writes both in the same transaction as the revision row.
+
+| Column | What it is |
+| --- | --- |
+| `revision_number` | The climb's current revision. 1 until its first recorded edit, then the newest revision's number. Pruning does not change it. |
+| `holds_revision_number` | The revision at which the holds last changed: the frames, or the number of frames. A rename, new notes, a regrade, a rule change, an angle change or a pace change all leave it alone. |
+
+Both are `NOT NULL DEFAULT 1`. A tick whose `climb_revision` is at or above the
+climb's `holds_revision_number` was climbed on the holds the climb has now.
+
+`saveTick` takes an optional `climbRevision`: the revision the client was
+showing when the climber logged it. The client is the better witness. A send
+logged offline on revision 3 and delivered after the setter saved revision 4 was
+still climbed on 3. What the server stores (`resolveTickClimbRevision`):
+
+| Case | Stored |
+| --- | --- |
+| The climb has no `board_climbs` row | NULL |
+| The client sent a revision from 1 up to the current one | That revision, even if its row has been pruned |
+| The client sent a revision above the current one | The fallback, and a warning in the log |
+| The client sent nothing, or something that is not a positive whole number | The fallback |
+| The uuid the client sent was an alias of another climb | The fallback. The client's number was counted on the retired row. |
+
+The fallback is the revision that was live when the climb was climbed: 1 when
+the climb is still on revision 1, otherwise the highest revision created at or
+before `climbedAt`, or 1 when the tick is older than all of them. With pruned
+revisions in between it answers the newest row that survives, which can be
+lower than the true one.
+
+A tick is never refused because of this value. A refused send is dead-lettered
+by the offline drainer and lost, and a wrong revision number costs much less
+than that. A failed lookup stores NULL.
+
+Readers: `Tick.climbRevision`, and `climbRevision` with `climbCurrentRevision`
+(the climb's `revision_number` now) on the rows of `climbLogs`,
+`followingClimbAscents`, `userAscentsFeed` and `userGroupedAscentsFeed`.
+`Climb.revisionNumber` and `Climb.holdsRevisionNumber` come back from search,
+climb detail, favourites, playlists and the setter's climb lists. `syncTicks` and `syncClimbs` emit the three columns,
+and the phone stores them from on-device schema v11, where all three are
+nullable: a row pulled before v11 reads NULL, which means unknown and not 1.
+
+Not built yet:
+
+- The app does not send `climbRevision`, and its queries do not select the new
+  fields. Until it does, every tick gets the fallback.
+- Climb stats do not read `holds_revision_number`. Ascent counts, grades and
+  stars still include ticks from before the holds moved.
+- `ClimbInput.revisionNumber` is accepted on a queue climb and stored, but no
+  client writes it and the queue subscriptions do not return it.
+
 ### In the app
 
 The server half (table, `updateClimb`, the `climbRevisions` query) is on `main`.
@@ -2173,6 +2242,8 @@ never "photo no longer available".
 - No history for edits made before this shipped.
 - The data export does not include revisions.
 - Deleting a climb deletes its revisions (the foreign key cascades).
+- A tick imported from another app has no revision (NULL), and neither does one
+  logged before the column existed. Nothing backfills them.
 
 ## Setting a climb on a wall (the editor)
 

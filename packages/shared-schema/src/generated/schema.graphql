@@ -91,6 +91,21 @@ type Climb {
   """
   missingHoldCount: Int
   """
+  The climb's current revision. 1 for a climb nobody has edited since it was
+  published, and one higher for every recorded edit after that (the same
+  numbers `climbRevisions` returns). A client that logs a tick sends this
+  back as `SaveTickInput.climbRevision`. Null on a fetch path that does not
+  project the column.
+  """
+  revisionNumber: Int
+  """
+  The revision at which this climb's holds last changed. Equal to
+  `revisionNumber` straight after an edit that moved a hold, and behind it
+  after a rename, a regrade or a pace change. A tick whose `climbRevision` is
+  at or above this number was climbed on the holds the climb has now.
+  """
+  holdsRevisionNumber: Int
+  """
   The holds this climb was set on that are no longer on the wall, carrying the
   geometry they had while they were — so a client can draw ghost rings where
   they used to be and the climber can see what the reset took.
@@ -182,6 +197,8 @@ input ClimbInput {
   compatibleSizeIds: [Int!]
   "How many of this climb's holds are no longer on the wall after a spray-wall reset. Round-tripped through the queue because a broken climb stays queueable and stays playable, and the peer showing it has to be able to say so — a queued row that dropped this would be the one surface pretending the climb was whole. Null on every catalogue board."
   missingHoldCount: Int
+  "The climb's revision as the queueing client read it (`Climb.revisionNumber`). Round-tripped through the queue so whoever logs a queued climb can say which revision was on the wall without a refetch. Null from a client that predates the field."
+  revisionNumber: Int
 }
 
 # ============================================
@@ -1265,6 +1282,8 @@ type Tick {
   boardType: String!
   "UUID of the climb attempted"
   climbUuid: String!
+  "Which revision of the climb this was logged against: a `Climb.revisionNumber`, so 1 on a climb nobody has edited. Null when it is not known, which is every imported tick and every tick older than the field. Set once when the tick is saved; updateTick never changes it."
+  climbRevision: Int
   "Board angle when attempted"
   angle: Int!
   "Whether the climb was mirrored"
@@ -1329,6 +1348,8 @@ input SaveTickInput {
   boardType: String!
   "Climb UUID"
   climbUuid: String!
+  "The `Climb.revisionNumber` the client was showing when the climber logged this. Optional. When it is omitted, or names a revision the climb has not reached, the server stores the revision that was live at climbedAt. A tick is never rejected over this value."
+  climbRevision: Int
   "Board angle"
   angle: Int!
   "Whether climb was mirrored"
@@ -1568,6 +1589,10 @@ type AscentFeedItem {
   climbedAt: String!
   "Encoded hold frames for thumbnail display"
   frames: String
+  "The climb revision this was logged against. 1 on a climb nobody has edited; null when it is not known (imports, and logs older than the field)."
+  climbRevision: Int
+  "The climb's revision now. A log whose climbRevision is lower was made on an earlier version of the climb. Null when the climb is no longer in the catalogue."
+  climbCurrentRevision: Int
 }
 
 """
@@ -1746,6 +1771,10 @@ type FollowingAscentFeedItem {
   downvotes: Int
   "Number of (non-deleted) comments on this tick. Null if the resolver doesn't compute it."
   commentCount: Int
+  "The climb revision this was logged against. 1 on a climb nobody has edited; null when it is not known (imports, and logs older than the field). Populated by followingClimbAscents; null on the paginated feeds."
+  climbRevision: Int
+  "The climb's revision now. A log whose climbRevision is lower was made on an earlier version of the climb. Populated by followingClimbAscents; null on the paginated feeds."
+  climbCurrentRevision: Int
 }
 
 """
@@ -1875,6 +1904,10 @@ type ClimbLogItem {
   comment: String!
   "When the climb was logged"
   climbedAt: String!
+  "The climb revision this was logged against. 1 on a climb nobody has edited; null when it is not known (imports, and logs older than the field)."
+  climbRevision: Int
+  "The climb's revision now. A log whose climbRevision is lower was made on an earlier version of the climb. Null when the climb is no longer in the catalogue."
+  climbCurrentRevision: Int
 }
 
 """

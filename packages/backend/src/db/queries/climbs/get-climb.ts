@@ -88,6 +88,8 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
       // the Intact / Lost holds filter and the remix prompt all read it, so a
       // projection without it tells a climber that a climb they cannot do is fine.
       missing_hold_count: tables.climbs.missingHoldCount,
+      revision_number: tables.climbs.revisionNumber,
+      holds_revision_number: tables.climbs.holdsRevisionNumber,
       // Boardsesh grade at the angle the stats resolved to (the requested angle
       // unless cross-angle sent it to the set angle). The queue's angle-change
       // refetch routes through this query, so the fresh grade rides along free.
@@ -168,6 +170,8 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
       characteristics: row.characteristics ?? null,
       compatibleSizeIds: row.compatible_size_ids ?? null,
       missingHoldCount: row.missing_hold_count ?? null,
+      revisionNumber: row.revision_number ?? null,
+      holdsRevisionNumber: row.holds_revision_number ?? null,
       boardseshDifficulty: row.boardsesh_difficulty == null ? null : Number(row.boardsesh_difficulty),
       boardseshConfidence: toConfidenceTier(row.boardsesh_confidence),
     };
