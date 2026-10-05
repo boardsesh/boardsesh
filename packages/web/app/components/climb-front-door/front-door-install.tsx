@@ -34,6 +34,9 @@ const helperSx = { color: 'var(--neutral-400)' };
  * that says who it is for, and its own event (`App Install Click`), so the
  * hand-off funnel reads exactly as it did.
  *
+ * These three pages are stored at the edge and handed to everyone, so the
+ * buttons are rendered `sharedHtml`: both stores in the HTML, one after mount.
+ *
  * No hooks and no data here: the wrapper is plain markup a server component can
  * render, and the only client code is the `StoreInstallButtons` island.
  */
@@ -43,7 +46,7 @@ export default function FrontDoorInstall({ placement, helperText, labels }: Fron
       <Typography variant="body2" sx={helperSx}>
         {helperText}
       </Typography>
-      <StoreInstallButtons placement={placement} labels={labels} appearance="plain" align="start" />
+      <StoreInstallButtons placement={placement} labels={labels} appearance="plain" align="start" sharedHtml />
     </Box>
   );
 }

@@ -37,9 +37,10 @@ export type AppInstallSource = 'app-store' | 'google-play' | 'capacitor-retireme
  *  - `climb-list`: a board's climb list (`StaticListFrontDoor`).
  *  - `spray-climb`: a climb on a spray wall (`SprayClimbFrontDoor`).
  *  - `gyms-directory`: `/gyms` and its three board pages.
- *  - `join-page`, `site-banner`: reserved for the session invite page (#6004)
- *    and a site-wide banner, so those buttons and their store links share one
- *    vocabulary from the first commit.
+ *  - `site-banner`: the iOS Smart App Banner (`smart-app-banner.ts`). It is a
+ *    campaign token only; Safari reports no tap, so no click carries it.
+ *  - `join-page`: reserved for the session invite page (#6004), so that button
+ *    and its store link share one vocabulary from the first commit.
  *
  * The placement is also the store link's id (`utm_content` on Google Play, `ct`
  * on the App Store, see `store-links.ts`), so a value here is a string that ends

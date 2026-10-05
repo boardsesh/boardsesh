@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
+import { renderToString } from 'react-dom/server';
 import { __resetSessionInboundCampaignForTests } from '@/app/lib/inbound-campaign';
 import { buildStoreUrl } from '@/app/lib/store-links';
 
@@ -137,5 +138,37 @@ describe('StoreInstallButtons', () => {
 
     expect(firstLink.className).toContain('MuiButton-contained');
     expect(secondLink.className).toContain('MuiButton-outlined');
+  });
+
+  describe('on a page whose HTML is shared', () => {
+    it('narrows to the store for this phone once mounted', async () => {
+      setUserAgent(ANDROID_UA);
+      render(<StoreInstallButtons placement="climb-view" labels={LABELS} appearance="plain" sharedHtml />);
+
+      await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(1));
+
+      expect(screen.getByRole('link', { name: 'Google Play' }).getAttribute('href')).toBe(
+        buildStoreUrl('android', { placement: 'climb-view' }),
+      );
+    });
+
+    it('hydrates over two-store HTML without a mismatch, then narrows', async () => {
+      // What an iPhone gets from the edge: HTML rendered for somebody else.
+      setUserAgent(IPHONE_UA);
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const island = <StoreInstallButtons placement="climb-view" labels={LABELS} appearance="plain" sharedHtml />;
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      container.innerHTML = renderToString(island);
+      expect(container.querySelectorAll('a')).toHaveLength(2);
+
+      render(island, { container, hydrate: true });
+
+      await waitFor(() => expect(container.querySelectorAll('a')).toHaveLength(1));
+      expect(container.querySelector('a')?.textContent).toBe('App Store');
+      expect(consoleError).not.toHaveBeenCalled();
+      consoleError.mockRestore();
+      container.remove();
+    });
   });
 });

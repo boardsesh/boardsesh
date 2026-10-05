@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';
 import { resolveServerTree } from '@/app/lib/__tests__/helpers/resolve-server-tree';
 import { buildStoreUrl } from '@/app/lib/store-links';
+import { classifyMarketingBrowser } from '@/app/lib/marketing-platform';
+import { MarketingPreviewProvider } from '@/app/components/marketing/marketing-preview-provider';
 import type { BoardDetails, Climb } from '@/app/lib/types';
 import type { HandoffTree } from '../climb-handoff-cta';
 
@@ -77,6 +79,13 @@ const LIST_PATHS: Record<HandoffTree, string> = {
   'config-tuple': '/kilter/1/10/1,20/40/list',
   slug: '/b/my-garage-board/40/list',
 };
+
+const GOOGLEBOT_SMARTPHONE_UA =
+  'Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)';
+const IPHONE_UA =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+const DESKTOP_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
 const TREES: HandoffTree[] = ['config-tuple', 'slug'];
 
@@ -159,12 +168,51 @@ describe.each(TREES)('climb list store button, %s tree', (tree) => {
 });
 
 describe('a cached front door', () => {
-  it('renders the same store link whatever campaign the first visitor arrived on', async () => {
+  it('renders the same store links whatever campaign the first visitor arrived on', async () => {
     // The page is cached with no session split, so its HTML cannot carry one
     // visitor's source. The tagged link is a post-hydration upgrade only.
     const html = await renderClimbPage('config-tuple');
 
-    expect(html).not.toContain('utm_source=');
-    expect(html).not.toContain('play.google.com');
+    expect(html).not.toContain('utm_source=chatgpt');
+    expect(html).toContain(asAttribute(buildStoreUrl('android', { placement: 'climb-view' })));
+  });
+
+  // The root layout seeds the provider from the user agent of the REQUEST, and
+  // the edge stores the resulting HTML for 24 hours with no user-agent split.
+  // Whoever asks first must not decide which store everyone after them gets.
+  it.each([
+    ['Googlebot Smartphone', GOOGLEBOT_SMARTPHONE_UA],
+    ['an iPhone', IPHONE_UA],
+    ['a desktop', DESKTOP_UA],
+    ['no user agent at all', ''],
+  ])('ships both stores when %s populated the cache', async (_requester, userAgent) => {
+    const page = await resolveServerTree(
+      await ClimbFrontDoor({
+        climb: CLIMB,
+        boardDetails: BOARD_DETAILS,
+        angle: 40,
+        canonicalAngle: 40,
+        angleStats: [],
+        similarClimbs: { status: 'loaded', items: [] },
+        betaLinks: { status: 'loaded', items: [] },
+        handoffPath: HANDOFF_PATHS['config-tuple'],
+        tree: 'config-tuple',
+      }),
+    );
+    const html = renderToString(
+      <MarketingPreviewProvider initialBrowser={classifyMarketingBrowser(userAgent)}>{page}</MarketingPreviewProvider>,
+    );
+
+    expect(html).toContain(asAttribute(buildStoreUrl('ios', { placement: 'climb-view' })));
+    expect(html).toContain(asAttribute(buildStoreUrl('android', { placement: 'climb-view' })));
+    expect(html).toContain('home.hero.ctaInstallIos');
+    expect(html).toContain('home.hero.ctaInstallAndroid');
+  });
+
+  it('ships both stores on a cached list page too', async () => {
+    const html = await renderListPage('slug');
+
+    expect(html).toContain(asAttribute(buildStoreUrl('ios', { placement: 'climb-list' })));
+    expect(html).toContain(asAttribute(buildStoreUrl('android', { placement: 'climb-list' })));
   });
 });

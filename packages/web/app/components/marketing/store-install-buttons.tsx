@@ -1,11 +1,11 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import { useInstallPlatform } from '@/app/hooks/use-install-platform';
 import { useInboundCampaign } from '@/app/hooks/use-inbound-campaign';
-import { resolveHeroInstall } from '@/app/lib/hero-install';
+import { resolveHeroInstall, type HeroInstall } from '@/app/lib/hero-install';
 import { buildStoreUrl } from '@/app/lib/store-links';
 import { brandCtaSx, brandCtaOutlinedSx } from '@/app/components/ui/brand-cta';
 import { track } from '@/app/lib/analytics';
@@ -45,7 +45,17 @@ type StoreInstallButtonsProps = {
   labels: StoreButtonLabels;
   appearance?: StoreButtonAppearance;
   align?: 'center' | 'start';
+  /**
+   * Set on a page whose HTML is stored once at the edge and handed to everyone:
+   * the climb, list and spray climb front doors. The server render and the
+   * hydration render then carry BOTH stores, whoever asked for the page, and
+   * the pair narrows to this visitor's store only after mount.
+   */
+  sharedHtml?: boolean;
 };
+
+/** What a shared page says before the browser has been asked: both stores, App Store first. */
+const SHARED_HTML_INSTALL: HeroInstall = { mode: 'install', stores: ['ios', 'android'] };
 
 // Both halves of the brand pair come off the SAME size step, which is the whole
 // reason they match.
@@ -57,12 +67,18 @@ const PLAIN_SX = { textTransform: 'none' };
  * The store button for the phone in the visitor's hand, on any www page (#6027).
  *
  * WHICH STORE. `useInstallPlatform` decides after hydration: Google Play on
- * Android, the App Store on an iPhone or iPad, both on a desktop. The server
- * render is not a guess about the visitor. It comes from the layout's own
- * classification, which is in the page payload, so a page served from the shared
- * CDN cache hydrates against the same markup it was rendered with, and the
- * effect then corrects the button for this visitor. A crawler, and anyone with
- * JavaScript off, always gets at least one real store anchor.
+ * Android, the App Store on an iPhone or iPad, both on a desktop.
+ *
+ * The first render is seeded from the root layout's reading of the REQUEST's
+ * user agent. That is right for a page rendered per request (/gyms, /help), and
+ * wrong for one the edge stores for 24 hours with no user-agent split: the
+ * stored HTML would carry the store of whoever asked first, and Googlebot
+ * Smartphone, whose user agent says Android, asks first for most climb pages.
+ * An iPhone reader would then get a lone Google Play link until hydration, and
+ * for good with JavaScript off. `sharedHtml` is for those pages: the seed is
+ * ignored and both stores are in the markup until the effect has run, so a
+ * crawler, a reader with JavaScript off and the hydration render all get the
+ * same two real anchors.
  *
  * WHERE THE LINK SAYS IT CAME FROM. `buildStoreUrl` with this surface's
  * placement, the one link format www has. A visitor who arrived on a tagged
@@ -77,10 +93,16 @@ export default function StoreInstallButtons({
   labels,
   appearance = 'brand',
   align = 'center',
+  sharedHtml = false,
 }: StoreInstallButtonsProps) {
   const inboundCampaign = useInboundCampaign();
   const { platform, nativeStore } = useInstallPlatform();
-  const { stores, mode } = resolveHeroInstall(platform, nativeStore);
+  // Flips in the same commit as `useInstallPlatform`'s own effect, so the pair
+  // goes straight from both stores to this visitor's, with no frame in between
+  // showing the store the layout guessed.
+  const [hasMounted, setHasMounted] = useState(false);
+  useEffect(() => setHasMounted(true), []);
+  const { stores, mode } = sharedHtml && !hasMounted ? SHARED_HTML_INSTALL : resolveHeroInstall(platform, nativeStore);
 
   return (
     <Box
