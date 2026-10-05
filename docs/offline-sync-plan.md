@@ -421,6 +421,19 @@ client posts GraphQL to one endpoint and a GraphQL server reports not-found as H
 
 Each mutation gets a client-generated UUID as an idempotency key. The backend's `saveTick` and `createPlaylist` accept this UUID and use `ON CONFLICT (uuid) DO NOTHING` for safe retry. Favorites use explicit `addFavorite`/`removeFavorite` (not `toggleFavorite`) so retries don't invert state. Follow/unfollow operations are naturally idempotent (follow when already following = no-op, unfollow when not following = no-op).
 
+### Droppable input fields: one retry without a field an older backend does not know
+
+The app updates over the air, so a queued write can reach a backend older than the app that wrote it: a rollback, or a deploy that has not finished. GraphQL rejects an input field it does not know (`Field "climbRevision" is not defined by type "SaveTickInput"`), that rejection is permanent, and the write would dead-letter. For a tick that is a lost send.
+
+`processMutation` (`packages/shared/offline-sync/src/mutation-queue/handlers.ts`) handles this for the fields listed in `DROPPABLE_INPUT_FIELDS`, keyed by mutation name. Today that is `SaveTick: ['climbRevision']` (#6023).
+
+- When a send fails with that unknown-field clause for a listed field the payload carries, the same mutation is sent **once** more without the field, with the same idempotency key. Any other failure, and a failure of the retry, is thrown as it came and the drainer classifies it as usual.
+- The match is the literal clause `Field "<name>" is not defined`, not the field name. graphql-js prints the whole input object in these messages, so the name alone also appears in rejections about other fields (`graphqlErrorRejectsUnknownInputField`, `error-classification.ts`).
+- The stored payload is never rewritten. The field is dropped from the variables of that one send only, so a later attempt against a newer backend sends it again.
+- A mutation with no entry in the registry gets no retry.
+
+A field belongs in the registry only when both are true: it is optional in the input type, and the server produces a correct write when it is absent. `climbRevision` qualifies because the server then stores the version that was live when the climb was climbed. A field whose absence changes what is written (a status, an angle, a board id) does not, and must stay a dead letter the climber can see.
+
 ### Dead letter handling
 
 Mutations that exceed `MAX_RETRY_COUNT` or fail with non-retryable errors are moved to `status = 'dead_letter'`. The app shows a badge/indicator when dead-letter mutations exist. Users can view failed mutations and choose to retry or discard them. This prevents silent data loss — the user always knows if a tick didn't sync.

@@ -109,10 +109,24 @@ export function hasGraphqlErrorCode(error: unknown, code: string, depth = 0): bo
   return false;
 }
 
-function graphqlErrorsRejectUnknownInputField(errors: unknown, unknownFieldPattern: RegExp): boolean {
+// The clause graphql-js writes for an unknown input field, per field name. Built
+// once per field: the set of names is the small fixed registry in handlers.ts,
+// and this runs for every failed send of a mutation that has droppable fields.
+const unknownInputFieldClauses = new Map<string, string>();
+
+function unknownInputFieldClause(fieldName: string): string {
+  let clause = unknownInputFieldClauses.get(fieldName);
+  if (clause === undefined) {
+    clause = `Field "${fieldName}" is not defined`;
+    unknownInputFieldClauses.set(fieldName, clause);
+  }
+  return clause;
+}
+
+function graphqlErrorsRejectUnknownInputField(errors: unknown, unknownFieldClause: string): boolean {
   if (!Array.isArray(errors)) return false;
   for (const entry of errors as Array<{ message?: unknown }>) {
-    if (typeof entry?.message === 'string' && unknownFieldPattern.test(entry.message)) return true;
+    if (typeof entry?.message === 'string' && entry.message.includes(unknownFieldClause)) return true;
   }
   return false;
 }
@@ -144,7 +158,9 @@ function graphqlErrorsRejectUnknownInputField(errors: unknown, unknownFieldPatte
 export function graphqlErrorRejectsUnknownInputField(error: unknown, fieldName: string, depth = 0): boolean {
   if (error === null || typeof error !== 'object') return false;
   const errorRecord = error as Record<string, unknown>;
-  const unknownFieldPattern = new RegExp(`Field "${fieldName}" is not defined`);
+  // A plain substring test, not a RegExp: the field name is matched literally,
+  // so a name with pattern characters in it cannot change what is matched.
+  const unknownFieldClause = unknownInputFieldClause(fieldName);
 
   if (depth < MAX_CAUSE_DEPTH) {
     const cause = errorRecord.cause;
@@ -153,11 +169,11 @@ export function graphqlErrorRejectsUnknownInputField(error: unknown, fieldName: 
     }
   }
 
-  if (graphqlErrorsRejectUnknownInputField(errorRecord.errors, unknownFieldPattern)) return true;
+  if (graphqlErrorsRejectUnknownInputField(errorRecord.errors, unknownFieldClause)) return true;
 
   const response = errorRecord.response;
   if (response !== null && typeof response === 'object') {
-    if (graphqlErrorsRejectUnknownInputField((response as Record<string, unknown>).errors, unknownFieldPattern)) {
+    if (graphqlErrorsRejectUnknownInputField((response as Record<string, unknown>).errors, unknownFieldClause)) {
       return true;
     }
   }

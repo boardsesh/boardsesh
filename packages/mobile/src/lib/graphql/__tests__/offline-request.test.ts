@@ -558,6 +558,63 @@ describe('offlineAwareRequest — climb version numbers on a network answer', ()
     expect(getDatabaseHandle).not.toHaveBeenCalled();
   });
 
+  // Any registered enrichment, not only the two real ones: whatever it does
+  // wrong, the caller gets the network's own object back.
+  describe('a registered enrichNetworkResponse that fails', () => {
+    type EnrichVars = { boardName: string };
+    type EnrichResponse = { items: string[] };
+    const ENRICH_DOC = 'query EnrichmentFailureProbe { items }';
+    const networkAnswer: EnrichResponse = { items: ['net'] };
+
+    async function requestWithEnrichment(enrichNetworkResponse: () => Promise<EnrichResponse>) {
+      const resolveLocal = vi.fn();
+      const unregister = registerOfflineOperationForTests<EnrichVars, EnrichResponse>({
+        document: ENRICH_DOC,
+        surface: 'search',
+        boardNameOf: ({ boardName }) => boardName,
+        canServeLocal: async () => false,
+        resolveLocal,
+        offlineFallback: () => ({ items: [] }),
+        enrichNetworkResponse,
+      });
+      try {
+        setOnline(true);
+        request.mockResolvedValue(networkAnswer);
+        const result = await offlineAwareRequest<EnrichResponse>(ENRICH_DOC, { boardName: 'kilter' });
+        return { result, resolveLocal };
+      } finally {
+        unregister();
+      }
+    }
+
+    it('returns the raw network answer when it throws synchronously', async () => {
+      const enrich = vi.fn((): Promise<EnrichResponse> => {
+        throw new Error('thrown before any promise existed');
+      });
+
+      const { result, resolveLocal } = await requestWithEnrichment(enrich);
+
+      expect(enrich).toHaveBeenCalledTimes(1);
+      expect(result).toBe(networkAnswer);
+      // Not mistaken for a network failure: no local rescue, no offline lane.
+      expect(resolveLocal).not.toHaveBeenCalled();
+      expect(recordOfflineRead).not.toHaveBeenCalled();
+    });
+
+    it('returns the raw network answer when it rejects', async () => {
+      const enrich = vi.fn(async (): Promise<EnrichResponse> => {
+        throw new Error('database is locked');
+      });
+
+      const { result, resolveLocal } = await requestWithEnrichment(enrich);
+
+      expect(enrich).toHaveBeenCalledTimes(1);
+      expect(result).toBe(networkAnswer);
+      expect(resolveLocal).not.toHaveBeenCalled();
+      expect(recordOfflineRead).not.toHaveBeenCalled();
+    });
+  });
+
   it('does not touch a local answer: the local readers select the numbers themselves', async () => {
     setOnline(true);
     isBoardDownloadedLocally.mockResolvedValue(true);

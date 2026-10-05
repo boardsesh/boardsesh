@@ -242,6 +242,52 @@ describe('boardsesh_ticks create dispatch: climbRevision (#6023)', () => {
   });
 });
 
+// Only mutations listed in DROPPABLE_INPUT_FIELDS get the strip-and-retry. For
+// every other one an unknown-field rejection is thrown as it came, after one
+// send, even when it names a field the payload carries.
+describe('mutations with no droppable input fields', () => {
+  const unknownField = (field: string, type: string) =>
+    Object.assign(new Error('rejected'), {
+      response: {
+        status: 200,
+        errors: [
+          {
+            message: `Variable "$input" got invalid value { ${field}: 3 }; Field "${field}" is not defined by type "${type}".`,
+            extensions: { code: 'BAD_USER_INPUT' },
+          },
+        ],
+      },
+    });
+
+  it.each([
+    ['AddFavorite', { table_name: 'user_favorites', operation: 'create' }, 'AddFavoriteInput'],
+    ['CreatePlaylist', { table_name: 'playlists', operation: 'create' }, 'CreatePlaylistInput'],
+  ])('%s: one send, no retry, the rejection thrown unchanged', async (mutationName, target, inputType) => {
+    const rejection = unknownField('climbRevision', inputType);
+    const graphqlFetch = vi.fn().mockRejectedValue(rejection);
+    const mutation = pendingMutation({
+      ...target,
+      payload: JSON.stringify({ boardName: 'kilter', climbUuid: 'climb-1', angle: 40, climbRevision: 3 }),
+    });
+
+    await expect(processMutation(mutation, graphqlFetch)).rejects.toBe(rejection);
+    expect(graphqlFetch).toHaveBeenCalledTimes(1);
+    expect(graphqlFetch.mock.calls[0][0]).toContain(`mutation ${mutationName}`);
+  });
+
+  it('SaveTick drops only its registered field: another unknown field is not retried', async () => {
+    const rejection = unknownField('sessionId', 'SaveTickInput');
+    const graphqlFetch = vi.fn().mockRejectedValue(rejection);
+    const mutation = pendingMutation({
+      operation: 'create',
+      payload: JSON.stringify({ climbUuid: 'climb-1', sessionId: 's-1', climbRevision: 3 }),
+    });
+
+    await expect(processMutation(mutation, graphqlFetch)).rejects.toBe(rejection);
+    expect(graphqlFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('graphqlErrorRejectsUnknownInputField', () => {
   it('matches the unknown-field clause for exactly that field', () => {
     const named = { errors: [{ message: 'Field "climbRevision" is not defined by type "SaveTickInput".' }] };
@@ -275,6 +321,14 @@ describe('graphqlErrorRejectsUnknownInputField', () => {
       ],
     };
     expect(graphqlErrorRejectsUnknownInputField(anotherUnknownField, 'climbRevision')).toBe(false);
+  });
+
+  it('matches the field name literally, with no pattern meaning', () => {
+    const dotted = { errors: [{ message: 'Field "climbXRevision" is not defined by type "SaveTickInput".' }] };
+    // As a RegExp, `climb.Revision` would match `climbXRevision`.
+    expect(graphqlErrorRejectsUnknownInputField(dotted, 'climb.Revision')).toBe(false);
+    const literal = { errors: [{ message: 'Field "a.b(c)" is not defined by type "T".' }] };
+    expect(graphqlErrorRejectsUnknownInputField(literal, 'a.b(c)')).toBe(true);
   });
 
   it('follows a wrapped cause and ignores non-errors', () => {
