@@ -349,31 +349,37 @@ describe('POST /api/spray-wall-photos', () => {
     },
   );
 
-  it('sends an error response even when object erasure and recording its retry both fail', async () => {
-    uploadRace.failDelete = true;
-    uploadRace.onUpload = async () => {
-      await db.execute(
-        sql`UPDATE spray_walls SET deleted_at = now(), photos_purged_at = now() WHERE board_uuid = ${wallUuid}`,
-      );
-      vi.spyOn(db, 'select').mockImplementationOnce(() => {
-        throw new Error('synthetic ownership lookup failure');
-      });
-      vi.spyOn(db, 'transaction').mockRejectedValueOnce(new Error('synthetic retry transaction failure'));
-    };
-    try {
-      const response = await uploadPhoto(baseUrl, {
-        token: OWNER,
-        wallUuid,
-        bytes: await plainPng(),
-        mimeType: 'image/png',
-        signal: AbortSignal.timeout(1500),
-      });
-      expect(response.status).toBe(500);
-      expect(await response.json()).toMatchObject({ error: 'Failed to save the wall photo' });
-    } finally {
-      vi.restoreAllMocks();
-    }
-  });
+  it.each([false, true])(
+    'preserves the response when erase and retry both fail (lookup throws: %s)',
+    async (lookupThrows) => {
+      uploadRace.failDelete = true;
+      uploadRace.onUpload = async () => {
+        await db.execute(
+          sql`UPDATE spray_walls SET deleted_at = now(), photos_purged_at = now() WHERE board_uuid = ${wallUuid}`,
+        );
+        if (lookupThrows)
+          vi.spyOn(db, 'select').mockImplementationOnce(() => {
+            throw new Error('synthetic ownership lookup failure');
+          });
+        vi.spyOn(db, 'transaction').mockRejectedValue(new Error('synthetic retry transaction failure'));
+      };
+      try {
+        const response = await uploadPhoto(baseUrl, {
+          token: OWNER,
+          wallUuid,
+          bytes: await plainPng(),
+          mimeType: 'image/png',
+          signal: AbortSignal.timeout(1500),
+        });
+        expect(response.status).toBe(lookupThrows ? 500 : 404);
+        expect(await response.json()).toMatchObject({
+          error: lookupThrows ? 'Failed to save the wall photo' : 'Spray wall not found',
+        });
+      } finally {
+        vi.restoreAllMocks();
+      }
+    },
+  );
 
   it('refuses a stranger and a missing token', async () => {
     const stranger = await uploadPhoto(baseUrl, {
