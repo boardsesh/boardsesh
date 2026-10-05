@@ -904,13 +904,20 @@ committing the reference.
 
 **That bundle was built and checked on Android only.** The one iPhone-only
 request it lacked was an unfiltered `GetAllUserPlaylists` page
-(`{"input":{"page":0,"pageSize":20}}`): Discover asked for the climber's
-playlists before the stored active board had been read, then asked again with
-the board filter. That cost every iPhone shard its first attempt, and run
-37271848549 failed when one shard's only remaining attempt hit a launch flake.
-The fix was in the app, not the set: Discover now holds that query until the
-active-board read settles, so the throwaway request is never sent, in a capture
-or on a climber's phone.
+(`{"input":{"page":0,"pageSize":20}}`). A capture boots a fresh install with no
+stored board and binds one a moment later (`ScreenshotBoardAutoActivator`). On
+iPhone, Discover is already mounted by then, so it saw "no board" and asked for
+every board's playlists, which is the right request for a climber with no wall
+and one the set does not hold. That cost every iPhone shard its first attempt,
+and run 37271848549 failed when one shard's only remaining attempt hit a launch
+flake.
+
+Two changes in Discover, neither in the set. In screenshot mode it holds the
+owned-playlists query until the capture has bound its board (an inlined
+`EXPO_PUBLIC_SCREENSHOT_MODE` branch, dead-stripped from normal builds). And in
+every build it waits for the stored active board to be read before asking, so a
+cold start no longer sends an unfiltered page that is thrown away when the
+filter arrives.
 
 **A refresh publishes another immutable snapshot.** The local merge replaces its
 working files; publishing creates a content-hashed object and updates the small

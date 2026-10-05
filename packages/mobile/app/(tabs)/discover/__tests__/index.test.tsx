@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, act, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -601,6 +601,32 @@ describe('DiscoverLibrary owned playlists and the active board', () => {
     expect(options?.token).toBe('token');
     expect(options?.boardType).toBeUndefined();
     expect(options?.layoutId).toBeUndefined();
+  });
+});
+
+describe('DiscoverLibrary owned playlists in a screenshot capture', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('waits for the capture to bind its board instead of asking for every board\u2019s playlists', () => {
+    // A capture boots with no stored board and binds one a moment later. The
+    // recorded fixture set holds only board-filtered pages.
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    activeBoardState.data = null;
+
+    renderHub();
+
+    expect(userPlaylistsOptions.length).toBeGreaterThan(0);
+    for (const options of userPlaylistsOptions) expect(options.token).toBeNull();
+  });
+
+  it('asks for the bound board\u2019s playlists once the capture has one', () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+
+    renderHub();
+
+    expect(userPlaylistsOptions.at(-1)).toMatchObject({ token: 'token', boardType: 'kilter', layoutId: 1 });
   });
 });
 
