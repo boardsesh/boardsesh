@@ -60,6 +60,9 @@
         "previous": "Page précédente",
         "next": "Page suivante",
         "pageLabel": "Page {{page}}"
+      },
+      "install": {
+        "helper": "Pas encore l’app ? Installe-la et allume ces blocs sur ta board."
       }
     }
   },
@@ -924,6 +927,9 @@
       "climbThis": "Grimper ce bloc",
       "ariaLabel": "Ouvrir {{climbName}} dans l’app Boardsesh",
       "helper": "Ouvre l’app, allume les prises, enregistre la croix."
+    },
+    "install": {
+      "helper": "Pas encore l’app ? Installe-la et allume ce bloc sur ta board."
     }
   },
   "spray": {
@@ -952,6 +958,10 @@
         "title": "{{wallName}} | Mur de pan",
         "description": "{{wallName}}, un mur de pan à {{angle}}°. Vois le mur et ouvre-le dans l’app Boardsesh."
       }
+    },
+    "install": {
+      "heading": "Prends l’app",
+      "body": "Note tes croix sur ce mur et ouvre tes propres blocs."
     }
   }
 }

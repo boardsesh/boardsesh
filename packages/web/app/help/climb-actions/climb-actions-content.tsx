@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
 import HelpBreadcrumb from '../help-breadcrumb';
+import HelpInstallSection from '../help-install-section';
 import { HelpClip, HelpShots } from '../help-clip';
 import { HelpScreenshot } from '../help-screenshot';
 
@@ -85,6 +86,8 @@ export default function ClimbActionsContent() {
           <li>{t('help.climbActions.rest.report')}</li>
         </ProseList>
       </PageSection>
+
+      <HelpInstallSection />
 
       <PageSection title={t('help.climbActions.next.title')}>
         <ProseList>

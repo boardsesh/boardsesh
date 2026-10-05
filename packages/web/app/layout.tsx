@@ -17,7 +17,10 @@ import CapacitorRetirementGate from './components/capacitor-retirement/capacitor
 import { getLocale } from './lib/i18n/get-locale';
 import { getServerTranslation } from './lib/i18n/server';
 import { LOCALE_HTML_LANG, LOCALE_OG } from './lib/i18n/config';
+import { localeHref } from './lib/i18n/locale-href';
+import { PATHNAME_HEADER } from './lib/request-pathname-header';
 import { SITE_URL } from './lib/seo/base-url';
+import { IOS_APP_STORE_ID } from './lib/store-urls';
 import { themeTokens } from './theme/theme-config';
 import { classifyMarketingBrowser } from './lib/marketing-platform';
 import { MarketingPreviewProvider } from './components/marketing/marketing-preview-provider';
@@ -25,7 +28,11 @@ import './components/index.css';
 import type { Viewport, Metadata } from 'next';
 
 export async function generateMetadata(): Promise<Metadata> {
-  const { t, locale } = await getServerTranslation('marketing');
+  const [{ t, locale }, requestHeaders] = await Promise.all([getServerTranslation('marketing'), headers()]);
+  // The page the visitor is on, as middleware saw it: locale prefix put back,
+  // query string left off. A page with no middleware in front of it has no
+  // header, and gets the banner without an argument.
+  const requestPathname = requestHeaders.get(PATHNAME_HEADER);
   return {
     metadataBase: new URL(SITE_URL),
     title: {
@@ -40,6 +47,24 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     twitter: {
       card: 'summary_large_image',
+    },
+    // The iOS Smart App Banner (#6027): Safari on an iPhone or iPad puts its own
+    // strip across the top of every www page, "View" in the App Store for
+    // someone without the app and "Open" for someone with it. It reaches the
+    // pages that have no store button of their own, and no other browser reads
+    // the tag.
+    //
+    // `app-argument` is the URL "Open" hands the app, so the climber lands on
+    // the climb they were reading instead of on Home. Pathname only: several of
+    // these pages are served from a shared CDN cache, and one visitor's query
+    // string (a campaign tag, a reset token) must not be written into HTML the
+    // next visitor is handed.
+    //
+    // Safari reports nothing about the banner and the tag carries no campaign
+    // token, so its installs are not attributable. See docs/growth-metrics.md.
+    itunes: {
+      appId: IOS_APP_STORE_ID,
+      ...(requestPathname ? { appArgument: `${SITE_URL}${localeHref(requestPathname, locale)}` } : {}),
     },
     // Same-origin, and no CDN copy of anything Next already serves itself.
     //

@@ -60,6 +60,9 @@
         "previous": "Página anterior",
         "next": "Página siguiente",
         "pageLabel": "Página {{page}}"
+      },
+      "install": {
+        "helper": "¿Aún no tienes la app? Descárgala y enciende estos bloques en tu plafón."
       }
     }
   },
@@ -924,6 +927,9 @@
       "climbThis": "Escala este bloque",
       "ariaLabel": "Abre {{climbName}} en la app de Boardsesh",
       "helper": "Abre la app, ilumina las presas y registra el encadene."
+    },
+    "install": {
+      "helper": "¿Aún no tienes la app? Descárgala y enciende este bloque en tu plafón."
     }
   },
   "spray": {
@@ -952,6 +958,10 @@
         "title": "{{wallName}} | Plafón de spray",
         "description": "{{wallName}}, un plafón de spray a {{angle}}°. Mira el plafón y ábrelo en la app de Boardsesh."
       }
+    },
+    "install": {
+      "heading": "Consigue la app",
+      "body": "Registra tus encadenes en este plafón y equipa tus propios bloques."
     }
   }
 }

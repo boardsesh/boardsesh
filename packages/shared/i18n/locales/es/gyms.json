@@ -160,5 +160,9 @@
     "area": "Rocódromos a menos de {{radius}} km de {{place}}",
     "selectedArea": "la ubicación seleccionada",
     "pinlessNotice": "Los resultados cercanos solo incluyen rocódromos con un marcador en el mapa."
+  },
+  "install": {
+    "heading": "Consigue la app",
+    "body": "Enciende los plafones de tu rocódromo desde el móvil y registra cada encadene."
   }
 }

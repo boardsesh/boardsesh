@@ -824,6 +824,10 @@
       "logbook": "Bring your logbook",
       "counts": "Climb counts",
       "ask": "Get help"
+    },
+    "install": {
+      "title": "Get the app",
+      "intro": "Everything on this page happens in the app."
     }
   },
   "docs": {

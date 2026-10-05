@@ -824,6 +824,10 @@
       "logbook": "Retrouve ton carnet",
       "counts": "Nombre de blocs",
       "ask": "Obtenir de l’aide"
+    },
+    "install": {
+      "title": "Prends l'app",
+      "intro": "Tout ce qui est sur cette page se passe dans l'app."
     }
   },
   "docs": {

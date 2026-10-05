@@ -31,12 +31,15 @@ export type AppInstallSource = 'app-store' | 'google-play' | 'capacitor-retireme
  *  - `hero`: the home page hero.
  *  - `gym-page`: `app/gym/[gym_slug]/gym-install-cta.tsx` (#4379), the only
  *    placement that also sets `gymSlug`.
- *  - `help`: the store pair on /help. It sent no placement before #6027.
- *  - `climb-view`, `climb-list`, `spray-climb`, `gyms-directory`, `join-page`,
- *    `site-banner`: reserved for the store buttons #6027 and #6004 add to the
- *    climb front doors, the gym directory, the session invite page and the
- *    site-wide banner. Declared here so those buttons and their store links
- *    share one vocabulary from the first commit.
+ *  - `help`: the store pair on /help and on its seven sub-pages. It sent no
+ *    placement before #6027.
+ *  - `climb-view`: a climb page, in both route trees (`ClimbFrontDoor`).
+ *  - `climb-list`: a board's climb list (`StaticListFrontDoor`).
+ *  - `spray-climb`: a climb on a spray wall (`SprayClimbFrontDoor`).
+ *  - `gyms-directory`: `/gyms` and its three board pages.
+ *  - `join-page`, `site-banner`: reserved for the session invite page (#6004)
+ *    and a site-wide banner, so those buttons and their store links share one
+ *    vocabulary from the first commit.
  *
  * The placement is also the store link's id (`utm_content` on Google Play, `ct`
  * on the App Store, see `store-links.ts`), so a value here is a string that ends

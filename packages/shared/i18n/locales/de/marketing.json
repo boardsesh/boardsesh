@@ -824,6 +824,10 @@
       "logbook": "Bring dein Routenbuch mit",
       "counts": "Boulder-Anzahl",
       "ask": "Hilfe finden"
+    },
+    "install": {
+      "title": "Hol dir die App",
+      "intro": "Alles auf dieser Seite passiert in der App."
     }
   },
   "docs": {

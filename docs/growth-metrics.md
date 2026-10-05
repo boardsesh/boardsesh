@@ -656,14 +656,22 @@ before it reads the source or campaign. A gym that tags its Google Business
 Profile link `utm_medium=organic` would otherwise move every install from our
 button out of the `campaign` count. Its source and campaign still carry.
 
-Link ids today: `hero`, `help`, `gym-page`, `gym-page.poster`. Reserved for the
-store buttons still to come (`AppInstallPlacement` in
-`packages/web/app/lib/app-install-event.ts`): `climb-view`, `climb-list`,
-`spray-climb`, `gyms-directory`, `join-page`, `site-banner`. The link id equals
-the `placement` on the matching `App Install Click`, so clicks and installs
-join on it: event `placement` on one side, the `utm_content` inside
-`install_referrer_raw` on the other. Do not use the event's own `utm_content`
-property for this; that is the visitor's landing tag ("Campaign params on www").
+Link ids today: `hero`, `help`, `gym-page`, `gym-page.poster`, and since the
+store buttons of #6027 `climb-view` (a climb page, in both the config-tuple and
+the `/b/{slug}` tree), `climb-list` (a board's climb list), `spray-climb` (a
+climb on a spray wall) and `gyms-directory` (`/gyms` and its three board
+pages). `help` covers the /help index and its seven sub-pages; tell them apart
+by `$pathname` on the click. Reserved for buttons still to come
+(`AppInstallPlacement` in `packages/web/app/lib/app-install-event.ts`):
+`join-page`, `site-banner`. The link id equals the `placement` on the matching
+`App Install Click`, so clicks and installs join on it: event `placement` on
+one side, the `utm_content` inside `install_referrer_raw` on the other. Do not
+use the event's own `utm_content` property for this; that is the visitor's
+landing tag ("Campaign params on www").
+
+A climb or list page shows one store, picked in the browser: Google Play on
+Android, the App Store on an iPhone or iPad, both on a desktop. The HTML a
+crawler reads has the App Store link.
 
 **`utm_medium=qr` changed meaning with #6027.** Before it, every gym-page Play
 link said `qr`, whether or not a code was scanned. After it, `qr` means the page
@@ -673,6 +681,17 @@ installs in the 28 days before the change are gym-page clicks of unknown kind.
 
 The Capacitor retirement screen keeps its bare store URLs. It sends someone who
 already has the app to update it, which is not an install.
+
+### The iOS Smart App Banner
+
+Every www page carries an `apple-itunes-app` meta tag (root layout, #6027), so
+Safari on an iPhone or iPad shows its own banner: "View" for someone without the
+app, "Open" for someone with it, handing the app the page's URL without its
+query string. **Nothing about it can be counted.** Safari fires no event when
+the banner is shown or tapped, so there is no `App Install Click`, and the tag
+carries no campaign token, so App Analytics files its downloads with every other
+untagged one. A rise in iOS downloads after that deploy with no matching rise in
+`App Install Click` is the banner, and that is all the evidence there will be.
 
 ### Google Play
 
