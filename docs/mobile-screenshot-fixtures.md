@@ -890,14 +890,16 @@ fixtures and the manifest's `capture` and `approvedTestUserIds` fields across
 by hand before publishing, and replay both platforms against the result before
 committing the reference.
 
-**The iPhone flow still misses once per shard, and passes on its retry.** That
-bundle was built and checked on Android only. On an iPhone shard's first, cold
-attempt the playlists screen asks for an unfiltered `GetAllUserPlaylists` page
+**The iPhone flow still loses its first attempt on every shard.** That bundle was
+built and checked on Android only. On an iPhone shard's first, cold attempt the
+playlists screen asks for an unfiltered `GetAllUserPlaylists` page
 (`{"input":{"page":0,"pageSize":20}}`) before a board is bound, and the set
-holds only the board-filtered pages. The second attempt starts warm, never sends
-it, and replays clean (run 37271848549). It costs one capture attempt per iPhone
-shard until the next refresh records the iOS flow too. The iPad shards and
-Android replay clean first time.
+holds only the board-filtered pages. The second attempt does not send it and
+replays clean, so a shard is green only when that one remaining attempt has no
+other trouble. In run 37271848549 three of four iPhone shards passed that way;
+the fourth lost its second attempt to a launch flake and failed the run. The
+iPad shards and Android replay clean first time. A refresh that records the iOS
+flow gives the iPhone shards their retry back.
 
 **A refresh publishes another immutable snapshot.** The local merge replaces its
 working files; publishing creates a content-hashed object and updates the small
