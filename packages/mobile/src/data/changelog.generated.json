@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-05T04:51:04.532Z",
+  "generatedAt": "2026-10-05T09:55:51.276Z",
   "entries": [
+    {
+      "prNumber": 6068,
+      "category": "fixed",
+      "title": "Scan a gym poster with your iPhone and land on that gym's page, not the app's Home tab.",
+      "mergedAt": "2026-10-05T07:08:06Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6068"
+    },
     {
       "prNumber": 6088,
       "category": "fixed",
