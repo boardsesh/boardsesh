@@ -127,7 +127,11 @@ What the retry has to respect:
 - **Patches come from the server, never the CDN.** `BUNDLE_DIFFING_CDN_REDIRECT` stays unset.
   expo-updates rejects a patch without the `im: bsdiff` and `expo-base-update-id` response headers
   and does not fall back to the full bundle. The edge would need a Worker to add the second one,
-  because the value comes from the request path. Unsetting `BUNDLE_DIFFING` is the kill switch.
+  because the value comes from the request path. `BUNDLE_DIFFING_CDN_REDIRECT` is a forbidden
+  variable in `infra/railway/config.ts`, so setting it by hand shows up as drift.
+- **Turning diffing off is a one-line PR:** set `BUNDLE_DIFFING` to `'false'` in
+  `infra/railway/config.ts`. Removing the entry does nothing, because `railway:apply` never unsets a
+  variable.
 
 After any bump: re-verify `/hc` = 200, `/ready` = 200, a header-carrying manifest + asset probe, and
 run `eoas doctor`.
@@ -1110,16 +1114,29 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
 
 ### Asset delivery from the edge
 
-Until xprem is given a `CDN_BASE_URL`, every asset request costs two hops: `updates.boardsesh.com/assets` reaches
-the Railway server uncached, which answers with a 302 to a presigned `r2.cloudflarestorage.com` URL. Measured from
+Every asset request costs two hops. `updates.boardsesh.com/assets` reaches the Railway server uncached, which
+answers with a 302. That first hop stays whatever the storage setup; what changes is where it points. Without
+`CDN_BASE_URL` the target is a presigned `r2.cloudflarestorage.com` URL. Measured from
 Sydney on 2026-10-05, the first hop took 350 to 650 ms per asset and the second served the 20.9 MB iOS bundle
 uncompressed over HTTP/1.1. Fleet `expo.updates.download_time` since the R2 rotation was p50 5.3 s and p90 19.6 s
 (268 samples over 19 hours).
 
 `ota-assets.boardsesh.com` is the public custom domain on the bucket, with a cache rule and a Brotli compression
 rule (`docs/cloudflare.md` → **OTA assets host**). xprem redirects asset requests to it because
-`CDN_BASE_URL` is set on the Railway service (`infra/railway/config.ts`). Unset that variable and xprem goes
-back to presigned bucket URLs on its next deploy; nothing in the bucket changes either way.
+`CDN_BASE_URL` is set on the Railway service (`infra/railway/config.ts`). `railway:apply` refuses to set that
+variable while the host does not answer (`preflightUrl`), so the Railway change cannot land ahead of the
+Cloudflare one. It does not check caching or compression; the gate below does.
+
+**Rolling back to presigned URLs takes two steps, in this order.** `railway:apply` never unsets a variable, so
+reverting the declaration alone leaves the fleet on the CDN, and unsetting it alone lasts only until the next
+apply sets it again.
+
+1. Unset `CDN_BASE_URL` on the `boardsesh-ota-v3` service in Railway and let it redeploy. Delivery is back on
+   presigned URLs as soon as the new deployment serves.
+2. Merge a PR that removes the `CDN_BASE_URL` entry from `OTA_REQUIRED_VARS` and from the runbook block in
+   `scripts/mobile-ota-setup.ts`.
+
+Nothing in the bucket changes either way.
 
 **Gate before pointing xprem at the host.** Take two real `cas/` keys from launch assets, one published after
 the R2 rotation and one copied over from Tigris, and require all three for both:
@@ -1207,7 +1224,10 @@ reads its current credentials, and creates only missing Tigris keys using condit
 must match by full size, SHA-256 and metadata; a mismatch stops the copy without replacement, and a concurrent create
 is accepted only after the same full match. Extra archived Tigris objects are retained; forward migration still
 requires exact key sets. The final verification checks source stability. Only after verification passes, restore the
-old Railway endpoint and credentials together. Verify old and new update delivery before restoring writers. Neither
+old Railway endpoint and credentials together. Before that, take `CDN_BASE_URL` off the service (both steps
+under [Asset delivery from the edge](#asset-delivery-from-the-edge)): it points at the R2 custom domain, so an
+update published to Tigris afterwards would redirect to a bucket that does not hold it and 404. Verify old and
+new update delivery before restoring writers. Neither
 direction changes Railway or deletes storage objects.
 
 Keep all mutable maintenance frozen through final verification and credential rotation, including any active bucket

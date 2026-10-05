@@ -18,6 +18,7 @@ import {
   CLICKHOUSE_VOLUME_USAGE_LIMIT_PERCENT,
   INVENTORY_SERVICES,
   OTA_BASE_URL,
+  OTA_CDN_BASE_URL,
   OTA_CONTAINER_PORT,
   OTA_HEALTHCHECK_PATH,
   OTA_GEOIP_COUNTRY_HEADER,
@@ -2550,6 +2551,57 @@ describe('apply mode', () => {
       value: OTA_BASE_URL,
     });
     expect(output).not.toContain(WRONG_OWNED_VALUE);
+  });
+
+  it('refuses to point clients at a host that does not answer, before any write', async () => {
+    // xprem stays healthy while redirecting every asset to a dead host, so the
+    // post-deploy probe cannot catch this. BASE_URL has drifted too, to prove
+    // the refusal comes before the first write and not after it.
+    const stub = railwayStub({
+      variables: variablesWithOta(otaVariables({ CDN_BASE_URL: null, BASE_URL: WRONG_OWNED_VALUE })),
+    });
+    const probed: string[] = [];
+    const { code, calls, error } = await runCli(
+      ['--apply', '--no-wait'],
+      stub,
+      {},
+      {
+        probePreflightUrl: async (url) => {
+          probed.push(url);
+          return 'getaddrinfo ENOTFOUND';
+        },
+      },
+    );
+    expect(code).toBeNull();
+    expect(error?.message).toContain('Refusing to set CDN_BASE_URL');
+    expect(error?.message).toContain('ENOTFOUND');
+    expect(probed).toEqual([`${OTA_CDN_BASE_URL}/`]);
+    expect(callsMatching(calls, 'variableUpsert')).toHaveLength(0);
+    expect(callsMatching(calls, 'serviceInstanceDeployV2(')).toHaveLength(0);
+  });
+
+  it('sets the redirect variable once its host answers, and never probes when it is already set', async () => {
+    const stub = railwayStub({ variables: variablesWithOta(otaVariables({ CDN_BASE_URL: null })) });
+    const answered = await runCli(['--apply', '--no-wait'], stub, {}, { probePreflightUrl: async () => null });
+    expect(answered.error).toBeNull();
+    expect(callsMatching(answered.calls, 'variableUpsert').map((call) => call.variables.input)).toEqual([
+      expect.objectContaining({ serviceId: OTA_SERVICE_ID, name: 'CDN_BASE_URL', value: OTA_CDN_BASE_URL }),
+    ]);
+
+    const probed: string[] = [];
+    const converged = await runCli(
+      ['--apply'],
+      railwayStub(),
+      {},
+      {
+        probePreflightUrl: async (url) => {
+          probed.push(url);
+          return 'unreachable';
+        },
+      },
+    );
+    expect(converged.code).toBe(0);
+    expect(probed).toEqual([]);
   });
 
   it('writes a supplied secret without ever printing it', async () => {

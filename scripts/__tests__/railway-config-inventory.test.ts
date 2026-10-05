@@ -87,6 +87,8 @@ describe('the OTA env contract', () => {
     const names = OTA_REQUIRED_VARS.map((variable) => variable.name);
     expect(names).toContain('BUNDLE_DIFFING');
     expect(names).not.toContain('BUNDLE_DIFFING_CDN_REDIRECT');
+    // Forbidden too, so a value set by hand in Railway shows up as drift.
+    expect(OTA_FORBIDDEN_VARS.map((variable) => variable.name)).toContain('BUNDLE_DIFFING_CDN_REDIRECT');
     expect(readRepoFile('scripts/mobile-ota-setup.ts')).not.toMatch(/^\s*`BUNDLE_DIFFING_CDN_REDIRECT=/m);
   });
 

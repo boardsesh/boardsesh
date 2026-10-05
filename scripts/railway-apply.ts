@@ -1102,6 +1102,19 @@ interface AppliedDeployment {
 export interface MainDependencies {
   rollbackDeployment?: RollbackDeployment;
   sleep?: (milliseconds: number) => Promise<void>;
+  /** Resolves to null when the URL answers, or to the reason it did not. */
+  probePreflightUrl?: (url: string) => Promise<string | null>;
+}
+
+/** Any answer below 500 proves the host exists and serves; the status itself is not the point. */
+async function defaultProbePreflightUrl(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(15_000) });
+    await response.body?.cancel();
+    return response.status < 500 ? null : `HTTP ${response.status}`;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
 }
 
 /** Roll back the newest applied service first, preserving stack order. */
@@ -1364,6 +1377,25 @@ export async function main(
           `Refusing a multi-service apply without rollback targets for: ${withoutRollbackTarget.join(', ')}.`,
         );
       }
+    }
+  }
+
+  // Before the first write. A variable that redirects clients to another host
+  // must not be set while that host is unreachable: the post-deploy probe asks
+  // only whether the service is healthy, and it would be.
+  const probePreflightUrl = dependencies.probePreflightUrl ?? defaultProbePreflightUrl;
+  for (const change of changes) {
+    if (change.blocked || change.resource !== 'env-var' || !change.target) continue;
+    const declared = desired.services
+      .find((candidate) => candidate.name === change.target?.serviceName)
+      ?.requiredVars.find((candidate) => candidate.name === change.target?.varName);
+    if (!declared?.preflightUrl) continue;
+    const failure = await probePreflightUrl(declared.preflightUrl);
+    if (failure !== null) {
+      throw new Error(
+        `Refusing to set ${declared.name}: ${declared.preflightUrl} did not answer (${failure}). ` +
+          'Nothing was written. Bring that host up first, then re-run.',
+      );
     }
   }
 
