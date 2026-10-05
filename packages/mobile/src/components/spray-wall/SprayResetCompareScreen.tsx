@@ -384,7 +384,12 @@ export function SprayResetCompareScreen({
         style={[styles.footer, { borderTopColor: systemColors.separator, paddingBottom: insets.bottom + spacing[3] }]}
       >
         {commitError ? (
-          <Text variant="footnote" color={iosSystemColors.systemRed} accessibilityLiveRegion="polite">
+          <Text
+            variant="footnote"
+            color={iosSystemColors.systemRed}
+            style={styles.commitError}
+            accessibilityLiveRegion="polite"
+          >
             {commitError}
           </Text>
         ) : null}
@@ -565,6 +570,9 @@ const styles = StyleSheet.create({
     padding: spacing[3],
     borderRadius: borderRadius.lg,
     gap: spacing[2],
+  },
+  commitError: {
+    marginBottom: spacing[3],
   },
   footer: {
     paddingHorizontal: spacing[4],

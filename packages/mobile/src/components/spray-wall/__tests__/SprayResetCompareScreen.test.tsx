@@ -69,8 +69,6 @@ vi.mock('../../../providers/theme-provider', () => ({
     systemColors: { background: '#000', secondaryBackground: '#111', secondaryLabel: '#888', separator: '#222' },
   }),
 }));
-// Root toasts cannot stand in for feedback mounted inside the reset modal.
-vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 // See SprayWallResetScreen.test.tsx: the builders return `{ name, properties }`
 // and `trackSprayEvent` unpacks the pair, so the stubs have to return it too.
