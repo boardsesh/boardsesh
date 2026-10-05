@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-05T11:48:08.829Z",
+  "generatedAt": "2026-10-05T22:29:44.320Z",
   "entries": [
+    {
+      "prNumber": 6128,
+      "category": "fixed",
+      "title": "Signing out or deleting a spray wall clears its cached photos and hold previews. Downloads finishing afterward cannot bring those previews back.",
+      "mergedAt": "2026-10-05T22:27:36Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6128"
+    },
     {
       "prNumber": 6108,
       "category": "fixed",
