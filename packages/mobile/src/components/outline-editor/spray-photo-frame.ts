@@ -5,7 +5,7 @@ import { spacing } from '../../theme/tokens';
 export const SPRAY_BAR_HEIGHT = glassSize.standard;
 /** Gap between the bottom bar and the bottom safe area. */
 export const SPRAY_BAR_GUTTER = spacing[2];
-/** Count controls and primary action occupy separate rows. */
+/** Two 48pt rows (count controls and primary action), separated by spacing[2]. */
 export const SPRAY_BAR_TOTAL_HEIGHT = SPRAY_BAR_HEIGHT * 2 + spacing[2];
 
 /**

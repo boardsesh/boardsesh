@@ -18,6 +18,7 @@ async function refreshDownloadedWall(layoutId: number, queryClient: QueryClient)
   const database = getDatabaseHandle();
   if (!database || !isSchemaReady() || !isOfflineEngineEnabled()) return;
   const { isBoardDownloadedLocally } = await import('../../db/queries/board-download-status');
+  // Spray wall identity uses its layout ID as its sole size ID.
   const scope = { boardType: 'spray', layoutId, sizeId: layoutId };
   if (!(await isBoardDownloadedLocally(database, scope))) return;
   const [{ pullSync }, { getOfflineSyncHttpClient }] = await Promise.all([

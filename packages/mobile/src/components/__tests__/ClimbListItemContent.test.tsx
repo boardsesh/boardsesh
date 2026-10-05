@@ -68,6 +68,7 @@ vi.mock('@boardsesh/board-react', async () => {
 
 vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
+  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
   View: ({ children, accessibilityLabel }: { children?: ReactNode; accessibilityLabel?: string }) =>
     createElement('div', { 'aria-label': accessibilityLabel }, children),
 }));
@@ -134,7 +135,6 @@ vi.mock('../Icon', () => ({
   Icon: ({ name, color }: { name: string; color?: string }) =>
     createElement('i', { 'data-icon': name, 'data-color': color }),
 }));
-vi.mock('../ClimbAttributeIcons', () => ({ ClimbAttributeIcons: () => null }));
 vi.mock('../ClimbPlaylistChips', () => ({ ClimbPlaylistChips: () => null }));
 
 import { favoritesStore } from '@boardsesh/climb-actions';
@@ -468,10 +468,17 @@ describe('ClimbListItemContent lost-holds chip', () => {
     expect(container.textContent).toContain('mobile.lostHolds.chip');
   });
 
-  it('keeps the name apart from lost-hold and any-feet labels', () => {
+  it('keeps all attributes below the name when a climb lost holds', () => {
     const { container, getByText } = render(
       <ClimbListItemContent
-        climb={{ ...baseClimb, name: 'A long spray climb name', missingHoldCount: 4, characteristics: ['any_feet'] }}
+        climb={{
+          ...baseClimb,
+          name: 'A long spray climb name',
+          missingHoldCount: 4,
+          characteristics: ['any_feet', 'no_match'],
+          benchmark_difficulty: '18',
+          is_hidden: true,
+        }}
         boardName="spray"
         layoutId={1}
         sizeId={1}
@@ -484,6 +491,14 @@ describe('ClimbListItemContent lost-holds chip', () => {
     expect(chip).not.toBeNull();
     expect(name.parentElement?.contains(chip)).toBe(false);
     expect(name.parentElement?.textContent).toBe('A long spray climb name');
+    const attributesRow = name.parentElement?.nextElementSibling;
+    for (const iconName of ['frame.remove', 'benchmark', 'no.match', 'visibility.off']) {
+      const icon = container.querySelector(`[data-icon="${iconName}"]`);
+      expect(icon).not.toBeNull();
+      expect(attributesRow?.contains(icon)).toBe(true);
+    }
+    expect(attributesRow?.contains(getByText('mobile.climbRow.anyFeet'))).toBe(true);
+    expect(attributesRow?.contains(getByText('mobile.hidden.chip'))).toBe(true);
   });
 
   it('leaves a climb with every hold still on the wall unmarked', () => {

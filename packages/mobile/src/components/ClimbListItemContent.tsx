@@ -520,7 +520,9 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
     );
   }
 
-  const hasLostHolds = typeof climb.missingHoldCount === 'number' && climb.missingHoldCount > 0;
+  const missingHoldCount =
+    typeof climb.missingHoldCount === 'number' && climb.missingHoldCount > 0 ? climb.missingHoldCount : undefined;
+  const hasLostHolds = missingHoldCount !== undefined;
   const nameAttributes = (
     <>
       <ClimbAttributeIcons
@@ -530,9 +532,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
       />
       {climb.is_draft === true ? <DraftChip style={styles.nameRowChip} testID="climb-row-draft-chip" /> : null}
       {climb.is_hidden ? <HiddenChip /> : null}
-      {typeof climb.missingHoldCount === 'number' && climb.missingHoldCount > 0 ? (
-        <LostHoldsChip count={climb.missingHoldCount} />
-      ) : null}
+      {hasLostHolds ? <LostHoldsChip count={missingHoldCount} /> : null}
     </>
   );
 
