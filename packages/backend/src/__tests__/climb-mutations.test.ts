@@ -7,7 +7,7 @@ const { mockDb, mockPublishSocialEvent, insertCalls, lockedClimb, mockRecordClim
   // What `lockClimbForRevision` answers: the draft flag of the climb row the test
   // last scripted. See the `climb-revisions` mock below.
   const lockedClimb: { current: Record<string, unknown> | null } = { current: null };
-  const mockRecordClimbRevision = vi.fn().mockResolvedValue(undefined);
+  const mockRecordClimbRevision = vi.fn().mockResolvedValue({ revisionNumber: 1, holdsRevisionNumber: 1 });
 
   const mockDb = {
     select: vi.fn(),
