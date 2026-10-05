@@ -73,7 +73,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  UPDATE_BRANCH: ${{ inputs.branch || 'pr-6129' }}
+  UPDATE_BRANCH: ${{ inputs.branch || 'pr-staging' }}
   EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL || 'https://updates.boardsesh.com/manifest' }}
   # What the embedded bundle is built with. No PostHog key and no Sentry DSN: the
   # bundle built into the gate's binary reports nothing. The update under test
@@ -112,7 +112,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REF: ${{ inputs.ref }}
-          RECEIPT_JSON: ${{ inputs.receipt_json || '{"commitHash":"ba5ee5d564c1b2d7e175cacd5182e405725a7de3","platforms":{"ios":{"runtimeVersion":"b71bdb600c5a3e954d75c9ca673f056c62247ea9","updateId":"dc04660c-386d-37ce-28bc-9a9e01d04e19"},"android":{"runtimeVersion":"154bc941c504727afc914057aed2edff2c096576","updateId":"bee9f197-4793-c45d-2db2-2a897e6738e7"}}}' }}
+          RECEIPT_JSON: ${{ inputs.receipt_json }}
         run: |
           set -euo pipefail
           if [ -n "$RECEIPT_JSON" ]; then
