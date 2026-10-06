@@ -1331,6 +1331,14 @@ export function SprayHoldEditorScreen({
   const handlePencilSeen = useCallback(() => {
     if (notePencil()) recordHint('pencil');
   }, [notePencil, recordHint]);
+  // `notePencil` answers true once per app process, but the hints' "asked"
+  // flag restarts with each mount: a Pencil met on an earlier wizard step still
+  // asks for its hint here. Idempotent, and a hint already used stays hidden.
+  // `viewerCanEdit` is a dep because the hints ignore events until it is true.
+  const pencilSeen = pencil.pencilSeen;
+  useEffect(() => {
+    if (pencilSeen && viewerCanEdit) recordHint('pencil');
+  }, [pencilSeen, viewerCanEdit, recordHint]);
 
   /**
    * A Pencil on the resting iPad editor, anywhere but the selected ring (that

@@ -439,7 +439,7 @@ kept per device (`boardsesh_spray_editor_pencil_only`).
 | Input | On a ring | On bare wall |
 |---|---|---|
 | Pencil tap | switch it on or off | add a circle at the median hold size |
-| Pencil stroke | starting on the SELECTED ring: move it | outline a new hold (`holdFromStroke`); centred inside the selected hold, redraw that hold instead (`SET_OUTLINE`) |
+| Pencil stroke | starting on the SELECTED ring: move it | outline a new hold (`holdFromStroke`); centred inside the selected hold, redraw that hold instead (`SET_OUTLINE`), which also switches a selected ghost or maybe on |
 | Pencil hover | a violet halo round it: a tap will switch it | a dashed circle of the size a tap would add |
 | Finger tap, Pencil only on | pick it (the inspector opens) | put the picked ring down |
 | Finger tap, Pencil only off | the phone rule (`resolveEditTap`) | the phone rule |
@@ -451,9 +451,13 @@ kept per device (`boardsesh_spray_editor_pencil_only`).
   `DrawStrokeOverlay` (`SprayPencilSurface`: Add's Manual recognizer, finger
   draw off) inside `SprayEditGestureOverlay`, the same ancestor fall-through
   Trace relies on. A finger fails it at touch-down and lands on the edit
-  overlay. A Pencil touch inside the selected hold's radius fails it too
+  overlay. A Pencil touch inside the selected hold's grab radius fails it too
   (`declineOnSelectionSV`), so the edit overlay's drag claims it and the
-  Pencil moves the ring. Everything else the Pencil does comes back as one
+  Pencil moves the ring. The grab radius is the drag's own claim at
+  touch-down: the hold's radius, or 22 screen pt when that is bigger. Were the
+  two to differ, a small ring would be claimed by both on the same touch, and
+  the drag's end ignores a cancelled touch (`success` false) for the same
+  reason. Everything else the Pencil does comes back as one
   stroke: within 10 screen pt it is a tap (`resolveEditTap` with
   `input: 'pencil'`), otherwise an outline (`pencilStrokeTarget` decides new
   hold or redraw).
@@ -469,8 +473,9 @@ kept per device (`boardsesh_spray_editor_pencil_only`).
   Pencil hovers (iPad Pro M2 and later, and the Pencil Pro models); elsewhere
   nothing arrives and nothing draws.
 - **The Pencil hint** ("Apple Pencil adds and switches holds. Fingers move
-  around and pick a hold.") is asked for by the first Pencil touch or hover and
-  goes ahead of every other hint. It is used up when a finger then picks a
+  around and pick a hold.") is asked for by the first Pencil touch or hover,
+  and again by each later wizard step once one has been seen, and goes ahead
+  of every other hint. It is used up when a finger then picks a
   ring, or when it is closed (`onboarding_tip_spray_pencil_seen`).
 - **Two-finger tap undo** is a `Gesture.Tap().minPointers(2)` of at most 250 ms
   and 15 pt, simultaneous with the pinch, so a quick tap undoes and anything

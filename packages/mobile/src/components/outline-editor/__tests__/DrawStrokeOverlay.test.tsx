@@ -343,6 +343,17 @@ describe('Pencil surface opt-ins', () => {
     expect(stroke.manager.activate).toHaveBeenCalledTimes(2);
   });
 
+  it('declines a stylus a fingertip from a ring smaller than a fingertip', () => {
+    // The move claims within max(r, 22 pt) at touch-down; at this mount's zoom
+    // 22 pt is 22 board px. (47.5, 60) lands on board (95, 90): r + 5 from a
+    // radius-10 ring, inside the fingertip.
+    const stroke = mount(true, false, { declineOnSelection: [5, 80, 90, 10] });
+    stroke.send('down', event([touch(7, 47.5, 60)], [touch(7, 47.5, 60)], STYLUS));
+    expect(stroke.manager.fail).toHaveBeenCalledTimes(1);
+    expect(stroke.manager.activate).not.toHaveBeenCalled();
+    expect(stroke.start).not.toHaveBeenCalled();
+  });
+
   it('declines on the selection on the Trace pan path too', () => {
     const stroke = mount(false, false, { declineOnSelection: [5, 80, 90, 10] });
     stroke.send('down', event([touch()], [touch()], STYLUS));

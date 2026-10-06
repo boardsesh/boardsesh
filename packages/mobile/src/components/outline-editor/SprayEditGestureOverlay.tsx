@@ -528,7 +528,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
         dragOffsetXSV.value = (event.translationX / scale) * boardScaleSV.value;
         dragOffsetYSV.value = (event.translationY / scale) * boardScaleSV.value;
       })
-      .onEnd((event) => {
+      .onEnd((event, success) => {
         'worklet';
         if (placingSV.value) {
           if (dragAbandonedSV.value || isPinchingSV.value) abandonPlacement();
@@ -536,7 +536,10 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
           return;
         }
         const holdId = dragHoldIdSV.value;
-        if (dragAbandonedSV.value || isPinchingSV.value || holdId === 0) {
+        // `!success` is a cancel: the system, or another gesture that claimed
+        // the same touch (the Pencil surface's stroke, for one). That touch was
+        // never a tap or a move of this hold, so nothing is reported.
+        if (!success || dragAbandonedSV.value || isPinchingSV.value || holdId === 0) {
           dragOffsetXSV.value = 0;
           dragOffsetYSV.value = 0;
           return;

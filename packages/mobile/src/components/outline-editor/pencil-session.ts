@@ -93,6 +93,11 @@ export function pencilToggleAvailable({
  * hold's outline; anything else is a new hold. Where the stroke STARTED does not
  * matter here: one that starts on the selected ring never reaches this, because
  * it is a move and the drag takes it at touch-down.
+ *
+ * Any role is retraced, not only an 'on' hold: the reducer stamps the new
+ * outline accepted, so circling a selected ghost or maybe switches it on, the
+ * same as a Pencil tap on it would. Adding a second hold on top of it instead
+ * would leave a duplicate under the climber's outline.
  */
 export function pencilStrokeTarget(
   stroke: Pick<HoldGeometry, 'cx' | 'cy'>,

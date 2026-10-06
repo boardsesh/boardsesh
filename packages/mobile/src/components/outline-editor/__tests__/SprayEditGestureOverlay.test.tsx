@@ -177,8 +177,17 @@ describe('SprayEditGestureOverlay stylus taps', () => {
       manager,
     );
     expect(manager.activate).toHaveBeenCalledTimes(1);
-    drag.handlers.get('onEnd')?.({ translationX: 0, translationY: 0 });
+    drag.handlers.get('onEnd')?.({ translationX: 0, translationY: 0 }, true);
     expect(onTap).toHaveBeenCalledExactlyOnceWith(30, 30, 1, true);
+    drag.handlers.get('onFinalize')?.();
+    // Cancelled after activating (the Pencil stroke took the touch): no tap.
+    drag.handlers.get('onTouchesDown')?.(
+      { numberOfTouches: 1, allTouches: [{ x: 30, y: 30 }], pointerType: STYLUS },
+      manager,
+    );
+    expect(manager.activate).toHaveBeenCalledTimes(2);
+    drag.handlers.get('onEnd')?.({ translationX: 0, translationY: 0 }, false);
+    expect(onTap).toHaveBeenCalledTimes(1);
   });
 });
 

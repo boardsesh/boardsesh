@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, type MutableRefObject } from 'react'
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, PointerType, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
+import { HIT_FALLBACK_SCREEN_PT } from './spray-hold-tools';
 import { STROKE_MIN_SAMPLE_BOARD_PX } from './stroke';
 import { stopLoupe, trackLoupe, useReleaseLoupeOnUnmount, type SprayLoupeFeed } from './spray-loupe-feed';
 
@@ -70,7 +71,8 @@ type DrawStrokeOverlayProps = {
   /**
    * OPT-IN, for the spray editor's resting Pencil surface. The selected hold as
    * `[id, cx, cy, r]` in board px, or empty for none. A drawing touch that lands
-   * inside that hold's radius fails at touch-down instead of drawing, so an
+   * inside that hold's grab radius (`r`, or a fingertip at the current zoom when
+   * that is bigger) fails at touch-down instead of drawing, so an
    * ANCESTOR gesture can claim it — the spray editor's move, which is how a
    * Pencil stroke that starts on the selected ring carries the ring rather than
    * drawing a new one. Omitted, every drawing touch draws (the catalogue editor
@@ -205,8 +207,12 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
       stylusReportedSV.value = true;
       runOnJS(handleStylusSeen)();
     };
-    // Whether a screen point lands inside the selected hold, through the same
-    // inverse transform the samples use. Always false without the opt-in.
+    // Whether a screen point lands within the selected hold's grab radius,
+    // through the same inverse transform the samples use. The radius is the
+    // move's own claim at touch-down (`selectedDragIdAt`): the hold's radius or
+    // a fingertip at this zoom, whichever is bigger. Stepping aside only inside
+    // `r` would leave a ring smaller than a fingertip claimed by both gestures
+    // on the same DOWN. Always false without the opt-in.
     const touchesSelection = (screenX: number, screenY: number) => {
       'worklet';
       if (declineOnSelectionSV === undefined) return false;
@@ -218,7 +224,9 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
       const boardY = ((screenY - translateYSV.value - centreY) / scaleSV.value + centreY) * boardScaleSV.value;
       const deltaX = boardX - selected[1];
       const deltaY = boardY - selected[2];
-      return deltaX * deltaX + deltaY * deltaY <= selected[3] * selected[3];
+      const fallbackRadius = (HIT_FALLBACK_SCREEN_PT * boardScaleSV.value) / Math.max(1, scaleSV.value);
+      const grabRadius = Math.max(selected[3], fallbackRadius);
+      return deltaX * deltaX + deltaY * deltaY <= grabRadius * grabRadius;
     };
     if (acceptStationaryTaps) {
       // A manually activated UIPan recognizer need not deliver onStart/onEnd
