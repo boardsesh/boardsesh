@@ -78,10 +78,10 @@ describe('iOS Button host', () => {
     expect(lastHostProps().ignoreSafeArea).toBe('keyboard');
   });
 
-  // A button in a list header that mounts while scrolled out of view (the
-  // Climbs saved-climbs card, #6002) must not keep the container's inset.
+  // A button in a list header that mounts while the list is scrolled, so it
+  // starts out of view, must not keep the container's inset.
   it('ignores every safe-area edge when asked to', () => {
-    render(<Button title="See saved climbs" onPress={vi.fn()} size="small" ignoreContainerSafeArea />);
+    render(<Button title="Light climbs" onPress={vi.fn()} size="small" ignoreContainerSafeArea />);
 
     expect(lastHostProps().ignoreSafeArea).toBe('all');
   });

@@ -192,7 +192,7 @@ describe('FirstConnectCard', () => {
   });
 
   // The card can mount while Climbs is scrolled, and an iOS button host that
-  // mounts off screen keeps the safe-area inset on its label (#6002).
+  // mounts off screen keeps the safe-area inset on its label.
   it('opts both buttons out of the container safe area', () => {
     const { container } = renderCard();
 

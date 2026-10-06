@@ -161,8 +161,8 @@ export function Button({
   // `"all"` (opt-in, `ignoreContainerSafeArea`): a host that mounts while it
   // is scrolled above the top of the screen also takes the container's
   // safe-area inset and keeps it, so its label draws below its own frame once
-  // it scrolls back. Seen on the Climbs saved-climbs card (#6002) on an
-  // iPhone SE simulator.
+  // it scrolls back. Seen on a button in the Climbs list header that mounted
+  // while the list was scrolled, on an iPhone SE simulator.
   return (
     <Host
       matchContents={buttonMatchContents(style)}
