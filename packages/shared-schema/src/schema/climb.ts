@@ -287,8 +287,7 @@ export const climbTypeDefs = /* GraphQL */ `
     "Show only unclimbed projects (climbs with 0 ascents)"
     projectsOnly: Boolean
     "The retired Lost holds filter. ANY and INTACT return the plain list; BROKEN returns no climbs, on every board. A spray wall's lists always leave out climbs that lost a hold to an old reset."
-    holdIntegrity: HoldIntegrityFilter
-      @deprecated(reason: "Retired. ANY and INTACT return the plain list; BROKEN returns no climbs.")
+    holdIntegrity: HoldIntegrityFilter @deprecated(reason: "Retired. BROKEN: no climbs. ANY, INTACT: ignored.")
     "Resolve each climb's grade and ascents through its own set angle when the browsed angle has no stats row, instead of ranking it below every climb that does have one (issue #5405). Opt-in on every board; omitted means off. On Woods, whose climbs are bound to the angle they were set at, off also narrows the list to the climbs for the browsed angle: set there, with no set angle recorded, or with stats there (issue #5642). A name search on Woods resolves across angles either way, so a climb is findable by name at any angle."
     crossAngleStats: Boolean
     "Which grade minGrade and maxGrade are compared against. Omitted means UPSTREAM, the grade older app builds filter on. Send BOARDSESH when the list shows Boardsesh grades, so the filter matches the labels."

@@ -1430,7 +1430,7 @@ export type ClimbSearchInput = {
   hideCompleted?: InputMaybe<Scalars['Boolean']['input']>;
   /**
    * The retired Lost holds filter. ANY and INTACT return the plain list; BROKEN returns no climbs, on every board. A spray wall's lists always leave out climbs that lost a hold to an old reset.
-   * @deprecated Retired. ANY and INTACT return the plain list; BROKEN returns no climbs.
+   * @deprecated Retired. BROKEN: no climbs. ANY, INTACT: ignored.
    */
   holdIntegrity?: InputMaybe<HoldIntegrityFilter>;
   /** Hold filter object: { holdId: 'ANY' | 'NOT', ... } */
