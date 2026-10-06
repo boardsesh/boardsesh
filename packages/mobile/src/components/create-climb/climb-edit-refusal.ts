@@ -4,14 +4,14 @@ import { extractGraphqlCode } from '../../lib/graphql/extract-error-message';
  * The reasons `updateClimb` refuses an edit that the editor can say in the
  * climber's own language (#5955).
  *
- *  - `conflict`: the save was decided on a row another edit has since replaced.
- *    A spray climb has two possible editors, its setter and anyone who can edit
- *    the wall, so two saves can cross.
- *  - `notAllowed`: the caller is neither the setter nor someone who can edit the
- *    wall. Reachable honestly: the Edit action is offered on a read of the
- *    wall's access that can be minutes old.
- *  - `windowExpired`: a catalogue climb, more than 24 hours after publishing.
- *  - `notEditable`: a published catalogue climb with no publish date on record.
+ *  - `conflict`: the save was decided on a row another edit has since replaced,
+ *    say from the setter's other phone.
+ *  - `notAllowed`: the caller is not the climb's setter. The app offers Edit to
+ *    the setter alone, so this is a draft opened from somewhere that skipped
+ *    that check, or a server that changed its mind first.
+ *  - `windowExpired`: a published climb, more than 24 hours after publishing,
+ *    on any board, a spray wall included.
+ *  - `notEditable`: a published climb with no publish date on record.
  */
 export type ClimbEditRefusal = 'conflict' | 'notAllowed' | 'windowExpired' | 'notEditable';
 

@@ -300,10 +300,9 @@ describe('create-climb queue hand-off carries board identity', () => {
 // played at the 750ms default however the setter set the transport — the speed
 // control authored nothing. These pin the value actually reaching the wire.
 describe('editing a climb somebody else set (#5955)', () => {
-  // A wall owner fixing a start hold has not taken the climb. The server never
-  // rewrites `user_id` / `setter_username` on an update, so the queue row the
-  // editor builds must not either: with the saver's id on it, the play drawer
-  // would credit the wall owner and offer the real setter nothing.
+  // The server never rewrites `user_id` / `setter_username` on an update, so
+  // the queue row the editor builds must not either: with the saver's id on it,
+  // the play drawer would credit the saver and offer the real setter nothing.
   const someoneElsesClimb = {
     uuid: 'climb-9',
     name: 'Left Arete',

@@ -221,7 +221,7 @@
       "viewMatchingClimb": "Ver bloque coincidente",
       "saveFailedFallback": "No se pudo guardar el bloque. Inténtalo de nuevo.",
       "editConflict": "Alguien acaba de cambiar este bloque. Vuelve a abrirlo para ver la última versión.",
-      "editNotAllowed": "No puedes editar este bloque. Solo pueden hacerlo quien lo montó y quienes gestionan el muro.",
+      "editNotAllowed": "No puedes editar este bloque. Solo puede hacerlo quien lo montó.",
       "editWindowExpired": "Este bloque se publicó hace más de 24 horas y ya no se puede editar.",
       "editNotEditable": "Este bloque ya no se puede editar.",
       "localRefreshFailed": "Vía guardada. No se pudo actualizar la lista descargada. Reconéctate para actualizarla."

@@ -227,7 +227,7 @@
       "viewMatchingClimb": "View matching climb",
       "saveFailedFallback": "Failed to save climb. Please try again.",
       "editConflict": "Someone else just changed this climb. Reopen it to see the latest.",
-      "editNotAllowed": "You can't edit this climb. Only its setter and the people who run the wall can.",
+      "editNotAllowed": "You can't edit this climb. Only its setter can.",
       "editWindowExpired": "This climb was published more than 24 hours ago, so it can't be edited now.",
       "editNotEditable": "This climb can't be edited any more.",
       "localRefreshFailed": "Climb saved. Your downloaded list couldn't refresh. Reconnect to refresh it."

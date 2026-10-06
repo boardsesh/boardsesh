@@ -260,7 +260,6 @@ export function mapSprayWallRenderData(
     homography: renderData.homography,
     renderSettings: null,
     viewerCanEdit: renderData.wall.viewerCanEdit === true,
-    viewerCanEditClimbs: (renderData.wall.viewerCanEditClimbs ?? renderData.wall.viewerCanEdit) === true,
     archive: sprayWallArchiveStateOf(renderData.wall),
     registeredAtMs: receivedAtMs,
   };
@@ -341,7 +340,6 @@ export function registerRenderData(
         ? undefined
         : {
             canEdit: renderData.wall.viewerCanEdit === true,
-            canEditClimbs: (renderData.wall.viewerCanEditClimbs ?? renderData.wall.viewerCanEdit) === true,
             generation: fetchedUnderViewerGeneration,
           },
   });

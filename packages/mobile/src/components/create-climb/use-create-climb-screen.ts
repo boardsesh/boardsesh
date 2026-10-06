@@ -1375,9 +1375,8 @@ export function useCreateClimbScreen({
       // save replaces the item. Self-correcting and not worth a queue-item
       // update path; revisit if it shows up in offline-first flows.
       //
-      // The ORIGINAL setter's on an edit: a wall owner fixing somebody else's
-      // spray climb has not taken it (#5955), and the server never rewrites
-      // either field on an update.
+      // The ORIGINAL setter's on an edit: the server never rewrites either
+      // field on an update.
       ...resolveProvisionalSetter(isEditing ? editClimb : null, profile),
       description,
       // The wall's own angle on a spray board, the caller's everywhere else —

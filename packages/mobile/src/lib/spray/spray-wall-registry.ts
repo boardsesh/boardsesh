@@ -144,10 +144,9 @@ export type RegisteredSprayWall = {
    * This version's row-major photo→canonical homography, the matrix `holds` were
    * mapped back through.
    *
-   * Kept so a hold that is NOT in `holds` — one a reset took off, drawn as a
-   * ghost where a climb used it (#5493) — goes through the very same inverse and
-   * lands on the same photo the live holds do. Optional because a fixture or an
-   * older caller may register without one; a reader without it draws no ghosts.
+   * Kept so a point in the wall's canonical frame can be drawn on this photo
+   * through the very same inverse the live holds went through. Optional because
+   * a fixture or an older caller may register without one.
    */
   homography?: readonly number[];
   /**
@@ -163,9 +162,9 @@ export type RegisteredSprayWall = {
    * Whether the signed-in viewer can edit this wall (`SprayWall.viewerCanEdit`):
    * its owner, an owner or admin of its gym, a community admin on a public wall.
    *
-   * Read by one thing, the Edit action on a published climb somebody else set
-   * (`canEditClimb`). It is a HINT about what the server will allow, not a
-   * permission: `updateClimb` checks `canEditBoard` itself on every save.
+   * A HINT about what the server will allow, not a permission: every wall
+   * write checks access itself. Who may edit a CLIMB does not read it: that is
+   * the climb's setter, on every board (`canEditClimb`).
    *
    * It is an answer about one ACCOUNT, in a registry that outlives a sign-out,
    * so it is only ever `true` for a payload fetched under the account that is
@@ -173,12 +172,6 @@ export type RegisteredSprayWall = {
    * behind a role change (the revalidation window).
    */
   viewerCanEdit: boolean;
-  /**
-   * Whether the signed-in viewer can edit published climbs on this wall
-   * (`SprayWall.viewerCanEditClimbs`, #6025): wall editors, plus anyone who can
-   * set climbs when the wall's climbEditPolicy is 'collaborators'.
-   */
-  viewerCanEditClimbs: boolean;
   /**
    * The wall's archive and hold-lock state. Shaped as a `useSyncExternalStore`
    * snapshot: a re-registration that says the same thing keeps the same object,
@@ -313,10 +306,7 @@ export function registerSprayWall(
   //
   // `archive` left out means a live wall with editable holds, the answer a
   // payload from before the fields existed gives.
-  wall: Omit<
-    RegisteredSprayWall,
-    'layoutId' | 'registeredAtMs' | 'renderSettings' | 'viewerCanEdit' | 'viewerCanEditClimbs' | 'archive'
-  > & {
+  wall: Omit<RegisteredSprayWall, 'layoutId' | 'registeredAtMs' | 'renderSettings' | 'viewerCanEdit' | 'archive'> & {
     renderSettings?: SprayWallRenderSettingsValue | null;
     viewerAccess?: SprayWallViewerAccess;
     archive?: SprayWallArchiveState;
@@ -344,7 +334,6 @@ export function registerSprayWall(
     ...registration,
     renderSettings,
     viewerCanEdit: viewerAccess?.canEdit === true && !fetchedForAnotherViewer,
-    viewerCanEditClimbs: (viewerAccess?.canEditClimbs ?? viewerAccess?.canEdit) === true && !fetchedForAnotherViewer,
     archive,
     layoutId,
     registeredAtMs: fetchedForAnotherViewer ? 0 : now(),
@@ -445,20 +434,11 @@ export function findRegisteredSprayWallByUuid(wallUuid: string): RegisteredSpray
 }
 
 /**
- * Whether the viewer can edit published climbs on this wall (#6025). `false` for
- * every catalogue board and for a wall that is not registered.
- */
-export function sprayWallViewerCanEditClimbs(boardName: string, layoutId: number): boolean {
-  if (boardName !== SPRAY_BOARD_NAME) return false;
-  return walls.get(layoutId)?.viewerCanEditClimbs === true;
-}
-
-/**
  * Who-can-edit, with the viewer generation its payload was fetched under.
  * `generation` is read with `sprayWallViewerGeneration()` BEFORE the request
  * goes out, never after it comes back.
  */
-export type SprayWallViewerAccess = { canEdit: boolean; canEditClimbs?: boolean; generation: number };
+export type SprayWallViewerAccess = { canEdit: boolean; generation: number };
 
 /**
  * Counts account changes. Bumped by `resetSprayWallViewerAccess`.
@@ -514,7 +494,6 @@ export function resetSprayWallViewerAccess({ markStale = true }: { markStale?: b
     walls.set(layoutId, {
       ...wall,
       viewerCanEdit: false,
-      viewerCanEditClimbs: false,
       registeredAtMs: markStale ? 0 : wall.registeredAtMs,
     });
     layoutIds.push(layoutId);

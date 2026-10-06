@@ -16,8 +16,6 @@ const sheet = vi.hoisted(() => ({
 const preview = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
 const ctrl = vi.hoisted(() => ({
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
-  viewerCanEditWall: false,
-  viewerCanEditClimbs: false,
   wallArchived: false,
 }));
 const nav = vi.hoisted(() => ({ push: vi.fn() }));
@@ -68,15 +66,10 @@ vi.mock('@boardsesh/play-view/readable-url-utils', () => ({
   buildReadableClimbViewPath: urlBuilder.buildReadableClimbViewPath,
 }));
 // The REAL edit rule (`canEditClimb`): the gate is the thing under test. Only
-// the wall's viewer flags are stubbed, since the registry behind them has its
-// own tests.
+// the wall's archive state is stubbed, since the registry behind it has its own
+// tests.
 vi.mock('../../lib/spray/use-spray-wall-archive', () => ({
   useSprayWallIsArchived: (boardName: string | null | undefined) => boardName === 'spray' && ctrl.wallArchived,
-}));
-vi.mock('../../lib/spray/use-spray-wall', () => ({
-  useSprayWallViewerCanEdit: (boardName: string | null | undefined) => boardName === 'spray' && ctrl.viewerCanEditWall,
-  useSprayWallViewerCanEditClimbs: (boardName: string | null | undefined) =>
-    boardName === 'spray' && ctrl.viewerCanEditClimbs,
 }));
 vi.mock('@boardsesh/analytics', () => ({ SHARED_EVENTS: {} }));
 vi.mock('../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
@@ -141,8 +134,6 @@ beforeEach(() => {
   preview.props = null;
   ctrl.variant = 'liquidGlass';
   ctrl.wallArchived = false;
-  ctrl.viewerCanEditWall = false;
-  ctrl.viewerCanEditClimbs = false;
   nav.push.mockClear();
 });
 
@@ -278,98 +269,42 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
     expect(container.querySelector('[data-row="mobile.climbActions.edit"]')).toBeNull();
   });
 
-  describe('who is offered Edit (#5955)', () => {
-    const published = {
-      ...climb,
-      userId: 'setter-1',
-      is_draft: false,
-      published_at: '2020-01-01T00:00:00.000Z',
-    } as unknown as Climb;
-    const draft = { ...published, is_draft: true, published_at: null } as unknown as Climb;
+  // The same rule on every board: the setter, a draft for good, a published
+  // climb for 24 hours after first publish. The wall's owner gets no Edit on a
+  // climb somebody else set.
+  describe('who is offered Edit', () => {
+    const publishedAt = (hoursAgo: number) => new Date(Date.now() - hoursAgo * 60 * 60 * 1000).toISOString();
+    const published = (hoursAgo: number) =>
+      ({ ...climb, userId: 'setter-1', is_draft: false, published_at: publishedAt(hoursAgo) }) as unknown as Climb;
+    const draft = { ...published(1), is_draft: true, published_at: null } as unknown as Climb;
     const sprayProps = { ...baseProps, boardName: 'spray' as const, layoutId: 4200, sizeId: 4200, setIds: '1' };
     const editRow = (container: HTMLElement) => container.querySelector('[data-row="mobile.climbActions.edit"]');
 
-    it('offers a wall editor Edit on a published spray climb they did not set', () => {
-      ctrl.viewerCanEditWall = true;
-      // What the backend actually sends a wall editor: `computeCanEditClimbs`
-      // returns true whenever `viewerCanEdit` is, whatever the policy.
-      ctrl.viewerCanEditClimbs = true;
+    it.each([
+      ['a spray wall', sprayProps],
+      ['Kilter', baseProps],
+    ])('offers the setter Edit within 24 hours of publishing on %s, and not after', (_label, props) => {
+      const fresh = render(
+        <ClimbActionsSheet visible={true} {...props} climb={published(2)} currentUserId="setter-1" />,
+      );
+      expect(editRow(fresh.container)).not.toBeNull();
+      fresh.unmount();
+      const old = render(
+        <ClimbActionsSheet visible={true} {...props} climb={published(30)} currentUserId="setter-1" />,
+      );
+      expect(editRow(old.container)).toBeNull();
+    });
+
+    it('keeps Edit on a spray draft for its setter, however old', () => {
       const { container } = render(
-        <ClimbActionsSheet visible={true} {...sprayProps} climb={published} currentUserId="wall-owner" />,
+        <ClimbActionsSheet visible={true} {...sprayProps} climb={draft} currentUserId="setter-1" />,
       );
       expect(editRow(container)).not.toBeNull();
     });
 
-    it('offers a collaborator Edit when viewerCanEditClimbs is true but viewerCanEditWall is false (#6025)', () => {
-      ctrl.viewerCanEditWall = false;
-      ctrl.viewerCanEditClimbs = true;
+    it("does not offer the wall's owner Edit on a spray climb somebody else set", () => {
       const { container } = render(
-        <ClimbActionsSheet visible={true} {...sprayProps} climb={published} currentUserId="collaborator-1" />,
-      );
-      expect(editRow(container)).not.toBeNull();
-    });
-
-    it('keeps Edit for the setter of a spray climb long after publishing', () => {
-      const { container } = render(
-        <ClimbActionsSheet visible={true} {...sprayProps} climb={published} currentUserId="setter-1" />,
-      );
-      expect(editRow(container)).not.toBeNull();
-    });
-
-    it("does not offer a wall editor Edit on somebody else's draft", () => {
-      ctrl.viewerCanEditWall = true;
-      // What the backend actually sends a wall editor: `computeCanEditClimbs`
-      // returns true whenever `viewerCanEdit` is, whatever the policy.
-      ctrl.viewerCanEditClimbs = true;
-      const { container } = render(
-        <ClimbActionsSheet visible={true} {...sprayProps} climb={draft} currentUserId="wall-owner" />,
-      );
-      expect(editRow(container)).toBeNull();
-    });
-
-    it('does not offer Edit on a spray climb to someone who cannot edit the wall', () => {
-      const { container } = render(
-        <ClimbActionsSheet visible={true} {...sprayProps} climb={published} currentUserId="stranger" />,
-      );
-      expect(editRow(container)).toBeNull();
-    });
-
-    it('does not offer a wall editor Edit on a climb from Kilter or from another wall', () => {
-      ctrl.viewerCanEditWall = true;
-      // What the backend actually sends a wall editor: `computeCanEditClimbs`
-      // returns true whenever `viewerCanEdit` is, whatever the policy.
-      ctrl.viewerCanEditClimbs = true;
-      for (const elsewhere of [
-        { boardType: 'kilter', layoutId: 1 },
-        { boardType: 'spray', layoutId: 4201 },
-      ]) {
-        const { container, unmount } = render(
-          <ClimbActionsSheet
-            visible={true}
-            {...sprayProps}
-            climb={{ ...published, ...elsewhere } as unknown as Climb}
-            currentUserId="wall-owner"
-          />,
-        );
-        expect(editRow(container)).toBeNull();
-        unmount();
-      }
-    });
-
-    it('does not offer a non-setter Edit on Kilter, whatever the wall flag says', () => {
-      ctrl.viewerCanEditWall = true;
-      // What the backend actually sends a wall editor: `computeCanEditClimbs`
-      // returns true whenever `viewerCanEdit` is, whatever the policy.
-      ctrl.viewerCanEditClimbs = true;
-      const { container } = render(
-        <ClimbActionsSheet visible={true} {...baseProps} climb={published} currentUserId="wall-owner" />,
-      );
-      expect(editRow(container)).toBeNull();
-    });
-
-    it('stops offering the setter Edit on Kilter 24 hours after publishing', () => {
-      const { container } = render(
-        <ClimbActionsSheet visible={true} {...baseProps} climb={published} currentUserId="setter-1" />,
+        <ClimbActionsSheet visible={true} {...sprayProps} climb={published(2)} currentUserId="wall-owner" />,
       );
       expect(editRow(container)).toBeNull();
     });

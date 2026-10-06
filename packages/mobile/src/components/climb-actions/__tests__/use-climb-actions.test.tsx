@@ -7,8 +7,6 @@ import type { ClimbActionId } from '../use-climb-actions';
 // Keep the real useCreateClimbNavigation in this test so fork/edit exercise the
 // one-action and injected-dismiss handoff end to end.
 const ctrl = vi.hoisted(() => ({
-  viewerCanEditWall: false,
-  viewerCanEditClimbs: false,
   wallArchived: false,
   sessionId: null as string | null,
   moderationEnabled: true,
@@ -38,11 +36,6 @@ vi.mock('expo-web-browser', () => ({ openBrowserAsync: vi.fn(async () => {}) }))
 // own tests.
 vi.mock('../../../lib/spray/use-spray-wall-archive', () => ({
   useSprayWallIsArchived: (boardName: string | null | undefined) => boardName === 'spray' && ctrl.wallArchived,
-}));
-vi.mock('../../../lib/spray/use-spray-wall', () => ({
-  useSprayWallViewerCanEdit: (boardName: string | null | undefined) => boardName === 'spray' && ctrl.viewerCanEditWall,
-  useSprayWallViewerCanEditClimbs: (boardName: string | null | undefined) =>
-    boardName === 'spray' && ctrl.viewerCanEditClimbs,
 }));
 vi.mock('@boardsesh/analytics', () => ({ SHARED_EVENTS: {} }));
 vi.mock('../../../providers/drawer-host-provider', () => ({
@@ -118,8 +111,6 @@ function ids(args: ActionArgs): ClimbActionId[] {
 
 beforeEach(() => {
   ctrl.wallArchived = false;
-  ctrl.viewerCanEditWall = false;
-  ctrl.viewerCanEditClimbs = false;
   ctrl.sessionId = null;
   ctrl.moderationEnabled = true;
   ctrl.activeClimbUuid = null;
@@ -244,64 +235,36 @@ describe('useClimbActions gating', () => {
     ).not.toContain('edit');
   });
 
-  describe('spray walls (#5955)', () => {
-    const published = { ...climb, userId: 'setter-1', is_draft: false, published_at: '2020-01-01T00:00:00.000Z' };
-    const publishedClimb = published as unknown as Climb;
-    const draftClimb = { ...published, is_draft: true, published_at: null } as unknown as Climb;
-    const asViewer = (viewedClimb: Climb, boardConfig: typeof kilterBoard, currentUserId: string) =>
-      ids({ climb: viewedClimb, boardConfig, isAuthenticated: true, currentUserId });
+  // A spray climb follows the catalogue rule: the setter, a draft for good, a
+  // published climb for 24 hours after first publish. Nobody else, the wall's
+  // owner included.
+  describe('spray walls', () => {
+    const publishedHoursAgo = (hoursAgo: number) =>
+      ({
+        ...climb,
+        userId: 'setter-1',
+        is_draft: false,
+        published_at: new Date(Date.now() - hoursAgo * 60 * 60 * 1000).toISOString(),
+      }) as unknown as Climb;
+    const draftClimb = { ...publishedHoursAgo(30), is_draft: true, published_at: null } as unknown as Climb;
+    const asViewer = (viewedClimb: Climb, currentUserId: string) =>
+      ids({ climb: viewedClimb, boardConfig: sprayBoard, isAuthenticated: true, currentUserId });
 
-    it('keeps Edit for the setter long after publishing', () => {
-      expect(asViewer(publishedClimb, sprayBoard, 'setter-1')).toContain('edit');
+    it('offers the setter Edit within 24 hours of publishing', () => {
+      expect(asViewer(publishedHoursAgo(2), 'setter-1')).toContain('edit');
     });
 
-    it('offers Edit to a wall editor on a published climb they did not set', () => {
-      ctrl.viewerCanEditWall = true;
-      // What the backend actually sends a wall editor: `computeCanEditClimbs`
-      // returns true whenever `viewerCanEdit` is, whatever the policy.
-      ctrl.viewerCanEditClimbs = true;
-      expect(asViewer(publishedClimb, sprayBoard, 'wall-owner')).toContain('edit');
+    it('stops offering the setter Edit 24 hours after publishing', () => {
+      expect(asViewer(publishedHoursAgo(30), 'setter-1')).not.toContain('edit');
     });
 
-    it('offers Edit to a collaborator when viewerCanEditClimbs is true but viewerCanEditWall is false (#6025)', () => {
-      ctrl.viewerCanEditWall = false;
-      ctrl.viewerCanEditClimbs = true;
-      expect(asViewer(publishedClimb, sprayBoard, 'collaborator')).toContain('edit');
+    it('keeps Edit on a draft for its setter', () => {
+      expect(asViewer(draftClimb, 'setter-1')).toContain('edit');
     });
 
-    it("does not offer a wall editor Edit on somebody else's draft", () => {
-      ctrl.viewerCanEditWall = true;
-      // What the backend actually sends a wall editor: `computeCanEditClimbs`
-      // returns true whenever `viewerCanEdit` is, whatever the policy.
-      ctrl.viewerCanEditClimbs = true;
-      expect(asViewer(draftClimb, sprayBoard, 'wall-owner')).not.toContain('edit');
-    });
-
-    it('does not offer Edit to a climber who cannot edit the wall', () => {
-      expect(asViewer(publishedClimb, sprayBoard, 'stranger')).not.toContain('edit');
-    });
-
-    it('does not offer a wall editor Edit on a queue item from Kilter or from another wall', () => {
-      // Standing at their own wall with a leftover queue item. They can edit
-      // the wall; this climb is not on it.
-      ctrl.viewerCanEditWall = true;
-      // What the backend actually sends a wall editor: `computeCanEditClimbs`
-      // returns true whenever `viewerCanEdit` is, whatever the policy.
-      ctrl.viewerCanEditClimbs = true;
-      const fromKilter = { ...published, boardType: 'kilter', layoutId: 1 } as unknown as Climb;
-      const fromAnotherWall = { ...published, boardType: 'spray', layoutId: 4201 } as unknown as Climb;
-      const onThisWall = { ...published, boardType: 'spray', layoutId: 4200 } as unknown as Climb;
-      expect(asViewer(fromKilter, sprayBoard, 'wall-owner')).not.toContain('edit');
-      expect(asViewer(fromAnotherWall, sprayBoard, 'wall-owner')).not.toContain('edit');
-      expect(asViewer(onThisWall, sprayBoard, 'wall-owner')).toContain('edit');
-    });
-
-    it('does not offer a non-setter Edit on Kilter, whatever the wall flag says', () => {
-      ctrl.viewerCanEditWall = true;
-      // What the backend actually sends a wall editor: `computeCanEditClimbs`
-      // returns true whenever `viewerCanEdit` is, whatever the policy.
-      ctrl.viewerCanEditClimbs = true;
-      expect(asViewer(publishedClimb, kilterBoard, 'wall-owner')).not.toContain('edit');
+    it("does not offer the wall's owner Edit on a climb somebody else set", () => {
+      expect(asViewer(publishedHoursAgo(2), 'wall-owner')).not.toContain('edit');
+      expect(asViewer(draftClimb, 'wall-owner')).not.toContain('edit');
     });
   });
 
@@ -321,7 +284,6 @@ describe('useClimbActions gating', () => {
   // An archived wall keeps its climbs, but takes no new climb and no edit.
   it('offers neither Fork nor Edit on an archived spray wall, and keeps the rest', () => {
     ctrl.wallArchived = true;
-    ctrl.viewerCanEditClimbs = true;
     const archivedIds = ids({
       climb: ownerClimb,
       boardConfig: sprayBoard,
