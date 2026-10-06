@@ -1322,10 +1322,13 @@ published climb. Those rows stay as they are, and one rule covers them:
   draft can still lose a hold today (a hold edit on a wall with no published
   climb), and `onlyDrafts` is the only place the setter finds it to re-set it or
   delete it. Re-setting it onto holds that are there brings its count back to 0.
+  On a drafts query an older app's Lost holds filter keeps its old meaning and
+  shows the drafts whose count is above 0.
 - **The older apps' Holds filter** (`ClimbSearchInput.holdIntegrity`, shown on
   every board by 2.5.0 and the 2.6.0 beta): All and Intact only answer the plain
   list. Lost holds answers the empty list on every board, a `false` predicate in
-  both search and count (`lostHoldsFilterCondition`). That is what it always
+  both search and count (`lostHoldsFilterCondition`), except on a drafts query
+  (above). That is what it always
   answered on a catalogue board, and on a spray wall it is honest now that
   lost-hold climbs are hidden. BROKEN stays a search param, so it keeps its own
   search-cache key; All and Intact share the plain search's key.
@@ -1561,7 +1564,7 @@ against this backend. Each answers like this:
 | `SprayWall.viewerCanEditClimbs` (`Boolean!`) | `false` |
 | `CreateSprayWallInput.climbEditPolicy`, `UpdateSprayWallInput.climbEditPolicy` | Accepted and not written. No owner-only refusal. |
 | `SaveClimbInput.remixOfClimbUuid` | Accepted and ignored on every board. No lineage row. |
-| `ClimbSearchInput.holdIntegrity` | ANY and INTACT: the plain list. BROKEN: no climbs, on every board. |
+| `ClimbSearchInput.holdIntegrity` | ANY and INTACT: the plain list. BROKEN: no climbs, on every board, except a drafts query, where it is the drafts that lost a hold. |
 | `Climb.missingHoldCount`, `Climb.revisionNumber`, `Climb.holdsRevisionNumber`, `Tick.climbRevision`, `SaveTickInput.climbRevision` | Unchanged: the stored values, and a tick is still stamped. |
 
 `SPRAY_WALL_RESET_REVIEW_REQUIRED`, `SPRAY_WALL_ANCHORS_REQUIRED` and

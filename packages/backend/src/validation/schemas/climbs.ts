@@ -250,9 +250,10 @@ export const ClimbSearchInputSchema = z.object({
   // the resolver returns an empty page rather than the unfiltered list.
   onlyFavorited: z.boolean().optional(),
   projectsOnly: z.boolean().optional(),
-  // Spray-wall hold integrity. No `.default()` — ANY and an omitted value are the
-  // same thing (no predicate), and a default here would apply for real, since
-  // searchClimbs uses this schema's parsed return.
+  // The retired "Lost holds" filter, still accepted from older apps: ANY and
+  // INTACT add no predicate, BROKEN answers no climbs (or, on a drafts query,
+  // the drafts that lost a hold). No `.default()`: a default here would apply
+  // for real, since searchClimbs uses this schema's parsed return.
   holdIntegrity: z.enum(['ANY', 'INTACT', 'BROKEN']).optional(),
   crossAngleStats: z.boolean().optional(),
   // No default: omitted means UPSTREAM, and mapSearchInputToParams collapses an

@@ -232,9 +232,10 @@ export type ClimbSearchInput = {
   // per angle, so it matches at every angle.
   onlyFavorited?: boolean;
   projectsOnly?: boolean;
-  // Spray-wall hold integrity: INTACT keeps climbs that have lost no holds,
-  // BROKEN keeps only the ones that have, ANY (and an absent value) adds no
-  // filter. Reads the materialised `board_climbs.missing_hold_count`.
+  // The retired "Lost holds" filter. ANY and INTACT add no filter: a spray
+  // wall's lists always leave out climbs that lost a hold. BROKEN answers no
+  // climbs on every board, except a drafts query, where it is the drafts whose
+  // `board_climbs.missing_hold_count` is above 0.
   holdIntegrity?: 'ANY' | 'INTACT' | 'BROKEN';
   // Resolve stats through the climb's own set angle when the browsed angle has
   // none (#5405). Opt-in on every board; omitted means off. On Woods, off also

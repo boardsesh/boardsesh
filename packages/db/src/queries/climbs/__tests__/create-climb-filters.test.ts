@@ -1255,6 +1255,17 @@ void describe('createClimbFilters: holdIntegrity BROKEN', () => {
 
   void it('is a false predicate on a spray wall, where lost-hold climbs are hidden anyway', () => {
     assert.match(whereSql(sprayParams, { holdIntegrity: 'broken' }), /\|\| false( \|\||$)/);
-    assert.deepEqual(lostHoldsFilterCondition({}), []);
+    assert.deepEqual(lostHoldsFilterCondition({}, { isDraftsQuery: false }), []);
+  });
+
+  void it('keeps only the drafts that lost a hold on a drafts query', () => {
+    // The drafts list keeps lost-hold drafts findable, so there BROKEN still means
+    // "the drafts that lost a hold" rather than nothing.
+    const drafts = createClimbFilters(sprayParams, { onlyDrafts: true, holdIntegrity: 'broken' }, 'setter-1')
+      .getClimbWhereConditions()
+      .map(sqlToString)
+      .join(' || ');
+    assert.match(drafts, /coalesce\(missing_hold_count, 0\) > 0/i);
+    assert.doesNotMatch(drafts, /\|\| false( \|\||$)/);
   });
 });

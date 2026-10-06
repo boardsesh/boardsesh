@@ -1426,7 +1426,7 @@ export type ClimbSearchInput = {
   /** Hide climbs the user has completed (requires auth) */
   hideCompleted?: InputMaybe<Scalars['Boolean']['input']>;
   /**
-   * The retired Lost holds filter. ANY and INTACT return the plain list; BROKEN returns no climbs, on every board. A spray wall's lists always leave out climbs that lost a hold to an old reset.
+   * The retired Lost holds filter. ANY and INTACT return the plain list; BROKEN returns no climbs, on every board, except that an onlyDrafts search returns the drafts that lost a hold. A spray wall's lists always leave out climbs that lost a hold to an old reset.
    * @deprecated Retired. BROKEN: no climbs. ANY, INTACT: ignored.
    */
   holdIntegrity?: InputMaybe<HoldIntegrityFilter>;
@@ -3465,7 +3465,8 @@ export type GymTopClimb = {
 /**
  * Retired. A spray wall's lists always leave out climbs that lost a hold, and no
  * other board loses holds, so ANY and INTACT are the plain list and BROKEN is the
- * empty list on every board. Kept so older apps' documents still validate.
+ * empty list on every board (on an onlyDrafts search, the drafts that lost a
+ * hold). Kept so older apps' documents still validate.
  */
 export type HoldIntegrityFilter = 'ANY' | 'BROKEN' | 'INTACT';
 

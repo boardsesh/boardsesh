@@ -309,12 +309,19 @@ export function lostHoldsCondition(boardName: string, options: { isDraftsQuery: 
  * Both installed apps offer it on every board. It used to keep only climbs that
  * had lost a hold: an empty list on a catalogue board, where holds never come
  * off, and the lost-hold climbs on a spray wall. Those are hidden now
- * (`lostHoldsCondition`), so the honest answer everywhere is the empty list,
- * rendered as a false predicate so search and count agree. INTACT and ANY are
- * accepted and ignored: each is the plain list.
+ * (`lostHoldsCondition`), so the honest answer is the empty list, rendered as
+ * a false predicate so search and count agree. INTACT and ANY are accepted and
+ * ignored: each is the plain list.
+ *
+ * The one exception is a drafts query, which keeps lost-hold drafts findable: there
+ * BROKEN still means what it said, the drafts that lost a hold.
  */
-export function lostHoldsFilterCondition(searchParams: Pick<ClimbSearchParams, 'holdIntegrity'>): SQL[] {
-  return searchParams.holdIntegrity === 'broken' ? [sql`false`] : [];
+export function lostHoldsFilterCondition(
+  searchParams: Pick<ClimbSearchParams, 'holdIntegrity'>,
+  options: { isDraftsQuery: boolean },
+): SQL[] {
+  if (searchParams.holdIntegrity !== 'broken') return [];
+  return options.isDraftsQuery ? [sql`COALESCE(${boardClimbs.missingHoldCount}, 0) > 0`] : [sql`false`];
 }
 
 function moonBoardZoneCoordinates(layoutId: number, placementHoleId: SQL): { x: SQL; y: SQL } {
@@ -566,7 +573,7 @@ export const createClimbFilters = (
     isDraftCondition,
     ...hiddenClimbCondition(searchParams),
     ...lostHoldsCondition(params.board_name, { isDraftsQuery: Boolean(isOnlyDrafts) }),
-    ...lostHoldsFilterCondition(searchParams),
+    ...lostHoldsFilterCondition(searchParams, { isDraftsQuery: Boolean(isOnlyDrafts) }),
     ...(climbTypeCondition ? [climbTypeCondition] : []),
   ];
 
