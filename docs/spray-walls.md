@@ -1476,12 +1476,12 @@ work, and the banner already answers the question the missing holds raise.
 
 ## Archive and reset
 
-A second way to reset a wall, added beside the in-place reset above. Changing a
-live wall in place turned out to be hard to follow for climbers, so a reset can
+A second way to reset a wall, beside the in-place reset above. Changing a live
+wall in place turned out to be hard to follow for climbers, so a reset can
 instead be a **clone**: a new wall with the old wall's settings, a new photo and
 holds marked from scratch. When the new wall is published, the old one is
-**archived**. This section is the backend half. The app does not call it yet,
-and the in-place reset and hold editing on a live wall work exactly as before.
+**archived**. The in-place reset and hold editing on a live wall still work
+exactly as before; nothing here refuses them yet.
 
 ### The two columns
 
@@ -1510,19 +1510,27 @@ Migration 0256 adds both. Nothing is dropped or rewritten.
   clone, never a second one.
 - **Settings only.** The clone is made by `insertSprayWallRows`, the same
   function `createSprayWall` uses, so its catalogue rows, board row and slug are
-  made exactly like any new wall's. It copies the name, description, angle, gym
-  link, location fields including `hide_location`, the stored look
-  (`render_settings`) and the climb edit policy. The old wall's visibility is
-  parked on `pending_is_public` / `pending_is_unlisted` and applied at the
-  clone's first publish, the same as a new wall (#5513). No photo, version,
-  hold or climb is copied.
+  made exactly like any new wall's. It copies the name, description, angle,
+  location fields, the stored look (`render_settings`) and the climb edit
+  policy. The gym link and `hide_location` are copied as they were when the
+  reset started; a later change to the old wall does not follow. No photo,
+  version, hold or climb is copied.
+- **Visibility.** The old wall's visibility is parked on `pending_is_public` /
+  `pending_is_unlisted`, so the clone is private until its first publish, like
+  any new wall (#5513). At that publish the clone gets the NARROWER of the
+  parked pair and the old wall's visibility at that moment (private, then
+  unlisted, then public and unlisted, then public). An owner who makes the old
+  wall private mid-reset publishes a private new wall. If the old wall was
+  deleted in between, the parked pair applies.
 - **Caps.** The clone skips the 10-wall live cap, because a reset nets to zero
   live walls once it publishes. It counts against
   `MAX_ARCHIVED_SPRAY_WALLS_PER_USER` (50) instead: the count is the owner's
   archived walls plus their unfinished clones, since each of those will archive
   one more wall. At 50 the call is refused with
   `SPRAY_WALL_ARCHIVE_LIMIT_REACHED`. The create-wall rate limit (5 a minute)
-  applies.
+  applies. Archived walls also do not count toward `MAX_BOARDS_PER_ACCOUNT`
+  (50 boards, `assertBoardCapNotReached`), so resets never block `createBoard`
+  or the BLE auto-mint.
 
 Until the clone is published, the old wall is untouched. An abandoned clone, or
 one the owner deletes, leaves the old wall live and listed, and the next
@@ -1534,16 +1542,23 @@ one the owner deletes, leaves the old wall live and listed, and the next
 On the clone's FIRST publish (both `publishSprayWallVersion` and
 `commitSprayWallVersion` go through it), in the same transaction:
 
-1. it takes the old wall's lock, while already holding the clone's;
+1. it takes the old wall's lock, while already holding the clone's, and reads
+   the old wall's visibility to narrow the clone's (above);
 2. stamps `archived_at` (and `updated_at`) on the old wall, if it is not
    already archived or deleted;
-3. copies the old board's `board_follows` rows and pins
-   (`user_board_activity.pinned_at`) onto the clone's board.
+3. copies the old board's `board_follows` rows, its pins
+   (`user_board_activity.pinned_at`) and its new-climb subscriptions
+   (`new_climb_subscriptions`, keyed by layout, so the old ones would never fire
+   again) onto the clone.
 
-Follows and pins only go to people the clone is shared with: a follow on the
-`followBoard` rule (a public board, or its owner), a pin to the owner, to
-everyone on a public board, and to members of the board's gym. An existing
-activity row on the clone keeps its pin and gains one if it had none.
+They only go to people the clone is shared with. A follow and a subscription
+carry over on the `followBoard` rule (a public board, or its owner). A pin
+carries over to the owner, to everyone on a public board, and to members of the
+board's gym. An existing activity row on the clone keeps its pin and gains one
+if it had none. Nothing carries to strangers on an unlisted or private clone.
+
+Deleting the published successor later does NOT un-archive the old wall. That
+is intended: the old wall's photo no longer matches a real wall.
 
 **Lock order is new wall, then old wall.** A clone is always inserted after its
 source, so it has the higher id. `deleteAccountSprayWalls`, the only other path
@@ -1560,20 +1575,30 @@ is archived. Its climbs stay, but nothing new can be set on it."
 | Refused | Still allowed |
 | --- | --- |
 | `saveClimb`, every `updateClimb` (including publishing a draft) | `saveTick` (the offline drainer would dead-letter a refusal) |
-| `createSprayWallVersion` | `deleteDraftClimb` |
+| `createSprayWallVersion`, and a photo upload to `/api/spray-wall-photos` (409, before and after the bytes land) | `deleteDraftClimb` |
 | `upsertSprayWallHolds`, `removeSprayWallHolds` | `discardSprayWallVersion` |
 | `publishSprayWallVersion`, `commitSprayWallVersion` | `updateSprayWall`, `setSprayWallRenderSettings`, `deleteSprayWall` |
 
-`viewerCanEditClimbs` is false on an archived wall, so an app that predates
-archiving does not offer an edit that can only fail.
+`viewerCanEditClimbs` is false on an archived wall for everyone, collaborators
+included, so an app that predates archiving does not offer an edit that can
+only fail. `viewerCanEdit` stays true for the owner, because it also gates
+renaming and deleting the wall, which an archived wall still allows.
 
 ### Where an archived wall shows up
 
-Left out of: `listableSprayWallCondition` (both branches, so `myBoards`,
-`searchBoards` and `gymBoards`), `sprayWallIsListable` (`gymSprayWalls`), the
-public spray wall sitemap, and the 10-wall live cap count in `createSprayWall`.
-The archived test sits outside the owner escape, so the owner's own pickers
-drop the wall too.
+Left out of:
+
+- `listableSprayWallCondition` (both branches), so `myBoards`, `searchBoards`
+  and `gymBoards`. The archived test sits outside the owner escape, so the
+  owner's own pickers drop the wall too;
+- `sprayWallIsListable`, so `gymSprayWalls`;
+- `boardDiscovery`, the www homepage rail;
+- a gym kiosk's slots (`resolveKioskView` skips the board like a deleted one);
+- the public spray wall sitemap. An archived public wall's climb pages leave
+  the climb sitemap with it, which is intended: the successor is the page worth
+  crawling;
+- the 10-wall live cap in `createSprayWall`, `MAX_BOARDS_PER_ACCOUNT`, and a
+  gym's `boardCount`.
 
 Still returned by: `sprayWall`, `sprayWallByLayout`, `sprayWallRenderData`,
 `board`, `boardBySlug`, `mySprayWalls` (where the owner finds archived walls),
@@ -1582,25 +1607,36 @@ read.
 
 **Archived is not deleted.** Every spray climb visibility predicate in
 `packages/db/src/queries/climbs/spray-visibility.ts` tests `sw.deleted_at`,
-never `archived_at`, so an archived wall's climbs keep resolving everywhere.
+never `archived_at`, so an archived wall's climbs keep resolving everywhere. A
+test reads search, the climb, a logbook, render data, the layout lookup and
+both syncs on an archived wall, so adding `archived_at` there goes red.
+
+An offline device learns a wall is archived from the wall payload
+(`archivedAt`), not from its SQLite mirror, which has no column for it.
 
 ### The `SprayWall` fields
 
 | Field | Meaning |
 | --- | --- |
 | `archivedAt` | ISO time of the archive, or null. |
-| `resetOfWallUuid` | The wall this one was cloned from, if it is not deleted. |
-| `replacedByWallUuid` | The live, PUBLISHED clone that replaced this wall. Null while the clone is unfinished. |
-| `holdsLocked` | True when the wall is archived or has at least one published climb (`is_draft = false`). Drafts do not count. |
-
-The two uuids follow one visibility rule (`viewerMayFollowResetLink`): the
-viewer must be able to see the linked wall without knowing its uuid (its owner,
-a member of its gym, or anyone when it is public). One exception: when both
-walls are unlisted, someone holding the old wall's share link is shown the new
-one, because that is the audience the owner already gave the old link to.
+| `resetOfWallUuid` | The wall this one was cloned from, if it is not deleted, and only for a viewer who can see that wall without its uuid: its owner, a member of its gym, or anyone when it is public. |
+| `replacedByWallUuid` | The live, PUBLISHED clone that replaced this wall, null while the clone is unfinished. Shown to a viewer who can see the successor without its uuid, plus one carry-forward: when the old wall is unlisted and NOT public, and the successor is unlisted too, someone holding the old share link is shown the new one. Old to new only. |
+| `holdsLocked` | True when the wall is archived or has at least one published climb (`is_draft = false`). Drafts do not count. Advisory on a live wall for now: the server does not refuse hold edits on a wall that reads true. |
 
 `mySprayWalls` and `gymSprayWalls` read these fields for every wall in three
-queries (`loadSprayWallArchiveFacts`), not three per wall.
+queries (`loadSprayWallArchiveFacts`), not three per wall. The `holdsLocked`
+read is one `EXISTS` per wall, which stops at the first published climb.
+
+These fields are in the SDL only. The shared `SPRAY_WALL_FIELDS` selection does
+not ask for them yet, so a client built against it keeps working against a
+backend that has not deployed them.
+
+### Known gaps
+
+- A kiosk slot that named the old wall is not repointed to the successor. The
+  kiosk layout is a validated JSON blob (unique slots, a leaderboard board that
+  must be one of them), so repointing is a rewrite, not an UPDATE. The slot
+  simply drops the archived wall until a gym editor places the new one.
 
 ## Photo privacy
 
