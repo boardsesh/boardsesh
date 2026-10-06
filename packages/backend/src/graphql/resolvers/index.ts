@@ -1,5 +1,6 @@
 // eslint-disable-next-line import/no-named-as-default -- `graphql-type-json` exports both default and named `GraphQLJSON`; default is the canonical scalar.
 import GraphQLJSON from 'graphql-type-json';
+import type { ConnectionContext } from '@boardsesh/shared-schema';
 
 // Import domain resolvers
 import { boardQueries } from './board/queries';
@@ -82,6 +83,7 @@ import { betaLinkQueries } from './beta-videos/queries';
 import { instagramBetaImportQueries } from './beta-videos/instagram-beta-import';
 import { syncQueries } from './sync/queries';
 import { resolveClimbNoMatch } from './shared/helpers';
+import { resolveClimbLostHolds, type ClimbLostHoldsParent } from './climbs/lost-holds';
 
 export const resolvers = {
   // Scalar types
@@ -212,10 +214,16 @@ export const resolvers = {
       boardType?: string | null;
     }) => resolveClimbNoMatch(climb.boardType, climb.characteristics, climb.description),
 
-    // Retired with lost-hold tracking (docs/spray-walls.md, "What an older app
-    // gets back"). The empty list on a spray climb draws no ghost rings in an
-    // older app; null on every other board is what it always answered there.
-    lostHolds: (climb: { boardType?: string | null }) => (climb.boardType === 'spray' ? [] : null),
+    // Spray only, and only for a climb whose materialised `missingHoldCount`
+    // says it lost something — see resolveClimbLostHolds. Per-climb by design:
+    // a list must not select it. The remix editor draws these as grey ghosts.
+    //
+    // `ctx` is not optional here: these rows are the geometry of somebody's
+    // garage, the parent may be a synthetic `ClimbInput` a caller sent back
+    // through the queue, and the wall's visibility is decided against the
+    // climb's own row with the viewer this request actually has.
+    lostHolds: (climb: ClimbLostHoldsParent, _args: unknown, ctx: ConnectionContext) =>
+      resolveClimbLostHolds(climb, ctx),
   },
 
   // Union type resolvers
