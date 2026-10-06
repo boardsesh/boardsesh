@@ -76,14 +76,8 @@ const SPRAY_WALL_ENTITY_FIELDS = `
   # Only ever non-null for the OWNER — a hidden wall does not resolve for anybody
   # else — so a client can render the notice off its presence alone (SW-17).
   hiddenAt
-  # Archive and reset (docs/spray-walls.md, "Archive and reset"). A wall is
-  # archived when its reset clone first publishes; its climbs stay readable but
-  # nothing new can be set on it. holdsLocked is true once a climb is published.
-  archivedAt
-  resetOfWallUuid
-  replacedByWallUuid
-  holdsLocked
-  # The wall's stored look is deliberately absent: see GET_SPRAY_WALL_LOOK.
+  # The wall's stored look is deliberately absent: see GET_SPRAY_WALL_LOOK. So
+  # is its archive state: see GET_SPRAY_WALL_ARCHIVE, for the same reason.
   currentVersion {
     ${SPRAY_WALL_VERSION_FIELDS}
   }
@@ -322,6 +316,75 @@ export const GET_SPRAY_WALL_LOOK = gql`
     }
   }
 `;
+
+/**
+ * Where the wall stands in a reset (`docs/spray-walls.md`, "Archive and reset"):
+ * when a reset archived it, the wall it was cloned from, the published wall that
+ * replaced it, and whether a published climb has locked its holds.
+ *
+ * Its own query, never part of `SPRAY_WALL_FIELDS`, for the reason
+ * `GET_SPRAY_WALL_LOOK` gives: a field the backend does not serve fails
+ * validation for the WHOLE operation, so an app that reached a phone before the
+ * backend (or a backend rolled back under it) would load no wall at all. Out
+ * here, a backend without the fields costs only this answer, and the app reads
+ * the wall as live with free holds. The server still refuses every write an
+ * archived or locked wall does not allow.
+ */
+export const GET_SPRAY_WALL_ARCHIVE = gql`
+  query GetSprayWallArchive($uuid: ID!) {
+    sprayWall(uuid: $uuid) {
+      uuid
+      archivedAt
+      resetOfWallUuid
+      replacedByWallUuid
+      holdsLocked
+    }
+  }
+`;
+
+/** The answer of `GET_SPRAY_WALL_ARCHIVE`. */
+export type SprayWallArchiveFields = {
+  uuid: string;
+  archivedAt?: string | null;
+  resetOfWallUuid?: string | null;
+  replacedByWallUuid?: string | null;
+  holdsLocked?: boolean | null;
+};
+
+export type GetSprayWallArchiveQueryResponse = { sprayWall: SprayWallArchiveFields | null };
+
+/**
+ * The owner's walls with only what My Boards' Archived section and the add-a-wall
+ * resume check read: no current version, so no presigned photo URLs for every
+ * wall the owner ever had. Fail-soft like `GET_SPRAY_WALL_ARCHIVE`: on a backend
+ * without the archive fields the query fails on its own, the Archived section is
+ * simply absent, and the resume check offers what it always did.
+ */
+export const GET_MY_SPRAY_WALL_LIFECYCLE = gql`
+  query GetMySprayWallLifecycle {
+    mySprayWalls {
+      uuid
+      layoutId
+      archivedAt
+      resetOfWallUuid
+      board {
+        uuid
+        name
+      }
+    }
+  }
+`;
+
+/** One row of `GET_MY_SPRAY_WALL_LIFECYCLE`. */
+export type SprayWallLifecycleRow = {
+  uuid: string;
+  layoutId: number;
+  archivedAt?: string | null;
+  resetOfWallUuid?: string | null;
+  board: { uuid: string; name: string } | null;
+};
+
+export type GetMySprayWallLifecycleQueryResponse = { mySprayWalls: SprayWallLifecycleRow[] };
 
 /**
  * Store the wall's default look (`{ mode, boardsesh }`), or clear it with
