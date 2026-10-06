@@ -36,6 +36,22 @@ export const ART_DILATE_FRACTION = 0.04;
 /** Mask feather sigma, as a fraction of the median hold radius. */
 export const ART_FEATHER_FRACTION = 0.06;
 
+/**
+ * Ceiling on the mask's feather sigma, in art pixels. The blur's cost grows
+ * with sigma, and a hold radius is owner-supplied (up to 10,000 canonical px),
+ * so an uncapped sigma of 600 kept a worker busy for minutes on one wall. Real
+ * walls sit at about 1-3; 24 is a median hold of 400 art px, far past anything
+ * a photo of a wall holds.
+ */
+export const ART_FEATHER_MAX_SIGMA = 24;
+
+/**
+ * Ceiling on one hold's dilation, in art pixels, for the same reason: it is a
+ * stroke width in the mask, and 4% of an owner-supplied radius is unbounded.
+ * 24 is the grow of a 600 px hold.
+ */
+export const ART_DILATE_MAX_PX = 24;
+
 /** Radius the feather assumes for a wall with no holds yet. */
 const ART_FALLBACK_RADIUS = 10;
 
@@ -100,7 +116,8 @@ function circleRing(cx: number, cy: number, r: number): number[] {
  * A hold's outline is a flat ring in units of its radius around its centre
  * (the `spray_wall_holds.outline` contract). A hold with no outline, or one
  * shorter than three points or carrying a non-finite number, draws a
- * 32-point circle instead, the same fallback the renderer uses.
+ * 32-point circle instead, the same fallback the renderer uses. Each ring's
+ * grow is at least 1 and at most `ART_DILATE_MAX_PX`.
  */
 export function holdMaskRings(holds: readonly ArtHold[], scale: number): ArtMaskRing[] {
   const rings: ArtMaskRing[] = [];
@@ -116,14 +133,14 @@ export function holdMaskRings(holds: readonly ArtHold[], scale: number): ArtMask
           .slice(0, outline.length - (outline.length % 2))
           .map((value, index) => (index % 2 === 0 ? cx : cy) + value * r)
       : circleRing(cx, cy, r);
-    rings.push({ points, grow: Math.max(1, Math.round(r * ART_DILATE_FRACTION)) });
+    rings.push({ points, grow: Math.min(ART_DILATE_MAX_PX, Math.max(1, Math.round(r * ART_DILATE_FRACTION))) });
   }
   return rings;
 }
 
 /**
  * The mask's Gaussian feather sigma, in art pixels: 6% of the median hold
- * radius, at least 1.
+ * radius, at least 1 and at most `ART_FEATHER_MAX_SIGMA`.
  */
 export function artFeather(radii: readonly number[], scale: number): number {
   const finite = radii.filter((radius) => Number.isFinite(radius) && radius > 0).sort((a, b) => a - b);
@@ -132,7 +149,7 @@ export function artFeather(radii: readonly number[], scale: number): number {
     const middle = Math.floor(finite.length / 2);
     median = finite.length % 2 === 1 ? finite[middle] : (finite[middle - 1] + finite[middle]) / 2;
   }
-  return Math.max(1, median * scale * ART_FEATHER_FRACTION);
+  return Math.min(ART_FEATHER_MAX_SIGMA, Math.max(1, median * scale * ART_FEATHER_FRACTION));
 }
 
 /**

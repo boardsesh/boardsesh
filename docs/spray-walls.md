@@ -513,7 +513,8 @@ feather sigma 6% of the median radius, 32-point circle for an untraced hold,
 (clients draw the photo). Nothing sweeps every wall on a bump: the job is
 re-queued the next time `sprayWallArt` is read for the PUBLISHED version of a
 wall whose chosen background is generated, or when the owner chooses one again.
-Walls on the photo are left alone. Old objects are never overwritten.
+Walls on the photo are left alone. Old objects are never overwritten; the
+re-render deletes them once the new recipe's images are ready.
 
 The recipe is also the only way to WITHDRAW art. A READY row of the running
 recipe is served whatever the live quality gate says, so tightening
@@ -529,10 +530,18 @@ gate with the shared function (writing `refused` if it fails), decodes the photo
 with sharp, warps it with `warpBilinear`, draws the hold mask as an SVG (each
 outline filled and stroked round by twice its grow, which dilates it), blurs it,
 joins it as the cutout's alpha, uploads thumbnails before their base images, and
-writes `ready`. A failure writes `failed` with a bounded code before it rethrows,
-so a retry, or the owner picking the look again, can heal it. A crash, an
-expired lease or the run deadline writes nothing, so every `pending` row carries
-`requestedAt`; one older than the job's 1 h deadline reads as `FAILED`.
+writes `ready`, then deletes this version's images from any older recipe. The
+mask is bounded whatever radius an owner types: the feather sigma is capped at
+`ART_FEATHER_MAX_SIGMA` (24 art px) and each hold's dilation at
+`ART_DILATE_MAX_PX` (24), because an uncapped sigma of 600 (a 10,000 px hold)
+kept the worker busy for minutes. sharp cannot be interrupted, so the job checks
+its lease between stages. A failure writes `failed` with a bounded code before it rethrows,
+so a retry, or the owner picking the look again, can heal it. That write
+survives an aborted attempt (a lease timeout or a shutdown): it goes through
+`transactionAfterAbort`, the same attempt fence without the abort check, and is
+recorded as `SPRAY_ART_ABORTED`. A crash, or an abort whose fence another attempt
+already took, writes nothing, so every `pending` row carries `requestedAt`; one
+older than the job's 1 h deadline reads as `FAILED`.
 
 Who queues it:
 
@@ -550,7 +559,11 @@ Who queues it:
   background is generated, when its art is missing, from an older recipe, or
   `failed` / `pending` past the 1 h deadline (a `failed` row is retried at most
   hourly, not on every read). Queue only, never rendered inline, deduplicated by
-  the singleton key, and never for a photo the gate refuses.
+  the singleton key, and never for a photo the gate refuses. A read opens no
+  transaction while the family is off or no queue is running, asks at most once
+  per version per 10 minutes per process, and logs a failed request at `warn`
+  (a publish's failure stays `error`), so a queue outage costs neither
+  Postgres round trips nor alert noise on every read.
 
 Nothing is queued while `spray-wall-art` is in `BATCH_FAMILIES_DISABLED` (every
 dev machine): the row stays NULL and the wall draws its photo.

@@ -57,6 +57,7 @@ export async function requestSprayWallArtOn(
   transaction: SavepointOpener,
   version: Pick<VersionRow, 'id' | 'anchors' | 'homography' | 'photoKey' | 'art'>,
   wall: WallFrame,
+  options: { failureLevel?: 'error' | 'warn' } = {},
 ): Promise<SprayWallArtRequestOutcome> {
   try {
     return await transaction.transaction(async (savepoint) => {
@@ -71,7 +72,7 @@ export async function requestSprayWallArtOn(
       if (artIsCurrent(version.art) && version.art.status === 'ready') return 'current';
       if (!version.photoKey) return 'unavailable';
 
-      const boss = enabledBatchFamiliesOrNone().has(SPRAY_WALL_ART_FAMILY) ? getJobQueue() : null;
+      const boss = sprayWallArtProducer();
       if (!boss) return 'unavailable';
 
       const jobPayload = { versionId: version.id, recipe: ART_RECIPE };
@@ -109,7 +110,59 @@ export async function requestSprayWallArtOn(
       return 'queued';
     });
   } catch (error) {
-    logger.error('[spray-wall-art] could not request art', { versionId: version.id }, error);
+    if (options.failureLevel === 'warn') {
+      logger.warn('[spray-wall-art] could not request art', { versionId: version.id }, error);
+    } else {
+      logger.error('[spray-wall-art] could not request art', { versionId: version.id }, error);
+    }
+    return 'unavailable';
+  }
+}
+
+/** The queue to send art jobs on, or null while the family is off or no queue is running. */
+function sprayWallArtProducer() {
+  return enabledBatchFamiliesOrNone().has(SPRAY_WALL_ART_FAMILY) ? getJobQueue() : null;
+}
+
+/**
+ * At most one read-path request per version per this window, per process. A
+ * read can come from anybody who can see the wall, logged out included, so a
+ * queue outage must not turn every read into a transaction and a log line.
+ */
+export const SPRAY_WALL_ART_READ_REQUEUE_THROTTLE_MS = 10 * 60 * 1000;
+const READ_REQUEUE_MAX_ENTRIES = 5000;
+const lastReadRequeueAt = new Map<number, number>();
+
+/** Forget the read-path throttle. Test seam: the map is module state. */
+export function resetSprayWallArtReadThrottle(): void {
+  lastReadRequeueAt.clear();
+}
+
+/**
+ * The read-time backfill's request (`sprayWallArt`): queue only, never
+ * render. Opens no transaction when the family is off or no queue is running,
+ * is throttled per version, and logs a failure at `warn` rather than `error`
+ * (a publish's failure stays `error`). Never throws.
+ */
+export async function requestSprayWallArtFromRead(
+  database: SavepointOpener,
+  version: Pick<VersionRow, 'id' | 'anchors' | 'homography' | 'photoKey' | 'art'>,
+  wall: WallFrame,
+  nowMs: number = Date.now(),
+): Promise<SprayWallArtRequestOutcome> {
+  if (!sprayWallArtProducer()) return 'unavailable';
+  const last = lastReadRequeueAt.get(version.id);
+  if (last !== undefined && nowMs - last < SPRAY_WALL_ART_READ_REQUEUE_THROTTLE_MS) return 'unavailable';
+  if (lastReadRequeueAt.size >= READ_REQUEUE_MAX_ENTRIES) {
+    const oldest = lastReadRequeueAt.keys().next();
+    if (!oldest.done) lastReadRequeueAt.delete(oldest.value);
+  }
+  lastReadRequeueAt.delete(version.id);
+  lastReadRequeueAt.set(version.id, nowMs);
+  try {
+    return await requestSprayWallArtOn(database, version, wall, { failureLevel: 'warn' });
+  } catch (error) {
+    logger.warn('[spray-wall-art] could not request art', { versionId: version.id }, error);
     return 'unavailable';
   }
 }
