@@ -75,6 +75,12 @@ const SPRAY_WALL_FIELDS = `
   # Only ever non-null for the OWNER — a hidden wall does not resolve for anybody
   # else — so a client can render the notice off its presence alone (SW-17).
   hiddenAt
+  # Archive and reset: an archived wall is read-only, and the two uuids link a
+  # wall to the one it was cloned from and the one that replaced it.
+  archivedAt
+  resetOfWallUuid
+  replacedByWallUuid
+  holdsLocked
   # The wall's stored look is deliberately absent: see GET_SPRAY_WALL_LOOK.
   board {
     uuid
@@ -219,6 +225,19 @@ export const GET_MY_SPRAY_WALLS = gql`
 export const CREATE_SPRAY_WALL = gql`
   mutation CreateSprayWall($input: CreateSprayWallInput!) {
     createSprayWall(input: $input) {
+      ${SPRAY_WALL_FIELDS}
+    }
+  }
+`;
+
+/**
+ * Start a reset: clone the wall's settings into a new, unfinished wall. The owner
+ * photographs and marks it in the add-wall wizard, and its first publish archives
+ * the old wall. Calling it again before then returns the same clone.
+ */
+export const RESET_SPRAY_WALL = gql`
+  mutation ResetSprayWall($input: ResetSprayWallInput!) {
+    resetSprayWall(input: $input) {
       ${SPRAY_WALL_FIELDS}
     }
   }

@@ -4288,6 +4288,18 @@ export type Mutation = {
   /** Prepare a weekly climbing archive and, where supported, its Aurora companion. */
   requestUserDataExport: UserDataExportStatus;
   /**
+   * Start a reset of a wall by cloning it. The clone copies the wall's settings
+   * (name, description, angle, gym, location, look, climb edit policy and
+   * visibility) and nothing else: the owner takes a new photo and marks the holds
+   * from scratch, and the clone's first publish archives the old wall. Calling it
+   * again before that publish returns the same unfinished clone.
+   *
+   * The wall's owner only. Refused on a wall with nothing published, and on an
+   * archived wall. Capped at `MAX_ARCHIVED_SPRAY_WALLS_PER_USER` archived walls
+   * per owner; the clone does not count toward `MAX_SPRAY_WALLS_PER_USER`.
+   */
+  resetSprayWall: SprayWall;
+  /**
    * Resolve a BLE serial for clients that can disambiguate. Returns a single
    * `board` when the serial is unambiguous (remembered choice, only one match,
    * or freshly created), or a list of `candidates` when several boards share
@@ -4993,6 +5005,11 @@ export type MutationRequestSprayWallDetectionArgs = {
 /** Root mutation type for all write operations. */
 export type MutationRequestUserDataExportArgs = {
   boardType: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationResetSprayWallArgs = {
+  input: ResetSprayWallInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -7878,6 +7895,11 @@ export type RequestSprayWallDetectionInput = {
   wallUuid: Scalars['ID']['input'];
 };
 
+export type ResetSprayWallInput = {
+  /** The published, live wall to replace. */
+  wallUuid: Scalars['ID']['input'];
+};
+
 /**
  * Result of resolving a BLE serial that may map to several boards. Exactly one
  * of `board` / `candidates` is set: `board` when the serial is unambiguous
@@ -9102,6 +9124,15 @@ export type SprayRemixSeed = {
  */
 export type SprayWall = {
   __typename?: 'SprayWall';
+  /**
+   * When this wall was archived, ISO 8601, or null for a live wall.
+   *
+   * A wall is archived when a reset clone of it (`resetSprayWall`) reaches its
+   * first publish. An archived wall is read-only: its climbs, ticks, playlists
+   * and share links keep working, it leaves every board picker and listing, and
+   * nobody can set a new climb, edit a climb or change its holds on it.
+   */
+  archivedAt?: Maybe<Scalars['String']['output']>;
   board: UserBoard;
   /** Who may edit published climbs on this wall (#6025). */
   climbEditPolicy: SprayClimbEditPolicy;
@@ -9119,6 +9150,11 @@ export type SprayWall = {
   hiddenAt?: Maybe<Scalars['String']['output']>;
   /** Holds alive on the current version. */
   holdCount: Scalars['Int']['output'];
+  /**
+   * Whether this wall's holds are fixed for good: true once the wall is archived
+   * or has at least one published climb. Draft climbs do not count.
+   */
+  holdsLocked: Scalars['Boolean']['output'];
   /** The wall's board_layouts id. Also its board_product_sizes id: a wall has exactly one size, itself. */
   layoutId: Scalars['Int']['output'];
   /**
@@ -9146,6 +9182,14 @@ export type SprayWall = {
    * for a viewer who has never chosen one.
    */
   renderSettings?: Maybe<Scalars['JSON']['output']>;
+  /**
+   * The published wall that replaced this one through `resetSprayWall`, when the
+   * viewer may see it. Null while the clone is unfinished, and for a viewer the
+   * successor is not shared with.
+   */
+  replacedByWallUuid?: Maybe<Scalars['ID']['output']>;
+  /** The wall this one was cloned from by `resetSprayWall`, when the viewer may see that wall. */
+  resetOfWallUuid?: Maybe<Scalars['ID']['output']>;
   /** Always equal to layoutId. Returned so a client never has to know the equality. */
   sizeId: Scalars['Int']['output'];
   uuid: Scalars['ID']['output'];

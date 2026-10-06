@@ -6220,6 +6220,28 @@ type SprayWall {
   for a viewer who has never chosen one.
   """
   renderSettings: JSON
+  """
+  When this wall was archived, ISO 8601, or null for a live wall.
+
+  A wall is archived when a reset clone of it (`resetSprayWall`) reaches its
+  first publish. An archived wall is read-only: its climbs, ticks, playlists
+  and share links keep working, it leaves every board picker and listing, and
+  nobody can set a new climb, edit a climb or change its holds on it.
+  """
+  archivedAt: String
+  "The wall this one was cloned from by `resetSprayWall`, when the viewer may see that wall."
+  resetOfWallUuid: ID
+  """
+  The published wall that replaced this one through `resetSprayWall`, when the
+  viewer may see it. Null while the clone is unfinished, and for a viewer the
+  successor is not shared with.
+  """
+  replacedByWallUuid: ID
+  """
+  Whether this wall's holds are fixed for good: true once the wall is archived
+  or has at least one published climb. Draft climbs do not count.
+  """
+  holdsLocked: Boolean!
 }
 
 """
@@ -6265,6 +6287,11 @@ input CreateSprayWallInput {
   hideLocation: Boolean
   "Who can edit climbs on this wall. Defaults to SETTER."
   climbEditPolicy: SprayClimbEditPolicy
+}
+
+input ResetSprayWallInput {
+  "The published, live wall to replace."
+  wallUuid: ID!
 }
 
 input CreateSprayWallVersionInput {
@@ -8442,6 +8469,19 @@ type Mutation {
   `MAX_SPRAY_WALLS_PER_USER` walls per owner.
   """
   createSprayWall(input: CreateSprayWallInput!): SprayWall!
+
+  """
+  Start a reset of a wall by cloning it. The clone copies the wall's settings
+  (name, description, angle, gym, location, look, climb edit policy and
+  visibility) and nothing else: the owner takes a new photo and marks the holds
+  from scratch, and the clone's first publish archives the old wall. Calling it
+  again before that publish returns the same unfinished clone.
+
+  The wall's owner only. Refused on a wall with nothing published, and on an
+  archived wall. Capped at `MAX_ARCHIVED_SPRAY_WALLS_PER_USER` archived walls
+  per owner; the clone does not count toward `MAX_SPRAY_WALLS_PER_USER`.
+  """
+  resetSprayWall(input: ResetSprayWallInput!): SprayWall!
 
   """
   Rename a wall, change its description, share it, attach it to a gym, or correct

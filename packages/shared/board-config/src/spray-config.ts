@@ -74,6 +74,16 @@ export const SPRAY_ANGLES = [
 export const MAX_SPRAY_WALLS_PER_USER = 10;
 
 /**
+ * How many ARCHIVED walls one climber may keep.
+ *
+ * A reset clones a wall and archives the old one at the clone's first publish,
+ * so archived walls do not count toward `MAX_SPRAY_WALLS_PER_USER` (a reset nets
+ * to zero live walls). Each one still keeps its photos and catalogue rows, so
+ * they need their own bound: 50 is a monthly reset for four years.
+ */
+export const MAX_ARCHIVED_SPRAY_WALLS_PER_USER = 50;
+
+/**
  * Holds on one wall. A dense commercial spray wall runs 400-800 holds; 1500
  * leaves room for the densest real wall while bounding what a detector run, a
  * hold editor session and a reset match have to hold in memory at once.
