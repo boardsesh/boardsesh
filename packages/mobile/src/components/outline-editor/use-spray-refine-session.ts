@@ -53,9 +53,9 @@ export type RefineView = {
   strokeCount: number;
   /** The area differs from where the session started: leaving now would lose work. */
   changed: boolean;
-  /** The hold's radius in board px when Refine opened: what the brush sizes are fractions of. */
+  /** The hold's radius in board px when Refine opened: what the brush's cap is a fraction of. */
   holdRadiusBoardPx: number;
-  /** The brush frame, for the brush-size floor. */
+  /** The brush frame, for the brush-size floor, and its origin is the hold's centre. */
   frame: RefineFrame;
 };
 
