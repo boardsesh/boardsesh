@@ -1466,6 +1466,43 @@ reason:
    it without probing candidate extensions and a cleanup sweep can enumerate a
    wall's objects by prefix.
 
+**Two sizes per photo (#5911).** The hold editor zooms to 8×, where a 2048 px
+photo shows about 190 photo pixels across a phone screen and a small hold goes
+soft. So a photo larger than 2048 px on its long side is stored twice:
+
+| Object | Key | Long side | Read by |
+| --- | --- | --- | --- |
+| Base | `spray-walls/<wallUuid>/<photoId>.jpg` | ≤ 2048 px (`SPRAY_WALL_PHOTO_BASE_MAX_DIMENSION`) | the canonical frame, the hold detector, the climb view, search, offline sync, the public copy |
+| Thumbnail | `<base key>@280.jpg` | 280 px square | list rows, the reset compare view |
+| Full | `spray-walls/<wallUuid>/<photoId>-full.jpg` | ≤ 4096 px (`SPRAY_WALL_PHOTO_FULL_MAX_DIMENSION`) | the hold editor, once zoomed past the base's resolution |
+
+- **The base keeps every number it had.** The response's `width`/`height` and
+  the base object's metadata are the BASE's, so `createSprayWallVersion`, the
+  canonical frame and every hold coordinate stay in the base's pixels. The full copy
+  is the same picture with more pixels, never a different frame: a client scales
+  it down to the base's size and draws holds exactly as before.
+- **No full copy for a photo that already fits.** A source at or under 2048 px
+  is stored once, as before. Both sizes are resized from the source, so the base
+  takes one JPEG generation and the full copy goes through the same
+  `rotate()` + re-encode that strips EXIF and GPS.
+- **Write order:** thumbnail, full, base. A reader who can see the base can see
+  both copies.
+- **The full key is derived from the base key** (`sprayWallFullPhotoKey`), never
+  stored. Every path that follows `photo_key` follows the copy for free: a
+  `sourceVersionId` version reuses the key, the purge and account deletion erase
+  the whole `spray-walls/<wallUuid>/` prefix, and a withdrawn upload erases every
+  key it wrote. SW-14's public promotion copies the BASE only; the full copy is
+  never public.
+- **`SprayWallRenderData.photoFullUrl`** is the presigned GET, minted with the
+  base's and expiring with `photo.expiresAt`. It is on the render payload and not
+  on `SprayWallPhoto`, so version lists and moderation previews never pay for it.
+  It is null when the version has no full copy. A base whose long side is not
+  exactly 2048 px cannot have one, so most versions cost no storage call; the rest
+  (including every pre-#5911 photo the app compressed to exactly 2048 px) get one
+  `HEAD` per key per backend process, remembered after because the answer never
+  changes for a key. An outage reads as null and is not remembered. No column
+  records it, because the check costs less than a migration and a backfill.
+
 Every stored object carries **`Cache-Control: private, no-store`**.
 `uploadToS3` defaults to `public, max-age=31536000, immutable`, which is right for
 an avatar and catastrophic here: a shared cache would keep serving the photo long
@@ -1473,14 +1510,14 @@ past the 15-minute presign that is supposed to BE the access control, and past t
 owner making the wall private. The public-promotion copy SW-14 (#5447) writes to
 `media` is the only place a long lifetime may ever be set.
 
-The cap is 10MB, `files: 1`, the magic bytes decide the format regardless of the
+The cap is 15MB (10MB before #5911 raised the app's upload to 4096 px), `files: 1`, the magic bytes decide the format regardless of the
 declared Content-Type, and the caller must **own** the wall — not merely be able
 to edit it. Nobody uploads a photograph of a stranger's living room.
 
 There is also a **per-user budget of 20 uploads per 10 minutes**, answering `429`
 with a `Retry-After: 600` once it is spent. It is the `feedback-screenshots.ts`
 pattern and it is here for the same reason: every POST mints a NEW object, so one
-authenticated account could otherwise fill the private bucket with 10MB objects,
+authenticated account could otherwise fill the private bucket with 15MB objects,
 and `MAX_VERSIONS_PER_WALL` does not help because it caps the ROWS rather than the
 uploads that never become one. A rejected upload is charged too — it still costs a
 multipart parse and a sharp decode, which is exactly what a spammer would loop on
@@ -1649,8 +1686,8 @@ behind a second service.
 What the mutation does, per wall, in this order:
 
 1. list `spray-walls/<wallUuid>/` in the `private` bucket and delete every
-   object — the photos, their resize variants, and any upload that was never
-   adopted as a version;
+   object — the photos, their resize variants, their `-full` copies (#5911), and
+   any upload that was never adopted as a version;
 2. the same prefix in `media`, which is where SW-14's public promotion copies a
    published photo. That is the one copy that would survive a private-bucket
    delete and stay fetchable by anybody;

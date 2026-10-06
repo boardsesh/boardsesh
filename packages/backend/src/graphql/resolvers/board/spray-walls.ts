@@ -55,7 +55,9 @@ import {
   SPRAY_PHOTO_CONTENT_TYPE,
   SPRAY_PHOTO_HEIGHT_METADATA_KEY,
   SPRAY_PHOTO_WIDTH_METADATA_KEY,
+  sprayWallFullPhotoKey,
   sprayWallPhotoKey,
+  sprayWallPhotoMayHaveFullCopy,
   sprayWallPublicPhotoKey,
 } from '../../../handlers/spray-wall-photos';
 import {
@@ -63,6 +65,7 @@ import {
   deleteFromS3,
   getPublicUrl,
   getS3ObjectMetadata,
+  getS3ObjectMetadataStrict,
   isS3Configured,
   presignGetObject,
 } from '../../../storage/s3';
@@ -383,6 +386,68 @@ export async function presignVersionPhoto(version: SprayWallVersionRow): Promise
     height: version.photoHeight,
     expiresAt: full.expiresAt,
   };
+}
+
+/**
+ * Whether a base photo key has a full-resolution copy beside it, by photo key.
+ *
+ * Remembered per process because the answer never changes for a key: the copy is
+ * written before the base (so before any version row can name the key), and the
+ * only paths that delete it — the retention purge and account deletion — clear
+ * `photo_key` too, so a remembered "yes" is never consulted for a deleted object.
+ * Bounded so a long-lived process does not grow without limit; Map iteration is
+ * insertion order, so the oldest entry goes first.
+ */
+const fullPhotoPresence = new Map<string, boolean>();
+const FULL_PHOTO_PRESENCE_MAX_ENTRIES = 5000;
+
+/** Forget every remembered full-copy answer. Test seam: the map is module state. */
+export function resetSprayFullPhotoPresenceCache(): void {
+  fullPhotoPresence.clear();
+}
+
+async function versionHasFullPhoto(photoKey: string): Promise<boolean> {
+  const remembered = fullPhotoPresence.get(photoKey);
+  if (remembered !== undefined) return remembered;
+
+  // Strict, so an outage throws instead of reading as "missing" and being
+  // remembered as a permanent no for this key.
+  const present = (await getS3ObjectMetadataStrict('private', sprayWallFullPhotoKey(photoKey))) !== null;
+  if (fullPhotoPresence.size >= FULL_PHOTO_PRESENCE_MAX_ENTRIES) {
+    const oldest = fullPhotoPresence.keys().next();
+    if (!oldest.done) fullPhotoPresence.delete(oldest.value);
+  }
+  fullPhotoPresence.set(photoKey, present);
+  return present;
+}
+
+/**
+ * Presigned GET for a version's full-resolution copy (#5911), or null when it
+ * has none.
+ *
+ * Only the hold editor asks for this, and only once it zooms past the base
+ * photo's resolution, so it is a field on `SprayWallRenderData` and not on
+ * `SprayWallPhoto` — the version lists and moderation previews that also build
+ * a `SprayWallPhoto` never pay for it. Signed in the same breath as the base, so
+ * `photo.expiresAt` covers it too.
+ *
+ * Existence costs no storage call for most versions: a base whose long side is
+ * not exactly the base cap cannot have a copy (`sprayWallPhotoMayHaveFullCopy`).
+ * The rest — including every pre-#5911 photo the app compressed to exactly 2048
+ * px — get one HEAD per key per process, remembered after. Best-effort: the base
+ * photo always renders, so a storage error here is a null, never a failed read.
+ */
+export async function presignVersionFullPhoto(version: SprayWallVersionRow): Promise<string | null> {
+  if (!version.photoKey || !isS3Configured('private')) return null;
+  if (!sprayWallPhotoMayHaveFullCopy(version.photoWidth, version.photoHeight)) return null;
+
+  try {
+    if (!(await versionHasFullPhoto(version.photoKey))) return null;
+    return (await presignGetObject('private', sprayWallFullPhotoKey(version.photoKey))).url;
+  } catch (error) {
+    logger.warn('Failed to presign a spray wall full-resolution photo', { versionId: version.id }, error);
+    return null;
+  }
 }
 
 /** How many holds a version put on, and took off, the wall. */
@@ -1340,7 +1405,10 @@ export const sprayWallQueries = {
     // honest answer — the same one an invisible wall gets.
     if (!photo) return null;
 
-    const holds = await aliveHolds(db, loaded.wall.id, versionRow.versionNumber);
+    const [photoFullUrl, holds] = await Promise.all([
+      presignVersionFullPhoto(versionRow),
+      aliveHolds(db, loaded.wall.id, versionRow.versionNumber),
+    ]);
     const versionNumberById = await loadVersionNumbers(loaded.wall.id);
 
     return {
@@ -1352,6 +1420,7 @@ export const sprayWallQueries = {
       boardWidth: loaded.wall.referenceWidth ?? versionRow.photoWidth ?? 0,
       boardHeight: loaded.wall.referenceHeight ?? versionRow.photoHeight ?? 0,
       photo,
+      photoFullUrl,
       homography: versionRow.homography ?? [...IDENTITY_HOMOGRAPHY],
       holds: holds.map((hold) => toGraphQLHold(hold, versionNumberById)),
     };

@@ -38,6 +38,7 @@ const { db } = await import('../db/client');
 const {
   handleSprayWallPhotoUpload,
   resetSprayWallPhotoRateLimit,
+  sprayWallFullPhotoKey,
   sprayWallPhotoKey,
   SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES,
 } = await import('../handlers/spray-wall-photos');
@@ -85,6 +86,21 @@ const insertUser = (id: string) =>
  */
 async function exifTaggedJpeg(): Promise<Buffer> {
   return sharp({ create: { width: 120, height: 60, channels: 3, background: '#4488cc' } })
+    .withMetadata({
+      orientation: 6,
+      exif: { IFD0: { ImageDescription: EXIF_MARKER, Copyright: EXIF_MARKER } },
+    })
+    .jpeg()
+    .toBuffer();
+}
+
+/**
+ * A landscape 5000x2500 JPEG tagged orientation 6, so the stored photo is a
+ * 2500x5000 portrait — larger than both caps, and transposed, so a size read
+ * before the rotate would show up in every dimension asserted below.
+ */
+async function largeExifTaggedJpeg(): Promise<Buffer> {
+  return sharp({ create: { width: 5000, height: 2500, channels: 3, background: '#4488cc' } })
     .withMetadata({
       orientation: 6,
       exif: { IFD0: { ImageDescription: EXIF_MARKER, Copyright: EXIF_MARKER } },
@@ -450,8 +466,69 @@ describe('POST /api/spray-wall-photos', () => {
     expect(uploadedObjects).toHaveLength(0);
   });
 
-  it('caps the upload at 10MB', () => {
-    expect(SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES).toBe(10 * 1024 * 1024);
+  it('caps the upload at 15MB', () => {
+    // Raised from 10MB for #5911: the app now sends up to 4096 px, and a busy
+    // 4096 px wall photo at JPEG 0.85 runs to 8MB or so.
+    expect(SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES).toBe(15 * 1024 * 1024);
+  });
+
+  it('keeps the base at 2048 px and stores a stripped full copy of a larger photo', async () => {
+    const response = await uploadPhoto(baseUrl, { token: OWNER, wallUuid, bytes: await largeExifTaggedJpeg() });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { photoId: string; width: number; height: number };
+
+    // The response and the base metadata carry the BASE size: that is what the
+    // canonical frame, the detector and the climb view read, unchanged by #5911.
+    expect(body).toMatchObject({ width: 1024, height: 2048 });
+    const baseKey = sprayWallPhotoKey(wallUuid, body.photoId);
+    const base = uploadedObjects.find((object) => object.key === baseKey);
+    expect((base!.options as { metadata?: Record<string, string> }).metadata).toEqual({
+      width: '1024',
+      height: '2048',
+    });
+    expect(await sharp(base!.body).metadata()).toMatchObject({ width: 1024, height: 2048 });
+
+    // The full copy: same orientation, capped at 4096 on its long side, and as
+    // stripped as the base — it is the SHARPER picture of somebody's home.
+    const fullKey = sprayWallFullPhotoKey(baseKey);
+    expect(fullKey).toBe(`spray-walls/${wallUuid}/${body.photoId}-full.jpg`);
+    const full = uploadedObjects.find((object) => object.key === fullKey);
+    expect(full).toBeDefined();
+    const fullMetadata = await sharp(full!.body).metadata();
+    expect(fullMetadata).toMatchObject({ width: 2048, height: 4096, format: 'jpeg' });
+    expect(fullMetadata.exif).toBeUndefined();
+    expect(full!.body.includes(EXIF_MARKER)).toBe(false);
+    expect(full!.bucket).toBe('private');
+    expect(full!.options).toMatchObject({ acl: null, cacheControl: 'private, no-store' });
+
+    // Base last, so a reader that can see the photo can always see its copies.
+    expect(uploadedObjects.map((object) => object.key)).toEqual([`${baseKey}@280.jpg`, fullKey, baseKey]);
+  });
+
+  it('writes no full copy when the photo already fits the base cap', async () => {
+    const response = await uploadPhoto(baseUrl, {
+      token: OWNER,
+      wallUuid,
+      bytes: await plainPng(2048, 1536),
+      mimeType: 'image/png',
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { photoId: string; width: number; height: number };
+
+    expect(body).toMatchObject({ width: 2048, height: 1536 });
+    const baseKey = sprayWallPhotoKey(wallUuid, body.photoId);
+    expect(uploadedObjects.map((object) => object.key)).toEqual([`${baseKey}@280.jpg`, baseKey]);
+  });
+
+  it('erases the full copy too when the wall is deleted during upload', async () => {
+    uploadRace.onUpload = async () => {
+      await db.execute(
+        sql`UPDATE spray_walls SET deleted_at = now(), photos_purged_at = now() WHERE board_uuid = ${wallUuid}`,
+      );
+    };
+    const response = await uploadPhoto(baseUrl, { token: OWNER, wallUuid, bytes: await largeExifTaggedJpeg() });
+    expect(response.status).toBe(404);
+    expect(uploadedObjects).toEqual([]);
   });
 
   it('spends a per-user budget and then answers 429', async () => {

@@ -9344,6 +9344,13 @@ export type SprayWallRenderData = {
   holds: Array<SprayWallHold>;
   homography: Array<Scalars['Float']['output']>;
   photo: SprayWallPhoto;
+  /**
+   * Presigned GET for the photo at up to 4096 px on its long side, or null when
+   * this version has no copy larger than `photo` (#5911). Same pixels and frame
+   * as `photo`, just more of them: the hold editor swaps it in once it zooms past
+   * the base photo's resolution. Expires with `photo.expiresAt`.
+   */
+  photoFullUrl?: Maybe<Scalars['String']['output']>;
   versionNumber: Scalars['Int']['output'];
   wall: SprayWall;
 };
@@ -16454,6 +16461,7 @@ export type SprayWallRenderDataResolvers<
   holds?: Resolver<Array<ResolversTypes['SprayWallHold']>, ParentType, ContextType>;
   homography?: Resolver<Array<ResolversTypes['Float']>, ParentType, ContextType>;
   photo?: Resolver<ResolversTypes['SprayWallPhoto'], ParentType, ContextType>;
+  photoFullUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   versionNumber?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   wall?: Resolver<ResolversTypes['SprayWall'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
