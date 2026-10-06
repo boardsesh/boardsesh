@@ -10,6 +10,8 @@ import {
   hasFootHolds,
   isSprayBoard,
   nextAnyFeetForFeetChange,
+  offersBoardLightbulb,
+  offersNoKickboardRule,
   requiresSetterGrade,
   shouldAwaitWall,
   sprayWallUuidFor,
@@ -216,5 +218,29 @@ describe('the grade name a remix inherits', () => {
     expect(getDifficultyIdForGradeName('V4')).toBeNull();
     expect(getDifficultyIdForGradeName('6b')).toBeNull();
     expect(getDifficultyIdForGradeName('')).toBeNull();
+  });
+});
+
+describe('the no-kickboard rule', () => {
+  it('is hidden on a spray wall, which has no kickboard', () => {
+    expect(offersNoKickboardRule('spray')).toBe(false);
+  });
+
+  it('stays on every catalogue board', () => {
+    for (const boardName of ['kilter', 'tension', 'moonboard', 'woods']) {
+      expect(offersNoKickboardRule(boardName)).toBe(true);
+    }
+  });
+});
+
+describe('the creator lightbulb', () => {
+  it('is not offered on a spray wall, which has no lights', () => {
+    expect(offersBoardLightbulb('spray')).toBe(false);
+  });
+
+  it('stays on every catalogue board', () => {
+    for (const boardName of ['kilter', 'tension', 'moonboard', 'woods']) {
+      expect(offersBoardLightbulb(boardName)).toBe(true);
+    }
   });
 });

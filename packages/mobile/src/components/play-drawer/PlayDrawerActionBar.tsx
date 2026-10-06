@@ -121,7 +121,8 @@ type PlayDrawerActionBarProps = {
   onLightbulbLongPress?: () => void;
   onOpenActions: () => void;
   onOpenQueue: () => void;
-  onShare: () => void;
+  /** Absent on a draft: only its setter can open it, so a link goes nowhere (#5960). */
+  onShare?: () => void;
   onTickPress: () => void;
   onTickLongPress: () => void;
   onOpenAngleSelector?: () => void;
@@ -242,7 +243,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
 
   const handleShare = useCallback(() => {
     hapticMedium();
-    onShare();
+    onShare?.();
   }, [onShare]);
 
   const heatmapModeLabel =
@@ -442,7 +443,9 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
               <>
                 {/* Share is a pure client action and the whole point of a read-only
                 climb page, so it stays. */}
-                <ShareButton size="sm" onPress={handleShare} accessibilityLabel={tClimbs('mobile.climbRow.share')} />
+                {onShare ? (
+                  <ShareButton size="sm" onPress={handleShare} accessibilityLabel={tClimbs('mobile.climbRow.share')} />
+                ) : null}
                 {/* A queue means nothing without a wall or a session, and the sheet it
                 opens is a write surface. */}
                 {!isAnonymous && (

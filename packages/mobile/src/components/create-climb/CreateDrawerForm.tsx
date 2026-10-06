@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { SwitchRow } from '../SwitchRow';
 import { SetterGradeRow } from './SetterGradeRow';
+import { offersNoKickboardRule } from './spray-climb-rules';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 
@@ -121,12 +122,15 @@ export function CreateDrawerForm({
           value={noMatch}
           onValueChange={onChangeNoMatch}
         />
-        <SwitchRow
-          label={t('mobile.create.settings.noKickboardLabel')}
-          description={t('mobile.create.settings.noKickboardDescription')}
-          value={noKickboard}
-          onValueChange={onChangeNoKickboard}
-        />
+        {/* A spray wall has no kickboard, so the rule has nothing to say there. */}
+        {offersNoKickboardRule(boardName) ? (
+          <SwitchRow
+            label={t('mobile.create.settings.noKickboardLabel')}
+            description={t('mobile.create.settings.noKickboardDescription')}
+            value={noKickboard}
+            onValueChange={onChangeNoKickboard}
+          />
+        ) : null}
         {/* The two feet rules sit next to each other because they answer the same
             question, and the controller keeps them mutually exclusive: turning one
             on turns the other off. */}

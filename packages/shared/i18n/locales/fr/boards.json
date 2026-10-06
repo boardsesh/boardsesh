@@ -397,6 +397,8 @@
           "title": "Pas de réseau, pas de catalogue",
           "body": "{{name}} n'est pas encore sur ton téléphone, donc il n'y a rien à chercher ici.",
           "cta": "La récupérer dès que j’ai du réseau",
+          "sprayTitle": "Pas de réseau, pas de blocs",
+          "sprayBody": "{{name}} n'est pas encore sur ton téléphone, donc ses blocs ne s'ouvrent pas ici.",
           "armedToast": "{{name}} est en file d’attente : le téléchargement démarre dès que tu es reconnecté."
         },
         "spotlight": {

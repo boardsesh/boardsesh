@@ -69,6 +69,27 @@ export function defaultIsDraft(boardName: string): boolean {
   return !isSprayBoard(boardName);
 }
 
+/**
+ * Whether the "No kickboard" rule means anything on this board.
+ *
+ * A kickboard is the strip of fixed feet under a catalogue board. A spray wall
+ * is a photograph of a home wall with no such strip, so the editor hides the
+ * switch there (#5960).
+ */
+export function offersNoKickboardRule(boardName: string): boolean {
+  return !isSprayBoard(boardName);
+}
+
+/**
+ * Whether the editor offers its Bluetooth lightbulb on this board.
+ *
+ * The editor's bulb only ever starts a Bluetooth connect. A spray wall has no
+ * LED kit and no controller, so the bulb there is a dead control (#5960).
+ */
+export function offersBoardLightbulb(boardName: string): boolean {
+  return !isSprayBoard(boardName);
+}
+
 /** Does the working frame mark any foot holds? */
 export function hasFootHolds(litUpHoldsMap: LitUpHoldsMap): boolean {
   for (const hold of Object.values(litUpHoldsMap)) {

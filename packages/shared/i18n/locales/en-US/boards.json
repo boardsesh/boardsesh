@@ -397,6 +397,8 @@
           "title": "No signal, no catalog",
           "body": "{{name}} isn't on your phone yet, so there's nothing to search down here.",
           "cta": "Grab it when I have signal",
+          "sprayTitle": "No signal, no climbs",
+          "sprayBody": "{{name}} isn't on your phone yet, so its climbs can't open down here.",
           "armedToast": "{{name}} is queued — it downloads the moment you're back online."
         },
         "spotlight": {

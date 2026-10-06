@@ -103,7 +103,8 @@ import type { OpenClimbActionsOptions } from '../../providers/drawer-host-provid
 import { useAuth } from '../../providers/auth-provider';
 import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { useToast } from '../../providers/toast-provider';
-import { useToggleFavorite, useFavoriteStatus, useClimb } from '../../lib/graphql/hooks';
+import { canReportDisplayedClimb } from './can-report-climb';
+import { useToggleFavorite, useFavoriteStatus, useClimb, useProfile } from '../../lib/graphql/hooks';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { resolveTickDefaultGradeName } from '../../lib/boardsesh-grade-display';
@@ -534,6 +535,8 @@ export function PlayDrawer({
   // tick picker's default grade below.
   const { boardseshActive } = useDisplayGrade();
   const { isAuthenticated } = useAuth();
+  const { data: profile } = useProfile();
+  const currentUserId = profile?.id ?? null;
   // Kill switch: unresolved reads as enabled, so the Report row never pops in a
   // beat after the sheet opens. See useClimbModerationEnabled.
   const moderationEnabled = useClimbModerationEnabled();
@@ -1317,6 +1320,10 @@ export function PlayDrawer({
       showToast(t('playView.shareError'), 'error');
     });
   }, [shareClimb, displayedClimb, boardName, layoutId, showToast, t]);
+
+  // A draft is visible to its setter alone: a share link opens nowhere for
+  // anyone else, and the only person who can report it is the setter (#5960).
+  const displayedClimbIsDraft = displayedClimb?.is_draft === true;
 
   // Long-press the climb name to copy it — handy for pasting into a chat when
   // sharing beta. Delegates to the unit-tested copyClimbName helper; haptic for
@@ -2164,7 +2171,7 @@ export function PlayDrawer({
                             onLightbulbLongPress={handleLightbulbLongPress}
                             onOpenActions={handleOpenActions}
                             onOpenQueue={onOpenQueue}
-                            onShare={handleShare}
+                            onShare={displayedClimbIsDraft ? undefined : handleShare}
                             onTickPress={handleTickFabPress}
                             onTickLongPress={handleTickFabLongPress}
                             viewer={viewer}
@@ -2271,6 +2278,7 @@ export function PlayDrawer({
           sizeId={sizeId}
           setIds={setIds}
           angle={angle}
+          currentUserId={currentUserId}
           onAddToQueue={() => {
             if (displayedClimb) {
               void addToQueue({
@@ -2281,9 +2289,18 @@ export function PlayDrawer({
           }}
           onToggleFavorite={handleToggleFavorite}
           onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
-          onReportClimb={isAuthenticated && moderationEnabled ? handleOpenReportClimb : undefined}
+          onReportClimb={
+            canReportDisplayedClimb({
+              isAuthenticated,
+              moderationEnabled,
+              climb: displayedClimb,
+              currentUserId,
+            })
+              ? handleOpenReportClimb
+              : undefined
+          }
           onOpenQueue={openQueueFromActions}
-          onShare={showConnectPill ? handleShare : undefined}
+          onShare={showConnectPill && !displayedClimbIsDraft ? handleShare : undefined}
           dismissPlayerAndWait={dismissPlayerAndWait}
           onClose={handleCloseSubDrawer}
         />

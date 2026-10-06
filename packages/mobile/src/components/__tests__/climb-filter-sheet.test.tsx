@@ -1495,3 +1495,43 @@ describe('ClimbFilterSheet with a locked Tall/Wide', () => {
     expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ onlyWideClimbs: true }), currentBoardFilters);
   });
 });
+
+// #5960: a spray wall has no benchmarks and no routes, so the sheet does not offer
+// either there, unless a filter picked on another board still needs undoing.
+describe('ClimbFilterSheet on a spray wall', () => {
+  const sprayBoardConfig = { ...boardConfig, boardName: 'spray', layoutId: 4200, sizeId: 4200, setIds: '1' };
+
+  it('offers Benchmarks and the climb type on a catalogue board', () => {
+    const { queryByTestId } = renderFilterSheet();
+
+    expect(queryByTestId('segment-benchmarks')).not.toBeNull();
+    expect(queryByTestId('segment-routes')).not.toBeNull();
+  });
+
+  it('drops Benchmarks and the climb type on a spray wall', () => {
+    const { queryByTestId } = renderFilterSheet({ boardConfig: sprayBoardConfig });
+
+    expect(queryByTestId('segment-benchmarks')).toBeNull();
+    expect(queryByTestId('segment-routes')).toBeNull();
+    // The rest of the collection control stays.
+    expect(queryByTestId('segment-drafts')).not.toBeNull();
+  });
+
+  it('keeps a non-default climb type on screen so it can be undone', () => {
+    const { getByTestId } = renderFilterSheet({
+      boardConfig: sprayBoardConfig,
+      currentFilters: { ...currentFilters, boulders: false, routes: true },
+    });
+
+    expect(getByTestId('segment-routes').getAttribute('data-selected')).toBe('true');
+  });
+
+  it('keeps an active Benchmarks filter on screen so it can be undone', () => {
+    const { getByTestId } = renderFilterSheet({
+      boardConfig: sprayBoardConfig,
+      currentBoardFilters: { ...currentBoardFilters, onlyBenchmarks: true },
+    });
+
+    expect(getByTestId('segment-benchmarks').getAttribute('data-selected')).toBe('true');
+  });
+});

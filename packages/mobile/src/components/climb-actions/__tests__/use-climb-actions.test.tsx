@@ -180,6 +180,27 @@ describe('useClimbActions gating', () => {
     expect(signedIn[signedIn.length - 1]).toBe('report');
   });
 
+  // #5960: a draft is visible to its setter alone, and nobody reports themselves.
+  it("offers neither Share nor Report on the viewer's own draft", () => {
+    const own = ids({ climb: ownerClimb, boardConfig: sprayBoard, isAuthenticated: true, currentUserId: 'user-1' });
+    expect(own).not.toContain('share');
+    expect(own).not.toContain('report');
+  });
+
+  it("drops Report but keeps Share on the viewer's own published climb", () => {
+    const published = { ...ownerClimb, is_draft: false } as unknown as Climb;
+    const own = ids({ climb: published, boardConfig: kilterBoard, isAuthenticated: true, currentUserId: 'user-1' });
+    expect(own).toContain('share');
+    expect(own).not.toContain('report');
+  });
+
+  it("keeps Report on somebody else's published climb", () => {
+    const theirs = { ...climb, userId: 'setter-2', is_draft: false } as unknown as Climb;
+    const viewed = ids({ climb: theirs, boardConfig: kilterBoard, isAuthenticated: true, currentUserId: 'user-1' });
+    expect(viewed).toContain('share');
+    expect(viewed).toContain('report');
+  });
+
   it('drops "Report climb" when the moderation kill switch is flipped', () => {
     ctrl.moderationEnabled = false;
     expect(ids({ climb, boardConfig: kilterBoard, isAuthenticated: true })).not.toContain('report');
@@ -289,7 +310,7 @@ describe('useClimbActions gating', () => {
 
     expect(woodsIds).toContain('fork');
     expect(woodsIds).toContain('edit');
-    expect(woodsIds).toEqual(expect.arrayContaining(['preview', 'queue', 'playlist', 'favorite', 'tick', 'share']));
+    expect(woodsIds).toEqual(expect.arrayContaining(['preview', 'queue', 'playlist', 'favorite', 'tick']));
   });
 
   it('returns nothing without a climb or board config', () => {

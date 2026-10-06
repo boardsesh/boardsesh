@@ -294,6 +294,7 @@ vi.mock('../use-wall-climb', () => ({ useWallClimb: () => wall }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: false }) }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../lib/graphql/hooks', () => ({
+  useProfile: () => ({ data: undefined }),
   useToggleFavorite: () => ({ mutate: vi.fn() }),
   useFavoriteStatus: (_boardName: string, _uuid: string | null, _angle: number, options?: Props) => {
     recorded.favoriteStatus.push(options ?? {});
