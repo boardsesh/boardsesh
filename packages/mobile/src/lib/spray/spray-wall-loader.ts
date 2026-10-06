@@ -17,18 +17,23 @@ import { getConnectivitySnapshot, subscribeConnectivity } from '../connectivity/
 import { isNetworkError } from '@boardsesh/offline-sync/error-classification';
 import type { QueryClient } from '@tanstack/react-query';
 import {
+  GET_SPRAY_WALL_ARCHIVE,
   GET_SPRAY_WALL_BY_LAYOUT,
   GET_SPRAY_WALL_LOOK,
   GET_SPRAY_WALL_RENDER_DATA,
+  type GetSprayWallArchiveQueryResponse,
+  type SprayWallArchiveFields,
 } from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWall, SprayWallRenderData } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../graphql/client';
 import {
+  LIVE_SPRAY_WALL_ARCHIVE_STATE,
   REGISTERED_WALL_REVALIDATE_MS,
   refreshSprayWall,
   settleSprayWallDiscoveryMiss,
   registerSprayWall,
   resetSprayWallViewerAccess,
+  setSprayWallArchiveState,
   setSprayWallLoader,
   setSprayWallLook,
   sprayVersionToken,
@@ -210,15 +215,12 @@ function reportDroppedHolds(renderData: SprayWallRenderData, expected: number, m
 }
 
 /**
- * The wall's archive and hold-lock state, off its payload.
+ * The wall's archive and hold-lock state, off a `GET_SPRAY_WALL_ARCHIVE` answer.
  *
- * A backend or a cached payload without the fields reads as a live wall with
- * free holds. An archived wall reads as locked whatever `holdsLocked` says, the
- * same rule the server applies.
+ * An archived wall reads as locked whatever `holdsLocked` says, the same rule
+ * the server applies.
  */
-export function sprayWallArchiveStateOf(
-  wall: Pick<SprayWall, 'archivedAt' | 'resetOfWallUuid' | 'replacedByWallUuid' | 'holdsLocked'>,
-): SprayWallArchiveState {
+export function sprayWallArchiveStateOf(wall: SprayWallArchiveFields): SprayWallArchiveState {
   const archivedAt = wall.archivedAt ?? null;
   return {
     archivedAt,
@@ -254,7 +256,8 @@ export function mapSprayWallRenderData(
     homography: renderData.homography,
     renderSettings: null,
     viewerCanEdit: renderData.wall.viewerCanEdit === true,
-    archive: sprayWallArchiveStateOf(renderData.wall),
+    // Draft payloads are an unpublished wall's: nothing is archived or locked.
+    archive: LIVE_SPRAY_WALL_ARCHIVE_STATE,
     registeredAtMs: receivedAtMs,
   };
 }
@@ -266,6 +269,11 @@ export function mapSprayWallRenderData(
  * reads it alongside the render data), so the wall registers drawn the right way
  * once. Left out, the wall registers keeping whatever look it already had and the
  * look is read in the background.
+ *
+ * `archive` is the same for the wall's archive state (`fetchSprayWallArchive`):
+ * left out, it is read in the background; `null` means the read failed (an
+ * older backend, no signal), and the wall registers keeping what it had, or as
+ * live with free holds. Either way the wall itself registers and draws.
  */
 export function registerRenderData(
   layoutId: number,
@@ -276,6 +284,7 @@ export function registerRenderData(
   // caller that cannot say whose answer this is does not get to show Edit.
   fetchedUnderViewerGeneration?: number,
   fetchedUnderRemovalGeneration?: number,
+  archive?: SprayWallArchiveState | null,
 ): boolean {
   if (
     fetchedUnderRemovalGeneration !== undefined &&
@@ -296,7 +305,6 @@ export function registerRenderData(
 
   reportDroppedHolds(renderData, canonicalHolds.length, holds.length);
 
-  const archive = sprayWallArchiveStateOf(renderData.wall);
   registerSprayWall(layoutId, {
     wallUuid: renderData.wall.uuid,
     // The wall's own angle, not the caller's. Every climb set on the wall has to
@@ -326,7 +334,8 @@ export function registerRenderData(
     holds,
     homography: renderData.homography,
     renderSettings: look,
-    archive,
+    archive: archive ?? undefined,
+    hiddenAt: renderData.wall.hiddenAt ?? null,
     // Strictly `true`: a payload from a backend that predates the field, or a
     // cached one missing it, must read as "cannot edit".
     viewerAccess:
@@ -338,14 +347,8 @@ export function registerRenderData(
           },
   });
   if (look === undefined) void loadSprayWallLook(layoutId, renderData.wall.uuid);
-
-  // Kept for the offline loader: SQLite has no column for either fact, so a
-  // downloaded wall opened with no signal reads them from here.
-  try {
-    rememberSprayWallArchive(renderData.wall.uuid, archive);
-  } catch (error) {
-    reportHandledError(error, { level: 'warning', tags: { boardName: 'spray' } });
-  }
+  if (archive === undefined) void loadSprayWallArchive(layoutId, renderData.wall.uuid);
+  else if (archive) keepSprayWallArchiveOffline(renderData.wall.uuid, archive);
 
   // The create-climb draft slot is keyed on the version, so a reset moves it and
   // leaves the old one holding holds that are no longer on the wall. Nothing else
@@ -454,6 +457,109 @@ export function clearSprayWallLooks(): void {
   lookWrites.clear();
 }
 
+// ============================================
+// The archive state, from its own query
+// ============================================
+
+/**
+ * How long a FAILED archive read stands before the next ask tries again. Short
+ * for the look's reason: usually a dropped connection. A backend that predates
+ * the fields fails every time, and is asked at most this often per wall.
+ */
+export const ARCHIVE_RETRY_AFTER_FAILURE_MS = 30 * 1000;
+
+type KnownArchive = { archive: SprayWallArchiveState | null; settledAtMs: number; freshForMs: number };
+
+const archives = new Map<string, KnownArchive>();
+const archivesInFlight = new Map<string, Promise<SprayWallArchiveState | null>>();
+let archiveEpoch = 0;
+
+/**
+ * Keep an archived wall's state for the offline loader: SQLite has no column for
+ * it, so a downloaded wall opened with no signal reads it from here. A live wall
+ * is removed. Never throws.
+ */
+function keepSprayWallArchiveOffline(wallUuid: string, archive: SprayWallArchiveState): void {
+  try {
+    rememberSprayWallArchive(wallUuid, {
+      archivedAt: archive.archivedAt,
+      replacedByWallUuid: archive.replacedByWallUuid,
+    });
+  } catch (error) {
+    reportHandledError(error, { level: 'warning', tags: { boardName: 'spray' } });
+  }
+}
+
+/**
+ * A wall's archive and hold-lock state (`GET_SPRAY_WALL_ARCHIVE`), or `null`
+ * when it could not be read.
+ *
+ * Never rejects: a failed read, including the validation error of a backend
+ * that does not serve the fields, is "not known", and the caller registers the
+ * wall without it. Answers are kept for the registry's revalidation window;
+ * `force` asks again whatever is kept, for a caller that knows the wall just
+ * changed (a publish, a refusal that said the wall is archived or locked).
+ */
+export function fetchSprayWallArchive(
+  wallUuid: string,
+  { force = false }: { force?: boolean } = {},
+): Promise<SprayWallArchiveState | null> {
+  const known = archives.get(wallUuid);
+  if (!force && known && Date.now() - known.settledAtMs < known.freshForMs) return Promise.resolve(known.archive);
+  const pending = archivesInFlight.get(wallUuid);
+  if (pending && !force) return pending;
+
+  const epochAtStart = archiveEpoch;
+  const request = Promise.resolve()
+    .then(() => getHttpClient().request<GetSprayWallArchiveQueryResponse>(GET_SPRAY_WALL_ARCHIVE, { uuid: wallUuid }))
+    .then(
+      (response) => ({
+        archive: response?.sprayWall ? sprayWallArchiveStateOf(response.sprayWall) : null,
+        freshForMs: REGISTERED_WALL_REVALIDATE_MS,
+      }),
+      () => ({ archive: null, freshForMs: ARCHIVE_RETRY_AFTER_FAILURE_MS }),
+    )
+    .then(({ archive, freshForMs }) => {
+      if (archiveEpoch === epochAtStart) archives.set(wallUuid, { archive, settledAtMs: Date.now(), freshForMs });
+      return archive;
+    })
+    .finally(() => {
+      if (archivesInFlight.get(wallUuid) === request) archivesInFlight.delete(wallUuid);
+    });
+  archivesInFlight.set(wallUuid, request);
+  return request;
+}
+
+/** Read a wall's archive state and hand it to the registered wall, if it is still that wall. */
+export async function loadSprayWallArchive(
+  layoutId: number,
+  wallUuid: string,
+  options?: { force?: boolean },
+): Promise<void> {
+  const archive = await fetchSprayWallArchive(wallUuid, options);
+  if (!archive) return;
+  setSprayWallArchiveState(layoutId, wallUuid, archive);
+  keepSprayWallArchiveOffline(wallUuid, archive);
+}
+
+/**
+ * Record an archive state this device just caused (a reset's replacement
+ * published here), so a read within the window does not hand back the live
+ * answer from before, and so the offline loader knows it before any refetch.
+ */
+export function primeSprayWallArchive(wallUuid: string, archive: SprayWallArchiveState): void {
+  archivesInFlight.delete(wallUuid);
+  archives.set(wallUuid, { archive, settledAtMs: Date.now(), freshForMs: REGISTERED_WALL_REVALIDATE_MS });
+  keepSprayWallArchiveOffline(wallUuid, archive);
+}
+
+/** Test seam: forget every archive answer this session has read. */
+export function clearSprayWallArchiveAnswers(): void {
+  archiveEpoch += 1;
+  archives.clear();
+  archivesInFlight.clear();
+}
+
 /** The wall's uuid for a layout id, through React Query so two callers share one request. */
 export function fetchSprayWallUuid(queryClient: QueryClient, layoutId: number): Promise<string | null> {
   return queryClient
@@ -536,6 +642,9 @@ async function loadSprayWallOnline(
   // draws in the viewer's settings, then draws again when the look lands, which
   // on a cold start doubles every spray surface's renders. Never rejects.
   const lookRead = fetchSprayWallLook(wallUuid);
+  // Same for the archive state, from its own fail-soft query. A forced load is
+  // one that follows a change (a publish, a refusal), so it asks again too.
+  const archiveRead = fetchSprayWallArchive(wallUuid, { force: options?.force });
   let renderData = await renderDataRead;
   if (!isCurrent()) return;
   if (viewerGeneration !== sprayWallViewerGeneration()) {
@@ -554,9 +663,9 @@ async function loadSprayWallOnline(
     unregisterSprayWall(layoutId);
     return;
   }
-  const look = await lookRead;
+  const [look, archive] = await Promise.all([lookRead, archiveRead]);
   if (!isCurrent()) return;
-  registerRenderData(layoutId, renderData, look, viewerGeneration, removalGeneration);
+  registerRenderData(layoutId, renderData, look, viewerGeneration, removalGeneration, archive);
 }
 
 /** Online authority wins; local mirrors are only a transport-unavailable fallback. */
@@ -638,6 +747,9 @@ export async function invalidateSprayWallRenderData(
  * next surface to ask for it fetches.
  */
 export function refreshSprayWallViewerAccess(): void {
+  // Who replaced a wall is only shown to a viewer who may see the replacement,
+  // so the archive answers go with the account too.
+  clearSprayWallArchiveAnswers();
   for (const layoutId of resetSprayWallViewerAccess()) refreshSprayWall(layoutId);
 }
 
@@ -654,6 +766,7 @@ export function refreshSprayWallViewerAccess(): void {
  * on sign-in or after the signed-out cleanup.
  */
 export function dropSprayWallViewerAccess(): void {
+  clearSprayWallArchiveAnswers();
   resetSprayWallViewerAccess({ markStale: false });
 }
 

@@ -9,7 +9,7 @@ const fixture = vi.hoisted(() => ({
   read: vi.fn(),
   register: vi.fn(),
   getSize: vi.fn(),
-  remembered: null as { archivedAt: string | null; replacedByWallUuid: string | null; holdsLocked: boolean } | null,
+  remembered: null as { archivedAt: string; replacedByWallUuid: string | null } | null,
 }));
 vi.mock('react-native', () => ({ Image: { getSize: fixture.getSize } }));
 vi.mock('../../../db', () => ({ getDatabaseHandle: () => ({}) }));
@@ -75,18 +75,15 @@ describe('offline published wall hydration', () => {
 
   // SQLite has no archive column, so what the server last said comes from the
   // settings store: an archived wall still refuses new climbs with no signal.
-  it('registers a downloaded wall as live when nothing was remembered about it', async () => {
+  // Nothing remembered: the registration says nothing about the archive, so the
+  // registry keeps what this session already knew, or reads the wall as live.
+  it('leaves the archive unsaid when nothing was remembered about the wall', async () => {
     expect(await loadLocalSprayWall(4, 1, 1)).toBe(true);
-    expect(fixture.register).toHaveBeenCalledWith(
-      4,
-      expect.objectContaining({
-        archive: { archivedAt: null, resetOfWallUuid: null, replacedByWallUuid: null, holdsLocked: false },
-      }),
-    );
+    expect(fixture.register).toHaveBeenCalledWith(4, expect.objectContaining({ archive: undefined }));
   });
 
   it('keeps a remembered archive offline, holds locked with it', async () => {
-    fixture.remembered = { archivedAt: '2026-10-01T09:00:00.000Z', replacedByWallUuid: 'new-wall', holdsLocked: false };
+    fixture.remembered = { archivedAt: '2026-10-01T09:00:00.000Z', replacedByWallUuid: 'new-wall' };
     expect(await loadLocalSprayWall(4, 1, 1)).toBe(true);
     expect(fixture.register).toHaveBeenCalledWith(
       4,

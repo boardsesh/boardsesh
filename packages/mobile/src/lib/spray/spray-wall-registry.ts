@@ -179,6 +179,12 @@ export type RegisteredSprayWall = {
    */
   archive: SprayWallArchiveState;
   /**
+   * When an admin hid this wall after a report (`SprayWall.hiddenAt`), or null.
+   * Only ever set for the wall's OWNER, who is told on the board sheet. Optional
+   * because a fixture or a local registration does not know it.
+   */
+  hiddenAt?: string | null;
+  /**
    * When this registration was made, for revalidation. Stamped by
    * `registerSprayWall`, never by the caller — a caller-supplied timestamp is a
    * caller that can accidentally pin a wall as fresh forever.
@@ -304,8 +310,10 @@ export function registerSprayWall(
   // not say the viewer may edit, or cannot say whose answer it is, must not put
   // an Edit action on screen. Never carried over from the previous registration.
   //
-  // `archive` left out means a live wall with editable holds, the answer a
-  // payload from before the fields existed gives.
+  // `archive` left out means "not known by this registration", like the look:
+  // the archive state arrives from its own query (`GET_SPRAY_WALL_ARCHIVE`), so
+  // a revalidation keeps what the same wall already had, and a wall nobody has
+  // answered for yet reads as live with free holds.
   wall: Omit<RegisteredSprayWall, 'layoutId' | 'registeredAtMs' | 'renderSettings' | 'viewerCanEdit' | 'archive'> & {
     renderSettings?: SprayWallRenderSettingsValue | null;
     viewerAccess?: SprayWallViewerAccess;
@@ -321,8 +329,8 @@ export function registerSprayWall(
   const nextLook = wall.renderSettings === undefined ? previousLook : wall.renderSettings;
   const renderSettings = sameLook(previousLook, nextLook) ? previousLook : nextLook;
   const { viewerAccess, archive: incomingArchive, ...registration } = wall;
-  const nextArchive = incomingArchive ?? LIVE_SPRAY_WALL_ARCHIVE_STATE;
   const previousArchive = previous?.wallUuid === wall.wallUuid ? previous.archive : null;
+  const nextArchive = incomingArchive ?? previousArchive ?? LIVE_SPRAY_WALL_ARCHIVE_STATE;
   const archive = previousArchive && sameArchiveState(previousArchive, nextArchive) ? previousArchive : nextArchive;
   // A payload fetched under an account that has since changed. The wall itself
   // is still the wall (photo and holds do not depend on who is looking), so it
@@ -423,6 +431,30 @@ export function markSprayWallArchived(
     archive: { ...wall.archive, archivedAt, replacedByWallUuid, holdsLocked: true },
   });
   notify();
+}
+
+/**
+ * Set a registered wall's archive state without re-registering it: the answer
+ * of the wall's own archive query, which arrives after the wall.
+ *
+ * Ignored when no wall is registered under the layout or a different wall is,
+ * and a no-op when nothing changed, so subscribers only wake for a real change.
+ */
+export function setSprayWallArchiveState(layoutId: number, wallUuid: string, archive: SprayWallArchiveState): void {
+  const wall = walls.get(layoutId);
+  if (!wall || wall.wallUuid !== wallUuid || sameArchiveState(wall.archive, archive)) return;
+  walls.set(layoutId, { ...wall, archive });
+  notify();
+}
+
+/**
+ * When an admin hid the wall a board config points at, or null. Only the owner
+ * is ever told (`hiddenAt` resolves for nobody else). A string, so it is safe as
+ * a `useSyncExternalStore` snapshot as it stands.
+ */
+export function sprayWallHiddenAt(boardName: string, layoutId: number): string | null {
+  if (boardName !== SPRAY_BOARD_NAME) return null;
+  return walls.get(layoutId)?.hiddenAt ?? null;
 }
 
 /** The registered wall with this uuid, or `null`. Linear in the walls this session holds. */

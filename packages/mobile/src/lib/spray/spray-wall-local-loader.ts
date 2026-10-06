@@ -63,7 +63,8 @@ export async function loadLocalSprayWall(
     const versionId: SprayVersionIdentity = `local-${photoMatch[2]}-${wall.version}`;
     // The mirror has no archive columns: what the server last said is kept
     // beside the offline boards (`rememberSprayWallArchive`), so an archived wall
-    // still refuses new climbs offline. Nothing remembered is a live wall.
+    // still refuses new climbs offline. Nothing remembered keeps what this session
+    // already knew about the wall, or reads it as live.
     const remembered = getRememberedSprayWallArchive(wall.boardUuid);
     registerSprayWall(layoutId, {
       wallUuid: wall.boardUuid,
@@ -84,9 +85,9 @@ export async function loadLocalSprayWall(
             ...LIVE_SPRAY_WALL_ARCHIVE_STATE,
             archivedAt: remembered.archivedAt,
             replacedByWallUuid: remembered.replacedByWallUuid,
-            holdsLocked: remembered.holdsLocked || remembered.archivedAt != null,
+            holdsLocked: true,
           }
-        : LIVE_SPRAY_WALL_ARCHIVE_STATE,
+        : undefined,
     });
     return true;
   } catch {

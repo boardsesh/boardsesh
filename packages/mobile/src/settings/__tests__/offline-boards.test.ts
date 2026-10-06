@@ -31,6 +31,7 @@ import {
   pruneOfflineBoards,
   clearOfflineBoards,
   clearSprayWallArchives,
+  forgetSprayWallArchive,
   getRememberedSprayWallArchive,
   rememberSprayWallArchive,
 } from '../offline-boards';
@@ -204,14 +205,12 @@ describe('remembered spray wall archive state', () => {
     setSpy.mockClear();
   });
 
-  const archived = { archivedAt: '2026-10-01T09:00:00.000Z', replacedByWallUuid: 'new-wall', holdsLocked: true };
+  const archived = { archivedAt: '2026-10-01T09:00:00.000Z', replacedByWallUuid: 'new-wall' };
 
-  it('keeps an archived or locked wall, and nothing for a live wall with free holds', () => {
+  it('keeps archived walls only', () => {
     rememberSprayWallArchive('old-wall', archived);
-    rememberSprayWallArchive('locked-wall', { archivedAt: null, replacedByWallUuid: null, holdsLocked: true });
-    rememberSprayWallArchive('live-wall', { archivedAt: null, replacedByWallUuid: null, holdsLocked: false });
+    rememberSprayWallArchive('live-wall', { archivedAt: null, replacedByWallUuid: null });
     expect(getRememberedSprayWallArchive('old-wall')).toEqual(archived);
-    expect(getRememberedSprayWallArchive('locked-wall')?.holdsLocked).toBe(true);
     expect(getRememberedSprayWallArchive('live-wall')).toBeNull();
   });
 
@@ -220,23 +219,34 @@ describe('remembered spray wall archive state', () => {
     rememberSprayWallArchive('old-wall', archived);
     setSpy.mockClear();
     rememberSprayWallArchive('old-wall', { ...archived });
-    rememberSprayWallArchive('live-wall', { archivedAt: null, replacedByWallUuid: null, holdsLocked: false });
+    rememberSprayWallArchive('live-wall', { archivedAt: null, replacedByWallUuid: null });
     expect(setSpy).not.toHaveBeenCalled();
   });
 
-  it('forgets a wall the server says is live again', () => {
-    rememberSprayWallArchive('locked-wall', { archivedAt: null, replacedByWallUuid: null, holdsLocked: true });
-    rememberSprayWallArchive('locked-wall', { archivedAt: null, replacedByWallUuid: null, holdsLocked: false });
-    expect(getRememberedSprayWallArchive('locked-wall')).toBeNull();
+  it('forgets a wall the server says is not archived, or that was deleted', () => {
+    rememberSprayWallArchive('old-wall', archived);
+    rememberSprayWallArchive('old-wall', { archivedAt: null, replacedByWallUuid: null });
+    expect(getRememberedSprayWallArchive('old-wall')).toBeNull();
+    rememberSprayWallArchive('deleted-wall', archived);
+    forgetSprayWallArchive('deleted-wall');
+    expect(getRememberedSprayWallArchive('deleted-wall')).toBeNull();
   });
 
   it('drops an entry written in a shape this build does not know', () => {
-    mockStorage.set('offlineSprayWallArchiveV1', JSON.stringify({ broken: { archivedAt: 4 }, 'old-wall': archived }));
+    mockStorage.set(
+      'offlineSprayWallArchiveV1',
+      JSON.stringify({
+        broken: { archivedAt: 4 },
+        live: { archivedAt: null, replacedByWallUuid: null },
+        'old-wall': archived,
+      }),
+    );
     expect(getRememberedSprayWallArchive('broken')).toBeNull();
+    expect(getRememberedSprayWallArchive('live')).toBeNull();
     expect(getRememberedSprayWallArchive('old-wall')).toEqual(archived);
   });
 
-  it('stays bounded, dropping the oldest wall first', () => {
+  it('stays bounded, dropping the least recently written wall first', () => {
     for (let index = 0; index < 70; index += 1) {
       rememberSprayWallArchive(`wall-${index}`, { ...archived, replacedByWallUuid: `next-${index}` });
     }
@@ -246,7 +256,18 @@ describe('remembered spray wall archive state', () => {
     expect(Object.keys(stored)).toHaveLength(64);
   });
 
-  it('clears everything at sign-out', () => {
+  // The offline loader can only ever draw a downloaded wall: its entry is the
+  // one worth keeping when the cap bites.
+  it('keeps a downloaded wall over an older entry for a wall that is not downloaded', () => {
+    rememberOfflineBoards([board({ uuid: 'wall-0', name: 'Old garage' })]);
+    for (let index = 0; index < 70; index += 1) {
+      rememberSprayWallArchive(`wall-${index}`, { ...archived, replacedByWallUuid: `next-${index}` });
+    }
+    expect(getRememberedSprayWallArchive('wall-0')).not.toBeNull();
+    expect(getRememberedSprayWallArchive('wall-1')).toBeNull();
+  });
+
+  it('clears everything at the account boundary', () => {
     rememberSprayWallArchive('old-wall', archived);
     clearSprayWallArchives();
     expect(getRememberedSprayWallArchive('old-wall')).toBeNull();

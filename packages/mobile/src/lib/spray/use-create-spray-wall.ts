@@ -14,12 +14,15 @@ import {
   CREATE_SPRAY_WALL_VERSION,
   DELETE_SPRAY_WALL,
   DISCARD_SPRAY_WALL_VERSION,
+  GET_MY_SPRAY_WALL_LIFECYCLE,
   GET_MY_SPRAY_WALLS,
   GET_SPRAY_WALL_WITH_VERSIONS,
   PUBLISH_SPRAY_WALL_VERSION,
   RESET_SPRAY_WALL,
   SET_SPRAY_WALL_RENDER_SETTINGS,
   UPDATE_SPRAY_WALL,
+  type GetMySprayWallLifecycleQueryResponse,
+  type SprayWallLifecycleRow,
 } from '@boardsesh/graphql/operations/spray-walls';
 import type {
   CreateSprayWallInput,
@@ -35,6 +38,16 @@ import { primeSprayWallLook } from './spray-wall-loader';
 
 /** The owner's wall list, invalidated the moment a wall becomes one. */
 export const mySprayWallsQueryKey = ['mySprayWalls'] as const;
+
+/**
+ * The narrow lifecycle list (`GET_MY_SPRAY_WALL_LIFECYCLE`). Under the
+ * `mySprayWalls` prefix on purpose: every invalidation of the owner's walls
+ * reaches it too.
+ */
+export const mySprayWallLifecycleQueryKey = ['mySprayWalls', 'lifecycle'] as const;
+
+/** How long the lifecycle list is taken at face value. Archiving is rare; pull to refresh asks at once. */
+export const MY_SPRAY_WALL_LIFECYCLE_STALE_TIME_MS = 5 * 60 * 1000;
 
 /** One wall with its version history, as the hold editor reads it. */
 export const sprayWallWithVersionsQueryKey = (wallUuid: string | null) => ['sprayWallWithVersions', wallUuid] as const;
@@ -142,6 +155,29 @@ export function useMySprayWalls(options?: { enabled?: boolean }) {
     },
     enabled: options?.enabled ?? true,
     staleTime: 0,
+  });
+}
+
+/**
+ * The owner's walls with their archive facts and nothing that costs a presigned
+ * URL: My Boards' Archived section, and the add-a-wall resume check (which must
+ * not offer a reset's unfinished clone as a new wall).
+ *
+ * Fail-soft by construction: on a backend that does not serve the archive fields
+ * this one query fails and nothing else does. `retry: false` keeps such a
+ * backend from being asked three more times; the data stays undefined, which
+ * every reader takes as "no archived walls, no clones known".
+ */
+export function useMySprayWallLifecycle(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: mySprayWallLifecycleQueryKey,
+    queryFn: async (): Promise<SprayWallLifecycleRow[]> => {
+      const response = await getHttpClient().request<GetMySprayWallLifecycleQueryResponse>(GET_MY_SPRAY_WALL_LIFECYCLE);
+      return response.mySprayWalls;
+    },
+    enabled: options?.enabled ?? true,
+    staleTime: MY_SPRAY_WALL_LIFECYCLE_STALE_TIME_MS,
+    retry: false,
   });
 }
 

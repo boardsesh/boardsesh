@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 
 const invalidateRenderData = vi.hoisted(() => vi.fn(async () => undefined));
+const primeArchive = vi.hoisted(() => vi.fn());
 vi.mock('../spray-wall-loader', () => ({
   invalidateSprayWallRenderData: invalidateRenderData,
+  primeSprayWallArchive: primeArchive,
   sprayWallRenderDataQueryKey: (wallUuid: string) => ['sprayWallRenderData', wallUuid, 'privacy-0'],
 }));
 vi.mock('../use-create-spray-wall', () => ({
@@ -32,6 +34,7 @@ function registerOldWall() {
 beforeEach(() => {
   clearSprayWallRegistry();
   invalidateRenderData.mockClear();
+  primeArchive.mockClear();
 });
 afterEach(() => clearSprayWallRegistry());
 
@@ -48,6 +51,17 @@ describe('settleArchivedSprayWall', () => {
       archivedAt: expect.any(String),
     });
     expect(invalidateRenderData).toHaveBeenCalledExactlyOnceWith(client, 'old-wall', 31);
+  });
+
+  // markSprayWallArchived is registry-only; the offline copy and the archive
+  // answer are written here, before any re-read, so publish then offline then
+  // restart still reads the old wall as archived.
+  it('primes the archive answer and its offline copy before the re-read', () => {
+    settleArchivedSprayWall(new QueryClient(), 'old-wall', 'new-wall');
+    expect(primeArchive).toHaveBeenCalledExactlyOnceWith(
+      'old-wall',
+      expect.objectContaining({ archivedAt: expect.any(String), replacedByWallUuid: 'new-wall', holdsLocked: true }),
+    );
   });
 
   it('refreshes the board lists either way, and the render cache of a wall it does not hold', () => {

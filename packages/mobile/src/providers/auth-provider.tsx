@@ -252,6 +252,10 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // has removed the shared key. The clear is queued behind any pre-existing
       // write and is awaited before account B is published.
       suspendLinkEmptyDismissalWrites();
+      // What the server last said about which walls are archived (the offline
+      // loader's copy). Some of it is per account: who replaced a wall is only
+      // shown to a viewer who may see the replacement.
+      clearSprayWallArchives();
       return Promise.allSettled([
         clearUserDataExportDownloads(exportCredentialGeneration),
         clearStoredSessionId(owner),
@@ -450,8 +454,6 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // previous account's board NAMES, so on a shared device a missed clear would
       // show one user's walls in the next user's picker.
       clearOfflineBoards();
-      // The archive state of the walls that account could see goes with them.
-      clearSprayWallArchives();
       // Drop the in-memory active-board cache too. It's `staleTime: Infinity`, so
       // without this the next user to sign in on a shared device would inherit the
       // previous user's board until a manual switch.

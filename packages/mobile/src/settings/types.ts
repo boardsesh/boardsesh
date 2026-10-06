@@ -1,11 +1,10 @@
 import type { RestTimerMode } from '../lib/rest-timer';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
-/** What `offlineSprayWallArchiveV1` keeps per wall. Mirrors the registry's archive state. */
+/** What `offlineSprayWallArchiveV1` keeps per archived wall. */
 export type RememberedSprayWallArchive = {
-  archivedAt: string | null;
+  archivedAt: string;
   replacedByWallUuid: string | null;
-  holdsLocked: boolean;
 };
 
 export type AppSettings = {
@@ -37,12 +36,11 @@ export type AppSettings = {
    */
   offlineDownloadAllTapPending: boolean;
   /**
-   * The last archive and hold-lock state the server reported for each spray
-   * wall that was archived or had locked holds, keyed by wall uuid
-   * (`rememberSprayWallArchive`). A downloaded wall opened with no signal is
-   * drawn from SQLite, which has no column for either, so without this an
+   * When the server last said each archived spray wall was archived, keyed by
+   * wall uuid (`rememberSprayWallArchive`). A downloaded wall opened with no
+   * signal is drawn from SQLite, which has no column for it, so without this an
    * archived wall would offer "set a climb" again the moment the phone went
-   * offline. Live walls with free holds are not stored, and sign-out clears it.
+   * offline. Only archived walls are stored, and the account boundary clears it.
    */
   offlineSprayWallArchiveV1: Record<string, RememberedSprayWallArchive>;
   /** Keep every board the user follows/uses available offline by default. */

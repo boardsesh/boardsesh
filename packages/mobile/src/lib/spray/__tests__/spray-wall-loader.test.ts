@@ -50,6 +50,7 @@ const {
 } = await import('../spray-wall-registry');
 const {
   LOOK_RETRY_AFTER_FAILURE_MS,
+  clearSprayWallArchiveAnswers,
   clearSprayWallLooks,
   dropSprayWallViewerAccess,
   loadSprayWall,
@@ -61,6 +62,7 @@ const {
   sprayWallRenderDataQueryKey,
 } = await import('../spray-wall-loader');
 const { createSprayWallDeletedSink } = await import('../../../offline/spray-photo-sink');
+const { clearSprayWallArchives, getRememberedSprayWallArchive } = await import('../../../settings/offline-boards');
 const sprayOperations = await import('@boardsesh/graphql/operations/spray-walls');
 
 const LAYOUT_ID = 4200;
@@ -118,6 +120,14 @@ function answerLook(answer: () => Promise<unknown>) {
   );
 }
 
+/** The archive request, answered by its operation like the look. */
+function answerArchive(answer: () => Promise<unknown>) {
+  const fallback = requestMock.getMockImplementation();
+  requestMock.mockImplementation((operation: unknown, variables: unknown) =>
+    operation === sprayOperations.GET_SPRAY_WALL_ARCHIVE ? answer() : fallback?.(operation, variables),
+  );
+}
+
 function lookRequests(): number {
   return requestMock.mock.calls.filter(([operation]) => operation === sprayOperations.GET_SPRAY_WALL_LOOK).length;
 }
@@ -140,6 +150,8 @@ beforeEach(() => {
   offlineState.localLoad.mockReset();
   clearSprayWallRegistry();
   clearSprayWallLooks();
+  clearSprayWallArchiveAnswers();
+  clearSprayWallArchives();
   requestMock.mockReset();
   reportHandledErrorMock.mockReset();
   invalidateQueriesMock.mockClear();
@@ -775,6 +787,88 @@ describe('loadSprayWall', () => {
       if (name === 'GET_SPRAY_WALL_LOOK' || name === 'SET_SPRAY_WALL_RENDER_SETTINGS') continue;
       expect(JSON.stringify(operation) ?? '', name).not.toContain('renderSettings');
     }
+  });
+
+  // Merge-order safety: a field the backend does not serve fails the WHOLE
+  // operation, so the archive fields live in their own query and nowhere else.
+  it('never asks for the archive fields inside a query or mutation that loads, creates or draws a wall', () => {
+    for (const [name, operation] of Object.entries(sprayOperations)) {
+      if (name === 'GET_SPRAY_WALL_ARCHIVE' || name === 'GET_MY_SPRAY_WALL_LIFECYCLE') continue;
+      const text = JSON.stringify(operation) ?? '';
+      for (const field of ['archivedAt', 'resetOfWallUuid', 'replacedByWallUuid', 'holdsLocked']) {
+        expect(text, `${name}.${field}`).not.toContain(field);
+      }
+    }
+  });
+
+  it('registers and draws the wall when the archive query fails, as live with free holds', async () => {
+    answerArchive(async () => {
+      throw new Error('Cannot query field "archivedAt" on type "SprayWall".');
+    });
+    requestMock
+      .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
+      .mockResolvedValueOnce(renderDataPayload());
+
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+
+    expect(getSprayWall(LAYOUT_ID)).toMatchObject({
+      version: 2,
+      archive: { archivedAt: null, replacedByWallUuid: null, holdsLocked: false },
+    });
+    expect(getRememberedSprayWallArchive(WALL_UUID)).toBeNull();
+    expect(reportHandledErrorMock).not.toHaveBeenCalled();
+  });
+
+  it('registers an archived wall as archived, and keeps it for the offline loader', async () => {
+    answerArchive(async () => ({
+      sprayWall: {
+        uuid: WALL_UUID,
+        archivedAt: '2026-10-01T09:00:00.000Z',
+        resetOfWallUuid: null,
+        replacedByWallUuid: 'new-wall',
+        holdsLocked: true,
+      },
+    }));
+    requestMock
+      .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
+      .mockResolvedValueOnce(renderDataPayload());
+
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+
+    expect(getSprayWall(LAYOUT_ID)?.archive).toEqual({
+      archivedAt: '2026-10-01T09:00:00.000Z',
+      resetOfWallUuid: null,
+      replacedByWallUuid: 'new-wall',
+      holdsLocked: true,
+    });
+    expect(getRememberedSprayWallArchive(WALL_UUID)).toEqual({
+      archivedAt: '2026-10-01T09:00:00.000Z',
+      replacedByWallUuid: 'new-wall',
+    });
+  });
+
+  // A failed read is "not known", not "live": a wall this session already knew
+  // as archived stays archived through a dropped connection.
+  it('keeps the archive this session already knew when a later read fails', async () => {
+    registerSprayWall(LAYOUT_ID, {
+      ...existingWall(),
+      archive: {
+        archivedAt: '2026-10-01T09:00:00.000Z',
+        resetOfWallUuid: null,
+        replacedByWallUuid: null,
+        holdsLocked: true,
+      },
+    });
+    answerArchive(async () => {
+      throw new Error('offline');
+    });
+    requestMock
+      .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
+      .mockResolvedValueOnce(renderDataPayload());
+
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID, { force: true });
+
+    expect(getSprayWall(LAYOUT_ID)).toMatchObject({ version: 2, archive: { archivedAt: '2026-10-01T09:00:00.000Z' } });
   });
 
   it('registers the wall with its stored look, sanitised, in one registration', async () => {

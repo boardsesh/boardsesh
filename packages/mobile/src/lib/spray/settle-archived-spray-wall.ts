@@ -1,7 +1,11 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { reportError } from '../error-reporting';
-import { findRegisteredSprayWallByUuid, markSprayWallArchived } from './spray-wall-registry';
-import { invalidateSprayWallRenderData, sprayWallRenderDataQueryKey } from './spray-wall-loader';
+import {
+  findRegisteredSprayWallByUuid,
+  LIVE_SPRAY_WALL_ARCHIVE_STATE,
+  markSprayWallArchived,
+} from './spray-wall-registry';
+import { invalidateSprayWallRenderData, primeSprayWallArchive, sprayWallRenderDataQueryKey } from './spray-wall-loader';
 import { mySprayWallsQueryKey, sprayWallWithVersionsQueryKey } from './use-create-spray-wall';
 
 /**
@@ -9,8 +13,9 @@ import { mySprayWallsQueryKey, sprayWallWithVersionsQueryKey } from './use-creat
  * it replaces. Make every surface here say so without waiting out a cache.
  *
  * - The old wall's registry entry is marked archived at once, so its sheet, its
- *   climb list and the create entry points change in the same frame, then
- *   re-read so the server's own `archivedAt` replaces the local stamp.
+ *   climb list and the create entry points change in the same frame, and the
+ *   archive answer and its offline copy are primed with the same, then the wall
+ *   is re-read so the server's own `archivedAt` replaces the local stamp.
  * - `myBoards` drops the old wall and `mySprayWalls` gains it as archived.
  *
  * Fire-and-forget: every call here is a cache invalidation, and under
@@ -21,12 +26,19 @@ export function settleArchivedSprayWall(
   archivedWallUuid: string,
   replacementUuid: string,
 ): void {
+  const archivedAt = new Date().toISOString();
   const registered = findRegisteredSprayWallByUuid(archivedWallUuid);
+  // The archive answer this session keeps, and the offline loader's copy, both
+  // learn it now: a phone that goes offline before the re-read below lands, then
+  // restarts, still reads the old wall as archived.
+  primeSprayWallArchive(archivedWallUuid, {
+    ...(registered?.archive ?? LIVE_SPRAY_WALL_ARCHIVE_STATE),
+    archivedAt,
+    replacedByWallUuid: replacementUuid,
+    holdsLocked: true,
+  });
   if (registered) {
-    markSprayWallArchived(registered.layoutId, archivedWallUuid, {
-      archivedAt: new Date().toISOString(),
-      replacedByWallUuid: replacementUuid,
-    });
+    markSprayWallArchived(registered.layoutId, archivedWallUuid, { archivedAt, replacedByWallUuid: replacementUuid });
     void invalidateSprayWallRenderData(queryClient, archivedWallUuid, registered.layoutId).catch(reportError);
   } else {
     void queryClient.invalidateQueries({ queryKey: sprayWallRenderDataQueryKey(archivedWallUuid) });

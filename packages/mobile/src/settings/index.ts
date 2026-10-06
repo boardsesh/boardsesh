@@ -34,6 +34,7 @@ export {
   forgetDownloadAllTap,
   getRememberedSprayWallArchive,
   rememberSprayWallArchive,
+  forgetSprayWallArchive,
   clearSprayWallArchives,
   type OfflineDownloadTrigger,
 } from './offline-boards';

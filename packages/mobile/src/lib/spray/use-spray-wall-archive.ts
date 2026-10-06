@@ -9,7 +9,9 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import {
   ensureSprayWallLoaded,
+  getSprayWallLoadState,
   sprayWallArchiveState,
+  sprayWallHiddenAt,
   subscribeToSprayWalls,
   type SprayWallArchiveState,
 } from './spray-wall-registry';
@@ -40,4 +42,37 @@ export function useSprayWallArchiveState(
 /** Whether the wall behind a board config is archived. `false` on every catalogue board and until it registers. */
 export function useSprayWallIsArchived(boardName: string | null | undefined, layoutId: number | null): boolean {
   return useSprayWallArchiveState(boardName, layoutId)?.archivedAt != null;
+}
+
+/**
+ * When an admin hid the wall behind a board config, or null. Only ever set for
+ * the wall's owner (`SprayWall.hiddenAt` resolves for nobody else).
+ */
+export function useSprayWallHiddenAt(boardName: string | null | undefined, layoutId: number | null): string | null {
+  const sprayLayoutId = boardName === 'spray' ? layoutId : null;
+  return useSyncExternalStore(
+    subscribeToSprayWalls,
+    useCallback(() => (sprayLayoutId == null ? null : sprayWallHiddenAt('spray', sprayLayoutId)), [sprayLayoutId]),
+  );
+}
+
+/**
+ * Whether the wall behind a board config has answered for its archive state:
+ * true once it registered (its archive state is then known, or read as live
+ * when the archive query failed), and true once its load settled without it
+ * (an unknown wall is not archived). Always true off a spray board.
+ */
+export function useSprayWallArchiveSettled(boardName: string | null | undefined, layoutId: number | null): boolean {
+  const sprayLayoutId = boardName === 'spray' ? layoutId : null;
+  useEffect(() => {
+    if (sprayLayoutId != null) ensureSprayWallLoaded(sprayLayoutId);
+  }, [sprayLayoutId]);
+  return useSyncExternalStore(
+    subscribeToSprayWalls,
+    useCallback(() => {
+      if (sprayLayoutId == null) return true;
+      const state = getSprayWallLoadState(sprayLayoutId);
+      return state === 'ready' || state === 'unavailable';
+    }, [sprayLayoutId]),
+  );
 }
