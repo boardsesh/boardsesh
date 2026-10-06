@@ -1,18 +1,12 @@
 import React, { useMemo } from 'react';
 import { StyleSheet } from 'react-native';
-import Animated, {
-  runOnJS,
-  useAnimatedProps,
-  useAnimatedReaction,
-  useFrameCallback,
-  useSharedValue,
-  type SharedValue,
-} from 'react-native-reanimated';
+import Animated, { useAnimatedProps, useAnimatedReaction, type SharedValue } from 'react-native-reanimated';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { overlays } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { RING, useZoomStrokeStep } from './SprayHoldSvgLayer';
 import { ringToPathData } from './stroke';
+import { useZoomSettle } from './use-zoom-settle';
 import { refineBrushRadiusAtZoom, type RefineBrushLimits, type RefineMode } from './spray-refine';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
@@ -27,15 +21,6 @@ const ERASE_STROKE_OPACITY = 0.7;
 
 /** The brush-size ring's fill while the slider moves: enough to read the disc against the area's own fill. */
 const SIZE_RING_FILL_OPACITY = 0.25;
-
-/**
- * How long the board's zoom must hold still to count as settled, in ms: past a
- * pinch's end and the 150-250 ms zoom animations, short enough that the slider's
- * range is right by the time a hand reaches it.
- */
-const ZOOM_SETTLE_MS = 120;
-/** A zoom change smaller than this is the same zoom. */
-const ZOOM_EPSILON = 1e-3;
 
 /**
  * Nudge, in board px, that gives a single-sample dab a segment to cap. A path
@@ -62,8 +47,8 @@ type SprayRefineLayerProps = {
    */
   zoomMirrorSV?: SharedValue<number>;
   /**
-   * Told the board's zoom each time it SETTLES (still for {@link ZOOM_SETTLE_MS}
-   * at a new value), and once when Refine opens — never per frame. The slider's
+   * Told the board's zoom each time it SETTLES (still for `ZOOM_SETTLE_MS` at a
+   * new value), and once when Refine opens — never per frame (`useZoomSettle`). The slider's
    * range follows it. Passed to the board's copy only, never the loupe's.
    */
   onZoomSettle?: (zoom: number) => void;
@@ -134,26 +119,8 @@ export const SprayRefineLayer = React.memo(function SprayRefineLayer({
     [boardZoomSV, zoomMirrorSV],
   );
 
-  // Settle detection on the UI thread: a cheap compare each frame, and one hop
-  // to JS per settle. A pinch's end, a zoom animation's end and the first still
-  // frames after Refine opens all land here, without reaching into the board's
-  // gesture.
-  const lastZoomSV = useSharedValue(-1);
-  const stillSinceSV = useSharedValue(0);
-  const settledZoomSV = useSharedValue(-1);
-  useFrameCallback((frame) => {
-    'worklet';
-    const zoom = boardZoomSV.value;
-    if (Math.abs(zoom - lastZoomSV.value) > ZOOM_EPSILON) {
-      lastZoomSV.value = zoom;
-      stillSinceSV.value = frame.timestamp;
-      return;
-    }
-    if (frame.timestamp - stillSinceSV.value < ZOOM_SETTLE_MS) return;
-    if (Math.abs(zoom - settledZoomSV.value) <= ZOOM_EPSILON) return;
-    settledZoomSV.value = zoom;
-    if (onZoomSettle) runOnJS(onZoomSettle)(zoom);
-  }, onZoomSettle !== undefined);
+  // Event-driven: nothing runs while the board is idle.
+  useZoomSettle(boardZoomSV, onZoomSettle);
 
   const { floorBoardPx, capBoardPx } = limits;
   const strokeProps = useAnimatedProps(() => {

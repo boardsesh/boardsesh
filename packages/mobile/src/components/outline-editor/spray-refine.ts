@@ -17,8 +17,8 @@
  * bitmap of millions of cells and stall the JS thread on every stroke. So every
  * hold is mapped into a frame centred on it and scaled so its radius is
  * {@link REFINE_FRAME_RADIUS} units: the edit is then accurate to the same
- * fraction of the hold (4% of its radius) whatever the photo's resolution or the
- * zoom, and the bitmap stays at most 640 cells a side. This is also why the
+ * fraction of the hold (5% of its radius) whatever the photo's resolution or the
+ * zoom, and the bitmap stays at most 512 cells a side. This is also why the
  * 4096 px full photo the editor loads past 3× changes nothing here: the frame
  * follows the hold, not the photo.
  */
@@ -54,22 +54,24 @@ import {
 /**
  * The hold's radius in the brush frame, in engine units.
  *
- * Precision: the engine decimates at 1.6 units, 4% of the hold's radius, and
- * its smallest brush that still moves a ring (`MIN_BRUSH_RADIUS_BOARD_PX`, 3
- * units) is 7.5% of it — 3 board px on a typical 40 px spray hold. It was 32
- * (a 9.4% floor, 3.75 px) until zoomed-in Refine needed a finer brush.
+ * Precision: the engine decimates at 1.6 units, 5% of the hold's radius — what
+ * Trace keeps on a typical spray hold (its 1.6 board px on a 40 px radius) —
+ * and its smallest brush that still moves a ring (`MIN_BRUSH_RADIUS_BOARD_PX`,
+ * 3 units) is 9.4% of it: 3.75 board px on a 40 px hold. The fine work comes
+ * from the screen-point brush instead (zoom in and the brush shrinks to that
+ * floor), not from a finer frame.
  *
  * Cost: the bitmap reaches the outline plus one radius (4 radii at most) at 2
- * cells a unit, about 440-460 cells a side in a normal session and 640 at the
+ * cells a unit, about 360-370 cells a side in a normal session and 512 at the
  * cap. Every stroke walks it several times on the JS thread (fill, components,
  * neck trim, border follow). Measured through the session in Node on the dev
  * box (60 strokes round a 40 px hold, five seeds): median per lift 17 ms at 32
  * units, 28 ms at 40 and 40 ms at 48; once the bitmap is at its cap, 48, 75 and
- * 112 ms. 48 also takes a normal session past 512 cells a side (about 540).
- * Hermes runs these loops several times slower, so 40 is the most the lift can
- * afford: tens of milliseconds on a phone, around 150 ms at the cap.
+ * 112 ms. Hermes runs these loops several times slower and none of the bigger
+ * frames has been timed on a phone, so 32 stays until a device says otherwise
+ * (the editor logs each lift's cost in development builds, `[refine] lift`).
  */
-export const REFINE_FRAME_RADIUS = 40;
+export const REFINE_FRAME_RADIUS = 32;
 
 /**
  * Bounds on the frame scale. Only a hold under 4 px or over 256 px in radius

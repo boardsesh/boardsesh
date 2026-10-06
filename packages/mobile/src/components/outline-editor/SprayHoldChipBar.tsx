@@ -246,7 +246,7 @@ export const SprayRefineBar = React.memo(function SprayRefineBar({
     (screenPt: number) =>
       t('sprayEditor.refine.sizeValue', {
         step: refineBrushRung(screenPt, minPt, maxPt) + 1,
-        count: REFINE_BRUSH_TOP_RUNG + 1,
+        total: REFINE_BRUSH_TOP_RUNG + 1,
       }),
     [t, minPt, maxPt],
   );

@@ -118,7 +118,7 @@ export type SprayRefineSession = {
  * `useBrushSession.snapshot` gives: later strokes compose onto the bitmap, so
  * restoring the ring alone would paint the next stroke over the undone one. The
  * stack keeps {@link MAX_REFINE_UNDO} entries, each a copy of the bitmap (about
- * 200 kB for a typical hold, 410 kB at worst: 4 and 8 MB for a full stack).
+ * 75 kB for a typical hold, 260 kB at worst).
  *
  * The session lives in refs; only the area and the stroke count are state,
  * because they are all the screen draws.

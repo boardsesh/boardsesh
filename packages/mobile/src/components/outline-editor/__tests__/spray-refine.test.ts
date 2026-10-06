@@ -74,9 +74,9 @@ describe('refineBrushLimits', () => {
   it('floors at the engine minimum in frame units and caps at the old Large', () => {
     const frame = refineFrameFor({ cx: 0, cy: 0, r: 40 });
     const limits = refineBrushLimits(40, frame);
-    // 40 frame units on a 40 px hold: the 3-unit floor is 3 board px, 7.5% of it.
+    // 32 frame units on a 40 px hold: the 3-unit floor is 3.75 board px, 9.4% of it.
     expect(limits.floorBoardPx).toBeCloseTo((MIN_BRUSH_RADIUS_BOARD_PX * 40) / REFINE_FRAME_RADIUS);
-    expect(limits.floorBoardPx / 40).toBeLessThan(0.08);
+    expect(limits.floorBoardPx / 40).toBeCloseTo(0.094, 3);
     expect(limits.capBoardPx).toBeCloseTo(REFINE_BRUSH_CAP_FRACTION * 40);
   });
 
@@ -137,7 +137,7 @@ describe('refineBrushScreenRadiusPt', () => {
   it('is the clamped radius as it lands on screen, so the preview grows and shrinks with the zoom', () => {
     // At 1× the cap is 24 board px, about 4.4 pt.
     expect(onScreen(14, 1)).toBeCloseTo(capBoardPx / PHONE_BOARD_PX_PER_PT);
-    // At 8× the floor (3 board px) is about 4.4 pt: a 1 pt pick shows that.
+    // At 8× the floor (3.75 board px) is about 5.5 pt: a 1 pt pick shows that.
     expect(onScreen(1, 8)).toBeCloseTo((floorBoardPx * 8) / PHONE_BOARD_PX_PER_PT);
   });
 });
@@ -148,7 +148,7 @@ describe('the brush-size slider range', () => {
 
   it('at 1× on a phone runs from 1 pt to the size that paints the cap', () => {
     const range = refineBrushRangeAtZoom(PHONE_BOARD_PX_PER_PT, 1, limits);
-    // The floor (3 board px) is under a point at 1×, so the track starts at 1 pt.
+    // The floor (3.75 board px) is under a point at 1×, so the track starts at 1 pt.
     expect(range.minPt).toBe(REFINE_BRUSH_MIN_PT);
     // The cap (24 board px) is about 4.4 pt: no dead upper half.
     expect(range.maxPt).toBeCloseTo(limits.capBoardPx / PHONE_BOARD_PX_PER_PT);
@@ -271,7 +271,7 @@ describe('the brush-size slider track', () => {
 
 describe('the finest brush', () => {
   it('still changes the committed ring, above the engine noise floor', () => {
-    // A 40 px hold's floor: 3 board px. A dab of it on the right edge must
+    // A 40 px hold's floor: 3.75 board px. A dab of it on the right edge must
     // bite a notch the stored ring keeps, not vanish into the decimation.
     const hold = { cx: 600, cy: 400, r: 40, outline: null };
     const frame = refineFrameFor(hold);

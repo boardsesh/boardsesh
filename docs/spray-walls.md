@@ -1268,7 +1268,7 @@ What the editor does with a wall is decided by this document rather than by tast
     Screen points so that zooming in paints finer: the radius a stroke paints,
     in board px, is `size x boardPxPerPt / zoom` at the zoom the stroke STARTED
     at (`DrawStrokeOverlay`'s `strokeZoomSV`), clamped between the engine's
-    floor (3 frame units, 3 board px or 7.5% of a 40 px hold; below it a dab
+    floor (3 frame units, 3.75 board px or 9.4% of a 40 px hold; below it a dab
     vanishes in the decimation) and a cap of 0.6 of the hold's radius when
     Refine opened (`REFINE_BRUSH_CAP_FRACTION`, the old Large;
     `refineBrushRadiusAtZoom`). The cap is what keeps a 12 pt brush at 1x
@@ -1278,11 +1278,14 @@ What the editor does with a wall is decided by this document rather than by tast
     the floor to the size that paints the cap at the zoom the board last
     SETTLED at, inside 1-32 pt, on a log track with 21 steps whatever the range
     (`refineBrushRangeAtZoom`): on a phone with a 40 px hold, 1 to about 4.4 pt
-    at 1x, about 4.4 to 32 pt at 8x. So no stretch of the track paints the same
+    at 1x, about 5.5 to 32 pt at 8x. So no stretch of the track paints the same
     brush. The range changes only on a settle, never per frame: the refine
     layer watches the zoom on the UI thread and reports it to JS once it has
     held still for 120 ms at a new value (a pinch's end, a zoom animation's
-    end, Refine opening), so the slider re-renders once per zoom. The stored
+    end, Refine opening), so the slider re-renders once per zoom. The watch is
+    event-driven (`useZoomSettle`): each zoom change restarts one delayed
+    no-op timing on a shared value, and only the one that outlives its delay
+    reports, so nothing runs per frame while the board is idle. The stored
     size is the screen-point radius the climber last picked, remembered per
     device (`useSprayRefineBrush`, the add shape's AsyncStorage pattern); the
     slider shows it clamped into the current range (`clampRefineBrushPt`) and
@@ -1328,14 +1331,16 @@ What the editor does with a wall is decided by this document rather than by tast
     An open Refine with a kept stroke counts as unsaved work for the leave
     guard (`onDirtyChange`), since its strokes reach the reducer only on Done.
   - **Resolution.** The engine works in a frame centred on the hold with its
-    radius at 40 units (`REFINE_FRAME_RADIUS` in `spray-refine.ts`): 4% of the
+    radius at 32 units (`REFINE_FRAME_RADIUS` in `spray-refine.ts`): 5% of the
     hold's radius whatever the photo, so the 4096 px full photo past 3x
-    changes nothing. It was 32 until the zoomed-in brush needed a finer floor
-    (9.4% of the hold then, 7.5% now); 48 measured too slow (below).
+    changes nothing. The fine work comes from the screen-point brush (zoom in
+    and it shrinks to the 3-unit floor), not from a finer frame: 40 units would
+    lower the floor to 7.5% of the hold, but its cost (below) has only been
+    measured in Node, so it waits for a number from a phone.
   - **The 4x limit.** The engine's bitmap reaches from the anchor to the
     outline plus one radius, and is capped at 4 radii (`MAX_RING_COORDINATE`
     times the radius Refine opened with) along either axis, because nothing
-    past that is storable: 640 x 640 cells at the cap. So Add can grow a hold
+    past that is storable: 512 x 512 cells at the cap. So Add can grow a hold
     to about 4x its original radius in any direction, and no further. An Add
     stroke whose brush crosses that line keeps what landed inside, and the
     banner says "That's as far as this hold can grow" with a warning buzz,
@@ -1349,18 +1354,18 @@ What the editor does with a wall is decided by this document rather than by tast
 
     | `REFINE_FRAME_RADIUS` | median per lift | bitmap side, normal | median at the cap | bitmap side at the cap |
     | --------------------- | --------------- | ------------------- | ----------------- | ---------------------- |
-    | 32 (before)           | 17 ms           | 360-370 cells       | 48 ms             | 512 cells              |
-    | 40 (now)              | 28 ms           | 440-460 cells       | 75 ms             | 640 cells              |
+    | 32 (shipped)          | 17 ms           | 360-370 cells       | 48 ms             | 512 cells              |
+    | 40                    | 28 ms           | 440-460 cells       | 75 ms             | 640 cells              |
     | 48                    | 40 ms           | 530-545 cells       | 112 ms            | 768 cells              |
 
-    Zoomed-in strokes with the finest brushes cost a little less (24 ms median
-    at 40). 40 is the largest frame whose median stays near 30 ms and whose
-    normal session stays under 512 cells a side. Hermes runs these loops
-    several times slower than Node's JIT, so expect tens of milliseconds per
-    lift on a phone and around 150 ms at the cap. The cost lands once per lift
-    on the JS thread, never during a stroke, and the stroke's preview stays on
-    screen until the new area is drawn. Each undo entry is a bitmap copy: about
-    200 kB, 410 kB at the cap, so a full 20-stroke stack holds 4-8 MB.
+    Zoomed-in strokes with the finest brushes cost a little less (15 ms median
+    at 32). Hermes runs these loops several times slower than Node's JIT, so
+    expect tens of milliseconds per lift on a phone and 100-200 ms at the cap.
+    A development build logs each lift's real cost (`[refine] lift … ms` from
+    `handleRefineStrokeEnd`), which is the number that would justify 40. The
+    cost lands once per lift on the JS thread, never during a stroke, and the
+    stroke's preview stays on screen until the new area is drawn. Each undo
+    entry is a bitmap copy: about 75 kB, 260 kB at the cap.
 - **Nothing is removed by accident.** Every switch-off is a ghost — a hold this
   session drew by hand included, which used to vanish on its second tap. A
   ghost is never written (`buildSprayHoldWritePlan` skips rejected holds and a

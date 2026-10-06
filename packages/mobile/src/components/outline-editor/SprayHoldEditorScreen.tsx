@@ -476,6 +476,13 @@ export function SprayHoldEditorScreen({
   const [refineNotice, setRefineNotice] = useState<string | null>(null);
   const refine = useSprayRefineSession();
   const refineView = refine.view;
+  const refineHoldId = refineView?.holdId;
+  // The size disc starts hidden on every open and goes with the session (Done,
+  // Cancel, the hold vanishing): a slider drag cut short by leaving Refine never
+  // gets the release that would fade it.
+  useEffect(() => {
+    refineSizeRingSV.value = 0;
+  }, [refineHoldId, refineSizeRingSV]);
   const refineHoldRadius = refineView?.holdRadiusBoardPx;
   const refineFrame = refineView?.frame;
   /** The open hold's brush clamp, or null outside Refine. Fixed for the session. */
@@ -1366,7 +1373,14 @@ export function SprayHoldEditorScreen({
         floorBoardPx,
         capBoardPx,
       );
+      const liftStartedAt = __DEV__ ? performance.now() : 0;
       const outcome = session.applyStroke(strokeBoardPoints, radius, refineModeRef.current);
+      // Device QA reads the real per-lift cost here; Node's numbers are in spray-refine.ts.
+      if (__DEV__) {
+        console.info(
+          `[refine] lift ${(performance.now() - liftStartedAt).toFixed(1)} ms, brush ${radius.toFixed(2)} board px, ${outcome.ok ? 'kept' : outcome.reason}`,
+        );
+      }
       // Add reached the furthest a hold can grow and the rest was clipped: say
       // so, or the brush just looks like it stopped working.
       const limitLine = outcome.reachedLimit ? t('sprayEditor.refine.atLimit') : null;

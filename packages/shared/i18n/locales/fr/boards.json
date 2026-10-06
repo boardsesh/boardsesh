@@ -949,7 +949,7 @@
       "add": "Ajouter",
       "erase": "Effacer",
       "size": "Taille du pinceau",
-      "sizeValue": "Taille {{step}} sur {{count}}",
+      "sizeValue": "Taille {{step}} sur {{total}}",
       "dropped_one": "La partie principale est gardée. {{count}} morceau isolé a été retiré.",
       "dropped_other": "La partie principale est gardée. {{count}} morceaux isolés ont été retirés.",
       "atLimit": "La prise ne peut pas grandir davantage. Tracer permet de la redessiner plus grande."
