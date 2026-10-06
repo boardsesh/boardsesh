@@ -123,7 +123,10 @@ async function deleteOlderRecipeArt(
 async function writeArtFailure(context: BackgroundJobContext, versionId: number, code: string): Promise<void> {
   // After an abort `transaction` refuses every write, which left the row
   // `pending` until the read path re-queued it an hour later. The after-abort
-  // variant keeps the attempt fence and drops only the abort check.
+  // variant keeps the attempt fence and drops only the abort check, which
+  // rescues a shutdown or a lost attempt. A lease timeout is still refused by
+  // the fence itself, so that row stays `pending` until the 1 h deadline
+  // re-queues it; with the blur capped, a timeout is now unlikely.
   const fenced = context.transactionAfterAbort ?? context.transaction;
   try {
     await fenced(async (transaction) => {

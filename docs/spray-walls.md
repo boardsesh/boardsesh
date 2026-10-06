@@ -537,11 +537,14 @@ mask is bounded whatever radius an owner types: the feather sigma is capped at
 kept the worker busy for minutes. sharp cannot be interrupted, so the job checks
 its lease between stages. A failure writes `failed` with a bounded code before it rethrows,
 so a retry, or the owner picking the look again, can heal it. That write
-survives an aborted attempt (a lease timeout or a shutdown): it goes through
+survives a worker shutdown or a lost attempt: it goes through
 `transactionAfterAbort`, the same attempt fence without the abort check, and is
-recorded as `SPRAY_ART_ABORTED`. A crash, or an abort whose fence another attempt
-already took, writes nothing, so every `pending` row carries `requestedAt`; one
-older than the job's 1 h deadline reads as `FAILED`.
+recorded as `SPRAY_ART_ABORTED`. It does not survive a lease timeout: that abort
+fires exactly when the fence's active-attempt check stops passing, so the fence
+refuses the write. A timeout (now unlikely, with the blur capped), a crash, or an
+abort whose fence another attempt already took writes nothing, so every
+`pending` row carries `requestedAt`; one older than the job's 1 h deadline reads
+as `FAILED` and is re-queued.
 
 Who queues it:
 

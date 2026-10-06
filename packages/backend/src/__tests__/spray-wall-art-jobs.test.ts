@@ -500,8 +500,10 @@ describe('spray-wall-art', () => {
     const { versionId } = await publishWall(STRAIGHT);
     const [job] = await workerBoss.fetch<BackgroundJobPayload>(queue, { includeMetadata: true, batchSize: 1 });
     const shutdown = new AbortController();
-    // A shutdown (or the lease timing out) while the photo downloads: the next
-    // stage check throws, and every ordinary fenced write is refused.
+    // A worker shutdown while the photo downloads: the next stage check throws,
+    // and every ordinary fenced write is refused. (A lease timeout is not
+    // covered: the fence itself refuses that write, and the row waits for the
+    // 1 h deadline to re-queue it.)
     readHook.onRead = () => shutdown.abort();
     await executeBackgroundJob(
       workerDatabase,
