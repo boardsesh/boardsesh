@@ -158,6 +158,8 @@ export type SprayWallResetAppliedProps = {
    * thing that makes remix able to suggest a successor months later.
    */
   moveCount: number;
+  /** The owner marked it a full reset, retiring the climbs that lost holds (#6024). */
+  fullReset: boolean;
 };
 
 export function sprayWallResetApplied(

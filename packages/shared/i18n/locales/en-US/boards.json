@@ -1028,6 +1028,8 @@
       "filterLabel": "Which rings to show",
       "tapHint": "Tap any ring to change your mind about it.",
       "confirm": "Confirm the reset",
+      "fullReset": "Full reset",
+      "fullResetBody": "Climbs that lose a hold leave this wall's list. Logbooks and playlists keep them.",
       "acceptMoves": "Take every suggested move",
       "noDetections": "Nothing to compare",
       "noDetectionsBody": "This phone couldn't spot the holds in your new photo, so there's nothing to check against. Your photo is saved as a draft."

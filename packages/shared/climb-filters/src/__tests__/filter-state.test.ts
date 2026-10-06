@@ -369,3 +369,35 @@ describe('toClimbSearchInput personal grades', () => {
     expect(build({ sortBy: 'difficulty' }, false).useMyGrades).toBeUndefined();
   });
 });
+
+// #6024: on a spray wall the default ('current') hides climbs a full reset
+// retired, and "All" has to say so out loud, because the server reads an
+// absent value as the default view.
+describe('toClimbSearchInput hold integrity after a full reset', () => {
+  const spray: BoardSearchConfig = { boardName: 'spray', layoutId: 7, sizeId: 7, setIds: '1', angle: 25 };
+  const build = (holdIntegrity: ClimbFilterState['holdIntegrity'], target: BoardSearchConfig = spray) =>
+    toClimbSearchInput({ ...DEFAULT_CLIMB_FILTER_STATE, holdIntegrity }, target, pagination).holdIntegrity;
+
+  it('sends nothing for the default, current view', () => {
+    expect(build(undefined)).toBeUndefined();
+    expect(build('current')).toBeUndefined();
+  });
+
+  it('sends ANY for "All" on a spray wall', () => {
+    expect(build('any')).toBe('ANY');
+  });
+
+  it('keeps "All" off the wire on a catalogue board, where it is the default list', () => {
+    expect(build('any', board)).toBeUndefined();
+  });
+
+  it('still sends INTACT and BROKEN', () => {
+    expect(build('intact')).toBe('INTACT');
+    expect(build('broken')).toBe('BROKEN');
+  });
+
+  it('counts "All" as an active filter and the current view as none', () => {
+    expect(hasActiveClimbFilters({ ...DEFAULT_CLIMB_FILTER_STATE, holdIntegrity: 'any' })).toBe(true);
+    expect(hasActiveClimbFilters({ ...DEFAULT_CLIMB_FILTER_STATE, holdIntegrity: 'current' })).toBe(false);
+  });
+});

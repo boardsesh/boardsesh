@@ -484,6 +484,7 @@
       },
       "holdIntegrity": {
         "label": "Holds",
+        "current": "Current",
         "any": "All",
         "intact": "Intact only",
         "broken": "Lost holds"

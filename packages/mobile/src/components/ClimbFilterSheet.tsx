@@ -524,15 +524,17 @@ export function ClimbFilterSheet({
     [t, isAuthenticated, offerBenchmarks],
   );
   // Hold integrity (SW-13) — on a spray wall, whether a climb still has every
-  // hold it was set on. 'any' is the default and sends nothing, so a climb that
-  // lost holds stays findable until the climber asks otherwise. 'broken' is an
+  // hold it was set on. 'current' is the default and sends nothing: a climb that
+  // lost holds in a partial reset stays listed, and one a FULL reset retired is
+  // hidden until the climber picks All or Lost holds (#6024). 'broken' is an
   // honest empty list on a catalogue board, where holds don't come off.
   const handleHoldIntegrityChange = useCallback(
-    (value: HoldIntegrityFilterValue) => setFiltersPatch({ holdIntegrity: value === 'any' ? undefined : value }),
+    (value: HoldIntegrityFilterValue) => setFiltersPatch({ holdIntegrity: value === 'current' ? undefined : value }),
     [setFiltersPatch],
   );
   const holdIntegrityOptions = useMemo(
     () => [
+      { key: 'current' as const, label: t('mobile.filter.holdIntegrity.current') },
       { key: 'any' as const, label: t('mobile.filter.holdIntegrity.any') },
       { key: 'intact' as const, label: t('mobile.filter.holdIntegrity.intact') },
       { key: 'broken' as const, label: t('mobile.filter.holdIntegrity.broken') },
@@ -1090,7 +1092,7 @@ export function ClimbFilterSheet({
               <View style={styles.controlGap} />
               <SegmentedControl
                 options={holdIntegrityOptions}
-                selectedKey={localFilters.holdIntegrity ?? 'any'}
+                selectedKey={localFilters.holdIntegrity ?? 'current'}
                 onSelect={handleHoldIntegrityChange}
                 accessibilityLabel={t('mobile.filter.holdIntegrity.label')}
               />

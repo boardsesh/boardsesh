@@ -484,6 +484,7 @@
       },
       "holdIntegrity": {
         "label": "Prises",
+        "current": "Actuels",
         "any": "Toutes",
         "intact": "Intacts seulement",
         "broken": "Prises perdues"
