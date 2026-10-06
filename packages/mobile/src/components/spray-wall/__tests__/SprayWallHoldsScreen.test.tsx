@@ -11,6 +11,7 @@ const requests = vi.hoisted(() => ({
   invalidate: vi.fn(),
   fetchRender: vi.fn(),
   register: vi.fn(),
+  discardLeftover: vi.fn(),
 }));
 const refreshClimbs = vi.hoisted(() => vi.fn(async (_queryClient: unknown, _layoutId: number) => undefined));
 vi.mock('../../../lib/spray/refresh-published-spray-climbs', () => ({ refreshPublishedSprayClimbs: refreshClimbs }));
@@ -55,9 +56,8 @@ vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request:
 vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
   fetchSprayWallVersions: vi.fn(),
   mySprayWallsQueryKey: ['mySprayWalls'],
-}));
-vi.mock('../../../lib/spray/use-spray-wall-reset', () => ({
   sprayWallWithVersionsQueryKey: (wallUuid: string) => ['sprayWallWithVersions', wallUuid],
+  useDiscardSprayWallVersion: () => ({ mutateAsync: requests.discardLeftover, isPending: false }),
 }));
 vi.mock('../../../lib/spray/spray-wall-loader', () => ({
   invalidateSprayWallRenderData: requests.invalidate,
@@ -144,6 +144,7 @@ beforeEach(() => {
   requests.invalidate.mockReset().mockResolvedValue(undefined);
   requests.fetchRender.mockReset().mockResolvedValue(publishedRender);
   requests.register.mockReset().mockReturnValue(true);
+  requests.discardLeftover.mockReset().mockResolvedValue(true);
   queryClient.invalidateQueries.mockResolvedValue(undefined);
   refreshClimbs.mockClear();
   router.canGoBack.mockReturnValue(true);
@@ -427,5 +428,58 @@ describe('SprayWallHoldsScreen', () => {
     fireEvent.click(await screen.findByTestId('editor'));
     await waitFor(() => expect(router.replace).toHaveBeenCalledExactlyOnceWith('/boards'));
     expect(router.back).not.toHaveBeenCalled();
+  });
+
+  // A deep link or a sheet that rendered before the first climb was published
+  // must not reach the editor: the screen says why and offers only the way back.
+  it.each([
+    ['holdsLocked', 'mobile.boardDetail.spray.holdsLockedHint'],
+    ['archived', 'sprayWallErrors.archived'],
+  ] as const)('explains a %s wall and offers no retry', async (reason, copy) => {
+    const { SprayHoldMaintenanceError } = await import('../../../lib/spray/spray-hold-maintenance');
+    requests.prepare.mockRejectedValueOnce(new SprayHoldMaintenanceError(reason));
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    await screen.findByText(copy);
+    expect(screen.queryByTestId('editor')).toBeNull();
+    expect(screen.queryByText('sprayMaintenance.retry')).toBeNull();
+    fireEvent.click(screen.getByText('sprayWizard.back'));
+    expect(router.back).toHaveBeenCalledTimes(1);
+  });
+
+  it("says a server refusal for a locked wall in the climber's words, without a retry", async () => {
+    requests.publish.mockRejectedValueOnce({
+      response: { errors: [{ message: 'Holds are locked.', extensions: { code: 'SPRAY_WALL_HOLDS_LOCKED' } }] },
+    });
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    fireEvent.click(await screen.findByTestId('editor'));
+    await screen.findByText('sprayWallErrors.holdsLocked');
+    expect(screen.queryByText('Holds are locked.')).toBeNull();
+    expect(screen.queryByText('sprayMaintenance.retry')).toBeNull();
+  });
+
+  // The retired in-place reset could leave a new-photo draft on a live wall.
+  // Discarding it keeps the wall and its climbs, and the editor then opens.
+  it('discards an unfinished photo from the old reset, then opens the editor', async () => {
+    const { SprayHoldMaintenanceError } = await import('../../../lib/spray/spray-hold-maintenance');
+    requests.prepare
+      .mockRejectedValueOnce(new SprayHoldMaintenanceError('leftoverPhotoDraft', 'draft-9'))
+      .mockResolvedValueOnce(draft);
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    await screen.findByText('sprayMaintenance.leftoverPhoto');
+    fireEvent.click(screen.getByText('sprayMaintenance.discardLeftover'));
+    await screen.findByTestId('editor');
+    expect(requests.discardLeftover).toHaveBeenCalledExactlyOnceWith('draft-9');
+    expect(requests.prepare).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the discard offer up when the discard fails', async () => {
+    const { SprayHoldMaintenanceError } = await import('../../../lib/spray/spray-hold-maintenance');
+    requests.prepare.mockRejectedValueOnce(new SprayHoldMaintenanceError('leftoverPhotoDraft', 'draft-9'));
+    requests.discardLeftover.mockRejectedValueOnce(new Error('offline'));
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    fireEvent.click(await screen.findByText('sprayMaintenance.discardLeftover'));
+    await screen.findByText('sprayMaintenance.discardLeftoverFailed');
+    expect(screen.getByText('sprayMaintenance.discardLeftover')).toBeTruthy();
+    expect(requests.prepare).toHaveBeenCalledTimes(1);
   });
 });

@@ -36,10 +36,15 @@ import { overlays, spacing } from '../../theme/tokens';
 import { glassSize } from '../../theme/layout';
 import { timingFor } from '../../theme/motion-config';
 import { hapticLight, hapticMedium, hapticSelection, hapticSuccess, hapticWarning } from '../../lib/haptics';
-import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
+import {
+  extractGraphqlMessage,
+  sprayWallLifecycleRefusal,
+  sprayWallRefusalMeansStaleWall,
+} from '../../lib/graphql/extract-error-message';
+import { sprayWallLifecycleMessage } from '../../lib/spray/spray-lifecycle-copy';
 import { SPRAY_CAP_VALUES } from '../../lib/spray/spray-cap-copy';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
-import { SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
+import { refreshSprayWall, SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
 import { useSprayWallDraft } from '../../lib/spray/use-spray-wall-draft';
 import { useSaveSprayHolds } from '../../lib/spray/use-spray-hold-writes';
 import { SegmentedControl } from '../SegmentedControl';
@@ -1794,7 +1799,16 @@ export function SprayHoldEditorScreen({
         onError: (error: unknown) => {
           setHandingOver(false);
           hapticWarning();
-          setErrorText(extractGraphqlMessage(error) ?? t('sprayEditor.errors.saveFailed'));
+          // Archived, or locked by a published climb, since the editor opened:
+          // say so in the climber's words and re-read the wall for every other
+          // surface that still offers an edit.
+          const refusal = sprayWallLifecycleRefusal(error);
+          if (sprayWallRefusalMeansStaleWall(refusal)) refreshSprayWall(layoutId);
+          setErrorText(
+            refusal
+              ? sprayWallLifecycleMessage(refusal, t)
+              : (extractGraphqlMessage(error) ?? t('sprayEditor.errors.saveFailed')),
+          );
         },
       },
     );
@@ -1809,6 +1823,7 @@ export function SprayHoldEditorScreen({
     celebrateThenHandOver,
     setHandingOver,
     clearCorners,
+    layoutId,
     t,
   ]);
 

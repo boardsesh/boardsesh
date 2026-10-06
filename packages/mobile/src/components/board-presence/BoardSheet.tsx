@@ -76,6 +76,8 @@ type BoardSheetProps = {
   activeBoard?: UserBoard | null;
   onOpenSprayMaintenance?: (wallUuid: string, action: SprayDetailRowKey) => void;
   onShareSprayWall?: (wallUuid: string) => void;
+  /** The signed-in climber's id. A spray wall's reset rows are its owner's alone. */
+  viewerUserId?: string | null;
   /** Hop to another board at the same gym, without closing the sheet. */
   onSelectGymWall?: (board: UserBoard) => void;
   /** Activate/open a climb from the wall feed. BoardSheet closes itself after this. */
@@ -98,6 +100,7 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
     activeBoard,
     onOpenSprayMaintenance,
     onShareSprayWall,
+    viewerUserId,
     onSelectGymWall,
     onClimbPress,
     onAddToQueue,
@@ -258,6 +261,7 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
           activeBoard={activeBoard}
           onOpenSprayMaintenance={onOpenSprayMaintenance}
           onShareSprayWall={onShareSprayWall}
+          viewerUserId={viewerUserId}
           onSelectGymWall={onSelectGymWall}
           onClimbPress={onClimbPress}
           onAddToQueue={onAddToQueue}

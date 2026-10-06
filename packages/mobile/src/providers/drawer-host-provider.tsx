@@ -819,7 +819,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const dismissBoardSheetAndWait = useCallback((): Promise<DismissAndWaitResult> => {
     return dismissManagedSheetAndWait(boardSheetRef.current);
   }, []);
-  const sprayWallActions = useSprayWallSheetActions(activeBoard ?? null, dismissBoardSheetAndWait);
+  const sprayWallActions = useSprayWallSheetActions(activeBoard ?? null, dismissBoardSheetAndWait, profile?.id);
   const cancelPendingSprayAction = sprayWallActions.cancelPendingAction;
 
   // Board sheet: present imperatively via the ref, exactly like the queue sheet
@@ -1286,6 +1286,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             activeBoard={activeBoard ?? null}
             onOpenSprayMaintenance={sprayWallActions.openMaintenance}
             onShareSprayWall={sprayWallActions.openShare}
+            viewerUserId={profile?.id ?? null}
             onSelectGymWall={handleSelectGymWall}
             onClimbPress={handleBoardSheetClimbPress}
             onAddToQueue={handleBoardSheetAddToQueue}

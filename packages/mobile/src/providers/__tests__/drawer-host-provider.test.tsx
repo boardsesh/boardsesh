@@ -328,9 +328,13 @@ vi.mock('../../lib/graphql/use-active-board', () => ({
   useSetActiveBoard: () => activeBoard.setActiveBoard,
 }));
 
+// The signed-in climber: the spray reset rows are the wall owner's alone.
+const viewerProfile = vi.hoisted(() => ({ current: null as { id: string } | null }));
+vi.mock('../../lib/spray/confirm-spray-wall-reset', () => ({ confirmSprayWallReset: async () => true }));
+
 vi.mock('../../lib/graphql/hooks', () => ({
   useToggleFavorite: () => ({ mutate: vi.fn() }),
-  useProfile: () => ({ data: null }),
+  useProfile: () => ({ data: viewerProfile.current }),
   useMyBoards: () => ({ data: { boards: myBoards.boards, totalCount: myBoards.boards.length, hasMore: false } }),
 }));
 
@@ -355,6 +359,7 @@ import {
   type BoardConfig,
 } from '../drawer-host-provider';
 import type { BoardSheetClimbAction } from '../../components/board-presence/BoardSheet';
+import { clearSprayWallRegistry, registerSprayWall } from '../../lib/spray/spray-wall-registry';
 
 const routerPush = router.push as unknown as ReturnType<typeof vi.fn>;
 const routerNavigate = router.navigate as unknown as ReturnType<typeof vi.fn>;
@@ -505,7 +510,7 @@ type BoardSheetTestProps = {
   onAddToQueue: (action: BoardSheetClimbAction) => void;
   onOpenPlaylist: (action: BoardSheetClimbAction) => void;
   onOpenActions: (action: BoardSheetClimbAction) => void;
-  onOpenSprayMaintenance: (wallUuid: string, action: 'editHolds' | 'newPhoto') => void;
+  onOpenSprayMaintenance: (wallUuid: string, action: 'editHolds' | 'resetWall') => void;
   onShareSprayWall: (wallUuid: string) => void;
 };
 
@@ -765,6 +770,21 @@ describe('DrawerHostProvider spray-wall sheet wiring', () => {
     activeBoard.stored = { ...sprayWall };
     boardSheet.props = null;
     boardSheet.present.mockClear();
+    // The rows wait for the wall's archive state, which the registry holds.
+    clearSprayWallRegistry();
+    registerSprayWall(sprayWall.layoutId, {
+      wallUuid: sprayWall.uuid,
+      angle: 40,
+      version: 1,
+      versionId: 1,
+      photoWidth: 100,
+      photoHeight: 100,
+      photoUrl: 'https://example.invalid/wall.jpg',
+      photoThumbUrl: null,
+      photoExpiresAt: '2099-01-01T00:00:00.000Z',
+      holds: [],
+    });
+    viewerProfile.current = { id: sprayWall.ownerId };
   });
 
   function deferBoardSheetDismiss() {
@@ -777,8 +797,8 @@ describe('DrawerHostProvider spray-wall sheet wiring', () => {
   }
 
   it.each([
-    ['editHolds', '/boards/spray/holds'],
-    ['newPhoto', '/boards/spray/reset'],
+    ['editHolds', '/boards/spray/holds?wallUuid='],
+    ['resetWall', '/boards/spray/new?resetOf='],
   ] as const)('routes the mounted board sheet %s callback after native dismissal', async (action, pathname) => {
     const hosts: HostValue[] = [];
     const onHost = (host: HostValue) => hosts.push(host);
@@ -789,7 +809,8 @@ describe('DrawerHostProvider spray-wall sheet wiring', () => {
     expect(boardSheet.present).toHaveBeenCalledTimes(1);
 
     const settle = deferBoardSheetDismiss();
-    act(() => getBoardSheetProps().onOpenSprayMaintenance(sprayWall.uuid, action));
+    // A reset is confirmed first (stubbed to yes), so the dismissal follows a tick later.
+    await act(async () => getBoardSheetProps().onOpenSprayMaintenance(sprayWall.uuid, action));
     expect(boardSheet.dismissAndWait).toHaveBeenCalledTimes(1);
     expect(routerPush).not.toHaveBeenCalled();
     // An ordinary provider render while the animation is leaving must retain
@@ -798,7 +819,7 @@ describe('DrawerHostProvider spray-wall sheet wiring', () => {
     rerender(createElement(DrawerHostProvider, null, createElement(Probe, { onHost, onRoute: () => {} })));
     await act(async () => settle({ status: 'dismissed' }));
 
-    expect(routerPush).toHaveBeenCalledExactlyOnceWith(`${pathname}?wallUuid=${sprayWall.uuid}`);
+    expect(routerPush).toHaveBeenCalledExactlyOnceWith(`${pathname}${sprayWall.uuid}`);
     expect(activeBoard.setActiveBoard).not.toHaveBeenCalled();
   });
 

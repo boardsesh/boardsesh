@@ -26,9 +26,16 @@ import {
   extractGraphqlCode,
   extractGraphqlMessage,
   isGraphqlValidationFailedError,
+  sprayWallLifecycleRefusal,
+  sprayWallRefusalMeansStaleWall,
 } from '../../lib/graphql/extract-error-message';
-import { fetchSprayWallVersions, mySprayWallsQueryKey } from '../../lib/spray/use-create-spray-wall';
-import { sprayWallWithVersionsQueryKey } from '../../lib/spray/use-spray-wall-reset';
+import { sprayWallLifecycleMessage } from '../../lib/spray/spray-lifecycle-copy';
+import {
+  fetchSprayWallVersions,
+  mySprayWallsQueryKey,
+  sprayWallWithVersionsQueryKey,
+  useDiscardSprayWallVersion,
+} from '../../lib/spray/use-create-spray-wall';
 import { refreshPublishedSprayClimbs } from '../../lib/spray/refresh-published-spray-climbs';
 import { BIND_STAGE_DEADLINE_MS, withDeadline } from '../../lib/spray/post-publish-bind';
 import {
@@ -36,7 +43,12 @@ import {
   invalidateSprayWallRenderData,
   registerRenderData,
 } from '../../lib/spray/spray-wall-loader';
-import { sprayWallRemovalGeneration, sprayWallViewerGeneration } from '../../lib/spray/spray-wall-registry';
+import {
+  findRegisteredSprayWallByUuid,
+  refreshSprayWall,
+  sprayWallRemovalGeneration,
+  sprayWallViewerGeneration,
+} from '../../lib/spray/spray-wall-registry';
 import {
   prepareSprayHoldDraft,
   publishSprayHoldDraft,
@@ -64,7 +76,26 @@ const maintenanceTransport: SprayHoldMaintenanceTransport = {
 };
 
 type MaintenanceStatus = 'preparing' | 'editing' | 'publishing' | 'refreshing' | 'failed';
-/** Editing keeps the active board and visibility intact; leaving keeps its draft. */
+
+/**
+ * A refusal that no retry can fix: the wall is archived, or its holds locked
+ * when its first climb was published. The screen explains it and offers only
+ * the way back.
+ */
+function isFinalRefusal(failure: unknown): boolean {
+  if (failure instanceof SprayHoldMaintenanceError) {
+    return failure.reason === 'archived' || failure.reason === 'holdsLocked';
+  }
+  return sprayWallRefusalMeansStaleWall(sprayWallLifecycleRefusal(failure));
+}
+
+/**
+ * Editing keeps the active board and visibility intact; leaving keeps its draft.
+ *
+ * Refuses a wall whose holds are locked or which is archived before any draft is
+ * opened (`prepareSprayHoldDraft`), so a deep link or a sheet that rendered
+ * before the lock cannot reach the editor.
+ */
 export function SprayWallHoldsScreen({
   wallUuid,
   putBackRequestId = null,
@@ -126,6 +157,18 @@ export function SprayWallHoldsScreen({
     else router.replace('/boards');
   }, [router]);
 
+  // The wall's registry entry, refreshed when the server says this device's
+  // picture of the wall is out of date (archived, or holds locked since).
+  const refreshRegisteredWall = useCallback((failure: unknown) => {
+    const stale =
+      failure instanceof SprayHoldMaintenanceError
+        ? failure.reason === 'archived' || failure.reason === 'holdsLocked'
+        : sprayWallRefusalMeansStaleWall(sprayWallLifecycleRefusal(failure));
+    if (!stale) return;
+    const registered = findRegisteredSprayWallByUuid(requestedWallUuidRef.current);
+    if (registered) refreshSprayWall(registered.layoutId);
+  }, []);
+
   const prepare = useCallback(async () => {
     if (busyRef.current) return;
     busyRef.current = true;
@@ -138,13 +181,14 @@ export function SprayWallHoldsScreen({
       setDraft(prepared);
       setStatus('editing');
     } catch (error) {
+      refreshRegisteredWall(error);
       if (!mountedRef.current) return;
       setFailure(error);
       setStatus('failed');
     } finally {
       busyRef.current = false;
     }
-  }, []);
+  }, [refreshRegisteredWall]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -216,13 +260,37 @@ export function SprayWallHoldsScreen({
       if (!mountedRef.current) return;
       setFinished(true);
     } catch (error) {
+      refreshRegisteredWall(error);
       if (!mountedRef.current) return;
       setFailure(error);
       setStatus('failed');
     } finally {
       busyRef.current = false;
     }
-  }, [queryClient, putBackRequest]);
+  }, [queryClient, putBackRequest, refreshRegisteredWall]);
+
+  // A new-photo draft the retired in-place reset left on this wall. Discarding
+  // it keeps the wall and its climbs; only the photo goes.
+  const discardLeftover = useDiscardSprayWallVersion(wallUuid);
+  const discardLeftoverAsync = discardLeftover.mutateAsync;
+  const [discardFailed, setDiscardFailed] = useState(false);
+  const discardLeftoverPhoto = useCallback(
+    async (versionId: string) => {
+      if (busyRef.current) return;
+      busyRef.current = true;
+      setDiscardFailed(false);
+      try {
+        await discardLeftoverAsync(versionId);
+      } catch {
+        if (mountedRef.current) setDiscardFailed(true);
+        busyRef.current = false;
+        return;
+      }
+      busyRef.current = false;
+      if (mountedRef.current) void prepare();
+    },
+    [discardLeftoverAsync, prepare],
+  );
 
   const onDirtyChange = useCallback((dirty: boolean) => {
     editorDirtyRef.current = dirty;
@@ -285,42 +353,63 @@ export function SprayWallHoldsScreen({
   }
 
   const graphqlMessage = extractGraphqlMessage(failure);
+  const lifecycleRefusal = sprayWallLifecycleRefusal(failure);
   // Yoga input-coercion errors have no code and can include request variables.
   // Only coded backend guidance is suitable for displaying verbatim.
   const schemaOrUncodedError =
     isGraphqlValidationFailedError(failure) || (graphqlMessage !== null && extractGraphqlCode(failure) === null);
   const failureText =
     failure instanceof SprayHoldMaintenanceError
-      ? failure.reason === 'unavailable'
-        ? t('sprayMaintenance.unavailable')
-        : failure.reason === 'nothingPublished'
-          ? t('sprayMaintenance.nothingPublished')
-          : failure.reason === 'resetInProgress'
-            ? t('sprayMaintenance.resetInProgress')
-            : t('sprayMaintenance.draftUnavailable')
-      : schemaOrUncodedError
-        ? t('sprayMaintenance.temporarilyUnavailable')
-        : (graphqlMessage ??
-          (draft
-            ? publishedRef.current
-              ? t('sprayMaintenance.refreshFailed')
-              : t('sprayMaintenance.publishFailed')
-            : t('sprayMaintenance.loadFailed')));
+      ? maintenanceFailureText(failure.reason, t)
+      : lifecycleRefusal
+        ? sprayWallLifecycleMessage(lifecycleRefusal, t)
+        : schemaOrUncodedError
+          ? t('sprayMaintenance.temporarilyUnavailable')
+          : (graphqlMessage ??
+            (draft
+              ? publishedRef.current
+                ? t('sprayMaintenance.refreshFailed')
+                : t('sprayMaintenance.publishFailed')
+              : t('sprayMaintenance.loadFailed')));
   const workingText =
     status === 'preparing'
       ? t('sprayMaintenance.preparing')
       : status === 'publishing'
         ? t('sprayMaintenance.publishing')
         : t('sprayMaintenance.refreshing');
+  const leftoverVersionId =
+    failure instanceof SprayHoldMaintenanceError && failure.reason === 'leftoverPhotoDraft'
+      ? failure.leftoverVersionId
+      : null;
+  const finalRefusal = isFinalRefusal(failure);
 
   return (
     <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
       {status === 'failed' ? (
         <>
-          <Text variant="headline" style={styles.message}>
+          {finalRefusal && failure instanceof SprayHoldMaintenanceError && failure.reason === 'holdsLocked' ? (
+            <Text variant="headline" style={styles.message}>
+              {t('mobile.boardDetail.spray.holdsLocked')}
+            </Text>
+          ) : null}
+          <Text variant={finalRefusal ? 'body' : 'headline'} style={styles.message}>
             {failureText}
           </Text>
-          <Button title={t('sprayMaintenance.retry')} onPress={() => void (draft ? finish() : prepare())} />
+          {discardFailed ? (
+            <Text variant="subheadline" style={styles.message}>
+              {t('sprayMaintenance.discardLeftoverFailed')}
+            </Text>
+          ) : null}
+          {leftoverVersionId ? (
+            <Button
+              title={t('sprayMaintenance.discardLeftover')}
+              onPress={() => void discardLeftoverPhoto(leftoverVersionId)}
+              loading={discardLeftover.isPending}
+              disabled={discardLeftover.isPending}
+            />
+          ) : finalRefusal ? null : (
+            <Button title={t('sprayMaintenance.retry')} onPress={() => void (draft ? finish() : prepare())} />
+          )}
           <Button title={t('sprayWizard.back')} variant="text" onPress={returnToBoards} />
         </>
       ) : (
@@ -333,6 +422,24 @@ export function SprayWallHoldsScreen({
       )}
     </View>
   );
+}
+
+/** The sentence for each maintenance failure. Literal keys, for the i18n orphan check. */
+function maintenanceFailureText(reason: SprayHoldMaintenanceError['reason'], t: (key: string) => string): string {
+  switch (reason) {
+    case 'unavailable':
+      return t('sprayMaintenance.unavailable');
+    case 'nothingPublished':
+      return t('sprayMaintenance.nothingPublished');
+    case 'archived':
+      return t('sprayWallErrors.archived');
+    case 'holdsLocked':
+      return t('mobile.boardDetail.spray.holdsLockedHint');
+    case 'leftoverPhotoDraft':
+      return t('sprayMaintenance.leftoverPhoto');
+    case 'draftUnavailable':
+      return t('sprayMaintenance.draftUnavailable');
+  }
 }
 
 const styles = StyleSheet.create({

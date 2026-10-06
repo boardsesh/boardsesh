@@ -186,6 +186,8 @@ export type NowOnTheWallPanelProps = {
   activeBoard?: UserBoard | null;
   onOpenSprayMaintenance?: (wallUuid: string, action: SprayDetailRowKey) => void;
   onShareSprayWall?: (wallUuid: string) => void;
+  /** The signed-in climber's id. A spray wall's reset rows are its owner's alone. */
+  viewerUserId?: string | null;
   /**
    * Hop to another board at the same gym. Sheet variant only — the same panel
    * renders the iPad wall kiosk, and a board switcher on a display mounted to a
@@ -213,6 +215,7 @@ function NowOnTheWallPanelComponent(
     activeBoard,
     onOpenSprayMaintenance,
     onShareSprayWall,
+    viewerUserId,
     onSelectGymWall,
     onClimbPress,
     onAddToQueue,
@@ -636,6 +639,7 @@ function NowOnTheWallPanelComponent(
             board={activeBoard ?? null}
             onOpenMaintenance={onOpenSprayMaintenance}
             onShare={onShareSprayWall}
+            viewerUserId={viewerUserId}
           />
         ) : null}
         {/* Showcase anchors (screenshot mode): the board sheet only, never the
@@ -764,6 +768,7 @@ function NowOnTheWallPanelComponent(
     activeBoard,
     onOpenSprayMaintenance,
     onShareSprayWall,
+    viewerUserId,
     onSelectGymWall,
     canSwitchGymWall,
     gymWallsExpanded,

@@ -204,12 +204,17 @@ const resetVersion = {
   photo: { ...photoGeometry.photo, url: 'https://private.example/spray-walls/aaaa/cccc.jpg' },
 };
 
-describe('reset drafts cannot enter hold maintenance', () => {
-  it('refuses an existing reset before preparing or publishing it', async () => {
+describe('a new-photo draft left by the retired in-place reset', () => {
+  it('is refused, naming the draft so the screen can offer to discard it', async () => {
     const requests = transport();
     requests.fetchWall.mockResolvedValue(wall({ versions: [publishedVersion, resetVersion] }));
-    await expect(prepareSprayHoldDraft('wall-1', requests)).rejects.toMatchObject({ reason: 'resetInProgress' });
-    await expect(publishSprayHoldDraft(preparedDraft, requests)).rejects.toMatchObject({ reason: 'resetInProgress' });
+    await expect(prepareSprayHoldDraft('wall-1', requests)).rejects.toMatchObject({
+      reason: 'leftoverPhotoDraft',
+      leftoverVersionId: 'draft-2',
+    });
+    await expect(publishSprayHoldDraft(preparedDraft, requests)).rejects.toMatchObject({
+      reason: 'leftoverPhotoDraft',
+    });
     expect(requests.createDraft).not.toHaveBeenCalled();
     expect(requests.publishDraft).not.toHaveBeenCalled();
   });
@@ -218,7 +223,7 @@ describe('reset drafts cannot enter hold maintenance', () => {
     const requests = transport();
     requests.createDraft.mockRejectedValue(new Error('another editor created a reset'));
     requests.fetchWall.mockResolvedValueOnce(wall()).mockResolvedValueOnce(wall({ versions: [resetVersion] }));
-    await expect(prepareSprayHoldDraft('wall-1', requests)).rejects.toMatchObject({ reason: 'resetInProgress' });
+    await expect(prepareSprayHoldDraft('wall-1', requests)).rejects.toMatchObject({ reason: 'leftoverPhotoDraft' });
   });
 
   it('ignores rotated URL signatures when resuming legitimate hold edits', async () => {
@@ -229,5 +234,32 @@ describe('reset drafts cannot enter hold maintenance', () => {
     };
     requests.fetchWall.mockResolvedValue(wall({ versions: [rotated] }));
     await expect(prepareSprayHoldDraft('wall-1', requests)).resolves.toEqual(preparedDraft);
+  });
+});
+
+describe('locked and archived walls cannot enter hold maintenance', () => {
+  it.each([
+    ['holds locked by a published climb', { holdsLocked: true }, 'holdsLocked'],
+    ['an archived wall', { archivedAt: '2026-10-01T09:00:00.000Z', holdsLocked: true }, 'archived'],
+  ] as const)('refuses %s before any draft opens', async (_label, overrides, reason) => {
+    const requests = transport();
+    requests.fetchWall.mockResolvedValue(wall(overrides));
+    await expect(prepareSprayHoldDraft('wall-1', requests)).rejects.toMatchObject({ reason });
+    expect(requests.createDraft).not.toHaveBeenCalled();
+  });
+
+  // A deep link or a stale sheet can arrive with a hold-edit draft already open.
+  it('refuses even with a draft already open, and never publishes it', async () => {
+    const requests = transport();
+    requests.fetchWall.mockResolvedValue(wall({ holdsLocked: true, versions: [publishedVersion, draftVersion] }));
+    await expect(prepareSprayHoldDraft('wall-1', requests)).rejects.toMatchObject({ reason: 'holdsLocked' });
+    await expect(publishSprayHoldDraft(preparedDraft, requests)).rejects.toMatchObject({ reason: 'holdsLocked' });
+    expect(requests.publishDraft).not.toHaveBeenCalled();
+  });
+
+  it('checks access first, so a stranger hears "unavailable" not "locked"', async () => {
+    const requests = transport();
+    requests.fetchWall.mockResolvedValue(wall({ viewerCanEdit: false, holdsLocked: true }));
+    await expect(prepareSprayHoldDraft('wall-1', requests)).rejects.toMatchObject({ reason: 'unavailable' });
   });
 });

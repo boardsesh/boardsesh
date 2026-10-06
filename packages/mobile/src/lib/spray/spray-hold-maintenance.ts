@@ -7,6 +7,10 @@ export type SprayHoldMaintenanceWall = {
   uuid: string;
   layoutId: number;
   viewerCanEdit: boolean;
+  /** Set once a reset replaced the wall. An archived wall's holds never change. */
+  archivedAt?: string | null;
+  /** The wall has a published climb, so its holds are locked. Changing one means a reset. */
+  holdsLocked?: boolean | null;
   currentVersion?: MaintenanceVersion | null;
   versions?: readonly MaintenanceVersion[] | null;
 };
@@ -25,24 +29,54 @@ export type SprayHoldMaintenanceTransport = {
   publishDraft: (versionId: string) => Promise<MaintenanceVersion>;
 };
 
+/**
+ * Why the hold editor cannot open, or cannot publish.
+ *
+ * - `archived`: a reset replaced the wall; it is read-only.
+ * - `holdsLocked`: the wall has a published climb, so its holds no longer
+ *   change. Changing one means resetting the wall.
+ * - `leftoverPhotoDraft`: the wall's open draft carries a new photo, left by the
+ *   in-place reset that no longer exists. `leftoverVersionId` is that draft, so
+ *   the screen can offer to discard it.
+ */
+export type SprayHoldMaintenanceFailure =
+  | 'unavailable'
+  | 'nothingPublished'
+  | 'draftUnavailable'
+  | 'archived'
+  | 'holdsLocked'
+  | 'leftoverPhotoDraft';
+
 export class SprayHoldMaintenanceError extends Error {
-  constructor(public readonly reason: 'unavailable' | 'nothingPublished' | 'draftUnavailable' | 'resetInProgress') {
+  constructor(
+    public readonly reason: SprayHoldMaintenanceFailure,
+    public readonly leftoverVersionId: string | null = null,
+  ) {
     super(reason);
     this.name = 'SprayHoldMaintenanceError';
   }
 }
 
+/**
+ * The viewer may edit the wall, and the wall's holds may still change.
+ *
+ * The lock is checked before anything else is read off the wall, so a locked or
+ * archived wall is refused even with a draft already open: a deep link or a
+ * stale sheet must not reach an editor whose Publish the server will refuse.
+ */
 function requireEditableWall(wallUuid: string, wall: SprayHoldMaintenanceWall | null): SprayHoldMaintenanceWall {
   if (!wall || wall.uuid !== wallUuid || !wall.viewerCanEdit) {
     throw new SprayHoldMaintenanceError('unavailable');
   }
+  if (wall.archivedAt != null) throw new SprayHoldMaintenanceError('archived');
+  if (wall.holdsLocked === true) throw new SprayHoldMaintenanceError('holdsLocked');
   return wall;
 }
 
 function prepareTarget(wall: SprayHoldMaintenanceWall, version: MaintenanceVersion): PreparedSprayHoldDraft {
   if (version.status !== 'DRAFT') throw new SprayHoldMaintenanceError('draftUnavailable');
   if (sprayDraftPurpose(version, wall.currentVersion) === 'reset') {
-    throw new SprayHoldMaintenanceError('resetInProgress');
+    throw new SprayHoldMaintenanceError('leftoverPhotoDraft', version.id);
   }
   return {
     wallUuid: wall.uuid,
@@ -99,7 +133,7 @@ export async function publishSprayHoldDraft(
   const version = findPreparedVersion(wall, draft);
   if (version.status !== 'DRAFT') return;
   if (sprayDraftPurpose(version, wall.currentVersion) === 'reset') {
-    throw new SprayHoldMaintenanceError('resetInProgress');
+    throw new SprayHoldMaintenanceError('leftoverPhotoDraft', version.id);
   }
 
   try {

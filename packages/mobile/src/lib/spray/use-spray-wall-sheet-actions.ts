@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
+import { sprayWallResetStarted } from '@boardsesh/analytics';
 import type { DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
 import {
   sprayDetailRows,
@@ -8,6 +10,9 @@ import {
   type SprayDetailRowKey,
   type SprayShareTarget,
 } from '../../components/board-discovery/spray-detail-rows';
+import { confirmSprayWallReset } from './confirm-spray-wall-reset';
+import { sprayWallArchiveState } from './spray-wall-registry';
+import { trackSprayEvent } from './spray-telemetry';
 
 type ShareSnapshot = SprayShareTarget & { wallUuid: string; wallName: string };
 
@@ -22,14 +27,27 @@ function boardActionSignature(board: UserBoard | null): string {
         board.slug,
         board.angle,
         board.name,
+        board.ownerId,
       ])
     : '';
 }
 
-/** Own action lifetimes above the panel, which unmounts after normal dismissal. */
-export function useSprayWallSheetActions(board: UserBoard | null, dismissAndWait: () => Promise<DismissAndWaitResult>) {
+/**
+ * Own action lifetimes above the panel, which unmounts after normal dismissal.
+ *
+ * `viewerUserId` is who is signed in: a reset is the wall owner's alone, so the
+ * reset rows compare it with the board's `ownerId`.
+ */
+export function useSprayWallSheetActions(
+  board: UserBoard | null,
+  dismissAndWait: () => Promise<DismissAndWaitResult>,
+  viewerUserId: string | null | undefined,
+) {
+  const { t } = useTranslation('boards');
   const boardRef = useRef(board);
   boardRef.current = board;
+  const viewerUserIdRef = useRef(viewerUserId);
+  viewerUserIdRef.current = viewerUserId;
   const signature = useMemo(() => boardActionSignature(board), [board]);
   const signatureRef = useRef(signature);
   signatureRef.current = signature;
@@ -61,7 +79,16 @@ export function useSprayWallSheetActions(board: UserBoard | null, dismissAndWait
     async (wallUuid: string, action: SprayDetailRowKey | 'share') => {
       const activeWall = boardRef.current;
       if (pendingRef.current || !activeWall || activeWall.uuid !== wallUuid) return;
-      const href = action === 'share' ? null : sprayDetailRows(activeWall).find((row) => row.key === action)?.href;
+      // Re-derived at the tap, from the registry as it is now: a wall archived
+      // or locked since the sheet rendered must not open a door it no longer has.
+      const row =
+        action === 'share'
+          ? null
+          : sprayDetailRows(activeWall, {
+              viewerUserId: viewerUserIdRef.current,
+              archive: sprayWallArchiveState(activeWall.boardType, activeWall.layoutId),
+            }).find((candidate) => candidate.key === action);
+      const href = row?.href ?? null;
       const target = action === 'share' ? sprayShareTarget(activeWall) : null;
       if (action === 'share' ? !target : !href) return;
       const snapshot = target ? { ...target, wallUuid, wallName: activeWall.name } : null;
@@ -69,6 +96,22 @@ export function useSprayWallSheetActions(board: UserBoard | null, dismissAndWait
       const request = ++requestRef.current;
       pendingRef.current = true;
       try {
+        if (row?.confirmsReset) {
+          const confirmed = await confirmSprayWallReset({
+            title: t('sprayResetConfirm.title'),
+            body: t('sprayResetConfirm.body'),
+            start: t('sprayResetConfirm.start'),
+            cancel: t('sprayResetConfirm.cancel'),
+          });
+          if (
+            !confirmed ||
+            !mountedRef.current ||
+            request !== requestRef.current ||
+            startingSignature !== signatureRef.current
+          )
+            return;
+          trackSprayEvent(sprayWallResetStarted(action === 'holdsLocked' ? 'holds_locked' : 'board_sheet'));
+        }
         const result = await dismissAndWait();
         if (
           result.status !== 'dismissed' ||
@@ -87,7 +130,7 @@ export function useSprayWallSheetActions(board: UserBoard | null, dismissAndWait
         if (request === requestRef.current) pendingRef.current = false;
       }
     },
-    [dismissAndWait],
+    [dismissAndWait, t],
   );
 
   const openMaintenance = useCallback(
