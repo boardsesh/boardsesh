@@ -286,16 +286,35 @@ export function hiddenClimbCondition(searchParams: ClimbSearchParams): SQL[] {
  * playlists, share links and the queue read a climb by uuid and never come
  * through this builder, so they still open it.
  *
- * `ClimbSearchInput.holdIntegrity` is accepted by the API and ignored. This also
- * covers the climbs a FULL reset retired (`retired_by_reset`): a retired climb
- * always lost a hold.
+ * This also covers the climbs a FULL reset retired (`retired_by_reset`): a
+ * retired climb always lost a hold.
+ *
+ * Not on a drafts query. A draft can still lose a hold today: the holds of a wall
+ * with no published climb stay editable, and a published hold edit that removes
+ * one the draft uses raises its count to 1. `onlyDrafts` is the only place the
+ * setter finds their drafts, so hiding it there would leave a draft nobody can
+ * open to fix or delete.
  *
  * Spray only, so a catalogue board renders no predicate. NULL reads as intact,
  * the same as before: a spray climb written before the column existed is whole.
  */
-export function lostHoldsCondition(boardName: string): SQL[] {
-  if (boardName !== 'spray') return [];
+export function lostHoldsCondition(boardName: string, options: { isDraftsQuery: boolean }): SQL[] {
+  if (boardName !== 'spray' || options.isDraftsQuery) return [];
   return [sql`COALESCE(${boardClimbs.missingHoldCount}, 0) = 0`];
+}
+
+/**
+ * The retired "Lost holds" filter (`holdIntegrity: BROKEN`), on every board.
+ *
+ * Both installed apps offer it on every board. It used to keep only climbs that
+ * had lost a hold: an empty list on a catalogue board, where holds never come
+ * off, and the lost-hold climbs on a spray wall. Those are hidden now
+ * (`lostHoldsCondition`), so the honest answer everywhere is the empty list,
+ * rendered as a false predicate so search and count agree. INTACT and ANY are
+ * accepted and ignored: each is the plain list.
+ */
+export function lostHoldsFilterCondition(searchParams: Pick<ClimbSearchParams, 'holdIntegrity'>): SQL[] {
+  return searchParams.holdIntegrity === 'broken' ? [sql`false`] : [];
 }
 
 function moonBoardZoneCoordinates(layoutId: number, placementHoleId: SQL): { x: SQL; y: SQL } {
@@ -546,7 +565,8 @@ export const createClimbFilters = (
     ...(isListedCondition ? [isListedCondition] : []),
     isDraftCondition,
     ...hiddenClimbCondition(searchParams),
-    ...lostHoldsCondition(params.board_name),
+    ...lostHoldsCondition(params.board_name, { isDraftsQuery: Boolean(isOnlyDrafts) }),
+    ...lostHoldsFilterCondition(searchParams),
     ...(climbTypeCondition ? [climbTypeCondition] : []),
   ];
 

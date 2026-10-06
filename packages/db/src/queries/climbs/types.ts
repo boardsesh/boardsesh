@@ -84,6 +84,13 @@ export type ClimbSearchParams = {
    */
   onlyFavorited?: boolean;
   projectsOnly?: boolean;
+  /**
+   * The retired "Lost holds" filter. Only `broken` survives, as an empty result
+   * on every board (`lostHoldsFilterCondition`); an older app's INTACT and ANY
+   * collapse to undefined, the plain list. Kept as a param, not dropped, so a
+   * BROKEN search keeps its own search-cache key.
+   */
+  holdIntegrity?: 'broken';
   // Resolve each climb's stats through its own set angle when the browsed angle
   // has no row (issue #5405). Opt-in on every board: omitted means off. On an
   // angle-bound board (Woods) off also restricts the list to the climbs that
@@ -151,7 +158,7 @@ export type ClimbSearchInputLike = {
   onlyDrafts?: boolean | null;
   onlyFavorited?: boolean | null;
   projectsOnly?: boolean | null;
-  /** Accepted from older apps and ignored; see `lostHoldsCondition`. */
+  /** From older apps. BROKEN survives as an empty filter; INTACT and ANY are ignored (`lostHoldsFilterCondition`). */
   holdIntegrity?: string | null;
   crossAngleStats?: boolean | null;
   gradeSource?: string | null;
@@ -268,6 +275,7 @@ export function mapSearchInputToParams(input: ClimbSearchInputLike): ClimbSearch
     // false is the same as omitted, so it collapses and leaves the cache key alone.
     onlyFavorited: input.onlyFavorited || undefined,
     projectsOnly: input.projectsOnly ?? undefined,
+    holdIntegrity: input.holdIntegrity?.toUpperCase() === 'BROKEN' ? 'broken' : undefined,
     crossAngleStats: input.crossAngleStats ?? undefined,
     gradeSource: gradeSourceMatters ? normalizeGradeSource(input.gradeSource) : undefined,
     boulders: input.boulders ?? undefined,

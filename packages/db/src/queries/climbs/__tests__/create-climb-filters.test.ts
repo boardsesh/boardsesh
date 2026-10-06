@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { woodsHoldIdsInZone } from '@boardsesh/board-config';
-import { createClimbFilters, hiddenClimbCondition, lostHoldsCondition } from '../create-climb-filters';
+import {
+  createClimbFilters,
+  hiddenClimbCondition,
+  lostHoldsCondition,
+  lostHoldsFilterCondition,
+} from '../create-climb-filters';
 import { mapSearchInputToParams, normalizeGradeSource, type BoardRouteParams, type ClimbSearchParams } from '../types';
 
 const params: BoardRouteParams = {
@@ -1202,13 +1207,54 @@ void describe('createClimbFilters: spray climbs that lost a hold', () => {
   });
 
   void it('renders nothing on a catalogue board', () => {
-    assert.deepEqual(lostHoldsCondition('kilter'), []);
+    assert.deepEqual(lostHoldsCondition('kilter', { isDraftsQuery: false }), []);
     assert.doesNotMatch(whereSql(params, baseSearch), /missing_hold_count/);
   });
 
-  void it('drops the wire holdIntegrity value, so every value searches the same rows', () => {
-    for (const holdIntegrity of ['ANY', 'INTACT', 'BROKEN']) {
+  void it('keeps a draft that lost a hold in the setter’s drafts list', () => {
+    // `onlyDrafts` is the one place a setter finds their drafts; a draft hidden
+    // there could never be opened to fix or delete.
+    const drafts = createClimbFilters(sprayParams, { onlyDrafts: true }, 'setter-1')
+      .getClimbWhereConditions()
+      .map(sqlToString)
+      .join(' || ');
+    assert.doesNotMatch(drafts, /missing_hold_count/);
+    // onlyDrafts with no signed-in caller is not a drafts query, so the rule stays.
+    assert.match(whereSql(sprayParams, { onlyDrafts: true }), /missing_hold_count/);
+  });
+
+  void it('ignores INTACT and ANY, which both search the plain list', () => {
+    for (const holdIntegrity of ['ANY', 'INTACT', 'any', undefined, null]) {
       assert.deepEqual(mapSearchInputToParams({ holdIntegrity }), mapSearchInputToParams({}));
     }
+  });
+});
+
+// The retired "Lost holds" filter, which both installed apps show on every board.
+void describe('createClimbFilters: holdIntegrity BROKEN', () => {
+  const sprayParams: BoardRouteParams = {
+    board_name: 'spray',
+    layout_id: 9001,
+    size_id: 9001,
+    set_ids: [1],
+    angle: 25,
+  };
+  const whereSql = (boardParams: BoardRouteParams, search: ClimbSearchParams) =>
+    createClimbFilters(boardParams, search).getClimbWhereConditions().map(sqlToString).join(' || ');
+
+  void it('survives the wire mapping as its own param', () => {
+    assert.equal(mapSearchInputToParams({ holdIntegrity: 'BROKEN' }).holdIntegrity, 'broken');
+    assert.equal(mapSearchInputToParams({ holdIntegrity: 'INTACT' }).holdIntegrity, undefined);
+  });
+
+  void it('is a false predicate on a catalogue board, as the empty list it always was', () => {
+    // Its own WHERE entry, a bare `false`.
+    assert.match(whereSql(params, { holdIntegrity: 'broken' }), /\|\| false( \|\||$)/);
+    assert.doesNotMatch(whereSql(params, baseSearch), /\|\| false( \|\||$)/);
+  });
+
+  void it('is a false predicate on a spray wall, where lost-hold climbs are hidden anyway', () => {
+    assert.match(whereSql(sprayParams, { holdIntegrity: 'broken' }), /\|\| false( \|\||$)/);
+    assert.deepEqual(lostHoldsFilterCondition({}), []);
   });
 });
