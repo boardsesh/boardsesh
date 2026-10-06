@@ -127,12 +127,10 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   // The photo is the step that decides how many holds the finder misses, so
   // the long version of the advice (with the why) is one tap away, in the
   // language the climber is reading.
+  const language = i18n.resolvedLanguage ?? i18n.language;
   const openPhotoGuide = useCallback(() => {
-    void openExternalUrl(
-      buildHelpUrl('spray-walls', i18n.resolvedLanguage ?? i18n.language),
-      'spray-wizard-photo-guide',
-    );
-  }, [i18n]);
+    void openExternalUrl(buildHelpUrl('spray-walls', language), 'spray-wizard-photo-guide');
+  }, [language]);
 
   /**
    * A cap refusal said in the climber's own language, with its number, ahead of
