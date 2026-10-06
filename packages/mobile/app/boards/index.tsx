@@ -1053,7 +1053,9 @@ const styles = StyleSheet.create({
   },
   modeRow: {
     flexDirection: 'row',
-    gap: spacing[3],
+    // 8 dp, not 12: five tiles share the row, and every point of gap is a
+    // point the labels lose (#5960).
+    gap: spacing[2],
     paddingHorizontal: spacing[4],
   },
   section: {

@@ -19,7 +19,7 @@ type ScreenProps = {
   options?: ScreenOptions | ((props: { route: { params?: object } }) => ScreenOptions);
 };
 
-const routerMock = vi.hoisted(() => ({ back: vi.fn(), dismissTo: vi.fn() }));
+const routerMock = vi.hoisted(() => ({ back: vi.fn(), dismissTo: vi.fn(), canGoBack: () => true }));
 const noteCloseTappedMock = vi.hoisted(() => vi.fn());
 const screens = vi.hoisted(() => ({ byName: new Map<string, ScreenProps>() }));
 
@@ -29,7 +29,7 @@ vi.mock('expo-router', () => {
     screens.byName.set(props.name, props);
     return null;
   };
-  return { Stack, router: routerMock };
+  return { Stack, router: routerMock, useRouter: () => routerMock };
 });
 // The launch hold is covered by its own suite; here the screen renders as is.
 vi.mock('../../../src/components/launch-update/hold-until-launch-ready', () => ({
@@ -142,5 +142,29 @@ describe('the board picker header X', () => {
     cleanup();
     renderIndexHeaderLeft({ source: 'onboarding', firstBoard: 1 });
     expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy();
+  });
+});
+
+// #5960: the live board sheet opens Reset the wall as the first screen of this
+// modal, where there is no back chevron. Edit holds is another flow's to change.
+describe('boards stack header on the spray maintenance routes', () => {
+  function headerLeftFor(name: string): HeaderLeft | undefined {
+    render(createElement(BoardsLayout));
+    const props = screens.byName.get(name);
+    if (!props) throw new Error(`${name} not captured`);
+    const options = typeof props.options === 'function' ? props.options({ route: { params: {} } }) : props.options;
+    cleanup();
+    return options?.headerLeft;
+  }
+
+  it('gives Reset the wall a close button that leaves through navigation', () => {
+    vi.clearAllMocks();
+    const headerLeft = headerLeftFor('spray/reset');
+    if (!headerLeft) throw new Error('spray/reset has no headerLeft');
+    render(createElement('div', null, headerLeft({ tintColor: '#000' })));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(routerMock.back).toHaveBeenCalledTimes(1);
   });
 });

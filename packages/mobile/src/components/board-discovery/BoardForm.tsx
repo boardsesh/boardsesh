@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   View,
   ScrollView,
@@ -24,7 +24,7 @@ import { boardTypeLabel, cleanLayoutName, formatSizeLabel } from './board-builde
 import { BoardImageNative } from '../BoardImageNative';
 import { getBoardRenderData } from '../../lib/board-details';
 import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
-import { sprayWallVisibility, type SprayWallVisibility } from '../../lib/spray/spray-share';
+import { sprayWallVisibility } from '../../lib/spray/spray-share';
 import { AngleSlider } from '../play-drawer/AngleSlider';
 import { AngleBoardDiagram } from '../play-drawer/AngleBoardDiagram';
 import { SwitchRow } from '../SwitchRow';
@@ -34,7 +34,13 @@ import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { TimerPairingSheet } from '../ble/TimerPairingSheet';
 import { GymPickerSheet } from './GymPickerSheet';
-import { BoardIdentityFields, BoardVisibilityFields, BuilderTextInput, SectionLabel } from './BoardMetaFields';
+import {
+  BoardIdentityFields,
+  BoardVisibilityFields,
+  BuilderTextInput,
+  SectionLabel,
+  SprayWallVisibilityField,
+} from './BoardMetaFields';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 
@@ -182,24 +188,6 @@ export function BoardForm({
   // device picker on a photograph.
   const isSprayWall = builder.boardName === 'spray';
   const sprayVisibility = sprayWallVisibility(builder);
-  const { setIsPublic, setIsUnlisted } = builder;
-  // One control, two flags. Public wins over unlisted on read (`sprayWallVisibility`),
-  // so writing the pair exclusively is what keeps the round trip honest.
-  const onSelectVisibility = useCallback(
-    (next: SprayWallVisibility) => {
-      setIsPublic(next === 'public');
-      setIsUnlisted(next === 'unlisted');
-    },
-    [setIsPublic, setIsUnlisted],
-  );
-  const visibilityOptions = useMemo(
-    () => [
-      { key: 'private' as const, label: t('mobile.sprayVisibility.private') },
-      { key: 'unlisted' as const, label: t('mobile.sprayVisibility.unlisted') },
-      { key: 'public' as const, label: t('mobile.sprayVisibility.public') },
-    ],
-    [t],
-  );
   const climbEditPolicyOptions = useMemo(
     () => [
       { key: 'setter' as const, label: t('mobile.sprayClimbEditPolicy.setter') },
@@ -336,20 +324,7 @@ export function BoardForm({
                 public" reachable, which is a state nobody meant to pick. */}
             {isSprayWall ? (
               <>
-                <SectionLabel>{t('mobile.sprayVisibility.label')}</SectionLabel>
-                <SegmentedControl<SprayWallVisibility>
-                  options={visibilityOptions}
-                  selectedKey={sprayVisibility}
-                  onSelect={onSelectVisibility}
-                  accessibilityLabel={t('mobile.sprayVisibility.label')}
-                />
-                <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.visibilityHint}>
-                  {sprayVisibility === 'public'
-                    ? t('mobile.sprayVisibility.publicHint')
-                    : sprayVisibility === 'unlisted'
-                      ? t('mobile.sprayVisibility.unlistedHint')
-                      : t('mobile.sprayVisibility.privateHint')}
-                </Text>
+                <SprayWallVisibilityField builder={builder} />
                 {onSelectClimbEditPolicy ? (
                   <>
                     <SectionLabel>{t('mobile.sprayClimbEditPolicy.label')}</SectionLabel>
@@ -503,6 +478,7 @@ export function BoardForm({
         <GymPickerSheet
           selectedUuid={builder.selectedGym?.uuid ?? null}
           boardCoords={builder.coords}
+          showsOnMap={builder.isPublic}
           onSelect={(gym) => {
             builder.setSelectedGym(gym);
             setGymPickerOpen(false);

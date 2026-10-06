@@ -381,8 +381,13 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
           {t('sprayReset.openDraft.body')}
         </Text>
         {openDraft.photo?.width && openDraft.photo?.height ? (
+          // The way forward is the primary action; throwing the reset away is
+          // the destructive side road. They were drawn the other way round:
+          // a small Resume above a large filled discard (#5960).
           <Button
             title={t('sprayDetection.resume')}
+            variant="filled"
+            size="large"
             onPress={() => {
               const { width, height } = openDraft.photo ?? {};
               if (!width || !height) return;
@@ -402,8 +407,8 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
         ) : null}
         <Button
           title={t('sprayReset.openDraft.discard')}
-          variant="filled"
-          size="large"
+          variant="text"
+          role="destructive"
           onPress={() => void discardOpenDraft()}
           loading={discardVersion.isPending}
           disabled={discardVersion.isPending}

@@ -80,9 +80,28 @@ vi.mock('../../../lib/graphql/extract-error-message', () => ({
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', {}, children),
 }));
+type ButtonMockProps = {
+  title: string;
+  onPress?: () => void;
+  disabled?: boolean;
+  variant?: string;
+  size?: string;
+  role?: string;
+};
 vi.mock('../../Button', () => ({
-  Button: ({ title, onPress, disabled }: { title: string; onPress?: () => void; disabled?: boolean }) =>
-    createElement('button', { onClick: onPress, disabled, 'data-disabled': disabled ? 'true' : 'false' }, title),
+  Button: ({ title, onPress, disabled, variant, size, role }: ButtonMockProps) =>
+    createElement(
+      'button',
+      {
+        onClick: onPress,
+        disabled,
+        'data-disabled': disabled ? 'true' : 'false',
+        'data-variant': variant ?? 'default',
+        'data-size': size ?? 'default',
+        'data-role': role ?? '',
+      },
+      title,
+    ),
 }));
 vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('i', { 'data-testid': 'spinner' }),
@@ -191,6 +210,27 @@ describe('SprayWallResetScreen', () => {
       getByText('sprayReset.openDraft.discard').click();
     });
     expect(discardMutateAsync).toHaveBeenCalledWith('2');
+  });
+
+  // #5960: Resume was drawn smaller than the destructive discard under it.
+  it('makes Resume the primary action and the discard a destructive text button', () => {
+    wallQueryState.current = {
+      data: {
+        ...EDITABLE_WALL,
+        versions: [
+          { id: '2', number: 2, status: 'DRAFT', photo: { width: 800, height: 600 } },
+          ...EDITABLE_WALL.versions,
+        ],
+      },
+      isPending: false,
+    };
+    const { getByText } = renderScreen();
+    const resume = getByText('sprayDetection.resume');
+    expect(resume.getAttribute('data-variant')).toBe('filled');
+    expect(resume.getAttribute('data-size')).toBe('large');
+    const discard = getByText('sprayReset.openDraft.discard');
+    expect(discard.getAttribute('data-variant')).toBe('text');
+    expect(discard.getAttribute('data-role')).toBe('destructive');
   });
 
   it('resumes the existing reset detection without manual fallback or changing the published wall', async () => {

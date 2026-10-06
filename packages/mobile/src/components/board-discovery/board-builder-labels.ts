@@ -77,10 +77,14 @@ export function formatDefaultBoardName(params: {
   size?: { name: string } | null;
 }): string {
   const { userName, boardName, layoutName, size } = params;
+  // A spray wall's layout and size are created at runtime and have no name a
+  // climber would recognise: the layout lookup falls back to the board type, so
+  // the name read "Marco's Spray wall spray" (#5960). The board type says it all.
+  const isSprayWall = boardName === 'spray';
   const config = [
     boardTypeLabel(boardName),
-    cleanLayoutName(layoutName, boardName),
-    size ? formatSizeDimensions(size) : '',
+    isSprayWall ? '' : cleanLayoutName(layoutName, boardName),
+    size && !isSprayWall ? formatSizeDimensions(size) : '',
   ]
     .filter(Boolean)
     .join(' ');

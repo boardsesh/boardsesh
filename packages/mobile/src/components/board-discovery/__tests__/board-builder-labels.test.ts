@@ -86,6 +86,13 @@ describe('formatDefaultBoardName', () => {
     ).toBe("Sam's Kilter Homewall");
   });
 
+  // #5960: clearing a spray wall's name saved "Test User's Spray wall spray".
+  it('names a spray wall by its owner and type alone', () => {
+    expect(
+      formatDefaultBoardName({ userName: 'Test User', boardName: 'spray', layoutName: 'spray', size: { name: '1' } }),
+    ).toBe("Test User's Spray wall");
+  });
+
   // The Woods layout is named "Original" (not "Woods Board") precisely so the
   // cleanup below leaves something to show — a layout called "Woods Board" would
   // strip to an empty string and the default name would read "Marco's Woods 12×12"

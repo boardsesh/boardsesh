@@ -412,6 +412,7 @@
     },
     "detail": {
       "notFound": "Bloque no encontrado",
+      "boardNotFound": "Este plafón ya no existe o no está compartido contigo.",
       "backToHome": "Volver al inicio"
     },
     "logAscent": {

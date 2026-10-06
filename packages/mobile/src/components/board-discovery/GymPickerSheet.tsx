@@ -43,6 +43,12 @@ type GymPickerSheetProps = {
   /** Board coordinates when known — the picker centres on these before asking for device location. */
   boardCoords: { latitude: number; longitude: number } | null;
   onSelect: (gym: PickedGym | null) => void;
+  /**
+   * Whether the board shows on the map at all (it is public). "Not at a gym"
+   * promised a pin of its own even on a private wall, which never gets one
+   * (#5960). Defaults to true.
+   */
+  showsOnMap?: boolean;
   /** "My gym isn't listed" — clears the link and sends the user back to the location field. */
   onRequestManualLocation: () => void;
   onDismiss: () => void;
@@ -94,6 +100,7 @@ export function GymPickerSheet({
   selectedUuid,
   boardCoords,
   onSelect,
+  showsOnMap = true,
   onRequestManualLocation,
   onDismiss,
 }: GymPickerSheetProps) {
@@ -191,7 +198,7 @@ export function GymPickerSheet({
             {t('mobile.gymPicker.noGym')}
           </Text>
           <Text variant="footnote" color={systemColors.secondaryLabel}>
-            {t('mobile.gymPicker.noGymHint')}
+            {showsOnMap ? t('mobile.gymPicker.noGymHint') : t('mobile.gymPicker.noGymHintOffMap')}
           </Text>
         </View>
         {selectedUuid == null ? <Icon name="check.small" size={20} color={brandColors.primary} /> : null}
@@ -222,6 +229,9 @@ export function GymPickerSheet({
       ) : (
         <BottomSheetFlatList
           data={gyms}
+          // The search field keeps the keyboard up; without this the first tap
+          // on a result only dismissed it and a second tap picked the gym (#5960).
+          keyboardShouldPersistTaps="handled"
           keyExtractor={keyExtractor}
           renderItem={renderItem}
           contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + spacing[4] }]}

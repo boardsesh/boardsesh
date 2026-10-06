@@ -162,6 +162,8 @@
       "location": "Emplacement",
       "locationPlaceholder": "Maison, nom de la salle ou ville",
       "useMyLocation": "Utiliser ma position",
+      "locationDeniedHint": "Boardsesh n'a pas accès à ta position. Autorise-la dans les Réglages ou tape un lieu au-dessus.",
+      "locationUnavailableHint": "Impossible de trouver où tu es. Tape plutôt un lieu au-dessus.",
       "serial": "Numéro de série du contrôleur",
       "serialPlaceholder": "p. ex. ABC-12345",
       "serialHint": "Optionnel — ton contrôleur se lie tout seul à la première connexion.",
@@ -415,6 +417,7 @@
       "searchPlaceholder": "Rechercher une salle",
       "noGym": "Pas dans une salle",
       "noGymHint": "Elle apparaîtra quand même sur la carte avec son propre repère.",
+      "noGymHintOffMap": "Elle reste hors de la carte tant qu'elle n'est pas publique.",
       "addNew": "Ma salle n'est pas listée",
       "empty": "Aucune salle à proximité",
       "sharedEditHint": "L'équipe de cette salle pourra modifier les infos de cette board.",
@@ -890,8 +893,7 @@
       "namePlaceholder": "Mur du garage",
       "angle": "Angle",
       "angleHint": "Le dévers du mur, par pas de 5°. Figé une fois publié.",
-      "publicHint": "Désactivé, le mur et sa photo restent pour toi seul.",
-      "next": "Choisir une photo",
+      "next": "Suivant",
       "anglePreview": "Mur à {{angle}} degrés"
     },
     "photo": {
@@ -925,6 +927,9 @@
       "percent": "Téléversé à {{percent}} %",
       "failed": "La photo n'est pas passée.",
       "retry": "Réessayer",
+      "offlineMode": "Le mode hors ligne est activé, ta photo ne peut donc pas être mise en ligne. Désactive-le, puis réessaie.",
+      "noSignal": "Pas de réseau, ta photo n'a donc pas été mise en ligne. Réessaie dès que tu as du réseau.",
+      "serverUnreachable": "Impossible de joindre Boardsesh pour l'instant. Ta photo est toujours là, réessaie dans une minute.",
       "checkFailed": "Impossible de savoir si ta photo est passée. Réessaie quand tu auras du réseau."
     },
     "detect": {

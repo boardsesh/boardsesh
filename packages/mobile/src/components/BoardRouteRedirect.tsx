@@ -95,7 +95,24 @@ function useBoardRouteHandoffReporter(target: BoardRouteTarget | null, mode: Boa
   );
 }
 
-export function BoardRouteRedirect({ status }: { status: BoardRouteStatus }) {
+/**
+ * What the dead end is about. A shared board or spray wall link that no longer
+ * resolves said "Climb not found" (#5960); only a climb link should.
+ */
+export type BoardRouteSubject = 'climb' | 'board';
+
+/** The subject of a parsed route. An unparsed URL keeps the climb wording. */
+export function boardRouteSubject(target: BoardRouteTarget | null): BoardRouteSubject {
+  return target?.kind === 'list' || target?.kind === 'slug-list' ? 'board' : 'climb';
+}
+
+export function BoardRouteRedirect({
+  status,
+  subject = 'climb',
+}: {
+  status: BoardRouteStatus;
+  subject?: BoardRouteSubject;
+}) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
   const router = useRouter();
@@ -127,7 +144,7 @@ export function BoardRouteRedirect({ status }: { status: BoardRouteStatus }) {
         <>
           <Icon name="error" size={48} color={systemColors.secondaryLabel} />
           <Text variant="headline" style={styles.errorText}>
-            {t('mobile.detail.notFound')}
+            {subject === 'board' ? t('mobile.detail.boardNotFound') : t('mobile.detail.notFound')}
           </Text>
           {/* The one way out. These routes mount headerless at the ROOT stack, so
               a cold open from a dead link has no header, no tab bar and nothing
@@ -193,7 +210,7 @@ export function BoardRouteHandoff({
     return <AnonymousClimbView climb={climb} boardConfig={boardConfig} isAngleAdjustable={isAngleAdjustable} />;
   }
 
-  return <BoardRouteRedirect status={status} />;
+  return <BoardRouteRedirect status={status} subject={boardRouteSubject(target)} />;
 }
 
 const styles = StyleSheet.create({

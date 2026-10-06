@@ -53,13 +53,20 @@ import {
   type SprayEditorNotice,
   type SprayHoldSaveSummary,
 } from '../outline-editor/SprayHoldEditorScreen';
-import { BoardIdentityFields, BoardVisibilityFields, SectionLabel } from '../board-discovery/BoardMetaFields';
+import {
+  BoardIdentityFields,
+  BoardVisibilityFields,
+  SectionLabel,
+  SprayWallVisibilityField,
+} from '../board-discovery/BoardMetaFields';
 import { SPRAY_ANGLE_OPTIONS, useSprayWallBuilder } from '../board-discovery/use-spray-wall-builder';
 import { AngleSlider } from '../play-drawer/AngleSlider';
 import { AngleBoardDiagram } from '../play-drawer/AngleBoardDiagram';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
+import { useConnectivity } from '../../lib/connectivity/use-connectivity';
+import { sprayUploadNotice } from './spray-upload-notice';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
@@ -156,6 +163,9 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
 
   const builder = useSprayWallBuilder();
   const [state, dispatch] = useReducer(addWallReducer, undefined, initialAddWallState);
+  // Why the network is out, if it is, so a failed upload can say which fix
+  // applies instead of the generic error (#5960).
+  const uploadNotice = sprayUploadNotice(useConnectivity().reason);
   const [pickerBusy, setPickerBusy] = useState(false);
   // Hosted here rather than inside `BoardIdentityFields` so the sheet is a
   // SIBLING of the ScrollView, exactly as it is in `BoardForm` — a sheet mounted
@@ -862,7 +872,10 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
               {t('sprayWizard.meta.angleHint')}
             </Text>
 
-            <BoardVisibilityFields builder={builder} publicHint={t('sprayWizard.meta.publicHint')} />
+            {/* Same three-way control as Edit board: two switches let "Public"
+                and "Unlisted" both be on, and Unlisted had no hint (#5960). */}
+            <SprayWallVisibilityField builder={builder} />
+            <BoardVisibilityFields builder={builder} hideVisibilitySwitches />
 
             {/* The wall cap said before it bites rather than after: ten is a
                 number a gym with a lot of bays can reach, and meeting it as a
@@ -891,6 +904,13 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
                 {t('sprayWizard.photo.helpLink')}
               </Text>
             </Pressable>
+            {/* Said before the upload, not after it fails: Offline mode is a
+                switch the climber can turn off right now. */}
+            {uploadNotice === 'offlineMode' ? (
+              <Text variant="footnote" color={iosSystemColors.systemOrange} accessibilityLiveRegion="polite">
+                {t('sprayWizard.upload.offlineMode')}
+              </Text>
+            ) : null}
             <View style={styles.photoActions}>
               <Button
                 title={state.photo ? t('sprayWizard.photo.pickAnother') : t('sprayWizard.photo.library')}
@@ -931,7 +951,13 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
             <Text variant="title3">{t('sprayWizard.upload.title')}</Text>
             {state.upload.error ? (
               <Text variant="subheadline" color={iosSystemColors.systemRed} accessibilityLiveRegion="polite">
-                {state.upload.error}
+                {uploadNotice === 'offlineMode'
+                  ? t('sprayWizard.upload.offlineMode')
+                  : uploadNotice === 'noSignal'
+                    ? t('sprayWizard.upload.noSignal')
+                    : uploadNotice === 'serverUnreachable'
+                      ? t('sprayWizard.upload.serverUnreachable')
+                      : state.upload.error}
               </Text>
             ) : (
               <ProgressBlock
@@ -987,6 +1013,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
         <GymPickerSheet
           selectedUuid={builder.selectedGym?.uuid ?? null}
           boardCoords={builder.coords}
+          showsOnMap={builder.isPublic}
           onSelect={(gym) => {
             builder.setSelectedGym(gym);
             setGymPickerOpen(false);

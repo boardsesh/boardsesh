@@ -83,3 +83,18 @@ describe('formatActiveBoardLabel', () => {
     ).toBe('Display:tension • 12x12');
   });
 });
+
+// #5960: a name ending in right-to-left text pulled the angle into its run.
+describe('formatActiveBoardLabel with right-to-left names', () => {
+  it('isolates a Hebrew name so the angle keeps its place', () => {
+    expect(formatActiveBoardLabel({ name: 'Garage עברית', angle: 40, boardType: 'spray' })).toBe('⁨Garage עברית⁩ • 40°');
+  });
+
+  it('isolates an Arabic name too', () => {
+    expect(formatActiveBoardLabel({ name: 'جدار', angle: 30, boardType: 'spray' })).toBe('⁨جدار⁩ • 30°');
+  });
+
+  it('leaves a left-to-right name untouched', () => {
+    expect(formatActiveBoardLabel({ name: 'Garage 🧗', angle: 40, boardType: 'spray' })).toBe('Garage 🧗 • 40°');
+  });
+});

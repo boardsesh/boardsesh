@@ -162,6 +162,8 @@
       "location": "Standort",
       "locationPlaceholder": "Zuhause, Hallenname oder Stadt",
       "useMyLocation": "Meinen Standort nutzen",
+      "locationDeniedHint": "Boardsesh kann deinen Standort nicht sehen. Erlaube ihn in den Einstellungen oder gib oben einen Ort ein.",
+      "locationUnavailableHint": "Wir konnten deinen Standort nicht finden. Gib stattdessen oben einen Ort ein.",
       "serial": "Controller-Seriennummer",
       "serialPlaceholder": "z. B. ABC-12345",
       "serialHint": "Optional — dein Controller verknüpft sich beim ersten Verbinden selbst.",
@@ -415,6 +417,7 @@
       "searchPlaceholder": "Hallen suchen",
       "noGym": "Nicht in einer Halle",
       "noGymHint": "Es erscheint trotzdem als eigener Pin auf der Karte.",
+      "noGymHintOffMap": "Erscheint nicht auf der Karte, solange es nicht öffentlich ist.",
       "addNew": "Meine Halle fehlt in der Liste",
       "empty": "Keine Hallen in der Nähe",
       "sharedEditHint": "Das Team dieser Halle kann die Details dieses Boards bearbeiten.",
@@ -890,8 +893,7 @@
       "namePlaceholder": "Garagenwand",
       "angle": "Winkel",
       "angleHint": "Wie weit die Wand überhängt, in 5°-Schritten. Nach dem Veröffentlichen fest.",
-      "publicHint": "Aus bleiben die Wand und ihr Foto nur bei dir.",
-      "next": "Foto wählen",
+      "next": "Weiter",
       "anglePreview": "Wand mit {{angle}} Grad"
     },
     "photo": {
@@ -925,6 +927,9 @@
       "percent": "{{percent}} % hochgeladen",
       "failed": "Das Foto ist nicht durchgekommen.",
       "retry": "Nochmal versuchen",
+      "offlineMode": "Der Offline-Modus ist an, deshalb kann dein Foto nicht hochgeladen werden. Schalte ihn aus und versuch es noch mal.",
+      "noSignal": "Kein Netz, dein Foto wurde nicht hochgeladen. Versuch es noch mal, sobald du wieder online bist.",
+      "serverUnreachable": "Boardsesh ist gerade nicht erreichbar. Dein Foto ist noch da, versuch es in einer Minute noch mal.",
       "checkFailed": "Unklar, ob dein Foto durchgekommen ist. Versuch es mit Empfang nochmal."
     },
     "detect": {

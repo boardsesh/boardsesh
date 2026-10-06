@@ -162,6 +162,8 @@
       "location": "Ubicación",
       "locationPlaceholder": "Casa, nombre del rocódromo o ciudad",
       "useMyLocation": "Usar mi ubicación",
+      "locationDeniedHint": "Boardsesh no puede ver tu ubicación. Actívala en Ajustes o escribe un lugar arriba.",
+      "locationUnavailableHint": "No hemos podido encontrar dónde estás. Escribe un lugar arriba.",
       "serial": "Número de serie del controlador",
       "serialPlaceholder": "p. ej. ABC-12345",
       "serialHint": "Opcional: tu controlador se vincula solo la primera vez que conectas.",
@@ -415,6 +417,7 @@
       "searchPlaceholder": "Buscar rocódromos",
       "noGym": "No está en un rocódromo",
       "noGymHint": "Seguirá apareciendo en el mapa con su propio marcador.",
+      "noGymHintOffMap": "No sale en el mapa mientras no sea público.",
       "addNew": "Mi rocódromo no aparece",
       "empty": "No hay rocódromos cerca",
       "sharedEditHint": "El personal de este rocódromo podrá editar los datos de este plafón.",
@@ -890,8 +893,7 @@
       "namePlaceholder": "Muro del garaje",
       "angle": "Ángulo",
       "angleHint": "Cuánto se inclina el muro, en pasos de 5°. Queda fijo al publicar.",
-      "publicHint": "Apagado, el muro y su foto son solo tuyos.",
-      "next": "Elegir una foto",
+      "next": "Siguiente",
       "anglePreview": "Muro a {{angle}} grados"
     },
     "photo": {
@@ -925,6 +927,9 @@
       "percent": "Subido {{percent}} %",
       "failed": "La foto no llegó a subirse.",
       "retry": "Reintentar",
+      "offlineMode": "El modo sin conexión está activado, así que tu foto no puede subirse. Desactívalo y vuelve a intentarlo.",
+      "noSignal": "Sin cobertura, así que tu foto no se ha subido. Vuelve a intentarlo cuando tengas conexión.",
+      "serverUnreachable": "Ahora mismo no se puede conectar con Boardsesh. Tu foto sigue aquí, así que vuelve a intentarlo en un minuto.",
       "checkFailed": "No se pudo saber si tu foto llegó. Inténtalo cuando tengas cobertura."
     },
     "detect": {

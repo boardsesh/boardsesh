@@ -89,7 +89,7 @@ vi.mock('../../lib/routing/use-board-route-target', () => ({
 const ANONYMOUS_CLIMB = { uuid: '0A1B2C3D4E5F60718293A4B5C6D7E8F9', name: 'Crimpy Thing' } as unknown as Climb;
 const ANONYMOUS_BOARD_CONFIG = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
 
-const { BoardRouteHandoff, BoardRouteRedirect } = await import('../BoardRouteRedirect');
+const { BoardRouteHandoff, BoardRouteRedirect, boardRouteSubject } = await import('../BoardRouteRedirect');
 
 const CLIMB_TARGET = {
   kind: 'climb',
@@ -133,6 +133,16 @@ describe('BoardRouteRedirect', () => {
     expect(queryByTestId('error-icon')).not.toBeNull();
     expect(queryByTestId('back-home')).not.toBeNull();
     expect(queryByTestId('spinner')).toBeNull();
+  });
+
+  // #5960: a deleted spray wall's share link said "Climb not found".
+  it('names a board, not a climb, when a board link is dead', () => {
+    const { getByText, queryByText } = render(
+      createElement(BoardRouteRedirect, { status: 'not-found' as BoardRouteStatus, subject: 'board' }),
+    );
+
+    expect(getByText('mobile.detail.boardNotFound')).toBeTruthy();
+    expect(queryByText('mobile.detail.notFound')).toBeNull();
   });
 
   // Web only in practice: the signed-out visitor goes to login carrying the path
@@ -365,5 +375,33 @@ describe('BoardRouteHandoff anonymous climb', () => {
     render(createElement(BoardRouteHandoff, { target: CLIMB_TARGET }));
 
     expect(anonymousClimbView.seen.at(-1)).toBe(false);
+  });
+});
+
+describe('boardRouteSubject', () => {
+  it('reads a list link as a board and a climb link as a climb', () => {
+    expect(boardRouteSubject({ kind: 'slug-list', slug: 'garage', angle: 40 } as BoardRouteTarget)).toBe('board');
+    expect(boardRouteSubject({ ...CLIMB_TARGET, kind: 'list' } as BoardRouteTarget)).toBe('board');
+    expect(boardRouteSubject(CLIMB_TARGET)).toBe('climb');
+    expect(boardRouteSubject(SLUG_CLIMB_TARGET)).toBe('climb');
+    expect(boardRouteSubject(null)).toBe('climb');
+  });
+});
+
+describe('BoardRouteHandoff dead end', () => {
+  it('names the board for a dead board link', () => {
+    routeStatus.current = 'not-found';
+    const { getByText } = render(
+      createElement(BoardRouteHandoff, {
+        target: { kind: 'slug-list', slug: 'garage', angle: 40 } as BoardRouteTarget,
+      }),
+    );
+    expect(getByText('mobile.detail.boardNotFound')).toBeTruthy();
+  });
+
+  it('names the climb for a dead climb link', () => {
+    routeStatus.current = 'not-found';
+    const { getByText } = render(createElement(BoardRouteHandoff, { target: CLIMB_TARGET }));
+    expect(getByText('mobile.detail.notFound')).toBeTruthy();
   });
 });

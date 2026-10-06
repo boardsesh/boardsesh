@@ -412,6 +412,7 @@
     },
     "detail": {
       "notFound": "Boulder nicht gefunden",
+      "boardNotFound": "Dieses Board gibt es nicht mehr, oder es wurde nicht mit dir geteilt.",
       "backToHome": "Zurück zum Start"
     },
     "logAscent": {

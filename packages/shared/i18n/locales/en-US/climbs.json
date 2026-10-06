@@ -412,6 +412,7 @@
     },
     "detail": {
       "notFound": "Climb not found",
+      "boardNotFound": "This board isn't here any more, or it isn't shared with you.",
       "backToHome": "Back to Home"
     },
     "logAscent": {
