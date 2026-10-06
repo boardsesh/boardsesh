@@ -31,7 +31,7 @@ type AliasIndexState = {
 const migrationDatabaseUrl = process.env.MIGRATION_INDEX_TEST_DB_URL;
 const expectedDatabaseName = process.env.MIGRATION_INDEX_TEST_EXPECTED_DATABASE;
 const requiredFixtureFlag = process.env.MIGRATION_INDEX_TEST_REQUIRED;
-const migrationSqlPath = fileURLToPath(new URL('../../drizzle/0254_mushy_retro_girl.sql', import.meta.url));
+const migrationSqlPath = fileURLToPath(new URL('../../drizzle/0255_mushy_retro_girl.sql', import.meta.url));
 const migrationSql = await readFile(migrationSqlPath, 'utf8');
 const migrationStatement = migrationSql.match(/CREATE INDEX IF NOT EXISTS[\s\S]*?;/i)?.[0];
 
