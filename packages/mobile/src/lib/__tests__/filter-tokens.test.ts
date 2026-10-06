@@ -185,6 +185,14 @@ describe('getActiveFilterTokens', () => {
     expect(patchFilters).toHaveBeenCalledWith({ onlyRatedByMe: undefined });
   });
 
+  it('gives the Liked collection a token that clears only onlyFavorited (#6002)', () => {
+    const { tokens, patchFilters } = build({ ...DEFAULT_FILTERS, onlyFavorited: true });
+    const liked = tokens.find((token) => token.key === 'liked');
+    expect(liked?.label).toBe('mobile.filter.collection.liked');
+    liked?.clear();
+    expect(patchFilters).toHaveBeenCalledWith({ onlyFavorited: undefined });
+  });
+
   it('orders grade first, then refinements in summary order', () => {
     const { tokens } = build({
       ...DEFAULT_FILTERS,

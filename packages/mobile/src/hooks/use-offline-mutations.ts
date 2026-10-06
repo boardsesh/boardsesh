@@ -277,6 +277,23 @@ export function favoriteRemoveKey(input: FavoriteInput): string {
   return `del:user_favorites:${input.boardName}:${input.climbUuid}:${input.angle}`;
 }
 
+/**
+ * The key prefix shared by one climb's add (or remove) mutations at EVERY angle.
+ * A heart belongs to the climb: the server's remove clears every angle variant,
+ * so cancelling the opposite queued operation has to as well. Otherwise an add
+ * queued at 40° survives a remove at 25° and, queued ahead of a later re-add,
+ * nets the climb to un-hearted on the server.
+ */
+function favoriteKeyPrefix(operation: 'add' | 'del', input: FavoriteInput): string {
+  return `${operation}:user_favorites:${input.boardName}:${input.climbUuid}:`;
+}
+
+// Matches every angle's key for one climb. `substr` rather than LIKE: a climb
+// uuid could carry `_`, a LIKE wildcard, and the trailing `:` keeps one uuid
+// from matching another that merely starts with it.
+const CANCEL_OPPOSITE_FAVORITE_SQL = `DELETE FROM pending_mutations
+  WHERE substr(idempotency_key, 1, ?) = ? AND status IN ('pending', 'dead_letter')`;
+
 export async function addFavoriteLocal(db: OfflineDatabase, input: FavoriteInput): Promise<void> {
   const now = new Date().toISOString();
   // Captured inside the transaction, reported after it commits: the report
@@ -299,10 +316,8 @@ export async function addFavoriteLocal(db: OfflineDatabase, input: FavoriteInput
     // dead letter is by definition not in flight, and leaving it would keep the
     // "Sync issues" badge lit for a remove this add has just superseded — and
     // poison the key when the user toggles back.
-    await txn.runAsync(
-      `DELETE FROM pending_mutations WHERE idempotency_key = ? AND status IN ('pending', 'dead_letter')`,
-      [favoriteRemoveKey(input)],
-    );
+    const removePrefix = favoriteKeyPrefix('del', input);
+    await txn.runAsync(CANCEL_OPPOSITE_FAVORITE_SQL, [removePrefix.length, removePrefix]);
     // A retry re-runs this and reassigns the holder — last attempt wins, which
     // is the outcome that matters. Re-running `enqueue` against a row a previous
     // attempt committed reports `pending`, and neither the revived nor the
@@ -349,10 +364,12 @@ export async function removeFavoriteLocal(db: OfflineDatabase, input: FavoriteIn
   const enqueueOutcome = newEnqueueOutcome();
 
   await runLocalWrite(db, 'user_favorites', 'delete', async (txn) => {
-    await txn.runAsync(`DELETE FROM user_favorites WHERE board_name = ? AND climb_uuid = ? AND angle = ?`, [
+    // Every angle, as the server's remove does (favorites/mutations.ts): the
+    // Liked list ignores angle, so a heart left at another angle would keep the
+    // climb listed until the next pull.
+    await txn.runAsync(`DELETE FROM user_favorites WHERE board_name = ? AND climb_uuid = ?`, [
       input.boardName,
       input.climbUuid,
-      input.angle,
     ]);
 
     // Cancel a not-yet-drained add so an offline add->remove nets to no server
@@ -363,10 +380,8 @@ export async function removeFavoriteLocal(db: OfflineDatabase, input: FavoriteIn
     // remove is harmless in the truly-canceled case and corrective in the race.
     // A dead-lettered add is cleared too (#4331) — it is not in flight, and it
     // would otherwise outlive the favorite the user just removed.
-    await txn.runAsync(
-      `DELETE FROM pending_mutations WHERE idempotency_key = ? AND status IN ('pending', 'dead_letter')`,
-      [favoriteAddKey(input)],
-    );
+    const addPrefix = favoriteKeyPrefix('add', input);
+    await txn.runAsync(CANCEL_OPPOSITE_FAVORITE_SQL, [addPrefix.length, addPrefix]);
     enqueueOutcome.result = await enqueue(txn, 'user_favorites', 'delete', input, favoriteRemoveKey(input), {
       reviveDeadLetter: true,
     });

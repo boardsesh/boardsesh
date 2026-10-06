@@ -146,6 +146,10 @@ export function isOfflineSearchSupported(input: ClimbSearchInput): boolean {
   // silently-ignored filter here is wrong results with no network fallback.
   if (input.onlyWithBetaVideos) return false;
   if (input.zoneBox) return false;
+  // Liked climbs (`onlyFavorited`, #6002) ARE expressible: the hearts are synced
+  // into `user_favorites`, and buildJoinAndWhere carries the EXISTS. The read is
+  // user-scoped, so `canServeSearchLocal` (offline-request.ts) also requires the
+  // local user data to be complete and this climber's before it serves locally.
   // Spray-wall hold integrity (SW-12) IS expressible now: SW-15 (#5448) mirrors
   // `board_climbs.missing_hold_count` into the on-device schema at migration v7,
   // and `buildJoinAndWhere` carries the same COALESCE predicate the server's
@@ -620,6 +624,27 @@ export function buildJoinAndWhere(
       input.minUserRating,
       ownerUserId,
     );
+  }
+
+  // Liked climbs (#6002), mirroring `onlyFavorited` in create-climb-filters.ts:
+  // a heart belongs to the climb, not the angle it was given at, so there is no
+  // angle condition — the (board_name, climb_uuid) prefix of the primary key
+  // answers it. The owner rule is the ticks' (see `ownedTicks`). With no owner
+  // stamp nobody is signed in to own a heart, so the filter matches nothing,
+  // the same `false` the server renders without a userId. The base clauses
+  // above already drop unlisted, draft and community-hidden climbs, as the
+  // server's search does.
+  if (input.onlyFavorited) {
+    if (ownerUserId === null) {
+      push('0 = 1');
+    } else {
+      push(
+        `EXISTS (SELECT 1 FROM user_favorites f
+          WHERE f.board_name = ? AND f.climb_uuid = c.uuid AND ${ownedTicks('f')})`,
+        boardType,
+        ownerUserId,
+      );
+    }
   }
 
   return { joinSql, whereSql: conditions.join(' AND '), joinBinds, whereBinds };

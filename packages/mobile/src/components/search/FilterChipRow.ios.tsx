@@ -55,7 +55,7 @@ import {
   isClimbType,
 } from './FilterChipRow.logic';
 import { buildSortLabel } from '../../lib/filter-labels';
-import { COLLECTION_VALUES } from '../../lib/collection-filter';
+import { COLLECTION_VALUES, isPersonalCollection } from '../../lib/collection-filter';
 import type { FilterChipRowProps } from './FilterChipRow.types';
 
 function FilterChipRowComponent({
@@ -82,7 +82,7 @@ function FilterChipRowComponent({
   canFilterProgress,
   collection,
   onChangeCollection,
-  canFilterDrafts,
+  canFilterPersonalCollections,
   sortBy,
   sortActive,
   onChangeSort,
@@ -242,11 +242,13 @@ function FilterChipRowComponent({
                   onChangeCollection(value);
                 }}
               >
-                {COLLECTION_VALUES.filter((value) => value !== 'drafts' || canFilterDrafts).map((value) => (
-                  <Text key={value} modifiers={[tag(value)]}>
-                    {collectionChipLabel(value, t)}
-                  </Text>
-                ))}
+                {COLLECTION_VALUES.filter((value) => canFilterPersonalCollections || !isPersonalCollection(value)).map(
+                  (value) => (
+                    <Text key={value} modifiers={[tag(value)]}>
+                      {collectionChipLabel(value, t)}
+                    </Text>
+                  ),
+                )}
               </Picker>
             </Menu>
           ) : null}

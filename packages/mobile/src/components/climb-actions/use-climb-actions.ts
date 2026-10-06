@@ -29,6 +29,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { useShareClimb } from '../../hooks/use-share-climb';
 import { track } from '../../lib/analytics';
+import { useBluetoothConnectedStatus } from '../../lib/ble/bluetooth-status-store';
 
 export type ClimbActionId =
   | 'preview'
@@ -172,6 +173,10 @@ export function useClimbActions({
   // wall changes, so gating the Play next row on it costs the menu nothing.
   const activeClimbUuid = useActiveClimbUuid();
   const { mutate: toggleFavoriteMutate } = useToggleFavorite();
+  // This phone's Bluetooth link, for `Favorite Toggle` only (#6002): a heart
+  // added away from the wall is a "save for next session". One menu is mounted
+  // at a time, so the subscription is a single listener.
+  const bluetoothConnected = useBluetoothConnectedStatus();
   const {
     openPlayDrawer,
     openLogAscent,
@@ -323,6 +328,7 @@ export function useClimbActions({
           boardName,
           layoutId,
           source: 'mobile_climb_actions',
+          connected: bluetoothConnected,
         });
         // Pass the state the row just rendered from: it flips the heart in the
         // climb list optimistically, and it's what the offline local-first path
@@ -511,6 +517,7 @@ export function useClimbActions({
     addToQueue,
     playNext,
     toggleFavoriteMutate,
+    bluetoothConnected,
     isFavorited,
     openPlayDrawer,
     openLogAscent,

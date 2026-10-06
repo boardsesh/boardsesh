@@ -604,6 +604,17 @@ export const SHARED_EVENTS = {
   FirstRunCardAction: 'First Run Card Action',
   BoardLightsDeclined: 'Board Lights Declined',
 
+  // Mobile-only (#6002). `Favorite Toggle` gained `connected` (this phone's
+  // Bluetooth link at the tap) on both live mobile sites (`mobile_play_drawer`,
+  // `mobile_climb_actions`); always filter it on `action = 'added'`.
+  //
+  // SmartPlaylistOpened: a smart-playlist detail screen mounted for a known
+  // type. `$screen` keeps `/discover/smart/[type]` verbatim, so this is the
+  // only event that names the list. Props: { type: the SmartPlaylistType
+  // ('LIKED_CLIMBS', 'FIVE_STARS', ...), source: 'discover' | 'other' ('other'
+  // = a deep link or a caller that passed no source) }. Once per mount.
+  SmartPlaylistOpened: 'Smart Playlist Opened',
+
   // Mobile-only, iOS 26 Liquid Glass iPhones (#5654): the one-time tip "To get
   // back to your climbs, tap the magnifier in the tab bar". There the Climbs tab
   // is the tab bar's search-role magnifier, set apart from the other tabs, and

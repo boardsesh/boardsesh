@@ -46,6 +46,7 @@ export function getFilterSummary(
       // minimums become indistinguishable pills.
       minUserRating: filters.minUserRating,
       onlyRatedByMe: filters.onlyRatedByMe,
+      onlyFavorited: filters.onlyFavorited,
     },
     grades ?? [],
     labels,

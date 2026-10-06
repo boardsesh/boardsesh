@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import { runMigrations } from '@boardsesh/offline-sync';
-import { ensureMutationQueueTable, stampLocalUserId } from '@boardsesh/offline-sync';
+import { clearLocalUserId, ensureMutationQueueTable, stampLocalUserId } from '@boardsesh/offline-sync';
 import type { OfflineDatabase, SqlExecutor, SqlRunResult, SqlValue } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 import { canAddClimbToBoard, type BoardCompatibilityTarget } from '@boardsesh/board-config';
@@ -796,6 +796,8 @@ describe('isOfflineSearchSupported', () => {
     // `uuid` — so the local SQL implements the same latest-graded-tick rule the
     // server does and this search may be answered on-device (#4828).
     expect(isOfflineSearchSupported(makeInput({ useMyGrades: true, minGrade: 26, maxGrade: 28 }))).toBe(true);
+    // Liked climbs read the synced user_favorites (#6002).
+    expect(isOfflineSearchSupported(makeInput({ onlyFavorited: true }))).toBe(true);
   });
 
   it('falls back for filters that need un-synced tables or the drafts path', () => {
@@ -1781,5 +1783,97 @@ describe('searchClimbsLocal: ticks on the climb’s current holds (#6023)', () =
     const result = await searchClimbsLocal(db, makeInput());
     expect(find(result, 'versioned')?.revisionNumber).toBe(5);
     expect(find(result, 'versioned')?.holdsRevisionNumber).toBe(3);
+  });
+});
+
+// Climbs → Collection → Liked (#6002), mirroring `onlyFavorited` in
+// packages/db/src/queries/climbs/create-climb-filters.ts.
+describe('searchClimbsLocal: liked climbs', () => {
+  let db: TestSqliteDb;
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await ensureMutationQueueTable(db);
+    await runMigrations(db);
+    await stampLocalUserId(db, LOCAL_OWNER);
+  });
+
+  async function insertFavorite(opts: {
+    climbUuid: string;
+    boardName?: string;
+    angle?: number;
+    userId?: string | null;
+  }): Promise<void> {
+    await db.runAsync(
+      'INSERT INTO user_favorites (board_name, climb_uuid, angle, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [
+        opts.boardName ?? 'kilter',
+        opts.climbUuid,
+        opts.angle ?? 40,
+        opts.userId === undefined ? LOCAL_OWNER : opts.userId,
+        '2026-10-01T00:00:00Z',
+        '2026-10-01T00:00:00Z',
+      ],
+    );
+  }
+
+  const liked = makeInput({ onlyFavorited: true });
+
+  it('lists only the hearted climbs on a downloaded board, not the whole catalogue', async () => {
+    await insertClimb(db, { uuid: 'hearted' });
+    await insertClimb(db, { uuid: 'not-hearted' });
+    await insertClimb(db, { uuid: 'also-not-hearted' });
+    await insertFavorite({ climbUuid: 'hearted' });
+
+    expect(uuids(await searchClimbsLocal(db, liked))).toEqual(['hearted']);
+    expect(await countClimbsLocal(db, liked)).toBe(1);
+    // Without the flag the same board answers every climb.
+    expect(await countClimbsLocal(db, makeInput())).toBe(3);
+  });
+
+  it('ignores the angle the heart was given at, as the server does', async () => {
+    await insertClimb(db, { uuid: 'hearted-at-25' });
+    await insertFavorite({ climbUuid: 'hearted-at-25', angle: 25 });
+
+    expect(uuids(await searchClimbsLocal(db, liked))).toEqual(['hearted-at-25']);
+  });
+
+  it('does not match a heart on another board with the same climb uuid', async () => {
+    await insertClimb(db, { uuid: 'shared-uuid' });
+    await insertFavorite({ climbUuid: 'shared-uuid', boardName: 'tension' });
+
+    expect(uuids(await searchClimbsLocal(db, liked))).toEqual([]);
+  });
+
+  it("keeps this device's own unsynced hearts and drops another account's leftovers", async () => {
+    await insertClimb(db, { uuid: 'mine' });
+    await insertClimb(db, { uuid: 'queued' });
+    await insertClimb(db, { uuid: 'theirs' });
+    await insertFavorite({ climbUuid: 'mine' });
+    await insertFavorite({ climbUuid: 'queued', userId: null });
+    await insertFavorite({ climbUuid: 'theirs', userId: 'someone-else' });
+
+    expect(
+      uuids(await searchClimbsLocal(db, makeInput({ onlyFavorited: true, sortBy: 'name', sortOrder: 'asc' }))),
+    ).toEqual(['mine', 'queued']);
+  });
+
+  it('drops hearted climbs that are hidden, unlisted or drafts, like the server search', async () => {
+    await insertClimb(db, { uuid: 'visible' });
+    await insertClimb(db, { uuid: 'hidden', isHidden: 1 });
+    await insertClimb(db, { uuid: 'unlisted', isListed: 0 });
+    await insertClimb(db, { uuid: 'draft', isDraft: 1 });
+    for (const climbUuid of ['visible', 'hidden', 'unlisted', 'draft']) await insertFavorite({ climbUuid });
+
+    expect(uuids(await searchClimbsLocal(db, liked))).toEqual(['visible']);
+  });
+
+  it('matches nothing with no signed-in owner', async () => {
+    await insertClimb(db, { uuid: 'hearted' });
+    await insertFavorite({ climbUuid: 'hearted', userId: null });
+    await clearLocalUserId(db);
+
+    expect(uuids(await searchClimbsLocal(db, liked))).toEqual([]);
+    expect(await countClimbsLocal(db, liked)).toBe(0);
   });
 });

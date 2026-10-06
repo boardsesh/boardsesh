@@ -74,10 +74,18 @@ vi.mock('../client', () => ({ getHttpClient: () => ({ request }) }));
 vi.mock('../../../db/queries/get-similar-climbs-local', () => ({ getSimilarClimbsLocal }));
 vi.mock('../../../db/queries/get-hold-heatmap-local', () => ({ getHoldHeatmapLocalWithCount }));
 vi.mock('../../../offline/hold-index-parser', () => ({ parseHoldRows: vi.fn() }));
+// Liked climbs (#6002) are user-scoped: the local read needs the climber's own,
+// complete user data, decided by `canServeLocalUserData` for the signed-in id.
+const favoritesGate = vi.hoisted(() => ({
+  canServeLocalUserData: vi.fn(),
+  readLocalUserId: vi.fn(),
+}));
 vi.mock('@boardsesh/offline-sync', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@boardsesh/offline-sync')>()),
   ensureHoldIndex,
+  canServeLocalUserData: favoritesGate.canServeLocalUserData,
 }));
+vi.mock('../../local-user-id', () => ({ readLocalUserId: favoritesGate.readLocalUserId }));
 // The rollup gate itself is covered in @boardsesh/offline-sync; here we assert
 // the interceptor hands it the right LANE for each terminal outcome (#4317).
 vi.mock('../../../offline/offline-usage-signal', () => ({
@@ -283,6 +291,38 @@ describe('offlineAwareRequest — SEARCH_CLIMBS', () => {
       'sqlite read failed',
     );
     expect(request).not.toHaveBeenCalled();
+  });
+});
+
+describe('offlineAwareRequest — SEARCH_CLIMBS liked climbs (#6002)', () => {
+  const likedInput: ClimbSearchInput = { ...searchInput, onlyFavorited: true };
+
+  beforeEach(() => {
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    favoritesGate.readLocalUserId.mockResolvedValue('me');
+  });
+
+  it("reads Liked locally when the phone holds the climber's complete user data", async () => {
+    setOnline(true);
+    favoritesGate.canServeLocalUserData.mockResolvedValue(true);
+    const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: likedInput });
+    expect(result.searchClimbs.climbs[0].uuid).toBe('local');
+    expect(favoritesGate.canServeLocalUserData).toHaveBeenCalledWith(fakeDb, 'me');
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('asks the network when the local hearts are incomplete or another account’s', async () => {
+    setOnline(true);
+    favoritesGate.canServeLocalUserData.mockResolvedValue(false);
+    const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: likedInput });
+    expect(result.searchClimbs.climbs[0].uuid).toBe('net');
+    expect(searchClimbsLocal).not.toHaveBeenCalled();
+  });
+
+  it('never consults the user-data gate for a search without Liked', async () => {
+    setOnline(true);
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+    expect(favoritesGate.canServeLocalUserData).not.toHaveBeenCalled();
   });
 });
 

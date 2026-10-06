@@ -478,7 +478,8 @@
       "popularity": "Beliebtheit",
       "collection": {
         "label": "Sammlung",
-        "any": "Beliebig"
+        "any": "Beliebig",
+        "liked": "Gelikt"
       },
       "holdIntegrity": {
         "label": "Griffe",

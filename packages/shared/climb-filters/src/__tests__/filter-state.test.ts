@@ -341,6 +341,28 @@ describe('personal rating filters (#2645)', () => {
   });
 });
 
+describe('liked climbs filter (#6002)', () => {
+  it('counts onlyFavorited as an active filter', () => {
+    expect(hasActiveClimbFilters({ ...DEFAULT_CLIMB_FILTER_STATE, onlyFavorited: true })).toBe(true);
+    expect(hasActiveClimbFilters({ ...DEFAULT_CLIMB_FILTER_STATE, onlyFavorited: false })).toBe(false);
+  });
+
+  it('sends onlyFavorited only when it is on, so the everyday search stays cacheable', () => {
+    const on = toClimbSearchInput({ ...DEFAULT_CLIMB_FILTER_STATE, onlyFavorited: true }, board, pagination);
+    expect(on.onlyFavorited).toBe(true);
+
+    const off = toClimbSearchInput({ ...DEFAULT_CLIMB_FILTER_STATE, onlyFavorited: false }, board, pagination);
+    expect('onlyFavorited' in off).toBe(false);
+    expect('onlyFavorited' in toClimbSearchInput(DEFAULT_CLIMB_FILTER_STATE, board, pagination)).toBe(false);
+  });
+
+  it('leaves the status flags alone', () => {
+    const input = toClimbSearchInput({ ...DEFAULT_CLIMB_FILTER_STATE, onlyFavorited: true }, board, pagination);
+    expect(input.onlyDrafts).toBeUndefined();
+    expect(input.projectsOnly).toBeUndefined();
+  });
+});
+
 // #4796 / #4828: the climber's own grade drives the grade range and the
 // difficulty sort, but only where it can change the answer — the param is
 // user-specific, so sending it needlessly costs the Redis cache on the app's

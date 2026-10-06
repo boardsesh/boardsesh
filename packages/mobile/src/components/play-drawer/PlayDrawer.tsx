@@ -1554,6 +1554,7 @@ export function PlayDrawer({
       boardName,
       layoutId,
       source: 'mobile_play_drawer',
+      connected: bluetoothConnected,
     });
     toggleFavoriteMutate(
       {
@@ -1582,7 +1583,18 @@ export function PlayDrawer({
         },
       },
     );
-  }, [displayedClimb, isFavorited, favoriteOverride, boardName, layoutId, angle, toggleFavoriteMutate, showToast, t]);
+  }, [
+    displayedClimb,
+    isFavorited,
+    favoriteOverride,
+    boardName,
+    layoutId,
+    angle,
+    bluetoothConnected,
+    toggleFavoriteMutate,
+    showToast,
+    t,
+  ]);
 
   const handleLightbulbLongPress = useCallback(() => {
     if (!bluetooth?.isConnected) return;

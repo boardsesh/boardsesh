@@ -18,7 +18,7 @@ import {
 } from '../../db/queries/board-download-status';
 import { getClimbStatsHistoryLocal } from '../../db/queries/get-climb-stats-history-local';
 import { getHttpClient } from './client';
-import { ensureHoldIndex } from '@boardsesh/offline-sync';
+import { canServeLocalUserData, ensureHoldIndex } from '@boardsesh/offline-sync';
 import type { OfflineReadLane, OfflineReadSurface, OfflineUnavailableReason } from '@boardsesh/offline-sync';
 import { getSimilarClimbsLocal } from '../../db/queries/get-similar-climbs-local';
 import { parseHoldRows } from '../../offline/hold-index-parser';
@@ -151,8 +151,20 @@ async function canServeSearchLocal(db: SQLiteDatabase, { input }: SearchClimbsQu
   return (
     isOfflineSearchSupported(input) &&
     (await isBoardDownloadedLocally(db, scopeOf(input))) &&
-    (!input.onlyFollowedAuthors || (await canReadFollowedAuthors(db)))
+    (!input.onlyFollowedAuthors || (await canReadFollowedAuthors(db))) &&
+    (!input.onlyFavorited || (await canReadLocalFavorites(db)))
   );
+}
+
+// Liked climbs read the synced `user_favorites`, so the phone answers only when
+// those rows are complete and belong to the signed-in climber. Otherwise a fresh
+// install, or one mid-account-switch, would serve a partial (or someone else's)
+// list; declining falls through to the network, as `canServeLocalUserData` says.
+// Lazy, like `canReadFollowedAuthors`: the reader pulls in the secure store,
+// which a search that never asks for Liked has no reason to load.
+async function canReadLocalFavorites(db: SQLiteDatabase): Promise<boolean> {
+  const { readLocalUserId } = await import('../local-user-id');
+  return canServeLocalUserData(db, await readLocalUserId());
 }
 
 // A search can come back empty offline for two very different reasons, and the

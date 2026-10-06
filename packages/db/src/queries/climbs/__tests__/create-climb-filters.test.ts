@@ -682,6 +682,51 @@ void describe('createClimbFilters: personal progress filters are scoped to the c
   });
 });
 
+void describe('createClimbFilters: onlyFavorited', () => {
+  // A heart belongs to the climb, not to an angle (#6077), so this filter is the
+  // one personal check that must NOT restrict by angle.
+  const userId = 'user-abc';
+  const angleParams: BoardRouteParams = { ...params, angle: 50 };
+
+  void it('is one EXISTS on user_favorites scoped to the user, the board and the climb', () => {
+    const f = createClimbFilters(angleParams, { onlyFavorited: true }, userId);
+    assert.equal(f.personalProgressConditions.length, 1);
+    const rendered = sqlToString(f.personalProgressConditions[0]);
+    assert.match(rendered, /EXISTS/);
+    assert.doesNotMatch(rendered, /NOT EXISTS/);
+    assert.match(new PgDialect().sqlToQuery(f.personalProgressConditions[0]).sql, /FROM "user_favorites"/);
+    assert.match(rendered, /user_id = user-abc/);
+    assert.match(rendered, /board_name = kilter/);
+    assert.match(rendered, /climb_uuid = uuid/);
+  });
+
+  void it('ignores the angle the heart was given at', () => {
+    const rendered = sqlToString(
+      createClimbFilters(angleParams, { onlyFavorited: true }, userId).personalProgressConditions[0],
+    );
+    assert.doesNotMatch(rendered, /angle/);
+    assert.doesNotMatch(rendered, /50/);
+  });
+
+  void it('matches nothing without a userId rather than dropping the filter', () => {
+    const f = createClimbFilters(angleParams, { onlyFavorited: true });
+    assert.equal(f.personalProgressConditions.length, 1);
+    assert.equal(sqlToString(f.personalProgressConditions[0]).trim(), 'false');
+    assert.ok(f.getClimbWhereConditions().includes(f.personalProgressConditions[0]));
+  });
+
+  void it('adds nothing when the flag is off', () => {
+    assert.equal(createClimbFilters(angleParams, {}, userId).personalProgressConditions.length, 0);
+    assert.equal(createClimbFilters(angleParams, { onlyFavorited: false }).personalProgressConditions.length, 0);
+  });
+
+  void it('collapses false to undefined in the mapper so cache keys stay put', () => {
+    assert.equal(mapSearchInputToParams({ onlyFavorited: true }).onlyFavorited, true);
+    assert.equal(mapSearchInputToParams({ onlyFavorited: false }).onlyFavorited, undefined);
+    assert.equal(mapSearchInputToParams({ onlyFavorited: null }).onlyFavorited, undefined);
+  });
+});
+
 void describe('createClimbFilters: onlyBenchmarks', () => {
   void it('produces no benchmark condition by default', () => {
     const f = createClimbFilters(params, baseSearch);

@@ -478,7 +478,8 @@
       "popularity": "Popularité",
       "collection": {
         "label": "Collection",
-        "any": "Toutes"
+        "any": "Toutes",
+        "liked": "Aimées"
       },
       "holdIntegrity": {
         "label": "Prises",

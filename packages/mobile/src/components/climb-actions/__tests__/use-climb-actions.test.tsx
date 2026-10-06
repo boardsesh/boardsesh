@@ -21,6 +21,7 @@ const openers = vi.hoisted(() => ({
   addToQueue: vi.fn(),
   playNext: vi.fn(),
   toggleFavoriteMutate: vi.fn(),
+  track: vi.fn(),
   push: vi.fn(),
   shareClimb: vi.fn(async () => {}),
 }));
@@ -68,7 +69,12 @@ vi.mock('../../../lib/graphql/hooks', () => ({
   useFavoriteStatus: () => ({ data: false }),
 }));
 vi.mock('../../../hooks/use-share-climb', () => ({ useShareClimb: () => openers.shareClimb }));
-vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
+vi.mock('../../../lib/analytics', () => ({ track: openers.track }));
+// This phone's Bluetooth link, read only to tag `Favorite Toggle` (#6002).
+const bluetoothCtrl = vi.hoisted(() => ({ connected: false }));
+vi.mock('../../../lib/ble/bluetooth-status-store', () => ({
+  useBluetoothConnectedStatus: () => bluetoothCtrl.connected,
+}));
 
 import { useClimbActions } from '../use-climb-actions';
 
@@ -108,6 +114,7 @@ beforeEach(() => {
   ctrl.sessionId = null;
   ctrl.moderationEnabled = true;
   ctrl.activeClimbUuid = null;
+  bluetoothCtrl.connected = false;
   Object.values(openers).forEach((fn) => fn.mockClear?.());
 });
 
@@ -232,6 +239,24 @@ describe('useClimbActions colours and dispatch', () => {
     result.current.find((action) => action.id === 'queue')?.run();
     expect(openers.addToQueue).toHaveBeenCalledWith({ uuid: 'queue-uuid', climb });
     expect(onAfterAction).toHaveBeenCalledTimes(1);
+  });
+
+  // A heart added away from the wall is a "save for next session" (#6002), so
+  // the event carries whether this phone was connected at the tap.
+  it.each([
+    ['away from the wall', false],
+    ['connected to a board', true],
+  ])('favorite.run tags the toggle with the Bluetooth link: %s', (_label, connected) => {
+    bluetoothCtrl.connected = connected;
+    const { result } = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: true });
+
+    result.current.find((action) => action.id === 'favorite')?.run();
+
+    expect(openers.track).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({ action: 'added', source: 'mobile_climb_actions', connected }),
+    );
+    expect(openers.toggleFavoriteMutate).toHaveBeenCalledTimes(1);
   });
 
   it('hides "Play next" for the climb already on the wall', () => {

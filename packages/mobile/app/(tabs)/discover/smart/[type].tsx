@@ -1,8 +1,9 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSmartPlaylist } from '@boardsesh/playlists-react';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import {
   GET_SMART_PLAYLIST,
   type SmartPlaylistType,
@@ -22,7 +23,8 @@ import { getHttpClient } from '../../../../src/lib/graphql/client';
 import { usePlaylistActivation } from '../../../../src/lib/playlists/use-playlist-activation';
 import { usePlaylistRenderBoard } from '../../../../src/lib/playlists/use-playlist-render-board';
 import { toQueueClimbs } from '../../../../src/lib/climb-types';
-import { smartPlaylistByType } from '../../../../src/lib/smart-playlists';
+import { parseSmartPlaylistOpenSource, smartPlaylistByType } from '../../../../src/lib/smart-playlists';
+import { track } from '../../../../src/lib/analytics';
 import { useProfile } from '../../../../src/lib/graphql/hooks';
 import { useAuthToken } from '../../../../src/lib/graphql/use-auth-token';
 import { useIsSharedSession } from '../../../../src/providers/queue-provider';
@@ -30,10 +32,12 @@ import { iosSystemColors } from '../../../../src/theme/ios-colors';
 
 type SmartParams = {
   type: string;
+  /** The surface that opened the list (`smartPlaylistHref`); absent on a deep link. */
+  source?: string;
 };
 
 export default function SmartPlaylistDetail() {
-  const { type } = useLocalSearchParams<SmartParams>();
+  const { type, source } = useLocalSearchParams<SmartParams>();
   const { t } = useTranslation('playlists');
   const { data: profile } = useProfile();
   const { isLoading: tokenLoading } = useAuthToken();
@@ -44,6 +48,17 @@ export default function SmartPlaylistDetail() {
   const userId = profile?.id ?? '';
   const preset = smartPlaylistByType(type);
   const smartType = (preset?.type ?? type) as SmartPlaylistType;
+
+  // Once per mount, for a list that exists: `$screen` keeps `[type]` verbatim,
+  // so this is the only place a Liked Climbs open can be told from any other
+  // smart list (#6002). The ref holds through a param change on the same mount.
+  const openTrackedRef = useRef(false);
+  const knownType = preset?.type ?? null;
+  useEffect(() => {
+    if (!knownType || openTrackedRef.current) return;
+    openTrackedRef.current = true;
+    track(SHARED_EVENTS.SmartPlaylistOpened, { type: knownType, source: parseSmartPlaylistOpenSource(source) });
+  }, [knownType, source]);
 
   const { query, allClimbs, meta } = useSmartPlaylist({
     smartPlaylistType: smartType,

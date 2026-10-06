@@ -52,7 +52,7 @@ import {
   climbTypeChipLabel,
 } from './FilterChipRow.logic';
 import { buildSortLabel } from '../../lib/filter-labels';
-import { COLLECTION_VALUES } from '../../lib/collection-filter';
+import { COLLECTION_VALUES, isPersonalCollection } from '../../lib/collection-filter';
 import type { FilterChipRowProps } from './FilterChipRow.types';
 
 // Semantic icon → Material XML vector drawable. White-filled (#FFFFFFFF) so the
@@ -196,7 +196,7 @@ function FilterChipRowComponent({
   canFilterProgress,
   collection,
   onChangeCollection,
-  canFilterDrafts,
+  canFilterPersonalCollections,
   sortBy,
   sortActive,
   onChangeSort,
@@ -369,7 +369,9 @@ function FilterChipRowComponent({
               colors={chipColors}
               renderItems={(close) => (
                 <>
-                  {COLLECTION_VALUES.filter((value) => value !== 'drafts' || canFilterDrafts).map((value) => (
+                  {COLLECTION_VALUES.filter(
+                    (value) => canFilterPersonalCollections || !isPersonalCollection(value),
+                  ).map((value) => (
                     <MenuItem
                       key={value}
                       label={collectionChipLabel(value, t)}

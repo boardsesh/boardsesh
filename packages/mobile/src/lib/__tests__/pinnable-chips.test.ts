@@ -105,7 +105,7 @@ describe('chipKindToTokenKeys', () => {
       grade: ['grade'],
       accuracy: ['gradeAccuracy'],
       progress: ['progress'],
-      collection: ['benchmark'],
+      collection: ['benchmark', 'liked'],
       climbType: ['climbType'],
       tall: ['tall'],
       wide: ['wide'],

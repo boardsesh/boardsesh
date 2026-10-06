@@ -32,7 +32,7 @@ import {
 } from '../../../src/components/playlist/DiscoverPlaylistCard';
 import { PlaylistShelf } from '../../../src/components/playlist/PlaylistShelf';
 import { DiscoverTopChrome } from '../../../src/components/chrome';
-import { SMART_PLAYLISTS, type SmartPlaylistPresentation } from '../../../src/lib/smart-playlists';
+import { SMART_PLAYLISTS, smartPlaylistHref, type SmartPlaylistPresentation } from '../../../src/lib/smart-playlists';
 import { useAuth } from '../../../src/providers/auth-provider';
 import { useTheme } from '../../../src/providers/theme-provider';
 import { useToast } from '../../../src/providers/toast-provider';
@@ -368,7 +368,7 @@ export default function DiscoverLibrary() {
   }, []);
 
   const goToSmartPlaylist = useCallback((smartPlaylistType: SmartPlaylistType) => {
-    router.push(`/(tabs)/discover/smart/${smartPlaylistType}`);
+    router.push(smartPlaylistHref(smartPlaylistType, 'discover'));
   }, []);
 
   const goToSetterPlaylist = useCallback((username: string) => {

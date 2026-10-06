@@ -205,6 +205,10 @@ vi.mock('../../../../src/hooks/use-bottom-chrome-metrics', () => ({
 }));
 vi.mock('../../../../src/lib/smart-playlists', () => ({
   DEFAULT_PINNED_SMART_PLAYLIST_TYPES: ['LIKED_CLIMBS', 'FIVE_STARS'],
+  smartPlaylistHref: (type: string, source: string) => ({
+    pathname: '/(tabs)/discover/smart/[type]',
+    params: { type, source },
+  }),
   SMART_PLAYLISTS: [
     {
       type: 'RECOMMENDED_CROWD_FAVORITES',

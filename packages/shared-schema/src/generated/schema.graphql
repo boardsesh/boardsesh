@@ -302,6 +302,8 @@ input ClimbSearchInput {
   useMyGrades: Boolean
   "Show only the user's draft climbs (requires auth)"
   onlyDrafts: Boolean
+  "Show only climbs the user has hearted on this board. A heart belongs to the climb, not to an angle, so it matches at every angle. Signed out returns no climbs. (requires auth)"
+  onlyFavorited: Boolean
   "Show only unclimbed projects (climbs with 0 ascents)"
   projectsOnly: Boolean
   "Keep only intact climbs, only climbs that have lost a hold, or everything (the default)."
