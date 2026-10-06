@@ -817,6 +817,9 @@ export const queriesTypeDefs = /* GraphQL */ `
     at all. Editor only, since a proposal describes an unpublished draft.
     """
     proposeSprayWallReset(input: ProposeSprayWallResetInput!): SprayWallResetProposal
+      @deprecated(
+        reason: "In-place resets were retired. Always refuses with SPRAY_WALL_RESET_RETIRED; use resetSprayWall."
+      )
 
     """
     A remix starting point: a climb on a spray wall with every hold it has since
@@ -834,6 +837,7 @@ export const queriesTypeDefs = /* GraphQL */ `
     2026-09-14): a climb that lost three holds is exactly the one worth remixing.
     """
     remixClimb(parentUuid: ID!, sprayWallUuid: ID): SprayRemixSeed
+      @deprecated(reason: "Remix after a reset was retired. Always null.")
 
     """
     Every spray wall attached to a gym that the caller may see, by wall name.
@@ -967,12 +971,10 @@ export const queriesTypeDefs = /* GraphQL */ `
     bulkVoteSummaries(input: BulkVoteSummaryInput!): [VoteSummary!]!
 
     """
-    The edit history of a published climb, newest first. At most 50 rows.
-
-    Empty for a climb nobody has edited, for a draft, and for a spray climb on a
-    wall the caller cannot see.
+    Retired: climb edits are no longer recorded as revisions. Always empty.
     """
     climbRevisions(boardType: String!, climbUuid: String!): [ClimbRevision!]!
+      @deprecated(reason: "Climb revision history was retired. Always empty.")
 
     # ============================================
     # Beta Link Queries

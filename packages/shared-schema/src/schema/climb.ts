@@ -80,54 +80,38 @@ export const climbTypeDefs = /* GraphQL */ `
     How many of this climb's holds are no longer on the wall.
 
     Spray walls only — null on every catalogue board, where holds do not come off.
-    0 is an intact climb; anything higher is a climb that survived a reset minus
-    some holds, which stays findable, gets a badge and can be remixed. Materialised
-    on \`board_climbs\` rather than joined, because the offline mirror has no
-    \`board_climb_holds\` table to join through.
+    0 is an intact climb; anything higher is a climb that lost holds to an
+    in-place reset before those were retired. Such a climb is left out of the
+    wall's climb lists and search, and still opens by uuid (logbook, playlist,
+    share link, queue). Materialised on \`board_climbs\` rather than joined,
+    because the offline mirror has no \`board_climb_holds\` table to join through.
     """
     missingHoldCount: Int
     """
-    The climb's current revision. 1 for a climb nobody has edited since it was
-    published, and one higher for every recorded edit after that (the same
-    numbers \`climbRevisions\` returns). A client that logs a tick sends this
-    back as \`SaveTickInput.climbRevision\`. Null on a fetch path that does not
-    project the column.
+    The climb's stored revision number. Edits no longer move it, so it is 1 for
+    almost every climb and frozen at its last value for the few edited before
+    revision history was retired. A client that logs a tick sends this back as
+    \`SaveTickInput.climbRevision\`. Null on a fetch path that does not project
+    the column.
     """
     revisionNumber: Int
     """
-    The revision at which this climb's holds last changed. Equal to
-    \`revisionNumber\` straight after an edit that moved a hold, and behind it
-    after a rename, a regrade or a pace change. A tick whose \`climbRevision\` is
-    at or above this number was climbed on the holds the climb has now.
+    The revision at which this climb's holds last changed, as stored. Edits no
+    longer move it. A tick whose \`climbRevision\` is at or above this number was
+    climbed on the holds the climb has now.
     """
     holdsRevisionNumber: Int
     """
-    The holds this climb was set on that are no longer on the wall, carrying the
-    geometry they had while they were — so a client can draw ghost rings where
-    they used to be and the climber can see what the reset took.
-
-    Spray walls only: null on every catalogue board, where holds do not come off,
-    and null on a climb that has lost nothing, so the common case costs no query.
-    An empty list means the climb's holds are all still there but the server did
-    look.
-
-    Coordinates are the wall's canonical frame — the same frame
-    \`SprayWallRenderData.holds\` uses — so the two sets draw on one photo without
-    conversion. \`removedVersion\` is the generation that took each hold off.
-
-    Resolved per climb, with its own query. A list must not select it; it is for a
-    single-climb surface — the play drawer and the remix editor.
+    Retired with lost-hold tracking. An empty list on a spray climb and null on
+    every other board, with no query.
     """
-    lostHolds: [SprayWallHold!]
+    lostHolds: [SprayWallHold!] @deprecated(reason: "Lost-hold tracking was retired. Always empty on a spray climb.")
   }
 
   """
-  Whether a climb still has every hold it was set on.
-
-  ANY is the default and adds no filter at all. INTACT keeps climbs that have lost
-  nothing; BROKEN keeps only the ones that have. Meaningful on spray walls, where a
-  reset takes holds off the wall; on a catalogue board every climb is INTACT, so
-  BROKEN there is an empty result rather than an error.
+  Retired. \`ClimbSearchInput.holdIntegrity\` is accepted and ignored: a spray
+  wall's lists always leave out climbs that lost a hold, and no other board loses
+  holds. Kept so older apps' documents still validate.
   """
   enum HoldIntegrityFilter {
     ANY
@@ -302,8 +286,8 @@ export const climbTypeDefs = /* GraphQL */ `
     onlyFavorited: Boolean
     "Show only unclimbed projects (climbs with 0 ascents)"
     projectsOnly: Boolean
-    "Keep only intact climbs, only climbs that have lost a hold, or everything (the default)."
-    holdIntegrity: HoldIntegrityFilter
+    "Accepted and ignored. A spray wall's lists always leave out climbs that lost a hold to an old reset."
+    holdIntegrity: HoldIntegrityFilter @deprecated(reason: "Ignored. Spray lists always hide climbs that lost a hold.")
     "Resolve each climb's grade and ascents through its own set angle when the browsed angle has no stats row, instead of ranking it below every climb that does have one (issue #5405). Opt-in on every board; omitted means off. On Woods, whose climbs are bound to the angle they were set at, off also narrows the list to the climbs for the browsed angle: set there, with no set angle recorded, or with stats there (issue #5642). A name search on Woods resolves across angles either way, so a climb is findable by name at any angle."
     crossAngleStats: Boolean
     "Which grade minGrade and maxGrade are compared against. Omitted means UPSTREAM, the grade older app builds filter on. Send BOARDSESH when the list shows Boardsesh grades, so the filter matches the labels."

@@ -104,16 +104,8 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
     caller is a principal.
     """
     sprayWallUuid: String
-    """
-    The spray wall climb this one was remixed from.
-
-    Writes a \`spray_climb_lineage\` row alongside the child, which is what the
-    child's screen reads to link back to the parent's ticks and grade history.
-    Only meaningful for \`boardType: "spray"\`, and the parent has to be a climb
-    on the SAME wall. The parent is kept even when it is no longer climbable —
-    that is usually why it was remixed.
-    """
-    remixOfClimbUuid: ID
+    "Accepted and ignored. Remix after a reset was retired, and no lineage is written."
+    remixOfClimbUuid: ID @deprecated(reason: "Remix after a reset was retired. Accepted and ignored.")
   }
 
   """
@@ -158,9 +150,8 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
   Input for updating an existing climb.
 
   A draft can be updated by its setter at any time. A published climb can be
-  updated by its setter within 24 hours of its first publish, except on a spray
-  wall, where the setter and anyone who can edit the wall can update it with no
-  time limit. Every edit to a published climb is kept (see climbRevisions).
+  updated by its setter within 24 hours of its first publish, on every board,
+  spray walls included. The edit is made in place; no revision is recorded.
   """
   input UpdateClimbInput {
     uuid: ID!
