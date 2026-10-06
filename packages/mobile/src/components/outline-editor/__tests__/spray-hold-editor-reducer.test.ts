@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { IDENTITY_HOMOGRAPHY } from '@boardsesh/spray-wall-geometry';
 import {
+  actionChangesWall,
   allHolds,
   editorCounts,
   editorIsDirty,
@@ -523,5 +524,43 @@ describe('sprayEditorReducer', () => {
     );
     // 100 stored + 1 confident find + 5 added, two switched off; the join undone.
     expect(editorCounts(state)).toMatchObject({ on: 104, maybes: 1, off: 2, unsavedWrites: 7, unsavedRemovals: 2 });
+  });
+});
+
+// The undo toast's two rules: raise only when the edit changed the wall, and
+// come down the moment `past` moves again. Both read `past` identity.
+describe('actionChangesWall', () => {
+  const wall = () => loaded([storedHold(1), storedHold(2), candidate(-1, UNSURE)]);
+
+  it('is false for a refused join, so no Undo can take back the edit before it', () => {
+    const edited = sprayEditorReducer(wall(), { type: 'DELETE', id: 2 });
+    expect(actionChangesWall(edited, { type: 'MERGE', ids: [1, 1] })).toBe(false);
+    expect(actionChangesWall(edited, { type: 'MERGE', ids: [1, 2] })).toBe(false);
+    expect(actionChangesWall(edited, { type: 'MERGE', ids: [1, -1] })).toBe(true);
+  });
+
+  it('is false for Keep all maybes with no maybe left to keep', () => {
+    expect(actionChangesWall(wall(), { type: 'KEEP_MAYBES' })).toBe(true);
+    const kept = sprayEditorReducer(wall(), { type: 'KEEP_MAYBES' });
+    expect(actionChangesWall(kept, { type: 'KEEP_MAYBES' })).toBe(false);
+  });
+
+  it('is true for Start over, even on an untouched wall', () => {
+    const seed = [storedHold(1), storedHold(2), candidate(-1, UNSURE)];
+    expect(actionChangesWall(wall(), { type: 'START_OVER', holds: seed })).toBe(true);
+  });
+
+  it('is false for a selection, which leaves the toast standing', () => {
+    const state = wall();
+    expect(actionChangesWall(state, { type: 'SELECT', id: 1 })).toBe(false);
+    expect(sprayEditorReducer(state, { type: 'SELECT', id: 1 }).past).toBe(state.past);
+  });
+
+  it('is true for the delete and the undo after it, so either takes the toast down', () => {
+    const state = wall();
+    expect(actionChangesWall(state, { type: 'DELETE', id: 1 })).toBe(true);
+    const deleted = sprayEditorReducer(state, { type: 'DELETE', id: 1 });
+    expect(actionChangesWall(deleted, { type: 'UNDO' })).toBe(true);
+    expect(actionChangesWall(deleted, { type: 'DELETE', id: 2 })).toBe(true);
   });
 });
