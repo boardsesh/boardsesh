@@ -1829,7 +1829,10 @@ editor. A hold draft opened before the lock can never be published, and nothing
 else clears it, so the refusal names it and the screen adds "Discard unpublished
 changes" under the locked message. One tap discards it
 (`discardSprayWallVersion`) and the screen settles on the plain locked state;
-nothing is discarded without that tap. On a live wall it resumes the wall's one
+nothing is discarded without that tap. Nothing on a locked wall's sheet opens
+this screen, so the offer is only seen through a stale sheet, a deep link, or a
+Publish that loses the race with the lock (the editor lands its refusal here).
+That is enough: a stranded draft blocks nothing, a reset included. On a live wall it resumes the wall's one
 open draft. With no draft,
 it creates one from the current published photo using `sourceVersionId`, without
 uploading the photograph again or changing its coordinate frame. Editing saves
@@ -1855,8 +1858,9 @@ stays mounted through its own closing animation.
 ## Resets
 
 A reset is what happens when someone takes holds off the wall and puts others on.
-The climb database survives it: climbs that lost holds stay findable, get a
-number, and can be remixed onto what is there now.
+The climb database survives it: climbs that lost holds keep their ticks and
+grades and get a number (`missing_hold_count`). The app hides the published ones
+from wall lists; see [A climb that lost holds](#a-climb-that-lost-holds).
 
 The flow is three calls, and only the middle one of the three writes anything:
 
@@ -2018,8 +2022,8 @@ It reaches three places:
   un-backfilled row would badge every Kilter climb in the database as broken.
 - **the offline mirror**, `packages/mobile/src/db/queries/search-climbs-local.ts`.
   The column has synced to the device since SW-15 (#5448). The app no longer sends
-  ANY or BROKEN: every spray search but a drafts-only one sends INTACT, and the
-  phone applies the same predicate itself (see
+  BROKEN: every spray search but a drafts-only one sends INTACT, a drafts-only one
+  sends ANY, and the phone applies the same predicate itself (see
   [A climb that lost holds](#a-climb-that-lost-holds)).
 
 `recomputeMissingHoldCounts` writes only the climbs whose number actually moved
@@ -2071,8 +2075,8 @@ picker's counts (`getSetterStats`) do not apply the rule; it has no
 
 The flag reaches phones through the `syncClimbs` pull and the saved-climb mirror
 document as `retired_by_reset`. On-device migration v12 adds the column. The
-phone's search no longer reads it: a retired climb lost every hold, so the
-lost-hold rule hides it already. Spray scopes have their own refresh revision (2,
+phone's search no longer reads it: a retired climb lost at least one hold in a
+full reset, so the lost-hold rule hides it already. Spray scopes have their own refresh revision (2,
 `refreshRevisionByBoardType`) and require the column on refresh pages
 (`refreshColumnsByBoardType`). So a climb retired while a phone ran an older
 bundle, which dropped the field, gets backfilled once on an unmetered network.
@@ -2224,11 +2228,16 @@ The rule is one predicate, `hidesLostHoldClimbs` in `@boardsesh/climb-filters`:
   `holdIntegrity: INTACT` (`withLostHoldRule` in `offline-request.ts`, applied to
   `SearchClimbs` and `SearchClimbsCount` whatever the caller built), and the
   phone's own search adds `COALESCE(missing_hold_count, 0) = 0`. A climb a full
-  reset retired lost every hold, so it is hidden by the same clause. NULL reads
+  reset retired lost at least one hold in it, so it is hidden by the same clause. NULL reads
   as whole: every catalogue climb, and a row pulled before the column existed.
 - **A climber's own drafts list keeps a draft that lost a hold**, so its setter
-  can fix it or delete it. A drafts-only search sends no `holdIntegrity`; the
-  phone's search never answers a drafts query, so it reads from the network.
+  can fix it or delete it. A drafts-only search sends `holdIntegrity: ANY`: the
+  current server hides retired climbs from any spray search without a value,
+  drafts included, and ANY turns that off without adding an integrity predicate
+  (a later server ignores it). The phone's search never answers a drafts query,
+  so it reads from the network.
+- **The similar-climbs strip on a downloaded wall leaves them out too**
+  (`get-similar-climbs-local.ts`).
 - **It still opens by uuid.** A logbook entry, a playlist, the queue or a link
   reaches it through `climb(uuid)` or `getClimbLocal`, which never go through the
   search builder. It is drawn with the holds that remain. Board compatibility
@@ -2239,9 +2248,14 @@ The rule is one predicate, `hidesLostHoldClimbs` in `@boardsesh/climb-filters`:
   a remix of such a climb seeds without the hold ids missing from the registered
   wall (`availableHoldIds`), so it never opens on holds it cannot draw.
 
+Two places do not apply the rule: the admin-only network heatmap, and the setter
+picker's counts (`getSetterStats`), which can include a setter's hidden lost-hold
+climbs.
+
 A search or recent pill stored by an older app can still carry a `holdIntegrity`
 value. `normalizeRetiredFilters` drops it on read, and `toClimbSearchInput` no
-longer reads the field.
+longer reads the field. A recent pill left with no filter and no search text
+after that is dropped.
 
 ## Archive and reset
 
@@ -3147,8 +3161,9 @@ It is a hint. `updateClimb` decides.
   line for each. "Not allowed" says only the setter can edit the climb. The
   server's own sentence is never shown; a failure with no known code gets the
   generic line.
-- **Two saves crossing.** `CLIMB_EDIT_CONFLICT` shows "Someone else just changed
-  this climb. Reopen it to see the latest." There is no automatic retry, and the
+- **Two saves crossing.** `CLIMB_EDIT_CONFLICT` (the setter saving from two
+  phones, say) shows "This climb changed somewhere else. Reopen it to see the
+  latest." There is no automatic retry, and the
   working copy stays on screen and in the autosave slot. Tapping Save again
   re-reads the climb and can succeed.
 - **The setter stays the setter in the queue too.** The queue row the editor
