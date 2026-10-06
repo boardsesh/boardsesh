@@ -12,10 +12,12 @@ import WarningAmberOutlined from '@mui/icons-material/WarningAmberOutlined';
 import type { GymClaimViewerState } from '@boardsesh/analytics';
 import { getPosthogDistinctId } from '@/app/lib/feature-flags/server-distinct-id';
 import { getServerTranslation } from '@/app/lib/i18n/server';
+import { getStoreButtonLabels } from '@/app/lib/store-button-labels.server';
 import { localeHref } from '@/app/lib/i18n/locale-href';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import StoreInstallButtons from '@/app/components/marketing/store-install-buttons';
 import { PageCard, PageShell, StatePanel } from '@/app/components/ui/page-shell';
 import { filterChipSx } from '@/app/components/ui/filter-chip';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -101,10 +103,11 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
   // The distinct id rides along with the two fetches rather than gating them:
   // it is only needed for the claim call-out's `viewerState`, and a session read
   // in series would add a round trip in front of every render.
-  const [pageResult, facetCountsResult, distinctId] = await Promise.all([
+  const [pageResult, facetCountsResult, distinctId, storeButtonLabels] = await Promise.all([
     fetchDirectoryPage(query),
     fetchFacetCounts(),
     getPosthogDistinctId(),
+    getStoreButtonLabels(),
   ]);
 
   // Either fetch failing means we cannot state the counts the body copy is
@@ -335,6 +338,24 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
             <GymDirectoryClaimLink viewerState={viewerState} />
           </Box>
         )}
+
+        {/* On every directory page, results or not (#6027): someone who found
+            their gym here needs the app to do anything at its boards, and
+            someone whose search came up empty still has a board at home. The
+            gym's own page carries the per-gym link; this one is the directory's. */}
+        <Box component="section" sx={{ mt: 5 }}>
+          <Typography
+            variant="subtitle1"
+            component="h2"
+            sx={{ fontWeight: themeTokens.typography.fontWeight.semibold, mb: 0.5 }}
+          >
+            {t('install.heading')}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: '68ch' }}>
+            {t('install.body')}
+          </Typography>
+          <StoreInstallButtons placement="gyms-directory" labels={storeButtonLabels} align="start" />
+        </Box>
 
         <Box component="section" sx={{ mt: 5 }}>
           <Typography

@@ -60,6 +60,9 @@
         "previous": "Vorherige Seite",
         "next": "Nächste Seite",
         "pageLabel": "Seite {{page}}"
+      },
+      "install": {
+        "helper": "Noch keine App? Hol sie dir und beleuchte diese Boulder an deinem Board."
       }
     }
   },
@@ -924,6 +927,9 @@
       "climbThis": "Boulder jetzt",
       "ariaLabel": "{{climbName}} in der Boardsesh-App öffnen",
       "helper": "Öffnet die App, beleuchtet die Griffe, loggt die Begehung."
+    },
+    "install": {
+      "helper": "Noch keine App? Hol sie dir und beleuchte diesen Boulder an deinem Board."
     }
   },
   "spray": {
@@ -952,6 +958,10 @@
         "title": "{{wallName}} | Spraywall",
         "description": "{{wallName}}, eine Spraywall mit {{angle}}°. Sieh dir die Wand an und öffne sie in der Boardsesh-App."
       }
+    },
+    "install": {
+      "heading": "Hol dir die App",
+      "body": "Trag deine Begehungen an dieser Wand ein und schraub deine eigenen Boulder."
     }
   }
 }

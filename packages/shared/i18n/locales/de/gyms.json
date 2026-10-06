@@ -160,5 +160,9 @@
     "area": "Hallen im Umkreis von {{radius}} km um {{place}}",
     "selectedArea": "den ausgewählten Standort",
     "pinlessNotice": "Ergebnisse in der Nähe enthalten nur Hallen mit einem Kartenmarker."
+  },
+  "install": {
+    "heading": "Hol dir die App",
+    "body": "Beleuchte die Boards in deiner Halle vom Handy aus und logg jede Begehung."
   }
 }

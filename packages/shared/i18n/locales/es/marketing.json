@@ -824,6 +824,10 @@
       "logbook": "Trae tu logbook",
       "counts": "Recuento de bloques",
       "ask": "Pide ayuda"
+    },
+    "install": {
+      "title": "Consigue la app",
+      "intro": "Todo lo de esta página pasa en la app."
     }
   },
   "docs": {

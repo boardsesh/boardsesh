@@ -28,7 +28,11 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
   default: ({ href, children }: { href: string; children?: React.ReactNode }) => <a href={href}>{children}</a>,
 }));
 
+// The store button is a client island that imports the analytics client.
+vi.mock('@/app/lib/analytics', () => ({ track: vi.fn() }));
+
 const { default: SprayClimbFrontDoor } = await import('../spray-climb-front-door');
+const { buildStoreUrl } = await import('@/app/lib/store-links');
 
 const PRESIGNED_URL = 'https://private.example/spray-walls/wall/photo.jpg?X-Amz-Signature=deadbeef';
 
@@ -104,6 +108,18 @@ describe('SprayClimbFrontDoor', () => {
     expect(html).toContain('href="/setter/marco"');
     expect(html).toContain('href="/gyms"');
     expect(html).toContain('href="/"');
+  });
+
+  it('ships a store link with the spray-climb link id (#6027)', async () => {
+    // The page had no way to the app at all: its only links were /setter, /gyms
+    // and home. Server-rendered, so it is in the HTML the CDN caches.
+    const html = await render();
+
+    expect(html).toContain(`href="${buildStoreUrl('ios', { placement: 'spray-climb' }).replaceAll('&', '&amp;')}"`);
+    expect(html).toContain('ct=spray-climb');
+    expect(html).toContain('spray.install.heading');
+    expect(html).toContain('spray.install.body');
+    expect(html).toContain('home.hero.ctaInstallIos');
   });
 
   it('never puts a presigned private-bucket URL in the markup', async () => {

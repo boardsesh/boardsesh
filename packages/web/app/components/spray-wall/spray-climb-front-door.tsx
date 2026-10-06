@@ -5,7 +5,9 @@ import Typography from '@mui/material/Typography';
 import { getDisplayDescription } from '@boardsesh/shared-schema';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import SprayBoardArt from '@/app/components/spray-wall/spray-board-art';
+import FrontDoorInstall from '@/app/components/climb-front-door/front-door-install';
 import { getServerTranslation } from '@/app/lib/i18n/server';
+import { getStoreButtonLabels } from '@/app/lib/store-button-labels.server';
 import { buildSprayLitHoldMarks, resolveSprayPhotoFrame } from '@/app/lib/spray/spray-climb-view';
 import type { SprayWallPageData } from '@/app/lib/spray/spray-wall-render-data.server';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
@@ -43,12 +45,13 @@ const sectionHeadingSx = { fontWeight: themeTokens.typography.fontWeight.semibol
  * back to. What is left is the climb, the photograph with the holds on it, and
  * links a crawler can follow.
  *
- * No client component anywhere in the tree: the picture of the wall is the
+ * One client island, the store button under the climb (#6027), and it is server
+ * rendered as a real anchor like everything else. The picture of the wall is the
  * page's LCP and the first HTML byte has to carry it, for a reader on a slow
  * connection and for a crawler that runs no JavaScript.
  */
 export default async function SprayClimbFrontDoor({ climb, wallData, photoUrl, angle }: SprayClimbFrontDoorProps) {
-  const { t } = await getServerTranslation('climbs');
+  const [{ t }, storeButtonLabels] = await Promise.all([getServerTranslation('climbs'), getStoreButtonLabels()]);
 
   const climbName = resolveClimbDisplayName(climb.name, 'spray');
   const wallName = wallData.wall.name;
@@ -113,6 +116,15 @@ export default async function SprayClimbFrontDoor({ climb, wallData, photoUrl, a
           </Typography>
         </Box>
       ) : null}
+
+      {/* The page's only action. A wall has no hand-off into the browser app, so
+          the store is the one way from here to climbing this. */}
+      <Box sx={sectionSx}>
+        <Typography variant="h2" sx={{ ...sectionHeadingSx, fontSize: '1.25rem' }}>
+          {t('spray.install.heading')}
+        </Typography>
+        <FrontDoorInstall placement="spray-climb" helperText={t('spray.install.body')} labels={storeButtonLabels} />
+      </Box>
 
       <Box sx={sectionSx}>
         <Typography variant="h2" sx={{ ...sectionHeadingSx, fontSize: '1.25rem' }}>

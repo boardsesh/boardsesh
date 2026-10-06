@@ -3,7 +3,9 @@
 // click came from. These stay exported as the base that builder extends, and
 // for the Capacitor retirement screen, which sends someone who already has the
 // app to update it and so has no install to attribute.
-export const IOS_APP_STORE_URL = 'https://apps.apple.com/app/boardsesh/id6761350784';
+/** The App Store's numeric id for the app. Also what the Smart App Banner meta tag names. */
+export const IOS_APP_STORE_ID = '6761350784';
+export const IOS_APP_STORE_URL = `https://apps.apple.com/app/boardsesh/id${IOS_APP_STORE_ID}`;
 export const ANDROID_PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.boardsesh.app';
 
 // Native scheme URLs — open the App Store / Play Store app directly and land on
