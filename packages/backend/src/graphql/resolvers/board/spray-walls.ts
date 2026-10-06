@@ -71,6 +71,8 @@ import {
 } from '../../../storage/s3';
 import { sprayWallIsListable } from './spray-wall-listing';
 import { resizedVariantKey } from '../../../lib/image-resize';
+import { sprayVersionQuality } from '../../../lib/spray-wall-art';
+import { requestSprayWallArtOn, sprayWallArtNeedsRequest, sprayWallArtView } from '../../../services/spray-wall-art';
 import {
   ClimbUuidSchema,
   CommitSprayWallVersionInputSchema,
@@ -156,6 +158,7 @@ export const SPRAY_WALL_CODES = {
   anchorsRequired: 'SPRAY_WALL_ANCHORS_REQUIRED',
   visibilityOwnerOnly: 'SPRAY_WALL_VISIBILITY_OWNER_ONLY',
   climbEditPolicyOwnerOnly: 'SPRAY_WALL_CLIMB_EDIT_POLICY_OWNER_ONLY',
+  artNotAvailable: 'SPRAY_WALL_ART_NOT_AVAILABLE',
 } as const;
 
 type SprayWallRow = typeof dbSchema.sprayWalls.$inferSelect;
@@ -1223,6 +1226,21 @@ async function publishDraftUnderLock(
   // AFTER the status flip, because the recompute only counts removals by
   // generations that have landed, and until that update this version is a draft.
   const climbsChanged = await recomputeMissingHoldCounts(tx, wall.id);
+
+  // The generated wall looks for the new generation, queued with the publish so
+  // the job commits (or rolls back) with it. Whatever background the wall
+  // shows, so the owner's picker has art to offer straight away. Refused here,
+  // with no job, when the photo fails the quality gate. Never fails the publish.
+  const [frame] = await tx
+    .select({
+      referenceWidth: dbSchema.sprayWalls.referenceWidth,
+      referenceHeight: dbSchema.sprayWalls.referenceHeight,
+    })
+    .from(dbSchema.sprayWalls)
+    .where(eq(dbSchema.sprayWalls.id, wall.id))
+    .limit(1);
+  if (frame) await requestSprayWallArtOn(tx, row, frame);
+
   if (climbsChanged > 0) {
     logger.info('Spray wall publish re-materialised climb integrity', {
       layoutId: wall.layoutId,
@@ -1347,6 +1365,24 @@ async function climbsUsingHolds(layoutId: number, holdIds: number[]): Promise<nu
 // Queries
 // ============================================
 
+/**
+ * The version a generated-background choice is checked against: the published
+ * one, or before the first publish the newest version (the wizard's draft).
+ */
+async function versionForArtChoice(wall: SprayWallRow): Promise<SprayWallVersionRow | undefined> {
+  const [version] = await db
+    .select()
+    .from(dbSchema.sprayWallVersions)
+    .where(
+      wall.currentVersionId != null
+        ? eq(dbSchema.sprayWallVersions.id, wall.currentVersionId)
+        : eq(dbSchema.sprayWallVersions.wallId, wall.id),
+    )
+    .orderBy(desc(dbSchema.sprayWallVersions.versionNumber))
+    .limit(1);
+  return version;
+}
+
 export const sprayWallQueries = {
   sprayWall: async (_: unknown, { uuid }: { uuid: unknown }, ctx: ConnectionContext) => {
     await applyRateLimit(ctx, WALL_QUERY_RATE_LIMIT, 'sprayWall');
@@ -1424,6 +1460,31 @@ export const sprayWallQueries = {
       homography: versionRow.homography ?? [...IDENTITY_HOMOGRAPHY],
       holds: holds.map((hold) => toGraphQLHold(hold, versionNumberById)),
     };
+  },
+
+  /**
+   * One version's generated wall looks and its quality verdict.
+   *
+   * The same gate as `sprayWallRenderData`, step for step: the wall's view
+   * rule, then the version rule (a draft only for an editor). Its own query so
+   * a backend that predates it fails only this read, never the render payload.
+   */
+  sprayWallArt: async (
+    _: unknown,
+    { uuid, version }: { uuid: unknown; version?: number | null },
+    ctx: ConnectionContext,
+  ) => {
+    await applyRateLimit(ctx, WALL_QUERY_RATE_LIMIT, 'sprayWallArt');
+    const validatedUuid = validateInput(UUIDSchema, uuid, 'uuid');
+
+    const loaded = await loadVisibleWall(validatedUuid, ctx.userId);
+    if (!loaded) return null;
+
+    const canEdit = await computeCanEdit(ctx, loaded.board);
+    const versionRow = await resolveReadableVersion(loaded.wall, version, canEdit);
+    if (!versionRow?.photoKey) return null;
+
+    return sprayWallArtView(versionRow, loaded.wall);
   },
 
   /**
@@ -2431,6 +2492,15 @@ export const sprayWallMutations = {
    * lock either — `render_settings` is touched by no other writer (holds,
    * versions and publish never read or write it), so there is no concurrent
    * write to order this against; the last call wins, which is what a setting is.
+   *
+   * A generated background (`wall-crop`, `hold-cutouts`) is refused when the
+   * wall's photo fails the quality gate — the published version's, or the
+   * newest draft's before the first publish — so no client can store a look
+   * the wall cannot show. The read it decides on is a version's pins and
+   * frame, which never change once written, so it still needs no lock: a
+   * publish landing alongside requests its own art. When the published
+   * version has no current art yet (a wall published before art existed),
+   * choosing one queues it.
    */
   setSprayWallRenderSettings: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
@@ -2439,15 +2509,36 @@ export const sprayWallMutations = {
     const validated = validateInput(SetSprayWallRenderSettingsInputSchema, input, 'input');
     const { wall } = await loadEditableWall(ctx, validated.uuid);
 
+    const background = validated.renderSettings?.background ?? 'photo';
+    const artVersion = background === 'photo' ? undefined : await versionForArtChoice(wall);
+    if (background !== 'photo') {
+      const quality = artVersion ? sprayVersionQuality(artVersion, wall) : null;
+      if (!quality || quality.verdict === 'fail') {
+        throw new GraphQLError(
+          'This wall\u2019s photo is too angled to straighten. Retake it front-on to use this look.',
+          {
+            extensions: { code: SPRAY_WALL_CODES.artNotAvailable, reason: quality?.reason ?? 'no-photo' },
+          },
+        );
+      }
+    }
+
     await db
       .update(dbSchema.sprayWalls)
       .set({ renderSettings: validated.renderSettings, updatedAt: new Date() })
       .where(eq(dbSchema.sprayWalls.id, wall.id));
 
+    // Backfill: only for the PUBLISHED version. A draft gets its art when it
+    // is published.
+    if (artVersion && artVersion.id === wall.currentVersionId && sprayWallArtNeedsRequest(artVersion.art)) {
+      await db.transaction((tx) => requestSprayWallArtOn(tx, artVersion, wall));
+    }
+
     logger.info('Spray wall render settings updated', {
       layoutId: wall.layoutId,
       userId: ctx.userId,
       mode: validated.renderSettings?.mode ?? null,
+      background,
     });
 
     const reloaded = await loadWall('uuid', validated.uuid);

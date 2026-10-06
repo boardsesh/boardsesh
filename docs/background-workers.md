@@ -149,7 +149,7 @@ these grants. A table the appliers start writing fails that test first.
 
 `maintenance-delivery` gets the grants `climb-stats-self-heal` needs
 (`CLIMB_STATS_SELF_HEAL_GRANTS`), plus the narrowly selected export fields
-(`USER_DATA_EXPORT_GRANTS`):
+(`USER_DATA_EXPORT_GRANTS`) and the spray wall art grants (below):
 
 | Grant | Tables |
 | --- | --- |
@@ -164,6 +164,17 @@ or application-table writes. The lists in `packages/db/src/job-queue-schema.ts`
 are authoritative and a restricted-role export test proves them. Supply this
 worker with `PRIVATE_*` storage configuration before the backend deploys with
 `user-data-export` running (hold it in `BATCH_FAMILIES_DISABLED` until then). See [user-data-exports.md](./user-data-exports.md).
+
+`spray-wall-art` (`SPRAY_WALL_ART_GRANTS`) renders a spray wall version's
+generated looks. It reads `spray_walls (id, board_uuid, reference_width,
+reference_height, deleted_at)`, `spray_wall_versions (id, wall_id,
+version_number, status, photo_key, photo_width, photo_height, anchors,
+homography, art)` and the whole of `spray_wall_holds` (geometry only), and its
+one write is `UPDATE (art)` on `spray_wall_versions`. No owner, visibility or
+public-copy column: the backend decides who may see the art, the job only makes
+it. It needs the same `PRIVATE_*` storage configuration as the export; the
+restricted-role proof is `src/__tests__/spray-wall-art-jobs.test.ts`. See
+[spray-walls.md](./spray-walls.md), "Generated wall looks".
 
 No application SQL function is called directly; the trigger functions these
 writes fire (the `sync_seq` stamps, the location triggers) run as the caller,
@@ -254,6 +265,7 @@ module. The module declares:
 | `moonboard-locations-sync` | `routine-provider` | 1800 s (heartbeat 120 s) | 1, after 600 s | 24 h | `moonboard` |
 | `climb-stats-self-heal` | `maintenance-delivery` | 900 s (heartbeat 120 s) | 1, after 300 s | 1 h | `climb-stats` |
 | `user-data-export` | `maintenance-delivery` | 300 s (heartbeat 30 s) | 1, after 15 s | 30 min | `userId:boardType:ISO-week` |
+| `spray-wall-art` | `maintenance-delivery` | 300 s (heartbeat 30 s) | 2, 30 s backoff to 300 s | 1 h | `art:versionId:recipe` |
 
 Throw `BackgroundJobError(code)` from `execute` to record a bounded,
 credential-free `error_code` (`/^[A-Z][A-Z0-9_]{0,63}$/`); pass
@@ -307,9 +319,11 @@ under a run-ID key. When every request in a tick fails, nothing was enqueued, so
 the tick throws and pg-boss retries it.
 
 The same list gates producers that are not schedules: a link and "Sync now"
-queue `aurora-user-sync` / `kilter-user-sync` runs, and an export request
-queues a `user-data-export` run, only while those families are not listed in
-`BATCH_FAMILIES_DISABLED` (see "Provider sync families").
+queue `aurora-user-sync` / `kilter-user-sync` runs, an export request
+queues a `user-data-export` run, and a spray wall publish (or an owner picking
+a generated background) queues a `spray-wall-art` run, only while those
+families are not listed in `BATCH_FAMILIES_DISABLED` (see "Provider sync
+families").
 
 ## Batch families
 

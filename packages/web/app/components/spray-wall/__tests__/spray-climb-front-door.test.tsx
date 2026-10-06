@@ -69,13 +69,17 @@ const CLIMB = {
   description: 'Sit start on the two crimps.',
 };
 
-async function render(overrides: { photoUrl?: string | null } = {}) {
+type ArtProps = Parameters<typeof SprayClimbFrontDoor>[0]['art'];
+
+async function render(overrides: { photoUrl?: string | null; art?: ArtProps; artUrl?: string | null } = {}) {
   const element = await SprayClimbFrontDoor({
     // The component's prop types are the page's; the fixtures above are the
     // shapes those types describe, narrowed to what this component reads.
     climb: CLIMB as unknown as Parameters<typeof SprayClimbFrontDoor>[0]['climb'],
     wallData: WALL_DATA,
     photoUrl: 'photoUrl' in overrides ? (overrides.photoUrl ?? null) : WALL_DATA.wall.publicPhotoUrl,
+    art: overrides.art ?? null,
+    artUrl: overrides.artUrl ?? null,
     angle: 40,
   });
   return renderToStaticMarkup(element);
@@ -137,5 +141,26 @@ describe('SprayClimbFrontDoor', () => {
 
     expect(html).toContain('spray.noPhoto');
     expect(html).not.toContain('<img');
+  });
+
+  it('draws the holds-only look in canonical mode on the dark field when the owner chose it', async () => {
+    const artUrl = `/api/v1/spray-walls/${WALL_DATA.wall.uuid}/photo?look=hold-cutouts`;
+    // Art at half the canonical frame: canonical (200, 400) lands at (100, 200).
+    const html = await render({ art: { background: 'hold-cutouts', width: 600, height: 800 }, artUrl });
+
+    expect(html).toContain(`src="${artUrl.replaceAll('&', '&amp;')}"`);
+    expect(html).not.toContain(WALL_DATA.wall.publicPhotoUrl);
+    expect(html).toContain('viewBox="0 0 600 800"');
+    expect(html).toContain('cx="100"');
+    expect(html).toContain('cy="200"');
+    expect(html).toContain('background-color:#181225');
+  });
+
+  it('draws the wall-only look with no field behind it', async () => {
+    const artUrl = `/api/v1/spray-walls/${WALL_DATA.wall.uuid}/photo?look=wall-crop`;
+    const html = await render({ art: { background: 'wall-crop', width: 1200, height: 1600 }, artUrl });
+
+    expect(html).toContain('look=wall-crop');
+    expect(html).not.toContain('#181225');
   });
 });

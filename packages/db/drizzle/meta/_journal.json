@@ -1793,6 +1793,13 @@
       "when": 1791263940823,
       "tag": "0255_spray_full_reset_retires_climbs",
       "breakpoints": true
+    },
+    {
+      "idx": 256,
+      "version": "7",
+      "when": 1791285267769,
+      "tag": "0256_spray_wall_version_art",
+      "breakpoints": true
     }
   ]
 }

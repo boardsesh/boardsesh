@@ -146,10 +146,12 @@ const WRITERS: Array<{ name: string; source: string; why: string; exempt?: strin
     name: 'setSprayWallRenderSettings',
     source: SPRAY_WALLS_SOURCE,
     why: 'it writes spray_walls.render_settings',
-    // A blind single-column write that decides on no read of wall state, to a
-    // column no hold, version or publish path reads or writes. There is nothing
-    // to order it against; the last call wins, which is what a setting is.
-    exempt: 'it decides on no read and no other writer touches render_settings',
+    // A single-column write to a column no hold, version or publish path reads
+    // or writes. Its one read — a generated background is refused when the
+    // version's photo fails the quality gate — is of a version's pins and frame,
+    // which never change once written, and a publish racing it queues its own
+    // art. There is nothing to order it against; the last call wins.
+    exempt: 'it decides only on immutable version geometry and no other writer touches render_settings',
   },
   { name: 'deleteSprayWall', source: SPRAY_WALLS_SOURCE, why: 'a publish must not land on a wall being deleted' },
   {
