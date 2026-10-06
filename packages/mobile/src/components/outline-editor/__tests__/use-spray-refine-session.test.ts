@@ -120,7 +120,7 @@ describe('useSprayRefineSession', () => {
       hook.result.current.applyStroke([650, 380, 650, 420], 20, 'add');
     });
     act(() => {
-      expect(hook.result.current.applyStroke([595, 340, 595, 460], 12, 'erase').ok).toBe(true);
+      expect(hook.result.current.applyStroke([600, 340, 600, 460], 20, 'erase').ok).toBe(true);
     });
     let committed: ReturnType<typeof hook.result.current.finish> = null;
     act(() => {
@@ -130,6 +130,81 @@ describe('useSprayRefineSession', () => {
     const result = committed as unknown as { ok: true; hold: { cx: number; outline: number[] } };
     expect(result.ok).toBe(true);
     expect(result.hold.cx).toBeGreaterThan(610);
+  });
+
+  it('undoing an erase that moved the hold paints the next stroke as if it never happened', () => {
+    const edited = openSession();
+    const fresh = openSession();
+    act(() => {
+      edited.result.current.applyStroke([650, 380, 650, 420], 20, 'add');
+      fresh.result.current.applyStroke([650, 380, 650, 420], 20, 'add');
+    });
+    act(() => {
+      // Through the middle: the anchor moves onto the bigger piece.
+      expect(edited.result.current.applyStroke([600, 340, 600, 460], 20, 'erase').ok).toBe(true);
+    });
+    act(() => {
+      // Refused (paints nothing), but seeds a bitmap round the moved anchor.
+      expect(edited.result.current.applyStroke([640, 400, 641, 400], 4, 'add')).toEqual({
+        ok: false,
+        reason: 'no-change',
+      });
+      expect(edited.result.current.undo()).toBe(true);
+    });
+    expect(edited.result.current.view?.outlineBoardPx).toEqual(fresh.result.current.view?.outlineBoardPx);
+    act(() => {
+      edited.result.current.applyStroke([600, 440, 600, 452], 8, 'add');
+      fresh.result.current.applyStroke([600, 440, 600, 452], 8, 'add');
+    });
+    // The edited session reseeds its bitmap from the ring (a fresh frame), so
+    // the two agree to the raster's own noise rather than to the bit.
+    const editedRing = polygonCentroidAndArea(toRingPoints(edited.result.current.view?.outlineBoardPx ?? []));
+    const freshRing = polygonCentroidAndArea(toRingPoints(fresh.result.current.view?.outlineBoardPx ?? []));
+    expect(Math.abs(editedRing.cx - freshRing.cx)).toBeLessThan(1);
+    expect(Math.abs(editedRing.cy - freshRing.cy)).toBeLessThan(1);
+    expect(Math.abs(editedRing.area / freshRing.area - 1)).toBeLessThan(0.03);
+  });
+
+  it('undo across a moved anchor never paints onto a bitmap framed round the new one', () => {
+    // Erasing bare wall far off the hold paints nothing but grows the brush
+    // bitmap to its 4-radius cap. Done either side of the anchor move, both
+    // bitmaps are the same size, so only the frame's origin tells them apart.
+    const farErase = [800, 400, 801, 400];
+    const centroidOf = (flat: number[]) => {
+      const { cx, cy } = polygonCentroidAndArea(toRingPoints(flat));
+      return { cx, cy };
+    };
+    const edited = openSession();
+    act(() => {
+      edited.result.current.applyStroke([650, 380, 650, 420], 20, 'add');
+      edited.result.current.applyStroke(farErase, 4, 'erase');
+    });
+    const beforeMove = edited.result.current.view?.outlineBoardPx ?? [];
+    act(() => {
+      expect(edited.result.current.applyStroke([600, 340, 600, 460], 20, 'erase').ok).toBe(true);
+      edited.result.current.applyStroke(farErase, 4, 'erase');
+      expect(edited.result.current.undo()).toBe(true);
+    });
+    act(() => {
+      edited.result.current.applyStroke([600, 440, 600, 446], 4, 'add');
+    });
+    const after = centroidOf(edited.result.current.view?.outlineBoardPx ?? []);
+    const before = centroidOf(beforeMove);
+    expect(Math.abs(after.cx - before.cx)).toBeLessThan(3);
+    expect(Math.abs(after.cy - before.cy)).toBeLessThan(3);
+  });
+
+  it('counts as changed while a stroke is kept', () => {
+    const hook = openSession();
+    expect(hook.result.current.view?.changed).toBe(false);
+    act(() => {
+      hook.result.current.applyStroke([640, 400, 652, 400], 8, 'add');
+    });
+    expect(hook.result.current.view?.changed).toBe(true);
+    act(() => {
+      hook.result.current.undo();
+    });
+    expect(hook.result.current.view?.changed).toBe(false);
   });
 
   it('commits one storable hold on finish, and nothing when no stroke was kept', () => {

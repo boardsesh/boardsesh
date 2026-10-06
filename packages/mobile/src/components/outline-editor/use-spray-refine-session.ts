@@ -38,8 +38,10 @@ export type RefineView = {
   holdId: number;
   /** The area as it stands, in board px, flat and implicitly closed. */
   outlineBoardPx: number[];
-  /** Strokes kept so far — and so how many the bar's Undo can take back. */
+  /** Strokes the bar's Undo can still take back (the stack keeps the last {@link MAX_REFINE_UNDO}). */
   strokeCount: number;
+  /** The area differs from where the session started: leaving now would lose work. */
+  changed: boolean;
   /** The brush frame, for the brush-size floor. */
   frame: RefineFrame;
 };
@@ -117,6 +119,7 @@ export function useSprayRefineSession(): SprayRefineSession {
             holdId: session.holdId,
             outlineBoardPx: fromBrushFrame(session.outlineBrushPx, session.frame),
             strokeCount: session.undo.length,
+            changed: session.netStrokes > 0,
             frame: session.frame,
           }
         : null,
@@ -222,13 +225,19 @@ export function useSprayRefineSession(): SprayRefineSession {
     const session = sessionRef.current;
     const entry = session?.undo.pop();
     if (!session || !entry) return false;
+    // Undoing an erase that moved the anchor: the brush session's bitmap (if a
+    // refused stroke has seeded one since) is framed round the NEW anchor, and
+    // `restore` only checks the length, so a snapshot framed round the old one
+    // could land shifted. Start clean instead; the next stroke reseeds from the ring.
+    const anchorMoves = entry.anchorX !== session.anchorX || entry.anchorY !== session.anchorY;
     session.outlineBrushPx = entry.outlineBrushPx;
     session.anchorX = entry.anchorX;
     session.anchorY = entry.anchorY;
     session.netStrokes -= 1;
-    // A bitmap from another frame (a reseed or a moved anchor since) does not
-    // fit and clears the session instead; the next stroke reseeds from the ring.
-    brush.restore(entry.cells);
+    // Otherwise a bitmap from another frame (a reseed since) does not fit and
+    // clears the session itself, with the same reseed on the next stroke.
+    if (anchorMoves) brush.reset();
+    else brush.restore(entry.cells);
     publish(session);
     return true;
   }, [brush, publish]);

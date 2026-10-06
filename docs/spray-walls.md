@@ -1296,6 +1296,8 @@ What the editor does with a wall is decided by this document rather than by tast
     ring goes through round, close, `isValidOutlineRing` and the centre gate
     (`holdFromRefinedOutline`). So the editor's Undo takes the whole refine back
     in one step. Publish waits until Refine is closed; Start over discards it.
+    An open Refine with a kept stroke counts as unsaved work for the leave
+    guard (`onDirtyChange`), since its strokes reach the reducer only on Done.
   - **Resolution.** The engine works in a frame centred on the hold with its
     radius at 32 units (`spray-refine.ts`): 5% of the hold's radius whatever
     the photo, so the 4096 px full photo past 3x changes nothing, and at most

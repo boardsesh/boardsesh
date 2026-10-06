@@ -686,7 +686,9 @@ export function SprayHoldEditorScreen({
   const countsRef = useRef(counts);
   countsRef.current = counts;
 
-  const dirty = editorIsDirty(state, counts);
+  // An open Refine with strokes in it is unsaved work too: they reach the
+  // reducer only on Done.
+  const dirty = editorIsDirty(state, counts) || (refineView?.changed ?? false);
   const wallLabel = t('sprayEditor.a11y.wall', { summary: sprayCountSummary(t, counts, showMaybes) });
   const onDirtyChangeRef = useRef(onDirtyChange);
   onDirtyChangeRef.current = onDirtyChange;
@@ -1191,21 +1193,22 @@ export function SprayHoldEditorScreen({
       setTool('edit');
       if (!keep || holdId == null) {
         session.cancel();
-        return;
+        return true;
       }
       const result = session.finish();
       // No stroke kept: nothing to commit.
-      if (!result) return;
+      if (!result) return true;
       if (!result.ok) {
         hapticWarning();
         setErrorText(refineRejectionMessage(result.reason, t));
-        return;
+        return false;
       }
       const hold = stateRef.current.holds[holdId];
-      if (!hold || !canEditRef.current || editWouldPassCap(hold)) return;
+      if (!hold || !canEditRef.current || editWouldPassCap(hold)) return false;
       hapticMedium();
       dispatch({ type: 'SET_OUTLINE', id: holdId, geometry: result.hold });
       recordHint('edit');
+      return true;
     },
     [refinePointsSV, editWouldPassCap, recordHint, t],
   );
@@ -1260,8 +1263,9 @@ export function SprayHoldEditorScreen({
       );
       const outcome = session.applyStroke(strokeBoardPoints, radius, refineModeRef.current);
       if (outcome.ok) {
-        // The preview stays until the new area is drawn, so the stroke never
-        // blinks out while the area catches up.
+        // The preview stays until the commit that draws the new area, so the
+        // stroke does not blink out while JS works (at most a frame between the
+        // clear and the new path mounting on Fabric).
         pendingRefineClearRef.current = [firstX, firstY];
         hapticSelection();
         if (outcome.droppedPieces > 0) {
@@ -1357,8 +1361,9 @@ export function SprayHoldEditorScreen({
       leaveAddMode();
       return;
     }
-    // Refine's strokes are kept, not thrown away by a tap on +.
-    if (toolRef.current === 'refine') leaveRefine(true);
+    // Refine's strokes are kept, not thrown away by a tap on +. One that could
+    // not be kept says why and stays out of add mode.
+    if (toolRef.current === 'refine' && !leaveRefine(true)) return;
     setErrorText(null);
     setJoinCursorId(null);
     draftPointsSV.value = NO_POINTS;

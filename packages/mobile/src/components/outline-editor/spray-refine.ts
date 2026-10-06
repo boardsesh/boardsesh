@@ -73,8 +73,9 @@ export const REFINE_FRAME_SCALE_MAX = 8;
 export const REFINE_CIRCLE_SAMPLES = 48;
 
 /**
- * Brush radii in SCREEN points, converted to board px at the zoom the stroke
- * starts at, so a brush feels the same size under the finger at 1× and at 8×.
+ * Brush radii in SCREEN points, converted to board px at the zoom when the
+ * stroke lifts (the live preview uses the live zoom, so what is shown is what
+ * is painted), so a brush feels the same size under the finger at 1× and at 8×.
  * Medium is a fingertip's contact patch; small is for a crimp's edge zoomed in.
  */
 export const REFINE_BRUSH_RADIUS_PT = {
@@ -205,7 +206,7 @@ export type LargestPieceResult =
       /** The kept piece, in the brush frame. */
       outlineBrushPx: number[];
       droppedPieces: number;
-      /** The kept piece's centroid in the brush frame: the session's new anchor. */
+      /** The kept piece's cell nearest its centroid, in the brush frame: the session's new anchor. */
       anchorX: number;
       anchorY: number;
     }
@@ -262,9 +263,27 @@ export function strokeKeepingLargestPiece(params: {
     sumX += cellX;
     sumY += (index - cellX) / mask.width;
   }
+  // The new anchor is the piece's own cell nearest its centroid: on a C-shaped
+  // piece the centroid itself can sit in the mouth, outside the piece, and an
+  // anchor there would skip the neck trim and fail the centre gate.
+  const meanX = sumX / largest.length;
+  const meanY = sumY / largest.length;
+  let anchorCell = largest[0];
+  let anchorDistanceSquared = Infinity;
+  for (const index of largest) {
+    const cellX = index % mask.width;
+    const deltaX = cellX - meanX;
+    const deltaY = (index - cellX) / mask.width - meanY;
+    const distanceSquared = deltaX * deltaX + deltaY * deltaY;
+    if (distanceSquared < anchorDistanceSquared) {
+      anchorDistanceSquared = distanceSquared;
+      anchorCell = index;
+    }
+  }
   // A cell's integer coordinate is the point the engine samples it at.
-  const centroidX = mask.originX + sumX / largest.length / mask.supersample;
-  const centroidY = mask.originY + sumY / largest.length / mask.supersample;
+  const anchorCellX = anchorCell % mask.width;
+  const centroidX = mask.originX + anchorCellX / mask.supersample;
+  const centroidY = mask.originY + (anchorCell - anchorCellX) / mask.width / mask.supersample;
   const traced = maskToRing(cells, { ...mask, cells, anchorX: centroidX, anchorY: centroidY });
   if (!traced.ok) return traced;
   return {
