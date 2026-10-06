@@ -110,6 +110,24 @@ export function sprayHoldsReviewed(
   return { name: SHARED_EVENTS.SprayHoldsReviewed, properties };
 }
 
+/**
+ * Which part of the post-publish bind did not finish. `navigate` is the dismiss
+ * that was dispatched and did not land; the other three ran past their deadline.
+ */
+export type SprayBindStage = 'visibility' | 'fetch_board' | 'bind' | 'navigate';
+
+export type SprayWallBindStalledProps = {
+  stage: SprayBindStage;
+  /** From the publish landing to the moment the stall was called. */
+  elapsedMs: number;
+};
+
+export function sprayWallBindStalled(
+  properties: SprayWallBindStalledProps,
+): SprayWallPayload<typeof SHARED_EVENTS.SprayWallBindStalled, SprayWallBindStalledProps> {
+  return { name: SHARED_EVENTS.SprayWallBindStalled, properties };
+}
+
 export type SprayWallResetPreviewedProps = {
   keptCount: number;
   removedCount: number;

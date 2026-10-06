@@ -98,6 +98,7 @@ vi.mock('../../outline-editor/SprayHoldEditorScreen', () => ({
 }));
 
 const { SprayWallHoldsScreen } = await import('../SprayWallHoldsScreen');
+const { BIND_STAGE_DEADLINE_MS } = await import('../../../lib/spray/post-publish-bind');
 const draft: PreparedSprayHoldDraft = {
   wallUuid: 'wall-1',
   layoutId: 42,
@@ -246,6 +247,30 @@ describe('SprayWallHoldsScreen', () => {
       expect(requests.fetchRender).toHaveBeenCalledTimes(2);
     },
   );
+
+  it('fails into Retry when the published refresh never settles', async () => {
+    // Both awaits can sit on a refetch paused offline, and the leave guard holds
+    // every way out while they do — so the ceiling is the only exit.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      requests.fetchRender.mockReturnValueOnce(new Promise<never>(() => {}));
+      render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+      fireEvent.click(await screen.findByTestId('editor'));
+      await waitFor(() => expect(requests.fetchRender).toHaveBeenCalledTimes(1));
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(BIND_STAGE_DEADLINE_MS);
+      });
+      await screen.findByText('sprayMaintenance.refreshFailed');
+      expect(router.back).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByText('sprayMaintenance.retry'));
+      await waitFor(() => expect(router.back).toHaveBeenCalledTimes(1));
+      expect(requests.publish).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it('refreshes downloaded integrity and the visible climb list after publishing', async () => {
     render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));

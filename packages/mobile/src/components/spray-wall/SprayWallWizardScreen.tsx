@@ -34,7 +34,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -71,13 +71,14 @@ import { classifySprayUploadFailure, sprayUploadNotice, type SprayUploadNotice }
 import { iosSystemColors } from '../../theme/ios-colors';
 import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
-import { reportError } from '../../lib/error-reporting';
+import { addErrorBreadcrumb, reportError } from '../../lib/error-reporting';
 import { openExternalUrl } from '../../lib/open-url';
 import { buildHelpUrl } from '../../lib/help-url';
 import { extractGraphqlCode, extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import { SPRAY_CAP_VALUES, sprayCapFromErrorCode, sprayCapMessage } from '../../lib/spray/spray-cap-copy';
 import { useActivateBoard } from '../../lib/boards/use-activate-board';
 import { activatePublishedSprayWall } from '../../lib/spray/activate-published-spray-wall';
+import { DONE_EXIT_OFFER_MS, PostPublishStalledError, runPostPublishBind } from '../../lib/spray/post-publish-bind';
 import type { BoardReturnTo } from '../../lib/boards/board-return-to';
 import { invalidateSprayWallRenderData } from '../../lib/spray/spray-wall-loader';
 import { prefetchSprayWallDraft } from '../../lib/spray/use-spray-wall-draft';
@@ -118,6 +119,13 @@ const sprayAngles: number[] = [...SPRAY_ANGLE_OPTIONS];
 
 /** Widest the photo preview is ever drawn. Past this it is a wall on a coffee table. */
 const MAX_PREVIEW_WIDTH = 520;
+
+/**
+ * The bind's navigation, taken away from `useActivateBoard`: the wizard leaves
+ * by itself once the bind has landed (`runPostPublishBind`), so that whether
+ * the dismiss actually took can be watched and, failing that, retried.
+ */
+const LEAVE_AFTER_BIND = () => {};
 
 /** The steps that get a "step N of M" counter — the ones a climber drives. */
 const COUNTED_STEPS: readonly AddWallStep[] = ['meta', 'photo', 'anchors', 'review', 'look', 'publish'];
@@ -172,6 +180,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     [t],
   );
   const router = useRouter();
+  const navigation = useNavigation();
   const queryClient = useQueryClient();
   const { width: windowWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -239,10 +248,56 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   // route; the publish tap already buzzed.
   const finish = useActivateBoard({
     returnTo,
+    navigate: LEAVE_AFTER_BIND,
     isLocalOnly: true,
     writeFailure: 'rethrow',
     haptic: false,
   });
+
+  /**
+   * Out of the flow, back onto the tab the Boards modal was opened from. The
+   * first road, taken once the bind has landed: a POP_TO onto the tab, which
+   * is what every other board picker does (`useActivateBoard`).
+   */
+  const leaveToReturnTo = useCallback(() => {
+    try {
+      router.dismissTo(returnTo);
+    } catch (error) {
+      reportError(error);
+    }
+  }, [router, returnTo]);
+
+  /**
+   * The second road, for when the first did not land and for the `done`
+   * step's own button. Re-sending the same `dismissTo` would fail the same way
+   * — a POP_TO to a tab that is not in the history, say — so this closes the
+   * Boards modal itself: `navigation` is the boards stack, and its parent is
+   * the root stack the modal sits on. A modal with nothing under it (a cold
+   * deep link) has nowhere to go back to, and only then is it replaced with
+   * the tab; replacing while the tabs ARE underneath would stack a second tab
+   * tree over them. At `done` the leave guard lets either straight through
+   * (`leaveDecision`).
+   */
+  const closeBoardsModal = useCallback(() => {
+    try {
+      const rootNavigation = navigation.getParent();
+      if (rootNavigation?.canGoBack()) {
+        rootNavigation.goBack();
+        return;
+      }
+      router.replace(returnTo);
+    } catch (error) {
+      reportError(error);
+    }
+  }, [navigation, router, returnTo]);
+
+  /**
+   * The bind attempt in flight. Aborted when a newer one starts and when the
+   * screen unmounts: that clears its timers, and it is what stops a late answer
+   * from a run that already gave up from starting a bind or navigating.
+   */
+  const bindControllerRef = useRef<AbortController | null>(null);
+  useEffect(() => () => bindControllerRef.current?.abort(), []);
 
   const previewWidth = Math.min(MAX_PREVIEW_WIDTH, windowWidth - spacing[4] * 2);
 
@@ -559,6 +614,9 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     const { draft, wall, published } = state;
     const board = boardRef.current;
     if (!draft || !wall || state.publish.running) return;
+    bindControllerRef.current?.abort();
+    const bindController = new AbortController();
+    bindControllerRef.current = bindController;
     dispatch({ type: 'PUBLISH_STARTED' });
     hapticSelection();
     // The look step just saved; this is the next thing that happens, and the
@@ -579,48 +637,103 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
 
       if (!published) {
         await publishVersionAsync(draft.versionId);
+        // Latched before anything else can throw: past this point a failure
+        // must retry the bind, never the publish the server would now refuse.
         dispatch({ type: 'PUBLISHED' });
-        // Register the PUBLISHED generation right now. SW-07's revalidation
-        // window would get there eventually, but the device that published
-        // already knows the version moved — and until it re-registers, every
-        // spray cache key still names the draft the climber was editing.
-        await invalidateSprayWallRenderData(queryClient, draft.wallUuid, draft.layoutId);
         // Built from the wall itself, not from `builder`: a resumed run never ran
         // the meta step, so the builder's fields are its constructor defaults and
         // reporting them would bias this funnel for every wall finished on a
         // second sitting. `wall-created-event.ts` carries the whole rule.
-        track(
-          SHARED_EVENTS.BoardCreated,
-          wallCreatedEventProperties({
-            layoutId: wall.layoutId,
-            board,
-            meta: metaRanHereRef.current
-              ? {
-                  angle: builder.angle,
-                  hasLocationName: builder.locationName.trim().length > 0,
-                  hasCoords: builder.coords != null,
-                  gymUuid: builder.selectedGym?.uuid ?? null,
-                }
-              : null,
-            pendingVisibility: visibility,
-          }),
-        );
+        // Once per wall, here and nowhere else; and caught, so a builder that
+        // throws costs the event rather than the bind.
+        try {
+          track(
+            SHARED_EVENTS.BoardCreated,
+            wallCreatedEventProperties({
+              layoutId: wall.layoutId,
+              board,
+              meta: metaRanHereRef.current
+                ? {
+                    angle: builder.angle,
+                    hasLocationName: builder.locationName.trim().length > 0,
+                    hasCoords: builder.coords != null,
+                    gymUuid: builder.selectedGym?.uuid ?? null,
+                  }
+                : null,
+              pendingVisibility: visibility,
+            }),
+          );
+        } catch (error) {
+          reportError(error);
+        }
+      } else {
+        // A retry: the re-bind runs on `done`, exactly like the first.
+        dispatch({ type: 'PUBLISHED' });
       }
 
-      // Idempotent, and after the latch above, so a retry of a failed bind
-      // re-applies it rather than re-publishing.
-      if (visibility) {
-        await updateVisibilityAsync({ uuid: draft.wallUuid, ...visibility });
-      }
-
-      // Fetch the published visibility before persisting the active board.
-      // A failed read leaves the published latch set, so retry only binds.
-      await activatePublishedSprayWall(queryClient, draft.wallUuid, finish);
+      await runPostPublishBind({
+        // Register the PUBLISHED generation right now. SW-07's revalidation
+        // window would get there eventually, but the device that published
+        // already knows the version moved — and until it re-registers, every
+        // spray cache key still names the draft the climber was editing. Not
+        // waited on: it is a cache invalidation, and a live subscriber's
+        // refetch can pause under `offlineFirst` for as long as the app thinks
+        // it is offline.
+        refresh: () => invalidateSprayWallRenderData(queryClient, draft.wallUuid, draft.layoutId),
+        // Idempotent, and after the latch above, so a retry of a failed bind
+        // re-applies it rather than re-publishing.
+        updateVisibility: visibility ? () => updateVisibilityAsync({ uuid: draft.wallUuid, ...visibility }) : null,
+        // Fetch the published visibility before persisting the active board.
+        // A failed read leaves the published latch set, so retry only binds.
+        activate: (hooks) => activatePublishedSprayWall(queryClient, draft.wallUuid, finish, hooks),
+        navigate: leaveToReturnTo,
+        fallbackNavigate: closeBoardsModal,
+        signal: bindController.signal,
+      });
     } catch (error) {
+      // Unmounted, or superseded by a newer attempt: nobody is left to tell.
+      if (bindController.signal.aborted) return;
+      if (error instanceof PostPublishStalledError) {
+        // Already reported, with its stage, by the run that called it.
+        dispatch({ type: 'PUBLISH_FAILED', message: t('sprayWizard.publish.stalled') });
+        return;
+      }
       reportError(error);
       dispatch({ type: 'PUBLISH_FAILED', message: capOrServerMessage(error, t('sprayWizard.publish.failed')) });
     }
-  }, [state, publishVersionAsync, updateVisibilityAsync, queryClient, builder, finish, t]);
+  }, [
+    state,
+    publishVersionAsync,
+    updateVisibilityAsync,
+    queryClient,
+    builder,
+    finish,
+    leaveToReturnTo,
+    closeBoardsModal,
+    t,
+  ]);
+
+  /**
+   * The `done` step's own way out, offered once the bind has had long enough
+   * that something is wrong. The wall is published and in Your boards whatever
+   * happens next, so leaving here loses nothing; a bind not yet started is
+   * dropped with the screen (`bindControllerRef`) rather than flipping the
+   * active board later under whatever the climber has moved on to. It takes
+   * the second road out, because the first may be the one that did not land.
+   */
+  const [doneExitOffered, setDoneExitOffered] = useState(false);
+  useEffect(() => {
+    // Not reset when the step moves on: a retry that lands back here after a
+    // failed bind offers the way out straight away, which is right for a
+    // climber who has already waited once.
+    if (state.step !== 'done') return;
+    const timer = setTimeout(() => setDoneExitOffered(true), DONE_EXIT_OFFER_MS);
+    return () => clearTimeout(timer);
+  }, [state.step]);
+  const leaveFromDone = useCallback(() => {
+    addErrorBreadcrumb({ category: 'spray-wall.bind', message: 'done_exit_tapped', level: 'info' });
+    closeBoardsModal();
+  }, [closeBoardsModal]);
 
   /**
    * Publish runs by itself the moment the look step confirms — its button is
@@ -1086,6 +1199,10 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
             loading={state.publish.running}
             disabled={state.publish.running}
           />
+        ) : null}
+
+        {state.step === 'done' && doneExitOffered ? (
+          <Button title={t('sprayWizard.done.leave')} variant="filled" size="large" onPress={leaveFromDone} />
         ) : null}
 
         {state.step !== 'done' && state.step !== 'resuming' ? (

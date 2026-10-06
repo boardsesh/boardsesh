@@ -963,10 +963,12 @@
       "title": "Put it on your boards",
       "working": "Publishing your wall…",
       "failed": "Publishing the wall failed.",
+      "stalled": "Your wall is saved, but setting it up took too long. Try again.",
       "retry": "Try again"
     },
     "done": {
-      "body": "Setting your wall up…"
+      "body": "Setting your wall up…",
+      "leave": "Back to climbing"
     },
     "leave": {
       "title": "Leave this wall for now?",

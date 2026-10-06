@@ -35,6 +35,7 @@ import type {
   SprayWallResetResult,
 } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../graphql/client';
+import { reportError } from '../error-reporting';
 import { invalidateSprayWallRenderData } from './spray-wall-loader';
 import { mySprayWallsQueryKey } from './use-create-spray-wall';
 import { refreshPublishedSprayClimbs } from './refresh-published-spray-climbs';
@@ -102,13 +103,20 @@ export function useCommitSprayWallVersion(layoutId: number) {
       return response.commitSprayWallVersion;
     },
     retry: false,
-    onSuccess: async (_result, input) => {
-      await invalidateSprayWallRenderData(queryClient, input.wallUuid, layoutId);
+    // Started, not awaited. `onSuccess` is part of `mutateAsync`, so anything it
+    // waits on holds the compare screen's Confirm spinner too, and every one of
+    // these is an `invalidateQueries` over queries with live subscribers: under
+    // `offlineFirst` a refetch whose first try fails while the app believes it
+    // is offline PAUSES its retries, and the promise with them, until it is
+    // back online. The reset has landed by now; the refreshes catch up when
+    // they can.
+    onSuccess: (_result, input) => {
+      void invalidateSprayWallRenderData(queryClient, input.wallUuid, layoutId).catch(reportError);
       // Every climb on this wall may have a different integrity number now, and
       // the badge and the filter both read it off the search payload.
-      await refreshPublishedSprayClimbs(queryClient, layoutId);
-      await queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
-      await queryClient.invalidateQueries({ queryKey: sprayWallWithVersionsQueryKey(input.wallUuid) });
+      void refreshPublishedSprayClimbs(queryClient, layoutId).catch(reportError);
+      void queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
+      void queryClient.invalidateQueries({ queryKey: sprayWallWithVersionsQueryKey(input.wallUuid) });
     },
   });
 }
@@ -161,7 +169,7 @@ export function useDiscardSprayWallVersion(wallUuid: string | null) {
       });
       return response.discardSprayWallVersion;
     },
-    onSuccess: async () => {
+    onSuccess: async (_discarded, versionId) => {
       await queryClient.cancelQueries({
         queryKey: ['sprayWallRenderData', wallUuid],
         predicate: (query) => typeof query.queryKey[2] === 'number',
@@ -170,7 +178,21 @@ export function useDiscardSprayWallVersion(wallUuid: string | null) {
         queryKey: ['sprayWallRenderData', wallUuid],
         predicate: (query) => typeof query.queryKey[2] === 'number',
       });
-      await queryClient.invalidateQueries({ queryKey: sprayWallWithVersionsQueryKey(wallUuid) });
+      // The reset screen reads its open-draft panel straight off this cache, so
+      // the discarded row leaves it NOW rather than when a refetch lands — which
+      // offline may be never, and a second Discard on a row that is already
+      // gone fails. A refetch already in flight is cancelled first so it cannot
+      // write the old list back over this one.
+      const versionsKey = sprayWallWithVersionsQueryKey(wallUuid);
+      await queryClient.cancelQueries({ queryKey: versionsKey });
+      queryClient.setQueryData<SprayWall | null>(versionsKey, (cachedWall) =>
+        cachedWall?.versions
+          ? { ...cachedWall, versions: cachedWall.versions.filter((version) => version.id !== versionId) }
+          : cachedWall,
+      );
+      // Not awaited, for the commit's reason above: the reset screen is this
+      // query's live subscriber, and its refetch can pause offline.
+      void queryClient.invalidateQueries({ queryKey: versionsKey });
     },
   });
 }

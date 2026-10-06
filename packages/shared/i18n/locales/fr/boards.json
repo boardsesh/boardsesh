@@ -963,10 +963,12 @@
       "title": "Ajoute-le à tes boards",
       "working": "Publication de ton mur…",
       "failed": "La publication du mur a échoué.",
+      "stalled": "Ton mur est enregistré, mais sa préparation a pris trop de temps. Réessaie.",
       "retry": "Réessayer"
     },
     "done": {
-      "body": "Préparation de ton mur…"
+      "body": "Préparation de ton mur…",
+      "leave": "Retour à la grimpe"
     },
     "leave": {
       "title": "Laisser ce mur pour l'instant ?",

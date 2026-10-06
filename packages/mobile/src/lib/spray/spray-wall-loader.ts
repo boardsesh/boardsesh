@@ -115,13 +115,18 @@ let unsubscribeQueryWithdrawal: (() => void) | undefined;
  * The key the PUBLISHED render payload is cached under: the prefix above, plus
  * the viewer generation it was fetched under.
  *
- * The third segment is an object, never a bare number. The hold editor caches a
- * DRAFT version under `['sprayWallRenderData', wallUuid, versionNumber]`
- * (`sprayWallDraftQueryKey`), and a generation is a small integer too: as a
- * number, generation 1 and draft version 1 would be one cache entry with two
- * different query functions, and each would overwrite the other's payload. An
- * object can never equal a number, and the `[key, wallUuid]` prefix still
- * invalidates both.
+ * The viewer generation is wrapped in an object, never a bare number. The hold
+ * editor caches a DRAFT version under `['sprayWallRenderData', wallUuid,
+ * versionNumber]` (`sprayWallDraftQueryKey`), and a viewer generation is a small
+ * integer too: as a bare number in the same slot, generation 1 and draft
+ * version 1 would be one cache entry with two different query functions, each
+ * overwriting the other's payload. An object can never equal a number.
+ *
+ * The prefix above is NOT shared with the draft key any more. Since it gained
+ * the privacy-generation segment (a string), its third segment can never equal
+ * a draft's version number, so `invalidateSprayWallRenderData`, which
+ * invalidates by that prefix, reaches published payloads only. Only the
+ * two-segment `['sprayWallRenderData', wallUuid]` matches both kinds.
  */
 export const sprayWallPublishedRenderDataQueryKey = (wallUuid: string, viewerGeneration: number) =>
   [...sprayWallRenderDataQueryKey(wallUuid), { viewerGeneration }] as const;

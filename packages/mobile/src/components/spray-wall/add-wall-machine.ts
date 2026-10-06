@@ -297,6 +297,12 @@ export type EditorLeaveState = {
 export type LeaveDecision = 'leave' | 'block' | 'confirm' | 'confirmDiscard';
 
 export function leaveDecision(state: AddWallState, editor: EditorLeaveState): LeaveDecision {
+  // The wall is published; all that is left is the bind and the dismiss, and
+  // both of those ARE leaving. Said first and outright, not left to fall out of
+  // `shouldConfirmLeave`: a detection flag left running, or a stale editor
+  // ref, must never put a dialog — or a block — between the climber and the way
+  // out of a step whose only control is that way out.
+  if (state.step === 'done') return 'leave';
   if (state.step === 'review' && editor.handingOver) return 'block';
   // The look step's save is the same kind of moment: its success publishes.
   if (state.step === 'look' && state.lookSaving) return 'block';
@@ -516,6 +522,9 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
       return { ...state, step: 'publish', publish: { running: false, error: action.message } };
 
     case 'PUBLISHED':
+      // Also dispatched by a retry whose version had already published, so the
+      // re-bind runs on `done` like the first one: on `publish` with `running`
+      // set, its own dismiss would be held by the leave guard's busy dialog.
       return { ...state, step: 'done', published: true, publish: { running: false, error: null } };
 
     case 'BACK': {

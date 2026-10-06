@@ -319,6 +319,19 @@ Three rules in that flow are not obvious from the API and are easy to undo:
 - **Publishing and binding the board are latched apart.** They sit behind one
   button, and `publishSprayWallVersion` refuses a version that has already
   published — so a shared retry would turn a failed board bind into a dead end.
+  The bind itself (`runPostPublishBind` in
+  `packages/mobile/src/lib/spray/post-publish-bind.ts`) cannot hold the `done`
+  spinner forever: the render-data refresh is started and never waited on, the
+  visibility write and the board read plus bind each get 30 s (past the GraphQL
+  client's 20 s deadline), and a stage that runs out lands on the publish step's
+  error and Try again, reported with its stage as `Spray Wall Bind Stalled`. A
+  timed-out run cannot start a bind or navigate when its answer arrives late
+  (a board write already in flight may still land). If the wizard is still
+  mounted 1.5 s after its `dismissTo`, it leaves by a second road: it closes the
+  Boards modal through the root stack, or replaces it with the tab when nothing
+  is underneath. After 5 s `done` shows its own "Back to climbing" button, which
+  takes that second road too. The maintenance editor (`spray/holds`) puts the
+  same 30 s ceiling on its post-publish refresh, which ends in its Retry screen.
 
 The wizard always exposes a header close control, including cold deep links
 without a back stack. It returns to the resolved source tab when no back route
@@ -1838,6 +1851,7 @@ through `trackSprayEvent`; nothing calls `track` with a spray event name directl
 | `Spray Wall Upload Finished` | `outcome`, `durationMs`, `determinate`, `attempt` | Whether the photo lands, and how long a climber waits for it. |
 | `Spray Wall Detection Finished` | `outcome`, `candidateCount`, `durationMs` | `unavailable` is a SUCCESS — the flow lands in the editor in manual mode. Read it against `ok` for the fraction of the fleet placing every hold by hand. |
 | `Spray Holds Reviewed` | `holdCount`, `candidateCount`, `hadCandidates` | Candidate and saved counts on the same event. Older clients omit candidateCount. |
+| `Spray Wall Bind Stalled` | `stage`, `elapsedMs` | A wall that published and then sat on "Setting your wall up…": `visibility`, `fetch_board` or `bind` ran past 30 s, or `navigate` was dispatched and the wizard was still on screen 1.5 s later. |
 | `Board Created` (existing) | `boardType: 'spray'` | Closes the add funnel. The SAME event every other board type fires — a spray-only variant would hide walls from every board-creation number we already watch. |
 | `Spray Wall Reset Previewed` | `keptCount`, `removedCount`, `addedCount`, `lowConfidenceCount`, `climbsAffected`, `aspectMismatch`, `detectionCount` | What the matcher found. |
 | `Spray Wall Reset Applied` | `keptCount`, `removedCount`, `addedCount`, `climbsChanged`, `moveCount` | What landed. The server's counts, not the review's. |
