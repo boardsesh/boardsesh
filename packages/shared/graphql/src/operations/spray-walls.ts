@@ -452,6 +452,71 @@ export const REMIX_CLIMB = gql`
   }
 `;
 
+/**
+ * The holds a climb lost to a reset, with the geometry they had (#5493).
+ *
+ * The create editor draws a dashed ghost ring at each one and offers a
+ * replacement. Same arguments as `GetClimb`: `Climb.lostHolds` resolves off the
+ * climb row that query returns, and decides the wall's visibility itself — a
+ * stranger gets `[]`, never an error. A single-climb read; a list must not
+ * select `lostHolds`.
+ */
+export const GET_CLIMB_LOST_HOLDS = gql`
+  query GetClimbLostHolds(
+    $boardName: String!
+    $layoutId: Int!
+    $sizeId: Int!
+    $setIds: String!
+    $angle: Int!
+    $climbUuid: ID!
+  ) {
+    climb(
+      boardName: $boardName
+      layoutId: $layoutId
+      sizeId: $sizeId
+      setIds: $setIds
+      angle: $angle
+      climbUuid: $climbUuid
+    ) {
+      uuid
+      missingHoldCount
+      lostHolds {
+        id
+        cx
+        cy
+        r
+        outline
+        movedFromHoldId
+        removedVersion
+      }
+    }
+  }
+`;
+
+export type GetClimbLostHoldsQueryVariables = {
+  boardName: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+  angle: number;
+  climbUuid: string;
+};
+
+/** One lost hold, in the wall's canonical frame. */
+export type ClimbLostHold = {
+  id: number;
+  cx: number;
+  cy: number;
+  r: number;
+  outline: number[] | null;
+  movedFromHoldId: number | null;
+  removedVersion: number | null;
+};
+
+export type GetClimbLostHoldsQueryResponse = {
+  climb: { uuid: string; missingHoldCount: number | null; lostHolds: ClimbLostHold[] | null } | null;
+};
+
 /** Reports never accept free text; duplicate reports preserve the first reason. */
 export const REPORT_SPRAY_WALL = gql`
   mutation ReportSprayWall($input: ReportSprayWallInput!) {

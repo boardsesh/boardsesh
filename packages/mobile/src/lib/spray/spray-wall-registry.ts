@@ -104,6 +104,16 @@ export type RegisteredSprayWall = {
   /** Alive holds only — `sprayWallRenderData` returns the generation alive AT this version. */
   holds: readonly SprayPhotoHold[];
   /**
+   * This version's row-major photo→canonical homography, the matrix `holds` were
+   * mapped back through.
+   *
+   * Kept so a hold that is NOT in `holds` — one a reset took off, drawn as a
+   * ghost where a climb used it (#5493) — goes through the very same inverse and
+   * lands on the same photo the live holds do. Optional because a fixture or an
+   * older caller may register without one; a reader without it draws no ghosts.
+   */
+  homography?: readonly number[];
+  /**
    * The look the wall's creator picked for it (`SprayWall.renderSettings`), or
    * `null` when none was stored or the stored value was unusable.
    *

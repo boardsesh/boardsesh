@@ -106,6 +106,10 @@ export function useCreateClimbNavigation({
           // grade again. Omitted when the source carries none, which reads as
           // "nothing to inherit" rather than "ungraded on purpose".
           ...(climb.difficulty ? { forkDifficulty: climb.difficulty } : {}),
+          // The parent's uuid, so the editor can fetch the holds it lost to a reset
+          // and draw them as ghost rings (#5493). The frames above already name
+          // them; only the server knows where they were.
+          forkParentUuid: climb.uuid,
           ...boardParams(resolveClimbRenderBoard(climb, board)?.boardConfig ?? board),
         },
         onActionAccepted,

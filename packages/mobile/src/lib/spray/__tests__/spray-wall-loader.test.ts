@@ -740,6 +740,23 @@ describe('loadSprayWall', () => {
     expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(false);
   });
 
+  it('keeps the homography and the move links, for drawing lost-hold ghosts (#5493)', async () => {
+    const { registerRenderData } = await import('../spray-wall-loader');
+    const payload = renderDataPayload({
+      homography: [2, 0, 0, 0, 2, 0, 0, 0, 1],
+      holds: [
+        { id: 7, cx: 100, cy: 200, r: 18, outline: null, movedFromHoldId: 3 },
+        { id: 8, cx: 300, cy: 400, r: 18, outline: null, movedFromHoldId: null },
+      ],
+    });
+    registerRenderData(LAYOUT_ID, payload.sprayWallRenderData as never, null);
+    const wall = getSprayWall(LAYOUT_ID);
+    expect(wall?.homography).toEqual([2, 0, 0, 0, 2, 0, 0, 0, 1]);
+    expect(wall?.holds[0]).toMatchObject({ id: 7, cx: 50, cy: 100, movedFromHoldId: 3 });
+    // No predecessor, no key: the hold keeps the shape it always had.
+    expect(wall?.holds[1]).not.toHaveProperty('movedFromHoldId');
+  });
+
   it('registers a wall whose payload will not say its angle', async () => {
     // Deliberately unlike a photo that will not say its size, which is refused:
     // such a wall draws perfectly well, and blanking the board over a field only

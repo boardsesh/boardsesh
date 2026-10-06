@@ -22,6 +22,7 @@ import {
   computeCanUpdate,
   computeEditLocked,
   buildInitialFrames,
+  type HoldPlacement,
   type SavedClimbSnapshot,
 } from '@boardsesh/create-climb-react';
 import { useBoardActions, isDuplicateClimbError } from '@boardsesh/board-react';
@@ -361,6 +362,7 @@ export function useCreateClimbScreen({
     frameCount,
     currentFrameIndex,
     setHoldState,
+    placeHold,
     generateFramesString,
     currentFrameBleString,
     startingCount,
@@ -1181,6 +1183,29 @@ export function useCreateClimbScreen({
     [setHoldState, reclaimWall],
   );
 
+  /**
+   * Put a live hold in the climb in place of one a reset took off (#5493), in
+   * every frame the lost hold was in and with the role it had there — one undo
+   * step. Placements pointing past the last frame (a frame deleted since) fall
+   * back to the frame on screen, with the lost hold's first role. Returns false
+   * when the role is already full (two starts or finishes), so the caller can
+   * say so instead of the tap doing nothing.
+   */
+  const placeLostHoldReplacement = useCallback(
+    (replacementHoldId: number, placements: readonly HoldPlacement[]): boolean => {
+      if (placements.length === 0) return false;
+      const inRange = placements.filter((placement) => placement.frameIndex < frameCount);
+      const effective = inRange.length > 0 ? inRange : [{ frameIndex: currentFrameIndex, state: placements[0].state }];
+      const placed = placeHold(replacementHoldId, effective);
+      if (placed) {
+        reclaimWall();
+        lastPaintRef.current = null;
+      }
+      return placed;
+    },
+    [placeHold, frameCount, currentFrameIndex, reclaimWall],
+  );
+
   // Editing or touching the transport takes the wall back from the queue.
   const handleDuplicateFrame = useCallback(() => {
     reclaimWall();
@@ -1920,6 +1945,14 @@ export function useCreateClimbScreen({
     handlePaint,
     handleAssignRole,
     handleClearHolds,
+    /** Every frame of the climb as painted now (the active one is `litUpHoldsMap`). */
+    frames,
+    /** The wall's live hold ids, read once at mount; undefined off spray. */
+    availableHoldIds,
+    /** The frames string the editor was seeded from — the row being edited, or
+     *  the remixed parent's — still naming any hold a reset took off. */
+    sourceFrames: isEditing ? (editClimb?.frames ?? null) : (forkFrames ?? null),
+    placeLostHoldReplacement,
     handleNewClimb,
     pendingNewClimb,
     confirmNewClimb,

@@ -65,6 +65,7 @@ These have "now" semantics or are unbounded, so a stale copy is worse than an ho
 | `['searchUsers', …]`, `['gymMembers', …]`, `['comments', …]`, `['bulkVoteSummaries', …]` | Neither                     | Unbounded or live                                                  |
 | `['nearbyBoards']`, `['nearbyGyms']`, `['betaLinkPreview', …]`                           | Neither                     | Location/link-scoped, useless stale                                |
 | `['climbRevisions', board, uuid]`, `['sprayWallRevisionRenderData', wall, version]`      | Neither                     | Edit history (#5955). The play-drawer section renders nothing offline; the revision sheet and its old-wall-photo board show the placard |
+| `['climbLostHolds', variables]` (`GetClimbLostHolds`)                                    | Neither                     | Where a spray climb's lost holds were, for the create editor's ghost rings (#5493). Network only (`networkMode: 'always'`), never persisted: the mirror keeps `missing_hold_count` but not the hold history. Offline the editor's banner still states the count (derived on the device from the climb's frames and the wall's live holds) and says the rings need a connection |
 | `['activeBoard']`                                                                        | Neither (already persisted) | AsyncStorage-backed in `use-active-board.ts` — do not double-store |
 
 ## The auth-scoping contract

@@ -44,6 +44,9 @@ import type { CreateOverflowAction } from './create-overflow-menu';
 import { computeBoardMaxHeight } from './create-drawer-layout';
 import { OpenDraftsSection } from './OpenDraftsSection';
 import { DuplicateBanner } from './DuplicateBanner';
+import { LostHoldGhostLayer } from './LostHoldGhostLayer';
+import { LostHoldsEditorBanner } from './LostHoldsEditorBanner';
+import type { HighlightedHold, LostHoldGhostsState } from './use-lost-hold-ghosts';
 import { InlineConfirmBanner } from './InlineConfirmBanner';
 import { useTranslation } from 'react-i18next';
 import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
@@ -77,7 +80,11 @@ type CreateDrawerProps = {
   onViewDuplicate: (uuid: string) => void;
   /** The hold heatmap, following the active brush (omitted → no heatmap button). */
   heatmap?: CreateHeatmap;
+  /** Holds a reset took off the climb being edited or remixed (#5493). */
+  lostHolds?: LostHoldGhostsState;
 };
+
+const NO_HIGHLIGHTS: readonly HighlightedHold[] = [];
 
 // The peek must never grow into the '100%' snap — at that point the two snap
 // points collapse into one, the sheet has no travel and the "drag up for the
@@ -108,6 +115,7 @@ export function CreateDrawer({
   onClose,
   onViewDuplicate,
   heatmap,
+  lostHolds,
 }: CreateDrawerProps) {
   const { systemColors } = useTheme();
   const { t, i18n } = useTranslation('climbs');
@@ -270,6 +278,59 @@ export function CreateDrawer({
       ) : null,
     [heatmapActive, heatLayer, board.boardName, board.layoutId, board.sizeId, board.setIds, boardHolds],
   );
+  // Ghost rings where the climb's lost holds were, plus the replacements on
+  // offer during a pick. Same slot as the heat, drawn after it.
+  const lostHoldGhosts = lostHolds?.ghosts;
+  const lostHoldCandidates = lostHolds?.replacing?.candidateHolds ?? NO_HIGHLIGHTS;
+  const boardOverlay = useMemo(() => {
+    const ghostLayer =
+      lostHoldGhosts && (lostHoldGhosts.length > 0 || lostHoldCandidates.length > 0) ? (
+        <LostHoldGhostLayer
+          boardName={board.boardName as BoardName}
+          ghosts={lostHoldGhosts}
+          candidateHolds={lostHoldCandidates}
+          boardWidth={boardHolds.boardWidth}
+          boardHeight={boardHolds.boardHeight}
+          renderWidth={boardRender.width}
+          renderHeight={boardRender.height}
+        />
+      ) : null;
+    if (!ghostLayer) return heatmapOverlay;
+    return (
+      <>
+        {heatmapOverlay}
+        {ghostLayer}
+      </>
+    );
+  }, [
+    heatmapOverlay,
+    lostHoldGhosts,
+    lostHoldCandidates,
+    board.boardName,
+    boardHolds.boardWidth,
+    boardHolds.boardHeight,
+    boardRender.width,
+    boardRender.height,
+  ]);
+
+  // While a replacement is being picked, a board tap is a pick, not a paint.
+  const interceptLostHoldPaint = lostHolds?.interceptPaint;
+  const controllerPaint = controller.handlePaint;
+  const handleBoardPaint = useCallback(
+    (holdId: number) => {
+      if (interceptLostHoldPaint?.(holdId)) return;
+      controllerPaint(holdId);
+    },
+    [interceptLostHoldPaint, controllerPaint],
+  );
+  const handleBoardLongPress = useCallback(
+    (holdId: number) => {
+      if (interceptLostHoldPaint?.(holdId)) return;
+      onLongPressHold(holdId);
+    },
+    [interceptLostHoldPaint, onLongPressHold],
+  );
+
   // While heat is on, the line under Save explains it (or offers the download)
   // in place of the autosave note. Erase hides the heat, and the line with it.
   const heatmapLine = useMemo(() => {
@@ -502,15 +563,29 @@ export function CreateDrawer({
                 boardHeight={boardHolds.boardHeight}
                 holdTargets={boardHolds.holdTargets}
                 litUpHoldsMap={controller.litUpHoldsMap}
-                onPaint={controller.handlePaint}
-                onLongPressHold={onLongPressHold}
+                onPaint={handleBoardPaint}
+                onLongPressHold={handleBoardLongPress}
                 renderWidth={boardRender.width}
                 renderHeight={boardRender.height}
                 controlRef={boardControlsRef}
                 onInteractionActiveChange={setBoardInteractionActive}
                 scrollRef={scrollGestureRef}
-                overlay={heatmapOverlay}
+                overlay={boardOverlay}
+                // Off during a pick: a candidate sits right beside its ghost, and
+                // the ghost's wider tap circle would take the tap and cancel the pick.
+                ghostTargets={lostHolds?.replacing ? undefined : lostHolds?.ghostTargets}
+                onGhostPress={lostHolds?.openGhost}
               />
+              {lostHolds ? (
+                <LostHoldsEditorBanner
+                  status={lostHolds.status}
+                  count={lostHolds.count}
+                  replacing={lostHolds.replacing !== null}
+                  roleFull={lostHolds.roleFull}
+                  onOpenFirstGhost={lostHolds.openFirstGhost}
+                  onCancelReplacing={lostHolds.cancelReplacing}
+                />
+              ) : null}
             </View>
 
             <CreateRoutePlaybackSlot

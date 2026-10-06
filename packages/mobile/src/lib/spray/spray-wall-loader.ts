@@ -166,6 +166,8 @@ export function toCanonicalHolds(renderData: Pick<SprayWallRenderData, 'holds'>)
     // time it is nudged (#5441).
     source: hold.source === 'AUTO' ? 'AUTO' : 'MANUAL',
     confidence: hold.confidence ?? null,
+    // The reset review's move link, for the create editor's lost-hold swap (#5493).
+    ...(hold.movedFromHoldId != null ? { movedFromHoldId: hold.movedFromHoldId } : {}),
   }));
 }
 
@@ -250,6 +252,7 @@ export function mapSprayWallRenderData(
     photoThumbUrl: renderData.photo.thumbUrl ?? null,
     photoExpiresAt: renderData.photo.expiresAt,
     holds,
+    homography: renderData.homography,
     renderSettings: null,
     viewerCanEdit: renderData.wall.viewerCanEdit === true,
     viewerCanEditClimbs: (renderData.wall.viewerCanEditClimbs ?? renderData.wall.viewerCanEdit) === true,
@@ -321,6 +324,7 @@ export function registerRenderData(
     photoThumbUrl: renderData.photo.thumbUrl ?? null,
     photoExpiresAt: renderData.photo.expiresAt,
     holds,
+    homography: renderData.homography,
     renderSettings: look,
     // Strictly `true`: a payload from a backend that predates the field, or a
     // cached one missing it, must read as "cannot edit".

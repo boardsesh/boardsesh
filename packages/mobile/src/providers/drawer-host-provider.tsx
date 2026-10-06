@@ -47,7 +47,8 @@ import { useSprayWall, useSprayWallLoader } from '../lib/spray/use-spray-wall';
 import { useSprayWallSheetActions } from '../lib/spray/use-spray-wall-sheet-actions';
 import { BoardShareSheet } from '../components/board-discovery/BoardShareSheet';
 import { climbToQueueItem } from '../lib/climb-to-queue-item';
-import { useActiveClimbUuid, useQueueActions, useQueueSessionControls } from './queue-provider';
+import { useActiveClimbUuid, useIsSharedSession, useQueueActions, useQueueSessionControls } from './queue-provider';
+import { useLostHoldsAutoEdit } from '../components/play-drawer/use-lost-holds-auto-edit';
 import { useDeviceLayout } from '../hooks/use-device-layout';
 import { resolveDetailPaneSurface } from '../theme/size-class';
 import { SIDEBAR_WIDTH } from '../theme/layout';
@@ -152,6 +153,13 @@ export type OpenPlayDrawerOptions = PlayDrawerOpenOptions & {
    *  default). The override is applied via state, so the actual open happens
    *  after the new boardConfig has propagated to PlayDrawer's props. */
   boardConfig?: BoardConfig;
+  /**
+   * `false` keeps a climb that lost holds on the player even for someone who
+   * could fix it (#5493). Playlist and circuit activation pass it: "Play" on a
+   * list means climb it, not edit its first broken climb. Left out, the
+   * set-active rule decides.
+   */
+  autoEditBroken?: boolean;
 };
 
 /** Props the iPad right-column PlayDrawer pane consumes (regular width). Mirrors
@@ -403,7 +411,15 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // to the `/play` route instead of a paneTarget that lands in an unmounted pane.
   // Folding it into `usesDetailPane` also makes the effect below clear a stale
   // paneTarget when the wall tab becomes focused.
-  const onWallTab = tabsActiveSegment(useSegments()) === 'wall';
+  const routeSegments = useSegments();
+  const onWallTab = tabsActiveSegment(routeSegments) === 'wall';
+  // The root `/play` route is on screen (a queue sheet stacked over it, say).
+  // Read by the lost-holds set-active routing, which leaves an open player alone.
+  // The root route only: the board deep links end in a `play` segment of their
+  // own. The iPad pane is not counted — it stays on screen under the editor, so
+  // routing from it loses nothing.
+  const playerOpenRef = useRef(false);
+  playerOpenRef.current = routeSegments[0] === 'play';
   const usesDetailPane =
     resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane' && !onWallTab;
   const usesDetailPaneRef = useRef(usesDetailPane);
@@ -552,9 +568,55 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const myBoardsRef = useRef(myBoardsConn);
   myBoardsRef.current = myBoardsConn;
 
+  // ---- Set-active routing for a climb that lost holds (#5493). ----
+  // Someone who can fix a broken spray climb and sets it active gets the editor
+  // instead of the player. `useLostHoldsAutoEdit` holds the rule; this is the one
+  // place every external open passes through, so it is the one place it is asked.
+  const isSharedSession = useIsSharedSession();
+  const autoEditContextRef = useRef({ activeClimbUuid, isSharedSession, currentUserId: profile?.id ?? null });
+  autoEditContextRef.current = { activeClimbUuid, isSharedSession, currentUserId: profile?.id ?? null };
+  const dismissRootSheetsAndWait = useCallback(async (): Promise<DismissAndWaitResult> => {
+    // Whichever root sheet the open came from: neither may still be on screen
+    // when the editor's own native sheet presents.
+    const queueResult = await dismissManagedSheetAndWait(queueSheetRef.current);
+    if (queueResult.status === 'aborted') return queueResult;
+    return dismissManagedSheetAndWait(boardSheetRef.current);
+  }, []);
+  const { tryAutoEdit } = useLostHoldsAutoEdit({
+    currentUserId: profile?.id ?? null,
+    dismissSourceSheets: dismissRootSheetsAndWait,
+  });
+  const tryAutoEditRef = useRef(tryAutoEdit);
+  tryAutoEditRef.current = tryAutoEdit;
+  const setCurrentClimbRef = useRef(setCurrentClimb);
+  setCurrentClimbRef.current = setCurrentClimb;
+
   const openPlayDrawer = useCallback((climb: Climb, options?: OpenPlayDrawerOptions) => {
     // Pull `boardConfig` out so it doesn't reach the open target.
-    const { boardConfig: override, ...openOptions } = options ?? {};
+    const { boardConfig: override, autoEditBroken, ...openOptions } = options ?? {};
+    const autoEdit = tryAutoEditRef.current(climb, {
+      optedOut: autoEditBroken === false,
+      storedBoard: storedActiveBoardConfigRef.current,
+      boardOverride: override,
+      isPreview: openOptions.previewQueueItem != null,
+      // Read before the opener's own `setCurrentClimb` re-renders anything: a
+      // committed open (queue sheet, board sheet) has asked for it, but this ref
+      // still holds the climb that was current when the tap landed.
+      isAlreadyCurrent: autoEditContextRef.current.activeClimbUuid === climb.uuid,
+      isSharedSession: autoEditContextRef.current.isSharedSession,
+      playerOpen: playerOpenRef.current,
+    });
+    if (autoEdit === 'swallowed') return;
+    if (autoEdit === 'routed') {
+      // The drawer would have made a fresh open current; a committed open's
+      // caller already did. Either way the climb is current from here on, which
+      // is what stops the next open of it from routing again.
+      if (!openOptions.committedExternally) {
+        setCurrentClimbRef.current(climbToQueueItem(climb), { playlistSuggestionSource: null });
+      }
+      setPreviewedClimbUuid(null);
+      return;
+    }
     // Set the board override BEFORE navigating so the route reads the right board
     // from `activeBoardConfig` (reactive) on mount — no requestAnimationFrame /
     // pending-replay dance. Only set an override that genuinely differs from the

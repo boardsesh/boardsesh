@@ -672,7 +672,28 @@
       "bannerBody": "Remixe ihn mit dem, was jetzt an der Wand ist.",
       "bannerBodyEdit": "Bearbeite ihn mit den Griffen, die noch da sind, oder remixe ihn.",
       "remix": "Remixen",
-      "edit": "Bearbeiten"
+      "edit": "Bearbeiten",
+      "editor": {
+        "tapGhost_one": "{{count}} Griff von diesem Boulder ist weg – tippe auf den gestrichelten Ring, um ihn zu ersetzen",
+        "tapGhost_other": "{{count}} Griffe von diesem Boulder sind weg – tippe auf einen gestrichelten Ring, um einen zu ersetzen",
+        "offline_one": "{{count}} Griff von diesem Boulder ist weg. Verbinde dich, um zu sehen, wo er war.",
+        "offline_other": "{{count}} Griffe von diesem Boulder sind weg. Verbinde dich, um zu sehen, wo sie waren.",
+        "pickNearby": "Tippe auf einen hervorgehobenen Griff, um ihn stattdessen zu nehmen.",
+        "roleFull": "Ein Boulder hat höchstens zwei Start- und zwei Topgriffe. Lösche einen und tippe noch mal.",
+        "noPositions_one": "{{count}} Griff von diesem Boulder ist weg. Wo er war, lässt sich nicht zeigen.",
+        "noPositions_other": "{{count}} Griffe von diesem Boulder sind weg. Wo sie waren, lässt sich nicht zeigen."
+      },
+      "sheet": {
+        "title": "Dieser Griff ist weg",
+        "wasStart": "Es war ein Startgriff.",
+        "wasHand": "Es war ein Handgriff.",
+        "wasFinish": "Es war ein Topgriff.",
+        "wasFoot": "Es war ein Tritt.",
+        "useNearby": "Griff in der Nähe nehmen",
+        "useNearbyHint": "Die nächsten freien Griffe werden auf der Wand hervorgehoben.",
+        "useNearbySuccessor": "Der Griff, der ihn ersetzt hat, wird zuerst hervorgehoben.",
+        "noneNearby": "Keine freien Griffe an der Wand zum Tauschen."
+      }
     },
     "climbActions": {
       "preview": "Vorschau",
