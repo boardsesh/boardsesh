@@ -35,6 +35,8 @@ export type SprayHoldWireInput = {
   outline: number[] | null;
   source: SprayEditorHoldSource;
   confidence?: number | null;
+  /** A NEW hold that puts a removed one back names it here (#5493). */
+  movedFromHoldId?: number;
 };
 
 export type SprayHoldWritePlan = {
@@ -154,6 +156,11 @@ export function buildSprayHoldWritePlan(state: SprayEditorState, homography: rea
       // Only ever sent for a detector hold. A hand-drawn hold has no confidence
       // to report, and sending 1 would claim a measurement nobody made.
       ...(hold.source === 'AUTO' ? { confidence: hold.confidence } : {}),
+      // Sent whenever the hold has one. A hold this draft drew is updated in
+      // place, and the server writes the field as sent — left out, a nudge would
+      // wipe the link. Correcting an inherited hold makes a successor whose link
+      // is the corrected hold, so the field is ignored there.
+      ...(hold.movedFromHoldId != null ? { movedFromHoldId: hold.movedFromHoldId } : {}),
     });
   }
 

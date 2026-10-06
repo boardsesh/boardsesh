@@ -692,7 +692,9 @@
         "useNearby": "Use a hold nearby",
         "useNearbyHint": "The closest free holds light up on the board.",
         "useNearbySuccessor": "The hold that replaced it lights up first.",
-        "noneNearby": "No free holds on the wall to swap in."
+        "noneNearby": "No free holds on the wall to swap in.",
+        "putBack": "Put this hold back on the wall",
+        "putBackHint": "Opens the hold editor where it was. Publish, and it comes back into this climb."
       }
     },
     "climbActions": {

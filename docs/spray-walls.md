@@ -2138,6 +2138,46 @@ which ghost it answered. The smaller radius keeps a small chip that happens to s
 inside a big lost volume from clearing it. A replacement picked from further away than that shows its ghost again
 after a restore. The ghost is only a picture; Save is unaffected.
 
+**Put this hold back on the wall.** The sheet's second action, offered to whoever
+can edit the wall's holds (`viewerCanEdit`, the same rule as the hold editor). A
+removed hold's id never comes back (`upsertSprayWallHolds` refuses any id that is
+not alive), so putting a hold back is a NEW hold that names the old one in
+`movedFromHoldId`. The round trip lives in `lib/spray/lost-hold-put-back.ts`:
+
+1. The climb editor closes. Its drawer is a native sheet, and a native sheet
+   presents over any route pushed after it, so the hold editor cannot open on
+   top of it. The working copy travels in memory with the request. The autosave
+   slot cannot carry it: a new climb's and a remix's slots are keyed by the wall
+   version, publishing moves the version, and the loader then sweeps the old
+   version's slots.
+2. The hold editor opens (`/boards/spray/holds?wallUuid=…&putBack=…`). Once the
+   draft is on screen it adds a hold at the lost one's geometry, mapped through
+   the draft's homography, with `movedFromHoldId` set. It selects that hold and
+   zooms to it. A draft that already has a hold linked to the lost one selects
+   that hold instead of adding a second. A successor that was linked before the
+   trip (a reset review's) is never reused. The write plan sends a hold's
+   `movedFromHoldId` on every write: the server writes an in-place edit's link
+   as sent, so leaving it out of a nudge would wipe it.
+3. The owner nudges the hold and publishes. The wall registers its new version,
+   and the hold editor marks the request published.
+4. However the hold editor goes away (published, backed out, or failed), the
+   climb editor reopens on the same climb with `putBackRequest`. It is a new
+   mount, so it reads the new version's live holds. It restores the working copy
+   once its own seed has settled, then places the new hold in the lost hold's
+   frames and roles, and counts it as that ghost's answer wherever it was
+   nudged to. The new hold is the newest live hold linked to the lost one
+   that was not linked before the trip. A trip that was backed out places
+   nothing and the ghost is still there. If the hold's role is already full in
+   the climb (two starts or two finishes), the banner says so and the ring
+   stays. The request is cleared once it has been applied, so a remount does not
+   apply it twice.
+
+For a new climb or a remix there is a window of about one second, between the
+hold editor registering the new wall version (which sweeps the old version's
+autosave slots) and the climb editor reopening, when the working copy lives only
+in memory: killing the app then loses it. An edit is safe throughout, because its
+slot is keyed by the climb, not the version.
+
 **Offline.** The device mirrors `missing_hold_count` but not the hold history, so
 the positions need a connection. With no signal (or a failed read) the banner
 still states the count (the device's own: the climb's holds its wall no longer

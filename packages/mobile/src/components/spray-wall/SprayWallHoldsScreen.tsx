@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useNavigation, useRouter } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
@@ -9,7 +9,16 @@ import type { SprayWallVersion } from '@boardsesh/graphql/generated/graphql';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
-import { SprayHoldEditorScreen, confirmDiscardSprayEdits } from '../outline-editor/SprayHoldEditorScreen';
+import {
+  SprayHoldEditorScreen,
+  confirmDiscardSprayEdits,
+  type SprayPutBackHold,
+} from '../outline-editor/SprayHoldEditorScreen';
+import {
+  getLostHoldPutBack,
+  markLostHoldPutBackPublished,
+  returnToClimbEditor,
+} from '../../lib/spray/lost-hold-put-back';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { getHttpClient } from '../../lib/graphql/client';
@@ -56,7 +65,14 @@ const maintenanceTransport: SprayHoldMaintenanceTransport = {
 
 type MaintenanceStatus = 'preparing' | 'editing' | 'publishing' | 'refreshing' | 'failed';
 /** Editing keeps the active board and visibility intact; leaving keeps its draft. */
-export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
+export function SprayWallHoldsScreen({
+  wallUuid,
+  putBackRequestId = null,
+}: {
+  wallUuid: string;
+  /** Set when a climb editor sent the owner here to put a removed hold back (#5493). */
+  putBackRequestId?: string | null;
+}) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const queryClient = useQueryClient();
@@ -76,6 +92,34 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
   const mountedRef = useRef(false);
   const editorDirtyRef = useRef(false);
   const editorHandingOverRef = useRef(false);
+
+  // The put-back request this visit serves, read once: a request for another
+  // wall (a stale link) is ignored and the editor opens as usual.
+  const [putBackRequest] = useState(() => {
+    const request = getLostHoldPutBack(putBackRequestId);
+    return request && request.wallUuid === wallUuid ? request : null;
+  });
+  const putBackHold = useMemo<SprayPutBackHold | null>(
+    () =>
+      putBackRequest
+        ? {
+            removedHoldId: putBackRequest.lostHold.id,
+            knownSuccessorIds: putBackRequest.knownSuccessorIds,
+            cx: putBackRequest.lostHold.cx,
+            cy: putBackRequest.lostHold.cy,
+            r: putBackRequest.lostHold.r,
+            outline: putBackRequest.lostHold.outline,
+          }
+        : null,
+    [putBackRequest],
+  );
+  // However this screen goes — published, backed out of, or failed — a climber
+  // who came from a climb goes back to that climb, not to the boards list.
+  useEffect(() => {
+    const requestId = putBackRequest?.requestId;
+    if (!requestId) return undefined;
+    return () => returnToClimbEditor(requestId);
+  }, [putBackRequest]);
 
   const returnToBoards = useCallback(() => {
     if (router.canGoBack()) router.back();
@@ -154,6 +198,9 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
       ) {
         throw new Error('Published wall refresh was unavailable');
       }
+      // The wall is published and registered with the new hold in it: the climb
+      // editor this visit returns to can now find it.
+      if (putBackRequest) markLostHoldPutBackPublished(putBackRequest.requestId);
       // Started, not awaited: the wall is published and registered above, so
       // nothing left here decides whether the climber may leave. These are
       // invalidations over queries with live subscribers, and under
@@ -175,7 +222,7 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
     } finally {
       busyRef.current = false;
     }
-  }, [queryClient]);
+  }, [queryClient, putBackRequest]);
 
   const onDirtyChange = useCallback((dirty: boolean) => {
     editorDirtyRef.current = dirty;
@@ -232,6 +279,7 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
         onCommitted={onCommitted}
         onDirtyChange={onDirtyChange}
         onHandoverChange={onHandoverChange}
+        putBackHold={putBackHold}
       />
     );
   }

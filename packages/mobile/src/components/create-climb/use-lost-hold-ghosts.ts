@@ -11,7 +11,7 @@ import {
   type LostHoldGhost,
   type ReplacementCandidate,
 } from '@boardsesh/create-climb-react';
-import type { GetClimbLostHoldsQueryVariables } from '@boardsesh/graphql/operations';
+import type { ClimbLostHold, GetClimbLostHoldsQueryVariables } from '@boardsesh/graphql/operations';
 import { useClimbLostHolds } from '../../lib/graphql/hooks/use-climb-lost-holds';
 import { getSprayWall, SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
 import { mapCanonicalHoldsToPhoto, type SprayPhotoHold } from '../../lib/spray/spray-hold-geometry';
@@ -51,14 +51,18 @@ export type LostHoldGhostsState = {
   ghosts: readonly LostHoldGhost[];
   /** The same ghosts as tap targets, so a tap on one reaches `openGhost`. */
   ghostTargets: readonly BoardHoldTarget[];
+  /** The lost holds as the server sent them, in the wall's canonical frame, by id. */
+  canonicalLostHolds: ReadonlyMap<number, ClimbLostHold>;
   /** The ghost whose sheet is open, or null. */
   sheetGhost: LostHoldGhost | null;
   /** Live holds the sheet's "Use a hold nearby" would offer for `sheetGhost`. */
   sheetCandidates: readonly ReplacementCandidate[];
   /** Set while the climber is picking a replacement on the board. */
   replacing: LostHoldReplacement | null;
-  /** The last pick was refused: that role is already full on the climb. */
+  /** The last pick (or a hold put back on the wall) was refused: that role is already full on the climb. */
   roleFull: boolean;
+  /** Say the role is full without a pick open: a hold came back but could not go in. */
+  flagRoleFull: () => void;
   openGhost: (lostHoldId: number) => void;
   /** Opens the sheet for the first ghost still on screen (the banner's tap). */
   openFirstGhost: () => void;
@@ -83,6 +87,12 @@ type UseLostHoldGhostsArgs = {
   /** Changes whenever the registered wall does. */
   sprayWallToken: string;
   placeLostHoldReplacement: (replacementHoldId: number, placements: readonly HoldPlacement[]) => boolean;
+  /**
+   * Replacements made before this mount, lost hold id → live hold id: the hold
+   * the owner just put back on the wall (#5493). Read once. Without it, a hold
+   * the owner nudged away from the old spot would leave its ghost up.
+   */
+  initialReplacements?: ReadonlyMap<number, number>;
 };
 
 const NO_GHOSTS: readonly LostHoldGhost[] = [];
@@ -119,6 +129,7 @@ export function useLostHoldGhosts({
   frames,
   sprayWallToken,
   placeLostHoldReplacement,
+  initialReplacements,
 }: UseLostHoldGhostsArgs): LostHoldGhostsState {
   const isSpray = board.boardName === SPRAY_BOARD_NAME;
 
@@ -184,8 +195,17 @@ export function useLostHoldGhosts({
     });
   }, [lostHoldsQuery, parsedSourceFrames, availableHoldIds, wall]);
 
+  const canonicalLostHolds = useMemo(() => {
+    const byId = new Map<number, ClimbLostHold>();
+    if (lostHoldsQuery.status === 'ready')
+      for (const lostHold of lostHoldsQuery.lostHolds) byId.set(lostHold.id, lostHold);
+    return byId;
+  }, [lostHoldsQuery]);
+
   // Which live hold was picked for which ghost, this session.
-  const [replacementByGhostId, setReplacementByGhostId] = useState<ReadonlyMap<number, number>>(() => new Map());
+  const [replacementByGhostId, setReplacementByGhostId] = useState<ReadonlyMap<number, number>>(
+    () => new Map(initialReplacements ?? []),
+  );
 
   const paintedHoldIds = useMemo(() => paintedHoldIdsOf(frames), [frames]);
   const visibleGhosts = useMemo(() => {
@@ -288,6 +308,7 @@ export function useLostHoldGhosts({
     setRoleFull(false);
     setSheetGhostId(null);
   }, [sheetGhostId]);
+  const flagRoleFull = useCallback(() => setRoleFull(true), []);
   const cancelReplacing = useCallback(() => {
     setReplacingGhostId(null);
     setRoleFull(false);
@@ -321,10 +342,12 @@ export function useLostHoldGhosts({
       count,
       ghosts,
       ghostTargets,
+      canonicalLostHolds,
       sheetGhost,
       sheetCandidates,
       replacing,
       roleFull,
+      flagRoleFull,
       openGhost,
       openFirstGhost,
       closeSheet,
@@ -337,10 +360,12 @@ export function useLostHoldGhosts({
       count,
       ghosts,
       ghostTargets,
+      canonicalLostHolds,
       sheetGhost,
       sheetCandidates,
       replacing,
       roleFull,
+      flagRoleFull,
       openGhost,
       openFirstGhost,
       closeSheet,

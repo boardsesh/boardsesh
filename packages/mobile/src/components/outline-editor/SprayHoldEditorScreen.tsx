@@ -88,6 +88,7 @@ import {
   SPRAY_TABLET_CONTENT_MAX_WIDTH,
 } from './spray-tablet-layout';
 import { zoomTargetForHold } from './hold-navigation';
+import { planSprayPutBack, type SprayPutBackHold } from './spray-put-back';
 import { SprayUndoToast, type SprayUndoToastContent } from './SprayUndoToast';
 import { resolveEditTap, type SprayEditorTool } from './spray-edit-tap';
 import { SprayEditorBanner } from './SprayEditorBanner';
@@ -292,7 +293,18 @@ export type SprayHoldEditorScreenProps = {
    * and removing the screen cancels the hand-over that would publish them.
    */
   onHandoverChange?: (handingOver: boolean) => void;
+  /**
+   * Put a removed hold back on the wall (#5493). Once the draft is on screen the
+   * editor adds a NEW hold at the removed one's geometry, linked to it by
+   * `movedFromHoldId`, selects it and zooms to it, so the owner only has to
+   * nudge it to where the hold went back on. A draft that already carries a hold
+   * linked to it (a put-back left unpublished) selects that one instead of
+   * adding a second.
+   */
+  putBackHold?: SprayPutBackHold | null;
 };
+
+export type { SprayPutBackHold } from './spray-put-back';
 
 /**
  * The spray-wall hold editor (issue #5441), rebuilt around one idea: rings are
@@ -345,6 +357,7 @@ export function SprayHoldEditorScreen({
   onCommitted,
   onDirtyChange,
   onHandoverChange,
+  putBackHold = null,
 }: SprayHoldEditorScreenProps) {
   const { systemColors, motion } = useTheme();
   const reduceMotion = useReducedMotion();
@@ -761,6 +774,28 @@ export function SprayHoldEditorScreen({
   canEditRef.current = canEdit;
   const toolRef = useRef(tool);
   toolRef.current = tool;
+
+  // ---- Put a removed hold back (#5493). Once, when the draft is ready to edit. ----
+  const putBackAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!putBackHold || putBackAppliedRef.current) return;
+    if (!seeded || homography == null || !canEdit || boardRender.width <= 0) return;
+    putBackAppliedRef.current = true;
+    const plan = planSprayPutBack(stateRef.current, putBackHold, homography);
+    if (!plan) return;
+    dispatch(plan.action);
+    const target = { id: 0, ...plan.focus };
+    boardControlRef.current?.zoomTo(
+      zoomTargetForHold({
+        hold: target,
+        boardWidth: photoWidth,
+        renderWidth: boardRender.width,
+        renderHeight: boardRender.height,
+        contextRadii: STEP_FRAME_CONTEXT_RADII,
+        maxScale: SPRAY_EDITOR_MAX_SCALE,
+      }),
+    );
+  }, [putBackHold, seeded, homography, canEdit, boardRender.width, boardRender.height, photoWidth]);
   // A hover left over from before a tool change must not flash up on the way back.
   useEffect(() => {
     hoverSV.value = NO_POINTS;

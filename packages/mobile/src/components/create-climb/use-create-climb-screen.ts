@@ -63,6 +63,7 @@ import {
   sprayWallUuidFor,
 } from './spray-climb-rules';
 import { useLastUsedGrade } from './use-last-used-grade';
+import type { LostHoldPutBackReturn } from '../../lib/spray/lost-hold-put-back';
 import { getDifficultyIdForGradeName, getGradeLabel } from '../../lib/grade-label';
 import { useCreateClimbAutosave } from './use-create-climb-autosave';
 import { deriveDraftStatusView, type DraftStatusView } from './draft-status-view';
@@ -118,6 +119,18 @@ type UseCreateClimbScreenArgs = {
    * grade again.
    */
   forkDifficultyId?: number | null;
+  /**
+   * The climber is back from putting a lost hold back on the wall (#5493): the
+   * working copy they left with, and the hold that went back on (null when they
+   * backed out). Applied once the editor's own seed has settled.
+   */
+  putBackReturn?: LostHoldPutBackReturn | null;
+  /**
+   * Fired once `putBackReturn` has been applied. `roleFull` is true when the
+   * hold came back but its role was already full (two starts or two finishes),
+   * so it could not go into the climb.
+   */
+  onPutBackApplied?: (roleFull: boolean) => void;
 };
 
 const BLE_PREVIEW_DEBOUNCE_MS = 250;
@@ -288,6 +301,8 @@ export function useCreateClimbScreen({
   onStartedNewClimb,
   sprayWallToken = '',
   forkDifficultyId,
+  putBackReturn = null,
+  onPutBackApplied,
 }: UseCreateClimbScreenArgs) {
   const router = useRouter();
   const { t } = useTranslation('climbs');
@@ -1206,6 +1221,36 @@ export function useCreateClimbScreen({
     [placeHold, frameCount, currentFrameIndex, reclaimWall],
   );
 
+  // ---- Back from putting a lost hold back on the wall (#5493). ----
+  // Two steps on two renders: the working copy first (it replaces the frames),
+  // then the new hold into the frames that copy produced. `placeHold` reads the
+  // frames it is given, so placing in the same pass would read the pre-restore
+  // ones. Both wait for the editor's own seed (an edit's server copy and slot),
+  // which would otherwise land on top.
+  const [putBackStage, setPutBackStage] = useState<'waiting' | 'placing' | 'done'>(putBackReturn ? 'waiting' : 'done');
+  const putBackReturnRef = useRef(putBackReturn);
+  const onPutBackAppliedRef = useRef(onPutBackApplied);
+  onPutBackAppliedRef.current = onPutBackApplied;
+  useEffect(() => {
+    const pending = putBackReturnRef.current;
+    if (putBackStage !== 'waiting' || !pending || restoreEpoch === 0) return;
+    applyStoredDraft(pending.draft);
+    const restoredSavedClimb = parseSavedClimbSnapshot(pending.draft.savedClimbJson);
+    if (restoredSavedClimb) {
+      setSavedClimb(restoredSavedClimb);
+      setSavedSignature(pending.draft.savedPayloadSignature ?? null);
+      setSavedSignatureUnknown(pending.draft.savedPayloadSignature === undefined);
+    }
+    setPutBackStage('placing');
+  }, [putBackStage, restoreEpoch, applyStoredDraft]);
+  useEffect(() => {
+    const pending = putBackReturnRef.current;
+    if (putBackStage !== 'placing' || !pending) return;
+    const placed = pending.newHoldId === null ? true : placeLostHoldReplacement(pending.newHoldId, pending.placements);
+    setPutBackStage('done');
+    onPutBackAppliedRef.current?.(!placed);
+  }, [putBackStage, placeLostHoldReplacement]);
+
   // Editing or touching the transport takes the wall back from the queue.
   const handleDuplicateFrame = useCallback(() => {
     reclaimWall();
@@ -1953,6 +1998,8 @@ export function useCreateClimbScreen({
      *  the remixed parent's — still naming any hold a reset took off. */
     sourceFrames: isEditing ? (editClimb?.frames ?? null) : (forkFrames ?? null),
     placeLostHoldReplacement,
+    /** The working copy as the autosave would store it — what a put-back trip carries. */
+    snapshotWorkingDraft: () => autosaveDraftRef.current,
     handleNewClimb,
     pendingNewClimb,
     confirmNewClimb,

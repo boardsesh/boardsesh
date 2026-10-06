@@ -82,6 +82,24 @@ vi.mock('../../Button', () => ({
 vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('i', { 'data-testid': 'spinner' }),
 }));
+// The put-back round trip (#5493) has its own suite; here it is only asked.
+const putBack = vi.hoisted(() => ({
+  request: null as null | {
+    requestId: string;
+    wallUuid: string;
+    lostHold: { id: number; cx: number; cy: number; r: number; outline: null };
+    knownSuccessorIds?: number[];
+  },
+  published: [] as string[],
+  returned: [] as string[],
+}));
+vi.mock('../../../lib/spray/lost-hold-put-back', () => ({
+  getLostHoldPutBack: (requestId: string | null) =>
+    requestId && putBack.request?.requestId === requestId ? putBack.request : null,
+  markLostHoldPutBackPublished: (requestId: string) => putBack.published.push(requestId),
+  returnToClimbEditor: (requestId: string) => putBack.returned.push(requestId),
+}));
+
 vi.mock('../../outline-editor/SprayHoldEditorScreen', () => ({
   SprayHoldEditorScreen: (props: EditorProps) => {
     editor.current = props;
@@ -195,6 +213,53 @@ describe('SprayWallHoldsScreen', () => {
     expect(typeof fetchedUnder).toBe('number');
     expect(requests.register).toHaveBeenCalledWith(42, publishedRender, undefined, fetchedUnder, expect.any(Number));
     expect(guard.enabled).toBe(false);
+  });
+
+  it('seeds the put-back hold, marks it published, and returns to the climb (#5493)', async () => {
+    putBack.request = {
+      requestId: 'req-1',
+      wallUuid: 'wall-1',
+      lostHold: { id: 9, cx: 10, cy: 20, r: 5, outline: null },
+      knownSuccessorIds: [12],
+    };
+    putBack.published.length = 0;
+    putBack.returned.length = 0;
+    try {
+      const view = render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1', putBackRequestId: 'req-1' }));
+      fireEvent.click(await screen.findByTestId('editor'));
+      expect((editorProps() as unknown as { putBackHold: unknown }).putBackHold).toEqual({
+        removedHoldId: 9,
+        knownSuccessorIds: [12],
+        cx: 10,
+        cy: 20,
+        r: 5,
+        outline: null,
+      });
+      await waitFor(() => expect(router.back).toHaveBeenCalledTimes(1));
+      expect(putBack.published).toEqual(['req-1']);
+      view.unmount();
+      expect(putBack.returned).toEqual(['req-1']);
+    } finally {
+      putBack.request = null;
+    }
+  });
+
+  it('ignores a put-back request for another wall', async () => {
+    putBack.request = {
+      requestId: 'req-2',
+      wallUuid: 'other-wall',
+      lostHold: { id: 9, cx: 10, cy: 20, r: 5, outline: null },
+    };
+    putBack.returned.length = 0;
+    try {
+      const view = render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1', putBackRequestId: 'req-2' }));
+      await screen.findByTestId('editor');
+      expect((editorProps() as unknown as { putBackHold: unknown }).putBackHold).toBeNull();
+      view.unmount();
+      expect(putBack.returned).toEqual([]);
+    } finally {
+      putBack.request = null;
+    }
   });
 
   it('keeps a removed wall unavailable when its published refresh finishes late', async () => {

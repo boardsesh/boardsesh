@@ -215,6 +215,23 @@ describe('useLostHoldGhosts', () => {
     expect(result.current.ghostTargets).toBe(targetsBefore);
   });
 
+  it('starts with the hold put back on the wall answering its ghost, wherever it was nudged to', () => {
+    registry.wall?.holds.push({ id: 14, cx: 300, cy: 300, r: 10, movedFromHoldId: 2 });
+    const { result } = renderHook(() =>
+      useLostHoldGhosts({
+        board: BOARD,
+        sourceClimbUuid: 'climb-1',
+        sourceFrames: SOURCE_FRAMES,
+        availableHoldIds: AVAILABLE,
+        frames: [{ ...PAINTED[0], 14: HAND }],
+        sprayWallToken: 'token',
+        placeLostHoldReplacement: vi.fn(),
+        initialReplacements: new Map([[2, 14]]),
+      }),
+    );
+    expect(result.current.ghosts).toEqual([]);
+  });
+
   it('passes taps through outside a pick', () => {
     const { result } = setup();
     expect(result.current.interceptPaint(10)).toBe(false);
