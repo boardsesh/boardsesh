@@ -747,7 +747,7 @@ describe('loadSprayWall', () => {
     expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(false);
   });
 
-  it('maps holds through the homography and keeps the move links the hold editor resends', async () => {
+  it('keeps the homography and the move links, for drawing lost-hold ghosts', async () => {
     const { registerRenderData } = await import('../spray-wall-loader');
     const payload = renderDataPayload({
       homography: [2, 0, 0, 0, 2, 0, 0, 0, 1],
@@ -758,6 +758,7 @@ describe('loadSprayWall', () => {
     });
     registerRenderData(LAYOUT_ID, payload.sprayWallRenderData as never, null);
     const wall = getSprayWall(LAYOUT_ID);
+    expect(wall?.homography).toEqual([2, 0, 0, 0, 2, 0, 0, 0, 1]);
     expect(wall?.holds[0]).toMatchObject({ id: 7, cx: 50, cy: 100, movedFromHoldId: 3 });
     // No predecessor, no key: the hold keeps the shape it always had.
     expect(wall?.holds[1]).not.toHaveProperty('movedFromHoldId');

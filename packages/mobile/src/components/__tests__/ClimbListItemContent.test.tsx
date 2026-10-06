@@ -441,20 +441,44 @@ describe('ClimbListItemContent personal grade', () => {
   });
 });
 
-// A climb that lost a hold before its wall was locked lists like any other. A
-// published one never reaches a wall list (search hides it); a draft does, and
-// its row carries no lost-holds badge.
-describe('ClimbListItemContent with lost holds', () => {
+// A spray climb that lost a hold is listed like any other, with a badge, so the
+// climber knows before tapping in that a hold it names is gone.
+describe('ClimbListItemContent lost-holds chip', () => {
   beforeEach(() => {
     resolveGrade.mockReturnValue({ label: 'V4', color: '#111111', isBoardsesh: false });
   });
 
-  it('shows no lost-holds badge and keeps the attributes beside the name', () => {
+  const chipIcon = (container: HTMLElement) => container.querySelector('[data-icon="frame.remove"]');
+
+  const renderWith = (missingHoldCount: number | null | undefined) =>
+    render(
+      <ClimbListItemContent
+        climb={{ ...baseClimb, missingHoldCount }}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+      />,
+    );
+
+  it('marks a climb that lost holds', () => {
+    const { container } = renderWith(3);
+    expect(chipIcon(container)).not.toBeNull();
+    expect(container.textContent).toContain('mobile.lostHolds.chip');
+  });
+
+  it('keeps all attributes below the name when a climb lost holds', () => {
     const { container, getByText } = render(
       <ClimbListItemContent
-        climb={
-          { ...baseClimb, name: 'Old blue', missingHoldCount: 2, characteristics: ['no_match'] } as typeof baseClimb
-        }
+        climb={{
+          ...baseClimb,
+          name: 'A long spray climb name',
+          missingHoldCount: 4,
+          characteristics: ['any_feet', 'no_match'],
+          benchmark_difficulty: '18',
+          is_hidden: true,
+        }}
         boardName="spray"
         layoutId={1}
         sizeId={1}
@@ -462,9 +486,38 @@ describe('ClimbListItemContent with lost holds', () => {
         angle={40}
       />,
     );
-    expect(container.querySelector('[data-icon="frame.remove"]')).toBeNull();
-    const name = getByText('Old blue');
-    expect(name.parentElement?.contains(container.querySelector('[data-icon="no.match"]'))).toBe(true);
+    const name = getByText('A long spray climb name');
+    const chip = chipIcon(container);
+    expect(chip).not.toBeNull();
+    expect(name.parentElement?.contains(chip)).toBe(false);
+    expect(name.parentElement?.textContent).toBe('A long spray climb name');
+    const attributesRow = name.parentElement?.nextElementSibling;
+    for (const iconName of ['frame.remove', 'benchmark', 'no.match', 'visibility.off']) {
+      const icon = container.querySelector(`[data-icon="${iconName}"]`);
+      expect(icon).not.toBeNull();
+      expect(attributesRow?.contains(icon)).toBe(true);
+    }
+    expect(attributesRow?.contains(getByText('mobile.climbRow.anyFeet'))).toBe(true);
+    expect(attributesRow?.contains(getByText('mobile.hidden.chip'))).toBe(true);
+  });
+
+  it('leaves a climb with every hold still on the wall unmarked', () => {
+    // The mutation guard: `> 0`, not `>= 0`. Every climb on every catalogue board
+    // reports 0 here, so a relaxed predicate would badge the entire database.
+    expect(chipIcon(renderWith(0).container)).toBeNull();
+  });
+
+  it('leaves a catalogue-board climb (null) unmarked', () => {
+    expect(chipIcon(renderWith(null).container)).toBeNull();
+  });
+
+  it('leaves a queue row without the field unmarked rather than guessing', () => {
+    expect(chipIcon(renderWith(undefined).container)).toBeNull();
+  });
+
+  it('stays in the row neutral grey — colour is the grade’s alone', () => {
+    const { container } = renderWith(1);
+    expect(chipIcon(container)?.getAttribute('data-color')).toBe('#8E8E93');
   });
 });
 

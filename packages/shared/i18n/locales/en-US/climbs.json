@@ -659,6 +659,16 @@
       "chip": "Hidden",
       "banner": "Hidden by the community"
     },
+    "lostHolds": {
+      "chip_one": "{{count}} hold gone",
+      "chip_other": "{{count}} holds gone",
+      "chipAria_one": "{{count}} hold is no longer on the wall",
+      "chipAria_other": "{{count}} holds are no longer on the wall",
+      "banner": "This climb lost a hold. Remix it onto the holds that are on the wall now.",
+      "remix": "Remix",
+      "editorHint_one": "Remove the grey hold to save",
+      "editorHint_other": "Remove the grey holds to save"
+    },
     "climbActions": {
       "preview": "Preview",
       "playNext": "Play next",

@@ -39,7 +39,8 @@ import { climbToQueueItem, resolveCommittableQueueItem } from '../../lib/climb-t
 import { toBoardName } from '@boardsesh/board-config';
 import { formatRenderBoardLabel, resolveClimbRenderBoard, sameRenderBoard } from '../../lib/boards/climb-render-board';
 import type { ActiveSubDrawer } from '@boardsesh/play-view';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, climbRemixedFromBroken } from '@boardsesh/analytics';
+import { trackSprayEvent } from '../../lib/spray/spray-telemetry';
 import { DeferredBoard } from './DeferredBoard';
 import { BoardRenderUnavailable } from './BoardRenderUnavailable';
 import { PlaybackControls } from '../playback/PlaybackControls';
@@ -105,6 +106,9 @@ import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { resolveTickDefaultGradeName } from '../../lib/boardsesh-grade-display';
 import { useShareClimb } from '../../hooks/use-share-climb';
+import { LostHoldsBanner } from './LostHoldsBanner';
+import { useCreateClimbNavigation } from '../create-climb/use-create-climb-navigation';
+import { useSprayWallIsArchived } from '../../lib/spray/use-spray-wall-archive';
 import { useMountedOnFirstOpen } from '../../hooks/use-mounted-on-first-open';
 import { getBoardRenderData } from '../../lib/board-details';
 import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
@@ -555,6 +559,24 @@ export function PlayDrawer({
     [displayedClimb, boardConfig],
   );
   const renderBoardConfig = renderBoardResolution?.boardConfig ?? boardConfig;
+
+  /**
+   * Remix a climb that lost a hold: the climb actions' own Remix handoff (one
+   * accepted action that dismisses the player, waits for the native
+   * transition, then pushes the create route), so there is one place for that
+   * ordering. The editor opens without the lost holds and draws a grey ring
+   * where each one was.
+   */
+  const { openRemix } = useCreateClimbNavigation({ dismissPlayerAndWait });
+  const lostHoldCount = displayedClimb?.missingHoldCount ?? 0;
+  // An archived wall takes no new climb, so the banner keeps its sentence and
+  // drops the button.
+  const lostHoldWallArchived = useSprayWallIsArchived(renderBoardConfig.boardName, renderBoardConfig.layoutId);
+  const handleRemixLostHolds = useCallback(() => {
+    if (!displayedClimb) return;
+    trackSprayEvent(climbRemixedFromBroken({ lostHoldCount, source: 'play_drawer' }));
+    openRemix(displayedClimb, renderBoardConfig);
+  }, [lostHoldCount, openRemix, displayedClimb, renderBoardConfig]);
 
   const openingSetterRef = useRef(false);
   const openSetterPlaylist = useCallback(() => {
@@ -1941,6 +1963,16 @@ export function PlayDrawer({
                           }
                         />
                       </View>
+
+                      {/* A climb that lost a hold. Still listed, playable and
+                          loggable, but nothing else on this screen would say why
+                          the board draws fewer holds than the setter painted.
+                          Above the board, because it is about what the board is
+                          showing. */}
+                      <LostHoldsBanner
+                        count={lostHoldCount}
+                        onRemix={lostHoldWallArchived ? undefined : handleRemixLostHolds}
+                      />
 
                       <View style={styles.boardSection}>
                         {/* Viewfinder brackets while browsing: you're looking through a

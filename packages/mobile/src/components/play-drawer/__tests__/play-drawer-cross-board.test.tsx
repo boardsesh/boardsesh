@@ -191,6 +191,13 @@ vi.mock('../AngleSelectorSheet', () => ({
   },
 }));
 vi.mock('../../ClimbActionsSheet', () => ({ ClimbActionsSheet: () => null }));
+// The lost-hold banner and the Remix handoff behind it, stubbed like every
+// other collaborator above. Both reach native modules this suite has no runtime
+// for: the banner through the design-system Button, the handoff through Sentry.
+vi.mock('../LostHoldsBanner', () => ({ LostHoldsBanner: () => null }));
+vi.mock('../../create-climb/use-create-climb-navigation', () => ({
+  useCreateClimbNavigation: () => ({ openRemix: vi.fn(), openEdit: vi.fn(), resetActionGuard: vi.fn() }),
+}));
 vi.mock('../../AddBetaVideoSheet', () => ({ AddBetaVideoSheet: () => null }));
 vi.mock('../logbook/LogbookFullSheet', () => ({ LogbookFullSheet: () => null }));
 vi.mock('../ClimberLogsSheet', () => ({ ClimberLogsSheet: () => null }));

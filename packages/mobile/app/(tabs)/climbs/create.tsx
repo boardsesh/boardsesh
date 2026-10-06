@@ -26,6 +26,8 @@ type CreateClimbParams = {
   forkCharacteristics?: string;
   /** The source climb's grade, as a name on the shared scale ("6c/V5"). */
   forkDifficulty?: string;
+  /** The remixed climb's uuid, so the editor can draw the holds it lost. */
+  forkParentUuid?: string;
   editClimbUuid?: string;
 };
 
@@ -224,6 +226,7 @@ export default function CreateClimbRoute() {
         forkDescription={params.forkDescription}
         forkCharacteristics={params.forkCharacteristics}
         forkDifficulty={params.forkDifficulty}
+        forkParentUuid={params.forkParentUuid}
         editClimbUuid={params.editClimbUuid}
       />
       {/* Host the BLE device picker from inside this route so a connect from the

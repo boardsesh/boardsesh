@@ -1919,6 +1919,13 @@ export function useCreateClimbScreen({
     handlePaint,
     handleAssignRole,
     handleClearHolds,
+    /** The wall's live hold ids, read once at mount; undefined off spray. */
+    availableHoldIds,
+    /**
+     * The remixed parent's frames, still naming any hold it lost, for the grey
+     * rings (`useLostHoldGhosts`). Null for a new climb and for an edit in place.
+     */
+    remixSourceFrames: isEditing ? null : (forkFrames ?? null),
     handleNewClimb,
     pendingNewClimb,
     confirmNewClimb,

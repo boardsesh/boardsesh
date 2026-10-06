@@ -659,6 +659,16 @@
       "chip": "Oculto",
       "banner": "Oculto por la comunidad"
     },
+    "lostHolds": {
+      "chip_one": "Falta {{count}} presa",
+      "chip_other": "Faltan {{count}} presas",
+      "chipAria_one": "{{count}} presa ya no está en el muro",
+      "chipAria_other": "{{count}} presas ya no están en el muro",
+      "banner": "A este bloque le falta una presa. Remézclalo con las presas que hay ahora en el muro.",
+      "remix": "Remezclar",
+      "editorHint_one": "Quita la presa gris para guardar",
+      "editorHint_other": "Quita las presas grises para guardar"
+    },
     "climbActions": {
       "preview": "Vista previa",
       "playNext": "Poner a continuación",

@@ -50,6 +50,11 @@ export type ClimbListItemClimb = {
   /** Voted out of the browse lists by the community. Optional because the queue's
    *  own `Climb` type doesn't carry it — a queued row simply shows no chip. */
   is_hidden?: boolean | null;
+  /** How many of this climb's holds are no longer on the wall — a spray wall that
+   *  got reset under it (SW-13). Null on every catalogue board, where holds don't
+   *  come off. Optional for the same reason as `is_hidden` above: the queue's own
+   *  `Climb` type doesn't carry it, so a queued row simply shows no chip. */
+  missingHoldCount?: number | null;
   /** The version at which this climb's holds last moved (#6023). A tick older
    *  than that does not mark the row sent. Null or absent on a row whose source
    *  does not carry it, where every tick counts. */
@@ -193,6 +198,40 @@ const HiddenChip = React.memo(function HiddenChip() {
       <Icon name="visibility.off" size={11} color={systemColors.secondaryLabel} />
       <Text variant="caption2" numberOfLines={1} color={systemColors.secondaryLabel}>
         {t('mobile.hidden.chip')}
+      </Text>
+    </View>
+  );
+});
+
+/**
+ * "N holds gone" chip for a climb whose spray wall was reset under it (SW-13).
+ * It answers the question the row otherwise raises silently — why this climb no
+ * longer works — and points at the remix flow on the climb itself.
+ *
+ * Not props-free like `HiddenChip`: it carries the count. The prop is a single
+ * primitive, so `React.memo` still skips it on every unrelated parent re-render.
+ *
+ * Same neutral `fill` / `secondaryLabel` pair as `HiddenChip`, deliberately: the
+ * row's one colour signal is the grade (see the note above `ASCENT_STATUS_ICON`),
+ * and a warning-coloured chip here would compete with it.
+ */
+const LostHoldsChip = React.memo(function LostHoldsChip({ count }: { count: number }) {
+  const { t } = useTranslation('climbs');
+  const { systemColors } = useTheme();
+
+  return (
+    <View
+      style={[climbChipStyles.chip, styles.nameRowChip, { backgroundColor: systemColors.fill }]}
+      accessibilityRole="text"
+      accessibilityLabel={t('mobile.lostHolds.chipAria', { count })}
+      testID="climb-row-lost-holds-chip"
+    >
+      {/* Renders ✕-in-circle on both platforms — a removal marker, which is what a
+          hold coming off the wall is. Named for the create-climb frame editor it
+          was added for; reused here rather than minting a near-identical glyph. */}
+      <Icon name="frame.remove" size={11} color={systemColors.secondaryLabel} />
+      <Text variant="caption2" numberOfLines={1} color={systemColors.secondaryLabel}>
+        {t('mobile.lostHolds.chip', { count })}
       </Text>
     </View>
   );
@@ -488,6 +527,9 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
     );
   }
 
+  const missingHoldCount =
+    typeof climb.missingHoldCount === 'number' && climb.missingHoldCount > 0 ? climb.missingHoldCount : undefined;
+  const hasLostHolds = missingHoldCount !== undefined;
   const nameAttributes = (
     <>
       <ClimbAttributeIcons
@@ -497,6 +539,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
       />
       {climb.is_draft === true ? <DraftChip style={styles.nameRowChip} testID="climb-row-draft-chip" /> : null}
       {climb.is_hidden ? <HiddenChip /> : null}
+      {hasLostHolds ? <LostHoldsChip count={missingHoldCount} /> : null}
     </>
   );
 
@@ -520,8 +563,9 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
           <Text variant="body" numberOfLines={1} style={styles.climbName}>
             {climb.name}
           </Text>
-          {nameAttributes}
+          {!hasLostHolds ? nameAttributes : null}
         </View>
+        {hasLostHolds ? <View style={styles.attributesRow}>{nameAttributes}</View> : null}
         {primarySubtitleOverride === undefined ? (
           <LiveClimbSubtitle
             boardName={boardName}
@@ -597,6 +641,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     minWidth: 0,
+  },
+  attributesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 2,
   },
   climbName: {
     fontWeight: '600',

@@ -659,6 +659,16 @@
       "chip": "Masqué",
       "banner": "Masqué par la communauté"
     },
+    "lostHolds": {
+      "chip_one": "{{count}} prise en moins",
+      "chip_other": "{{count}} prises en moins",
+      "chipAria_one": "{{count}} prise n'est plus sur le mur",
+      "chipAria_other": "{{count}} prises ne sont plus sur le mur",
+      "banner": "Ce bloc a perdu une prise. Remixe-le avec les prises qui sont sur le mur maintenant.",
+      "remix": "Remixer",
+      "editorHint_one": "Retire la prise grise pour enregistrer",
+      "editorHint_other": "Retire les prises grises pour enregistrer"
+    },
     "climbActions": {
       "preview": "Aperçu",
       "playNext": "Mettre juste après",

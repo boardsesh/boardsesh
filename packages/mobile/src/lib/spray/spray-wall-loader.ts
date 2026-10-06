@@ -243,6 +243,7 @@ export function mapSprayWallRenderData(
     photoThumbUrl: renderData.photo.thumbUrl ?? null,
     photoExpiresAt: renderData.photo.expiresAt,
     holds,
+    homography: renderData.homography,
     renderSettings: null,
     viewerCanEdit: renderData.wall.viewerCanEdit === true,
     // Draft payloads are an unpublished wall's: nothing is archived.
@@ -321,6 +322,7 @@ export function registerRenderData(
     photoThumbUrl: renderData.photo.thumbUrl ?? null,
     photoExpiresAt: renderData.photo.expiresAt,
     holds,
+    homography: renderData.homography,
     renderSettings: look,
     archive: archive ?? undefined,
     hiddenAt: renderData.wall.hiddenAt ?? null,

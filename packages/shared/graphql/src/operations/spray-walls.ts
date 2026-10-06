@@ -496,6 +496,66 @@ export const DELETE_SPRAY_WALL = gql`
   }
 `;
 
+/**
+ * Where the holds a spray climb lost used to be. The remix editor draws a grey
+ * ring at each one, and the climber taps it away before Save comes back.
+ *
+ * Same arguments as `GetClimb`: `Climb.lostHolds` resolves off the climb row
+ * that query returns and decides the wall's visibility itself, so a stranger
+ * gets `[]`, never an error. A single-climb read; a list must not select
+ * `lostHolds`.
+ */
+export const GET_CLIMB_LOST_HOLDS = gql`
+  query GetClimbLostHolds(
+    $boardName: String!
+    $layoutId: Int!
+    $sizeId: Int!
+    $setIds: String!
+    $angle: Int!
+    $climbUuid: ID!
+  ) {
+    climb(
+      boardName: $boardName
+      layoutId: $layoutId
+      sizeId: $sizeId
+      setIds: $setIds
+      angle: $angle
+      climbUuid: $climbUuid
+    ) {
+      uuid
+      lostHolds {
+        id
+        cx
+        cy
+        r
+        outline
+      }
+    }
+  }
+`;
+
+export type GetClimbLostHoldsQueryVariables = {
+  boardName: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+  angle: number;
+  climbUuid: string;
+};
+
+/** One lost hold, in the wall's canonical frame. */
+export type ClimbLostHold = {
+  id: number;
+  cx: number;
+  cy: number;
+  r: number;
+  outline: number[] | null;
+};
+
+export type GetClimbLostHoldsQueryResponse = {
+  climb: { uuid: string; lostHolds: ClimbLostHold[] | null } | null;
+};
+
 /** Reports never accept free text; duplicate reports preserve the first reason. */
 export const REPORT_SPRAY_WALL = gql`
   mutation ReportSprayWall($input: ReportSprayWallInput!) {

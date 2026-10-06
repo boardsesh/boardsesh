@@ -78,6 +78,7 @@ export async function loadLocalSprayWall(
       photoThumbUrl: null,
       photoExpiresAt: '1970-01-01T00:00:00.000Z',
       holds,
+      homography: wall.homography,
       viewerAccess: { canEdit: false, generation: viewerGeneration },
       archive: remembered
         ? {

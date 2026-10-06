@@ -45,6 +45,8 @@ import { computeBoardMaxHeight } from './create-drawer-layout';
 import { OpenDraftsSection } from './OpenDraftsSection';
 import { DuplicateBanner } from './DuplicateBanner';
 import { InlineConfirmBanner } from './InlineConfirmBanner';
+import { LostHoldGhostLayer } from './LostHoldGhostLayer';
+import type { LostHoldGhostsState } from './use-lost-hold-ghosts';
 import { useTranslation } from 'react-i18next';
 import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
 import { HeatmapOverlay, useHeatLayer } from '../board/HeatmapOverlay';
@@ -77,6 +79,8 @@ type CreateDrawerProps = {
   onViewDuplicate: (uuid: string) => void;
   /** The hold heatmap, following the active brush (omitted → no heatmap button). */
   heatmap?: CreateHeatmap;
+  /** Grey rings where a remixed climb's lost holds were. Save waits until they are gone. */
+  lostHolds?: LostHoldGhostsState;
 };
 
 // The peek must never grow into the '100%' snap — at that point the two snap
@@ -108,6 +112,7 @@ export function CreateDrawer({
   onClose,
   onViewDuplicate,
   heatmap,
+  lostHolds,
 }: CreateDrawerProps) {
   const { systemColors } = useTheme();
   const { t, i18n } = useTranslation('climbs');
@@ -270,6 +275,42 @@ export function CreateDrawer({
       ) : null,
     [heatmapActive, heatLayer, board.boardName, board.layoutId, board.sizeId, board.setIds, boardHolds],
   );
+  // Grey rings where a remixed climb's lost holds were, drawn over the heat.
+  const lostHoldGhosts = lostHolds?.ghosts;
+  const boardOverlay = useMemo(() => {
+    if (!lostHoldGhosts || lostHoldGhosts.length === 0) return heatmapOverlay;
+    return (
+      <>
+        {heatmapOverlay}
+        <LostHoldGhostLayer
+          ghosts={lostHoldGhosts}
+          boardWidth={boardHolds.boardWidth}
+          boardHeight={boardHolds.boardHeight}
+          renderWidth={boardRender.width}
+          renderHeight={boardRender.height}
+        />
+      </>
+    );
+  }, [
+    heatmapOverlay,
+    lostHoldGhosts,
+    boardHolds.boardWidth,
+    boardHolds.boardHeight,
+    boardRender.width,
+    boardRender.height,
+  ]);
+  const ghostsPending = lostHoldGhosts != null && lostHoldGhosts.length > 0;
+  const ghostCount = lostHoldGhosts?.length ?? 0;
+  const saveBlockedLine = useMemo(
+    () =>
+      ghostCount > 0 ? (
+        <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
+          {t('mobile.lostHolds.editorHint', { count: ghostCount })}
+        </Text>
+      ) : null,
+    [ghostCount, systemColors.secondaryLabel, t],
+  );
+
   // While heat is on, the line under Save explains it (or offers the download)
   // in place of the autosave note. Erase hides the heat, and the line with it.
   const heatmapLine = useMemo(() => {
@@ -509,7 +550,9 @@ export function CreateDrawer({
                 controlRef={boardControlsRef}
                 onInteractionActiveChange={setBoardInteractionActive}
                 scrollRef={scrollGestureRef}
-                overlay={heatmapOverlay}
+                overlay={boardOverlay}
+                ghostTargets={lostHolds?.ghostTargets}
+                onGhostPress={lostHolds?.dismissGhost}
               />
             </View>
 
@@ -540,12 +583,13 @@ export function CreateDrawer({
               onSetActive={controller.handleSetActive}
               saveState={controller.saveState}
               onSave={() => void controller.handleSave()}
-              publishBlocked={controller.publishBlocked}
+              publishBlocked={controller.publishBlocked || ghostsPending}
               draftStatus={controller.draftStatus}
               onToggleHeatmap={heatmap?.toggle}
               heatmapActive={heatmapActive}
               heatmapBusy={heatmap?.busy ?? false}
               heatmapLine={heatmapLine}
+              saveBlockedLine={saveBlockedLine}
             />
           </View>
 

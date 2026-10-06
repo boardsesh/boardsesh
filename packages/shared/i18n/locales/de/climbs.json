@@ -659,6 +659,16 @@
       "chip": "Ausgeblendet",
       "banner": "Von der Community ausgeblendet"
     },
+    "lostHolds": {
+      "chip_one": "{{count}} Griff weg",
+      "chip_other": "{{count}} Griffe weg",
+      "chipAria_one": "{{count}} Griff ist nicht mehr an der Wand",
+      "chipAria_other": "{{count}} Griffe sind nicht mehr an der Wand",
+      "banner": "Diesem Boulder fehlt ein Griff. Remixe ihn mit den Griffen, die jetzt an der Wand sind.",
+      "remix": "Remixen",
+      "editorHint_one": "Entferne den grauen Griff, um zu speichern",
+      "editorHint_other": "Entferne die grauen Griffe, um zu speichern"
+    },
     "climbActions": {
       "preview": "Vorschau",
       "playNext": "Als Nächstes dran",

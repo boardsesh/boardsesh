@@ -84,7 +84,11 @@ const holdTargets: BoardHoldTarget[] = [
   { id: 20, cx: 120, cy: 100, r: 8 },
 ];
 
-function renderBoard(onPaint = vi.fn(), onLongPressHold = vi.fn()) {
+function renderBoard(
+  onPaint = vi.fn(),
+  onLongPressHold = vi.fn(),
+  ghosts?: { ghostTargets: BoardHoldTarget[]; onGhostPress: (lostHoldId: number) => void },
+) {
   const result = render(
     <InteractiveCreateBoard
       frames="p1r12"
@@ -100,6 +104,8 @@ function renderBoard(onPaint = vi.fn(), onLongPressHold = vi.fn()) {
       onLongPressHold={onLongPressHold}
       renderWidth={300}
       renderHeight={400}
+      ghostTargets={ghosts?.ghostTargets}
+      onGhostPress={ghosts?.onGhostPress}
     />,
   );
   return { ...result, onPaint, onLongPressHold };
@@ -140,6 +146,24 @@ describe('InteractiveCreateBoard hold taps', () => {
     // rests on the overlay.
     expect(restOptions?.pinchRef).toBeDefined();
     expect(restOptions?.isPinchingSV).toBeDefined();
+  });
+
+  it("adds a remix's grey rings to the hit circles and sends their taps to onGhostPress", () => {
+    const onGhostPress = vi.fn();
+    const { onPaint, onLongPressHold } = renderBoard(vi.fn(), vi.fn(), {
+      ghostTargets: [{ id: 99, cx: 300, cy: 300, r: 10 }],
+      onGhostPress,
+    });
+    const restOptions = restTapCalls.at(-1);
+    expect(restOptions?.hitTargets).toHaveLength(holdTargets.length + 1);
+    (restOptions?.onTap as (holdId: number) => void)(99);
+    (restOptions?.onLongPress as (holdId: number) => void)(99);
+    expect(onGhostPress).toHaveBeenCalledTimes(2);
+    expect(onPaint).not.toHaveBeenCalled();
+    expect(onLongPressHold).not.toHaveBeenCalled();
+    // A live hold still paints.
+    (zoomedTapCalls.at(-1)?.onTap as (holdId: number) => void)(10);
+    expect(onPaint).toHaveBeenCalledWith(10);
   });
 
   it('swaps the at-rest overlay for the pan overlay once zoomed', () => {
