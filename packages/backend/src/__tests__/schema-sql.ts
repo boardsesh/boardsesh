@@ -1785,7 +1785,11 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     -- SW-17 retention: when the purge swept this wall's storage prefix. Explicit
     -- state, because a purged wall's row is never deleted and a wall can own
     -- objects no version row names (an abandoned wizard upload).
-    "photos_purged_at" timestamp
+    "photos_purged_at" timestamp,
+    -- Archive and reset (migration 0256): when a reset clone's first publish
+    -- replaced this wall, and the wall a clone was made from.
+    "archived_at" timestamp,
+    "reset_from_wall_id" bigint REFERENCES "spray_walls"("id") ON DELETE SET NULL
   );
 
   CREATE TABLE IF NOT EXISTS "spray_wall_versions" (
@@ -1819,6 +1823,8 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   -- whole table.
   CREATE INDEX IF NOT EXISTS "spray_walls_deleted_at_idx"
     ON "spray_walls" ("deleted_at") WHERE "deleted_at" IS NOT NULL AND "photos_purged_at" IS NULL;
+  CREATE INDEX IF NOT EXISTS "spray_walls_reset_from_wall_idx"
+    ON "spray_walls" ("reset_from_wall_id") WHERE "reset_from_wall_id" IS NOT NULL;
 
   CREATE TABLE IF NOT EXISTS "spray_wall_holds" (
     "wall_id" bigint NOT NULL REFERENCES "spray_walls"("id") ON DELETE CASCADE,
