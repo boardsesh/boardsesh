@@ -47,6 +47,8 @@ import {
   populateSprayClimbColumns,
   assertSprayGradeOnPublish,
   assertSprayHoldsAreAlive,
+  assertSprayTargetNotArchived,
+  assertSprayWallAcceptsClimbsUnderLock,
   findVisibleSprayWall,
   isSprayBoard,
   requireVisibleSprayWall,
@@ -198,6 +200,9 @@ export const climbMutations = {
       ? await requireVisibleSprayWall(validated.layoutId, ctx.userId!, validated.sprayWallUuid)
       : null;
     if (sprayTarget) {
+      // An archived wall is read-only: nothing new is set on it. Early here for a
+      // fast answer; the deciding check runs under the wall lock below.
+      assertSprayTargetNotArchived(sprayTarget);
       // Ahead of every write: a spray wall has no crowd grade to converge on
       // (`crowdGrade: false`), so a published climb with no setter grade would
       // stay ungraded forever.
@@ -354,6 +359,8 @@ export const climbMutations = {
       // reset committing between them would otherwise let a climb through on a
       // hold that had just come off the wall.
       if (sprayTarget) {
+        // First, so an archived wall is refused as archived rather than on its holds.
+        await assertSprayWallAcceptsClimbsUnderLock(tx, sprayTarget.wallId);
         await assertSprayHoldsAreAlive(
           tx,
           sprayTarget,
@@ -833,6 +840,10 @@ export const climbMutations = {
         extensions: { code: CLIMB_EDIT_REFUSAL_CODES.notAllowed },
       });
     }
+    // After the refusal above, so it tells nobody anything they could not already
+    // see. Every spray edit reaches this with a target: the setter's path throws
+    // without one, and anyone else's is refused above.
+    if (sprayTarget) assertSprayTargetNotArchived(sprayTarget);
 
     if (!currentlyDraft && climbEditWindowApplies(boardType)) {
       // Published, on a board with a window: only editable within 24h of the
@@ -1125,6 +1136,7 @@ export const climbMutations = {
       // edit, not only a frames change — a metadata-only edit of a climb whose
       // holds went away should not be the thing that quietly re-publishes it.
       if (sprayTarget) {
+        await assertSprayWallAcceptsClimbsUnderLock(tx, sprayTarget.wallId);
         await assertSprayHoldsAreAlive(
           tx,
           sprayTarget,

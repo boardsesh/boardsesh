@@ -34,6 +34,15 @@ import * as dbSchema from '@boardsesh/db/schema';
  * are not the owner) and a follower's `myBoards`. The owner escape sits OUTSIDE
  * the EXISTS, so the owner still lists their own hidden wall and sees the
  * notice on it. See "What hidden means" in docs/spray-walls.md.
+ *
+ * ## Archived walls
+ *
+ * A wall replaced by a reset (`spray_walls.archived_at`) leaves every listing
+ * this predicate carries, the OWNER'S included: these are the pickers a climber
+ * chooses a wall to climb on, and nothing new can be set on an archived wall. So
+ * the archived test sits OUTSIDE the owner escape. The owner finds archived walls
+ * in `mySprayWalls`, and every climb, tick and share link on them keeps working.
+ * See "Archive and reset" in docs/spray-walls.md.
  */
 export function listableSprayWallCondition(
   viewerId: string | null | undefined,
@@ -50,6 +59,7 @@ export function listableSprayWallCondition(
         JOIN spray_wall_versions sv ON sv.id = sw.current_version_id AND sv.wall_id = sw.id
         WHERE sw.board_uuid = ${dbSchema.userBoards.uuid}
           AND sw.deleted_at IS NULL
+          AND sw.archived_at IS NULL
           AND sv.status = 'published'
           AND (sw.hidden_at IS NULL ${ownerHiddenEscape})
       )
@@ -60,14 +70,25 @@ export function listableSprayWallCondition(
   // the failure anybody wants from a visibility filter.
   const ownerEscape = viewerId ? sql`${dbSchema.userBoards.ownerId} = ${viewerId} OR ` : sql``;
 
+  // The archived test is its own NOT EXISTS, outside the owner escape, so the
+  // owner's listings drop an archived wall too (see "Archived walls" above).
   return sql`(
     ${dbSchema.userBoards.boardType} IS DISTINCT FROM 'spray'
-    OR ${ownerEscape}EXISTS (
-      SELECT 1 FROM spray_walls sw
-      WHERE sw.board_uuid = ${dbSchema.userBoards.uuid}
-        AND sw.deleted_at IS NULL
-        AND sw.current_version_id IS NOT NULL
-        AND sw.hidden_at IS NULL
+    OR (
+      NOT EXISTS (
+        SELECT 1 FROM spray_walls archived
+        WHERE archived.board_uuid = ${dbSchema.userBoards.uuid}
+          AND archived.archived_at IS NOT NULL
+      )
+      AND (
+        ${ownerEscape}EXISTS (
+          SELECT 1 FROM spray_walls sw
+          WHERE sw.board_uuid = ${dbSchema.userBoards.uuid}
+            AND sw.deleted_at IS NULL
+            AND sw.current_version_id IS NOT NULL
+            AND sw.hidden_at IS NULL
+        )
+      )
     )
   )`;
 }
@@ -75,13 +96,15 @@ export function listableSprayWallCondition(
 /**
  * The same rule for a row already loaded from `spray_walls`, where the join has
  * been done and the SQL form would be a second query per row. Mirrors the SQL
- * exactly: the owner, or a published wall that is not admin-hidden.
+ * exactly: never an archived wall; otherwise the owner, or a published wall that
+ * is not admin-hidden.
  */
 export function sprayWallIsListable(
-  wall: { currentVersionId: number | null; hiddenAt: Date | null },
+  wall: { currentVersionId: number | null; hiddenAt: Date | null; archivedAt: Date | null },
   board: { ownerId: string },
   viewerId: string | null | undefined,
 ): boolean {
+  if (wall.archivedAt != null) return false;
   if (viewerId != null && board.ownerId === viewerId) return true;
   return wall.currentVersionId != null && wall.hiddenAt == null;
 }

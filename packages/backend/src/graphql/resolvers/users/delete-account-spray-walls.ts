@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { Database } from '../../../db/client';
 import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
@@ -27,7 +27,11 @@ export async function deleteAccountSprayWalls(tx: Transaction, userId: string): 
     .from(dbSchema.sprayWalls)
     .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.sprayWalls.boardUuid))
     .where(eq(dbSchema.userBoards.ownerId, userId))
-    .orderBy(asc(dbSchema.sprayWalls.id));
+    // Highest id first. This loop holds every wall lock it takes until commit, so
+    // it must take them in the one order every other two-lock path uses: a reset
+    // clone's first publish holds the clone (always the higher id) and then takes
+    // the wall it replaces. Ascending here would deadlock against that publish.
+    .orderBy(desc(dbSchema.sprayWalls.id));
   if (walls.length === 0) return [];
 
   const [systemOwner] = await tx

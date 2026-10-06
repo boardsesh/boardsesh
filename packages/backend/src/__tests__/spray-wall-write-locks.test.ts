@@ -130,6 +130,25 @@ const WRITERS: Array<{ name: string; source: string; why: string; exempt?: strin
     // sequence, so two concurrent creates cannot collide either.
     exempt: 'the wall does not exist yet, so there is nothing to lock on',
   },
+  {
+    name: 'insertSprayWallRows',
+    source: SPRAY_WALLS_SOURCE,
+    why: 'it inserts the spray_walls row for createSprayWall and resetSprayWall',
+    // Same reason as createSprayWall, whose transaction body this is: the wall it
+    // writes does not exist until the insert. resetSprayWall holds the SOURCE
+    // wall's lock around it, which is a different wall.
+    exempt: 'the wall it creates does not exist yet, so there is nothing to lock on',
+  },
+  {
+    name: 'resetSprayWall',
+    source: SPRAY_WALLS_SOURCE,
+    why: 'the source wall must not be archived, deleted or cloned twice while the clone is made',
+  },
+  {
+    name: 'archiveResetSourceUnderLock',
+    source: SPRAY_WALLS_SOURCE,
+    why: 'it stamps archived_at on the wall a reset clone replaces',
+  },
   { name: 'createSprayWallVersion', source: SPRAY_WALLS_SOURCE, why: 'the one-draft check decides on a read' },
   { name: 'upsertSprayWallHolds', source: SPRAY_WALLS_SOURCE, why: 'the draft-status and alive-set reads decide' },
   { name: 'removeSprayWallHolds', source: SPRAY_WALLS_SOURCE, why: 'the draft-status and alive-set reads decide' },
@@ -200,7 +219,10 @@ describe('every spray wall writer holds the wall lock', () => {
       // which is itself in this list and takes the lock again (re-entrant within a
       // transaction) before its first write. The resolver still locks, so a reader
       // of either function sees the rule stated where the transaction opens.
-      expect(['assertSprayHoldsAreAlive', 'publishSprayWallVersion']).toContain(name);
+      //
+      // `resetSprayWall` delegates its insert to `insertSprayWallRows` and holds
+      // the SOURCE wall's lock so the source cannot change under the clone.
+      expect(['assertSprayHoldsAreAlive', 'publishSprayWallVersion', 'resetSprayWall']).toContain(name);
       return;
     }
     expect(lockAt, `${name} writes at offset ${writeAt} before locking at ${lockAt}`).toBeLessThan(writeAt);
@@ -471,5 +493,73 @@ describe('the climb.created decision is re-read under the wall lock', () => {
     const { sprayWallMayAnnounceUnderLock } = await import('../graphql/resolvers/climbs/spray-authoring');
     await expect(sprayWallMayAnnounceUnderLock(executor, 42)).resolves.toBe(false);
     expect(calls).toEqual(['lock', 'read']);
+  });
+});
+
+/**
+ * An archived wall is read-only, and the refusal is decided under the wall lock.
+ *
+ * The archive is stamped by the replacing wall's first publish, under the archived
+ * wall's lock. A writer that checked `archived_at` before taking the lock could
+ * read "live", lose the race to that publish, and then write onto an archived wall.
+ */
+describe('an archived wall refuses writes, decided under the wall lock', () => {
+  const MUTATIONS_SOURCE = readFileSync(
+    fileURLToPath(new URL('../graphql/resolvers/climbs/mutations.ts', import.meta.url)),
+    'utf8',
+  );
+  const TICK_MUTATIONS_SOURCE = readFileSync(
+    fileURLToPath(new URL('../graphql/resolvers/ticks/mutations.ts', import.meta.url)),
+    'utf8',
+  );
+
+  it.each([
+    'createSprayWallVersion',
+    'upsertSprayWallHolds',
+    'removeSprayWallHolds',
+    'commitSprayWallVersion',
+    'publishSprayWallVersion',
+  ])('%s checks right after the lock, before any write', (name) => {
+    const body = functionBody(SPRAY_WALLS_SOURCE, name);
+    const lockAt = body.indexOf('lockWallForWrite(');
+    const guardAt = body.indexOf('assertSprayWallNotArchivedUnderLock(');
+    expect(guardAt, `${name} never refuses an archived wall`).toBeGreaterThan(lockAt);
+    const writeAt = firstWriteOffset(body);
+    if (writeAt !== -1) expect(guardAt).toBeLessThan(writeAt);
+  });
+
+  it.each(['saveClimb', 'updateClimb'])('%s checks under the lock, before the holds', (resolver) => {
+    const body = functionBody(MUTATIONS_SOURCE, resolver);
+    const guardAt = body.indexOf('assertSprayWallAcceptsClimbsUnderLock(');
+    expect(guardAt, `${resolver} never refuses an archived wall under the lock`).toBeGreaterThanOrEqual(0);
+    expect(guardAt).toBeLessThan(body.indexOf('assertSprayHoldsAreAlive('));
+    expect(guardAt).toBeGreaterThan(body.indexOf('db.transaction('));
+  });
+
+  it.each(['discardSprayWallVersion', 'deleteSprayWall', 'updateSprayWall', 'setSprayWallRenderSettings'])(
+    '%s stays allowed on an archived wall',
+    (name) => {
+      expect(functionBody(SPRAY_WALLS_SOURCE, name)).not.toMatch(/archived/i);
+    },
+  );
+
+  it('never refuses a tick or a draft delete, which the offline drainer would dead-letter', () => {
+    expect(functionBody(TICK_MUTATIONS_SOURCE, 'saveTick')).not.toMatch(/archived/i);
+    expect(functionBody(MUTATIONS_SOURCE, 'deleteDraftClimb')).not.toMatch(/archived/i);
+  });
+
+  it('takes the clone lock before the source lock, and account deletion walks walls the same way', () => {
+    // publishDraftUnderLock holds the clone (always the higher id) and then takes
+    // the source. deleteAccountSprayWalls holds every lock it takes until commit,
+    // so it has to walk highest id first or the two can deadlock.
+    const publishBody = functionBody(SPRAY_WALLS_SOURCE, 'publishDraftUnderLock');
+    expect(publishBody.indexOf('lockWallForWrite(tx, wall.id)')).toBeLessThan(
+      publishBody.indexOf('archiveResetSourceUnderLock('),
+    );
+    const deleteAccountSource = readFileSync(
+      fileURLToPath(new URL('../graphql/resolvers/users/delete-account-spray-walls.ts', import.meta.url)),
+      'utf8',
+    );
+    expect(deleteAccountSource).toContain('.orderBy(desc(dbSchema.sprayWalls.id))');
   });
 });
