@@ -226,7 +226,7 @@
       "publishDuplicateUnnamed": "This hold pattern matches an existing climb. Toggle Draft to save it without publishing, or change a hold.",
       "viewMatchingClimb": "View matching climb",
       "saveFailedFallback": "Failed to save climb. Please try again.",
-      "editConflict": "Someone else just changed this climb. Reopen it to see the latest.",
+      "editConflict": "This climb changed somewhere else. Reopen it to see the latest.",
       "editNotAllowed": "You can't edit this climb. Only its setter can.",
       "editWindowExpired": "This climb was published more than 24 hours ago, so it can't be edited now.",
       "editNotEditable": "This climb can't be edited any more.",

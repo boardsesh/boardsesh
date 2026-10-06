@@ -220,7 +220,7 @@
       "publishDuplicateUnnamed": "Este patrón de presas coincide con un bloque existente. Activa Borrador para guardarlo sin publicar, o cambia una presa.",
       "viewMatchingClimb": "Ver bloque coincidente",
       "saveFailedFallback": "No se pudo guardar el bloque. Inténtalo de nuevo.",
-      "editConflict": "Alguien acaba de cambiar este bloque. Vuelve a abrirlo para ver la última versión.",
+      "editConflict": "Este bloque ha cambiado en otro sitio. Vuelve a abrirlo para ver la última versión.",
       "editNotAllowed": "No puedes editar este bloque. Solo puede hacerlo quien lo montó.",
       "editWindowExpired": "Este bloque se publicó hace más de 24 horas y ya no se puede editar.",
       "editNotEditable": "Este bloque ya no se puede editar.",

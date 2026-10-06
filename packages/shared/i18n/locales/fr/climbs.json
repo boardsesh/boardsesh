@@ -226,7 +226,7 @@
       "publishDuplicateUnnamed": "Cette configuration de prises correspond à un bloc existant. Activez Brouillon pour l'enregistrer sans le publier, ou changez une prise.",
       "viewMatchingClimb": "Voir le bloc correspondant",
       "saveFailedFallback": "Échec de l'enregistrement du bloc. Veuillez réessayer.",
-      "editConflict": "Quelqu’un vient de modifier ce bloc. Rouvre-le pour voir la dernière version.",
+      "editConflict": "Ce bloc a changé ailleurs. Rouvre-le pour voir la dernière version.",
       "editNotAllowed": "Tu ne peux pas modifier ce bloc. Seul son ouvreur ou son ouvreuse le peut.",
       "editWindowExpired": "Ce bloc a été publié il y a plus de 24 heures, il ne peut plus être modifié.",
       "editNotEditable": "Ce bloc ne peut plus être modifié.",

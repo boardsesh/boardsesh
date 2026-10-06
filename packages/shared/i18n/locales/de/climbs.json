@@ -226,7 +226,7 @@
       "publishDuplicateUnnamed": "Dieses Griff-Muster passt zu einem bestehenden Boulder. Schalte auf Entwurf, um ihn ohne Veröffentlichung zu speichern, oder ändere einen Griff.",
       "viewMatchingClimb": "Passenden Boulder ansehen",
       "saveFailedFallback": "Boulder konnte nicht gespeichert werden. Versuch es nochmal.",
-      "editConflict": "Jemand hat diesen Boulder gerade geändert. Öffne ihn neu, um den aktuellen Stand zu sehen.",
+      "editConflict": "Dieser Boulder wurde woanders geändert. Öffne ihn neu, um den aktuellen Stand zu sehen.",
       "editNotAllowed": "Du kannst diesen Boulder nicht bearbeiten. Das kann nur, wer ihn geschraubt hat.",
       "editWindowExpired": "Dieser Boulder wurde vor mehr als 24 Stunden veröffentlicht und lässt sich nicht mehr bearbeiten.",
       "editNotEditable": "Dieser Boulder lässt sich nicht mehr bearbeiten.",
