@@ -233,10 +233,16 @@ describe('writeTickLocal', () => {
     expect(notifyOutboxChangedMock).toHaveBeenCalledTimes(1);
   });
 
-  // #6023: the local row and the queued replay both name the version of the
-  // climb the climber was looking at.
-  it('writes the climb version into the local row and the queued payload', async () => {
-    await writeTickLocal(db, makeTickInput({ climbRevision: 3 }), 'tick-rev-1');
+  // The local row is stamped with the phone's copy of the climb's version, so
+  // the local sent marks (which compare it with the climb's holds version)
+  // count the send before the pull. The queued payload never carries a version:
+  // the server picks it.
+  it("stamps the local row with the phone's climb version and queues no version", async () => {
+    await db.runAsync(
+      `INSERT INTO board_climbs (uuid, board_type, layout_id, name, frames, is_listed, is_draft, revision_number, holds_revision_number)
+       VALUES ('climb-1', 'kilter', 1, 'Edited', 'p1r12', 1, 0, 3, 2)`,
+    );
+    await writeTickLocal(db, makeTickInput(), 'tick-rev-1');
 
     const tick = await db.getFirstAsync<Row>('SELECT climb_revision FROM boardsesh_ticks WHERE uuid = ?', [
       'tick-rev-1',
@@ -246,21 +252,29 @@ describe('writeTickLocal', () => {
     const queued = await db.getFirstAsync<Row>('SELECT payload FROM pending_mutations WHERE idempotency_key = ?', [
       'tick-rev-1',
     ]);
-    expect((JSON.parse(queued?.payload as string) as Record<string, unknown>).climbRevision).toBe(3);
+    expect('climbRevision' in (JSON.parse(queued?.payload as string) as Record<string, unknown>)).toBe(false);
   });
 
-  it('leaves the local version NULL, and the payload without the key, when the app does not know it', async () => {
+  it("does not take another board's climb version", async () => {
+    await db.runAsync(
+      `INSERT INTO board_climbs (uuid, board_type, layout_id, name, frames, is_listed, is_draft, revision_number, holds_revision_number)
+       VALUES ('climb-1', 'tension', 1, 'Other board', 'p1r12', 1, 0, 5, 5)`,
+    );
+    await writeTickLocal(db, makeTickInput(), 'tick-rev-other');
+
+    const tick = await db.getFirstAsync<Row>('SELECT climb_revision FROM boardsesh_ticks WHERE uuid = ?', [
+      'tick-rev-other',
+    ]);
+    expect(tick?.climb_revision).toBeNull();
+  });
+
+  it('leaves the local version NULL when the phone holds no copy of the climb', async () => {
     await writeTickLocal(db, makeTickInput(), 'tick-rev-2');
 
     const tick = await db.getFirstAsync<Row>('SELECT climb_revision FROM boardsesh_ticks WHERE uuid = ?', [
       'tick-rev-2',
     ]);
     expect(tick?.climb_revision).toBeNull();
-
-    const queued = await db.getFirstAsync<Row>('SELECT payload FROM pending_mutations WHERE idempotency_key = ?', [
-      'tick-rev-2',
-    ]);
-    expect('climbRevision' in (JSON.parse(queued?.payload as string) as Record<string, unknown>)).toBe(false);
   });
 
   it('persists a null session_id when the input omits sessionId', async () => {
