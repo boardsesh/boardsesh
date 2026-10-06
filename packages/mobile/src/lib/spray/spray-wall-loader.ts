@@ -506,6 +506,7 @@ export function primeSprayWallLook(
 
 /** Test seam: forget every look this session has read. */
 export function clearSprayWallLooks(): void {
+  clearSprayArtFollowUps();
   lookEpoch += 1;
   looks.clear();
   looksInFlight.clear();
@@ -598,6 +599,40 @@ export function artForRenderData(
   return { variant, versionId, width, height, scale, url: file.url, expiresAt: file.expiresAt, holds };
 }
 
+/** How long after a not-yet-ready art read the wall is asked about again. */
+export const ART_FOLLOW_UP_MS = 20_000;
+/** Follow-ups per (wall, version): about two minutes of asking, then the revalidation window takes over. */
+export const ART_FOLLOW_UP_MAX = 6;
+
+const artFollowUps = new Map<string, { tries: number; timer: ReturnType<typeof setTimeout> | null }>();
+
+/**
+ * The art for a wall's PUBLISHED version is still being made (PENDING, or NONE
+ * while the read that just happened queues it). Ask again shortly, without any
+ * screen having to be open: a wall published from the wizard, a hold edit or a
+ * reset swaps onto its look about a minute later, not after the ten-minute
+ * revalidation window. Bounded per version, so a queue that never runs costs
+ * `ART_FOLLOW_UP_MAX` requests and no more.
+ */
+function scheduleArtFollowUp(layoutId: number, versionId: number): void {
+  const key = `${layoutId}:${versionId}`;
+  const entry = artFollowUps.get(key) ?? { tries: 0, timer: null };
+  if (entry.timer || entry.tries >= ART_FOLLOW_UP_MAX) return;
+  entry.tries += 1;
+  entry.timer = setTimeout(() => {
+    entry.timer = null;
+    if (getSprayWall(layoutId)?.versionId !== versionId) return;
+    requestMissingSprayArt(layoutId);
+  }, ART_FOLLOW_UP_MS);
+  artFollowUps.set(key, entry);
+}
+
+/** Test seam: cancel and forget every scheduled art follow-up. */
+export function clearSprayArtFollowUps(): void {
+  for (const entry of artFollowUps.values()) if (entry.timer) clearTimeout(entry.timer);
+  artFollowUps.clear();
+}
+
 /**
  * The generated look to register a wall with, on disk, or `null` for the photo.
  *
@@ -626,7 +661,12 @@ async function loadArtForRegistration(
     return held && held.versionId === versionId && held.variant === variant ? held : null;
   }
   const candidate = artForRenderData(renderData, art, variant, versionId);
-  if (!candidate) return null;
+  if (!candidate) {
+    if (art && art.versionNumber === renderData.versionNumber && (art.status === 'PENDING' || art.status === 'NONE')) {
+      scheduleArtFollowUp(layoutId, versionId);
+    }
+    return null;
+  }
   const path = await ensureSprayPhotoCached(
     { layoutId, versionId, variant },
     { url: candidate.url, expiresAt: candidate.expiresAt },

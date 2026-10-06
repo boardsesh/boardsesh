@@ -58,7 +58,11 @@ export function useSprayWallBackgroundEditor({
 
   const [picked, setPicked] = useState<SprayWallBackground | null>(null);
   const value = picked ?? storedBackground;
-  const changed = picked !== null && picked !== storedBackground;
+  // A generated look whose last render failed is re-sent on Save even when it
+  // is already the stored choice: choosing it again is what re-queues the job,
+  // and it is what the picker's "Save it again to retry" asks for.
+  const retryFailedArt = gate.kind === 'open' && gate.status === 'failed' && value !== 'photo';
+  const changed = (picked !== null && picked !== storedBackground) || retryFailedArt;
 
   const lookStatus = lookQuery.status;
   const refetchLook = lookQuery.refetch;
@@ -67,8 +71,8 @@ export function useSprayWallBackgroundEditor({
 
   /** Store the picked background. Resolves an outcome, never rejects. */
   const save = useCallback(async (): Promise<SprayBackgroundSaveOutcome> => {
-    if (!changed || picked === null || lookStatus !== 'success') return 'unchanged';
-    if (!canPickBackground(gate, picked)) return 'refused';
+    if (!changed || lookStatus !== 'success') return 'unchanged';
+    if (!canPickBackground(gate, value)) return 'refused';
     // A wall stored without a look (its first save failed) takes the default
     // one: the server will not store a background on its own.
     const look =
@@ -79,7 +83,7 @@ export function useSprayWallBackgroundEditor({
     // leaving one: an omitted key keeps whatever is stored, and a backend older
     // than generated looks refuses the key outright, so a wall that never had a
     // background keeps sending the shape every backend accepts.
-    const renderSettings = { ...look, background: picked };
+    const renderSettings = { ...look, background: value };
     try {
       await setRenderSettingsAsync({ layoutId, uuid: wallUuid, renderSettings });
     } catch (error) {
@@ -91,7 +95,7 @@ export function useSprayWallBackgroundEditor({
     // it when the art lands (`useSprayWallArt`).
     requestMissingSprayArt(layoutId);
     return 'saved';
-  }, [changed, picked, lookStatus, gate, storedSettings, setRenderSettingsAsync, layoutId, wallUuid, refetchLook]);
+  }, [changed, value, lookStatus, gate, storedSettings, setRenderSettingsAsync, layoutId, wallUuid, refetchLook]);
 
   return { gate, art: artQuery.data, value, onChange: setPicked, changed, save };
 }

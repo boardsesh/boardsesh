@@ -26,6 +26,7 @@ vi.mock('../spray-photo-cache', () => ({ ensureSprayPhotoCached: downloads.ensur
 const registry = await import('../spray-wall-registry');
 const loader = await import('../spray-wall-loader');
 const { getBoardRenderData, clearBoardRenderDataCache } = await import('../../board-details');
+const { getRuntimeGeometry } = await import('@boardsesh/board-art-geometry');
 const keys = await import('../spray-photo-keys');
 const sprayOperations = await import('@boardsesh/graphql/operations/spray-walls');
 
@@ -36,15 +37,24 @@ const LOOK = { mode: 'aura' as const, boardsesh: DEFAULT_BOARDSESH_RENDER_SETTIN
 // down by half, so photo-mode holds land at twice their canonical coordinates.
 const HALVING = [0.5, 0, 0, 0, 0.5, 0, 0, 0, 1];
 
+// Overridable per case: the geometry case needs a stretch the halving map lacks.
+const wallShape = { homography: HALVING, photo: { width: 2000, height: 3000 }, outline: null as number[] | null };
+
 function renderData() {
   return {
     wall: { uuid: WALL_UUID, layoutId: LAYOUT_ID, board: { angle: 30 }, currentVersion: { id: '21', number: 3 } },
     versionNumber: 3,
     boardWidth: 1000,
     boardHeight: 1500,
-    homography: HALVING,
-    photo: { url: 'https://private.example/photo', thumbUrl: null, width: 2000, height: 3000, expiresAt: 'later' },
-    holds: [{ id: 7, cx: 100, cy: 200, r: 20, outline: null }],
+    homography: wallShape.homography,
+    photo: {
+      url: 'https://private.example/photo',
+      thumbUrl: null,
+      width: wallShape.photo.width,
+      height: wallShape.photo.height,
+      expiresAt: 'later',
+    },
+    holds: [{ id: 7, cx: 100, cy: 200, r: 20, outline: wallShape.outline }],
   };
 }
 
@@ -101,6 +111,10 @@ function drawn() {
 }
 
 beforeEach(() => {
+  vi.useRealTimers();
+  wallShape.homography = HALVING;
+  wallShape.photo = { width: 2000, height: 3000 };
+  wallShape.outline = null;
   offline.offline = false;
   registry.clearSprayWallRegistry();
   loader.clearSprayWallLooks();
@@ -271,5 +285,80 @@ describe('switching back to the photo', () => {
     });
     expect(registry.activeSprayArt(registry.getSprayWall(LAYOUT_ID))).toBeNull();
     expect(drawn()?.boardWidth).toBe(2000);
+  });
+});
+
+describe('the hold outlines move with the picture', () => {
+  it('registers canonical outlines while art is drawn, and photo ones once it is not', async () => {
+    // Twice as wide as tall: a photo-mapped outline is squashed, a canonical one is not.
+    wallShape.homography = [0.5, 0, 0, 0, 0.25, 0, 0, 0, 1];
+    wallShape.photo = { width: 2000, height: 6000 };
+    const ring = [1, 0, 0, 1, -1, 0, 0, -1];
+    wallShape.outline = ring;
+    answer({ background: 'wall-crop', art: artAnswer('READY') });
+    await loader.loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+    const key = registry.sprayGeometryKey(LAYOUT_ID);
+    expect(getRuntimeGeometry(key)?.outlines[7]).toEqual(ring);
+
+    loader.primeSprayWallLook(LAYOUT_ID, WALL_UUID, LOOK);
+    const photoOutline = getRuntimeGeometry(key)?.outlines[7];
+    expect(photoOutline).toBeDefined();
+    expect(photoOutline).not.toEqual(ring);
+
+    loader.primeSprayWallLook(LAYOUT_ID, WALL_UUID, { ...LOOK, background: 'wall-crop' });
+    expect(getRuntimeGeometry(key)?.outlines[7]).toEqual(ring);
+  });
+});
+
+describe('artForRenderData aspect check', () => {
+  const data = renderData() as unknown as Parameters<typeof loader.artForRenderData>[0];
+  it('accepts art rounded a few pixels off the frame', () => {
+    // 800 / 1205 is 0.4% off 1000 / 1500.
+    expect(loader.artForRenderData(data, artAnswer('READY', { height: 1205 }) as never, 'crop', 21)).not.toBeNull();
+  });
+  it('refuses art more than 1% off the frame', () => {
+    // 800 / 1230 is 2.4% off.
+    expect(loader.artForRenderData(data, artAnswer('READY', { height: 1230 }) as never, 'crop', 21)).toBeNull();
+  });
+});
+
+describe('art that is still being made', () => {
+  function installLoader() {
+    const client = fakeQueryClient();
+    registry.setSprayWallLoader((layoutId, options) => loader.loadSprayWall(client, layoutId, options));
+  }
+
+  it('swaps the wall onto its art once the job finishes, with no screen open', async () => {
+    vi.useFakeTimers();
+    installLoader();
+    let artStatus = 'PENDING';
+    answer({ background: 'wall-crop', art: () => ({ sprayWallArt: artAnswer(artStatus) }) });
+    await loader.loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+    expect(drawn()?.boardWidth).toBe(2000);
+
+    artStatus = 'READY';
+    await vi.advanceTimersByTimeAsync(loader.ART_FOLLOW_UP_MS);
+    await vi.waitFor(() => expect(drawn()?.boardWidth).toBe(800));
+  });
+
+  it('asks a bounded number of times for art that never arrives', async () => {
+    vi.useFakeTimers();
+    installLoader();
+    answer({ background: 'wall-crop', art: () => ({ sprayWallArt: artAnswer('NONE') }) });
+    await loader.loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+    for (let step = 0; step < loader.ART_FOLLOW_UP_MAX + 3; step++) {
+      await vi.advanceTimersByTimeAsync(loader.ART_FOLLOW_UP_MS);
+    }
+    expect(artRequests()).toBe(1 + loader.ART_FOLLOW_UP_MAX);
+    expect(drawn()?.boardWidth).toBe(2000);
+  });
+
+  it('does not follow up on a failed or refused job', async () => {
+    vi.useFakeTimers();
+    installLoader();
+    answer({ background: 'wall-crop', art: artAnswer('FAILED') });
+    await loader.loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+    await vi.advanceTimersByTimeAsync(loader.ART_FOLLOW_UP_MS * 3);
+    expect(artRequests()).toBe(1);
   });
 });

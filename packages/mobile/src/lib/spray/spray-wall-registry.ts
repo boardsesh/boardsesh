@@ -809,7 +809,19 @@ export function sprayCacheToken(boardName: string, layoutId: number): string {
   // byte-identical to what it was before art existed, so no overlay on disk moves.
   const art = activeSprayArt(walls.get(layoutId));
   const background = art ? `-bg${art.variant}` : '';
-  return `${sprayVersionToken(boardName, layoutId)}-pr${sprayMemoryGeneration(layoutId)}${background}`;
+  return `${sprayIdentityToken(boardName, layoutId)}${background}`;
+}
+
+/**
+ * `sprayCacheToken` without the picture: the version and the privacy
+ * generation only. For keys that name what a climber is EDITING rather than
+ * what is drawn — the create screen's React key, the web draft slot — which
+ * must not move when a generated look lands mid-paint (that would remount the
+ * editor and lose its undo history). `''` for every catalogue board.
+ */
+export function sprayIdentityToken(boardName: string, layoutId: number): string {
+  if (boardName !== SPRAY_BOARD_NAME) return '';
+  return `${sprayVersionToken(boardName, layoutId)}-pr${sprayMemoryGeneration(layoutId)}`;
 }
 
 /**

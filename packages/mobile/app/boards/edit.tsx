@@ -293,10 +293,18 @@ function EditBoardForm({ board }: { board: UserBoard }) {
         }
 
         // The background is part of the wall's look, its own mutation again.
-        if (isSprayWall && backgroundChanged && !visibilityError) {
+        // Saved whatever happened to visibility above, and its refusal is said
+        // beside that one rather than swallowed by it.
+        if (isSprayWall && backgroundChanged) {
           const outcome = await saveBackground();
-          if (outcome === 'refused') visibilityError = t('sprayBackground.notAvailable');
-          else if (outcome === 'failed') visibilityError = t('sprayBackground.saveFailed');
+          const backgroundError =
+            outcome === 'refused'
+              ? t('sprayBackground.notAvailable')
+              : outcome === 'failed'
+                ? t('sprayBackground.saveFailed')
+                : null;
+          if (backgroundError)
+            visibilityError = visibilityError ? `${visibilityError} ${backgroundError}` : backgroundError;
         }
 
         // `UpdateBoardInput` carries no gym, so a changed gym is its own mutation.

@@ -91,4 +91,15 @@ describe('useSprayWallBackgroundEditor', () => {
     act(() => result.current.onChange('wall-crop'));
     await act(async () => expect(await result.current.save()).toBe('refused'));
   });
+
+  it('re-sends a stored look whose render failed, so Save retries it', async () => {
+    controls.stored = { ...LOOK, background: 'wall-crop' };
+    controls.art = { status: 'success', data: { ...GOOD, status: 'FAILED' } };
+    const { result } = await mounted();
+    await waitFor(() => expect(result.current.changed).toBe(true));
+    await act(async () => expect(await result.current.save()).toBe('saved'));
+    expect(controls.save).toHaveBeenCalledWith(
+      expect.objectContaining({ renderSettings: { ...LOOK, background: 'wall-crop' } }),
+    );
+  });
 });

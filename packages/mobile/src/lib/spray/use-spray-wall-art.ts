@@ -24,6 +24,21 @@ export const SPRAY_ART_MAX_POLLS = 30;
 type SprayWallArtResponse = { sprayWallArt: SprayWallArt | null };
 
 /**
+ * The picker's poll: every `SPRAY_ART_PENDING_POLL_MS` while a LIVE wall's art
+ * is NONE or PENDING, never for a draft (`live` false, art only comes at
+ * publish), and never past `SPRAY_ART_MAX_POLLS` reads — a backend whose art
+ * queue is off leaves a wall at NONE for good.
+ */
+export function sprayArtRefetchInterval(
+  status: SprayWallArt['status'] | undefined,
+  readCount: number,
+  live: boolean,
+): number | false {
+  if (!live || readCount > SPRAY_ART_MAX_POLLS) return false;
+  return status === 'PENDING' || status === 'NONE' ? SPRAY_ART_PENDING_POLL_MS : false;
+}
+
+/**
  * `version` null reads the published version. `layoutId`, when given, is the
  * live wall: its art is polled while NONE or PENDING (reading it queues a job
  * for an old recipe), and the wall is swapped onto its new look the moment the
@@ -39,13 +54,12 @@ export function useSprayWallArt(wallUuid: string | null, version: number | null,
     // A backend without the query answers with a validation error. Asking again
     // will not change that, and the picker simply stays hidden.
     retry: false,
-    refetchInterval: (current) => {
-      // A backend whose art queue is off leaves a wall at NONE for good; stop
-      // asking after a few minutes rather than for as long as the screen is up.
-      if (layoutId == null || current.state.dataUpdateCount > SPRAY_ART_MAX_POLLS) return false;
-      const status = current.state.data?.sprayWallArt?.status;
-      return status === 'PENDING' || status === 'NONE' ? SPRAY_ART_PENDING_POLL_MS : false;
-    },
+    refetchInterval: (current) =>
+      sprayArtRefetchInterval(
+        current.state.data?.sprayWallArt?.status,
+        current.state.dataUpdateCount,
+        layoutId != null,
+      ),
     refetchOnWindowFocus: true,
   });
 
