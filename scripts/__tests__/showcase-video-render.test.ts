@@ -104,12 +104,9 @@ import type { ShowcaseTakeId } from '../lib/showcase-video/contract';
 
 /**
  * The marks of the recording the edit was tuned on (work/marks/*.json), seconds.
- * `spray` has no recording yet: its marks and length are what its flow should
- * give (the retired light take's rhythm, less the bulb tap). Replace them with
- * the real ones after the first spray recording.
  */
 const RECORDED_MARKS: Partial<Record<ShowcaseTakeId, Record<string, number>>> = {
-  spray: { 'next-1': 2.7, 'next-2': 5.6 },
+  spray: { 'next-1': 3.033, 'next-2': 5.903 },
   wall: { 'sheet-open': 5.438, 'history-shown': 10.242 },
   crew: {
     'invite-closed': 4.591,
@@ -123,7 +120,7 @@ const RECORDED_MARKS: Partial<Record<ShowcaseTakeId, Record<string, number>>> = 
   log: { scrolled: 5.005, 'filter-kilter': 10.252, 'filter-tension': 17.871 },
 };
 const RECORDED_FRAMES: Partial<Record<ShowcaseTakeId, number>> = {
-  spray: 330,
+  spray: 378,
   wall: 504,
   crew: 766,
   workouts: 721,

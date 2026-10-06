@@ -2492,11 +2492,7 @@ export const SHOWCASE_DRAWN_PLACEHOLDER_MARKER = 'DRAWN-PLACEHOLDER';
 export const SHOWCASE_PLACEHOLDER_TAKES: Record<ShowcaseTakeId, PlaceholderTake> = {
   'boards-kilter': { source: { kind: 'still', file: 'kilter.webp' }, anchors: {} },
   'boards-tension': { source: { kind: 'still', file: 'tension.webp' }, anchors: {} },
-  // PROVISIONAL: no committed spray-wall screenshot yet, so both spray takes
-  // borrow the MoonBoard store still (a board on a photo, the nearest thing to
-  // a spray wall the store set has). Swap in a real spray frame once there is
-  // one; `board-surface` is measured on this still.
-  'boards-spray': { source: { kind: 'still', file: 'moonboard.webp' }, anchors: {} },
+  'boards-spray': { source: { kind: 'still', file: 'spray-wall.webp' }, anchors: {} },
   'boards-moonboard': { source: { kind: 'still', file: 'moonboard.webp' }, anchors: {} },
   'boards-woods': { source: boardRender('woods', 1, 2, [1]), anchors: {} },
   // Decoy's full-size layout draws only with its whole hold-set list (2–20).
@@ -2512,10 +2508,9 @@ export const SHOWCASE_PLACEHOLDER_TAKES: Record<ShowcaseTakeId, PlaceholderTake>
   'boards-touchstone': { source: boardRender('touchstone', 1, 1, [1]), anchors: {} },
   'boards-grasshopper': { source: boardRender('grasshopper', 1, 4, [1, 2]), anchors: {} },
   'boards-soill': { source: boardRender('soill', 1, 1, [1]), anchors: {} },
-  // PROVISIONAL, as `boards-spray` above.
   spray: {
-    source: { kind: 'still', file: 'moonboard.webp' },
-    anchors: { 'board-surface': { x: 21, y: 206, width: 398, height: 540 } },
+    source: { kind: 'still', file: 'spray-wall.webp' },
+    anchors: { 'board-surface': { x: 16, y: 272, width: 408, height: 404 } },
   },
   wall: {
     source: { kind: 'still', file: 'wall-status.webp' },

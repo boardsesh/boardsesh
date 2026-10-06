@@ -342,7 +342,7 @@ change the hero.
 | `homepage` | motion | 1080x1920 → 720x1280 lite | all eight | 54.8 s | yes | none | `packages/web/public/videos/home/showcase-9x16-lite.{webm,mp4}`, `public/images/home/showcase-hero-9x16.webp` |
 | `social` | motion | 1920x1080 and 1080x1920 | all eight | 54.8 s | yes | none | `out/social/brag.mp4`, `brag-9x16.mp4`, `brag*.jpg`, `share-copy.txt` |
 | `reel` | motion, safe-area stage | 1080x1920 | boards, spray, crew, island, outro | 29.9 s | no | silent stereo AAC | `out/reel/reel-9x16.mp4`, `.jpg` |
-| `app-store` | full-bleed | 886x1920 | five clips: spray, wall, crew, island, log | 28.5 s | no | silent stereo AAC, 256 kbit/s | `out/app-store/iphone-6.9.mp4`, `iphone-6.5.mp4` (same file), `iphone-poster.jpg` |
+| `app-store` | full-bleed | 886x1920 | five clips: spray, wall, crew, island, log | 28 s | no | silent stereo AAC, 256 kbit/s | `out/app-store/iphone-6.9.mp4`, `iphone-6.5.mp4` (same file), `iphone-poster.jpg` |
 | `play-promo` | motion | 1920x1080 | boards, spray, crew, island, log, outro | 38.1 s | no | silent stereo AAC | `out/play/play-16x9.mp4`, `.jpg` |
 
 `out/` is `.boardsesh/showcase-video/out/` (gitignored). Only the `homepage`
@@ -385,7 +385,7 @@ renderer probes the encode and fails when it misses any of them:
 | Spec | Apple | What we render |
 | --- | --- | --- |
 | iPhone 6.9" and 6.5" portrait (also 6.7", 6.3", 6.1") | 886 x 1920 | 886 x 1920, one file copied to both slots |
-| Length | 15–30 s | 28.5 s |
+| Length | 15–30 s | 28 s |
 | Frame rate | 30 fps max | 30 fps, progressive |
 | Video | H.264 up to High Profile Level 4.0, 10–12 Mbit/s target (or ProRes 422 HQ) | H.264 High 4.0, CBR 11 Mbit/s, `.mp4` |
 | Audio | stereo; H.264 files 256 kbit/s AAC, 44.1 or 48 kHz; all tracks enabled | silent stereo AAC 256 kbit/s, 48 kHz |

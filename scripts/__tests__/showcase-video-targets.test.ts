@@ -235,7 +235,7 @@ describe('durations', () => {
     expect(targetSeconds(SHOWCASE_TARGETS.reel)).toBeCloseTo(29.9);
     expect(targetSeconds(SHOWCASE_TARGETS['play-promo'])).toBeCloseTo(38.1);
     const store = targetSeconds(SHOWCASE_TARGETS['app-store']);
-    expect(store).toBeCloseTo(28.5);
+    expect(store).toBeCloseTo(28);
     expect(store).toBeGreaterThanOrEqual(APPLE_APP_PREVIEW_SPEC.minSeconds);
     expect(store).toBeLessThanOrEqual(APPLE_APP_PREVIEW_SPEC.maxSeconds);
   });
@@ -261,7 +261,7 @@ describe('durations', () => {
   it('opens the App Preview on the spray wall, then wall, crew, island and log', () => {
     const { clips } = SHOWCASE_TARGETS['app-store'];
     expect(clips.map((clip) => [clip.take, clip.frames])).toEqual([
-      ['spray', 150],
+      ['spray', 135],
       ['wall', 165],
       ['crew', 225],
       ['lock-screen', 165],
@@ -271,8 +271,8 @@ describe('durations', () => {
       take: 'spray',
       caption: 'spray',
       captionTop: 14,
-      segments: [{ mark: 'next-1', from: -1.6 }],
-      frames: 150,
+      segments: [{ mark: 'next-1', from: -2 }],
+      frames: 135,
     });
     expect(copy.appStore.captions.spray).toBe('Your spray wall, too');
     expect(copy.appStore.captions).not.toHaveProperty('light');

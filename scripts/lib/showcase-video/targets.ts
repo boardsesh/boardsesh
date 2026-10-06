@@ -334,7 +334,7 @@ export const SHOWCASE_TARGETS: Record<ShowcaseTargetName, ShowcaseTarget> = {
     // over the empty wallpaper.
     clips: [
       // The first climb on the wall's photo, then the swipe to the next one.
-      { take: 'spray', caption: 'spray', captionTop: 14, segments: [{ mark: 'next-1', from: -1.6 }], frames: 150 },
+      { take: 'spray', caption: 'spray', captionTop: 14, segments: [{ mark: 'next-1', from: -2 }], frames: 135 },
       {
         take: 'wall',
         caption: 'wall',
