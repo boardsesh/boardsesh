@@ -65,8 +65,9 @@ import { AngleBoardDiagram } from '../play-drawer/AngleBoardDiagram';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
-import { useConnectivity } from '../../lib/connectivity/use-connectivity';
-import { sprayUploadNotice } from './spray-upload-notice';
+import { useConnectivityField } from '../../lib/connectivity/use-connectivity';
+import { getConnectivitySnapshot, type ConnectivitySnapshot } from '../../lib/connectivity/connectivity-store';
+import { classifySprayUploadFailure, sprayUploadNotice, type SprayUploadNotice } from './spray-upload-notice';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
@@ -126,6 +127,11 @@ type SprayWallWizardScreenProps = {
   returnTo: BoardReturnTo;
 };
 
+/** Hoisted for `useConnectivityField`: a stable selector keeps one subscription. */
+function selectConnectivityReason(snapshot: ConnectivitySnapshot): ConnectivitySnapshot['reason'] {
+  return snapshot.reason;
+}
+
 export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) {
   const { t, i18n } = useTranslation('boards');
   const { systemColors } = useTheme();
@@ -148,6 +154,15 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
    * `extensions.code` — never on that sentence — is what lets the app say the
    * rule and the number instead of relaying a string nobody translated.
    */
+  /** The sentence for a network-class upload failure; literal keys for the i18n linter. */
+  const uploadNoticeMessage = useCallback(
+    (notice: SprayUploadNotice): string => {
+      if (notice === 'offlineMode') return t('sprayWizard.upload.offlineMode');
+      if (notice === 'noSignal') return t('sprayWizard.upload.noSignal');
+      return t('sprayWizard.upload.serverUnreachable');
+    },
+    [t],
+  );
   const capOrServerMessage = useCallback(
     (error: unknown, fallback: string): string => {
       const cap = sprayCapFromErrorCode(extractGraphqlCode(error));
@@ -163,9 +178,10 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
 
   const builder = useSprayWallBuilder();
   const [state, dispatch] = useReducer(addWallReducer, undefined, initialAddWallState);
-  // Why the network is out, if it is, so a failed upload can say which fix
-  // applies instead of the generic error (#5960).
-  const uploadNotice = sprayUploadNotice(useConnectivity().reason);
+  // Offline mode, said on the photo step before an upload tries and fails
+  // (#5960). Only `reason` is subscribed, not the whole connectivity snapshot.
+  const connectivityReason = useConnectivityField(selectConnectivityReason);
+  const offlineModeOn = sprayUploadNotice(connectivityReason) === 'offlineMode';
   const [pickerBusy, setPickerBusy] = useState(false);
   // Hosted here rather than inside `BoardIdentityFields` so the sheet is a
   // SIBLING of the ScrollView, exactly as it is in `BoardForm` — a sheet mounted
@@ -471,7 +487,15 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
           attempt,
         }),
       );
-      dispatch({ type: 'UPLOAD_FAILED', message: capOrServerMessage(error, t('sprayWizard.upload.failed')) });
+      // Classified now, at failure time, and stored with the message: a server
+      // refusal (the wall cap) keeps its own words however connectivity moves
+      // afterwards, and only a request that never got an answer is blamed on
+      // the network (#5960).
+      const notice = classifySprayUploadFailure(error, getConnectivitySnapshot().reason);
+      dispatch({
+        type: 'UPLOAD_FAILED',
+        message: notice ? uploadNoticeMessage(notice) : capOrServerMessage(error, t('sprayWizard.upload.failed')),
+      });
     }
   }, [
     state.photo,
@@ -484,6 +508,8 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     createWallAsync,
     createVersionAsync,
     runDetection,
+    capOrServerMessage,
+    uploadNoticeMessage,
     t,
   ]);
 
@@ -906,7 +932,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
             </Pressable>
             {/* Said before the upload, not after it fails: Offline mode is a
                 switch the climber can turn off right now. */}
-            {uploadNotice === 'offlineMode' ? (
+            {offlineModeOn ? (
               <Text variant="footnote" color={iosSystemColors.systemOrange} accessibilityLiveRegion="polite">
                 {t('sprayWizard.upload.offlineMode')}
               </Text>
@@ -951,13 +977,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
             <Text variant="title3">{t('sprayWizard.upload.title')}</Text>
             {state.upload.error ? (
               <Text variant="subheadline" color={iosSystemColors.systemRed} accessibilityLiveRegion="polite">
-                {uploadNotice === 'offlineMode'
-                  ? t('sprayWizard.upload.offlineMode')
-                  : uploadNotice === 'noSignal'
-                    ? t('sprayWizard.upload.noSignal')
-                    : uploadNotice === 'serverUnreachable'
-                      ? t('sprayWizard.upload.serverUnreachable')
-                      : state.upload.error}
+                {state.upload.error}
               </Text>
             ) : (
               <ProgressBlock

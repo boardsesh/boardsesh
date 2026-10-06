@@ -29,6 +29,7 @@ const updateSprayWallMock = vi.hoisted(() => vi.fn());
 // What each test varies: the gym on file, the gym the picker is showing, and
 // whether the board being edited is also the active one.
 const state = vi.hoisted(() => ({
+  ownerDisplayName: undefined as string | undefined,
   boardGymUuid: null as string | null,
   selectedGym: null as { uuid: string; name: string } | null,
   activeBoardUuid: null as string | null,
@@ -95,6 +96,7 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
       gymUuid: state.boardGymUuid,
       isPublic: state.boardIsPublic,
       isUnlisted: state.boardIsUnlisted,
+      ownerDisplayName: state.ownerDisplayName,
     },
     isLoading: false,
   }),
@@ -139,7 +141,7 @@ vi.mock('../../../src/components/board-discovery/use-board-builder', () => ({
 }));
 
 vi.mock('../../../src/components/board-discovery/board-builder-labels', () => ({
-  formatDefaultBoardName: () => 'Default name',
+  formatDefaultBoardName: ({ userName }: { userName?: string | null }) => `${userName ?? 'nobody'}'s board`,
 }));
 
 vi.mock('../../../src/components/board-discovery/BoardForm', () => ({
@@ -211,6 +213,7 @@ beforeEach(() => {
   state.builderIsPublic = false;
   state.builderIsUnlisted = false;
   state.wallPolicy = 'SETTER';
+  state.ownerDisplayName = undefined;
   buildUpdateInputMock.mockReturnValue({ boardUuid: 'board-uuid', name: 'Klimmuur MoonBoard' });
   updateSprayWallMock.mockResolvedValue({ uuid: 'board-uuid', layoutId: 4242 });
   updateBoardMock.mockResolvedValue({ uuid: 'board-uuid', name: 'Klimmuur MoonBoard' } as unknown as UserBoard);
@@ -227,6 +230,31 @@ describe('EditBoard', () => {
       expect.objectContaining({ currentConfig: { layoutId: 3, sizeId: 1, setIds: '5,6,7' } }),
     );
     expect(updateBoardMock.mock.calls[0][0].allowDuplicateConfig).toBeUndefined();
+  });
+
+  // #5960 review: an admin clearing somebody's board name must not rename it
+  // after themselves. The signed-in profile here is "Marco".
+  it("falls back to the OWNER's name, not the editor's, for a cleared name", async () => {
+    state.ownerDisplayName = 'Test User';
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(buildUpdateInputMock).toHaveBeenCalledTimes(1));
+    expect(buildUpdateInputMock).toHaveBeenCalledWith(
+      'board-uuid',
+      expect.objectContaining({ fallbackName: "Test User's board" }),
+    );
+  });
+
+  it("uses the editor's name when the board carries no owner name", async () => {
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(buildUpdateInputMock).toHaveBeenCalledTimes(1));
+    expect(buildUpdateInputMock).toHaveBeenCalledWith(
+      'board-uuid',
+      expect.objectContaining({ fallbackName: "Marco's board" }),
+    );
   });
 
   it('asks instead of failing when the config collides with a sibling board', async () => {
