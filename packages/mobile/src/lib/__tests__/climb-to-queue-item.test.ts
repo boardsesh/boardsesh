@@ -107,32 +107,31 @@ describe('climbToQueueItem ownership / draft state (#3927)', () => {
     expect(kept).toEqual(sent);
   });
 
-  it('keeps the climb version numbers on the queued item and off the wire (#6023)', () => {
+  it('keeps the holds version on the queued item and off the wire (#6023)', () => {
     const climb = { ...makeClimb(), revisionNumber: 4, holdsRevisionNumber: 3 };
     const item = climbToQueueItem(climb);
 
-    expect(item.climb.revisionNumber).toBe(4);
     expect(item.climb.holdsRevisionNumber).toBe(3);
+    // The climb's own version has no reader on the phone, so the item drops it.
+    expect('revisionNumber' in item.climb).toBe(false);
 
-    // Re-deriving an item from a queued climb keeps them (the play-drawer open
+    // Re-deriving an item from a queued climb keeps it (the play-drawer open
     // and the climb-actions preview both rebuild an item this way).
     const requeued = climbToQueueItem(item.climb as unknown as Climb);
-    expect(requeued.climb.revisionNumber).toBe(4);
     expect(requeued.climb.holdsRevisionNumber).toBe(3);
 
     // An older backend rejects an input field it does not know, and that would
     // fail the whole queue mutation.
     const wireClimb = toQueueItemWireInput(item).climb;
-    for (const localOnlyField of QUEUE_LOCAL_ONLY_CLIMB_FIELDS) {
-      expect(localOnlyField in toClimbInput(climb)).toBe(false);
-      expect(localOnlyField in wireClimb).toBe(false);
+    for (const field of [...QUEUE_LOCAL_ONLY_CLIMB_FIELDS, 'revisionNumber']) {
+      expect(field in toClimbInput(climb)).toBe(false);
+      expect(field in wireClimb).toBe(false);
     }
   });
 
-  it('leaves the version numbers unknown on a climb that has none', () => {
+  it('leaves the holds version unknown on a climb that has none', () => {
     const item = climbToQueueItem(makeClimb());
 
-    expect(item.climb.revisionNumber).toBeUndefined();
     expect(item.climb.holdsRevisionNumber).toBeUndefined();
   });
 });

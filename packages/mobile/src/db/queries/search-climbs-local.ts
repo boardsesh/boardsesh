@@ -684,12 +684,10 @@ export type LocalClimbRow = {
    *  NULL on every catalogue-board climb and on rows pulled before the column
    *  existed; read as 0 — "no reset has taken anything off this climb". */
   missing_hold_count: number | null;
-  /** `board_climbs.revision_number` and `holds_revision_number` (migration
-   *  v11): the version the climb is on and the version at which its holds last
-   *  moved. NULL on a row pulled before the columns existed and not delivered
-   *  again since, which reads as unknown. Optional so a reader that does not
-   *  select them still type-checks. */
-  revision_number?: number | null;
+  /** `board_climbs.holds_revision_number` (migration v11): the version at
+   *  which the climb's holds last moved. NULL on a row pulled before the column
+   *  existed and not delivered again since, which reads as unknown. Optional so
+   *  a reader that does not select it still type-checks. */
   holds_revision_number?: number | null;
   characteristics: string | null;
   created_at: string | null;
@@ -793,7 +791,6 @@ export function mapRowToClimb(
     missingHoldCount: row.missing_hold_count ?? null,
     // Left NULL when the phone does not know. The sent glyph reads a NULL
     // holds version as 1, so every tick on the climb counts.
-    revisionNumber: row.revision_number ?? null,
     holdsRevisionNumber: row.holds_revision_number ?? null,
     is_no_match: resolveClimbNoMatch(boardType, characteristics, row.description),
     characteristics,
@@ -876,7 +873,7 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   const query = `
     SELECT
       c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.is_hidden,
-      c.missing_hold_count, c.revision_number, c.holds_revision_number, c.characteristics,
+      c.missing_hold_count, c.holds_revision_number, c.characteristics,
       c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
       ${eff('ascensionist_count')} AS ascensionist_count,
       ${eff('display_difficulty')} AS display_difficulty,

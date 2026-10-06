@@ -1696,7 +1696,6 @@ describe('searchClimbsLocal: ticks on the climb’s current holds (#6023)', () =
     const result = await searchClimbsLocal(db, makeInput());
     expect(find(result, 'pre-v11')?.userAscents).toBe(1);
     expect(find(result, 'pre-v11')?.userAttempts).toBe(1);
-    expect(find(result, 'pre-v11')?.revisionNumber).toBeNull();
     expect(find(result, 'pre-v11')?.holdsRevisionNumber).toBeNull();
     expect(uuids(await searchClimbsLocal(db, makeInput({ showOnlyCompleted: true })))).toEqual(['pre-v11']);
   });
@@ -1763,12 +1762,11 @@ describe('searchClimbsLocal: ticks on the climb’s current holds (#6023)', () =
     expect(find(result, 'graded-on-old-holds')?.userAscents).toBe(0);
   });
 
-  it('puts the climb’s version numbers on the row', async () => {
+  it('puts the climb’s holds version on the row', async () => {
     await insertClimb(db, { uuid: 'versioned' });
     await setClimbRevisions('versioned', 5, 3);
 
     const result = await searchClimbsLocal(db, makeInput());
-    expect(find(result, 'versioned')?.revisionNumber).toBe(5);
     expect(find(result, 'versioned')?.holdsRevisionNumber).toBe(3);
   });
 });

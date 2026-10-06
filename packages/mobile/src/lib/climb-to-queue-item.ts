@@ -159,14 +159,12 @@ export function climbToQueueItem(climb: Climb, options?: { suggested?: boolean; 
       // this number — a queued row that dropped it would be the one surface that
       // quietly pretended the climb was whole.
       missingHoldCount: climb.missingHoldCount,
-      // The version of the climb as it was read when it was queued (#6023).
-      // Ticks never send a version. Kept on the local item only. `toClimbInput`
-      // does not send these: no queue document can select them yet (the
-      // screenshot fixtures pin their text), so a field written to the wire
-      // could never be read back, and a backend from before
-      // `ClimbInput.revisionNumber` would reject the whole queue mutation.
+      // The version at which the climb's holds last moved, as it was read when
+      // it was queued (#6023), for the sent glyph. Ticks never send a version.
+      // Kept on the local item only. `toClimbInput` does not send it: no queue
+      // document can select it yet (the screenshot fixtures pin their text), so
+      // a field written to the wire could never be read back.
       // `QUEUE_LOCAL_ONLY_CLIMB_FIELDS` names the exception.
-      revisionNumber: climb.revisionNumber,
       holdsRevisionNumber: climb.holdsRevisionNumber,
     },
   };
@@ -177,7 +175,7 @@ export function climbToQueueItem(climb: Climb, options?: { suggested?: boolean; 
  * note in `climbToQueueItem`. Remove an entry in the change that adds the field
  * to `toClimbInput`, `SUBSCRIPTION_CLIMB_FIELDS` and `toClimbQueueItem`.
  */
-export const QUEUE_LOCAL_ONLY_CLIMB_FIELDS = ['revisionNumber', 'holdsRevisionNumber'] as const;
+export const QUEUE_LOCAL_ONLY_CLIMB_FIELDS = ['holdsRevisionNumber'] as const;
 
 /** The outcome of {@link resolveCommittableQueueItem}. */
 export type CommittableQueueItem = {

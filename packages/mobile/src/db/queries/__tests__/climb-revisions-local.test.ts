@@ -15,7 +15,6 @@ type NetworkClimb = {
   uuid: string;
   name?: string;
   frames?: string | null;
-  revisionNumber?: number | null;
   holdsRevisionNumber?: number | null;
 };
 const networkClimbs = (...climbs: NetworkClimb[]): NetworkClimb[] => climbs;
@@ -95,26 +94,24 @@ describe('climb revisions on the device (#6023)', () => {
         'not-on-phone',
       ]);
 
-      // The frames come from the same row, in the same statement.
-      expect(numbers.get('edited')).toEqual({ revisionNumber: 4, holdsRevisionNumber: 3, frames: FRAMES });
-      expect(numbers.get('fresh')).toEqual({ revisionNumber: 1, holdsRevisionNumber: 1, frames: FRAMES });
+      expect(numbers.get('edited')).toEqual({ holdsRevisionNumber: 3 });
+      expect(numbers.get('fresh')).toEqual({ holdsRevisionNumber: 1 });
       expect(numbers.has('on-another-board')).toBe(false);
       expect(numbers.has('not-on-phone')).toBe(false);
     });
 
-    it('leaves out a row pulled before the columns existed', async () => {
+    it('leaves out a row pulled before the columns existed, or with no holds version', async () => {
       await insertClimb(db, 'pre-v11', null, null);
+      await insertClimb(db, 'climb-version-only', 3, null);
 
-      expect((await readClimbRevisionNumbersLocal(db, 'kilter', ['pre-v11'])).size).toBe(0);
+      expect((await readClimbRevisionNumbersLocal(db, 'kilter', ['pre-v11', 'climb-version-only'])).size).toBe(0);
     });
 
     it('reads a non-positive stored value as unknown', async () => {
-      await insertClimb(db, 'odd', 0, 2);
+      await insertClimb(db, 'odd', 2, 0);
 
       expect((await readClimbRevisionNumbersLocal(db, 'kilter', ['odd'])).get('odd')).toEqual({
-        revisionNumber: null,
-        holdsRevisionNumber: 2,
-        frames: FRAMES,
+        holdsRevisionNumber: null,
       });
     });
 
@@ -125,7 +122,7 @@ describe('climb revisions on the device (#6023)', () => {
       const numbers = await readClimbRevisionNumbersLocal(db, 'kilter', uuids);
 
       expect(numbers.size).toBe(950);
-      expect(numbers.get('climb-949')).toEqual({ revisionNumber: 2, holdsRevisionNumber: 1, frames: FRAMES });
+      expect(numbers.get('climb-949')).toEqual({ holdsRevisionNumber: 1 });
     });
 
     it('does nothing for an empty list', async () => {
@@ -199,20 +196,19 @@ describe('climb revisions on the device (#6023)', () => {
   });
 
   describe('fillClimbRevisionNumbersLocal', () => {
-    it('fills both numbers when the phone’s row has the same holds as the climb', async () => {
+    it('fills the holds version from the phone’s row', async () => {
       await insertClimb(db, 'edited', 4, 3);
       const climbs = networkClimbs({ uuid: 'edited', name: 'Edited', frames: FRAMES });
 
       const filled = await fillClimbRevisionNumbersLocal(db, 'kilter', climbs);
 
-      expect(filled).toEqual([
-        { uuid: 'edited', name: 'Edited', frames: FRAMES, revisionNumber: 4, holdsRevisionNumber: 3 },
-      ]);
+      expect(filled).toEqual([{ uuid: 'edited', name: 'Edited', frames: FRAMES, holdsRevisionNumber: 3 }]);
     });
 
     // The network answer is newer than the phone's last pull: the setter moved
-    // a hold since. The phone's version is not the version of these holds.
-    it('leaves revisionNumber out when the network frames differ from the phone’s row', async () => {
+    // a hold since. The holds version is still filled: it is a threshold that
+    // only rises, so the phone's older value can never make a send read unsent.
+    it('fills the holds version even when the network frames differ from the phone’s row', async () => {
       await insertClimb(db, 'edited', 4, 3);
 
       const [filled] = await fillClimbRevisionNumbersLocal(
@@ -221,46 +217,18 @@ describe('climb revisions on the device (#6023)', () => {
         networkClimbs({ uuid: 'edited', frames: MOVED_FRAMES }),
       );
 
-      expect(filled.revisionNumber).toBeNull();
-      // The holds version is still filled. It is a threshold that only rises,
-      // so the phone's older value can never make a send read unsent.
       expect(filled.holdsRevisionNumber).toBe(3);
-    });
-
-    it.each([
-      ['the climb carries no frames', undefined],
-      ['the climb’s frames are empty', ''],
-    ])('leaves revisionNumber out when %s', async (_label, frames) => {
-      await insertClimb(db, 'edited', 4, 3);
-
-      const [filled] = await fillClimbRevisionNumbersLocal(db, 'kilter', networkClimbs({ uuid: 'edited', frames }));
-
-      expect(filled.revisionNumber).toBeNull();
-    });
-
-    it('leaves revisionNumber out when the phone’s row has no frames', async () => {
-      await insertClimb(db, 'frameless', 4, 3, 'kilter', null);
-
-      const [filled] = await fillClimbRevisionNumbersLocal(
-        db,
-        'kilter',
-        networkClimbs({ uuid: 'frameless', frames: FRAMES }),
-      );
-
-      expect(filled.revisionNumber).toBeNull();
     });
 
     it('keeps a number the climb already carries', async () => {
       await insertClimb(db, 'edited', 4, 3);
-      const climbs = [{ uuid: 'edited', frames: FRAMES, revisionNumber: 5, holdsRevisionNumber: null }];
+      const climbs = [{ uuid: 'edited', frames: FRAMES, holdsRevisionNumber: 5 }];
 
-      const [filled] = await fillClimbRevisionNumbersLocal(db, 'kilter', climbs);
-
-      expect(filled).toEqual({ uuid: 'edited', frames: FRAMES, revisionNumber: 5, holdsRevisionNumber: 3 });
+      expect(await fillClimbRevisionNumbersLocal(db, 'kilter', climbs)).toBe(climbs);
     });
 
-    it('returns the same array, and reads nothing, when every climb has both numbers', async () => {
-      const climbs = [{ uuid: 'complete', frames: FRAMES, revisionNumber: 2, holdsRevisionNumber: 1 }];
+    it('returns the same array, and reads nothing, when every climb has its holds version', async () => {
+      const climbs = [{ uuid: 'complete', frames: FRAMES, holdsRevisionNumber: 1 }];
       let reads = 0;
       const countingDb = {
         getAllAsync: async () => {
@@ -289,7 +257,7 @@ describe('climb revisions on the device (#6023)', () => {
       ]);
 
       expect(filled[0]).toBe(notOnPhone);
-      expect(filled[1]).toEqual({ uuid: 'on-phone', frames: FRAMES, revisionNumber: 2, holdsRevisionNumber: 2 });
+      expect(filled[1]).toEqual({ uuid: 'on-phone', frames: FRAMES, holdsRevisionNumber: 2 });
     });
 
     it('reads a whole page in one statement', async () => {
@@ -310,7 +278,7 @@ describe('climb revisions on the device (#6023)', () => {
       );
 
       expect(reads).toBe(1);
-      expect(filled.every((climb) => climb.revisionNumber === 2)).toBe(true);
+      expect(filled.every((climb) => climb.holdsRevisionNumber === 2)).toBe(true);
     });
   });
 });

@@ -181,12 +181,12 @@ async function searchUnavailableReason(
 
 const searchBoardName = ({ input }: SearchClimbsQueryVariables) => input.boardName;
 
-// `SearchClimbs` and `GetClimb` cannot select `revisionNumber` /
-// `holdsRevisionNumber`: the App Store screenshot fixtures pin both documents
-// by hash (docs/mobile-screenshot-fixtures.md). A climb read over the network
-// therefore gets its version numbers from the phone's own `board_climbs` row,
-// one indexed read per page. A climb the phone does not hold stays without
-// them, and its sent glyph counts every tick (#6023).
+// `SearchClimbs` and `GetClimb` cannot select `holdsRevisionNumber`: the App
+// Store screenshot fixtures pin both documents by hash
+// (docs/mobile-screenshot-fixtures.md). A climb read over the network therefore
+// gets its holds version from the phone's own `board_climbs` row, one indexed
+// read per page. A climb the phone does not hold stays without it, and its sent
+// glyph counts every tick (#6023).
 async function fillSearchRevisionNumbers(
   db: SQLiteDatabase,
   { input }: SearchClimbsQueryVariables,
