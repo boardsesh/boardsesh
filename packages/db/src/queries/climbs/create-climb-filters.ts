@@ -276,66 +276,26 @@ export function hiddenClimbCondition(searchParams: ClimbSearchParams): SQL[] {
 }
 
 /**
- * The spray-wall integrity predicate: does this climb still have every hold it
- * was set on?
+ * Spray climbs that lost a hold drop out of every climb list and search on their
+ * wall, the default view and a name search alike.
  *
- * Reads the materialised `board_climbs.missing_hold_count`, which
- * `recomputeMissingHoldCounts` re-derives whenever a reset lands. Materialised
- * rather than joined through `board_climb_holds` on purpose — the offline mirror
- * has no such table, so a join would be a filter the phone could never mirror.
+ * Losing a hold was only possible through the in-place reset, which is retired:
+ * a wall's holds are now locked once it has a published climb, and a reset
+ * clones the wall. What is left is legacy rows whose `missing_hold_count` an old
+ * reset raised. They are hidden, never deleted: `climb(uuid)`, logbooks,
+ * playlists, share links and the queue read a climb by uuid and never come
+ * through this builder, so they still open it.
  *
- * NULL is the reason both branches COALESCE. Every non-spray climb carries NULL
- * (holds do not come off a catalogue board), as does a spray climb written before
- * the column existed. The honest reading of "unknown" is INTACT: a climb is
- * presumed whole until a reset says otherwise, so INTACT keeps NULLs and BROKEN
- * drops them. Reversed, one un-backfilled row would badge every Kilter climb in
- * the database as broken.
+ * `ClimbSearchInput.holdIntegrity` is accepted by the API and ignored. This also
+ * covers the climbs a FULL reset retired (`retired_by_reset`): a retired climb
+ * always lost a hold.
  *
- * The offline mirror of this rule lives in
- * packages/mobile/src/db/queries/search-climbs-local.ts and is the same two
- * COALESCE clauses: SW-15 (#5448) added `missing_hold_count` to the on-device
- * schema and to the `syncClimbs` payload, so the phone answers the filter rather
- * than declining it. Change the NULL rule here and you must change it there.
+ * Spray only, so a catalogue board renders no predicate. NULL reads as intact,
+ * the same as before: a spray climb written before the column existed is whole.
  */
-export function holdIntegrityCondition(searchParams: ClimbSearchParams): SQL[] {
-  if (searchParams.holdIntegrity === 'intact') {
-    return [sql`COALESCE(${boardClimbs.missingHoldCount}, 0) = 0`];
-  }
-  if (searchParams.holdIntegrity === 'broken') {
-    return [sql`COALESCE(${boardClimbs.missingHoldCount}, 0) > 0`];
-  }
-  return [];
-}
-
-/**
- * Retired spray climbs drop out of a wall's DEFAULT climb list (#6024).
- *
- * A climb is retired when it lost a hold in a reset its owner marked as a full
- * reset (`board_climbs.retired_by_reset`, materialised by
- * `recomputeMissingHoldCounts`). It is hidden, never deleted: `climb(uuid)`,
- * logbooks, playlists and share links never come through this builder.
- *
- * Only the default view hides them. Each of these shows them again:
- *
- *   - `holdIntegrity: 'any'` ("All"), sent explicitly — an omitted value is the
- *     default view, which is why `normalizeHoldIntegrity` keeps 'any';
- *   - `holdIntegrity: 'broken'` ("Lost holds") — a retired climb always lost a
- *     hold, so it belongs there;
- *   - a name search, the same exception `hiddenClimbCondition` makes, so a
- *     climber who knows the name can still find it.
- *
- * 'intact' needs nothing from here: a retired climb has lost holds, so
- * `holdIntegrityCondition` already drops it.
- *
- * Spray only. NULL reads as not retired, so a catalogue board renders no
- * predicate at all rather than one that is always true. The offline mirror is in
- * packages/mobile/src/db/queries/search-climbs-local.ts and must say the same.
- */
-export function retiredByResetCondition(boardName: string, searchParams: ClimbSearchParams): SQL[] {
+export function lostHoldsCondition(boardName: string): SQL[] {
   if (boardName !== 'spray') return [];
-  if (searchParams.holdIntegrity != null) return [];
-  if (hasNameQuery(searchParams)) return [];
-  return [sql`COALESCE(${boardClimbs.retiredByReset}, false) = false`];
+  return [sql`COALESCE(${boardClimbs.missingHoldCount}, 0) = 0`];
 }
 
 function moonBoardZoneCoordinates(layoutId: number, placementHoleId: SQL): { x: SQL; y: SQL } {
@@ -586,8 +546,7 @@ export const createClimbFilters = (
     ...(isListedCondition ? [isListedCondition] : []),
     isDraftCondition,
     ...hiddenClimbCondition(searchParams),
-    ...holdIntegrityCondition(searchParams),
-    ...retiredByResetCondition(params.board_name, searchParams),
+    ...lostHoldsCondition(params.board_name),
     ...(climbTypeCondition ? [climbTypeCondition] : []),
   ];
 

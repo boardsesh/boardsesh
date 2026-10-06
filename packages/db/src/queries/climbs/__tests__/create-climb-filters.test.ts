@@ -3,19 +3,8 @@ import assert from 'node:assert/strict';
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { woodsHoldIdsInZone } from '@boardsesh/board-config';
-import {
-  createClimbFilters,
-  hiddenClimbCondition,
-  holdIntegrityCondition,
-  retiredByResetCondition,
-} from '../create-climb-filters';
-import {
-  mapSearchInputToParams,
-  normalizeGradeSource,
-  normalizeHoldIntegrity,
-  type BoardRouteParams,
-  type ClimbSearchParams,
-} from '../types';
+import { createClimbFilters, hiddenClimbCondition, lostHoldsCondition } from '../create-climb-filters';
+import { mapSearchInputToParams, normalizeGradeSource, type BoardRouteParams, type ClimbSearchParams } from '../types';
 
 const params: BoardRouteParams = {
   board_name: 'kilter',
@@ -1186,50 +1175,10 @@ void describe('createClimbFilters: browsed-angle restriction', () => {
   });
 });
 
-void describe('createClimbFilters: spray-wall hold integrity', () => {
-  const integritySql = (search: ClimbSearchParams) => holdIntegrityCondition(search).map(sqlToString).join(' || ');
-
-  void it('adds nothing at all for ANY, which is what an absent value means', () => {
-    assert.deepEqual(holdIntegrityCondition(baseSearch), []);
-    assert.deepEqual(holdIntegrityCondition({ holdIntegrity: undefined }), []);
-  });
-
-  void it('keeps climbs that have lost nothing for INTACT', () => {
-    const rendered = integritySql({ holdIntegrity: 'intact' });
-    assert.match(rendered, /missing_hold_count/);
-    assert.match(rendered, /= 0/);
-  });
-
-  void it('keeps only climbs that have lost something for BROKEN', () => {
-    const rendered = integritySql({ holdIntegrity: 'broken' });
-    assert.match(rendered, /missing_hold_count/);
-    assert.match(rendered, /> 0/);
-  });
-
-  void it('COALESCEs NULL, so an un-backfilled row reads as INTACT rather than broken', () => {
-    // Every non-spray climb carries NULL — holds do not come off a catalogue
-    // board. Reversed, one NULL would badge every Kilter climb as broken.
-    assert.match(integritySql({ holdIntegrity: 'intact' }), /coalesce/i);
-    assert.match(integritySql({ holdIntegrity: 'broken' }), /coalesce/i);
-  });
-
-  void it('puts the predicate in the climb WHERE array the browse query runs', () => {
-    const rendered = createClimbFilters(params, { holdIntegrity: 'broken' })
-      .getClimbWhereConditions()
-      .map(sqlToString)
-      .join(' || ');
-    assert.match(rendered, /missing_hold_count/);
-  });
-
-  void it('leaves the WHERE array untouched for an unfiltered browse', () => {
-    const rendered = createClimbFilters(params, baseSearch).getClimbWhereConditions().map(sqlToString).join(' || ');
-    assert.doesNotMatch(rendered, /missing_hold_count/);
-  });
-});
-
-// #6024: a full reset retires the old set's climbs. They leave the wall's
-// default list and come back under "All", "Lost holds" and a name search.
-void describe('createClimbFilters: climbs retired by a full reset', () => {
+// Climbs that lost a hold to a retired in-place reset leave every spray list and
+// search, whatever `holdIntegrity` an older app sends. A by-uuid read never comes
+// through this builder, so they still open from a logbook or a share link.
+void describe('createClimbFilters: spray climbs that lost a hold', () => {
   const sprayParams: BoardRouteParams = {
     board_name: 'spray',
     layout_id: 9001,
@@ -1240,33 +1189,26 @@ void describe('createClimbFilters: climbs retired by a full reset', () => {
   const whereSql = (boardParams: BoardRouteParams, search: ClimbSearchParams) =>
     createClimbFilters(boardParams, search).getClimbWhereConditions().map(sqlToString).join(' || ');
 
-  void it('hides retired climbs from the default spray list, reading NULL as not retired', () => {
-    const rendered = whereSql(sprayParams, baseSearch);
-    assert.match(rendered, /retired_by_reset/);
-    assert.match(rendered, /coalesce\(retired_by_reset, false\) = false/i);
+  void it('hides them from the default spray list, reading NULL as intact', () => {
+    assert.match(whereSql(sprayParams, baseSearch), /coalesce\(missing_hold_count, 0\) = 0/i);
   });
 
-  void it('shows them for an explicit ANY ("All")', () => {
-    assert.deepEqual(retiredByResetCondition('spray', { holdIntegrity: 'any' }), []);
-    assert.doesNotMatch(whereSql(sprayParams, { holdIntegrity: 'any' }), /retired_by_reset/);
+  void it('hides them from a name search too', () => {
+    assert.match(whereSql(sprayParams, { name: 'Old blue' }), /coalesce\(missing_hold_count, 0\) = 0/i);
   });
 
-  void it('shows them under BROKEN ("Lost holds"), since a retired climb always lost a hold', () => {
-    assert.deepEqual(retiredByResetCondition('spray', { holdIntegrity: 'broken' }), []);
-  });
-
-  void it('shows them to a name search, like a community-hidden climb', () => {
-    assert.deepEqual(retiredByResetCondition('spray', { name: 'Old blue' }), []);
+  void it('no longer reads retired_by_reset: a retired climb always lost a hold', () => {
+    assert.doesNotMatch(whereSql(sprayParams, baseSearch), /retired_by_reset/);
   });
 
   void it('renders nothing on a catalogue board', () => {
-    assert.deepEqual(retiredByResetCondition('kilter', baseSearch), []);
-    assert.doesNotMatch(whereSql(params, baseSearch), /retired_by_reset/);
+    assert.deepEqual(lostHoldsCondition('kilter'), []);
+    assert.doesNotMatch(whereSql(params, baseSearch), /missing_hold_count/);
   });
 
-  void it('keeps an explicit ANY on the wire instead of collapsing it into the default view', () => {
-    assert.equal(normalizeHoldIntegrity('ANY'), 'any');
-    assert.equal(normalizeHoldIntegrity(undefined), undefined);
-    assert.equal(mapSearchInputToParams({ holdIntegrity: 'ANY' }).holdIntegrity, 'any');
+  void it('drops the wire holdIntegrity value, so every value searches the same rows', () => {
+    for (const holdIntegrity of ['ANY', 'INTACT', 'BROKEN']) {
+      assert.deepEqual(mapSearchInputToParams({ holdIntegrity }), mapSearchInputToParams({}));
+    }
   });
 });

@@ -3,6 +3,11 @@ import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 /**
  * "This tick was logged on the holds the climb has now" (#6023).
  *
+ * Read-only since climb revision history was retired: `updateClimb` no longer
+ * moves `holds_revision_number`, so the epoch is frozen. It is still read here
+ * because it stays correct for the few climbs edited before the retirement, and
+ * is a no-op (epoch 1) for every other climb.
+ *
  * A published climb can be edited. `board_climbs.holds_revision_number` is the
  * climb's holds epoch: the revision at which its frames or frame count last
  * changed. `boardsesh_ticks.climb_revision` is the revision a tick was logged
