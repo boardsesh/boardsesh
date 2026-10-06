@@ -11,7 +11,7 @@ import {
   type LostHoldGhost,
   type ReplacementCandidate,
 } from '@boardsesh/create-climb-react';
-import type { GetClimbLostHoldsQueryVariables } from '@boardsesh/graphql/operations';
+import type { ClimbLostHold, GetClimbLostHoldsQueryVariables } from '@boardsesh/graphql/operations';
 import { useClimbLostHolds } from '../../lib/graphql/hooks/use-climb-lost-holds';
 import { getSprayWall, SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
 import { mapCanonicalHoldsToPhoto, type SprayPhotoHold } from '../../lib/spray/spray-hold-geometry';
@@ -51,6 +51,8 @@ export type LostHoldGhostsState = {
   ghosts: readonly LostHoldGhost[];
   /** The same ghosts as tap targets, so a tap on one reaches `openGhost`. */
   ghostTargets: readonly BoardHoldTarget[];
+  /** The lost holds as the server sent them, in the wall's canonical frame, by id. */
+  canonicalLostHolds: ReadonlyMap<number, ClimbLostHold>;
   /** The ghost whose sheet is open, or null. */
   sheetGhost: LostHoldGhost | null;
   /** Live holds the sheet's "Use a hold nearby" would offer for `sheetGhost`. */
@@ -183,6 +185,13 @@ export function useLostHoldGhosts({
       liveHoldIds: availableHoldIds,
     });
   }, [lostHoldsQuery, parsedSourceFrames, availableHoldIds, wall]);
+
+  const canonicalLostHolds = useMemo(() => {
+    const byId = new Map<number, ClimbLostHold>();
+    if (lostHoldsQuery.status === 'ready')
+      for (const lostHold of lostHoldsQuery.lostHolds) byId.set(lostHold.id, lostHold);
+    return byId;
+  }, [lostHoldsQuery]);
 
   // Which live hold was picked for which ghost, this session.
   const [replacementByGhostId, setReplacementByGhostId] = useState<ReadonlyMap<number, number>>(() => new Map());
@@ -321,6 +330,7 @@ export function useLostHoldGhosts({
       count,
       ghosts,
       ghostTargets,
+      canonicalLostHolds,
       sheetGhost,
       sheetCandidates,
       replacing,
@@ -337,6 +347,7 @@ export function useLostHoldGhosts({
       count,
       ghosts,
       ghostTargets,
+      canonicalLostHolds,
       sheetGhost,
       sheetCandidates,
       replacing,

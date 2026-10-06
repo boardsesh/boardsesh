@@ -692,7 +692,9 @@
         "useNearby": "Utiliser une prise proche",
         "useNearbyHint": "Les prises libres les plus proches s'allument sur le mur.",
         "useNearbySuccessor": "La prise qui l'a remplacée s'allume en premier.",
-        "noneNearby": "Aucune prise libre sur le mur pour la remplacer."
+        "noneNearby": "Aucune prise libre sur le mur pour la remplacer.",
+        "putBack": "Remettre cette prise sur le mur",
+        "putBackHint": "Ouvre l'éditeur de prises là où elle était. Publie, et elle revient dans ce bloc."
       }
     },
     "climbActions": {

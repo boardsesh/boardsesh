@@ -15,6 +15,11 @@ type LostHoldSheetProps = {
   /** What "Use a hold nearby" would highlight for it. */
   candidates: readonly ReplacementCandidate[];
   onUseNearby: () => void;
+  /**
+   * "Put this hold back on the wall": the hold editor, at the spot it was.
+   * Offered to whoever can edit the wall's holds; omitted for everyone else.
+   */
+  onPutBack?: () => void;
   onClose: () => void;
 };
 
@@ -24,7 +29,7 @@ type RoleKey = 'STARTING' | 'HAND' | 'FINISH' | 'FOOT';
  * What to do about one lost hold (#5493). A sibling of the create drawer, like
  * `HoldRoleSheet`: two native sheets stack as siblings, never nested.
  */
-export function LostHoldSheet({ ghost, candidates, onUseNearby, onClose }: LostHoldSheetProps) {
+export function LostHoldSheet({ ghost, candidates, onUseNearby, onPutBack, onClose }: LostHoldSheetProps) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
   const sheetRef = useRef<BottomSheet>(null);
@@ -84,6 +89,26 @@ export function LostHoldSheet({ ghost, candidates, onUseNearby, onClose }: LostH
             </Text>
           </View>
         </Pressable>
+        {onPutBack ? (
+          <Pressable
+            onPress={onPutBack}
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.lostHolds.sheet.putBack')}
+            accessibilityHint={t('mobile.lostHolds.sheet.putBackHint')}
+            style={[styles.option, { backgroundColor: systemColors.fill }]}
+            testID="lost-hold-put-back"
+          >
+            <Icon name="add" size={20} color={systemColors.label} />
+            <View style={styles.optionCopy}>
+              <Text variant="subheadline" style={styles.optionTitle}>
+                {t('mobile.lostHolds.sheet.putBack')}
+              </Text>
+              <Text variant="footnote" color={systemColors.secondaryLabel}>
+                {t('mobile.lostHolds.sheet.putBackHint')}
+              </Text>
+            </View>
+          </Pressable>
+        ) : null}
       </View>
     </Sheet>
   );

@@ -692,7 +692,9 @@
         "useNearby": "Griff in der Nähe nehmen",
         "useNearbyHint": "Die nächsten freien Griffe werden auf der Wand hervorgehoben.",
         "useNearbySuccessor": "Der Griff, der ihn ersetzt hat, wird zuerst hervorgehoben.",
-        "noneNearby": "Keine freien Griffe an der Wand zum Tauschen."
+        "noneNearby": "Keine freien Griffe an der Wand zum Tauschen.",
+        "putBack": "Griff wieder an die Wand schrauben",
+        "putBackHint": "Öffnet den Griff-Editor an der alten Stelle. Veröffentliche, und er kommt zurück in diesen Boulder."
       }
     },
     "climbActions": {

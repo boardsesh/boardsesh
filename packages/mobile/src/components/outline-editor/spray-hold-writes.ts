@@ -35,6 +35,8 @@ export type SprayHoldWireInput = {
   outline: number[] | null;
   source: SprayEditorHoldSource;
   confidence?: number | null;
+  /** A NEW hold that puts a removed one back names it here (#5493). */
+  movedFromHoldId?: number;
 };
 
 export type SprayHoldWritePlan = {
@@ -154,6 +156,9 @@ export function buildSprayHoldWritePlan(state: SprayEditorState, homography: rea
       // Only ever sent for a detector hold. A hand-drawn hold has no confidence
       // to report, and sending 1 would claim a measurement nobody made.
       ...(hold.source === 'AUTO' ? { confidence: hold.confidence } : {}),
+      // Only on a hold the server has never seen. An existing hold keeps the
+      // link it was written with; the server owns it from then on.
+      ...(!alreadyOnTheWall && hold.movedFromHoldId != null ? { movedFromHoldId: hold.movedFromHoldId } : {}),
     });
   }
 

@@ -21,6 +21,12 @@ import { iosSystemColors } from '../../theme/ios-colors';
 import { HoldRoleSheet } from './HoldRoleSheet';
 import { LostHoldSheet } from './LostHoldSheet';
 import { useLostHoldGhosts } from './use-lost-hold-ghosts';
+import { getSprayWall, sprayWallViewerCanEdit } from '../../lib/spray/spray-wall-registry';
+import {
+  finishLostHoldPutBack,
+  readLostHoldPutBackReturn,
+  startLostHoldPutBack,
+} from '../../lib/spray/lost-hold-put-back';
 import { CreateDrawer } from './CreateDrawer';
 import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
 import { useHoldHeatmap } from '../../lib/graphql/hooks/use-hold-heatmap';
@@ -41,6 +47,8 @@ type CreateClimbScreenProps = {
   /** The remixed climb's uuid, for drawing the holds it lost (#5493). */
   forkParentUuid?: string;
   editClimbUuid?: string;
+  /** Set when the climber comes back from putting a lost hold back on the wall (#5493). */
+  putBackRequest?: string;
 };
 
 /**
@@ -59,6 +67,7 @@ export function CreateClimbScreen({
   forkDifficulty,
   forkParentUuid,
   editClimbUuid,
+  putBackRequest,
 }: CreateClimbScreenProps) {
   const { t } = useTranslation('climbs');
   const { t: tCommon } = useTranslation('common');
@@ -92,6 +101,11 @@ export function CreateClimbScreen({
   const sprayLayoutId = isSprayBoard(board.boardName) ? board.layoutId : null;
   const { isLoading: sprayWallLoading } = useSprayWall(sprayLayoutId);
 
+  // Back from the hold editor: the working copy left behind and the hold that
+  // went back on. Read once; the request is cleared once it has been applied.
+  const [putBackReturn] = useState(() => readLostHoldPutBackReturn(putBackRequest));
+  const handlePutBackApplied = useCallback(() => finishLostHoldPutBack(putBackRequest), [putBackRequest]);
+
   const controller = useCreateClimbScreen({
     board,
     forkFrames,
@@ -106,6 +120,8 @@ export function CreateClimbScreen({
     editClimbUuid,
     onPublished: () => router.back(),
     onStartedNewClimb: handleStartedNewClimb,
+    putBackReturn,
+    onPutBackApplied: handlePutBackApplied,
   });
 
   const [longPressHoldId, setLongPressHoldId] = useState<number | null>(null);
@@ -121,6 +137,70 @@ export function CreateClimbScreen({
     sprayWallToken,
     placeLostHoldReplacement: controller.placeLostHoldReplacement,
   });
+
+  // "Put this hold back on the wall" — for whoever can edit the wall's holds.
+  // A new hold goes on at the lost one's spot in the hold editor, and the climb
+  // editor reopens with it in the lost hold's place (#5493).
+  const sprayWallForPutBack = sprayLayoutId !== null ? getSprayWall(sprayLayoutId) : null;
+  const canPutBack =
+    sprayWallForPutBack !== null && sprayWallViewerCanEdit(board.boardName, board.layoutId) && sprayWallToken !== '';
+  const { sheetGhost, canonicalLostHolds, closeSheet } = lostHolds;
+  const { snapshotWorkingDraft } = controller;
+  const handlePutBack = useCallback(() => {
+    const wall = sprayLayoutId !== null ? getSprayWall(sprayLayoutId) : null;
+    const lostHold = sheetGhost ? canonicalLostHolds.get(sheetGhost.id) : undefined;
+    if (!wall || !sheetGhost || !lostHold) return;
+    closeSheet();
+    const createParams: Record<string, string> = {
+      boardName: board.boardName,
+      layoutId: String(board.layoutId),
+      sizeId: String(board.sizeId),
+      setIds: board.setIds,
+      angle: String(board.angle),
+    };
+    const optionalParams: Record<string, string | undefined> = {
+      editClimbUuid,
+      forkFrames,
+      forkName,
+      forkDescription,
+      forkCharacteristics,
+      forkDifficulty,
+      forkParentUuid,
+    };
+    for (const [key, value] of Object.entries(optionalParams)) {
+      if (value !== undefined) createParams[key] = value;
+    }
+    startLostHoldPutBack(
+      {
+        wallUuid: wall.wallUuid,
+        layoutId: wall.layoutId,
+        lostHold: { id: lostHold.id, cx: lostHold.cx, cy: lostHold.cy, r: lostHold.r, outline: lostHold.outline },
+        placements: sheetGhost.placements,
+        knownSuccessorIds: wall.holds.filter((hold) => hold.movedFromHoldId === lostHold.id).map((hold) => hold.id),
+        createParams,
+        draft: snapshotWorkingDraft(),
+      },
+      () => {
+        if (router.canGoBack()) router.back();
+        else router.replace('/(tabs)/climbs');
+      },
+    );
+  }, [
+    sprayLayoutId,
+    sheetGhost,
+    canonicalLostHolds,
+    closeSheet,
+    board,
+    editClimbUuid,
+    forkFrames,
+    forkName,
+    forkDescription,
+    forkCharacteristics,
+    forkDifficulty,
+    forkParentUuid,
+    snapshotWorkingDraft,
+    router,
+  ]);
 
   // The hold heatmap over the whole board (the create board has no list filters
   // to follow), counting the role the active brush paints: the downloaded board
@@ -335,6 +415,7 @@ export function CreateClimbScreen({
         ghost={lostHolds.sheetGhost}
         candidates={lostHolds.sheetCandidates}
         onUseNearby={lostHolds.startReplacing}
+        onPutBack={canPutBack ? handlePutBack : undefined}
         onClose={lostHolds.closeSheet}
       />
     </View>

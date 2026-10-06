@@ -43,6 +43,8 @@ export type SeedableWall = {
     /** Absent on a payload written before provenance was carried; manual is the honest default. */
     source?: 'MANUAL' | 'AUTO';
     confidence?: number | null;
+    /** The removed hold this one replaced, when a reset review or a put-back linked them. */
+    movedFromHoldId?: number;
   }[];
 };
 
@@ -158,6 +160,7 @@ export function buildEditorSeed(
       confidence: hold.confidence ?? null,
       review: 'accepted',
       dirty: false,
+      ...(hold.movedFromHoldId != null ? { movedFromHoldId: hold.movedFromHoldId } : {}),
     });
   }
 

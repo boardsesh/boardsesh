@@ -88,6 +88,7 @@ import {
   SPRAY_TABLET_CONTENT_MAX_WIDTH,
 } from './spray-tablet-layout';
 import { zoomTargetForHold } from './hold-navigation';
+import { mapCanonicalHoldsToPhoto } from '../../lib/spray/spray-hold-geometry';
 import { SprayUndoToast, type SprayUndoToastContent } from './SprayUndoToast';
 import { resolveEditTap, type SprayEditorTool } from './spray-edit-tap';
 import { SprayEditorBanner } from './SprayEditorBanner';
@@ -292,6 +293,24 @@ export type SprayHoldEditorScreenProps = {
    * and removing the screen cancels the hand-over that would publish them.
    */
   onHandoverChange?: (handingOver: boolean) => void;
+  /**
+   * Put a removed hold back on the wall (#5493). Once the draft is on screen the
+   * editor adds a NEW hold at the removed one's geometry, linked to it by
+   * `movedFromHoldId`, selects it and zooms to it, so the owner only has to
+   * nudge it to where the hold went back on. A draft that already carries a hold
+   * linked to it (a put-back left unpublished) selects that one instead of
+   * adding a second.
+   */
+  putBackHold?: SprayPutBackHold | null;
+};
+
+/** A removed hold to put back: its canonical geometry and its id. */
+export type SprayPutBackHold = {
+  removedHoldId: number;
+  cx: number;
+  cy: number;
+  r: number;
+  outline: readonly number[] | null;
 };
 
 /**
@@ -345,6 +364,7 @@ export function SprayHoldEditorScreen({
   onCommitted,
   onDirtyChange,
   onHandoverChange,
+  putBackHold = null,
 }: SprayHoldEditorScreenProps) {
   const { systemColors, motion } = useTheme();
   const reduceMotion = useReducedMotion();
@@ -761,6 +781,50 @@ export function SprayHoldEditorScreen({
   canEditRef.current = canEdit;
   const toolRef = useRef(tool);
   toolRef.current = tool;
+
+  // ---- Put a removed hold back (#5493). Once, when the draft is ready to edit. ----
+  const putBackAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!putBackHold || putBackAppliedRef.current) return;
+    if (!seeded || homography == null || !canEdit || boardRender.width <= 0) return;
+    putBackAppliedRef.current = true;
+    const linked = Object.values(stateRef.current.holds).find(
+      (hold) => hold.movedFromHoldId === putBackHold.removedHoldId && hold.review !== 'rejected',
+    );
+    let target: { id: number; cx: number; cy: number; r: number };
+    if (linked) {
+      target = linked;
+    } else {
+      // Canonical → this draft's photo, through the draft's own homography: the
+      // same map every other hold on screen went through.
+      const [mapped] =
+        mapCanonicalHoldsToPhoto(homography, [
+          {
+            id: putBackHold.removedHoldId,
+            cx: putBackHold.cx,
+            cy: putBackHold.cy,
+            r: putBackHold.r,
+            outline: putBackHold.outline,
+          },
+        ]) ?? [];
+      if (!mapped) return;
+      const geometry = { cx: mapped.cx, cy: mapped.cy, r: mapped.r, outline: mapped.outline ?? null };
+      const id = stateRef.current.nextLocalId;
+      dispatch({ type: 'ADD_HOLD', geometry, movedFromHoldId: putBackHold.removedHoldId });
+      target = { id, cx: geometry.cx, cy: geometry.cy, r: geometry.r };
+    }
+    dispatch({ type: 'SELECT', id: target.id });
+    boardControlRef.current?.zoomTo(
+      zoomTargetForHold({
+        hold: target,
+        boardWidth: photoWidth,
+        renderWidth: boardRender.width,
+        renderHeight: boardRender.height,
+        contextRadii: STEP_FRAME_CONTEXT_RADII,
+        maxScale: SPRAY_EDITOR_MAX_SCALE,
+      }),
+    );
+  }, [putBackHold, seeded, homography, canEdit, boardRender.width, boardRender.height, photoWidth]);
   // A hover left over from before a tool change must not flash up on the way back.
   useEffect(() => {
     hoverSV.value = NO_POINTS;

@@ -692,7 +692,9 @@
         "useNearby": "Usar una presa cercana",
         "useNearbyHint": "Se resaltan en el muro las presas libres más cercanas.",
         "useNearbySuccessor": "La presa que la sustituyó se resalta primero.",
-        "noneNearby": "No hay presas libres en el muro para cambiarla."
+        "noneNearby": "No hay presas libres en el muro para cambiarla.",
+        "putBack": "Volver a poner esta presa en el muro",
+        "putBackHint": "Abre el editor de presas donde estaba. Publica y vuelve a este bloque."
       }
     },
     "climbActions": {
