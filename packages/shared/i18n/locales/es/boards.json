@@ -897,6 +897,8 @@
     "photo": {
       "title": "Fotografía el muro",
       "body": "Ponte de frente, dispara a 1x y encuadra el muro entero. Cada presa que pongas vive en estos píxeles.",
+      "helpLink": "Cómo hacer la foto",
+      "helpLinkHint": "Abre la guía de fotos en tu navegador",
       "library": "Elegir una foto",
       "camera": "Hacer una foto",
       "pickAnother": "Elegir otra foto",

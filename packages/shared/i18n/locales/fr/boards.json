@@ -897,6 +897,8 @@
     "photo": {
       "title": "Photographie le mur",
       "body": "Place-toi bien en face, shoote en 1x et cadre tout le mur. Chaque prise que tu poses vit sur ces pixels.",
+      "helpLink": "Bien prendre la photo",
+      "helpLinkHint": "Ouvre le guide photo dans ton navigateur",
       "library": "Choisir une photo",
       "camera": "Prendre une photo",
       "pickAnother": "Choisir une autre photo",

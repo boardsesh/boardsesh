@@ -27,6 +27,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   View,
@@ -63,6 +64,8 @@ import { iosSystemColors } from '../../theme/ios-colors';
 import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
 import { reportError } from '../../lib/error-reporting';
+import { openExternalUrl } from '../../lib/open-url';
+import { buildHelpUrl } from '../../lib/help-url';
 import { extractGraphqlCode, extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import { SPRAY_CAP_VALUES, sprayCapFromErrorCode, sprayCapMessage } from '../../lib/spray/spray-cap-copy';
 import { useActivateBoard } from '../../lib/boards/use-activate-board';
@@ -117,9 +120,19 @@ type SprayWallWizardScreenProps = {
 };
 
 export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) {
-  const { t } = useTranslation('boards');
+  const { t, i18n } = useTranslation('boards');
   const { systemColors } = useTheme();
   const { showToast } = useToast();
+
+  // The photo is the step that decides how many holds the finder misses, so
+  // the long version of the advice (with the why) is one tap away, in the
+  // language the climber is reading.
+  const openPhotoGuide = useCallback(() => {
+    void openExternalUrl(
+      buildHelpUrl('spray-walls', i18n.resolvedLanguage ?? i18n.language),
+      'spray-wizard-photo-guide',
+    );
+  }, [i18n]);
 
   /**
    * A cap refusal said in the climber's own language, with its number, ahead of
@@ -869,6 +882,17 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
             <Text variant="subheadline" color={systemColors.secondaryLabel}>
               {t('sprayWizard.photo.body')}
             </Text>
+            <Pressable
+              onPress={openPhotoGuide}
+              hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+              style={styles.photoGuideLink}
+              accessibilityRole="link"
+              accessibilityHint={t('sprayWizard.photo.helpLinkHint')}
+            >
+              <Text variant="subheadline" color={systemColors.accent}>
+                {t('sprayWizard.photo.helpLink')}
+              </Text>
+            </Pressable>
             <View style={styles.photoActions}>
               <Button
                 title={state.photo ? t('sprayWizard.photo.pickAnother') : t('sprayWizard.photo.library')}
@@ -1104,6 +1128,9 @@ const styles = StyleSheet.create({
   previewWrap: {
     alignItems: 'center',
     paddingVertical: spacing[3],
+  },
+  photoGuideLink: {
+    alignSelf: 'flex-start',
   },
   photoActions: {
     gap: spacing[2],
