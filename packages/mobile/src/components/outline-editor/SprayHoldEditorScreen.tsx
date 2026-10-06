@@ -814,7 +814,11 @@ export function SprayHoldEditorScreen({
   /** The next change to the wall's spoken value (or an error) is read out — set by actions a swipe did not start. */
   const announceNextRef = useRef(false);
 
-  const committing = saveHolds.isPending;
+  // True while the host reads whether climbs use the holds a save takes off,
+  // and while its confirm is up: the press owns the screen, so Save shows its
+  // spinner and editing waits, rather than refusing touches with no sign why.
+  const [askingRemoval, setAskingRemoval] = useState(false);
+  const committing = saveHolds.isPending || askingRemoval;
   // Nothing takes a touch until the rings have finished arriving: a tap during
   // the sweep would land on a ring that is not drawn yet.
   const canEdit = viewerCanEdit && !committing && !celebrating && revealDone;
@@ -1838,7 +1842,10 @@ export function SprayHoldEditorScreen({
     const askAboutRemoval = confirmHoldRemovalRef.current;
     const planned = askAboutRemoval
       ? await confirmPlanRemovals(planPrimary, askAboutRemoval, {
-          onAsking: setHandingOver,
+          onAsking: (asking) => {
+            setHandingOver(asking);
+            setAskingRemoval(asking);
+          },
           stillHere: () => !unmountedRef.current,
         })
       : planPrimary();

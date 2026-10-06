@@ -341,6 +341,15 @@ describe('holdIdsLeavingTheWall', () => {
     expect(holdIdsLeavingTheWall(planWith([4, 9], [9, 12, undefined]).plan)).toEqual([4, 9, 12]);
   });
 
+  // A resize keeps the centre, and the server still supersedes the hold, so a
+  // climb that used it loses it: it has to be asked about like a removal.
+  it('names a stored hold resized in place, centre unchanged', () => {
+    const state = run([storedHold(7), storedHold(8)], { type: 'RESIZE_HOLD', id: 7, r: 30 });
+    const plan = buildSprayHoldWritePlan(state, IDENTITY_HOMOGRAPHY);
+    expect(plan.upsert).toEqual([expect.objectContaining({ id: 7, cx: 100, cy: 200 })]);
+    expect(holdIdsLeavingTheWall(plan)).toEqual([7]);
+  });
+
   it('names nothing for a save that only adds holds', () => {
     expect(holdIdsLeavingTheWall(planWith([], [undefined, undefined]).plan)).toEqual([]);
   });
@@ -381,6 +390,26 @@ describe('confirmPlanRemovals', () => {
     const ask = vi.fn(async () => true);
     await expect(confirmPlanRemovals(planNow, ask)).resolves.toBe(plans[1]);
     expect(ask.mock.calls).toEqual([[[4]], [[5]]]);
+  });
+
+  // The usage read can take as long as the HTTP deadline: the screen stays held
+  // (and Save shows its spinner) the whole time, and nothing is saved yet.
+  it('holds the screen while the check is still out', async () => {
+    let answer: (goAhead: boolean) => void = () => {};
+    const onAsking = vi.fn();
+    const pending = confirmPlanRemovals(
+      () => planWith([4]),
+      () =>
+        new Promise<boolean>((resolve) => {
+          answer = resolve;
+        }),
+      { onAsking },
+    );
+    await Promise.resolve();
+    expect(onAsking.mock.calls).toEqual([[true]]);
+    answer(true);
+    await expect(pending).resolves.toEqual(planWith([4]));
+    expect(onAsking.mock.calls).toEqual([[true], [false]]);
   });
 
   it('saves nothing when the screen went away while asking', async () => {
