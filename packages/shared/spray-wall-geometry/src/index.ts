@@ -1,15 +1,12 @@
 /**
- * `@boardsesh/spray-wall-geometry` — the maths a spray wall needs to survive
- * being photographed twice: the per-version homography that puts two photos in
- * one coordinate frame, and the matcher that decides which holds are still
- * there after a reset.
+ * `@boardsesh/spray-wall-geometry` — the maths a spray wall photo needs: the
+ * per-version homography that maps a photo onto the wall's canonical frame, and
+ * the rule that tells a hold-edit draft from a new-photo draft.
  *
- * Pure TypeScript, no dependencies. The backend runs the matcher for real
- * (`proposeSprayWallReset`, SW-12) and the app runs the same code for a preview,
- * which is the whole point of it living here.
- *
- * The frame, the gates and why a moved hold is removed + added are written up in
- * `docs/spray-walls.md`, "Canonical coordinates and matching".
+ * Pure TypeScript, no dependencies, shared by the backend, the app and the web
+ * climb page. The hold matcher that compared two photos of one wall went with the
+ * retired in-place reset. The frame is written up in `docs/spray-walls.md`,
+ * "Canonical coordinates".
  */
 export {
   IDENTITY_HOMOGRAPHY,
@@ -27,26 +24,5 @@ export {
   mapRing,
   quadDoubleArea,
 } from './homography';
-export { INFEASIBLE, type Assignment, solveAssignment } from './hungarian';
-export {
-  DEFAULT_DISTANCE_GATE,
-  DEFAULT_IOU_GATE,
-  DEFAULT_MATCH_WEIGHTS,
-  DEFAULT_MOVE_RADII,
-  type AliveHold,
-  type KeptHold,
-  type MatchGates,
-  type MatchOptions,
-  type MatchResult,
-  type MatchWeights,
-  type MoveSuggestion,
-  type SuggestMovesOptions,
-  type WallCircle,
-  circleIou,
-  colourDistance,
-  matchHolds,
-  pairCost,
-  suggestMoves,
-} from './match';
 
 export { classifySprayDraft, sameSprayGeometry, type SprayDraftPurpose, type SprayVersionPhoto } from './draft-purpose';
