@@ -61,6 +61,7 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetPlaylistsForClimbs',
   'GetPopularBoardConfigs',
   'GetSessionHealthExport',
+  'GetSprayWall',
   'GetSprayWallByLayout',
   'GetSprayWallDraftRenderData',
   'GetSprayWallForLink',
