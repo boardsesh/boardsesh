@@ -12,7 +12,8 @@
 //  * **Outcomes, not gestures.** PostHog is past the 1M-event tier
 //    (`docs/posthog-cost-audit`-era rule), so every event here fires once per
 //    wall per step — picking the photo, the upload landing, detection settling,
-//    the holds being saved, a reset started. Nothing fires
+//    the holds being saved, a reset started, used holds removed, a broken
+//    climb remixed. Nothing fires
 //    per tap, per frame, or per hold.
 //  * **Nothing identifies the wall or what is on it.** No photo, no URI, no
 //    file name, no wall name, no gym, no hold coordinates, no free text. A wall
@@ -155,6 +156,38 @@ export function sprayWallResetStarted(
   source: SprayResetSurface,
 ): SprayWallPayload<typeof SHARED_EVENTS.SprayWallResetStarted, SprayWallResetStartedProps> {
   return { name: SHARED_EVENTS.SprayWallResetStarted, properties: { source } };
+}
+
+export type SprayWallHoldsRemovedInUseProps = {
+  /** How many holds the confirm was about. Never which. */
+  holdCount: number;
+  /** Published climbs that use them; 0 when the usage read failed. */
+  publishedClimbCount: number;
+  /** False when the usage read failed and the confirm used its generic wording. */
+  usageKnown: boolean;
+};
+
+/** The owner confirmed removing (or moving) holds that published climbs use. */
+export function sprayWallHoldsRemovedInUse(
+  properties: SprayWallHoldsRemovedInUseProps,
+): SprayWallPayload<typeof SHARED_EVENTS.SprayWallHoldsRemovedInUse, SprayWallHoldsRemovedInUseProps> {
+  return { name: SHARED_EVENTS.SprayWallHoldsRemovedInUse, properties };
+}
+
+/** Which surface offered the remix. One today; a union so a second is legible. */
+export type SprayRemixSurface = 'play_drawer';
+
+export type ClimbRemixedFromBrokenProps = {
+  /** Holds this climb lost. Never which holds. */
+  lostHoldCount: number;
+  source: SprayRemixSurface;
+};
+
+/** A climber took the Remix on a climb that lost a hold. */
+export function climbRemixedFromBroken(
+  properties: ClimbRemixedFromBrokenProps,
+): SprayWallPayload<typeof SHARED_EVENTS.ClimbRemixedFromBroken, ClimbRemixedFromBrokenProps> {
+  return { name: SHARED_EVENTS.ClimbRemixedFromBroken, properties };
 }
 
 /**

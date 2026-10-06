@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { SHARED_EVENTS } from '../events';
 import {
   SPRAY_ROLLOUT_GATES,
+  climbRemixedFromBroken,
   sprayHoldsReviewed,
   sprayWallBindStalled,
   sprayWallDetectionFinished,
   sprayWallPhotoPicked,
+  sprayWallHoldsRemovedInUse,
   sprayWallResetStarted,
   sprayWallUploadFinished,
 } from '../spray-wall-events';
@@ -47,6 +49,8 @@ const EVERY_PAYLOAD = [
   sprayHoldsReviewed({ holdCount: 198, hadCandidates: true }),
   sprayWallBindStalled({ stage: 'fetch_board', elapsedMs: 30000 }),
   sprayWallResetStarted('board_sheet'),
+  sprayWallHoldsRemovedInUse({ holdCount: 2, publishedClimbCount: 5, usageKnown: true }),
+  climbRemixedFromBroken({ lostHoldCount: 1, source: 'play_drawer' }),
 ];
 
 describe('spray wall event builders', () => {
@@ -66,6 +70,14 @@ describe('spray wall event builders', () => {
     expect(sprayWallResetStarted('board_sheet')).toEqual({
       name: SHARED_EVENTS.SprayWallResetStarted,
       properties: { source: 'board_sheet' },
+    });
+    expect(sprayWallHoldsRemovedInUse({ holdCount: 1, publishedClimbCount: 0, usageKnown: false })).toEqual({
+      name: SHARED_EVENTS.SprayWallHoldsRemovedInUse,
+      properties: { holdCount: 1, publishedClimbCount: 0, usageKnown: false },
+    });
+    expect(climbRemixedFromBroken({ lostHoldCount: 3, source: 'play_drawer' })).toEqual({
+      name: SHARED_EVENTS.ClimbRemixedFromBroken,
+      properties: { lostHoldCount: 3, source: 'play_drawer' },
     });
   });
 

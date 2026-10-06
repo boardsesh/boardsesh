@@ -727,6 +727,19 @@ export const SHARED_EVENTS = {
   // `Board Created` with `isReset: true`, so the ratio between the two is
   // confirms per completed reset.
   SprayWallResetStarted: 'Spray Wall Reset Started',
+  // Props: { holdCount, publishedClimbCount, usageKnown }. The owner confirmed
+  // "Remove a hold that climbs use?" in the hold editor: the save removes or
+  // moves holds that published climbs use, and those climbs will be marked as
+  // missing a hold. `holdCount` is how many holds the confirm was about,
+  // `publishedClimbCount` how many published climbs use them (0 when the usage
+  // read failed and `usageKnown` is false). Fires on "Remove anyway", never on
+  // "Keep holds".
+  SprayWallHoldsRemovedInUse: 'Spray Wall Holds Removed In Use',
+  // Props: { lostHoldCount, source: 'play_drawer' }. A climber took the Remix
+  // on the play drawer's "This climb lost a hold" banner: the one number that
+  // says whether a climb that lost a hold is a dead end or a starting point.
+  // Fires on the tap, not on the save.
+  ClimbRemixedFromBroken: 'Climb Remixed From Broken',
   // Board presence — "now on the wall" (board-level collaboration, keyed on the
   // shared board_id resolved from the BLE serial). `boardId` is attached as an
   // event PROPERTY at the call sites — never the raw serial. Keep these to user
