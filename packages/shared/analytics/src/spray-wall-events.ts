@@ -1,5 +1,6 @@
 // Spray wall telemetry (epic #5346, SW-17): the add-a-wall funnel, the reset
-// funnel, and the remix offer that catches a climb a reset broke.
+// that opens it on a clone of a wall, and the remix offer that catches a climb a
+// reset broke.
 //
 // The contract, one paragraph, mirrors board-render-events.ts:
 //
@@ -12,7 +13,7 @@
 //  * **Outcomes, not gestures.** PostHog is past the 1M-event tier
 //    (`docs/posthog-cost-audit`-era rule), so every event here fires once per
 //    wall per step — picking the photo, the upload landing, detection settling,
-//    the holds being saved, a reset previewed, a reset applied. Nothing fires
+//    the holds being saved, a reset started. Nothing fires
 //    per tap, per frame, or per hold.
 //  * **Nothing identifies the wall or what is on it.** No photo, no URI, no
 //    file name, no wall name, no gym, no hold coordinates, no free text. A wall
@@ -23,7 +24,8 @@
 //  * `Board Created` with `boardType: 'spray'` closes the add funnel and is the
 //    SAME event every other board type fires — a spray-only variant would hide
 //    walls from every board-creation number we already watch, so there is no
-//    builder for it here.
+//    builder for it here. A wall built through a reset says so with
+//    `isReset`, so activation numbers can leave clones out.
 //
 // Full contract and the rollout gates read off these: `docs/spray-walls.md`
 // ("Telemetry" and "Rolling the flag out").
@@ -136,44 +138,22 @@ export function sprayWallBindStalled(
   return { name: SHARED_EVENTS.SprayWallBindStalled, properties };
 }
 
-export type SprayWallResetPreviewedProps = {
-  keptCount: number;
-  removedCount: number;
-  addedCount: number;
-  /** Matches the gate let through at low confidence — the ones worth eyeballing. */
-  lowConfidenceCount: number;
-  /** Climbs whose integrity the reset would move. Never which climbs. */
-  climbsAffected: number;
-  /** The new photo is a different shape from the wall's frame. */
-  aspectMismatch: boolean;
-  /** How many holds the new photo's detector found, before matching. */
-  detectionCount: number;
-};
+/**
+ * Where the owner confirmed a reset: the wall sheet's "Reset this wall" row, or
+ * the "Holds are locked" row that explains why a hold cannot change.
+ */
+export type SprayResetSurface = 'board_sheet' | 'holds_locked';
 
-export function sprayWallResetPreviewed(
-  properties: SprayWallResetPreviewedProps,
-): SprayWallPayload<typeof SHARED_EVENTS.SprayWallResetPreviewed, SprayWallResetPreviewedProps> {
-  return { name: SHARED_EVENTS.SprayWallResetPreviewed, properties };
-}
+export type SprayWallResetStartedProps = { source: SprayResetSurface };
 
-export type SprayWallResetAppliedProps = {
-  keptCount: number;
-  removedCount: number;
-  addedCount: number;
-  climbsChanged: number;
-  /**
-   * How many "same hold, moved here" pairings the owner confirmed — the only
-   * thing that makes remix able to suggest a successor months later.
-   */
-  moveCount: number;
-  /** The owner marked it a full reset, retiring the climbs that lost holds (#6024). */
-  fullReset: boolean;
-};
-
-export function sprayWallResetApplied(
-  properties: SprayWallResetAppliedProps,
-): SprayWallPayload<typeof SHARED_EVENTS.SprayWallResetApplied, SprayWallResetAppliedProps> {
-  return { name: SHARED_EVENTS.SprayWallResetApplied, properties };
+/**
+ * The owner confirmed "Reset this wall?". Read against `Board Created` with
+ * `isReset: true` to see how many resets reach a published replacement.
+ */
+export function sprayWallResetStarted(
+  source: SprayResetSurface,
+): SprayWallPayload<typeof SHARED_EVENTS.SprayWallResetStarted, SprayWallResetStartedProps> {
+  return { name: SHARED_EVENTS.SprayWallResetStarted, properties: { source } };
 }
 
 /** Which surface offered the remix. One today; named so a second is legible. */
@@ -208,7 +188,7 @@ export function climbEditedFromBroken(
 }
 
 /**
- * The two ratios the flag rollout is gated on (`docs/feature-flags.md`).
+ * The ratio the flag rollout is gated on (`docs/feature-flags.md`).
  *
  * Exported as functions rather than written into a dashboard description so the
  * numbers in the doc and the numbers in the code cannot drift, and so a reader
@@ -228,13 +208,5 @@ export const SPRAY_ROLLOUT_GATES = {
   detectionCorrectionRate(detected: number, saved: number): number {
     if (detected <= 0) return 0;
     return Math.abs(saved - detected) / detected;
-  },
-  /**
-   * Reset satisfaction: applied / previewed. An owner who previews a reset and
-   * never applies it has been shown something they do not believe. Gate: >= 0.6.
-   */
-  resetCommitRate(previewed: number, applied: number): number {
-    if (previewed <= 0) return 0;
-    return applied / previewed;
   },
 } as const;

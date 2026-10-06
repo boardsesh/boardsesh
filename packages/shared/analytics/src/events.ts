@@ -642,6 +642,11 @@ export const SHARED_EVENTS = {
   // `resumed` before reading either one, or the denominator silently drops the
   // resumed population instead of being wrong about it. Every other property is
   // read off the `user_boards` row and is correct on both paths.
+  //
+  // Spray walls also carry `isReset`: true when the wall is the replacement a
+  // reset built (`Spray Wall Reset Started`). Its publish archives the wall it
+  // replaced, so it is not a new wall for anyone; leave it out of activation
+  // and board-creation counts.
   BoardCreated: 'Board Created',
   // Props: { boardType, source, error_reason: 'duplicate_config' | 'rate_limited'
   //          | 'auth' | 'board_limit' | 'exception' }. 'board_limit' is the
@@ -709,28 +714,19 @@ export const SHARED_EVENTS = {
   // who sees it can still finish — but the count of walls that published and
   // then sat on "Setting your wall up…", by where they sat.
   SprayWallBindStalled: 'Spray Wall Bind Stalled',
-  // Spray walls — the reset funnel (epic #5346, SW-13). Two events, because a
-  // reset is two decisions: looking at what the matcher found, and landing it.
-  // The gap between them is the number that says whether the compare screen is
-  // trusted — an owner who previews and never applies has been shown something
-  // they do not believe.
+  // Spray walls — a reset (docs/spray-walls.md, "Archive and reset"). A reset
+  // clones the wall's settings into a new wall the owner photographs and marks
+  // in the add-a-wall wizard; its first publish archives the old wall.
   //
-  // Props: { keptCount, removedCount, addedCount, lowConfidenceCount,
-  // climbsAffected, aspectMismatch, detectionCount }. Nothing here identifies
-  // the wall or its photograph.
-  SprayWallResetPreviewed: 'Spray Wall Reset Previewed',
-  // Props: { keptCount, removedCount, addedCount, climbsChanged, moveCount }.
-  // The counts are the SERVER's, not the review's: an owner's decisions are
-  // re-validated under the wall lock, so what landed and what was confirmed can
-  // legitimately differ. `moveCount` is how many "same hold, moved here"
-  // pairings were confirmed — the only thing that makes remix able to suggest a
-  // successor months later.
-  SprayWallResetApplied: 'Spray Wall Reset Applied',
+  // Props: { source: 'board_sheet' | 'holds_locked' }. Fired once when the
+  // owner confirms "Reset this wall?". The replacement's publish is the
+  // ordinary `Board Created` with `isReset: true`.
+  SprayWallResetStarted: 'Spray Wall Reset Started',
   // Props: { lostHoldCount, source: 'play_drawer' }. Fired when a climber takes
   // the remix offer on a climb that lost holds — the one number that says
   // whether a broken climb is a dead end or a starting point. No successor
-  // count: `remixClimb`'s suggestions are not read on this path (see
-  // `use-spray-wall-reset.ts`), and a property that is always absent is worse
+  // count: no client reads `remixClimb`'s suggestions, and a property that is
+  // always absent is worse
   // than no property at all — it reads as "no successors were offered" rather
   // than "nobody asked".
   ClimbRemixedFromBroken: 'Climb Remixed From Broken',
