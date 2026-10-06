@@ -897,6 +897,8 @@
     "photo": {
       "title": "Photograph the wall",
       "body": "Stand square on, shoot at 1x, and get the whole wall in frame. Every hold you set lives on these pixels.",
+      "helpLink": "How to shoot it",
+      "helpLinkHint": "Opens the photo guide in your browser",
       "library": "Choose a photo",
       "camera": "Take a photo",
       "pickAnother": "Choose a different photo",
