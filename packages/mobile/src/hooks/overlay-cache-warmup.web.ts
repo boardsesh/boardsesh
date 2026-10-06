@@ -58,6 +58,12 @@ export function listOverlayCacheEntries(_cacheDirName: string): OverlayCacheEntr
   return entries.length > 0 ? entries : null;
 }
 
+export function deleteOverlayCacheEntry(uri: string): void {
+  snapshotOverlayEntries()
+    .find((entry) => entry.uri === uri)
+    ?.delete?.();
+}
+
 /**
  * Browser object URLs cannot be synchronously mapped back to a Cache API entry.
  * Returning null makes an image failure terminal instead of guessing that a

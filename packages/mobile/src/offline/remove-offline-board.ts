@@ -24,6 +24,7 @@ import { getSetting, setOfflineBoardEnabled, forgetOfflineBoardScope } from '../
 import { reportScopeDownloadAbandoned } from './offline-sync-adapter';
 import { reportHandledError } from '../lib/error-reporting';
 import { deleteStoredSprayPhoto } from '../lib/spray/spray-photo-store';
+import { clearSprayWallPrivateCaches } from '../lib/spray/spray-privacy-cleanup';
 import { clearSprayPhotoPending } from './spray-photo-retry';
 import { sweepOverlaysForScope } from '../lib/sweep-caches';
 
@@ -93,6 +94,7 @@ export async function removeOfflineBoard(params: {
   // they'd offer a board whose climbs have just been deleted.
   forgetOfflineBoardScope(scope);
   const releasePurge = beginScopePurge(purgeNamespaceKey(scope));
+  if (scope.boardType === 'spray') clearSprayWallPrivateCaches(scope.layoutId);
 
   const retainedScopes = getSetting('syncEnabledBoards')
     .map(parseOfflineBoardKey)

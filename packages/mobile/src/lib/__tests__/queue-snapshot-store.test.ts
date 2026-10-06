@@ -148,3 +148,56 @@ describe('queue-snapshot-store', () => {
     expect(stored?.queue).toEqual(queue);
   });
 });
+
+describe('queue snapshot removal ordering', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    (await getStorageMock()).__reset();
+  });
+
+  it('rejects a save whose debounce was scheduled before removal', async () => {
+    const { getStoredQueueSnapshot, setStoredQueueSnapshot, clearStoredQueueSnapshot, getQueueSnapshotGeneration } =
+      await import('../queue-snapshot-store');
+    const oldGeneration = getQueueSnapshotGeneration();
+    await clearStoredQueueSnapshot();
+    await setStoredQueueSnapshot(
+      { queue: [makeQueueItem('deleted')], currentClimbQueueItem: null, playlistSuggestionSource: null },
+      undefined,
+      oldGeneration,
+    );
+    expect(await getStoredQueueSnapshot()).toBeNull();
+    await setStoredQueueSnapshot({
+      queue: [makeQueueItem('new')],
+      currentClimbQueueItem: null,
+      playlistSuggestionSource: null,
+    });
+    expect((await getStoredQueueSnapshot())?.queue[0].uuid).toBe('new');
+  });
+
+  it('waits for an in-flight save before deleting its snapshot', async () => {
+    const { getStoredQueueSnapshot, setStoredQueueSnapshot, clearStoredQueueSnapshot } =
+      await import('../queue-snapshot-store');
+    const storage = (await import('@react-native-async-storage/async-storage')).default;
+    const originalSetItem = vi.mocked(storage.setItem).getMockImplementation();
+    let finishSave: (() => void) | undefined;
+    vi.mocked(storage.setItem).mockImplementationOnce(
+      (key, serialized) =>
+        new Promise<void>((resolve) => {
+          finishSave = () => {
+            void originalSetItem?.(key, serialized).then(resolve);
+          };
+        }),
+    );
+    const saving = setStoredQueueSnapshot({
+      queue: [makeQueueItem('deleted')],
+      currentClimbQueueItem: null,
+      playlistSuggestionSource: null,
+    });
+    await Promise.resolve();
+    const clearing = clearStoredQueueSnapshot();
+    expect(finishSave).toBeDefined();
+    finishSave?.();
+    await Promise.all([saving, clearing]);
+    expect(await getStoredQueueSnapshot()).toBeNull();
+  });
+});

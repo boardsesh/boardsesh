@@ -26,7 +26,7 @@
 import 'server-only';
 import { cache } from 'react';
 import {
-  GET_BOARD,
+  GET_EMBED_BOARD,
   GET_GYM,
   GET_GYM_BOARDS,
   type GetBoardQueryResponse,
@@ -77,7 +77,7 @@ async function fetchEmbedGraphQL<ResponseData, Entity>(
  * `resolveEmbeddableBoard` (the resolver serves private boards to anon). */
 export const fetchBoardForEmbed = cache(async (boardUuid: string): Promise<EmbedFetchResult<UserBoard | null>> => {
   return fetchEmbedGraphQL<GetBoardQueryResponse, UserBoard | null>(
-    GET_BOARD,
+    GET_EMBED_BOARD,
     { boardUuid },
     (responseData) => responseData.board,
   );

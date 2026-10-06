@@ -120,7 +120,25 @@ const climbInputFields = inputTypeFieldNames('ClimbInput');
  */
 const NEVER_BROADCAST = new Set(['userAscents', 'userAttempts']);
 
-const expectedReadPathFields = new Set([...climbInputFields].filter((field) => !NEVER_BROADCAST.has(field)));
+/**
+ * Fields the server accepts on a queue climb that no client writes or reads YET.
+ *
+ * `revisionNumber` (#6023) is declared on `ClimbInput` and on the Zod schema in
+ * the server PR, so the backend is ready before any client sends it. The two
+ * selection sets gain it in the client PR, together with the write mappers and
+ * re-recorded screenshot fixtures (those hash the operation documents, which is
+ * why they are not edited here). Until then nobody writes the field, so there is
+ * nothing to flap.
+ *
+ * The check below also runs the other way: once a selection set reads a field
+ * listed here it fails as "read but never written", so the entry has to be
+ * removed in the same change that adds the field to the documents.
+ */
+const SERVER_READY_NOT_YET_ON_CLIENTS = new Set(['revisionNumber']);
+
+const expectedReadPathFields = new Set(
+  [...climbInputFields].filter((field) => !NEVER_BROADCAST.has(field) && !SERVER_READY_NOT_YET_ON_CLIENTS.has(field)),
+);
 
 describe('queue climb field parity: GraphQL ClimbInput <-> backend Zod schema', () => {
   it('found the ClimbInput type in the schema', () => {
@@ -181,6 +199,7 @@ describe('queue climb field parity: GraphQL ClimbInput <-> backend Zod schema', 
       boardseshConfidence: 'confirmed',
       compatibleSizeIds: [10, 17],
       missingHoldCount: 2,
+      revisionNumber: 3,
     };
 
     const parsed = ClimbQueueItemSchema.parse({ uuid: 'queue-slot-1', climb });
@@ -204,6 +223,18 @@ describe('queue climb field parity: GraphQL ClimbInput <-> backend Zod schema', 
     });
 
     expect(result.success).toBe(true);
+  });
+
+  // Same failure mode, different field: a revision that is not a positive
+  // integer costs the queued climb its revision, not its place in the queue.
+  it.each([[0], [-1], [1.5], ['3']])('drops a revisionNumber of %j rather than the queue slot', (revisionNumber) => {
+    const result = ClimbQueueItemSchema.safeParse({
+      uuid: 'queue-slot-1',
+      climb: { uuid: 'aurora-climb-uuid-fixture', angle: 40, revisionNumber },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.climb.revisionNumber).toBeNull();
   });
 });
 

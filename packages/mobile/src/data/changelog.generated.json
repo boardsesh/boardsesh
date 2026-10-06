@@ -1,6 +1,198 @@
 {
-  "generatedAt": "2026-10-04T01:23:15.348Z",
+  "generatedAt": "2026-10-06T00:02:08.766Z",
   "entries": [
+    {
+      "prNumber": 6114,
+      "category": "fixed",
+      "title": "Keep editing your spray wall when you cancel a leave prompt.",
+      "mergedAt": "2026-10-05T23:59:41Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6114"
+    },
+    {
+      "prNumber": 6116,
+      "category": "fixed",
+      "title": "See the reset summary and framing warning above your wall photo.",
+      "mergedAt": "2026-10-05T23:40:25Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6116"
+    },
+    {
+      "prNumber": 6132,
+      "category": "new",
+      "title": "Your logbook shows when a tick was on an earlier version of a climb",
+      "mergedAt": "2026-10-05T23:35:28Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6132",
+      "body": "A spray climb's sends and stars start again when its holds change"
+    },
+    {
+      "prNumber": 6126,
+      "category": "new",
+      "title": "The climber-facing note ships with the app PR for #6023, which is where the sent mark and the version tag appear.",
+      "mergedAt": "2026-10-05T23:34:42Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6126"
+    },
+    {
+      "prNumber": 6122,
+      "category": "fixed",
+      "title": "Read climb names beside lost-holds labels, and refresh downloaded climbs after publishing a reset.",
+      "mergedAt": "2026-10-05T23:00:31Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6122"
+    },
+    {
+      "prNumber": 6128,
+      "category": "fixed",
+      "title": "Signing out or deleting a spray wall clears its cached photos and hold previews. Downloads finishing afterward cannot bring those previews back.",
+      "mergedAt": "2026-10-05T22:27:36Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6128"
+    },
+    {
+      "prNumber": 6108,
+      "category": "fixed",
+      "title": "Photographing a wall no longer closes the app on devices with no camera",
+      "mergedAt": "2026-10-05T11:46:08Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6108"
+    },
+    {
+      "prNumber": 6068,
+      "category": "fixed",
+      "title": "Scan a gym poster with your iPhone and land on that gym's page, not the app's Home tab.",
+      "mergedAt": "2026-10-05T07:08:06Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6068"
+    },
+    {
+      "prNumber": 6088,
+      "category": "fixed",
+      "title": "Your new climbs appear immediately on downloaded spray walls, without restarting the app.",
+      "mergedAt": "2026-10-05T04:48:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6088"
+    },
+    {
+      "prNumber": 6093,
+      "category": "fixed",
+      "title": "Your browser queue stays cleared after removing a wall, and new queued climbs survive a quick switch.",
+      "mergedAt": "2026-10-05T04:09:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6093"
+    },
+    {
+      "prNumber": 6091,
+      "category": "improved",
+      "title": "Updates download faster, so the newest version is ready sooner when you open the app.",
+      "mergedAt": "2026-10-05T03:59:37Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6091"
+    },
+    {
+      "prNumber": 6069,
+      "category": "new",
+      "title": "Using Boardsesh in your phone's browser? There's now a link to get the app from the App Store or Google Play.",
+      "mergedAt": "2026-10-05T03:32:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6069"
+    },
+    {
+      "prNumber": 6074,
+      "category": "fixed",
+      "title": "Tap a shared climb before signing in and it opens once you're in.",
+      "mergedAt": "2026-10-05T03:30:57Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6074"
+    },
+    {
+      "prNumber": 6063,
+      "category": "fixed",
+      "title": "Log, queue and favourite your spray climbs after holds come off the wall.",
+      "mergedAt": "2026-10-05T03:30:43Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6063"
+    },
+    {
+      "prNumber": 6082,
+      "category": "fixed",
+      "title": "Your board picker shows walls ready to climb. Resume unfinished walls in Add a wall, and close an editor when its wall photo cannot load.",
+      "mergedAt": "2026-10-05T03:30:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6082"
+    },
+    {
+      "prNumber": 6067,
+      "category": "fixed",
+      "title": "Delete your spray wall without its last climb lingering on the bar.",
+      "mergedAt": "2026-10-05T02:37:09Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6067"
+    },
+    {
+      "prNumber": 6085,
+      "category": "improved",
+      "title": "[x] none",
+      "mergedAt": "2026-10-05T02:30:16Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6085"
+    },
+    {
+      "prNumber": 6076,
+      "category": "fixed",
+      "title": "Your new unlisted or public wall has its share link as soon as you publish it.",
+      "mergedAt": "2026-10-05T02:28:31Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6076"
+    },
+    {
+      "prNumber": 6079,
+      "category": "fixed",
+      "title": "Browse and search downloaded climbs after relaunching offline, including spray walls.",
+      "mergedAt": "2026-10-05T02:28:03Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6079"
+    },
+    {
+      "prNumber": 6070,
+      "category": "fixed",
+      "title": "Keep unfinished wall photos separate from hold edits.",
+      "mergedAt": "2026-10-05T01:51:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6070"
+    },
+    {
+      "prNumber": 6036,
+      "category": "fixed",
+      "title": "Logs, notes and beta on a private spray wall no longer show up on session cards for climbers who cannot see the wall",
+      "mergedAt": "2026-10-05T01:51:10Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6036"
+    },
+    {
+      "prNumber": 6034,
+      "category": "fixed",
+      "title": "Notes and suggestions on a climb you deleted from a private wall no longer show up for other climbers",
+      "mergedAt": "2026-10-04T12:56:47Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6034"
+    },
+    {
+      "prNumber": 6028,
+      "category": "fixed",
+      "title": "Pick a wall photo, profile picture or feedback screenshot without sharing your whole photo library.",
+      "mergedAt": "2026-10-04T12:31:38Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6028"
+    },
+    {
+      "prNumber": 6029,
+      "category": "fixed",
+      "title": "All four corner rings stay on screen while you mark your spray wall.",
+      "mergedAt": "2026-10-04T12:30:43Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6029",
+      "body": "The area you marked is outlined between the rings."
+    },
+    {
+      "prNumber": 4593,
+      "category": "fixed",
+      "title": "Pan a zoomed-in climb without the play drawer sliding away.",
+      "mergedAt": "2026-10-04T11:18:36Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4593"
+    },
+    {
+      "prNumber": 4731,
+      "category": "new",
+      "title": "Queue a playlist after your current climbs, including playlists from setters.",
+      "mergedAt": "2026-10-04T11:18:08Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4731"
+    },
+    {
+      "prNumber": 5999,
+      "category": "improved",
+      "title": "Your logbook on a climb shows up right away when you open it",
+      "mergedAt": "2026-10-04T05:32:28Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5999",
+      "body": "Other climbers' logs are ready sooner when you scroll down to them"
+    },
     {
       "prNumber": 5975,
       "category": "new",
@@ -6087,6 +6279,76 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-10-05T13:37:36+11:00",
+      "sha": "ce06f3ef7821f2641b4e1d736af3776d93fa6394",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "8624152895000c330497160a9f561e17ce4bb9b7",
+        "ios": "7c1871c18f50ea805ea5409d498f48bdd01779c9"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-10-04T23:31:48+11:00",
+      "sha": "ce8badbf7612679baefc13ab0210160fdfd9158a",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "0efc9e960983a6f8648dcdadfde0fe88733c5a76"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-10-04T23:31:25+11:00",
+      "sha": "7a40023624ea62f3edf700be22b4781d65df6cf5",
+      "platforms": [
+        "ios"
+      ],
+      "fingerprints": {
+        "ios": "a481f6b2d2745ef66a16bf61e24ccde448c2e21b"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-10-04T22:49:37+11:00",
+      "sha": "569dbf347205427f1ef8ba8c4d21e9191c8b0033",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "de46aaf27b7fc32afaf914f0470abbc00945f359"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-10-04T22:19:35+11:00",
+      "sha": "2ee585f53c31b3e654de255d76aea2fc378ac3c7",
+      "platforms": [
+        "ios"
+      ],
+      "fingerprints": {
+        "ios": "17f858ea4305b69188294bbc28ee774dbb25dbf1"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-10-04T22:16:45+11:00",
+      "sha": "9db090bbe09a08959c39e2ce4b198cfd6cef2efb",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "4c07a7270f53c8f721422fbaea22d3125d7db53c",
+        "ios": "7123e6ce929911b8b439d8313baa11a18e42dad8"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-10-03T21:12:59+10:00",

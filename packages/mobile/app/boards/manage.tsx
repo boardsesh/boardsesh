@@ -3,7 +3,6 @@ import { RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { useSQLiteContext } from 'expo-sqlite';
 import { useQuery } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useMyBoards, useProfile } from '../../src/lib/graphql/hooks';
@@ -27,6 +26,8 @@ import {
   estimateScopeDownload,
 } from '@boardsesh/offline-sync';
 import { reportAbandonedDownloadOnDisable } from '../../src/offline/abandoned-download-terminals';
+import { useOfflineDatabase } from '../../src/db/use-offline-database';
+import { useOfflineSchemaDowngrade } from '../../src/db/use-offline-schema-downgrade';
 import { useBoardDownloads } from '../../src/offline/use-board-downloads';
 import { useSnapshotManifest } from '../../src/offline/use-snapshot-manifest';
 import { useConfirmBoardDownload } from '../../src/offline/use-confirm-board-download';
@@ -75,6 +76,11 @@ const getItemType = (item: ManageItem) => item.type;
 export default function ManageBoards() {
   const router = useRouter();
   const { t, i18n } = useTranslation('boards');
+  const { t: tCommon } = useTranslation('common');
+  // The offline database belongs to a newer app version, so nothing can be
+  // downloaded into it this session. The rows keep their download controls,
+  // disabled, and the header says why — the same words Storage uses.
+  const offlineStoragePaused = useOfflineSchemaDowngrade() !== null;
   const { isAuthenticated, refreshAuthState } = useAuth();
   const { systemColors, brandColors } = useTheme();
   const confirm = useConfirm();
@@ -125,7 +131,8 @@ export default function ManageBoards() {
   const snapshotManifest = useSnapshotManifest();
   const snapshotManifestRef = useRef(snapshotManifest);
   snapshotManifestRef.current = snapshotManifest;
-  const db = useSQLiteContext();
+  // Not `useSQLiteContext()` directly: see src/db/use-offline-database.
+  const db = useOfflineDatabase();
   const syncStatus = useSyncStatus();
   // Mirrored for the toggle-off handler, which only reads it at tap time: keeping
   // the live status out of that callback's deps means a progress frame can't churn
@@ -487,6 +494,7 @@ export default function ManageBoards() {
           canRetryFastDownload={canRetryFastDownload}
           onRetryFastDownload={handleRetryFastDownload}
           onToggleOffline={handleToggleOffline}
+          offlineControlsDisabled={offlineStoragePaused}
         />
       );
     },
@@ -504,6 +512,7 @@ export default function ManageBoards() {
       snapshotSourceAvailable,
       handleToggleOffline,
       handleRetryFastDownload,
+      offlineStoragePaused,
     ],
   );
 
@@ -586,6 +595,14 @@ export default function ManageBoards() {
             </View>
           ) : items.length > 0 ? (
             <View style={styles.listHeader}>
+              {offlineStoragePaused && offlineDownloadsEnabled ? (
+                <View style={styles.pausedNotice}>
+                  <Text variant="headline">{tCommon('mobile.settings.storage.downgradeTitle')}</Text>
+                  <Text variant="subheadline" style={styles.offlineNotice}>
+                    {tCommon('mobile.settings.storage.downgradeSubtitle')}
+                  </Text>
+                </View>
+              ) : null}
               <Button title={t('mobile.discovery.create')} variant="outlined" onPress={onCreate} />
             </View>
           ) : null
@@ -621,6 +638,10 @@ const styles = StyleSheet.create({
   },
   offlineNotice: {
     opacity: 0.7,
+  },
+  pausedNotice: {
+    gap: spacing[1],
+    paddingBottom: spacing[3],
   },
   sectionHeader: {
     paddingHorizontal: spacing[4],

@@ -18,9 +18,14 @@ describe('isConnectStepProductionBuild', () => {
     ['a dev build', { devBuild: true }],
     ['an EAS preview binary', { previewBuild: true }],
     ['a pr-* OTA bundle, by its environment', { appEnvironment: 'preview' }],
-    ['a pr-* OTA branch, by the running branch', { otaBranch: 'pr-5678' }],
+    ['a PR preview, by the running branch', { otaBranch: 'pr-5678' }],
+    ['the staged main bundle, by the running branch', { otaBranch: 'pr-staging' }],
   ] as const)('leaves out %s', (_label, overrides) => {
     expect(isConnectStepProductionBuild({ ...STORE_BUILD, ...overrides })).toBe(false);
+  });
+
+  it('counts a climber on early updates: the branch is named pr-beta and is not a preview', () => {
+    expect(isConnectStepProductionBuild({ ...STORE_BUILD, otaBranch: 'pr-beta' })).toBe(true);
   });
 
   it('keeps a production branch that is not a PR preview', () => {

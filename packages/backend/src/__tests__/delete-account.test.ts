@@ -71,6 +71,10 @@ function setupTransactionMock(options?: {
 
   mockDb.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) => {
     const tx = {
+      execute: vi.fn().mockImplementation((...args: unknown[]) => {
+        txCalls.push({ method: 'execute', args });
+        return Promise.resolve([{ present: false }]);
+      }),
       select: vi.fn().mockImplementation((columns: unknown) => {
         const call = { method: 'select', columns, args: [] as unknown[] };
         return {
@@ -179,15 +183,20 @@ describe('deleteAccount mutation', () => {
     ).rejects.toThrow('DB error');
   });
 
-  it('should execute operations in correct order: select drafts, delete drafts, setter name, user', async () => {
+  it('locks and checks the favorites archive before deleting the user', async () => {
     await userMutations.deleteAccount({}, { input: { removeSetterName: true } }, makeAuthCtx());
 
-    // Order: select this user's draft climbs, delete drafts, update setter name, delete user
-    expect(txCalls).toHaveLength(4);
-    expect(txCalls[0].method).toBe('select'); // this user's draft climbs
-    expect(txCalls[1].method).toBe('delete'); // draft climbs
-    expect(txCalls[2].method).toBe('update'); // setter name
-    expect(txCalls[3].method).toBe('delete'); // user row
+    // The three raw statements are transaction isolation, relation lock, and
+    // the fresh optional-archive check, in that order.
+    expect(txCalls.map((call) => call.method)).toEqual([
+      'execute',
+      'execute',
+      'execute',
+      'select',
+      'delete',
+      'update',
+      'delete',
+    ]);
   });
 
   it('cleans up board_climb_stats/history/beta_links for a draft climb before deleting the drafts', async () => {
@@ -197,7 +206,17 @@ describe('deleteAccount mutation', () => {
 
     // select drafts, delete stats, delete history, delete beta links, delete drafts, delete user.
     // The dependent-row cleanup (3 deletes) must land between the select and the drafts delete.
-    expect(txCalls.map((call) => call.method)).toEqual(['select', 'delete', 'delete', 'delete', 'delete', 'delete']);
+    expect(txCalls.map((call) => call.method)).toEqual([
+      'execute',
+      'execute',
+      'execute',
+      'select',
+      'delete',
+      'delete',
+      'delete',
+      'delete',
+      'delete',
+    ]);
     const deleteCalls = txCalls.filter((call) => call.method === 'delete');
     expect(deleteCalls).toHaveLength(5);
   });

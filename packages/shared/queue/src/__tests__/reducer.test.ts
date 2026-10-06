@@ -942,6 +942,27 @@ describe('REFRESH_AUTHORED_CLIMB', () => {
     expect(result.queue[0].climb).toMatchObject(publishedPatch);
   });
 
+  it('drops the version numbers when the holds change, and keeps them on a rename', () => {
+    const queued = makeClimbQueueItem({
+      uuid: 'climb-a',
+      climb: { uuid: 'climb-a', name: 'First go', frames: 'p1r12', revisionNumber: 3, holdsRevisionNumber: 2 },
+    });
+    const state = makeState({ queue: [queued], currentClimbQueueItem: queued });
+
+    const renamed = queueReducer(state, {
+      type: 'REFRESH_AUTHORED_CLIMB',
+      payload: { climbUuid: 'climb-a', patch: { name: 'Renamed', frames: 'p1r12' } },
+    });
+    expect(renamed.queue[0].climb).toMatchObject({ revisionNumber: 3, holdsRevisionNumber: 2 });
+
+    const moved = queueReducer(state, {
+      type: 'REFRESH_AUTHORED_CLIMB',
+      payload: { climbUuid: 'climb-a', patch: publishedPatch },
+    });
+    expect(moved.queue[0].climb).toMatchObject({ revisionNumber: null, holdsRevisionNumber: null });
+    expect(moved.currentClimbQueueItem?.climb.holdsRevisionNumber).toBeNull();
+  });
+
   it('refreshes a queued copy that is not the current climb, and leaves the current one alone', () => {
     const other = makeClimbQueueItem({ uuid: 'other' });
     const draft = makeClimbQueueItem({ uuid: 'climb-a', climb: { uuid: 'climb-a', is_draft: true } });

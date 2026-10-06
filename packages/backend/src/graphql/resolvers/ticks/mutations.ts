@@ -24,6 +24,7 @@ import { queueBoardStatsPublish } from '../board-presence/stats';
 import { publishSocialEvent } from '../../../events';
 import { publishDebouncedSessionStats } from '../sessions/debounced-stats-publisher';
 import { queueClimbStatsRecompute, recomputeClimbStatsNow } from './debounced-climb-stats-publisher';
+import { resolveTickClimbRevision } from './tick-climb-revision';
 import { getInstagramMediaId, isInstagramUrl, normalizeBetaVideoUrl } from '../../../lib/instagram-meta';
 import {
   InstagramBetaValidationError,
@@ -523,6 +524,7 @@ function tickResult(tick: dbSchema.BoardseshTick): Record<string, unknown> {
     userId: tick.userId,
     boardType: tick.boardType,
     climbUuid: tick.climbUuid,
+    climbRevision: tick.climbRevision,
     angle: tick.angle,
     isMirror: tick.isMirror,
     status: tick.status,
@@ -852,6 +854,31 @@ export const tickMutations = {
     // climbUuid, so an edit can never move a tick to a different climb.
     const climbUuid = await resolveCanonicalClimbUuid(db, validatedInput.boardType, validatedInput.climbUuid);
 
+    // Which revision of the climb this send was on (#6023). Read once, here, and
+    // written only by the insert below: a replay returns the stored row from the
+    // pre-check above or from the conflict path, so it keeps the value its first
+    // delivery was given even when the climb has been edited since.
+    //
+    // Started here, because it needs the canonical uuid, and awaited just before
+    // the transaction, so its one or two reads overlap the session, board and
+    // beta-link work below instead of adding a serial round-trip (the same shape
+    // as the catalog probe above). Unlike that probe it CAN reject: a database
+    // error propagates so the drainer retries the send. The no-op handler marks
+    // the promise as handled for the case where something below throws first and
+    // the await is never reached; the await itself still sees the rejection.
+    //
+    // updateTick needs no counterpart for the same reason as the alias lookup:
+    // an edit cannot move a tick to another climb, and moving `climbedAt` does not
+    // change which holds the climber was on.
+    const climbRevisionLookup = resolveTickClimbRevision({
+      boardType: validatedInput.boardType,
+      inputClimbUuid: validatedInput.climbUuid,
+      canonicalClimbUuid: climbUuid,
+      clientRevision: validatedInput.climbRevision,
+      climbedAt,
+    });
+    climbRevisionLookup.catch(() => undefined);
+
     // A stale/unknown sessionId (session ended, or never existed on this
     // backend — e.g. an offline-replayed tick) would otherwise FK-violate the
     // insert and lose the whole tick (#2386). Same best-effort drop-the-ref
@@ -1052,6 +1079,10 @@ export const tickMutations = {
         })
       : { action: 'no-url' };
 
+    // Settle the revision lookup started after alias resolution. Outside the
+    // transaction on purpose: it is a read on the pool, not on `tx`.
+    const climbRevision = await climbRevisionLookup;
+
     // Insert into database. When the client supplied a uuid that already exists
     // (offline replay), the insert is a no-op and `createdTick` is undefined —
     // we detect that, return the original row, and skip every side effect below.
@@ -1069,6 +1100,7 @@ export const tickMutations = {
             userId,
             boardType: validatedInput.boardType,
             climbUuid,
+            climbRevision,
             angle: validatedInput.angle,
             isMirror: validatedInput.isMirror,
             status: validatedInput.status,
@@ -1446,6 +1478,8 @@ export const tickMutations = {
       userId: updated.userId,
       boardType: updated.boardType,
       climbUuid: updated.climbUuid,
+      // Read back, never written: `updates` above has no entry for it.
+      climbRevision: updated.climbRevision,
       angle: updated.angle,
       isMirror: updated.isMirror,
       status: updated.status,

@@ -72,7 +72,10 @@
       "unfollowMessage": "\"{{name}}\" es tu plafón activo. Al dejar de seguirlo, se quita de tus plafones y se borra la selección.",
       "unfollowConfirm": "Dejar de seguir",
       "edit": "Editar",
-      "done": "Listo"
+      "done": "Listo",
+      "deleteWallTitle": "¿Eliminar el muro de spray?",
+      "deleteWallMessage": "¿Eliminar \"{{name}}\"? Sus fotos y bloques dejarán de estar disponibles. No se puede deshacer.",
+      "deleteSuccess": "\"{{name}}\" eliminado"
     },
     "emptyTitle": "Aún no tienes plafones",
     "emptySubtitle": "Busca un plafón para empezar",

@@ -6,10 +6,15 @@ import Button from '@mui/material/Button';
 import { useTranslation } from 'react-i18next';
 import { useInstallPlatform } from '@/app/hooks/use-install-platform';
 import { resolveHeroInstall } from '@/app/lib/hero-install';
-import { IOS_APP_STORE_URL, ANDROID_PLAY_STORE_URL } from '@/app/lib/store-urls';
+import { useInboundCampaign } from '@/app/hooks/use-inbound-campaign';
+import { buildStoreUrl } from '@/app/lib/store-links';
 import { brandCtaSx, brandCtaOutlinedSx } from '@/app/components/ui/brand-cta';
 import { track } from '@/app/lib/analytics';
-import { APP_INSTALL_CLICK_EVENT, buildAppInstallClickProperties } from '@/app/lib/app-install-event';
+import {
+  APP_INSTALL_CLICK_EVENT,
+  buildAppInstallClickProperties,
+  type AppInstallPlacement,
+} from '@/app/lib/app-install-event';
 
 // The store pair, hoisted: both halves come off the SAME size step, which is the
 // whole reason they match. They previously did not — the outlined half carried
@@ -17,8 +22,17 @@ import { APP_INSTALL_CLICK_EVENT, buildAppInstallClickProperties } from '@/app/l
 const PRIMARY_STORE_SX = brandCtaSx({ size: 'large' });
 const SECONDARY_STORE_SX = brandCtaOutlinedSx({ size: 'large' });
 
-export default function MarketingInstallLinks() {
+type MarketingInstallLinksProps = {
+  /**
+   * Which surface this store pair sits on. It names the click in PostHog and is
+   * the link id in the store URL, so each surface has to pass its own.
+   */
+  placement: AppInstallPlacement;
+};
+
+export default function MarketingInstallLinks({ placement }: MarketingInstallLinksProps) {
   const { t } = useTranslation('marketing');
+  const inboundCampaign = useInboundCampaign();
   const { platform, nativeStore } = useInstallPlatform();
   const { stores, mode } = resolveHeroInstall(platform, nativeStore);
   return (
@@ -26,7 +40,7 @@ export default function MarketingInstallLinks() {
       {stores.map((store, index) => (
         <Button
           key={store}
-          href={store === 'ios' ? IOS_APP_STORE_URL : ANDROID_PLAY_STORE_URL}
+          href={buildStoreUrl(store, { placement, inbound: inboundCampaign })}
           target="_blank"
           rel="noopener noreferrer"
           variant={index === 0 ? 'contained' : 'outlined'}
@@ -37,6 +51,7 @@ export default function MarketingInstallLinks() {
               buildAppInstallClickProperties({
                 platform: store,
                 source: store === 'ios' ? 'app-store' : 'google-play',
+                placement,
                 mode,
               }),
             );

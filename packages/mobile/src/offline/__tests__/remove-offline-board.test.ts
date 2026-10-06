@@ -3,6 +3,8 @@
 // re-downloading its whole catalog over cellular right after the user removed it.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+const clearPrivateCaches = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/spray/spray-privacy-cleanup', () => ({ clearSprayWallPrivateCaches: clearPrivateCaches }));
 
 const mockStorage = new Map<string, string>();
 
@@ -92,6 +94,15 @@ beforeEach(() => {
 });
 
 describe('removeOfflineBoard', () => {
+  it('withdraws only the removed spray wall before deleting its rows', async () => {
+    const scope: OfflineBoardScope = { boardType: 'spray', layoutId: 42, sizeId: 42 };
+    removeBoardScopeData.mockImplementationOnce(async () => {
+      expect(clearPrivateCaches).toHaveBeenCalledWith(42);
+      return { climbsDeleted: 1, statsDeleted: 0, gradesDeleted: 0, removedAnyRows: true };
+    });
+    await removeOfflineBoard({ db, queryClient, scope });
+    expect(clearPrivateCaches).toHaveBeenCalledTimes(1);
+  });
   // The ordering hazard. The pull client reads syncEnabledBoards at the top of every
   // cycle, and a cycle fires on any foreground or connectivity change. If the scope
   // were still listed when the delete ran, the next cycle would see a scope with no

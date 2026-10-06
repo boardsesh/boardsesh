@@ -1,5 +1,5 @@
 {
-  "id": "81064e30-b67e-4b2e-babc-48630084c6ae",
+  "id": "e744c3fb-6c71-4733-9b02-3c60edf99317",
   "prevId": "2549351c-c794-4065-8150-e613a25e9714",
   "version": "7",
   "dialect": "postgresql",
@@ -1479,11 +1479,35 @@
         }
       },
       "indexes": {
-        "board_climbs_board_type_idx": {
-          "name": "board_climbs_board_type_idx",
+        "board_climbs_layout_filter_idx": {
+          "name": "board_climbs_layout_filter_idx",
           "columns": [
             {
               "expression": "board_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "layout_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "is_listed",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "is_draft",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "frames_count",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -7445,27 +7469,6 @@
           "method": "btree",
           "with": {}
         },
-        "boardsesh_ticks_sync_pending_idx": {
-          "name": "boardsesh_ticks_sync_pending_idx",
-          "columns": [
-            {
-              "expression": "aurora_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "boardsesh_ticks_kilter_id_unique": {
           "name": "boardsesh_ticks_kilter_id_unique",
           "columns": [
@@ -7927,27 +7930,6 @@
         }
       },
       "indexes": {
-        "board_climb_events_board_confirmed_at_idx": {
-          "name": "board_climb_events_board_confirmed_at_idx",
-          "columns": [
-            {
-              "expression": "board_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "confirmed_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "board_climb_events_board_seq_unique": {
           "name": "board_climb_events_board_seq_unique",
           "columns": [
@@ -8022,27 +8004,6 @@
           "columns": [
             {
               "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "board_climb_events_board_climb_idx": {
-          "name": "board_climb_events_board_climb_idx",
-          "columns": [
-            {
-              "expression": "board_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "climb_uuid",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -12097,29 +12058,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "board_setter_stats_score_idx": {
-          "name": "board_setter_stats_score_idx",
-          "columns": [
-            {
-              "expression": "board_type",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "setter_score",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "board_setter_stats_board_type_setter_username_pk": {
@@ -13034,33 +12973,6 @@
         }
       },
       "indexes": {
-        "board_climb_neighbors_rank_idx": {
-          "name": "board_climb_neighbors_rank_idx",
-          "columns": [
-            {
-              "expression": "board_type",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "climb_uuid",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "rank",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "board_climb_neighbors_neighbor_idx": {
           "name": "board_climb_neighbors_neighbor_idx",
           "columns": [
@@ -15483,193 +15395,6 @@
             "board_type",
             "climb_uuid",
             "angle"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.board_climb_revisions": {
-      "name": "board_climb_revisions",
-      "schema": "",
-      "columns": {
-        "board_type": {
-          "name": "board_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "climb_uuid": {
-          "name": "climb_uuid",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "revision_number": {
-          "name": "revision_number",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "frames": {
-          "name": "frames",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "frames_count": {
-          "name": "frames_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "frames_pace": {
-          "name": "frames_pace",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "angle": {
-          "name": "angle",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "characteristics": {
-          "name": "characteristics",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "difficulty_id": {
-          "name": "difficulty_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "spray_wall_version_id": {
-          "name": "spray_wall_version_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "changes": {
-          "name": "changes",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::text[]"
-        },
-        "edited_by": {
-          "name": "edited_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "board_climb_revisions_spray_wall_version_idx": {
-          "name": "board_climb_revisions_spray_wall_version_idx",
-          "columns": [
-            {
-              "expression": "spray_wall_version_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"board_climb_revisions\".\"spray_wall_version_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "board_climb_revisions_edited_by_idx": {
-          "name": "board_climb_revisions_edited_by_idx",
-          "columns": [
-            {
-              "expression": "edited_by",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"board_climb_revisions\".\"edited_by\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "board_climb_revisions_spray_wall_version_id_spray_wall_versions_id_fk": {
-          "name": "board_climb_revisions_spray_wall_version_id_spray_wall_versions_id_fk",
-          "tableFrom": "board_climb_revisions",
-          "tableTo": "spray_wall_versions",
-          "columnsFrom": [
-            "spray_wall_version_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "board_climb_revisions_edited_by_users_id_fk": {
-          "name": "board_climb_revisions_edited_by_users_id_fk",
-          "tableFrom": "board_climb_revisions",
-          "tableTo": "users",
-          "columnsFrom": [
-            "edited_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "board_climb_revisions_climb_fk": {
-          "name": "board_climb_revisions_climb_fk",
-          "tableFrom": "board_climb_revisions",
-          "tableTo": "board_climbs",
-          "columnsFrom": [
-            "climb_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "cascade"
-        }
-      },
-      "compositePrimaryKeys": {
-        "board_climb_revisions_climb_uuid_board_type_revision_number_pk": {
-          "name": "board_climb_revisions_climb_uuid_board_type_revision_number_pk",
-          "columns": [
-            "climb_uuid",
-            "board_type",
-            "revision_number"
           ]
         }
       },

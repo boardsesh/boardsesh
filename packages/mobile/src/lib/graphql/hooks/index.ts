@@ -256,10 +256,7 @@ export function useBoard(boardUuid: string | null) {
  * merged-away uuid resolves to the surviving canonical board (a *different*
  * uuid) while a plain-deleted board resolves to `null`.
  */
-export async function fetchBoardByUuid(boardUuid: string): Promise<UserBoard | null> {
-  const data = await getHttpClient().request<GetBoardQueryResponse>(GET_BOARD, { boardUuid });
-  return data.board;
-}
+export { fetchBoardByUuid } from './fetch-board-by-uuid';
 
 // `fetchAllMyBoards` — the paginated companion to `fetchBoardByUuid` — lives in
 // its own module rather than here: the walk needs a unit test, and this barrel
@@ -957,7 +954,8 @@ export function useSearchClimbs(
     queryFn: () => offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input }),
     select: (data) => data.searchClimbs,
     enabled: enabled && (!input.onlyFollowedAuthors || !!userId),
-    networkMode: input.onlyFollowedAuthors ? 'always' : undefined,
+    // Preserve the provider's offlineFirst default for downloaded-board reads.
+    ...(input.onlyFollowedAuthors ? { networkMode: 'always' as const } : {}),
     // undefined → React Query's defaults.
     staleTime: options?.staleTime,
     gcTime: options?.gcTime,
@@ -973,7 +971,8 @@ export function useSearchClimbsCount(requestedInput: ClimbSearchInput, enabled =
     queryFn: () => offlineAwareRequest<SearchClimbsCountQueryResponse>(SEARCH_CLIMBS_COUNT, { input }),
     select: (data) => data.searchClimbs.totalCount,
     enabled: enabled && (!input.onlyFollowedAuthors || !!userId),
-    networkMode: input.onlyFollowedAuthors ? 'always' : undefined,
+    // Preserve the provider's offlineFirst default for downloaded-board reads.
+    ...(input.onlyFollowedAuthors ? { networkMode: 'always' as const } : {}),
     // Hold the last count while a new filter set is in flight so the bar /
     // "Show N" button doesn't flicker to blank on every filter change.
     placeholderData: input.onlyFollowedAuthors ? undefined : (previous) => previous,
@@ -987,7 +986,8 @@ export function useSetterStats(input: SetterStatsInput, enabled = true) {
     queryFn: () => offlineAwareRequest<GetSetterStatsQueryResponse>(GET_SETTER_STATS, { input }),
     select: (data) => data.setterStats,
     enabled: enabled && (!input.onlyFollowedAuthors || !!userId),
-    networkMode: input.onlyFollowedAuthors ? 'always' : undefined,
+    // Preserve the provider's offlineFirst default for downloaded-board reads.
+    ...(input.onlyFollowedAuthors ? { networkMode: 'always' as const } : {}),
     staleTime: 5 * 60 * 1000,
   });
 }

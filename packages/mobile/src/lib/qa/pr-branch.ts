@@ -19,6 +19,28 @@ export function parsePrBranch(name: string | null | undefined): number | null {
   return Number.isSafeInteger(prNumber) ? prNumber : null;
 }
 
+// Fits the production channel's existing `pr-*` branch-surfing pattern while
+// remaining distinct from numbered PR previews.
+export const STAGING_OTA_BRANCH = 'pr-staging';
+// The "Get updates early" track: every merge to main, ahead of the daily stable
+// release. Named to fit the same `pr-*` surfing pattern, and like staging it is
+// NOT a pull request. Every place that lists or classifies branches has to say
+// so explicitly, because the numbered-PR pattern already drops it silently.
+export const EARLY_UPDATES_OTA_BRANCH = 'pr-beta';
+
+/**
+ * What kind of branch a bundle came from. `'default'` is the build's own
+ * channel (xprem reports no branch for it) plus anything this app does not
+ * publish on purpose.
+ */
+export type OtaBranchKind = 'default' | 'preview' | 'staging' | 'early-updates';
+
+export function otaBranchKind(branch: string | null): OtaBranchKind {
+  if (branch === EARLY_UPDATES_OTA_BRANCH) return 'early-updates';
+  if (branch === STAGING_OTA_BRANCH) return 'staging';
+  return parsePrBranch(branch) === null ? 'default' : 'preview';
+}
+
 /** The branch name a build surfs to for a given pull request. */
 export function prBranchName(prNumber: number): string {
   return `pr-${prNumber}`;

@@ -92,21 +92,25 @@ describe('registerAppEnvironment', () => {
   });
 });
 
-// Guards the stable anonymous identity used by explicit screen/action events.
 describe('buildPostHogOptions', () => {
-  it('bootstraps the anonymous distinct_id from a resolved party-profile UUID', () => {
-    const options = buildPostHogOptions('https://us.i.posthog.com', 'party-profile-uuid');
-    expect(options.bootstrap).toEqual({ distinctId: 'party-profile-uuid', isIdentifiedId: false });
+  // The SDK owns the anonymous id. A bootstrap would put some other id in its
+  // place and reopen the identity split (see reconcile-identity.ts).
+  it('leaves the anonymous id to the SDK: no bootstrap', () => {
+    const options = buildPostHogOptions('https://us.i.posthog.com');
+    expect(options.bootstrap).toBeUndefined();
     expect(options.host).toBe('https://us.i.posthog.com');
   });
 
-  it('omits bootstrap when the party-profile UUID could not be resolved', () => {
-    const options = buildPostHogOptions('https://us.i.posthog.com', null);
-    expect(options.bootstrap).toBeUndefined();
+  // The old signed-out identify() switched person processing on as a side
+  // effect. With it gone, the SDK default would send signed-out events
+  // personless and signed-out person counts would step down on the OTA date.
+  it('builds a person for every event, signed out included', () => {
+    const options = buildPostHogOptions('https://us.i.posthog.com');
+    expect(options.personProfiles).toBe('always');
   });
 
-  it('always configures session replay masking regardless of bootstrap', () => {
-    const options = buildPostHogOptions('https://us.i.posthog.com', null);
+  it('always configures session replay masking', () => {
+    const options = buildPostHogOptions('https://us.i.posthog.com');
     expect(options.sessionReplayConfig).toEqual({
       maskAllTextInputs: true,
       maskAllImages: true,
@@ -115,7 +119,7 @@ describe('buildPostHogOptions', () => {
   });
 
   it('disables native lifecycle autocapture', () => {
-    const options = buildPostHogOptions('https://us.i.posthog.com', null);
+    const options = buildPostHogOptions('https://us.i.posthog.com');
     expect(options.captureAppLifecycleEvents).toBe(false);
   });
 });

@@ -19,6 +19,11 @@ vi.mock('../../providers/auth-provider', () => ({ useAuth: () => ({ signOut: sig
 const databaseHandle = vi.hoisted(() => ({ current: {} as unknown }));
 vi.mock('../../db', () => ({ getDatabaseHandle: () => databaseHandle.current }));
 
+const schemaDowngrade = vi.hoisted(() => ({
+  current: null as { storedVersion: number; supportedVersion: number } | null,
+}));
+vi.mock('../../db/schema-downgrade', () => ({ getSchemaDowngrade: () => schemaDowngrade.current }));
+
 const hasDownloadedBoardDataMock = vi.hoisted(() => vi.fn(async (): Promise<boolean> => false));
 vi.mock('../../db/queries/board-download-status', () => ({
   hasDownloadedBoardData: hasDownloadedBoardDataMock,
@@ -101,6 +106,7 @@ beforeEach(() => {
   reportErrorMock.mockClear();
   showSignOutFailureMock.mockClear();
   databaseHandle.current = {};
+  schemaDowngrade.current = null;
 });
 
 describe('useConfirmSignOut', () => {
@@ -303,5 +309,55 @@ describe('useConfirmSignOut', () => {
       'mobile.settings.signOut.failureTitle',
       'mobile.settings.signOut.failure',
     );
+  });
+});
+
+describe('useConfirmSignOut when the offline database belongs to a newer app version', () => {
+  beforeEach(() => {
+    // The init chain never publishes a handle in this state.
+    databaseHandle.current = null;
+    schemaDowngrade.current = { storedVersion: 11, supportedVersion: 10 };
+  });
+
+  it('warns about the sends waiting on this phone, with staying as the safe choice', async () => {
+    const { press } = renderConfirmSignOut();
+
+    await press();
+
+    expect(confirmMock).toHaveBeenCalledTimes(1);
+    expect(confirmMock).toHaveBeenCalledWith({
+      title: 'mobile.settings.signOut.title',
+      message: 'mobile.settings.signOut.downgradeMessage',
+      confirmLabel: 'mobile.settings.signOut.downgradeConfirm',
+      cancelLabel: 'mobile.settings.signOut.downgradeCancel',
+      destructive: true,
+    });
+  });
+
+  it('stays signed in when the climber backs out', async () => {
+    confirmMock.mockResolvedValue(false);
+    const { press } = renderConfirmSignOut();
+
+    await press();
+
+    expect(signOutMock).not.toHaveBeenCalled();
+  });
+
+  it('signs out when the climber chooses to anyway', async () => {
+    const { press } = renderConfirmSignOut();
+
+    await press();
+
+    expect(signOutMock).toHaveBeenCalledTimes(1);
+    expect(signOutMock).toHaveBeenCalledWith('manual');
+  });
+
+  it('never reads the refused database to compose the message', async () => {
+    const { press } = renderConfirmSignOut();
+
+    await press();
+
+    expect(getOutboxSummaryMock).not.toHaveBeenCalled();
+    expect(hasDownloadedBoardDataMock).not.toHaveBeenCalled();
   });
 });

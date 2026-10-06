@@ -69,6 +69,15 @@ export type Climb = {
   // dropped it would be the one surface that quietly pretended the climb was
   // whole.
   missingHoldCount?: number | null;
+  // `board_climbs.revision_number` / `holds_revision_number` as the client that
+  // queued the climb read them (#6023): the version of the climb the queue item
+  // shows, and the version at which its holds last moved. Null/undefined means
+  // unknown. LOCAL ONLY for now: the queue documents are pinned by the App
+  // Store screenshot fixtures and cannot select them, so they are not written
+  // to the wire either, and an item rebuilt from a server echo has neither.
+  // The tick form falls back to the phone's own copy of the climb then.
+  revisionNumber?: number | null;
+  holdsRevisionNumber?: number | null;
 };
 
 export type ClimbQueueItem = {
@@ -94,8 +103,21 @@ export type PlaylistSuggestionSource = {
   climbs: Climb[];
 };
 
+/**
+ * Why a climb became the current one, when it was not the climber choosing it.
+ * `climb_saved` is the create screen putting a just-saved climb on the queue:
+ * nobody picked a climb to climb, so a measure of "made a climb active" has to
+ * be able to leave it out.
+ */
+export type SetCurrentClimbTrigger = 'climb_saved';
+
 export type SetCurrentClimbOptions = {
-  playlistSuggestionSource: PlaylistSuggestionSource | null;
+  /**
+   * The playlist the climb was activated from, or null to clear that context.
+   * Left out, the context is untouched, the same as passing no options.
+   */
+  playlistSuggestionSource?: PlaylistSuggestionSource | null;
+  trigger?: SetCurrentClimbTrigger;
 };
 
 /**

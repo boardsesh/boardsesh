@@ -37,6 +37,7 @@ import type {
 import { getHttpClient } from '../graphql/client';
 import { invalidateSprayWallRenderData } from './spray-wall-loader';
 import { mySprayWallsQueryKey } from './use-create-spray-wall';
+import { refreshPublishedSprayClimbs } from './refresh-published-spray-climbs';
 
 type ProposeResponse = { proposeSprayWallReset: SprayWallResetProposal | null };
 type CommitResponse = { commitSprayWallVersion: SprayWallResetResult };
@@ -105,7 +106,7 @@ export function useCommitSprayWallVersion(layoutId: number) {
       await invalidateSprayWallRenderData(queryClient, input.wallUuid, layoutId);
       // Every climb on this wall may have a different integrity number now, and
       // the badge and the filter both read it off the search payload.
-      await queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
+      await refreshPublishedSprayClimbs(queryClient, layoutId);
       await queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
       await queryClient.invalidateQueries({ queryKey: sprayWallWithVersionsQueryKey(input.wallUuid) });
     },

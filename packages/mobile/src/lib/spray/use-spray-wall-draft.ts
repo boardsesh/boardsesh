@@ -182,17 +182,20 @@ export function useSprayWallDraft(
   const teardownRef = useRef({ queryClient, wallUuid, published: renderData?.wall.currentVersion != null });
   teardownRef.current = { queryClient, wallUuid, published: renderData?.wall.currentVersion != null };
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    const mountedUnder = sprayWallRemovalGeneration(layoutId);
+    return () => {
       // Put the published generation back for whatever outlives this screen, and
       // drop the cached payload with it: this device has been writing to the
       // wall, so a payload from before the session is not to be trusted.
       const { queryClient: client, wallUuid: uuid, published } = teardownRef.current;
       if (!uuid || !published) return;
+      // Withdrawn since this editor opened (sign-out, deletion, lost access): its
+      // caches are already erased, and a refresh would ask for a wall that is gone.
+      if (mountedUnder !== sprayWallRemovalGeneration(layoutId)) return;
       void invalidateSprayWallRenderData(client, uuid, layoutId);
-    },
-    [layoutId],
-  );
+    };
+  }, [layoutId]);
 
   const asked = wallUuid != null && versionNumber != null && versionId != null;
   // True from the retry tap until its read has started, so the tap is answered

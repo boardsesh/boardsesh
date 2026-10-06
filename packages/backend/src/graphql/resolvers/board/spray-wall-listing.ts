@@ -35,7 +35,26 @@ import * as dbSchema from '@boardsesh/db/schema';
  * the EXISTS, so the owner still lists their own hidden wall and sees the
  * notice on it. See "What hidden means" in docs/spray-walls.md.
  */
-export function listableSprayWallCondition(viewerId: string | null | undefined): SQL {
+export function listableSprayWallCondition(
+  viewerId: string | null | undefined,
+  options: { requirePublished?: boolean } = {},
+): SQL {
+  // The climbing picker must only offer usable walls. Owners can still see
+  // hidden published walls, but unfinished walls belong in mySprayWalls.
+  if (options.requirePublished) {
+    const ownerHiddenEscape = viewerId ? sql`OR ${dbSchema.userBoards.ownerId} = ${viewerId}` : sql``;
+    return sql`(
+      ${dbSchema.userBoards.boardType} IS DISTINCT FROM 'spray'
+      OR EXISTS (
+        SELECT 1 FROM spray_walls sw
+        JOIN spray_wall_versions sv ON sv.id = sw.current_version_id AND sv.wall_id = sw.id
+        WHERE sw.board_uuid = ${dbSchema.userBoards.uuid}
+          AND sw.deleted_at IS NULL
+          AND sv.status = 'published'
+          AND (sw.hidden_at IS NULL ${ownerHiddenEscape})
+      )
+    )`;
+  }
   // `IS DISTINCT FROM` rather than `<>`: board_type is NOT NULL today, and a
   // three-valued comparison that quietly drops rows if that ever changes is not
   // the failure anybody wants from a visibility filter.

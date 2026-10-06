@@ -40,6 +40,10 @@ export const DEFAULT_SEARCH_CACHE_TTL = 86400;
  * and a search that does not filter on integrity has no param that moved — so a
  * cached v8 page would serve rows with the field absent and every climb on a wall
  * that has just been reset would read as intact for the full 24h TTL.
+ * v10: search rows now carry `revisionNumber` and `holdsRevisionNumber` (#6023).
+ * A client will send `revisionNumber` back with a tick, so a cached v9 page,
+ * whose rows have neither field, would leave every tick logged from it to the
+ * server's by-date fallback for the full 24h TTL.
  *
  * Not bumped for #5642, which narrowed Woods searches back to the browsed angle
  * unless `crossAngleStats` opts in: Woods has not been cacheable since #4750
@@ -47,7 +51,7 @@ export const DEFAULT_SEARCH_CACHE_TTL = 86400;
  * and every cacheable board resolves exactly as before. The v8 note above
  * predates that exclusion.
  */
-export const CACHE_VERSION = 'v9';
+export const CACHE_VERSION = 'v10';
 
 /**
  * Recursively sorts the keys of an object so that JSON.stringify produces

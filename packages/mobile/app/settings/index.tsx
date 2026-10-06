@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { useSQLiteContext } from 'expo-sqlite';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { GradeDisplayFormat } from '@boardsesh/play-view';
 import type { ThemeOverride } from '@boardsesh/key-value-storage';
@@ -15,8 +14,10 @@ import { openExternalUrl } from '../../src/lib/open-url';
 import { useConfirmSignOut } from '../../src/hooks/use-confirm-sign-out';
 import { useProfile, useMyBoards, useIsAdmin } from '../../src/lib/graphql/hooks';
 import { useQaMenu } from '../../src/lib/qa/use-qa-menu';
+import { useEarlyUpdatesRow } from '../../src/lib/qa/use-early-updates';
 import { useBoardDownloads } from '../../src/offline/use-board-downloads';
 import { isOfflineEngineEnabled } from '../../src/lib/offline-engine';
+import { useOfflineDatabase } from '../../src/db/use-offline-database';
 import { useOfflineSchemaReady } from '../../src/db/use-offline-schema-ready';
 import {
   useSetting,
@@ -44,6 +45,7 @@ import { getHttpClient } from '../../src/lib/graphql/client';
 import { hapticLight, hapticSelection } from '../../src/lib/haptics';
 import { getDevMetadataSection } from '../../src/components/dev-metadata-section';
 import { buildOfflineModeRow } from '../../src/components/offline-mode-row';
+import { buildEarlyUpdatesSection } from '../../src/components/early-updates-section';
 import { useBottomChromeDiagnosticsEligible } from '../../src/components/BottomChromeDebugOverlay';
 import { MoreForm } from '../../src/components/MoreForm';
 import type { MoreButtonRow, MoreFormModel, MoreRow, MoreSection } from '../../src/components/MoreForm.types';
@@ -189,7 +191,10 @@ export default function MoreScreen() {
   // section is hidden offline — a pending write offline is expected, not a "stuck"
   // problem). A dead-lettered write is one the server rejected or that failed past
   // its retry budget while reachable: worth surfacing with a retry (never a discard).
-  const db = useSQLiteContext();
+  // Not `useSQLiteContext()` directly: the retry below DRAINS the outbox, and on a
+  // database a newer bundle migrated that must be refused, not attempted
+  // (src/db/refused-database).
+  const db = useOfflineDatabase();
   // Handed out as soon as the launch gate opens — after the first init attempt,
   // whatever it did — so on a contended launch it has no tables yet. Both reads
   // below fold readiness into their KEY rather than gating on it: a failed read
@@ -303,6 +308,9 @@ export default function MoreScreen() {
   // tester/admin-only. `show` is the binary's ability to surf, so a build that
   // cannot load a preview still hides it.
   const { show: showQaPreviews, prNumber: qaPrNumber } = useQaMenu();
+  // "Get updates early" (docs/mobile-ota-updates.md). Open to every climber on a
+  // build that can surf, once the `early-updates` flag is on.
+  const earlyUpdates = useEarlyUpdatesRow();
 
   // Dev, testers and admins. The section can no longer come out empty: the
   // "Force server unreachable" switch below is available to everyone who passes
@@ -915,6 +923,20 @@ export default function MoreScreen() {
       },
     ],
   });
+
+  if (earlyUpdates.show) {
+    sections.push(
+      buildEarlyUpdatesSection(t, {
+        state: earlyUpdates.state,
+        environment: earlyUpdates.environment,
+        onDeferred: (enabled) =>
+          showToast(
+            t(enabled ? 'mobile.settings.earlyUpdates.joinDeferred' : 'mobile.settings.earlyUpdates.leaveDeferred'),
+            'info',
+          ),
+      }),
+    );
+  }
 
   // PR previews — the everyone-facing entry into the crowdsourced-QA flow. The
   // screen is also where "Previews are switched off" / "Nothing to test right

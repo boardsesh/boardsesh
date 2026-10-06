@@ -135,7 +135,7 @@ describe('sprayCacheToken', () => {
 
   it('carries the wall version', () => {
     registerSprayWall(LAYOUT_ID, wall(4));
-    expect(sprayCacheToken('spray', LAYOUT_ID)).toBe('-svid4');
+    expect(sprayCacheToken('spray', LAYOUT_ID)).toMatch(/^-svid4-pr\d+-\d+$/);
   });
 
   it('moves when a discarded number is reused for another immutable row', () => {
@@ -155,9 +155,10 @@ describe('sprayCacheToken', () => {
   it('differs from every real version while the wall is unknown', () => {
     // Nothing is drawn or cached under it — there is no render data — but it must
     // not collide with the first paint after the query lands.
-    expect(sprayCacheToken('spray', 12345)).toBe('-svid0');
+    const unknownToken = sprayCacheToken('spray', 12345);
+    expect(unknownToken).toMatch(/^-svid0-pr\d+-\d+$/);
     registerSprayWall(12345, wall(1));
-    expect(sprayCacheToken('spray', 12345)).not.toBe('-svid0');
+    expect(sprayCacheToken('spray', 12345)).not.toBe(unknownToken);
   });
 
   it('keeps two walls apart', () => {
@@ -313,7 +314,7 @@ describe('who can edit the wall (#5955)', () => {
     expect(sprayWallViewerCanEdit('spray', 4201)).toBe(false);
     // Still registered at the same version: nothing on screen goes blank.
     expect(getSprayWall(LAYOUT_ID)).toMatchObject({ version: 3, photoWidth: 1200 });
-    expect(sprayCacheToken('spray', LAYOUT_ID)).toBe('-svid3');
+    expect(sprayCacheToken('spray', LAYOUT_ID)).toMatch(/^-svid3-pr\d+-\d+$/);
     // Marked stale, so the next ask goes back to the server for this account.
     expect(getSprayWall(LAYOUT_ID)?.registeredAtMs).toBe(0);
   });

@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { rowsOf } from '../util/rows';
 import { setSerialPlan } from '../util/serial-plan';
+import { holdsEpochOrFirstSql, tickAliasOnCurrentHoldsSql } from './holds-epoch';
 import { blendedQualityAverageSql } from './quality-blend';
 import { deriveGradeFromTicksSql, ownedGradeIsOursSql } from './real-catalog-data';
 
@@ -96,6 +97,30 @@ type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
  * double-counted. The recompute never writes upstream_quality_average (the upstream
  * syncs own it).
  *
+ * The holds epoch (#6023): the count, the FA and both quality aggregates read
+ * only ticks logged on the holds the climb has now — tickOnCurrentHoldsSql
+ * (holds-epoch.ts), `COALESCE(tick.climb_revision, 1) >=
+ * board_climbs.holds_revision_number`. Moving a hold starts those over; a
+ * rename, new notes, a regrade, a rule, angle or pace change does not move the
+ * epoch. The filter drops the tick from EVERY arm of the counting rule, so an
+ * imported send on the old holds no longer marks its climber as
+ * upstream-represented on the new ones. A NULL tick revision reads as 1 and a
+ * missing board_climbs row as epoch 1, so a climb whose holds never moved —
+ * every catalogue climb past its edit window — computes exactly as before.
+ *   - NOT filtered: difficulty_average / display_difficulty. A spray grade is
+ *     the setter's and never tick-derived; on any other owned climb, filtering
+ *     would NULL the grade after a hold edit until someone logged a graded send
+ *     on the new holds, and an ungraded climb drops out of grade-filtered search.
+ *   - NOT filtered: the seed's tick EXISTS. A key with sends on the old holds
+ *     only still gets its row, with zero ascensionists and the grade above; the
+ *     alternative would make the outcome depend on whether the row already
+ *     existed.
+ * updateClimb recomputes a climb's keys in the transaction that moves its epoch
+ * (holds-change-stats.ts in the backend), so the epoch and the stats commit
+ * together. It marks those keys in climb_stats_recompute_pending first: a
+ * recompute here whose statement read the old epoch can still write after that
+ * commit, and the drain of the marker is what recomputes the key again.
+ *
  * The defensive seed is GUARDED on the climb existing in board_climbs (#3528)
  * AND a matching non-detached flash/send tick still existing at the key.
  * A tick can carry any string as its climb_uuid — saveTick's Zod schema is
@@ -173,6 +198,13 @@ export async function recomputeClimbStats(
     boardseshQualityCount: sql`bq.bs_quality_count`,
   });
 
+  const singleKeyEpoch = holdsEpochOrFirstSql(sql`(
+          SELECT bc.holds_revision_number
+            FROM board_climbs bc
+           WHERE bc.board_type = ${boardType}
+             AND bc.uuid       = ${climbUuid}
+        )`);
+
   await db.transaction(async (tx) => {
     // The aggregate UPDATE below hash-joins boardsesh_ticks against
     // board_climb_stats, which is exactly the plan shape that exhausts
@@ -235,6 +267,11 @@ export async function recomputeClimbStats(
            AND climb_uuid = ${climbUuid}
            AND angle      = ${angle}
       ),
+      -- The climb's holds epoch (#6023), one primary-key probe. Always exactly
+      -- one row: a key with no board_climbs row reads as epoch 1.
+      epoch AS (
+        SELECT ${singleKeyEpoch} AS holds_epoch
+      ),
       agg AS (
         SELECT
           -- Per-user double-count guard: a user counts only when they have an
@@ -260,6 +297,7 @@ export async function recomputeClimbStats(
                  AND bt_u.climb_uuid = ${climbUuid}
                  AND bt_u.angle      = ${angle}
                  AND bt_u.kilter_detached_at IS NULL
+                 AND ${tickAliasOnCurrentHoldsSql('bt_u', sql`(SELECT holds_epoch FROM epoch)`)}
                GROUP BY bt_u.user_id
               HAVING bool_or(
                        bt_u.origin = 'native' AND bt_u.status IN ('flash','send')
@@ -272,12 +310,17 @@ export async function recomputeClimbStats(
                      )
                  AND NOT bool_or(bt_u.origin <> 'native' AND bt_u.status IN ('flash','send'))
             ) counting_users)          AS distinct_senders,
-          MIN(bt.climbed_at)           AS first_at,
+          -- first_at and avg_quality read current-holds ticks only (#6023);
+          -- avg_difficulty reads them all — see the module doc.
+          MIN(bt.climbed_at) FILTER (WHERE ${tickAliasOnCurrentHoldsSql('bt', sql`(SELECT holds_epoch FROM epoch)`)}) AS first_at,
           -- Not origin-filtered: avg_quality only reaches OWNED climbs (no
           -- upstream average to double-count), and avg_difficulty reaches a
           -- non-owned row only when it has no upstream grade or one we derived
           -- (#4798), so an imported tick never double-counts either.
-          AVG(bt.quality) FILTER (WHERE bt.quality BETWEEN 1 AND 5) AS avg_quality,
+          AVG(bt.quality) FILTER (
+            WHERE bt.quality BETWEEN 1 AND 5
+              AND ${tickAliasOnCurrentHoldsSql('bt', sql`(SELECT holds_epoch FROM epoch)`)}
+          ) AS avg_quality,
           AVG(bt.difficulty) FILTER (WHERE bt.difficulty > 1)       AS avg_difficulty,
           (SELECT COALESCE(up.display_name, u.name)
              FROM boardsesh_ticks bt2
@@ -288,6 +331,7 @@ export async function recomputeClimbStats(
               AND bt2.angle      = ${angle}
               AND bt2.status IN ('flash','send')
               AND bt2.kilter_detached_at IS NULL
+              AND ${tickAliasOnCurrentHoldsSql('bt2', sql`(SELECT holds_epoch FROM epoch)`)}
             ORDER BY bt2.climbed_at ASC
             LIMIT 1)                   AS first_user
         FROM boardsesh_ticks bt
@@ -316,6 +360,7 @@ export async function recomputeClimbStats(
                AND bt.quality >= 1
                AND bt.quality <= 5
                AND bt.kilter_detached_at IS NULL
+               AND ${tickAliasOnCurrentHoldsSql('bt', sql`(SELECT holds_epoch FROM epoch)`)}
              ORDER BY bt.user_id, bt.climbed_at DESC, bt.id DESC
           ) latest
       ),
@@ -464,6 +509,13 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
     boardseshQualityCount: sql`bq.bs_quality_count`,
   });
 
+  const bulkEpoch = holdsEpochOrFirstSql(sql`(
+                 SELECT bc.holds_revision_number
+                   FROM board_climbs bc
+                  WHERE bc.board_type = k.board_type
+                    AND bc.uuid       = k.climb_uuid
+               )`);
+
   for (let i = 0; i < distinct.length; i += BULK_CHUNK_SIZE) {
     const chunk = distinct.slice(i, i + BULK_CHUNK_SIZE);
     const payload = JSON.stringify(
@@ -502,7 +554,11 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
 
     await db.execute(sql`
       WITH keys AS (
-        SELECT board_type, climb_uuid, angle
+        -- holds_epoch (#6023): one board_climbs_pkey probe per key, done here
+        -- so the tick scans below compare against a column of the row they
+        -- already join. No board_climbs row reads as epoch 1.
+        SELECT k.board_type, k.climb_uuid, k.angle,
+               ${bulkEpoch} AS holds_epoch
           FROM jsonb_to_recordset(${payload}::jsonb) AS k(board_type text, climb_uuid text, angle integer)
       ),
       per_user AS (
@@ -543,6 +599,7 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
          -- Kilter-detached rows are upstream-deleted; they must not count nor
          -- keep a user "upstream-represented" (see kilter_detached_at docs).
          WHERE bt.kilter_detached_at IS NULL
+           AND ${tickAliasOnCurrentHoldsSql('bt', sql`k.holds_epoch`)}
          GROUP BY bt.board_type, bt.climb_uuid, bt.angle, bt.user_id
       ),
       counts AS (
@@ -553,8 +610,13 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
       ),
       sends AS (
         SELECT bt.board_type, bt.climb_uuid, bt.angle,
-               MIN(bt.climbed_at)                                     AS first_at,
-               AVG(bt.quality) FILTER (WHERE bt.quality BETWEEN 1 AND 5) AS avg_quality,
+               -- first_at and avg_quality read current-holds ticks only
+               -- (#6023); avg_difficulty reads them all — see the module doc.
+               MIN(bt.climbed_at) FILTER (WHERE ${tickAliasOnCurrentHoldsSql('bt', sql`k.holds_epoch`)}) AS first_at,
+               AVG(bt.quality) FILTER (
+                 WHERE bt.quality BETWEEN 1 AND 5
+                   AND ${tickAliasOnCurrentHoldsSql('bt', sql`k.holds_epoch`)}
+               ) AS avg_quality,
                AVG(bt.difficulty) FILTER (WHERE bt.difficulty > 1)       AS avg_difficulty
           FROM boardsesh_ticks bt
           JOIN keys k
@@ -574,6 +636,7 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
      LEFT JOIN user_profiles up ON up.user_id = u.id
          WHERE bt.status IN ('flash','send')
            AND bt.kilter_detached_at IS NULL
+           AND ${tickAliasOnCurrentHoldsSql('bt', sql`k.holds_epoch`)}
          ORDER BY bt.board_type, bt.climb_uuid, bt.angle, bt.climbed_at ASC
       ),
       -- The blend's Boardsesh side, per key: one vote per climber = their LATEST
@@ -595,6 +658,7 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
                AND bt.quality >= 1
                AND bt.quality <= 5
                AND bt.kilter_detached_at IS NULL
+               AND ${tickAliasOnCurrentHoldsSql('bt', sql`k.holds_epoch`)}
              ORDER BY bt.board_type, bt.climb_uuid, bt.angle, bt.user_id, bt.climbed_at DESC, bt.id DESC
           ) latest
          GROUP BY latest.board_type, latest.climb_uuid, latest.angle

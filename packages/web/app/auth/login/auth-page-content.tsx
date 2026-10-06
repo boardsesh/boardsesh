@@ -181,11 +181,11 @@ export default function AuthPageContent() {
         requires_verification: Boolean(data.requiresVerification),
       });
       // First-touch attribution — written once and never overwritten.
-      // PostHog merges these onto the authenticated user once alias() runs
-      // in party-profile-context after the auto-signin below.
+      // PostHog merges these onto the authenticated user once AnalyticsIdentity
+      // sends identify(userId) after the auto-signin below.
       //
       // Caveat: if requires_verification is true, we hit the early return below
-      // and the auto-signin never runs, so alias() may not fire in this session.
+      // and the auto-signin never runs, so that identify() does not fire in this session.
       // signup_at / signup_auth_method then live on the anonymous distinct_id
       // until the user comes back to verify and log in — at which point PostHog
       // merges them onto the authenticated user. Until that merge they're

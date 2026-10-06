@@ -147,6 +147,8 @@
         "a11yHasNote": "has note",
         "a11yHasBetaVideo": "has beta video",
         "a11yMirrored": "mirrored",
+        "earlierVersion": "Earlier version",
+        "a11yEarlierVersion": "climbed on an earlier version of this climb",
         "editAction": "Edit entry",
         "deleteAction": "Delete entry",
         "moreActions": "More actions"

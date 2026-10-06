@@ -13,6 +13,7 @@ import {
   type OfflineDatabase,
   type SqlExecutor,
 } from '@boardsesh/offline-sync';
+import { knownClimbRevision } from '@boardsesh/logbook';
 import { drainMutationQueue } from '../offline/offline-sync-adapter';
 import { reportEnqueueRevived, reportEnqueueSuppressed } from '../offline/outbox-telemetry';
 import { notifyOutboxChanged } from '../offline/outbox-store';
@@ -188,8 +189,8 @@ export async function writeTickLocal(
       await txn.runAsync(
         `INSERT OR IGNORE INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status,
        attempt_count, quality, difficulty, comment, climbed_at, session_id, is_mirror, is_benchmark,
-       created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       created_at, updated_at, climb_revision)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           tickUuid,
           ownerUserId,
@@ -207,6 +208,11 @@ export async function writeTickLocal(
           input.isBenchmark ? 1 : 0,
           now,
           now,
+          // The version of the climb the climber was looking at, so the local
+          // row answers "which version was this on" before the server has it.
+          // NULL when the app did not know: the pull fills it in once the
+          // server has stored its own answer (#6023).
+          knownClimbRevision(input.climbRevision),
         ],
       );
 

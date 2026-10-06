@@ -66,6 +66,7 @@ import { reportError } from '../../lib/error-reporting';
 import { extractGraphqlCode, extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import { SPRAY_CAP_VALUES, sprayCapFromErrorCode, sprayCapMessage } from '../../lib/spray/spray-cap-copy';
 import { useActivateBoard } from '../../lib/boards/use-activate-board';
+import { activatePublishedSprayWall } from '../../lib/spray/activate-published-spray-wall';
 import type { BoardReturnTo } from '../../lib/boards/board-return-to';
 import { invalidateSprayWallRenderData } from '../../lib/spray/spray-wall-loader';
 import { prefetchSprayWallDraft } from '../../lib/spray/use-spray-wall-draft';
@@ -162,15 +163,17 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   const updateVisibility = useUpdateSprayWallVisibility();
   const updateVisibilityAsync = updateVisibility.mutateAsync;
 
-  // The camera is a property of the BINARY, not of this bundle: SW-02 put the
-  // usage description in 2.6.0 and this slice rides an OTA into older ones too.
-  const cameraAvailable = useMemo(() => canPhotographWall(), []);
+  // The camera is a property of the BINARY and of the DEVICE, not of this
+  // bundle: SW-02 put the usage description in 2.6.0, and an iOS simulator has
+  // no camera to open — a picker launched into it aborts the app. Both gates
+  // live in `canPhotographWall`.
+  const cameraAvailable = useMemo(() => canPhotographWall(Platform.OS), []);
 
   const discardDraft = useDiscardSprayWallDraft();
   const discardDraftAsync = discardDraft.mutateAsync;
 
   /**
-   * The wall's `user_boards` row, as `useActivateBoard` needs it.
+   * The initial board row, kept for creation analytics.
    *
    * A ref and not machine state because it is a PAYLOAD rather than an identity:
    * the machine holds which wall this is (and must, so a retry cannot mint a
@@ -258,7 +261,11 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
       if (choice === 'startOver') {
         const plan = startOverPlan(resumable, full.versions ?? []);
         try {
-          await discardDraftAsync({ versionId: plan.discardVersionId, wallUuid: plan.deleteWallUuid });
+          await discardDraftAsync({
+            versionId: plan.discardVersionId,
+            wallUuid: plan.deleteWallUuid,
+            layoutId: full.layoutId,
+          });
         } catch (error) {
           // Best-effort, deliberately. A start-over that cannot reach the server
           // must still let the climber build their wall; the stray row is what
@@ -559,17 +566,14 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
         await updateVisibilityAsync({ uuid: draft.wallUuid, ...visibility });
       }
 
-      // Binds the wall as the active board and dismisses back to the tab the
-      // flow was opened from, where the Climbs empty state takes over. A wall
-      // whose board payload never arrived is still published — it just is not
-      // switched to, which the board picker fixes in one tap.
-      if (board) await finish(board);
-      else router.back();
+      // Fetch the published visibility before persisting the active board.
+      // A failed read leaves the published latch set, so retry only binds.
+      await activatePublishedSprayWall(queryClient, draft.wallUuid, finish);
     } catch (error) {
       reportError(error);
       dispatch({ type: 'PUBLISH_FAILED', message: capOrServerMessage(error, t('sprayWizard.publish.failed')) });
     }
-  }, [state, publishVersionAsync, updateVisibilityAsync, queryClient, builder, finish, router, t]);
+  }, [state, publishVersionAsync, updateVisibilityAsync, queryClient, builder, finish, t]);
 
   /**
    * Publish runs by itself the moment the look step confirms — its button is

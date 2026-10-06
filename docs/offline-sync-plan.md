@@ -8,6 +8,13 @@ Offline data layer for the React Native mobile app. Uses `expo-sqlite` for the l
 
 > **Where the code lives.** The engine (mutation queue + drainer, pull client, checkpoints, table config, SQLite DDL/migrations) is the platform-free package **`@boardsesh/offline-sync`** (`packages/shared/offline-sync`). The mobile app binds its platform seams — expo-sqlite handle, NetInfo/AppState triggers, `onlineManager` connectivity, Sentry telemetry — in `packages/mobile/src/offline/offline-sync-adapter.ts`; mobile code calls `drainMutationQueue`/`startSyncScheduler`/`triggerSync`/`pullSync` via that adapter only, never from the package directly. Expo-specific pieces (DB lifecycle/`connection.ts`, local read queries, the sync-status store, hooks, the bridge component) stay in `packages/mobile`.
 
+`pullSync` serializes concurrent callers per database handle, including direct
+publication refreshes and scheduler pulls. Each caller awaits its own FIFO cycle;
+its scope and purge token are captured before waiting. Scheduler event coalescing
+remains separate: repeated events produce at most one queued scheduler follow-up.
+Mutation draining writes the outbox and may overlap a direct pull; this gate
+serializes pull cycles, not all sync activity.
+
 This document records the evaluation of four approaches and why `expo-sqlite` + custom mutation queue is the recommendation. The plan was refined through 4 rounds of review by paired Opus agents (8 review agents total, 100+ findings).
 
 ## Alternatives evaluated
@@ -138,6 +145,43 @@ When a Drizzle migration adds a column, three things must stay in sync:
 3. **On-device SQLite** — must be migrated on app startup if the app schema is newer than the local database.
 
 The on-device migration system runs sequentially on app startup, checking the database's schema version against the app's expected version. If the pre-warmed DB was built before the latest migration, the startup migration brings it forward. If a sync pull query returns a column that doesn't exist locally, the migration adds it.
+
+### Older JS on a newer database (the downgrade rule)
+
+The migration runner only moves forward, and JS does not. Two routine events put an older bundle on a phone whose `boardsesh.db` a newer bundle already migrated:
+
+- **A canary OTA is reverted.** The phones in the canary slice ran its migrations, then receive the previous update again.
+- **A climber leaves the early-updates track.** Their database was migrated by early-update JS that the stable track has not reached yet.
+
+Until this rule existed, `runMigrations` filtered `version > current`, found nothing to apply, and the older bundle then ran its queries, its sync and its outbox drainer against a schema it had never seen.
+
+**What the guard does.** `readSchemaCompatibility` (`packages/shared/offline-sync/src/db/migrations.ts`) reads the stored `schema_version` and compares it with `LATEST_SCHEMA_VERSION`. It is read-only: it looks the table up in `sqlite_master` instead of creating it. `initializeDatabase` calls it first, before the WAL switch and before any DDL, and `runMigrations` checks again before its own first statement. A stored version above the bundle's is the outcome `newer`, not an error. On `newer`:
+
+| What                                              | Behaviour                                                                                                                                                                                                                                                                |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| The file                                          | Untouched. No statement is run, the version is not re-stamped, nothing is deleted or rebuilt. A bundle that knows the schema opens it again as if nothing happened.                                                                                                        |
+| `getDatabaseHandle()`                             | Stays `null`, and `isSchemaReady()` stays `false`. This is the existing "local DB unavailable" path, so every reader falls back to the network and offline surfaces show the usual "No signal" placard. No retry is scheduled: the answer cannot change until the JS does. |
+| The outbox                                        | Not drained, not dropped, not dead-lettered. The scheduler and the drainer are gated on schema readiness, so they never start; a send logged in this state goes straight to the server, as it does whenever the handle is null. Queued sends wait in the file.            |
+| `useOfflineDatabase()`                            | Returns a stand-in whose every method refuses with `SchemaNewerThanAppError` (`packages/mobile/src/db/refused-database.ts`). See below for why the null handle is not enough on its own.                                                                                  |
+| Settings → Storage                                | Says "Offline storage is paused" and that downloads and waiting sends stay on the phone, instead of "Couldn't measure your downloads" with a Retry that cannot work.                                                                                                                |
+| Update check                                      | `watchForSchemaDowngrade` (`packages/mobile/src/lib/schema-downgrade-recovery.ts`) runs `performOtaRecovery` once per process: check, then download a newer bundle if the server has one. It does not reload. The bundle launches on the next cold start, because nothing says it knows the stored schema and a restart mid-session for nothing is worse than waiting. |
+| Sign-out                                          | The database wipe is skipped, as it is whenever the handle is null; the wall photographs are still deleted. The owner stamp (`assertLocalUserDataOwner`) clears the previous account's rows when a bundle that can open the file next signs in. **Known cost:** if a different account signs in first, that clear takes the first account's queued sends with it, with no drain attempt. The manual sign-out dialog says so in this state ("Stay signed in" / "Sign out anyway"); a forced sign-out (expired session) has no moment to ask. |
+
+> **The update check can repeat, on purpose.** It downloads whatever is latest on the phone's branch without knowing whether that bundle supports the stored schema; the server does not say. A phone whose database is ahead of stable therefore runs one check per cold start, and may download each newly published bundle, until one that knows the schema is published. That is intended, and affordable only because the check never reloads: the cost is one background download, not a restart.
+
+**Known limit: a forced sign-out has no dialog.** An expired session or a failed token refresh signs the climber out with no moment to ask, so the queued-sends cost in the Sign-out row can land there without the warning the manual sign-out gives.
+
+**Why a refusing connection as well as a null handle.** `SQLiteProvider` hands its connection to every `useSQLiteContext()` consumer whatever the init chain decided, and several of those are not behind the schema-ready gate: the Sync-issues retry in Settings drains the outbox, Storage removes a board and vacuums, My Boards restores a download's retry budget. Against a database with missing tables those calls throw. Against a newer one the tables exist, so they would succeed. Routing them through `useOfflineDatabase()` and refusing there covers every such call, including ones added later. `reportError` drops every `SchemaNewerThanAppError` except the init chain's own, so each refused read does not file its own report. My Boards keeps its download toggle and "retry fast download" in place but disabled, under the same "Offline storage is paused" explanation Storage shows.
+
+**How to count it.** One Sentry event per launch in the state: `source: offline-sync`, `kind: sqlite-schema-newer`, with `stored_schema_version` and `supported_schema_version` tags. It is deliberately not `kind: sqlite-init`, which is the lock-contention and corruption aggregate. The same report reaches xprem Observe against the OTA update id, which answers "which update put phones here". The update check reuses the existing `OTA Recovery Attempted` event with `source: schema-downgrade` and a `result` of `update-fetched`, `no-fix-available` or `failed`; no new event name.
+
+**The rule for whoever writes a migration: expand first, contract a release later.** The guard is the backstop, and it costs the climber offline storage until the next update. The way not to need it is for every migration to leave a schema the previous stable bundle can still read:
+
+- **Expand** in the release that needs the change: a new nullable column, a new table, an index. Older JS ignores what it does not know.
+- **Contract** (drop a column or table, rename, tighten a constraint, rewrite rows into a shape old readers reject) only in a later release, once no bundle that reads the old shape can come back. With stable one to two days behind `main`, that means at least one stable release later.
+- Bumping `LATEST_SCHEMA_VERSION` at all makes the previous bundle refuse the file, so a migration is never free of this cost. Batch schema changes, and do not ship one in an update that might be reverted for an unrelated reason.
+
+CI enforces the statement, not the truth of it: `pr-test-plan` fails a PR that changes `packages/shared/offline-sync/src/db/migrations.ts` unless its description carries the ticked line from the PR template (`@boardsesh/pr-body`, `offline-migration.ts`; see `docs/crowdsourced-qa.md`). `skip-qa-gate` does not waive it. Bot-authored PRs skip the whole `pr-test-plan` job, this rule included. That is safe as configured: Dependabot is set up for the `npm` ecosystem only (`.github/dependabot.yml`), so its PRs change `package.json` and lockfiles and cannot touch a source file. Revisit it if a bot that edits source is ever added.
 
 ## Climb search — full SQL with JOINs
 
@@ -376,6 +420,19 @@ client posts GraphQL to one endpoint and a GraphQL server reports not-found as H
 ### Idempotency
 
 Each mutation gets a client-generated UUID as an idempotency key. The backend's `saveTick` and `createPlaylist` accept this UUID and use `ON CONFLICT (uuid) DO NOTHING` for safe retry. Favorites use explicit `addFavorite`/`removeFavorite` (not `toggleFavorite`) so retries don't invert state. Follow/unfollow operations are naturally idempotent (follow when already following = no-op, unfollow when not following = no-op).
+
+### Droppable input fields: one retry without a field an older backend does not know
+
+The app updates over the air, so a queued write can reach a backend older than the app that wrote it: a rollback, or a deploy that has not finished. GraphQL rejects an input field it does not know (`Field "climbRevision" is not defined by type "SaveTickInput"`), that rejection is permanent, and the write would dead-letter. For a tick that is a lost send.
+
+`processMutation` (`packages/shared/offline-sync/src/mutation-queue/handlers.ts`) handles this for the fields listed in `DROPPABLE_INPUT_FIELDS`, keyed by mutation name. Today that is `SaveTick: ['climbRevision']` (#6023).
+
+- When a send fails with that unknown-field clause for a listed field the payload carries, the same mutation is sent **once** more without the field, with the same idempotency key. Any other failure, and a failure of the retry, is thrown as it came and the drainer classifies it as usual.
+- The match is the literal clause `Field "<name>" is not defined`, not the field name. graphql-js prints the whole input object in these messages, so the name alone also appears in rejections about other fields (`graphqlErrorRejectsUnknownInputField`, `error-classification.ts`).
+- The stored payload is never rewritten. The field is dropped from the variables of that one send only, so a later attempt against a newer backend sends it again.
+- A mutation with no entry in the registry gets no retry.
+
+A field belongs in the registry only when both are true: it is optional in the input type, and the server produces a correct write when it is absent. `climbRevision` qualifies because the server then stores the version that was live when the climb was climbed. A field whose absence changes what is written (a status, an angle, a board id) does not, and must stay a dead letter the climber can see.
 
 ### Dead letter handling
 
@@ -960,7 +1017,7 @@ whether offline storage comes up at all.
 
 | Writer                                                    | Connection                                                  | Lock window                                                                                                                                    |
 | --------------------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Startup DDL (`ensureMutationQueueTable`, `runMigrations`) | the app's main connection                                   | milliseconds on a warm install; the full migration set on an upgrade                                                                           |
+| Startup DDL (`ensureMutationQueueTable`, `runMigrations`) | the app's main connection                                   | milliseconds on a warm install; the full migration set on an upgrade; none at all when the file belongs to a newer bundle (see "Older JS on a newer database") |
 | Snapshot import (`bootstrapScopeFromSnapshot`)            | its own native connection (`withExclusiveTransactionAsync`) | one `BEGIN EXCLUSIVE` covering `reconcileScope` + `importScope` ONLY — the artifact is already downloaded to disk before the transaction opens |
 | Paged crawl (`pull-client`)                               | its own native connection                                   | one short exclusive transaction per page, opened `BEGIN IMMEDIATE` with a 5s `busy_timeout`, so a contender can win in the gaps               |
 | `VACUUM` / teardown deletes                               | the main connection                                         | 5-20s on a 200-400MB file                                                                                                                      |

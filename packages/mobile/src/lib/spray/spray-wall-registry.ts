@@ -36,6 +36,7 @@ import type { BoardArtGeometry } from '@boardsesh/board-art-geometry/types';
 import { spraySizeIdForLayout } from '@boardsesh/board-config';
 import type { BoardRenderDefault } from '../board-render-settings';
 import type { SprayPhotoHold } from './spray-hold-geometry';
+import { revokeSprayPrivacy, sprayPrivacyGeneration, sprayMemoryGeneration } from './spray-privacy-generation';
 
 /** The one board name a wall is ever registered under. */
 export const SPRAY_BOARD_NAME = 'spray';
@@ -148,6 +149,35 @@ export function sprayWallRemovalGeneration(layoutId: number): number {
 
 /** Listeners woken when a wall is registered, re-registered or dropped. */
 const subscribers = new Set<() => void>();
+const withdrawalSubscribers = new Set<(layoutId?: number, wallUuid?: string) => void>();
+let privacyCleanup: ((layoutId?: number) => void) | null = null;
+
+/**
+ * Platform I/O is injected by spray-privacy-cleanup, keeping this module pure.
+ * AuthProvider imports that module at app bootstrap, before any wall surface;
+ * registry-only consumers retain memory withdrawal without platform I/O.
+ */
+export function setSprayWallPrivacyCleanup(cleanup: (layoutId?: number) => void): void {
+  privacyCleanup = cleanup;
+}
+
+/** Query owners erase payloads while the withdrawn identity is still available. */
+export function subscribeToSprayWallWithdrawals(listener: (layoutId?: number, wallUuid?: string) => void): () => void {
+  withdrawalSubscribers.add(listener);
+  return () => {
+    withdrawalSubscribers.delete(listener);
+  };
+}
+
+function notifyWithdrawal(layoutId?: number): void {
+  for (const subscriber of withdrawalSubscribers) {
+    try {
+      subscriber(layoutId, layoutId == null ? undefined : walls.get(layoutId)?.wallUuid);
+    } catch {
+      // A query owner's failure must not prevent file and geometry withdrawal.
+    }
+  }
+}
 
 function notify(): void {
   for (const subscriber of subscribers) subscriber();
@@ -355,6 +385,10 @@ export function resetSprayWallViewerAccess({ markStale = true }: { markStale?: b
 /** Drop a wall and its runtime geometry, so the render path reports no board rather than a stale one. */
 export function unregisterSprayWall(layoutId: number): void {
   wallRemovalGenerations.set(layoutId, ++removalSequence);
+  revokeSprayPrivacy(layoutId);
+  notifyWithdrawal(layoutId);
+  privacyCleanup?.(layoutId);
+  inFlightLoads.delete(layoutId);
   deferredRequests.delete(layoutId);
   loadStates.set(layoutId, { state: 'unavailable', settledAtMs: now() });
   if (!walls.delete(layoutId)) {
@@ -418,6 +452,14 @@ const inFlightLoads = new Set<number>();
 /** Injected so this module fetches nothing itself — see `setSprayWallLoader`. */
 type SprayWallLoader = (layoutId: number, options?: { force?: boolean }) => Promise<void>;
 let sprayWallLoader: SprayWallLoader | null = null;
+let loaderGeneration = 0;
+export function sprayWallLoaderGeneration(): number {
+  return loaderGeneration;
+}
+
+export function unsetSprayWallLoader(expected: SprayWallLoader): void {
+  if (sprayWallLoader === expected) setSprayWallLoader(null);
+}
 
 function now(): number {
   return Date.now();
@@ -439,6 +481,12 @@ function markUnavailable(layoutId: number): void {
   notify();
 }
 
+/** A cold by-layout miss is discovery failure; an existing wall losing access is withdrawal. */
+export function settleSprayWallDiscoveryMiss(layoutId: number): void {
+  if (walls.has(layoutId)) unregisterSprayWall(layoutId);
+  else markUnavailable(layoutId);
+}
+
 /**
  * Install the function that actually fetches a wall.
  *
@@ -450,6 +498,9 @@ function markUnavailable(layoutId: number): void {
  * and a wall only arrives through `useSprayWall`.
  */
 export function setSprayWallLoader(loader: SprayWallLoader | null): void {
+  loaderGeneration += 1;
+  for (const layoutId of inFlightLoads) deferredRequests.add(layoutId);
+  inFlightLoads.clear();
   sprayWallLoader = loader;
   if (!loader) return;
 
@@ -489,11 +540,14 @@ export function refreshSprayWall(layoutId: number): void {
 
   if (!walls.has(layoutId)) loadStates.set(layoutId, { state: 'loading', settledAtMs: 0 });
   inFlightLoads.add(layoutId);
+  const generation = sprayPrivacyGeneration(layoutId);
+  const loaderEpoch = loaderGeneration;
   void sprayWallLoader(layoutId, { force: true })
     .catch(() => {
       // Same as `ensureSprayWallLoaded`: every failure looks alike from here.
     })
     .finally(() => {
+      if (generation !== sprayPrivacyGeneration(layoutId) || loaderEpoch !== loaderGeneration) return;
       inFlightLoads.delete(layoutId);
       if (walls.has(layoutId)) return;
       markUnavailable(layoutId);
@@ -541,11 +595,14 @@ export function ensureSprayWallLoaded(layoutId: number): void {
   // state would flash its placeholder for a refresh nobody asked to see.
   if (!registered) loadStates.set(layoutId, { state: 'loading', settledAtMs: 0 });
   inFlightLoads.add(layoutId);
+  const generation = sprayPrivacyGeneration(layoutId);
+  const loaderEpoch = loaderGeneration;
   void sprayWallLoader(layoutId)
     .catch(() => {
       // The loader registers on success; every failure looks the same here.
     })
     .finally(() => {
+      if (generation !== sprayPrivacyGeneration(layoutId) || loaderEpoch !== loaderGeneration) return;
       inFlightLoads.delete(layoutId);
       // `registerSprayWall` may already have moved this to `ready`; only a wall
       // that did NOT arrive is marked unavailable. A revalidation that failed
@@ -596,7 +653,30 @@ export function subscribeToSprayWalls(listener: () => void): () => void {
  */
 export function sprayCacheToken(boardName: string, layoutId: number): string {
   if (boardName !== SPRAY_BOARD_NAME) return '';
-  return `-svid${walls.get(layoutId)?.versionId ?? 0}`;
+  return `${sprayVersionToken(boardName, layoutId)}-pr${sprayMemoryGeneration(layoutId)}`;
+}
+
+/**
+ * Persisted editor drafts use the wall version, never a session generation. The
+ * version is its immutable row id: a discarded version's number can be reused.
+ */
+export function sprayVersionToken(boardName: string, layoutId: number): string {
+  return boardName === SPRAY_BOARD_NAME ? `-svid${walls.get(layoutId)?.versionId ?? 0}` : '';
+}
+
+/** Sign-out: withdraw every wall, disown loads in flight and erase private caches. */
+export function withdrawAllSprayWalls(): void {
+  registryRemovalGeneration = ++removalSequence;
+  wallRemovalGenerations.clear();
+  revokeSprayPrivacy();
+  notifyWithdrawal();
+  privacyCleanup?.();
+  for (const layoutId of walls.keys()) unregisterRuntimeGeometry(sprayGeometryKey(layoutId));
+  walls.clear();
+  loadStates.clear();
+  deferredRequests.clear();
+  inFlightLoads.clear();
+  notify();
 }
 
 /**
@@ -609,15 +689,10 @@ export function sprayCacheToken(boardName: string, layoutId: number): string {
  * subscriber-call-count assertion goes green for the wrong reason.
  */
 export function clearSprayWallRegistry(): void {
-  registryRemovalGeneration = ++removalSequence;
-  wallRemovalGenerations.clear();
-  for (const layoutId of walls.keys()) unregisterRuntimeGeometry(sprayGeometryKey(layoutId));
-  walls.clear();
-  loadStates.clear();
-  deferredRequests.clear();
-  inFlightLoads.clear();
+  withdrawAllSprayWalls();
+  loaderGeneration += 1;
   sprayWallLoader = null;
   viewerGeneration = 0;
-  notify();
   subscribers.clear();
+  withdrawalSubscribers.clear();
 }

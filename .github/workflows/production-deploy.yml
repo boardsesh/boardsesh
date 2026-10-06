@@ -991,7 +991,7 @@ jobs:
   # static export + upload with no DB or image dependency, so it only needs
   # detect-changes. No inline Playwright smoke gate — a per-deploy expo-web boot
   # is too heavy here (this file has no such gate for web/backend either); the
-  # expo-web-smoke suite stays the dispatch-only gate in e2e-tests.yml.
+  # expo-web-smoke suite stays in e2e-tests.yml (nightly, and on dispatch).
   # Converges the Cloudflare zone config (infra/cloudflare) on main. Runs only
   # when the desired state or apply tooling changes (or on manual dispatch).
   # Static-asset publication waits for this job when both targets change, so it

@@ -48,6 +48,15 @@ export const GET_BOARD_DISCOVERY = gql`
 export type GetBoardDiscoveryQueryResponse = { boardDiscovery: BoardDiscoveryBoard[] };
 export type GetBoardDiscoveryQueryVariables = { input?: BoardDiscoveryInput };
 
+/**
+ * The one board selection. Every document that returns a `UserBoard` selects
+ * this, so a board read through any of them carries the same fields.
+ *
+ * The field ORDER is load-bearing: `GetBoard` is replayed from recorded
+ * fixtures keyed on the query text (docs/mobile-screenshot-fixtures.md), and
+ * that set cannot be re-recorded. Append a field at the end and the screenshot
+ * drift test tells you the recorded `GetBoard` no longer matches.
+ */
 export const BOARD_FIELDS = `
   uuid
   slug
@@ -85,8 +94,17 @@ export const BOARD_FIELDS = `
   gymName
   distanceMeters
   serialNumber
+  timerName
   canEdit
-  boardId
+  isPinnedByMe
+`;
+
+/**
+ * `BOARD_FIELDS` plus the numeric `boardId` the wall-presence feed is keyed on.
+ * Kept out of `BOARD_FIELDS` itself only because the recorded `GetBoard` text
+ * does not select it.
+ */
+const BOARD_FIELDS_WITH_BOARD_ID = `${BOARD_FIELDS}  boardId
 `;
 
 export const GET_BOARD = gql`
@@ -97,10 +115,23 @@ export const GET_BOARD = gql`
   }
 `;
 
+/**
+ * The board behind a gym-website embed. Its own operation because the embed
+ * subscribes to wall presence and needs `boardId`, which `GetBoard` cannot
+ * select without changing its recorded text.
+ */
+export const GET_EMBED_BOARD = gql`
+  query GetEmbedBoard($boardUuid: ID!) {
+    board(boardUuid: $boardUuid) {
+      ${BOARD_FIELDS_WITH_BOARD_ID}
+    }
+  }
+`;
+
 export const GET_BOARD_BY_SLUG = gql`
   query GetBoardBySlug($slug: String!) {
     boardBySlug(slug: $slug) {
-      ${BOARD_FIELDS}
+      ${BOARD_FIELDS_WITH_BOARD_ID}
     }
   }
 `;
@@ -109,7 +140,7 @@ export const GET_MY_BOARDS = gql`
   query GetMyBoards($input: MyBoardsInput) {
     myBoards(input: $input) {
       boards {
-        ${BOARD_FIELDS}
+        ${BOARD_FIELDS_WITH_BOARD_ID}
       }
       totalCount
       hasMore
@@ -120,7 +151,7 @@ export const GET_MY_BOARDS = gql`
 export const GET_DEFAULT_BOARD = gql`
   query GetDefaultBoard {
     defaultBoard {
-      ${BOARD_FIELDS}
+      ${BOARD_FIELDS_WITH_BOARD_ID}
     }
   }
 `;
@@ -129,7 +160,7 @@ export const SEARCH_BOARDS = gql`
   query SearchBoards($input: SearchBoardsInput!) {
     searchBoards(input: $input) {
       boards {
-        ${BOARD_FIELDS}
+        ${BOARD_FIELDS_WITH_BOARD_ID}
       }
       totalCount
       hasMore
@@ -185,7 +216,7 @@ export const GET_POPULAR_BOARD_CONFIGS = gql`
 export const GET_BOARDS_BY_SERIAL_NUMBERS = gql`
   query GetBoardsBySerialNumbers($serialNumbers: [String!]!, $boardType: String) {
     boardsBySerialNumbers(serialNumbers: $serialNumbers, boardType: $boardType) {
-      ${BOARD_FIELDS}
+      ${BOARD_FIELDS_WITH_BOARD_ID}
     }
   }
 `;
@@ -213,7 +244,7 @@ export const GET_MY_BOARD_SERIAL_CONFIGS = gql`
 export const CREATE_BOARD = gql`
   mutation CreateBoard($input: CreateBoardInput!) {
     createBoard(input: $input) {
-      ${BOARD_FIELDS}
+      ${BOARD_FIELDS_WITH_BOARD_ID}
     }
   }
 `;
@@ -221,7 +252,7 @@ export const CREATE_BOARD = gql`
 export const UPDATE_BOARD = gql`
   mutation UpdateBoard($input: UpdateBoardInput!) {
     updateBoard(input: $input) {
-      ${BOARD_FIELDS}
+      ${BOARD_FIELDS_WITH_BOARD_ID}
     }
   }
 `;

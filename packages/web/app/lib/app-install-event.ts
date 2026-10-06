@@ -16,6 +16,8 @@
 // assertion, and `sanitizeForPosthog` would strip it anyway, so writing it
 // would only make "not applicable" indistinguishable from "not instrumented".
 
+import type { GymQrMedium } from '@boardsesh/analytics';
+
 /** Store the climber was sent to, as classified by the CTA that sent them. */
 export type AppInstallPlatform = 'ios' | 'android' | 'web';
 
@@ -23,14 +25,45 @@ export type AppInstallPlatform = 'ios' | 'android' | 'web';
 export type AppInstallSource = 'app-store' | 'google-play' | 'capacitor-retirement' | 'capacitor-retirement-fallback';
 
 /**
- * Where on the page the CTA lives. Absent means the home page's onboarding
- * install card or the Capacitor dead-end screen, neither of which has ever
- * carried a placement — adding one would change their existing payloads.
+ * Every placement a store button can have, in one list so a runtime check and
+ * the type cannot drift.
  *
- * `gym-page` is produced by `app/gym/[gym_slug]/gym-install-cta.tsx` (#4379),
- * and is the only placement that also sets `gymSlug`.
+ *  - `hero`: the home page hero.
+ *  - `gym-page`: `app/gym/[gym_slug]/gym-install-cta.tsx` (#4379), the only
+ *    placement that also sets `gymSlug`.
+ *  - `help`: the store pair on /help. It sent no placement before #6027.
+ *  - `climb-view`, `climb-list`, `spray-climb`, `gyms-directory`, `join-page`,
+ *    `site-banner`: reserved for the store buttons #6027 and #6004 add to the
+ *    climb front doors, the gym directory, the session invite page and the
+ *    site-wide banner. Declared here so those buttons and their store links
+ *    share one vocabulary from the first commit.
+ *
+ * The placement is also the store link's id (`utm_content` on Google Play, `ct`
+ * on the App Store, see `store-links.ts`), so a value here is a string that ends
+ * up in install data. Add members; do not rename them.
+ *
+ * These are www's values only. The browser app fires the same event with
+ * `browser-app-<surface>` placements from its own builder,
+ * `packages/mobile/src/lib/store-links.ts`.
  */
-export type AppInstallPlacement = 'hero' | 'gym-page';
+export const APP_INSTALL_PLACEMENTS = [
+  'hero',
+  'gym-page',
+  'help',
+  'climb-view',
+  'climb-list',
+  'spray-climb',
+  'gyms-directory',
+  'join-page',
+  'site-banner',
+] as const;
+
+/**
+ * Where on the page the CTA lives. Absent means the Capacitor dead-end screen,
+ * which has never carried a placement, or an event from before a surface was
+ * given one.
+ */
+export type AppInstallPlacement = (typeof APP_INSTALL_PLACEMENTS)[number];
 
 /**
  * Whether the CTA offers a first install or an update. Only the home hero
@@ -47,6 +80,12 @@ export type AppInstallClickInput = {
   mode?: AppInstallMode;
   /** Slug of the gym page the install CTA was rendered on. Only ever set with `placement: 'gym-page'`. */
   gymSlug?: string;
+  /**
+   * The printed medium the page was reached through (`?src=qr&medium=…`), when
+   * the click follows a scan. Absent, never `null`, for a visit that did not
+   * come off a code. Matches the `.poster` suffix on the store link's id.
+   */
+  qrMedium?: GymQrMedium;
 };
 
 export type AppInstallClickProperties = {
@@ -55,6 +94,7 @@ export type AppInstallClickProperties = {
   placement?: AppInstallPlacement;
   mode?: AppInstallMode;
   gymSlug?: string;
+  qrMedium?: GymQrMedium;
 };
 
 export function buildAppInstallClickProperties(input: AppInstallClickInput): AppInstallClickProperties {
@@ -64,5 +104,6 @@ export function buildAppInstallClickProperties(input: AppInstallClickInput): App
     ...(input.placement === undefined ? {} : { placement: input.placement }),
     ...(input.mode === undefined ? {} : { mode: input.mode }),
     ...(input.gymSlug === undefined ? {} : { gymSlug: input.gymSlug }),
+    ...(input.qrMedium === undefined ? {} : { qrMedium: input.qrMedium }),
   };
 }

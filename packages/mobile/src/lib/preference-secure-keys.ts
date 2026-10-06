@@ -30,13 +30,11 @@
 //
 // Two keys are deliberately absent:
 //
-// * boardsesh_party_profile — the analytics id, read synchronously at
-//   module-eval time (party-profile-store.ts:38) before any migration could run,
-//   with its failure already swallowed into a null that falls back to PostHog's
-//   own anonymous id. It contributes nothing to the background-read failures
-//   this fixes; the only gain would be analytics linkage on locked background
-//   launches. Not worth widening the blast radius of a change to credential
-//   storage. Revisit in phase 2 if that linkage turns out to matter.
+// * boardsesh_party_profile — the party-session peer id. A failed read is
+//   already swallowed into a null (party-profile-store.ts), so it contributes
+//   nothing to the background-read failures this fixes. Not worth widening the
+//   blast radius of a change to credential storage. It was also PostHog's
+//   anonymous id until the identity-split fix; it no longer is.
 //
 // * boardsesh_dev_metro_hosts — dev-only, and already read-and-deleted on its way
 //   to AsyncStorage (metro-target-store.ts:25). Nothing writes it any more.

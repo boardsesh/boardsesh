@@ -1,3 +1,6 @@
+vi.mock('../../../src/providers/queue-provider', () => ({
+  useQueueActions: () => ({ clearSession: vi.fn(async () => {}) }),
+}));
 // @vitest-environment jsdom
 //
 // Regression cover for #3897: with no signal the board picker used to render its
@@ -134,9 +137,10 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
 }));
 
 vi.mock('../../../src/lib/graphql/use-active-board', () => ({
+  getActiveBoardWriteGeneration: () => 0,
   useActiveBoard: () => ({ data: state.activeBoard }),
   useSetActiveBoard: () => setActiveBoardMock,
-  useClearActiveBoard: () => vi.fn(),
+  useClearActiveBoardIfCurrentGeneration: () => vi.fn(),
 }));
 
 vi.mock('../../../src/hooks/use-current-user-id', () => ({

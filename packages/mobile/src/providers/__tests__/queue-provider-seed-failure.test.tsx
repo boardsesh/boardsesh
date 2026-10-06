@@ -87,6 +87,7 @@ const sessionStore = vi.hoisted(() => ({
 
 const queueSnapshotStore = vi.hoisted(() => ({
   getStoredQueueSnapshot: vi.fn(async () => null),
+  getQueueSnapshotGeneration: () => 0,
   setStoredQueueSnapshot: vi.fn(async () => {}),
   clearStoredQueueSnapshot: vi.fn(async () => {}),
 }));
@@ -182,6 +183,7 @@ vi.mock('../../lib/active-board-store', () => ({
 }));
 
 vi.mock('../../lib/graphql/use-active-board', () => ({
+  getActiveBoardWriteGeneration: () => 0,
   useActiveBoard: () => ({ data: activeBoard.stored }),
   useSetActiveBoard: () => activeBoard.setActiveBoard,
 }));

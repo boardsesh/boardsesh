@@ -13,10 +13,15 @@ import {
   useUnfollowBoard,
   usePinBoard,
 } from '../../src/lib/graphql/hooks';
-import { useActiveBoard, useClearActiveBoard } from '../../src/lib/graphql/use-active-board';
+import {
+  useActiveBoard,
+  useClearActiveBoardIfCurrentGeneration,
+  getActiveBoardWriteGeneration,
+} from '../../src/lib/graphql/use-active-board';
 import { useDeviceLocation } from '../../src/lib/use-device-location';
 import { useAuth } from '../../src/providers/auth-provider';
 import { useToast } from '../../src/providers/toast-provider';
+import { useQueueActions } from '../../src/providers/queue-provider';
 import { useConfirm } from '../../src/providers/dialog-provider';
 import { useTheme } from '../../src/providers/theme-provider';
 import { hapticSelection } from '../../src/lib/haptics';
@@ -112,7 +117,8 @@ export default function BoardSelection() {
     fromOnboarding,
     fromNoBoard,
   });
-  const clearActiveBoard = useClearActiveBoard();
+  const clearActiveBoard = useClearActiveBoardIfCurrentGeneration();
+  const { clearSession } = useQueueActions();
   const deleteBoard = useDeleteBoard();
   const unfollowBoard = useUnfollowBoard();
   // `useMutation` returns a fresh object literal on every render, so depending on
@@ -446,10 +452,15 @@ export default function BoardSelection() {
         return;
       }
       const wasActive = activeBoard?.uuid === board.uuid;
+      // Capture at action time: a render-time value can miss a queued board write.
+      const activeBoardGeneration = getActiveBoardWriteGeneration();
       if (action === 'delete') {
         const confirmed = await confirm({
-          title: t('mobile.manage.deleteTitle'),
-          message: t('mobile.manage.deleteMessage', { name: board.name }),
+          title: board.boardType === 'spray' ? t('mobile.manage.deleteWallTitle') : t('mobile.manage.deleteTitle'),
+          message:
+            board.boardType === 'spray'
+              ? t('mobile.manage.deleteWallMessage', { name: board.name })
+              : t('mobile.manage.deleteMessage', { name: board.name }),
           confirmLabel: t('mobile.manage.deleteConfirm'),
           cancelLabel: t('mobile.manage.cancel'),
           destructive: true,
@@ -461,10 +472,14 @@ export default function BoardSelection() {
           // (a sibling board can share the scope), but a card for a board the
           // backend has dropped must never reach setActiveBoard.
           forgetOfflineBoard(board.uuid);
-          if (wasActive) await clearActiveBoard();
+          if (wasActive && activeBoardGeneration === getActiveBoardWriteGeneration()) {
+            await clearSession({ notifyServer: true });
+            await clearActiveBoard(activeBoardGeneration);
+          }
           // Leave edit mode after an irreversible removal: the carousel has just
           // reflowed under a finger that is still over a red button.
           setIsEditingBoards(false);
+          showToast(t('mobile.manage.deleteSuccess', { name: board.name }), 'success');
         } catch {
           showToast(t('mobile.manage.deleteError'), 'error');
         }
@@ -486,7 +501,10 @@ export default function BoardSelection() {
         try {
           await unfollowBoardAsync(board.uuid);
           forgetOfflineBoard(board.uuid);
-          if (wasActive) await clearActiveBoard();
+          if (wasActive && activeBoardGeneration === getActiveBoardWriteGeneration()) {
+            await clearSession({ notifyServer: true });
+            await clearActiveBoard(activeBoardGeneration);
+          }
         } catch {
           showToast(t('mobile.manage.unfollowError'), 'error');
         }
@@ -501,6 +519,7 @@ export default function BoardSelection() {
       deleteBoardAsync,
       unfollowBoardAsync,
       clearActiveBoard,
+      clearSession,
       showToast,
       t,
     ],

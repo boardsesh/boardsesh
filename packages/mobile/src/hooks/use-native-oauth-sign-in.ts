@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, loginProviderProperties } from '@boardsesh/analytics';
 import { useAuth } from '../providers/auth-provider';
 import { track } from '../lib/analytics';
 import { useTrackLoginSucceeded } from '../lib/login-analytics';
@@ -48,7 +48,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
     void consumeFreshOAuthPending(returnedOAuth.attemptId).then((marker) => {
       if (!marker || marker.provider !== returnedOAuth.provider) return;
       track(SHARED_EVENTS.LoginFailed, {
-        auth_method: marker.provider,
+        ...loginProviderProperties(marker.provider),
         flow: 'web',
         failure_reason: 'oauth',
         failure_detail: returnedOAuth.error,
@@ -70,7 +70,11 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
       // `$screen_name` has usually moved on by then (see login-analytics.ts).
       const signInScreen = isRegistration ? 'register' : 'login';
       const primaryFlow = Platform.OS === 'web' ? 'web' : 'native';
-      track(SHARED_EVENTS.LoginAttempted, { auth_method: provider, flow: primaryFlow, ...registrationProps });
+      track(SHARED_EVENTS.LoginAttempted, {
+        ...loginProviderProperties(provider),
+        flow: primaryFlow,
+        ...registrationProps,
+      });
       // duration_ms separates a human dismissing the system sheet (seconds) from
       // the flow dying programmatically (sub-second).
       const attemptStartedAt = Date.now();
@@ -98,7 +102,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
       const runWebFallback = async (): Promise<void> => {
         const fallbackStartedAt = Date.now();
         track(SHARED_EVENTS.LoginAttempted, {
-          auth_method: provider,
+          ...loginProviderProperties(provider),
           flow: 'web_fallback',
           fallback_mechanism: 'browser_deeplink',
           ...registrationProps,
@@ -108,7 +112,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
           fallback = await webFallbackFor[provider](isRegistration);
         } catch (fallbackError) {
           track(SHARED_EVENTS.LoginFailed, {
-            auth_method: provider,
+            ...loginProviderProperties(provider),
             flow: 'web_fallback',
             fallback_mechanism: 'browser_deeplink',
             failure_reason: 'exception',
@@ -124,7 +128,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
         }
         if (fallback.success) {
           trackLoginSucceeded({
-            auth_method: provider,
+            ...loginProviderProperties(provider),
             flow: 'web_fallback',
             fallback_mechanism: 'browser_deeplink',
             screen: signInScreen,
@@ -141,7 +145,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
           // The user dismissed the browser — intent, not a failure. A distinct
           // event keeps it out of the LoginFailed count.
           track(SHARED_EVENTS.LoginCancelled, {
-            auth_method: provider,
+            ...loginProviderProperties(provider),
             flow: 'web_fallback',
             fallback_mechanism: 'browser_deeplink',
             duration_ms: Date.now() - fallbackStartedAt,
@@ -151,7 +155,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
         }
         const fallbackReason = classifyNativeAuthFailureReason(fallback, 'oauth');
         track(SHARED_EVENTS.LoginFailed, {
-          auth_method: provider,
+          ...loginProviderProperties(provider),
           flow: 'web_fallback',
           fallback_mechanism: 'browser_deeplink',
           failure_reason: fallbackReason,
@@ -187,7 +191,12 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
           return;
         }
         if (result.success) {
-          trackLoginSucceeded({ auth_method: provider, flow: primaryFlow, screen: signInScreen, ...registrationProps });
+          trackLoginSucceeded({
+            ...loginProviderProperties(provider),
+            flow: primaryFlow,
+            screen: signInScreen,
+            ...registrationProps,
+          });
           // AuthProvider flips isAuthenticated and the redirect handles navigation.
           return;
         }
@@ -195,7 +204,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
           // The user dismissed the provider sheet — intent, not a failure. A
           // distinct event keeps it out of the LoginFailed count.
           track(SHARED_EVENTS.LoginCancelled, {
-            auth_method: provider,
+            ...loginProviderProperties(provider),
             flow: primaryFlow,
             duration_ms: Date.now() - attemptStartedAt,
             ...registrationProps,
@@ -208,7 +217,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
         // on Android it dead-ends and is terminal.
         const oauthFailureReason = classifyNativeAuthFailureReason(result, 'oauth');
         track(SHARED_EVENTS.LoginFailed, {
-          auth_method: provider,
+          ...loginProviderProperties(provider),
           flow: primaryFlow,
           failure_reason: oauthFailureReason,
           failure_detail: result.error,
@@ -250,7 +259,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
           Platform.OS === 'ios' ||
           (Platform.OS === 'android' && provider === 'google' && isRecoverableAndroidGoogleSignInError(oauthError));
         track(SHARED_EVENTS.LoginFailed, {
-          auth_method: provider,
+          ...loginProviderProperties(provider),
           flow: primaryFlow,
           failure_reason: 'exception',
           failure_detail: nativeErrorCode ?? (oauthError instanceof Error ? oauthError.message : undefined),

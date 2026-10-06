@@ -276,3 +276,60 @@ describe('cross-user isolation — every user-scoped sync resolver', () => {
     expect(result.documents.map((doc) => (doc as Record<string, unknown>).playlist_uuid)).toEqual(['plf-own']);
   });
 });
+
+describe('climb revision columns (#6023)', () => {
+  it('syncTicks emits climb_revision, and null for a tick that has none', async () => {
+    await db.execute(sql`
+      INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, climb_revision, angle, status, climbed_at)
+      VALUES ('tick-rev-3', ${USER_ID}, 'kilter', 'c1', 3, 40, 'send', now()),
+             ('tick-rev-unknown', ${USER_ID}, 'kilter', 'c1', NULL, 40, 'send', now())
+    `);
+
+    const result = (await syncQueries.syncTicks(undefined, { cursor: null, limit: 500 }, ctx())) as SyncResult;
+    const revisionByUuid = new Map(
+      (result.documents as Array<Record<string, unknown>>).map((doc) => [doc.uuid, doc.climb_revision]),
+    );
+    expect(revisionByUuid).toEqual(
+      new Map([
+        ['tick-rev-3', 3],
+        ['tick-rev-unknown', null],
+      ]),
+    );
+  });
+
+  it('syncClimbs emits revision_number and holds_revision_number, 1 and 1 on a climb nobody has edited', async () => {
+    const layoutId = 96023;
+    await db.execute(sql`DELETE FROM board_climbs WHERE board_type = 'kilter' AND layout_id = ${layoutId}`);
+    await db.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, name, is_listed, is_draft, updated_at)
+      VALUES ('sync-rev-unedited', 'kilter', ${layoutId}, 'Unedited', true, false, now())
+    `);
+    await db.execute(sql`
+      INSERT INTO board_climbs
+        (uuid, board_type, layout_id, name, is_listed, is_draft, revision_number, holds_revision_number, updated_at)
+      VALUES ('sync-rev-edited', 'kilter', ${layoutId}, 'Edited', true, false, 5, 3, now())
+    `);
+
+    try {
+      const result = (await syncQueries.syncClimbs(
+        undefined,
+        { boardType: 'kilter', layoutId, cursor: null, limit: 500 },
+        ctx(),
+      )) as SyncResult;
+      const revisionsByUuid = new Map(
+        (result.documents as Array<Record<string, unknown>>).map((doc) => [
+          doc.uuid,
+          [doc.revision_number, doc.holds_revision_number],
+        ]),
+      );
+      expect(revisionsByUuid).toEqual(
+        new Map([
+          ['sync-rev-unedited', [1, 1]],
+          ['sync-rev-edited', [5, 3]],
+        ]),
+      );
+    } finally {
+      await db.execute(sql`DELETE FROM board_climbs WHERE board_type = 'kilter' AND layout_id = ${layoutId}`);
+    }
+  });
+});

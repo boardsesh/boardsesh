@@ -24,10 +24,16 @@ export {
   fetchedLogbookClimbUuidsQueryKey,
   logbookQueryKey,
   logbookClimbAngleKey,
+  withTickRevisions,
 } from './logbook-keys';
 export type { LogbookEntry, LogbookSourceTick, TickStatus } from './logbook-keys';
 
-export { buildOptimisticTickEntry, applySavedTickToLogbook, rollbackOptimisticTick } from './tick-helpers';
+export {
+  buildOptimisticTickEntry,
+  applySavedTickToLogbook,
+  rollbackOptimisticTick,
+  climbRevisionToSend,
+} from './tick-helpers';
 export type { SaveTickOptions } from './tick-helpers';
 
 export { toSaveClimbInput, isDuplicateClimbError } from './climb-helpers';

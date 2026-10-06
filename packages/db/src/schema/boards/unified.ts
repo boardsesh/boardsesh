@@ -358,9 +358,11 @@ export const boardClimbs = pgTable(
     // 'method_footless', 'method_footless_kickboard', 'method_no_kickboard'
     // (see @boardsesh/shared-schema CLIMB_CHARACTERISTICS). Internal reads/filters
     // use this array; the description prefix stays only as the Aurora wire format.
-    // A GIN index (board_climbs_characteristics_idx) is created in a custom
-    // migration — like compatible_size_ids' GIN index (migration 0073), kept out
-    // of the schema so drizzle-kit generate never emits a destructive diff for it.
+    // The rule matcher filters COALESCE(characteristics, legacy Aurora
+    // description fallback) with array containment, so a plain-column GIN
+    // index does not match that expression. Migration 0135 built the
+    // board_climbs_characteristics_idx GIN index; production never scanned it,
+    // and migration 0250 removes it.
     characteristics: text('characteristics').array(),
     // Spray walls only: how many of this climb's holds have come off the wall
     // (`spray_wall_holds.removed_version_id IS NOT NULL`). NULL on every other
@@ -370,11 +372,32 @@ export const boardClimbs = pgTable(
     // Recomputed per wall by `recomputeMissingHoldCounts` (SW-04) whenever a
     // reset commits.
     missingHoldCount: integer('missing_hold_count'),
+    // The climb's current revision (#6023): the highest `revision_number` it
+    // has in `board_climb_revisions`, or 1 when it has never been edited.
+    // Written by `recordClimbRevision` in the same transaction as the revision
+    // row, so a tick can be stamped from this row without reading that table.
+    revisionNumber: integer('revision_number').notNull().default(1),
+    // The revision at which the holds last changed (frames or frame count), the
+    // "holds epoch". A rename, regrade or pace change moves `revisionNumber` and
+    // leaves this alone. Ticks stamped at or after it were climbed on the holds
+    // the climb has now.
+    holdsRevisionNumber: integer('holds_revision_number').notNull().default(1),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     syncSeq: bigserial('sync_seq', { mode: 'number' }).notNull(),
   },
   (table) => ({
-    boardTypeIdx: index('board_climbs_board_type_idx').on(table.boardType),
+    // Layout-scoped reads (sitemap board configs, catalogue counts) and any
+    // whole-board range scan. Created in migration 0025, dropped from the schema
+    // in 0067 but never from production, where it carries ~560k scans a week;
+    // declared again (IF NOT EXISTS) so a future generate cannot drop it. It
+    // also replaces the old single-column board_climbs_board_type_idx.
+    layoutFilterIdx: index('board_climbs_layout_filter_idx').on(
+      table.boardType,
+      table.layoutId,
+      table.isListed,
+      table.isDraft,
+      table.framesCount,
+    ),
     // Leading board_type: every syncClimbs pull filters on it before walking
     // the (updated_at, sync_seq) cursor, so a per-board pull is one range scan.
     syncCursorIdx: index('board_climbs_sync_cursor_idx').on(table.boardType, table.updatedAt, table.syncSeq),
@@ -409,6 +432,17 @@ export const boardClimbs = pgTable(
       .where(sql`${table.userId} IS NOT NULL`),
     // Index for climb name lookups (used by JSON import to resolve names to UUIDs)
     nameIdx: index('board_climbs_name_idx').on(table.boardType, table.name),
+    // The climbs whose holds have ever been moved by an edit (#6023): a tiny set
+    // beside the catalogue. Per-climber reads that need the holds epoch of every
+    // climb in a logbook (the Projects playlist) join this index instead of
+    // probing board_climbs once per climb, so a logbook of unedited climbs never
+    // touches the table. A climb absent from it has epoch 1. The key carries the
+    // epoch itself, so the read can stay inside the index. Queries must repeat
+    // the predicate to use it: `climbHoldsEverMovedSql` in holds-epoch.ts.
+    // Built out-of-band in production (see the migration's header).
+    holdsMovedIdx: index('board_climbs_holds_moved_idx')
+      .on(table.boardType, table.uuid, table.holdsRevisionNumber)
+      .where(sql`${table.holdsRevisionNumber} > 1`),
     // Note: a GIN index on compatible_size_ids already exists from migration 0073
     // (board_climbs_compatible_size_ids_idx); the recommendation size filter uses
     // `compatible_size_ids @> ARRAY[sizeId]` so it can use that existing index.
@@ -688,9 +722,10 @@ export const boardClimbStats = pgTable(
     // (Historically upstream was split into aurora_/kilter_ columns for the two
     // Kilter backends; migration 0141 folded them into GREATEST(aurora, kilter) and
     // dropped the kilter column.)
-    // Keep it as a regular column (not GENERATED) so the custom covering indexes
-    // (board_climb_stats_ascents_covering_idx, migration 0068; the v2 variant with
-    // climb_uuid as a trailing key column, migration 0122) keep working.
+    // Keep it as a regular column (not GENERATED) so the custom covering index
+    // (board_climb_stats_ascents_covering_v2_idx, migration 0122, with climb_uuid
+    // as a trailing key column) keeps working. The v1 index from 0068 was a
+    // strict prefix of it and is removed in migration 0250.
     ascensionistCount: bigint('ascensionist_count', { mode: 'number' }),
     upstreamAscensionistCount: bigint('upstream_ascensionist_count', { mode: 'number' }),
     boardseshAscensionistCount: bigint('boardsesh_ascensionist_count', { mode: 'number' }),

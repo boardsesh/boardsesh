@@ -45,7 +45,14 @@ export type ClimbRevisionState = {
   characteristics: string[] | null;
   /** The setter grade. Spray only; null on every other board. */
   difficultyId: number | null;
+  /** `board_climbs.revision_number`. Bookkeeping, not editable state: the diff ignores it. */
+  revisionNumber: number;
+  /** `board_climbs.holds_revision_number`. Bookkeeping too. */
+  holdsRevisionNumber: number;
 };
+
+/** A climb's revision and its holds epoch, as `updateClimb` hands them back. */
+export type ClimbRevisionNumbers = Pick<ClimbRevisionState, 'revisionNumber' | 'holdsRevisionNumber'>;
 
 async function readClimbRevisionState(
   executor: DrizzleExecutor,
@@ -66,6 +73,8 @@ async function readClimbRevisionState(
       framesPace: dbSchema.boardClimbs.framesPace,
       angle: dbSchema.boardClimbs.angle,
       characteristics: dbSchema.boardClimbs.characteristics,
+      revisionNumber: dbSchema.boardClimbs.revisionNumber,
+      holdsRevisionNumber: dbSchema.boardClimbs.holdsRevisionNumber,
     })
     .from(dbSchema.boardClimbs)
     .where(and(eq(dbSchema.boardClimbs.uuid, climbUuid), eq(dbSchema.boardClimbs.boardType, boardType)))
@@ -210,7 +219,9 @@ export function climbEditDecisionsAreStale(
  *  - on the Aurora boards the "No match" description prefix is a rule, not prose,
  *    so it is stripped before descriptions are compared and counted under `rules`
  *    instead. Without that, the first edit to move the legacy prefix into the
- *    `characteristics` array would report a description change nobody made.
+ *    `characteristics` array would report a description change nobody made;
+ *  - the same holds in the same roles are the same holds, whatever order the
+ *    frames string lists them in (see {@link holdsMoved}).
  */
 export function diffClimbRevisionStates(
   boardType: BoardName,
@@ -223,11 +234,9 @@ export function diffClimbRevisionStates(
   const changes: ClimbRevisionChange[] = [];
   if ((before.name ?? '') !== (after.name ?? '')) changes.push('name');
   if (prose(before.description) !== prose(after.description)) changes.push('description');
-  if (
-    (before.frames ?? '') !== (after.frames ?? '') ||
-    (before.framesCount ?? 1) !== (after.framesCount ?? 1) ||
-    (before.framesPace ?? 0) !== (after.framesPace ?? 0)
-  ) {
+  // The same hold test that moves the holds epoch, so a save that only re-encodes
+  // the frames string records nothing here and resets nothing there.
+  if (holdsMoved(boardType, before, after) || (before.framesPace ?? 0) !== (after.framesPace ?? 0)) {
     changes.push('holds');
   }
   if (before.difficultyId !== after.difficultyId) changes.push('grade');
@@ -239,6 +248,44 @@ export function diffClimbRevisionStates(
     changes.push('rules');
   }
   return changes;
+}
+
+/**
+ * One frames string as a set of holds: every (frame, hold, role) it lights,
+ * sorted, so two strings that list the same holds in a different order are equal.
+ * Frame numbers are kept, so the same holds in a different frame are different.
+ */
+function holdSetKey(boardType: BoardName, frames: string | null): string {
+  return parseFramesToHoldEntries(boardType, frames)
+    .map((entry) => `${entry.frameNumber}:${entry.holdId}:${entry.holdState}`)
+    .sort()
+    .join(' ');
+}
+
+/**
+ * Whether the holds themselves differ between two states: which holds are lit
+ * in which role in each frame, or how many frames there are.
+ *
+ * Compared as parsed hold sets, never as strings. The app re-sends `frames` on
+ * every save, encoded in ascending hold-id order, and a stored string from
+ * another encoder (an import, an older client) lists the same holds in another
+ * order. A string comparison would call that rename a hold change, and since
+ * #6023 a hold change restarts the climb's sends.
+ *
+ * Narrower than the `holds` entry {@link diffClimbRevisionStates} reports, which
+ * also covers `framesPace`. The pace is how fast a multi-frame route plays, not
+ * where the holds are, so a pace-only edit is a revision but the climb is still
+ * the same climb to anyone who sent it. This is what moves
+ * `board_climbs.holds_revision_number` (#6023).
+ */
+export function holdsMoved(
+  boardType: BoardName,
+  before: Pick<ClimbRevisionState, 'frames' | 'framesCount'>,
+  after: Pick<ClimbRevisionState, 'frames' | 'framesCount'>,
+): boolean {
+  if ((before.framesCount ?? 1) !== (after.framesCount ?? 1)) return true;
+  if ((before.frames ?? '') === (after.frames ?? '')) return false;
+  return holdSetKey(boardType, before.frames) !== holdSetKey(boardType, after.frames);
 }
 
 /** The wall's published version id, read under the wall lock. */
@@ -368,6 +415,12 @@ function publishedDate(state: ClimbRevisionState): Date {
  *
  * Past `MAX_REVISIONS_PER_CLIMB` the oldest rows other than revision 1 are
  * deleted. An edit is never refused for being one too many.
+ *
+ * A recorded edit also moves `board_climbs.revision_number` to the new number,
+ * and `holds_revision_number` with it when {@link holdsMoved}.
+ *
+ * Returns the two numbers as they stand once this call is done: moved when it
+ * recorded an edit, and the locked row's own otherwise.
  */
 export async function recordClimbRevision(
   executor: DrizzleExecutor,
@@ -379,15 +432,20 @@ export async function recordClimbRevision(
     editorId: string;
     sprayTarget: Pick<SprayClimbTarget, 'wallId'> | null;
   },
-): Promise<void> {
+): Promise<ClimbRevisionNumbers> {
   const { boardType, climbUuid, before, editorId, sprayTarget } = params;
-  if (before.isDraft) return;
+  // The row is locked from `before` to here, so nothing else has moved these.
+  const unchanged: ClimbRevisionNumbers = {
+    revisionNumber: before.revisionNumber,
+    holdsRevisionNumber: before.holdsRevisionNumber,
+  };
+  if (before.isDraft) return unchanged;
 
   const after = await readClimbRevisionState(executor, boardType, climbUuid, false);
-  if (!after || after.isDraft) return;
+  if (!after || after.isDraft) return unchanged;
 
   const changes = diffClimbRevisionStates(boardType, before, after);
-  if (changes.length === 0) return;
+  if (changes.length === 0) return unchanged;
 
   const revisionKey = and(
     eq(dbSchema.boardClimbRevisions.climbUuid, climbUuid),
@@ -423,6 +481,22 @@ export async function recordClimbRevision(
     editedBy: editorId,
   });
 
+  // Keep the climb's own copy of its revision in step with the row just written
+  // (#6023), so `saveTick` can stamp a tick with one primary-key read. A second
+  // UPDATE rather than columns on the caller's: the number is only known here,
+  // after the stats row is read back and the diff says this save was an edit at
+  // all. It fires `trg_board_climbs_set_sync_fields` once more, which is wanted
+  // when the caller's UPDATE changed nothing on the row (a spray regrade lives
+  // on the stats row), because `syncClimbs` has to re-deliver the new number.
+  const recorded: ClimbRevisionNumbers = {
+    revisionNumber: nextRevisionNumber,
+    holdsRevisionNumber: holdsMoved(boardType, before, after) ? nextRevisionNumber : before.holdsRevisionNumber,
+  };
+  await executor
+    .update(dbSchema.boardClimbs)
+    .set(recorded)
+    .where(and(eq(dbSchema.boardClimbs.uuid, climbUuid), eq(dbSchema.boardClimbs.boardType, boardType)));
+
   // Prune. Revision 1 is never a candidate, so the climb as first published is
   // always there to compare the latest against.
   const prunable = await executor
@@ -442,4 +516,5 @@ export async function recordClimbRevision(
       ),
     );
   }
+  return recorded;
 }

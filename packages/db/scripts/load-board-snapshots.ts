@@ -60,7 +60,7 @@ import {
 } from '../src/catalog-snapshot.js';
 import { describeDatabaseHost, isLocalDatabaseUrl } from './db-connection.js';
 
-const DEFAULT_SNAPSHOT_BASE_URL = 'https://boardsesh-board-snapshots.t3.tigrisfiles.io';
+const DEFAULT_SNAPSHOT_BASE_URL = 'https://snapshots.boardsesh.com';
 const CLIMBS_MANIFEST_PATH = 'board-snapshots/v1-gzip/manifest.json';
 const CATALOG_MANIFEST_PATH = 'board-snapshots/v1-catalog/manifest.json';
 

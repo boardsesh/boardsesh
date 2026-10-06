@@ -72,7 +72,10 @@
       "unfollowMessage": "\"{{name}}\" is your active board. Unfollowing drops it from your boards and clears the selection.",
       "unfollowConfirm": "Unfollow",
       "edit": "Edit",
-      "done": "Done"
+      "done": "Done",
+      "deleteWallTitle": "Delete spray wall?",
+      "deleteWallMessage": "Delete \"{{name}}\"? Its photos and climbs will no longer be available. This cannot be undone.",
+      "deleteSuccess": "\"{{name}}\" deleted"
     },
     "emptyTitle": "No boards yet",
     "emptySubtitle": "Search for a board to get started",

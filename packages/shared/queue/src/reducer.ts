@@ -452,7 +452,12 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
         if (item.climb.uuid !== climbUuid) return item;
         if (patchKeys.every((key) => item.climb[key] === patch[key])) return item;
         changed = true;
-        return { ...item, climb: { ...item.climb, ...patch } };
+        // The version numbers describe the holds the item was queued with
+        // (#6023). New holds make them stale, and a tick stamped with a stale
+        // version is stored as a send on the old climb, so drop them and let
+        // the tick form fall back to the phone's copy.
+        const versions = item.climb.frames === patch.frames ? {} : { revisionNumber: null, holdsRevisionNumber: null };
+        return { ...item, climb: { ...item.climb, ...patch, ...versions } };
       };
 
       const newQueue = state.queue.map(refresh);

@@ -1048,6 +1048,9 @@ export const queriesTypeDefs = /* GraphQL */ `
     "Pull the authenticated user's playlist-follows changed since the cursor."
     syncPlaylistFollows(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
 
+    "Read a saved climb immediately: own drafts or published spray climbs on accessible walls."
+    syncClimbDocuments(boardType: String!, layoutId: Int!, climbUuid: ID!, sprayWallUuid: ID): SyncClimbDocuments
+
     """
     Pull board climbs for a board type, changed since the cursor (reference data).
     Optional layoutId/sizeId narrow the pull to a single layout/size (all sets) so a

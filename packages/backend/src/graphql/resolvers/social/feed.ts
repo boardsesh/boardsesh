@@ -4,6 +4,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { sprayTickClimbExistsCondition } from '../shared/spray-tick-visibility';
 import { requireAuthenticated, applyRateLimit, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import {
   difficultyNameWithFallbackExpr,
@@ -125,6 +126,9 @@ export const socialFeedQueries = {
             { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
             myUserId,
           ),
+          // …and a spray log whose climb was hard-deleted has no wall left to
+          // check, so it is nobody's to see but its author's.
+          sprayTickClimbExistsCondition(myUserId),
         ),
       )
       .orderBy(desc(dbSchema.boardseshTicks.climbedAt))
@@ -250,6 +254,7 @@ export const socialFeedQueries = {
             { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
             ctx?.userId,
           ),
+          sprayTickClimbExistsCondition(ctx?.userId),
         ),
       )
       .orderBy(desc(dbSchema.boardseshTicks.climbedAt))
@@ -359,6 +364,7 @@ export const socialFeedQueries = {
           climbName: dbSchema.boardClimbs.name,
           climbCharacteristics: dbSchema.boardClimbs.characteristics,
           climbDescription: dbSchema.boardClimbs.description,
+          climbCurrentRevision: dbSchema.boardClimbs.revisionNumber,
           upvotes: dbSchema.voteCounts.upvotes,
           downvotes: dbSchema.voteCounts.downvotes,
           commentCount: tickCommentCountExpr,
@@ -424,6 +430,7 @@ export const socialFeedQueries = {
         ...toClimbLogBase(row),
         climbName: row.climbName || 'Unknown Climb',
         isNoMatch: resolveClimbNoMatch(row.tick.boardType, row.climbCharacteristics, row.climbDescription),
+        climbCurrentRevision: row.climbCurrentRevision,
         upvotes: Number(row.upvotes ?? 0),
         downvotes: Number(row.downvotes ?? 0),
         commentCount: Number(row.commentCount ?? 0),

@@ -10,6 +10,7 @@ import { boardClimbRatingsJoinCondition } from '../shared/sql-expressions';
 import {
   climbLogBaseSelection,
   climbLogConditions,
+  readClimbCurrentRevision,
   resolveClimbLogUuid,
   sentStatusCondition,
   toClimbLogBase,
@@ -198,15 +199,18 @@ export const climbLogsQueries = {
       // The climb's canonical uuid, so logs stored under a uuid that was
       // deduplicated into this climb are found too.
       const canonicalClimbUuid = await resolveClimbLogUuid(boardType, validatedInput.climbUuid);
-      const rows = await buildClimbLogsQuery({
-        boardType,
-        canonicalClimbUuid,
-        viewerUserId,
-        filters: validatedInput,
-        latestPerClimber: validatedInput.latestPerClimber === true,
-        limit,
-        cursor,
-      });
+      const [rows, climbCurrentRevision] = await Promise.all([
+        buildClimbLogsQuery({
+          boardType,
+          canonicalClimbUuid,
+          viewerUserId,
+          filters: validatedInput,
+          latestPerClimber: validatedInput.latestPerClimber === true,
+          limit,
+          cursor,
+        }),
+        readClimbCurrentRevision(boardType, canonicalClimbUuid),
+      ]);
 
       logSlowRead('climbLogs', startedAt, {
         boardType,
@@ -224,7 +228,7 @@ export const climbLogsQueries = {
         items: pageRows.map((row) => {
           // `isBenchmark` is part of the base mapper and not of ClimbLogItem.
           const { isBenchmark: _isBenchmark, ...item } = toClimbLogBase(row);
-          return item;
+          return { ...item, climbCurrentRevision };
         }),
         cursor: hasMore && lastTick ? encodeClimbLogsCursor({ climbedAt: lastTick.climbedAt, id: lastTick.id }) : null,
         hasMore,

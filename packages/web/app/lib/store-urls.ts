@@ -1,3 +1,8 @@
+// The bare store listings. A store BUTTON on www does not link to these: it
+// builds its URL with `buildStoreUrl` (`store-links.ts`), which adds where the
+// click came from. These stay exported as the base that builder extends, and
+// for the Capacitor retirement screen, which sends someone who already has the
+// app to update it and so has no install to attribute.
 export const IOS_APP_STORE_URL = 'https://apps.apple.com/app/boardsesh/id6761350784';
 export const ANDROID_PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.boardsesh.app';
 

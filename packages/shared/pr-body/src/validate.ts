@@ -1,3 +1,4 @@
+import { findOfflineMigrationProblem } from './offline-migration';
 import { findWrittenRiskScore, parseRisk, type Risk } from './risk';
 import { parseTestPlan, type TestPlan } from './test-plan';
 import { describeDeveloperVoice, findDeveloperVoice } from './tester-voice';
@@ -29,18 +30,35 @@ function countWords(text: string): number {
  *  - Every step addressed to the tester, not the author: no commands to run and
  *    no repo paths to open (hard) — see tester-voice.ts.
  *  - `Risk: N/5 — why` with N in 1–5 (hard); a reason (soft).
+ *  - When `changedPaths` includes the offline migration list: a ticked statement
+ *    that the previous stable bundle can read the result (hard) — see
+ *    offline-migration.ts.
  * The test plan is always required — "1. CI green." is a valid plan for an
- * internal change. `skip-qa-gate` on the PR short-circuits everything.
+ * internal change. `skip-qa-gate` on the PR short-circuits the test plan and the
+ * risk score. It does NOT waive the migration statement: that label is about
+ * whether testers need a plan, and this rule is about whether a phone keeps its
+ * offline data, which no label can answer.
+ *
+ * `changedPaths` is the PR's changed files. A caller that only reads a body
+ * (the backend serving a plan, the changelog) leaves it out, and is never asked
+ * for the statement.
  */
-export function validatePrBody(body: string | null | undefined, labels: readonly string[] = []): PrBodyValidation {
+export function validatePrBody(
+  body: string | null | undefined,
+  labels: readonly string[] = [],
+  changedPaths: readonly string[] = [],
+): PrBodyValidation {
   const testPlan = parseTestPlan(body);
   const risk = parseRisk(body);
   const errors: string[] = [];
   const warnings: string[] = [];
 
+  const migrationProblem = findOfflineMigrationProblem(body, changedPaths);
+  if (migrationProblem !== null) errors.push(migrationProblem);
+
   if (labels.includes(SKIP_QA_GATE_LABEL)) {
     warnings.push(`"${SKIP_QA_GATE_LABEL}" label present — test plan and risk not checked.`);
-    return { ok: true, errors, warnings, testPlan, risk };
+    return { ok: errors.length === 0, errors, warnings, testPlan, risk };
   }
 
   if (testPlan === null) {

@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { and, eq, sql } from 'drizzle-orm';
-import { sprayWallHolds, sprayWallVersions, sprayWalls } from '@boardsesh/db/schema';
+import {
+  feedItems,
+  syncDeletions,
+  userBoards,
+  sprayWallHolds,
+  sprayWallVersions,
+  sprayWalls,
+} from '@boardsesh/db/schema';
 import type { ClimbSearchInput, ConnectionContext } from '@boardsesh/shared-schema';
 import { SPRAY_WALL_WRITE_LOCK_NAMESPACE } from '@boardsesh/shared-schema';
 
@@ -219,9 +226,9 @@ async function createPublishedWall(
  */
 async function abandonedDraftRow(layoutId: number, versionNumber: number): Promise<string> {
   const [row] = (await db.execute(sql`
-    INSERT INTO spray_wall_versions (wall_id, version_number, status, photo_key, photo_width, photo_height, created_at, updated_at)
+    INSERT INTO spray_wall_versions (wall_id, version_number, status, photo_key, photo_width, photo_height, anchors, created_at, updated_at)
     VALUES ((SELECT id FROM spray_walls WHERE layout_id = ${layoutId}), ${versionNumber}, 'draft',
-            'abandoned/key.jpg', 1200, 900, now(), now())
+            'abandoned/key.jpg', 1200, 900, ${JSON.stringify(ANCHORS)}::jsonb, now(), now())
     RETURNING id
   `)) as unknown as Array<{ id: string }>;
   return String(row.id);
@@ -843,7 +850,11 @@ describe('removing holds', () => {
       RETURNING hold_id AS id
     `)) as unknown as Array<{ id: number }>;
     const realHold = { id: Number(realHoldId) };
-    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: realId } }, ctxFor(OWNER));
+    await sprayWallMutations.commitSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: realId, kept: [], removed: [], added: [] } },
+      ctxFor(OWNER),
+    );
 
     const renderData = (await sprayWallQueries.sprayWallRenderData({}, { uuid: wall.uuid }, ctxFor(OWNER))) as {
       versionNumber: number;
@@ -1020,7 +1031,11 @@ describe('saveClimb on a spray wall', () => {
       { input: { wallUuid: wall.uuid, versionId: reset.id, holdIds: [holdIds[2]] } },
       ctxFor(OWNER),
     );
-    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: reset.id } }, ctxFor(OWNER));
+    await sprayWallMutations.commitSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: reset.id, kept: [], removed: [], added: [] } },
+      ctxFor(OWNER),
+    );
 
     await expect(
       climbMutations.saveClimb(
@@ -1409,7 +1424,11 @@ describe('saveClimb on a spray wall', () => {
       { input: { wallUuid: wall.uuid, versionId: reset.id, holdIds: [holdIds[2]] } },
       ctxFor(OWNER),
     );
-    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: reset.id } }, ctxFor(OWNER));
+    await sprayWallMutations.commitSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: reset.id, kept: [], removed: [], added: [] } },
+      ctxFor(OWNER),
+    );
 
     await expect(
       climbMutations.updateClimb(
@@ -1452,7 +1471,15 @@ describe('the caps, and the shapes the server refuses', () => {
         { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
         ctxFor(OWNER),
       )) as { id: string };
-      await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: version.id } }, ctxFor(OWNER));
+      if (created === 0) {
+        await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: version.id } }, ctxFor(OWNER));
+      } else {
+        await sprayWallMutations.commitSprayWallVersion(
+          {},
+          { input: { wallUuid: wall.uuid, versionId: version.id, kept: [], removed: [], added: [] } },
+          ctxFor(OWNER),
+        );
+      }
     }
     const overflowPhoto = registerUploadedPhoto(wall.uuid);
     await expect(
@@ -2791,7 +2818,15 @@ describe('publishing re-materialises climb integrity', () => {
       expect(await missingFor(first.uuid)).toBe(0);
       expect(await missingFor(second.uuid)).toBe(0);
 
-      await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: reset.id } }, ctxFor(OWNER));
+      if (photoSource === 'uploadedPhoto') {
+        await sprayWallMutations.commitSprayWallVersion(
+          {},
+          { input: { wallUuid: wall.uuid, versionId: reset.id, kept: [], removed: [], added: [] } },
+          ctxFor(OWNER),
+        );
+      } else {
+        await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: reset.id } }, ctxFor(OWNER));
+      }
 
       expect(await missingFor(first.uuid)).toBe(1);
       expect(await missingFor(second.uuid)).toBe(1);
@@ -2831,7 +2866,11 @@ describe('publishing re-materialises climb integrity', () => {
     // Draft v3 removes nothing and publishes, which runs the recompute. Built by
     // hand for the same reason as v2 above.
     const realId = await abandonedDraftRow(wall.layoutId, 3);
-    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: realId } }, ctxFor(OWNER));
+    await sprayWallMutations.commitSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: realId, kept: [], removed: [], added: [] } },
+      ctxFor(OWNER),
+    );
 
     const [row] = (await db.execute(
       sql`SELECT missing_hold_count FROM board_climbs WHERE uuid = ${climb.uuid}`,
@@ -3230,7 +3269,11 @@ describe('the alive-holds check on a metadata-only edit', () => {
       { input: { wallUuid: wall.uuid, versionId: reset.id, holdIds: [holdIds[0]] } },
       ctxFor(OWNER),
     );
-    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: reset.id } }, ctxFor(OWNER));
+    await sprayWallMutations.commitSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: reset.id, kept: [], removed: [], added: [] } },
+      ctxFor(OWNER),
+    );
 
     // A pure RENAME — no frames in the input at all — is still refused, because the
     // climb it would re-publish is one nobody can do.
@@ -3267,7 +3310,11 @@ describe('one draft at a time, and the states a version may move between', () =>
     ).rejects.toThrow(new RegExp(`already has an unfinished photo \\(version ${draft.number}\\)`, 'i'));
 
     // Publishing it is one way out…
-    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: draft.id } }, ctxFor(OWNER));
+    await sprayWallMutations.commitSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: draft.id, kept: [], removed: [], added: [] } },
+      ctxFor(OWNER),
+    );
     await expect(
       sprayWallMutations.createSprayWallVersion(
         {},
@@ -3457,7 +3504,11 @@ describe('one draft at a time, and the states a version may move between', () =>
       { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
       ctxFor(OWNER),
     )) as { id: string };
-    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: second.id } }, ctxFor(OWNER));
+    await sprayWallMutations.commitSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: second.id, kept: [], removed: [], added: [] } },
+      ctxFor(OWNER),
+    );
 
     const [superseded] = (await db.execute(
       sql`SELECT status FROM spray_wall_versions WHERE id = ${publishedId}`,
@@ -3490,7 +3541,7 @@ describe('one draft at a time, and the states a version may move between', () =>
 
     await expect(
       sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: String(staleId) } }, ctxFor(OWNER)),
-    ).rejects.toThrow(/already published at version 1/i);
+    ).rejects.toThrow(/review and confirm this reset/i);
   });
 });
 
@@ -3773,7 +3824,11 @@ describe('sharing a wall: public promotion, demotion and gym listing', () => {
       { input: { wallUuid: wall.uuid, photoId: secondPhotoId, anchors: ANCHORS } },
       ctxFor(OWNER),
     )) as { id: string };
-    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: secondVersion.id } }, ctxFor(OWNER));
+    await sprayWallMutations.commitSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: secondVersion.id, kept: [], removed: [], added: [] } },
+      ctxFor(OWNER),
+    );
 
     const secondKey = await publicPhotoKeyOf(wall.layoutId);
     // A new key over the new photo, and the old object swept.
@@ -3814,7 +3869,11 @@ describe('sharing a wall: public promotion, demotion and gym listing', () => {
       { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
       ctxFor(OWNER),
     )) as { id: string };
-    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: version.id } }, ctxFor(OWNER));
+    await sprayWallMutations.commitSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: version.id, kept: [], removed: [], added: [] } },
+      ctxFor(OWNER),
+    );
     return attemptedKey;
   }
 
@@ -3885,6 +3944,67 @@ describe('sharing a wall: public promotion, demotion and gym listing', () => {
     expect(await publicPhotoKeyOf(wall.layoutId)).toBeNull();
     expect(deletedPublicKeys).toContain(publicKey);
     expect(publicBucketObjects.size).toBe(0);
+  });
+
+  it('generic picker deletion tombstones the wall and removes its feed and public photo', async () => {
+    const { wall, climbUuid } = await wallWithAClimb({ isPublic: true });
+    const publicKey = await publicPhotoKeyOf(wall.layoutId);
+    expect(publicKey).not.toBeNull();
+    await db.insert(feedItems).values({
+      recipientId: STRANGER,
+      actorId: OWNER,
+      type: 'new_climb',
+      entityType: 'climb',
+      entityId: climbUuid,
+    });
+
+    // Cleanup reuses layout IDs, so historical tombstones may match this scope.
+    const previousTombstones = await db
+      .select()
+      .from(syncDeletions)
+      .where(
+        and(
+          eq(syncDeletions.tableName, 'spray_walls'),
+          eq(syncDeletions.recordId, String(wall.layoutId)),
+          eq(syncDeletions.userId, OWNER),
+        ),
+      );
+    expect(await socialBoardMutations.deleteBoard({}, { boardUuid: wall.uuid }, ctxFor(OWNER))).toBe(true);
+
+    const [deletedWall] = await db.select().from(sprayWalls).where(eq(sprayWalls.layoutId, wall.layoutId));
+    const [deletedBoard] = await db.select().from(userBoards).where(eq(userBoards.uuid, wall.uuid));
+    expect(deletedWall.deletedAt).not.toBeNull();
+    expect(deletedBoard.deletedAt).toEqual(deletedWall.deletedAt);
+    expect(deletedBoard.syncFrozenAt).toEqual(deletedWall.deletedAt);
+    expect(deletedWall.publicPhotoKey).toBeNull();
+    expect(deletedPublicKeys).toContain(publicKey);
+    expect(publicBucketObjects.size).toBe(0);
+    expect(await db.select().from(feedItems).where(eq(feedItems.entityId, climbUuid))).toHaveLength(0);
+    expect(
+      await db
+        .select()
+        .from(syncDeletions)
+        .where(
+          and(
+            eq(syncDeletions.tableName, 'spray_walls'),
+            eq(syncDeletions.recordId, String(wall.layoutId)),
+            eq(syncDeletions.userId, OWNER),
+          ),
+        ),
+    ).toHaveLength(previousTombstones.length + 1);
+    expect(await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))).toBeNull();
+  });
+
+  it('generic picker deletion keeps the owner authorization guard', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    const gym = await gymWith(STRANGER, 'admin');
+    await db.update(userBoards).set({ gymId: gym.id }).where(eq(userBoards.uuid, wall.uuid));
+
+    await expect(socialBoardMutations.deleteBoard({}, { boardUuid: wall.uuid }, ctxFor(STRANGER))).rejects.toThrow(
+      'Not authorized to delete this board',
+    );
+    const [stillLive] = await db.select().from(sprayWalls).where(eq(sprayWalls.layoutId, wall.layoutId));
+    expect(stillLive.deletedAt).toBeNull();
   });
 
   it('refuses a visibility change from anyone but the wall owner', async () => {
@@ -4112,13 +4232,8 @@ describe('a wall with no published version is listed to nobody but its owner', (
     expect(search.totalCount).toBe(1);
   });
 
-  it('keeps the owner escape in myBoards — your own half-built wall stays in your list', async () => {
-    // `listableSprayWallCondition(userId)` is the only reason this row survives
-    // the filter, and it lives in the WHERE the COUNT and the page share. Without
-    // the escape a climber would photograph a wall and watch it vanish from their
-    // own board list until they published it.
+  it('keeps unfinished walls out of myBoards but available for resuming setup', async () => {
     const wall = await unpublishedPublicWall('Mine, unfinished');
-
     const listed = async (userId: string) =>
       (await socialBoardQueries.myBoards({}, { input: { limit: 50, offset: 0 } }, ctxFor(userId))) as {
         boards: Array<{ uuid: string }>;
@@ -4126,19 +4241,35 @@ describe('a wall with no published version is listed to nobody but its owner', (
       };
 
     const owner = await listed(OWNER);
-    expect(owner.boards.map((board) => board.uuid)).toContain(wall.uuid);
-    expect(owner.totalCount).toBeGreaterThan(0);
+    expect(owner.boards.map((board) => board.uuid)).not.toContain(wall.uuid);
+    expect(owner.totalCount).toBe(0);
+    const resumable = (await sprayWallQueries.mySprayWalls({}, {}, ctxFor(OWNER))) as Array<{ uuid: string }>;
+    expect(resumable.map((draftWall) => draftWall.uuid)).toContain(wall.uuid);
 
-    // A follower of the wall gets the same list treatment as anybody else: the
-    // escape is the OWNER, not merely "someone who can see it".
     await db.execute(sql`
       INSERT INTO board_follows (user_id, board_uuid, created_at)
       VALUES (${STRANGER}, ${wall.uuid}, now())
       ON CONFLICT DO NOTHING
     `);
     const follower = await listed(STRANGER);
-    expect(follower.boards.map((board) => board.uuid)).not.toContain(wall.uuid);
+    expect(follower.boards).toHaveLength(0);
     expect(follower.totalCount).toBe(0);
+
+    const draft = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId: registerUploadedPhoto(wall.uuid), anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+    const versionId = draft.id;
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId } }, ctxFor(OWNER));
+    const publishedOwner = await listed(OWNER);
+    expect(publishedOwner.boards.map((board) => board.uuid)).toContain(wall.uuid);
+    expect(publishedOwner.totalCount).toBe(1);
+    expect((await listed(STRANGER)).totalCount).toBe(1);
+
+    await db.execute(sql`UPDATE spray_walls SET hidden_at = now() WHERE board_uuid = ${wall.uuid}`);
+    expect((await listed(OWNER)).totalCount).toBe(1);
+    expect((await listed(STRANGER)).totalCount).toBe(0);
   });
 
   it('leaves catalogue boards alone', async () => {
@@ -4941,7 +5072,11 @@ describe('the publish path’s bookkeeping', () => {
     `);
 
     await expect(
-      sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: reset.id } }, ctxFor(OWNER)),
+      sprayWallMutations.commitSprayWallVersion(
+        {},
+        { input: { wallUuid: wall.uuid, versionId: reset.id, kept: [], removed: [], added: [] } },
+        ctxFor(OWNER),
+      ),
     ).rejects.toThrow(/unexpected state/i);
 
     // Nothing moved: the wall still points at version 1.
@@ -5143,7 +5278,11 @@ describe('a wall keeps the visibility picked at creation through a resumed publi
     `);
 
     const versionId = await openDraft(wall.uuid);
-    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId } }, ctxFor(OWNER));
+    await sprayWallMutations.commitSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, versionId, kept: [], removed: [], added: [] } },
+      ctxFor(OWNER),
+    );
 
     const row = await visibilityOf(wall.uuid);
     expect(row.is_public).toBe(false);
@@ -5512,5 +5651,73 @@ describe('who may edit a climb on a spray wall (#5955)', () => {
     // The wall owner still can.
     await rename(climbUuid, OWNER);
     expect(await climbRow(climbUuid)).toMatchObject({ name: 'Edited', user_id: STRANGER });
+  });
+});
+
+describe('draft purpose separates hold editing and photo resets', () => {
+  it('refuses to publish a reset through the hold-editor endpoint', async () => {
+    const { wall, versionId } = await createPublishedWall(OWNER);
+    const photoId = registerUploadedPhoto(wall.uuid);
+    const reset = await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    );
+    await expect(
+      sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: reset.id } }, ctxFor(OWNER)),
+    ).rejects.toMatchObject({ extensions: { code: 'SPRAY_WALL_RESET_REVIEW_REQUIRED' } });
+    const [storedWall] = await db.select().from(sprayWalls).where(eq(sprayWalls.boardUuid, wall.uuid));
+    expect(storedWall.currentVersionId).toBe(Number(versionId));
+  });
+
+  it.each(['propose', 'commit'])('refuses to %s a hold-edit draft as a reset', async (endpoint) => {
+    const { wall, versionId } = await createPublishedWall(OWNER);
+    const draft = await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, sourceVersionId: versionId } },
+      ctxFor(OWNER),
+    );
+    const requested =
+      endpoint === 'propose'
+        ? sprayWallQueries.proposeSprayWallReset(
+            {},
+            { input: { wallUuid: wall.uuid, versionId: draft.id, detections: [] } },
+            ctxFor(OWNER),
+          )
+        : sprayWallMutations.commitSprayWallVersion(
+            {},
+            { input: { wallUuid: wall.uuid, versionId: draft.id, kept: [], removed: [], added: [] } },
+            ctxFor(OWNER),
+          );
+    await expect(requested).rejects.toMatchObject({ extensions: { code: 'SPRAY_WALL_DRAFT_PURPOSE_MISMATCH' } });
+    await expect(
+      sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: draft.id } }, ctxFor(OWNER)),
+    ).resolves.toMatchObject({ id: draft.id, status: 'PUBLISHED' });
+  });
+
+  it('recovers the exact uploaded draft without adopting another photo or geometry', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    const photoId = registerUploadedPhoto(wall.uuid);
+    const input = { wallUuid: wall.uuid, photoId, anchors: ANCHORS };
+    const original = await sprayWallMutations.createSprayWallVersion({}, { input }, ctxFor(OWNER));
+    await expect(sprayWallMutations.createSprayWallVersion({}, { input }, ctxFor(OWNER))).resolves.toMatchObject({
+      id: original.id,
+    });
+    for (const changed of [
+      { ...input, photoId: registerUploadedPhoto(wall.uuid) },
+      {
+        ...input,
+        anchors: [
+          [10, 0],
+          [1200, 0],
+          [1200, 900],
+          [0, 900],
+        ],
+      },
+    ]) {
+      await expect(
+        sprayWallMutations.createSprayWallVersion({}, { input: changed }, ctxFor(OWNER)),
+      ).rejects.toMatchObject({ extensions: { code: 'SPRAY_WALL_DRAFT_ALREADY_OPEN' } });
+    }
   });
 });

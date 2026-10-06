@@ -1,4 +1,4 @@
-import type { OfflineDatabase, QueryInvalidator, SqlExecutor, SqlValue } from '../database';
+import type { OfflineDatabase, QueryInvalidator, SqlExecutor } from '../database';
 import type { SyncCursorInput, SyncResult, SyncDeletionsResult } from '../types';
 import { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from './table-config';
 import {
@@ -88,8 +88,15 @@ import {
   resetUserDataForLostCoverage,
 } from './deletions-coverage';
 import { classifySqliteLockError } from '../db/lock-errors';
-import { buildMultiRowInsertSql, multiRowChunkSize, runPullWrite } from './pull-write';
-import { ensureHoldIndex, removeClimbFromHoldIndex, type HoldRowParser } from '../holds-index/hold-index';
+import { runPullWrite } from './pull-write';
+import { writePullDocuments } from './document-writer';
+export { toSqliteValue } from './document-writer';
+import {
+  ensureHoldIndex,
+  clearLayoutHoldIndex,
+  removeClimbFromHoldIndex,
+  type HoldRowParser,
+} from '../holds-index/hold-index';
 // Re-exported: the export job and the package index have always imported it from here.
 export { multiRowChunkSize } from './pull-write';
 import { getPendingCount } from '../mutation-queue/queue';
@@ -117,7 +124,7 @@ import {
  * expected snapshot columns are rejected separately before rows can be changed.
  */
 export type { SchemaDriftReporter } from './schema-compatibility';
-import { reportExtraColumn, type SchemaDriftReporter } from './schema-compatibility';
+import { type SchemaDriftReporter } from './schema-compatibility';
 import { scopedInvalidateFilters } from './invalidate-keys';
 
 /**
@@ -737,23 +744,6 @@ export function listSyncPullDocuments(): SyncPullDocument[] {
   ];
 }
 
-/**
- * Coerces a synced document value to what the SQLite bridge accepts:
- * booleans as 0/1 (SQLite has no BOOLEAN type), Date values as ISO strings,
- * objects/arrays as their JSON string (frames, characteristics, etc. are stored
- * as TEXT), null/undefined as NULL (undefined means "document omitted this
- * column" — same bind as an explicit null), everything else passed through
- * unchanged. Exported so the snapshot export job can reuse the exact same
- * coercion off the same synced documents without re-deriving it.
- */
-export function toSqliteValue(value: unknown): SqlValue {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'boolean') return value ? 1 : 0;
-  if (value instanceof Date) return value.toISOString();
-  if (typeof value === 'object') return JSON.stringify(value);
-  return value as SqlValue;
-}
-
 async function upsertDocuments(
   db: OfflineDatabase,
   tableName: string,
@@ -774,51 +764,6 @@ async function upsertDocuments(
 ): Promise<boolean> {
   if (documents.length === 0) return true;
 
-  // Unknown columns are SKIPPED, not fatal: the backend deploys before OTA
-  // clients update, so a newly-added server column must not brick every older
-  // client's sync loop. SQL safety is unaffected — the statement's column list
-  // below is derived from the allowlist intersection, never from document keys.
-  // Drift still surfaces in telemetry (once per table+column per app launch),
-  // so a resolver emitting a misnamed column stays observable.
-  const allowedColumnSet = new Set(allowedColumns);
-  const transientColumnSet = new Set(transientColumns);
-  for (const document of documents) {
-    const unknownColumns = Object.keys(document).filter(
-      (column) => !allowedColumnSet.has(column) && !transientColumnSet.has(column),
-    );
-    for (const unknownColumn of unknownColumns) {
-      reportExtraColumn(onSchemaDrift, { origin: 'pull', tableName, column: unknownColumn });
-    }
-  }
-
-  // Columns are the union of allowed columns present anywhere in the page (not
-  // per-document) — this was already true before batching, since this filter
-  // ran once over the whole `documents` array. Batching depends on it: every
-  // row in a multi-row VALUES clause must bind the same column list. A
-  // document missing a page-wide column binds NULL for it below, same as the
-  // single-row INSERT OR REPLACE did (INSERT OR REPLACE still does a whole-row
-  // replace, so this matches today's semantics, not just today's SQL shape).
-  const columns = allowedColumns.filter((column) =>
-    documents.some((document) => Object.prototype.hasOwnProperty.call(document, column)),
-  );
-  if (columns.length === 0) {
-    throw new Error(`Sync document for ${tableName} did not contain any allowed columns`);
-  }
-
-  const chunkSize = multiRowChunkSize(columns.length);
-  // At most two distinct row counts occur in a page (full chunks + a smaller
-  // final chunk), so caching the built SQL by row count avoids rebuilding the
-  // same multi-row VALUES string for every full chunk.
-  const sqlByRowCount = new Map<number, string>();
-  const sqlForRowCount = (rowCount: number): string => {
-    let sql = sqlByRowCount.get(rowCount);
-    if (!sql) {
-      sql = buildMultiRowInsertSql(tableName, columns, rowCount, page?.preserveNewerRows);
-      sqlByRowCount.set(rowCount, sql);
-    }
-    return sql;
-  };
-
   // One exclusive transaction per page (≤ PAGE_LIMIT rows): a big board pull is
   // thousands of pages, and a per-50-row transaction multiplied every page's
   // commit overhead by 10 while giving the drainer no meaningful extra window —
@@ -830,16 +775,15 @@ async function upsertDocuments(
     // attempt's verdict into this one.
     committed = false;
     if (page && !page.canWrite()) return;
-    for (let chunkStart = 0; chunkStart < documents.length; chunkStart += chunkSize) {
-      const chunk = documents.slice(chunkStart, chunkStart + chunkSize);
-      const values: SqlValue[] = [];
-      for (const document of chunk) {
-        for (const column of columns) {
-          values.push(toSqliteValue(document[column]));
-        }
-      }
-      await transaction.runAsync(sqlForRowCount(chunk.length), values);
-    }
+    await writePullDocuments(
+      transaction,
+      tableName,
+      documents,
+      allowedColumns,
+      transientColumns,
+      page?.preserveNewerRows ?? false,
+      onSchemaDrift,
+    );
     await page?.afterUpsert(transaction);
     committed = true;
   });
@@ -992,8 +936,16 @@ async function syncTable(
         onSchemaDrift,
         {
           canWrite,
-          preserveNewerRows: !!refresh,
+          preserveNewerRows:
+            !!refresh ||
+            (boardScope?.boardType === 'spray' && (tableName === 'board_climbs' || tableName === 'board_climb_stats')),
           afterUpsert: async (transaction) => {
+            if (tableName === 'board_climbs' && boardScope?.boardType === 'spray') {
+              // A targeted saved-row mirror can move the derived index ahead
+              // of delayed ordinary or refresh rows. Rebuild bounded spray
+              // layouts on next use, and fence in-flight index work atomically.
+              await clearLayoutHoldIndex(transaction, boardScope.boardType, boardScope.layoutId);
+            }
             if (!refresh) await setCheckpoint(transaction, checkpointKey, result.cursor);
             if (clearDownloadCoverage && boardScope) {
               await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [
@@ -2880,8 +2832,8 @@ async function runBootstrapPhase(params: {
  *
  * `beginGlobalPurge()` is deliberately NOT called: it bumps the global wipe
  * epoch, which would abort the very cycle that is supposed to rebuild. It isn't
- * needed here — the scheduler single-flights pullSync, so no other pull page is
- * on the wire, and the drainer writes only to pending_mutations, which this
+ * needed here — the exported pullSync gate serializes cycles on this database,
+ * so no other pull page is on the wire, and the drainer writes only to pending_mutations, which this
  * reset never touches.
  */
 async function enforceDeletionsCoverage(
@@ -2988,10 +2940,42 @@ async function enforceDeletionsCoverage(
   options?.onCoverageEvaluated?.({ verdict, markerAgeDays, outcome: 'reset' });
 }
 
-export async function pullSync(
+// Scheduler cycles and explicit download/publication refreshes share this gate.
+// Keep each caller's cycle: joining an older pull could miss its newer publication.
+const pullTails = new WeakMap<OfflineDatabase, Promise<void>>();
+
+export function pullSync(
   db: OfflineDatabase,
   queryClient: QueryInvalidator,
   graphqlFetch: <T>(query: string, variables?: Record<string, unknown>) => Promise<T>,
+  options?: SyncOptions,
+): Promise<void> {
+  // Capture authority and scope before waiting: a queued request must never
+  // adopt a later sign-in or re-download a scope removed during that wait.
+  const purgeToken = capturePurgeToken();
+  const signingOutAtEnqueue = isSigningOut();
+  const cycleOptions = options ? { ...options, enabledBoards: options.enabledBoards?.slice() } : undefined;
+  const previous = pullTails.get(db);
+  const start = () => performPullSync(db, queryClient, graphqlFetch, purgeToken, signingOutAtEnqueue, cycleOptions);
+  const result = (previous ?? Promise.resolve()).then(start);
+  // Only the queue tail swallows failure; the caller retains the original rejection.
+  const tail = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  pullTails.set(db, tail);
+  void tail.then(() => {
+    if (pullTails.get(db) === tail) pullTails.delete(db);
+  });
+  return result;
+}
+
+async function performPullSync(
+  db: OfflineDatabase,
+  queryClient: QueryInvalidator,
+  graphqlFetch: <T>(query: string, variables?: Record<string, unknown>) => Promise<T>,
+  purgeToken: PurgeToken,
+  signingOutAtEnqueue: boolean,
   options?: SyncOptions,
 ): Promise<void> {
   let totalDocuments = 0;
@@ -3008,7 +2992,8 @@ export async function pullSync(
   // Mirrors drainMutationQueue's entry guard: don't even start the snapshot
   // bootstrap phase below (which runs before the first cycleAborted() check)
   // when the app is already backgrounded.
-  if (isBackgrounded()) return reportInterruptedCycle();
+  if (signingOutAtEnqueue || isSigningOut() || hasPurgeLanded(purgeToken) || isBackgrounded())
+    return reportInterruptedCycle();
 
   // Offline: every request this cycle would make is already lost, and the
   // bootstrap phase would spend a Sentry event per enabled-but-undownloaded
@@ -3018,28 +3003,9 @@ export async function pullSync(
   const isOnline = options?.isOnline ?? (() => true);
   if (!isOnline()) return reportInterruptedCycle();
 
-  // Captured ONCE for the whole cycle and threaded into every phase, so a wipe or a
-  // purge aborts exactly the work it can invalidate rather than just whichever table
-  // is mid-flight. The token carries the global epoch AND a copy of every
-  // per-namespace purge epoch, so one capture answers for every scope this cycle
-  // will touch (issue #4370).
-  //
-  // Capturing once matters because `enabledBoards` is a snapshot taken before the
-  // cycle began. Removing a board (see removeBoardScopeData) drops it from that
-  // setting and bumps that namespace's epoch — but this cycle is still iterating the
-  // STALE list. If each table re-baselined its own token, every table after the one
-  // that aborted would capture the post-bump value, sail through its guard, and
-  // happily re-download the scope whose rows are being deleted right now, writing
-  // checkpoints past them. The user taps Remove and the catalog comes back.
-  //
-  // Sign-out never hit this because `isSigningOut()` is a persistent flag that stays
-  // true for every subsequent table; the epoch alone is not a substitute for it.
-  //
-  // Captured immediately after the entry guard and BEFORE the coverage phase's
-  // awaits: that phase can spend a network probe plus a multi-table wipe, and a
-  // purge landing inside that window must read as "not my token" rather than be
-  // adopted as this cycle's own baseline.
-  const purgeToken = capturePurgeToken();
+  // The enqueue token covers the queue wait AND every phase; never rebase per table.
+  // enabledBoards stays the captured snapshot after a namespace purge advances.
+  // A new token would let later tables re-download a removed scope.
   // GLOBAL: sign-out, a global wipe, backgrounding, or connectivity loss. A board
   // purge is deliberately absent — it cannot invalidate the user tables, the
   // deletions cursor, or another board's rows, so it ends that scope's work

@@ -20,6 +20,7 @@ vi.mock('expo-router', () => ({
 }));
 vi.mock('../../../../src/lib/analytics', () => ({
   readPosthogFeatureFlags: () => accessState.posthogFlags,
+  readPosthogFeatureFlagsRequestId: () => undefined,
   subscribePosthogFeatureFlags: () => () => undefined,
 }));
 vi.mock('../../../../src/lib/feature-flag-overrides', () => ({

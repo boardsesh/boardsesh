@@ -115,7 +115,10 @@ function BoardsLayout() {
 
           The live board sheet's "New photo" row opens this route after its
           native dismissal has settled. */}
-      <Stack.Screen name="spray/reset" options={{ title: tBoards('sprayReset.screenTitle') }} />
+      <Stack.Screen
+        name="spray/reset"
+        options={{ title: tBoards('sprayReset.screenTitle'), headerBackButtonMenuEnabled: false }}
+      />
     </Stack>
   );
 }

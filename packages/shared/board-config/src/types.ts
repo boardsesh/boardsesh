@@ -7,6 +7,8 @@ export type ClimbCompatibilityInput = {
   boardType?: string;
   layoutId?: number | null;
   frames: string | null | undefined;
+  /** Removed spray holds are historical climb content, not a different wall. */
+  missingHoldCount?: number | null;
   /**
    * `board_climbs.compatible_size_ids` — every board size the climb fits on.
    * Only consulted when the target names its own `size_id`; null/undefined (the

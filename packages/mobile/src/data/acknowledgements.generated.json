@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-09-28T15:09:29.128Z",
+  "generatedAt": "2026-10-05T15:43:10.809Z",
   "contributors": [
     {
       "login": "marcodejongh",
       "name": "Marco de Jongh",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1107647?u=63993f18e3d652404c7a04ae91a5f7a505fdef5c&v=4",
       "htmlUrl": "https://github.com/marcodejongh",
-      "pullRequests": 3967,
-      "issues": 1344,
-      "contributions": 5311
+      "pullRequests": 4123,
+      "issues": 1414,
+      "contributions": 5537
     },
     {
       "login": "ES-Alexander",
@@ -128,6 +128,15 @@
       "contributions": 4
     },
     {
+      "login": "leifaha",
+      "name": "Leif Hatlem",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/28669311?u=b3b5fe9dda41ca3f66b40d7ee2255720e3aa1a30&v=4",
+      "htmlUrl": "https://github.com/leifaha",
+      "pullRequests": 0,
+      "issues": 3,
+      "contributions": 3
+    },
+    {
       "login": "alecgdouglas",
       "name": "Alec Douglas",
       "avatarUrl": "https://avatars.githubusercontent.com/u/3189085?u=216caa536c024c8dda5a246d0e329c9f25482f98&v=4",
@@ -179,6 +188,15 @@
       "htmlUrl": "https://github.com/crcklt",
       "pullRequests": 0,
       "issues": 1,
+      "contributions": 1
+    },
+    {
+      "login": "dmucli",
+      "name": null,
+      "avatarUrl": "https://avatars.githubusercontent.com/u/29764214?v=4",
+      "htmlUrl": "https://github.com/dmucli",
+      "pullRequests": 1,
+      "issues": 0,
       "contributions": 1
     },
     {
@@ -303,6 +321,15 @@
       "name": null,
       "avatarUrl": "https://avatars.githubusercontent.com/u/21166436?v=4",
       "htmlUrl": "https://github.com/pxcuthbert",
+      "pullRequests": 0,
+      "issues": 1,
+      "contributions": 1
+    },
+    {
+      "login": "rosi200",
+      "name": null,
+      "avatarUrl": "https://avatars.githubusercontent.com/u/335335607?v=4",
+      "htmlUrl": "https://github.com/rosi200",
       "pullRequests": 0,
       "issues": 1,
       "contributions": 1

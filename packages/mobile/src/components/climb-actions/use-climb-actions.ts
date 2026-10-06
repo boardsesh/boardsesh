@@ -355,6 +355,8 @@ export function useClimbActions({
             setIds,
             consensusGradeName: climb.difficulty,
             sessionId,
+            climbRevision: climb.revisionNumber,
+            climbFrames: climb.frames,
           });
         }
         after();

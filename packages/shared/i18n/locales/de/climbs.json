@@ -225,7 +225,8 @@
       "editConflict": "Jemand hat diesen Boulder gerade geändert. Öffne ihn neu, um den aktuellen Stand zu sehen.",
       "editNotAllowed": "Du kannst diesen Boulder nicht bearbeiten. Das können nur Routenbauer*in und alle, die die Wand verwalten.",
       "editWindowExpired": "Dieser Boulder wurde vor mehr als 24 Stunden veröffentlicht und lässt sich nicht mehr bearbeiten.",
-      "editNotEditable": "Dieser Boulder lässt sich nicht mehr bearbeiten."
+      "editNotEditable": "Dieser Boulder lässt sich nicht mehr bearbeiten.",
+      "localRefreshFailed": "Boulder gespeichert. Die heruntergeladene Liste konnte nicht aktualisiert werden. Verbinde dich erneut, um sie zu aktualisieren."
     },
     "fields": {
       "description": "Beschreibung (optional)"

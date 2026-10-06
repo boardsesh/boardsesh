@@ -640,21 +640,45 @@ void describe('createClimbFilters: personal progress filters are scoped to the c
     assert.match(sql, /'attempt'/);
   });
 
+  void it('scopes the personal rating filters to the angle column too', () => {
+    const rated = progressSql({ onlyRatedByMe: true });
+    assert.match(rated, /EXISTS/);
+    assert.doesNotMatch(rated, /NOT EXISTS/);
+    assert.match(rated, /angle\s*=/);
+    // Both ticks of the latest-rating anti-join: the offending rating at the
+    // browsed angle, and the newer one that supersedes it at the same angle.
+    const minRating = progressSql({ minUserRating: 3 });
+    assert.match(minRating, /rating_below\.angle\s*=/);
+    assert.match(minRating, /rating_newer\.angle = rating_below\.angle/);
+  });
+
+  void it('reads only ticks on the climb’s current holds in every personal check (#6023)', () => {
+    // One compare against the board_climbs row the subquery is already
+    // correlated to. No lookup in board_climb_revisions.
+    const onCurrentHolds = /COALESCE\(climb_revision, 1\) >= holds_revision_number/;
+    for (const filter of [
+      'hideCompleted',
+      'hideAttempted',
+      'showOnlyCompleted',
+      'showOnlyAttempted',
+      'onlyRatedByMe',
+    ]) {
+      const rendered = progressSql({ [filter]: true });
+      assert.match(rendered, onCurrentHolds, filter);
+      assert.doesNotMatch(rendered, /board_climb_revisions/, filter);
+    }
+    // The latest-rating anti-join tests the offending rating only. On the
+    // superseding one the epoch is a reference two query levels up, which
+    // stopped Postgres unnesting the inner NOT EXISTS.
+    const minRating = progressSql({ minUserRating: 3 });
+    assert.match(minRating, /COALESCE\(rating_below\.climb_revision, 1\) >= holds_revision_number/);
+    assert.doesNotMatch(minRating, /rating_newer\.climb_revision/);
+    assert.equal(minRating.match(/holds_revision_number/g)?.length, 1);
+  });
+
   void it('skips personal progress conditions entirely when no userId is supplied', () => {
     const f = createClimbFilters(angleParams, { hideCompleted: true });
     assert.equal(f.personalProgressConditions.length, 0);
-  });
-
-  void it('per-climb userAscents/userAttempts selectors are scoped to the angle column', () => {
-    const f = createClimbFilters(angleParams, baseSearch, userId);
-    const selects = f.getUserLogbookSelects();
-    const ascentsSql = sqlToString(selects.userAscents);
-    const attemptsSql = sqlToString(selects.userAttempts);
-    assert.match(ascentsSql, /angle\s*=/);
-    assert.match(attemptsSql, /angle\s*=/);
-    // And the status sets must still match the semantic of each selector.
-    assert.match(ascentsSql, /'flash'.*'send'/);
-    assert.match(attemptsSql, /'attempt'/);
   });
 });
 

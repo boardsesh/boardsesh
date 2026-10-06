@@ -329,6 +329,16 @@ cannot be drawn, the creator can still select any offered look and save it.
 Photo replacement controls precede the preview so portrait photos cannot hide
 them below the fold.
 
+Both the wizard and the reset guard leaving with `usePreventRemove`, which
+registers native dismissal prevention before a gesture can remove the screen,
+and carries that protection up to the containing Boards modal. The wizard
+registers it through `useSprayWizardLeaveGuard`, always on, and hands the held
+navigation action to the leave decision above; the reset uses
+`useSprayLeaveGuard`, on while there is something to lose. Cancelling keeps the
+flow mounted; confirming redispatches the original navigation action. Footer
+exits use the same guard, so they ask once. Both routes disable the native
+back-button history menu, which does not support removal prevention.
+
 ## Caps
 
 | Cap | Value | Why |
@@ -565,6 +575,24 @@ because a draft has never been published: no climb can reference its work. The
 discard un-marks what the draft removed, drops the holds it added (catalogue rows
 included), then deletes the version row.
 
+### Drafts belong to one editing flow
+
+The single open draft is either initial setup, hold maintenance, or a photo reset.
+Hold maintenance reuses the current published private photo key and its exact
+pixel dimensions, anchors and homography. Any other photo or mapping requires
+reset review. This is inferred from immutable photo identity, so existing drafts
+need no migration. Expiring URL signatures never determine identity.
+
+The plain publish endpoint accepts initial setup and hold maintenance only.
+Photo resets publish through `commitSprayWallVersion`; propose and commit refuse
+hold-maintenance drafts. Initial setup may still use the commit endpoint for its
+first publication, including its saved visibility choice. Publishing checks the current source again under the
+wall lock, so an older client cannot bypass comparison through “Publish holds”.
+Creating a version with the same uploaded photo, dimensions, corners and notes
+returns its existing draft after a lost response. A different upload or mapping
+still receives `SPRAY_WALL_DRAFT_ALREADY_OPEN` and must be explicitly resumed or
+discarded.
+
 ### The version state machine
 
 | From | To | How |
@@ -637,7 +665,7 @@ a climb and never join `board_climbs` at all:
 
 | Shape | Where | Used by |
 | --- | --- | --- |
-| `sprayReferenceVisibilityCondition({ boardType, climbUuid }, userId)` | in the WHERE, over the referencing table | the smart-playlist ref queries, `browseProposals`, `globalCommentFeed`, `userProfileStats` |
+| `sprayReferenceVisibilityCondition({ boardType, climbUuid }, userId)` | in the WHERE, over the referencing table | the smart-playlist ref queries, `browseProposals`, `globalCommentFeed`, `userProfileStats`, `followingClimbAscents`, `climbLogs` |
 | `sprayClimbUuidIsReadable(climbUuid, userId)` | before the query | `comments`, `climbProposals` — the uuid-keyed threads; `climbRevisions`, a climb's edit history |
 
 It is phrased "there is **no INVISIBLE** spray climb behind this reference"
@@ -724,11 +752,51 @@ server render fetches the stats with no viewer, so the owner's first paint omits
 the log until the signed-in client fetch replaces it; the same already holds for
 their logs on a private wall.
 
-**Not covered:** the logbook readers that LEFT JOIN `board_climbs` and use the
-column form (`userTicks`, the ascents feeds, the session feed, detail and
-summary). `IS DISTINCT FROM 'spray'` is true for a missing climb, so they still
-return a spray tick whose climb was hard-deleted, as "Unknown Climb", to anyone.
-That is #6031.
+**The logbook readers** LEFT JOIN `board_climbs` and use the column form, and
+`IS DISTINCT FROM 'spray'` is true for a missing climb. That is right for the
+other boards, where such a log renders as "Unknown Climb", and wrong for spray.
+They carry `sprayTickClimbExistsCondition(viewer)`
+(`packages/backend/src/graphql/resolvers/shared/spray-tick-visibility.ts`), which
+is the reference condition above keyed on the tick, with the author exemption
+(#6031):
+
+| Reader | A log on a hard-deleted spray climb |
+| --- | --- |
+| `userTicks`, `userAscentsFeed`, `userGroupedAscentsFeed` | the climber who logged it only; rows, totals and groups |
+| `globalAscentsFeed` | the climber who logged it only |
+| `followingAscentsFeed` | nobody: the feed lists the people a viewer follows, never the viewer |
+| `sessionDetail` | the climber who logged it only; a session of nothing else answers null to everybody else |
+| the session summary's hardest send | the climber who logged it only |
+| `gymStats` top climbs | nobody (the reader has no viewer) |
+
+**The session cards** (`sessionGroupedFeed`, and the crew feed built on it)
+choose a tick first and join `board_climbs` afterwards: the session's hardest
+send, a day's highlight, the featured beta. A wall rule in that join only nulls
+the climb's columns. The tick that was chosen still carries its own uuid, climb
+uuid and comment, and a beta link its url, so for a live private wall as much as
+for a deleted climb the card handed those to anybody. The whole rule,
+`sprayTickVisibleSql(alias, viewer)`, now sits where the tick is CHOSEN:
+
+| Query in `social/session-feed.ts` | What it leaves out for a viewer who may not see the wall |
+| --- | --- |
+| `fetchHardestSendsBatch`, the `ranked` CTE | the send is not a candidate; the next hardest visible send is picked |
+| `daily_hardest` in `getSessionFeed` | the log is not the day's highlight; a day of nothing else has no card |
+| `fetchSessionFeaturedBetaRows`, `fetchDailyFeaturedBetaRows` | the beta link is not a candidate |
+| `fetchTickHighlightsByUuid` | a uuid that reached it some other way is not hydrated |
+
+Still not gated, and the same for a live private wall and a deleted climb:
+
+- the session cards' and the session summary's COUNTS (tick count, sends, grade
+  distribution, board types, participants) include every tick in the session;
+- `sessionDetail`'s participant list is built from every tick, while its rows
+  and totals are filtered;
+- `userTickCountsByBoard` returns a count per board type, spray included. Its
+  own comment calls counts non-sensitive, so that one is a product decision;
+- `comments` on a tick, `climbCommunityStatus` and `voteSummary` answer a caller
+  who already holds the uuid.
+
+The smart-playlist ref queries can still count a reference to a deleted climb in
+`totalCount`; no row is returned.
 
 Pick by what the query HAS, not by taste:
 
@@ -1340,6 +1408,22 @@ its removals would badge every climb through them as broken with no way back.
 There is no status that would work: `superseded` is read as landed, so a discarded
 draft's work would take effect, which is the abandoned-draft bug made permanent.
 
+### Refresh after publication
+
+After a reset commits, `refreshPublishedSprayClimbs` refreshes climb integrity
+before the local-first climb list refetches. For a downloaded wall, it awaits
+one `pullSync` invocation scoped to `spray:<layoutId>:<layoutId>`; the existing
+engine owns bounded delta paging. Shared `pullSync` serializes cycles per SQLite
+handle, including scheduler pulls, and each refresh awaits its own queued cycle.
+Its purge token and board scope are captured before waiting so sign-out or wall
+removal cannot authorize stale work when the queue advances. It then invalidates `searchClimbs`,
+`infiniteSearchClimbs`, `searchClimbsCount`, and `climb`. Walls that are not
+downloaded, or whose SQLite schema or offline engine is unavailable, skip the
+pull and still invalidate those readers. An offline or backgrounded pull can
+be deferred by the engine; a thrown refresh error is reported without turning
+an already committed reset into a failed publication. Freshness then waits for
+a later successful sync.
+
 ### Climb integrity
 
 `board_climbs.missing_hold_count` is how many of a climb's holds now carry a landed
@@ -1439,6 +1523,11 @@ they pressed Confirm.
 `Climb.missingHoldCount` reaches three mobile surfaces, and the rule across all
 three is that a broken climb stays findable and stays playable:
 
+Compatibility treats a reported lost hold on the same spray layout as historical
+content. The play drawer and playlist rows keep logging, queue and favourite
+actions available. A different wall or known incompatible size still fails the
+normal compatibility checks; catalogue-board hold containment remains strict.
+
 - the climb-row chip ("2 holds gone"), beside the Hidden chip and in the same
   neutral grey — colour in that row means grade and nothing else;
 - the **Holds** filter in the climb filter sheet (All / Intact only / Lost
@@ -1458,6 +1547,46 @@ climb's holds threaded through route params that are strings. Both are follow-up
 work, and the banner already answers the question the missing holds raise.
 
 ## Photo privacy
+
+### Device cleanup
+
+Sign-out withdraws every registered wall and clears renderer photographs in
+`{cache}/spray-walls`, durable offline photographs in
+`{document}/spray-wall-photos`, and spray PNGs in `board-thumbnails`. Catalogue
+board PNGs remain. Removing a downloaded wall or receiving its deletion
+tombstone withdraws only that layout, including all cached photo versions and
+its overlays. A loader discovering that a wall is no longer readable uses the
+same withdrawal path. Filesystem cleanup still runs without an offline database
+and when the SQLite sign-out wipe fails.
+
+Session and per-wall generations fence pending downloads and render results.
+Partial photo downloads use generation-specific destinations; a late transfer
+removes its own partial rather than publishing it or erasing a replacement.
+Selective renderer cleanup recognizes legacy wall/version names and staging
+names with the producer's launch nonce and two epoch counters. Offline photo
+sinks skip rows with non-finite layout IDs rather than persist unfenced photos.
+Spray overlay destinations include a launch nonce and privacy generation, so a
+late native render cannot overwrite another session's PNG. Stale completions
+delete their own PNG and never enter the synchronous overlay index. Warm-up
+rejects legacy spray PNGs and those from earlier launches. Catalogue cache keys
+remain unchanged.
+
+Registry withdrawal preserves the installed loader and subscribers. Loader
+replacement and teardown fence pending work independently, and query keys
+include privacy generations so a new session cannot join an old request.
+The installed loader also removes all cached epochs of the withdrawn wall's
+layout identity, UUID identity, published/draft render data and version history.
+Known version IDs allow selective reset-proposal removal; a version-only pending
+proposal without cached wall history cannot be mapped to a layout and is not
+covered by single-wall removal. Global withdrawal removes these spray query
+families. Other walls and catalogue queries survive selective withdrawal.
+Removal destroys matching pending queries, preventing late responses from
+recaching payloads. A link response whose layout was unknown at withdrawal is
+removed by its exact old query key when its revocation check fails.
+Persisted editor drafts keep version-only keys, allowing recovery after an app
+restart. Cleanup is best effort: failed filesystem deletion is retried by later
+withdrawal or cache sweeping; a crash during native I/O can leave a partial until
+the next cleanup.
 
 Wall photos go to the **`private`** R2 bucket and are read through **15-minute
 presigned URLs** (`presignGetObject` in `packages/backend/src/storage/s3.ts`).
@@ -1571,7 +1700,8 @@ they do not share a query builder:
 6. `listableSprayWallCondition` in
    `packages/backend/src/graphql/resolvers/board/spray-wall-listing.ts`, the
    EXISTS behind `searchBoards`, `gymBoards` and `myBoards`. Its owner escape sits
-   outside the EXISTS, so the owner still lists their own hidden wall;
+   outside the default EXISTS. The climbing picker uses the stricter published
+   EXISTS with its owner exception inside, retaining hidden published walls;
 7. gym discovery's own EXISTS in
    `packages/backend/src/graphql/resolvers/social/board-discovery.ts`, with no
    owner escape at all;
@@ -1719,6 +1849,17 @@ Two rules, both enforced by a test in
   is a number, a boolean, or a member of a closed string union, and the test
   reads the payloads back field by field rather than trusting the types.
 
+Three older events also fire on a wall and now say so (#6027): `Tick Logged`,
+`Set Active Climb` and `Climb Created` carry `boardType`, built by
+`boardTypeProperty` in `packages/shared/analytics/src/board-type-property.ts`.
+Its value is one of the nine board types or null and nothing else, so it stays
+inside the second rule: a wall's name, slug or uuid passed to it comes out as
+null. It is what makes a spray session countable at all, because a wall's
+`layoutId` is created with the wall. `Set Active Climb` also carries `trigger`,
+`climb_saved` or null: saving a climb on a wall puts it on the queue, and that
+is not the same act as choosing a climb to climb. The spray-wall activation
+definition built on both is in `docs/growth-metrics.md`.
+
 ## Availability and detection quality
 
 Spray walls are enabled by default. The picker tile and `/boards/spray/*`
@@ -1814,22 +1955,28 @@ ahead of backend and `gymSprayWalls` is not a field yet. On `null` the filter is
 skipped and the walls keep their old row in the boards section, so neither deploy
 order makes a gym's walls disappear from its page.
 
-### An unpublished wall is listed to nobody but its owner
+### The climbing picker requires a published wall
 
 `is_public` and the first publish are two separate moments: the API lets a caller
 create a wall public and photograph it afterwards, and in between the row is a
 public board with no photo, no holds and no climbs. So every listing that can
 return a spray wall carries one more rule — a wall whose
-`spray_walls.current_version_id` is NULL is listed only to its owner.
+`spray_walls.current_version_id` is NULL is unavailable to other climbers.
+The normal `myBoards` picker excludes it for the owner too: unfinished walls
+belong in `mySprayWalls`, where the add-wall flow can resume them.
 
 `listableSprayWallCondition(viewerId)`
 (`resolvers/board/spray-wall-listing.ts`) is that rule as SQL, and it is applied
 in `searchBoards` (both the proximity and the text path), `gymBoards` and
-`myBoards`; `gymSprayWalls` applies the row-level twin `sprayWallIsListable`,
+`myBoards` with `{ requirePublished: true }`; `gymSprayWalls` applies the row-level twin `sprayWallIsListable`,
 having already joined the wall. SQL rather than a post-filter because
 `searchBoards` and `myBoards` each run a COUNT beside the page: a filter that
 dropped rows from the page alone would leave the count promising results the last
-page does not have.
+page does not have. The picker additionally verifies the current version is
+published and belongs to the same wall. Owners still see their hidden published
+walls. Publish and wizard discard invalidate every cached `myBoards` page.
+If hold geometry cannot load, the climb editor offers Close, including while
+loading; a cold route without history returns to the climbs tab.
 
 The app creates walls private and shares them after the first publish (SW-09), but
 the API is public and a server rule must not rest on a client convention.
@@ -1938,6 +2085,19 @@ having, and search's size filter reads them — but its step 3 derives
 whose edge box contains the climb's, **with no layout scoping**. On spray every
 wall's size row IS an edge box, so left alone the column would come out naming
 other walls' sizes as well as its own.
+
+### Deleting a wall from the Boards picker
+
+The generic `deleteBoard` mutation delegates spray boards to `deleteSprayWall`
+after checking ownership. Both wall and board rows are tombstoned together,
+including `sync_frozen_at`, feed retraction and public-photo cleanup. Older apps
+using the generic mutation receive the same wall cleanup.
+
+Removing the active board also leaves this device's shared session and clears
+its queue, current climb and playlist source. The solo snapshot is removed
+before the picker finishes, so relaunching cannot restore the deleted wall's
+climb. Removing another board leaves the active queue alone. The confirmation
+names the wall's photos and climbs, and a successful delete shows a toast.
 
 ### Turning a wall private has to RETRACT, not just stop
 
@@ -2174,7 +2334,366 @@ field is proven to show the owner the history and a stranger nothing.
 Revisions are read-only. There is no restore, and an old revision cannot be
 queued or lit up.
 
+### Which revision a tick was logged on
+
+A send on revision 2 of a climb is not a send of revision 5 if the holds moved
+in between. So every tick records the revision it was logged against (#6023),
+in `boardsesh_ticks.climb_revision`:
+
+| Value | Meaning |
+| --- | --- |
+| 1 | The climb had never been edited, or the tick was on it as first published. |
+| 2 and up | That revision, the same number `climbRevisions` returns. |
+| NULL | Not known. Every imported tick (Aurora, Kilter, JSON, MoonBoard) and every tick older than the column. |
+
+The number is set once, when `saveTick` inserts the row. `updateTick` never
+changes it, not even when the edit moves `climbedAt`. A replayed `saveTick`
+returns the row as first stored. There is no foreign key to
+`board_climb_revisions`: a climb nobody has edited has no rows there, and rows
+past the cap are pruned, so a tick can name a revision whose row is gone.
+
+To make that one cheap read, `board_climbs` carries two numbers of its own.
+`recordClimbRevision` writes both in the same transaction as the revision row.
+
+| Column | What it is |
+| --- | --- |
+| `revision_number` | The climb's current revision. 1 until its first recorded edit, then the newest revision's number. Pruning does not change it. |
+| `holds_revision_number` | The revision at which the holds last changed: the frames, or the number of frames. A rename, new notes, a regrade, a rule change, an angle change or a pace change all leave it alone. |
+
+Both are `NOT NULL DEFAULT 1`. A tick whose `climb_revision` is at or above the
+climb's `holds_revision_number` was climbed on the holds the climb has now.
+`updateClimb` answers with both numbers as the save left them, so the app that
+made the edit knows the new revision without fetching the climb again.
+
+Climbs edited before the columns existed were filled in once, by migration
+0252, from their revision rows. For those climbs the holds number is a best
+reading of the `changes` lists: a pace-only edit is listed there as `holds`, so
+it can sit one edit too high, and a pruned revision cannot be counted at all.
+
+`saveTick` takes an optional `climbRevision`: the revision the client was
+showing when the climber logged it. The client is the better witness. A send
+logged offline on revision 3 and delivered after the setter saved revision 4 was
+still climbed on 3. What the server stores (`resolveTickClimbRevision`):
+
+| Case | Stored |
+| --- | --- |
+| The climb has no `board_climbs` row | NULL |
+| The client sent a revision from 1 up to the current one | That revision, even if its row has been pruned |
+| The client sent a revision above the current one | The fallback, and a warning in the log |
+| The client sent nothing, or 0, or a negative number | The fallback |
+| The uuid the client sent was an alias of another climb | The fallback. The client's number was counted on the retired row. |
+
+The fallback is the revision that was live when the climb was climbed: 1 when
+the climb is still on revision 1, otherwise the highest revision created at or
+before `climbedAt`, or 1 when the tick is older than all of them. With pruned
+revisions in between it answers the newest row that survives, which can be
+lower than the true one.
+
+No whole number the client sends gets a tick refused. A refused send is
+dead-lettered by the offline drainer and lost, and a wrong revision number costs
+much less than that. Something that is not a whole number at all (`2.5`, `"2"`)
+is a malformed request and GraphQL rejects it before `saveTick` runs, the same as
+it would for any other field.
+
+If the database read behind the lookup fails, the save fails with it. The app's
+outbox retries that kind of error and a retry of the same tick uuid is safe, so
+the send arrives later with its revision, where storing it at once with NULL
+would have left it without one for good.
+
+Readers: `Tick.climbRevision`, and `climbRevision` with `climbCurrentRevision`
+(the climb's `revision_number` now) on the rows of `climbLogs`,
+`followingClimbAscents`, `userAscentsFeed` and `userGroupedAscentsFeed`.
+`Climb.revisionNumber` and `Climb.holdsRevisionNumber` come back from search,
+climb detail, favourites, playlists and the setter's climb lists. `syncTicks` and `syncClimbs` emit the three columns,
+and the phone stores them from on-device schema v11, where all three are
+nullable: a row pulled before v11 reads NULL, which means unknown and not 1.
+
+#### What the app sends
+
+The app calls a revision a **version**. That is the only word a climber sees.
+
+One rule decides everything below. The server stores any in-range version the
+app sends, as sent. So a wrong version is worse than a missing one: a missing
+one gets the fallback, which is the version live at `climbedAt` and is right for
+a tick logged now, while a wrong one files the send under a version the climber
+was not on, and if the holds moved since, the send stops counting. The app sends
+a version only when it can show the number belongs to the holds on screen. When
+it cannot, it leaves the key out. It is never sent as null either: a backend
+from before the field rejects the key.
+
+Where the number comes from (`resolveTickClimbRevision`,
+`packages/mobile/src/lib/tick-climb-revision.ts`), in order:
+
+1. The climb on screen, when it carries `revisionNumber`. A climb only carries
+   one that was read together with its frames: a row from the phone's own
+   search or detail read, or a network row that passed the check in step 2.
+2. The phone's own copy of the climb (`board_climbs.revision_number`), but only
+   when that row's `frames` are the same string as the frames on screen
+   (`localRevisionMatchingFrames`). `useLocalClimbRevision` reads the number
+   and the frames in one primary-key statement, when the form opens for a climb
+   with no number of its own, and again whenever `['climb']` is invalidated: a
+   saved tick, a climb edit and a completed board pull all do that.
+3. Nowhere. The tick is sent with no version.
+
+The frames check is an exact string comparison. The server's `holdsMoved`
+compares parsed hold sets, so two strings that list the same holds in another
+order are equal there and different here. That only makes the app leave the
+number out more often, which is the safe side, and the parser stays on the
+server.
+
+Cases the check exists for:
+
+| The climb on screen | The phone's row | Sent |
+| --- | --- | --- |
+| A network answer after the setter moved a hold | The version before the move | Nothing |
+| A queue item from before an edit | The version after it | Nothing |
+| The editor's unsaved holds (Set Active) | The last save | Nothing |
+| The editor's second save, when the phone's row was not refreshed | The first save | Nothing |
+| Same holds as the phone's row | That row | Its version |
+| Anything, on a board that is not downloaded | No row | Nothing |
+
+The last-but-two row is why the create screen puts no version on the climb it
+queues, although `updateClimb` could tell it one. A local "make this current"
+for the uuid that is already current is a no-op in the queue reducer
+(`packages/shared/queue/src/reducer.ts`), so after Edit, Save, move a hold, Save
+again the queue still holds the first save's item. `REFRESH_AUTHORED_CLIMB`
+then patches the second save's name, holds and draft state onto it, and no
+version. A version stamped by the first save would be one behind the server,
+the setter's send would be stored on it, and it would not count. With none, the
+send names the phone's version once the phone's row has the second save's
+holds. The `UpdateClimb` document does not select the two numbers, since
+nothing reads them.
+
+Offline, the version is written twice: into the local `boardsesh_ticks` row
+(`climb_revision`) and into the queued `SaveTick` payload. If the backend that
+finally receives the queued tick answers `Field "climbRevision" is not defined`,
+the outbox handler sends it once more without the field (`handlers.ts`,
+`DROPPABLE_INPUT_FIELDS`), so the send is delivered instead of dead-lettered.
+The match is on that clause and not on the field name: graphql-js prints the
+whole input in such messages, so the name alone appears in rejections that are
+about something else.
+
+#### Why the version comes from the phone and not from the query
+
+`SearchClimbs`, `GetClimb`, `GetTicks` and the queue documents (`QueueUpdates`,
+`JoinSession`, `GetSessionQueueState`) are pinned by the App Store screenshot
+fixtures, which key a recording on the document text
+(`docs/mobile-screenshot-fixtures.md`). They cannot select `revisionNumber` or
+`climbRevision` until the fixtures are recorded again. Until then:
+
+- A climb's numbers come from `syncClimbs` (the phone's `board_climbs` row). A
+  network `SearchClimbs` page or `GetClimb` answer is filled in from it
+  (`fillClimbRevisionNumbersLocal`, one read per page): `revisionNumber` under
+  the frames check above, `holdsRevisionNumber` always. The holds number is only
+  a threshold for "does this send still count", it only rises, and the phone's
+  value is a past one, so it can be too low and never too high. Too low counts
+  a send that should have been dropped; it cannot drop one that counts. The fill
+  has 150 ms (`NETWORK_ENRICHMENT_BUDGET_MS`); a busy database hands the
+  network answer over as it came. It is skipped where there is no offline
+  engine (the browser app).
+- A tick's version in the play drawer's own history comes from `syncTicks`: the
+  shared logbook joins the phone's `boardsesh_ticks.climb_revision` onto the
+  `GetTicks` rows by tick uuid (`BoardAdapter.readLocalTickRevisions`). See
+  "A tick the phone has not pulled yet" below.
+- A queue item keeps `revisionNumber` and `holdsRevisionNumber` on the phone
+  that queued it, and does not send them. `ClimbInput.revisionNumber` is
+  accepted by the server, but no queue document returns it, so a climb that has
+  been through a shared queue arrives without it and the tick form uses step 2
+  above. `queue-climb-field-contract.test.ts` still lists the field as
+  server-ready for this reason.
+
+Adding the fields to those documents, and removing the local joins, is the
+follow-up once the fixtures are re-recorded.
+
+#### A tick the phone has not pulled yet
+
+The join gives each of the climber's own ticks one of three answers, and they
+are kept apart all the way to the sent mark (`isTickOnCurrentHolds`):
+
+| The phone's `boardsesh_ticks` | The tick's version reads as | Counts as sent on a climb whose holds moved |
+| --- | --- | --- |
+| A row with a version | That version | When it is at or above the holds version |
+| A row the server delivered, with no version (an import, a tick older than the field) | 1 | No |
+| No row, or this phone's own write still in the outbox with no version | Not known | Yes |
+
+The third row is the second-phone case: `GetTicks` answers before the tick pull
+has written the row. Counting the tick is what the app did before the field, and
+it is right far more often than not, since most ticks are on the holds a climb
+has now. When the pull lands it invalidates `['logbook']`, the batches on screen
+are read again, and the logbook cache takes the version from the later read
+(`mergeLogbookEntries` upgrades `climb_revision` on a row it already holds, and
+never trades a known value for less). A batch that is not on screen is read
+again the next time its climb is opened.
+
+#### Where the app says "Earlier version"
+
+A log shows the words **Earlier version** when its version is known and lower
+than the version the climb is on now. Any edit counts, a rename included: the
+tag says the climb has changed since, not that the send stopped counting. No
+version numbers are shown. A log with no known version shows nothing.
+
+| Surface | Source of the two versions |
+| --- | --- |
+| Play drawer, your own history (`LogbookEntryRow`) | The tick from the phone's copy; the climb's current version from the phone's `board_climbs` row. No frames check here: the tag compares against the version the climb is on now, whatever holds a queue item is showing. |
+| Play drawer, other climbers' logs (`ClimberLogRow`) | `climbRevision` and `climbCurrentRevision` on `climbLogs` and `followingClimbAscents` |
+| You tab, the flat logbook (`LogbookRow`) | The same two fields on `userAscentsFeed` |
+| You tab, the grouped logbook | No tag. `GetUserGroupedAscentsFeed` is a pinned document. |
+| Session detail and the session feed | No tag, for the same reason. |
+
+The tag is plain text. Opening the version a log was made on needs the version
+sheet from #5973, which ships with the release train; making the tag a button
+is the follow-up.
+
+#### The app's own "sent" marks
+
+Two places work "sent" out on the phone, and both follow the holds epoch:
+
+- Search on a downloaded board (`search-climbs-local.ts`): hide or show sent,
+  hide or show attempted, rated by me, my minimum rating, and the per-row
+  `userAscents` / `userAttempts`. The SQL is written once
+  (`tickOnCurrentHoldsLocalSql`, `climb-revisions-local.ts`) and COALESCEs both
+  sides to 1, because on the phone the climb's column is nullable too. The
+  personal grade is not filtered, as on the server.
+- The sent glyph on a list row (`useAscentStatus`), through
+  `isTickOnCurrentHolds` in `@boardsesh/logbook`. The row passes the climb's
+  `holdsRevisionNumber`; a row whose source does not carry it (a playlist, a
+  queue row) counts every tick, as before. A tick whose version is not known
+  counts too (see the table above).
+
+The Flash or Send label on the tick form still counts any earlier log on the
+climb as history, old holds included.
+
+### What a moved hold resets
+
+A climb's sends, stars and first ascent belong to its holds. When an edit moves
+a hold they start over, on every board. The rule is one comparison, written once
+in `packages/db/src/queries/climb-stats/holds-epoch.ts`: a tick counts when
+
+```sql
+COALESCE(tick.climb_revision, 1) >= board_climbs.holds_revision_number
+```
+
+A tick with no revision counts as revision 1. A tick whose climb has no
+`board_climbs` row is compared with 1 too.
+
+- For a tick older than the column that is exact: no climb had a revision
+  before the column existed.
+- For an imported tick (Aurora, Kilter, JSON, MoonBoard) it is a choice, and it
+  can be wrong one way. If a setter moves a hold on a Boardsesh-owned catalogue
+  climb and someone's send of the new holds arrives later by import, the import
+  has no revision, reads as 1, and does not count as a send of the current
+  holds. Their "sent" mark and the first ascent stay off until they log it in
+  Boardsesh. This is accepted: an import never adds to the Boardsesh ascent
+  count in any case, the window is the setter's 24 hours after publishing, and
+  spray walls, where edits have no limit, have no imports.
+
+| An edit that changes | Sends, stars, first ascent, sent marks |
+| --- | --- |
+| Which holds are lit, a hold's role, or the number of frames | Start over |
+| Name, notes, grade, angle, rules, pace | Unchanged |
+| Only the order the holds are listed in the frames string | Unchanged, and no revision is recorded |
+
+"The holds" means the parsed set: each frame's holds with their roles
+(`holdsMoved`, `climbs/climb-revisions.ts`). The app sends the frames string
+again on every save, written in ascending hold-id order. A stored string from
+another encoder lists the same holds in a different order, and comparing the
+strings would turn a rename into a reset. In a multi-frame climb a hold that
+moves from one frame to another is a change.
+
+On a climb whose holds never moved the epoch is 1 and every tick counts, so
+catalogue boards behave as they always did. A catalogue climb can only be edited
+by its setter in the first 24 hours.
+
+What reads the rule:
+
+| Surface | After a hold moves |
+| --- | --- |
+| `board_climb_stats.ascensionist_count` and the Boardsesh count behind it | Zero until someone sends the new holds |
+| `fa_username`, `fa_at` on a Boardsesh-owned climb | Empty until someone sends the new holds. Then that climber. |
+| `quality_average` and the Boardsesh star votes | Only ratings from sends of the new holds |
+| Search filters: hide or show sent, hide or show attempted, rated by me, my minimum rating | Read only ticks on the new holds |
+| Recommendations ("find new climbs") | The climb is offered again |
+| The Projects smart playlist and its card count | A project is a climb tried on its current holds and not sent on them. A send of the old holds does not make it a project, and neither does an old attempt. The list is still ordered by total attempts on every version. |
+| ↳ how it reads the epoch | Not from each climb's row. It joins the logbook against `board_climbs_holds_moved_idx` (migration 0253), a partial index holding only the climbs whose `holds_revision_number` is above 1. A climb that is not in it is at epoch 1. `climbHoldsEverMovedSql` in `holds-epoch.ts` is the predicate a query must repeat to use it. `boardClimbRecentSenders` reads its one epoch the same way. |
+| `boardClimbRecentSenders` (the wall's recent senders for a climb) | Only senders of the new holds |
+
+What does not:
+
+- **The grade.** On a spray wall the grade is the setter's and no tick changes
+  it. On other boards a Boardsesh-owned climb's grade is the average of every
+  graded send, old holds included. Filtering it would leave the climb ungraded
+  after an edit until someone logged a graded send, and an ungraded climb drops
+  out of grade-filtered search.
+- **Anything that counts what a climber has done.** Profile totals and
+  percentiles, leaderboards, gym insights, a board's send totals, session
+  summaries, the Five stars and Most repeated playlists, feeds, and logbook
+  lists. A send of an older version is still a send by that climber. The lists
+  that show a tick (`climbLogs`, `followingClimbAscents`, the ascent feeds)
+  return `climbRevision` and `climbCurrentRevision` so a client can label it.
+- **The climber's personal grade** on a search row, which is their latest
+  graded tick on any version.
+
+`updateClimb` does the reset, in its own transaction, in three steps
+(`climbs/holds-change-stats.ts`):
+
+1. Before it writes anything, if the request changes the frames string or the
+   frame count, it lists the angles of the climb that have a flash or a send
+   and writes one row per angle to `climb_stats_recompute_pending`
+   (`markStatsKeysForHoldsChange`).
+2. Once `recordClimbRevision` has moved the holds epoch, it recomputes
+   `board_climb_stats` for those angles (`recomputeStatsAfterHoldsChange`).
+   The new holds and the zeroed numbers commit together.
+3. After the commit the same keys go through the debounced recompute, which
+   publishes `climbStatsUpdated`.
+
+An angle nobody has sent is left alone: there is nothing to reset, and a
+recompute there would write an empty tick average over a grade a setter seeded.
+
+The pending rows from step 1 are not deleted by the edit. They do two things:
+
+- **They serialise the edit with the batched recomputes.** The hourly
+  self-heal, a sync's deferred flush and the pending drain all lock the same
+  rows, in the same `(board_type, climb_uuid, angle)` order, before they read a
+  tick. A batch touching one of these keys either finishes before the edit goes
+  on, or waits for it to commit and reads the new epoch. Because the edit takes
+  the pending rows before any stats row, as the batches do, the two cannot wait
+  on each other.
+- **They get the key recomputed once more.** The next self-heal pass drains
+  them (rows older than 2 minutes, hourly). That corrects a writer that takes no
+  pending row and read the old epoch: a `saveTick` recompute, or a sync that
+  recomputes inside its own write transaction, landing its count after the edit
+  committed. The debounced recompute from step 3 normally fixes that within two
+  seconds, but it is an in-process timer and a deploy drops it.
+
+A save that re-sends the same holds in another order also writes the pending
+rows (step 1 runs before the diff is known). The drain then recomputes a key
+that has not changed, which writes nothing.
+
+The old ticks are not changed or deleted. They stay in every logbook with the
+revision they were logged on.
+
+Known limits:
+
+- A stale count can last until the next self-heal pass, up to about an hour,
+  when the two-second timer was lost. It can outlast that pass only if the
+  stale write lands after the drain ran, which needs a statement that started
+  before the edit committed and was still running when the drain got to it.
+  Then the next tick on the climb corrects it.
+- A deadlock is possible, and rare, between a holds edit of a climb sent at two
+  or more angles and a sync that recomputes two of those angles inside its own
+  write transaction, with no pending rows. Postgres ends it after a second by
+  failing one side. If that is the edit, nothing is written and the climber
+  sees the save fail; saving again works. A spray wall has one fixed angle, so
+  in practice this needs a catalogue climb inside its 24 hour window.
+- `board_climb_popularity` needs nothing. Its incremental refresh re-reads
+  climbs whose stats row has a new `updated_at`, and the reset writes the row.
+- Cached anonymous search pages keep the old ascent count for up to 24 hours,
+  the same as after any send. Spray searches are never cached.
+
 ### In the app
+
+The server half (table, `updateClimb`, the `climbRevisions` query) is on `main`.
+The app half below ships with the release train (#5973 on `release/next`).
 
 The play drawer shows an **Edit history** section (`RevisionsSection`) after
 Community and before Similar climbs. It renders nothing unless the query has two
@@ -2216,6 +2735,8 @@ never "photo no longer available".
 - No history for edits made before this shipped.
 - The data export does not include revisions.
 - Deleting a climb deletes its revisions (the foreign key cascades).
+- A tick imported from another app has no revision (NULL), and neither does one
+  logged before the column existed. Nothing backfills them.
 
 ## Setting a climb on a wall (the editor)
 
@@ -2558,3 +3079,29 @@ If that other draft blocks creation, the owner explicitly resumes or discards
 it. Discarding returns to the selected local photo so the next attempt is visible.
 The backend protection in #6070 also refuses plain publishing of new-photo
 reset drafts from older clients.
+
+### Newly saved climbs on downloaded walls
+
+After a successful spray climb save or edit, mobile awaits an exact-UUID canonical
+mirror before invalidating the downloaded climb list. `syncClimbDocuments`
+requires the exact board type and layout, and the existing wall visibility rule (including an explicitly supplied unlisted wall
+UUID). Climb and stats documents come from one repeatable-read primary snapshot,
+including the real server `updated_at` and `sync_seq` values. Authors can mirror
+their own drafts; other readable spray rows must be published. This supports
+wall owners editing another setter's published climb without exposing anybody
+else's draft. The response's authenticated `viewerId` gates the local account
+stamp, while the climb keeps its original `user_id` attribution.
+
+The SQLite mirror writes both tables in one transaction through the ordinary
+pull document writer. It checks download coverage, the local account owner,
+auth credential generation, and purge generation; it never changes pull
+checkpoints or bypasses the ordinary pull stability window. Ordinary climb and
+stats pulls preserve newer mirrored spray rows when an older response arrives later.
+Each ordinary or refresh spray climb page also clears its derived holds index in the same
+transaction. This fences an in-flight index build and lets delayed older rows
+enter heatmaps and similar-climb searches even if a mirrored row advanced the
+index watermark. The next index read rebuilds the bounded spray layout;
+catalogue walls retain their existing incremental index behavior.
+If the mirror fails, the remote save still succeeds and the app asks the climber
+to reconnect to refresh their downloaded list. Mobile release depends on the
+additive backend query being deployed first.

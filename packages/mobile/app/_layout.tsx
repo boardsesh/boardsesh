@@ -3,13 +3,7 @@
 // worklet-serialization global-error-capture install, which must wrap Sentry's
 // handler, not the other way round.
 import { wrapWithSentry } from '../src/lib/sentry';
-// Import second, still ahead of anything that reaches posthog-client.ts (e.g.
-// AnalyticsProvider below): resolves the party-profile UUID synchronously and
-// stores it for posthog-client.ts to bootstrap the PostHog SDK's anonymous
-// distinct_id with, before the SDK's own module-eval side effect constructs
-// the client and fires its app-lifecycle autocapture. See analytics-bootstrap.ts.
-import '../src/lib/analytics-bootstrap';
-// Import third: calls Observe.configure() at module scope. It MUST have run
+// Import second: calls Observe.configure() at module scope. It MUST have run
 // before the first screen mounts — expo-observe's router integration reads
 // isInitialized() when a screen mounts and throws if it changes afterwards — so
 // this cannot become a hook or an effect. See observe-bootstrap.ts.
@@ -83,6 +77,7 @@ import { glassStackScreenOptions } from '../src/theme/navigation';
 import { reportError, reportHandledError } from '../src/lib/error-reporting';
 import { track, getAnalyticsClient } from '../src/lib/analytics';
 import { performOtaRecovery, type OtaRecoveryPhase } from '../src/lib/ota-recovery';
+import { watchForSchemaDowngrade } from '../src/lib/schema-downgrade-recovery';
 import { isChunkLoadError, markRootLayoutLoaded } from '../src/lib/chunk-load-recovery';
 import { ChunkLoadErrorScreen } from '../src/components/ChunkLoadErrorScreen';
 import { loadRequiredFonts } from '../src/lib/required-fonts';
@@ -106,6 +101,7 @@ import { RestTimerRuntime } from '../src/components/queue-control/RestTimerRunti
 import { RootRestTimerPillHost } from '../src/components/queue-control/RestTimerPillHost';
 import { ConnectivityBanner } from '../src/components/connectivity/ConnectivityBanner';
 import { QaTesterGate } from '../src/components/qa/QaTesterGate';
+import { EarlyUpdatesLaunchSync } from '../src/components/qa/EarlyUpdatesLaunchSync';
 import { SendRecoveryGate } from '../src/components/offline/SendRecoveryGate';
 import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
 import { BottomChromeDebugOverlay } from '../src/components/BottomChromeDebugOverlay';
@@ -130,6 +126,19 @@ markStartup('root.module.ready');
 // down. No-op on native (#5611).
 markRootLayoutLoaded();
 void SplashScreen.preventAutoHideAsync();
+
+// Older JS on a database newer JS migrated (a reverted canary OTA, a climber
+// leaving the early-updates track): the database lifecycle refuses the file, and
+// this downloads whatever newer bundle the OTA server has, for the next cold
+// start. Registered here, before `DatabaseProvider` can mount and find it.
+watchForSchemaDowngrade({
+  // The check/fetch calls throw ERR_UPDATES_DISABLED in dev.
+  updatesEnabled: Updates.isEnabled && !__DEV__,
+  checkForUpdate: () => Updates.checkForUpdateAsync(),
+  fetchUpdate: () => Updates.fetchUpdateAsync(),
+  track,
+  reportFailure: (error) => reportHandledError(error, { tags: { source: 'schema-downgrade-recovery' } }),
+});
 
 // The screenshots build is a Debug dev-client (__DEV__ true) so it can load its
 // JS from Metro; a stray warning would pop a LogBox toast into a captured
@@ -964,6 +973,12 @@ function RootLayout() {
                                                             else. A first run outranks it through the seen flag
                                                             it waits for, not through mount order. */}
                                                                     <QaTesterGate />
+                                                                    {/* Brings the OTA branch pin in line with the "Get updates
+                                                            early" choice once flags and branch surfing are ready: in
+                                                            the background, after first interactions, never a reload.
+                                                            No request when they already agree. Beside QaTesterGate
+                                                            because it reads the signed-in profile too. Null render. */}
+                                                                    <EarlyUpdatesLaunchSync />
                                                                     {/* Tells a climber the one-time #5335 recovery found sends
                                                             of theirs that never reached the server. Silent for
                                                             everyone else, which is almost everyone. It and

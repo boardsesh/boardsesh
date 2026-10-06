@@ -4,10 +4,52 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
-## 2026-10-04
+## 2026-10-05
+
+### App update
+
+A new version shipped to the App Store and Play Store.
 
 ### New
 
+- Your logbook shows when a tick was on an earlier version of a climb ([#6132](https://github.com/boardsesh/boardsesh/pull/6132))
+  A spray climb's sends and stars start again when its holds change
+- The climber-facing note ships with the app PR for #6023, which is where the sent mark and the version tag appear. ([#6126](https://github.com/boardsesh/boardsesh/pull/6126))
+- Using Boardsesh in your phone's browser? There's now a link to get the app from the App Store or Google Play. ([#6069](https://github.com/boardsesh/boardsesh/pull/6069))
+
+### Improved
+
+- Updates download faster, so the newest version is ready sooner when you open the app. ([#6091](https://github.com/boardsesh/boardsesh/pull/6091))
+- [x] none ([#6085](https://github.com/boardsesh/boardsesh/pull/6085))
+
+### Fixed
+
+- Keep editing your spray wall when you cancel a leave prompt. ([#6114](https://github.com/boardsesh/boardsesh/pull/6114))
+- See the reset summary and framing warning above your wall photo. ([#6116](https://github.com/boardsesh/boardsesh/pull/6116))
+- Read climb names beside lost-holds labels, and refresh downloaded climbs after publishing a reset. ([#6122](https://github.com/boardsesh/boardsesh/pull/6122))
+- Signing out or deleting a spray wall clears its cached photos and hold previews. Downloads finishing afterward cannot bring those previews back. ([#6128](https://github.com/boardsesh/boardsesh/pull/6128))
+- Photographing a wall no longer closes the app on devices with no camera ([#6108](https://github.com/boardsesh/boardsesh/pull/6108))
+- Scan a gym poster with your iPhone and land on that gym's page, not the app's Home tab. ([#6068](https://github.com/boardsesh/boardsesh/pull/6068))
+- Your new climbs appear immediately on downloaded spray walls, without restarting the app. ([#6088](https://github.com/boardsesh/boardsesh/pull/6088))
+- Your browser queue stays cleared after removing a wall, and new queued climbs survive a quick switch. ([#6093](https://github.com/boardsesh/boardsesh/pull/6093))
+- Tap a shared climb before signing in and it opens once you're in. ([#6074](https://github.com/boardsesh/boardsesh/pull/6074))
+- Log, queue and favourite your spray climbs after holds come off the wall. ([#6063](https://github.com/boardsesh/boardsesh/pull/6063))
+- Your board picker shows walls ready to climb. Resume unfinished walls in Add a wall, and close an editor when its wall photo cannot load. ([#6082](https://github.com/boardsesh/boardsesh/pull/6082))
+- Delete your spray wall without its last climb lingering on the bar. ([#6067](https://github.com/boardsesh/boardsesh/pull/6067))
+- Your new unlisted or public wall has its share link as soon as you publish it. ([#6076](https://github.com/boardsesh/boardsesh/pull/6076))
+- Browse and search downloaded climbs after relaunching offline, including spray walls. ([#6079](https://github.com/boardsesh/boardsesh/pull/6079))
+- Keep unfinished wall photos separate from hold edits. ([#6070](https://github.com/boardsesh/boardsesh/pull/6070))
+- Logs, notes and beta on a private spray wall no longer show up on session cards for climbers who cannot see the wall ([#6036](https://github.com/boardsesh/boardsesh/pull/6036))
+
+## 2026-10-04
+
+### App update
+
+A new version shipped to the App Store and Play Store.
+
+### New
+
+- Queue a playlist after your current climbs, including playlists from setters. ([#4731](https://github.com/boardsesh/boardsesh/pull/4731))
 - See how everyone got on with a climb, with the people you follow always first. ([#5975](https://github.com/boardsesh/boardsesh/pull/5975))
   Open "See all logs" on any climb for the newest log from every climber, with filters for your angle, notes and sends.
 - See how a climb went for the people you follow. ([#5974](https://github.com/boardsesh/boardsesh/pull/5974))
@@ -16,8 +58,18 @@ manual changes). See docs/mobile-ota-updates.md.
   Long projects keep the drawer quick: the newest sessions show first and "See full logbook" opens the rest.
   A climb you have logged no longer says "No tries yet" when you have no signal.
 
+### Improved
+
+- Your logbook on a climb shows up right away when you open it ([#5999](https://github.com/boardsesh/boardsesh/pull/5999))
+  Other climbers' logs are ready sooner when you scroll down to them
+
 ### Fixed
 
+- Notes and suggestions on a climb you deleted from a private wall no longer show up for other climbers ([#6034](https://github.com/boardsesh/boardsesh/pull/6034))
+- Pick a wall photo, profile picture or feedback screenshot without sharing your whole photo library. ([#6028](https://github.com/boardsesh/boardsesh/pull/6028))
+- All four corner rings stay on screen while you mark your spray wall. ([#6029](https://github.com/boardsesh/boardsesh/pull/6029))
+  The area you marked is outlined between the rings.
+- Pan a zoomed-in climb without the play drawer sliding away. ([#4593](https://github.com/boardsesh/boardsesh/pull/4593))
 - Close a climb and return to the playlist you were browsing. ([#5927](https://github.com/boardsesh/boardsesh/pull/5927))
   Generated playlist names and climb counts have room to show.
 - Your crew now follows Next and Previous from Android's session notification. ([#5928](https://github.com/boardsesh/boardsesh/pull/5928))

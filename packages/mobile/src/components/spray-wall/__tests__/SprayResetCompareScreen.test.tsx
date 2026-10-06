@@ -45,18 +45,29 @@ const wallState = vi.hoisted(() => ({
   },
 }));
 /** The board's props, so a test can fire a ring tap the way a finger does. */
+const headerInset = vi.hoisted(() => ({ current: 0 }));
+const safeAreaInsets = vi.hoisted(() => ({ top: 0, bottom: 0 }));
 const boardProps = vi.hoisted(() => ({
-  current: null as null | { onHoldTap?: (key: number) => void; holdTargets?: { id: number }[] },
+  current: null as null | {
+    onHoldTap?: (key: number) => void;
+    holdTargets?: { id: number }[];
+    renderWidth?: number;
+    renderHeight?: number;
+  },
 }));
 
 vi.mock('react-native', () => ({
   StyleSheet: { absoluteFill: {}, hairlineWidth: 1, create: (styles: unknown) => styles },
-  View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
+  View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+    createElement('div', { 'data-native-style': JSON.stringify(style) }, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   useWindowDimensions: () => ({ width: 400, height: 800 }),
 }));
 
-vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
+vi.mock('../../../hooks/use-transparent-header-inset', () => ({
+  useTransparentHeaderInset: () => headerInset.current,
+}));
+vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => safeAreaInsets }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) => (options ? `${key}:${JSON.stringify(options)}` : key),
@@ -79,9 +90,6 @@ vi.mock('@boardsesh/analytics', () => ({
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
-vi.mock('../../../lib/graphql/extract-error-message', () => ({
-  extractGraphqlMessage: (error: unknown) => (error as Error)?.message,
-}));
 
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', {}, children),
@@ -110,7 +118,12 @@ vi.mock('../../SegmentedControl', () => ({
     ),
 }));
 vi.mock('../../search/InteractiveFilterBoard', () => ({
-  InteractiveFilterBoard: (props: { onHoldTap?: (key: number) => void; holdTargets?: { id: number }[] }) => {
+  InteractiveFilterBoard: (props: {
+    onHoldTap?: (key: number) => void;
+    holdTargets?: { id: number }[];
+    renderWidth?: number;
+    renderHeight?: number;
+  }) => {
     boardProps.current = props;
     return createElement('div', { 'data-testid': 'board' });
   },
@@ -148,14 +161,16 @@ const PROPOSAL = {
   aspectMismatch: false,
 };
 
-function renderScreen(onCommitted = vi.fn()) {
+const SERVER_PROPOSAL_ERROR = { response: { errors: [{ message: 'Server refused the proposal' }] } };
+
+function renderScreen(onCommitted = vi.fn(), candidates = CANDIDATES) {
   return render(
     createElement(SprayResetCompareScreen, {
       wallUuid: 'wall-1',
       layoutId: 9001,
       versionId: '42',
       versionNumber: 2,
-      candidates: CANDIDATES,
+      candidates,
       onCommitted,
     }),
   );
@@ -164,6 +179,9 @@ function renderScreen(onCommitted = vi.fn()) {
 beforeEach(() => {
   commitMutateAsync.mockClear();
   boardProps.current = null;
+  headerInset.current = 0;
+  safeAreaInsets.top = 0;
+  safeAreaInsets.bottom = 0;
   draftState.current = { isLoading: false, isUnavailable: false, homography: [1, 0, 0, 0, 1, 0, 0, 0, 1] };
   proposalState.current = { data: PROPOSAL, isPending: false, error: null };
   wallState.current = {
@@ -177,6 +195,29 @@ beforeEach(() => {
 });
 
 describe('SprayResetCompareScreen', () => {
+  describe.each([
+    { header: 'transparent', inset: 100, expectedPaddingTop: 116 },
+    { header: 'opaque', inset: 0, expectedPaddingTop: 16 },
+  ])('$header header fallback states', ({ inset, expectedPaddingTop }) => {
+    it.each(['loading', 'no-detections', 'unavailable'] as const)(
+      'uses the measured header inset while %s',
+      (state) => {
+        headerInset.current = inset;
+        if (state === 'loading') draftState.current = { isLoading: true, isUnavailable: false, homography: null };
+        if (state === 'unavailable')
+          proposalState.current = { data: null, isPending: false, error: SERVER_PROPOSAL_ERROR };
+        const screen = renderScreen(vi.fn(), state === 'no-detections' ? [] : CANDIDATES);
+
+        if (state === 'loading') expect(screen.getByTestId('spinner')).toBeTruthy();
+        if (state === 'no-detections') expect(screen.getByText('sprayReset.compare.noDetections')).toBeTruthy();
+        if (state === 'unavailable') expect(screen.getByText('Server refused the proposal')).toBeTruthy();
+        expect(screen.queryByTestId('board')).toBeNull();
+        const screenStyle = JSON.parse(screen.container.firstElementChild!.getAttribute('data-native-style')!);
+        expect(screenStyle).toContainEqual({ backgroundColor: '#000', paddingTop: expectedPaddingTop });
+      },
+    );
+  });
+
   it('spins while the wall loads rather than claiming nothing was found', () => {
     // `detections` is empty until the homography lands, so the empty state and
     // "still loading" are indistinguishable from the inside.
@@ -205,10 +246,10 @@ describe('SprayResetCompareScreen', () => {
   });
 
   it('shows the proposal error instead of an empty review when propose fails', () => {
-    proposalState.current = { data: null, isPending: false, error: new Error('Network request failed') };
+    proposalState.current = { data: null, isPending: false, error: SERVER_PROPOSAL_ERROR };
     const { getByText, queryByTestId } = renderScreen();
 
-    expect(getByText('Network request failed')).toBeTruthy();
+    expect(getByText('Server refused the proposal')).toBeTruthy();
     expect(queryByTestId('board')).toBeNull();
   });
 
@@ -219,6 +260,36 @@ describe('SprayResetCompareScreen', () => {
     expect(getByTestId('filter')).toBeTruthy();
     expect(getByText(/sprayReset\.compare\.counts/)).toBeTruthy();
     expect(getByText('sprayReset.compare.confirm')).toBeTruthy();
+  });
+
+  it('keeps the summary below a transparent header and fits the board beneath it', () => {
+    headerInset.current = 100;
+    // A tall photo makes available height, rather than width, limit the board.
+    wallState.current = { ...wallState.current!, photoWidth: 500, photoHeight: 1000 };
+    const { container } = renderScreen();
+
+    const screenStyle = JSON.parse(container.firstElementChild!.getAttribute('data-native-style')!);
+    expect(screenStyle).toContainEqual({ backgroundColor: '#000', paddingTop: 100 });
+    expect(boardProps.current?.renderHeight).toBe(300);
+    expect(boardProps.current?.renderWidth).toBe(150);
+  });
+
+  it('adds no header padding when the header is opaque', () => {
+    const { container } = renderScreen();
+
+    const screenStyle = JSON.parse(container.firstElementChild!.getAttribute('data-native-style')!);
+    expect(screenStyle).toContainEqual({ backgroundColor: '#000', paddingTop: 0 });
+  });
+
+  it('preserves safe-area photo fit beneath an opaque header', () => {
+    safeAreaInsets.top = 30;
+    wallState.current = { ...wallState.current!, photoWidth: 500, photoHeight: 1000 };
+    const { container } = renderScreen();
+
+    const screenStyle = JSON.parse(container.firstElementChild!.getAttribute('data-native-style')!);
+    expect(screenStyle).toContainEqual({ backgroundColor: '#000', paddingTop: 0 });
+    expect(boardProps.current?.renderHeight).toBe(370);
+    expect(boardProps.current?.renderWidth).toBe(185);
   });
 
   it('opens the panel for the ring under the finger', () => {

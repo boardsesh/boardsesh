@@ -41,7 +41,7 @@ function BoardOfflineToggleComponent({ state, onPress, accessibilityLabel, disab
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ selected: state === 'downloaded', disabled: !!disabled }}
-      style={styles.control}
+      style={[styles.control, disabled && styles.disabled]}
     >
       <Icon name={iconName} size={22} color={iconColor} />
     </Pressable>
@@ -55,5 +55,8 @@ const styles = StyleSheet.create({
     width: 28,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  disabled: {
+    opacity: 0.4,
   },
 });

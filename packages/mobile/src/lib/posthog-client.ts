@@ -1,5 +1,4 @@
 import { PostHog, type PostHogOptions } from 'posthog-react-native';
-import { getAnalyticsBootstrapId } from './analytics-bootstrap-id';
 import { resolveAnalyticsUserAgent } from './analytics-user-agent';
 import { resolveAppEnvironment } from './app-environment';
 
@@ -70,16 +69,28 @@ export const isAnalyticsEnabled = !!apiKey && !__DEV__;
 let client: PostHog | null = null;
 let initAttempted = false;
 
-// Pure so the bootstrap wiring is unit-testable without constructing a real
-// PostHog client (isAnalyticsEnabled is always false in the test env).
-// `bootstrapDistinctId` is the party-profile UUID resolved synchronously by the
-// caller, or null if that read/create failed — in which case bootstrap is
-// omitted entirely and the SDK falls back to its own anonymous id, exactly as
-// before this option existed.
-export function buildPostHogOptions(postHogHost: string, bootstrapDistinctId: string | null): PostHogOptions {
+// Pure so the options are unit-testable without constructing a real PostHog
+// client (isAnalyticsEnabled is always false in the test env).
+//
+// There is no `bootstrap` on purpose. The SDK mints and persists its own
+// anonymous id, and that id is the only anonymous identity the app has: see the
+// header of packages/shared/analytics/src/reconcile-identity.ts. The option
+// used to carry the party-profile UUID, but the slot it read was still empty
+// when this module was evaluated (expo-router loads `app/(tabs)/_layout.tsx`,
+// which reaches this file, before the root layout that filled the slot), so it
+// never took effect on a device.
+export function buildPostHogOptions(postHogHost: string): PostHogOptions {
   return {
     host: postHogHost,
-    bootstrap: bootstrapDistinctId ? { distinctId: bootstrapDistinctId, isIdentifiedId: false } : undefined,
+    // Every event builds a person, signed out included. The SDK default,
+    // `identified_only`, sends signed-out events personless until something
+    // identifies or sets a person property. The app never ran that way: its old
+    // signed-out identify() switched person processing on at every launch. That
+    // call is gone (reconcile-identity.ts, rule 2), so this keeps what it did for
+    // person counts and `person.properties` breakdowns on signed-out traffic.
+    // It does not mark anyone identified: an anonymous person made this way
+    // still merges into an account on sign-in.
+    personProfiles: 'always',
     // The app already emits explicit $screen events plus reviewed product
     // events. SDK lifecycle autocapture adds high-volume foreground/background
     // noise and does not help answer product or BLE reliability questions.
@@ -103,13 +114,7 @@ export function getPostHogClient(): PostHog | null {
   if (client) return client;
   if (initAttempted) return null;
   initAttempted = true;
-  // getAnalyticsBootstrapId() reads a slot that analytics-bootstrap.ts (wired
-  // up in app/_layout.tsx, ahead of anything that imports this module)
-  // resolves synchronously via expo-secure-store's JSI sync API. We still pass
-  // it as `bootstrap` so the SDK's anonymous id is stable before explicit
-  // screen/action events start flowing.
-  const bootstrapDistinctId = getAnalyticsBootstrapId();
-  client = new PostHog(apiKey, buildPostHogOptions(host, bootstrapDistinctId));
+  client = new PostHog(apiKey, buildPostHogOptions(host));
   registerAppSuperProperties(client);
   return client;
 }

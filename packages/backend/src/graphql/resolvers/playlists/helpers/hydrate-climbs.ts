@@ -119,6 +119,8 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       // the Intact / Lost holds filter and the remix prompt all read it, so a
       // projection without it tells a climber that a climb they cannot do is fine.
       missing_hold_count: tables.climbs.missingHoldCount,
+      revision_number: tables.climbs.revisionNumber,
+      holds_revision_number: tables.climbs.holdsRevisionNumber,
       // Structured climb rules ('no_match', 'any_feet', 'campus', method_*). The
       // play drawer states both Woods rules from this array and every board draws
       // its glyphs from it, so a playlist climb without it reads as "not
@@ -224,6 +226,8 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       framesPace: row.frames_pace ?? null,
       compatibleSizeIds: row.compatible_size_ids ?? null,
       missingHoldCount: row.missing_hold_count ?? null,
+      revisionNumber: row.revision_number ?? null,
+      holdsRevisionNumber: row.holds_revision_number ?? null,
       characteristics: row.characteristics ?? null,
       angle,
       // The angle the stats row resolved to. It can differ from `angle` above,

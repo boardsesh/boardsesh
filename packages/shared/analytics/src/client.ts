@@ -20,7 +20,6 @@ export type AnalyticsCaptureOptions = { timestamp?: Date };
 export interface PostHogClient {
   capture(event: string, properties?: AnalyticsProperties, options?: AnalyticsCaptureOptions): void;
   identify(distinctId: string, properties?: AnalyticsProperties): void;
-  alias(alias: string): void;
   reset(): void;
   setPersonProperties(set?: AnalyticsProperties, setOnce?: AnalyticsProperties): void;
 }

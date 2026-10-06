@@ -367,4 +367,10 @@ export type ClimbRow = {
    *  off the wall. Spray only; null on every catalogue board and on any row the
    *  reset recompute has never touched, both of which mean "intact". */
   missingHoldCount: number | null;
+  /** `board_climbs.revision_number` — the climb's current revision, 1 when it
+   *  has never been edited. What a client sends back with a tick (#6023). */
+  revisionNumber: number | null;
+  /** `board_climbs.holds_revision_number` — the revision at which the holds last
+   *  changed. */
+  holdsRevisionNumber: number | null;
 };

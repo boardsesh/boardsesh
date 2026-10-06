@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, cleanup, render, waitFor } from '@testing-library/react';
 import type { OnboardingGateEvaluation } from '../../../lib/onboarding/onboarding-gate-analytics';
+import { clearBoardLinkReplay, setBoardLinkReplay } from '../../../lib/routing/board-link-replay';
 
 // The profile's creation times the suite uses, against a frozen "now". Most
 // cases describe an existing climber, which the first-board picker (#5654)
@@ -168,6 +169,7 @@ describe('OnboardingGate', () => {
     // Default: a plain launch (no cold-start deep link, no notification tap).
     getInitialURLMock.mockResolvedValue(null);
     notificationCtrl.openedFromNotification = false;
+    clearBoardLinkReplay();
     segmentsCtrl.segments = ['(tabs)', 'climbs'];
     profileCtrl.id = undefined;
     profileCtrl.createdAt = OLD_ACCOUNT_CREATED_AT;
@@ -931,6 +933,61 @@ describe('OnboardingGate', () => {
       expect(readShowCountMock).not.toHaveBeenCalled();
       expect(recordShownMock).not.toHaveBeenCalled();
       expect(pushMock).not.toHaveBeenCalled();
+    });
+
+    // A shared climb tapped while signed out, opened after sign-up (#6027).
+    // The link arrived with the app already open, so there is no launch URL,
+    // and it lands on a board route, which is not a deep-link segment.
+    it('never opens over a shared climb that was opened after sign-in', async () => {
+      segmentsCtrl.segments = ['kilter', '1', '7', '1,20', '40', 'view', 'the-proj'];
+      setBoardLinkReplay(Promise.resolve(true));
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0]).toMatchObject({ outcome: 'skipped', reason: 'replayed_board_link', hadBoard: false });
+      expect(readShowCountMock).not.toHaveBeenCalled();
+      expect(recordShownMock).not.toHaveBeenCalled();
+      expect(pushMock).not.toHaveBeenCalled();
+    });
+
+    it('waits for the stash to be read before it decides', async () => {
+      let resolveReplay: (opened: boolean) => void = () => undefined;
+      setBoardLinkReplay(
+        new Promise<boolean>((resolve) => {
+          resolveReplay = resolve;
+        }),
+      );
+      render(<OnboardingGate />);
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(decisions()).toHaveLength(0);
+      expect(pushMock).not.toHaveBeenCalled();
+
+      await act(async () => {
+        resolveReplay(true);
+      });
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0]).toMatchObject({ outcome: 'skipped', reason: 'replayed_board_link' });
+      expect(pushMock).not.toHaveBeenCalled();
+    });
+
+    it('opens as usual when the sign-in had no stashed link to open', async () => {
+      setBoardLinkReplay(Promise.resolve(false));
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0]).toMatchObject({ outcome: 'presented', reason: 'new_account' });
+      expect(pushMock).toHaveBeenCalledWith(FIRST_BOARD_HREF);
+    });
+
+    it('opens as usual when reading the stash failed', async () => {
+      setBoardLinkReplay(Promise.reject(new Error('storage unavailable')));
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0]).toMatchObject({ outcome: 'presented', reason: 'new_account' });
     });
 
     it('never opens over a deep-link landing', async () => {

@@ -13,6 +13,7 @@ export type {
   ClimbQueue,
   PlaylistSuggestionSource,
   SetCurrentClimbOptions,
+  SetCurrentClimbTrigger,
   AddToQueueSource,
   PeerId,
   UserName,

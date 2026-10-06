@@ -26,9 +26,10 @@ vi.mock('../table-config', async () => {
 });
 
 import { pullSync, type SyncProgress, multiRowChunkSize } from '../pull-client';
-import { setSigningOut, setBackgrounded, beginGlobalPurge } from '../../mutation-queue/drainer';
+import { setSigningOut, setBackgrounded, beginGlobalPurge, beginScopePurge } from '../../mutation-queue/drainer';
 import { getCheckpoint, setCheckpoint, getCheckpointKey, markScopeDownloadComplete } from '../checkpoints';
 import { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from '../table-config';
+import { triggerSync, isSyncInFlight, __resetSyncSchedulerStateForTests } from '../sync-scheduler';
 
 type SqlCall = { sql: string; params: unknown[] };
 
@@ -117,6 +118,179 @@ describe('pullSync', () => {
       throw new Error(`Unexpected query: ${query}`);
     });
   }
+
+  function pausedFetch() {
+    let release!: () => void;
+    let markStarted!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    let firstRequest = true;
+    const fetch = vi.fn(async (query: string, variables?: Record<string, unknown>) => {
+      if (firstRequest) {
+        firstRequest = false;
+        markStarted();
+        await blocked;
+      }
+      return graphqlFetch(query, variables);
+    }) as unknown as GraphqlFetchMock;
+    return { fetch, started, release };
+  }
+
+  async function flushPullEntry() {
+    // Coverage/checkpoint reads precede the first request. Flush their finite
+    // await chain so an incorrectly concurrent cycle reaches its network call.
+    for (let turn = 0; turn < 50; turn += 1) await Promise.resolve();
+  }
+
+  it('serializes a publication pull behind the actual scheduler cycle', async () => {
+    setupGraphqlFetchForAllTables();
+    __resetSyncSchedulerStateForTests();
+    const scheduled = pausedFetch();
+    const publication = pausedFetch();
+    triggerSync(
+      db,
+      queryClient,
+      scheduled.fetch,
+      () => [],
+      async () => {},
+    );
+    await scheduled.started;
+    const refresh = pullSync(db, queryClient, publication.fetch, { enabledBoards: [] });
+    try {
+      await flushPullEntry();
+      expect(publication.fetch).not.toHaveBeenCalled();
+      scheduled.release();
+      await publication.started;
+    } finally {
+      scheduled.release();
+      publication.release();
+      await refresh;
+      await vi.waitFor(() => expect(isSyncInFlight()).toBe(false));
+    }
+  });
+
+  it('awaits each same-database caller and snapshots its queued options and scopes', async () => {
+    setupGraphqlFetchForAllTables();
+    const first = pausedFetch();
+    const second = pausedFetch();
+    const initial = pullSync(db, queryClient, first.fetch, { enabledBoards: [] });
+    await first.started;
+    const options = { enabledBoards: ['spray:9001:9001'], isOnline: () => true };
+    const refresh = pullSync(db, queryClient, second.fetch, options);
+    options.enabledBoards.length = 0;
+    options.isOnline = () => false;
+    let finished = false;
+    void refresh.then(() => {
+      finished = true;
+    });
+    try {
+      await flushPullEntry();
+      expect(second.fetch).not.toHaveBeenCalled();
+      expect(finished).toBe(false);
+      first.release();
+      await initial;
+      await second.started;
+      expect(finished).toBe(false);
+    } finally {
+      first.release();
+      second.release();
+      await Promise.all([initial, refresh]);
+    }
+    expect(
+      second.fetch.mock.calls.some(
+        ([, variables]) => (variables as Record<string, unknown> | undefined)?.boardType === 'spray',
+      ),
+    ).toBe(true);
+  });
+
+  it('releases the queue after failure without hiding the first caller rejection', async () => {
+    setupGraphqlFetchForAllTables();
+    const first = pausedFetch();
+    const firstError = new Error('first pull failed');
+    graphqlFetch.mockRejectedValueOnce(firstError);
+    const initial = pullSync(db, queryClient, first.fetch, { enabledBoards: [] });
+    const rejected = expect(initial).rejects.toBe(firstError);
+    await first.started;
+    const next = pullSync(db, queryClient, graphqlFetch, { enabledBoards: [] });
+    first.release();
+    await rejected;
+    await next;
+    expect(graphqlFetch.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it('allows different database handles to pull independently', async () => {
+    setupGraphqlFetchForAllTables();
+    const first = pausedFetch();
+    const other = pausedFetch();
+    const initial = pullSync(db, queryClient, first.fetch, { enabledBoards: [] });
+    await first.started;
+    const independent = pullSync(createMockDb().db, queryClient, other.fetch, { enabledBoards: [] });
+    await other.started;
+    other.release();
+    await independent;
+    first.release();
+    await initial;
+  });
+
+  it('does no queued database or network work after sign-out finishes', async () => {
+    setupGraphqlFetchForAllTables();
+    const first = pausedFetch();
+    const staleFetch = vi.fn((query: string, variables?: Record<string, unknown>) =>
+      graphqlFetch(query, variables),
+    ) as unknown as GraphqlFetchMock;
+    const initial = pullSync(db, queryClient, first.fetch, { enabledBoards: [] });
+    await first.started;
+    const queued = pullSync(db, queryClient, staleFetch, { enabledBoards: [] });
+    setSigningOut(true);
+    setSigningOut(false);
+    const sqlCount = sqlCalls.length;
+    const reads = vi.mocked(db.getFirstAsync).mock.calls.length;
+    first.release();
+    await initial;
+    await queued;
+    expect(staleFetch).not.toHaveBeenCalled();
+    expect(sqlCalls).toHaveLength(sqlCount);
+    expect(vi.mocked(db.getFirstAsync).mock.calls).toHaveLength(reads);
+  });
+
+  it('does not resurrect requests enqueued during sign-out after the flag clears', async () => {
+    setupGraphqlFetchForAllTables();
+    const first = pausedFetch();
+    const staleFetch = vi.fn((query: string, variables?: Record<string, unknown>) =>
+      graphqlFetch(query, variables),
+    ) as unknown as GraphqlFetchMock;
+    const initial = pullSync(db, queryClient, first.fetch, { enabledBoards: [] });
+    await first.started;
+    setSigningOut(true);
+    const queued = pullSync(db, queryClient, staleFetch, { enabledBoards: [] });
+    setSigningOut(false);
+    first.release();
+    await initial;
+    await queued;
+    expect(staleFetch).not.toHaveBeenCalled();
+  });
+
+  it('skips a board removed while its request waits behind another pull', async () => {
+    setupGraphqlFetchForAllTables();
+    const first = pausedFetch();
+    const initial = pullSync(db, queryClient, first.fetch, { enabledBoards: [] });
+    await first.started;
+    const queued = pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['spray:9001:9001'] });
+    const endPurge = beginScopePurge('spray:9001');
+    endPurge();
+    first.release();
+    await initial;
+    await queued;
+    expect(
+      graphqlFetch.mock.calls.some(
+        ([, variables]) => (variables as Record<string, unknown> | undefined)?.boardType === 'spray',
+      ),
+    ).toBe(false);
+  });
 
   it('applies deletions FIRST, then user data tables, then board data', async () => {
     // Deletions-first is what makes a server-side delete-then-recreate

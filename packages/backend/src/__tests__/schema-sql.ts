@@ -5,6 +5,14 @@
 
 import { readFileSync } from 'node:fs';
 
+// Install the real wall deletion triggers so resolver tests exercise offline
+// tombstones as well as the row's deleted_at flag. Install at the schema tail
+// after all referenced tables exist; trigger installation has no DDL ordering dependency.
+const sprayWallDeletionSchema = readFileSync(
+  new URL('../../../db/drizzle/0228_spray_walls_sync_deletions.sql', import.meta.url),
+  'utf8',
+);
+
 // Exercise the generated migration instead of maintaining a second detection schema.
 const detectionSchema = readFileSync(
   new URL('../../../db/drizzle/0234_shallow_the_phantom.sql', import.meta.url),
@@ -28,7 +36,7 @@ const climbStatsRecomputePendingSchema = readFileSync(
   'utf8',
 );
 const climbRevisionsSchema = readFileSync(
-  new URL('../../../db/drizzle/0250_climb_revisions.sql', import.meta.url),
+  new URL('../../../db/drizzle/0251_climb_revisions.sql', import.meta.url),
   'utf8',
 );
 const providerSyncControlsSchema = readFileSync(
@@ -243,12 +251,15 @@ export const schemaSQL = `
     "hold_fingerprint" text,
     "characteristics" text[],
     "missing_hold_count" integer,
+    "revision_number" integer DEFAULT 1 NOT NULL,
+    "holds_revision_number" integer DEFAULT 1 NOT NULL,
     "updated_at" timestamp DEFAULT now() NOT NULL,
     "sync_seq" bigserial NOT NULL
   );
 
   CREATE INDEX IF NOT EXISTS "board_climbs_hold_fingerprint_idx" ON "board_climbs" ("board_type", "layout_id", "hold_fingerprint");
-  CREATE INDEX IF NOT EXISTS "board_climbs_characteristics_idx" ON "board_climbs" USING gin ("characteristics");
+  -- Migration 0253: the climbs whose holds an edit has moved (#6023).
+  CREATE INDEX IF NOT EXISTS "board_climbs_holds_moved_idx" ON "board_climbs" ("board_type", "uuid", "holds_revision_number") WHERE "holds_revision_number" > 1;
 
   CREATE TABLE IF NOT EXISTS "board_climb_aliases" (
     "board_type" text NOT NULL,
@@ -428,6 +439,7 @@ export const schemaSQL = `
     "user_id" text NOT NULL,
     "board_type" text NOT NULL,
     "climb_uuid" text NOT NULL,
+    "climb_revision" integer,
     "angle" integer NOT NULL,
     "is_mirror" boolean DEFAULT false,
     "origin" tick_origin NOT NULL DEFAULT 'native',
@@ -1002,10 +1014,8 @@ export const schemaSQL = `
     "confirmed_at" timestamp NOT NULL,
     "created_at" timestamp DEFAULT now() NOT NULL
   );
-  CREATE INDEX IF NOT EXISTS "board_climb_events_board_confirmed_at_idx" ON "board_climb_events" ("board_id", "confirmed_at");
   CREATE UNIQUE INDEX IF NOT EXISTS "board_climb_events_board_seq_unique" ON "board_climb_events" ("board_id", "seq");
   CREATE INDEX IF NOT EXISTS "board_climb_events_session_idx" ON "board_climb_events" ("session_id");
-  CREATE INDEX IF NOT EXISTS "board_climb_events_board_climb_idx" ON "board_climb_events" ("board_id", "climb_uuid");
   DROP TABLE IF EXISTS "kilter_wall_sources";
 CREATE TABLE "kilter_wall_sources" (
 	"source_key" text PRIMARY KEY NOT NULL,
@@ -2044,4 +2054,5 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "rejected_reason" text,
     CONSTRAINT "board_climb_ingest_skips_board_type_climb_uuid_pk" PRIMARY KEY ("board_type", "climb_uuid")
   );
+  ${sprayWallDeletionSchema}
 `;

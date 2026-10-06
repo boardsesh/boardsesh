@@ -225,7 +225,8 @@
       "editConflict": "Quelqu’un vient de modifier ce bloc. Rouvre-le pour voir la dernière version.",
       "editNotAllowed": "Tu ne peux pas modifier ce bloc. Seuls son ouvreur et les personnes qui gèrent le mur le peuvent.",
       "editWindowExpired": "Ce bloc a été publié il y a plus de 24 heures, il ne peut plus être modifié.",
-      "editNotEditable": "Ce bloc ne peut plus être modifié."
+      "editNotEditable": "Ce bloc ne peut plus être modifié.",
+      "localRefreshFailed": "Voie enregistrée. La liste téléchargée n’a pas été actualisée. Reconnecte-toi pour l’actualiser."
     },
     "fields": {
       "description": "Description (optionnelle)"

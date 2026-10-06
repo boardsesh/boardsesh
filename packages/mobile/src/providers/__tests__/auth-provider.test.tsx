@@ -195,7 +195,11 @@ vi.mock('../../lib/error-reporting', () => ({
 }));
 
 const resetAnalyticsMock = vi.hoisted(() => vi.fn());
+// Whether the PostHog SDK is pinned to a person. The signed-out cold-start path
+// only resets when it is; the sign-out paths reset regardless.
+const isAnalyticsPinnedToAPersonMock = vi.hoisted(() => vi.fn(() => false));
 vi.mock('../../lib/analytics', () => ({
+  isAnalyticsPinnedToAPerson: isAnalyticsPinnedToAPersonMock,
   reset: resetAnalyticsMock,
   track: (...args: unknown[]) => trackMock(...args),
 }));
@@ -304,6 +308,8 @@ const getDatabaseHandleMock = vi.fn((): unknown => null);
 // full one an explicit sign-out runs. Which one a given path picks is the regression
 // guard of issue #3621, so both are recorded rather than stubbed anonymously.
 const clearStoredSprayPhotosMock = vi.hoisted(() => vi.fn(() => {}));
+const clearSprayPrivateCachesMock = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/spray/spray-privacy-cleanup', () => ({ clearSprayWallPrivateCaches: clearSprayPrivateCachesMock }));
 // The wall photographs live on the filesystem, not in SQLite, so the row wipe
 // cannot take them — sign-out has to call this too or the previous account's
 // picture stays decodable on a shared phone (#5448).
@@ -1300,6 +1306,7 @@ describe('AuthProvider Expo-web OAuth completion', () => {
     await waitFor(() =>
       expect(trackMock).toHaveBeenCalledWith('Login Succeeded', {
         auth_method: 'apple',
+        provider: 'apple',
         flow: 'web',
         screen: 'register',
         is_registration: true,
@@ -1332,7 +1339,7 @@ describe('AuthProvider Expo-web OAuth completion', () => {
     await waitFor(() => expect(consumeFreshOAuthPendingMock).toHaveBeenCalledTimes(1));
     expect(trackMock).not.toHaveBeenCalledWith(
       'Login Succeeded',
-      expect.objectContaining({ auth_method: 'google', flow: 'web' }),
+      expect.objectContaining({ auth_method: 'google', provider: 'google', flow: 'web' }),
     );
   });
 });
@@ -1490,6 +1497,7 @@ describe('AuthProvider sign-out offline data wipe', () => {
     clearUserDataMock.mockClear();
     clearUserDataMock.mockResolvedValue(undefined);
     clearStoredSprayPhotosMock.mockClear();
+    clearSprayPrivateCachesMock.mockClear();
     purgeLocalDataForSignOutMock.mockClear();
     purgeLocalDataForSignOutMock.mockResolvedValue({
       pendingDiscarded: 0,
@@ -1551,6 +1559,17 @@ describe('AuthProvider sign-out offline data wipe', () => {
     });
 
     expect(clearStoredSprayPhotosMock).toHaveBeenCalled();
+    expect(clearSprayPrivateCachesMock).toHaveBeenCalledWith();
+  });
+
+  it('withdraws render caches and durable photos even without an offline database', async () => {
+    const result = await renderSignedIn();
+    getDatabaseHandleMock.mockReturnValue(null);
+    await act(async () => {
+      await result.current.signOut();
+    });
+    expect(clearSprayPrivateCachesMock).toHaveBeenCalledWith();
+    expect(clearStoredSprayPhotosMock).toHaveBeenCalled();
   });
 
   it('deletes the stored wall photographs when a 401 forces a sign-out', async () => {
@@ -1580,6 +1599,7 @@ describe('AuthProvider sign-out offline data wipe', () => {
     });
 
     expect(clearStoredSprayPhotosMock).toHaveBeenCalled();
+    expect(clearSprayPrivateCachesMock).toHaveBeenCalledWith();
   });
 
   it('still deletes the photographs when the selective wipe rejects', async () => {
@@ -1594,6 +1614,7 @@ describe('AuthProvider sign-out offline data wipe', () => {
     });
 
     await waitFor(() => expect(clearStoredSprayPhotosMock).toHaveBeenCalled());
+    expect(clearSprayPrivateCachesMock).toHaveBeenCalledWith();
   });
 
   it('wipes the downloaded catalogs when the account is deleted', async () => {
@@ -1622,6 +1643,36 @@ describe('AuthProvider sign-out offline data wipe', () => {
     await waitFor(() => expect(clearUserDataMock).toHaveBeenCalled());
 
     expect(purgeLocalDataForSignOutMock).not.toHaveBeenCalled();
+  });
+
+  // Two 401s in one launch, or a remote sign-out after a forced one. The first
+  // cleanup forgets the account. By the second the SDK is already anonymous and
+  // nobody is signed in, so a reset would only throw away the anonymous id the
+  // next sign-in merges on.
+  it('resets analytics once when a forced sign-out fires twice', async () => {
+    resetAnalyticsMock.mockClear();
+    clearOfflineBoardsMock.mockClear();
+    // Anonymous throughout: the user id had not loaded, so the SDK was never
+    // identified. The first reset must still happen, on the live session alone.
+    isAnalyticsPinnedToAPersonMock.mockReturnValue(false);
+    await renderSignedIn();
+    await waitFor(() => expect(setOnForcedSignOutMock).toHaveBeenCalled());
+    const forceSignOut = setOnForcedSignOutMock.mock.calls.at(-1)?.[0] as (() => void) | undefined;
+
+    await act(async () => {
+      forceSignOut?.();
+      await Promise.resolve();
+    });
+    // clearOfflineBoards runs after the reset, so each cleanup is past it here.
+    await waitFor(() => expect(clearOfflineBoardsMock).toHaveBeenCalledTimes(1));
+    expect(resetAnalyticsMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      forceSignOut?.();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(clearOfflineBoardsMock).toHaveBeenCalledTimes(2));
+    expect(resetAnalyticsMock).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the downloaded catalogs when checkAuth finds the session expired', async () => {
@@ -2153,6 +2204,9 @@ describe('AuthProvider forced sign-out registration', () => {
 
 describe('AuthProvider.checkAuth signed-out cleanup', () => {
   beforeEach(() => {
+    resetAnalyticsMock.mockReset();
+    isAnalyticsPinnedToAPersonMock.mockReset();
+    isAnalyticsPinnedToAPersonMock.mockReturnValue(false);
     getAuthTokenMock.mockReset();
     isTokenExpiringSoonMock.mockReset();
     authSignOutMock.mockReset();
@@ -2279,6 +2333,62 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
     expect(clearUserDataExportDownloadsMock).toHaveBeenCalledWith(1);
     expect(resetHttpClientMock).not.toHaveBeenCalled();
     expect(disposeWsClientMock).not.toHaveBeenCalled();
+  });
+
+  // The identity split. A signed-out cold start used to reset analytics, and it
+  // did so once per checkAuth: the mount check and the AppState `active` check
+  // both resolve while the provider is still loading. Each reset threw away the
+  // SDK's anonymous id, so the id carrying the pre-login events was gone before
+  // the sign-in that should have merged it.
+  it('leaves an anonymous analytics SDK alone on a signed-out cold start, however many checks run', async () => {
+    getAuthTokenMock.mockResolvedValue(null);
+    isAnalyticsPinnedToAPersonMock.mockReturnValue(false);
+    resetAnalyticsMock.mockClear();
+    resetOfflineUsageSignalMock.mockClear();
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{null}</AuthProvider>
+      </QueryClientProvider>,
+    );
+    // The foreground check iOS fires straight after launch, racing the mount check.
+    act(() => {
+      appStateState.listener?.('active');
+    });
+
+    await waitFor(() => expect(clearStoredActiveBoardMock).toHaveBeenCalledTimes(2));
+    expect(resetAnalyticsMock).not.toHaveBeenCalled();
+    // No account boundary, so the offline-usage rollup keeps its counters too:
+    // the two resets go together or not at all.
+    expect(resetOfflineUsageSignalMock).not.toHaveBeenCalled();
+  });
+
+  // A session that died while the app was closed: the SDK still holds the last
+  // user's id, and the next climber on this phone must not inherit it.
+  it('resets analytics on a signed-out cold start when the SDK is still pinned to a person', async () => {
+    getAuthTokenMock.mockResolvedValue(null);
+    isAnalyticsPinnedToAPersonMock.mockReturnValue(true);
+    resetAnalyticsMock.mockClear();
+    resetOfflineUsageSignalMock.mockClear();
+    // The real reset() un-pins the SDK, so a second check finds it anonymous.
+    resetAnalyticsMock.mockImplementation(() => {
+      isAnalyticsPinnedToAPersonMock.mockReturnValue(false);
+    });
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{null}</AuthProvider>
+      </QueryClientProvider>,
+    );
+    act(() => {
+      appStateState.listener?.('active');
+    });
+
+    await waitFor(() => expect(clearStoredActiveBoardMock).toHaveBeenCalledTimes(2));
+    expect(resetAnalyticsMock).toHaveBeenCalledTimes(1);
+    expect(resetOfflineUsageSignalMock).toHaveBeenCalledTimes(1);
   });
 
   it('bounds a hung web cold-start cleanup so the loading gate still releases', async () => {

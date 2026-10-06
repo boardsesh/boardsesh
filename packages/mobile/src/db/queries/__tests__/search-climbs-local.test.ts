@@ -1615,3 +1615,171 @@ describe('browsed-angle restriction (default on Woods)', () => {
     }
   });
 });
+
+// #6023: a tick counts toward "sent / tried / rated" only when it was logged on
+// the holds the climb has now. The server states the rule in
+// packages/db/src/queries/climb-stats/holds-epoch.ts; this is the on-device
+// copy, where BOTH columns can be NULL (rows pulled before migration v11).
+describe('searchClimbsLocal: ticks on the climb’s current holds (#6023)', () => {
+  let db: TestSqliteDb;
+
+  async function setClimbRevisions(uuid: string, revisionNumber: number | null, holdsRevisionNumber: number | null) {
+    await db.runAsync('UPDATE board_climbs SET revision_number = ?, holds_revision_number = ? WHERE uuid = ?', [
+      revisionNumber,
+      holdsRevisionNumber,
+      uuid,
+    ]);
+  }
+
+  async function setTickRevision(uuid: string, climbRevision: number | null) {
+    await db.runAsync('UPDATE boardsesh_ticks SET climb_revision = ? WHERE uuid = ?', [climbRevision, uuid]);
+  }
+
+  const find = (result: Awaited<ReturnType<typeof searchClimbsLocal>>, uuid: string) =>
+    result.climbs.find((climb) => climb.uuid === uuid);
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await ensureMutationQueueTable(db);
+    await runMigrations(db);
+    await stampLocalUserId(db, LOCAL_OWNER);
+  });
+
+  it('reads a send on old holds as not sent, and a send on the current holds as sent', async () => {
+    // Holds last moved at version 3. One climb was sent before that, one after.
+    await insertClimb(db, { uuid: 'sent-before-move' });
+    await insertClimb(db, { uuid: 'sent-after-move' });
+    await setClimbRevisions('sent-before-move', 4, 3);
+    await setClimbRevisions('sent-after-move', 4, 3);
+    await insertTick(db, { uuid: 't-old', climbUuid: 'sent-before-move', status: 'send' });
+    await insertTick(db, { uuid: 't-new', climbUuid: 'sent-after-move', status: 'send' });
+    await setTickRevision('t-old', 2);
+    await setTickRevision('t-new', 3);
+
+    const all = await searchClimbsLocal(db, makeInput());
+    expect(find(all, 'sent-before-move')?.userAscents).toBe(0);
+    expect(find(all, 'sent-after-move')?.userAscents).toBe(1);
+
+    expect(uuids(await searchClimbsLocal(db, makeInput({ showOnlyCompleted: true })))).toEqual(['sent-after-move']);
+    expect(uuids(await searchClimbsLocal(db, makeInput({ hideCompleted: true })))).toEqual(['sent-before-move']);
+    expect(await countClimbsLocal(db, makeInput({ showOnlyCompleted: true }))).toBe(1);
+    expect(await countClimbsLocal(db, makeInput({ hideCompleted: true }))).toBe(1);
+  });
+
+  it('applies the same rule to attempts', async () => {
+    await insertClimb(db, { uuid: 'tried-before-move' });
+    await insertClimb(db, { uuid: 'tried-after-move' });
+    await setClimbRevisions('tried-before-move', 2, 2);
+    await setClimbRevisions('tried-after-move', 2, 2);
+    await insertTick(db, { uuid: 'a-old', climbUuid: 'tried-before-move', status: 'attempt' });
+    await insertTick(db, { uuid: 'a-new', climbUuid: 'tried-after-move', status: 'attempt' });
+    await setTickRevision('a-old', 1);
+    await setTickRevision('a-new', 2);
+
+    const all = await searchClimbsLocal(db, makeInput());
+    expect(find(all, 'tried-before-move')?.userAttempts).toBe(0);
+    expect(find(all, 'tried-after-move')?.userAttempts).toBe(1);
+    expect(uuids(await searchClimbsLocal(db, makeInput({ showOnlyAttempted: true })))).toEqual(['tried-after-move']);
+    expect(uuids(await searchClimbsLocal(db, makeInput({ hideAttempted: true })))).toEqual(['tried-before-move']);
+  });
+
+  it('reads a tick with no version as version 1', async () => {
+    // NULL is an import or a tick older than the column. It counts on a climb
+    // whose holds never moved and does not on one whose holds moved at 2.
+    await insertClimb(db, { uuid: 'never-edited' });
+    await insertClimb(db, { uuid: 'holds-moved' });
+    await setClimbRevisions('never-edited', 1, 1);
+    await setClimbRevisions('holds-moved', 2, 2);
+    await insertTick(db, { uuid: 'n-1', climbUuid: 'never-edited', status: 'send' });
+    await insertTick(db, { uuid: 'n-2', climbUuid: 'holds-moved', status: 'send' });
+
+    expect(uuids(await searchClimbsLocal(db, makeInput({ showOnlyCompleted: true })))).toEqual(['never-edited']);
+  });
+
+  it('reads a climb with no holds version as version 1, so every tick on it counts', async () => {
+    // A board_climbs row pulled before migration v11: both columns NULL. A bare
+    // `>=` against NULL would drop every tick on the climb.
+    await insertClimb(db, { uuid: 'pre-v11' });
+    await insertTick(db, { uuid: 'p-null', climbUuid: 'pre-v11', status: 'send' });
+    await insertTick(db, { uuid: 'p-stamped', climbUuid: 'pre-v11', status: 'attempt' });
+    await setTickRevision('p-stamped', 5);
+
+    const result = await searchClimbsLocal(db, makeInput());
+    expect(find(result, 'pre-v11')?.userAscents).toBe(1);
+    expect(find(result, 'pre-v11')?.userAttempts).toBe(1);
+    expect(find(result, 'pre-v11')?.revisionNumber).toBeNull();
+    expect(find(result, 'pre-v11')?.holdsRevisionNumber).toBeNull();
+    expect(uuids(await searchClimbsLocal(db, makeInput({ showOnlyCompleted: true })))).toEqual(['pre-v11']);
+  });
+
+  it('leaves a rename alone: the version moves, the holds version does not', async () => {
+    await insertClimb(db, { uuid: 'renamed' });
+    await setClimbRevisions('renamed', 6, 1);
+    await insertTick(db, { uuid: 'r-1', climbUuid: 'renamed', status: 'send' });
+    await setTickRevision('r-1', 1);
+
+    expect(uuids(await searchClimbsLocal(db, makeInput({ showOnlyCompleted: true })))).toEqual(['renamed']);
+  });
+
+  it('ignores a rating given before the holds moved', async () => {
+    await insertClimb(db, { uuid: 'rated-on-old-holds' });
+    await insertClimb(db, { uuid: 'rated-on-current-holds' });
+    await setClimbRevisions('rated-on-old-holds', 3, 3);
+    await setClimbRevisions('rated-on-current-holds', 3, 3);
+    await insertTick(db, { uuid: 'q-old', climbUuid: 'rated-on-old-holds', status: 'send', quality: 1 });
+    await insertTick(db, { uuid: 'q-new', climbUuid: 'rated-on-current-holds', status: 'send', quality: 1 });
+    await setTickRevision('q-old', 2);
+    await setTickRevision('q-new', 3);
+
+    expect(uuids(await searchClimbsLocal(db, makeInput({ onlyRatedByMe: true })))).toEqual(['rated-on-current-holds']);
+    // A 1-star rating of the old holds no longer hides the climb from "4 stars
+    // and up": that climb is unrated now. The current-holds rating still does.
+    expect(uuids(await searchClimbsLocal(db, makeInput({ minUserRating: 4 })))).toEqual(['rated-on-old-holds']);
+  });
+
+  it('picks the latest rating among ticks on the current holds only', async () => {
+    // The newest rating overall is a 1 from before the holds moved. On the
+    // current holds the only rating is a 5, so the climb passes "4 and up".
+    await insertClimb(db, { uuid: 'rerated' });
+    await setClimbRevisions('rerated', 3, 2);
+    await insertTick(db, {
+      uuid: 'low-newer-old-holds',
+      climbUuid: 'rerated',
+      status: 'send',
+      quality: 1,
+      climbedAt: '2026-03-01T00:00:00Z',
+    });
+    await insertTick(db, {
+      uuid: 'high-older-current-holds',
+      climbUuid: 'rerated',
+      status: 'send',
+      quality: 5,
+      climbedAt: '2026-02-01T00:00:00Z',
+    });
+    await setTickRevision('low-newer-old-holds', 1);
+    await setTickRevision('high-older-current-holds', 2);
+
+    expect(uuids(await searchClimbsLocal(db, makeInput({ minUserRating: 4 })))).toEqual(['rerated']);
+  });
+
+  it('does not filter the personal grade: a grade given to an older version still counts', async () => {
+    await insertClimb(db, { uuid: 'graded-on-old-holds' });
+    await setClimbRevisions('graded-on-old-holds', 2, 2);
+    await insertTick(db, { uuid: 'g-old', climbUuid: 'graded-on-old-holds', status: 'send', difficulty: 20 });
+    await setTickRevision('g-old', 1);
+
+    const result = await searchClimbsLocal(db, makeInput({ useMyGrades: true }));
+    expect(find(result, 'graded-on-old-holds')?.myDifficulty).toBe(20);
+    // The send itself no longer counts.
+    expect(find(result, 'graded-on-old-holds')?.userAscents).toBe(0);
+  });
+
+  it('puts the climb’s version numbers on the row', async () => {
+    await insertClimb(db, { uuid: 'versioned' });
+    await setClimbRevisions('versioned', 5, 3);
+
+    const result = await searchClimbsLocal(db, makeInput());
+    expect(find(result, 'versioned')?.revisionNumber).toBe(5);
+    expect(find(result, 'versioned')?.holdsRevisionNumber).toBe(3);
+  });
+});

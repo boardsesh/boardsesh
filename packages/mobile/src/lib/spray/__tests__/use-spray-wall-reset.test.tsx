@@ -22,9 +22,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { COMMIT_SPRAY_WALL_VERSION, PROPOSE_SPRAY_WALL_RESET } from '@boardsesh/graphql/operations/spray-walls';
 
 const requestMock = vi.hoisted(() => vi.fn());
+const refreshClimbsMock = vi.hoisted(() => vi.fn(async (_queryClient: QueryClient, _layoutId: number) => undefined));
 const invalidateRenderDataMock = vi.hoisted(() => vi.fn(async () => undefined));
 
 vi.mock('../../graphql/client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
+vi.mock('../refresh-published-spray-climbs', () => ({ refreshPublishedSprayClimbs: refreshClimbsMock }));
 vi.mock('../spray-wall-loader', () => ({ invalidateSprayWallRenderData: invalidateRenderDataMock }));
 
 import { useCommitSprayWallVersion, useSprayWallResetProposal } from '../use-spray-wall-reset';
@@ -68,6 +70,7 @@ function makeWrapper() {
 beforeEach(() => {
   requestMock.mockReset();
   invalidateRenderDataMock.mockClear();
+  refreshClimbsMock.mockClear();
 });
 
 describe('useSprayWallResetProposal', () => {
@@ -128,7 +131,7 @@ describe('useCommitSprayWallVersion', () => {
 
   it('re-registers the wall and invalidates the climb queries once the reset lands', async () => {
     requestMock.mockResolvedValue({ commitSprayWallVersion: RESULT });
-    const { Wrapper, invalidateSpy } = makeWrapper();
+    const { Wrapper } = makeWrapper();
 
     const { result } = renderHook(() => useCommitSprayWallVersion(LAYOUT_ID), { wrapper: Wrapper });
     await result.current.mutateAsync(input);
@@ -141,8 +144,8 @@ describe('useCommitSprayWallVersion', () => {
     expect(invalidateRenderDataMock.mock.calls[0].slice(1)).toEqual([WALL_UUID, LAYOUT_ID]);
 
     // And every climb on the wall may have a different integrity number now.
-    const invalidatedKeys = invalidateSpy.mock.calls.map(([options]) => options?.queryKey?.[0]);
-    expect(invalidatedKeys).toContain('searchClimbs');
+    expect(refreshClimbsMock).toHaveBeenCalledTimes(1);
+    expect(refreshClimbsMock.mock.calls[0]?.[1]).toBe(LAYOUT_ID);
   });
 
   it('leaves the review intact when the commit is refused', async () => {

@@ -19,7 +19,11 @@ vi.mock('../../connectivity/connectivity-store', () => ({
 vi.mock('../spray-wall-local-loader', () => ({ loadLocalSprayWall: offlineState.localLoad }));
 const requestMock = vi.hoisted(() => vi.fn());
 vi.mock('../../graphql/client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
-vi.mock('../spray-photo-cache', () => ({ deleteCachedSprayWallPhotos: () => {} }));
+// The real cleanup also erases files; here it only has to withdraw the wall.
+vi.mock('../spray-privacy-cleanup', async () => {
+  const { unregisterSprayWall: withdraw } = await import('../spray-wall-registry');
+  return { clearSprayWallPrivateCaches: (layoutId: number) => withdraw(layoutId) };
+});
 vi.mock('../spray-photo-store', () => ({
   SPRAY_PHOTO_STORE_AVAILABLE: true,
   deleteStoredSprayPhoto: () => {},
@@ -33,6 +37,7 @@ vi.mock('../../error-reporting', () => ({ reportHandledError: reportHandledError
 
 const {
   clearSprayWallRegistry,
+  ensureSprayWallLoaded,
   getSprayWall,
   registerSprayWall,
   unregisterSprayWall,
@@ -40,6 +45,8 @@ const {
   setSprayWallLoader,
   sprayWallViewerGeneration,
   subscribeToSprayWalls,
+  subscribeToSprayWallWithdrawals,
+  withdrawAllSprayWalls,
 } = await import('../spray-wall-registry');
 const {
   LOOK_RETRY_AFTER_FAILURE_MS,
@@ -47,8 +54,11 @@ const {
   dropSprayWallViewerAccess,
   loadSprayWall,
   installSprayWallLoader,
+  invalidateSprayWallRenderData,
   primeSprayWallLook,
   refreshSprayWallViewerAccess,
+  sprayWallByLayoutQueryKey,
+  sprayWallRenderDataQueryKey,
 } = await import('../spray-wall-loader');
 const { createSprayWallDeletedSink } = await import('../../../offline/spray-photo-sink');
 const sprayOperations = await import('@boardsesh/graphql/operations/spray-walls');
@@ -61,6 +71,8 @@ function fakeQueryClient(): Parameters<typeof loadSprayWall>[0] {
   return {
     fetchQuery: ({ queryFn }: { queryFn: () => Promise<unknown> }) => queryFn(),
     invalidateQueries: invalidateQueriesMock,
+    getQueryCache: () => ({ getAll: () => [] }),
+    removeQueries: () => {},
   } as unknown as Parameters<typeof loadSprayWall>[0];
 }
 
@@ -110,8 +122,21 @@ function lookRequests(): number {
   return requestMock.mock.calls.filter(([operation]) => operation === sprayOperations.GET_SPRAY_WALL_LOOK).length;
 }
 
+function privateQueryClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+}
+
+function deferredResponse() {
+  let resolve!: (response: unknown) => void;
+  const promise = new Promise<unknown>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   offlineState.offline = false;
+  offlineState.subscribers.clear();
   offlineState.localLoad.mockReset();
   clearSprayWallRegistry();
   clearSprayWallLooks();
@@ -122,6 +147,135 @@ beforeEach(() => {
 
 afterEach(() => {
   clearSprayWallRegistry();
+});
+
+describe('withdrawal erases React Query payloads', () => {
+  it('continues registry and query withdrawal if another cleanup subscriber fails', () => {
+    const unsubscribeBroken = subscribeToSprayWallWithdrawals(() => {
+      throw new Error('broken cleanup');
+    });
+    const queryClient = privateQueryClient();
+    const teardown = installSprayWallLoader(queryClient);
+    registerExistingWall();
+    queryClient.setQueryData(['sprayWallRenderData', WALL_UUID, 'old'], renderDataPayload());
+    unregisterSprayWall(LAYOUT_ID);
+    expect(getSprayWall(LAYOUT_ID)).toBeNull();
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+    unsubscribeBroken();
+    teardown();
+    queryClient.clear();
+  });
+  it('removes every epoch and known draft/proposal while preserving other walls and catalogue data', () => {
+    const queryClient = privateQueryClient();
+    const teardown = installSprayWallLoader(queryClient);
+    registerExistingWall();
+    const wall = { uuid: WALL_UUID, layoutId: LAYOUT_ID, versions: [{ id: 'draft-a' }] };
+    const erasedKeys = [
+      ['sprayWallByLayout', LAYOUT_ID, 'old'],
+      ['sprayWallByLayout', LAYOUT_ID, 'older'],
+      ['sprayWall', WALL_UUID, 'old'],
+      ['sprayWallRenderData', WALL_UUID, 'old'],
+      ['sprayWallRenderData', WALL_UUID, 3, 'old'],
+      ['sprayWallWithVersions', WALL_UUID],
+      ['sprayWallResetProposal', 'draft-a', 20],
+    ];
+    for (const key of erasedKeys)
+      queryClient.setQueryData(
+        key,
+        key[0] === 'sprayWallWithVersions' ? { uuid: WALL_UUID, versions: wall.versions } : { sprayWall: wall },
+      );
+    const preservedKeys = [
+      ['sprayWallByLayout', 4300, 'old'],
+      ['sprayWallRenderData', 'wall-b', 'old'],
+      ['sprayWallResetProposal', 'draft-b', 20],
+      ['catalogue', 'kilter'],
+    ];
+    for (const key of preservedKeys) queryClient.setQueryData(key, { secret: 'other payload' });
+
+    unregisterSprayWall(LAYOUT_ID);
+
+    for (const key of erasedKeys) expect(queryClient.getQueryData(key)).toBeUndefined();
+    for (const key of preservedKeys) expect(queryClient.getQueryData(key)).toEqual({ secret: 'other payload' });
+    teardown();
+    queryClient.clear();
+  });
+
+  it('erases an unregistered identity discovered only in cached data', () => {
+    const queryClient = privateQueryClient();
+    const teardown = installSprayWallLoader(queryClient);
+    queryClient.setQueryData(['sprayWall', WALL_UUID, 'old'], { sprayWall: { uuid: WALL_UUID, layoutId: LAYOUT_ID } });
+    queryClient.setQueryData(['sprayWallRenderData', WALL_UUID, 'old'], renderDataPayload());
+    unregisterSprayWall(LAYOUT_ID);
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+    teardown();
+    queryClient.clear();
+  });
+
+  it('global withdrawal erases spray families and retains catalogue queries', () => {
+    const queryClient = privateQueryClient();
+    const teardown = installSprayWallLoader(queryClient);
+    for (const family of [
+      'sprayWallByLayout',
+      'sprayWall',
+      'sprayWallRenderData',
+      'sprayWallWithVersions',
+      'sprayWallResetProposal',
+    ]) {
+      queryClient.setQueryData([family, 'unknown'], { secret: 'private' });
+    }
+    queryClient.setQueryData(['catalogue'], { board: 'kilter' });
+    withdrawAllSprayWalls();
+    expect(
+      queryClient
+        .getQueryCache()
+        .getAll()
+        .map((query) => query.queryKey),
+    ).toEqual([['catalogue']]);
+    teardown();
+    queryClient.clear();
+  });
+
+  it('destroys a known pending render so a late network completion cannot recache its photograph', async () => {
+    const queryClient = privateQueryClient();
+    const teardown = installSprayWallLoader(queryClient);
+    queryClient.setQueryData(sprayWallByLayoutQueryKey(LAYOUT_ID), {
+      sprayWallByLayout: { uuid: WALL_UUID, layoutId: LAYOUT_ID },
+    });
+    const render = deferredResponse();
+    requestMock.mockImplementation((operation) =>
+      operation === sprayOperations.GET_SPRAY_WALL_RENDER_DATA ? render.promise : Promise.resolve({ sprayWall: null }),
+    );
+    const loading = loadSprayWall(queryClient, LAYOUT_ID);
+    await vi.waitFor(() =>
+      expect(requestMock).toHaveBeenCalledWith(sprayOperations.GET_SPRAY_WALL_RENDER_DATA, { uuid: WALL_UUID }),
+    );
+    const oldKey = sprayWallRenderDataQueryKey(WALL_UUID);
+    unregisterSprayWall(LAYOUT_ID);
+    render.resolve(renderDataPayload());
+    await loading;
+    expect(queryClient.getQueryData(oldKey)).toBeUndefined();
+    expect(queryClient.getQueryCache().findAll({ queryKey: ['sprayWallRenderData', WALL_UUID] })).toHaveLength(0);
+    expect(getSprayWall(LAYOUT_ID)).toBeNull();
+    teardown();
+    queryClient.clear();
+  });
+
+  it('old loader teardown leaves replacement query cleanup installed', () => {
+    const previousClient = privateQueryClient();
+    const previousTeardown = installSprayWallLoader(previousClient);
+    const queryClient = privateQueryClient();
+    const teardown = installSprayWallLoader(queryClient);
+    previousTeardown();
+    queryClient.setQueryData(['sprayWallByLayout', LAYOUT_ID, 'old'], {
+      sprayWallByLayout: { uuid: WALL_UUID, layoutId: LAYOUT_ID },
+    });
+    queryClient.setQueryData(['sprayWallRenderData', WALL_UUID, 'old'], renderDataPayload());
+    unregisterSprayWall(LAYOUT_ID);
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+    teardown();
+    queryClient.clear();
+    previousClient.clear();
+  });
 });
 
 describe('loadSprayWall', () => {
@@ -231,6 +385,79 @@ describe('loadSprayWall', () => {
     resolveRender?.(renderDataPayload());
     await loading;
     expect(getSprayWall(LAYOUT_ID)).toBeNull();
+  });
+
+  it.each(['identity', 'render'] as const)(
+    'does not register the %s response completing after sign-out',
+    async (stage) => {
+      const delayed = deferredResponse();
+      const delayedOperation =
+        stage === 'identity' ? sprayOperations.GET_SPRAY_WALL_BY_LAYOUT : sprayOperations.GET_SPRAY_WALL_RENDER_DATA;
+      requestMock.mockImplementation((operation) => {
+        if (operation === delayedOperation) return delayed.promise;
+        if (operation === sprayOperations.GET_SPRAY_WALL_BY_LAYOUT)
+          return Promise.resolve({ sprayWallByLayout: { uuid: WALL_UUID } });
+        return Promise.resolve({ sprayWall: null });
+      });
+      const loading = loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+      await vi.waitFor(() =>
+        expect(requestMock.mock.calls.some(([operation]) => operation === delayedOperation)).toBe(true),
+      );
+      const requestsBeforeSignOut = requestMock.mock.calls.length;
+      withdrawAllSprayWalls();
+      delayed.resolve(stage === 'identity' ? { sprayWallByLayout: { uuid: WALL_UUID } } : renderDataPayload());
+      await loading;
+      expect(getSprayWall(LAYOUT_ID)).toBeNull();
+      expect(requestMock).toHaveBeenCalledTimes(requestsBeforeSignOut);
+    },
+  );
+
+  it('teardown rejects a loader already awaiting a render response', async () => {
+    const delayed = deferredResponse();
+    requestMock.mockImplementation((operation) => {
+      if (operation === sprayOperations.GET_SPRAY_WALL_RENDER_DATA) return delayed.promise;
+      if (operation === sprayOperations.GET_SPRAY_WALL_BY_LAYOUT)
+        return Promise.resolve({ sprayWallByLayout: { uuid: WALL_UUID } });
+      return Promise.resolve({ sprayWall: null });
+    });
+    const teardown = installSprayWallLoader(fakeQueryClient());
+    const loading = loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+    await vi.waitFor(() =>
+      expect(requestMock).toHaveBeenCalledWith(sprayOperations.GET_SPRAY_WALL_RENDER_DATA, { uuid: WALL_UUID }),
+    );
+    teardown();
+    delayed.resolve(renderDataPayload());
+    await loading;
+    expect(getSprayWall(LAYOUT_ID)).toBeNull();
+  });
+
+  it('an old teardown cannot detach the replacement loader or clear its registrations', async () => {
+    const oldTeardown = installSprayWallLoader(fakeQueryClient());
+    installSprayWallLoader(fakeQueryClient());
+    registerExistingWall();
+    oldTeardown();
+    expect(getSprayWall(LAYOUT_ID)).not.toBeNull();
+    requestMock
+      .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
+      .mockResolvedValueOnce(renderDataPayload());
+    ensureSprayWallLoaded(LAYOUT_ID + 1);
+    await vi.waitFor(() => expect(getSprayWall(LAYOUT_ID + 1)).not.toBeNull());
+  });
+
+  it('does not refresh a wall when invalidation completes after sign-out', async () => {
+    let completeInvalidation!: () => void;
+    invalidateQueriesMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          completeInvalidation = resolve;
+        }),
+    );
+    installSprayWallLoader(fakeQueryClient());
+    const invalidating = invalidateSprayWallRenderData(fakeQueryClient(), WALL_UUID, LAYOUT_ID);
+    withdrawAllSprayWalls();
+    completeInvalidation();
+    await invalidating;
+    expect(requestMock).not.toHaveBeenCalled();
   });
 
   it('registers the wall it fetched', async () => {
@@ -402,11 +629,14 @@ describe('loadSprayWall', () => {
       for (let version = 0; version <= 60; version += 1) {
         expect(hash(publishedKey)).not.toBe(hash(sprayWallDraftQueryKey(WALL_UUID, version)));
       }
-      // Structurally distinct, not merely unequal today: the segment is not a
-      // number or a numeric string, so no draft version can ever match it.
-      expect(typeof publishedKey[2]).toBe('object');
+      // Structurally distinct, not merely unequal today: where a draft carries
+      // its version number the published key carries the privacy generation,
+      // which is never a number or a numeric string, and the viewer generation
+      // after it is an object.
+      expect(Number.isNaN(Number(publishedKey[2]))).toBe(true);
+      expect(typeof publishedKey[3]).toBe('object');
       // And the shared prefix still reaches it, which every invalidation uses.
-      expect(publishedKey.slice(0, 2)).toEqual([...sprayWallRenderDataQueryKey(WALL_UUID)]);
+      expect(publishedKey.slice(0, 3)).toEqual([...sprayWallRenderDataQueryKey(WALL_UUID)]);
     }
   });
 
@@ -680,7 +910,9 @@ describe('loadSprayWall', () => {
 
     await loadSprayWall(queryClient, LAYOUT_ID, { force: true });
 
-    expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['sprayWallRenderData', WALL_UUID] });
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: ['sprayWallRenderData', WALL_UUID, expect.any(String)],
+    });
   });
 
   it('reports a wall that lost a material share of its holds', async () => {

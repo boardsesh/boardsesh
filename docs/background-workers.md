@@ -9,7 +9,9 @@ batch families, PR-B2 the two weekly MoonBoard estimate families and PR-B3
 the similar-climbs refresh (below); each stays off until
 `BATCH_FAMILIES_ENABLED` names it. Snapshot publishing completed its ownership cutover
 on September 30 (#5912); its Actions schedules are retired and only a gated R2 rehearsal remains.
-Other family workflows keep running until their own cutover. PR-2 adds the first-link and "Sync now" provider
+The four nightly refresh families cut over in #5939: their workflows lost `schedule:` and stay
+dispatchable for backfills and dry runs. The two weekly MoonBoard estimate workflows keep their
+schedules until their own cutover. PR-2 adds the first-link and "Sync now" provider
 syncs; PR-3 the routine provider cycle, the board-wide catalog and location
 syncs, and the stats self-heal (see "Routine provider sync"). The Aurora and
 Kilter daemons keep owning routine syncs until the documented cutover.
@@ -84,6 +86,40 @@ listed under "Batch families", the provider roles' below. Runtime users must
 never be migration owners. The existing runtime and detector grant contracts
 remain supported.
 
+### A new worker image can start before the migrator has run
+
+A push to `main` starts two workflows that do not wait for each other:
+
+| Workflow | What it does | When the new code is live |
+| --- | --- | --- |
+| `background-worker-image.yml` | builds the worker image, then `dispatch-homelab` tells the homelab to deploy that digest | as soon as one image build finishes |
+| `production-deploy.yml` | builds the web and backend images, then `migrate` (migrations, then `initializeJobQueueSchema` with `MIGRATION_WORKER_ROLES`), then the deploys | `migrate` needs both image builds and runs under the Production environment, where a run can sit parked |
+
+So the worker can win, and with one build against two it is the likelier
+side. A worker job that reads a column the same push
+adds, or needs a grant the same push adds, fails with `column does not exist`
+or `permission denied` from the homelab deploy until `migrate` finishes. The
+job's own retry and its next schedule slot recover it; nothing is written wrong
+in between. If the production run is parked, the gap lasts as long as the park.
+
+To keep that gap at zero, ship the schema and the grant one merge ahead of the
+code that needs them:
+
+1. the PR that adds a column also adds it to every column-level grant list in
+   `WORKER_ROLE_DATA_GRANTS` whose role will read it. The migrator creates the
+   column and applies the grants in the same run, in that order;
+2. the PR whose worker code reads the column merges after that deploy is done.
+
+The climb revision columns (#6023) are the worked example. Migration 0252 added
+`boardsesh_ticks.climb_revision` and `board_climbs.holds_revision_number`; the
+recompute that `climb-stats-self-heal` runs as `maintenance-delivery` started
+reading both one PR later, and that role holds column grants. The two columns
+belong in `CLIMB_STATS_SELF_HEAL_GRANTS` from the PR that carries 0252.
+
+A role with a whole-table grant (`batch` on `board_climbs`, the provider roles)
+needs no grant change for a new column, but its jobs still hit the
+missing-column half of this if they select it before `migrate` has run.
+
 `interactive-import` and `routine-provider` share the provider sync list
 (`PROVIDER_SYNC_GRANTS`):
 
@@ -115,7 +151,7 @@ these grants. A table the appliers start writing fails that test first.
 
 | Grant | Tables |
 | --- | --- |
-| SELECT | `boardsesh_ticks (id, user_id, board_type, climb_uuid, angle, status, origin, quality, difficulty, climbed_at, updated_at, kilter_id, kilter_synced_at, kilter_detached_at)`, `board_climbs (uuid, board_type, user_id)`, `users (id, name)`, `user_profiles (user_id, display_name)` |
+| SELECT | `boardsesh_ticks (id, user_id, board_type, climb_uuid, angle, status, origin, quality, difficulty, climbed_at, updated_at, kilter_id, kilter_synced_at, kilter_detached_at, climb_revision)`, `board_climbs (uuid, board_type, user_id, holds_revision_number)`, `users (id, name)`, `user_profiles (user_id, display_name)` |
 | SELECT, INSERT, UPDATE | `board_climb_stats` |
 | SELECT, INSERT, UPDATE, DELETE | `climb_stats_recompute_pending` (UPDATE because the drain reads it `FOR UPDATE SKIP LOCKED`; INSERT because every recompute batch first upserts a marker per key to hold its lock) |
 
@@ -270,8 +306,10 @@ listed (see "Provider sync families").
 
 ## Batch families
 
-Seven scheduled data jobs that run on GitHub Actions (two of them weekly) can
-also run on the batch worker, once `BATCH_FAMILIES_ENABLED` names them. The job
+Seven scheduled data jobs that ran on GitHub Actions (two of them weekly) run
+on the batch worker once `BATCH_FAMILIES_ENABLED` names them; five have cut
+over (snapshot export plus the four nightly refreshes), leaving the two weekly
+MoonBoard estimate workflows on Actions schedules until their own cutover. The job
 bodies live in `packages/db/src/jobs/` (package export `@boardsesh/db/jobs`)
 and take `{ db, signal, transact, log, ...params }`: `db` for reads, `transact`
 for every write batch, and they throw instead of exiting. The CLIs in
@@ -391,8 +429,8 @@ job's signal.
 
 | Variable or mount | Value |
 | --- | --- |
-| `AWS_S3_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL`, `AWS_DEFAULT_REGION` | Current Tigris producer configuration. At live R2 rotation use the complete named `SNAPSHOTS_*` configuration in `docs/board-snapshots.md`; Actions stays disabled. |
-| `SNAPSHOT_PUBLIC_BASE_URL` | Current Tigris public base. At R2 rotation set both this singular exporter base and plural `SNAPSHOTS_PUBLIC_BASE_URL` to `https://snapshots.boardsesh.com`. The live rotation remains uncompleted. |
+| `SNAPSHOTS_S3_BUCKET_NAME`, `SNAPSHOTS_AWS_ACCESS_KEY_ID`, `SNAPSHOTS_AWS_SECRET_ACCESS_KEY`, `SNAPSHOTS_AWS_ENDPOINT_URL`, `SNAPSHOTS_AWS_REGION` | Permanent worker R2 configuration; see `docs/board-snapshots.md`. Legacy `AWS_*` fields remain available for rollback. Actions stays disabled. |
+| `SNAPSHOT_PUBLIC_BASE_URL`, `SNAPSHOTS_PUBLIC_BASE_URL` | Both are `https://snapshots.boardsesh.com`. Storage client reads passed; normal producer and native reader acceptance are tracked in `docs/r2-migration-2026-10.md`. |
 | `SYNC_STABILITY_WINDOW_SECONDS` | Only when the backend sets it; the export must use the same window. |
 | `/tmp` | tmpfs, 2 GB. One layout's SQLite files live there during its export (kilter's largest is about 271 MB raw). Tmpfs pages are charged to the container's memory cgroup, so a memory limit must cover them on top of the 4 GB heap. |
 

@@ -142,6 +142,7 @@ describe('RegisterScreen analytics', () => {
     await waitFor(() =>
       expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.LoginSucceeded, {
         auth_method: 'credentials',
+        provider: 'email',
         flow: 'native',
         is_registration: true,
         screen: 'register',
@@ -149,6 +150,7 @@ describe('RegisterScreen analytics', () => {
     );
     expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.SignupCompleted, {
       auth_method: 'credentials',
+      provider: 'email',
       flow: 'native',
     });
     expect(analytics.setPersonProperties).toHaveBeenCalledWith(undefined, {
@@ -181,6 +183,7 @@ describe('RegisterScreen analytics', () => {
     await waitFor(() =>
       expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.SignupCompleted, {
         auth_method: 'credentials',
+        provider: 'email',
         flow: 'web',
         requires_verification: true,
       }),
@@ -258,6 +261,7 @@ describe('RegisterScreen analytics', () => {
     await waitFor(() =>
       expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.SignupCompleted, {
         auth_method: 'credentials',
+        provider: 'email',
         flow: 'native',
         requires_verification: false,
       }),

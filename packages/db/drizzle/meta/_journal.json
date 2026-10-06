@@ -1755,8 +1755,29 @@
     {
       "idx": 250,
       "version": "7",
-      "when": 1791020572955,
-      "tag": "0250_climb_revisions",
+      "when": 1790987038165,
+      "tag": "0250_drop_unused_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 251,
+      "version": "7",
+      "when": 1791202050447,
+      "tag": "0251_climb_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 252,
+      "version": "7",
+      "when": 1791203098580,
+      "tag": "0252_tick_climb_revision",
+      "breakpoints": true
+    },
+    {
+      "idx": 253,
+      "version": "7",
+      "when": 1791207959498,
+      "tag": "0253_climb_holds_moved_index",
       "breakpoints": true
     }
   ]

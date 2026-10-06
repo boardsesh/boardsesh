@@ -3,6 +3,16 @@ import { CREATED_SESSION_ID_KEY, SESSION_ID_KEY, SESSION_VISIBILITY_KEY } from '
 import { parseStoredSessionVisibility, serializeSessionVisibility } from './session-visibility-value';
 import type { UserStorageOwner } from './user-storage-owner';
 
+// Session identity/provenance writes share one intent-ordered lane. A delayed
+// teardown must not overwrite the stored identity of a later join or start.
+let sessionIdentityWriteQueue: Promise<void> = Promise.resolve();
+
+function enqueueSessionIdentityWrite(write: () => Promise<void>): Promise<void> {
+  const operation = sessionIdentityWriteQueue.then(write, write);
+  sessionIdentityWriteQueue = operation.catch(() => undefined);
+  return operation;
+}
+
 export async function getStoredSessionId(_owner?: UserStorageOwner | null): Promise<string | null> {
   try {
     return await readSecureValue(SESSION_ID_KEY);
@@ -12,11 +22,11 @@ export async function getStoredSessionId(_owner?: UserStorageOwner | null): Prom
 }
 
 export async function setStoredSessionId(sessionId: string, _owner?: UserStorageOwner | null): Promise<void> {
-  await writeSecureValue(SESSION_ID_KEY, sessionId);
+  await enqueueSessionIdentityWrite(() => writeSecureValue(SESSION_ID_KEY, sessionId));
 }
 
 export async function clearStoredSessionId(_owner?: UserStorageOwner | null): Promise<void> {
-  await deleteSecureValue(SESSION_ID_KEY);
+  await enqueueSessionIdentityWrite(() => deleteSecureValue(SESSION_ID_KEY));
 }
 
 /**
@@ -56,11 +66,11 @@ export async function getStoredCreatedSessionId(): Promise<string | null> {
 }
 
 export async function setStoredCreatedSessionId(sessionId: string): Promise<void> {
-  await writeSecureValue(CREATED_SESSION_ID_KEY, sessionId);
+  await enqueueSessionIdentityWrite(() => writeSecureValue(CREATED_SESSION_ID_KEY, sessionId));
 }
 
 export async function clearStoredCreatedSessionId(): Promise<void> {
-  await deleteSecureValue(CREATED_SESSION_ID_KEY);
+  await enqueueSessionIdentityWrite(() => deleteSecureValue(CREATED_SESSION_ID_KEY));
 }
 
 /**

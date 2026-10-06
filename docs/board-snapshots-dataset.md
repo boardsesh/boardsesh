@@ -10,7 +10,7 @@ analysis, backup, or tooling can use them directly.
 The one stable URL is the manifest:
 
 ```
-https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-gzip/manifest.json
+https://snapshots.boardsesh.com/board-snapshots/v1-gzip/manifest.json
 ```
 
 Artifacts under this prefix are stored gzipped and served with `Content-Encoding: gzip`. Anything
@@ -24,7 +24,7 @@ that stores an artifact URL will 404 within two weeks; a job that reads the mani
 keep working.
 
 ```sh
-manifest=https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-gzip/manifest.json
+manifest=https://snapshots.boardsesh.com/board-snapshots/v1-gzip/manifest.json
 
 # List what's available
 curl -s "$manifest" |
@@ -63,7 +63,8 @@ only care about one size.
 Treat `schemaVersion` as informational: columns may be added over time (additive), and a breaking
 layout change would ship under a new `board-snapshots/v2*` prefix rather than mutating `v1-gzip`.
 A `board-snapshots/v1` prefix still carries identity-encoded copies of the same artifacts; it is
-kept only as a rollback target and will be deleted, so don't build against it.
+retained as a nightly-published rollback target. New consumers should use `v1-gzip`.
+Removing the identity prefix or legacy Tigris data requires separate explicit approval.
 
 ## What's inside
 

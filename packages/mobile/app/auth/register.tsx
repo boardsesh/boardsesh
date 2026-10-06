@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, loginProviderProperties } from '@boardsesh/analytics';
 import { classifyNativeAuthFailureReason } from '../../src/lib/native-auth-analytics';
 import { validateRegisterFields, isValid, type RegisterFieldErrors } from '../../src/lib/auth-validation';
 import { useAuth } from '../../src/providers/auth-provider';
@@ -108,7 +108,11 @@ export default function RegisterScreen() {
     setFormError(null);
     setSubmitting(true);
     const authFlow = Platform.OS === 'web' ? 'web' : 'native';
-    track(SHARED_EVENTS.LoginAttempted, { auth_method: 'credentials', flow: authFlow, is_registration: true });
+    track(SHARED_EVENTS.LoginAttempted, {
+      ...loginProviderProperties('credentials'),
+      flow: authFlow,
+      is_registration: true,
+    });
     try {
       const result = await register(trimmedEmail, values.password, values.name.trim() || undefined);
       if (result.success) {
@@ -119,7 +123,7 @@ export default function RegisterScreen() {
 
         if (result.authenticated === false) {
           track(SHARED_EVENTS.SignupCompleted, {
-            auth_method: 'credentials',
+            ...loginProviderProperties('credentials'),
             flow: authFlow,
             requires_verification: result.requiresVerification,
           });
@@ -136,12 +140,12 @@ export default function RegisterScreen() {
         }
 
         trackLoginSucceeded({
-          auth_method: 'credentials',
+          ...loginProviderProperties('credentials'),
           flow: authFlow,
           is_registration: true,
           screen: 'register',
         });
-        track(SHARED_EVENTS.SignupCompleted, { auth_method: 'credentials', flow: authFlow });
+        track(SHARED_EVENTS.SignupCompleted, { ...loginProviderProperties('credentials'), flow: authFlow });
         // AuthProvider flips isAuthenticated and the auth-group Redirect lands the
         // new user in the app — same auto-login path as signInWithCredentials.
         return;
@@ -149,7 +153,7 @@ export default function RegisterScreen() {
 
       const failureReason = classifyNativeAuthFailureReason(result, 'credentials');
       track(SHARED_EVENTS.LoginFailed, {
-        auth_method: 'credentials',
+        ...loginProviderProperties('credentials'),
         flow: authFlow,
         failure_reason: failureReason,
         failure_detail: result.error,
@@ -175,7 +179,7 @@ export default function RegisterScreen() {
       }
     } catch (registerError) {
       track(SHARED_EVENTS.LoginFailed, {
-        auth_method: 'credentials',
+        ...loginProviderProperties('credentials'),
         flow: authFlow,
         failure_reason: 'exception',
         is_registration: true,
