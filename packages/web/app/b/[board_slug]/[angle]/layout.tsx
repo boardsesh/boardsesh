@@ -1,49 +1,24 @@
 import React, { type PropsWithChildren } from 'react';
 import Box from '@mui/material/Box';
-import { notFound } from 'next/navigation';
-import type { Metadata } from 'next';
-import { resolveBoardBySlug } from '@/app/lib/board-slug-utils';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import { boardShellSx } from '@/app/components/climb-front-door/board-shell-sx';
-
-type BoardSlugRouteParams = {
-  board_slug: string;
-  angle: string;
-};
-
-export async function generateMetadata(props: { params: Promise<BoardSlugRouteParams> }): Promise<Metadata> {
-  const params = await props.params;
-
-  try {
-    const board = await resolveBoardBySlug(params.board_slug);
-    if (!board) {
-      return { title: 'Board Not Found | Boardsesh' };
-    }
-
-    return {
-      title: `${board.name} | Boardsesh`,
-    };
-  } catch {
-    return { title: 'Boardsesh' };
-  }
-}
 
 /**
  * The named-board shell. Server-only: the
  * board, session, connection, queue and search providers came out with the
  * sibling routes that consumed them (#4433), and the pages left under it — the
  * climb list and climb view front doors — render server-side.
+ *
+ * It resolves no board and 404s nothing. A layout never sees the query string,
+ * and an unlisted spray wall is only readable with the `?wall=` capability in
+ * it: a slug-only lookup here 404'd every unlisted wall's share link before the
+ * page could present the uuid. Every page under this layout resolves the board
+ * itself (React `cache` dedupes the read) and answers `notFound()` for a miss,
+ * and sets its own title.
  */
-export default async function BoardSlugLayout(props: PropsWithChildren<{ params: Promise<BoardSlugRouteParams> }>) {
-  const params = await props.params;
+export default async function BoardSlugLayout(props: PropsWithChildren) {
   const { children } = props;
-
-  const board = await resolveBoardBySlug(params.board_slug);
-  if (!board) {
-    return notFound();
-  }
-
   const locale = await getLocale();
 
   return (

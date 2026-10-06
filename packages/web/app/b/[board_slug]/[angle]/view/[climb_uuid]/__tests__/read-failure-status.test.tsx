@@ -84,6 +84,7 @@ import BoardSlugViewPage from '../page';
 import { DbReadTimeoutError } from '@/app/lib/db/read-deadline';
 
 const props = {
+  searchParams: Promise.resolve({}),
   params: Promise.resolve({ board_slug: 'marcos-garage', angle: '40', climb_uuid: 'a-climb-climb-uuid-1' }),
 } as unknown as Parameters<typeof BoardSlugViewPage>[0];
 

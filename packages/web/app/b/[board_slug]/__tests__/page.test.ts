@@ -88,6 +88,26 @@ describe('/b/[board_slug] redirect', () => {
     );
   });
 
+  it("opens the lookup with an unlisted wall's ?wall= and carries it onto the list", async () => {
+    // Without the uuid the backend has no row for an unlisted wall, so this hop
+    // would 404 the share link before the page that redeems it ever ran.
+    resolveBoardBySlug.mockResolvedValue({ slug: 'garage-wall', angle: 40 });
+
+    await expect(redirectTargetFor('garage-wall', { wall: 'wall-uuid-1' })).resolves.toBe(
+      '/b/garage-wall/40/list?wall=wall-uuid-1',
+    );
+    expect(resolveBoardBySlug).toHaveBeenCalledWith('garage-wall', 'wall-uuid-1');
+  });
+
+  it('drops a repeated ?wall= rather than picking one', async () => {
+    resolveBoardBySlug.mockResolvedValue({ slug: 'garage-wall', angle: 40 });
+
+    await expect(redirectTargetFor('garage-wall', { wall: ['wall-uuid-1', 'wall-uuid-2'] })).resolves.toBe(
+      '/b/garage-wall/40/list',
+    );
+    expect(resolveBoardBySlug).toHaveBeenCalledWith('garage-wall', undefined);
+  });
+
   it('404s an unknown board without redirecting anywhere', async () => {
     resolveBoardBySlug.mockResolvedValue(null);
 

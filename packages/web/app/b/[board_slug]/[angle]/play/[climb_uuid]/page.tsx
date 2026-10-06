@@ -3,6 +3,7 @@ import { resolveBoardBySlug, boardToRouteParamsFromAngleSegment } from '@/app/li
 import { getClimb } from '@/app/lib/data/queries';
 import { constructBoardSlugViewUrl, extractUuidFromSlug, isUuidOnly } from '@/app/lib/url-utils';
 import { redirectWithQuery } from '@/app/lib/url-utils.server';
+import { WALL_CAPABILITY_PARAM, readWallCapability } from '@/app/lib/spray/spray-visibility';
 
 /**
  * Old `/b/{board_slug}/{angle}/play/[climb_uuid]` URLs 301-redirect to the
@@ -16,7 +17,10 @@ export default async function BoardSlugPlayRedirectPage(props: {
   const params = await props.params;
   const searchParams = await props.searchParams;
 
-  const board = await resolveBoardBySlug(params.board_slug);
+  // An unlisted spray wall has no row on the slug alone; `?wall=` is forwarded to
+  // the view page by `redirectWithQuery` below, and it has to open the lookup here
+  // too or the hop 404s first.
+  const board = await resolveBoardBySlug(params.board_slug, readWallCapability(searchParams[WALL_CAPABILITY_PARAM]));
   if (!board) return notFound();
 
   const parsedBoardParams = boardToRouteParamsFromAngleSegment(board, params.angle);
