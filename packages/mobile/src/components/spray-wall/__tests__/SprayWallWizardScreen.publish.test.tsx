@@ -71,8 +71,13 @@ vi.mock('expo-router', () => ({
   }),
 }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
+vi.mock('../../../lib/open-url', () => ({ openExternalUrl: vi.fn() }));
+vi.mock('../../../lib/connectivity/use-connectivity', () => ({ useConnectivityField: () => null }));
+vi.mock('../../../lib/connectivity/connectivity-store', () => ({ getConnectivitySnapshot: () => ({ reason: null }) }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({}) }));
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key, i18n: { resolvedLanguage: 'en-US', language: 'en-US' } }),
+}));
 vi.mock('@boardsesh/analytics', () => ({
   SHARED_EVENTS: { BoardCreated: 'Board Created' },
   sprayHoldsReviewed: (properties: Record<string, unknown>) => ({ name: 'r', properties }),

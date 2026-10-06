@@ -48,7 +48,10 @@ vi.mock('react-native', () => ({
   useWindowDimensions: () => ({ width: 400, height: 800 }),
 }));
 vi.mock('expo-image', () => ({ Image: () => createElement('img') }));
-vi.mock('expo-router', () => ({ useRouter: () => ({ back: vi.fn(), replace: vi.fn() }) }));
+vi.mock('expo-router', () => ({
+  useRouter: () => ({ back: vi.fn(), replace: vi.fn(), dismissTo: vi.fn() }),
+  useNavigation: () => ({ getParent: () => undefined }),
+}));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({}) }));
 vi.mock('react-i18next', () => ({
