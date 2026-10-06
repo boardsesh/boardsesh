@@ -57,20 +57,32 @@ export function useCreateClimbNavigation({
       actionInFlightRef.current = true;
       onActionAccepted?.();
 
+      // The claim covers the handoff, not the hook's lifetime: once the route
+      // is pushed, or the handoff stopped short (an aborted dismissal navigates
+      // nowhere), the next action is a fresh one. A surface that outlives the
+      // handoff (the play drawer's lost-hold banner, an iPad pane) would
+      // otherwise be dead until it remounted.
       const completeHandoff = async () => {
         const dismissSource = dismissSourceSheetRef.current;
         if (dismissSource) {
           const sourceResult = await dismissSource();
-          if (sourceResult.status === 'aborted') return;
+          if (sourceResult.status === 'aborted') {
+            actionInFlightRef.current = false;
+            return;
+          }
         }
 
         const dismissPlayer = dismissPlayerAndWaitRef.current;
         if (dismissPlayer) {
           const playerResult = await dismissPlayer();
-          if (playerResult.status === 'aborted') return;
+          if (playerResult.status === 'aborted') {
+            actionInFlightRef.current = false;
+            return;
+          }
         }
 
         router.push({ pathname: '/(tabs)/climbs/create', params });
+        actionInFlightRef.current = false;
       };
       void completeHandoff().catch((error: unknown) => {
         // The owning overlay is already closing, so keep this presentation's
