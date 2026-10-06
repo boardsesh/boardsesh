@@ -390,7 +390,8 @@ export async function purgeDeletedSprayWallPhotos({
         if (!wallNow || wallNow.updatedAtToken !== candidate.updatedAtToken) return false;
         await tx
           .update(dbSchema.sprayWallVersions)
-          .set({ photoKey: null, updatedAt: now })
+          // `art` names objects under the same prefix (the generated wall looks).
+          .set({ photoKey: null, art: null, updatedAt: now })
           .where(eq(dbSchema.sprayWallVersions.wallId, candidate.id));
         await tx
           .update(dbSchema.sprayWalls)

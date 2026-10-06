@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
-import { buildSprayLitHoldMarks, resolveSprayPhotoFrame } from '../spray-climb-view';
+import { buildSprayLitHoldMarks, resolveSprayPhotoFrame, resolveSprayWallDrawing } from '../spray-climb-view';
 
 /**
  * The drawing half of a spray climb page: which holds get a mark, where the
@@ -107,5 +107,49 @@ describe('resolveSprayPhotoFrame', () => {
     expect(
       resolveSprayPhotoFrame({ photoWidth: null, photoHeight: null, boardWidth: 1200, boardHeight: 1600 }),
     ).toEqual({ width: 1200, height: 1600 });
+  });
+});
+
+describe('resolveSprayWallDrawing', () => {
+  const base = {
+    photoUrl: '/photo',
+    artUrl: '/photo?look=wall-crop',
+    photoWidth: 3000,
+    photoHeight: 2000,
+    boardWidth: 2400,
+    boardHeight: 1600,
+    homography: DOUBLE_SCALE,
+    darkFieldColor: '#181225',
+  };
+
+  it('draws the photo, through the stored matrix, when there is no ready art', () => {
+    expect(resolveSprayWallDrawing({ ...base, art: null })).toEqual({
+      imageUrl: '/photo',
+      frame: { width: 3000, height: 2000 },
+      homography: DOUBLE_SCALE,
+      fieldColor: null,
+    });
+  });
+
+  it('draws generated art in canonical mode, holds scaled onto it with no homography', () => {
+    const drawing = resolveSprayWallDrawing({ ...base, art: { background: 'wall-crop', width: 1200, height: 800 } });
+    expect(drawing).toMatchObject({
+      imageUrl: '/photo?look=wall-crop',
+      frame: { width: 1200, height: 800 },
+      fieldColor: null,
+    });
+
+    // Canonical (200, 400) is art (100, 200) at half scale.
+    const [mark] = buildSprayLitHoldMarks({ holds: HOLDS, homography: drawing!.homography, frames: 'p101r1' });
+    expect([mark.cx, mark.cy, mark.r]).toEqual([100, 200, 10]);
+  });
+
+  it('puts the field colour behind the holds-only look', () => {
+    const drawing = resolveSprayWallDrawing({ ...base, art: { background: 'hold-cutouts', width: 1200, height: 800 } });
+    expect(drawing?.fieldColor).toBe('#181225');
+  });
+
+  it('is null with neither a photo nor art', () => {
+    expect(resolveSprayWallDrawing({ ...base, photoUrl: null, art: null })).toBeNull();
   });
 });
