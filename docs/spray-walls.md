@@ -2070,13 +2070,70 @@ normal compatibility checks; catalogue-board hold containment remains strict.
   own sanitiser drops the hold ids that are no longer on the wall, so it opens
   with exactly the holds that survived.
 
-`Climb.lostHolds` carries the geometry of those holds as they were, for drawing
-dashed ghost rings where they used to be. The field and its resolver ship here;
-the layer that draws them does not. The play drawer renders through the board
-render pipeline rather than `InteractiveCreateBoard`'s `overlay` slot, so the
-ghosts need a seam in that pipeline, and the create editor would need the parent
-climb's holds threaded through route params that are strings. Both are follow-up
-work, and the banner already answers the question the missing holds raise.
+`Climb.lostHolds` carries the geometry of those holds as they were. The create
+editor draws it (#5493); the play drawer does not yet, because it renders through
+the board render pipeline rather than `InteractiveCreateBoard`'s `overlay` slot.
+
+### Fixing a climb that lost holds, in the editor
+
+**Set active opens the editor for someone who can fix it.** `openPlayDrawer` in
+`DrawerHostProvider` is the one door every list, queue-sheet, board-sheet and
+suggestion tap goes through, and it asks `useLostHoldsAutoEdit` first. The rule,
+`shouldAutoEditBrokenClimb`, routes to the editor in edit mode only when all of
+these hold, and otherwise the climb plays with the banner as before:
+
+- `missingHoldCount > 0` on a spray climb, on the climber's own wall;
+- the viewer can edit it (`canEditClimb`: the setter, a wall editor, or a
+  collaborator under the `'collaborators'` policy);
+- `lostHoldsEditReadiness` is `'ready'` (the device's wall agrees with the server
+  and some holds survive);
+- the open makes the climb current: not a preview, not a crew session (a tap there
+  is a look), and not the climb that is already current;
+- the player is not already on screen. Inside the player (a swipe, a similar
+  climb, a browse commit) the banner's Edit is one tap away, and leaving the
+  player would lose the climber's place.
+
+The routed climb is still made current, so the next open of it (the bottom bar, a
+second tap) is a reopen and plays it. That is what stops a climber who backed out
+of the editor from being sent back in. Closing the editor is a plain back to the
+list. A second tap inside 1.5 s is swallowed rather than opening the player over
+the editor. The route is counted as `Climb Edited From Broken` with
+`source: 'set_active'`.
+
+**Ghost rings.** The editor (edit, and remix through the `forkParentUuid` route
+param) asks `GetClimbLostHolds` for the climb's `lostHolds` and maps each one
+through the registered wall's inverse homography, the same map the live holds
+went through (`RegisteredSprayWall.homography`, set by both loaders). Each lost
+hold the climb used and the device's wall no longer has is a dashed ring in its
+old role's colour (`LostHoldGhostLayer`, in the `overlay` slot). The ghosts join
+the board's hit targets — a lost hold's id can never be a live hold's — so a tap
+on one opens `LostHoldSheet` instead of painting.
+
+A banner floats over the top of the board ("1 hold on this climb is gone — tap
+the dashed ring to replace it"). It floats rather than sitting above the board
+because the drawer's peek height is measured from the blocks above the fold, and a
+banner that came and went there would re-snap the sheet.
+
+**Use a hold nearby.** The sheet's first action highlights
+candidates on the board, from `rankReplacementCandidates` in
+`@boardsesh/create-climb-react`: the live hold whose `movedFromHoldId` names the
+lost one first, then the nearest free holds within eight radii, or the three
+nearest when none are that close. Holds already in the climb are never offered.
+Tapping a highlighted hold places it in every frame the lost hold was in, with the
+role it had there, as one undo step (`placeHold`). Any other tap is swallowed
+while the pick is open. If the role is full (two starts or two finishes), the
+banner says so and the pick stays open.
+
+A ghost leaves once something stands in for it: the hold picked for it this
+session, or any painted hold whose centre is inside the ghost's radius. The second
+rule covers a restored autosave, which carries the paint but not which ghost it
+answered. A replacement picked from further away than that shows its ghost again
+after a restore. The ghost is only a picture; Save is unaffected.
+
+**Offline.** The device mirrors `missing_hold_count` but not the hold history, so
+the positions need a connection. With no signal the banner still states the count
+(the device's own: the climb's holds its wall no longer has) and says the rings
+need a connection.
 
 ## Photo privacy
 

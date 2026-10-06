@@ -258,7 +258,22 @@ vi.mock('../bluetooth-provider', () => ({
   useOptionalBluetoothContext: () => ({ undoWallChange: vi.fn(async () => true) }),
 }));
 
+// The lost-holds set-active rule has its own suite; here it is only asked.
+const autoEdit = vi.hoisted(() => ({
+  answer: 'declined' as 'routed' | 'swallowed' | 'declined',
+  calls: [] as Array<{ climbUuid: string; context: Record<string, unknown> }>,
+}));
+vi.mock('../../components/play-drawer/use-lost-holds-auto-edit', () => ({
+  useLostHoldsAutoEdit: () => ({
+    tryAutoEdit: (climb: { uuid: string }, context: Record<string, unknown>) => {
+      autoEdit.calls.push({ climbUuid: climb.uuid, context });
+      return autoEdit.answer;
+    },
+  }),
+}));
+
 vi.mock('../queue-provider', () => ({
+  useIsSharedSession: () => false,
   useActiveClimbUuid: () => queue.activeClimbUuid,
   useQueueActions: () => ({
     addToQueue: queue.addToQueue,
@@ -998,6 +1013,41 @@ describe('DrawerHostProvider play drawer open target', () => {
     // open target the route applies.
     await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(climb));
     expect(routes.at(-1)?.playTarget?.options).toEqual({ committedExternally: true });
+  });
+
+  it('hands a broken climb a fixer set active to the editor instead of the player (#5493)', async () => {
+    const hosts: Array<HostValue> = [];
+    const routes: Array<RouteValue> = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+    autoEdit.answer = 'routed';
+    autoEdit.calls.length = 0;
+    queue.setCurrentClimb.mockClear();
+    const navigate = vi.mocked(router.navigate);
+    navigate.mockClear();
+
+    const climb = makeQueueItem('queue-broken', 'climb-broken').climb as unknown as Climb;
+    try {
+      act(() => {
+        hosts.at(-1)?.openPlayDrawer(climb);
+      });
+      expect(autoEdit.calls.at(-1)).toEqual({
+        climbUuid: 'climb-broken',
+        context: expect.objectContaining({ isPreview: false, isAlreadyCurrent: false, playerOpen: false }),
+      });
+      // Made current here, since the drawer that would have done it never opens.
+      expect(queue.setCurrentClimb).toHaveBeenCalledWith(
+        expect.objectContaining({ climb: expect.objectContaining({ uuid: 'climb-broken' }) }),
+        { playlistSuggestionSource: null },
+      );
+      expect(navigate).not.toHaveBeenCalled();
+      expect(routes.at(-1)?.playTarget).toBeNull();
+    } finally {
+      autoEdit.answer = 'declined';
+    }
   });
 
   // The close reset runs from the route's UNMOUNT cleanup — the end of the

@@ -19,6 +19,8 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { HoldRoleSheet } from './HoldRoleSheet';
+import { LostHoldSheet } from './LostHoldSheet';
+import { useLostHoldGhosts } from './use-lost-hold-ghosts';
 import { CreateDrawer } from './CreateDrawer';
 import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
 import { useHoldHeatmap } from '../../lib/graphql/hooks/use-hold-heatmap';
@@ -36,6 +38,8 @@ type CreateClimbScreenProps = {
   forkCharacteristics?: string;
   /** The remixed climb's grade, as a name on the shared scale ("6c/V5"). */
   forkDifficulty?: string;
+  /** The remixed climb's uuid, for drawing the holds it lost (#5493). */
+  forkParentUuid?: string;
   editClimbUuid?: string;
 };
 
@@ -53,6 +57,7 @@ export function CreateClimbScreen({
   forkDescription,
   forkCharacteristics,
   forkDifficulty,
+  forkParentUuid,
   editClimbUuid,
 }: CreateClimbScreenProps) {
   const { t } = useTranslation('climbs');
@@ -104,6 +109,18 @@ export function CreateClimbScreen({
   });
 
   const [longPressHoldId, setLongPressHoldId] = useState<number | null>(null);
+
+  // The holds a reset took off the climb being edited or remixed: dashed ghost
+  // rings, a banner, and the swap that puts a live hold in their place (#5493).
+  const lostHolds = useLostHoldGhosts({
+    board,
+    sourceClimbUuid: editClimbUuid ?? (forkFrames ? (forkParentUuid ?? null) : null),
+    sourceFrames: controller.sourceFrames,
+    availableHoldIds: controller.availableHoldIds,
+    frames: controller.frames,
+    sprayWallToken,
+    placeLostHoldReplacement: controller.placeLostHoldReplacement,
+  });
 
   // The hold heatmap over the whole board (the create board has no list filters
   // to follow), counting the role the active brush paints: the downloaded board
@@ -296,11 +313,12 @@ export function CreateClimbScreen({
         controller={controller}
         boardHolds={boardHolds}
         onLongPressHold={handleLongPress}
-        subSheetOpen={longPressHoldId !== null}
+        subSheetOpen={longPressHoldId !== null || lostHolds.sheetGhost !== null}
         onLoadDraft={handleLoadDraft}
         onClose={handleClose}
         onViewDuplicate={handleViewDuplicate}
         heatmap={heatmap}
+        lostHolds={lostHolds}
       />
 
       <HoldRoleSheet
@@ -311,6 +329,13 @@ export function CreateClimbScreen({
         finishCount={controller.finishCount}
         onSelectRole={controller.handleAssignRole}
         onClose={closeHoldRole}
+      />
+
+      <LostHoldSheet
+        ghost={lostHolds.sheetGhost}
+        candidates={lostHolds.sheetCandidates}
+        onUseNearby={lostHolds.startReplacing}
+        onClose={lostHolds.closeSheet}
       />
     </View>
   );

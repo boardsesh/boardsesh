@@ -177,7 +177,11 @@ export function sprayWallResetApplied(
 }
 
 /** Which surface offered the remix. One today; named so a second is legible. */
-export type SprayRemixSurface = 'play_drawer';
+/**
+ * Where a broken climb's Edit or Remix started. `set_active` is the editor
+ * opening by itself because someone who can fix the climb set it active (#5493).
+ */
+export type SprayRemixSurface = 'play_drawer' | 'set_active';
 
 export type ClimbRemixedFromBrokenProps = {
   /** Holds this climb lost to a reset. Never which holds. */

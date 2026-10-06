@@ -672,7 +672,26 @@
       "bannerBody": "Remézclalo con lo que hay ahora en el muro.",
       "bannerBodyEdit": "Edítalo con las presas que quedan o remézclalo.",
       "remix": "Remezclar",
-      "edit": "Editar"
+      "edit": "Editar",
+      "editor": {
+        "tapGhost_one": "Falta {{count}} presa de este bloque: toca el círculo discontinuo para sustituirla",
+        "tapGhost_other": "Faltan {{count}} presas de este bloque: toca un círculo discontinuo para sustituir una",
+        "offline_one": "Falta {{count}} presa de este bloque. Conéctate para ver dónde estaba.",
+        "offline_other": "Faltan {{count}} presas de este bloque. Conéctate para ver dónde estaban.",
+        "pickNearby": "Toca una presa resaltada para usarla en su lugar.",
+        "roleFull": "Un bloque lleva como mucho dos presas de inicio y dos finales. Borra una y vuelve a tocar."
+      },
+      "sheet": {
+        "title": "Esta presa ya no está",
+        "wasStart": "Era una presa de inicio.",
+        "wasHand": "Era una presa de mano.",
+        "wasFinish": "Era una presa final.",
+        "wasFoot": "Era una presa de pie.",
+        "useNearby": "Usar una presa cercana",
+        "useNearbyHint": "Se resaltan en el muro las presas libres más cercanas.",
+        "useNearbySuccessor": "La presa que la sustituyó se resalta primero.",
+        "noneNearby": "No hay presas libres en el muro para cambiarla."
+      }
     },
     "climbActions": {
       "preview": "Vista previa",

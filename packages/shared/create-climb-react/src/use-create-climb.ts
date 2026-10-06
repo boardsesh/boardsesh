@@ -1,12 +1,13 @@
 import { useCallback, useMemo, useReducer, useState } from 'react';
 import {
-  HOLD_STATE_MAP,
   STATE_TO_PRIMARY_CODE,
   accumulatedMapsToFrameStrings,
   encodeMapsToFramesString,
   flattenFramesToUnion,
 } from '@boardsesh/board-constants/hold-states';
 import type { BoardName, HoldState, LitUpHoldsMap } from '@boardsesh/shared-schema';
+import { applyHoldState } from './hold-paint';
+import { applyHoldPlacements, type HoldPlacement } from './lost-holds';
 
 type UseCreateClimbOptions = {
   /** Seeds the editor's full frame sequence (a fork, an edit, or an autosave restore). */
@@ -117,6 +118,9 @@ type FramesAction =
   // early-out in `setHoldState` (blocked max-2, OFF-on-absent, same-state
   // repaint) leaves history untouched.
   | { type: 'APPLY'; updater: (prev: LitUpHoldsMap) => LitUpHoldsMap }
+  // Apply a functional update to the whole frame sequence (a hold placed into
+  // several frames at once). Same rule as APPLY: history only on a new reference.
+  | { type: 'APPLY_ALL'; updater: (prev: LitUpHoldsMap[]) => LitUpHoldsMap[] }
   // Replace the whole frame sequence and establish a fresh undo baseline
   // (draft load / edit seed / fork / autosave restore). You can't undo across
   // a load into the pre-load state. `frames` must be non-empty.
@@ -161,6 +165,16 @@ export function framesReducer(state: FramesHistory, action: FramesAction): Frame
         present,
         future: [],
         currentFrameIndex: state.currentFrameIndex,
+      };
+    }
+    case 'APPLY_ALL': {
+      const present = action.updater(state.present);
+      if (present === state.present) return state;
+      return {
+        past: capPast([...state.past, snapshotOf(state)]),
+        present,
+        future: [],
+        currentFrameIndex: clampIndex(state.currentFrameIndex, present.length),
       };
     }
     case 'LOAD_FRAMES': {
@@ -306,58 +320,28 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
 
   const setHoldState = useCallback(
     (holdId: number, nextState: HoldState | 'OFF') => {
-      dispatch({
-        type: 'APPLY',
-        updater: (prev) => {
-          // Clearing a hold removes it from the map.
-          if (nextState === 'OFF') {
-            if (!(holdId in prev)) return prev;
-            const { [holdId]: _removed, ...rest } = prev;
-            void _removed;
-            return rest;
-          }
-
-          // Re-painting a hold to the state it already has is a true no-op —
-          // keeps undo history clean (no redundant steps) and avoids re-renders.
-          const currentHold = prev[holdId];
-          if (currentHold?.state === nextState) return prev;
-
-          // Enforce max-2 STARTING / FINISH limits per frame as a safety net —
-          // the picker already disables these options when at the cap.
-          if (nextState === 'STARTING') {
-            const startingCount = Object.values(prev).filter((h) => h.state === 'STARTING').length;
-            if (startingCount >= 2) return prev;
-          }
-          if (nextState === 'FINISH') {
-            const finishCount = Object.values(prev).filter((h) => h.state === 'FINISH').length;
-            if (finishCount >= 2) return prev;
-          }
-
-          // Optional-chained for the same reason as `filterSupportedHoldsMap`: an
-          // unknown board must not throw. Both reads already return `prev` when the
-          // lookup misses, so this only widens "missing role" to "missing board".
-          const stateCode = STATE_TO_PRIMARY_CODE[boardName]?.[nextState];
-          if (stateCode === undefined) {
-            return prev;
-          }
-
-          const holdInfo = HOLD_STATE_MAP[boardName]?.[stateCode];
-          if (!holdInfo) {
-            return prev;
-          }
-
-          return {
-            ...prev,
-            [holdId]: {
-              state: nextState,
-              color: holdInfo.color,
-              displayColor: holdInfo.displayColor || holdInfo.color,
-            },
-          };
-        },
-      });
+      // `applyHoldState` hands back the frame itself for every no-op (blocked
+      // max-2, OFF-on-absent, same-state repaint), which keeps history clean.
+      dispatch({ type: 'APPLY', updater: (prev) => applyHoldState(prev, boardName, holdId, nextState) });
     },
     [boardName],
+  );
+
+  /**
+   * Paint one hold into several frames as a single undoable step — how a hold
+   * that replaces a lost one takes over every frame the lost hold was in, with
+   * the role it had in each (`lostHoldPlacements`). Returns whether anything
+   * changed: a replacement whose role is full in every frame (two starts already
+   * painted) is refused rather than silently dropped.
+   */
+  const placeHold = useCallback(
+    (holdId: number, placements: readonly HoldPlacement[]): boolean => {
+      const next = applyHoldPlacements(history.present, boardName, holdId, placements);
+      if (next === history.present) return false;
+      dispatch({ type: 'APPLY_ALL', updater: (frames) => applyHoldPlacements(frames, boardName, holdId, placements) });
+      return true;
+    },
+    [history.present, boardName],
   );
 
   // Encode the whole route: frame 0 absolute, later frames delta-encoded.
@@ -411,6 +395,7 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
     frameCount,
     currentFrameIndex,
     setHoldState,
+    placeHold,
     generateFramesString,
     currentFrameBleString,
     startingCount,
