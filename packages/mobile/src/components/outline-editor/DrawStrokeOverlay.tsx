@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, type MutableRefObject } from 'react'
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, PointerType, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
-import { HIT_FALLBACK_SCREEN_PT } from './spray-hold-tools';
+import { fallbackRadiusAt, selectedDragIdAt } from './spray-gesture-math';
 import { STROKE_MIN_SAMPLE_BOARD_PX } from './stroke';
 import { stopLoupe, trackLoupe, useReleaseLoupeOnUnmount, type SprayLoupeFeed } from './spray-loupe-feed';
 
@@ -80,12 +80,23 @@ type DrawStrokeOverlayProps = {
    */
   declineOnSelectionSV?: SharedValue<number[]>;
   /**
+   * The wall's flat hit list (`[id, cx, cy, r, ...]`), read with
+   * `declineOnSelectionSV`. A touch inside the selection's grab radius that the
+   * full hit test gives to a smaller or nearer neighbour is NOT the move's
+   * (`selectedDragIdAt`), so it draws rather than being declined into nothing.
+   * Omitted, the grab radius alone decides.
+   */
+  declineHitHoldsSV?: SharedValue<number[]>;
+  /**
    * OPT-IN. Fired once per mount, at the first stylus touch-down (drawing or
    * declined), so a screen can notice an Apple Pencil exists. Whether it is
    * listened for is fixed at mount.
    */
   onStylusSeen?: () => void;
 };
+
+/** No hit list: the selection's grab radius alone decides a decline. */
+const NO_HIT_HOLDS: number[] = [];
 
 /**
  * The Apple-Pencil draw surface: a full-bleed pan that only claims the touch
@@ -126,10 +137,12 @@ type DrawStrokeOverlayProps = {
  * avoiding Pan centroid movement and committing stationary matching UP events.
  * Trace retains the Pan behavior above.
  *
- * Two opt-in props exist for the spray editor's iPad Pencil surface and change
- * nothing when omitted: `declineOnSelectionSV` steps aside at touch-down for a
- * touch on the selected hold, and `onStylusSeen` reports the first stylus.
- * Their maths is inlined for the same cross-module-worklet reason.
+ * Three opt-in props exist for the spray editor's iPad Pencil surface and
+ * change nothing when omitted: `declineOnSelectionSV` (with
+ * `declineHitHoldsSV`) steps aside at touch-down for a touch the edit
+ * overlay's move claims, and `onStylusSeen` reports the first stylus. The
+ * decline calls the move's own `selectedDragIdAt` from `spray-gesture-math`,
+ * whose functions carry the `'worklet'` directive, so the two rules cannot drift.
  *
  * `runOnJS` fires at most twice per stroke (start, then end or cancel) — never
  * per frame — plus once per mount for `onStylusSeen`.
@@ -150,6 +163,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   onStrokeCancel,
   loupe,
   declineOnSelectionSV,
+  declineHitHoldsSV,
   onStylusSeen,
 }: DrawStrokeOverlayProps) {
   // Mirrored into a shared value rather than captured: a captured number would
@@ -207,12 +221,13 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
       stylusReportedSV.value = true;
       runOnJS(handleStylusSeen)();
     };
-    // Whether a screen point lands within the selected hold's grab radius,
-    // through the same inverse transform the samples use. The radius is the
-    // move's own claim at touch-down (`selectedDragIdAt`): the hold's radius or
-    // a fingertip at this zoom, whichever is bigger. Stepping aside only inside
-    // `r` would leave a ring smaller than a fingertip claimed by both gestures
-    // on the same DOWN. Always false without the opt-in.
+    // Whether a screen point is the move's, through the same inverse transform
+    // the samples use and the move's own claim at touch-down
+    // (`selectedDragIdAt`): inside the selection's grab radius (its radius or a
+    // fingertip at this zoom, whichever is bigger) AND named by the full hit
+    // test. Declining any less would leave a small ring claimed by both
+    // gestures on the same DOWN; declining any more would leave a neighbour
+    // inside that radius claimed by neither. Always false without the opt-in.
     const touchesSelection = (screenX: number, screenY: number) => {
       'worklet';
       if (declineOnSelectionSV === undefined) return false;
@@ -222,11 +237,9 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
       const centreY = containerHeightSV.value / 2;
       const boardX = ((screenX - translateXSV.value - centreX) / scaleSV.value + centreX) * boardScaleSV.value;
       const boardY = ((screenY - translateYSV.value - centreY) / scaleSV.value + centreY) * boardScaleSV.value;
-      const deltaX = boardX - selected[1];
-      const deltaY = boardY - selected[2];
-      const fallbackRadius = (HIT_FALLBACK_SCREEN_PT * boardScaleSV.value) / Math.max(1, scaleSV.value);
-      const grabRadius = Math.max(selected[3], fallbackRadius);
-      return deltaX * deltaX + deltaY * deltaY <= grabRadius * grabRadius;
+      const hitHolds = declineHitHoldsSV === undefined ? NO_HIT_HOLDS : declineHitHoldsSV.value;
+      const fallbackRadius = fallbackRadiusAt(boardScaleSV.value, scaleSV.value);
+      return selectedDragIdAt(hitHolds, selected, boardX, boardY, fallbackRadius) !== 0;
     };
     if (acceptStationaryTaps) {
       // A manually activated UIPan recognizer need not deliver onStart/onEnd
@@ -445,6 +458,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
     abandonedSV,
     stylusReportedSV,
     declineOnSelectionSV,
+    declineHitHoldsSV,
     pinchRef,
   ]);
 

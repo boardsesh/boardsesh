@@ -8,6 +8,11 @@ type SprayPencilSurfaceProps = {
   pointsSV: SharedValue<number[]>;
   /** The selected hold as `[id, cx, cy, r]`: a Pencil touch inside it is a move, not a stroke. */
   selectedHoldSV: SharedValue<number[]>;
+  /**
+   * The wall's flat hit list, the one the edit overlay's move reads, so a
+   * Pencil touch is declined exactly when that move claims it.
+   */
+  hitHoldsSV: SharedValue<number[]>;
   scaleSV: SharedValue<number>;
   translateXSV: SharedValue<number>;
   translateYSV: SharedValue<number>;
@@ -28,7 +33,8 @@ type SprayPencilSurfaceProps = {
  * without a mode.
  *
  * Every finger fails at touch-down (finger draw is off), and so does a Pencil
- * touch on the selected hold (`declineOnSelectionSV`); both fall through to the
+ * touch the selected hold's move claims (`declineOnSelectionSV`, by the move's
+ * own `selectedDragIdAt` rule); both fall through to the
  * edit overlay around it, where a finger picks and a Pencil on the selection
  * moves it. Everything else the Pencil does — a tap or a stroke — comes back
  * through `onStrokeEnd` for the screen to sort out.
@@ -36,6 +42,7 @@ type SprayPencilSurfaceProps = {
 export const SprayPencilSurface = React.memo(function SprayPencilSurface({
   pointsSV,
   selectedHoldSV,
+  hitHoldsSV,
   scaleSV,
   translateXSV,
   translateYSV,
@@ -55,6 +62,7 @@ export const SprayPencilSurface = React.memo(function SprayPencilSurface({
       acceptStationaryTaps
       fingerDrawSV={fingersNeverDrawSV}
       declineOnSelectionSV={selectedHoldSV}
+      declineHitHoldsSV={hitHoldsSV}
       onStylusSeen={onStylusSeen}
       scaleSV={scaleSV}
       translateXSV={translateXSV}

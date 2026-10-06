@@ -132,6 +132,14 @@ type SprayEditGestureOverlayProps = {
   onStylusSeen?: () => void;
   /** OPT-IN. A quick two-finger tap (iPad: undo). Fixed at mount. */
   onTwoFingerTap?: () => void;
+  /**
+   * OPT-IN. True while `children` holds a Pencil draw surface that adds on bare
+   * wall (the iPad layout's edit tool). A stylus press and hold on bare wall
+   * then steps aside for that surface instead of placing a median circle.
+   * False everywhere else — iPad Split View / Slide Over and an Android S-Pen —
+   * so a stylus rest places a hold exactly as a finger does.
+   */
+  stylusAddsElsewhere?: boolean;
 };
 
 /**
@@ -151,7 +159,8 @@ type SprayEditGestureOverlayProps = {
  *   (`placeHoldSV`), slides with it, and lands where the finger lifts — one
  *   `onPlace`. It steps aside at touch-down only when there is nothing it could
  *   do: Join waiting, a second finger, bare wall on a wall at the hold cap, or
- *   an Apple Pencil on bare wall (the Pencil adds by tapping or drawing).
+ *   a stylus on bare wall while a nested Pencil surface adds instead
+ *   (`stylusAddsElsewhere`; the Pencil adds by tapping or drawing there).
  *   A zoomed board's pan still wins a finger that moves: the pan activates at
  *   8 px, inside this gesture's 10 px allowance.
  * - **Drag** (`manualActivation`): claims the touch AT TOUCH-DOWN when it lands
@@ -205,6 +214,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
   hoverRadiusSV,
   onStylusSeen,
   onTwoFingerTap,
+  stylusAddsElsewhere = false,
 }: SprayEditGestureOverlayProps) {
   // Mirrored into shared values rather than captured: a captured value would be
   // a gesture dependency, and rebuilding a live RNGH gesture mid-session has
@@ -221,6 +231,10 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
   useEffect(() => {
     canAddSV.value = canAdd;
   }, [canAdd, canAddSV]);
+  const stylusAddsElsewhereSV = useSharedValue(stylusAddsElsewhere);
+  useEffect(() => {
+    stylusAddsElsewhereSV.value = stylusAddsElsewhere;
+  }, [stylusAddsElsewhere, stylusAddsElsewhereSV]);
 
   /** The ring a long press is resting on, from touch-down; 0 for none. */
   const pickUpIdSV = useSharedValue(0);
@@ -374,10 +388,12 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
         if (holdId === 0) {
           // Bare wall: a rest here places a hold. At the cap there is nothing to
           // place, so step aside at once rather than sit on the touch for 400 ms.
-          // Nor for an Apple Pencil: it adds with a tap or a stroke of its own
-          // (the iPad's Pencil surface), so a Pencil resting mid-stroke never
-          // drops a median circle as well.
-          if (!canAddSV.value || event.pointerType === STYLUS_POINTER_TYPE) {
+          // Nor for a stylus while the iPad's Pencil surface is nested: it adds
+          // with a tap or a stroke of its own there, so a Pencil resting
+          // mid-stroke never drops a median circle as well. Without that
+          // surface (Split View, Slide Over, an Android S-Pen) a stylus rest
+          // places, like a finger.
+          if (!canAddSV.value || (stylusAddsElsewhereSV.value && event.pointerType === STYLUS_POINTER_TYPE)) {
             manager.fail();
             return;
           }
@@ -674,6 +690,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
     boardScaleSV,
     canMoveSV,
     canAddSV,
+    stylusAddsElsewhereSV,
     medianRadiusSV,
     placeHoldSV,
     loupe,
