@@ -43,14 +43,7 @@ import { useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import {
-  SHARED_EVENTS,
-  sprayHoldsReviewed,
-  sprayWallPhotoPicked,
-  sprayWallResetStarted,
-  sprayWallUploadFinished,
-  type SprayResetSurface,
-} from '@boardsesh/analytics';
+import { SHARED_EVENTS, sprayHoldsReviewed, sprayWallPhotoPicked, sprayWallUploadFinished } from '@boardsesh/analytics';
 import { trackSprayEvent } from '../../lib/spray/spray-telemetry';
 import type { UserBoard, SprayDetectionCandidate } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
@@ -98,7 +91,7 @@ import { useActivateBoard } from '../../lib/boards/use-activate-board';
 import { activatePublishedSprayWall } from '../../lib/spray/activate-published-spray-wall';
 import { DONE_EXIT_OFFER_MS, PostPublishStalledError, runPostPublishBind } from '../../lib/spray/post-publish-bind';
 import type { BoardReturnTo } from '../../lib/boards/board-return-to';
-import { invalidateSprayWallRenderData } from '../../lib/spray/spray-wall-loader';
+import { fetchSprayWallResetSource, invalidateSprayWallRenderData } from '../../lib/spray/spray-wall-loader';
 import { settleArchivedSprayWall } from '../../lib/spray/settle-archived-spray-wall';
 import { prefetchSprayWallDraft } from '../../lib/spray/use-spray-wall-draft';
 import {
@@ -141,7 +134,7 @@ import {
   type CreatedWallDraft,
   type DetectionOutcome,
 } from './add-wall-machine';
-import { findOpenDraft, findResumableWall, planUploadRetry, resumeTargetFor, startOverPlan } from './resume-draft';
+import { findResumableWall, planUploadRetry, resumeTargetFor, startOverPlan } from './resume-draft';
 import { SPRAY_FORM_MAX_WIDTH, sprayFlowCoversScreen } from '../../lib/spray/spray-flow-presentation';
 
 /** The angle list as `AngleSlider` takes it. Built once: it never changes. */
@@ -182,8 +175,6 @@ type SprayWallWizardScreenProps = {
    * wall back.
    */
   resetOfWallUuid?: string | null;
-  /** Where the owner confirmed the reset, for `Spray Wall Reset Started`. */
-  resetSource?: SprayResetSurface;
 };
 
 /** Hoisted for `useConnectivityField`: a stable selector keeps one subscription. */
@@ -191,11 +182,7 @@ function selectConnectivityReason(snapshot: ConnectivitySnapshot): ConnectivityS
   return snapshot.reason;
 }
 
-export function SprayWallWizardScreen({
-  returnTo,
-  resetOfWallUuid = null,
-  resetSource = 'board_sheet',
-}: SprayWallWizardScreenProps) {
+export function SprayWallWizardScreen({ returnTo, resetOfWallUuid = null }: SprayWallWizardScreenProps) {
   const countedSteps = resetOfWallUuid != null ? RESET_COUNTED_STEPS : COUNTED_STEPS;
   const { t, i18n } = useTranslation('boards');
   const { systemColors } = useTheme();
@@ -484,14 +471,31 @@ export function SprayWallWizardScreen({
       return;
     }
 
-    Alert.alert(t('sprayWizard.resume.title'), t('sprayWizard.resume.body', { name: resumable.board.name }), [
-      {
-        text: t('sprayWizard.resume.startOver'),
-        style: 'destructive',
-        onPress: () => void decideResume(resumable, 'startOver'),
-      },
-      { text: t('sprayWizard.resume.pickUp'), onPress: () => void decideResume(resumable, 'resume') },
-    ]);
+    const askToResume = () =>
+      Alert.alert(t('sprayWizard.resume.title'), t('sprayWizard.resume.body', { name: resumable.board.name }), [
+        {
+          text: t('sprayWizard.resume.startOver'),
+          style: 'destructive',
+          onPress: () => void decideResume(resumable, 'startOver'),
+        },
+        { text: t('sprayWizard.resume.pickUp'), onPress: () => void decideResume(resumable, 'resume') },
+      ]);
+    if (cloneOf.has(resumable.uuid)) {
+      askToResume();
+      return;
+    }
+    // The list did not answer for this wall (it failed, or predates it). A
+    // reset's clone offered here would publish through the plain path, leaving
+    // the wall it replaces unsettled, so ask about this one wall before offering
+    // it. A read that fails too offers it, as the check always did.
+    void fetchSprayWallResetSource(resumable.uuid).then((resetOf) => {
+      if (!mountedRef.current) return;
+      if (resetOf) {
+        dispatch({ type: 'RESUME_DECLINED' });
+        return;
+      }
+      askToResume();
+    });
   }, [resetOfWallUuid, state.step, wallsSettled, lifecycleSettled, lifecycleRows, walls, decideResume, t]);
 
   // ============================================
@@ -539,9 +543,6 @@ export function SprayWallWizardScreen({
     const versions = clone.versions ?? [];
     const target = resumeTargetFor(clone, versions);
     if (target.at === 'photo') {
-      // A clone with nothing on it yet: this is where a reset starts, so it is
-      // counted here, once, rather than on every reopening of an unfinished one.
-      if (!findOpenDraft(versions)) trackSprayEvent(sprayWallResetStarted(resetSource));
       dispatch({ type: 'RESUMED_AT_PHOTO', wall: target.wall });
       return;
     }
@@ -569,7 +570,7 @@ export function SprayWallWizardScreen({
       { text: t('sprayWizard.resume.startOver'), style: 'destructive', onPress: () => void startOver() },
       { text: t('sprayWizard.resume.pickUp'), onPress: pickUp },
     ]);
-  }, [resetOfWallUuid, resetWallAsync, discardDraftAsync, resetSource, t]);
+  }, [resetOfWallUuid, resetWallAsync, discardDraftAsync, t]);
   const startResetRef = useRef(startReset);
   startResetRef.current = startReset;
 

@@ -19,22 +19,9 @@ export function sprayHoldEditorHref(wallUuid: string): string {
   return `${SPRAY_HOLD_EDITOR_PATH}?wallUuid=${encodeURIComponent(wallUuid)}`;
 }
 
-/** Where the owner confirmed a reset. Telemetry only; mirrors `SprayResetSurface`. */
-export type SprayResetSource = 'board_sheet' | 'holds_locked';
-
-/**
- * `/boards/spray/new?resetOf=<uuid>`: reset a wall by building its replacement in
- * the wizard. `source` rides along for the one `Spray Wall Reset Started` event
- * the wizard fires when the reset really starts.
- */
-export function sprayResetWizardHref(wallUuid: string, source?: SprayResetSource): string {
-  const base = `${SPRAY_NEW_WALL_PATH}?resetOf=${encodeURIComponent(wallUuid)}`;
-  return source ? `${base}&resetSource=${source}` : base;
-}
-
-/** The reset source a route param names, or undefined for anything else. */
-export function readSprayResetSource(param: string | string[] | undefined): SprayResetSource | undefined {
-  return param === 'board_sheet' || param === 'holds_locked' ? param : undefined;
+/** `/boards/spray/new?resetOf=<uuid>`: reset a wall by building its replacement in the wizard. */
+export function sprayResetWizardHref(wallUuid: string): string {
+  return `${SPRAY_NEW_WALL_PATH}?resetOf=${encodeURIComponent(wallUuid)}`;
 }
 
 /** Accept the old boardUuid spelling for restored navigation and saved links. */

@@ -87,7 +87,6 @@ vi.mock('@boardsesh/analytics', () => ({
   sprayWallPhotoPicked: (source: string) => ({ name: 'p', properties: { source } }),
   sprayWallUploadFinished: (properties: Record<string, unknown>) => ({ name: 'u', properties }),
   sprayWallBindStalled: (properties: Record<string, unknown>) => ({ name: 'Spray Wall Bind Stalled', properties }),
-  sprayWallResetStarted: (source: string) => ({ name: 'Spray Wall Reset Started', properties: { source } }),
 }));
 vi.mock('../../../lib/spray/spray-telemetry', () => ({ trackSprayEvent: vi.fn() }));
 vi.mock('../../../lib/analytics', () => ({ track: mocks.track }));
@@ -175,7 +174,11 @@ vi.mock('../../../lib/spray/wall-photo', () => ({
 }));
 vi.mock('../../../lib/spray/discard-local-photo', () => ({ discardLocalPhoto: vi.fn() }));
 vi.mock('../../../lib/spray/spray-wall-photo-upload', () => ({ uploadSprayWallPhoto: vi.fn() }));
-vi.mock('../../../lib/spray/spray-wall-loader', () => ({ invalidateSprayWallRenderData: mocks.invalidateRenderData }));
+vi.mock('../../../lib/spray/spray-wall-loader', () => ({
+  invalidateSprayWallRenderData: mocks.invalidateRenderData,
+  // The resume check's one-wall read: not a clone.
+  fetchSprayWallResetSource: async () => null,
+}));
 vi.mock('../../../lib/spray/use-spray-wall-draft', () => ({ prefetchSprayWallDraft: vi.fn() }));
 vi.mock('../../../lib/spray/activate-published-spray-wall', () => ({ activatePublishedSprayWall: mocks.activate }));
 vi.mock('../../../lib/boards/use-activate-board', () => ({

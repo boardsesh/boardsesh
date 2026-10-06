@@ -16,6 +16,8 @@ vi.mock('expo-router', () => ({ router: navigation }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 const confirmReset = vi.hoisted(() => vi.fn(async () => true));
 vi.mock('../confirm-spray-wall-reset', () => ({ confirmSprayWallReset: confirmReset }));
+const trackSpray = vi.hoisted(() => vi.fn());
+vi.mock('../spray-telemetry', () => ({ trackSprayEvent: trackSpray }));
 const wall: UserBoard = {
   uuid: 'wall-1',
   slug: 'garage',
@@ -68,6 +70,7 @@ beforeEach(() => {
   navigation.push.mockClear();
   confirmReset.mockReset();
   confirmReset.mockResolvedValue(true);
+  trackSpray.mockClear();
   clearSprayWallRegistry();
   registerWall();
 });
@@ -152,8 +155,7 @@ describe('live spray wall sheet actions', () => {
     expect(confirmReset).not.toHaveBeenCalled();
   });
 
-  // The wizard counts the reset once it really starts; the sheet only says
-  // where the owner confirmed it.
+  // Counted once per confirm tap, here, with where the owner confirmed it.
   it('asks before a reset, then opens the wizard on that wall', async () => {
     const { dismiss, finish } = deferredDismiss();
     const { result } = renderHook(() => useSprayWallSheetActions(wall, dismiss, 'owner-1'));
@@ -166,8 +168,11 @@ describe('live spray wall sheet actions', () => {
       start: 'sprayResetConfirm.start',
       cancel: 'sprayResetConfirm.cancel',
     });
+    expect(trackSpray).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ properties: { source: 'board_sheet' } }),
+    );
     await act(async () => finish({ status: 'dismissed' }));
-    expect(navigation.push).toHaveBeenCalledExactlyOnceWith('/boards/spray/new?resetOf=wall-1&resetSource=board_sheet');
+    expect(navigation.push).toHaveBeenCalledExactlyOnceWith('/boards/spray/new?resetOf=wall-1');
   });
 
   it('leaves the sheet up and records nothing when the owner says "Not now"', async () => {
@@ -178,6 +183,7 @@ describe('live spray wall sheet actions', () => {
       result.current.openMaintenance(wall.uuid, 'resetWall');
     });
     expect(dismiss).not.toHaveBeenCalled();
+    expect(trackSpray).not.toHaveBeenCalled();
     // And the next tap is not swallowed by a pending action.
     confirmReset.mockResolvedValue(true);
     await act(async () => {
@@ -199,9 +205,7 @@ describe('live spray wall sheet actions', () => {
       result.current.openMaintenance(wall.uuid, 'holdsLocked');
     });
     await act(async () => finish({ status: 'dismissed' }));
-    expect(navigation.push).toHaveBeenCalledExactlyOnceWith(
-      '/boards/spray/new?resetOf=wall-1&resetSource=holds_locked',
-    );
+    expect(navigation.push).toHaveBeenCalledExactlyOnceWith('/boards/spray/new?resetOf=wall-1');
 
     const editor = renderHook(() => useSprayWallSheetActions(wall, dismiss, 'gym-admin'));
     confirmReset.mockClear();

@@ -811,9 +811,7 @@ describe('DrawerHostProvider spray-wall sheet wiring', () => {
     rerender(createElement(DrawerHostProvider, null, createElement(Probe, { onHost, onRoute: () => {} })));
     await act(async () => settle({ status: 'dismissed' }));
 
-    expect(routerPush).toHaveBeenCalledExactlyOnceWith(
-      action === 'resetWall' ? `${pathname}${sprayWall.uuid}&resetSource=board_sheet` : `${pathname}${sprayWall.uuid}`,
-    );
+    expect(routerPush).toHaveBeenCalledExactlyOnceWith(`${pathname}${sprayWall.uuid}`);
     expect(activeBoard.setActiveBoard).not.toHaveBeenCalled();
   });
 

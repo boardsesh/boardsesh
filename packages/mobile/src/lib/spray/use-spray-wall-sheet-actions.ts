@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
+import { sprayWallResetStarted } from '@boardsesh/analytics';
 import type { DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
 import {
   sprayDetailRows,
@@ -11,6 +12,7 @@ import {
 } from '../../components/board-discovery/spray-detail-rows';
 import { confirmSprayWallReset } from './confirm-spray-wall-reset';
 import { sprayWallArchiveState } from './spray-wall-registry';
+import { trackSprayEvent } from './spray-telemetry';
 
 type ShareSnapshot = SprayShareTarget & { wallUuid: string; wallName: string };
 
@@ -108,6 +110,9 @@ export function useSprayWallSheetActions(
             startingSignature !== signatureRef.current
           )
             return;
+          // Once per confirm tap. Read against `Board Created` with `isReset`,
+          // the ratio is confirms per completed reset.
+          trackSprayEvent(sprayWallResetStarted(action === 'holdsLocked' ? 'holds_locked' : 'board_sheet'));
         }
         const result = await dismissAndWait();
         if (

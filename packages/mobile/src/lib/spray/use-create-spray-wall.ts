@@ -164,9 +164,9 @@ export function useMySprayWalls(options?: { enabled?: boolean }) {
  * not offer a reset's unfinished clone as a new wall).
  *
  * Fail-soft by construction: on a backend that does not serve the archive fields
- * this one query fails and nothing else does. `retry: false` keeps such a
- * backend from being asked three more times; the data stays undefined, which
- * every reader takes as "no archived walls, no clones known".
+ * this one query fails and nothing else does, after one retry; the data stays
+ * undefined, which every reader takes as "no archived walls, no clones known"
+ * (the resume check then asks about its one candidate directly).
  */
 export function useMySprayWallLifecycle(options?: { enabled?: boolean }) {
   return useQuery({
@@ -177,7 +177,9 @@ export function useMySprayWallLifecycle(options?: { enabled?: boolean }) {
     },
     enabled: options?.enabled ?? true,
     staleTime: MY_SPRAY_WALL_LIFECYCLE_STALE_TIME_MS,
-    retry: false,
+    // One retry, for a dropped connection; a backend without the fields fails
+    // twice and stops. The resume check asks per wall when the list has nothing.
+    retry: 1,
   });
 }
 

@@ -151,7 +151,7 @@ export function sprayDetailRows(
     rows.push({
       key: 'holdsLocked',
       icon: 'lock',
-      href: isOwner ? sprayResetWizardHref(board.uuid, 'holds_locked') : null,
+      href: isOwner ? sprayResetWizardHref(board.uuid) : null,
       confirmsReset: isOwner,
     });
   }
@@ -159,7 +159,7 @@ export function sprayDetailRows(
     rows.push({
       key: 'resetWall',
       icon: 'camera',
-      href: sprayResetWizardHref(board.uuid, 'board_sheet'),
+      href: sprayResetWizardHref(board.uuid),
       confirmsReset: true,
     });
   }

@@ -23,8 +23,8 @@ const asEditor = (archive: SprayDetailRowContext['archive']): SprayDetailRowCont
   archive,
 });
 
-const resetHref = `${SPRAY_NEW_WALL_PATH}?resetOf=wall-uuid-1&resetSource=board_sheet`;
-const lockedResetHref = `${SPRAY_NEW_WALL_PATH}?resetOf=wall-uuid-1&resetSource=holds_locked`;
+const resetHref = `${SPRAY_NEW_WALL_PATH}?resetOf=wall-uuid-1`;
+const lockedResetHref = resetHref;
 const editHref = `${SPRAY_HOLD_EDITOR_PATH}?wallUuid=wall-uuid-1`;
 
 describe('sprayDetailRows', () => {
@@ -107,7 +107,7 @@ describe('sprayDetailRows', () => {
   it('escapes the uuid it puts in the query string', () => {
     const rows = sprayDetailRows({ ...wall, uuid: 'a&b=c' }, asOwner(free));
     expect(rows[0].href).toBe(`${SPRAY_HOLD_EDITOR_PATH}?wallUuid=a%26b%3Dc`);
-    expect(rows[1].href).toBe(`${SPRAY_NEW_WALL_PATH}?resetOf=a%26b%3Dc&resetSource=board_sheet`);
+    expect(rows[1].href).toBe(`${SPRAY_NEW_WALL_PATH}?resetOf=a%26b%3Dc`);
   });
 });
 

@@ -5,21 +5,13 @@
 import { useLocalSearchParams } from 'expo-router';
 import { SprayWallWizardScreen } from '../../../src/components/spray-wall/SprayWallWizardScreen';
 import { resolveBoardReturnTo } from '../../../src/lib/boards/board-return-to';
-import { readSprayResetSource } from '../../../src/lib/spray/spray-routes';
 
 export default function NewSprayWall() {
   const params = useLocalSearchParams<{
     returnTo?: string;
     resetOf?: string | string[];
-    resetSource?: string | string[];
   }>();
   const resetOfWallUuid =
     typeof params.resetOf === 'string' && params.resetOf.trim().length > 0 ? params.resetOf : null;
-  return (
-    <SprayWallWizardScreen
-      returnTo={resolveBoardReturnTo(params.returnTo)}
-      resetOfWallUuid={resetOfWallUuid}
-      resetSource={readSprayResetSource(params.resetSource)}
-    />
-  );
+  return <SprayWallWizardScreen returnTo={resolveBoardReturnTo(params.returnTo)} resetOfWallUuid={resetOfWallUuid} />;
 }
