@@ -7,6 +7,7 @@ import {
   REFINE_FRAME_SCALE_MAX,
   fromBrushFrame,
   holdFromRefinedOutline,
+  interiorPointOnRow,
   refineBrushRadiusBoardPx,
   refineFrameFor,
   refineStartOutline,
@@ -50,17 +51,27 @@ describe('refineFrameFor', () => {
 });
 
 describe('refineBrushRadiusBoardPx', () => {
-  it('is screen points at the zoom, so the brush feels the same at 1x and 8x', () => {
+  it('is a fraction of the hold, whatever the zoom', () => {
     const frame = refineFrameFor({ cx: 0, cy: 0, r: 40 });
-    // 5 board px per point at 1x (a 2048 px photo on a ~400 pt phone).
-    expect(refineBrushRadiusBoardPx(12, 5, 1, frame)).toBeCloseTo(60);
-    expect(refineBrushRadiusBoardPx(12, 5, 8, frame)).toBeCloseTo(7.5);
+    expect(refineBrushRadiusBoardPx('small', 40, frame)).toBeCloseTo(6);
+    expect(refineBrushRadiusBoardPx('medium', 40, frame)).toBeCloseTo(12);
+    expect(refineBrushRadiusBoardPx('large', 40, frame)).toBeCloseTo(24);
+    // A hold four times the size gets a brush four times the size.
+    const big = refineFrameFor({ cx: 0, cy: 0, r: 160 });
+    expect(refineBrushRadiusBoardPx('medium', 160, big)).toBeCloseTo(48);
+  });
+
+  it('keeps every preset in the same place in the brush frame', () => {
+    for (const r of [12, 40, 200]) {
+      const frame = refineFrameFor({ cx: 0, cy: 0, r });
+      expect(refineBrushRadiusBoardPx('medium', r, frame) * frame.scale).toBeCloseTo(0.3 * REFINE_FRAME_RADIUS);
+    }
   });
 
   it('never drops below the smallest brush the engine can apply', () => {
-    const frame = refineFrameFor({ cx: 0, cy: 0, r: 40 });
-    const floor = MIN_BRUSH_RADIUS_BOARD_PX / frame.scale;
-    expect(refineBrushRadiusBoardPx(1, 0.2, 8, frame)).toBeCloseTo(floor);
+    // A 2 px hold clamps the frame scale, so 15% of it is under the engine floor.
+    const frame = refineFrameFor({ cx: 0, cy: 0, r: 2 });
+    expect(refineBrushRadiusBoardPx('small', 2, frame)).toBeCloseTo(MIN_BRUSH_RADIUS_BOARD_PX / frame.scale);
   });
 });
 
@@ -107,11 +118,32 @@ describe('holdFromRefinedOutline', () => {
     expect(pointInRing(result.hold.outline, 0, 0)).toBe(true);
   });
 
+  it('falls back to a point inside the area when the centroid and the anchor both miss', () => {
+    // A thick C whose anchor also sits in the mouth (the middle was erased away).
+    const thickC = [0, 0, 100, 0, 100, 20, 20, 20, 20, 80, 100, 80, 100, 100, 0, 100];
+    const result = holdFromRefinedOutline(thickC, { x: 60, y: 50 });
+    expect(result.ok).toBe(true);
+    if (!result.ok || !result.hold.outline) return;
+    expect(pointInRing(result.hold.outline, 0, 0)).toBe(true);
+  });
+
   it('refuses an area with nothing in it', () => {
     expect(holdFromRefinedOutline([0, 0, 10, 0, 20, 0], { x: 5, y: 0 })).toEqual({
       ok: false,
       reason: 'too-few-points',
     });
+  });
+});
+
+describe('interiorPointOnRow', () => {
+  it('takes the middle of the widest span on the row', () => {
+    const thickC = [0, 0, 100, 0, 100, 20, 20, 20, 20, 80, 100, 80, 100, 100, 0, 100];
+    expect(interiorPointOnRow(thickC, 50)).toEqual({ x: 10, y: 50 });
+    expect(interiorPointOnRow(thickC, 10)).toEqual({ x: 50, y: 10 });
+  });
+
+  it('is null for a row that misses the ring', () => {
+    expect(interiorPointOnRow(square(0, 0, 10), 50)).toBeNull();
   });
 });
 

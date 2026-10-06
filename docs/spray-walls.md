@@ -1260,12 +1260,19 @@ What the editor does with a wall is decided by this document rather than by tast
   away the nine-tenths that were fine. Refine (an ON ring only, like Trace)
   turns the hold into a filled violet AREA over its own faint ghost; the rest of
   the wall drops to 35% so the area reads. Plain circles start as their circle.
-  - **Add | Erase** is a segmented control on the banner, beside Cancel; the
-    brush size is three dot chips in the dock (6, 12 and 24 screen-pt radius,
-    medium by default) with Done. Sizes are screen points at the stroke's zoom
-    (`refineBrushRadiusBoardPx`), so a brush feels the same at 1x and 8x, and
-    never smaller than the engine's 3-unit floor, below which a dab vanishes in
-    the decimation. Mode and size carry from one hold to the next for the visit.
+  - **Add | Erase** is a segmented control on the banner, beside Cancel; on
+    iPad a Pencil double tap (or squeeze) set to "switch to eraser" flips it
+    too, instead of leaving the tool. The brush size is three dot chips in the
+    dock (radio buttons to VoiceOver) with Done: Small, Medium (default) and
+    Large paint with 0.15, 0.3 and 0.6 of the hold's radius when Refine opened
+    (`REFINE_BRUSH_RADIUS_FRACTION`, `refineBrushRadiusBoardPx`), never smaller
+    than the engine's 3-unit floor, below which a dab vanishes in the
+    decimation. Relative to the hold, not the screen: the job is fine-tuning one
+    hold, and screen-point brushes were bigger than a typical hold at 1x on a
+    phone (12 pt is about 66 board px on a 2048 px photo against a 40 px hold),
+    so the default dab re-shaped the whole hold. The preview draws the true
+    size, so zooming in shows exactly what a dab covers. Mode and size carry
+    from one hold to the next for the visit.
   - **Painting.** `DrawStrokeOverlay` with `acceptStationaryTaps`, so a dab
     paints too, and the loupe for a finger. Two fingers zoom and pan
     (`pinchPans`). On iPad with "Pencil only" on, fingers pan and only the
@@ -1299,9 +1306,28 @@ What the editor does with a wall is decided by this document rather than by tast
     An open Refine with a kept stroke counts as unsaved work for the leave
     guard (`onDirtyChange`), since its strokes reach the reducer only on Done.
   - **Resolution.** The engine works in a frame centred on the hold with its
-    radius at 32 units (`spray-refine.ts`): 5% of the hold's radius whatever
-    the photo, so the 4096 px full photo past 3x changes nothing, and at most
-    512 x 512 bitmap cells. One stroke measured 17 ms in Node on the dev box.
+    radius at 32 units (`REFINE_FRAME_RADIUS` in `spray-refine.ts`): 5% of the
+    hold's radius whatever the photo, so the 4096 px full photo past 3x
+    changes nothing.
+  - **The 4x limit.** The engine's bitmap reaches from the anchor to the
+    outline plus one radius, and is capped at 4 radii (`MAX_RING_COORDINATE`
+    times the radius Refine opened with) along either axis, because nothing
+    past that is storable: 512 x 512 cells at the cap. So Add can grow a hold
+    to about 4x its original radius in any direction, and no further. An Add
+    stroke whose brush crosses that line keeps what landed inside, and the
+    banner says "That's as far as this hold can grow" with a warning buzz,
+    rather than clipping silently; erasing out there clips nothing that
+    matters and says nothing. Trace is the way to make a hold much bigger. The
+    bitmap never shrinks within a session, so once a stroke has reached the
+    cap every later stroke pays the cap's cost.
+  - **Cost per lift.** Measured through the session (`useSprayRefineSession`,
+    60 strokes of the three sizes on a 40 px hold, Node on the dev box): about
+    19 ms median with the relative brushes, whose frame stays near 310-350
+    cells a side; 48 ms median once a stroke has pushed the bitmap to the
+    512-cell cap. Hermes runs these loops several times slower than Node's JIT,
+    so expect tens of milliseconds per lift on a phone and around 100 ms at the
+    cap. The cost lands once per lift on the JS thread, never during a stroke,
+    and the stroke's preview stays on screen until the new area is drawn.
 - **Nothing is removed by accident.** Every switch-off is a ghost — a hold this
   session drew by hand included, which used to vanish on its second tap. A
   ghost is never written (`buildSprayHoldWritePlan` skips rejected holds and a

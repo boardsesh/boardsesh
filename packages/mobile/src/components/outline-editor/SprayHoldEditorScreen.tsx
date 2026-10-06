@@ -57,10 +57,9 @@ import { SprayEditorMenu } from './SprayCountCapsule';
 import { SprayCornersChipBar, SprayHoldChipBar, SprayRefineBar } from './SprayHoldChipBar';
 import { SprayHoldInspector } from './SprayHoldInspector';
 import { SprayRefineLayer } from './SprayRefineLayer';
-import { useSprayRefineSession, type RefineRejection } from './use-spray-refine-session';
+import { planRefineExit, useSprayRefineSession, type RefineRejection } from './use-spray-refine-session';
 import {
   DEFAULT_REFINE_BRUSH_SIZE,
-  REFINE_BRUSH_RADIUS_PT,
   refineBrushRadiusBoardPx,
   type RefineBrushSize,
   type RefineMode,
@@ -1187,30 +1186,37 @@ export function SprayHoldEditorScreen({
     (keep: boolean) => {
       const session = refineRef.current;
       const holdId = session.view?.holdId ?? null;
+      const hold = holdId != null ? stateRef.current.holds[holdId] : undefined;
+      // Everything that can stop a commit is checked BEFORE the session ends,
+      // so a refusal leaves the climber in Refine with every stroke intact.
+      const plan = planRefineExit({
+        keep,
+        result: keep ? session.result() : null,
+        holdExists: hold != null,
+        canEdit: canEditRef.current,
+        overCap: hold != null && holdRole(hold) !== 'on' && countsRef.current.on >= MAX_HOLDS_PER_WALL,
+      });
+      if (plan.kind === 'stay') {
+        if (plan.reason === 'cap') refuseOverCap();
+        else if (plan.reason === 'refused') {
+          hapticWarning();
+          setErrorText(refineRejectionMessage(plan.rejection, t));
+        }
+        return false;
+      }
+      if (plan.kind === 'commit' && holdId != null) {
+        hapticMedium();
+        dispatch({ type: 'SET_OUTLINE', id: holdId, geometry: plan.hold });
+        recordHint('edit');
+      }
+      session.cancel();
       refinePointsSV.value = NO_POINTS;
       setRefineNotice(null);
       setErrorText(null);
       setTool('edit');
-      if (!keep || holdId == null) {
-        session.cancel();
-        return true;
-      }
-      const result = session.finish();
-      // No stroke kept: nothing to commit.
-      if (!result) return true;
-      if (!result.ok) {
-        hapticWarning();
-        setErrorText(refineRejectionMessage(result.reason, t));
-        return false;
-      }
-      const hold = stateRef.current.holds[holdId];
-      if (!hold || !canEditRef.current || editWouldPassCap(hold)) return false;
-      hapticMedium();
-      dispatch({ type: 'SET_OUTLINE', id: holdId, geometry: result.hold });
-      recordHint('edit');
       return true;
     },
-    [refinePointsSV, editWouldPassCap, recordHint, t],
+    [refinePointsSV, refuseOverCap, recordHint, t],
   );
   const handleRefineDone = useCallback(() => leaveRefine(true), [leaveRefine]);
 
@@ -1245,7 +1251,7 @@ export function SprayHoldEditorScreen({
    * leave nothing storable is refused with the reason and the area is untouched.
    */
   const handleRefineStrokeEnd = useCallback(
-    (strokeBoardPoints: number[], zoom: number) => {
+    (strokeBoardPoints: number[]) => {
       if (strokeBoardPoints.length < 2) return;
       const firstX = strokeBoardPoints[0];
       const firstY = strokeBoardPoints[1];
@@ -1255,18 +1261,21 @@ export function SprayHoldEditorScreen({
         runOnUI(clearStrokeIfStill)(refinePointsSV, firstX, firstY);
         return;
       }
-      const radius = refineBrushRadiusBoardPx(
-        REFINE_BRUSH_RADIUS_PT[refineBrushSizeRef.current],
-        boardScale,
-        zoom,
-        view.frame,
-      );
+      const radius = refineBrushRadiusBoardPx(refineBrushSizeRef.current, view.holdRadiusBoardPx, view.frame);
       const outcome = session.applyStroke(strokeBoardPoints, radius, refineModeRef.current);
+      // Add reached the furthest a hold can grow and the rest was clipped: say
+      // so, or the brush just looks like it stopped working.
+      const limitLine = outcome.reachedLimit ? t('sprayEditor.refine.atLimit') : null;
       if (outcome.ok) {
         // The preview stays until the commit that draws the new area, so the
         // stroke does not blink out while JS works (at most a frame between the
         // clear and the new path mounting on Fabric).
         pendingRefineClearRef.current = [firstX, firstY];
+        if (limitLine) {
+          hapticWarning();
+          setRefineNotice(limitLine);
+          return;
+        }
         hapticSelection();
         if (outcome.droppedPieces > 0) {
           setRefineNotice(t('sprayEditor.refine.dropped', { count: outcome.droppedPieces }));
@@ -1274,12 +1283,19 @@ export function SprayHoldEditorScreen({
         return;
       }
       runOnUI(clearStrokeIfStill)(refinePointsSV, firstX, firstY);
-      // A stroke that painted nothing (erasing bare wall, adding inside) is not an error.
-      if (outcome.reason === 'no-change') return;
+      // A stroke that painted nothing (erasing bare wall, adding inside) is not
+      // an error — unless it painted nothing because it was all past the limit.
+      if (outcome.reason === 'no-change') {
+        if (limitLine) {
+          hapticWarning();
+          setRefineNotice(limitLine);
+        }
+        return;
+      }
       hapticWarning();
       setErrorText(refineRejectionMessage(outcome.reason, t));
     },
-    [boardScale, refinePointsSV, t],
+    [refinePointsSV, t],
   );
 
   const handleCancelTool = useCallback(() => {
@@ -2190,11 +2206,12 @@ export function SprayHoldEditorScreen({
               outlineBoardPx={refineView.outlineBoardPx}
               pointsSV={refinePointsSV}
               mode={refineMode}
-              brushPt={REFINE_BRUSH_RADIUS_PT[refineBrushSize]}
-              minBrushRadiusBoardPx={refineBrushRadiusBoardPx(0, boardScale, 1, refineView.frame)}
-              boardScale={boardScale}
+              brushRadiusBoardPx={refineBrushRadiusBoardPx(
+                refineBrushSize,
+                refineView.holdRadiusBoardPx,
+                refineView.frame,
+              )}
               scaleSV={context.scaleSV}
-              brushZoomSV={context.scaleSV}
               boardWidth={wall.photoWidth}
               boardHeight={wall.photoHeight}
               renderWidth={boardRender.width}
@@ -2314,11 +2331,12 @@ export function SprayHoldEditorScreen({
               outlineBoardPx={refineView.outlineBoardPx}
               pointsSV={refinePointsSV}
               mode={refineMode}
-              brushPt={REFINE_BRUSH_RADIUS_PT[refineBrushSize]}
-              minBrushRadiusBoardPx={refineBrushRadiusBoardPx(0, boardScale, 1, refineView.frame)}
-              boardScale={boardScale}
+              brushRadiusBoardPx={refineBrushRadiusBoardPx(
+                refineBrushSize,
+                refineView.holdRadiusBoardPx,
+                refineView.frame,
+              )}
               scaleSV={loupeMagnificationSV}
-              brushZoomSV={loupeFeed.zoomSV}
               boardWidth={wall.photoWidth}
               boardHeight={wall.photoHeight}
               renderWidth={boardRender.width}
@@ -2459,7 +2477,7 @@ export function SprayHoldEditorScreen({
             boardScale={boardScale}
             pinchRef={context.pinchRef}
             onStrokeStart={handleRefineStrokeStart}
-            onStrokeEnd={(strokeBoardPoints) => handleRefineStrokeEnd(strokeBoardPoints, scaleSV.value)}
+            onStrokeEnd={handleRefineStrokeEnd}
             onStrokeCancel={IGNORE_STROKE_CANCEL}
             loupe={loupeFeed}
             onStylusSeen={tablet ? handlePencilSeen : undefined}

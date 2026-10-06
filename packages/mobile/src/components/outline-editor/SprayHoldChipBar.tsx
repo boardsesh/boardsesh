@@ -159,7 +159,7 @@ export const SprayRefineBar = React.memo(function SprayRefineBar({
   const { t } = useTranslation('boards');
   const { brandColors } = useTheme();
   return (
-    <View pointerEvents="box-none" style={styles.row} accessibilityLabel={t('sprayEditor.refine.size')}>
+    <View pointerEvents="box-none" style={styles.row}>
       {REFINE_SIZE_CHIPS.map(({ size, dot }) => (
         <SprayBrushSizeChip
           key={size}
@@ -203,9 +203,11 @@ const SprayBrushSizeChip = React.memo(function SprayBrushSizeChip({
     <PressableSurface
       onPress={() => onSelect(size)}
       feedback="scale"
-      accessibilityRole="button"
+      // Each chip names its size ("Small brush") and is one of a set: VoiceOver
+      // reads "Small brush, radio button, 1 of 3" and which one is checked.
+      accessibilityRole="radio"
       accessibilityLabel={label}
-      accessibilityState={{ selected }}
+      accessibilityState={{ checked: selected }}
       style={[styles.chip, styles.iconChip, styles.sizeChip, selected ? { borderColor: brandColors.primary } : null]}
     >
       <GlassSurface

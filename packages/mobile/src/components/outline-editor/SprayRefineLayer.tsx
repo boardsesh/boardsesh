@@ -29,20 +29,10 @@ type SprayRefineLayerProps = {
   /** The live stroke in board px, written by `DrawStrokeOverlay`. */
   pointsSV: SharedValue<number[]>;
   mode: RefineMode;
-  /** The brush radius in screen points. */
-  brushPt: number;
-  /** The smallest radius the brush paints with, in board px (`refineBrushRadiusBoardPx`'s floor). */
-  minBrushRadiusBoardPx: number;
-  /** Board px per render px. */
-  boardScale: number;
-  /** The zoom whose ring strokes this copy draws at — the board's, or the loupe's magnification. */
+  /** The radius the stroke paints with, in board px (`refineBrushRadiusBoardPx`). */
+  brushRadiusBoardPx: number;
+  /** The zoom whose edge strokes this copy draws at — the board's, or the loupe's magnification. */
   scaleSV: SharedValue<number>;
-  /**
-   * The BOARD's zoom, which sets the brush's size in board px. The same as
-   * `scaleSV` on the board; the loupe's copy passes the board zoom its feed
-   * recorded, so the brush it shows is the one the stroke paints with.
-   */
-  brushZoomSV: SharedValue<number>;
   boardWidth: number;
   boardHeight: number;
   renderWidth: number;
@@ -57,19 +47,15 @@ type SprayRefineLayerProps = {
  * stroke. The stroke is a shared value the draw overlay writes on the UI thread,
  * drawn as one round-capped path whose width is the brush DIAMETER in board px —
  * geometry, not a hairline, so it scales with the zoom and with the loupe exactly
- * like the photo under it, and covers what the engine will paint. Its width is
- * worked out in the same worklet from the board's live zoom, so nothing crosses
- * to JS while a stroke is drawn.
+ * like the photo under it, and covers exactly what the engine will paint.
+ * Nothing crosses to JS while a stroke is drawn.
  */
 export const SprayRefineLayer = React.memo(function SprayRefineLayer({
   outlineBoardPx,
   pointsSV,
   mode,
-  brushPt,
-  minBrushRadiusBoardPx,
-  boardScale,
+  brushRadiusBoardPx,
   scaleSV,
-  brushZoomSV,
   boardWidth,
   boardHeight,
   renderWidth,
@@ -84,9 +70,8 @@ export const SprayRefineLayer = React.memo(function SprayRefineLayer({
   const strokeProps = useAnimatedProps(() => {
     'worklet';
     const points = pointsSV.value;
-    const zoom = Math.max(brushZoomSV.value, 1e-6);
-    const radius = Math.max((brushPt * boardScale) / zoom, minBrushRadiusBoardPx);
-    if (points.length < 2) return { d: '', strokeWidth: radius * 2 };
+    const strokeWidth = brushRadiusBoardPx * 2;
+    if (points.length < 2) return { d: '', strokeWidth };
     let path = `M${points[0]} ${points[1]}`;
     if (points.length < 4) {
       path += `L${points[0] + DAB_NUDGE_BOARD_PX} ${points[1]}`;
@@ -95,7 +80,7 @@ export const SprayRefineLayer = React.memo(function SprayRefineLayer({
         path += `L${points[index]} ${points[index + 1]}`;
       }
     }
-    return { d: path, strokeWidth: radius * 2 };
+    return { d: path, strokeWidth };
   });
 
   if (renderWidth <= 0 || renderHeight <= 0) return null;

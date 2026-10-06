@@ -903,7 +903,7 @@
       "cornersHollow": "That shape is too hollow. Tap the corners round the outside of the hold.",
       "refineNothingLeft": "That would erase the whole hold. Switch it off instead.",
       "refineTooDetailed": "That leaves an edge too fiddly to save. Try a bigger brush.",
-      "refineCantStore": "That leaves a shape that can't be saved as one hold. Undo and try again."
+      "refineCantStore": "That stroke would leave a shape that can't be saved as one hold, so it wasn't kept."
     },
     "empty": {
       "noPhoto": "This wall has no photo to edit yet."
@@ -948,12 +948,12 @@
       "mode": "Brush",
       "add": "Add",
       "erase": "Erase",
-      "size": "Brush size",
       "sizeSmall": "Small brush",
       "sizeMedium": "Medium brush",
       "sizeLarge": "Large brush",
       "dropped_one": "Kept the main part. {{count}} stray bit was dropped.",
-      "dropped_other": "Kept the main part. {{count}} stray bits were dropped."
+      "dropped_other": "Kept the main part. {{count}} stray bits were dropped.",
+      "atLimit": "That's as far as this hold can grow. Trace redraws it bigger."
     }
   },
   "sprayWizard": {

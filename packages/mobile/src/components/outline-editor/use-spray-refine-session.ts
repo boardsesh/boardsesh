@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import type { BrushMode, BrushRejection } from '@boardsesh/board-art-geometry/brush';
+import { strokeReachFromAnchor, type BrushMode, type BrushRejection } from '@boardsesh/board-art-geometry/brush';
+import { MAX_RING_COORDINATE } from '@boardsesh/board-art-geometry/ring';
 import { useBrushSession } from './use-brush-session';
 import {
   fromBrushFrame,
@@ -22,7 +23,7 @@ const REFINE_EDIT_KIND = 'spray-refine';
 /** Why a stroke was not kept. `no-change` is a stroke that painted nothing: not an error. */
 export type RefineRejection = Exclude<BrushRejection, 'anchor-erased'> | StrokeRejection;
 
-export type RefineStrokeOutcome =
+export type RefineStrokeOutcome = (
   | {
       ok: true;
       /**
@@ -31,7 +32,17 @@ export type RefineStrokeOutcome =
        */
       droppedPieces: number;
     }
-  | { ok: false; reason: RefineRejection };
+  | { ok: false; reason: RefineRejection }
+) & {
+  /**
+   * An Add stroke reached past the furthest a hold can grow: `MAX_RING_COORDINATE`
+   * (4) times the hold's radius when Refine opened, from its anchor, along
+   * either axis. The engine's bitmap stops there, because nothing past it is
+   * storable, so that part of the stroke was clipped. Worth saying, or the
+   * brush looks broken.
+   */
+  reachedLimit: boolean;
+};
 
 /** What the screen draws while a hold is being refined. */
 export type RefineView = {
@@ -42,6 +53,8 @@ export type RefineView = {
   strokeCount: number;
   /** The area differs from where the session started: leaving now would lose work. */
   changed: boolean;
+  /** The hold's radius in board px when Refine opened: what the brush sizes are fractions of. */
+  holdRadiusBoardPx: number;
   /** The brush frame, for the brush-size floor. */
   frame: RefineFrame;
 };
@@ -81,9 +94,12 @@ export type SprayRefineSession = {
   /** Take back the last stroke. False when there is none. */
   undo: () => boolean;
   /**
-   * End the session. The refined hold, ready for ONE `SET_OUTLINE`, or null
-   * when no stroke was kept (nothing to commit).
+   * The refined hold as it stands, ready for ONE `SET_OUTLINE`, or null when no
+   * stroke is kept (nothing to commit). Leaves the session open, so a caller
+   * that cannot commit it yet loses nothing.
    */
+  result: () => HoldFromStrokeResult | null;
+  /** {@link result}, then end the session. */
   finish: () => HoldFromStrokeResult | null;
   /** End the session and throw every stroke away. */
   cancel: () => void;
@@ -120,6 +136,7 @@ export function useSprayRefineSession(): SprayRefineSession {
             outlineBoardPx: fromBrushFrame(session.outlineBrushPx, session.frame),
             strokeCount: session.undo.length,
             changed: session.netStrokes > 0,
+            holdRadiusBoardPx: session.holdRadius / session.frame.scale,
             frame: session.frame,
           }
         : null,
@@ -149,10 +166,14 @@ export function useSprayRefineSession(): SprayRefineSession {
   const applyStroke = useCallback<SprayRefineSession['applyStroke']>(
     (strokeBoardPx, brushRadiusBoardPx, mode) => {
       const session = sessionRef.current;
-      if (!session || strokeBoardPx.length < 2) return { ok: false, reason: 'no-change' };
+      if (!session || strokeBoardPx.length < 2) return { ok: false, reason: 'no-change', reachedLimit: false };
       const { frame, holdId, holdRadius, anchorX, anchorY } = session;
       const strokeBrushPx = toBrushFrame(strokeBoardPx, frame);
       const brushRadius = brushRadiusBoardPx * frame.scale;
+      // The same reach, measured the same way, that sizes the engine's frame.
+      const reachedLimit =
+        mode === 'add' &&
+        strokeReachFromAnchor(strokeBrushPx, anchorX, anchorY, brushRadius) > MAX_RING_COORDINATE * holdRadius;
       const before = brush.snapshot();
 
       let outlineBrushPx: number[];
@@ -185,14 +206,18 @@ export function useSprayRefineSession(): SprayRefineSession {
           mode,
         });
         if (!largest.ok)
-          return { ok: false, reason: largest.reason === 'anchor-erased' ? 'nothing-left' : largest.reason };
+          return {
+            ok: false,
+            reason: largest.reason === 'anchor-erased' ? 'nothing-left' : largest.reason,
+            reachedLimit,
+          };
         outlineBrushPx = largest.outlineBrushPx;
         droppedPieces = largest.droppedPieces;
         nextAnchorX = largest.anchorX;
         nextAnchorY = largest.anchorY;
         reanchored = true;
       } else {
-        return { ok: false, reason: outcome.reason };
+        return { ok: false, reason: outcome.reason, reachedLimit };
       }
 
       const [anchorBoardX, anchorBoardY] = fromBrushFrame([nextAnchorX, nextAnchorY], frame);
@@ -203,7 +228,7 @@ export function useSprayRefineSession(): SprayRefineSession {
       if (!checked.ok) {
         // The brush session already kept this stroke's bitmap; put it back.
         if (!reanchored) brush.restore(before);
-        return { ok: false, reason: checked.reason };
+        return { ok: false, reason: checked.reason, reachedLimit };
       }
       // A moved anchor needs a bitmap framed round it: the next stroke reseeds
       // from the ring just kept.
@@ -216,7 +241,7 @@ export function useSprayRefineSession(): SprayRefineSession {
       session.anchorY = nextAnchorY;
       session.netStrokes += 1;
       publish(session);
-      return { ok: true, droppedPieces };
+      return { ok: true, droppedPieces, reachedLimit };
     },
     [brush, publish],
   );
@@ -248,21 +273,59 @@ export function useSprayRefineSession(): SprayRefineSession {
     publish(null);
   }, [brush, publish]);
 
-  const finish = useCallback(() => {
+  const result = useCallback(() => {
     const session = sessionRef.current;
-    sessionRef.current = null;
-    brush.reset();
-    publish(null);
     if (!session || session.netStrokes === 0) return null;
     const [anchorBoardX, anchorBoardY] = fromBrushFrame([session.anchorX, session.anchorY], session.frame);
     return holdFromRefinedOutline(fromBrushFrame(session.outlineBrushPx, session.frame), {
       x: anchorBoardX,
       y: anchorBoardY,
     });
-  }, [brush, publish]);
+  }, []);
+
+  const finish = useCallback(() => {
+    const committed = result();
+    cancel();
+    return committed;
+  }, [result, cancel]);
 
   return useMemo(
-    () => ({ view, start, applyStroke, undo, finish, cancel }),
-    [view, start, applyStroke, undo, finish, cancel],
+    () => ({ view, start, applyStroke, undo, result, finish, cancel }),
+    [view, start, applyStroke, undo, result, finish, cancel],
   );
+}
+
+/** What leaving Refine does, decided before anything is cleared. */
+export type RefineExitPlan =
+  /** Drop every stroke and leave: Cancel, or the hold is gone. */
+  | { kind: 'discard' }
+  /** Keep, with nothing kept: just leave. */
+  | { kind: 'unchanged' }
+  /** One `SET_OUTLINE` with this geometry, then leave. */
+  | { kind: 'commit'; hold: HoldGeometry }
+  /** Stay in Refine with every stroke intact, and say why. */
+  | { kind: 'stay'; reason: 'locked' | 'cap' }
+  | { kind: 'stay'; reason: 'refused'; rejection: StrokeRejection };
+
+/**
+ * Leaving Refine, as a pure decision, so the screen checks everything that can
+ * stop a commit BEFORE it ends the session: a refusal, a locked wall or the hold
+ * cap leaves the climber in Refine with their strokes, never with them gone.
+ */
+export function planRefineExit(params: {
+  keep: boolean;
+  /** `SprayRefineSession.result()`: null when no stroke is kept. */
+  result: HoldFromStrokeResult | null;
+  holdExists: boolean;
+  canEdit: boolean;
+  /** Committing would switch the hold ON past the wall's hold cap. */
+  overCap: boolean;
+}): RefineExitPlan {
+  const { keep, result, holdExists, canEdit, overCap } = params;
+  if (!keep || !holdExists) return { kind: 'discard' };
+  if (!result) return { kind: 'unchanged' };
+  if (!result.ok) return { kind: 'stay', reason: 'refused', rejection: result.reason };
+  if (!canEdit) return { kind: 'stay', reason: 'locked' };
+  if (overCap) return { kind: 'stay', reason: 'cap' };
+  return { kind: 'commit', hold: result.hold };
 }

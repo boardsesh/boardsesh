@@ -2,7 +2,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { isValidOutlineRing, pointInRing } from '@boardsesh/board-art-geometry/ring';
-import { MAX_REFINE_UNDO, useSprayRefineSession } from '../use-spray-refine-session';
+import { MAX_REFINE_UNDO, planRefineExit, useSprayRefineSession } from '../use-spray-refine-session';
 import { polygonCentroidAndArea, toRingPoints } from '../spray-hold-tools';
 
 /** A plain circle on a 2048 px photo, about the size the editor's median gives. */
@@ -32,7 +32,11 @@ describe('useSprayRefineSession', () => {
     const startArea = areaOf(hook.result.current.view?.outlineBoardPx ?? []);
     act(() => {
       // A dab hanging off the right edge.
-      expect(hook.result.current.applyStroke([640, 400, 652, 400], 8, 'add')).toEqual({ ok: true, droppedPieces: 0 });
+      expect(hook.result.current.applyStroke([640, 400, 652, 400], 8, 'add')).toEqual({
+        ok: true,
+        droppedPieces: 0,
+        reachedLimit: false,
+      });
     });
     const grown = hook.result.current.view?.outlineBoardPx ?? [];
     expect(areaOf(grown)).toBeGreaterThan(startArea);
@@ -90,6 +94,7 @@ describe('useSprayRefineSession', () => {
       expect(hook.result.current.applyStroke([600, 400, 601, 400], 120, 'erase')).toEqual({
         ok: false,
         reason: 'nothing-left',
+        reachedLimit: false,
       });
     });
     expect(hook.result.current.view?.outlineBoardPx).toEqual(before);
@@ -106,6 +111,7 @@ describe('useSprayRefineSession', () => {
       expect(hook.result.current.applyStroke([665, 370, 665, 430], 6, 'erase')).toEqual({
         ok: true,
         droppedPieces: 1,
+        reachedLimit: false,
       });
     });
     const kept = hook.result.current.view?.outlineBoardPx ?? [];
@@ -148,6 +154,7 @@ describe('useSprayRefineSession', () => {
       expect(edited.result.current.applyStroke([640, 400, 641, 400], 4, 'add')).toEqual({
         ok: false,
         reason: 'no-change',
+        reachedLimit: false,
       });
       expect(edited.result.current.undo()).toBe(true);
     });
@@ -253,6 +260,36 @@ describe('useSprayRefineSession', () => {
     expect(committed).not.toBeNull();
   });
 
+  it('says when Add reaches past the furthest a hold can grow', () => {
+    const hook = openSession();
+    // 4 radii of a 40 px hold is 160 px from the centre; this dab reaches 175.
+    let outcome: ReturnType<typeof hook.result.current.applyStroke> | null = null;
+    act(() => {
+      outcome = hook.result.current.applyStroke([630, 400, 770, 400], 6, 'add');
+    });
+    expect(outcome).toMatchObject({ ok: true, reachedLimit: true });
+    // Erasing out there clips nothing that matters, so it says nothing.
+    act(() => {
+      outcome = hook.result.current.applyStroke([780, 400, 781, 400], 6, 'erase');
+    });
+    expect(outcome).toMatchObject({ reachedLimit: false });
+  });
+
+  it('result() reads the hold without ending the session', () => {
+    const hook = openSession();
+    act(() => {
+      hook.result.current.applyStroke([640, 400, 652, 400], 8, 'add');
+    });
+    const peeked = hook.result.current.result();
+    expect(peeked?.ok).toBe(true);
+    expect(hook.result.current.view?.changed).toBe(true);
+    let finished: ReturnType<typeof hook.result.current.finish> = null;
+    act(() => {
+      finished = hook.result.current.finish();
+    });
+    expect(finished).toEqual(peeked);
+  });
+
   it('cancel throws the strokes away', () => {
     const hook = openSession();
     act(() => {
@@ -263,5 +300,33 @@ describe('useSprayRefineSession', () => {
     act(() => {
       expect(hook.result.current.finish()).toBeNull();
     });
+  });
+});
+
+describe('planRefineExit', () => {
+  const kept = { ok: true as const, hold: { cx: 1, cy: 2, r: 3, outline: [1, 0, 0, 1, -1, 0] } };
+  const base = { keep: true, result: kept, holdExists: true, canEdit: true, overCap: false };
+
+  it('commits a kept area', () => {
+    expect(planRefineExit(base)).toEqual({ kind: 'commit', hold: kept.hold });
+  });
+
+  it('leaves with nothing to commit when no stroke is kept', () => {
+    expect(planRefineExit({ ...base, result: null })).toEqual({ kind: 'unchanged' });
+  });
+
+  it('discards on Cancel, or when the hold is gone', () => {
+    expect(planRefineExit({ ...base, keep: false })).toEqual({ kind: 'discard' });
+    expect(planRefineExit({ ...base, holdExists: false })).toEqual({ kind: 'discard' });
+  });
+
+  it('stays in Refine, strokes intact, whenever a commit cannot happen', () => {
+    expect(planRefineExit({ ...base, result: { ok: false, reason: 'out-of-bounds' } })).toEqual({
+      kind: 'stay',
+      reason: 'refused',
+      rejection: 'out-of-bounds',
+    });
+    expect(planRefineExit({ ...base, canEdit: false })).toEqual({ kind: 'stay', reason: 'locked' });
+    expect(planRefineExit({ ...base, overCap: true })).toEqual({ kind: 'stay', reason: 'cap' });
   });
 });

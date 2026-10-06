@@ -903,7 +903,7 @@
       "cornersHollow": "Cette forme est trop creuse. Touche les coins le long du bord extérieur de la prise.",
       "refineNothingLeft": "Ça effacerait toute la prise. Désactive-la plutôt.",
       "refineTooDetailed": "Ce bord est trop détaillé pour être enregistré. Essaie un pinceau plus gros.",
-      "refineCantStore": "Cette forme ne peut pas être enregistrée comme une seule prise. Annule et réessaie."
+      "refineCantStore": "Ce tracé laisserait une forme impossible à enregistrer comme une seule prise, il n'a donc pas été appliqué."
     },
     "empty": {
       "noPhoto": "Ce mur n'a pas encore de photo à modifier."
@@ -948,12 +948,12 @@
       "mode": "Pinceau",
       "add": "Ajouter",
       "erase": "Effacer",
-      "size": "Taille du pinceau",
       "sizeSmall": "Petit pinceau",
       "sizeMedium": "Pinceau moyen",
       "sizeLarge": "Gros pinceau",
       "dropped_one": "La partie principale est gardée. {{count}} morceau isolé a été retiré.",
-      "dropped_other": "La partie principale est gardée. {{count}} morceaux isolés ont été retirés."
+      "dropped_other": "La partie principale est gardée. {{count}} morceaux isolés ont été retirés.",
+      "atLimit": "La prise ne peut pas grandir davantage. Tracer permet de la redessiner plus grande."
     }
   },
   "sprayWizard": {

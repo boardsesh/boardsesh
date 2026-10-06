@@ -903,7 +903,7 @@
       "cornersHollow": "Esa forma es demasiado hueca. Toca las esquinas por el borde exterior de la presa.",
       "refineNothingLeft": "Eso borraría la presa entera. Mejor desactívala.",
       "refineTooDetailed": "Ese borde queda demasiado detallado para guardarlo. Prueba con un pincel más grande.",
-      "refineCantStore": "Esa forma no se puede guardar como una sola presa. Deshaz e inténtalo de nuevo."
+      "refineCantStore": "Ese trazo dejaría una forma que no se puede guardar como una sola presa, así que no se ha aplicado."
     },
     "empty": {
       "noPhoto": "Este muro todavía no tiene foto que editar."
@@ -948,12 +948,12 @@
       "mode": "Pincel",
       "add": "Añadir",
       "erase": "Borrar",
-      "size": "Tamaño del pincel",
       "sizeSmall": "Pincel pequeño",
       "sizeMedium": "Pincel mediano",
       "sizeLarge": "Pincel grande",
       "dropped_one": "Se conservó la parte principal. Se descartó {{count}} trozo suelto.",
-      "dropped_other": "Se conservó la parte principal. Se descartaron {{count}} trozos sueltos."
+      "dropped_other": "Se conservó la parte principal. Se descartaron {{count}} trozos sueltos.",
+      "atLimit": "La presa no puede crecer más por ahí. Con Trazar puedes redibujarla más grande."
     }
   },
   "sprayWizard": {

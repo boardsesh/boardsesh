@@ -816,7 +816,9 @@ photo's own pixels, where holds run from about 20 px to several hundred. So the 
 maps each hold into a frame centred on it with its radius at 32 units, which holds the
 precision at 5% of the hold's radius (what Trace keeps on a typical 40 px spray hold) and
 the bitmap at most 512 cells a side whatever the photo's resolution; 32 rather than 64
-because one stroke costs 17 ms in Node at 32 units and 70 ms at 64, and Hermes is slower.
+because a one-shot stroke costs 17 ms in Node at 32 units and 70 ms at 64, and Hermes is
+slower. The brush sizes are fractions of the hold's radius (0.15, 0.3, 0.6), so a session
+normally stays near 350 cells a side; the per-lift costs are in `docs/spray-walls.md`.
 The adapter also owns the two spray rules the engine leaves to its caller: an erase through
 the hold's middle (the engine's `anchor-erased`) keeps the largest piece and moves the
 anchor onto it, built from the engine's own primitives; and every kept stroke must still be
