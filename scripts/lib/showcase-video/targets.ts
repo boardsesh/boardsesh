@@ -88,7 +88,7 @@ export type ShowcaseStageVariant = Readonly<{
 /** What a rendition writes. */
 export type ShowcaseDeliverable =
   | Readonly<{
-      /** The homepage hero: lite VP9 + H.264 encodes rotated to open on the poster frame, and that frame as WebP. */
+      /** The homepage hero: lite VP9 + H.264 encodes opening on the poster frame, and that frame as WebP. */
       kind: 'web-lite';
       webm: string;
       mp4: string;
@@ -228,7 +228,7 @@ const SHORT_OUTRO: ShowcaseScenePlan = { id: 'outro', frames: 129 };
 export const SHOWCASE_TARGETS: Record<ShowcaseTargetName, ShowcaseTarget> = {
   homepage: {
     name: 'homepage',
-    summary: 'The homepage hero: lite 9:16 web encodes opening on the light scene, and its poster',
+    summary: 'The homepage hero: lite 9:16 web encodes opening on the boards scene, and its poster',
     layout: 'motion',
     scenes: SHOWCASE_FULL_PLAN,
     clips: [],
@@ -259,7 +259,7 @@ export const SHOWCASE_TARGETS: Record<ShowcaseTargetName, ShowcaseTarget> = {
   },
   social: {
     name: 'social',
-    summary: 'Full-quality 16:9 and 9:16 masters for social posts, frame 0 the hook',
+    summary: 'Full-quality 16:9 and 9:16 masters for social posts, opening on the boards scene',
     layout: 'motion',
     scenes: SHOWCASE_FULL_PLAN,
     clips: [],
@@ -301,14 +301,7 @@ export const SHOWCASE_TARGETS: Record<ShowcaseTargetName, ShowcaseTarget> = {
     name: 'reel',
     summary: "About 30 s of 9:16 for Instagram Reels and app-install ads, text inside Meta's safe zone",
     layout: 'motion',
-    scenes: [
-      { id: 'hook' },
-      { id: 'light', frames: 150 },
-      { id: 'boards', frames: 138 },
-      { id: 'crew' },
-      { id: 'lock-screen', frames: 150 },
-      SHORT_OUTRO,
-    ],
+    scenes: [{ id: 'boards' }, { id: 'spray' }, { id: 'crew' }, { id: 'lock-screen', frames: 150 }, SHORT_OUTRO],
     clips: [],
     minSeconds: 20,
     maxSeconds: 32,
@@ -340,8 +333,8 @@ export const SHOWCASE_TARGETS: Record<ShowcaseTargetName, ShowcaseTarget> = {
     // the island clip, whose top is the Dynamic Island: there the bar sits
     // over the empty wallpaper.
     clips: [
-      // Ends on the first swipe's climb, before the second swipe starts.
-      { take: 'light', caption: 'light', captionTop: 14, segments: [{ mark: 'bulb-tapped', from: -0.3 }], frames: 150 },
+      // The first climb on the wall's photo, then the swipe to the next one.
+      { take: 'spray', caption: 'spray', captionTop: 14, segments: [{ mark: 'next-1', from: -1.6 }], frames: 150 },
       {
         take: 'wall',
         caption: 'wall',
@@ -407,15 +400,7 @@ export const SHOWCASE_TARGETS: Record<ShowcaseTargetName, ShowcaseTarget> = {
     name: 'play-promo',
     summary: 'A 16:9 cut for the YouTube video Google Play links to',
     layout: 'motion',
-    scenes: [
-      { id: 'hook' },
-      { id: 'light' },
-      { id: 'boards' },
-      { id: 'crew' },
-      { id: 'lock-screen' },
-      { id: 'log' },
-      SHORT_OUTRO,
-    ],
+    scenes: [{ id: 'boards' }, { id: 'spray' }, { id: 'crew' }, { id: 'lock-screen' }, { id: 'log' }, SHORT_OUTRO],
     clips: [],
     minSeconds: 30,
     maxSeconds: 45,

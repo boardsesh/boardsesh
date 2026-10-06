@@ -69,9 +69,9 @@ describe('where a render reads its recording', () => {
   it('reads iOS from work/<kind>/ and Android from work/android/<kind>/', () => {
     const ios = renderWorkDirs('ios');
     const android = renderWorkDirs('android');
-    expect(footageTakeDir('light', ios)).toBe(`${work}/footage/light`);
-    expect(anchorsFilePath('light', ios)).toBe(`${work}/anchors/light.json`);
-    expect(marksFilePath('light', ios)).toBe(`${work}/marks/light.json`);
+    expect(footageTakeDir('spray', ios)).toBe(`${work}/footage/spray`);
+    expect(anchorsFilePath('spray', ios)).toBe(`${work}/anchors/spray.json`);
+    expect(marksFilePath('spray', ios)).toBe(`${work}/marks/spray.json`);
     expect(footageTakeDir('lock-screen', android)).toBe(`${work}/android/footage/lock-screen`);
     expect(anchorsFilePath('lock-screen', android)).toBe(`${work}/android/anchors/lock-screen.json`);
     expect(marksFilePath('lock-screen', android)).toBe(`${work}/android/marks/lock-screen.json`);
@@ -85,9 +85,9 @@ describe('where a render reads its recording', () => {
 
   it('reads a --work-dir instead, for either platform', () => {
     const scratch = renderWorkDirs('android', '/scratch/try');
-    expect(footageTakeDir('light', scratch)).toBe('/scratch/try/footage/light');
-    expect(anchorsFilePath('light', scratch)).toBe('/scratch/try/anchors/light.json');
-    expect(marksFilePath('light', scratch)).toBe('/scratch/try/marks/light.json');
+    expect(footageTakeDir('spray', scratch)).toBe('/scratch/try/footage/spray');
+    expect(anchorsFilePath('spray', scratch)).toBe('/scratch/try/anchors/spray.json');
+    expect(marksFilePath('spray', scratch)).toBe('/scratch/try/marks/spray.json');
   });
 });
 
@@ -160,7 +160,7 @@ describe('the Android target registry', () => {
     const [hero] = SHOWCASE_ANDROID_TARGETS['homepage-android'].renditions;
     expect(hero.deliverable).toMatchObject({
       kind: 'web-lite',
-      posterFrame: 142,
+      posterFrame: 0,
       size: { width: 720, height: 1280 },
       maxWebmBytes: 1_750_000,
       maxMp4Bytes: 1_900_000,
@@ -348,9 +348,12 @@ describe('Android copy', () => {
   });
 });
 
-/** The first Android recording's marks and frame counts (work/android/marks, footage). */
+/**
+ * The first Android recording's marks and frame counts (work/android/marks,
+ * footage). It predates the spray take, so the spray scene is budgeted here
+ * without an edit; add its marks after the first Android spray recording.
+ */
 const ANDROID_MARKS: Partial<Record<ShowcaseTakeId, Record<string, number>>> = {
-  light: { 'bulb-tapped': 3.783, 'next-1': 7.444, 'next-2': 11.983 },
   wall: { 'sheet-open': 4.122, 'history-shown': 8.228 },
   crew: { 'invite-closed': 4.167, 'queue-open': 12.292, 'row-landed': 14.819, 'crew-added': 15.886 },
   workouts: { 'pyramid-picked': 2.996, 'rest-armed': 6.669, 'rest-pill': 10.782, started: 17.187 },
@@ -358,7 +361,6 @@ const ANDROID_MARKS: Partial<Record<ShowcaseTakeId, Record<string, number>>> = {
   log: { scrolled: 4.523, 'filter-kilter': 9.007, 'filter-tension': 15.186 },
 };
 const ANDROID_FRAMES: Partial<Record<ShowcaseTakeId, number>> = {
-  light: 514,
   wall: 409,
   crew: 618,
   workouts: 702,

@@ -29,6 +29,7 @@ export type ShowcaseBoardKind =
   | 'woods'
   | 'decoy'
   | 'grasshopper'
+  | 'spray'
   | 'touchstone'
   | 'soill';
 
@@ -43,6 +44,7 @@ export const SHOWCASE_BOARD_SLOTS: readonly ShowcaseBoardKind[] = [
   'woods',
   'decoy',
   'grasshopper',
+  'spray',
 ];
 
 /**
@@ -58,6 +60,9 @@ export const SHOWCASE_BOARD_CONFIG_LINKS: Readonly<Partial<Record<ShowcaseBoardK
 };
 
 export type ShowcaseBackend = 'prod' | 'local';
+
+/** How long a take's last prime link gets to draw before recording starts, unless the take says otherwise (ms). */
+export const SHOWCASE_PRIME_SETTLE_MS = 3000;
 
 /** A `setupFlows` entry that relaunches the app instead of running a flow. */
 export const SHOWCASE_RELAUNCH_STEP = '@relaunch';
@@ -84,6 +89,11 @@ export type ShowcaseTake = Readonly<{
    * load stay out of the footage.
    */
   primeLinks: readonly string[];
+  /**
+   * How long the last prime link gets to draw before recording starts (ms).
+   * A spray wall's photo is fetched, so its takes wait longer than the default.
+   */
+  primeSettleMs: number;
   /** Flow file under `packages/mobile/.maestro/showcase/`, run while recording. */
   flow: string;
   /**
@@ -191,6 +201,7 @@ type TakeInput = Omit<
   | 'anchorMarks'
   | 'deviceSetupFlows'
   | 'platforms'
+  | 'primeSettleMs'
 > &
   Partial<
     Pick<
@@ -204,6 +215,7 @@ type TakeInput = Omit<
       | 'anchorMarks'
       | 'deviceSetupFlows'
       | 'platforms'
+      | 'primeSettleMs'
     >
   > & { extraAnchors?: readonly ShowcaseAnchorName[] };
 
@@ -217,6 +229,7 @@ function take({ extraAnchors, ...entry }: TakeInput): ShowcaseTake {
     anchorMarks: {},
     deviceSetupFlows: [],
     platforms: {},
+    primeSettleMs: SHOWCASE_PRIME_SETTLE_MS,
     ...entry,
     privateSession,
     teardownFlows: entry.teardownFlows ?? (privateSession ? ['session-end.yaml'] : []),
@@ -224,6 +237,10 @@ function take({ extraAnchors, ...entry }: TakeInput): ShowcaseTake {
     minSeconds: requiredTakeSeconds(entry.id),
   };
 }
+
+/** The spray wall's slot in `SHOWCASE_BOARD_SLOTS`, and how long its photo gets to draw. */
+const SPRAY_SLOT = SHOWCASE_BOARD_SLOTS.indexOf('spray');
+const SPRAY_PRIME_SETTLE_MS = 8000;
 
 const NO_LOCAL_WALL = 'the dev DB has no wall of this type; record it against prod';
 
@@ -242,6 +259,7 @@ const boardTake = (id: ShowcaseTakeId, kind: ShowcaseBoardKind): ShowcaseTake =>
     trimSeconds: 6,
     board: { slot: slot === -1 ? null : slot, kind },
     unavailable: slot >= 3 ? { local: NO_LOCAL_WALL } : {},
+    ...(kind === 'spray' ? { primeSettleMs: SPRAY_PRIME_SETTLE_MS } : {}),
   });
 };
 
@@ -254,22 +272,25 @@ const sessionPrime = (slot: number): readonly string[] => [
 ];
 
 export const SHOWCASE_TAKES: readonly ShowcaseTake[] = [
-  take({
-    id: 'light',
-    summary: 'Open the first climb, tap the bulb (fake board: "On the wall"), swipe to the next climb twice.',
-    primeLinks: ['home', 'climbs?screenshotOpenFirst=1&screenshotBoardIndex=0'],
-    flow: 'light.yaml',
-    trimSeconds: 6,
-    board: { slot: 0, kind: 'kilter' },
-  }),
   boardTake('boards-kilter', 'kilter'),
   boardTake('boards-tension', 'tension'),
+  boardTake('boards-spray', 'spray'),
   boardTake('boards-moonboard', 'moonboard'),
   boardTake('boards-woods', 'woods'),
   boardTake('boards-decoy', 'decoy'),
   boardTake('boards-touchstone', 'touchstone'),
   boardTake('boards-grasshopper', 'grasshopper'),
   boardTake('boards-soill', 'soill'),
+  take({
+    id: 'spray',
+    summary: "Open the first climb on the spray wall (holds on the wall's own photo), swipe to the next climb twice.",
+    primeLinks: ['home', `climbs?screenshotOpenFirst=1&screenshotBoardIndex=${SPRAY_SLOT}`],
+    primeSettleMs: SPRAY_PRIME_SETTLE_MS,
+    flow: 'spray.yaml',
+    trimSeconds: 6,
+    board: { slot: SPRAY_SLOT, kind: 'spray' },
+    unavailable: { local: NO_LOCAL_WALL },
+  }),
   take({
     id: 'wall',
     summary: 'Climbs tab: tap the board button; the sheet shows what is on the wall now and what was lit before.',

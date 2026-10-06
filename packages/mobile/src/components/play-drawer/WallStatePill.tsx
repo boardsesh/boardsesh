@@ -32,7 +32,6 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { BoardDriverAvatar } from '../board-presence/BoardDriverAvatar';
 import { useWallDriver } from './use-wall-driver';
-import { useShowcaseAnchor } from '../../lib/showcase-anchor';
 import type { WallPillState } from './wall-state';
 
 /** The states that actually render — `null` means the host omits the pill. */
@@ -71,7 +70,6 @@ function WallStatePillImpl({ state, onPress, reserveOnly = false }: WallStatePil
   // Read unconditionally (hook rules); only the onWall branch renders the face,
   // and `useBoardDriver` degrades to null outside a board-presence provider.
   const { driver, name: driverName, litAgo } = useWallDriver();
-  const pillAnchor = useShowcaseAnchor('wall-pill', !reserveOnly);
 
   const driverLabel = driverName
     ? t('mobile.boardPresence.drivenByA11y', { name: driverName })
@@ -146,7 +144,6 @@ function WallStatePillImpl({ state, onPress, reserveOnly = false }: WallStatePil
         // which Reanimated can't reliably intercept with an `exiting`.
         key={state}
         entering={reduceMotion || reserveOnly ? undefined : FadeIn.duration(180)}
-        {...pillAnchor}
         style={[styles.pill, state === 'onWall' ? styles.pillAvatar : styles.pillLabelled, containerStyle]}
       >
         {state === 'onWall' ? (

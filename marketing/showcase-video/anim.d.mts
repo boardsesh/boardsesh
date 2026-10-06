@@ -20,6 +20,7 @@ export function springAt(
   fps: number,
   options?: { zeta?: number; period?: number },
 ): number;
+export function closerPose<T extends Pose>(slot: T, frame: number, start: number, lastFrame: number, drop: number): T;
 export function hexToRgb(hex: string): number[];
 export function rgbToOklab(rgb: number[]): number[];
 export function oklabToRgb(lab: number[]): number[];
@@ -33,7 +34,6 @@ export function projectPoint(
 export function anchorAt<T extends Sample>(samples: readonly T[] | null | undefined, t: number): T | null;
 export function catmullRomPolyline(points: readonly Point[], samplesPerSegment?: number): Curve;
 export function pointAtLength(curve: Curve, length: number): Point;
-export function lengthNearest(curve: Curve, point: Point): number;
 export function polylinePath(points: readonly Point[]): string;
 export type StageBackground = { from: 'dark' | 'light'; to: 'dark' | 'light'; amount: number };
 export function backgroundAt(

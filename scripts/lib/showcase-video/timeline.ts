@@ -6,22 +6,12 @@ import { SHOWCASE_FPS, type ShowcaseCalloutName, type ShowcaseTakeId } from './c
  * scenes are as long as their callouts' reading time needs (render.ts
  * `readingBudgetReport`); the rest keep the rhythm.
  *
- * Backgrounds alternate from the boards scene on, so two busy layouts never
- * meet on the same background. The two dark→dark joins are deliberate: hook →
- * light is a match cut (the motif's rings land on the footage), and log →
- * outro hands a phone scene to the centred end card, which then loops into the
- * hook.
+ * Backgrounds alternate from the first scene on (`resolveTimeline`), so two
+ * busy layouts never meet on the same background. The one dark→dark join is
+ * deliberate: log → outro hands a phone scene to the centred end card, which
+ * then loops back into the boards scene, also dark.
  */
-export type ShowcaseSceneId =
-  | 'hook'
-  | 'light'
-  | 'boards'
-  | 'wall'
-  | 'crew'
-  | 'workouts'
-  | 'lock-screen'
-  | 'log'
-  | 'outro';
+export type ShowcaseSceneId = 'boards' | 'spray' | 'wall' | 'crew' | 'workouts' | 'lock-screen' | 'log' | 'outro';
 
 export type ShowcaseScene = Readonly<{
   id: ShowcaseSceneId;
@@ -30,7 +20,8 @@ export type ShowcaseScene = Readonly<{
   background: 'dark' | 'light';
   /**
    * Takes whose footage the scene shows. For the boards pile-up this is the
-   * arrival order: the first three rise together, the rest crowd in after.
+   * arrival order: the first three stand in the opening trio, the rest crowd
+   * in after.
    */
   takes: readonly ShowcaseTakeId[];
   /** Callouts, in climb-role order (start, hand, finish). Either background. */
@@ -38,23 +29,15 @@ export type ShowcaseScene = Readonly<{
 }>;
 
 export const SHOWCASE_SCENES: readonly ShowcaseScene[] = [
-  { id: 'hook', startFrame: 0, endFrame: 72, background: 'dark', takes: [], callouts: [] },
-  {
-    id: 'light',
-    startFrame: 72,
-    endFrame: 252,
-    background: 'dark',
-    takes: ['light'],
-    callouts: ['wall-pill', 'board-surface'],
-  },
   {
     id: 'boards',
-    startFrame: 252,
-    endFrame: 396,
-    background: 'light',
+    startFrame: 0,
+    endFrame: 156,
+    background: 'dark',
     takes: [
       'boards-kilter',
       'boards-tension',
+      'boards-spray',
       'boards-moonboard',
       'boards-woods',
       'boards-decoy',
@@ -64,47 +47,49 @@ export const SHOWCASE_SCENES: readonly ShowcaseScene[] = [
     ],
     callouts: [],
   },
+  // One phone on a spray wall: the holds drawn on the owner's own photo.
+  { id: 'spray', startFrame: 156, endFrame: 336, background: 'light', takes: ['spray'], callouts: ['board-surface'] },
   {
     id: 'wall',
-    startFrame: 396,
-    endFrame: 666,
+    startFrame: 336,
+    endFrame: 606,
     background: 'dark',
     takes: ['wall'],
     callouts: ['board-history-button', 'now-on-wall', 'wall-history'],
   },
   {
     id: 'crew',
-    startFrame: 666,
-    endFrame: 948,
+    startFrame: 606,
+    endFrame: 888,
     background: 'light',
     takes: ['crew'],
     callouts: ['invite-qr', 'queue-row-avatar', 'play-next'],
   },
-  { id: 'workouts', startFrame: 948, endFrame: 1116, background: 'dark', takes: ['workouts'], callouts: [] },
+  { id: 'workouts', startFrame: 888, endFrame: 1056, background: 'dark', takes: ['workouts'], callouts: [] },
   // The Dynamic Island scene. Id and take keep their lock-screen names so the
   // recorder and the anchors contract stay put.
   {
     id: 'lock-screen',
-    startFrame: 1116,
-    endFrame: 1296,
+    startFrame: 1056,
+    endFrame: 1236,
     background: 'light',
     takes: ['lock-screen'],
     callouts: ['lock-next', 'lock-relight', 'lock-mirror'],
   },
   {
     id: 'log',
-    startFrame: 1296,
-    endFrame: 1512,
+    startFrame: 1236,
+    endFrame: 1452,
     background: 'dark',
     takes: ['log'],
     callouts: ['profile-board-filter', 'activity-calendar'],
   },
-  { id: 'outro', startFrame: 1512, endFrame: 1704, background: 'dark', takes: [], callouts: [] },
+  { id: 'outro', startFrame: 1452, endFrame: 1644, background: 'dark', takes: [], callouts: [] },
 ];
 
 export const SHOWCASE_TOTAL_FRAMES = SHOWCASE_SCENES[SHOWCASE_SCENES.length - 1].endFrame;
 
-/** Frame 0 is the settled hook: the poster, baked in as the first frame. */
+/** Frame 0 is the settled boards trio: the poster, baked in as the first frame. */
 export const SHOWCASE_POSTER_FRAME = 0;
 
 /**
@@ -154,10 +139,10 @@ export const planFrames = (plan: readonly ShowcaseScenePlan[]): number =>
 /**
  * The cut for the footage at hand: the plan's scenes in its order and lengths,
  * less any skippable scene whose takes are missing; the scenes after it move
- * up, and backgrounds are re-alternated from the third scene on (hook and
- * light stay dark for the match cut, the last scene keeps its own so the outro
- * stays dark for the loop), so no two busy scenes share a background. With
- * every take present and the full plan this is `SHOWCASE_SCENES` exactly.
+ * up, and backgrounds alternate from the first scene (dark, light, dark, …;
+ * the last scene keeps its own, so the outro stays dark for the loop), so no
+ * two busy scenes share a background. With every take present and the full
+ * plan this is `SHOWCASE_SCENES` exactly.
  */
 export function resolveTimeline(
   available: ReadonlySet<ShowcaseTakeId>,
@@ -173,8 +158,7 @@ export function resolveTimeline(
   let frame = 0;
   const scenes = kept.map(({ scene, frames }, index): ShowcaseScene => {
     const length = frames ?? scene.endFrame - scene.startFrame;
-    const background =
-      index < 2 || index === kept.length - 1 ? scene.background : (index - 2) % 2 === 0 ? 'light' : 'dark';
+    const background = index === kept.length - 1 ? scene.background : index % 2 === 0 ? 'dark' : 'light';
     const moved = { ...scene, startFrame: frame, endFrame: frame + length, background };
     frame += length;
     return moved;

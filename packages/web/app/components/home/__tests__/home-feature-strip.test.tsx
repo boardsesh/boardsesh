@@ -6,7 +6,7 @@ import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 /**
  * The strip is a server component, so what matters is the FIRST server render:
- * three columns in the HTML a crawler with no JavaScript receives. Rendering
+ * four columns in the HTML a crawler with no JavaScript receives. Rendering
  * through `renderToStaticMarkup` is that pass.
  *
  * The strip used to carry its own store CTA and this suite asserted it. The page
@@ -74,15 +74,17 @@ describe('HomeFeatureStrip', () => {
     expect(await renderStrip()).not.toContain('data-testid="preview-switch"');
   });
 
-  it('renders three columns, each with a heading and a line of copy', async () => {
+  it('renders four columns, each with a heading and a line of copy', async () => {
     const html = await renderStrip();
 
-    expect(html.match(/data-testid="home-feature-column"/g)).toHaveLength(3);
-    expect(html.match(/<h3/g)).toHaveLength(3);
+    expect(html.match(/data-testid="home-feature-column"/g)).toHaveLength(4);
+    expect(html.match(/<h3/g)).toHaveLength(4);
     expect(html).toContain(resolveMarketingKey('home.features.queue.title'));
     expect(html).toContain(resolveMarketingKey('home.features.wall.title'));
     expect(html).toContain(resolveMarketingKey('home.features.profile.title'));
     expect(html).toContain(resolveMarketingKey('home.features.profile.body'));
+    expect(html).toContain(resolveMarketingKey('home.features.spray.title'));
+    expect(html).toContain(resolveMarketingKey('home.features.spray.body'));
   });
 
   it('renders the section heading as the only h2', async () => {
@@ -93,19 +95,21 @@ describe('HomeFeatureStrip', () => {
     expect(html).toContain(resolveMarketingKey('home.features.lead'));
   });
 
-  it('shows a real app capture for all three features', async () => {
+  it('shows a real app capture for all four features', async () => {
     const html = await renderStrip();
 
-    expect(html.match(/<img/g)).toHaveLength(3);
+    expect(html.match(/<img/g)).toHaveLength(4);
     expect(html).toContain('/images/app/android/queue.webp');
     expect(html).toContain('/images/app/android/wall-status.webp');
     expect(html).toContain('/images/app/android/profile-overview.webp');
+    expect(html).toContain('/images/app/android/spray-wall.webp');
     // Both captures carry alt text from the catalog. The comparison is on a
     // fragment: React escapes the apostrophes in the full string, so matching
     // the raw catalog value would be a test of HTML escaping, not of alt text.
     expect(html).toContain(resolveMarketingKey('home.features.wall.shotAlt'));
     expect(html).toContain(resolveMarketingKey('home.features.profile.shotAlt'));
     expect(html).toContain(resolveMarketingKey('home.features.queue.shotAlt'));
+    expect(html).toContain(resolveMarketingKey('home.features.spray.shotAlt'));
   });
 
   it('presents the benefit before each corresponding screenshot', async () => {
@@ -121,6 +125,13 @@ describe('HomeFeatureStrip', () => {
     );
     expect(featureMarkup.indexOf(resolveMarketingKey('home.features.profile.title'))).toBeLessThan(
       featureMarkup.indexOf('/images/app/android/profile-overview.webp'),
+    );
+    expect(featureMarkup.indexOf(resolveMarketingKey('home.features.spray.title'))).toBeLessThan(
+      featureMarkup.indexOf('/images/app/android/spray-wall.webp'),
+    );
+    // Spray wall is the closing card.
+    expect(featureMarkup.indexOf('/images/app/android/profile-overview.webp')).toBeLessThan(
+      featureMarkup.indexOf(resolveMarketingKey('home.features.spray.title')),
     );
   });
 });

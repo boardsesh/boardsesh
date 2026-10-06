@@ -33,6 +33,12 @@ export default async function HomeFeatureStrip() {
       body: t('home.features.profile.body'),
       alt: t('home.features.profile.shotAlt'),
     },
+    {
+      id: 'spray-wall',
+      title: t('home.features.spray.title'),
+      body: t('home.features.spray.body'),
+      alt: t('home.features.spray.shotAlt'),
+    },
   ];
 
   return (

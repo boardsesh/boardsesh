@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   anchorAt as stageAnchorAt,
   backgroundAt,
+  closerPose,
   footageAt as stageFootageAt,
   orthoPath,
   mixOklab,
@@ -54,14 +55,11 @@ import {
   buildWebMp4PassArgs,
   buildWebmPassArgs,
   calloutSlots,
-  classifyGlowPixel,
   contrastRatio,
   countWords,
-  detectLitHolds,
   footageFrameIndex,
   layoutPortraitPills,
   layoutSceneCallouts,
-  orderHoldsForClimb,
   parseHeadline,
   parseRenderArgs,
   pileupArrivalFrames,
@@ -72,6 +70,7 @@ import {
   pickPlaceholderClimbs,
   planBoards,
   planLeaders,
+  SHOWCASE_PILEUP,
   prepareAnchorsFile,
   projectPhonePoint,
   readingBudgetReport,
@@ -103,9 +102,14 @@ import {
 } from '../lib/showcase-video/timeline';
 import type { ShowcaseTakeId } from '../lib/showcase-video/contract';
 
-/** The marks of the recording the edit was tuned on (work/marks/*.json), seconds. */
+/**
+ * The marks of the recording the edit was tuned on (work/marks/*.json), seconds.
+ * `spray` has no recording yet: its marks and length are what its flow should
+ * give (the retired light take's rhythm, less the bulb tap). Replace them with
+ * the real ones after the first spray recording.
+ */
 const RECORDED_MARKS: Partial<Record<ShowcaseTakeId, Record<string, number>>> = {
-  light: { 'bulb-tapped': 2.655, 'next-1': 5.576, 'next-2': 8.463 },
+  spray: { 'next-1': 2.7, 'next-2': 5.6 },
   wall: { 'sheet-open': 5.438, 'history-shown': 10.242 },
   crew: {
     'invite-closed': 4.591,
@@ -119,7 +123,7 @@ const RECORDED_MARKS: Partial<Record<ShowcaseTakeId, Record<string, number>>> = 
   log: { scrolled: 5.005, 'filter-kilter': 10.252, 'filter-tension': 17.871 },
 };
 const RECORDED_FRAMES: Partial<Record<ShowcaseTakeId, number>> = {
-  light: 418,
+  spray: 330,
   wall: 504,
   crew: 766,
   workouts: 721,
@@ -129,7 +133,7 @@ const RECORDED_FRAMES: Partial<Record<ShowcaseTakeId, number>> = {
 
 /** The marks each take's flow raises, from the table in docs/showcase-video.md. */
 const DOCUMENTED_MARKS: Partial<Record<ShowcaseTakeId, readonly string[]>> = {
-  light: ['bulb-tapped', 'next-1', 'next-2'],
+  spray: ['next-1', 'next-2'],
   wall: ['sheet-open', 'history-shown'],
   crew: ['invite-closed', 'queue-open', 'crew-added', 'row-landed', 'play-next-menu'],
   workouts: ['pyramid-picked', 'rest-armed', 'rest-pill', 'started'],
@@ -221,16 +225,17 @@ describe('anchors', () => {
   });
 
   it('skips a callout whose anchor is off screen', () => {
-    const light = sceneOf('light');
-    const file = placeholderAnchorsFile('light', {
-      source: { kind: 'video', file: 'x.mp4', seek: 0 },
+    const wall = sceneOf('wall');
+    const file = placeholderAnchorsFile('wall', {
+      source: { kind: 'still', file: 'wall-status.webp' },
       anchors: {
-        'wall-pill': { x: 500, y: 20, width: 40, height: 20 },
-        'board-surface': { x: 20, y: 200, width: 400, height: 500 },
+        'board-history-button': { x: 500, y: 20, width: 40, height: 20 },
+        'now-on-wall': { x: 132, y: 81, width: 230, height: 35 },
+        'wall-history': { x: 8, y: 181, width: 424, height: 24 },
       },
     });
-    const { callouts, warnings } = resolveSceneCallouts(light, file, sceneCalloutCopy(copy, 'light'));
-    expect(callouts).toEqual(['board-surface']);
+    const { callouts, warnings } = resolveSceneCallouts(wall, file, sceneCalloutCopy(copy, 'wall'));
+    expect(callouts).toEqual(['now-on-wall', 'wall-history']);
     expect(warnings[0]).toMatch(/off screen/);
   });
 
@@ -238,7 +243,9 @@ describe('anchors', () => {
     const boards = sceneOf('boards');
     expect(takeSegments(boards)).toEqual([[30, 30 + boards.endFrame - boards.startFrame]]);
     expect(footageFrameIndex(boards, boards.startFrame, 400)).toBe(30);
-    expect(footageFrameIndex(boards, 0, 400)).toBe(0);
+    // The loop closer reads the board takes just before the cut's end, as the frames before frame 0.
+    expect(footageFrameIndex(boards, boards.startFrame - 1, 400)).toBe(29);
+    expect(footageFrameIndex(boards, boards.startFrame - 100, 400)).toBe(0);
     expect(footageFrameIndex(boards, 10_000, 400)).toBe(399);
   });
 });
@@ -395,7 +402,7 @@ describe('every render target on the recorded takes', () => {
 describe('reading budget', () => {
   it('counts words, not punctuation', () => {
     expect(countWords('Free, no ads. iOS & Android.')).toBe(5);
-    expect(countWords('Your board.\nLit from your *phone.*'.replace(/\*/g, ''))).toBe(6);
+    expect(countWords('Your spray\nwall, *too.*'.replace(/\*/g, ''))).toBe(4);
   });
 
   const recordedEdits = Object.fromEntries(
@@ -444,8 +451,8 @@ describe('reading budget', () => {
   });
 
   it('flags a callout that leaves before it has been read', () => {
-    const light = sceneOf('light');
-    const short = { ...light, endFrame: light.startFrame + 90 };
+    const spray = sceneOf('spray');
+    const short = { ...spray, endFrame: spray.startFrame + 90 };
     const [report] = readingBudgetReport(copy, [short]);
     expect(readingBudgetMet(report)).toBe(false);
     expect(formatReadingBudgetTable([report])).toContain('SHORT');
@@ -471,60 +478,17 @@ describe('reading budget', () => {
   });
 });
 
-describe('lit-hold detection', () => {
-  function frame(width: number, height: number, blobs: { x: number; y: number; rgb: [number, number, number] }[]) {
-    const pixels = new Uint8Array(width * height * 3).fill(30);
-    for (const blob of blobs) {
-      for (let y = blob.y - 3; y <= blob.y + 3; y += 1) {
-        for (let x = blob.x - 3; x <= blob.x + 3; x += 1) pixels.set(blob.rgb, (y * width + x) * 3);
-      }
-    }
-    return pixels;
-  }
-
-  it('classifies the three role glows and ignores foot amber and grey', () => {
-    expect(classifyGlowPixel(0, 255, 0)).toBe('start');
-    expect(classifyGlowPixel(77, 245, 253)).toBe('hand');
-    expect(classifyGlowPixel(255, 0, 255)).toBe('finish');
-    expect(classifyGlowPixel(255, 170, 0)).toBeNull();
-    expect(classifyGlowPixel(128, 128, 128)).toBeNull();
-  });
-
-  it('finds each glow blob, ordered start → hands bottom-up → finish', () => {
-    const pixels = frame(100, 100, [
-      { x: 20, y: 20, rgb: [255, 0, 255] },
-      { x: 50, y: 40, rgb: [77, 245, 253] },
-      { x: 60, y: 70, rgb: [77, 245, 253] },
-      { x: 70, y: 90, rgb: [0, 255, 0] },
-      { x: 80, y: 80, rgb: [255, 170, 0] },
-    ]);
-    const holds = detectLitHolds(pixels, 100, 100, 3);
-    expect(holds.map((hold) => hold.role)).toEqual(['start', 'hand', 'hand', 'finish']);
-    expect(holds[0].x).toBeCloseTo(70);
-    expect(holds[1].y).toBeCloseTo(70);
-  });
-
-  it('only looks inside the region it is given', () => {
-    const pixels = frame(100, 100, [
-      { x: 20, y: 20, rgb: [0, 255, 0] },
-      { x: 70, y: 70, rgb: [0, 255, 0] },
-    ]);
-    expect(detectLitHolds(pixels, 100, 100, 3, { x: 50, y: 50, width: 50, height: 50 })).toHaveLength(1);
-  });
-
-  it('orders finishes left to right', () => {
-    const ordered = orderHoldsForClimb([
-      { x: 9, y: 1, role: 'finish' },
-      { x: 1, y: 1, role: 'finish' },
-    ]);
-    expect(ordered.map((hold) => hold.x)).toEqual([1, 9]);
-  });
-});
-
 describe('stills', () => {
   it('leads each sheet with the settled frame and covers the loop seam', () => {
-    const hook = stillFramesForScene(sceneOf('hook'));
-    expect(hook[0]).toEqual({ frame: 0, label: 'settled' });
+    const boards = sceneOf('boards');
+    expect(stillFramesForScene(boards)[0]).toEqual({
+      // Before the side phones start to sink.
+      frame: boards.endFrame - SHOWCASE_PILEUP.exitFromEnd - 2,
+      label: 'settled',
+    });
+    expect(stillFramesForScene(boards).map((still) => still.label)).toEqual(
+      expect.arrayContaining(['crowding', 'squeeze']),
+    );
     const outro = stillFramesForScene(sceneOf('outro')).map((still) => still.frame);
     expect(outro).toContain(SHOWCASE_TOTAL_FRAMES - 1);
     expect(outro).toContain(0);
@@ -570,7 +534,7 @@ describe('encoding', () => {
     expect(args[args.indexOf('-color_trc') + 1]).toBe('bt709');
     expect(args[args.indexOf('-movflags') + 1]).toBe('+faststart');
     expect(args).toContain('-an');
-    // The master opens on the hook; only the web cut is rotated.
+    // The master always opens on frame 0; only a web cut with another poster frame is rotated.
     expect(args.join(' ')).not.toMatch(/trim=/);
   });
 
@@ -622,15 +586,22 @@ describe('placeholder footage', () => {
   });
 
   it('extracts enough 800 px frames for the take, holding a short clip on its last frame', () => {
-    const args = buildPlaceholderFootageArgs('light', SHOWCASE_PLACEHOLDER_TAKES.light, '/f/light');
+    const args = buildPlaceholderFootageArgs('spray', SHOWCASE_PLACEHOLDER_TAKES.spray, '/f/spray');
     expect(args[args.indexOf('-vf') + 1]).toMatch(/^fps=30,scale=800:-2:flags=lanczos,tpad=stop_mode=clone/);
-    const light = sceneOf('light');
+    const spray = sceneOf('spray');
     expect(args[args.indexOf('-frames:v') + 1]).toBe(
-      String(Math.ceil(((light.endFrame - light.startFrame) / 30 + 2) * 30)),
+      String(Math.ceil(((spray.endFrame - spray.startFrame) / 30 + 2) * 30)),
     );
-    expect(args[args.length - 1]).toBe('/f/light/%05d.jpg');
-    const still = buildPlaceholderFootageArgs('boards-kilter', SHOWCASE_PLACEHOLDER_TAKES['boards-kilter'], '/f/k');
-    expect(still.slice(0, 6)).toContain('-loop');
+    expect(args[args.length - 1]).toBe('/f/spray/%05d.jpg');
+    expect(args.slice(0, 6)).toContain('-loop');
+    // One frame of a help clip, held for the whole take.
+    const frame = buildPlaceholderFootageArgs('workouts', SHOWCASE_PLACEHOLDER_TAKES.workouts, '/f/w');
+    expect(frame[frame.indexOf('-vf') + 1]).toMatch(/^trim=end_frame=1,loop=loop=-1/);
+  });
+
+  it('stands the spray takes in with a store still until a spray frame is committed', () => {
+    expect(SHOWCASE_PLACEHOLDER_TAKES.spray.source).toEqual(SHOWCASE_PLACEHOLDER_TAKES['boards-spray'].source);
+    expect(SHOWCASE_PLACEHOLDER_TAKES.spray.source.kind).toBe('still');
   });
 });
 
@@ -677,11 +648,20 @@ describe('boards pile-up', () => {
   it('lands every recorded board, the persistent Tension phone in the middle of the final row', () => {
     const plan = planBoards(boards.takes, new Set(boards.takes));
     expect(plan.arrival).toEqual(boards.takes);
-    expect(plan.main).toBe('boards-tension');
+    // The spray wall is the persistent phone: the next scene is its own.
+    expect(plan.main).toBe('boards-spray');
     expect(plan.neatCount).toBe(3);
-    expect(plan.final).toHaveLength(8);
-    expect(plan.final.slice(3, 5)).toEqual(['boards-tension', 'boards-soill']);
+    expect(plan.arrival.slice(0, 3)).toEqual(['boards-kilter', 'boards-tension', 'boards-spray']);
+    // MoonBoard is the first to join the pile-up, and So iLL squeezes in last.
+    expect(plan.arrival[3]).toBe('boards-moonboard');
+    expect(plan.arrival[8]).toBe('boards-soill');
+    expect(plan.final).toHaveLength(9);
+    // The trio keeps the middle, the spray wall dead centre, So iLL beside it.
+    expect(plan.final.slice(3, 7)).toEqual(['boards-kilter', 'boards-spray', 'boards-soill', 'boards-tension']);
+    expect(plan.final[4]).toBe('boards-spray');
     expect(plan.labels['boards-soill']).toBe('So iLL');
+    expect(plan.labels['boards-spray']).toBe('Spray wall');
+    expect(boardTakeLabel('boards-spray')).toBe('Spray wall');
     expect(boardTakeLabel('boards-moonboard')).toBe('MoonBoard');
   });
 
@@ -689,18 +669,20 @@ describe('boards pile-up', () => {
     const recorded = new Set<ShowcaseTakeId>(['boards-kilter', 'boards-moonboard', 'boards-decoy']);
     const plan = planBoards(boards.takes, recorded);
     expect(plan.arrival).toEqual(['boards-kilter', 'boards-moonboard', 'boards-decoy']);
-    // No Tension: the first neat arrival becomes the persistent phone.
+    // No spray wall in the trio: the first neat arrival becomes the persistent phone.
     expect(plan.main).toBe('boards-kilter');
     expect(plan.arrivalFrames).toHaveLength(3);
     expect(() => planBoards(boards.takes, new Set())).toThrow(/at least one board/);
   });
 
-  it('brings the neat three in with the scene change and the rest in fast, the last after a beat', () => {
-    const frames = pileupArrivalFrames(8, 3, 1);
-    expect(frames.slice(0, 3)).toEqual([-2, -4, 3]);
-    expect(frames.slice(3, 7)).toEqual([40, 46, 52, 58]);
+  it('opens on the neat three and brings the rest in fast, the last after a beat', () => {
+    const frames = pileupArrivalFrames(9, 3);
+    // The trio is there from frame 0: the poster, and where the loop closer lands.
+    expect(frames.slice(0, 3)).toEqual([0, 0, 0]);
+    expect(frames.slice(3, 8)).toEqual([40, 46, 52, 58, 64]);
     // The squeeze waits one gap plus a pause.
-    expect(frames[7]).toBe(69);
+    expect(frames[8]).toBe(SHOWCASE_PILEUP.squeeze);
+    expect(frames[8]).toBe(75);
     // Everyone is in well before the headline starts leaving.
     expect(Math.max(...frames)).toBeLessThan(
       boards.endFrame - boards.startFrame - SHOWCASE_CHOREO.wordsOutFromEnd - 30,
@@ -800,7 +782,7 @@ describe('island placeholder', () => {
 describe('board placeholders', () => {
   it('never draws a board phone: every one is a recording, a store still or a real render', () => {
     for (const takeId of sceneOf('boards').takes) {
-      expect(['video', 'still', 'render'], takeId).toContain(SHOWCASE_PLACEHOLDER_TAKES[takeId].source.kind);
+      expect(['still', 'render'], takeId).toContain(SHOWCASE_PLACEHOLDER_TAKES[takeId].source.kind);
     }
     expect(SHOWCASE_PLACEHOLDER_TAKES['boards-woods'].source.kind).toBe('render');
   });
@@ -979,10 +961,10 @@ describe('the edit', () => {
 
   it('holds the last frame when a scene runs a little past its take, and still fails a long overrun', () => {
     const edit: TakeEdit = { segments: [{ mark: 'start', from: 0 }] };
-    const short = resolveTakeEdit('light', edit, { start: 5 }, 120, 150 + 100);
+    const short = resolveTakeEdit('spray', edit, { start: 5 }, 120, 150 + 100);
     expect(short.segments).toEqual([[150, 250, 20]]);
     expect(short.warnings[0]).toMatch(/ends 20 frames before its scene/);
-    expect(() => resolveTakeEdit('light', edit, { start: 5 }, 120 + SHOWCASE_MAX_TAIL_HOLD_FRAMES, 150 + 100)).toThrow(
+    expect(() => resolveTakeEdit('spray', edit, { start: 5 }, 120 + SHOWCASE_MAX_TAIL_HOLD_FRAMES, 150 + 100)).toThrow(
       /runs off its 250 footage frames/,
     );
     const hold: TakeEdit = {
@@ -991,7 +973,7 @@ describe('the edit', () => {
         { mark: 'start', from: 2 },
       ],
     };
-    expect(resolveTakeEdit('light', hold, { start: 5 }, 90, 400).segments).toEqual([
+    expect(resolveTakeEdit('spray', hold, { start: 5 }, 90, 400).segments).toEqual([
       [150, 180, 15],
       [210, 255],
     ]);
@@ -1057,7 +1039,7 @@ describe('no flat frames', () => {
       expect(background.amount).toBeLessThanOrEqual(1);
       if (background.from !== background.to) transitions += 1;
     }
-    // Six background changes (boards, wall, crew, workouts, island, log), 10 frames each.
+    // Six background changes (spray, wall, crew, workouts, island, log), 10 frames each.
     expect(transitions).toBe(6 * (backgroundLeadIn + backgroundLeadOut));
   });
 
@@ -1078,12 +1060,52 @@ describe('no flat frames', () => {
   });
 });
 
+describe('the loop closer', () => {
+  const start = SHOWCASE_TOTAL_FRAMES - SHOWCASE_CHOREO.loopCloserFrames + 6;
+  const last = SHOWCASE_TOTAL_FRAMES - 1;
+
+  it('lands every neat phone on the last frame exactly where frame 0 has it', () => {
+    for (const format of ['16x9', '9x16'] as const) {
+      const { BOARDS_LEFT, BOARDS_MID, BOARDS_RIGHT } = SHOWCASE_POSES[format];
+      const drop = SHOWCASE_CANVAS[format].height * 0.9;
+      for (const slot of [BOARDS_LEFT, BOARDS_MID, BOARDS_RIGHT]) {
+        // Frame 0 shows the phone in its slot; so must the last frame, to the last bit.
+        expect(closerPose(slot, last, start, last, drop), format).toEqual(slot);
+        expect(Object.is(closerPose(slot, last, start, last, drop).cy, slot.cy)).toBe(true);
+      }
+    }
+  });
+
+  it('brings them up from below the canvas, easing out, never past the slot', () => {
+    for (const format of ['16x9', '9x16'] as const) {
+      const canvas = SHOWCASE_CANVAS[format];
+      const slot = SHOWCASE_POSES[format].BOARDS_MID;
+      const drop = canvas.height * 0.9;
+      const from = closerPose(slot, start, start, last, drop);
+      // The whole phone (900 px tall before scaling) starts under the bottom edge.
+      expect(from.cy - 450 * slot.scale, format).toBeGreaterThan(canvas.height);
+      expect(from).toMatchObject({ cx: slot.cx, scale: slot.scale, rz: slot.rz });
+      let previous = from.cy;
+      for (let frame = start + 1; frame <= last; frame += 1) {
+        const { cy } = closerPose(slot, frame, start, last, drop);
+        expect(cy, `${format} frame ${frame}`).toBeLessThanOrEqual(previous);
+        expect(cy, `${format} frame ${frame}`).toBeGreaterThanOrEqual(slot.cy);
+        previous = cy;
+      }
+      // Most of the way up with a third of the frames to go: it settles in, it does not snap.
+      const late = closerPose(slot, last - 6, start, last, drop);
+      expect(late.cy - slot.cy, format).toBeLessThan(drop * 0.05);
+    }
+  });
+});
+
 describe('web posters and the lite encode', () => {
-  it('opens the web cut and its poster on the settled light scene, not the hook', () => {
-    const light = sceneOf('light');
-    expect(SHOWCASE_WEB_POSTER_FRAME).toBeGreaterThan(light.startFrame + 40);
-    expect(SHOWCASE_WEB_POSTER_FRAME).toBeLessThan(light.endFrame - SHOWCASE_CHOREO.settleEndFromEnd);
+  it('opens the web cut and its poster on frame 0, the settled boards trio; --poster-frame still rotates', () => {
+    expect(SHOWCASE_WEB_POSTER_FRAME).toBe(0);
+    expect(sceneOf('boards').startFrame).toBe(0);
     expect(parseRenderArgs([]).posterFrame).toBe(SHOWCASE_WEB_POSTER_FRAME);
+    // Unrotated by default, so the web cut plays the loop as the masters do.
+    expect(webRotation(SHOWCASE_WEB_POSTER_FRAME).join(' ')).not.toMatch(/trim=/);
     expect(parseRenderArgs(['--poster-frame', '105']).posterFrame).toBe(105);
     const [homepage] = SHOWCASE_TARGETS.homepage.renditions;
     expect(homepage.deliverable).toMatchObject({

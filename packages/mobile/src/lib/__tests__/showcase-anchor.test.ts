@@ -75,11 +75,11 @@ describe('showcase anchor contract', () => {
 
   it('formats the line the recorder parses, and nothing for an unlaid rect', async () => {
     const { formatShowcaseAnchorLine } = await loadShowcaseAnchor(false);
-    expect(formatShowcaseAnchorLine('wall-pill', 24, 118.333, 132, 32)).toBe(
-      '[showcase-anchor] {"name":"wall-pill","x":24,"y":118.3,"width":132,"height":32}',
+    expect(formatShowcaseAnchorLine('board-surface', 24, 118.333, 132, 32)).toBe(
+      '[showcase-anchor] {"name":"board-surface","x":24,"y":118.3,"width":132,"height":32}',
     );
-    expect(formatShowcaseAnchorLine('wall-pill', 0, 0, 0, 32)).toBeNull();
-    expect(formatShowcaseAnchorLine('wall-pill', Number.NaN, 0, 10, 10)).toBeNull();
+    expect(formatShowcaseAnchorLine('board-surface', 0, 0, 0, 32)).toBeNull();
+    expect(formatShowcaseAnchorLine('board-surface', Number.NaN, 0, 10, 10)).toBeNull();
   });
 });
 
@@ -87,7 +87,7 @@ describe('useShowcaseAnchor outside screenshot mode', () => {
   it('returns one frozen no-op without calling any hook', async () => {
     const { useShowcaseAnchor } = await loadShowcaseAnchor(false);
     // Called bare, outside a component: it would throw if it used a hook.
-    const first = useShowcaseAnchor('wall-pill');
+    const first = useShowcaseAnchor('board-surface');
     const second = useShowcaseAnchor('invite-qr', true);
     expect(first).toEqual({ ref: undefined, onLayout: undefined });
     expect(second).toBe(first);
@@ -206,7 +206,7 @@ describe('useShowcaseAnchor in screenshot mode', () => {
   it('stops re-measuring once the view unmounts', async () => {
     vi.useFakeTimers();
     const { useShowcaseAnchor } = await loadShowcaseAnchor(true);
-    const { result, unmount } = renderHook(() => useShowcaseAnchor('wall-pill'));
+    const { result, unmount } = renderHook(() => useShowcaseAnchor('board-surface'));
     const view = fakeView({ x: 16, y: 60, width: 32, height: 32 });
     result.current.ref?.(view);
     result.current.onLayout?.(layoutEvent());

@@ -1,27 +1,17 @@
 appId: com.boardsesh.app.dev
-name: showcase take - light the wall (Android)
+name: showcase take - a spray wall (Android)
 ---
-# Take: light -> .boardsesh/showcase-video/work/android/footage/light/
+# Take: spray -> .boardsesh/showcase-video/work/android/footage/spray/
 #
-# The Android twin of ../light.yaml; that file says what the take shows and why.
-# Only the points differ.
+# The Android twin of ../spray.yaml; that file says what the take shows and why.
 #
 # Coordinates (1080x2424 emulator, 411x923 dp, portrait):
-#   87%,83%             the bulb, right end of the action row under the board
 #   85%,42% -> 18%,42%  a right-to-left drag across the board = next climb
 #
-# Marks (work/android/marks/light.json): bulb-tapped, next-1, next-2.
+# Marks (work/android/marks/spray.json): next-1, next-2.
 
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
 
-- extendedWaitUntil:
-    visible: 'zzz-showcase-pause'
-    timeout: 1200
-    optional: true
-
-- tapOn:
-    point: '87%,83%'
-- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/bulb-tapped')}
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'
     timeout: 1200
@@ -44,5 +34,5 @@ name: showcase take - light the wall (Android)
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/next-2')}
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'
-    timeout: 1800
+    timeout: 3000
     optional: true

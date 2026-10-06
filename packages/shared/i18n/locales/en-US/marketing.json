@@ -114,11 +114,10 @@
       "title": "Fresh beta"
     },
     "showcase": {
-      "videoLabel": "Demo: lighting a Kilter board from a phone, switching boards, running a crew queue and logging a send.",
+      "videoLabel": "Demo: every board in one app, including a spray wall, then a crew queue, a workout plan and a logged send.",
       "scenes": {
-        "hook": "Your board. Lit from your phone.",
-        "light": "Swipe, and the wall follows.",
         "boards": "Every board. One app.",
+        "spray": "Your spray wall, too.",
         "wall": "See what's on the wall.",
         "crew": "Your crew. One queue.",
         "workouts": "Give your session a plan.",
@@ -147,6 +146,11 @@
         "title": "All your boards. One profile.",
         "body": "See your sends and progress across every board.",
         "shotAlt": "Your sends and progress across boards in the Boardsesh profile"
+      },
+      "spray": {
+        "title": "Your spray wall, too.",
+        "body": "Photograph any wall. Set and log climbs on it.",
+        "shotAlt": "A climb highlighted on a spray wall photo in Boardsesh"
       }
     },
     "support": {

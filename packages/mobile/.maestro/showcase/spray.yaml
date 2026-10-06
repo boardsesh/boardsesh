@@ -1,0 +1,56 @@
+appId: com.boardsesh.app
+name: showcase take - a spray wall
+---
+# Take: spray -> .boardsesh/showcase-video/work/footage/spray/ (homepage showcase, scene "spray")
+#
+# Records: the first climb on the account's spray wall open in the play view,
+# its holds highlighted on the wall's own photo, then two swipes to the next
+# climb. Callout on this take: board-surface.
+#
+# The recorder opens ://climbs?screenshotOpenFirst=1&screenshotBoardIndex=6 on a
+# freshly launched app BEFORE recording starts and waits for the wall photo to
+# draw (the take's primeSettleMs), so this flow opens on the first climb.
+# Screenshot mode cuts the board swap without the swipe animation.
+#
+# Run by `vp run video:record`, never by hand: every step that talks to
+# SHOWCASE_SIGNAL_URL needs the recorder's signal server.
+#
+# Coordinates (iPhone 16 Pro Max portrait, 440x956 pt). Nothing in the play
+# view is exposed to Maestro on this RN Fabric build, so every step is a point.
+#   85%,42% -> 18%,42%  a right-to-left drag across the board = next climb
+#
+# Marks (work/marks/spray.json): next-1, next-2.
+#
+# Percentages must be WHOLE NUMBERS. Maestro has no `sleep`: a pause is an
+# optional wait for text that is never on screen.
+
+# The recorder cuts everything before this request (Maestro attaching).
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
+
+# The first climb on the wall's photo.
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 1200
+    optional: true
+
+# Next climb.
+- swipe:
+    start: '85%,42%'
+    end: '18%,42%'
+    duration: 400
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/next-1')}
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 1200
+    optional: true
+
+# And the one after; the scene ends on it.
+- swipe:
+    start: '85%,42%'
+    end: '18%,42%'
+    duration: 400
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/next-2')}
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 3000
+    optional: true

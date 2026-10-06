@@ -8,7 +8,8 @@ The homepage showcase video is three pieces that share one contract
    footage: a 30 fps JPEG sequence per take plus where each callout target sat
    on screen.
 2. The mobile app, in screenshot mode, logs those callout positions
-   (`useShowcaseAnchor`) and fakes a Bluetooth board so the bulb lights.
+   (`useShowcaseAnchor`) and fakes a Bluetooth board so a session has a wall
+   to light.
 3. **`vp run video:render`** lays the footage into `marketing/showcase-video/`
    and encodes its targets: the homepage hero, social masters, a Reels / ad
    cut, an Apple App Preview and a Play promo (see [Targets](#targets)).
@@ -98,7 +99,7 @@ Useful flags:
 | --- | --- |
 | `--only crew` | Record one take (repeat or comma-separate for more). Other takes' footage is left alone. |
 | `--backend local` | Seeded dev DB: runs `vp run db:up`, starts a backend of its own on 8180+, seeds a MoonBoard and a crew account. `SHOWCASE_LOCAL_BACKEND_URL` reuses a running backend. |
-| `--boards "A\|B\|…"` | The kilter, tension, moonboard, woods, decoy and grasshopper walls, by name, in that order. |
+| `--boards "A\|B\|…"` | The seven walls by name, in slot order: kilter, tension, moonboard, woods, decoy, grasshopper, spray. |
 | `--app-path <app>` | Install this dev-client instead of building one. |
 | `--keep-raw` | Keep the raw `.mov` under `work/raw/` (otherwise deleted once the frames are out). |
 | `--skip-anchor-check` | Record without requiring the callout anchors. |
@@ -119,8 +120,8 @@ what every coordinate hits.
 
 | Take | Deep links before recording | What the flow does |
 | --- | --- | --- |
-| `light` | `climbs?screenshotOpenFirst=1&screenshotBoardIndex=0` | Taps the bulb (the fake board lights at once), swipes to the next climb twice. |
-| `boards-<type>` (8) | `climbs?screenshotOpenFirst=1&screenshotBoardIndex=N`, or a board-config link | Holds a lit climb still for 6.5 s. |
+| `boards-<type>` (9) | `climbs?screenshotOpenFirst=1&screenshotBoardIndex=N`, or a board-config link | Holds a lit climb still for 7 s. |
+| `spray` | `climbs?screenshotOpenFirst=1&screenshotBoardIndex=6` | The first climb on the spray wall's photo, then two swipes to the next climb. |
 | `wall` | `climbs?screenshotBoardIndex=0` | Taps the board button; the sheet shows the climb on the wall, then drags up to "Lit on this wall". |
 | `crew` | the first climb, then `record` | See below. |
 | `workouts` | the first climb, then `record` | Picks Pyramid, arms a fixed-window 0:30 rest timer, taps Start (a private session, ended afterwards). |
@@ -129,9 +130,10 @@ what every coordinate hits.
 
 ### Walls
 
-Kilter, Tension, MoonBoard, Woods, Decoy and Grasshopper are walls on the App
-Store account, picked by name (`SHOWCASE_DEFAULT_BOARDS` in `record.ts`, slot
-order in `SHOWCASE_BOARD_SLOTS`). The account has no Touchstone or So iLL wall,
+Kilter, Tension, MoonBoard, Woods, Decoy, Grasshopper and the spray wall are
+seven walls on the App Store account, picked by name (`SHOWCASE_DEFAULT_BOARDS`
+in `record.ts`, slot order in `SHOWCASE_BOARD_SLOTS`; the spray wall is slot 6).
+The account has no Touchstone or So iLL wall,
 so those takes deep-link a board CONFIG (`touchstone/1/1/1/40/list`,
 `soill/1/2/1/40/list`, `SHOWCASE_BOARD_CONFIG_LINKS` in `takes.ts`). The app
 resolves that the way a session join does: it reuses a matching board on the
@@ -139,8 +141,23 @@ account or ADDS one to the account's own boards list. So the first prod run
 adds a Touchstone and a So iLL board to `test@boardsesh.com`; every later run
 reuses them. The take checks the link's `Board Route Handoff` resolved.
 
+The spray wall is filmed twice: held still as `boards-spray`, one of the nine
+board phones, and with two swipes as `spray`, the scene of its own. Its photo is
+fetched, so both takes give the last deep link 8 s to draw before recording
+starts (`primeSettleMs` in `takes.ts`; every other take gets 3 s). The default
+name, `Garage Spray Wall`, is a placeholder: point slot 6 at the real wall with
+`--boards`, or change `SHOWCASE_DEFAULT_BOARDS`.
+
+TODO(photo credit): the spray wall's photo is somebody's wall. Name whose it is
+and that they agreed to it being in the video here, before the footage ships.
+
+The wall check reads the board type from the app's own log line, which leads
+with it: `[screenshot] board[6] "Garage Spray Wall" -> "<name>" (spray: <layout>
+L.. S.. @..°)`. A spray wall's name and layout are whatever its owner typed, so
+the type is never taken from either (`findBoardSlotProblem` in `record.ts`).
+
 On `--backend local` the dev DB has only the first three walls; the other
-board takes are skipped with a note.
+board takes and `spray` are skipped with a note.
 
 ### Live sessions
 
@@ -239,8 +256,8 @@ frames for the app to draw it.
 
 | Take | Marks |
 | --- | --- |
-| `light` | `bulb-tapped`, `next-1`, `next-2` |
 | `boards-*` | none (held still) |
+| `spray` | `next-1`, `next-2` (the two swipes) |
 | `wall` | `sheet-open`, `history-shown` |
 | `crew` | `invite-closed`, `queue-open`, `crew-added` (the second phone's swipe), `row-landed` (derived: the new row's anchor first logged), `play-next-menu` |
 | `workouts` | `pyramid-picked`, `rest-armed`, `rest-pill`, `started` |
@@ -316,11 +333,11 @@ change the hero.
 
 | Target | Layout | Size | Scenes | Length | Donation line | Audio | Writes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `homepage` | motion | 1080x1920 → 720x1280 lite | all nine | 56.8 s | yes | none | `packages/web/public/videos/home/showcase-9x16-lite.{webm,mp4}`, `public/images/home/showcase-hero-9x16.webp` |
-| `social` | motion | 1920x1080 and 1080x1920 | all nine | 56.8 s | yes | none | `out/social/brag.mp4`, `brag-9x16.mp4`, `brag*.jpg`, `share-copy.txt` |
-| `reel` | motion, safe-area stage | 1080x1920 | hook, light, boards, crew, island, outro | 30.7 s | no | silent stereo AAC | `out/reel/reel-9x16.mp4`, `.jpg` |
-| `app-store` | full-bleed | 886x1920 | five clips: light, wall, crew, island, log | 28.5 s | no | silent stereo AAC, 256 kbit/s | `out/app-store/iphone-6.9.mp4`, `iphone-6.5.mp4` (same file), `iphone-poster.jpg` |
-| `play-promo` | motion | 1920x1080 | hook, light, boards, crew, island, log, outro | 40.1 s | no | silent stereo AAC | `out/play/play-16x9.mp4`, `.jpg` |
+| `homepage` | motion | 1080x1920 → 720x1280 lite | all eight | 54.8 s | yes | none | `packages/web/public/videos/home/showcase-9x16-lite.{webm,mp4}`, `public/images/home/showcase-hero-9x16.webp` |
+| `social` | motion | 1920x1080 and 1080x1920 | all eight | 54.8 s | yes | none | `out/social/brag.mp4`, `brag-9x16.mp4`, `brag*.jpg`, `share-copy.txt` |
+| `reel` | motion, safe-area stage | 1080x1920 | boards, spray, crew, island, outro | 29.9 s | no | silent stereo AAC | `out/reel/reel-9x16.mp4`, `.jpg` |
+| `app-store` | full-bleed | 886x1920 | five clips: spray, wall, crew, island, log | 28.5 s | no | silent stereo AAC, 256 kbit/s | `out/app-store/iphone-6.9.mp4`, `iphone-6.5.mp4` (same file), `iphone-poster.jpg` |
+| `play-promo` | motion | 1920x1080 | boards, spray, crew, island, log, outro | 38.1 s | no | silent stereo AAC | `out/play/play-16x9.mp4`, `.jpg` |
 
 `out/` is `.boardsesh/showcase-video/out/` (gitignored). Only the `homepage`
 files are committed. `homepage` and `social` 9:16 render the same frames, so
@@ -427,7 +444,7 @@ What changes per take:
 
 | Take | On Android |
 | --- | --- |
-| `light`, `boards-*`, `log`, `workouts` | Same story, own coordinates. The shorter screen keeps the workout preview below the fold. |
+| `boards-*`, `spray`, `log`, `workouts` | Same story, own coordinates. The shorter screen keeps the workout preview below the fold. |
 | `wall` | The Climbs header has no board glyph on the right ("+" is a new climb); the sheet opens from the board name ("Marco's Board", the `board-history-button` anchor) at half height. |
 | `crew` | The queue sheet is dragged to full height (history rows can push the new row below the fold at half height), and there is no "Play next" beat (see the app bugs below). The second phone is the iOS simulator, see below. |
 | `lock-screen` | The ongoing "session" notification in the shade instead of the Dynamic Island: Home, a swipe down from the status bar (the notification is expanded as the first one), Next by its label. No relaunch between setup and arm (a relaunch leaves the first climb without its thumbnail) and no home-screen cleanup (the shade covers it). |
@@ -484,10 +501,10 @@ iOS one. The platform decides four things and nothing else:
 
 | Target | Follows | Size | Length | Writes |
 | --- | --- | --- | --- | --- |
-| `homepage-android` | `homepage` | 1080x1920 → 720x1280 lite | 56.8 s | `packages/web/public/videos/home/showcase-9x16-lite-android.{webm,mp4}`, `public/images/home/showcase-hero-9x16-android.webp` |
-| `social-android` | `social` | 1920x1080 and 1080x1920 | 56.8 s | `out/android/social/brag.mp4`, `brag-9x16.mp4`, `brag*.jpg`, `share-copy.txt` |
-| `reel-android` | `reel` | 1080x1920, safe-area stage | 30.7 s | `out/android/reel/reel-9x16.mp4`, `.jpg` |
-| `play-promo-android` | `play-promo` | 1920x1080 | 40.1 s | `out/android/play/play-16x9.mp4`, `.jpg` |
+| `homepage-android` | `homepage` | 1080x1920 → 720x1280 lite | 54.8 s | `packages/web/public/videos/home/showcase-9x16-lite-android.{webm,mp4}`, `public/images/home/showcase-hero-9x16-android.webp` |
+| `social-android` | `social` | 1920x1080 and 1080x1920 | 54.8 s | `out/android/social/brag.mp4`, `brag-9x16.mp4`, `brag*.jpg`, `share-copy.txt` |
+| `reel-android` | `reel` | 1080x1920, safe-area stage | 29.9 s | `out/android/reel/reel-9x16.mp4`, `.jpg` |
+| `play-promo-android` | `play-promo` | 1920x1080 | 38.1 s | `out/android/play/play-16x9.mp4`, `.jpg` |
 
 `app-store` has no Android variant: an App Preview is iOS footage.
 `homepage-android` is the only Android target that writes into
@@ -521,14 +538,17 @@ iOS edit and replaces what the Android recording measured differently:
 | `workouts` | The rest countdown starts 2.36 s after `rest-armed` (1.43 s on iOS); `restPill` follows it. The gap moved by a second between two recordings, so re-read it after a re-record. |
 | `log` | The scroll moves the Filters row 353 dp, and the Kilter view lifts the calendar 27 dp more. |
 
-`light`, `lock-screen` and the boards cut on the iOS entries. Every number
+`spray`, `lock-screen` and the boards cut on the iOS entries. Every number
 was checked with `--platform android --target all --stills --measure`, and
 `showcase-video-android-render.test` holds the reading budget on the Android
-marks, as the iOS test does.
+marks, as the iOS test does. The Android recording on disk predates the spray
+takes: record `spray` and `boards-spray` on the emulator (and re-check the
+`spray` cut against its marks) before an Android render.
 
 **Trying a layout before the recording lands.** `--work-dir <dir>` reads
-`<dir>/{footage,anchors,marks}` instead. A copy of the iOS takes with the light
-take scaled to 800 x 1796 is enough to check the Pixel mockup and the copy.
+`<dir>/{footage,anchors,marks}` instead. A copy of the iOS takes with the first
+one in `SHOWCASE_TAKE_IDS` (`boards-kilter`, whose first frame sizes the phone's
+screen) scaled to 800 x 1796 is enough to check the Pixel mockup and the copy.
 
 ## Uploading
 
@@ -569,8 +589,9 @@ Nothing uploads automatically. After `vp run video:render -- --target all`:
    and pure logic.
 
 To pin a take's opening screen, drop its first frame at
-`marketing/showcase-video/reference/<take>.jpg`; the recorder then fails a take
-whose first frame differs in more than 35% of thumbnail pixels.
+`marketing/showcase-video/reference/<platform>/<take>.jpg` (`ios` or `android`:
+the two never open on the same pixels); the recorder then fails a take whose
+first frame differs in more than 35% of thumbnail pixels.
 
 ## When the self-check fails
 
@@ -580,9 +601,9 @@ Each failure names the take. The fixes:
 | --- | --- | --- |
 | `footage is Xs, the scene needs Ys` | The flow ended too soon after the trim. | Lengthen the flow's last pause. |
 | `the first frame is blank` | The app had not drawn when the footage starts. | Raise the flow's opening pause; check the raw with `--keep-raw`. |
-| `differs from marketing/showcase-video/reference/<take>.jpg` | The take opened on another screen: a moved button, a dialog, a changed deep link. | Fix the flow or deep links; replace the reference if the screen changed on purpose. |
+| `differs from marketing/showcase-video/reference/<platform>/<take>.jpg` | The take opened on another screen: a moved button, a dialog, a changed deep link. | Fix the flow or deep links; replace the reference if the screen changed on purpose. |
 | `wrong wall: slot N matched no wall (board roster: ...)` | The account has no wall by that name (renamed, unfollowed). | `--boards` with names from the roster, or update `SHOWCASE_DEFAULT_BOARDS` in `record.ts`. |
-| `wrong wall: slot N landed on a non-<kind> wall` | The name matched a different board type. | Put a wall of that type in that slot. |
+| `wrong wall: slot N landed on a non-<kind> wall` | The name matched a wall of another board type (read from the `(<boardType>: …)` the app logs, never from the wall's name). | Put a wall of that type in that slot. |
 | `never logged anchor(s) ...` | The flow never reached the screen, or the bundle lacks the anchor hooks. | Check the flow's coordinates against a screenshot; `--skip-anchor-check` only while the hooks are missing. |
 | `its flow ... failed (Maestro exit N)` | A Maestro step failed. | Read `work/logs/maestro/<run>/console.log`. |
 | `"Show this session live" was not switched off` | The switch tap missed, or a session was already running. | End any running session on the account; check the point in `session-private.yaml`. |
@@ -614,8 +635,8 @@ How the rendered files reach the homepage (`packages/web/app/components/home/hom
 
 **Data saver, reduced motion and refused autoplay.** If `navigator.connection.saveData` is set or the reader prefers reduced motion, the poster stays and a centred play button appears. Nothing is fetched until they press it, and the press calls `play()` itself so iOS accepts it inside the click. A browser that refuses autoplay gets the same treatment: the poster and the centred play button, with no native controls. The small corner toggle pauses and resumes once the video is playing.
 
-**Files.** One cut serves every viewport: `showcase-9x16-lite.webm` and `.mp4` (720 x 1280, `SHOWCASE_WEB_LITE` in `scripts/lib/showcase-video/render.ts`, the `homepage` target), plus `showcase-hero-9x16.webp`. Caps: webm 1,750,000 bytes, mp4 1,900,000 bytes; the renderer fails the encode over its cap. The cut is rotated to start on the poster frame (`SHOWCASE_WEB_POSTER_FRAME`), so the first video frame equals the poster and nothing jumps when playback starts.
+**Files.** One cut serves every viewport: `showcase-9x16-lite.webm` and `.mp4` (720 x 1280, `SHOWCASE_WEB_LITE` in `scripts/lib/showcase-video/render.ts`, the `homepage` target), plus `showcase-hero-9x16.webp`. Caps: webm 1,750,000 bytes, mp4 1,900,000 bytes; the renderer fails the encode over its cap. The cut opens on the poster frame (`SHOWCASE_WEB_POSTER_FRAME`, frame 0: the boards trio settled under "Every board. One app."), so the first video frame equals the poster and nothing jumps when playback starts. `--poster-frame <n>` picks another frame and rotates the web encodes to start there; the loop closer lands the last frame on frame 0, so a rotated loop has no seam either.
 
 **Analytics.** `Showcase Video Progress` fires once per quartile per page view with `{ quartile: 25 | 50 | 75 | 100, placement: 'hero', cut: '9x16-lite', autoplayed }`. `autoplayed` is false when the reader pressed play. Quartile 100 fires at 97% of the duration, because a looping video may never report its exact end.
 
-**SEO.** `page.tsx` renders `VideoObject` JSON-LD next to the site JSON-LD, English only. Its `duration` (`PT56.8S`) must equal `SHOWCASE_TOTAL_FRAMES / SHOWCASE_FPS`. It is a literal in `packages/web/app/lib/showcase-video.ts` because the timeline module pulls in Node imports a client bundle can't take; `scripts/__tests__/showcase-video-web-duration.test.ts` fails when they drift. After changing the timeline, update the literal and bump `/` in the sitemap static entries.
+**SEO.** `page.tsx` renders `VideoObject` JSON-LD next to the site JSON-LD, English only. Its `duration` (`PT54.8S`) must equal `SHOWCASE_TOTAL_FRAMES / SHOWCASE_FPS`. It is a literal in `packages/web/app/lib/showcase-video.ts` because the timeline module pulls in Node imports a client bundle can't take; `scripts/__tests__/showcase-video-web-duration.test.ts` fails when they drift. After changing the timeline, update the literal and bump `/` in the sitemap static entries.

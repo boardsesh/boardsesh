@@ -9,5 +9,5 @@ name: showcase take - one lit climb, held still (Android)
 
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'
-    timeout: 6500
+    timeout: 7000
     optional: true

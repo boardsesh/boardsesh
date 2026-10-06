@@ -11,11 +11,11 @@ import {
   orthoPath,
   catmullRomPolyline,
   clamp,
+  closerPose,
   easeIn,
   easeInOut,
   easeOut,
   footageAt,
-  lengthNearest,
   lerp,
   pointAtLength,
   polylinePath,
@@ -29,16 +29,12 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 /** Per-format placements that are not phone poses. */
 const LAYOUT = {
   '16x9': {
-    motif: { cx: 1430, cy: 540, maxWidth: 660, maxHeight: 700 },
-    grid: { cx: 1430, cy: 540, rx: 600, ry: 560 },
-    glow: { hook: [1430, 540, 1.0, 0.55], boards: [960, 720, 2.1, 1], outro: [960, 470, 1.15, 0.6] },
+    glow: { boards: [960, 720, 2.1, 1], outro: [960, 470, 1.15, 0.6] },
     outro: { mark: 150, wordmark: 338, dots: 566, tagline: 646, pill: 790, donation: 880, dotsHalfWidth: 300, zig: 16 },
     boardLabelGap: 30,
   },
   '9x16': {
-    motif: { cx: 540, cy: 1200, maxWidth: 760, maxHeight: 900 },
-    grid: { cx: 540, cy: 1200, rx: 620, ry: 760 },
-    glow: { hook: [540, 1200, 1.2, 0.55], boards: [540, 1220, 1.5, 1], outro: [540, 860, 1.1, 0.6] },
+    glow: { boards: [540, 1220, 1.5, 1], outro: [540, 860, 1.1, 0.6] },
     outro: {
       mark: 470,
       wordmark: 668,
@@ -53,10 +49,9 @@ const LAYOUT = {
   },
 };
 
+/** Where the persistent phone stands in each scene after the boards (which it shares with the other board phones). */
 const SCENE_POSE = {
-  hook: 'OFF_RIGHT',
-  light: 'CALLOUT',
-  boards: 'BOARDS_MID',
+  spray: 'CALLOUT',
   wall: 'CALLOUT',
   crew: 'CALLOUT',
   workouts: 'HERO_TILT',
@@ -66,11 +61,17 @@ const SCENE_POSE = {
 };
 
 /** The pile-up's small, fixed untidiness: per-slot tilt (deg) and drop (px). */
-const JITTER_RZ = [-4, 3, -2, 4, -3, 2, -4, 3];
-const JITTER_Y = [10, -8, 12, -6, 8, -12, 6, -4];
-/** Springs: the neat rise, the newcomers' quicker, bouncier arrival, and the nudges. */
+const JITTER_RZ = [-4, 3, -2, 4, -3, 2, -4, 3, -2];
+const JITTER_Y = [10, -8, 12, -6, 8, -12, 6, -4, 9];
+/** Springs: the newcomers' quick, bouncy arrival, and the nudges. */
 const ARRIVE = { zeta: 0.62, period: 0.42 };
 const NUDGE = { zeta: 0.5, period: 0.5 };
+/**
+ * The loop closer: this many frames into it the opening trio starts back up
+ * from below, and the opening headline blurs in over the cut's last frames.
+ */
+const CLOSER_RISE_DELAY = 6;
+const CLOSER_HEADLINE_FRAMES = 17;
 
 let data = null;
 let layout = null;
@@ -111,7 +112,7 @@ const setAttrs = (node, attributes) => {
   }
 };
 
-/** `"Your board.\nLit from your *phone.*"` → lines of { text, accent }. Mirrors render.ts parseHeadline. */
+/** `"Every board.\nOne *app.*"` → lines of { text, accent }. Mirrors render.ts parseHeadline. */
 function parseHeadline(headline) {
   return headline
     .split('\n')
@@ -220,6 +221,10 @@ const sceneIndexAt = (frame) => {
 const sceneById = (id) => data.scenes.find((scene) => scene.id === id);
 const sceneLength = (scene) => scene.endFrame - scene.startFrame;
 const release = (scene) => scene.startFrame - data.choreo.backgroundLeadIn;
+/** First frame of the loop closer, which leads the cut's end back into frame 0. */
+const closerStartFrame = () => data.totalFrames - data.choreo.loopCloserFrames;
+/** The board phones that stand in the opening trio. */
+const isNeatBoard = (takeId) => data.boards.arrival.indexOf(takeId) < data.boards.neatCount;
 
 /** Light-background amount at `frame`, tweened (OKLab, via mixOklab) across L-4..L+6 at each change. */
 function lightMixAt(frame) {
@@ -316,11 +321,12 @@ function boardSlots(present) {
 }
 
 /**
- * Keyframes for every board phone, keyed by take. The neat phones rise with
- * the scene change; each newcomer slides in from its side (the last one pops
+ * Keyframes for every board phone, keyed by take. The neat phones stand in
+ * their slots from the first frame (the cut opens on them, and the loop closer
+ * brings them back); each newcomer slides in from its side (the last one pops
  * up from below, into the gap it forces open) and every phone already there
  * springs to its new, tighter slot. The squeeze kicks its two neighbours. Nothing
- * enters from above: a dark phone crossing the dark headline would hide it.
+ * enters from above: a dark phone crossing the headline would hide it.
  */
 function buildBoardKeys(boardsScene) {
   const plan = data.boards;
@@ -333,22 +339,19 @@ function buildBoardKeys(boardsScene) {
   const mainFinal = plan.final.indexOf(plan.main);
   const last = plan.arrival.length - 1;
   plan.arrival.forEach((takeId, arrivalIndex) => {
-    const frame = start + plan.arrivalFrames[arrivalIndex];
     const slots = boardSlots(presentAfter(arrivalIndex));
     const target = slots.get(takeId);
-    const neat = arrivalIndex < plan.neatCount;
-    const squeeze = !neat && arrivalIndex === last && last > plan.neatCount;
-    if (takeId !== plan.main) {
-      const fromLeft = plan.final.indexOf(takeId) < mainFinal;
-      const entrance = neat
-        ? { ...target, cy: target.cy + data.height * 0.85 }
-        : squeeze
-          ? { ...target, cy: target.cy + data.height * 0.9, rz: -12 }
-          : { ...target, cx: fromLeft ? -420 : data.width + 420, rz: fromLeft ? -22 : 22 };
-      keys.get(takeId).push({ frame: -Infinity, pose: entrance });
+    if (arrivalIndex < plan.neatCount) {
+      keys.get(takeId).push({ frame: -Infinity, pose: target });
+      return;
     }
-    keys.get(takeId).push({ frame, pose: target, spring: neat ? undefined : ARRIVE });
-    if (neat) return;
+    const frame = start + plan.arrivalFrames[arrivalIndex];
+    const squeeze = arrivalIndex === last && last > plan.neatCount;
+    const fromLeft = plan.final.indexOf(takeId) < mainFinal;
+    const entrance = squeeze
+      ? { ...target, cy: target.cy + data.height * 0.9, rz: -12 }
+      : { ...target, cx: fromLeft ? -420 : data.width + 420, rz: fromLeft ? -22 : 22 };
+    keys.get(takeId).push({ frame: -Infinity, pose: entrance }, { frame, pose: target, spring: ARRIVE });
     // Everyone already on stage makes room.
     const final = plan.final;
     for (const other of plan.arrival.slice(0, arrivalIndex)) {
@@ -363,16 +366,18 @@ function buildBoardKeys(boardsScene) {
       keys.get(other).push({ frame: frame + 8, pose: slot, spring: NUDGE });
     }
   });
-  // Exit: the side phones sink away a frame apart, clear before the persistent one moves on at L-4.
-  plan.arrival.forEach((takeId, arrivalIndex) => {
-    if (takeId === plan.main) return;
-    const list = keys.get(takeId);
-    const settled = list[list.length - 1].pose;
-    list.push({
-      frame: boardsScene.endFrame - 16 + arrivalIndex,
-      pose: { ...settled, cy: settled.cy + data.height * 0.9 },
+  // Exit: the side phones sink away a frame apart (render.ts SHOWCASE_PILEUP.exitFromEnd),
+  // so even eight of them have started down before the persistent one moves on at L-4.
+  plan.arrival
+    .filter((takeId) => takeId !== plan.main)
+    .forEach((takeId, sideIndex) => {
+      const list = keys.get(takeId);
+      const settled = list[list.length - 1].pose;
+      list.push({
+        frame: boardsScene.endFrame - plan.exitFromEnd + sideIndex,
+        pose: { ...settled, cy: settled.cy + data.height * 0.9 },
+      });
     });
-  });
   for (const list of keys.values()) sortKeys(list);
   return keys;
 }
@@ -448,7 +453,10 @@ export function init(input) {
   // Phones: one per board take, the persistent one last so it sits where the
   // other scenes expect it. Later arrivals stack on top of earlier ones.
   const phoneLayer = document.getElementById('phones');
-  const boardsScene = sceneById('boards');
+  const boardsScene = data.scenes[0];
+  // Frame 0 is the poster and the loop's seam, and both are the boards trio.
+  if (boardsScene.id !== 'boards') throw new Error('The cut must open on the boards scene');
+  ui.boardsScene = boardsScene;
   ui.boardPhones = new Map();
   data.boards.arrival.forEach((takeId, arrivalIndex) => {
     if (takeId === data.boards.main) return;
@@ -457,30 +465,28 @@ export function init(input) {
   ui.main = buildPhone(phoneLayer, 2 + data.boards.arrival.indexOf(data.boards.main));
 
   const poses = data.poses;
-  const boardKeys = buildBoardKeys(boardsScene);
-  ui.boardKeys = boardKeys;
-  ui.mainKeys = [{ frame: -Infinity, pose: poses[SCENE_POSE[data.scenes[0].id]] }];
+  ui.boardKeys = buildBoardKeys(boardsScene);
+  // The persistent phone is one of the trio, then moves on through the scenes.
+  ui.mainKeys = [...ui.boardKeys.get(data.boards.main)];
   for (const scene of data.scenes.slice(1)) {
-    if (scene.id === 'boards') ui.mainKeys.push(...boardKeys.get(data.boards.main));
-    else ui.mainKeys.push({ frame: release(scene), pose: poses[SCENE_POSE[scene.id]] });
+    ui.mainKeys.push({ frame: release(scene), pose: poses[SCENE_POSE[scene.id]] });
     // A staged scene (the island) zooms in once its footage has opened the island.
     const staging = data.staging[scene.id];
     if (staging) ui.mainKeys.push({ frame: scene.startFrame + staging.zoomAt, pose: poses[staging.zoomPose] });
   }
   sortKeys(ui.mainKeys);
 
-  // The glow follows the phone, or the motif / outro mark when there is no phone.
+  // The glow follows the phone, or sits behind the pile-up and the outro mark.
   const glowFor = (scene) => {
     const custom = layout.glow[scene.id];
     if (custom) return { cx: custom[0], cy: custom[1], scale: custom[2], rx: custom[3], ry: 0, rz: 0 };
     const pose = poses[SCENE_POSE[scene.id]];
     return { cx: pose.cx, cy: pose.cy, scale: pose.scale, rx: 1, ry: 0, rz: 0 };
   };
-  ui.glowKeys = [{ frame: -Infinity, pose: glowFor(data.scenes[0]) }];
+  ui.glowKeys = [{ frame: -Infinity, pose: glowFor(boardsScene) }];
   for (const scene of data.scenes.slice(1)) ui.glowKeys.push({ frame: release(scene), pose: glowFor(scene) });
-  // The loop closer hands the glow back to the hook's motif, so the last frame matches frame 0.
-  const lastScene = data.scenes[data.scenes.length - 1];
-  ui.glowKeys.push({ frame: lastScene.endFrame - data.choreo.loopCloserFrames, pose: glowFor(data.scenes[0]) });
+  // The loop closer hands the glow back to the pile-up, so the last frame matches frame 0.
+  ui.glowKeys.push({ frame: closerStartFrame(), pose: glowFor(boardsScene) });
 
   // Headlines.
   ui.headlines = {};
@@ -495,11 +501,12 @@ export function init(input) {
     ui.headlines[scene.id] = { container, ...buildWords(container, copy.headline) };
   }
 
-  // Board labels, one per phone.
+  // Board labels, one per phone, in the boards scene's tone.
+  const labelTone = boardsScene.background === 'light' ? 'on-light' : 'on-dark';
   ui.boardLabels = new Map(
     data.boards.arrival.map((takeId) => [
       takeId,
-      el('div', { class: 'board-label', text: data.boards.labels[takeId] ?? takeId }, ui.text),
+      el('div', { class: `board-label ${labelTone}`, text: data.boards.labels[takeId] ?? takeId }, ui.text),
     ]),
   );
 
@@ -565,51 +572,8 @@ export function init(input) {
   ui.progressTrack = track;
   ui.progressFill = el('div', { class: 'fill' }, track);
 
-  // Motif: holds in screen points → hook positions on the canvas.
-  const lightTake = data.takes.light;
-  const screen = lightTake ? lightTake.screen : { width: 440, height: 956 };
-  const xs = data.holds.map((hold) => hold.x);
-  const ys = data.holds.map((hold) => hold.y);
-  const spanX = Math.max(...xs) - Math.min(...xs) || 1;
-  const spanY = Math.max(...ys) - Math.min(...ys) || 1;
-  const motifScale = Math.min(layout.motif.maxWidth / spanX, layout.motif.maxHeight / spanY);
-  const midX = (Math.max(...xs) + Math.min(...xs)) / 2;
-  const midY = (Math.max(...ys) + Math.min(...ys)) / 2;
-  ui.holds = data.holds.map((hold) => ({
-    role: hold.role,
-    hook: { x: layout.motif.cx + (hold.x - midX) * motifScale, y: layout.motif.cy + (hold.y - midY) * motifScale },
-    local: screenToPhone(hold, screen),
-  }));
-  ui.hookCurve = catmullRomPolyline(ui.holds.map((hold) => hold.hook));
-  ui.holds.forEach((hold) => {
-    hold.along = lengthNearest(ui.hookCurve, hold.hook);
-  });
-  const lineGradient = document.getElementById('lineGradient');
-  const first = ui.holds[0]?.hook ?? { x: 0, y: 0 };
-  const last = ui.holds[ui.holds.length - 1]?.hook ?? { x: 1, y: 1 };
-  setAttrs(lineGradient, { x1: first.x, y1: first.y, x2: last.x, y2: last.y });
-  setAttrs(document.getElementById('gridMaskShape'), {
-    cx: layout.grid.cx,
-    cy: layout.grid.cy,
-    rx: layout.grid.rx,
-    ry: layout.grid.ry,
-  });
-  const rings = document.getElementById('rings');
-  ui.rings = ui.holds.map((hold) => {
-    const color = `var(--role-${hold.role})`;
-    const group = svg('g', { class: 'ring' }, rings);
-    const halo = svg('circle', { r: 24, fill: color, filter: 'url(#softGlow)', class: 'ring-halo' }, group);
-    halo.style.fill = color;
-    const ring = svg('circle', { r: 13, 'stroke-width': 4, 'fill-opacity': 0.22 }, group);
-    ring.style.fill = color;
-    ring.style.stroke = color;
-    return { group, halo };
-  });
-  ui.motifBack = document.getElementById('motifBack');
-  ui.motifLine = document.getElementById('motifLine');
-  ui.grid = document.getElementById('grid');
+  // The outro's one amber spark.
   ui.spark = document.getElementById('spark');
-  ui.sparkTrail = document.getElementById('sparkTrail');
 
   // Outro.
   const outro = el('div', { class: 'outro' }, ui.text);
@@ -658,17 +622,6 @@ export function init(input) {
     dot.style.fill = color;
     return { group, role, fraction: index / (dotRoles.length - 1) };
   });
-  // Which outro dot each hook hold grows out of in the loop closer.
-  const handHolds = ui.holds.filter((hold) => hold.role === 'hand');
-  ui.holds.forEach((hold) => {
-    if (hold.role === 'start') hold.dot = 0;
-    else if (hold.role === 'finish') hold.dot = 4;
-    else {
-      const order = handHolds.indexOf(hold);
-      hold.dot = 1 + Math.min(2, Math.floor((order * 3) / Math.max(1, handHolds.length)));
-    }
-  });
-
   // Measure overlay.
   if (data.measure && data.safeArea) {
     // The text band a safe area leaves: every word must stay inside it.
@@ -694,7 +647,6 @@ export function init(input) {
         ui.measureItems.push({ takeId, samples, rect, label });
       }
     }
-    ui.measureCrosses = ui.holds.map(() => svg('path', { class: 'cross', visibility: 'hidden' }, ui.measure));
   }
   return true;
 }
@@ -703,7 +655,7 @@ export function init(input) {
 
 /** The persistent phone's footage: its scene's take, else the neighbour it is arriving from or leaving to. */
 function mainTake(sceneIndex) {
-  const pick = (scene) => (scene.id === 'boards' ? data.boards.main : scene.takes[0]);
+  const pick = (scene) => (scene === ui.boardsScene ? data.boards.main : scene.takes[0]);
   const scene = data.scenes[sceneIndex];
   if (scene.takes.length) return { takeId: pick(scene), scene };
   const previous = data.scenes[sceneIndex - 1];
@@ -724,36 +676,27 @@ function onCanvas(pose) {
   return pose.cx > -margin && pose.cx < data.width + margin && pose.cy > -margin && pose.cy < data.height + margin;
 }
 
-function applyPhone(phone, pose, takeRef, frame, footageOpacity) {
+function applyPhone(phone, pose, takeRef, frame) {
   const { rig, img, shadow } = phone;
-  setVars(rig, {
-    cx: pose.cx,
-    cy: pose.cy,
-    s: pose.scale,
-    rx: pose.rx,
-    ry: pose.ry,
-    rz: pose.rz,
-    'footage-o': footageOpacity,
-  });
+  setVars(rig, { cx: pose.cx, cy: pose.cy, s: pose.scale, rx: pose.rx, ry: pose.ry, rz: pose.rz });
   setVars(shadow, { cx: pose.cx, cy: pose.cy + (data.phone.height / 2 + 2) * pose.scale, s: pose.scale });
   if (!takeRef || !onCanvas(pose)) return;
   const take = data.takes[takeRef.takeId];
   if (!take) return;
   const src = frameUrl(take, footageIndex(take, takeRef.scene, frame));
   if (img.getAttribute('src') !== src) img.src = src;
-  if (footageOpacity > 0) visible.push(img);
+  visible.push(img);
 }
 
 function renderHeadlines(frame) {
-  const hookScene = data.scenes[0];
-  const outroScene = sceneById('outro');
+  const openingScene = data.scenes[0];
+  // The opening headline is settled on frame 0 (the poster) and blurs back in over the cut's last frames.
+  const closerStart = data.totalFrames - CLOSER_HEADLINE_FRAMES;
   for (const [sceneId, group] of Object.entries(ui.headlines)) {
     const scene = sceneById(sceneId);
     const local = frame - scene.startFrame;
     let on = frame >= scene.startFrame && frame < scene.endFrame;
-    if (sceneId === hookScene.id) {
-      // The hook is settled on frame 0 (the poster) and blurs back in during the loop closer.
-      const closerStart = outroScene.endFrame - 17;
+    if (scene === openingScene) {
       if (frame >= closerStart) {
         on = true;
         applyWords(group, frame - closerStart, 0, {
@@ -886,26 +829,36 @@ function renderCallouts(frame, sceneIndex, mainPose) {
 }
 
 function renderBoards(frame, boardPoses) {
-  const scene = sceneById('boards');
+  const scene = ui.boardsScene;
   const local = frame - scene.startFrame;
-  const on = frame >= scene.startFrame - 2 && frame < scene.endFrame + 4;
-  // Inside a safe area the labels are gone before the phones sink (L-16), so
-  // no label rides a phone down into the margin.
-  const out = data.safeArea ? easeIn(progress(local, sceneLength(scene) - 20, 4)) : wordsOut(scene, local);
+  const inScene = frame < scene.endFrame + 4;
+  // The loop closer: the trio's labels fade back in where frame 0 has them,
+  // all the way in on the last frame. They wait in place rather than ride the
+  // phones up, so no label crosses a safe area's bottom margin.
+  const closerFrom = closerStartFrame() + CLOSER_RISE_DELAY + 4;
+  const closerAmount = easeOut(progress(frame, closerFrom, data.totalFrames - 1 - closerFrom));
+  // Inside a safe area the labels are gone before the phones sink, so no label
+  // rides a phone down into the margin.
+  const out = data.safeArea
+    ? easeIn(progress(local, sceneLength(scene) - data.boards.exitFromEnd - 4, 4))
+    : wordsOut(scene, local);
   data.boards.arrival.forEach((takeId, arrivalIndex) => {
     const label = ui.boardLabels.get(takeId);
-    const pose = boardPoses.get(takeId);
-    if (!on || !pose) {
+    const neat = arrivalIndex < data.boards.neatCount;
+    const pose = inScene ? boardPoses.get(takeId) : ui.boardKeys.get(takeId)[0].pose;
+    if (!inScene && !(neat && closerAmount > 0)) {
       setVars(label, { o: 0 });
       return;
     }
-    const arrival = Math.max(14 + 4 * arrivalIndex, data.boards.arrivalFrames[arrivalIndex] + 10);
-    const amount = easeOut(progress(local, arrival, 12));
+    // The trio's labels are up from the first frame; a newcomer's follows it in.
+    const arrival = data.boards.arrivalFrames[arrivalIndex] + 10;
+    const amount = !inScene ? closerAmount : neat ? 1 : easeOut(progress(local, arrival, 12));
+    const leaving = inScene ? out : 0;
     setVars(label, {
       lx: pose.cx,
       ly: pose.cy - (data.phone.height / 2) * pose.scale - layout.boardLabelGap - 30,
-      o: amount * (1 - out),
-      b: 10 * (1 - amount) + 10 * out,
+      o: amount * (1 - leaving),
+      b: 10 * (1 - amount) + 10 * leaving,
       y: 14 * (1 - amount),
     });
   });
@@ -973,7 +926,10 @@ function renderOutro(frame) {
   const length = sceneLength(scene);
   const on = frame >= scene.startFrame;
   setVars(ui.outro, { on: on ? 1 : 0 });
-  if (!on) return { sparkAmount: 0 };
+  if (!on) {
+    setAttrs(ui.spark, { opacity: 0 });
+    return;
+  }
   const closer = length - data.choreo.loopCloserFrames;
   const out = easeIn(progress(local, closer - 1, 10));
   const reveal = (node, start, frames, blurFrom = 14, rise = 20) => {
@@ -1007,96 +963,16 @@ function renderOutro(frame) {
     });
   });
   const sparkPoint = pointAtLength(ui.outroCurve, sparkAmount * ui.outroCurve.total);
-  const sparkOpacity = progress(local, 13, 4) * (1 - progress(local, 40, 6));
-  return { sparkAmount, sparkPoint, sparkOpacity, curve: ui.outroCurve };
-}
-
-function renderMotif(frame, mainPose, outroState) {
-  const outroScene = sceneById('outro');
-  const lightScene = sceneById('light');
-  const closerStart = outroScene.endFrame - data.choreo.loopCloserFrames;
-  const arrive = lightScene.startFrame - data.choreo.backgroundLeadIn;
-  const inHook = frame < lightScene.startFrame + 40;
-  const inCloser = frame >= closerStart;
-
-  let positions = ui.holds.map((hold) => hold.hook);
-  let ringsOpacity = 0;
-  let ringScale = 1;
-  let lineOpacity = 0;
-  let gridOpacity = 0;
-  let sparkLength = -1;
-
-  if (inHook) {
-    const match = easeInOut(progress(frame, arrive, 18));
-    positions = ui.holds.map((hold) => {
-      const target = projectPoint(mainPose, hold.local.x, hold.local.y, projection());
-      return { x: lerp(hold.hook.x, target.x, match), y: lerp(hold.hook.y, target.y, match) };
-    });
-    ringScale = lerp(1, mainPose.scale * 0.92, match);
-    ringsOpacity = 1 - easeIn(progress(frame, arrive + 26, 14));
-    lineOpacity = 1 - easeOut(progress(frame, arrive, 10));
-    gridOpacity = 1 - easeIn(progress(frame, arrive - 2, 12));
-    sparkLength = easeInOut(progress(frame, 12, 36)) * ui.hookCurve.total;
-  } else if (inCloser) {
-    const grow = easeInOut(progress(frame, closerStart, data.choreo.loopCloserFrames - 1));
-    positions = ui.holds.map((hold) => {
-      const from = ui.outroDotPoints[hold.dot];
-      return { x: lerp(from.x, hold.hook.x, grow), y: lerp(from.y, hold.hook.y, grow) };
-    });
-    ringsOpacity = easeOut(progress(frame, closerStart, 6));
-    ringScale = lerp(0.7, 1, grow);
-    gridOpacity = easeInOut(progress(frame, closerStart + 7, 16));
-    lineOpacity = easeInOut(progress(frame, closerStart + 9, 14));
-  }
-
-  setVars(ui.motifBack, {
-    'motif-o': ringsOpacity > 0 || gridOpacity > 0 ? 1 : 0,
-    'grid-o': gridOpacity,
-    'line-o': lineOpacity,
+  setAttrs(ui.spark, {
+    transform: `translate(${sparkPoint.x.toFixed(2)} ${sparkPoint.y.toFixed(2)})`,
+    opacity: progress(local, 13, 4) * (1 - progress(local, 40, 6)),
   });
-  const curve = catmullRomPolyline(positions);
-  setAttrs(ui.motifLine, { d: polylinePath(curve.points) });
-
-  const sparkOn = inHook && frame >= 10 && frame < 56;
-  const sparkOpacity = inHook ? progress(frame, 10, 4) * (1 - progress(frame, 48, 6)) : 0;
-  ui.holds.forEach((hold, index) => {
-    const passing = sparkOn ? Math.max(0, 1 - Math.abs(sparkLength - hold.along) / 90) : 0;
-    const bright = passing * sparkOpacity;
-    const point = positions[index];
-    setAttrs(ui.rings[index].group, {
-      transform: `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)}) scale(${(ringScale * (1 + 0.32 * bright)).toFixed(3)})`,
-      opacity: ringsOpacity,
-    });
-    setAttrs(ui.rings[index].halo, { opacity: 0.45 + 0.55 * bright });
-  });
-
-  // One amber spark: the hook's run up the climb, or the outro's pass along the dots.
-  if (sparkOn && sparkOpacity > 0) {
-    const point = pointAtLength(ui.hookCurve, sparkLength);
-    setAttrs(ui.spark, { transform: `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)})`, opacity: sparkOpacity });
-    const trail = Math.min(sparkLength, 150);
-    setAttrs(ui.sparkTrail, {
-      d: polylinePath(ui.hookCurve.points),
-      'stroke-dasharray': `0 ${((sparkLength - trail) / ui.hookCurve.total).toFixed(4)} ${(trail / ui.hookCurve.total).toFixed(4)} 1`,
-      opacity: 0.55 * sparkOpacity,
-    });
-  } else if (outroState && outroState.sparkOpacity > 0) {
-    const point = outroState.sparkPoint;
-    setAttrs(ui.spark, {
-      transform: `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)})`,
-      opacity: outroState.sparkOpacity,
-    });
-    setAttrs(ui.sparkTrail, { opacity: 0 });
-  } else {
-    setAttrs(ui.spark, { opacity: 0 });
-    setAttrs(ui.sparkTrail, { opacity: 0 });
-  }
 }
 
 function renderMeasure(frame, sceneIndex, mainPose, boardPoses) {
   if (!data.measure) return;
   const main = mainTake(sceneIndex);
-  const boards = sceneById('boards');
+  const boards = ui.boardsScene;
   const shown = new Map();
   if (main) shown.set(main.takeId, { pose: mainPose, scene: main.scene });
   if (frame >= boards.startFrame && frame < boards.endFrame) {
@@ -1115,14 +991,6 @@ function renderMeasure(frame, sceneIndex, mainPose, boardPoses) {
     setAttrs(item.rect, { visibility: 'visible', x: box.x, y: box.y, width: box.width, height: box.height });
     setAttrs(item.label, { visibility: 'visible', x: box.x, y: box.y - 6 });
   }
-  const lightOn = main && main.takeId === 'light';
-  ui.holds.forEach((hold, index) => {
-    const point = projectPoint(mainPose, hold.local.x, hold.local.y, projection());
-    setAttrs(ui.measureCrosses[index], {
-      visibility: lightOn ? 'visible' : 'hidden',
-      d: `M${point.x - 12} ${point.y} H${point.x + 12} M${point.x} ${point.y - 12} V${point.y + 12}`,
-    });
-  });
 }
 
 export function renderAt(frame) {
@@ -1130,7 +998,18 @@ export function renderAt(frame) {
   visible = [];
   const sceneIndex = sceneIndexAt(frame);
   const lightMix = lightMixAt(frame);
-  const mainPose = poseAt(ui.mainKeys, frame);
+  const boards = ui.boardsScene;
+  // The loop closer: the opening trio comes back up from below and lands on
+  // the last frame exactly where frame 0 has it. Its footage counts back from
+  // the cut's end, so it runs straight on into frame 0.
+  const riseStart = closerStartFrame() + CLOSER_RISE_DELAY;
+  const rising = frame >= riseStart;
+  const boardsFrame = rising ? frame - data.totalFrames : frame;
+  const boardPose = (takeId, keys) =>
+    rising && isNeatBoard(takeId)
+      ? closerPose(keys[0].pose, frame, riseStart, data.totalFrames - 1, data.height * 0.9)
+      : poseAt(keys, frame);
+  const mainPose = boardPose(data.boards.main, ui.mainKeys);
   // The new background grows out of the phone as a circle (see anim.mjs backgroundAt).
   const background = backgroundAt(data.scenes, frame, data.choreo.backgroundLeadIn, data.choreo.backgroundLeadOut);
   const colour = (tone) => (tone === 'light' ? data.palette.stageLight : data.palette.stageDark);
@@ -1147,15 +1026,13 @@ export function renderAt(frame) {
     'bg-r': `${(background.amount * reach * 1.02).toFixed(1)}px`,
   });
 
-  const lightScene = sceneById('light');
-  const footageOpacity = frame < lightScene.endFrame ? easeOut(progress(frame, lightScene.startFrame + 8, 14)) : 1;
-  applyPhone(ui.main, mainPose, mainTake(sceneIndex), frame, footageOpacity);
-  const boards = sceneById('boards');
+  if (rising) applyPhone(ui.main, mainPose, { takeId: data.boards.main, scene: boards }, boardsFrame);
+  else applyPhone(ui.main, mainPose, mainTake(sceneIndex), frame);
   const boardPoses = new Map([[data.boards.main, mainPose]]);
   for (const [takeId, phone] of ui.boardPhones) {
-    const pose = poseAt(ui.boardKeys.get(takeId), frame);
+    const pose = boardPose(takeId, ui.boardKeys.get(takeId));
     boardPoses.set(takeId, pose);
-    applyPhone(phone, pose, { takeId, scene: boards }, frame, 1);
+    applyPhone(phone, pose, { takeId, scene: boards }, boardsFrame);
   }
 
   const glow = poseAt(ui.glowKeys, frame);
@@ -1165,8 +1042,7 @@ export function renderAt(frame) {
   renderCallouts(frame, sceneIndex, mainPose);
   renderBoards(frame, boardPoses);
   renderWorkouts(frame);
-  const outroState = renderOutro(frame);
-  renderMotif(frame, mainPose, outroState);
+  renderOutro(frame);
   renderMeasure(frame, sceneIndex, mainPose, boardPoses);
   return frame;
 }

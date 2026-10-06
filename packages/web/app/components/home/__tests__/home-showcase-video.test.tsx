@@ -112,11 +112,11 @@ describe('HomeShowcaseVideo', () => {
     expect(toggle.className).toMatch(/toggle/);
   });
 
-  it('lists all nine scene headlines in a hidden caption', () => {
+  it('lists all eight scene headlines in a hidden caption', () => {
     render(<HomeShowcaseVideo />);
     const items = document.querySelectorAll('figcaption li');
-    expect(items).toHaveLength(9);
-    expect(items[6].textContent).toBe(tFromCatalog('marketing', 'home.showcase.scenes.island'));
+    expect(items).toHaveLength(8);
+    expect(items[5].textContent).toBe(tFromCatalog('marketing', 'home.showcase.scenes.island'));
   });
 
   it('loads the webm after window load plus idle, then plays once in view', () => {

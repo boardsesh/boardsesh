@@ -114,11 +114,10 @@
       "title": "Beta fresca"
     },
     "showcase": {
-      "videoLabel": "Demo: encender un plafón Kilter desde el móvil, cambiar de plafón, llevar una cola de grupo y registrar un encadene.",
+      "videoLabel": "Demo: todos los plafones en una app, incluido un muro de spray, y después una cola de grupo, un plan de entrenamiento y un encadene registrado.",
       "scenes": {
-        "hook": "Tu plafón. Encendido desde el móvil.",
-        "light": "Desliza y el plafón te sigue.",
         "boards": "Todos los plafones. Una app.",
+        "spray": "Tu muro de spray, también.",
         "wall": "Mira qué hay en el plafón.",
         "crew": "Tu grupo. Una cola.",
         "workouts": "Dale un plan a tu sesión.",
@@ -147,6 +146,11 @@
         "title": "Todos tus plafones. Un perfil.",
         "body": "Ve tus encadenes y tu progreso en cada plafón.",
         "shotAlt": "Tus encadenes y tu progreso en cada plafón en tu perfil de Boardsesh"
+      },
+      "spray": {
+        "title": "Tu muro de spray, también.",
+        "body": "Fotografía cualquier muro. Monta y registra bloques en él.",
+        "shotAlt": "Un bloque resaltado sobre la foto de un muro de spray en Boardsesh"
       }
     },
     "support": {

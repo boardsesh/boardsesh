@@ -96,7 +96,7 @@ svg.layer {
 }
 
 /*
- * Stacking: background, glow and the motif's grid sit at the bottom; phones
+ * Stacking: background and glow sit at the bottom; phones
  * (z 2 up, later board arrivals on top) above their shadows; everything drawn
  * over the footage above the phones.
  */
@@ -108,7 +108,7 @@ svg.layer {
 .phone-shadow {
   z-index: 1;
 }
-.motif-front {
+.spark-layer {
   z-index: 30;
 }
 #callouts {
@@ -172,21 +172,6 @@ svg.layer {
   opacity: calc(var(--light-mix) * 0.04);
 }
 
-/* --- motif ------------------------------------------------------------------- */
-
-.motif-back {
-  opacity: var(--motif-o, 1);
-}
-#grid {
-  opacity: var(--grid-o, 1);
-}
-#motifLine {
-  opacity: var(--line-o, 1);
-}
-.ring .ring-halo {
-  opacity: var(--halo, 0.5);
-}
-
 /*
  * --- phone ----------------------------------------------------------------------
  *
@@ -247,7 +232,6 @@ svg.layer {
   width: 100%;
   height: 100%;
   object-fit: fill;
-  opacity: var(--footage-o, 1);
 }
 .screen .gloss {
   position: absolute;
@@ -400,7 +384,8 @@ svg.layer {
   font-weight: 700;
   font-size: 26px;
   letter-spacing: -0.01em;
-  color: var(--sub-on-light);
+  /* The boards scene's tone (`on-dark` / `on-light`, set by timeline.mjs). */
+  color: var(--sub);
   opacity: var(--o, 0);
   filter: blur(calc(var(--b, 0) * 1px));
   white-space: nowrap;
@@ -409,10 +394,18 @@ svg.layer {
 #stage[data-format='9x16'] .board-label {
   padding: 4px 12px;
   border-radius: 999px;
+  color: var(--ink);
+  font-size: 24px;
+}
+#stage[data-format='9x16'] .board-label.on-light {
   background: color-mix(in srgb, #fff 88%, transparent);
   box-shadow: 0 4px 14px rgba(40, 20, 80, 0.12);
-  color: var(--ink-on-light);
-  font-size: 24px;
+}
+#stage[data-format='9x16'] .board-label.on-dark {
+  background: color-mix(in srgb, var(--stage-dark) 86%, transparent);
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in srgb, var(--ink-on-dark) 22%, transparent),
+    0 4px 14px rgba(5, 2, 12, 0.5);
 }
 
 /* --- callouts -------------------------------------------------------------------- */
@@ -755,10 +748,6 @@ svg.layer {
   stroke: #ffe14d;
   stroke-width: 3;
   stroke-dasharray: 18 10;
-}
-.measure .cross {
-  stroke: #ffe14d;
-  stroke-width: 2;
 }
 
 /* --- 9:16 --------------------------------------------------------------------------------- */

@@ -58,10 +58,10 @@ export function showcaseVideoJsonLd(): Record<string, unknown> {
     '@type': 'VideoObject',
     name: 'Boardsesh in under a minute',
     description:
-      'Light a Kilter board from your phone, switch between boards, run a shared crew queue and log a send in Boardsesh.',
+      'Use every board in one app, including your own spray wall, run a shared crew queue, plan a workout and log a send in Boardsesh. Works with Kilter, Tension and MoonBoard.',
     thumbnailUrl: toAbsolute(poster),
-    uploadDate: '2026-09-30T00:00:00+10:00',
-    duration: 'PT56.8S',
+    uploadDate: '2026-10-06T00:00:00+10:00',
+    duration: 'PT54.8S',
     contentUrl: toAbsolute(mp4),
   };
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import { SUPPORTED_LOCALES } from '../i18n/config';
 import { marketingScreenshot, type MarketingShot } from '../marketing-screenshots';
 
-const shots: MarketingShot[] = ['kilter', 'tension', 'moonboard', 'queue', 'wall-status', 'profile'];
+const shots: MarketingShot[] = ['kilter', 'tension', 'moonboard', 'queue', 'wall-status', 'profile', 'spray-wall'];
 
 describe('marketing capture selection', () => {
   for (const platform of ['ios', 'android'] as const) {

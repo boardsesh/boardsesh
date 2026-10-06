@@ -79,15 +79,16 @@ export const footageFramePath = (
  * several phones, one take per board).
  */
 export const SHOWCASE_TAKE_IDS = [
-  'light',
   'boards-kilter',
   'boards-tension',
+  'boards-spray',
   'boards-moonboard',
   'boards-woods',
   'boards-decoy',
   'boards-touchstone',
   'boards-grasshopper',
   'boards-soill',
+  'spray',
   'wall',
   'crew',
   'workouts',
@@ -103,7 +104,6 @@ export type ShowcaseTakeId = (typeof SHOWCASE_TAKE_IDS)[number];
  * list against the app's copy.
  */
 export const SHOWCASE_ANCHOR_NAMES = [
-  'wall-pill',
   'board-surface',
   'invite-qr',
   'queue-row-avatar',
@@ -133,7 +133,7 @@ export type ShowcaseCalloutName = ShowcaseAnchorName | ShowcaseStaticAnchorName;
  * What the app prints (via `console.log`, which Metro forwards) whenever an
  * anchored view lays out in screenshot mode:
  *
- *   [showcase-anchor] {"name":"wall-pill","x":24,"y":118,"width":132,"height":32}
+ *   [showcase-anchor] {"name":"invite-qr","x":120,"y":118,"width":200,"height":200}
  *
  * Coordinates are `measureInWindow` points (not pixels; dp on Android). The recorder stamps
  * each line with the time it arrived, relative to the take's recording start.
@@ -164,7 +164,7 @@ export type ShowcaseAnchorsFile = Readonly<{
 
 /**
  * `work/marks/<takeId>.json`, written by the recorder, read by the renderer:
- * the moments a take's flow reached a step (the bulb tap, the island opening,
+ * the moments a take's flow reached a step (a swipe, the island opening,
  * Next), in seconds from the start of the TRIMMED footage, so the renderer
  * can place cuts and callouts on events instead of hand-read frame numbers.
  * The flows raise them on the recorder's signal server as `/mark/<name>`

@@ -182,9 +182,8 @@ export default function HomeShowcaseVideo() {
 
   const scenes = React.useMemo(
     () => [
-      { id: 'hook', headline: t('home.showcase.scenes.hook') },
-      { id: 'light', headline: t('home.showcase.scenes.light') },
       { id: 'boards', headline: t('home.showcase.scenes.boards') },
+      { id: 'spray', headline: t('home.showcase.scenes.spray') },
       { id: 'wall', headline: t('home.showcase.scenes.wall') },
       { id: 'crew', headline: t('home.showcase.scenes.crew') },
       { id: 'workouts', headline: t('home.showcase.scenes.workouts') },
