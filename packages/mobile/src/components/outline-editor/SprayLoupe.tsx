@@ -10,14 +10,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { overlays } from '../../theme/tokens';
-import {
-  LOUPE_DELAY_MS,
-  LOUPE_SIZE_PT,
-  loupeGateOpen,
-  loupeInnerTransform,
-  loupePlacement,
-  type LoupeSide,
-} from './spray-gesture-math';
+import { LOUPE_SIZE_PT, loupeInnerTransform, stepLoupe, type LoupeTrack } from './spray-gesture-math';
 import type { SprayLoupeFeed } from './spray-loupe-feed';
 
 /** The loupe fades rather than pops, quickly enough to keep up with a finger. */
@@ -92,57 +85,42 @@ export const SprayLoupe = React.memo(function SprayLoupe({
   /** The circle's centre in the host. Written only by the reaction below. */
   const centreXSV = useSharedValue(0);
   const centreYSV = useSharedValue(0);
-  const sideSV = useSharedValue<LoupeSide>('above');
-  /** Where the current touch started, for the movement half of the gate. */
-  const startXSV = useSharedValue(0);
-  const startYSV = useSharedValue(0);
-  /** The gate has opened for this touch: the fade-in is running or done. */
-  const shownSV = useSharedValue(false);
+  /** What the loupe remembers about the touch it follows. Written only by the reaction below. */
+  const trackSV = useSharedValue<LoupeTrack>({ startX: 0, startY: 0, side: 'above', shown: false });
 
   useAnimatedReaction(
     () => ({ touchDownAt: feed.touchDownAtSV.value, x: feed.xSV.value, y: feed.ySV.value }),
     (current, previous) => {
-      const fadeIn = { duration: FADE_IN_MS, reduceMotion: ReduceMotion.System };
-      if (current.touchDownAt === 0) {
-        if (previous !== null && previous.touchDownAt !== 0) {
-          shownSV.value = false;
-          opacitySV.value = withTiming(0, { duration: FADE_OUT_MS, reduceMotion: ReduceMotion.System });
-        }
-        return;
-      }
-      const isNewTouch = previous === null || previous.touchDownAt !== current.touchDownAt;
-      // A new touch starts above the finger; the same touch keeps its side.
-      const placement = loupePlacement(
-        current.x + clipOffsetX,
-        current.y + clipOffsetY,
-        hostWidth,
-        hostHeight,
+      const step = stepLoupe(
+        previous,
+        current,
+        trackSV.value,
+        Date.now(),
+        { clipOffsetX, clipOffsetY, width: hostWidth, height: hostHeight, topSafe },
         LOUPE_SIZE_PT,
-        topSafe,
-        isNewTouch ? 'above' : sideSV.value,
       );
-      centreXSV.value = placement.x;
-      centreYSV.value = placement.y;
-      sideSV.value = placement.side;
-      if (isNewTouch) {
-        startXSV.value = current.x;
-        startYSV.value = current.y;
-        const elapsed = Math.max(0, Date.now() - current.touchDownAt);
-        shownSV.value = loupeGateOpen(elapsed, 0);
-        // Not open yet: fade in once the delay is up, unless the finger lifts
-        // (the fade-out replaces this) or moves (the branch below) first. The
-        // delay is never skipped for Reduce Motion — it is what keeps a tap
-        // from flashing the loupe, not motion — only the fade is.
-        opacitySV.value = shownSV.value
-          ? withTiming(1, fadeIn)
-          : withDelay(LOUPE_DELAY_MS - elapsed, withTiming(1, fadeIn), ReduceMotion.Never);
-        return;
+      trackSV.value = step.track;
+      if (step.placement) {
+        centreXSV.value = step.placement.x;
+        centreYSV.value = step.placement.y;
       }
-      if (shownSV.value) return;
-      const moved = Math.hypot(current.x - startXSV.value, current.y - startYSV.value);
-      if (loupeGateOpen(0, moved)) {
-        shownSV.value = true;
-        opacitySV.value = withTiming(1, fadeIn);
+      const fadeIn = { duration: FADE_IN_MS, reduceMotion: ReduceMotion.System };
+      switch (step.fade) {
+        case 'out':
+          opacitySV.value = withTiming(0, { duration: FADE_OUT_MS, reduceMotion: ReduceMotion.System });
+          return;
+        case 'in':
+          opacitySV.value = withTiming(1, fadeIn);
+          return;
+        case 'inAfterDelay':
+          // Fades in once the delay is up, unless the finger lifts (the fade-out
+          // replaces this) or moves (an `in` step) first. The delay is never
+          // skipped for Reduce Motion — it is what keeps a tap from flashing the
+          // loupe, not motion — only the fade is.
+          opacitySV.value = withDelay(step.delayMs, withTiming(1, fadeIn), ReduceMotion.Never);
+          return;
+        case 'keep':
+          return;
       }
     },
     [feed, clipOffsetX, clipOffsetY, hostWidth, hostHeight, topSafe],
@@ -207,7 +185,7 @@ const styles = StyleSheet.create({
     height: LOUPE_SIZE_PT,
     borderRadius: LOUPE_HALF,
     overflow: 'hidden',
-    backgroundColor: '#000000',
+    backgroundColor: overlays.loupeBackdrop,
   },
   content: {
     position: 'absolute',

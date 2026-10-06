@@ -12,7 +12,11 @@ import {
   loupeMagnification,
   loupePlacement,
   screenToBoard,
+  stepLoupe,
+  type LoupeHost,
+  type LoupeSample,
   type LoupeSide,
+  type LoupeTrack,
 } from '../spray-gesture-math';
 
 /** A 375 pt phone's editor area. */
@@ -156,5 +160,93 @@ describe('loupeGateOpen', () => {
   it('opens on time or on movement, whichever comes first', () => {
     expect(loupeGateOpen(LOUPE_DELAY_MS, 0)).toBe(true);
     expect(loupeGateOpen(10, LOUPE_SLOP_PT)).toBe(true);
+  });
+});
+
+describe('stepLoupe', () => {
+  const HOST: LoupeHost = {
+    clipOffsetX: 0,
+    clipOffsetY: 0,
+    width: PHONE_WIDTH,
+    height: PHONE_HEIGHT,
+    topSafe: TOP_SAFE,
+  };
+  const IDLE: LoupeTrack = { startX: 0, startY: 0, side: 'above', shown: false };
+  const DOWN_AT = 10_000;
+  const MID = { x: 200, y: 400 };
+  const NEAR_TOP = { x: 200, y: 20 };
+
+  function sample(touchDownAt: number, point: { x: number; y: number }): LoupeSample {
+    return { touchDownAt, ...point };
+  }
+  function step(previous: LoupeSample | null, current: LoupeSample, track: LoupeTrack, now: number) {
+    return stepLoupe(previous, current, track, now, HOST, LOUPE_SIZE_PT);
+  }
+
+  it.each([
+    ['a fresh touch waits out the rest of the delay', 30, 'inAfterDelay', LOUPE_DELAY_MS - 30, false],
+    ['a touch that landed in the future still waits the whole delay', -5, 'inAfterDelay', LOUPE_DELAY_MS, false],
+    ['a 400 ms pick-up shows at once', 400, 'in', 0, true],
+    ['a touch exactly at the delay shows at once', LOUPE_DELAY_MS, 'in', 0, true],
+  ] as const)('%s', (_name, elapsed, fade, delayMs, shown) => {
+    const result = step(null, sample(DOWN_AT, MID), IDLE, DOWN_AT + elapsed);
+    expect(result.fade).toBe(fade);
+    expect(result.delayMs).toBe(delayMs);
+    expect(result.track).toEqual({ startX: MID.x, startY: MID.y, side: 'above', shown });
+    expect(result.placement).toEqual(place(MID.x, MID.y));
+  });
+
+  it('captures the start point afresh for a new touch, and starts it above the finger', () => {
+    const stale: LoupeTrack = { startX: 1, startY: 1, side: 'left', shown: true };
+    const result = step(sample(DOWN_AT, MID), sample(DOWN_AT + 500, MID), stale, DOWN_AT + 510);
+    expect(result.track).toEqual({ startX: MID.x, startY: MID.y, side: 'above', shown: false });
+    expect(result.fade).toBe('inAfterDelay');
+  });
+
+  it.each([
+    ['opens the gate once the same touch has moved the slop', LOUPE_SLOP_PT, 'in', true],
+    ['keeps waiting while the same touch has moved less', LOUPE_SLOP_PT - 1, 'keep', false],
+  ] as const)('%s', (_name, movedX, fade, shown) => {
+    const started = step(null, sample(DOWN_AT, MID), IDLE, DOWN_AT);
+    const moved = { x: MID.x + movedX, y: MID.y };
+    const result = step(sample(DOWN_AT, MID), sample(DOWN_AT, moved), started.track, DOWN_AT + 10);
+    expect(result.fade).toBe(fade);
+    expect(result.track.shown).toBe(shown);
+    expect(result.placement).toEqual(place(moved.x, moved.y));
+  });
+
+  it('leaves the fade alone for a touch already shown, but still follows the finger', () => {
+    const shown: LoupeTrack = { startX: MID.x, startY: MID.y, side: 'above', shown: true };
+    const result = step(sample(DOWN_AT, MID), sample(DOWN_AT, { x: 220, y: 400 }), shown, DOWN_AT + 300);
+    expect(result.fade).toBe('keep');
+    expect(result.placement).toEqual(place(220, 400));
+  });
+
+  it('carries the side across readings of the same touch', () => {
+    const atTop = step(null, sample(DOWN_AT, NEAR_TOP), IDLE, DOWN_AT);
+    expect(atTop.track.side).toBe('left');
+    // Just below the point where above would fit, but inside the return margin.
+    const justBelow = { x: NEAR_TOP.x, y: LOUPE_OFFSET_PT + HALF + TOP_SAFE + 1 };
+    const kept = step(sample(DOWN_AT, NEAR_TOP), sample(DOWN_AT, justBelow), atTop.track, DOWN_AT + 10);
+    expect(kept.track.side).toBe('left');
+    // The same point on a NEW touch starts above.
+    const fresh = step(null, sample(DOWN_AT + 1000, justBelow), atTop.track, DOWN_AT + 1000);
+    expect(fresh.track.side).toBe('above');
+  });
+
+  it('fades out and forgets the gate when the finger lifts', () => {
+    const shown: LoupeTrack = { startX: MID.x, startY: MID.y, side: 'left', shown: true };
+    const result = step(sample(DOWN_AT, MID), sample(0, MID), shown, DOWN_AT + 300);
+    expect(result).toEqual({ placement: null, track: { ...shown, shown: false }, fade: 'out', delayMs: 0 });
+  });
+
+  it('does nothing while no touch is live', () => {
+    expect(step(null, sample(0, MID), IDLE, DOWN_AT)).toEqual({
+      placement: null,
+      track: IDLE,
+      fade: 'keep',
+      delayMs: 0,
+    });
+    expect(step(sample(0, MID), sample(0, NEAR_TOP), IDLE, DOWN_AT).fade).toBe('keep');
   });
 });

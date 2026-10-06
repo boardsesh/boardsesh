@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { PointerType } from 'react-native-gesture-handler';
 import { useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { screenToBoard } from './spray-gesture-math';
@@ -92,4 +92,28 @@ export function stopLoupe(feed: SprayLoupeFeed | undefined): void {
   'worklet';
   if (!feed || feed.touchDownAtSV.value === 0) return;
   feed.touchDownAtSV.value = 0;
+}
+
+/**
+ * Lets go of the loupe if this overlay unmounts while it is feeding it.
+ *
+ * Only a gesture callback calls `stopLoupe`, and an overlay unmounted mid-touch
+ * (a second hand taps a tool chip or Done while a finger is on the wall) never
+ * gets its `onFinalize`, which would leave the loupe up until the next lift.
+ * `ownTouchDownAtSV` is the touch-down time this overlay hands `trackLoupe`:
+ * the feed is cleared only while it still carries that time, so an overlay
+ * leaving never hides a loupe another overlay is feeding.
+ */
+export function useReleaseLoupeOnUnmount(
+  feed: SprayLoupeFeed | undefined,
+  ownTouchDownAtSV: SharedValue<number>,
+): void {
+  useEffect(
+    () => () => {
+      if (!feed) return;
+      const touchDownAt = feed.touchDownAtSV.value;
+      if (touchDownAt !== 0 && touchDownAt === ownTouchDownAtSV.value) feed.touchDownAtSV.value = 0;
+    },
+    [feed, ownTouchDownAtSV],
+  );
 }

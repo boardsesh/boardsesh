@@ -3,7 +3,14 @@ import { StyleSheet, View, type AccessibilityActionEvent, type AccessibilityActi
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { fallbackRadiusAt, holdIdAtPoint, screenToBoard, selectedDragIdAt } from './spray-gesture-math';
-import { loupeIsTracking, pointerWantsLoupe, stopLoupe, trackLoupe, type SprayLoupeFeed } from './spray-loupe-feed';
+import {
+  loupeIsTracking,
+  pointerWantsLoupe,
+  stopLoupe,
+  trackLoupe,
+  useReleaseLoupeOnUnmount,
+  type SprayLoupeFeed,
+} from './spray-loupe-feed';
 
 /**
  * Tap window, matching the board's own hold taps (`use-zoomed-hold-tap-gesture`)
@@ -197,6 +204,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
   const placeStartYSV = useSharedValue(0);
   /** The touch is a finger, so it hides what it is on and gets the loupe. */
   const loupeFingerSV = useSharedValue(false);
+  useReleaseLoupeOnUnmount(loupe, touchStartMsSV);
 
   const callbacksRef = useRef({
     onTap,

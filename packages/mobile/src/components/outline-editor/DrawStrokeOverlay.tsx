@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, PointerType, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { STROKE_MIN_SAMPLE_BOARD_PX } from './stroke';
-import { stopLoupe, trackLoupe, type SprayLoupeFeed } from './spray-loupe-feed';
+import { stopLoupe, trackLoupe, useReleaseLoupeOnUnmount, type SprayLoupeFeed } from './spray-loupe-feed';
 
 /**
  * Pointer types that draw. Read into a module-level number so the activation
@@ -143,6 +143,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   const ownerPointerIdSV = useSharedValue(-1);
   /** When the live stroke's first pointer landed, for the loupe's delay. */
   const strokeDownAtSV = useSharedValue(0);
+  useReleaseLoupeOnUnmount(loupe, strokeDownAtSV);
   useEffect(() => {
     boardScaleSV.value = boardScale;
   }, [boardScale, boardScaleSV]);

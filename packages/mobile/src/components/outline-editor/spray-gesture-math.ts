@@ -398,3 +398,100 @@ export function loupeInnerTransform(
     translateY: size / 2 - centreY - (renderY - centreY) * magnification,
   };
 }
+
+/** One reading of the loupe feed: when the touch landed (0 for none) and where the finger is, in the board clip. */
+export type LoupeSample = { touchDownAt: number; x: number; y: number };
+
+/** What the loupe remembers about the touch it is following, between feed readings. */
+export type LoupeTrack = {
+  /** Where the touch started, for the movement half of the gate. */
+  startX: number;
+  startY: number;
+  /** The side it sat on at the last reading, kept so it does not jump across the finger. */
+  side: LoupeSide;
+  /** The gate has opened for this touch: the fade-in is running or done. */
+  shown: boolean;
+};
+
+/** The loupe's host, in points: where the board clip sits in it, its size, and the line it stays below. */
+export type LoupeHost = {
+  clipOffsetX: number;
+  clipOffsetY: number;
+  width: number;
+  height: number;
+  topSafe: number;
+};
+
+/**
+ * What one feed reading does to the loupe: `out` fades it, `in` fades it in now,
+ * `inAfterDelay` fades it in `delayMs` from now unless a later step replaces it,
+ * `keep` leaves the fade alone.
+ */
+export type LoupeFade = 'out' | 'in' | 'inAfterDelay' | 'keep';
+
+export type LoupeStep = {
+  /** The circle's new centre, or null to leave it where it is. */
+  placement: LoupePlacement | null;
+  track: LoupeTrack;
+  fade: LoupeFade;
+  /** For `inAfterDelay`: how long until the fade-in starts. */
+  delayMs: number;
+};
+
+/**
+ * The loupe's response to one reading of the feed, at `now` (`Date.now()`).
+ *
+ * A finger lifting (`touchDownAt` back to 0) fades it out and forgets the touch.
+ * A new touch starts above the finger and records where it started; one that
+ * is already past {@link LOUPE_DELAY_MS} (a 400 ms pick-up) shows at once,
+ * a younger one waits out the rest of the delay. The same touch keeps its side,
+ * and opens the gate early once it has moved {@link LOUPE_SLOP_PT}.
+ */
+export function stepLoupe(
+  previous: LoupeSample | null,
+  sample: LoupeSample,
+  track: LoupeTrack,
+  now: number,
+  host: LoupeHost,
+  size: number,
+): LoupeStep {
+  'worklet';
+  if (sample.touchDownAt === 0) {
+    const wasTracking = previous !== null && previous.touchDownAt !== 0;
+    return {
+      placement: null,
+      track: wasTracking ? { ...track, shown: false } : track,
+      fade: wasTracking ? 'out' : 'keep',
+      delayMs: 0,
+    };
+  }
+  const isNewTouch = previous === null || previous.touchDownAt !== sample.touchDownAt;
+  const placement = loupePlacement(
+    sample.x + host.clipOffsetX,
+    sample.y + host.clipOffsetY,
+    host.width,
+    host.height,
+    size,
+    host.topSafe,
+    isNewTouch ? 'above' : track.side,
+  );
+  if (isNewTouch) {
+    const elapsed = Math.max(0, now - sample.touchDownAt);
+    const shown = loupeGateOpen(elapsed, 0);
+    return {
+      placement,
+      track: { startX: sample.x, startY: sample.y, side: placement.side, shown },
+      fade: shown ? 'in' : 'inAfterDelay',
+      delayMs: shown ? 0 : LOUPE_DELAY_MS - elapsed,
+    };
+  }
+  if (track.shown) return { placement, track: { ...track, side: placement.side }, fade: 'keep', delayMs: 0 };
+  const moved = Math.hypot(sample.x - track.startX, sample.y - track.startY);
+  const shown = loupeGateOpen(0, moved);
+  return {
+    placement,
+    track: { ...track, side: placement.side, shown },
+    fade: shown ? 'in' : 'keep',
+    delayMs: 0,
+  };
+}

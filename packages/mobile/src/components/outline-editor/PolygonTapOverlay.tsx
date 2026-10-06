@@ -3,7 +3,13 @@ import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { CORNERS_CLOSE_EXTENT_FRACTION, CORNERS_CLOSE_TARGET_PT } from './spray-hold-tools';
-import { pointerWantsLoupe, stopLoupe, trackLoupe, type SprayLoupeFeed } from './spray-loupe-feed';
+import {
+  pointerWantsLoupe,
+  stopLoupe,
+  trackLoupe,
+  useReleaseLoupeOnUnmount,
+  type SprayLoupeFeed,
+} from './spray-loupe-feed';
 
 /**
  * How long after a close a corner is ignored. A quick double tap on the first
@@ -105,6 +111,7 @@ export const PolygonTapOverlay = React.memo(function PolygonTapOverlay({
   const touchDownAtSV = useSharedValue(0);
   /** That pointer is a finger, so it gets the loupe. */
   const loupeFingerSV = useSharedValue(false);
+  useReleaseLoupeOnUnmount(loupe, touchDownAtSV);
   useEffect(() => {
     boardScaleSV.value = boardScale;
   }, [boardScale, boardScaleSV]);

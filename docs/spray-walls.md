@@ -1134,7 +1134,10 @@ What the editor does with a wall is decided by this document rather than by tast
   scaling about the view's centre: `t = size/2 − c − (p − c)·m`), holding a
   second `expo-image` of the same URI (a memory-cache hit), the same dim, and
   second instances of `SprayHoldSvgLayer` (with the loupe's magnification as
-  its scale, so strokes stay thin), `SelectedHoldOverlay` (with
+  its scale, so strokes stay thin, and the board's zoom as its
+  `geometryScaleSV`, so the Corners dots and close target are magnified with
+  the photo and the target covers exactly what `PolygonTapOverlay` closes
+  on), `SelectedHoldOverlay` (with
   `syncSharedValues={false}`: the board's copy owns re-syncing) and
   `SprayPlacementPreview`. Those layers draw from shared values, so the
   stroke, the Corners preview, the move and the placed circle show in the
@@ -1142,9 +1145,16 @@ What the editor does with a wall is decided by this document rather than by tast
   where it is mounted, so the overlay that owns the touch writes a
   `SprayLoupeFeed` (`spray-loupe-feed.ts`): the touch-down time (0 when off),
   the finger in the board clip's points, the point under it in render px,
-  and the zoom. It is always mounted at opacity 0, and only transforms and
-  opacity animate, so a gesture never re-renders it; the second ring layer
-  re-renders only when the rings do. `DrawStrokeOverlay` takes the feed as
+  and the zoom. An overlay unmounted mid-touch (a tool chip or Done tapped
+  with a finger still on the wall) never finalizes, so each one clears the
+  feed on unmount while it still carries its own touch
+  (`useReleaseLoupeOnUnmount`). The loupe's own state across readings — the
+  touch's start point, its side and whether the gate has opened — is one
+  pure step per reading (`stepLoupe`). It is always mounted at opacity 0, and
+  only transforms and opacity animate, so a gesture never re-renders it; the
+  second ring layer re-renders only when the rings do, or on the first touch
+  after a pinch that crossed a stroke step (the feed's zoom is written at
+  touch-down). `DrawStrokeOverlay` takes the feed as
   an opt-in `loupe` prop, which the catalogue editor never passes. The
   resize handle has none (the finger is beside the ring, not on it), and
   the anchors step has none yet.

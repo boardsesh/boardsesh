@@ -1599,7 +1599,17 @@ export function SprayHoldEditorScreen({
   // the layers that draw a gesture's live state from shared values — so the
   // loupe shows the stroke, the Corners preview, the move and the placed
   // circle with no extra wiring. Memoised so the loupe re-renders only when the
-  // rings themselves do.
+  // rings themselves do — or when its zoom crosses a stroke step: the feed's
+  // zoom is written at touch-down, so the first touch after a pinch that
+  // crossed a step re-renders these layers' widths on the JS thread while the
+  // loupe waits out its delay. The hold paths are memoised on the holds, so that
+  // render only re-joins strings; it is the price of keeping the loupe's
+  // strokes hairlines at every magnification.
+  //
+  // The ring layer's strokes follow the loupe's magnification, but the Corners
+  // dots and close target follow the BOARD's zoom (`geometryScaleSV`): they
+  // are geometry, magnified with the photo, so the target covers exactly what
+  // `PolygonTapOverlay` will close on.
   const loupeContent = useMemo(
     () =>
       wall && viewerCanEdit ? (
@@ -1624,6 +1634,7 @@ export function SprayHoldEditorScreen({
             draftPointsSV={draftPointsSV}
             polygonSV={cornersSV}
             scaleSV={loupeMagnificationSV}
+            geometryScaleSV={loupeFeed.zoomSV}
             boardWidth={wall.photoWidth}
             boardHeight={wall.photoHeight}
             renderWidth={boardRender.width}

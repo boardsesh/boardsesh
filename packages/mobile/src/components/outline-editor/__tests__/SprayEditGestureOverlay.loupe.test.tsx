@@ -95,7 +95,7 @@ function mount(selected: number[] = []) {
   };
   const manager = { activate: vi.fn(), fail: vi.fn(), end: vi.fn() };
   const onPlaceStart = vi.fn();
-  render(
+  const { unmount } = render(
     <SprayEditGestureOverlay
       scaleSV={shared(1)}
       translateXSV={shared(0)}
@@ -134,7 +134,7 @@ function mount(selected: number[] = []) {
     send('longPress', 'down', touchEvent(x, y, 1, pointerType));
     send('drag', 'down', touchEvent(x, y, 1, pointerType));
   }
-  return { loupe, manager, send, down, onPlaceStart };
+  return { loupe, manager, send, down, onPlaceStart, unmount };
 }
 
 beforeEach(() => installed.gestures.clear());
@@ -191,5 +191,20 @@ describe('SprayEditGestureOverlay feeds the loupe', () => {
     overlay.send('longPress', 'start', { x: 100, y: 100 });
     overlay.send('drag', 'move', touchEvent(120, 100, 1, 1));
     expect(overlay.loupe.touchDownAtSV.value).toBe(0);
+  });
+
+  it('lets go if the overlay unmounts mid-drag, which never finalizes the touch', () => {
+    const overlay = mount([...HOLD]);
+    overlay.down(105, 100);
+    expect(overlay.loupe.touchDownAtSV.value).toBeGreaterThan(0);
+    overlay.unmount();
+    expect(overlay.loupe.touchDownAtSV.value).toBe(0);
+  });
+
+  it('leaves a loupe another overlay is feeding when it unmounts', () => {
+    const overlay = mount([...HOLD]);
+    overlay.loupe.touchDownAtSV.value = 12345;
+    overlay.unmount();
+    expect(overlay.loupe.touchDownAtSV.value).toBe(12345);
   });
 });
