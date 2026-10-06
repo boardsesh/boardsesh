@@ -78,6 +78,7 @@ describe('PREFERENCE_SECURE_KEYS', () => {
       'onboarding_tip_spray_maybe_seen',
       'onboarding_tip_spray_long_press_seen',
       'onboarding_tip_spray_add_hold_seen',
+      'onboarding_tip_spray_pencil_seen',
     ]);
   });
 

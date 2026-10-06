@@ -841,7 +841,8 @@
       "cancel": "Cancelar",
       "addDraw": "Dibuja alrededor de una presa que falta, o toca para poner un círculo",
       "addCorners": "Toca las esquinas alrededor de una presa que falta",
-      "done": "Listo"
+      "done": "Listo",
+      "tracePencil": "Dibuja con el Apple Pencil alrededor de la presa"
     },
     "addShape": {
       "label": "Cómo perfilar una presa",
@@ -860,7 +861,8 @@
       "longPress": "Mantén pulsado un círculo y deslízalo para moverlo.",
       "addHold": "Mantén pulsado para añadir una presa.",
       "dismiss": "Ocultar consejo",
-      "replay": "Ver consejos"
+      "replay": "Ver consejos",
+      "pencil": "El Apple Pencil añade y activa presas. Con los dedos te mueves y eliges una presa."
     },
     "a11y": {
       "wall": "Foto de tu muro: {{summary}}",
@@ -899,7 +901,32 @@
       "noPhoto": "Este muro todavía no tiene foto que editar."
     },
     "loading": "Cargando tu muro…",
-    "loadStalled": "No pudimos cargar tu muro. Inténtalo de nuevo."
+    "loadStalled": "No pudimos cargar tu muro. Inténtalo de nuevo.",
+    "rail": {
+      "label": "Herramientas de edición",
+      "grip": "Mover las herramientas al otro lado",
+      "mark": "Elegir y activar presas",
+      "pencilOnly": "Solo Pencil",
+      "pencilOnlyHint": "Con los dedos eliges presas y te mueves. Solo el Apple Pencil cambia el muro.",
+      "fit": "Ajustar el muro a la pantalla",
+      "more": "Más opciones"
+    },
+    "inspector": {
+      "role": {
+        "on": "Activa",
+        "off": "Desactivada",
+        "maybe": "Dudosa"
+      },
+      "source": {
+        "scan": "Encontrada por el escaneo",
+        "scanConfidence": "Encontrada por el escaneo · {{percent}} %",
+        "manual": "Añadida por ti"
+      },
+      "size": "Tamaño",
+      "redraw": "Redibujar",
+      "previous": "Presa anterior",
+      "next": "Presa siguiente"
+    }
   },
   "sprayWizard": {
     "screenTitle": "Añadir un muro de spray",

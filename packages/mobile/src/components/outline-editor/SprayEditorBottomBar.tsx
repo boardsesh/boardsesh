@@ -1,6 +1,6 @@
-import React, { useCallback, useMemo, useState } from 'react';
-import { Alert, StyleSheet, View, type ColorValue } from 'react-native';
-import Animated, { FadeIn, FadeOut, LinearTransition, ZoomIn } from 'react-native-reanimated';
+import React, { useCallback, useState } from 'react';
+import { StyleSheet, View, type ColorValue } from 'react-native';
+import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
@@ -8,19 +8,14 @@ import { GlassIconButton } from '../GlassIconButton';
 import { GlassSurface } from '../GlassSurface';
 import { PressableSurface } from '../PressableSurface';
 import { useTheme } from '../../providers/theme-provider';
-import { borderRadius, spacing } from '../../theme/tokens';
-import { glassSize } from '../../theme/layout';
+import { spacing } from '../../theme/tokens';
 import type { SprayEditorCounts } from './spray-hold-editor-reducer';
 import { SPRAY_BAR_GUTTER, SPRAY_BAR_HEIGHT } from './spray-photo-frame';
-import { SprayCountCrossfade } from './SprayCountCrossfade';
-import { springs } from '../../theme/animations';
+import { SprayCountCapsule, SprayEditorMenu } from './SprayCountCapsule';
 
-type Translate = (key: string, options?: Record<string, unknown>) => string;
+// Re-exported so the editor imports the count line from where it always has.
+export { sprayCountSummary } from './SprayCountCapsule';
 
-/** Diameter of the dashed dot that ties the capsule's maybe line to the dashed rings. */
-const MAYBE_DOT_SIZE = 8;
-/** The checkmark the capsule turns into once the holds are saved. */
-const CHECK_SIZE = 26;
 /** The undo and redo glyphs, the size `GlassIconButton` draws its own. */
 const HISTORY_ICON_SIZE = 22;
 /** Dimmed opacity for Undo with nothing to undo, matching a disabled glass button. */
@@ -29,26 +24,6 @@ const DISABLED_OPACITY = 0.4;
 const REDO_ENTERING = FadeIn.duration(150);
 const REDO_EXITING = FadeOut.duration(150);
 const PILL_LAYOUT = LinearTransition.duration(150);
-// Built-in, so Reduce Motion (the system setting) skips it: the checkmark
-// simply appears.
-const CHECK_ENTERING = ZoomIn.springify()
-  .damping(springs.bouncy.damping)
-  .stiffness(springs.bouncy.stiffness)
-  .mass(springs.bouncy.mass);
-
-/**
- * The wall's numbers as one line — "212 holds · 38 maybes", or just the holds
- * while there are no maybes on screen. What a screen reader hears for the
- * capsule and for the wall itself.
- */
-export function sprayCountSummary(t: Translate, counts: SprayEditorCounts, showMaybes: boolean): string {
-  const holdsLabel = t('sprayEditor.bar.holds', { count: counts.on });
-  if (counts.maybes === 0 || !showMaybes) return holdsLabel;
-  return t('sprayEditor.bar.withMaybes', {
-    holds: holdsLabel,
-    maybes: t('sprayEditor.bar.maybes', { count: counts.maybes }),
-  });
-}
 
 type SprayEditorBottomBarProps = {
   counts: SprayEditorCounts;
@@ -125,62 +100,21 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
   const { systemColors, brandColors } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const holdsLabel = t('sprayEditor.bar.holds', { count: counts.on });
-  const maybesLabel = counts.maybes > 0 && showMaybes ? t('sprayEditor.bar.maybes', { count: counts.maybes }) : null;
-  const countLabel = celebrating ? t('sprayEditor.bar.saved') : sprayCountSummary(t, counts, showMaybes);
-
   const toggleMenu = useCallback(() => setMenuOpen((open) => !open), []);
   const closeMenu = useCallback(() => setMenuOpen(false), []);
-
-  const menuActions = useMemo(() => {
-    const keepMaybes = () => {
-      setMenuOpen(false);
-      onKeepMaybes();
-    };
-    const toggleMaybes = () => {
-      setMenuOpen(false);
-      onToggleMaybes();
-    };
-    const startOver = () => {
-      setMenuOpen(false);
-      Alert.alert(t('sprayEditor.startOver.title'), t('sprayEditor.startOver.body'), [
-        { text: t('sprayEditor.startOver.cancel'), style: 'cancel' },
-        { text: t('sprayEditor.startOver.confirm'), style: 'destructive', onPress: onStartOver },
-      ]);
-    };
-    return { keepMaybes, toggleMaybes, startOver };
-  }, [onKeepMaybes, onToggleMaybes, onStartOver, t]);
 
   return (
     <View pointerEvents="box-none" style={[styles.root, { bottom: bottomInset + SPRAY_BAR_GUTTER }]}>
       {menuOpen && !locked ? (
-        <View style={styles.menu}>
-          <GlassSurface glassEffectStyle="regular" borderRadius={borderRadius.xl} style={StyleSheet.absoluteFill} />
-          {canReviewMaybes && counts.maybes > 0 && showMaybes ? (
-            <Button
-              title={t('sprayEditor.menu.keepMaybes')}
-              variant="text"
-              over="surface"
-              onPress={menuActions.keepMaybes}
-            />
-          ) : null}
-          {canReviewMaybes && counts.maybes > 0 ? (
-            <Button
-              title={showMaybes ? t('sprayEditor.menu.hideMaybes') : t('sprayEditor.menu.showMaybes')}
-              variant="text"
-              over="surface"
-              onPress={menuActions.toggleMaybes}
-            />
-          ) : null}
-          <Button
-            title={t('sprayEditor.menu.startOver')}
-            variant="text"
-            role="destructive"
-            over="surface"
-            onPress={menuActions.startOver}
-          />
-          <Button title={t('sprayEditor.menu.close')} variant="text" role="cancel" over="surface" onPress={closeMenu} />
-        </View>
+        <SprayEditorMenu
+          counts={counts}
+          showMaybes={showMaybes}
+          canReviewMaybes={canReviewMaybes}
+          onKeepMaybes={onKeepMaybes}
+          onToggleMaybes={onToggleMaybes}
+          onStartOver={onStartOver}
+          onClose={closeMenu}
+        />
       ) : null}
 
       <View pointerEvents="box-none" style={styles.row}>
@@ -213,54 +147,14 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
           ) : null}
         </Animated.View>
 
-        <PressableSurface
-          testID="spray-count-capsule"
+        <SprayCountCapsule
+          counts={counts}
+          showMaybes={showMaybes}
+          celebrating={celebrating}
+          locked={locked}
           onPress={toggleMenu}
-          disabled={locked}
-          feedback="scale"
-          accessibilityRole="button"
-          accessibilityLabel={countLabel}
-          accessibilityHint={t('sprayEditor.bar.menuHint')}
-          accessibilityState={{ expanded: menuOpen, disabled: locked }}
-          style={styles.capsule}
-        >
-          <GlassSurface
-            glassEffectStyle="regular"
-            fallbackColor={systemColors.fill}
-            borderRadius={glassSize.capsule / 2}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
-          {celebrating ? (
-            <Animated.View entering={CHECK_ENTERING} style={styles.check}>
-              <Icon name="checkmark.circle.fill" size={CHECK_SIZE} color={brandColors.primary} />
-            </Animated.View>
-          ) : (
-            <>
-              {/* The primary action has its own row, leaving the translated
-                  counts the space between the two fixed-size icon buttons. */}
-              <SprayCountCrossfade
-                text={holdsLabel}
-                value={counts.on}
-                variant={maybesLabel ? 'subheadline' : 'headline'}
-                color={systemColors.label}
-                style={[styles.capsuleText, styles.holdsText]}
-              />
-              {maybesLabel ? (
-                <View style={styles.maybeRow}>
-                  <View style={[styles.maybeDot, { borderColor: brandColors.accent }]} />
-                  <SprayCountCrossfade
-                    text={maybesLabel}
-                    value={counts.maybes}
-                    variant="caption2"
-                    color={systemColors.secondaryLabel}
-                    style={styles.capsuleText}
-                  />
-                </View>
-              ) : null}
-            </>
-          )}
-        </PressableSurface>
+          expanded={menuOpen}
+        />
 
         <GlassIconButton
           iconName="plus"
@@ -353,46 +247,5 @@ const styles = StyleSheet.create({
   },
   disabled: {
     opacity: DISABLED_OPACITY,
-  },
-  capsule: {
-    flex: 1,
-    minWidth: 0,
-    height: glassSize.capsule,
-    borderRadius: glassSize.capsule / 2,
-    overflow: 'hidden',
-    justifyContent: 'center',
-    paddingHorizontal: spacing[3],
-  },
-  capsuleText: {
-    textAlign: 'center',
-    fontVariant: ['tabular-nums'],
-  },
-  holdsText: {
-    fontWeight: '600',
-  },
-  check: {
-    alignSelf: 'center',
-  },
-  maybeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing[1],
-  },
-  maybeDot: {
-    width: MAYBE_DOT_SIZE,
-    height: MAYBE_DOT_SIZE,
-    borderRadius: MAYBE_DOT_SIZE / 2,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-  },
-  menu: {
-    alignSelf: 'center',
-    minWidth: 220,
-    borderRadius: borderRadius.xl,
-    overflow: 'hidden',
-    paddingVertical: spacing[1],
-    paddingHorizontal: spacing[2],
-    gap: spacing[1],
   },
 });

@@ -75,7 +75,7 @@ function shared<T>(initial: T): SharedValue<T> {
     },
   };
 }
-function mount(initialVertices: number[] = [], maxVertices = 24) {
+function mount(initialVertices: number[] = [], maxVertices = 24, stylusOnly?: boolean) {
   const vertices = shared<number[]>(initialVertices);
   const loupe: SprayLoupeFeed = {
     touchDownAtSV: shared(0),
@@ -104,6 +104,7 @@ function mount(initialVertices: number[] = [], maxVertices = 24) {
       onVertexLimit={limit}
       onClose={close}
       loupe={loupe}
+      stylusOnlySV={stylusOnly === undefined ? undefined : shared(stylusOnly)}
     />,
   );
   function send(name: string, payload: unknown = event()) {
@@ -220,5 +221,41 @@ describe('Corners: the loupe', () => {
     expect(corners.loupe.touchDownAtSV.value).toBe(0);
     corners.send('up', upEvent());
     expect(corners.vertices.value).toEqual([80, 90]);
+  });
+});
+
+const FINGER = 0;
+const STYLUS = 1;
+
+describe('Corners: Pencil only (stylusOnlySV)', () => {
+  it('fails a finger at touch-down while Pencil only is on, so it pans instead', () => {
+    const corners = mount([], 24, true);
+    corners.send('down', event([touch()], [touch()], FINGER));
+    expect(corners.manager.fail).toHaveBeenCalledTimes(1);
+    expect(corners.manager.activate).not.toHaveBeenCalled();
+    // A finger turned away never feeds the loupe either.
+    expect(corners.loupe.touchDownAtSV.value).toBe(0);
+  });
+
+  it('lets the Pencil touch, slide and lift a corner while Pencil only is on', () => {
+    const corners = mount([], 24, true);
+    corners.send('down', event([touch()], [touch()], STYLUS));
+    expect(corners.manager.fail).not.toHaveBeenCalled();
+    corners.send('up', upEvent());
+    expect(corners.vertices.value).toEqual([80, 90]);
+    expect(corners.added).toHaveBeenCalledTimes(1);
+  });
+
+  it('takes any one finger when off or omitted, and never two', () => {
+    for (const stylusOnly of [false, undefined]) {
+      installed.callbacks.clear();
+      const corners = mount([], 24, stylusOnly);
+      corners.send('down', event([touch()], [touch()], FINGER));
+      expect(corners.manager.fail).not.toHaveBeenCalled();
+      expect(corners.manager.activate).toHaveBeenCalledTimes(1);
+      corners.send('up', upEvent());
+      corners.send('down', event([touch(), touch(8)]));
+      expect(corners.manager.fail).toHaveBeenCalledTimes(1);
+    }
   });
 });

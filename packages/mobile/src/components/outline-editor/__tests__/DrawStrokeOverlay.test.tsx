@@ -98,11 +98,13 @@ function loupeFeed(): SprayLoupeFeed {
     zoomSV: shared(1),
   };
 }
-function mount(acceptStationaryTaps = true, fingerDraw = true, loupe?: SprayLoupeFeed) {
+type OptIns = { declineOnSelection?: number[]; onStylusSeen?: () => void; loupe?: SprayLoupeFeed };
+function mount(acceptStationaryTaps = true, fingerDraw = true, optIns: OptIns = {}) {
   const points = shared<number[]>([]);
   const start = vi.fn();
   const end = vi.fn();
   const cancel = vi.fn();
+  const selection = optIns.declineOnSelection ? shared<number[]>(optIns.declineOnSelection) : undefined;
   const manager = { begin: vi.fn(), activate: vi.fn(), end: vi.fn(), fail: vi.fn() };
   render(
     <DrawStrokeOverlay
@@ -119,7 +121,9 @@ function mount(acceptStationaryTaps = true, fingerDraw = true, loupe?: SprayLoup
       onStrokeStart={start}
       onStrokeEnd={end}
       onStrokeCancel={cancel}
-      loupe={loupe}
+      loupe={optIns.loupe}
+      declineOnSelectionSV={selection}
+      onStylusSeen={optIns.onStylusSeen}
     />,
   );
   function send(name: string, payload: unknown = event(), success?: boolean) {
@@ -128,7 +132,7 @@ function mount(acceptStationaryTaps = true, fingerDraw = true, loupe?: SprayLoup
       | undefined;
     callback?.(payload, success ?? manager);
   }
-  return { points, start, end, cancel, manager, send };
+  return { points, start, end, cancel, manager, send, selection };
 }
 beforeEach(() => installed.callbacks.clear());
 describe('Add Draw pointer lifecycle', () => {
@@ -254,7 +258,7 @@ describe('Add Draw pointer lifecycle', () => {
 describe('the loupe feed', () => {
   it('follows a finger stroke in clip points and unzoomed render px, then lets go on UP', () => {
     const loupe = loupeFeed();
-    const stroke = mount(true, true, loupe);
+    const stroke = mount(true, true, { loupe });
     stroke.send('down');
     expect(loupe.touchDownAtSV.value).toBeGreaterThan(0);
     // Clip (40, 60) through scale 2, translate (10, 20) about the 100 pt container's centre.
@@ -271,14 +275,14 @@ describe('the loupe feed', () => {
   });
   it('lets go when a second finger turns the stroke into a pinch', () => {
     const loupe = loupeFeed();
-    const stroke = mount(true, true, loupe);
+    const stroke = mount(true, true, { loupe });
     stroke.send('down');
     stroke.send('down', event([touch(8)], [touch(), touch(8)]));
     expect(loupe.touchDownAtSV.value).toBe(0);
   });
   it('is never fed for a stylus', () => {
     const loupe = loupeFeed();
-    const stroke = mount(true, false, loupe);
+    const stroke = mount(true, false, { loupe });
     stroke.send('down', event([touch()], [touch()], 1));
     stroke.send('move', event([touch(7, 48, 60)], [touch(7, 48, 60)], 1));
     expect(loupe.touchDownAtSV.value).toBe(0);
@@ -286,7 +290,7 @@ describe('the loupe feed', () => {
   });
   it('follows a Trace finger stroke and lets go on finalize', () => {
     const loupe = loupeFeed();
-    const stroke = mount(false, true, loupe);
+    const stroke = mount(false, true, { loupe });
     stroke.send('down');
     stroke.send('start', { x: 40, y: 60 });
     expect(loupe.touchDownAtSV.value).toBeGreaterThan(0);
@@ -299,5 +303,81 @@ describe('the loupe feed', () => {
   it('is opt-in: the catalogue editor passes no loupe', () => {
     const source = readFileSync(new FileURL('../OutlineCanvasScreen.tsx', import.meta.url), 'utf8');
     expect(source).not.toContain('loupe');
+  });
+});
+
+// The spray editor's iPad Pencil surface: Add's Manual recognizer, finger draw
+// off, stepping aside for the selected hold. The default touch (40, 60) lands
+// on board (80, 90) through the mounted zoom transform.
+const STYLUS = 1;
+describe('Pencil surface opt-ins', () => {
+  it('draws with a stylus while finger draw is off, and fails a finger at touch-down', () => {
+    const stroke = mount(true, false);
+    stroke.send('down');
+    expect(stroke.manager.fail).toHaveBeenCalledTimes(1);
+    expect(stroke.start).not.toHaveBeenCalled();
+    stroke.send('down', event([touch()], [touch()], STYLUS));
+    stroke.send('up', upEvent([touch()], [], STYLUS));
+    expect(stroke.start).toHaveBeenCalledTimes(1);
+    expect(stroke.end).toHaveBeenCalledExactlyOnceWith([80, 90]);
+  });
+
+  it('declines a stylus touch on the selected hold so the move underneath can take it', () => {
+    const stroke = mount(true, false, { declineOnSelection: [5, 80, 90, 10] });
+    stroke.send('down', event([touch()], [touch()], STYLUS));
+    expect(stroke.manager.fail).toHaveBeenCalledTimes(1);
+    expect(stroke.manager.activate).not.toHaveBeenCalled();
+    expect(stroke.start).not.toHaveBeenCalled();
+    expect(stroke.points.value).toEqual([]);
+  });
+
+  it('still draws a stylus touch off the selection, and with no selection at all', () => {
+    // (80, 60) lands on board (120, 90): 40 px from the selection's centre, radius 10.
+    const stroke = mount(true, false, { declineOnSelection: [5, 80, 90, 10] });
+    stroke.send('down', event([touch(7, 80, 60)], [touch(7, 80, 60)], STYLUS));
+    expect(stroke.manager.activate).toHaveBeenCalledTimes(1);
+    stroke.send('up', upEvent([touch(7, 80, 60)], [], STYLUS));
+    expect(stroke.end).toHaveBeenCalledExactlyOnceWith([120, 90]);
+    stroke.selection!.value = [];
+    stroke.send('down', event([touch()], [touch()], STYLUS));
+    expect(stroke.manager.activate).toHaveBeenCalledTimes(2);
+  });
+
+  it('declines a stylus a fingertip from a ring smaller than a fingertip', () => {
+    // The move claims within max(r, 22 pt) at touch-down; at this mount's zoom
+    // 22 pt is 22 board px. (47.5, 60) lands on board (95, 90): r + 5 from a
+    // radius-10 ring, inside the fingertip.
+    const stroke = mount(true, false, { declineOnSelection: [5, 80, 90, 10] });
+    stroke.send('down', event([touch(7, 47.5, 60)], [touch(7, 47.5, 60)], STYLUS));
+    expect(stroke.manager.fail).toHaveBeenCalledTimes(1);
+    expect(stroke.manager.activate).not.toHaveBeenCalled();
+    expect(stroke.start).not.toHaveBeenCalled();
+  });
+
+  it('declines on the selection on the Trace pan path too', () => {
+    const stroke = mount(false, false, { declineOnSelection: [5, 80, 90, 10] });
+    stroke.send('down', event([touch()], [touch()], STYLUS));
+    expect(stroke.manager.fail).toHaveBeenCalledTimes(1);
+    expect(stroke.manager.activate).not.toHaveBeenCalled();
+  });
+
+  it('reports the first stylus once, declined or not, and never a finger', () => {
+    const onStylusSeen = vi.fn();
+    const stroke = mount(true, false, { declineOnSelection: [5, 80, 90, 10], onStylusSeen });
+    stroke.send('down');
+    expect(onStylusSeen).not.toHaveBeenCalled();
+    stroke.send('down', event([touch()], [touch()], STYLUS));
+    expect(onStylusSeen).toHaveBeenCalledTimes(1);
+    stroke.send('down', event([touch(7, 80, 60)], [touch(7, 80, 60)], STYLUS));
+    stroke.send('up', upEvent([touch(7, 80, 60)], [], STYLUS));
+    expect(onStylusSeen).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a stroke without the opt-ins exactly as it was', () => {
+    const stroke = mount(true, true);
+    stroke.send('down', event([touch()], [touch()], STYLUS));
+    stroke.send('up', upEvent([touch()], [], STYLUS));
+    expect(stroke.end).toHaveBeenCalledExactlyOnceWith([80, 90]);
+    expect(stroke.manager.fail).not.toHaveBeenCalled();
   });
 });

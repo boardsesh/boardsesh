@@ -783,6 +783,14 @@ to pick a ring and tap it again to switch it off or on, long press to pick one u
 it — goes through its own `SprayEditGestureOverlay` (see `docs/spray-walls.md`, "The hold
 editor").
 
+`DrawStrokeOverlay` has two OPT-IN props for the spray editor's iPad Pencil surface, and the
+catalogue editor passes neither, so its behaviour is unchanged. `declineOnSelectionSV`
+(the selected hold as `[id, cx, cy, r]`) fails a drawing touch at touch-down when it lands
+inside that hold, so an ancestor's drag can claim it. `onStylusSeen` fires once per mount
+at the first stylus touch-down. Their maths is inlined in the worklets for the same
+cross-module reason as the sampling. `PolygonTapOverlay` likewise gains an opt-in
+`stylusOnlySV` that fails a non-stylus touch at touch-down.
+
 The geometry behind those tools is `spray-hold-tools.ts`, and it is pure. A tap in Add mode
 places a circle at the wall's median hold radius; a traced loop goes through `buildOutlineRing`
 unchanged, so a wall gets exactly the ring a board would, with the centre at the polygon

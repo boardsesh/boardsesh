@@ -212,6 +212,11 @@ export const iconMap = {
   sort: { ios: 'arrow.up.arrow.down', android: 'sort-variant' },
   refresh: { ios: 'arrow.clockwise', android: 'refresh' },
   'crop.free': { ios: 'viewfinder', android: 'crop-free' },
+  // The spray editor's iPad tool rail: the resting pick-and-switch tool, the
+  // Pencil only toggle, and fit-the-wall (the zoom reset).
+  'hand.tap': { ios: 'hand.tap', android: 'gesture-tap' },
+  'pencil.tip': { ios: 'pencil.tip', android: 'draw-pen' },
+  'fit.screen': { ios: 'arrow.down.right.and.arrow.up.left', android: 'arrow-collapse' },
   photo: { ios: 'photo', android: 'image-outline' },
   camera: { ios: 'camera', android: 'camera-outline' },
   video: { ios: 'video', android: 'video-outline' },

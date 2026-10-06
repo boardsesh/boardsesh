@@ -47,6 +47,9 @@ export const ONBOARDING_TIP_SPRAY_TAP_SELECT_KEY = 'onboarding_tip_spray_tap_sel
 export const ONBOARDING_TIP_SPRAY_MAYBE_KEY = 'onboarding_tip_spray_maybe_seen';
 export const ONBOARDING_TIP_SPRAY_LONG_PRESS_KEY = 'onboarding_tip_spray_long_press_seen';
 export const ONBOARDING_TIP_SPRAY_ADD_HOLD_KEY = 'onboarding_tip_spray_add_hold_seen';
+// The iPad's Apple Pencil hint, asked for by the first Pencil touch or hover and
+// marked seen when a finger then picks a ring (or the hint is closed).
+export const ONBOARDING_TIP_SPRAY_PENCIL_KEY = 'onboarding_tip_spray_pencil_seen';
 
 // Dismissal of the "your board account isn't linked" card on the empty Progress /
 // Logbook tabs. Not a tip: an empty logbook with no linked account is a standing

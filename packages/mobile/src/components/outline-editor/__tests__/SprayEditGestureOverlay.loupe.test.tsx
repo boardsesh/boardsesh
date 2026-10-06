@@ -193,6 +193,23 @@ describe('SprayEditGestureOverlay feeds the loupe', () => {
     expect(overlay.loupe.touchDownAtSV.value).toBe(0);
   });
 
+  // The Pencil adds by tapping or drawing on its own surface (iPad), so a
+  // Pencil resting on bare wall must never drop a median circle as well.
+  it('never places a hold for a Pencil resting on bare wall', () => {
+    const overlay = mount();
+    overlay.down(300, 300, 1);
+    expect(overlay.manager.fail).toHaveBeenCalled();
+    overlay.send('longPress', 'start', { x: 300, y: 300 });
+    expect(overlay.onPlaceStart).not.toHaveBeenCalled();
+    expect(overlay.loupe.touchDownAtSV.value).toBe(0);
+  });
+
+  it('still picks up a ring under a Pencil, since that is a move and not an add', () => {
+    const overlay = mount();
+    overlay.send('longPress', 'down', touchEvent(100, 100, 1, 1));
+    expect(overlay.manager.fail).not.toHaveBeenCalled();
+  });
+
   it('lets go if the overlay unmounts mid-drag, which never finalizes the touch', () => {
     const overlay = mount([...HOLD]);
     overlay.down(105, 100);
