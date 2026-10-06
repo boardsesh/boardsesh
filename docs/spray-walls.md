@@ -3602,13 +3602,15 @@ outbox retries that kind of error and a retry of the same tick uuid is safe, so
 the send arrives later with its revision, where storing it at once with NULL
 would have left it without one for good.
 
-Readers: `Tick.climbRevision`, and `climbRevision` with `climbCurrentRevision`
+Fields the server serves (the app selects none of them): `Tick.climbRevision`, and `climbRevision` with `climbCurrentRevision`
 (the climb's `revision_number` now) on the rows of `climbLogs`,
 `followingClimbAscents`, `userAscentsFeed` and `userGroupedAscentsFeed`.
-`Climb.revisionNumber` and `Climb.holdsRevisionNumber` come back from search,
-climb detail, favourites, playlists and the setter's climb lists. `syncTicks` and `syncClimbs` emit the three columns,
-and the phone stores them from on-device schema v11, where all three are
-nullable: a row pulled before v11 reads NULL, which means unknown and not 1.
+The server still serves `Climb.revisionNumber` and `Climb.holdsRevisionNumber`
+on search, climb detail, favourites, playlists and the setter's climb lists, but
+no app document selects either: the app reads its local copy instead.
+`syncTicks` and `syncClimbs` emit the three columns, and the phone stores them
+from on-device schema v11, where all three are nullable: a row pulled before v11
+reads NULL, which means unknown and not 1.
 
 #### What the app sends
 
