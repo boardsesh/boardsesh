@@ -13,6 +13,7 @@ import {
   boardPlacements,
   boardHoles,
   boardBetaLinks,
+  userFavorites,
 } from '../../schema/index';
 import { hasNameQuery, type BoardRouteParams, type ClimbSearchParams } from './types';
 import { tickAliasOnCurrentHoldsSql, tickOnCurrentHoldsSql } from '../climb-stats/holds-epoch';
@@ -1002,7 +1003,27 @@ export const createClimbFilters = (
 
   // Personal progress filter conditions
   const personalProgressConditions: SQL[] = [];
+  if (searchParams.onlyFavorited && !userId) {
+    // Nobody to read hearts for. Match nothing rather than dropping the filter,
+    // which would hand back the whole catalogue as the climber's "liked" list.
+    personalProgressConditions.push(sql`false`);
+  }
   if (userId) {
+    if (searchParams.onlyFavorited) {
+      // A heart belongs to the climb, not to an angle: user_favorites records the
+      // angle the heart was given at, but favorites/queries.ts and the toggle
+      // mutation both treat any row for (user, board, climb) as hearted. So no
+      // angle condition here — a climb hearted at 40 is liked at 25 too.
+      personalProgressConditions.push(
+        sql`EXISTS (
+          SELECT 1 FROM ${userFavorites}
+          WHERE ${userFavorites.userId} = ${userId}
+          AND ${userFavorites.boardName} = ${params.board_name}
+          AND ${userFavorites.climbUuid} = ${boardClimbs.uuid}
+        )`,
+      );
+    }
+
     if (searchParams.hideAttempted) {
       // Hide climbs where the user has at least one attempt tick
       personalProgressConditions.push(

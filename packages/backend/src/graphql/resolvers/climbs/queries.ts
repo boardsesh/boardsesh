@@ -391,8 +391,9 @@ export const climbQueries = {
       );
     }
 
-    // Drafts require authentication — return empty results if not signed in
-    if (parsedInput.onlyDrafts && !ctx.isAuthenticated) {
+    // Drafts and liked climbs require authentication — return empty results if
+    // not signed in. A signed-out "liked" list is empty, never the full catalogue.
+    if ((parsedInput.onlyDrafts || parsedInput.onlyFavorited) && !ctx.isAuthenticated) {
       return {
         params,
         searchParams,

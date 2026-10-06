@@ -246,6 +246,9 @@ export const ClimbSearchInputSchema = z.object({
   // than erroring.
   useMyGrades: z.boolean().optional(),
   onlyDrafts: z.boolean().optional(),
+  // Only climbs the caller has hearted on this board, at any angle. Signed out,
+  // the resolver returns an empty page rather than the unfiltered list.
+  onlyFavorited: z.boolean().optional(),
   projectsOnly: z.boolean().optional(),
   // Spray-wall hold integrity. No `.default()` — ANY and an omitted value are the
   // same thing (no predicate), and a default here would apply for real, since
