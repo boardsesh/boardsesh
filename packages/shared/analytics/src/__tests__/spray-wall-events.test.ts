@@ -51,7 +51,14 @@ const EVERY_PAYLOAD = [
     aspectMismatch: false,
     detectionCount: 181,
   }),
-  sprayWallResetApplied({ keptCount: 150, removedCount: 20, addedCount: 31, climbsChanged: 12, moveCount: 6, fullReset: false }),
+  sprayWallResetApplied({
+    keptCount: 150,
+    removedCount: 20,
+    addedCount: 31,
+    climbsChanged: 12,
+    moveCount: 6,
+    fullReset: false,
+  }),
   climbRemixedFromBroken({ lostHoldCount: 3, source: 'play_drawer' }),
   climbEditedFromBroken({ lostHoldCount: 3, source: 'play_drawer' }),
 ];
