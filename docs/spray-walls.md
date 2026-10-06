@@ -808,6 +808,20 @@ applies the wall's own: `'capability'` for the uuid (an unlisted wall opens, lik
 `sprayWall(uuid)`), `'enumerable'` for the slug — which is derived from the
 wall's NAME, so it is a guess, not a capability.
 
+`boardBySlug(slug, wallUuid)` takes the share link's `?wall=` as `wallUuid`. When
+it is the uuid of the row the slug resolved to, the lookup uses `'capability'`
+instead, so www's `/b/{slug}/...` pages can open an unlisted wall for whoever
+holds the link. A uuid that names a different wall is ignored, so the answer is
+the same as a request without one. A private or hidden wall stays shut to
+everybody but its owner (and its gym). www's layouts under `/b/[board_slug]/[angle]` do not
+resolve the board, because a layout never sees the query string; each page
+resolves it with the capability and runs `resolveSprayWallAccess`
+(`packages/web/app/lib/spray/spray-visibility.ts`) on the row. That page-side check
+is still needed because a signed-in owner gets their unlisted row without a uuid,
+and these paths carry a shared `s-maxage`. Every such page is `noindex, follow`
+with no canonical and no OG card, so the uuid only appears in the URL the reader
+already has.
+
 All four express the same **by-layout** rule — owner, gym member, or a public
 wall — the one `viewerCanSeeSprayWallByLayout` applies, with no unlisted
 exemption. The board-ROW shape is the only one with a second mode, and its

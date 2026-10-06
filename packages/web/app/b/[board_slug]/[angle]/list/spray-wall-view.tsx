@@ -5,7 +5,7 @@ import type { ResolvedBoard } from '@/app/lib/board-slug-utils';
 import SprayWallFrontDoor from '@/app/components/spray-wall/spray-wall-front-door';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
-import { resolveSprayWallVisibility } from '@/app/lib/spray/spray-visibility';
+import { resolveSprayWallAccess } from '@/app/lib/spray/spray-visibility';
 import { fetchSprayWallPageData, resolveSprayPhotoUrl } from '@/app/lib/spray/spray-wall-render-data.server';
 
 /**
@@ -29,6 +29,12 @@ import { fetchSprayWallPageData, resolveSprayPhotoUrl } from '@/app/lib/spray/sp
  * | unlisted | 404 | renders | 404 |
  * | private | 404 | 404 | 404 |
  *
+ * The rule itself is `resolveSprayWallAccess` in `@/app/lib/spray/spray-visibility`,
+ * shared with the climb page. Before it runs, the page passes the param to
+ * `resolveBoardBySlug` as `wallUuid`: the backend refuses an anonymous caller an
+ * unlisted wall's row on the slug alone, because a slug is derived from the
+ * wall's name and so is a guess.
+ *
  * A public wall needs no capability and its share link carries none, which is why
  * it renders on the clean URL. A private wall refuses everyone, its owner
  * included: the app is where an owner reads their own wall, and www puts a shared
@@ -40,33 +46,6 @@ import { fetchSprayWallPageData, resolveSprayPhotoUrl } from '@/app/lib/spray/sp
  * clean twin to point at, and the sitemap names none of this either (the boards
  * shard is catalogue-only).
  */
-
-/** The share-link capability, as it appears in the query string. */
-export const WALL_CAPABILITY_PARAM = 'wall';
-
-export type SprayWallAccess = 'render' | 'refuse';
-
-/**
- * Whether this request may see the wall, from the board row and the param alone.
- *
- * No round trip: a private wall is refused before anything asks the backend about
- * it, so the request never produces a signal that the wall exists.
- */
-export function resolveSprayWallAccess(
-  board: Pick<ResolvedBoard, 'uuid' | 'isPublic' | 'isUnlisted'>,
-  wallParam: string | string[] | undefined,
-): SprayWallAccess {
-  const visibility = resolveSprayWallVisibility(board);
-  if (visibility === 'private') return 'refuse';
-  if (visibility === 'public') {
-    // A public wall is world-readable, so a param is not needed — but a WRONG one
-    // is still refused rather than ignored, because a link carrying somebody
-    // else's uuid is a mistake worth surfacing as "not here" instead of quietly
-    // showing a different wall than the sender meant.
-    return wallParam === undefined || wallParam === board.uuid ? 'render' : 'refuse';
-  }
-  return wallParam === board.uuid ? 'render' : 'refuse';
-}
 
 /** `generateMetadata` for the spray branch of `/b/{slug}/{angle}/list`. */
 export async function buildSprayWallListMetadata(board: ResolvedBoard): Promise<Metadata> {

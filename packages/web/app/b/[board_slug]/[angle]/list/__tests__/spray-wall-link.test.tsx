@@ -46,7 +46,7 @@ function boardFor(visibility: 'public' | 'unlisted' | 'private') {
   };
 }
 
-const resolveBoardBySlug = vi.fn(async (_slug: string) => boardFor('unlisted'));
+const resolveBoardBySlug = vi.fn(async (_slug: string, _wallUuid?: string) => boardFor('unlisted'));
 
 vi.mock('@/app/lib/board-slug-utils', () => ({
   resolveBoardBySlug,
@@ -102,7 +102,8 @@ vi.mock('@/app/components/climb-front-door/static-list-front-door', () => ({ def
 vi.mock('@/app/components/spray-wall/spray-wall-front-door', () => ({ default: () => null }));
 
 const { default: BoardSlugListPage, generateMetadata } = await import('../page');
-const { default: SprayWallListPage, resolveSprayWallAccess } = await import('../spray-wall-view');
+const { default: SprayWallListPage } = await import('../spray-wall-view');
+const { resolveSprayWallAccess } = await import('@/app/lib/spray/spray-visibility');
 
 type ListSearchParams = SearchRequestPagination & { wall?: string | string[] };
 
@@ -153,6 +154,28 @@ describe('the /b/{slug}/{angle}/list route on a spray wall', () => {
     expect(element.props).toEqual({ board: boardFor('unlisted'), wallParam: WALL_UUID });
     expect(getBoardDetailsForBoard).not.toHaveBeenCalled();
     expect(fetchFrontDoorListPage).not.toHaveBeenCalled();
+  });
+
+  it('presents the capability to the backend, because a slug alone opens no unlisted wall', async () => {
+    // `boardBySlug` answers an anonymous caller `null` for an unlisted wall unless
+    // `wallUuid` names it. A lookup on the slug alone 404'd every share link.
+    await BoardSlugListPage(propsWith(WALL_UUID));
+    await generateMetadata(propsWith(WALL_UUID));
+
+    expect(resolveBoardBySlug).toHaveBeenCalledTimes(2);
+    expect(resolveBoardBySlug).toHaveBeenNthCalledWith(1, 'garage-wall', WALL_UUID);
+    expect(resolveBoardBySlug).toHaveBeenNthCalledWith(2, 'garage-wall', WALL_UUID);
+  });
+
+  it('presents no capability for a repeated param, or for none', async () => {
+    await BoardSlugListPage({
+      params: Promise.resolve({ board_slug: 'garage-wall', angle: '40' }),
+      searchParams: Promise.resolve({ wall: [WALL_UUID, OTHER_WALL_UUID] } as ListSearchParams),
+    });
+    await BoardSlugListPage(propsWith());
+
+    expect(resolveBoardBySlug).toHaveBeenNthCalledWith(1, 'garage-wall', undefined);
+    expect(resolveBoardBySlug).toHaveBeenNthCalledWith(2, 'garage-wall', undefined);
   });
 
   it('asks for no indexation, and emits no canonical for a capability URL', async () => {
