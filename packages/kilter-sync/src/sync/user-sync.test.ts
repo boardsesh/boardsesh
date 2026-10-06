@@ -46,9 +46,18 @@ function recomputedKeys(): Array<{ climbUuid: string; angle: number }> {
 type CallRecord = {
   // `conflict` records the ON CONFLICT clause an insert was given, so a test
   // can assert the ownership `setWhere` guard was attached.
-  kind: 'select' | 'delete' | 'execute' | 'insert' | 'update' | 'conflict' | 'transaction';
+  kind: 'select' | 'delete' | 'execute' | 'gradeCopy' | 'insert' | 'update' | 'conflict' | 'transaction';
   args: unknown[];
 };
+
+/**
+ * applyRatingGradesToTicks' UPDATE. The stubs record it as `gradeCopy` rather
+ * than `execute`, so the round-trip counts below keep describing the log and
+ * rating writes, and the grade copy is asserted on its own.
+ */
+function isGradeCopy(query: unknown): boolean {
+  return new PgDialect().sqlToQuery(query as never).sql.includes('difficulty = r.difficulty_grade_id');
+}
 
 type SelectResult = Array<Record<string, unknown>>;
 
@@ -72,7 +81,12 @@ type SelectResult = Array<Record<string, unknown>>;
 // caught at typecheck time via the Drizzle column references. Promote
 // to an integration test if the SQL grows another conditional.
 function createTx(
-  opts: { selectResults?: SelectResult[]; removeResult?: SelectResult; executeResults?: unknown[] } = {},
+  opts: {
+    selectResults?: SelectResult[];
+    removeResult?: SelectResult;
+    executeResults?: unknown[];
+    gradeCopyResult?: SelectResult;
+  } = {},
 ) {
   const calls: CallRecord[] = [];
   const selectResults = opts.selectResults ?? [];
@@ -125,6 +139,10 @@ function createTx(
       };
     },
     execute(query: unknown) {
+      if (isGradeCopy(query)) {
+        calls.push({ kind: 'gradeCopy', args: [query] });
+        return Promise.resolve(opts.gradeCopyResult ?? []);
+      }
       calls.push({ kind: 'execute', args: [query] });
       return Promise.resolve(executeResults[executeIdx++]);
     },
@@ -886,6 +904,42 @@ function existingKilterTick(overrides: Record<string, unknown> = {}): Record<str
   };
 }
 
+/** The (climb, angle) keys and user a recorded grade-copy UPDATE was bound to. */
+function gradeCopyBinding(call: CallRecord): { userId: unknown; keys: unknown } {
+  const { params } = new PgDialect().sqlToQuery(call.args[0] as never);
+  const payload = params.find((param) => typeof param === 'string' && param.startsWith('['));
+  return { userId: params.find((param) => param === 'user-1'), keys: JSON.parse(String(payload)) };
+}
+
+describe('applyLogs — copies the climber’s Kilter grade (#6182)', () => {
+  beforeEach(() => recomputeMock.mockClear());
+
+  it('runs the grade copy once over the keys the flush wrote', async () => {
+    const { tx, calls } = createTx({ selectResults: [[], []] });
+    const op = makeLogPutOp({
+      log_uuid: 'log-A',
+      climb_uuid: 'climb-1',
+      angle: 40,
+      created_at: '2026-05-01T12:00:00.000Z',
+    });
+
+    await applyLogs(tx as unknown as TxArg, 'user-1', [op], aliasCacheFor(['climb-1']), () => {});
+
+    const copies = calls.filter((c) => c.kind === 'gradeCopy');
+    expect(copies).toHaveLength(1);
+    expect(gradeCopyBinding(copies[0])).toEqual({ userId: 'user-1', keys: [{ climb_uuid: 'climb-1', angle: 40 }] });
+    // The copy runs before the recompute, so the stats see the new grade.
+    expect(calls.findIndex((c) => c.kind === 'gradeCopy')).toBeGreaterThan(calls.findIndex((c) => c.kind === 'insert'));
+    expect(recomputedKeys()).toEqual([{ climbUuid: 'climb-1', angle: 40 }]);
+  });
+
+  it('skips the grade copy when the flush wrote nothing', async () => {
+    const { tx, calls } = createTx();
+    await applyLogs(tx as unknown as TxArg, 'user-1', [], aliasCacheFor([]), () => {});
+    expect(calls.filter((c) => c.kind === 'gradeCopy')).toHaveLength(0);
+  });
+});
+
 describe('applyLogs — PR4 offset inference + edit guard', () => {
   let logSpy: ReturnType<typeof vi.fn<(msg: string) => void>>;
 
@@ -1191,6 +1245,8 @@ function createRichTx(
      * vice versa) and quietly change what a test is asserting.
      */
     updateReturningRows?: Array<Array<Record<string, unknown>>>;
+    /** Rows applyRatingGradesToTicks' UPDATE … RETURNING hands back. */
+    gradeCopyResult?: SelectResult;
   } = {},
 ): ChainTx {
   const calls: CallRecord[] = [];
@@ -1272,8 +1328,12 @@ function createRichTx(
       };
     },
     execute(query: unknown) {
+      if (isGradeCopy(query)) {
+        calls.push({ kind: 'gradeCopy', args: [query] });
+        return Promise.resolve(opts.gradeCopyResult ?? []);
+      }
       calls.push({ kind: 'execute', args: [query] });
-      return Promise.resolve();
+      return Promise.resolve([]);
     },
     // applyClimbRatings wraps each upsert chunk in a savepoint so one refused
     // row costs its chunk rather than the buffer. Drizzle models a savepoint as
@@ -1363,6 +1423,39 @@ describe('applyClimbRatings — bulk upsert with COALESCE comment', () => {
     expect(calls.filter((c) => c.kind === 'update')).toHaveLength(0);
     // boardClimbRatings is the schema target — used by the bulk insert.
     expect(boardClimbRatings).toBeDefined();
+  });
+
+  it('copies the climber’s grade onto their ticks for every rating key and recomputes only the changed ones (#6182)', async () => {
+    const { tx, calls } = createRichTx({ gradeCopyResult: [{ climb_uuid: 'climb-B', angle: 25 }] });
+    const recompute = vi.fn();
+    const ops = [
+      makeRatingPutOp({ climb_rating_uuid: 'r-1', climb_uuid: 'climb-A', angle: 40, difficulty_grade_id: 22 }),
+      makeRatingPutOp({ climb_rating_uuid: 'r-2', climb_uuid: 'climb-B', angle: 25, difficulty_grade_id: 23 }),
+    ];
+
+    await applyClimbRatings(
+      tx as unknown as ApplyClimbRatingsTx,
+      'user-1',
+      ops,
+      aliasCacheFor(['climb-A', 'climb-B']),
+      () => {},
+      new Map(),
+      recompute,
+    );
+
+    const copies = calls.filter((c) => c.kind === 'gradeCopy');
+    expect(copies).toHaveLength(1);
+    // After the upsert: the copy joins board_climb_ratings, so it must see this batch.
+    expect(calls.findIndex((c) => c.kind === 'gradeCopy')).toBeGreaterThan(calls.findIndex((c) => c.kind === 'insert'));
+    expect(gradeCopyBinding(copies[0])).toEqual({
+      userId: 'user-1',
+      keys: [
+        { climb_uuid: 'climb-A', angle: 40 },
+        { climb_uuid: 'climb-B', angle: 25 },
+      ],
+    });
+    expect(recompute).toHaveBeenCalledTimes(1);
+    expect(recompute.mock.calls[0][1]).toEqual([{ boardType: 'kilter', climbUuid: 'climb-B', angle: 25 }]);
   });
 
   it('sanitizes a Kilter rating=0 to NULL so the batch does not violate the CHECK', () => {

@@ -107,6 +107,18 @@ The original design assumed Kilter had a separate `attempts` table like Aurora. 
 
 A single `logs` row maps to either a flash/send tick or an attempt tick, with `kilter_type` set to `'logs'` or `'attempts'` accordingly. There is no separate per-attempt table to drain.
 
+### The tick's grade comes from `climb_ratings`
+
+A `logs` row has no grade. The grade the climber picks when they log a send in Kilter lands on their `climb_ratings` row for that (climb, angle) as `difficulty_grade_id`, on the same difficulty-id scale as `boardsesh_ticks.difficulty`. `applyRatingGradesToTicks` copies it onto the tick. Without the copy a pulled tick keeps `difficulty` NULL and every surface falls back to the climb's consensus grade (#6182).
+
+Logs and ratings flush in separate transactions in either order, so both phases run the copy over the keys they wrote. The ratings phase runs it over every key in the batch, and because PowerSync redelivers the full snapshot each cycle, that also backfills ticks pulled before the copy existed. A tick is written only when all of these hold:
+
+- it has a `kilter_id` and no local edit newer than its last sync (`updated_at <= kilter_synced_at`), so a grade changed in Boardsesh is never overwritten;
+- it has no grade yet, or its `origin` is `kilter_pull`. A grade changed on Kilter follows a pulled tick, while a native tick keeps the grade its climber gave it;
+- the rating is not detached and its grade exists in `board_difficulty_grades`. A NULL or unknown grade never clears a tick's grade.
+
+The copy restamps `kilter_synced_at` with a time taken inside the transaction. The `set_updated_at` trigger sets `updated_at` to the transaction's `NOW()`, which is earlier, so the copy never looks like a local edit. Changed keys go through the usual `board_climb_stats` recompute. One rating covers every tick on that (climb, angle), because Kilter keeps one grade per climb and angle, not one per log.
+
 ### Natural-key adoption (design §4.3)
 
 Incoming `logs` PUT ops are first **deduped by `log_uuid`** (last-op-wins). PowerSync's oplog can carry more than one op for the same row within a single snapshot — an edited or re-logged climb shows up as several PUTs. The reference PowerSync client collapses these into a table keyed by id; our hand-rolled stream forwards every op, so the writer dedupes explicitly. Without this, two ops for the same `log_uuid` would both reach the bulk insert with the same `kilter_id` and violate the **global** `boardsesh_ticks_kilter_id_unique` index, aborting the whole flush.
