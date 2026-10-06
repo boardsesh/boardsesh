@@ -1,8 +1,7 @@
 import type { SqlExecutor } from '@boardsesh/offline-sync';
-import { localRevisionMatchingFrames } from '../../lib/tick-climb-revision';
 
 /**
- * Climb revisions on the device (#6023).
+ * Climb versions on the device (#6023), for the sent marks only.
  *
  * Three nullable columns arrive with the sync: `board_climbs.revision_number`
  * and `holds_revision_number` (which version a climb is on, and the version at
@@ -10,8 +9,11 @@ import { localRevisionMatchingFrames } from '../../lib/tick-climb-revision';
  * version a tick was logged on). NULL means unknown: a row pulled before SQLite
  * migration v11 and not delivered again since.
  *
- * Everything that reads those columns outside a sync write lives here, so the
- * NULL rule is written once.
+ * The server still drops a send logged before the climb's holds last moved, so
+ * the phone's sent marks apply the same rule to agree with it. Everything that
+ * reads those columns outside a sync write lives here, so the NULL rule is
+ * written once. The app shows no version history and sends no version with a
+ * tick.
  */
 
 /** The tick aliases the local readers use. A literal union so no runtime string reaches the SQL. */
@@ -41,10 +43,22 @@ export type LocalClimbRevisionNumbers = {
   /**
    * `board_climbs.frames` of the same row, read in the same statement. The
    * version is only a witness for a climb showing these holds; see
-   * `localRevisionMatchingFrames`.
+   * `revisionMatchingFrames`.
    */
   frames: string | null;
 };
+
+/**
+ * The phone's version of a climb, but only when the phone's row has the same
+ * holds as the climb on screen. Null otherwise: the phone's row is one past
+ * state of the climb, and a network answer newer than the last pull can be
+ * another. Compared as exact strings, which only errs toward leaving the
+ * number out.
+ */
+function revisionMatchingFrames(local: LocalClimbRevisionNumbers, displayedFrames: string | null | undefined) {
+  if (!displayedFrames || !local.frames || local.frames !== displayedFrames) return null;
+  return local.revisionNumber;
+}
 
 // SQLite's default bound-parameter limit is 999 on older builds. Two binds are
 // spent on the board type across the readers below, so stay well under it.
@@ -111,7 +125,8 @@ export async function readClimbRevisionNumbersLocal(
  * - no key: the phone cannot say. Either it holds no row for the tick (not
  *   pulled yet), or the row is this phone's own write that the server has not
  *   answered for: a tick still in the outbox has a NULL version only because
- *   the app did not know one when it was logged, not because it has none.
+ *   the phone held no copy of the climb when it was logged (`writeTickLocal`
+ *   stamps the phone's version), not because it has none.
  *
  * `ownerUserId` is the `local_user_id` stamp, as in every other local tick
  * read (docs/offline-reads.md): rows a failed sign-out wipe left behind must
@@ -161,10 +176,12 @@ type ClimbWithRevisionNumbers = {
  * The two numbers are filled under different rules, because they are used for
  * different things:
  *
- * - `revisionNumber` is what a tick is stamped with, so it is filled only when
- *   the phone's row has the same frames as the climb (see
- *   `localRevisionMatchingFrames`). A network answer newer than the phone's
- *   last pull keeps no number, and its ticks are sent without one.
+ * - `revisionNumber` names the version of the holds on screen, so it is filled
+ *   only when the phone's row has the same frames as the climb (see
+ *   `revisionMatchingFrames`). A network answer newer than the phone's last
+ *   pull keeps no number. Nothing in the app reads it since ticks stopped
+ *   carrying a version; it rides along on queue items until the server drops
+ *   the holds rule.
  * - `holdsRevisionNumber` is only ever compared against the climber's own
  *   ticks to decide whether a send still counts, and it is filled whatever the
  *   frames. The phone's value is a past value of a number that only goes up,
@@ -191,7 +208,7 @@ export async function fillClimbRevisionNumbersLocal<TClimb extends ClimbWithRevi
   const filled = climbs.map((climb) => {
     const local = numbersByClimb.get(climb.uuid);
     if (!local) return climb;
-    const revisionNumber = climb.revisionNumber ?? localRevisionMatchingFrames(local, climb.frames);
+    const revisionNumber = climb.revisionNumber ?? revisionMatchingFrames(local, climb.frames);
     const holdsRevisionNumber = climb.holdsRevisionNumber ?? local.holdsRevisionNumber;
     if (
       revisionNumber === (climb.revisionNumber ?? null) &&

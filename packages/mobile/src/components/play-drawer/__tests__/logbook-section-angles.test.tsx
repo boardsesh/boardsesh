@@ -73,7 +73,6 @@ const logbookState = vi.hoisted(() => ({
 }));
 vi.mock('@boardsesh/board-react', () => ({ useLogbook: () => logbookState }));
 vi.mock('../../../hooks/use-local-climb-ticks', () => ({ useLocalClimbTicks: () => undefined }));
-vi.mock('../../../hooks/use-local-climb-revision', () => ({ useLocalClimbRevision: () => undefined }));
 
 const pending = vi.hoisted(() => ({ count: 0 }));
 vi.mock('../../../hooks/use-local-ticks', () => ({ useLocalPendingTicks: () => ({ data: pending.count }) }));

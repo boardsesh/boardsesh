@@ -422,37 +422,3 @@ describe('LogbookRow — accessibility actions', () => {
     expect(onOpenActions).not.toHaveBeenCalled();
   });
 });
-
-// #6023: the flat logbook's feed carries the version a tick was logged on and
-// the version the climb is on now.
-describe('LogbookRow — earlier version tag', () => {
-  const boardLine = (container: HTMLElement) =>
-    Array.from(container.querySelectorAll('span'))
-      .map((span) => span.textContent ?? '')
-      .find((text) => text.includes('40°')) ?? '';
-
-  it('says "Earlier version" on the board line when the climb has been edited since', () => {
-    const { container } = renderRow(ascent({ climbRevision: 1, climbCurrentRevision: 2 }));
-
-    expect(boardLine(container)).toContain(' · mobile.logbook.row.earlierVersion');
-    expect(String(a11y.props?.accessibilityLabel)).toContain('mobile.logbook.row.a11yEarlierVersion');
-  });
-
-  it('shows no tag on the current version', () => {
-    const { container } = renderRow(ascent({ climbRevision: 2, climbCurrentRevision: 2 }));
-
-    expect(container.textContent).not.toContain('earlierVersion');
-    expect(String(a11y.props?.accessibilityLabel)).not.toContain('a11yEarlierVersion');
-  });
-
-  it.each([
-    ['the tick has no version (an import, or older than the field)', { climbRevision: null, climbCurrentRevision: 4 }],
-    ['the climb is gone from the catalogue', { climbRevision: 1, climbCurrentRevision: null }],
-    ['the row came from a feed that selects neither (the grouped logbook)', {}],
-  ])('shows no tag when %s', (_label, versions) => {
-    const { container } = renderRow(ascent(versions));
-
-    expect(container.textContent).not.toContain('earlierVersion');
-    expect(String(a11y.props?.accessibilityLabel)).not.toContain('a11yEarlierVersion');
-  });
-});

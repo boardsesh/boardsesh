@@ -444,17 +444,6 @@
       "publicHint": "Cualquiera puede encontrar el plafón. Aparece en la página del rocódromo, sus bloques salen en el feed y su foto se publica en la web abierta.",
       "ownerOnlyError": "Solo quien montó este plafón puede cambiar quién lo ve. El resto de tus cambios se han guardado.",
       "updateError": "No se pudo cambiar quién ve este plafón. Inténtalo de nuevo."
-    },
-    "sprayClimbEditPolicy": {
-      "label": "Quién puede editar bloques",
-      "setter": "Solo el setter",
-      "collaborators": "Quien pueda equipar",
-      "setterHint": "Solo el setter del bloque y los editores del plafón pueden editar bloques.",
-      "collaboratorsPublicHint": "Cualquiera que pueda ver este plafón público puede editar bloques publicados.",
-      "collaboratorsUnlistedHint": "Cualquiera con el enlace puede editar bloques publicados.",
-      "collaboratorsPrivateHint": "En un plafón privado, solo los escaladores con acceso para equipar pueden editar los bloques.",
-      "ownerOnlyHint": "Solo quien montó este plafón puede cambiar quién edita los bloques.",
-      "ownerOnlyError": "Solo quien montó este plafón puede cambiar quién edita los bloques. El resto de tus cambios se han guardado."
     }
   },
   "boardEntity": {

@@ -876,42 +876,6 @@
     "setterNotes": {
       "title": "Notas del setter"
     },
-    "revisions": {
-      "title": "Historial de cambios",
-      "summary_one": "Editado una vez",
-      "summary_other": "Editado {{count}} veces",
-      "current": "Actual",
-      "tagSetter": "Setter",
-      "tagWallEditor": "Editor del muro",
-      "deletedEditor": "Cuenta eliminada",
-      "published": "Primera publicación",
-      "edited": "Editado",
-      "changed": "Cambió {{changes}}",
-      "changes": {
-        "name": "nombre",
-        "description": "notas",
-        "holds": "presas",
-        "grade": "grado",
-        "angle": "ángulo",
-        "rules": "reglas"
-      },
-      "showAll": "Ver los {{count}}",
-      "capNote": "Solo se guardan la primera versión y los cambios más recientes, {{max}} versiones en total.",
-      "rowLabel": "{{date}}, {{editor}}. Ver esta versión.",
-      "sheet": {
-        "title": "Versión del {{date}}",
-        "by": "{{editor}} · {{role}}",
-        "readOnly": "Una versión anterior. Puedes verla, pero no ponerla en la cola ni iluminarla.",
-        "noGrade": "Sin grado",
-        "angle": "{{angle}}°",
-        "older": "Anterior",
-        "newer": "Siguiente",
-        "position": "{{position}} de {{total}}",
-        "photoUnavailable": "La foto de este muro ya no está disponible",
-        "boardUnavailable": "Ahora mismo no se puede dibujar este plafón",
-        "boardLabel": "Las presas de esta versión"
-      }
-    },
     "heatmap": {
       "toggle": "Mapa de calor",
       "modeLabel": "Colorear presas por",

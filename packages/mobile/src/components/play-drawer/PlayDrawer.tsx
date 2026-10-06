@@ -79,7 +79,6 @@ import { useDrawerDismissGesture, type SwipeDismissAnimation } from './use-drawe
 import { AngleSelectorSheet } from './AngleSelectorSheet';
 import { ClimbActionsSheet } from '../ClimbActionsSheet';
 import { AddBetaVideoSheet } from '../AddBetaVideoSheet';
-import { ClimbRevisionSheet } from './ClimbRevisionSheet';
 import { LogbookFullSheet } from './logbook/LogbookFullSheet';
 import { useFullLogbookSheet } from './logbook/use-full-logbook-sheet';
 import { ClimberLogsSheet } from './ClimberLogsSheet';
@@ -385,16 +384,6 @@ export function PlayDrawer({
   // Pinned climb/board the reaction menu opened the beta sheet for; null falls back
   // to the live displayedClimb (the "+" button path). See #3505.
   const [betaVideoTarget, setBetaVideoTarget] = useState<{ climb: Climb; boardConfig: BoardConfig } | null>(null);
-  // The earlier version of a climb the edit-history section opened, pinned with
-  // the climb and board it was opened on so a queue or angle change behind the
-  // sheet cannot swap what it shows. Kept after close so the dismiss animation
-  // still has something to draw; the next open overwrites it.
-  const [revisionTarget, setRevisionTarget] = useState<{
-    climb: Climb;
-    boardConfig: Pick<BoardConfig, 'boardName' | 'layoutId' | 'sizeId' | 'setIds'>;
-    revisionNumber: number;
-  } | null>(null);
-  const [revisionSheetOpen, setRevisionSheetOpen] = useState(false);
   // Pinned climb/board the reaction menu opened the tick sheet for; null falls back
   // to the live displayedClimb (the FAB path). Mirrors betaVideoTarget so a party-
   // session queue/angle change mid-menu can't retarget the sheet.
@@ -1665,24 +1654,6 @@ export function PlayDrawer({
     setReportClimbOpen(false);
   }, []);
 
-  // Edit history row: open the drawer's OWN in-tree sheet, which stacks above the
-  // `/play` modal. A root-level opener would present behind it.
-  const handleOpenRevision = useCallback(
-    (revisionNumber: number) => {
-      if (!displayedClimb) return;
-      setRevisionTarget({
-        climb: displayedClimb,
-        boardConfig: { boardName: boardName as BoardName, layoutId, sizeId, setIds },
-        revisionNumber,
-      });
-      setRevisionSheetOpen(true);
-    },
-    [displayedClimb, boardName, layoutId, sizeId, setIds],
-  );
-  const handleCloseRevision = useCallback(() => {
-    setRevisionSheetOpen(false);
-  }, []);
-
   // Don't clear betaVideoTarget here: the sheet is still animating out and reads
   // from it, so nulling it mid-dismiss would swap the shown climb for a frame. The
   // next open overwrites it (the "+" path to null, the reaction path to its snapshot).
@@ -1885,7 +1856,6 @@ export function PlayDrawer({
   const climberLogsOpen = climberLogsClimbUuid !== null && climberLogsClimbUuid === displayedClimbUuid;
   const mountClimberLogs = useMountedOnFirstOpen(climberLogsOpen);
   const mountReportClimb = useMountedOnFirstOpen(reportClimbOpen);
-  const mountRevisionSheet = useMountedOnFirstOpen(revisionSheetOpen);
   const mountAngleSelector = useMountedOnFirstOpen(angleSelectorVisible);
   const mountLogAscent = useMountedOnFirstOpen(isTickBarActive);
   const mountBleControl = useMountedOnFirstOpen(bleControlVisible);
@@ -2226,7 +2196,6 @@ export function PlayDrawer({
                       onLogbookSectionLayout={handleLogbookSectionLayout}
                       onLogbookToggle={handleLogbookToggle}
                       onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
-                      onOpenRevision={handleOpenRevision}
                       onOpenFullLogbook={handleOpenFullLogbook}
                       onOpenClimberLogs={handleOpenClimberLogs}
                       onOpenClimberProfile={handleOpenClimberProfile}
@@ -2294,21 +2263,6 @@ export function PlayDrawer({
           layoutId={betaVideoTarget?.boardConfig.layoutId ?? layoutId}
           angle={betaVideoTarget?.boardConfig.angle ?? angle}
           onClose={handleCloseAddBetaVideo}
-        />
-      )}
-
-      {/* Sub-drawer: one earlier version of the climb, opened from an edit-history
-          row. Read-only. Mounted on first open. */}
-      {mountRevisionSheet && (
-        <ClimbRevisionSheet
-          visible={revisionSheetOpen}
-          climb={revisionTarget?.climb ?? null}
-          boardName={(revisionTarget?.boardConfig.boardName ?? boardName) as BoardName}
-          layoutId={revisionTarget?.boardConfig.layoutId ?? layoutId}
-          sizeId={revisionTarget?.boardConfig.sizeId ?? sizeId}
-          setIds={revisionTarget?.boardConfig.setIds ?? setIds}
-          revisionNumber={revisionTarget?.revisionNumber ?? null}
-          onClose={handleCloseRevision}
         />
       )}
 
@@ -2402,11 +2356,6 @@ export function PlayDrawer({
               // defaults to what the app now shows. Only the DEFAULT changes — the saved
               // tick value stays on the Aurora scale and null until the climber picks.
               consensusGradeName={resolveTickDefaultGradeName(tickClimb, boardseshActive) ?? tickClimb.difficulty}
-              // The version of the climb on screen, when it carries one, and
-              // the holds on screen, which decide whether the phone's copy of
-              // the climb may answer when it does not.
-              climbRevision={tickClimb.revisionNumber}
-              climbFrames={tickClimb.frames}
             />
           );
         })()}

@@ -141,7 +141,6 @@ import {
 } from '@boardsesh/queue';
 import { DEFAULT_PACE_MS } from '@boardsesh/playback-react';
 import { climbToQueueItem, toClimbInput } from '../../../lib/climb-to-queue-item';
-import { resolveTickClimbRevision } from '../../../lib/tick-climb-revision';
 import { useCreateClimbScreen } from '../use-create-climb-screen';
 
 const kilterBoard = { boardName: 'kilter' as const, layoutId: 8, sizeId: 17, setIds: '26,27', angle: 40 };
@@ -454,26 +453,6 @@ describe('editing a climb somebody else set (#5955)', () => {
     });
 
     expect(toast.showToast).toHaveBeenCalledWith('createClimbForm.alerts.saveFailedFallback', 'error');
-  });
-
-  it('refreshes the edit history of the climb it saved, and no other', async () => {
-    edit.climb = someoneElsesClimb;
-    board.updateClimb.mockResolvedValue({
-      uuid: 'climb-9',
-      createdAt: '2020-01-01T00:00:00.000Z',
-      publishedAt: '2020-01-01T00:00:00.000Z',
-      isDraft: false,
-    });
-    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard, editClimbUuid: 'climb-9' }));
-
-    await act(async () => {
-      await result.current.handleSave();
-    });
-
-    const revisionInvalidations = cache.invalidateQueries.mock.calls
-      .map(([filter]) => (filter as { queryKey: unknown[] }).queryKey)
-      .filter((queryKey) => queryKey[0] === 'climbRevisions');
-    expect(revisionInvalidations).toEqual([['climbRevisions', 'kilter', 'climb-9']]);
   });
 
   it('still gives a brand-new climb to the climber making it', () => {
@@ -803,36 +782,23 @@ describe('a re-saved climb is refreshed in the queue', () => {
   });
 });
 
-// #6023. The climb the editor puts on the queue is what the tick form reads when
-// the setter logs a send, and the server stores any in-range version the app
-// sends, as sent. So the question this block answers is: after the editor has
-// touched a climb, what version does the NEXT tick name?
+// #6023. After the editor has touched a climb, the queue item must carry no
+// version: the item's holds are what the editor holds, which no saved version
+// may hold, and the sent marks compare the item's holds version with ticks.
 //
 // It runs through the REAL queue reducer. An earlier version of these tests
 // asserted on the item handed to a mocked `setCurrentClimb`, and passed on an
 // item the reducer throws away: a local set-current for the uuid that is
 // already current is a no-op, so the second save's item never reaches the
 // queue. What does reach it is the refresh that follows every save, which
-// patches the authored fields (the holds included) and no version. The tick is
-// resolved by the real `resolveTickClimbRevision`, the same function the tick
-// form calls.
-describe('create-climb queue hand-off: the version the next tick names (#6023)', () => {
+// patches the authored fields (the holds included) and no version.
+describe('create-climb queue hand-off: no version on the queued climb (#6023)', () => {
   const FIRST_SAVE_FRAMES = 'p1r12p2r13p3r14';
   const SECOND_SAVE_FRAMES = 'p1r12p2r13p9r14';
   const WIP_FRAMES = 'p1r12p2r13p7r14';
 
   let queueState: QueueState<Record<string, never>>;
   let correlationCounter = 0;
-
-  /** What the tick form would send for the climb the queue is showing. */
-  function versionTheNextTickNames(local: { frames: string | null; revisionNumber: number | null } | undefined) {
-    const displayed = queueState.currentClimbQueueItem?.climb;
-    return resolveTickClimbRevision({
-      displayedRevision: displayed?.revisionNumber,
-      displayedFrames: displayed?.frames,
-      local,
-    });
-  }
 
   beforeEach(() => {
     queueState = initialState({});
@@ -872,7 +838,7 @@ describe('create-climb queue hand-off: the version the next tick names (#6023)',
     });
   }
 
-  it('edit, save, move a hold, save again, then tick: no stale version is sent', async () => {
+  it('edit, save, move a hold, save again: the queued climb drops its version', async () => {
     board.saveClimb.mockResolvedValue({ uuid: 'climb-x', createdAt: null, publishedAt: null, isDraft: true });
     board.updateClimb.mockResolvedValue({ uuid: 'climb-x', createdAt: null, publishedAt: null, isDraft: true });
     const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
@@ -892,34 +858,18 @@ describe('create-climb queue hand-off: the version the next tick names (#6023)',
     // The refresh moved the holds, so the reducer cleared the item's version.
     expect(current?.climb.revisionNumber).toBeNull();
     expect(current?.climb.holdsRevisionNumber).toBeNull();
-
-    // The server is on the second save now (version N+2, holds moved at N+2),
-    // and the phone's copy was refreshed to match. The queue shows those same
-    // holds, so the phone's version is theirs.
-    expect(versionTheNextTickNames({ frames: SECOND_SAVE_FRAMES, revisionNumber: 3 })).toBe(3);
-    // When the phone's copy was never refreshed (the board is not downloaded,
-    // so the save was not mirrored) it still holds an older state, and its
-    // version is not the one on screen: nothing is sent, and the server stores
-    // the version live when the climb was climbed.
-    expect(versionTheNextTickNames({ frames: FIRST_SAVE_FRAMES, revisionNumber: 2 })).toBeNull();
-    expect(versionTheNextTickNames({ frames: 'p1r12p2r13', revisionNumber: 1 })).toBeNull();
-    // And when the phone has no copy at all.
-    expect(versionTheNextTickNames(undefined)).toBeNull();
   });
 
-  it('after one save, a tick names the phone’s version only because the holds match', async () => {
+  it('after one save, the queued climb carries no version', async () => {
     board.saveClimb.mockResolvedValue({ uuid: 'climb-y', createdAt: null, publishedAt: null, isDraft: true });
     const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
 
     await saveWithFrames(result, 'Only Save', FIRST_SAVE_FRAMES);
 
     expect(queueState.currentClimbQueueItem?.climb.revisionNumber).toBeUndefined();
-    // The phone's copy is the row this save wrote: same holds, so its version
-    // is the version on screen.
-    expect(versionTheNextTickNames({ frames: FIRST_SAVE_FRAMES, revisionNumber: 1 })).toBe(1);
   });
 
-  it('Set Active with unsaved work-in-progress holds: no version is sent', async () => {
+  it('Set Active with unsaved work-in-progress holds: no version on the item', async () => {
     board.saveClimb.mockResolvedValue({ uuid: 'climb-z', createdAt: null, publishedAt: null, isDraft: true });
     const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
     await saveWithFrames(result, 'Saved Once', FIRST_SAVE_FRAMES);
@@ -943,13 +893,9 @@ describe('create-climb queue hand-off: the version the next tick names (#6023)',
     expect(current?.climb.uuid).toBe('climb-z');
     expect(current?.climb.frames).toBe(WIP_FRAMES);
     expect(current?.climb.revisionNumber).toBeUndefined();
-
-    // The phone holds the SAVED holds at version 1. The wall shows the unsaved
-    // ones. No version.
-    expect(versionTheNextTickNames({ frames: FIRST_SAVE_FRAMES, revisionNumber: 1 })).toBeNull();
   });
 
-  it('Set Active on a climb that was never saved: no version is sent', () => {
+  it('Set Active on a climb that was never saved: no version on the item', () => {
     const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
     createClimb.generateFramesString.mockReturnValue(WIP_FRAMES);
 
@@ -958,7 +904,6 @@ describe('create-climb queue hand-off: the version the next tick names (#6023)',
 
     expect(queueState.currentClimbQueueItem?.climb.frames).toBe(WIP_FRAMES);
     expect(queueState.currentClimbQueueItem?.climb.revisionNumber).toBeUndefined();
-    expect(versionTheNextTickNames(undefined)).toBeNull();
   });
 
   it('the editor never puts a version on the climb it queues, whatever updateClimb returns', async () => {

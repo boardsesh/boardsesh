@@ -285,8 +285,6 @@ export const GET_FOLLOWING_CLIMB_ASCENTS = gql`
         upvotes
         downvotes
         commentCount
-        climbRevision
-        climbCurrentRevision
       }
       hasMore
       summary {
@@ -330,8 +328,6 @@ export type FollowingClimbAscentItem = Pick<
   | 'upvotes'
   | 'downvotes'
   | 'commentCount'
-  | 'climbRevision'
-  | 'climbCurrentRevision'
 >;
 
 export type GetFollowingClimbAscentsQueryResponse = {
@@ -364,8 +360,6 @@ export const GET_CLIMB_LOGS = gql`
         difficulty
         comment
         climbedAt
-        climbRevision
-        climbCurrentRevision
       }
       cursor
       hasMore

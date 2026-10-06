@@ -116,8 +116,6 @@ export function useQueueSheetHandlers({
         setIds: storedBoardConfig.setIds,
         sessionId,
         consensusGradeName: item.climb.difficulty,
-        climbRevision: item.climb.revisionNumber,
-        climbFrames: item.climb.frames,
       });
     },
     [storedBoardConfig, sessionId, openLogAscent],
