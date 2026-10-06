@@ -6,12 +6,10 @@ import { LIVE_SPRAY_WALL_ARCHIVE_STATE } from '../../../lib/spray/spray-wall-reg
 const wall = { uuid: 'wall-uuid-1', boardType: 'spray', canEdit: true, ownerId: 'owner-1' };
 
 const free = LIVE_SPRAY_WALL_ARCHIVE_STATE;
-const locked = { ...LIVE_SPRAY_WALL_ARCHIVE_STATE, holdsLocked: true };
 const archived = {
   ...LIVE_SPRAY_WALL_ARCHIVE_STATE,
   archivedAt: '2026-10-01T09:00:00.000Z',
   replacedByWallUuid: 'new-wall',
-  holdsLocked: true,
 };
 
 const asOwner = (archive: SprayDetailRowContext['archive']): SprayDetailRowContext => ({
@@ -24,17 +22,14 @@ const asEditor = (archive: SprayDetailRowContext['archive']): SprayDetailRowCont
 });
 
 const resetHref = `${SPRAY_NEW_WALL_PATH}?resetOf=wall-uuid-1`;
-const lockedResetHref = resetHref;
 const editHref = `${SPRAY_HOLD_EDITOR_PATH}?wallUuid=wall-uuid-1`;
 
 describe('sprayDetailRows', () => {
-  // The matrix the sheet is built from: who is looking, and whether the wall's
-  // holds are still free.
+  // The matrix the sheet is built from: who is looking, and whether the wall is
+  // live. A live wall's holds stay editable, published climbs or not.
   it.each([
-    ['the owner, holds free', wall, asOwner(free), ['editHolds', 'resetWall']],
-    ['the owner, holds locked', wall, asOwner(locked), ['holdsLocked', 'resetWall']],
-    ['an editor who is not the owner, holds free', wall, asEditor(free), ['editHolds']],
-    ['an editor who is not the owner, holds locked', wall, asEditor(locked), ['holdsLocked']],
+    ['the owner of a live wall', wall, asOwner(free), ['editHolds', 'resetWall']],
+    ['an editor who is not the owner', wall, asEditor(free), ['editHolds']],
     ['a climber who only follows the wall', { ...wall, canEdit: false }, asEditor(free), []],
     ['the owner of an archived wall', wall, asOwner(archived), []],
     ['an editor of an archived wall', wall, asEditor(archived), []],
@@ -43,8 +38,7 @@ describe('sprayDetailRows', () => {
     ['the owner of a wall that has not published', wall, asOwner(null), []],
     // No signed-in id at all (profile and stored id both missing): nobody is
     // the owner, so no reset, and edit access alone decides the hold rows.
-    ['a viewer whose id is unknown, holds free', wall, { viewerUserId: undefined, archive: free }, ['editHolds']],
-    ['a viewer whose id is unknown, holds locked', wall, { viewerUserId: undefined, archive: locked }, ['holdsLocked']],
+    ['a viewer whose id is unknown', wall, { viewerUserId: undefined, archive: free }, ['editHolds']],
   ])('offers %s exactly the right rows', (_label, board, context, keys) => {
     expect(sprayDetailRows(board, context).map((row) => row.key)).toEqual(keys);
   });
@@ -53,22 +47,6 @@ describe('sprayDetailRows', () => {
     const rows = sprayDetailRows(wall, asOwner(free));
     expect(rows[0]).toEqual({ key: 'editHolds', icon: 'edit', href: editHref, confirmsReset: false });
     expect(rows[1]).toEqual({ key: 'resetWall', icon: 'camera', href: resetHref, confirmsReset: true });
-  });
-
-  // The locked row explains to everyone, and leads somewhere only for the owner.
-  it('lets only the owner act on "Holds are locked"', () => {
-    expect(sprayDetailRows(wall, asOwner(locked))[0]).toEqual({
-      key: 'holdsLocked',
-      icon: 'lock',
-      href: lockedResetHref,
-      confirmsReset: true,
-    });
-    expect(sprayDetailRows(wall, asEditor(locked))[0]).toEqual({
-      key: 'holdsLocked',
-      icon: 'lock',
-      href: null,
-      confirmsReset: false,
-    });
   });
 
   // Reset is owner-only on the server (`SPRAY_WALL_RESET_OWNER_ONLY`): edit

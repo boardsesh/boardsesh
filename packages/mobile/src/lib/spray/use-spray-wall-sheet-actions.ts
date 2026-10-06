@@ -80,7 +80,7 @@ export function useSprayWallSheetActions(
       const activeWall = boardRef.current;
       if (pendingRef.current || !activeWall || activeWall.uuid !== wallUuid) return;
       // Re-derived at the tap, from the registry as it is now: a wall archived
-      // or locked since the sheet rendered must not open a door it no longer has.
+      // since the sheet rendered must not open a door it no longer has.
       const row =
         action === 'share'
           ? null
@@ -112,7 +112,7 @@ export function useSprayWallSheetActions(
             return;
           // Once per confirm tap. Read against `Board Created` with `isReset`,
           // the ratio is confirms per completed reset.
-          trackSprayEvent(sprayWallResetStarted(action === 'holdsLocked' ? 'holds_locked' : 'board_sheet'));
+          trackSprayEvent(sprayWallResetStarted('board_sheet'));
         }
         const result = await dismissAndWait();
         if (

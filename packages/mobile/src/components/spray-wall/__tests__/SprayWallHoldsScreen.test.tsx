@@ -34,7 +34,6 @@ type EditorProps = {
   onCommitted: () => void;
   onDirtyChange: (dirty: boolean) => void;
   onHandoverChange: (handingOver: boolean) => void;
-  onWallLocked?: (refusal: unknown) => void;
 };
 const editor = vi.hoisted(() => ({ current: null as EditorProps | null }));
 
@@ -369,100 +368,30 @@ describe('SprayWallHoldsScreen', () => {
     expect(router.back).not.toHaveBeenCalled();
   });
 
-  // A deep link or a sheet that rendered before the first climb was published
-  // must not reach the editor: the screen says why and offers only the way back.
-  it.each([
-    ['holdsLocked', 'mobile.boardDetail.spray.holdsLockedHint'],
-    ['archived', 'sprayWallErrors.archived'],
-  ] as const)('explains a %s wall and offers no retry', async (reason, copy) => {
+  // A deep link or a sheet that rendered before the archive must not reach the
+  // editor: the screen says why and offers only the way back.
+  it('explains an archived wall and offers no retry', async () => {
     const { SprayHoldMaintenanceError } = await import('../../../lib/spray/spray-hold-maintenance');
-    requests.prepare.mockRejectedValueOnce(new SprayHoldMaintenanceError(reason));
+    requests.prepare.mockRejectedValueOnce(new SprayHoldMaintenanceError('archived'));
     render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
-    await screen.findByText(copy);
+    await screen.findByText('sprayWallErrors.archived');
     expect(screen.queryByTestId('editor')).toBeNull();
     expect(screen.queryByText('sprayMaintenance.retry')).toBeNull();
-    expect(screen.queryByText('sprayMaintenance.discardStrandedDraft')).toBeNull();
     fireEvent.click(screen.getByText('sprayWizard.back'));
     expect(router.back).toHaveBeenCalledTimes(1);
   });
 
-  // Hold changes opened before the wall locked can never be published, and
-  // nothing else would clear them. The owner discards them with a tap, never
-  // automatically, and the screen then settles on the plain locked state.
-  it.each(['holdsLocked', 'archived'] as const)(
-    'offers to discard a draft left on a %s wall, then shows the plain locked state',
-    async (reason) => {
-      const { SprayHoldMaintenanceError } = await import('../../../lib/spray/spray-hold-maintenance');
-      requests.prepare
-        .mockRejectedValueOnce(new SprayHoldMaintenanceError(reason, 'draft-4'))
-        .mockRejectedValueOnce(new SprayHoldMaintenanceError(reason));
-      render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
-      await screen.findByText('sprayMaintenance.strandedDraft');
-      expect(requests.discardLeftover).not.toHaveBeenCalled();
-      fireEvent.click(screen.getByText('sprayMaintenance.discardStrandedDraft'));
-      await waitFor(() => expect(requests.prepare).toHaveBeenCalledTimes(2));
-      expect(requests.discardLeftover).toHaveBeenCalledExactlyOnceWith('draft-4');
-      await waitFor(() => expect(screen.queryByText('sprayMaintenance.strandedDraft')).toBeNull());
-      expect(screen.queryByText('sprayMaintenance.discardStrandedDraft')).toBeNull();
-      expect(screen.queryByText('sprayMaintenance.retry')).toBeNull();
-      expect(screen.queryByTestId('editor')).toBeNull();
-    },
-  );
-
-  it('keeps the offer up when discarding a draft left on a locked wall fails', async () => {
-    const { SprayHoldMaintenanceError } = await import('../../../lib/spray/spray-hold-maintenance');
-    requests.prepare.mockRejectedValueOnce(new SprayHoldMaintenanceError('holdsLocked', 'draft-4'));
-    requests.discardLeftover.mockRejectedValueOnce(new Error('offline'));
-    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
-    fireEvent.click(await screen.findByText('sprayMaintenance.discardStrandedDraft'));
-    await screen.findByText('sprayMaintenance.discardStrandedDraftFailed');
-    expect(screen.getByText('sprayMaintenance.discardStrandedDraft')).toBeTruthy();
-    expect(requests.prepare).toHaveBeenCalledTimes(1);
-  });
-
-  // A climb was published while the editor was open: the Publish is refused,
-  // and the saved edits sit in a draft that can never publish. Not a dead end:
-  // the screen goes back through the gate and offers to discard that draft.
-  it('lands a publish refused as holds locked on the discard offer', async () => {
-    const { SprayHoldMaintenanceError } = await import('../../../lib/spray/spray-hold-maintenance');
+  // Archived while the editor was open: the Publish is refused, and the screen
+  // says so in the climber's words with no retry.
+  it('explains a publish refused because the wall was archived', async () => {
     requests.publish.mockRejectedValueOnce({
-      response: { errors: [{ message: 'Holds are locked.', extensions: { code: 'SPRAY_WALL_HOLDS_LOCKED' } }] },
+      response: { errors: [{ message: 'Archived.', extensions: { code: 'SPRAY_WALL_ARCHIVED' } }] },
     });
-    requests.prepare
-      .mockResolvedValueOnce(draft)
-      .mockRejectedValueOnce(new SprayHoldMaintenanceError('holdsLocked', 'draft-2'));
     render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
     fireEvent.click(await screen.findByTestId('editor'));
-    await screen.findByText('sprayMaintenance.discardStrandedDraft');
-    expect(screen.queryByText('Holds are locked.')).toBeNull();
+    await screen.findByText('sprayWallErrors.archived');
+    expect(screen.queryByText('Archived.')).toBeNull();
     expect(screen.queryByText('sprayMaintenance.retry')).toBeNull();
-    expect(requests.prepare).toHaveBeenCalledTimes(2);
-  });
-
-  it('lands a hold save the editor reports as locked on the same offer', async () => {
-    const { SprayHoldMaintenanceError } = await import('../../../lib/spray/spray-hold-maintenance');
-    requests.prepare
-      .mockResolvedValueOnce(draft)
-      .mockRejectedValueOnce(new SprayHoldMaintenanceError('holdsLocked', 'draft-2'));
-    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
-    await screen.findByTestId('editor');
-    act(() => editorProps().onDirtyChange(true));
-    act(() => editorProps().onWallLocked?.({ extensions: { code: 'SPRAY_WALL_HOLDS_LOCKED' } }));
-    await screen.findByText('sprayMaintenance.discardStrandedDraft');
-    // Nothing unsaved is left to ask about on the way out.
-    expect(guard.enabled).toBe(false);
-  });
-
-  // Most leftover new-photo drafts sit on walls that have climbs, so they meet
-  // the lock first. They are still named and discarded as what they are.
-  it('offers to discard a leftover photo on a locked wall too', async () => {
-    const { SprayHoldMaintenanceError } = await import('../../../lib/spray/spray-hold-maintenance');
-    requests.prepare.mockRejectedValueOnce(new SprayHoldMaintenanceError('holdsLocked', 'draft-9', true));
-    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
-    await screen.findByText('sprayMaintenance.leftoverPhoto');
-    expect(screen.queryByText('sprayMaintenance.discardStrandedDraft')).toBeNull();
-    fireEvent.click(screen.getByText('sprayMaintenance.discardLeftover'));
-    await waitFor(() => expect(requests.discardLeftover).toHaveBeenCalledExactlyOnceWith('draft-9'));
   });
 
   // The retired in-place reset could leave a new-photo draft on a live wall.
@@ -491,10 +420,12 @@ describe('SprayWallHoldsScreen', () => {
     expect(requests.prepare).toHaveBeenCalledTimes(1);
   });
 
-  // The one place the app writes holds fails CLOSED: the backend does not
-  // refuse a hold write on a locked wall yet (#6183), so a lock state that
-  // could not be read must not open the editor.
-  it('refuses to open the editor when the lock state cannot be read', async () => {
+  // Fail-soft, like every other reader of the archive query: an archive state
+  // that cannot be read reads as live, and the gate goes on to the wall itself.
+  it.each([
+    [null, 'sprayMaintenance.nothingPublished'],
+    [{ archivedAt: '2026-10-01T09:00:00.000Z', replacedByWallUuid: null }, 'sprayWallErrors.archived'],
+  ])('reads the archive state fresh and fails soft (%o)', async (archive, copy) => {
     const original = await vi.importActual<typeof import('../../../lib/spray/spray-hold-maintenance')>(
       '../../../lib/spray/spray-hold-maintenance',
     );
@@ -503,14 +434,13 @@ describe('SprayWallHoldsScreen', () => {
       uuid: 'wall-1',
       layoutId: 42,
       viewerCanEdit: true,
-      currentVersion: { id: 'v1', number: 1, status: 'PUBLISHED', photo: null, anchors: null, homography: null },
+      currentVersion: null,
       versions: [],
     });
-    requests.fetchArchive.mockResolvedValue(null);
+    requests.fetchArchive.mockResolvedValue(archive);
     render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
-    await screen.findByText('sprayMaintenance.unavailable');
-    expect(screen.queryByTestId('editor')).toBeNull();
-    expect(screen.getByText('sprayMaintenance.retry')).toBeTruthy();
+    await screen.findByText(copy);
+    expect(screen.queryByText('sprayMaintenance.unavailable')).toBeNull();
     expect(requests.fetchArchive).toHaveBeenCalledWith('wall-1', { force: true });
   });
 });

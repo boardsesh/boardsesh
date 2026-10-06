@@ -92,9 +92,8 @@ export const MAX_ARCHIVED_SPRAY_WALLS_PER_USER = 50;
 export const MAX_HOLDS_PER_WALL = 1500;
 
 /**
- * Versions of one wall: its first photo, then one per published hold edit, all
- * before the wall's first climb locks its holds. (A reset makes a new wall, not
- * a version.) The cap exists because every version keeps its own photo and its
+ * Versions of one wall: its first photo, then one per published hold edit. (A
+ * reset makes a new wall, not a version.) The cap exists because every version keeps its own photo and its
  * own `spray_wall_holds` generation.
  */
 export const MAX_VERSIONS_PER_WALL = 50;

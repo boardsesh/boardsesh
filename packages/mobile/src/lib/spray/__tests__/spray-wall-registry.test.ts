@@ -368,10 +368,9 @@ describe('spray wall archive state', () => {
   const ARCHIVED = {
     archivedAt: '2026-10-01T09:00:00.000Z',
     replacedByWallUuid: 'new-wall',
-    holdsLocked: true,
   };
 
-  it('carries the four fields a payload says, and reads a payload without them as a live wall', () => {
+  it('carries the fields a payload says, and reads a payload without them as a live wall', () => {
     registerSprayWall(LAYOUT_ID, { ...wall(1), archive: ARCHIVED });
     expect(getSprayWall(LAYOUT_ID)?.archive).toEqual(ARCHIVED);
     expect(sprayWallArchiveState('spray', LAYOUT_ID)).toEqual(ARCHIVED);
@@ -389,9 +388,9 @@ describe('spray wall archive state', () => {
   // useSyncExternalStore compares snapshots by identity: a revalidation that
   // says the same thing must hand back the same object, and a real change a new one.
   it('keeps the snapshot identity across a revalidation that says the same thing', () => {
-    registerSprayWall(LAYOUT_ID, { ...wall(1), archive: { ...LIVE_SPRAY_WALL_ARCHIVE_STATE, holdsLocked: true } });
+    registerSprayWall(LAYOUT_ID, { ...wall(1), archive: { ...LIVE_SPRAY_WALL_ARCHIVE_STATE } });
     const first = sprayWallArchiveState('spray', LAYOUT_ID);
-    registerSprayWall(LAYOUT_ID, { ...wall(1), archive: { ...LIVE_SPRAY_WALL_ARCHIVE_STATE, holdsLocked: true } });
+    registerSprayWall(LAYOUT_ID, { ...wall(1), archive: { ...LIVE_SPRAY_WALL_ARCHIVE_STATE } });
     expect(sprayWallArchiveState('spray', LAYOUT_ID)).toBe(first);
     registerSprayWall(LAYOUT_ID, { ...wall(1), archive: ARCHIVED });
     expect(sprayWallArchiveState('spray', LAYOUT_ID)).not.toBe(first);
@@ -411,7 +410,6 @@ describe('spray wall archive state', () => {
     expect(sprayWallArchiveState('spray', LAYOUT_ID)).toEqual({
       archivedAt: '2026-10-06T10:00:00.000Z',
       replacedByWallUuid: 'new-wall',
-      holdsLocked: true,
     });
     expect(wakes).toBe(1);
     // A second mark, or a mark for a wall that is not this one, changes nothing.

@@ -226,9 +226,6 @@
         "kind": "Spraywall",
         "editHolds": "Griffe bearbeiten",
         "editHoldsHint": "Füge Griffe hinzu, verschiebe oder lösche sie.",
-        "holdsLocked": "Griffe sind gesperrt",
-        "holdsLockedHint": "An dieser Wand gibt es veröffentlichte Boulder. Setz die Wand zurück, um einen Griff zu ändern.",
-        "holdsLockedEditorHint": "An dieser Wand gibt es veröffentlichte Boulder, deshalb sind die Griffe gesperrt. Nur wer die Wand angelegt hat, kann sie zurücksetzen.",
         "resetWall": "Wand zurücksetzen",
         "resetWallHint": "Mach ein neues Foto und markier die Griffe neu.",
         "shareLink": "Link teilen",
@@ -1102,7 +1099,6 @@
   },
   "sprayWallErrors": {
     "archived": "Diese Wand ist archiviert. Die Boulder und Begehungen darauf bleiben, aber du kannst nichts Neues mehr daran bauen.",
-    "holdsLocked": "An dieser Wand gibt es veröffentlichte Boulder, deshalb sind die Griffe gesperrt. Setz die Wand zurück, um einen Griff zu ändern.",
     "resetRetired": "Wände änderst du jetzt, indem du sie zurücksetzt. Aktualisier die App und setz die Wand dann zurück.",
     "resetOwnerOnly": "Nur wer die Wand angelegt hat, kann sie zurücksetzen.",
     "resetSourceUnpublished": "Richte diese Wand fertig ein, bevor du sie zurücksetzt.",
@@ -1130,14 +1126,11 @@
     },
     "leftoverPhoto": "An dieser Wand liegt ein unfertiges neues Foto aus einer älteren App-Version. Verwirf es, um die Griffe zu bearbeiten.",
     "discardLeftover": "Unfertiges Foto verwerfen",
-    "discardLeftoverFailed": "Das Foto ließ sich nicht verwerfen. Versuch es nochmal.",
-    "strandedDraft": "Du hast unveröffentlichte Änderungen an dieser Wand. Sie lassen sich nicht mehr veröffentlichen.",
-    "discardStrandedDraft": "Unveröffentlichte Änderungen verwerfen",
-    "discardStrandedDraftFailed": "Die Änderungen ließen sich nicht verwerfen. Versuch es nochmal."
+    "discardLeftoverFailed": "Das Foto ließ sich nicht verwerfen. Versuch es nochmal."
   },
   "sprayCaps": {
     "holds": "Eine Wand trägt bis zu {{max}} Griffe. Verwirf ein paar und speichere erneut.",
-    "versions": "Eine Wand behält bis zu {{max}} Versionen der Griffe, bevor der erste Boulder veröffentlicht ist, und diese hat alle verbraucht.",
+    "versions": "Eine Wand behält bis zu {{max}} Versionen ihrer Griffe, eine pro veröffentlichter Änderung, und diese hat alle verbraucht. Setz die Wand zurück, um neu anzufangen.",
     "walls": "Du kannst {{max}} Wände behalten. Lösch eine, um Platz zu schaffen.",
     "wallsHint": "Du kannst bis zu {{max}} Wände behalten."
   },

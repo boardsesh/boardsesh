@@ -15,7 +15,7 @@ import type { SprayVersionIdentity } from './spray-photo-keys';
 //
 // ## The version is the whole point
 //
-// Publishing a hold edit (before the wall's first climb locks its holds) writes
+// Publishing a hold edit writes
 // a new `spray_wall_versions` row and a new generation of `spray_wall_holds`
 // under the SAME layout and size: the wall keeps its `(board_type, layout_id)`
 // partition so every climb set on it stays findable (`docs/spray-walls.md`,
@@ -57,29 +57,21 @@ export type SprayWallRenderSettingsValue = BoardRenderDefault;
  *   archived wall keeps its climbs and sends, but nothing new is set on it.
  * - `replacedByWallUuid`: the published wall that replaced this one, when the
  *   viewer may see it. Null while the replacement is unfinished.
- * - `holdsLocked`: the wall has a published climb (or is archived), so its holds
- *   no longer change. Changing a hold means resetting the wall.
  */
 export type SprayWallArchiveState = {
   archivedAt: string | null;
   replacedByWallUuid: string | null;
-  holdsLocked: boolean;
 };
 
-/** A live wall whose holds are still free to edit: what a payload without the fields reads as. */
+/** A live wall: what a payload without the fields reads as. */
 export const LIVE_SPRAY_WALL_ARCHIVE_STATE: SprayWallArchiveState = Object.freeze({
   archivedAt: null,
   replacedByWallUuid: null,
-  holdsLocked: false,
 });
 
 /** Field-wise equality, so an unchanged revalidation keeps the previous object. */
 function sameArchiveState(left: SprayWallArchiveState, right: SprayWallArchiveState): boolean {
-  return (
-    left.archivedAt === right.archivedAt &&
-    left.replacedByWallUuid === right.replacedByWallUuid &&
-    left.holdsLocked === right.holdsLocked
-  );
+  return left.archivedAt === right.archivedAt && left.replacedByWallUuid === right.replacedByWallUuid;
 }
 
 /**
@@ -402,7 +394,6 @@ export function sprayWallArchiveState(boardName: string, layoutId: number): Spra
  * its reset replacement published here. The next revalidation confirms it.
  *
  * Ignored when no wall is registered under the layout or a different wall is.
- * Holds lock with the archive, as they do on the server.
  */
 export function markSprayWallArchived(
   layoutId: number,
@@ -413,7 +404,7 @@ export function markSprayWallArchived(
   if (!wall || wall.wallUuid !== wallUuid || wall.archive.archivedAt != null) return;
   walls.set(layoutId, {
     ...wall,
-    archive: { ...wall.archive, archivedAt, replacedByWallUuid, holdsLocked: true },
+    archive: { ...wall.archive, archivedAt, replacedByWallUuid },
   });
   notify();
 }
@@ -440,25 +431,6 @@ export function setSprayWallArchiveState(layoutId: number, wallUuid: string, arc
 export function sprayWallHiddenAt(boardName: string, layoutId: number): string | null {
   if (boardName !== SPRAY_BOARD_NAME) return null;
   return walls.get(layoutId)?.hiddenAt ?? null;
-}
-
-/** Injected by the loader, for the reason `setSprayWallLoader` gives. */
-type SprayWallArchiveRefresher = (layoutId: number, wallUuid: string) => void;
-let sprayWallArchiveRefresher: SprayWallArchiveRefresher | null = null;
-
-export function setSprayWallArchiveRefresher(refresher: SprayWallArchiveRefresher | null): void {
-  sprayWallArchiveRefresher = refresher;
-}
-
-/**
- * Re-read a registered wall's archive state alone (not its render payload), now:
- * for a caller that knows it just changed, like a climb publish that may have
- * locked the wall's holds. A no-op for a wall not registered, or before the
- * loader is installed.
- */
-export function refreshSprayWallArchive(layoutId: number): void {
-  const wall = walls.get(layoutId);
-  if (wall && sprayWallArchiveRefresher) sprayWallArchiveRefresher(layoutId, wall.wallUuid);
 }
 
 /** The registered wall with this uuid, or `null`. Linear in the walls this session holds. */
@@ -529,8 +501,7 @@ export function resetSprayWallViewerAccess({ markStale = true }: { markStale?: b
     // that a request sent now would carry a token (`dropSprayWallViewerAccess`).
     // Who replaced an archived wall is only shown to a viewer who may see the
     // replacement: it goes with the account, and the re-read says it again.
-    // When it was archived and whether its holds are locked are facts about
-    // the wall, and stay.
+    // When it was archived is a fact about the wall, and stays.
     walls.set(layoutId, {
       ...wall,
       viewerCanEdit: false,
@@ -853,7 +824,6 @@ export function clearSprayWallRegistry(): void {
   withdrawAllSprayWalls();
   loaderGeneration += 1;
   sprayWallLoader = null;
-  sprayWallArchiveRefresher = null;
   viewerGeneration = 0;
   subscribers.clear();
   withdrawalSubscribers.clear();

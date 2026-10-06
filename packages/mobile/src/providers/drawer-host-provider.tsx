@@ -479,7 +479,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // Who owns a spray wall decides its reset rows. The profile is the fresher
   // answer but it is network-only, so fall back to the id the signed token
   // carries, as My Boards does: a failed profile read must not take the owner's
-  // reset away and leave them an inert "Holds are locked".
+  // reset away.
   const { userId: storedUserId } = useStoredUserId(isAuthenticated && !profile?.id);
   const sprayViewerUserId = profile?.id ?? storedUserId ?? null;
   // Read at the app root (resolved by interaction time) and passed to the reaction

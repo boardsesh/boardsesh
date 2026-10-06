@@ -84,7 +84,6 @@ export async function loadLocalSprayWall(
             ...LIVE_SPRAY_WALL_ARCHIVE_STATE,
             archivedAt: remembered.archivedAt,
             replacedByWallUuid: remembered.replacedByWallUuid,
-            holdsLocked: true,
           }
         : undefined,
     });

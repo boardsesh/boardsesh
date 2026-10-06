@@ -388,7 +388,7 @@ describe('CreateClimbRoute on an archived spray wall', () => {
       photoThumbUrl: null,
       photoExpiresAt: '2099-01-01T00:00:00.000Z',
       holds: [],
-      archive: { ...LIVE_SPRAY_WALL_ARCHIVE_STATE, archivedAt, holdsLocked: archivedAt != null },
+      archive: { ...LIVE_SPRAY_WALL_ARCHIVE_STATE, archivedAt },
     });
   }
 

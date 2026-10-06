@@ -288,7 +288,7 @@ import {
   type SprayWallArchiveState,
 } from '../../../lib/spray/spray-wall-registry';
 
-/** Register a spray wall in the real registry, so the sheet knows whether its holds are locked. */
+/** Register a spray wall in the real registry, so the sheet knows whether it is archived. */
 function registerSprayWallFixture(layoutId: number, wallUuid: string, archive: Partial<SprayWallArchiveState> = {}) {
   registerSprayWall(layoutId, {
     wallUuid,
@@ -438,23 +438,21 @@ describe('NowOnTheWallPanel', () => {
     expect(queryByLabelText('mobile.boardDetail.spray.resetWall')).toBeNull();
   });
 
-  // Once a climb is published the holds lock: Edit holds becomes an
-  // explanation, which only the owner can act on (it opens the reset confirm).
-  it('swaps Edit holds for "Holds are locked" once the wall has a climb', () => {
+  // Holds stay editable on a live wall, published climbs or not: the owner
+  // gets Edit holds and Reset, an editor who is not the owner Edit holds alone.
+  it('keeps Edit holds on a live wall for the owner and for an editor', () => {
     clearSprayWallRegistry();
-    registerSprayWallFixture(sprayWall.layoutId, sprayWall.uuid, { holdsLocked: true });
+    registerSprayWallFixture(sprayWall.layoutId, sprayWall.uuid, {});
     const onOpenSprayMaintenance = vi.fn();
-    const { getByLabelText, getByText, queryByLabelText, rerender } = render(
+    const { getByLabelText, queryByLabelText, rerender } = render(
       panelElement({ activeBoard: sprayWall, onOpenSprayMaintenance, viewerUserId: 'owner-1' }),
     );
-    expect(queryByLabelText('mobile.boardDetail.spray.editHolds')).toBeNull();
-    fireEvent.click(getByLabelText('mobile.boardDetail.spray.holdsLocked'));
-    expect(onOpenSprayMaintenance).toHaveBeenCalledExactlyOnceWith(sprayWall.uuid, 'holdsLocked');
+    fireEvent.click(getByLabelText('mobile.boardDetail.spray.editHolds'));
+    expect(onOpenSprayMaintenance).toHaveBeenCalledExactlyOnceWith(sprayWall.uuid, 'editHolds');
+    expect(getByLabelText('mobile.boardDetail.spray.resetWall')).toBeTruthy();
 
-    // A gym admin who can edit but does not own the wall reads it, and cannot act on it.
     rerender(panelElement({ activeBoard: sprayWall, onOpenSprayMaintenance, viewerUserId: 'gym-admin' }));
-    expect(getByText('mobile.boardDetail.spray.holdsLockedEditorHint')).toBeTruthy();
-    expect(queryByLabelText('mobile.boardDetail.spray.holdsLocked')).toBeNull();
+    expect(getByLabelText('mobile.boardDetail.spray.editHolds')).toBeTruthy();
     expect(queryByLabelText('mobile.boardDetail.spray.resetWall')).toBeNull();
   });
 
@@ -491,7 +489,6 @@ describe('NowOnTheWallPanel', () => {
     registerSprayWallFixture(sprayWall.layoutId, sprayWall.uuid, {
       archivedAt: '2026-10-01T09:00:00.000Z',
       replacedByWallUuid: 'new-wall',
-      holdsLocked: true,
     });
     const { getByText, queryByLabelText } = render(
       panelElement({ activeBoard: sprayWall, onOpenSprayMaintenance: vi.fn(), viewerUserId: 'owner-1' }),
@@ -500,7 +497,6 @@ describe('NowOnTheWallPanel', () => {
     fireEvent.click(getByText('sprayArchive.switchToNew'));
     expect(openSprayWall).toHaveBeenCalledExactlyOnceWith('new-wall');
     expect(queryByLabelText('mobile.boardDetail.spray.editHolds')).toBeNull();
-    expect(queryByLabelText('mobile.boardDetail.spray.holdsLocked')).toBeNull();
     expect(queryByLabelText('mobile.boardDetail.spray.resetWall')).toBeNull();
   });
 

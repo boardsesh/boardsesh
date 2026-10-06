@@ -17,7 +17,7 @@ import {
 } from './spray-wall-registry';
 
 /**
- * The archive and hold-lock state of the wall behind a board config, or `null`
+ * The archive state of the wall behind a board config, or `null`
  * on every catalogue board and until the wall has registered.
  *
  * Asks for the wall too, like the readers in `use-spray-wall.ts`, so a wall archived from

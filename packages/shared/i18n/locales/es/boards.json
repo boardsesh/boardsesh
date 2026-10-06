@@ -226,9 +226,6 @@
         "kind": "Plafón de presas",
         "editHolds": "Editar presas",
         "editHoldsHint": "Añade, mueve o borra las presas de tu muro.",
-        "holdsLocked": "Presas fijadas",
-        "holdsLockedHint": "Este muro ya tiene bloques publicados. Resetéalo para cambiar una presa.",
-        "holdsLockedEditorHint": "Este muro ya tiene bloques publicados, así que sus presas están fijadas. Solo quien lo creó puede resetearlo.",
         "resetWall": "Resetear este muro",
         "resetWallHint": "Haz una foto nueva y marca las presas otra vez.",
         "shareLink": "Compartir enlace",
@@ -1102,7 +1099,6 @@
   },
   "sprayWallErrors": {
     "archived": "Este muro está archivado. Sus bloques y encadenes se quedan, pero ya no se puede montar nada nuevo en él.",
-    "holdsLocked": "Este muro ya tiene bloques publicados, así que sus presas están fijadas. Resetea el muro para cambiar una presa.",
     "resetRetired": "Ahora los muros se cambian reseteándolos. Actualiza la app y luego resetea el muro.",
     "resetOwnerOnly": "Solo quien creó el muro puede resetearlo.",
     "resetSourceUnpublished": "Termina de configurar este muro antes de resetearlo.",
@@ -1130,14 +1126,11 @@
     },
     "leftoverPhoto": "Este muro tiene una foto nueva sin terminar de una versión anterior de la app. Descártala para editar las presas.",
     "discardLeftover": "Descartar la foto sin terminar",
-    "discardLeftoverFailed": "No se pudo descartar esa foto. Inténtalo otra vez.",
-    "strandedDraft": "Tienes cambios sin publicar en este muro. Ya no se pueden publicar.",
-    "discardStrandedDraft": "Descartar los cambios sin publicar",
-    "discardStrandedDraftFailed": "No se pudieron descartar esos cambios. Inténtalo otra vez."
+    "discardLeftoverFailed": "No se pudo descartar esa foto. Inténtalo otra vez."
   },
   "sprayCaps": {
     "holds": "En un muro caben hasta {{max}} presas. Descarta algunas y vuelve a guardar.",
-    "versions": "Un muro guarda hasta {{max}} versiones de sus presas antes de que se publique su primer bloque, y este ya las ha gastado todas.",
+    "versions": "Un muro guarda hasta {{max}} versiones de sus presas, una por cada edición publicada, y este ya las ha gastado todas. Resetea el muro para empezar de cero.",
     "walls": "Puedes tener {{max}} muros. Borra uno para hacer sitio.",
     "wallsHint": "Puedes tener hasta {{max}} muros."
   },

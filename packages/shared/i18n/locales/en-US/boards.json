@@ -226,9 +226,6 @@
         "kind": "Spray wall",
         "editHolds": "Edit holds",
         "editHoldsHint": "Add, move or delete the holds on your wall.",
-        "holdsLocked": "Holds are locked",
-        "holdsLockedHint": "This wall has published climbs. Reset it to change a hold.",
-        "holdsLockedEditorHint": "This wall has published climbs, so its holds are locked. Only the owner can reset it.",
         "resetWall": "Reset this wall",
         "resetWallHint": "Take a new photo and mark the holds again.",
         "shareLink": "Share link",
@@ -1102,7 +1099,6 @@
   },
   "sprayWallErrors": {
     "archived": "This wall is archived. Its climbs and sends stay, but nothing new can be set on it.",
-    "holdsLocked": "This wall has published climbs, so its holds are locked. Reset the wall to change a hold.",
     "resetRetired": "Walls change by resetting them now. Update the app, then reset the wall.",
     "resetOwnerOnly": "Only the wall's owner can reset it.",
     "resetSourceUnpublished": "Finish setting up this wall before you reset it.",
@@ -1130,14 +1126,11 @@
     },
     "leftoverPhoto": "This wall has an unfinished new photo from an older version of the app. Discard it to edit the holds.",
     "discardLeftover": "Discard the unfinished photo",
-    "discardLeftoverFailed": "That photo wouldn't clear. Try again.",
-    "strandedDraft": "You have unpublished changes on this wall. They can't be published now.",
-    "discardStrandedDraft": "Discard unpublished changes",
-    "discardStrandedDraftFailed": "Those changes wouldn't clear. Try again."
+    "discardLeftoverFailed": "That photo wouldn't clear. Try again."
   },
   "sprayCaps": {
     "holds": "A wall carries up to {{max}} holds. Drop a few and save again.",
-    "versions": "A wall keeps up to {{max}} versions of its holds before its first climb is published, and this one has used them all.",
+    "versions": "A wall keeps up to {{max}} versions of its holds, one per published hold edit, and this one has used them all. Reset the wall to start fresh.",
     "walls": "You can keep {{max}} walls. Delete one to make room.",
     "wallsHint": "You can keep up to {{max}} walls."
   },

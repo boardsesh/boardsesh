@@ -35,7 +35,6 @@ export function settleArchivedSprayWall(
     ...(registered?.archive ?? LIVE_SPRAY_WALL_ARCHIVE_STATE),
     archivedAt,
     replacedByWallUuid: replacementUuid,
-    holdsLocked: true,
   });
   if (registered) {
     markSprayWallArchived(registered.layoutId, archivedWallUuid, { archivedAt, replacedByWallUuid: replacementUuid });

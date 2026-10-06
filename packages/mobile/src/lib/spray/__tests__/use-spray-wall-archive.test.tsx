@@ -9,7 +9,7 @@ import {
 } from '../spray-wall-registry';
 import { useSprayWallArchiveState, useSprayWallIsArchived } from '../use-spray-wall-archive';
 
-function registerWall(holdsLocked = false) {
+function registerWall() {
   registerSprayWall(55, {
     wallUuid: 'wall-55',
     angle: 40,
@@ -21,7 +21,7 @@ function registerWall(holdsLocked = false) {
     photoThumbUrl: null,
     photoExpiresAt: '2099-01-01T00:00:00.000Z',
     holds: [],
-    archive: { ...LIVE_SPRAY_WALL_ARCHIVE_STATE, holdsLocked },
+    archive: { ...LIVE_SPRAY_WALL_ARCHIVE_STATE },
   });
 }
 
@@ -36,8 +36,8 @@ describe('the archive readers', () => {
     expect(result.current.archive).toBeNull();
     expect(result.current.archived).toBe(false);
 
-    act(() => registerWall(true));
-    expect(result.current.archive?.holdsLocked).toBe(true);
+    act(() => registerWall());
+    expect(result.current.archive).toEqual(LIVE_SPRAY_WALL_ARCHIVE_STATE);
     expect(result.current.archived).toBe(false);
 
     act(() =>
@@ -48,7 +48,7 @@ describe('the archive readers', () => {
   });
 
   it('never reads a catalogue board as archived', () => {
-    registerWall(true);
+    registerWall();
     const { result } = renderHook(() => useSprayWallArchiveState('kilter', 55));
     expect(result.current).toBeNull();
   });

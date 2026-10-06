@@ -39,12 +39,7 @@ import { useQueueActions } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useToast } from '../../providers/toast-provider';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
-import {
-  getSprayWall,
-  refreshSprayWall,
-  refreshSprayWallArchive,
-  SPRAY_BOARD_NAME,
-} from '../../lib/spray/spray-wall-registry';
+import { getSprayWall, refreshSprayWall, SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
 import { sprayWallLifecycleRefusal, sprayWallRefusalMeansStaleWall } from '../../lib/graphql/extract-error-message';
 import { sprayWallLifecycleMessage } from '../../lib/spray/spray-lifecycle-copy';
 import {
@@ -341,8 +336,8 @@ export function useCreateClimbScreen({
    *
    * A catalogue board gets `undefined`, which means "every hold in the seed is
    * real": Kilter's holds are bolted on at the factory. A wall's are not. Holds
-   * came off some walls before a published climb locked them, and a remix or a
-   * draft of a climb set before that still names them. Without this the editor
+   * come off a live wall, and a remix or a draft of a climb set before that
+   * still names them. Without this the editor
    * opens with those holds painted: invisible (no placement, so no ring),
    * untappable (no target), and still counted by `startingCount` /
    * `finishCount` / `isValid`, so Save would publish a climb born broken.
@@ -1758,11 +1753,6 @@ export function useCreateClimbScreen({
       // An admin's live heatmap counts the new climb at once; a downloaded board
       // catches up when the climb syncs down and the index rebuilds.
       void queryClient.invalidateQueries({ queryKey: ['holdHeatmap'] });
-      // A wall's first published climb locks its holds. Re-read the wall's
-      // archive state now (that query alone, not the whole wall), so its board
-      // sheet says "Holds are locked" at once rather than after the ten-minute
-      // revalidation.
-      if (!isDraft && board.boardName === SPRAY_BOARD_NAME) refreshSprayWallArchive(board.layoutId);
       setJustSaved(true);
       // Seed the next climb's picker with what this one published at — a session
       // on one wall clusters hard around two or three grades.
@@ -1798,8 +1788,7 @@ export function useCreateClimbScreen({
         // and in the autosave slot, and Save can be tapped again (after a
         // conflict the server re-reads the climb, so a second Save can succeed).
         const refusal = climbEditRefusal(err);
-        // The wall was archived (or, for a hold write, locked) since this device
-        // last read it: say so, and re-read the wall so the editor's entry
+        // The wall was archived since this device last read it: say so, and re-read the wall so the editor's entry
         // points and the board sheet catch up.
         const wallRefusal = board.boardName === SPRAY_BOARD_NAME ? sprayWallLifecycleRefusal(err) : null;
         if (sprayWallRefusalMeansStaleWall(wallRefusal)) refreshSprayWall(board.layoutId);

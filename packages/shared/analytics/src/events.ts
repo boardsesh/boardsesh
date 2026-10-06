@@ -720,7 +720,7 @@ export const SHARED_EVENTS = {
   // clones the wall's settings into a new wall the owner photographs and marks
   // in the add-a-wall wizard; its first publish archives the old wall.
   //
-  // Props: { source: 'board_sheet' | 'holds_locked' } (where the owner
+  // Props: { source: 'board_sheet' } (where the owner
   // confirmed "Reset this wall?"). Fired once per confirm tap, from the board
   // sheet, never from the wizard: reopening an unfinished reset or starting it
   // over fires nothing. The replacement's publish is the ordinary

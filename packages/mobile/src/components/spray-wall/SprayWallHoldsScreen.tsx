@@ -50,21 +50,17 @@ import {
 } from '../../lib/spray/spray-hold-maintenance';
 
 const maintenanceTransport: SprayHoldMaintenanceTransport = {
-  // The wall and, from its own query, whether it is archived or its holds are
-  // locked. Asked fresh every time: this is the gate in front of the editor and
-  // its Publish, the one place the app writes holds. It fails CLOSED, unlike
-  // every other reader of that query: the backend does not refuse a hold write
-  // on a locked wall yet (#6183), so an unknown answer (a failed or timed-out
-  // read, an older backend) must not let the editor move holds under published
-  // climbs. The screen offers Retry and Back.
+  // The wall and, from its own query, whether it is archived. Asked fresh every
+  // time: this is the gate in front of the editor and its Publish. Fail-soft
+  // like every other reader of that query: an unknown answer reads as live, and
+  // the server refuses a write to an archived wall anyway.
   fetchWall: async (wallUuid) => {
     const [wall, archive] = await Promise.all([
       fetchSprayWallVersions(wallUuid),
       fetchSprayWallArchive(wallUuid, { force: true }),
     ]);
     if (!wall) return null;
-    if (!archive) throw new SprayHoldMaintenanceError('unavailable');
-    return { ...wall, archivedAt: archive.archivedAt, holdsLocked: archive.holdsLocked };
+    return { ...wall, archivedAt: archive?.archivedAt ?? null };
   },
   createDraft: async (input) => {
     const response = await getHttpClient().request<{ createSprayWallVersion: SprayWallVersion }>(
@@ -85,23 +81,20 @@ const maintenanceTransport: SprayHoldMaintenanceTransport = {
 type MaintenanceStatus = 'preparing' | 'editing' | 'publishing' | 'refreshing' | 'failed';
 
 /**
- * A refusal that no retry can fix: the wall is archived, or its holds locked
- * when its first climb was published. The screen explains it and offers only
- * the way back.
+ * A refusal that no retry can fix: the wall is archived. The screen explains it
+ * and offers only the way back.
  */
 function isFinalRefusal(failure: unknown): boolean {
-  if (failure instanceof SprayHoldMaintenanceError) {
-    return failure.reason === 'archived' || failure.reason === 'holdsLocked';
-  }
+  if (failure instanceof SprayHoldMaintenanceError) return failure.reason === 'archived';
   return sprayWallRefusalMeansStaleWall(sprayWallLifecycleRefusal(failure));
 }
 
 /**
  * Editing keeps the active board and visibility intact; leaving keeps its draft.
  *
- * Refuses a wall whose holds are locked or which is archived before any draft is
- * opened (`prepareSprayHoldDraft`), so a deep link or a sheet that rendered
- * before the lock cannot reach the editor.
+ * Refuses an archived wall before any draft is opened (`prepareSprayHoldDraft`),
+ * so a deep link or a sheet that rendered before the archive cannot reach the
+ * editor.
  */
 export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
   const { t } = useTranslation('boards');
@@ -130,11 +123,11 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
   }, [router]);
 
   // The wall's registry entry, refreshed when the server says this device's
-  // picture of the wall is out of date (archived, or holds locked since).
+  // picture of the wall is out of date (archived since).
   const refreshRegisteredWall = useCallback((failure: unknown) => {
     const stale =
       failure instanceof SprayHoldMaintenanceError
-        ? failure.reason === 'archived' || failure.reason === 'holdsLocked'
+        ? failure.reason === 'archived'
         : sprayWallRefusalMeansStaleWall(sprayWallLifecycleRefusal(failure));
     if (!stale) return;
     const registered = findRegisteredSprayWallByUuid(requestedWallUuidRef.current);
@@ -169,27 +162,6 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
       mountedRef.current = false;
     };
   }, [prepare]);
-
-  /**
-   * The wall was locked (a climb published) or archived while the editor was
-   * open, and a save or the publish was refused for it. Not a dead end: the
-   * edits are in a server draft that can never be published, so the screen
-   * goes back through `prepare`, which lands on the locked state and offers to
-   * discard that draft. Whatever the editor held unsaved is gone either way.
-   */
-  const landOnLockedWall = useCallback(
-    (refusal: unknown) => {
-      refreshRegisteredWall(refusal);
-      editorDirtyRef.current = false;
-      editorHandingOverRef.current = false;
-      setEditorDirty(false);
-      setEditorHandingOver(false);
-      draftRef.current = null;
-      setDraft(null);
-      void prepare();
-    },
-    [prepare, refreshRegisteredWall],
-  );
 
   const finish = useCallback(async () => {
     const prepared = draftRef.current;
@@ -250,13 +222,6 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
       if (!mountedRef.current) return;
       setFinished(true);
     } catch (error) {
-      if (!publishedRef.current && sprayWallRefusalMeansStaleWall(sprayWallLifecycleRefusal(error))) {
-        // Handed over after this run's `finally` has released the screen, so
-        // the gate's own run owns `busyRef` from its start: the leave guard
-        // never sees a gap between the two.
-        if (mountedRef.current) queueMicrotask(() => landOnLockedWall(error));
-        return;
-      }
       refreshRegisteredWall(error);
       if (!mountedRef.current) return;
       setFailure(error);
@@ -264,12 +229,11 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
     } finally {
       busyRef.current = false;
     }
-  }, [queryClient, refreshRegisteredWall, landOnLockedWall]);
+  }, [queryClient, refreshRegisteredWall]);
 
   // An open draft this screen cannot edit: a new-photo draft the retired
-  // in-place reset left, or hold changes started before the wall was locked or
-  // archived. Discarding it keeps the wall and its climbs; only the draft goes.
-  // Only ever on a tap: the climber may still want to look at what it held.
+  // in-place reset left. Discarding it keeps the wall and its climbs; only the
+  // draft goes. Only ever on a tap.
   const discardLeftover = useDiscardSprayWallVersion(wallUuid);
   const discardLeftoverAsync = discardLeftover.mutateAsync;
   const [discardFailed, setDiscardFailed] = useState(false);
@@ -346,7 +310,6 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
         onCommitted={onCommitted}
         onDirtyChange={onDirtyChange}
         onHandoverChange={onHandoverChange}
-        onWallLocked={landOnLockedWall}
       />
     );
   }
@@ -380,62 +343,24 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
     failure instanceof SprayHoldMaintenanceError && failure.reason === 'leftoverPhotoDraft'
       ? failure.leftoverVersionId
       : null;
-  // A draft opened before the wall was locked or archived. It can never be
-  // published; once discarded, the screen settles on the plain locked state.
-  const lockedFailure =
-    failure instanceof SprayHoldMaintenanceError && (failure.reason === 'holdsLocked' || failure.reason === 'archived')
-      ? failure
-      : null;
-  const strandedDraftVersionId =
-    lockedFailure && !lockedFailure.leftoverIsPhoto ? lockedFailure.leftoverVersionId : null;
-  // A new photo the retired reset left on a wall that has since been locked:
-  // the same discard as on a live wall, named for what it is.
-  const lockedLeftoverPhotoId = lockedFailure?.leftoverIsPhoto ? lockedFailure.leftoverVersionId : null;
-  const leftoverVersionIdToDiscard = leftoverVersionId ?? lockedLeftoverPhotoId;
   const finalRefusal = isFinalRefusal(failure);
 
   return (
     <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
       {status === 'failed' ? (
         <>
-          {finalRefusal && failure instanceof SprayHoldMaintenanceError && failure.reason === 'holdsLocked' ? (
-            <Text variant="headline" style={styles.message}>
-              {t('mobile.boardDetail.spray.holdsLocked')}
-            </Text>
-          ) : null}
-          <Text variant={finalRefusal ? 'body' : 'headline'} style={styles.message}>
+          <Text variant="headline" style={styles.message}>
             {failureText}
           </Text>
-          {strandedDraftVersionId ? (
-            <Text variant="subheadline" style={styles.message}>
-              {t('sprayMaintenance.strandedDraft')}
-            </Text>
-          ) : null}
-          {lockedLeftoverPhotoId ? (
-            <Text variant="subheadline" style={styles.message}>
-              {t('sprayMaintenance.leftoverPhoto')}
-            </Text>
-          ) : null}
           {discardFailed ? (
             <Text variant="subheadline" style={styles.message}>
-              {strandedDraftVersionId
-                ? t('sprayMaintenance.discardStrandedDraftFailed')
-                : t('sprayMaintenance.discardLeftoverFailed')}
+              {t('sprayMaintenance.discardLeftoverFailed')}
             </Text>
           ) : null}
-          {strandedDraftVersionId ? (
-            <Button
-              title={t('sprayMaintenance.discardStrandedDraft')}
-              variant="outlined"
-              role="destructive"
-              onPress={() => void discardOpenDraft(strandedDraftVersionId)}
-              loading={discardLeftover.isPending}
-              disabled={discardLeftover.isPending}
-            />
-          ) : leftoverVersionIdToDiscard ? (
+          {leftoverVersionId ? (
             <Button
               title={t('sprayMaintenance.discardLeftover')}
-              onPress={() => void discardOpenDraft(leftoverVersionIdToDiscard)}
+              onPress={() => void discardOpenDraft(leftoverVersionId)}
               loading={discardLeftover.isPending}
               disabled={discardLeftover.isPending}
             />
@@ -465,8 +390,6 @@ function maintenanceFailureText(reason: SprayHoldMaintenanceError['reason'], t: 
       return t('sprayMaintenance.nothingPublished');
     case 'archived':
       return t('sprayWallErrors.archived');
-    case 'holdsLocked':
-      return t('mobile.boardDetail.spray.holdsLockedHint');
     case 'leftoverPhotoDraft':
       return t('sprayMaintenance.leftoverPhoto');
     case 'draftUnavailable':

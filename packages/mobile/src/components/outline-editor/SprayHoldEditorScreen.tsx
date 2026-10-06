@@ -306,12 +306,6 @@ export type SprayHoldEditorScreenProps = {
    * and removing the screen cancels the hand-over that would publish them.
    */
   onHandoverChange?: (handingOver: boolean) => void;
-  /**
-   * A save was refused because the wall was archived, or its holds locked by a
-   * published climb, while the editor was open. The host takes over (the hold
-   * route offers to discard the draft); left out, the editor shows the refusal.
-   */
-  onWallLocked?: (refusal: unknown) => void;
 };
 
 /**
@@ -365,7 +359,6 @@ export function SprayHoldEditorScreen({
   onCommitted,
   onDirtyChange,
   onHandoverChange,
-  onWallLocked,
 }: SprayHoldEditorScreenProps) {
   const { systemColors, motion } = useTheme();
   const reduceMotion = useReducedMotion();
@@ -1855,17 +1848,10 @@ export function SprayHoldEditorScreen({
         onError: (error: unknown) => {
           setHandingOver(false);
           hapticWarning();
-          // Archived, or locked by a published climb, since the editor opened:
-          // say so in the climber's words and re-read the wall for every other
-          // surface that still offers an edit.
+          // Archived since the editor opened: say so in the climber's words and
+          // re-read the wall for every other surface that still offers an edit.
           const refusal = sprayWallLifecycleRefusal(error);
-          if (sprayWallRefusalMeansStaleWall(refusal)) {
-            refreshSprayWall(layoutId);
-            if (onWallLocked) {
-              onWallLocked(error);
-              return;
-            }
-          }
+          if (sprayWallRefusalMeansStaleWall(refusal)) refreshSprayWall(layoutId);
           setErrorText(
             refusal
               ? sprayWallLifecycleMessage(refusal, t)
@@ -1886,7 +1872,6 @@ export function SprayHoldEditorScreen({
     setHandingOver,
     clearCorners,
     layoutId,
-    onWallLocked,
     t,
   ]);
 

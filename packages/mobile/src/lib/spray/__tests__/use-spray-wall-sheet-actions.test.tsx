@@ -192,35 +192,11 @@ describe('live spray wall sheet actions', () => {
     expect(dismiss).toHaveBeenCalledTimes(1);
   });
 
-  it('turns "Holds are locked" into the reset confirm for the owner only', async () => {
-    clearSprayWallRegistry();
-    registerWall({ ...LIVE_SPRAY_WALL_ARCHIVE_STATE, holdsLocked: true });
-    const { dismiss, finish } = deferredDismiss();
-    const { result } = renderHook(() => useSprayWallSheetActions(wall, dismiss, 'owner-1'));
-    await act(async () => {
-      result.current.openMaintenance(wall.uuid, 'editHolds');
-    });
-    expect(dismiss).not.toHaveBeenCalled();
-    await act(async () => {
-      result.current.openMaintenance(wall.uuid, 'holdsLocked');
-    });
-    await act(async () => finish({ status: 'dismissed' }));
-    expect(navigation.push).toHaveBeenCalledExactlyOnceWith('/boards/spray/new?resetOf=wall-1');
-
-    const editor = renderHook(() => useSprayWallSheetActions(wall, dismiss, 'gym-admin'));
-    confirmReset.mockClear();
-    await act(async () => {
-      editor.result.current.openMaintenance(wall.uuid, 'holdsLocked');
-    });
-    expect(confirmReset).not.toHaveBeenCalled();
-  });
-
   it('opens nothing on a wall archived since the sheet rendered', async () => {
     clearSprayWallRegistry();
     registerWall({
       ...LIVE_SPRAY_WALL_ARCHIVE_STATE,
       archivedAt: '2026-10-01T09:00:00.000Z',
-      holdsLocked: true,
     });
     const { dismiss } = deferredDismiss();
     const { result } = renderHook(() => useSprayWallSheetActions(wall, dismiss, 'owner-1'));

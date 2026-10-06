@@ -138,10 +138,10 @@ export function sprayWallBindStalled(
 }
 
 /**
- * Where the owner confirmed a reset: the wall sheet's "Reset this wall" row, or
- * the "Holds are locked" row that explains why a hold cannot change.
+ * Where the owner confirmed a reset: the wall sheet's "Reset this wall" row.
+ * One value today; a union so a second entry point adds a member, not a prop.
  */
-export type SprayResetSurface = 'board_sheet' | 'holds_locked';
+export type SprayResetSurface = 'board_sheet';
 
 export type SprayWallResetStartedProps = { source: SprayResetSurface };
 

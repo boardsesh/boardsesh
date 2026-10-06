@@ -200,14 +200,12 @@ export function isSprayWallVisibilityOwnerOnlyError(error: unknown): boolean {
 /**
  * `extensions.code` values the spray API refuses a write with because of where
  * the wall stands in its reset lifecycle (`docs/spray-walls.md`, "Archive and
- * reset"). `holdsLocked` and `resetRetired` come from a later backend release;
- * mapping them now means the copy is in place the day they arrive.
+ * reset"). `resetRetired` comes from a later backend release; mapping it now
+ * means the copy is in place the day it arrives.
  */
 export const SPRAY_WALL_LIFECYCLE_CODES = {
   /** The wall is archived: nothing new can be set on it, and its holds cannot change. */
   archived: 'SPRAY_WALL_ARCHIVED',
-  /** The wall has a published climb, so its holds no longer change. */
-  holdsLocked: 'SPRAY_WALL_HOLDS_LOCKED',
   /** An old client called the retired in-place reset. */
   resetRetired: 'SPRAY_WALL_RESET_RETIRED',
   /** Only the wall's owner may reset it. */
@@ -242,12 +240,12 @@ export function sprayWallLifecycleRefusal(error: unknown): SprayWallLifecycleRef
 }
 
 /**
- * The two refusals that mean this device's picture of the wall is out of date:
- * it was archived, or its holds locked, since the wall was last read. The
- * caller refreshes the wall (`refreshSprayWall`) so the screen catches up.
+ * The refusal that means this device's picture of the wall is out of date: it
+ * was archived since the wall was last read. The caller refreshes the wall
+ * (`refreshSprayWall`) so the screen catches up.
  */
 export function sprayWallRefusalMeansStaleWall(refusal: SprayWallLifecycleRefusal | null): boolean {
-  return refusal === 'archived' || refusal === 'holdsLocked';
+  return refusal === 'archived';
 }
 
 // The board-mutation rejections clients branch on are parsed in

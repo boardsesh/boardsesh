@@ -33,7 +33,6 @@ import {
   settleSprayWallDiscoveryMiss,
   registerSprayWall,
   resetSprayWallViewerAccess,
-  setSprayWallArchiveRefresher,
   setSprayWallArchiveState,
   setSprayWallLoader,
   setSprayWallLook,
@@ -216,19 +215,9 @@ function reportDroppedHolds(renderData: SprayWallRenderData, expected: number, m
   });
 }
 
-/**
- * The wall's archive and hold-lock state, off a `GET_SPRAY_WALL_ARCHIVE` answer.
- *
- * An archived wall reads as locked whatever `holdsLocked` says, the same rule
- * the server applies.
- */
+/** The wall's archive state, off a `GET_SPRAY_WALL_ARCHIVE` answer. */
 export function sprayWallArchiveStateOf(wall: SprayWallArchiveFields): SprayWallArchiveState {
-  const archivedAt = wall.archivedAt ?? null;
-  return {
-    archivedAt,
-    replacedByWallUuid: wall.replacedByWallUuid ?? null,
-    holdsLocked: wall.holdsLocked === true || archivedAt != null,
-  };
+  return { archivedAt: wall.archivedAt ?? null, replacedByWallUuid: wall.replacedByWallUuid ?? null };
 }
 
 /** Map one payload without replacing the published wall or its runtime geometry. */
@@ -256,7 +245,7 @@ export function mapSprayWallRenderData(
     holds,
     renderSettings: null,
     viewerCanEdit: renderData.wall.viewerCanEdit === true,
-    // Draft payloads are an unpublished wall's: nothing is archived or locked.
+    // Draft payloads are an unpublished wall's: nothing is archived.
     archive: LIVE_SPRAY_WALL_ARCHIVE_STATE,
     registeredAtMs: receivedAtMs,
   };
@@ -502,14 +491,14 @@ function keepSprayWallArchiveOffline(wallUuid: string, archive: SprayWallArchive
 }
 
 /**
- * A wall's archive and hold-lock state (`GET_SPRAY_WALL_ARCHIVE`), or `null`
+ * A wall's archive state (`GET_SPRAY_WALL_ARCHIVE`), or `null`
  * when it could not be read.
  *
  * Never rejects: a failed read, including the validation error of a backend
  * that does not serve the fields, is "not known", and the caller registers the
  * wall without it. Answers are kept for the registry's revalidation window;
  * `force` asks again whatever is kept, for a caller that knows the wall just
- * changed (a publish, a refusal that said the wall is archived or locked).
+ * changed (a publish, a refusal that said the wall is archived).
  */
 export function fetchSprayWallArchive(
   wallUuid: string,
@@ -843,10 +832,6 @@ export function installSprayWallLoader(queryClient: QueryClient): () => void {
     return loadSprayWall(queryClient, layoutId, options);
   };
   setSprayWallLoader(loader);
-  const refreshArchive = (layoutId: number, wallUuid: string) => {
-    if (active) void loadSprayWallArchive(layoutId, wallUuid, { force: true });
-  };
-  setSprayWallArchiveRefresher(refreshArchive);
   let wasOffline = getConnectivitySnapshot().effectiveOffline;
   const unsubscribe = subscribeConnectivity(() => {
     const offline = getConnectivitySnapshot().effectiveOffline;
@@ -867,6 +852,5 @@ export function installSprayWallLoader(queryClient: QueryClient): () => void {
     unsubscribeWithdrawal();
     if (unsubscribeQueryWithdrawal === unsubscribeWithdrawal) unsubscribeQueryWithdrawal = undefined;
     unsetSprayWallLoader(loader);
-    setSprayWallArchiveRefresher(null);
   };
 }

@@ -43,9 +43,6 @@ export const SprayWallActions = memo(function SprayWallActions({
   const editHolds = useCallback(() => {
     if (wallUuid) onOpenMaintenance?.(wallUuid, 'editHolds');
   }, [onOpenMaintenance, wallUuid]);
-  const holdsLocked = useCallback(() => {
-    if (wallUuid) onOpenMaintenance?.(wallUuid, 'holdsLocked');
-  }, [onOpenMaintenance, wallUuid]);
   const resetWall = useCallback(() => {
     if (wallUuid) onOpenMaintenance?.(wallUuid, 'resetWall');
   }, [onOpenMaintenance, wallUuid]);
@@ -81,8 +78,6 @@ export const SprayWallActions = memo(function SprayWallActions({
   if (!showMaintenance && !showShare)
     return archive?.archivedAt || hiddenNotice ? <View style={styles.block}>{banner}</View> : null;
 
-  const lockedRow = maintenanceRows.find((row) => row.key === 'holdsLocked');
-
   return (
     <View style={styles.block}>
       {banner}
@@ -95,23 +90,6 @@ export const SprayWallActions = memo(function SprayWallActions({
                 label={t('mobile.boardDetail.spray.editHolds')}
                 hint={t('mobile.boardDetail.spray.editHoldsHint')}
                 onPress={editHolds}
-              />
-            ) : null}
-            {lockedRow ? (
-              <WallActionRow
-                icon="lock"
-                label={t('mobile.boardDetail.spray.holdsLocked')}
-                // The owner can reset; an editor who is not the owner cannot,
-                // and is told who can.
-                hint={
-                  lockedRow.href
-                    ? t('mobile.boardDetail.spray.holdsLockedHint')
-                    : t('mobile.boardDetail.spray.holdsLockedEditorHint')
-                }
-                // Only the owner can act on it; for anyone else it says why
-                // Edit holds is gone and leads nowhere.
-                onPress={lockedRow.href ? holdsLocked : undefined}
-                separator={maintenanceRows[0]?.key !== 'holdsLocked'}
               />
             ) : null}
             {maintenanceRows.some((row) => row.key === 'resetWall') ? (

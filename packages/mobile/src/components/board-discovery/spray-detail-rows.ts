@@ -18,9 +18,9 @@
 //    board") and is never used here.
 //
 // And one rule from the wall itself (`docs/spray-walls.md`, "Archive and reset"):
-// holds are free to edit until the wall has its first published climb. After
-// that they are locked, and changing a hold means resetting the wall. An
-// archived wall offers none of these: it is read-only.
+// an archived wall offers none of these: it is read-only. A live wall's holds
+// stay editable, published climbs or not; the editor asks before it removes a
+// hold that published climbs use.
 
 import { toBoardName } from '@boardsesh/board-config';
 import type { IconName } from '../icon-map';
@@ -42,8 +42,8 @@ export type SprayDetailRowBoard = {
  * archive state from the registry (`useSprayWallArchiveState`).
  *
  * `archive` is null until the wall has registered from its published version,
- * and every row waits for it: whether holds are locked, and whether the wall is
- * archived, is not something to guess.
+ * and every row waits for it: whether the wall is archived is not something to
+ * guess.
  */
 export type SprayDetailRowContext = {
   viewerUserId: string | null | undefined;
@@ -98,17 +98,15 @@ export function sprayShareTarget(board: SprayShareBoard | null | undefined): Spr
 
 /**
  * - `editHolds`: open the hold editor.
- * - `holdsLocked`: says the holds are locked. Opens the reset confirm for the
- *   owner, and does nothing for anyone else.
  * - `resetWall`: the owner's reset, behind a confirm.
  */
-export type SprayDetailRowKey = 'editHolds' | 'holdsLocked' | 'resetWall';
+export type SprayDetailRowKey = 'editHolds' | 'resetWall';
 
 export type SprayDetailRow = {
   key: SprayDetailRowKey;
   icon: IconName;
-  /** Where the row leads once it is confirmed, or null for a row that only informs. */
-  href: string | null;
+  /** Where the row leads once it is confirmed. */
+  href: string;
   /** The row asks "Reset this wall?" before it navigates. */
   confirmsReset: boolean;
 };
@@ -125,11 +123,11 @@ export function viewerOwnsSprayWall(
  * The maintenance rows for one board, in display order. None on a catalogue
  * board, on a wall not registered yet, or on an archived wall.
  *
- * | Viewer            | Holds free | Holds locked              |
- * | ----------------- | ---------- | ------------------------- |
- * | owner             | edit, reset | locked (opens reset), reset |
- * | editor, not owner | edit       | locked (information only) |
- * | anyone else       | none       | none                      |
+ * | Viewer            | Rows        |
+ * | ----------------- | ----------- |
+ * | owner             | edit, reset |
+ * | editor, not owner | edit        |
+ * | anyone else       | none        |
  *
  * Returns a fresh array, so call it from the sheet's `useMemo` rather than from a
  * row. It is O(1) either way.
@@ -144,16 +142,8 @@ export function sprayDetailRows(
   const isOwner = viewerOwnsSprayWall(board, viewerUserId);
   const canEdit = board.canEdit === true;
   const rows: SprayDetailRow[] = [];
-  if (canEdit && !archive.holdsLocked) {
+  if (canEdit) {
     rows.push({ key: 'editHolds', icon: 'edit', href: sprayHoldEditorHref(board.uuid), confirmsReset: false });
-  }
-  if ((canEdit || isOwner) && archive.holdsLocked) {
-    rows.push({
-      key: 'holdsLocked',
-      icon: 'lock',
-      href: isOwner ? sprayResetWizardHref(board.uuid) : null,
-      confirmsReset: isOwner,
-    });
   }
   if (isOwner) {
     rows.push({

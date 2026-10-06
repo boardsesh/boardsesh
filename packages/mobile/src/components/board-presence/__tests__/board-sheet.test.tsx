@@ -362,7 +362,7 @@ import {
   type SprayWallArchiveState,
 } from '../../../lib/spray/spray-wall-registry';
 
-/** Register a spray wall in the real registry, so the sheet knows whether its holds are locked. */
+/** Register a spray wall in the real registry, so the sheet knows whether it is archived. */
 function registerSprayWallFixture(layoutId: number, wallUuid: string, archive: Partial<SprayWallArchiveState> = {}) {
   registerSprayWall(layoutId, {
     wallUuid,

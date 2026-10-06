@@ -237,15 +237,12 @@ describe('a new-photo draft left by the retired in-place reset', () => {
   });
 });
 
-describe('locked and archived walls cannot enter hold maintenance', () => {
-  it.each([
-    ['holds locked by a published climb', { holdsLocked: true }, 'holdsLocked'],
-    ['an archived wall', { archivedAt: '2026-10-01T09:00:00.000Z', holdsLocked: true }, 'archived'],
-  ] as const)('refuses %s before any draft opens', async (_label, overrides, reason) => {
+describe('archived walls cannot enter hold maintenance', () => {
+  it('refuses an archived wall before any draft opens', async () => {
     const requests = transport();
-    requests.fetchWall.mockResolvedValue(wall(overrides));
+    requests.fetchWall.mockResolvedValue(wall({ archivedAt: '2026-10-01T09:00:00.000Z' }));
     await expect(prepareSprayHoldDraft('wall-1', requests)).rejects.toMatchObject({
-      reason,
+      reason: 'archived',
       leftoverVersionId: null,
     });
     expect(requests.createDraft).not.toHaveBeenCalled();
@@ -254,29 +251,24 @@ describe('locked and archived walls cannot enter hold maintenance', () => {
   // A deep link or a stale sheet can arrive with a hold-edit draft already open.
   it('refuses even with a draft already open, and never publishes it', async () => {
     const requests = transport();
-    requests.fetchWall.mockResolvedValue(wall({ holdsLocked: true, versions: [publishedVersion, draftVersion] }));
-    await expect(prepareSprayHoldDraft('wall-1', requests)).rejects.toMatchObject({ reason: 'holdsLocked' });
-    await expect(publishSprayHoldDraft(preparedDraft, requests)).rejects.toMatchObject({ reason: 'holdsLocked' });
+    requests.fetchWall.mockResolvedValue(
+      wall({ archivedAt: '2026-10-01T09:00:00.000Z', versions: [publishedVersion, draftVersion] }),
+    );
+    await expect(prepareSprayHoldDraft('wall-1', requests)).rejects.toMatchObject({ reason: 'archived' });
+    await expect(publishSprayHoldDraft(preparedDraft, requests)).rejects.toMatchObject({ reason: 'archived' });
     expect(requests.publishDraft).not.toHaveBeenCalled();
   });
 
-  // Nothing else would ever clear that draft, so the refusal names it and the
-  // screen can offer to discard it.
-  it.each([
-    ['holds locked', { holdsLocked: true }, 'holdsLocked'],
-    ['archived', { archivedAt: '2026-10-01T09:00:00.000Z', holdsLocked: true }, 'archived'],
-  ] as const)('names the draft left open on a wall with %s', async (_label, overrides, reason) => {
+  // A live wall with published climbs stays editable: no lock.
+  it('opens the hold editor on a live wall whatever its climbs', async () => {
     const requests = transport();
-    requests.fetchWall.mockResolvedValue(wall({ ...overrides, versions: [publishedVersion, draftVersion] }));
-    await expect(prepareSprayHoldDraft('wall-1', requests)).rejects.toMatchObject({
-      reason,
-      leftoverVersionId: draftVersion.id,
-    });
+    requests.fetchWall.mockResolvedValue(wall({ versions: [publishedVersion, draftVersion] }));
+    await expect(prepareSprayHoldDraft('wall-1', requests)).resolves.toEqual(preparedDraft);
   });
 
-  it('checks access first, so a stranger hears "unavailable" not "locked"', async () => {
+  it('checks access first, so a stranger hears "unavailable" not "archived"', async () => {
     const requests = transport();
-    requests.fetchWall.mockResolvedValue(wall({ viewerCanEdit: false, holdsLocked: true }));
+    requests.fetchWall.mockResolvedValue(wall({ viewerCanEdit: false, archivedAt: '2026-10-01T09:00:00.000Z' }));
     await expect(prepareSprayHoldDraft('wall-1', requests)).rejects.toMatchObject({ reason: 'unavailable' });
   });
 });

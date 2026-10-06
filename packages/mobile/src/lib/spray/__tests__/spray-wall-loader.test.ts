@@ -39,7 +39,6 @@ const {
   clearSprayWallRegistry,
   ensureSprayWallLoaded,
   markSprayWallArchived,
-  refreshSprayWallArchive,
   getSprayWall,
   registerSprayWall,
   unregisterSprayWall,
@@ -799,13 +798,13 @@ describe('loadSprayWall', () => {
     for (const [name, operation] of Object.entries(sprayOperations)) {
       if (name === 'GET_SPRAY_WALL_ARCHIVE' || name === 'GET_MY_SPRAY_WALL_LIFECYCLE') continue;
       const text = JSON.stringify(operation) ?? '';
-      for (const field of ['archivedAt', 'resetOfWallUuid', 'replacedByWallUuid', 'holdsLocked']) {
+      for (const field of ['archivedAt', 'resetOfWallUuid', 'replacedByWallUuid']) {
         expect(text, `${name}.${field}`).not.toContain(field);
       }
     }
   });
 
-  it('registers and draws the wall when the archive query fails, as live with free holds', async () => {
+  it('registers and draws the wall when the archive query fails, as live', async () => {
     answerArchive(async () => {
       throw new Error('Cannot query field "archivedAt" on type "SprayWall".');
     });
@@ -817,7 +816,7 @@ describe('loadSprayWall', () => {
 
     expect(getSprayWall(LAYOUT_ID)).toMatchObject({
       version: 2,
-      archive: { archivedAt: null, replacedByWallUuid: null, holdsLocked: false },
+      archive: { archivedAt: null, replacedByWallUuid: null },
     });
     expect(getRememberedSprayWallArchive(WALL_UUID)).toBeNull();
     expect(reportHandledErrorMock).not.toHaveBeenCalled();
@@ -830,7 +829,6 @@ describe('loadSprayWall', () => {
         archivedAt: '2026-10-01T09:00:00.000Z',
         resetOfWallUuid: null,
         replacedByWallUuid: 'new-wall',
-        holdsLocked: true,
       },
     }));
     requestMock
@@ -842,7 +840,6 @@ describe('loadSprayWall', () => {
     expect(getSprayWall(LAYOUT_ID)?.archive).toEqual({
       archivedAt: '2026-10-01T09:00:00.000Z',
       replacedByWallUuid: 'new-wall',
-      holdsLocked: true,
     });
     expect(getRememberedSprayWallArchive(WALL_UUID)).toEqual({
       archivedAt: '2026-10-01T09:00:00.000Z',
@@ -858,7 +855,6 @@ describe('loadSprayWall', () => {
       archive: {
         archivedAt: '2026-10-01T09:00:00.000Z',
         replacedByWallUuid: null,
-        holdsLocked: true,
       },
     });
     answerArchive(async () => {
@@ -873,20 +869,6 @@ describe('loadSprayWall', () => {
     expect(getSprayWall(LAYOUT_ID)).toMatchObject({ version: 2, archive: { archivedAt: '2026-10-01T09:00:00.000Z' } });
   });
 
-  // A published climb may have locked the wall's holds: the create screen asks
-  // through the registry, and the loader re-reads the archive query alone.
-  it('re-reads only the archive state when asked through the registry', async () => {
-    const teardown = installSprayWallLoader(privateQueryClient());
-    registerSprayWall(LAYOUT_ID, existingWall());
-    answerArchive(async () => ({
-      sprayWall: { uuid: WALL_UUID, archivedAt: null, replacedByWallUuid: null, holdsLocked: true },
-    }));
-    refreshSprayWallArchive(LAYOUT_ID);
-    await vi.waitFor(() => expect(getSprayWall(LAYOUT_ID)?.archive.holdsLocked).toBe(true));
-    expect(requestMock.mock.calls.map(([operation]) => operation)).toEqual([sprayOperations.GET_SPRAY_WALL_ARCHIVE]);
-    teardown();
-  });
-
   // A reset that published here primes "archived"; a "live" read sent before
   // the publish must not answer over it, in the cache, the registry or offline.
   it('a primed archive survives an older read that resolves later', async () => {
@@ -896,11 +878,11 @@ describe('loadSprayWall', () => {
     const loading = loadSprayWallArchive(LAYOUT_ID, WALL_UUID, { force: true });
     await Promise.resolve();
 
-    const archived = { archivedAt: '2026-10-06T10:00:00.000Z', replacedByWallUuid: 'new-wall', holdsLocked: true };
+    const archived = { archivedAt: '2026-10-06T10:00:00.000Z', replacedByWallUuid: 'new-wall' };
     primeSprayWallArchive(WALL_UUID, archived);
     markSprayWallArchived(LAYOUT_ID, WALL_UUID, { archivedAt: archived.archivedAt, replacedByWallUuid: 'new-wall' });
     read.resolve({
-      sprayWall: { uuid: WALL_UUID, archivedAt: null, replacedByWallUuid: null, holdsLocked: false },
+      sprayWall: { uuid: WALL_UUID, archivedAt: null, replacedByWallUuid: null },
     });
     await loading;
 
@@ -922,7 +904,6 @@ describe('loadSprayWall', () => {
         uuid: WALL_UUID,
         archivedAt: '2026-10-01T09:00:00.000Z',
         replacedByWallUuid: 'x',
-        holdsLocked: true,
       },
     });
     await expect(reading).resolves.toBeNull();

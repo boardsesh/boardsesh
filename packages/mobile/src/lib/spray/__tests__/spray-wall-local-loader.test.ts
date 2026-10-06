@@ -21,7 +21,6 @@ vi.mock('../spray-wall-registry', () => ({
   LIVE_SPRAY_WALL_ARCHIVE_STATE: {
     archivedAt: null,
     replacedByWallUuid: null,
-    holdsLocked: false,
   },
   registerSprayWall: fixture.register,
   sprayWallViewerGeneration: () => fixture.viewerGeneration,
@@ -81,7 +80,7 @@ describe('offline published wall hydration', () => {
     expect(fixture.register).toHaveBeenCalledWith(4, expect.objectContaining({ archive: undefined }));
   });
 
-  it('keeps a remembered archive offline, holds locked with it', async () => {
+  it('keeps a remembered archive offline', async () => {
     fixture.remembered = { archivedAt: '2026-10-01T09:00:00.000Z', replacedByWallUuid: 'new-wall' };
     expect(await loadLocalSprayWall(4, 1, 1)).toBe(true);
     expect(fixture.register).toHaveBeenCalledWith(
@@ -90,7 +89,6 @@ describe('offline published wall hydration', () => {
         archive: {
           archivedAt: '2026-10-01T09:00:00.000Z',
           replacedByWallUuid: 'new-wall',
-          holdsLocked: true,
         },
       }),
     );

@@ -47,7 +47,6 @@ describe('settleArchivedSprayWall', () => {
     settleArchivedSprayWall(client, 'old-wall', 'new-wall');
     expect(sprayWallArchiveState('spray', 31)).toMatchObject({
       replacedByWallUuid: 'new-wall',
-      holdsLocked: true,
       archivedAt: expect.any(String),
     });
     expect(invalidateRenderData).toHaveBeenCalledExactlyOnceWith(client, 'old-wall', 31);
@@ -60,7 +59,7 @@ describe('settleArchivedSprayWall', () => {
     settleArchivedSprayWall(new QueryClient(), 'old-wall', 'new-wall');
     expect(primeArchive).toHaveBeenCalledExactlyOnceWith(
       'old-wall',
-      expect.objectContaining({ archivedAt: expect.any(String), replacedByWallUuid: 'new-wall', holdsLocked: true }),
+      expect.objectContaining({ archivedAt: expect.any(String), replacedByWallUuid: 'new-wall' }),
     );
   });
 

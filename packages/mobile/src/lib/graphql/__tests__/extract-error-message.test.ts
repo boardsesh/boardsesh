@@ -198,7 +198,6 @@ describe('spray wall lifecycle refusals', () => {
 
   it.each([
     ['SPRAY_WALL_ARCHIVED', 'archived', 'sprayWallErrors.archived'],
-    ['SPRAY_WALL_HOLDS_LOCKED', 'holdsLocked', 'sprayWallErrors.holdsLocked'],
     ['SPRAY_WALL_RESET_RETIRED', 'resetRetired', 'sprayWallErrors.resetRetired'],
     ['SPRAY_WALL_RESET_OWNER_ONLY', 'resetOwnerOnly', 'sprayWallErrors.resetOwnerOnly'],
     ['SPRAY_WALL_RESET_SOURCE_UNPUBLISHED', 'resetSourceUnpublished', 'sprayWallErrors.resetSourceUnpublished'],
@@ -222,16 +221,19 @@ describe('spray wall lifecycle refusals', () => {
     expect(seen).toEqual([{ max: 50 }]);
   });
 
-  it.each([null, undefined, new Error('offline'), coded('SPRAY_WALL_LIMIT_REACHED'), coded('FORBIDDEN')])(
-    'leaves anything else alone: %j',
-    (error) => {
-      expect(sprayWallLifecycleRefusal(error)).toBeNull();
-    },
-  );
+  it.each([
+    null,
+    undefined,
+    new Error('offline'),
+    coded('SPRAY_WALL_LIMIT_REACHED'),
+    coded('SPRAY_WALL_HOLDS_LOCKED'),
+    coded('FORBIDDEN'),
+  ])('leaves anything else alone: %j', (error) => {
+    expect(sprayWallLifecycleRefusal(error)).toBeNull();
+  });
 
-  it('asks for a fresh read of the wall only when it was archived or locked since', () => {
+  it('asks for a fresh read of the wall only when it was archived since', () => {
     expect(sprayWallRefusalMeansStaleWall('archived')).toBe(true);
-    expect(sprayWallRefusalMeansStaleWall('holdsLocked')).toBe(true);
     expect(sprayWallRefusalMeansStaleWall('resetOwnerOnly')).toBe(false);
     expect(sprayWallRefusalMeansStaleWall(null)).toBe(false);
   });

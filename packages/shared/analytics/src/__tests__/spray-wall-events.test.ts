@@ -63,9 +63,9 @@ describe('spray wall event builders', () => {
       name: SHARED_EVENTS.SprayWallBindStalled,
       properties: { stage: 'navigate', elapsedMs: 1500 },
     });
-    expect(sprayWallResetStarted('holds_locked')).toEqual({
+    expect(sprayWallResetStarted('board_sheet')).toEqual({
       name: SHARED_EVENTS.SprayWallResetStarted,
-      properties: { source: 'holds_locked' },
+      properties: { source: 'board_sheet' },
     });
   });
 
