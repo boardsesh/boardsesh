@@ -12,7 +12,7 @@ type LostHoldsEditorBannerProps = {
   count: number;
   /** True while the climber is picking a replacement on the board. */
   replacing: boolean;
-  /** The last pick was refused because that role is already full. */
+  /** The last pick, or a hold put back on the wall, was refused because that role is already full. */
   roleFull: boolean;
   /** Tapping the banner opens the first ghost's sheet (a small ring is hard to hit). */
   onOpenFirstGhost: () => void;
@@ -69,8 +69,9 @@ export const LostHoldsEditorBanner = React.memo(function LostHoldsEditorBanner({
 
   if (status === 'none' || !(count > 0)) return null;
 
-  const message =
-    status === 'ready'
+  const message = roleFull
+    ? t('mobile.lostHolds.editor.roleFull')
+    : status === 'ready'
       ? t('mobile.lostHolds.editor.tapGhost', { count })
       : status === 'unavailable'
         ? t('mobile.lostHolds.editor.offline', { count })

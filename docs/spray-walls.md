@@ -2167,8 +2167,16 @@ not alive), so putting a hold back is a NEW hold that names the old one in
    frames and roles, and counts it as that ghost's answer wherever it was
    nudged to. The new hold is the newest live hold linked to the lost one
    that was not linked before the trip. A trip that was backed out places
-   nothing and the ghost is still there. The request is cleared once it has been
-   applied, so a remount does not apply it twice.
+   nothing and the ghost is still there. If the hold's role is already full in
+   the climb (two starts or two finishes), the banner says so and the ring
+   stays. The request is cleared once it has been applied, so a remount does not
+   apply it twice.
+
+For a new climb or a remix there is a window of about one second, between the
+hold editor registering the new wall version (which sweeps the old version's
+autosave slots) and the climb editor reopening, when the working copy lives only
+in memory: killing the app then loses it. An edit is safe throughout, because its
+slot is keyed by the climb, not the version.
 
 **Offline.** The device mirrors `missing_hold_count` but not the hold history, so
 the positions need a connection. With no signal (or a failed read) the banner

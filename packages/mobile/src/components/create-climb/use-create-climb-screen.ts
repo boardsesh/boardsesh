@@ -125,8 +125,12 @@ type UseCreateClimbScreenArgs = {
    * backed out). Applied once the editor's own seed has settled.
    */
   putBackReturn?: LostHoldPutBackReturn | null;
-  /** Fired once `putBackReturn` has been applied. */
-  onPutBackApplied?: () => void;
+  /**
+   * Fired once `putBackReturn` has been applied. `roleFull` is true when the
+   * hold came back but its role was already full (two starts or two finishes),
+   * so it could not go into the climb.
+   */
+  onPutBackApplied?: (roleFull: boolean) => void;
 };
 
 const BLE_PREVIEW_DEBOUNCE_MS = 250;
@@ -1242,9 +1246,9 @@ export function useCreateClimbScreen({
   useEffect(() => {
     const pending = putBackReturnRef.current;
     if (putBackStage !== 'placing' || !pending) return;
-    if (pending.newHoldId !== null) placeLostHoldReplacement(pending.newHoldId, pending.placements);
+    const placed = pending.newHoldId === null ? true : placeLostHoldReplacement(pending.newHoldId, pending.placements);
     setPutBackStage('done');
-    onPutBackAppliedRef.current?.();
+    onPutBackAppliedRef.current?.(!placed);
   }, [putBackStage, placeLostHoldReplacement]);
 
   // Editing or touching the transport takes the wall back from the queue.

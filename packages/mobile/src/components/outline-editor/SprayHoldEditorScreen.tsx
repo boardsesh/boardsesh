@@ -88,7 +88,7 @@ import {
   SPRAY_TABLET_CONTENT_MAX_WIDTH,
 } from './spray-tablet-layout';
 import { zoomTargetForHold } from './hold-navigation';
-import { mapCanonicalHoldsToPhoto } from '../../lib/spray/spray-hold-geometry';
+import { planSprayPutBack, type SprayPutBackHold } from './spray-put-back';
 import { SprayUndoToast, type SprayUndoToastContent } from './SprayUndoToast';
 import { resolveEditTap, type SprayEditorTool } from './spray-edit-tap';
 import { SprayEditorBanner } from './SprayEditorBanner';
@@ -304,20 +304,7 @@ export type SprayHoldEditorScreenProps = {
   putBackHold?: SprayPutBackHold | null;
 };
 
-/** A removed hold to put back: its canonical geometry and its id. */
-export type SprayPutBackHold = {
-  removedHoldId: number;
-  /**
-   * Holds already linked to the removed one before this trip (a reset review's
-   * successor). Never reused as the put-back hold: the climb editor looks for a
-   * hold linked AFTER the trip, and nudging an inherited hold replaces it.
-   */
-  knownSuccessorIds: readonly number[];
-  cx: number;
-  cy: number;
-  r: number;
-  outline: readonly number[] | null;
-};
+export type { SprayPutBackHold } from './spray-put-back';
 
 /**
  * The spray-wall hold editor (issue #5441), rebuilt around one idea: rings are
@@ -794,35 +781,10 @@ export function SprayHoldEditorScreen({
     if (!putBackHold || putBackAppliedRef.current) return;
     if (!seeded || homography == null || !canEdit || boardRender.width <= 0) return;
     putBackAppliedRef.current = true;
-    const knownSuccessors = new Set(putBackHold.knownSuccessorIds);
-    const linked = Object.values(stateRef.current.holds).find(
-      (hold) =>
-        hold.movedFromHoldId === putBackHold.removedHoldId &&
-        hold.review !== 'rejected' &&
-        !knownSuccessors.has(hold.id),
-    );
-    let target: { id: number; cx: number; cy: number; r: number };
-    if (linked) {
-      target = linked;
-    } else {
-      // Canonical → this draft's photo, through the draft's own homography: the
-      // same map every other hold on screen went through.
-      const [mapped] =
-        mapCanonicalHoldsToPhoto(homography, [
-          {
-            id: putBackHold.removedHoldId,
-            cx: putBackHold.cx,
-            cy: putBackHold.cy,
-            r: putBackHold.r,
-            outline: putBackHold.outline,
-          },
-        ]) ?? [];
-      if (!mapped) return;
-      const geometry = { cx: mapped.cx, cy: mapped.cy, r: mapped.r, outline: mapped.outline ?? null };
-      dispatch({ type: 'ADD_HOLD', geometry, movedFromHoldId: putBackHold.removedHoldId, select: true });
-      target = { id: 0, cx: geometry.cx, cy: geometry.cy, r: geometry.r };
-    }
-    if (linked) dispatch({ type: 'SELECT', id: linked.id });
+    const plan = planSprayPutBack(stateRef.current, putBackHold, homography);
+    if (!plan) return;
+    dispatch(plan.action);
+    const target = { id: 0, ...plan.focus };
     boardControlRef.current?.zoomTo(
       zoomTargetForHold({
         hold: target,

@@ -104,7 +104,19 @@ export function CreateClimbScreen({
   // Back from the hold editor: the working copy left behind and the hold that
   // went back on. Read once; the request is cleared once it has been applied.
   const [putBackReturn] = useState(() => readLostHoldPutBackReturn(putBackRequest));
-  const handlePutBackApplied = useCallback(() => finishLostHoldPutBack(putBackRequest), [putBackRequest]);
+  // Set below once the ghost layer exists; the controller only calls this from an
+  // effect, after the first render has assigned it.
+  const flagPutBackRoleFullRef = useRef<() => void>(() => {});
+  const handlePutBackApplied = useCallback(
+    (roleFull: boolean) => {
+      finishLostHoldPutBack(putBackRequest);
+      // The hold is back on the wall but its role is full in the climb: say so
+      // with the same line a refused pick gets, instead of leaving the ring up
+      // with no word about why.
+      if (roleFull) flagPutBackRoleFullRef.current();
+    },
+    [putBackRequest],
+  );
   // The hold that went back on answers its ghost, wherever the owner nudged it.
   const [putBackInitialReplacements] = useState(() =>
     putBackReturn?.newHoldId != null ? new Map([[putBackReturn.lostHoldId, putBackReturn.newHoldId]]) : undefined,
@@ -142,6 +154,7 @@ export function CreateClimbScreen({
     placeLostHoldReplacement: controller.placeLostHoldReplacement,
     initialReplacements: putBackInitialReplacements,
   });
+  flagPutBackRoleFullRef.current = lostHolds.flagRoleFull;
 
   // "Put this hold back on the wall" — for whoever can edit the wall's holds.
   // A new hold goes on at the lost one's spot in the hold editor, and the climb

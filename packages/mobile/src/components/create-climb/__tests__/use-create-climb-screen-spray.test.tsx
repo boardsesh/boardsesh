@@ -452,6 +452,21 @@ describe('back from putting a lost hold back on the wall (#5493)', () => {
     expect(createClimb.loadFrames).toHaveBeenCalledWith([{ 1: { state: 'STARTING' } }]);
     expect(result.current.name).toBe('Left behind');
     expect(createClimb.placeHold).toHaveBeenCalledWith(77, placements);
+    expect(onPutBackApplied).toHaveBeenCalledWith(false);
+  });
+
+  it('reports a hold whose role was already full, instead of dropping it silently', async () => {
+    createClimb.placeHold.mockClear();
+    createClimb.placeHold.mockReturnValueOnce(false);
+    const onPutBackApplied = vi.fn();
+    renderHook(() =>
+      useCreateClimbScreen({
+        board: SPRAY_BOARD,
+        putBackReturn: { lostHoldId: 5, draft, placements, newHoldId: 77 },
+        onPutBackApplied,
+      }),
+    );
+    await waitFor(() => expect(onPutBackApplied).toHaveBeenCalledWith(true));
   });
 
   it('restores the working copy and places nothing when the owner backed out', async () => {

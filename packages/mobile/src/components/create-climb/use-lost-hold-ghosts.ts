@@ -59,8 +59,10 @@ export type LostHoldGhostsState = {
   sheetCandidates: readonly ReplacementCandidate[];
   /** Set while the climber is picking a replacement on the board. */
   replacing: LostHoldReplacement | null;
-  /** The last pick was refused: that role is already full on the climb. */
+  /** The last pick (or a hold put back on the wall) was refused: that role is already full on the climb. */
   roleFull: boolean;
+  /** Say the role is full without a pick open: a hold came back but could not go in. */
+  flagRoleFull: () => void;
   openGhost: (lostHoldId: number) => void;
   /** Opens the sheet for the first ghost still on screen (the banner's tap). */
   openFirstGhost: () => void;
@@ -306,6 +308,7 @@ export function useLostHoldGhosts({
     setRoleFull(false);
     setSheetGhostId(null);
   }, [sheetGhostId]);
+  const flagRoleFull = useCallback(() => setRoleFull(true), []);
   const cancelReplacing = useCallback(() => {
     setReplacingGhostId(null);
     setRoleFull(false);
@@ -344,6 +347,7 @@ export function useLostHoldGhosts({
       sheetCandidates,
       replacing,
       roleFull,
+      flagRoleFull,
       openGhost,
       openFirstGhost,
       closeSheet,
@@ -361,6 +365,7 @@ export function useLostHoldGhosts({
       sheetCandidates,
       replacing,
       roleFull,
+      flagRoleFull,
       openGhost,
       openFirstGhost,
       closeSheet,

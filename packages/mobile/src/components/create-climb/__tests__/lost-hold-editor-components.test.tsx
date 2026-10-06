@@ -195,6 +195,11 @@ describe('LostHoldsEditorBanner', () => {
     expect(props.onCancelReplacing).toHaveBeenCalledTimes(1);
   });
 
+  it('says the role is full when a hold put back on the wall could not go in', () => {
+    renderBanner({ roleFull: true });
+    expect(screen.getByTestId('lost-holds-editor-banner').textContent).toContain('mobile.lostHolds.editor.roleFull');
+  });
+
   it('says the role is full when a pick was refused', () => {
     renderBanner({ replacing: true, roleFull: true });
     expect(screen.getByTestId('lost-holds-editor-banner').textContent).toContain('mobile.lostHolds.editor.roleFull');
