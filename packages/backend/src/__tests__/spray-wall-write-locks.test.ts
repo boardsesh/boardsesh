@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { SPRAY_WALL_WRITE_LOCK_NAMESPACE } from '@boardsesh/shared-schema';
 
 /**
  * Every writer of spray wall state takes the wall lock, and takes it FIRST.
@@ -31,6 +32,10 @@ const SPRAY_WALLS_SOURCE = readFileSync(
 );
 const SPRAY_AUTHORING_SOURCE = readFileSync(
   fileURLToPath(new URL('../graphql/resolvers/climbs/spray-authoring.ts', import.meta.url)),
+  'utf8',
+);
+const SPRAY_LOCK_SOURCE = readFileSync(
+  fileURLToPath(new URL('../services/spray-wall-lock.ts', import.meta.url)),
   'utf8',
 );
 
@@ -215,8 +220,9 @@ describe('every spray wall writer holds the wall lock', () => {
   it('locks on the wall id, not the version id', () => {
     // A per-version lock would not make an edit and a publish queue: they contend on
     // different rows (a version row and the wall's `current_version_id`).
-    const body = functionBody(SPRAY_WALLS_SOURCE, 'lockWallForWrite');
-    expect(body).toMatch(/pg_advisory_xact_lock\(\$\{SPRAY_WALL_LOCK_NAMESPACE\}, \$\{wallId\}\)/);
+    const body = functionBody(SPRAY_LOCK_SOURCE, 'lockWallForWrite');
+    expect(body).toMatch(/pg_advisory_xact_lock\(\$\{SPRAY_WALL_WRITE_LOCK_NAMESPACE\}, \$\{wallId\}\)/);
+    expect(SPRAY_WALL_WRITE_LOCK_NAMESPACE).toBe(0x53505259);
   });
 });
 

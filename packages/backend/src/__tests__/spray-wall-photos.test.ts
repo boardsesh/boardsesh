@@ -7,9 +7,10 @@ import { sql } from 'drizzle-orm';
 import sharp from 'sharp';
 
 const validateTokenMock = vi.hoisted(() => vi.fn());
-const { uploadedObjects, isS3ConfiguredMock } = vi.hoisted(() => ({
+const { uploadedObjects, isS3ConfiguredMock, uploadRace } = vi.hoisted(() => ({
   uploadedObjects: [] as Array<{ bucket: string; key: string; body: Buffer; contentType: string; options: unknown }>,
   isS3ConfiguredMock: vi.fn(() => true),
+  uploadRace: { onUpload: null as (() => Promise<void>) | null, failDelete: false },
 }));
 
 vi.mock('../middleware/auth', () => ({
@@ -23,7 +24,13 @@ vi.mock('../storage/s3', () => ({
   isS3Configured: isS3ConfiguredMock,
   uploadToS3: vi.fn(async (bucket: string, body: Buffer, key: string, contentType: string, options: unknown = {}) => {
     uploadedObjects.push({ bucket, key, body, contentType, options });
+    if (!key.includes('@') && uploadRace.onUpload) await uploadRace.onUpload();
     return { key };
+  }),
+  deleteFromS3: vi.fn(async (_bucket: string, key: string) => {
+    if (uploadRace.failDelete) throw new Error('synthetic erase failure');
+    const index = uploadedObjects.findIndex((object) => object.key === key);
+    if (index >= 0) uploadedObjects.splice(index, 1);
   }),
 }));
 
@@ -121,7 +128,14 @@ function closeServer(server: Server): Promise<void> {
 
 function uploadPhoto(
   baseUrl: string,
-  opts: { token?: string; wallUuid?: string; bytes?: Buffer; mimeType?: string; fileName?: string },
+  opts: {
+    token?: string;
+    wallUuid?: string;
+    bytes?: Buffer;
+    mimeType?: string;
+    fileName?: string;
+    signal?: AbortSignal;
+  },
 ): Promise<Response> {
   const formData = new FormData();
   if (opts.wallUuid !== undefined) formData.set('wallUuid', opts.wallUuid);
@@ -135,6 +149,7 @@ function uploadPhoto(
     method: 'POST',
     headers: opts.token ? { Authorization: `Bearer ${opts.token}` } : {},
     body: formData,
+    signal: opts.signal,
   });
 }
 
@@ -154,6 +169,8 @@ afterEach(async () => {
 });
 
 beforeEach(async () => {
+  uploadRace.onUpload = null;
+  uploadRace.failDelete = false;
   await db.execute(sql`TRUNCATE TABLE "spray_walls", "user_boards" RESTART IDENTITY CASCADE`);
   await Promise.all(ALL_USERS.map(insertUser));
   uploadedObjects.length = 0;
@@ -266,6 +283,103 @@ describe('POST /api/spray-wall-photos', () => {
     const { photoId } = (await response.json()) as { photoId: string };
     expect(uploadedObjects.some((object) => object.key === `spray-walls/${wallUuid}/${photoId}.jpg`)).toBe(true);
   });
+
+  it('erases a photo and variant when the wall is deleted during upload', async () => {
+    uploadRace.onUpload = async () => {
+      await db.execute(
+        sql`UPDATE spray_walls SET deleted_at = now(), photos_purged_at = now() WHERE board_uuid = ${wallUuid}`,
+      );
+    };
+    const response = await uploadPhoto(baseUrl, {
+      token: OWNER,
+      wallUuid,
+      bytes: await plainPng(),
+      mimeType: 'image/png',
+    });
+    expect(response.status).toBe(404);
+    expect(uploadedObjects).toEqual([]);
+  });
+
+  it('restores a durable purge retry when withdrawn upload cleanup fails', async () => {
+    uploadRace.failDelete = true;
+    uploadRace.onUpload = async () => {
+      await db.execute(
+        sql`UPDATE spray_walls SET deleted_at = now(), photos_purged_at = now() WHERE board_uuid = ${wallUuid}`,
+      );
+    };
+    const response = await uploadPhoto(baseUrl, {
+      token: OWNER,
+      wallUuid,
+      bytes: await plainPng(),
+      mimeType: 'image/png',
+    });
+    expect(response.status).toBe(404);
+    const [wall] = (await db.execute(
+      sql`SELECT photos_purged_at FROM spray_walls WHERE board_uuid = ${wallUuid}`,
+    )) as unknown as Array<{ photos_purged_at: Date | null }>;
+    expect(wall.photos_purged_at).toBeNull();
+    expect(uploadedObjects).toHaveLength(2);
+  });
+
+  it.each([false, true])(
+    'cleans up a late upload if its ownership recheck throws (erase fails: %s)',
+    async (failDelete) => {
+      uploadRace.failDelete = failDelete;
+      uploadRace.onUpload = async () => {
+        await db.execute(
+          sql`UPDATE spray_walls SET deleted_at = now(), photos_purged_at = now() WHERE board_uuid = ${wallUuid}`,
+        );
+        vi.spyOn(db, 'select').mockImplementationOnce(() => {
+          throw new Error('synthetic final ownership lookup failure');
+        });
+      };
+      const response = await uploadPhoto(baseUrl, {
+        token: OWNER,
+        wallUuid,
+        bytes: await plainPng(),
+        mimeType: 'image/png',
+      });
+      expect(response.status).toBe(500);
+      expect(uploadedObjects).toHaveLength(failDelete ? 2 : 0);
+      if (failDelete) {
+        const rows = await db.execute(sql`SELECT photos_purged_at FROM spray_walls WHERE board_uuid = ${wallUuid}`);
+        expect(Array.from(rows)[0].photos_purged_at).toBeNull();
+      }
+      vi.restoreAllMocks();
+    },
+  );
+
+  it.each([false, true])(
+    'preserves the response when erase and retry both fail (lookup throws: %s)',
+    async (lookupThrows) => {
+      uploadRace.failDelete = true;
+      uploadRace.onUpload = async () => {
+        await db.execute(
+          sql`UPDATE spray_walls SET deleted_at = now(), photos_purged_at = now() WHERE board_uuid = ${wallUuid}`,
+        );
+        if (lookupThrows)
+          vi.spyOn(db, 'select').mockImplementationOnce(() => {
+            throw new Error('synthetic ownership lookup failure');
+          });
+        vi.spyOn(db, 'transaction').mockRejectedValue(new Error('synthetic retry transaction failure'));
+      };
+      try {
+        const response = await uploadPhoto(baseUrl, {
+          token: OWNER,
+          wallUuid,
+          bytes: await plainPng(),
+          mimeType: 'image/png',
+          signal: AbortSignal.timeout(1500),
+        });
+        expect(response.status).toBe(lookupThrows ? 500 : 404);
+        expect(await response.json()).toMatchObject({
+          error: lookupThrows ? 'Failed to save the wall photo' : 'Spray wall not found',
+        });
+      } finally {
+        vi.restoreAllMocks();
+      }
+    },
+  );
 
   it('refuses a stranger and a missing token', async () => {
     const stranger = await uploadPhoto(baseUrl, {

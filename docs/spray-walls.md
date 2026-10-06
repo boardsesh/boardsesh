@@ -1599,6 +1599,35 @@ spray-wall flag default.
 
 ## Retention: what happens to a deleted wall's photographs
 
+### Account deletion
+
+Deleting a wall owner's account also deletes every wall they owned, including
+walls already soft-deleted. The account transaction keeps inaccessible wall,
+version, hold and climb identities so other climbers' logs retain their references.
+It writes deletion tombstones before moving the deleted board rows to the existing
+system owner, clears sharing and gym links, and scrubs wall names, location,
+description and version notes. This is a deleted-row retention mechanism: no wall
+is transferred for somebody else to climb, and the system-owner visibility exception
+does not override either deletion timestamp.
+
+Photo erasure runs after commit, across both bucket prefixes, including resize
+variants and uploads never adopted by a version. Account-deleted walls skip the
+ordinary thirty-day retention window. Storage failure leaves `photos_purged_at`
+NULL and the existing daily purge retries immediately eligible work; it never
+prevents the committed account deletion. SQL rollback never erases photos.
+
+Wall creation and account deletion share a transaction advisory lock for the
+account. The account's user row is deleted last: locking that row first would
+deadlock against a version writer holding a wall lock while checking its creator
+foreign key. An upload or public-photo promotion that passed its first check before
+deletion must recheck before reporting success or attaching a public copy. Failed
+late-upload erasure marks a durable retry. The purge compares the wall's exact
+database `updated_at` token under its wall lock after erasure, so an older prefix
+listing cannot overwrite that newer retry with a success stamp.
+
+Other climbers' logs remain stored under the existing deleted-wall privacy rules;
+deleting the account does not delete their ticks or make private logs public.
+
 Deleting a wall is a **soft** delete, and it always will be: the catalogue rows
 and every climb ever set on the wall stay behind, because a deleted wall stops
 being reachable and does not un-set anybody's climbs. The PHOTOGRAPHS are the

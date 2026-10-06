@@ -13,10 +13,11 @@ import {
   validateGymUuid as isWellFormedUuid,
 } from './gym-image-upload';
 import { validateToken } from '../middleware/auth';
-import { isS3Configured, uploadToS3 } from '../storage/s3';
+import { deleteFromS3, isS3Configured, uploadToS3 } from '../storage/s3';
 import { writeImageVariants } from '../lib/image-resize';
 import { db } from '../db/client';
 import { logger } from '../utils/logger';
+import { markDeletedSprayWallPhotoRetry } from '../services/spray-photo-erasure-retry';
 
 /**
  * POST /api/spray-wall-photos — the one way a photograph of somebody's wall
@@ -394,7 +395,29 @@ export async function handleSprayWallPhotoUpload(req: IncomingMessage, res: Serv
         }
 
         const photoId = randomUUID();
+        const uploadedWallUuid = wallUuid;
         const key = sprayWallPhotoKey(wallUuid, photoId);
+        const writtenKeys: string[] = [];
+
+        // A request may have passed ownership before account deletion committed.
+        // Erase its own objects on withdrawal; retain a durable retry if storage
+        // is unavailable. The purge's updated_at fence protects this retry from
+        // an older prefix listing that had not seen our late upload.
+        const eraseUpload = async () => {
+          const erased = await Promise.allSettled(writtenKeys.map((writtenKey) => deleteFromS3('private', writtenKey)));
+          if (erased.every((result) => result.status === 'fulfilled')) return;
+          try {
+            await markDeletedSprayWallPhotoRetry(uploadedWallUuid);
+          } catch (retryError) {
+            // Cleanup is best effort; a second SQL failure must not prevent
+            // sending the upload's original error response.
+            logger.error(
+              'Failed to record withdrawn spray photo cleanup retry',
+              { wallUuid: uploadedWallUuid },
+              retryError,
+            );
+          }
+        };
 
         try {
           // Variants first, then the base — the avatars.ts ordering, so a reader
@@ -405,14 +428,17 @@ export async function handleSprayWallPhotoUpload(req: IncomingMessage, res: Serv
           await writeImageVariants(
             normalised.body,
             key,
-            (variantKey, body, contentType) =>
-              uploadToS3('private', body, variantKey, contentType, {
+            (variantKey, body, contentType) => {
+              writtenKeys.push(variantKey);
+              return uploadToS3('private', body, variantKey, contentType, {
                 acl: null,
                 cacheControl: PRIVATE_PHOTO_CACHE_CONTROL,
-              }),
+              });
+            },
             [280],
             STORED_CONTENT_TYPE,
           );
+          writtenKeys.push(key);
           await uploadToS3('private', normalised.body, key, STORED_CONTENT_TYPE, {
             acl: null,
             cacheControl: PRIVATE_PHOTO_CACHE_CONTROL,
@@ -425,7 +451,14 @@ export async function handleSprayWallPhotoUpload(req: IncomingMessage, res: Serv
               [SPRAY_PHOTO_HEIGHT_METADATA_KEY]: String(normalised.height),
             },
           });
+          if ((await loadOwnedWall(wallUuid, authenticatedUserId)).outcome !== 'ok') {
+            await eraseUpload();
+            respondJson(res, 404, { error: 'Spray wall not found' });
+            resolve();
+            return;
+          }
         } catch (saveError) {
+          await eraseUpload();
           logger.error('Failed to save spray wall photo:', saveError);
           respondJson(res, 500, { error: 'Failed to save the wall photo' });
           resolve();
