@@ -84,7 +84,7 @@ function touchEvent(x: number, y: number, touches = 1, pointerType = 0) {
   return { numberOfTouches: touches, allTouches: points, changedTouches: points.slice(-1), pointerType };
 }
 
-function mount(selected: number[] = []) {
+function mount(selected: number[] = [], { stylusAddsElsewhere = false }: { stylusAddsElsewhere?: boolean } = {}) {
   const loupe: SprayLoupeFeed = {
     touchDownAtSV: shared(0),
     xSV: shared(0),
@@ -121,6 +121,7 @@ function mount(selected: number[] = []) {
       onMoveEnd={vi.fn()}
       onPlaceStart={onPlaceStart}
       onPlace={vi.fn()}
+      stylusAddsElsewhere={stylusAddsElsewhere}
     />,
   );
   function send(kind: string, name: string, payload: unknown = {}) {
@@ -193,10 +194,10 @@ describe('SprayEditGestureOverlay feeds the loupe', () => {
     expect(overlay.loupe.touchDownAtSV.value).toBe(0);
   });
 
-  // The Pencil adds by tapping or drawing on its own surface (iPad), so a
-  // Pencil resting on bare wall must never drop a median circle as well.
-  it('never places a hold for a Pencil resting on bare wall', () => {
-    const overlay = mount();
+  // On the iPad layout the Pencil adds by tapping or drawing on its own nested
+  // surface, so a Pencil resting on bare wall must never drop a median circle as well.
+  it('never places a hold for a Pencil resting on bare wall while a Pencil surface adds instead', () => {
+    const overlay = mount([], { stylusAddsElsewhere: true });
     overlay.down(300, 300, 1);
     expect(overlay.manager.fail).toHaveBeenCalled();
     overlay.send('longPress', 'start', { x: 300, y: 300 });
@@ -204,8 +205,20 @@ describe('SprayEditGestureOverlay feeds the loupe', () => {
     expect(overlay.loupe.touchDownAtSV.value).toBe(0);
   });
 
-  it('still picks up a ring under a Pencil, since that is a move and not an add', () => {
+  // No Pencil surface (iPad Split View / Slide Over, an Android S-Pen): the
+  // stylus has no other way to add at rest, so its press and hold places.
+  it('places a hold for a stylus resting on bare wall when no Pencil surface is nested', () => {
     const overlay = mount();
+    overlay.send('longPress', 'down', touchEvent(300, 300, 1, 1));
+    expect(overlay.manager.fail).not.toHaveBeenCalled();
+    overlay.send('longPress', 'start', { x: 300, y: 300 });
+    expect(overlay.onPlaceStart).toHaveBeenCalledTimes(1);
+    // Still no loupe: that is for fingers only.
+    expect(overlay.loupe.touchDownAtSV.value).toBe(0);
+  });
+
+  it('picks up the selected ring under a Pencil, the one touch the nested Pencil surface leaves to it', () => {
+    const overlay = mount([...HOLD], { stylusAddsElsewhere: true });
     overlay.send('longPress', 'down', touchEvent(100, 100, 1, 1));
     expect(overlay.manager.fail).not.toHaveBeenCalled();
   });

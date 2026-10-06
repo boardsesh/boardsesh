@@ -575,6 +575,8 @@ export function SprayHoldEditorScreen({
     resizeHoldIdSV.value = 0;
     placeHoldSV.value = NO_POINTS;
     loupeFeed.touchDownAtSV.value = 0;
+    // The remounted overlay's old hover may never finalize: drop its ghost too.
+    hoverSV.value = NO_POINTS;
     setMoveRevision((revision) => revision + 1);
     setGestureEpoch((epoch) => epoch + 1);
   }, [
@@ -588,6 +590,7 @@ export function SprayHoldEditorScreen({
     resizeHoldIdSV,
     placeHoldSV,
     loupeFeed,
+    hoverSV,
   ]);
 
   const boardScale = renderToBoardScale(wall?.photoWidth ?? 0, boardRender.width);
@@ -2049,7 +2052,9 @@ export function SprayHoldEditorScreen({
       // iPad: the Pencil always marks, through a Pencil-only draw surface nested
       // inside the edit overlay so every touch it declines lands on the overlay.
       // Keyed on the layout too, because the hover and the two-finger tap are
-      // fixed at mount.
+      // fixed at mount. Off that surface (the phone layout: iPad Split View,
+      // Slide Over, Android) a stylus press and hold places like a finger.
+      const pencilSurfaceShown = tablet && tool === 'edit' && canEdit;
       return (
         <>
           <SprayEditGestureOverlay
@@ -2082,11 +2087,13 @@ export function SprayHoldEditorScreen({
             hoverRadiusSV={tablet ? medianRadiusSV : undefined}
             onStylusSeen={tablet ? handlePencilSeen : undefined}
             onTwoFingerTap={tablet ? handleTwoFingerUndo : undefined}
+            stylusAddsElsewhere={pencilSurfaceShown}
           >
-            {tablet && tool === 'edit' && canEdit ? (
+            {pencilSurfaceShown ? (
               <SprayPencilSurface
                 pointsSV={draftPointsSV}
                 selectedHoldSV={selectedHoldSV}
+                hitHoldsSV={hitHoldsSV}
                 scaleSV={context.scaleSV}
                 translateXSV={context.translateXSV}
                 translateYSV={context.translateYSV}

@@ -45,6 +45,7 @@ vi.mock('react-native-gesture-handler', () => {
   };
 });
 import { DrawStrokeOverlay } from '../DrawStrokeOverlay';
+import { fallbackRadiusAt, selectedDragIdAt } from '../spray-gesture-math';
 import type { SprayLoupeFeed } from '../spray-loupe-feed';
 
 const touch = (id = 7, x = 40, y = 60) => ({ id, x, y, absoluteX: x, absoluteY: y });
@@ -98,7 +99,12 @@ function loupeFeed(): SprayLoupeFeed {
     zoomSV: shared(1),
   };
 }
-type OptIns = { declineOnSelection?: number[]; onStylusSeen?: () => void; loupe?: SprayLoupeFeed };
+type OptIns = {
+  declineOnSelection?: number[];
+  declineHitHolds?: number[];
+  onStylusSeen?: () => void;
+  loupe?: SprayLoupeFeed;
+};
 function mount(acceptStationaryTaps = true, fingerDraw = true, optIns: OptIns = {}) {
   const points = shared<number[]>([]);
   const start = vi.fn();
@@ -123,6 +129,7 @@ function mount(acceptStationaryTaps = true, fingerDraw = true, optIns: OptIns = 
       onStrokeCancel={cancel}
       loupe={optIns.loupe}
       declineOnSelectionSV={selection}
+      declineHitHoldsSV={optIns.declineHitHolds ? shared<number[]>(optIns.declineHitHolds) : undefined}
       onStylusSeen={optIns.onStylusSeen}
     />,
   );
@@ -345,12 +352,46 @@ describe('Pencil surface opt-ins', () => {
 
   it('declines a stylus a fingertip from a ring smaller than a fingertip', () => {
     // The move claims within max(r, 22 pt) at touch-down; at this mount's zoom
-    // 22 pt is 22 board px. (47.5, 60) lands on board (95, 90): r + 5 from a
+    // 22 pt is 22 board px. (55, 60) lands on board (95, 90): r + 5 from a
     // radius-10 ring, inside the fingertip.
     const stroke = mount(true, false, { declineOnSelection: [5, 80, 90, 10] });
-    stroke.send('down', event([touch(7, 47.5, 60)], [touch(7, 47.5, 60)], STYLUS));
+    stroke.send('down', event([touch(7, 55, 60)], [touch(7, 55, 60)], STYLUS));
     expect(stroke.manager.fail).toHaveBeenCalledTimes(1);
     expect(stroke.manager.activate).not.toHaveBeenCalled();
+    expect(stroke.start).not.toHaveBeenCalled();
+  });
+
+  it('draws a stylus on a smaller neighbour inside the selection fingertip, which the move never claims', () => {
+    // (55, 60) lands on board (95, 90): inside the radius-10 selection's 22 px
+    // fingertip, but ON the radius-4 neighbour at (97, 90). The move's claim
+    // (`selectedDragIdAt`) gives that touch to the neighbour, so declining it
+    // here would leave a Pencil stroke claimed by nothing.
+    const selection = [5, 80, 90, 10];
+    const hitHolds = [...selection, 9, 97, 90, 4];
+    const fallbackRadius = fallbackRadiusAt(2, 2);
+    expect(selectedDragIdAt(hitHolds, selection, 95, 90, fallbackRadius)).toBe(0);
+    const stroke = mount(true, false, { declineOnSelection: selection, declineHitHolds: hitHolds });
+    stroke.send('down', event([touch(7, 55, 60)], [touch(7, 55, 60)], STYLUS));
+    expect(stroke.manager.fail).not.toHaveBeenCalled();
+    expect(stroke.manager.activate).toHaveBeenCalledTimes(1);
+    stroke.send('up', upEvent([touch(7, 55, 60)], [], STYLUS));
+    expect(stroke.end).toHaveBeenCalledExactlyOnceWith([95, 90]);
+  });
+
+  it('still declines the selection itself, and its fingertip off any neighbour, with the hit list', () => {
+    const selection = [5, 80, 90, 10];
+    const hitHolds = [...selection, 9, 97, 90, 4];
+    const fallbackRadius = fallbackRadiusAt(2, 2);
+    // The default touch lands on board (80, 90), the selection's centre.
+    expect(selectedDragIdAt(hitHolds, selection, 80, 90, fallbackRadius)).toBe(5);
+    const stroke = mount(true, false, { declineOnSelection: selection, declineHitHolds: hitHolds });
+    stroke.send('down', event([touch()], [touch()], STYLUS));
+    expect(stroke.manager.fail).toHaveBeenCalledTimes(1);
+    // (40, 80) lands on board (80, 110): 10 px off the ring's edge, inside its
+    // fingertip and nowhere near the neighbour, so the move claims it.
+    expect(selectedDragIdAt(hitHolds, selection, 80, 110, fallbackRadius)).toBe(5);
+    stroke.send('down', event([touch(8, 40, 80)], [touch(8, 40, 80)], STYLUS));
+    expect(stroke.manager.fail).toHaveBeenCalledTimes(2);
     expect(stroke.start).not.toHaveBeenCalled();
   });
 
