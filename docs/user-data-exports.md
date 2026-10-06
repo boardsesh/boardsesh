@@ -119,6 +119,8 @@ physical cleanup is pending. Only generated copies expire; source records remain
 4. The family starts with the backend deploy; hold it with
    `BATCH_FAMILIES_DISABLED` until steps 1-3 are done. Deploy
    backend/mobile; verify a named browser download and repeated-download cache reuse.
+   Until this step, status reads answer `unavailable` instead of offering Prepare
+   or Retry; this week's finished files stay downloadable.
 5. Observe duration, bytes, cache reuse, and failures. Validate large logbooks and
    actual iOS/Android browser downloads before completing device QA.
 
