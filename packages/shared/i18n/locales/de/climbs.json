@@ -668,7 +668,9 @@
       "banner_one": "{{count}} Griff von diesem Boulder ist weg",
       "banner_other": "{{count}} Griffe von diesem Boulder sind weg",
       "bannerBody": "Remixe ihn mit dem, was jetzt an der Wand ist.",
-      "remix": "Remixen"
+      "bannerBodyEdit": "Bearbeite ihn mit den Griffen, die noch da sind, oder remixe ihn.",
+      "remix": "Remixen",
+      "edit": "Bearbeiten"
     },
     "climbActions": {
       "preview": "Vorschau",

@@ -668,7 +668,9 @@
       "banner_one": "{{count}} hold on this climb is gone",
       "banner_other": "{{count}} holds on this climb are gone",
       "bannerBody": "Remix it onto what's on the wall now.",
-      "remix": "Remix it"
+      "bannerBodyEdit": "Edit it onto the holds that are left, or remix it.",
+      "remix": "Remix it",
+      "edit": "Edit it"
     },
     "climbActions": {
       "preview": "Preview",

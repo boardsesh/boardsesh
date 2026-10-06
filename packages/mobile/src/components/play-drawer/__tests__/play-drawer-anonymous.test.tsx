@@ -261,6 +261,7 @@ vi.mock('../../ClimbActionsSheet', () => ({ ClimbActionsSheet: () => null }));
 // for — the banner through the design-system Button, the handoff through
 // Sentry — and neither is what is under test here.
 vi.mock('../LostHoldsBanner', () => ({ LostHoldsBanner: () => null }));
+vi.mock('../use-can-edit-displayed-climb', () => ({ useCanEditDisplayedClimb: () => false }));
 vi.mock('../../create-climb/use-create-climb-navigation', () => ({
   useCreateClimbNavigation: () => ({ openRemix: vi.fn(), openEdit: vi.fn(), resetActionGuard: vi.fn() }),
 }));

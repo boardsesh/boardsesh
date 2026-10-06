@@ -109,6 +109,7 @@ import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { resolveTickDefaultGradeName } from '../../lib/boardsesh-grade-display';
 import { useShareClimb } from '../../hooks/use-share-climb';
 import { LostHoldsBanner } from './LostHoldsBanner';
+import { useCanEditDisplayedClimb } from './use-can-edit-displayed-climb';
 import { useCreateClimbNavigation } from '../create-climb/use-create-climb-navigation';
 import { useMountedOnFirstOpen } from '../../hooks/use-mounted-on-first-open';
 import { getBoardRenderData } from '../../lib/board-details';
@@ -579,7 +580,7 @@ export function PlayDrawer({
    * frames, and the create editor's own sanitiser drops the hold ids that are no
    * longer on the wall, so the editor opens with exactly the holds that survived.
    */
-  const { openRemix } = useCreateClimbNavigation({ dismissPlayerAndWait });
+  const { openRemix, openEdit } = useCreateClimbNavigation({ dismissPlayerAndWait });
   const openingSetterRef = useRef(false);
   const openSetterPlaylist = useCallback(() => {
     const username = displayedClimb?.setter_username;
@@ -602,6 +603,18 @@ export function PlayDrawer({
     trackSprayEvent(climbRemixedFromBroken({ lostHoldCount, source: 'play_drawer' }));
     openRemix(displayedClimb, renderBoardConfig);
   }, [lostHoldCount, openRemix, displayedClimb, renderBoardConfig]);
+  // Fix it in place as well as remix it (#6024). The editor drops the holds that
+  // are no longer on the wall when it loads the climb, so Save writes a new
+  // revision on what is there now. Offered only to whoever may edit the climb.
+  const canEditDisplayedClimb = useCanEditDisplayedClimb(
+    displayedClimb,
+    renderBoardConfig.boardName,
+    renderBoardConfig.layoutId,
+  );
+  const handleEditLostHolds = useCallback(() => {
+    if (!displayedClimb) return;
+    openEdit(displayedClimb, renderBoardConfig);
+  }, [openEdit, displayedClimb, renderBoardConfig]);
   // The climb belongs to a genuinely DIFFERENT board model. Same gate as an
   // explicit board override (`boardMismatch` from the host), just discovered
   // from the climb rather than handed in by the opener.
@@ -2003,7 +2016,11 @@ export function PlayDrawer({
                           why the board is drawing fewer holds than the setter
                           painted. Above the board, because it is about what the
                           board is showing. */}
-                      <LostHoldsBanner count={lostHoldCount} onRemix={handleRemixLostHolds} />
+                      <LostHoldsBanner
+                        count={lostHoldCount}
+                        onRemix={handleRemixLostHolds}
+                        onEdit={canEditDisplayedClimb ? handleEditLostHolds : undefined}
+                      />
 
                       <View style={styles.boardSection}>
                         {/* Viewfinder brackets while browsing: you're looking through a
