@@ -4,6 +4,7 @@ import { DEFAULT_FILTERS } from '../../../../lib/climb-filter-types';
 import {
   heatmapSearchInput,
   isHeatmapSearchFiltered,
+  parseHeatmapSearch,
   withoutHoldPicks,
   type HeatmapSearch,
 } from '../heatmap-search-input';
@@ -71,5 +72,25 @@ describe('withoutHoldPicks', () => {
     const holdsOnly = search({ boardFilters: { holdsFilter: { hold_7: { ANY: 'include' as const } } } });
     expect(isHeatmapSearchFiltered(holdsOnly)).toBe(true);
     expect(isHeatmapSearchFiltered(withoutHoldPicks(holdsOnly))).toBe(false);
+  });
+});
+
+describe('parseHeatmapSearch', () => {
+  it('reads back the draft the filter sheet serialises', () => {
+    const draft = search({ searchText: 'crimp', boardFilters: { onlyBenchmarks: true } });
+    expect(parseHeatmapSearch(JSON.stringify(draft))).toEqual(draft);
+  });
+
+  it.each([
+    ['no param (a deep link)', undefined],
+    ['an empty string', ''],
+    ['malformed JSON', '{"filters":'],
+    ['an array', '[]'],
+    ['null', 'null'],
+    ['missing filters', JSON.stringify({ boardFilters: {}, searchText: '' })],
+    ['array boardFilters', JSON.stringify({ filters: {}, boardFilters: [], searchText: '' })],
+    ['a non-string searchText', JSON.stringify({ filters: {}, boardFilters: {}, searchText: 4 })],
+  ])('reads %s as the whole board', (_label, serialized) => {
+    expect(parseHeatmapSearch(serialized)).toBeNull();
   });
 });
