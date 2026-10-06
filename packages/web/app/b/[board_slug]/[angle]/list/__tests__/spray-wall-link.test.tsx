@@ -188,6 +188,27 @@ describe('the /b/{slug}/{angle}/list route on a spray wall', () => {
   });
 });
 
+describe('the wall page metadata', () => {
+  it("names the wall only for a request the page would render, never the owner's private one", async () => {
+    // The owner's own lookup returns a private or unlisted row without a uuid; the
+    // title must not name a wall the body refuses.
+    for (const [visibility, wall] of [
+      ['unlisted', undefined],
+      ['unlisted', OTHER_WALL_UUID],
+      ['private', WALL_UUID],
+    ] as const) {
+      resolveBoardBySlug.mockResolvedValue(boardFor(visibility));
+      const metadata = await generateMetadata(propsWith(wall));
+      // `createBoardContentPageMetadata` wraps the title as `{ absolute }`.
+      expect(JSON.stringify(metadata.title)).toContain('metadata.list.fallbackTitle');
+      expect(metadata.robots).toEqual({ index: false, follow: true });
+    }
+
+    resolveBoardBySlug.mockResolvedValue(boardFor('unlisted'));
+    expect(JSON.stringify((await generateMetadata(propsWith(WALL_UUID))).title)).toContain('spray.wall.metadata.title');
+  });
+});
+
 describe('the wall branch itself', () => {
   it('renders an unlisted wall for a link holder', async () => {
     await SprayWallListPage({ board: boardFor('unlisted'), wallParam: WALL_UUID });

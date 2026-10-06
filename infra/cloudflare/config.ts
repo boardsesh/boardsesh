@@ -581,6 +581,17 @@ export const RSC_REQUEST_HEADER_NAME = 'rsc';
 /** The query parameter Next appends to RSC fetches, and the target of that 307. */
 export const RSC_QUERY_PARAM = '_rsc';
 
+/**
+ * A spray wall's share-link capability, as it appears in a query string
+ * (`/b/{slug}/…?wall=<uuid>`). The origin already answers such a request with
+ * `CDN-Cache-Control: no-store` (packages/web/middleware.ts), and gate 5 below
+ * would defer to that. The edge bypasses it by expression as well, so a later
+ * origin change cannot put an unlisted wall's page, or the 404 it answers after
+ * a hide or a switch to private, into the edge for a day. `contains` can also
+ * match an unrelated param ending in `wall`; bypassing that is harmless.
+ */
+export const SPRAY_WALL_CAPABILITY_QUERY = 'wall=';
+
 /** Every `{locale}{root}` path prefix the middleware decorates, as Cloudflare sees it. */
 export function buildWwwHtmlCachePathPrefixes(): string[] {
   return WWW_HTML_CACHE_LOCALE_PREFIXES.flatMap((localePrefix) =>
@@ -613,7 +624,8 @@ export function buildWwwHtmlCachePathPrefixes(): string[] {
  *    Cloudflare cannot strip. Enumerated rather than loosened so a future www
  *    route that happens to end in `/list` and sets its own public max-age
  *    cannot inherit this rule.
- * 4. Bypasses — session cookie, RSC header, `?_rsc`. See the constants above.
+ * 4. Bypasses — session cookie, RSC header, `?_rsc`, a spray wall's `?wall=`.
+ *    See the constants above.
  *    `Vary` is not a substitute for any of them: Cloudflare ignores it except
  *    for Accept-Encoding.
  * 5. `edge_ttl: bypass_by_default` on the rule itself, which is the real
@@ -637,7 +649,8 @@ export const WWW_HTML_CACHE_EXPRESSION =
     .join(' or ')})` +
   ` and not (http.cookie contains "${SESSION_COOKIE_NAME_SUBSTRING}")` +
   ` and not (any(http.request.headers["${RSC_REQUEST_HEADER_NAME}"][*] != ""))` +
-  ` and not (http.request.uri.query contains "${RSC_QUERY_PARAM}"))`;
+  ` and not (http.request.uri.query contains "${RSC_QUERY_PARAM}")` +
+  ` and not (http.request.uri.query contains "${SPRAY_WALL_CAPABILITY_QUERY}"))`;
 
 /**
  * The allow list lives in crawler-policy.ts beside the block list, so the

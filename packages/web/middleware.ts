@@ -1,7 +1,7 @@
 // middleware.ts
 import { NextResponse, type NextRequest } from 'next/server';
 import { SUPPORTED_BOARDS } from './app/lib/board-data';
-import { getClimbViewPageCacheTTL, getListPageCacheTTL } from './app/lib/list-page-cache';
+import { getClimbViewPageCacheTTL, getListPageCacheTTL, isSprayWallCapabilityRequest } from './app/lib/list-page-cache';
 import { isCrawlerUserAgent } from './app/lib/is-crawler';
 import { CLIMB_SESSION_COOKIE } from './app/lib/climb-session-cookie';
 import { PATHNAME_HEADER } from './app/lib/request-pathname-header';
@@ -280,7 +280,14 @@ export function middleware(request: NextRequest) {
   const cacheTTL =
     getListPageCacheTTL(strippedPath, request.nextUrl.searchParams) ??
     getClimbViewPageCacheTTL(strippedPath, request.nextUrl.searchParams);
-  if (cacheTTL !== null) {
+  if (isSprayWallCapabilityRequest(strippedPath, request.nextUrl.searchParams)) {
+    // An unlisted spray wall's share link. Said out loud rather than left to the
+    // missing CDN header: no shared cache may hold it, so a hide or a switch to
+    // private takes effect on the next request. See `isSprayWallCapabilityRequest`.
+    response.headers.set('Cache-Control', 'private, no-store');
+    response.headers.set('CDN-Cache-Control', 'no-store');
+    response.headers.set('Vercel-CDN-Cache-Control', 'no-store');
+  } else if (cacheTTL !== null) {
     const cdnCacheValue = `s-maxage=${cacheTTL}, stale-while-revalidate=${cacheTTL * 7}`;
     response.headers.set('Vercel-CDN-Cache-Control', cdnCacheValue);
     response.headers.set('CDN-Cache-Control', cdnCacheValue);
