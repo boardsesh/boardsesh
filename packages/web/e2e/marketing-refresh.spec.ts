@@ -126,7 +126,7 @@ test('desktop preview switching persists when navigating to About', async ({ bro
     const page = await context.newPage();
     await page.goto('/');
     await page.getByRole('button', { name: 'iOS', exact: true }).click();
-    await expect(page.locator('[data-preview-platform="ios"]')).toHaveCount(3);
+    await expect(page.locator('[data-preview-platform="ios"]')).toHaveCount(4);
     await page.getByTestId('marketing-header').getByRole('link', { name: 'About', exact: true }).click();
     await expect(page).toHaveURL(/\/about$/);
     await expect(
