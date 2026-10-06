@@ -433,6 +433,19 @@ export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorA
   }
 }
 
+/**
+ * Would `action` put a step on the undo stack — that is, change the wall?
+ *
+ * The screen raises its undo toast only when this holds, so a refused join or
+ * a Keep all maybes with nothing to keep never leaves an Undo that would take
+ * back the edit before it. Anything that leaves `past` alone (a selection, a
+ * refused edit) returns false; the toast's take-down rule leans on the same
+ * identity check, so a selection never takes the toast down either.
+ */
+export function actionChangesWall(state: SprayEditorState, action: SprayEditorAction): boolean {
+  return sprayEditorReducer(state, action).past !== state.past;
+}
+
 // ---------------------------------------------------------------------------
 // Selectors. Every one of these is called from a `useMemo` in the screen, so
 // they are pure and take the state rather than reading it out of a closure.

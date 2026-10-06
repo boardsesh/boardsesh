@@ -983,7 +983,9 @@ What the editor does with a wall is decided by this document rather than by tast
   Start over raise `SprayUndoToast` ("Joined 2 holds · Undo") in the bottom
   dock above the chip bar for 4 s; the next edit takes it down, so its Undo can
   only undo what it names, and an edit the reducer refused raises no toast at
-  all. It is drawn inside the screen because the app's global toast draws
+  all (`actionChangesWall`: the action must move `past`). The toast's Undo
+  always takes back a wall edit, never the last corner of a Corners outline
+  in progress the way the bar's Undo does. It is drawn inside the screen because the app's global toast draws
   behind this modal. Toggles raise no toast: the ring is still there.
 - **Undo has Redo.** The reducer keeps a `future` beside the capped `past`:
   Undo pushes the present onto it, `REDO` pops it back, and every new edit,

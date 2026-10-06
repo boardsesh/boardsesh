@@ -68,6 +68,7 @@ import type { HoldGeometry } from './spray-hold-tools';
 import { editorTargetCapabilities, type SprayWallEditorTarget } from './editor-target';
 import { fallbackRadiusAt, flattenHitHolds } from './spray-gesture-math';
 import {
+  actionChangesWall,
   countEditorHolds,
   editorIsDirty,
   holdRole,
@@ -656,8 +657,7 @@ export function SprayHoldEditorScreen({
    * refused join must not leave an Undo that would take back the edit before it.
    */
   const dispatchWithUndoToast = useCallback((action: SprayEditorAction, message: string) => {
-    const before = stateRef.current;
-    if (sprayEditorReducer(before, action).past === before.past) return false;
+    if (!actionChangesWall(stateRef.current, action)) return false;
     dispatch(action);
     toastNonceRef.current += 1;
     toastPastRef.current = null;
@@ -980,15 +980,13 @@ export function SprayHoldEditorScreen({
     [draftPointsSV, editWouldPassCap, t, recordHint],
   );
 
-  const handleUndo = useCallback(() => {
+  /**
+   * Take back the last wall edit. The toast's Undo calls this directly: it
+   * names one edit, so it must never spend itself on a Corners corner instead.
+   */
+  const undoWallEdit = useCallback(() => {
     setErrorText(null);
     hapticSelection();
-    // A Corners outline in progress gives back its last corner before any hold.
-    const corners = cornersSV.value;
-    if (toolRef.current === 'add' && corners.length >= 2) {
-      cornersSV.value = corners.slice(0, -2);
-      return;
-    }
     // Worked out before the dispatch, from the snapshot the undo is about to
     // restore: the hold it changes gets the violet halo.
     const current = stateRef.current;
@@ -999,7 +997,19 @@ export function SprayHoldEditorScreen({
     // up while adding.
     if (toolRef.current === 'add') dispatch({ type: 'SELECT', id: null });
     if (reverted) pulseSpotlight('undo', reverted);
-  }, [pulseSpotlight, cornersSV]);
+  }, [pulseSpotlight]);
+
+  /** The bar's Undo: a Corners outline in progress gives back its last corner before any hold. */
+  const handleUndo = useCallback(() => {
+    const corners = cornersSV.value;
+    if (toolRef.current === 'add' && corners.length >= 2) {
+      setErrorText(null);
+      hapticSelection();
+      cornersSV.value = corners.slice(0, -2);
+      return;
+    }
+    undoWallEdit();
+  }, [cornersSV, undoWallEdit]);
 
   const handleRedo = useCallback(() => {
     const current = stateRef.current;
@@ -1655,7 +1665,7 @@ export function SprayHoldEditorScreen({
           <SprayUndoToast
             message={undoToast.message}
             nonce={undoToast.nonce}
-            onUndo={handleUndo}
+            onUndo={undoWallEdit}
             onDismiss={dismissUndoToast}
           />
         ) : null}
