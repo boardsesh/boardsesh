@@ -75,7 +75,6 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetUserDataExportDownload',
   'HoldHeatmap',
   'HoldOutlines',
-  'ProposeSprayWallReset',
   'QaPreviews',
   'SavedClimbDocuments',
   'SearchBoards',
