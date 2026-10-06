@@ -154,6 +154,23 @@ function registerUploadedPhoto(wallUuid: string): string {
 
 type CreatedWall = { uuid: string; layoutId: number };
 
+/**
+ * A reset-purpose draft (a NEW photo on a published wall) as the retired in-place
+ * reset left one before its deploy. The API refuses to create one now
+ * (`SPRAY_WALL_RESET_RETIRED`), but rows like this still exist, so the row is
+ * written directly.
+ */
+async function insertLeftoverResetDraft(wall: CreatedWall, photoId: string): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO spray_wall_versions (wall_id, version_number, status, photo_key, photo_width, photo_height,
+                                     anchors, homography, created_by)
+    SELECT w.id, (SELECT max(v.version_number) + 1 FROM spray_wall_versions v WHERE v.wall_id = w.id), 'draft',
+           ${sprayWallPhotoKey(wall.uuid, photoId)}, 1200, 900, ${JSON.stringify(ANCHORS)}::jsonb,
+           '[1,0,0,0,1,0,0,0,1]'::jsonb, ${OWNER}
+    FROM spray_walls w WHERE w.board_uuid = ${wall.uuid}
+  `);
+}
+
 /** A wall with no photo and no version — the state an abandoned wizard leaves. */
 async function createWallOnly(): Promise<CreatedWall> {
   for (const bucket of ['private', 'media']) {
@@ -438,7 +455,7 @@ describe('reporting a wall', () => {
     expect(presignedUrls).toEqual([]);
   });
 
-  it('keeps the published preview while an unpublished reset is edited', async () => {
+  it('keeps the published preview while a leftover reset draft is open', async () => {
     const { wall } = await createPublishedWall();
     await sprayWallModerationMutations.reportSprayWall(
       {},
@@ -446,11 +463,7 @@ describe('reporting a wall', () => {
       ctxFor(OWNER),
     );
     const published = await sprayWallModerationQueries.sprayWallReports({}, { uuid: null }, ctxFor(ADMIN));
-    await sprayWallMutations.createSprayWallVersion(
-      {},
-      { input: { wallUuid: wall.uuid, photoId: registerUploadedPhoto(wall.uuid), anchors: ANCHORS } },
-      ctxFor(OWNER),
-    );
+    await insertLeftoverResetDraft(wall, registerUploadedPhoto(wall.uuid));
     const withDraft = await sprayWallModerationQueries.sprayWallReports({}, { uuid: null }, ctxFor(ADMIN));
     expect(withDraft[0].photo?.url).toEqual(published[0].photo?.url);
   });
@@ -467,11 +480,7 @@ describe('reporting a wall', () => {
     )[0].photo?.url;
     expect(publishedPreview).toBeDefined();
     const resetPhotoId = registerUploadedPhoto(publishedWall.uuid);
-    await sprayWallMutations.createSprayWallVersion(
-      {},
-      { input: { wallUuid: publishedWall.uuid, photoId: resetPhotoId, anchors: ANCHORS } },
-      ctxFor(OWNER),
-    );
+    await insertLeftoverResetDraft(publishedWall, resetPhotoId);
 
     const draftWall = await createWallOnly();
     const draftPhotoId = registerUploadedPhoto(draftWall.uuid);
