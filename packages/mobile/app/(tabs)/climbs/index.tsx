@@ -45,6 +45,7 @@ import { FilterChipRow } from '../../../src/components/search/FilterChipRow';
 import type { DimensionChip } from '../../../src/components/search/FilterChipRow.types';
 import { chipKindToTokenKeys } from '../../../src/lib/pinnable-chips';
 import { usePinnedChips } from '../../../src/lib/pinned-chips-store';
+import { SPRAY_BOARD_NAME } from '../../../src/lib/spray/spray-wall-registry';
 import {
   getCollectionFilter,
   getClimbTypeFilter,
@@ -1546,6 +1547,7 @@ function ClimbListInner() {
           collection={getCollectionFilter(filters, boardFilters)}
           onChangeCollection={handleChangeCollection}
           canFilterDrafts={isAuthenticated}
+          isSprayWall={boardName === SPRAY_BOARD_NAME}
           sortBy={filters.sortBy}
           sortActive={sortActive}
           onChangeSort={handleChangeSort}

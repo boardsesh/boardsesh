@@ -234,7 +234,18 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
 
     expect(container.querySelector('[data-row="mobile.climbActions.fork"]')).not.toBeNull();
     expect(container.querySelector('[data-row="mobile.climbActions.edit"]')).not.toBeNull();
-    expect(container.querySelector('[data-row="mobile.climbActions.copyLink"]')).not.toBeNull();
+  });
+
+  it('offers Copy link on a published climb but not on a draft (#5960)', () => {
+    const published = { ...ownerClimb, is_draft: false } as unknown as Climb;
+    const copyRow = (container: HTMLElement) => container.querySelector('[data-row="mobile.climbActions.copyLink"]');
+
+    const first = render(<ClimbActionsSheet visible={true} {...baseProps} climb={published} />);
+    expect(copyRow(first.container)).not.toBeNull();
+    first.unmount();
+
+    const second = render(<ClimbActionsSheet visible={true} {...baseProps} climb={ownerClimb} />);
+    expect(copyRow(second.container)).toBeNull();
   });
 
   it('keeps Fork and Edit on a board that can', () => {

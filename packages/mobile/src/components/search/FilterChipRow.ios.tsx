@@ -55,7 +55,7 @@ import {
   isClimbType,
 } from './FilterChipRow.logic';
 import { buildSortLabel } from '../../lib/filter-labels';
-import { COLLECTION_VALUES } from '../../lib/collection-filter';
+import { visibleCollectionValues } from '../../lib/collection-filter';
 import type { FilterChipRowProps } from './FilterChipRow.types';
 
 function FilterChipRowComponent({
@@ -83,6 +83,7 @@ function FilterChipRowComponent({
   collection,
   onChangeCollection,
   canFilterDrafts,
+  isSprayWall,
   sortBy,
   sortActive,
   onChangeSort,
@@ -242,7 +243,7 @@ function FilterChipRowComponent({
                   onChangeCollection(value);
                 }}
               >
-                {COLLECTION_VALUES.filter((value) => value !== 'drafts' || canFilterDrafts).map((value) => (
+                {visibleCollectionValues({ canFilterDrafts, isSprayWall, current: collection }).map((value) => (
                   <Text key={value} modifiers={[tag(value)]}>
                     {collectionChipLabel(value, t)}
                   </Text>

@@ -330,12 +330,14 @@ function ClimbActionsSheet({
             showSeparator
           />
         )}
-        <ListRow
-          title={t('mobile.climbActions.copyLink')}
-          leading={<Icon name="copy" size={22} color={accentActionIconColor} />}
-          onPress={handleCopyLink}
-          showSeparator={!!auroraAppUrl || !!onReportClimb}
-        />
+        {climb?.is_draft !== true && (
+          <ListRow
+            title={t('mobile.climbActions.copyLink')}
+            leading={<Icon name="copy" size={22} color={accentActionIconColor} />}
+            onPress={handleCopyLink}
+            showSeparator={!!auroraAppUrl || !!onReportClimb}
+          />
+        )}
         {auroraAppUrl && (
           <ListRow
             title={t('mobile.climbActions.openInApp')}

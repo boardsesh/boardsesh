@@ -8,6 +8,25 @@ import type { ClimbFilterState, ClimbBoardFilterState } from '@boardsesh/climb-f
 export const COLLECTION_VALUES = ['any', 'benchmarks', 'drafts'] as const;
 export type CollectionFilter = (typeof COLLECTION_VALUES)[number];
 
+/**
+ * The Collection values a chip menu offers. My drafts needs a signed-in user. A
+ * spray wall has no benchmarks (#5960), so Benchmarks stays only while it is the
+ * active value, which keeps a filter picked on another board undoable. Same rule
+ * as the filter sheet's Collection segment.
+ */
+export function visibleCollectionValues(options: {
+  canFilterDrafts: boolean;
+  isSprayWall: boolean;
+  current: CollectionFilter;
+}): CollectionFilter[] {
+  const { canFilterDrafts, isSprayWall, current } = options;
+  return COLLECTION_VALUES.filter((value) => {
+    if (value === 'drafts') return canFilterDrafts;
+    if (value === 'benchmarks') return !isSprayWall || current === 'benchmarks';
+    return true;
+  });
+}
+
 /** Narrows a raw native-picker tag to a {@link CollectionFilter}. */
 export function isCollectionFilter(value: string): value is CollectionFilter {
   return (COLLECTION_VALUES as readonly string[]).includes(value);

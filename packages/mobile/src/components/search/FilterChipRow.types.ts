@@ -70,6 +70,8 @@ export type FilterChipRowProps = {
   onChangeCollection: (value: CollectionFilter) => void;
   /** My drafts is auth-only; the option is dropped from the chip menu when signed out. */
   canFilterDrafts: boolean;
+  /** A spray wall has no benchmarks, so the menu hides Benchmarks unless it is already active. */
+  isSprayWall: boolean;
 
   // --- Tier-2 (opt-in) chips: sheet-only controls a user can pin. ---
 
