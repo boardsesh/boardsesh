@@ -1,4 +1,5 @@
-import { sql, type SQL } from 'drizzle-orm';
+import { and, eq, isNotNull, notExists, sql, type SQL } from 'drizzle-orm';
+import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 
 /**
@@ -107,4 +108,24 @@ export function sprayWallIsListable(
   if (wall.archivedAt != null) return false;
   if (viewerId != null && board.ownerId === viewerId) return true;
   return wall.currentVersionId != null && wall.hiddenAt == null;
+}
+
+/**
+ * True for every `user_boards` row that is NOT an archived spray wall.
+ *
+ * For counts that measure what an account or gym has live: the board cap
+ * (`assertBoardCapNotReached`) and a gym's `boardCount`. An archived wall is a
+ * read-only record a reset left behind, and counting it would make every reset
+ * cost one board. A correlated `NOT EXISTS`, so it composes into any WHERE that
+ * has `user_boards` in scope.
+ */
+export function boardIsNotArchivedSprayWall(): SQL {
+  return notExists(
+    db
+      .select({ id: dbSchema.sprayWalls.id })
+      .from(dbSchema.sprayWalls)
+      .where(
+        and(eq(dbSchema.sprayWalls.boardUuid, dbSchema.userBoards.uuid), isNotNull(dbSchema.sprayWalls.archivedAt)),
+      ),
+  );
 }

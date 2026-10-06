@@ -1,10 +1,11 @@
 import { v4 as uuidv4 } from 'uuid';
 import { GraphQLError } from 'graphql';
-import { and, asc, count, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, exists, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { lockWallForWrite } from '../../../services/spray-wall-lock';
 export { lockWallForWrite } from '../../../services/spray-wall-lock';
 import { lockSprayWallAccount } from '../../../services/spray-account-lock';
+import { SPRAY_WALL_ARCHIVED_CODE, SPRAY_WALL_ARCHIVED_MESSAGE } from '../../../services/spray-wall-archive';
 import { markDeletedSprayWallPhotoRetry } from '../../../services/spray-photo-erasure-retry';
 import {
   MAX_ARCHIVED_SPRAY_WALLS_PER_USER,
@@ -158,7 +159,7 @@ export const SPRAY_WALL_CODES = {
   anchorsRequired: 'SPRAY_WALL_ANCHORS_REQUIRED',
   visibilityOwnerOnly: 'SPRAY_WALL_VISIBILITY_OWNER_ONLY',
   climbEditPolicyOwnerOnly: 'SPRAY_WALL_CLIMB_EDIT_POLICY_OWNER_ONLY',
-  archived: 'SPRAY_WALL_ARCHIVED',
+  archived: SPRAY_WALL_ARCHIVED_CODE,
   resetOwnerOnly: 'SPRAY_WALL_RESET_OWNER_ONLY',
   resetSourceUnpublished: 'SPRAY_WALL_RESET_SOURCE_UNPUBLISHED',
   archiveLimitReached: 'SPRAY_WALL_ARCHIVE_LIMIT_REACHED',
@@ -187,8 +188,12 @@ export type SprayWallVisibility = { hiddenAt: Date | null };
  */
 export type SprayWriteExecutor = typeof db | SprayWriteTransaction;
 
-/** A transaction handle, for writes that must never run on the pooled client. */
-type SprayWriteTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+/**
+ * A transaction handle, for checks and writes that must never run on the pooled
+ * client: a transaction-scoped advisory lock taken on the pool is released the
+ * moment that one statement commits.
+ */
+export type SprayWriteTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 function notFoundError(): GraphQLError {
   return new GraphQLError('Spray wall not found', { extensions: { code: SPRAY_WALL_CODES.notFound } });
@@ -196,9 +201,7 @@ function notFoundError(): GraphQLError {
 
 /** The refusal every write that would change an archived wall gets. */
 export function sprayWallArchivedError(): GraphQLError {
-  return new GraphQLError('This wall is archived. Its climbs stay, but nothing new can be set on it.', {
-    extensions: { code: SPRAY_WALL_CODES.archived },
-  });
+  return new GraphQLError(SPRAY_WALL_ARCHIVED_MESSAGE, { extensions: { code: SPRAY_WALL_CODES.archived } });
 }
 
 /**
@@ -217,7 +220,10 @@ export function sprayWallArchivedError(): GraphQLError {
  * discarding a draft version, renaming, the look and deleting the wall stay
  * allowed on an archived wall (docs/spray-walls.md, "Archive and reset").
  */
-export async function assertSprayWallNotArchivedUnderLock(executor: SprayWriteExecutor, wallId: number): Promise<void> {
+export async function assertSprayWallNotArchivedUnderLock(
+  executor: SprayWriteTransaction,
+  wallId: number,
+): Promise<void> {
   await lockWallForWrite(executor, wallId);
   const [row] = await executor
     .select({ archivedAt: dbSchema.sprayWalls.archivedAt })
@@ -649,9 +655,10 @@ async function toGraphQLWall(
     hiddenAt: wall.hiddenAt ? wall.hiddenAt.toISOString() : null,
     renderSettings: wall.renderSettings ?? null,
     archivedAt: wall.archivedAt ? wall.archivedAt.toISOString() : null,
-    resetOfWallUuid: source && (await viewerMayFollowResetLink(loaded, source, userId)) ? source.board.uuid : null,
+    resetOfWallUuid:
+      source && (await viewerCanSeeSprayWallByLayout(source.wall, source.board, userId)) ? source.board.uuid : null,
     replacedByWallUuid:
-      successor && (await viewerMayFollowResetLink(loaded, successor, userId)) ? successor.board.uuid : null,
+      successor && (await viewerMayFollowToSuccessor(loaded, successor, userId)) ? successor.board.uuid : null,
     holdsLocked: wall.archivedAt != null || archiveFacts.layoutsWithPublishedClimbs.has(wall.layoutId),
   };
 }
@@ -679,19 +686,30 @@ async function loadSprayWallArchiveFacts(walls: SprayWallRow[]): Promise<SprayWa
 
   const sourceIds = [...new Set(walls.map((wall) => wall.resetFromWallId).filter((sourceId) => sourceId != null))];
   const [climbLayouts, sources, successors] = await Promise.all([
-    // `board_climbs_layout_filter_idx` leads with (board_type, layout_id,
-    // is_listed, is_draft), so this is an index probe per wall, not a scan.
+    // A semi-join, one EXISTS per wall: each stops at the first published climb
+    // it finds on `board_climbs_layout_filter_idx` (board_type, layout_id,
+    // is_listed, is_draft), so a wall with thousands of climbs costs one probe.
     db
-      .selectDistinct({ layoutId: dbSchema.boardClimbs.layoutId })
-      .from(dbSchema.boardClimbs)
+      .select({ layoutId: dbSchema.sprayWalls.layoutId })
+      .from(dbSchema.sprayWalls)
       .where(
         and(
-          eq(dbSchema.boardClimbs.boardType, 'spray'),
           inArray(
-            dbSchema.boardClimbs.layoutId,
-            walls.map((wall) => wall.layoutId),
+            dbSchema.sprayWalls.id,
+            walls.map((wall) => wall.id),
           ),
-          eq(dbSchema.boardClimbs.isDraft, false),
+          exists(
+            db
+              .select({ uuid: dbSchema.boardClimbs.uuid })
+              .from(dbSchema.boardClimbs)
+              .where(
+                and(
+                  eq(dbSchema.boardClimbs.boardType, 'spray'),
+                  eq(dbSchema.boardClimbs.layoutId, dbSchema.sprayWalls.layoutId),
+                  eq(dbSchema.boardClimbs.isDraft, false),
+                ),
+              ),
+          ),
         ),
       ),
     sourceIds.length === 0
@@ -727,9 +745,7 @@ async function loadSprayWallArchiveFacts(walls: SprayWallRow[]): Promise<SprayWa
       .orderBy(asc(dbSchema.sprayWalls.id)),
   ]);
 
-  for (const row of climbLayouts) {
-    if (row.layoutId != null) facts.layoutsWithPublishedClimbs.add(row.layoutId);
-  }
+  for (const row of climbLayouts) facts.layoutsWithPublishedClimbs.add(row.layoutId);
   for (const row of sources) facts.sourcesById.set(row.wall.id, row);
   // Ascending, so the newest successor wins if a wall somehow has two.
   for (const row of successors) {
@@ -739,23 +755,34 @@ async function loadSprayWallArchiveFacts(walls: SprayWallRow[]): Promise<SprayWa
 }
 
 /**
- * Whether a viewer of one wall may be told the uuid of the wall linked to it by
- * a reset (its predecessor or its successor).
+ * Whether a viewer of a wall may be told the uuid of the wall that REPLACED it
+ * (`replacedByWallUuid`).
  *
- * The by-layout rule on the LINKED wall — its owner, a member of its gym, or a
- * public wall — because the viewer did not reach the linked wall by uuid, and a
- * uuid is the capability that opens an unlisted one. Plus one carry-forward: when
- * BOTH walls are unlisted, a crew holding the old wall's share link may follow it
- * to the new one. That is the audience the owner already chose for the old link,
- * and without it every share link would dead-end at the archive.
+ * The by-layout rule on the successor (its owner, a member of its gym, or a
+ * public wall), because the viewer did not reach the successor by uuid, and a
+ * uuid is the capability that opens an unlisted wall. Plus one carry-forward:
+ * when the old wall is unlisted and NOT public, and the successor is unlisted
+ * too, a crew holding the old share link may follow it to the new wall. That is
+ * the audience the owner already gave the old link to, and without it every
+ * share link would dead-end at the archive. A public old wall carries nobody
+ * forward this way: its viewers did not need a link to get there.
+ *
+ * Old to new only. The reverse link (`resetOfWallUuid`) uses the by-layout rule
+ * alone, so the new wall's link never hands out the old wall's capability.
  */
-async function viewerMayFollowResetLink(
-  from: LoadedWall,
-  linked: LoadedWall,
+async function viewerMayFollowToSuccessor(
+  archived: LoadedWall,
+  successor: LoadedWall,
   userId: string | null | undefined,
 ): Promise<boolean> {
-  if (await viewerCanSeeSprayWallByLayout(linked.wall, linked.board, userId)) return true;
-  return linked.wall.hiddenAt == null && from.wall.hiddenAt == null && from.board.isUnlisted && linked.board.isUnlisted;
+  if (await viewerCanSeeSprayWallByLayout(successor.wall, successor.board, userId)) return true;
+  return (
+    successor.wall.hiddenAt == null &&
+    archived.wall.hiddenAt == null &&
+    archived.board.isUnlisted &&
+    !archived.board.isPublic &&
+    successor.board.isUnlisted
+  );
 }
 
 /**
@@ -1210,6 +1237,48 @@ function pendingVisibilityColumns(input: { isPublic?: boolean; isUnlisted?: bool
   return { pendingIsPublic: isPublic, pendingIsUnlisted: isUnlisted };
 }
 
+/**
+ * How far a visibility pair reaches, lowest first. A public wall that is also
+ * unlisted is public by layout but kept out of search, so it ranks below a plain
+ * public one.
+ */
+function visibilityReach(visibility: PendingVisibility): number {
+  if (visibility.isPublic) return visibility.isUnlisted ? 2 : 3;
+  return visibility.isUnlisted ? 1 : 0;
+}
+
+/**
+ * The visibility a reset clone publishes with: the NARROWER of what was parked
+ * when the reset started and what the old wall has now. Private beats unlisted
+ * beats public, and a tie keeps the parked pair.
+ *
+ * Takes the old wall's lock first, so a visibility change to it either lands
+ * before this read or waits for the publish. The publish already holds the
+ * clone's lock: new wall, then old wall, the order every two-lock path uses. A
+ * deleted old wall has no audience left to follow, so the parked pair stands.
+ */
+async function narrowToResetSourceUnderLock(
+  tx: SprayWriteTransaction,
+  sourceWallId: number,
+  parked: PendingVisibility,
+): Promise<PendingVisibility> {
+  await lockWallForWrite(tx, sourceWallId);
+  const [source] = await tx
+    .select({ isPublic: dbSchema.userBoards.isPublic, isUnlisted: dbSchema.userBoards.isUnlisted })
+    .from(dbSchema.sprayWalls)
+    .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.sprayWalls.boardUuid))
+    .where(
+      and(
+        eq(dbSchema.sprayWalls.id, sourceWallId),
+        isNull(dbSchema.sprayWalls.deletedAt),
+        isNull(dbSchema.userBoards.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!source) return parked;
+  return visibilityReach(source) < visibilityReach(parked) ? source : parked;
+}
+
 /** Rows per INSERT when follows and pins carry over, well under Postgres's 65535 parameters. */
 const CARRY_OVER_BATCH_SIZE = 1000;
 
@@ -1229,8 +1298,9 @@ const CARRY_OVER_BATCH_SIZE = 1000;
  * ## What carries over
  *
  * Only to people the clone is shared with, so a reset cannot put a wall in front
- * of someone its owner has not shown it to. A follow carries over on the rule
- * `followBoard` enforces (a public board, or its owner). A pin carries over to
+ * of someone its owner has not shown it to. A follow, and a new-climb
+ * subscription (keyed by layout, so the old one would never fire again), carry
+ * over on the rule `followBoard` enforces (a public board, or its owner). A pin carries over to
  * the owner, to everyone when the board is public, and to members of its gym.
  * An unlisted wall's crew follows the `replacedByWallUuid` link instead.
  *
@@ -1238,10 +1308,11 @@ const CARRY_OVER_BATCH_SIZE = 1000;
  * those follows were never this clone's to take.
  */
 async function archiveResetSourceUnderLock(
-  tx: SprayWriteExecutor,
+  tx: SprayWriteTransaction,
   sourceWallId: number,
-  successorBoardUuid: string,
+  successor: { boardUuid: string; layoutId: number },
 ): Promise<void> {
+  const successorBoardUuid = successor.boardUuid;
   await lockWallForWrite(tx, sourceWallId);
 
   const archivedAt = new Date();
@@ -1257,7 +1328,7 @@ async function archiveResetSourceUnderLock(
         isNull(dbSchema.sprayWalls.deletedAt),
       ),
     )
-    .returning({ boardUuid: dbSchema.sprayWalls.boardUuid });
+    .returning({ boardUuid: dbSchema.sprayWalls.boardUuid, layoutId: dbSchema.sprayWalls.layoutId });
   if (!archived) return;
 
   const [successorBoard] = await tx
@@ -1286,6 +1357,34 @@ async function archiveResetSourceUnderLock(
           userId: follow.userId,
           boardUuid: successorBoardUuid,
           createdAt: follow.createdAt,
+        })),
+      )
+      .onConflictDoNothing();
+  }
+
+  // "Tell me about new climbs" is keyed by layout, and the new wall has a new
+  // layout. Same audience rule as a follow: it announces the wall's climbs.
+  const subscribers = await tx
+    .select({ userId: dbSchema.newClimbSubscriptions.userId, createdAt: dbSchema.newClimbSubscriptions.createdAt })
+    .from(dbSchema.newClimbSubscriptions)
+    .where(
+      and(
+        eq(dbSchema.newClimbSubscriptions.boardType, 'spray'),
+        eq(dbSchema.newClimbSubscriptions.layoutId, archived.layoutId),
+      ),
+    );
+  const carriedSubscriptions = subscribers.filter(
+    (subscription) => successorBoard.isPublic || subscription.userId === successorBoard.ownerId,
+  );
+  for (let offset = 0; offset < carriedSubscriptions.length; offset += CARRY_OVER_BATCH_SIZE) {
+    await tx
+      .insert(dbSchema.newClimbSubscriptions)
+      .values(
+        carriedSubscriptions.slice(offset, offset + CARRY_OVER_BATCH_SIZE).map((subscription) => ({
+          userId: subscription.userId,
+          boardType: 'spray',
+          layoutId: successor.layoutId,
+          createdAt: subscription.createdAt,
         })),
       )
       .onConflictDoNothing();
@@ -1355,7 +1454,7 @@ async function archiveResetSourceUnderLock(
  * stale by the time the transaction opens.
  */
 async function publishDraftUnderLock(
-  tx: SprayWriteExecutor,
+  tx: SprayWriteTransaction,
   wall: Pick<SprayWallRow, 'id' | 'layoutId'>,
   versionId: number,
 ): Promise<PublishedDraft> {
@@ -1466,10 +1565,17 @@ async function publishDraftUnderLock(
   // visibility without knowing the columns exist, and a pair left standing through
   // that would otherwise overturn the owner's later choice on their next reset.
   const isFirstPublish = wallNow.currentVersionId == null;
-  const appliedVisibility: PendingVisibility | null =
+  const parkedVisibility: PendingVisibility | null =
     isFirstPublish && (wallNow.pendingIsPublic != null || wallNow.pendingIsUnlisted != null)
       ? { isPublic: wallNow.pendingIsPublic === true, isUnlisted: wallNow.pendingIsUnlisted === true }
       : null;
+  // A reset clone parked the OLD wall's audience when the reset started. The
+  // owner may have narrowed the old wall since, and the new wall must never
+  // reach further than the old one does now.
+  const appliedVisibility =
+    parkedVisibility && wallNow.resetFromWallId != null
+      ? await narrowToResetSourceUnderLock(tx, wallNow.resetFromWallId, parkedVisibility)
+      : parkedVisibility;
   if (appliedVisibility) {
     await tx
       .update(dbSchema.userBoards)
@@ -1493,7 +1599,10 @@ async function publishDraftUnderLock(
   // no instant at which both walls are live or neither is. AFTER the visibility
   // apply above, because who the follows and pins carry over to depends on it.
   if (isFirstPublish && wallNow.resetFromWallId != null) {
-    await archiveResetSourceUnderLock(tx, wallNow.resetFromWallId, wallNow.boardUuid);
+    await archiveResetSourceUnderLock(tx, wallNow.resetFromWallId, {
+      boardUuid: wallNow.boardUuid,
+      layoutId: wall.layoutId,
+    });
   }
 
   // The catalogue's join row carries the image filename every board reader looks

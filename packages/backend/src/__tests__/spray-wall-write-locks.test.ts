@@ -502,14 +502,11 @@ describe('the climb.created decision is re-read under the wall lock', () => {
  * The archive is stamped by the replacing wall's first publish, under the archived
  * wall's lock. A writer that checked `archived_at` before taking the lock could
  * read "live", lose the race to that publish, and then write onto an archived wall.
+ * What an archived wall still ALLOWS is behavioural, in spray-wall-reset-clone.test.ts.
  */
 describe('an archived wall refuses writes, decided under the wall lock', () => {
   const MUTATIONS_SOURCE = readFileSync(
     fileURLToPath(new URL('../graphql/resolvers/climbs/mutations.ts', import.meta.url)),
-    'utf8',
-  );
-  const TICK_MUTATIONS_SOURCE = readFileSync(
-    fileURLToPath(new URL('../graphql/resolvers/ticks/mutations.ts', import.meta.url)),
     'utf8',
   );
 
@@ -536,26 +533,15 @@ describe('an archived wall refuses writes, decided under the wall lock', () => {
     expect(guardAt).toBeGreaterThan(body.indexOf('db.transaction('));
   });
 
-  it.each(['discardSprayWallVersion', 'deleteSprayWall', 'updateSprayWall', 'setSprayWallRenderSettings'])(
-    '%s stays allowed on an archived wall',
-    (name) => {
-      expect(functionBody(SPRAY_WALLS_SOURCE, name)).not.toMatch(/archived/i);
-    },
-  );
-
-  it('never refuses a tick or a draft delete, which the offline drainer would dead-letter', () => {
-    expect(functionBody(TICK_MUTATIONS_SOURCE, 'saveTick')).not.toMatch(/archived/i);
-    expect(functionBody(MUTATIONS_SOURCE, 'deleteDraftClimb')).not.toMatch(/archived/i);
-  });
-
   it('takes the clone lock before the source lock, and account deletion walks walls the same way', () => {
     // publishDraftUnderLock holds the clone (always the higher id) and then takes
     // the source. deleteAccountSprayWalls holds every lock it takes until commit,
     // so it has to walk highest id first or the two can deadlock.
     const publishBody = functionBody(SPRAY_WALLS_SOURCE, 'publishDraftUnderLock');
-    expect(publishBody.indexOf('lockWallForWrite(tx, wall.id)')).toBeLessThan(
-      publishBody.indexOf('archiveResetSourceUnderLock('),
-    );
+    const cloneLockAt = publishBody.indexOf('lockWallForWrite(tx, wall.id)');
+    expect(cloneLockAt).toBeGreaterThanOrEqual(0);
+    expect(cloneLockAt).toBeLessThan(publishBody.indexOf('narrowToResetSourceUnderLock('));
+    expect(cloneLockAt).toBeLessThan(publishBody.indexOf('archiveResetSourceUnderLock('));
     const deleteAccountSource = readFileSync(
       fileURLToPath(new URL('../graphql/resolvers/users/delete-account-spray-walls.ts', import.meta.url)),
       'utf8',

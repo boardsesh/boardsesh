@@ -969,6 +969,18 @@ export const schemaSQL = `
   );
   CREATE UNIQUE INDEX IF NOT EXISTS "board_follows_unique_user_board" ON "board_follows" ("user_id", "board_uuid");
 
+  -- "Tell me about new climbs on this layout" (migration 0050). A spray reset
+  -- carries these from the archived wall's layout to its successor's.
+  CREATE TABLE IF NOT EXISTS "new_climb_subscriptions" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "board_type" text NOT NULL,
+    "layout_id" integer NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "new_climb_subscriptions_unique_user_board_layout"
+    ON "new_climb_subscriptions" ("user_id", "board_type", "layout_id");
+
   -- Auto-recorded serial→config rows + the user's remembered board choice for a
   -- serial (board_uuid). Resolver reads this to skip the disambiguation prompt.
   CREATE TABLE IF NOT EXISTS "user_board_serials" (
