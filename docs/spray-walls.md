@@ -838,7 +838,31 @@ lot for an anonymous caller, a stranger and the owner. A new resolver is swept t
 day it lands, and its author has to either make it reach the wall or name it in
 that file's `NOT_APPLICABLE` with a reason.
 
-### The server validates shape, and never re-runs detection
+#### Writing to a climb is a fifth rule
+
+The read side cannot leak a wall whose existence it never confirms, but a write
+that accepts the climb anyway answers "found" versus "not found" — an existence
+oracle in the error message — and lands rows that the reads then have to keep
+masking. So the same by-layout rule sits in front of the writes too (#6032):
+
+| Write | Where the gate lives | Answers |
+| --- | --- | --- |
+| `createProposal`, `reportClimb` | `loadTargetClimb` (`social/proposals/lifecycle.ts`) — `sprayClimbVisibilityCondition` in the load's WHERE, plus the draft/unlisted check `validateEntityExists` already applies to comments, on every board type | `Climb not found`, the same words a missing uuid gets |
+| `saveTick` | one primary read before the insert, spray-only — the climb row must exist and the wall must be visible, with the tick's `boardUuid` honoured as the unlisted capability | `Climb not found` with code `CLIMB_NOT_FOUND`, which the offline drainer treats as permanent: a replay whose climb was hard-deleted dead-letters on attempt one |
+| the feed fan-out | `getProposalContextMetadata` and the tick/climb branches of `getCommentContextMetadata` (`events/feed-fanout.ts`) skip rows whose climb is a draft, and whose spray wall may not announce | nothing written |
+
+Proposals carry no wall-uuid input, so unlike `saveTick` they get no unlisted
+capability — exactly as comments already treat an unlisted wall. And the fan-out
+gate is the WALL's rule ("public and unhidden", the same `publishesFeedEvents`
+answer `saveClimb` and `saveTick` consult before they announce), never a
+per-recipient one: the fan-out writes rows for many readers at once, and which
+reader may see their own rows stays the read side's job.
+
+`packages/backend/src/__tests__/spray-write-visibility.test.ts` pins all of it,
+including the oracle itself: an invisible wall and a uuid with no row must answer
+with identical text.
+
+
 
 `packages/backend/src/validation/schemas/spray-walls.ts` checks the ring contract
 (`isValidOutlineRing` from `@boardsesh/board-art-geometry/ring` — the same
