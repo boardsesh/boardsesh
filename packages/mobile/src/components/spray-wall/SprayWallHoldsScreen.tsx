@@ -30,6 +30,7 @@ import {
 import { refreshPublishedSprayClimbs } from '../../lib/spray/refresh-published-spray-climbs';
 import { BIND_STAGE_DEADLINE_MS, withDeadline } from '../../lib/spray/post-publish-bind';
 import {
+  fetchSprayWallArchive,
   fetchSprayWallRenderData,
   invalidateSprayWallRenderData,
   registerRenderData,
@@ -49,7 +50,18 @@ import {
 } from '../../lib/spray/spray-hold-maintenance';
 
 const maintenanceTransport: SprayHoldMaintenanceTransport = {
-  fetchWall: fetchSprayWallVersions,
+  // The wall and, from its own fail-soft query, whether it is archived or its
+  // holds are locked. Asked fresh every time: this is the gate in front of the
+  // editor and its Publish. Unknown (an older backend, a failed read) reads as
+  // live with free holds, and the server still refuses what it must.
+  fetchWall: async (wallUuid) => {
+    const [wall, archive] = await Promise.all([
+      fetchSprayWallVersions(wallUuid),
+      fetchSprayWallArchive(wallUuid, { force: true }),
+    ]);
+    if (!wall) return null;
+    return { ...wall, archivedAt: archive?.archivedAt ?? null, holdsLocked: archive?.holdsLocked === true };
+  },
   createDraft: async (input) => {
     const response = await getHttpClient().request<{ createSprayWallVersion: SprayWallVersion }>(
       CREATE_SPRAY_WALL_VERSION,
@@ -154,6 +166,27 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
     };
   }, [prepare]);
 
+  /**
+   * The wall was locked (a climb published) or archived while the editor was
+   * open, and a save or the publish was refused for it. Not a dead end: the
+   * edits are in a server draft that can never be published, so the screen
+   * goes back through `prepare`, which lands on the locked state and offers to
+   * discard that draft. Whatever the editor held unsaved is gone either way.
+   */
+  const landOnLockedWall = useCallback(
+    (refusal: unknown) => {
+      refreshRegisteredWall(refusal);
+      editorDirtyRef.current = false;
+      editorHandingOverRef.current = false;
+      setEditorDirty(false);
+      setEditorHandingOver(false);
+      draftRef.current = null;
+      setDraft(null);
+      void prepare();
+    },
+    [prepare, refreshRegisteredWall],
+  );
+
   const finish = useCallback(async () => {
     const prepared = draftRef.current;
     if (!prepared || busyRef.current) return;
@@ -213,6 +246,11 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
       if (!mountedRef.current) return;
       setFinished(true);
     } catch (error) {
+      if (!publishedRef.current && sprayWallRefusalMeansStaleWall(sprayWallLifecycleRefusal(error))) {
+        busyRef.current = false;
+        if (mountedRef.current) landOnLockedWall(error);
+        return;
+      }
       refreshRegisteredWall(error);
       if (!mountedRef.current) return;
       setFailure(error);
@@ -220,7 +258,7 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
     } finally {
       busyRef.current = false;
     }
-  }, [queryClient, refreshRegisteredWall]);
+  }, [queryClient, refreshRegisteredWall, landOnLockedWall]);
 
   // An open draft this screen cannot edit: a new-photo draft the retired
   // in-place reset left, or hold changes started before the wall was locked or
@@ -302,6 +340,7 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
         onCommitted={onCommitted}
         onDirtyChange={onDirtyChange}
         onHandoverChange={onHandoverChange}
+        onWallLocked={landOnLockedWall}
       />
     );
   }
@@ -337,10 +376,16 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
       : null;
   // A draft opened before the wall was locked or archived. It can never be
   // published; once discarded, the screen settles on the plain locked state.
-  const strandedDraftVersionId =
+  const lockedFailure =
     failure instanceof SprayHoldMaintenanceError && (failure.reason === 'holdsLocked' || failure.reason === 'archived')
-      ? failure.leftoverVersionId
+      ? failure
       : null;
+  const strandedDraftVersionId =
+    lockedFailure && !lockedFailure.leftoverIsPhoto ? lockedFailure.leftoverVersionId : null;
+  // A new photo the retired reset left on a wall that has since been locked:
+  // the same discard as on a live wall, named for what it is.
+  const lockedLeftoverPhotoId = lockedFailure?.leftoverIsPhoto ? lockedFailure.leftoverVersionId : null;
+  const leftoverVersionIdToDiscard = leftoverVersionId ?? lockedLeftoverPhotoId;
   const finalRefusal = isFinalRefusal(failure);
 
   return (
@@ -360,6 +405,11 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
               {t('sprayMaintenance.strandedDraft')}
             </Text>
           ) : null}
+          {lockedLeftoverPhotoId ? (
+            <Text variant="subheadline" style={styles.message}>
+              {t('sprayMaintenance.leftoverPhoto')}
+            </Text>
+          ) : null}
           {discardFailed ? (
             <Text variant="subheadline" style={styles.message}>
               {strandedDraftVersionId
@@ -376,10 +426,10 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
               loading={discardLeftover.isPending}
               disabled={discardLeftover.isPending}
             />
-          ) : leftoverVersionId ? (
+          ) : leftoverVersionIdToDiscard ? (
             <Button
               title={t('sprayMaintenance.discardLeftover')}
-              onPress={() => void discardOpenDraft(leftoverVersionId)}
+              onPress={() => void discardOpenDraft(leftoverVersionIdToDiscard)}
               loading={discardLeftover.isPending}
               disabled={discardLeftover.isPending}
             />

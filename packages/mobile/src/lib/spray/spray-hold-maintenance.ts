@@ -42,6 +42,9 @@ export type SprayHoldMaintenanceTransport = {
  * new-photo draft of `leftoverPhotoDraft`, or, with `archived` or
  * `holdsLocked`, a draft opened before the wall was locked. Such a draft can
  * never be published, and nothing else on the phone would ever clear it.
+ * `leftoverIsPhoto` says which kind it is: a new photo left by the retired
+ * reset (most of those sit on walls that have climbs, so they meet the lock),
+ * or hold changes. The screen names it accordingly.
  */
 export type SprayHoldMaintenanceFailure =
   | 'unavailable'
@@ -55,6 +58,7 @@ export class SprayHoldMaintenanceError extends Error {
   constructor(
     public readonly reason: SprayHoldMaintenanceFailure,
     public readonly leftoverVersionId: string | null = null,
+    public readonly leftoverIsPhoto: boolean = reason === 'leftoverPhotoDraft',
   ) {
     super(reason);
     this.name = 'SprayHoldMaintenanceError';
@@ -76,7 +80,11 @@ function requireEditableWall(wallUuid: string, wall: SprayHoldMaintenanceWall | 
   const lockedReason = wall.archivedAt != null ? 'archived' : wall.holdsLocked === true ? 'holdsLocked' : null;
   if (lockedReason) {
     const strandedDraft = wall.versions?.find((version) => version.status === 'DRAFT');
-    throw new SprayHoldMaintenanceError(lockedReason, strandedDraft?.id ?? null);
+    throw new SprayHoldMaintenanceError(
+      lockedReason,
+      strandedDraft?.id ?? null,
+      strandedDraft != null && sprayDraftPurpose(strandedDraft, wall.currentVersion) === 'reset',
+    );
   }
   return wall;
 }
