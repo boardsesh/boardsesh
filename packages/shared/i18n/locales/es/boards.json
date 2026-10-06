@@ -843,11 +843,17 @@
       "draw": "Dibujar",
       "corners": "Esquinas"
     },
+    "resize": {
+      "bigger": "+{{percent}} %",
+      "smaller": "−{{percent}} %",
+      "original": "Original",
+      "typical": "Típico"
+    },
     "hints": {
       "tap": "Toca un círculo para elegirlo. Vuelve a tocarlo para desactivarlo.",
       "maybe": "Los círculos discontinuos son presas dudosas. Toca una y luego toca Conservar.",
       "longPress": "Mantén pulsado un círculo y deslízalo para moverlo.",
-      "addHold": "Toca + para añadir una presa.",
+      "addHold": "Mantén pulsado para añadir una presa.",
       "dismiss": "Ocultar consejo",
       "replay": "Ver consejos"
     },

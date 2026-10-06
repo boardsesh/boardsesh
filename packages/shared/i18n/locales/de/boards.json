@@ -843,11 +843,17 @@
       "draw": "Zeichnen",
       "corners": "Ecken"
     },
+    "resize": {
+      "bigger": "+{{percent}} %",
+      "smaller": "−{{percent}} %",
+      "original": "Original",
+      "typical": "Typisch"
+    },
     "hints": {
       "tap": "Tippe auf einen Kreis, um ihn auszuwählen. Tippe noch mal, um ihn auszuschalten.",
       "maybe": "Gestrichelte Kreise sind unsichere Griffe. Tippe auf einen und dann auf Behalten.",
       "longPress": "Halte einen Kreis gedrückt und zieh ihn, um ihn zu verschieben.",
-      "addHold": "Tippe auf +, um einen Griff hinzuzufügen.",
+      "addHold": "Halte gedrückt, um einen Griff hinzuzufügen.",
       "dismiss": "Tipp ausblenden",
       "replay": "Tipps zeigen"
     },

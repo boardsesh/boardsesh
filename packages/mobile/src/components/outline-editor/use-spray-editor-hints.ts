@@ -14,10 +14,11 @@ import { hasSeenTip, markTipSeen } from '../../lib/onboarding/onboarding-storage
  * 2. `maybe`: once hint 1 is out of the way, and only while the wall has maybes.
  * 3. `longPress`: after a few edits. "Press and hold a ring, then slide to move it."
  *
- * And one that waits to be asked: `addHold`, "Tap + to add a hold.", shown the
- * first time a tap on bare wall with nothing picked meets no hold — the tap
- * that used to add one. It jumps the queue, because it answers the climber's
- * own question, and it is marked seen by adding a hold or closing it.
+ * And one that waits to be asked: `addHold`, "Press and hold to add a hold.",
+ * shown the first time a tap on bare wall with nothing picked meets no hold —
+ * the tap that used to add one. It jumps the queue, because it answers the
+ * climber's own question, and it is marked seen by adding a hold (a press and
+ * hold, or add mode) or closing it.
  */
 export type SprayHintId = 'tap' | 'maybe' | 'longPress' | 'addHold';
 

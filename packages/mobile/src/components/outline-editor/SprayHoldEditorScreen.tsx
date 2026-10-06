@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   StyleSheet,
@@ -39,6 +39,8 @@ import { DrawStrokeOverlay } from './DrawStrokeOverlay';
 import { PolygonTapOverlay } from './PolygonTapOverlay';
 import { SprayHoldSvgLayer } from './SprayHoldSvgLayer';
 import { SelectedHoldOverlay } from './SelectedHoldOverlay';
+import { SprayPlacementPreview } from './SprayPlacementPreview';
+import { SprayResizeHandle } from './SprayResizeHandle';
 import { SprayEditGestureOverlay, type SprayWallAccessibility } from './SprayEditGestureOverlay';
 import { SprayEditorBottomBar, sprayCountSummary } from './SprayEditorBottomBar';
 import { SprayCornersChipBar, SprayHoldChipBar } from './SprayHoldChipBar';
@@ -65,7 +67,7 @@ import {
 import type { SprayHoldCandidate, SprayHoldSaveSummary } from './spray-hold-editor-types';
 import type { HoldGeometry } from './spray-hold-tools';
 import { editorTargetCapabilities, type SprayWallEditorTarget } from './editor-target';
-import { fallbackRadiusAt, flattenHitHolds } from './spray-gesture-math';
+import { fallbackRadiusAt, flattenHitHolds, holdReach } from './spray-gesture-math';
 import {
   actionChangesWall,
   countEditorHolds,
@@ -86,8 +88,9 @@ import {
   holdFromPolygon,
   holdFromStroke,
   holdFromTap,
+  holdRadiusBounds,
   POLYGON_MAX_VERTICES,
-  stepHoldSize,
+  stepHoldRadius,
   strokeExtent,
   toRingPoints,
 } from './spray-hold-tools';
@@ -127,6 +130,9 @@ const ADD_TAP_SLOP_PT = 10;
 
 /** Corners an outline needs before it can close. */
 const MIN_CORNERS = 3;
+
+/** "Nothing below here to avoid" for the resize handle, until the bottom dock has been laid out. */
+const NO_AVOID_TOP = 1e9;
 
 /** Where the zoomed-in reset control sits: top-left, clear of the chip bar and the bottom bar. */
 const RESET_ZOOM_STYLE = { left: spacing[2], top: spacing[2] };
@@ -209,8 +215,11 @@ export type SprayHoldEditorScreenProps = {
  * every one of its guesses. A picked ring gets the chip bar for its role —
  * size, trace, join and switch off for an ON ring, switch on or delete for a
  * ghost, keep or switch off for a maybe — and a long press picks a ring up so
- * the same touch can carry on into a move. A stray tap therefore never changes
- * the wall: switching off leaves a ghost, and only a ghost can be deleted.
+ * the same touch can carry on into a move, or on bare wall places a new hold
+ * that slides with the finger until it lifts. The picked ring carries a resize
+ * handle that scales it on the same 5% grid as the − / + chips. A stray tap
+ * therefore never changes the wall: switching off leaves a ghost, and only a
+ * ghost can be deleted.
  * Everything goes through one pure reducer with undo and redo, the heavy
  * actions raise an in-screen undo toast, and one button saves and hands over
  * (`onCommitted`).
@@ -282,6 +291,12 @@ export function SprayHoldEditorScreen({
   const [addShape, pickAddShape] = useSprayAddShape();
   /** Corners placed so far in Corners mode. The corners themselves live on the UI thread in `cornersSV`. */
   const [cornerCount, setCornerCount] = useState(0);
+  /**
+   * The hold add mode put in last. It keeps the resize handle (and no chip bar)
+   * until the next add or the next touch on the wall, so a hold that went in
+   * the wrong size is fixed without leaving add mode.
+   */
+  const [lastAddedId, setLastAddedId] = useState<number | null>(null);
 
   const draftPointsSV = useSharedValue<number[]>(NO_POINTS);
   const cornersSV = useSharedValue<number[]>(NO_POINTS);
@@ -304,6 +319,13 @@ export function SprayHoldEditorScreen({
   const dragOffsetXSV = useSharedValue(0);
   const dragOffsetYSV = useSharedValue(0);
   const dragHoldIdSV = useSharedValue(0);
+  /** The resize handle's live scale and the hold it is on (0 for none). See `SprayResizeHandle`. */
+  const resizeScaleSV = useSharedValue(1);
+  const resizeHoldIdSV = useSharedValue(0);
+  /** A press and hold's circle under the finger, `[x, y, r]` in board px. See `SprayPlacementPreview`. */
+  const placeHoldSV = useSharedValue<number[]>(NO_POINTS);
+  /** The bottom dock's top edge in the board's own points, for the resize handle to stay above. */
+  const avoidTopSV = useSharedValue(NO_AVOID_TOP);
   /** The reveal's progress: the ring layer's clip height, or its opacity with Reduce Motion. */
   const revealSV = useSharedValue(revealOnMount ? 0 : 1);
   const maybeRevealSV = useSharedValue(revealOnMount ? 0 : 1);
@@ -462,9 +484,9 @@ export function SprayHoldEditorScreen({
   }, [visibleHolds, hitHoldsSV]);
 
   /**
-   * The hold size a tap places, and the unit Smaller and Bigger step through.
-   * Measured over EVERY hold, so hiding the maybes does not change what "a
-   * normal hold" means.
+   * The hold size a press and hold places, and the unit of the 5% resize grid
+   * the handle and the − / + steppers share. Measured over EVERY hold, so
+   * hiding the maybes does not change what "a normal hold" means.
    */
   const medianRadius = useMemo(
     () => defaultHoldRadius(allEditorHolds, wall?.photoWidth ?? 0),
@@ -472,8 +494,23 @@ export function SprayHoldEditorScreen({
   );
   const medianRadiusRef = useRef(medianRadius);
   medianRadiusRef.current = medianRadius;
+  const medianRadiusSV = useSharedValue(medianRadius);
+  useEffect(() => {
+    medianRadiusSV.value = medianRadius;
+  }, [medianRadius, medianRadiusSV]);
+  const radiusBounds = useMemo(
+    () => holdRadiusBounds(medianRadius, photoWidth, photoHeight),
+    [medianRadius, photoWidth, photoHeight],
+  );
 
   const selectedHold = state.selectedId != null ? (state.holds[state.selectedId] ?? null) : null;
+  const lastAddedHold = tool === 'add' && lastAddedId != null ? (state.holds[lastAddedId] ?? null) : null;
+  /**
+   * The ring drawn full strength over its ghost, and the one the resize handle
+   * sits on: the selection, or in add mode the hold just added.
+   */
+  const focusedHold = tool === 'add' ? lastAddedHold : selectedHold;
+  const focusedReachRatio = focusedHold && focusedHold.r > 0 ? holdReach(focusedHold) / focusedHold.r : 1;
 
   // The screen reader's walk: every tappable ring in reading order. Only built
   // for a viewer who can edit — nobody else gets the gesture surface it drives.
@@ -754,8 +791,9 @@ export function SprayHoldEditorScreen({
     [editWouldPassCap, recordHint],
   );
 
-  const shrinkTo = selectedHold ? stepHoldSize(selectedHold.r, medianRadius, -1) : null;
-  const growTo = selectedHold ? stepHoldSize(selectedHold.r, medianRadius, 1) : null;
+  // One press is one step of the same 5% grid the handle snaps to, and one undo step.
+  const shrinkTo = selectedHold ? stepHoldRadius(selectedHold.r, medianRadius, -1, radiusBounds) : null;
+  const growTo = selectedHold ? stepHoldRadius(selectedHold.r, medianRadius, 1, radiusBounds) : null;
 
   const handleShrink = useCallback(() => {
     if (!canEdit || !selectedHold || shrinkTo == null || editWouldPassCap(selectedHold)) return;
@@ -770,6 +808,67 @@ export function SprayHoldEditorScreen({
     dispatch({ type: 'RESIZE_HOLD', id: selectedHold.id, r: growTo });
     recordHint('edit');
   }, [canEdit, selectedHold, growTo, editWouldPassCap, recordHint]);
+
+  /**
+   * The resize handle let go at a new radius: one `RESIZE_HOLD`, one undo step.
+   * Resizing an OFF ring or a maybe switches it ON, so it meets the cap check;
+   * a refusal snaps the ring back to the size it had.
+   */
+  const handleResizeEnd = useCallback(
+    (holdId: number, radius: number) => {
+      const hold = stateRef.current.holds[holdId];
+      if (!canEditRef.current || !hold || hold.r === radius || editWouldPassCap(hold)) {
+        resizeScaleSV.value = 1;
+        return;
+      }
+      setErrorText(null);
+      // `SelectedHoldOverlay` hands the live scale back to 1 in the commit that
+      // draws the new radius.
+      dispatch({ type: 'RESIZE_HOLD', id: holdId, r: radius });
+      recordHint('edit');
+    },
+    [editWouldPassCap, recordHint, resizeScaleSV],
+  );
+
+  /** Set by a placement; the layout effect below clears the preview in the commit that draws the hold. */
+  const clearPlacementOnRenderRef = useRef(false);
+  useLayoutEffect(() => {
+    if (!clearPlacementOnRenderRef.current) return;
+    clearPlacementOnRenderRef.current = false;
+    placeHoldSV.value = NO_POINTS;
+  }, [state.holds, placeHoldSV]);
+
+  const handlePlaceStart = useCallback(() => {
+    setErrorText(null);
+    hapticMedium();
+  }, []);
+
+  /**
+   * A press and hold on bare wall lifted here: a median-size circle goes in and
+   * is selected, so the handle is on it straight away. ADD_HOLD then SELECT is
+   * one undo step — selecting never touches the history.
+   */
+  const handlePlace = useCallback(
+    (boardX: number, boardY: number) => {
+      if (!canEditRef.current || toolRef.current !== 'edit') {
+        placeHoldSV.value = NO_POINTS;
+        return;
+      }
+      if (countsRef.current.on >= MAX_HOLDS_PER_WALL) {
+        placeHoldSV.value = NO_POINTS;
+        refuseOverCap();
+        return;
+      }
+      const newId = stateRef.current.nextLocalId;
+      const geometry = holdFromTap(boardX, boardY, medianRadiusRef.current);
+      clearPlacementOnRenderRef.current = true;
+      dispatch({ type: 'ADD_HOLD', geometry });
+      dispatch({ type: 'SELECT', id: newId });
+      pulseSpotlight('add', geometry);
+      recordHint('add');
+    },
+    [placeHoldSV, refuseOverCap, pulseSpotlight, recordHint],
+  );
 
   const handleStartTrace = useCallback(() => {
     setErrorText(null);
@@ -801,6 +900,8 @@ export function SprayHoldEditorScreen({
         return false;
       }
       hapticMedium();
+      // The id ADD_HOLD is about to take: add mode keeps a resize handle on it.
+      setLastAddedId(stateRef.current.nextLocalId);
       dispatch({ type: 'ADD_HOLD', geometry });
       pulseSpotlight('add', geometry);
       recordHint('add');
@@ -849,6 +950,7 @@ export function SprayHoldEditorScreen({
 
   const handleCornerAdded = useCallback(() => {
     setErrorText(null);
+    setLastAddedId(null);
     hapticSelection();
   }, []);
 
@@ -863,6 +965,7 @@ export function SprayHoldEditorScreen({
     if (cornersSV.value.length / 2 >= MIN_CORNERS && !takeAndCloseCorners()) return;
     clearCorners();
     draftPointsSV.value = NO_POINTS;
+    setLastAddedId(null);
     setTool('edit');
   }, [takeAndCloseCorners, clearCorners, cornersSV, draftPointsSV]);
 
@@ -877,6 +980,7 @@ export function SprayHoldEditorScreen({
     clearCorners();
     // Nothing is picked up while adding, so nothing stays picked up either.
     dispatch({ type: 'SELECT', id: null });
+    setLastAddedId(null);
     hapticSelection();
     setTool('add');
   }, [leaveAddMode, clearCorners, draftPointsSV]);
@@ -935,6 +1039,11 @@ export function SprayHoldEditorScreen({
   }, [canEdit, selectedHold, switchHold]);
 
   const handleStrokeStart = useCallback(() => setErrorText(null), []);
+  /** A touch on the wall in add mode: the last hold added is done with, so its handle goes. */
+  const handleAddStrokeStart = useCallback(() => {
+    setErrorText(null);
+    setLastAddedId(null);
+  }, []);
   const handleStrokeCancel = useCallback(() => {
     draftPointsSV.value = NO_POINTS;
   }, [draftPointsSV]);
@@ -1320,6 +1429,26 @@ export function SprayHoldEditorScreen({
     AccessibilityInfo.announceForAccessibility(errorText ?? wallValue);
   }, [wallValue, errorText]);
 
+  /** Under the hold cap, so a press and hold on bare wall has something to place. */
+  const canAddHold = counts.on < MAX_HOLDS_PER_WALL;
+
+  // The resize handle flips off any diagonal that would put it under the bottom
+  // dock (toast, chip bar) or the bar beneath it. The dock is laid out in the
+  // screen's container and the handle in the board's, so the board's top in
+  // the container is taken off: the board is centred in its slot.
+  const boardTopInContainer = (boardRender.slotHeight - boardRender.height) / 2;
+  const dockTopRef = useRef<number | null>(null);
+  const handleDockLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      dockTopRef.current = event.nativeEvent.layout.y;
+      avoidTopSV.value = event.nativeEvent.layout.y - boardTopInContainer;
+    },
+    [avoidTopSV, boardTopInContainer],
+  );
+  useEffect(() => {
+    if (dockTopRef.current != null) avoidTopSV.value = dockTopRef.current - boardTopInContainer;
+  }, [avoidTopSV, boardTopInContainer]);
+
   const renderInTransform = useCallback(
     (context: FilterBoardTransformContext) =>
       wall ? (
@@ -1343,7 +1472,7 @@ export function SprayHoldEditorScreen({
               <SprayHoldSvgLayer
                 holds={allEditorHolds}
                 showMaybes={showMaybes}
-                selectedId={selectedHold?.id ?? null}
+                selectedId={focusedHold?.id ?? null}
                 maybeOpacitySV={maybeRevealSV}
                 draftPointsSV={draftPointsSV}
                 polygonSV={cornersSV}
@@ -1374,13 +1503,21 @@ export function SprayHoldEditorScreen({
             boardScale={boardScale}
           />
           <SelectedHoldOverlay
-            hold={selectedHold}
-            role={selectedHold ? holdRole(selectedHold) : 'on'}
+            hold={focusedHold}
+            role={focusedHold ? holdRole(focusedHold) : 'on'}
             revision={moveRevision}
             selectedHoldSV={selectedHoldSV}
             dragOffsetXSV={dragOffsetXSV}
             dragOffsetYSV={dragOffsetYSV}
             dragHoldIdSV={dragHoldIdSV}
+            resizeScaleSV={resizeScaleSV}
+            resizeHoldIdSV={resizeHoldIdSV}
+            scaleSV={context.scaleSV}
+            boardScale={boardScale}
+          />
+          <SprayPlacementPreview
+            placeHoldSV={placeHoldSV}
+            radius={medianRadius}
             scaleSV={context.scaleSV}
             boardScale={boardScale}
           />
@@ -1389,6 +1526,11 @@ export function SprayHoldEditorScreen({
     [
       wall,
       selectedHold,
+      focusedHold,
+      medianRadius,
+      resizeScaleSV,
+      resizeHoldIdSV,
+      placeHoldSV,
       allEditorHolds,
       showMaybes,
       maybeRevealSV,
@@ -1416,42 +1558,75 @@ export function SprayHoldEditorScreen({
     (context: FilterBoardTransformContext) => {
       // Read-only: zoom and pan, and nothing that could change the wall.
       if (!viewerCanEdit) return null;
-      if (tool === 'add' && addShape === 'corners') {
-        return (
-          <PolygonTapOverlay
-            verticesSV={cornersSV}
+      // On top of whichever surface the tool uses, so its own touch-down beats
+      // both that surface and the zoomed board's pan.
+      const resizeHandle =
+        focusedHold && canEdit && (tool === 'edit' || tool === 'add') ? (
+          <SprayResizeHandle
             scaleSV={context.scaleSV}
             translateXSV={context.translateXSV}
             translateYSV={context.translateYSV}
             containerWidthSV={context.containerWidthSV}
             containerHeightSV={context.containerHeightSV}
-            boardScale={boardScale}
+            isPinchingSV={context.isPinchingSV}
             pinchRef={context.pinchRef}
-            maxVertices={POLYGON_MAX_VERTICES}
-            onVertexAdded={handleCornerAdded}
-            onVertexLimit={handleCornerLimit}
-            onClose={closeCorners}
+            boardScale={boardScale}
+            holdId={focusedHold.id}
+            reachRatio={focusedReachRatio}
+            selectedHoldSV={selectedHoldSV}
+            dragOffsetXSV={dragOffsetXSV}
+            dragOffsetYSV={dragOffsetYSV}
+            dragHoldIdSV={dragHoldIdSV}
+            resizeScaleSV={resizeScaleSV}
+            resizeHoldIdSV={resizeHoldIdSV}
+            medianRadius={medianRadius}
+            bounds={radiusBounds}
+            avoidTopSV={avoidTopSV}
+            onResizeEnd={handleResizeEnd}
           />
+        ) : null;
+      if (tool === 'add' && addShape === 'corners') {
+        return (
+          <>
+            <PolygonTapOverlay
+              verticesSV={cornersSV}
+              scaleSV={context.scaleSV}
+              translateXSV={context.translateXSV}
+              translateYSV={context.translateYSV}
+              containerWidthSV={context.containerWidthSV}
+              containerHeightSV={context.containerHeightSV}
+              boardScale={boardScale}
+              pinchRef={context.pinchRef}
+              maxVertices={POLYGON_MAX_VERTICES}
+              onVertexAdded={handleCornerAdded}
+              onVertexLimit={handleCornerLimit}
+              onClose={closeCorners}
+            />
+            {resizeHandle}
+          </>
         );
       }
       if (tool === 'add') {
         const { scaleSV } = context;
         return (
-          <DrawStrokeOverlay
-            pointsSV={draftPointsSV}
-            acceptStationaryTaps
-            fingerDrawSV={addDrawSV}
-            scaleSV={scaleSV}
-            translateXSV={context.translateXSV}
-            translateYSV={context.translateYSV}
-            containerWidthSV={context.containerWidthSV}
-            containerHeightSV={context.containerHeightSV}
-            boardScale={boardScale}
-            pinchRef={context.pinchRef}
-            onStrokeStart={handleStrokeStart}
-            onStrokeEnd={(strokeBoardPoints) => handleAddStrokeEnd(strokeBoardPoints, scaleSV.value)}
-            onStrokeCancel={handleStrokeCancel}
-          />
+          <>
+            <DrawStrokeOverlay
+              pointsSV={draftPointsSV}
+              acceptStationaryTaps
+              fingerDrawSV={addDrawSV}
+              scaleSV={scaleSV}
+              translateXSV={context.translateXSV}
+              translateYSV={context.translateYSV}
+              containerWidthSV={context.containerWidthSV}
+              containerHeightSV={context.containerHeightSV}
+              boardScale={boardScale}
+              pinchRef={context.pinchRef}
+              onStrokeStart={handleAddStrokeStart}
+              onStrokeEnd={(strokeBoardPoints) => handleAddStrokeEnd(strokeBoardPoints, scaleSV.value)}
+              onStrokeCancel={handleStrokeCancel}
+            />
+            {resizeHandle}
+          </>
         );
       }
       if (tool === 'trace') {
@@ -1473,26 +1648,34 @@ export function SprayHoldEditorScreen({
         );
       }
       return (
-        <SprayEditGestureOverlay
-          scaleSV={context.scaleSV}
-          translateXSV={context.translateXSV}
-          translateYSV={context.translateYSV}
-          containerWidthSV={context.containerWidthSV}
-          containerHeightSV={context.containerHeightSV}
-          isPinchingSV={context.isPinchingSV}
-          pinchRef={context.pinchRef}
-          boardScale={boardScale}
-          hitHoldsSV={hitHoldsSV}
-          selectedHoldSV={selectedHoldSV}
-          dragOffsetXSV={dragOffsetXSV}
-          dragOffsetYSV={dragOffsetYSV}
-          dragHoldIdSV={dragHoldIdSV}
-          canMove={tool === 'edit' && canEdit}
-          accessibility={wallAccessibility}
-          onTap={handleTap}
-          onPickUp={handlePickUp}
-          onMoveEnd={handleMoveEnd}
-        />
+        <>
+          <SprayEditGestureOverlay
+            scaleSV={context.scaleSV}
+            translateXSV={context.translateXSV}
+            translateYSV={context.translateYSV}
+            containerWidthSV={context.containerWidthSV}
+            containerHeightSV={context.containerHeightSV}
+            isPinchingSV={context.isPinchingSV}
+            pinchRef={context.pinchRef}
+            boardScale={boardScale}
+            hitHoldsSV={hitHoldsSV}
+            selectedHoldSV={selectedHoldSV}
+            dragOffsetXSV={dragOffsetXSV}
+            dragOffsetYSV={dragOffsetYSV}
+            dragHoldIdSV={dragHoldIdSV}
+            canMove={tool === 'edit' && canEdit}
+            canAdd={canAddHold}
+            medianRadiusSV={medianRadiusSV}
+            placeHoldSV={placeHoldSV}
+            accessibility={wallAccessibility}
+            onTap={handleTap}
+            onPickUp={handlePickUp}
+            onMoveEnd={handleMoveEnd}
+            onPlaceStart={handlePlaceStart}
+            onPlace={handlePlace}
+          />
+          {resizeHandle}
+        </>
       );
     },
     [
@@ -1500,6 +1683,20 @@ export function SprayHoldEditorScreen({
       tool,
       addShape,
       canEdit,
+      canAddHold,
+      focusedHold,
+      focusedReachRatio,
+      medianRadius,
+      radiusBounds,
+      resizeScaleSV,
+      resizeHoldIdSV,
+      avoidTopSV,
+      medianRadiusSV,
+      placeHoldSV,
+      handleResizeEnd,
+      handlePlaceStart,
+      handlePlace,
+      handleAddStrokeStart,
       draftPointsSV,
       cornersSV,
       addDrawSV,
@@ -1643,6 +1840,7 @@ export function SprayHoldEditorScreen({
           two stack instead of overlapping however many rows the chips wrap to. */}
       <View
         pointerEvents="box-none"
+        onLayout={handleDockLayout}
         style={[styles.dock, { bottom: insets.bottom + SPRAY_BAR_GUTTER * 2 + SPRAY_BAR_TOTAL_HEIGHT }]}
       >
         {undoToast && canEdit ? (

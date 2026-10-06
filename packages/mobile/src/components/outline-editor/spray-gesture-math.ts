@@ -129,3 +129,122 @@ export function selectedDragIdAt(
   if (Math.hypot(x - selected[1], y - selected[2]) > Math.max(selected[3], fallbackRadius)) return 0;
   return holdIdAtPoint(flat, x, y, fallbackRadius, selected) === selected[0] ? selected[0] : 0;
 }
+
+/**
+ * A board point → a screen point on the gesture overlay. The exact inverse of
+ * {@link screenToBoard}: board → render px, then the board's
+ * `animatedZoomStyle` (scale about the container centre, then translate).
+ */
+export function boardToScreen(
+  boardX: number,
+  boardY: number,
+  scale: number,
+  translateX: number,
+  translateY: number,
+  containerWidth: number,
+  containerHeight: number,
+  boardScale: number,
+): { x: number; y: number } {
+  'worklet';
+  const centreX = containerWidth / 2;
+  const centreY = containerHeight / 2;
+  const renderX = boardScale > 0 ? boardX / boardScale : 0;
+  const renderY = boardScale > 0 ? boardY / boardScale : 0;
+  return {
+    x: (renderX - centreX) * scale + centreX + translateX,
+    y: (renderY - centreY) * scale + centreY + translateY,
+  };
+}
+
+/**
+ * A hold's farthest reach from its centre, in board px: its traced ring can
+ * stick out past `r`, a plain circle cannot.
+ */
+export function holdReach(hold: HoldGeometry): number {
+  'worklet';
+  let reach = hold.r;
+  const outline = hold.outline;
+  if (outline) {
+    for (let index = 0; index + 1 < outline.length; index += 2) {
+      reach = Math.max(reach, Math.hypot(outline[index], outline[index + 1]) * hold.r);
+    }
+  }
+  return reach;
+}
+
+/** An axis-aligned box in overlay points. */
+export type ScreenRect = { x: number; y: number; width: number; height: number };
+
+/** The resize handle's dot: where it sits and the outward direction a drag is measured along. */
+export type ResizeHandleAnchor = { x: number; y: number; ux: number; uy: number };
+
+/** Gap between the hold's farthest point and the handle's dot, in screen points. */
+export const RESIZE_HANDLE_GAP_PT = 10;
+/** The handle's touch box, in screen points: the 44 pt floor, whatever the zoom. */
+export const RESIZE_HANDLE_HIT_PT = 44;
+
+const DIAGONAL = Math.SQRT1_2;
+/** The diagonals the handle tries, in order: bottom-right first, where a right thumb reaches. */
+const HANDLE_DIRECTIONS: readonly (readonly [number, number])[] = [
+  [DIAGONAL, DIAGONAL],
+  [-DIAGONAL, DIAGONAL],
+  [DIAGONAL, -DIAGONAL],
+  [-DIAGONAL, -DIAGONAL],
+];
+
+function boxOverlaps(centreX: number, centreY: number, half: number, rect: ScreenRect): boolean {
+  'worklet';
+  return (
+    centreX + half > rect.x &&
+    centreX - half < rect.x + rect.width &&
+    centreY + half > rect.y &&
+    centreY - half < rect.y + rect.height
+  );
+}
+
+/**
+ * Where the resize handle goes for a hold whose centre is at `centre` on screen
+ * and whose farthest point is `reachPt` screen points out.
+ *
+ * It sits {@link RESIZE_HANDLE_GAP_PT} outside that point on the bottom-right
+ * diagonal, and flips to the next diagonal (bottom-left, top-right, top-left)
+ * whenever its 44 pt touch box would leave the viewport or touch one of
+ * `avoidRects` (the chip bar and the bottom bar). When no diagonal is clear it
+ * takes the first whose dot is at least on screen and uncovered, and failing
+ * even that, bottom-right. Placed in screen space, so it is the same size at any
+ * zoom.
+ */
+export function resizeHandleAnchor(
+  centre: { x: number; y: number },
+  reachPt: number,
+  viewport: { width: number; height: number },
+  avoidRects: readonly ScreenRect[],
+): ResizeHandleAnchor {
+  'worklet';
+  const distance = Math.max(0, reachPt) + RESIZE_HANDLE_GAP_PT;
+  const half = RESIZE_HANDLE_HIT_PT / 2;
+  let fallbackIndex = -1;
+  for (let index = 0; index < HANDLE_DIRECTIONS.length; index += 1) {
+    const [ux, uy] = HANDLE_DIRECTIONS[index];
+    const x = centre.x + ux * distance;
+    const y = centre.y + uy * distance;
+    let covered = false;
+    let dotCovered = false;
+    for (let rectIndex = 0; rectIndex < avoidRects.length; rectIndex += 1) {
+      if (boxOverlaps(x, y, half, avoidRects[rectIndex])) covered = true;
+      if (boxOverlaps(x, y, 0, avoidRects[rectIndex])) dotCovered = true;
+    }
+    const boxInside = x - half >= 0 && y - half >= 0 && x + half <= viewport.width && y + half <= viewport.height;
+    if (boxInside && !covered) return { x, y, ux, uy };
+    const dotInside = x >= 0 && y >= 0 && x <= viewport.width && y <= viewport.height;
+    if (fallbackIndex < 0 && dotInside && !dotCovered) fallbackIndex = index;
+  }
+  const [ux, uy] = HANDLE_DIRECTIONS[fallbackIndex < 0 ? 0 : fallbackIndex];
+  return { x: centre.x + ux * distance, y: centre.y + uy * distance, ux, uy };
+}
+
+/** A drag `(dx, dy)` measured along the unit vector `(ux, uy)`: positive is outward. */
+export function projectOnto(dx: number, dy: number, ux: number, uy: number): number {
+  'worklet';
+  return dx * ux + dy * uy;
+}
