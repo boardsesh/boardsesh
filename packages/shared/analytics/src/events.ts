@@ -727,6 +727,12 @@ export const SHARED_EVENTS = {
   // than no property at all — it reads as "no successors were offered" rather
   // than "nobody asked".
   ClimbRemixedFromBroken: 'Climb Remixed From Broken',
+  // Props: { lostHoldCount, source: 'play_drawer' }. The other answer to the
+  // same banner (#6024): the setter or a wall editor opens the climb in the
+  // editor, lost holds already dropped, to save it in place as a new revision.
+  // Read beside `Climb Remixed From Broken` to see whether broken climbs get
+  // repaired or replaced. Fires on the tap, not on the save.
+  ClimbEditedFromBroken: 'Climb Edited From Broken',
   // Board presence — "now on the wall" (board-level collaboration, keyed on the
   // shared board_id resolved from the BLE serial). `boardId` is attached as an
   // event PROPERTY at the call sites — never the raw serial. Keep these to user

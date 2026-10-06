@@ -1826,7 +1826,7 @@ its batch loses nothing — tomorrow's run takes what it missed.
 
 ## Telemetry
 
-Seven events, all in `SHARED_EVENTS` with typed builders in
+Eight events, all in `SHARED_EVENTS` with typed builders in
 `packages/shared/analytics/src/spray-wall-events.ts` (the `board-render-events.ts`
 style: each builder returns `{ name, properties }` together, so a call site
 cannot pair one event's props with another event's name). Mobile fires them
@@ -1842,6 +1842,7 @@ through `trackSprayEvent`; nothing calls `track` with a spray event name directl
 | `Spray Wall Reset Previewed` | `keptCount`, `removedCount`, `addedCount`, `lowConfidenceCount`, `climbsAffected`, `aspectMismatch`, `detectionCount` | What the matcher found. |
 | `Spray Wall Reset Applied` | `keptCount`, `removedCount`, `addedCount`, `climbsChanged`, `moveCount` | What landed. The server's counts, not the review's. |
 | `Climb Remixed From Broken` | `lostHoldCount`, `source` | Whether a climb a reset broke is a dead end or a starting point. |
+| `Climb Edited From Broken` | `lostHoldCount`, `source` | How often the setter or a wall editor repairs a broken climb in place instead of remixing it. |
 
 Two rules, both enforced by a test in
 `packages/shared/analytics/src/__tests__/spray-wall-events.test.ts`:

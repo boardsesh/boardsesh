@@ -39,7 +39,7 @@ import { climbToQueueItem, resolveCommittableQueueItem } from '../../lib/climb-t
 import { toBoardName } from '@boardsesh/board-config';
 import { formatRenderBoardLabel, resolveClimbRenderBoard, sameRenderBoard } from '../../lib/boards/climb-render-board';
 import type { ActiveSubDrawer } from '@boardsesh/play-view';
-import { SHARED_EVENTS, climbRemixedFromBroken } from '@boardsesh/analytics';
+import { SHARED_EVENTS, climbEditedFromBroken, climbRemixedFromBroken } from '@boardsesh/analytics';
 import { trackSprayEvent } from '../../lib/spray/spray-telemetry';
 import { DeferredBoard } from './DeferredBoard';
 import { BoardRenderUnavailable } from './BoardRenderUnavailable';
@@ -109,6 +109,8 @@ import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { resolveTickDefaultGradeName } from '../../lib/boardsesh-grade-display';
 import { useShareClimb } from '../../hooks/use-share-climb';
 import { LostHoldsBanner } from './LostHoldsBanner';
+import { useCanEditDisplayedClimb } from './use-can-edit-displayed-climb';
+import { useLostHoldsEditReadiness } from './use-lost-holds-edit-readiness';
 import { useCreateClimbNavigation } from '../create-climb/use-create-climb-navigation';
 import { useMountedOnFirstOpen } from '../../hooks/use-mounted-on-first-open';
 import { getBoardRenderData } from '../../lib/board-details';
@@ -579,7 +581,7 @@ export function PlayDrawer({
    * frames, and the create editor's own sanitiser drops the hold ids that are no
    * longer on the wall, so the editor opens with exactly the holds that survived.
    */
-  const { openRemix } = useCreateClimbNavigation({ dismissPlayerAndWait });
+  const { openRemix, openEdit } = useCreateClimbNavigation({ dismissPlayerAndWait });
   const openingSetterRef = useRef(false);
   const openSetterPlaylist = useCallback(() => {
     const username = displayedClimb?.setter_username;
@@ -602,6 +604,27 @@ export function PlayDrawer({
     trackSprayEvent(climbRemixedFromBroken({ lostHoldCount, source: 'play_drawer' }));
     openRemix(displayedClimb, renderBoardConfig);
   }, [lostHoldCount, openRemix, displayedClimb, renderBoardConfig]);
+  // Fix it in place as well as remix it (#6024). The editor drops the holds that
+  // are no longer on the wall when it loads the climb, so Save writes a new
+  // revision on what is there now. Offered only to whoever may edit the climb.
+  const canEditDisplayedClimb = useCanEditDisplayedClimb(
+    displayedClimb,
+    renderBoardConfig.boardName,
+    renderBoardConfig.layoutId,
+  );
+  // And only when the editor would open on something it can save: this device's
+  // wall agrees with the server about what is gone, and some holds survive.
+  const lostHoldsEditReadiness = useLostHoldsEditReadiness(
+    lostHoldCount > 0 ? displayedClimb : null,
+    renderBoardConfig.boardName,
+    renderBoardConfig.layoutId,
+  );
+  const canEditLostHolds = canEditDisplayedClimb && lostHoldsEditReadiness === 'ready';
+  const handleEditLostHolds = useCallback(() => {
+    if (!displayedClimb) return;
+    trackSprayEvent(climbEditedFromBroken({ lostHoldCount, source: 'play_drawer' }));
+    openEdit(displayedClimb, renderBoardConfig);
+  }, [lostHoldCount, openEdit, displayedClimb, renderBoardConfig]);
   // The climb belongs to a genuinely DIFFERENT board model. Same gate as an
   // explicit board override (`boardMismatch` from the host), just discovered
   // from the climb rather than handed in by the opener.
@@ -2003,7 +2026,11 @@ export function PlayDrawer({
                           why the board is drawing fewer holds than the setter
                           painted. Above the board, because it is about what the
                           board is showing. */}
-                      <LostHoldsBanner count={lostHoldCount} onRemix={handleRemixLostHolds} />
+                      <LostHoldsBanner
+                        count={lostHoldCount}
+                        onRemix={handleRemixLostHolds}
+                        onEdit={canEditLostHolds ? handleEditLostHolds : undefined}
+                      />
 
                       <View style={styles.boardSection}>
                         {/* Viewfinder brackets while browsing: you're looking through a

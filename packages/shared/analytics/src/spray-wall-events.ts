@@ -166,6 +166,15 @@ export function climbRemixedFromBroken(
   return { name: SHARED_EVENTS.ClimbRemixedFromBroken, properties };
 }
 
+/** Same shape as the remix event, so the two read side by side (#6024). */
+export type ClimbEditedFromBrokenProps = ClimbRemixedFromBrokenProps;
+
+export function climbEditedFromBroken(
+  properties: ClimbEditedFromBrokenProps,
+): SprayWallPayload<typeof SHARED_EVENTS.ClimbEditedFromBroken, ClimbEditedFromBrokenProps> {
+  return { name: SHARED_EVENTS.ClimbEditedFromBroken, properties };
+}
+
 /**
  * The two ratios the flag rollout is gated on (`docs/feature-flags.md`).
  *

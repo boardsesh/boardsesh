@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useReducer } from 'react';
+import { useCallback, useMemo, useReducer, useState } from 'react';
 import {
   HOLD_STATE_MAP,
   STATE_TO_PRIMARY_CODE,
@@ -28,6 +28,13 @@ type UseCreateClimbOptions = {
    * target) — while they still count toward `startingCount`, `finishCount` and
    * `isValid`. Save would publish a climb born broken, on exactly the flow that
    * exists to repair one.
+   *
+   * Applies to `loadFrames` as well as to `initialFrames`. Editing a published
+   * climb seeds through `loadFrames` once the row arrives, and the server refuses
+   * any save of a spray climb that still names a removed hold — so an edit that
+   * kept the lost holds could never be saved (#6024). Read once at mount, like the
+   * seed: a reset landing on another device mid-session must not erase a hold the
+   * climber has just painted.
    */
   availableHoldIds?: ReadonlySet<number>;
 };
@@ -248,8 +255,9 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
   // The editor mounts once per board route today, so this initial sanitizer only
   // needs the mount-time board. If a future caller swaps boardName mid-mount,
   // remount this hook or re-sanitize the present frames on board change.
+  const [availableHoldIds] = useState(() => options?.availableHoldIds);
   const [history, dispatch] = useReducer(framesReducer, options?.initialFrames, (initial) =>
-    initHistory(boardName, initial, options?.availableHoldIds),
+    initHistory(boardName, initial, availableHoldIds),
   );
   const litUpHoldsMap = history.present[history.currentFrameIndex] ?? {};
   const frameCount = history.present.length;
@@ -372,10 +380,11 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
 
   // Replace the entire frame sequence in one shot (draft load / edit seed /
   // fork / autosave restore). Establishes a fresh undo baseline and drops
-  // unsupported holds from every frame.
+  // unsupported holds, and holds no longer on the wall, from every frame.
   const loadFrames = useCallback(
-    (frames: LitUpHoldsMap[]) => dispatch({ type: 'LOAD_FRAMES', frames: filterSupportedFrames(boardName, frames) }),
-    [boardName],
+    (frames: LitUpHoldsMap[]) =>
+      dispatch({ type: 'LOAD_FRAMES', frames: filterSupportedFrames(boardName, frames, availableHoldIds) }),
+    [boardName, availableHoldIds],
   );
 
   // Convenience single-frame form of `loadFrames`.
