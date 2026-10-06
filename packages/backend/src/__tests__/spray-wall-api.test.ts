@@ -56,6 +56,12 @@ vi.mock('../storage/s3', () => ({
     const metadata = storedPhotoMetadata.get(key);
     return metadata ? { contentType: 'image/jpeg', contentLength: 1024, lastModified: new Date(), metadata } : null;
   }),
+  // The full-resolution existence check (#5911). Same object set; the real one
+  // differs only in throwing on an outage instead of answering null.
+  getS3ObjectMetadataStrict: vi.fn(async (_bucket: string, key: string) => {
+    const metadata = storedPhotoMetadata.get(key);
+    return metadata ? { contentType: 'image/jpeg', contentLength: 1024, lastModified: new Date(), metadata } : null;
+  }),
   uploadToS3: vi.fn(async (_bucket: string, _body: Buffer, key: string) => ({ key })),
   // The public-promotion path (SW-14). `storedPhotoMetadata` is the set of
   // objects that exist in the private bucket, so a copy of a key nothing
@@ -96,7 +102,7 @@ vi.mock('../utils/redis-rate-limiter', () => ({
 const { db } = await import('../db/client');
 const { sprayWallQueries, sprayWallMutations } = await import('../graphql/resolvers/board/spray-walls');
 const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
-const { sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
+const { sprayWallFullPhotoKey, sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
 const { climbQueries } = await import('../graphql/resolvers/climbs/queries');
 const { socialBoardQueries, socialBoardMutations } = await import('../graphql/resolvers/social/boards');
 const { newClimbSubscriptionResolvers } = await import('../graphql/resolvers/social/new-climb-subscriptions');
@@ -114,7 +120,7 @@ const { climbStatsSubscriptions } = await import('../graphql/resolvers/ticks/cli
 const { socialProposalQueries } = await import('../graphql/resolvers/social/proposals/queries');
 const { MAX_HOLDS_PER_WALL, MAX_SPRAY_WALLS_PER_USER, MAX_VERSIONS_PER_WALL } = await import('@boardsesh/board-config');
 const { recomputeClimbStatsBulk } = await import('@boardsesh/db/queries');
-const { lockWallForWrite } = await import('../graphql/resolvers/board/spray-walls');
+const { lockWallForWrite, resetSprayFullPhotoPresenceCache } = await import('../graphql/resolvers/board/spray-walls');
 const { betaLinkQueries } = await import('../graphql/resolvers/beta-videos/queries');
 const { tickQueries } = await import('../graphql/resolvers/ticks/queries');
 
@@ -5190,6 +5196,105 @@ describe('the publish path’s bookkeeping', () => {
     expect(presignedUrls).toHaveLength(2);
     // …and `currentVersion` IS that entry, not a second render of it.
     expect(payload.currentVersion).toBe(payload.versions[0]);
+  });
+});
+
+describe('the full-resolution photo copy (#5911)', () => {
+  type RenderWithFull = { photo: { url: string; expiresAt: string }; photoFullUrl: string | null } | null;
+
+  /** A published wall whose v1 photo has the given stored size, plus its base key. */
+  async function publishedWallWithPhoto(size: { width: number; height: number }) {
+    const wall = await createWall(OWNER);
+    const photoId = registerUploadedPhoto(wall.uuid, size);
+    const version = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+    await sprayWallMutations.upsertSprayWallHolds(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: version.id, holds: [{ cx: 300, cy: 300, r: 24 }] } },
+      ctxFor(OWNER),
+    );
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: version.id } }, ctxFor(OWNER));
+    return { wall, baseKey: sprayWallPhotoKey(wall.uuid, photoId) };
+  }
+
+  const renderFor = async (uuid: string, userId = OWNER) =>
+    (await sprayWallQueries.sprayWallRenderData({}, { uuid }, ctxFor(userId))) as RenderWithFull;
+
+  beforeEach(() => {
+    resetSprayFullPhotoPresenceCache();
+  });
+
+  it('signs the full copy when the upload wrote one, and checks storage once per key', async () => {
+    const { wall, baseKey } = await publishedWallWithPhoto({ width: 2048, height: 1536 });
+    const fullKey = sprayWallFullPhotoKey(baseKey);
+    storedPhotoMetadata.set(fullKey, { width: '4096', height: '3072' });
+    const storage = await import('../storage/s3');
+    vi.mocked(storage.getS3ObjectMetadataStrict).mockClear();
+
+    const first = await renderFor(wall.uuid);
+    expect(first!.photoFullUrl).toBe(`https://private.example/${fullKey}?X-Amz-Signature=stub`);
+    // Same pixels as `photo`, so the canonical frame the holds live in is untouched.
+    expect(first!.photo.url).toContain(baseKey);
+
+    // The answer never changes for a key, so a second read costs no HEAD.
+    const second = await renderFor(wall.uuid);
+    expect(second!.photoFullUrl).toContain(fullKey);
+    expect(storage.getS3ObjectMetadataStrict).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers null for a 2048 px photo the upload kept as-is', async () => {
+    // Every photo the app compressed to 2048 px before #5911 looks like this: a
+    // base at exactly the cap and nothing beside it.
+    const { wall } = await publishedWallWithPhoto({ width: 1536, height: 2048 });
+    expect((await renderFor(wall.uuid))!.photoFullUrl).toBeNull();
+  });
+
+  it('answers null for a smaller photo without asking storage', async () => {
+    // A base under the cap was never resized, so no full copy can exist.
+    const { wall } = await publishedWallWithPhoto({ width: 1200, height: 900 });
+    const storage = await import('../storage/s3');
+    vi.mocked(storage.getS3ObjectMetadataStrict).mockClear();
+
+    expect((await renderFor(wall.uuid))!.photoFullUrl).toBeNull();
+    expect(storage.getS3ObjectMetadataStrict).not.toHaveBeenCalled();
+  });
+
+  it('answers null on a storage outage, still renders the base, and asks again next time', async () => {
+    const { wall, baseKey } = await publishedWallWithPhoto({ width: 2048, height: 1536 });
+    storedPhotoMetadata.set(sprayWallFullPhotoKey(baseKey), { width: '4096', height: '3072' });
+    const storage = await import('../storage/s3');
+    vi.mocked(storage.getS3ObjectMetadataStrict).mockRejectedValueOnce(new Error('synthetic R2 outage'));
+
+    const duringOutage = await renderFor(wall.uuid);
+    expect(duringOutage!.photo.url).toContain(baseKey);
+    expect(duringOutage!.photoFullUrl).toBeNull();
+
+    // The outage was not remembered as "no full copy".
+    expect((await renderFor(wall.uuid))!.photoFullUrl).toContain(sprayWallFullPhotoKey(baseKey));
+  });
+
+  it('follows the photo key, so a version reusing the published photo gets the same full copy', async () => {
+    const { wall, baseKey } = await publishedWallWithPhoto({ width: 2048, height: 1536 });
+    storedPhotoMetadata.set(sprayWallFullPhotoKey(baseKey), { width: '4096', height: '3072' });
+    const current = (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))) as {
+      currentVersion: { id: string };
+    };
+
+    const reuse = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, sourceVersionId: current.currentVersion.id } },
+      ctxFor(OWNER),
+    )) as { number: number };
+
+    const draft = (await sprayWallQueries.sprayWallRenderData(
+      {},
+      { uuid: wall.uuid, version: reuse.number },
+      ctxFor(OWNER),
+    )) as RenderWithFull;
+    expect(draft!.photoFullUrl).toContain(sprayWallFullPhotoKey(baseKey));
   });
 });
 
