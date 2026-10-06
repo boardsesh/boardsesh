@@ -14,6 +14,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Share your unlisted spray wall and friends without the app can open the link in a browser ([#6165](https://github.com/boardsesh/boardsesh/pull/6165))
 - Data export now says it's unavailable up front instead of offering a button that can't work ([#6138](https://github.com/boardsesh/boardsesh/pull/6138))
 - Spray walls load again on the 2.6.0 beta, and you can create new ones. ([#6142](https://github.com/boardsesh/boardsesh/pull/6142))
 - Delete your account even if you created a spray wall. Your walls and photos go away; other climbers keep their logged sends. ([#6115](https://github.com/boardsesh/boardsesh/pull/6115))

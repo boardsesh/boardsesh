@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-06T05:49:56.861Z",
+  "generatedAt": "2026-10-06T07:37:18.908Z",
   "entries": [
+    {
+      "prNumber": 6165,
+      "category": "fixed",
+      "title": "Share your unlisted spray wall and friends without the app can open the link in a browser",
+      "mergedAt": "2026-10-06T07:35:14Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6165"
+    },
     {
       "prNumber": 6138,
       "category": "fixed",
