@@ -38,7 +38,7 @@ import { adjustValue, notchIndex } from '../value-slider.logic';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { BoardLookCarousel } from '../board-look/BoardLookCarousel';
 import { RailIndexDots } from '../board-look/RailIndexDots';
-import { captionBlockHeight, captionLineHeights, resolveHeroThumb } from '../board-look/board-look-card-metrics';
+import { captionLineHeights } from '../board-look/board-look-card-metrics';
 import { useTheme } from '../../providers/theme-provider';
 import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
 import { spacing } from '../../theme/tokens';
@@ -60,6 +60,7 @@ import {
 import { useKeepSprayDraftRegistered, useSprayWallDraft } from '../../lib/spray/use-spray-wall-draft';
 import { useSetSprayWallRenderSettings } from '../../lib/spray/use-create-spray-wall';
 import type { CreatedWallDraft } from './add-wall-machine';
+import { fitSprayLookHero } from './spray-look-hero';
 
 // Plain numbers, so the worklets below capture numbers rather than a shared object.
 const DIM_MIN = SPRAY_WALL_DIM_RANGE.min;
@@ -172,9 +173,13 @@ export function SprayWallLookStep({
   const previewAspect = preview ? preview.boardWidth / preview.boardHeight : null;
   const heroThumb = useMemo(() => {
     if (railSlotHeight <= 0 || previewAspect == null) return null;
-    // No description under a hero card, so nothing to reserve for one.
-    const caption = captionBlockHeight(captionLineHeights('hero', textStyles), fontScale, 0);
-    return resolveHeroThumb({ aspect: previewAspect, windowWidth, heightBudget: railSlotHeight - caption });
+    return fitSprayLookHero({
+      aspect: previewAspect,
+      windowWidth,
+      railSlotHeight,
+      captionLineHeights: captionLineHeights('hero', textStyles),
+      fontScale,
+    });
   }, [railSlotHeight, previewAspect, textStyles, fontScale, windowWidth]);
 
   const setRenderSettings = useSetSprayWallRenderSettings();

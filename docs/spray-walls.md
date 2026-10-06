@@ -1424,6 +1424,10 @@ be deferred by the engine; a thrown refresh error is reported without turning
 an already committed reset into a failed publication. Freshness then waits for
 a later successful sync.
 
+The modern existing-wall hold editor uses the same refresh after publishing
+hold changes. The onboarding Look step retains its separate first-publication
+flow.
+
 ### Climb integrity
 
 `board_climbs.missing_hold_count` is how many of a climb's holds now carry a landed

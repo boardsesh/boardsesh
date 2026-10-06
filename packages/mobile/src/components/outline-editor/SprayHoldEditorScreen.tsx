@@ -47,7 +47,7 @@ import { SprayEditorLoading, type SprayEditorLoadingPhoto } from './SprayEditorL
 import { SprayScanBand, SCAN_BAND_HEIGHT } from './SprayScanBand';
 import { SprayHoldSpotlight } from './SprayHoldSpotlight';
 import { SprayPublishSweep, PUBLISH_SWEEP_MS } from './SprayPublishSweep';
-import { fitSprayPhoto, SPRAY_BAR_GUTTER, SPRAY_BAR_HEIGHT, SPRAY_EDITOR_MAX_SCALE } from './spray-photo-frame';
+import { fitSprayPhoto, SPRAY_BAR_GUTTER, SPRAY_BAR_TOTAL_HEIGHT, SPRAY_EDITOR_MAX_SCALE } from './spray-photo-frame';
 import { useSprayAddShape, type SprayAddShape } from './use-spray-add-shape';
 import { revertedHold, type SpraySpotlightKind, type SpraySpotlightPulse } from './spray-spotlight';
 import { useSprayEditorHints, type SprayHintId } from './use-spray-editor-hints';
@@ -1552,7 +1552,7 @@ export function SprayHoldEditorScreen({
 
       {selectedHold && tool === 'edit' && canEdit ? (
         <SprayHoldChipBar
-          bottom={insets.bottom + SPRAY_BAR_GUTTER * 2 + SPRAY_BAR_HEIGHT}
+          bottom={insets.bottom + SPRAY_BAR_GUTTER * 2 + SPRAY_BAR_TOTAL_HEIGHT}
           canShrink={shrinkTo != null}
           canGrow={growTo != null}
           onShrink={handleShrink}
@@ -1565,7 +1565,7 @@ export function SprayHoldEditorScreen({
 
       {tool === 'add' && addShape === 'corners' && cornerCount >= MIN_CORNERS && canEdit ? (
         <SprayCornersChipBar
-          bottom={insets.bottom + SPRAY_BAR_GUTTER * 2 + SPRAY_BAR_HEIGHT}
+          bottom={insets.bottom + SPRAY_BAR_GUTTER * 2 + SPRAY_BAR_TOTAL_HEIGHT}
           onFinish={takeAndCloseCorners}
         />
       ) : null}

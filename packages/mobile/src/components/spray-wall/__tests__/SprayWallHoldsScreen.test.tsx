@@ -12,6 +12,8 @@ const requests = vi.hoisted(() => ({
   fetchRender: vi.fn(),
   register: vi.fn(),
 }));
+const refreshClimbs = vi.hoisted(() => vi.fn(async (_queryClient: unknown, _layoutId: number) => undefined));
+vi.mock('../../../lib/spray/refresh-published-spray-climbs', () => ({ refreshPublishedSprayClimbs: refreshClimbs }));
 const queryClient = vi.hoisted(() => ({ invalidateQueries: vi.fn() }));
 const router = vi.hoisted(() => ({ back: vi.fn(), replace: vi.fn(), canGoBack: vi.fn() }));
 const navigation = vi.hoisted(() => ({ dispatch: vi.fn() }));
@@ -124,6 +126,7 @@ beforeEach(() => {
   requests.fetchRender.mockReset().mockResolvedValue(publishedRender);
   requests.register.mockReset().mockReturnValue(true);
   queryClient.invalidateQueries.mockResolvedValue(undefined);
+  refreshClimbs.mockClear();
   router.canGoBack.mockReturnValue(true);
   guard.enabled = false;
   guard.callback = null;
@@ -243,6 +246,14 @@ describe('SprayWallHoldsScreen', () => {
       expect(requests.fetchRender).toHaveBeenCalledTimes(2);
     },
   );
+
+  it('refreshes downloaded integrity and the visible climb list after publishing', async () => {
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    fireEvent.click(await screen.findByTestId('editor'));
+    await waitFor(() => expect(router.back).toHaveBeenCalledTimes(1));
+    expect(requests.publish).toHaveBeenCalledTimes(1);
+    expect(refreshClimbs).toHaveBeenCalledExactlyOnceWith(queryClient, draft.layoutId);
+  });
 
   it('stays on the refresh error when the payload cannot render', async () => {
     requests.register.mockReturnValue(false);

@@ -200,8 +200,8 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
             </Animated.View>
           ) : (
             <>
-              {/* Two short lines rather than one long one, so the capsule never
-                  truncates beside Undo and the primary button on a 375pt phone. */}
+              {/* The primary action has its own row, leaving the translated
+                  counts the space between the two fixed-size icon buttons. */}
               <SprayCountCrossfade
                 text={holdsLabel}
                 value={counts.on}
@@ -236,17 +236,16 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
           disabled={locked}
           accessibilityLabel={adding ? t('sprayEditor.banner.done') : t('sprayEditor.bar.addA11y')}
         />
-
-        <Button
-          title={primaryLabel}
-          variant="filled"
-          size="large"
-          onPress={onPrimary}
-          loading={primaryLoading}
-          disabled={locked || primaryBlocked || counts.on === 0}
-          minHeight={SPRAY_BAR_HEIGHT}
-        />
       </View>
+      <Button
+        title={primaryLabel}
+        variant="filled"
+        size="large"
+        onPress={onPrimary}
+        loading={primaryLoading}
+        disabled={locked || primaryBlocked || counts.on === 0}
+        minHeight={SPRAY_BAR_HEIGHT}
+      />
     </View>
   );
 });

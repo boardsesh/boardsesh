@@ -5,13 +5,15 @@ import { spacing } from '../../theme/tokens';
 export const SPRAY_BAR_HEIGHT = glassSize.standard;
 /** Gap between the bottom bar and the bottom safe area. */
 export const SPRAY_BAR_GUTTER = spacing[2];
+/** Two 48pt rows (count controls and primary action), separated by spacing[2]. */
+export const SPRAY_BAR_TOTAL_HEIGHT = SPRAY_BAR_HEIGHT * 2 + spacing[2];
 
 /**
  * Vertical room kept free under the photo for the floating bottom bar: the bar,
  * the gutter under it and a matching gap above it. The safe-area inset is added
  * on top.
  */
-export const SPRAY_BAR_RESERVE = SPRAY_BAR_HEIGHT + SPRAY_BAR_GUTTER * 3;
+export const SPRAY_BAR_RESERVE = SPRAY_BAR_TOTAL_HEIGHT + SPRAY_BAR_GUTTER * 3;
 
 /**
  * Deepest pinch zoom in the spray hold editor. Small holds tucked beside big ones
