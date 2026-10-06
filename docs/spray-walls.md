@@ -351,6 +351,12 @@ than a tuned threshold.
 #5442). One route, with separate background and hold-look steps, available to
 every climber.
 
+The climber-facing version of this section, with a walkthrough video of the
+photo, the hold editor and Edit holds, is `/help/spray-walls`
+(`packages/web/app/help/spray-walls/`); how the video is recorded and rendered
+is in [help-clips.md](help-clips.md#the-spray-wall-walkthrough). Change the
+page and re-record the takes when this flow changes.
+
 Two front doors open it: the board picker's Spray wall tile, and "Add my spray
 wall" under My own board in the "Where do you climb?" block that Climbs' Find my
 board opens for a climber with no boards (#5654, `First Board Path Chosen
