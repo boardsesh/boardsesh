@@ -550,6 +550,47 @@ describe('who can see and who can edit a wall', () => {
     expect(ownerRead?.uuid).toBe(privateWall.wall.uuid);
   });
 
+  it("opens an UNLISTED wall through boardBySlug only when the request carries that wall's uuid", async () => {
+    // The web share link is `/b/{slug}/...?wall=<uuid>`. The slug is the guess,
+    // the uuid is the capability, and www forwards it as `wallUuid`.
+    const slugOf = async (wallUuid: string) => {
+      const [row] = (await db.execute(sql`SELECT slug FROM user_boards WHERE uuid = ${wallUuid}`)) as unknown as Array<{
+        slug: string;
+      }>;
+      return row.slug;
+    };
+    const readBySlug = async (slug: string, wallUuid: string | undefined, viewer: string | null) =>
+      (await socialBoardQueries.boardBySlug({}, { slug, wallUuid }, ctxFor(viewer))) as { uuid: string } | null;
+
+    const unlisted = await createPublishedWall(OWNER, { isUnlisted: true });
+    const unlistedSlug = await slugOf(unlisted.wall.uuid);
+
+    // The right uuid opens it, signed out or signed in as a stranger.
+    expect((await readBySlug(unlistedSlug, unlisted.wall.uuid, null))?.uuid).toBe(unlisted.wall.uuid);
+    expect((await readBySlug(unlistedSlug, unlisted.wall.uuid, STRANGER))?.uuid).toBe(unlisted.wall.uuid);
+
+    // A WRONG uuid is no capability: a random one, and another unlisted wall's
+    // real uuid. Without the pairing, one leaked uuid would open every slug.
+    const otherUnlisted = await createPublishedWall(OWNER, { isUnlisted: true });
+    expect(await readBySlug(unlistedSlug, uuidv4(), null)).toBeNull();
+    expect(await readBySlug(unlistedSlug, otherUnlisted.wall.uuid, null)).toBeNull();
+    expect(await readBySlug(unlistedSlug, otherUnlisted.wall.uuid, STRANGER)).toBeNull();
+
+    // A PRIVATE wall stays shut even with its own uuid: its owner sent nobody a link.
+    const privateWall = await createPublishedWall(OWNER);
+    const privateSlug = await slugOf(privateWall.wall.uuid);
+    expect(await readBySlug(privateSlug, privateWall.wall.uuid, null)).toBeNull();
+    expect(await readBySlug(privateSlug, privateWall.wall.uuid, STRANGER)).toBeNull();
+    // Its owner still reads it, with or without the param.
+    expect((await readBySlug(privateSlug, privateWall.wall.uuid, OWNER))?.uuid).toBe(privateWall.wall.uuid);
+    expect((await readBySlug(privateSlug, undefined, OWNER))?.uuid).toBe(privateWall.wall.uuid);
+
+    // An admin-hidden wall: the link its owner sent before the hide stops working.
+    await db.execute(sql`UPDATE spray_walls SET hidden_at = now() WHERE board_uuid = ${unlisted.wall.uuid}`);
+    expect(await readBySlug(unlistedSlug, unlisted.wall.uuid, null)).toBeNull();
+    expect(await readBySlug(unlistedSlug, unlisted.wall.uuid, STRANGER)).toBeNull();
+  });
+
   it('refuses every wall mutation from a user who does not own the wall', async () => {
     const { wall, versionId } = await createPublishedWall(OWNER, { isUnlisted: true });
     const photoId = registerUploadedPhoto(wall.uuid);

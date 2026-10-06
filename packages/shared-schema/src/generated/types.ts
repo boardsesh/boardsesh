@@ -6012,7 +6012,14 @@ export type Query = {
   betaLinks: Array<BetaLink>;
   /** Get a board by UUID. */
   board?: Maybe<UserBoard>;
-  /** Get a board by slug (for URL routing). */
+  /**
+   * Get a board by slug (for URL routing).
+   *
+   * wallUuid is a spray wall's share-link capability (the ?wall= param). When it
+   * matches the uuid of the wall the slug resolved to, an UNLISTED wall opens for
+   * any caller, the same as sprayWall(uuid). It never opens a private or
+   * admin-hidden wall, a mismatch is ignored, and it does nothing on other boards.
+   */
   boardBySlug?: Maybe<UserBoard>;
   /**
    * The five most recent distinct climbers to send or flash a climb at the
@@ -6793,6 +6800,7 @@ export type QueryBoardArgs = {
 /** Root query type for all read operations. */
 export type QueryBoardBySlugArgs = {
   slug: Scalars['String']['input'];
+  wallUuid?: InputMaybe<Scalars['ID']['input']>;
 };
 
 /** Root query type for all read operations. */
