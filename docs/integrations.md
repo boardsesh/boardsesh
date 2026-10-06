@@ -211,8 +211,10 @@ allowlist.
   are compared without case, extra spaces or curly apostrophes. Moon's export
   writes characters it can't encode as `?` (`??? -KAMI HITOE-` for
   `紙一重 -KAMI HITOE-`), so a name with `?` matches as a one-character-per-`?`
-  pattern. That needs at least two surviving letters or digits, and it never
-  takes the name-only fallback. A row that stays ambiguous is reported as
+  pattern. Each `?` stands for exactly one character Windows-1252 can't encode
+  (or a literal `?`), so `????` can match `鏡花水月` but never `WU 2`. A name
+  with `?` never takes the name-only fallback, even when a catalogue climb is
+  literally named `????`. A row that stays ambiguous is reported as
   unresolved, never guessed. The `matchedBy` field of the result counts rows
   per method.
 
