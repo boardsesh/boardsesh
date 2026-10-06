@@ -269,6 +269,23 @@ describe('weekly user exports', () => {
     expect(status.status).toBe('ready');
     expect(status.files.map((file) => file.format)).toEqual(['boardsesh', 'aurora']);
   });
+  it('keeps partial files on an unavailable status and passes non-offering statuses through', async () => {
+    fixtures.enabled = false;
+    fixtures.runs = [run('failed')];
+    storageMocks.getS3ObjectMetadataStrict.mockImplementation(async (_bucket, key: string) =>
+      key.endsWith('.boardsesh.json') ? metadata : null,
+    );
+    const partial = await service.getUserDataExportStatus('user-1', 'kilter');
+    expect(partial.status).toBe('unavailable');
+    expect(partial.files.map((file) => file.format)).toEqual(['boardsesh']);
+    fixtures.runs = [run('running')];
+    expect((await service.getUserDataExportStatus('user-1', 'kilter')).status).toBe('generating');
+    fixtures.runs = [{ ...run('failed'), errorCode: 'EXPORT_TOO_LARGE' }];
+    expect(await service.getUserDataExportStatus('user-1', 'kilter')).toMatchObject({
+      status: 'failed',
+      errorCode: 'EXPORT_TOO_LARGE',
+    });
+  });
   it('requires five minutes before a manual retry and permits at most two runs weekly', async () => {
     fixtures.runs = [run('failed')];
     expect(await service.requestUserDataExport('user-1', 'kilter')).toMatchObject({
