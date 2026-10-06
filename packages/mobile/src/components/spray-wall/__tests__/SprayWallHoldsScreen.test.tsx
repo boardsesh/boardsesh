@@ -14,6 +14,7 @@ const requests = vi.hoisted(() => ({
   discardLeftover: vi.fn(),
   fetchWall: vi.fn(),
   fetchArchive: vi.fn(),
+  askUsage: vi.fn(),
 }));
 const refreshClimbs = vi.hoisted(() => vi.fn(async (_queryClient: unknown, _layoutId: number) => undefined));
 vi.mock('../../../lib/spray/refresh-published-spray-climbs', () => ({ refreshPublishedSprayClimbs: refreshClimbs }));
@@ -34,6 +35,7 @@ type EditorProps = {
   onCommitted: () => void;
   onDirtyChange: (dirty: boolean) => void;
   onHandoverChange: (handingOver: boolean) => void;
+  confirmHoldRemoval?: (holdIds: readonly number[]) => Promise<boolean>;
 };
 const editor = vi.hoisted(() => ({ current: null as EditorProps | null }));
 
@@ -67,6 +69,7 @@ vi.mock('../../../lib/spray/spray-wall-loader', () => ({
   registerRenderData: requests.register,
   fetchSprayWallArchive: requests.fetchArchive,
 }));
+vi.mock('../../../lib/spray/spray-hold-usage', () => ({ askBeforeRemovingUsedHolds: requests.askUsage }));
 vi.mock('../../../lib/spray/spray-hold-maintenance', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../../lib/spray/spray-hold-maintenance')>();
   return { ...original, prepareSprayHoldDraft: requests.prepare, publishSprayHoldDraft: requests.publish };
@@ -176,6 +179,16 @@ describe('SprayWallHoldsScreen', () => {
     expect(editorProps()).toMatchObject(draft);
     expect(requests.prepare).toHaveBeenCalledTimes(1);
     expect(requests.prepare.mock.calls[0][0]).toBe('wall-1');
+  });
+
+  // A live wall's holds stay editable; the editor asks before a save takes off
+  // holds that climbs may use, for this route's wall.
+  it('hands the editor the "Remove a hold that climbs use?" check for its wall', async () => {
+    requests.askUsage.mockResolvedValueOnce(false);
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    await screen.findByTestId('editor');
+    await expect(editorProps().confirmHoldRemoval?.([4, 7])).resolves.toBe(false);
+    expect(requests.askUsage).toHaveBeenCalledExactlyOnceWith('wall-1', [4, 7], expect.any(Function));
   });
 
   it('publishes after save, awaits a renderable published wall, then returns', async () => {

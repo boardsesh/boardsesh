@@ -28,6 +28,7 @@ import {
   useDiscardSprayWallVersion,
 } from '../../lib/spray/use-create-spray-wall';
 import { refreshPublishedSprayClimbs } from '../../lib/spray/refresh-published-spray-climbs';
+import { askBeforeRemovingUsedHolds } from '../../lib/spray/spray-hold-usage';
 import { BIND_STAGE_DEADLINE_MS, withDeadline } from '../../lib/spray/post-publish-bind';
 import {
   fetchSprayWallArchive,
@@ -263,6 +264,12 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
     editorHandingOverRef.current = handingOver;
     setEditorHandingOver(handingOver);
   }, []);
+  // A live wall's holds stay editable, published climbs or not. Before a save
+  // takes off holds that published climbs use, the owner is told what it costs.
+  const confirmHoldRemoval = useCallback(
+    (holdIds: readonly number[]) => askBeforeRemovingUsedHolds(requestedWallUuidRef.current, holdIds, t),
+    [t],
+  );
   const onCommitted = useCallback(() => {
     // Publish even if this save changes no holds: a resumed draft can already
     // contain the edits to publish, so save counts do not gate completion.
@@ -310,6 +317,7 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
         onCommitted={onCommitted}
         onDirtyChange={onDirtyChange}
         onHandoverChange={onHandoverChange}
+        confirmHoldRemoval={confirmHoldRemoval}
       />
     );
   }

@@ -1128,6 +1128,14 @@
     "discardLeftover": "Abandonner la photo inachevée",
     "discardLeftoverFailed": "Impossible d'abandonner cette photo. Réessaie."
   },
+  "sprayHoldUsage": {
+    "title": "Retirer une prise utilisée par des blocs ?",
+    "body_one": "{{count}} bloc publié utilise ces prises. Il sera marqué comme ayant perdu une prise jusqu'à ce que quelqu'un le remixe.",
+    "body_other": "{{count}} blocs publiés utilisent ces prises. Ils seront marqués comme ayant perdu une prise jusqu'à ce que quelqu'un les remixe.",
+    "bodyUnknown": "Des blocs utilisent peut-être ces prises. Ils seront marqués comme ayant perdu une prise jusqu'à ce que quelqu'un les remixe.",
+    "removeAnyway": "Retirer quand même",
+    "keep": "Garder les prises"
+  },
   "sprayCaps": {
     "holds": "Un mur porte jusqu’à {{max}} prises. Écartes-en quelques-unes et enregistre à nouveau.",
     "versions": "Un mur garde jusqu’à {{max}} versions de ses prises, une par modification publiée, et celui-ci les a toutes utilisées. Réinitialise le mur pour repartir de zéro.",

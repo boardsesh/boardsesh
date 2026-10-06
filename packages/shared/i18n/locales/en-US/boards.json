@@ -1128,6 +1128,14 @@
     "discardLeftover": "Discard the unfinished photo",
     "discardLeftoverFailed": "That photo wouldn't clear. Try again."
   },
+  "sprayHoldUsage": {
+    "title": "Remove a hold that climbs use?",
+    "body_one": "{{count}} published climb uses these holds. It'll be marked as missing a hold until someone remixes it.",
+    "body_other": "{{count}} published climbs use these holds. They'll be marked as missing a hold until someone remixes them.",
+    "bodyUnknown": "Some climbs may use these holds. They'll be marked as missing a hold until someone remixes them.",
+    "removeAnyway": "Remove anyway",
+    "keep": "Keep holds"
+  },
   "sprayCaps": {
     "holds": "A wall carries up to {{max}} holds. Drop a few and save again.",
     "versions": "A wall keeps up to {{max}} versions of its holds, one per published hold edit, and this one has used them all. Reset the wall to start fresh.",

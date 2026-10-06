@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { IDENTITY_HOMOGRAPHY } from '@boardsesh/spray-wall-geometry';
 import { MAX_RING_NUMBERS } from '@boardsesh/board-art-geometry/ring';
 import {
@@ -8,7 +8,14 @@ import {
   type SprayEditorHold,
   type SprayEditorState,
 } from '../spray-hold-editor-reducer';
-import { buildSprayHoldWritePlan, planHasWork, prepareCommit } from '../spray-hold-writes';
+import {
+  buildSprayHoldWritePlan,
+  confirmPlanRemovals,
+  holdIdsLeavingTheWall,
+  planHasWork,
+  prepareCommit,
+  type SprayHoldWritePlan,
+} from '../spray-hold-writes';
 import { SPRAY_ON_CUTOFF } from '../spray-hold-tools';
 
 function storedHold(id: number, overrides: Partial<SprayEditorHold> = {}): SprayEditorHold {
@@ -304,5 +311,85 @@ describe('prepareCommit', () => {
     expect(planHasWork(second.plan)).toBe(false);
     // ...and undo cannot reach a snapshot where those finds are unwritten again.
     expect(sprayEditorReducer(saved, { type: 'UNDO' })).toBe(saved);
+  });
+});
+
+function planWith(removeIds: number[], upsertIds: (number | undefined)[] = []): { plan: SprayHoldWritePlan } {
+  return {
+    plan: {
+      upsert: upsertIds.map((id) => ({
+        ...(id != null ? { id } : {}),
+        cx: 1,
+        cy: 1,
+        r: 1,
+        outline: null,
+        source: 'MANUAL',
+      })),
+      writtenIds: [],
+      removeIds,
+      unmappableIds: [],
+      outlinesDropped: 0,
+      overCap: false,
+    },
+  };
+}
+
+describe('holdIdsLeavingTheWall', () => {
+  // The server records a move as a removal plus a new hold, so a stored hold
+  // whose geometry goes out again leaves the wall just like a removed one.
+  it('names every removal and every stored hold that moves, once each', () => {
+    expect(holdIdsLeavingTheWall(planWith([4, 9], [9, 12, undefined]).plan)).toEqual([4, 9, 12]);
+  });
+
+  it('names nothing for a save that only adds holds', () => {
+    expect(holdIdsLeavingTheWall(planWith([], [undefined, undefined]).plan)).toEqual([]);
+  });
+});
+
+describe('confirmPlanRemovals', () => {
+  it('asks nothing and saves when nothing leaves the wall', async () => {
+    const ask = vi.fn(async () => true);
+    const planned = planWith([], [undefined]);
+    await expect(confirmPlanRemovals(() => planned, ask)).resolves.toBe(planned);
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  it('asks about the holds leaving, and saves on "Remove anyway"', async () => {
+    const ask = vi.fn(async () => true);
+    const planned = planWith([4], [7]);
+    await expect(confirmPlanRemovals(() => planned, ask)).resolves.toBe(planned);
+    expect(ask).toHaveBeenCalledExactlyOnceWith([4, 7]);
+  });
+
+  it('aborts the save on "Keep holds"', async () => {
+    const onAsking = vi.fn();
+    await expect(
+      confirmPlanRemovals(
+        () => planWith([4]),
+        async () => false,
+        { onAsking },
+      ),
+    ).resolves.toBeNull();
+    // The screen is held while asking, and given back either way.
+    expect(onAsking.mock.calls).toEqual([[true], [false]]);
+  });
+
+  it('asks again only about a hold taken off while the check was up', async () => {
+    const plans = [planWith([4]), planWith([4, 5])];
+    let reads = 0;
+    const planNow = () => plans[Math.min(reads++, plans.length - 1)];
+    const ask = vi.fn(async () => true);
+    await expect(confirmPlanRemovals(planNow, ask)).resolves.toBe(plans[1]);
+    expect(ask.mock.calls).toEqual([[[4]], [[5]]]);
+  });
+
+  it('saves nothing when the screen went away while asking', async () => {
+    await expect(
+      confirmPlanRemovals(
+        () => planWith([4]),
+        async () => true,
+        { stillHere: () => false },
+      ),
+    ).resolves.toBeNull();
   });
 });

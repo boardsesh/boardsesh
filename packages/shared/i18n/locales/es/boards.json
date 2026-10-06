@@ -1128,6 +1128,14 @@
     "discardLeftover": "Descartar la foto sin terminar",
     "discardLeftoverFailed": "No se pudo descartar esa foto. Inténtalo otra vez."
   },
+  "sprayHoldUsage": {
+    "title": "¿Quitar una presa que usan bloques?",
+    "body_one": "{{count}} bloque publicado usa estas presas. Quedará marcado como que le falta una presa hasta que alguien lo remezcle.",
+    "body_other": "{{count}} bloques publicados usan estas presas. Quedarán marcados como que les falta una presa hasta que alguien los remezcle.",
+    "bodyUnknown": "Puede que algunos bloques usen estas presas. Quedarán marcados como que les falta una presa hasta que alguien los remezcle.",
+    "removeAnyway": "Quitar igualmente",
+    "keep": "Mantener las presas"
+  },
   "sprayCaps": {
     "holds": "En un muro caben hasta {{max}} presas. Descarta algunas y vuelve a guardar.",
     "versions": "Un muro guarda hasta {{max}} versiones de sus presas, una por cada edición publicada, y este ya las ha gastado todas. Resetea el muro para empezar de cero.",

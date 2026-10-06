@@ -117,7 +117,7 @@ import { sprayFlowCoversScreen } from '../../lib/spray/spray-flow-presentation';
 import { revertedHold, type SpraySpotlightKind, type SpraySpotlightPulse } from './spray-spotlight';
 import { useSprayEditorHints, type SprayHintId } from './use-spray-editor-hints';
 import { renderToBoardScale, type StrokeRejection } from './stroke';
-import { planHasWork, prepareCommit } from './spray-hold-writes';
+import { confirmPlanRemovals, planHasWork, prepareCommit } from './spray-hold-writes';
 import {
   buildEditorSeed,
   holdsToCarryOver,
@@ -306,6 +306,14 @@ export type SprayHoldEditorScreenProps = {
    * and removing the screen cancels the hand-over that would publish them.
    */
   onHandoverChange?: (handingOver: boolean) => void;
+  /**
+   * Asked before a save that takes stored holds off the wall (a removal, or a
+   * move, which the server records as a removal plus a new hold), with their
+   * ids. Resolves whether the save may go on. The hold route passes the
+   * "Remove a hold that climbs use?" check; left out (a new wall in the wizard,
+   * where no climb can use a hold yet), nothing is asked.
+   */
+  confirmHoldRemoval?: (holdIds: readonly number[]) => Promise<boolean>;
 };
 
 /**
@@ -359,6 +367,7 @@ export function SprayHoldEditorScreen({
   onCommitted,
   onDirtyChange,
   onHandoverChange,
+  confirmHoldRemoval,
 }: SprayHoldEditorScreenProps) {
   const { systemColors, motion } = useTheme();
   const reduceMotion = useReducedMotion();
@@ -1787,22 +1796,54 @@ export function SprayHoldEditorScreen({
     [setHandingOver, t],
   );
 
-  const handlePrimary = useCallback(() => {
-    if (!viewerCanEdit || homography == null || committingRef.current || toolRef.current === 'refine') return;
+  const confirmHoldRemovalRef = useRef(confirmHoldRemoval);
+  confirmHoldRemovalRef.current = confirmHoldRemoval;
+  const unmountedRef = useRef(false);
+  useEffect(
+    () => () => {
+      unmountedRef.current = true;
+    },
+    [],
+  );
+
+  /**
+   * The plan for this press, or null after saying why there is none. Re-run
+   * after the removal check, so holds taken off while it was up are asked
+   * about too.
+   */
+  const planPrimary = useCallback(() => {
+    if (homography == null) return null;
     const { state: prepared, plan } = prepareCommit(stateRef.current, homography);
     const holdCount = countEditorHolds(prepared.holds, 0).on;
-    if (holdCount === 0) return;
+    if (holdCount === 0) return null;
     if (plan.overCap) {
       refuseOverCap();
-      return;
+      return null;
     }
     if (plan.unmappableIds.length > 0) {
       // Rare — the homography has to send a hold to infinity — but publishing
       // without them would lose holds the screen is showing as ON.
       hapticWarning();
       setErrorText(t('sprayEditor.errors.someHoldsOffWall', { count: plan.unmappableIds.length }));
-      return;
+      return null;
     }
+    return { plan, holdCount };
+  }, [homography, refuseOverCap, t]);
+
+  const handlePrimary = useCallback(async () => {
+    if (!viewerCanEdit || homography == null || committingRef.current || toolRef.current === 'refine') return;
+    // Ask before taking stored holds off a live wall that climbs may use. The
+    // press owns the screen while the host asks (`committingRef`), so a second
+    // press waits, and a declined check leaves every edit where it was.
+    const askAboutRemoval = confirmHoldRemovalRef.current;
+    const planned = askAboutRemoval
+      ? await confirmPlanRemovals(planPrimary, askAboutRemoval, {
+          onAsking: setHandingOver,
+          stillHere: () => !unmountedRef.current,
+        })
+      : planPrimary();
+    if (!planned) return;
+    const { plan, holdCount } = planned;
 
     setErrorText(null);
     clearCorners();
@@ -1863,7 +1904,7 @@ export function SprayHoldEditorScreen({
   }, [
     viewerCanEdit,
     homography,
-    refuseOverCap,
+    planPrimary,
     saveHolds,
     wallUuid,
     versionNumber,
@@ -1874,6 +1915,9 @@ export function SprayHoldEditorScreen({
     layoutId,
     t,
   ]);
+  const pressPrimary = useCallback(() => {
+    void handlePrimary();
+  }, [handlePrimary]);
 
   /**
    * One rule for the bar, the rail, the Pencil palette and ⌘Z. While refining,
@@ -1965,7 +2009,7 @@ export function SprayHoldEditorScreen({
         handleSelectNext();
         return;
       case 'primary':
-        handlePrimary();
+        pressPrimary();
         return;
       case 'none':
         return;
@@ -2991,7 +3035,7 @@ export function SprayHoldEditorScreen({
           primaryLabel={primaryLabel}
           primaryLoading={committing}
           primaryDisabled={!canEdit || cornerCount > 0 || tool === 'refine' || counts.on === 0}
-          onPrimary={handlePrimary}
+          onPrimary={pressPrimary}
         />
       ) : (
         <>
@@ -3058,7 +3102,7 @@ export function SprayHoldEditorScreen({
             onKeepMaybes={handleKeepMaybes}
             onToggleMaybes={handleToggleMaybes}
             onStartOver={handleStartOver}
-            onPrimary={handlePrimary}
+            onPrimary={pressPrimary}
             menuOpen={menuOpen}
             onToggleMenu={toggleMenu}
             onCloseMenu={closeMenu}

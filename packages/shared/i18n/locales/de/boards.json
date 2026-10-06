@@ -1128,6 +1128,14 @@
     "discardLeftover": "Unfertiges Foto verwerfen",
     "discardLeftoverFailed": "Das Foto ließ sich nicht verwerfen. Versuch es nochmal."
   },
+  "sprayHoldUsage": {
+    "title": "Einen Griff entfernen, den Boulder nutzen?",
+    "body_one": "{{count}} veröffentlichter Boulder nutzt diese Griffe. Er wird als Boulder mit fehlendem Griff markiert, bis ihn jemand remixt.",
+    "body_other": "{{count}} veröffentlichte Boulder nutzen diese Griffe. Sie werden als Boulder mit fehlendem Griff markiert, bis sie jemand remixt.",
+    "bodyUnknown": "Vielleicht nutzen Boulder diese Griffe. Sie werden als Boulder mit fehlendem Griff markiert, bis sie jemand remixt.",
+    "removeAnyway": "Trotzdem entfernen",
+    "keep": "Griffe behalten"
+  },
   "sprayCaps": {
     "holds": "Eine Wand trägt bis zu {{max}} Griffe. Verwirf ein paar und speichere erneut.",
     "versions": "Eine Wand behält bis zu {{max}} Versionen ihrer Griffe, eine pro veröffentlichter Änderung, und diese hat alle verbraucht. Setz die Wand zurück, um neu anzufangen.",
