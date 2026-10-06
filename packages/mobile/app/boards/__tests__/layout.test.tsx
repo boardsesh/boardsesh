@@ -155,27 +155,23 @@ describe('the board picker header X', () => {
   });
 });
 
-// #5960: the live board sheet opens Reset the wall as the first screen of this
-// modal, where there is no back chevron. Edit holds is another flow's to change.
-describe('boards stack header on the spray maintenance routes', () => {
-  function headerLeftFor(name: string): HeaderLeft | undefined {
-    render(createElement(BoardsLayout));
-    const props = screens.byName.get(name);
-    if (!props) throw new Error(`${name} not captured`);
-    const options = typeof props.options === 'function' ? props.options({ route: { params: {} } }) : props.options;
-    cleanup();
-    return options?.headerLeft;
-  }
-
-  it('gives Reset the wall a close button that leaves through navigation', () => {
+// #5960: the live board sheet opens a reset as the first screen of this modal,
+// where there is no back chevron. Edit holds is another flow's to change.
+describe('boards stack header on the spray wizard opened as a reset', () => {
+  it('gives the reset a close button that leaves through navigation', () => {
     vi.clearAllMocks();
-    const headerLeft = headerLeftFor('spray/reset');
-    if (!headerLeft) throw new Error('spray/reset has no headerLeft');
+    const { headerLeft } = optionsFor('spray/new', { resetOf: 'wall-uuid' });
+    if (!headerLeft) throw new Error('spray/new has no headerLeft');
     render(createElement('div', null, headerLeft({ tintColor: '#000' })));
 
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
 
     expect(routerMock.back).toHaveBeenCalledTimes(1);
+  });
+
+  it('titles the wizard as a reset only when it carries resetOf', () => {
+    expect(optionsFor('spray/new', { resetOf: 'wall-uuid' }).title).toBe('Reset this wall');
+    expect(optionsFor('spray/new').title).toBe('Add a spray wall');
   });
 });
 
@@ -188,7 +184,7 @@ function optionsFor(name: string, params: object = {}): ScreenOptions {
   return typeof declared === 'function' ? declared({ route: { params } }) : declared;
 }
 
-const SPRAY_SCREENS = ['spray/new', 'spray/holds', 'spray/reset'];
+const SPRAY_SCREENS = ['spray/new', 'spray/holds'];
 
 describe('the spray screens on iPad', () => {
   it.each(SPRAY_SCREENS)('%s covers the screen and fades the home indicator', (name) => {
@@ -199,7 +195,7 @@ describe('the spray screens on iPad', () => {
   });
 
   // Full screen means no swipe down and, as a modal, no back chevron.
-  it.each(['spray/holds', 'spray/reset'])('%s has an X that goes back through the leave guard', (name) => {
+  it.each(['spray/new', 'spray/holds'])('%s has an X that goes back through the leave guard', (name) => {
     platformMock.isPad = true;
     const { headerLeft } = optionsFor(name);
     if (!headerLeft) throw new Error(`${name} has no headerLeft`);
@@ -243,13 +239,17 @@ describe('the spray screens on a phone', () => {
     expect(Object.keys(optionsFor('spray/holds'))).not.toContain('headerLeft');
   });
 
-  // The #5960 X on Reset the wall is not an iPad addition: every platform keeps it.
+  // The #5960 X on a reset is not an iPad addition: every platform keeps it.
   it.each([
     ['iOS', 'ios'],
     ['Android', 'android'],
-  ])('keeps the Reset the wall close button on %s', (_label, os) => {
+  ])('keeps the reset close button on %s', (_label, os) => {
     platformMock.OS = os;
-    expect(Object.keys(optionsFor('spray/reset'))).toEqual(['title', 'headerBackButtonMenuEnabled', 'headerLeft']);
+    expect(Object.keys(optionsFor('spray/new', { resetOf: 'wall-uuid' }))).toEqual([
+      'title',
+      'headerBackButtonMenuEnabled',
+      'headerLeft',
+    ]);
   });
 
   // isPad is an iOS-only field; Android never reads it as an iPad.

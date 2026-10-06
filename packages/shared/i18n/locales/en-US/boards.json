@@ -6,8 +6,7 @@
     "failed": "We couldn't finish finding holds. Your photo is saved.",
     "resumeHint": "You can leave and resume later. Your published wall stays unchanged.",
     "retry": "Try again",
-    "manual": "Mark holds myself",
-    "resume": "Resume this reset"
+    "manual": "Mark holds myself"
   },
   "mobile": {
     "edit": {
@@ -227,8 +226,10 @@
         "kind": "Spray wall",
         "editHolds": "Edit holds",
         "editHoldsHint": "Add, move or delete the holds on your wall.",
-        "newPhoto": "New photo",
-        "newPhotoHint": "Shoot the wall again after a reset.",
+        "holdsLocked": "Holds are locked",
+        "holdsLockedHint": "This wall has climbs. Reset it to change a hold.",
+        "resetWall": "Reset this wall",
+        "resetWallHint": "Take a new photo and mark the holds again.",
         "shareLink": "Share link",
         "shareLinkPublicHint": "Anyone can open this wall.",
         "shareLinkUnlistedHint": "Only the climbers you send it to."
@@ -1071,88 +1072,39 @@
       "startOver": "Start over",
       "checkFailed": "Couldn't check that wall. Try again.",
       "retry": "Try again"
+    },
+    "reset": {
+      "screenTitle": "Reset this wall",
+      "starting": "Getting your new wall ready…",
+      "startFailed": "Couldn't start the reset. Try again.",
+      "resumeTitle": "You've a reset on the go",
+      "resumeBody": "The new photo of “{{name}}” isn't finished. Pick up where you left off, or start over. The wall stays live until the new one goes up.",
+      "photoTitle": "Photograph the wall as it is now",
+      "photoBody": "Same name and angle as before. Shoot the whole wall, then mark every hold."
     }
   },
-  "sprayReset": {
-    "screenTitle": "Reset the wall",
-    "loading": "Loading your wall…",
-    "notYours": "This wall isn't yours to reset.",
-    "nothingPublished": "This wall isn't set up yet. Finish adding it first.",
-    "openDraft": {
-      "title": "There's a reset half done",
-      "body": "Your saved photo is ready to resume. Nothing on the published wall changes until you confirm the reset.",
-      "discard": "Throw it away and start again",
-      "discarded": "That reset is gone. Take a new photo.",
-      "discardFailed": "That reset wouldn't clear. Try again.",
-      "holdEditTitle": "Hold edits are waiting",
-      "holdEditBody": "Publish or discard your saved hold edits in Edit holds before choosing a new photo."
-    },
-    "photo": {
-      "title": "Photograph the wall again",
-      "body": "Stand where you stood the first time if you can. Same wall, new holds."
-    },
-    "adjust": {
-      "body": "Crop to the edges of the wall, and keep all four corners inside the crop. You'll mark them next."
-    },
-    "anchors": {
-      "title": "Mark the corners",
-      "body": "Drag the four rings onto the corners of the wall. This one isn't optional: it's what lines your new photo up with every climb already on the wall.",
-      "use": "Use these corners"
-    },
-    "leave": {
-      "title": "Leave the reset?",
-      "body": "Your new photo stays as a draft. Nothing changes on the wall until you confirm."
-    },
-    "compare": {
-      "working": "Working out what changed…",
-      "unavailable": "We couldn't work out what changed on this wall.",
-      "counts": "{{kept}} kept · {{removed}} gone · {{added}} new",
-      "climbsAffected_one": "{{count}} climb loses a hold",
-      "climbsAffected_other": "{{count}} climbs lose holds",
-      "aspectWarning": "This photo is framed differently from the last one. Check the corners landed on the corners.",
-      "filterLabel": "Which rings to show",
-      "tapHint": "Tap any ring to change your mind about it.",
-      "confirm": "Confirm the reset",
-      "fullReset": "Full reset",
-      "fullResetBody": "Climbs that lose a hold leave this wall's list. They stay in logbooks, and Lost holds shows them.",
-      "acceptMoves": "Take every suggested move",
-      "noDetections": "Nothing to compare",
-      "noDetectionsBody": "This phone couldn't spot the holds in your new photo, so there's nothing to check against. Your photo is saved as a draft."
-    },
-    "commit": {
-      "failed": "The reset didn't land. Nothing on the wall has changed."
-    },
-    "filter": {
-      "all": "All",
-      "kept": "Kept {{value}}",
-      "removed": "Gone {{value}}",
-      "new": "New {{value}}",
-      "unsure": "Unsure {{value}}"
-    },
-    "hold": {
-      "kept": "Hold {{id}} — still on the wall",
-      "removed": "Hold {{id}} — coming off",
-      "unsure": "Hold {{id}} — worth a look",
-      "stillHere": "It's still here",
-      "gone": "It's gone"
-    },
-    "detection": {
-      "new": "A hold that wasn't here before",
-      "rejected": "Not a hold",
-      "accept": "It's a hold",
-      "reject": "Not a hold"
-    },
-    "pairing": {
-      "start": "Same hold, moved here",
-      "prompt": "Tap the ring where that hold used to be.",
-      "cancel": "Never mind",
-      "paired": "Replaces hold {{id}}",
-      "unpair": "It's not that hold",
-      "useSuggestion": "Replaces hold {{id}}"
-    },
-    "done": {
-      "toast": "{{removed}} gone, {{added}} new, {{climbs}} climbs changed"
-    }
+  "sprayResetConfirm": {
+    "title": "Reset this wall?",
+    "body": "Take a new photo and mark the holds from scratch. When the new wall goes live, this one is archived. Its climbs and sends stay in logbooks and playlists, and nobody can set on it any more.",
+    "start": "Start reset",
+    "cancel": "Not now"
+  },
+  "sprayArchive": {
+    "banner": "Archived {{date}}. Climbs and sends stay, nothing new can be set here.",
+    "bannerUndated": "Archived. Climbs and sends stay, nothing new can be set here.",
+    "switchToNew": "Switch to the new wall",
+    "openFailed": "Couldn't open that wall. Try again.",
+    "manageHeader": "Archived",
+    "manageRow": "Archived {{date}}",
+    "manageRowUndated": "Archived"
+  },
+  "sprayWallErrors": {
+    "archived": "This wall is archived. Its climbs and sends stay, but nothing new can be set on it.",
+    "holdsLocked": "This wall has climbs, so its holds are locked. Reset the wall to change a hold.",
+    "resetRetired": "Walls change by resetting them now. Update the app, then reset the wall.",
+    "resetOwnerOnly": "Only the wall's owner can reset it.",
+    "resetSourceUnpublished": "Finish setting up this wall before you reset it.",
+    "archiveLimitReached": "You can keep {{max}} archived walls. Delete one to reset this wall."
   },
   "sprayMaintenance": {
     "screenTitle": "Edit holds",
@@ -1174,17 +1126,15 @@
       "stay": "Keep editing",
       "discard": "Discard changes"
     },
-    "resetInProgress": "Finish or discard the new-photo reset before editing holds."
+    "leftoverPhoto": "This wall has an unfinished new photo from an older version of the app. Discard it to edit the holds.",
+    "discardLeftover": "Discard the unfinished photo",
+    "discardLeftoverFailed": "That photo wouldn't clear. Try again."
   },
   "sprayCaps": {
     "holds": "A wall carries up to {{max}} holds. Drop a few and save again.",
     "versions": "A wall keeps {{max}} resets, and this one has used them all.",
     "walls": "You can keep {{max}} walls. Delete one to make room.",
     "wallsHint": "You can keep up to {{max}} walls."
-  },
-  "sprayHidden": {
-    "body": "Someone reported it and we took it out of everyone else’s view. It’s still here for you, and nothing on it was deleted.",
-    "title": "This wall is hidden"
   },
   "sprayModeration": {
     "reportTitle": "Report wall",

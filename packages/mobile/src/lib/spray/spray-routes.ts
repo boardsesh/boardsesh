@@ -1,7 +1,7 @@
-// The two wall-maintenance routes, named once.
+// The wall-maintenance routes, named once.
 //
-// Both routes are opened from the live board sheet. Keep their names and wall
-// parameter together so the action helpers and route readers cannot drift.
+// Opened from the live board sheet. Keep their names and wall parameter
+// together so the action helpers and route readers cannot drift.
 //
 // The wall is addressed by its `user_boards` uuid, not its layout id: that is the
 // handle every other board route already carries (`/boards/edit?boardUuid=…`), it
@@ -11,17 +11,17 @@
 /** The hold editor for one wall: add, move, resize and delete its holds (SW-08). */
 export const SPRAY_HOLD_EDITOR_PATH = '/boards/spray/holds';
 
-/** Photograph the wall again after a reset and review what moved (SW-13). */
-export const SPRAY_RESET_PATH = '/boards/spray/reset';
+/** The add-a-wall wizard. With `resetOf`, it builds the reset clone of that wall. */
+export const SPRAY_NEW_WALL_PATH = '/boards/spray/new';
 
 /** `/boards/spray/holds?wallUuid=<uuid>`. */
 export function sprayHoldEditorHref(wallUuid: string): string {
   return `${SPRAY_HOLD_EDITOR_PATH}?wallUuid=${encodeURIComponent(wallUuid)}`;
 }
 
-/** `/boards/spray/reset?wallUuid=<uuid>`. */
-export function sprayResetHref(wallUuid: string): string {
-  return `${SPRAY_RESET_PATH}?wallUuid=${encodeURIComponent(wallUuid)}`;
+/** `/boards/spray/new?resetOf=<uuid>`: reset a wall by building its replacement in the wizard. */
+export function sprayResetWizardHref(wallUuid: string): string {
+  return `${SPRAY_NEW_WALL_PATH}?resetOf=${encodeURIComponent(wallUuid)}`;
 }
 
 /** Accept the old boardUuid spelling for restored navigation and saved links. */
@@ -34,11 +34,11 @@ export function readSprayWallUuid(params: {
 }
 
 /**
- * The boards-stack screens that make up the spray flows: adding a wall, editing
- * its holds and resetting it. Each is a full-screen pan-and-pinch surface for
+ * The boards-stack screens that make up the spray flows: adding (or resetting)
+ * a wall and editing its holds. Each is a full-screen pan-and-pinch surface for
  * part of its life, which is why iPad presents them full screen.
  */
-const SPRAY_FLOW_SCREENS: ReadonlySet<string> = new Set(['spray/new', 'spray/holds', 'spray/reset']);
+const SPRAY_FLOW_SCREENS: ReadonlySet<string> = new Set(['spray/new', 'spray/holds']);
 
 /**
  * The root `boards` route as its options function sees it. `params.screen` is

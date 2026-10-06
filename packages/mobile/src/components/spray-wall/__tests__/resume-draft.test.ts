@@ -49,6 +49,13 @@ describe('findResumableWall', () => {
     expect(findResumableWall([])).toBeNull();
   });
 
+  // A reset clone carries the live wall's name, and finishing it archives that
+  // wall. "Add a wall" must never offer it back; the reset does.
+  it('leaves an unfinished reset clone to its own reset', () => {
+    expect(findResumableWall([wall({ resetOfWallUuid: 'live-wall' })])).toBeNull();
+    expect(findResumableWall([wall({ uuid: 'clone', resetOfWallUuid: 'live-wall' }), wall()])?.uuid).toBe('wall-1');
+  });
+
   it('picks the same wall every time when two were abandoned', () => {
     const walls = [wall({ uuid: 'wall-a' }), wall({ uuid: 'wall-b' })];
     expect(findResumableWall(walls)?.uuid).toBe('wall-a');

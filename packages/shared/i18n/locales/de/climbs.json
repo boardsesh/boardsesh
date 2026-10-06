@@ -218,7 +218,8 @@
       "boardCannotAuthor": "An diesem Board kannst du noch keine Boulder bauen.",
       "boardConfigIncomplete": "Die Board-Angaben fehlen oder sind ungültig. Wähl das Board erneut, um deinen Boulder zu bauen.",
       "noUsableBoard": "Wähl erst ein Board, dann bau deinen Boulder.",
-      "boardTypeUnsupported": "Mit dieser App-Version kannst du an diesem Board noch keine Boulder bauen. Wähl ein anderes Board."
+      "boardTypeUnsupported": "Mit dieser App-Version kannst du an diesem Board noch keine Boulder bauen. Wähl ein anderes Board.",
+      "wallArchived": "Diese Wand ist archiviert. Ihre Boulder und Begehungen bleiben, aber du kannst nichts Neues mehr daran bauen."
     },
     "alerts": {
       "publishDuplicateNamed": "Dieses Griff-Muster passt zu „{{name}}“. Schalte auf Entwurf, um ihn ohne Veröffentlichung zu speichern, oder ändere einen Griff.",

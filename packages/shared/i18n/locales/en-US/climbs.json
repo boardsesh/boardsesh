@@ -218,7 +218,8 @@
       "boardCannotAuthor": "You can't set climbs on this board yet.",
       "boardConfigIncomplete": "The board details are missing or invalid. Pick the board again to set your climb.",
       "noUsableBoard": "Pick a board first, then set your climb.",
-      "boardTypeUnsupported": "This app version can't set climbs on that board yet. Pick another board."
+      "boardTypeUnsupported": "This app version can't set climbs on that board yet. Pick another board.",
+      "wallArchived": "This wall is archived. Its climbs and sends stay, but nothing new can be set on it."
     },
     "alerts": {
       "publishDuplicateNamed": "This hold pattern matches \"{{name}}\". Toggle Draft to save it without publishing, or change a hold.",

@@ -36,12 +36,16 @@ const editorProps = vi.hoisted(() => ({
   last: null as null | { onDirtyChange?: (dirty: boolean) => void; onHandoverChange?: (handingOver: boolean) => void },
 }));
 const confirmDiscardMock = vi.hoisted(() => vi.fn());
+const resetWallMock = vi.hoisted(() => vi.fn());
+const discardDraftMock = vi.hoisted(() => vi.fn(async () => true));
+const routerMock = vi.hoisted(() => ({ back: vi.fn(), replace: vi.fn(), dismissTo: vi.fn() }));
 
 vi.mock('react-native', () => ({
   AccessibilityInfo: { isReduceMotionEnabled: vi.fn(async () => false), addEventListener: () => ({ remove() {} }) },
   Alert: { alert: alertMock },
   KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   Platform: { OS: 'ios' },
+  Pressable: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   StyleSheet: { hairlineWidth: 1, absoluteFillObject: {}, create: (styles: unknown) => styles },
   View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
@@ -49,7 +53,7 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('expo-image', () => ({ Image: () => createElement('img') }));
 vi.mock('expo-router', () => ({
-  useRouter: () => ({ back: vi.fn(), replace: vi.fn(), dismissTo: vi.fn() }),
+  useRouter: () => routerMock,
   useNavigation: () => ({ getParent: () => undefined }),
 }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
@@ -84,7 +88,13 @@ vi.mock('../../../lib/open-url', () => ({ openExternalUrl: vi.fn() }));
 vi.mock('../../../lib/graphql/extract-error-message', () => ({
   extractGraphqlMessage: () => undefined,
   extractGraphqlCode: () => undefined,
+  // A test error names its refusal directly; the real code mapping has its own suite.
+  sprayWallLifecycleRefusal: (error: unknown) => (error as { refusal?: string } | null)?.refusal ?? null,
 }));
+vi.mock('../../../lib/spray/spray-lifecycle-copy', () => ({
+  sprayWallLifecycleMessage: (refusal: string) => `lifecycle:${refusal}`,
+}));
+vi.mock('../../../lib/spray/settle-archived-spray-wall', () => ({ settleArchivedSprayWall: vi.fn() }));
 vi.mock('../../../lib/boards/use-activate-board', () => ({ useActivateBoard: () => vi.fn() }));
 vi.mock('../../../lib/spray/activate-published-spray-wall', () => ({ activatePublishedSprayWall: vi.fn() }));
 vi.mock('../../../lib/spray/spray-wall-loader', () => ({ invalidateSprayWallRenderData: vi.fn() }));
@@ -108,7 +118,8 @@ vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
   useCreateSprayWallVersion: () => ({ mutateAsync: vi.fn() }),
   usePublishSprayWallVersion: () => ({ mutateAsync: vi.fn() }),
   useUpdateSprayWallVisibility: () => ({ mutateAsync: vi.fn() }),
-  useDiscardSprayWallDraft: () => ({ mutateAsync: vi.fn(async () => true) }),
+  useDiscardSprayWallDraft: () => ({ mutateAsync: discardDraftMock }),
+  useResetSprayWall: () => ({ mutateAsync: resetWallMock }),
 }));
 
 vi.mock('../../Text', () => ({
@@ -330,5 +341,103 @@ describe('native back guard', () => {
     expect(alertMock).not.toHaveBeenCalled();
     expect(confirmDiscardMock).not.toHaveBeenCalled();
     expect(onConfirm).not.toHaveBeenCalled();
+  });
+});
+
+describe('a reset (`resetOf`)', () => {
+  /** The clone `resetSprayWall` hands back: the old wall's settings, nothing else. */
+  const CLONE = {
+    uuid: 'clone-1',
+    layoutId: 8,
+    viewerCanEdit: true,
+    currentVersion: null,
+    resetOfWallUuid: 'old-wall',
+    board: { name: 'Garage wall' },
+  };
+  const CLONE_WITH_PHOTO = {
+    ...CLONE,
+    versions: [{ id: 'clone-v1', number: 1, status: 'DRAFT', photo: { url: 'https://img/c.jpg' }, addedHoldCount: 4 }],
+  };
+
+  async function mountReset() {
+    const view = render(<SprayWallWizardScreen returnTo="/(tabs)/climbs" resetOfWallUuid="old-wall" />);
+    await act(async () => {});
+    return view;
+  }
+
+  it('builds the clone and rejoins it at the photo, never asking for a name or angle', async () => {
+    resetWallMock.mockResolvedValue(CLONE);
+    fetchVersionsMock.mockResolvedValue({ ...CLONE, versions: [] });
+    const { getByText, queryByTestId } = await mountReset();
+
+    expect(resetWallMock).toHaveBeenCalledExactlyOnceWith('old-wall');
+    expect(fetchVersionsMock).toHaveBeenCalledWith('clone-1');
+    // No list-and-prompt: the reset hands back its own clone.
+    expect(alertMock).not.toHaveBeenCalled();
+    expect(getByText('sprayWizard.reset.photoTitle')).toBeTruthy();
+    expect(queryByTestId('identity')).toBeNull();
+  });
+
+  it('leaves the flow from the photo step rather than opening the meta form', async () => {
+    resetWallMock.mockResolvedValue(CLONE);
+    fetchVersionsMock.mockResolvedValue({ ...CLONE, versions: [] });
+    const { getByText, queryByTestId } = await mountReset();
+
+    act(() => getByText('sprayWizard.back').click());
+    expect(routerMock.back).toHaveBeenCalledTimes(1);
+    expect(queryByTestId('identity')).toBeNull();
+  });
+
+  it('asks before rejoining a clone that already has a photo, and picks it up at the editor', async () => {
+    resetWallMock.mockResolvedValue(CLONE);
+    fetchVersionsMock.mockResolvedValue(CLONE_WITH_PHOTO);
+    const { queryByTestId } = await mountReset();
+
+    expect(alertMock).toHaveBeenCalledTimes(1);
+    const [title, body] = alertMock.mock.calls[0] as [string, string];
+    expect(title).toBe('sprayWizard.reset.resumeTitle');
+    expect(body).toBe('sprayWizard.reset.resumeBody');
+    await act(async () => lastAlertButton('sprayWizard.resume.pickUp').onPress());
+    expect(queryByTestId('editor')).not.toBeNull();
+  });
+
+  // Start over throws away the CLONE and starts a fresh one. The wall being
+  // replaced is never named in the discard: it stays live.
+  it('starts over by deleting the clone only, then building a fresh one', async () => {
+    resetWallMock.mockResolvedValueOnce(CLONE).mockResolvedValueOnce({ ...CLONE, uuid: 'clone-2' });
+    fetchVersionsMock
+      .mockResolvedValueOnce(CLONE_WITH_PHOTO)
+      .mockResolvedValueOnce({ ...CLONE, uuid: 'clone-2', versions: [] });
+    const { getByText } = await mountReset();
+
+    await act(async () => lastAlertButton('sprayWizard.resume.startOver').onPress());
+
+    expect(discardDraftMock).toHaveBeenCalledExactlyOnceWith({
+      versionId: 'clone-v1',
+      wallUuid: 'clone-1',
+      layoutId: 8,
+    });
+    expect(JSON.stringify(discardDraftMock.mock.calls)).not.toContain('old-wall');
+    expect(resetWallMock).toHaveBeenCalledTimes(2);
+    expect(resetWallMock).toHaveBeenLastCalledWith('old-wall');
+    expect(getByText('sprayWizard.reset.photoTitle')).toBeTruthy();
+  });
+
+  it('says why a reset was refused, and Try again asks once more', async () => {
+    resetWallMock.mockRejectedValueOnce({ refusal: 'archiveLimitReached' }).mockResolvedValueOnce(CLONE);
+    fetchVersionsMock.mockResolvedValue({ ...CLONE, versions: [] });
+    const { getByText } = await mountReset();
+
+    expect(getByText('lifecycle:archiveLimitReached')).toBeTruthy();
+    await act(async () => getByText('sprayWizard.resume.retry').click());
+    expect(resetWallMock).toHaveBeenCalledTimes(2);
+    expect(getByText('sprayWizard.reset.photoTitle')).toBeTruthy();
+  });
+
+  it('falls back to a plain sentence for a failure without a code', async () => {
+    resetWallMock.mockRejectedValueOnce(new Error('offline'));
+    const { getByText } = await mountReset();
+    expect(getByText('sprayWizard.reset.startFailed')).toBeTruthy();
+    expect(getByText('sprayWizard.back')).toBeTruthy();
   });
 });

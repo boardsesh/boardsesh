@@ -1,18 +1,23 @@
 import { existsSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { opensIntoSprayFlow, readSprayWallUuid, sprayHoldEditorHref, sprayResetHref } from '../spray-routes';
+import { opensIntoSprayFlow, readSprayWallUuid, sprayHoldEditorHref, sprayResetWizardHref } from '../spray-routes';
 
 describe('spray maintenance routes', () => {
-  it.each([sprayHoldEditorHref, sprayResetHref])(
-    'opens an existing route with the wall parameter its screen reads',
-    (href) => {
-      const wallUuid = 'wall&with=special characters';
-      const destination = new URL(href(wallUuid), 'https://app.boardsesh.com');
-      const routeFile = new URL(`../../../../app${destination.pathname}.tsx`, import.meta.url);
-      expect(existsSync(routeFile)).toBe(true);
-      expect(readSprayWallUuid(Object.fromEntries(destination.searchParams))).toBe(wallUuid);
-    },
-  );
+  it('opens the hold editor with the wall parameter its screen reads', () => {
+    const wallUuid = 'wall&with=special characters';
+    const destination = new URL(sprayHoldEditorHref(wallUuid), 'https://app.boardsesh.com');
+    const routeFile = new URL(`../../../../app${destination.pathname}.tsx`, import.meta.url);
+    expect(existsSync(routeFile)).toBe(true);
+    expect(readSprayWallUuid(Object.fromEntries(destination.searchParams))).toBe(wallUuid);
+  });
+
+  it('opens a reset in the add-a-wall wizard, naming the wall being replaced', () => {
+    const wallUuid = 'wall&with=special characters';
+    const destination = new URL(sprayResetWizardHref(wallUuid), 'https://app.boardsesh.com');
+    const routeFile = new URL(`../../../../app${destination.pathname}.tsx`, import.meta.url);
+    expect(existsSync(routeFile)).toBe(true);
+    expect(destination.searchParams.get('resetOf')).toBe(wallUuid);
+  });
 
   it('accepts restored links using the old boardUuid spelling', () => {
     expect(readSprayWallUuid({ boardUuid: 'legacy-wall' })).toBe('legacy-wall');
@@ -34,7 +39,7 @@ describe('spray maintenance routes', () => {
 describe('opensIntoSprayFlow', () => {
   // `router.push('/boards/spray/holds?…')` from a tab arrives at the root
   // `boards` screen as a nested navigate: the entry screen rides in params.
-  it.each(['spray/new', 'spray/holds', 'spray/reset'])('reads a nested navigate into %s', (screen) => {
+  it.each(['spray/new', 'spray/holds'])('reads a nested navigate into %s', (screen) => {
     expect(opensIntoSprayFlow({ params: { screen, params: { wallUuid: 'wall-1' } } })).toBe(true);
   });
 
@@ -56,7 +61,7 @@ describe('opensIntoSprayFlow', () => {
     expect(
       opensIntoSprayFlow({
         params: { screen: 'index' },
-        state: { routes: [{ name: 'index' }, { name: 'spray/reset' }] },
+        state: { routes: [{ name: 'index' }, { name: 'spray/holds' }] },
       }),
     ).toBe(false);
     expect(

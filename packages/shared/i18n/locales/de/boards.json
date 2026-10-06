@@ -6,8 +6,7 @@
     "failed": "Die Grifferkennung konnte nicht abgeschlossen werden. Dein Foto ist gespeichert.",
     "resumeHint": "Du kannst später weitermachen. Deine veröffentlichte Wand bleibt unverändert.",
     "retry": "Erneut versuchen",
-    "manual": "Griffe selbst markieren",
-    "resume": "Dieses Zurücksetzen fortsetzen"
+    "manual": "Griffe selbst markieren"
   },
   "mobile": {
     "edit": {
@@ -227,8 +226,10 @@
         "kind": "Spraywall",
         "editHolds": "Griffe bearbeiten",
         "editHoldsHint": "Füge Griffe hinzu, verschiebe oder lösche sie.",
-        "newPhoto": "Neues Foto",
-        "newPhotoHint": "Fotografiere dein Board nach einem Umbau neu.",
+        "holdsLocked": "Griffe sind gesperrt",
+        "holdsLockedHint": "An dieser Wand gibt es Boulder. Setz sie zurück, um einen Griff zu ändern.",
+        "resetWall": "Wand zurücksetzen",
+        "resetWallHint": "Mach ein neues Foto und markier die Griffe neu.",
         "shareLink": "Link teilen",
         "shareLinkPublicHint": "Jede*r kann dieses Board öffnen.",
         "shareLinkUnlistedHint": "Nur die Leute, denen du den Link schickst."
@@ -1071,88 +1072,39 @@
       "startOver": "Neu anfangen",
       "checkFailed": "Diese Wand ließ sich nicht prüfen. Versuch es nochmal.",
       "retry": "Nochmal versuchen"
+    },
+    "reset": {
+      "screenTitle": "Wand zurücksetzen",
+      "starting": "Deine neue Wand wird vorbereitet…",
+      "startFailed": "Das Zurücksetzen ließ sich nicht starten. Versuch es nochmal.",
+      "resumeTitle": "Du hast ein Zurücksetzen offen",
+      "resumeBody": "Das neue Foto von „{{name}}“ ist nicht fertig. Mach weiter, wo du aufgehört hast, oder fang neu an. Die Wand bleibt live, bis die neue online ist.",
+      "photoTitle": "Fotografiere die Wand, wie sie jetzt ist",
+      "photoBody": "Gleicher Name und Winkel wie vorher. Fotografiere die ganze Wand und markier dann jeden Griff."
     }
   },
-  "sprayReset": {
-    "screenTitle": "Wand zurücksetzen",
-    "loading": "Deine Wand wird geladen…",
-    "notYours": "Diese Wand gehört dir nicht, du kannst sie nicht zurücksetzen.",
-    "nothingPublished": "Diese Wand ist noch nicht fertig eingerichtet. Schließ das Hinzufügen erst ab.",
-    "openDraft": {
-      "title": "Ein Zurücksetzen ist halb fertig",
-      "body": "Dein gespeichertes Foto wartet auf dich. Die veröffentlichte Wand ändert sich erst, wenn du das Zurücksetzen bestätigst.",
-      "discard": "Wegwerfen und neu anfangen",
-      "discarded": "Das Zurücksetzen ist weg. Mach ein neues Foto.",
-      "discardFailed": "Das Zurücksetzen ließ sich nicht löschen. Versuch es nochmal.",
-      "holdEditTitle": "Griffänderungen warten auf dich",
-      "holdEditBody": "Veröffentliche oder verwirf deine gespeicherten Änderungen unter Griffe bearbeiten, bevor du ein neues Foto auswählst."
-    },
-    "photo": {
-      "title": "Fotografiere die Wand nochmal",
-      "body": "Stell dich hin, wo du beim ersten Mal standest, wenn es geht. Gleiche Wand, neue Griffe."
-    },
-    "adjust": {
-      "body": "Schneide bis an die Ränder der Wand zu und lass alle vier Ecken im Ausschnitt. Die markierst du gleich danach."
-    },
-    "anchors": {
-      "title": "Markiere die Ecken",
-      "body": "Zieh die vier Ringe auf die Ecken der Wand. Das ist nicht optional: nur so passt dein neues Foto zu jedem Boulder, der schon auf der Wand steht.",
-      "use": "Diese Ecken nehmen"
-    },
-    "leave": {
-      "title": "Zurücksetzen verlassen?",
-      "body": "Dein neues Foto bleibt als Entwurf. An der Wand ändert sich nichts, bis du bestätigst."
-    },
-    "compare": {
-      "working": "Wir rechnen aus, was sich geändert hat…",
-      "unavailable": "Wir konnten nicht ausrechnen, was sich an dieser Wand geändert hat.",
-      "counts": "{{kept}} geblieben · {{removed}} weg · {{added}} neu",
-      "climbsAffected_one": "{{count}} Boulder verliert einen Griff",
-      "climbsAffected_other": "{{count}} Boulder verlieren Griffe",
-      "aspectWarning": "Dieses Foto ist anders gerahmt als das letzte. Prüf, ob die Ecken auf den Ecken liegen.",
-      "filterLabel": "Welche Ringe zeigen",
-      "tapHint": "Tipp auf einen Ring, um es dir anders zu überlegen.",
-      "confirm": "Zurücksetzen bestätigen",
-      "fullReset": "Kompletter Umbau",
-      "fullResetBody": "Boulder, die einen Griff verlieren, verschwinden aus der Liste dieser Wand. Sie bleiben im Routenbuch, und Fehlende Griffe zeigt sie.",
-      "acceptMoves": "Alle vorgeschlagenen Umzüge übernehmen",
-      "noDetections": "Nichts zu vergleichen",
-      "noDetectionsBody": "Dieses Handy hat auf deinem neuen Foto keine Griffe gefunden, also gibt es nichts zu vergleichen. Dein Foto bleibt als Entwurf gespeichert."
-    },
-    "commit": {
-      "failed": "Das Zurücksetzen ist nicht durchgegangen. An der Wand hat sich nichts geändert."
-    },
-    "filter": {
-      "all": "Alle",
-      "kept": "Geblieben {{value}}",
-      "removed": "Weg {{value}}",
-      "new": "Neu {{value}}",
-      "unsure": "Unsicher {{value}}"
-    },
-    "hold": {
-      "kept": "Griff {{id}} — noch an der Wand",
-      "removed": "Griff {{id}} — kommt ab",
-      "unsure": "Griff {{id}} — schau nochmal hin",
-      "stillHere": "Er ist noch da",
-      "gone": "Er ist weg"
-    },
-    "detection": {
-      "new": "Ein Griff, der vorher nicht da war",
-      "rejected": "Kein Griff",
-      "accept": "Doch, ein Griff",
-      "reject": "Kein Griff"
-    },
-    "pairing": {
-      "start": "Gleicher Griff, hierher versetzt",
-      "prompt": "Tipp auf den Ring, wo dieser Griff vorher war.",
-      "cancel": "Doch nicht",
-      "paired": "Ersetzt Griff {{id}}",
-      "unpair": "Das ist nicht der Griff",
-      "useSuggestion": "Ersetzt Griff {{id}}"
-    },
-    "done": {
-      "toast": "{{removed}} weg, {{added}} neu, {{climbs}} Boulder geändert"
-    }
+  "sprayResetConfirm": {
+    "title": "Wand zurücksetzen?",
+    "body": "Mach ein neues Foto und markier die Griffe von vorn. Sobald die neue Wand live ist, wird diese archiviert. Ihre Boulder und Begehungen bleiben in Routenbüchern und Playlists, und niemand kann mehr Boulder daran bauen.",
+    "start": "Zurücksetzen starten",
+    "cancel": "Nicht jetzt"
+  },
+  "sprayArchive": {
+    "banner": "Archiviert am {{date}}. Boulder und Begehungen bleiben, Neues wird hier nicht mehr gebaut.",
+    "bannerUndated": "Archiviert. Boulder und Begehungen bleiben, Neues wird hier nicht mehr gebaut.",
+    "switchToNew": "Zur neuen Wand wechseln",
+    "openFailed": "Diese Wand ließ sich nicht öffnen. Versuch es nochmal.",
+    "manageHeader": "Archiviert",
+    "manageRow": "Archiviert am {{date}}",
+    "manageRowUndated": "Archiviert"
+  },
+  "sprayWallErrors": {
+    "archived": "Diese Wand ist archiviert. Ihre Boulder und Begehungen bleiben, aber du kannst nichts Neues mehr daran bauen.",
+    "holdsLocked": "An dieser Wand gibt es Boulder, deshalb sind ihre Griffe gesperrt. Setz die Wand zurück, um einen Griff zu ändern.",
+    "resetRetired": "Wände änderst du jetzt, indem du sie zurücksetzt. Aktualisier die App und setz die Wand dann zurück.",
+    "resetOwnerOnly": "Nur wer die Wand angelegt hat, kann sie zurücksetzen.",
+    "resetSourceUnpublished": "Richte diese Wand fertig ein, bevor du sie zurücksetzt.",
+    "archiveLimitReached": "Du kannst {{max}} archivierte Wände behalten. Lösch eine, um diese Wand zurückzusetzen."
   },
   "sprayMaintenance": {
     "screenTitle": "Griffe bearbeiten",
@@ -1174,17 +1126,15 @@
       "stay": "Weiter bearbeiten",
       "discard": "Änderungen verwerfen"
     },
-    "resetInProgress": "Schließe das Zurücksetzen mit dem neuen Foto ab oder verwirf es, bevor du Griffe bearbeitest."
+    "leftoverPhoto": "An dieser Wand liegt ein unfertiges neues Foto aus einer älteren App-Version. Verwirf es, um die Griffe zu bearbeiten.",
+    "discardLeftover": "Unfertiges Foto verwerfen",
+    "discardLeftoverFailed": "Das Foto ließ sich nicht verwerfen. Versuch es nochmal."
   },
   "sprayCaps": {
     "holds": "Eine Wand trägt bis zu {{max}} Griffe. Verwirf ein paar und speichere erneut.",
     "versions": "Eine Wand behält {{max}} Zurücksetzungen, und diese hat alle verbraucht.",
     "walls": "Du kannst {{max}} Wände behalten. Lösch eine, um Platz zu schaffen.",
     "wallsHint": "Du kannst bis zu {{max}} Wände behalten."
-  },
-  "sprayHidden": {
-    "body": "Jemand hat sie gemeldet und wir haben sie für alle anderen ausgeblendet. Für dich ist sie weiter da, und gelöscht wurde nichts.",
-    "title": "Diese Wand ist ausgeblendet"
   },
   "sprayModeration": {
     "reportTitle": "Wand melden",

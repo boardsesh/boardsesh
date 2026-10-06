@@ -18,7 +18,7 @@
 // (`packages/shared/analytics/src/events.ts`); a wall is a board, and a
 // spray-only variant would hide walls from every board-creation number we
 // already watch. The property set therefore matches `describeInput` in
-// `app/boards/create.tsx`, plus `resumed`.
+// `app/boards/create.tsx`, plus `resumed` and `isReset`.
 
 /**
  * The slice of the wall's `user_boards` row this module reads.
@@ -56,6 +56,8 @@ export type WallCreatedEventInput = {
   meta: WallCreatedMeta | null;
   /** The visibility about to be applied by `updateSprayWall`, or null when the wall stays private. */
   pendingVisibility: { isPublic: boolean; isUnlisted: boolean } | null;
+  /** The wall is a reset's replacement (`resetSprayWall`), not a new wall. */
+  isReset: boolean;
 };
 
 export type WallCreatedEventProperties = {
@@ -74,11 +76,16 @@ export type WallCreatedEventProperties = {
   gymUuid?: string;
   source: 'spray_wizard';
   resumed: boolean;
+  /**
+   * The wall replaces one a reset archived. Its publish nets to zero walls, so
+   * activation and creation counts leave it out.
+   */
+  isReset: boolean;
 };
 
 /** The `Board Created` payload for a wall that has just published its first version. */
 export function wallCreatedEventProperties(input: WallCreatedEventInput): WallCreatedEventProperties {
-  const { layoutId, board, meta, pendingVisibility } = input;
+  const { layoutId, board, meta, pendingVisibility, isReset } = input;
 
   // The row wins wherever it can. On a resumed wall it is the only honest
   // source; on a fresh one it holds the value the meta step just sent, so
@@ -116,5 +123,6 @@ export function wallCreatedEventProperties(input: WallCreatedEventInput): WallCr
     // location property, so an analyst who pools the two reads a denominator
     // that is missing rows rather than one that is wrong.
     resumed: meta == null,
+    isReset,
   };
 }

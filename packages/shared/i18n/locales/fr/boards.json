@@ -6,8 +6,7 @@
     "failed": "La recherche des prises n'a pas abouti. Ta photo est enregistrée.",
     "resumeHint": "Tu peux quitter et reprendre plus tard. Ton mur publié reste inchangé.",
     "retry": "Réessayer",
-    "manual": "Marquer les prises à la main",
-    "resume": "Reprendre cette réinitialisation"
+    "manual": "Marquer les prises à la main"
   },
   "mobile": {
     "edit": {
@@ -227,8 +226,10 @@
         "kind": "Mur de pan",
         "editHolds": "Modifier les prises",
         "editHoldsHint": "Ajoute, déplace ou supprime les prises de ton mur.",
-        "newPhoto": "Nouvelle photo",
-        "newPhotoHint": "Photographie le mur à nouveau après un changement de prises.",
+        "holdsLocked": "Prises verrouillées",
+        "holdsLockedHint": "Ce mur a des blocs. Réinitialise-le pour changer une prise.",
+        "resetWall": "Réinitialiser ce mur",
+        "resetWallHint": "Prends une nouvelle photo et marque à nouveau les prises.",
         "shareLink": "Partager le lien",
         "shareLinkPublicHint": "N'importe qui peut ouvrir ce mur.",
         "shareLinkUnlistedHint": "Seulement les grimpeurs à qui tu l’envoies."
@@ -1071,88 +1072,39 @@
       "startOver": "Recommencer",
       "checkFailed": "Impossible de vérifier ce mur. Réessaie.",
       "retry": "Réessayer"
+    },
+    "reset": {
+      "screenTitle": "Réinitialiser ce mur",
+      "starting": "Préparation de ton nouveau mur…",
+      "startFailed": "Impossible de lancer la réinitialisation. Réessaie.",
+      "resumeTitle": "Tu as une réinitialisation en cours",
+      "resumeBody": "La nouvelle photo de « {{name}} » n'est pas finie. Reprends où tu t'es arrêté, ou recommence. Le mur reste en ligne jusqu'à ce que le nouveau le remplace.",
+      "photoTitle": "Photographie le mur tel quel",
+      "photoBody": "Même nom et même angle qu’avant. Prends tout le mur en photo, puis marque chaque prise."
     }
   },
-  "sprayReset": {
-    "screenTitle": "Réinitialiser le mur",
-    "loading": "Chargement de ton mur…",
-    "notYours": "Ce mur n'est pas à toi, tu ne peux pas le réinitialiser.",
-    "nothingPublished": "Ce mur n'est pas encore prêt. Termine de l'ajouter d'abord.",
-    "openDraft": {
-      "title": "Une réinitialisation est à moitié faite",
-      "body": "Ta photo est enregistrée pour reprendre. Le mur publié ne change pas avant ta confirmation.",
-      "discard": "La jeter et recommencer",
-      "discarded": "Cette réinitialisation est partie. Prends une nouvelle photo.",
-      "discardFailed": "Cette réinitialisation ne s'efface pas. Réessaie.",
-      "holdEditTitle": "Des modifications de prises sont en attente",
-      "holdEditBody": "Publie ou abandonne les modifications enregistrées dans Modifier les prises avant de choisir une nouvelle photo."
-    },
-    "photo": {
-      "title": "Photographie le mur à nouveau",
-      "body": "Place-toi où tu étais la première fois si tu peux. Même mur, nouvelles prises."
-    },
-    "adjust": {
-      "body": "Recadre au ras des bords du mur, en gardant les quatre coins dans le cadre. Tu les marqueras juste après."
-    },
-    "anchors": {
-      "title": "Marque les coins",
-      "body": "Fais glisser les quatre cercles sur les coins du mur. Ce n'est pas optionnel : c'est ça qui aligne ta nouvelle photo avec chaque bloc déjà posé sur le mur.",
-      "use": "Utiliser ces coins"
-    },
-    "leave": {
-      "title": "Quitter la réinitialisation ?",
-      "body": "Ta nouvelle photo reste en brouillon. Rien ne change sur le mur tant que tu ne confirmes pas."
-    },
-    "compare": {
-      "working": "On calcule ce qui a changé…",
-      "unavailable": "On n'a pas pu calculer ce qui a changé sur ce mur.",
-      "counts": "{{kept}} gardées · {{removed}} parties · {{added}} nouvelles",
-      "climbsAffected_one": "{{count}} bloc perd une prise",
-      "climbsAffected_other": "{{count}} blocs perdent des prises",
-      "aspectWarning": "Cette photo est cadrée différemment de la précédente. Vérifie que les coins sont bien sur les coins.",
-      "filterLabel": "Quels cercles afficher",
-      "tapHint": "Touche n'importe quel cercle pour changer d'avis.",
-      "confirm": "Confirmer la réinitialisation",
-      "fullReset": "Réinitialisation complète",
-      "fullResetBody": "Les blocs qui perdent une prise quittent la liste de ce mur. Ils restent dans le carnet, et Prises perdues les affiche.",
-      "acceptMoves": "Accepter tous les déplacements proposés",
-      "noDetections": "Rien à comparer",
-      "noDetectionsBody": "Ce téléphone n'a pas trouvé les prises sur ta nouvelle photo, donc il n'y a rien à comparer. Ta photo est gardée en brouillon."
-    },
-    "commit": {
-      "failed": "La réinitialisation n'est pas passée. Rien n'a changé sur le mur."
-    },
-    "filter": {
-      "all": "Toutes",
-      "kept": "Gardées {{value}}",
-      "removed": "Parties {{value}}",
-      "new": "Nouvelles {{value}}",
-      "unsure": "À vérifier {{value}}"
-    },
-    "hold": {
-      "kept": "Prise {{id}} — toujours sur le mur",
-      "removed": "Prise {{id}} — elle part",
-      "unsure": "Prise {{id}} — à vérifier",
-      "stillHere": "Elle est toujours là",
-      "gone": "Elle est partie"
-    },
-    "detection": {
-      "new": "Une prise qui n'était pas là",
-      "rejected": "Ce n'est pas une prise",
-      "accept": "C'est bien une prise",
-      "reject": "Ce n'est pas une prise"
-    },
-    "pairing": {
-      "start": "Même prise, déplacée ici",
-      "prompt": "Touche le cercle où cette prise était avant.",
-      "cancel": "Laisse tomber",
-      "paired": "Remplace la prise {{id}}",
-      "unpair": "Ce n'est pas cette prise",
-      "useSuggestion": "Remplace la prise {{id}}"
-    },
-    "done": {
-      "toast": "{{removed}} parties, {{added}} nouvelles, {{climbs}} blocs modifiés"
-    }
+  "sprayResetConfirm": {
+    "title": "Réinitialiser ce mur ?",
+    "body": "Prends une nouvelle photo et marque les prises depuis zéro. Quand le nouveau mur est en ligne, celui-ci est archivé. Ses blocs et ses croix restent dans les carnets et les playlists, et plus personne ne peut y ouvrir de bloc.",
+    "start": "Lancer la réinitialisation",
+    "cancel": "Pas maintenant"
+  },
+  "sprayArchive": {
+    "banner": "Archivé le {{date}}. Les blocs et les croix restent, mais on n'ouvre plus rien ici.",
+    "bannerUndated": "Archivé. Les blocs et les croix restent, mais on n'ouvre plus rien ici.",
+    "switchToNew": "Passer au nouveau mur",
+    "openFailed": "Impossible d'ouvrir ce mur. Réessaie.",
+    "manageHeader": "Archivés",
+    "manageRow": "Archivé le {{date}}",
+    "manageRowUndated": "Archivé"
+  },
+  "sprayWallErrors": {
+    "archived": "Ce mur est archivé. Ses blocs et ses croix restent, mais on ne peut plus y ouvrir de bloc.",
+    "holdsLocked": "Ce mur a des blocs, donc ses prises sont verrouillées. Réinitialise le mur pour changer une prise.",
+    "resetRetired": "Désormais, on change un mur en le réinitialisant. Mets l'app à jour, puis réinitialise le mur.",
+    "resetOwnerOnly": "Seul le propriétaire du mur peut le réinitialiser.",
+    "resetSourceUnpublished": "Termine la configuration de ce mur avant de le réinitialiser.",
+    "archiveLimitReached": "Tu peux garder {{max}} murs archivés. Supprimes-en un pour réinitialiser ce mur."
   },
   "sprayMaintenance": {
     "screenTitle": "Modifier les prises",
@@ -1174,17 +1126,15 @@
       "stay": "Continuer à modifier",
       "discard": "Abandonner les modifications"
     },
-    "resetInProgress": "Termine ou abandonne la réinitialisation avec la nouvelle photo avant de modifier les prises."
+    "leftoverPhoto": "Ce mur a une nouvelle photo inachevée, laissée par une ancienne version de l'app. Abandonne-la pour modifier les prises.",
+    "discardLeftover": "Abandonner la photo inachevée",
+    "discardLeftoverFailed": "Impossible d'abandonner cette photo. Réessaie."
   },
   "sprayCaps": {
     "holds": "Un mur porte jusqu’à {{max}} prises. Écartes-en quelques-unes et enregistre à nouveau.",
     "versions": "Un mur garde {{max}} réinitialisations, et celui-ci les a toutes utilisées.",
     "walls": "Tu peux garder {{max}} murs. Supprimes-en un pour faire de la place.",
     "wallsHint": "Tu peux garder jusqu’à {{max}} murs."
-  },
-  "sprayHidden": {
-    "body": "Quelqu’un l’a signalé et on l’a retiré de la vue des autres. Pour toi il est toujours là, et rien n’a été supprimé.",
-    "title": "Ce mur est masqué"
   },
   "sprayModeration": {
     "reportTitle": "Signaler le mur",

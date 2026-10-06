@@ -18,6 +18,7 @@ describe('wallCreatedEventProperties', () => {
       board: row({ gymUuid: 'gym-1' }),
       meta: meta(),
       pendingVisibility: { isPublic: true, isUnlisted: false },
+      isReset: false,
     });
 
     expect(properties).toEqual({
@@ -37,7 +38,22 @@ describe('wallCreatedEventProperties', () => {
       gymUuid: 'gym-1',
       source: 'spray_wizard',
       resumed: false,
+      isReset: false,
     });
+  });
+
+  // A reset's replacement publishes as a wall too, but it replaces the one it
+  // archives: activation counts have to be able to leave it out.
+  it('marks the replacement a reset built', () => {
+    const properties = wallCreatedEventProperties({
+      layoutId: 9010,
+      board: row({ angle: 40 }),
+      meta: null,
+      pendingVisibility: null,
+      isReset: true,
+    });
+    expect(properties.isReset).toBe(true);
+    expect(properties.resumed).toBe(true);
   });
 
   // The regression this module exists for. A resumed run rejoins at the photo or
@@ -50,6 +66,7 @@ describe('wallCreatedEventProperties', () => {
       board: row({ angle: 55, isPublic: false, gymUuid: 'gym-7' }),
       meta: null,
       pendingVisibility: null,
+      isReset: false,
     });
 
     expect(properties.angle).toBe(55);
@@ -65,6 +82,7 @@ describe('wallCreatedEventProperties', () => {
       board: row(),
       meta: null,
       pendingVisibility: null,
+      isReset: false,
     });
 
     // Absent, not false: the row cannot answer for them, and a confident `false`
@@ -81,6 +99,7 @@ describe('wallCreatedEventProperties', () => {
       board: row({ angle: 70 }),
       meta: meta({ angle: 25 }),
       pendingVisibility: null,
+      isReset: false,
     });
 
     expect(properties.angle).toBe(70);
@@ -92,6 +111,7 @@ describe('wallCreatedEventProperties', () => {
       board: null,
       meta: meta({ angle: 35, gymUuid: null }),
       pendingVisibility: null,
+      isReset: false,
     });
 
     expect(properties.angle).toBe(35);
@@ -108,6 +128,7 @@ describe('wallCreatedEventProperties', () => {
       board: row({ isPublic: false }),
       meta: meta(),
       pendingVisibility: { isPublic: false, isUnlisted: true },
+      isReset: false,
     });
     expect(unlisted.isPublic).toBe(false);
 
@@ -116,6 +137,7 @@ describe('wallCreatedEventProperties', () => {
       board: row({ isPublic: false }),
       meta: meta(),
       pendingVisibility: null,
+      isReset: false,
     });
     expect(kept.isPublic).toBe(false);
   });
