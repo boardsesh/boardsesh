@@ -439,6 +439,17 @@
       "publicHint": "Anyone can find the wall. It shows on the gym page, its climbs turn up in the feed, and the wall photo goes on the open web.",
       "ownerOnlyError": "Only the climber who set this wall up can change who sees it. Your other changes saved.",
       "updateError": "Couldn't change who can see this wall. Try again."
+    },
+    "sprayClimbEditPolicy": {
+      "label": "Who can edit climbs",
+      "setter": "Setter only",
+      "collaborators": "Anyone who can set",
+      "setterHint": "Only a climb's setter and the wall's editors can edit climbs.",
+      "collaboratorsPublicHint": "Anyone who can see this public wall can edit published climbs.",
+      "collaboratorsUnlistedHint": "Anyone with the share link can edit published climbs.",
+      "collaboratorsPrivateHint": "On a private wall, only climbers with access to set climbs can edit them.",
+      "ownerOnlyHint": "Only the climber who set this wall up can change who can edit climbs.",
+      "ownerOnlyError": "Only the climber who set this wall up can change who can edit climbs. Your other changes saved."
     }
   },
   "boardEntity": {

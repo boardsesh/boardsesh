@@ -247,6 +247,7 @@ export function mapSprayWallRenderData(
     holds,
     renderSettings: null,
     viewerCanEdit: renderData.wall.viewerCanEdit === true,
+    viewerCanEditClimbs: (renderData.wall.viewerCanEditClimbs ?? renderData.wall.viewerCanEdit) === true,
     registeredAtMs: receivedAtMs,
   };
 }
@@ -309,7 +310,11 @@ export function registerRenderData(
     viewerAccess:
       fetchedUnderViewerGeneration === undefined
         ? undefined
-        : { canEdit: renderData.wall.viewerCanEdit === true, generation: fetchedUnderViewerGeneration },
+        : {
+            canEdit: renderData.wall.viewerCanEdit === true,
+            canEditClimbs: (renderData.wall.viewerCanEditClimbs ?? renderData.wall.viewerCanEdit) === true,
+            generation: fetchedUnderViewerGeneration,
+          },
   });
   if (look === undefined) void loadSprayWallLook(layoutId, renderData.wall.uuid);
 

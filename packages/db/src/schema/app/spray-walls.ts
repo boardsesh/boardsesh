@@ -92,6 +92,14 @@ export const sprayDetectionStatusEnum = pgEnum('spray_detection_status', [
 ]);
 
 /**
+ * Who may edit published climbs on this wall (#6025):
+ * - 'setter': only the climb's setter + the wall editors (owner, gym admin, community leader on public wall)
+ * - 'collaborators': anyone who can set climbs on the wall (gym members, share-link crew, anyone on a public wall)
+ */
+export const sprayClimbEditPolicyEnum = pgEnum('spray_climb_edit_policy', ['setter', 'collaborators']);
+export type SprayClimbEditPolicy = (typeof sprayClimbEditPolicyEnum.enumValues)[number];
+
+/**
  * A wall's stored default look: the `BoardRenderSettings` shape mobile keeps
  * per climber, minus its `'default'` mode — a wall default of "use the default"
  * would be circular, so only an explicit `classic` or `aura` is ever stored.
@@ -207,6 +215,11 @@ export const sprayWalls = pgTable(
      * `reference_width/height` rather than migrating onto `spray_wall_versions`.
      */
     renderSettings: jsonb('render_settings').$type<SprayWallRenderSettingsValue>(),
+    /**
+     * Who may edit published climbs on this wall (#6025).
+     * Defaults to 'setter', keeping existing behavior for all existing walls.
+     */
+    climbEditPolicy: sprayClimbEditPolicyEnum('climb_edit_policy').default('setter').notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     /**
