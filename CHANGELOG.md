@@ -24,6 +24,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Keep editing your spray wall when you cancel a leave prompt. ([#6114](https://github.com/boardsesh/boardsesh/pull/6114))
 - See the reset summary and framing warning above your wall photo. ([#6116](https://github.com/boardsesh/boardsesh/pull/6116))
 - Read climb names beside lost-holds labels, and refresh downloaded climbs after publishing a reset. ([#6122](https://github.com/boardsesh/boardsesh/pull/6122))
 - Signing out or deleting a spray wall clears its cached photos and hold previews. Downloads finishing afterward cannot bring those previews back. ([#6128](https://github.com/boardsesh/boardsesh/pull/6128))
