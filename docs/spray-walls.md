@@ -3079,6 +3079,14 @@ nullable: a row pulled before v11 reads NULL, which means unknown and not 1.
 Nothing. The app never sends `climbRevision`, so the server always stores the
 fallback above.
 
+The server therefore decides the version from the tick's date. A send logged
+today but back-dated to before a holds edit counts against the older holds, so
+it stops counting as a send of the current climb; the phone shows it as sent
+until the next sync and then agrees with the server. A send logged now from a
+phone still showing the old holds is credited on the current holds. Both are
+accepted costs of dropping the client's version, and a later backend change
+removes the holds-version rule altogether.
+
 Offline, the local `boardsesh_ticks` row is still stamped, from the phone's own
 `board_climbs.revision_number` for that climb (`writeTickLocal`), so the app's
 sent marks below count the send before the pull brings the server's value. The
@@ -3297,46 +3305,11 @@ Known limits:
 
 ### In the app
 
-The server half (table, `updateClimb`, the `climbRevisions` query) is on `main`.
-The app half below ships with the release train (#5973 on `release/next`).
-
-The play drawer shows an **Edit history** section (`RevisionsSection`) after
-Community and before Similar climbs. It renders nothing unless the query has two
-or more rows, so most climbs never show it. Loading, failed and offline also
-render nothing. It is collapsed by default and its summary counts edits from the
-newest revision number, so pruned edits still count.
-
-Five rows show inline and "Show all" reveals the rest, up to
-`MAX_REVISIONS_PER_CLIMB`. A full history carries a one-line note with that
-number, read through `spray-cap-copy.ts`.
-
-A row opens `ClimbRevisionSheet`: board, name, grade (spray only), notes, date,
-editor, and Older / Newer. It is mounted inside `PlayDrawer` and opened by a
-handler the drawer owns, because a root sheet presents behind the `/play` modal.
-The file imports nothing from the queue, Bluetooth or the editor.
-
-The board is drawn one of two ways (`pickRevisionBoardPath`):
-
-| Revision | Drawn by |
-| --- | --- |
-| Any catalogue board | `BoardImageNative`, with the revision's frames |
-| Spray, same wall version as the registered wall | `BoardImageNative` |
-| Spray, a different wall version | `SprayRevisionBoard` |
-| Spray, no wall version on record | Nothing. One line: "This wall photo is no longer available" |
-
-`SprayRevisionBoard` fetches `sprayWallRenderData(uuid, version)` itself, under
-its own query key, and **never writes the spray registry**. The registry holds
-one version per wall and the play drawer under the sheet draws from it, so
-registering an old version would swap the photo and holds under the live player.
-It draws the photo with `expo-image` (memory cache only, the URL is a 15 minute
-signature) and the holds as rings in one SVG layer.
-
-With no connection the sheet and the old-version board show the offline placard,
-never "photo no longer available".
+The app shows no edit history. The `climbRevisions` query is still served and
+still gated, but nothing in the app calls it.
 
 ### Known limits
 
-- The old-photo preview draws plain rings, not the wall's stored look.
 - No history for edits made before this shipped.
 - The data export does not include revisions.
 - Deleting a climb deletes its revisions (the foreign key cascades).
