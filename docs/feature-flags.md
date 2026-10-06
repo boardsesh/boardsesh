@@ -183,14 +183,6 @@ diagnostic) applies on native. The whole surface lives in three files:
   connect-step state, takes effect right away for the signed-in account
   (`FirstConnectHost` re-enrols when the override changes), and tags the
   exposure `arm_forced: true`.
-  `save-next-session-kill` (read through `useSaveNextSessionEnabled`,
-  unresolved = enabled) takes down save for next session (#6002): the "Saved"
-  line the play view shows after a heart, and the "saved climbs" card in the
-  Climbs list header. It ships to everyone with no arm and no holdout, so this
-  switch is the only way to take it back without a release. With it on, hearts
-  work as before and a failed heart goes back to the root toast. The card
-  waits for `useFeatureFlagsResolved()` before it shows, so it never flashes
-  on a fleet it is off for; the notice reads the flag at the tap.
   `spray-walls` is a POSITIVE rollout flag (read through
   `useSprayWallsEnabled`, unresolved = off) covering the whole spray wall
   surface: the "Add a spray wall" tile on the boards picker and the

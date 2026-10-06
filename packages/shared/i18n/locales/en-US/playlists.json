@@ -42,12 +42,6 @@
       "pinFailed": "Failed to pin playlist",
       "unpinFailed": "Failed to unpin playlist"
     },
-    "savedCard": {
-      "title": "Pick up your saved climbs",
-      "body": "Everything you hearted is waiting in Liked Climbs.",
-      "open": "See saved climbs",
-      "dismiss": "Dismiss"
-    },
     "smart": {
       "fiveStars": {
         "title": "Five Stars",

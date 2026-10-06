@@ -42,12 +42,6 @@
       "pinFailed": "Die Playlist ließ sich nicht anpinnen",
       "unpinFailed": "Die Playlist ließ sich nicht abpinnen"
     },
-    "savedCard": {
-      "title": "Hol dir deine gespeicherten Boulder",
-      "body": "Alle Boulder mit deinem Herz warten in „Gelikte Boulder“ auf dich.",
-      "open": "Gespeicherte Boulder ansehen",
-      "dismiss": "Schließen"
-    },
     "smart": {
       "fiveStars": {
         "title": "Fünf Sterne",

@@ -112,7 +112,6 @@ import { FollowedAuthorsUnavailableError } from '../../../src/lib/followed-autho
 import { useActiveBoard, useSetActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { OnboardingTipBanner } from '../../../src/components/onboarding/OnboardingTipBanner';
 import { FirstConnectCard, useFirstConnectCardExpected } from '../../../src/components/onboarding/FirstConnectCard';
-import { SavedClimbsCard } from '../../../src/components/SavedClimbsCard';
 import {
   clearBoardRevealTipPending,
   hasBoardRevealTipPending,
@@ -1585,21 +1584,12 @@ function ClimbListInner() {
   // Memoized so FlashList doesn't re-measure/re-render the header on every
   // ClimbListInner render — only when the title, pills, or filters change.
   const connectCardBoardName = (activeBoard?.name ?? '').trim() || null;
-  const savedCardBoardType = activeBoard?.boardType ?? null;
   const listHeader = useMemo(
     () => (
       <>
         <FirstConnectCard
           boardName={connectCardBoardName}
           boardHasLights={connectCardBoardHasLights}
-          style={styles.revealBanner}
-        />
-        {/* The way back to hearted climbs (#6002). Last in the one-at-a-time
-            chain: it stays until dismissed, so the connect card and both
-            one-shot tips go first. */}
-        <SavedClimbsCard
-          boardType={savedCardBoardType}
-          suppressed={connectCardVisible || showRevealTip || showQuickActionsTip}
           style={styles.revealBanner}
         />
         {showRevealTip ? (
@@ -1638,8 +1628,6 @@ function ClimbListInner() {
     [
       connectCardBoardName,
       connectCardBoardHasLights,
-      savedCardBoardType,
-      connectCardVisible,
       showRevealTip,
       handleOpenBoardDetail,
       dismissRevealTip,

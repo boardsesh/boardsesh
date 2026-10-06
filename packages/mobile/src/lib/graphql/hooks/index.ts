@@ -100,7 +100,6 @@ import {
 import { UPDATE_SPRAY_WALL } from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWall, UpdateSprayWallInput } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../client';
-import { HAS_SAVED_CLIMBS_QUERY_KEY } from '../../save-next-session/use-has-saved-climbs-on-board';
 import { requestSearchBoards, shouldRetryBoardSearch, boardSearchRetryDelay } from '../search-boards-request';
 import { useStoredUserId } from '../../../hooks/use-current-user-id';
 import { withHoldOutlineOverride, withoutHoldOutlineOverride } from './hold-outline-cache';
@@ -1180,11 +1179,6 @@ export function useToggleFavorite() {
         void queryClient.invalidateQueries({
           queryKey: ['favoriteStatus', variables.input.boardName, variables.input.climbUuid, variables.input.angle],
         });
-        // The Climbs "saved climbs" card asks whether this board has any liked
-        // climb at all; a first heart, or removing the last one, changes that.
-        // Expo web only: a native heart is queued, and the drainer invalidates
-        // this key through `TABLE_INVALIDATE_KEYS.user_favorites` when it lands.
-        void queryClient.invalidateQueries({ queryKey: HAS_SAVED_CLIMBS_QUERY_KEY });
       }
     },
   });

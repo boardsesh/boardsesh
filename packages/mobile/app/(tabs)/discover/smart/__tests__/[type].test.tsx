@@ -163,8 +163,6 @@ describe('SmartPlaylistDetail open event', () => {
   });
 
   it.each([
-    ['the save prompt', 'save_prompt', 'save_prompt'],
-    ['the Climbs card', 'saved_card', 'saved_card'],
     ['Discover', 'discover', 'discover'],
     ['a deep link with no source', undefined, 'other'],
     ['a source nobody defined', 'somewhere_else', 'other'],

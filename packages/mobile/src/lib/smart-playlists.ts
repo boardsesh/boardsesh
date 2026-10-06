@@ -107,9 +107,9 @@ const BY_TYPE = new Map<SmartPlaylistType, SmartPlaylistPresentation>(
  * screen event keeps `[type]` verbatim, so without this a Liked Climbs open
  * cannot be told from any other smart list, or its entry point named.
  */
-export type SmartPlaylistOpenSource = 'discover' | 'save_prompt' | 'saved_card' | 'other';
+export type SmartPlaylistOpenSource = 'discover' | 'other';
 
-const OPEN_SOURCES: readonly SmartPlaylistOpenSource[] = ['discover', 'save_prompt', 'saved_card', 'other'];
+const OPEN_SOURCES: readonly SmartPlaylistOpenSource[] = ['discover', 'other'];
 
 /** A deep link or an old caller carries no source: that reads as `other`. */
 export function parseSmartPlaylistOpenSource(raw: unknown): SmartPlaylistOpenSource {

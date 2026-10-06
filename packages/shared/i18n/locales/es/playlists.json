@@ -42,12 +42,6 @@
       "pinFailed": "No se pudo fijar la playlist",
       "unpinFailed": "No se pudo desfijar la playlist"
     },
-    "savedCard": {
-      "title": "Retoma tus bloques guardados",
-      "body": "Todo lo que marcaste con corazón te espera en Bloques favoritos.",
-      "open": "Ver bloques guardados",
-      "dismiss": "Cerrar"
-    },
     "smart": {
       "fiveStars": {
         "title": "Cinco estrellas",
