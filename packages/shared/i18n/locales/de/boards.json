@@ -897,6 +897,8 @@
     "photo": {
       "title": "Fotografiere die Wand",
       "body": "Stell dich frontal hin, fotografiere bei 1x und hol die ganze Wand ins Bild. Jeder Griff, den du setzt, lebt auf diesen Pixeln.",
+      "helpLink": "So gelingt das Foto",
+      "helpLinkHint": "Öffnet die Foto-Anleitung in deinem Browser",
       "library": "Foto wählen",
       "camera": "Foto aufnehmen",
       "pickAnother": "Anderes Foto wählen",
