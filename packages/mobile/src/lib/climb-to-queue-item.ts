@@ -154,10 +154,9 @@ export function climbToQueueItem(climb: Climb, options?: { suggested?: boolean; 
       // Size compatibility, so a queued climb keeps the one signal that tells
       // Woods' two boards apart (see toClimbInput above).
       compatibleSizeIds: climb.compatibleSizeIds,
-      // How many holds this climb has lost to a spray-wall reset. A broken climb
-      // is still queueable and still playable, and the play drawer says so from
-      // this number — a queued row that dropped it would be the one surface that
-      // quietly pretended the climb was whole.
+      // How many holds this climb has lost to a spray-wall reset. Board
+      // compatibility reads it to keep a climb that lost a hold queueable,
+      // loggable and playable on its own wall, so a queued row must keep it.
       missingHoldCount: climb.missingHoldCount,
       // The version at which the climb's holds last moved, as it was read when
       // it was queued (#6023), for the sent glyph. Ticks never send a version.

@@ -1924,8 +1924,6 @@ export function useCreateClimbScreen({
     handlePaint,
     handleAssignRole,
     handleClearHolds,
-    /** Every frame of the climb as painted now (the active one is `litUpHoldsMap`). */
-    frames,
     handleNewClimb,
     pendingNewClimb,
     confirmNewClimb,

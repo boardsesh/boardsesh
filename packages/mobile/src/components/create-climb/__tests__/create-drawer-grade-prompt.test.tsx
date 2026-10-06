@@ -97,7 +97,6 @@ function footprintBanner(footprint: number) {
     return createElement('div', { 'data-node': 'banner' });
   };
 }
-// The lost-hold layer (#5493) draws through react-native-svg and has its own suite.
 vi.mock('../InlineConfirmBanner', () => ({ InlineConfirmBanner: footprintBanner(96) }));
 vi.mock('../DuplicateBanner', () => ({ DuplicateBanner: footprintBanner(70) }));
 vi.mock('../CreateRoutePlaybackSlot', () => ({

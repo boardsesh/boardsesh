@@ -151,7 +151,8 @@ export function toCanonicalHolds(renderData: Pick<SprayWallRenderData, 'holds'>)
     // time it is nudged (#5441).
     source: hold.source === 'AUTO' ? 'AUTO' : 'MANUAL',
     confidence: hold.confidence ?? null,
-    // The reset review's move link, for the create editor's lost-hold swap (#5493).
+    // The hold this one replaced, as the server has it. The hold editor resends
+    // it on every write, because the server writes the field as sent.
     ...(hold.movedFromHoldId != null ? { movedFromHoldId: hold.movedFromHoldId } : {}),
   }));
 }
