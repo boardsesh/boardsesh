@@ -69,7 +69,12 @@ export type SprayWallHealthMetrics = {
   ticksLogged: number;
   /** Spray ticks that are not bare attempts: flash or send. */
   ticksSends: number;
-  ticksClimbers: number;
+  /**
+   * Distinct people who touched a live spray wall in the week — by logging a
+   * tick or by lighting a climb. Broader than the ticks group above: a kiosk
+   * push that lights a climb is engagement even with no tick behind it.
+   */
+  peopleActive: number;
   /** Ticks written by someone other than the wall's owner. */
   ticksNonOwner: number;
   // Reset and report churn inside the week, plus the hold stock.
@@ -238,7 +243,7 @@ export function foldSprayWallHealth(
     litClimbs,
     ticksLogged,
     ticksSends,
-    ticksClimbers: climbers.size,
+    peopleActive: climbers.size,
     ticksNonOwner,
     resetsPublished: rows.resetsPublished,
     reportsFiled: rows.reportsFiled,
@@ -346,12 +351,16 @@ export async function computeSprayWallHealth({
     .select({ publishedCount: count() })
     .from(sprayWallVersions)
     .innerJoin(sprayWalls, eq(sprayWallVersions.wallId, sprayWalls.id))
+    // Same live-wall definition as the roster: a soft-deleted board removes
+    // the wall from stock, so its resets leave the week's count with it.
+    .innerJoin(userBoards, eq(userBoards.uuid, sprayWalls.boardUuid))
     .where(
       and(
         eq(sprayWallVersions.status, 'published'),
         gte(sprayWallVersions.publishedAt, start),
         lt(sprayWallVersions.publishedAt, end),
         isNull(sprayWalls.deletedAt),
+        isNull(userBoards.deletedAt),
       ),
     );
 
@@ -359,8 +368,14 @@ export async function computeSprayWallHealth({
     .select({ filedCount: count() })
     .from(sprayWallReports)
     .innerJoin(sprayWalls, eq(sprayWallReports.wallId, sprayWalls.id))
+    .innerJoin(userBoards, eq(userBoards.uuid, sprayWalls.boardUuid))
     .where(
-      and(gte(sprayWallReports.createdAt, start), lt(sprayWallReports.createdAt, end), isNull(sprayWalls.deletedAt)),
+      and(
+        gte(sprayWallReports.createdAt, start),
+        lt(sprayWallReports.createdAt, end),
+        isNull(sprayWalls.deletedAt),
+        isNull(userBoards.deletedAt),
+      ),
     );
 
   return {

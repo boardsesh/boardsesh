@@ -72,7 +72,7 @@ void test('empty roster is the no-cohort shape: zeros here, absence at the calle
   const metrics = foldSprayWallHealth(EMPTY, WINDOW);
   assert.equal(metrics.wallsLive, 0);
   assert.equal(metrics.litEvents, 0);
-  assert.equal(metrics.ticksClimbers, 0);
+  assert.equal(metrics.peopleActive, 0);
   assert.equal(metrics.holdsAlive, 0);
 });
 
@@ -91,7 +91,7 @@ void test('owner ticks make a wall active, guest ticks also make it a second-cli
   );
   assert.equal(metrics.ticksLogged, 4);
   assert.equal(metrics.ticksSends, 3); // the bare attempt is not a send
-  assert.equal(metrics.ticksClimbers, 2);
+  assert.equal(metrics.peopleActive, 2);
   assert.equal(metrics.ticksNonOwner, 1);
   assert.equal(metrics.wallsActive, 2);
   assert.equal(metrics.wallsSecondClimber, 1);
@@ -112,7 +112,7 @@ void test('activity on a deleted board stays in the fleet totals but off every w
     WINDOW,
   );
   assert.equal(metrics.ticksLogged, 8); // everything in the window counts
-  assert.equal(metrics.ticksClimbers, 3);
+  assert.equal(metrics.peopleActive, 3);
   assert.equal(metrics.litEvents, 4);
   assert.equal(metrics.wallsActive, 1); // only the live wall
   assert.equal(metrics.litWalls, 0); // its lit rows are on the deleted board
@@ -134,7 +134,7 @@ void test('kiosk lighting events count as activity, never as a second climber', 
   assert.equal(metrics.wallsActive, 1);
   assert.equal(metrics.litWalls, 1);
   assert.equal(metrics.wallsSecondClimber, 0);
-  assert.equal(metrics.ticksClimbers, 0);
+  assert.equal(metrics.peopleActive, 0);
 });
 
 void test('a guest lighting a wall counts as a second climber without any tick', () => {
@@ -142,12 +142,17 @@ void test('a guest lighting a wall counts as a second climber without any tick',
     {
       ...EMPTY,
       walls: [rosterRow({ id: 1, ownerId: 'owner-1' })],
+      // In production `lit` and `litUsers` always co-occur — same table, two
+      // grains of the same window. This fixture keeps that truth so
+      // `wallsActive` cannot be 0 while a second climber is counted.
+      lit: [{ boardId: 1, litEvents: 1, litClimbs: 1 }],
       litUsers: [{ boardId: 1, userId: 'guest-3', litEvents: 1 }],
     },
     WINDOW,
   );
+  assert.equal(metrics.wallsActive, 1);
   assert.equal(metrics.wallsSecondClimber, 1);
-  assert.equal(metrics.ticksClimbers, 1);
+  assert.equal(metrics.peopleActive, 1);
 });
 
 void test('stock reads the roster with its quirks: gyms, hidden walls, birth weeks, dead layouts', () => {

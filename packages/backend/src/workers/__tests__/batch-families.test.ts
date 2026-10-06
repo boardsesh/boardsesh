@@ -526,7 +526,7 @@ describe('execute', () => {
       litClimbs: 12,
       ticksLogged: 25,
       ticksSends: 19,
-      ticksClimbers: 6,
+      peopleActive: 6,
       ticksNonOwner: 8,
       resetsPublished: 1,
       reportsFiled: 2,

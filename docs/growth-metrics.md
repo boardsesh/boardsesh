@@ -442,7 +442,8 @@ names a wall, a gym or a climber.
 | `climbsCreated` | week | Of those, set inside the week. |
 | `climbsDegraded` | stock | Climbs with at least one hold no longer installed (`missingHoldCount > 0`). |
 | `litEvents` / `litWalls` / `litClimbs` | week | `board_climb_events` on live walls: a "lit" on a wall with no LEDs is a climb put on the wall, same reading as spray activation above. |
-| `ticksLogged` / `ticksSends` / `ticksClimbers` / `ticksNonOwner` | week | Spray ticks by climbed-at: total, flash-or-send (not bare attempts), distinct people, and the ones written by someone other than the owner. |
+| `ticksLogged` / `ticksSends` / `ticksNonOwner` | week | Spray ticks by climbed-at: total, flash-or-send (not bare attempts), and the ones written by someone other than the owner. |
+| `peopleActive` | week | Distinct people who touched a live wall — every tick-writer and every climber behind a lighting push. |
 | `resetsPublished` | week | Wall versions published (a reset landing) inside the week. |
 | `reportsFiled` | week | Wall reports raised inside the week. |
 | `holdsAlive` | stock | Holds installed across live walls. |
