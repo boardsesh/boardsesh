@@ -147,9 +147,7 @@ describe('confirmed inaccessible spray walls', () => {
     expect(wallInvalidations).toEqual([
       { queryKey: ['sprayWallByLayout', 4], exact: true },
       { queryKey: ['sprayWallRenderData', 'board-4'] },
-      { queryKey: ['sprayWall', 'board-4'] },
       { queryKey: ['sprayWallWithVersions', 'board-4'] },
-      { queryKey: ['sprayWallRevisionRenderData', 'board-4'] },
     ]);
     const cachedKeys = [
       ['sprayWallRenderData', 'board-4', { viewerGeneration: 1 }],

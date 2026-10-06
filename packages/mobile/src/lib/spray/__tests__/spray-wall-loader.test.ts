@@ -173,7 +173,6 @@ describe('withdrawal erases React Query payloads', () => {
     const erasedKeys = [
       ['sprayWallByLayout', LAYOUT_ID, 'old'],
       ['sprayWallByLayout', LAYOUT_ID, 'older'],
-      ['sprayWall', WALL_UUID, 'old'],
       ['sprayWallRenderData', WALL_UUID, 'old'],
       ['sprayWallRenderData', WALL_UUID, 3, 'old'],
       ['sprayWallWithVersions', WALL_UUID],
@@ -201,7 +200,7 @@ describe('withdrawal erases React Query payloads', () => {
   it('erases an unregistered identity discovered only in cached data', () => {
     const queryClient = privateQueryClient();
     const teardown = installSprayWallLoader(queryClient);
-    queryClient.setQueryData(['sprayWall', WALL_UUID, 'old'], { sprayWall: { uuid: WALL_UUID, layoutId: LAYOUT_ID } });
+    queryClient.setQueryData(['sprayWallWithVersions', WALL_UUID], { uuid: WALL_UUID, layoutId: LAYOUT_ID });
     queryClient.setQueryData(['sprayWallRenderData', WALL_UUID, 'old'], renderDataPayload());
     unregisterSprayWall(LAYOUT_ID);
     expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
@@ -212,7 +211,7 @@ describe('withdrawal erases React Query payloads', () => {
   it('global withdrawal erases spray families and retains catalogue queries', () => {
     const queryClient = privateQueryClient();
     const teardown = installSprayWallLoader(queryClient);
-    for (const family of ['sprayWallByLayout', 'sprayWall', 'sprayWallRenderData', 'sprayWallWithVersions']) {
+    for (const family of ['sprayWallByLayout', 'sprayWallRenderData', 'sprayWallWithVersions']) {
       queryClient.setQueryData([family, 'unknown'], { secret: 'private' });
     }
     queryClient.setQueryData(['catalogue'], { board: 'kilter' });
@@ -271,7 +270,7 @@ describe('withdrawal erases React Query payloads', () => {
 });
 
 describe('loadSprayWall', () => {
-  it.each(['sprayWallWithVersions', 'sprayWallRevisionRenderData'])(
+  it.each(['sprayWallWithVersions', 'sprayWallRenderData'])(
     'cancels inactive %s requests without clearing another wall',
     async (queryPrefix) => {
       const queryClient = new QueryClient();

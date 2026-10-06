@@ -92,7 +92,7 @@ describe('shared-wall capability resolution', () => {
 
   it('rechecks access despite a cached wall that has become private or hidden', async () => {
     const queryClient = makeQueryClient();
-    queryClient.setQueryData(['sprayWall', WALL_UUID], { sprayWall: wall });
+    queryClient.setQueryData(['sprayWallWithVersions', WALL_UUID], wall);
     request.mockResolvedValue({ sprayWall: null });
     await expect(fetchSprayWallBoardFromLink(queryClient, WALL_UUID, WALL_SLUG)).resolves.toBeNull();
     expect(request).toHaveBeenCalledTimes(1);

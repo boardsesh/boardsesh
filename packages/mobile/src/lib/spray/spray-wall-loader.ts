@@ -57,13 +57,7 @@ export const sprayWallByLayoutQueryKey = (layoutId: number | null) =>
 export const sprayWallRenderDataQueryKey = (wallUuid: string | null) =>
   ['sprayWallRenderData', wallUuid, sprayPrivacyGeneration()] as const;
 
-const privateWallQueryFamilies = new Set([
-  'sprayWallByLayout',
-  'sprayWall',
-  'sprayWallRenderData',
-  'sprayWallRevisionRenderData',
-  'sprayWallWithVersions',
-]);
+const privateWallQueryFamilies = new Set(['sprayWallByLayout', 'sprayWallRenderData', 'sprayWallWithVersions']);
 
 function recordFields(payload: unknown): Record<string, unknown> | undefined {
   return payload != null && typeof payload === 'object' ? (payload as Record<string, unknown>) : undefined;
@@ -78,7 +72,7 @@ function eraseWithdrawnWallQueries(queryClient: QueryClient, layoutId?: number, 
       if (!privateWallQueryFamilies.has(String(query.queryKey[0]))) continue;
       const response = recordFields(query.state.data);
       const render = recordFields(response?.sprayWallRenderData);
-      const wall = recordFields(response?.sprayWallByLayout ?? response?.sprayWall ?? render?.wall ?? response);
+      const wall = recordFields(response?.sprayWallByLayout ?? render?.wall ?? response);
       if (wall?.layoutId !== layoutId && !(query.queryKey[0] === 'sprayWallByLayout' && query.queryKey[1] === layoutId))
         continue;
       if (typeof wall?.uuid === 'string') wallUuids.add(wall.uuid);
