@@ -1348,9 +1348,17 @@ links never go through the search builder, so they still open them. The setter
 picker's counts (`getSetterStats`) do not apply the rule; it has no
 `holdIntegrity` input.
 
-The flag reaches phones through the `syncClimbs` pull as `retired_by_reset`. The
-offline search on the phone has to apply the same rule (mobile half of #6024).
-There is no backfill: no reset was marked full before the column existed.
+The flag reaches phones through the `syncClimbs` pull and the saved-climb mirror
+document as `retired_by_reset`. On-device migration v12 adds the column, and
+`search-climbs-local.ts` applies the same rule, because a downloaded wall reads
+locally even while online. Spray scopes have their own refresh revision (2,
+`refreshRevisionByBoardType`) and require the column on refresh pages
+(`refreshColumnsByBoardType`). So a climb retired while a phone ran an older
+bundle, which dropped the field, gets backfilled once on an unmetered network.
+No catalogue board is re-crawled for it.
+
+There is no backfill on the server: no reset was marked full before the column
+existed.
 
 ### Why a moved hold is removed + added, and what remix is for
 

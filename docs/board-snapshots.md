@@ -402,8 +402,8 @@ layout artifact but intentionally outside the enabled size.
   the next live threshold scan rebuilds the stale-schema artifact.
 - **`ARTIFACT_SCHEMA_VERSION`** is derived from the migrations. It is the highest version with a statement
   naming `board_climbs`, `board_climb_stats` or `board_climb_grades` (the same whole-word match the export
-  uses to pick artifact DDL, minus `DEVICE_ONLY_STATEMENTS`). It is 11 today (the climb revision columns
-  on `board_climbs`, #6023). It was 7 (`missing_hold_count`) through v10: a migration that touches only
+  uses to pick artifact DDL, minus `DEVICE_ONLY_STATEMENTS`). It is 12 today (`board_climbs.retired_by_reset`,
+  #6024). It was 11 for the climb revision columns on `board_climbs` (#6023), and 7 (`missing_hold_count`) through v10: a migration that touches only
   device-side tables (v8 spray walls, v9 followed authors, v10 holds index) raises
   `LATEST_SCHEMA_VERSION` but not this, so older artifacts stay importable and downloads keep coming
   from the CDN. The required-columns check below remains the backstop: an artifact that lacks a
@@ -438,6 +438,13 @@ so `ARTIFACT_SCHEMA_VERSION` becomes 11 and the
 [schema-bump staleness window](#schema-bump-staleness-window) applies once: a v11 client refuses every
 artifact built at v10 or below and crawls the scope page by page until the export has rebuilt it. A v10
 client meeting a v11 artifact imports it and drops the two columns it does not have.
+
+### v12 moves it again
+
+Schema **v12** adds `board_climbs.retired_by_reset` (#6024), so `ARTIFACT_SCHEMA_VERSION` becomes 12 and
+the [schema-bump staleness window](#schema-bump-staleness-window) applies once more. The export selects
+the device schema's columns from Postgres, so it needs server migration 0255 applied before it can build
+a v12 artifact. Both ship in the same PR.
 
 ### Compatible additions and missing columns
 
