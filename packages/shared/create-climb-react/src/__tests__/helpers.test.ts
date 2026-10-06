@@ -87,6 +87,30 @@ describe('a spray climb has the same 24-hour window', () => {
   });
 });
 
+// The window's edge, on both sides, on every board. `now - publishedAt` equal to
+// the window is still inside it; one millisecond more is outside.
+describe('the 24-hour edge', () => {
+  const atEdge = new Date(NOW - EDIT_WINDOW_MS).toISOString();
+  const pastEdge = new Date(NOW - EDIT_WINDOW_MS - 1).toISOString();
+
+  it.each(['kilter', 'spray'])('is editable at exactly 24 hours and locked a millisecond later on %s', (boardType) => {
+    const row = (publishedAt: string) => ({ uuid: 'a', boardType, createdAt: null, publishedAt, isDraft: false });
+    expect(computeCanUpdate(row(atEdge), boardType, NOW)).toBe(true);
+    expect(computeEditLocked(row(atEdge), NOW)).toBe(false);
+    expect(computeCanUpdate(row(pastEdge), boardType, NOW)).toBe(false);
+    expect(computeEditLocked(row(pastEdge), NOW)).toBe(true);
+
+    const climb = (publishedAt: string) => ({
+      uuid: 'c',
+      userId: 'setter-1',
+      is_draft: false,
+      published_at: publishedAt,
+    });
+    expect(canEditClimb({ climb: climb(atEdge), boardType, currentUserId: 'setter-1', now: NOW })).toBe(true);
+    expect(canEditClimb({ climb: climb(pastEdge), boardType, currentUserId: 'setter-1', now: NOW })).toBe(false);
+  });
+});
+
 describe('canEditClimb', () => {
   const SETTER = 'setter-1';
   const OTHER = 'someone-else';

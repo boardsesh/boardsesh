@@ -1030,6 +1030,33 @@ describe('DrawerHostProvider play drawer open target', () => {
     expect(routes.at(-1)?.playTarget?.options).toEqual({ committedExternally: true });
   });
 
+  // A spray climb that lost a hold opens like any other: in the player, never
+  // routed to the editor.
+  it('opens a spray climb that lost a hold in the player', async () => {
+    const hosts: Array<HostValue> = [];
+    const routes: Array<RouteValue> = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+    routerNavigate.mockClear();
+    routerPush.mockClear();
+
+    const climb = {
+      ...makeQueueItem('queue-lost', 'climb-lost').climb,
+      boardType: 'spray',
+      missingHoldCount: 2,
+    } as unknown as Climb;
+    act(() => {
+      hosts.at(-1)?.openPlayDrawer(climb);
+    });
+
+    await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(climb));
+    expect(routerNavigate).toHaveBeenCalledWith('/play');
+    expect(routerPush).not.toHaveBeenCalled();
+  });
+
   // The close reset runs from the route's UNMOUNT cleanup — the end of the
   // dismiss animation — and the list underneath is live and tappable for that
   // whole window. A tap landing there writes a target the closing route never
