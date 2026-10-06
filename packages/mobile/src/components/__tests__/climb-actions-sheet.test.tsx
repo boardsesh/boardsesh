@@ -17,6 +17,7 @@ const preview = vi.hoisted(() => ({ props: null as Record<string, unknown> | nul
 const ctrl = vi.hoisted(() => ({
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   viewerCanEditWall: false,
+  viewerCanEditClimbs: false,
 }));
 const nav = vi.hoisted(() => ({ push: vi.fn() }));
 const clipboard = vi.hoisted(() => ({ setStringAsync: vi.fn() }));
@@ -71,7 +72,7 @@ vi.mock('@boardsesh/play-view/readable-url-utils', () => ({
 vi.mock('../../lib/spray/use-spray-wall', () => ({
   useSprayWallViewerCanEdit: (boardName: string | null | undefined) => boardName === 'spray' && ctrl.viewerCanEditWall,
   useSprayWallViewerCanEditClimbs: (boardName: string | null | undefined) =>
-    boardName === 'spray' && ctrl.viewerCanEditWall,
+    boardName === 'spray' && (ctrl.viewerCanEditClimbs || ctrl.viewerCanEditWall),
 }));
 vi.mock('@boardsesh/analytics', () => ({ SHARED_EVENTS: {} }));
 vi.mock('../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
@@ -130,6 +131,7 @@ beforeEach(() => {
   preview.props = null;
   ctrl.variant = 'liquidGlass';
   ctrl.viewerCanEditWall = false;
+  ctrl.viewerCanEditClimbs = false;
   nav.push.mockClear();
 });
 
@@ -259,6 +261,15 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
       ctrl.viewerCanEditWall = true;
       const { container } = render(
         <ClimbActionsSheet visible={true} {...sprayProps} climb={published} currentUserId="wall-owner" />,
+      );
+      expect(editRow(container)).not.toBeNull();
+    });
+
+    it('offers a collaborator Edit when viewerCanEditClimbs is true but viewerCanEditWall is false (#6025)', () => {
+      ctrl.viewerCanEditWall = false;
+      ctrl.viewerCanEditClimbs = true;
+      const { container } = render(
+        <ClimbActionsSheet visible={true} {...sprayProps} climb={published} currentUserId="collaborator-1" />,
       );
       expect(editRow(container)).not.toBeNull();
     });

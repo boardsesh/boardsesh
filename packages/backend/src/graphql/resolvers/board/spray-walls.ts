@@ -1319,7 +1319,14 @@ export const sprayWallQueries = {
     // sequence, so an unlisted wall must not resolve here. See that function.
     const loaded = await loadWall('layoutId', layoutId);
     if (!loaded || !(await viewerCanSeeSprayWallByLayout(loaded.wall, loaded.board, ctx.userId))) return null;
-    return toGraphQLWall(loaded, ctx.userId, await computeCanEdit(ctx, loaded.board));
+    return toGraphQLWall(
+      loaded,
+      ctx.userId,
+      await computeCanEdit(ctx, loaded.board),
+      undefined,
+      undefined,
+      loaded.board.uuid,
+    );
   },
 
   sprayWallRenderData: async (
@@ -1422,7 +1429,9 @@ export const sprayWallQueries = {
     }
 
     return Promise.all(
-      visible.map(async (row) => toGraphQLWall(row, ctx.userId, await computeCanEdit(ctx, row.board))),
+      visible.map(async (row) =>
+        toGraphQLWall(row, ctx.userId, await computeCanEdit(ctx, row.board), undefined, undefined, row.board.uuid),
+      ),
     );
   },
 

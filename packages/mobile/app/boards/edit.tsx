@@ -240,11 +240,15 @@ function EditBoardForm({ board }: { board: UserBoard }) {
         // below: the name and the gym DID save, and a moderator who may edit the
         // wall but not share it should see which half was refused rather than a
         // blanket failure.
+        const currentServerPolicy = sprayWall?.climbEditPolicy
+          ? sprayWall.climbEditPolicy.toLowerCase() === 'collaborators'
+            ? 'collaborators'
+            : 'setter'
+          : undefined;
         const policyChanged =
           isSprayWall &&
           isOwner &&
-          selectedClimbEditPolicy !==
-            (sprayWall?.climbEditPolicy?.toLowerCase() === 'collaborators' ? 'collaborators' : 'setter');
+          (policyTouched ? (currentServerPolicy ? selectedClimbEditPolicy !== currentServerPolicy : true) : false);
         let visibilityError: string | null = null;
         let visibilityApplied = false;
         if (visibilityChanged || policyChanged) {
@@ -389,6 +393,7 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       router,
       t,
       isOwner,
+      policyTouched,
       selectedClimbEditPolicy,
       sprayWall?.climbEditPolicy,
     ],

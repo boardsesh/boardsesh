@@ -8,6 +8,7 @@ import type { ClimbActionId } from '../use-climb-actions';
 // one-action and injected-dismiss handoff end to end.
 const ctrl = vi.hoisted(() => ({
   viewerCanEditWall: false,
+  viewerCanEditClimbs: false,
   sessionId: null as string | null,
   moderationEnabled: true,
   activeClimbUuid: null as string | null,
@@ -37,7 +38,7 @@ vi.mock('expo-web-browser', () => ({ openBrowserAsync: vi.fn(async () => {}) }))
 vi.mock('../../../lib/spray/use-spray-wall', () => ({
   useSprayWallViewerCanEdit: (boardName: string | null | undefined) => boardName === 'spray' && ctrl.viewerCanEditWall,
   useSprayWallViewerCanEditClimbs: (boardName: string | null | undefined) =>
-    boardName === 'spray' && ctrl.viewerCanEditWall,
+    boardName === 'spray' && (ctrl.viewerCanEditClimbs || ctrl.viewerCanEditWall),
 }));
 vi.mock('@boardsesh/analytics', () => ({ SHARED_EVENTS: {} }));
 vi.mock('../../../providers/drawer-host-provider', () => ({
@@ -113,6 +114,7 @@ function ids(args: ActionArgs): ClimbActionId[] {
 
 beforeEach(() => {
   ctrl.viewerCanEditWall = false;
+  ctrl.viewerCanEditClimbs = false;
   ctrl.sessionId = null;
   ctrl.moderationEnabled = true;
   ctrl.activeClimbUuid = null;
@@ -230,6 +232,12 @@ describe('useClimbActions gating', () => {
     it('offers Edit to a wall editor on a published climb they did not set', () => {
       ctrl.viewerCanEditWall = true;
       expect(asViewer(publishedClimb, sprayBoard, 'wall-owner')).toContain('edit');
+    });
+
+    it('offers Edit to a collaborator when viewerCanEditClimbs is true but viewerCanEditWall is false (#6025)', () => {
+      ctrl.viewerCanEditWall = false;
+      ctrl.viewerCanEditClimbs = true;
+      expect(asViewer(publishedClimb, sprayBoard, 'collaborator')).toContain('edit');
     });
 
     it("does not offer a wall editor Edit on somebody else's draft", () => {
