@@ -6218,15 +6218,75 @@ type SprayWall {
   because the underlying knob set still changes independently. A viewer's own
   EXPLICIT render-mode choice always overrides this; it only supplies the look
   for a viewer who has never chosen one.
+
+  May also carry `background: 'photo' | 'wall-crop' | 'hold-cutouts'` — what
+  the wall is drawn on. Missing means 'photo'. The generated backgrounds are
+  read through `sprayWallArt`; a client falls back to the photo whenever that
+  art is not READY.
   """
   renderSettings: JSON
+}
+
+"Where a version's generated wall looks are."
+enum SprayWallArtStatus {
+  "Never asked for, or made by an older recipe."
+  NONE
+  "A job is queued or running."
+  PENDING
+  "Both images are ready."
+  READY
+  "The last job failed. Choosing a generated background again re-queues it."
+  FAILED
+  "The photo failed the quality gate, so nothing will be rendered for it."
+  REFUSED
+}
+
+enum SprayWallPhotoVerdict {
+  "Front-on enough to flatten cleanly."
+  GOOD
+  "Usable, but the far side will look stretched; suggest a front-on retake."
+  SOFT
+  "Too angled, too small, or no corner pins: the generated looks are not offered."
+  FAIL
+}
+
+"How straight-on a version's photo is. Same numbers on the server and in the app."
+type SprayWallPhotoQuality {
+  "sqrt(max / min) of the area scale across the frame. 1 is a perfectly front-on photo. Null when unmeasurable."
+  stretch: Float
+  verdict: SprayWallPhotoVerdict!
+  "ok, no-pins, keystone, small-frame or singular."
+  reason: String!
+  "The canonical frame's short edge, in pixels."
+  frameShortEdge: Int!
+}
+
+"""
+One version's generated wall looks, drawn in the canonical frame (the frame
+hold coordinates live in), scaled to `width` x `height`. Draw holds over it
+with no homography: multiply canonical coordinates by width / boardWidth.
+
+Read in its own query (`sprayWallArt`), never in a shared fragment.
+"""
+type SprayWallArt {
+  versionNumber: Int!
+  "The rendering recipe the server runs. Art made by another recipe reads as NONE."
+  recipe: Int!
+  status: SprayWallArtStatus!
+  width: Int
+  height: Int
+  quality: SprayWallPhotoQuality!
+  "Wall only: the photo flattened into the canonical frame. JPEG. Null unless READY."
+  crop: SprayWallPhoto
+  "Holds only: the same pixels, transparent everywhere but the holds. WebP with alpha; draw the field colour behind it. Null unless READY."
+  cutout: SprayWallPhoto
 }
 
 """
 Everything a renderer needs for one wall at one version: the photo, the
 geometry that maps it, and the holds alive at that version.
 
-No image is ever warped — the client maps holds through the INVERSE of
+The stored photo is never warped — the client maps holds through the INVERSE of
 `homography` at draw time.
 """
 type SprayWallRenderData {
@@ -7454,6 +7514,13 @@ type Query {
   as is a wall with nothing published yet.
   """
   sprayWallRenderData(uuid: ID!, version: Int): SprayWallRenderData
+
+  """
+  The generated wall looks of one version (`wall-crop`, `hold-cutouts`) and
+  its photo-quality verdict. Omit `version` for the published one. Same
+  visibility rules as `sprayWallRenderData`; null where that is null.
+  """
+  sprayWallArt(uuid: ID!, version: Int): SprayWallArt
 
   "Every wall the caller owns, newest first. Includes walls with no published version."
   mySprayWalls: [SprayWall!]!
