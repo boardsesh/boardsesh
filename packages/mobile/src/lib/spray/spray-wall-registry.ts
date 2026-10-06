@@ -49,6 +49,43 @@ export const SPRAY_BOARD_NAME = 'spray';
 export type SprayWallRenderSettingsValue = BoardRenderDefault;
 
 /**
+ * Where a wall stands in the reset lifecycle (`docs/spray-walls.md`, "Archive
+ * and reset"), as the wall payload said it last.
+ *
+ * - `archivedAt`: when a reset replaced this wall, or null for a live wall. An
+ *   archived wall keeps its climbs and sends, but nothing new is set on it.
+ * - `resetOfWallUuid`: the wall this one was cloned from, when the viewer may see it.
+ * - `replacedByWallUuid`: the published wall that replaced this one, when the
+ *   viewer may see it. Null while the replacement is unfinished.
+ * - `holdsLocked`: the wall has a published climb (or is archived), so its holds
+ *   no longer change. Changing a hold means resetting the wall.
+ */
+export type SprayWallArchiveState = {
+  archivedAt: string | null;
+  resetOfWallUuid: string | null;
+  replacedByWallUuid: string | null;
+  holdsLocked: boolean;
+};
+
+/** A live wall whose holds are still free to edit: what a payload without the fields reads as. */
+export const LIVE_SPRAY_WALL_ARCHIVE_STATE: SprayWallArchiveState = Object.freeze({
+  archivedAt: null,
+  resetOfWallUuid: null,
+  replacedByWallUuid: null,
+  holdsLocked: false,
+});
+
+/** Field-wise equality, so an unchanged revalidation keeps the previous object. */
+function sameArchiveState(left: SprayWallArchiveState, right: SprayWallArchiveState): boolean {
+  return (
+    left.archivedAt === right.archivedAt &&
+    left.resetOfWallUuid === right.resetOfWallUuid &&
+    left.replacedByWallUuid === right.replacedByWallUuid &&
+    left.holdsLocked === right.holdsLocked
+  );
+}
+
+/**
  * One wall at one version, in that version's photo pixels.
  *
  * `photoUrl` is a 15-minute presigned signature over an object in the PRIVATE
@@ -142,6 +179,12 @@ export type RegisteredSprayWall = {
    * set climbs when the wall's climbEditPolicy is 'collaborators'.
    */
   viewerCanEditClimbs: boolean;
+  /**
+   * The wall's archive and hold-lock state. Shaped as a `useSyncExternalStore`
+   * snapshot: a re-registration that says the same thing keeps the same object,
+   * so `useSprayWallArchiveState` only wakes its readers for a real change.
+   */
+  archive: SprayWallArchiveState;
   /**
    * When this registration was made, for revalidation. Stamped by
    * `registerSprayWall`, never by the caller — a caller-supplied timestamp is a
@@ -267,12 +310,16 @@ export function registerSprayWall(
   // payload was FETCHED under. Left out means "cannot edit": an answer that does
   // not say the viewer may edit, or cannot say whose answer it is, must not put
   // an Edit action on screen. Never carried over from the previous registration.
+  //
+  // `archive` left out means a live wall with editable holds, the answer a
+  // payload from before the fields existed gives.
   wall: Omit<
     RegisteredSprayWall,
-    'layoutId' | 'registeredAtMs' | 'renderSettings' | 'viewerCanEdit' | 'viewerCanEditClimbs'
+    'layoutId' | 'registeredAtMs' | 'renderSettings' | 'viewerCanEdit' | 'viewerCanEditClimbs' | 'archive'
   > & {
     renderSettings?: SprayWallRenderSettingsValue | null;
     viewerAccess?: SprayWallViewerAccess;
+    archive?: SprayWallArchiveState;
   },
 ): void {
   // An unchanged look keeps its previous identity. Every board surface on the
@@ -283,7 +330,10 @@ export function registerSprayWall(
   const previousLook = previous?.wallUuid === wall.wallUuid ? previous.renderSettings : null;
   const nextLook = wall.renderSettings === undefined ? previousLook : wall.renderSettings;
   const renderSettings = sameLook(previousLook, nextLook) ? previousLook : nextLook;
-  const { viewerAccess, ...registration } = wall;
+  const { viewerAccess, archive: incomingArchive, ...registration } = wall;
+  const nextArchive = incomingArchive ?? LIVE_SPRAY_WALL_ARCHIVE_STATE;
+  const previousArchive = previous?.wallUuid === wall.wallUuid ? previous.archive : null;
+  const archive = previousArchive && sameArchiveState(previousArchive, nextArchive) ? previousArchive : nextArchive;
   // A payload fetched under an account that has since changed. The wall itself
   // is still the wall (photo and holds do not depend on who is looking), so it
   // registers and draws. But its `viewerCanEdit` is somebody else's answer, so
@@ -295,6 +345,7 @@ export function registerSprayWall(
     renderSettings,
     viewerCanEdit: viewerAccess?.canEdit === true && !fetchedForAnotherViewer,
     viewerCanEditClimbs: (viewerAccess?.canEditClimbs ?? viewerAccess?.canEdit) === true && !fetchedForAnotherViewer,
+    archive,
     layoutId,
     registeredAtMs: fetchedForAnotherViewer ? 0 : now(),
   });
@@ -345,6 +396,52 @@ export function sprayBoardRenderDefault(boardName: string, layoutId: number): Sp
 export function sprayWallViewerCanEdit(boardName: string, layoutId: number): boolean {
   if (boardName !== SPRAY_BOARD_NAME) return false;
   return walls.get(layoutId)?.viewerCanEdit === true;
+}
+
+/**
+ * The archive and hold-lock state of the wall a board config points at, or
+ * `null` for every catalogue board and for a wall that is not registered yet.
+ *
+ * Reference-stable between registrations that say the same thing, so it is safe
+ * as a `useSyncExternalStore` snapshot.
+ */
+export function sprayWallArchiveState(boardName: string, layoutId: number): SprayWallArchiveState | null {
+  if (boardName !== SPRAY_BOARD_NAME) return null;
+  return walls.get(layoutId)?.archive ?? null;
+}
+
+/** Whether the wall a board config points at is archived. `false` until it registers. */
+export function sprayWallIsArchived(boardName: string, layoutId: number): boolean {
+  return sprayWallArchiveState(boardName, layoutId)?.archivedAt != null;
+}
+
+/**
+ * Record, ahead of the server's answer, that this device just archived a wall:
+ * its reset replacement published here. The next revalidation confirms it.
+ *
+ * Ignored when no wall is registered under the layout or a different wall is.
+ * Holds lock with the archive, as they do on the server.
+ */
+export function markSprayWallArchived(
+  layoutId: number,
+  wallUuid: string,
+  { archivedAt, replacedByWallUuid }: { archivedAt: string; replacedByWallUuid: string | null },
+): void {
+  const wall = walls.get(layoutId);
+  if (!wall || wall.wallUuid !== wallUuid || wall.archive.archivedAt != null) return;
+  walls.set(layoutId, {
+    ...wall,
+    archive: { ...wall.archive, archivedAt, replacedByWallUuid, holdsLocked: true },
+  });
+  notify();
+}
+
+/** The registered wall with this uuid, or `null`. Linear in the walls this session holds. */
+export function findRegisteredSprayWallByUuid(wallUuid: string): RegisteredSprayWall | null {
+  for (const wall of walls.values()) {
+    if (wall.wallUuid === wallUuid) return wall;
+  }
+  return null;
 }
 
 /**

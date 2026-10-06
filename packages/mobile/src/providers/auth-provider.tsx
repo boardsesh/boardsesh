@@ -49,7 +49,7 @@ import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
 import { clearSprayWallPrivateCaches } from '../lib/spray/spray-privacy-cleanup';
 import { dropSprayWallViewerAccess, refreshSprayWallViewerAccess } from '../lib/spray/spray-wall-loader';
 import { resetSyncStatus } from '../sync/sync-status';
-import { setSetting, clearOfflineBoards } from '../settings';
+import { setSetting, clearOfflineBoards, clearSprayWallArchives } from '../settings';
 import { getOutboxSummary, setSigningOut } from '@boardsesh/offline-sync';
 import { drainMutationQueue, reportScopeDownloadAbandonedOnSignOut } from '../offline/offline-sync-adapter';
 import { reportAbandonedDownloadsOnSignOut } from '../offline/abandoned-download-terminals';
@@ -450,6 +450,8 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // previous account's board NAMES, so on a shared device a missed clear would
       // show one user's walls in the next user's picker.
       clearOfflineBoards();
+      // The archive state of the walls that account could see goes with them.
+      clearSprayWallArchives();
       // Drop the in-memory active-board cache too. It's `staleTime: Infinity`, so
       // without this the next user to sign in on a shared device would inherit the
       // previous user's board until a manual switch.

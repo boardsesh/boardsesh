@@ -9,13 +9,21 @@ const fixture = vi.hoisted(() => ({
   read: vi.fn(),
   register: vi.fn(),
   getSize: vi.fn(),
+  remembered: null as { archivedAt: string | null; replacedByWallUuid: string | null; holdsLocked: boolean } | null,
 }));
 vi.mock('react-native', () => ({ Image: { getSize: fixture.getSize } }));
 vi.mock('../../../db', () => ({ getDatabaseHandle: () => ({}) }));
 vi.mock('../../../db/queries/get-spray-wall-local', () => ({ getSprayWallLocal: fixture.read }));
 vi.mock('../../local-user-id', () => ({ readLocalUserId: async () => fixture.userId }));
 vi.mock('../spray-photo-store', () => ({ tryGetStoredSprayPhotoPathSync: () => fixture.storedPath }));
+vi.mock('../../../settings/offline-boards', () => ({ getRememberedSprayWallArchive: () => fixture.remembered }));
 vi.mock('../spray-wall-registry', () => ({
+  LIVE_SPRAY_WALL_ARCHIVE_STATE: {
+    archivedAt: null,
+    resetOfWallUuid: null,
+    replacedByWallUuid: null,
+    holdsLocked: false,
+  },
   registerSprayWall: fixture.register,
   sprayWallViewerGeneration: () => fixture.viewerGeneration,
   sprayWallRemovalGeneration: () => fixture.removalGeneration,
@@ -41,6 +49,7 @@ beforeEach(() => {
   fixture.storedPath = '/photos/wall.jpg';
   fixture.viewerGeneration = 1;
   fixture.removalGeneration = 1;
+  fixture.remembered = null;
   fixture.read.mockResolvedValue(wall);
   fixture.getSize.mockImplementation((_uri: string, success: (width: number, height: number) => void) =>
     success(1200, 900),
@@ -60,6 +69,34 @@ describe('offline published wall hydration', () => {
         localPhotoPath: '/photos/wall.jpg',
         viewerAccess: { canEdit: false, generation: 1 },
         holds: [expect.objectContaining({ cx: 100, cy: 150 })],
+      }),
+    );
+  });
+
+  // SQLite has no archive column, so what the server last said comes from the
+  // settings store: an archived wall still refuses new climbs with no signal.
+  it('registers a downloaded wall as live when nothing was remembered about it', async () => {
+    expect(await loadLocalSprayWall(4, 1, 1)).toBe(true);
+    expect(fixture.register).toHaveBeenCalledWith(
+      4,
+      expect.objectContaining({
+        archive: { archivedAt: null, resetOfWallUuid: null, replacedByWallUuid: null, holdsLocked: false },
+      }),
+    );
+  });
+
+  it('keeps a remembered archive offline, holds locked with it', async () => {
+    fixture.remembered = { archivedAt: '2026-10-01T09:00:00.000Z', replacedByWallUuid: 'new-wall', holdsLocked: false };
+    expect(await loadLocalSprayWall(4, 1, 1)).toBe(true);
+    expect(fixture.register).toHaveBeenCalledWith(
+      4,
+      expect.objectContaining({
+        archive: {
+          archivedAt: '2026-10-01T09:00:00.000Z',
+          resetOfWallUuid: null,
+          replacedByWallUuid: 'new-wall',
+          holdsLocked: true,
+        },
       }),
     );
   });

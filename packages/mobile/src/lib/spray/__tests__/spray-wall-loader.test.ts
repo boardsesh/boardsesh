@@ -177,7 +177,6 @@ describe('withdrawal erases React Query payloads', () => {
       ['sprayWallRenderData', WALL_UUID, 'old'],
       ['sprayWallRenderData', WALL_UUID, 3, 'old'],
       ['sprayWallWithVersions', WALL_UUID],
-      ['sprayWallResetProposal', 'draft-a', 20],
     ];
     for (const key of erasedKeys)
       queryClient.setQueryData(
@@ -187,7 +186,6 @@ describe('withdrawal erases React Query payloads', () => {
     const preservedKeys = [
       ['sprayWallByLayout', 4300, 'old'],
       ['sprayWallRenderData', 'wall-b', 'old'],
-      ['sprayWallResetProposal', 'draft-b', 20],
       ['catalogue', 'kilter'],
     ];
     for (const key of preservedKeys) queryClient.setQueryData(key, { secret: 'other payload' });
@@ -214,13 +212,7 @@ describe('withdrawal erases React Query payloads', () => {
   it('global withdrawal erases spray families and retains catalogue queries', () => {
     const queryClient = privateQueryClient();
     const teardown = installSprayWallLoader(queryClient);
-    for (const family of [
-      'sprayWallByLayout',
-      'sprayWall',
-      'sprayWallRenderData',
-      'sprayWallWithVersions',
-      'sprayWallResetProposal',
-    ]) {
+    for (const family of ['sprayWallByLayout', 'sprayWall', 'sprayWallRenderData', 'sprayWallWithVersions']) {
       queryClient.setQueryData([family, 'unknown'], { secret: 'private' });
     }
     queryClient.setQueryData(['catalogue'], { board: 'kilter' });

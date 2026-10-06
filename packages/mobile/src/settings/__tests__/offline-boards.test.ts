@@ -30,6 +30,9 @@ import {
   forgetOfflineBoardScope,
   pruneOfflineBoards,
   clearOfflineBoards,
+  clearSprayWallArchives,
+  getRememberedSprayWallArchive,
+  rememberSprayWallArchive,
 } from '../offline-boards';
 import { resetAllSettings } from '../hooks';
 
@@ -190,5 +193,62 @@ describe('offline board snapshots', () => {
 
     mockStorage.set('offlineBoardsV1', 'not json at all');
     expect(getOfflineBoards()).toEqual([]);
+  });
+});
+
+describe('remembered spray wall archive state', () => {
+  beforeEach(() => {
+    mockStorage.clear();
+    setSpy.mockClear();
+    resetAllSettings();
+    setSpy.mockClear();
+  });
+
+  const archived = { archivedAt: '2026-10-01T09:00:00.000Z', replacedByWallUuid: 'new-wall', holdsLocked: true };
+
+  it('keeps an archived or locked wall, and nothing for a live wall with free holds', () => {
+    rememberSprayWallArchive('old-wall', archived);
+    rememberSprayWallArchive('locked-wall', { archivedAt: null, replacedByWallUuid: null, holdsLocked: true });
+    rememberSprayWallArchive('live-wall', { archivedAt: null, replacedByWallUuid: null, holdsLocked: false });
+    expect(getRememberedSprayWallArchive('old-wall')).toEqual(archived);
+    expect(getRememberedSprayWallArchive('locked-wall')?.holdsLocked).toBe(true);
+    expect(getRememberedSprayWallArchive('live-wall')).toBeNull();
+  });
+
+  // Every ten-minute revalidation calls this; a write wakes every settings reader.
+  it('writes only on a change', () => {
+    rememberSprayWallArchive('old-wall', archived);
+    setSpy.mockClear();
+    rememberSprayWallArchive('old-wall', { ...archived });
+    rememberSprayWallArchive('live-wall', { archivedAt: null, replacedByWallUuid: null, holdsLocked: false });
+    expect(setSpy).not.toHaveBeenCalled();
+  });
+
+  it('forgets a wall the server says is live again', () => {
+    rememberSprayWallArchive('locked-wall', { archivedAt: null, replacedByWallUuid: null, holdsLocked: true });
+    rememberSprayWallArchive('locked-wall', { archivedAt: null, replacedByWallUuid: null, holdsLocked: false });
+    expect(getRememberedSprayWallArchive('locked-wall')).toBeNull();
+  });
+
+  it('drops an entry written in a shape this build does not know', () => {
+    mockStorage.set('offlineSprayWallArchiveV1', JSON.stringify({ broken: { archivedAt: 4 }, 'old-wall': archived }));
+    expect(getRememberedSprayWallArchive('broken')).toBeNull();
+    expect(getRememberedSprayWallArchive('old-wall')).toEqual(archived);
+  });
+
+  it('stays bounded, dropping the oldest wall first', () => {
+    for (let index = 0; index < 70; index += 1) {
+      rememberSprayWallArchive(`wall-${index}`, { ...archived, replacedByWallUuid: `next-${index}` });
+    }
+    expect(getRememberedSprayWallArchive('wall-0')).toBeNull();
+    expect(getRememberedSprayWallArchive('wall-69')).not.toBeNull();
+    const stored = JSON.parse(mockStorage.get('offlineSprayWallArchiveV1') ?? '{}') as Record<string, unknown>;
+    expect(Object.keys(stored)).toHaveLength(64);
+  });
+
+  it('clears everything at sign-out', () => {
+    rememberSprayWallArchive('old-wall', archived);
+    clearSprayWallArchives();
+    expect(getRememberedSprayWallArchive('old-wall')).toBeNull();
   });
 });

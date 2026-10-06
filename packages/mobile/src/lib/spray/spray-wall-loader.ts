@@ -36,12 +36,14 @@ import {
   unregisterSprayWall,
   sprayWallRemovalGeneration,
   subscribeToSprayWalls,
+  type SprayWallArchiveState,
   type SprayWallRenderSettingsValue,
   sprayWallLoaderGeneration,
   unsetSprayWallLoader,
   subscribeToSprayWallWithdrawals,
 } from './spray-wall-registry';
 import { clearSupersededSprayDrafts } from '../create-climb-draft-store';
+import { rememberSprayWallArchive } from '../../settings/offline-boards';
 import { sanitizeBoardRenderDefault } from '../board-render-settings';
 import { reportHandledError } from '../error-reporting';
 import { mapCanonicalHoldsToPhoto, type CanonicalSprayHold } from './spray-hold-geometry';
@@ -61,7 +63,6 @@ const privateWallQueryFamilies = new Set([
   'sprayWallRenderData',
   'sprayWallRevisionRenderData',
   'sprayWallWithVersions',
-  'sprayWallResetProposal',
 ]);
 
 function recordFields(payload: unknown): Record<string, unknown> | undefined {
@@ -72,7 +73,6 @@ function recordFields(payload: unknown): Record<string, unknown> | undefined {
 function eraseWithdrawnWallQueries(queryClient: QueryClient, layoutId?: number, registeredUuid?: string): void {
   const queries = queryClient.getQueryCache().getAll();
   const wallUuids = new Set<string>(registeredUuid ? [registeredUuid] : []);
-  const versionIds = new Set<string>();
   if (layoutId != null) {
     for (const query of queries) {
       if (!privateWallQueryFamilies.has(String(query.queryKey[0]))) continue;
@@ -83,19 +83,6 @@ function eraseWithdrawnWallQueries(queryClient: QueryClient, layoutId?: number, 
         continue;
       if (typeof wall?.uuid === 'string') wallUuids.add(wall.uuid);
     }
-    for (const query of queries) {
-      if (!privateWallQueryFamilies.has(String(query.queryKey[0]))) continue;
-      const response = recordFields(query.state.data);
-      const render = recordFields(response?.sprayWallRenderData);
-      const wall = recordFields(response?.sprayWallByLayout ?? response?.sprayWall ?? render?.wall ?? response);
-      const knownUuid = typeof query.queryKey[1] === 'string' && wallUuids.has(query.queryKey[1]);
-      if (wall?.layoutId !== layoutId && !knownUuid) continue;
-      const versions = Array.isArray(wall?.versions) ? wall.versions : [];
-      for (const version of [...versions, wall?.currentVersion]) {
-        const versionId = recordFields(version)?.id;
-        if (typeof versionId === 'string') versionIds.add(versionId);
-      }
-    }
   }
   queryClient.removeQueries({
     predicate: (query) => {
@@ -103,7 +90,6 @@ function eraseWithdrawnWallQueries(queryClient: QueryClient, layoutId?: number, 
       if (!privateWallQueryFamilies.has(String(family))) return false;
       if (layoutId == null) return true;
       if (family === 'sprayWallByLayout') return identity === layoutId;
-      if (family === 'sprayWallResetProposal') return typeof identity === 'string' && versionIds.has(identity);
       return typeof identity === 'string' && wallUuids.has(identity);
     },
   });
@@ -229,6 +215,25 @@ function reportDroppedHolds(renderData: SprayWallRenderData, expected: number, m
   });
 }
 
+/**
+ * The wall's archive and hold-lock state, off its payload.
+ *
+ * A backend or a cached payload without the fields reads as a live wall with
+ * free holds. An archived wall reads as locked whatever `holdsLocked` says, the
+ * same rule the server applies.
+ */
+export function sprayWallArchiveStateOf(
+  wall: Pick<SprayWall, 'archivedAt' | 'resetOfWallUuid' | 'replacedByWallUuid' | 'holdsLocked'>,
+): SprayWallArchiveState {
+  const archivedAt = wall.archivedAt ?? null;
+  return {
+    archivedAt,
+    resetOfWallUuid: wall.resetOfWallUuid ?? null,
+    replacedByWallUuid: wall.replacedByWallUuid ?? null,
+    holdsLocked: wall.holdsLocked === true || archivedAt != null,
+  };
+}
+
 /** Map one payload without replacing the published wall or its runtime geometry. */
 export function mapSprayWallRenderData(
   layoutId: number,
@@ -256,6 +261,7 @@ export function mapSprayWallRenderData(
     renderSettings: null,
     viewerCanEdit: renderData.wall.viewerCanEdit === true,
     viewerCanEditClimbs: (renderData.wall.viewerCanEditClimbs ?? renderData.wall.viewerCanEdit) === true,
+    archive: sprayWallArchiveStateOf(renderData.wall),
     registeredAtMs: receivedAtMs,
   };
 }
@@ -297,6 +303,7 @@ export function registerRenderData(
 
   reportDroppedHolds(renderData, canonicalHolds.length, holds.length);
 
+  const archive = sprayWallArchiveStateOf(renderData.wall);
   registerSprayWall(layoutId, {
     wallUuid: renderData.wall.uuid,
     // The wall's own angle, not the caller's. Every climb set on the wall has to
@@ -326,6 +333,7 @@ export function registerRenderData(
     holds,
     homography: renderData.homography,
     renderSettings: look,
+    archive,
     // Strictly `true`: a payload from a backend that predates the field, or a
     // cached one missing it, must read as "cannot edit".
     viewerAccess:
@@ -338,6 +346,14 @@ export function registerRenderData(
           },
   });
   if (look === undefined) void loadSprayWallLook(layoutId, renderData.wall.uuid);
+
+  // Kept for the offline loader: SQLite has no column for either fact, so a
+  // downloaded wall opened with no signal reads them from here.
+  try {
+    rememberSprayWallArchive(renderData.wall.uuid, archive);
+  } catch (error) {
+    reportHandledError(error, { level: 'warning', tags: { boardName: 'spray' } });
+  }
 
   // The create-climb draft slot is keyed on the version, so a reset moves it and
   // leaves the old one holding holds that are no longer on the wall. Nothing else

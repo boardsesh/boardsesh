@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { offlineBoardKey, offlineBoardKeyForBoard, type OfflineBoardScope } from '@boardsesh/offline-sync';
 import { getSetting, setSetting, useSetting } from './hooks';
+import type { RememberedSprayWallArchive } from './types';
 import { isOfflineBoardCard, readOfflineBoardCards } from '../lib/boards/offline-board-card';
 
 /**
@@ -253,4 +254,83 @@ export function takeDownloadAllTap(): boolean {
 export function forgetDownloadAllTap(): void {
   if (getSetting(DOWNLOAD_ALL_TAP_SETTING_KEY) !== true) return;
   setSetting(DOWNLOAD_ALL_TAP_SETTING_KEY, false);
+}
+
+// --- Spray wall archive state for offline walls ---------------------------------
+
+const SPRAY_ARCHIVE_SETTING_KEY = 'offlineSprayWallArchiveV1';
+
+/**
+ * A climber who resets a wall once a month for four years archives fifty walls
+ * (`MAX_ARCHIVED_SPRAY_WALLS_PER_USER`), and a few more come from walls they
+ * follow. Past this the oldest entry goes first: a wall nobody has opened in
+ * that long reads as live offline, and the server still refuses the save.
+ */
+const MAX_REMEMBERED_SPRAY_WALL_ARCHIVES = 64;
+
+function isRememberedSprayWallArchive(value: unknown): value is RememberedSprayWallArchive {
+  if (value === null || typeof value !== 'object') return false;
+  const entry = value as Record<string, unknown>;
+  return (
+    (entry.archivedAt === null || typeof entry.archivedAt === 'string') &&
+    (entry.replacedByWallUuid === null || typeof entry.replacedByWallUuid === 'string') &&
+    typeof entry.holdsLocked === 'boolean'
+  );
+}
+
+function readSprayWallArchives(): Record<string, RememberedSprayWallArchive> {
+  const stored: unknown = getSetting(SPRAY_ARCHIVE_SETTING_KEY);
+  if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) return {};
+  const valid: Record<string, RememberedSprayWallArchive> = {};
+  for (const [wallUuid, entry] of Object.entries(stored as Record<string, unknown>)) {
+    if (isRememberedSprayWallArchive(entry)) valid[wallUuid] = entry;
+  }
+  return valid;
+}
+
+/** The last archive state the server reported for a wall, or `null` for a live wall with free holds. */
+export function getRememberedSprayWallArchive(wallUuid: string): RememberedSprayWallArchive | null {
+  return readSprayWallArchives()[wallUuid] ?? null;
+}
+
+/**
+ * Keep what the server just said about a wall, for the next time it is opened
+ * offline. A live wall with free holds is the default and is removed rather
+ * than stored. Writes only on a change: every settings write re-renders every
+ * `useSetting` reader, and this runs on each ten-minute revalidation.
+ */
+export function rememberSprayWallArchive(wallUuid: string, state: RememberedSprayWallArchive): void {
+  const current = readSprayWallArchives();
+  const previous = current[wallUuid];
+  const isDefault = state.archivedAt === null && !state.holdsLocked;
+  if (isDefault) {
+    if (!previous) return;
+    const { [wallUuid]: _forgotten, ...rest } = current;
+    setSetting(SPRAY_ARCHIVE_SETTING_KEY, rest);
+    return;
+  }
+  if (
+    previous &&
+    previous.archivedAt === state.archivedAt &&
+    previous.replacedByWallUuid === state.replacedByWallUuid &&
+    previous.holdsLocked === state.holdsLocked
+  )
+    return;
+  const { [wallUuid]: _replaced, ...others } = current;
+  const kept = Object.entries(others).slice(-(MAX_REMEMBERED_SPRAY_WALL_ARCHIVES - 1));
+  setSetting(SPRAY_ARCHIVE_SETTING_KEY, {
+    ...Object.fromEntries(kept),
+    [wallUuid]: {
+      archivedAt: state.archivedAt,
+      replacedByWallUuid: state.replacedByWallUuid,
+      holdsLocked: state.holdsLocked,
+    },
+  });
+}
+
+/** Drop every remembered wall. Sign-out, beside `clearOfflineBoards`. */
+export function clearSprayWallArchives(): void {
+  const stored = getSetting(SPRAY_ARCHIVE_SETTING_KEY);
+  if (stored !== null && typeof stored === 'object' && Object.keys(stored).length === 0) return;
+  setSetting(SPRAY_ARCHIVE_SETTING_KEY, {});
 }
