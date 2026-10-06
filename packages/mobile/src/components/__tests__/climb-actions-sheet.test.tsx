@@ -112,6 +112,8 @@ const ownerClimb = {
   is_draft: true,
 } as unknown as Climb;
 
+const publishedOwnerClimb = { ...ownerClimb, is_draft: false } as unknown as Climb;
+
 const baseProps = {
   climb,
   boardName: 'kilter' as const,
@@ -181,7 +183,7 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
       <ClimbActionsSheet
         visible={true}
         {...baseProps}
-        climb={ownerClimb}
+        climb={publishedOwnerClimb}
         boardName="tension"
         currentUserId="user-1"
         onAddToQueue={vi.fn()}
@@ -207,7 +209,7 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
       <ClimbActionsSheet
         visible={true}
         {...baseProps}
-        climb={ownerClimb}
+        climb={publishedOwnerClimb}
         boardName="tension"
         currentUserId="user-1"
         onAddToQueue={vi.fn()}
