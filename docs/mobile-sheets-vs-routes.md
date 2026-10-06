@@ -489,7 +489,7 @@ climb changes reuse the carousel without restarting the opening placeholder.
   nested navigator costs you the back-swipe and the inherited header for nothing — the depth is
   already expressed by the route names. Reach for the same shape for any settings screen that grows
   sub-pages.
-- **Spray-wall flows on iPad** (`/boards/spray/new`, `/holds`, `/reset`) — pushed routes on the
+- **Spray-wall flows on iPad** (`/boards/spray/new`, `/holds`) — pushed routes on the
   `boards` modal everywhere (rule 3: their corner markers and hold editor are pan-and-pinch
   boards), but on iPad the `boards` page card is a box in the middle of the screen, the wrong size
   for an editor. So on iPad, and only there, they are a `fullScreenModal`. Rule 2 does not apply:
