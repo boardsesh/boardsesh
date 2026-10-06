@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 
-import { TABLE_CONFIGS, BOARD_DATA_TABLES, USER_DATA_TABLES } from '../table-config';
+import {
+  TABLE_CONFIGS,
+  BOARD_DATA_TABLES,
+  USER_DATA_TABLES,
+  refreshColumnsFor,
+  refreshRevisionFor,
+} from '../table-config';
 
 /**
  * Pins the two halves of the spray-wall sync contract that nothing else can
@@ -106,5 +112,21 @@ describe('climb revision columns (#6023)', () => {
     // same tick. A bump would re-crawl every downloaded catalogue for nothing.
     expect(TABLE_CONFIGS.board_climbs.refreshRevision).toBe(1);
     expect(TABLE_CONFIGS.board_climbs.refreshColumns).toEqual(['is_hidden']);
+  });
+});
+
+describe('board_climbs.retired_by_reset (#6024)', () => {
+  it('is synced', () => {
+    expect(TABLE_CONFIGS.board_climbs.localColumns).toContain('retired_by_reset');
+  });
+
+  it('replays and requires the column on spray scopes only, never on a catalogue', () => {
+    // Only a full spray reset sets the flag. A spray replay backfills rows an
+    // older bundle dropped it from; the same on Kilter would re-crawl every
+    // downloaded catalogue to write NULLs.
+    expect(refreshRevisionFor('board_climbs', 'spray')).toBe(2);
+    expect(refreshRevisionFor('board_climbs', 'kilter')).toBe(1);
+    expect(refreshColumnsFor('board_climbs', 'spray')).toEqual(['is_hidden', 'retired_by_reset']);
+    expect(refreshColumnsFor('board_climbs', 'kilter')).toEqual(['is_hidden']);
   });
 });

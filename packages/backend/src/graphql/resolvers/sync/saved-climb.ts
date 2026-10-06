@@ -43,6 +43,7 @@ const climbColumns = {
   characteristics: boardClimbs.characteristics,
   hold_fingerprint: boardClimbs.holdFingerprint,
   missing_hold_count: boardClimbs.missingHoldCount,
+  retired_by_reset: boardClimbs.retiredByReset,
   revision_number: boardClimbs.revisionNumber,
   holds_revision_number: boardClimbs.holdsRevisionNumber,
   updated_at: sql<string>`${boardClimbs.updatedAt}::text`,

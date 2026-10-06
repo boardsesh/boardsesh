@@ -41,6 +41,15 @@ export type TableSyncConfig = {
   captureOnDelete?: readonly string[];
   /** Bump when existing reference rows need newly synced fields backfilled. */
   refreshRevision?: number;
+  /**
+   * A higher refresh revision for one board type only, so a field that only
+   * one board ever writes can be backfilled without re-crawling every other
+   * board's downloaded catalogue. The effective revision for a scope is the
+   * larger of this and `refreshRevision` (`refreshRevisionFor`).
+   */
+  refreshRevisionByBoardType?: Readonly<Partial<Record<string, number>>>;
+  /** Extra `refreshColumns` for one board type's scopes, merged by `refreshColumnsFor`. */
+  refreshColumnsByBoardType?: Readonly<Partial<Record<string, readonly string[]>>>;
   /** Cumulative fields that must be present before coverage can be stamped. */
   refreshColumns?: readonly string[];
   /**
@@ -155,7 +164,18 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
   },
   board_climbs: {
     refreshRevision: 1,
+    // Spray scopes replay once more for `retired_by_reset` (#6024). A full reset
+    // stamps `updated_at` on every climb it retires, but a phone on an older
+    // bundle took those rows through the ordinary cursor and dropped the field,
+    // so they would stay NULL (not retired) here for good. Spray only: no
+    // catalogue board ever sets the flag, and bumping `refreshRevision` would
+    // re-crawl every downloaded Kilter and Tension catalogue to write NULLs.
+    refreshRevisionByBoardType: { spray: 2 },
     refreshColumns: ['is_hidden'],
+    // Required on spray pages only. A page from a server that predates the
+    // column must not complete the spray replay above, but making it required
+    // everywhere would let one such page reopen coverage on every catalogue.
+    refreshColumnsByBoardType: { spray: ['retired_by_reset'] },
     queryName: 'syncClimbs',
     cursorColumn: UPDATED_AT_CURSOR,
     operationKey: 'SYNC_CLIMBS',
@@ -222,6 +242,16 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
       // correctly.
       'revision_number',
       'holds_revision_number',
+      // Spray climbs retired by a full reset (#6024), so the local search can
+      // hide them from a wall's default list the way the server does.
+      //
+      // ALSO ADDED WITHOUT BUMPING `refreshRevision` / `refreshColumns`. Only a
+      // full reset sets it, the recompute that sets it stamps `updated_at`, and
+      // so the ordinary cursor re-delivers every row it touches. NULL reads as
+      // not retired, which is right for every catalogue climb. The gap is the
+      // same as for the revision numbers above: a row re-delivered to an older
+      // bundle that dropped the field stays NULL here until it next changes.
+      'retired_by_reset',
       'updated_at',
       'sync_seq',
     ],
@@ -322,6 +352,27 @@ export const TABLE_CONFIGS: Record<string, TableSyncConfig> = Object.fromEntries
     { ...definition, invalidateKeys: TABLE_INVALIDATE_KEYS[tableName] ?? [] },
   ]),
 );
+
+/**
+ * The refresh revision a board scope of `tableName` must reach: the table-wide
+ * `refreshRevision`, raised by `refreshRevisionByBoardType` for that board.
+ * Undefined when the table has neither, which means "never replay".
+ */
+export function refreshRevisionFor(tableName: string, boardType: string | undefined): number | undefined {
+  const config = TABLE_CONFIGS[tableName];
+  if (!config) return undefined;
+  const boardRevision = boardType ? config.refreshRevisionByBoardType?.[boardType] : undefined;
+  const revision = Math.max(config.refreshRevision ?? 0, boardRevision ?? 0);
+  return revision > 0 ? revision : undefined;
+}
+
+/** The refresh columns a board scope of `tableName` requires: the table's, plus that board's. */
+export function refreshColumnsFor(tableName: string, boardType: string | undefined): readonly string[] {
+  const config = TABLE_CONFIGS[tableName];
+  if (!config) return [];
+  const boardColumns = boardType ? (config.refreshColumnsByBoardType?.[boardType] ?? []) : [];
+  return [...(config.refreshColumns ?? []), ...boardColumns];
+}
 
 export const USER_DATA_TABLES = Object.entries(TABLE_CONFIGS)
   .filter(([, config]) => !config.isPerBoard)

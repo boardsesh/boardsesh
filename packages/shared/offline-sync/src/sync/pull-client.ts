@@ -1,6 +1,12 @@
 import type { OfflineDatabase, QueryInvalidator, SqlExecutor } from '../database';
 import type { SyncCursorInput, SyncResult, SyncDeletionsResult } from '../types';
-import { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from './table-config';
+import {
+  TABLE_CONFIGS,
+  USER_DATA_TABLES,
+  BOARD_DATA_TABLES,
+  refreshColumnsFor,
+  refreshRevisionFor,
+} from './table-config';
 import {
   getCheckpoint,
   compareCheckpoints,
@@ -819,7 +825,7 @@ async function syncTable(
 
   const checkpointKey = getCheckpointKey(tableName, boardScope?.scopeKey);
   const checkpoint = refresh?.state ?? (await getCheckpoint(db, checkpointKey));
-  const revision = boardScope ? config.refreshRevision : undefined;
+  const revision = boardScope ? refreshRevisionFor(tableName, boardScope.boardType) : undefined;
   const previousRefresh =
     revision && boardScope ? await getSchemaRefreshState(db, tableName, boardScope.scopeKey) : null;
   let fullDownload =
@@ -880,7 +886,7 @@ async function syncTable(
 
       assertSyncPageProgress(result, cursor);
       if (result.documents.length === 0) break;
-      const missingRefreshColumns = (config.refreshColumns ?? []).filter((column) =>
+      const missingRefreshColumns = refreshColumnsFor(tableName, boardScope?.boardType).filter((column) =>
         result.documents.some((document) => !Object.prototype.hasOwnProperty.call(document, column)),
       );
       if (refresh && missingRefreshColumns.length > 0) {
@@ -3312,7 +3318,7 @@ async function performPullSync(
     if (cycleAborted()) return reportInterruptedCycle();
     if (scopePurged(boardScope) || !(await isScopeDownloadComplete(db, boardScope.scopeKey))) continue;
     for (const tableName of BOARD_DATA_TABLES) {
-      const revision = TABLE_CONFIGS[tableName].refreshRevision;
+      const revision = refreshRevisionFor(tableName, boardScope.boardType);
       if (!revision) continue;
       const state = await getSchemaRefreshState(db, tableName, boardScope.scopeKey);
       if (state && state.revision >= revision && state.complete) continue;
