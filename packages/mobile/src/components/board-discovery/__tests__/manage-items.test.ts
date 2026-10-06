@@ -112,14 +112,15 @@ describe('buildManageItems', () => {
 describe('the Archived section', () => {
   const archivedLabels = { ...labels, archivedHeader: 'Archived' };
   const archived = archivedSprayWallSummaries([
-    { uuid: 'old-garage', archivedAt: '2026-08-01T10:00:00.000Z', board: { name: 'Garage' } },
-    { uuid: 'live-wall', archivedAt: null, board: { name: 'Garage' } },
-    { uuid: 'older-garage', archivedAt: '2026-02-01T10:00:00.000Z', board: { name: 'Garage' } },
-    { uuid: 'nameless', archivedAt: '2026-09-01T10:00:00.000Z', board: null },
+    { uuid: 'old-garage', layoutId: 1, archivedAt: '2026-08-01T10:00:00.000Z', board: { name: 'Garage' } },
+    { uuid: 'live-wall', layoutId: 2, archivedAt: null, board: { name: 'Garage' } },
+    { uuid: 'older-garage', layoutId: 3, archivedAt: '2026-02-01T10:00:00.000Z', board: { name: 'Garage' } },
+    { uuid: 'nameless', layoutId: 4, archivedAt: '2026-09-01T10:00:00.000Z', board: null },
   ]);
 
   it('keeps only archived walls, most recently archived first', () => {
     expect(archived.map((wall) => wall.uuid)).toEqual(['old-garage', 'older-garage']);
+    expect(archived[0].layoutId).toBe(1);
     expect(archivedSprayWallSummaries(undefined)).toEqual([]);
   });
 

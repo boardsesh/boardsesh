@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshControl, StyleSheet, View } from 'react-native';
+import { Alert, RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { useMyBoards, useProfile } from '../../src/lib/graphql/hooks';
+import { useDeleteBoard, useMyBoards, useProfile } from '../../src/lib/graphql/hooks';
 import { useActiveBoard } from '../../src/lib/graphql/use-active-board';
 import { useAuth } from '../../src/providers/auth-provider';
 import { useConfirm } from '../../src/providers/dialog-provider';
@@ -65,7 +65,14 @@ import {
   type ManageItem,
 } from '../../src/components/board-discovery/manage-items';
 import { ArchivedWallManageRow } from '../../src/components/board-discovery/ArchivedWallManageRow';
-import { useMySprayWalls } from '../../src/lib/spray/use-create-spray-wall';
+import { useMySprayWallLifecycle } from '../../src/lib/spray/use-create-spray-wall';
+import { forgetDeletedSprayWall } from '../../src/lib/spray/forget-deleted-spray-wall';
+import {
+  getActiveBoardWriteGeneration,
+  useClearActiveBoardIfCurrentGeneration,
+} from '../../src/lib/graphql/use-active-board';
+import { useQueueActions } from '../../src/providers/queue-provider';
+import type { ArchivedSprayWallSummary } from '../../src/components/board-discovery/manage-items';
 import { useOpenSprayWall } from '../../src/lib/spray/use-open-spray-wall';
 import { useActivateBoard } from '../../src/lib/boards/use-activate-board';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
@@ -354,16 +361,64 @@ export default function ManageBoards() {
   }, [isError, refreshAuthState]);
 
   // The walls a reset replaced. `myBoards` leaves them out, so they come from
-  // the owner's own wall list; tapping one opens it to browse and log climbs.
-  const { data: mySprayWalls } = useMySprayWalls({ enabled: isAuthenticated });
-  const archivedWalls = useMemo(() => archivedSprayWallSummaries(mySprayWalls), [mySprayWalls]);
-  const activateBoard = useActivateBoard({ returnTo: MANAGE_RETURN_TO, isLocalOnly: true });
+  // the owner's own wall list, read through the narrow lifecycle document (no
+  // photo URLs). A backend without the archive fields fails that one query and
+  // the section is simply absent. Tapping a row opens the wall to browse and
+  // log its climbs; its trash deletes it.
+  const { data: sprayWallLifecycle, refetch: refetchSprayWallLifecycle } = useMySprayWallLifecycle({
+    enabled: isAuthenticated,
+  });
+  const archivedWalls = useMemo(() => archivedSprayWallSummaries(sprayWallLifecycle), [sprayWallLifecycle]);
+  // `rethrow`: a failed write is said by `useOpenSprayWall`'s alert, not a toast
+  // the modal route would draw over.
+  const activateBoard = useActivateBoard({ returnTo: MANAGE_RETURN_TO, isLocalOnly: true, writeFailure: 'rethrow' });
   const openSprayWall = useOpenSprayWall(activateBoard);
   const openArchivedWall = useCallback(
     (wallUuid: string) => {
       void openSprayWall(wallUuid);
     },
     [openSprayWall],
+  );
+
+  const deleteBoard = useDeleteBoard();
+  const deleteBoardAsync = deleteBoard.mutateAsync;
+  const clearActiveBoard = useClearActiveBoardIfCurrentGeneration();
+  const { clearSession } = useQueueActions();
+  const deleteArchivedWall = useCallback(
+    async (wall: ArchivedSprayWallSummary) => {
+      const wasActive = activeUuid === wall.uuid;
+      // Captured at action time, as the picker's delete does.
+      const activeBoardGeneration = getActiveBoardWriteGeneration();
+      const confirmed = await confirm({
+        title: t('mobile.manage.deleteWallTitle'),
+        message: t('sprayArchive.deleteMessage', { name: wall.name }),
+        confirmLabel: t('mobile.manage.deleteConfirm'),
+        cancelLabel: t('mobile.manage.cancel'),
+        destructive: true,
+      });
+      if (!confirmed) return;
+      try {
+        await deleteBoardAsync(wall.uuid);
+      } catch {
+        // An alert, not a toast: this is a modal route, which the toast draws behind.
+        Alert.alert(t('mobile.manage.deleteError'));
+        return;
+      }
+      // Everything this phone kept about the wall goes with it.
+      await forgetDeletedSprayWall(wall, db);
+      if (wasActive && activeBoardGeneration === getActiveBoardWriteGeneration()) {
+        await clearSession({ notifyServer: true });
+        await clearActiveBoard(activeBoardGeneration);
+      }
+      void refetchSprayWallLifecycle();
+    },
+    [activeUuid, confirm, t, deleteBoardAsync, db, clearSession, clearActiveBoard, refetchSprayWallLifecycle],
+  );
+  const onDeleteArchivedWall = useCallback(
+    (wall: ArchivedSprayWallSummary) => {
+      void deleteArchivedWall(wall);
+    },
+    [deleteArchivedWall],
   );
 
   // Split into owned + followed groups (pure helper, unit-tested), then the
@@ -455,7 +510,14 @@ export default function ManageBoards() {
         );
       }
       if (item.type === 'archivedWall') {
-        return <ArchivedWallManageRow wall={item.wall} isActive={item.isActive} onOpen={openArchivedWall} />;
+        return (
+          <ArchivedWallManageRow
+            wall={item.wall}
+            isActive={item.isActive}
+            onOpen={openArchivedWall}
+            onDelete={onDeleteArchivedWall}
+          />
+        );
       }
       const scopeKey = offlineBoardKeyForBoard(item.board);
       const bootstrapMetadata = bootstrapMetadataByScope?.get(scopeKey);
@@ -549,6 +611,7 @@ export default function ManageBoards() {
       handleRetryFastDownload,
       offlineStoragePaused,
       openArchivedWall,
+      onDeleteArchivedWall,
     ],
   );
 
@@ -656,7 +719,15 @@ export default function ManageBoards() {
           </View>
         }
         refreshControl={
-          <RefreshControl refreshing={isRefetching} onRefresh={() => void refetch()} tintColor={brandColors.primary} />
+          <RefreshControl
+            refreshing={isRefetching}
+            onRefresh={() => {
+              void refetch();
+              // The Archived section comes from its own query; refresh it with the list.
+              void refetchSprayWallLifecycle();
+            }}
+            tintColor={brandColors.primary}
+          />
         }
       />
     </View>

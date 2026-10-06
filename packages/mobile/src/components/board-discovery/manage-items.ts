@@ -10,6 +10,8 @@ import type { UserBoard } from '@boardsesh/shared-schema';
  */
 export type ArchivedSprayWallSummary = {
   uuid: string;
+  /** The wall's catalogue layout: what deleting it clears from the registry and downloads. */
+  layoutId: number;
   name: string;
   /** ISO time the wall was archived. */
   archivedAt: string;
@@ -22,17 +24,25 @@ export type ManageItem =
   | { type: 'archivedWall'; key: string; wall: ArchivedSprayWallSummary; isActive: boolean };
 
 /**
- * The archived walls in a `mySprayWalls` answer, most recently archived first.
+ * The archived walls in a `GET_MY_SPRAY_WALL_LIFECYCLE` answer, most recently archived first.
  * Live walls (no `archivedAt`) and rows without a name are left out.
  */
 export function archivedSprayWallSummaries(
-  walls: readonly { uuid: string; archivedAt?: string | null; board?: { name?: string | null } | null }[] | undefined,
+  walls:
+    | readonly {
+        uuid: string;
+        layoutId: number;
+        archivedAt?: string | null;
+        board?: { name?: string | null } | null;
+      }[]
+    | undefined,
 ): ArchivedSprayWallSummary[] {
   if (!walls) return [];
   const archived: ArchivedSprayWallSummary[] = [];
   for (const wall of walls) {
     const name = wall.board?.name;
-    if (wall.archivedAt && name) archived.push({ uuid: wall.uuid, name, archivedAt: wall.archivedAt });
+    if (wall.archivedAt && name)
+      archived.push({ uuid: wall.uuid, layoutId: wall.layoutId, name, archivedAt: wall.archivedAt });
   }
   // ISO 8601 strings in one zone sort as text.
   return archived.sort((left, right) =>
