@@ -275,6 +275,7 @@ describe('switching back to the photo', () => {
       art: {
         variant: 'crop',
         versionId: 21,
+        version: 3,
         width: 800,
         height: 1200,
         scale: 0.8,
@@ -383,5 +384,25 @@ describe('art that is still being made', () => {
     registry.registerSprayWall(LAYOUT_ID, { ...registry.getSprayWall(LAYOUT_ID)!, versionId: 99, version: 9 });
     await vi.advanceTimersByTimeAsync(loader.ART_FOLLOW_UP_MS * 2);
     expect(artRequests()).toBe(1);
+  });
+});
+
+describe('an offline revalidation', () => {
+  it('keeps drawing the art when the local mirror of the same version takes over', async () => {
+    answer({ background: 'wall-crop', art: artAnswer('READY') });
+    await loader.loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+    const online = registry.getSprayWall(LAYOUT_ID)!;
+    // What the local loader registers when the network read fails: the same
+    // published version under a `local-…` id, carrying the held art.
+    registry.registerSprayWall(LAYOUT_ID, {
+      ...online,
+      versionId: 'local-0a1b2c3d-0000-4000-8000-000000000000-3',
+      localPhotoPath: '/photos/wall.jpg',
+      art: online.art,
+    });
+    const data = drawn();
+    expect(data?.boardWidth).toBe(800);
+    // Still the server version's art file, which is what is on disk.
+    expect(data?.backgroundImageKeys).toEqual([keys.sprayBackgroundKey(LAYOUT_ID, 21, 'crop')]);
   });
 });

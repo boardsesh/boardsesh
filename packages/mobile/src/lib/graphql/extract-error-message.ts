@@ -216,6 +216,15 @@ export function isSprayWallArtNotAvailableError(error: unknown): boolean {
   );
 }
 
+/** Why the server refused a generated look (`extensions.reason`): `no-pins`, `keystone`, `small-frame`, … */
+export function readSprayWallArtRefusalReason(error: unknown): string | null {
+  const refusal = getGraphqlErrors(error).find(
+    (graphqlError) => graphqlError.extensions?.code === 'SPRAY_WALL_ART_NOT_AVAILABLE',
+  );
+  const reason = refusal?.extensions?.reason;
+  return typeof reason === 'string' ? reason : null;
+}
+
 // The board-mutation rejections clients branch on are parsed in
 // @boardsesh/graphql so web and mobile read the same shapes. Re-exported here so
 // board screens keep a single import for GraphQL error handling.

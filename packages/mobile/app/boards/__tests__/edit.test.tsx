@@ -27,7 +27,7 @@ const buildUpdateInputMock = vi.hoisted(() => vi.fn());
 const updateSprayWallMock = vi.hoisted(() => vi.fn());
 const background = vi.hoisted(() => ({
   changed: false,
-  save: vi.fn(async (): Promise<string> => 'saved'),
+  save: vi.fn(async (): Promise<{ outcome: string; reason?: string | null }> => ({ outcome: 'saved' })),
 }));
 
 // What each test varies: the gym on file, the gym the picker is showing, and
@@ -233,7 +233,7 @@ beforeEach(() => {
   state.wallPolicy = 'SETTER';
   state.ownerDisplayName = undefined;
   background.changed = false;
-  background.save.mockResolvedValue('saved');
+  background.save.mockResolvedValue({ outcome: 'saved' });
   buildUpdateInputMock.mockReturnValue({ boardUuid: 'board-uuid', name: 'Klimmuur MoonBoard' });
   updateSprayWallMock.mockResolvedValue({ uuid: 'board-uuid', layoutId: 4242 });
   updateBoardMock.mockResolvedValue({ uuid: 'board-uuid', name: 'Klimmuur MoonBoard' } as unknown as UserBoard);
@@ -621,7 +621,7 @@ describe('EditBoard — spray wall visibility', () => {
   it('says why when the server refuses a generated look, and stays', async () => {
     editSprayWall({ isPublic: false, isUnlisted: false });
     background.changed = true;
-    background.save.mockResolvedValueOnce('refused');
+    background.save.mockResolvedValueOnce({ outcome: 'refused', reason: 'keystone' });
     render(createElement(EditBoard));
     fireEvent.click(screen.getByText('submit'));
 
@@ -636,7 +636,7 @@ describe('EditBoard — spray wall visibility', () => {
       response: { errors: [{ message: 'nope', extensions: { code: 'SPRAY_WALL_VISIBILITY_OWNER_ONLY' } }] },
     });
     background.changed = true;
-    background.save.mockResolvedValueOnce('refused');
+    background.save.mockResolvedValueOnce({ outcome: 'refused', reason: 'keystone' });
     render(createElement(EditBoard));
     fireEvent.click(screen.getByText('submit'));
 
@@ -646,5 +646,16 @@ describe('EditBoard — spray wall visibility', () => {
       'mobile.sprayVisibility.ownerOnlyError sprayBackground.notAvailable',
     );
     expect(backMock).not.toHaveBeenCalled();
+  });
+
+  it('names the missing corner pins when that is why the look was refused', async () => {
+    editSprayWall({ isPublic: false, isUnlisted: false });
+    background.changed = true;
+    background.save.mockResolvedValueOnce({ outcome: 'refused', reason: 'no-pins' });
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(screen.getByTestId('error')).toBeTruthy());
+    expect(screen.getByTestId('error').textContent).toBe('sprayBackground.notAvailableNoPins');
   });
 });

@@ -3,6 +3,7 @@ import type { SprayWallArt } from '@boardsesh/graphql/generated/graphql';
 import {
   backgroundPickerNote,
   canPickBackground,
+  sprayArtRefusalMessageKey,
   sprayBackgroundGate,
   suggestedBackground,
 } from '../spray-background-gate';
@@ -94,5 +95,17 @@ describe('backgroundPickerNote', () => {
     [open('ready'), 'wall-crop', false, null],
   ] as const)('%o + %s (draft %s) -> %s', (gate, value, isDraft, expected) => {
     expect(backgroundPickerNote(gate, value, isDraft)).toBe(expected);
+  });
+});
+
+describe('sprayArtRefusalMessageKey', () => {
+  it.each([
+    ['no-pins', 'notAvailableNoPins'],
+    ['small-frame', 'notAvailableSmall'],
+    ['keystone', 'notAvailable'],
+    ['singular', 'notAvailable'],
+    [null, 'notAvailable'],
+  ] as const)('%s -> %s', (reason, key) => {
+    expect(sprayArtRefusalMessageKey(reason)).toBe(key);
   });
 });

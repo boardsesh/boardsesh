@@ -37,6 +37,7 @@ function registerWall(versionId: number, withArt: boolean) {
       ? {
           variant: 'crop',
           versionId,
+          version: versionId,
           width: 800,
           height: 1200,
           scale: 0.8,

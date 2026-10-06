@@ -59,6 +59,12 @@ export type RegisteredSprayArt = {
   variant: SprayArtVariant;
   /** The version the art was made from. Art for any other version is never drawn. */
   versionId: number;
+  /**
+   * That version's published NUMBER. A local mirror of the same published
+   * version (`local-…` id, registered when a revalidation fails offline) keeps
+   * drawing the art by it: the file on disk is the same version's.
+   */
+  version: number;
   /** The art's pixel size: the canonical frame, scaled. */
   width: number;
   height: number;
@@ -293,7 +299,9 @@ function buildWallGeometry(holds: readonly SprayPhotoHold[]): BoardArtGeometry {
 export function activeSprayArt(wall: RegisteredSprayWall | null | undefined): RegisteredSprayArt | null {
   const art = wall?.art;
   if (!wall || !art) return null;
-  if (art.versionId !== wall.versionId) return null;
+  const sameVersion =
+    art.versionId === wall.versionId || (typeof wall.versionId === 'string' && art.version === wall.version);
+  if (!sameVersion) return null;
   return artVariantForBackground(wall.background) === art.variant ? art : null;
 }
 

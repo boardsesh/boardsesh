@@ -10,7 +10,10 @@ import { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { GET_SPRAY_WALL_LOOK } from '@boardsesh/graphql/operations/spray-walls';
 import { getHttpClient } from '../../lib/graphql/client';
-import { isSprayWallArtNotAvailableError } from '../../lib/graphql/extract-error-message';
+import {
+  isSprayWallArtNotAvailableError,
+  readSprayWallArtRefusalReason,
+} from '../../lib/graphql/extract-error-message';
 import { sanitizeBoardRenderDefault } from '../../lib/board-render-settings';
 import {
   DEFAULT_SPRAY_WALL_LOOK_OPTION_ID,
@@ -26,7 +29,13 @@ import { canPickBackground, sprayBackgroundGate } from './spray-background-gate'
 
 type SprayWallLookResponse = { sprayWall: { uuid: string; renderSettings?: unknown } | null };
 
-export type SprayBackgroundSaveOutcome = 'unchanged' | 'saved' | 'refused' | 'failed';
+/**
+ * `refused` carries the server's reason (`no-pins`, `keystone`, `small-frame`)
+ * so the screen can say which; see `sprayArtRefusalMessageKey`.
+ */
+export type SprayBackgroundSaveOutcome =
+  | { outcome: 'unchanged' | 'saved' | 'failed' }
+  | { outcome: 'refused'; reason: string | null };
 
 export function useSprayWallBackgroundEditor({
   wallUuid,
@@ -71,14 +80,16 @@ export function useSprayWallBackgroundEditor({
 
   /** Store the picked background. Resolves an outcome, never rejects. */
   const save = useCallback(async (): Promise<SprayBackgroundSaveOutcome> => {
-    if (!changed || lookStatus !== 'success') return 'unchanged';
-    if (!canPickBackground(gate, value)) return 'refused';
+    if (!changed || lookStatus !== 'success') return { outcome: 'unchanged' };
+    if (!canPickBackground(gate, value)) {
+      return { outcome: 'refused', reason: gate.kind === 'locked' && gate.reason === 'no-pins' ? 'no-pins' : null };
+    }
     // A wall stored without a look (its first save failed) takes the default
     // one: the server will not store a background on its own.
     const look =
       sanitizeBoardRenderDefault(storedSettings) ??
       boardLookOptionWallDefault(DEFAULT_SPRAY_WALL_LOOK_OPTION_ID, SPRAY_WALL_LOOK_OPTIONS);
-    if (!look) return 'failed';
+    if (!look) return { outcome: 'failed' };
     // `background` is sent for a generated look, and as `photo` only when
     // leaving one: an omitted key keeps whatever is stored, and a backend older
     // than generated looks refuses the key outright, so a wall that never had a
@@ -87,14 +98,16 @@ export function useSprayWallBackgroundEditor({
     try {
       await setRenderSettingsAsync({ layoutId, uuid: wallUuid, renderSettings });
     } catch (error) {
-      return isSprayWallArtNotAvailableError(error) ? 'refused' : 'failed';
+      return isSprayWallArtNotAvailableError(error)
+        ? { outcome: 'refused', reason: readSprayWallArtRefusalReason(error) }
+        : { outcome: 'failed' };
     }
     void refetchLook();
     // The live wall swaps onto the look as soon as its art is on disk; while
     // the job is still running it keeps its photo, and the picker's poll swaps
     // it when the art lands (`useSprayWallArt`).
     requestMissingSprayArt(layoutId);
-    return 'saved';
+    return { outcome: 'saved' };
   }, [changed, value, lookStatus, gate, storedSettings, setRenderSettingsAsync, layoutId, wallUuid, refetchLook]);
 
   return { gate, art: artQuery.data, value, onChange: setPicked, changed, save };

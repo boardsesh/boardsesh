@@ -1249,6 +1249,9 @@
       "afterPublish": "Prêt environ une minute après la publication. Ta photo s'affiche d'ici là.",
       "soft": "Reprends la photo bien en face pour un rendu plus net.",
       "volumes": "Les volumes ne sont pas encore détourés."
-    }
+    },
+    "notAvailableNoPins": "Place d'abord les 4 coins du mur pour utiliser ce rendu.",
+    "notAvailableSmall": "Cette photo est trop petite pour être redressée. Reprends-la avec l'appareil principal en 1x.",
+    "usePhoto": "Utiliser la photo"
   }
 }

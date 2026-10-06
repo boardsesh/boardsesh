@@ -54,7 +54,7 @@ describe('useSprayWallBackgroundEditor', () => {
     controls.stored = { ...LOOK, background: 'wall-crop' };
     const { result } = await mounted();
     await waitFor(() => expect(result.current.value).toBe('wall-crop'));
-    await act(async () => expect(await result.current.save()).toBe('unchanged'));
+    await act(async () => expect(await result.current.save()).toEqual({ outcome: 'unchanged' }));
     expect(controls.save).not.toHaveBeenCalled();
   });
 
@@ -62,7 +62,7 @@ describe('useSprayWallBackgroundEditor', () => {
     controls.stored = LOOK;
     const { result } = await mounted();
     act(() => result.current.onChange('hold-cutouts'));
-    await act(async () => expect(await result.current.save()).toBe('saved'));
+    await act(async () => expect(await result.current.save()).toEqual({ outcome: 'saved' }));
     expect(controls.save).toHaveBeenCalledWith({
       layoutId: 9,
       uuid: 'wall',
@@ -76,7 +76,7 @@ describe('useSprayWallBackgroundEditor', () => {
     const { result } = await mounted();
     await waitFor(() => expect(result.current.value).toBe('wall-crop'));
     act(() => result.current.onChange('photo'));
-    await act(async () => expect(await result.current.save()).toBe('saved'));
+    await act(async () => expect(await result.current.save()).toEqual({ outcome: 'saved' }));
     expect(controls.save).toHaveBeenCalledWith(
       expect.objectContaining({ renderSettings: { ...LOOK, background: 'photo' } }),
     );
@@ -85,11 +85,13 @@ describe('useSprayWallBackgroundEditor', () => {
   it('reports a server refusal without throwing', async () => {
     controls.stored = LOOK;
     controls.save.mockRejectedValueOnce({
-      response: { errors: [{ message: 'no', extensions: { code: 'SPRAY_WALL_ART_NOT_AVAILABLE' } }] },
+      response: {
+        errors: [{ message: 'no', extensions: { code: 'SPRAY_WALL_ART_NOT_AVAILABLE', reason: 'no-pins' } }],
+      },
     });
     const { result } = await mounted();
     act(() => result.current.onChange('wall-crop'));
-    await act(async () => expect(await result.current.save()).toBe('refused'));
+    await act(async () => expect(await result.current.save()).toEqual({ outcome: 'refused', reason: 'no-pins' }));
   });
 
   it('re-sends a stored look whose render failed, so Save retries it', async () => {
@@ -97,7 +99,7 @@ describe('useSprayWallBackgroundEditor', () => {
     controls.art = { status: 'success', data: { ...GOOD, status: 'FAILED' } };
     const { result } = await mounted();
     await waitFor(() => expect(result.current.changed).toBe(true));
-    await act(async () => expect(await result.current.save()).toBe('saved'));
+    await act(async () => expect(await result.current.save()).toEqual({ outcome: 'saved' }));
     expect(controls.save).toHaveBeenCalledWith(
       expect.objectContaining({ renderSettings: { ...LOOK, background: 'wall-crop' } }),
     );

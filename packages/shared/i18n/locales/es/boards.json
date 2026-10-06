@@ -1249,6 +1249,9 @@
       "afterPublish": "Listo más o menos un minuto después de publicar. Hasta entonces se ve tu foto.",
       "soft": "Repite la foto de frente para un aspecto más nítido.",
       "volumes": "Los volúmenes todavía no se recortan."
-    }
+    },
+    "notAvailableNoPins": "Marca primero las 4 esquinas del muro para usar este aspecto.",
+    "notAvailableSmall": "Esta foto es demasiado pequeña para enderezarla. Repítela con la cámara principal a 1x.",
+    "usePhoto": "Usar la foto"
   }
 }

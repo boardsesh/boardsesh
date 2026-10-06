@@ -39,6 +39,7 @@ import { spacing } from '../../src/theme/tokens';
 import { sprayResetHref } from '../../src/lib/spray/spray-routes';
 import { SprayWallBackgroundPicker } from '../../src/components/spray-wall/SprayWallBackgroundPicker';
 import { useSprayWallBackgroundEditor } from '../../src/components/spray-wall/use-spray-wall-background-editor';
+import { sprayArtRefusalMessageKey } from '../../src/components/spray-wall/spray-background-gate';
 
 export default function EditBoard() {
   const router = useRouter();
@@ -296,11 +297,11 @@ function EditBoardForm({ board }: { board: UserBoard }) {
         // Saved whatever happened to visibility above, and its refusal is said
         // beside that one rather than swallowed by it.
         if (isSprayWall && backgroundChanged) {
-          const outcome = await saveBackground();
+          const saved = await saveBackground();
           const backgroundError =
-            outcome === 'refused'
-              ? t('sprayBackground.notAvailable')
-              : outcome === 'failed'
+            saved.outcome === 'refused'
+              ? t(`sprayBackground.${sprayArtRefusalMessageKey(saved.reason)}`)
+              : saved.outcome === 'failed'
                 ? t('sprayBackground.saveFailed')
                 : null;
           if (backgroundError)

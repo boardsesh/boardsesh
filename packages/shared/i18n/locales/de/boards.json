@@ -1249,6 +1249,9 @@
       "afterPublish": "Etwa eine Minute nach dem Veröffentlichen fertig. Bis dahin siehst du dein Foto.",
       "soft": "Nimm das Foto frontal neu auf, dann wird es schärfer.",
       "volumes": "Volumen werden noch nicht ausgeschnitten."
-    }
+    },
+    "notAvailableNoPins": "Setz zuerst die 4 Ecken der Wand, um diesen Look zu nutzen.",
+    "notAvailableSmall": "Dieses Foto ist zu klein zum Entzerren. Nimm es mit der Hauptkamera bei 1x neu auf.",
+    "usePhoto": "Foto nehmen"
   }
 }

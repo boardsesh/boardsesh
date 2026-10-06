@@ -70,3 +70,17 @@ export function backgroundPickerNote(
   if (value === 'hold-cutouts') return 'volumes';
   return null;
 }
+
+/**
+ * Which sentence explains a refused generated look, by the server's reason
+ * (`SPRAY_WALL_ART_NOT_AVAILABLE`'s `extensions.reason`): no corner pins, a
+ * frame too small to flatten, or (keystone and anything else) a photo too
+ * angled. Keys under `sprayBackground.`.
+ */
+export function sprayArtRefusalMessageKey(
+  reason: string | null | undefined,
+): 'notAvailableNoPins' | 'notAvailableSmall' | 'notAvailable' {
+  if (reason === 'no-pins') return 'notAvailableNoPins';
+  if (reason === 'small-frame') return 'notAvailableSmall';
+  return 'notAvailable';
+}

@@ -63,9 +63,17 @@ import type { CreatedWallDraft } from './add-wall-machine';
 import { fitSprayLookHero } from './spray-look-hero';
 import { useSprayWallArt } from '../../lib/spray/use-spray-wall-art';
 import type { SprayWallBackground } from '../../lib/spray/spray-wall-background';
-import { isSprayWallArtNotAvailableError } from '../../lib/graphql/extract-error-message';
+import {
+  isSprayWallArtNotAvailableError,
+  readSprayWallArtRefusalReason,
+} from '../../lib/graphql/extract-error-message';
 import { SprayWallBackgroundPicker } from './SprayWallBackgroundPicker';
-import { canPickBackground, sprayBackgroundGate, suggestedBackground } from './spray-background-gate';
+import {
+  canPickBackground,
+  sprayArtRefusalMessageKey,
+  sprayBackgroundGate,
+  suggestedBackground,
+} from './spray-background-gate';
 
 // Plain numbers, so the worklets below capture numbers rather than a shared object.
 const DIM_MIN = SPRAY_WALL_DIM_RANGE.min;
@@ -244,7 +252,9 @@ export function SprayWallLookStep({
         setBackgroundTouched(true);
         setBackground('photo');
       }
-      const message = artRefused ? t('sprayBackground.notAvailable') : t('sprayWizard.look.failed');
+      const message = artRefused
+        ? t(`sprayBackground.${sprayArtRefusalMessageKey(readSprayWallArtRefusalReason(error))}`)
+        : t('sprayWizard.look.failed');
       setSaveError(message);
       // `accessibilityLiveRegion` below is Android-only; VoiceOver needs telling.
       AccessibilityInfo.announceForAccessibility(message);

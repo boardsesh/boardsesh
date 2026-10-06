@@ -287,7 +287,9 @@ function getSprayRenderData(params: { layoutId: number; sizeId: number }): Board
     edgeBottom: 0,
     edgeTop: boardHeight,
     backgroundImageKeys: [
-      art ? sprayBackgroundKey(layoutId, wall.versionId, art.variant) : sprayBackgroundKey(layoutId, wall.versionId),
+      // The art's own version id: a local mirror of the same published version
+      // has a `local-…` id, and its art is still the server version's file.
+      art ? sprayBackgroundKey(layoutId, art.versionId, art.variant) : sprayBackgroundKey(layoutId, wall.versionId),
     ],
     holdsData,
   };

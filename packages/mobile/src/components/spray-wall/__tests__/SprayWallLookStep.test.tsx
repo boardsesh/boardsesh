@@ -295,6 +295,7 @@ describe('spray Look wall background', () => {
     await act(async () => {
       fireEvent.click(getByText(saveButton()));
     });
+    // Keystone: the "too angled" sentence, not the corner-pins one.
     expect(getByText('sprayBackground.notAvailable')).toBeTruthy();
     expect(getByTestId('background-picker').getAttribute('data-value')).toBe('photo');
   });

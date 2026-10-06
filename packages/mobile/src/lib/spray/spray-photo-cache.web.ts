@@ -35,8 +35,8 @@ export type SprayFileSource = { url: string; expiresAt: string };
 
 function presignedUrl(identity: SprayPhotoIdentity): string | null {
   const wall = getSprayWall(identity.layoutId);
-  if (!wall || wall.versionId !== identity.versionId) return null;
-  if (!identity.variant) return wall.photoUrl;
+  if (!wall) return null;
+  if (!identity.variant) return wall.versionId === identity.versionId ? wall.photoUrl : null;
   const art = wall.art;
   return art && art.variant === identity.variant && art.versionId === identity.versionId ? art.url : null;
 }

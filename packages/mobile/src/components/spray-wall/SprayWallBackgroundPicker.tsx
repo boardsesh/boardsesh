@@ -108,13 +108,29 @@ export const SprayWallBackgroundPicker = memo(function SprayWallBackgroundPicker
       <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.label}>
         {t('sprayBackground.label')}
       </Text>
-      <SegmentedControl<SprayWallBackground>
-        options={options}
-        selectedKey={value}
-        onSelect={handleSelect}
-        disabledKeys={disabledKeys}
-        accessibilityLabel={t('sprayBackground.label')}
-      />
+      {/* Not drawn while the generated looks are locked. iOS's segmented
+          Picker cannot disable one segment, so a refused tap would leave
+          "Wall only" highlighted natively while nothing was chosen. A locked
+          gate shows why, and the way out, instead. While a save is running the
+          whole control is held still for the same reason, and says so to
+          VoiceOver and TalkBack. */}
+      {locked ? null : (
+        <View
+          pointerEvents={disabled ? 'none' : 'auto'}
+          accessibilityState={{ disabled }}
+          accessibilityElementsHidden={disabled}
+          importantForAccessibility={disabled ? 'no-hide-descendants' : 'auto'}
+          testID="spray-background-control"
+        >
+          <SegmentedControl<SprayWallBackground>
+            options={options}
+            selectedKey={value}
+            onSelect={handleSelect}
+            disabledKeys={disabledKeys}
+            accessibilityLabel={t('sprayBackground.label')}
+          />
+        </View>
+      )}
       {note ? (
         <View style={styles.noteRow}>
           {note === 'generating' ? <ActivityIndicator size="small" /> : null}
@@ -134,6 +150,17 @@ export const SprayWallBackgroundPicker = memo(function SprayWallBackgroundPicker
           {t('sprayBackground.note.volumes')}
         </Text>
       ) : null}
+      {locked && value !== 'photo' ? (
+        // A stored generated look the photo no longer qualifies for: the photo
+        // is still one tap away, without the segmented control.
+        <Button
+          title={t('sprayBackground.usePhoto')}
+          variant="text"
+          onPress={() => handleSelect('photo')}
+          disabled={disabled}
+          style={styles.retake}
+        />
+      ) : null}
       {gate.kind === 'locked' && onRetakePhoto ? (
         <Button
           title={t('sprayBackground.retake')}
@@ -148,6 +175,9 @@ export const SprayWallBackgroundPicker = memo(function SprayWallBackgroundPicker
           source={previewSource}
           style={previewStyle}
           contentFit="contain"
+          // Memory only: this is a private wall's art, and nothing clears
+          // expo-image's disk cache on sign-out or when a wall is withdrawn.
+          cachePolicy="memory"
           accessibilityLabel={t('sprayBackground.previewLabel', { look: selectedLabel })}
           testID="spray-background-preview"
         />

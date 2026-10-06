@@ -596,7 +596,17 @@ export function artForRenderData(
   const scale = width / boardWidth;
   const holds = scaleCanonicalHoldsToArt(toCanonicalHolds(renderData), scale);
   if (!holds) return null;
-  return { variant, versionId, width, height, scale, url: file.url, expiresAt: file.expiresAt, holds };
+  return {
+    variant,
+    versionId,
+    version: renderData.versionNumber,
+    width,
+    height,
+    scale,
+    url: file.url,
+    expiresAt: file.expiresAt,
+    holds,
+  };
 }
 
 /** How long after a not-yet-ready art read the wall is asked about again. */

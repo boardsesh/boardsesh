@@ -55,8 +55,10 @@ export function liveSprayPhotoFileNames(): Set<string> {
   const names = new Set<string>();
   for (const wall of listRegisteredSprayWalls()) {
     names.add(sprayPhotoFileName({ layoutId: wall.layoutId, versionId: wall.versionId }));
-    if (wall.art && wall.art.versionId === wall.versionId) {
-      names.add(sprayPhotoFileName({ layoutId: wall.layoutId, versionId: wall.versionId, variant: wall.art.variant }));
+    if (wall.art) {
+      names.add(
+        sprayPhotoFileName({ layoutId: wall.layoutId, versionId: wall.art.versionId, variant: wall.art.variant }),
+      );
     }
   }
   return names;
@@ -70,8 +72,9 @@ export type SprayFileSource = { url: string; expiresAt: string };
  * registered art's when the identity names a generated look of this version.
  */
 function registeredSource(wall: RegisteredSprayWall, identity: SprayPhotoIdentity): SprayFileSource | null {
-  if (wall.versionId !== identity.versionId) return null;
-  if (!identity.variant) return { url: wall.photoUrl, expiresAt: wall.photoExpiresAt };
+  if (!identity.variant) {
+    return wall.versionId === identity.versionId ? { url: wall.photoUrl, expiresAt: wall.photoExpiresAt } : null;
+  }
   const art = wall.art;
   if (!art || art.variant !== identity.variant || art.versionId !== identity.versionId) return null;
   return { url: art.url, expiresAt: art.expiresAt };
