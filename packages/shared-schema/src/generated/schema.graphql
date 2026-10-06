@@ -6243,8 +6243,9 @@ type SprayWall {
   """
   The published wall that replaced this one through `resetSprayWall`, when the
   viewer may see it: its owner, a member of its gym, anyone when it is public,
-  or anyone holding this wall's unlisted share link when both walls are
-  unlisted. Null while the replacement is unfinished.
+  or anyone holding this wall's share link when this wall is unlisted and not
+  public and the replacement is unlisted too. Null while the replacement is
+  unfinished.
   """
   replacedByWallUuid: ID
   """

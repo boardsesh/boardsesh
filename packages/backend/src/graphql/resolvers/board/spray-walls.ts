@@ -164,6 +164,7 @@ export const SPRAY_WALL_CODES = {
   archived: SPRAY_WALL_ARCHIVED_CODE,
   resetOwnerOnly: 'SPRAY_WALL_RESET_OWNER_ONLY',
   resetSourceUnpublished: 'SPRAY_WALL_RESET_SOURCE_UNPUBLISHED',
+  resetHidden: 'SPRAY_WALL_RESET_HIDDEN',
   archiveLimitReached: 'SPRAY_WALL_ARCHIVE_LIMIT_REACHED',
   artNotAvailable: 'SPRAY_WALL_ART_NOT_AVAILABLE',
 } as const;
@@ -1258,7 +1259,8 @@ function visibilityReach(visibility: PendingVisibility): number {
  * Takes the old wall's lock first, so a visibility change to it either lands
  * before this read or waits for the publish. The publish already holds the
  * clone's lock: new wall, then old wall, the order every two-lock path uses. A
- * deleted old wall has no audience left to follow, so the parked pair stands.
+ * deleted old wall still bounds the clone by the flags it last had; an
+ * admin-hidden one bounds it to private.
  */
 async function narrowToResetSourceUnderLock(
   tx: SprayWriteTransaction,
@@ -1266,20 +1268,26 @@ async function narrowToResetSourceUnderLock(
   parked: PendingVisibility,
 ): Promise<PendingVisibility> {
   await lockWallForWrite(tx, sourceWallId);
+  // Deleted or not: the flags a deleted wall last had still bound the clone, so
+  // "narrow it, then delete it" cannot widen the clone back to the parked pair.
   const [source] = await tx
-    .select({ isPublic: dbSchema.userBoards.isPublic, isUnlisted: dbSchema.userBoards.isUnlisted })
+    .select({
+      isPublic: dbSchema.userBoards.isPublic,
+      isUnlisted: dbSchema.userBoards.isUnlisted,
+      hiddenAt: dbSchema.sprayWalls.hiddenAt,
+    })
     .from(dbSchema.sprayWalls)
     .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.sprayWalls.boardUuid))
-    .where(
-      and(
-        eq(dbSchema.sprayWalls.id, sourceWallId),
-        isNull(dbSchema.sprayWalls.deletedAt),
-        isNull(dbSchema.userBoards.deletedAt),
-      ),
-    )
+    .where(eq(dbSchema.sprayWalls.id, sourceWallId))
     .limit(1);
   if (!source) return parked;
-  return visibilityReach(source) < visibilityReach(parked) ? source : parked;
+  // An admin-hidden wall reads as private to everybody but its owner, so a wall
+  // hidden after the reset started publishes a private clone.
+  const sourceVisibility: PendingVisibility =
+    source.hiddenAt != null
+      ? { isPublic: false, isUnlisted: false }
+      : { isPublic: source.isPublic, isUnlisted: source.isUnlisted };
+  return visibilityReach(sourceVisibility) < visibilityReach(parked) ? sourceVisibility : parked;
 }
 
 /** Rows per INSERT when follows and pins carry over, well under Postgres's 65535 parameters. */
@@ -2226,6 +2234,13 @@ function assertResetAllowed(loaded: LoadedWall, userId: string): void {
     });
   }
   if (loaded.wall.archivedAt != null) throw sprayWallArchivedError();
+  // A reset copies the audience and carries the followers over, so resetting a
+  // wall an admin hid would put it straight back in front of them.
+  if (loaded.wall.hiddenAt != null) {
+    throw new GraphQLError('This wall is hidden while a report is reviewed, so it can\u2019t be reset yet.', {
+      extensions: { code: SPRAY_WALL_CODES.resetHidden },
+    });
+  }
   if (loaded.wall.currentVersionId == null) {
     throw new GraphQLError('Publish this wall before resetting it. There is nothing to replace yet.', {
       extensions: { code: SPRAY_WALL_CODES.resetSourceUnpublished },
@@ -3044,6 +3059,7 @@ export const sprayWallMutations = {
             pendingIsPublic: dbSchema.sprayWalls.pendingIsPublic,
             pendingIsUnlisted: dbSchema.sprayWalls.pendingIsUnlisted,
             deletedAt: dbSchema.sprayWalls.deletedAt,
+            resetFromWallId: dbSchema.sprayWalls.resetFromWallId,
           })
           .from(dbSchema.sprayWalls)
           .where(eq(dbSchema.sprayWalls.id, wall.id))
@@ -3101,8 +3117,19 @@ export const sprayWallMutations = {
         // `{ isUnlisted: false }` alone would silently drop a pending public.
         // Only while something is pending: there is nothing to merge into after
         // the first publish, which clears the pair.
+        //
+        // A reset clone is different: its pair is the OLD wall's audience, parked
+        // when the reset started, and the first publish narrows it to whatever the
+        // old wall has by then. Once the owner states a visibility for the clone
+        // themselves, that is a choice, not a stale copy, so the pair is dropped:
+        // the board row this call writes is what publishes, unnarrowed, whatever
+        // order the owner edited the two walls in.
         const hasPending = wallNow?.pendingIsPublic != null || wallNow?.pendingIsUnlisted != null;
-        if (hasPending && (validated.isPublic !== undefined || validated.isUnlisted !== undefined)) {
+        const statesVisibility = validated.isPublic !== undefined || validated.isUnlisted !== undefined;
+        if (hasPending && statesVisibility && wallNow?.resetFromWallId != null) {
+          wallUpdates.pendingIsPublic = null;
+          wallUpdates.pendingIsUnlisted = null;
+        } else if (hasPending && statesVisibility) {
           const merged = pendingVisibilityColumns({
             isPublic: validated.isPublic ?? wallNow?.pendingIsPublic === true,
             isUnlisted: validated.isUnlisted ?? wallNow?.pendingIsUnlisted === true,
