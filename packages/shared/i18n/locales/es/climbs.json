@@ -484,6 +484,7 @@
       },
       "holdIntegrity": {
         "label": "Presas",
+        "current": "Actuales",
         "any": "Todas",
         "intact": "Solo intactos",
         "broken": "Presas perdidas"

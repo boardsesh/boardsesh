@@ -98,6 +98,17 @@ vi.mock('../../Button', () => ({
   Button: ({ title, onPress, disabled }: { title: string; onPress?: () => void; disabled?: boolean }) =>
     createElement('button', { onClick: onPress, disabled }, title),
 }));
+vi.mock('../../SwitchRow', () => ({
+  SwitchRow: ({
+    label,
+    value,
+    onValueChange,
+  }: {
+    label: string;
+    value: boolean;
+    onValueChange: (next: boolean) => void;
+  }) => createElement('button', { role: 'switch', 'aria-checked': value, onClick: () => onValueChange(!value) }, label),
+}));
 vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('i', { 'data-testid': 'spinner' }),
 }));
@@ -323,6 +334,28 @@ describe('SprayResetCompareScreen', () => {
     expect(payload.removed).toEqual([12]);
     expect(payload.added).toHaveLength(1);
     expect(onCommitted).toHaveBeenCalledTimes(1);
+  });
+
+  it('commits a partial reset unless the owner ticks Full reset (#6024)', async () => {
+    const { getByText } = renderScreen();
+
+    await act(async () => {
+      getByText('sprayReset.compare.confirm').click();
+    });
+
+    // Absent, not false: a backend without the field refuses an unknown key.
+    expect(commitMutateAsync.mock.calls[0][0]).not.toHaveProperty('fullReset');
+  });
+
+  it('sends fullReset when the owner ticks Full reset (#6024)', async () => {
+    const { getByText } = renderScreen();
+
+    act(() => getByText('sprayReset.compare.fullReset').click());
+    await act(async () => {
+      getByText('sprayReset.compare.confirm').click();
+    });
+
+    expect((commitMutateAsync.mock.calls[0][0] as CommitPayload & { fullReset?: boolean }).fullReset).toBe(true);
   });
 
   it('keeps the review when the commit is refused', async () => {

@@ -1044,6 +1044,8 @@
       "filterLabel": "Qué círculos mostrar",
       "tapHint": "Toca cualquier círculo para cambiar de opinión.",
       "confirm": "Confirmar el reseteo",
+      "fullReset": "Reseteo completo",
+      "fullResetBody": "Los bloques que pierden una presa salen de la lista de este muro. Siguen en el logbook, y Presas perdidas los muestra.",
       "acceptMoves": "Aceptar todos los cambios de sitio",
       "noDetections": "Nada que comparar",
       "noDetectionsBody": "Este móvil no pudo encontrar las presas en tu foto nueva, así que no hay nada con qué comparar. Tu foto queda guardada como borrador."

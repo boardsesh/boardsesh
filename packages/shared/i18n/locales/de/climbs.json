@@ -484,6 +484,7 @@
       },
       "holdIntegrity": {
         "label": "Griffe",
+        "current": "Aktuelle",
         "any": "Alle",
         "intact": "Nur intakte",
         "broken": "Fehlende Griffe"

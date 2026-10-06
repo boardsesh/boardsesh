@@ -459,6 +459,13 @@ export const sprayWallResetTypeDefs = /* GraphQL */ `
     "Hold ids that came off the wall."
     removed: [Int!]!
     added: [SprayWallAddedDecisionInput!]!
+    """
+    The owner marked this a FULL reset: the old set is coming down. Every climb
+    that loses a hold in this reset is retired and drops out of the wall's default
+    climb list; logbooks, playlists and share links still open it. Omitted or
+    false is a partial reset, which retires nothing.
+    """
+    fullReset: Boolean
   }
 
   "What a committed reset changed."
@@ -478,7 +485,7 @@ export const sprayWallResetTypeDefs = /* GraphQL */ `
     removedCount: Int!
     "Holds this commit put on the wall."
     addedCount: Int!
-    "Climbs whose \`missingHoldCount\` moved as a result."
+    "Climbs whose \`missingHoldCount\` or retired state moved as a result."
     climbsChanged: Int!
   }
 

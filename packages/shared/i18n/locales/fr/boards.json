@@ -1044,6 +1044,8 @@
       "filterLabel": "Quels cercles afficher",
       "tapHint": "Touche n'importe quel cercle pour changer d'avis.",
       "confirm": "Confirmer la réinitialisation",
+      "fullReset": "Réinitialisation complète",
+      "fullResetBody": "Les blocs qui perdent une prise quittent la liste de ce mur. Ils restent dans le carnet, et Prises perdues les affiche.",
       "acceptMoves": "Accepter tous les déplacements proposés",
       "noDetections": "Rien à comparer",
       "noDetectionsBody": "Ce téléphone n'a pas trouvé les prises sur ta nouvelle photo, donc il n'y a rien à comparer. Ta photo est gardée en brouillon."

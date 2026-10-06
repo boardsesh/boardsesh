@@ -1719,6 +1719,15 @@ wall's version token and this device is the one that moved it; until it
 re-registers, every key still names the generation the owner was looking at when
 they pressed Confirm.
 
+### Marking a reset as full
+
+The compare view has a **Full reset** switch above Confirm, off by default. When it
+is on, the commit sends `fullReset: true`, and every climb that loses a hold in
+that reset is retired: it leaves the wall's default list but stays in logbooks,
+playlists and share links (#6024). The switch sits inside the scrolling controls,
+not in the footer, so the board keeps the space `CHROME_BUDGET` gives it.
+`Spray Wall Reset Applied` carries `fullReset`.
+
 ### A climb that lost holds
 
 `Climb.missingHoldCount` reaches three mobile surfaces, and the rule across all
@@ -1731,8 +1740,12 @@ normal compatibility checks; catalogue-board hold containment remains strict.
 
 - the climb-row chip ("2 holds gone"), beside the Hidden chip and in the same
   neutral grey — colour in that row means grade and nothing else;
-- the **Holds** filter in the climb filter sheet (All / Intact only / Lost
-  holds), defaulting to All. One tap hides them; nothing hides them by default;
+- the **Holds** filter in the climb filter sheet (Current / All / Intact only /
+  Lost holds), defaulting to Current. Current sends nothing, and the server
+  then hides only climbs a full reset retired (#6024), so a climb that lost
+  holds in a partial reset stays listed. All sends `ANY` on a spray wall and
+  shows retired climbs too; Lost holds shows every climb that lost a hold,
+  retired or not;
 - the play drawer banner, which states the number and offers the one thing that
   fixes it. Remix goes through the same `useCreateClimbNavigation` handoff the
   climb-actions sheet uses, carrying the parent's frames — the create editor's

@@ -1342,12 +1342,14 @@ describe('ClimbFilterSheet name field (#3606)', () => {
 describe('ClimbFilterSheet hold integrity (SW-13)', () => {
   it('defaults to All and sends no holdIntegrity', () => {
     const onApply = vi.fn();
-    const { getAllByTestId, getByText } = renderFilterSheet({ onApply });
+    const { getAllByTestId, getByText, queryByTestId } = renderFilterSheet({ onApply });
 
     // Both single-selects in this section rest on 'any' (Collection + Holds).
     for (const segment of getAllByTestId('segment-any')) {
       expect(segment.getAttribute('data-selected')).toBe('true');
     }
+    // Current is a spray-wall option (#6024); a catalogue board keeps the three.
+    expect(queryByTestId('segment-current')).toBeNull();
 
     applyAndClose(getByText('mobile.filter.showCount12'));
     expect((onApply.mock.calls.at(-1)?.[0] as ClimbFilters).holdIntegrity).toBeUndefined();
@@ -1385,6 +1387,41 @@ describe('ClimbFilterSheet hold integrity (SW-13)', () => {
   it('shows the committed selection when the sheet opens', () => {
     const { getByTestId } = renderFilterSheet({ currentFilters: { ...currentFilters, holdIntegrity: 'broken' } });
     expect(getByTestId('segment-broken').getAttribute('data-selected')).toBe('true');
+  });
+});
+
+// #6024: on a spray wall the default is Current (the set that is up now), and
+// All is its own value, which shows the climbs a full reset retired.
+describe('ClimbFilterSheet hold integrity on a spray wall', () => {
+  const sprayBoard = { boardName: 'spray', layoutId: 7, sizeId: 7, setIds: '1', angle: 25 };
+
+  it('defaults to Current and sends no holdIntegrity', () => {
+    const onApply = vi.fn();
+    const { getByTestId, getByText } = renderFilterSheet({ onApply, boardConfig: sprayBoard });
+
+    expect(getByTestId('segment-current').getAttribute('data-selected')).toBe('true');
+    applyAndClose(getByText('mobile.filter.showCount12'));
+    expect((onApply.mock.calls.at(-1)?.[0] as ClimbFilters).holdIntegrity).toBeUndefined();
+  });
+
+  it('applies "All" as its own value, so retired climbs show again', () => {
+    const onApply = vi.fn();
+    const { getAllByTestId, getByText } = renderFilterSheet({ onApply, boardConfig: sprayBoard });
+
+    // The Holds control's All segment is the second 'any' in the section.
+    fireEvent.click(getAllByTestId('segment-any')[1]);
+    applyAndClose(getByText('mobile.filter.showCount12'));
+    expect((onApply.mock.calls.at(-1)?.[0] as ClimbFilters).holdIntegrity).toBe('any');
+  });
+
+  it('clears back to undefined on Current, not to an inert "current" value', () => {
+    const onApply = vi.fn();
+    const { getByTestId, getByText } = renderFilterSheet({ onApply, boardConfig: sprayBoard });
+
+    fireEvent.click(getByTestId('segment-broken'));
+    fireEvent.click(getByTestId('segment-current'));
+    applyAndClose(getByText('mobile.filter.showCount12'));
+    expect((onApply.mock.calls.at(-1)?.[0] as ClimbFilters).holdIntegrity).toBeUndefined();
   });
 });
 

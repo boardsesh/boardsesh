@@ -33,6 +33,7 @@ import { Text } from '../Text';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { SegmentedControl } from '../SegmentedControl';
+import { SwitchRow } from '../SwitchRow';
 import { InteractiveFilterBoard } from '../search/InteractiveFilterBoard';
 import { useTheme } from '../../providers/theme-provider';
 import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
@@ -173,6 +174,10 @@ export function SprayResetCompareScreen({
   const effective = review.seeded ? review : null;
 
   const [selectedKey, setSelectedKey] = useState<number | null>(null);
+  // A full reset retires every climb that loses a hold in it: off the wall's
+  // default list, still in logbooks, playlists and share links (#6024). Off by
+  // default, so a reset that swaps a few holds keeps every climb listed.
+  const [fullReset, setFullReset] = useState(false);
   const [pairingIndex, setPairingIndex] = useState<number | null>(null);
 
   const counts = useMemo(() => (effective ? resetReviewCounts(effective) : null), [effective]);
@@ -233,7 +238,15 @@ export function SprayResetCompareScreen({
     hapticSelection();
     const decisions = buildResetCommitDecisions(effective, detections);
     try {
-      const result = await commitAsync({ wallUuid, versionId, ...decisions });
+      // `fullReset` only goes on the wire when it is true: a backend that
+      // predates the field rejects an unknown input key, so a partial reset
+      // must send exactly what it always did (#6024).
+      const result = await commitAsync({
+        wallUuid,
+        versionId,
+        ...decisions,
+        ...(fullReset ? { fullReset: true } : {}),
+      });
       trackSprayEvent(
         sprayWallResetApplied({
           keptCount: result.keptCount,
@@ -241,6 +254,7 @@ export function SprayResetCompareScreen({
           addedCount: result.addedCount,
           climbsChanged: result.climbsChanged,
           moveCount: Object.keys(effective.moves).length,
+          fullReset,
         }),
       );
       onCommitted(result);
@@ -248,7 +262,7 @@ export function SprayResetCompareScreen({
       reportError(error);
       showToast(extractGraphqlMessage(error) ?? t('sprayReset.commit.failed'), 'error');
     }
-  }, [effective, commit.isPending, commitAsync, detections, wallUuid, versionId, onCommitted, showToast, t]);
+  }, [effective, commit.isPending, commitAsync, detections, wallUuid, versionId, fullReset, onCommitted, showToast, t]);
 
   const renderInTransform = useCallback(
     () =>
@@ -391,6 +405,17 @@ export function SprayResetCompareScreen({
             onPress={() => dispatch({ type: 'ACCEPT_SUGGESTED_MOVES' })}
           />
         ) : null}
+
+        {/* In the scrolling controls rather than the footer, so the board keeps
+            the space CHROME_BUDGET gives it. Last, right above Confirm. */}
+        <SwitchRow
+          label={t('sprayReset.compare.fullReset')}
+          description={t('sprayReset.compare.fullResetBody')}
+          wrapDescription
+          value={fullReset}
+          onValueChange={setFullReset}
+          disabled={commit.isPending}
+        />
       </ScrollView>
 
       <View

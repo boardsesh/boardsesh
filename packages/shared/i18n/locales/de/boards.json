@@ -1044,6 +1044,8 @@
       "filterLabel": "Welche Ringe zeigen",
       "tapHint": "Tipp auf einen Ring, um es dir anders zu überlegen.",
       "confirm": "Zurücksetzen bestätigen",
+      "fullReset": "Kompletter Umbau",
+      "fullResetBody": "Boulder, die einen Griff verlieren, verschwinden aus der Liste dieser Wand. Sie bleiben im Routenbuch, und Fehlende Griffe zeigt sie.",
       "acceptMoves": "Alle vorgeschlagenen Umzüge übernehmen",
       "noDetections": "Nichts zu vergleichen",
       "noDetectionsBody": "Dieses Handy hat auf deinem neuen Foto keine Griffe gefunden, also gibt es nichts zu vergleichen. Dein Foto bleibt als Entwurf gespeichert."
