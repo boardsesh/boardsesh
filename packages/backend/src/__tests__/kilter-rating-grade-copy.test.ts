@@ -107,14 +107,10 @@ async function tickState(tx: Tx, userId: string, climbUuid: string): Promise<Tic
   return row;
 }
 
-/** Seed the user and the kilter grades the test uses (20–24), inside the rolled-back transaction. */
+/** Seed the user, inside the rolled-back transaction. */
 async function seed(tx: Tx, tag: string): Promise<string> {
   const userId = `${tag}-user`;
   await tx.execute(sql`INSERT INTO users (id, email) VALUES (${userId}, ${`${tag}@example.test`})`);
-  await tx.execute(sql`
-    INSERT INTO board_difficulty_grades (board_type, difficulty, boulder_name)
-    SELECT 'kilter', g, g::text FROM generate_series(20, 24) AS g
-    ON CONFLICT DO NOTHING`);
   return userId;
 }
 
@@ -245,14 +241,13 @@ describe('kilter-sync copies the climber’s Kilter grade onto pulled ticks (#61
     });
   });
 
-  it('no grade, a placeholder grade, an unknown grade, an attempt or a detached rating leaves the tick alone', async () => {
+  it('no grade, a placeholder grade, an attempt or a detached rating leaves the tick alone', async () => {
     await inRolledBackTransaction(async (tx) => {
       const tag = `grade-${Date.now()}-f`;
       const userId = await seed(tx, tag);
       const cases: Array<[string, number | null]> = [
         [`${tag}-null`, null],
         [`${tag}-one`, 1],
-        [`${tag}-unknown`, 999],
       ];
       for (const [climb, grade] of cases) {
         await pullLog(tx, userId, `${climb}-log`, climb);

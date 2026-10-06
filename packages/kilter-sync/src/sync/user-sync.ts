@@ -1203,8 +1203,8 @@ export async function applyLogs(
  *     guard applyLogs uses) — a Boardsesh-side grade edit is never stomped;
  *   - it has no grade yet, or it came from a Kilter pull, so a grade changed
  *     on Kilter follows while a native tick's own grade stays;
- *   - the rating is live (not detached) and names a real Kilter grade. A NULL
- *     or unknown grade never clears one.
+ *   - the rating is live (not detached) and carries a grade (> 1, the same
+ *     placeholder rule as catalog-sync). A NULL grade never clears one.
  *
  * kilter_synced_at is restamped with max(this host's clock, the DB's NOW()),
  * so it stays >= the updated_at the set_updated_at trigger writes (NOW()).
@@ -1248,11 +1248,10 @@ export async function applyRatingGradesToTicks(
       AND r.climb_uuid = t.climb_uuid
       AND r.angle = t.angle
       AND r.kilter_detached_at IS NULL
-      AND EXISTS (
-        SELECT 1 FROM board_difficulty_grades g
-         WHERE g.board_type = r.board_type
-           AND g.difficulty = r.difficulty_grade_id
-      )
+      -- Same "no grade" rule as catalog-sync's guardDifficulty: Grips sends 0
+      -- or 1 as a placeholder (id 1 doesn't exist). Not an EXISTS on
+      -- board_difficulty_grades: the provider-sync worker roles can't read it.
+      AND r.difficulty_grade_id > 1
     RETURNING t.climb_uuid, t.angle
   `);
   const rows = (Array.isArray(result) ? result : []) as Array<{ climb_uuid: string; angle: number }>;

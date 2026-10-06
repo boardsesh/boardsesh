@@ -116,7 +116,7 @@ Logs and ratings flush in separate transactions in either order, so both phases 
 - it is a send or flash. Attempts never carry a grade (`docs/ascents-and-attempts.md`);
 - it has a `kilter_id` and no local edit newer than its last sync (`updated_at <= kilter_synced_at`), so a grade changed in Boardsesh is never overwritten;
 - it has no grade yet, or its `origin` is `kilter_pull`. A grade changed on Kilter follows a pulled tick, while a native tick keeps the grade its climber gave it;
-- the rating is not detached and its grade exists in `board_difficulty_grades`. A NULL or unknown grade never clears a tick's grade.
+- the rating is not detached and carries a grade (`difficulty_grade_id > 1`, the same placeholder rule as the catalog sync). A NULL grade never clears a tick's grade.
 
 The copy restamps `kilter_synced_at` with the later of the worker's clock and the database's `NOW()`. The `set_updated_at` trigger sets `updated_at` to `NOW()`, so the copy never looks like a local edit, even when the database clock runs ahead of the worker's. Changed keys go through the usual `board_climb_stats` recompute. One rating covers every tick on that (climb, angle), because Kilter keeps one grade per climb and angle, not one per log.
 
