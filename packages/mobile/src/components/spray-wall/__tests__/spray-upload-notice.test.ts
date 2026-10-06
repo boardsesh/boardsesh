@@ -38,6 +38,13 @@ describe('classifySprayUploadFailure', () => {
     expect(classifySprayUploadFailure(graphqlRefusal('SPRAY_WALL_CAP'), 'offline_mode')).toBeNull();
   });
 
+  it('keeps a coded server answer on its own message, even on a 503', () => {
+    const codedOutage = Object.assign(new Error('busy'), {
+      response: { status: 503, errors: [{ message: 'Try later', extensions: { code: 'RATE_LIMITED' } }] },
+    });
+    expect(classifySprayUploadFailure(codedOutage, null)).toBeNull();
+  });
+
   it('keeps an ordinary error on its own message', () => {
     expect(classifySprayUploadFailure(new Error('The photo upload failed'), 'device_offline')).toBeNull();
   });
