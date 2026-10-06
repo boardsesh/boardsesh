@@ -47,9 +47,26 @@ import { fetchSprayWallPageData, resolveSprayPhotoUrl } from '@/app/lib/spray/sp
  * shard is catalogue-only).
  */
 
-/** `generateMetadata` for the spray branch of `/b/{slug}/{angle}/list`. */
-export async function buildSprayWallListMetadata(board: ResolvedBoard): Promise<Metadata> {
+/**
+ * `generateMetadata` for the spray branch of `/b/{slug}/{angle}/list`.
+ *
+ * A refused request gets the list page's generic fallback, not the wall's name:
+ * the title must say nothing the page body would refuse to show.
+ */
+export async function buildSprayWallListMetadata(
+  board: ResolvedBoard,
+  wallParam: string | string[] | undefined,
+): Promise<Metadata> {
   const { t, locale } = await getServerTranslation('climbs');
+
+  if (resolveSprayWallAccess(board, wallParam) === 'refuse') {
+    return createBoardContentPageMetadata({
+      title: t('metadata.list.fallbackTitle'),
+      description: t('metadata.list.fallbackDescription'),
+      locale,
+      robots: { index: false, follow: true },
+    });
+  }
 
   return createBoardContentPageMetadata({
     title: t('spray.wall.metadata.title', { wallName: board.name }),

@@ -780,6 +780,35 @@ describe('middleware cache headers on climb view pages', () => {
   );
 });
 
+// An unlisted spray wall answers 200 only while it stays unlisted and unhidden,
+// and 404 while www is ahead of the backend. Neither may be pinned at the edge.
+describe('middleware cache headers on a spray wall share link (?wall=)', () => {
+  it.each([
+    ['wall list', '/b/garage-wall/40/list?wall=11111111-1111-4111-8111-111111111111'],
+    ['climb view', `${SLUG_VIEW}?wall=11111111-1111-4111-8111-111111111111`],
+    ['localized climb view', `/fr${SLUG_VIEW}?wall=11111111-1111-4111-8111-111111111111`],
+    ['bare board hop', '/b/garage-wall?wall=11111111-1111-4111-8111-111111111111'],
+  ])('sends no-store on the %s', (_shape, url) => {
+    const response = middleware(makeRequest(url));
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(response.headers.get('CDN-Cache-Control')).toBe('no-store');
+    expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe('no-store');
+  });
+
+  it('keeps caching the same pages without the param', () => {
+    const response = middleware(makeRequest(SLUG_VIEW));
+    expect(response.headers.get('CDN-Cache-Control')).toBe(
+      `s-maxage=${TTL_24H}, stale-while-revalidate=${TTL_24H * 7}`,
+    );
+  });
+
+  it('gives the TTL helpers no window for a capability URL either', () => {
+    const withWall = new URLSearchParams({ wall: '11111111-1111-4111-8111-111111111111' });
+    expect(getListPageCacheTTL('/b/garage-wall/40/list', withWall)).toBeNull();
+    expect(getClimbViewPageCacheTTL('/b/garage-wall/40/view/some-climb', withWall)).toBeNull();
+  });
+});
+
 // A crawler that persists cookies (observed in production logs) acquires
 // boardsesh-locale by crawling one /de|/es|/fr page, then bounces every
 // subsequent unprefixed URL through a locale twin — ~15k of these 307s/day,

@@ -55,7 +55,7 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
     // indexable one, because the URL an unlisted wall is read at carries a
     // capability. See `./spray-wall-view`.
     if (board.boardType === SPRAY_BOARD_TYPE) {
-      return await buildSprayWallListMetadata(board);
+      return await buildSprayWallListMetadata(board, searchParams[WALL_CAPABILITY_PARAM]);
     }
 
     const boardName = formatBoardDisplayName(board.boardType);
