@@ -926,6 +926,15 @@
       "redraw": "Redraw",
       "previous": "Previous hold",
       "next": "Next hold"
+    },
+    "shortcuts": {
+      "delete": "Switch off or delete hold"
+    },
+    "palette": {
+      "label": "Pencil tools",
+      "close": "Close Pencil tools",
+      "draw": "Add a hold by drawing round it",
+      "corners": "Add a hold by tapping its corners"
     }
   },
   "sprayWizard": {

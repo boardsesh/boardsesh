@@ -217,6 +217,9 @@ export const iconMap = {
   'hand.tap': { ios: 'hand.tap', android: 'gesture-tap' },
   'pencil.tip': { ios: 'pencil.tip', android: 'draw-pen' },
   'fit.screen': { ios: 'arrow.down.right.and.arrow.up.left', android: 'arrow-collapse' },
+  // The two ways to outline a missed hold, on the Apple Pencil squeeze palette.
+  'shape.draw': { ios: 'scribble', android: 'gesture' },
+  'shape.corners': { ios: 'pentagon', android: 'vector-polygon' },
   photo: { ios: 'photo', android: 'image-outline' },
   camera: { ios: 'camera', android: 'camera-outline' },
   video: { ios: 'video', android: 'video-outline' },

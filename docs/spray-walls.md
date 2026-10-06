@@ -495,6 +495,59 @@ What can only be checked on hardware: palm rejection while the Pencil draws,
 a Pencil landing on the selection while zoomed, hover on a Pencil Pro iPad,
 and a two-finger tap against a short pinch.
 
+### Keyboard shortcuts and the Pencil's double tap and squeeze
+
+Neither has a JS path on iOS: React Native 0.86's `onKeyDown` is Android only,
+and nothing else references `UIPencilInteraction`. On Android `onKeyDown`
+exists but sits behind the native `enableKeyEvents` feature flag, which is off
+in every OSS release level and cannot be turned on from JS. So both platforms
+use one local Expo module, `packages/mobile/modules/spray-editor-input`, which
+ships on the `release/next` train because it moves the native fingerprint.
+
+- **The native half only turns keys into ids.** `SprayEditorKeyScope` mounts the
+  module's view over the whole editor (touch-transparent, hidden from screen
+  readers) while a climber who can edit has it open. JS hands it the shortcut
+  list (`sprayShortcutCommands`: keys, plus the titles the iPad's Cmd-hold
+  overlay shows). iOS registers each one as a `UIKeyCommand` on a view that
+  makes itself first responder. Android matches key presses on a view that
+  takes key focus (`SprayShortcutMatcher`, JVM-tested in CI). Both report
+  `onShortcut({ id })`, and neither takes the keyboard from a text field. iOS
+  takes it back when its window becomes key, when the app becomes active, or
+  when a touch lands on the editor, because UIKit gives it to nobody after an
+  alert.
+- **What a shortcut does is JS** (`resolveSprayShortcut` in
+  `spray-editor-shortcuts.ts`, tested as a table), so it ships by OTA. Each one
+  runs the handler its button runs, under the same lock (the table below). On
+  Android, `command` means Ctrl or Meta, so undo is Ctrl+Z.
+- **The Pencil's double tap and squeeze follow the iPad's own Pencil setting**
+  (`resolvePencilGesture`), on the tablet layout only. A switch setting ("switch
+  between current tool and eraser" or "…and last used") swaps between Mark and
+  Add. A palette setting opens `SprayPencilPalette`: Mark, Draw, Corners, Undo
+  and Redo in a ring round the Pencil tip, pulled in from the edges by
+  `pencilPaletteCentre`, or mid-screen when the Pencil was not hovering.
+  Ignore and a system shortcut are left alone. A squeeze (Pencil Pro, iPadOS
+  17.5 and later) acts when it is let go, and a second squeeze closes the
+  palette.
+- **An older binary does nothing.** `modules/spray-editor-input/src/index.ts`
+  resolves the module with `requireOptionalNativeModule('SprayEditorInput')`
+  and only asks for the view when the module is there. An OTA of this JS on a
+  store build without the module renders nothing, and the shortcuts are absent.
+
+| Keys | Does | Only when |
+|---|---|---|
+| ⌘Z / ⇧⌘Z | Undo / Redo | there is something to undo or redo |
+| Delete or Backspace | switch the picked ring off; on a ghost, delete it | Mark, a ring picked |
+| Esc | close the Pencil palette or the iPad menu; otherwise leave Add, cancel Trace or Join, or put the ring down | |
+| A | Add on or off | |
+| − / = (or +) | smaller / bigger | Mark, a ring picked |
+| [ / ] | previous / next ring in reading order | Mark, more than one ring |
+| ⌘↩ | the primary button | the button's own enabled rule |
+
+What can only be checked on hardware: the shortcuts on an iPad keyboard (and
+that they survive an alert and a trip to the home screen), the Cmd-hold
+overlay's titles, double tap on a Pencil 2 or Pro, squeeze and its hover point
+on a Pencil Pro, and Ctrl+Z on an Android tablet with a keyboard.
+
 ## Caps
 
 | Cap | Value | Why |

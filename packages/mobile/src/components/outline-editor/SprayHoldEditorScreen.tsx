@@ -58,6 +58,16 @@ import { SprayHoverPreview } from './SprayHoverPreview';
 import { SprayPencilSurface } from './SprayPencilSurface';
 import { SprayTabletChrome } from './SprayTabletChrome';
 import { SprayToolRail } from './SprayToolRail';
+import { SprayEditorKeyScope } from './SprayEditorKeyScope';
+import { SprayPencilPalette } from './SprayPencilPalette';
+import { pencilPaletteCentre } from './pencil-palette-layout';
+import {
+  resolvePencilGesture,
+  resolveSprayShortcut,
+  sprayShortcutCommands,
+  type SprayShortcutId,
+} from './spray-editor-shortcuts';
+import type { NativePencilGesture } from '../../../modules/spray-editor-input/src/index';
 import { pencilStrokeTarget } from './pencil-session';
 import { useSprayPencilMode } from './use-spray-pencil-mode';
 import { useSprayRailSide } from './use-spray-rail-side';
@@ -286,7 +296,9 @@ export type SprayHoldEditorScreenProps = {
  * other (`SprayHoldInspector`), and the counts and the primary button in a
  * cluster at the bottom (`SprayTabletChrome`). The Apple Pencil marks there:
  * a Pencil tap switches a ring or adds one, a Pencil stroke outlines a hold,
- * and fingers pick and move around — see `pencil-session.ts`.
+ * and fingers pick and move around — see `pencil-session.ts`. A hardware
+ * keyboard and the Pencil's double tap and squeeze reach the same handlers
+ * through `SprayEditorKeyScope` (`spray-editor-shortcuts.ts`).
  *
  * Coordinates are the photograph's own pixels everywhere on screen. The single
  * hop into canonical wall coordinates happens in `prepareCommit`, once.
@@ -324,6 +336,11 @@ export function SprayHoldEditorScreen({
   const [railSide, setRailSide] = useSprayRailSide(tablet);
   /** The tablet rail's wall-wide menu. The phone's lives inside its bottom bar. */
   const [tabletMenuOpen, setTabletMenuOpen] = useState(false);
+  /**
+   * The Apple Pencil squeeze palette, open at the Pencil tip (null x/y: the
+   * Pencil was not hovering, so mid-screen). iPad only. See `SprayPencilPalette`.
+   */
+  const [pencilPalette, setPencilPalette] = useState<{ x: number | null; y: number | null } | null>(null);
 
   const { isLoading, isUnavailable, isStalled, retry, homography, wall, photoFullUrl, refreshPhotoUrls } =
     useSprayWallDraft(layoutId, wallUuid, versionNumber, versionId);
@@ -1540,6 +1557,131 @@ export function SprayHoldEditorScreen({
     t,
   ]);
 
+  // ---- Keyboard shortcuts and the Apple Pencil's own gestures ----
+  // `modules/spray-editor-input` reports a shortcut id or a Pencil double tap /
+  // squeeze; `spray-editor-shortcuts.ts` decides what it means right now, and
+  // the handler is the one the matching button runs. Each reads the latest
+  // render through a ref, so the native view's callbacks keep one identity.
+
+  /** What the Cmd-hold overlay lists, in the climber's language. */
+  const shortcutCommands = useMemo(
+    () =>
+      sprayShortcutCommands({
+        undo: t('sprayEditor.bar.undo'),
+        redo: t('sprayEditor.bar.redo'),
+        delete: t('sprayEditor.shortcuts.delete'),
+        escape: t('sprayEditor.banner.cancel'),
+        add: t('sprayEditor.bar.addA11y'),
+        smaller: t('sprayEditor.a11y.actions.smaller'),
+        bigger: t('sprayEditor.a11y.actions.bigger'),
+        previous: t('sprayEditor.inspector.previous'),
+        next: t('sprayEditor.inspector.next'),
+        primary: primaryLabel,
+      }),
+    [t, primaryLabel],
+  );
+
+  const shortcutRef = useRef<(id: SprayShortcutId) => void>(() => {});
+  shortcutRef.current = (id) => {
+    const action = resolveSprayShortcut(id, {
+      canEdit,
+      tool,
+      selectedRole: selectedHold ? holdRole(selectedHold) : null,
+      canUndo: state.past.length > 0 || (tool === 'add' && cornerCount > 0),
+      canRedo: state.future.length > 0,
+      canStep: readingOrder.length > 1,
+      // The primary button's own enabled rule.
+      primaryReady: cornerCount === 0 && counts.on > 0,
+      popoverOpen: pencilPalette != null || tabletMenuOpen,
+    });
+    switch (action) {
+      case 'undo':
+        handleUndo();
+        return;
+      case 'redo':
+        handleRedo();
+        return;
+      case 'switchOff':
+        handleSwitchSelectedOff();
+        return;
+      case 'delete':
+        handleDelete();
+        return;
+      case 'closePopover':
+        setPencilPalette(null);
+        setTabletMenuOpen(false);
+        return;
+      case 'leaveAdd':
+        leaveAddMode();
+        return;
+      case 'cancelTool':
+        handleCancelTool();
+        return;
+      case 'deselect':
+        handlePutDown();
+        return;
+      case 'toggleAdd':
+        handleToggleAddMode();
+        return;
+      case 'shrink':
+        handleShrink();
+        return;
+      case 'grow':
+        handleGrow();
+        return;
+      case 'previous':
+        handleSelectPrevious();
+        return;
+      case 'next':
+        handleSelectNext();
+        return;
+      case 'primary':
+        handlePrimary();
+        return;
+      case 'none':
+        return;
+    }
+  };
+  const handleShortcut = useCallback((id: SprayShortcutId) => shortcutRef.current(id), []);
+
+  const pencilGestureRef = useRef<(gesture: NativePencilGesture) => void>(() => {});
+  pencilGestureRef.current = (gesture) => {
+    switch (resolvePencilGesture(gesture.preferredAction, { tablet, canEdit, tool })) {
+      case 'add':
+        setPencilPalette(null);
+        handleToggleAddMode();
+        return;
+      case 'mark':
+        setPencilPalette(null);
+        handleMarkTool();
+        return;
+      case 'palette':
+        // A second squeeze puts it away again.
+        hapticSelection();
+        setPencilPalette((open) => (open ? null : { x: gesture.x ?? null, y: gesture.y ?? null }));
+        return;
+      case 'none':
+        return;
+    }
+  };
+  const handlePencilGesture = useCallback((gesture: NativePencilGesture) => pencilGestureRef.current(gesture), []);
+
+  const closePencilPalette = useCallback(() => setPencilPalette(null), []);
+  // The palette's Draw and Corners go straight into Add with that outline shape.
+  const addWithShape = useCallback(
+    (shape: SprayAddShape) => {
+      if (toolRef.current !== 'add') handleToggleAddMode();
+      handleAddShapeChange(shape);
+    },
+    [handleToggleAddMode, handleAddShapeChange],
+  );
+  const handlePaletteDraw = useCallback(() => addWithShape('draw'), [addWithShape]);
+  const handlePaletteCorners = useCallback(() => addWithShape('corners'), [addWithShape]);
+  // Gone when the wall locks (a save, the hand-over) or the window drops to the phone layout.
+  useEffect(() => {
+    if (!tablet || !canEdit) setPencilPalette(null);
+  }, [tablet, canEdit]);
+
   /**
    * A screen reader's swipe up (`1`) or down (`-1`). Outside Join it selects the
    * next ring in reading order, which is what brings up the chip bar; inside
@@ -2468,6 +2610,37 @@ export function SprayHoldEditorScreen({
         >
           {loupeContent}
         </SprayLoupe>
+      ) : null}
+
+      {/* Over everything and touch-transparent: the hardware keyboard and the
+          Pencil's double tap and squeeze. Nothing on a binary without the module. */}
+      {viewerCanEdit ? (
+        <SprayEditorKeyScope
+          commands={shortcutCommands}
+          onShortcut={handleShortcut}
+          onPencilGesture={handlePencilGesture}
+        />
+      ) : null}
+
+      {pencilPalette && tablet && canEdit ? (
+        <SprayPencilPalette
+          centre={pencilPaletteCentre({
+            x: pencilPalette.x,
+            y: pencilPalette.y,
+            areaWidth: area.width,
+            areaHeight: area.height,
+          })}
+          tool={tool}
+          addShape={addShape}
+          canUndo={canUndo}
+          canRedo={state.future.length > 0}
+          onMark={handleMarkTool}
+          onDraw={handlePaletteDraw}
+          onCorners={handlePaletteCorners}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          onClose={closePencilPalette}
+        />
       ) : null}
     </View>
   );

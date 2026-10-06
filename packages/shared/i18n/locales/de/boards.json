@@ -926,6 +926,15 @@
       "redraw": "Neu zeichnen",
       "previous": "Vorheriger Griff",
       "next": "Nächster Griff"
+    },
+    "shortcuts": {
+      "delete": "Griff ausschalten oder löschen"
+    },
+    "palette": {
+      "label": "Pencil-Werkzeuge",
+      "close": "Pencil-Werkzeuge schließen",
+      "draw": "Griff hinzufügen, indem du ihn umrandest",
+      "corners": "Griff hinzufügen, indem du auf seine Ecken tippst"
     }
   },
   "sprayWizard": {
