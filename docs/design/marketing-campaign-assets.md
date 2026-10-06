@@ -55,7 +55,7 @@ All paths below are relative to `packages/web/public/images/app/`. Raw SHA-256 r
 | `ios/queue.webp` | 1206 × 2622 | 736 × 1600 | 70,874 |
 | `ios/wall-status.webp` | 1206 × 2622 | 736 × 1600 | 92,276 |
 | `ios/profile-overview.webp` | 1206 × 2622 | 736 × 1600 | 54,502 |
-| `ios/spray-wall.webp` | 1206 × 2622 | 736 × 1600 | pending capture |
+| `ios/spray-wall.webp` | 1320 × 2868 | 736 × 1600 | 88,670 |
 | `android/kilter.webp` | 1080 × 1920 | 900 × 1600 | 87,330 |
 | `android/tension.webp` | 1080 × 1920 | 900 × 1600 | 76,478 |
 | `android/moonboard.webp` | 1080 × 1920 | 900 × 1600 | 45,062 |
@@ -74,7 +74,7 @@ Total: **853,760 bytes** across 12 files.
 | `ios/queue` | `9698243244fdb1dfc7d6f39d4e683d7007178c4f9182433a51e0cc73c79d4c1a` | `b4fb612eea9686ce922677dd90fff9b8e117df36e2e94492ba03e0ab7731ccb3` |
 | `ios/wall-status` | `fdb8eec4e899020dce2fa63c43df51c5ee83436f832c94f66e0f77d3ca33136d` | `a2e42f21aba84312a38b8968e2a6ff319c6292db4d2a8777a941bff5aacc6e48` |
 | `ios/profile-overview` | `581d8aee67ab0fc6cc97d2c14d9383231ce2892cd722713bd5ba8409dbc13053` | `c60d933f7dd797449ba0b5dad8b7c99eb334afd128ea215eed3340f362901ed2` |
-| `ios/spray-wall` | pending capture | pending capture |
+| `ios/spray-wall` | `e07adb306adf56b9be40840409619a2eb3dc1f481289e439876ca3d77f72475f` | `a5f3e529e142205751d20697de2c4d9a904b141f89134064f868db0a03987118` |
 | `android/kilter` | `977184520b781b62b21e377efcda531281981cf12c21d5fed87fcd741f0cc09c` | `12b7c081aa4b75d4d85a535ab199b07d015610f2cf7a1a1c1ff0d411f1684a07` |
 | `android/tension` | `82be291d86792001878e825876c6b3ed8f343652f0b21ee52c454da60c059c26` | `c149fe9ecaf93ec2964a236f21cbaa109ce1102464eb0487eac24bc1d6a3c2a4` |
 | `android/moonboard` | `528a8f47dc74705b7f5bedb3a2a61fc88e4c3c222d2dd8dd2f8918c61cd42ceb` | `9dce8570aa661034a7e66872113f9a909236deef751f3c6b5195073ba8aea1c4` |
@@ -83,6 +83,6 @@ Total: **853,760 bytes** across 12 files.
 | `android/profile-overview` | `525406070e62bca67102ea868bea1201f7bc537ff304d3353b59ba4f042493bf` | `2a853fd62d925d113c34d4ec596bb2086e81fc9df36bebf48fe1691ebe520849` |
 | `android/spray-wall` | pending capture | pending capture |
 
-The two `spray-wall.webp` rows are placeholders: the homepage's fourth feature card references them, but the images have not been captured yet. The total and the "12 images" count above exclude them until they land.
+The `android/spray-wall.webp` row is a placeholder: the homepage's fourth feature card references it, but it has not been captured yet. The iOS one was captured on an iPhone 16 Pro Max simulator, which is why its raw size differs from the other iOS rows. The total and the "12 images" count above exclude them until they land.
 
 To reproduce `spray-wall`, take a live capture against production of a climb on the demo spray wall, then process it with the same Sharp settings as above. The pinned replay fixture has no spray wall, so the replay environment cannot produce this shot.
