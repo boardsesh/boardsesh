@@ -51,7 +51,9 @@ vi.mock('expo-image', () => ({ Image: () => createElement('img') }));
 vi.mock('expo-router', () => ({ useRouter: () => ({ back: vi.fn(), replace: vi.fn() }) }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({}) }));
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key, i18n: { resolvedLanguage: 'en-US', language: 'en-US' } }),
+}));
 vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24, 8: 32 },
   borderRadius: { lg: 12 },
@@ -73,6 +75,9 @@ vi.mock('@boardsesh/analytics', () => ({
 vi.mock('../../../lib/spray/spray-telemetry', () => ({ trackSprayEvent: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
+// The photo step's shooting-guide link (#6141). The real module loads
+// expo-web-browser, whose native event emitter does not exist under node.
+vi.mock('../../../lib/open-url', () => ({ openExternalUrl: vi.fn() }));
 vi.mock('../../../lib/graphql/extract-error-message', () => ({
   extractGraphqlMessage: () => undefined,
   extractGraphqlCode: () => undefined,
