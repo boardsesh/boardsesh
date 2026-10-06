@@ -525,6 +525,75 @@ describe('favorite queue coalescing', () => {
   });
 });
 
+// A heart belongs to the climb, not the angle (#6077 review): the server's
+// remove clears every angle, and Collection → Liked ignores angle.
+describe('favorite removal across angles', () => {
+  const at40 = { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 };
+  const at25 = { ...at40, angle: 25 };
+
+  it('removing at 25° deletes the heart given at 40°', async () => {
+    await addFavoriteLocal(db, at40);
+    await removeFavoriteLocal(db, at25);
+
+    expect(await db.getAllAsync<Row>('SELECT * FROM user_favorites')).toEqual([]);
+  });
+
+  it('keeps hearts on other climbs and other boards', async () => {
+    await addFavoriteLocal(db, at40);
+    await addFavoriteLocal(db, { ...at40, climbUuid: 'climb-10' });
+    await addFavoriteLocal(db, { ...at40, boardName: 'tension' });
+    await removeFavoriteLocal(db, at25);
+
+    const rows = await db.getAllAsync<Row>(
+      'SELECT board_name, climb_uuid FROM user_favorites ORDER BY board_name, climb_uuid',
+    );
+    expect(rows).toEqual([
+      { board_name: 'kilter', climb_uuid: 'climb-10' },
+      { board_name: 'tension', climb_uuid: 'climb-9' },
+    ]);
+  });
+
+  it('drops the climb from a local Collection → Liked search after a remove at another angle', async () => {
+    const { searchClimbsLocal } = await import('../../db/queries/search-climbs-local');
+    await stampLocalUserId(db, 'me');
+    await db.runAsync(
+      `INSERT INTO board_climbs (uuid, board_type, layout_id, name, is_listed, is_draft, frames_count, compatible_size_ids, required_set_ids)
+       VALUES ('climb-9', 'kilter', 1, 'Climb 9', 1, 0, 1, '[5]', '[]')`,
+    );
+    const liked = {
+      boardName: 'kilter',
+      layoutId: 1,
+      sizeId: 5,
+      setIds: '',
+      angle: 25,
+      onlyFavorited: true,
+    };
+
+    await addFavoriteLocal(db, at40);
+    expect((await searchClimbsLocal(db, liked)).climbs.map((climb) => climb.uuid)).toEqual(['climb-9']);
+
+    await removeFavoriteLocal(db, at25);
+    expect((await searchClimbsLocal(db, liked)).climbs).toEqual([]);
+  });
+
+  it('a remove at 25° cancels the queued add at 40°, leaving only the remove', async () => {
+    await addFavoriteLocal(db, at40);
+    await removeFavoriteLocal(db, at25);
+
+    const queued = await db.getAllAsync<Row>('SELECT operation, idempotency_key FROM pending_mutations');
+    expect(queued).toEqual([{ operation: 'delete', idempotency_key: favoriteRemoveKey(at25) }]);
+  });
+
+  it('add at 40°, remove at 25°, add at 40° again nets one add', async () => {
+    await addFavoriteLocal(db, at40);
+    await removeFavoriteLocal(db, at25);
+    await addFavoriteLocal(db, at40);
+
+    const queued = await db.getAllAsync<Row>('SELECT operation, idempotency_key FROM pending_mutations');
+    expect(queued).toEqual([{ operation: 'create', idempotency_key: favoriteAddKey(at40) }]);
+  });
+});
+
 describe('favorite idempotency keys', () => {
   it('derive add/del keys from the target so add and remove never collide', () => {
     const target = { boardName: 'tension', climbUuid: 'c', angle: 25 };
