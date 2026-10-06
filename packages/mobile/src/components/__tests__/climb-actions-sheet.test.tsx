@@ -67,12 +67,12 @@ vi.mock('@boardsesh/play-view/readable-url-utils', () => ({
   buildReadableClimbViewPath: urlBuilder.buildReadableClimbViewPath,
 }));
 // The REAL edit rule (`canEditClimb`): the gate is the thing under test. Only
-// the wall's `viewerCanEdit` is stubbed, since the registry behind it has its
+// the wall's viewer flags are stubbed, since the registry behind them has its
 // own tests.
 vi.mock('../../lib/spray/use-spray-wall', () => ({
   useSprayWallViewerCanEdit: (boardName: string | null | undefined) => boardName === 'spray' && ctrl.viewerCanEditWall,
   useSprayWallViewerCanEditClimbs: (boardName: string | null | undefined) =>
-    boardName === 'spray' && (ctrl.viewerCanEditClimbs || ctrl.viewerCanEditWall),
+    boardName === 'spray' && ctrl.viewerCanEditClimbs,
 }));
 vi.mock('@boardsesh/analytics', () => ({ SHARED_EVENTS: {} }));
 vi.mock('../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
@@ -259,6 +259,9 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
 
     it('offers a wall editor Edit on a published spray climb they did not set', () => {
       ctrl.viewerCanEditWall = true;
+      // What the backend actually sends a wall editor: `computeCanEditClimbs`
+      // returns true whenever `viewerCanEdit` is, whatever the policy.
+      ctrl.viewerCanEditClimbs = true;
       const { container } = render(
         <ClimbActionsSheet visible={true} {...sprayProps} climb={published} currentUserId="wall-owner" />,
       );
@@ -283,6 +286,9 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
 
     it("does not offer a wall editor Edit on somebody else's draft", () => {
       ctrl.viewerCanEditWall = true;
+      // What the backend actually sends a wall editor: `computeCanEditClimbs`
+      // returns true whenever `viewerCanEdit` is, whatever the policy.
+      ctrl.viewerCanEditClimbs = true;
       const { container } = render(
         <ClimbActionsSheet visible={true} {...sprayProps} climb={draft} currentUserId="wall-owner" />,
       );
@@ -298,6 +304,9 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
 
     it('does not offer a wall editor Edit on a climb from Kilter or from another wall', () => {
       ctrl.viewerCanEditWall = true;
+      // What the backend actually sends a wall editor: `computeCanEditClimbs`
+      // returns true whenever `viewerCanEdit` is, whatever the policy.
+      ctrl.viewerCanEditClimbs = true;
       for (const elsewhere of [
         { boardType: 'kilter', layoutId: 1 },
         { boardType: 'spray', layoutId: 4201 },
@@ -317,6 +326,9 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
 
     it('does not offer a non-setter Edit on Kilter, whatever the wall flag says', () => {
       ctrl.viewerCanEditWall = true;
+      // What the backend actually sends a wall editor: `computeCanEditClimbs`
+      // returns true whenever `viewerCanEdit` is, whatever the policy.
+      ctrl.viewerCanEditClimbs = true;
       const { container } = render(
         <ClimbActionsSheet visible={true} {...baseProps} climb={published} currentUserId="wall-owner" />,
       );

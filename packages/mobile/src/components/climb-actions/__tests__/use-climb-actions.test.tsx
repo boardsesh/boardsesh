@@ -33,12 +33,12 @@ vi.mock('expo-router', () => ({
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'queue-uuid' }));
 vi.mock('expo-web-browser', () => ({ openBrowserAsync: vi.fn(async () => {}) }));
 // The REAL edit rule (`canEditClimb`): the gate is the thing under test. Only
-// the wall's `viewerCanEdit` is stubbed, since the registry behind it has its
+// the wall's viewer flags are stubbed, since the registry behind them has its
 // own tests.
 vi.mock('../../../lib/spray/use-spray-wall', () => ({
   useSprayWallViewerCanEdit: (boardName: string | null | undefined) => boardName === 'spray' && ctrl.viewerCanEditWall,
   useSprayWallViewerCanEditClimbs: (boardName: string | null | undefined) =>
-    boardName === 'spray' && (ctrl.viewerCanEditClimbs || ctrl.viewerCanEditWall),
+    boardName === 'spray' && ctrl.viewerCanEditClimbs,
 }));
 vi.mock('@boardsesh/analytics', () => ({ SHARED_EVENTS: {} }));
 vi.mock('../../../providers/drawer-host-provider', () => ({
@@ -231,6 +231,9 @@ describe('useClimbActions gating', () => {
 
     it('offers Edit to a wall editor on a published climb they did not set', () => {
       ctrl.viewerCanEditWall = true;
+      // What the backend actually sends a wall editor: `computeCanEditClimbs`
+      // returns true whenever `viewerCanEdit` is, whatever the policy.
+      ctrl.viewerCanEditClimbs = true;
       expect(asViewer(publishedClimb, sprayBoard, 'wall-owner')).toContain('edit');
     });
 
@@ -242,6 +245,9 @@ describe('useClimbActions gating', () => {
 
     it("does not offer a wall editor Edit on somebody else's draft", () => {
       ctrl.viewerCanEditWall = true;
+      // What the backend actually sends a wall editor: `computeCanEditClimbs`
+      // returns true whenever `viewerCanEdit` is, whatever the policy.
+      ctrl.viewerCanEditClimbs = true;
       expect(asViewer(draftClimb, sprayBoard, 'wall-owner')).not.toContain('edit');
     });
 
@@ -253,6 +259,9 @@ describe('useClimbActions gating', () => {
       // Standing at their own wall with a leftover queue item. They can edit
       // the wall; this climb is not on it.
       ctrl.viewerCanEditWall = true;
+      // What the backend actually sends a wall editor: `computeCanEditClimbs`
+      // returns true whenever `viewerCanEdit` is, whatever the policy.
+      ctrl.viewerCanEditClimbs = true;
       const fromKilter = { ...published, boardType: 'kilter', layoutId: 1 } as unknown as Climb;
       const fromAnotherWall = { ...published, boardType: 'spray', layoutId: 4201 } as unknown as Climb;
       const onThisWall = { ...published, boardType: 'spray', layoutId: 4200 } as unknown as Climb;
@@ -263,6 +272,9 @@ describe('useClimbActions gating', () => {
 
     it('does not offer a non-setter Edit on Kilter, whatever the wall flag says', () => {
       ctrl.viewerCanEditWall = true;
+      // What the backend actually sends a wall editor: `computeCanEditClimbs`
+      // returns true whenever `viewerCanEdit` is, whatever the policy.
+      ctrl.viewerCanEditClimbs = true;
       expect(asViewer(publishedClimb, kilterBoard, 'wall-owner')).not.toContain('edit');
     });
   });

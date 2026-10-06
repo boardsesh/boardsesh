@@ -39,6 +39,9 @@ const state = vi.hoisted(() => ({
   boardIsUnlisted: false,
   builderIsPublic: false,
   builderIsUnlisted: false,
+  // #6025: the wall query's climb-edit policy as the server reports it; null
+  // stands in for the query not having landed yet.
+  wallPolicy: 'SETTER' as string | null,
 }));
 
 const board = {
@@ -96,7 +99,10 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
     isLoading: false,
   }),
   useProfile: () => ({ data: { id: 'owner-id', displayName: 'Marco' } }),
-  useSprayWallByUuid: () => ({ data: { climbEditPolicy: 'SETTER' }, isLoading: false }),
+  useSprayWallByUuid: () => ({
+    data: state.wallPolicy ? { climbEditPolicy: state.wallPolicy } : undefined,
+    isLoading: state.wallPolicy === null,
+  }),
   useUpdateBoard: () => ({ mutateAsync: updateBoardMock }),
   useLinkBoardToGym: () => ({ mutateAsync: linkBoardToGymMock }),
   useUpdateSprayWall: () => ({ mutateAsync: updateSprayWallMock }),
@@ -204,6 +210,7 @@ beforeEach(() => {
   state.boardIsUnlisted = false;
   state.builderIsPublic = false;
   state.builderIsUnlisted = false;
+  state.wallPolicy = 'SETTER';
   buildUpdateInputMock.mockReturnValue({ boardUuid: 'board-uuid', name: 'Klimmuur MoonBoard' });
   updateSprayWallMock.mockResolvedValue({ uuid: 'board-uuid', layoutId: 4242 });
   updateBoardMock.mockResolvedValue({ uuid: 'board-uuid', name: 'Klimmuur MoonBoard' } as unknown as UserBoard);
@@ -490,6 +497,25 @@ describe('EditBoard — spray wall visibility', () => {
     await waitFor(() => expect(updateBoardMock).toHaveBeenCalledTimes(1));
     expect(updateBoardMock.mock.calls[0][0].isPublic).toBe(true);
     expect(updateSprayWallMock).not.toHaveBeenCalled();
+  });
+
+  it('sends a touched climbEditPolicy before the wall query has landed (#6025)', async () => {
+    // A fast save: the owner flips the control while `useSprayWallByUuid` is
+    // still in flight. Comparing against the column's default is what keeps the
+    // choice from being silently dropped.
+    state.wallPolicy = null;
+    state.boardIsPublic = true;
+    state.boardIsUnlisted = false;
+    editSprayWall({ isPublic: true, isUnlisted: false });
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('collaborators'));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(updateSprayWallMock).toHaveBeenCalledTimes(1));
+    expect(updateSprayWallMock).toHaveBeenCalledWith({
+      uuid: 'board-uuid',
+      climbEditPolicy: 'COLLABORATORS',
+    });
   });
 
   it('sends changed climbEditPolicy to updateSprayWall (#6025)', async () => {

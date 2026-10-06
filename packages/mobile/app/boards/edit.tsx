@@ -242,14 +242,17 @@ function EditBoardForm({ board }: { board: UserBoard }) {
         // below: the name and the gym DID save, and a moderator who may edit the
         // wall but not share it should see which half was refused rather than a
         // blanket failure.
-        const currentServerPolicy = sprayWall?.climbEditPolicy
-          ? toClimbEditPolicyKey(sprayWall.climbEditPolicy)
-          : undefined;
+        // An untouched control says nothing the server does not already know; a
+        // touched one says what to write even if the wall query has not landed
+        // yet — comparing against `spray_walls.climb_edit_policy`'s default of
+        // 'setter' means a fast save cannot silently drop the owner's choice.
+        const serverPolicyLoaded = sprayWall?.climbEditPolicy != null;
         const policyChanged =
           isSprayWall &&
           isOwner &&
-          currentServerPolicy !== undefined &&
-          selectedClimbEditPolicy !== currentServerPolicy;
+          (serverPolicyLoaded
+            ? selectedClimbEditPolicy !== toClimbEditPolicyKey(sprayWall?.climbEditPolicy)
+            : policyTouched);
         let visibilityError: string | null = null;
         let visibilityApplied = false;
         if (visibilityChanged || policyChanged) {
