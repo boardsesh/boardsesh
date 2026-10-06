@@ -422,25 +422,30 @@ export function useClimbActions({
       });
     }
 
-    items.push({
-      id: 'share',
-      title: t('share.actionLabel'),
-      icon: 'share',
-      color: accentColor,
-      run: () => {
-        // Dismiss the overlay, then open the native share sheet (same as the play
-        // drawer). .catch so a dismissed/failed share isn't an unhandled rejection.
-        after();
-        track(SHARED_EVENTS.ClimbShared, {
-          method: 'share',
-          source: 'climb_actions_menu',
-          climbUuid: climb.uuid,
-          boardName,
-          layoutId,
-        });
-        void shareClimb().catch(() => {});
-      },
-    });
+    // A draft is visible to its setter alone, so a link to it opens nowhere for
+    // anyone it is sent to (#5960).
+    const isDraft = climb.is_draft === true;
+    if (!isDraft) {
+      items.push({
+        id: 'share',
+        title: t('share.actionLabel'),
+        icon: 'share',
+        color: accentColor,
+        run: () => {
+          // Dismiss the overlay, then open the native share sheet (same as the play
+          // drawer). .catch so a dismissed/failed share isn't an unhandled rejection.
+          after();
+          track(SHARED_EVENTS.ClimbShared, {
+            method: 'share',
+            source: 'climb_actions_menu',
+            climbUuid: climb.uuid,
+            boardName,
+            layoutId,
+          });
+          void shareClimb().catch(() => {});
+        },
+      });
+    }
 
     if (auroraAppUrl) {
       items.push({
@@ -461,7 +466,10 @@ export function useClimbActions({
 
     // Last in the list, and last for a reason: it is the one action that acts
     // AGAINST the climb, so it sits below everything a climber came here to do.
-    if (isAuthenticated && moderationEnabled) {
+    // Not on the viewer's own climb: reporting yourself to the crew has no
+    // outcome, and the setter already has Edit for anything they want changed.
+    const isOwnClimb = !!currentUserId && climb.userId === currentUserId;
+    if (isAuthenticated && moderationEnabled && !isOwnClimb) {
       items.push({
         id: 'report',
         title: t('mobile.climbActions.report'),

@@ -92,6 +92,20 @@ describe('OfflineCatalogCta', () => {
     expect(screen.getByTestId('offline-catalog-cta')).toBeTruthy();
   });
 
+  it('talks about a catalog on a catalogue board', async () => {
+    await renderCta();
+    expect(screen.getByText('mobile.offline.nudge.noCatalog.title')).toBeTruthy();
+    expect(screen.queryByText('mobile.offline.nudge.noCatalog.sprayTitle')).toBeNull();
+  });
+
+  // #5960: a spray wall has climbs, not a catalog to search.
+  it("talks about the wall's climbs on a spray wall", async () => {
+    await renderCta({ ...board, boardType: 'spray', layoutId: 4200, sizeId: 4200 } as UserBoard);
+    expect(screen.getByText('mobile.offline.nudge.noCatalog.sprayTitle')).toBeTruthy();
+    expect(screen.getByText('mobile.offline.nudge.noCatalog.sprayBody')).toBeTruthy();
+    expect(screen.queryByText('mobile.offline.nudge.noCatalog.title')).toBeNull();
+  });
+
   // The whole point of the arm-only design: a cycle kicked from here would burn
   // a bootstrap attempt per tap on captive-portal wifi (#4313).
   it('arms the board without starting a download, and says so', async () => {

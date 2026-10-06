@@ -52,6 +52,7 @@ import { formatHeatmapClimbCount, HeatmapLegend } from '../board/HeatmapLegend';
 import { HeatmapDownloadLine } from '../board/HeatmapDownloadLine';
 import { Text } from '../Text';
 import type { CreateHeatmap } from './create-heatmap';
+import { offersBoardLightbulb } from './spray-climb-rules';
 
 type Controller = ReturnType<typeof useCreateClimbScreen>;
 
@@ -440,6 +441,7 @@ export function CreateDrawer({
               finishCount={controller.finishCount}
               focusSignal={controller.focusNameSignal}
               onClose={() => sheetRef.current?.close()}
+              showLightbulb={offersBoardLightbulb(board.boardName)}
               bleConnected={controller.bleConnected}
               bleConnecting={controller.bleConnecting}
               onToggleBle={controller.handleToggleBle}

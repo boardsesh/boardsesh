@@ -62,6 +62,7 @@ import {
   type DimensionLockState,
   type LockedDimensions,
 } from '../../../src/lib/dimension-chips';
+import { shouldShowQuickActionsTip } from '../../../src/lib/onboarding/quick-actions-tip';
 import { hapticMedium } from '../../../src/lib/haptics';
 import { useDrawerHost, usePreviewedClimbUuid } from '../../../src/providers/drawer-host-provider';
 import { useTheme, useAppColorScheme } from '../../../src/providers/theme-provider';
@@ -501,10 +502,6 @@ function ClimbListInner() {
     }, []),
   );
   const dismissQuickActionsTip = useCallback(() => setQuickActionsTipArmed(false), []);
-  const showQuickActionsTip = quickActionsTipArmed && !showRevealTip && !connectCardVisible;
-  useEffect(() => {
-    if (showQuickActionsTip) void markTipSeen(ONBOARDING_TIP_QUICKACTIONS_KEY);
-  }, [showQuickActionsTip]);
 
   // Screenshot mode: a second board-view shot renders a different wall via
   // ?screenshotBoardIndex=1 — slot 1 of SCREENSHOT_BOARDS, resolved by name so it
@@ -745,6 +742,17 @@ function ClimbListInner() {
     }
     return climbs;
   }, [searchPages?.pages]);
+
+  // Waits for a climb row to exist: the tip teaches a gesture on one (#5960).
+  const showQuickActionsTip = shouldShowQuickActionsTip({
+    armed: quickActionsTipArmed,
+    revealTipShowing: showRevealTip,
+    connectCardVisible,
+    climbCount: visibleClimbs.length,
+  });
+  useEffect(() => {
+    if (showQuickActionsTip) void markTipSeen(ONBOARDING_TIP_QUICKACTIONS_KEY);
+  }, [showQuickActionsTip]);
 
   const firstSearchPage = searchPages?.pages[0];
 

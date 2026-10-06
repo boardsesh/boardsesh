@@ -395,6 +395,8 @@
           "title": "Sin cobertura y sin catálogo",
           "body": "Todavía no tienes {{name}} en el móvil, así que aquí abajo no hay nada que buscar.",
           "cta": "Descargarlo cuando tenga cobertura",
+          "sprayTitle": "Sin cobertura y sin bloques",
+          "sprayBody": "Todavía no tienes {{name}} en el móvil, así que sus bloques no se abren aquí abajo.",
           "armedToast": "{{name}} está en cola: se descarga en cuanto vuelvas a tener conexión."
         },
         "spotlight": {

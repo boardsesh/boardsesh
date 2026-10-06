@@ -1295,6 +1295,10 @@ export function PlayDrawer({
     });
   }, [shareClimb, displayedClimb, boardName, layoutId, showToast, t]);
 
+  // A draft is visible to its setter alone: a share link opens nowhere for
+  // anyone else, and the only person who can report it is the setter (#5960).
+  const displayedClimbIsDraft = displayedClimb?.is_draft === true;
+
   // Long-press the climb name to copy it — handy for pasting into a chat when
   // sharing beta. Delegates to the unit-tested copyClimbName helper; haptic for
   // tactile confirmation, info toast matching the "Link copied" affordance.
@@ -2137,7 +2141,7 @@ export function PlayDrawer({
                             onLightbulbLongPress={handleLightbulbLongPress}
                             onOpenActions={handleOpenActions}
                             onOpenQueue={onOpenQueue}
-                            onShare={handleShare}
+                            onShare={displayedClimbIsDraft ? undefined : handleShare}
                             onTickPress={handleTickFabPress}
                             onTickLongPress={handleTickFabLongPress}
                             viewer={viewer}
@@ -2254,9 +2258,11 @@ export function PlayDrawer({
           }}
           onToggleFavorite={handleToggleFavorite}
           onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
-          onReportClimb={isAuthenticated && moderationEnabled ? handleOpenReportClimb : undefined}
+          onReportClimb={
+            isAuthenticated && moderationEnabled && !displayedClimbIsDraft ? handleOpenReportClimb : undefined
+          }
           onOpenQueue={openQueueFromActions}
-          onShare={showConnectPill ? handleShare : undefined}
+          onShare={showConnectPill && !displayedClimbIsDraft ? handleShare : undefined}
           dismissPlayerAndWait={dismissPlayerAndWait}
           onClose={handleCloseSubDrawer}
         />

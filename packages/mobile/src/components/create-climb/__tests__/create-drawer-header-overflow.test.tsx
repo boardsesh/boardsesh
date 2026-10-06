@@ -62,7 +62,10 @@ vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 } 
 
 import { CreateDrawerHeader } from '../CreateDrawerHeader';
 
-function renderHeader(overflow: Partial<Parameters<typeof CreateDrawerHeader>[0]['overflow']> = {}) {
+function renderHeader(
+  overflow: Partial<Parameters<typeof CreateDrawerHeader>[0]['overflow']> = {},
+  { showLightbulb = true }: { showLightbulb?: boolean } = {},
+) {
   const onSelectOverflowAction = vi.fn();
   const { container } = render(
     createElement(CreateDrawerHeader, {
@@ -72,6 +75,7 @@ function renderHeader(overflow: Partial<Parameters<typeof CreateDrawerHeader>[0]
       finishCount: 0,
       focusSignal: 0,
       onClose: vi.fn(),
+      showLightbulb,
       bleConnected: false,
       bleConnecting: false,
       onToggleBle: vi.fn(),
@@ -134,5 +138,19 @@ describe('CreateDrawerHeader overflow menu', () => {
     const { row } = renderHeader({ supportsMultiFrame: false });
     expect(row('mobile.create.routeMenu.makeRoute')).toBeNull();
     expect(row('mobile.create.actions.newClimb')).not.toBeNull();
+  });
+});
+
+// #5960: the creator's bulb only starts a Bluetooth connect, and a spray wall has
+// no lights. The drawer passes `showLightbulb={false}` there.
+describe('CreateDrawerHeader lightbulb', () => {
+  it('draws the bulb on a board with lights', () => {
+    const { container } = renderHeader();
+    expect(container.querySelector('[data-ble="true"]')).not.toBeNull();
+  });
+
+  it('leaves the bulb out when the board has nothing to light', () => {
+    const { container } = renderHeader({}, { showLightbulb: false });
+    expect(container.querySelector('[data-ble="true"]')).toBeNull();
   });
 });

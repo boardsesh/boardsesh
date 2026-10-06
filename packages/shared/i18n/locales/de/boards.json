@@ -395,6 +395,8 @@
           "title": "Kein Netz, kein Katalog",
           "body": "{{name}} ist noch nicht auf deinem Handy, hier unten gibt es also nichts zu durchsuchen.",
           "cta": "Holen, sobald ich Netz habe",
+          "sprayTitle": "Kein Netz, keine Boulder",
+          "sprayBody": "{{name}} ist noch nicht auf deinem Handy, deshalb lassen sich die Boulder hier unten nicht öffnen.",
           "armedToast": "{{name}} steht in der Warteschlange und lädt, sobald du wieder online bist."
         },
         "spotlight": {
