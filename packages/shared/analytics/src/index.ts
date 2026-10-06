@@ -78,6 +78,7 @@ export {
   sprayWallResetPreviewed,
   sprayWallResetApplied,
   climbRemixedFromBroken,
+  climbEditedFromBroken,
   SPRAY_ROLLOUT_GATES,
   type SprayWallPayload,
   type SprayPhotoSource,
@@ -91,6 +92,7 @@ export {
   type SprayWallResetPreviewedProps,
   type SprayWallResetAppliedProps,
   type ClimbRemixedFromBrokenProps,
+  type ClimbEditedFromBrokenProps,
 } from './spray-wall-events';
 export {
   buildCohortPersonProperties,

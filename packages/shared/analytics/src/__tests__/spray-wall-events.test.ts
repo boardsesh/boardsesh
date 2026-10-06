@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { SHARED_EVENTS } from '../events';
 import {
   SPRAY_ROLLOUT_GATES,
+  climbEditedFromBroken,
   climbRemixedFromBroken,
   sprayHoldsReviewed,
   sprayWallDetectionFinished,
@@ -50,6 +51,7 @@ const EVERY_PAYLOAD = [
   }),
   sprayWallResetApplied({ keptCount: 150, removedCount: 20, addedCount: 31, climbsChanged: 12, moveCount: 6 }),
   climbRemixedFromBroken({ lostHoldCount: 3, source: 'play_drawer' }),
+  climbEditedFromBroken({ lostHoldCount: 3, source: 'play_drawer' }),
 ];
 
 describe('spray wall event builders', () => {
@@ -65,6 +67,10 @@ describe('spray wall event builders', () => {
     expect(climbRemixedFromBroken({ lostHoldCount: 3, source: 'play_drawer' })).toEqual({
       name: SHARED_EVENTS.ClimbRemixedFromBroken,
       properties: { lostHoldCount: 3, source: 'play_drawer' },
+    });
+    expect(climbEditedFromBroken({ lostHoldCount: 2, source: 'play_drawer' })).toEqual({
+      name: SHARED_EVENTS.ClimbEditedFromBroken,
+      properties: { lostHoldCount: 2, source: 'play_drawer' },
     });
   });
 

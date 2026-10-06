@@ -39,7 +39,7 @@ import { climbToQueueItem, resolveCommittableQueueItem } from '../../lib/climb-t
 import { toBoardName } from '@boardsesh/board-config';
 import { formatRenderBoardLabel, resolveClimbRenderBoard, sameRenderBoard } from '../../lib/boards/climb-render-board';
 import type { ActiveSubDrawer } from '@boardsesh/play-view';
-import { SHARED_EVENTS, climbRemixedFromBroken } from '@boardsesh/analytics';
+import { SHARED_EVENTS, climbEditedFromBroken, climbRemixedFromBroken } from '@boardsesh/analytics';
 import { trackSprayEvent } from '../../lib/spray/spray-telemetry';
 import { DeferredBoard } from './DeferredBoard';
 import { BoardRenderUnavailable } from './BoardRenderUnavailable';
@@ -110,6 +110,7 @@ import { resolveTickDefaultGradeName } from '../../lib/boardsesh-grade-display';
 import { useShareClimb } from '../../hooks/use-share-climb';
 import { LostHoldsBanner } from './LostHoldsBanner';
 import { useCanEditDisplayedClimb } from './use-can-edit-displayed-climb';
+import { useLostHoldsEditReadiness } from './use-lost-holds-edit-readiness';
 import { useCreateClimbNavigation } from '../create-climb/use-create-climb-navigation';
 import { useMountedOnFirstOpen } from '../../hooks/use-mounted-on-first-open';
 import { getBoardRenderData } from '../../lib/board-details';
@@ -611,10 +612,19 @@ export function PlayDrawer({
     renderBoardConfig.boardName,
     renderBoardConfig.layoutId,
   );
+  // And only when the editor would open on something it can save: this device's
+  // wall agrees with the server about what is gone, and some holds survive.
+  const lostHoldsEditReadiness = useLostHoldsEditReadiness(
+    lostHoldCount > 0 ? displayedClimb : null,
+    renderBoardConfig.boardName,
+    renderBoardConfig.layoutId,
+  );
+  const canEditLostHolds = canEditDisplayedClimb && lostHoldsEditReadiness === 'ready';
   const handleEditLostHolds = useCallback(() => {
     if (!displayedClimb) return;
+    trackSprayEvent(climbEditedFromBroken({ lostHoldCount, source: 'play_drawer' }));
     openEdit(displayedClimb, renderBoardConfig);
-  }, [openEdit, displayedClimb, renderBoardConfig]);
+  }, [lostHoldCount, openEdit, displayedClimb, renderBoardConfig]);
   // The climb belongs to a genuinely DIFFERENT board model. Same gate as an
   // explicit board override (`boardMismatch` from the host), just discovered
   // from the climb rather than handed in by the opener.
@@ -2019,7 +2029,7 @@ export function PlayDrawer({
                       <LostHoldsBanner
                         count={lostHoldCount}
                         onRemix={handleRemixLostHolds}
-                        onEdit={canEditDisplayedClimb ? handleEditLostHolds : undefined}
+                        onEdit={canEditLostHolds ? handleEditLostHolds : undefined}
                       />
 
                       <View style={styles.boardSection}>
