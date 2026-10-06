@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
+import { View, Pressable, StyleSheet, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { useLocalSearchParams, useNavigation, useFocusEffect } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,12 +11,19 @@ import { Text } from '../../../src/components/Text';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { InteractiveFilterBoard } from '../../../src/components/search/InteractiveFilterBoard';
 import { HoldFilterPicker } from '../../../src/components/search/HoldFilterPicker';
+import { HoldFilterHeatmapPanel } from '../../../src/components/search/heatmap/HoldFilterHeatmapPanel';
+import { useHoldFilterHeatmap } from '../../../src/components/search/heatmap/use-hold-filter-heatmap';
+import { parseHeatmapSearch } from '../../../src/components/search/heatmap/heatmap-search-input';
+import { ActionButton } from '../../../src/components/drawer-action-bar/DrawerActionBar';
 import { useTheme } from '../../../src/providers/theme-provider';
+import { useAuth } from '../../../src/providers/auth-provider';
+import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { useScreenshotBoardParams } from '../../../src/hooks/use-screenshot-board-params';
 import { getCreateBoardHolds, parseSetIdsParam } from '../../../src/lib/create-board-holds';
 import { useSprayWallToken } from '../../../src/lib/spray/use-spray-wall-token';
 import { emitHoldsFilterSelection } from '../../../src/lib/hold-filter-handoff';
 import { track } from '../../../src/lib/analytics';
+import { hapticMedium } from '../../../src/lib/haptics';
 import { spacing } from '../../../src/theme/tokens';
 
 type Params = {
@@ -24,7 +31,10 @@ type Params = {
   layoutId?: string;
   sizeId?: string;
   setIds?: string;
+  angle?: string;
   holdsFilter?: string;
+  /** The filter sheet's draft search, for the heatmap. */
+  heatmapSearch?: string;
 };
 
 // Vertical space (px) reserved for the on-screen chrome around the board so the
@@ -62,6 +72,7 @@ export default function HoldFilterScreen() {
   const layoutId = Number(screenshotBoard?.layoutId ?? params.layoutId ?? 0);
   const sizeId = Number(screenshotBoard?.sizeId ?? params.sizeId ?? 0);
   const setIds = screenshotBoard?.setIds ?? params.setIds ?? '';
+  const angle = Number(screenshotBoard?.angle ?? params.angle ?? 0);
   // Matches the web `boardLayout` property: the layout NAME (web sends
   // `boardDetails.layout_name`), not the numeric id, so the hold-filter events
   // join cleanly with web across platforms. Falls back to '' for unknown ids.
@@ -91,18 +102,64 @@ export default function HoldFilterScreen() {
     // `sprayToken` moves when the wall arrives or is reset.
   }, [boardName, layoutId, sizeId, setIds, sprayToken]);
 
+  // The hold heatmap, counting the climbs the sheet's other filters match. A
+  // read that answers from a downloaded board (or offers the download), which a
+  // signed-out climber has no way to use, so they get no toggle.
+  const { isAuthenticated } = useAuth();
+  const [heatmapDraft] = useState(() => parseHeatmapSearch(params.heatmapSearch));
+  const heatmap = useHoldFilterHeatmap({ boardName, layoutId, sizeId, setIds, angle, holds: boardHolds }, heatmapDraft);
+  const { data: activeBoard } = useActiveBoard();
+  const heatmapNudgeBoard =
+    activeBoard &&
+    activeBoard.boardType === boardName &&
+    activeBoard.layoutId === layoutId &&
+    activeBoard.sizeId === sizeId
+      ? activeBoard
+      : null;
+  const heatmapModeLabel =
+    heatmap.mode === 'grade'
+      ? t('mobile.heatmap.modes.grade')
+      : heatmap.mode === 'startsFinishes'
+        ? t('mobile.heatmap.modes.startsFinishes')
+        : t('mobile.heatmap.modes.climbs');
+  const { toggle: toggleHeatmap } = heatmap;
+  const handleToggleHeatmap = useCallback(() => {
+    hapticMedium();
+    toggleHeatmap();
+  }, [toggleHeatmap]);
+  const heatmapToggle = isAuthenticated ? (
+    <ActionButton
+      size="sm"
+      iconName={heatmap.enabled ? 'flame.fill' : 'flame'}
+      onPress={handleToggleHeatmap}
+      active={heatmap.enabled}
+      activeColor={brandColors.primary}
+      busy={heatmap.enabled && heatmap.isBusy}
+      checked={heatmap.enabled}
+      accessibilityLabel={t('mobile.heatmap.toggle')}
+      accessibilityValueText={heatmap.enabled ? heatmapModeLabel : undefined}
+    />
+  ) : null;
+
+  // The heatmap panel's measured height (0 while it renders nothing), so the
+  // board gives up exactly the room the legend, caption or download line takes.
+  const [heatmapPanelHeight, setHeatmapPanelHeight] = useState(0);
+  const handleHeatmapPanelLayout = useCallback((event: LayoutChangeEvent) => {
+    setHeatmapPanelHeight(Math.round(event.nativeEvent.layout.height));
+  }, []);
+  const chromeBudget = CHROME_BUDGET + heatmapPanelHeight;
   const boardRender = useMemo(() => {
     if (!boardHolds) return { width: 0, height: 0 };
     const boardAspect = boardHolds.boardWidth / boardHolds.boardHeight;
     const availWidth = windowWidth - spacing[4] * 2;
     // Clamp to a 200px floor so a short window (small device in landscape, or an
     // over-large CHROME_BUDGET estimate) never collapses the board to nothing.
-    const availHeight = Math.max(200, windowHeight - insets.top - insets.bottom - CHROME_BUDGET);
+    const availHeight = Math.max(200, windowHeight - insets.top - insets.bottom - chromeBudget);
     if (availWidth / availHeight > boardAspect) {
       return { width: availHeight * boardAspect, height: availHeight };
     }
     return { width: availWidth, height: availWidth / boardAspect };
-  }, [boardHolds, windowWidth, windowHeight, insets.top, insets.bottom]);
+  }, [boardHolds, windowWidth, windowHeight, insets.top, insets.bottom, chromeBudget]);
 
   // Hand the current filter back to the sheet whenever this screen loses focus
   // (Done button pops, or swipe-back). Matches the setters handoff timing.
@@ -189,7 +246,12 @@ export default function HoldFilterScreen() {
           onHoldTap={handleHoldTap}
           renderWidth={boardRender.width}
           renderHeight={boardRender.height}
+          underOverlay={heatmap.overlay}
         />
+      </View>
+
+      <View onLayout={handleHeatmapPanelLayout}>
+        <HoldFilterHeatmapPanel heatmap={heatmap} boardName={boardName} nudgeBoard={heatmapNudgeBoard} />
       </View>
 
       <HoldFilterPicker
@@ -198,6 +260,7 @@ export default function HoldFilterScreen() {
         onSelectType={setSelectedType}
         applyMode={applyMode}
         onApplyModeChange={setApplyMode}
+        modeRowAccessory={heatmapToggle}
       />
     </View>
   );

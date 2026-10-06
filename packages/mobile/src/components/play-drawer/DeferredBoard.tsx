@@ -1,4 +1,4 @@
-import { memo, type ComponentType, type MutableRefObject, type ReactNode, type RefObject } from 'react';
+import { memo, type ComponentType, type MutableRefObject, type RefObject } from 'react';
 import { View, StyleSheet } from 'react-native';
 import type { GestureType } from 'react-native-gesture-handler';
 import type { SharedValue } from 'react-native-reanimated';
@@ -39,8 +39,6 @@ type DeferredBoardProps = {
   scrollRef?: RefObject<ComponentType | undefined | null>;
   swipeTranslateX?: SharedValue<number>;
   swipeIsAnimating?: SharedValue<boolean>;
-  /** The hold heatmap, drawn on the current board only. */
-  underOverlay?: ReactNode;
   /** RNGH ref to the drawer-dismiss Pan, forwarded to the zoomed-only board pan. */
   dismissRef?: MutableRefObject<GestureType | undefined>;
 };

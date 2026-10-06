@@ -868,7 +868,6 @@
         "grade": "Lila Griffe tauchen in schwereren Bouldern auf, gelbe in leichteren"
       },
       "wholeBoard": "Ganzes Board",
-      "holdPicksSkipped": "{{summary}} · Griffauswahl offline übersprungen",
       "wholeBoardHint": "Zählt stattdessen jeden Boulder am Board",
       "useFiltersHint": "Zählt nur die Boulder, die zu deinen Filtern passen",
       "filterUnsupported": "Die Heatmap kann diesen Filtern offline nicht folgen. Tipp auf den Chip, um das ganze Board zu sehen.",

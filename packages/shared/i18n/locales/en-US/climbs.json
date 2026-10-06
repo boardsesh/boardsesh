@@ -868,7 +868,6 @@
         "grade": "Purple holds show up on harder climbs, yellow on easier ones"
       },
       "wholeBoard": "Whole board",
-      "holdPicksSkipped": "{{summary}} · hold picks skipped offline",
       "wholeBoardHint": "Counts every climb on the board instead",
       "useFiltersHint": "Counts only the climbs your filters match",
       "filterUnsupported": "The heatmap can't follow these filters offline. Tap the chip to see the whole board.",

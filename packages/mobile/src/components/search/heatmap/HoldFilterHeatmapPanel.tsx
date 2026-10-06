@@ -10,20 +10,20 @@ import { HeatmapDownloadLine } from '../../board/HeatmapDownloadLine';
 import { HEATMAP_MODES, type HeatmapMode } from '../../board/heatmap-buckets';
 import { useTheme } from '../../../providers/theme-provider';
 import { useGrades } from '../../../lib/graphql/hooks';
-import { countFilteredHolds, hasActiveClimbFilters } from '@boardsesh/climb-filters';
+import { hasActiveClimbFilters } from '@boardsesh/climb-filters';
 import { getFilterSummary } from '../../../lib/filter-summary';
 import { DEFAULT_FILTERS } from '../../../lib/climb-filter-types';
 import { useHeatmapFirstRunCaption } from '../../../lib/heatmap-first-run';
 import { borderRadius, spacing } from '../../../theme/tokens';
-import type { PlayDrawerHeatmap } from './use-play-drawer-heatmap';
+import type { HoldFilterHeatmap } from './use-hold-filter-heatmap';
 
-type PlayDrawerHeatmapPanelProps = {
-  heatmap: PlayDrawerHeatmap;
+type HoldFilterHeatmapPanelProps = {
+  heatmap: HoldFilterHeatmap;
   /** For the filter summary's grade names. */
   boardName: string;
   /**
-   * The climber's active board when it is the board the drawer is drawing, else
-   * null: the download offer only makes sense for the board they are standing at.
+   * The climber's active board when it is the board being filtered, else null:
+   * the download offer only makes sense for the board they are standing at.
    */
   nudgeBoard: UserBoard | null;
 };
@@ -34,23 +34,23 @@ type PlayDrawerHeatmapPanelProps = {
  * list's filters, or the whole board) — or, for a board that is not on this
  * phone, one line offering the download.
  */
-export const PlayDrawerHeatmapPanel = memo(function PlayDrawerHeatmapPanel({
+export const HoldFilterHeatmapPanel = memo(function HoldFilterHeatmapPanel({
   heatmap,
   boardName,
   nudgeBoard,
-}: PlayDrawerHeatmapPanelProps) {
+}: HoldFilterHeatmapPanelProps) {
   if (!heatmap.enabled) return null;
   if (heatmap.source === 'download') {
     return heatmap.isResolving ? null : (
       <View style={styles.panel}>
-        <HeatmapDownloadLine board={nudgeBoard} source="play_drawer" testID="hold-heatmap-download-line" />
+        <HeatmapDownloadLine board={nudgeBoard} source="hold_filter" testID="hold-heatmap-download-line" />
       </View>
     );
   }
   return <HeatmapPanelBody heatmap={heatmap} boardName={boardName} />;
 });
 
-function HeatmapPanelBody({ heatmap, boardName }: { heatmap: PlayDrawerHeatmap; boardName: string }) {
+function HeatmapPanelBody({ heatmap, boardName }: { heatmap: HoldFilterHeatmap; boardName: string }) {
   const { t, i18n } = useTranslation('climbs');
   const { systemColors, colorScheme } = useTheme();
   const { search, wholeBoard, toggleWholeBoard, mode, setMode, legend, climbCount } = heatmap;
@@ -98,7 +98,7 @@ function HeatmapPanelBody({ heatmap, boardName }: { heatmap: PlayDrawerHeatmap; 
           : null;
 
   return (
-    <View style={styles.panel} testID="play-drawer-heatmap-legend">
+    <View style={styles.panel} testID="hold-filter-heatmap-legend">
       <HeatmapLegend
         legend={legend}
         lowLabel={lowLabel}
@@ -108,7 +108,7 @@ function HeatmapPanelBody({ heatmap, boardName }: { heatmap: PlayDrawerHeatmap; 
         showEdgeValues
       />
       {caption ? (
-        <Text variant="caption1" color={systemColors.secondaryLabel} testID="play-drawer-heatmap-caption">
+        <Text variant="caption1" color={systemColors.secondaryLabel} testID="hold-filter-heatmap-caption">
           {caption}
         </Text>
       ) : null}
@@ -119,13 +119,7 @@ function HeatmapPanelBody({ heatmap, boardName }: { heatmap: PlayDrawerHeatmap; 
         accessibilityLabel={t('mobile.heatmap.modeLabel')}
       />
       {search ? (
-        <HeatmapScopeChip
-          search={search}
-          boardName={boardName}
-          wholeBoard={wholeBoard}
-          holdPicksSkipped={heatmap.holdPicksSkipped}
-          onPress={toggleWholeBoard}
-        />
+        <HeatmapScopeChip search={search} boardName={boardName} wholeBoard={wholeBoard} onPress={toggleWholeBoard} />
       ) : null}
       {status ? (
         <Text variant="footnote" color={systemColors.secondaryLabel}>
@@ -140,13 +134,11 @@ function HeatmapScopeChip({
   search,
   boardName,
   wholeBoard,
-  holdPicksSkipped,
   onPress,
 }: {
-  search: NonNullable<PlayDrawerHeatmap['search']>;
+  search: NonNullable<HoldFilterHeatmap['search']>;
   boardName: string;
   wholeBoard: boolean;
-  holdPicksSkipped: boolean;
   onPress: () => void;
 }) {
   const { t } = useTranslation('climbs');
@@ -155,12 +147,11 @@ function HeatmapScopeChip({
   const { data: grades } = useGrades(boardName);
   const summary = useMemo(() => {
     // The list's own summary covers the filter sheet and the name; the board
-    // filters (benchmarks, holds, region) are named the way the list's tokens
-    // name them, so a holds-only search still says what it is filtering on.
+    // filters (benchmarks, region) are named the way the list's tokens name
+    // them, so a region-only search still says what it is filtering on. Hold
+    // picks never reach here: the hook drops them.
     const boardParts: string[] = [];
     if (search.boardFilters.onlyBenchmarks) boardParts.push(t('mobile.filter.benchmark'));
-    const holdCount = countFilteredHolds(search.boardFilters.holdsFilter);
-    if (holdCount > 0) boardParts.push(t('mobile.holdFilter.summaryCount', { count: holdCount }));
     if (search.boardFilters.zoneBox != null) boardParts.push(t('mobile.zoneFilter.title'));
     const listFiltered =
       hasActiveClimbFilters({
@@ -173,11 +164,7 @@ function HeatmapScopeChip({
       : boardParts;
     return parts.join(' · ');
   }, [search, grades, t]);
-  const label = wholeBoard
-    ? t('mobile.heatmap.wholeBoard')
-    : holdPicksSkipped
-      ? t('mobile.heatmap.holdPicksSkipped', { summary })
-      : summary;
+  const label = wholeBoard ? t('mobile.heatmap.wholeBoard') : summary;
 
   return (
     <Pressable

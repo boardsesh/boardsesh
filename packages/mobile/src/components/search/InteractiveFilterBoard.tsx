@@ -76,6 +76,12 @@ type InteractiveFilterBoardProps = {
   renderWidth: number;
   renderHeight: number;
   /**
+   * Drawn between the board photo and the holds (the hold heatmap), inside the
+   * zoom transform so it tracks the board. Pass a memoised element: a fresh one
+   * per render defeats BoardImageNative's memo.
+   */
+  underOverlay?: ReactNode;
+  /**
    * Overlay rendered INSIDE the zoom transform (like the hold filter rings) so it
    * tracks the board at any zoom — used by the zone editor for the draggable
    * rectangle. Receives the board pinch + live scale so its pans compose cleanly.
@@ -147,6 +153,7 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   mirrored = false,
   renderWidth,
   renderHeight,
+  underOverlay,
   renderInTransform,
   renderAboveBoard,
   controlRef,
@@ -273,6 +280,7 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
               boardWidth={boardWidth}
               boardHeight={boardHeight}
               mirrored={mirrored}
+              underOverlay={underOverlay}
             />
             {holdsFilter ? (
               <SearchHoldFilterRings

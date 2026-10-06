@@ -1,33 +1,34 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { HeatmapOverlay, useHeatLayer } from '../../board/HeatmapOverlay';
 import type { HeatLegend, HeatmapMode } from '../../board/heatmap-buckets';
-import { getCreateBoardHolds, parseSetIdsParam } from '../../../lib/create-board-holds';
-import { getLastSearch } from '../../../lib/last-search-store';
+import type { CreateBoardHolds } from '../../../lib/create-board-holds';
 import { useHoldHeatmap } from '../../../lib/graphql/hooks/use-hold-heatmap';
 import { useCatalogQuerySourceState, type CatalogQuerySource } from '../../../lib/offline/use-catalog-query-source';
-import { useAuth } from '../../../providers/auth-provider';
+import { isOfflineSearchSupported } from '../../../db/queries/search-climbs-local';
 import {
   heatmapSearchInput,
   isHeatmapSearchFiltered,
-  localHeatmapInput,
+  withoutHoldPicks,
   type HeatmapSearch,
 } from './heatmap-search-input';
 
-export type PlayDrawerHeatmapBoard = {
+export type HoldFilterHeatmapBoard = {
   boardName: BoardName;
   layoutId: number;
   sizeId: number;
   setIds: string;
   angle: number;
+  /** The screen's own hold geometry, so a spray wall that arrives late is picked up once. */
+  holds: CreateBoardHolds | null;
 };
 
-export type PlayDrawerHeatmap = {
+export type HoldFilterHeatmap = {
   enabled: boolean;
   toggle: () => void;
   mode: HeatmapMode;
   setMode: (mode: HeatmapMode) => void;
-  /** The saved list search the heatmap is following, or null for the whole board. */
+  /** The filter sheet's draft (minus its hold picks) the heatmap follows, or null for the whole board. */
   search: HeatmapSearch | null;
   /** A filtered search exists and the climber switched it off. */
   wholeBoard: boolean;
@@ -35,10 +36,8 @@ export type PlayDrawerHeatmap = {
   source: CatalogQuerySource;
   /** The source could still move off `download`; hold the offer back. */
   isResolving: boolean;
-  /** The saved search needs a filter this phone cannot run even without its hold picks. */
+  /** The search needs a filter this phone cannot run. */
   filterUnsupported: boolean;
-  /** The phone dropped the search's hold-state picks and drew the rest. */
-  holdPicksSkipped: boolean;
   isBusy: boolean;
   isError: boolean;
   /** The query answered with no holds at all. */
@@ -54,42 +53,25 @@ export type PlayDrawerHeatmap = {
 };
 
 /**
- * Everything the play drawer's hold heatmap needs, in one place so the drawer
- * only wires it: the toggle and colour mode, the climb list's saved search for
- * this board config (the drawer has no search provider of its own), where the
+ * Everything the hold filter screen's heatmap needs, in one place so the screen
+ * only wires it: the toggle and colour mode, which climbs to count, where the
  * answer comes from (`useCatalogQuerySource`), the ranked heat layer, and the
  * memoised overlay.
  *
- * The saved search is re-read each time the heatmap is switched on or the
- * board changes, so a filter set in the list since the last look is picked up.
+ * `draft` is the filter sheet's search as it stood when the screen opened. Its
+ * hold picks are dropped: they are what this screen edits, so the heat shows
+ * where the climbs matching everything else go.
  */
-export function usePlayDrawerHeatmap(board: PlayDrawerHeatmapBoard): PlayDrawerHeatmap {
-  const { boardName, layoutId, sizeId, setIds, angle } = board;
-  const { isAuthenticated } = useAuth();
+export function useHoldFilterHeatmap(board: HoldFilterHeatmapBoard, draft: HeatmapSearch | null): HoldFilterHeatmap {
+  const { boardName, layoutId, sizeId, setIds, angle, holds } = board;
   const [enabled, setEnabled] = useState(false);
   const [mode, setMode] = useState<HeatmapMode>('climbs');
   const [wholeBoard, setWholeBoard] = useState(false);
-  // undefined while the read is in flight, so the query waits for the filters
-  // rather than running once unfiltered and again filtered.
-  const [savedSearch, setSavedSearch] = useState<HeatmapSearch | null | undefined>(undefined);
 
-  useEffect(() => {
-    if (!enabled) return;
-    let cancelled = false;
-    setSavedSearch(undefined);
-    getLastSearch({ boardName, layoutId, sizeId, setIds, angle }, { isAuthenticated })
-      .then((entry) => {
-        if (!cancelled) setSavedSearch(entry);
-      })
-      .catch(() => {
-        if (!cancelled) setSavedSearch(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [enabled, boardName, layoutId, sizeId, setIds, angle, isAuthenticated]);
-
-  const search = isHeatmapSearchFiltered(savedSearch) ? savedSearch : null;
+  const search = useMemo(() => {
+    const withoutPicks = draft ? withoutHoldPicks(draft) : null;
+    return isHeatmapSearchFiltered(withoutPicks) ? withoutPicks : null;
+  }, [draft]);
   const listInput = useMemo(
     () => heatmapSearchInput({ boardName, layoutId, sizeId, setIds, angle }, search && !wholeBoard ? search : null),
     [boardName, layoutId, sizeId, setIds, angle, search, wholeBoard],
@@ -98,26 +80,15 @@ export function usePlayDrawerHeatmap(board: PlayDrawerHeatmapBoard): PlayDrawerH
   const scope = useMemo(() => ({ boardName, layoutId, sizeId }), [boardName, layoutId, sizeId]);
   const { source, isResolving } = useCatalogQuerySourceState(scope);
   // Only the phone is limited; the admin resolver runs every filter.
-  const local = useMemo(
-    () =>
-      source === 'local'
-        ? localHeatmapInput(listInput)
-        : { input: listInput, holdPicksSkipped: false, unsupported: false },
+  const filterUnsupported = useMemo(
+    () => source === 'local' && !isOfflineSearchSupported(listInput),
     [source, listInput],
   );
-  const filterUnsupported = local.unsupported;
 
-  const heatmap = useHoldHeatmap(
-    local.input,
-    source,
-    enabled && savedSearch !== undefined && !isResolving && !filterUnsupported,
-    { withStats: mode === 'grade' },
-  );
+  const heatmap = useHoldHeatmap(listInput, source, enabled && !isResolving && !filterUnsupported, {
+    withStats: mode === 'grade',
+  });
 
-  const holds = useMemo(
-    () => getCreateBoardHolds({ boardName, layoutId, sizeId, setIds: parseSetIdsParam(setIds) }),
-    [boardName, layoutId, sizeId, setIds],
-  );
   const layer = useHeatLayer({ statsByHoldId: heatmap.statsByHoldId, holdTargets: holds?.holdTargets, metric: mode });
 
   const showOverlay = enabled && source !== 'download' && !filterUnsupported && holds !== null;
@@ -141,11 +112,11 @@ export function usePlayDrawerHeatmap(board: PlayDrawerHeatmapBoard): PlayDrawerH
   const toggle = useCallback(() => setEnabled((previous) => !previous), []);
   const toggleWholeBoard = useCallback(() => setWholeBoard((previous) => !previous), []);
 
-  const isBusy = enabled && (savedSearch === undefined || isResolving || heatmap.isFetching);
+  const isBusy = enabled && (isResolving || heatmap.isFetching);
   const isUnavailable = enabled && heatmap.isUnavailable;
   const isEmpty = enabled && heatmap.isSuccess && !heatmap.isUnavailable && heatmap.holdStats.length === 0;
-  // One object per real change, so the memoised panel and action bar skip the
-  // drawer's unrelated re-renders.
+  // One object per real change, so the memoised panel skips the screen's
+  // unrelated re-renders (every hold tap).
   return useMemo(
     () => ({
       enabled,
@@ -158,7 +129,6 @@ export function usePlayDrawerHeatmap(board: PlayDrawerHeatmapBoard): PlayDrawerH
       source,
       isResolving,
       filterUnsupported,
-      holdPicksSkipped: local.holdPicksSkipped,
       isBusy,
       isError: heatmap.isError,
       isEmpty,
@@ -177,7 +147,6 @@ export function usePlayDrawerHeatmap(board: PlayDrawerHeatmapBoard): PlayDrawerH
       source,
       isResolving,
       filterUnsupported,
-      local.holdPicksSkipped,
       isBusy,
       heatmap.isError,
       isEmpty,

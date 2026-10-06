@@ -104,15 +104,13 @@ describe('DeferredBoard', () => {
     expect(board?.getAttribute('data-frames')).toBe('p1145r15');
   });
 
-  it('forwards the dismiss ref and current-board heatmap through the deferred mount', () => {
+  it('forwards the dismiss ref through the deferred mount', () => {
     const dismissRef = { current: undefined as GestureType | undefined };
-    const underOverlay = createElement('div', { 'data-testid': 'heatmap-overlay' });
-    render(createElement(DeferredBoard, { ...baseProps, open: true, dismissRef, underOverlay }));
+    render(createElement(DeferredBoard, { ...baseProps, open: true, dismissRef }));
 
     flushFrame();
 
     expect(forwardedCarouselProps.current?.dismissRef).toBe(dismissRef);
-    expect(forwardedCarouselProps.current?.underOverlay).toBe(underOverlay);
   });
 
   it('waits for delayed layout, then defers one frame after the measured commit', () => {

@@ -868,7 +868,6 @@
         "grade": "Les prises violettes reviennent dans les blocs plus durs, les jaunes dans les plus faciles"
       },
       "wholeBoard": "Toute la board",
-      "holdPicksSkipped": "{{summary}} · choix de prises ignorés hors ligne",
       "wholeBoardHint": "Compte tous les blocs de la board",
       "useFiltersHint": "Compte seulement les blocs qui passent tes filtres",
       "filterUnsupported": "La carte de chaleur ne peut pas suivre ces filtres hors ligne. Touche la puce pour voir toute la board.",

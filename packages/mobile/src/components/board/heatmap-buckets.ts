@@ -3,7 +3,7 @@ import { V_GRADE_COLORS } from '@boardsesh/board-constants/grade-colors';
 import { difficultyIdToVNumber } from '@boardsesh/board-constants/grade-conversion';
 
 /**
- * What the heatmap colours a hold by in the play drawer:
+ * What the heatmap colours a hold by on the hold filter screen:
  * - `climbs` — how many of the matched climbs use it (the default);
  * - `startsFinishes` — how many of them start or finish on it;
  * - `grade` — the average grade of those climbs, pulled toward the board's
@@ -14,7 +14,7 @@ export type HeatmapMode = 'climbs' | 'startsFinishes' | 'grade';
 export const HEATMAP_MODES: readonly HeatmapMode[] = ['climbs', 'startsFinishes', 'grade'];
 
 /**
- * The count a hold is ranked by. The three drawer modes, plus the four the
+ * The count a hold is ranked by. The three hold filter modes, plus the four the
  * create board follows as the setter switches brush (`starts` for the Start
  * brush, and so on). `grade` is the one that is not a count.
  */
