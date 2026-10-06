@@ -3,7 +3,6 @@ import { SearchCacheService, DEFAULT_SEARCH_CACHE_TTL, CACHE_VERSION } from '../
 import { redisClientManager } from '../../redis/client';
 import type { ClimbSearchParams, ParsedBoardRouteParameters } from '../../db/queries/climbs/index';
 import { logger } from '../../utils/logger';
-import { mapSearchInputToParams } from '@boardsesh/db/queries';
 
 vi.mock('../../redis/client', () => ({
   redisClientManager: {
@@ -72,20 +71,6 @@ describe('SearchCacheService', () => {
       const key2 = service.buildCacheKey(makeRouteParams({ set_ids: [1, 2, 3] }), {}, 'results');
 
       expect(key1).toBe(key2);
-    });
-
-    it('gives a holdIntegrity BROKEN search its own key, and folds INTACT and ANY into the plain one', () => {
-      // BROKEN is the retired "Lost holds" filter and answers the empty list, so it
-      // must never share the plain search's cached page. INTACT and ANY are the
-      // plain list.
-      const params = makeRouteParams();
-      const plain = service.buildCacheKey(params, mapSearchInputToParams({}), 'climbs');
-      expect(service.buildCacheKey(params, mapSearchInputToParams({ holdIntegrity: 'BROKEN' }), 'climbs')).not.toBe(
-        plain,
-      );
-      for (const holdIntegrity of ['INTACT', 'ANY']) {
-        expect(service.buildCacheKey(params, mapSearchInputToParams({ holdIntegrity }), 'climbs')).toBe(plain);
-      }
     });
 
     it('produces a valid key with empty searchParams', () => {

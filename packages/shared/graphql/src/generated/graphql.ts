@@ -1089,9 +1089,20 @@ export type Climb = {
   /** Layout ID the climb belongs to (used to identify cross-layout climbs) */
   layoutId?: Maybe<Scalars['Int']['output']>;
   /**
-   * Retired with lost-hold tracking. An empty list on a spray climb and null on
-   * every other board, with no query.
-   * @deprecated Lost-hold tracking was retired. Always empty on a spray climb.
+   * The holds this climb was set on that are no longer on the wall, carrying the
+   * geometry they had while they were — so a client can draw ghost rings where
+   * they used to be and the climber can see what came off.
+   *
+   * Spray walls only: null on every catalogue board, where holds do not come off,
+   * and null when the climb's count is unknown. An empty list for a climb that has
+   * lost nothing (no query), or for a wall the viewer may not see.
+   *
+   * Coordinates are the wall's canonical frame — the same frame
+   * `SprayWallRenderData.holds` uses — so the two sets draw on one photo without
+   * conversion. `removedVersion` is the generation that took each hold off.
+   *
+   * Resolved per climb, with its own query. A list must not select it; it is for a
+   * single-climb surface — the play drawer and the remix editor.
    */
   lostHolds?: Maybe<Array<SprayWallHold>>;
   /** Whether the climb should be displayed mirrored */
@@ -1100,11 +1111,11 @@ export type Climb = {
    * How many of this climb's holds are no longer on the wall.
    *
    * Spray walls only — null on every catalogue board, where holds do not come off.
-   * 0 is an intact climb; anything higher is a climb that lost holds to an
-   * in-place reset before those were retired. Such a climb is left out of the
-   * wall's climb lists and search, and still opens by uuid (logbook, playlist,
-   * share link, queue). Materialised on `board_climbs` rather than joined,
-   * because the offline mirror has no `board_climb_holds` table to join through.
+   * 0 is an intact climb; anything higher is a climb that lost holds when the
+   * owner edited the wall's holds (or to an old in-place reset). It stays listed,
+   * gets a badge and can be remixed, with `lostHolds` drawing the missing holds.
+   * Materialised on `board_climbs` rather than joined, because the offline mirror
+   * has no `board_climb_holds` table to join through.
    */
   missingHoldCount?: Maybe<Scalars['Int']['output']>;
   /** The signed-in climber's OWN grade for this climb at this angle: the difficulty of their latest tick that carries one, clamped to the boulder scale. Populated only when the search asked for useMyGrades — that search's filter and difficulty sort key off exactly this value (falling back to the crowd's grade where it is null), so a row can never disagree with its own position in the list. Never round-tripped through the party queue: it is one climber's private opinion, not a property of the climb. */
@@ -1425,10 +1436,7 @@ export type ClimbSearchInput = {
   hideAttempted?: InputMaybe<Scalars['Boolean']['input']>;
   /** Hide climbs the user has completed (requires auth) */
   hideCompleted?: InputMaybe<Scalars['Boolean']['input']>;
-  /**
-   * The retired Lost holds filter. ANY and INTACT return the plain list; BROKEN returns no climbs, on every board, except that an onlyDrafts search returns the drafts that lost a hold. A spray wall's lists always leave out climbs that lost a hold to an old reset.
-   * @deprecated Retired. BROKEN: no climbs. ANY, INTACT: ignored.
-   */
+  /** Keep only intact climbs, only climbs that have lost a hold, or everything (the default). */
   holdIntegrity?: InputMaybe<HoldIntegrityFilter>;
   /** Hold filter object: { holdId: 'ANY' | 'NOT', ... } */
   holdsFilter?: InputMaybe<Scalars['JSON']['input']>;
@@ -3463,10 +3471,12 @@ export type GymTopClimb = {
 };
 
 /**
- * Retired. A spray wall's lists always leave out climbs that lost a hold, and no
- * other board loses holds, so ANY and INTACT are the plain list and BROKEN is the
- * empty list on every board (on an onlyDrafts search, the drafts that lost a
- * hold). Kept so older apps' documents still validate.
+ * Whether a climb still has every hold it was set on.
+ *
+ * ANY is the default and adds no filter at all. INTACT keeps climbs that have lost
+ * nothing; BROKEN keeps only the ones that have. Meaningful on spray walls, where a
+ * hold edit (or an old reset) takes holds off the wall; on a catalogue board every
+ * climb is INTACT, so BROKEN there is an empty result rather than an error.
  */
 export type HoldIntegrityFilter = 'ANY' | 'BROKEN' | 'INTACT';
 

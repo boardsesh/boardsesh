@@ -85,12 +85,18 @@ export type ClimbSearchParams = {
   onlyFavorited?: boolean;
   projectsOnly?: boolean;
   /**
-   * The retired "Lost holds" filter. Only `broken` survives, as an empty result
-   * on every board (`lostHoldsFilterCondition`); an older app's INTACT and ANY
-   * collapse to undefined, the plain list. Kept as a param, not dropped, so a
-   * BROKEN search keeps its own search-cache key.
+   * Hold integrity, for spray walls: 'intact' keeps climbs that have lost no
+   * holds, 'broken' keeps only the ones that have, 'any' adds no integrity
+   * predicate. `undefined` is the default view, which on a spray wall also hides
+   * climbs retired by a full reset; 'any' shows them (#6024,
+   * `retiredByResetCondition`).
+   *
+   * Reads the materialised `board_climbs.missing_hold_count`, which a reset
+   * re-computes (`recomputeMissingHoldCounts`). Lower case because that is what
+   * every other param here uses; the GraphQL enum arrives SCREAMING and is
+   * lowered by the validator.
    */
-  holdIntegrity?: 'broken';
+  holdIntegrity?: 'any' | 'intact' | 'broken';
   // Resolve each climb's stats through its own set angle when the browsed angle
   // has no row (issue #5405). Opt-in on every board: omitted means off. On an
   // angle-bound board (Woods) off also restricts the list to the climbs that
@@ -158,7 +164,6 @@ export type ClimbSearchInputLike = {
   onlyDrafts?: boolean | null;
   onlyFavorited?: boolean | null;
   projectsOnly?: boolean | null;
-  /** From older apps. BROKEN survives as an empty filter; INTACT and ANY are ignored (`lostHoldsFilterCondition`). */
   holdIntegrity?: string | null;
   crossAngleStats?: boolean | null;
   gradeSource?: string | null;
@@ -198,13 +203,28 @@ export function hasNameQuery(searchParams: Pick<ClimbSearchParams, 'name'>): boo
 }
 
 /**
- * Map a wire `gradeSource` value onto the param. Only BOARDSESH survives: UPSTREAM
- * is the default, so it collapses to undefined like an omitted value — the
- * search-cache key hashes the params, and an explicit default would split one
- * cached page into two keys. Unknown strings collapse too: the validator has
+ * Map a wire `holdIntegrity` value onto the param.
+ *
+ * Unknown strings collapse to undefined rather than throwing: the validator has
  * already rejected anything off the enum by the time a GraphQL search gets here,
  * and the SSR path builds this shape from URL text where an unreadable value must
  * not blank the page.
+ */
+export function normalizeHoldIntegrity(raw: string | null | undefined): ClimbSearchParams['holdIntegrity'] {
+  if (!raw) return undefined;
+  const value = raw.toLowerCase();
+  // 'any' survives rather than collapsing to undefined: on a spray wall an
+  // omitted value hides retired climbs and an explicit 'any' shows them (#6024).
+  if (value === 'intact' || value === 'broken' || value === 'any') return value;
+  return undefined;
+}
+
+/**
+ * Map a wire `gradeSource` value onto the param. Only BOARDSESH survives: UPSTREAM
+ * is the default, so it collapses to undefined like an omitted value — the
+ * search-cache key hashes the params, and an explicit default would split one
+ * cached page into two keys. Unknown strings collapse too, for the same reason
+ * `normalizeHoldIntegrity` gives.
  */
 export function normalizeGradeSource(raw: string | null | undefined): ClimbSearchParams['gradeSource'] {
   if (!raw) return undefined;
@@ -275,7 +295,10 @@ export function mapSearchInputToParams(input: ClimbSearchInputLike): ClimbSearch
     // false is the same as omitted, so it collapses and leaves the cache key alone.
     onlyFavorited: input.onlyFavorited || undefined,
     projectsOnly: input.projectsOnly ?? undefined,
-    holdIntegrity: input.holdIntegrity?.toUpperCase() === 'BROKEN' ? 'broken' : undefined,
+    // The GraphQL enum is SCREAMING_CASE and the param is lower case. ANY is the
+    // "no filter" value, so it collapses to undefined here rather than travelling
+    // down to `createClimbFilters` as a predicate that matches everything.
+    holdIntegrity: normalizeHoldIntegrity(input.holdIntegrity),
     crossAngleStats: input.crossAngleStats ?? undefined,
     gradeSource: gradeSourceMatters ? normalizeGradeSource(input.gradeSource) : undefined,
     boulders: input.boulders ?? undefined,

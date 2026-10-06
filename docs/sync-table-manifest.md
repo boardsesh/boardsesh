@@ -295,7 +295,7 @@ composite-keyed sync table must keep this true (or version the encoding).
   catalogue — tens of thousands of rows each — replayed to fill in a column that is NULL on all of them. Spray
   scopes are new in this release, so no checkpoint predating the column can exist for one, and the reader's
   predicate is NULL-safe (`COALESCE(missing_hold_count, 0)`, the same "unknown reads as intact" rule the server's
-  `lostHoldsCondition` applies), so a row pulled before v7 reads as intact rather than as wrong. Both
+  `holdIntegrityCondition` applies), so a row pulled before v7 reads as intact rather than as wrong. Both
   conditions a bump exists to protect are therefore already met.
 - `revision_number` and `holds_revision_number` are the climb's current revision and the revision at which its
   holds last changed (#6023). On the server both are `NOT NULL DEFAULT 1`; on the device both are nullable
