@@ -7,6 +7,9 @@
 // drag ended — and the photo above it is fitted to the space the footer leaves,
 // so the two bottom rings went under it. The button is always here now and is
 // disabled until there is something for it to undo.
+//
+// The crop step ("Crop or rotate") wears the same footer with its own words:
+// Done, Reset and Cancel, so the photo above it is fitted to the same space.
 
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,6 +28,12 @@ export type SprayCornerFooterProps = {
   onClear: () => void;
   onBack: () => void;
   backDisabled: boolean;
+  /** The main button's spinner, while what it started is still running. */
+  primaryLoading?: boolean;
+  /** What Back says, when it is not "Back". */
+  backTitle?: string;
+  /** What the clear button says, when it is not "Start the corners again". */
+  clearTitle?: string;
 };
 
 export function SprayCornerFooter({
@@ -35,6 +44,9 @@ export function SprayCornerFooter({
   onClear,
   onBack,
   backDisabled,
+  primaryLoading = false,
+  backTitle,
+  clearTitle,
 }: SprayCornerFooterProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
@@ -44,19 +56,26 @@ export function SprayCornerFooter({
     <View
       style={[styles.footer, { borderTopColor: systemColors.separator, paddingBottom: insets.bottom + spacing[3] }]}
     >
-      <Button title={primaryTitle} variant="filled" size="large" onPress={onPrimary} disabled={primaryDisabled} />
+      <Button
+        title={primaryTitle}
+        variant="filled"
+        size="large"
+        onPress={onPrimary}
+        disabled={primaryDisabled}
+        loading={primaryLoading}
+      />
       {/* One row rather than two stacked buttons: every point the footer does
           not take is a point the photo gets. */}
       <View style={styles.secondaryRow}>
         <Button
-          title={t('sprayWizard.back')}
+          title={backTitle ?? t('sprayWizard.back')}
           variant="text"
           onPress={onBack}
           disabled={backDisabled}
           style={styles.secondaryButton}
         />
         <Button
-          title={t('sprayWizard.anchors.clear')}
+          title={clearTitle ?? t('sprayWizard.anchors.clear')}
           variant="text"
           onPress={onClear}
           disabled={!canClear}

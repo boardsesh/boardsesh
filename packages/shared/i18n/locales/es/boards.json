@@ -949,9 +949,31 @@
       "library": "Elegir una foto",
       "camera": "Hacer una foto",
       "pickAnother": "Elegir otra foto",
+      "adjust": "Recortar o girar",
       "next": "Siguiente",
       "cameraDenied": "Boardsesh necesita tu cámara para fotografiar un muro.",
       "failed": "Esa foto no se abre. Prueba con otra."
+    },
+    "adjust": {
+      "title": "Recorta y gira",
+      "body": "Recorta hasta los bordes del muro. Gira la foto si salió de lado.",
+      "hint": "Arrastra un borde o una esquina. Arrastra dentro del recuadro para moverlo.",
+      "small": "Esta foto es pequeña. Las presas pueden verse borrosas al hacer zoom.",
+      "failed": "No se pudo recortar esa foto. Inténtalo de nuevo o cancela para dejarla como estaba.",
+      "rotate": "Girar",
+      "rotateLabel": "Girar un cuarto de vuelta a la derecha",
+      "done": "Listo",
+      "reset": "Restablecer",
+      "cancel": "Cancelar",
+      "handleTopLeft": "Esquina superior izquierda del recorte",
+      "handleTop": "Borde superior del recorte",
+      "handleTopRight": "Esquina superior derecha del recorte",
+      "handleRight": "Borde derecho del recorte",
+      "handleBottomRight": "Esquina inferior derecha del recorte",
+      "handleBottom": "Borde inferior del recorte",
+      "handleBottomLeft": "Esquina inferior izquierda del recorte",
+      "handleLeft": "Borde izquierdo del recorte",
+      "handleMove": "Zona de recorte"
     },
     "anchors": {
       "title": "Marca las esquinas",
@@ -1051,6 +1073,9 @@
     "photo": {
       "title": "Fotografía el muro otra vez",
       "body": "Colócate donde te colocaste la primera vez si puedes. Mismo muro, presas nuevas."
+    },
+    "adjust": {
+      "body": "Recorta hasta los bordes del muro y deja las cuatro esquinas dentro del recorte. Las marcarás a continuación."
     },
     "anchors": {
       "title": "Marca las esquinas",

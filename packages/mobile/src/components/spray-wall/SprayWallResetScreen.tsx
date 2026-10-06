@@ -30,6 +30,7 @@ import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { SprayCornerFooter } from './SprayCornerFooter';
 import { SprayCornerStep } from './SprayCornerStep';
+import { SprayPhotoAdjustStep } from './SprayPhotoAdjustStep';
 import { SprayResetCompareScreen } from './SprayResetCompareScreen';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -44,7 +45,14 @@ import { sprayHoldEditorHref } from '../../lib/spray/spray-routes';
 import { uploadSprayWallPhoto } from '../../lib/spray/spray-wall-photo-upload';
 import { SprayDetectionStep } from './SprayDetectionStep';
 import { canPhotographWall } from '../../lib/spray/camera-capability';
-import { pickWallPhotoFromCamera, pickWallPhotoFromLibrary, rescalePoint } from '../../lib/spray/wall-photo';
+import {
+  pickWallPhotoFromCamera,
+  pickWallPhotoFromLibrary,
+  renderWallPhotoEdit,
+  rescalePoint,
+} from '../../lib/spray/wall-photo';
+import { discardLocalPhoto } from '../../lib/spray/discard-local-photo';
+import { editCrops, editRotates, editsEqual, isIdentityEdit, type WallPhotoEdit } from '../../lib/spray/photo-edit';
 import { useCreateSprayWallVersion } from '../../lib/spray/use-create-spray-wall';
 import { useDiscardSprayWallVersion, useSprayWallWithVersions } from '../../lib/spray/use-spray-wall-reset';
 import {
@@ -160,6 +168,49 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
   );
 
   // ============================================
+  // Step 1, detour — crop or rotate
+  // ============================================
+
+  // The last render failed. Local rather than machine state: it is copy on the
+  // crop step, and the machine's own answer to a failure is to stay put.
+  const [adjustFailed, setAdjustFailed] = useState(false);
+
+  const openAdjust = useCallback(() => {
+    setAdjustFailed(false);
+    dispatch({ type: 'ADJUST_OPENED' });
+  }, []);
+
+  const applyPhotoEdit = useCallback(
+    async (edit: WallPhotoEdit) => {
+      const photo = state.photo;
+      if (!photo || state.photoProcessing) return;
+      setAdjustFailed(false);
+      // Done with nothing changed is Cancel: re-rendering the same file would
+      // clear the four corners for nothing.
+      if (editsEqual(photo.edit, edit)) {
+        dispatch({ type: 'BACK' });
+        return;
+      }
+      dispatch({ type: 'PHOTO_PROCESSING_STARTED' });
+      try {
+        const rendered = await renderWallPhotoEdit(photo, edit);
+        dispatch({
+          type: 'PHOTO_ADJUSTED',
+          photo: { ...photo, ...rendered, edit: isIdentityEdit(edit) ? null : edit },
+        });
+        // The edit this one replaced is nobody's now. Never the base, which the
+        // next re-edit starts from, nor the picker's original.
+        if (photo.uri !== photo.base.uri && photo.uri !== rendered.uri) discardLocalPhoto(photo.uri);
+      } catch (error) {
+        reportError(error);
+        setAdjustFailed(true);
+        dispatch({ type: 'PHOTO_PROCESSING_FAILED' });
+      }
+    },
+    [state.photo, state.photoProcessing],
+  );
+
+  // ============================================
   // Steps 3 and 4 — upload, then suggest
   // ============================================
 
@@ -196,6 +247,8 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
           durationMs: Date.now() - startedAt,
           determinate: uploaded.determinate,
           attempt,
+          cropped: editCrops(photo.edit),
+          rotated: editRotates(photo.edit),
         }),
       );
 
@@ -227,6 +280,8 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
           durationMs: Date.now() - startedAt,
           determinate: false,
           attempt,
+          cropped: editCrops(photo.edit),
+          rotated: editRotates(photo.edit),
         }),
       );
       // The version cap is the one a reset can actually hit — fifty resets is four
@@ -440,6 +495,23 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
 
   const stepIndex = COUNTED_STEPS.indexOf(state.step);
 
+  // The crop step: a detour off the photo step, uncounted. On a reset the four
+  // corners are mandatory next, so the copy says to keep them inside the crop
+  // (a corner cut off here is a corner nobody can mark).
+  if (state.step === 'adjust' && state.photo) {
+    return (
+      <SprayPhotoAdjustStep
+        title={t('sprayWizard.adjust.title')}
+        body={t('sprayReset.adjust.body')}
+        photo={state.photo}
+        processing={state.photoProcessing}
+        failed={adjustFailed}
+        onDone={(edit) => void applyPhotoEdit(edit)}
+        onCancel={goBack}
+      />
+    );
+  }
+
   // Its own screenful rather than a section of the scrolling page below: the
   // photo is fitted to the space between the header and the footer, so all four
   // rings are on screen and a vertical drag is never also a scroll (#5958).
@@ -519,6 +591,13 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
                   }}
                   contentFit="cover"
                   accessibilityIgnoresInvertColors
+                />
+                <Button
+                  title={t('sprayWizard.photo.adjust')}
+                  icon="crop.free"
+                  variant="text"
+                  onPress={openAdjust}
+                  disabled={pickerBusy}
                 />
               </View>
             ) : null}
@@ -657,6 +736,7 @@ const styles = StyleSheet.create({
   previewWrap: {
     alignItems: 'center',
     paddingVertical: spacing[3],
+    gap: spacing[2],
   },
   photoActions: {
     gap: spacing[2],

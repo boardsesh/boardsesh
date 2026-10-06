@@ -17,6 +17,7 @@
 
 import { isConvexQuad, type Quad } from '@boardsesh/spray-wall-geometry';
 import type { SprayHoldCandidate } from '../outline-editor/spray-hold-editor-types';
+import type { EditableWallPhoto } from '../../lib/spray/photo-edit';
 
 /**
  * Where the climber is.
@@ -25,11 +26,15 @@ import type { SprayHoldCandidate } from '../outline-editor/spray-hold-editor-typ
  * version exists" — the wall row, the multipart POST and `createSprayWallVersion`
  * — because none of the three is separately actionable: they retry together and
  * they fail into the same place.
+ *
+ * `adjust` is the photo step's "Crop or rotate", a detour rather than a stop on
+ * the way: it is opened from `photo`, always returns there, and is not counted.
  */
 export type AddWallStep =
   | 'resuming'
   | 'meta'
   | 'photo'
+  | 'adjust'
   | 'anchors'
   | 'upload'
   | 'detect'
@@ -38,11 +43,11 @@ export type AddWallStep =
   | 'publish'
   | 'done';
 
-/** A photo as the picker and the compressor left it: a local JPEG and its pixels. */
-export type PickedWallPhoto = {
-  uri: string;
-  width: number;
-  height: number;
+/**
+ * A photo as the picker and the compressor left it (a local JPEG and its
+ * pixels), plus what the crop step needs to re-edit it (`photo-edit.ts`).
+ */
+export type PickedWallPhoto = EditableWallPhoto & {
   /** Which affordance produced it. Telemetry only. */
   source: 'library' | 'camera';
 };
@@ -124,6 +129,11 @@ export type AddWallState = {
    */
   lookSaving: boolean;
   /**
+   * The crop step is rendering the edited photo. Busy like an upload: Back and
+   * leaving wait for it, so the render cannot land on a step that has moved on.
+   */
+  photoProcessing: boolean;
+  /**
    * How many holds the draft carries: what a resumed draft already had, then
    * what the editor's commit left on it. Display and telemetry only — the
    * editor itself refuses to commit an empty wall.
@@ -139,6 +149,12 @@ export type AddWallAction =
   | { type: 'META_DONE' }
   | { type: 'PHOTO_PICKED'; photo: PickedWallPhoto }
   | { type: 'PHOTO_CONFIRMED' }
+  /** "Crop or rotate" on the photo step. */
+  | { type: 'ADJUST_OPENED' }
+  | { type: 'PHOTO_PROCESSING_STARTED' }
+  /** The edit rendered; `photo` is the new upload, still carrying its base and original. */
+  | { type: 'PHOTO_ADJUSTED'; photo: PickedWallPhoto }
+  | { type: 'PHOTO_PROCESSING_FAILED' }
   | { type: 'ANCHORS_SET'; anchors: Quad }
   | { type: 'ANCHORS_CLEARED' }
   | { type: 'ANCHORS_DONE' }
@@ -178,6 +194,7 @@ export function initialAddWallState(): AddWallState {
     detection: { outcome: 'idle', done: 0, total: 0, candidates: NO_CANDIDATES },
     publish: { running: false, error: null },
     lookSaving: false,
+    photoProcessing: false,
     savedHoldCount: 0,
   };
 }
@@ -199,6 +216,8 @@ export function initialAddWallState(): AddWallState {
  */
 const BACK_TARGET: Partial<Record<AddWallStep, AddWallStep>> = {
   photo: 'meta',
+  // Back on the crop step is Cancel: the edit is dropped, the photo is as it was.
+  adjust: 'photo',
   anchors: 'photo',
   upload: 'photo',
 };
@@ -267,7 +286,7 @@ export function shouldConfirmLeave(state: AddWallState): boolean {
 
 /** Whether the flow is mid-request and a back gesture should be declined. */
 export function isBusy(state: AddWallState): boolean {
-  return state.upload.running || state.publish.running || state.lookSaving;
+  return state.upload.running || state.publish.running || state.lookSaving || state.photoProcessing;
 }
 
 /** What the hold editor knows that the machine does not, read at the moment of leaving. */
@@ -390,6 +409,40 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
 
     case 'PHOTO_CONFIRMED':
       return state.photo ? { ...state, step: 'anchors' } : state;
+
+    case 'ADJUST_OPENED':
+      // Only from the photo step, and only with a photo to adjust. Never once a
+      // draft exists: its photo is already on the server, and the crop would
+      // describe a picture nobody is going to upload.
+      if (state.step !== 'photo' || !state.photo || state.draft) return state;
+      return { ...state, step: 'adjust' };
+
+    case 'PHOTO_PROCESSING_STARTED':
+      if (state.step !== 'adjust') return state;
+      return { ...state, photoProcessing: true };
+
+    case 'PHOTO_ADJUSTED':
+      // Back to the photo step with the edited file, which invalidates exactly
+      // what a newly picked photo does. The anchors are CLEARED rather than
+      // carried through the crop: a quarter turn changes which corner is the
+      // top-left, and a quad mapped through it would come out in the wrong
+      // order (a bow-tie the convexity check refuses at best, a mirrored wall
+      // at worst).
+      if (state.step !== 'adjust') return state;
+      return {
+        ...state,
+        step: 'photo',
+        photo: action.photo,
+        photoProcessing: false,
+        anchors: null,
+        anchorRejection: null,
+        upload: { running: false, progress: null, error: null, attempts: 0 },
+      };
+
+    case 'PHOTO_PROCESSING_FAILED':
+      // Stays on the crop step with the climber's edit intact, so Done can be
+      // tried again or the edit cancelled.
+      return state.photoProcessing ? { ...state, photoProcessing: false } : state;
 
     case 'ANCHORS_SET': {
       // The one validation the client owes the server. A bow-tie quad has a

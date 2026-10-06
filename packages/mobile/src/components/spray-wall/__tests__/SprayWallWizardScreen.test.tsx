@@ -94,8 +94,13 @@ vi.mock('../../../lib/spray/camera-capability', () => ({ canPhotographWall: () =
 vi.mock('../../../lib/spray/wall-photo', () => ({
   pickWallPhotoFromLibrary: vi.fn(),
   pickWallPhotoFromCamera: vi.fn(),
+  renderWallPhotoEdit: vi.fn(),
   rescalePoint: (point: [number, number]) => point,
 }));
+vi.mock('../../../lib/spray/discard-local-photo', () => ({ discardLocalPhoto: vi.fn() }));
+// The photo step's guide link opens a browser; the native module behind it does
+// not exist outside a device.
+vi.mock('../../../lib/open-url', () => ({ openExternalUrl: vi.fn() }));
 vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
   fetchSprayWallVersions: fetchVersionsMock,
   useMySprayWalls: () => ({ ...wallsQuery.current, refetch: vi.fn() }),
@@ -128,6 +133,7 @@ vi.mock('../../play-drawer/AngleSlider', () => ({ AngleSlider: () => null }));
 vi.mock('../../play-drawer/AngleBoardDiagram', () => ({ AngleBoardDiagram: () => null }));
 vi.mock('../SprayCornerFooter', () => ({ SprayCornerFooter: () => null }));
 vi.mock('../SprayCornerStep', () => ({ SprayCornerStep: () => null }));
+vi.mock('../SprayPhotoAdjustStep', () => ({ SprayPhotoAdjustStep: () => null }));
 vi.mock('../SprayDetectionStep', () => ({ SprayDetectionStep: () => null }));
 vi.mock('../SprayWallLookStep', () => ({ SprayWallLookStep: () => null }));
 vi.mock('../../outline-editor/SprayHoldEditorScreen', () => ({

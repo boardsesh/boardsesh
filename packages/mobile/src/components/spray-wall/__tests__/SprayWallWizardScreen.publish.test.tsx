@@ -140,6 +140,7 @@ vi.mock('../../play-drawer/AngleSlider', () => ({ AngleSlider: () => null }));
 vi.mock('../../play-drawer/AngleBoardDiagram', () => ({ AngleBoardDiagram: () => null }));
 vi.mock('../SprayCornerFooter', () => ({ SprayCornerFooter: () => null }));
 vi.mock('../SprayCornerStep', () => ({ SprayCornerStep: () => null }));
+vi.mock('../SprayPhotoAdjustStep', () => ({ SprayPhotoAdjustStep: () => null }));
 vi.mock('../SprayDetectionStep', () => ({ SprayDetectionStep: () => null }));
 vi.mock('../../outline-editor/SprayHoldEditorScreen', () => ({
   confirmDiscardSprayEdits: vi.fn(),
@@ -160,8 +161,10 @@ vi.mock('../../../lib/spray/camera-capability', () => ({ canPhotographWall: () =
 vi.mock('../../../lib/spray/wall-photo', () => ({
   pickWallPhotoFromCamera: vi.fn(),
   pickWallPhotoFromLibrary: vi.fn(),
+  renderWallPhotoEdit: vi.fn(),
   rescalePoint: (point: unknown) => point,
 }));
+vi.mock('../../../lib/spray/discard-local-photo', () => ({ discardLocalPhoto: vi.fn() }));
 vi.mock('../../../lib/spray/spray-wall-photo-upload', () => ({ uploadSprayWallPhoto: vi.fn() }));
 vi.mock('../../../lib/spray/spray-wall-loader', () => ({ invalidateSprayWallRenderData: mocks.invalidateRenderData }));
 vi.mock('../../../lib/spray/use-spray-wall-draft', () => ({ prefetchSprayWallDraft: vi.fn() }));

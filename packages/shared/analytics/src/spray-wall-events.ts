@@ -60,6 +60,14 @@ export type SprayWallUploadFinishedProps = {
   determinate: boolean;
   /** 1 for the first try. A retry is a different population; never pool them. */
   attempt: number;
+  /**
+   * Whether the climber cropped the photo before uploading it ("Crop or rotate"
+   * on the photo step). Omitted by clients that predate the step, so read a
+   * missing value as unknown, not as false.
+   */
+  cropped?: boolean;
+  /** Whether they turned it a quarter turn or more. Same omission rule as `cropped`. */
+  rotated?: boolean;
 };
 
 export function sprayWallUploadFinished(

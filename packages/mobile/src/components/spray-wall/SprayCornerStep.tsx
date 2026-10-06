@@ -21,7 +21,7 @@
 // taller of the two, so a refused quad does not re-fit the photo as the finger
 // lifts.
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Quad } from '@boardsesh/spray-wall-geometry';
@@ -31,19 +31,7 @@ import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-in
 import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { SprayCornerMarker } from './SprayCornerMarker';
-import { CORNER_HANDLE_SIZE } from './corner-photo-fit';
-
-/** Widest the photo is ever drawn. Past this it is a wall on a coffee table. */
-const MAX_PHOTO_WIDTH = 520;
-
-/** The shortest the photo's slot is ever made, however little room the screen leaves. */
-const MIN_STAGE_HEIGHT = 200 + CORNER_HANDLE_SIZE;
-
-/** Layout jitter smaller than this is not worth re-fitting the photo for. */
-const LAYOUT_EPSILON = 0.5;
-
-type Size = { width: number; height: number };
-const NO_SIZE: Size = { width: 0, height: 0 };
+import { MIN_STAGE_HEIGHT, useFittedPhotoStage } from './use-fitted-photo-stage';
 
 export type SprayCornerStepProps = {
   /** "Step 3 of 6", already translated, or null where the step is not counted. */
@@ -64,38 +52,9 @@ export function SprayCornerStep({ stepCounter, title, body, photo, value, onChan
   const { systemColors } = useTheme();
   const headerInset = useTransparentHeaderInset();
 
-  const [stage, setStage] = useState<Size>(NO_SIZE);
-  const [viewportHeight, setViewportHeight] = useState(0);
-  const [contentHeight, setContentHeight] = useState(0);
-
-  const onStageLayout = useCallback((event: LayoutChangeEvent) => {
-    const { width, height } = event.nativeEvent.layout;
-    setStage((previous) =>
-      Math.abs(previous.width - width) < LAYOUT_EPSILON && Math.abs(previous.height - height) < LAYOUT_EPSILON
-        ? previous
-        : { width, height },
-    );
-  }, []);
-  const onViewportLayout = useCallback((event: LayoutChangeEvent) => {
-    setViewportHeight(event.nativeEvent.layout.height);
-  }, []);
-  const onContentSizeChange = useCallback((_width: number, height: number) => {
-    setContentHeight(height);
-  }, []);
-
-  // Scrolls only when the content really is taller than the screen — that is,
-  // only when the stage has hit its floor.
-  const overflows = contentHeight > viewportHeight + LAYOUT_EPSILON;
-
-  // And never while a ring is held. Counted, because two rings can be held at
-  // once and the page must stay put until the last finger lifts. The marker
-  // reports a finger landing and leaving, so this is two state changes per drag.
-  const heldHandles = useRef(0);
-  const [dragging, setDragging] = useState(false);
-  const onDragActiveChange = useCallback((active: boolean) => {
-    heldHandles.current = Math.max(0, heldHandles.current + (active ? 1 : -1));
-    setDragging(heldHandles.current > 0);
-  }, []);
+  // The measured stage, the scroll-when-it-must rule and the hold-still-while-
+  // dragging lock, shared with the crop step.
+  const fittedStage = useFittedPhotoStage();
 
   // One slot for the hint and for the refusal that replaces it, as tall as the
   // taller of the two at this width and text size.
@@ -114,16 +73,6 @@ export function SprayCornerStep({ stepCounter, title, body, photo, value, onChan
   // still skip.
   const photoHasSize = photo.width > 0 && photo.height > 0;
 
-  // The stage runs edge to edge so the handle layer, which overhangs the photo
-  // by half a handle on every side, has room. For a photo limited by its width
-  // the layer is still 12 points wider than the stage (the gutter is 16, the
-  // overhang 22), so 6 points of each outer touch target fall outside it, off
-  // the edge of the screen. The rings themselves are whole.
-  // Floored at zero: before the stage is measured these would be negative, and
-  // "no room yet" should not depend on every reader treating that as zero.
-  const maxPhotoWidth = Math.max(0, Math.min(MAX_PHOTO_WIDTH, stage.width - spacing[4] * 2));
-  const maxPhotoHeight = Math.max(0, stage.height - CORNER_HANDLE_SIZE);
-
   return (
     <ScrollView
       style={styles.flex}
@@ -131,11 +80,9 @@ export function SprayCornerStep({ stepCounter, title, body, photo, value, onChan
       // it natively and the content could not be sized to the visible height.
       contentInsetAdjustmentBehavior="never"
       contentContainerStyle={[styles.content, { paddingTop: headerInset + spacing[4] }]}
-      scrollEnabled={overflows && !dragging}
+      {...fittedStage.scrollProps}
       bounces={false}
       showsVerticalScrollIndicator={false}
-      onLayout={onViewportLayout}
-      onContentSizeChange={onContentSizeChange}
     >
       {stepCounter ? (
         <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.stepCounter}>
@@ -146,16 +93,16 @@ export function SprayCornerStep({ stepCounter, title, body, photo, value, onChan
       <Text variant="subheadline" color={systemColors.secondaryLabel}>
         {body}
       </Text>
-      <View style={styles.stage} onLayout={onStageLayout}>
+      <View style={styles.stage} onLayout={fittedStage.onStageLayout}>
         {photoHasSize ? (
           <SprayCornerMarker
             photo={photo}
-            maxWidth={maxPhotoWidth}
-            maxHeight={maxPhotoHeight}
+            maxWidth={fittedStage.maxPhotoWidth}
+            maxHeight={fittedStage.maxPhotoHeight}
             value={value}
             onChange={onChange}
             invalid={invalid}
-            onDragActiveChange={onDragActiveChange}
+            onDragActiveChange={fittedStage.onDragActiveChange}
           />
         ) : (
           <Text

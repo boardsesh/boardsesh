@@ -949,9 +949,31 @@
       "library": "Foto wählen",
       "camera": "Foto aufnehmen",
       "pickAnother": "Anderes Foto wählen",
+      "adjust": "Zuschneiden oder drehen",
       "next": "Weiter",
       "cameraDenied": "Boardsesh braucht deine Kamera, um eine Wand zu fotografieren.",
       "failed": "Dieses Foto lässt sich nicht öffnen. Nimm ein anderes."
+    },
+    "adjust": {
+      "title": "Zuschneiden und drehen",
+      "body": "Schneide bis an die Ränder der Wand zu. Dreh das Foto, falls es quer liegt.",
+      "hint": "Zieh an einer Kante oder Ecke. Zieh innerhalb des Rahmens, um ihn zu verschieben.",
+      "small": "Dieses Foto ist klein. Griffe können beim Zoomen unscharf wirken.",
+      "failed": "Das Foto ließ sich nicht zuschneiden. Versuch es noch mal oder brich ab, um es so zu lassen.",
+      "rotate": "Drehen",
+      "rotateLabel": "Eine Vierteldrehung im Uhrzeigersinn drehen",
+      "done": "Fertig",
+      "reset": "Zurücksetzen",
+      "cancel": "Abbrechen",
+      "handleTopLeft": "Obere linke Ecke des Ausschnitts",
+      "handleTop": "Obere Kante des Ausschnitts",
+      "handleTopRight": "Obere rechte Ecke des Ausschnitts",
+      "handleRight": "Rechte Kante des Ausschnitts",
+      "handleBottomRight": "Untere rechte Ecke des Ausschnitts",
+      "handleBottom": "Untere Kante des Ausschnitts",
+      "handleBottomLeft": "Untere linke Ecke des Ausschnitts",
+      "handleLeft": "Linke Kante des Ausschnitts",
+      "handleMove": "Ausschnitt"
     },
     "anchors": {
       "title": "Markiere die Ecken",
@@ -1051,6 +1073,9 @@
     "photo": {
       "title": "Fotografiere die Wand nochmal",
       "body": "Stell dich hin, wo du beim ersten Mal standest, wenn es geht. Gleiche Wand, neue Griffe."
+    },
+    "adjust": {
+      "body": "Schneide bis an die Ränder der Wand zu und lass alle vier Ecken im Ausschnitt. Die markierst du gleich danach."
     },
     "anchors": {
       "title": "Markiere die Ecken",

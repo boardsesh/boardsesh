@@ -949,9 +949,31 @@
       "library": "Choose a photo",
       "camera": "Take a photo",
       "pickAnother": "Choose a different photo",
+      "adjust": "Crop or rotate",
       "next": "Next",
       "cameraDenied": "Boardsesh needs your camera to photograph a wall.",
       "failed": "That photo wouldn't open. Try another one."
+    },
+    "adjust": {
+      "title": "Crop and rotate",
+      "body": "Crop to the edges of the wall. Turn it round if it came out sideways.",
+      "hint": "Drag an edge or a corner. Drag inside the box to move it.",
+      "small": "This photo is small. Holds may look soft when you zoom in.",
+      "failed": "That photo wouldn't crop. Try again, or cancel to keep it as it was.",
+      "rotate": "Rotate",
+      "rotateLabel": "Rotate a quarter turn clockwise",
+      "done": "Done",
+      "reset": "Reset",
+      "cancel": "Cancel",
+      "handleTopLeft": "Top left corner of the crop",
+      "handleTop": "Top edge of the crop",
+      "handleTopRight": "Top right corner of the crop",
+      "handleRight": "Right edge of the crop",
+      "handleBottomRight": "Bottom right corner of the crop",
+      "handleBottom": "Bottom edge of the crop",
+      "handleBottomLeft": "Bottom left corner of the crop",
+      "handleLeft": "Left edge of the crop",
+      "handleMove": "Crop area"
     },
     "anchors": {
       "title": "Mark the corners",
@@ -1051,6 +1073,9 @@
     "photo": {
       "title": "Photograph the wall again",
       "body": "Stand where you stood the first time if you can. Same wall, new holds."
+    },
+    "adjust": {
+      "body": "Crop to the edges of the wall, and keep all four corners inside the crop. You'll mark them next."
     },
     "anchors": {
       "title": "Mark the corners",
