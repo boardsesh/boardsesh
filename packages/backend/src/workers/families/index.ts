@@ -21,6 +21,7 @@ import { moonBoardLocationsSyncFamily } from './moonboard-locations-sync';
 import { climbStatsSelfHealFamily } from './climb-stats-self-heal';
 import { userDataExportFamily } from './user-data-export';
 import { sprayWallArtFamily } from './spray-wall-art';
+import { sprayWallHealthFamily } from './spray-wall-health';
 
 export { BackgroundJobError, InvalidJobPayloadError } from './types';
 export type { BackgroundJobContext, BackgroundJobFamilyModule, BackgroundJobFamilyOptions } from './types';
@@ -44,6 +45,7 @@ const FAMILY_MODULES = {
   'climb-stats-self-heal': climbStatsSelfHealFamily,
   'user-data-export': userDataExportFamily,
   'spray-wall-art': sprayWallArtFamily,
+  'spray-wall-health': sprayWallHealthFamily,
 } satisfies Record<BackgroundJobFamily, BackgroundJobFamilyModule>;
 
 const registry: ReadonlyMap<string, BackgroundJobFamilyModule> = new Map(

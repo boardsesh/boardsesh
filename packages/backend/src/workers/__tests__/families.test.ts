@@ -30,6 +30,7 @@ describe('family registry', () => {
       'climb-stats-self-heal',
       'user-data-export',
       'spray-wall-art',
+      'spray-wall-health',
     ]);
     expect(() => requireFamily('no-such-family')).toThrow('UNKNOWN_FAMILY');
   });

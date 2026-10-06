@@ -3463,6 +3463,14 @@ null. It is what makes a spray session countable at all, because a wall's
 is not the same act as choosing a climb to climb. The spray-wall activation
 definition built on both is in `docs/growth-metrics.md`.
 
+None of the above says how the fleet's walls are living after the funnels
+close — that is the backend's job. The `spray-wall-health` batch family reads
+the app tables every Monday and emits ONE personless `Spray Wall Health
+Weekly` event: stock, activity, second-climber reach, degradation, resets and
+reports for the week that just ended. It identifies no wall and no person
+(every property is a count), and its full contract is in
+`docs/growth-metrics.md` → "Spray-wall health".
+
 ## Availability and detection quality
 
 Spray walls are enabled by default. The picker tile and `/boards/spray/*`
@@ -3480,6 +3488,13 @@ detection correction ratio stays available through `SPRAY_ROLLOUT_GATES` in
 proxy, not an F1: equal candidate and saved counts can hide corrections. Upload
 success is read straight from the upload events, and the reset preview and
 commit events are gone with the in-place reset.
+
+The weekly `Spray Wall Health Weekly` roll-up (#6062) is a WATCH line for this
+table, not a gate on it: it measures walls that already exist, so it cannot
+tell step 2 whether step 1 worked. Read it alongside — active walls,
+second-climber reach, degradation climbing week over week — and let a
+sustained decline be the reason to pause before the *next* expansion, not a
+number that blocks the row you are already on.
 
 ### The one public copy (SW-14)
 

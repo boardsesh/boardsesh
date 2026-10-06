@@ -28,6 +28,7 @@ const EXPECTED_SCHEDULES: Record<string, Array<{ key: string; cron: string; tz: 
   'climb-stats-self-heal': [{ key: 'hourly', cron: '13 * * * *', tz: 'UTC', roles: ['maintenance-delivery'] }],
   'user-data-export': [],
   'spray-wall-art': [],
+  'spray-wall-health': [{ key: 'weekly', cron: '45 8 * * 1', tz: 'UTC', roles: ['batch'] }],
 };
 
 describe('family schedules', () => {

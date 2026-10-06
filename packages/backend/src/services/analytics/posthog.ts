@@ -24,7 +24,12 @@ export type BackendAnalyticsEvent =
   | 'Active Users Snapshot'
   // Once-a-minute per-replica count of GraphQL operations per client app
   // (services/client-usage.ts). One event per (client, version, transport).
-  | 'Client Usage Summary';
+  | 'Client Usage Summary'
+  // One personless weekly roll-up of the spray-wall fleet's health (issue
+  // #6062). The distinct id is a fixed synthetic actor; count WEEKS, and read
+  // the properties, never the event volume. Contract:
+  // services/analytics/wall-health-events.ts and docs/growth-metrics.md.
+  | 'Spray Wall Health Weekly';
 
 /**
  * Backend events are operational telemetry sent under legitimate interest, not

@@ -56,6 +56,7 @@ export const BACKGROUND_JOB_FAMILIES = [
   'climb-stats-self-heal',
   'user-data-export',
   'spray-wall-art',
+  'spray-wall-health',
 ] as const;
 
 export type BackgroundJobFamily = (typeof BACKGROUND_JOB_FAMILIES)[number];
