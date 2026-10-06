@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React from 'react';
 import { StyleSheet, View, type ColorValue } from 'react-native';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
@@ -53,6 +53,10 @@ type SprayEditorBottomBarProps = {
   onToggleMaybes: () => void;
   onStartOver: () => void;
   onPrimary: () => void;
+  /** The count capsule's menu is open. Held by the screen, so Esc can close it. */
+  menuOpen: boolean;
+  onToggleMenu: () => void;
+  onCloseMenu: () => void;
 };
 
 /**
@@ -95,13 +99,12 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
   onToggleMaybes,
   onStartOver,
   onPrimary,
+  menuOpen,
+  onToggleMenu,
+  onCloseMenu,
 }: SprayEditorBottomBarProps) {
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  const toggleMenu = useCallback(() => setMenuOpen((open) => !open), []);
-  const closeMenu = useCallback(() => setMenuOpen(false), []);
 
   return (
     <View pointerEvents="box-none" style={[styles.root, { bottom: bottomInset + SPRAY_BAR_GUTTER }]}>
@@ -113,7 +116,7 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
           onKeepMaybes={onKeepMaybes}
           onToggleMaybes={onToggleMaybes}
           onStartOver={onStartOver}
-          onClose={closeMenu}
+          onClose={onCloseMenu}
         />
       ) : null}
 
@@ -152,7 +155,7 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
           showMaybes={showMaybes}
           celebrating={celebrating}
           locked={locked}
-          onPress={toggleMenu}
+          onPress={onToggleMenu}
           expanded={menuOpen}
         />
 

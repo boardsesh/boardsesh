@@ -95,6 +95,9 @@ function barProps(overrides: Partial<BottomBarProps> = {}): BottomBarProps {
     onToggleMaybes: vi.fn(),
     onStartOver: vi.fn(),
     onPrimary: vi.fn(),
+    menuOpen: false,
+    onToggleMenu: vi.fn(),
+    onCloseMenu: vi.fn(),
     ...overrides,
   };
 }

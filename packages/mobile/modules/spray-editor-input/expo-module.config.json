@@ -1,0 +1,9 @@
+{
+  "platforms": ["ios", "android"],
+  "ios": {
+    "modules": ["SprayEditorInputModule"]
+  },
+  "android": {
+    "modules": ["com.boardsesh.sprayeditorinput.SprayEditorInputModule"]
+  }
+}

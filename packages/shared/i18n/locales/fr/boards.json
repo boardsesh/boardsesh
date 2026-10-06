@@ -926,6 +926,15 @@
       "redraw": "Redessiner",
       "previous": "Prise précédente",
       "next": "Prise suivante"
+    },
+    "shortcuts": {
+      "delete": "Désactiver ou supprimer la prise"
+    },
+    "palette": {
+      "label": "Outils du Pencil",
+      "close": "Fermer les outils du Pencil",
+      "draw": "Ajouter une prise en dessinant son tour",
+      "corners": "Ajouter une prise en touchant ses coins"
     }
   },
   "sprayWizard": {

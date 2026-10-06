@@ -926,6 +926,15 @@
       "redraw": "Redibujar",
       "previous": "Presa anterior",
       "next": "Presa siguiente"
+    },
+    "shortcuts": {
+      "delete": "Desactivar o eliminar presa"
+    },
+    "palette": {
+      "label": "Herramientas del Pencil",
+      "close": "Cerrar herramientas del Pencil",
+      "draw": "Añadir una presa dibujando a su alrededor",
+      "corners": "Añadir una presa tocando sus esquinas"
     }
   },
   "sprayWizard": {
