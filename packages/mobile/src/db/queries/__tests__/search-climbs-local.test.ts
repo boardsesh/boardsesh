@@ -887,6 +887,54 @@ describe('searchClimbsLocal: spray-wall hold integrity', () => {
   });
 });
 
+// #6024: a full reset retires the climbs that lost holds in it. The local list
+// must hide them exactly as the server's `retiredByResetCondition` does, since a
+// downloaded wall reads here even while online.
+describe('searchClimbsLocal: climbs retired by a full reset', () => {
+  let db: TestSqliteDb;
+  const sprayInput = (overrides: Partial<ClimbSearchInput> = {}) =>
+    makeInput({ boardName: 'spray', layoutId: 7, sizeId: 5, ...overrides } as Partial<ClimbSearchInput>);
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await ensureMutationQueueTable(db);
+    await runMigrations(db);
+    await stampLocalUserId(db, LOCAL_OWNER);
+    await insertClimb(db, { uuid: 'current', boardType: 'spray', layoutId: 7, missingHoldCount: 0 });
+    await insertClimb(db, { uuid: 'retired', name: 'Old blue', boardType: 'spray', layoutId: 7, missingHoldCount: 1 });
+    await insertClimb(db, { uuid: 'unknown', boardType: 'spray', layoutId: 7 });
+    await db.runAsync("UPDATE board_climbs SET retired_by_reset = 1 WHERE uuid = 'retired'");
+    await db.runAsync("UPDATE board_climbs SET retired_by_reset = 0 WHERE uuid = 'current'");
+    for (const uuid of ['current', 'retired', 'unknown']) {
+      await insertStat(db, { climbUuid: uuid, boardType: 'spray', ascensionistCount: 3 });
+    }
+  });
+
+  const names = async (overrides: Partial<ClimbSearchInput> = {}) => {
+    const result = await searchClimbsLocal(db, sprayInput(overrides));
+    return result.climbs.map((climb) => climb.uuid).sort();
+  };
+
+  it('hides a retired climb from the default list, and reads NULL as not retired', async () => {
+    expect(await names()).toEqual(['current', 'unknown']);
+    expect(await countClimbsLocal(db, sprayInput())).toBe(2);
+  });
+
+  it('shows it again under an explicit ANY, under BROKEN and on a name search', async () => {
+    expect(await names({ holdIntegrity: 'ANY' })).toEqual(['current', 'retired', 'unknown']);
+    expect(await names({ holdIntegrity: 'BROKEN' })).toEqual(['retired']);
+    expect(await names({ name: 'Old blue' })).toEqual(['retired']);
+  });
+
+  it('leaves a catalogue board alone', async () => {
+    await insertClimb(db, { uuid: 'kilter-climb' });
+    await db.runAsync("UPDATE board_climbs SET retired_by_reset = 1 WHERE uuid = 'kilter-climb'");
+    await insertStat(db, { climbUuid: 'kilter-climb', ascensionistCount: 3 });
+    const result = await searchClimbsLocal(db, makeInput());
+    expect(result.climbs.map((climb) => climb.uuid)).toEqual(['kilter-climb']);
+  });
+});
+
 describe('searchClimbsLocal: random sort', () => {
   let db: TestSqliteDb;
 

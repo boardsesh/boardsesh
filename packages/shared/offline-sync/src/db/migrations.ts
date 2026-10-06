@@ -218,6 +218,25 @@ export const MIGRATIONS: Migration[] = [
       'ALTER TABLE board_climbs ADD COLUMN holds_revision_number INTEGER;',
     ],
   },
+  {
+    // Spray climbs retired by a full reset (#6024): the mirror of
+    // `board_climbs.retired_by_reset`, which `syncClimbs` now emits. The local
+    // search hides a retired climb from a wall's default list exactly as the
+    // server's `retiredByResetCondition` does, and a downloaded wall reads
+    // locally even while online, so the two must agree.
+    //
+    // Nullable, no default, SQLite boolean as INTEGER 0/1. NULL reads as not
+    // retired, the server's rule too: every catalogue climb is NULL. No
+    // table-wide `refreshRevision` bump; spray scopes get their own bump to 2
+    // (`refreshRevisionByBoardType`), see the comment on `board_climbs` in
+    // sync/table-config.ts.
+    //
+    // Expand-only, so the previous bundle can still read the file. It changes
+    // `board_climbs`, an artifact table, so it moves ARTIFACT_SCHEMA_VERSION to
+    // 12: an artifact built before it is refused until the export rebuilds it.
+    version: 12,
+    statements: ['ALTER TABLE board_climbs ADD COLUMN retired_by_reset INTEGER;'],
+  },
 ];
 
 const SCHEMA_VERSION_TABLE = `

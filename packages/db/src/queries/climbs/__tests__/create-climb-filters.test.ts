@@ -3,8 +3,19 @@ import assert from 'node:assert/strict';
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { woodsHoldIdsInZone } from '@boardsesh/board-config';
-import { createClimbFilters, hiddenClimbCondition, holdIntegrityCondition } from '../create-climb-filters';
-import { mapSearchInputToParams, normalizeGradeSource, type BoardRouteParams, type ClimbSearchParams } from '../types';
+import {
+  createClimbFilters,
+  hiddenClimbCondition,
+  holdIntegrityCondition,
+  retiredByResetCondition,
+} from '../create-climb-filters';
+import {
+  mapSearchInputToParams,
+  normalizeGradeSource,
+  normalizeHoldIntegrity,
+  type BoardRouteParams,
+  type ClimbSearchParams,
+} from '../types';
 
 const params: BoardRouteParams = {
   board_name: 'kilter',
@@ -1213,5 +1224,49 @@ void describe('createClimbFilters: spray-wall hold integrity', () => {
   void it('leaves the WHERE array untouched for an unfiltered browse', () => {
     const rendered = createClimbFilters(params, baseSearch).getClimbWhereConditions().map(sqlToString).join(' || ');
     assert.doesNotMatch(rendered, /missing_hold_count/);
+  });
+});
+
+// #6024: a full reset retires the old set's climbs. They leave the wall's
+// default list and come back under "All", "Lost holds" and a name search.
+void describe('createClimbFilters: climbs retired by a full reset', () => {
+  const sprayParams: BoardRouteParams = {
+    board_name: 'spray',
+    layout_id: 9001,
+    size_id: 9001,
+    set_ids: [1],
+    angle: 25,
+  };
+  const whereSql = (boardParams: BoardRouteParams, search: ClimbSearchParams) =>
+    createClimbFilters(boardParams, search).getClimbWhereConditions().map(sqlToString).join(' || ');
+
+  void it('hides retired climbs from the default spray list, reading NULL as not retired', () => {
+    const rendered = whereSql(sprayParams, baseSearch);
+    assert.match(rendered, /retired_by_reset/);
+    assert.match(rendered, /coalesce\(retired_by_reset, false\) = false/i);
+  });
+
+  void it('shows them for an explicit ANY ("All")', () => {
+    assert.deepEqual(retiredByResetCondition('spray', { holdIntegrity: 'any' }), []);
+    assert.doesNotMatch(whereSql(sprayParams, { holdIntegrity: 'any' }), /retired_by_reset/);
+  });
+
+  void it('shows them under BROKEN ("Lost holds"), since a retired climb always lost a hold', () => {
+    assert.deepEqual(retiredByResetCondition('spray', { holdIntegrity: 'broken' }), []);
+  });
+
+  void it('shows them to a name search, like a community-hidden climb', () => {
+    assert.deepEqual(retiredByResetCondition('spray', { name: 'Old blue' }), []);
+  });
+
+  void it('renders nothing on a catalogue board', () => {
+    assert.deepEqual(retiredByResetCondition('kilter', baseSearch), []);
+    assert.doesNotMatch(whereSql(params, baseSearch), /retired_by_reset/);
+  });
+
+  void it('keeps an explicit ANY on the wire instead of collapsing it into the default view', () => {
+    assert.equal(normalizeHoldIntegrity('ANY'), 'any');
+    assert.equal(normalizeHoldIntegrity(undefined), undefined);
+    assert.equal(mapSearchInputToParams({ holdIntegrity: 'ANY' }).holdIntegrity, 'any');
   });
 });

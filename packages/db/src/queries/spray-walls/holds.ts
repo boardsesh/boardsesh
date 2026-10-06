@@ -119,7 +119,49 @@ function missingHoldCountFor(wallId: number, climbUuid: SQL): SQL {
 }
 
 /**
- * Re-materialise `board_climbs.missing_hold_count` for every climb on a wall.
+ * Whether one climb is retired by a full reset, as a scalar subquery (#6024).
+ *
+ * True when at least one of the climb's holds was taken off by a LANDED version
+ * the owner marked `is_full_reset`. Derived from the holds the climb uses NOW,
+ * so the three cases that matter come out right with no extra bookkeeping:
+ *
+ *   - a full reset retires every climb that lost a hold in it, and only those;
+ *   - a later partial reset changes nothing for a climb it retired, and retires
+ *     nothing new;
+ *   - a climb edited onto holds still on the wall uses none of the removed holds
+ *     any more, so the per-climb recompute after that edit drops it to false.
+ *
+ * Same landed-generation rule as `missingHoldCountFor`, for the same reason: an
+ * abandoned draft cannot retire anything.
+ */
+function retiredByResetFor(wallId: number, climbUuid: SQL): SQL {
+  return sql`EXISTS (
+    SELECT 1
+    FROM board_climb_holds h
+    JOIN spray_wall_holds s ON s.hold_id = h.hold_id AND s.wall_id = ${wallId}
+    JOIN spray_wall_versions rv ON rv.id = s.removed_version_id
+    WHERE h.climb_uuid = ${climbUuid}
+      AND h.board_type = 'spray'
+      AND rv.status <> 'draft'
+      AND rv.is_full_reset
+  )`;
+}
+
+/**
+ * The guard both recomputes write under: only a climb whose count or retired
+ * flag actually moved. The flag is compared through COALESCE because NULL (never
+ * computed) and false mean the same thing; without it, the first recompute after
+ * this column shipped would rewrite every climb on the wall to say "false", bump
+ * `updated_at` on all of them and re-ship the whole partition to every phone.
+ */
+const integrityMoved = sql`(
+  board_climbs.missing_hold_count IS DISTINCT FROM m.missing_hold_count
+  OR COALESCE(board_climbs.retired_by_reset, false) IS DISTINCT FROM m.retired_by_reset
+)`;
+
+/**
+ * Re-materialise `board_climbs.missing_hold_count` and `retired_by_reset` for
+ * every climb on a wall.
  *
  * Run it after a reset commits. A climb's count is how many of its holds now
  * carry a `removed_version_id` — so an intact climb lands on 0, and a climb that
@@ -152,15 +194,18 @@ export async function recomputeMissingHoldCounts(db: DrizzleDb, wallId: number):
   const updated = await db.execute(sql`
     UPDATE board_climbs
     SET missing_hold_count = m.missing_hold_count,
+        retired_by_reset = m.retired_by_reset,
         updated_at = now()
     FROM (
-      SELECT c.uuid, ${missingHoldCountFor(wallId, sql`c.uuid`)} AS missing_hold_count
+      SELECT c.uuid,
+        ${missingHoldCountFor(wallId, sql`c.uuid`)} AS missing_hold_count,
+        ${retiredByResetFor(wallId, sql`c.uuid`)} AS retired_by_reset
       FROM board_climbs c
       WHERE c.board_type = 'spray'
         AND c.layout_id = (SELECT layout_id FROM spray_walls WHERE id = ${wallId})
     ) AS m
     WHERE board_climbs.uuid = m.uuid
-      AND board_climbs.missing_hold_count IS DISTINCT FROM m.missing_hold_count
+      AND ${integrityMoved}
     RETURNING board_climbs.uuid
   `);
 
@@ -197,16 +242,19 @@ export async function recomputeMissingHoldCountForClimb(
   const updated = await db.execute(sql`
     UPDATE board_climbs
     SET missing_hold_count = m.missing_hold_count,
+        retired_by_reset = m.retired_by_reset,
         updated_at = now()
     FROM (
-      SELECT c.uuid, ${missingHoldCountFor(wallId, sql`c.uuid`)} AS missing_hold_count
+      SELECT c.uuid,
+        ${missingHoldCountFor(wallId, sql`c.uuid`)} AS missing_hold_count,
+        ${retiredByResetFor(wallId, sql`c.uuid`)} AS retired_by_reset
       FROM board_climbs c
       WHERE c.uuid = ${climbUuid}
         AND c.board_type = 'spray'
     ) AS m
     WHERE board_climbs.uuid = m.uuid
       AND board_climbs.board_type = 'spray'
-      AND board_climbs.missing_hold_count IS DISTINCT FROM m.missing_hold_count
+      AND ${integrityMoved}
     RETURNING board_climbs.uuid
   `);
 

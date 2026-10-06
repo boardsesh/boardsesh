@@ -307,6 +307,37 @@ export function holdIntegrityCondition(searchParams: ClimbSearchParams): SQL[] {
   return [];
 }
 
+/**
+ * Retired spray climbs drop out of a wall's DEFAULT climb list (#6024).
+ *
+ * A climb is retired when it lost a hold in a reset its owner marked as a full
+ * reset (`board_climbs.retired_by_reset`, materialised by
+ * `recomputeMissingHoldCounts`). It is hidden, never deleted: `climb(uuid)`,
+ * logbooks, playlists and share links never come through this builder.
+ *
+ * Only the default view hides them. Each of these shows them again:
+ *
+ *   - `holdIntegrity: 'any'` ("All"), sent explicitly — an omitted value is the
+ *     default view, which is why `normalizeHoldIntegrity` keeps 'any';
+ *   - `holdIntegrity: 'broken'` ("Lost holds") — a retired climb always lost a
+ *     hold, so it belongs there;
+ *   - a name search, the same exception `hiddenClimbCondition` makes, so a
+ *     climber who knows the name can still find it.
+ *
+ * 'intact' needs nothing from here: a retired climb has lost holds, so
+ * `holdIntegrityCondition` already drops it.
+ *
+ * Spray only. NULL reads as not retired, so a catalogue board renders no
+ * predicate at all rather than one that is always true. The offline mirror is in
+ * packages/mobile/src/db/queries/search-climbs-local.ts and must say the same.
+ */
+export function retiredByResetCondition(boardName: string, searchParams: ClimbSearchParams): SQL[] {
+  if (boardName !== 'spray') return [];
+  if (searchParams.holdIntegrity != null) return [];
+  if (hasNameQuery(searchParams)) return [];
+  return [sql`COALESCE(${boardClimbs.retiredByReset}, false) = false`];
+}
+
 function moonBoardZoneCoordinates(layoutId: number, placementHoleId: SQL): { x: SQL; y: SQL } {
   const geometry = getMoonBoardGeometryByLayoutId(layoutId);
   const { leftMargin, rightMargin, topMargin, bottomMargin } = geometry.calibration;
@@ -556,6 +587,7 @@ export const createClimbFilters = (
     isDraftCondition,
     ...hiddenClimbCondition(searchParams),
     ...holdIntegrityCondition(searchParams),
+    ...retiredByResetCondition(params.board_name, searchParams),
     ...(climbTypeCondition ? [climbTypeCondition] : []),
   ];
 

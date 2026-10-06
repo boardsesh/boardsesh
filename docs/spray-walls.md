@@ -1228,7 +1228,11 @@ editor published, and applying it then would remove holds that are already gone.
    not change still disagree by a few pixels; the hold did not move, the camera
    did. An outline is a picture of the hold rather than a position, so a sharper
    one is free.
-4. Then the ordinary publish, through the same `publishDraftUnderLock` helper
+4. When the owner marked it a full reset (`fullReset: true`), the version is
+   stamped `is_full_reset` before the publish, so the publish's recompute retires
+   every climb that lost a hold in it (see "A full reset retires the old set's
+   climbs" below).
+5. Then the ordinary publish, through the same `publishDraftUnderLock` helper
    `publishSprayWallVersion` uses: the previous generation is superseded, this one
    becomes `published`, `current_version_id` / `hold_count` / the catalogue image
    move, and `recomputeMissingHoldCounts(wallId)` re-materialises every climb's
@@ -1300,6 +1304,65 @@ It reaches three places:
 `recomputeMissingHoldCounts` writes only the climbs whose number actually moved
 (`IS DISTINCT FROM`) and stamps `updated_at` on those, so the offline sync cursor
 ships the change without re-shipping the whole partition after every reset.
+
+### A full reset retires the old set's climbs
+
+When a gym strips a wall (or a section of it) and sets a new problem set, the old
+climbs should leave the list without being deleted (#6024, owner decision
+2026-10-06). The owner says which kind of reset it is: `commitSprayWallVersion`
+takes an optional `fullReset: Boolean`. Omitted or false is a partial reset, which
+is also what every app built before this sends.
+
+- **The fact lives on the version.** `spray_wall_versions.is_full_reset` records
+  that this reset was a full one. It is never derived and never changes after the
+  commit.
+- **The climb flag is derived from it.** `board_climbs.retired_by_reset` is true
+  when at least one of the climb's holds was removed by a landed full-reset
+  version. Both recomputes (`recomputeMissingHoldCounts` and
+  `recomputeMissingHoldCountForClimb`) write it beside `missing_hold_count`, from
+  the holds the climb uses now. So:
+  - a full reset retires every climb that lost a hold in it, and no other climb;
+  - a later partial reset leaves a retired climb retired and retires nothing new;
+  - a climb edited onto holds still on the wall uses no removed hold any more, so
+    the per-climb recompute after the edit un-retires it. A remix is a new climb
+    and starts out not retired. Its parent stays retired.
+- **NULL reads as not retired.** Every catalogue climb is NULL, and so is a spray
+  climb that has never been recomputed. The recompute guard compares
+  `COALESCE(retired_by_reset, false)`, so the first pass after the column shipped
+  does not rewrite every climb on a wall.
+
+`retiredByResetCondition` in `create-climb-filters.ts` hides retired climbs from a
+spray wall's **default** list. Search, the count badge and the hold heatmap all
+apply it, because they build their WHERE from the same builder. It is skipped when:
+
+- `holdIntegrity: ANY` ("All") is sent explicitly. `normalizeHoldIntegrity` keeps
+  `any` for this reason; an omitted value is the default view;
+- `holdIntegrity: BROKEN` ("Lost holds") is sent, since a retired climb always
+  lost a hold;
+- the search has a name, the same exception community-hidden climbs get.
+
+`INTACT` already drops retired climbs through `missing_hold_count`.
+
+Retired climbs are never deleted. `climb(uuid)`, logbooks, playlists and share
+links never go through the search builder, so they still open them. The setter
+picker's counts (`getSetterStats`) do not apply the rule; it has no
+`holdIntegrity` input.
+
+The flag reaches phones through the `syncClimbs` pull and the saved-climb mirror
+document as `retired_by_reset`. On-device migration v12 adds the column, and
+`search-climbs-local.ts` applies the same rule, because a downloaded wall reads
+locally even while online. Spray scopes have their own refresh revision (2,
+`refreshRevisionByBoardType`) and require the column on refresh pages
+(`refreshColumnsByBoardType`). So a climb retired while a phone ran an older
+bundle, which dropped the field, gets backfilled once on an unmetered network.
+No catalogue board is re-crawled for it. A backend that does not serve the
+column yet (an OTA preview pointed at prod before migration 0255 ships) makes
+the replay's first page come back without it. The replay then stops before it
+writes, leaves the revision at 1, and the rest of the sync carries on; the next
+cycle retries.
+
+There is no backfill on the server: no reset was marked full before the column
+existed.
 
 ### Why a moved hold is removed + added, and what remix is for
 

@@ -1,6 +1,12 @@
 import type { OfflineDatabase, QueryInvalidator, SqlExecutor } from '../database';
 import type { SyncCursorInput, SyncResult, SyncDeletionsResult } from '../types';
-import { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from './table-config';
+import {
+  TABLE_CONFIGS,
+  USER_DATA_TABLES,
+  BOARD_DATA_TABLES,
+  refreshColumnsFor,
+  refreshRevisionFor,
+} from './table-config';
 import {
   getCheckpoint,
   compareCheckpoints,
@@ -793,6 +799,21 @@ function assertSyncPageProgress(result: SyncResult, cursor: SyncCursorInput | un
   }
 }
 
+/**
+ * A refresh replay's page lacks a column the replay exists to fill: the backend
+ * it reached predates that column (an OTA preview pointed at an older prod
+ * backend, or a client OTA that beat the backend deploy). Thrown before the page
+ * writes anything, so the replay's revision stays unadvanced. pullSync's replay
+ * loop catches it per table and defers that replay to a later cycle instead of
+ * failing the whole sync.
+ */
+class RefreshColumnsMissingError extends Error {
+  constructor(tableName: string, columns: string[]) {
+    super(`Sync refresh for ${tableName} is missing columns: ${columns.join(', ')}`);
+    this.name = 'RefreshColumnsMissingError';
+  }
+}
+
 async function syncTable(
   db: OfflineDatabase,
   queryClient: QueryInvalidator,
@@ -819,7 +840,7 @@ async function syncTable(
 
   const checkpointKey = getCheckpointKey(tableName, boardScope?.scopeKey);
   const checkpoint = refresh?.state ?? (await getCheckpoint(db, checkpointKey));
-  const revision = boardScope ? config.refreshRevision : undefined;
+  const revision = boardScope ? refreshRevisionFor(tableName, boardScope.boardType) : undefined;
   const previousRefresh =
     revision && boardScope ? await getSchemaRefreshState(db, tableName, boardScope.scopeKey) : null;
   let fullDownload =
@@ -880,11 +901,11 @@ async function syncTable(
 
       assertSyncPageProgress(result, cursor);
       if (result.documents.length === 0) break;
-      const missingRefreshColumns = (config.refreshColumns ?? []).filter((column) =>
+      const missingRefreshColumns = refreshColumnsFor(tableName, boardScope?.boardType).filter((column) =>
         result.documents.some((document) => !Object.prototype.hasOwnProperty.call(document, column)),
       );
       if (refresh && missingRefreshColumns.length > 0) {
-        throw new Error(`Sync refresh for ${tableName} is missing columns: ${missingRefreshColumns.join(', ')}`);
+        throw new RefreshColumnsMissingError(tableName, missingRefreshColumns);
       }
       // A later ordinary delta can also erase a previously repaired field.
       // Invalidate coverage even when this catalog already completed a refresh.
@@ -3312,7 +3333,7 @@ async function performPullSync(
     if (cycleAborted()) return reportInterruptedCycle();
     if (scopePurged(boardScope) || !(await isScopeDownloadComplete(db, boardScope.scopeKey))) continue;
     for (const tableName of BOARD_DATA_TABLES) {
-      const revision = TABLE_CONFIGS[tableName].refreshRevision;
+      const revision = refreshRevisionFor(tableName, boardScope.boardType);
       if (!revision) continue;
       const state = await getSchemaRefreshState(db, tableName, boardScope.scopeKey);
       if (state && state.revision >= revision && state.complete) continue;
@@ -3320,23 +3341,32 @@ async function performPullSync(
       const shouldContinue = async (): Promise<boolean> =>
         !cycleAborted() && !scopePurged(boardScope) && (await (options?.isOnUnmeteredNetwork?.() ?? false));
       if (!(await shouldContinue())) continue;
-      await syncTable(
-        db,
-        queryClient,
-        graphqlFetch,
-        tableName,
-        purgeToken,
-        boardScope,
-        undefined,
-        options?.onSchemaDrift,
-        {
-          state:
-            state?.revision === revision
-              ? state
-              : { ...REFRESH_START_CURSOR, revision, complete: false, mode: 'refresh' },
-          shouldContinue,
-        },
-      );
+      try {
+        await syncTable(
+          db,
+          queryClient,
+          graphqlFetch,
+          tableName,
+          purgeToken,
+          boardScope,
+          undefined,
+          options?.onSchemaDrift,
+          {
+            state:
+              state?.revision === revision
+                ? state
+                : { ...REFRESH_START_CURSOR, revision, complete: false, mode: 'refresh' },
+            shouldContinue,
+          },
+        );
+      } catch (error) {
+        // The backend does not serve the column this replay fills yet. The page
+        // was refused before it wrote, so the revision stays where it was and a
+        // later cycle retries once the backend has the column. Every other
+        // error (network, malformed page) still fails the cycle as before.
+        if (!(error instanceof RefreshColumnsMissingError)) throw error;
+        console.warn(`[Sync] refresh deferred for ${tableName} in ${boardScope.scopeKey}: ${error.message}`);
+      }
     }
   }
 

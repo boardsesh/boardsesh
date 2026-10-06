@@ -27,6 +27,7 @@ const fresh = {
     is_draft: false,
     is_listed: true,
     is_hidden: false,
+    retired_by_reset: false,
     compatible_size_ids: [123],
     updated_at: '2026-01-01T00:00:20.000123Z',
     sync_seq: '100',
