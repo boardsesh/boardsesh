@@ -728,7 +728,9 @@ export const climbMutations = {
    *    first publish;
    *  - a published climb on a spray wall: its setter, or anyone who can edit the
    *    wall (`canEditBoard`: the wall owner, the owner or an admin of its gym, a
-   *    community admin on a public wall), with no time limit.
+   *    community admin on a public wall) — or, when the wall's `climbEditPolicy` is
+   *    'collaborators' (#6025), anyone who can set climbs on the wall
+   *    (`viewerCanWriteSprayClimbs`) — with no time limit.
    *
    * An edit never changes who the setter is. `user_id` and `setter_username` are
    * not in the update set, so a wall owner fixing somebody's climb leaves it
@@ -813,7 +815,16 @@ export const climbMutations = {
         sprayTarget = await requireVisibleSprayWall(existing.layoutId, ctx.userId!, validated.sprayWallUuid);
       } else if (!currentlyDraft) {
         const visibleWall = await findVisibleSprayWall(existing.layoutId, ctx.userId!, validated.sprayWallUuid);
-        if (visibleWall && (await canEditBoard(ctx.userId!, visibleWall.board))) sprayTarget = visibleWall;
+        // `findVisibleSprayWall` already asserted `viewerCanWriteSprayClimbs` (the caller may set
+        // climbs on this wall). When the wall's climbEditPolicy is 'collaborators', that write access
+        // authorizes editing published climbs (#6025); otherwise, only callers with board-level
+        // edit access (`canEditBoard`: owner, gym admin, community leader on public wall) may edit.
+        if (
+          visibleWall &&
+          (visibleWall.climbEditPolicy === 'collaborators' || (await canEditBoard(ctx.userId!, visibleWall.board)))
+        ) {
+          sprayTarget = visibleWall;
+        }
       }
     }
 

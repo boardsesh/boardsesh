@@ -97,6 +97,11 @@ export type SprayClimbTarget = {
    * the climb's setter may still edit it, without a second query (#5955).
    */
   board: typeof dbSchema.userBoards.$inferSelect;
+  /**
+   * Who may edit published climbs on this wall (#6025). Carried so `updateClimb`
+   * can allow collaborators when the policy is 'collaborators'.
+   */
+  climbEditPolicy: typeof dbSchema.sprayWalls.$inferSelect.climbEditPolicy;
 };
 
 /**
@@ -176,6 +181,7 @@ export async function findVisibleSprayWall(
     publishedVersionNumber: row.publishedVersionNumber ?? null,
     publishesFeedEvents: row.board.isPublic && row.wall.hiddenAt == null,
     board: row.board,
+    climbEditPolicy: row.wall.climbEditPolicy,
   };
 }
 

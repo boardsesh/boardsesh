@@ -2933,6 +2933,91 @@ describe('updateSprayWall', () => {
       /Nothing to update/i,
     );
   });
+
+  it('accepts climbEditPolicy at creation time (#6025)', async () => {
+    const created = (await sprayWallMutations.createSprayWall(
+      {},
+      { input: { name: 'Collaborator Wall', angle: 40, climbEditPolicy: 'COLLABORATORS' } },
+      ctxFor(OWNER),
+    )) as { climbEditPolicy: string; viewerCanEditClimbs: boolean };
+    expect(created.climbEditPolicy).toBe('COLLABORATORS');
+    expect(created.viewerCanEditClimbs).toBe(true);
+  });
+
+  it('lets the owner update climbEditPolicy, and refuses a gym admin', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    const gymUuid = uuidv4();
+    await db.execute(sql`
+      INSERT INTO gyms (uuid, name, slug, owner_id, is_public, created_at, updated_at)
+      VALUES (${gymUuid}, 'Spray Gym', ${gymUuid}, ${OWNER}, true, now(), now())
+    `);
+    const [gym] = (await db.execute(sql`SELECT id FROM gyms WHERE uuid = ${gymUuid}`)) as unknown as Array<{
+      id: number;
+    }>;
+    await db.execute(sql`
+      INSERT INTO gym_members (gym_id, user_id, role, created_at)
+      VALUES (${gym.id}, ${STRANGER}, 'admin', now())
+    `);
+    await db.execute(sql`UPDATE user_boards SET gym_id = ${gym.id} WHERE uuid = ${wall.uuid}`);
+
+    // Gym admin cannot change climbEditPolicy (owner only)
+    await expect(
+      sprayWallMutations.updateSprayWall(
+        {},
+        { input: { uuid: wall.uuid, climbEditPolicy: 'COLLABORATORS' } },
+        ctxFor(STRANGER),
+      ),
+    ).rejects.toMatchObject({
+      extensions: { code: 'SPRAY_WALL_CLIMB_EDIT_POLICY_OWNER_ONLY' },
+    });
+
+    // Owner can change climbEditPolicy
+    const updated = (await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: wall.uuid, climbEditPolicy: 'COLLABORATORS' } },
+      ctxFor(OWNER),
+    )) as { climbEditPolicy: string; viewerCanEditClimbs: boolean };
+
+    expect(updated.climbEditPolicy).toBe('COLLABORATORS');
+    expect(updated.viewerCanEditClimbs).toBe(true);
+  });
+
+  it('reports viewerCanEditClimbs according to policy and viewer rights', async () => {
+    const { wall } = await createPublishedWall(OWNER, { isPublic: true });
+
+    // Default policy is SETTER
+    const readDefault = (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(STRANGER))) as {
+      climbEditPolicy: string;
+      viewerCanEditClimbs: boolean;
+      viewerCanEdit: boolean;
+    };
+    expect(readDefault.climbEditPolicy).toBe('SETTER');
+    expect(readDefault.viewerCanEdit).toBe(false);
+    expect(readDefault.viewerCanEditClimbs).toBe(false);
+
+    // Update policy to COLLABORATORS
+    await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: wall.uuid, climbEditPolicy: 'COLLABORATORS' } },
+      ctxFor(OWNER),
+    );
+
+    // Stranger on public wall can now edit climbs
+    const readCollaborators = (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(STRANGER))) as {
+      climbEditPolicy: string;
+      viewerCanEditClimbs: boolean;
+      viewerCanEdit: boolean;
+    };
+    expect(readCollaborators.climbEditPolicy).toBe('COLLABORATORS');
+    expect(readCollaborators.viewerCanEdit).toBe(false);
+    expect(readCollaborators.viewerCanEditClimbs).toBe(true);
+
+    // Anonymous viewer cannot edit climbs
+    const readAnon = (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(null))) as {
+      viewerCanEditClimbs: boolean;
+    };
+    expect(readAnon.viewerCanEditClimbs).toBe(false);
+  });
 });
 
 describe('setSprayWallRenderSettings', () => {
@@ -5651,6 +5736,66 @@ describe('who may edit a climb on a spray wall (#5955)', () => {
     // The wall owner still can.
     await rename(climbUuid, OWNER);
     expect(await climbRow(climbUuid)).toMatchObject({ name: 'Edited', user_id: STRANGER });
+  });
+
+  it('lets a collaborator edit another setter’s climb when policy is collaborators (#6025)', async () => {
+    const { wall, climbUuid } = await climbSetBy(STRANGER);
+    // Wall is public; update policy to COLLABORATORS
+    await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: wall.uuid, climbEditPolicy: 'COLLABORATORS' } },
+      ctxFor(OWNER),
+    );
+
+    // OUTSIDER (neither setter nor owner nor gym admin) can now edit
+    await rename(climbUuid, OUTSIDER, { name: 'Collaborator Edit' });
+
+    const after = await climbRow(climbUuid);
+    expect(after).toMatchObject({
+      name: 'Collaborator Edit',
+      user_id: STRANGER,
+      revisions: 2,
+    });
+  });
+
+  it('still refuses collaborators on drafts even when policy is collaborators (#6025)', async () => {
+    const { wall, climbUuid } = await climbSetBy(STRANGER, { isDraft: true });
+    await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: wall.uuid, climbEditPolicy: 'COLLABORATORS' } },
+      ctxFor(OWNER),
+    );
+
+    await expect(rename(climbUuid, OUTSIDER)).rejects.toThrow(REFUSAL);
+    await expect(rename(climbUuid, OUTSIDER, { isDraft: false })).rejects.toThrow(REFUSAL);
+  });
+
+  it('lets a share-link holder edit when policy is collaborators on an unlisted wall (#6025)', async () => {
+    const { wall, climbUuid } = await climbSetBy(OWNER, { wallOverrides: { isUnlisted: true } });
+    await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: wall.uuid, climbEditPolicy: 'COLLABORATORS' } },
+      ctxFor(OWNER),
+    );
+
+    // With sprayWallUuid capability, STRANGER can edit
+    await rename(climbUuid, STRANGER, { sprayWallUuid: wall.uuid, name: 'Unlisted Collaborator Edit' });
+    expect(await climbRow(climbUuid)).toMatchObject({ name: 'Unlisted Collaborator Edit', revisions: 2 });
+
+    // Without sprayWallUuid capability, OUTSIDER cannot edit
+    await expect(rename(climbUuid, OUTSIDER)).rejects.toThrow(REFUSAL);
+  });
+
+  it('still refuses outsiders on a private wall even when policy is collaborators (#6025)', async () => {
+    const { wall, climbUuid } = await climbSetBy(OWNER, { wallOverrides: {} });
+    await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: wall.uuid, climbEditPolicy: 'COLLABORATORS' } },
+      ctxFor(OWNER),
+    );
+
+    // Private wall refuses outsider completely
+    await expect(rename(climbUuid, OUTSIDER)).rejects.toThrow(REFUSAL);
   });
 });
 
