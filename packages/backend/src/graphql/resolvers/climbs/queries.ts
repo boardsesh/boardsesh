@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { storedWoodsSizeId } from './woods-authoring';
-import { eq, and, gt, asc, desc, inArray, sql } from 'drizzle-orm';
+import { eq, and, gt, asc, inArray, sql } from 'drizzle-orm';
 import {
   type CheckMoonBoardClimbDuplicatesInput,
   type ClimbSearchInput,
@@ -24,12 +24,7 @@ import {
 } from '../../../db/queries/climbs/index';
 import { isValidBoardName } from '../../../db/queries/util/table-select';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
-import {
-  isSprayBoardType,
-  sprayClimbUuidIsReadable,
-  sprayLayoutIsReadable,
-  sprayLayoutIsReadableWithCapability,
-} from './spray-read-access';
+import { isSprayBoardType, sprayLayoutIsReadable, sprayLayoutIsReadableWithCapability } from './spray-read-access';
 import { findMoonBoardDuplicateMatches } from './moonboard-duplicates';
 import { parseFramesToHoldEntries, type NormalizedHold } from './climb-similarity';
 import { findSimilarClimbsCached } from './similar-climbs-cache';
@@ -648,106 +643,11 @@ export const climbQueries = {
   },
 
   /**
-   * The edit history of a published climb, newest first (#5955).
-   *
-   * Shaped like `betaLinks`: keyed on a climb uuid, readable without signing in,
-   * and on a spray wall the WALL decides. Every refusal is the empty list, never
-   * an error, so a private wall's existence is not observable. Someone holding
-   * only a share link to an unlisted wall gets the empty list too in v1: the rule
-   * here is the by-layout one, with no capability argument.
-   *
-   * No pagination. `MAX_REVISIONS_PER_CLIMB` caps the rows at 50.
+   * Retired: climb edits are no longer recorded as revisions, so there is no
+   * history to show. Always the empty list, which older apps already render as
+   * "nothing edited".
    */
-  climbRevisions: async (
-    _: unknown,
-    { boardType, climbUuid }: { boardType: string; climbUuid: string },
-    ctx: ConnectionContext,
-  ) => {
-    // 60/min/identity, the same budget as the other per-climb play-drawer reads.
-    await applyRateLimit(ctx, 60, 'climb-revisions');
-    validateInput(BoardNameSchema, boardType, 'boardType');
-    validateInput(ExternalUUIDSchema, climbUuid, 'climbUuid');
-
-    // The climb row first, matched on BOTH keys. `boardType` is the caller's
-    // claim, so the spray gate below cannot key on it alone: a spray climb's uuid
-    // sent with `boardType: 'kilter'` finds no row here and stops. A draft has no
-    // history by definition, and its existence is the setter's business.
-    //
-    // The primary, not the replica: the editor refetches this straight after a
-    // successful `updateClimb`, and a lagging read would show the list without
-    // the edit that was just made.
-    const [climb] = await db
-      .select({ setterId: dbSchema.boardClimbs.userId, isDraft: dbSchema.boardClimbs.isDraft })
-      .from(dbSchema.boardClimbs)
-      .where(and(eq(dbSchema.boardClimbs.uuid, climbUuid), eq(dbSchema.boardClimbs.boardType, boardType)))
-      .limit(1);
-    if (!climb || climb.isDraft === true) return [];
-
-    if (
-      isSprayBoardType(boardType) &&
-      // On the primary, like the climb read above. The rule answers "visible" for
-      // a climb row it cannot find, so asking the replica about a climb the
-      // primary has only just been given would wave a private wall through.
-      !(await sprayClimbUuidIsReadable(climbUuid, ctx.isAuthenticated ? (ctx.userId ?? null) : null, db))
-    ) {
-      return [];
-    }
-
-    const rows = await db
-      .select({
-        revisionNumber: dbSchema.boardClimbRevisions.revisionNumber,
-        createdAt: dbSchema.boardClimbRevisions.createdAt,
-        name: dbSchema.boardClimbRevisions.name,
-        description: dbSchema.boardClimbRevisions.description,
-        frames: dbSchema.boardClimbRevisions.frames,
-        angle: dbSchema.boardClimbRevisions.angle,
-        difficultyId: dbSchema.boardClimbRevisions.difficultyId,
-        changes: dbSchema.boardClimbRevisions.changes,
-        editedBy: dbSchema.boardClimbRevisions.editedBy,
-        editorName: dbSchema.users.name,
-        editorImage: dbSchema.users.image,
-        editorDisplayName: dbSchema.userProfiles.displayName,
-        editorAvatarUrl: dbSchema.userProfiles.avatarUrl,
-        sprayWallVersionNumber: dbSchema.sprayWallVersions.versionNumber,
-      })
-      .from(dbSchema.boardClimbRevisions)
-      .leftJoin(dbSchema.users, eq(dbSchema.users.id, dbSchema.boardClimbRevisions.editedBy))
-      .leftJoin(dbSchema.userProfiles, eq(dbSchema.userProfiles.userId, dbSchema.boardClimbRevisions.editedBy))
-      .leftJoin(
-        dbSchema.sprayWallVersions,
-        eq(dbSchema.sprayWallVersions.id, dbSchema.boardClimbRevisions.sprayWallVersionId),
-      )
-      .where(
-        and(
-          eq(dbSchema.boardClimbRevisions.climbUuid, climbUuid),
-          eq(dbSchema.boardClimbRevisions.boardType, boardType),
-        ),
-      )
-      .orderBy(desc(dbSchema.boardClimbRevisions.revisionNumber));
-
-    return rows.map((row, index) => ({
-      revisionNumber: row.revisionNumber,
-      // Newest first, so the first row is the one that matches the live climb.
-      isCurrent: index === 0,
-      createdAt: row.createdAt.toISOString(),
-      name: row.name,
-      description: row.description,
-      frames: row.frames,
-      angle: row.angle,
-      difficultyId: row.difficultyId,
-      changes: row.changes,
-      editor:
-        row.editedBy == null
-          ? null
-          : {
-              id: row.editedBy,
-              displayName: row.editorDisplayName || row.editorName || null,
-              avatarUrl: row.editorAvatarUrl || row.editorImage || null,
-            },
-      editedBySetter: row.editedBy != null && row.editedBy === climb.setterId,
-      sprayWallVersionNumber: row.sprayWallVersionNumber ?? null,
-    }));
-  },
+  climbRevisions: () => [],
 
   /**
    * Get current per-angle stats from the live board_climb_stats table.

@@ -2,20 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { climbMutations } from '../graphql/resolvers/climbs/mutations';
 
-const { mockDb, mockPublishSocialEvent, insertCalls, lockedClimb, mockRecordClimbRevision } = vi.hoisted(() => {
+const { mockDb, mockPublishSocialEvent, insertCalls, lockedClimb } = vi.hoisted(() => {
   const insertCalls: Array<{ table: unknown; values: unknown }> = [];
-  // What `lockClimbForRevision` answers: the draft flag of the climb row the test
-  // last scripted. See the `climb-revisions` mock below.
+  // What `lockClimbForEdit` answers: the draft flag of the climb row the test
+  // last scripted. See the `climb-edit-guard` mock below.
   const lockedClimb: { current: Record<string, unknown> | null } = { current: null };
-  // Answers what the real one does for a save that records nothing: the locked
-  // row's own numbers. `updateClimb` puts them on its result and compares the
-  // holds epoch with the locked row's to decide whether to restart the stats.
-  const mockRecordClimbRevision = vi.fn(
-    async (_executor: unknown, params: { before: { revisionNumber?: number; holdsRevisionNumber?: number } }) => ({
-      revisionNumber: params.before.revisionNumber,
-      holdsRevisionNumber: params.before.holdsRevisionNumber,
-    }),
-  );
 
   const mockDb = {
     select: vi.fn(),
@@ -28,24 +19,23 @@ const { mockDb, mockPublishSocialEvent, insertCalls, lockedClimb, mockRecordClim
 
   const mockPublishSocialEvent = vi.fn().mockResolvedValue(undefined);
 
-  return { mockDb, mockPublishSocialEvent, insertCalls, lockedClimb, mockRecordClimbRevision };
+  return { mockDb, mockPublishSocialEvent, insertCalls, lockedClimb };
 });
 
-// Revision history re-reads the climb row under a lock and writes its own rows,
-// inside the transaction. Both would eat entries off the `mockDb.select` queue the
-// tests below script call by call, so those two functions are stubbed here and
-// exercised against a real database in climb-revisions.test.ts. The lock answers
-// with the row the test scripted (captured in `createMockChain`), i.e. "nothing
-// changed since you loaded it", unless a test sets `lockedClimb.current` itself.
-// The staleness check and the error code stay real.
-vi.mock('../graphql/resolvers/climbs/climb-revisions', async () => {
-  const actual = await vi.importActual<typeof import('../graphql/resolvers/climbs/climb-revisions')>(
-    '../graphql/resolvers/climbs/climb-revisions',
+// The edit guard re-reads the climb row under a lock inside the transaction,
+// which would eat entries off the `mockDb.select` queue the tests below script
+// call by call, so it is stubbed here and exercised against a real database in
+// climb-edit-in-place.test.ts. The lock answers with the row the test scripted
+// (captured in `createMockChain`), i.e. "nothing changed since you loaded it",
+// unless a test sets `lockedClimb.current` itself. The staleness check and the
+// error codes stay real.
+vi.mock('../graphql/resolvers/climbs/climb-edit-guard', async () => {
+  const actual = await vi.importActual<typeof import('../graphql/resolvers/climbs/climb-edit-guard')>(
+    '../graphql/resolvers/climbs/climb-edit-guard',
   );
   return {
     ...actual,
-    lockClimbForRevision: vi.fn(async () => lockedClimb.current),
-    recordClimbRevision: mockRecordClimbRevision,
+    lockClimbForEdit: vi.fn(async () => lockedClimb.current),
   };
 });
 
@@ -1157,9 +1147,9 @@ describe('climb mutations', () => {
     expect(updateSet?.characteristics).toEqual(['no_match']);
   });
 
-  // The catalogue-board edit rule, which #5955 leaves exactly as it was: the
-  // setter only, and a published climb only within 24 hours of its publish. The
-  // spray half of the rule needs a real wall and lives in spray-wall-api.test.ts.
+  // The edit rule, the same on every board: the setter only, and a published
+  // climb only within 24 hours of its publish. The spray half needs a real wall
+  // and lives in climb-edit-in-place.test.ts.
   describe('updateClimb edit rule on a catalogue board', () => {
     const HOUR_MS = 60 * 60 * 1000;
 
@@ -1190,19 +1180,15 @@ describe('climb mutations', () => {
     const rename = (ctx = makeCtx()) =>
       climbMutations.updateClimb({}, { input: { boardType: 'kilter', uuid: 'climb-1', name: 'Renamed' } }, ctx);
 
-    it('lets the setter edit a published climb inside the 24 hour window, and records the edit', async () => {
+    it('lets the setter edit a published climb inside the 24 hour window, in place', async () => {
       scriptPublishedClimb();
+      lockedClimb.current = { ...lockedClimb.current, revisionNumber: 3, holdsRevisionNumber: 2 };
 
-      await rename();
+      // The stored revision numbers come back as they were: an edit no longer moves them.
+      await expect(rename()).resolves.toMatchObject({ uuid: 'climb-1', revisionNumber: 3, holdsRevisionNumber: 2 });
 
+      // One UPDATE: the climb row. Nothing else writes revision numbers.
       expect(mockDb.update).toHaveBeenCalledTimes(1);
-      expect(mockRecordClimbRevision).toHaveBeenCalledTimes(1);
-      expect(mockRecordClimbRevision.mock.calls[0][1]).toMatchObject({
-        boardType: 'kilter',
-        climbUuid: 'climb-1',
-        editorId: 'user-123',
-        sprayTarget: null,
-      });
     });
 
     it('still refuses the setter once the 24 hour window has passed', async () => {
@@ -1214,7 +1200,6 @@ describe('climb mutations', () => {
 
       expect(mockDb.transaction).not.toHaveBeenCalled();
       expect(mockDb.update).not.toHaveBeenCalled();
-      expect(mockRecordClimbRevision).not.toHaveBeenCalled();
     });
 
     it('still refuses a published climb with no publish time', async () => {
@@ -1246,7 +1231,6 @@ describe('climb mutations', () => {
 
       expect(mockDb.transaction).not.toHaveBeenCalled();
       expect(mockDb.update).not.toHaveBeenCalled();
-      expect(mockRecordClimbRevision).not.toHaveBeenCalled();
     });
 
     const conflict = { extensions: { code: 'CLIMB_EDIT_CONFLICT' } };
@@ -1261,7 +1245,6 @@ describe('climb mutations', () => {
       await expect(rename()).rejects.toThrow('Climb not found');
 
       expect(mockDb.update).not.toHaveBeenCalled();
-      expect(mockRecordClimbRevision).not.toHaveBeenCalled();
     });
 
     it('refuses an edit decided on frames, rules, an angle or a description that another edit has since replaced', async () => {
@@ -1290,7 +1273,6 @@ describe('climb mutations', () => {
       }
 
       expect(mockDb.update).not.toHaveBeenCalled();
-      expect(mockRecordClimbRevision).not.toHaveBeenCalled();
     });
 
     it('does not refuse over a concurrent rename, which no decision depends on', async () => {
@@ -1323,7 +1305,6 @@ describe('climb mutations', () => {
       expect(result).toMatchObject({ uuid: 'climb-1', isDraft: false, publishedAt });
       expect(mockDb.update).not.toHaveBeenCalled();
       expect(insertCalls).toEqual([]);
-      expect(mockRecordClimbRevision).not.toHaveBeenCalled();
       expect(mockPublishSocialEvent).not.toHaveBeenCalled();
     });
 

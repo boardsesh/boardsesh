@@ -598,7 +598,6 @@ export const tickQueries = {
         setterUsername: dbSchema.boardClimbs.setterUsername,
         layoutId: dbSchema.boardClimbs.layoutId,
         frames: dbSchema.boardClimbs.frames,
-        climbCurrentRevision: dbSchema.boardClimbs.revisionNumber,
         // Which sizes/sets the climb physically fits — drives renderBoard below.
         compatibleSizeIds: dbSchema.boardClimbs.compatibleSizeIds,
         requiredSetIds: dbSchema.boardClimbs.requiredSetIds,
@@ -786,7 +785,6 @@ export const tickQueries = {
         setterUsername,
         layoutId,
         frames,
-        climbCurrentRevision,
         compatibleSizeIds,
         requiredSetIds,
         boardName,
@@ -853,7 +851,8 @@ export const tickQueries = {
           climbedAt: tick.climbedAt,
           frames,
           climbRevision: tick.climbRevision,
-          climbCurrentRevision,
+          // Retired with revision history; null hides an older app's "Earlier version" tag.
+          climbCurrentRevision: null,
           hasBetaVideo: climbsWithBeta.has(`${tick.boardType}:${tick.climbUuid}`),
         };
       },
@@ -1042,7 +1041,6 @@ export const tickQueries = {
         setterUsername: dbSchema.boardClimbs.setterUsername,
         layoutId: dbSchema.boardClimbs.layoutId,
         frames: dbSchema.boardClimbs.frames,
-        climbCurrentRevision: dbSchema.boardClimbs.revisionNumber,
         // Which sizes/sets the climb physically fits — drives renderBoard below.
         compatibleSizeIds: dbSchema.boardClimbs.compatibleSizeIds,
         requiredSetIds: dbSchema.boardClimbs.requiredSetIds,
@@ -1194,7 +1192,6 @@ export const tickQueries = {
       setterUsername,
       layoutId,
       frames,
-      climbCurrentRevision,
       compatibleSizeIds,
       requiredSetIds,
       difficultyName,
@@ -1266,7 +1263,8 @@ export const tickQueries = {
         climbedAt: tick.climbedAt,
         frames,
         climbRevision: tick.climbRevision,
-        climbCurrentRevision,
+        // Retired with revision history; null hides an older app's "Earlier version" tag.
+        climbCurrentRevision: null,
         hasBetaVideo: climbsWithBeta.has(`${tick.boardType}:${tick.climbUuid}`),
       };
 
