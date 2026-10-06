@@ -361,4 +361,27 @@ describe('art that is still being made', () => {
     await vi.advanceTimersByTimeAsync(loader.ART_FOLLOW_UP_MS * 3);
     expect(artRequests()).toBe(1);
   });
+
+  it('schedules one follow-up at a time however often the art is read', async () => {
+    vi.useFakeTimers();
+    installLoader();
+    answer({ background: 'wall-crop', art: () => ({ sprayWallArt: artAnswer('PENDING') }) });
+    await loader.loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+    await loader.loadSprayWall(fakeQueryClient(), LAYOUT_ID, { force: true });
+    await loader.loadSprayWall(fakeQueryClient(), LAYOUT_ID, { force: true });
+    expect(artRequests()).toBe(3);
+    await vi.advanceTimersByTimeAsync(loader.ART_FOLLOW_UP_MS);
+    expect(artRequests()).toBe(4);
+  });
+
+  it('drops a follow-up for a version the wall has moved off', async () => {
+    vi.useFakeTimers();
+    installLoader();
+    answer({ background: 'wall-crop', art: () => ({ sprayWallArt: artAnswer('PENDING') }) });
+    await loader.loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+    // A reset lands meanwhile: the wall is on another version now.
+    registry.registerSprayWall(LAYOUT_ID, { ...registry.getSprayWall(LAYOUT_ID)!, versionId: 99, version: 9 });
+    await vi.advanceTimersByTimeAsync(loader.ART_FOLLOW_UP_MS * 2);
+    expect(artRequests()).toBe(1);
+  });
 });

@@ -629,4 +629,22 @@ describe('EditBoard — spray wall visibility', () => {
     expect(screen.getByTestId('error').textContent).toBe('sprayBackground.notAvailable');
     expect(backMock).not.toHaveBeenCalled();
   });
+
+  it('still saves the background when visibility was refused, and says both', async () => {
+    editSprayWall({ isPublic: true, isUnlisted: false });
+    updateSprayWallMock.mockRejectedValueOnce({
+      response: { errors: [{ message: 'nope', extensions: { code: 'SPRAY_WALL_VISIBILITY_OWNER_ONLY' } }] },
+    });
+    background.changed = true;
+    background.save.mockResolvedValueOnce('refused');
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(screen.getByTestId('error')).toBeTruthy());
+    expect(background.save).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('error').textContent).toBe(
+      'mobile.sprayVisibility.ownerOnlyError sprayBackground.notAvailable',
+    );
+    expect(backMock).not.toHaveBeenCalled();
+  });
 });
