@@ -127,8 +127,18 @@ describe('buildSprayClimbSharePath', () => {
     expect(buildSprayClimbSharePath({ ...PUBLIC_WALL, climbName: '!!!' })).toBe(
       `/b/brewery-spray/40/view/${CLIMB_UUID}`,
     );
-    expect(buildSprayClimbSharePath({ ...PUBLIC_WALL, climbName: null })).toBe(
+    expect(buildSprayClimbSharePath({ ...PUBLIC_WALL, climbName: '   ' })).toBe(
       `/b/brewery-spray/40/view/${CLIMB_UUID}`,
+    );
+  });
+
+  it("names an unnamed climb the way www's canonical does", () => {
+    // www's `resolveClimbDisplayName(null, 'spray')` is `spray Climb`.
+    expect(buildSprayClimbSharePath({ ...PUBLIC_WALL, climbName: null })).toBe(
+      `/b/brewery-spray/40/view/spray-climb-${CLIMB_UUID}`,
+    );
+    expect(buildSprayClimbSharePath({ ...PUBLIC_WALL, climbName: '' })).toBe(
+      `/b/brewery-spray/40/view/spray-climb-${CLIMB_UUID}`,
     );
   });
 

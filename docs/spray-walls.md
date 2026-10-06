@@ -3063,12 +3063,24 @@ slug, the angle and the two visibility flags come off the registered wall
 | --- | --- | --- |
 | public | the clean `/b/` link | the exact `og:image` URL this page advertises |
 | unlisted | the `/b/` link plus `?wall=<uuid>` | none (`/og/climb` answers 404) |
-| private, not loaded, or no slug | the climb name alone, no link | none |
+| private, admin-hidden, not loaded, or no slug | the climb name alone, no link | none |
 
-`?wall=` on a climb link is for the app, not for www: this page renders an
-unlisted wall at its slug without it, and the app's `/b/.../view/` route hands it
-to `BoardRouteHandoff` (`wallUuid`), which resolves the wall before adopting the
-board, so a crew member who is not the owner still gets the wall's photo.
+**An unlisted climb link opens in the app only, for now.** The app's
+`/b/.../view/` route hands `?wall=` to `BoardRouteHandoff` (`wallUuid`), which
+resolves the wall before adopting the board, so a crew member who is not the
+owner still gets the wall's photo. On www the same link 404s for anyone but the
+owner and the gym's members: this page resolves the wall through `boardBySlug`,
+which refuses an unlisted wall to an anonymous caller (a slug is derived from
+the wall's name, so it is a guess and not a capability), and nothing on the page
+reads `?wall=` yet. Teaching www to redeem it is a follow-up PR.
+
+The registered wall is re-read whenever its owner saves the edit screen
+(`useUpdateSprayWall` calls `invalidateSprayWallRenderData`), so a visibility
+change moves what Share sends straight away instead of after the registry's
+10-minute revalidation. An admin-hidden wall (`SprayWall.hiddenAt`, only set for
+the owner) registers with no share fields at all, because hidden means exactly
+what private means. The wall-level share row (`sprayShareTarget`) reads a
+`UserBoard`, which carries no `hiddenAt`, so it does not apply that rule yet.
 
 ### The card and the sitemap
 
