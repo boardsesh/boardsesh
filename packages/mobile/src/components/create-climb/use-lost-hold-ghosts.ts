@@ -85,6 +85,12 @@ type UseLostHoldGhostsArgs = {
   /** Changes whenever the registered wall does. */
   sprayWallToken: string;
   placeLostHoldReplacement: (replacementHoldId: number, placements: readonly HoldPlacement[]) => boolean;
+  /**
+   * Replacements made before this mount, lost hold id → live hold id: the hold
+   * the owner just put back on the wall (#5493). Read once. Without it, a hold
+   * the owner nudged away from the old spot would leave its ghost up.
+   */
+  initialReplacements?: ReadonlyMap<number, number>;
 };
 
 const NO_GHOSTS: readonly LostHoldGhost[] = [];
@@ -121,6 +127,7 @@ export function useLostHoldGhosts({
   frames,
   sprayWallToken,
   placeLostHoldReplacement,
+  initialReplacements,
 }: UseLostHoldGhostsArgs): LostHoldGhostsState {
   const isSpray = board.boardName === SPRAY_BOARD_NAME;
 
@@ -194,7 +201,9 @@ export function useLostHoldGhosts({
   }, [lostHoldsQuery]);
 
   // Which live hold was picked for which ghost, this session.
-  const [replacementByGhostId, setReplacementByGhostId] = useState<ReadonlyMap<number, number>>(() => new Map());
+  const [replacementByGhostId, setReplacementByGhostId] = useState<ReadonlyMap<number, number>>(
+    () => new Map(initialReplacements ?? []),
+  );
 
   const paintedHoldIds = useMemo(() => paintedHoldIdsOf(frames), [frames]);
   const visibleGhosts = useMemo(() => {

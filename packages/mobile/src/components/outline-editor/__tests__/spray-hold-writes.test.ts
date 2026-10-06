@@ -54,7 +54,7 @@ describe('buildSprayHoldWritePlan', () => {
     ]);
   });
 
-  it('sends a put-back hold with the removed hold it replaces (#5493), and only while it is new', () => {
+  it('sends a put-back hold with the removed hold it replaces (#5493), and keeps sending it on a nudge', () => {
     const added = run([], {
       type: 'ADD_HOLD',
       geometry: { cx: 300, cy: 400, r: 25, outline: null },
@@ -63,10 +63,13 @@ describe('buildSprayHoldWritePlan', () => {
     expect(buildSprayHoldWritePlan(added, IDENTITY_HOMOGRAPHY).upsert).toEqual([
       { cx: 300, cy: 400, r: 25, outline: null, source: 'MANUAL', movedFromHoldId: 42 },
     ]);
-    // Once on the wall the server owns the link; a nudge does not resend it.
+    expect(
+      run([], { type: 'ADD_HOLD', geometry: { cx: 1, cy: 2, r: 3, outline: null }, select: true }).selectedId,
+    ).toBe(added.nextLocalId + 1);
+    // The server writes an in-place edit's link as sent, so a nudge resends it.
     const stored = run([storedHold(9, { movedFromHoldId: 42 })], { type: 'MOVE_HOLD', id: 9, cx: 150, cy: 250 });
     expect(buildSprayHoldWritePlan(stored, IDENTITY_HOMOGRAPHY).upsert).toEqual([
-      { id: 9, cx: 150, cy: 250, r: 20, outline: null, source: 'MANUAL' },
+      { id: 9, cx: 150, cy: 250, r: 20, outline: null, source: 'MANUAL', movedFromHoldId: 42 },
     ]);
   });
 

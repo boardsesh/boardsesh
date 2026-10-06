@@ -307,6 +307,12 @@ export type SprayHoldEditorScreenProps = {
 /** A removed hold to put back: its canonical geometry and its id. */
 export type SprayPutBackHold = {
   removedHoldId: number;
+  /**
+   * Holds already linked to the removed one before this trip (a reset review's
+   * successor). Never reused as the put-back hold: the climb editor looks for a
+   * hold linked AFTER the trip, and nudging an inherited hold replaces it.
+   */
+  knownSuccessorIds: readonly number[];
   cx: number;
   cy: number;
   r: number;
@@ -788,8 +794,12 @@ export function SprayHoldEditorScreen({
     if (!putBackHold || putBackAppliedRef.current) return;
     if (!seeded || homography == null || !canEdit || boardRender.width <= 0) return;
     putBackAppliedRef.current = true;
+    const knownSuccessors = new Set(putBackHold.knownSuccessorIds);
     const linked = Object.values(stateRef.current.holds).find(
-      (hold) => hold.movedFromHoldId === putBackHold.removedHoldId && hold.review !== 'rejected',
+      (hold) =>
+        hold.movedFromHoldId === putBackHold.removedHoldId &&
+        hold.review !== 'rejected' &&
+        !knownSuccessors.has(hold.id),
     );
     let target: { id: number; cx: number; cy: number; r: number };
     if (linked) {
@@ -809,11 +819,10 @@ export function SprayHoldEditorScreen({
         ]) ?? [];
       if (!mapped) return;
       const geometry = { cx: mapped.cx, cy: mapped.cy, r: mapped.r, outline: mapped.outline ?? null };
-      const id = stateRef.current.nextLocalId;
-      dispatch({ type: 'ADD_HOLD', geometry, movedFromHoldId: putBackHold.removedHoldId });
-      target = { id, cx: geometry.cx, cy: geometry.cy, r: geometry.r };
+      dispatch({ type: 'ADD_HOLD', geometry, movedFromHoldId: putBackHold.removedHoldId, select: true });
+      target = { id: 0, cx: geometry.cx, cy: geometry.cy, r: geometry.r };
     }
-    dispatch({ type: 'SELECT', id: target.id });
+    if (linked) dispatch({ type: 'SELECT', id: linked.id });
     boardControlRef.current?.zoomTo(
       zoomTargetForHold({
         hold: target,

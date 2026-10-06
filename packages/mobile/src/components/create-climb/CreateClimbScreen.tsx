@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -105,6 +105,10 @@ export function CreateClimbScreen({
   // went back on. Read once; the request is cleared once it has been applied.
   const [putBackReturn] = useState(() => readLostHoldPutBackReturn(putBackRequest));
   const handlePutBackApplied = useCallback(() => finishLostHoldPutBack(putBackRequest), [putBackRequest]);
+  // The hold that went back on answers its ghost, wherever the owner nudged it.
+  const [putBackInitialReplacements] = useState(() =>
+    putBackReturn?.newHoldId != null ? new Map([[putBackReturn.lostHoldId, putBackReturn.newHoldId]]) : undefined,
+  );
 
   const controller = useCreateClimbScreen({
     board,
@@ -136,6 +140,7 @@ export function CreateClimbScreen({
     frames: controller.frames,
     sprayWallToken,
     placeLostHoldReplacement: controller.placeLostHoldReplacement,
+    initialReplacements: putBackInitialReplacements,
   });
 
   // "Put this hold back on the wall" — for whoever can edit the wall's holds.
@@ -146,10 +151,14 @@ export function CreateClimbScreen({
     sprayWallForPutBack !== null && sprayWallViewerCanEdit(board.boardName, board.layoutId) && sprayWallToken !== '';
   const { sheetGhost, canonicalLostHolds, closeSheet } = lostHolds;
   const { snapshotWorkingDraft } = controller;
+  // One trip per screen: a second tap during the sheet's close animation would
+  // start another request and pop a second route.
+  const putBackStartedRef = useRef(false);
   const handlePutBack = useCallback(() => {
     const wall = sprayLayoutId !== null ? getSprayWall(sprayLayoutId) : null;
     const lostHold = sheetGhost ? canonicalLostHolds.get(sheetGhost.id) : undefined;
-    if (!wall || !sheetGhost || !lostHold) return;
+    if (!wall || !sheetGhost || !lostHold || putBackStartedRef.current) return;
+    putBackStartedRef.current = true;
     closeSheet();
     const createParams: Record<string, string> = {
       boardName: board.boardName,

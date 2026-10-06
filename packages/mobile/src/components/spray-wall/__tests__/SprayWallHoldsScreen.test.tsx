@@ -88,6 +88,7 @@ const putBack = vi.hoisted(() => ({
     requestId: string;
     wallUuid: string;
     lostHold: { id: number; cx: number; cy: number; r: number; outline: null };
+    knownSuccessorIds?: number[];
   },
   published: [] as string[],
   returned: [] as string[],
@@ -219,6 +220,7 @@ describe('SprayWallHoldsScreen', () => {
       requestId: 'req-1',
       wallUuid: 'wall-1',
       lostHold: { id: 9, cx: 10, cy: 20, r: 5, outline: null },
+      knownSuccessorIds: [12],
     };
     putBack.published.length = 0;
     putBack.returned.length = 0;
@@ -227,6 +229,7 @@ describe('SprayWallHoldsScreen', () => {
       fireEvent.click(await screen.findByTestId('editor'));
       expect((editorProps() as unknown as { putBackHold: unknown }).putBackHold).toEqual({
         removedHoldId: 9,
+        knownSuccessorIds: [12],
         cx: 10,
         cy: 20,
         r: 5,

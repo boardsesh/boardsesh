@@ -104,6 +104,7 @@ export function SprayWallHoldsScreen({
       putBackRequest
         ? {
             removedHoldId: putBackRequest.lostHold.id,
+            knownSuccessorIds: putBackRequest.knownSuccessorIds,
             cx: putBackRequest.lostHold.cx,
             cy: putBackRequest.lostHold.cy,
             r: putBackRequest.lostHold.r,

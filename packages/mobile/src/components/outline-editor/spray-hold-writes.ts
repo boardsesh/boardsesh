@@ -156,9 +156,11 @@ export function buildSprayHoldWritePlan(state: SprayEditorState, homography: rea
       // Only ever sent for a detector hold. A hand-drawn hold has no confidence
       // to report, and sending 1 would claim a measurement nobody made.
       ...(hold.source === 'AUTO' ? { confidence: hold.confidence } : {}),
-      // Only on a hold the server has never seen. An existing hold keeps the
-      // link it was written with; the server owns it from then on.
-      ...(!alreadyOnTheWall && hold.movedFromHoldId != null ? { movedFromHoldId: hold.movedFromHoldId } : {}),
+      // Sent whenever the hold has one. A hold this draft drew is updated in
+      // place, and the server writes the field as sent — left out, a nudge would
+      // wipe the link. Correcting an inherited hold makes a successor whose link
+      // is the corrected hold, so the field is ignored there.
+      ...(hold.movedFromHoldId != null ? { movedFromHoldId: hold.movedFromHoldId } : {}),
     });
   }
 

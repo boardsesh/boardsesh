@@ -104,7 +104,8 @@ export type SprayEditorAction =
   | { type: 'TOGGLE_HOLD'; id: number }
   /** An ON ring or a MAYBE goes OFF (a ghost). Already OFF does nothing. The maybe's "Switch off" chip. */
   | { type: 'SWITCH_OFF'; id: number }
-  | { type: 'ADD_HOLD'; geometry: HoldGeometry; movedFromHoldId?: number }
+  /** `select` picks the new hold in the same step, so nothing can take its id in between. */
+  | { type: 'ADD_HOLD'; geometry: HoldGeometry; movedFromHoldId?: number; select?: boolean }
   | { type: 'MOVE_HOLD'; id: number; cx: number; cy: number }
   | { type: 'RESIZE_HOLD'; id: number; r: number }
   | { type: 'SET_OUTLINE'; id: number; geometry: HoldGeometry }
@@ -285,6 +286,7 @@ export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorA
         ...snapshotOf(state),
         holds: { ...state.holds, [id]: hold },
         nextLocalId: id - 1,
+        ...(action.select ? { selectedId: id } : {}),
       });
     }
 

@@ -48,6 +48,8 @@ export type LostHoldPutBackRequest = {
 
 /** What the reopened climb editor gets back. */
 export type LostHoldPutBackReturn = {
+  /** The lost hold the trip was for. */
+  lostHoldId: number;
   draft: CreateClimbDraft;
   placements: readonly HoldPlacement[];
   /** The hold that went back on, or null when the trip was abandoned or it cannot be found. */
@@ -105,6 +107,7 @@ export function readLostHoldPutBackReturn(requestId: string | null | undefined):
   const request = getLostHoldPutBack(requestId);
   if (!request) return null;
   return {
+    lostHoldId: request.lostHold.id,
     draft: request.draft,
     placements: request.placements,
     newHoldId: request.status === 'published' ? findPutBackHoldId(request) : null,
@@ -154,6 +157,12 @@ export function returnToClimbEditor(requestId: string): void {
   if (!request) return;
   setTimeout(() => {
     if (current?.requestId !== requestId) return;
+    // The wall left the registry meanwhile (a sign-out withdraws every wall):
+    // there is no editor to reopen, and nothing to reopen it for.
+    if (!getSprayWall(request.layoutId)) {
+      current = null;
+      return;
+    }
     router.push({
       pathname: '/(tabs)/climbs/create',
       params: { ...request.createParams, [PUT_BACK_REQUEST_PARAM]: requestId },

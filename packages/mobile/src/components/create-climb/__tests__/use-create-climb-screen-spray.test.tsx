@@ -444,7 +444,7 @@ describe('back from putting a lost hold back on the wall (#5493)', () => {
     const { result } = renderHook(() =>
       useCreateClimbScreen({
         board: SPRAY_BOARD,
-        putBackReturn: { draft, placements, newHoldId: 77 },
+        putBackReturn: { lostHoldId: 5, draft, placements, newHoldId: 77 },
         onPutBackApplied,
       }),
     );
@@ -460,7 +460,7 @@ describe('back from putting a lost hold back on the wall (#5493)', () => {
     const { result } = renderHook(() =>
       useCreateClimbScreen({
         board: SPRAY_BOARD,
-        putBackReturn: { draft, placements, newHoldId: null },
+        putBackReturn: { lostHoldId: 5, draft, placements, newHoldId: null },
         onPutBackApplied,
       }),
     );

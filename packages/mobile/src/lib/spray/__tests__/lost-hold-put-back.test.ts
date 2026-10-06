@@ -70,6 +70,7 @@ describe('lost-hold put-back', () => {
   it('hands back the working copy and no hold when the owner backed out', () => {
     const requestId = startLostHoldPutBack(REQUEST, vi.fn());
     expect(readLostHoldPutBackReturn(requestId)).toEqual({
+      lostHoldId: 42,
       draft: DRAFT,
       placements: REQUEST.placements,
       newHoldId: null,
@@ -101,6 +102,17 @@ describe('lost-hold put-back', () => {
       pathname: '/(tabs)/climbs/create',
       params: { ...REQUEST.createParams, putBackRequest: requestId },
     });
+  });
+
+  it('does not reopen once the wall has left the registry (a sign-out)', () => {
+    const requestId = startLostHoldPutBack(REQUEST, vi.fn());
+    vi.advanceTimersByTime(500);
+    router.push.mockClear();
+    returnToClimbEditor(requestId);
+    registry.wall = null;
+    vi.advanceTimersByTime(500);
+    expect(router.push).not.toHaveBeenCalled();
+    expect(getLostHoldPutBack(requestId)).toBeNull();
   });
 
   it('does not reopen for a request that is already done, or unknown', () => {
