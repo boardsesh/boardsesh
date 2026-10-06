@@ -582,8 +582,8 @@ the INVERSE at draw time. Generated art (below) is a separate derived image. SW-
 
 ### Adding and removing holds
 
-Holds are only editable on a **draft** version, and only until the wall has a
-published climb (see [Holds lock at the first published climb](#holds-lock-at-the-first-published-climb)).
+Holds are only editable on a **draft** version, before and after the wall's
+first publish (see [Editing the holds of a live wall](#editing-the-holds-of-a-live-wall)).
 Published and superseded versions are immutable, because a climb set against a
 published generation reads its holds by id — rewriting that generation's geometry
 would silently move every climb on it.
@@ -1218,41 +1218,44 @@ reasons that both have to be fixed before the flag flips (#5491):
    unreachable regardless of the flag. Whatever wires them up has to put them on
    the sheet climbers actually open.
 
-## Holds lock at the first published climb
+## Editing the holds of a live wall
 
-A wall's holds are free to edit until the wall has its first **published**
-climb. From then on they are locked: no hold is added, moved or removed. To
-change the holds, the owner resets the wall, which clones it (see
-[Archive and reset](#archive-and-reset)).
+A wall's holds stay editable after it is published, whether or not climbs are set
+on it. The owner (or anyone `requireBoardEditAccess` lets edit the wall) opens a
+hold-edit draft on the published photo (`createSprayWallVersion` with
+`sourceVersionId`), adds, moves or removes holds on it, and publishes it.
 
-`SprayWall.holdsLocked` reports the rule and the server enforces it. One helper,
-`assertSprayWallHoldsUnlockedUnderLock` in `spray-walls.ts`, takes the wall lock
-and refuses with `SPRAY_WALL_HOLDS_LOCKED` when the wall has at least one
-`board_climbs` row with `board_type = 'spray'`, its layout id and
-`is_draft = false`. A wall that has never published skips the climb read: its
-holds are the add-wall wizard's, and nothing can be published on a wall with no
-published holds. The archived check runs first, so an archived wall is refused
-as archived.
+Removing a hold that climbs use is the owner's call, confirmed in the app first:
 
-| Call | When the lock applies |
-| --- | --- |
-| `createSprayWallVersion` with `sourceVersionId` (a hold-edit draft) | the wall is published |
-| `upsertSprayWallHolds`, `removeSprayWallHolds` | the wall is published |
-| `publishSprayWallVersion`, `commitSprayWallVersion` | not the wall's first publish |
+1. Before it removes (or moves) holds, the hold editor asks
+   `sprayWallHoldUsage(wallUuid, holdIds)` how many published and draft climbs use
+   each one (see [The `SprayWall` fields](#the-spraywall-fields)).
+2. When published climbs use one, the app asks the climber to confirm.
+3. On yes, the publish stamps the removal, and the recompute in
+   `publishDraftUnderLock` raises those climbs' `missing_hold_count`.
 
-The check is exact, not a best effort: `saveClimb` and `updateClimb`, the only
-writers that can publish a spray climb, take the same wall lock before they
-insert or publish. A climb either lands before the hold write reads and is seen,
-or waits for it. A hold-edit draft opened while the wall had no climbs is refused
-at publish if a climb was published meanwhile; it can still be discarded.
+What a climb that lost a hold gets:
 
-Draft climbs do not lock a wall. A hold edit published on a wall that has only
-draft climbs still re-materialises `missing_hold_count`, so a draft that used a
-removed hold reads 1 until its setter moves it onto holds that are there.
-
-The refusal is worded for the oldest app that can see it, because an app built
-before the lock shows the server's message and nothing else: "Holds are locked
-once a wall has climbs. Update Boardsesh, then use Reset wall to change them."
+- **It stays listed**, in the wall's climb list and search, with a badge from
+  `Climb.missingHoldCount`. It still opens by uuid (logbook, playlist, share
+  link, queue).
+- **The Holds filter works again** (`ClimbSearchInput.holdIntegrity`): ANY adds
+  no filter, INTACT keeps `COALESCE(missing_hold_count, 0) = 0`, BROKEN keeps
+  `> 0` (`holdIntegrityCondition` in
+  `packages/db/src/queries/climbs/create-climb-filters.ts`), drafts included. On a
+  catalogue board every climb reads intact, so BROKEN there is the empty list.
+  The default view still hides climbs a full in-place reset retired
+  (`retiredByResetCondition`), as before.
+- **It can be remixed** through the app's generic fork route. `Climb.lostHolds`
+  returns each removed hold's last geometry (centre, radius, outline, the
+  version that installed it and the one that removed it), and the remix editor
+  draws it as a grey ghost that has to come off before the remix saves.
+  `lostHolds` is resolved per climb and only for a spray climb whose
+  `missingHoldCount` is above 0; it counts a removal only once the version that
+  made it has published, and a wall the viewer may not see answers `[]`.
+- **Its setter can fix it** inside their 24 hour window by moving it onto holds
+  that are there; `updateClimb`'s per-climb recompute brings the count back to 0.
+  A draft is fixable at any time.
 
 ## Resets
 
@@ -1262,9 +1265,10 @@ flow, its caps and what an archived wall refuses are in
 [Archive and reset](#archive-and-reset).
 
 The in-place reset is retired: a new photo on a published wall, matched against
-the old one, with kept / removed / added decisions, a partial or full flag, lost
-holds tracked per climb and remix as the way back. What is left of it on the
-server:
+the old one, with kept / removed / added decisions and a partial or full flag.
+Lost holds and remixing stay, now driven by hold edits on the published photo
+(see [Editing the holds of a live wall](#editing-the-holds-of-a-live-wall)). What
+is left of the reset on the server:
 
 - `createSprayWallVersion` with a new `photoId` on a published wall refuses with
   `SPRAY_WALL_RESET_RETIRED`, "Resets changed. Update Boardsesh, then use Reset
@@ -1283,7 +1287,7 @@ server:
 Both installed apps (2.5.0 on `main`, the 2.6.0 beta on `release/next`) publish a
 new wall through `publishSprayWallVersion`, and only their reset screen calls
 `commitSprayWallVersion`. Both first-publish paths are covered by
-`spray-wall-hold-lock.test.ts`, for a wizard wall and for a reset clone.
+`spray-wall-retired-reset.test.ts`, for a wizard wall and for a reset clone.
 
 The hold matcher (`matchHolds`, `suggestMoves`, the Hungarian solver) is gone
 from `@boardsesh/spray-wall-geometry`; nothing else imported it.
@@ -1307,43 +1311,11 @@ draft's work would take effect, which is the abandoned-draft bug made permanent.
 
 ### Climbs that lost holds to an old reset
 
-`board_climbs.missing_hold_count` is how many of a climb's holds carry a landed
-`removed_version_id`. Before the lock, an in-place reset could raise it on a
-published climb. Those rows stay as they are, and one rule covers them:
-
-- **Every spray climb list and search leaves them out**: a wall's climb list,
-  its count, the hold heatmap, and a name search too (the simplest rule; there
-  is no "show lost-hold climbs" view any more). `lostHoldsCondition` in
-  `packages/db/src/queries/climbs/create-climb-filters.ts` adds
-  `COALESCE(missing_hold_count, 0) = 0` on spray only. NULL reads as intact. A
-  climb a full reset retired (`retired_by_reset`) always lost a hold, so the same
-  rule hides it.
-- **Except the setter's drafts list.** An `onlyDrafts` search skips the rule. A
-  draft can still lose a hold today (a hold edit on a wall with no published
-  climb), and `onlyDrafts` is the only place the setter finds it to re-set it or
-  delete it. Re-setting it onto holds that are there brings its count back to 0.
-  On a drafts query an older app's Lost holds filter keeps its old meaning and
-  shows the drafts whose count is above 0.
-- **The older apps' Holds filter** (`ClimbSearchInput.holdIntegrity`, shown on
-  every board by 2.5.0 and the 2.6.0 beta): All and Intact only answer the plain
-  list. Lost holds answers the empty list on every board, a `false` predicate in
-  both search and count (`lostHoldsFilterCondition`), except on a drafts query
-  (above). That is what it always
-  answered on a catalogue board, and on a spray wall it is honest now that
-  lost-hold climbs are hidden. BROKEN stays a search param, so it keeps its own
-  search-cache key; All and Intact share the plain search's key.
-- **A read of one climb by uuid still returns it**: `climb(uuid)`, logbooks,
-  playlists, share links and the queue never go through the list builder.
-- The setter picker's counts (`getSetterStats`) do not apply the rule.
-
-No search cache version bump: spray searches are never cached. On a cached board
-a BROKEN search keeps its own key (and was already the empty list there), and
-ANY and INTACT now hash to the plain search's key, whose cached page was already
-right.
-
-The offline mirror on the phone (`search-climbs-local.ts`) keeps its own,
-older rule until a mobile release changes it. The columns it reads,
-`missing_hold_count` and `retired_by_reset`, still reach it through `syncClimbs`.
+Climbs whose `missing_hold_count` an in-place reset raised before it was retired
+are treated like any other climb that lost a hold (see
+[Editing the holds of a live wall](#editing-the-holds-of-a-live-wall)): listed with
+a badge, found by the Holds filter, remixable with `Climb.lostHolds`. The climbs a
+FULL reset retired (`retired_by_reset`) still leave the default view, as before.
 
 ## Archive and reset
 
@@ -1560,18 +1532,18 @@ against this backend. Each answers like this:
 | `proposeSprayWallReset` | `SPRAY_WALL_RESET_RETIRED`, same message |
 | `publishSprayWallVersion` / `commitSprayWallVersion` of a reset-purpose draft | `SPRAY_WALL_RESET_RETIRED`, same message |
 | `commitSprayWallVersion` of a wall's first draft | Publishes it. `kept`, `removed`, `added` and `fullReset` are ignored. |
-| `createSprayWallVersion` (hold edit), `upsertSprayWallHolds`, `removeSprayWallHolds`, a later publish, on a wall with a published climb | `SPRAY_WALL_HOLDS_LOCKED`, "Holds are locked once a wall has climbs. Update Boardsesh, then use Reset wall to change them." |
+| `createSprayWallVersion` (hold edit), `upsertSprayWallHolds`, `removeSprayWallHolds`, a later publish | Work as before, climbs or not. A removal under published climbs gives them a lost hold. |
 | `updateClimb` by anyone but the setter | `CLIMB_EDIT_NOT_ALLOWED`, "You can only update your own climbs" |
 | `updateClimb` by the setter more than 24 hours after first publish | `CLIMB_EDIT_WINDOW_EXPIRED`, "The 24 hour edit window has expired" |
 | `Query.climbRevisions` (`[ClimbRevision!]!`) | `[]` |
 | `climbCurrentRevision` on `AscentFeedItem`, `FollowingAscentFeedItem`, `ClimbLogItem` (`Int`) | `null`, which hides the "Earlier version" tag |
 | `Query.remixClimb` (`SprayRemixSeed`) | `null` |
-| `Climb.lostHolds` (`[SprayWallHold!]`) | `[]` on a spray climb, `null` on every other board, no query |
+| `Climb.lostHolds` (`[SprayWallHold!]`) | Live, not retired: the removed holds' last geometry on a spray climb that lost holds, `[]` on an intact one, `null` on every other board |
 | `SprayWall.climbEditPolicy` (`SprayClimbEditPolicy!`) | `SETTER` |
 | `SprayWall.viewerCanEditClimbs` (`Boolean!`) | `false` |
 | `CreateSprayWallInput.climbEditPolicy`, `UpdateSprayWallInput.climbEditPolicy` | Accepted and not written. No owner-only refusal. |
 | `SaveClimbInput.remixOfClimbUuid` | Accepted and ignored on every board. No lineage row. |
-| `ClimbSearchInput.holdIntegrity` | ANY and INTACT: the plain list. BROKEN: no climbs, on every board, except a drafts query, where it is the drafts that lost a hold. |
+| `ClimbSearchInput.holdIntegrity` | Live, not retired: ANY no filter, INTACT the climbs that lost nothing, BROKEN the ones that lost a hold |
 | `Climb.missingHoldCount`, `Climb.revisionNumber`, `Climb.holdsRevisionNumber`, `Tick.climbRevision`, `SaveTickInput.climbRevision` | Unchanged: the stored values, and a tick is still stamped. |
 
 `SPRAY_WALL_RESET_REVIEW_REQUIRED`, `SPRAY_WALL_ANCHORS_REQUIRED` and
@@ -1584,9 +1556,6 @@ What a climber on an older app sees, known and accepted until the app update:
   wall", the new app's name for it.
 - **Its who-can-edit toggle reads back as setter-only** whatever the owner picks,
   because the policy is not written and every wall answers `SETTER`.
-- **A hold-edit draft left open on a wall that then locks** shows the locked
-  message on every visit until the app update. Nothing is damaged: the draft
-  holds no published work, and the new app discards it.
 - **A new photo on a published wall with no climbs is refused too.** Decision:
   the owner uses Reset wall, which works on any published wall, climbs or not.
 
@@ -1602,8 +1571,8 @@ a separately approved cleanup:
 | `spray_walls.climb_edit_policy` | No (new walls take the column default, `setter`) |
 | `spray_wall_versions.is_full_reset` | No (new versions take the default, `false`) |
 | `board_climbs.revision_number`, `holds_revision_number` | No. Frozen at their stored values; the holds-epoch reads still use them. |
-| `spray_wall_holds.moved_from_hold_id` | Yes, by the hold editor: a correction to an inherited hold on a climbless wall links its successor |
-| `board_climbs.missing_hold_count`, `retired_by_reset` | Yes, by the publish recompute and by `updateClimb`'s per-climb recompute. On a wall with a published climb nothing can move them any more. |
+| `spray_wall_holds.moved_from_hold_id` | Yes, by the hold editor: a correction to an inherited hold links its successor |
+| `board_climbs.missing_hold_count`, `retired_by_reset` | Yes, by the publish recompute and by `updateClimb`'s per-climb recompute. A hold-edit publish that removes a used hold raises the count; `retired_by_reset` only moves for climbs an old full reset touched. |
 | `boardsesh_ticks.climb_revision` | Yes, by `saveTick`, as before |
 
 The device still mirrors `missing_hold_count`, `revision_number`,
@@ -2249,9 +2218,10 @@ Nobody else, on any wall: not the wall owner, not a gym owner or admin, not a
 community leader, not a collaborator or a share-link holder. The wall's stored
 `climb_edit_policy` is not read. Before this, a spray climb could be edited with
 no time limit by its setter and by anyone who could edit the wall (#5955), or
-anyone who could set on it under the `collaborators` policy (#6025). A spray
-wall's holds now lock at its first published climb, so its climbs no longer need
-fixing after a reset, and the reason for the exception is gone.
+anyone who could set on it under the `collaborators` policy (#6025). The owner
+decided a published climb holds still like on every board; a climb that loses a
+hold to a hold edit is remixed instead (see
+[Editing the holds of a live wall](#editing-the-holds-of-a-live-wall)).
 
 The refusals keep their codes: `CLIMB_EDIT_NOT_ALLOWED` for anyone but the
 setter (the same message whether the wall is private, unlisted or public, so it
