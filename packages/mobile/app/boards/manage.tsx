@@ -67,6 +67,7 @@ import {
 import { ArchivedWallManageRow } from '../../src/components/board-discovery/ArchivedWallManageRow';
 import { useMySprayWallLifecycle } from '../../src/lib/spray/use-create-spray-wall';
 import { forgetDeletedSprayWall } from '../../src/lib/spray/forget-deleted-spray-wall';
+import { reportError } from '../../src/lib/error-reporting';
 import {
   getActiveBoardWriteGeneration,
   useClearActiveBoardIfCurrentGeneration,
@@ -384,33 +385,52 @@ export default function ManageBoards() {
   const deleteBoardAsync = deleteBoard.mutateAsync;
   const clearActiveBoard = useClearActiveBoardIfCurrentGeneration();
   const { clearSession } = useQueueActions();
+  // One archived-wall delete at a time: a second trash tap while the first is
+  // out must not send a second delete. State as well as a ref, so the row can
+  // show its trash disabled while it runs.
+  const deletingArchivedWallRef = useRef(false);
+  const [deletingArchivedWallUuid, setDeletingArchivedWallUuid] = useState<string | null>(null);
   const deleteArchivedWall = useCallback(
     async (wall: ArchivedSprayWallSummary) => {
-      const wasActive = activeUuid === wall.uuid;
-      // Captured at action time, as the picker's delete does.
-      const activeBoardGeneration = getActiveBoardWriteGeneration();
-      const confirmed = await confirm({
-        title: t('mobile.manage.deleteWallTitle'),
-        message: t('sprayArchive.deleteMessage', { name: wall.name }),
-        confirmLabel: t('mobile.manage.deleteConfirm'),
-        cancelLabel: t('mobile.manage.cancel'),
-        destructive: true,
-      });
-      if (!confirmed) return;
+      if (deletingArchivedWallRef.current) return;
+      deletingArchivedWallRef.current = true;
+      setDeletingArchivedWallUuid(wall.uuid);
       try {
-        await deleteBoardAsync(wall.uuid);
-      } catch {
-        // An alert, not a toast: this is a modal route, which the toast draws behind.
-        Alert.alert(t('mobile.manage.deleteError'));
-        return;
+        const wasActive = activeUuid === wall.uuid;
+        // Captured at action time, as the picker's delete does.
+        const activeBoardGeneration = getActiveBoardWriteGeneration();
+        const confirmed = await confirm({
+          title: t('mobile.manage.deleteWallTitle'),
+          message: t('sprayArchive.deleteMessage', { name: wall.name }),
+          confirmLabel: t('mobile.manage.deleteConfirm'),
+          cancelLabel: t('mobile.manage.cancel'),
+          destructive: true,
+        });
+        if (!confirmed) return;
+        try {
+          await deleteBoardAsync(wall.uuid);
+        } catch {
+          // An alert, not a toast: this is a modal route, which the toast draws behind.
+          Alert.alert(t('mobile.manage.deleteError'));
+          return;
+        }
+        // The wall is gone on the server. What is left is this phone's own
+        // bookkeeping; a failure there is reported, never shown, and never
+        // stops the list from refreshing.
+        try {
+          await forgetDeletedSprayWall(wall, db);
+          if (wasActive && activeBoardGeneration === getActiveBoardWriteGeneration()) {
+            await clearSession({ notifyServer: true });
+            await clearActiveBoard(activeBoardGeneration);
+          }
+        } catch (error) {
+          reportError(error);
+        }
+      } finally {
+        deletingArchivedWallRef.current = false;
+        setDeletingArchivedWallUuid(null);
+        void refetchSprayWallLifecycle();
       }
-      // Everything this phone kept about the wall goes with it.
-      await forgetDeletedSprayWall(wall, db);
-      if (wasActive && activeBoardGeneration === getActiveBoardWriteGeneration()) {
-        await clearSession({ notifyServer: true });
-        await clearActiveBoard(activeBoardGeneration);
-      }
-      void refetchSprayWallLifecycle();
     },
     [activeUuid, confirm, t, deleteBoardAsync, db, clearSession, clearActiveBoard, refetchSprayWallLifecycle],
   );
@@ -494,7 +514,13 @@ export default function ManageBoards() {
   const showOfflineList = shouldUseOfflineList && offlineItems.length > 0;
   // Keep the snapshots fresh from the live list while online (renames, a backfill for
   // boards downloaded before this existed, and a prune of boards the server dropped).
-  useRememberDownloadedBoards(boardConnection);
+  // Archived walls are not in `myBoards`: name them, or their download cards
+  // would be pruned as if the walls were gone. Unknown when the list failed.
+  const archivedWallUuids = useMemo(
+    () => (sprayWallLifecycle ? archivedWalls.map((wall) => wall.uuid) : undefined),
+    [sprayWallLifecycle, archivedWalls],
+  );
+  useRememberDownloadedBoards(boardConnection, archivedWallUuids);
 
   const onCreate = useCallback(() => {
     router.push('/boards/create');
@@ -516,6 +542,7 @@ export default function ManageBoards() {
             isActive={item.isActive}
             onOpen={openArchivedWall}
             onDelete={onDeleteArchivedWall}
+            deleting={deletingArchivedWallUuid === item.wall.uuid}
           />
         );
       }
@@ -612,6 +639,7 @@ export default function ManageBoards() {
       offlineStoragePaused,
       openArchivedWall,
       onDeleteArchivedWall,
+      deletingArchivedWallUuid,
     ],
   );
 

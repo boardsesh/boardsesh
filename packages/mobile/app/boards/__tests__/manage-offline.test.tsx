@@ -265,9 +265,11 @@ const archived = vi.hoisted(() => ({
   refetch: vi.fn(),
   deleteBoard: vi.fn(async () => true),
   forget: vi.fn(async () => {}),
+  reportError: vi.fn(),
   rows: [] as { wall: { uuid: string; layoutId: number; name: string }; onDelete: (wall: unknown) => void }[],
 }));
 vi.mock('../../../src/lib/spray/forget-deleted-spray-wall', () => ({ forgetDeletedSprayWall: archived.forget }));
+vi.mock('../../../src/lib/error-reporting', () => ({ reportError: archived.reportError }));
 
 vi.mock('../../../src/providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: true, refreshAuthState: vi.fn() }),
@@ -1460,6 +1462,35 @@ describe('My Boards archived walls', () => {
       expect.anything(),
     );
     expect(archived.refetch).toHaveBeenCalled();
+  });
+
+  // The wall is gone on the server; a failure in this phone's own cleanup is
+  // reported, and the list still refreshes so the deleted row leaves.
+  it('still refreshes the list when the cleanup after a delete fails', async () => {
+    confirmMock.mockResolvedValue(true);
+    archived.forget.mockRejectedValueOnce(new Error('disk full'));
+    const row = renderWithArchivedWall();
+    await act(async () => row.onDelete(row.wall));
+    expect(archived.deleteBoard).toHaveBeenCalledTimes(1);
+    expect(archived.reportError).toHaveBeenCalledWith(expect.objectContaining({ message: 'disk full' }));
+    expect(archived.refetch).toHaveBeenCalled();
+  });
+
+  it('sends one delete for a second trash tap while the first is out', async () => {
+    let answer: (value: boolean) => void = () => {};
+    confirmMock.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        answer = resolve;
+      }),
+    );
+    const row = renderWithArchivedWall();
+    await act(async () => {
+      row.onDelete(row.wall);
+      row.onDelete(row.wall);
+    });
+    await act(async () => answer(true));
+    expect(confirmMock).toHaveBeenCalledTimes(1);
+    expect(archived.deleteBoard).toHaveBeenCalledTimes(1);
   });
 
   it('deletes nothing when the owner backs out', async () => {

@@ -15,6 +15,8 @@ type ArchivedWallManageRowProps = {
   onOpen: (wallUuid: string) => void;
   /** Delete the wall, behind the screen's confirm. Stable: one callback for every row. */
   onDelete: (wall: ArchivedSprayWallSummary) => void;
+  /** This wall's delete is in flight: the trash is disabled until it settles. */
+  deleting?: boolean;
 };
 
 /**
@@ -28,6 +30,7 @@ export const ArchivedWallManageRow = memo(function ArchivedWallManageRow({
   isActive,
   onOpen,
   onDelete,
+  deleting = false,
 }: ArchivedWallManageRowProps) {
   const { t, i18n } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
@@ -66,10 +69,12 @@ export const ArchivedWallManageRow = memo(function ArchivedWallManageRow({
       </Pressable>
       <Pressable
         onPress={remove}
+        disabled={deleting}
         hitSlop={8}
         accessibilityRole="button"
         accessibilityLabel={t('mobile.manage.deleteAria', { name: wall.name })}
-        style={({ pressed }) => [styles.deleteButton, pressed ? styles.pressed : null]}
+        accessibilityState={{ disabled: deleting, busy: deleting }}
+        style={({ pressed }) => [styles.deleteButton, pressed || deleting ? styles.pressed : null]}
       >
         <Icon name="delete" size={20} color={systemColors.secondaryLabel} />
       </Pressable>

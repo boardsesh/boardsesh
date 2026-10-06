@@ -154,6 +154,18 @@ describe('offline board snapshots', () => {
     expect(getOfflineBoards().map((card) => card.uuid)).toEqual(['garage']);
   });
 
+  it('spares cards of the type the caller cannot vouch for', () => {
+    rememberOfflineBoards([
+      board({ uuid: 'garage', name: 'Garage' }),
+      board({ uuid: 'old-wall', name: 'Archived wall', boardType: 'spray', layoutId: 77, sizeId: 77 }),
+      board({ uuid: 'gone', name: 'Unfollowed elsewhere' }),
+    ]);
+
+    pruneOfflineBoards(['garage'], { keepBoardType: 'spray' });
+
+    expect(getOfflineBoards().map((card) => card.uuid)).toEqual(['garage', 'old-wall']);
+  });
+
   it('does not write when every card is still on the server list', () => {
     rememberOfflineBoards([board({ uuid: 'garage', name: 'Garage' })]);
     setSpy.mockClear();

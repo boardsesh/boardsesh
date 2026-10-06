@@ -107,10 +107,16 @@ export function forgetOfflineBoard(uuid: string): void {
  * the backend no longer knows into `active-board-store`, which is exactly the
  * board-presence poisoning this feature refuses to risk with synthetic uuids.
  */
-export function pruneOfflineBoards(knownUuids: readonly string[]): void {
+export function pruneOfflineBoards(
+  knownUuids: readonly string[],
+  { keepBoardType }: { keepBoardType?: string } = {},
+): void {
   const known = new Set(knownUuids);
   const current = getOfflineBoards();
-  const next = current.filter((card) => known.has(card.uuid));
+  // `keepBoardType` spares cards of one type the caller cannot vouch for: an
+  // archived spray wall is not in `myBoards`, and without the archived list to
+  // name it, its card must not be taken for a deleted board's.
+  const next = current.filter((card) => known.has(card.uuid) || card.boardType === keepBoardType);
   if (next.length === current.length) return;
   setSetting(SETTING_KEY, next);
 }
