@@ -1,7 +1,7 @@
 Novedades de 2.6:
-- Muros de spray: fotografía tu muro, la app encuentra las presas, corrige lo que falte y monta, pon en cola y registra bloques.
-- Salta entre los plafones de tu rocódromo desde el panel del muro. El Bluetooth y la cola te acompañan.
+- Muros de spray: fotografía tu muro, la app halla las presas y montas, pones en cola y registras bloques. No hacen falta LED.
+- Las sesiones de tu crew en Inicio y sus registros en cada bloque.
 - Temporizador de descanso que empieza al registrar un bloque y puede pasar la cola.
 - Poner a continuación: mantén pulsado un bloque para saltarte la cola.
-- Sesiones de tu equipo en Inicio.
-- Enlaces de bloques compartidos se abren en la app.
+- Los demás plafones de tu rocódromo, a un toque en el panel del muro.
+- Los enlaces de bloques compartidos se abren en la app.

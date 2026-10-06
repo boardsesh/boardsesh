@@ -1,7 +1,7 @@
 New in 2.6:
-- Spray walls: photograph your own wall, let the app find the holds, fix what it missed, then set, queue and log climbs on it.
-- Hop between your gym's boards from the wall sheet. Bluetooth and the queue come with you.
+- Spray walls: photograph your home wall or your gym's spray wall, the app finds the holds, then set, queue and log climbs on it. No LEDs needed.
+- See your crew's live sessions on Home, and their logs on every climb.
 - A rest timer that starts when you log a climb and can move the queue on.
 - Play next: long-press a climb to jump the queue.
-- See your crew's live sessions on Home.
+- Your gym's other boards are one tap away in the wall sheet.
 - Shared climb links open straight in the app.

@@ -1,40 +1,34 @@
-New in 2.6:
+SPRAY WALLS: YOUR OWN WALL IN BOARDSESH
 
-SPRAY WALLS
+Photograph your home wall or the spray wall at your gym and the app finds the holds. Fix what it missed, pick a look, publish, and start setting. Climbs work like on any other board: queue them, save them to playlists, and log your sends in the same logbook as your other boards. No LEDs needed: the holds are highlighted on your photo.
 
-Your home wall, the woody at your gym, the board with no app: photograph it and it's a board in Boardsesh. The app finds the holds in your photo. Tap a ring to switch a hold off, tap bare wall to add one, or draw round a hold the scan missed. Pick the angle and a look, publish, and start setting.
+Keep a wall private, make it public, or share it by link or QR code and your crew can set and log on it too. Stripped the wall? Take a new photo and check what came off before anything changes. Climbs that lost a hold stay in your list with a badge, and one tap remixes them onto what's still on the wall.
 
-Climbs on a spray wall work like climbs on any other board: queue them, log sends and attempts, save them to playlists. There are no LEDs, so the holds are highlighted on your photo.
+Free, like the rest of Boardsesh.
 
-Keep a wall private, share it by link or QR code, or make it public. Stripped the wall? Take a new photo, mark the corners and check what came off before anything changes. Climbs that lost a hold stay findable. The setter and the wall's editors can edit a climb any time, and every earlier version is kept.
+YOUR CREW, ON EVERY CLIMB
 
-YOUR GYM'S OTHER BOARDS, ONE TAP AWAY
-
-A Kilter next to a Tension, or two walls of the same board at different angles? The wall sheet now lists the other boards at your gym, so you hop to the one you're standing at in one tap. The Bluetooth link moves with you, a queue built across two walls plays in order, and each board keeps its own name and angle.
+Home shows who's climbing right now, so you can jump into their session. Open a climb and the people you follow come first: their notes, the grade they'd give it, then everyone else's logs. Follow a setter and their new climbs land in your crew feed as one card you swipe through.
 
 A REST TIMER THAT MOVES THE QUEUE ON
 
-Run boulders on the minute without picking your phone up between goes. Turn on the rest timer in the Session tab and it starts counting the moment you log a climb, then runs past zero into the red if you sit down too long. Let it move to the next climb and it lights that climb on the wall for you.
+Run boulders on the minute without picking your phone up between goes. Turn on the rest timer in the Session tab and it starts counting the moment you log a climb, then runs past zero into the red if you sit down too long. Let it move to the next climb and it lights that climb on the wall for you. Someone wants a go first? Long-press their climb and tap Play next to slot it right behind the one on the wall.
 
 ALSO NEW
 
-- Play next: long-press a climb to slot it right behind the one on the wall.
-- See who's climbing right now on Home and jump into their session.
-- Follow setters and swipe through their new climbs as they land.
-- Open a climb to see how it went for the people you follow, then everyone else's logs.
-- The grade you gave a climb is the grade you see on it, with the crowd's number underneath when the two disagree.
+- Your gym's other boards sit in the wall sheet: one tap to the wall you're standing at, and the Bluetooth link and the queue come with you.
+- Turn on Use my grades and the grade you gave a climb is the one you see, sort and filter by.
 - Similar climbs and the redesigned hold heatmap run on your downloaded board, so they work with no signal.
-- Linked Kilter and Tension logbooks sync around the clock, with Sync now for when you can't wait.
-- Export your climbing history, playlists and climbs from Settings, then save the file or share it.
-- New board look: Aura Outline, a solid outline on each lit hold with a tight glow.
-- Route pacing reads in seconds a frame, up to 60, the unit the setter used.
+- Linked board logbooks now sync on their own, around the clock.
+- Export your climbing history, playlists and climbs from Settings.
+- A new board look, Aura Outline: a solid outline on each lit hold.
+- Routes play at the pace they were set: pacing now reads in seconds a frame, up to 60.
 
 FIXED
 
+- Sends logged on a flaky connection wait for signal and sync instead of getting lost.
 - Woods: every climb shows up whatever angle it was set at, and the setter filter lists all of a board's setters.
 - MoonBoard: a problem graded at only one of the two angles now shows an estimate for the other.
-- Tap the lightbulb while a friend's phone holds the board and the climb lights over their link, instead of failing to connect.
 - Swiping in the play drawer stays on the list you picked from, even after logging a climb reorders that list.
-- Android: shared climb links open straight in the app, the Climbs tab no longer crashes when a board connects, and offline saving keeps working after a long spell in the background.
 
 Free, no ads, open source.

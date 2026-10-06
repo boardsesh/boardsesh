@@ -1,40 +1,34 @@
-Novedades de 2.6:
+MUROS DE SPRAY: TU PROPIO MURO EN BOARDSESH
 
-MUROS DE SPRAY
+Fotografía tu muro de casa o el muro de spray de tu rocódromo y la app encuentra las presas. Corrige lo que se le haya pasado, elige un aspecto, publica y empieza a montar. Los bloques funcionan como en cualquier otro plafón: ponlos en cola, guárdalos en playlists y registra tus encadenes en el mismo logbook que tus demás plafones. No hacen falta LED: las presas se resaltan sobre tu foto.
 
-Tu muro de casa, el woody de tu rocódromo, el plafón sin app: fotografíalo y ya es un plafón en Boardsesh. La app encuentra las presas en tu foto. Toca un aro para apagar una presa, toca la pared vacía para añadir una, o dibuja alrededor de una presa que el escaneo no vio. Elige el ángulo y un aspecto, publica y empieza a montar.
+Mantén un muro privado, hazlo público o compártelo por enlace o código QR y tu crew también podrá montar y registrar en él. ¿Has desmontado el muro? Haz una foto nueva y revisa lo que se ha quitado antes de que cambie nada. Los bloques que perdieron una presa siguen en tu lista con una insignia, y con un toque los remezclas sobre lo que queda en el muro.
 
-Los bloques de un muro de spray funcionan como los de cualquier otro plafón: ponlos en cola, registra encadenes e intentos, guárdalos en playlists. No hay LED, así que las presas se resaltan sobre tu foto.
+Gratis, como el resto de Boardsesh.
 
-Mantén un muro privado, compártelo por enlace o código QR, o hazlo público. ¿Has desmontado el muro? Haz una foto nueva, marca las esquinas y revisa lo que se ha quitado antes de que cambie nada. Los bloques que perdieron una presa se siguen encontrando. Quien montó el bloque y los editores del muro pueden editarlo cuando quieran, y se conservan todas las versiones anteriores.
+TU CREW, EN CADA BLOQUE
 
-LOS DEMÁS PLAFONES DE TU ROCÓDROMO, A UN TOQUE
-
-¿Un Kilter Board junto a un Tension Board, o dos muros del mismo plafón a ángulos distintos? El panel del muro ahora lista los demás plafones de tu rocódromo, así que saltas al que tienes delante con un toque. El Bluetooth se va contigo, una cola montada entre dos muros se reproduce en orden y cada plafón conserva su nombre y su ángulo.
+Inicio muestra quién está escalando ahora mismo para que entres en su sesión. Abre un bloque y primero ves a la gente que sigues: sus notas, el grado que le pondrían, y después los registros de todos los demás. Sigue a un setter y sus bloques nuevos llegan al feed de tu crew como una tarjeta que deslizas.
 
 UN TEMPORIZADOR DE DESCANSO QUE MUEVE LA COLA
 
-Haz bloques al minuto sin tocar el teléfono entre intentos. Activa el temporizador de descanso en la pestaña Sesión y empieza a contar en cuanto registras un bloque; si te quedas sentado de más, sigue contando en rojo. Deja que pase al siguiente bloque y te lo enciende en el muro.
+Haz bloques al minuto sin tocar el teléfono entre intentos. Activa el temporizador de descanso en la pestaña Sesión y empieza a contar en cuanto registras un bloque; si te quedas sentado de más, sigue contando en rojo. Deja que pase al siguiente bloque y te lo enciende en el muro. ¿Alguien quiere ir antes? Mantén pulsado su bloque y toca Poner a continuación para colocarlo justo detrás del que está en el muro.
 
 TAMBIÉN NUEVO
 
-- Poner a continuación: mantén pulsado un bloque para colocarlo justo detrás del que está en el muro.
-- Mira quién está escalando ahora mismo en Inicio y entra en su sesión.
-- Sigue a setters y desliza por sus bloques nuevos según llegan.
-- Abre un bloque para ver cómo les fue a las personas que sigues, y luego los registros de todos los demás.
-- El grado que le diste a un bloque es el que ves en él, con el número de la comunidad debajo cuando no coinciden.
+- Los demás plafones de tu rocódromo están en el panel del muro: un toque al muro que tienes delante, y el Bluetooth y la cola se van contigo.
+- Activa Usar mis grados y el grado que le diste a un bloque es el que ves, y por el que ordenas y filtras.
 - Los bloques similares y el nuevo mapa de calor de presas funcionan con tu plafón descargado, así que van sin cobertura.
-- Los logbooks vinculados de Kilter y Tension se sincronizan a todas horas, con Sincronizar ahora para cuando no puedas esperar.
-- Exporta tu historial de escalada, tus playlists y tus bloques desde Ajustes, y guarda el archivo o compártelo.
-- Nuevo aspecto del plafón: Aura contorno, un contorno sólido en cada presa encendida con un brillo ceñido.
-- El ritmo de las vías se lee en segundos por fotograma, hasta 60, la unidad que usó quien las montó.
+- Los logbooks vinculados de los plafones se sincronizan solos, a todas horas.
+- Exporta tu historial de escalada, tus playlists y tus bloques desde Ajustes.
+- Nuevo aspecto del plafón, Aura contorno: un contorno sólido en cada presa encendida.
+- Las vías suenan al ritmo con que se montaron: el ritmo se lee en segundos por fotograma, hasta 60.
 
 CORREGIDO
 
+- Los encadenes registrados con mala conexión esperan a tener cobertura y se sincronizan, en vez de perderse.
 - Woods: todos los bloques aparecen sea cual sea el ángulo al que se montaron, y el filtro de setters lista a todos los de un plafón.
 - MoonBoard: un problema graduado en solo uno de los dos ángulos ahora muestra una estimación para el otro.
-- Toca la bombilla mientras el teléfono de otra persona lleva el plafón y el bloque se enciende por su conexión, en vez de fallar al conectar.
 - Los deslizamientos en el panel de juego siguen en la lista de la que elegiste, aunque registrar un bloque reordene esa lista.
-- Android: los enlaces de bloques compartidos se abren directamente en la app, la pestaña Bloques ya no se cierra al conectar un plafón y el guardado sin conexión sigue funcionando tras un buen rato en segundo plano.
 
 Gratis, sin anuncios, código abierto.

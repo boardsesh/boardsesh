@@ -1,7 +1,7 @@
 Neu in 2.6:
-- Spraywände: Fotografier deine Wand, die App findet die Griffe, du korrigierst, was fehlt, dann schraubst du Boulder, legst sie in die Warteschlange und loggst sie.
-- Wechsle im Wand-Sheet zwischen den Boards deiner Halle. Bluetooth und Warteschlange ziehen mit.
+- Spraywände: Fotografier deine Wand, die App findet die Griffe, dann schraubst du Boulder, legst sie in die Warteschlange und loggst sie. Keine LEDs nötig.
+- Live-Sessions deiner Crew auf Start, ihre Begehungen bei jedem Boulder.
 - Ein Pausen-Timer ab deiner Begehung, der die Warteschlange weiterschaltet.
 - Als Nächstes dran: Boulder gedrückt halten.
-- Live-Sessions deiner Crew auf Start.
+- Die anderen Boards deiner Halle: ein Tipp im Wand-Sheet.
 - Geteilte Boulder-Links öffnen direkt in der App.

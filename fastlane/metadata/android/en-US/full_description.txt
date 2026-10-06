@@ -6,8 +6,8 @@ Search any climb and Boardsesh lights the holds on the wall over Bluetooth, on K
 ONE APP FOR EVERY BOARD YOU CLIMB
 Kilter, Tension and MoonBoard each ship their own app for their own board. Boardsesh works across all of them, plus Woods, Decoy, Touchstone, Grasshopper and So iLL, in one place. Your whole climbing history across every board lives here.
 
-YOUR OWN WALL, TOO
-Got a spray wall at home or at the gym? Photograph it and Boardsesh finds the holds. Fix what it missed, then set climbs, queue them and log your sends like on any other board. Keep the wall private, share it by link, or make it public.
+YOUR SPRAY WALL, TOO
+A home wall, or a spray wall at your gym? Photograph it and Boardsesh finds the holds. Fix what it missed, then set climbs, queue them and log sends in the same logbook as your other boards. No LEDs needed: the holds are highlighted on your photo. Share the wall by link and your crew can set on it too. Stripped the wall? Take a new photo and your old climbs stay in the list, marked with what came off.
 
 BOARD HISTORY, ALWAYS ON
 Share a board and you lose track of the last climb fast, and someone always wipes it by accident.

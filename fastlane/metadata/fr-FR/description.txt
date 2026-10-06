@@ -3,8 +3,8 @@ Cherche une voie, regarde ton mur s'allumer. Moins de temps sur ton téléphone,
 UNE SEULE APPLI POUR TOUTES LES BOARDS QUE TU GRIMPES
 Kilter, Tension et MoonBoard ont chacune leur appli pour leur propre board. Boardsesh marche avec toutes, plus Woods, Decoy, Touchstone, Grasshopper et So iLL, au même endroit. Tout ton historique d'escalade sur chaque board vit ici.
 
-TON PROPRE MUR AUSSI
-Un mur de spray chez toi ou en salle ? Prends-le en photo et Boardsesh trouve les prises. Corrige ce qu'il a raté, puis ouvre des blocs, mets-les dans la file et fais la croix comme sur n'importe quelle autre board. Garde le mur privé, partage-le par lien, ou rends-le public.
+TON MUR DE SPRAY AUSSI
+Un mur chez toi, ou un mur de spray dans ta salle ? Prends-le en photo et Boardsesh trouve les prises. Corrige ce qu'il a raté, puis ouvre des blocs, mets-les dans la file et enregistre tes croix dans le même carnet que tes autres boards. Pas de LED : les prises sont mises en évidence sur ta photo. Partage le mur par lien et ton crew peut y ouvrir des blocs aussi. Mur reconfiguré ? Prends une nouvelle photo : tes anciens blocs restent dans la liste, marqués de ce qui a disparu.
 
 L'HISTORIQUE DE BOARD, TOUJOURS ACTIF
 Partage une board et tu perds vite le fil de la dernière voie, et quelqu'un finit toujours par l'effacer par accident.
@@ -28,6 +28,6 @@ Enregistre ta séance dans Apple Health, et importe ton ancien carnet Kilter et 
 TROUVE PLUS À GRIMPER
 Suis ta crew et les ouvreurs, cherche des grimpeurs, et épingle des playlists depuis Discover.
 
-Boards prises en charge : Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Woods (12x12, 8x10), Decoy, Touchstone, Grasshopper et So iLL.
+Boards prises en charge : Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Woods (12x12, 8x10), Decoy, Touchstone, Grasshopper et So iLL. Plus les murs de spray : n'importe quel mur que tu peux photographier.
 
 Boardsesh est un projet communautaire qui fonctionne avec ces boards et n'est ni affilié à, ni soutenu par aucun fabricant de boards.

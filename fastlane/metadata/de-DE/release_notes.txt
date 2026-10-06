@@ -1,40 +1,34 @@
-Neu in 2.6:
+SPRAYWÄNDE: DEINE EIGENE WAND IN BOARDSESH
 
-SPRAYWÄNDE
+Fotografier deine Heimwand oder die Spraywand in deiner Halle, und die App findet die Griffe. Korrigier, was fehlt, wähl einen Look, veröffentliche, und leg mit dem Schrauben los. Boulder funktionieren wie an jedem anderen Board: in die Warteschlange legen, in Playlists speichern und Begehungen im selben Routenbuch eintragen wie an deinen anderen Boards. Keine LEDs nötig: Die Griffe werden auf deinem Foto hervorgehoben.
 
-Deine Heimwand, die Holzwand in deiner Halle, das Board ohne App: Fotografier sie, und sie ist ein Board in Boardsesh. Die App findet die Griffe in deinem Foto. Tipp auf einen Ring, um einen Griff auszuschalten, tipp auf freie Wand, um einen hinzuzufügen, oder zeichne einen Kreis um einen Griff, den der Scan verpasst hat. Wähl den Winkel und einen Look, veröffentliche, und leg mit dem Schrauben los.
+Halte eine Wand privat, mach sie öffentlich oder teile sie per Link oder QR-Code, dann kann deine Crew darauf auch schrauben und loggen. Wand abgeschraubt? Mach ein neues Foto und prüf, was weg ist, bevor sich etwas ändert. Boulder, die einen Griff verloren haben, bleiben mit einem Badge in deiner Liste, und mit einem Tipp remixt du sie auf das, was noch an der Wand ist.
 
-Boulder an einer Spraywand funktionieren wie an jedem anderen Board: in die Warteschlange legen, Begehungen und Versuche eintragen, in Playlists speichern. Es gibt keine LEDs, also werden die Griffe auf deinem Foto hervorgehoben.
+Kostenlos, wie der Rest von Boardsesh.
 
-Halte eine Wand privat, teile sie per Link oder QR-Code, oder mach sie öffentlich. Wand abgeschraubt? Mach ein neues Foto, markier die Ecken und prüf, was weg ist, bevor sich etwas ändert. Boulder, die einen Griff verloren haben, bleiben auffindbar. Die Routenbauer*innen und die Editor*innen der Wand können einen Boulder jederzeit bearbeiten, und jede frühere Version bleibt erhalten.
+DEINE CREW, BEI JEDEM BOULDER
 
-DIE ANDEREN BOARDS DEINER HALLE, EIN TIPP ENTFERNT
-
-Ein Kilter neben einem Tension, oder zwei Wände desselben Boards in verschiedenen Winkeln? Das Wand-Sheet listet jetzt die anderen Boards deiner Halle, also wechselst du mit einem Tipp zu dem, vor dem du stehst. Die Bluetooth-Verbindung zieht mit, eine Warteschlange über zwei Wände läuft der Reihe nach, und jedes Board behält seinen Namen und seinen Winkel.
+Start zeigt, wer gerade klettert, damit du in die Session springen kannst. Öffne einen Boulder, und die Leute, denen du folgst, kommen zuerst: ihre Notizen, der Grad, den sie ihm geben würden, dann die Begehungen aller anderen. Folge einer Routenbauer*in, und ihre neuen Boulder landen im Feed deiner Crew als eine Karte zum Durchwischen.
 
 EIN PAUSEN-TIMER, DER DIE WARTESCHLANGE WEITERSCHALTET
 
-Zieh Boulder im Minutentakt durch, ohne zwischen den Versuchen zum Handy zu greifen. Schalt den Pausen-Timer im Tab Session ein, und er läuft ab dem Moment, in dem du eine Begehung einträgst, und danach ins Rote, wenn du zu lange sitzen bleibst. Lass ihn zum nächsten Boulder wechseln, dann beleuchtet er ihn für dich an der Wand.
+Zieh Boulder im Minutentakt durch, ohne zwischen den Versuchen zum Handy zu greifen. Schalt den Pausen-Timer im Tab Session ein, und er läuft ab dem Moment, in dem du eine Begehung einträgst, und danach ins Rote, wenn du zu lange sitzen bleibst. Lass ihn zum nächsten Boulder wechseln, dann beleuchtet er ihn für dich an der Wand. Jemand will zuerst dran? Halte seinen Boulder gedrückt und tipp auf Als Nächstes dran, um ihn direkt hinter den Boulder an der Wand zu setzen.
 
 AUSSERDEM NEU
 
-- Als Nächstes dran: Halte einen Boulder gedrückt, um ihn direkt hinter den Boulder an der Wand zu setzen.
-- Sieh auf Start, wer gerade klettert, und spring in die Session.
-- Folge Routenbauer*innen und wisch durch ihre neuen Boulder, sobald sie landen.
-- Öffne einen Boulder und sieh, wie er für die Leute lief, denen du folgst, dann die Begehungen aller anderen.
-- Der Grad, den du einem Boulder gegeben hast, ist der, den du siehst, mit der Zahl der Crowd darunter, wenn beide abweichen.
+- Die anderen Boards deiner Halle stehen im Wand-Sheet: ein Tipp auf die Wand, vor der du stehst, und die Bluetooth-Verbindung und die Warteschlange ziehen mit.
+- Schalt Meine Grade verwenden ein, und der Grad, den du einem Boulder gegeben hast, ist der, den du siehst, sortierst und filterst.
 - Ähnliche Boulder und die neu gestaltete Griff-Heatmap laufen auf deinem heruntergeladenen Board, auch ohne Empfang.
-- Verknüpfte Kilter- und Tension-Routenbücher synchronisieren rund um die Uhr, mit „Jetzt synchronisieren“, wenn du nicht warten willst.
-- Kletterdaten exportieren: Verlauf, Playlists und Boulder aus den Einstellungen, dann Datei speichern oder teilen.
-- Neuer Board-Look: Aura Umriss, eine feste Kontur um jeden leuchtenden Griff mit engem Glühen.
-- Das Tempo einer Route steht in Sekunden pro Bild, bis 60, in der Einheit der Routenbauer*innen.
+- Verknüpfte Board-Routenbücher synchronisieren jetzt von selbst, rund um die Uhr.
+- Kletterdaten exportieren: Verlauf, Playlists und Boulder aus den Einstellungen.
+- Ein neuer Board-Look, Aura Umriss: eine feste Kontur um jeden leuchtenden Griff.
+- Routen laufen im Tempo, in dem sie gesetzt wurden: Das Tempo steht in Sekunden pro Bild, bis 60.
 
 BEHOBEN
 
+- Begehungen, die bei schlechter Verbindung eingetragen werden, warten auf Empfang und synchronisieren, statt verloren zu gehen.
 - Woods: Jeder Boulder taucht auf, egal in welchem Winkel er gesetzt wurde, und der Filter zeigt alle Routenbauer*innen eines Boards.
 - MoonBoard: Ein Boulder mit Grad in nur einem der beiden Winkel zeigt jetzt eine Schätzung für den anderen.
-- Tipp auf die Glühbirne, während das Handy einer anderen Person das Board hält: Der Boulder leuchtet über deren Verbindung auf, statt am Verbinden zu scheitern.
 - Wischen im Play-Drawer bleibt auf der Liste, aus der du ausgewählt hast, auch wenn eine eingetragene Begehung diese Liste neu sortiert.
-- Android: Geteilte Boulder-Links öffnen direkt in der App, der Boulder-Tab stürzt nicht mehr ab, wenn sich ein Board verbindet, und das Speichern offline läuft auch nach längerer Zeit im Hintergrund weiter.
 
 Kostenlos, werbefrei, Open Source.
