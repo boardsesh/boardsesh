@@ -741,6 +741,49 @@ describe('reads through the executable schema', () => {
     return result.data as Record<string, unknown>;
   }
 
+  it('treats a MOVED hold as lost: the old position is the ghost, the successor links back', async () => {
+    const { wall, holdIds } = await createPublishedWall(OWNER, { isPublic: true });
+    const climbUuid = await saveClimbOn(wall, 'Moved under it', [holdIds[0]]);
+    const editId = await openHoldEditDraft(wall);
+
+    // A correction to an inherited hold is the supersede path: the old row is
+    // stamped removed at this draft and a successor gets a new id.
+    const [successor] = (await sprayWallMutations.upsertSprayWallHolds(
+      {},
+      {
+        input: {
+          wallUuid: wall.uuid,
+          versionId: editId,
+          holds: [{ id: holdIds[0], cx: BASE_HOLDS[0].cx + 30, cy: BASE_HOLDS[0].cy, r: BASE_HOLDS[0].r }],
+        },
+      },
+      ctxFor(OWNER),
+    )) as Array<{ id: number; cx: number; movedFromHoldId: number | null }>;
+    expect(successor.id).not.toBe(holdIds[0]);
+    await publishVersion(editId);
+
+    expect(await missingFor(climbUuid)).toBe(1);
+    const read = (await run(
+      `query ($layoutId: Int!, $sizeId: Int!, $climbUuid: ID!) {
+        climb(boardName: "spray", layoutId: $layoutId, sizeId: $sizeId, setIds: "1", angle: 40, climbUuid: $climbUuid) {
+          lostHolds { id cx }
+        }
+      }`,
+      { layoutId: wall.layoutId, sizeId: wall.sizeId, climbUuid },
+    )) as { climb: { lostHolds: Array<{ id: number; cx: number }> } };
+    expect(read.climb.lostHolds).toEqual([{ id: holdIds[0], cx: BASE_HOLDS[0].cx }]);
+
+    // The alive successor carries the move back to the hold it replaced.
+    const alive = (await db.execute(sql`
+      SELECT hold_id, cx, moved_from_hold_id FROM spray_wall_holds
+      WHERE wall_id = ${await wallIdOf(wall)} AND removed_version_id IS NULL AND moved_from_hold_id IS NOT NULL
+    `)) as unknown as Array<{ hold_id: number; cx: number; moved_from_hold_id: number }>;
+    expect([...alive].map((row) => [Number(row.hold_id), Number(row.cx), Number(row.moved_from_hold_id)])).toEqual([
+      [successor.id, BASE_HOLDS[0].cx + 30, holdIds[0]],
+    ]);
+    expect(successor.movedFromHoldId).toBe(holdIds[0]);
+  });
+
   it('draws the hold a published hold edit took off, for the remix ghost', async () => {
     const { wall, holdIds } = await createPublishedWall(OWNER, { isPublic: true });
     const climbUuid = await saveClimbOn(wall, 'Lost one', [holdIds[0], holdIds[1]]);

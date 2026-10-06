@@ -286,7 +286,8 @@ composite-keyed sync table must keep this true (or version the encoding).
   `compatible_size_ids` (JSON text), `characteristics` (JSON text, schema v2), `hold_fingerprint`,
   `missing_hold_count` (schema v7), `revision_number` and `holds_revision_number` (schema v11), `updated_at`,
   `sync_seq`.
-- `missing_hold_count` is a nullable INTEGER — how many of a climb's holds have since come off the wall — and is
+- `missing_hold_count` is a nullable INTEGER — how many of a climb's holds have since come off the wall, written when
+  a hold-edit publish removes a hold the climb uses — and is
   spray-only in practice: it is NULL for every climb on the catalogue boards, because holds do not come off a
   Kilter. It is what lets `search-climbs-local.ts` answer the Intact / Lost-holds filter (SW-12) offline instead
   of declining it.

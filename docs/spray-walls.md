@@ -1234,6 +1234,11 @@ Removing a hold that climbs use is the owner's call, confirmed in the app first:
 3. On yes, the publish stamps the removal, and the recompute in
    `publishDraftUnderLock` raises those climbs' `missing_hold_count`.
 
+The usage check is advisory: a climb published between the check and the publish
+is marked lost without a warning. The authoritative after-the-fact count is
+`climbsChanged` from the publish: in `commitSprayWallVersion`'s result, and in the
+server's publish log line (`publishSprayWallVersion` returns only the version).
+
 What a climb that lost a hold gets:
 
 - **It stays listed**, in the wall's climb list and search, with a badge from
@@ -1538,7 +1543,7 @@ against this backend. Each answers like this:
 | `Query.climbRevisions` (`[ClimbRevision!]!`) | `[]` |
 | `climbCurrentRevision` on `AscentFeedItem`, `FollowingAscentFeedItem`, `ClimbLogItem` (`Int`) | `null`, which hides the "Earlier version" tag |
 | `Query.remixClimb` (`SprayRemixSeed`) | `null` |
-| `Climb.lostHolds` (`[SprayWallHold!]`) | Live, not retired: the removed holds' last geometry on a spray climb that lost holds, `[]` on an intact one, `null` on every other board |
+| `Climb.lostHolds` (`[SprayWallHold!]`) | Live, not retired: the removed holds' last geometry on a spray climb that lost holds, `[]` on an intact one, `null` on every other board and when `missingHoldCount` is unknown (a fetch path that does not project the column) |
 | `SprayWall.climbEditPolicy` (`SprayClimbEditPolicy!`) | `SETTER` |
 | `SprayWall.viewerCanEditClimbs` (`Boolean!`) | `false` |
 | `CreateSprayWallInput.climbEditPolicy`, `UpdateSprayWallInput.climbEditPolicy` | Accepted and not written. No owner-only refusal. |
