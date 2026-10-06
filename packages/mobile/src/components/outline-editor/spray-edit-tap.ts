@@ -30,12 +30,15 @@
  * `edit` is the resting state: taps pick and switch rings, long presses pick
  * them up. `trace` and `join` are one-shot tools a selected hold starts, each
  * with its own banner and a Cancel — never modes a climber has to remember to
- * leave. `add` is the exception, and is a mode on purpose: the scan misses holds
+ * leave. `refine` is the selected hold's touch-up brush: it takes as many
+ * strokes as the climber wants and ends with Done (one edit) or Cancel (none),
+ * and while it is open every one-finger touch paints. `add` is the other
+ * exception, and is a mode on purpose: the scan misses holds
  * in handfuls, so it stays on until Done, and while it is on a touch never
  * selects or picks up a ring — which is what makes a missed hold squeezed
  * between two rings reachable at all.
  */
-export type SprayEditorTool = 'edit' | 'trace' | 'join' | 'add';
+export type SprayEditorTool = 'edit' | 'trace' | 'join' | 'add' | 'refine';
 
 export type SprayEditTapResult =
   /** Pick the ring under the finger. No change to the wall. */
@@ -76,7 +79,7 @@ export function resolveEditTap({
     // selected hold itself leaves it waiting.
     return hitId != null && selectedId != null && hitId !== selectedId ? 'merge' : 'none';
   }
-  // Trace and Add own their touches through their own overlays; a tap that
+  // Trace, Refine and Add own their touches through their own overlays; a tap that
   // still arrives here (one in flight as the tool changed) does nothing.
   if (tool !== 'edit') return 'none';
   if (input === 'pencil') return hitId == null ? 'addHold' : 'toggle';

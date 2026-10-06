@@ -11,12 +11,14 @@ import { Image } from 'expo-image';
 import Animated, {
   ReduceMotion,
   runOnJS,
+  runOnUI,
   useAnimatedReaction,
   useAnimatedStyle,
   useDerivedValue,
   useReducedMotion,
   useSharedValue,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { MAX_HOLDS_PER_WALL } from '@boardsesh/board-config';
@@ -52,8 +54,16 @@ import { useSprayLoupeFeed } from './spray-loupe-feed';
 import { SprayEditGestureOverlay, type SprayWallAccessibility } from './SprayEditGestureOverlay';
 import { SprayEditorBottomBar, sprayCountSummary } from './SprayEditorBottomBar';
 import { SprayEditorMenu } from './SprayCountCapsule';
-import { SprayCornersChipBar, SprayHoldChipBar } from './SprayHoldChipBar';
+import { SprayCornersChipBar, SprayHoldChipBar, SprayRefineBar } from './SprayHoldChipBar';
 import { SprayHoldInspector } from './SprayHoldInspector';
+import { SprayRefineLayer } from './SprayRefineLayer';
+import { planRefineExit, useSprayRefineSession, type RefineRejection } from './use-spray-refine-session';
+import {
+  DEFAULT_REFINE_BRUSH_SIZE,
+  refineBrushRadiusBoardPx,
+  type RefineBrushSize,
+  type RefineMode,
+} from './spray-refine';
 import { SprayHoverPreview } from './SprayHoverPreview';
 import { SprayPencilSurface } from './SprayPencilSurface';
 import { SprayTabletChrome } from './SprayTabletChrome';
@@ -163,6 +173,22 @@ const NO_EDITOR_HOLDS: SprayEditorHold[] = [];
 const NO_READING_ORDER: number[] = [];
 /** A read-only viewer: the scope is still the root, with nothing to answer. */
 const NO_SHORTCUT_COMMANDS: NativeShortcutCommand[] = [];
+
+/** A cancelled Refine stroke needs nothing: the overlay clears its own points. */
+const IGNORE_STROKE_CANCEL = () => {};
+
+/**
+ * Clear Refine's stroke preview, but only if it is still the stroke JS just
+ * handled. Run on the UI thread, where the draw overlay writes the same value,
+ * so the check and the clear cannot be split by the next stroke's touch-down:
+ * a quick second dab that has already started keeps its points (a different
+ * first sample), and its own end reads them intact.
+ */
+function clearStrokeIfStill(pointsSV: SharedValue<number[]>, firstX: number, firstY: number) {
+  'worklet';
+  const points = pointsSV.value;
+  if (points.length >= 2 && points[0] === firstX && points[1] === firstY) pointsSV.value = [];
+}
 
 /** The screen-reader actions the wall always has. See `SprayWallAccessibility`. */
 const WALL_A11Y_ACTIONS: readonly AccessibilityActionInfo[] = [
@@ -404,7 +430,24 @@ export function SprayHoldEditorScreen({
    */
   const [lastAddedId, setLastAddedId] = useState<number | null>(null);
 
+  /** Refine's brush: Add or Erase, and its size. Kept from one hold to the next for the visit. */
+  const [refineMode, setRefineMode] = useState<RefineMode>('add');
+  const [refineBrushSize, setRefineBrushSize] = useState<RefineBrushSize>(DEFAULT_REFINE_BRUSH_SIZE);
+  /** A line about the last kept stroke that is not an error: the stray pieces it dropped. */
+  const [refineNotice, setRefineNotice] = useState<string | null>(null);
+  const refine = useSprayRefineSession();
+  const refineView = refine.view;
+  // Read by the stroke handlers, so they keep one identity across strokes.
+  const refineRef = useRef(refine);
+  refineRef.current = refine;
+  const refineModeRef = useRef(refineMode);
+  refineModeRef.current = refineMode;
+  const refineBrushSizeRef = useRef(refineBrushSize);
+  refineBrushSizeRef.current = refineBrushSize;
+
   const draftPointsSV = useSharedValue<number[]>(NO_POINTS);
+  /** Refine's live brush stroke, in board px. Its own value, so it is drawn as a brush and not as Trace's line. */
+  const refinePointsSV = useSharedValue<number[]>(NO_POINTS);
   const cornersSV = useSharedValue<number[]>(NO_POINTS);
   // Add mode's Draw takes a finger, whatever the target's default — unless
   // "Pencil only" is on, when fingers pan and only the Pencil draws.
@@ -588,6 +631,7 @@ export function SprayHoldEditorScreen({
     if (previous.width === boardRender.width && previous.height === boardRender.height) return;
     boardControlRef.current?.resetZoom();
     draftPointsSV.value = NO_POINTS;
+    refinePointsSV.value = NO_POINTS;
     dragOffsetXSV.value = 0;
     dragOffsetYSV.value = 0;
     dragHoldIdSV.value = 0;
@@ -605,6 +649,7 @@ export function SprayHoldEditorScreen({
     boardRender.width,
     boardRender.height,
     draftPointsSV,
+    refinePointsSV,
     dragOffsetXSV,
     dragOffsetYSV,
     dragHoldIdSV,
@@ -640,7 +685,9 @@ export function SprayHoldEditorScreen({
   const countsRef = useRef(counts);
   countsRef.current = counts;
 
-  const dirty = editorIsDirty(state, counts);
+  // An open Refine with strokes in it is unsaved work too: they reach the
+  // reducer only on Done.
+  const dirty = editorIsDirty(state, counts) || (refineView?.changed ?? false);
   const wallLabel = t('sprayEditor.a11y.wall', { summary: sprayCountSummary(t, counts, showMaybes) });
   const onDirtyChangeRef = useRef(onDirtyChange);
   onDirtyChangeRef.current = onDirtyChange;
@@ -681,7 +728,13 @@ export function SprayHoldEditorScreen({
    * The ring drawn full strength over its ghost, and the one the resize handle
    * sits on: the selection, or in add mode the hold just added.
    */
-  const focusedHold = tool === 'add' ? lastAddedHold : selectedHold;
+  const focusedHold = tool === 'add' ? lastAddedHold : tool === 'refine' ? null : selectedHold;
+  /**
+   * Drawn as a faint ghost in the ring layer: the focused hold (its overlay
+   * draws the real ring), or while refining the hold's ORIGINAL outline, under
+   * the area being brushed.
+   */
+  const ghostedHoldId = refineView ? refineView.holdId : (focusedHold?.id ?? null);
   const focusedReachRatio = focusedHold && focusedHold.r > 0 ? holdReach(focusedHold) / focusedHold.r : 1;
 
   // The screen reader's walk: every tappable ring in reading order. Only built
@@ -793,8 +846,16 @@ export function SprayHoldEditorScreen({
   // A one-shot tool needs its hold. An undo that took the selection away ends it.
   // Add mode has no hold of its own, so it is left alone.
   useEffect(() => {
-    if ((tool === 'trace' || tool === 'join') && selectedHold == null) setTool('edit');
+    if ((tool === 'trace' || tool === 'join' || tool === 'refine') && selectedHold == null) setTool('edit');
   }, [tool, selectedHold]);
+
+  // Refine ends with its tool, whichever way the tool ended — Start over, or an
+  // undo toast that took the hold away. Done and Cancel have ended it already.
+  useEffect(() => {
+    if (tool === 'refine' || !refineRef.current.view) return;
+    refineRef.current.cancel();
+    refinePointsSV.value = NO_POINTS;
+  }, [tool, refinePointsSV]);
 
   /** The cap said out loud, with its number, from the constant the server refuses on. */
   const refuseOverCap = useCallback(() => {
@@ -1101,12 +1162,152 @@ export function SprayHoldEditorScreen({
     setTool('join');
   }, []);
 
+  /** Refine on the picked hold: its outline (or its circle) becomes an area to brush. ON holds only, like Trace. */
+  const handleStartRefine = useCallback(() => {
+    const current = stateRef.current;
+    const hold = current.selectedId != null ? current.holds[current.selectedId] : null;
+    if (!canEditRef.current || !hold || holdRole(hold) !== 'on') return;
+    setErrorText(null);
+    setRefineNotice(null);
+    // Its Undo would take back a wall edit from under the open session.
+    setUndoToast(null);
+    refinePointsSV.value = NO_POINTS;
+    refineRef.current.start(hold);
+    hapticSelection();
+    setTool('refine');
+  }, [refinePointsSV]);
+
+  /**
+   * Leave Refine. Kept, the area goes on the hold as ONE `SET_OUTLINE` — one
+   * step for the editor's Undo, however many strokes made it. Not kept, every
+   * stroke is dropped and the hold is as it was.
+   */
+  const leaveRefine = useCallback(
+    (keep: boolean) => {
+      const session = refineRef.current;
+      const holdId = session.view?.holdId ?? null;
+      const hold = holdId != null ? stateRef.current.holds[holdId] : undefined;
+      // Everything that can stop a commit is checked BEFORE the session ends,
+      // so a refusal leaves the climber in Refine with every stroke intact.
+      const plan = planRefineExit({
+        keep,
+        result: keep ? session.result() : null,
+        holdExists: hold != null,
+        canEdit: canEditRef.current,
+        overCap: hold != null && holdRole(hold) !== 'on' && countsRef.current.on >= MAX_HOLDS_PER_WALL,
+      });
+      if (plan.kind === 'stay') {
+        if (plan.reason === 'cap') refuseOverCap();
+        else if (plan.reason === 'refused') {
+          hapticWarning();
+          setErrorText(refineRejectionMessage(plan.rejection, t));
+        }
+        return false;
+      }
+      if (plan.kind === 'commit' && holdId != null) {
+        hapticMedium();
+        dispatch({ type: 'SET_OUTLINE', id: holdId, geometry: plan.hold });
+        recordHint('edit');
+      }
+      session.cancel();
+      refinePointsSV.value = NO_POINTS;
+      setRefineNotice(null);
+      setErrorText(null);
+      setTool('edit');
+      return true;
+    },
+    [refinePointsSV, refuseOverCap, recordHint, t],
+  );
+  const handleRefineDone = useCallback(() => leaveRefine(true), [leaveRefine]);
+
+  const handleRefineModeChange = useCallback((mode: RefineMode) => {
+    setErrorText(null);
+    setRefineNotice(null);
+    setRefineMode(mode);
+  }, []);
+
+  const handleRefineBrushSize = useCallback((size: RefineBrushSize) => {
+    hapticSelection();
+    setRefineBrushSize(size);
+  }, []);
+
+  const handleRefineStrokeStart = useCallback(() => {
+    setErrorText(null);
+    setRefineNotice(null);
+  }, []);
+
+  /** A kept stroke's first sample; the layout effect below clears its preview in the commit that draws the new area. */
+  const pendingRefineClearRef = useRef<readonly [number, number] | null>(null);
+  useLayoutEffect(() => {
+    const pending = pendingRefineClearRef.current;
+    if (!pending) return;
+    pendingRefineClearRef.current = null;
+    runOnUI(clearStrokeIfStill)(refinePointsSV, pending[0], pending[1]);
+  }, [refineView, refinePointsSV]);
+
+  /**
+   * One Refine stroke lifted: paint it into the area with the brush size in
+   * screen points at the stroke's zoom. A kept stroke ticks; one that would
+   * leave nothing storable is refused with the reason and the area is untouched.
+   */
+  const handleRefineStrokeEnd = useCallback(
+    (strokeBoardPoints: number[]) => {
+      if (strokeBoardPoints.length < 2) return;
+      const firstX = strokeBoardPoints[0];
+      const firstY = strokeBoardPoints[1];
+      const session = refineRef.current;
+      const view = session.view;
+      if (!canEditRef.current || !view) {
+        runOnUI(clearStrokeIfStill)(refinePointsSV, firstX, firstY);
+        return;
+      }
+      const radius = refineBrushRadiusBoardPx(refineBrushSizeRef.current, view.holdRadiusBoardPx, view.frame);
+      const outcome = session.applyStroke(strokeBoardPoints, radius, refineModeRef.current);
+      // Add reached the furthest a hold can grow and the rest was clipped: say
+      // so, or the brush just looks like it stopped working.
+      const limitLine = outcome.reachedLimit ? t('sprayEditor.refine.atLimit') : null;
+      if (outcome.ok) {
+        // The preview stays until the commit that draws the new area, so the
+        // stroke does not blink out while JS works (at most a frame between the
+        // clear and the new path mounting on Fabric).
+        pendingRefineClearRef.current = [firstX, firstY];
+        if (limitLine) {
+          hapticWarning();
+          setRefineNotice(limitLine);
+          return;
+        }
+        hapticSelection();
+        if (outcome.droppedPieces > 0) {
+          setRefineNotice(t('sprayEditor.refine.dropped', { count: outcome.droppedPieces }));
+        }
+        return;
+      }
+      runOnUI(clearStrokeIfStill)(refinePointsSV, firstX, firstY);
+      // A stroke that painted nothing (erasing bare wall, adding inside) is not
+      // an error — unless it painted nothing because it was all past the limit.
+      if (outcome.reason === 'no-change') {
+        if (limitLine) {
+          hapticWarning();
+          setRefineNotice(limitLine);
+        }
+        return;
+      }
+      hapticWarning();
+      setErrorText(refineRejectionMessage(outcome.reason, t));
+    },
+    [refinePointsSV, t],
+  );
+
   const handleCancelTool = useCallback(() => {
+    if (toolRef.current === 'refine') {
+      leaveRefine(false);
+      return;
+    }
     draftPointsSV.value = NO_POINTS;
     setErrorText(null);
     setJoinCursorId(null);
     setTool('edit');
-  }, [draftPointsSV]);
+  }, [draftPointsSV, leaveRefine]);
 
   const clearCorners = useCallback(() => {
     cornersSV.value = NO_POINTS;
@@ -1176,6 +1377,9 @@ export function SprayHoldEditorScreen({
       leaveAddMode();
       return;
     }
+    // Refine's strokes are kept, not thrown away by a tap on +. One that could
+    // not be kept says why and stays out of add mode.
+    if (toolRef.current === 'refine' && !leaveRefine(true)) return;
     setErrorText(null);
     setJoinCursorId(null);
     draftPointsSV.value = NO_POINTS;
@@ -1185,7 +1389,7 @@ export function SprayHoldEditorScreen({
     setLastAddedId(null);
     hapticSelection();
     setTool('add');
-  }, [leaveAddMode, clearCorners, draftPointsSV]);
+  }, [leaveAddMode, leaveRefine, clearCorners, draftPointsSV]);
 
   const handleAddShapeChange = useCallback(
     (shape: SprayAddShape) => {
@@ -1298,6 +1502,15 @@ export function SprayHoldEditorScreen({
 
   /** The bar's Undo: a Corners outline in progress gives back its last corner before any hold. */
   const handleUndo = useCallback(() => {
+    // While refining, Undo takes back one stroke; the hold itself is untouched until Done.
+    if (toolRef.current === 'refine') {
+      if (refineRef.current.undo()) {
+        setErrorText(null);
+        setRefineNotice(null);
+        hapticSelection();
+      }
+      return;
+    }
     const corners = cornersSV.value;
     if (toolRef.current === 'add' && corners.length >= 2) {
       setErrorText(null);
@@ -1309,6 +1522,7 @@ export function SprayHoldEditorScreen({
   }, [cornersSV, undoWallEdit]);
 
   const handleRedo = useCallback(() => {
+    if (toolRef.current === 'refine') return;
     const current = stateRef.current;
     const next = current.future[current.future.length - 1];
     if (!next) return;
@@ -1409,11 +1623,12 @@ export function SprayHoldEditorScreen({
     undoWallEdit();
   }, [undoWallEdit]);
 
-  /** The rail's Mark: back to the resting tool from Add, Trace or Join. */
+  /** The rail's Mark: back to the resting tool from Add, Trace, Join or Refine. Add and Refine keep their work, as their Done does. */
   const handleMarkTool = useCallback(() => {
     if (toolRef.current === 'add') leaveAddMode();
+    else if (toolRef.current === 'refine') leaveRefine(true);
     else handleCancelTool();
-  }, [leaveAddMode, handleCancelTool]);
+  }, [leaveAddMode, leaveRefine, handleCancelTool]);
 
   const handleFitWall = useCallback(() => boardControlRef.current?.resetZoom(), []);
   const handlePutDown = useCallback(() => dispatch({ type: 'SELECT', id: null }), []);
@@ -1484,7 +1699,7 @@ export function SprayHoldEditorScreen({
   );
 
   const handlePrimary = useCallback(() => {
-    if (!viewerCanEdit || homography == null || committingRef.current) return;
+    if (!viewerCanEdit || homography == null || committingRef.current || toolRef.current === 'refine') return;
     const { state: prepared, plan } = prepareCommit(stateRef.current, homography);
     const holdCount = countEditorHolds(prepared.holds, 0).on;
     if (holdCount === 0) return;
@@ -1562,8 +1777,16 @@ export function SprayHoldEditorScreen({
     t,
   ]);
 
-  /** One rule for the bar, the rail, the Pencil palette and ⌘Z. */
-  const canUndo = state.past.length > 0 || (tool === 'add' && cornerCount > 0);
+  /**
+   * One rule for the bar, the rail, the Pencil palette and ⌘Z. While refining,
+   * Undo and Redo are about strokes: Undo takes back the last one, and there is
+   * nothing to redo.
+   */
+  const canUndo =
+    tool === 'refine'
+      ? (refineView?.strokeCount ?? 0) > 0
+      : state.past.length > 0 || (tool === 'add' && cornerCount > 0);
+  const canRedo = tool !== 'refine' && state.future.length > 0;
 
   // ---- Keyboard shortcuts and the Apple Pencil's own gestures ----
   // `modules/spray-editor-input` reports a shortcut id or a Pencil double tap /
@@ -1596,10 +1819,10 @@ export function SprayHoldEditorScreen({
       tool,
       selectedRole: selectedHold ? holdRole(selectedHold) : null,
       canUndo,
-      canRedo: state.future.length > 0,
+      canRedo,
       canStep: readingOrder.length > 1,
       // The primary button's own enabled rule.
-      primaryReady: cornerCount === 0 && counts.on > 0,
+      primaryReady: cornerCount === 0 && tool !== 'refine' && counts.on > 0,
       popoverOpen: pencilPalette != null || menuOpen,
     });
     switch (action) {
@@ -1662,6 +1885,10 @@ export function SprayHoldEditorScreen({
       case 'mark':
         setPencilPalette(null);
         handleMarkTool();
+        return;
+      case 'refineSwitchMode':
+        hapticSelection();
+        handleRefineModeChange(refineModeRef.current === 'add' ? 'erase' : 'add');
         return;
       case 'palette':
         // A second squeeze puts it away again.
@@ -1912,11 +2139,17 @@ export function SprayHoldEditorScreen({
             pointerEvents="none"
             style={[styles.revealClip, { width: boardRender.width }, revealClipStyle]}
           >
-            <View style={{ width: boardRender.width, height: boardRender.height }}>
+            {/* While refining, the rest of the wall steps back so the area reads. */}
+            <View
+              style={[
+                { width: boardRender.width, height: boardRender.height },
+                refineView ? styles.refineDimmed : null,
+              ]}
+            >
               <SprayHoldSvgLayer
                 holds={allEditorHolds}
                 showMaybes={showMaybes}
-                selectedId={focusedHold?.id ?? null}
+                selectedId={ghostedHoldId}
                 maybeOpacitySV={maybeRevealSV}
                 draftPointsSV={draftPointsSV}
                 polygonSV={cornersSV}
@@ -1968,10 +2201,32 @@ export function SprayHoldEditorScreen({
           {hoverShown ? (
             <SprayHoverPreview hoverSV={hoverSV} scaleSV={context.scaleSV} boardScale={boardScale} />
           ) : null}
+          {refineView ? (
+            <SprayRefineLayer
+              outlineBoardPx={refineView.outlineBoardPx}
+              pointsSV={refinePointsSV}
+              mode={refineMode}
+              brushRadiusBoardPx={refineBrushRadiusBoardPx(
+                refineBrushSize,
+                refineView.holdRadiusBoardPx,
+                refineView.frame,
+              )}
+              scaleSV={context.scaleSV}
+              boardWidth={wall.photoWidth}
+              boardHeight={wall.photoHeight}
+              renderWidth={boardRender.width}
+              renderHeight={boardRender.height}
+            />
+          ) : null}
         </>
       ) : null,
     [
       wall,
+      refineView,
+      refinePointsSV,
+      refineMode,
+      refineBrushSize,
+      ghostedHoldId,
       hoverShown,
       hoverSV,
       selectedHold,
@@ -2035,20 +2290,22 @@ export function SprayHoldEditorScreen({
               { backgroundColor: selectedHold ? overlays.photoDimFocused : overlays.photoDim },
             ]}
           />
-          <SprayHoldSvgLayer
-            holds={allEditorHolds}
-            showMaybes={showMaybes}
-            selectedId={focusedHold?.id ?? null}
-            maybeOpacitySV={maybeRevealSV}
-            draftPointsSV={draftPointsSV}
-            polygonSV={cornersSV}
-            scaleSV={loupeMagnificationSV}
-            geometryScaleSV={loupeFeed.zoomSV}
-            boardWidth={wall.photoWidth}
-            boardHeight={wall.photoHeight}
-            renderWidth={boardRender.width}
-            renderHeight={boardRender.height}
-          />
+          <View style={[StyleSheet.absoluteFill, refineView ? styles.refineDimmed : null]}>
+            <SprayHoldSvgLayer
+              holds={allEditorHolds}
+              showMaybes={showMaybes}
+              selectedId={ghostedHoldId}
+              maybeOpacitySV={maybeRevealSV}
+              draftPointsSV={draftPointsSV}
+              polygonSV={cornersSV}
+              scaleSV={loupeMagnificationSV}
+              geometryScaleSV={loupeFeed.zoomSV}
+              boardWidth={wall.photoWidth}
+              boardHeight={wall.photoHeight}
+              renderWidth={boardRender.width}
+              renderHeight={boardRender.height}
+            />
+          </View>
           <SelectedHoldOverlay
             hold={focusedHold}
             role={focusedHold ? holdRole(focusedHold) : 'on'}
@@ -2069,11 +2326,34 @@ export function SprayHoldEditorScreen({
             scaleSV={loupeMagnificationSV}
             boardScale={boardScale}
           />
+          {refineView ? (
+            <SprayRefineLayer
+              outlineBoardPx={refineView.outlineBoardPx}
+              pointsSV={refinePointsSV}
+              mode={refineMode}
+              brushRadiusBoardPx={refineBrushRadiusBoardPx(
+                refineBrushSize,
+                refineView.holdRadiusBoardPx,
+                refineView.frame,
+              )}
+              scaleSV={loupeMagnificationSV}
+              boardWidth={wall.photoWidth}
+              boardHeight={wall.photoHeight}
+              renderWidth={boardRender.width}
+              renderHeight={boardRender.height}
+            />
+          ) : null}
         </>
       ) : null,
     [
       wall,
       viewerCanEdit,
+      refineView,
+      refinePointsSV,
+      refineMode,
+      refineBrushSize,
+      ghostedHoldId,
+      loupeFeed.zoomSV,
       selectedHold,
       focusedHold,
       allEditorHolds,
@@ -2177,6 +2457,31 @@ export function SprayHoldEditorScreen({
             />
             {resizeHandle}
           </>
+        );
+      }
+      if (tool === 'refine') {
+        const { scaleSV } = context;
+        // A dab paints too, so the overlay takes stationary taps. Fingers follow
+        // "Pencil only" as Trace's do: with it on they pan and only the Pencil paints.
+        return (
+          <DrawStrokeOverlay
+            key={gestureEpoch}
+            pointsSV={refinePointsSV}
+            acceptStationaryTaps
+            fingerDrawSV={fingerDrawSV}
+            scaleSV={scaleSV}
+            translateXSV={context.translateXSV}
+            translateYSV={context.translateYSV}
+            containerWidthSV={context.containerWidthSV}
+            containerHeightSV={context.containerHeightSV}
+            boardScale={boardScale}
+            pinchRef={context.pinchRef}
+            onStrokeStart={handleRefineStrokeStart}
+            onStrokeEnd={handleRefineStrokeEnd}
+            onStrokeCancel={IGNORE_STROKE_CANCEL}
+            loupe={loupeFeed}
+            onStylusSeen={tablet ? handlePencilSeen : undefined}
+          />
         );
       }
       if (tool === 'trace') {
@@ -2298,6 +2603,9 @@ export function SprayHoldEditorScreen({
       handleStrokeEnd,
       handleStrokeCancel,
       handleAddStrokeEnd,
+      refinePointsSV,
+      handleRefineStrokeStart,
+      handleRefineStrokeEnd,
       handleCornerAdded,
       handleCornerLimit,
       closeCorners,
@@ -2326,6 +2634,8 @@ export function SprayHoldEditorScreen({
   const banner = bannerFor({
     tool,
     addShape,
+    refineMode,
+    refineNotice,
     pencilOnly: pencil.pencilOnly,
     errorText,
     viewerCanEdit,
@@ -2334,6 +2644,13 @@ export function SprayHoldEditorScreen({
     onDone: leaveAddMode,
     t,
   });
+  const refineModeOptions = useMemo(
+    () => [
+      { key: 'add' as const, label: t('sprayEditor.refine.add') },
+      { key: 'erase' as const, label: t('sprayEditor.refine.erase') },
+    ],
+    [t],
+  );
   const bannerAccessory =
     tool === 'add' ? (
       <SegmentedControl
@@ -2341,6 +2658,13 @@ export function SprayHoldEditorScreen({
         selectedKey={addShape}
         onSelect={handleAddShapeChange}
         accessibilityLabel={t('sprayEditor.addShape.label')}
+      />
+    ) : tool === 'refine' ? (
+      <SegmentedControl
+        options={refineModeOptions}
+        selectedKey={refineMode}
+        onSelect={handleRefineModeChange}
+        accessibilityLabel={t('sprayEditor.refine.mode')}
       />
     ) : null;
   const boardShowing = !isLoading && wall != null && !isUnavailable && homography != null;
@@ -2355,6 +2679,10 @@ export function SprayHoldEditorScreen({
     if (hintLine) AccessibilityInfo.announceForAccessibility(hintLine);
   }, [hintLine]);
 
+  const refineBarNode =
+    tool === 'refine' && canEdit ? (
+      <SprayRefineBar brushSize={refineBrushSize} onBrushSize={handleRefineBrushSize} onDone={handleRefineDone} />
+    ) : null;
   const undoToastNode =
     undoToast && canEdit ? (
       <SprayUndoToast
@@ -2469,7 +2797,7 @@ export function SprayHoldEditorScreen({
               rightInset={insets.right}
               locked={!canEdit}
               canUndo={canUndo}
-              canRedo={state.future.length > 0}
+              canRedo={canRedo}
               onUndo={handleUndo}
               onRedo={handleRedo}
               adding={tool === 'add'}
@@ -2513,6 +2841,7 @@ export function SprayHoldEditorScreen({
                 onShrink={handleShrink}
                 onGrow={handleGrow}
                 onTrace={handleStartTrace}
+                onRefine={handleStartRefine}
                 onJoin={handleStartJoin}
                 onSwitchOff={handleSwitchSelectedOff}
                 onSwitchOn={handleSwitchSelectedOn}
@@ -2528,6 +2857,7 @@ export function SprayHoldEditorScreen({
             <>
               {undoToastNode}
               {cornersFinishNode}
+              {refineBarNode}
             </>
           }
           counts={counts}
@@ -2536,7 +2866,7 @@ export function SprayHoldEditorScreen({
           locked={!canEdit}
           primaryLabel={primaryLabel}
           primaryLoading={committing}
-          primaryDisabled={!canEdit || cornerCount > 0 || counts.on === 0}
+          primaryDisabled={!canEdit || cornerCount > 0 || tool === 'refine' || counts.on === 0}
           onPrimary={handlePrimary}
         />
       ) : (
@@ -2573,6 +2903,7 @@ export function SprayHoldEditorScreen({
                 onShrink={handleShrink}
                 onGrow={handleGrow}
                 onTrace={handleStartTrace}
+                onRefine={handleStartRefine}
                 onJoin={handleStartJoin}
                 onSwitchOff={handleSwitchSelectedOff}
                 onSwitchOn={handleSwitchSelectedOn}
@@ -2581,6 +2912,7 @@ export function SprayHoldEditorScreen({
             ) : null}
 
             {cornersFinishNode}
+            {refineBarNode}
           </View>
 
           <SprayEditorBottomBar
@@ -2588,9 +2920,9 @@ export function SprayHoldEditorScreen({
             showMaybes={showMaybes}
             canReviewMaybes={capabilities.canReviewCandidates}
             canUndo={canUndo}
-            canRedo={state.future.length > 0}
+            canRedo={canRedo}
             adding={tool === 'add'}
-            primaryBlocked={cornerCount > 0}
+            primaryBlocked={cornerCount > 0 || tool === 'refine'}
             locked={!canEdit}
             primaryLabel={primaryLabel}
             primaryLoading={committing}
@@ -2621,7 +2953,7 @@ export function SprayHoldEditorScreen({
           tool={tool}
           addShape={addShape}
           canUndo={canUndo}
-          canRedo={state.future.length > 0}
+          canRedo={canRedo}
           onMark={handleMarkTool}
           onDraw={handlePaletteDraw}
           onCorners={handlePaletteCorners}
@@ -2673,6 +3005,8 @@ function roleLabel(role: SprayHoldRole, t: Translate): string {
 function bannerFor({
   tool,
   addShape,
+  refineMode,
+  refineNotice,
   pencilOnly,
   errorText,
   viewerCanEdit,
@@ -2683,7 +3017,10 @@ function bannerFor({
 }: {
   tool: SprayEditorTool;
   addShape: SprayAddShape;
-  /** iPad "Pencil only": Trace draws with the Pencil, so the line says so. */
+  refineMode: RefineMode;
+  /** Refine's line about the last stroke that is not an error. */
+  refineNotice: string | null;
+  /** iPad "Pencil only": Trace and Refine draw with the Pencil, so the line says so. */
   pencilOnly: boolean;
   errorText: string | null;
   viewerCanEdit: boolean;
@@ -2707,6 +3044,12 @@ function bannerFor({
   if (tool === 'join') {
     return { message: t('sprayEditor.banner.join'), actionLabel: t('sprayEditor.banner.cancel'), onAction: onCancel };
   }
+  if (tool === 'refine') {
+    const cancel = t('sprayEditor.banner.cancel');
+    if (errorText) return { message: errorText, actionLabel: cancel, onAction: onCancel, tone: 'error' };
+    if (refineNotice) return { message: refineNotice, actionLabel: cancel, onAction: onCancel };
+    return { message: refineBannerMessage(refineMode, pencilOnly, t), actionLabel: cancel, onAction: onCancel };
+  }
   if (errorText) return { message: errorText, tone: 'error' };
   if (!viewerCanEdit) return { message: t('sprayEditor.readOnly') };
   if (notice) return notice;
@@ -2727,6 +3070,23 @@ function cornersRejectionMessage(reason: StrokeRejection, t: Translate): string 
   if (reason === 'centre-outside') return t('sprayEditor.errors.cornersHollow');
   if (reason === 'too-few-points') return t('sprayEditor.errors.cornersTooFew');
   return rejectionMessage(reason, t);
+}
+
+/** What Refine's brush does, as the banner says it. Literal keys, so the catalogue checks can see them. */
+function refineBannerMessage(mode: RefineMode, pencilOnly: boolean, t: Translate): string {
+  if (mode === 'add') {
+    return pencilOnly ? t('sprayEditor.banner.refineAddPencil') : t('sprayEditor.banner.refineAdd');
+  }
+  return pencilOnly ? t('sprayEditor.banner.refineErasePencil') : t('sprayEditor.banner.refineErase');
+}
+
+/** Why a Refine stroke (or Done) was refused. Worded for a brush, not a drawn loop. */
+function refineRejectionMessage(reason: RefineRejection, t: Translate): string {
+  if (reason === 'nothing-left' || reason === 'too-few-points') return t('sprayEditor.errors.refineNothingLeft');
+  if (reason === 'too-complex' || reason === 'self-intersecting' || reason === 'self-overlap') {
+    return t('sprayEditor.errors.refineTooDetailed');
+  }
+  return t('sprayEditor.errors.refineCantStore');
 }
 
 function rejectionMessage(reason: StrokeRejection, t: Translate): string {
@@ -2776,6 +3136,10 @@ const styles = StyleSheet.create({
     right: spacing[4],
     alignItems: 'center',
     gap: spacing[2],
+  },
+  // The ring layer while a hold is refined: still there for context, but behind the area.
+  refineDimmed: {
+    opacity: 0.35,
   },
   revealClip: {
     position: 'absolute',

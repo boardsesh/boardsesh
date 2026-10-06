@@ -31,6 +31,8 @@ describe('resolveEditTap', () => {
   it.each<Row>([
     ['trace on a ring', 'trace', 4, 7, 'none'],
     ['trace on bare wall', 'trace', null, 7, 'none'],
+    ['refine on a ring', 'refine', 4, 7, 'none'],
+    ['refine on bare wall', 'refine', null, 7, 'none'],
     ['add on a ring', 'add', 4, null, 'none'],
     ['add on bare wall', 'add', null, null, 'none'],
   ])('other tools ignore stray taps: %s', (_label, tool, hitId, selectedId, expected) => {
@@ -45,7 +47,7 @@ describe('resolveEditTap', () => {
   });
 
   it('never answers a bare-wall tap with anything that adds a hold', () => {
-    const answers = (['edit', 'join', 'trace', 'add'] as const).flatMap((tool) =>
+    const answers = (['edit', 'join', 'trace', 'add', 'refine'] as const).flatMap((tool) =>
       [null, 7].map((selectedId) => resolveEditTap({ tool, hitId: null, selectedId })),
     );
     expect(answers.every((answer) => answer !== 'select' && answer !== 'toggle' && answer !== 'merge')).toBe(true);

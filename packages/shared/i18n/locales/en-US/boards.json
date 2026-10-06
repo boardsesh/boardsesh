@@ -833,7 +833,8 @@
       "switchOn": "Switch on",
       "delete": "Delete",
       "keep": "Keep",
-      "finish": "Finish"
+      "finish": "Finish",
+      "refine": "Refine"
     },
     "banner": {
       "trace": "Draw round the hold with one finger",
@@ -842,7 +843,11 @@
       "addDraw": "Draw round a missing hold, or tap to drop a circle",
       "addCorners": "Tap round the corners of a missing hold",
       "done": "Done",
-      "tracePencil": "Draw round the hold with Apple Pencil"
+      "tracePencil": "Draw round the hold with Apple Pencil",
+      "refineAdd": "Paint to add to the hold. Pinch to zoom.",
+      "refineErase": "Paint to trim the hold. Pinch to zoom.",
+      "refineAddPencil": "Paint with Apple Pencil to add to the hold",
+      "refineErasePencil": "Paint with Apple Pencil to trim the hold"
     },
     "addShape": {
       "label": "How to outline a hold",
@@ -895,7 +900,10 @@
       "someHoldsOffWall_other": "{{count}} holds land off the wall. Move them back onto the photo or switch them off.",
       "cornersCross": "Two sides cross. Tap the corners in order round the hold.",
       "cornersTooFew": "Those corners are too close together or in a line. Tap at least 3 round the hold.",
-      "cornersHollow": "That shape is too hollow. Tap the corners round the outside of the hold."
+      "cornersHollow": "That shape is too hollow. Tap the corners round the outside of the hold.",
+      "refineNothingLeft": "That would erase the whole hold. Switch it off instead.",
+      "refineTooDetailed": "That leaves an edge too fiddly to save. Try a bigger brush.",
+      "refineCantStore": "That stroke would leave a shape that can't be saved as one hold, so it wasn't kept."
     },
     "empty": {
       "noPhoto": "This wall has no photo to edit yet."
@@ -935,6 +943,17 @@
       "close": "Close Pencil tools",
       "draw": "Add a hold by drawing round it",
       "corners": "Add a hold by tapping its corners"
+    },
+    "refine": {
+      "mode": "Brush",
+      "add": "Add",
+      "erase": "Erase",
+      "sizeSmall": "Small brush",
+      "sizeMedium": "Medium brush",
+      "sizeLarge": "Large brush",
+      "dropped_one": "Kept the main part. {{count}} stray bit was dropped.",
+      "dropped_other": "Kept the main part. {{count}} stray bits were dropped.",
+      "atLimit": "That's as far as this hold can grow. Trace redraws it bigger."
     }
   },
   "sprayWizard": {

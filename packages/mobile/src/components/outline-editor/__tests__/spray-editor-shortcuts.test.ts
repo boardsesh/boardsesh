@@ -90,6 +90,7 @@ describe('resolveSprayShortcut', () => {
     expect(resolveSprayShortcut('escape', { ...RESTING, tool: 'add' })).toBe('leaveAdd');
     expect(resolveSprayShortcut('escape', { ...RESTING, tool: 'trace' })).toBe('cancelTool');
     expect(resolveSprayShortcut('escape', { ...RESTING, tool: 'join' })).toBe('cancelTool');
+    expect(resolveSprayShortcut('escape', { ...RESTING, tool: 'refine' })).toBe('cancelTool');
     expect(resolveSprayShortcut('escape', RESTING)).toBe('deselect');
     expect(resolveSprayShortcut('escape', { ...RESTING, selectedRole: null })).toBe('none');
   });
@@ -128,6 +129,12 @@ describe('resolvePencilGesture', () => {
     expect(resolvePencilGesture('switchPrevious', ipad)).toBe('add');
     expect(resolvePencilGesture('switchEraser', { ...ipad, tool: 'add' })).toBe('mark');
     expect(resolvePencilGesture('switchPrevious', { ...ipad, tool: 'trace' })).toBe('mark');
+  });
+
+  it('flips the brush between Add and Erase inside Refine', () => {
+    expect(resolvePencilGesture('switchEraser', { ...ipad, tool: 'refine' })).toBe('refineSwitchMode');
+    expect(resolvePencilGesture('switchPrevious', { ...ipad, tool: 'refine' })).toBe('refineSwitchMode');
+    expect(resolvePencilGesture('showContextualPalette', { ...ipad, tool: 'refine' })).toBe('palette');
   });
 
   it('opens the palette for the palette settings', () => {

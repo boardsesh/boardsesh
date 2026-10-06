@@ -833,7 +833,8 @@
       "switchOn": "Activer",
       "delete": "Supprimer",
       "keep": "Garder",
-      "finish": "Terminer"
+      "finish": "Terminer",
+      "refine": "Retoucher"
     },
     "banner": {
       "trace": "Dessine le tour de la prise avec un doigt",
@@ -842,7 +843,11 @@
       "addDraw": "Dessine le tour d'une prise manquante, ou touche pour poser un cercle",
       "addCorners": "Touche les coins autour d'une prise manquante",
       "done": "Terminé",
-      "tracePencil": "Dessine le tour de la prise avec l'Apple Pencil"
+      "tracePencil": "Dessine le tour de la prise avec l'Apple Pencil",
+      "refineAdd": "Peins pour agrandir la prise. Pince pour zoomer.",
+      "refineErase": "Peins pour rogner la prise. Pince pour zoomer.",
+      "refineAddPencil": "Peins avec l'Apple Pencil pour agrandir la prise",
+      "refineErasePencil": "Peins avec l'Apple Pencil pour rogner la prise"
     },
     "addShape": {
       "label": "Comment délimiter une prise",
@@ -895,7 +900,10 @@
       "someHoldsOffWall_other": "{{count}} prises tombent en dehors du mur. Remets-les sur la photo ou désactive-les.",
       "cornersCross": "Deux côtés se croisent. Touche les coins dans l'ordre autour de la prise.",
       "cornersTooFew": "Ces coins sont trop rapprochés ou alignés. Touche au moins 3 coins autour de la prise.",
-      "cornersHollow": "Cette forme est trop creuse. Touche les coins le long du bord extérieur de la prise."
+      "cornersHollow": "Cette forme est trop creuse. Touche les coins le long du bord extérieur de la prise.",
+      "refineNothingLeft": "Ça effacerait toute la prise. Désactive-la plutôt.",
+      "refineTooDetailed": "Ce bord est trop détaillé pour être enregistré. Essaie un pinceau plus gros.",
+      "refineCantStore": "Ce tracé laisserait une forme impossible à enregistrer comme une seule prise, il n'a donc pas été appliqué."
     },
     "empty": {
       "noPhoto": "Ce mur n'a pas encore de photo à modifier."
@@ -935,6 +943,17 @@
       "close": "Fermer les outils du Pencil",
       "draw": "Ajouter une prise en dessinant son tour",
       "corners": "Ajouter une prise en touchant ses coins"
+    },
+    "refine": {
+      "mode": "Pinceau",
+      "add": "Ajouter",
+      "erase": "Effacer",
+      "sizeSmall": "Petit pinceau",
+      "sizeMedium": "Pinceau moyen",
+      "sizeLarge": "Gros pinceau",
+      "dropped_one": "La partie principale est gardée. {{count}} morceau isolé a été retiré.",
+      "dropped_other": "La partie principale est gardée. {{count}} morceaux isolés ont été retirés.",
+      "atLimit": "La prise ne peut pas grandir davantage. Tracer permet de la redessiner plus grande."
     }
   },
   "sprayWizard": {

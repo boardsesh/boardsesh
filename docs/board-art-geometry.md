@@ -799,6 +799,33 @@ silhouettes — a real polygon union is a clipping library this app will not gro
 tool, and a hull always contains both holds, is always simple, and always contains its own
 centroid, so the ring contract is always satisfiable.
 
+**Refine** (the spray editor's add / erase brush) is the one place the wall target shares
+the brush ENGINE rather than a stroke chain: `src/brush.ts` and `src/raster.ts` (package
+exports `./brush` and `./raster`) and the mobile `outline-editor/use-brush-session.ts`, all
+shared with the catalogue editor's brush and kept byte-identical to it. A brush edit cannot
+be done on the ring directly, because a stroke is a swept disc rather than a boundary, so
+the engine round-trips through a bitmap: rasterise the ring, stamp the disc along the
+stroke, keep the piece covering the placement centre, trim one-cell necks, walk the border
+back out with the tracer's own follower and decimate it with `simplifyRing`. The session
+keeps that bitmap across strokes so successive strokes compose on one raster.
+
+The wall needs nothing changed in the engine, only an adapter around it
+(`outline-editor/spray-refine.ts`). The engine's numbers are absolute — two cells per unit,
+a 1.6-unit decimation tolerance, a 3-unit smallest brush — and spray board px are the
+photo's own pixels, where holds run from about 20 px to several hundred. So the adapter
+maps each hold into a frame centred on it with its radius at 32 units, which holds the
+precision at 5% of the hold's radius (what Trace keeps on a typical 40 px spray hold) and
+the bitmap at most 512 cells a side whatever the photo's resolution; 32 rather than 64
+because a one-shot stroke costs 17 ms in Node at 32 units and 70 ms at 64, and Hermes is
+slower. The brush sizes are fractions of the hold's radius (0.15, 0.3, 0.6), so a session
+normally stays near 350 cells a side; the per-lift costs are in `docs/spray-walls.md`.
+The adapter also owns the two spray rules the engine leaves to its caller: an erase through
+the hold's middle (the engine's `anchor-erased`) keeps the largest piece and moves the
+anchor onto it, built from the engine's own primitives; and every kept stroke must still be
+a storable hold — centroid and equivalent-area radius (`radiusForRing`), rounded then
+closed, `isValidOutlineRing`, the centre gate — with the anchor as the fallback centre when
+a concave area's centroid falls outside it. See `docs/spray-walls.md`, "The hold editor".
+
 State is one reducer with undo and redo (`spray-hold-editor-reducer.ts`), modelled on
 `framesReducer` in `@boardsesh/create-climb-react`: a present, a capped past and a future
 that every new edit empties, snapshot-based because a merge is not trivially invertible. Two rules in it are load-bearing rather than

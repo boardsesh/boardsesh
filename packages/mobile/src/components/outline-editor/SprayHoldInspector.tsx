@@ -32,6 +32,8 @@ type SprayHoldInspectorProps = {
   onShrink: () => void;
   onGrow: () => void;
   onTrace: () => void;
+  /** Touch up the outline with an add / erase brush. */
+  onRefine: () => void;
   onJoin: () => void;
   onSwitchOff: () => void;
   onSwitchOn: () => void;
@@ -67,6 +69,7 @@ export const SprayHoldInspector = React.memo(function SprayHoldInspector({
   onShrink,
   onGrow,
   onTrace,
+  onRefine,
   onJoin,
   onSwitchOff,
   onSwitchOn,
@@ -147,6 +150,13 @@ export const SprayHoldInspector = React.memo(function SprayHoldInspector({
               size="small"
               over="surface"
               onPress={onTrace}
+            />
+            <Button
+              title={t('sprayEditor.chips.refine')}
+              variant="tonal"
+              size="small"
+              over="surface"
+              onPress={onRefine}
             />
             <Button title={t('sprayEditor.chips.join')} variant="tonal" size="small" over="surface" onPress={onJoin} />
           </>
