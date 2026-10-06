@@ -5837,13 +5837,10 @@ describe('generated wall looks (sprayWallArt and the background setting)', () =>
   });
 
   it('hands a draft’s art to its editor and to nobody else', async () => {
-    const { wall } = await straightWall({ isUnlisted: true });
-    const photoId = registerUploadedPhoto(wall.uuid, { width: 2400, height: 1800 });
-    await sprayWallMutations.createSprayWallVersion(
-      {},
-      { input: { wallUuid: wall.uuid, photoId, anchors: STRAIGHT_ANCHORS } },
-      ctxFor(OWNER),
-    );
+    const { wall, versionId } = await straightWall({ isUnlisted: true });
+    // A hold-edit draft on the published photo: the only draft a published wall
+    // takes now that a new photo there is refused.
+    await openHoldEditDraft(wall.uuid, versionId);
 
     // The stranger can read the unlisted wall's published art, not the draft's.
     expect((await readArt(wall.uuid, STRANGER, 1))?.status).toBe('NONE');
