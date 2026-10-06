@@ -370,7 +370,7 @@ back-button history menu, which does not support removal prevention.
 
 ### Full screen on iPad
 
-On iPad the three spray routes (`spray/new`, `spray/holds`, `spray/reset`) are a
+On iPad the two spray routes (`spray/new`, which also builds a reset, and `spray/holds`) are a
 `fullScreenModal`, not the page card every other Boards screen is. A card leaves
 the editor a box in the middle of the screen with the app dimmed around it.
 `sprayFlowCoversScreen()` (`src/lib/spray/spray-flow-presentation.ts`) is the
@@ -1802,15 +1802,20 @@ nothing at all on an archived wall:
 | Viewer | Holds free | Holds locked |
 | --- | --- | --- |
 | owner | Edit holds, Reset this wall | Holds are locked (opens the reset confirm), Reset this wall |
-| can edit, not the owner | Edit holds | Holds are locked (information only) |
+| can edit, not the owner | Edit holds | Holds are locked (information only, saying only the owner can reset) |
 | anyone else | none | none |
 
 Edit holds reads `canEdit`, the field the spray API gates every version mutation
 on. Reset reads `ownerId` against the signed-in climber, because
 `resetSprayWall` is the owner's alone (`SPRAY_WALL_RESET_OWNER_ONLY`). `isOwned`
-("I own the physical board") is never used. The reset rows ask "Reset this
-wall?" first, fire `Spray Wall Reset Started`, then open
-`/boards/spray/new?resetOf=<wallUuid>`.
+("I own the physical board") is never used. The viewer is the profile's id,
+falling back to the id the signed token carries, as My Boards does, so a failed
+profile read does not take the owner's reset away. The reset rows ask "Reset
+this wall?" first, then open `/boards/spray/new?resetOf=<wallUuid>&resetSource=…`;
+the wizard fires `Spray Wall Reset Started` once the reset really starts.
+
+The owner of a wall an admin hid after a report (`SprayWall.hiddenAt`) is told
+so above these rows (`sprayHidden.*`); nobody else can see the wall to be told.
 
 `SprayWallActions` renders these rows in the live `BoardSheet` list header,
 alongside sharing for public and unlisted walls. The kiosk column has no account
@@ -2114,48 +2119,94 @@ view and the "Full reset" switch are gone from the app; no client calls
   instead of listing the owner's walls. The server returns the unfinished clone
   if there is one, so reopening a reset lands on yesterday's photo. A clone with
   no photo draft rejoins at the photo step (`RESUMED_AT_PHOTO`): its name, angle
-  and location came from the old wall, so the meta step never shows, and Back on
-  the photo step leaves the flow. A clone with a photo draft asks "Pick up or
-  start over" first.
+  and location came from the old wall, so the meta step never shows, the step
+  counter starts at the photo, and Back on the photo step leaves the flow. A
+  clone with a photo draft asks "Pick up or start over" first. A clone with
+  nothing on it is a reset starting, and fires `Spray Wall Reset Started` once;
+  reopening an unfinished reset does not. One reset request at a time; an answer
+  that lands after the screen has gone raises nothing.
 - **Start over** discards the clone's draft and deletes the CLONE
   (`useDiscardSprayWallDraft`), then calls `resetSprayWall` again for a fresh
   one. The wall being replaced is never touched and stays live.
-- **Refusals** show in the resume step with a retry and a way back, in the
-  climber's words (`sprayWallLifecycleMessage`): owner only, not published yet,
-  already archived, the archive cap.
+- **Refusals** show in the resume step in the climber's words
+  (`sprayWallLifecycleMessage`) with a way back. Try again is offered only for a
+  failure a retry can fix; owner only, not published yet, already archived and
+  the archive cap get the way back alone.
+- **The look step says it** before the publish: when this wall goes live, the
+  old one is archived. A deep link or a resumed reset never saw the confirm.
 - **Publishing** is the ordinary publish and bind. `Board Created` carries
-  `isReset: true`. `settleArchivedSprayWall` then marks the old wall archived in
-  this device's registry at once, re-reads it, and refreshes `myBoards`,
-  `mySprayWalls` and the old wall's history.
+  `isReset: true` and no `isPublic` (the clone is private until its publish
+  gives it the old wall's audience, which the client cannot see).
+  `settleArchivedSprayWall` then marks the old wall archived in this device's
+  registry at once, primes the archive answer and its offline copy, re-reads
+  the wall, and refreshes `myBoards`, `mySprayWalls` and the old wall's history.
 - **An unfinished clone is never offered to a plain "Add a wall" run**
-  (`findResumableWall` skips a wall with `resetOfWallUuid`): it carries the live
-  wall's name, and finishing it archives that wall.
+  (`findResumableWall` skips a wall the lifecycle list names as a clone): it
+  carries the live wall's name, and finishing it archives that wall.
 
 ### Archived walls on the phone
 
-The four `SprayWall` fields ride every spray wall payload (`SPRAY_WALL_FIELDS`)
-into the registry as `RegisteredSprayWall.archive`, read with
-`useSprayWallArchiveState` / `useSprayWallIsArchived`
+**The archive fields have their own queries.** A field the backend does not
+serve fails GraphQL validation for the WHOLE operation, so if the four fields
+sat in `SPRAY_WALL_FIELDS`, an app that reached a phone before the backend that
+serves them (or a backend rolled back under it) would load no wall at all. They
+are asked for, like the wall's look, by two small documents of their own and by
+nothing else (a loader test pins that):
+
+- `GET_SPRAY_WALL_ARCHIVE` (one wall). The loader sends it beside the render
+  payload on every load and revalidation, and with `force` on every forced load:
+  the refresh after a refusal that said the wall is archived or locked, the
+  re-read after a reset's publish, and after a climb on the wall is published (its
+  first published climb locks the holds). The answer lands on the registry as
+  `RegisteredSprayWall.archive`. The hold route asks it fresh in front of the
+  editor and its Publish.
+- `GET_MY_SPRAY_WALL_LIFECYCLE` (the owner's walls: uuid, layout, archive time,
+  clone source and name, no photo URLs). My Boards' **Archived** section and the
+  add-a-wall resume check read it; five minutes fresh, refreshed with My Boards'
+  pull to refresh.
+
+Either one failing for any reason, a validation error included, is "not known":
+the wall still registers and draws, reading as live with free holds (or keeping
+what this session already knew about it), the Archived section is absent, and
+the resume check filters nothing. The server still refuses every write an
+archived or locked wall does not allow.
+
+Read with `useSprayWallArchiveState` / `useSprayWallIsArchived`
 (`use-spray-wall-archive.ts`, registry only, so list rows and sheets do not pull
 the network client in). An archived wall:
 
 - carries a quiet notice on its board sheet and over its climb list, with
-  "Switch to the new wall" when `replacedByWallUuid` is visible;
+  "Switch to the new wall" when `replacedByWallUuid` is visible (a failure is a
+  system alert: the toast draws behind the sheet and the Boards modal);
 - offers no Create climb (Climbs header and empty state), no Fork and no Edit in
   the climb actions, and the create route exits with
-  `createClimbForm.cannotOpen.wallArchived`;
+  `createClimbForm.cannotOpen.wallArchived`. The route waits for a spray wall's
+  archive state before it shows the editor, so a cold deep link never flashes
+  it; once the editor is open, an archive learned later (a refused save) is the
+  save's to explain, and the route stays;
 - keeps sending, ticks, the queue and playlists;
-- leaves `myBoards`, so My Boards lists it in an **Archived** section built from
-  `mySprayWalls`; tapping a row makes it the active board.
+- leaves `myBoards`, so My Boards lists it in an **Archived** section; tapping a
+  row makes it the active board, and its trash deletes the wall (the existing
+  board delete, behind a confirm that says its climbs and sends leave logbooks
+  and playlists with it). A delete also forgets the wall on the phone: its
+  offline card, its archive entry, its registration and photo caches, and its
+  download (`forgetDeletedSprayWall`). It is the one way to make room under the
+  archived-wall cap, which `archiveLimitReached` points to.
 
 A save refused with `SPRAY_WALL_ARCHIVED` or `SPRAY_WALL_HOLDS_LOCKED` says so
-and calls `refreshSprayWall`, so every other surface catches up.
+and calls `refreshSprayWall`, so every other surface catches up. In the hold
+route, a save or Publish refused that way goes back through the gate, which
+lands on "Holds are locked" with the stranded draft's discard (a new photo the
+retired reset left is named and discarded as such, even on a locked wall).
 
 Offline, a downloaded wall is drawn from SQLite, which has no archive column.
-The last state the server reported for an archived or locked wall is kept in the
-settings store (`offlineSprayWallArchiveV1`, `rememberSprayWallArchive`, cleared
-at sign-out) and the local loader registers the wall with it. A live wall with
-free holds is not stored.
+The archive time of each ARCHIVED wall the server reported is kept in the
+settings store (`offlineSprayWallArchiveV1`, `rememberSprayWallArchive`) and the
+local loader registers the wall with it. Locked-but-live walls are not kept
+(offline nobody can edit holds anyway). Past 64 entries the first to go are
+walls with no download card, then the least recently written. The store is
+cleared at the account boundary (`clearPersistedUserStores`: sign-out, expiry,
+an identity change).
 
 ### A climb that lost holds
 
@@ -2345,9 +2396,10 @@ An offline device learns a wall is archived from the wall payload
 queries (`loadSprayWallArchiveFacts`), not three per wall. The `holdsLocked`
 read is one `EXISTS` per wall, which stops at the first published climb.
 
-The shared `SPRAY_WALL_FIELDS` selection asks for all four, so every wall
-payload the app reads carries them ([Archived walls on the
-phone](#archived-walls-on-the-phone)).
+The shared `SPRAY_WALL_FIELDS` selection does NOT ask for them: a backend
+without them would fail every wall read. The app asks with
+`GET_SPRAY_WALL_ARCHIVE` and `GET_MY_SPRAY_WALL_LIFECYCLE`, fail-soft ([Archived
+walls on the phone](#archived-walls-on-the-phone)).
 
 ### Known gaps
 
@@ -2443,7 +2495,7 @@ soft. So a photo larger than 2048 px on its long side is stored twice:
 | Object | Key | Long side | Read by |
 | --- | --- | --- | --- |
 | Base | `spray-walls/<wallUuid>/<photoId>.jpg` | ≤ 2048 px (`SPRAY_WALL_PHOTO_BASE_MAX_DIMENSION`) | the canonical frame, the hold detector, the climb view, search, offline sync, the public copy |
-| Thumbnail | `<base key>@280.jpg` | 280 px square | list rows, the reset compare view |
+| Thumbnail | `<base key>@280.jpg` | 280 px square | list rows |
 | Full | `spray-walls/<wallUuid>/<photoId>-full.jpg` | ≤ 4096 px (`SPRAY_WALL_PHOTO_FULL_MAX_DIMENSION`) | the hold editor, once zoomed past the base's resolution |
 
 - **The base keeps every number it had.** The response's `width`/`height` and
@@ -2723,7 +2775,7 @@ through `trackSprayEvent`; nothing calls `track` with a spray event name directl
 | `Spray Holds Reviewed` | `holdCount`, `candidateCount`, `hadCandidates` | Candidate and saved counts on the same event. Older clients omit candidateCount. |
 | `Spray Wall Bind Stalled` | `stage`, `elapsedMs` | A wall that published and then sat on "Setting your wall up…": `visibility`, `fetch_board` or `bind` ran past 30 s, or `navigate` was dispatched and the wizard was still on screen 1.5 s later. |
 | `Board Created` (existing) | `boardType: 'spray'`, `resumed`, `isReset` | Closes the add funnel. The SAME event every other board type fires — a spray-only variant would hide walls from every board-creation number we already watch. `isReset` marks a reset's replacement, which nets to zero walls: leave it out of activation counts. |
-| `Spray Wall Reset Started` | `source` (`board_sheet`, `holds_locked`) | The owner confirmed "Reset this wall?". Read against `Board Created` with `isReset: true` for resets that reached a published replacement. |
+| `Spray Wall Reset Started` | `source` (`board_sheet`, `holds_locked`) | A new reset started: the owner confirmed "Reset this wall?" and the reset resolved to a clone with nothing on it yet. Not fired when an unfinished reset is reopened. Read against `Board Created` with `isReset: true` for resets that reached a published replacement. |
 
 Two rules, both enforced by a test in
 `packages/shared/analytics/src/__tests__/spray-wall-events.test.ts`:
