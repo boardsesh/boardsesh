@@ -17,6 +17,7 @@ import Animated, {
   useDerivedValue,
   useReducedMotion,
   useSharedValue,
+  withDelay,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
@@ -59,11 +60,13 @@ import { SprayHoldInspector } from './SprayHoldInspector';
 import { SprayRefineLayer } from './SprayRefineLayer';
 import { planRefineExit, useSprayRefineSession, type RefineRejection } from './use-spray-refine-session';
 import {
-  DEFAULT_REFINE_BRUSH_SIZE,
-  refineBrushRadiusBoardPx,
-  type RefineBrushSize,
+  FULL_REFINE_BRUSH_RANGE,
+  refineBrushLimits,
+  refineBrushRadiusAtZoom,
+  refineBrushRangeAtZoom,
   type RefineMode,
 } from './spray-refine';
+import { useSprayRefineBrush } from './use-spray-refine-brush';
 import { SprayHoverPreview } from './SprayHoverPreview';
 import { SprayPencilSurface } from './SprayPencilSurface';
 import { SprayTabletChrome } from './SprayTabletChrome';
@@ -212,6 +215,12 @@ const LOUPE_TOP_SAFE = spacing[2];
 
 /** "Nothing below here to avoid" for the resize handle, until the bottom dock has been laid out. */
 const NO_AVOID_TOP = 1e9;
+
+/** How long the brush-size disc stays on the hold after the slider lets go, then fades, in ms. */
+const REFINE_SIZE_RING_HOLD_MS = 700;
+const REFINE_SIZE_RING_FADE_MS = 150;
+/** Refine's brush clamp before a hold is open: never drawn, only a typed placeholder. */
+const NO_REFINE_LIMITS = { floorBoardPx: 0, capBoardPx: 0 };
 
 /** Where the zoomed-in reset control sits: top-left, clear of the chip bar and the bottom bar. */
 const RESET_ZOOM_STYLE = { left: spacing[2], top: spacing[2] };
@@ -443,20 +452,52 @@ export function SprayHoldEditorScreen({
    */
   const [lastAddedId, setLastAddedId] = useState<number | null>(null);
 
-  /** Refine's brush: Add or Erase, and its size. Kept from one hold to the next for the visit. */
+  /**
+   * Refine's brush: Add or Erase for the visit, and its size in screen points,
+   * remembered per device (`useSprayRefineBrush`).
+   */
   const [refineMode, setRefineMode] = useState<RefineMode>('add');
-  const [refineBrushSize, setRefineBrushSize] = useState<RefineBrushSize>(DEFAULT_REFINE_BRUSH_SIZE);
+  const [refineBrushPt, pickRefineBrushPt] = useSprayRefineBrush();
+  /** The slider's live size, read by the previews and by a stroke's commit. */
+  const refineBrushPtSV = useSharedValue(refineBrushPt);
+  /** The board's zoom when the live Refine stroke started: its preview and its commit both read it. */
+  const refineStrokeZoomSV = useSharedValue(1);
+  /** The brush-size disc over the hold: shown while the slider moves, faded out after. */
+  const refineSizeRingSV = useSharedValue(0);
+  /** The board's zoom, mirrored out of the board by the refine layer, for the size dot by the slider. */
+  const refineBoardZoomSV = useSharedValue(1);
+  /**
+   * The zoom the board last SETTLED at, reported by the refine layer once per
+   * settle (and once when Refine opens), never per frame: the slider's range
+   * follows it.
+   */
+  const [refineSettledZoom, setRefineSettledZoom] = useState(1);
   /** A line about the last kept stroke that is not an error: the stray pieces it dropped. */
   const [refineNotice, setRefineNotice] = useState<string | null>(null);
   const refine = useSprayRefineSession();
   const refineView = refine.view;
+  const refineHoldId = refineView?.holdId;
+  // The size disc starts hidden on every open and goes with the session (Done,
+  // Cancel, the hold vanishing): a slider drag cut short by leaving Refine never
+  // gets the release that would fade it.
+  useEffect(() => {
+    refineSizeRingSV.value = 0;
+  }, [refineHoldId, refineSizeRingSV]);
+  const refineHoldRadius = refineView?.holdRadiusBoardPx;
+  const refineFrame = refineView?.frame;
+  /** The open hold's brush clamp, or null outside Refine. Fixed for the session. */
+  const refineLimits = useMemo(
+    () => (refineHoldRadius !== undefined && refineFrame ? refineBrushLimits(refineHoldRadius, refineFrame) : null),
+    [refineHoldRadius, refineFrame],
+  );
   // Read by the stroke handlers, so they keep one identity across strokes.
   const refineRef = useRef(refine);
   refineRef.current = refine;
   const refineModeRef = useRef(refineMode);
   refineModeRef.current = refineMode;
-  const refineBrushSizeRef = useRef(refineBrushSize);
-  refineBrushSizeRef.current = refineBrushSize;
+  useEffect(() => {
+    refineBrushPtSV.value = refineBrushPt;
+  }, [refineBrushPt, refineBrushPtSV]);
 
   const draftPointsSV = useSharedValue<number[]>(NO_POINTS);
   /** Refine's live brush stroke, in board px. Its own value, so it is drawn as a brush and not as Trace's line. */
@@ -674,6 +715,12 @@ export function SprayHoldEditorScreen({
   ]);
 
   const boardScale = renderToBoardScale(wall?.photoWidth ?? 0, boardRender.width);
+  /** Refine's slider range at the settled zoom: finest to biggest brush that paints differently. */
+  const refineBrushRange = useMemo(
+    () =>
+      refineLimits ? refineBrushRangeAtZoom(boardScale, refineSettledZoom, refineLimits) : FULL_REFINE_BRUSH_RANGE,
+    [boardScale, refineSettledZoom, refineLimits],
+  );
 
   // Memoised on `state.holds`, which only changes when a hold does — never on a
   // selection tap.
@@ -1261,10 +1308,30 @@ export function SprayHoldEditorScreen({
     setRefineMode(mode);
   }, []);
 
-  const handleRefineBrushSize = useCallback((size: RefineBrushSize) => {
-    hapticSelection();
-    setRefineBrushSize(size);
-  }, []);
+  // The slider ticks its own haptics. A live value shows the size disc on the
+  // hold; a commit (or a cancel) leaves it up long enough to read, then fades it.
+  const handleRefineBrushLive = useCallback(
+    (screenPt: number) => {
+      refineBrushPtSV.value = screenPt;
+      refineSizeRingSV.value = withTiming(1, { duration: REFINE_SIZE_RING_FADE_MS });
+    },
+    [refineBrushPtSV, refineSizeRingSV],
+  );
+  const fadeRefineSizeRing = useCallback(() => {
+    refineSizeRingSV.value = withDelay(REFINE_SIZE_RING_HOLD_MS, withTiming(0, { duration: REFINE_SIZE_RING_FADE_MS }));
+  }, [refineSizeRingSV]);
+  const handleRefineBrushCommit = useCallback(
+    (screenPt: number) => {
+      refineBrushPtSV.value = screenPt;
+      pickRefineBrushPt(screenPt);
+      fadeRefineSizeRing();
+    },
+    [pickRefineBrushPt, refineBrushPtSV, fadeRefineSizeRing],
+  );
+  const handleRefineBrushCancel = useCallback(() => {
+    refineBrushPtSV.value = refineBrushPt;
+    fadeRefineSizeRing();
+  }, [refineBrushPt, refineBrushPtSV, fadeRefineSizeRing]);
 
   const handleRefineStrokeStart = useCallback(() => {
     setErrorText(null);
@@ -1282,8 +1349,10 @@ export function SprayHoldEditorScreen({
 
   /**
    * One Refine stroke lifted: paint it into the area with the brush size in
-   * screen points at the stroke's zoom. A kept stroke ticks; one that would
-   * leave nothing storable is refused with the reason and the area is untouched.
+   * screen points at the zoom the stroke started at, clamped to the hold
+   * (`refineBrushRadiusAtZoom`, the radius its preview drew). A kept stroke
+   * ticks; one that would leave nothing storable is refused with the reason and
+   * the area is untouched.
    */
   const handleRefineStrokeEnd = useCallback(
     (strokeBoardPoints: number[]) => {
@@ -1296,8 +1365,22 @@ export function SprayHoldEditorScreen({
         runOnUI(clearStrokeIfStill)(refinePointsSV, firstX, firstY);
         return;
       }
-      const radius = refineBrushRadiusBoardPx(refineBrushSizeRef.current, view.holdRadiusBoardPx, view.frame);
+      const { floorBoardPx, capBoardPx } = refineBrushLimits(view.holdRadiusBoardPx, view.frame);
+      const radius = refineBrushRadiusAtZoom(
+        refineBrushPtSV.get(),
+        boardScale,
+        refineStrokeZoomSV.get(),
+        floorBoardPx,
+        capBoardPx,
+      );
+      const liftStartedAt = __DEV__ ? performance.now() : 0;
       const outcome = session.applyStroke(strokeBoardPoints, radius, refineModeRef.current);
+      // Device QA reads the real per-lift cost here; Node's numbers are in spray-refine.ts.
+      if (__DEV__) {
+        console.info(
+          `[refine] lift ${(performance.now() - liftStartedAt).toFixed(1)} ms, brush ${radius.toFixed(2)} board px, ${outcome.ok ? 'kept' : outcome.reason}`,
+        );
+      }
       // Add reached the furthest a hold can grow and the rest was clipped: say
       // so, or the brush just looks like it stopped working.
       const limitLine = outcome.reachedLimit ? t('sprayEditor.refine.atLimit') : null;
@@ -1330,7 +1413,7 @@ export function SprayHoldEditorScreen({
       hapticWarning();
       setErrorText(refineRejectionMessage(outcome.reason, t));
     },
-    [refinePointsSV, t],
+    [refinePointsSV, refineBrushPtSV, refineStrokeZoomSV, boardScale, t],
   );
 
   const handleCancelTool = useCallback(() => {
@@ -2241,11 +2324,16 @@ export function SprayHoldEditorScreen({
               outlineBoardPx={refineView.outlineBoardPx}
               pointsSV={refinePointsSV}
               mode={refineMode}
-              brushRadiusBoardPx={refineBrushRadiusBoardPx(
-                refineBrushSize,
-                refineView.holdRadiusBoardPx,
-                refineView.frame,
-              )}
+              brushPtSV={refineBrushPtSV}
+              strokeZoomSV={refineStrokeZoomSV}
+              boardZoomSV={context.scaleSV}
+              zoomMirrorSV={refineBoardZoomSV}
+              onZoomSettle={setRefineSettledZoom}
+              boardPxPerPt={boardScale}
+              limits={refineLimits ?? NO_REFINE_LIMITS}
+              sizeRingOpacitySV={refineSizeRingSV}
+              sizeRingX={refineView.frame.originX}
+              sizeRingY={refineView.frame.originY}
               scaleSV={context.scaleSV}
               boardWidth={wall.photoWidth}
               boardHeight={wall.photoHeight}
@@ -2260,7 +2348,10 @@ export function SprayHoldEditorScreen({
       refineView,
       refinePointsSV,
       refineMode,
-      refineBrushSize,
+      refineBrushPtSV,
+      refineStrokeZoomSV,
+      refineSizeRingSV,
+      refineLimits,
       ghostedHoldId,
       hoverShown,
       hoverSV,
@@ -2366,11 +2457,14 @@ export function SprayHoldEditorScreen({
               outlineBoardPx={refineView.outlineBoardPx}
               pointsSV={refinePointsSV}
               mode={refineMode}
-              brushRadiusBoardPx={refineBrushRadiusBoardPx(
-                refineBrushSize,
-                refineView.holdRadiusBoardPx,
-                refineView.frame,
-              )}
+              brushPtSV={refineBrushPtSV}
+              strokeZoomSV={refineStrokeZoomSV}
+              boardZoomSV={loupeFeed.zoomSV}
+              boardPxPerPt={boardScale}
+              limits={refineLimits ?? NO_REFINE_LIMITS}
+              sizeRingOpacitySV={refineSizeRingSV}
+              sizeRingX={refineView.frame.originX}
+              sizeRingY={refineView.frame.originY}
               scaleSV={loupeMagnificationSV}
               boardWidth={wall.photoWidth}
               boardHeight={wall.photoHeight}
@@ -2386,7 +2480,10 @@ export function SprayHoldEditorScreen({
       refineView,
       refinePointsSV,
       refineMode,
-      refineBrushSize,
+      refineBrushPtSV,
+      refineStrokeZoomSV,
+      refineSizeRingSV,
+      refineLimits,
       ghostedHoldId,
       loupeFeed.zoomSV,
       selectedHold,
@@ -2513,6 +2610,7 @@ export function SprayHoldEditorScreen({
             pinchRef={context.pinchRef}
             onStrokeStart={handleRefineStrokeStart}
             onStrokeEnd={handleRefineStrokeEnd}
+            strokeZoomSV={refineStrokeZoomSV}
             onStrokeCancel={IGNORE_STROKE_CANCEL}
             loupe={loupeFeed}
             onStylusSeen={tablet ? handlePencilSeen : undefined}
@@ -2716,7 +2814,18 @@ export function SprayHoldEditorScreen({
 
   const refineBarNode =
     tool === 'refine' && canEdit ? (
-      <SprayRefineBar brushSize={refineBrushSize} onBrushSize={handleRefineBrushSize} onDone={handleRefineDone} />
+      <SprayRefineBar
+        brushPt={refineBrushPt}
+        range={refineBrushRange}
+        brushPtSV={refineBrushPtSV}
+        boardZoomSV={refineBoardZoomSV}
+        boardPxPerPt={boardScale}
+        limits={refineLimits ?? NO_REFINE_LIMITS}
+        onBrushPtLive={handleRefineBrushLive}
+        onBrushPtCommit={handleRefineBrushCommit}
+        onBrushPtCancel={handleRefineBrushCancel}
+        onDone={handleRefineDone}
+      />
     ) : null;
   const undoToastNode =
     undoToast && canEdit ? (
