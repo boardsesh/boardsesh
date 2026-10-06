@@ -119,6 +119,8 @@ physical cleanup is pending. Only generated copies expire; source records remain
 4. Add `user-data-export` to the backend's existing `BATCH_FAMILIES_ENABLED`
    comma-separated list, preserving its other enabled families. Deploy
    backend/mobile; verify a named browser download and repeated-download cache reuse.
+   Until this step, status reads answer `unavailable` instead of offering Prepare
+   or Retry; this week's finished files stay downloadable.
 5. Observe duration, bytes, cache reuse, and failures. Validate large logbooks and
    actual iOS/Android browser downloads before completing device QA.
 
