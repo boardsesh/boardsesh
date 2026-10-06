@@ -372,6 +372,13 @@ export const boardClimbs = pgTable(
     // Recomputed per wall by `recomputeMissingHoldCounts` (SW-04) whenever a
     // reset commits.
     missingHoldCount: integer('missing_hold_count'),
+    // Spray walls only: the climb lost at least one hold in a reset its owner
+    // marked as a FULL reset (`spray_wall_versions.is_full_reset`), so the wall's
+    // climb list hides it by default (#6024). Derived, like `missingHoldCount`,
+    // and recomputed by the same two functions: a climb edited onto holds still
+    // on the wall drops back to false on its own. NULL means "never computed" and
+    // reads as not retired, which is every catalogue climb.
+    retiredByReset: boolean('retired_by_reset'),
     // The climb's current revision (#6023): the highest `revision_number` it
     // has in `board_climb_revisions`, or 1 when it has never been edited.
     // Written by `recordClimbRevision` in the same transaction as the revision

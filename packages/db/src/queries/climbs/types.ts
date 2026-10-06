@@ -79,8 +79,10 @@ export type ClimbSearchParams = {
   projectsOnly?: boolean;
   /**
    * Hold integrity, for spray walls: 'intact' keeps climbs that have lost no
-   * holds, 'broken' keeps only the ones that have, 'any' (the default, and what
-   * `undefined` means) adds no predicate at all.
+   * holds, 'broken' keeps only the ones that have, 'any' adds no integrity
+   * predicate. `undefined` is the default view, which on a spray wall also hides
+   * climbs retired by a full reset; 'any' shows them (#6024,
+   * `retiredByResetCondition`).
    *
    * Reads the materialised `board_climbs.missing_hold_count`, which a reset
    * re-computes (`recomputeMissingHoldCounts`). Lower case because that is what
@@ -203,7 +205,9 @@ export function hasNameQuery(searchParams: Pick<ClimbSearchParams, 'name'>): boo
 export function normalizeHoldIntegrity(raw: string | null | undefined): ClimbSearchParams['holdIntegrity'] {
   if (!raw) return undefined;
   const value = raw.toLowerCase();
-  if (value === 'intact' || value === 'broken') return value;
+  // 'any' survives rather than collapsing to undefined: on a spray wall an
+  // omitted value hides retired climbs and an explicit 'any' shows them (#6024).
+  if (value === 'intact' || value === 'broken' || value === 'any') return value;
   return undefined;
 }
 

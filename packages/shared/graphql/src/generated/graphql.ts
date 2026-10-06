@@ -1711,6 +1711,13 @@ export type CommentsInput = {
  */
 export type CommitSprayWallVersionInput = {
   added: Array<SprayWallAddedDecisionInput>;
+  /**
+   * The owner marked this a FULL reset: the old set is coming down. Every climb
+   * that loses a hold in this reset is retired and drops out of the wall's default
+   * climb list; logbooks, playlists and share links still open it. Omitted or
+   * false is a partial reset, which retires nothing.
+   */
+  fullReset?: InputMaybe<Scalars['Boolean']['input']>;
   kept: Array<SprayWallKeptDecisionInput>;
   /** Hold ids that came off the wall. */
   removed: Array<Scalars['Int']['input']>;
@@ -9429,7 +9436,7 @@ export type SprayWallResetResult = {
   __typename?: 'SprayWallResetResult';
   /** Holds this commit put on the wall. */
   addedCount: Scalars['Int']['output'];
-  /** Climbs whose `missingHoldCount` moved as a result. */
+  /** Climbs whose `missingHoldCount` or retired state moved as a result. */
   climbsChanged: Scalars['Int']['output'];
   /**
    * Holds still on the wall from the previous generation.

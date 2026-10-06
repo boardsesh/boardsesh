@@ -2848,7 +2848,17 @@ export const sprayWallMutations = {
         `);
       }
 
-      // 4. …and publish, which is the moment every removal above becomes real.
+      // 4. A full reset is recorded on the version BEFORE the publish below,
+      //    because the publish's recompute is what reads it: every climb using a
+      //    hold this version removed comes out retired (#6024).
+      if (validated.fullReset === true) {
+        await tx
+          .update(dbSchema.sprayWallVersions)
+          .set({ isFullReset: true, updatedAt: new Date() })
+          .where(eq(dbSchema.sprayWallVersions.id, version.id));
+      }
+
+      // 5. …and publish, which is the moment every removal above becomes real.
       //    Same transaction and same lock, so a reset is atomic: there is no
       //    instant at which the holds have gone but the version has not landed.
       const {
@@ -2877,6 +2887,7 @@ export const sprayWallMutations = {
       removed: committed.removedCount,
       added: committed.addedCount,
       climbsChanged: committed.climbsChanged,
+      fullReset: validated.fullReset === true,
     });
 
     // The same public-copy refresh `publishSprayWallVersion` makes, on the same

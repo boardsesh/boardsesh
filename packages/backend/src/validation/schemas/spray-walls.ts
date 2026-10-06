@@ -273,6 +273,9 @@ export const CommitSprayWallVersionInputSchema = z
     kept: z.array(SprayWallKeptDecisionSchema).max(MAX_HOLDS_PER_WALL),
     removed: z.array(z.number().int().positive()).max(MAX_HOLDS_PER_WALL),
     added: z.array(SprayWallAddedDecisionSchema).max(MAX_HOLDS_PER_WALL),
+    // Optional so an app that predates full resets (#6024) commits exactly as
+    // before: a partial reset.
+    fullReset: z.boolean().nullish(),
   })
   .refine((input) => {
     const keptIds = input.kept.map((decision) => decision.holdId);
