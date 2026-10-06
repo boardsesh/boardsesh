@@ -530,9 +530,13 @@ async function loadFootage(allowDrawnPlaceholders: boolean, source: FootageSourc
   return { source, copy, phone, takes, anchors };
 }
 
-/** Width / height of the recorded frames (the first loaded take's first), which the phone's screen matches. */
+/**
+ * Width / height of the recorded frames, which the phone's screen matches. Read
+ * from a required take when one is loaded: a board take may be a stand-in still
+ * of another shape, and it would skew the phone for the whole cut.
+ */
 async function footageAspect(takeIds: readonly ShowcaseTakeId[], dirs: ShowcaseWorkDirs): Promise<number> {
-  const [takeId] = takeIds;
+  const takeId = takeIds.find((id) => !id.startsWith('boards-')) ?? takeIds[0];
   if (!takeId) throw new Error('No take has footage to size the phone from');
   const { width, height } = await sharp(resolve(footageTakeDir(takeId, dirs), '00001.jpg')).metadata();
   if (!width || !height) throw new Error(`Could not read the "${takeId}" take's first frame size`);

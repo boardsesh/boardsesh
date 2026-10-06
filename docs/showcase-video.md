@@ -157,9 +157,9 @@ which leaves out the gym's logo and the camera's date stamp) is committed as
 another account. Keep the wall private: a public wall copies the photo into the
 world-readable media bucket and lists the wall.
 
-The wall check reads the board type from the app's own log line, which leads
-with it: `[screenshot] board[6] "Plywood Spray Wall" -> "<name>" (spray: <layout>
-L.. S.. @..°)`. A spray wall's name and layout are whatever its owner typed, so
+The wall check reads the board type from the app's own log line, which ends
+with it: `[screenshot] board[6] "Plywood Spray Wall" -> "<name>" (<layout> L..
+S.. @..°, spray)`. A spray wall's name and layout are whatever its owner typed, so
 the type is never taken from either (`findBoardSlotProblem` in `record.ts`).
 
 On `--backend local` the dev DB has only the first three walls; the other

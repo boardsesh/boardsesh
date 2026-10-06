@@ -537,17 +537,14 @@ export function findBoardHandoffProblem(logText: string, link: string): string |
 }
 
 /**
- * The board type a `[screenshot] board[N]` line names. The app describes the
- * wall as `"<name>" (<boardType>: <layout> L.. S.. @..°)`, so the type is read
- * from the parenthesised group and never from the wall's name: a Kilter called
- * "Tension Fans" is still a Kilter. A line from a bundle older than that format
- * has no `<boardType>:` and returns null.
+ * The board type a `[screenshot] board[N]` line names. The app ends the line
+ * with `@<angle>°, <boardType>)`, after the wall's name and its layout's name,
+ * which are free text and may hold brackets and quotes of their own. Reading
+ * from the end means neither can pose as the type: a Kilter called "Tension
+ * Fans" is still a Kilter. Null when the line does not end that way.
  */
-function loggedBoardDescription(detail: string): { group: string; boardType: string | null } {
-  const groupStart = detail.lastIndexOf('" (');
-  const group = groupStart === -1 ? detail : detail.slice(groupStart + 3).replace(/\)\s*$/, '');
-  const typed = /^([a-z][a-z0-9]*): /.exec(group);
-  return { group, boardType: typed ? typed[1] : null };
+function loggedBoardType(detail: string): string | null {
+  return /@-?[\d.]+°, ([a-z][a-z0-9]*)\)\s*$/.exec(detail)?.[1] ?? null;
 }
 
 /**
@@ -566,10 +563,11 @@ export function findBoardSlotProblem(logText: string, slot: number, kind: Showca
   const resolved = [...lines].reverse().find((line) => line.includes(`[screenshot] board[${slot}] `));
   if (!resolved) return `the app never resolved board slot ${slot}; is the account signed in and are its walls loaded?`;
   const detail = resolved.slice(resolved.indexOf(`board[${slot}]`));
-  const { group, boardType } = loggedBoardDescription(detail);
-  // An old-format line carries only the layout's name: look for the kind in it.
-  const rightKind =
-    boardType === null ? group.toLowerCase().includes(kind === 'moonboard' ? 'moon' : kind) : boardType === kind;
+  const boardType = loggedBoardType(detail);
+  if (boardType === null) {
+    return `slot ${slot}'s line names no board type (${detail.trim()}); the app bundle is older than this recorder`;
+  }
+  const rightKind = boardType === kind;
   if (!rightKind) {
     return `slot ${slot} landed on a non-${kind} wall (${detail.trim()}); pass --boards with a ${kind} wall in slot ${slot}`;
   }

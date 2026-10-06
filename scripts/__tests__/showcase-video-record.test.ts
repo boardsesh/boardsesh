@@ -343,50 +343,52 @@ describe('findBoardSlotProblem', () => {
   const line = (slot: number, name: string, description: string) =>
     ` LOG  [screenshot] board[${slot}] "selector" -> "${name}" (${description})`;
 
-  it('reads the board type the app leads the description with', () => {
+  it('reads the board type the app ends the description with', () => {
     expect(
-      findBoardSlotProblem(line(2, 'Home Moon', 'moonboard: MoonBoard 2016 L2 S1 @40°'), 2, 'moonboard'),
+      findBoardSlotProblem(line(2, 'Home Moon', 'MoonBoard 2016 L2 S1 @40°, moonboard'), 2, 'moonboard'),
     ).toBeNull();
     expect(
-      findBoardSlotProblem(line(0, "Marco's Board", 'kilter: Kilter Board Original L1 S7 @40°'), 0, 'kilter'),
+      findBoardSlotProblem(line(0, "Marco's Board", 'Kilter Board Original L1 S7 @40°, kilter'), 0, 'kilter'),
     ).toBeNull();
-    // No layout name: the type still leads.
-    expect(findBoardSlotProblem(line(1, 'Gym', 'tension: L10 S18 @40°'), 1, 'tension')).toBeNull();
+    // No layout name: the type still closes the line.
+    expect(findBoardSlotProblem(line(1, 'Gym', 'L10 S18 @40°, tension'), 1, 'tension')).toBeNull();
   });
 
   it('accepts a spray wall whatever its owner called it', () => {
     // Neither the wall's name nor its layout's says "spray".
-    const garage = line(6, 'The Woodie', 'spray: The Woodie L90012 S1 @35°');
+    const garage = line(6, 'The Woodie', 'The Woodie L90012 S1 @35°, spray');
     expect(findBoardSlotProblem(garage, 6, 'spray')).toBeNull();
     expect(findBoardSlotProblem(garage, 6, 'kilter')).toMatch(/non-kilter wall/);
   });
 
-  it('never takes the kind from the name: a Kilter called "Tension Fans Kilter" is not a Tension', () => {
-    const misnamed = line(1, 'Tension Fans Kilter', 'kilter: Kilter Board Original L1 S7 @40°');
+  it('never takes the kind from free text: a Kilter called "Tension Fans Kilter" is not a Tension', () => {
+    const misnamed = line(1, 'Tension Fans Kilter', 'Kilter Board Original L1 S7 @40°, kilter');
     expect(findBoardSlotProblem(misnamed, 1, 'tension')).toMatch(/slot 1 landed on a non-tension wall/);
     expect(findBoardSlotProblem(misnamed, 1, 'kilter')).toBeNull();
     // Nor from the layout's name, when the type says otherwise.
-    const borrowed = line(0, 'Garage', 'spray: Kilter Homewall copy L90013 S1 @40°');
+    const borrowed = line(0, 'Garage', 'Kilter Homewall copy L90013 S1 @40°, spray');
     expect(findBoardSlotProblem(borrowed, 0, 'kilter')).toMatch(/non-kilter wall/);
-    // A name with its own brackets doesn't move the group that is read.
-    const bracketed = line(1, 'Wall (tension: side)', 'kilter: Kilter Board Original L1 S7 @40°');
+    // Brackets and quotes in the name or the layout don't move what is read.
+    const bracketed = line(1, 'Wall (tension)', 'Kilter Board Original L1 S7 @40°, kilter');
     expect(findBoardSlotProblem(bracketed, 1, 'tension')).toMatch(/non-tension wall/);
+    const quotedLayout = line(6, 'Cave', 'The "Cave" (garage) L90014 S1 @40°, spray');
+    expect(findBoardSlotProblem(quotedLayout, 6, 'spray')).toBeNull();
+    const posing = line(6, 'Cave', 'x" (kilter) L90015 S1 @40°, spray');
+    expect(findBoardSlotProblem(posing, 6, 'kilter')).toMatch(/non-kilter wall/);
   });
 
-  it('still reads a line from a bundle older than the typed description', () => {
-    expect(findBoardSlotProblem(line(2, 'Home Moon', 'MoonBoard 2016 L2 S1 @40°'), 2, 'moonboard')).toBeNull();
-    expect(findBoardSlotProblem(line(1, 'Gym', 'kilter L8 S21 @40°'), 1, 'tension')).toMatch(/non-tension wall/);
-    // Even there the name is not read, only the bracketed description.
-    const misnamed = line(1, 'Tension Fans Kilter', 'Kilter Board Original L1 S7 @40°');
-    expect(findBoardSlotProblem(misnamed, 1, 'tension')).toMatch(/non-tension wall/);
+  it('refuses a line with no board type instead of guessing from the layout', () => {
+    expect(findBoardSlotProblem(line(2, 'Home Moon', 'MoonBoard 2016 L2 S1 @40°'), 2, 'moonboard')).toMatch(
+      /names no board type/,
+    );
   });
 
   it('uses the last line for the slot, and names a miss with its roster or a slot never resolved', () => {
-    const switched = [line(0, 'Old', 'tension: L10 S18 @40°'), line(0, 'New', 'kilter: L1 S7 @40°')].join('\n');
+    const switched = [line(0, 'Old', 'L10 S18 @40°, tension'), line(0, 'New', 'L1 S7 @40°, kilter')].join('\n');
     expect(findBoardSlotProblem(switched, 0, 'kilter')).toBeNull();
     const miss = [
       ' LOG  [screenshot] WARN board[2] selector "MoonBoard" matched nothing; using position',
-      ' LOG  [screenshot] board roster: "HQ" (kilter: L1 S7 @40°)',
+      ' LOG  [screenshot] board roster: "HQ" (L1 S7 @40°, kilter)',
     ].join('\n');
     expect(findBoardSlotProblem(miss, 2, 'moonboard')).toMatch(/matched no wall \(board roster: "HQ"/);
     expect(findBoardSlotProblem('', 0, 'kilter')).toMatch(/never resolved board slot 0/);

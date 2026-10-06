@@ -102,8 +102,8 @@ describe('resolveScreenshotBoard', () => {
     expect(logged).toContain('"Newest Follow"');
     // The board type leads each description: the showcase recorder's wall check
     // reads it from there, never from a name someone typed.
-    expect(logged).toContain('"The Cellar" (tension: Tension Board 2 L1 S7 @40°)');
-    expect(logged).toContain('"Newest Follow" (moonboard: L1 S7 @40°)');
+    expect(logged).toContain('"The Cellar" (Tension Board 2 L1 S7 @40°, tension)');
+    expect(logged).toContain('"Newest Follow" (L1 S7 @40°, moonboard)');
     const warnLine = logged.split('\n').find((line) => line.includes('WARN board[0]')) ?? '';
     expect(warnLine).not.toContain('roster');
   });

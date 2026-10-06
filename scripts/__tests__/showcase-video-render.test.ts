@@ -645,7 +645,7 @@ describe('stage motion helpers', () => {
 describe('boards pile-up', () => {
   const boards = sceneOf('boards');
 
-  it('lands every recorded board, the persistent Tension phone in the middle of the final row', () => {
+  it('lands every recorded board, the persistent spray wall phone in the middle of the final row', () => {
     const plan = planBoards(boards.takes, new Set(boards.takes));
     expect(plan.arrival).toEqual(boards.takes);
     // The spray wall is the persistent phone: the next scene is its own.
