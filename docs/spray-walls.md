@@ -2812,13 +2812,16 @@ When the wall owner selects the `'collaborators'` policy (#6025), anyone who can
 write climbs on the wall (`viewerCanWriteSprayClimbs`: gym members on gym walls,
 share-link holders on unlisted walls, or anyone on public walls) may also edit
 published climbs. Only the wall creator may change the wall's `climbEditPolicy`.
+The app no longer offers a control for it: every wall keeps the policy it has,
+and the server still applies it.
 
 Four things the rule is careful about:
 
 - **The setter stays the setter.** `updateClimb` never writes `user_id` or
   `setter_username`, and a regrade goes on the climb's stats row with
   `fa_username` left as it was. A collaborator or wall owner who fixes your climb
-  has not taken it. Who made each edit is in the revision history instead.
+  has not taken it. Who made each edit is in `board_climb_revisions`, which the
+  app does not show.
 - **A draft is its setter's alone.** Collaborators and wall editors cannot edit or
   publish somebody else's draft. Publishing announces a new climb to followers, and
   it would announce it under the wrong name.
@@ -2994,7 +2997,8 @@ a share link to an unlisted wall gets the empty list in v1. The visibility sweep
 field is proven to show the owner the history and a stranger nothing.
 
 Revisions are read-only. There is no restore, and an old revision cannot be
-queued or lit up.
+queued or lit up. The app does not show the history: a published climb is not
+versioned for climbers. The query stays until a later backend change.
 
 ### Which revision a tick was logged on
 
@@ -3072,68 +3076,20 @@ nullable: a row pulled before v11 reads NULL, which means unknown and not 1.
 
 #### What the app sends
 
-The app calls a revision a **version**. That is the only word a climber sees.
+Nothing. The app never sends `climbRevision`, so the server always stores the
+fallback above.
 
-One rule decides everything below. The server stores any in-range version the
-app sends, as sent. So a wrong version is worse than a missing one: a missing
-one gets the fallback, which is the version live at `climbedAt` and is right for
-a tick logged now, while a wrong one files the send under a version the climber
-was not on, and if the holds moved since, the send stops counting. The app sends
-a version only when it can show the number belongs to the holds on screen. When
-it cannot, it leaves the key out. It is never sent as null either: a backend
-from before the field rejects the key.
-
-Where the number comes from (`resolveTickClimbRevision`,
-`packages/mobile/src/lib/tick-climb-revision.ts`), in order:
-
-1. The climb on screen, when it carries `revisionNumber`. A climb only carries
-   one that was read together with its frames: a row from the phone's own
-   search or detail read, or a network row that passed the check in step 2.
-2. The phone's own copy of the climb (`board_climbs.revision_number`), but only
-   when that row's `frames` are the same string as the frames on screen
-   (`localRevisionMatchingFrames`). `useLocalClimbRevision` reads the number
-   and the frames in one primary-key statement, when the form opens for a climb
-   with no number of its own, and again whenever `['climb']` is invalidated: a
-   saved tick, a climb edit and a completed board pull all do that.
-3. Nowhere. The tick is sent with no version.
-
-The frames check is an exact string comparison. The server's `holdsMoved`
-compares parsed hold sets, so two strings that list the same holds in another
-order are equal there and different here. That only makes the app leave the
-number out more often, which is the safe side, and the parser stays on the
-server.
-
-Cases the check exists for:
-
-| The climb on screen | The phone's row | Sent |
-| --- | --- | --- |
-| A network answer after the setter moved a hold | The version before the move | Nothing |
-| A queue item from before an edit | The version after it | Nothing |
-| The editor's unsaved holds (Set Active) | The last save | Nothing |
-| The editor's second save, when the phone's row was not refreshed | The first save | Nothing |
-| Same holds as the phone's row | That row | Its version |
-| Anything, on a board that is not downloaded | No row | Nothing |
-
-The last-but-two row is why the create screen puts no version on the climb it
-queues, although `updateClimb` could tell it one. A local "make this current"
-for the uuid that is already current is a no-op in the queue reducer
-(`packages/shared/queue/src/reducer.ts`), so after Edit, Save, move a hold, Save
-again the queue still holds the first save's item. `REFRESH_AUTHORED_CLIMB`
-then patches the second save's name, holds and draft state onto it, and no
-version. A version stamped by the first save would be one behind the server,
-the setter's send would be stored on it, and it would not count. With none, the
-send names the phone's version once the phone's row has the second save's
-holds. The `UpdateClimb` document does not select the two numbers, since
-nothing reads them.
-
-Offline, the version is written twice: into the local `boardsesh_ticks` row
-(`climb_revision`) and into the queued `SaveTick` payload. If the backend that
-finally receives the queued tick answers `Field "climbRevision" is not defined`,
-the outbox handler sends it once more without the field (`handlers.ts`,
-`DROPPABLE_INPUT_FIELDS`), so the send is delivered instead of dead-lettered.
-The match is on that clause and not on the field name: graphql-js prints the
-whole input in such messages, so the name alone appears in rejections that are
-about something else.
+Offline, the local `boardsesh_ticks` row is still stamped, from the phone's own
+`board_climbs.revision_number` for that climb (`writeTickLocal`), so the app's
+sent marks below count the send before the pull brings the server's value. The
+phone's row is never below its own holds version, so the stamp always agrees
+with the local check. The queued `SaveTick` payload carries no version. A tick
+queued by an older app still carries one and is replayed as stored; if the
+backend answers `Field "climbRevision" is not defined`, the outbox handler sends
+it once more without the field (`handlers.ts`, `DROPPABLE_INPUT_FIELDS`). The
+match is on that clause and not on the field name: graphql-js prints the whole
+input in such messages, so the name alone appears in rejections that are about
+something else.
 
 #### Why the version comes from the phone and not from the query
 
@@ -3145,8 +3101,8 @@ fixtures, which key a recording on the document text
 
 - A climb's numbers come from `syncClimbs` (the phone's `board_climbs` row). A
   network `SearchClimbs` page or `GetClimb` answer is filled in from it
-  (`fillClimbRevisionNumbersLocal`, one read per page): `revisionNumber` under
-  the frames check above, `holdsRevisionNumber` always. The holds number is only
+  (`fillClimbRevisionNumbersLocal`, one read per page): `revisionNumber` only
+  when the phone's row has the same frames, `holdsRevisionNumber` always. The holds number is only
   a threshold for "does this send still count", it only rises, and the phone's
   value is a past one, so it can be too low and never too high. Too low counts
   a send that should have been dropped; it cannot drop one that counts. The fill
@@ -3160,9 +3116,9 @@ fixtures, which key a recording on the document text
 - A queue item keeps `revisionNumber` and `holdsRevisionNumber` on the phone
   that queued it, and does not send them. `ClimbInput.revisionNumber` is
   accepted by the server, but no queue document returns it, so a climb that has
-  been through a shared queue arrives without it and the tick form uses step 2
-  above. `queue-climb-field-contract.test.ts` still lists the field as
-  server-ready for this reason.
+  been through a shared queue arrives without it.
+  `queue-climb-field-contract.test.ts` still lists the field as server-ready for
+  this reason.
 
 Adding the fields to those documents, and removing the local joins, is the
 follow-up once the fixtures are re-recorded.
@@ -3187,24 +3143,11 @@ are read again, and the logbook cache takes the version from the later read
 never trades a known value for less). A batch that is not on screen is read
 again the next time its climb is opened.
 
-#### Where the app says "Earlier version"
+#### No "Earlier version" tag
 
-A log shows the words **Earlier version** when its version is known and lower
-than the version the climb is on now. Any edit counts, a rename included: the
-tag says the climb has changed since, not that the send stopped counting. No
-version numbers are shown. A log with no known version shows nothing.
-
-| Surface | Source of the two versions |
-| --- | --- |
-| Play drawer, your own history (`LogbookEntryRow`) | The tick from the phone's copy; the climb's current version from the phone's `board_climbs` row. No frames check here: the tag compares against the version the climb is on now, whatever holds a queue item is showing. |
-| Play drawer, other climbers' logs (`ClimberLogRow`) | `climbRevision` and `climbCurrentRevision` on `climbLogs` and `followingClimbAscents` |
-| You tab, the flat logbook (`LogbookRow`) | The same two fields on `userAscentsFeed` |
-| You tab, the grouped logbook | No tag. `GetUserGroupedAscentsFeed` is a pinned document. |
-| Session detail and the session feed | No tag, for the same reason. |
-
-The tag is plain text. Opening the version a log was made on needs the version
-sheet from #5973, which ships with the release train; making the tag a button
-is the follow-up.
+The app does not tag a log made on an earlier version of a climb. The server
+still returns `climbRevision` and `climbCurrentRevision` on the log feeds; the
+app reads a tick's version only for the sent marks below.
 
 #### The app's own "sent" marks
 

@@ -302,13 +302,13 @@ composite-keyed sync table must keep this true (or version the encoding).
   INTEGERs, because a row pulled before schema v11 has never been told its revision.
 - They were also added **without** bumping `refreshRevision`. Only an edit moves either number off 1, and an edit
   bumps the row's `sync_seq`, so every climb whose number is not 1 comes down the ordinary cursor. A row that is
-  never re-delivered is a climb nobody has edited. Its local NULL costs nothing: a tick logged from it sends no
-  revision and the server stores 1. A bump would re-crawl every downloaded catalogue to write a 1 beside each
+  never re-delivered is a climb nobody has edited. Its local NULL costs nothing: the app never sends a tick's
+  revision, and the server stores 1. A bump would re-crawl every downloaded catalogue to write a 1 beside each
   climb.
 - A local reader that STAMPS a tick must treat NULL as unknown, not as 1. A climb edited while the phone ran a
   bundle older than v11 was re-delivered to code that dropped the two fields, and it stays NULL until its next
-  edit. The server's by-date fallback stamps a tick on that climb correctly; a reader that assumed 1 would not.
-  The tick form does this: a NULL `revision_number` sends no `climbRevision` at all.
+  edit. `writeTickLocal` stamps the local tick row with `revision_number` as it is, NULL included; the app sends
+  no `climbRevision`, so the server's by-date fallback stamps the server's row.
 - The local "sent" comparison is the one place NULL reads as 1, on both sides
   (`tickOnCurrentHoldsLocalSql`, `packages/mobile/src/db/queries/climb-revisions-local.ts`). A NULL
   `holds_revision_number` then lets every tick count, which is how the list behaved before the column. The cost is
