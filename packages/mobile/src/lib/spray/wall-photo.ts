@@ -12,8 +12,18 @@
 import * as ImagePicker from 'expo-image-picker';
 import { compressPickedImage } from '../image-compression';
 
-/** Longest edge of an uploaded wall photo. */
-export const WALL_PHOTO_MAX_DIMENSION = 2048;
+/**
+ * Longest edge of an uploaded wall photo.
+ *
+ * 4096, not the 2048 the wall is drawn at (#5911). The server keeps a 2048 px
+ * base for the canonical frame, the detector and the climb view, and stores this
+ * larger copy beside it for the hold editor to swap in once it zooms past 3x.
+ * A 12 MP phone photo (4032x3024) goes up unscaled. Eight sample wall photos
+ * came to 1.5–2.6 MB at JPEG 0.85 and at most 4.7 MB at 0.95, and even pure
+ * noise at 4096x3072 stays under 13 MB, so the handler's 15 MB cap needs no
+ * second, lower-quality pass.
+ */
+export const WALL_PHOTO_MAX_DIMENSION = 4096;
 /** JPEG quality. The hold editor traces silhouettes on these pixels. */
 export const WALL_PHOTO_QUALITY = 0.85;
 

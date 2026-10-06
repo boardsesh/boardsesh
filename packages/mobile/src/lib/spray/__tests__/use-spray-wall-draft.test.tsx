@@ -134,6 +134,53 @@ describe('draft render ownership', () => {
     expect(getSprayWall(LAYOUT_ID)).toBe(published);
   });
 
+  // #5911: the hold editor swaps this in once it zooms past 3x.
+  it('hands over the full-resolution photo URL with the wall', async () => {
+    requestMock.mockResolvedValue({
+      sprayWallRenderData: { ...payload(), photoFullUrl: 'https://private.example/30-full.jpg?signature=1' },
+    });
+    const { result } = renderHook(() => useSprayWallDraft(LAYOUT_ID, 'wall-1', 3, '30'), { wrapper });
+    await waitFor(() => expect(result.current.wall?.versionId).toBe(30));
+    expect(result.current.photoFullUrl).toBe('https://private.example/30-full.jpg?signature=1');
+  });
+
+  // Walls uploaded before #5911 have no full copy; the editor keeps the base.
+  it('answers no full-resolution photo for a wall without one', async () => {
+    requestMock.mockResolvedValue({ sprayWallRenderData: { ...payload(), photoFullUrl: null } });
+    const { result } = renderHook(() => useSprayWallDraft(LAYOUT_ID, 'wall-1', 3, '30'), { wrapper });
+    await waitFor(() => expect(result.current.wall?.versionId).toBe(30));
+    expect(result.current.photoFullUrl).toBeNull();
+  });
+
+  // The same gates that withhold the wall withhold its sharper photo.
+  it('withholds the full-resolution photo of a row it rejects', async () => {
+    requestMock.mockResolvedValue({
+      sprayWallRenderData: { ...payload('31'), photoFullUrl: 'https://private.example/31-full.jpg?signature=1' },
+    });
+    const { result } = renderHook(() => useSprayWallDraft(LAYOUT_ID, 'wall-1', 3, '30'), { wrapper });
+    await waitFor(() => expect(result.current.isUnavailable).toBe(true));
+    expect(result.current.photoFullUrl).toBeNull();
+  });
+
+  // A lapsed signature is refreshed in the background, never as a reload.
+  it('refreshes the photo URLs without going back to loading', async () => {
+    requestMock.mockResolvedValue({
+      sprayWallRenderData: { ...payload(), photoFullUrl: 'https://private.example/30-full.jpg?signature=1' },
+    });
+    const { result } = renderHook(() => useSprayWallDraft(LAYOUT_ID, 'wall-1', 3, '30'), { wrapper });
+    await waitFor(() => expect(result.current.wall?.versionId).toBe(30));
+    requestMock.mockResolvedValue({
+      sprayWallRenderData: { ...payload(), photoFullUrl: 'https://private.example/30-full.jpg?signature=2' },
+    });
+    const loadingSeen: boolean[] = [];
+    act(() => result.current.refreshPhotoUrls());
+    loadingSeen.push(result.current.isLoading);
+    await waitFor(() => expect(result.current.photoFullUrl).toContain('signature=2'));
+    loadingSeen.push(result.current.isLoading);
+    expect(loadingSeen).toEqual([false, false]);
+    expect(result.current.wall?.versionId).toBe(30);
+  });
+
   it('rejects a refetch that resolves a reused number to a replacement row', async () => {
     registerPublished();
     requestMock.mockResolvedValue({ sprayWallRenderData: payload('31') });

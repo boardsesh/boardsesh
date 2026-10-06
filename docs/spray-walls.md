@@ -288,7 +288,7 @@ would leave first-run open.
 | --- | --- |
 | `resuming` | Asks `mySprayWalls` for a wall of the caller's own with no published version and offers to pick it up or start over. |
 | `meta` | Name, gym, visibility, location, and the angle — snapped to `SPRAY_ANGLES`, because the server validates against that list. |
-| `photo` | Library pick; the camera button only on a binary at or past the version that shipped the usage description. Compressed to a 2048 px JPEG, which bakes the EXIF orientation into the pixels. |
+| `photo` | Library pick; the camera button only on a binary at or past the version that shipped the usage description. Compressed to a 4096 px JPEG (`WALL_PHOTO_MAX_DIMENSION`), which bakes the EXIF orientation into the pixels. A 12 MP phone photo goes up unscaled. The server keeps a 2048 px base for the frame, the detector and the climb view, and the larger copy only for the hold editor's deep zoom (#5911). |
 | `anchors` | Optional, Skip by default. Four draggable handles with the marked area outlined between them; a quad that crosses itself is refused client-side, because the server's fallback for a degenerate quad is the identity matrix. The photo is fitted on both axes to the space between the header and the footer (`corner-photo-fit.ts`), so all four handles are on screen and the step does not scroll; the footer is the same height before and after the first drag. When that space would fall under about 200 points the photo stops shrinking and the step scrolls instead — reachable on a 375x667 phone with the reset flow's longer copy, not only at large text sizes — and the page is held still while a ring is being dragged, so a drag never becomes a scroll. The hint and the refusal that replaces it share one slot, so a refused quad does not re-fit the photo. The reset flow's corner step is the same component. |
 | `upload` | `createSprayWall`, then the multipart POST, then `createSprayWallVersion`. |
 | `detect` | Request or resume a server-owned recognition job. New walls can enter manual editing while queued ("Mark holds myself"); published reset versions remain unchanged until review and confirmation. With the photo still on the phone the step is full-screen (`SprayScanPhoto`): the photo sits exactly where the editor will put it (`fitSprayPhoto`), dimmed, with a violet band looping down it and a glass status card. A run resumed without the file, and the reset flow, keep the plain spinner. |
@@ -1004,10 +1004,40 @@ What the editor does with a wall is decided by this document rather than by tast
   hands it to `useZoomPanGesture`. Everything else keeps `MAX_SCALE = 4` from
   `@boardsesh/play-view`: climb view, search, zone, the catalogue outline
   editor, reset compare and web. Ring strokes snap through zoom steps 1, 1.5, 2,
-  3, 4, 6 and 8 so they stay thin. The photo is already the stored 2048 px
-  long-side original (the only other copy is a 280 px thumbnail), so at 8x a
-  phone shows roughly 190 photo px across and looks soft. Storing a larger
-  original is a follow-up.
+  3, 4, 6 and 8 so they stay thin.
+- **Past 3x the editor swaps in the full-resolution photo (#5911).** The base
+  photo is 2048 px on its long side, so at 8x a phone shows at most about 190
+  of its pixels across and a small hold goes soft. On iOS it is fewer still:
+  expo-image resizes the base to the view's un-zoomed pixel size (about 1179 px
+  across on an iPhone), so 8x shows about 150. Decoding the base at full size
+  too is a possible follow-up. A version uploaded larger also has a
+  copy at up to 4096 px, which only the draft read (`GET_SPRAY_WALL_DRAFT_RENDER_DATA`)
+  asks for, as `photoFullUrl`; the climb view, search and every other read keep
+  the base alone. The editor hands it to `InteractiveFilterBoard` as
+  `fullResolutionPhoto` (`spray-full-photo.ts`), and `FullResolutionPhotoLayer`
+  draws it over the base, inside the zoom transform.
+  - **Fetched on the first zoom past 3x** (`SPRAY_FULL_PHOTO_MIN_SCALE`), not on
+    open: a 4096x3072 photo is about 48 MB decoded. One `useAnimatedReaction`
+    tells the JS thread once, on the first crossing.
+  - **No flash.** The base stays mounted underneath and shows until the full
+    photo has loaded, so the swap reads as the wall sharpening. Both are drawn
+    `fill` into the same box, so every ring stays where it was.
+  - **Decoded at full size.** The layer passes `allowDownscaling={false}`.
+    Without it expo-image on iOS resizes any image larger than its view's
+    pixel size down to that size, `fill` included, and the zoom transform does
+    not change the view's layout box, so the 4096 px copy would land smaller
+    than the base. Android's `fill` path keeps the pixels either way.
+  - **Kept for the visit.** Zooming back out does not unload it, so a climber
+    working up and down the wall decodes it once. It is cached in memory only,
+    like the base, under a key naming the version (`spray-full/<wallUuid>/v<versionId>`),
+    so a refetch that re-signs the URL does not download it again.
+  - **A lapsed signature is refetched.** The first deep zoom can come after the
+    draft's 15-minute signature ran out; a load that fails past `photo.expiresAt`
+    reads the draft again for fresh URLs, at most once a minute. Any other
+    failure leaves the base on screen.
+  - **Walls without a copy are unchanged.** `photoFullUrl` is null for every
+    version uploaded before #5911 and for any photo already 2048 px or smaller;
+    the editor then shows the base alone, as before.
 - **Motion is whole-layer or one spotlight, never per hold.** After a fresh
   scan (`revealOnMount`) the ring layer is revealed by a 700 ms top-to-bottom
   clip of one wrapper view, with the scan band riding its edge, then the maybes

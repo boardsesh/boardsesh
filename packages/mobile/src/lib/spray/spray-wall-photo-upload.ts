@@ -5,7 +5,7 @@
 //
 //  1. **`createUploadTask` (native).** The legacy `expo-file-system` upload task
 //     is the only thing in the app that reports BYTES SENT. A wall photo is a
-//     2048 px JPEG — two to five megabytes on a phone link — and the difference
+//     4096 px JPEG — two to five megabytes on a phone link — and the difference
 //     between a bar that moves and a spinner that does not is the difference
 //     between waiting and force-quitting.
 //  2. **`authenticatedFetch` + FormData (fallback).** The Expo web build has no
