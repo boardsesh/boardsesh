@@ -227,8 +227,8 @@
         "editHolds": "Modifier les prises",
         "editHoldsHint": "Ajoute, déplace ou supprime les prises de ton mur.",
         "holdsLocked": "Prises verrouillées",
-        "holdsLockedHint": "Ce mur a des blocs. Réinitialise-le pour changer une prise.",
-        "holdsLockedEditorHint": "Ce mur a des blocs, donc ses prises sont verrouillées. Seul son propriétaire peut le réinitialiser.",
+        "holdsLockedHint": "Ce mur a des blocs publiés. Réinitialise-le pour changer une prise.",
+        "holdsLockedEditorHint": "Ce mur a des blocs publiés, donc ses prises sont verrouillées. Seul son propriétaire peut le réinitialiser.",
         "resetWall": "Réinitialiser ce mur",
         "resetWallHint": "Prends une nouvelle photo et marque à nouveau les prises.",
         "shareLink": "Partager le lien",
@@ -1099,11 +1099,11 @@
     "manageHeader": "Archivés",
     "manageRow": "Archivé le {{date}}",
     "manageRowUndated": "Archivé",
-    "deleteMessage": "Supprimer « {{name}} » ? Sa photo, ses blocs et toutes les croix notées dessus quittent les carnets et les playlists avec lui. C'est irréversible."
+    "deleteMessage": "Supprimer « {{name}} » ? Sa photo est supprimée. Ses blocs, et toutes les croix notées dessus, quittent les carnets et les playlists. C'est irréversible."
   },
   "sprayWallErrors": {
     "archived": "Ce mur est archivé. Ses blocs et ses croix restent, mais on ne peut plus y ouvrir de bloc.",
-    "holdsLocked": "Ce mur a des blocs, donc ses prises sont verrouillées. Réinitialise le mur pour changer une prise.",
+    "holdsLocked": "Ce mur a des blocs publiés, donc ses prises sont verrouillées. Réinitialise le mur pour changer une prise.",
     "resetRetired": "Désormais, on change un mur en le réinitialisant. Mets l'app à jour, puis réinitialise le mur.",
     "resetOwnerOnly": "Seul le propriétaire du mur peut le réinitialiser.",
     "resetSourceUnpublished": "Termine la configuration de ce mur avant de le réinitialiser.",
@@ -1138,7 +1138,7 @@
   },
   "sprayCaps": {
     "holds": "Un mur porte jusqu’à {{max}} prises. Écartes-en quelques-unes et enregistre à nouveau.",
-    "versions": "Un mur garde {{max}} réinitialisations, et celui-ci les a toutes utilisées.",
+    "versions": "Un mur garde jusqu’à {{max}} versions de ses prises avant la publication de son premier bloc, et celui-ci les a toutes utilisées.",
     "walls": "Tu peux garder {{max}} murs. Supprimes-en un pour faire de la place.",
     "wallsHint": "Tu peux garder jusqu’à {{max}} murs."
   },

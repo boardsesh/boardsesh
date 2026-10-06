@@ -225,14 +225,14 @@
       "spray": {
         "kind": "Plafón de presas",
         "editHolds": "Editar presas",
-        "editHoldsHint": "Añade, mueve o borra las presas de tu plafón.",
-        "holdsLocked": "Presas bloqueadas",
-        "holdsLockedHint": "Este muro ya tiene bloques. Resetéalo para cambiar una presa.",
-        "holdsLockedEditorHint": "Este muro ya tiene bloques, así que sus presas están bloqueadas. Solo quien lo creó puede resetearlo.",
+        "editHoldsHint": "Añade, mueve o borra las presas de tu muro.",
+        "holdsLocked": "Presas fijadas",
+        "holdsLockedHint": "Este muro ya tiene bloques publicados. Resetéalo para cambiar una presa.",
+        "holdsLockedEditorHint": "Este muro ya tiene bloques publicados, así que sus presas están fijadas. Solo quien lo creó puede resetearlo.",
         "resetWall": "Resetear este muro",
         "resetWallHint": "Haz una foto nueva y marca las presas otra vez.",
         "shareLink": "Compartir enlace",
-        "shareLinkPublicHint": "Cualquiera puede abrir este plafón.",
+        "shareLinkPublicHint": "Cualquiera puede abrir este muro.",
         "shareLinkUnlistedHint": "Solo quien reciba el enlace."
       },
       "details": "Detalles",
@@ -1099,11 +1099,11 @@
     "manageHeader": "Archivados",
     "manageRow": "Archivado el {{date}}",
     "manageRowUndated": "Archivado",
-    "deleteMessage": "¿Borrar «{{name}}»? Su foto, sus bloques y todos los encadenes registrados en ellos desaparecen con él de los logbooks y las playlists. No se puede deshacer."
+    "deleteMessage": "¿Eliminar «{{name}}»? Se elimina su foto, y sus bloques y todos los encadenes registrados en ellos desaparecen de los logbooks y las playlists. No se puede deshacer."
   },
   "sprayWallErrors": {
     "archived": "Este muro está archivado. Sus bloques y encadenes se quedan, pero ya no se puede montar nada nuevo en él.",
-    "holdsLocked": "Este muro ya tiene bloques, así que sus presas están bloqueadas. Resetea el muro para cambiar una presa.",
+    "holdsLocked": "Este muro ya tiene bloques publicados, así que sus presas están fijadas. Resetea el muro para cambiar una presa.",
     "resetRetired": "Ahora los muros se cambian reseteándolos. Actualiza la app y luego resetea el muro.",
     "resetOwnerOnly": "Solo quien creó el muro puede resetearlo.",
     "resetSourceUnpublished": "Termina de configurar este muro antes de resetearlo.",
@@ -1138,7 +1138,7 @@
   },
   "sprayCaps": {
     "holds": "En un muro caben hasta {{max}} presas. Descarta algunas y vuelve a guardar.",
-    "versions": "Un muro guarda {{max}} reseteos, y este ya los ha gastado todos.",
+    "versions": "Un muro guarda hasta {{max}} versiones de sus presas antes de que se publique su primer bloque, y este ya las ha gastado todas.",
     "walls": "Puedes tener {{max}} muros. Borra uno para hacer sitio.",
     "wallsHint": "Puedes tener hasta {{max}} muros."
   },
