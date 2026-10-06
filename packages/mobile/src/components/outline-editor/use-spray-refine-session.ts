@@ -53,9 +53,9 @@ export type RefineView = {
   strokeCount: number;
   /** The area differs from where the session started: leaving now would lose work. */
   changed: boolean;
-  /** The hold's radius in board px when Refine opened: what the brush sizes are fractions of. */
+  /** The hold's radius in board px when Refine opened: what the brush's cap is a fraction of. */
   holdRadiusBoardPx: number;
-  /** The brush frame, for the brush-size floor. */
+  /** The brush frame, for the brush-size floor, and its origin is the hold's centre. */
   frame: RefineFrame;
 };
 
@@ -118,7 +118,7 @@ export type SprayRefineSession = {
  * `useBrushSession.snapshot` gives: later strokes compose onto the bitmap, so
  * restoring the ring alone would paint the next stroke over the undone one. The
  * stack keeps {@link MAX_REFINE_UNDO} entries, each a copy of the bitmap (about
- * 75 kB for a typical hold, 260 kB at worst).
+ * 200 kB for a typical hold, 410 kB at worst: 4 and 8 MB for a full stack).
  *
  * The session lives in refs; only the area and the stroke count are state,
  * because they are all the screen draws.
