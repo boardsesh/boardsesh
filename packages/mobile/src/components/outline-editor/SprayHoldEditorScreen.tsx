@@ -51,7 +51,23 @@ import { SprayLoupe } from './SprayLoupe';
 import { useSprayLoupeFeed } from './spray-loupe-feed';
 import { SprayEditGestureOverlay, type SprayWallAccessibility } from './SprayEditGestureOverlay';
 import { SprayEditorBottomBar, sprayCountSummary } from './SprayEditorBottomBar';
+import { SprayEditorMenu } from './SprayCountCapsule';
 import { SprayCornersChipBar, SprayHoldChipBar } from './SprayHoldChipBar';
+import { SprayHoldInspector } from './SprayHoldInspector';
+import { SprayHoverPreview } from './SprayHoverPreview';
+import { SprayPencilSurface } from './SprayPencilSurface';
+import { SprayTabletChrome } from './SprayTabletChrome';
+import { SprayToolRail } from './SprayToolRail';
+import { pencilStrokeTarget } from './pencil-session';
+import { useSprayPencilMode } from './use-spray-pencil-mode';
+import { useSprayRailSide } from './use-spray-rail-side';
+import {
+  sprayTabletPlacement,
+  SPRAY_INSPECTOR_WIDTH,
+  SPRAY_RAIL_MARGIN,
+  SPRAY_TABLET_CONTENT_MAX_WIDTH,
+} from './spray-tablet-layout';
+import { zoomTargetForHold } from './hold-navigation';
 import { SprayUndoToast, type SprayUndoToastContent } from './SprayUndoToast';
 import { resolveEditTap, type SprayEditorTool } from './spray-edit-tap';
 import { SprayEditorBanner } from './SprayEditorBanner';
@@ -59,7 +75,13 @@ import { SprayEditorLoading, type SprayEditorLoadingPhoto } from './SprayEditorL
 import { SprayScanBand, SCAN_BAND_HEIGHT } from './SprayScanBand';
 import { SprayHoldSpotlight } from './SprayHoldSpotlight';
 import { SprayPublishSweep, PUBLISH_SWEEP_MS } from './SprayPublishSweep';
-import { fitSprayPhoto, SPRAY_BAR_GUTTER, SPRAY_BAR_TOTAL_HEIGHT, SPRAY_EDITOR_MAX_SCALE } from './spray-photo-frame';
+import {
+  fitSprayPhoto,
+  SPRAY_BAR_GUTTER,
+  SPRAY_BAR_HEIGHT,
+  SPRAY_BAR_TOTAL_HEIGHT,
+  SPRAY_EDITOR_MAX_SCALE,
+} from './spray-photo-frame';
 import { photoSignatureLapsed, sprayFullResolutionPhoto } from './spray-full-photo';
 import { useSprayAddShape, type SprayAddShape } from './use-spray-add-shape';
 import { sprayPhotoReservesBottom, useSprayEditorLayout } from './use-spray-editor-layout';
@@ -154,6 +176,16 @@ const NO_AVOID_TOP = 1e9;
 
 /** Where the zoomed-in reset control sits: top-left, clear of the chip bar and the bottom bar. */
 const RESET_ZOOM_STYLE = { left: spacing[2], top: spacing[2] };
+/** On iPad it goes to the top corner away from the tool rail. */
+const RESET_ZOOM_STYLE_RIGHT = { right: spacing[2], top: spacing[2] };
+
+/**
+ * How much wall the inspector's Previous / Next frame round the hold they pick,
+ * in units of its radius. Wide enough that the neighbours stay in view and a
+ * walk down the wall reads as moving along it, not jumping between close-ups:
+ * about 4x on an iPad for a typical spray hold.
+ */
+const STEP_FRAME_CONTEXT_RADII = 9;
 
 // Re-exported so a caller that opens this screen imports one module. The shapes
 // themselves live in `spray-hold-editor-types.ts`, which has no React in it, so
@@ -248,6 +280,14 @@ export type SprayHoldEditorScreenProps = {
  * editor's `DrawStrokeOverlay` and stroke → ring chain unchanged, so a wall's
  * traced outline obeys exactly the ring contract a board's does.
  *
+ * On an iPad at full width (`useSprayEditorLayout`) the photo takes the whole
+ * screen and the chrome changes shape around the same handlers: a tool rail
+ * down one side (`SprayToolRail`), the picked hold in an inspector card on the
+ * other (`SprayHoldInspector`), and the counts and the primary button in a
+ * cluster at the bottom (`SprayTabletChrome`). The Apple Pencil marks there:
+ * a Pencil tap switches a ring or adds one, a Pencil stroke outlines a hold,
+ * and fingers pick and move around — see `pencil-session.ts`.
+ *
  * Coordinates are the photograph's own pixels everywhere on screen. The single
  * hop into canonical wall coordinates happens in `prepareCommit`, once.
  */
@@ -271,7 +311,19 @@ export function SprayHoldEditorScreen({
   const { t } = useTranslation('boards');
   const insets = useSafeAreaInsets();
   const headerInset = useTransparentHeaderInset();
-  const { layout } = useSprayEditorLayout();
+  const { layout, landscape } = useSprayEditorLayout();
+  const tablet = layout === 'tablet';
+  const tabletRef = useRef(tablet);
+  tabletRef.current = tablet;
+  // The Pencil marks and fingers inspect (iPad only). See `pencil-session.ts`.
+  const pencil = useSprayPencilMode(tablet);
+  const pencilOnlyRef = useRef(pencil.pencilOnly);
+  pencilOnlyRef.current = pencil.pencilOnly;
+  const pencilSeenRef = useRef(pencil.pencilSeen);
+  pencilSeenRef.current = pencil.pencilSeen;
+  const [railSide, setRailSide] = useSprayRailSide(tablet);
+  /** The tablet rail's wall-wide menu. The phone's lives inside its bottom bar. */
+  const [tabletMenuOpen, setTabletMenuOpen] = useState(false);
 
   const { isLoading, isUnavailable, isStalled, retry, homography, wall, photoFullUrl, refreshPhotoUrls } =
     useSprayWallDraft(layoutId, wallUuid, versionNumber, versionId);
@@ -332,8 +384,16 @@ export function SprayHoldEditorScreen({
 
   const draftPointsSV = useSharedValue<number[]>(NO_POINTS);
   const cornersSV = useSharedValue<number[]>(NO_POINTS);
-  // Add mode's Draw always takes a finger, whatever the target's default.
+  // Add mode's Draw takes a finger, whatever the target's default — unless
+  // "Pencil only" is on, when fingers pan and only the Pencil draws.
   const addDrawSV = useSharedValue(true);
+  const pencilOnlySV = useSharedValue(false);
+  /** What a hovering Pencil is over, for `SprayHoverPreview`. Written by the edit overlay. */
+  const hoverSV = useSharedValue<number[]>(NO_POINTS);
+  useEffect(() => {
+    addDrawSV.value = !pencil.pencilOnly;
+    pencilOnlySV.value = pencil.pencilOnly;
+  }, [pencil.pencilOnly, addDrawSV, pencilOnlySV]);
   // The corners are written on the UI thread (a tap, a close) and on JS (undo,
   // a refused close putting them back). The count is read from the one place
   // they live, so the two can never disagree.
@@ -400,8 +460,9 @@ export function SprayHoldEditorScreen({
   );
 
   useEffect(() => {
-    fingerDrawSV.value = capabilities.fingerDrawDefault;
-  }, [capabilities.fingerDrawDefault, fingerDrawSV]);
+    // Trace follows "Pencil only" too: with it on, a finger never draws.
+    fingerDrawSV.value = capabilities.fingerDrawDefault && !pencil.pencilOnly;
+  }, [capabilities.fingerDrawDefault, pencil.pencilOnly, fingerDrawSV]);
 
   // The registry is a module-level map, so the wall is read through
   // `useSyncExternalStore` — the same shape `useSprayWall` uses. Its own
@@ -579,6 +640,7 @@ export function SprayHoldEditorScreen({
   );
   const medianRadiusRef = useRef(medianRadius);
   medianRadiusRef.current = medianRadius;
+  /** The same size, for a press and hold's circle and the Pencil hover's "a tap adds this" ghost. */
   const medianRadiusSV = useSharedValue(medianRadius);
   useEffect(() => {
     medianRadiusSV.value = medianRadius;
@@ -621,6 +683,10 @@ export function SprayHoldEditorScreen({
   canEditRef.current = canEdit;
   const toolRef = useRef(tool);
   toolRef.current = tool;
+  // A hover left over from before a tool change must not flash up on the way back.
+  useEffect(() => {
+    hoverSV.value = NO_POINTS;
+  }, [tool, hoverSV]);
 
   /** Says what the reveal found, once it has. A ref so the reveal effect need not re-run on a count. */
   const announceRevealRef = useRef(() => {});
@@ -808,8 +874,26 @@ export function SprayHoldEditorScreen({
     [dispatchWithUndoToast, recordHint, t],
   );
 
+  /** One hand-added hold, with the cap check every add shares. False when the cap refused it. */
+  const addHold = useCallback(
+    (geometry: HoldGeometry) => {
+      if (countsRef.current.on >= MAX_HOLDS_PER_WALL) {
+        refuseOverCap();
+        return false;
+      }
+      hapticMedium();
+      // The id ADD_HOLD is about to take: add mode keeps a resize handle on it.
+      setLastAddedId(stateRef.current.nextLocalId);
+      dispatch({ type: 'ADD_HOLD', geometry });
+      pulseSpotlight('add', geometry);
+      recordHint('add');
+      return true;
+    },
+    [refuseOverCap, pulseSpotlight, recordHint],
+  );
+
   const handleTap = useCallback(
-    (boardX: number, boardY: number, zoom: number) => {
+    (boardX: number, boardY: number, zoom: number, isStylus = false) => {
       if (!canEditRef.current) return;
       setErrorText(null);
       const current = stateRef.current;
@@ -820,12 +904,23 @@ export function SprayHoldEditorScreen({
         holdAtPoint(visibleHoldsRef.current, boardX, boardY, fallbackRadius) ??
         holdAtPoint(hiddenMaybesRef.current, boardX, boardY, fallbackRadius);
 
-      switch (resolveEditTap({ tool: toolRef.current, hitId: hit?.id ?? null, selectedId: current.selectedId })) {
+      // The Pencil's own rule applies on the iPad layout only.
+      const input = tabletRef.current && isStylus ? 'pencil' : 'finger';
+      const answer = resolveEditTap({
+        tool: toolRef.current,
+        hitId: hit?.id ?? null,
+        selectedId: current.selectedId,
+        input,
+        pencilOnly: pencilOnlyRef.current,
+      });
+      switch (answer) {
         case 'select':
           if (!hit) return;
           hapticSelection();
           dispatch({ type: 'SELECT', id: hit.id });
-          recordHint('select');
+          // A finger picking a ring is the half of the Pencil lesson nobody
+          // finds by accident, so once a Pencil is out it uses that hint up.
+          recordHint(input === 'finger' && pencilSeenRef.current ? 'fingerPick' : 'select');
           return;
         case 'toggle':
           if (hit) toggleHold(hit);
@@ -844,11 +939,15 @@ export function SprayHoldEditorScreen({
           pulseSpotlight('ping', holdFromTap(boardX, boardY, medianRadiusRef.current));
           recordHint('bareWall');
           return;
+        case 'addHold':
+          // A Pencil tap on bare wall: the Pencil marks.
+          addHold(holdFromTap(boardX, boardY, medianRadiusRef.current));
+          return;
         case 'none':
           return;
       }
     },
-    [boardScale, toggleHold, joinHolds, pulseSpotlight, recordHint],
+    [boardScale, toggleHold, joinHolds, pulseSpotlight, recordHint, addHold],
   );
 
   const handlePickUp = useCallback(
@@ -987,24 +1086,6 @@ export function SprayHoldEditorScreen({
   const clearCorners = useCallback(() => {
     cornersSV.value = NO_POINTS;
   }, [cornersSV]);
-
-  /** One hand-added hold, with the cap check every add shares. False when the cap refused it. */
-  const addHold = useCallback(
-    (geometry: HoldGeometry) => {
-      if (countsRef.current.on >= MAX_HOLDS_PER_WALL) {
-        refuseOverCap();
-        return false;
-      }
-      hapticMedium();
-      // The id ADD_HOLD is about to take: add mode keeps a resize handle on it.
-      setLastAddedId(stateRef.current.nextLocalId);
-      dispatch({ type: 'ADD_HOLD', geometry });
-      pulseSpotlight('add', geometry);
-      recordHint('add');
-      return true;
-    },
-    [refuseOverCap, pulseSpotlight, recordHint],
-  );
 
   /**
    * Closes a Corners outline the caller has already taken off `cornersSV`.
@@ -1244,6 +1325,102 @@ export function SprayHoldEditorScreen({
     setShowMaybes(true);
     dispatchWithUndoToast({ type: 'START_OVER', holds: seedHoldsRef.current }, t('sprayEditor.toast.startedOver'));
   }, [clearCorners, dispatchWithUndoToast, t]);
+
+  /** The first Pencil touch or hover: "Pencil only" turns itself on, and the Pencil hint asks to be shown. */
+  const notePencil = pencil.notePencil;
+  const handlePencilSeen = useCallback(() => {
+    if (notePencil()) recordHint('pencil');
+  }, [notePencil, recordHint]);
+
+  /**
+   * A Pencil on the resting iPad editor, anywhere but the selected ring (that
+   * touch is a move, and the edit overlay has it). Short enough to be a tap, it
+   * is the Pencil's tap: switch the ring under it, or add one on bare wall. A
+   * real stroke outlines a hold — a new one, or the selected one again when
+   * the loop is centred inside it.
+   */
+  const handlePencilStroke = useCallback(
+    (strokeBoardPoints: number[], zoom: number) => {
+      draftPointsSV.value = NO_POINTS;
+      if (!canEditRef.current || toolRef.current !== 'edit' || strokeBoardPoints.length < 2) return;
+      const tapSlop = (ADD_TAP_SLOP_PT * boardScale) / Math.max(1, zoom);
+      if (strokeExtent(strokeBoardPoints) <= tapSlop) {
+        handleTap(strokeBoardPoints[0], strokeBoardPoints[1], zoom, true);
+        return;
+      }
+      const drawn = holdFromStroke(toRingPoints(strokeBoardPoints));
+      if (!drawn.ok) {
+        hapticWarning();
+        setErrorText(rejectionMessage(drawn.reason, t));
+        return;
+      }
+      setErrorText(null);
+      const current = stateRef.current;
+      const selected = current.selectedId != null ? (current.holds[current.selectedId] ?? null) : null;
+      const target = pencilStrokeTarget(drawn.hold, selected);
+      if (target.kind === 'add' || !selected) {
+        addHold(drawn.hold);
+        return;
+      }
+      if (editWouldPassCap(selected)) return;
+      hapticMedium();
+      dispatch({ type: 'SET_OUTLINE', id: target.id, geometry: drawn.hold });
+      recordHint('edit');
+    },
+    [draftPointsSV, boardScale, handleTap, addHold, editWouldPassCap, recordHint, t],
+  );
+
+  /** iPad: a quick two-finger tap takes back the last wall edit. */
+  const handleTwoFingerUndo = useCallback(() => {
+    if (!canEditRef.current || stateRef.current.past.length === 0) return;
+    undoWallEdit();
+  }, [undoWallEdit]);
+
+  /** The rail's Mark: back to the resting tool from Add, Trace or Join. */
+  const handleMarkTool = useCallback(() => {
+    if (toolRef.current === 'add') leaveAddMode();
+    else handleCancelTool();
+  }, [leaveAddMode, handleCancelTool]);
+
+  const handleFitWall = useCallback(() => boardControlRef.current?.resetZoom(), []);
+  const handlePutDown = useCallback(() => dispatch({ type: 'SELECT', id: null }), []);
+  const toggleTabletMenu = useCallback(() => setTabletMenuOpen((open) => !open), []);
+  const closeTabletMenu = useCallback(() => setTabletMenuOpen(false), []);
+
+  /**
+   * The inspector's Previous / Next: pick the neighbouring ring in reading order
+   * (the screen reader's walk) and frame it, so a correction pass goes hold by
+   * hold without hunting for the next one.
+   */
+  const stepSelection = useCallback(
+    (delta: 1 | -1) => {
+      if (!canEditRef.current || toolRef.current !== 'edit') return;
+      const nextId = stepReadingCursor(
+        readingOrderRef.current,
+        readingIndexRef.current,
+        stateRef.current.selectedId,
+        delta,
+      );
+      const hold = nextId != null ? stateRef.current.holds[nextId] : null;
+      if (nextId == null || !hold) return;
+      setErrorText(null);
+      hapticSelection();
+      dispatch({ type: 'SELECT', id: nextId });
+      boardControlRef.current?.zoomTo(
+        zoomTargetForHold({
+          hold,
+          boardWidth: photoWidth,
+          renderWidth: boardRender.width,
+          renderHeight: boardRender.height,
+          contextRadii: STEP_FRAME_CONTEXT_RADII,
+          maxScale: SPRAY_EDITOR_MAX_SCALE,
+        }),
+      );
+    },
+    [photoWidth, boardRender.width, boardRender.height],
+  );
+  const handleSelectPrevious = useCallback(() => stepSelection(-1), [stepSelection]);
+  const handleSelectNext = useCallback(() => stepSelection(1), [stepSelection]);
 
   /**
    * The holds are on the draft: play the publish moment, then hand over. The
@@ -1541,9 +1718,19 @@ export function SprayHoldEditorScreen({
     },
     [avoidTopSV, boardTopInContainer],
   );
+  // The iPad has no bottom dock: its chrome floats over the photo, and what
+  // sits along the bottom edge is the count and primary cluster. The handle
+  // stays above that band instead.
+  const tabletClusterTop = area.height - (insets.bottom + SPRAY_BAR_GUTTER + SPRAY_BAR_HEIGHT);
   useEffect(() => {
+    if (tablet) {
+      avoidTopSV.value = tabletClusterTop - boardTopInContainer;
+      return;
+    }
     if (dockTopRef.current != null) avoidTopSV.value = dockTopRef.current - boardTopInContainer;
-  }, [avoidTopSV, boardTopInContainer]);
+  }, [avoidTopSV, boardTopInContainer, tablet, tabletClusterTop]);
+  // What a hovering Pencil would do, on the resting iPad editor only.
+  const hoverShown = tablet && tool === 'edit' && canEdit;
 
   const renderInTransform = useCallback(
     (context: FilterBoardTransformContext) =>
@@ -1617,10 +1804,15 @@ export function SprayHoldEditorScreen({
             scaleSV={context.scaleSV}
             boardScale={boardScale}
           />
+          {hoverShown ? (
+            <SprayHoverPreview hoverSV={hoverSV} scaleSV={context.scaleSV} boardScale={boardScale} />
+          ) : null}
         </>
       ) : null,
     [
       wall,
+      hoverShown,
+      hoverSV,
       selectedHold,
       focusedHold,
       medianRadius,
@@ -1794,6 +1986,7 @@ export function SprayHoldEditorScreen({
               onVertexLimit={handleCornerLimit}
               onClose={closeCorners}
               loupe={loupeFeed}
+              stylusOnlySV={tablet ? pencilOnlySV : undefined}
             />
             {resizeHandle}
           </>
@@ -1819,6 +2012,7 @@ export function SprayHoldEditorScreen({
               onStrokeEnd={(strokeBoardPoints) => handleAddStrokeEnd(strokeBoardPoints, scaleSV.value)}
               onStrokeCancel={handleStrokeCancel}
               loupe={loupeFeed}
+              onStylusSeen={tablet ? handlePencilSeen : undefined}
             />
             {resizeHandle}
           </>
@@ -1844,10 +2038,14 @@ export function SprayHoldEditorScreen({
           />
         );
       }
+      // iPad: the Pencil always marks, through a Pencil-only draw surface nested
+      // inside the edit overlay so every touch it declines lands on the overlay.
+      // Keyed on the layout too, because the hover and the two-finger tap are
+      // fixed at mount.
       return (
         <>
           <SprayEditGestureOverlay
-            key={gestureEpoch}
+            key={`${gestureEpoch}-${layout}`}
             scaleSV={context.scaleSV}
             translateXSV={context.translateXSV}
             translateYSV={context.translateYSV}
@@ -1862,7 +2060,7 @@ export function SprayHoldEditorScreen({
             dragOffsetYSV={dragOffsetYSV}
             dragHoldIdSV={dragHoldIdSV}
             canMove={tool === 'edit' && canEdit}
-            canAdd={canAddHold}
+            canAdd={canAddHold && !(tablet && pencil.pencilOnly)}
             medianRadiusSV={medianRadiusSV}
             placeHoldSV={placeHoldSV}
             loupe={loupeFeed}
@@ -1872,7 +2070,29 @@ export function SprayHoldEditorScreen({
             onMoveEnd={handleMoveEnd}
             onPlaceStart={handlePlaceStart}
             onPlace={handlePlace}
-          />
+            hoverSV={tablet ? hoverSV : undefined}
+            hoverRadiusSV={tablet ? medianRadiusSV : undefined}
+            onStylusSeen={tablet ? handlePencilSeen : undefined}
+            onTwoFingerTap={tablet ? handleTwoFingerUndo : undefined}
+          >
+            {tablet && tool === 'edit' && canEdit ? (
+              <SprayPencilSurface
+                pointsSV={draftPointsSV}
+                selectedHoldSV={selectedHoldSV}
+                scaleSV={context.scaleSV}
+                translateXSV={context.translateXSV}
+                translateYSV={context.translateYSV}
+                containerWidthSV={context.containerWidthSV}
+                containerHeightSV={context.containerHeightSV}
+                boardScale={boardScale}
+                pinchRef={context.pinchRef}
+                onStrokeStart={handleStrokeStart}
+                onStrokeEnd={(strokeBoardPoints) => handlePencilStroke(strokeBoardPoints, context.scaleSV.value)}
+                onStrokeCancel={handleStrokeCancel}
+                onStylusSeen={handlePencilSeen}
+              />
+            ) : null}
+          </SprayEditGestureOverlay>
           {resizeHandle}
         </>
       );
@@ -1919,6 +2139,14 @@ export function SprayHoldEditorScreen({
       handleTap,
       handlePickUp,
       handleMoveEnd,
+      tablet,
+      layout,
+      pencilOnlySV,
+      pencil.pencilOnly,
+      hoverSV,
+      handlePencilSeen,
+      handlePencilStroke,
+      handleTwoFingerUndo,
     ],
   );
 
@@ -1933,6 +2161,7 @@ export function SprayHoldEditorScreen({
   const banner = bannerFor({
     tool,
     addShape,
+    pencilOnly: pencil.pencilOnly,
     errorText,
     viewerCanEdit,
     notice: wallIsEmpty ? notice : undefined,
@@ -1960,6 +2189,37 @@ export function SprayHoldEditorScreen({
   useEffect(() => {
     if (hintLine) AccessibilityInfo.announceForAccessibility(hintLine);
   }, [hintLine]);
+
+  const canUndo = state.past.length > 0 || (tool === 'add' && cornerCount > 0);
+  const undoToastNode =
+    undoToast && canEdit ? (
+      <SprayUndoToast
+        message={undoToast.message}
+        nonce={undoToast.nonce}
+        onUndo={undoWallEdit}
+        onDismiss={dismissUndoToast}
+      />
+    ) : null;
+  const cornersFinishNode =
+    tool === 'add' && addShape === 'corners' && cornerCount >= MIN_CORNERS && canEdit ? (
+      <SprayCornersChipBar onFinish={takeAndCloseCorners} />
+    ) : null;
+  // iPad: the reset-zoom control goes to the top corner away from the rail, and
+  // the banner and hints keep a readable column in the middle.
+  const resetZoomStyle =
+    tablet && sprayTabletPlacement({ railSide, landscape }).oppositeEdge === 'right'
+      ? RESET_ZOOM_STYLE_RIGHT
+      : RESET_ZOOM_STYLE;
+  // In landscape the inspector shares the top edge, so the column also keeps
+  // clear of its width on both sides.
+  const bannerSideInset = tablet
+    ? Math.max(
+        spacing[4],
+        (area.width - SPRAY_TABLET_CONTENT_MAX_WIDTH) / 2,
+        landscape ? SPRAY_RAIL_MARGIN + SPRAY_INSPECTOR_WIDTH + spacing[2] : 0,
+      )
+    : spacing[4];
+  const bannerInsets = { left: bannerSideInset, right: bannerSideInset };
 
   // A read that stalled is said in the screen: this route is a modal, and the
   // toast and banner overlays draw behind it. Checked ahead of "unavailable",
@@ -2000,7 +2260,7 @@ export function SprayHoldEditorScreen({
             renderHeight={boardRender.height}
             renderInTransform={renderInTransform}
             renderAboveBoard={renderAboveBoard}
-            resetZoomStyle={RESET_ZOOM_STYLE}
+            resetZoomStyle={resetZoomStyle}
             controlRef={boardControlRef}
             maxScale={SPRAY_EDITOR_MAX_SCALE}
             pinchPans
@@ -2009,13 +2269,13 @@ export function SprayHoldEditorScreen({
       ) : null}
 
       {banner ? (
-        <View pointerEvents="box-none" style={styles.bannerSlot}>
+        <View pointerEvents="box-none" style={[styles.bannerSlot, bannerInsets]}>
           <SprayEditorBanner {...banner} accessory={bannerAccessory} />
         </View>
       ) : null}
 
       {hint && hintLine ? (
-        <View pointerEvents="box-none" style={styles.bannerSlot}>
+        <View pointerEvents="box-none" style={[styles.bannerSlot, bannerInsets]}>
           <OnboardingTipBanner
             solid
             text={hintLine}
@@ -2025,78 +2285,157 @@ export function SprayHoldEditorScreen({
         </View>
       ) : null}
 
-      {viewerCanEdit && !SCREENSHOT_MODE ? (
-        <View style={styles.helpSlot}>
-          <GlassIconButton
-            iconName="help"
-            iconColor={systemColors.label}
-            fallbackColor={systemColors.fill}
-            size={glassSize.capsule}
-            onPress={hints.replay}
-            disabled={!canEdit}
-            accessibilityLabel={t('sprayEditor.hints.replay')}
+      {tablet ? (
+        <SprayTabletChrome
+          railSide={railSide}
+          landscape={landscape}
+          insets={insets}
+          rail={
+            <SprayToolRail
+              side={railSide}
+              onSideChange={setRailSide}
+              windowWidth={area.width}
+              leftInset={insets.left}
+              rightInset={insets.right}
+              locked={!canEdit}
+              canUndo={canUndo}
+              canRedo={state.future.length > 0}
+              onUndo={handleUndo}
+              onRedo={handleRedo}
+              adding={tool === 'add'}
+              onMark={handleMarkTool}
+              onAdd={handleToggleAddMode}
+              maybeControls={capabilities.canReviewCandidates && counts.maybes > 0}
+              showMaybes={showMaybes}
+              onToggleMaybes={handleToggleMaybes}
+              onKeepMaybes={handleKeepMaybes}
+              pencilToggleAvailable={pencil.toggleAvailable}
+              pencilOnly={pencil.pencilOnly}
+              onTogglePencilOnly={pencil.togglePencilOnly}
+              onFit={handleFitWall}
+              onMore={toggleTabletMenu}
+              moreExpanded={tabletMenuOpen && canEdit}
+              onHelp={viewerCanEdit && !SCREENSHOT_MODE ? hints.replay : undefined}
+            />
+          }
+          menu={
+            tabletMenuOpen && canEdit ? (
+              <SprayEditorMenu
+                counts={counts}
+                showMaybes={showMaybes}
+                canReviewMaybes={capabilities.canReviewCandidates}
+                includeMaybeRows={false}
+                onKeepMaybes={handleKeepMaybes}
+                onToggleMaybes={handleToggleMaybes}
+                onStartOver={handleStartOver}
+                onClose={closeTabletMenu}
+              />
+            ) : null
+          }
+          inspector={
+            selectedHold && selectedRole && tool === 'edit' && canEdit ? (
+              <SprayHoldInspector
+                role={selectedRole}
+                source={selectedHold.source}
+                confidence={selectedHold.confidence}
+                canShrink={shrinkTo != null}
+                canGrow={growTo != null}
+                onShrink={handleShrink}
+                onGrow={handleGrow}
+                onTrace={handleStartTrace}
+                onJoin={handleStartJoin}
+                onSwitchOff={handleSwitchSelectedOff}
+                onSwitchOn={handleSwitchSelectedOn}
+                onDelete={handleDelete}
+                canStep={readingOrder.length > 1}
+                onPrevious={handleSelectPrevious}
+                onNext={handleSelectNext}
+                onClose={handlePutDown}
+              />
+            ) : null
+          }
+          dock={
+            <>
+              {undoToastNode}
+              {cornersFinishNode}
+            </>
+          }
+          counts={counts}
+          showMaybes={showMaybes}
+          celebrating={celebrating}
+          locked={!canEdit}
+          primaryLabel={primaryLabel}
+          primaryLoading={committing}
+          primaryDisabled={!canEdit || cornerCount > 0 || counts.on === 0}
+          onPrimary={handlePrimary}
+        />
+      ) : (
+        <>
+          {viewerCanEdit && !SCREENSHOT_MODE ? (
+            <View style={styles.helpSlot}>
+              <GlassIconButton
+                iconName="help"
+                iconColor={systemColors.label}
+                fallbackColor={systemColors.fill}
+                size={glassSize.capsule}
+                onPress={hints.replay}
+                disabled={!canEdit}
+                accessibilityLabel={t('sprayEditor.hints.replay')}
+              />
+            </View>
+          ) : null}
+
+          {/* One column docked just above the bottom bar: the undo toast on top,
+              the chip bar for the picked hold (or Corners' Finish) under it, so the
+              two stack instead of overlapping however many rows the chips wrap to. */}
+          <View
+            pointerEvents="box-none"
+            onLayout={handleDockLayout}
+            style={[styles.dock, { bottom: insets.bottom + SPRAY_BAR_GUTTER * 2 + SPRAY_BAR_TOTAL_HEIGHT }]}
+          >
+            {undoToastNode}
+
+            {selectedHold && selectedRole && tool === 'edit' && canEdit ? (
+              <SprayHoldChipBar
+                role={selectedRole}
+                canShrink={shrinkTo != null}
+                canGrow={growTo != null}
+                onShrink={handleShrink}
+                onGrow={handleGrow}
+                onTrace={handleStartTrace}
+                onJoin={handleStartJoin}
+                onSwitchOff={handleSwitchSelectedOff}
+                onSwitchOn={handleSwitchSelectedOn}
+                onDelete={handleDelete}
+              />
+            ) : null}
+
+            {cornersFinishNode}
+          </View>
+
+          <SprayEditorBottomBar
+            counts={counts}
+            showMaybes={showMaybes}
+            canReviewMaybes={capabilities.canReviewCandidates}
+            canUndo={canUndo}
+            canRedo={state.future.length > 0}
+            adding={tool === 'add'}
+            primaryBlocked={cornerCount > 0}
+            locked={!canEdit}
+            primaryLabel={primaryLabel}
+            primaryLoading={committing}
+            celebrating={celebrating}
+            bottomInset={insets.bottom}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            onAdd={handleToggleAddMode}
+            onKeepMaybes={handleKeepMaybes}
+            onToggleMaybes={handleToggleMaybes}
+            onStartOver={handleStartOver}
+            onPrimary={handlePrimary}
           />
-        </View>
-      ) : null}
-
-      {/* One column docked just above the bottom bar: the undo toast on top,
-          the chip bar for the picked hold (or Corners' Finish) under it, so the
-          two stack instead of overlapping however many rows the chips wrap to. */}
-      <View
-        pointerEvents="box-none"
-        onLayout={handleDockLayout}
-        style={[styles.dock, { bottom: insets.bottom + SPRAY_BAR_GUTTER * 2 + SPRAY_BAR_TOTAL_HEIGHT }]}
-      >
-        {undoToast && canEdit ? (
-          <SprayUndoToast
-            message={undoToast.message}
-            nonce={undoToast.nonce}
-            onUndo={undoWallEdit}
-            onDismiss={dismissUndoToast}
-          />
-        ) : null}
-
-        {selectedHold && selectedRole && tool === 'edit' && canEdit ? (
-          <SprayHoldChipBar
-            role={selectedRole}
-            canShrink={shrinkTo != null}
-            canGrow={growTo != null}
-            onShrink={handleShrink}
-            onGrow={handleGrow}
-            onTrace={handleStartTrace}
-            onJoin={handleStartJoin}
-            onSwitchOff={handleSwitchSelectedOff}
-            onSwitchOn={handleSwitchSelectedOn}
-            onDelete={handleDelete}
-          />
-        ) : null}
-
-        {tool === 'add' && addShape === 'corners' && cornerCount >= MIN_CORNERS && canEdit ? (
-          <SprayCornersChipBar onFinish={takeAndCloseCorners} />
-        ) : null}
-      </View>
-
-      <SprayEditorBottomBar
-        counts={counts}
-        showMaybes={showMaybes}
-        canReviewMaybes={capabilities.canReviewCandidates}
-        canUndo={state.past.length > 0 || (tool === 'add' && cornerCount > 0)}
-        canRedo={state.future.length > 0}
-        adding={tool === 'add'}
-        primaryBlocked={cornerCount > 0}
-        locked={!canEdit}
-        primaryLabel={primaryLabel}
-        primaryLoading={committing}
-        celebrating={celebrating}
-        bottomInset={insets.bottom}
-        onUndo={handleUndo}
-        onRedo={handleRedo}
-        onAdd={handleToggleAddMode}
-        onKeepMaybes={handleKeepMaybes}
-        onToggleMaybes={handleToggleMaybes}
-        onStartOver={handleStartOver}
-        onPrimary={handlePrimary}
-      />
+        </>
+      )}
 
       {/* Last, so it draws over the chrome as well as the board: it is only up
           while a finger is on the wall, and it takes no touches. */}
@@ -2140,6 +2479,7 @@ function roleLabel(role: SprayHoldRole, t: Translate): string {
 function bannerFor({
   tool,
   addShape,
+  pencilOnly,
   errorText,
   viewerCanEdit,
   notice,
@@ -2149,6 +2489,8 @@ function bannerFor({
 }: {
   tool: SprayEditorTool;
   addShape: SprayAddShape;
+  /** iPad "Pencil only": Trace draws with the Pencil, so the line says so. */
+  pencilOnly: boolean;
   errorText: string | null;
   viewerCanEdit: boolean;
   notice: SprayEditorNotice | undefined;
@@ -2163,9 +2505,10 @@ function bannerFor({
     return { message, actionLabel: done, onAction: onDone };
   }
   if (tool === 'trace') {
+    const message = pencilOnly ? t('sprayEditor.banner.tracePencil') : t('sprayEditor.banner.trace');
     return errorText
       ? { message: errorText, actionLabel: t('sprayEditor.banner.cancel'), onAction: onCancel, tone: 'error' }
-      : { message: t('sprayEditor.banner.trace'), actionLabel: t('sprayEditor.banner.cancel'), onAction: onCancel };
+      : { message, actionLabel: t('sprayEditor.banner.cancel'), onAction: onCancel };
   }
   if (tool === 'join') {
     return { message: t('sprayEditor.banner.join'), actionLabel: t('sprayEditor.banner.cancel'), onAction: onCancel };
@@ -2180,6 +2523,7 @@ function hintText(id: SprayHintId, t: Translate): string {
   if (id === 'maybe') return t('sprayEditor.hints.maybe');
   if (id === 'longPress') return t('sprayEditor.hints.longPress');
   if (id === 'addHold') return t('sprayEditor.hints.addHold');
+  if (id === 'pencil') return t('sprayEditor.hints.pencil');
   return t('sprayEditor.hints.tap');
 }
 
@@ -2226,8 +2570,6 @@ const styles = StyleSheet.create({
   bannerSlot: {
     position: 'absolute',
     top: spacing[2] * 2 + glassSize.capsule,
-    left: spacing[4],
-    right: spacing[4],
   },
   helpSlot: {
     position: 'absolute',

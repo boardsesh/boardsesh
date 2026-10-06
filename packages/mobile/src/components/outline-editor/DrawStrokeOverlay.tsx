@@ -67,6 +67,22 @@ type DrawStrokeOverlayProps = {
    * fed and the overlay behaves exactly as before.
    */
   loupe?: SprayLoupeFeed;
+  /**
+   * OPT-IN, for the spray editor's resting Pencil surface. The selected hold as
+   * `[id, cx, cy, r]` in board px, or empty for none. A drawing touch that lands
+   * inside that hold's radius fails at touch-down instead of drawing, so an
+   * ANCESTOR gesture can claim it — the spray editor's move, which is how a
+   * Pencil stroke that starts on the selected ring carries the ring rather than
+   * drawing a new one. Omitted, every drawing touch draws (the catalogue editor
+   * and the spray Trace / Add tools).
+   */
+  declineOnSelectionSV?: SharedValue<number[]>;
+  /**
+   * OPT-IN. Fired once per mount, at the first stylus touch-down (drawing or
+   * declined), so a screen can notice an Apple Pencil exists. Whether it is
+   * listened for is fixed at mount.
+   */
+  onStylusSeen?: () => void;
 };
 
 /**
@@ -108,8 +124,13 @@ type DrawStrokeOverlayProps = {
  * avoiding Pan centroid movement and committing stationary matching UP events.
  * Trace retains the Pan behavior above.
  *
+ * Two opt-in props exist for the spray editor's iPad Pencil surface and change
+ * nothing when omitted: `declineOnSelectionSV` steps aside at touch-down for a
+ * touch on the selected hold, and `onStylusSeen` reports the first stylus.
+ * Their maths is inlined for the same cross-module-worklet reason.
+ *
  * `runOnJS` fires at most twice per stroke (start, then end or cancel) — never
- * per frame.
+ * per frame — plus once per mount for `onStylusSeen`.
  */
 export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   pointsSV,
@@ -126,6 +147,8 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   onStrokeEnd,
   onStrokeCancel,
   loupe,
+  declineOnSelectionSV,
+  onStylusSeen,
 }: DrawStrokeOverlayProps) {
   // Mirrored into a shared value rather than captured: a captured number would
   // have to be a gesture dependency, and rebuilding a live RNGH gesture
@@ -144,16 +167,20 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   /** When the live stroke's first pointer landed, for the loupe's delay. */
   const strokeDownAtSV = useSharedValue(0);
   useReleaseLoupeOnUnmount(loupe, strokeDownAtSV);
+  // Starts "already reported" when nobody listens, so the catalogue editor
+  // never makes the hop to JS at all.
+  const stylusReportedSV = useSharedValue(onStylusSeen == null);
   useEffect(() => {
     boardScaleSV.value = boardScale;
   }, [boardScale, boardScaleSV]);
 
-  const callbacksRef = useRef({ onStrokeStart, onStrokeEnd, onStrokeCancel });
-  callbacksRef.current = { onStrokeStart, onStrokeEnd, onStrokeCancel };
+  const callbacksRef = useRef({ onStrokeStart, onStrokeEnd, onStrokeCancel, onStylusSeen });
+  callbacksRef.current = { onStrokeStart, onStrokeEnd, onStrokeCancel, onStylusSeen };
   // Captured once by the gesture memo — only closes over the stable ref.
   const handleStart = () => callbacksRef.current.onStrokeStart();
   const handleEnd = (boardPoints: number[]) => callbacksRef.current.onStrokeEnd(boardPoints);
   const handleCancel = () => callbacksRef.current.onStrokeCancel();
+  const handleStylusSeen = () => callbacksRef.current.onStylusSeen?.();
 
   const gesture = useMemo(() => {
     /** Points the loupe at a finger stroke's pointer. Never for a stylus. */
@@ -171,6 +198,27 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
         containerWidthSV.value,
         containerHeightSV.value,
       );
+    };
+    const reportStylus = () => {
+      'worklet';
+      if (stylusReportedSV.value) return;
+      stylusReportedSV.value = true;
+      runOnJS(handleStylusSeen)();
+    };
+    // Whether a screen point lands inside the selected hold, through the same
+    // inverse transform the samples use. Always false without the opt-in.
+    const touchesSelection = (screenX: number, screenY: number) => {
+      'worklet';
+      if (declineOnSelectionSV === undefined) return false;
+      const selected = declineOnSelectionSV.value;
+      if (selected.length < 4) return false;
+      const centreX = containerWidthSV.value / 2;
+      const centreY = containerHeightSV.value / 2;
+      const boardX = ((screenX - translateXSV.value - centreX) / scaleSV.value + centreX) * boardScaleSV.value;
+      const boardY = ((screenY - translateYSV.value - centreY) / scaleSV.value + centreY) * boardScaleSV.value;
+      const deltaX = boardX - selected[1];
+      const deltaY = boardY - selected[2];
+      return deltaX * deltaX + deltaY * deltaY <= selected[3] * selected[3];
     };
     if (acceptStationaryTaps) {
       // A manually activated UIPan recognizer need not deliver onStart/onEnd
@@ -213,8 +261,14 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
             return;
           }
           const isStylus = event.pointerType === STYLUS_POINTER_TYPE;
+          if (isStylus) reportStylus();
           const pointer = event.changedTouches[0];
           if (!pointer || (!isStylus && (!fingerDrawSV.value || event.numberOfTouches > 1))) {
+            manager.fail();
+            return;
+          }
+          // On the selected hold: the ancestor's move has it.
+          if (touchesSelection(pointer.x, pointer.y)) {
             manager.fail();
             return;
           }
@@ -295,8 +349,14 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
           return;
         }
         const isStylus = event.pointerType === STYLUS_POINTER_TYPE;
+        if (isStylus) reportStylus();
         // Two fingers at once are a pinch from the start, not a stroke.
         if (isStylus || (fingerDrawSV.value && event.numberOfTouches < 2)) {
+          const touch = event.changedTouches[0] ?? event.allTouches[0];
+          if (touch && touchesSelection(touch.x, touch.y)) {
+            manager.fail();
+            return;
+          }
           isDrawingSV.value = true;
           strokeIsStylusSV.value = isStylus;
           strokeDownAtSV.value = Date.now();
@@ -357,7 +417,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
     // without this detector claiming the pinch's handler tag.
     pan.simultaneousWithExternalGesture(pinchRef);
     return pan;
-    // handleStart/handleEnd/handleCancel are intentionally not deps — they're
+    // handleStart/handleEnd/handleCancel/handleStylusSeen are intentionally not deps — they're
     // captured once and read render-scoped values through callbacksRef.
   }, [
     acceptStationaryTaps,
@@ -375,6 +435,8 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
     isDrawingSV,
     strokeIsStylusSV,
     abandonedSV,
+    stylusReportedSV,
+    declineOnSelectionSV,
     pinchRef,
   ]);
 

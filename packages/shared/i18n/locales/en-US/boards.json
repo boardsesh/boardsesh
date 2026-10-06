@@ -841,7 +841,8 @@
       "cancel": "Cancel",
       "addDraw": "Draw round a missing hold, or tap to drop a circle",
       "addCorners": "Tap round the corners of a missing hold",
-      "done": "Done"
+      "done": "Done",
+      "tracePencil": "Draw round the hold with Apple Pencil"
     },
     "addShape": {
       "label": "How to outline a hold",
@@ -860,7 +861,8 @@
       "longPress": "Press and hold a ring, then slide to move it.",
       "addHold": "Press and hold to add a hold.",
       "dismiss": "Hide tip",
-      "replay": "Show tips"
+      "replay": "Show tips",
+      "pencil": "Apple Pencil adds and switches holds. Fingers move around and pick a hold."
     },
     "a11y": {
       "wall": "Your wall photo: {{summary}}",
@@ -899,7 +901,32 @@
       "noPhoto": "This wall has no photo to edit yet."
     },
     "loading": "Loading your wall…",
-    "loadStalled": "Couldn't load your wall. Try again."
+    "loadStalled": "Couldn't load your wall. Try again.",
+    "rail": {
+      "label": "Editing tools",
+      "grip": "Move the tools to the other side",
+      "mark": "Pick and switch holds",
+      "pencilOnly": "Pencil only",
+      "pencilOnlyHint": "Fingers pick holds and move around. Only Apple Pencil changes the wall.",
+      "fit": "Fit the wall to the screen",
+      "more": "More options"
+    },
+    "inspector": {
+      "role": {
+        "on": "On",
+        "off": "Off",
+        "maybe": "Maybe"
+      },
+      "source": {
+        "scan": "Found by scan",
+        "scanConfidence": "Found by scan · {{percent}}%",
+        "manual": "Added by you"
+      },
+      "size": "Size",
+      "redraw": "Redraw",
+      "previous": "Previous hold",
+      "next": "Next hold"
+    }
   },
   "sprayWizard": {
     "screenTitle": "Add a spray wall",

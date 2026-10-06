@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, type MutableRefObject } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, type MutableRefObject, type ReactNode } from 'react';
 import { StyleSheet, View, type AccessibilityActionEvent, type AccessibilityActionInfo } from 'react-native';
-import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, PointerType, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { fallbackRadiusAt, holdIdAtPoint, screenToBoard, selectedDragIdAt } from './spray-gesture-math';
 import {
@@ -24,6 +24,12 @@ const PICK_UP_MIN_DURATION_MS = 400;
 const PICK_UP_MAX_DISTANCE_PX = 10;
 /** How far a picked-up ring's finger moves before the drag takes over. Under the board pan's 8 px. */
 const PICK_UP_DRAG_SLOP_PX = 4;
+/** A two-finger tap is quick: anything slower is the start of a pinch. */
+const TWO_FINGER_TAP_MAX_DURATION_MS = 250;
+/** Read into a primitive so the worklets capture a number, not the enum object (as in `DrawStrokeOverlay`). */
+const STYLUS_POINTER_TYPE: number = PointerType.STYLUS;
+/** No hover: the Pencil is away from the glass. */
+const NO_HOVER: number[] = [];
 
 /** What a screen reader hears, and can do, on the wall. Memoise it: the overlay is `React.memo`'d. */
 export type SprayWallAccessibility = {
@@ -95,8 +101,11 @@ type SprayEditGestureOverlayProps = {
    * switches the cursor's hold, and the named actions mirror the chips.
    */
   accessibility: SprayWallAccessibility;
-  /** A tap at a board point; `zoom` is the board scale at the time, for the hit-test fallback. */
-  onTap: (boardX: number, boardY: number, zoom: number) => void;
+  /**
+   * A tap at a board point; `zoom` is the board scale at the time, for the
+   * hit-test fallback. `isStylus` when an Apple Pencil made it.
+   */
+  onTap: (boardX: number, boardY: number, zoom: number, isStylus: boolean) => void;
   /** A long press landed on this ring. */
   onPickUp: (holdId: number) => void;
   /** A drag of this ring ended this far from where it started, in board px. */
@@ -105,6 +114,24 @@ type SprayEditGestureOverlayProps = {
   onPlaceStart: () => void;
   /** That finger lifted here, in board px: place the hold. */
   onPlace: (boardX: number, boardY: number) => void;
+  /**
+   * Nested inside this surface, so a touch a child declines falls through to
+   * the tap, pick-up and drag here — the iPad layout's Pencil draw surface.
+   */
+  children?: ReactNode;
+  /**
+   * OPT-IN Pencil hover (iPad). Written on the UI thread while an Apple Pencil
+   * hovers over the wall: `[id, cx, cy, r]` of the ring under it, or
+   * `[0, x, y, r]` on bare wall with `r` from `hoverRadiusSV`; empty when it
+   * leaves. A mouse or trackpad pointer is ignored. Fixed at mount.
+   */
+  hoverSV?: SharedValue<number[]>;
+  /** The bare-wall hover ghost's radius in board px: the size a Pencil tap would add. */
+  hoverRadiusSV?: SharedValue<number>;
+  /** OPT-IN. Fired once per mount, the first time a Pencil hovers. */
+  onStylusSeen?: () => void;
+  /** OPT-IN. A quick two-finger tap (iPad: undo). Fixed at mount. */
+  onTwoFingerTap?: () => void;
 };
 
 /**
@@ -123,7 +150,8 @@ type SprayEditGestureOverlayProps = {
  *   it PLACES a hold instead: a median-size circle appears under the finger
  *   (`placeHoldSV`), slides with it, and lands where the finger lifts — one
  *   `onPlace`. It steps aside at touch-down only when there is nothing it could
- *   do: Join waiting, a second finger, or bare wall on a wall at the hold cap.
+ *   do: Join waiting, a second finger, bare wall on a wall at the hold cap, or
+ *   an Apple Pencil on bare wall (the Pencil adds by tapping or drawing).
  *   A zoomed board's pan still wins a finger that moves: the pan activates at
  *   8 px, inside this gesture's 10 px allowance.
  * - **Drag** (`manualActivation`): claims the touch AT TOUCH-DOWN when it lands
@@ -132,6 +160,12 @@ type SprayEditGestureOverlayProps = {
  *   pan to it — and otherwise waits for a pick-up, failing as soon as the
  *   finger wanders without one so the board's pan (when zoomed) takes over. A
  *   drag that barely moved is a tap on the selected ring, and is reported as one.
+ *
+ * On the iPad layout two opt-ins sit beside the race, simultaneous with it: a
+ * Pencil hover that writes what a Pencil tap would hit (`hoverSV`), and a quick
+ * two-finger tap (`onTwoFingerTap`). A stylus tap is reported as one
+ * (`isStylus`), and `children` nest a Pencil draw surface inside this one so a
+ * touch it declines (a finger, or the Pencil on the selected ring) lands here.
  *
  * Mounted through `renderAboveBoard`, so while zoomed it is a child of the
  * board's pan overlay and a touch this surface declines falls through to that
@@ -166,6 +200,11 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
   onMoveEnd,
   onPlaceStart,
   onPlace,
+  children,
+  hoverSV,
+  hoverRadiusSV,
+  onStylusSeen,
+  onTwoFingerTap,
 }: SprayEditGestureOverlayProps) {
   // Mirrored into shared values rather than captured: a captured value would be
   // a gesture dependency, and rebuilding a live RNGH gesture mid-session has
@@ -194,6 +233,8 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
   const touchStartXSV = useSharedValue(0);
   const touchStartYSV = useSharedValue(0);
   const touchStartMsSV = useSharedValue(0);
+  /** The drag's touch is an Apple Pencil, for the tap it may turn out to be. */
+  const touchIsStylusSV = useSharedValue(false);
   const dragActiveSV = useSharedValue(false);
   /** The press started on bare wall: if it rests long enough, it places a hold. */
   const placeArmedSV = useSharedValue(false);
@@ -205,6 +246,9 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
   /** The touch is a finger, so it hides what it is on and gets the loupe. */
   const loupeFingerSV = useSharedValue(false);
   useReleaseLoupeOnUnmount(loupe, touchStartMsSV);
+  // Starts "already reported" when nobody listens.
+  const stylusReportedSV = useSharedValue(onStylusSeen == null);
+  const twoFingerTapEnabled = onTwoFingerTap != null;
 
   const callbacksRef = useRef({
     onTap,
@@ -213,6 +257,8 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
     onPlaceStart,
     onPlace,
     onAccessibilityAction: accessibility.onAction,
+    onStylusSeen,
+    onTwoFingerTap,
   });
   callbacksRef.current = {
     onTap,
@@ -221,9 +267,14 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
     onPlaceStart,
     onPlace,
     onAccessibilityAction: accessibility.onAction,
+    onStylusSeen,
+    onTwoFingerTap,
   };
   // Captured once by the gesture memo — only close over the stable ref.
-  const handleTap = (boardX: number, boardY: number, zoom: number) => callbacksRef.current.onTap(boardX, boardY, zoom);
+  const handleTap = (boardX: number, boardY: number, zoom: number, isStylus: boolean) =>
+    callbacksRef.current.onTap(boardX, boardY, zoom, isStylus);
+  const handleStylusSeen = () => callbacksRef.current.onStylusSeen?.();
+  const handleTwoFingerTap = () => callbacksRef.current.onTwoFingerTap?.();
   const handlePickUp = (holdId: number) => callbacksRef.current.onPickUp(holdId);
   const handleMoveEnd = (holdId: number, deltaX: number, deltaY: number) =>
     callbacksRef.current.onMoveEnd(holdId, deltaX, deltaY);
@@ -286,7 +337,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
           containerHeightSV.value,
           boardScaleSV.value,
         );
-        runOnJS(handleTap)(point.x, point.y, scaleSV.value);
+        runOnJS(handleTap)(point.x, point.y, scaleSV.value, event.pointerType === STYLUS_POINTER_TYPE);
       });
 
     const pickUp = Gesture.LongPress()
@@ -323,7 +374,10 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
         if (holdId === 0) {
           // Bare wall: a rest here places a hold. At the cap there is nothing to
           // place, so step aside at once rather than sit on the touch for 400 ms.
-          if (!canAddSV.value) {
+          // Nor for an Apple Pencil: it adds with a tap or a stroke of its own
+          // (the iPad's Pencil surface), so a Pencil resting mid-stroke never
+          // drops a median circle as well.
+          if (!canAddSV.value || event.pointerType === STYLUS_POINTER_TYPE) {
             manager.fail();
             return;
           }
@@ -398,6 +452,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
         dragHoldIdSV.value = 0;
         dragAbandonedSV.value = false;
         startedOnSelectionSV.value = false;
+        touchIsStylusSV.value = event.pointerType === STYLUS_POINTER_TYPE;
         touchStartXSV.value = touch.x;
         touchStartYSV.value = touch.y;
         touchStartMsSV.value = Date.now();
@@ -503,7 +558,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
               containerHeightSV.value,
               boardScaleSV.value,
             );
-            runOnJS(handleTap)(point.x, point.y, scaleSV.value);
+            runOnJS(handleTap)(point.x, point.y, scaleSV.value, touchIsStylusSV.value);
           }
           return;
         }
@@ -543,9 +598,68 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
     // touch when the pick-up fires so the same finger can carry on into a move.
     // Both race the tap: a tap wins a quick still touch, and either of the other
     // two activating cancels it.
-    return Gesture.Race(Gesture.Simultaneous(pickUp, drag), tap);
-    // handleTap/handlePickUp/handleMoveEnd/handlePlaceStart/handlePlace are intentionally not deps — captured
-    // once and read render-scoped values through callbacksRef.
+    const race = Gesture.Race(Gesture.Simultaneous(pickUp, drag), tap);
+
+    // The iPad opt-ins sit beside the race, never in it: a hover is not a touch,
+    // and a two-finger tap is exactly what every member of the race refuses.
+    const beside: GestureType[] = [];
+    if (hoverSV !== undefined) {
+      const hover = Gesture.Hover()
+        .onBegin((event) => {
+          'worklet';
+          if (event.pointerType !== STYLUS_POINTER_TYPE || stylusReportedSV.value) return;
+          stylusReportedSV.value = true;
+          runOnJS(handleStylusSeen)();
+        })
+        .onUpdate((event) => {
+          'worklet';
+          // Stylus only: a trackpad pointer over the wall is not about to tap it.
+          if (event.pointerType !== STYLUS_POINTER_TYPE) {
+            if (hoverSV.value.length > 0) hoverSV.value = NO_HOVER;
+            return;
+          }
+          const point = screenToBoard(
+            event.x,
+            event.y,
+            scaleSV.value,
+            translateXSV.value,
+            translateYSV.value,
+            containerWidthSV.value,
+            containerHeightSV.value,
+            boardScaleSV.value,
+          );
+          const flat = hitHoldsSV.value;
+          const holdId = holdIdAtPoint(flat, point.x, point.y, fallbackRadiusAt(boardScaleSV.value, scaleSV.value));
+          if (holdId !== 0) {
+            for (let index = 0; index + 3 < flat.length; index += 4) {
+              if (flat[index] !== holdId) continue;
+              hoverSV.value = [holdId, flat[index + 1], flat[index + 2], flat[index + 3]];
+              return;
+            }
+          }
+          hoverSV.value = [0, point.x, point.y, hoverRadiusSV?.value ?? 0];
+        })
+        .onFinalize(() => {
+          'worklet';
+          hoverSV.value = NO_HOVER;
+        });
+      beside.push(hover);
+    }
+    if (twoFingerTapEnabled) {
+      const twoFingerTap = Gesture.Tap()
+        .minPointers(2)
+        .maxDuration(TWO_FINGER_TAP_MAX_DURATION_MS)
+        .maxDistance(TAP_MAX_DISTANCE_PX)
+        .onEnd((_event, success) => {
+          'worklet';
+          if (success) runOnJS(handleTwoFingerTap)();
+        });
+      twoFingerTap.simultaneousWithExternalGesture(pinchRef);
+      beside.push(twoFingerTap);
+    }
+    return beside.length > 0 ? Gesture.Simultaneous(...beside, race) : race;
+    // The handle* callbacks are intentionally not deps — captured once and read
+    // render-scoped values through callbacksRef.
   }, [
     scaleSV,
     translateXSV,
@@ -577,7 +691,12 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
     touchStartXSV,
     touchStartYSV,
     touchStartMsSV,
+    touchIsStylusSV,
     dragActiveSV,
+    hoverSV,
+    hoverRadiusSV,
+    stylusReportedSV,
+    twoFingerTapEnabled,
   ]);
 
   const fireAccessibilityAction = useCallback(
@@ -623,7 +742,9 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
         accessibilityActions={accessibility.actions}
         onAccessibilityAction={handleAccessibilityAction}
         onAccessibilityTap={handleAccessibilityTap}
-      />
+      >
+        {children}
+      </View>
     </GestureDetector>
   );
 });

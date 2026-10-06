@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, PointerType, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { CORNERS_CLOSE_EXTENT_FRACTION, CORNERS_CLOSE_TARGET_PT } from './spray-hold-tools';
 import {
@@ -17,6 +17,9 @@ import {
  * same spot, leaving a stray corner that blocks Publish.
  */
 const AFTER_CLOSE_QUIET_MS = 250;
+
+/** Read into a primitive so the worklet captures a number, not the enum object (as in `DrawStrokeOverlay`). */
+const STYLUS_POINTER_TYPE: number = PointerType.STYLUS;
 
 type PolygonTapOverlayProps = {
   /**
@@ -60,6 +63,12 @@ type PolygonTapOverlayProps = {
   onClose: (vertices: number[]) => void;
   /** The magnifier over the finger while it slides to a corner. Omitted, there is no loupe. */
   loupe?: SprayLoupeFeed;
+  /**
+   * OPT-IN, for the spray editor's "Pencil only" mode on iPad. While true, a
+   * touch that is not a stylus fails at touch-down, so fingers pan and pinch and
+   * only the Pencil places corners. Omitted or false, any one finger places one.
+   */
+  stylusOnlySV?: SharedValue<boolean>;
 };
 
 /**
@@ -98,6 +107,7 @@ export const PolygonTapOverlay = React.memo(function PolygonTapOverlay({
   onVertexLimit,
   onClose,
   loupe,
+  stylusOnlySV,
 }: PolygonTapOverlayProps) {
   // Mirrored into shared values rather than captured: a captured number would
   // have to be a gesture dependency, and rebuilding a live RNGH gesture
@@ -210,6 +220,11 @@ export const PolygonTapOverlay = React.memo(function PolygonTapOverlay({
           manager.fail();
           return;
         }
+        // Pencil only: a finger is moving round the wall, not placing a corner.
+        if (stylusOnlySV !== undefined && stylusOnlySV.value && event.pointerType !== STYLUS_POINTER_TYPE) {
+          manager.fail();
+          return;
+        }
         ownerPointerIdSV.value = pointer.id;
         touchDownAtSV.value = Date.now();
         loupeFingerSV.value = pointerWantsLoupe(event.pointerType);
@@ -270,6 +285,7 @@ export const PolygonTapOverlay = React.memo(function PolygonTapOverlay({
     touchDownAtSV,
     loupeFingerSV,
     loupe,
+    stylusOnlySV,
     pinchRef,
   ]);
 

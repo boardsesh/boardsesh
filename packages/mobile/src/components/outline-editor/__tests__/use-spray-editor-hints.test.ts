@@ -5,6 +5,7 @@ import {
   ONBOARDING_TIP_SPRAY_ADD_HOLD_KEY,
   ONBOARDING_TIP_SPRAY_LONG_PRESS_KEY,
   ONBOARDING_TIP_SPRAY_MAYBE_KEY,
+  ONBOARDING_TIP_SPRAY_PENCIL_KEY,
   ONBOARDING_TIP_SPRAY_TAP_SELECT_KEY,
 } from '@boardsesh/key-value-storage';
 
@@ -38,7 +39,7 @@ beforeEach(() => {
 
 const loaded: SprayHintsState = sprayHintsReducer(initialSprayHintsState, {
   type: 'LOADED',
-  seen: { tap: false, maybe: false, longPress: false, addHold: false },
+  seen: { tap: false, maybe: false, longPress: false, addHold: false, pencil: false },
 });
 
 describe('visibleSprayHint', () => {
@@ -70,7 +71,7 @@ describe('visibleSprayHint', () => {
     let state = sprayHintsReducer(initialSprayHintsState, { type: 'EVENT', event: 'longPress' });
     state = sprayHintsReducer(state, {
       type: 'LOADED',
-      seen: { tap: true, maybe: true, longPress: false, addHold: true },
+      seen: { tap: true, maybe: true, longPress: false, addHold: true, pencil: false },
     });
     for (let edit = 0; edit < 5; edit += 1) state = sprayHintsReducer(state, { type: 'EVENT', event: 'add' });
     expect(visibleSprayHint(state, true)).toBeNull();
@@ -112,7 +113,7 @@ describe('visibleSprayHint', () => {
     it('stays away once seen on an earlier visit', () => {
       const seen = sprayHintsReducer(initialSprayHintsState, {
         type: 'LOADED',
-        seen: { tap: true, maybe: true, longPress: true, addHold: true },
+        seen: { tap: true, maybe: true, longPress: true, addHold: true, pencil: false },
       });
       expect(visibleSprayHint(sprayHintsReducer(seen, { type: 'EVENT', event: 'bareWall' }), true)).toBeNull();
     });
@@ -123,10 +124,47 @@ describe('visibleSprayHint', () => {
     });
   });
 
+  describe('the Pencil hint', () => {
+    it('waits for the first Pencil, then goes ahead of everything', () => {
+      let state = sprayHintsReducer(loaded, { type: 'EVENT', event: 'bareWall' });
+      expect(visibleSprayHint(state, true)).toBe('addHold');
+      state = sprayHintsReducer(state, { type: 'EVENT', event: 'pencil' });
+      expect(visibleSprayHint(state, true)).toBe('pencil');
+    });
+
+    it('is used up by a finger picking a ring, not by the Pencil itself', () => {
+      let state = sprayHintsReducer(loaded, { type: 'EVENT', event: 'pencil' });
+      state = sprayHintsReducer(state, { type: 'EVENT', event: 'toggle' });
+      state = sprayHintsReducer(state, { type: 'EVENT', event: 'add' });
+      expect(visibleSprayHint(state, false)).toBe('pencil');
+      state = sprayHintsReducer(state, { type: 'EVENT', event: 'fingerPick' });
+      expect(visibleSprayHint(state, false)).toBeNull();
+    });
+
+    it('is not an edit for the long-press gate, and a repeat leaves the state alone', () => {
+      const asked = sprayHintsReducer(loaded, { type: 'EVENT', event: 'pencil' });
+      expect(asked.edits).toBe(0);
+      expect(sprayHintsReducer(asked, { type: 'EVENT', event: 'pencil' })).toBe(asked);
+    });
+
+    it('replays only for a climber who has used a Pencil', () => {
+      const allSeen = sprayHintsReducer(initialSprayHintsState, {
+        type: 'LOADED',
+        seen: { tap: true, maybe: true, longPress: true, addHold: true, pencil: true },
+      });
+      const state = sprayHintsReducer(allSeen, { type: 'REPLAY' });
+      expect(visibleSprayHint(sprayHintsReducer(state, { type: 'DISMISS', id: 'tap' }), false)).toBe('addHold');
+      const withPencil = sprayHintsReducer(sprayHintsReducer(allSeen, { type: 'EVENT', event: 'pencil' }), {
+        type: 'REPLAY',
+      });
+      expect(visibleSprayHint(sprayHintsReducer(withPencil, { type: 'DISMISS', id: 'tap' }), false)).toBe('pencil');
+    });
+  });
+
   it('a replay runs every hint again, without the edit gate', () => {
     const allSeen = sprayHintsReducer(initialSprayHintsState, {
       type: 'LOADED',
-      seen: { tap: true, maybe: true, longPress: true, addHold: true },
+      seen: { tap: true, maybe: true, longPress: true, addHold: true, pencil: false },
     });
     expect(visibleSprayHint(allSeen, true)).toBeNull();
     let state = sprayHintsReducer(allSeen, { type: 'REPLAY' });
@@ -151,7 +189,7 @@ describe('useSprayEditorHints', () => {
 
     // A second visit: storage now says seen, so it never comes back.
     const second = renderHook(() => useSprayEditorHints({ enabled: true, hasMaybes: false }));
-    await waitFor(() => expect(hasSeenTipMock).toHaveBeenCalledTimes(8));
+    await waitFor(() => expect(hasSeenTipMock).toHaveBeenCalledTimes(10));
     expect(second.result.current.hint).toBeNull();
   });
 
@@ -182,6 +220,17 @@ describe('useSprayEditorHints', () => {
     expect(result.current.hint).toBe('tap');
   });
 
+  it('marks the Pencil hint seen when a finger picks a ring, not when the Pencil asks for it', async () => {
+    const { result } = renderHook(() => useSprayEditorHints({ enabled: true, hasMaybes: false }));
+    await waitFor(() => expect(result.current.hint).toBe('tap'));
+    act(() => result.current.record('pencil'));
+    expect(result.current.hint).toBe('pencil');
+    expect(markTipSeenMock).not.toHaveBeenCalled();
+    act(() => result.current.record('fingerPick'));
+    expect(markTipSeenMock).toHaveBeenCalledWith(ONBOARDING_TIP_SPRAY_PENCIL_KEY);
+    expect(result.current.hint).toBe('tap');
+  });
+
   it('marks the long-press hint seen on the first long press', async () => {
     const { result } = renderHook(() => useSprayEditorHints({ enabled: true, hasMaybes: false }));
     await waitFor(() => expect(result.current.hint).toBe('tap'));
@@ -204,7 +253,7 @@ describe('useSprayEditorHints', () => {
   it('stays silent in screenshot mode, where storage reports every tip seen', async () => {
     hasSeenTipMock.mockImplementation(async () => true);
     const { result } = renderHook(() => useSprayEditorHints({ enabled: true, hasMaybes: true }));
-    await waitFor(() => expect(hasSeenTipMock).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(hasSeenTipMock).toHaveBeenCalledTimes(5));
     await act(async () => {
       await Promise.resolve();
     });

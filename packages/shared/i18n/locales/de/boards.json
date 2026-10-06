@@ -841,7 +841,8 @@
       "cancel": "Abbrechen",
       "addDraw": "Zeichne um einen fehlenden Griff oder tippe, um einen Kreis zu setzen",
       "addCorners": "Tippe auf die Ecken um einen fehlenden Griff",
-      "done": "Fertig"
+      "done": "Fertig",
+      "tracePencil": "Zeichne mit dem Apple Pencil um den Griff"
     },
     "addShape": {
       "label": "So umrandest du einen Griff",
@@ -860,7 +861,8 @@
       "longPress": "Halte einen Kreis gedrückt und zieh ihn, um ihn zu verschieben.",
       "addHold": "Halte gedrückt, um einen Griff hinzuzufügen.",
       "dismiss": "Tipp ausblenden",
-      "replay": "Tipps zeigen"
+      "replay": "Tipps zeigen",
+      "pencil": "Der Apple Pencil fügt Griffe hinzu und schaltet sie. Mit den Fingern bewegst du dich und wählst einen Griff aus."
     },
     "a11y": {
       "wall": "Foto deiner Wand: {{summary}}",
@@ -899,7 +901,32 @@
       "noPhoto": "Diese Wand hat noch kein Foto zum Bearbeiten."
     },
     "loading": "Deine Wand wird geladen…",
-    "loadStalled": "Deine Wand konnte nicht geladen werden. Versuch es erneut."
+    "loadStalled": "Deine Wand konnte nicht geladen werden. Versuch es erneut.",
+    "rail": {
+      "label": "Bearbeitungswerkzeuge",
+      "grip": "Werkzeuge auf die andere Seite verschieben",
+      "mark": "Griffe auswählen und schalten",
+      "pencilOnly": "Nur Pencil",
+      "pencilOnlyHint": "Mit den Fingern wählst du Griffe aus und bewegst dich. Nur der Apple Pencil ändert die Wand.",
+      "fit": "Wand an den Bildschirm anpassen",
+      "more": "Weitere Optionen"
+    },
+    "inspector": {
+      "role": {
+        "on": "An",
+        "off": "Aus",
+        "maybe": "Unsicher"
+      },
+      "source": {
+        "scan": "Vom Scan gefunden",
+        "scanConfidence": "Vom Scan gefunden · {{percent}} %",
+        "manual": "Von dir hinzugefügt"
+      },
+      "size": "Größe",
+      "redraw": "Neu zeichnen",
+      "previous": "Vorheriger Griff",
+      "next": "Nächster Griff"
+    }
   },
   "sprayWizard": {
     "screenTitle": "Spraywand hinzufügen",

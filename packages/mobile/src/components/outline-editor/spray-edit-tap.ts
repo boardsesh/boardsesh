@@ -14,6 +14,14 @@
  *
  * The screen resolves the hit test (`holdAtPoint`, hidden maybes included) and
  * hands the answer here; its `handleTap` is a switch over the result.
+ *
+ * On the iPad layout the Apple Pencil has its own, shorter rule: the Pencil
+ * marks and fingers inspect. A Pencil tap switches the ring under it outright —
+ * no pick first — and a Pencil tap on bare wall adds a hold there. With "Pencil
+ * only" on, a finger never changes the wall at all: it picks a ring (which opens
+ * the inspector) and puts it down on bare wall. With it off a finger follows the
+ * phone rule above. The phone layout never passes `input: 'pencil'`, so none of
+ * this reaches it.
  */
 
 /**
@@ -40,18 +48,28 @@ export type SprayEditTapResult =
   | 'merge'
   /** Bare wall with nothing picked: ripple, and the "how to add" hint. */
   | 'bareWallHint'
+  /** A Pencil tap on bare wall: a circle at the median hold size goes there. */
+  | 'addHold'
   /** The tap means nothing in this tool. */
   | 'none';
+
+/** What made the tap. `pencil` only ever comes from the iPad layout. */
+export type SprayTapInput = 'finger' | 'pencil';
 
 export function resolveEditTap({
   tool,
   hitId,
   selectedId,
+  input = 'finger',
+  pencilOnly = false,
 }: {
   tool: SprayEditorTool;
   /** The ring the tap landed on, or null for bare wall. */
   hitId: number | null;
   selectedId: number | null;
+  input?: SprayTapInput;
+  /** "Pencil only" is on: fingers pick and never switch. Ignored for a Pencil tap. */
+  pencilOnly?: boolean;
 }): SprayEditTapResult {
   if (tool === 'join') {
     // Join waits for the second hold and nothing else: bare wall or the
@@ -61,6 +79,11 @@ export function resolveEditTap({
   // Trace and Add own their touches through their own overlays; a tap that
   // still arrives here (one in flight as the tool changed) does nothing.
   if (tool !== 'edit') return 'none';
+  if (input === 'pencil') return hitId == null ? 'addHold' : 'toggle';
+  if (pencilOnly) {
+    if (hitId == null) return selectedId != null ? 'deselect' : 'none';
+    return hitId === selectedId ? 'none' : 'select';
+  }
   if (hitId == null) return selectedId != null ? 'deselect' : 'bareWallHint';
   return hitId === selectedId ? 'toggle' : 'select';
 }

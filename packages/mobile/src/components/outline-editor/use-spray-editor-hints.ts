@@ -3,6 +3,7 @@ import {
   ONBOARDING_TIP_SPRAY_ADD_HOLD_KEY,
   ONBOARDING_TIP_SPRAY_LONG_PRESS_KEY,
   ONBOARDING_TIP_SPRAY_MAYBE_KEY,
+  ONBOARDING_TIP_SPRAY_PENCIL_KEY,
   ONBOARDING_TIP_SPRAY_TAP_SELECT_KEY,
 } from '@boardsesh/key-value-storage';
 import { hasSeenTip, markTipSeen } from '../../lib/onboarding/onboarding-storage';
@@ -19,8 +20,15 @@ import { hasSeenTip, markTipSeen } from '../../lib/onboarding/onboarding-storage
  * the tap that used to add one. It jumps the queue, because it answers the
  * climber's own question, and it is marked seen by adding a hold (a press and
  * hold, or add mode) or closing it.
+ *
+ * And one for the iPad: `pencil`, "Apple Pencil adds and switches holds.
+ * Fingers move around and pick a hold.", shown the first time a Pencil touches
+ * or hovers over the wall (which is also when "Pencil only" turns itself on).
+ * It goes ahead of everything, because the rules just changed under the
+ * climber's hand. It is marked seen when a finger picks a ring after that —
+ * the half of the lesson nobody finds by accident — or when it is closed.
  */
-export type SprayHintId = 'tap' | 'maybe' | 'longPress' | 'addHold';
+export type SprayHintId = 'tap' | 'maybe' | 'longPress' | 'addHold' | 'pencil';
 
 /** What the climber just did, as far as the hints care. */
 export type SprayHintEvent =
@@ -36,6 +44,10 @@ export type SprayHintEvent =
   | 'longPress'
   /** Tapped bare wall with nothing picked: asks for the add-a-hold hint. */
   | 'bareWall'
+  /** The first Apple Pencil touch or hover: asks for the Pencil hint. */
+  | 'pencil'
+  /** Picked a ring with a finger once a Pencil has been seen. */
+  | 'fingerPick'
   /** Any other edit (a move, a resize, a trace, a join, a delete). */
   | 'edit';
 
@@ -44,12 +56,13 @@ export const SPRAY_HINT_KEYS: Readonly<Record<SprayHintId, string>> = {
   maybe: ONBOARDING_TIP_SPRAY_MAYBE_KEY,
   longPress: ONBOARDING_TIP_SPRAY_LONG_PRESS_KEY,
   addHold: ONBOARDING_TIP_SPRAY_ADD_HOLD_KEY,
+  pencil: ONBOARDING_TIP_SPRAY_PENCIL_KEY,
 };
 
 /** Edits before the long-press hint is worth a line: by then the climber has the basics. */
 export const EDITS_BEFORE_LONG_PRESS_HINT = 3;
 
-const HINT_IDS: readonly SprayHintId[] = ['tap', 'maybe', 'longPress', 'addHold'];
+const HINT_IDS: readonly SprayHintId[] = ['tap', 'maybe', 'longPress', 'addHold', 'pencil'];
 
 export type SprayHintsState = {
   /** Storage has answered. Nothing shows before it, so a seen hint never flashes up. */
@@ -60,6 +73,8 @@ export type SprayHintsState = {
   edits: number;
   /** A tap on bare wall asked how to add a hold (or the "?" replayed the hints). */
   addHoldAsked: boolean;
+  /** A Pencil has been seen on this visit: the Pencil hint is due. */
+  pencilAsked: boolean;
   /** The "?" button replayed the hints: they run again, and the edit gate is off. */
   replaying: boolean;
 };
@@ -75,6 +90,7 @@ const NONE_DONE: Readonly<Record<SprayHintId, boolean>> = {
   maybe: false,
   longPress: false,
   addHold: false,
+  pencil: false,
 };
 
 export const initialSprayHintsState: SprayHintsState = {
@@ -82,6 +98,7 @@ export const initialSprayHintsState: SprayHintsState = {
   done: NONE_DONE,
   edits: 0,
   addHoldAsked: false,
+  pencilAsked: false,
   replaying: false,
 };
 
@@ -91,12 +108,15 @@ export function hintsUsedBy(event: SprayHintEvent): readonly SprayHintId[] {
   if (event === 'maybe') return ['tap', 'maybe'];
   if (event === 'add') return ['addHold'];
   if (event === 'longPress') return ['longPress'];
+  if (event === 'fingerPick') return ['pencil'];
   return [];
 }
 
 /** Whether an event is an edit for the long-press hint's gate. Picking a ring or tapping bare wall changes nothing. */
 function countsAsEdit(event: SprayHintEvent): boolean {
-  return event !== 'longPress' && event !== 'select' && event !== 'bareWall';
+  return (
+    event !== 'longPress' && event !== 'select' && event !== 'bareWall' && event !== 'pencil' && event !== 'fingerPick'
+  );
 }
 
 export function sprayHintsReducer(state: SprayHintsState, action: SprayHintsAction): SprayHintsState {
@@ -112,10 +132,12 @@ export function sprayHintsReducer(state: SprayHintsState, action: SprayHintsActi
           maybe: state.done.maybe || action.seen.maybe,
           longPress: state.done.longPress || action.seen.longPress,
           addHold: state.done.addHold || action.seen.addHold,
+          pencil: state.done.pencil || action.seen.pencil,
         },
       };
     case 'EVENT': {
       if (action.event === 'bareWall') return state.addHoldAsked ? state : { ...state, addHoldAsked: true };
+      if (action.event === 'pencil') return state.pencilAsked ? state : { ...state, pencilAsked: true };
       const used = hintsUsedBy(action.event);
       const counts = countsAsEdit(action.event);
       if (used.length === 0 && !counts) return state;
@@ -126,7 +148,15 @@ export function sprayHintsReducer(state: SprayHintsState, action: SprayHintsActi
     case 'DISMISS':
       return state.done[action.id] ? state : { ...state, done: { ...state.done, [action.id]: true } };
     case 'REPLAY':
-      return { loaded: true, done: NONE_DONE, edits: 0, addHoldAsked: true, replaying: true };
+      // The Pencil hint replays only for a climber who has used a Pencil.
+      return {
+        loaded: true,
+        done: NONE_DONE,
+        edits: 0,
+        addHoldAsked: true,
+        pencilAsked: state.pencilAsked,
+        replaying: true,
+      };
     default:
       return state;
   }
@@ -135,11 +165,15 @@ export function sprayHintsReducer(state: SprayHintsState, action: SprayHintsActi
 /** The one hint to show now, or null. One at a time, in order. */
 export function visibleSprayHint(state: SprayHintsState, hasMaybes: boolean): SprayHintId | null {
   if (!state.loaded) return null;
+  const pencilDue = state.pencilAsked && !state.done.pencil;
   const addHoldDue = state.addHoldAsked && !state.done.addHold;
-  // A bare-wall tap is a question asked right now, so its answer goes first.
-  // A replay asks it too, but in its place after the tap hint.
+  // The Pencil just changed what fingers do, and a bare-wall tap is a question
+  // asked right now, so their answers go first. A replay asks them too, but in
+  // their place after the tap hint.
+  if (pencilDue && !state.replaying) return 'pencil';
   if (addHoldDue && !state.replaying) return 'addHold';
   if (!state.done.tap) return 'tap';
+  if (pencilDue) return 'pencil';
   if (addHoldDue) return 'addHold';
   if (hasMaybes && !state.done.maybe) return 'maybe';
   if (!state.done.longPress && (state.replaying || state.edits >= EDITS_BEFORE_LONG_PRESS_HINT)) return 'longPress';
@@ -184,9 +218,11 @@ export function useSprayEditorHints({
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
-    void Promise.all(HINT_IDS.map((id) => hasSeenTip(SPRAY_HINT_KEYS[id]))).then(([tap, maybe, longPress, addHold]) => {
-      if (!cancelled) dispatch({ type: 'LOADED', seen: { tap, maybe, longPress, addHold } });
-    });
+    void Promise.all(HINT_IDS.map((id) => hasSeenTip(SPRAY_HINT_KEYS[id]))).then(
+      ([tap, maybe, longPress, addHold, pencil]) => {
+        if (!cancelled) dispatch({ type: 'LOADED', seen: { tap, maybe, longPress, addHold, pencil } });
+      },
+    );
     return () => {
       cancelled = true;
     };

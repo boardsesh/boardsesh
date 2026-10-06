@@ -841,7 +841,8 @@
       "cancel": "Annuler",
       "addDraw": "Dessine le tour d'une prise manquante, ou touche pour poser un cercle",
       "addCorners": "Touche les coins autour d'une prise manquante",
-      "done": "Terminé"
+      "done": "Terminé",
+      "tracePencil": "Dessine le tour de la prise avec l'Apple Pencil"
     },
     "addShape": {
       "label": "Comment délimiter une prise",
@@ -860,7 +861,8 @@
       "longPress": "Appuie longuement sur un cercle, puis fais-le glisser pour le déplacer.",
       "addHold": "Appuie longuement pour ajouter une prise.",
       "dismiss": "Masquer l'astuce",
-      "replay": "Voir les astuces"
+      "replay": "Voir les astuces",
+      "pencil": "L'Apple Pencil ajoute et active les prises. Avec les doigts, tu te déplaces et choisis une prise."
     },
     "a11y": {
       "wall": "Photo de ton mur : {{summary}}",
@@ -899,7 +901,32 @@
       "noPhoto": "Ce mur n'a pas encore de photo à modifier."
     },
     "loading": "Chargement de ton mur…",
-    "loadStalled": "Impossible de charger ton mur. Réessaie."
+    "loadStalled": "Impossible de charger ton mur. Réessaie.",
+    "rail": {
+      "label": "Outils d'édition",
+      "grip": "Déplacer les outils de l'autre côté",
+      "mark": "Choisir et activer les prises",
+      "pencilOnly": "Pencil uniquement",
+      "pencilOnlyHint": "Avec les doigts, tu choisis les prises et te déplaces. Seul l'Apple Pencil modifie le mur.",
+      "fit": "Ajuster le mur à l'écran",
+      "more": "Plus d'options"
+    },
+    "inspector": {
+      "role": {
+        "on": "Activée",
+        "off": "Désactivée",
+        "maybe": "Incertaine"
+      },
+      "source": {
+        "scan": "Trouvée par le scan",
+        "scanConfidence": "Trouvée par le scan · {{percent}} %",
+        "manual": "Ajoutée par toi"
+      },
+      "size": "Taille",
+      "redraw": "Redessiner",
+      "previous": "Prise précédente",
+      "next": "Prise suivante"
+    }
   },
   "sprayWizard": {
     "screenTitle": "Ajouter un mur de spray",

@@ -398,6 +398,98 @@ the presentation and layout they had, key for key.
 Why iPad may use `fullScreenModal` when `docs/mobile-sheets-vs-routes.md` rule 2
 bans it: the ban is about the iOS 26 NativeTabs, and iPad never mounts them.
 
+### The iPad editor and Apple Pencil
+
+On the `tablet` layout the hold editor keeps every handler the phone has and
+changes where they live. The phone layout is untouched, key for key.
+
+- **A tool rail down one side** (`SprayToolRail`): Undo, Redo, Mark (the resting
+  pick-and-switch tool) and Add, the maybes' show-or-hide and Keep all, "Pencil
+  only" once a Pencil has been seen, Fit (the zoom reset), the wall-wide menu
+  (Start over) and the "?". It is the phone's bottom bar on its side, minus the
+  counts and the primary button. It docks to the leading edge; dragging its grip
+  past the middle of the screen springs it to the other edge, and the side is
+  kept per device (`boardsesh_spray_editor_rail_side`, `useSprayRailSide`). A
+  screen reader activates the grip to switch sides.
+- **Everything else stays away from the rail** (`sprayTabletPlacement` in
+  `spray-tablet-layout.ts`, tested as a table). The picked hold's
+  `SprayHoldInspector` replaces the chip bar: a 300 pt glass card with the
+  hold's role, where it came from ("Found by scan · 82%" or "Added by you"),
+  the size stepper, the role's actions (Switch off, Redraw, Join; Switch on,
+  Delete; Keep, Switch off) and Previous / Next, which pick the neighbouring
+  ring in reading order (`sprayHoldReadingOrder`, the screen reader's walk) and
+  frame it through the board's `controlRef.zoomTo`. In landscape the card sits
+  under the header on the side away from the rail; in portrait it sits low on
+  that side, above the cluster. The undo toast and Corners' Finish stack above
+  the cluster on the same side. The reset-zoom control moves to the top corner
+  away from the rail, and the banner and hints keep a column of up to 520 pt in
+  the middle, narrower in landscape so it clears the inspector.
+- **A primary cluster along the bottom**: the count capsule
+  (`SprayCountCapsule`, shared with the phone's bottom bar) and the primary
+  button. Landscape docks it to the side away from the rail, portrait centres
+  it at up to 520 pt.
+
+**The Pencil marks and fingers inspect.** The Pencil needs no mode: on the
+tablet layout every touch is checked for `PointerType.STYLUS`. "Pencil only"
+is about fingers. It turns itself on the first time a Pencil touches or hovers
+over the wall in a session (`pencil-session.ts`, module-scoped so the wizard
+remounting the editor does not forget it), and the rail's toggle overrides it,
+kept per device (`boardsesh_spray_editor_pencil_only`).
+
+| Input | On a ring | On bare wall |
+|---|---|---|
+| Pencil tap | switch it on or off | add a circle at the median hold size |
+| Pencil stroke | starting on the SELECTED ring: move it | outline a new hold (`holdFromStroke`); centred inside the selected hold, redraw that hold instead (`SET_OUTLINE`) |
+| Pencil hover | a violet halo round it: a tap will switch it | a dashed circle of the size a tap would add |
+| Finger tap, Pencil only on | pick it (the inspector opens) | put the picked ring down |
+| Finger tap, Pencil only off | the phone rule (`resolveEditTap`) | the phone rule |
+| Finger long press or drag on the picked ring | pick up and move | Pencil only off: place a hold (the phone rule). On: pan when zoomed |
+| Pinch | zoom and pan | zoom and pan |
+| Two-finger tap | undo the last wall edit | undo the last wall edit |
+
+- **How the touches are split.** The resting editor nests a Pencil-only
+  `DrawStrokeOverlay` (`SprayPencilSurface`: Add's Manual recognizer, finger
+  draw off) inside `SprayEditGestureOverlay`, the same ancestor fall-through
+  Trace relies on. A finger fails it at touch-down and lands on the edit
+  overlay. A Pencil touch inside the selected hold's radius fails it too
+  (`declineOnSelectionSV`), so the edit overlay's drag claims it and the
+  Pencil moves the ring. Everything else the Pencil does comes back as one
+  stroke: within 10 screen pt it is a tap (`resolveEditTap` with
+  `input: 'pencil'`), otherwise an outline (`pencilStrokeTarget` decides new
+  hold or redraw).
+- **Add mode and Trace follow Pencil only.** With it on, Add's Draw takes only
+  the Pencil (`fingerDrawSV` false), Corners takes only the Pencil
+  (`PolygonTapOverlay`'s `stylusOnlySV` fails a finger at touch-down, so it
+  pans), and Trace draws only with the Pencil and says so in its banner.
+- **Hover** is RNGH's `Gesture.Hover()`, already in the binary, simultaneous
+  with the edit overlay's race. It writes `[id, cx, cy, r]` (or `[0, x, y, r]`
+  on bare wall) to a shared value on the UI thread with the same hit test a
+  tap uses, and `SprayHoverPreview` draws it inside the zoom transform. A
+  mouse or trackpad pointer is ignored. Hover only exists on the iPads whose
+  Pencil hovers (iPad Pro M2 and later, and the Pencil Pro models); elsewhere
+  nothing arrives and nothing draws.
+- **The Pencil hint** ("Apple Pencil adds and switches holds. Fingers move
+  around and pick a hold.") is asked for by the first Pencil touch or hover and
+  goes ahead of every other hint. It is used up when a finger then picks a
+  ring, or when it is closed (`onboarding_tip_spray_pencil_seen`).
+- **Two-finger tap undo** is a `Gesture.Tap().minPointers(2)` of at most 250 ms
+  and 15 pt, simultaneous with the pinch, so a quick tap undoes and anything
+  longer or wider is a pinch.
+- **With the resize handle, press and hold, and the loupe.** These came from
+  the phone editor and keep working on iPad unchanged. The resize handle is
+  mounted after the edit overlay, so its own detector still wins a touch on
+  the handle, Pencil or finger. Press and hold to place a hold is for fingers
+  only: the edit overlay's long press steps aside at touch-down for a Pencil
+  on bare wall (the Pencil adds by tapping or drawing), and with "Pencil only"
+  on, a finger's press and hold on bare wall steps aside too and pans, since
+  fingers do not add then. The loupe follows fingers only (`pointerWantsLoupe`),
+  so a Pencil never brings it up. On iPad the handle avoids the bottom count
+  and primary cluster instead of the phone's dock.
+
+What can only be checked on hardware: palm rejection while the Pencil draws,
+a Pencil landing on the selection while zoomed, hover on a Pencil Pro iPad,
+and a two-finger tap against a short pinch.
+
 ## Caps
 
 | Cap | Value | Why |
@@ -1274,8 +1366,9 @@ What the editor does with a wall is decided by this document rather than by tast
   first tap on bare wall with nothing picked shows it ahead of the others, and
   adding a hold (a press and hold, or add mode) or closing it uses it up. Each is marked seen when the climber does the thing
   or closes it, never just for showing; picking a ring or tapping bare wall is
-  not an edit for the long-press gate. The top-right "?" replays them all for
-  the session. None show in screenshot mode or on a read-only wall. The tap
+  not an edit for the long-press gate. On iPad a fifth, the Pencil hint, is
+  asked for by the first Pencil (see "The iPad editor and Apple Pencil"). The
+  top-right "?" (the rail's "?" on iPad) replays them all for the session. None show in screenshot mode or on a read-only wall. The tap
   hint is stored under a new key (`onboarding_tip_spray_tap_select_seen`, not
   the old `..._toggle_seen`), so a climber who learned "a tap switches a ring"
   sees the new rule once.
