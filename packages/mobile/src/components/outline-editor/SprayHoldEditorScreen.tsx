@@ -84,6 +84,7 @@ import {
 } from './spray-hold-editor-reducer';
 import { readingCursorPosition, readingOrderIndex, sprayHoldReadingOrder, stepReadingCursor } from './spray-hold-a11y';
 import {
+  clampPointToPhoto,
   defaultHoldRadius,
   holdAtPoint,
   holdFromPolygon,
@@ -92,12 +93,15 @@ import {
   holdRadiusBounds,
   POLYGON_MAX_VERTICES,
   stepHoldRadius,
+  stepHoldRadiusBy,
   strokeExtent,
   toRingPoints,
 } from './spray-hold-tools';
 
 /** The ring reveal's sweep down the wall, after a fresh scan. */
 const REVEAL_MS = 700;
+/** Grid steps per screen-reader bigger / smaller: about 22% a swipe, so four swipes double a hold. */
+const A11Y_RESIZE_STEPS = 4;
 /** The maybes' fade once the ON rings are in. */
 const MAYBE_FADE_MS = 250;
 /** The whole reveal, when Reduce Motion turns it into a fade. */
@@ -795,33 +799,42 @@ export function SprayHoldEditorScreen({
     (holdId: number, deltaX: number, deltaY: number) => {
       const hold = stateRef.current.holds[holdId];
       if (canEditRef.current && hold && !editWouldPassCap(hold)) {
-        dispatch({ type: 'MOVE_HOLD', id: holdId, cx: hold.cx + deltaX, cy: hold.cy + deltaY });
+        // A finger dragged past the board's edge leaves the hold at the edge.
+        const centre = clampPointToPhoto(hold.cx + deltaX, hold.cy + deltaY, photoWidth, photoHeight);
+        dispatch({ type: 'MOVE_HOLD', id: holdId, cx: centre.x, cy: centre.y });
         recordHint('edit');
       }
       // Always, so the preview re-syncs to the reducer's answer — including a
-      // refused move, which snaps back.
+      // refused move, which snaps back, and a clamped one.
       setMoveRevision((revision) => revision + 1);
     },
-    [editWouldPassCap, recordHint],
+    [editWouldPassCap, recordHint, photoWidth, photoHeight],
   );
 
   // One press is one step of the same 5% grid the handle snaps to, and one undo step.
   const shrinkTo = selectedHold ? stepHoldRadius(selectedHold.r, medianRadius, -1, radiusBounds) : null;
   const growTo = selectedHold ? stepHoldRadius(selectedHold.r, medianRadius, 1, radiusBounds) : null;
 
-  const handleShrink = useCallback(() => {
-    if (!canEdit || !selectedHold || shrinkTo == null || editWouldPassCap(selectedHold)) return;
-    hapticSelection();
-    dispatch({ type: 'RESIZE_HOLD', id: selectedHold.id, r: shrinkTo });
-    recordHint('edit');
-  }, [canEdit, selectedHold, shrinkTo, editWouldPassCap, recordHint]);
-
-  const handleGrow = useCallback(() => {
-    if (!canEdit || !selectedHold || growTo == null || editWouldPassCap(selectedHold)) return;
-    hapticSelection();
-    dispatch({ type: 'RESIZE_HOLD', id: selectedHold.id, r: growTo });
-    recordHint('edit');
-  }, [canEdit, selectedHold, growTo, editWouldPassCap, recordHint]);
+  /** The selected hold to a new radius: one `RESIZE_HOLD`, one undo step. */
+  const resizeSelectedTo = useCallback(
+    (radius: number | null) => {
+      if (!canEdit || !selectedHold || radius == null || editWouldPassCap(selectedHold)) return;
+      hapticSelection();
+      dispatch({ type: 'RESIZE_HOLD', id: selectedHold.id, r: radius });
+      recordHint('edit');
+    },
+    [canEdit, selectedHold, editWouldPassCap, recordHint],
+  );
+  const handleShrink = useCallback(() => resizeSelectedTo(shrinkTo), [resizeSelectedTo, shrinkTo]);
+  const handleGrow = useCallback(() => resizeSelectedTo(growTo), [resizeSelectedTo, growTo]);
+  /** The screen reader's bigger / smaller: a few grid steps per swipe, still one undo step. */
+  const handleAccessibilityResize = useCallback(
+    (direction: 1 | -1) => {
+      if (!selectedHold) return;
+      resizeSelectedTo(stepHoldRadiusBy(selectedHold.r, medianRadius, direction, radiusBounds, A11Y_RESIZE_STEPS));
+    },
+    [selectedHold, medianRadius, radiusBounds, resizeSelectedTo],
+  );
 
   /**
    * The resize handle let go at a new radius: one `RESIZE_HOLD`, one undo step.
@@ -874,14 +887,16 @@ export function SprayHoldEditorScreen({
         return;
       }
       const newId = stateRef.current.nextLocalId;
-      const geometry = holdFromTap(boardX, boardY, medianRadiusRef.current);
+      // The finger can slide past the board's edge before it lifts.
+      const centre = clampPointToPhoto(boardX, boardY, photoWidth, photoHeight);
+      const geometry = holdFromTap(centre.x, centre.y, medianRadiusRef.current);
       clearPlacementOnRenderRef.current = true;
       dispatch({ type: 'ADD_HOLD', geometry });
       dispatch({ type: 'SELECT', id: newId });
       pulseSpotlight('add', geometry);
       recordHint('add');
     },
-    [placeHoldSV, refuseOverCap, pulseSpotlight, recordHint],
+    [placeHoldSV, refuseOverCap, pulseSpotlight, recordHint, photoWidth, photoHeight],
   );
 
   const handleStartTrace = useCallback(() => {
@@ -1372,10 +1387,10 @@ export function SprayHoldEditorScreen({
           activateWallCursor();
           return;
         case WALL_ACTION.shrink:
-          handleShrink();
+          handleAccessibilityResize(-1);
           return;
         case WALL_ACTION.grow:
-          handleGrow();
+          handleAccessibilityResize(1);
           return;
         case WALL_ACTION.delete:
           announceNextRef.current = true;
@@ -1388,7 +1403,7 @@ export function SprayHoldEditorScreen({
           return;
       }
     },
-    [stepWallCursor, activateWallCursor, handleShrink, handleGrow, handleDelete, addHoldAtViewCentre],
+    [stepWallCursor, activateWallCursor, handleAccessibilityResize, handleDelete, addHoldAtViewCentre],
   );
 
   const cursorId = tool === 'join' ? joinCursorId : state.selectedId;

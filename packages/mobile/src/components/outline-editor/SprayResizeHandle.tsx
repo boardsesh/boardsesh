@@ -9,16 +9,17 @@ import { useTheme } from '../../providers/theme-provider';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { hapticLight, hapticMedium, hapticSelection } from '../../lib/haptics';
 import {
-  RESIZE_HANDLE_GAP_PT,
   RESIZE_HANDLE_HIT_PT,
   boardToScreen,
+  fingertipScreenPt,
   projectOnto,
   resizeHandleAnchor,
+  resizeHandleDistance,
   type ScreenRect,
 } from './spray-gesture-math';
 import { resizeFromDrag, type HoldRadiusBounds } from './spray-hold-tools';
 
-/** The visible dot, inside the 44 pt touch box. */
+/** The visible dot, at the centre of the 44 pt touch box. */
 const DOT_SIZE = 12;
 const DOT_EDGE = 2;
 /** The "+15%" pill: its box (the label is centred in it), and how far above the handle it floats. */
@@ -91,9 +92,11 @@ type SprayResizeHandleProps = {
 };
 
 /**
- * The selected hold's resize handle: a 12 pt dot just outside the ring, on the
+ * The selected hold's resize handle: a 12 pt dot outside the ring, on the
  * bottom-right diagonal unless that would leave the board or sit under the
- * bars.
+ * bars. Its 44 pt touch box never covers the ring's own disc (the ring, or a
+ * fingertip around a small one), so a tap on the selected ring still toggles
+ * it and a press there still picks it up — see `resizeHandleDistance`.
  *
  * One finger drags it, and the hold scales uniformly about its centre. Travel
  * is measured along the handle's own outward diagonal in SCREEN points and
@@ -226,6 +229,7 @@ export const SprayResizeHandle = React.memo(function SprayResizeHandle({
       return resizeHandleAnchor(
         centre,
         reachPt,
+        fingertipScreenPt(scale),
         { width: containerWidthSV.value, height: containerHeightSV.value },
         avoid,
       );
@@ -300,15 +304,20 @@ export const SprayResizeHandle = React.memo(function SprayResizeHandle({
         resizeScaleSV.value = result.r / startRadius;
         const magnet =
           result.magnet === 'median' ? MAGNET_MEDIAN : result.magnet === 'original' ? MAGNET_ORIGINAL : MAGNET_NONE;
-        if (result.r === lastRadiusSV.value) {
+        // Decided before the same-size bail-out: a bound that sits exactly on a
+        // grid step is reached by a step that is not yet "at the bound", and the
+        // next move only flips the flag — that flip still bumps.
+        const reachedBound = result.atBound && !lastAtBoundSV.value;
+        if (result.r === lastRadiusSV.value && !reachedBound) {
           lastAtBoundSV.value = result.atBound;
           return;
         }
-        // One hop to JS per change of size, never per frame. The haptic inside it
-        // is throttled; the pill is not, so it never shows a stale number.
+        // One hop to JS per change of size (or bound), never per frame. The
+        // haptic inside it is throttled; the pill is not, so it never shows a
+        // stale number.
         const now = Date.now();
         let tick = TICK_NONE;
-        if (result.atBound && !lastAtBoundSV.value) tick = TICK_BOUND;
+        if (reachedBound) tick = TICK_BOUND;
         else if (magnet !== MAGNET_NONE && magnet !== lastMagnetSV.value) tick = TICK_MAGNET;
         else if (now - lastTickMsSV.value >= STEP_TICK_MIN_MS) tick = TICK_STEP;
         if (tick !== TICK_NONE) lastTickMsSV.value = now;
@@ -403,12 +412,14 @@ export const SprayResizeHandle = React.memo(function SprayResizeHandle({
     if (activeSV.value) {
       // Mid-drag the diagonal is the one the finger grabbed: the dot rides the
       // growing ring out along it rather than jumping corners.
-      x = centre.x + directionXSV.value * (reachPt + RESIZE_HANDLE_GAP_PT);
-      y = centre.y + directionYSV.value * (reachPt + RESIZE_HANDLE_GAP_PT);
+      const distance = resizeHandleDistance(reachPt, fingertipScreenPt(scale));
+      x = centre.x + directionXSV.value * distance;
+      y = centre.y + directionYSV.value * distance;
     } else {
       const anchor = resizeHandleAnchor(
         centre,
         reachPt,
+        fingertipScreenPt(scale),
         { width: containerWidthSV.value, height: containerHeightSV.value },
         [{ x: -AVOID_RECT_SPAN, y: avoidTopSV.value, width: AVOID_RECT_SPAN * 2, height: AVOID_RECT_SPAN }],
       );
@@ -416,7 +427,13 @@ export const SprayResizeHandle = React.memo(function SprayResizeHandle({
       y = anchor.y;
     }
     const half = RESIZE_HANDLE_HIT_PT / 2;
-    return { opacity: 1, transform: [{ translateX: x - half }, { translateY: y - half }] };
+    // Turned 45° about its centre, so the face towards the hold is flat and
+    // stays clear of the hold's own disc (`resizeHandleDistance`). Both
+    // platforms' hit tests honour the rotation.
+    return {
+      opacity: 1,
+      transform: [{ translateX: x - half }, { translateY: y - half }, { rotate: '45deg' }],
+    };
   }, []);
 
   const pillStyle = useAnimatedStyle(() => {
@@ -438,13 +455,16 @@ export const SprayResizeHandle = React.memo(function SprayResizeHandle({
       boardScaleSV.value > 0
         ? ((selected[3] * reachRatioSV.value * resizeScaleSV.value) / boardScaleSV.value) * scale
         : 0;
-    const handleX = centre.x + directionXSV.value * (reachPt + RESIZE_HANDLE_GAP_PT);
-    const handleY = centre.y + directionYSV.value * (reachPt + RESIZE_HANDLE_GAP_PT);
+    const distance = resizeHandleDistance(reachPt, fingertipScreenPt(scale));
+    const handleX = centre.x + directionXSV.value * distance;
+    const handleY = centre.y + directionYSV.value * distance;
     const width = containerWidthSV.value;
     // Above the touch box (so the finger never covers it), or below when there
-    // is no room above; kept inside the board sideways.
-    const above = handleY - RESIZE_HANDLE_HIT_PT / 2 - PILL_GAP - PILL_HEIGHT;
-    const top = above >= 0 ? above : handleY + RESIZE_HANDLE_HIT_PT / 2 + PILL_GAP;
+    // is no room above; kept inside the board sideways. The turned box's
+    // corners reach `HIT × √½` above and below the dot.
+    const boxHalfHeight = RESIZE_HANDLE_HIT_PT * Math.SQRT1_2;
+    const above = handleY - boxHalfHeight - PILL_GAP - PILL_HEIGHT;
+    const top = above >= 0 ? above : handleY + boxHalfHeight + PILL_GAP;
     const left = Math.min(Math.max(handleX - PILL_WIDTH / 2, 0), Math.max(0, width - PILL_WIDTH));
     return { opacity: 1, transform: [{ translateX: left }, { translateY: top }] };
   }, []);

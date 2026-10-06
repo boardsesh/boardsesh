@@ -178,10 +178,36 @@ export type ScreenRect = { x: number; y: number; width: number; height: number }
 /** The resize handle's dot: where it sits and the outward direction a drag is measured along. */
 export type ResizeHandleAnchor = { x: number; y: number; ux: number; uy: number };
 
-/** Gap between the hold's farthest point and the handle's dot, in screen points. */
-export const RESIZE_HANDLE_GAP_PT = 10;
 /** The handle's touch box, in screen points: the 44 pt floor, whatever the zoom. */
 export const RESIZE_HANDLE_HIT_PT = 44;
+/** Bare space between the hold's own disc and the handle's touch box, in screen points. */
+export const RESIZE_HANDLE_CLEARANCE_PT = 2;
+
+/**
+ * {@link HIT_FALLBACK_SCREEN_PT} as it lands on screen at a zoom: a fingertip
+ * at 1x and above, shrinking with the board below it (the same `max(1, scale)`
+ * as {@link fallbackRadiusAt}).
+ */
+export function fingertipScreenPt(scale: number): number {
+  'worklet';
+  return (HIT_FALLBACK_SCREEN_PT * scale) / Math.max(1, scale);
+}
+
+/**
+ * How far the handle's dot sits from the hold's centre, in screen points.
+ *
+ * The touch box is turned 45° so a flat face looks at the hold, and that face
+ * stays {@link RESIZE_HANDLE_CLEARANCE_PT} outside the hold's own disc: its
+ * farthest point, or a fingertip, whichever is bigger. That disc is where a
+ * tap, a pick-up or a drag of the selected ring lands, so the handle never sits
+ * over the ring it resizes, at any zoom. The dot is the box's centre, so a
+ * small hold at 1x gets its dot 46 pt out, and a big or zoomed one 24 pt past
+ * its farthest point.
+ */
+export function resizeHandleDistance(reachPt: number, fingertipPt: number): number {
+  'worklet';
+  return Math.max(0, reachPt, fingertipPt) + RESIZE_HANDLE_HIT_PT / 2 + RESIZE_HANDLE_CLEARANCE_PT;
+}
 
 const DIAGONAL = Math.SQRT1_2;
 /** The diagonals the handle tries, in order: bottom-right first, where a right thumb reaches. */
@@ -203,13 +229,15 @@ function boxOverlaps(centreX: number, centreY: number, half: number, rect: Scree
 }
 
 /**
- * Where the resize handle goes for a hold whose centre is at `centre` on screen
- * and whose farthest point is `reachPt` screen points out.
+ * Where the resize handle goes for a hold whose centre is at `centre` on screen,
+ * whose farthest point is `reachPt` screen points out, and whose fingertip grab
+ * radius is `fingertipPt`.
  *
- * It sits {@link RESIZE_HANDLE_GAP_PT} outside that point on the bottom-right
- * diagonal, and flips to the next diagonal (bottom-left, top-right, top-left)
- * whenever its 44 pt touch box would leave the viewport or touch one of
- * `avoidRects` (the chip bar and the bottom bar). When no diagonal is clear it
+ * It sits {@link resizeHandleDistance} out on the bottom-right diagonal, and
+ * flips to the next diagonal (bottom-left, top-right, top-left) whenever its
+ * touch box — a 44 pt square turned 45°, so 62 pt across corner to corner —
+ * would leave the viewport or touch one of `avoidRects` (the chip bar and the
+ * bottom bar). When no diagonal is clear it
  * takes the first whose dot is at least on screen and uncovered, and failing
  * even that, bottom-right. Placed in screen space, so it is the same size at any
  * zoom.
@@ -217,12 +245,14 @@ function boxOverlaps(centreX: number, centreY: number, half: number, rect: Scree
 export function resizeHandleAnchor(
   centre: { x: number; y: number },
   reachPt: number,
+  fingertipPt: number,
   viewport: { width: number; height: number },
   avoidRects: readonly ScreenRect[],
 ): ResizeHandleAnchor {
   'worklet';
-  const distance = Math.max(0, reachPt) + RESIZE_HANDLE_GAP_PT;
-  const half = RESIZE_HANDLE_HIT_PT / 2;
+  const distance = resizeHandleDistance(reachPt, fingertipPt);
+  // The turned box's corners reach this far along each axis.
+  const half = RESIZE_HANDLE_HIT_PT * DIAGONAL;
   let fallbackIndex = -1;
   for (let index = 0; index < HANDLE_DIRECTIONS.length; index += 1) {
     const [ux, uy] = HANDLE_DIRECTIONS[index];

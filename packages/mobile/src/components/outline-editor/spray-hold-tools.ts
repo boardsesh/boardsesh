@@ -367,6 +367,23 @@ export function holdFromTap(x: number, y: number, radius: number): HoldGeometry 
   return { cx: x, cy: y, r: Math.max(MIN_HOLD_RADIUS_BOARD_PX, radius), outline: null };
 }
 
+/**
+ * A hold centre kept on the photo, in board px. A press and hold or a move can
+ * carry the finger past the board's edge, and a hold centred off the photo is
+ * saved but drawn nowhere. A photo with no size yet clamps nothing.
+ */
+export function clampPointToPhoto(
+  x: number,
+  y: number,
+  photoWidth: number,
+  photoHeight: number,
+): { x: number; y: number } {
+  return {
+    x: photoWidth > 0 ? Math.min(Math.max(x, 0), photoWidth) : x,
+    y: photoHeight > 0 ? Math.min(Math.max(y, 0), photoHeight) : y,
+  };
+}
+
 /** The wall's own hold size, for a hold placed where there is nothing to measure. */
 export function defaultHoldRadius(holds: readonly HoldGeometry[], boardWidth: number): number {
   const radii = holds.map((hold) => hold.r).filter((radius) => radius > 0);
@@ -609,6 +626,29 @@ export function stepHoldRadius(
 }
 
 /**
+ * Several {@link stepHoldRadius} presses at once, stopping early at a bound:
+ * the screen reader's bigger / smaller actions, where one swipe per 5% would
+ * take 14 swipes to double a hold. Null when not even one step fits.
+ */
+export function stepHoldRadiusBy(
+  radius: number,
+  median: number,
+  direction: 1 | -1,
+  bounds: HoldRadiusBounds,
+  steps: number,
+): number | null {
+  let result: number | null = null;
+  let current = radius;
+  for (let step = 0; step < steps; step += 1) {
+    const next = stepHoldRadius(current, median, direction, bounds);
+    if (next == null) break;
+    result = next;
+    current = next;
+  }
+  return result;
+}
+
+/**
  * The resize handle's drag → a radius, on the UI thread.
  *
  * `projectedPt` is the finger's travel along the handle's outward direction, in
@@ -620,7 +660,9 @@ export function stepHoldRadius(
  * both are in reach the nearer wins, and on a tie the original does.
  *
  * Bounds clamp everything but the original: a hold that was already outside
- * them (a wide merge) can always be dragged back to the size it had.
+ * them (a wide merge) can always be dragged back to the size it had, and a
+ * drag away from the bounds leaves it at that size rather than jumping it the
+ * other way — the radius only ever moves the way the finger does.
  */
 export function resizeFromDrag(
   projectedPt: number,
@@ -647,13 +689,15 @@ export function resizeFromDrag(
     magnet = 'median';
   }
   const radius = gridRadius(stepIndex, median);
-  if (radius < bounds.min) {
-    return { r: bounds.min, stepIndex: Math.round(gridPosition(bounds.min, median)), magnet: null, atBound: true };
+  if (radius >= bounds.min && radius <= bounds.max) return { r: radius, stepIndex, magnet, atBound: false };
+  const clamped = radius < bounds.min ? bounds.min : bounds.max;
+  // A hold that started outside the bounds would be clamped AGAINST the drag
+  // (dragging a wide merge out would shrink it to the max): it stays the size
+  // it was until the finger turns back towards the bounds.
+  if ((projectedPt > 0 && clamped < startRadius) || (projectedPt < 0 && clamped > startRadius)) {
+    return { r: startRadius, stepIndex: Math.round(originalPosition), magnet: 'original', atBound: true };
   }
-  if (radius > bounds.max) {
-    return { r: bounds.max, stepIndex: Math.round(gridPosition(bounds.max, median)), magnet: null, atBound: true };
-  }
-  return { r: radius, stepIndex, magnet, atBound: false };
+  return { r: clamped, stepIndex: Math.round(gridPosition(clamped, median)), magnet: null, atBound: true };
 }
 
 /** The widest side of a flat point list's bounding box, in board px. Zero with no points. */
