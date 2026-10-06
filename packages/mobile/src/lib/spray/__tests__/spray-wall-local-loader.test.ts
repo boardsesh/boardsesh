@@ -20,7 +20,6 @@ vi.mock('../../../settings/offline-boards', () => ({ getRememberedSprayWallArchi
 vi.mock('../spray-wall-registry', () => ({
   LIVE_SPRAY_WALL_ARCHIVE_STATE: {
     archivedAt: null,
-    resetOfWallUuid: null,
     replacedByWallUuid: null,
     holdsLocked: false,
   },
@@ -90,7 +89,6 @@ describe('offline published wall hydration', () => {
       expect.objectContaining({
         archive: {
           archivedAt: '2026-10-01T09:00:00.000Z',
-          resetOfWallUuid: null,
           replacedByWallUuid: 'new-wall',
           holdsLocked: true,
         },

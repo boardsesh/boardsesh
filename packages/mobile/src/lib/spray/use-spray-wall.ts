@@ -28,10 +28,6 @@ import {
 } from './spray-wall-registry';
 import { installSprayWallLoader } from './spray-wall-loader';
 
-// The archive readers live in their own registry-only module so a list row or
-// a sheet can read them without the network loader in its import graph.
-export { useSprayWallArchiveState, useSprayWallIsArchived } from './use-spray-wall-archive';
-
 export {
   sprayWallByLayoutQueryKey,
   sprayWallRenderDataQueryKey,

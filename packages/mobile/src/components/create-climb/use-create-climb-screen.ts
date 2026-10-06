@@ -39,7 +39,12 @@ import { useQueueActions } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useToast } from '../../providers/toast-provider';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
-import { getSprayWall, refreshSprayWall, SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
+import {
+  getSprayWall,
+  refreshSprayWall,
+  refreshSprayWallArchive,
+  SPRAY_BOARD_NAME,
+} from '../../lib/spray/spray-wall-registry';
 import { sprayWallLifecycleRefusal, sprayWallRefusalMeansStaleWall } from '../../lib/graphql/extract-error-message';
 import { sprayWallLifecycleMessage } from '../../lib/spray/spray-lifecycle-copy';
 import {
@@ -1754,9 +1759,10 @@ export function useCreateClimbScreen({
       // catches up when the climb syncs down and the index rebuilds.
       void queryClient.invalidateQueries({ queryKey: ['holdHeatmap'] });
       // A wall's first published climb locks its holds. Re-read the wall's
-      // archive state now, so its board sheet says "Holds are locked" at once
-      // rather than after the ten-minute revalidation.
-      if (!isDraft && board.boardName === SPRAY_BOARD_NAME) refreshSprayWall(board.layoutId);
+      // archive state now (that query alone, not the whole wall), so its board
+      // sheet says "Holds are locked" at once rather than after the ten-minute
+      // revalidation.
+      if (!isDraft && board.boardName === SPRAY_BOARD_NAME) refreshSprayWallArchive(board.layoutId);
       setJustSaved(true);
       // Seed the next climb's picker with what this one published at — a session
       // on one wall clusters hard around two or three grades.

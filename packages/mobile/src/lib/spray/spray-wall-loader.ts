@@ -11,7 +11,7 @@
 // uuid; a board config carries only a layout id. `sprayWallByLayout` turns one
 // into the other, and it is a separate query so it can be cached hard: a wall's
 // uuid never changes, while its render payload carries presigned photo URLs that
-// expire in fifteen minutes and holds that change on every reset.
+// expire in fifteen minutes and holds that change with every published version.
 
 import { getConnectivitySnapshot, subscribeConnectivity } from '../connectivity/connectivity-store';
 import { isNetworkError } from '@boardsesh/offline-sync/error-classification';
@@ -33,6 +33,7 @@ import {
   settleSprayWallDiscoveryMiss,
   registerSprayWall,
   resetSprayWallViewerAccess,
+  setSprayWallArchiveRefresher,
   setSprayWallArchiveState,
   setSprayWallLoader,
   setSprayWallLook,
@@ -128,7 +129,7 @@ export const WALL_IDENTITY_STALE_TIME_MS = 60 * 60 * 1000;
  *
  * Bounded by the photo signature, not by how often a wall changes: the URLs in
  * hand stop working after fifteen minutes, so ten leaves a margin for a surface
- * that was opened just before the boundary. A reset lands on the next refetch —
+ * that was opened just before the boundary. A new version lands on the next refetch —
  * the version moves, every cache key moves with it (`sprayCacheToken`), and the
  * new photo downloads under its own name.
  *
@@ -225,7 +226,6 @@ export function sprayWallArchiveStateOf(wall: SprayWallArchiveFields): SprayWall
   const archivedAt = wall.archivedAt ?? null;
   return {
     archivedAt,
-    resetOfWallUuid: wall.resetOfWallUuid ?? null,
     replacedByWallUuid: wall.replacedByWallUuid ?? null,
     holdsLocked: wall.holdsLocked === true || archivedAt != null,
   };
@@ -254,7 +254,6 @@ export function mapSprayWallRenderData(
     photoThumbUrl: renderData.photo.thumbUrl ?? null,
     photoExpiresAt: renderData.photo.expiresAt,
     holds,
-    homography: renderData.homography,
     renderSettings: null,
     viewerCanEdit: renderData.wall.viewerCanEdit === true,
     // Draft payloads are an unpublished wall's: nothing is archived or locked.
@@ -333,7 +332,6 @@ export function registerRenderData(
     photoThumbUrl: renderData.photo.thumbUrl ?? null,
     photoExpiresAt: renderData.photo.expiresAt,
     holds,
-    homography: renderData.homography,
     renderSettings: look,
     archive: archive ?? undefined,
     hiddenAt: renderData.wall.hiddenAt ?? null,
@@ -349,14 +347,18 @@ export function registerRenderData(
   });
   if (look === undefined) void loadSprayWallLook(layoutId, renderData.wall.uuid);
   if (archive === undefined) void loadSprayWallArchive(layoutId, renderData.wall.uuid);
-  else if (archive) keepSprayWallArchiveOffline(renderData.wall.uuid, archive);
+  else if (
+    archive &&
+    (fetchedUnderViewerGeneration === undefined || fetchedUnderViewerGeneration === sprayWallViewerGeneration())
+  )
+    keepSprayWallArchiveOffline(renderData.wall.uuid, archive);
 
-  // The create-climb draft slot is keyed on the version, so a reset moves it and
-  // leaves the old one holding holds that are no longer on the wall. Nothing else
+  // The create-climb draft slot is keyed on the version, so a new version moves
+  // it and leaves the old one holding holds that may be gone. Nothing else
   // would ever read or remove it. Fire-and-forget: losing this costs a few
   // kilobytes, and it must not sit in front of the first paint.
   void clearSupersededSprayDrafts(layoutId, sprayVersionToken('spray', layoutId)).catch(() => {
-    // AsyncStorage unavailable. The orphan survives until the next reset.
+    // AsyncStorage unavailable. The orphan survives until the next version.
   });
   return true;
 }
@@ -473,6 +475,14 @@ type KnownArchive = { archive: SprayWallArchiveState | null; settledAtMs: number
 
 const archives = new Map<string, KnownArchive>();
 const archivesInFlight = new Map<string, Promise<SprayWallArchiveState | null>>();
+/**
+ * Bumped, per wall, by every write to `archives` that is not a read's answer
+ * (`primeSprayWallArchive`). A read that started before one is stale: a reset
+ * that published here primes "archived", and a "live" read sent before the
+ * publish must not answer over it. `archiveEpoch` does the same for every wall
+ * at once when the account changes.
+ */
+const archiveWrites = new Map<string, number>();
 let archiveEpoch = 0;
 
 /**
@@ -511,6 +521,7 @@ export function fetchSprayWallArchive(
   if (pending && !force) return pending;
 
   const epochAtStart = archiveEpoch;
+  const writesAtStart = archiveWrites.get(wallUuid) ?? 0;
   const request = Promise.resolve()
     .then(() => getHttpClient().request<GetSprayWallArchiveQueryResponse>(GET_SPRAY_WALL_ARCHIVE, { uuid: wallUuid }))
     .then(
@@ -521,7 +532,12 @@ export function fetchSprayWallArchive(
       () => ({ archive: null, freshForMs: ARCHIVE_RETRY_AFTER_FAILURE_MS }),
     )
     .then(({ archive, freshForMs }) => {
-      if (archiveEpoch === epochAtStart) archives.set(wallUuid, { archive, settledAtMs: Date.now(), freshForMs });
+      // Asked under another account: whose answer it is cannot be said, so it
+      // is "not known" rather than handed to the account that is here now.
+      if (archiveEpoch !== epochAtStart) return null;
+      // Something this device knows better landed while the read was out.
+      if ((archiveWrites.get(wallUuid) ?? 0) !== writesAtStart) return archives.get(wallUuid)?.archive ?? null;
+      archives.set(wallUuid, { archive, settledAtMs: Date.now(), freshForMs });
       return archive;
     })
     .finally(() => {
@@ -531,14 +547,31 @@ export function fetchSprayWallArchive(
   return request;
 }
 
+/**
+ * The wall a reset cloned this one from, `null` for a wall that is not a clone,
+ * or `undefined` when it could not be read. Uncached: the one caller asks once,
+ * before offering an unfinished wall back.
+ */
+export async function fetchSprayWallResetSource(wallUuid: string): Promise<string | null | undefined> {
+  try {
+    const response = await getHttpClient().request<GetSprayWallArchiveQueryResponse>(GET_SPRAY_WALL_ARCHIVE, {
+      uuid: wallUuid,
+    });
+    return response?.sprayWall ? (response.sprayWall.resetOfWallUuid ?? null) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Read a wall's archive state and hand it to the registered wall, if it is still that wall. */
 export async function loadSprayWallArchive(
   layoutId: number,
   wallUuid: string,
   options?: { force?: boolean },
 ): Promise<void> {
+  const viewerGeneration = sprayWallViewerGeneration();
   const archive = await fetchSprayWallArchive(wallUuid, options);
-  if (!archive) return;
+  if (!archive || viewerGeneration !== sprayWallViewerGeneration()) return;
   setSprayWallArchiveState(layoutId, wallUuid, archive);
   keepSprayWallArchiveOffline(wallUuid, archive);
 }
@@ -549,16 +582,22 @@ export async function loadSprayWallArchive(
  * answer from before, and so the offline loader knows it before any refetch.
  */
 export function primeSprayWallArchive(wallUuid: string, archive: SprayWallArchiveState): void {
+  archiveWrites.set(wallUuid, (archiveWrites.get(wallUuid) ?? 0) + 1);
   archivesInFlight.delete(wallUuid);
   archives.set(wallUuid, { archive, settledAtMs: Date.now(), freshForMs: REGISTERED_WALL_REVALIDATE_MS });
   keepSprayWallArchiveOffline(wallUuid, archive);
 }
 
-/** Test seam: forget every archive answer this session has read. */
+/**
+ * Forget every archive answer this session has read, and disown reads in
+ * flight. Runs on every account change (who replaced a wall is only shown to a
+ * viewer who may see the replacement); tests use it as a reset too.
+ */
 export function clearSprayWallArchiveAnswers(): void {
   archiveEpoch += 1;
   archives.clear();
   archivesInFlight.clear();
+  archiveWrites.clear();
 }
 
 /** The wall's uuid for a layout id, through React Query so two callers share one request. */
@@ -710,17 +749,16 @@ export async function loadSprayWall(
 /**
  * Re-register a wall immediately after THIS device changed it.
  *
- * The revalidation gate closes the cross-device hole (another climber publishes
- * a reset; this session picks it up within the stale window), but the device that
- * published should not wait on a window at all — it already knows the version
- * moved. `publishSprayWallVersion` and, once SW-12 lands it,
- * `commitSprayWallVersion` call this on success: the cached payload is dropped
- * and the wall re-registers under its new version, which moves every spray cache
- * key with it.
+ * The revalidation gate closes the cross-device hole (another editor publishes
+ * a version, or the wall is archived; this session picks it up within the stale
+ * window), but the device that made the change should not wait on a window at
+ * all. A published hold edit and a reset's publish (for the wall it archives,
+ * `settleArchivedSprayWall`) call this: the cached payload is dropped and the
+ * wall re-registers, under its new version where there is one, which moves every
+ * spray cache key with it.
  *
- * SW-08's editor calls it on unmount, to put the published generation back for
- * whatever outlives the screen (`use-spray-wall-draft.ts`). SW-12's
- * `commitSprayWallVersion` is the other caller, once it lands.
+ * The hold editor also calls it on unmount, to put the published generation
+ * back for whatever outlives the screen (`use-spray-wall-draft.ts`).
  */
 export async function invalidateSprayWallRenderData(
   queryClient: QueryClient,
@@ -805,6 +843,10 @@ export function installSprayWallLoader(queryClient: QueryClient): () => void {
     return loadSprayWall(queryClient, layoutId, options);
   };
   setSprayWallLoader(loader);
+  const refreshArchive = (layoutId: number, wallUuid: string) => {
+    if (active) void loadSprayWallArchive(layoutId, wallUuid, { force: true });
+  };
+  setSprayWallArchiveRefresher(refreshArchive);
   let wasOffline = getConnectivitySnapshot().effectiveOffline;
   const unsubscribe = subscribeConnectivity(() => {
     const offline = getConnectivitySnapshot().effectiveOffline;
@@ -825,5 +867,6 @@ export function installSprayWallLoader(queryClient: QueryClient): () => void {
     unsubscribeWithdrawal();
     if (unsubscribeQueryWithdrawal === unsubscribeWithdrawal) unsubscribeQueryWithdrawal = undefined;
     unsetSprayWallLoader(loader);
+    setSprayWallArchiveRefresher(null);
   };
 }

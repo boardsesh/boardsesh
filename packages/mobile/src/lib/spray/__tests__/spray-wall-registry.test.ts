@@ -7,7 +7,6 @@ import {
   LIVE_SPRAY_WALL_ARCHIVE_STATE,
   markSprayWallArchived,
   sprayWallArchiveState,
-  sprayWallIsArchived,
   listRegisteredSprayWalls,
   registerSprayWall,
   resetSprayWallViewerAccess,
@@ -368,7 +367,6 @@ describe('who can edit the wall (#5955)', () => {
 describe('spray wall archive state', () => {
   const ARCHIVED = {
     archivedAt: '2026-10-01T09:00:00.000Z',
-    resetOfWallUuid: 'older-wall',
     replacedByWallUuid: 'new-wall',
     holdsLocked: true,
   };
@@ -377,18 +375,15 @@ describe('spray wall archive state', () => {
     registerSprayWall(LAYOUT_ID, { ...wall(1), archive: ARCHIVED });
     expect(getSprayWall(LAYOUT_ID)?.archive).toEqual(ARCHIVED);
     expect(sprayWallArchiveState('spray', LAYOUT_ID)).toEqual(ARCHIVED);
-    expect(sprayWallIsArchived('spray', LAYOUT_ID)).toBe(true);
 
     registerSprayWall(LAYOUT_ID + 1, wall(1));
     expect(sprayWallArchiveState('spray', LAYOUT_ID + 1)).toEqual(LIVE_SPRAY_WALL_ARCHIVE_STATE);
-    expect(sprayWallIsArchived('spray', LAYOUT_ID + 1)).toBe(false);
   });
 
   it('answers null for a catalogue board and for a wall not registered yet', () => {
     registerSprayWall(LAYOUT_ID, { ...wall(1), archive: ARCHIVED });
     expect(sprayWallArchiveState('kilter', LAYOUT_ID)).toBeNull();
     expect(sprayWallArchiveState('spray', 999)).toBeNull();
-    expect(sprayWallIsArchived('spray', 999)).toBe(false);
   });
 
   // useSyncExternalStore compares snapshots by identity: a revalidation that
@@ -415,7 +410,6 @@ describe('spray wall archive state', () => {
     });
     expect(sprayWallArchiveState('spray', LAYOUT_ID)).toEqual({
       archivedAt: '2026-10-06T10:00:00.000Z',
-      resetOfWallUuid: null,
       replacedByWallUuid: 'new-wall',
       holdsLocked: true,
     });

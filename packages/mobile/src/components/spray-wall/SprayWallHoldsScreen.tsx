@@ -50,17 +50,21 @@ import {
 } from '../../lib/spray/spray-hold-maintenance';
 
 const maintenanceTransport: SprayHoldMaintenanceTransport = {
-  // The wall and, from its own fail-soft query, whether it is archived or its
-  // holds are locked. Asked fresh every time: this is the gate in front of the
-  // editor and its Publish. Unknown (an older backend, a failed read) reads as
-  // live with free holds, and the server still refuses what it must.
+  // The wall and, from its own query, whether it is archived or its holds are
+  // locked. Asked fresh every time: this is the gate in front of the editor and
+  // its Publish, the one place the app writes holds. It fails CLOSED, unlike
+  // every other reader of that query: the backend does not refuse a hold write
+  // on a locked wall yet (#6183), so an unknown answer (a failed or timed-out
+  // read, an older backend) must not let the editor move holds under published
+  // climbs. The screen offers Retry and Back.
   fetchWall: async (wallUuid) => {
     const [wall, archive] = await Promise.all([
       fetchSprayWallVersions(wallUuid),
       fetchSprayWallArchive(wallUuid, { force: true }),
     ]);
     if (!wall) return null;
-    return { ...wall, archivedAt: archive?.archivedAt ?? null, holdsLocked: archive?.holdsLocked === true };
+    if (!archive) throw new SprayHoldMaintenanceError('unavailable');
+    return { ...wall, archivedAt: archive.archivedAt, holdsLocked: archive.holdsLocked };
   },
   createDraft: async (input) => {
     const response = await getHttpClient().request<{ createSprayWallVersion: SprayWallVersion }>(
@@ -247,8 +251,10 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
       setFinished(true);
     } catch (error) {
       if (!publishedRef.current && sprayWallRefusalMeansStaleWall(sprayWallLifecycleRefusal(error))) {
-        busyRef.current = false;
-        if (mountedRef.current) landOnLockedWall(error);
+        // Handed over after this run's `finally` has released the screen, so
+        // the gate's own run owns `busyRef` from its start: the leave guard
+        // never sees a gap between the two.
+        if (mountedRef.current) queueMicrotask(() => landOnLockedWall(error));
         return;
       }
       refreshRegisteredWall(error);

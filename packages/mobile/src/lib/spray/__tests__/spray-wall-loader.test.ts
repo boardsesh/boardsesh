@@ -38,6 +38,8 @@ vi.mock('../../error-reporting', () => ({ reportHandledError: reportHandledError
 const {
   clearSprayWallRegistry,
   ensureSprayWallLoaded,
+  markSprayWallArchived,
+  refreshSprayWallArchive,
   getSprayWall,
   registerSprayWall,
   unregisterSprayWall,
@@ -51,6 +53,9 @@ const {
 const {
   LOOK_RETRY_AFTER_FAILURE_MS,
   clearSprayWallArchiveAnswers,
+  fetchSprayWallArchive,
+  loadSprayWallArchive,
+  primeSprayWallArchive,
   clearSprayWallLooks,
   dropSprayWallViewerAccess,
   loadSprayWall,
@@ -743,7 +748,7 @@ describe('loadSprayWall', () => {
     expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(false);
   });
 
-  it('keeps the homography and the move links, for drawing lost-hold ghosts (#5493)', async () => {
+  it('maps holds through the homography and keeps the move links the hold editor resends', async () => {
     const { registerRenderData } = await import('../spray-wall-loader');
     const payload = renderDataPayload({
       homography: [2, 0, 0, 0, 2, 0, 0, 0, 1],
@@ -754,7 +759,6 @@ describe('loadSprayWall', () => {
     });
     registerRenderData(LAYOUT_ID, payload.sprayWallRenderData as never, null);
     const wall = getSprayWall(LAYOUT_ID);
-    expect(wall?.homography).toEqual([2, 0, 0, 0, 2, 0, 0, 0, 1]);
     expect(wall?.holds[0]).toMatchObject({ id: 7, cx: 50, cy: 100, movedFromHoldId: 3 });
     // No predecessor, no key: the hold keeps the shape it always had.
     expect(wall?.holds[1]).not.toHaveProperty('movedFromHoldId');
@@ -837,7 +841,6 @@ describe('loadSprayWall', () => {
 
     expect(getSprayWall(LAYOUT_ID)?.archive).toEqual({
       archivedAt: '2026-10-01T09:00:00.000Z',
-      resetOfWallUuid: null,
       replacedByWallUuid: 'new-wall',
       holdsLocked: true,
     });
@@ -854,7 +857,6 @@ describe('loadSprayWall', () => {
       ...existingWall(),
       archive: {
         archivedAt: '2026-10-01T09:00:00.000Z',
-        resetOfWallUuid: null,
         replacedByWallUuid: null,
         holdsLocked: true,
       },
@@ -869,6 +871,61 @@ describe('loadSprayWall', () => {
     await loadSprayWall(fakeQueryClient(), LAYOUT_ID, { force: true });
 
     expect(getSprayWall(LAYOUT_ID)).toMatchObject({ version: 2, archive: { archivedAt: '2026-10-01T09:00:00.000Z' } });
+  });
+
+  // A published climb may have locked the wall's holds: the create screen asks
+  // through the registry, and the loader re-reads the archive query alone.
+  it('re-reads only the archive state when asked through the registry', async () => {
+    const teardown = installSprayWallLoader(privateQueryClient());
+    registerSprayWall(LAYOUT_ID, existingWall());
+    answerArchive(async () => ({
+      sprayWall: { uuid: WALL_UUID, archivedAt: null, replacedByWallUuid: null, holdsLocked: true },
+    }));
+    refreshSprayWallArchive(LAYOUT_ID);
+    await vi.waitFor(() => expect(getSprayWall(LAYOUT_ID)?.archive.holdsLocked).toBe(true));
+    expect(requestMock.mock.calls.map(([operation]) => operation)).toEqual([sprayOperations.GET_SPRAY_WALL_ARCHIVE]);
+    teardown();
+  });
+
+  // A reset that published here primes "archived"; a "live" read sent before
+  // the publish must not answer over it, in the cache, the registry or offline.
+  it('a primed archive survives an older read that resolves later', async () => {
+    registerSprayWall(LAYOUT_ID, existingWall());
+    const read = deferredResponse();
+    answerArchive(() => read.promise);
+    const loading = loadSprayWallArchive(LAYOUT_ID, WALL_UUID, { force: true });
+    await Promise.resolve();
+
+    const archived = { archivedAt: '2026-10-06T10:00:00.000Z', replacedByWallUuid: 'new-wall', holdsLocked: true };
+    primeSprayWallArchive(WALL_UUID, archived);
+    markSprayWallArchived(LAYOUT_ID, WALL_UUID, { archivedAt: archived.archivedAt, replacedByWallUuid: 'new-wall' });
+    read.resolve({
+      sprayWall: { uuid: WALL_UUID, archivedAt: null, replacedByWallUuid: null, holdsLocked: false },
+    });
+    await loading;
+
+    expect(getSprayWall(LAYOUT_ID)?.archive.archivedAt).toBe(archived.archivedAt);
+    expect(getRememberedSprayWallArchive(WALL_UUID)?.archivedAt).toBe(archived.archivedAt);
+    await expect(fetchSprayWallArchive(WALL_UUID)).resolves.toEqual(archived);
+  });
+
+  // A read sent under one account and answered under the next is "not known":
+  // who replaced a wall is only shown to a viewer who may see the replacement.
+  it('answers "not known" for a read that outlived an account change', async () => {
+    const read = deferredResponse();
+    answerArchive(() => read.promise);
+    const reading = fetchSprayWallArchive(WALL_UUID);
+    await Promise.resolve();
+    clearSprayWallArchiveAnswers();
+    read.resolve({
+      sprayWall: {
+        uuid: WALL_UUID,
+        archivedAt: '2026-10-01T09:00:00.000Z',
+        replacedByWallUuid: 'x',
+        holdsLocked: true,
+      },
+    });
+    await expect(reading).resolves.toBeNull();
   });
 
   it('registers the wall with its stored look, sanitised, in one registration', async () => {

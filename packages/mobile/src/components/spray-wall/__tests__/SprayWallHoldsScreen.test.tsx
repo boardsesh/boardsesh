@@ -12,6 +12,8 @@ const requests = vi.hoisted(() => ({
   fetchRender: vi.fn(),
   register: vi.fn(),
   discardLeftover: vi.fn(),
+  fetchWall: vi.fn(),
+  fetchArchive: vi.fn(),
 }));
 const refreshClimbs = vi.hoisted(() => vi.fn(async (_queryClient: unknown, _layoutId: number) => undefined));
 vi.mock('../../../lib/spray/refresh-published-spray-climbs', () => ({ refreshPublishedSprayClimbs: refreshClimbs }));
@@ -55,7 +57,7 @@ vi.mock('@boardsesh/graphql/operations/spray-walls', () => ({
 }));
 vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: vi.fn() }) }));
 vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
-  fetchSprayWallVersions: vi.fn(),
+  fetchSprayWallVersions: requests.fetchWall,
   mySprayWallsQueryKey: ['mySprayWalls'],
   sprayWallWithVersionsQueryKey: (wallUuid: string) => ['sprayWallWithVersions', wallUuid],
   useDiscardSprayWallVersion: () => ({ mutateAsync: requests.discardLeftover, isPending: false }),
@@ -64,6 +66,7 @@ vi.mock('../../../lib/spray/spray-wall-loader', () => ({
   invalidateSprayWallRenderData: requests.invalidate,
   fetchSprayWallRenderData: requests.fetchRender,
   registerRenderData: requests.register,
+  fetchSprayWallArchive: requests.fetchArchive,
 }));
 vi.mock('../../../lib/spray/spray-hold-maintenance', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../../lib/spray/spray-hold-maintenance')>();
@@ -486,5 +489,28 @@ describe('SprayWallHoldsScreen', () => {
     await screen.findByText('sprayMaintenance.discardLeftoverFailed');
     expect(screen.getByText('sprayMaintenance.discardLeftover')).toBeTruthy();
     expect(requests.prepare).toHaveBeenCalledTimes(1);
+  });
+
+  // The one place the app writes holds fails CLOSED: the backend does not
+  // refuse a hold write on a locked wall yet (#6183), so a lock state that
+  // could not be read must not open the editor.
+  it('refuses to open the editor when the lock state cannot be read', async () => {
+    const original = await vi.importActual<typeof import('../../../lib/spray/spray-hold-maintenance')>(
+      '../../../lib/spray/spray-hold-maintenance',
+    );
+    requests.prepare.mockImplementation(original.prepareSprayHoldDraft);
+    requests.fetchWall.mockResolvedValue({
+      uuid: 'wall-1',
+      layoutId: 42,
+      viewerCanEdit: true,
+      currentVersion: { id: 'v1', number: 1, status: 'PUBLISHED', photo: null, anchors: null, homography: null },
+      versions: [],
+    });
+    requests.fetchArchive.mockResolvedValue(null);
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    await screen.findByText('sprayMaintenance.unavailable');
+    expect(screen.queryByTestId('editor')).toBeNull();
+    expect(screen.getByText('sprayMaintenance.retry')).toBeTruthy();
+    expect(requests.fetchArchive).toHaveBeenCalledWith('wall-1', { force: true });
   });
 });
