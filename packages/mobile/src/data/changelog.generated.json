@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-06T04:35:31.171Z",
+  "generatedAt": "2026-10-06T05:49:56.861Z",
   "entries": [
+    {
+      "prNumber": 6138,
+      "category": "fixed",
+      "title": "Data export now says it's unavailable up front instead of offering a button that can't work",
+      "mergedAt": "2026-10-06T05:30:07Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6138"
+    },
     {
       "prNumber": 6144,
       "category": "new",
