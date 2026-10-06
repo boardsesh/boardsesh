@@ -105,6 +105,17 @@ describe('public native store collection', () => {
     );
     expect(() => nextStoreSnapshot(first, [], '2026-09-01T12:00:00.000Z')).toThrow('Invalid prior');
   });
+  it('rejects missing publishing identity before network access', async () => {
+    vi.stubEnv(
+      'GOOGLE_PLAY_MONITOR_SERVICE_ACCOUNT_JSON',
+      JSON.stringify({ client_email: 'monitor@example.com', private_key: 'unused' }),
+    );
+    vi.stubEnv('GOOGLE_PLAY_SERVICE_ACCOUNT_JSON', '');
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(collectAndroidVersions(tags)).rejects.toThrow('GOOGLE_PLAY_SERVICE_ACCOUNT_JSON');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
   it('rejects a publishing account reused for monitoring before network access', async () => {
     const credential = JSON.stringify({ client_email: 'publisher@example.com', private_key: 'unused' });
     vi.stubEnv('GOOGLE_PLAY_MONITOR_SERVICE_ACCOUNT_JSON', credential);
@@ -157,6 +168,10 @@ describe('public native store collection', () => {
     expect(JSON.parse(fetchMock.mock.calls[2]![1].body as string).state).toBe('success');
   });
   it('discards Google edits even after track reads fail and never commits', async () => {
+    vi.stubEnv(
+      'GOOGLE_PLAY_SERVICE_ACCOUNT_JSON',
+      JSON.stringify({ client_email: 'publisher@example.com', private_key: 'unused' }),
+    );
     const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
     vi.stubEnv(
       'GOOGLE_PLAY_MONITOR_SERVICE_ACCOUNT_JSON',

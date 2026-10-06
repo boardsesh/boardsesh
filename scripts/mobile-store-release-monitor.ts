@@ -149,8 +149,8 @@ export function publicAndroidVersions(
 }
 export async function collectAndroidVersions(tags: readonly string[]): Promise<string[]> {
   const monitorAccount = parseGoogleServiceAccount(required('GOOGLE_PLAY_MONITOR_SERVICE_ACCOUNT_JSON'));
-  const publisherSecret = process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON;
-  if (publisherSecret && parseGoogleServiceAccount(publisherSecret).client_email === monitorAccount.client_email) {
+  const publisherAccount = parseGoogleServiceAccount(required('GOOGLE_PLAY_SERVICE_ACCOUNT_JSON'));
+  if (publisherAccount.client_email === monitorAccount.client_email) {
     throw new Error('Play monitor must use a different client_email from publishing');
   }
   const token = await createGoogleAccessToken(monitorAccount);

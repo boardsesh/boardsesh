@@ -445,8 +445,9 @@ and screenshot sessions do not show reminders.
 
 1. Create a dedicated Play monitor account and set Production's
    `GOOGLE_PLAY_MONITOR_SERVICE_ACCOUNT_JSON`; verify its `client_email` differs
-   from the publishing account. The collector rejects equal identities before
-   creating an edit.
+   from the publishing account. Supply `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` for
+   that identity comparison. The collector rejects missing or equal publishing
+   identities before creating an edit; it never authenticates with that account.
 2. Grant app-level read access to release lifecycle metadata and the permissions
    required to insert, read, and discard a production edit. Validate permissions
    with a dry run before activating; view-only accounts may not allow edit creation.

@@ -65,6 +65,7 @@ export function useStoreUpdateNudge(enabled: boolean) {
     };
   }, [eligible, preferenceKey]);
 
+  const queryEnabled = eligible && qaStage === null && parseNumericVersion(nativeVersion) !== null;
   const query = useQuery({
     queryKey: ['mobileStoreRelease', platform, nativeVersion],
     queryFn: async (): Promise<MobileStoreRelease | null> => {
@@ -80,9 +81,9 @@ export function useStoreUpdateNudge(enabled: boolean) {
         return null;
       }
     },
-    enabled: eligible && qaStage === null && parseNumericVersion(nativeVersion) !== null,
+    enabled: queryEnabled,
     staleTime: 60 * 60 * 1000,
-    refetchInterval: eligible ? 60 * 60 * 1000 : false,
+    refetchInterval: queryEnabled ? 60 * 60 * 1000 : false,
     retry: false,
   });
   const release = qaStage ? makeStoreUpdateQaRelease(qaStage, currentTimeMs) : (query.data ?? null);
