@@ -1,4 +1,9 @@
-import { SORT_OPTIONS, STATUS_FILTER_VALUES, normalizeRetiredFilters } from '@boardsesh/climb-filters';
+import {
+  SORT_OPTIONS,
+  STATUS_FILTER_VALUES,
+  hasActiveClimbFilters,
+  normalizeRetiredFilters,
+} from '@boardsesh/climb-filters';
 import type { ClimbFilters } from './climb-filter-types';
 import { getFilterKey } from './filter-key';
 import { deleteSecureValue, readSecureValue, writeSecureValue } from './secure-store-io';
@@ -57,6 +62,16 @@ function normalizeEntry(entry: RecentFilter): RecentFilter {
   return { ...entry, filters: normalizeRetiredFilters({ ...entry.filters, status }) };
 }
 
+/**
+ * A pill that still does something once normalised. An entry whose only filter
+ * was one that has since been retired (the spray "Holds" filter) comes out of
+ * `normalizeEntry` with nothing active and no search text, and would replay as
+ * a pill that changes nothing.
+ */
+function stillFilters(entry: RecentFilter): boolean {
+  return hasActiveClimbFilters(entry.filters) || (entry.searchText ?? '').trim() !== '';
+}
+
 function stripAuthGatedFields(filters: ClimbFilters): ClimbFilters {
   const sanitized = { ...filters };
   for (const field of AUTH_GATED_FIELDS) {
@@ -83,7 +98,7 @@ export async function getRecentFilters(options?: { isAuthenticated?: boolean }):
     if (!value) return [];
     const parsed: unknown = JSON.parse(value);
     if (!Array.isArray(parsed)) return [];
-    const valid = parsed.filter(isValidEntry).map(normalizeEntry).slice(0, MAX_ITEMS);
+    const valid = parsed.filter(isValidEntry).map(normalizeEntry).filter(stillFilters).slice(0, MAX_ITEMS);
     if (options?.isAuthenticated === false) {
       return valid.map((entry) => ({ ...entry, filters: stripAuthGatedFields(entry.filters) }));
     }
