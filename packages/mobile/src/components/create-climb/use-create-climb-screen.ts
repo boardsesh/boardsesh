@@ -40,7 +40,9 @@ import { useQueueActions } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useToast } from '../../providers/toast-provider';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
-import { getSprayWall, SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
+import { getSprayWall, refreshSprayWall, SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
+import { sprayWallLifecycleRefusal, sprayWallRefusalMeansStaleWall } from '../../lib/graphql/extract-error-message';
+import { sprayWallLifecycleMessage } from '../../lib/spray/spray-lifecycle-copy';
 import {
   loadDraft,
   saveDraft,
@@ -305,6 +307,7 @@ export function useCreateClimbScreen({
 }: UseCreateClimbScreenArgs) {
   const router = useRouter();
   const { t } = useTranslation('climbs');
+  const { t: tBoards } = useTranslation('boards');
   const { isAuthenticated, saveClimb, updateClimb } = useBoardActions();
   const auth = useAuth();
   const { data: profile } = useProfile();
@@ -1858,8 +1861,17 @@ export function useCreateClimbScreen({
         // and in the autosave slot, and Save can be tapped again (after a
         // conflict the server re-reads the climb, so a second Save can succeed).
         const refusal = climbEditRefusal(err);
+        // The wall was archived (or, for a hold write, locked) since this device
+        // last read it: say so, and re-read the wall so the editor's entry
+        // points and the board sheet catch up.
+        const wallRefusal = board.boardName === SPRAY_BOARD_NAME ? sprayWallLifecycleRefusal(err) : null;
+        if (sprayWallRefusalMeansStaleWall(wallRefusal)) refreshSprayWall(board.layoutId);
         showToast(
-          refusal ? climbEditRefusalMessage(refusal, t) : t('createClimbForm.alerts.saveFailedFallback'),
+          refusal
+            ? climbEditRefusalMessage(refusal, t)
+            : wallRefusal
+              ? sprayWallLifecycleMessage(wallRefusal, tBoards)
+              : t('createClimbForm.alerts.saveFailedFallback'),
           'error',
         );
       }
@@ -1901,6 +1913,7 @@ export function useCreateClimbScreen({
     syncSavedToQueue,
     showToast,
     t,
+    tBoards,
     queryClient,
     onPublished,
     playbackPause,

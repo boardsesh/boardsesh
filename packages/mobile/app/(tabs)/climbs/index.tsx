@@ -109,6 +109,8 @@ import { resolveScreenshotBoard } from '../../../src/lib/screenshot-board-select
 import { useScreenshotBoards } from '../../../src/hooks/use-screenshot-boards';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../../../src/lib/create-board-holds';
 import { shouldShowUnsetWallEmptyState } from '../../../src/lib/spray/unset-wall-empty-state';
+import { useSprayWallIsArchived } from '../../../src/lib/spray/use-spray-wall-archive';
+import { SprayWallArchivedBanner } from '../../../src/components/spray-wall/SprayWallArchivedBanner';
 import { NO_BOARD_PICKER_HREF } from '../../../src/lib/boards/first-board-mode';
 import { FollowedAuthorsUnavailableError } from '../../../src/lib/followed-authors-error';
 import { useActiveBoard, useSetActiveBoard } from '../../../src/lib/graphql/use-active-board';
@@ -525,6 +527,8 @@ function ClimbListInner() {
   const angle = activeBoard?.angle ?? 0;
 
   const hasBoardConfig = !!activeBoard;
+  // An archived spray wall keeps its climbs, but nothing new is set on it.
+  const wallArchived = useSprayWallIsArchived(boardName, hasBoardConfig ? layoutId : null);
 
   // Reactive connectivity, for the offline-only empty state below.
   const isOffline = useIsOffline();
@@ -1602,6 +1606,11 @@ function ClimbListInner() {
           boardHasLights={connectCardBoardHasLights}
           style={styles.revealBanner}
         />
+        <SprayWallArchivedBanner
+          boardName={boardName}
+          layoutId={hasBoardConfig ? layoutId : null}
+          style={styles.revealBanner}
+        />
         {showRevealTip ? (
           <OnboardingTipBanner
             text={tCommon('mobile.onboarding.boardRevealTip')}
@@ -1650,6 +1659,9 @@ function ClimbListInner() {
       name,
       handleApplyRecentFilter,
       handleClearRecentFilters,
+      boardName,
+      hasBoardConfig,
+      layoutId,
     ],
   );
 
@@ -1812,7 +1824,8 @@ function ClimbListInner() {
   const isEmpty = visibleClimbs.length === 0 && !isClimbsLoading && !isPlaceholderData && !isBoardResolving;
   // Whether the climber may set a climb on the active board at all. Hoisted out
   // of the chrome below so the wall's empty state offers exactly the same door.
-  const canCreateClimb = isAuthenticated && hasBoardConfig && getBoardCapabilities(boardName).climbCreation;
+  const canCreateClimb =
+    isAuthenticated && hasBoardConfig && getBoardCapabilities(boardName).climbCreation && !wallArchived;
   // A wall nobody has set on yet is a different fact from "no climbs found":
   // nothing is wrong with the search, the wall is simply new. The query/filter
   // gates inside are the honest part — see `shouldShowUnsetWallEmptyState`.

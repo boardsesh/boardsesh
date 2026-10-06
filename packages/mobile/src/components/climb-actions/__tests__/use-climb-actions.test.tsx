@@ -9,6 +9,7 @@ import type { ClimbActionId } from '../use-climb-actions';
 const ctrl = vi.hoisted(() => ({
   viewerCanEditWall: false,
   viewerCanEditClimbs: false,
+  wallArchived: false,
   sessionId: null as string | null,
   moderationEnabled: true,
   activeClimbUuid: null as string | null,
@@ -35,6 +36,9 @@ vi.mock('expo-web-browser', () => ({ openBrowserAsync: vi.fn(async () => {}) }))
 // The REAL edit rule (`canEditClimb`): the gate is the thing under test. Only
 // the wall's viewer flags are stubbed, since the registry behind them has its
 // own tests.
+vi.mock('../../../lib/spray/use-spray-wall-archive', () => ({
+  useSprayWallIsArchived: (boardName: string | null | undefined) => boardName === 'spray' && ctrl.wallArchived,
+}));
 vi.mock('../../../lib/spray/use-spray-wall', () => ({
   useSprayWallViewerCanEdit: (boardName: string | null | undefined) => boardName === 'spray' && ctrl.viewerCanEditWall,
   useSprayWallViewerCanEditClimbs: (boardName: string | null | undefined) =>
@@ -113,6 +117,7 @@ function ids(args: ActionArgs): ClimbActionId[] {
 }
 
 beforeEach(() => {
+  ctrl.wallArchived = false;
   ctrl.viewerCanEditWall = false;
   ctrl.viewerCanEditClimbs = false;
   ctrl.sessionId = null;
@@ -311,6 +316,21 @@ describe('useClimbActions gating', () => {
     expect(woodsIds).toContain('fork');
     expect(woodsIds).toContain('edit');
     expect(woodsIds).toEqual(expect.arrayContaining(['preview', 'queue', 'playlist', 'favorite', 'tick']));
+  });
+
+  // An archived wall keeps its climbs, but takes no new climb and no edit.
+  it('offers neither Fork nor Edit on an archived spray wall, and keeps the rest', () => {
+    ctrl.wallArchived = true;
+    ctrl.viewerCanEditClimbs = true;
+    const archivedIds = ids({
+      climb: ownerClimb,
+      boardConfig: sprayBoard,
+      isAuthenticated: true,
+      currentUserId: 'user-1',
+    });
+    expect(archivedIds).not.toContain('fork');
+    expect(archivedIds).not.toContain('edit');
+    expect(archivedIds).toEqual(expect.arrayContaining(['preview', 'queue', 'playlist', 'tick']));
   });
 
   it('returns nothing without a climb or board config', () => {

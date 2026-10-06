@@ -12,6 +12,7 @@ import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { createClimbScreenKey } from '../../../src/lib/create-climb-screen-key';
 import { useUnsupportedBoardExit } from '../../../src/lib/routing/use-unsupported-board-exit';
 import { useSprayWallToken } from '../../../src/lib/spray/use-spray-wall-token';
+import { useSprayWallIsArchived } from '../../../src/lib/spray/use-spray-wall-archive';
 
 type CreateClimbParams = {
   boardName?: string | string[];
@@ -93,20 +94,33 @@ function resolveEditorBoard(params: CreateClimbParams, activeBoard: UserBoard | 
   return { boardName, layoutId, sizeId, setIds, angle };
 }
 
-type CreateExitReason = 'boardCannotAuthor' | 'boardConfigIncomplete' | 'boardTypeUnsupported' | 'noUsableBoard';
+type CreateExitReason =
+  | 'boardCannotAuthor'
+  | 'boardConfigIncomplete'
+  | 'boardTypeUnsupported'
+  | 'noUsableBoard'
+  | 'wallArchived';
 
-/** Resolve failures separately from a pending active-board read. */
+/**
+ * Resolve failures separately from a pending active-board read.
+ *
+ * `wallArchived` is the resolved spray wall's archive state from the registry:
+ * an archived wall keeps its climbs but takes no new climb and no edit, so a
+ * deep link, a stale sheet or a queue item cannot open the editor on it.
+ */
 function createExitReason(
   params: CreateClimbParams,
   activeBoard: UserBoard | null | undefined,
   activeBoardPending: boolean,
   resolvedBoard: EditorBoard | null,
+  wallArchived = false,
 ): CreateExitReason | null {
   const linkedBoard = supportedBoardName(params.boardName);
   if (linkedBoard != null && !getBoardCapabilities(linkedBoard).climbCreation) return 'boardCannotAuthor';
 
   if (resolvedBoard != null) {
     if (!getBoardCapabilities(resolvedBoard.boardName).climbCreation) return 'boardCannotAuthor';
+    if (wallArchived) return 'wallArchived';
     return isAuthorableBoard(resolvedBoard) ? null : 'boardConfigIncomplete';
   }
 
@@ -138,10 +152,11 @@ export default function CreateClimbRoute() {
   // been and gone past. Subscribing here is what makes the key move when the wall
   // arrives. `''` for every catalogue board.
   useSprayWallToken(resolvedBoard?.boardName, resolvedBoard?.layoutId);
+  const wallArchived = useSprayWallIsArchived(resolvedBoard?.boardName, resolvedBoard?.layoutId ?? null);
 
   const exitReason = useMemo(
-    () => createExitReason(params, activeBoard, activeBoardPending, resolvedBoard),
-    [params, activeBoard, activeBoardPending, resolvedBoard],
+    () => createExitReason(params, activeBoard, activeBoardPending, resolvedBoard, wallArchived),
+    [params, activeBoard, activeBoardPending, resolvedBoard, wallArchived],
   );
   const exitMessage = useMemo(() => {
     switch (exitReason) {
@@ -153,6 +168,8 @@ export default function CreateClimbRoute() {
         return t('createClimbForm.cannotOpen.boardTypeUnsupported');
       case 'noUsableBoard':
         return t('createClimbForm.cannotOpen.noUsableBoard');
+      case 'wallArchived':
+        return t('createClimbForm.cannotOpen.wallArchived');
       default:
         return undefined;
     }

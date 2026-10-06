@@ -351,6 +351,14 @@ vi.mock('../../../src/components/Button', () => ({
 vi.mock('../../../src/components/ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-testid': 'spinner' }),
 }));
+// The Archived section reads the owner's wall list and opens a wall by uuid;
+// neither has anything to do with the offline list these cases cover.
+vi.mock('../../../src/lib/spray/use-create-spray-wall', () => ({
+  useMySprayWalls: () => ({ data: undefined }),
+}));
+vi.mock('../../../src/lib/spray/use-open-spray-wall', () => ({ useOpenSprayWall: () => vi.fn() }));
+vi.mock('../../../src/lib/boards/use-activate-board', () => ({ useActivateBoard: () => vi.fn() }));
+vi.mock('../../../src/components/board-discovery/ArchivedWallManageRow', () => ({ ArchivedWallManageRow: () => null }));
 vi.mock('../../../src/components/board-discovery/BoardManageRow', () => ({
   BoardManageRow: ({
     board: rowBoard,

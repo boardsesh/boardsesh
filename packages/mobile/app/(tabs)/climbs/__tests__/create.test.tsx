@@ -4,6 +4,11 @@ import { render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import CreateClimbRoute from '../create';
+import {
+  clearSprayWallRegistry,
+  LIVE_SPRAY_WALL_ARCHIVE_STATE,
+  registerSprayWall,
+} from '../../../../src/lib/spray/spray-wall-registry';
 
 // Mutable across tests so each seeds its own deep-link params + stored board.
 const routeParams = vi.hoisted(() => ({ current: {} as Record<string, string | string[]> }));
@@ -361,5 +366,46 @@ describe('CreateClimbRoute invalid board inputs', () => {
     render(<CreateClimbRoute />);
     expect(editorBoard.latest).toMatchObject({ boardName, setIds: '' });
     expect(router.replace).not.toHaveBeenCalled();
+  });
+});
+
+describe('CreateClimbRoute on an archived spray wall', () => {
+  const SPRAY_PARAMS = { boardName: 'spray', layoutId: '4242', sizeId: '4242', setIds: '', angle: '40' };
+
+  function registerWall(archivedAt: string | null) {
+    registerSprayWall(4242, {
+      wallUuid: 'wall-4242',
+      angle: 40,
+      version: 1,
+      versionId: 1,
+      photoWidth: 100,
+      photoHeight: 100,
+      photoUrl: 'https://example.invalid/wall.jpg',
+      photoThumbUrl: null,
+      photoExpiresAt: '2099-01-01T00:00:00.000Z',
+      holds: [],
+      archive: { ...LIVE_SPRAY_WALL_ARCHIVE_STATE, archivedAt, holdsLocked: archivedAt != null },
+    });
+  }
+
+  beforeEach(() => clearSprayWallRegistry());
+
+  // A deep link, a stale sheet or a queue item can still name the wall. The
+  // server refuses every new climb and edit on it, so the editor never opens.
+  it('refuses to open the editor, and says why', () => {
+    registerWall('2026-10-01T09:00:00.000Z');
+    routeParams.current = SPRAY_PARAMS;
+    const { container } = render(<CreateClimbRoute />);
+    expect(container.querySelector('[data-editor]')).toBeNull();
+    expect(showToast).toHaveBeenCalledWith('createClimbForm.cannotOpen.wallArchived', 'error');
+    expect(router.replace).toHaveBeenCalledWith('/(tabs)/climbs');
+  });
+
+  it('opens the editor on the same wall while it is live', () => {
+    registerWall(null);
+    routeParams.current = SPRAY_PARAMS;
+    const { container } = render(<CreateClimbRoute />);
+    expect(container.querySelector('[data-editor]')).not.toBeNull();
+    expect(showToast).not.toHaveBeenCalled();
   });
 });

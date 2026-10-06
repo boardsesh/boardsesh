@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { boardIsOwnedBy, buildManageItems, type ManageItem } from '../manage-items';
+import { archivedSprayWallSummaries, boardIsOwnedBy, buildManageItems, type ManageItem } from '../manage-items';
 
 // buildManageItems only reads uuid + ownerId, so a minimal cast is enough.
 const board = (uuid: string, ownerId: string): UserBoard => ({ uuid, ownerId }) as unknown as UserBoard;
@@ -106,5 +106,46 @@ describe('buildManageItems', () => {
         'f1',
       ]);
     });
+  });
+});
+
+describe('the Archived section', () => {
+  const archivedLabels = { ...labels, archivedHeader: 'Archived' };
+  const archived = archivedSprayWallSummaries([
+    { uuid: 'old-garage', archivedAt: '2026-08-01T10:00:00.000Z', board: { name: 'Garage' } },
+    { uuid: 'live-wall', archivedAt: null, board: { name: 'Garage' } },
+    { uuid: 'older-garage', archivedAt: '2026-02-01T10:00:00.000Z', board: { name: 'Garage' } },
+    { uuid: 'nameless', archivedAt: '2026-09-01T10:00:00.000Z', board: null },
+  ]);
+
+  it('keeps only archived walls, most recently archived first', () => {
+    expect(archived.map((wall) => wall.uuid)).toEqual(['old-garage', 'older-garage']);
+    expect(archivedSprayWallSummaries(undefined)).toEqual([]);
+  });
+
+  it('lists archived walls last, under their own header, marking the active one', () => {
+    const items = buildManageItems([board('o1', 'me')], 'me', 'older-garage', archivedLabels, archived);
+    expect(items.map((item) => (item.type === 'header' ? `#${item.title}` : item.key))).toEqual([
+      '#Your boards',
+      'o1',
+      '#Archived',
+      'archived:old-garage',
+      'archived:older-garage',
+    ]);
+    const active = items.find((item) => item.key === 'archived:older-garage');
+    expect(active?.type === 'archivedWall' && active.isActive).toBe(true);
+  });
+
+  it('shows the section even when every live board is gone', () => {
+    const items = buildManageItems([], 'me', undefined, archivedLabels, archived);
+    expect(items[0]).toEqual({ type: 'header', key: 'header:archived', title: 'Archived' });
+  });
+
+  it('leaves the section out with no archived walls or no header to put over them', () => {
+    expect(buildManageItems([board('o1', 'me')], 'me', undefined, archivedLabels).map((item) => item.key)).toEqual([
+      'header:owned',
+      'o1',
+    ]);
+    expect(buildManageItems([], 'me', undefined, labels, archived)).toEqual([]);
   });
 });

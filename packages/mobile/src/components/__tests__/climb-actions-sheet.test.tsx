@@ -18,6 +18,7 @@ const ctrl = vi.hoisted(() => ({
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   viewerCanEditWall: false,
   viewerCanEditClimbs: false,
+  wallArchived: false,
 }));
 const nav = vi.hoisted(() => ({ push: vi.fn() }));
 const clipboard = vi.hoisted(() => ({ setStringAsync: vi.fn() }));
@@ -69,6 +70,9 @@ vi.mock('@boardsesh/play-view/readable-url-utils', () => ({
 // The REAL edit rule (`canEditClimb`): the gate is the thing under test. Only
 // the wall's viewer flags are stubbed, since the registry behind them has its
 // own tests.
+vi.mock('../../lib/spray/use-spray-wall-archive', () => ({
+  useSprayWallIsArchived: (boardName: string | null | undefined) => boardName === 'spray' && ctrl.wallArchived,
+}));
 vi.mock('../../lib/spray/use-spray-wall', () => ({
   useSprayWallViewerCanEdit: (boardName: string | null | undefined) => boardName === 'spray' && ctrl.viewerCanEditWall,
   useSprayWallViewerCanEditClimbs: (boardName: string | null | undefined) =>
@@ -136,6 +140,7 @@ beforeEach(() => {
   urlBuilder.buildReadableClimbViewPath.mockClear();
   preview.props = null;
   ctrl.variant = 'liquidGlass';
+  ctrl.wallArchived = false;
   ctrl.viewerCanEditWall = false;
   ctrl.viewerCanEditClimbs = false;
   nav.push.mockClear();
@@ -261,6 +266,16 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
 
     expect(container.querySelector('[data-row="mobile.climbActions.fork"]')).not.toBeNull();
     expect(container.querySelector('[data-row="mobile.climbActions.edit"]')).not.toBeNull();
+  });
+
+  it('offers neither Fork nor Edit on an archived spray wall', () => {
+    ctrl.wallArchived = true;
+    const sprayProps = { ...baseProps, boardName: 'spray' as const, layoutId: 4200, sizeId: 4200, setIds: '1' };
+    const { container } = render(
+      <ClimbActionsSheet visible={true} {...sprayProps} climb={ownerClimb} currentUserId="user-1" />,
+    );
+    expect(container.querySelector('[data-row="mobile.climbActions.fork"]')).toBeNull();
+    expect(container.querySelector('[data-row="mobile.climbActions.edit"]')).toBeNull();
   });
 
   describe('who is offered Edit (#5955)', () => {

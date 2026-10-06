@@ -59,7 +59,16 @@ import {
   boardIsBootstrapping,
   boardDownloadProgress,
 } from '../../src/components/board-discovery/board-offline-state';
-import { buildManageItems, type ManageItem } from '../../src/components/board-discovery/manage-items';
+import {
+  archivedSprayWallSummaries,
+  buildManageItems,
+  type ManageItem,
+} from '../../src/components/board-discovery/manage-items';
+import { ArchivedWallManageRow } from '../../src/components/board-discovery/ArchivedWallManageRow';
+import { useMySprayWalls } from '../../src/lib/spray/use-create-spray-wall';
+import { useOpenSprayWall } from '../../src/lib/spray/use-open-spray-wall';
+import { useActivateBoard } from '../../src/lib/boards/use-activate-board';
+import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { offlineBoardRows } from '../../src/components/board-discovery/offline-board-items';
 import { useConnectivity } from '../../src/lib/connectivity/use-connectivity';
 import { pickerNoticeKey } from '../../src/lib/boards/local-only';
@@ -71,6 +80,8 @@ const EMPTY_BOARDS: UserBoard[] = [];
 const EMPTY_ITEMS: ManageItem[] = [];
 
 const keyExtractor = (item: ManageItem) => item.key;
+/** The boards modal's default destination; this screen is not given one. */
+const MANAGE_RETURN_TO = resolveBoardReturnTo(undefined);
 const getItemType = (item: ManageItem) => item.type;
 
 export default function ManageBoards() {
@@ -342,15 +353,36 @@ export default function ManageBoards() {
     if (isError) void refreshAuthState();
   }, [isError, refreshAuthState]);
 
-  // Split into owned + followed groups (pure helper, unit-tested). Each board
-  // carries precomputed isOwned/isActive so a row never scans for them.
+  // The walls a reset replaced. `myBoards` leaves them out, so they come from
+  // the owner's own wall list; tapping one opens it to browse and log climbs.
+  const { data: mySprayWalls } = useMySprayWalls({ enabled: isAuthenticated });
+  const archivedWalls = useMemo(() => archivedSprayWallSummaries(mySprayWalls), [mySprayWalls]);
+  const activateBoard = useActivateBoard({ returnTo: MANAGE_RETURN_TO, isLocalOnly: true });
+  const openSprayWall = useOpenSprayWall(activateBoard);
+  const openArchivedWall = useCallback(
+    (wallUuid: string) => {
+      void openSprayWall(wallUuid);
+    },
+    [openSprayWall],
+  );
+
+  // Split into owned + followed groups (pure helper, unit-tested), then the
+  // archived walls. Each board carries precomputed isOwned/isActive so a row
+  // never scans for them.
   const items = useMemo(
     () =>
-      buildManageItems(myBoards, currentUserId, activeUuid, {
-        ownedHeader: t('mobile.manage.ownedHeader'),
-        followingHeader: t('mobile.manage.followingHeader'),
-      }),
-    [myBoards, currentUserId, activeUuid, t],
+      buildManageItems(
+        myBoards,
+        currentUserId,
+        activeUuid,
+        {
+          ownedHeader: t('mobile.manage.ownedHeader'),
+          followingHeader: t('mobile.manage.followingHeader'),
+          archivedHeader: t('sprayArchive.manageHeader'),
+        },
+        archivedWalls,
+      ),
+    [myBoards, currentUserId, activeUuid, archivedWalls, t],
   );
 
   // Offline this screen has TWO independent failures: `useMyBoards` and `useProfile`
@@ -421,6 +453,9 @@ export default function ManageBoards() {
             {item.title}
           </Text>
         );
+      }
+      if (item.type === 'archivedWall') {
+        return <ArchivedWallManageRow wall={item.wall} isActive={item.isActive} onOpen={openArchivedWall} />;
       }
       const scopeKey = offlineBoardKeyForBoard(item.board);
       const bootstrapMetadata = bootstrapMetadataByScope?.get(scopeKey);
@@ -513,6 +548,7 @@ export default function ManageBoards() {
       handleToggleOffline,
       handleRetryFastDownload,
       offlineStoragePaused,
+      openArchivedWall,
     ],
   );
 
