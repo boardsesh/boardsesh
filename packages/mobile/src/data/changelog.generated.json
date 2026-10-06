@@ -1,6 +1,28 @@
 {
-  "generatedAt": "2026-10-06T00:02:08.766Z",
+  "generatedAt": "2026-10-06T02:41:09.049Z",
   "entries": [
+    {
+      "prNumber": 6083,
+      "category": "new",
+      "title": "Get the app straight from a climb page, a climb list or the gym directory on boardsesh.com",
+      "mergedAt": "2026-10-06T02:38:54Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6083",
+      "body": "iPhone Safari now offers to open the page you're on in the app"
+    },
+    {
+      "prNumber": 6115,
+      "category": "fixed",
+      "title": "Delete your account even if you created a spray wall. Your walls and photos go away; other climbers keep their logged sends.",
+      "mergedAt": "2026-10-06T02:23:52Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6115"
+    },
+    {
+      "prNumber": 6118,
+      "category": "fixed",
+      "title": "Writes to spray walls you can't see are now refused at the server — private walls' climbs no longer accept strangers' proposals, reports, or log ticks, and a draft's or private wall's climb details stop leaking into other people's activity feeds.",
+      "mergedAt": "2026-10-06T02:12:35Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6118"
+    },
     {
       "prNumber": 6114,
       "category": "fixed",
