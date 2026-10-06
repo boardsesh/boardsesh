@@ -2457,7 +2457,7 @@ export const sprayWallMutations = {
           source.photoWidth <= 0 ||
           source.photoHeight <= 0
         ) {
-          throw new GraphQLError('That published photo is unavailable. Add a new photo to edit the wall.', {
+          throw new GraphQLError('That published photo is unavailable. Use Reset wall to photograph the wall again.', {
             extensions: { code: SPRAY_WALL_CODES.photoMissing },
           });
         }
