@@ -801,9 +801,17 @@
       "maybes_other": "{{count}} dudosas",
       "withMaybes": "{{holds}} · {{maybes}}",
       "undo": "Deshacer",
+      "redo": "Rehacer",
       "menuHint": "Abre las opciones para todas tus presas",
       "saved": "Presas guardadas",
       "addA11y": "Añadir presas que faltan"
+    },
+    "toast": {
+      "deleted": "Presa eliminada",
+      "joined": "2 presas unidas",
+      "keptMaybes_one": "{{count}} dudosa conservada",
+      "keptMaybes_other": "{{count}} dudosas conservadas",
+      "startedOver": "Has empezado de nuevo"
     },
     "menu": {
       "keepMaybes": "Conservar todas las dudosas",
@@ -819,11 +827,12 @@
       "cancel": "Seguir editando"
     },
     "chips": {
-      "smaller": "Reducir",
-      "bigger": "Agrandar",
       "trace": "Trazar",
       "join": "Unir",
-      "remove": "Quitar",
+      "switchOff": "Desactivar",
+      "switchOn": "Activar",
+      "delete": "Eliminar",
+      "keep": "Conservar",
       "finish": "Terminar"
     },
     "banner": {
@@ -840,9 +849,10 @@
       "corners": "Esquinas"
     },
     "hints": {
-      "toggle": "Toca un círculo para desactivarlo. Toca el muro vacío para añadir una presa.",
-      "maybe": "Los círculos discontinuos son presas dudosas. Toca una para conservarla.",
-      "longPress": "Mantén pulsado un círculo para ajustar su tamaño, su posición o su forma.",
+      "tap": "Toca un círculo para elegirlo. Vuelve a tocarlo para desactivarlo.",
+      "maybe": "Los círculos discontinuos son presas dudosas. Toca una y luego toca Conservar.",
+      "longPress": "Mantén pulsado un círculo y deslízalo para moverlo.",
+      "addHold": "Toca + para añadir una presa.",
       "dismiss": "Ocultar consejo",
       "replay": "Ver consejos"
     },
@@ -860,7 +870,7 @@
       "actions": {
         "smaller": "Hacer más pequeña",
         "bigger": "Hacer más grande",
-        "remove": "Quitar",
+        "delete": "Eliminar",
         "addHold": "Añadir una presa en el centro de la vista"
       },
       "revealed": "Presas encontradas: {{summary}}"

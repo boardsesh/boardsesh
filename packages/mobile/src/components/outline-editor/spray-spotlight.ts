@@ -3,11 +3,13 @@ import type { SprayEditorHold } from './spray-hold-editor-reducer';
 
 /**
  * What the single spotlight is marking. `toggleOn`, `toggleOff` and `add` follow
- * a tap, `undo` rings the hold an undo just put back. The two toggles are apart
+ * an edit, `undo` rings the hold an undo or a redo just put back, and `ping` is
+ * a lone ripple where a tap met bare wall with nothing picked — the tap is
+ * heard, and the hint says where adding lives. The two toggles are apart
  * because each pops in the style the ring is switching TO: a solid ON ring for
  * a hold switched on, the faint dotted OFF ghost for one switched off.
  */
-export type SpraySpotlightKind = 'toggleOn' | 'toggleOff' | 'add' | 'undo';
+export type SpraySpotlightKind = 'toggleOn' | 'toggleOff' | 'add' | 'undo' | 'ping';
 
 /**
  * One spotlight moment. `key` changes every time, so the same hold tapped twice
@@ -20,7 +22,7 @@ export type SpraySpotlightPulse = {
 };
 
 /**
- * The hold an undo changed, for the spotlight to ring.
+ * The hold an undo (or a redo) changed, for the spotlight to ring.
  *
  * Compares the holds before and after the undo by identity: the reducer only
  * replaces the holds an action touched, so every other entry is the same object

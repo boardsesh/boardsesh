@@ -777,21 +777,21 @@ The catalogue path is untouched by all of it. `DrawStrokeOverlay`, `stroke.ts`,
 keeps the `manualActivation` + `pinchRef` coexistence and the round-trip ring algebra from
 drifting. The wall target reuses them rather than forking them: `SprayHoldEditorScreen`
 mounts the *same* `DrawStrokeOverlay` for its one-shot Trace tool, and everything else — tap
-to switch a ring off or on, tap bare wall to add one, long press to pick one up and move it —
-goes through its own `SprayEditGestureOverlay` (see `docs/spray-walls.md`, "The hold
+to pick a ring and tap it again to switch it off or on, long press to pick one up and move
+it — goes through its own `SprayEditGestureOverlay` (see `docs/spray-walls.md`, "The hold
 editor").
 
-The geometry behind those tools is `spray-hold-tools.ts`, and it is pure. A tap places a
-circle at the wall's median hold radius; a traced loop goes through `buildOutlineRing`
+The geometry behind those tools is `spray-hold-tools.ts`, and it is pure. A tap in Add mode
+places a circle at the wall's median hold radius; a traced loop goes through `buildOutlineRing`
 unchanged, so a wall gets exactly the ring a board would, with the centre at the polygon
 centroid and the radius the equivalent-area one. A join is the convex hull of the two
 silhouettes — a real polygon union is a clipping library this app will not grow for one
 tool, and a hull always contains both holds, is always simple, and always contains its own
 centroid, so the ring contract is always satisfiable.
 
-State is one reducer with undo (`spray-hold-editor-reducer.ts`), modelled on `framesReducer`
-in `@boardsesh/create-climb-react`: a present and a capped past (no redo), snapshot-based
-because a merge is not trivially invertible. Two rules in it are load-bearing rather than
+State is one reducer with undo and redo (`spray-hold-editor-reducer.ts`), modelled on
+`framesReducer` in `@boardsesh/create-climb-react`: a present, a capped past and a future
+that every new edit empties, snapshot-based because a merge is not trivially invertible. Two rules in it are load-bearing rather than
 stylistic. A hold this session DREW is dropped outright on delete while one the wall already
 had is recorded for `removeSprayWallHolds` — the server's own split, because a climb set on
 an inherited hold has to stay findable. And a merge keeps the STORED hold as the survivor

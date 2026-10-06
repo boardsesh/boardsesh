@@ -43,14 +43,15 @@ type SprayHoldSpotlightProps = {
 
 /**
  * The one spotlight the editor animates: a toggled hold's ring pops back to
- * size (snappy spring) in the style it is switching to, an added one bounces in and throws a ripple, and an
- * undone one gets a short violet halo.
+ * size (snappy spring) in the style it is switching to, an added one bounces in and throws a ripple, an
+ * undone or redone one gets a short violet halo, and a tap on bare wall throws
+ * the ripple alone.
  *
  * One hold at a time, in one small box positioned at that hold, and every
  * frame is a UI-thread transform or opacity on it. The ring layer underneath
  * never re-renders for any of this. With Reduce Motion the tap moments show
- * nothing extra (the ring layer already changed) and the undo halo is a static
- * highlight for the same 300 ms.
+ * nothing extra (the ring layer already changed, and the bare-wall hint says
+ * the rest) and the undo halo is a static highlight for the same 300 ms.
  *
  * Lives inside the board's zoom transform, like the rings.
  */
@@ -109,6 +110,14 @@ export const SprayHoldSpotlight = React.memo(function SprayHoldSpotlight({
     }
     // A tap already changed the ring layer; with Reduce Motion that is the whole answer.
     if (reduceMotion) return;
+    if (pulseKind === 'ping') {
+      // Nothing was added, so no ring: only the ripple, to show the tap landed.
+      rippleScaleSV.value = 1;
+      rippleScaleSV.value = withTiming(RIPPLE_REACH, { duration: 450 });
+      rippleOpacitySV.value = 0.8;
+      rippleOpacitySV.value = withTiming(0, { duration: 450 });
+      return;
+    }
     if (pulseKind === 'toggleOn' || pulseKind === 'toggleOff') {
       ringScaleSV.value = 1.3;
       ringScaleSV.value = withSpring(1, springs.snappy);
@@ -172,7 +181,7 @@ export const SprayHoldSpotlight = React.memo(function SprayHoldSpotlight({
         </Animated.View>
       ) : (
         <>
-          {pulse.kind === 'add' ? (
+          {pulse.kind === 'add' || pulse.kind === 'ping' ? (
             <Animated.View style={[StyleSheet.absoluteFill, rippleStyle]}>
               <Svg width={shape.sizeRender} height={shape.sizeRender} viewBox={viewBox}>
                 <Path
@@ -185,41 +194,43 @@ export const SprayHoldSpotlight = React.memo(function SprayHoldSpotlight({
               </Svg>
             </Animated.View>
           ) : null}
-          <Animated.View style={[StyleSheet.absoluteFill, ringStyle]}>
-            <Svg width={shape.sizeRender} height={shape.sizeRender} viewBox={viewBox}>
-              {pulse.kind === 'toggleOff' ? (
-                // The OFF ghost, exactly as the ring layer draws it: switching a
-                // hold off must never flash a solid ON ring.
-                <Path
-                  d={shape.path}
-                  fill="none"
-                  stroke={overlays.onScrim}
-                  strokeOpacity={RING.offOpacity}
-                  strokeWidth={RING.offWidth / zoomStep}
-                  strokeDasharray={offDash}
-                  strokeLinecap="round"
-                  vectorEffect="non-scaling-stroke"
-                />
-              ) : (
-                <>
-                  <Path
-                    d={shape.path}
-                    fill="none"
-                    stroke={overlays.scrim}
-                    strokeWidth={STROKE.ringHalo / zoomStep}
-                    vectorEffect="non-scaling-stroke"
-                  />
+          {pulse.kind === 'ping' ? null : (
+            <Animated.View style={[StyleSheet.absoluteFill, ringStyle]}>
+              <Svg width={shape.sizeRender} height={shape.sizeRender} viewBox={viewBox}>
+                {pulse.kind === 'toggleOff' ? (
+                  // The OFF ghost, exactly as the ring layer draws it: switching a
+                  // hold off must never flash a solid ON ring.
                   <Path
                     d={shape.path}
                     fill="none"
                     stroke={overlays.onScrim}
-                    strokeWidth={STROKE.ring / zoomStep}
+                    strokeOpacity={RING.offOpacity}
+                    strokeWidth={RING.offWidth / zoomStep}
+                    strokeDasharray={offDash}
+                    strokeLinecap="round"
                     vectorEffect="non-scaling-stroke"
                   />
-                </>
-              )}
-            </Svg>
-          </Animated.View>
+                ) : (
+                  <>
+                    <Path
+                      d={shape.path}
+                      fill="none"
+                      stroke={overlays.scrim}
+                      strokeWidth={STROKE.ringHalo / zoomStep}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                    <Path
+                      d={shape.path}
+                      fill="none"
+                      stroke={overlays.onScrim}
+                      strokeWidth={STROKE.ring / zoomStep}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  </>
+                )}
+              </Svg>
+            </Animated.View>
+          )}
         </>
       )}
     </View>

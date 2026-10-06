@@ -5,8 +5,9 @@ import Svg, { Path } from 'react-native-svg';
 import { overlays } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { holdPathData } from './spray-hold-path';
-import { useZoomStrokeStep } from './SprayHoldSvgLayer';
+import { RING, useZoomStrokeStep } from './SprayHoldSvgLayer';
 import type { HoldGeometry } from './spray-hold-tools';
+import type { SprayHoldRole } from './spray-hold-editor-reducer';
 
 /** Selected-ring styles in screen points at 1x, divided by the zoom step like every ring. */
 const SELECTED = {
@@ -21,6 +22,12 @@ const HALO_MARGIN_RENDER_PX = 8;
 type SelectedHoldOverlayProps = {
   /** The selected hold in board px, or null. Its id is the revision key for the preview. */
   hold: (HoldGeometry & { id: number }) | null;
+  /**
+   * How the selected hold reads on the wall. The line keeps the ring layer's
+   * pattern — solid ON, dashed maybe, dotted OFF ghost — so tapping the
+   * selected ring again visibly switches it. Omitted reads as ON.
+   */
+  role?: SprayHoldRole;
   /**
    * Bumped after every committed move, so the preview re-syncs to the reducer's
    * answer even when the move changed nothing (a refused move snaps back).
@@ -58,6 +65,7 @@ type SelectedHoldOverlayProps = {
  */
 export const SelectedHoldOverlay = React.memo(function SelectedHoldOverlay({
   hold,
+  role = 'on',
   revision,
   selectedHoldSV,
   dragOffsetXSV,
@@ -117,6 +125,8 @@ export const SelectedHoldOverlay = React.memo(function SelectedHoldOverlay({
 
   const widthAtZoom = SELECTED.width / zoomStep;
   const haloAtZoom = SELECTED.haloWidth / zoomStep;
+  const pattern = role === 'off' ? RING.offDash : role === 'maybe' ? RING.maybeDash : null;
+  const dashAtZoom = pattern ? pattern.map((dash) => dash / zoomStep) : undefined;
 
   return (
     <Animated.View
@@ -141,6 +151,8 @@ export const SelectedHoldOverlay = React.memo(function SelectedHoldOverlay({
           fill="none"
           stroke={overlays.onScrim}
           strokeWidth={widthAtZoom}
+          strokeDasharray={dashAtZoom}
+          strokeLinecap={role === 'off' ? 'round' : undefined}
           vectorEffect="non-scaling-stroke"
         />
       </Svg>
