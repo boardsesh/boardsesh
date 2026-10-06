@@ -227,7 +227,8 @@ export const MIGRATIONS: Migration[] = [
     //
     // Nullable, no default, SQLite boolean as INTEGER 0/1. NULL reads as not
     // retired, the server's rule too: every catalogue climb is NULL. No
-    // `refreshRevision` bump; see the comment on `board_climbs` in
+    // table-wide `refreshRevision` bump; spray scopes get their own bump to 2
+    // (`refreshRevisionByBoardType`), see the comment on `board_climbs` in
     // sync/table-config.ts.
     //
     // Expand-only, so the previous bundle can still read the file. It changes

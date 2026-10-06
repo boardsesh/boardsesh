@@ -444,7 +444,10 @@ client meeting a v11 artifact imports it and drops the two columns it does not h
 Schema **v12** adds `board_climbs.retired_by_reset` (#6024), so `ARTIFACT_SCHEMA_VERSION` becomes 12 and
 the [schema-bump staleness window](#schema-bump-staleness-window) applies once more. The export selects
 the device schema's columns from Postgres, so it needs server migration 0255 applied before it can build
-a v12 artifact. Both ship in the same PR.
+a v12 artifact. Nothing orders the two: the homelab worker deploy (`dispatch-homelab` in
+`background-worker-image.yml`) waits only for the image build, not for the production `migrate` job. A
+worker that lands first fails its live scans until 0255 is applied, then the next scan builds the
+artifacts. It heals on its own; no one needs to act.
 
 ### Compatible additions and missing columns
 
@@ -470,7 +473,10 @@ separate cursor in `schema-refresh:<table>:<scope>` (`revision`, `mode`, `comple
 Normal deltas retain their own cursor and keep running on metered links. Refresh rows and progress commit
 together; older refresh rows cannot overwrite newer cached rows. A disconnect, backgrounding, or metered
 connection pauses the replay until the next eligible sync. Completion advances the ordinary cursor only
-if the replay is newer. Malformed or nonadvancing pages cannot mark the replay complete.
+if the replay is newer. Malformed or nonadvancing pages cannot mark the replay complete. A page that lacks
+one of the table's refresh columns (the backend predates the field) stops that replay before it writes and
+leaves its revision unadvanced; the rest of the sync, including the holds index, still runs, and the next
+cycle retries. Other refresh errors still fail the cycle.
 
 Current snapshots and full fresh paged downloads stamp the revision as covered, so they do not immediately
 replay. Partial fresh downloads persist their coverage with each page; reaching the end of a legacy delta

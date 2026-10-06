@@ -160,7 +160,8 @@ describe('reference schema refresh', () => {
       }
       return normal(query, variables) as Promise<T>;
     };
-    await expect(sync(malformed)).rejects.toThrow('missing columns: is_hidden');
+    // Deferred, not fatal (#6161): the cycle completes and the replay retries later.
+    await expect(sync(malformed)).resolves.toBeUndefined();
     expect(await hiddenFlag()).toBeNull();
     expect(await getSchemaRefreshState(db, 'board_climbs', SCOPE)).toBeNull();
     expect(await getCheckpoint(db, `checkpoint:board_climbs:${SCOPE}`)).toEqual(HEAD);
@@ -465,6 +466,50 @@ describe('spray-only refresh for retired_by_reset', () => {
         )
       )?.retired_by_reset,
     ).toBe(1);
+    expect(await getSchemaRefreshState(db, 'board_climbs', SPRAY_SCOPE)).toMatchObject({ revision: 2, complete: true });
+  });
+
+  // #6161: an OTA preview pointed at a prod backend without migration 0255. The
+  // replay must not fail the whole sync, and must retry once the column exists.
+  it('defers the replay against a backend without retired_by_reset and lets the cycle finish', async () => {
+    await db.runAsync(
+      `INSERT INTO board_climbs (uuid, board_type, layout_id, compatible_size_ids, is_hidden, updated_at, sync_seq)
+       VALUES ('old-set', 'spray', 7, '[7]', 0, ?, 10)`,
+      [OLD.updatedAt],
+    );
+    await setCheckpoint(db, `checkpoint:board_climbs:${SPRAY_SCOPE}`, HEAD);
+    await markScopeDownloadComplete(db, SPRAY_SCOPE);
+    const revisionOne = { ...HEAD, revision: 1, complete: true, mode: 'download' as const };
+    await writeSchemaRefreshState(db, 'board_climbs', SPRAY_SCOPE, revisionOne);
+
+    const legacy: Record<string, unknown> = { ...sprayClimb('old-set', null) };
+    delete legacy.retired_by_reset;
+    const oldBackend = sprayFetch([legacy as ReturnType<typeof sprayClimb>]);
+    const phases: string[] = [];
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await expect(
+        pullSync(db, queryClient, oldBackend, {
+          enabledBoards: [SPRAY_SCOPE],
+          isOnUnmeteredNetwork: () => true,
+          onProgress: (progress) => phases.push(progress.phase),
+        }),
+      ).resolves.toBeUndefined();
+    } finally {
+      warn.mockRestore();
+    }
+
+    // The replay really ran, and the cycle still reached its idle tail.
+    expect(oldBackend.mock.calls.some(([, variables]) => (variables?.cursor as SyncCheckpoint)?.syncSeq === '0')).toBe(
+      true,
+    );
+    expect(phases.at(-1)).toBe('idle');
+    expect(await getSchemaRefreshState(db, 'board_climbs', SPRAY_SCOPE)).toEqual(revisionOne);
+
+    await pullSync(db, queryClient, sprayFetch([sprayClimb('old-set', true)]), {
+      enabledBoards: [SPRAY_SCOPE],
+      isOnUnmeteredNetwork: () => true,
+    });
     expect(await getSchemaRefreshState(db, 'board_climbs', SPRAY_SCOPE)).toMatchObject({ revision: 2, complete: true });
   });
 

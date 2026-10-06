@@ -245,12 +245,13 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
       // Spray climbs retired by a full reset (#6024), so the local search can
       // hide them from a wall's default list the way the server does.
       //
-      // ALSO ADDED WITHOUT BUMPING `refreshRevision` / `refreshColumns`. Only a
-      // full reset sets it, the recompute that sets it stamps `updated_at`, and
-      // so the ordinary cursor re-delivers every row it touches. NULL reads as
-      // not retired, which is right for every catalogue climb. The gap is the
-      // same as for the revision numbers above: a row re-delivered to an older
-      // bundle that dropped the field stays NULL here until it next changes.
+      // No table-wide `refreshRevision` / `refreshColumns` bump: only a full
+      // reset sets it, the recompute that sets it stamps `updated_at`, and so
+      // the ordinary cursor re-delivers every row it touches. NULL reads as not
+      // retired, which is right for every catalogue climb. Spray scopes DO get
+      // a bump (`refreshRevisionByBoardType` / `refreshColumnsByBoardType`
+      // above), so a spray row re-delivered to an older bundle that dropped the
+      // field is backfilled by that one replay.
       'retired_by_reset',
       'updated_at',
       'sync_seq',

@@ -1355,7 +1355,11 @@ locally even while online. Spray scopes have their own refresh revision (2,
 `refreshRevisionByBoardType`) and require the column on refresh pages
 (`refreshColumnsByBoardType`). So a climb retired while a phone ran an older
 bundle, which dropped the field, gets backfilled once on an unmetered network.
-No catalogue board is re-crawled for it.
+No catalogue board is re-crawled for it. A backend that does not serve the
+column yet (an OTA preview pointed at prod before migration 0255 ships) makes
+the replay's first page come back without it. The replay then stops before it
+writes, leaves the revision at 1, and the rest of the sync carries on; the next
+cycle retries.
 
 There is no backfill on the server: no reset was marked full before the column
 existed.
