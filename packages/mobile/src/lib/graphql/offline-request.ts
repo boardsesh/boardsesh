@@ -18,7 +18,6 @@ import {
 } from '../../db/queries/board-download-status';
 import { getClimbStatsHistoryLocal } from '../../db/queries/get-climb-stats-history-local';
 import { getHttpClient } from './client';
-import { hidesLostHoldClimbs } from '@boardsesh/climb-filters';
 import { ensureHoldIndex } from '@boardsesh/offline-sync';
 import type { OfflineReadLane, OfflineReadSurface, OfflineUnavailableReason } from '@boardsesh/offline-sync';
 import { getSimilarClimbsLocal } from '../../db/queries/get-similar-climbs-local';
@@ -208,26 +207,21 @@ async function fillDetailRevisionNumbers(
 }
 
 /**
- * A spray wall's search leaves out published climbs that lost a hold
- * (`hidesLostHoldClimbs`). The server honours `holdIntegrity: 'INTACT'`, so every
- * network search on a wall sends it, whatever the caller built, except the
- * climber's own drafts list, which keeps a draft that lost a hold so its setter
- * can fix or delete it. `searchClimbsLocal` applies the same rule on the phone.
+ * A spray climb that lost a hold is listed like any other, so a wall list sends
+ * no `holdIntegrity` at all, whatever the caller built: a stored value from the
+ * retired "Holds" filter is dropped here as well as on read
+ * (`normalizeRetiredFilters`). With none, the server applies only its default
+ * rule (`retiredByResetCondition`), which `searchClimbsLocal` mirrors.
  *
- * The drafts list sends an explicit `ANY`, not nothing. The current server hides
- * climbs a full reset retired from every spray search that carries no
- * `holdIntegrity`, drafts included (`retiredByResetCondition`), and ANY is the
- * one value that turns that off without adding an integrity predicate. Sent
- * nothing, a draft that lost a hold in an old full reset could never be reached,
- * fixed or deleted. A later server ignores the value.
+ * The climber's own drafts list is the one exception: it sends an explicit
+ * `ANY`. That default rule hides a climb a full in-place reset retired from
+ * every spray search without `holdIntegrity`, drafts included, and ANY is the
+ * one value that turns it off without adding an integrity predicate. Sent
+ * nothing, such a draft could never be reached, fixed or deleted.
  */
 export function withLostHoldRule(variables: SearchClimbsQueryVariables): SearchClimbsQueryVariables {
   const { input } = variables;
-  const wanted = hidesLostHoldClimbs(input)
-    ? 'INTACT'
-    : input.boardName === 'spray' && input.onlyDrafts === true
-      ? 'ANY'
-      : null;
+  const wanted = input.boardName === 'spray' && input.onlyDrafts === true ? 'ANY' : null;
   if (wanted) {
     return input.holdIntegrity === wanted ? variables : { ...variables, input: { ...input, holdIntegrity: wanted } };
   }

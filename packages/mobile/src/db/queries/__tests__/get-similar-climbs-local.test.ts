@@ -257,10 +257,9 @@ describe('getSimilarClimbsLocal', () => {
     expect(result.map(({ uuid }) => uuid)).toEqual(['bigger-wall-only']);
   });
 
-  // A published spray climb that lost a hold leaves wall lists and search, and
-  // the strip under a climb is one more list. A catalogue climb never carries
-  // the count, but the clause is spray-only all the same.
-  it('leaves out a spray climb that lost a hold, and only on spray', async () => {
+  // A spray climb that lost a hold is listed like any other, and the strip under
+  // a climb is one more list: it keeps it, with the climbs that are whole.
+  it('keeps a spray climb that lost a hold in the strip', async () => {
     const SPRAY = { boardType: 'spray', layoutId: 4200, sizeId: 4200 };
     const onWall = { boardType: 'spray', layoutId: 4200, sizes: [4200] };
     await insertClimb(db, { uuid: 's-target', holds: [1, 2, 3, 4], ...onWall });
@@ -269,7 +268,7 @@ describe('getSimilarClimbsLocal', () => {
     await insertClimb(db, { uuid: 's-lost', holds: [1, 2, 3, 4, 7], ...onWall, missingHoldCount: 1 });
     await buildIndex(db, SPRAY);
     const spray = await getSimilarClimbsLocal(db, { ...SPRAY, climbUuid: 's-target' }, parseHoldRows);
-    expect(spray.map(({ uuid }) => uuid).sort()).toEqual(['s-unknown', 's-whole']);
+    expect(spray.map(({ uuid }) => uuid).sort()).toEqual(['s-lost', 's-unknown', 's-whole']);
 
     await insertClimb(db, { uuid: 'target', holds: [1, 2, 3, 4] });
     await insertClimb(db, { uuid: 'kilter-counted', holds: [1, 2, 3, 4, 5], missingHoldCount: 2 });

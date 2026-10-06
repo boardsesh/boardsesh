@@ -8,7 +8,6 @@ import {
   toClimbSearchInput,
   newSortSeed,
   normalizeRetiredFilters,
-  hidesLostHoldClimbs,
   type ClimbFilterState,
   type BoardSearchConfig,
   type SearchPagination,
@@ -392,20 +391,5 @@ describe('a stored filter state from before the Holds filter was removed', () =>
 
   it('returns the same state when nothing needs dropping', () => {
     expect(normalizeRetiredFilters(DEFAULT_CLIMB_FILTER_STATE)).toBe(DEFAULT_CLIMB_FILTER_STATE);
-  });
-});
-
-describe('hidesLostHoldClimbs', () => {
-  it('hides lost-hold climbs on a spray wall', () => {
-    expect(hidesLostHoldClimbs({ boardName: 'spray' })).toBe(true);
-    expect(hidesLostHoldClimbs({ boardName: 'spray', onlyDrafts: false })).toBe(true);
-  });
-
-  it("keeps the climber's own drafts listed, lost holds and all", () => {
-    expect(hidesLostHoldClimbs({ boardName: 'spray', onlyDrafts: true })).toBe(false);
-  });
-
-  it('never touches a catalogue board', () => {
-    expect(hidesLostHoldClimbs({ boardName: 'kilter' })).toBe(false);
   });
 });

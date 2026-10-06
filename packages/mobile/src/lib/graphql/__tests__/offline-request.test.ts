@@ -340,9 +340,8 @@ describe('offlineAwareRequest — SEARCH_CLIMBS_COUNT', () => {
   });
 });
 
-// A published spray climb that lost a hold is left out of wall lists. The
-// server honours INTACT, so every network search on a wall carries it, except
-// the climber's own drafts list.
+// A spray climb that lost a hold is listed with a badge, so a wall search sends
+// no hold-integrity value at all. The climber's own drafts list sends ANY.
 describe('offlineAwareRequest — spray searches over the network', () => {
   const sprayInput: ClimbSearchInput = { boardName: 'spray', layoutId: 7, sizeId: 7, setIds: '1', angle: 25 };
 
@@ -351,20 +350,20 @@ describe('offlineAwareRequest — spray searches over the network', () => {
     isBoardDownloadedLocally.mockResolvedValue(false);
   });
 
-  it('sends INTACT on a wall search and a wall count', async () => {
+  it('sends no holdIntegrity on a wall search and a wall count', async () => {
     await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: sprayInput });
-    expect(request).toHaveBeenLastCalledWith(SEARCH_CLIMBS, { input: { ...sprayInput, holdIntegrity: 'INTACT' } });
+    expect(request).toHaveBeenLastCalledWith(SEARCH_CLIMBS, { input: sprayInput });
     await offlineAwareRequest<SearchClimbsCountQueryResponse>(SEARCH_CLIMBS_COUNT, { input: sprayInput });
-    expect(request).toHaveBeenLastCalledWith(SEARCH_CLIMBS_COUNT, {
-      input: { ...sprayInput, holdIntegrity: 'INTACT' },
-    });
+    expect(request).toHaveBeenLastCalledWith(SEARCH_CLIMBS_COUNT, { input: sprayInput });
+    const sent = request.mock.calls.at(-1)?.[1] as { input: ClimbSearchInput };
+    expect('holdIntegrity' in sent.input).toBe(false);
   });
 
-  it('overrides a value an older caller still builds', async () => {
-    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, {
-      input: { ...sprayInput, holdIntegrity: 'BROKEN' },
-    });
-    expect(request).toHaveBeenLastCalledWith(SEARCH_CLIMBS, { input: { ...sprayInput, holdIntegrity: 'INTACT' } });
+  it('drops a value an older caller still builds', async () => {
+    for (const holdIntegrity of ['INTACT', 'BROKEN', 'ANY'] as const) {
+      await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: { ...sprayInput, holdIntegrity } });
+      expect(request).toHaveBeenLastCalledWith(SEARCH_CLIMBS, { input: sprayInput });
+    }
   });
 
   // ANY, not nothing: the current server hides retired climbs from every spray

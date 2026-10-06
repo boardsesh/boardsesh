@@ -4,7 +4,7 @@ import { resolveClimbNoMatch } from '@boardsesh/shared-schema';
 import { getBoardCapabilities, isSizeScopedBoard } from '@boardsesh/board-config';
 import { getTallWideScope } from '@boardsesh/board-constants';
 import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
-import { climbNameLikePattern, hidesLostHoldClimbs } from '@boardsesh/climb-filters';
+import { climbNameLikePattern } from '@boardsesh/climb-filters';
 import { getGradeLabel, getClimbStars } from '../../lib/grade-label';
 import { followedAuthorsLocalCondition } from './followed-authors-local';
 import { tickOnCurrentHoldsLocalSql } from './climb-revisions-local';
@@ -146,8 +146,8 @@ export function isOfflineSearchSupported(input: ClimbSearchInput): boolean {
   // silently-ignored filter here is wrong results with no network fallback.
   if (input.onlyWithBetaVideos) return false;
   if (input.zoneBox) return false;
-  // A spray wall's lost-hold rule IS expressible: migration v7 mirrors
-  // `board_climbs.missing_hold_count` on the device, and `buildJoinAndWhere`
+  // A spray wall's retired-by-reset rule IS expressible: migration v12 mirrors
+  // `board_climbs.retired_by_reset` on the device, and `buildJoinAndWhere`
   // applies it. No fall-back clause here on purpose.
   const { hasHoldState } = parseHoldsFilter(input.holdsFilter);
   if (hasHoldState) return false;
@@ -423,23 +423,21 @@ export function buildJoinAndWhere(
     push('(c.angle = ? OR c.angle IS NULL OR s.climb_uuid IS NOT NULL)', angle);
   }
 
-  // A published spray climb that lost a hold is left out of every wall list and
-  // search, name search included (`hidesLostHoldClimbs`; the network sends the
-  // same rule as `holdIntegrity: 'INTACT'`). A downloaded wall reads here even
-  // while online, so the two must agree or the list changes with the signal.
-  // A climb a full reset retired lost at least one hold in it, so this hides
-  // it too.
+  // A spray climb that lost a hold is listed like any other: it carries a badge
+  // and a Remix, and is not hidden. The one exception mirrors the server's
+  // `retiredByResetCondition` (packages/db/src/queries/climbs/create-climb-filters.ts),
+  // which applies when the request carries no `holdIntegrity` (the app never
+  // sends one for a wall list): a climb a full in-place reset retired (#6024)
+  // leaves the default list, and comes back on a name search. A downloaded wall
+  // reads here even while online, so the two must agree or the list changes
+  // with the signal. The drafts list is answered by the network
+  // (`isOfflineSearchSupported`), which sends `ANY` for it.
   //
-  // COALESCE because NULL reads as whole: every catalogue climb, a spray climb
-  // written before the server kept the count, and any row pulled before
-  // migration v7 added the column (synced without a refresh revision, so those
-  // rows stay NULL until the climb is next touched). Reversed, one row without
-  // the count would hide a climb that never lost anything.
-  //
-  // A drafts-only query keeps them, so a setter can fix or delete a draft that
-  // lost a hold. `isOfflineSearchSupported` sends drafts to the network today;
-  // the guard keeps this builder right on its own.
-  if (hidesLostHoldClimbs(input)) push('COALESCE(c.missing_hold_count, 0) = 0');
+  // COALESCE because NULL reads as not retired: every catalogue climb, and any
+  // row pulled before on-device migration v12 added the column.
+  if (boardType === 'spray' && input.onlyDrafts !== true && !hasNameQuery(input)) {
+    push('COALESCE(c.retired_by_reset, 0) = 0');
+  }
 
   // Boulders / routes on frames_count (NULL is legacy single-frame → boulder).
   const wantsBoulders = !!input.boulders;

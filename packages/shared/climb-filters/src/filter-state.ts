@@ -159,8 +159,8 @@ export function applyStatusChange(_previous: ClimbFilterState, newStatus: Status
  *   control and the active-filter count doesn't double-count the one lever.
  *   The enum value is kept for back-compat.
  * - `holdIntegrity` was the spray-wall "Holds" filter (Current / All / Intact /
- *   Lost holds). It is gone: a published climb that lost a hold is now always
- *   hidden from wall lists (see {@link hidesLostHoldClimbs}). A stored value is
+ *   Lost holds). It is gone: a climb that lost a hold is listed with a badge,
+ *   and the app sends no integrity filter for a wall list. A stored value is
  *   dropped so it is not written back with the next save.
  *
  * Returns the same reference when there is nothing to change.
@@ -173,20 +173,6 @@ export function normalizeRetiredFilters(state: ClimbFilterState): ClimbFilterSta
   if (retiredHoldIntegrity === undefined && !statusRetired) return state;
   const base: ClimbFilterState = retiredHoldIntegrity === undefined ? state : withoutHoldIntegrity;
   return statusRetired ? { ...base, status: 'any' } : base;
-}
-
-/**
- * Whether a climb search must leave out published climbs that lost a hold.
- *
- * True on a spray wall, the only board whose holds ever came off, for every
- * search but the climber's own drafts: a draft that lost a hold stays listed so
- * its setter can fix it or delete it. Lost-hold climbs still open by uuid (a
- * logbook, a playlist, the queue, a link); only lists and search hide them.
- * The network sends this as `holdIntegrity: 'INTACT'`, and the phone's own
- * search applies the same rule to `missing_hold_count`.
- */
-export function hidesLostHoldClimbs(input: Pick<ClimbSearchInput, 'boardName' | 'onlyDrafts'>): boolean {
-  return input.boardName === 'spray' && input.onlyDrafts !== true;
 }
 
 export type BoardSearchConfig = {

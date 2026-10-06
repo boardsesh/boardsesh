@@ -813,9 +813,10 @@ describe('isOfflineSearchSupported', () => {
   });
 });
 
-// A published spray climb that lost a hold is left out of wall lists and search
-// (the network sends the same rule as `holdIntegrity: 'INTACT'`). A downloaded
-// wall reads here even while online, so the two must agree.
+// A spray climb that lost a hold is listed like any other, with its count on
+// the row for the badge. Only a climb a full in-place reset retired leaves the
+// default list, as on the server (`retiredByResetCondition`). A downloaded wall
+// reads here even while online, so the two must agree.
 describe('searchClimbsLocal: spray climbs that lost a hold', () => {
   let db: TestSqliteDb;
   const sprayInput = (overrides: Partial<ClimbSearchInput> = {}) =>
@@ -828,7 +829,7 @@ describe('searchClimbsLocal: spray climbs that lost a hold', () => {
     await stampLocalUserId(db, LOCAL_OWNER);
     await insertClimb(db, { uuid: 'whole', boardType: 'spray', layoutId: 7, missingHoldCount: 0 });
     await insertClimb(db, { uuid: 'lost', name: 'Old blue', boardType: 'spray', layoutId: 7, missingHoldCount: 2 });
-    await insertClimb(db, { uuid: 'retired', boardType: 'spray', layoutId: 7, missingHoldCount: 5 });
+    await insertClimb(db, { uuid: 'retired', name: 'Gone line', boardType: 'spray', layoutId: 7, missingHoldCount: 5 });
     await db.runAsync("UPDATE board_climbs SET retired_by_reset = 1 WHERE uuid = 'retired'");
     // NULL: a spray climb written before the server kept the count, or a row
     // pulled before migration v7. Read as whole.
@@ -843,27 +844,29 @@ describe('searchClimbsLocal: spray climbs that lost a hold', () => {
     return result.climbs.map((climb) => climb.uuid).sort();
   };
 
-  it('hides a published climb that lost a hold, a retired one with it, and reads NULL as whole', async () => {
-    expect(await names()).toEqual(['unknown', 'whole']);
-    expect(await countClimbsLocal(db, sprayInput())).toBe(2);
+  it('lists a climb that lost a hold, and leaves out only a retired one', async () => {
+    expect(await names()).toEqual(['lost', 'unknown', 'whole']);
+    expect(await countClimbsLocal(db, sprayInput())).toBe(3);
   });
 
-  it('hides it from a name search too', async () => {
-    expect(await names({ name: 'Old blue' })).toEqual([]);
+  it('finds both on a name search, as the server does', async () => {
+    expect(await names({ name: 'Old blue' })).toEqual(['lost']);
+    expect(await names({ name: 'Gone line' })).toEqual(['retired']);
   });
 
   it('ignores a hold-integrity value an older caller still sends', async () => {
-    expect(await names({ holdIntegrity: 'ANY' })).toEqual(['unknown', 'whole']);
-    expect(await names({ holdIntegrity: 'BROKEN' })).toEqual(['unknown', 'whole']);
+    expect(await names({ holdIntegrity: 'INTACT' })).toEqual(['lost', 'unknown', 'whole']);
+    expect(await names({ holdIntegrity: 'BROKEN' })).toEqual(['lost', 'unknown', 'whole']);
   });
 
-  it('leaves a lost-hold draft to the drafts list, which reads over the network', () => {
+  it('leaves the drafts list to the network', () => {
     expect(isOfflineSearchSupported(sprayInput({ onlyDrafts: true }))).toBe(false);
   });
 
-  it('still carries the count on the rows it lists', async () => {
+  it('carries the count on the rows it lists, for the badge', async () => {
     const result = await searchClimbsLocal(db, sprayInput());
     const byUuid = new Map(result.climbs.map((climb) => [climb.uuid, climb.missingHoldCount]));
+    expect(byUuid.get('lost')).toBe(2);
     expect(byUuid.get('whole')).toBe(0);
     expect(byUuid.get('unknown')).toBeNull();
   });
