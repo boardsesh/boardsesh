@@ -792,8 +792,8 @@ export function mapRowToClimb(
     // is nullable for exactly the same rows, and a badge that reads "0 holds
     // lost" is not the same statement as "this is not a spray climb".
     missingHoldCount: row.missing_hold_count ?? null,
-    // Left NULL when the phone does not know. The tick form then sends no
-    // version and the server works it out; the sent glyph reads NULL as 1.
+    // Left NULL when the phone does not know. The sent glyph reads a NULL
+    // holds version as 1, so every tick on the climb counts.
     revisionNumber: row.revision_number ?? null,
     holdsRevisionNumber: row.holds_revision_number ?? null,
     is_no_match: resolveClimbNoMatch(boardType, characteristics, row.description),

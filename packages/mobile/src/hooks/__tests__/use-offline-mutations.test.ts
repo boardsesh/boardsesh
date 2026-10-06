@@ -78,6 +78,8 @@ import {
 } from '../use-offline-mutations';
 import { getDeadLetterCount, runMigrations, stampLocalUserId, type GraphQLFetch } from '@boardsesh/offline-sync';
 import { readAuthorSnapshot, saveAuthorSnapshot } from '../../db/queries/followed-authors-local';
+import { searchClimbsLocal } from '../../db/queries/search-climbs-local';
+import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import { createTestDatabase, __resetDrainerStateForTests, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 
 type Row = Record<string, unknown>;
@@ -266,6 +268,60 @@ describe('writeTickLocal', () => {
       'tick-rev-other',
     ]);
     expect(tick?.climb_revision).toBeNull();
+  });
+
+  // Why the stamp exists: local search counts a send only when its version is
+  // at or past the climb's holds version, and a NULL reads as 1.
+  it('a tick written on a climb whose holds moved reads back as sent in local search', async () => {
+    await stampLocalUserId(db, 'viewer');
+    await db.runAsync(
+      `INSERT INTO board_climbs (uuid, board_type, layout_id, name, frames, frames_count, is_listed, is_draft,
+         compatible_size_ids, revision_number, holds_revision_number, created_at, updated_at)
+       VALUES ('climb-1', 'kilter', 1, 'Edited', 'p1r12', 1, 1, 0, '[5]', 3, 3,
+         '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
+    );
+    await writeTickLocal(db, makeTickInput({ isMirror: false }), 'tick-sent');
+
+    const { climbs } = await searchClimbsLocal(db, {
+      boardName: 'kilter',
+      layoutId: 1,
+      sizeId: 5,
+      setIds: '',
+      angle: 40,
+      page: 0,
+      pageSize: 20,
+      sortBy: 'ascents',
+      sortOrder: 'desc',
+    } as ClimbSearchInput);
+    expect(climbs.find((climb) => climb.uuid === 'climb-1')?.userAscents).toBe(1);
+  });
+
+  it('leaves the local version NULL when the phone row has no version yet', async () => {
+    await db.runAsync(
+      `INSERT INTO board_climbs (uuid, board_type, layout_id, name, frames, is_listed, is_draft, revision_number, holds_revision_number)
+       VALUES ('climb-1', 'kilter', 1, 'Pre-v11 row', 'p1r12', 1, 0, NULL, NULL)`,
+    );
+    await writeTickLocal(db, makeTickInput(), 'tick-rev-null');
+
+    const tick = await db.getFirstAsync<Row>('SELECT climb_revision FROM boardsesh_ticks WHERE uuid = ?', [
+      'tick-rev-null',
+    ]);
+    expect(tick?.climb_revision).toBeNull();
+  });
+
+  it('does not re-stamp a tick on a retried write', async () => {
+    await db.runAsync(
+      `INSERT INTO board_climbs (uuid, board_type, layout_id, name, frames, is_listed, is_draft, revision_number, holds_revision_number)
+       VALUES ('climb-1', 'kilter', 1, 'Edited', 'p1r12', 1, 0, 3, 3)`,
+    );
+    await writeTickLocal(db, makeTickInput(), 'tick-retried');
+    await db.runAsync("UPDATE board_climbs SET revision_number = 5, holds_revision_number = 5 WHERE uuid = 'climb-1'");
+    await writeTickLocal(db, makeTickInput(), 'tick-retried');
+
+    const ticks = await db.getAllAsync<Row>('SELECT climb_revision FROM boardsesh_ticks WHERE uuid = ?', [
+      'tick-retried',
+    ]);
+    expect(ticks).toEqual([{ climb_revision: 3 }]);
   });
 
   it('leaves the local version NULL when the phone holds no copy of the climb', async () => {

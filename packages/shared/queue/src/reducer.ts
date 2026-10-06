@@ -453,9 +453,8 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
         if (patchKeys.every((key) => item.climb[key] === patch[key])) return item;
         changed = true;
         // The version numbers describe the holds the item was queued with
-        // (#6023). New holds make them stale, and a tick stamped with a stale
-        // version is stored as a send on the old climb, so drop them and let
-        // the tick form fall back to the phone's copy.
+        // (#6023). New holds make them stale, so drop them: an unknown holds
+        // version lets the sent glyph count every tick on the climb.
         const versions = item.climb.frames === patch.frames ? {} : { revisionNumber: null, holdsRevisionNumber: null };
         return { ...item, climb: { ...item.climb, ...patch, ...versions } };
       };
