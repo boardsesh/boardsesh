@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createElement, type ReactNode } from 'react';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import CreateClimbRoute from '../create';
@@ -8,6 +8,7 @@ import {
   clearSprayWallRegistry,
   LIVE_SPRAY_WALL_ARCHIVE_STATE,
   registerSprayWall,
+  settleSprayWallDiscoveryMiss,
 } from '../../../../src/lib/spray/spray-wall-registry';
 
 // Mutable across tests so each seeds its own deep-link params + stored board.
@@ -362,6 +363,9 @@ describe('CreateClimbRoute invalid board inputs', () => {
   });
 
   it.each(['woods', 'spray'])('accepts empty hold sets for %s', (boardName) => {
+    // A spray wall must have said whether it is archived first; one that did
+    // not load at all is not.
+    if (boardName === 'spray') settleSprayWallDiscoveryMiss(1);
     routeParams.current = { boardName, layoutId: '1', sizeId: '1', setIds: '', angle: '40' };
     render(<CreateClimbRoute />);
     expect(editorBoard.latest).toMatchObject({ boardName, setIds: '' });
@@ -405,6 +409,32 @@ describe('CreateClimbRoute on an archived spray wall', () => {
     registerWall(null);
     routeParams.current = SPRAY_PARAMS;
     const { container } = render(<CreateClimbRoute />);
+    expect(container.querySelector('[data-editor]')).not.toBeNull();
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  // A cold deep link: the editor waits for the wall instead of flashing open
+  // and then leaving.
+  it('waits for the wall before opening the editor', () => {
+    routeParams.current = SPRAY_PARAMS;
+    const { container, rerender } = render(<CreateClimbRoute />);
+    expect(container.querySelector('[data-editor]')).toBeNull();
+    expect(container.querySelector('[data-spinner]')).not.toBeNull();
+    act(() => registerWall('2026-10-01T09:00:00.000Z'));
+    rerender(<CreateClimbRoute />);
+    expect(container.querySelector('[data-editor]')).toBeNull();
+    expect(showToast).toHaveBeenCalledWith('createClimbForm.cannotOpen.wallArchived', 'error');
+  });
+
+  // A save refused as archived re-reads the wall. The save already said why;
+  // the route must not leave with a second message under the climber.
+  it('stays open, with no second message, when the wall is archived after the editor opened', () => {
+    registerWall(null);
+    routeParams.current = SPRAY_PARAMS;
+    const { container, rerender } = render(<CreateClimbRoute />);
+    expect(container.querySelector('[data-editor]')).not.toBeNull();
+    act(() => registerWall('2026-10-01T09:00:00.000Z'));
+    rerender(<CreateClimbRoute />);
     expect(container.querySelector('[data-editor]')).not.toBeNull();
     expect(showToast).not.toHaveBeenCalled();
   });

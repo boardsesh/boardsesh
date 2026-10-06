@@ -318,6 +318,12 @@ vi.mock('../../lib/graphql/use-active-board', () => ({
 const viewerProfile = vi.hoisted(() => ({ current: null as { id: string } | null }));
 vi.mock('../../lib/spray/confirm-spray-wall-reset', () => ({ confirmSprayWallReset: async () => true }));
 
+// The stored-id fallback is a React Query read of the keychain; these cases
+// have a profile, so it never answers.
+vi.mock('../../hooks/use-current-user-id', () => ({
+  useStoredUserId: () => ({ userId: undefined, isLoading: false }),
+}));
+
 vi.mock('../../lib/graphql/hooks', () => ({
   useToggleFavorite: () => ({ mutate: vi.fn() }),
   useProfile: () => ({ data: viewerProfile.current }),
@@ -805,7 +811,9 @@ describe('DrawerHostProvider spray-wall sheet wiring', () => {
     rerender(createElement(DrawerHostProvider, null, createElement(Probe, { onHost, onRoute: () => {} })));
     await act(async () => settle({ status: 'dismissed' }));
 
-    expect(routerPush).toHaveBeenCalledExactlyOnceWith(`${pathname}${sprayWall.uuid}`);
+    expect(routerPush).toHaveBeenCalledExactlyOnceWith(
+      action === 'resetWall' ? `${pathname}${sprayWall.uuid}&resetSource=board_sheet` : `${pathname}${sprayWall.uuid}`,
+    );
     expect(activeBoard.setActiveBoard).not.toHaveBeenCalled();
   });
 

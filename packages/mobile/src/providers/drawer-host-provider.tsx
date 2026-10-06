@@ -40,6 +40,7 @@ import { AddBetaVideoSheet } from '../components/AddBetaVideoSheet';
 import { ReportClimbSheet } from '../components/report-climb/ReportClimbSheet';
 import { AddToPlaylistSheet } from '../components/AddToPlaylistSheet';
 import { useProfile, useMyBoards } from '../lib/graphql/hooks';
+import { useStoredUserId } from '../hooks/use-current-user-id';
 import { boardLooselyMatches } from '../lib/boards/board-matches';
 import { useAuth } from './auth-provider';
 import { useReduceMotion } from '../hooks/use-reduce-motion';
@@ -475,6 +476,12 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const boardPresenceBoardIdRef = useRef(boardPresenceBoardId);
   boardPresenceBoardIdRef.current = boardPresenceBoardId;
   const { data: profile } = useProfile();
+  // Who owns a spray wall decides its reset rows. The profile is the fresher
+  // answer but it is network-only, so fall back to the id the signed token
+  // carries, as My Boards does: a failed profile read must not take the owner's
+  // reset away and leave them an inert "Holds are locked".
+  const { userId: storedUserId } = useStoredUserId(isAuthenticated && !profile?.id);
+  const sprayViewerUserId = profile?.id ?? storedUserId ?? null;
   // Read at the app root (resolved by interaction time) and passed to the reaction
   // menu so its mount-time enter animation uses the real value, not the hook's
   // conservative `true` default.
@@ -758,7 +765,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const dismissBoardSheetAndWait = useCallback((): Promise<DismissAndWaitResult> => {
     return dismissManagedSheetAndWait(boardSheetRef.current);
   }, []);
-  const sprayWallActions = useSprayWallSheetActions(activeBoard ?? null, dismissBoardSheetAndWait, profile?.id);
+  const sprayWallActions = useSprayWallSheetActions(activeBoard ?? null, dismissBoardSheetAndWait, sprayViewerUserId);
   const cancelPendingSprayAction = sprayWallActions.cancelPendingAction;
 
   // Board sheet: present imperatively via the ref, exactly like the queue sheet
@@ -1225,7 +1232,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             activeBoard={activeBoard ?? null}
             onOpenSprayMaintenance={sprayWallActions.openMaintenance}
             onShareSprayWall={sprayWallActions.openShare}
-            viewerUserId={profile?.id ?? null}
+            viewerUserId={sprayViewerUserId}
             onSelectGymWall={handleSelectGymWall}
             onClimbPress={handleBoardSheetClimbPress}
             onAddToQueue={handleBoardSheetAddToQueue}

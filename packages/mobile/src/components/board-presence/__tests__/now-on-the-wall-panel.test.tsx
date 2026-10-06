@@ -453,9 +453,35 @@ describe('NowOnTheWallPanel', () => {
 
     // A gym admin who can edit but does not own the wall reads it, and cannot act on it.
     rerender(panelElement({ activeBoard: sprayWall, onOpenSprayMaintenance, viewerUserId: 'gym-admin' }));
-    expect(getByText('mobile.boardDetail.spray.holdsLockedHint')).toBeTruthy();
+    expect(getByText('mobile.boardDetail.spray.holdsLockedEditorHint')).toBeTruthy();
     expect(queryByLabelText('mobile.boardDetail.spray.holdsLocked')).toBeNull();
     expect(queryByLabelText('mobile.boardDetail.spray.resetWall')).toBeNull();
+  });
+
+  // Only the owner can still see a wall an admin hid after a report; a wall
+  // that quietly vanished for everyone else would read as data loss.
+  it('tells the owner, and only the owner, that their wall is hidden', () => {
+    clearSprayWallRegistry();
+    registerSprayWall(sprayWall.layoutId, {
+      wallUuid: sprayWall.uuid,
+      angle: 40,
+      version: 1,
+      versionId: 1,
+      photoWidth: 100,
+      photoHeight: 100,
+      photoUrl: 'https://example.invalid/wall.jpg',
+      photoThumbUrl: null,
+      photoExpiresAt: '2099-01-01T00:00:00.000Z',
+      holds: [],
+      hiddenAt: '2026-10-02T09:00:00.000Z',
+    });
+    const { getByText, queryByText, rerender } = render(
+      panelElement({ activeBoard: sprayWall, onOpenSprayMaintenance: vi.fn(), viewerUserId: 'owner-1' }),
+    );
+    expect(getByText('sprayHidden.title')).toBeTruthy();
+    expect(getByText('sprayHidden.body')).toBeTruthy();
+    rerender(panelElement({ activeBoard: sprayWall, onOpenSprayMaintenance: vi.fn(), viewerUserId: 'gym-admin' }));
+    expect(queryByText('sprayHidden.title')).toBeNull();
   });
 
   // An archived wall keeps its climbs: the sheet says so, offers the wall that

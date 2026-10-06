@@ -115,7 +115,7 @@ vi.mock('../brush-roles', () => ({
   getNextBrushRole: () => 'HAND',
 }));
 
-import { clearSprayWallRegistry, registerSprayWall } from '../../../lib/spray/spray-wall-registry';
+import { clearSprayWallRegistry, registerSprayWall, setSprayWallLoader } from '../../../lib/spray/spray-wall-registry';
 import { getPreference, removePreference, setPreference } from '../../../lib/preference-store';
 import { lastUsedGradeKey } from '../use-last-used-grade';
 import { useCreateClimbScreen } from '../use-create-climb-screen';
@@ -353,6 +353,29 @@ describe('the setter grade gates a publish', () => {
       expect.objectContaining({ user_grade: '6c/V5', is_draft: false }),
     );
     expect(result.current.focusGradeSignal).toBe(0);
+  });
+
+  // A wall's first published climb locks its holds: the wall is re-read at once,
+  // so its sheet says "Holds are locked" now rather than ten minutes later.
+  it('re-reads the wall after a publish, and not after a draft save', async () => {
+    const loader = vi.fn(async () => {});
+    setSprayWallLoader(loader);
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+    act(() => {
+      result.current.setName('Slopey traverse');
+      result.current.setSetterGradeDifficultyId(SIX_C_DIFFICULTY_ID);
+    });
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(loader).toHaveBeenCalledWith(LAYOUT_ID, { force: true });
+
+    loader.mockClear();
+    act(() => result.current.setIsDraft(true));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(loader).not.toHaveBeenCalledWith(LAYOUT_ID, { force: true });
   });
 
   it('leaves a DRAFT saveable with no grade', async () => {

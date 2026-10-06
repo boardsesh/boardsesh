@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -12,7 +12,7 @@ import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { createClimbScreenKey } from '../../../src/lib/create-climb-screen-key';
 import { useUnsupportedBoardExit } from '../../../src/lib/routing/use-unsupported-board-exit';
 import { useSprayWallToken } from '../../../src/lib/spray/use-spray-wall-token';
-import { useSprayWallIsArchived } from '../../../src/lib/spray/use-spray-wall-archive';
+import { useSprayWallArchiveSettled, useSprayWallIsArchived } from '../../../src/lib/spray/use-spray-wall-archive';
 
 type CreateClimbParams = {
   boardName?: string | string[];
@@ -149,10 +149,21 @@ export default function CreateClimbRoute() {
   // arrives. `''` for every catalogue board.
   useSprayWallToken(resolvedBoard?.boardName, resolvedBoard?.layoutId);
   const wallArchived = useSprayWallIsArchived(resolvedBoard?.boardName, resolvedBoard?.layoutId ?? null);
+  // A spray wall's archive state has to be known before the editor shows, or a
+  // cold deep link onto an archived wall flashes the editor for a frame and then
+  // leaves. "Known" includes a wall whose archive query failed (read as live)
+  // and a wall that did not load at all (not archived): the server still refuses.
+  const wallArchiveSettled = useSprayWallArchiveSettled(resolvedBoard?.boardName, resolvedBoard?.layoutId ?? null);
+  // Once the editor is open, an archive learned later (a save refused as
+  // archived re-reads the wall) is the save's to explain, in one message. The
+  // route must not also leave with a second one.
+  // A ref, not state: noting it must not cost the route a second render.
+  const editorOpenedRef = useRef(false);
+  const refuseArchivedWall = wallArchived && !editorOpenedRef.current;
 
   const exitReason = useMemo(
-    () => createExitReason(params, activeBoard, activeBoardPending, resolvedBoard, wallArchived),
-    [params, activeBoard, activeBoardPending, resolvedBoard, wallArchived],
+    () => createExitReason(params, activeBoard, activeBoardPending, resolvedBoard, refuseArchivedWall),
+    [params, activeBoard, activeBoardPending, resolvedBoard, refuseArchivedWall],
   );
   const exitMessage = useMemo(() => {
     switch (exitReason) {
@@ -172,6 +183,11 @@ export default function CreateClimbRoute() {
   }, [exitReason, t]);
   useUnsupportedBoardExit(exitReason != null, exitMessage);
 
+  const showEditor = exitReason == null && resolvedBoard != null && wallArchiveSettled;
+  useEffect(() => {
+    if (showEditor) editorOpenedRef.current = true;
+  }, [showEditor]);
+
   // Leave the climb list visible under the transparent modal while it dismisses.
   // Still claim the picker while dismissing: dropping the claim here would let
   // the app-root picker flash in behind this still-mounted modal for the one
@@ -180,8 +196,9 @@ export default function CreateClimbRoute() {
     return <DevicePickerSheetHost registerExternal />;
   }
 
-  // The only honest spinner left: the active-board query hasn't answered yet.
-  if (!resolvedBoard) {
+  // The only honest spinners left: the active-board query hasn't answered yet,
+  // or a spray wall has not said whether it is archived.
+  if (!resolvedBoard || !wallArchiveSettled) {
     return (
       <>
         <View style={styles.loading}>

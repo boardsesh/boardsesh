@@ -7,9 +7,9 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import type { IconName } from '../icon-map';
-import { useSprayWallArchiveState } from '../../lib/spray/use-spray-wall-archive';
+import { useSprayWallArchiveState, useSprayWallHiddenAt } from '../../lib/spray/use-spray-wall-archive';
 import { SprayWallArchivedBanner } from '../spray-wall/SprayWallArchivedBanner';
-import { sprayDetailRows, sprayShareTarget, type SprayDetailRowKey } from './spray-detail-rows';
+import { sprayDetailRows, sprayShareTarget, viewerOwnsSprayWall, type SprayDetailRowKey } from './spray-detail-rows';
 
 type SprayWallActionsProps = {
   board: UserBoard | null;
@@ -32,6 +32,8 @@ export const SprayWallActions = memo(function SprayWallActions({
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const archive = useSprayWallArchiveState(board?.boardType, board?.layoutId ?? null);
+  const hiddenAt = useSprayWallHiddenAt(board?.boardType, board?.layoutId ?? null);
+  const isOwner = board != null && viewerOwnsSprayWall(board, viewerUserId);
   const maintenanceRows = useMemo(
     () => sprayDetailRows(board, { viewerUserId, archive }),
     [board, viewerUserId, archive],
@@ -51,10 +53,33 @@ export const SprayWallActions = memo(function SprayWallActions({
     if (wallUuid) onShare?.(wallUuid);
   }, [onShare, wallUuid]);
 
-  const banner = <SprayWallArchivedBanner boardName={board?.boardType} layoutId={board?.layoutId ?? null} />;
+  // An admin hid the wall after a report: only the owner can still see it, and
+  // a wall that quietly vanished for everyone else would read as data loss.
+  const hiddenNotice =
+    hiddenAt && isOwner ? (
+      <View
+        style={[styles.notice, { backgroundColor: systemColors.secondaryBackground }]}
+        accessible
+        accessibilityLabel={`${t('sprayHidden.title')}. ${t('sprayHidden.body')}`}
+      >
+        <Text variant="headline" color={systemColors.label}>
+          {t('sprayHidden.title')}
+        </Text>
+        <Text variant="subheadline" color={systemColors.secondaryLabel}>
+          {t('sprayHidden.body')}
+        </Text>
+      </View>
+    ) : null;
+  const banner = (
+    <>
+      {hiddenNotice}
+      <SprayWallArchivedBanner boardName={board?.boardType} layoutId={board?.layoutId ?? null} />
+    </>
+  );
   const showMaintenance = onOpenMaintenance != null && maintenanceRows.length > 0;
   const showShare = onShare != null && shareTarget != null;
-  if (!showMaintenance && !showShare) return archive?.archivedAt ? <View style={styles.block}>{banner}</View> : null;
+  if (!showMaintenance && !showShare)
+    return archive?.archivedAt || hiddenNotice ? <View style={styles.block}>{banner}</View> : null;
 
   const lockedRow = maintenanceRows.find((row) => row.key === 'holdsLocked');
 
@@ -76,7 +101,13 @@ export const SprayWallActions = memo(function SprayWallActions({
               <WallActionRow
                 icon="lock"
                 label={t('mobile.boardDetail.spray.holdsLocked')}
-                hint={t('mobile.boardDetail.spray.holdsLockedHint')}
+                // The owner can reset; an editor who is not the owner cannot,
+                // and is told who can.
+                hint={
+                  lockedRow.href
+                    ? t('mobile.boardDetail.spray.holdsLockedHint')
+                    : t('mobile.boardDetail.spray.holdsLockedEditorHint')
+                }
                 // Only the owner can act on it; for anyone else it says why
                 // Edit holds is gone and leads nowhere.
                 onPress={lockedRow.href ? holdsLocked : undefined}
@@ -167,6 +198,7 @@ const WallActionRow = memo(function WallActionRow({
 const styles = StyleSheet.create({
   block: { gap: spacing[3], marginVertical: spacing[3] },
   card: { borderRadius: borderRadius.lg, overflow: 'hidden' },
+  notice: { borderRadius: borderRadius.md, padding: spacing[3], gap: spacing[1] },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing[3], padding: spacing[4], minHeight: 44 },
   copy: { flex: 1, gap: spacing[1] },
   pressed: { opacity: 0.6 },

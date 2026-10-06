@@ -1753,6 +1753,10 @@ export function useCreateClimbScreen({
       // An admin's live heatmap counts the new climb at once; a downloaded board
       // catches up when the climb syncs down and the index rebuilds.
       void queryClient.invalidateQueries({ queryKey: ['holdHeatmap'] });
+      // A wall's first published climb locks its holds. Re-read the wall's
+      // archive state now, so its board sheet says "Holds are locked" at once
+      // rather than after the ten-minute revalidation.
+      if (!isDraft && board.boardName === SPRAY_BOARD_NAME) refreshSprayWall(board.layoutId);
       setJustSaved(true);
       // Seed the next climb's picker with what this one published at — a session
       // on one wall clusters hard around two or three grades.
