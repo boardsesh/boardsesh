@@ -93,8 +93,8 @@ export function providerSyncFamily(
 /**
  * Queue an interactive sync of one link inside the caller's transaction, and
  * point the control row's `pending_run_id` at it. Returns null, and queues
- * nothing, while the board's family is not listed in `BATCH_FAMILIES_ENABLED`:
- * until then the daemons are the only thing syncing, exactly as before.
+ * nothing, while the board's family is named in the `BATCH_FAMILIES_DISABLED`
+ * kill switch.
  *
  * Transactional on purpose: the job commits with the link. A throw anywhere
  * after this call rolls back the credential, the new generation and the job

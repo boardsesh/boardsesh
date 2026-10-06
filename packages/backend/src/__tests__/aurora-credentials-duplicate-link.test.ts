@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
 import { and, eq, sql } from 'drizzle-orm';
 
 // Encryption secret for encrypt()/decrypt() used inside the save services.
@@ -59,11 +59,16 @@ function mappingRows(userId: string, boardType: string) {
 
 describe('duplicate upstream account link guard', () => {
   beforeEach(async () => {
+    // These tests start no job queue, so keep the link from queueing a sync.
+    vi.stubEnv('BATCH_FAMILIES_DISABLED', 'aurora-user-sync,kilter-user-sync');
     signInMock.mockReset();
     signInMock.mockResolvedValue({ token: 'aurora-token', user_id: TENSION_UPSTREAM_ID });
     await clearFixtures();
     await insertUser(USER_A);
     await insertUser(USER_B);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   describe('Aurora (saveAuroraCredential)', () => {
