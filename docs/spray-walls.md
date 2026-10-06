@@ -1626,7 +1626,11 @@ Migration 0257 adds both. Nothing is dropped or rewritten.
   wall read.
 - **A published, live wall.** A wall with no published version gets
   `SPRAY_WALL_RESET_SOURCE_UNPUBLISHED`, an archived one gets
-  `SPRAY_WALL_ARCHIVED`, a deleted one is not found.
+  `SPRAY_WALL_ARCHIVED`, a deleted one is not found. A wall an admin has hidden
+  gets `SPRAY_WALL_RESET_HIDDEN` ("This wall is hidden while a report is
+  reviewed, so it can't be reset yet."): a reset copies the audience and
+  carries the followers over, so it would put the wall straight back in front
+  of them.
 - **Idempotent.** Under the owner's account lock and then the old wall's lock,
   it looks for a live clone of this wall that has not been published yet and
   returns it. A retry, or the owner coming back to the wizard, gets the same
@@ -1642,9 +1646,18 @@ Migration 0257 adds both. Nothing is dropped or rewritten.
   `pending_is_unlisted`, so the clone is private until its first publish, like
   any new wall (#5513). At that publish the clone gets the NARROWER of the
   parked pair and the old wall's visibility at that moment (private, then
-  unlisted, then public and unlisted, then public). An owner who makes the old
-  wall private mid-reset publishes a private new wall. If the old wall was
-  deleted in between, the parked pair applies.
+  unlisted, then public and unlisted, then public; a tie keeps the parked
+  pair). An owner who makes the old wall private mid-reset publishes a private
+  new wall, and an old wall made WIDER mid-reset does not widen the clone. An
+  old wall an admin hid in between counts as private. A deleted old wall still
+  bounds the clone by the flags it last had, so narrowing it and then deleting
+  it cannot widen the clone back.
+- **An explicit choice opts out of narrowing.** Once the owner states a
+  visibility for the clone itself through `updateSprayWall`, the parked pair is
+  dropped and the clone's own board row is what publishes, unnarrowed. Narrowing
+  exists to catch a stale parked copy of the old wall's audience, not to
+  overrule a choice the owner made for the new wall, and dropping the pair makes
+  the result the same whichever wall the owner edited first.
 - **Caps.** The clone skips the 10-wall live cap, because a reset nets to zero
   live walls once it publishes. It counts against
   `MAX_ARCHIVED_SPRAY_WALLS_PER_USER` (50) instead: the count is the owner's
@@ -1721,7 +1734,14 @@ Left out of:
   the climb sitemap with it, which is intended: the successor is the page worth
   crawling;
 - the 10-wall live cap in `createSprayWall`, `MAX_BOARDS_PER_ACCOUNT`, and a
-  gym's `boardCount`.
+  gym's `boardCount`;
+- a gym kiosk layout write (`assertLayoutBoardsInGym` refuses a slot or
+  leaderboard naming an archived wall, matching the read side).
+
+Deliberately still counted: a gym's `boardTypes` and angle chips, the gym
+directory's board type filter, and the admin duplicate and stray-board tools.
+The successor has the same type and angle, so the chips and the filter come
+out the same either way, and the admin tools are about rows, archived or not.
 
 Still returned by: `sprayWall`, `sprayWallByLayout`, `sprayWallRenderData`,
 `board`, `boardBySlug`, `mySprayWalls` (where the owner finds archived walls),
@@ -1753,6 +1773,18 @@ read is one `EXISTS` per wall, which stops at the first published climb.
 These fields are in the SDL only. The shared `SPRAY_WALL_FIELDS` selection does
 not ask for them yet, so a client built against it keeps working against a
 backend that has not deployed them.
+
+### Generated wall art
+
+Art (`spray_wall_versions.art`, migration 0256) is generated per published
+version and requested inside `publishDraftUnderLock`, so a reset clone's first
+publish requests art for the clone exactly as any new wall's does, and the clone
+copies the old wall's `render_settings` (including a generated `background`)
+like every other setting. If the clone's photo fails the quality gate, the
+read-side fallback draws the photo. An archived wall gets no new art: no version
+can be published on it, and the two backfills (`sprayWallArt` on read and
+`setSprayWallRenderSettings`) skip an archived wall. Its existing art keeps
+rendering.
 
 ### Known gaps
 
