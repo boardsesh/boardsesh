@@ -85,18 +85,6 @@ export const HIT_RADIUS_MULTIPLE = 1.4;
  */
 export const DEFAULT_RADIUS_FRACTION_OF_WIDTH = 0.02;
 
-/**
- * The four sizes Smaller and Bigger step through, as multiples of the wall's own
- * median hold radius. A wall's holds are all roughly one size, so "medium" IS the median and
- * the others are the jug / crimp spread around it.
- */
-export const SIZE_PRESETS = [
-  { key: 'S', scale: 0.62 },
-  { key: 'M', scale: 1 },
-  { key: 'L', scale: 1.45 },
-  { key: 'XL', scale: 2.1 },
-] as const;
-
 /** Smallest radius a hold may be left at, in board px. Below this it is not a tap target. */
 export const MIN_HOLD_RADIUS_BOARD_PX = 2;
 
@@ -379,6 +367,23 @@ export function holdFromTap(x: number, y: number, radius: number): HoldGeometry 
   return { cx: x, cy: y, r: Math.max(MIN_HOLD_RADIUS_BOARD_PX, radius), outline: null };
 }
 
+/**
+ * A hold centre kept on the photo, in board px. A press and hold or a move can
+ * carry the finger past the board's edge, and a hold centred off the photo is
+ * saved but drawn nowhere. A photo with no size yet clamps nothing.
+ */
+export function clampPointToPhoto(
+  x: number,
+  y: number,
+  photoWidth: number,
+  photoHeight: number,
+): { x: number; y: number } {
+  return {
+    x: photoWidth > 0 ? Math.min(Math.max(x, 0), photoWidth) : x,
+    y: photoHeight > 0 ? Math.min(Math.max(y, 0), photoHeight) : y,
+  };
+}
+
 /** The wall's own hold size, for a hold placed where there is nothing to measure. */
 export function defaultHoldRadius(holds: readonly HoldGeometry[], boardWidth: number): number {
   const radii = holds.map((hold) => hold.r).filter((radius) => radius > 0);
@@ -500,25 +505,199 @@ export function holdAtPoint<T extends HoldGeometry & { id: number }>(
 }
 
 /**
- * The next size preset up or down from a hold's current radius, or null at the
- * end of the ladder.
- *
- * Measured against the wall's median radius, because that is what the presets
- * are multiples of. A hold that sits between two presets (a traced one, or one
- * the detector sized) steps to the next preset strictly past it rather than to
- * the nearest, so "Bigger" never makes a hold smaller.
+ * One resize step: every size a hold can be given by hand is the wall's median
+ * radius times a whole power of this. The handle and the − / + steppers share
+ * the grid, so a drag and a run of presses land on the same sizes and "+" can
+ * never make a hold smaller.
  */
-export function stepHoldSize(radius: number, medianRadius: number, direction: 1 | -1): number | null {
-  if (!(medianRadius > 0) || !(radius > 0)) return null;
-  const current = radius / medianRadius;
-  // Two percent of slack, so a hold sitting exactly on a preset is read as ON it.
-  const slack = 0.02;
-  const ladder = direction === 1 ? SIZE_PRESETS : [...SIZE_PRESETS].reverse();
-  for (const preset of ladder) {
-    const beyond = direction === 1 ? preset.scale > current * (1 + slack) : preset.scale < current * (1 - slack);
-    if (beyond) return Math.max(MIN_HOLD_RADIUS_BOARD_PX, medianRadius * preset.scale);
+export const RESIZE_STEP_RATIO = 1.05;
+
+/**
+ * Screen points of handle travel per e-fold of size: `scale = exp(pt / gain)`.
+ * One 5% step is `120 × ln 1.05` ≈ 5.9 pt, so the grid ticks under a fingertip
+ * at a steady rate whatever the zoom or the hold's size.
+ */
+export const RESIZE_GAIN_PT = 120;
+
+/** The smallest a resize leaves a hold, as a fraction of the median radius. */
+export const RESIZE_MIN_MEDIAN_FRACTION = 0.3;
+/** The biggest a resize makes a hold, as a multiple of the median radius. */
+export const RESIZE_MAX_MEDIAN_MULTIPLE = 4;
+/** …and never past this fraction of the photo's shorter side, so one ring cannot swallow the wall. */
+export const RESIZE_MAX_PHOTO_FRACTION = 0.2;
+
+/**
+ * Grid positions within this many steps of a whole one count as ON it. A
+ * hold sized on the grid drifts off it the moment the median moves (resizing
+ * the median hold moves the median), and a stepper press must not then spend
+ * itself on a 1% nudge to the grid point it was already sitting on.
+ */
+const GRID_SLACK_STEPS = 0.25;
+
+/** Room for floating-point error when a bound sits exactly on a grid point. */
+const GRID_EPSILON = 1e-9;
+
+export type HoldRadiusBounds = { min: number; max: number };
+
+export type ResizeMagnet = 'original' | 'median';
+
+export type ResizeFromDragResult = {
+  /** The radius to show, in board px. */
+  r: number;
+  /**
+   * The grid step the radius sits on (`median × 1.05^stepIndex`), rounded for a
+   * magnet or a bound that sits between two.
+   */
+  stepIndex: number;
+  /** The snap point that captured the drag, if one did. */
+  magnet: ResizeMagnet | null;
+  /** The drag is pressing against a bound and the radius is clamped to it. */
+  atBound: boolean;
+};
+
+/**
+ * The sizes a hand resize may give a hold, in board px.
+ *
+ * Min: `max(MIN_HOLD_RADIUS_BOARD_PX, 0.3 × median)`, so a ring stays a tap
+ * target. Max: `min(4 × median, 0.2 × the photo's shorter side)`. A photo with
+ * no size yet (or a median of nothing) only loses the term it cannot supply;
+ * with neither, and whenever the terms cross, the max collapses onto the min.
+ *
+ * None of this needs to guard the ring contract: an outline is stored in
+ * radius units, so a resize changes `r` alone and the ring's coordinates —
+ * and with them `MAX_RING_COORDINATE` — are untouched.
+ */
+export function holdRadiusBounds(median: number, photoWidth: number, photoHeight: number): HoldRadiusBounds {
+  'worklet';
+  const safeMedian = median > 0 ? median : 0;
+  const min = Math.max(MIN_HOLD_RADIUS_BOARD_PX, safeMedian * RESIZE_MIN_MEDIAN_FRACTION);
+  let max = safeMedian > 0 ? safeMedian * RESIZE_MAX_MEDIAN_MULTIPLE : Infinity;
+  const shorterSide = Math.min(photoWidth, photoHeight);
+  if (shorterSide > 0) max = Math.min(max, shorterSide * RESIZE_MAX_PHOTO_FRACTION);
+  // Nothing to measure against at all is no room to resize, not unlimited room.
+  if (!(max >= min) || !Number.isFinite(max)) max = min;
+  return { min, max };
+}
+
+/** A radius's position on the grid, in steps from the median. Not rounded. */
+function gridPosition(radius: number, median: number): number {
+  'worklet';
+  return Math.log(radius / median) / Math.log(RESIZE_STEP_RATIO);
+}
+
+function gridRadius(stepIndex: number, median: number): number {
+  'worklet';
+  return median * Math.pow(RESIZE_STEP_RATIO, stepIndex);
+}
+
+/** The nearest grid size to a radius: `median × 1.05ⁿ`. A radius or median of nothing comes back unchanged. */
+export function snapRadiusToGrid(radius: number, median: number): number {
+  'worklet';
+  if (!(median > 0) || !(radius > 0)) return radius;
+  return gridRadius(Math.round(gridPosition(radius, median)), median);
+}
+
+/**
+ * One − or + press: the next grid size strictly past the hold's own, inside the
+ * bounds, or null when there is none that way.
+ *
+ * "Strictly past" is what keeps a press honest. A hold that sits between two
+ * grid sizes (traced, detected, or left behind by a median that moved) goes to
+ * the next one in the direction pressed, never back to the one behind it, so
+ * "+" can never shrink a hold. A hold already outside the bounds (a merge can
+ * make one) steps back inside on the first press towards them.
+ */
+export function stepHoldRadius(
+  radius: number,
+  median: number,
+  direction: 1 | -1,
+  bounds: HoldRadiusBounds,
+): number | null {
+  if (!(median > 0) || !(radius > 0)) return null;
+  const position = gridPosition(radius, median);
+  const lowestStep = Math.ceil(gridPosition(bounds.min, median) - GRID_EPSILON);
+  const highestStep = Math.floor(gridPosition(bounds.max, median) + GRID_EPSILON);
+  if (direction === 1) {
+    const target = Math.max(Math.floor(position + GRID_SLACK_STEPS) + 1, lowestStep);
+    return target <= highestStep ? gridRadius(target, median) : null;
   }
-  return null;
+  const target = Math.min(Math.ceil(position - GRID_SLACK_STEPS) - 1, highestStep);
+  return target >= lowestStep ? gridRadius(target, median) : null;
+}
+
+/**
+ * Several {@link stepHoldRadius} presses at once, stopping early at a bound:
+ * the screen reader's bigger / smaller actions, where one swipe per 5% would
+ * take 14 swipes to double a hold. Null when not even one step fits.
+ */
+export function stepHoldRadiusBy(
+  radius: number,
+  median: number,
+  direction: 1 | -1,
+  bounds: HoldRadiusBounds,
+  steps: number,
+): number | null {
+  let result: number | null = null;
+  let current = radius;
+  for (let step = 0; step < steps; step += 1) {
+    const next = stepHoldRadius(current, median, direction, bounds);
+    if (next == null) break;
+    result = next;
+    current = next;
+  }
+  return result;
+}
+
+/**
+ * The resize handle's drag → a radius, on the UI thread.
+ *
+ * `projectedPt` is the finger's travel along the handle's outward direction, in
+ * screen points (`projectOnto`); `exp(pt / RESIZE_GAIN_PT)` turns it into a
+ * scale, so the same travel means the same change at any zoom and on any size
+ * of hold. The answer snaps to the grid, with two magnets that each capture
+ * within half a step: the size the hold had when it was grabbed (so a drag that
+ * comes back changes nothing) and the median (the wall's typical hold). When
+ * both are in reach the nearer wins, and on a tie the original does.
+ *
+ * Bounds clamp everything but the original: a hold that was already outside
+ * them (a wide merge) can always be dragged back to the size it had, and a
+ * drag away from the bounds leaves it at that size rather than jumping it the
+ * other way — the radius only ever moves the way the finger does.
+ */
+export function resizeFromDrag(
+  projectedPt: number,
+  startRadius: number,
+  median: number,
+  bounds: HoldRadiusBounds,
+): ResizeFromDragResult {
+  'worklet';
+  if (!(median > 0) || !(startRadius > 0)) {
+    return { r: startRadius, stepIndex: 0, magnet: 'original', atBound: false };
+  }
+  const raw = startRadius * Math.exp(projectedPt / RESIZE_GAIN_PT);
+  const position = gridPosition(raw, median);
+  const originalPosition = gridPosition(startRadius, median);
+  const fromOriginal = Math.abs(position - originalPosition);
+  const fromMedian = Math.abs(position);
+  if (fromOriginal <= 0.5 && fromOriginal <= fromMedian) {
+    return { r: startRadius, stepIndex: Math.round(originalPosition), magnet: 'original', atBound: false };
+  }
+  let stepIndex = Math.round(position);
+  let magnet: ResizeMagnet | null = null;
+  if (fromMedian <= 0.5) {
+    stepIndex = 0;
+    magnet = 'median';
+  }
+  const radius = gridRadius(stepIndex, median);
+  if (radius >= bounds.min && radius <= bounds.max) return { r: radius, stepIndex, magnet, atBound: false };
+  const clamped = radius < bounds.min ? bounds.min : bounds.max;
+  // A hold that started outside the bounds would be clamped AGAINST the drag
+  // (dragging a wide merge out would shrink it to the max): it stays the size
+  // it was until the finger turns back towards the bounds.
+  if ((projectedPt > 0 && clamped < startRadius) || (projectedPt < 0 && clamped > startRadius)) {
+    return { r: startRadius, stepIndex: Math.round(originalPosition), magnet: 'original', atBound: true };
+  }
+  return { r: clamped, stepIndex: Math.round(gridPosition(clamped, median)), magnet: null, atBound: true };
 }
 
 /** The widest side of a flat point list's bounding box, in board px. Zero with no points. */
