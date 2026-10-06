@@ -6639,6 +6639,14 @@ export type Query = {
   sprayWallDetection?: Maybe<SprayWallDetection>;
   sprayWallDetectionForVersion?: Maybe<SprayWallDetection>;
   /**
+   * How many climbs set on this wall use each of the given holds, for the hold
+   * editor to ask before it removes (or moves) one that published climbs use.
+   * One row per distinct requested hold, zeros included. Hidden climbs and
+   * climbs a full reset retired are not counted. Same gate as editing the
+   * wall's holds; refused on an archived wall. At most 500 holds per call.
+   */
+  sprayWallHoldUsage: Array<SprayWallHoldUsage>;
+  /**
    * Everything needed to render a wall at one version: the photo, the homography
    * and the holds alive at that version. Omit `version` for the published one.
    *
@@ -7396,6 +7404,12 @@ export type QuerySprayWallDetectionArgs = {
 /** Root query type for all read operations. */
 export type QuerySprayWallDetectionForVersionArgs = {
   versionId: Scalars['ID']['input'];
+  wallUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySprayWallHoldUsageArgs = {
+  holdIds: Array<Scalars['Int']['input']>;
   wallUuid: Scalars['ID']['input'];
 };
 
@@ -9161,13 +9175,6 @@ export type SprayWall = {
   hiddenAt?: Maybe<Scalars['String']['output']>;
   /** Holds alive on the current version. */
   holdCount: Scalars['Int']['output'];
-  /**
-   * True for an archived wall, and for a wall with at least one published climb
-   * (draft climbs do not count). Enforced: on a wall that reads true, every hold
-   * add, move and remove is refused with SPRAY_WALL_HOLDS_LOCKED (or
-   * SPRAY_WALL_ARCHIVED). To change the holds, reset the wall (`resetSprayWall`).
-   */
-  holdsLocked: Scalars['Boolean']['output'];
   /** The wall's board_layouts id. Also its board_product_sizes id: a wall has exactly one size, itself. */
   layoutId: Scalars['Int']['output'];
   /**
@@ -9370,6 +9377,16 @@ export type SprayWallHoldInput = {
   outline?: InputMaybe<Array<Scalars['Float']['input']>>;
   r: Scalars['Int']['input'];
   source?: InputMaybe<SprayHoldSource>;
+};
+
+/** How many climbs on a wall use one hold. See `sprayWallHoldUsage`. */
+export type SprayWallHoldUsage = {
+  __typename?: 'SprayWallHoldUsage';
+  /** Draft climbs that use the hold. */
+  draftClimbCount: Scalars['Int']['output'];
+  holdId: Scalars['Int']['output'];
+  /** Published climbs that use the hold. Removing it gives each of them a lost hold. */
+  publishedClimbCount: Scalars['Int']['output'];
 };
 
 /** Keep this hold, optionally refreshing its silhouette from the new photo. */
@@ -11162,6 +11179,7 @@ export type ResolversTypes = ResolversObject<{
   SprayWallDetectionInput: SprayWallDetectionInput;
   SprayWallHold: ResolverTypeWrapper<SprayWallHold>;
   SprayWallHoldInput: SprayWallHoldInput;
+  SprayWallHoldUsage: ResolverTypeWrapper<SprayWallHoldUsage>;
   SprayWallKeptDecisionInput: SprayWallKeptDecisionInput;
   SprayWallModerationResult: ResolverTypeWrapper<SprayWallModerationResult>;
   SprayWallMoveSuggestion: ResolverTypeWrapper<SprayWallMoveSuggestion>;
@@ -11609,6 +11627,7 @@ export type ResolversParentTypes = ResolversObject<{
   SprayWallDetectionInput: SprayWallDetectionInput;
   SprayWallHold: SprayWallHold;
   SprayWallHoldInput: SprayWallHoldInput;
+  SprayWallHoldUsage: SprayWallHoldUsage;
   SprayWallKeptDecisionInput: SprayWallKeptDecisionInput;
   SprayWallModerationResult: SprayWallModerationResult;
   SprayWallMoveSuggestion: SprayWallMoveSuggestion;
@@ -15550,6 +15569,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QuerySprayWallDetectionForVersionArgs, 'versionId' | 'wallUuid'>
   >;
+  sprayWallHoldUsage?: Resolver<
+    Array<ResolversTypes['SprayWallHoldUsage']>,
+    ParentType,
+    ContextType,
+    RequireFields<QuerySprayWallHoldUsageArgs, 'holdIds' | 'wallUuid'>
+  >;
   sprayWallRenderData?: Resolver<
     Maybe<ResolversTypes['SprayWallRenderData']>,
     ParentType,
@@ -16517,7 +16542,6 @@ export type SprayWallResolvers<
   currentVersion?: Resolver<Maybe<ResolversTypes['SprayWallVersion']>, ParentType, ContextType>;
   hiddenAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   holdCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
-  holdsLocked?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   publicPhotoUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   referenceHeight?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
@@ -16578,6 +16602,16 @@ export type SprayWallHoldResolvers<
   r?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   removedVersion?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   source?: Resolver<ResolversTypes['SprayHoldSource'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayWallHoldUsageResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayWallHoldUsage'] = ResolversParentTypes['SprayWallHoldUsage'],
+> = ResolversObject<{
+  draftClimbCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  holdId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  publishedClimbCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -17386,6 +17420,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   SprayWallArt?: SprayWallArtResolvers<ContextType>;
   SprayWallDetection?: SprayWallDetectionResolvers<ContextType>;
   SprayWallHold?: SprayWallHoldResolvers<ContextType>;
+  SprayWallHoldUsage?: SprayWallHoldUsageResolvers<ContextType>;
   SprayWallModerationResult?: SprayWallModerationResultResolvers<ContextType>;
   SprayWallMoveSuggestion?: SprayWallMoveSuggestionResolvers<ContextType>;
   SprayWallPhoto?: SprayWallPhotoResolvers<ContextType>;

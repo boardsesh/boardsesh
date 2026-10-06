@@ -804,6 +804,15 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     sprayWallArt(uuid: ID!, version: Int): SprayWallArt
 
+    """
+    How many climbs set on this wall use each of the given holds, for the hold
+    editor to ask before it removes (or moves) one that published climbs use.
+    One row per distinct requested hold, zeros included. Hidden climbs and
+    climbs a full reset retired are not counted. Same gate as editing the
+    wall's holds; refused on an archived wall. At most 500 holds per call.
+    """
+    sprayWallHoldUsage(wallUuid: ID!, holdIds: [Int!]!): [SprayWallHoldUsage!]!
+
     "Every wall the caller owns, newest first. Includes walls with no published version."
     mySprayWalls: [SprayWall!]!
 

@@ -210,13 +210,6 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     unfinished.
     """
     replacedByWallUuid: ID
-    """
-    True for an archived wall, and for a wall with at least one published climb
-    (draft climbs do not count). Enforced: on a wall that reads true, every hold
-    add, move and remove is refused with SPRAY_WALL_HOLDS_LOCKED (or
-    SPRAY_WALL_ARCHIVED). To change the holds, reset the wall (\`resetSprayWall\`).
-    """
-    holdsLocked: Boolean!
   }
 
   "Where a version's generated wall looks are."
@@ -317,6 +310,15 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     hideLocation: Boolean
     "Accepted and ignored. Only a climb's setter edits it."
     climbEditPolicy: SprayClimbEditPolicy @deprecated(reason: "Retired. Accepted and ignored.")
+  }
+
+  "How many climbs on a wall use one hold. See \`sprayWallHoldUsage\`."
+  type SprayWallHoldUsage {
+    holdId: Int!
+    "Published climbs that use the hold. Removing it gives each of them a lost hold."
+    publishedClimbCount: Int!
+    "Draft climbs that use the hold."
+    draftClimbCount: Int!
   }
 
   input ResetSprayWallInput {

@@ -1351,8 +1351,10 @@ The only way to reset a wall. Changing a live wall in place turned out to be har
 to follow for climbers, so a reset is a **clone**: a new wall with the old wall's
 settings, a new photo and holds marked from scratch. When the new wall is
 published, the old one is **archived**. The in-place reset is retired (see
-[Resets](#resets)), and a live wall's holds lock at its first published climb
-(see [Holds lock at the first published climb](#holds-lock-at-the-first-published-climb)).
+[Resets](#resets)).
+
+Holds stay editable on a live wall, published climbs or not (see
+[Editing the holds of a live wall](#editing-the-holds-of-a-live-wall)).
 
 ### The two columns
 
@@ -1512,11 +1514,16 @@ An offline device learns a wall is archived from the wall payload
 | `archivedAt` | ISO time of the archive, or null. |
 | `resetOfWallUuid` | The wall this one was cloned from, if it is not deleted, and only for a viewer who can see that wall without its uuid: its owner, a member of its gym, or anyone when it is public. |
 | `replacedByWallUuid` | The live, PUBLISHED clone that replaced this wall, null while the clone is unfinished. Shown to a viewer who can see the successor without its uuid, plus one carry-forward: when the old wall is unlisted and NOT public, and the successor is unlisted too, someone holding the old share link is shown the new one. Old to new only. |
-| `holdsLocked` | True when the wall is archived or has at least one published climb (`is_draft = false`). Drafts do not count. Enforced: see [Holds lock at the first published climb](#holds-lock-at-the-first-published-climb). |
 
-`mySprayWalls` and `gymSprayWalls` read these fields for every wall in three
-queries (`loadSprayWallArchiveFacts`), not three per wall. The `holdsLocked`
-read is one `EXISTS` per wall, which stops at the first published climb.
+`mySprayWalls` and `gymSprayWalls` read these fields for every wall in two
+queries (`loadSprayWallArchiveFacts`), not two per wall.
+
+`sprayWallHoldUsage(wallUuid, holdIds)` answers one row per distinct requested
+hold (at most 500 per call): `publishedClimbCount` (listed, non-draft) and
+`draftClimbCount`, from `board_climb_holds` joined to this wall's climbs.
+Hidden climbs and climbs a full reset retired are not counted. It takes the
+same gate as editing the holds and refuses an archived wall with
+`SPRAY_WALL_ARCHIVED`.
 
 These fields are in the SDL only. The shared `SPRAY_WALL_FIELDS` selection does
 not ask for them yet, so a client built against it keeps working against a
