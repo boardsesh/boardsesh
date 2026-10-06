@@ -1196,6 +1196,8 @@ export async function applyLogs(
  *
  * Logs and ratings flush in separate transactions in either order, so both
  * phases call this for the keys they wrote. A tick is written only when:
+ *   - it is a send or flash (attempts never carry a grade —
+ *     docs/ascents-and-attempts.md);
  *   - it is linked to Kilter (`kilter_id` set) and carries no local edit
  *     newer than its last sync (`updated_at <= kilter_synced_at`, the same
  *     guard applyLogs uses) — a Boardsesh-side grade edit is never stomped;
@@ -1204,9 +1206,9 @@ export async function applyLogs(
  *   - the rating is live (not detached) and names a real Kilter grade. A NULL
  *     or unknown grade never clears one.
  *
- * kilter_synced_at is restamped with a time taken inside the transaction, so
- * it stays >= the updated_at the set_updated_at trigger writes (the
- * transaction's NOW()). Otherwise the copy itself would read as a local edit.
+ * kilter_synced_at is restamped with max(this host's clock, the DB's NOW()),
+ * so it stays >= the updated_at the set_updated_at trigger writes (NOW()).
+ * Otherwise the copy itself would read as a local edit.
  *
  * Returns the (climb, angle) keys whose ticks changed, for the caller's
  * board_climb_stats recompute.
@@ -1224,7 +1226,10 @@ export async function applyRatingGradesToTicks(
   const result = await tx.execute(sql`
     UPDATE boardsesh_ticks AS t SET
       difficulty = r.difficulty_grade_id,
-      kilter_synced_at = ${syncedAt}::timestamp,
+      -- GREATEST with the DB clock: the trigger stamps updated_at from NOW(),
+      -- so a DB clock running ahead of this host must not make the copy read
+      -- as a local edit.
+      kilter_synced_at = GREATEST(${syncedAt}::timestamp, now()::timestamp),
       updated_at = ${syncedAt}::timestamp
     FROM board_climb_ratings AS r,
       jsonb_to_recordset(${payload}::jsonb) AS k(climb_uuid text, angle integer)
@@ -1232,6 +1237,7 @@ export async function applyRatingGradesToTicks(
       AND t.board_type = ${KILTER_BOARD_TYPE}
       AND t.climb_uuid = k.climb_uuid
       AND t.angle = k.angle
+      AND t.status IN ('flash', 'send')
       AND t.kilter_id IS NOT NULL
       AND t.kilter_synced_at IS NOT NULL
       AND t.updated_at <= t.kilter_synced_at

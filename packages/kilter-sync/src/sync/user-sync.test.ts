@@ -928,7 +928,7 @@ describe('applyLogs — copies the climber’s Kilter grade (#6182)', () => {
     const copies = calls.filter((c) => c.kind === 'gradeCopy');
     expect(copies).toHaveLength(1);
     expect(gradeCopyBinding(copies[0])).toEqual({ userId: 'user-1', keys: [{ climb_uuid: 'climb-1', angle: 40 }] });
-    // The copy runs before the recompute, so the stats see the new grade.
+    // The copy runs after the insert, so the new tick is there to receive the grade.
     expect(calls.findIndex((c) => c.kind === 'gradeCopy')).toBeGreaterThan(calls.findIndex((c) => c.kind === 'insert'));
     expect(recomputedKeys()).toEqual([{ climbUuid: 'climb-1', angle: 40 }]);
   });

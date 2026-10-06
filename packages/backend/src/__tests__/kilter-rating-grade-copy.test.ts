@@ -44,7 +44,7 @@ async function queryRows<T>(tx: Tx, query: ReturnType<typeof sql>): Promise<T[]>
 const ANGLE = 40;
 const noLog = () => {};
 
-function logOp(logUuid: string, climbUuid: string): PowerSyncOp {
+function logOp(logUuid: string, climbUuid: string, topped: 0 | 1 = 1): PowerSyncOp {
   return {
     op_id: '1',
     op: 'PUT',
@@ -60,7 +60,7 @@ function logOp(logUuid: string, climbUuid: string): PowerSyncOp {
       product_layout_uuid: null,
       angle: ANGLE,
       flashed: 0,
-      topped: 1,
+      topped,
       attempts: 3,
       created_at: '2026-10-01T18:00:00.000Z',
     },
@@ -127,9 +127,9 @@ function recorder() {
   return { keys, recompute };
 }
 
-async function pullLog(tx: Tx, userId: string, logUuid: string, climbUuid: string) {
+async function pullLog(tx: Tx, userId: string, logUuid: string, climbUuid: string, topped: 0 | 1 = 1) {
   const { keys, recompute } = recorder();
-  await applyLogs(tx as unknown as ApplyTx, userId, [logOp(logUuid, climbUuid)], new Map(), noLog, recompute);
+  await applyLogs(tx as unknown as ApplyTx, userId, [logOp(logUuid, climbUuid, topped)], new Map(), noLog, recompute);
   return keys;
 }
 
@@ -245,7 +245,7 @@ describe('kilter-sync copies the climber’s Kilter grade onto pulled ticks (#61
     });
   });
 
-  it('no grade, a placeholder grade, an unknown grade or a detached rating leaves the tick alone', async () => {
+  it('no grade, a placeholder grade, an unknown grade, an attempt or a detached rating leaves the tick alone', async () => {
     await inRolledBackTransaction(async (tx) => {
       const tag = `grade-${Date.now()}-f`;
       const userId = await seed(tx, tag);
@@ -259,6 +259,12 @@ describe('kilter-sync copies the climber’s Kilter grade onto pulled ticks (#61
         await pullRating(tx, userId, `${climb}-rating`, climb, grade);
         expect((await tickState(tx, userId, climb)).difficulty).toBeNull();
       }
+
+      // An attempt never carries a grade, even when the climber rated the climb.
+      const attempt = `${tag}-attempt`;
+      await pullLog(tx, userId, `${attempt}-log`, attempt, 0);
+      await pullRating(tx, userId, `${attempt}-rating`, attempt, 22);
+      expect((await tickState(tx, userId, attempt)).difficulty).toBeNull();
 
       // Detached: upstream deleted the rating. Its stale grade must not reach the tick.
       const detached = `${tag}-detached`;
