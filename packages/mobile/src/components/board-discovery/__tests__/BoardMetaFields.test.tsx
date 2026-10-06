@@ -150,6 +150,10 @@ describe('SprayWallVisibilityField', () => {
     fireEvent.click(getByTestId('segment-unlisted'));
     expect(builder.setIsPublic).toHaveBeenLastCalledWith(false);
     expect(builder.setIsUnlisted).toHaveBeenLastCalledWith(true);
+
+    fireEvent.click(getByTestId('segment-public'));
+    expect(builder.setIsPublic).toHaveBeenLastCalledWith(true);
+    expect(builder.setIsUnlisted).toHaveBeenLastCalledWith(false);
   });
 
   it('explains Link only', () => {
