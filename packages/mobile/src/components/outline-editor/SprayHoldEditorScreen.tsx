@@ -67,7 +67,7 @@ import {
   sprayShortcutCommands,
   type SprayShortcutId,
 } from './spray-editor-shortcuts';
-import type { NativePencilGesture } from '../../../modules/spray-editor-input/src/index';
+import type { NativePencilGesture, NativeShortcutCommand } from '../../../modules/spray-editor-input/src/index';
 import { pencilStrokeTarget } from './pencil-session';
 import { useSprayPencilMode } from './use-spray-pencil-mode';
 import { useSprayRailSide } from './use-spray-rail-side';
@@ -161,6 +161,8 @@ const NO_HOLD_TARGETS: BoardHoldTarget[] = [];
 const NO_SELECTION: number[] = [];
 const NO_EDITOR_HOLDS: SprayEditorHold[] = [];
 const NO_READING_ORDER: number[] = [];
+/** A read-only viewer: the scope is still the root, with nothing to answer. */
+const NO_SHORTCUT_COMMANDS: NativeShortcutCommand[] = [];
 
 /** The screen-reader actions the wall always has. See `SprayWallAccessibility`. */
 const WALL_A11Y_ACTIONS: readonly AccessibilityActionInfo[] = [
@@ -334,8 +336,11 @@ export function SprayHoldEditorScreen({
   const pencilSeenRef = useRef(pencil.pencilSeen);
   pencilSeenRef.current = pencil.pencilSeen;
   const [railSide, setRailSide] = useSprayRailSide(tablet);
-  /** The tablet rail's wall-wide menu. The phone's lives inside its bottom bar. */
-  const [tabletMenuOpen, setTabletMenuOpen] = useState(false);
+  /**
+   * The wall-wide menu: the rail's More on iPad, the count capsule on a phone.
+   * Kept here for both so Esc can close it.
+   */
+  const [menuOpen, setMenuOpen] = useState(false);
   /**
    * The Apple Pencil squeeze palette, open at the Pencil tip (null x/y: the
    * Pencil was not hovering, so mid-screen). iPad only. See `SprayPencilPalette`.
@@ -1412,8 +1417,8 @@ export function SprayHoldEditorScreen({
 
   const handleFitWall = useCallback(() => boardControlRef.current?.resetZoom(), []);
   const handlePutDown = useCallback(() => dispatch({ type: 'SELECT', id: null }), []);
-  const toggleTabletMenu = useCallback(() => setTabletMenuOpen((open) => !open), []);
-  const closeTabletMenu = useCallback(() => setTabletMenuOpen(false), []);
+  const toggleMenu = useCallback(() => setMenuOpen((open) => !open), []);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
 
   /**
    * The inspector's Previous / Next: pick the neighbouring ring in reading order
@@ -1557,6 +1562,9 @@ export function SprayHoldEditorScreen({
     t,
   ]);
 
+  /** One rule for the bar, the rail, the Pencil palette and ⌘Z. */
+  const canUndo = state.past.length > 0 || (tool === 'add' && cornerCount > 0);
+
   // ---- Keyboard shortcuts and the Apple Pencil's own gestures ----
   // `modules/spray-editor-input` reports a shortcut id or a Pencil double tap /
   // squeeze; `spray-editor-shortcuts.ts` decides what it means right now, and
@@ -1587,12 +1595,12 @@ export function SprayHoldEditorScreen({
       canEdit,
       tool,
       selectedRole: selectedHold ? holdRole(selectedHold) : null,
-      canUndo: state.past.length > 0 || (tool === 'add' && cornerCount > 0),
+      canUndo,
       canRedo: state.future.length > 0,
       canStep: readingOrder.length > 1,
       // The primary button's own enabled rule.
       primaryReady: cornerCount === 0 && counts.on > 0,
-      popoverOpen: pencilPalette != null || tabletMenuOpen,
+      popoverOpen: pencilPalette != null || menuOpen,
     });
     switch (action) {
       case 'undo':
@@ -1609,7 +1617,7 @@ export function SprayHoldEditorScreen({
         return;
       case 'closePopover':
         setPencilPalette(null);
-        setTabletMenuOpen(false);
+        setMenuOpen(false);
         return;
       case 'leaveAdd':
         leaveAddMode();
@@ -2347,7 +2355,6 @@ export function SprayHoldEditorScreen({
     if (hintLine) AccessibilityInfo.announceForAccessibility(hintLine);
   }, [hintLine]);
 
-  const canUndo = state.past.length > 0 || (tool === 'add' && cornerCount > 0);
   const undoToastNode =
     undoToast && canEdit ? (
       <SprayUndoToast
@@ -2395,10 +2402,16 @@ export function SprayHoldEditorScreen({
     );
   }
 
+  // The editor's root is the keyboard and Pencil scope itself: the native view
+  // has to be an ancestor of every view a touch lands on (see
+  // `SprayEditorKeyScope`). Read-only, it registers no shortcut.
   return (
-    <View
+    <SprayEditorKeyScope
       style={[styles.container, { backgroundColor: systemColors.background, marginTop: headerInset }]}
       onLayout={handleAreaLayout}
+      commands={viewerCanEdit ? shortcutCommands : NO_SHORTCUT_COMMANDS}
+      onShortcut={handleShortcut}
+      onPencilGesture={handlePencilGesture}
     >
       {boardRender.width > 0 ? (
         <View style={[styles.boardSlot, { height: boardRender.slotHeight }]}>
@@ -2470,13 +2483,13 @@ export function SprayHoldEditorScreen({
               pencilOnly={pencil.pencilOnly}
               onTogglePencilOnly={pencil.togglePencilOnly}
               onFit={handleFitWall}
-              onMore={toggleTabletMenu}
-              moreExpanded={tabletMenuOpen && canEdit}
+              onMore={toggleMenu}
+              moreExpanded={menuOpen && canEdit}
               onHelp={viewerCanEdit && !SCREENSHOT_MODE ? hints.replay : undefined}
             />
           }
           menu={
-            tabletMenuOpen && canEdit ? (
+            menuOpen && canEdit ? (
               <SprayEditorMenu
                 counts={counts}
                 showMaybes={showMaybes}
@@ -2485,7 +2498,7 @@ export function SprayHoldEditorScreen({
                 onKeepMaybes={handleKeepMaybes}
                 onToggleMaybes={handleToggleMaybes}
                 onStartOver={handleStartOver}
-                onClose={closeTabletMenu}
+                onClose={closeMenu}
               />
             ) : null
           }
@@ -2590,37 +2603,12 @@ export function SprayHoldEditorScreen({
             onToggleMaybes={handleToggleMaybes}
             onStartOver={handleStartOver}
             onPrimary={handlePrimary}
+            menuOpen={menuOpen}
+            onToggleMenu={toggleMenu}
+            onCloseMenu={closeMenu}
           />
         </>
       )}
-
-      {/* Last, so it draws over the chrome as well as the board: it is only up
-          while a finger is on the wall, and it takes no touches. */}
-      {loupeContent && boardRender.width > 0 ? (
-        <SprayLoupe
-          feed={loupeFeed}
-          magnificationSV={loupeMagnificationSV}
-          clipOffsetX={(area.width - boardRender.width) / 2}
-          clipOffsetY={boardTopInContainer}
-          hostWidth={area.width}
-          hostHeight={area.height}
-          topSafe={LOUPE_TOP_SAFE}
-          renderWidth={boardRender.width}
-          renderHeight={boardRender.height}
-        >
-          {loupeContent}
-        </SprayLoupe>
-      ) : null}
-
-      {/* Over everything and touch-transparent: the hardware keyboard and the
-          Pencil's double tap and squeeze. Nothing on a binary without the module. */}
-      {viewerCanEdit ? (
-        <SprayEditorKeyScope
-          commands={shortcutCommands}
-          onShortcut={handleShortcut}
-          onPencilGesture={handlePencilGesture}
-        />
-      ) : null}
 
       {pencilPalette && tablet && canEdit ? (
         <SprayPencilPalette
@@ -2642,7 +2630,25 @@ export function SprayHoldEditorScreen({
           onClose={closePencilPalette}
         />
       ) : null}
-    </View>
+
+      {/* Last, so it draws over the chrome as well as the board: it is only up
+          while a finger is on the wall, and it takes no touches. */}
+      {loupeContent && boardRender.width > 0 ? (
+        <SprayLoupe
+          feed={loupeFeed}
+          magnificationSV={loupeMagnificationSV}
+          clipOffsetX={(area.width - boardRender.width) / 2}
+          clipOffsetY={boardTopInContainer}
+          hostWidth={area.width}
+          hostHeight={area.height}
+          topSafe={LOUPE_TOP_SAFE}
+          renderWidth={boardRender.width}
+          renderHeight={boardRender.height}
+        >
+          {loupeContent}
+        </SprayLoupe>
+      ) : null}
+    </SprayEditorKeyScope>
   );
 }
 

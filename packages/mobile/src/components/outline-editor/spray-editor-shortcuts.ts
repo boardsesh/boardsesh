@@ -95,7 +95,7 @@ export type SprayShortcutContext = {
   canStep: boolean;
   /** The primary button would take a press: there are holds ON and no Corners outline open. */
   primaryReady: boolean;
-  /** The Pencil palette or the iPad's wall-wide menu is open. Escape closes it first. */
+  /** The Pencil palette or the wall-wide menu (rail or count capsule) is open. Escape closes it first. */
   popoverOpen: boolean;
 };
 

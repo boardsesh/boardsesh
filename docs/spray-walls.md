@@ -504,9 +504,12 @@ in every OSS release level and cannot be turned on from JS. So both platforms
 use one local Expo module, `packages/mobile/modules/spray-editor-input`, which
 ships on the `release/next` train because it moves the native fingerprint.
 
-- **The native half only turns keys into ids.** `SprayEditorKeyScope` mounts the
-  module's view over the whole editor (touch-transparent, hidden from screen
-  readers) while a climber who can edit has it open. JS hands it the shortcut
+- **The native half only turns keys into ids.** `SprayEditorKeyScope` is the
+  editor's root view, so the module's view is the ancestor of everything a
+  touch lands on. It is `box-none`, not `none`: on iOS, Fabric turns `none` into
+  `userInteractionEnabled = NO`, and UIKit can then refuse it first responder
+  and never hit-tests it, which would silence both the key commands and the
+  Pencil interaction. For a climber who can edit, JS hands it the shortcut
   list (`sprayShortcutCommands`: keys, plus the titles the iPad's Cmd-hold
   overlay shows). iOS registers each one as a `UIKeyCommand` on a view that
   makes itself first responder. Android matches key presses on a view that
@@ -537,15 +540,22 @@ ships on the `release/next` train because it moves the native fingerprint.
 |---|---|---|
 | ⌘Z / ⇧⌘Z | Undo / Redo | there is something to undo or redo |
 | Delete or Backspace | switch the picked ring off; on a ghost, delete it | Mark, a ring picked |
-| Esc | close the Pencil palette or the iPad menu; otherwise leave Add, cancel Trace or Join, or put the ring down | |
+| Esc | close the Pencil palette or the wall menu; otherwise leave Add, cancel Trace or Join, or put the ring down | |
 | A | Add on or off | |
 | − / = (or +) | smaller / bigger | Mark, a ring picked |
 | [ / ] | previous / next ring in reading order | Mark, more than one ring |
 | ⌘↩ | the primary button | the button's own enabled rule |
 
+Each key is matched as its US layout types it, with exactly the modifiers in
+the table. On a layout where `[`, `]` or `=` needs Shift, Option or AltGr
+(German and French, for two), previous, next and bigger do not fire from those
+keys; the inspector's buttons and the keypad `+` still do.
+
 What can only be checked on hardware: the shortcuts on an iPad keyboard (and
-that they survive an alert and a trip to the home screen), the Cmd-hold
-overlay's titles, double tap on a Pencil 2 or Pro, squeeze and its hover point
+that they survive an alert and a trip to the home screen), that the scope view
+becomes first responder at all, which input the Delete and forward-delete keys
+reach (`UIKeyCommand.inputDelete` against `"\u{8}"`), the Cmd-hold overlay's
+titles, double tap on a Pencil 2 or Pro, squeeze and its hover point
 on a Pencil Pro, and Ctrl+Z on an Android tablet with a keyboard.
 
 ## Caps

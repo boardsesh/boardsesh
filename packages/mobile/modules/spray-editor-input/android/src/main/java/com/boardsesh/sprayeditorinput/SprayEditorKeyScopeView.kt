@@ -9,8 +9,8 @@ import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
 
 /**
- * An invisible view laid over the hold editor that holds key focus while it is
- * attached and answers the shortcuts it was given.
+ * The hold editor's root view. It holds key focus while it is attached and
+ * answers the shortcuts it was given.
  *
  * Android delivers a key to the focused view and its ancestors, so this view
  * makes itself focusable (in touch mode too, since a touch screen never leaves
@@ -18,8 +18,10 @@ import expo.modules.kotlin.views.ExpoView
  * say), and when its shortcut list arrives. It never takes focus from a text
  * field. A key that is not one of the editor's shortcuts goes on as normal.
  *
- * JS renders it with `pointerEvents="none"`, so touches pass through to the
- * editor, and hides it from accessibility services.
+ * JS renders the whole editor inside it with `pointerEvents="box-none"`, so
+ * touches reach the editor's own views. As their ancestor it also sees every
+ * key first, even when one of them holds focus. It is not an accessibility
+ * node itself, but everything inside it is.
  */
 class SprayEditorKeyScopeView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
     private val onShortcut by EventDispatcher()
@@ -29,7 +31,7 @@ class SprayEditorKeyScopeView(context: Context, appContext: AppContext) : ExpoVi
     init {
         isFocusable = true
         isFocusableInTouchMode = true
-        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
         // A focused view gets a highlight drawn over it once a hardware key is
         // pressed. This one covers the whole editor, so that would tint the wall.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

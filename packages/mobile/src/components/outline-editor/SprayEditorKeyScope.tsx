@@ -1,5 +1,5 @@
-import React, { useCallback } from 'react';
-import { StyleSheet, type NativeSyntheticEvent } from 'react-native';
+import React, { useCallback, type ReactNode } from 'react';
+import { View, type LayoutChangeEvent, type NativeSyntheticEvent, type StyleProp, type ViewStyle } from 'react-native';
 import {
   NativeSprayEditorKeyScope,
   type NativePencilGesture,
@@ -8,7 +8,7 @@ import {
 import { isSprayShortcutId, type SprayShortcutId } from './spray-editor-shortcuts';
 
 type SprayEditorKeyScopeProps = {
-  /** What to register: `sprayShortcutCommands(titles)`. */
+  /** What to register: `sprayShortcutCommands(titles)`. Empty answers nothing. */
   commands: readonly NativeShortcutCommand[];
   onShortcut: (id: SprayShortcutId) => void;
   /**
@@ -17,22 +17,35 @@ type SprayEditorKeyScopeProps = {
    * that gesture, and the setting is what decides the action.
    */
   onPencilGesture: (gesture: NativePencilGesture) => void;
+  style?: StyleProp<ViewStyle>;
+  onLayout?: (event: LayoutChangeEvent) => void;
+  children?: ReactNode;
 };
 
 /**
- * While this is mounted, the editor answers its keyboard shortcuts and the
- * Apple Pencil's double tap and squeeze (`modules/spray-editor-input`).
+ * The editor's root view. While it is mounted, the editor answers its keyboard
+ * shortcuts and the Apple Pencil's double tap and squeeze
+ * (`modules/spray-editor-input`).
  *
- * Mount it inside the editor's root view: it lays an invisible native view
- * over the whole editor, which takes no touches and is hidden from screen
- * readers, so a hover point it reports is in the editor's own coordinates.
- * On a binary built before the module shipped it renders nothing, and every
+ * It wraps the whole editor rather than lying on top of it. On iOS, Fabric
+ * turns `pointerEvents="none"` into `userInteractionEnabled = NO`, and UIKit
+ * may then refuse the view first responder (no key command would ever fire)
+ * and never hit-tests it (the Pencil interaction on it would rest on
+ * undocumented delivery). As the ancestor of every view a touch lands on, with
+ * `box-none`, it keeps interaction on, sees each hit test (which is how a touch
+ * hands it the keyboard back) and still passes every touch to the editor. A
+ * hover point it reports is in the editor's own coordinates.
+ *
+ * On a binary built before the module shipped it is a plain `View`, and every
  * shortcut is simply not there.
  */
 export const SprayEditorKeyScope = React.memo(function SprayEditorKeyScope({
   commands,
   onShortcut,
   onPencilGesture,
+  style,
+  onLayout,
+  children,
 }: SprayEditorKeyScopeProps) {
   const handleShortcut = useCallback(
     (event: NativeSyntheticEvent<{ id: string }>) => {
@@ -46,18 +59,24 @@ export const SprayEditorKeyScope = React.memo(function SprayEditorKeyScope({
     [onPencilGesture],
   );
 
-  if (!NativeSprayEditorKeyScope) return null;
+  if (!NativeSprayEditorKeyScope) {
+    return (
+      <View style={style} onLayout={onLayout}>
+        {children}
+      </View>
+    );
+  }
   return (
     <NativeSprayEditorKeyScope
-      pointerEvents="none"
-      style={StyleSheet.absoluteFill}
-      accessible={false}
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
+      pointerEvents="box-none"
+      style={style}
+      onLayout={onLayout}
       commands={commands}
       onShortcut={handleShortcut}
       onPencilTap={handlePencilGesture}
       onPencilSqueeze={handlePencilGesture}
-    />
+    >
+      {children}
+    </NativeSprayEditorKeyScope>
   );
 });

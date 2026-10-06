@@ -1,9 +1,9 @@
 import ExpoModulesCore
 import UIKit
 
-/// An invisible view laid over the hold editor. While it is in a window it
-/// holds the keyboard (first responder), answers the shortcuts it was given as
-/// `UIKeyCommand`s, and carries the editor's `UIPencilInteraction`.
+/// The hold editor's root view. While it is in a window it holds the keyboard
+/// (first responder), answers the shortcuts it was given as `UIKeyCommand`s,
+/// and carries the editor's `UIPencilInteraction`.
 ///
 /// Key commands only reach responders in the chain that starts at the first
 /// responder, so this view has to be it. Nothing else on the editor ever is —
@@ -12,9 +12,14 @@ import UIKit
 /// window becomes key, the app becomes active, or a touch lands on the editor.
 /// It never takes the keyboard from a text field someone is typing in.
 ///
-/// JS renders it with `pointerEvents="none"`, so touches pass straight through
-/// to the editor; `hitTest` is still asked first, which is how a touch tells the
-/// view to take the keyboard back.
+/// JS renders the whole editor inside it with `pointerEvents="box-none"`, never
+/// `"none"`: Fabric turns `"none"` into `isUserInteractionEnabled = false`, and
+/// a view like that may be refused first responder and is never hit-tested,
+/// which would leave both the key commands and the Pencil interaction dead.
+/// With `"box-none"` it keeps interaction on and hands every touch to the
+/// editor view under the finger, but `hitTest` still runs here first for every
+/// touch on the editor, which is how a touch tells the view to take the
+/// keyboard back.
 final class SprayEditorKeyScopeView: ExpoView, UIPencilInteractionDelegate {
   let onShortcut = EventDispatcher()
   let onPencilTap = EventDispatcher()
@@ -108,7 +113,14 @@ final class SprayEditorKeyScopeView: ExpoView, UIPencilInteractionDelegate {
     if FirstResponderProbe.current() is UIKeyInput {
       return
     }
-    becomeFirstResponder()
+    #if DEBUG
+      // The one failure nothing else reports: every shortcut would be silent.
+      if !becomeFirstResponder() {
+        NSLog("[SprayEditorInput] becomeFirstResponder returned false; shortcuts will not fire")
+      }
+    #else
+      becomeFirstResponder()
+    #endif
   }
 
   // MARK: - Apple Pencil
