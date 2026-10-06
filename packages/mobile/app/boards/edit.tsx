@@ -141,9 +141,7 @@ function EditBoardForm({ board }: { board: UserBoard }) {
 
   useEffect(() => {
     if (!policyTouched && sprayWall?.climbEditPolicy) {
-      setSelectedClimbEditPolicy(
-        sprayWall.climbEditPolicy.toLowerCase() === 'collaborators' ? 'collaborators' : 'setter',
-      );
+      setSelectedClimbEditPolicy(sprayWall.climbEditPolicy === 'COLLABORATORS' ? 'collaborators' : 'setter');
     }
   }, [sprayWall?.climbEditPolicy, policyTouched]);
 
@@ -241,14 +239,15 @@ function EditBoardForm({ board }: { board: UserBoard }) {
         // wall but not share it should see which half was refused rather than a
         // blanket failure.
         const currentServerPolicy = sprayWall?.climbEditPolicy
-          ? sprayWall.climbEditPolicy.toLowerCase() === 'collaborators'
+          ? sprayWall.climbEditPolicy === 'COLLABORATORS'
             ? 'collaborators'
             : 'setter'
           : undefined;
         const policyChanged =
           isSprayWall &&
           isOwner &&
-          (policyTouched ? (currentServerPolicy ? selectedClimbEditPolicy !== currentServerPolicy : true) : false);
+          currentServerPolicy !== undefined &&
+          selectedClimbEditPolicy !== currentServerPolicy;
         let visibilityError: string | null = null;
         let visibilityApplied = false;
         if (visibilityChanged || policyChanged) {
