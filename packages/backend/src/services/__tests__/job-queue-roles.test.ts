@@ -44,6 +44,7 @@ import { refreshClimbNeighborsFamily } from '../../workers/families/refresh-clim
 import { refreshHoldFeaturesFamily } from '../../workers/families/refresh-hold-features';
 import { refreshMoonboardAngleEstimatesFamily } from '../../workers/families/refresh-moonboard-angle-estimates';
 import { refreshMoonboardWideAngleEstimatesFamily } from '../../workers/families/refresh-moonboard-wide-angle-estimates';
+import { sprayWallHealthFamily } from '../../workers/families/spray-wall-health';
 import { refreshRecommendationsFamily } from '../../workers/families/refresh-recommendations';
 import {
   FIXTURE_PREFIX,
@@ -361,11 +362,22 @@ describe('batch worker grants', () => {
       expect(ladder).toEqual([...MOONBOARD_WIDE_LADDER_ANGLES]);
       expect(wide.some((row) => row.climbUuid === MOONBOARD_STALE_WIDE_CLIMB)).toBe(false);
 
+      // The weekly spray-wall health roll-up, run for real: read-only, so an
+      // empty fleet is its legitimate no-cohort path and the run still
+      // executes every table its roster/ticks/lit/climbs/versions/reports
+      // queries touch under the restricted login.
+      await sprayWallHealthFamily.execute(context('spray-wall-health'), { dryRun: false });
+
       // Nothing beyond the list: no user data it does not need, no catalog writes.
       await expect(restricted`SELECT email FROM users LIMIT 1`).rejects.toThrow('permission denied');
       await expect(restricted`SELECT comment FROM boardsesh_ticks LIMIT 1`).rejects.toThrow('permission denied');
       await expect(restricted`SELECT session_id FROM boardsesh_ticks LIMIT 1`).rejects.toThrow('permission denied');
       await expect(restricted`SELECT name FROM user_boards LIMIT 1`).rejects.toThrow('permission denied');
+      // The spray grants are column-level: the photo, the owner's reset note
+      // and the reporter's identity stay out of reach.
+      await expect(restricted`SELECT public_photo_key FROM spray_walls LIMIT 1`).rejects.toThrow('permission denied');
+      await expect(restricted`SELECT notes FROM spray_wall_versions LIMIT 1`).rejects.toThrow('permission denied');
+      await expect(restricted`SELECT reporter_id FROM spray_wall_reports LIMIT 1`).rejects.toThrow('permission denied');
       await expect(restricted`SELECT id FROM aurora_credentials LIMIT 1`).rejects.toThrow('permission denied');
       await expect(restricted`DELETE FROM board_climbs WHERE uuid = 'none'`).rejects.toThrow('permission denied');
       await expect(restricted`UPDATE board_climbs SET name = name WHERE false`).rejects.toThrow('permission denied');

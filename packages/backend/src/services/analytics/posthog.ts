@@ -17,7 +17,12 @@ export type BackendAnalyticsEvent =
   // Count DISTINCT USERS, not events — one looping client would otherwise read
   // as a fleet-wide problem. A sustained zero is the signal to turn the check
   // into a rejection (#3942).
-  | 'Tick Climb Not In Catalog';
+  | 'Tick Climb Not In Catalog'
+  // One personless weekly roll-up of the spray-wall fleet's health (issue
+  // #6062). The distinct id is a fixed synthetic actor; count WEEKS, and read
+  // the properties, never the event volume. Contract:
+  // services/analytics/wall-health-events.ts and docs/growth-metrics.md.
+  | 'Spray Wall Health Weekly';
 
 interface CaptureBackendEventOptions {
   distinctId: string;

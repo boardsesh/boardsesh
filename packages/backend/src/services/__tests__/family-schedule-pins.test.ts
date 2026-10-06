@@ -27,6 +27,7 @@ const EXPECTED_SCHEDULES: Record<string, Array<{ key: string; cron: string; tz: 
   'moonboard-locations-sync': [{ key: 'daily', cron: '41 3 * * *', tz: 'UTC', roles: ['routine-provider'] }],
   'climb-stats-self-heal': [{ key: 'hourly', cron: '13 * * * *', tz: 'UTC', roles: ['maintenance-delivery'] }],
   'user-data-export': [],
+  'spray-wall-health': [{ key: 'weekly', cron: '45 8 * * 1', tz: 'UTC', roles: ['batch'] }],
 };
 
 describe('family schedules', () => {

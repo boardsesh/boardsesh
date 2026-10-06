@@ -417,6 +417,55 @@ definition, which is why the save's own `Set Active Climb` is filtered out
 above; count it as its own measure. Its `boardLayout` is the empty string
 on a spray wall, which is an accident of the layout table and not a classifier.
 
+## Spray-wall health (weekly roll-up)
+
+The funnels above all start with somebody DOING something to a wall. None of
+them says how the fleet's walls are LIVING — whether owners climb on them,
+whether anyone else gets to, whether holds are coming off. The `spray-wall-health`
+batch family (`docs/background-workers.md`) measures that every Monday 08:45
+UTC from the app tables and emits ONE personless `Spray Wall Health Weekly`
+event per week, with a fixed synthetic actor (`spray-wall-health:<weekStart>`,
+`$process_person_profile = false`, read it on the backend `$lib = posthog-node`
+population). Count WEEKS, not events; every property is an integer and nothing
+names a wall, a gym or a climber.
+
+| Property | Kinds | Definition |
+| --- | --- | --- |
+| `weekStart` | string | ISO date of the measured Monday — the week is `[weekStart, weekStart+7d)` in UTC, always the week that ENDED. |
+| `wallsLive` | stock | Walls with both the `spray_walls` row and its `user_boards` row undeleted. |
+| `wallsCreated` | week | Stock born inside the week (board `created_at`). |
+| `wallsGym` | stock | Live walls attached to a gym. |
+| `wallsPublic` | stock | Live public walls that are also not admin-hidden. |
+| `wallsActive` | week | Live walls with at least one logged tick or lit climb inside the week. |
+| `wallsSecondClimber` | week | Live walls climbed inside the week by someone other than the owner — the shared-with-the-crew signal. |
+| `climbsLive` | stock | Listed (non-draft) spray climbs on live walls. |
+| `climbsCreated` | week | Of those, set inside the week. |
+| `climbsDegraded` | stock | Climbs with at least one hold no longer installed (`missingHoldCount > 0`). |
+| `litEvents` / `litWalls` / `litClimbs` | week | `board_climb_events` on live walls: a "lit" on a wall with no LEDs is a climb put on the wall, same reading as spray activation above. |
+| `ticksLogged` / `ticksSends` / `ticksNonOwner` | week | Spray ticks by climbed-at: total, flash-or-send (not bare attempts), and the ones written by someone other than the owner. |
+| `peopleActive` | week | Distinct people who touched a live wall — every tick-writer and every climber behind a lighting push. |
+| `resetsPublished` | week | Wall versions published (a reset landing) inside the week. |
+| `reportsFiled` | week | Wall reports raised inside the week. |
+| `holdsAlive` | stock | Holds installed across live walls. |
+
+**No cohort, not zero.** With `wallsLive = 0` the event carries only
+`weekStart` and `wallsLive: 0`: activity metrics over an empty fleet are
+absence, not measurement, and a dashboard reading them as zeros would claim
+"walls nobody climbs" in a world with no walls. Every other week every
+property is present, and a zero there IS a measurement.
+
+A missing week (worker down, family not enabled) is a gap, not a zero:
+`BATCH_FAMILIES_ENABLED` must list `spray-wall-health` (see
+`docs/background-workers.md` → "Schedules and `BATCH_FAMILIES_ENABLED`"). Past
+weeks re-emit through the operator with a `weekStart` payload, which dedupes
+under its own key, not the weekly singleton.
+
+Read it as trend lines, not gates: `docs/spray-walls.md` → "Rolling the flag
+out" keeps the rollout gates on the client funnels and watches this roll-up
+beside them. What the lines say at rollout time decides the next board —
+alongside `Board Demand Reported`, which is the same ledger from the other
+end: the demand that has not become a wall yet.
+
 ## Acquisition
 
 These are separate counts. None of them is a funnel of the same people.

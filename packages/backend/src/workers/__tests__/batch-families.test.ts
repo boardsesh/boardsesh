@@ -16,6 +16,7 @@ const jobs = vi.hoisted(() => ({
   orderBoardsByClimbCount: vi.fn(),
   runMoonboardAngleEstimates: vi.fn(),
   runMoonboardWideAngleEstimates: vi.fn(),
+  computeSprayWallHealth: vi.fn(),
 }));
 
 vi.mock('@boardsesh/db/jobs', async (importOriginal) => {
@@ -23,8 +24,32 @@ vi.mock('@boardsesh/db/jobs', async (importOriginal) => {
   return { ...actual, ...jobs };
 });
 
-const { CLIMB_NEIGHBOR_BOARDS, ClimbNeighborsInterruptedError, GradeGatesFailedError, MoonboardFitUnusableError } =
-  await import('@boardsesh/db/jobs');
+// The wall-health family is the only one that captures a PostHog event; the
+// real client is environment-gated, so the test pins the CALL instead.
+const capture = vi.hoisted(() => ({
+  captureBackendEvent: vi.fn(
+    (
+      _eventName: string,
+      _options: {
+        distinctId: string;
+        processPersonProfile?: boolean;
+        properties?: Record<string, string | number>;
+      },
+    ): boolean => false,
+  ),
+}));
+vi.mock('../../services/analytics/posthog', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/analytics/posthog')>();
+  return { ...actual, ...capture };
+});
+
+const {
+  CLIMB_NEIGHBOR_BOARDS,
+  ClimbNeighborsInterruptedError,
+  GradeGatesFailedError,
+  MoonboardFitUnusableError,
+  SprayWallHealthInputError,
+} = await import('@boardsesh/db/jobs');
 const { BackgroundJobError, familiesForRole, requireFamily } = await import('../families');
 const { refreshRecommendationsFamily } = await import('../families/refresh-recommendations');
 const { refreshHoldFeaturesFamily } = await import('../families/refresh-hold-features');
@@ -32,6 +57,7 @@ const { refreshClimbGradesFamily } = await import('../families/refresh-climb-gra
 const { refreshClimbNeighborsFamily } = await import('../families/refresh-climb-neighbors');
 const { refreshMoonboardAngleEstimatesFamily } = await import('../families/refresh-moonboard-angle-estimates');
 const { refreshMoonboardWideAngleEstimatesFamily } = await import('../families/refresh-moonboard-wide-angle-estimates');
+const { sprayWallHealthFamily } = await import('../families/spray-wall-health');
 
 type Context = Parameters<typeof refreshRecommendationsFamily.execute>[0];
 
@@ -87,6 +113,7 @@ describe('batch family registration', () => {
         'refresh-climb-neighbors',
         'refresh-moonboard-angle-estimates',
         'refresh-moonboard-wide-angle-estimates',
+        'spray-wall-health',
       ]),
     );
     expect(familiesForRole('interactive-import').map((family) => family.name)).toEqual([
@@ -110,6 +137,7 @@ describe('batch family registration', () => {
     expect(requireFamily('refresh-climb-neighbors')).toBe(refreshClimbNeighborsFamily);
     expect(requireFamily('refresh-moonboard-angle-estimates')).toBe(refreshMoonboardAngleEstimatesFamily);
     expect(requireFamily('refresh-moonboard-wide-angle-estimates')).toBe(refreshMoonboardWideAngleEstimatesFamily);
+    expect(requireFamily('spray-wall-health')).toBe(sprayWallHealthFamily);
   });
 
   it('keeps each lease inside pg-boss limits and each heartbeat window valid', () => {
@@ -119,7 +147,11 @@ describe('batch family registration', () => {
       refreshClimbGradesFamily,
       refreshClimbNeighborsFamily,
     ];
-    const weekly = [refreshMoonboardAngleEstimatesFamily, refreshMoonboardWideAngleEstimatesFamily];
+    const weekly = [
+      refreshMoonboardAngleEstimatesFamily,
+      refreshMoonboardWideAngleEstimatesFamily,
+      sprayWallHealthFamily,
+    ];
     for (const family of [...nightly, ...weekly]) {
       // pg-boss's own attempt-lease cap.
       expect(family.options.expireInSeconds).toBeLessThanOrEqual(24 * 60 * 60);
@@ -166,6 +198,14 @@ describe('batch family registration', () => {
       // Sized to one ~50k-row publish chunk, not the whole publish.
       heartbeatSeconds: 300,
     });
+    expect(sprayWallHealthFamily.options).toMatchObject({
+      // A read-only sweep of aggregate queries; a cold database is the worst case.
+      expireInSeconds: 600,
+      retryLimit: 1,
+      retryDelay: 300,
+      deadlineSeconds: 518_400,
+      heartbeatSeconds: 300,
+    });
     expect(refreshClimbNeighborsFamily.options).toEqual({
       expireInSeconds: 21_600,
       retryLimit: 2,
@@ -189,6 +229,9 @@ describe('batch family registration', () => {
     expect(refreshMoonboardWideAngleEstimatesFamily.schedules?.map(({ key, cron }) => ({ key, cron }))).toEqual([
       { key: 'weekly', cron: '30 8 * * 1' },
     ]);
+    expect(sprayWallHealthFamily.schedules?.map(({ key, cron }) => ({ key, cron }))).toEqual([
+      { key: 'weekly', cron: '45 8 * * 1' },
+    ]);
     expect(await refreshRecommendationsFamily.schedules?.[0].fanOut(database)).toEqual([{ payload: {} }]);
     expect(await refreshHoldFeaturesFamily.schedules?.[0].fanOut(database)).toEqual([{ payload: { board: 'kilter' } }]);
     expect(await refreshClimbGradesFamily.schedules?.[0].fanOut(database)).toEqual([{ payload: {} }]);
@@ -198,6 +241,7 @@ describe('batch family registration', () => {
     expect(await refreshMoonboardWideAngleEstimatesFamily.schedules?.[0].fanOut(database)).toEqual([
       { payload: { publish: true } },
     ]);
+    expect(await sprayWallHealthFamily.schedules?.[0].fanOut(database)).toEqual([{ payload: { dryRun: false } }]);
   });
 
   it('fans the neighbours schedule out to one job per board, cheapest first', async () => {
@@ -286,6 +330,19 @@ describe('payloads and dedup keys', () => {
     });
     expect(refreshMoonboardWideAngleEstimatesFamily.payload.safeParse({ validateOnly: true }).success).toBe(false);
     expect(refreshMoonboardWideAngleEstimatesFamily.singletonKey?.({ publish: true })).toBe('weekly');
+  });
+
+  it('spray-wall-health defaults to the live weekly slot and keys a backfill by its week', () => {
+    expect(sprayWallHealthFamily.payload.parse({})).toEqual({ dryRun: false });
+    expect(sprayWallHealthFamily.payload.parse({ weekStart: '2026-09-21', dryRun: true })).toEqual({
+      weekStart: '2026-09-21',
+      dryRun: true,
+    });
+    expect(sprayWallHealthFamily.payload.safeParse({ weekStart: 'last monday' }).success).toBe(false);
+    expect(sprayWallHealthFamily.payload.safeParse({ publish: true }).success).toBe(false);
+    expect(sprayWallHealthFamily.singletonKey?.({ dryRun: false })).toBe('weekly');
+    // A `weekStart` backfill must not be swallowed by the weekly singleton.
+    expect(sprayWallHealthFamily.singletonKey?.({ dryRun: false, weekStart: '2026-09-21' })).toBe('2026-09-21');
   });
 });
 
@@ -451,6 +508,72 @@ describe('execute', () => {
       .catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(BackgroundJobError);
     expect(failure).toMatchObject({ code: 'FIT_UNUSABLE', retryable: false });
+  });
+
+  describe('spray-wall-health', () => {
+    const metrics = {
+      wallsLive: 7,
+      wallsCreated: 2,
+      wallsGym: 3,
+      wallsPublic: 4,
+      wallsActive: 5,
+      wallsSecondClimber: 2,
+      climbsLive: 41,
+      climbsCreated: 9,
+      climbsDegraded: 3,
+      litEvents: 18,
+      litWalls: 4,
+      litClimbs: 12,
+      ticksLogged: 25,
+      ticksSends: 19,
+      peopleActive: 6,
+      ticksNonOwner: 8,
+      resetsPublished: 1,
+      reportsFiled: 2,
+      holdsAlive: 460,
+    };
+
+    beforeEach(() => {
+      capture.captureBackendEvent.mockReset().mockReturnValue(false);
+      jobs.computeSprayWallHealth.mockResolvedValue({ weekStart: '2026-09-28', metrics });
+    });
+
+    it('measures the week and captures the aggregate as one personless event', async () => {
+      const { context: jobContext } = context('spray-wall-health');
+      await sprayWallHealthFamily.execute(jobContext, sprayWallHealthFamily.payload.parse({}));
+      expect(jobs.computeSprayWallHealth).toHaveBeenCalledWith({
+        db: database,
+        signal: jobContext.signal,
+        weekStart: undefined,
+      });
+      expect(capture.captureBackendEvent).toHaveBeenCalledTimes(1);
+      const [eventName, options] = capture.captureBackendEvent.mock.calls[0] ?? [];
+      expect(eventName).toBe('Spray Wall Health Weekly');
+      expect(options).toMatchObject({
+        distinctId: 'spray-wall-health:2026-09-28',
+        processPersonProfile: false,
+      });
+      expect(options?.properties).toMatchObject({ weekStart: '2026-09-28', wallsLive: 7, holdsAlive: 460 });
+    });
+
+    it('passes a backfill week through and refuses to emit on a dry run', async () => {
+      await sprayWallHealthFamily.execute(context('spray-wall-health').context, {
+        weekStart: '2026-09-21',
+        dryRun: true,
+      });
+      expect(jobs.computeSprayWallHealth.mock.calls[0][0].weekStart).toBe('2026-09-21');
+      expect(capture.captureBackendEvent).not.toHaveBeenCalled();
+    });
+
+    it('maps a bad weekStart to a non-retryable WEEK_START_INVALID', async () => {
+      jobs.computeSprayWallHealth.mockRejectedValue(new SprayWallHealthInputError('weekStart must be a Monday'));
+      const failure = await sprayWallHealthFamily
+        .execute(context('spray-wall-health').context, { dryRun: false })
+        .catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(BackgroundJobError);
+      expect(failure).toMatchObject({ code: 'WEEK_START_INVALID', retryable: false });
+      expect(capture.captureBackendEvent).not.toHaveBeenCalled();
+    });
   });
 
   it('refresh-moonboard-angle-estimates lets any other failure retry', async () => {

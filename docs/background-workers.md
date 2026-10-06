@@ -244,6 +244,7 @@ module. The module declares:
 | `export-board-snapshots` | `batch` | 21,600 s (heartbeat 120 s) | 1, after 300 s | 20 h (live scan: skips itself after 840 s) | mode (`nightly`, `live-scan`) |
 | `refresh-moonboard-angle-estimates` | `batch` | 1,800 s | 1, after 900 s | 6 days | `weekly` |
 | `refresh-moonboard-wide-angle-estimates` | `batch` | 7,200 s | 1, after 900 s | 6 days | `weekly` |
+| `spray-wall-health` | `batch` | 600 s | 1, after 300 s | 6 days | `weekly`, or the backfilled `weekStart` |
 | `aurora-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:boardType:linkGeneration` |
 | `kilter-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:kilter:linkGeneration` |
 | `provider-routine-cycle` | `routine-provider` | 600 s (heartbeat 300 s) | none | 48 600 s (the fan-out budget) | `aurora` / `kilter` |
@@ -326,6 +327,7 @@ fence (`context.transaction`). The worker never imports
 | `export-board-snapshots` | `15 7 * * *` (`nightly`), `7,22,37,52 * * * *` (`live-scan`) | `{ mode, board?, layout?, refreshThreshold?, gzipOnly?, skipPrune? }` | 120 s | nothing in Postgres; SQLite artifacts and manifests to the snapshot bucket | `export-board-snapshots.yml` |
 | `refresh-moonboard-angle-estimates` | `0 8 * * 1` | `{ publish = true, validateOnly?, dryRun? }` | 600 s | `board_grade_coefficients`, `board_climb_grades` | `refresh-moonboard-angle-estimates.yml` |
 | `refresh-moonboard-wide-angle-estimates` | `30 8 * * 1` | `{ publish = true, dryRun? }` | 300 s | `board_climb_grades` (no coefficients: the angle surface is refit from `board_climb_stats` every run) | `refresh-moonboard-wide-angle-estimates.yml` |
+| `spray-wall-health` | `45 8 * * 1` | `{ weekStart?, dryRun? }` | 300 s | nothing in Postgres; one `Spray Wall Health Weekly` PostHog event (`docs/growth-metrics.md`) | none — new with #6062 |
 
 Measured on GitHub Actions against production in Sep 2026: recommendations
 about 25 s, hold features about 60 s, grades about 4 minutes, of which the
