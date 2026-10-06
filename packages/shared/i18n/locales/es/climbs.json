@@ -868,7 +868,6 @@
         "grade": "Las presas moradas salen en bloques más difíciles; las amarillas, en más fáciles"
       },
       "wholeBoard": "Todo el plafón",
-      "holdPicksSkipped": "{{summary}} · selección de presas omitida sin conexión",
       "wholeBoardHint": "Cuenta todos los bloques del plafón",
       "useFiltersHint": "Cuenta solo los bloques que cumplen tus filtros",
       "filterUnsupported": "El mapa de calor no puede seguir estos filtros sin conexión. Toca el chip para ver todo el plafón.",

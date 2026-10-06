@@ -1020,7 +1020,8 @@ export const SHARED_EVENTS = {
   //   offlineEngineEnabled: boolean.
   OfflineArtifactTransfer: 'Offline Artifact Transfer',
   // A board's offline switch was flipped, either way. Props: { scopeKey,
-  // enabled: boolean, source: 'manage' | 'storage' | 'more' | 'adopt' | 'onboarding' | 'play_drawer',
+  // enabled: boolean, source: 'manage' | 'storage' | 'more' | 'adopt' | 'onboarding' | 'play_drawer'
+  // | 'hold_filter',
   // offlineEngineEnabled }. The enable half is the entry point #4318's discovery
   // nudges are measured against.
   OfflineBoardToggled: 'Offline Board Toggled',

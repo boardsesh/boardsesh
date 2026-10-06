@@ -65,12 +65,6 @@ type SwipeBoardCarouselProps = {
    *  reset (it resets translateX once the new climb has rendered). The carousel
    *  uses it to keep the incoming peek frozen + covering centre until then. */
   swipeIsAnimating?: SharedValue<boolean>;
-  /**
-   * Drawn on the CURRENT board only, above the photo and below the lit holds
-   * (BoardImageNative's `underOverlay`) — the hold heatmap. Never on the peek:
-   * the heatmap describes the board, and a second copy sliding in would be noise.
-   */
-  underOverlay?: React.ReactNode;
   /** RNGH ref to the drawer-dismiss Pan blocked by the zoomed-only board pan. */
   dismissRef?: React.MutableRefObject<GestureType | undefined>;
 };
@@ -99,7 +93,6 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   scrollRef,
   swipeTranslateX,
   swipeIsAnimating,
-  underOverlay,
   dismissRef,
 }: SwipeBoardCarouselProps) {
   const { width: screenWidth } = useWindowDimensions();
@@ -288,7 +281,6 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
               recyclingKey={currentFrames}
               style={boardBox}
               overlayTestID="play-drawer-board-overlay"
-              underOverlay={underOverlay}
               // The one board a climber is actually looking at: `surface: 'play'`
               // on render-failure telemetry, and the only surface that watches
               // for an overlay that never paints. Never the peek below.
@@ -318,7 +310,6 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
                 // instant (no-fade) swap lands it before the reset uncovers it —
                 // killing the Android end-of-swipe flash. See isCommitting above.
                 suppressOverlayTransition={isCommitting}
-                underOverlay={underOverlay}
                 // See the screenshot-mode board above: the current card is the
                 // only `surface: 'play'` in the app.
                 playSurface

@@ -16,7 +16,7 @@ type HeatmapLegendProps = {
   highLabel: string;
   /** "18,240 climbs", when the answer knows how many. */
   scopeLabel?: string | null;
-  /** The real count at the bottom of each bucket, under its swatch (play drawer only). */
+  /** The real count at the bottom of each bucket, under its swatch (hold filter only). */
   showEdgeValues?: boolean;
   /** "Every hold used equally", shown in place of the two ends when nothing ranks. */
   allEqualLabel: string;
@@ -43,8 +43,8 @@ const SWATCH_SIZE = 12;
 /**
  * What the heatmap's colours mean, on one line: the two ends in words, five
  * ring swatches drawn the way the renderer marks a hold (a saturated edge over
- * a see-through fill), and how many climbs the colours count. Shared by the play
- * drawer's panel and the create board, which shows it where the autosave note
+ * a see-through fill), and how many climbs the colours count. Shared by the hold
+ * filter's panel and the create board, which shows it where the autosave note
  * sits while heat is on.
  */
 export const HeatmapLegend = memo(function HeatmapLegend({

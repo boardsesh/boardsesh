@@ -10,7 +10,6 @@ import { FirstConnectPill } from './FirstConnectPill';
 import { PlayDrawerCommitBar } from './PlayDrawerCommitBar';
 import type { CommitBarMode, CommitButtonLabel } from './wall-state';
 import { ActionButton, SIZES, type ButtonSize, drawerActionBarStyles } from '../drawer-action-bar/DrawerActionBar';
-import type { HeatmapMode } from '../board/heatmap-buckets';
 import { useTheme } from '../../providers/theme-provider';
 // Aliased: foregrounds in this file read scheme-aware brand from `useTheme()`.
 // `staticBrandColors` is the static set, used only for the count badge — a FILL
@@ -125,13 +124,6 @@ type PlayDrawerActionBarProps = {
   onTickPress: () => void;
   onTickLongPress: () => void;
   onOpenAngleSelector?: () => void;
-  /** The hold heatmap toggle. Omitted (or an anonymous viewer) → no button. */
-  onToggleHeatmap?: () => void;
-  heatmapActive?: boolean;
-  /** The heatmap's answer is on its way. */
-  heatmapBusy?: boolean;
-  /** The heatmap's colour mode, spoken as the toggle's value while it is on. */
-  heatmapMode?: HeatmapMode;
 };
 
 export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
@@ -177,10 +169,6 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   onTickPress,
   onTickLongPress,
   onOpenAngleSelector,
-  onToggleHeatmap,
-  heatmapActive = false,
-  heatmapBusy = false,
-  heatmapMode = 'climbs',
 }: PlayDrawerActionBarProps) {
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
@@ -244,18 +232,6 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
     hapticMedium();
     onShare();
   }, [onShare]);
-
-  const heatmapModeLabel =
-    heatmapMode === 'grade'
-      ? tClimbs('mobile.heatmap.modes.grade')
-      : heatmapMode === 'startsFinishes'
-        ? tClimbs('mobile.heatmap.modes.startsFinishes')
-        : tClimbs('mobile.heatmap.modes.climbs');
-
-  const handleToggleHeatmap = useCallback(() => {
-    hapticMedium();
-    onToggleHeatmap?.();
-  }, [onToggleHeatmap]);
 
   return (
     <View style={drawerActionBarStyles.container}>
@@ -365,25 +341,6 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           bottom "mode strip" that pairs with the header pill up top, and still
           0pt: it's a background on a row that already exists. */}
       <View style={[drawerActionBarStyles.rowSecondary, inCommitMode && { backgroundColor: theme.systemColors.fill }]}>
-        {/* The heatmap toggle leads the row in BOTH modes, ahead of the commit
-            branch: browsing from search is exactly when the heatmap is wanted,
-            and the commit pair used to replace the utilities it lived among, so
-            the flame vanished the moment a climber browsed. A read, but it
-            answers from a downloaded board (or offers the download), which a
-            signed-out reader of the web export has no way to use. */}
-        {onToggleHeatmap && !isAnonymous && (
-          <ActionButton
-            size="sm"
-            iconName={heatmapActive ? 'flame.fill' : 'flame'}
-            onPress={handleToggleHeatmap}
-            active={heatmapActive}
-            activeColor={theme.brandColors.primary}
-            busy={heatmapActive && heatmapBusy}
-            checked={heatmapActive}
-            accessibilityLabel={tClimbs('mobile.heatmap.toggle')}
-            accessibilityValueText={heatmapActive ? heatmapModeLabel : undefined}
-          />
-        )}
         {inCommitMode ? (
           <PlayDrawerCommitBar
             showBackToLive={showBackToLive}

@@ -50,8 +50,6 @@ import { PlayDrawerStatusBarScrim } from './PlayDrawerStatusBarScrim';
 import { copyClimbName } from './copy-climb-name';
 import { SwipeableHeader } from './SwipeableHeader';
 import { PlayDrawerActionBar } from './PlayDrawerActionBar';
-import { usePlayDrawerHeatmap } from './heatmap/use-play-drawer-heatmap';
-import { PlayDrawerHeatmapPanel } from './heatmap/PlayDrawerHeatmapPanel';
 import { WallStatePill } from './WallStatePill';
 import { WallStateCallout } from './WallStateCallout';
 import { BrowseFrameOverlay } from './BrowseFrameOverlay';
@@ -760,16 +758,6 @@ export function PlayDrawer({
       ? { boardName: resolvedBoardName, layoutId: activeBoardForNavigation.layoutId }
       : undefined;
   }, [activeBoardForNavigation]);
-  // The hold heatmap on the board being drawn. Its download offer is for the
-  // board the climber is standing at, so only when that is the one drawn.
-  const heatmap = usePlayDrawerHeatmap({ boardName: boardName as BoardName, layoutId, sizeId, setIds, angle });
-  const heatmapNudgeBoard =
-    activeBoardForNavigation &&
-    activeBoardForNavigation.boardType === boardName &&
-    activeBoardForNavigation.layoutId === layoutId &&
-    activeBoardForNavigation.sizeId === sizeId
-      ? activeBoardForNavigation
-      : null;
   const navigationState = useMemo(
     () =>
       computeNavigationStateWithSuggestions(
@@ -2004,7 +1992,6 @@ export function PlayDrawer({
                             scrollRef={scrollGestureRef}
                             swipeTranslateX={swipeTranslateX}
                             swipeIsAnimating={swipeIsAnimating}
-                            underOverlay={heatmap.overlay}
                             dismissRef={dismissGestureRef}
                           />
                         ) : (
@@ -2031,11 +2018,6 @@ export function PlayDrawer({
                           accessibilityElementsHidden={showBoardMismatch}
                           importantForAccessibility={showBoardMismatch ? 'no-hide-descendants' : 'auto'}
                         >
-                          <PlayDrawerHeatmapPanel
-                            heatmap={heatmap}
-                            boardName={boardName}
-                            nudgeBoard={heatmapNudgeBoard}
-                          />
                           {playback.isAnimatable && (
                             <PlaybackControls
                               frameIndex={playback.frameIndex}
@@ -2114,10 +2096,6 @@ export function PlayDrawer({
                             onSignInPress={onSignIn}
                             currentAngle={activeAngle}
                             onOpenAngleSelector={isAngleAdjustable ? handleOpenAngleSelector : undefined}
-                            onToggleHeatmap={heatmap.toggle}
-                            heatmapActive={heatmap.enabled}
-                            heatmapBusy={heatmap.isBusy}
-                            heatmapMode={heatmap.mode}
                           />
                         </View>
 

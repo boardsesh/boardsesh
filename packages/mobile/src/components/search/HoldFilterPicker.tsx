@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, type ReactNode } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useTranslation } from 'react-i18next';
@@ -22,6 +22,8 @@ type HoldFilterPickerProps = {
   /** Whether tapping a hold marks the brush type as included or excluded. */
   applyMode: HoldFilterMode;
   onApplyModeChange: (mode: HoldFilterMode) => void;
+  /** Drawn at the end of the Include / Exclude row (the heatmap toggle). */
+  modeRowAccessory?: ReactNode;
 };
 
 /**
@@ -40,6 +42,7 @@ export function HoldFilterPicker({
   onSelectType,
   applyMode,
   onApplyModeChange,
+  modeRowAccessory,
 }: HoldFilterPickerProps) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
@@ -94,13 +97,18 @@ export function HoldFilterPicker({
         { borderTopColor: systemColors.separator, paddingBottom: windowInsetBottom + spacing[3] },
       ]}
     >
-      <SegmentedControl
-        options={applyModeOptions}
-        selectedKey={applyMode}
-        onSelect={onApplyModeChange}
-        trackColor={systemColors.fill}
-        accessibilityLabel={t('mobile.holdFilter.applyModeLabel')}
-      />
+      <View style={styles.modeRow}>
+        <View style={styles.modeControl}>
+          <SegmentedControl
+            options={applyModeOptions}
+            selectedKey={applyMode}
+            onSelect={onApplyModeChange}
+            trackColor={systemColors.fill}
+            accessibilityLabel={t('mobile.holdFilter.applyModeLabel')}
+          />
+        </View>
+        {modeRowAccessory}
+      </View>
 
       <View style={styles.chipRow}>
         {options.map((option) => {
@@ -165,6 +173,14 @@ const styles = StyleSheet.create({
     gap: spacing[3],
     borderTopWidth: StyleSheet.hairlineWidth,
     // borderTopColor applied inline from systemColors.separator (scheme-aware).
+  },
+  modeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+  },
+  modeControl: {
+    flex: 1,
   },
   chipRow: {
     flexDirection: 'row',
