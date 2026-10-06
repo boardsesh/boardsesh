@@ -55,6 +55,7 @@ export const BACKGROUND_JOB_FAMILIES = [
   'moonboard-locations-sync',
   'climb-stats-self-heal',
   'user-data-export',
+  'spray-wall-health',
 ] as const;
 
 export type BackgroundJobFamily = (typeof BACKGROUND_JOB_FAMILIES)[number];

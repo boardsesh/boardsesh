@@ -350,7 +350,33 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
         'climbed_at',
       ],
     },
-    { table: 'user_boards', privileges: ['SELECT'], columns: ['id', 'gym_id'] },
+    // Which gym a tick's board belongs to, plus the columns the weekly
+    // spray-wall health roll-up folds its roster from (#6062): identity for
+    // the join, ownership for the second-climber split, visibility flags for
+    // the stock counts. Never names, locations, settings or coordinates.
+    {
+      table: 'user_boards',
+      privileges: ['SELECT'],
+      columns: ['id', 'gym_id', 'uuid', 'owner_id', 'board_type', 'is_public', 'created_at', 'deleted_at'],
+    },
+    // The spray-wall fleet the health roll-up counts: the wall roster (join
+    // key, layout for climbs, hold stock, deletion/hide state), the reset
+    // history, and the report queue. No photos, no versions' payloads.
+    {
+      table: 'spray_walls',
+      privileges: ['SELECT'],
+      columns: ['id', 'board_uuid', 'layout_id', 'hold_count', 'deleted_at', 'hidden_at'],
+    },
+    { table: 'spray_wall_versions', privileges: ['SELECT'], columns: ['wall_id', 'status', 'published_at'] },
+    { table: 'spray_wall_reports', privileges: ['SELECT'], columns: ['wall_id', 'created_at'] },
+    // "Lit" for a wall with no LEDs (board_climb_events): the weekly roll-up's
+    // lighting side. Only the board/climb/user columns the aggregates group
+    // by, and the confirmation time the window filters on.
+    {
+      table: 'board_climb_events',
+      privileges: ['SELECT'],
+      columns: ['board_id', 'board_type', 'climb_uuid', 'user_id', 'confirmed_at'],
+    },
     // The recommendations job's writes.
     { table: 'board_setter_stats', privileges: ['SELECT', 'INSERT', 'UPDATE'] },
     { table: 'board_climb_send_stats', privileges: ['SELECT', 'INSERT', 'DELETE'] },
