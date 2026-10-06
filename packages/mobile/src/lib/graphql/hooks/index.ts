@@ -97,7 +97,7 @@ import {
   type RecordBoardOpenedMutationResponse,
   type GetBoardBySlugQueryResponse,
 } from '@boardsesh/graphql/operations/boards';
-import { GET_SPRAY_WALL, UPDATE_SPRAY_WALL } from '@boardsesh/graphql/operations/spray-walls';
+import { UPDATE_SPRAY_WALL } from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWall, UpdateSprayWallInput } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../client';
 import { invalidateSprayWallRenderData } from '../../spray/spray-wall-loader';
@@ -258,20 +258,6 @@ export function useBoard(boardUuid: string | null) {
  * uuid) while a plain-deleted board resolves to `null`.
  */
 export { fetchBoardByUuid } from './fetch-board-by-uuid';
-
-/**
- * Fetch one spray wall by uuid (including its climbEditPolicy and version metadata).
- */
-export function useSprayWallByUuid(uuid: string | null | undefined) {
-  return useQuery({
-    queryKey: ['sprayWall', uuid],
-    queryFn: async () => {
-      const response = await getHttpClient().request<{ sprayWall: SprayWall | null }>(GET_SPRAY_WALL, { uuid });
-      return response.sprayWall;
-    },
-    enabled: !!uuid,
-  });
-}
 
 // `fetchAllMyBoards` — the paginated companion to `fetchBoardByUuid` — lives in
 // its own module rather than here: the walk needs a unit test, and this barrel
@@ -606,7 +592,6 @@ export function useUpdateSprayWall() {
       return response.updateSprayWall;
     },
     onSuccess: (updated) => {
-      queryClient.setQueryData(['sprayWall', updated.uuid], updated);
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['board', updated.uuid] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
@@ -1284,9 +1269,6 @@ export function useBetaLinks(boardType: string, climbUuid: string, enabled = tru
     staleTime: 5 * 60 * 1000,
   });
 }
-
-export { useClimbRevisions, type ClimbRevisionRow } from './use-climb-revisions';
-export { CLIMB_REVISIONS_QUERY_KEY, climbRevisionsQueryKey } from './climb-revisions-query-key';
 
 const USER_BETA_LINKS_PAGE_SIZE = 20;
 

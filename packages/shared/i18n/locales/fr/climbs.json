@@ -873,42 +873,6 @@
     "setterNotes": {
       "title": "Notes de l’ouvreur"
     },
-    "revisions": {
-      "title": "Historique des modifications",
-      "summary_one": "Modifié une fois",
-      "summary_other": "Modifié {{count}} fois",
-      "current": "Actuelle",
-      "tagSetter": "Ouvreur",
-      "tagWallEditor": "Éditeur du mur",
-      "deletedEditor": "Compte supprimé",
-      "published": "Première publication",
-      "edited": "Modifié",
-      "changed": "A changé : {{changes}}",
-      "changes": {
-        "name": "nom",
-        "description": "notes",
-        "holds": "prises",
-        "grade": "cotation",
-        "angle": "inclinaison",
-        "rules": "règles"
-      },
-      "showAll": "Tout afficher ({{count}})",
-      "capNote": "Seules la première version et les modifications les plus récentes sont conservées, {{max}} versions au total.",
-      "rowLabel": "{{date}}, {{editor}}. Voir cette version.",
-      "sheet": {
-        "title": "Version du {{date}}",
-        "by": "{{editor}} · {{role}}",
-        "readOnly": "Une version précédente. Tu peux la regarder, mais pas la mettre en file ni l’allumer.",
-        "noGrade": "Pas de cotation",
-        "angle": "{{angle}}°",
-        "older": "Précédente",
-        "newer": "Suivante",
-        "position": "{{position}} sur {{total}}",
-        "photoUnavailable": "La photo de ce mur n’est plus disponible",
-        "boardUnavailable": "Impossible d’afficher cette board pour l’instant",
-        "boardLabel": "Les prises de cette version"
-      }
-    },
     "heatmap": {
       "toggle": "Carte de chaleur",
       "modeLabel": "Colorer les prises selon",

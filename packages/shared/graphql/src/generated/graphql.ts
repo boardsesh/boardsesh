@@ -11332,35 +11332,6 @@ export type BoardseshGradesForAnglesQuery = {
   }>;
 };
 
-export type GetClimbRevisionsQueryVariables = Exact<{
-  boardType: Scalars['String']['input'];
-  climbUuid: Scalars['String']['input'];
-}>;
-
-export type GetClimbRevisionsQuery = {
-  __typename?: 'Query';
-  climbRevisions: Array<{
-    __typename?: 'ClimbRevision';
-    revisionNumber: number;
-    isCurrent: boolean;
-    createdAt: string;
-    name?: string | null;
-    description?: string | null;
-    frames?: string | null;
-    angle?: number | null;
-    difficultyId?: number | null;
-    changes: Array<string>;
-    editedBySetter: boolean;
-    sprayWallVersionNumber?: number | null;
-    editor?: {
-      __typename?: 'ClimbRevisionEditor';
-      id: string;
-      displayName?: string | null;
-      avatarUrl?: string | null;
-    } | null;
-  }>;
-};
-
 export type ClimbStatsForAnglesQueryVariables = Exact<{
   boardName: Scalars['String']['input'];
   climbUuid: Scalars['ID']['input'];
@@ -16365,77 +16336,6 @@ export const BoardseshGradesForAnglesDocument = {
     },
   ],
 } as unknown as DocumentNode<BoardseshGradesForAnglesQuery, BoardseshGradesForAnglesQueryVariables>;
-export const GetClimbRevisionsDocument = {
-  kind: 'Document',
-  definitions: [
-    {
-      kind: 'OperationDefinition',
-      operation: 'query',
-      name: { kind: 'Name', value: 'GetClimbRevisions' },
-      variableDefinitions: [
-        {
-          kind: 'VariableDefinition',
-          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
-          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
-        },
-        {
-          kind: 'VariableDefinition',
-          variable: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuid' } },
-          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
-        },
-      ],
-      selectionSet: {
-        kind: 'SelectionSet',
-        selections: [
-          {
-            kind: 'Field',
-            name: { kind: 'Name', value: 'climbRevisions' },
-            arguments: [
-              {
-                kind: 'Argument',
-                name: { kind: 'Name', value: 'boardType' },
-                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
-              },
-              {
-                kind: 'Argument',
-                name: { kind: 'Name', value: 'climbUuid' },
-                value: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuid' } },
-              },
-            ],
-            selectionSet: {
-              kind: 'SelectionSet',
-              selections: [
-                { kind: 'Field', name: { kind: 'Name', value: 'revisionNumber' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'isCurrent' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'name' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'description' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'difficultyId' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'changes' } },
-                {
-                  kind: 'Field',
-                  name: { kind: 'Name', value: 'editor' },
-                  selectionSet: {
-                    kind: 'SelectionSet',
-                    selections: [
-                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
-                    ],
-                  },
-                },
-                { kind: 'Field', name: { kind: 'Name', value: 'editedBySetter' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'sprayWallVersionNumber' } },
-              ],
-            },
-          },
-        ],
-      },
-    },
-  ],
-} as unknown as DocumentNode<GetClimbRevisionsQuery, GetClimbRevisionsQueryVariables>;
 export const ClimbStatsForAnglesDocument = {
   kind: 'Document',
   definitions: [
