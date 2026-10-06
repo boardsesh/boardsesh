@@ -155,7 +155,7 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   // (`packages/mobile/src/lib/spray/spray-wall-registry.ts`, SW-07 / #5440),
   // which is a plain map the render path reads synchronously and which carries
   // its own subscription — there is no query key to bust. The climb-facing half
-  // of a hold edit (a published climb that lost a hold leaves the listings) rides
+  // of a hold edit (a published climb that lost a hold gets its badge) rides
   // on `board_climbs.missing_hold_count` and is already covered by that table's
   // keys above. Give this real keys if a wall ever grows a React Query surface.
   spray_walls: [],
