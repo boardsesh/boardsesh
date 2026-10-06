@@ -165,10 +165,10 @@ const integrityMoved = sql`(
  *
  * Run it when a wall version publishes. A climb's count is how many of its holds
  * now carry a `removed_version_id` — so an intact climb lands on 0, and a climb
- * that lost two holds lands on 2 and can be filtered without a join the mobile
- * SQLite mirror cannot make (it has no `board_climb_holds` table). Since the hold
- * lock, a publish that removes holds only lands on a wall with no published
- * climb, so only a draft can gain a count here.
+ * that lost two holds lands on 2 and can be badged and filtered without a join
+ * the mobile SQLite mirror cannot make (it has no `board_climb_holds` table). A
+ * hold-edit publish that takes off a hold published climbs use is what raises
+ * it now; the app confirms that first (`sprayWallHoldUsage`).
  *
  * A removal only counts once the version that made it LANDED — the same rule
  * `aliveHolds` applies (see its own note). An abandoned draft owns a version
@@ -218,10 +218,10 @@ export async function recomputeMissingHoldCounts(db: DrizzleDb, wallId: number):
  *
  * The wall-wide recompute runs when a version publishes, which is when the WALL
  * moves under the climbs. This is the other direction: the climb moves under the
- * wall. A setter whose draft lost a hold edits it onto holds that are still there,
+ * wall. A setter whose climb lost a hold edits it onto holds that are still there,
  * and `updateClimb` rewrites `board_climb_holds` — at which point the stored
  * number describes holds the climb no longer uses. Nothing else would ever
- * correct it: the wall-wide recompute only runs on the next publish, so the draft
+ * correct it: the wall-wide recompute only runs on the next publish, so the climb
  * would keep a count for a problem its setter had already fixed.
  *
  * Same count, same landed-generation rule, same `IS DISTINCT FROM` guard and the

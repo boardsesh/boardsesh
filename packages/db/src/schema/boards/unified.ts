@@ -370,8 +370,7 @@ export const boardClimbs = pgTable(
     // derived because climb integrity has to be filterable in the mobile SQLite
     // mirror too, and that mirror carries no `board_climb_holds` table to join.
     // Recomputed per wall by `recomputeMissingHoldCounts` (SW-04) whenever a
-    // wall version publishes. Since the hold lock, only a draft climb can still
-    // gain a count; legacy counts from in-place resets stay as stored.
+    // wall version publishes, which is when a hold edit's removal lands.
     missingHoldCount: integer('missing_hold_count'),
     // Spray walls only: the climb lost at least one hold in a reset its owner
     // marked as a FULL reset (`spray_wall_versions.is_full_reset`), so the wall's

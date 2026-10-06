@@ -353,7 +353,7 @@ describe('assertSprayHoldsAreAlive re-resolves the published generation under th
  * authz read and the lock is ordinary. Forcing that window in a behavioural test
  * means interleaving two transactions and would be flaky about hitting it; the
  * outer gate (a wall already deleted when the call arrives) is covered
- * behaviourally in spray-wall-hold-lock.test.ts.
+ * behaviourally in spray-wall-retired-reset.test.ts.
  *
  * The `IS NULL` scope alone is not enough, which is why the throw is asserted too:
  * a missing row without the throw would read as "nothing published yet" and
@@ -509,37 +509,5 @@ describe('an archived wall refuses writes, decided under the wall lock', () => {
       'utf8',
     );
     expect(deleteAccountSource).toContain('.orderBy(desc(dbSchema.sprayWalls.id))');
-  });
-});
-
-/**
- * A wall's holds lock once it has a published climb, decided under the wall lock.
- *
- * `saveClimb` and `updateClimb` publish a spray climb under the same lock, so a
- * check here either sees the climb or the climb waits for the hold edit. A check
- * read before the lock could see "no climbs", lose the race to a publish, and
- * then move a hold under a published climb. What the lock refuses and allows is
- * behavioural, in spray-wall-hold-lock.test.ts, which also races the two orders
- * against a real wall lock.
- */
-describe('the hold lock is decided under the wall lock, after the archived check', () => {
-  it.each(['createSprayWallVersion', 'upsertSprayWallHolds', 'removeSprayWallHolds', 'publishDraftUnderLock'])(
-    '%s checks before any write',
-    (name) => {
-      const body = functionBody(SPRAY_WALLS_SOURCE, name);
-      const lockAt = body.indexOf('lockWallForWrite(');
-      const guardAt = body.indexOf('assertSprayWallHoldsUnlockedUnderLock(');
-      expect(guardAt, `${name} never checks the hold lock`).toBeGreaterThan(lockAt);
-      const archivedAt = body.indexOf('assertSprayWallNotArchivedUnderLock(');
-      if (archivedAt !== -1) expect(archivedAt).toBeLessThan(guardAt);
-      const writeAt = firstWriteOffset(body);
-      if (writeAt !== -1) expect(guardAt).toBeLessThan(writeAt);
-    },
-  );
-
-  it('takes the lock before it reads the wall or its climbs', () => {
-    const body = functionBody(SPRAY_WALLS_SOURCE, 'assertSprayWallHoldsUnlockedUnderLock');
-    expect(body.indexOf('lockWallForWrite(')).toBeGreaterThanOrEqual(0);
-    expect(body.indexOf('lockWallForWrite(')).toBeLessThan(body.indexOf('.select('));
   });
 });

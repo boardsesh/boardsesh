@@ -148,7 +148,6 @@ export const SPRAY_WALL_CODES = {
   draftPurposeMismatch: 'SPRAY_WALL_DRAFT_PURPOSE_MISMATCH',
   sourceVersionNotCurrent: 'SPRAY_WALL_SOURCE_VERSION_NOT_CURRENT',
   visibilityOwnerOnly: 'SPRAY_WALL_VISIBILITY_OWNER_ONLY',
-  holdsLocked: 'SPRAY_WALL_HOLDS_LOCKED',
   resetRetired: 'SPRAY_WALL_RESET_RETIRED',
   archived: SPRAY_WALL_ARCHIVED_CODE,
   resetOwnerOnly: 'SPRAY_WALL_RESET_OWNER_ONLY',
@@ -227,18 +226,6 @@ export async function assertSprayWallNotArchivedUnderLock(
 }
 
 /**
- * The refusal for a hold add, move or remove on a wall that has a published
- * climb. Worded for the oldest app that can see it: an app built before the lock
- * shows this message and nothing else.
- */
-function sprayWallHoldsLockedError(): GraphQLError {
-  return new GraphQLError(
-    'Holds are locked once a wall has climbs. Update Boardsesh, then use Reset wall to change them.',
-    { extensions: { code: SPRAY_WALL_CODES.holdsLocked } },
-  );
-}
-
-/**
  * The refusal for the retired in-place reset: a new photo on a published wall,
  * `proposeSprayWallReset`, and publishing a reset-purpose draft. A reset is now
  * `resetSprayWall`, which clones the wall.
@@ -258,47 +245,6 @@ async function publishedVersionIdUnderLock(tx: SprayWriteTransaction, wallId: nu
     .where(eq(dbSchema.sprayWalls.id, wallId))
     .limit(1);
   return row?.currentVersionId ?? null;
-}
-
-/**
- * Refuse a hold add, move or remove once the wall has a published climb, read
- * UNDER THE WALL LOCK.
- *
- * A wall's holds are free to edit until its first published climb. After that a
- * climb is set on them and they are locked: the way to change them is
- * `resetSprayWall`, which clones the wall. Draft climbs do not lock the wall.
- * This is the rule `SprayWall.holdsLocked` reports.
- *
- * Exact, not approximate: `saveClimb` and `updateClimb` (the only writers that
- * can publish a spray climb) take this same wall lock before they insert or
- * publish, so a climb either lands before this read and is seen, or waits for
- * the hold edit to commit.
- *
- * A wall that has never published short-circuits without the climb read: its
- * holds are the add-wall wizard's, and no climb can be published on a wall with
- * no published holds. Callers run `assertSprayWallNotArchivedUnderLock` first,
- * so an archived wall is refused as archived.
- */
-async function assertSprayWallHoldsUnlockedUnderLock(tx: SprayWriteTransaction, wallId: number): Promise<void> {
-  await lockWallForWrite(tx, wallId);
-  const [wall] = await tx
-    .select({ layoutId: dbSchema.sprayWalls.layoutId, currentVersionId: dbSchema.sprayWalls.currentVersionId })
-    .from(dbSchema.sprayWalls)
-    .where(eq(dbSchema.sprayWalls.id, wallId))
-    .limit(1);
-  if (!wall || wall.currentVersionId == null) return;
-  const [publishedClimb] = await tx
-    .select({ uuid: dbSchema.boardClimbs.uuid })
-    .from(dbSchema.boardClimbs)
-    .where(
-      and(
-        eq(dbSchema.boardClimbs.boardType, 'spray'),
-        eq(dbSchema.boardClimbs.layoutId, wall.layoutId),
-        eq(dbSchema.boardClimbs.isDraft, false),
-      ),
-    )
-    .limit(1);
-  if (publishedClimb) throw sprayWallHoldsLockedError();
 }
 
 /**
@@ -1468,10 +1414,9 @@ async function archiveResetSourceUnderLock(
  * integrity number. One sequence, called from `publishSprayWallVersion` and from
  * `commitSprayWallVersion`, which older apps still use for a wall's first publish.
  *
- * A later publish is a hold edit on a live wall, so it is where the hold lock is
- * exact: refused once the wall has a published climb, and refused outright for a
- * draft with a new photo (the retired in-place reset). A first publish, of a
- * wizard wall or a reset clone, has neither check.
+ * A later publish is a hold edit on a live wall. A draft with a new photo there
+ * is the retired in-place reset and is refused. A first publish, of a wizard
+ * wall or a reset clone, has no such check.
  *
  * It takes the wall lock itself. `pg_advisory_xact_lock` is re-entrant within a
  * transaction, so a caller that already holds it pays nothing — and a caller that
@@ -1522,7 +1467,6 @@ async function publishDraftUnderLock(
     // A draft with a new photo on a live wall is a leftover of the retired
     // in-place reset. It can be discarded, never published.
     if ((await draftPurpose(tx, wall.id, draft)) === 'reset') throw sprayWallResetRetiredError();
-    await assertSprayWallHoldsUnlockedUnderLock(tx, wall.id);
   }
 
   // Publishing a version that is not NEWER than the published one would walk
@@ -1656,11 +1600,12 @@ async function publishDraftUnderLock(
       );
   }
 
-  // Re-materialise every climb's integrity number. With the hold lock above, a
-  // later publish only lands on a wall with no published climb, so what this can
-  // still move is a DRAFT climb whose hold this publish took off. AFTER the status
-  // flip, because the recompute only counts removals by generations that have
-  // landed, and until that update this version is a draft.
+  // Re-materialise every climb's integrity number. This publish is the moment a
+  // hold edit's removal becomes real, so a published or draft climb that used a
+  // hold it took off gets its lost-hold count here (the app confirms first, from
+  // `sprayWallHoldUsage`). AFTER the status flip, because the recompute only counts
+  // removals by generations that have landed, and until that update this version
+  // is a draft.
   const climbsChanged = await recomputeMissingHoldCounts(tx, wall.id);
 
   // The generated wall looks for the new generation, queued with the publish so
@@ -2456,13 +2401,11 @@ export const sprayWallMutations = {
       // A new photo is only for a wall's FIRST version: the add-wall wizard and a
       // reset clone. On a published wall it was the retired in-place reset, which
       // is now `resetSprayWall`. Reusing the published photo (`sourceVersionId`) is
-      // a hold edit, which the hold lock decides. Both run before the open-draft
-      // check, so an older app retrying a reset upload is told to update rather
-      // than handed back its leftover draft.
-      if (uploadedPhoto) {
-        if ((await publishedVersionIdUnderLock(tx, wall.id)) != null) throw sprayWallResetRetiredError();
-      } else {
-        await assertSprayWallHoldsUnlockedUnderLock(tx, wall.id);
+      // a hold edit and always allowed. The check runs before the open-draft check,
+      // so an older app retrying a reset upload is told to update rather than
+      // handed back its leftover draft.
+      if (uploadedPhoto && (await publishedVersionIdUnderLock(tx, wall.id)) != null) {
+        throw sprayWallResetRetiredError();
       }
 
       const [{ versions: versionCount }] = await tx
@@ -2989,8 +2932,13 @@ export const sprayWallMutations = {
     if (explicitBackground !== undefined && explicitBackground !== 'photo') {
       const quality = artVersion ? sprayVersionQuality(artVersion, wall) : null;
       if (!quality || quality.verdict === 'fail') {
+        // A published wall takes no new photo (the in-place reset is retired), so
+        // the way to a front-on photo there is Reset wall. Before the first publish
+        // the wizard can still retake it.
         throw new GraphQLError(
-          'This wall\u2019s photo is too angled to straighten. Retake it front-on to use this look.',
+          wall.currentVersionId == null
+            ? 'This wall\u2019s photo is too angled to straighten. Retake it front-on to use this look.'
+            : 'This wall\u2019s photo is too angled to straighten. Use Reset wall to photograph it front-on and use this look.',
           {
             extensions: { code: SPRAY_WALL_CODES.artNotAvailable, reason: quality?.reason ?? 'no-photo' },
           },
@@ -3039,7 +2987,6 @@ export const sprayWallMutations = {
     const result = await db.transaction(async (tx) => {
       await lockWallForWrite(tx, wall.id);
       await assertSprayWallNotArchivedUnderLock(tx, wall.id);
-      await assertSprayWallHoldsUnlockedUnderLock(tx, wall.id);
       const version = await loadDraftVersion(tx, wall.id, validated.versionId);
 
       // The wall as THIS DRAFT sees it: holds installed at or before the draft's
@@ -3265,7 +3212,6 @@ export const sprayWallMutations = {
     await db.transaction(async (tx) => {
       await lockWallForWrite(tx, wall.id);
       await assertSprayWallNotArchivedUnderLock(tx, wall.id);
-      await assertSprayWallHoldsUnlockedUnderLock(tx, wall.id);
       const version = await loadDraftVersion(tx, wall.id, validated.versionId);
 
       // The draft's own view of the wall — see `upsertSprayWallHolds`.
@@ -3411,7 +3357,7 @@ export const sprayWallMutations = {
       await assertSprayWallNotArchivedUnderLock(tx, found.wall.id);
       // The re-read and every write live in `publishDraftUnderLock`, so
       // this path and `commitSprayWallVersion` cannot drift on what publishing
-      // means — the hold lock, the retired reset, the supersede, the hold count,
+      // means — the retired reset, the supersede, the hold count,
       // the catalogue image and the integrity recompute are one sequence with one
       // owner.
       return publishDraftUnderLock(tx, found.wall, found.version.id);

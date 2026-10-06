@@ -3,26 +3,24 @@ import { createRequire } from 'node:module';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
 import type * as GraphQLModule from 'graphql';
-import { SPRAY_WALL_WRITE_LOCK_NAMESPACE, type ConnectionContext } from '@boardsesh/shared-schema';
+import type { ConnectionContext } from '@boardsesh/shared-schema';
 
 /**
- * The spray wall hold lock and the retired in-place reset, against the real
+ * The retired in-place reset, and live-wall hold edits, against the real
  * database.
  *
- * The rules (docs/spray-walls.md, "Holds lock at the first published climb" and
- * "What an older app gets back"):
+ * The rules (docs/spray-walls.md, "Resets", "Editing the holds of a live wall"
+ * and "What an older app gets back"):
  *
- *  - a wall's holds are free to edit until its first PUBLISHED climb; after that
- *    every hold add, move and remove is refused with SPRAY_WALL_HOLDS_LOCKED.
- *    Draft climbs do not lock the wall;
+ *  - holds stay editable on a live wall, published climbs or not. A climb that
+ *    used a removed hold gets `missing_hold_count`, stays listed and can be
+ *    found with the Holds filter;
  *  - a new photo on a published wall, `proposeSprayWallReset`, and publishing a
  *    reset-purpose draft are refused with SPRAY_WALL_RESET_RETIRED. A leftover
  *    reset draft can still be discarded;
  *  - a wall's FIRST publish works through both `publishSprayWallVersion` and
  *    `commitSprayWallVersion`, for a wizard wall and for a reset clone;
- *  - climbs that lost a hold to an old reset leave the wall's lists and search,
- *    and still open by uuid;
- *  - the retired reads answer their safe empty values.
+ *  - the retired reads answer their safe values, through the real schema.
  *
  * Storage is the only stub — there is no R2 in CI — and everything else is real
  * rows.
@@ -106,13 +104,11 @@ const { db } = await import('../db/client');
 const requireFromHere = createRequire(import.meta.url);
 const { execute, parse } = requireFromHere('graphql') as typeof GraphQLModule;
 const { schema } = await import('../graphql/index');
-const { sprayWallQueries, sprayWallMutations, lockWallForWrite } =
-  await import('../graphql/resolvers/board/spray-walls');
+const { sprayWallQueries, sprayWallMutations } = await import('../graphql/resolvers/board/spray-walls');
 const { tickMutations } = await import('../graphql/resolvers/ticks/mutations');
 const { countClimbs } = await import('../db/queries/climbs/count-climbs');
 const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
 const { climbQueries } = await import('../graphql/resolvers/climbs/queries');
-const { resolvers } = await import('../graphql/resolvers/index');
 const { sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
 const { searchClimbs } = await import('../db/queries/climbs/search-climbs');
 
@@ -207,7 +203,6 @@ async function readWall(wall: CreatedWall) {
   return (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))) as {
     currentVersion: { id: string; number: number } | null;
     holdCount: number;
-    holdsLocked: boolean;
     climbEditPolicy: string;
     viewerCanEditClimbs: boolean;
   };
@@ -255,7 +250,7 @@ async function missingFor(uuid: string): Promise<number | null> {
 async function searchNames(
   wall: CreatedWall,
   name?: string,
-  filters: { onlyDrafts?: boolean; holdIntegrity?: 'broken' } = {},
+  filters: { onlyDrafts?: boolean; holdIntegrity?: 'any' | 'intact' | 'broken' } = {},
 ): Promise<string[]> {
   const result = await searchClimbs(
     sprayRouteParams(wall),
@@ -310,10 +305,6 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-const HOLDS_LOCKED = {
-  message: 'Holds are locked once a wall has climbs. Update Boardsesh, then use Reset wall to change them.',
-  extensions: { code: 'SPRAY_WALL_HOLDS_LOCKED' },
-};
 const RESET_RETIRED = {
   message: 'Resets changed. Update Boardsesh, then use Reset wall.',
   extensions: { code: 'SPRAY_WALL_RESET_RETIRED' },
@@ -387,59 +378,54 @@ async function removedVersionOf(holdId: number): Promise<number | null> {
   return row.removed_version_id == null ? null : Number(row.removed_version_id);
 }
 
-describe('the hold lock', () => {
-  it('refuses every hold writer once the wall has a published climb', async () => {
-    const { wall, holdIds } = await createPublishedWall(OWNER);
-    // Opened while the wall had no climbs, so there is a draft to write to.
-    const draftId = await openHoldEditDraft(wall);
-    await saveClimbOn(wall, 'Alpha', [holdIds[0], holdIds[1]]);
-    expect((await readWall(wall)).holdsLocked).toBe(true);
+describe('holds stay editable on a live wall', () => {
+  it('takes a hold off under a published climb, which keeps the climb listed with a lost hold', async () => {
+    const { wall, holdIds } = await createPublishedWall(OWNER, { isPublic: true });
+    const climb = await saveClimbOn(wall, 'Loses one', [holdIds[0], holdIds[1]]);
+    const intact = await saveClimbOn(wall, 'Keeps all', [holdIds[0], holdIds[2]]);
 
-    await expect(upsertHold(wall, draftId)).rejects.toMatchObject(HOLDS_LOCKED);
-    await expect(removeHold(wall, draftId, holdIds[2])).rejects.toMatchObject(HOLDS_LOCKED);
-    await expect(publishVersion(draftId)).rejects.toMatchObject(HOLDS_LOCKED);
-
-    // Nothing moved: the draft drew nothing and took nothing off.
-    expect(await removedVersionOf(holdIds[2])).toBeNull();
-    expect((await readWall(wall)).holdCount).toBe(3);
-
-    // The draft can still be thrown away, and a new hold-edit draft is refused.
-    await expect(
-      sprayWallMutations.discardSprayWallVersion({}, { input: { versionId: draftId } }, ctxFor(OWNER)),
-    ).resolves.toBe(true);
-    await expect(openHoldEditDraft(wall)).rejects.toMatchObject(HOLDS_LOCKED);
-  });
-
-  it('leaves the holds free while the wall has only draft climbs', async () => {
-    const { wall, holdIds } = await createPublishedWall(OWNER);
-    const draftClimb = await saveClimbOn(wall, 'Draft', [holdIds[0], holdIds[2]], { isDraft: true });
-    expect((await readWall(wall)).holdsLocked).toBe(false);
+    // The app asks first how many climbs use the hold, then confirms.
+    const usage = (await sprayWallQueries.sprayWallHoldUsage(
+      {},
+      { wallUuid: wall.uuid, holdIds: [holdIds[1]] },
+      ctxFor(OWNER),
+    )) as Array<{ holdId: number; publishedClimbCount: number }>;
+    expect(usage).toEqual([expect.objectContaining({ holdId: holdIds[1], publishedClimbCount: 1 })]);
 
     const draftId = await openHoldEditDraft(wall);
     await expect(upsertHold(wall, draftId)).resolves.toHaveLength(1);
-    await expect(removeHold(wall, draftId, holdIds[2])).resolves.toBe(1);
+    await expect(removeHold(wall, draftId, holdIds[1])).resolves.toBe(1);
     await expect(publishVersion(draftId)).resolves.toMatchObject({ status: 'PUBLISHED' });
 
-    const read = await readWall(wall);
-    expect(read.currentVersion?.number).toBe(2);
-    expect(read.holdCount).toBe(3);
-    // The publish is still the moment a removal lands on the climbs that used it.
-    expect(await missingFor(draftClimb)).toBe(1);
+    expect(await missingFor(climb)).toBe(1);
+    expect(await missingFor(intact)).toBe(0);
+    // Still listed, and the Holds filter values work again.
+    expect(await searchNames(wall)).toEqual(['Keeps all', 'Loses one']);
+    expect(await searchNames(wall, undefined, { holdIntegrity: 'broken' })).toEqual(['Loses one']);
+    expect(await searchNames(wall, undefined, { holdIntegrity: 'intact' })).toEqual(['Keeps all']);
+    expect(await countClimbs(sprayRouteParams(wall), { holdIntegrity: 'broken' }, OWNER)).toBe(1);
   });
 
-  it('locks once a draft climb is published through updateClimb', async () => {
+  it('lets the setter re-set a draft that lost a hold, and it is findable in the drafts list', async () => {
     const { wall, holdIds } = await createPublishedWall(OWNER);
-    const draftClimb = await saveClimbOn(wall, 'Soon', [holdIds[0], holdIds[1]], { isDraft: true });
-    const draftId = await openHoldEditDraft(wall);
+    const draft = await saveClimbOn(wall, 'Draft to fix', [holdIds[0], holdIds[2]], { isDraft: true });
 
+    const editId = await openHoldEditDraft(wall);
+    await removeHold(wall, editId, holdIds[2]);
+    await publishVersion(editId);
+    expect(await missingFor(draft)).toBe(1);
+
+    expect(await searchNames(wall, undefined, { onlyDrafts: true })).toEqual(['Draft to fix']);
+    expect(await searchNames(wall, undefined, { onlyDrafts: true, holdIntegrity: 'broken' })).toEqual(['Draft to fix']);
+    expect(await countClimbs(sprayRouteParams(wall), { onlyDrafts: true }, OWNER)).toBe(1);
+
+    // Re-set onto holds still on the wall, the per-climb recompute clears it.
     await climbMutations.updateClimb(
       {},
-      { input: { uuid: draftClimb, boardType: 'spray', isDraft: false } },
+      { input: { uuid: draft, boardType: 'spray', frames: framesFor([holdIds[0], holdIds[1]]) } },
       ctxFor(OWNER),
     );
-
-    await expect(upsertHold(wall, draftId)).rejects.toMatchObject(HOLDS_LOCKED);
-    await expect(publishVersion(draftId)).rejects.toMatchObject(HOLDS_LOCKED);
+    expect(await missingFor(draft)).toBe(0);
   });
 });
 
@@ -567,13 +553,12 @@ describe('the retired in-place reset', () => {
     expect(await removedVersionOf(holdIds[2])).toBeNull();
   });
 
-  it('answers RESET_RETIRED before HOLDS_LOCKED for a leftover reset draft on a wall with climbs', async () => {
+  it('answers RESET_RETIRED for a leftover reset draft on a wall with climbs', async () => {
     // The update message is the one an older app should see: its reset is what
     // changed, and Reset wall is what it needs.
     const { wall, holdIds } = await createPublishedWall(OWNER);
     const leftoverId = await insertLeftoverResetDraft(wall, holdIds[2]);
-    await saveClimbOn(wall, 'Locks the wall', [holdIds[0], holdIds[1]]);
-    expect((await readWall(wall)).holdsLocked).toBe(true);
+    await saveClimbOn(wall, 'A published climb', [holdIds[0], holdIds[1]]);
 
     await expect(publishVersion(leftoverId)).rejects.toMatchObject(RESET_RETIRED);
     await expect(commitVersion(wall, leftoverId)).rejects.toMatchObject(RESET_RETIRED);
@@ -623,22 +608,19 @@ describe('the retired in-place reset', () => {
   });
 });
 
-describe('climbs that lost a hold to an old reset', () => {
-  it('leave the wall’s climb list and a name search, and still open by uuid', async () => {
+describe('a climb that lost a hold', () => {
+  it('stays listed and opens by uuid, and the Holds filter splits the list', async () => {
     const { wall, holdIds } = await createPublishedWall(OWNER, { isPublic: true });
     const intact = await saveClimbOn(wall, 'Intact', [holdIds[0]]);
     const broken = await saveClimbOn(wall, 'Broken', [holdIds[1]]);
-    const retired = await saveClimbOn(wall, 'Retired', [holdIds[2]]);
     await db.execute(sql`UPDATE board_climbs SET missing_hold_count = 1 WHERE uuid = ${broken}`);
-    await db.execute(
-      sql`UPDATE board_climbs SET missing_hold_count = 2, retired_by_reset = true WHERE uuid = ${retired}`,
-    );
 
-    expect(await searchNames(wall)).toEqual(['Intact']);
-    expect(await searchNames(wall, 'Broken')).toEqual([]);
-    expect(await searchNames(wall, 'Intact')).toEqual(['Intact']);
+    expect(await searchNames(wall)).toEqual(['Broken', 'Intact']);
+    expect(await searchNames(wall, 'Broken')).toEqual(['Broken']);
+    expect(await searchNames(wall, undefined, { holdIntegrity: 'intact' })).toEqual(['Intact']);
+    expect(await searchNames(wall, undefined, { holdIntegrity: 'broken' })).toEqual(['Broken']);
 
-    for (const climbUuid of [intact, broken, retired]) {
+    for (const climbUuid of [intact, broken]) {
       const opened = (await climbQueries.climb(
         {},
         {
@@ -650,18 +632,13 @@ describe('climbs that lost a hold to an old reset', () => {
           climbUuid,
         },
         ctxFor(OWNER),
-      )) as { uuid: string; missingHoldCount: number | null } | null;
+      )) as { uuid: string } | null;
       expect(opened?.uuid).toBe(climbUuid);
     }
   });
 });
 
 describe('the retired reads and inputs', () => {
-  it('answers Climb.lostHolds with null on a catalogue climb, as it always did', () => {
-    // The spray half runs through the executable schema below.
-    expect(resolvers.Climb.lostHolds({ boardType: 'kilter' })).toBeNull();
-  });
-
   it('reports SETTER and no climb edit on every wall, whatever is stored', async () => {
     const { wall } = await createPublishedWall(OWNER, { climbEditPolicy: 'COLLABORATORS' });
     const [stored] = (await db.execute(
@@ -701,145 +678,6 @@ describe('the retired reads and inputs', () => {
       sql`SELECT count(*)::int AS rows FROM spray_climb_lineage WHERE child_uuid = ${child}`,
     )) as unknown as Array<{ rows: number }>;
     expect(lineage.rows).toBe(0);
-  });
-});
-
-describe('drafts that lose a hold, and the retired Lost holds filter', () => {
-  it('keeps a draft that lost a hold in the drafts list, and the setter can re-set it', async () => {
-    const { wall, holdIds } = await createPublishedWall(OWNER);
-    const draft = await saveClimbOn(wall, 'Draft to fix', [holdIds[0], holdIds[2]], { isDraft: true });
-
-    // Holds are still free: the wall has only a draft climb. This edit takes off
-    // a hold the draft uses.
-    const editId = await openHoldEditDraft(wall);
-    await removeHold(wall, editId, holdIds[2]);
-    await publishVersion(editId);
-    expect(await missingFor(draft)).toBe(1);
-
-    // `onlyDrafts` is the only place the setter finds it, in the list and the count.
-    expect(await searchNames(wall, undefined, { onlyDrafts: true })).toEqual(['Draft to fix']);
-    expect(await countClimbs(sprayRouteParams(wall), { onlyDrafts: true }, OWNER)).toBe(1);
-    // An older app's "Lost holds" filter on its drafts tab shows exactly this draft.
-    expect(await searchNames(wall, undefined, { onlyDrafts: true, holdIntegrity: 'broken' })).toEqual(['Draft to fix']);
-
-    // Re-set onto holds still on the wall, the per-climb recompute clears it.
-    await climbMutations.updateClimb(
-      {},
-      { input: { uuid: draft, boardType: 'spray', frames: framesFor([holdIds[0], holdIds[1]]) } },
-      ctxFor(OWNER),
-    );
-    expect(await missingFor(draft)).toBe(0);
-    expect(await searchNames(wall, undefined, { onlyDrafts: true })).toEqual(['Draft to fix']);
-  });
-
-  it('answers the Lost holds filter with an empty list on a spray wall, in the list and the count', async () => {
-    const { wall, holdIds } = await createPublishedWall(OWNER, { isPublic: true });
-    await saveClimbOn(wall, 'Intact', [holdIds[0]]);
-    const broken = await saveClimbOn(wall, 'Broken', [holdIds[1]]);
-    await db.execute(sql`UPDATE board_climbs SET missing_hold_count = 1 WHERE uuid = ${broken}`);
-
-    expect(await searchNames(wall)).toEqual(['Intact']);
-    expect(await searchNames(wall, undefined, { holdIntegrity: 'broken' })).toEqual([]);
-    expect(await countClimbs(sprayRouteParams(wall), { holdIntegrity: 'broken' }, OWNER)).toBe(0);
-  });
-});
-
-describe('the hold lock under a real race', () => {
-  /** Wait until Postgres shows a request queued, not granted, on this wall's lock. */
-  async function untilQueuedBehindWallLock(wallId: number): Promise<void> {
-    await vi.waitFor(
-      async () => {
-        const [lock] = (await db.execute(sql`
-          SELECT EXISTS (
-            SELECT 1 FROM pg_locks
-            WHERE locktype = 'advisory'
-              AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
-              AND classid = ${SPRAY_WALL_WRITE_LOCK_NAMESPACE}
-              AND objid = ${wallId}
-              AND objsubid = 2
-              AND NOT granted
-          ) AS waiting
-        `)) as unknown as Array<{ waiting: boolean }>;
-        expect(lock.waiting).toBe(true);
-      },
-      { timeout: 5000 },
-    );
-  }
-
-  /** A transaction that holds the wall lock, runs `work` on cue, then commits. */
-  function holdWallLock(
-    wallId: number,
-    work: (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => Promise<void>,
-  ) {
-    let announce: () => void = () => {};
-    let release: () => void = () => {};
-    const held = new Promise<void>((resolve) => {
-      announce = resolve;
-    });
-    const mayCommit = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const done = db.transaction(async (tx) => {
-      await lockWallForWrite(tx, wallId);
-      announce();
-      await mayCommit;
-      await work(tx);
-    });
-    return { held, release, done };
-  }
-
-  it('refuses a hold write that queued behind a climb publish', async () => {
-    const { wall, holdIds } = await createPublishedWall(OWNER);
-    const draftId = await openHoldEditDraft(wall);
-    const wallId = await wallIdOf(wall);
-
-    // The climb publish: what `saveClimb` writes under the wall lock.
-    const climbPublish = holdWallLock(wallId, async (tx) => {
-      await tx.execute(sql`
-        INSERT INTO board_climbs (uuid, board_type, layout_id, name, frames, is_draft, is_listed, user_id)
-        VALUES (${uuidv4().replace(/-/g, '').toUpperCase()}, 'spray', ${wall.layoutId}, 'Raced in',
-                ${framesFor([holdIds[0]])}, false, true, ${OWNER})
-      `);
-    });
-    await climbPublish.held;
-    const holdWrite = upsertHold(wall, draftId);
-    const refused = expect(holdWrite).rejects.toMatchObject(HOLDS_LOCKED);
-    try {
-      await untilQueuedBehindWallLock(wallId);
-    } finally {
-      climbPublish.release();
-      await climbPublish.done;
-    }
-    await refused;
-  });
-
-  it('lets a hold write that held the lock first land, then locks the wall once the climb publishes', async () => {
-    const { wall, holdIds } = await createPublishedWall(OWNER);
-    const draftId = await openHoldEditDraft(wall);
-    const wallId = await wallIdOf(wall);
-
-    // The hold write: what `removeSprayWallHolds` writes under the wall lock.
-    const holdWrite = holdWallLock(wallId, async (tx) => {
-      await tx.execute(sql`
-        UPDATE spray_wall_holds SET removed_version_id = ${draftId}
-        WHERE wall_id = ${wallId} AND hold_id = ${holdIds[2]}
-      `);
-    });
-    await holdWrite.held;
-    const climbSave = saveClimbOn(wall, 'Waited its turn', [holdIds[0], holdIds[1]]);
-    const saved = expect(climbSave).resolves.toEqual(expect.any(String));
-    try {
-      await untilQueuedBehindWallLock(wallId);
-    } finally {
-      holdWrite.release();
-      await holdWrite.done;
-    }
-    await saved;
-
-    // The hold write stands, and every hold write after the climb is refused.
-    expect(await removedVersionOf(holdIds[2])).toBe(Number(draftId));
-    await expect(upsertHold(wall, draftId)).rejects.toMatchObject(HOLDS_LOCKED);
-    await expect(publishVersion(draftId)).rejects.toMatchObject(HOLDS_LOCKED);
   });
 });
 
@@ -890,7 +728,7 @@ describe('publishing a draft, end to end', () => {
   });
 });
 
-describe('the retired reads through the executable schema', () => {
+describe('reads through the executable schema', () => {
   /** Run a document against the real schema, so a nullability mistake fails here. */
   async function run(document: string, variables: Record<string, unknown> = {}) {
     const result = await execute({
@@ -903,7 +741,39 @@ describe('the retired reads through the executable schema', () => {
     return result.data as Record<string, unknown>;
   }
 
-  it('answers each retired field with its safe value', async () => {
+  it('draws the hold a published hold edit took off, for the remix ghost', async () => {
+    const { wall, holdIds } = await createPublishedWall(OWNER, { isPublic: true });
+    const climbUuid = await saveClimbOn(wall, 'Lost one', [holdIds[0], holdIds[1]]);
+    const editId = await openHoldEditDraft(wall);
+    await removeHold(wall, editId, holdIds[1]);
+    await publishVersion(editId);
+
+    const read = (await run(
+      `query ($layoutId: Int!, $sizeId: Int!, $climbUuid: ID!) {
+        climb(boardName: "spray", layoutId: $layoutId, sizeId: $sizeId, setIds: "1", angle: 40, climbUuid: $climbUuid) {
+          missingHoldCount
+          lostHolds { id cx cy r installedVersion removedVersion }
+        }
+      }`,
+      { layoutId: wall.layoutId, sizeId: wall.sizeId, climbUuid },
+    )) as { climb: { missingHoldCount: number; lostHolds: Array<Record<string, number>> } };
+    // The removed hold's last geometry, installed by version 1 and taken off by 2.
+    expect(read.climb).toEqual({
+      missingHoldCount: 1,
+      lostHolds: [
+        {
+          id: holdIds[1],
+          cx: BASE_HOLDS[1].cx,
+          cy: BASE_HOLDS[1].cy,
+          r: BASE_HOLDS[1].r,
+          installedVersion: 1,
+          removedVersion: 2,
+        },
+      ],
+    });
+  });
+
+  it('answers each retired field with its safe value, and lostHolds [] for an intact climb', async () => {
     const { wall, holdIds } = await createPublishedWall(OWNER, { isPublic: true });
     const climbUuid = await saveClimbOn(wall, 'Through the schema', [holdIds[0], holdIds[1]]);
     await tickMutations.saveTick(

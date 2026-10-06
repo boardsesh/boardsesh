@@ -1213,7 +1213,7 @@ export const climbMutations = {
             );
 
           // The climb just moved under the wall, so its integrity number now
-          // describes holds it no longer uses. A draft that lost a hold to a
+          // describes holds it no longer uses. A climb that lost a hold to a
           // published hold edit, and that its setter re-set onto holds still on
           // the wall, is fixed by this edit, and nothing else would say so: the
           // wall-wide recompute only runs when a version publishes.
