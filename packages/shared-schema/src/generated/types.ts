@@ -9154,8 +9154,10 @@ export type SprayWall = {
   /** Holds alive on the current version. */
   holdCount: Scalars['Int']['output'];
   /**
-   * Whether this wall's holds are fixed for good: true once the wall is archived
-   * or has at least one published climb. Draft climbs do not count.
+   * True for an archived wall, and for a wall with at least one published climb
+   * (draft climbs do not count). Advisory on a live wall in this release: the
+   * server does not refuse hold edits on a wall that reads true here yet, so a
+   * client uses it to steer the owner to a reset rather than as a guarantee.
    */
   holdsLocked: Scalars['Boolean']['output'];
   /** The wall's board_layouts id. Also its board_product_sizes id: a wall has exactly one size, itself. */
@@ -9187,11 +9189,16 @@ export type SprayWall = {
   renderSettings?: Maybe<Scalars['JSON']['output']>;
   /**
    * The published wall that replaced this one through `resetSprayWall`, when the
-   * viewer may see it. Null while the clone is unfinished, and for a viewer the
-   * successor is not shared with.
+   * viewer may see it: its owner, a member of its gym, anyone when it is public,
+   * or anyone holding this wall's unlisted share link when both walls are
+   * unlisted. Null while the replacement is unfinished.
    */
   replacedByWallUuid?: Maybe<Scalars['ID']['output']>;
-  /** The wall this one was cloned from by `resetSprayWall`, when the viewer may see that wall. */
+  /**
+   * The wall this one was cloned from by `resetSprayWall`. Only for a viewer who
+   * can see that wall without its uuid: its owner, a member of its gym, or anyone
+   * when it is public.
+   */
   resetOfWallUuid?: Maybe<Scalars['ID']['output']>;
   /** Always equal to layoutId. Returned so a client never has to know the equality. */
   sizeId: Scalars['Int']['output'];
