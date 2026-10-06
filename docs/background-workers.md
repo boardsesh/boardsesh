@@ -13,8 +13,10 @@ The four nightly refresh families cut over in #5939: their workflows lost `sched
 dispatchable for backfills and dry runs. The two weekly MoonBoard estimate workflows lost their
 schedules too and are manual fallbacks. PR-2 adds the first-link and "Sync now" provider
 syncs; PR-3 the routine provider cycle, the board-wide catalog and location
-syncs, and the stats self-heal (see "Routine provider sync"). The Aurora and
-Kilter daemons keep owning routine syncs until the documented cutover.
+syncs, and the stats self-heal (see "Routine provider sync"). These families run
+by default, so the Aurora and Kilter daemons must stay off (`SYNC_DAEMON_DISABLED=true`,
+see "Routine cutover"). To hand routine syncs back to the daemons, list the five
+routine families in `BATCH_FAMILIES_DISABLED` first.
 
 ## Placement and connection budget
 

@@ -16,10 +16,10 @@ name: Refresh MoonBoard Wide-Angle Estimates
 # Weekly rather than nightly for the same reason as the sibling angle-estimate
 # job: the training sample (MoonBoard problems with a known 25°/40° grade)
 # moves slowly, and Kilter/Tension's fitted angle surface changes at most
-# weekly too (see refresh-climb-grades.ts's own refit cadence). Offset 30
-# minutes after refresh-moonboard-angle-estimates.yml so the two jobs, which
-# both write to board_climb_grades for disjoint angles on the same board,
-# never run concurrently.
+# weekly too (see refresh-climb-grades.ts's own refit cadence). The worker
+# family runs 30 minutes after refresh-moonboard-angle-estimates, since both
+# write to board_climb_grades for disjoint angles on the same board; don't
+# dispatch this while either worker run is in flight.
 # The weekly run is the worker's `refresh-moonboard-wide-angle-estimates` family
 # (docs/background-workers.md); this workflow is the manual fallback.
 on:
