@@ -175,7 +175,7 @@ avoid dropping data on a broken read:
 
 `packages/backend/src/workers/families/export-board-snapshots.ts` runs the same exporter
 (`runExportWithOptions` and `runCatalogExportWithOptions`) on the homelab batch worker
-(`docs/background-workers.md`, "Batch families"). It is enabled through `BATCH_FAMILIES_ENABLED`,
+(`docs/background-workers.md`, "Batch families"). It runs by default (`BATCH_FAMILIES_DISABLED` switches it off),
 and owns production publishing; Actions has only the isolated R2 rehearsal. Part of #5800; it
 implements the job side of #5622.
 
@@ -291,7 +291,7 @@ never overlap:
    `readsAllStats: true`. Record the run's duration on the homelab uplink (`started_at` to
    `finished_at` on its ledger row) in the cutover PR; Actions took 10 to 14 minutes.
    That original Actions fallback is retired; use the sole-worker rollback below.
-4. As soon as that nightly succeeds, add the family to the backend's `BATCH_FAMILIES_ENABLED` and
+4. As soon as that nightly succeeds, remove the family from the backend's `BATCH_FAMILIES_DISABLED` and
    redeploy, so the live prefix goes no longer than one deploy without a scan.
 5. The cutover PR deletes the workflow's `schedule:`, updates
    `scripts/__tests__/batch-families-cron.test.ts` and `scripts/__tests__/snapshot-export-workflow.test.ts`,
@@ -300,7 +300,7 @@ never overlap:
 6. Wait for three nights of `succeeded` nightly rows and compare each night's manifest with the one
    before (entry count, per-layout row counts).
 
-Rollback: remove the family from `BATCH_FAMILIES_ENABLED` and redeploy (the backend unschedules it on
+Rollback: add the family to `BATCH_FAMILIES_DISABLED` and redeploy (the backend unschedules it on
 boot). Jobs already queued still run, so wait until
 
 ```sql
@@ -1440,8 +1440,8 @@ R2 producer.
    CORS, immutable caching, and a manifest cache HIT. A successful worker nightly alone is insufficient:
    catalog failure is nonfatal on the worker, so the fresh catalog must pass independently.
 4. Immediately before live rotation, repeat the full rehearsal. Set `SNAPSHOT_PUBLISHER_STORAGE_TARGET=r2`,
-   disable Actions, and drain its queued/in-progress runs. Temporarily remove this family from the backend's
-   `BATCH_FAMILIES_ENABLED`, redeploy, and wait for its queued/running/retrying ledger rows to finish.
+   disable Actions, and drain its queued/in-progress runs. Temporarily add this family to the backend's
+   `BATCH_FAMILIES_DISABLED`, redeploy, and wait for its queued/running/retrying ledger rows to finish.
    Rotate the homelab vault/deploy to the complete R2 configuration above. Capture a trusted coverage file
    and UTC start time, then enqueue a full operator nightly with `skipPrune: true`. Verify all three
    prefixes, and exercise the live scan and filtered/gzip-only operator modes with `skipPrune: true`.

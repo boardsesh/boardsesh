@@ -95,7 +95,7 @@ beforeAll(async () => {
   queueState.boss = ownerBoss;
 }, 30000);
 beforeEach(async () => {
-  vi.stubEnv('BATCH_FAMILIES_ENABLED', 'user-data-export');
+  vi.stubEnv('BATCH_FAMILIES_DISABLED', '');
   objects.clear();
   await ownerBoss.deleteAllJobs(queue);
   await db.delete(backgroundJobRuns).where(eq(backgroundJobRuns.family, 'user-data-export'));

@@ -1,10 +1,9 @@
 /**
  * Backend-owned schedules for background job families (docs/background-workers.md).
  *
- * - **Opt-in per family.** `BATCH_FAMILIES_ENABLED` is a comma list of family
- *   names. Unset or empty registers nothing, so shipping a family's code never
- *   starts its cron; an unknown name removes every family schedule and throws
- *   instead of guessing.
+ * - **On by default, with a kill switch.** Every family runs. `BATCH_FAMILIES_DISABLED`
+ *   is a comma list of family names to turn off; an unknown name removes every
+ *   family schedule and throws instead of guessing.
  * - **One trigger queue.** Each family schedule is a pg-boss schedule on
  *   `background-schedule` keyed `<family>/<key>`, carrying `{ family, key }`.
  *   Disabling a family removes its schedules on the next boot.
@@ -29,40 +28,41 @@ import { logger } from '../utils/logger';
 export function enabledBatchFamilies(
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): BackgroundJobFamily[] {
-  const names = (environment.BATCH_FAMILIES_ENABLED ?? '')
+  const names = (environment.BATCH_FAMILIES_DISABLED ?? '')
     .split(',')
     .map((name) => name.trim())
     .filter(Boolean);
   const unknown = names.filter((name) => !isBackgroundJobFamily(name));
   if (unknown.length) {
     throw new Error(
-      `BATCH_FAMILIES_ENABLED names unknown families (${unknown.join(', ')}); known: ${BACKGROUND_JOB_FAMILIES.join(', ')}`,
+      `BATCH_FAMILIES_DISABLED names unknown families (${unknown.join(', ')}); known: ${BACKGROUND_JOB_FAMILIES.join(', ')}`,
     );
   }
-  return [...new Set(names.filter(isBackgroundJobFamily))];
+  const disabled = new Set(names);
+  return BACKGROUND_JOB_FAMILIES.filter((family) => !disabled.has(family));
 }
 
 let requestPathFamilies: { raw: string | undefined; families: ReadonlySet<BackgroundJobFamily> } | null = null;
 
 /**
  * `enabledBatchFamilies` for request paths (a link, "Sync now", the credential
- * status): never throws. An invalid `BATCH_FAMILIES_ENABLED` is an operator
- * typo, and it must not fail every credential request or roll back a valid
- * link; it disables every family here instead, exactly as boot leaves the
- * schedules unregistered. The validation error is logged once per value, and
- * the parse is memoised on the raw string so the hot status read does not
- * re-split it. Boot (`startBatchSchedules`) keeps the throwing variant.
+ * status, an export request): never throws. An invalid `BATCH_FAMILIES_DISABLED`
+ * is an operator typo in a kill switch, so it fails closed: every family is off
+ * here, exactly as boot leaves the schedules unregistered. The validation error
+ * is logged once per value, and the parse is memoised on the raw string so the
+ * hot status read does not re-split it. Boot (`startBatchSchedules`) keeps the
+ * throwing variant.
  */
 export function enabledBatchFamiliesOrNone(
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): ReadonlySet<BackgroundJobFamily> {
-  const raw = environment.BATCH_FAMILIES_ENABLED;
+  const raw = environment.BATCH_FAMILIES_DISABLED;
   if (requestPathFamilies && requestPathFamilies.raw === raw) return requestPathFamilies.families;
   let families: ReadonlySet<BackgroundJobFamily>;
   try {
     families = new Set(enabledBatchFamilies(environment));
   } catch (error) {
-    logger.error('[batch-schedules] BATCH_FAMILIES_ENABLED is invalid; request paths treat every family as off', {
+    logger.error('[batch-schedules] BATCH_FAMILIES_DISABLED is invalid; request paths treat every family as off', {
       error: error instanceof Error ? error.message : String(error),
     });
     families = new Set();
@@ -170,6 +170,10 @@ export async function startBatchSchedules(
   database: DbInstance,
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): Promise<void> {
+  if (environment.BATCH_FAMILIES_ENABLED !== undefined)
+    logger.warn(
+      '[batch-schedules] BATCH_FAMILIES_ENABLED is retired and ignored; every family runs unless BATCH_FAMILIES_DISABLED names it',
+    );
   let enabledFamilies: Set<string>;
   try {
     enabledFamilies = new Set<string>(enabledBatchFamilies(environment));

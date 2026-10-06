@@ -81,37 +81,39 @@ beforeEach(() => {
 });
 
 describe('enabledBatchFamilies', () => {
-  it('treats unset and empty as none', () => {
-    expect(enabledBatchFamilies({})).toEqual([]);
-    expect(enabledBatchFamilies({ BATCH_FAMILIES_ENABLED: '' })).toEqual([]);
-    expect(enabledBatchFamilies({ BATCH_FAMILIES_ENABLED: ' , ' })).toEqual([]);
+  it('turns every family on when the kill switch is unset or empty', () => {
+    expect(enabledBatchFamilies({})).toEqual(['batch-fake', 'multi-fake']);
+    expect(enabledBatchFamilies({ BATCH_FAMILIES_DISABLED: '' })).toEqual(['batch-fake', 'multi-fake']);
+    expect(enabledBatchFamilies({ BATCH_FAMILIES_DISABLED: ' , ' })).toEqual(['batch-fake', 'multi-fake']);
   });
 
-  it('parses and dedupes a comma list', () => {
-    expect(enabledBatchFamilies({ BATCH_FAMILIES_ENABLED: ' batch-fake ,batch-fake,multi-fake' })).toEqual([
-      'batch-fake',
-      'multi-fake',
-    ]);
+  it('turns off each family the kill switch names, tolerating spaces and repeats', () => {
+    expect(enabledBatchFamilies({ BATCH_FAMILIES_DISABLED: ' multi-fake ,multi-fake' })).toEqual(['batch-fake']);
+    expect(enabledBatchFamilies({ BATCH_FAMILIES_DISABLED: 'batch-fake,multi-fake' })).toEqual([]);
+  });
+
+  it('ignores the retired allowlist', () => {
+    expect(enabledBatchFamilies({ BATCH_FAMILIES_ENABLED: 'batch-fake' })).toEqual(['batch-fake', 'multi-fake']);
   });
 
   it('rejects an unknown family name', () => {
-    expect(() => enabledBatchFamilies({ BATCH_FAMILIES_ENABLED: 'batch-fake,refresh-typo' })).toThrow('refresh-typo');
+    expect(() => enabledBatchFamilies({ BATCH_FAMILIES_DISABLED: 'batch-fake,refresh-typo' })).toThrow('refresh-typo');
   });
 });
 
 describe('enabledBatchFamiliesOrNone', () => {
-  it('turns every family off for an invalid list instead of throwing, and logs it once per value', () => {
+  it('turns every family off for an invalid kill switch instead of throwing, and logs it once per value', () => {
     const logged = vi.spyOn(logger, 'error').mockImplementation(() => logger);
-    const invalid = { BATCH_FAMILIES_ENABLED: 'batch-fake,refresh-typo' };
+    const invalid = { BATCH_FAMILIES_DISABLED: 'batch-fake,refresh-typo' };
 
     expect([...enabledBatchFamiliesOrNone(invalid)]).toEqual([]);
     expect([...enabledBatchFamiliesOrNone(invalid)]).toEqual([]);
     expect(logged).toHaveBeenCalledTimes(1);
 
-    expect([...enabledBatchFamiliesOrNone({ BATCH_FAMILIES_ENABLED: 'batch-fake' })]).toEqual(['batch-fake']);
+    expect([...enabledBatchFamiliesOrNone({ BATCH_FAMILIES_DISABLED: 'multi-fake' })]).toEqual(['batch-fake']);
     expect(logged).toHaveBeenCalledTimes(1);
-    // Unset is "none", not a cache hit on nothing.
-    expect([...enabledBatchFamiliesOrNone({})]).toEqual([]);
+    // Unset is "all on", not a cache hit on the last value.
+    expect([...enabledBatchFamiliesOrNone({})]).toEqual(['batch-fake', 'multi-fake']);
     logged.mockRestore();
   });
 });
@@ -131,9 +133,9 @@ describe('assertScheduleRoles', () => {
 });
 
 describe('startBatchSchedules', () => {
-  it('registers nothing and unschedules every key when no family is enabled', async () => {
+  it('registers nothing and unschedules every key when every family is switched off', async () => {
     const { boss, asPgBoss, unscheduledKeys } = fakeBoss(['batch-fake/hourly', 'retired-family/daily']);
-    await startBatchSchedules(asPgBoss, database, {});
+    await startBatchSchedules(asPgBoss, database, { BATCH_FAMILIES_DISABLED: 'batch-fake,multi-fake' });
     expect(boss.schedule).not.toHaveBeenCalled();
     expect(boss.work).not.toHaveBeenCalled();
     expect(unscheduledKeys()).toEqual(new Set(['batch-fake/hourly', 'batch-fake/nightly', 'retired-family/daily']));
@@ -142,7 +144,7 @@ describe('startBatchSchedules', () => {
 
   it('sweeps stale keys, then schedules each enabled schedule and starts one worker', async () => {
     const { boss, asPgBoss } = fakeBoss(['batch-fake/hourly', 'retired-family/daily']);
-    await startBatchSchedules(asPgBoss, database, { BATCH_FAMILIES_ENABLED: 'batch-fake' });
+    await startBatchSchedules(asPgBoss, database, { BATCH_FAMILIES_DISABLED: 'multi-fake' });
     expect(boss.unschedule.mock.calls).toEqual([[BACKGROUND_SCHEDULE_QUEUE, 'retired-family/daily']]);
     expect(boss.unschedule.mock.invocationCallOrder[0]).toBeLessThan(boss.schedule.mock.invocationCallOrder[0]);
     expect(boss.schedule.mock.calls).toEqual([
@@ -166,11 +168,21 @@ describe('startBatchSchedules', () => {
     ]);
   });
 
+  it('warns that the retired allowlist is ignored, and still schedules every family', async () => {
+    const warned = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const { boss, asPgBoss } = fakeBoss();
+    await startBatchSchedules(asPgBoss, database, { BATCH_FAMILIES_ENABLED: 'multi-fake' });
+    expect(warned).toHaveBeenCalledWith(expect.stringContaining('BATCH_FAMILIES_ENABLED is retired'));
+    expect(boss.schedule.mock.calls.map(([, , data]) => data)).toEqual([
+      { family: 'batch-fake', key: 'hourly' },
+      { family: 'batch-fake', key: 'nightly' },
+    ]);
+    warned.mockRestore();
+  });
+
   it('on an unknown family, removes every schedule and throws without scheduling', async () => {
     const { boss, asPgBoss, unscheduledKeys } = fakeBoss(['batch-fake/hourly', 'retired-family/daily']);
-    await expect(
-      startBatchSchedules(asPgBoss, database, { BATCH_FAMILIES_ENABLED: 'batch-fake,typo' }),
-    ).rejects.toThrow('typo');
+    await expect(startBatchSchedules(asPgBoss, database, { BATCH_FAMILIES_DISABLED: 'typo' })).rejects.toThrow('typo');
     expect(unscheduledKeys()).toEqual(new Set(['batch-fake/hourly', 'batch-fake/nightly', 'retired-family/daily']));
     expect(boss.schedule).not.toHaveBeenCalled();
     expect(boss.work).not.toHaveBeenCalled();
@@ -179,16 +191,14 @@ describe('startBatchSchedules', () => {
   it('refuses to register an enabled multi-role family whose schedule names no role', async () => {
     fakes.families.push(multiFake);
     const { boss, asPgBoss } = fakeBoss();
-    await expect(
-      startBatchSchedules(asPgBoss, database, { BATCH_FAMILIES_ENABLED: 'batch-fake,multi-fake' }),
-    ).rejects.toThrow('must name a role');
+    await expect(startBatchSchedules(asPgBoss, database, {})).rejects.toThrow('must name a role');
     expect(boss.schedule).not.toHaveBeenCalled();
     expect(boss.work).not.toHaveBeenCalled();
   });
 
   it('fans a tick out into one enqueue per request and tolerates ALREADY_QUEUED', async () => {
     const { asPgBoss, tick } = fakeBoss();
-    await startBatchSchedules(asPgBoss, database, { BATCH_FAMILIES_ENABLED: 'batch-fake' });
+    await startBatchSchedules(asPgBoss, database, { BATCH_FAMILIES_DISABLED: 'multi-fake' });
     fakes.fanOut.mockResolvedValue([{ payload: {}, singletonKey: 'board-1' }, { payload: {} }]);
     fakes.enqueue
       .mockResolvedValueOnce({ runId: 'a', alreadyQueued: true })

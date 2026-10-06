@@ -31,7 +31,7 @@ async function main() {
   await startSprayDetectionMaintenance(jobQueue);
   await startBackgroundJobMaintenance(jobQueue, db);
   // Not fatal: without it no family schedule fires, which is also the state
-  // with BATCH_FAMILIES_ENABLED unset. Work already queued is unaffected.
+  // with every family in BATCH_FAMILIES_DISABLED. Work already queued is unaffected.
   await startBatchSchedules(jobQueue, db).catch((error: unknown) => {
     logger.error('[BatchSchedules] Could not register family schedules', { error });
   });
