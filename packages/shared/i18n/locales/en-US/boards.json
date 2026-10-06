@@ -848,11 +848,17 @@
       "draw": "Draw",
       "corners": "Corners"
     },
+    "resize": {
+      "bigger": "+{{percent}}%",
+      "smaller": "−{{percent}}%",
+      "original": "Original",
+      "typical": "Typical"
+    },
     "hints": {
       "tap": "Tap a ring to pick it. Tap it again to switch it off.",
       "maybe": "Dashed rings are maybes. Tap one, then tap Keep.",
       "longPress": "Press and hold a ring, then slide to move it.",
-      "addHold": "Tap + to add a hold.",
+      "addHold": "Press and hold to add a hold.",
       "dismiss": "Hide tip",
       "replay": "Show tips"
     },

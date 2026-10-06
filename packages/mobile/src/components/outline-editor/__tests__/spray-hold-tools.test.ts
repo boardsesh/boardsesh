@@ -20,8 +20,6 @@ import {
   polygonCentroidAndArea,
   polygonSelfOverlaps,
   radiusForRing,
-  SIZE_PRESETS,
-  stepHoldSize,
   toRingPoints,
   type HoldGeometry,
   strokeExtent,
@@ -473,32 +471,6 @@ describe('holdIdAtPoint (the UI-thread twin)', () => {
     const actual = screenToBoard(210, 90, 2.5, 40, -30, 300, 400, 3);
     expect(actual.x).toBeCloseTo(expected[0]);
     expect(actual.y).toBeCloseTo(expected[1]);
-  });
-});
-
-describe('stepHoldSize', () => {
-  const median = 10;
-  const radii = SIZE_PRESETS.map((preset) => preset.scale * median);
-
-  it('walks the preset ladder one step at a time', () => {
-    expect(stepHoldSize(radii[1], median, 1)).toBeCloseTo(radii[2]);
-    expect(stepHoldSize(radii[2], median, -1)).toBeCloseTo(radii[1]);
-  });
-
-  it('stops at both ends', () => {
-    expect(stepHoldSize(radii[radii.length - 1], median, 1)).toBeNull();
-    expect(stepHoldSize(radii[0], median, -1)).toBeNull();
-  });
-
-  it('steps a between-presets hold to the next preset PAST it, never backwards', () => {
-    // 1.2x the median sits between M (1x) and L (1.45x).
-    expect(stepHoldSize(12, median, 1)).toBeCloseTo(radii[2]);
-    expect(stepHoldSize(12, median, -1)).toBeCloseTo(radii[1]);
-  });
-
-  it('refuses nonsense rather than inventing a size', () => {
-    expect(stepHoldSize(10, 0, 1)).toBeNull();
-    expect(stepHoldSize(0, 10, 1)).toBeNull();
   });
 });
 

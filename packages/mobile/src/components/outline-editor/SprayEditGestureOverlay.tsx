@@ -10,7 +10,7 @@ import { fallbackRadiusAt, holdIdAtPoint, screenToBoard, selectedDragIdAt } from
  */
 const TAP_MAX_DURATION_MS = 300;
 const TAP_MAX_DISTANCE_PX = 15;
-/** How long a finger rests on a ring before it is picked up. */
+/** How long a finger rests on a ring before it is picked up, or on bare wall before a hold is placed. */
 const PICK_UP_MIN_DURATION_MS = 400;
 /** How far a finger may wander before a pick-up is abandoned. RNGH's own long-press default. */
 const PICK_UP_MAX_DISTANCE_PX = 10;
@@ -62,6 +62,19 @@ type SprayEditGestureOverlayProps = {
   /** False while Join is waiting for its second hold: taps still count, drags and pick-ups do not. */
   canMove: boolean;
   /**
+   * The wall is under the hold cap. False makes a press and hold on bare wall
+   * step aside at touch-down, like any other touch with nothing to do.
+   */
+  canAdd: boolean;
+  /** The wall's median radius in board px: the size a press and hold places. Mirrored by the screen. */
+  medianRadiusSV: SharedValue<number>;
+  /**
+   * The hold a press and hold is placing, `[x, y, r]` in board px, or empty.
+   * Written here as the finger slides; `SprayPlacementPreview` draws it, and the
+   * screen clears it once the placed hold has rendered (or was refused).
+   */
+  placeHoldSV: SharedValue<number[]>;
+  /**
    * The screen-reader path. The rings are one drawing, not one view each, so the
    * wall is ONE adjustable element: swipe up / down walks a cursor through the
    * holds (the screen selects each, which brings up the chip bar), a double tap
@@ -74,10 +87,15 @@ type SprayEditGestureOverlayProps = {
   onPickUp: (holdId: number) => void;
   /** A drag of this ring ended this far from where it started, in board px. */
   onMoveEnd: (holdId: number, deltaX: number, deltaY: number) => void;
+  /** A press and hold on bare wall has just put a circle under the finger. */
+  onPlaceStart: () => void;
+  /** That finger lifted here, in board px: place the hold. */
+  onPlace: (boardX: number, boardY: number) => void;
 };
 
 /**
- * The hold editor's one gesture surface: tap, pick up, and move.
+ * The hold editor's one gesture surface: tap, pick up, move, and press and hold
+ * to place.
  *
  * Three gestures race on one full-bleed view, all of them single-finger and all
  * of them `simultaneousWithExternalGesture(pinchRef)` so a pinch always zooms —
@@ -86,10 +104,14 @@ type SprayEditGestureOverlayProps = {
  *
  * - **Tap** (≤ 300 ms, ≤ 15 px): handed to JS as a board point; the screen's
  *   tested hit test decides what it meant.
- * - **Pick up** (a 400 ms rest on a ring): refuses at touch-down when no ring is
- *   under the finger, so a long press on bare wall is not held against a pan.
- *   On activation it selects that ring and arms the drag, so the same touch can
- *   carry straight on into a move.
+ * - **Pick up / place** (a 400 ms rest): on a ring, it selects that ring and arms
+ *   the drag, so the same touch can carry straight on into a move. On bare wall
+ *   it PLACES a hold instead: a median-size circle appears under the finger
+ *   (`placeHoldSV`), slides with it, and lands where the finger lifts — one
+ *   `onPlace`. It steps aside at touch-down only when there is nothing it could
+ *   do: Join waiting, a second finger, or bare wall on a wall at the hold cap.
+ *   A zoomed board's pan still wins a finger that moves: the pan activates at
+ *   8 px, inside this gesture's 10 px allowance.
  * - **Drag** (`manualActivation`): claims the touch AT TOUCH-DOWN when it lands
  *   on the selected ring by the full hit test (a neighbour inside a big
  *   selection's grab radius is the neighbour's touch) — which is what beats the zoomed board's own one-finger
@@ -120,10 +142,15 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
   dragOffsetYSV,
   dragHoldIdSV,
   canMove,
+  canAdd,
+  medianRadiusSV,
+  placeHoldSV,
   accessibility,
   onTap,
   onPickUp,
   onMoveEnd,
+  onPlaceStart,
+  onPlace,
 }: SprayEditGestureOverlayProps) {
   // Mirrored into shared values rather than captured: a captured value would be
   // a gesture dependency, and rebuilding a live RNGH gesture mid-session has
@@ -136,6 +163,10 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
   useEffect(() => {
     canMoveSV.value = canMove;
   }, [canMove, canMoveSV]);
+  const canAddSV = useSharedValue(canAdd);
+  useEffect(() => {
+    canAddSV.value = canAdd;
+  }, [canAdd, canAddSV]);
 
   /** The ring a long press is resting on, from touch-down; 0 for none. */
   const pickUpIdSV = useSharedValue(0);
@@ -149,16 +180,54 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
   const touchStartYSV = useSharedValue(0);
   const touchStartMsSV = useSharedValue(0);
   const dragActiveSV = useSharedValue(false);
+  /** The press started on bare wall: if it rests long enough, it places a hold. */
+  const placeArmedSV = useSharedValue(false);
+  /** A placement is live: the circle is under the finger. */
+  const placingSV = useSharedValue(false);
+  /** Where the press started, in board px — the placed circle's origin before any slide. */
+  const placeStartXSV = useSharedValue(0);
+  const placeStartYSV = useSharedValue(0);
 
-  const callbacksRef = useRef({ onTap, onPickUp, onMoveEnd, onAccessibilityAction: accessibility.onAction });
-  callbacksRef.current = { onTap, onPickUp, onMoveEnd, onAccessibilityAction: accessibility.onAction };
+  const callbacksRef = useRef({
+    onTap,
+    onPickUp,
+    onMoveEnd,
+    onPlaceStart,
+    onPlace,
+    onAccessibilityAction: accessibility.onAction,
+  });
+  callbacksRef.current = {
+    onTap,
+    onPickUp,
+    onMoveEnd,
+    onPlaceStart,
+    onPlace,
+    onAccessibilityAction: accessibility.onAction,
+  };
   // Captured once by the gesture memo — only close over the stable ref.
   const handleTap = (boardX: number, boardY: number, zoom: number) => callbacksRef.current.onTap(boardX, boardY, zoom);
   const handlePickUp = (holdId: number) => callbacksRef.current.onPickUp(holdId);
   const handleMoveEnd = (holdId: number, deltaX: number, deltaY: number) =>
     callbacksRef.current.onMoveEnd(holdId, deltaX, deltaY);
+  const handlePlaceStart = () => callbacksRef.current.onPlaceStart();
+  const handlePlace = (boardX: number, boardY: number) => callbacksRef.current.onPlace(boardX, boardY);
 
   const gesture = useMemo(() => {
+    /** The finger lifted on a live placement: hand it to JS, which clears the preview once the hold is in. */
+    const commitPlacement = () => {
+      'worklet';
+      const placing = placeHoldSV.value;
+      placingSV.value = false;
+      if (placing.length >= 3) runOnJS(handlePlace)(placing[0], placing[1]);
+    };
+    /** A second finger or a pinch took the touch: the circle goes, nothing is placed. */
+    const abandonPlacement = () => {
+      'worklet';
+      if (!placingSV.value) return;
+      placingSV.value = false;
+      placeHoldSV.value = [];
+    };
+
     const tap = Gesture.Tap()
       .maxDuration(TAP_MAX_DURATION_MS)
       .maxDistance(TAP_MAX_DISTANCE_PX)
@@ -193,6 +262,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
         'worklet';
         pickedUpSV.value = false;
         pickUpIdSV.value = 0;
+        placeArmedSV.value = false;
         const touch = event.allTouches[0];
         // Not `isPinchingSV` here: it is cleared by the pinch's own touch-down for
         // a fresh single finger, which may run after this one.
@@ -216,16 +286,31 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
           point.y,
           fallbackRadiusAt(boardScaleSV.value, scaleSV.value),
         );
-        // Bare wall: nothing to pick up, so step aside at once rather than sit on
-        // the touch for 400 ms and then steal it from the board's pan.
         if (holdId === 0) {
-          manager.fail();
+          // Bare wall: a rest here places a hold. At the cap there is nothing to
+          // place, so step aside at once rather than sit on the touch for 400 ms.
+          if (!canAddSV.value) {
+            manager.fail();
+            return;
+          }
+          placeArmedSV.value = true;
+          placeStartXSV.value = point.x;
+          placeStartYSV.value = point.y;
           return;
         }
         pickUpIdSV.value = holdId;
       })
       .onStart(() => {
         'worklet';
+        if (placeArmedSV.value) {
+          if (isPinchingSV.value || dragActiveSV.value) return;
+          placeHoldSV.value = [placeStartXSV.value, placeStartYSV.value, medianRadiusSV.value];
+          placingSV.value = true;
+          // Lets the drag below take over once the finger slides, exactly as a pick-up does.
+          pickedUpSV.value = true;
+          runOnJS(handlePlaceStart)();
+          return;
+        }
         const holdId = pickUpIdSV.value;
         if (holdId === 0 || isPinchingSV.value) return;
         // The drag already claimed this touch for the selected hold: picking up
@@ -258,6 +343,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
             dragAbandonedSV.value = true;
             dragOffsetXSV.value = 0;
             dragOffsetYSV.value = 0;
+            abandonPlacement();
             manager.end();
           }
           return;
@@ -266,6 +352,8 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
         // Not `isPinchingSV` here: it is cleared by the pinch's own touch-down for
         // a fresh single finger, which may run after this one.
         if (!canMoveSV.value || event.numberOfTouches > 1 || !touch) {
+          // A second finger on a circle still resting where it was placed.
+          abandonPlacement();
           manager.fail();
           return;
         }
@@ -307,7 +395,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
         const touch = event.allTouches[0];
         if (!touch) return;
         const moved = Math.hypot(touch.x - touchStartXSV.value, touch.y - touchStartYSV.value);
-        if (pickedUpSV.value && pickUpIdSV.value !== 0) {
+        if (pickedUpSV.value && (pickUpIdSV.value !== 0 || placingSV.value)) {
           if (moved < PICK_UP_DRAG_SLOP_PX) return;
           dragHoldIdSV.value = pickUpIdSV.value;
           dragActiveSV.value = true;
@@ -320,19 +408,36 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
       })
       .onTouchesUp((_event, manager) => {
         'worklet';
+        if (dragActiveSV.value) return;
+        // A placement that never slid lands where it was placed.
+        if (placingSV.value) commitPlacement();
         // A touch that never became a drag ends here, rather than leaving the pan
         // sitting in BEGAN.
-        if (!dragActiveSV.value) manager.fail();
+        manager.fail();
       })
       .onUpdate((event) => {
         'worklet';
         if (dragAbandonedSV.value || isPinchingSV.value) return;
         const scale = scaleSV.value;
+        if (placingSV.value) {
+          const placing = placeHoldSV.value;
+          placeHoldSV.value = [
+            placeStartXSV.value + (event.translationX / scale) * boardScaleSV.value,
+            placeStartYSV.value + (event.translationY / scale) * boardScaleSV.value,
+            placing.length >= 3 ? placing[2] : medianRadiusSV.value,
+          ];
+          return;
+        }
         dragOffsetXSV.value = (event.translationX / scale) * boardScaleSV.value;
         dragOffsetYSV.value = (event.translationY / scale) * boardScaleSV.value;
       })
       .onEnd((event) => {
         'worklet';
+        if (placingSV.value) {
+          if (dragAbandonedSV.value || isPinchingSV.value) abandonPlacement();
+          else commitPlacement();
+          return;
+        }
         const holdId = dragHoldIdSV.value;
         if (dragAbandonedSV.value || isPinchingSV.value || holdId === 0) {
           dragOffsetXSV.value = 0;
@@ -374,6 +479,10 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
       })
       .onFinalize(() => {
         'worklet';
+        // Anything still placing here was cancelled from outside (the board's pan
+        // won the touch, the system took it): no hold.
+        abandonPlacement();
+        placeArmedSV.value = false;
         dragActiveSV.value = false;
         dragHoldIdSV.value = 0;
         pickedUpSV.value = false;
@@ -392,7 +501,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
     // Both race the tap: a tap wins a quick still touch, and either of the other
     // two activating cancels it.
     return Gesture.Race(Gesture.Simultaneous(pickUp, drag), tap);
-    // handleTap/handlePickUp/handleMoveEnd are intentionally not deps — captured
+    // handleTap/handlePickUp/handleMoveEnd/handlePlaceStart/handlePlace are intentionally not deps — captured
     // once and read render-scoped values through callbacksRef.
   }, [
     scaleSV,
@@ -404,6 +513,13 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
     pinchRef,
     boardScaleSV,
     canMoveSV,
+    canAddSV,
+    medianRadiusSV,
+    placeHoldSV,
+    placeArmedSV,
+    placingSV,
+    placeStartXSV,
+    placeStartYSV,
     hitHoldsSV,
     selectedHoldSV,
     dragOffsetXSV,

@@ -848,11 +848,17 @@
       "draw": "Dessiner",
       "corners": "Coins"
     },
+    "resize": {
+      "bigger": "+{{percent}} %",
+      "smaller": "−{{percent}} %",
+      "original": "D'origine",
+      "typical": "Typique"
+    },
     "hints": {
       "tap": "Touche un cercle pour le choisir. Touche-le encore pour le désactiver.",
       "maybe": "Les cercles en pointillés sont des prises incertaines. Touche-en une, puis touche Garder.",
       "longPress": "Appuie longuement sur un cercle, puis fais-le glisser pour le déplacer.",
-      "addHold": "Touche + pour ajouter une prise.",
+      "addHold": "Appuie longuement pour ajouter une prise.",
       "dismiss": "Masquer l'astuce",
       "replay": "Voir les astuces"
     },
