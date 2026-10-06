@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- The hold heatmap moved to the hold filter: pick holds with the heat showing where climbs go ([#6144](https://github.com/boardsesh/boardsesh/pull/6144))
 - Get the app straight from a climb page, a climb list or the gym directory on boardsesh.com ([#6083](https://github.com/boardsesh/boardsesh/pull/6083))
   iPhone Safari now offers to open the page you're on in the app
 
