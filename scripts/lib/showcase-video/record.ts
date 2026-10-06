@@ -57,7 +57,7 @@ export const SHOWCASE_DEVICES: Readonly<Record<'primary' | 'secondary', Showcase
  * the account's roster in the message.
  */
 export const SHOWCASE_DEFAULT_BOARDS: Readonly<Record<ShowcaseBackend, string>> = {
-  prod: "Marco's Board|High Point Climbing Orlando|MoonBoard 2016|Woods Original|Decoy Dungeon|Grasshopper|Plywood Spray Wall",
+  prod: "Marco's Board|High Point Climbing Orlando|MoonBoard 2016|Woods Original|Decoy Dungeon|Grasshopper|Home Spray Wall",
   local: 'The Proj Wall|The Slab Lab|MoonBoard 2016',
 };
 

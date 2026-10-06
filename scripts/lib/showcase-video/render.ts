@@ -2510,7 +2510,7 @@ export const SHOWCASE_PLACEHOLDER_TAKES: Record<ShowcaseTakeId, PlaceholderTake>
   'boards-soill': { source: boardRender('soill', 1, 1, [1]), anchors: {} },
   spray: {
     source: { kind: 'still', file: 'spray-wall.webp' },
-    anchors: { 'board-surface': { x: 16, y: 272, width: 408, height: 404 } },
+    anchors: { 'board-surface': { x: 16, y: 276, width: 408, height: 396 } },
   },
   wall: {
     source: { kind: 'still', file: 'wall-status.webp' },

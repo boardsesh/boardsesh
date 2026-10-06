@@ -106,7 +106,7 @@ import type { ShowcaseTakeId } from '../lib/showcase-video/contract';
  * The marks of the recording the edit was tuned on (work/marks/*.json), seconds.
  */
 const RECORDED_MARKS: Partial<Record<ShowcaseTakeId, Record<string, number>>> = {
-  spray: { 'next-1': 3.033, 'next-2': 5.903 },
+  spray: { 'next-1': 4.011, 'next-2': 7.09 },
   wall: { 'sheet-open': 5.438, 'history-shown': 10.242 },
   crew: {
     'invite-closed': 4.591,
@@ -120,7 +120,7 @@ const RECORDED_MARKS: Partial<Record<ShowcaseTakeId, Record<string, number>>> = 
   log: { scrolled: 5.005, 'filter-kilter': 10.252, 'filter-tension': 17.871 },
 };
 const RECORDED_FRAMES: Partial<Record<ShowcaseTakeId, number>> = {
-  spray: 378,
+  spray: 419,
   wall: 504,
   crew: 766,
   workouts: 721,

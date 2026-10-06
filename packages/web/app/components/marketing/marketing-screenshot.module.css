@@ -40,10 +40,10 @@
   object-position: center 38%;
 }
 
-/* Starting point only: the spray-wall board photo sits in the upper-middle of a
-   climb view. Tune after the first real capture. */
+/* Centres the crop on the wall photo, which sits lower in the play view than
+   the store shots' subjects. */
 .detail[data-marketing-shot='spray-wall'] .image {
-  object-position: center 38%;
+  object-position: center 47%;
 }
 
 .switch {

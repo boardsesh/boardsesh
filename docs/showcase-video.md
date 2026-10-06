@@ -145,20 +145,17 @@ The spray wall is filmed twice: held still as `boards-spray`, one of the nine
 board phones, and with two swipes as `spray`, the scene of its own. Its photo is
 fetched, so both takes give the last deep link 8 s to draw before recording
 starts (`primeSettleMs` in `takes.ts`; every other take gets 3 s). The default
-name is `Plywood Spray Wall`; point slot 6 at another wall with `--boards`.
+name is `Home Spray Wall`; point slot 6 at another wall with `--boards`.
 
-The wall's photo is a crop of
-[a Wikimedia Commons photo](https://commons.wikimedia.org/wiki/File:SZ_%E6%B7%B1%E5%9C%B3_Shenzhen_%E7%A6%8F%E7%94%B0_Futian_%E6%9C%83%E5%B1%95%E4%B8%AD%E5%BF%83%E5%9F%8E_Link_Central_Walk_Mall_shop_%E6%94%80%E7%9F%B3%E7%89%86_rock_climbing_wall_club_June_2025_R12S_03.jpg)
-by WAOSNMAH wocnaprm, released under
-[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/), so it needs no
-credit in the video or the store cuts. The crop (the right-hand panel, 2110 x 2090,
-which leaves out the gym's logo and the camera's date stamp) is committed as
-`marketing/showcase-video/spray-wall-photo.jpg`, so the wall can be rebuilt on
-another account. Keep the wall private: a public wall copies the photo into the
-world-readable media bucket and lists the wall.
+The wall's photo was taken by a friend of the project, who agreed to it
+appearing in the video, the store previews and ads. It is not in the repo: to
+rebuild the wall on another account, ask for the file (or use any wall you have
+permission for) and re-record the two spray takes. Keep the wall private: a
+public wall copies the photo into the world-readable media bucket and lists the
+wall.
 
 The wall check reads the board type from the app's own log line, which ends
-with it: `[screenshot] board[6] "Plywood Spray Wall" -> "<name>" (<layout> L..
+with it: `[screenshot] board[6] "Home Spray Wall" -> "<name>" (<layout> L..
 S.. @..°, spray)`. A spray wall's name and layout are whatever its owner typed, so
 the type is never taken from either (`findBoardSlotProblem` in `record.ts`).
 
