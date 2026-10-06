@@ -472,6 +472,25 @@ describe('loadSprayWall', () => {
     // The wall's own fixed angle, which is what every climb set on it publishes at
     // (SW-10) — `assertSprayAngleMatchesWall` rejects any other outright.
     expect(getSprayWall(LAYOUT_ID)?.angle).toBe(25);
+    // No slug in this payload, so no share link (#5488).
+    expect(getSprayWall(LAYOUT_ID)?.share).toBeNull();
+  });
+
+  it('keeps the slug and visibility a climb share link needs (#5488)', async () => {
+    const payload = renderDataPayload();
+    requestMock.mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } }).mockResolvedValueOnce({
+      sprayWallRenderData: {
+        ...payload.sprayWallRenderData,
+        wall: {
+          ...payload.sprayWallRenderData.wall,
+          board: { angle: 25, slug: 'brewery-spray', isPublic: false, isUnlisted: true },
+        },
+      },
+    });
+
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+
+    expect(getSprayWall(LAYOUT_ID)?.share).toEqual({ slug: 'brewery-spray', isPublic: false, isUnlisted: true });
   });
 
   it('registers whether the viewer can edit the wall, and only on a literal true', async () => {

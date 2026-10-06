@@ -3048,6 +3048,28 @@ propagating the noindex up the chain. So: no breadcrumb until a wall has an
 indexable page of its own, which is a decision about crawling somebody's home
 wall rather than a markup change.
 
+### Sharing a climb from the app (#5488)
+
+The app's Share button on a wall climb hands out the same URL this page lives at,
+`/b/{slug}/{angle}/view/{name-slug}-{uuid}`, built by `buildSprayClimbSharePath`
+(`packages/mobile/src/lib/spray/spray-share.ts`) with the climb segment www's
+`constructBoardSlugViewUrl` emits. It used to share the numeric
+`/spray/{layout}/{size}/1/{angle}/view/...` path, which www 404s by design. The
+slug, the angle and the two visibility flags come off the registered wall
+(`RegisteredSprayWall.share`, filled by the loader from `sprayWallRenderData`'s
+`wall.board`), so the share costs no request.
+
+| The wall is | What Share sends | Card warmed before the sheet opens |
+| --- | --- | --- |
+| public | the clean `/b/` link | the exact `og:image` URL this page advertises |
+| unlisted | the `/b/` link plus `?wall=<uuid>` | none (`/og/climb` answers 404) |
+| private, not loaded, or no slug | the climb name alone, no link | none |
+
+`?wall=` on a climb link is for the app, not for www: this page renders an
+unlisted wall at its slug without it, and the app's `/b/.../view/` route hands it
+to `BoardRouteHandoff` (`wallUuid`), which resolves the wall before adopting the
+board, so a crew member who is not the owner still gets the wall's photo.
+
 ### The card and the sitemap
 
 `GET /og/climb?board_name=spray` composes the card from the public copy and the

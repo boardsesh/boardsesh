@@ -78,6 +78,16 @@ export type RegisteredSprayWall = {
    * with nothing the setter could do about it.
    */
   angle: number | null;
+  /**
+   * What a climb share link needs from the wall's `user_boards` row: the slug
+   * `/b/{slug}` routes on and the two visibility flags that decide whether there
+   * is a link at all (`buildSprayClimbSharePath`).
+   *
+   * Optional because only the loader knows it; a registration without it (a
+   * test fixture, or a payload whose `board` came back empty) shares no link
+   * rather than a guessed one.
+   */
+  share?: { slug: string; isPublic: boolean; isUnlisted: boolean } | null;
   /** `SprayWallVersion.number`: 1-based and dense per wall. */
   version: number;
   /** Immutable database row id; discarded version numbers may be reused. */
