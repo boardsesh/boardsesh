@@ -2089,9 +2089,11 @@ these hold, and otherwise the climb plays with the banner as before:
   and some holds survive);
 - the open makes the climb current: not a preview, not a crew session (a tap there
   is a look), and not the climb that is already current;
-- the player is not already on screen. Inside the player (a swipe, a similar
-  climb, a browse commit) the banner's Edit is one tap away, and leaving the
-  player would lose the climber's place.
+- the `/play` route is not already on screen. Inside the player (a swipe, a
+  similar climb, a browse commit, a queue tap over it) the banner's Edit is one
+  tap away, and leaving the player would lose the climber's place. The iPad's
+  side pane does not count: it stays on screen under the editor, so routing
+  from it loses nothing.
 
 The routed climb is still made current, so the next open of it (the bottom bar, a
 second tap) is a reopen and plays it. That is what stops a climber who backed out

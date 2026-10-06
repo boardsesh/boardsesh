@@ -180,6 +180,25 @@ describe('useLostHoldGhosts', () => {
     expect(lostHoldsQuery.variables.at(-1)).toBeNull();
   });
 
+  it('forgets an open sheet whose ghost was answered, so an undo does not reopen it', () => {
+    registry.wall?.holds.push({ id: 13, cx: 102, cy: 100, r: 10 });
+    const { result, rerender } = setup();
+    act(() => result.current.openGhost(2));
+    expect(result.current.sheetGhost?.id).toBe(2);
+    rerender({ currentFrames: [{ ...PAINTED[0], 13: HAND }] });
+    expect(result.current.sheetGhost).toBeNull();
+    rerender({ currentFrames: PAINTED });
+    expect(result.current.ghosts.map((ghost) => ghost.id)).toEqual([2]);
+    expect(result.current.sheetGhost).toBeNull();
+  });
+
+  it('states only the count when there is no climb to ask about', () => {
+    lostHoldsQuery.state = { status: 'idle' };
+    const { result } = setup();
+    expect(result.current.status).toBe('countOnly');
+    expect(result.current.count).toBe(1);
+  });
+
   it('passes taps through outside a pick', () => {
     const { result } = setup();
     expect(result.current.interceptPaint(10)).toBe(false);

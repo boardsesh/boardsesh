@@ -406,10 +406,13 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // paneTarget when the wall tab becomes focused.
   const routeSegments = useSegments();
   const onWallTab = tabsActiveSegment(routeSegments) === 'wall';
-  // The player route is on screen (a queue sheet stacked over it, say). Read by
-  // the lost-holds set-active routing, which leaves an open player alone.
+  // The root `/play` route is on screen (a queue sheet stacked over it, say).
+  // Read by the lost-holds set-active routing, which leaves an open player alone.
+  // The root route only: the board deep links end in a `play` segment of their
+  // own. The iPad pane is not counted — it stays on screen under the editor, so
+  // routing from it loses nothing.
   const playerOpenRef = useRef(false);
-  playerOpenRef.current = (routeSegments as readonly string[]).includes('play');
+  playerOpenRef.current = routeSegments[0] === 'play';
   const usesDetailPane =
     resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane' && !onWallTab;
   const usesDetailPaneRef = useRef(usesDetailPane);

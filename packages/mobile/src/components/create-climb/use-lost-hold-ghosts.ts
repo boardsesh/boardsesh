@@ -22,11 +22,12 @@ import type { CreateClimbBoard } from './use-create-climb-screen';
 /**
  * What the editor shows about a climb's lost holds:
  *  - `none`: nothing is lost (or this is not a spray climb, or a fresh one);
- *  - `loading`: holds are lost, their positions are on the way;
+ *  - `countOnly`: holds are lost, their positions are on the way (or there is
+ *    no climb to ask about, such as a remix opened without its parent's uuid);
  *  - `ready`: positions known, ghosts drawn;
  *  - `unavailable`: no signal or the read failed. The count still shows.
  */
-export type LostHoldsStatus = 'none' | 'loading' | 'ready' | 'unavailable';
+export type LostHoldsStatus = 'none' | 'countOnly' | 'ready' | 'unavailable';
 
 /** The ghost being replaced, and the live holds offered for it. */
 export type LostHoldReplacement = {
@@ -211,8 +212,8 @@ export function useLostHoldGhosts({
       ? 'none'
       : allGhosts.length > 0
         ? 'ready'
-        : lostHoldsQuery.status === 'loading'
-          ? 'loading'
+        : lostHoldsQuery.status === 'loading' || lostHoldsQuery.status === 'idle'
+          ? 'countOnly'
           : 'unavailable';
   const count = status === 'ready' ? ghosts.length : lostHoldIds.length;
 
@@ -253,7 +254,12 @@ export function useLostHoldGhosts({
       setReplacingGhostId(null);
       setRoleFull(false);
     }
-  }, [ghosts, replacingGhostId]);
+    // The same for an open sheet: forgotten, so an undo that brings the ghost
+    // back does not bring its sheet back up unasked.
+    if (sheetGhostId !== null && !ghosts.some((ghost) => ghost.id === sheetGhostId)) {
+      setSheetGhostId(null);
+    }
+  }, [ghosts, replacingGhostId, sheetGhostId]);
 
   const openGhost = useCallback((lostHoldId: number) => {
     hapticSelection();

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useReducer, useState } from 'react';
+import { useCallback, useMemo, useReducer, useRef, useState } from 'react';
 import {
   STATE_TO_PRIMARY_CODE,
   accumulatedMapsToFrameStrings,
@@ -334,14 +334,18 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
    * changed: a replacement whose role is full in every frame (two starts already
    * painted) is refused rather than silently dropped.
    */
+  // Read through a ref so `placeHold` keeps one identity across paints: callers
+  // hand it down to tap handlers that would otherwise re-create on every tap.
+  const presentRef = useRef(history.present);
+  presentRef.current = history.present;
   const placeHold = useCallback(
     (holdId: number, placements: readonly HoldPlacement[]): boolean => {
-      const next = applyHoldPlacements(history.present, boardName, holdId, placements);
-      if (next === history.present) return false;
+      const present = presentRef.current;
+      if (applyHoldPlacements(present, boardName, holdId, placements) === present) return false;
       dispatch({ type: 'APPLY_ALL', updater: (frames) => applyHoldPlacements(frames, boardName, holdId, placements) });
       return true;
     },
-    [history.present, boardName],
+    [boardName],
   );
 
   // Encode the whole route: frame 0 absolute, later frames delta-encoded.

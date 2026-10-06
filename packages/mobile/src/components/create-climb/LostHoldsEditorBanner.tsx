@@ -41,7 +41,14 @@ export const LostHoldsEditorBanner = React.memo(function LostHoldsEditorBanner({
 
   if (replacing) {
     return (
-      <View style={styles.banner} accessibilityLiveRegion="polite" testID="lost-holds-editor-banner">
+      // `box-none`: only Cancel takes a touch, so a candidate under the banner
+      // can still be picked.
+      <View
+        style={styles.banner}
+        pointerEvents="box-none"
+        accessibilityLiveRegion="polite"
+        testID="lost-holds-editor-banner"
+      >
         <Icon name="hand.tap" size={16} color={overlays.onScrim} />
         <Text variant="footnote" color={overlays.onScrim} style={styles.copy}>
           {roleFull ? t('mobile.lostHolds.editor.roleFull') : t('mobile.lostHolds.editor.pickNearby')}
@@ -72,6 +79,9 @@ export const LostHoldsEditorBanner = React.memo(function LostHoldsEditorBanner({
   return (
     <Pressable
       style={styles.banner}
+      // Only a banner with somewhere to go takes a touch. One that just states
+      // the count lets taps and pinches through to the board under it.
+      pointerEvents={status === 'ready' ? 'auto' : 'none'}
       onPress={status === 'ready' ? onOpenFirstGhost : undefined}
       disabled={status !== 'ready'}
       accessibilityRole={status === 'ready' ? 'button' : 'text'}

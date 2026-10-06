@@ -571,7 +571,9 @@ export function CreateDrawer({
                 onInteractionActiveChange={setBoardInteractionActive}
                 scrollRef={scrollGestureRef}
                 overlay={boardOverlay}
-                ghostTargets={lostHolds?.ghostTargets}
+                // Off during a pick: a candidate sits right beside its ghost, and
+                // the ghost's wider tap circle would take the tap and cancel the pick.
+                ghostTargets={lostHolds?.replacing ? undefined : lostHolds?.ghostTargets}
                 onGhostPress={lostHolds?.openGhost}
               />
               {lostHolds ? (
