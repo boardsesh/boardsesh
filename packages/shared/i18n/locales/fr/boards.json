@@ -447,7 +447,7 @@
       "setterHint": "Seul l'ouvreur du bloc et les gestionnaires du mur peuvent modifier les blocs.",
       "collaboratorsPublicHint": "Toute personne qui peut voir ce mur public peut modifier les blocs publiés.",
       "collaboratorsUnlistedHint": "Toute personne avec le lien de partage peut modifier les blocs publiés.",
-      "collaboratorsPrivateHint": "Toute personne qui peut ouvrir sur ce mur peut modifier les blocs publiés.",
+      "collaboratorsPrivateHint": "Sur un mur privé, seuls les grimpeurs ayant accès pour ouvrir peuvent modifier les blocs.",
       "ownerOnlyHint": "Seul le grimpeur qui a monté ce mur peut changer qui modifie les blocs.",
       "ownerOnlyError": "Seul le grimpeur qui a monté ce mur peut changer qui modifie les blocs. Tes autres modifications sont enregistrées."
     }

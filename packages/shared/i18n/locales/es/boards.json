@@ -447,7 +447,7 @@
       "setterHint": "Solo el setter del bloque y los editores del plafón pueden editar bloques.",
       "collaboratorsPublicHint": "Cualquiera que pueda ver este plafón público puede editar bloques publicados.",
       "collaboratorsUnlistedHint": "Cualquiera con el enlace puede editar bloques publicados.",
-      "collaboratorsPrivateHint": "Cualquiera que pueda equipar en este plafón puede editar bloques publicados.",
+      "collaboratorsPrivateHint": "En un plafón privado, solo los escaladores con acceso para equipar pueden editar los bloques.",
       "ownerOnlyHint": "Solo quien montó este plafón puede cambiar quién edita los bloques.",
       "ownerOnlyError": "Solo quien montó este plafón puede cambiar quién edita los bloques. El resto de tus cambios se han guardado."
     }

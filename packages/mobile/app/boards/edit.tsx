@@ -135,7 +135,7 @@ function EditBoardForm({ board }: { board: UserBoard }) {
   // is what decides where visibility is saved.
   const isSprayWall = toBoardName(board.boardType) === 'spray';
   const { data: sprayWall } = useSprayWallByUuid(isSprayWall ? board.uuid : null);
-  const isOwner = (!!profile?.id && board.ownerId === profile.id) || board.isOwned === true;
+  const isOwner = !!profile?.id && board.ownerId === profile.id;
   const [selectedClimbEditPolicy, setSelectedClimbEditPolicy] = useState<'setter' | 'collaborators'>('setter');
   const [policyTouched, setPolicyTouched] = useState(false);
 

@@ -605,6 +605,7 @@ export function useUpdateSprayWall() {
       return response.updateSprayWall;
     },
     onSuccess: (updated) => {
+      queryClient.setQueryData(['sprayWall', updated.uuid], updated);
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['board', updated.uuid] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
