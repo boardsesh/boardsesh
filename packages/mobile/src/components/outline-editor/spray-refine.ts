@@ -5,9 +5,9 @@
  * (rasterise the ring, paint the stroke, walk the border back out), shared with
  * the catalogue outline editor, and its per-hold session is `use-brush-session.ts`.
  * This module is the spray ADAPTER around them: the coordinate frame the engine
- * works in, the screen-point brush size, the rule for a stroke that erases the
- * hold's middle, and the step that turns the brushed area back into a storable
- * hold (`cx`, `cy`, `r` and a radius-unit ring).
+ * works in, the screen-point brush size and its clamp to the hold, the rule for
+ * a stroke that erases the hold's middle, and the step that turns the brushed
+ * area back into a storable hold (`cx`, `cy`, `r` and a radius-unit ring).
  *
  * WHY A FRAME OF ITS OWN. The engine's numbers are absolute: two bitmap cells
  * per unit and a 1.6-unit decimation tolerance, tuned for catalogue board art.
@@ -55,16 +55,21 @@ import {
  * The hold's radius in the brush frame, in engine units.
  *
  * Precision: the engine decimates at 1.6 units, 5% of the hold's radius — what
- * Trace keeps on a typical spray hold (its 1.6 board px on a 40 px radius).
+ * Trace keeps on a typical spray hold (its 1.6 board px on a 40 px radius) —
+ * and its smallest brush that still moves a ring (`MIN_BRUSH_RADIUS_BOARD_PX`,
+ * 3 units) is 9.4% of it: 3.75 board px on a 40 px hold. The fine work comes
+ * from the screen-point brush instead (zoom in and the brush shrinks to that
+ * floor), not from a finer frame.
  *
  * Cost: the bitmap reaches the outline plus one radius (4 radii at most) at 2
- * cells a unit, about 310-350 cells a side with the hold-relative brushes and
- * 512 at the cap. Every stroke walks it several times on the JS thread (fill,
- * components, neck trim, border follow). Measured on the dev box in Node, a
- * one-shot stroke costs 17 ms at 32 units, 27 ms at 40 and 70 ms at 64; through
- * the session at 32 units, 19 ms median per lift, 48 ms once the bitmap is at
- * its cap. Hermes runs these loops several times slower, so 64 would visibly
- * stall where 32 stays at tens of milliseconds.
+ * cells a unit, about 360-370 cells a side in a normal session and 512 at the
+ * cap. Every stroke walks it several times on the JS thread (fill, components,
+ * neck trim, border follow). Measured through the session in Node on the dev
+ * box (60 strokes round a 40 px hold, five seeds): median per lift 17 ms at 32
+ * units, 28 ms at 40 and 40 ms at 48; once the bitmap is at its cap, 48, 75 and
+ * 112 ms. Hermes runs these loops several times slower and none of the bigger
+ * frames has been timed on a phone, so 32 stays until a device says otherwise
+ * (the editor logs each lift's cost in development builds, `[refine] lift`).
  */
 export const REFINE_FRAME_RADIUS = 32;
 
@@ -80,24 +85,123 @@ export const REFINE_FRAME_SCALE_MAX = 8;
 export const REFINE_CIRCLE_SAMPLES = 48;
 
 /**
- * Brush radii as a fraction of the hold's radius (its `r` when Refine opened).
+ * The brush size the climber picks, as a RADIUS IN SCREEN POINTS.
  *
- * Relative to the hold, not to the screen: the job is fine-tuning one hold, so
- * the brush is sized to that hold whatever the zoom. Screen-point brushes were
- * bigger than a typical hold at 1x on a phone (12 pt is about 66 board px on a
- * 2048 px photo, against a 40 px hold), so the default dab re-shaped the whole
- * hold and every first stroke pushed the bitmap to its cap. The live preview
- * draws the true size, so zooming in shows exactly what a dab covers.
+ * Screen points, so zooming in makes the brush finer on the hold: at 1× on a
+ * phone a point is about 5 board px of a 2048 px photo, at 8× well under one.
+ * The radius actually painted is clamped to the hold
+ * ({@link refineBrushRadiusAtZoom}), so the slider's range follows the zoom
+ * ({@link refineBrushRangeAtZoom}): it runs from the size that paints the floor
+ * to the size that paints the cap at the zoom the board last settled at, inside
+ * these absolute bounds, so no stretch of the track paints the same brush.
  */
-export const REFINE_BRUSH_RADIUS_FRACTION = {
-  small: 0.15,
-  medium: 0.3,
-  large: 0.6,
-} as const;
+export const REFINE_BRUSH_MIN_PT = 1;
+export const REFINE_BRUSH_MAX_PT = 32;
+/** The slider's top step: 21 steps (0-20), whatever the range at this zoom. */
+export const REFINE_BRUSH_TOP_RUNG = 20;
 
-export type RefineBrushSize = keyof typeof REFINE_BRUSH_RADIUS_FRACTION;
+/**
+ * The size Refine starts on: 2 pt is about 11 board px at 1× on a phone, the
+ * old Medium brush (30% of a 40 px hold) on the hold most walls have.
+ */
+export const DEFAULT_REFINE_BRUSH_PT = 2;
 
-export const DEFAULT_REFINE_BRUSH_SIZE: RefineBrushSize = 'medium';
+/**
+ * The biggest brush, as a fraction of the hold's radius when Refine opened: the
+ * old Large. A screen-point brush at 1× on a phone is bigger than a typical
+ * hold (12 pt is about 66 board px against a 40 px hold), and a dab that size
+ * re-shapes the whole hold and pushes the bitmap to its cap on the first stroke.
+ */
+export const REFINE_BRUSH_CAP_FRACTION = 0.6;
+
+/** The slider's range at one zoom, in screen points. */
+export type RefineBrushRange = { minPt: number; maxPt: number };
+
+/** The whole track: the range before a hold is open. */
+export const FULL_REFINE_BRUSH_RANGE: RefineBrushRange = { minPt: REFINE_BRUSH_MIN_PT, maxPt: REFINE_BRUSH_MAX_PT };
+
+/** A range never narrower than this ratio (one old quarter-doubling), so the slider always has somewhere to go. */
+const MIN_RANGE_RATIO = 2 ** 0.25;
+
+/**
+ * The slider's range at a settled zoom: from the size that paints the floor to
+ * the size that paints the cap, in screen points, inside
+ * [{@link REFINE_BRUSH_MIN_PT}, {@link REFINE_BRUSH_MAX_PT}]. Recomputed only
+ * when the zoom settles (the screen's `onZoomSettle`), never per frame.
+ */
+export function refineBrushRangeAtZoom(
+  boardPxPerPt: number,
+  zoom: number,
+  limits: RefineBrushLimits,
+): RefineBrushRange {
+  if (!(boardPxPerPt > 0) || !(zoom > 0)) return FULL_REFINE_BRUSH_RANGE;
+  const ptPerBoardPx = zoom / boardPxPerPt;
+  const clampPt = (value: number) => Math.min(REFINE_BRUSH_MAX_PT, Math.max(REFINE_BRUSH_MIN_PT, value));
+  let minPt = clampPt(limits.floorBoardPx * ptPerBoardPx);
+  let maxPt = clampPt(limits.capBoardPx * ptPerBoardPx);
+  if (maxPt < minPt * MIN_RANGE_RATIO) {
+    // A hold so small (or a zoom so far out) that the floor and the cap are the
+    // same few points: every size paints the same brush, so any short range does.
+    maxPt = Math.min(REFINE_BRUSH_MAX_PT, minPt * MIN_RANGE_RATIO);
+    minPt = maxPt / MIN_RANGE_RATIO;
+  }
+  return { minPt, maxPt };
+}
+
+/** A stored size shown inside the range at this zoom. The stored size itself is not changed. */
+export function clampRefineBrushPt(screenPt: number, range: RefineBrushRange): number {
+  return Math.min(range.maxPt, Math.max(range.minPt, screenPt));
+}
+
+/** The size at a 0-1 position along the range's log track. */
+export function refineBrushPtAtRatio(ratio: number, minPt: number, maxPt: number): number {
+  'worklet';
+  const clamped = ratio < 0 ? 0 : ratio > 1 ? 1 : ratio;
+  return minPt * (maxPt / minPt) ** clamped;
+}
+
+/** Where a size sits along the range's log track, 0-1. The inverse of {@link refineBrushPtAtRatio}. */
+export function refineBrushRatioForPt(screenPt: number, minPt: number, maxPt: number): number {
+  'worklet';
+  if (!(screenPt > minPt) || !(maxPt > minPt)) return 0;
+  const ratio = Math.log(screenPt / minPt) / Math.log(maxPt / minPt);
+  return ratio > 1 ? 1 : ratio;
+}
+
+/** The step a size sits on in the range, 0 to {@link REFINE_BRUSH_TOP_RUNG}. */
+export function refineBrushRung(screenPt: number, minPt: number, maxPt: number): number {
+  'worklet';
+  return Math.round(refineBrushRatioForPt(screenPt, minPt, maxPt) * REFINE_BRUSH_TOP_RUNG);
+}
+
+/** The size on a step of the range, clamped to it. */
+export function refineBrushPtAtRung(rung: number, minPt: number, maxPt: number): number {
+  'worklet';
+  const clamped = Math.min(REFINE_BRUSH_TOP_RUNG, Math.max(0, Math.round(rung)));
+  if (clamped === 0) return minPt;
+  if (clamped === REFINE_BRUSH_TOP_RUNG) return maxPt;
+  return refineBrushPtAtRatio(clamped / REFINE_BRUSH_TOP_RUNG, minPt, maxPt);
+}
+
+/** A size snapped to its nearest step of the range: the slider's quantiser. */
+export function roundRefineBrushPt(screenPt: number, minPt: number, maxPt: number): number {
+  'worklet';
+  return refineBrushPtAtRung(refineBrushRung(screenPt, minPt, maxPt), minPt, maxPt);
+}
+
+/** One VoiceOver / TalkBack step: the next step of the range up or down, clamped. */
+export function adjustRefineBrushPt(screenPt: number, direction: 1 | -1, minPt: number, maxPt: number): number {
+  'worklet';
+  return refineBrushPtAtRung(refineBrushRung(screenPt, minPt, maxPt) + direction, minPt, maxPt);
+}
+
+/** A stored size read back, or the default for anything that is not a size on the track. */
+export function parseRefineBrushPt(stored: unknown): number {
+  const value = typeof stored === 'string' ? Number(stored) : stored;
+  if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_REFINE_BRUSH_PT;
+  if (value < REFINE_BRUSH_MIN_PT || value > REFINE_BRUSH_MAX_PT) return DEFAULT_REFINE_BRUSH_PT;
+  return value;
+}
 
 export type { BrushMode as RefineMode };
 
@@ -135,15 +239,54 @@ export function fromBrushFrame(flatBrushPx: readonly number[], frame: RefineFram
   return converted;
 }
 
+/** The board-px bounds a brush is clamped to, for one hold. */
+export type RefineBrushLimits = {
+  /**
+   * The engine's smallest brush that moves a ring at all
+   * (`MIN_BRUSH_RADIUS_BOARD_PX`, in frame units). A dab smaller than that
+   * vanishes into the decimation, and a brush that silently does nothing is
+   * worse than a slightly bigger one.
+   */
+  floorBoardPx: number;
+  /** {@link REFINE_BRUSH_CAP_FRACTION} of the hold's radius, never under the floor. */
+  capBoardPx: number;
+};
+
+export function refineBrushLimits(holdRadiusBoardPx: number, frame: RefineFrame): RefineBrushLimits {
+  const floorBoardPx = MIN_BRUSH_RADIUS_BOARD_PX / frame.scale;
+  return { floorBoardPx, capBoardPx: Math.max(floorBoardPx, REFINE_BRUSH_CAP_FRACTION * holdRadiusBoardPx) };
+}
+
 /**
- * The brush radius a stroke paints with, in BOARD px: the size's fraction of
- * the hold's radius, floored at the engine's smallest brush that moves a ring
- * at all (`MIN_BRUSH_RADIUS_BOARD_PX`, in frame units). A dab smaller than that
- * vanishes into the decimation, and a brush that silently does nothing is worse
- * than a slightly bigger one. The preview draws exactly this radius.
+ * The radius a stroke paints with, in BOARD px: the picked size in screen
+ * points at this zoom (`screenPt × boardPxPerPt / zoom`), clamped to the hold's
+ * limits. `boardPxPerPt` is the board's render scale (`renderToBoardScale`),
+ * `zoom` the board's zoom when the stroke started. The stroke preview, the
+ * size preview by the slider and the ring over the hold all draw this radius.
  */
-export function refineBrushRadiusBoardPx(size: RefineBrushSize, holdRadiusBoardPx: number, frame: RefineFrame): number {
-  return Math.max(REFINE_BRUSH_RADIUS_FRACTION[size] * holdRadiusBoardPx, MIN_BRUSH_RADIUS_BOARD_PX / frame.scale);
+export function refineBrushRadiusAtZoom(
+  screenPt: number,
+  boardPxPerPt: number,
+  zoom: number,
+  floorBoardPx: number,
+  capBoardPx: number,
+): number {
+  'worklet';
+  const wanted = zoom > 0 && boardPxPerPt > 0 ? (screenPt * boardPxPerPt) / zoom : capBoardPx;
+  return Math.max(floorBoardPx, Math.min(capBoardPx, wanted));
+}
+
+/** {@link refineBrushRadiusAtZoom} as it lands on screen, in points: what the size preview draws. */
+export function refineBrushScreenRadiusPt(
+  screenPt: number,
+  boardPxPerPt: number,
+  zoom: number,
+  floorBoardPx: number,
+  capBoardPx: number,
+): number {
+  'worklet';
+  if (!(boardPxPerPt > 0)) return screenPt;
+  return (refineBrushRadiusAtZoom(screenPt, boardPxPerPt, zoom, floorBoardPx, capBoardPx) * zoom) / boardPxPerPt;
 }
 
 /** The hold's starting area as a flat board-px ring: its outline, or its circle sampled. */

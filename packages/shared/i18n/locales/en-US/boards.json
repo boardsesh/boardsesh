@@ -937,9 +937,8 @@
       "mode": "Brush",
       "add": "Add",
       "erase": "Erase",
-      "sizeSmall": "Small brush",
-      "sizeMedium": "Medium brush",
-      "sizeLarge": "Large brush",
+      "size": "Brush size",
+      "sizeValue": "Size {{step}} of {{total}}",
       "dropped_one": "Kept the main part. {{count}} stray bit was dropped.",
       "dropped_other": "Kept the main part. {{count}} stray bits were dropped.",
       "atLimit": "That's as far as this hold can grow. Trace redraws it bigger."

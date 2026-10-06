@@ -1424,17 +1424,42 @@ What the editor does with a wall is decided by this document rather than by tast
   the wall drops to 35% so the area reads. Plain circles start as their circle.
   - **Add | Erase** is a segmented control on the banner, beside Cancel; on
     iPad a Pencil double tap (or squeeze) set to "switch to eraser" flips it
-    too, instead of leaving the tool. The brush size is three dot chips in the
-    dock (radio buttons to VoiceOver) with Done: Small, Medium (default) and
-    Large paint with 0.15, 0.3 and 0.6 of the hold's radius when Refine opened
-    (`REFINE_BRUSH_RADIUS_FRACTION`, `refineBrushRadiusBoardPx`), never smaller
-    than the engine's 3-unit floor, below which a dab vanishes in the
-    decimation. Relative to the hold, not the screen: the job is fine-tuning one
-    hold, and screen-point brushes were bigger than a typical hold at 1x on a
-    phone (12 pt is about 66 board px on a 2048 px photo against a 40 px hold),
-    so the default dab re-shaped the whole hold. The preview draws the true
-    size, so zooming in shows exactly what a dab covers. Mode and size carry
-    from one hold to the next for the visit.
+    too, instead of leaving the tool. The brush size is a slider in the dock
+    with Done (`SprayRefineBar`, on the shared `ValueSlider`): a radius in
+    SCREEN POINTS, starting on 2 pt (about the old Medium at 1x on a phone).
+    Screen points so that zooming in paints finer: the radius a stroke paints,
+    in board px, is `size x boardPxPerPt / zoom` at the zoom the stroke STARTED
+    at (`DrawStrokeOverlay`'s `strokeZoomSV`), clamped between the engine's
+    floor (3 frame units, 3.75 board px or 9.4% of a 40 px hold; below it a dab
+    vanishes in the decimation) and a cap of 0.6 of the hold's radius when
+    Refine opened (`REFINE_BRUSH_CAP_FRACTION`, the old Large;
+    `refineBrushRadiusAtZoom`). The cap is what keeps a 12 pt brush at 1x
+    (about 66 board px against a 40 px hold) from re-shaping the whole hold
+    and pushing the bitmap to its cap.
+  - **The slider's range follows the zoom.** It runs from the size that paints
+    the floor to the size that paints the cap at the zoom the board last
+    SETTLED at, inside 1-32 pt, on a log track with 21 steps whatever the range
+    (`refineBrushRangeAtZoom`): on a phone with a 40 px hold, 1 to about 4.4 pt
+    at 1x, about 5.5 to 32 pt at 8x. So no stretch of the track paints the same
+    brush. The range changes only on a settle, never per frame: the refine
+    layer watches the zoom on the UI thread and reports it to JS once it has
+    held still for 120 ms at a new value (a pinch's end, a zoom animation's
+    end, Refine opening), so the slider re-renders once per zoom. The watch is
+    event-driven (`useZoomSettle`): each zoom change restarts one delayed
+    no-op timing on a shared value, and only the one that outlives its delay
+    reports, so nothing runs per frame while the board is idle. The stored
+    size is the screen-point radius the climber last picked, remembered per
+    device (`useSprayRefineBrush`, the add shape's AsyncStorage pattern); the
+    slider shows it clamped into the current range (`clampRefineBrushPt`) and
+    only a drag or a VoiceOver step rewrites it, so zooming in and back out
+    returns the thumb to where it was. Next to the slider a dot is drawn at the
+    size the next dab paints ON SCREEN after the clamp, at the live zoom (the
+    refine layer mirrors the board's zoom out to it), so it grows and shrinks
+    as the board zooms. While the slider moves a disc of the brush's size sits
+    on the hold's centre, so the size reads against the hold's real edge; it
+    fades 0.7 s after the slider lets go. VoiceOver reads the slider as "Brush
+    size, Size 5 of 21" and steps it one step per swipe. The mode carries from
+    one hold to the next for the visit.
   - **Painting.** `DrawStrokeOverlay` with `acceptStationaryTaps`, so a dab
     paints too, and the loupe for a finger. Two fingers zoom and pan
     (`pinchPans`). On iPad with "Pencil only" on, fingers pan and only the
@@ -1470,7 +1495,10 @@ What the editor does with a wall is decided by this document rather than by tast
   - **Resolution.** The engine works in a frame centred on the hold with its
     radius at 32 units (`REFINE_FRAME_RADIUS` in `spray-refine.ts`): 5% of the
     hold's radius whatever the photo, so the 4096 px full photo past 3x
-    changes nothing.
+    changes nothing. The fine work comes from the screen-point brush (zoom in
+    and it shrinks to the 3-unit floor), not from a finer frame: 40 units would
+    lower the floor to 7.5% of the hold, but its cost (below) has only been
+    measured in Node, so it waits for a number from a phone.
   - **The 4x limit.** The engine's bitmap reaches from the anchor to the
     outline plus one radius, and is capped at 4 radii (`MAX_RING_COORDINATE`
     times the radius Refine opened with) along either axis, because nothing
@@ -1483,13 +1511,23 @@ What the editor does with a wall is decided by this document rather than by tast
     bitmap never shrinks within a session, so once a stroke has reached the
     cap every later stroke pays the cap's cost.
   - **Cost per lift.** Measured through the session (`useSprayRefineSession`,
-    60 strokes of the three sizes on a 40 px hold, Node on the dev box): about
-    19 ms median with the relative brushes, whose frame stays near 310-350
-    cells a side; 48 ms median once a stroke has pushed the bitmap to the
-    512-cell cap. Hermes runs these loops several times slower than Node's JIT,
-    so expect tens of milliseconds per lift on a phone and around 100 ms at the
-    cap. The cost lands once per lift on the JS thread, never during a stroke,
-    and the stroke's preview stays on screen until the new area is drawn.
+    60 strokes round a 40 px hold at the 1x brush sizes, five seeds, Node on
+    the dev box), by frame radius:
+
+    | `REFINE_FRAME_RADIUS` | median per lift | bitmap side, normal | median at the cap | bitmap side at the cap |
+    | --------------------- | --------------- | ------------------- | ----------------- | ---------------------- |
+    | 32 (shipped)          | 17 ms           | 360-370 cells       | 48 ms             | 512 cells              |
+    | 40                    | 28 ms           | 440-460 cells       | 75 ms             | 640 cells              |
+    | 48                    | 40 ms           | 530-545 cells       | 112 ms            | 768 cells              |
+
+    Zoomed-in strokes with the finest brushes cost a little less (15 ms median
+    at 32). Hermes runs these loops several times slower than Node's JIT, so
+    expect tens of milliseconds per lift on a phone and 100-200 ms at the cap.
+    A development build logs each lift's real cost (`[refine] lift … ms` from
+    `handleRefineStrokeEnd`), which is the number that would justify 40. The
+    cost lands once per lift on the JS thread, never during a stroke, and the
+    stroke's preview stays on screen until the new area is drawn. Each undo
+    entry is a bitmap copy: about 75 kB, 260 kB at the cap.
 - **Nothing is removed by accident.** Every switch-off is a ghost — a hold this
   session drew by hand included, which used to vanish on its second tap. A
   ghost is never written (`buildSprayHoldWritePlan` skips rejected holds and a
