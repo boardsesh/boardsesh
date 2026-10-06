@@ -100,15 +100,29 @@ describe('pickClimbByName', () => {
 });
 
 describe('lossyNamePattern', () => {
-  it('turns each "?" into a one-character wildcard and escapes LIKE metacharacters', () => {
-    expect(lossyNamePattern('??? -kami hitoe-')).toBe('___ -kami hitoe-');
-    expect(lossyNamePattern('100%_send ?')).toBe('100\\%\\_send _');
+  const matches = (exportName: string, catalogueName: string): boolean =>
+    new RegExp(lossyNamePattern(exportName) ?? '^$', 'u').test(catalogueName);
+
+  it('lets each "?" stand for one character Windows-1252 cannot hold', () => {
+    expect(matches('??? -kami hitoe-', '紙一重 -kami hitoe-')).toBe(true);
+    expect(matches('????', '鏡花水月')).toBe(true);
+    expect(matches('baby moon girl ?', 'baby moon girl 🐣')).toBe(true);
   });
 
-  it('skips names without "?" or with too little left to match on', () => {
+  it('never lets "?" stand for a letter the export could have written', () => {
+    expect(matches('????', 'wu 2')).toBe(false);
+    expect(matches('????', 'björ')).toBe(false);
+    expect(matches('????', '鏡花水')).toBe(false);
+  });
+
+  it('still accepts a literal "?" and escapes regex metacharacters', () => {
+    expect(matches('ezpz?', 'ezpz?')).toBe(true);
+    expect(matches('a.b (c) ?', 'a.b (c) 紙')).toBe(true);
+    expect(matches('a.b (c) ?', 'axb (c) 紙')).toBe(false);
+  });
+
+  it('returns null for names without "?"', () => {
     expect(lossyNamePattern('wuthering heights')).toBeNull();
-    expect(lossyNamePattern('????')).toBeNull();
-    expect(lossyNamePattern('a ?')).toBeNull();
   });
 });
 
@@ -458,5 +472,32 @@ describeWithDatabase('importMoonBoardExportData', () => {
 
     expect(result.ticks).toEqual({ imported: 0, skipped: 0, failed: 1 });
     expect(result.unresolvedClimbs).toEqual(['Klingon Easy']);
+  });
+
+  it('matches an all-"?" name only against unencodable names, never on name alone', async () => {
+    const kanji = await insertNamedMoonBoardClimb({ uuid: 'kyoka-suigetsu', name: '鏡花水月', layoutId: 2, angle: 40 });
+    await insertNamedMoonBoardClimb({ uuid: 'wu-2', name: 'WU 2', layoutId: 2, angle: 40 });
+    // A climb really named "????" at another grade must not win on name alone.
+    await insertNamedMoonBoardClimb({
+      uuid: 'literal-question-marks',
+      name: '????',
+      layoutId: 2,
+      angle: 40,
+      difficultyId: SIX_B_DIFFICULTY_ID,
+    });
+
+    const result = await importMoonBoardExportData(
+      db,
+      TEST_USER_ID,
+      moonBoardImportData([
+        namedLogRow({ lineNumber: 2, name: '????', setup: 'MoonBoard 2016', angle: 40 }),
+        namedLogRow({ lineNumber: 3, name: '????', setup: 'MoonBoard 2016', angle: 40, grade: '6C' }),
+      ]),
+      () => {},
+    );
+
+    expect(result.ticks).toEqual({ imported: 1, skipped: 0, failed: 1 });
+    expect(result.matchedBy?.nameGrade).toBe(1);
+    expect((await importedTicks()).map((tick) => tick.climb_uuid)).toEqual([kanji]);
   });
 });

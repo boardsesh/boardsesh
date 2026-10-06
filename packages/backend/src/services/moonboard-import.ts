@@ -279,18 +279,24 @@ function nameLookupKey(name: string, layoutId: number | null, angle: number): st
   return `${layoutId ?? '*'}:${angle}:${normalizeProblemName(name)}`;
 }
 
-// Moon's export writes every character its encoding can't hold as "?", so
-// "紙一重 -KAMI HITOE-" arrives as "??? -KAMI HITOE-". Such names match as a
-// pattern with one wildcard per "?", but only when at least this many letters
-// or digits survive; "????" alone would match any four-letter name.
-const MIN_SURVIVING_NAME_CHARACTERS = 2;
+// Moon's export writes every character Windows-1252 can't hold as "?", so
+// "紙一重 -KAMI HITOE-" arrives as "??? -KAMI HITOE-" and "鏡花水月" as "????".
+// Each "?" therefore stands for exactly one character that Windows-1252 can't
+// encode (or a literal "?"), never an ordinary letter: "????" can match "鏡花水月"
+// but not "WU 2". Windows-1252 holds ASCII, U+00A0-U+00FF and these 27 extras.
+const WINDOWS_1252_EXTRA_CHARACTERS = '€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ';
+const LOST_CHARACTER_PATTERN = `(\\?|[^\u0001-\u007F\u00A0-\u00FF${WINDOWS_1252_EXTRA_CHARACTERS}])`;
 
-/** LIKE pattern for a name with "?" placeholders, or null when it has none or too little survives. */
+/**
+ * Anchored Postgres regex for a name with "?" placeholders, or null when it has
+ * none. Every other character must match literally.
+ */
 export function lossyNamePattern(normalizedName: string): string | null {
   if (!normalizedName.includes('?')) return null;
-  const survivingCharacters = normalizedName.match(/[\p{L}\p{N}]/gu)?.length ?? 0;
-  if (survivingCharacters < MIN_SURVIVING_NAME_CHARACTERS) return null;
-  return normalizedName.replace(/[\\%_]/g, (character) => `\\${character}`).replace(/\?/g, '_');
+  const slots = [...normalizedName].map((character) =>
+    character === '?' ? LOST_CHARACTER_PATTERN : character.replace(/[.^$*+?()[\]{}|\\]/g, '\\$&'),
+  );
+  return `^${slots.join('')}$`;
 }
 
 async function queryNameCandidates(
@@ -308,12 +314,12 @@ async function queryNameCandidates(
     }),
     sql`, `,
   );
-  // Kept as two queries so the exact batch can hash-join on the name; a LIKE
+  // Kept as two queries so the exact batch can hash-join on the name; a regex
   // in the same join would force a nested loop over every row in the file.
   const nameCondition =
     mode === 'exact'
       ? sql`${NORMALIZED_CLIMB_NAME_SQL} = name_input.lookup_value`
-      : sql`${NORMALIZED_CLIMB_NAME_SQL} LIKE name_input.lookup_value`;
+      : sql`${NORMALIZED_CLIMB_NAME_SQL} ~ name_input.lookup_value`;
   const matchResult = await db.execute<MoonBoardNameMatchRow>(sql`
     WITH name_input(lookup_key, lookup_name, lookup_value, layout_id, angle) AS (
       VALUES ${lookupSql}
@@ -350,6 +356,7 @@ async function findNameCandidates(
   lookups: MoonBoardNameLookup[],
 ): Promise<Map<string, MoonBoardNameCandidate[]>> {
   const lossyLookups = lookups.filter((lookup) => lossyNamePattern(normalizeProblemName(lookup.name)) != null);
+  const lossyKeys = new Set(lossyLookups.map((lookup) => lookup.lookupKey));
   const exactLookups = lookups.filter((lookup) => !lossyLookups.includes(lookup));
   const matches = [
     ...(await queryNameCandidates(db, exactLookups, 'exact')),
@@ -361,7 +368,9 @@ async function findNameCandidates(
     const candidates = candidatesByKey.get(match.lookupKey) ?? [];
     candidates.push({
       climbUuid: match.canonicalUuid,
-      exactName: match.exactName,
+      // A name with "?" may be one the export mangled, so even a literal match
+      // (a catalogue climb really named "????") isn't trusted on name alone.
+      exactName: match.exactName && !lossyKeys.has(match.lookupKey),
       setter: match.setterUsername,
       difficultyId: match.displayDifficulty == null ? null : Number(match.displayDifficulty),
     });
