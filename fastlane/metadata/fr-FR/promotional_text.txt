@@ -1,1 +1,1 @@
-Télécharge une board et grimpe sans réseau. Et la cotation Boardsesh : un chiffre qui se lit pareil sur Kilter, Tension et MoonBoard, à partir de vraies croix.
+Nouveau : les murs de spray. Photographie ton mur ou le pan de ta salle, l'app trouve les prises, tu ouvres et enregistres des blocs. Plus Kilter, Tension et MoonBoard.

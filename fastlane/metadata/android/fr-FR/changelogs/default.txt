@@ -1,5 +1,7 @@
 Nouveautés de la version 2.6 :
-- Passe d'une board à l'autre dans ta salle depuis la feuille du mur : un tap vers celle devant toi, le Bluetooth et la file te suivent.
-- Un minuteur de repos qui démarre dès que tu enregistres un bloc et peut passer au suivant en l'allumant pour toi.
-- Le rythme des voies se lit en secondes par image, jusqu'à 60 s.
-- Woods : tous les blocs apparaissent quel que soit leur angle, et le filtre d'ouvreurs les liste tous.
+- Murs de spray : photographie ton mur, l'app trouve les prises, corrige-les, puis ouvre, mets en file et enregistre des blocs.
+- Passe d'une board à l'autre de ta salle depuis la feuille du mur.
+- Un minuteur de repos qui démarre à l'enregistrement d'un bloc.
+- Mettre juste après : appui long pour passer devant dans la file.
+- Les séances de ta crew en direct sur Accueil.
+- Les liens de blocs s'ouvrent dans l'app.

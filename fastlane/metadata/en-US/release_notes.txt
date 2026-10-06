@@ -1,23 +1,40 @@
 New in 2.6:
 
+SPRAY WALLS
+
+Your home wall, the woody at your gym, the board with no app: photograph it and it's a board in Boardsesh. The app finds the holds in your photo. Tap a ring to switch a hold off, tap bare wall to add one, or draw round a hold the scan missed. Pick the angle and a look, publish, and start setting.
+
+Climbs on a spray wall work like climbs on any other board: queue them, log sends and attempts, save them to playlists. There are no LEDs, so the holds are highlighted on your photo.
+
+Keep a wall private, share it by link or QR code, or make it public. Stripped the wall? Take a new photo, mark the corners and check what came off before anything changes. Climbs that lost a hold stay findable. The setter and the wall's editors can edit a climb any time, and every earlier version is kept.
+
 YOUR GYM'S OTHER BOARDS, ONE TAP AWAY
 
-A Kilter next to a Tension, or two walls of the same board at different angles? The wall sheet now lists the other boards at your gym, so you hop to the one you're standing at in one tap instead of scrolling past boards in other cities. The Bluetooth link moves with you, a queue built across two walls plays in order, and each board keeps its own name and angle.
+A Kilter next to a Tension, or two walls of the same board at different angles? The wall sheet now lists the other boards at your gym, so you hop to the one you're standing at in one tap. The Bluetooth link moves with you, a queue built across two walls plays in order, and each board keeps its own name and angle.
 
 A REST TIMER THAT MOVES THE QUEUE ON
 
-Run boulders on the minute without picking your phone up between goes. Turn on the rest timer in the Record tab, set your rest, and it starts counting the moment you log a climb, then runs past zero into the red if you sit down too long. Let it move to the next climb and it lights that climb on the wall for you. "After each send" gives you the full rest every time; "On the minute" holds the beat however long the go takes.
+Run boulders on the minute without picking your phone up between goes. Turn on the rest timer in the Session tab and it starts counting the moment you log a climb, then runs past zero into the red if you sit down too long. Let it move to the next climb and it lights that climb on the wall for you.
 
-ROUTES IN SECONDS, NOT MULTIPLIERS
+ALSO NEW
 
-Route pacing now reads in seconds a frame, the unit the setter authored in, and reaches 60 seconds a frame. Half the route catalogue was set slower than the old control could play.
+- Play next: long-press a climb to slot it right behind the one on the wall.
+- See who's climbing right now on Home and jump into their session.
+- Follow setters and swipe through their new climbs as they land.
+- Open a climb to see how it went for the people you follow, then everyone else's logs.
+- The grade you gave a climb is the grade you see on it, with the crowd's number underneath when the two disagree.
+- Similar climbs and the redesigned hold heatmap run on your downloaded board, so they work with no signal.
+- Linked Kilter and Tension logbooks sync around the clock, with Sync now for when you can't wait.
+- Export your climbing history, playlists and climbs from Settings, then save the file or share it.
+- New board look: Aura Outline, a solid outline on each lit hold with a tight glow.
+- Route pacing reads in seconds a frame, up to 60, the unit the setter used.
 
 FIXED
 
-- Woods: every climb shows up whatever angle it was set at, carrying the grade it was given, and the setter filter lists all of a board's setters instead of the few with a climb graded at your angle.
+- Woods: every climb shows up whatever angle it was set at, and the setter filter lists all of a board's setters.
 - MoonBoard: a problem graded at only one of the two angles now shows an estimate for the other.
 - Tap the lightbulb while a friend's phone holds the board and the climb lights over their link, instead of failing to connect.
 - Swiping in the play drawer stays on the list you picked from, even after logging a climb reorders that list.
-- Android: the Climbs tab no longer crashes when a board connects, offline saving keeps working after a long spell in the background, and switch labels are readable in dark mode.
+- Android: shared climb links open straight in the app, the Climbs tab no longer crashes when a board connects, and offline saving keeps working after a long spell in the background.
 
 Free, no ads, open source.

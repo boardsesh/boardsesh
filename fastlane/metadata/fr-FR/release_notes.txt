@@ -1,23 +1,40 @@
 Nouveautés de la version 2.6 :
 
+MURS DE SPRAY
+
+Ton mur de chez toi, le pan de ta salle, la board sans appli : prends-le en photo et c'est une board dans Boardsesh. L'app trouve les prises sur ta photo. Touche un anneau pour éteindre une prise, touche le mur nu pour en ajouter une, ou dessine autour d'une prise que le scan a ratée. Choisis l'angle et un look, publie, et commence à ouvrir.
+
+Les blocs d'un mur de spray fonctionnent comme sur n'importe quelle autre board : mets-les dans la file, enregistre croix et essais, garde-les dans des playlists. Il n'y a pas de LED : les prises sont mises en évidence sur ta photo.
+
+Garde un mur privé, partage-le par lien ou QR code, ou rends-le public. Mur reconfiguré ? Prends une nouvelle photo, marque les coins et vérifie ce qui a disparu avant que rien ne change. Les blocs qui ont perdu une prise restent faciles à retrouver. L'ouvreur ou l'ouvreuse et les éditeurs du mur peuvent modifier un bloc à tout moment, et chaque version précédente est conservée.
+
 LES AUTRES BOARDS DE TA SALLE, À UN TAP
 
-Une Kilter à côté d'une Tension, ou deux murs de la même board à des angles différents ? La feuille du mur liste maintenant les autres boards de ta salle : tu passes à celle devant laquelle tu es en un tap, sans faire défiler des boards d'autres villes. Le Bluetooth te suit, une file montée sur deux murs se joue dans l'ordre, et chaque board garde son nom et son angle.
+Une Kilter à côté d'une Tension, ou deux murs de la même board à des angles différents ? La feuille du mur liste maintenant les autres boards de ta salle : tu passes à celle devant laquelle tu es en un tap. Le Bluetooth te suit, une file montée sur deux murs se joue dans l'ordre, et chaque board garde son nom et son angle.
 
 UN MINUTEUR DE REPOS QUI FAIT AVANCER LA FILE
 
-Enchaîne des blocs à la minute sans toucher ton téléphone entre deux essais. Active le minuteur de repos dans l'onglet Enregistrer, choisis ton repos : il démarre dès que tu enregistres un bloc, puis continue dans le rouge si tu traînes. Laisse-le passer au bloc suivant et il l'allume sur le mur pour toi. « Après chaque croix » te laisse tout ton repos à chaque fois ; « Rythme fixe » garde le tempo quelle que soit la durée de l'essai.
+Enchaîne des blocs à la minute sans toucher ton téléphone entre deux essais. Active le minuteur de repos dans l'onglet Session : il démarre dès que tu enregistres un bloc, puis continue dans le rouge si tu traînes. Laisse-le passer au bloc suivant et il l'allume sur le mur pour toi.
 
-DES VOIES EN SECONDES, PAS EN MULTIPLICATEURS
+AUSSI AU PROGRAMME
 
-Le rythme des voies se lit maintenant en secondes par image, l'unité utilisée par l'ouvreur ou l'ouvreuse, et monte jusqu'à 60 secondes. La moitié du catalogue était réglée plus lentement que ce que l'ancien réglage pouvait jouer.
+- Mettre juste après : appui long sur un bloc pour le placer juste derrière celui qui est sur le mur.
+- Vois qui grimpe en ce moment sur Accueil et rejoins sa séance.
+- Suis des ouvreurs et ouvreuses et swipe leurs nouveaux blocs dès qu'ils arrivent.
+- Ouvre un bloc pour voir comment ça s'est passé pour les gens que tu suis, puis dans les carnets de tous les autres.
+- La cotation que tu as donnée à un bloc est celle que tu vois dessus, avec le chiffre de la foule dessous quand les deux divergent.
+- Les blocs similaires et la carte de chaleur refondue marchent sur ta board téléchargée, donc sans réseau.
+- Les carnets Kilter et Tension liés se synchronisent en continu, avec Synchroniser quand tu ne peux pas attendre.
+- Exporte ton historique de grimpe, tes playlists et tes blocs depuis Paramètres, puis enregistre le fichier ou partage-le.
+- Nouveau look de board : Aura contour, un contour net sur chaque prise lumineuse avec une lueur serrée.
+- Le rythme des voies se lit en secondes par image, jusqu'à 60, l'unité utilisée par l'ouvreur ou l'ouvreuse.
 
 CORRIGÉ
 
-- Woods : tous les blocs apparaissent quel que soit l'angle auquel ils ont été ouverts, avec la cotation qu'ils ont reçue, et le filtre d'ouvreurs les liste tous au lieu des rares qui ont un bloc coté à ton angle.
+- Woods : tous les blocs apparaissent quel que soit l'angle auquel ils ont été ouverts, et le filtre d'ouvreurs les liste tous.
 - MoonBoard : un bloc coté à un seul des deux angles affiche maintenant une estimation pour l'autre.
 - Touche l'ampoule pendant que le téléphone d'un autre grimpeur tient la board : le bloc s'allume par sa connexion au lieu d'échouer.
 - Les swipes dans le tiroir de lecture restent sur la liste d'où tu es parti, même quand enregistrer un bloc réordonne cette liste.
-- Android : l'onglet Blocs ne fait plus planter l'app quand une board se connecte, l'enregistrement hors ligne continue après un long passage en arrière-plan, et les libellés des interrupteurs se lisent en mode sombre.
+- Android : les liens de blocs partagés s'ouvrent directement dans l'app, l'onglet Blocs ne fait plus planter l'app quand une board se connecte, et l'enregistrement hors ligne continue après un long passage en arrière-plan.
 
 Gratuit, sans pub, open source.

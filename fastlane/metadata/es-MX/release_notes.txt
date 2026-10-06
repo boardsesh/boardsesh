@@ -1,23 +1,40 @@
 Novedades de 2.6:
 
+MUROS DE SPRAY
+
+Tu muro de casa, el woody de tu rocódromo, el plafón sin app: fotografíalo y ya es un plafón en Boardsesh. La app encuentra las presas en tu foto. Toca un aro para apagar una presa, toca la pared vacía para añadir una, o dibuja alrededor de una presa que el escaneo no vio. Elige el ángulo y un aspecto, publica y empieza a montar.
+
+Los bloques de un muro de spray funcionan como los de cualquier otro plafón: ponlos en cola, registra encadenes e intentos, guárdalos en playlists. No hay LED, así que las presas se resaltan sobre tu foto.
+
+Mantén un muro privado, compártelo por enlace o código QR, o hazlo público. ¿Has desmontado el muro? Haz una foto nueva, marca las esquinas y revisa lo que se ha quitado antes de que cambie nada. Los bloques que perdieron una presa se siguen encontrando. Quien montó el bloque y los editores del muro pueden editarlo cuando quieran, y se conservan todas las versiones anteriores.
+
 LOS DEMÁS PLAFONES DE TU ROCÓDROMO, A UN TOQUE
 
-¿Un Kilter Board junto a un Tension Board, o dos muros del mismo plafón a ángulos distintos? El panel del muro ahora lista los demás plafones de tu rocódromo, así que saltas al que tienes delante con un toque, sin pasar por plafones de otras ciudades. El Bluetooth se va contigo, una cola montada entre dos muros se reproduce en orden y cada plafón conserva su nombre y su ángulo.
+¿Un Kilter Board junto a un Tension Board, o dos muros del mismo plafón a ángulos distintos? El panel del muro ahora lista los demás plafones de tu rocódromo, así que saltas al que tienes delante con un toque. El Bluetooth se va contigo, una cola montada entre dos muros se reproduce en orden y cada plafón conserva su nombre y su ángulo.
 
 UN TEMPORIZADOR DE DESCANSO QUE MUEVE LA COLA
 
-Haz bloques al minuto sin tocar el teléfono entre intentos. Activa el temporizador de descanso en la pestaña Grabar, elige tu descanso y empieza a contar en cuanto registras un bloque; si te quedas sentado de más, sigue contando en rojo. Deja que pase al siguiente bloque y te lo enciende en el muro. «Tras cada encadene» te da el descanso entero siempre; «Ritmo fijo» mantiene el compás tardes lo que tardes.
+Haz bloques al minuto sin tocar el teléfono entre intentos. Activa el temporizador de descanso en la pestaña Sesión y empieza a contar en cuanto registras un bloque; si te quedas sentado de más, sigue contando en rojo. Deja que pase al siguiente bloque y te lo enciende en el muro.
 
-VÍAS EN SEGUNDOS, NO EN MULTIPLICADORES
+TAMBIÉN NUEVO
 
-El ritmo de las vías ahora se lee en segundos por fotograma, la unidad con la que las creó quien las montó, y llega a 60 segundos. La mitad del catálogo estaba montada más lenta de lo que el control anterior podía reproducir.
+- Poner a continuación: mantén pulsado un bloque para colocarlo justo detrás del que está en el muro.
+- Mira quién está escalando ahora mismo en Inicio y entra en su sesión.
+- Sigue a setters y desliza por sus bloques nuevos según llegan.
+- Abre un bloque para ver cómo les fue a las personas que sigues, y luego los registros de todos los demás.
+- El grado que le diste a un bloque es el que ves en él, con el número de la comunidad debajo cuando no coinciden.
+- Los bloques similares y el nuevo mapa de calor de presas funcionan con tu plafón descargado, así que van sin cobertura.
+- Los logbooks vinculados de Kilter y Tension se sincronizan a todas horas, con Sincronizar ahora para cuando no puedas esperar.
+- Exporta tu historial de escalada, tus playlists y tus bloques desde Ajustes, y guarda el archivo o compártelo.
+- Nuevo aspecto del plafón: Aura contorno, un contorno sólido en cada presa encendida con un brillo ceñido.
+- El ritmo de las vías se lee en segundos por fotograma, hasta 60, la unidad que usó quien las montó.
 
 CORREGIDO
 
-- Woods: todos los bloques aparecen sea cual sea el ángulo al que se montaron, con el grado que les pusieron, y el filtro de setters lista a todos los de un plafón, no solo a los que tienen un bloque graduado en tu ángulo.
+- Woods: todos los bloques aparecen sea cual sea el ángulo al que se montaron, y el filtro de setters lista a todos los de un plafón.
 - MoonBoard: un problema graduado en solo uno de los dos ángulos ahora muestra una estimación para el otro.
 - Toca la bombilla mientras el teléfono de otra persona lleva el plafón y el bloque se enciende por su conexión, en vez de fallar al conectar.
 - Los deslizamientos en el panel de juego siguen en la lista de la que elegiste, aunque registrar un bloque reordene esa lista.
-- Android: la pestaña Bloques ya no se cierra al conectar un plafón, el guardado sin conexión sigue funcionando tras un buen rato en segundo plano y las etiquetas de los interruptores se leen en modo oscuro.
+- Android: los enlaces de bloques compartidos se abren directamente en la app, la pestaña Bloques ya no se cierra al conectar un plafón y el guardado sin conexión sigue funcionando tras un buen rato en segundo plano.
 
 Gratis, sin anuncios, código abierto.
