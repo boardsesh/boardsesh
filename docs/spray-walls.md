@@ -1794,19 +1794,33 @@ flag cannot be unpinned through the ordinary board door either.
 
 ### Maintenance on the live wall sheet
 
-`sprayDetailRows(board)` is the gate behind the wall-maintenance rows ("Edit
-holds", "New photo"): two rows on a spray wall whose `canEdit` is true, none
-anywhere else. It reads `canEdit` rather than `isOwned` because that is the field
-the spray API gates every version mutation on, so the affordance and the
-permission cannot drift.
+`sprayDetailRows(board, { viewerUserId, archive })` is the gate behind the
+wall-maintenance rows. It needs the wall's archive state from the registry, so
+it offers nothing until the wall has registered from its published version, and
+nothing at all on an archived wall:
+
+| Viewer | Holds free | Holds locked |
+| --- | --- | --- |
+| owner | Edit holds, Reset this wall | Holds are locked (opens the reset confirm), Reset this wall |
+| can edit, not the owner | Edit holds | Holds are locked (information only) |
+| anyone else | none | none |
+
+Edit holds reads `canEdit`, the field the spray API gates every version mutation
+on. Reset reads `ownerId` against the signed-in climber, because
+`resetSprayWall` is the owner's alone (`SPRAY_WALL_RESET_OWNER_ONLY`). `isOwned`
+("I own the physical board") is never used. The reset rows ask "Reset this
+wall?" first, fire `Spray Wall Reset Started`, then open
+`/boards/spray/new?resetOf=<wallUuid>`.
 
 `SprayWallActions` renders these rows in the live `BoardSheet` list header,
 alongside sharing for public and unlisted walls. The kiosk column has no account
 actions. The Boards picker's `BoardDetailSheet` retains details, sharing and
 reporting; maintenance lives on the active wall's live sheet.
 
-Both routes use `wallUuid`; restored links with `boardUuid` still work. The hold
-route rechecks edit access and resumes the wall's one open draft. With no draft,
+The hold route uses `wallUuid`; restored links with `boardUuid` still work. It
+rechecks edit access, then refuses an archived wall or one whose holds are
+locked before any draft opens, so a deep link or a stale sheet cannot reach the
+editor. It resumes the wall's one open draft. With no draft,
 it creates one from the current published photo using `sourceVersionId`, without
 uploading the photograph again or changing its coordinate frame. Editing saves
 the draft, then publishes it. An uncertain response is reconciled before retry;
@@ -1818,8 +1832,7 @@ reuses the published photo through `sourceVersionId`, which copies the photo,
 anchors and homography exactly, and the schema refuses anchors together with
 `sourceVersionId` — so there is no way to say "the same picture, cropped". A
 cropped re-upload would carry a new `photoId`, and `classifySprayDraft` reads a
-new photo as a reset, which asks for four corners and runs the reset review.
-Re-cropping needs its own draft purpose
+new photo as a reset. Re-cropping needs its own draft purpose
 ([#6156](https://github.com/boardsesh/boardsesh/issues/6156)). To crop
 a wall today, reset it and crop the new photo.
 
@@ -2088,65 +2101,57 @@ the parent.
 
 ## The reset on the phone
 
-`/boards/spray/reset?wallUuid=…` is one route with a stepper behind it
-(`reset-wall-machine.ts`), a sibling of the add-a-wall machine rather than a
-branch inside it. The two flows share three steps and disagree about everything
-around them: there is no wall to name here, and **the anchors are mandatory**.
-That gate is the reason the machines are separate — `ANCHORS_DONE` does nothing
-without four corners that describe a usable quadrilateral, so a climber never
-spends four minutes uploading a photograph the server is going to refuse.
+A reset is the add-a-wall wizard opened with `?resetOf=<wallUuid>`
+([Archive and reset](#archive-and-reset)). The in-place reset screen, its compare
+view and the "Full reset" switch are gone from the app; no client calls
+`proposeSprayWallReset`, `commitSprayWallVersion` or `remixClimb`.
 
-The compare view is a component, not a second route, and the detections are why.
-A wall photograph yields hundreds of circles and expo-router params are strings,
-so handing them to `/boards/spray/compare` would mean a module-level stash keyed
-by version id — a second source of truth for the one array whose INDICES the
-proposal is expressed in. It still gets the whole screen when it is showing.
+- **Starting.** In the wizard's `resuming` step the run calls `resetSprayWall`
+  instead of listing the owner's walls. The server returns the unfinished clone
+  if there is one, so reopening a reset lands on yesterday's photo. A clone with
+  no photo draft rejoins at the photo step (`RESUMED_AT_PHOTO`): its name, angle
+  and location came from the old wall, so the meta step never shows, and Back on
+  the photo step leaves the flow. A clone with a photo draft asks "Pick up or
+  start over" first.
+- **Start over** discards the clone's draft and deletes the CLONE
+  (`useDiscardSprayWallDraft`), then calls `resetSprayWall` again for a fresh
+  one. The wall being replaced is never touched and stays live.
+- **Refusals** show in the resume step with a retry and a way back, in the
+  climber's words (`sprayWallLifecycleMessage`): owner only, not published yet,
+  already archived, the archive cap.
+- **Publishing** is the ordinary publish and bind. `Board Created` carries
+  `isReset: true`. `settleArchivedSprayWall` then marks the old wall archived in
+  this device's registry at once, re-reads it, and refreshes `myBoards`,
+  `mySprayWalls` and the old wall's history.
+- **An unfinished clone is never offered to a plain "Add a wall" run**
+  (`findResumableWall` skips a wall with `resetOfWallUuid`): it carries the live
+  wall's name, and finishing it archives that wall.
 
-The reset's photo step has the same "Crop or rotate" detour as the add-a-wall
-flow (`adjust`, uncounted). Its copy adds one thing: keep all four corners inside
-the crop. From version 2 on the corners are mandatory (`assertResetVersionIsAnchored`),
-so a corner cut off by the crop is a corner nobody can mark, and the gate would
-hold the flow on the anchors step with no way to satisfy it but to crop again.
-The crop itself changes nothing the reset depends on: version 1's frame is
-inherited under the wall lock, and the new photo's homography is solved from its
-own anchors in its own (cropped) pixels.
+### Archived walls on the phone
 
-Three rules the client holds that the server cannot:
+The four `SprayWall` fields ride every spray wall payload (`SPRAY_WALL_FIELDS`)
+into the registry as `RegisteredSprayWall.archive`, read with
+`useSprayWallArchiveState` / `useSprayWallIsArchived`
+(`use-spray-wall-archive.ts`, registry only, so list rows and sheets do not pull
+the network client in). An archived wall:
 
-- **Detections are built once**, in both frames, by `buildResetDetections`. A
-  candidate the homography cannot place is dropped BEFORE the array is indexed;
-  dropping it later would shift every index past it, and the proposal would then
-  describe holds the screen is not drawing.
-- **No detections, no review.** The matcher compares two sets of circles, so an
-  empty second set means "the whole wall has gone" — which, committed, takes
-  every hold off and breaks every climb on it. A phone with no detector lands in
-  the hold editor on the add-a-wall flow and is fine; there is no equivalent
-  fallback for a reset, because the thing being reviewed IS what the detector
-  found. The screen says so and offers nothing else.
-- **A pairing is unrepresentable unless the server would take it.**
-  `canPairMove` is the only way a `movedFromHoldId` enters the review, and
-  putting a predecessor back on the wall drops every pairing naming it. So the
-  "in this commit's `removed` list" rule cannot be violated by the client.
+- carries a quiet notice on its board sheet and over its climb list, with
+  "Switch to the new wall" when `replacedByWallUuid` is visible;
+- offers no Create climb (Climbs header and empty state), no Fork and no Edit in
+  the climb actions, and the create route exits with
+  `createClimbForm.cannotOpen.wallArchived`;
+- keeps sending, ticks, the queue and playlists;
+- leaves `myBoards`, so My Boards lists it in an **Archived** section built from
+  `mySprayWalls`; tapping a row makes it the active board.
 
-The "N climbs lose holds" number is the server's, computed for the removal set
-the PROPOSAL named. Nothing on the phone can recompute it — the climbs' holds are
-not there — so `climbsAffectedIsStale` hides it the moment the owner changes that
-set, rather than showing a number about a different one.
+A save refused with `SPRAY_WALL_ARCHIVED` or `SPRAY_WALL_HOLDS_LOCKED` says so
+and calls `refreshSprayWall`, so every other surface catches up.
 
-After a commit lands, `invalidateSprayWallRenderData(queryClient, wallUuid,
-layoutId)` runs immediately. The SW-07 registry keys every spray cache on the
-wall's version token and this device is the one that moved it; until it
-re-registers, every key still names the generation the owner was looking at when
-they pressed Confirm.
-
-### Marking a reset as full
-
-The compare view has a **Full reset** switch above Confirm, off by default. When it
-is on, the commit sends `fullReset: true`, and every climb that loses a hold in
-that reset is retired: it leaves the wall's default list but stays in logbooks,
-playlists and share links (#6024). The switch sits inside the scrolling controls,
-not in the footer, so the board keeps the space `CHROME_BUDGET` gives it.
-`Spray Wall Reset Applied` carries `fullReset`.
+Offline, a downloaded wall is drawn from SQLite, which has no archive column.
+The last state the server reported for an archived or locked wall is kept in the
+settings store (`offlineSprayWallArchiveV1`, `rememberSprayWallArchive`, cleared
+at sign-out) and the local loader registers the wall with it. A live wall with
+free holds is not stored.
 
 ### A climb that lost holds
 
@@ -2441,9 +2446,9 @@ An offline device learns a wall is archived from the wall payload
 queries (`loadSprayWallArchiveFacts`), not three per wall. The `holdsLocked`
 read is one `EXISTS` per wall, which stops at the first published climb.
 
-These fields are in the SDL only. The shared `SPRAY_WALL_FIELDS` selection does
-not ask for them yet, so a client built against it keeps working against a
-backend that has not deployed them.
+The shared `SPRAY_WALL_FIELDS` selection asks for all four, so every wall
+payload the app reads carries them ([Archived walls on the
+phone](#archived-walls-on-the-phone)).
 
 ### Known gaps
 
@@ -2817,9 +2822,8 @@ through `trackSprayEvent`; nothing calls `track` with a spray event name directl
 | `Spray Wall Detection Finished` | `outcome`, `candidateCount`, `durationMs` | `unavailable` is a SUCCESS — the flow lands in the editor in manual mode. Read it against `ok` for the fraction of the fleet placing every hold by hand. |
 | `Spray Holds Reviewed` | `holdCount`, `candidateCount`, `hadCandidates` | Candidate and saved counts on the same event. Older clients omit candidateCount. |
 | `Spray Wall Bind Stalled` | `stage`, `elapsedMs` | A wall that published and then sat on "Setting your wall up…": `visibility`, `fetch_board` or `bind` ran past 30 s, or `navigate` was dispatched and the wizard was still on screen 1.5 s later. |
-| `Board Created` (existing) | `boardType: 'spray'` | Closes the add funnel. The SAME event every other board type fires — a spray-only variant would hide walls from every board-creation number we already watch. |
-| `Spray Wall Reset Previewed` | `keptCount`, `removedCount`, `addedCount`, `lowConfidenceCount`, `climbsAffected`, `aspectMismatch`, `detectionCount` | What the matcher found. |
-| `Spray Wall Reset Applied` | `keptCount`, `removedCount`, `addedCount`, `climbsChanged`, `moveCount` | What landed. The server's counts, not the review's. |
+| `Board Created` (existing) | `boardType: 'spray'`, `resumed`, `isReset` | Closes the add funnel. The SAME event every other board type fires — a spray-only variant would hide walls from every board-creation number we already watch. `isReset` marks a reset's replacement, which nets to zero walls: leave it out of activation counts. |
+| `Spray Wall Reset Started` | `source` (`board_sheet`, `holds_locked`) | The owner confirmed "Reset this wall?". Read against `Board Created` with `isReset: true` for resets that reached a published replacement. |
 | `Climb Remixed From Broken` | `lostHoldCount`, `source` | Whether a climb a reset broke is a dead end or a starting point. |
 | `Climb Edited From Broken` | `lostHoldCount`, `source` | How often the setter or a wall editor repairs a broken climb in place instead of remixing it. |
 
@@ -4012,9 +4016,9 @@ withdraw local draft payloads; a delayed response cannot restore them.
 ### Hold maintenance and photo reset draft ownership
 
 The hold editor adopts only initial setup or a draft reusing the exact published
-photo and mapping. Opening it during a photo reset reports that the owner must
-finish or discard the reset first. New photo sends a saved hold-edit draft back
-to Edit holds, without offering detection or comparison.
+photo and mapping. A new-photo draft left on a live wall by the retired in-place
+reset is refused as `leftoverPhotoDraft`, and the screen offers "Discard the
+unfinished photo" (`useDiscardSprayWallVersion`, which keeps the wall).
 
 Version history is fetched fresh on reentry and invalidated when a draft is
 created, published, committed or discarded. An upload retry keeps the exact
