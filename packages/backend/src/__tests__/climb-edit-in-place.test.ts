@@ -56,6 +56,24 @@ vi.mock('../events', () => ({
   publishSocialEvent: vi.fn(async () => undefined),
 }));
 
+// saveTick schedules more database work on 2 s timers that outlive a test. A
+// late statement from one test would hold locks while the next one's
+// TRUNCATE ... CASCADE runs and deadlock it, so the two timer queues are
+// stubbed. The in-request recompute (`recomputeClimbStatsNow`) stays real: the
+// stats assertions read what it writes.
+vi.mock('../graphql/resolvers/ticks/debounced-climb-stats-publisher', async () => ({
+  ...(await vi.importActual<typeof import('../graphql/resolvers/ticks/debounced-climb-stats-publisher')>(
+    '../graphql/resolvers/ticks/debounced-climb-stats-publisher',
+  )),
+  queueClimbStatsRecompute: vi.fn(),
+}));
+vi.mock('../graphql/resolvers/board-presence/stats', async () => ({
+  ...(await vi.importActual<typeof import('../graphql/resolvers/board-presence/stats')>(
+    '../graphql/resolvers/board-presence/stats',
+  )),
+  queueBoardStatsPublish: vi.fn(),
+}));
+
 vi.mock('../lib/web-revalidate', () => ({
   notifyClimbRevalidated: vi.fn(async () => undefined),
 }));

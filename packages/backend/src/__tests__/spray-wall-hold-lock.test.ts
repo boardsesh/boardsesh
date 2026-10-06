@@ -70,6 +70,24 @@ vi.mock('../events', () => ({
   }),
 }));
 
+// saveTick schedules more database work on 2 s timers that outlive a test. A
+// late statement from one test would hold locks while the next one's
+// TRUNCATE ... CASCADE runs and deadlock it, so the two timer queues are
+// stubbed. The in-request recompute (`recomputeClimbStatsNow`) stays real: the
+// stats assertions read what it writes.
+vi.mock('../graphql/resolvers/ticks/debounced-climb-stats-publisher', async () => ({
+  ...(await vi.importActual<typeof import('../graphql/resolvers/ticks/debounced-climb-stats-publisher')>(
+    '../graphql/resolvers/ticks/debounced-climb-stats-publisher',
+  )),
+  queueClimbStatsRecompute: vi.fn(),
+}));
+vi.mock('../graphql/resolvers/board-presence/stats', async () => ({
+  ...(await vi.importActual<typeof import('../graphql/resolvers/board-presence/stats')>(
+    '../graphql/resolvers/board-presence/stats',
+  )),
+  queueBoardStatsPublish: vi.fn(),
+}));
+
 vi.mock('../lib/web-revalidate', () => ({
   notifyClimbRevalidated: vi.fn(async () => undefined),
 }));
@@ -701,6 +719,8 @@ describe('drafts that lose a hold, and the retired Lost holds filter', () => {
     // `onlyDrafts` is the only place the setter finds it, in the list and the count.
     expect(await searchNames(wall, undefined, { onlyDrafts: true })).toEqual(['Draft to fix']);
     expect(await countClimbs(sprayRouteParams(wall), { onlyDrafts: true }, OWNER)).toBe(1);
+    // An older app's "Lost holds" filter on its drafts tab shows exactly this draft.
+    expect(await searchNames(wall, undefined, { onlyDrafts: true, holdIntegrity: 'broken' })).toEqual(['Draft to fix']);
 
     // Re-set onto holds still on the wall, the per-climb recompute clears it.
     await climbMutations.updateClimb(
@@ -833,7 +853,12 @@ describe('publishing a draft, end to end', () => {
 
     const outcomes = await Promise.allSettled([publishVersion(draftId), publishVersion(draftId)]);
     expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
-    expect(outcomes.filter((outcome) => outcome.status === 'rejected')).toHaveLength(1);
+    const rejected = outcomes.filter((outcome) => outcome.status === 'rejected');
+    expect(rejected).toHaveLength(1);
+    // The loser re-read the version under the lock and found it no longer a draft.
+    expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({
+      extensions: { code: 'SPRAY_WALL_VERSION_NOT_DRAFT' },
+    });
 
     const [counts] = (await db.execute(sql`
       SELECT count(*) FILTER (WHERE status = 'published')::int AS published,
