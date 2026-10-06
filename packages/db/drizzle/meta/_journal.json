@@ -1797,8 +1797,15 @@
     {
       "idx": 256,
       "version": "7",
-      "when": 1791287217587,
-      "tag": "0256_spray_wall_archive_and_reset",
+      "when": 1791285267769,
+      "tag": "0256_spray_wall_version_art",
+      "breakpoints": true
+    },
+    {
+      "idx": 257,
+      "version": "7",
+      "when": 1791320905957,
+      "tag": "0257_spray_wall_archive_and_reset",
       "breakpoints": true
     }
   ]

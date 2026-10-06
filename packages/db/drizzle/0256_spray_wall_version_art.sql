@@ -1,0 +1,1 @@
+ALTER TABLE "spray_wall_versions" ADD COLUMN "art" jsonb;

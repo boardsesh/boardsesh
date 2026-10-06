@@ -6622,6 +6622,12 @@ export type Query = {
    */
   sprayWall?: Maybe<SprayWall>;
   /**
+   * The generated wall looks of one version (`wall-crop`, `hold-cutouts`) and
+   * its photo-quality verdict. Omit `version` for the published one. Same
+   * visibility rules as `sprayWallRenderData`; null where that is null.
+   */
+  sprayWallArt?: Maybe<SprayWallArt>;
+  /**
    * The spray wall occupying a catalogue layout id, for a client holding only a
    * board config. Same visibility rules as `sprayWall`.
    */
@@ -7365,6 +7371,12 @@ export type QuerySmartPlaylistArgs = {
 /** Root query type for all read operations. */
 export type QuerySprayWallArgs = {
   uuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySprayWallArtArgs = {
+  uuid: Scalars['ID']['input'];
+  version?: InputMaybe<Scalars['Int']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -9177,13 +9189,19 @@ export type SprayWall = {
    * because the underlying knob set still changes independently. A viewer's own
    * EXPLICIT render-mode choice always overrides this; it only supplies the look
    * for a viewer who has never chosen one.
+   *
+   * May also carry `background: 'photo' | 'wall-crop' | 'hold-cutouts'` — what
+   * the wall is drawn on. Missing means 'photo'. The generated backgrounds are
+   * read through `sprayWallArt`; a client falls back to the photo whenever that
+   * art is not READY.
    */
   renderSettings?: Maybe<Scalars['JSON']['output']>;
   /**
    * The published wall that replaced this one through `resetSprayWall`, when the
    * viewer may see it: its owner, a member of its gym, anyone when it is public,
-   * or anyone holding this wall's unlisted share link when both walls are
-   * unlisted. Null while the replacement is unfinished.
+   * or anyone holding this wall's share link when this wall is unlisted and not
+   * public and the replacement is unlisted too. Null while the replacement is
+   * unfinished.
    */
   replacedByWallUuid?: Maybe<Scalars['ID']['output']>;
   /**
@@ -9227,6 +9245,41 @@ export type SprayWallAddedDecisionInput = {
    */
   movedFromHoldId?: InputMaybe<Scalars['Int']['input']>;
 };
+
+/**
+ * One version's generated wall looks, drawn in the canonical frame (the frame
+ * hold coordinates live in), scaled to `width` x `height`. Draw holds over it
+ * with no homography: multiply canonical coordinates by width / boardWidth.
+ *
+ * Read in its own query (`sprayWallArt`), never in a shared fragment.
+ */
+export type SprayWallArt = {
+  __typename?: 'SprayWallArt';
+  /** Wall only: the photo flattened into the canonical frame. JPEG. Null unless READY. */
+  crop?: Maybe<SprayWallPhoto>;
+  /** Holds only: the same pixels, transparent everywhere but the holds. WebP with alpha; draw the field colour behind it. Null unless READY. */
+  cutout?: Maybe<SprayWallPhoto>;
+  height?: Maybe<Scalars['Int']['output']>;
+  quality: SprayWallPhotoQuality;
+  /** The rendering recipe the server runs. Art made by another recipe reads as NONE. */
+  recipe: Scalars['Int']['output'];
+  status: SprayWallArtStatus;
+  versionNumber: Scalars['Int']['output'];
+  width?: Maybe<Scalars['Int']['output']>;
+};
+
+/** Where a version's generated wall looks are. */
+export type SprayWallArtStatus =
+  /** The last job failed. Choosing a generated background again re-queues it. */
+  | 'FAILED'
+  /** Never asked for, or made by an older recipe. */
+  | 'NONE'
+  /** A job is queued or running. */
+  | 'PENDING'
+  /** Both images are ready. */
+  | 'READY'
+  /** The photo failed the quality gate, so nothing will be rendered for it. */
+  | 'REFUSED';
 
 export type SprayWallDetection = {
   __typename?: 'SprayWallDetection';
@@ -9386,11 +9439,31 @@ export type SprayWallPhotoPurgeResult = {
   wallsPurged: Scalars['Int']['output'];
 };
 
+/** How straight-on a version's photo is. Same numbers on the server and in the app. */
+export type SprayWallPhotoQuality = {
+  __typename?: 'SprayWallPhotoQuality';
+  /** The canonical frame's short edge, in pixels. */
+  frameShortEdge: Scalars['Int']['output'];
+  /** ok, no-pins, keystone, small-frame or singular. */
+  reason: Scalars['String']['output'];
+  /** sqrt(max / min) of the area scale across the frame. 1 is a perfectly front-on photo. Null when unmeasurable. */
+  stretch?: Maybe<Scalars['Float']['output']>;
+  verdict: SprayWallPhotoVerdict;
+};
+
+export type SprayWallPhotoVerdict =
+  /** Too angled, too small, or no corner pins: the generated looks are not offered. */
+  | 'FAIL'
+  /** Front-on enough to flatten cleanly. */
+  | 'GOOD'
+  /** Usable, but the far side will look stretched; suggest a front-on retake. */
+  | 'SOFT';
+
 /**
  * Everything a renderer needs for one wall at one version: the photo, the
  * geometry that maps it, and the holds alive at that version.
  *
- * No image is ever warped — the client maps holds through the INVERSE of
+ * The stored photo is never warped — the client maps holds through the INVERSE of
  * `homography` at draw time.
  */
 export type SprayWallRenderData = {

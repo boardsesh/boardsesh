@@ -96,7 +96,15 @@ const fetchSprayWallPageData = vi.fn(async (_wallUuid: string): Promise<typeof W
 // client, and which photograph a wall shows is pinned next door in
 // `spray-view.test.tsx`. What this file is about is who gets to see the page.
 const resolveSprayPhotoUrl = vi.fn(() => 'https://media.example/photo.jpg');
-vi.mock('@/app/lib/spray/spray-wall-render-data.server', () => ({ resolveSprayPhotoUrl, fetchSprayWallPageData }));
+// No generated look by default: the page draws the photo.
+const fetchSprayWallArtChoice = vi.fn(async (_wallUuid: string, _versionNumber: number) => null);
+const resolveSprayArtUrl = vi.fn(() => null);
+vi.mock('@/app/lib/spray/spray-wall-render-data.server', () => ({
+  resolveSprayPhotoUrl,
+  fetchSprayWallPageData,
+  fetchSprayWallArtChoice,
+  resolveSprayArtUrl,
+}));
 
 vi.mock('@/app/components/climb-front-door/static-list-front-door', () => ({ default: () => null }));
 vi.mock('@/app/components/spray-wall/spray-wall-front-door', () => ({ default: () => null }));
@@ -236,6 +244,8 @@ describe('the wall branch itself', () => {
     expect(fetchSprayWallPageData).toHaveBeenCalledWith(WALL_UUID);
     // The public copy, never the presigned one: this page is shared and cached.
     expect(resolveSprayPhotoUrl).toHaveBeenCalledWith(WALL_DATA, true);
+    // The generated look is asked for the version the page draws.
+    expect(fetchSprayWallArtChoice).toHaveBeenCalledWith(WALL_UUID, WALL_DATA.versionNumber);
   });
 
   it('404s a wall the backend will not hand over', async () => {

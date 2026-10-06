@@ -1798,7 +1798,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     -- state, because a purged wall's row is never deleted and a wall can own
     -- objects no version row names (an abandoned wizard upload).
     "photos_purged_at" timestamp,
-    -- Archive and reset (migration 0256): when a reset clone's first publish
+    -- Archive and reset (migration 0257): when a reset clone's first publish
     -- replaced this wall, and the wall a clone was made from.
     "archived_at" timestamp,
     "reset_from_wall_id" bigint REFERENCES "spray_walls"("id") ON DELETE SET NULL
@@ -1816,6 +1816,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "homography" jsonb,
     "notes" text,
     "is_full_reset" boolean DEFAULT false NOT NULL,
+    "art" jsonb,
     "created_by" text REFERENCES "users"("id") ON DELETE SET NULL,
     "published_at" timestamp,
     "created_at" timestamp DEFAULT now() NOT NULL,
