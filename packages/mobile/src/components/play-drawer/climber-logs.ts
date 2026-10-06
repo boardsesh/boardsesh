@@ -13,7 +13,6 @@
 //      note and its grade does not disagree with the climb's. Bare climbers
 //      share a line on the card and sit two to a line in the full list.
 import { parseTickTime, tickTimeMs } from '@boardsesh/profile-stats';
-import { isTickOnEarlierVersion } from '@boardsesh/logbook';
 import type { FollowingClimbAscentsSummary } from '@boardsesh/shared-schema';
 
 /**
@@ -36,15 +35,7 @@ export type ClimberLog = {
   difficulty?: number | null;
   comment: string;
   climbedAt: string;
-  /** Which version of the climb this was logged on, and the version it is on now (#6023). */
-  climbRevision?: number | null;
-  climbCurrentRevision?: number | null;
 };
-
-/** The climb has been edited since this log was made. False when either version is unknown. */
-export function isLogOnEarlierVersion(log: Pick<ClimberLog, 'climbRevision' | 'climbCurrentRevision'>): boolean {
-  return isTickOnEarlierVersion(log.climbRevision, log.climbCurrentRevision);
-}
 
 /**
  * One climber's logs on the climb. Three things are read from them, each from

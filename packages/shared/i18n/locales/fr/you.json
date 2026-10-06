@@ -147,8 +147,6 @@
         "a11yHasNote": "avec note",
         "a11yHasBetaVideo": "avec vidéo de beta",
         "a11yMirrored": "en miroir",
-        "earlierVersion": "Version précédente",
-        "a11yEarlierVersion": "grimpé sur une version précédente de ce bloc",
         "editAction": "Modifier l'entrée",
         "deleteAction": "Supprimer l'entrée",
         "moreActions": "Plus d'actions"
