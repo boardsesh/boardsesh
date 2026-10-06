@@ -71,7 +71,7 @@ const { tickQueries } = await import('../graphql/resolvers/ticks/queries');
 const { syncQueries } = await import('../graphql/resolvers/sync/queries');
 const { assertBoardCapNotReached, MAX_BOARDS_PER_ACCOUNT } = await import('../graphql/resolvers/social/board-limits');
 const { socialGymQueries } = await import('../graphql/resolvers/social/gyms');
-const { socialGymKioskQueries } = await import('../graphql/resolvers/social/gym-kiosks');
+const { socialGymKioskQueries, socialGymKioskMutations } = await import('../graphql/resolvers/social/gym-kiosks');
 const { newClimbSubscriptionResolvers } = await import('../graphql/resolvers/social/new-climb-subscriptions');
 
 const OWNER = 'reset-owner';
@@ -102,7 +102,6 @@ type WallPayload = {
   archivedAt: string | null;
   resetOfWallUuid: string | null;
   replacedByWallUuid: string | null;
-  holdsLocked: boolean;
   viewerCanEditClimbs: boolean;
 };
 
@@ -404,7 +403,6 @@ describe('the clone’s first publish', () => {
     const archived = await readWall(source.uuid, OWNER);
     expect(archived?.archivedAt).not.toBeNull();
     expect(archived?.replacedByWallUuid).toBe(clone.uuid);
-    expect(archived?.holdsLocked).toBe(true);
   });
 
   it('leaves the old wall live and listable when the clone is abandoned', async () => {
@@ -587,25 +585,12 @@ describe('where an archived wall shows up', () => {
     const byUuid = new Map(mine.map((wall) => [wall.uuid, wall]));
     expect(byUuid.get(source.uuid)?.archivedAt).toEqual(expect.any(String));
     expect(byUuid.get(source.uuid)?.replacedByWallUuid).toBe(clone.uuid);
-    expect(byUuid.get(source.uuid)?.holdsLocked).toBe(true);
     expect(byUuid.get(clone.uuid)?.archivedAt).toBeNull();
     expect(byUuid.get(clone.uuid)?.resetOfWallUuid).toBe(source.uuid);
-    expect(byUuid.get(clone.uuid)?.holdsLocked).toBe(false);
   });
 });
 
 describe('the archive fields', () => {
-  it('holdsLocked is true with a published climb and false with only a draft', async () => {
-    const { wall, holdIds } = await createPublishedWall(OWNER);
-    expect((await readWall(wall.uuid, OWNER))?.holdsLocked).toBe(false);
-
-    await saveClimbOn(wall, holdIds, true);
-    expect((await readWall(wall.uuid, OWNER))?.holdsLocked).toBe(false);
-
-    await saveClimbOn(wall, holdIds);
-    expect((await readWall(wall.uuid, OWNER))?.holdsLocked).toBe(true);
-  });
-
   it('replacedByWallUuid is hidden from a viewer who cannot see the successor', async () => {
     const { wall: source } = await createPublishedWall(OWNER, { isPublic: true });
     const clone = await resetWall(source.uuid, OWNER);
@@ -681,7 +666,7 @@ describe('the clone’s audience at first publish', () => {
     expect((await wallRow(clone.uuid)).is_public).toBe(true);
   });
 
-  it('applies the parked audience, and archives nothing, when the old wall was deleted first', async () => {
+  it('bounds the clone by a deleted old wall’s last flags, and archives nothing', async () => {
     const { wall: source } = await createPublishedWall(OWNER, { isPublic: true });
     const clone = await resetWall(source.uuid, OWNER);
     await sprayWallMutations.deleteSprayWall({}, { uuid: source.uuid }, ctxFor(OWNER));
@@ -914,9 +899,10 @@ describe('counts and surfaces that only want live walls', () => {
     const gym = await gymWith(GYM_ADMIN, 'member');
     const { wall: source } = await createPublishedWall(OWNER, { isPublic: true });
     await db.execute(sql`UPDATE user_boards SET gym_id = ${gym.id} WHERE uuid = ${source.uuid}`);
+    const kioskUuid = uuidv4();
     await db.execute(sql`
       INSERT INTO gym_kiosks (uuid, gym_id, slug, name, layout, created_at, updated_at)
-      VALUES (${uuidv4()}, ${gym.id}, 'main', 'Main', ${JSON.stringify({
+      VALUES (${kioskUuid}, ${gym.id}, 'main', 'Main', ${JSON.stringify({
         version: 1,
         boards: [{ boardUuid: source.uuid }],
         leaderboard: null,
@@ -936,5 +922,169 @@ describe('counts and surfaces that only want live walls', () => {
     const gymView = (await socialGymQueries.gym({}, { gymUuid: gym.uuid }, ctxFor(null))) as { boardCount: number };
     expect(gymView.boardCount).toBe(1);
     expect(await kioskBoards()).toEqual([]);
+
+    // …and a layout write cannot put it back.
+    await expect(
+      socialGymKioskMutations.updateGymKiosk(
+        {},
+        { input: { kioskUuid, layout: { version: 1, boards: [{ boardUuid: source.uuid }], leaderboard: null } } },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toMatchObject({ extensions: { code: 'BAD_USER_INPUT' } });
+    await expect(
+      socialGymKioskMutations.updateGymKiosk(
+        {},
+        { input: { kioskUuid, layout: { version: 1, boards: [{ boardUuid: clone.uuid }], leaderboard: null } } },
+        ctxFor(OWNER),
+      ),
+    ).resolves.toBeTruthy();
+  });
+});
+
+describe('review follow-ups: hidden walls, explicit choices, ordering', () => {
+  const setVisibility = (wallUuid: string, visibility: { isPublic?: boolean; isUnlisted?: boolean }) =>
+    sprayWallMutations.updateSprayWall({}, { input: { uuid: wallUuid, ...visibility } }, ctxFor(OWNER));
+  const hide = (wallUuid: string) =>
+    db.execute(sql`UPDATE spray_walls SET hidden_at = now() WHERE board_uuid = ${wallUuid}`);
+
+  it('refuses to reset a wall an admin hid', async () => {
+    const { wall } = await createPublishedWall(OWNER, { isPublic: true });
+    await hide(wall.uuid);
+    await expect(resetWall(wall.uuid, OWNER)).rejects.toMatchObject({
+      extensions: { code: 'SPRAY_WALL_RESET_HIDDEN' },
+    });
+  });
+
+  it('publishes a private clone when the old wall was hidden after the reset started', async () => {
+    const { wall: source } = await createPublishedWall(OWNER, { isPublic: true });
+    await socialBoardMutations.followBoard({}, { input: { boardUuid: source.uuid } }, ctxFor(STRANGER));
+    const clone = await resetWall(source.uuid, OWNER);
+    await hide(source.uuid);
+    await publishFirstVersion(clone.uuid, OWNER);
+
+    const published = await wallRow(clone.uuid);
+    expect(published.is_public).toBe(false);
+    expect(published.is_unlisted).toBe(false);
+  });
+
+  it('carries no follow when the narrowed audience is private', async () => {
+    const { wall: source } = await createPublishedWall(OWNER, { isPublic: true });
+    await socialBoardMutations.followBoard({}, { input: { boardUuid: source.uuid } }, ctxFor(STRANGER));
+    const clone = await resetWall(source.uuid, OWNER);
+    await setVisibility(source.uuid, { isPublic: false });
+    await publishFirstVersion(clone.uuid, OWNER);
+
+    const follows = (await db.execute(sql`
+      SELECT count(*)::int AS follows FROM board_follows WHERE board_uuid = ${clone.uuid}
+    `)) as unknown as Array<{ follows: number }>;
+    expect(follows[0].follows).toBe(0);
+  });
+
+  it('does not widen the clone when the old wall got wider mid-reset', async () => {
+    const { wall: source } = await createPublishedWall(OWNER, { isUnlisted: true });
+    const clone = await resetWall(source.uuid, OWNER);
+    await setVisibility(source.uuid, { isPublic: true, isUnlisted: false });
+    await publishFirstVersion(clone.uuid, OWNER);
+
+    const published = await wallRow(clone.uuid);
+    expect(published.is_public).toBe(false);
+    expect(published.is_unlisted).toBe(true);
+  });
+
+  it('ranks public-and-unlisted below public', async () => {
+    const { wall: source } = await createPublishedWall(OWNER, { isPublic: true });
+    const clone = await resetWall(source.uuid, OWNER);
+    await setVisibility(source.uuid, { isUnlisted: true });
+    await publishFirstVersion(clone.uuid, OWNER);
+
+    const published = await wallRow(clone.uuid);
+    expect(published.is_public).toBe(true);
+    expect(published.is_unlisted).toBe(true);
+  });
+
+  it('keeps the parked pair on a tie', async () => {
+    const { wall: source } = await createPublishedWall(OWNER, { isUnlisted: true });
+    const clone = await resetWall(source.uuid, OWNER);
+    // Stated again, unchanged: same reach as the parked pair.
+    await setVisibility(source.uuid, { isPublic: false, isUnlisted: true });
+    await publishFirstVersion(clone.uuid, OWNER);
+
+    const published = await wallRow(clone.uuid);
+    expect(published.is_public).toBe(false);
+    expect(published.is_unlisted).toBe(true);
+  });
+
+  it('bounds the clone by the narrowed flags when the old wall is narrowed and then deleted', async () => {
+    const { wall: source } = await createPublishedWall(OWNER, { isPublic: true });
+    const clone = await resetWall(source.uuid, OWNER);
+    await setVisibility(source.uuid, { isPublic: false });
+    await sprayWallMutations.deleteSprayWall({}, { uuid: source.uuid }, ctxFor(OWNER));
+    await publishFirstVersion(clone.uuid, OWNER);
+
+    expect((await wallRow(clone.uuid)).is_public).toBe(false);
+  });
+
+  it('lets an explicit choice on the clone stand, whichever wall is edited first', async () => {
+    // Clone first, then the old wall.
+    const { wall: firstSource } = await createPublishedWall(OWNER, { isUnlisted: true });
+    const firstClone = await resetWall(firstSource.uuid, OWNER);
+    await setVisibility(firstClone.uuid, { isPublic: true, isUnlisted: false });
+    await setVisibility(firstSource.uuid, { isPublic: false, isUnlisted: false });
+    await publishFirstVersion(firstClone.uuid, OWNER);
+
+    // The old wall first, then the clone.
+    const { wall: secondSource } = await createPublishedWall(OWNER, { isUnlisted: true });
+    const secondClone = await resetWall(secondSource.uuid, OWNER);
+    await setVisibility(secondSource.uuid, { isPublic: false, isUnlisted: false });
+    await setVisibility(secondClone.uuid, { isPublic: true, isUnlisted: false });
+    await publishFirstVersion(secondClone.uuid, OWNER);
+
+    for (const clone of [firstClone, secondClone]) {
+      const published = await wallRow(clone.uuid);
+      expect(published.is_public, clone.uuid).toBe(true);
+      expect(published.is_unlisted, clone.uuid).toBe(false);
+      expect(published.pending_is_public).toBeNull();
+    }
+  });
+});
+
+describe('sprayWallHoldUsage', () => {
+  const usage = (wallUuid: string, holdIds: number[], userId: string) =>
+    sprayWallQueries.sprayWallHoldUsage({}, { wallUuid, holdIds }, ctxFor(userId)) as Promise<
+      Array<{ holdId: number; publishedClimbCount: number; draftClimbCount: number }>
+    >;
+
+  it('counts published and draft climbs per hold, zeros included, once per hold', async () => {
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const [usedHold, draftOnlyHold, unusedHold] = holdIds;
+    await saveClimbOn(wall, [usedHold]);
+    await saveClimbOn(wall, [usedHold, draftOnlyHold], true);
+
+    expect(await usage(wall.uuid, [usedHold, draftOnlyHold, unusedHold, usedHold], OWNER)).toEqual([
+      { holdId: usedHold, publishedClimbCount: 1, draftClimbCount: 1 },
+      { holdId: draftOnlyHold, publishedClimbCount: 0, draftClimbCount: 1 },
+      { holdId: unusedHold, publishedClimbCount: 0, draftClimbCount: 0 },
+    ]);
+  });
+
+  it('refuses an archived wall', async () => {
+    const { source, holdIds } = await archivedWallWithClimb();
+    await expect(usage(source.uuid, holdIds, OWNER)).rejects.toMatchObject({
+      extensions: { code: 'SPRAY_WALL_ARCHIVED' },
+    });
+  });
+
+  it('refuses a stranger, on a public wall or a private one', async () => {
+    // The edit gate every hold writer uses (`loadEditableWall`), refusal and all.
+    for (const visibility of [{ isPublic: true }, {}]) {
+      const { wall, holdIds } = await createPublishedWall(OWNER, visibility);
+      await expect(usage(wall.uuid, holdIds, STRANGER)).rejects.toThrow(/not authorized/i);
+    }
+  });
+
+  it('caps how many holds one call may ask about', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    const tooMany = Array.from({ length: 501 }, (_, index) => index + 1);
+    await expect(usage(wall.uuid, tooMany, OWNER)).rejects.toThrow();
   });
 });

@@ -20,6 +20,7 @@ import { kilterCatalogSyncFamily } from './kilter-catalog-sync';
 import { moonBoardLocationsSyncFamily } from './moonboard-locations-sync';
 import { climbStatsSelfHealFamily } from './climb-stats-self-heal';
 import { userDataExportFamily } from './user-data-export';
+import { sprayWallArtFamily } from './spray-wall-art';
 
 export { BackgroundJobError, InvalidJobPayloadError } from './types';
 export type { BackgroundJobContext, BackgroundJobFamilyModule, BackgroundJobFamilyOptions } from './types';
@@ -42,6 +43,7 @@ const FAMILY_MODULES = {
   'moonboard-locations-sync': moonBoardLocationsSyncFamily,
   'climb-stats-self-heal': climbStatsSelfHealFamily,
   'user-data-export': userDataExportFamily,
+  'spray-wall-art': sprayWallArtFamily,
 } satisfies Record<BackgroundJobFamily, BackgroundJobFamilyModule>;
 
 const registry: ReadonlyMap<string, BackgroundJobFamilyModule> = new Map(

@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { GraphQLError } from 'graphql';
-import { and, asc, count, desc, eq, exists, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { lockWallForWrite } from '../../../services/spray-wall-lock';
 export { lockWallForWrite } from '../../../services/spray-wall-lock';
@@ -73,6 +73,8 @@ import {
 } from '../../../storage/s3';
 import { sprayWallIsListable } from './spray-wall-listing';
 import { resizedVariantKey } from '../../../lib/image-resize';
+import { sprayVersionQuality, sprayWallArtState } from '../../../lib/spray-wall-art';
+import { requestSprayWallArtOn, sprayWallArtNeedsRequest, sprayWallArtView } from '../../../services/spray-wall-art';
 import {
   ClimbUuidSchema,
   CommitSprayWallVersionInputSchema,
@@ -82,6 +84,7 @@ import {
   PublishSprayWallVersionInputSchema,
   RemoveSprayWallHoldsInputSchema,
   ResetSprayWallInputSchema,
+  SprayWallHoldUsageArgsSchema,
   SetSprayWallRenderSettingsInputSchema,
   UpdateSprayWallInputSchema,
   SPRAY_VERSION_STATUS_WIRE_NAME,
@@ -162,7 +165,9 @@ export const SPRAY_WALL_CODES = {
   archived: SPRAY_WALL_ARCHIVED_CODE,
   resetOwnerOnly: 'SPRAY_WALL_RESET_OWNER_ONLY',
   resetSourceUnpublished: 'SPRAY_WALL_RESET_SOURCE_UNPUBLISHED',
+  resetHidden: 'SPRAY_WALL_RESET_HIDDEN',
   archiveLimitReached: 'SPRAY_WALL_ARCHIVE_LIMIT_REACHED',
+  artNotAvailable: 'SPRAY_WALL_ART_NOT_AVAILABLE',
 } as const;
 
 type SprayWallRow = typeof dbSchema.sprayWalls.$inferSelect;
@@ -659,17 +664,14 @@ async function toGraphQLWall(
       source && (await viewerCanSeeSprayWallByLayout(source.wall, source.board, userId)) ? source.board.uuid : null,
     replacedByWallUuid:
       successor && (await viewerMayFollowToSuccessor(loaded, successor, userId)) ? successor.board.uuid : null,
-    holdsLocked: wall.archivedAt != null || archiveFacts.layoutsWithPublishedClimbs.has(wall.layoutId),
   };
 }
 
 /**
  * What `toGraphQLWall` needs to answer the archive and reset fields, for a set of
- * walls in a fixed number of queries rather than three per wall.
+ * walls in a fixed number of queries rather than two per wall.
  */
 type SprayWallArchiveFacts = {
-  /** Layout ids of the walls that have at least one published (non-draft) climb. */
-  layoutsWithPublishedClimbs: Set<number>;
   /** The live wall each clone was made from, by the clone's `reset_from_wall_id`. */
   sourcesById: Map<number, LoadedWall>;
   /** The live, PUBLISHED clone that replaced each wall, by the replaced wall's id. */
@@ -678,40 +680,13 @@ type SprayWallArchiveFacts = {
 
 async function loadSprayWallArchiveFacts(walls: SprayWallRow[]): Promise<SprayWallArchiveFacts> {
   const facts: SprayWallArchiveFacts = {
-    layoutsWithPublishedClimbs: new Set(),
     sourcesById: new Map(),
     successorsBySourceId: new Map(),
   };
   if (walls.length === 0) return facts;
 
   const sourceIds = [...new Set(walls.map((wall) => wall.resetFromWallId).filter((sourceId) => sourceId != null))];
-  const [climbLayouts, sources, successors] = await Promise.all([
-    // A semi-join, one EXISTS per wall: each stops at the first published climb
-    // it finds on `board_climbs_layout_filter_idx` (board_type, layout_id,
-    // is_listed, is_draft), so a wall with thousands of climbs costs one probe.
-    db
-      .select({ layoutId: dbSchema.sprayWalls.layoutId })
-      .from(dbSchema.sprayWalls)
-      .where(
-        and(
-          inArray(
-            dbSchema.sprayWalls.id,
-            walls.map((wall) => wall.id),
-          ),
-          exists(
-            db
-              .select({ uuid: dbSchema.boardClimbs.uuid })
-              .from(dbSchema.boardClimbs)
-              .where(
-                and(
-                  eq(dbSchema.boardClimbs.boardType, 'spray'),
-                  eq(dbSchema.boardClimbs.layoutId, dbSchema.sprayWalls.layoutId),
-                  eq(dbSchema.boardClimbs.isDraft, false),
-                ),
-              ),
-          ),
-        ),
-      ),
+  const [sources, successors] = await Promise.all([
     sourceIds.length === 0
       ? Promise.resolve([])
       : db
@@ -745,7 +720,6 @@ async function loadSprayWallArchiveFacts(walls: SprayWallRow[]): Promise<SprayWa
       .orderBy(asc(dbSchema.sprayWalls.id)),
   ]);
 
-  for (const row of climbLayouts) facts.layoutsWithPublishedClimbs.add(row.layoutId);
   for (const row of sources) facts.sourcesById.set(row.wall.id, row);
   // Ascending, so the newest successor wins if a wall somehow has two.
   for (const row of successors) {
@@ -1255,7 +1229,8 @@ function visibilityReach(visibility: PendingVisibility): number {
  * Takes the old wall's lock first, so a visibility change to it either lands
  * before this read or waits for the publish. The publish already holds the
  * clone's lock: new wall, then old wall, the order every two-lock path uses. A
- * deleted old wall has no audience left to follow, so the parked pair stands.
+ * deleted old wall still bounds the clone by the flags it last had; an
+ * admin-hidden one bounds it to private.
  */
 async function narrowToResetSourceUnderLock(
   tx: SprayWriteTransaction,
@@ -1263,20 +1238,26 @@ async function narrowToResetSourceUnderLock(
   parked: PendingVisibility,
 ): Promise<PendingVisibility> {
   await lockWallForWrite(tx, sourceWallId);
+  // Deleted or not: the flags a deleted wall last had still bound the clone, so
+  // "narrow it, then delete it" cannot widen the clone back to the parked pair.
   const [source] = await tx
-    .select({ isPublic: dbSchema.userBoards.isPublic, isUnlisted: dbSchema.userBoards.isUnlisted })
+    .select({
+      isPublic: dbSchema.userBoards.isPublic,
+      isUnlisted: dbSchema.userBoards.isUnlisted,
+      hiddenAt: dbSchema.sprayWalls.hiddenAt,
+    })
     .from(dbSchema.sprayWalls)
     .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.sprayWalls.boardUuid))
-    .where(
-      and(
-        eq(dbSchema.sprayWalls.id, sourceWallId),
-        isNull(dbSchema.sprayWalls.deletedAt),
-        isNull(dbSchema.userBoards.deletedAt),
-      ),
-    )
+    .where(eq(dbSchema.sprayWalls.id, sourceWallId))
     .limit(1);
   if (!source) return parked;
-  return visibilityReach(source) < visibilityReach(parked) ? source : parked;
+  // An admin-hidden wall reads as private to everybody but its owner, so a wall
+  // hidden after the reset started publishes a private clone.
+  const sourceVisibility: PendingVisibility =
+    source.hiddenAt != null
+      ? { isPublic: false, isUnlisted: false }
+      : { isPublic: source.isPublic, isUnlisted: source.isUnlisted };
+  return visibilityReach(sourceVisibility) < visibilityReach(parked) ? sourceVisibility : parked;
 }
 
 /** Rows per INSERT when follows and pins carry over, well under Postgres's 65535 parameters. */
@@ -1628,6 +1609,21 @@ async function publishDraftUnderLock(
   // AFTER the status flip, because the recompute only counts removals by
   // generations that have landed, and until that update this version is a draft.
   const climbsChanged = await recomputeMissingHoldCounts(tx, wall.id);
+
+  // The generated wall looks for the new generation, queued with the publish so
+  // the job commits (or rolls back) with it. Whatever background the wall
+  // shows, so the owner's picker has art to offer straight away. Refused here,
+  // with no job, when the photo fails the quality gate. Never fails the publish.
+  const [frame] = await tx
+    .select({
+      referenceWidth: dbSchema.sprayWalls.referenceWidth,
+      referenceHeight: dbSchema.sprayWalls.referenceHeight,
+    })
+    .from(dbSchema.sprayWalls)
+    .where(eq(dbSchema.sprayWalls.id, wall.id))
+    .limit(1);
+  if (frame) await requestSprayWallArtOn(tx, row, frame);
+
   if (climbsChanged > 0) {
     logger.info('Spray wall publish re-materialised climb integrity', {
       layoutId: wall.layoutId,
@@ -1752,6 +1748,24 @@ async function climbsUsingHolds(layoutId: number, holdIds: number[]): Promise<nu
 // Queries
 // ============================================
 
+/**
+ * The version a generated-background choice is checked against: the published
+ * one, or before the first publish the newest version (the wizard's draft).
+ */
+async function versionForArtChoice(wall: SprayWallRow): Promise<SprayWallVersionRow | undefined> {
+  const [version] = await db
+    .select()
+    .from(dbSchema.sprayWallVersions)
+    .where(
+      wall.currentVersionId != null
+        ? eq(dbSchema.sprayWallVersions.id, wall.currentVersionId)
+        : eq(dbSchema.sprayWallVersions.wallId, wall.id),
+    )
+    .orderBy(desc(dbSchema.sprayWallVersions.versionNumber))
+    .limit(1);
+  return version;
+}
+
 export const sprayWallQueries = {
   sprayWall: async (_: unknown, { uuid }: { uuid: unknown }, ctx: ConnectionContext) => {
     await applyRateLimit(ctx, WALL_QUERY_RATE_LIMIT, 'sprayWall');
@@ -1829,6 +1843,109 @@ export const sprayWallQueries = {
       homography: versionRow.homography ?? [...IDENTITY_HOMOGRAPHY],
       holds: holds.map((hold) => toGraphQLHold(hold, versionNumberById)),
     };
+  },
+
+  /**
+   * How many climbs use each of the given holds, split published / draft.
+   *
+   * The hold editor asks this before saving a removal (a move is a removal plus
+   * an addition), so it can warn the owner that published climbs will lose a
+   * hold. Nothing is refused on the strength of it: the removal itself is
+   * unchanged, and the publish that lands it recomputes `missing_hold_count`.
+   *
+   * Counted the way search shows climbs: hidden climbs and climbs a full reset
+   * retired are left out, and a published climb is a listed non-draft one.
+   */
+  sprayWallHoldUsage: async (
+    _: unknown,
+    { wallUuid, holdIds }: { wallUuid: unknown; holdIds: unknown },
+    ctx: ConnectionContext,
+  ) => {
+    requireAuthenticated(ctx);
+    await applyRateLimit(ctx, WALL_QUERY_RATE_LIMIT, 'sprayWallHoldUsage');
+    const validated = validateInput(SprayWallHoldUsageArgsSchema, { wallUuid, holdIds }, 'input');
+
+    // The same gate as editing the holds: this is a question only the hold
+    // editor asks, and the counts include other setters' drafts.
+    const { wall } = await loadEditableWall(ctx, validated.wallUuid);
+    if (wall.archivedAt != null) throw sprayWallArchivedError();
+
+    const requested = [...new Set(validated.holdIds)];
+    if (requested.length === 0) return [];
+
+    const isPublished = and(eq(dbSchema.boardClimbs.isDraft, false), eq(dbSchema.boardClimbs.isListed, true));
+    const rows = await db
+      .select({
+        holdId: dbSchema.boardClimbHolds.holdId,
+        publishedClimbCount: sql<number>`count(*) FILTER (WHERE ${isPublished})::int`,
+        draftClimbCount: sql<number>`count(*) FILTER (WHERE ${eq(dbSchema.boardClimbs.isDraft, true)})::int`,
+      })
+      .from(dbSchema.boardClimbHolds)
+      .innerJoin(dbSchema.boardClimbs, eq(dbSchema.boardClimbs.uuid, dbSchema.boardClimbHolds.climbUuid))
+      .where(
+        and(
+          eq(dbSchema.boardClimbHolds.boardType, 'spray'),
+          inArray(dbSchema.boardClimbHolds.holdId, requested),
+          eq(dbSchema.boardClimbs.boardType, 'spray'),
+          eq(dbSchema.boardClimbs.layoutId, wall.layoutId),
+          eq(dbSchema.boardClimbs.isHidden, false),
+          sql`COALESCE(${dbSchema.boardClimbs.retiredByReset}, false) = false`,
+        ),
+      )
+      .groupBy(dbSchema.boardClimbHolds.holdId);
+
+    const usageByHold = new Map(rows.map((row) => [row.holdId, row]));
+    return requested.map((holdId) => ({
+      holdId,
+      publishedClimbCount: usageByHold.get(holdId)?.publishedClimbCount ?? 0,
+      draftClimbCount: usageByHold.get(holdId)?.draftClimbCount ?? 0,
+    }));
+  },
+
+  /**
+   * One version's generated wall looks and its quality verdict.
+   *
+   * The same gate as `sprayWallRenderData`, step for step: the wall's view
+   * rule, then the version rule (a draft only for an editor). Its own query so
+   * a backend that predates it fails only this read, never the render payload.
+   */
+  sprayWallArt: async (
+    _: unknown,
+    { uuid, version }: { uuid: unknown; version?: number | null },
+    ctx: ConnectionContext,
+  ) => {
+    await applyRateLimit(ctx, WALL_QUERY_RATE_LIMIT, 'sprayWallArt');
+    const validatedUuid = validateInput(UUIDSchema, uuid, 'uuid');
+
+    const loaded = await loadVisibleWall(validatedUuid, ctx.userId);
+    if (!loaded) return null;
+
+    const canEdit = await computeCanEdit(ctx, loaded.board);
+    const versionRow = await resolveReadableVersion(loaded.wall, version, canEdit);
+    if (!versionRow?.photoKey) return null;
+
+    const liveFail = sprayVersionQuality(versionRow, loaded.wall).verdict === 'fail';
+    const state = sprayWallArtState(versionRow.art, liveFail);
+
+    // Read-time backfill: the PUBLISHED version of a wall that chose a
+    // generated look, whose art is missing, from an older recipe, or failed or
+    // stuck past the job's deadline. Only queued, never rendered inline; the
+    // singleton key dedupes concurrent readers, and a refused photo never
+    // reaches here (`requeue` is false for it).
+    // Never for an ARCHIVED wall: it gets no new generation, and its readers fall
+    // back to the photo when the art is missing.
+    const background = loaded.wall.renderSettings?.background;
+    if (
+      state.requeue &&
+      loaded.wall.archivedAt == null &&
+      versionRow.id === loaded.wall.currentVersionId &&
+      (background === 'wall-crop' || background === 'hold-cutouts')
+    ) {
+      const outcome = await db.transaction((tx) => requestSprayWallArtOn(tx, versionRow, loaded.wall));
+      if (outcome === 'queued') return sprayWallArtView(versionRow, loaded.wall, { status: 'PENDING', requeue: false });
+    }
+
+    return sprayWallArtView(versionRow, loaded.wall, state);
   },
 
   /**
@@ -1932,7 +2049,7 @@ export const sprayWallQueries = {
     // reason. The caller owns these walls, so no version is filtered out below and
     // this set is exactly the one each payload needs.
     const deltas = await versionHoldDeltas([...versionsByWall.values()].flat().map((version) => Number(version.id)));
-    // …and the archive and reset fields for every wall in three queries. ARCHIVED
+    // …and the archive and reset fields for every wall in two queries. ARCHIVED
     // walls are deliberately still here: this list is where the owner finds them.
     const archiveFacts = await loadSprayWallArchiveFacts(rows.map((row) => row.wall));
 
@@ -2144,6 +2261,13 @@ function assertResetAllowed(loaded: LoadedWall, userId: string): void {
     });
   }
   if (loaded.wall.archivedAt != null) throw sprayWallArchivedError();
+  // A reset copies the audience and carries the followers over, so resetting a
+  // wall an admin hid would put it straight back in front of them.
+  if (loaded.wall.hiddenAt != null) {
+    throw new GraphQLError('This wall is hidden while a report is reviewed, so it can\u2019t be reset yet.', {
+      extensions: { code: SPRAY_WALL_CODES.resetHidden },
+    });
+  }
   if (loaded.wall.currentVersionId == null) {
     throw new GraphQLError('Publish this wall before resetting it. There is nothing to replace yet.', {
       extensions: { code: SPRAY_WALL_CODES.resetSourceUnpublished },
@@ -2962,6 +3086,7 @@ export const sprayWallMutations = {
             pendingIsPublic: dbSchema.sprayWalls.pendingIsPublic,
             pendingIsUnlisted: dbSchema.sprayWalls.pendingIsUnlisted,
             deletedAt: dbSchema.sprayWalls.deletedAt,
+            resetFromWallId: dbSchema.sprayWalls.resetFromWallId,
           })
           .from(dbSchema.sprayWalls)
           .where(eq(dbSchema.sprayWalls.id, wall.id))
@@ -3019,8 +3144,19 @@ export const sprayWallMutations = {
         // `{ isUnlisted: false }` alone would silently drop a pending public.
         // Only while something is pending: there is nothing to merge into after
         // the first publish, which clears the pair.
+        //
+        // A reset clone is different: its pair is the OLD wall's audience, parked
+        // when the reset started, and the first publish narrows it to whatever the
+        // old wall has by then. Once the owner states a visibility for the clone
+        // themselves, that is a choice, not a stale copy, so the pair is dropped:
+        // the board row this call writes is what publishes, unnarrowed, whatever
+        // order the owner edited the two walls in.
         const hasPending = wallNow?.pendingIsPublic != null || wallNow?.pendingIsUnlisted != null;
-        if (hasPending && (validated.isPublic !== undefined || validated.isUnlisted !== undefined)) {
+        const statesVisibility = validated.isPublic !== undefined || validated.isUnlisted !== undefined;
+        if (hasPending && statesVisibility && wallNow?.resetFromWallId != null) {
+          wallUpdates.pendingIsPublic = null;
+          wallUpdates.pendingIsUnlisted = null;
+        } else if (hasPending && statesVisibility) {
           const merged = pendingVisibilityColumns({
             isPublic: validated.isPublic ?? wallNow?.pendingIsPublic === true,
             isUnlisted: validated.isUnlisted ?? wallNow?.pendingIsUnlisted === true,
@@ -3085,6 +3221,15 @@ export const sprayWallMutations = {
    * lock either — `render_settings` is touched by no other writer (holds,
    * versions and publish never read or write it), so there is no concurrent
    * write to order this against; the last call wins, which is what a setting is.
+   *
+   * A generated background (`wall-crop`, `hold-cutouts`) is refused when the
+   * wall's photo fails the quality gate — the published version's, or the
+   * newest draft's before the first publish — so no client can store a look
+   * the wall cannot show. The read it decides on is a version's pins and
+   * frame, which never change once written, so it still needs no lock: a
+   * publish landing alongside requests its own art. When the published
+   * version has no current art yet (a wall published before art existed),
+   * choosing one queues it.
    */
   setSprayWallRenderSettings: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
@@ -3093,15 +3238,51 @@ export const sprayWallMutations = {
     const validated = validateInput(SetSprayWallRenderSettingsInputSchema, input, 'input');
     const { wall } = await loadEditableWall(ctx, validated.uuid);
 
+    // An older client sends `{ mode, boardsesh }` with no `background` key.
+    // That is "change the look", not "go back to the photo", so the stored
+    // background is kept. Only an explicit choice is gated: a kept one was
+    // allowed when it was made, and a reset that fails the gate draws the
+    // photo through the read-side fallback anyway.
+    const explicitBackground = validated.renderSettings?.background;
+    const renderSettings =
+      validated.renderSettings && explicitBackground === undefined && wall.renderSettings?.background
+        ? { ...validated.renderSettings, background: wall.renderSettings.background }
+        : validated.renderSettings;
+    const background = renderSettings?.background ?? 'photo';
+    const artVersion = background === 'photo' ? undefined : await versionForArtChoice(wall);
+    if (explicitBackground !== undefined && explicitBackground !== 'photo') {
+      const quality = artVersion ? sprayVersionQuality(artVersion, wall) : null;
+      if (!quality || quality.verdict === 'fail') {
+        throw new GraphQLError(
+          'This wall\u2019s photo is too angled to straighten. Retake it front-on to use this look.',
+          {
+            extensions: { code: SPRAY_WALL_CODES.artNotAvailable, reason: quality?.reason ?? 'no-photo' },
+          },
+        );
+      }
+    }
+
     await db
       .update(dbSchema.sprayWalls)
-      .set({ renderSettings: validated.renderSettings, updatedAt: new Date() })
+      .set({ renderSettings, updatedAt: new Date() })
       .where(eq(dbSchema.sprayWalls.id, wall.id));
+
+    // Backfill: only for the PUBLISHED version of a live wall. A draft gets its
+    // art when it is published; an archived wall gets no new art.
+    if (
+      artVersion &&
+      wall.archivedAt == null &&
+      artVersion.id === wall.currentVersionId &&
+      sprayWallArtNeedsRequest(artVersion.art)
+    ) {
+      await db.transaction((tx) => requestSprayWallArtOn(tx, artVersion, wall));
+    }
 
     logger.info('Spray wall render settings updated', {
       layoutId: wall.layoutId,
       userId: ctx.userId,
       mode: validated.renderSettings?.mode ?? null,
+      background,
     });
 
     const reloaded = await loadWall('uuid', validated.uuid);

@@ -6,7 +6,12 @@ import SprayWallFrontDoor from '@/app/components/spray-wall/spray-wall-front-doo
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
 import { resolveSprayWallAccess } from '@/app/lib/spray/spray-visibility';
-import { fetchSprayWallPageData, resolveSprayPhotoUrl } from '@/app/lib/spray/spray-wall-render-data.server';
+import {
+  fetchSprayWallArtChoice,
+  fetchSprayWallPageData,
+  resolveSprayArtUrl,
+  resolveSprayPhotoUrl,
+} from '@/app/lib/spray/spray-wall-render-data.server';
 
 /**
  * Redeeming a wall's share link on the web.
@@ -92,11 +97,14 @@ export default async function SprayWallListPage({
   // Null here is a wall the backend will not hand over — soft-deleted, or with
   // nothing published yet. Same answer as a refused capability.
   if (!wallData) notFound();
+  const art = await fetchSprayWallArtChoice(board.uuid, wallData.versionNumber);
 
   return (
     <SprayWallFrontDoor
       wallData={wallData}
       photoUrl={resolveSprayPhotoUrl(wallData, board.isPublic)}
+      art={art}
+      artUrl={resolveSprayArtUrl(wallData.wall.uuid, art)}
       angle={board.angle}
     />
   );

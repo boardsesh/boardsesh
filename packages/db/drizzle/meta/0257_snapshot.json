@@ -1,6 +1,6 @@
 {
-  "id": "7397ba85-0039-4f5a-abbf-5d40a4253a92",
-  "prevId": "5a2106e3-1559-4360-b6b0-a8de48b79a8d",
+  "id": "91ee7f9b-1212-4c28-a5b1-91749b4f3830",
+  "prevId": "7397ba85-0039-4f5a-abbf-5d40a4253a92",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -15001,6 +15001,18 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reset_from_wall_id": {
+          "name": "reset_from_wall_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -15015,6 +15027,22 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "spray_walls_reset_from_wall_idx": {
+          "name": "spray_walls_reset_from_wall_idx",
+          "columns": [
+            {
+              "expression": "reset_from_wall_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"spray_walls\".\"reset_from_wall_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -15069,6 +15097,19 @@
           "tableTo": "users",
           "columnsFrom": [
             "hidden_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "spray_walls_reset_from_wall_id_spray_walls_id_fk": {
+          "name": "spray_walls_reset_from_wall_id_spray_walls_id_fk",
+          "tableFrom": "spray_walls",
+          "tableTo": "spray_walls",
+          "columnsFrom": [
+            "reset_from_wall_id"
           ],
           "columnsTo": [
             "id"

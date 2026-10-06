@@ -137,10 +137,11 @@ that the frame is the photo.
 
 Three consequences worth stating plainly.
 
-- **No image is ever warped.** The matrix is stored on the version; the renderer
-  maps holds through `invert()` at draw time and paints them over the untouched
-  photo. Warping would cost a re-encode per version and lose pixels at the edges
-  for no gain.
+- **The stored photo is never warped.** The matrix is stored on the version;
+  the renderer maps holds through `invert()` at draw time and paints them over
+  the untouched photo. The one warped copy is DERIVED art the owner can choose to
+  show instead (see "Generated wall looks"): made once per version from the
+  photo, never replacing it, and always regenerable.
 - **A version without anchors stores the identity**, which is the honest answer
   for a wall whose photo *is* its frame. Anchors are optional at creation and
   required at the first reset, because that is the first moment two photographs
@@ -714,6 +715,127 @@ previews and the stored bundle cannot disagree.
 - **No wall lock.** No hold, version or publish path reads or writes the column, so
   there is no concurrent writer to order against; the last call wins.
 
+### Generated wall looks
+
+A wall's owner picks what the wall is drawn on, as
+`render_settings.background`:
+
+| Value | In the app | What it is |
+| --- | --- | --- |
+| `photo` (or missing) | Photo | The stored photo, holds mapped through `invert()`. Every wall before this shipped. |
+| `wall-crop` | Wall only | The photo flattened into the canonical frame through the version's corner-pin homography. The room falls outside the pinned quad, so there is nothing to mask. The recommended look once the photo passes the quality gate. |
+| `hold-cutouts` | Holds only | Only the hold pixels, on a transparent background. Clients draw the Aura field colour behind it (`BOARD_FIELD_COLORS`: `#FFFFFF` light, `#181225` dark), so it reads like an LED board. Volumes are not detected as holds, so they drop out; an owner with volumes uses Wall only. |
+
+Both generated looks are drawn in the CANONICAL frame, the frame hold
+coordinates already live in, so a renderer draws holds on them with no
+homography: frame = the art's own size, holds scaled by `art.width /
+boardWidth`. The pixel maths is `@boardsesh/spray-wall-geometry`
+(`clean-art.ts`, `photo-quality.ts`), dependency-free, so the backend job and
+the app agree on the frame, the mask and the gate.
+
+**The quality gate.** A photo taken from a sharp angle has to stretch its far
+side much more than its near side, and the far side comes out smeared.
+`photoQuality` puts one number on that: sample the canonical -> photo map on a
+15 x 15 grid over the middle 90% of the frame, take `|det J|` at each sample,
+and `stretch = sqrt(max / min)`.
+
+| Verdict | Rule | What the client does |
+| --- | --- | --- |
+| `good` | stretch <= 1.7 | Offers both generated looks. |
+| `soft` | 1.7 < stretch <= 2.2 | Offers them, and nudges "retake front-on". |
+| `fail` | stretch > 2.2, no corner pins, or a frame whose short edge is under 1000 px | Offers only the photo. The server refuses a generated background too, so an old or hand-rolled client cannot store one (`SPRAY_WALL_ART_NOT_AVAILABLE`, with the reason). |
+
+The numbers come from a spike over real climbers' wall photos in October 2026:
+a near front-on wall (bottom corners pinned 7-8% in from the sides) scored 1.25 and flattened
+cleanly; a strongly keystoned one (bottom edge pinned at half the width of the
+top) scored 2.87 and its far side was visibly smeared. Both are pinned in
+`photo-quality.test.ts`. Pins tapped on the photo's own corners solve to the
+identity, so the gate reads the version's PINS, not its matrix: a stored
+identity with no pins is "no pins", the same identity from pins is a front-on
+photo.
+
+**Where the art lives.** `spray_wall_versions.art` (jsonb, nullable) holds
+`{ recipe, status, width, height, cropKey, cutoutKey, quality, error }`, with
+status `pending` / `ready` / `failed` / `refused`. The images are in the PRIVATE
+bucket beside the photo, under the same `private, no-store` cache rule:
+
+```
+spray-walls/<wall uuid>/art/<versionId>-r<recipe>-crop.jpg       (+ @280.jpg thumbnail)
+spray-walls/<wall uuid>/art/<versionId>-r<recipe>-cutout.webp    (+ @280.webp thumbnail, alpha kept)
+```
+
+Under the wall's own prefix, so the retention purge and account deletion, which
+delete the whole `spray-walls/<wall uuid>/` prefix, take the art with the photo.
+
+**The recipe lever.** `ART_RECIPE` (now 1) is in every key and on every row.
+Bump it whenever a rendering number changes (dilate 4% of each hold's radius,
+feather sigma 6% of the median radius, 32-point circle for an untraced hold,
+2048 px long edge). A row whose recipe is not the running one reads as `NONE`
+(clients draw the photo). Nothing sweeps every wall on a bump: the job is
+re-queued the next time `sprayWallArt` is read for the PUBLISHED version of a
+wall whose chosen background is generated, or when the owner chooses one again.
+Walls on the photo are left alone. Old objects are never overwritten.
+
+The recipe is also the only way to WITHDRAW art. A READY row of the running
+recipe is served whatever the live quality gate says, so tightening
+`ART_STRETCH_GOOD_MAX`, `ART_STRETCH_SOFT_MAX` or `ART_MIN_FRAME_SHORT_EDGE`
+later only stops new art from being made (and stops owners choosing a
+generated look). Art already READY stays on show until `ART_RECIPE` is bumped,
+after which the old rows read as `NONE` and a photo that now fails the gate
+reads as `REFUSED`.
+
+**The job.** `spray-wall-art` on the `maintenance-delivery` role
+(`docs/background-workers.md`), keyed `art:<versionId>:<recipe>`. It re-checks the
+gate with the shared function (writing `refused` if it fails), decodes the photo
+with sharp, warps it with `warpBilinear`, draws the hold mask as an SVG (each
+outline filled and stroked round by twice its grow, which dilates it), blurs it,
+joins it as the cutout's alpha, uploads thumbnails before their base images, and
+writes `ready`. A failure writes `failed` with a bounded code before it rethrows,
+so a retry, or the owner picking the look again, can heal it. A crash, an
+expired lease or the run deadline writes nothing, so every `pending` row carries
+`requestedAt`; one older than the job's 1 h deadline reads as `FAILED`.
+
+Who queues it:
+
+- **`publishDraftUnderLock`**, inside the publish transaction (a savepoint, so a
+  queue failure never fails the publish), for every new generation whatever the
+  background, so the owner's picker has art to offer straight away. A photo
+  that fails the gate gets `refused` and no job.
+- **`setSprayWallRenderSettings`**, when a generated background is chosen and
+  the PUBLISHED version has no current art (a wall published before this
+  shipped, or a failed run). Before the first publish the choice is checked
+  against the newest draft and the publish queues the art. A write that omits
+  `background` (every older client sends `{ mode, boardsesh }` only) keeps the
+  stored one rather than resetting it to the photo, and is not re-gated.
+- **`sprayWallArt` reads**, for the PUBLISHED version of a wall whose chosen
+  background is generated, when its art is missing, from an older recipe, or
+  `failed` / `pending` past the 1 h deadline (a `failed` row is retried at most
+  hourly, not on every read). Queue only, never rendered inline, deduplicated by
+  the singleton key, and never for a photo the gate refuses.
+
+Nothing is queued while `spray-wall-art` is in `BATCH_FAMILIES_DISABLED` (every
+dev machine): the row stays NULL and the wall draws its photo.
+
+**Reading it.** `sprayWallArt(uuid, version)`, its own query and never a field
+on the shared fragments, for the reason the look has its own query. Same gate
+as `sprayWallRenderData`: the wall's view rule, then a draft only for an editor.
+It returns the live quality verdict (so a client can grey out the choice before
+any job has run), the status, the size, and presigned `crop` / `cutout`
+`SprayWallPhoto`s when ready.
+
+**Fallback, everywhere.** A client draws the photo whenever the art is not
+`READY` for the version it is drawing: no art yet, an older recipe, a failed or
+refused run, a backend without `sprayWallArt`, or art for a different version
+than the render payload's. The photo is always a correct picture of the wall.
+
+**Public walls have no public copy of the art.** The web page links the art
+through the same redirect route the unlisted photo uses
+(`/api/v1/spray-walls/{uuid}/photo?look=wall-crop|hold-cutouts`, a fresh
+signature per fetch), for public walls too. A world-readable copy would need its
+own random key, demotion delete and hide rule, the way the photo's has (SW-14);
+that is deferred until a crawler or an unfurler needs the art. OG cards keep
+drawing the photo.
+
 ### Versions, anchors and the homography
 
 `createSprayWallVersion` takes the `photoId` the upload handler returned and
@@ -754,10 +876,11 @@ The geometry all lives in **`@boardsesh/spray-wall-geometry`** (SW-06, #5466) �
 `mapRadius`. The backend imports it and owns no copy.
 
 One contract to know before adding a backend caller: **`invert` THROWS on a
-singular matrix** rather than returning the identity. Nothing on the server inverts
-today — the stored matrix is the forward photo→canonical one and the client inverts
-at draw time — so there is no call site to guard yet. When one appears, let the
-throw surface as a clear error rather than catching it into the identity: a corrupt
+singular matrix** rather than returning the identity. The one server call site is
+the `spray-wall-art` job, which turns the throw into a non-retryable
+`SPRAY_ART_SINGULAR_HOMOGRAPHY` failure (the gate refuses most such matrices
+first). Any new caller should do the same — surface it as a clear error rather
+than catching it into the identity: a corrupt
 stored homography that silently becomes the identity renders every hold at the
 wrong place, which is far harder to notice than a failed request.
 
@@ -766,8 +889,8 @@ The homography is a 4-point DLT in pure TS
 the identity matrix when a version has no anchors. A degenerate quad — anchors
 collinear or coincident — also falls back to the identity: a worse map than a
 correct one, and a far better outcome than a matrix of NaN that would render every
-hold at nowhere. No image is ever warped in v1; the client maps holds through the
-INVERSE at draw time. SW-06 (#5439) moves the module into
+hold at nowhere. The stored photo is never warped; the client maps holds through
+the INVERSE at draw time. Generated art (below) is a separate derived image. SW-06 (#5439) moves the module into
 `@boardsesh/spray-wall-geometry` unchanged.
 
 ### Adding and removing holds
@@ -2295,7 +2418,13 @@ wall in place turned out to be hard to follow for climbers, so a reset can
 instead be a **clone**: a new wall with the old wall's settings, a new photo and
 holds marked from scratch. When the new wall is published, the old one is
 **archived**. The in-place reset and hold editing on a live wall still work
-exactly as before; nothing here refuses them yet.
+exactly as before.
+
+Holds stay editable on a live wall, published climbs or not. Before it removes
+(or moves) a hold, the app asks `sprayWallHoldUsage` how many published and
+draft climbs use it and asks the climber to confirm when published climbs do;
+those climbs then get `missing_hold_count` from the publish, as they always
+have.
 
 ### The two columns
 
@@ -2304,7 +2433,7 @@ exactly as before; nothing here refuses them yet.
 | `spray_walls.archived_at` | When a reset replaced this wall. NULL for a live wall. |
 | `spray_walls.reset_from_wall_id` | The wall this one was cloned from. Self-reference, `ON DELETE SET NULL`, with a partial index where it is not null (almost no wall has one). |
 
-Migration 0256 adds both. Nothing is dropped or rewritten.
+Migration 0257 adds both. Nothing is dropped or rewritten.
 
 ### `resetSprayWall`
 
@@ -2317,7 +2446,11 @@ Migration 0256 adds both. Nothing is dropped or rewritten.
   wall read.
 - **A published, live wall.** A wall with no published version gets
   `SPRAY_WALL_RESET_SOURCE_UNPUBLISHED`, an archived one gets
-  `SPRAY_WALL_ARCHIVED`, a deleted one is not found.
+  `SPRAY_WALL_ARCHIVED`, a deleted one is not found. A wall an admin has hidden
+  gets `SPRAY_WALL_RESET_HIDDEN` ("This wall is hidden while a report is
+  reviewed, so it can't be reset yet."): a reset copies the audience and
+  carries the followers over, so it would put the wall straight back in front
+  of them.
 - **Idempotent.** Under the owner's account lock and then the old wall's lock,
   it looks for a live clone of this wall that has not been published yet and
   returns it. A retry, or the owner coming back to the wizard, gets the same
@@ -2333,9 +2466,18 @@ Migration 0256 adds both. Nothing is dropped or rewritten.
   `pending_is_unlisted`, so the clone is private until its first publish, like
   any new wall (#5513). At that publish the clone gets the NARROWER of the
   parked pair and the old wall's visibility at that moment (private, then
-  unlisted, then public and unlisted, then public). An owner who makes the old
-  wall private mid-reset publishes a private new wall. If the old wall was
-  deleted in between, the parked pair applies.
+  unlisted, then public and unlisted, then public; a tie keeps the parked
+  pair). An owner who makes the old wall private mid-reset publishes a private
+  new wall, and an old wall made WIDER mid-reset does not widen the clone. An
+  old wall an admin hid in between counts as private. A deleted old wall still
+  bounds the clone by the flags it last had, so narrowing it and then deleting
+  it cannot widen the clone back.
+- **An explicit choice opts out of narrowing.** Once the owner states a
+  visibility for the clone itself through `updateSprayWall`, the parked pair is
+  dropped and the clone's own board row is what publishes, unnarrowed. Narrowing
+  exists to catch a stale parked copy of the old wall's audience, not to
+  overrule a choice the owner made for the new wall, and dropping the pair makes
+  the result the same whichever wall the owner edited first.
 - **Caps.** The clone skips the 10-wall live cap, because a reset nets to zero
   live walls once it publishes. It counts against
   `MAX_ARCHIVED_SPRAY_WALLS_PER_USER` (50) instead: the count is the owner's
@@ -2412,7 +2554,14 @@ Left out of:
   the climb sitemap with it, which is intended: the successor is the page worth
   crawling;
 - the 10-wall live cap in `createSprayWall`, `MAX_BOARDS_PER_ACCOUNT`, and a
-  gym's `boardCount`.
+  gym's `boardCount`;
+- a gym kiosk layout write (`assertLayoutBoardsInGym` refuses a slot or
+  leaderboard naming an archived wall, matching the read side).
+
+Deliberately still counted: a gym's `boardTypes` and angle chips, the gym
+directory's board type filter, and the admin duplicate and stray-board tools.
+The successor has the same type and angle, so the chips and the filter come
+out the same either way, and the admin tools are about rows, archived or not.
 
 Still returned by: `sprayWall`, `sprayWallByLayout`, `sprayWallRenderData`,
 `board`, `boardBySlug`, `mySprayWalls` (where the owner finds archived walls),
@@ -2435,15 +2584,32 @@ An offline device learns a wall is archived from the wall payload
 | `archivedAt` | ISO time of the archive, or null. |
 | `resetOfWallUuid` | The wall this one was cloned from, if it is not deleted, and only for a viewer who can see that wall without its uuid: its owner, a member of its gym, or anyone when it is public. |
 | `replacedByWallUuid` | The live, PUBLISHED clone that replaced this wall, null while the clone is unfinished. Shown to a viewer who can see the successor without its uuid, plus one carry-forward: when the old wall is unlisted and NOT public, and the successor is unlisted too, someone holding the old share link is shown the new one. Old to new only. |
-| `holdsLocked` | True when the wall is archived or has at least one published climb (`is_draft = false`). Drafts do not count. Advisory on a live wall for now: the server does not refuse hold edits on a wall that reads true. |
 
-`mySprayWalls` and `gymSprayWalls` read these fields for every wall in three
-queries (`loadSprayWallArchiveFacts`), not three per wall. The `holdsLocked`
-read is one `EXISTS` per wall, which stops at the first published climb.
+`mySprayWalls` and `gymSprayWalls` read these fields for every wall in two
+queries (`loadSprayWallArchiveFacts`), not two per wall.
+
+`sprayWallHoldUsage(wallUuid, holdIds)` answers one row per distinct requested
+hold (at most 500 per call): `publishedClimbCount` (listed, non-draft) and
+`draftClimbCount`, from `board_climb_holds` joined to this wall's climbs.
+Hidden climbs and climbs a full reset retired are not counted. It takes the
+same gate as editing the holds and refuses an archived wall with
+`SPRAY_WALL_ARCHIVED`.
 
 These fields are in the SDL only. The shared `SPRAY_WALL_FIELDS` selection does
 not ask for them yet, so a client built against it keeps working against a
 backend that has not deployed them.
+
+### Generated wall art
+
+Art (`spray_wall_versions.art`, migration 0256) is generated per published
+version and requested inside `publishDraftUnderLock`, so a reset clone's first
+publish requests art for the clone exactly as any new wall's does, and the clone
+copies the old wall's `render_settings` (including a generated `background`)
+like every other setting. If the clone's photo fails the quality gate, the
+read-side fallback draws the photo. An archived wall gets no new art: no version
+can be published on it, and the two backfills (`sprayWallArt` on read and
+`setSprayWallRenderSettings`) skip an archived wall. Its existing art keeps
+rendering.
 
 ### Known gaps
 
@@ -3911,6 +4077,13 @@ wall has no such copy by design, so it shows the presigned URL from
 `sprayWallRenderData`, which is right for a page read by whoever has the link
 and never indexed. Never the other way round: a presigned URL in a public page's
 HTML is a dead image fifteen minutes later.
+
+When the owner chose a generated background and the backend reports it READY
+for the version the page draws, the page shows that instead
+(`fetchSprayWallArtChoice`, `resolveSprayWallDrawing`): through the redirect
+route for public and unlisted walls alike, in canonical mode, with the dark Aura
+field behind Holds only (www has one colour scheme). Any miss draws the photo
+as above.
 
 ### Drawing the climb
 

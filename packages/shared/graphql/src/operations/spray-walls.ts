@@ -273,6 +273,21 @@ export const CREATE_SPRAY_WALL = gql`
 `;
 
 /**
+ * How many published and draft climbs use each hold. The hold editor asks before
+ * it saves a removal or a move, so it can warn that published climbs will lose a
+ * hold.
+ */
+export const GET_SPRAY_WALL_HOLD_USAGE = gql`
+  query GetSprayWallHoldUsage($wallUuid: ID!, $holdIds: [Int!]!) {
+    sprayWallHoldUsage(wallUuid: $wallUuid, holdIds: $holdIds) {
+      holdId
+      publishedClimbCount
+      draftClimbCount
+    }
+  }
+`;
+
+/**
  * Start a reset: clone the wall's settings into a new, unfinished wall. The owner
  * photographs and marks it in the add-wall wizard, and its first publish archives
  * the old wall. Calling it again before then returns the same clone.
@@ -314,6 +329,43 @@ export const GET_SPRAY_WALL_LOOK = gql`
     sprayWall(uuid: $uuid) {
       uuid
       renderSettings
+    }
+  }
+`;
+
+/**
+ * One version's generated wall looks and its photo-quality verdict. Its own
+ * query for the reason `GET_SPRAY_WALL_LOOK` gives: a backend without
+ * `sprayWallArt` costs only the art, and the wall draws on its photo.
+ */
+export const GET_SPRAY_WALL_ART = gql`
+  query GetSprayWallArt($uuid: ID!, $version: Int) {
+    sprayWallArt(uuid: $uuid, version: $version) {
+      versionNumber
+      recipe
+      status
+      width
+      height
+      quality {
+        stretch
+        verdict
+        reason
+        frameShortEdge
+      }
+      crop {
+        url
+        thumbUrl
+        width
+        height
+        expiresAt
+      }
+      cutout {
+        url
+        thumbUrl
+        width
+        height
+        expiresAt
+      }
     }
   }
 `;

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
 import { createRequestLogger } from '@/app/lib/observability/request-logger';
-import { fetchSprayWallPhotoUrl } from '@/app/lib/spray/spray-wall-render-data.server';
+import { fetchSprayWallArtImageUrl, fetchSprayWallPhotoUrl } from '@/app/lib/spray/spray-wall-render-data.server';
 
 /**
  * The photograph of an UNLISTED spray wall, behind a redirect that is minted on
@@ -24,6 +24,13 @@ import { fetchSprayWallPhotoUrl } from '@/app/lib/spray/spray-wall-render-data.s
  * a public or unlisted wall answers and every private one is "not found". This
  * route therefore cannot leak a private wall even if it wanted to, and it never
  * has to decide anything a resolver already decides.
+ *
+ * `?look=wall-crop` or `?look=hold-cutouts` redirects to that generated look of
+ * the published version instead (`sprayWallArt`, same gate). Those live in the
+ * private bucket for every wall, public ones included — there is no public copy
+ * of the art — so a public wall's page comes through here for them too. A look
+ * that is not ready is the same 404 as a missing wall; the page only links one
+ * the backend reported ready.
  */
 
 /** Per-IP cap. Each miss is a backend round trip that mints a signature. */
@@ -50,9 +57,13 @@ export async function GET(req: Request, props: { params: Promise<{ wall_uuid: st
   }
 
   const { wall_uuid: wallUuid } = await props.params;
+  const look = new URL(req.url).searchParams.get('look');
+  if (look !== null && look !== 'wall-crop' && look !== 'hold-cutouts') {
+    return NextResponse.json({ error: 'Not found' }, { status: 404, headers: NO_STORE });
+  }
 
   try {
-    const photoUrl = await fetchSprayWallPhotoUrl(wallUuid);
+    const photoUrl = look ? await fetchSprayWallArtImageUrl(wallUuid, look) : await fetchSprayWallPhotoUrl(wallUuid);
     if (!photoUrl) {
       // Same answer for a wall that does not exist, a wall this anonymous read
       // may not see, and a wall whose photo could not be signed. Distinguishing

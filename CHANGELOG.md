@@ -6,8 +6,13 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-10-06
 
+### App update
+
+A new version shipped to the App Store and Play Store.
+
 ### New
 
+- Spray wall owners can show their wall straightened out, or just the holds on a clean background, like an LED board. ([#6178](https://github.com/boardsesh/boardsesh/pull/6178))
 - The hold heatmap moved to the hold filter: pick holds with the heat showing where climbs go ([#6144](https://github.com/boardsesh/boardsesh/pull/6144))
 - Get the app straight from a climb page, a climb list or the gym directory on boardsesh.com ([#6083](https://github.com/boardsesh/boardsesh/pull/6083))
   iPhone Safari now offers to open the page you're on in the app

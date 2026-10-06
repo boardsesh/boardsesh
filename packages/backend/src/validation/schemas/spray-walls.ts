@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { MAX_RING_NUMBERS, MIN_RING_NUMBERS, isValidOutlineRing } from '@boardsesh/board-art-geometry/ring';
 import { MAX_HOLDS_PER_WALL, SPRAY_ANGLES } from '@boardsesh/board-config';
 import { BOARD_RENDER_SETTING_BOUNDS, type BoardseshRenderSettings } from '@boardsesh/board-look';
-import { isSolvableAnchorQuad } from '@boardsesh/spray-wall-geometry';
+import { SPRAY_WALL_BACKGROUNDS, isSolvableAnchorQuad } from '@boardsesh/spray-wall-geometry';
 import { UUIDSchema } from './primitives';
 
 /**
@@ -135,6 +135,15 @@ export const CreateSprayWallInputSchema = z.object({
   // `has_leds` data rather than the board type (`scanFamilyForBoard('spray')`
   // still answers 'aurora'), so the column is written false by the resolver and
   // never taken from a client. See docs/spray-walls.md.
+});
+
+/** Most holds one `sprayWallHoldUsage` call may ask about: a hold editor removes a few at a time. */
+export const MAX_HOLD_USAGE_HOLD_IDS = 500;
+
+/** `sprayWallHoldUsage`'s two arguments, validated together. */
+export const SprayWallHoldUsageArgsSchema = z.object({
+  wallUuid: UUIDSchema,
+  holdIds: z.array(z.number().int().positive()).max(MAX_HOLD_USAGE_HOLD_IDS),
 });
 
 /** `resetSprayWall`: the wall to clone. Everything else is copied from it server-side. */
@@ -412,6 +421,13 @@ export const SprayWallRenderSettingsSchema = z
   .object({
     mode: z.enum(['classic', 'aura'], { error: "mode must be 'classic' or 'aura'" }),
     boardsesh: BoardseshRenderSettingsSchema,
+    // What the wall is drawn on. Optional, so every client that predates it
+    // keeps sending a valid look; missing means 'photo'. A generated background
+    // is also refused by the resolver when the wall's photo fails the quality
+    // gate, so an old or hand-rolled client cannot store one it cannot show.
+    background: z
+      .enum(SPRAY_WALL_BACKGROUNDS, { error: "background must be 'photo', 'wall-crop' or 'hold-cutouts'" })
+      .optional(),
   })
   .strict()
   .nullable();
