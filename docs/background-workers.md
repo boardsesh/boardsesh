@@ -285,7 +285,8 @@ never throws out of the caller's transaction for a dedup.
 Only the backend registers schedules; the worker's queue client is built with
 `schedule: false`. Every family runs by default, so shipping a new family needs
 no env change. On boot the backend reads `BATCH_FAMILIES_DISABLED`, a comma
-list of family names to switch off (unset or empty: none). An unknown name, or
+list of family names to switch off (unset or empty: none; `all`: every family,
+which is what `packages/backend/.env.development` sets). An unknown name, or
 a running multi-role family whose schedule names no role, removes every family
 schedule, registers nothing and logs an error; the backend still boots, and
 request paths treat every family as off. `BATCH_FAMILIES_ENABLED` is retired:

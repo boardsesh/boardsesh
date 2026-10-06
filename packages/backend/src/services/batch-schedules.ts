@@ -2,8 +2,8 @@
  * Backend-owned schedules for background job families (docs/background-workers.md).
  *
  * - **On by default, with a kill switch.** Every family runs. `BATCH_FAMILIES_DISABLED`
- *   is a comma list of family names to turn off; an unknown name removes every
- *   family schedule and throws instead of guessing.
+ *   is a comma list of family names to turn off, or `all`; an unknown name
+ *   removes every family schedule and throws instead of guessing.
  * - **One trigger queue.** Each family schedule is a pg-boss schedule on
  *   `background-schedule` keyed `<family>/<key>`, carrying `{ family, key }`.
  *   Disabling a family removes its schedules on the next boot.
@@ -32,10 +32,11 @@ export function enabledBatchFamilies(
     .split(',')
     .map((name) => name.trim())
     .filter(Boolean);
+  if (names.includes('all')) return [];
   const unknown = names.filter((name) => !isBackgroundJobFamily(name));
   if (unknown.length) {
     throw new Error(
-      `BATCH_FAMILIES_DISABLED names unknown families (${unknown.join(', ')}); known: ${BACKGROUND_JOB_FAMILIES.join(', ')}`,
+      `BATCH_FAMILIES_DISABLED names unknown families (${unknown.join(', ')}); known: all, ${BACKGROUND_JOB_FAMILIES.join(', ')}`,
     );
   }
   const disabled = new Set(names);

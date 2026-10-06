@@ -90,6 +90,7 @@ describe('enabledBatchFamilies', () => {
   it('turns off each family the kill switch names, tolerating spaces and repeats', () => {
     expect(enabledBatchFamilies({ BATCH_FAMILIES_DISABLED: ' multi-fake ,multi-fake' })).toEqual(['batch-fake']);
     expect(enabledBatchFamilies({ BATCH_FAMILIES_DISABLED: 'batch-fake,multi-fake' })).toEqual([]);
+    expect(enabledBatchFamilies({ BATCH_FAMILIES_DISABLED: ' all ' })).toEqual([]);
   });
 
   it('ignores the retired allowlist', () => {
