@@ -63,9 +63,12 @@ export const FullResolutionPhotoLayer = React.memo(function FullResolutionPhotoL
     <Image
       source={{ uri: photo.uri, cacheKey: photo.cacheKey }}
       style={StyleSheet.absoluteFill}
-      // `fill` also keeps expo-image from downscaling it to the view's
-      // un-zoomed size, which would throw away the pixels it was fetched for.
       contentFit="fill"
+      // Without this, expo-image on iOS resizes the bitmap to the view's
+      // un-zoomed pixel size (about 1179 px across on an iPhone), which is
+      // smaller than the 2048 px base and throws away the pixels it was
+      // fetched for. The zoom transform scales the view, not its layout box.
+      allowDownscaling={false}
       // Memory only, like the base: a private wall's photo is not written to disk.
       cachePolicy="memory"
       onError={onError}

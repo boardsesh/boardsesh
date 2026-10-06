@@ -27,7 +27,12 @@ vi.mock('react-native-reanimated', () => ({
   },
 }));
 
-type ImageProps = { source: { uri: string; cacheKey?: string }; contentFit?: string; onError?: () => void };
+type ImageProps = {
+  source: { uri: string; cacheKey?: string };
+  contentFit?: string;
+  allowDownscaling?: boolean;
+  onError?: () => void;
+};
 const imageRenders = vi.hoisted(() => [] as ImageProps[]);
 vi.mock('expo-image', () => ({
   Image: (props: ImageProps) => {
@@ -92,8 +97,10 @@ describe('FullResolutionPhotoLayer', () => {
     const image = container.querySelector('img');
     expect(image?.getAttribute('data-uri')).toBe(photo.uri);
     expect(image?.getAttribute('data-cache-key')).toBe(photo.cacheKey);
-    // `fill` both matches the base's box and keeps expo-image from downscaling it.
+    // `fill` matches the base's box; on iOS only `allowDownscaling={false}`
+    // stops expo-image resizing it to the view's un-zoomed pixel size.
     expect(imageRenders.at(-1)?.contentFit).toBe('fill');
+    expect(imageRenders.at(-1)?.allowDownscaling).toBe(false);
   });
 
   // Zooming back out must not unload and re-decode it on the next zoom in.

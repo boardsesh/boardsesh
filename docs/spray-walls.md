@@ -1006,8 +1006,11 @@ What the editor does with a wall is decided by this document rather than by tast
   editor, reset compare and web. Ring strokes snap through zoom steps 1, 1.5, 2,
   3, 4, 6 and 8 so they stay thin.
 - **Past 3x the editor swaps in the full-resolution photo (#5911).** The base
-  photo is 2048 px on its long side, so at 8x a phone shows roughly 190 of its
-  pixels across and a small hold goes soft. A version uploaded larger also has a
+  photo is 2048 px on its long side, so at 8x a phone shows at most about 190
+  of its pixels across and a small hold goes soft. On iOS it is fewer still:
+  expo-image resizes the base to the view's un-zoomed pixel size (about 1179 px
+  across on an iPhone), so 8x shows about 150. Decoding the base at full size
+  too is a possible follow-up. A version uploaded larger also has a
   copy at up to 4096 px, which only the draft read (`GET_SPRAY_WALL_DRAFT_RENDER_DATA`)
   asks for, as `photoFullUrl`; the climb view, search and every other read keep
   the base alone. The editor hands it to `InteractiveFilterBoard` as
@@ -1019,6 +1022,11 @@ What the editor does with a wall is decided by this document rather than by tast
   - **No flash.** The base stays mounted underneath and shows until the full
     photo has loaded, so the swap reads as the wall sharpening. Both are drawn
     `fill` into the same box, so every ring stays where it was.
+  - **Decoded at full size.** The layer passes `allowDownscaling={false}`.
+    Without it expo-image on iOS resizes any image larger than its view's
+    pixel size down to that size, `fill` included, and the zoom transform does
+    not change the view's layout box, so the 4096 px copy would land smaller
+    than the base. Android's `fill` path keeps the pixels either way.
   - **Kept for the visit.** Zooming back out does not unload it, so a climber
     working up and down the wall decodes it once. It is cached in memory only,
     like the base, under a key naming the version (`spray-full/<wallUuid>/v<versionId>`),
