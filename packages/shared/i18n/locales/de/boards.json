@@ -965,10 +965,12 @@
       "title": "Ab zu deinen Boards",
       "working": "Deine Wand wird veröffentlicht…",
       "failed": "Die Wand konnte nicht veröffentlicht werden.",
+      "stalled": "Deine Wand ist gespeichert, aber das Einrichten hat zu lange gedauert. Versuch es noch mal.",
       "retry": "Erneut versuchen"
     },
     "done": {
-      "body": "Deine Wand wird eingerichtet…"
+      "body": "Deine Wand wird eingerichtet…",
+      "leave": "Zurück zum Klettern"
     },
     "leave": {
       "title": "Diese Wand erstmal liegen lassen?",

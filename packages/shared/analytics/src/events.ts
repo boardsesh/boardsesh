@@ -702,6 +702,13 @@ export const SHARED_EVENTS = {
   // Props: { holdCount, hadCandidates }. What the review step actually saved —
   // the number the detector, and later the retrain flywheel (SW-20), is judged on.
   SprayHoldsReviewed: 'Spray Holds Reviewed',
+  // Props: { stage: 'visibility' | 'fetch_board' | 'bind' | 'navigate', elapsedMs }.
+  // The wall published but the bind that follows did not finish: a stage ran
+  // past its 30 s deadline, or (`navigate`) the dismiss was dispatched and the
+  // wizard was still on screen afterwards. Not part of the funnel — a climber
+  // who sees it can still finish — but the count of walls that published and
+  // then sat on "Setting your wall up…", by where they sat.
+  SprayWallBindStalled: 'Spray Wall Bind Stalled',
   // Spray walls — the reset funnel (epic #5346, SW-13). Two events, because a
   // reset is two decisions: looking at what the matcher found, and landing it.
   // The gap between them is the number that says whether the compare screen is

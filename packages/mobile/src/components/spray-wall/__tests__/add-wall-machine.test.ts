@@ -518,6 +518,43 @@ describe('leaveDecision', () => {
     expect(leaveDecision(atReview(), EDITOR_IDLE)).toBe('confirm');
   });
 
+  it('always lets the climber out of done, whatever stale flags the run left behind', () => {
+    const done = run(
+      [
+        { type: 'REVIEW_COMMITTED', holdCount: 3 },
+        { type: 'LOOK_CONFIRMED' },
+        { type: 'PUBLISH_STARTED' },
+        { type: 'PUBLISHED' },
+      ],
+      atReview(),
+    );
+    expect(leaveDecision(done, EDITOR_IDLE)).toBe('leave');
+    expect(leaveDecision(done, { dirty: true, handingOver: true })).toBe('leave');
+    // A detection flag that never cleared would otherwise ask first.
+    const detectionStuck = { ...done, detection: { ...done.detection, outcome: 'running' as const } };
+    expect(leaveDecision(detectionStuck, EDITOR_IDLE)).toBe('leave');
+  });
+
+  it('re-binds on done when a retry finds the version already published', () => {
+    const failedBind = run(
+      [
+        { type: 'REVIEW_COMMITTED', holdCount: 3 },
+        { type: 'LOOK_CONFIRMED' },
+        { type: 'PUBLISH_STARTED' },
+        { type: 'PUBLISHED' },
+        { type: 'PUBLISH_FAILED', message: 'bind stalled' },
+      ],
+      atReview(),
+    );
+    expect(failedBind.step).toBe('publish');
+    expect(failedBind.published).toBe(true);
+
+    const retrying = run([{ type: 'PUBLISH_STARTED' }, { type: 'PUBLISHED' }], failedBind);
+    expect(retrying.step).toBe('done');
+    expect(retrying.publish).toEqual({ running: false, error: null });
+    expect(leaveDecision(retrying, EDITOR_IDLE)).toBe('leave');
+  });
+
   it('only blocks on the review step: a stale flag cannot trap the climber elsewhere', () => {
     const publishing = run(
       [{ type: 'REVIEW_COMMITTED', holdCount: 3 }, { type: 'LOOK_CONFIRMED' }, { type: 'PUBLISH_STARTED' }],

@@ -5,6 +5,7 @@ import {
   climbEditedFromBroken,
   climbRemixedFromBroken,
   sprayHoldsReviewed,
+  sprayWallBindStalled,
   sprayWallDetectionFinished,
   sprayWallPhotoPicked,
   sprayWallResetApplied,
@@ -40,6 +41,7 @@ const EVERY_PAYLOAD = [
   sprayWallUploadFinished({ outcome: 'ok', durationMs: 1200, determinate: true, attempt: 1 }),
   sprayWallDetectionFinished({ outcome: 'ok', candidateCount: 214, durationMs: 4100 }),
   sprayHoldsReviewed({ holdCount: 198, hadCandidates: true }),
+  sprayWallBindStalled({ stage: 'fetch_board', elapsedMs: 30000 }),
   sprayWallResetPreviewed({
     keptCount: 150,
     removedCount: 20,
@@ -63,6 +65,10 @@ describe('spray wall event builders', () => {
     expect(sprayHoldsReviewed({ holdCount: 12, hadCandidates: false })).toEqual({
       name: SHARED_EVENTS.SprayHoldsReviewed,
       properties: { holdCount: 12, hadCandidates: false },
+    });
+    expect(sprayWallBindStalled({ stage: 'navigate', elapsedMs: 1500 })).toEqual({
+      name: SHARED_EVENTS.SprayWallBindStalled,
+      properties: { stage: 'navigate', elapsedMs: 1500 },
     });
     expect(climbRemixedFromBroken({ lostHoldCount: 3, source: 'play_drawer' })).toEqual({
       name: SHARED_EVENTS.ClimbRemixedFromBroken,

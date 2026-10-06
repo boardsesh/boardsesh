@@ -21,6 +21,7 @@ import {
 import { fetchSprayWallVersions, mySprayWallsQueryKey } from '../../lib/spray/use-create-spray-wall';
 import { sprayWallWithVersionsQueryKey } from '../../lib/spray/use-spray-wall-reset';
 import { refreshPublishedSprayClimbs } from '../../lib/spray/refresh-published-spray-climbs';
+import { BIND_STAGE_DEADLINE_MS, withDeadline } from '../../lib/spray/post-publish-bind';
 import {
   fetchSprayWallRenderData,
   invalidateSprayWallRenderData,
@@ -124,13 +125,25 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
       }
       if (!mountedRef.current) return;
       setStatus('refreshing');
-      await invalidateSprayWallRenderData(queryClient, prepared.wallUuid, prepared.layoutId);
-      // Noted before the fetch: the payload says whether THIS account can edit
-      // the wall, and a registration that cannot say whose answer it holds is
-      // registered as "cannot edit", which would take Edit off the owner's own
-      // climbs for the rest of the revalidation window.
-      const viewerGeneration = sprayWallViewerGeneration();
-      const publishedRenderData = await fetchSprayWallRenderData(queryClient, prepared.wallUuid, viewerGeneration);
+      // Under one ceiling, in the same order as ever. While this runs the leave
+      // guard holds every way out (`busyRef`), and both awaits can sit on a
+      // query whose refetch is paused offline, so without a deadline the
+      // "refreshing" spinner had no end and no exit. Past it the screen fails
+      // into Retry (which skips the publish, latched above) and Back.
+      const { renderData: publishedRenderData, viewerGeneration } = await withDeadline(
+        (async () => {
+          await invalidateSprayWallRenderData(queryClient, prepared.wallUuid, prepared.layoutId);
+          // Noted before the fetch: the payload says whether THIS account can
+          // edit the wall, and a registration that cannot say whose answer it
+          // holds is registered as "cannot edit", which would take Edit off the
+          // owner's own climbs for the rest of the revalidation window.
+          const viewerGeneration = sprayWallViewerGeneration();
+          const renderData = await fetchSprayWallRenderData(queryClient, prepared.wallUuid, viewerGeneration);
+          return { renderData, viewerGeneration };
+        })(),
+        BIND_STAGE_DEADLINE_MS,
+        () => new Error('Published wall refresh timed out'),
+      );
       // Publishing preserves the draft's number. A later published version is
       // also valid if another editor publishes while this reload is in flight.
       if (
@@ -141,7 +154,14 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
       ) {
         throw new Error('Published wall refresh was unavailable');
       }
-      await Promise.all([
+      // Started, not awaited: the wall is published and registered above, so
+      // nothing left here decides whether the climber may leave. These are
+      // invalidations over queries with live subscribers, and under
+      // `offlineFirst` a refetch whose first try fails offline pauses its
+      // retries — and this promise with them — until the app is back online.
+      // None of them rejects: `invalidateQueries` never throws by default and
+      // `refreshPublishedSprayClimbs` reports its own failures.
+      void Promise.all([
         queryClient.invalidateQueries({ queryKey: sprayWallWithVersionsQueryKey(prepared.wallUuid) }),
         queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey }),
         refreshPublishedSprayClimbs(queryClient, prepared.layoutId),

@@ -29,7 +29,12 @@ vi.mock('../../graphql/client', () => ({ getHttpClient: () => ({ request: reques
 vi.mock('../refresh-published-spray-climbs', () => ({ refreshPublishedSprayClimbs: refreshClimbsMock }));
 vi.mock('../spray-wall-loader', () => ({ invalidateSprayWallRenderData: invalidateRenderDataMock }));
 
-import { useCommitSprayWallVersion, useSprayWallResetProposal } from '../use-spray-wall-reset';
+import {
+  sprayWallWithVersionsQueryKey,
+  useCommitSprayWallVersion,
+  useDiscardSprayWallVersion,
+  useSprayWallResetProposal,
+} from '../use-spray-wall-reset';
 
 const WALL_UUID = '11111111-2222-3333-4444-555555555555';
 const VERSION_ID = '42';
@@ -64,7 +69,7 @@ function makeWrapper() {
   const Wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
-  return { Wrapper, invalidateSpy };
+  return { Wrapper, invalidateSpy, queryClient };
 }
 
 beforeEach(() => {
@@ -148,6 +153,25 @@ describe('useCommitSprayWallVersion', () => {
     expect(refreshClimbsMock.mock.calls[0]?.[1]).toBe(LAYOUT_ID);
   });
 
+  it('lands the commit without waiting on refreshes that cannot finish', async () => {
+    // Under `offlineFirst` a live subscriber's refetch can pause until the app
+    // is back online, and `onSuccess` is part of `mutateAsync`: waiting on it
+    // would hold Confirm's spinner over a reset that has already landed.
+    requestMock.mockResolvedValue({ commitSprayWallVersion: RESULT });
+    const pausedForever = () => new Promise<undefined>(() => {});
+    invalidateRenderDataMock.mockImplementationOnce(pausedForever);
+    refreshClimbsMock.mockImplementationOnce(pausedForever);
+    const { Wrapper, invalidateSpy } = makeWrapper();
+    invalidateSpy.mockImplementation(pausedForever);
+
+    const { result } = renderHook(() => useCommitSprayWallVersion(LAYOUT_ID), { wrapper: Wrapper });
+    await expect(result.current.mutateAsync(input)).resolves.toEqual(RESULT);
+
+    expect(invalidateRenderDataMock).toHaveBeenCalledTimes(1);
+    expect(refreshClimbsMock).toHaveBeenCalledTimes(1);
+    expect(invalidateSpy).toHaveBeenCalledTimes(2);
+  });
+
   it('leaves the review intact when the commit is refused', async () => {
     // The wall has not changed, and the owner's verdicts on a hundred rings are
     // the expensive thing in the flow. A refused commit must be retryable from
@@ -173,5 +197,33 @@ describe('useCommitSprayWallVersion', () => {
     await expect(result.current.mutateAsync(input)).rejects.toThrow();
 
     expect(requestMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('useDiscardSprayWallVersion', () => {
+  it('takes the discarded draft out of the cached history at once, even while the refetch hangs', async () => {
+    // The reset screen draws its open-draft panel off this cache. Left to the
+    // refetch, which can pause offline, the panel would stay up and a second
+    // Discard would fail on a row that is already gone.
+    requestMock.mockResolvedValue({ discardSprayWallVersion: true });
+    const { Wrapper, invalidateSpy, queryClient } = makeWrapper();
+    const versionsKey = sprayWallWithVersionsQueryKey(WALL_UUID);
+    queryClient.setQueryData(versionsKey, {
+      uuid: WALL_UUID,
+      versions: [
+        { id: 'published-1', status: 'PUBLISHED' },
+        { id: 'draft-2', status: 'DRAFT' },
+      ],
+    });
+    invalidateSpy.mockImplementation(() => new Promise<undefined>(() => {}));
+
+    const { result } = renderHook(() => useDiscardSprayWallVersion(WALL_UUID), { wrapper: Wrapper });
+    await expect(result.current.mutateAsync('draft-2')).resolves.toBe(true);
+
+    expect(queryClient.getQueryData(versionsKey)).toEqual({
+      uuid: WALL_UUID,
+      versions: [{ id: 'published-1', status: 'PUBLISHED' }],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: versionsKey });
   });
 });

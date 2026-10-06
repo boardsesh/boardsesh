@@ -965,10 +965,12 @@
       "title": "Añádelo a tus plafones",
       "working": "Publicando tu muro…",
       "failed": "No se pudo publicar el muro.",
+      "stalled": "Tu muro está guardado, pero prepararlo tardó demasiado. Inténtalo de nuevo.",
       "retry": "Reintentar"
     },
     "done": {
-      "body": "Preparando tu muro…"
+      "body": "Preparando tu muro…",
+      "leave": "Volver a escalar"
     },
     "leave": {
       "title": "¿Dejar este muro por ahora?",
