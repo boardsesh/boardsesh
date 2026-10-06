@@ -350,7 +350,7 @@ describe('assertSprayHoldsAreAlive re-resolves the published generation under th
  * authz read and the lock is ordinary. Forcing that window in a behavioural test
  * means interleaving two transactions and would be flaky about hitting it; the
  * outer gate (a wall already deleted when the call arrives) is covered
- * behaviourally in spray-wall-reset.test.ts.
+ * behaviourally in spray-wall-hold-lock.test.ts.
  *
  * The `IS NULL` scope alone is not enough, which is why the throw is asserted too:
  * a missing row without the throw would read as "nothing published yet" and
@@ -516,7 +516,8 @@ describe('an archived wall refuses writes, decided under the wall lock', () => {
  * check here either sees the climb or the climb waits for the hold edit. A check
  * read before the lock could see "no climbs", lose the race to a publish, and
  * then move a hold under a published climb. What the lock refuses and allows is
- * behavioural, in spray-wall-reset.test.ts.
+ * behavioural, in spray-wall-hold-lock.test.ts, which also races the two orders
+ * against a real wall lock.
  */
 describe('the hold lock is decided under the wall lock, after the archived check', () => {
   it.each(['createSprayWallVersion', 'upsertSprayWallHolds', 'removeSprayWallHolds', 'publishDraftUnderLock'])(
