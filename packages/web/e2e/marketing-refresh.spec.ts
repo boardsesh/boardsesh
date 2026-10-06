@@ -157,6 +157,7 @@ for (const width of [1440, 390]) {
       '/help/climb-actions',
       '/help/beta-videos',
       '/help/board-and-bluetooth',
+      '/help/spray-walls',
       '/legal',
       '/privacy',
     ]) {

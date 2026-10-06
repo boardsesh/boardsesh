@@ -1,0 +1,325 @@
+#!/usr/bin/env node
+/**
+ * Renders the spray wall walkthrough on /help/spray-walls from the stage in
+ * marketing/spray-walkthrough/.
+ *
+ * The app footage is three Android emulator takes in .boardsesh/help-clips/raw/
+ * (spray-create, spray-review, spray-edit-later; how to record them is in
+ * docs/help-clips.md). Each take is cut to 30 fps JPEG frames, the stage shows
+ * them by frame number, and every frame of the video is a pure function of its
+ * number: `window.renderAt(frame)` then a Chromium screenshot piped to ffmpeg.
+ *
+ * Usage: vp run video:spray-walkthrough [-- --stills] [--frame <n>] [--re-extract]
+ */
+import { chromium, type Page } from '@playwright/test';
+import sharp from 'sharp';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, relative, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { brandColors, brandColorsDark, materialSurfaces } from '@boardsesh/velvet-tokens';
+import { themeTokens } from '../app/theme/theme-config';
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+const STAGE_DIR = resolve(REPO_ROOT, 'marketing/spray-walkthrough');
+const RAW_DIR = resolve(REPO_ROOT, '.boardsesh/help-clips/raw');
+const WORK_DIR = resolve(REPO_ROOT, '.boardsesh/spray-walkthrough');
+const VIDEO_DIR = resolve(REPO_ROOT, 'packages/web/public/videos/help');
+const POSTER_DIR = resolve(REPO_ROOT, 'packages/web/public/images/help/clips');
+const NAME = 'spray-walls-walkthrough';
+
+const FPS = 30;
+const STAGE = { width: 720, height: 1280 };
+const DEVICE_SCALE = 1.5; // 1080x1920 master
+const WEB = { width: 720, height: 1280 };
+const FOOTAGE_WIDTH = 900; // the phone's screen is 548 CSS px, 822 device px
+
+type Caption = { at: number; key: string };
+type EditTake = { id: string; file: string; segments: number[][]; captions: Caption[] };
+type Edit = { takes: EditTake[] };
+type CaptionCopy = Record<string, Record<string, { title: string; body: string }>>;
+type Copy = { footage: CaptionCopy } & Record<string, unknown>;
+
+const log = (message: string) => console.log(`[spray-walkthrough] ${message}`);
+
+function parseArgs(argv: string[]) {
+  const args = { stills: false, frame: null as number | null, reExtract: false };
+  for (let index = 0; index < argv.length; index += 1) {
+    const flag = argv[index];
+    if (flag === '--') continue;
+    if (flag === '--stills') args.stills = true;
+    else if (flag === '--re-extract') args.reExtract = true;
+    else if (flag === '--frame') {
+      const frame = Number(argv[++index]);
+      if (!Number.isInteger(frame) || frame < 0) throw new Error('--frame needs a frame number');
+      args.frame = frame;
+    } else throw new Error(`Unknown argument: ${flag}`);
+  }
+  return args;
+}
+
+function run(command: string, commandArgs: string[]): void {
+  const result = spawnSync(command, commandArgs, { stdio: ['ignore', 'inherit', 'inherit'] });
+  if (result.status !== 0) throw new Error(`${command} ${commandArgs.slice(0, 4).join(' ')}… exited ${result.status}`);
+}
+
+/** Cuts one take into numbered JPEGs at the video's frame rate, once. */
+function extractTake(take: EditTake, reExtract: boolean): { dir: string; count: number } {
+  const source = resolve(RAW_DIR, take.file);
+  if (!existsSync(source)) throw new Error(`Missing take ${relative(REPO_ROOT, source)} (see docs/help-clips.md)`);
+  const dir = resolve(WORK_DIR, 'footage', take.id);
+  const stamp = resolve(dir, '.source-mtime');
+  const mtime = String(statSync(source).mtimeMs);
+  if (reExtract || !existsSync(stamp) || readFileSync(stamp, 'utf8') !== mtime) {
+    rmSync(dir, { recursive: true, force: true });
+    mkdirSync(dir, { recursive: true });
+    log(`extracting ${take.file}`);
+    run('ffmpeg', [
+      '-loglevel',
+      'error',
+      '-i',
+      source,
+      '-vf',
+      `fps=${FPS},scale=${FOOTAGE_WIDTH}:-2:flags=lanczos`,
+      '-q:v',
+      '3',
+      resolve(dir, 'f_%05d.jpg'),
+    ]);
+    writeFileSync(stamp, mtime);
+  }
+  const count = readdirSync(dir).filter((file) => file.endsWith('.jpg')).length;
+  for (const [from, to] of take.segments) {
+    if (to > count) throw new Error(`${take.id}: segment [${from}, ${to}] runs past the take's ${count} frames`);
+  }
+  return { dir: pathToFileURL(dir).href, count };
+}
+
+function writeTokens(): void {
+  const tokens: Record<string, string> = {
+    'stage-dark': themeTokens.semantic.background,
+    'ink-dark': materialSurfaces.dark.label,
+    'sub-dark': materialSurfaces.dark.secondaryLabel,
+    'accent-dark': materialSurfaces.dark.accent,
+    'glow-dark': brandColorsDark.primaryFill,
+    amber: brandColors.accent,
+    good: themeTokens.colors.success,
+    bad: themeTokens.colors.error,
+  };
+  const lines = Object.entries(tokens).map(([name, value]) => `  --token-${name}: ${value};`);
+  writeFileSync(
+    resolve(STAGE_DIR, 'tokens.css'),
+    `/* Generated by packages/web/scripts/render-spray-walkthrough.ts. Do not edit. */\n:root {\n${lines.join('\n')}\n}\n`,
+  );
+}
+
+function stageData(reExtract: boolean) {
+  const copy = JSON.parse(readFileSync(resolve(STAGE_DIR, 'copy.en-US.json'), 'utf8')) as Copy;
+  const edit = JSON.parse(readFileSync(resolve(STAGE_DIR, 'edit.json'), 'utf8')) as Edit;
+  const { holds } = JSON.parse(readFileSync(resolve(STAGE_DIR, 'holds.json'), 'utf8')) as { holds: unknown[] };
+  const footage = edit.takes.map((take) => {
+    const { dir, count } = extractTake(take, reExtract);
+    const captions = take.captions.map(({ at, key }) => {
+      const caption = copy.footage[take.id]?.[key];
+      if (!caption) throw new Error(`copy.en-US.json has no footage.${take.id}.${key}`);
+      return { at, ...caption };
+    });
+    return { id: take.id, dir, count, segments: take.segments, captions };
+  });
+  return { copy, photo: 'wall-photo.jpg', holds, footage };
+}
+
+async function openStage(data: ReturnType<typeof stageData>) {
+  const browser = await chromium.launch({ args: ['--allow-file-access-from-files', '--font-render-hinting=none'] });
+  try {
+    const page = await browser.newPage({ viewport: STAGE, deviceScaleFactor: DEVICE_SCALE });
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    page.on('console', (message) => {
+      if (message.type() === 'error') errors.push(message.text());
+    });
+    await page.goto(pathToFileURL(resolve(STAGE_DIR, 'index.html')).href, { waitUntil: 'load' });
+    await page.waitForFunction(
+      () => (window as unknown as { walkthroughStageLoaded?: boolean }).walkthroughStageLoaded,
+    );
+    await page.evaluate(
+      (input) => {
+        (window as unknown as { walkthroughInit: (value: unknown) => void }).walkthroughInit(input);
+      },
+      data as unknown as Record<string, unknown>,
+    );
+    await page.evaluate(async () => {
+      await document.fonts.load('800 58px "Inter Tight"');
+      await document.fonts.ready;
+    });
+    if (errors.length > 0) throw new Error(`Stage errors:\n${errors.join('\n')}`);
+    const client = await page.context().newCDPSession(page);
+    return { browser, page, client };
+  } catch (error) {
+    await browser.close();
+    throw error;
+  }
+}
+
+async function renderFrame(page: Page, frame: number): Promise<void> {
+  const failed = await page.evaluate(async (target) => {
+    const stage = window as unknown as { renderAt: (value: number) => void; visibleImages: () => HTMLImageElement[] };
+    stage.renderAt(target);
+    const results = await Promise.all(
+      stage.visibleImages().map((image) =>
+        image
+          .decode()
+          .then(() => null)
+          .catch(() => image.getAttribute('src')),
+      ),
+    );
+    return results.filter((value): value is string => value !== null);
+  }, frame);
+  if (failed.length > 0) throw new Error(`Frame ${frame}: could not decode ${failed.join(', ')}`);
+}
+
+type Cdp = Awaited<ReturnType<typeof openStage>>['client'];
+
+async function capture(client: Cdp): Promise<Buffer> {
+  const { data } = (await client.send('Page.captureScreenshot', { format: 'png', optimizeForSpeed: true })) as {
+    data: string;
+  };
+  return Buffer.from(data, 'base64');
+}
+
+type Scene = { id: string; start: number; length: number };
+
+async function renderStills(page: Page, client: Cdp, scenes: Scene[]): Promise<void> {
+  const dir = resolve(WORK_DIR, 'stills');
+  mkdirSync(dir, { recursive: true });
+  const tiles: sharp.OverlayOptions[] = [];
+  const cell = { width: 270, height: 480 };
+  const picks = scenes.flatMap((scene) => [0.35, 0.8].map((at) => scene.start + Math.round(scene.length * at)));
+  for (const [index, frame] of picks.entries()) {
+    await renderFrame(page, frame);
+    const shot = await sharp(await capture(client))
+      .resize(cell.width, cell.height)
+      .toBuffer();
+    tiles.push({ input: shot, left: (index % 8) * (cell.width + 6), top: Math.floor(index / 8) * (cell.height + 6) });
+  }
+  const output = resolve(dir, 'contact-sheet.png');
+  await sharp({
+    create: {
+      width: 8 * (cell.width + 6),
+      height: Math.ceil(picks.length / 8) * (cell.height + 6),
+      channels: 3,
+      background: '#222',
+    },
+  })
+    .composite(tiles)
+    .png()
+    .toFile(output);
+  log(`stills: ${output}`);
+}
+
+async function renderMaster(page: Page, client: Cdp, total: number, output: string): Promise<void> {
+  mkdirSync(dirname(output), { recursive: true });
+  const ffmpeg = spawn(
+    'ffmpeg',
+    [
+      '-loglevel',
+      'error',
+      '-y',
+      '-f',
+      'image2pipe',
+      '-framerate',
+      String(FPS),
+      '-i',
+      '-',
+      '-c:v',
+      'libx264',
+      '-preset',
+      'slow',
+      '-crf',
+      '14',
+      '-pix_fmt',
+      'yuv420p',
+      output,
+    ],
+    { stdio: ['pipe', 'inherit', 'inherit'] },
+  );
+  const done = new Promise<void>((resolvePromise, reject) => {
+    ffmpeg.on('error', reject);
+    ffmpeg.on('close', (code) => (code === 0 ? resolvePromise() : reject(new Error(`ffmpeg exited with ${code}`))));
+  });
+  const started = Date.now();
+  try {
+    for (let frame = 0; frame < total; frame += 1) {
+      await renderFrame(page, frame);
+      const png = await capture(client);
+      if (!ffmpeg.stdin.write(png)) await new Promise((resolveDrain) => ffmpeg.stdin.once('drain', resolveDrain));
+      if ((frame + 1) % 150 === 0) {
+        const rate = (frame + 1) / ((Date.now() - started) / 1000);
+        log(`frame ${frame + 1}/${total} (${rate.toFixed(1)} fps)`);
+      }
+    }
+  } catch (error) {
+    // Let ffmpeg close on what it has before the failure propagates.
+    ffmpeg.stdin.end();
+    await done.catch(() => undefined);
+    throw error;
+  }
+  ffmpeg.stdin.end();
+  await done;
+}
+
+function encodeWeb(master: string): void {
+  mkdirSync(VIDEO_DIR, { recursive: true });
+  const scale = `scale=${WEB.width}:${WEB.height}:flags=lanczos`;
+  const mp4 = resolve(VIDEO_DIR, `${NAME}.mp4`);
+  const webm = resolve(VIDEO_DIR, `${NAME}.webm`);
+  const input = ['-loglevel', 'error', '-y', '-i', master, '-vf', scale, '-an'];
+  const h264 = ['-c:v', 'libx264', '-preset', 'veryslow', '-crf', '28', '-profile:v', 'high', '-pix_fmt', 'yuv420p'];
+  run('ffmpeg', [...input, ...h264, '-movflags', '+faststart', mp4]);
+  const vp9 = ['-c:v', 'libvpx-vp9', '-crf', '38', '-b:v', '0', '-row-mt', '1', '-deadline', 'good', '-cpu-used', '2'];
+  run('ffmpeg', [...input, ...vp9, webm]);
+  for (const file of [mp4, webm]) log(`${relative(REPO_ROOT, file)}: ${(statSync(file).size / 1e6).toFixed(2)} MB`);
+}
+
+async function main(): Promise<void> {
+  const args = parseArgs(process.argv.slice(2));
+  writeTokens();
+  const data = stageData(args.reExtract);
+  const { browser, page, client } = await openStage(data);
+  try {
+    const total = await page.evaluate(() => (window as unknown as { totalFrames: () => number }).totalFrames());
+    const scenes = await page.evaluate(() => (window as unknown as { sceneList: () => Scene[] }).sceneList());
+    log(`${total} frames (${(total / FPS).toFixed(1)} s): ${scenes.map((scene) => scene.id).join(', ')}`);
+    if (args.frame !== null) {
+      await renderFrame(page, args.frame);
+      const output = resolve(WORK_DIR, 'stills', `frame-${String(args.frame).padStart(5, '0')}.png`);
+      mkdirSync(dirname(output), { recursive: true });
+      writeFileSync(output, await capture(client));
+      log(`frame: ${output}`);
+      return;
+    }
+    if (args.stills) {
+      await renderStills(page, client, scenes);
+      return;
+    }
+    const master = resolve(WORK_DIR, `${NAME}-master.mp4`);
+    await renderMaster(page, client, total, master);
+    log(`master: ${relative(REPO_ROOT, master)}`);
+    // The poster is the intro's settled title card.
+    await renderFrame(page, 60);
+    mkdirSync(POSTER_DIR, { recursive: true });
+    const poster = resolve(POSTER_DIR, `${NAME}.webp`);
+    await sharp(await capture(client))
+      .resize(WEB.width, WEB.height)
+      .webp({ quality: 82 })
+      .toFile(poster);
+    log(`poster: ${relative(REPO_ROOT, poster)}`);
+    encodeWeb(master);
+  } finally {
+    await browser.close();
+  }
+}
+
+main().catch((error: unknown) => {
+  console.error(error);
+  process.exit(1);
+});

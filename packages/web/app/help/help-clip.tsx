@@ -5,7 +5,7 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { useTranslation } from 'react-i18next';
 import { useAutoplayVideo } from '@/app/hooks/use-autoplay-video';
-import { helpClip, type HelpClipName } from '@/app/lib/help-clips';
+import { helpClip, helpWalkthrough, type HelpClipName, type HelpWalkthroughName } from '@/app/lib/help-clips';
 import frame from '@/app/components/marketing/marketing-screenshot.module.css';
 import styles from './help-clip.module.css';
 
@@ -55,6 +55,45 @@ export function HelpClip({ name, alt, caption }: { name: HelpClipName; alt: stri
           {t('help.clip.playHint')}
         </Typography>
       ) : null}
+    </Box>
+  );
+}
+
+/**
+ * A walkthrough of a whole flow, minutes long, in the same frame.
+ *
+ * Unlike a gesture clip it never starts itself or loops: a two-minute video
+ * playing silently on repeat is noise, and the reader needs to scrub back to the
+ * step they missed. So it shows the poster and native controls from the start,
+ * and the browser fetches only the metadata until they press play.
+ */
+export function HelpWalkthrough({ name, alt, caption }: { name: HelpWalkthroughName; alt: string; caption: string }) {
+  const { t } = useTranslation('marketing');
+  const video = helpWalkthrough(name);
+
+  return (
+    <Box component="figure" className={`${styles.figure} ${styles.walkthroughFigure}`}>
+      <Box className={frame.frame}>
+        <video
+          className={`${styles.video} ${styles.walkthroughVideo}`}
+          poster={video.poster}
+          width={video.width}
+          height={video.height}
+          aria-label={alt}
+          muted
+          playsInline
+          preload="metadata"
+          controls
+        >
+          {/* mp4 first: at two minutes it encodes smaller than the VP9 copy. */}
+          <source src={video.mp4} type="video/mp4" />
+          <source src={video.webm} type="video/webm" />
+          {t('help.clip.unsupported')}
+        </video>
+      </Box>
+      <Typography component="figcaption" variant="body2" className={styles.caption}>
+        {caption}
+      </Typography>
     </Box>
   );
 }

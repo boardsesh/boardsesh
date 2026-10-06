@@ -29,3 +29,14 @@
   color: var(--neutral-500);
   line-height: 1.5;
 }
+
+/* A walkthrough is read rather than glanced at: its captions are part of the
+   picture, so it gets a little more width than a still beside it. */
+.walkthroughFigure {
+  max-width: 360px;
+}
+
+/* The walkthrough renderer's 720 x 1280 output, not the converter's box. */
+.walkthroughVideo {
+  aspect-ratio: 720 / 1280;
+}

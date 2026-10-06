@@ -56,6 +56,10 @@
     "helpBetaVideos": {
       "title": "Partager un reel Instagram ou TikTok en beta",
       "description": "Partage un reel Instagram ou un TikTok vers Boardsesh depuis sa fiche de partage, joins-le à un bloc, filme une nouvelle beta, et trouve la beta des autres."
+    },
+    "helpSprayWalls": {
+      "title": "Comment photographier et configurer ton mur de spray",
+      "description": "Photographie ton mur de spray bien en face, en portrait et incliné comme le mur, puis ajoute-le à Boardsesh, corrige les prises trouvées et modifie-les après un changement de prises."
     }
   },
   "home": {
@@ -419,7 +423,7 @@
     },
     "guides": {
       "title": "Guides",
-      "intro": "Sept pages courtes avec des captures de l'app.",
+      "intro": "Huit pages courtes avec des captures de l'app.",
       "playlists": {
         "title": "Playlists",
         "body": "Créer une playlist, en ressortir un bloc, mettre toute la liste en file, et utiliser les huit listes intégrées."
@@ -447,6 +451,10 @@
       "betaVideos": {
         "title": "Vidéos beta",
         "body": "Partager un reel Instagram ou TikTok vers Boardsesh, le joindre à un bloc, et trouver la beta des autres."
+      },
+      "sprayWalls": {
+        "title": "Murs de spray",
+        "body": "Photographie ton mur pour que les prises ressortent bien, ajoute-le, et corrige ses prises quand tu veux."
       }
     },
     "playlists": {
@@ -844,6 +852,57 @@
     "install": {
       "title": "Prends l'app",
       "intro": "Tout ce qui est sur cette page se passe dans l'app."
+    },
+    "sprayWalls": {
+      "breadcrumb": "Murs de spray",
+      "hero": {
+        "title": "Photographie et configure ton mur de spray",
+        "subtitle": "Chaque prise et chaque bloc de ton mur sont posés sur une seule photo, alors soigne-la."
+      },
+      "watch": {
+        "title": "Regarde d'abord",
+        "videoAlt": "Vidéo montrant comment photographier un mur de spray et configurer ses prises dans l'app Boardsesh",
+        "videoCaption": "La photo, l'ajout du mur et la correction des prises, en deux minutes environ.",
+        "p1": "Boardsesh trouve les prises sur ta photo, et chaque bloc du mur est posé sur cette même photo. Une bonne photo, c'est moins de prises à corriger à la main."
+      },
+      "photo": {
+        "title": "Prendre la photo",
+        "p1": "Prends la photo avant d'ouvrir l'app. Cinq choses font la différence :",
+        "square": "Place-toi bien en face du mur, dans l'axe de son centre. Décalé sur le côté, les prises lointaines rétrécissent et se tassent.",
+        "portrait": "Tiens le téléphone en portrait. Tu grimpes avec le téléphone à la verticale, et une photo en paysage se réduit à une bande où les prises sont trop petites pour être touchées.",
+        "tilt": "Incline le téléphone selon l'angle du mur, pour qu'il soit parallèle à sa surface. Sur un dévers, un téléphone tenu bien droit fait grossir le haut du mur et rétrécir le bas.",
+        "frame": "Cadre tout le mur, de haut en bas et d'un bord à l'autre.",
+        "zoom": "Shoote en 1x. Si le mur ne rentre pas, recule plutôt que de passer au grand-angle.",
+        "why": "Pourquoi c'est important : le détecteur de prises lit ta photo telle quelle. Photographiées de biais, les prises ressortent petites et étirées, donc il en rate davantage et tu finis par les ajouter toi-même."
+      },
+      "add": {
+        "title": "Ajouter le mur",
+        "step1": "Ouvre Boards et touche Mur spray.",
+        "step2": "Donne un nom au mur et règle son angle. L'angle est figé une fois publié.",
+        "step3": "Choisis ta photo, ou prends-en une.",
+        "step4": "Fais glisser les quatre cercles sur les coins du mur. Si tu as shooté bien en face, tu peux passer cette étape.",
+        "step5": "Boardsesh trouve les prises. Ça prend quelques secondes."
+      },
+      "fix": {
+        "title": "Corriger les prises avant de publier",
+        "p1": "Les prises trouvées par Boardsesh s'affichent en cercles sur ta photo. Vérifie-les avant que quelqu'un grimpe dessus.",
+        "maybe": "Les cercles en pointillés sont des prises incertaines. Touche l'un d'eux pour garder la prise.",
+        "toggle": "Touche un cercle pour le désactiver. Touche le mur vide pour ajouter une prise.",
+        "longPress": "Appuie longuement sur un cercle pour Agrandir, Réduire, Tracer, Réunir ou Retirer. Tracer redessine le contour de la prise, et Réunir fait de deux cercles une seule prise.",
+        "missed": "Une prise oubliée ? Touche +, puis dessine son tour avec un doigt (Dessiner) ou touche ses coins (Coins).",
+        "p2": "Choisis ensuite comment tes prises s'allument, puis publie. Le mur arrive dans tes boards, prêt pour son premier bloc."
+      },
+      "later": {
+        "title": "Modifier les prises plus tard",
+        "p1": "Touche le nom du mur en haut de l'onglet Blocs pour ouvrir sa fiche, puis Modifier les prises. Ajoute, désactive ou corrige des prises comme avant, puis touche Publier les prises.",
+        "p2": "Tu as changé les prises du mur ? Touche Nouvelle photo dans la même fiche. Place-toi là où tu étais la première fois, puis marque les coins pour que la nouvelle photo s'aligne sur les blocs déjà ouverts sur le mur."
+      },
+      "next": {
+        "title": "Pour aller plus loin",
+        "logbook": "Faire la croix sur tes blocs",
+        "sessions": "Grimper avec ta crew",
+        "hub": "Tous les sujets d'aide"
+      }
     }
   },
   "docs": {

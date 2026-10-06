@@ -1,0 +1,106 @@
+{
+  "intro": {
+    "eyebrow": "Spray walls",
+    "title": "One good photo.",
+    "body": "Every hold you set lives on it, so it pays to get the shot right."
+  },
+  "good": {
+    "title": "The shot that works",
+    "tips": ["Stand square on to the wall", "Hold the phone in portrait", "Tilt it to match the wall's angle"],
+    "result": "Every hold the same size and shape"
+  },
+  "landscape": {
+    "title": "Not landscape",
+    "body": "You climb with the phone upright. A landscape photo shrinks to a strip and the holds get too small to tap."
+  },
+  "side": {
+    "title": "Not from the side",
+    "body": "Off to one side, the far holds shrink and bunch up."
+  },
+  "upright": {
+    "title": "Not straight up and down",
+    "body": "Hold the phone upright under an overhang and the top looms while the bottom shrinks away."
+  },
+  "why": {
+    "title": "Why it matters",
+    "good": "Square on",
+    "bad": "Skewed",
+    "body": "The hold finder reads your photo as it is. Skewed holds come out small and stretched, so more of them get missed."
+  },
+  "recap": {
+    "title": "Before you shoot",
+    "items": ["Portrait", "Square on", "Tilted with the wall", "The whole wall in frame"]
+  },
+  "outro": {
+    "title": "Your wall, ready to climb.",
+    "body": "boardsesh.com/help/spray-walls"
+  },
+  "footage": {
+    "create": {
+      "start": {
+        "title": "Start from Boards",
+        "body": "Tap Spray wall."
+      },
+      "name": {
+        "title": "Name it, set the angle",
+        "body": "The angle is fixed once you publish."
+      },
+      "photo": {
+        "title": "Choose your photo",
+        "body": "The one you shot square on, in portrait."
+      },
+      "corners": {
+        "title": "Mark the corners",
+        "body": "Drag the four rings onto the corners of the wall."
+      },
+      "detect": {
+        "title": "Boardsesh finds the holds",
+        "body": "It takes a few seconds."
+      }
+    },
+    "review": {
+      "maybe": {
+        "title": "Dashed rings are maybes",
+        "body": "Tap one to keep it."
+      },
+      "add": {
+        "title": "Tap the wall to add a hold",
+        "body": "A ring drops where you tap."
+      },
+      "resize": {
+        "title": "Press and hold to fix a ring",
+        "body": "Make it bigger or smaller, trace it, or remove it."
+      },
+      "draw": {
+        "title": "Missed one? Draw round it",
+        "body": "Tap +, then trace the hold with one finger."
+      },
+      "look": {
+        "title": "Pick how your holds light up",
+        "body": "Then publish, and the wall is on your boards."
+      },
+      "publish": {
+        "title": "Your wall is set up",
+        "body": "Time to set the first climb."
+      }
+    },
+    "later": {
+      "open": {
+        "title": "Change holds any time",
+        "body": "Tap your wall's name, then Edit holds."
+      },
+      "remove": {
+        "title": "Hold came off? Remove it",
+        "body": "Press and hold its ring, then tap Remove."
+      },
+      "add": {
+        "title": "New hold? Tap to add it",
+        "body": "Draw round it if it's an odd shape."
+      },
+      "publish": {
+        "title": "Publish holds",
+        "body": "Do it when you're done editing."
+      }
+    }
+  }
+}

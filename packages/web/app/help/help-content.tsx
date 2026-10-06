@@ -28,6 +28,7 @@ const TOPICS = [
   { key: 'logbook', href: '/help/logbook' },
   { key: 'betaVideos', href: '/help/beta-videos' },
   { key: 'bluetooth', href: '/help/board-and-bluetooth' },
+  { key: 'sprayWalls', href: '/help/spray-walls' },
 ] as const;
 
 /**

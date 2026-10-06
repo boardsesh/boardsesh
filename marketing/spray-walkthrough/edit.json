@@ -1,0 +1,109 @@
+{
+  "_comment": "Cuts into the raw takes in .boardsesh/help-clips/raw/<take>.mp4, at 30 fps. segments are [from, to, hold?] in take frames, played back to back; captions start at scene-local frames.",
+  "takes": [
+    {
+      "id": "create",
+      "file": "spray-create.mp4",
+      "segments": [
+        [0, 90],
+        [150, 375],
+        [390, 465],
+        [510, 675],
+        [690, 880],
+        [1070, 1110],
+        [1110, 1230],
+        [1410, 1485],
+        [1560, 1665, 45]
+      ],
+      "captions": [
+        {
+          "at": 0,
+          "key": "start"
+        },
+        {
+          "at": 90,
+          "key": "name"
+        },
+        {
+          "at": 315,
+          "key": "photo"
+        },
+        {
+          "at": 555,
+          "key": "corners"
+        },
+        {
+          "at": 785,
+          "key": "detect"
+        }
+      ]
+    },
+    {
+      "id": "review",
+      "file": "spray-review.mp4",
+      "segments": [
+        [0, 162],
+        [162, 240],
+        [240, 390],
+        [405, 585],
+        [810, 1035],
+        [1035, 1080, 30]
+      ],
+      "captions": [
+        {
+          "at": 0,
+          "key": "maybe"
+        },
+        {
+          "at": 162,
+          "key": "add"
+        },
+        {
+          "at": 240,
+          "key": "resize"
+        },
+        {
+          "at": 390,
+          "key": "draw"
+        },
+        {
+          "at": 570,
+          "key": "look"
+        },
+        {
+          "at": 795,
+          "key": "publish"
+        }
+      ]
+    },
+    {
+      "id": "later",
+      "file": "spray-edit-later.mp4",
+      "segments": [
+        [75, 270],
+        [270, 330],
+        [390, 585],
+        [585, 660],
+        [780, 945, 30]
+      ],
+      "captions": [
+        {
+          "at": 0,
+          "key": "open"
+        },
+        {
+          "at": 255,
+          "key": "remove"
+        },
+        {
+          "at": 450,
+          "key": "add"
+        },
+        {
+          "at": 525,
+          "key": "publish"
+        }
+      ]
+    }
+  ]
+}

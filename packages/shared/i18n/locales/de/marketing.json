@@ -56,6 +56,10 @@
     "helpBetaVideos": {
       "title": "Ein Reel von Instagram oder TikTok als Beta teilen",
       "description": "Teile ein Instagram-Reel oder TikTok aus dem Teilen-Menü nach Boardsesh, häng es an einen Boulder, film neue Beta und find die Beta der anderen."
+    },
+    "helpSprayWalls": {
+      "title": "Spraywand fotografieren und einrichten",
+      "description": "Fotografiere deine Spraywand frontal, im Hochformat und mit dem Handy im Winkel der Wand, füge sie in Boardsesh hinzu, korrigiere die gefundenen Griffe und bearbeite sie nach einem Umbau."
     }
   },
   "home": {
@@ -419,7 +423,7 @@
     },
     "guides": {
       "title": "Guides",
-      "intro": "Sieben kurze Seiten mit Screenshots aus der App.",
+      "intro": "Acht kurze Seiten mit Screenshots aus der App.",
       "playlists": {
         "title": "Playlists",
         "body": "Playlist anlegen, einen Boulder wieder rausnehmen, die ganze Liste in die Warteschlange legen und die acht fertigen Listen nutzen."
@@ -447,6 +451,10 @@
       "betaVideos": {
         "title": "Beta-Videos",
         "body": "Ein Reel von Instagram oder TikTok nach Boardsesh teilen, an einen Boulder hängen und die Beta der anderen finden."
+      },
+      "sprayWalls": {
+        "title": "Spraywände",
+        "body": "Fotografiere deine Wand so, dass die Griffe gut erkannt werden, füge sie hinzu und korrigiere ihre Griffe jederzeit."
       }
     },
     "playlists": {
@@ -844,6 +852,57 @@
     "install": {
       "title": "Hol dir die App",
       "intro": "Alles auf dieser Seite passiert in der App."
+    },
+    "sprayWalls": {
+      "breadcrumb": "Spraywände",
+      "hero": {
+        "title": "Fotografiere und richte deine Spraywand ein",
+        "subtitle": "Jeder Griff und jeder Boulder an deiner Wand sitzt auf einem einzigen Foto. Darum zählt die Aufnahme."
+      },
+      "watch": {
+        "title": "Erst mal anschauen",
+        "videoAlt": "Video: eine Spraywand fotografieren und ihre Griffe in der Boardsesh-App einrichten",
+        "videoCaption": "Das Foto, die Wand hinzufügen und Griffe korrigieren, in etwa zwei Minuten.",
+        "p1": "Boardsesh findet die Griffe auf deinem Foto, und jeder Boulder an der Wand wird auf genau diesem Foto gesetzt. Ein gutes Foto heißt: weniger Griffe, die du von Hand korrigieren musst."
+      },
+      "photo": {
+        "title": "Das Foto machen",
+        "p1": "Fotografiere die Wand, bevor du die App öffnest. Fünf Dinge machen den Unterschied:",
+        "square": "Stell dich frontal und mittig vor die Wand. Von der Seite aus werden die entfernten Griffe kleiner und rücken zusammen.",
+        "portrait": "Halte das Handy im Hochformat. Du kletterst mit dem Handy hochkant, und ein Foto im Querformat schrumpft zu einem Streifen, auf dem die Griffe zu klein zum Antippen sind.",
+        "tilt": "Neig das Handy im Winkel der Wand, sodass es parallel zur Wandfläche liegt. Im Überhang wirkt der obere Teil der Wand bei senkrecht gehaltenem Handy riesig, und der untere schrumpft.",
+        "frame": "Hol die ganze Wand ins Bild, von oben bis unten und von Rand zu Rand.",
+        "zoom": "Fotografiere bei 1x. Passt die Wand nicht drauf, geh lieber ein paar Schritte zurück, statt auf das Weitwinkelobjektiv zu wechseln.",
+        "why": "Warum das wichtig ist: Die Griff-Erkennung liest dein Foto so, wie es ist. Schräg fotografierte Griffe kommen klein und verzerrt raus, also werden mehr übersehen und du musst sie selbst hinzufügen."
+      },
+      "add": {
+        "title": "Die Wand hinzufügen",
+        "step1": "Öffne Boards und tippe auf Spraywand.",
+        "step2": "Gib der Wand einen Namen und stell ihren Winkel ein. Nach dem Veröffentlichen ist der Winkel fest.",
+        "step3": "Wähle dein Foto aus oder nimm eins auf.",
+        "step4": "Zieh die vier Ringe auf die Ecken der Wand. Wenn du frontal fotografiert hast, kannst du das überspringen.",
+        "step5": "Boardsesh findet die Griffe. Das dauert ein paar Sekunden."
+      },
+      "fix": {
+        "title": "Griffe vor dem Veröffentlichen korrigieren",
+        "p1": "Die Griffe, die Boardsesh gefunden hat, erscheinen als Kreise auf deinem Foto. Prüf sie, bevor jemand daran klettert.",
+        "maybe": "Gestrichelte Kreise sind unsichere Griffe. Tippe auf einen, um ihn zu behalten.",
+        "toggle": "Tippe auf einen Kreis, um ihn auszuschalten. Tippe auf freie Wand, um einen Griff hinzuzufügen.",
+        "longPress": "Halte einen Kreis gedrückt für Größer, Kleiner, Umranden, Verbinden oder Entfernen. Umranden zeichnet den Umriss des Griffs neu, Verbinden macht aus zwei Kreisen einen Griff.",
+        "missed": "Einen Griff übersehen? Tippe auf + und zeichne mit einem Finger um ihn herum (Zeichnen) oder tippe auf seine Ecken (Ecken).",
+        "p2": "Wähle dann, wie deine Griffe leuchten, und veröffentliche. Die Wand landet bei deinen Boards, bereit für ihren ersten Boulder."
+      },
+      "later": {
+        "title": "Griffe später bearbeiten",
+        "p1": "Tippe oben im Tab Boulder auf den Namen der Wand, um ihre Übersicht zu öffnen, dann auf Griffe bearbeiten. Füge Griffe hinzu, schalte sie aus oder korrigiere sie wie vorher und tippe dann auf Griffe veröffentlichen.",
+        "p2": "Die Wand wurde umgeschraubt? Tippe in derselben Übersicht auf Neues Foto. Stell dich dorthin, wo du beim ersten Mal standest, und markiere die Ecken, damit das neue Foto zu den Bouldern passt, die schon an der Wand sind."
+      },
+      "next": {
+        "title": "Weiterlesen",
+        "logbook": "Deine Begehungen eintragen",
+        "sessions": "Mit deiner Crew klettern",
+        "hub": "Alle Hilfethemen"
+      }
     }
   },
   "docs": {

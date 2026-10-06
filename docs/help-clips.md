@@ -136,3 +136,46 @@ the clip shows rather than rely on the motion.
 
 Prune an entry nothing uses. An unused entry costs the operator a recording
 session, so it is cheaper to remove it than to keep it in case.
+
+## The spray wall walkthrough
+
+`/help/spray-walls` carries one longer video (about 2 minutes, 720 x 1280) rather
+than a gesture clip. It is not in the clip table: it is rendered, not converted.
+
+- **Stage:** `marketing/spray-walkthrough/`. The photo-tip scenes (portrait vs
+  landscape, side-on, phone upright under an overhang, why skew costs holds) are
+  HTML/SVG animations over `wall-photo.jpg`, the same CC0 photo as the showcase
+  video's demo wall. `copy.en-US.json` holds every caption; `edit.json` holds the
+  cuts into the app takes (frames at 30 fps) and when each caption starts;
+  `holds.json` places the rings in the "why it matters" scene.
+- **Footage:** three Android emulator takes in `.boardsesh/help-clips/raw/`
+  (`spray-create`, `spray-review`, `spray-edit-later`), recorded with
+  `scripts/spray-walkthrough-takes.sh create|review|later` against a dev client
+  started by `vp run mobile:android-shots -- --backend prod`, signed in to the help
+  account (`SCREENSHOT_USER_EMAIL` / `SCREENSHOT_USER_PASSWORD`). Push the photo to
+  the gallery first (the script's header says how). `create` and `review` make a
+  new wall each run; `later` edits the active one.
+- **Render:** `vp run video:spray-walkthrough` writes the master to
+  `.boardsesh/spray-walkthrough/`, then `packages/web/public/videos/help/spray-walls-walkthrough.{mp4,webm}`
+  and the poster `packages/web/public/images/help/clips/spray-walls-walkthrough.webp`.
+  `-- --stills` writes a contact sheet of every scene; `-- --frame <n>` writes one frame.
+  Run `vp run generate:static-assets` after a new render.
+
+**On this Linux host the emulator needs
+`BOARDSESH_EMULATOR_GPU=swangle_indirect BOARDSESH_EMULATOR_EXTRA_ARGS='-feature -Vulkan'`**;
+with the default renderer `qemu-system-x86_64` segfaults a few seconds into boot.
+
+**Record against the app that is shipping.** The takes show `/boards/spray/holds`
+(Edit holds from the board sheet), which first shipped on the `release/next` train.
+A `release/next` client can ask the prod backend for fields it does not serve yet.
+The 2026-10-06 takes hit exactly that: prod rejected `climbEditPolicy` and
+`viewerCanEditClimbs` (#6025), so the recording checkout dropped those two lines from
+the spray wall fragment in `packages/shared/graphql/src/operations/spray-walls.ts`,
+locally and never committed. Nothing in the takes reads them. Once prod serves both
+fields, record from a clean checkout. Metro on this host does not always notice edits
+made while it runs; restart it after changing anything the takes depend on.
+
+**Re-record after spray UI changes.** The take script taps fixed coordinates on the
+1080 x 1920 screenshot-mode display. `scripts/spray-walkthrough-takes.sh ui` lists
+what is on screen with its bounds, which is how the coordinates were measured.
+The over-budget size is deliberate: two minutes of footage does not fit 1.5 MB.

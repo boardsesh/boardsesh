@@ -14,7 +14,7 @@ export const STATIC_ENTRIES: readonly SitemapItem[] = [
   { path: '/aurora-migration', changeFrequency: 'weekly', priority: 0.9, lastModified: new Date('2026-04-30') },
   { path: '/about', changeFrequency: 'monthly', priority: 0.8, lastModified: new Date('2026-04-30') },
   { path: '/support', changeFrequency: 'monthly', priority: 0.6, lastModified: new Date('2026-09-16') },
-  // /help became a hub over seven topic pages once adoption data showed people
+  // /help became a hub over its topic pages once adoption data showed people
   // were missing shipped features rather than asking for new ones.
   { path: '/help', changeFrequency: 'monthly', priority: 0.7, lastModified: new Date('2026-09-19') },
   // Playlists: building one, pruning one, and the eight auto-curated lists.
@@ -36,6 +36,8 @@ export const STATIC_ENTRIES: readonly SitemapItem[] = [
     priority: 0.6,
     lastModified: new Date('2026-09-19'),
   },
+  // Spray walls: shooting the photo the hold finder reads, then fixing its holds.
+  { path: '/help/spray-walls', changeFrequency: 'monthly', priority: 0.6, lastModified: new Date('2026-10-06') },
   // /docs lost both Aurora proxy operations (plus the tag, the overview bullet and
   // three schemas) when W-25a deprecated them, then lost the "Retired endpoints"
   // card itself when W-25b deleted the URLs outright (410 -> 404).
