@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { LitUpHoldsMap } from '@boardsesh/shared-schema';
 import {
   buildInitialFrames,
@@ -25,9 +25,12 @@ import type { CreateClimbBoard } from './use-create-climb-screen';
  *  - `countOnly`: holds are lost, their positions are on the way (or there is
  *    no climb to ask about, such as a remix opened without its parent's uuid);
  *  - `ready`: positions known, ghosts drawn;
+ *  - `noPositions`: the server answered but nothing it said can be drawn (a
+ *    wall this viewer cannot see answers `[]`, a hold the homography drops, a
+ *    wall registered without a homography). The count still shows;
  *  - `unavailable`: no signal or the read failed. The count still shows.
  */
-export type LostHoldsStatus = 'none' | 'countOnly' | 'ready' | 'unavailable';
+export type LostHoldsStatus = 'none' | 'countOnly' | 'ready' | 'noPositions' | 'unavailable';
 
 /** The ghost being replaced, and the live holds offered for it. */
 export type LostHoldReplacement = {
@@ -185,7 +188,7 @@ export function useLostHoldGhosts({
   const [replacementByGhostId, setReplacementByGhostId] = useState<ReadonlyMap<number, number>>(() => new Map());
 
   const paintedHoldIds = useMemo(() => paintedHoldIdsOf(frames), [frames]);
-  const ghosts = useMemo(() => {
+  const visibleGhosts = useMemo(() => {
     if (allGhosts.length === 0) return NO_GHOSTS;
     const paintedCircles: HoldCircle[] = [];
     for (const holdId of paintedHoldIds) {
@@ -198,23 +201,32 @@ export function useLostHoldGhosts({
       return !isGhostCovered(ghost, paintedCircles);
     });
   }, [allGhosts, paintedHoldIds, wallHoldById, replacementByGhostId]);
+  // The previous answer, handed back while the same ghosts survive a paint, so
+  // the board's hit targets and tap handlers do not rebind on every tap.
+  const previousGhostsRef = useRef<readonly LostHoldGhost[]>(NO_GHOSTS);
+  const ghosts = useMemo(() => {
+    const previous = previousGhostsRef.current;
+    const unchanged =
+      visibleGhosts.length === previous.length && visibleGhosts.every((ghost, index) => ghost === previous[index]);
+    if (!unchanged) previousGhostsRef.current = visibleGhosts;
+    return previousGhostsRef.current;
+  }, [visibleGhosts]);
 
   const ghostTargets = useMemo<BoardHoldTarget[]>(
     () => ghosts.map((ghost) => ({ id: ghost.id, cx: ghost.cx, cy: ghost.cy, r: ghost.r })),
     [ghosts],
   );
 
-  // A read that came back without usable positions (no homography, a
-  // stranger's empty list, a hold the map dropped) reads the same as no signal:
-  // the count stands, the rings cannot be drawn.
   const status: LostHoldsStatus =
     lostHoldIds.length === 0
       ? 'none'
       : allGhosts.length > 0
         ? 'ready'
-        : lostHoldsQuery.status === 'loading' || lostHoldsQuery.status === 'idle'
-          ? 'countOnly'
-          : 'unavailable';
+        : lostHoldsQuery.status === 'unavailable'
+          ? 'unavailable'
+          : lostHoldsQuery.status === 'ready'
+            ? 'noPositions'
+            : 'countOnly';
   const count = status === 'ready' ? ghosts.length : lostHoldIds.length;
 
   const candidatesFor = useCallback(

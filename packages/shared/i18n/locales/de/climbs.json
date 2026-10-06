@@ -679,7 +679,9 @@
         "offline_one": "{{count}} Griff von diesem Boulder ist weg. Verbinde dich, um zu sehen, wo er war.",
         "offline_other": "{{count}} Griffe von diesem Boulder sind weg. Verbinde dich, um zu sehen, wo sie waren.",
         "pickNearby": "Tippe auf einen hervorgehobenen Griff, um ihn stattdessen zu nehmen.",
-        "roleFull": "Ein Boulder hat höchstens zwei Start- und zwei Topgriffe. Lösche einen und tippe noch mal."
+        "roleFull": "Ein Boulder hat höchstens zwei Start- und zwei Topgriffe. Lösche einen und tippe noch mal.",
+        "noPositions_one": "{{count}} Griff von diesem Boulder ist weg. Wo er war, lässt sich nicht zeigen.",
+        "noPositions_other": "{{count}} Griffe von diesem Boulder sind weg. Wo sie waren, lässt sich nicht zeigen."
       },
       "sheet": {
         "title": "Dieser Griff ist weg",

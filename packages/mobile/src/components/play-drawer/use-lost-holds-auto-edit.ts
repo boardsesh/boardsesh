@@ -29,6 +29,8 @@ export type BrokenClimbActivation = {
   isOtherBoard: boolean;
   /** The player is already on screen (a sheet stacked over it): leaving it would lose their place. */
   playerOpen: boolean;
+  /** The opener said no (`autoEditBroken: false`): playlist and circuit activation. */
+  optedOut: boolean;
   /** `canEditClimb`: the setter, or a wall editor / collaborator. */
   viewerCanEdit: boolean;
   /** Whether the editor would open on something it can save. */
@@ -48,6 +50,9 @@ export type BrokenClimbActivation = {
  *  - not with the player already up: the climber is mid-session in it, and the
  *    banner's Edit is one tap away;
  *  - not for another board's climb: that one raises the switch-board prompt;
+ *  - not when the opener opts out: "Play" on a playlist or circuit means climb
+ *    it, and dropping the setter into the editor with a fresh queue behind it
+ *    is not what that button promises;
  *  - not unless the editor can save (`readiness`): a stale wall, or a climb with
  *    nothing left, would open an editor that cannot finish the job.
  */
@@ -60,6 +65,7 @@ export function shouldAutoEditBrokenClimb(activation: BrokenClimbActivation): bo
     !activation.isSharedSession &&
     !activation.isOtherBoard &&
     !activation.playerOpen &&
+    !activation.optedOut &&
     activation.viewerCanEdit &&
     activation.readiness === 'ready'
   );
@@ -81,6 +87,8 @@ type UseLostHoldsAutoEditArgs = {
 };
 
 export type LostHoldsAutoEditContext = {
+  /** The opener passed `autoEditBroken: false`. */
+  optedOut: boolean;
   /** The climber's own board, never a drawer override. */
   storedBoard: BoardConfig | null;
   /** The board the opener asked the drawer to show the climb on, if any. */
@@ -141,6 +149,7 @@ export function useLostHoldsAutoEdit({ currentUserId, dismissSourceSheets }: Use
         isSharedSession: context.isSharedSession,
         isOtherBoard,
         playerOpen: context.playerOpen,
+        optedOut: context.optedOut,
         viewerCanEdit,
         readiness: isSprayClimb ? lostHoldsEditReadiness(climb.frames, missingHoldCount, liveHoldIds) : 'wall-stale',
       });

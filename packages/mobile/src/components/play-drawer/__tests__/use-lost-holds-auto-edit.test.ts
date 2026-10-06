@@ -47,6 +47,7 @@ const ROUTABLE = {
   isSharedSession: false,
   isOtherBoard: false,
   playerOpen: false,
+  optedOut: false,
   viewerCanEdit: true,
   readiness: 'ready' as const,
 };
@@ -65,6 +66,7 @@ describe('shouldAutoEditBrokenClimb', () => {
     ['a crew session', { isSharedSession: true }],
     ['another board', { isOtherBoard: true }],
     ['an open player', { playerOpen: true }],
+    ['a playlist or circuit activation', { optedOut: true }],
     ['a viewer who cannot edit', { viewerCanEdit: false }],
     ['a stale wall', { readiness: 'wall-stale' as const }],
     ['a climb with nothing left', { readiness: 'nothing-left' as const }],
@@ -86,6 +88,7 @@ const brokenClimb = {
 } as unknown as Climb;
 
 const CONTEXT = {
+  optedOut: false,
   storedBoard: SPRAY_BOARD,
   boardOverride: undefined,
   isPreview: false,
@@ -141,6 +144,14 @@ describe('useLostHoldsAutoEdit', () => {
     expect(result.current.tryAutoEdit(brokenClimb, CONTEXT)).toBe('routed');
     expect(result.current.tryAutoEdit(brokenClimb, CONTEXT)).toBe('swallowed');
     expect(navigation.openEdit).toHaveBeenCalledTimes(1);
+  });
+
+  it('declines when the opener opts out (playlist Play)', () => {
+    const { result } = renderHook(() =>
+      useLostHoldsAutoEdit({ currentUserId: 'setter', dismissSourceSheets: vi.fn() }),
+    );
+    expect(result.current.tryAutoEdit(brokenClimb, { ...CONTEXT, optedOut: true })).toBe('declined');
+    expect(navigation.openEdit).not.toHaveBeenCalled();
   });
 
   it('declines a climb opened onto another board', () => {

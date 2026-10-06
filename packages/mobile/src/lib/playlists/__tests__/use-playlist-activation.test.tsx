@@ -270,7 +270,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     // frame as the tap. `committedExternally` tells the drawer the caller already
     // dispatches the climb, so it renders from currentClimbQueueItem (no preview)
     // and doesn't re-dispatch.
-    expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true });
+    expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true, autoEditBroken: false });
     // The shared activation still runs (suggestion source + the synchronous queue
     // dispatch).
     expect(mocks.activate).toHaveBeenCalledWith(climb);
@@ -321,7 +321,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     // Every tap drives the shared activation — there is no non-driver preview
     // branch that skips it anymore.
     expect(mocks.activate).toHaveBeenCalledWith(climb);
-    expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true });
+    expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true, autoEditBroken: false });
   });
 
   it('re-tapping the active climb whose suggestions already follow this list just reopens', async () => {
@@ -334,7 +334,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
 
     // Pure reopen — the shared activation does NOT run (re-activating would
     // duplicate it in the queue / pointlessly rebuild the same source).
-    expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true });
+    expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true, autoEditBroken: false });
     expect(mocks.activate).not.toHaveBeenCalled();
   });
 
@@ -348,7 +348,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     await result.current.activate(climb);
 
     expect(mocks.activate).toHaveBeenCalledWith(climb);
-    expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true });
+    expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true, autoEditBroken: false });
   });
 
   it('queueApi refreshes the source in place for the active climb (no duplicate append)', async () => {
@@ -375,7 +375,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
 
     // 'a' is not the active climb ('b' is), so this still starts a fresh pass.
     expect(mocks.activate).toHaveBeenCalledWith(climb);
-    expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true });
+    expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true, autoEditBroken: false });
   });
 
   it('opens wrong-board playlist climbs view-only without mutating the queue', async () => {
@@ -538,7 +538,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       await result.current.activate(climb);
 
       expect(mocks.activate).toHaveBeenCalledWith(climb);
-      expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true });
+      expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true, autoEditBroken: false });
     });
   });
 
@@ -597,7 +597,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         activatedClimbUuid: 'b',
         climbs: [{ uuid: 'a' }, { uuid: 'b' }, { uuid: 'c' }],
       });
-      expect(mocks.openPlayDrawer).toHaveBeenCalledWith(tapped, { committedExternally: true });
+      expect(mocks.openPlayDrawer).toHaveBeenCalledWith(tapped, { committedExternally: true, autoEditBroken: false });
       await waitFor(() => {
         const lastSetQueue = mocks.setQueue.mock.calls.at(-1);
         expect(lastSetQueue?.[0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['a', 'b', 'c']);

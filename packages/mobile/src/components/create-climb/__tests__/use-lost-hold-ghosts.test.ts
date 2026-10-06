@@ -199,6 +199,22 @@ describe('useLostHoldGhosts', () => {
     expect(result.current.count).toBe(1);
   });
 
+  it('says the positions cannot be shown when the server answered with nothing usable', () => {
+    lostHoldsQuery.state = { status: 'ready', lostHolds: [] };
+    const { result } = setup();
+    expect(result.current.status).toBe('noPositions');
+    expect(result.current.count).toBe(1);
+  });
+
+  it('keeps the same ghosts array across a paint that leaves them standing', () => {
+    const { result, rerender } = setup();
+    const ghostsBefore = result.current.ghosts;
+    const targetsBefore = result.current.ghostTargets;
+    rerender({ currentFrames: [{ ...PAINTED[0], 12: HAND }] });
+    expect(result.current.ghosts).toBe(ghostsBefore);
+    expect(result.current.ghostTargets).toBe(targetsBefore);
+  });
+
   it('passes taps through outside a pick', () => {
     const { result } = setup();
     expect(result.current.interceptPaint(10)).toBe(false);

@@ -153,6 +153,13 @@ export type OpenPlayDrawerOptions = PlayDrawerOpenOptions & {
    *  default). The override is applied via state, so the actual open happens
    *  after the new boardConfig has propagated to PlayDrawer's props. */
   boardConfig?: BoardConfig;
+  /**
+   * `false` keeps a climb that lost holds on the player even for someone who
+   * could fix it (#5493). Playlist and circuit activation pass it: "Play" on a
+   * list means climb it, not edit its first broken climb. Left out, the
+   * set-active rule decides.
+   */
+  autoEditBroken?: boolean;
 };
 
 /** Props the iPad right-column PlayDrawer pane consumes (regular width). Mirrors
@@ -586,8 +593,9 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
 
   const openPlayDrawer = useCallback((climb: Climb, options?: OpenPlayDrawerOptions) => {
     // Pull `boardConfig` out so it doesn't reach the open target.
-    const { boardConfig: override, ...openOptions } = options ?? {};
+    const { boardConfig: override, autoEditBroken, ...openOptions } = options ?? {};
     const autoEdit = tryAutoEditRef.current(climb, {
+      optedOut: autoEditBroken === false,
       storedBoard: storedActiveBoardConfigRef.current,
       boardOverride: override,
       isPreview: openOptions.previewQueueItem != null,

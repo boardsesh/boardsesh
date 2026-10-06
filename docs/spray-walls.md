@@ -2089,6 +2089,10 @@ these hold, and otherwise the climb plays with the banner as before:
   and some holds survive);
 - the open makes the climb current: not a preview, not a crew session (a tap there
   is a look), and not the climb that is already current;
+- the opener did not opt out. Playlist and circuit activation pass
+  `autoEditBroken: false`: "Play" on a list means climb it, and dropping the
+  setter into the editor with a fresh queue behind it is not what that button
+  promises;
 - the `/play` route is not already on screen. Inside the player (a swipe, a
   similar climb, a browse commit, a queue tap over it) the banner's Edit is one
   tap away, and leaving the player would lose the climber's place. The iPad's
@@ -2127,15 +2131,20 @@ while the pick is open. If the role is full (two starts or two finishes), the
 banner says so and the pick stays open.
 
 A ghost leaves once something stands in for it: the hold picked for it this
-session, or any painted hold whose centre is inside the ghost's radius. The second
-rule covers a restored autosave, which carries the paint but not which ghost it
-answered. A replacement picked from further away than that shows its ghost again
+session, a painted hold whose `movedFromHoldId` names the lost one (its successor,
+wherever it went), or a painted hold whose centre is within the smaller of the two
+radii. The last two cover a restored autosave, which carries the paint but not
+which ghost it answered. The smaller radius keeps a small chip that happens to sit
+inside a big lost volume from clearing it. A replacement picked from further away than that shows its ghost again
 after a restore. The ghost is only a picture; Save is unaffected.
 
 **Offline.** The device mirrors `missing_hold_count` but not the hold history, so
-the positions need a connection. With no signal the banner still states the count
-(the device's own: the climb's holds its wall no longer has) and says the rings
-need a connection.
+the positions need a connection. With no signal (or a failed read) the banner
+still states the count (the device's own: the climb's holds its wall no longer
+has) and says the rings need a connection. A read that answers with nothing it can
+draw — a wall this viewer cannot see answers `[]`, or the homography drops a hold —
+states the count and says the old spots cannot be shown, rather than blaming the
+connection. See `offline-reads.md`.
 
 ## Photo privacy
 

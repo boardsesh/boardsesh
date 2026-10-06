@@ -679,13 +679,15 @@
         "offline_one": "{{count}} prise de ce bloc n'est plus là. Connecte-toi pour voir où elle était.",
         "offline_other": "{{count}} prises de ce bloc ne sont plus là. Connecte-toi pour voir où elles étaient.",
         "pickNearby": "Touche une prise en surbrillance pour l'utiliser à la place.",
-        "roleFull": "Un bloc a au plus deux prises de départ et deux de fin. Efface-en une, puis touche à nouveau."
+        "roleFull": "Un bloc a au plus deux prises de départ et deux d'arrivée. Efface-en une, puis touche à nouveau.",
+        "noPositions_one": "{{count}} prise de ce bloc n'est plus là. Impossible de montrer où elle était.",
+        "noPositions_other": "{{count}} prises de ce bloc ne sont plus là. Impossible de montrer où elles étaient."
       },
       "sheet": {
         "title": "Cette prise n'est plus là",
         "wasStart": "C'était une prise de départ.",
         "wasHand": "C'était une prise de main.",
-        "wasFinish": "C'était une prise de fin.",
+        "wasFinish": "C'était une prise d'arrivée.",
         "wasFoot": "C'était une prise de pied.",
         "useNearby": "Utiliser une prise proche",
         "useNearbyHint": "Les prises libres les plus proches s'allument sur le mur.",

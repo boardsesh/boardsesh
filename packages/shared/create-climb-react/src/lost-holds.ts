@@ -129,15 +129,21 @@ function centreDistance(left: { cx: number; cy: number }, right: { cx: number; c
 }
 
 /**
- * Whether a painted hold now sits where the ghost was.
+ * Whether a painted hold now answers the ghost.
  *
  * Covers the replacement a climber made in an earlier session (a restored
  * autosave carries the paint but not which ghost it answered) and a successor
- * painted by hand: either way something is on that spot, so the ghost has
- * nothing left to say. "On" means centres closer than the larger radius.
+ * painted by hand. Two ways to answer it:
+ *  - the painted hold is the lost one's successor (`movedFromHoldId` names it),
+ *    wherever on the wall it went;
+ *  - its centre is within the SMALLER of the two radii, so it sits on the spot.
+ *    The smaller one, so a small chip whose centre falls inside a big lost
+ *    volume does not count as standing in for it.
  */
 export function isGhostCovered(ghost: HoldCircle, paintedHolds: readonly HoldCircle[]): boolean {
-  return paintedHolds.some((hold) => centreDistance(ghost, hold) <= Math.max(ghost.r, hold.r));
+  return paintedHolds.some(
+    (hold) => hold.movedFromHoldId === ghost.id || centreDistance(ghost, hold) <= Math.min(ghost.r, hold.r),
+  );
 }
 
 /**

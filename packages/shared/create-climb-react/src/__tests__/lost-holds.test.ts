@@ -72,9 +72,18 @@ describe('buildLostHoldGhosts', () => {
 describe('isGhostCovered', () => {
   const ghost = { id: 1, cx: 100, cy: 100, r: 10 };
 
-  it('is covered by a painted hold whose centre is inside the larger radius', () => {
-    expect(isGhostCovered(ghost, [{ id: 9, cx: 108, cy: 100, r: 4 }])).toBe(true);
-    expect(isGhostCovered(ghost, [{ id: 9, cx: 114, cy: 100, r: 15 }])).toBe(true);
+  it('is covered by a painted hold whose centre is inside the smaller radius', () => {
+    expect(isGhostCovered(ghost, [{ id: 9, cx: 103, cy: 100, r: 4 }])).toBe(true);
+    expect(isGhostCovered(ghost, [{ id: 9, cx: 108, cy: 100, r: 15 }])).toBe(true);
+  });
+
+  it('is not covered by a small chip inside a big lost volume', () => {
+    expect(isGhostCovered(ghost, [{ id: 9, cx: 108, cy: 100, r: 4 }])).toBe(false);
+  });
+
+  it('is covered by its successor wherever it went', () => {
+    expect(isGhostCovered(ghost, [{ id: 9, cx: 900, cy: 900, r: 10, movedFromHoldId: 1 }])).toBe(true);
+    expect(isGhostCovered(ghost, [{ id: 9, cx: 900, cy: 900, r: 10, movedFromHoldId: 2 }])).toBe(false);
   });
 
   it('is not covered by a neighbour', () => {

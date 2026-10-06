@@ -74,7 +74,9 @@ export const LostHoldsEditorBanner = React.memo(function LostHoldsEditorBanner({
       ? t('mobile.lostHolds.editor.tapGhost', { count })
       : status === 'unavailable'
         ? t('mobile.lostHolds.editor.offline', { count })
-        : t('mobile.lostHolds.banner', { count });
+        : status === 'noPositions'
+          ? t('mobile.lostHolds.editor.noPositions', { count })
+          : t('mobile.lostHolds.banner', { count });
 
   return (
     <Pressable
