@@ -166,7 +166,13 @@ export const GET_SPRAY_WALL_RENDER_DATA = gql`
   }
 `;
 
-/** Draft reads verify the immutable row id even when a discarded number is reused. */
+/**
+ * Draft reads verify the immutable row id even when a discarded number is reused.
+ *
+ * The one read that asks for `photoFullUrl` (#5911): the hold editor swaps it in
+ * once it zooms past 3x. The climb view's `GET_SPRAY_WALL_RENDER_DATA` leaves it
+ * out, so the render path never pays for a second signature it would not use.
+ */
 export const GET_SPRAY_WALL_DRAFT_RENDER_DATA = gql`
   query GetSprayWallDraftRenderData($uuid: ID!, $version: Int) {
     sprayWallRenderData(uuid: $uuid, version: $version) {
@@ -177,6 +183,7 @@ export const GET_SPRAY_WALL_DRAFT_RENDER_DATA = gql`
       photo {
         ${SPRAY_WALL_PHOTO_FIELDS}
       }
+      photoFullUrl
       holds {
         ${SPRAY_WALL_HOLD_FIELDS}
       }

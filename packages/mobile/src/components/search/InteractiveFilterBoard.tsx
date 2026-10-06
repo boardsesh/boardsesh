@@ -20,6 +20,7 @@ import { useZoomedHoldTapGesture, PAN_ACTIVATION_OFFSET } from '../create-climb/
 import { spacing } from '../../theme/tokens';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import { SearchHoldFilterRings } from './SearchHoldFilterRings';
+import { FullResolutionPhotoLayer, type FullResolutionPhoto } from './FullResolutionPhotoLayer';
 
 /** Context handed to an overlay rendered inside the board's zoom transform. */
 export type FilterBoardTransformContext = {
@@ -69,6 +70,14 @@ export type FilterBoardTransformContext = {
 type InteractiveFilterBoardProps = {
   /** Explicit draft photograph; avoids published registry geometry. */
   backgroundPhotoUrl?: string;
+  /**
+   * A sharper copy of `backgroundPhotoUrl`, fetched once the zoom passes its
+   * `minScale` and drawn over it (#5911). Only the spray hold editor passes one;
+   * ignored without `backgroundPhotoUrl`.
+   */
+  fullResolutionPhoto?: FullResolutionPhoto | null;
+  /** `fullResolutionPhoto` would not load. The base photo stays on screen. */
+  onFullResolutionPhotoError?: () => void;
   boardName: BoardName;
   layoutId: number;
   sizeId: number;
@@ -159,6 +168,8 @@ export type FilterBoardControls = {
  */
 export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard({
   backgroundPhotoUrl,
+  fullResolutionPhoto,
+  onFullResolutionPhotoError,
   boardName,
   layoutId,
   sizeId,
@@ -306,12 +317,21 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
         <View style={[styles.clip, { width: renderWidth, height: renderHeight }]}>
           <Animated.View style={[styles.board, animatedZoomStyle]}>
             {backgroundPhotoUrl ? (
-              <Image
-                source={{ uri: backgroundPhotoUrl }}
-                style={StyleSheet.absoluteFill}
-                contentFit="fill"
-                cachePolicy="memory"
-              />
+              <>
+                <Image
+                  source={{ uri: backgroundPhotoUrl }}
+                  style={StyleSheet.absoluteFill}
+                  contentFit="fill"
+                  cachePolicy="memory"
+                />
+                {fullResolutionPhoto ? (
+                  <FullResolutionPhotoLayer
+                    photo={fullResolutionPhoto}
+                    scaleSV={scaleSV}
+                    onError={onFullResolutionPhotoError}
+                  />
+                ) : null}
+              </>
             ) : (
               <BoardImageNative
                 frames=""

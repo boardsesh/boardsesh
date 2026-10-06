@@ -48,6 +48,7 @@ import { SprayScanBand, SCAN_BAND_HEIGHT } from './SprayScanBand';
 import { SprayHoldSpotlight } from './SprayHoldSpotlight';
 import { SprayPublishSweep, PUBLISH_SWEEP_MS } from './SprayPublishSweep';
 import { fitSprayPhoto, SPRAY_BAR_GUTTER, SPRAY_BAR_TOTAL_HEIGHT, SPRAY_EDITOR_MAX_SCALE } from './spray-photo-frame';
+import { photoSignatureLapsed, sprayFullResolutionPhoto } from './spray-full-photo';
 import { useSprayAddShape, type SprayAddShape } from './use-spray-add-shape';
 import { revertedHold, type SpraySpotlightKind, type SpraySpotlightPulse } from './spray-spotlight';
 import { useSprayEditorHints, type SprayHintId } from './use-spray-editor-hints';
@@ -249,12 +250,25 @@ export function SprayHoldEditorScreen({
   const insets = useSafeAreaInsets();
   const headerInset = useTransparentHeaderInset();
 
-  const { isLoading, isUnavailable, isStalled, retry, homography, wall } = useSprayWallDraft(
-    layoutId,
-    wallUuid,
-    versionNumber,
-    versionId,
-  );
+  const { isLoading, isUnavailable, isStalled, retry, homography, wall, photoFullUrl, refreshPhotoUrls } =
+    useSprayWallDraft(layoutId, wallUuid, versionNumber, versionId);
+  // The sharper photo for deep zoom (#5911). Null on walls that have none, which
+  // keep the base photo alone.
+  const fullResolutionPhoto = useMemo(() => sprayFullResolutionPhoto(wall, photoFullUrl), [wall, photoFullUrl]);
+  const photoExpiresAt = wall?.photoExpiresAt ?? null;
+  const lastPhotoRefreshAtRef = useRef(0);
+  const handleFullPhotoError = useCallback(() => {
+    // The full photo is first fetched on the first deep zoom, which in a long
+    // sitting can be after the draft's 15-minute signature ran out. Read the
+    // draft again for fresh URLs; anything else leaves the base photo on screen.
+    // At most once a minute, so a photo that fails for another reason with a
+    // clock that keeps saying "expired" cannot spin on refetches.
+    const nowMs = Date.now();
+    if (!photoExpiresAt || !photoSignatureLapsed(photoExpiresAt, nowMs)) return;
+    if (nowMs - lastPhotoRefreshAtRef.current < 60 * 1000) return;
+    lastPhotoRefreshAtRef.current = nowMs;
+    refreshPhotoUrls();
+  }, [photoExpiresAt, refreshPhotoUrls]);
   const saveHolds = useSaveSprayHolds();
 
   const capabilities = useMemo(() => {
@@ -1501,6 +1515,8 @@ export function SprayHoldEditorScreen({
         <View style={[styles.boardSlot, { height: boardRender.slotHeight }]}>
           <InteractiveFilterBoard
             backgroundPhotoUrl={wall.photoUrl}
+            fullResolutionPhoto={fullResolutionPhoto}
+            onFullResolutionPhotoError={handleFullPhotoError}
             boardName={SPRAY_BOARD_NAME}
             layoutId={layoutId}
             sizeId={layoutId}

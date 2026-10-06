@@ -121,6 +121,19 @@ export type UseSprayWallDraftResult = {
   isUnavailable: boolean;
   /** The version's row-major photo→canonical homography, or null. */
   homography: readonly number[] | null;
+  /**
+   * Presigned GET for the same photo at up to 4096 px (#5911), or null when the
+   * version has none — every wall uploaded before it, and any photo that was
+   * already 2048 px or smaller. Signed with `wall.photoUrl` and expiring with
+   * `wall.photoExpiresAt`. Only the hold editor reads it, and only once zoomed.
+   */
+  photoFullUrl: string | null;
+  /**
+   * Read the version again in the background, keeping what is on screen. For a
+   * lapsed photo signature: unlike `retry` it does not count as loading, so the
+   * editor stays put while the new URLs arrive.
+   */
+  refreshPhotoUrls: () => void;
 };
 
 /**
@@ -212,8 +225,14 @@ export function useSprayWallDraft(
   // a read that gave up. A retry that is backing off or running is neither.
   const isStalled = asked && !retrying && query.data === undefined && (query.fetchStatus === 'paused' || query.isError);
   const homography = renderData?.homography ?? null;
+  // Only alongside a wall this hook vouches for: the same gates that null `wall`
+  // must not leave another account's or a replaced row's photo reachable here.
+  const photoFullUrl = wall ? (renderData?.photoFullUrl ?? null) : null;
 
   const { refetch } = query;
+  const refreshPhotoUrls = useCallback(() => {
+    void refetch();
+  }, [refetch]);
   const retry = useCallback(() => {
     setRetrying(true);
     void retryConnectivityNow()
@@ -233,8 +252,8 @@ export function useSprayWallDraft(
   }, [queryClient, wallUuid, versionNumber, versionId, refetch]);
 
   return useMemo(
-    () => ({ isLoading, isUnavailable, isStalled, retry, homography, wall }),
-    [isLoading, isUnavailable, isStalled, retry, homography, wall],
+    () => ({ isLoading, isUnavailable, isStalled, retry, homography, wall, photoFullUrl, refreshPhotoUrls }),
+    [isLoading, isUnavailable, isStalled, retry, homography, wall, photoFullUrl, refreshPhotoUrls],
   );
 }
 

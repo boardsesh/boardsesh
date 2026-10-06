@@ -41,7 +41,7 @@ describe('pickWallPhotoFromLibrary', () => {
 
     expect(result).toEqual({
       outcome: 'picked',
-      photo: { uri: 'file:///wall.jpg', width: WALL_PHOTO_MAX_DIMENSION, height: 1536 },
+      photo: { uri: 'file:///wall.jpg', width: 4032, height: 3024 },
     });
     expect(picker.requestMediaLibraryPermissionsAsync).not.toHaveBeenCalled();
     expect(picker.launchImageLibraryAsync).toHaveBeenCalledWith({ mediaTypes: ['images'], quality: 1 });
@@ -70,7 +70,7 @@ describe('pickWallPhotoFromCamera', () => {
   it('photographs the wall once the camera is allowed', async () => {
     expect(await pickWallPhotoFromCamera()).toEqual({
       outcome: 'picked',
-      photo: { uri: 'file:///wall.jpg', width: WALL_PHOTO_MAX_DIMENSION, height: 1536 },
+      photo: { uri: 'file:///wall.jpg', width: 4032, height: 3024 },
     });
     expect(picker.requestMediaLibraryPermissionsAsync).not.toHaveBeenCalled();
   });
@@ -81,12 +81,24 @@ describe('predictCompressedSize', () => {
     expect(predictCompressedSize(1600, 1200)).toEqual({ width: 1600, height: 1200 });
   });
 
+  // #5911: the server keeps its own 2048 px base and stores this larger copy
+  // beside it for the hold editor's deep zoom, so a 12 MP phone photo goes up
+  // whole instead of being thrown down to 2048 on the phone.
+  it('keeps a 12 MP phone photo at its full size', () => {
+    expect(WALL_PHOTO_MAX_DIMENSION).toBe(4096);
+    expect(predictCompressedSize(4032, 3024)).toEqual({ width: 4032, height: 3024 });
+  });
+
   it('constrains the long edge of a landscape photo', () => {
-    expect(predictCompressedSize(4032, 3024)).toEqual({ width: WALL_PHOTO_MAX_DIMENSION, height: 1536 });
+    expect(predictCompressedSize(6000, 4000)).toEqual({ width: WALL_PHOTO_MAX_DIMENSION, height: 2731 });
   });
 
   it('constrains the long edge of a portrait photo', () => {
-    expect(predictCompressedSize(3024, 4032)).toEqual({ width: 1536, height: WALL_PHOTO_MAX_DIMENSION });
+    expect(predictCompressedSize(4000, 6000)).toEqual({ width: 2731, height: WALL_PHOTO_MAX_DIMENSION });
+  });
+
+  it('still honours a smaller cap when one is asked for', () => {
+    expect(predictCompressedSize(4032, 3024, 2048)).toEqual({ width: 2048, height: 1536 });
   });
 
   it('answers zero for a photo whose size the picker could not report', () => {

@@ -17,8 +17,9 @@ export const SPRAY_BAR_RESERVE = SPRAY_BAR_TOTAL_HEIGHT + SPRAY_BAR_GUTTER * 3;
 
 /**
  * Deepest pinch zoom in the spray hold editor. Small holds tucked beside big ones
- * need more than the climb view's 4×; the photo is 2048 px on its long side, so
- * past about 8× there is no more detail to see.
+ * need more than the climb view's 4×. Past 3× the editor swaps in the wall's
+ * 4096 px copy where it has one (#5911, `spray-full-photo.ts`); past 8× even
+ * that has no more detail to show.
  */
 export const SPRAY_EDITOR_MAX_SCALE = 8;
 
