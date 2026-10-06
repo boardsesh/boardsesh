@@ -90,7 +90,7 @@
     "demandBody": "Choisis ce qui manque. On compte chaque réponse pour décider des prochaines boards.",
     "demandGymBoard": "Ma salle a une board qui ne figure pas dans la liste",
     "demandBrand": "Ma salle utilise une marque que Boardsesh ne pilote pas",
-    "demandSpray": "Je veux illuminer mon propre mur",
+    "demandSpray": "Je veux allumer mon propre mur",
     "demandNoBoard": "Je n'ai pas encore de board",
     "demandOther": "Autre chose",
     "demandSend": "Envoyer",

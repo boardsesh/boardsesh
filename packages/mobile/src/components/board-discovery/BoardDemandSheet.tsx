@@ -7,6 +7,7 @@ import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { ModalSheet } from '../ModalSheet';
 import { useTheme } from '../../providers/theme-provider';
+import { withAlpha } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { boardDemandNeedsFeedback } from '../../lib/boards/board-demand-flow';
 import { track } from '../../lib/analytics';
@@ -118,7 +119,9 @@ export function BoardDemandSheet({ visible, surface, onClose }: BoardDemandSheet
                       styles.option,
                       {
                         borderColor: selected ? brandColors.primary : systemColors.separator,
-                        backgroundColor: selected ? `${brandColors.primary}14` : systemColors.secondaryBackground,
+                        backgroundColor: selected
+                          ? withAlpha(brandColors.primary, 0.08)
+                          : systemColors.secondaryBackground,
                       },
                     ]}
                   >
