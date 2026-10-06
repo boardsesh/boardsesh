@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { GraphQLError } from 'graphql';
-import { and, asc, count, desc, eq, exists, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { lockWallForWrite } from '../../../services/spray-wall-lock';
 export { lockWallForWrite } from '../../../services/spray-wall-lock';
@@ -84,6 +84,7 @@ import {
   PublishSprayWallVersionInputSchema,
   RemoveSprayWallHoldsInputSchema,
   ResetSprayWallInputSchema,
+  SprayWallHoldUsageArgsSchema,
   SetSprayWallRenderSettingsInputSchema,
   UpdateSprayWallInputSchema,
   SPRAY_VERSION_STATUS_WIRE_NAME,
@@ -663,17 +664,14 @@ async function toGraphQLWall(
       source && (await viewerCanSeeSprayWallByLayout(source.wall, source.board, userId)) ? source.board.uuid : null,
     replacedByWallUuid:
       successor && (await viewerMayFollowToSuccessor(loaded, successor, userId)) ? successor.board.uuid : null,
-    holdsLocked: wall.archivedAt != null || archiveFacts.layoutsWithPublishedClimbs.has(wall.layoutId),
   };
 }
 
 /**
  * What `toGraphQLWall` needs to answer the archive and reset fields, for a set of
- * walls in a fixed number of queries rather than three per wall.
+ * walls in a fixed number of queries rather than two per wall.
  */
 type SprayWallArchiveFacts = {
-  /** Layout ids of the walls that have at least one published (non-draft) climb. */
-  layoutsWithPublishedClimbs: Set<number>;
   /** The live wall each clone was made from, by the clone's `reset_from_wall_id`. */
   sourcesById: Map<number, LoadedWall>;
   /** The live, PUBLISHED clone that replaced each wall, by the replaced wall's id. */
@@ -682,40 +680,13 @@ type SprayWallArchiveFacts = {
 
 async function loadSprayWallArchiveFacts(walls: SprayWallRow[]): Promise<SprayWallArchiveFacts> {
   const facts: SprayWallArchiveFacts = {
-    layoutsWithPublishedClimbs: new Set(),
     sourcesById: new Map(),
     successorsBySourceId: new Map(),
   };
   if (walls.length === 0) return facts;
 
   const sourceIds = [...new Set(walls.map((wall) => wall.resetFromWallId).filter((sourceId) => sourceId != null))];
-  const [climbLayouts, sources, successors] = await Promise.all([
-    // A semi-join, one EXISTS per wall: each stops at the first published climb
-    // it finds on `board_climbs_layout_filter_idx` (board_type, layout_id,
-    // is_listed, is_draft), so a wall with thousands of climbs costs one probe.
-    db
-      .select({ layoutId: dbSchema.sprayWalls.layoutId })
-      .from(dbSchema.sprayWalls)
-      .where(
-        and(
-          inArray(
-            dbSchema.sprayWalls.id,
-            walls.map((wall) => wall.id),
-          ),
-          exists(
-            db
-              .select({ uuid: dbSchema.boardClimbs.uuid })
-              .from(dbSchema.boardClimbs)
-              .where(
-                and(
-                  eq(dbSchema.boardClimbs.boardType, 'spray'),
-                  eq(dbSchema.boardClimbs.layoutId, dbSchema.sprayWalls.layoutId),
-                  eq(dbSchema.boardClimbs.isDraft, false),
-                ),
-              ),
-          ),
-        ),
-      ),
+  const [sources, successors] = await Promise.all([
     sourceIds.length === 0
       ? Promise.resolve([])
       : db
@@ -749,7 +720,6 @@ async function loadSprayWallArchiveFacts(walls: SprayWallRow[]): Promise<SprayWa
       .orderBy(asc(dbSchema.sprayWalls.id)),
   ]);
 
-  for (const row of climbLayouts) facts.layoutsWithPublishedClimbs.add(row.layoutId);
   for (const row of sources) facts.sourcesById.set(row.wall.id, row);
   // Ascending, so the newest successor wins if a wall somehow has two.
   for (const row of successors) {
@@ -1876,6 +1846,63 @@ export const sprayWallQueries = {
   },
 
   /**
+   * How many climbs use each of the given holds, split published / draft.
+   *
+   * The hold editor asks this before saving a removal (a move is a removal plus
+   * an addition), so it can warn the owner that published climbs will lose a
+   * hold. Nothing is refused on the strength of it: the removal itself is
+   * unchanged, and the publish that lands it recomputes `missing_hold_count`.
+   *
+   * Counted the way search shows climbs: hidden climbs and climbs a full reset
+   * retired are left out, and a published climb is a listed non-draft one.
+   */
+  sprayWallHoldUsage: async (
+    _: unknown,
+    { wallUuid, holdIds }: { wallUuid: unknown; holdIds: unknown },
+    ctx: ConnectionContext,
+  ) => {
+    requireAuthenticated(ctx);
+    await applyRateLimit(ctx, WALL_QUERY_RATE_LIMIT, 'sprayWallHoldUsage');
+    const validated = validateInput(SprayWallHoldUsageArgsSchema, { wallUuid, holdIds }, 'input');
+
+    // The same gate as editing the holds: this is a question only the hold
+    // editor asks, and the counts include other setters' drafts.
+    const { wall } = await loadEditableWall(ctx, validated.wallUuid);
+    if (wall.archivedAt != null) throw sprayWallArchivedError();
+
+    const requested = [...new Set(validated.holdIds)];
+    if (requested.length === 0) return [];
+
+    const isPublished = and(eq(dbSchema.boardClimbs.isDraft, false), eq(dbSchema.boardClimbs.isListed, true));
+    const rows = await db
+      .select({
+        holdId: dbSchema.boardClimbHolds.holdId,
+        publishedClimbCount: sql<number>`count(*) FILTER (WHERE ${isPublished})::int`,
+        draftClimbCount: sql<number>`count(*) FILTER (WHERE ${eq(dbSchema.boardClimbs.isDraft, true)})::int`,
+      })
+      .from(dbSchema.boardClimbHolds)
+      .innerJoin(dbSchema.boardClimbs, eq(dbSchema.boardClimbs.uuid, dbSchema.boardClimbHolds.climbUuid))
+      .where(
+        and(
+          eq(dbSchema.boardClimbHolds.boardType, 'spray'),
+          inArray(dbSchema.boardClimbHolds.holdId, requested),
+          eq(dbSchema.boardClimbs.boardType, 'spray'),
+          eq(dbSchema.boardClimbs.layoutId, wall.layoutId),
+          eq(dbSchema.boardClimbs.isHidden, false),
+          sql`COALESCE(${dbSchema.boardClimbs.retiredByReset}, false) = false`,
+        ),
+      )
+      .groupBy(dbSchema.boardClimbHolds.holdId);
+
+    const usageByHold = new Map(rows.map((row) => [row.holdId, row]));
+    return requested.map((holdId) => ({
+      holdId,
+      publishedClimbCount: usageByHold.get(holdId)?.publishedClimbCount ?? 0,
+      draftClimbCount: usageByHold.get(holdId)?.draftClimbCount ?? 0,
+    }));
+  },
+
+  /**
    * One version's generated wall looks and its quality verdict.
    *
    * The same gate as `sprayWallRenderData`, step for step: the wall's view
@@ -2022,7 +2049,7 @@ export const sprayWallQueries = {
     // reason. The caller owns these walls, so no version is filtered out below and
     // this set is exactly the one each payload needs.
     const deltas = await versionHoldDeltas([...versionsByWall.values()].flat().map((version) => Number(version.id)));
-    // …and the archive and reset fields for every wall in three queries. ARCHIVED
+    // …and the archive and reset fields for every wall in two queries. ARCHIVED
     // walls are deliberately still here: this list is where the owner finds them.
     const archiveFacts = await loadSprayWallArchiveFacts(rows.map((row) => row.wall));
 

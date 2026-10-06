@@ -102,7 +102,6 @@ type WallPayload = {
   archivedAt: string | null;
   resetOfWallUuid: string | null;
   replacedByWallUuid: string | null;
-  holdsLocked: boolean;
   viewerCanEditClimbs: boolean;
 };
 
@@ -404,7 +403,6 @@ describe('the clone’s first publish', () => {
     const archived = await readWall(source.uuid, OWNER);
     expect(archived?.archivedAt).not.toBeNull();
     expect(archived?.replacedByWallUuid).toBe(clone.uuid);
-    expect(archived?.holdsLocked).toBe(true);
   });
 
   it('leaves the old wall live and listable when the clone is abandoned', async () => {
@@ -587,25 +585,12 @@ describe('where an archived wall shows up', () => {
     const byUuid = new Map(mine.map((wall) => [wall.uuid, wall]));
     expect(byUuid.get(source.uuid)?.archivedAt).toEqual(expect.any(String));
     expect(byUuid.get(source.uuid)?.replacedByWallUuid).toBe(clone.uuid);
-    expect(byUuid.get(source.uuid)?.holdsLocked).toBe(true);
     expect(byUuid.get(clone.uuid)?.archivedAt).toBeNull();
     expect(byUuid.get(clone.uuid)?.resetOfWallUuid).toBe(source.uuid);
-    expect(byUuid.get(clone.uuid)?.holdsLocked).toBe(false);
   });
 });
 
 describe('the archive fields', () => {
-  it('holdsLocked is true with a published climb and false with only a draft', async () => {
-    const { wall, holdIds } = await createPublishedWall(OWNER);
-    expect((await readWall(wall.uuid, OWNER))?.holdsLocked).toBe(false);
-
-    await saveClimbOn(wall, holdIds, true);
-    expect((await readWall(wall.uuid, OWNER))?.holdsLocked).toBe(false);
-
-    await saveClimbOn(wall, holdIds);
-    expect((await readWall(wall.uuid, OWNER))?.holdsLocked).toBe(true);
-  });
-
   it('replacedByWallUuid is hidden from a viewer who cannot see the successor', async () => {
     const { wall: source } = await createPublishedWall(OWNER, { isPublic: true });
     const clone = await resetWall(source.uuid, OWNER);
@@ -1060,5 +1045,46 @@ describe('review follow-ups: hidden walls, explicit choices, ordering', () => {
       expect(published.is_unlisted, clone.uuid).toBe(false);
       expect(published.pending_is_public).toBeNull();
     }
+  });
+});
+
+describe('sprayWallHoldUsage', () => {
+  const usage = (wallUuid: string, holdIds: number[], userId: string) =>
+    sprayWallQueries.sprayWallHoldUsage({}, { wallUuid, holdIds }, ctxFor(userId)) as Promise<
+      Array<{ holdId: number; publishedClimbCount: number; draftClimbCount: number }>
+    >;
+
+  it('counts published and draft climbs per hold, zeros included, once per hold', async () => {
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const [usedHold, draftOnlyHold, unusedHold] = holdIds;
+    await saveClimbOn(wall, [usedHold]);
+    await saveClimbOn(wall, [usedHold, draftOnlyHold], true);
+
+    expect(await usage(wall.uuid, [usedHold, draftOnlyHold, unusedHold, usedHold], OWNER)).toEqual([
+      { holdId: usedHold, publishedClimbCount: 1, draftClimbCount: 1 },
+      { holdId: draftOnlyHold, publishedClimbCount: 0, draftClimbCount: 1 },
+      { holdId: unusedHold, publishedClimbCount: 0, draftClimbCount: 0 },
+    ]);
+  });
+
+  it('refuses an archived wall', async () => {
+    const { source, holdIds } = await archivedWallWithClimb();
+    await expect(usage(source.uuid, holdIds, OWNER)).rejects.toMatchObject({
+      extensions: { code: 'SPRAY_WALL_ARCHIVED' },
+    });
+  });
+
+  it('refuses a stranger, on a public wall or a private one', async () => {
+    // The edit gate every hold writer uses (`loadEditableWall`), refusal and all.
+    for (const visibility of [{ isPublic: true }, {}]) {
+      const { wall, holdIds } = await createPublishedWall(OWNER, visibility);
+      await expect(usage(wall.uuid, holdIds, STRANGER)).rejects.toThrow(/not authorized/i);
+    }
+  });
+
+  it('caps how many holds one call may ask about', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    const tooMany = Array.from({ length: 501 }, (_, index) => index + 1);
+    await expect(usage(wall.uuid, tooMany, OWNER)).rejects.toThrow();
   });
 });

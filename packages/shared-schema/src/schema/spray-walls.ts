@@ -212,13 +212,6 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     unfinished.
     """
     replacedByWallUuid: ID
-    """
-    True for an archived wall, and for a wall with at least one published climb
-    (draft climbs do not count). Advisory on a live wall in this release: the
-    server does not refuse hold edits on a wall that reads true here yet, so a
-    client uses it to steer the owner to a reset rather than as a guarantee.
-    """
-    holdsLocked: Boolean!
   }
 
   "Where a version's generated wall looks are."
@@ -319,6 +312,15 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     hideLocation: Boolean
     "Who can edit climbs on this wall. Defaults to SETTER."
     climbEditPolicy: SprayClimbEditPolicy
+  }
+
+  "How many climbs on a wall use one hold. See \`sprayWallHoldUsage\`."
+  type SprayWallHoldUsage {
+    holdId: Int!
+    "Published climbs that use the hold. Removing it gives each of them a lost hold."
+    publishedClimbCount: Int!
+    "Draft climbs that use the hold."
+    draftClimbCount: Int!
   }
 
   input ResetSprayWallInput {
