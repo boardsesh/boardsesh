@@ -87,6 +87,7 @@ vi.mock('@boardsesh/analytics', () => ({
   sprayWallPhotoPicked: (source: string) => ({ name: 'p', properties: { source } }),
   sprayWallUploadFinished: (properties: Record<string, unknown>) => ({ name: 'u', properties }),
   sprayWallBindStalled: (properties: Record<string, unknown>) => ({ name: 'Spray Wall Bind Stalled', properties }),
+  sprayWallResetStarted: (source: string) => ({ name: 'Spray Wall Reset Started', properties: { source } }),
 }));
 vi.mock('../../../lib/spray/spray-telemetry', () => ({ trackSprayEvent: vi.fn() }));
 vi.mock('../../../lib/analytics', () => ({ track: mocks.track }));
@@ -207,6 +208,7 @@ vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
   useMySprayWalls: () => mySprayWalls,
   usePublishSprayWallVersion: () => ({ mutateAsync: mocks.publishVersion }),
   useResetSprayWall: () => ({ mutateAsync: mocks.resetWall }),
+  useMySprayWallLifecycle: () => ({ data: undefined, isFetching: false }),
   useUpdateSprayWallVisibility: () => ({ mutateAsync: mocks.updateVisibility }),
 }));
 

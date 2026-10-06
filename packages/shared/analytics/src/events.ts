@@ -647,6 +647,8 @@ export const SHARED_EVENTS = {
   // reset built (`Spray Wall Reset Started`). Its publish archives the wall it
   // replaced, so it is not a new wall for anyone; leave it out of activation
   // and board-creation counts.
+  // `isPublic` is absent on a reset's replacement: the clone is private until
+  // its publish gives it the old wall's audience, which the client cannot see.
   BoardCreated: 'Board Created',
   // Props: { boardType, source, error_reason: 'duplicate_config' | 'rate_limited'
   //          | 'auth' | 'board_limit' | 'exception' }. 'board_limit' is the
@@ -718,9 +720,11 @@ export const SHARED_EVENTS = {
   // clones the wall's settings into a new wall the owner photographs and marks
   // in the add-a-wall wizard; its first publish archives the old wall.
   //
-  // Props: { source: 'board_sheet' | 'holds_locked' }. Fired once when the
-  // owner confirms "Reset this wall?". The replacement's publish is the
-  // ordinary `Board Created` with `isReset: true`.
+  // Props: { source: 'board_sheet' | 'holds_locked' } (where the owner
+  // confirmed "Reset this wall?"). Fired once per NEW reset: when the reset
+  // resolves to a clone with nothing on it yet, never when an unfinished reset
+  // is reopened. The replacement's publish is the ordinary `Board Created` with
+  // `isReset: true`.
   SprayWallResetStarted: 'Spray Wall Reset Started',
   // Board presence — "now on the wall" (board-level collaboration, keyed on the
   // shared board_id resolved from the BLE serial). `boardId` is attached as an

@@ -228,6 +228,7 @@
         "editHoldsHint": "Añade, mueve o borra las presas de tu plafón.",
         "holdsLocked": "Presas bloqueadas",
         "holdsLockedHint": "Este muro ya tiene bloques. Resetéalo para cambiar una presa.",
+        "holdsLockedEditorHint": "Este muro ya tiene bloques, así que sus presas están bloqueadas. Solo quien lo creó puede resetearlo.",
         "resetWall": "Resetear este muro",
         "resetWallHint": "Haz una foto nueva y marca las presas otra vez.",
         "shareLink": "Compartir enlace",
@@ -1080,7 +1081,8 @@
       "resumeTitle": "Tienes un reseteo a medias",
       "resumeBody": "La foto nueva de «{{name}}» no está terminada. Retómala donde la dejaste o empieza de nuevo. El muro sigue activo hasta que se publique el nuevo.",
       "photoTitle": "Fotografía el muro tal como está ahora",
-      "photoBody": "Mismo nombre y ángulo que antes. Fotografía el muro entero y luego marca cada presa."
+      "photoBody": "Mismo nombre y ángulo que antes. Fotografía el muro entero y luego marca cada presa.",
+      "archiveNotice": "Cuando este muro se publique, el anterior se archiva. Sus bloques y encadenes se quedan."
     }
   },
   "sprayResetConfirm": {
@@ -1096,7 +1098,8 @@
     "openFailed": "No se pudo abrir ese muro. Inténtalo otra vez.",
     "manageHeader": "Archivados",
     "manageRow": "Archivado el {{date}}",
-    "manageRowUndated": "Archivado"
+    "manageRowUndated": "Archivado",
+    "deleteMessage": "¿Borrar «{{name}}»? Su foto, sus bloques y todos los encadenes registrados en ellos desaparecen con él de los logbooks y las playlists. No se puede deshacer."
   },
   "sprayWallErrors": {
     "archived": "Este muro está archivado. Sus bloques y encadenes se quedan, pero ya no se puede montar nada nuevo en él.",
@@ -1104,7 +1107,7 @@
     "resetRetired": "Ahora los muros se cambian reseteándolos. Actualiza la app y luego resetea el muro.",
     "resetOwnerOnly": "Solo quien creó el muro puede resetearlo.",
     "resetSourceUnpublished": "Termina de configurar este muro antes de resetearlo.",
-    "archiveLimitReached": "Puedes guardar {{max}} muros archivados. Borra uno para resetear este muro."
+    "archiveLimitReached": "Puedes guardar {{max}} muros archivados. Borra uno de la sección Archivados para resetear este muro."
   },
   "sprayMaintenance": {
     "screenTitle": "Editar presas",
@@ -1138,6 +1141,10 @@
     "versions": "Un muro guarda {{max}} reseteos, y este ya los ha gastado todos.",
     "walls": "Puedes tener {{max}} muros. Borra uno para hacer sitio.",
     "wallsHint": "Puedes tener hasta {{max}} muros."
+  },
+  "sprayHidden": {
+    "body": "Alguien lo reportó y lo hemos quitado de la vista de los demás. Para ti sigue aquí, y no se ha borrado nada.",
+    "title": "Este muro está oculto"
   },
   "sprayModeration": {
     "reportTitle": "Denunciar plafón",

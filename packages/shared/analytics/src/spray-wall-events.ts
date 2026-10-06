@@ -147,8 +147,10 @@ export type SprayResetSurface = 'board_sheet' | 'holds_locked';
 export type SprayWallResetStartedProps = { source: SprayResetSurface };
 
 /**
- * The owner confirmed "Reset this wall?". Read against `Board Created` with
- * `isReset: true` to see how many resets reach a published replacement.
+ * A new reset started: the owner confirmed "Reset this wall?" and the reset
+ * resolved to a clone with nothing on it yet. Not fired when an unfinished reset
+ * is reopened. Read against `Board Created` with `isReset: true` to see how many
+ * resets reach a published replacement.
  */
 export function sprayWallResetStarted(
   source: SprayResetSurface,

@@ -23,7 +23,8 @@ const asEditor = (archive: SprayDetailRowContext['archive']): SprayDetailRowCont
   archive,
 });
 
-const resetHref = `${SPRAY_NEW_WALL_PATH}?resetOf=wall-uuid-1`;
+const resetHref = `${SPRAY_NEW_WALL_PATH}?resetOf=wall-uuid-1&resetSource=board_sheet`;
+const lockedResetHref = `${SPRAY_NEW_WALL_PATH}?resetOf=wall-uuid-1&resetSource=holds_locked`;
 const editHref = `${SPRAY_HOLD_EDITOR_PATH}?wallUuid=wall-uuid-1`;
 
 describe('sprayDetailRows', () => {
@@ -40,6 +41,10 @@ describe('sprayDetailRows', () => {
     // An unpublished wall never registers from a published version, so the
     // registry has no archive state for it and nothing is offered.
     ['the owner of a wall that has not published', wall, asOwner(null), []],
+    // No signed-in id at all (profile and stored id both missing): nobody is
+    // the owner, so no reset, and edit access alone decides the hold rows.
+    ['a viewer whose id is unknown, holds free', wall, { viewerUserId: undefined, archive: free }, ['editHolds']],
+    ['a viewer whose id is unknown, holds locked', wall, { viewerUserId: undefined, archive: locked }, ['holdsLocked']],
   ])('offers %s exactly the right rows', (_label, board, context, keys) => {
     expect(sprayDetailRows(board, context).map((row) => row.key)).toEqual(keys);
   });
@@ -55,7 +60,7 @@ describe('sprayDetailRows', () => {
     expect(sprayDetailRows(wall, asOwner(locked))[0]).toEqual({
       key: 'holdsLocked',
       icon: 'lock',
-      href: resetHref,
+      href: lockedResetHref,
       confirmsReset: true,
     });
     expect(sprayDetailRows(wall, asEditor(locked))[0]).toEqual({
@@ -102,7 +107,7 @@ describe('sprayDetailRows', () => {
   it('escapes the uuid it puts in the query string', () => {
     const rows = sprayDetailRows({ ...wall, uuid: 'a&b=c' }, asOwner(free));
     expect(rows[0].href).toBe(`${SPRAY_HOLD_EDITOR_PATH}?wallUuid=a%26b%3Dc`);
-    expect(rows[1].href).toBe(`${SPRAY_NEW_WALL_PATH}?resetOf=a%26b%3Dc`);
+    expect(rows[1].href).toBe(`${SPRAY_NEW_WALL_PATH}?resetOf=a%26b%3Dc&resetSource=board_sheet`);
   });
 });
 

@@ -67,7 +67,12 @@ export type WallCreatedEventProperties = {
   setCount: number;
   angle: number;
   isOwned: true;
-  isPublic: boolean;
+  /**
+   * Absent for a reset's replacement whose visibility this run did not set: the
+   * clone is private until its publish, which then gives it the visibility of
+   * the wall it replaces. The row cannot say which, and false would be wrong.
+   */
+  isPublic?: boolean;
   /** Absent on a resumed run — see `resumed`. */
   hasLocationName?: boolean;
   /** Absent on a resumed run — see `resumed`. */
@@ -98,7 +103,7 @@ export function wallCreatedEventProperties(input: WallCreatedEventInput): WallCr
   // visibility is applied by `updateSprayWall` in the same publish that fires
   // this event — so the pending write, when there is one, is what the wall is
   // about to be. A resumed run has no pending write and the row is the answer.
-  const isPublic = pendingVisibility?.isPublic ?? board?.isPublic ?? false;
+  const isPublic = pendingVisibility?.isPublic ?? (isReset ? undefined : (board?.isPublic ?? false));
 
   return {
     boardType: 'spray',
@@ -110,7 +115,7 @@ export function wallCreatedEventProperties(input: WallCreatedEventInput): WallCr
     setCount: 1,
     angle,
     isOwned: true,
-    isPublic,
+    ...(isPublic !== undefined ? { isPublic } : {}),
     // Omitted, not defaulted, when the meta step did not run.
     ...(meta ? { hasLocationName: meta.hasLocationName, hasCoords: meta.hasCoords } : {}),
     hasGym: gymUuid != null,

@@ -151,12 +151,17 @@ export function sprayDetailRows(
     rows.push({
       key: 'holdsLocked',
       icon: 'lock',
-      href: isOwner ? sprayResetWizardHref(board.uuid) : null,
+      href: isOwner ? sprayResetWizardHref(board.uuid, 'holds_locked') : null,
       confirmsReset: isOwner,
     });
   }
   if (isOwner) {
-    rows.push({ key: 'resetWall', icon: 'camera', href: sprayResetWizardHref(board.uuid), confirmsReset: true });
+    rows.push({
+      key: 'resetWall',
+      icon: 'camera',
+      href: sprayResetWizardHref(board.uuid, 'board_sheet'),
+      confirmsReset: true,
+    });
   }
   return rows;
 }

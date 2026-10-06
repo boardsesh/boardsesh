@@ -54,6 +54,9 @@ describe('wallCreatedEventProperties', () => {
     });
     expect(properties.isReset).toBe(true);
     expect(properties.resumed).toBe(true);
+    // The clone is private until its publish gives it the old wall's audience;
+    // the row cannot say which, so nothing is sent rather than a wrong false.
+    expect(properties).not.toHaveProperty('isPublic');
   });
 
   // The regression this module exists for. A resumed run rejoins at the photo or

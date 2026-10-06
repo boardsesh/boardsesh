@@ -228,6 +228,7 @@
         "editHoldsHint": "Füge Griffe hinzu, verschiebe oder lösche sie.",
         "holdsLocked": "Griffe sind gesperrt",
         "holdsLockedHint": "An dieser Wand gibt es Boulder. Setz sie zurück, um einen Griff zu ändern.",
+        "holdsLockedEditorHint": "An dieser Wand gibt es Boulder, deshalb sind ihre Griffe gesperrt. Nur wer sie angelegt hat, kann sie zurücksetzen.",
         "resetWall": "Wand zurücksetzen",
         "resetWallHint": "Mach ein neues Foto und markier die Griffe neu.",
         "shareLink": "Link teilen",
@@ -1077,10 +1078,11 @@
       "screenTitle": "Wand zurücksetzen",
       "starting": "Deine neue Wand wird vorbereitet…",
       "startFailed": "Das Zurücksetzen ließ sich nicht starten. Versuch es nochmal.",
-      "resumeTitle": "Du hast ein Zurücksetzen offen",
+      "resumeTitle": "Eine Zurücksetzung ist noch offen",
       "resumeBody": "Das neue Foto von „{{name}}“ ist nicht fertig. Mach weiter, wo du aufgehört hast, oder fang neu an. Die Wand bleibt live, bis die neue online ist.",
       "photoTitle": "Fotografiere die Wand, wie sie jetzt ist",
-      "photoBody": "Gleicher Name und Winkel wie vorher. Fotografiere die ganze Wand und markier dann jeden Griff."
+      "photoBody": "Gleicher Name und Winkel wie vorher. Fotografiere die ganze Wand und markier dann jeden Griff.",
+      "archiveNotice": "Sobald diese Wand live ist, wird die alte archiviert. Ihre Boulder und Begehungen bleiben."
     }
   },
   "sprayResetConfirm": {
@@ -1096,7 +1098,8 @@
     "openFailed": "Diese Wand ließ sich nicht öffnen. Versuch es nochmal.",
     "manageHeader": "Archiviert",
     "manageRow": "Archiviert am {{date}}",
-    "manageRowUndated": "Archiviert"
+    "manageRowUndated": "Archiviert",
+    "deleteMessage": "„{{name}}“ löschen? Ihr Foto, ihre Boulder und alle Begehungen darauf verschwinden mit ihr aus Routenbüchern und Playlists. Das lässt sich nicht rückgängig machen."
   },
   "sprayWallErrors": {
     "archived": "Diese Wand ist archiviert. Ihre Boulder und Begehungen bleiben, aber du kannst nichts Neues mehr daran bauen.",
@@ -1104,7 +1107,7 @@
     "resetRetired": "Wände änderst du jetzt, indem du sie zurücksetzt. Aktualisier die App und setz die Wand dann zurück.",
     "resetOwnerOnly": "Nur wer die Wand angelegt hat, kann sie zurücksetzen.",
     "resetSourceUnpublished": "Richte diese Wand fertig ein, bevor du sie zurücksetzt.",
-    "archiveLimitReached": "Du kannst {{max}} archivierte Wände behalten. Lösch eine, um diese Wand zurückzusetzen."
+    "archiveLimitReached": "Du kannst {{max}} archivierte Wände behalten. Lösch eine im Bereich „Archiviert“, um diese Wand zurückzusetzen."
   },
   "sprayMaintenance": {
     "screenTitle": "Griffe bearbeiten",
@@ -1138,6 +1141,10 @@
     "versions": "Eine Wand behält {{max}} Zurücksetzungen, und diese hat alle verbraucht.",
     "walls": "Du kannst {{max}} Wände behalten. Lösch eine, um Platz zu schaffen.",
     "wallsHint": "Du kannst bis zu {{max}} Wände behalten."
+  },
+  "sprayHidden": {
+    "body": "Jemand hat sie gemeldet und wir haben sie für alle anderen ausgeblendet. Für dich ist sie weiter da, und gelöscht wurde nichts.",
+    "title": "Diese Wand ist ausgeblendet"
   },
   "sprayModeration": {
     "reportTitle": "Wand melden",

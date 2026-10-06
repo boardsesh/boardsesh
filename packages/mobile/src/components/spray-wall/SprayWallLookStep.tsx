@@ -98,6 +98,11 @@ type SprayWallLookStepProps = {
   onSaveFailed: () => void;
   /** The look is stored on the wall, or the climber chose to publish without it. */
   onConfirmed: () => void;
+  /**
+   * One more line under the body, said before publishing: a reset's step uses
+   * it to say the wall it replaces is archived when this one goes live.
+   */
+  notice?: string;
 };
 
 export function SprayWallLookStep({
@@ -106,6 +111,7 @@ export function SprayWallLookStep({
   onSaveStarted,
   onSaveFailed,
   onConfirmed,
+  notice,
 }: SprayWallLookStepProps) {
   const { t } = useTranslation('boards');
   const { t: tCommon } = useTranslation('common');
@@ -244,6 +250,11 @@ export function SprayWallLookStep({
         <Text variant="subheadline" color={systemColors.secondaryLabel}>
           {t('sprayWizard.look.body')}
         </Text>
+        {notice ? (
+          <Text variant="footnote" color={systemColors.secondaryLabel}>
+            {notice}
+          </Text>
+        ) : null}
       </View>
 
       {/* The rail takes every point the header and footer do not, measured
