@@ -36,6 +36,7 @@ import { sprayWallsTypeDefs, sprayWallResetTypeDefs, sprayWallModerationTypeDefs
 import { sprayDetectionTypeDefs } from './spray-detection';
 import { userDataExportTypeDefs } from './user-data-export';
 import { analyticsConsentTypeDefs } from './analytics-consent';
+import { mobileStoreReleaseTypeDefs } from './mobile-store-release';
 
 export const typeDefs = [
   privacyTypeDefs,
@@ -78,4 +79,5 @@ export const typeDefs = [
   boardPresenceTypeDefs,
   userDataExportTypeDefs,
   analyticsConsentTypeDefs,
+  mobileStoreReleaseTypeDefs,
 ];

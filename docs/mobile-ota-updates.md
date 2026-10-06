@@ -2803,3 +2803,13 @@ Keep all legacy objects and credentials during the retention period;
 see [the R2 reader acceptance PR](https://github.com/boardsesh/boardsesh/pull/5989) and issue #5912. An already
 published R2 update requires reverse copy and complete verification before an OTA
 storage rollback; changing only the endpoint is insufficient.
+
+## Public store update reminders
+
+Accepted release anchors and publicly available update targets are separate signals.
+The Mobile Release Anchor workflow also collects public store metadata every six
+hours in an independent job. The 2.6.0 app uses that metadata for progressive,
+dismissible native-update reminders; it never treats an accepted-but-unpublished
+binary as an available update. See [mobile-store-release.md](mobile-store-release.md)
+for collector credentials, snapshot history, suppression rules, and activation
+through the release train's merge back into `main`.

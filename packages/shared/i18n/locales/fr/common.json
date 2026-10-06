@@ -622,6 +622,16 @@
       "googlePlay": "Disponible sur Google Play",
       "appStore": "Télécharger dans l'App Store",
       "dismiss": "Pas maintenant"
+    },
+    "storeUpdate": {
+      "weeklyTitle": "Une mise à jour de Boardsesh est disponible",
+      "frequentTitle": "Profite des dernières améliorations de Boardsesh",
+      "dailyTitle": "Ta version de Boardsesh est ancienne",
+      "iosBody": "Passe à la version {{version}} sur l’App Store pour profiter des dernières améliorations.",
+      "androidBody": "Passe à la version {{version}} sur Google Play pour profiter des dernières améliorations.",
+      "update": "Mettre Boardsesh à jour",
+      "later": "Plus tard",
+      "openFailed": "Impossible d’ouvrir la boutique. Réessaie."
     }
   },
   "lightControl": {

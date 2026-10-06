@@ -202,9 +202,20 @@ vi.mock('../../../../src/components/onboarding/FirstConnectCard', () => ({
   FirstConnectCard: () => null,
   useFirstConnectCardExpected: () => false,
 }));
+vi.mock('../../../../src/components/store-update/StoreUpdateCard', () => ({ StoreUpdateCard: () => null }));
+vi.mock('../../../../src/providers/feature-flags-provider', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../src/providers/feature-flags-provider')>()),
+  useFeatureFlagsResolved: () => true,
+}));
+vi.mock('../../../../src/lib/onboarding/first-connect-store', () => ({ useFirstConnectSelector: () => true }));
+vi.mock('../../../../src/lib/onboarding/connect-step-build', () => ({
+  readConnectStepBuild: () => ({ nativeVersion: '2.6.0', productionBuild: true }),
+}));
 vi.mock('../../../../src/lib/onboarding/onboarding-storage', () => ({
   hasBoardRevealTipPending: vi.fn(async () => false),
   clearBoardRevealTipPending: vi.fn(async () => {}),
+  hasSeenTip: vi.fn(async () => true),
+  markTipSeen: vi.fn(async () => {}),
 }));
 
 // The favourite-hearts fetcher reads the signed-in user's id, which reaches

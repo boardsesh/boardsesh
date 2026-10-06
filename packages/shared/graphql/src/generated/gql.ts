@@ -63,6 +63,7 @@ type Documents = {
   '\n  query BoardLiveSessions($boardId: Int!) {\n    boardLiveSessions(boardId: $boardId) {\n      ...LiveSessionFields\n    }\n  }\n  \n': typeof types.BoardLiveSessionsDocument;
   '\n  query FrozenLocationSyncEntities($input: FrozenLocationSyncEntitiesInput!) {\n    frozenLocationSyncEntities(input: $input) {\n      entities {\n        entityType\n        entityUuid\n        slug\n        name\n        boardType\n        isSystemOwned\n        ownerProtected\n        isDeleted\n        deletedAt\n        syncFrozenAt\n        sourceKeys\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.FrozenLocationSyncEntitiesDocument;
   '\n  mutation ClearLocationSyncFreeze($input: ClearLocationSyncFreezeInput!) {\n    clearLocationSyncFreeze(input: $input) {\n      status\n      entityType\n      entityUuid\n      previousSyncFrozenAt\n    }\n  }\n': typeof types.ClearLocationSyncFreezeDocument;
+  '\n  query MobileStoreRelease($platform: MobileStorePlatform!, $nativeVersion: String!) {\n    mobileStoreRelease(platform: $platform, nativeVersion: $nativeVersion) {\n      latestVersion\n      firstNewerMinorAvailableAt\n      checkedAt\n      storeUrl\n    }\n  }\n': typeof types.MobileStoreReleaseDocument;
   '\n  query GetNewClimbFeed($input: NewClimbFeedInput!) {\n    newClimbFeed(input: $input) {\n      items {\n        uuid\n        name\n        boardType\n        layoutId\n        setterDisplayName\n        setterAvatarUrl\n        angle\n        frames\n        difficultyName\n        isNoMatch\n        createdAt\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.GetNewClimbFeedDocument;
   '\n  query GetMyNewClimbSubscriptions {\n    myNewClimbSubscriptions {\n      id\n      boardType\n      layoutId\n      createdAt\n    }\n  }\n': typeof types.GetMyNewClimbSubscriptionsDocument;
   '\n  mutation SubscribeNewClimbs($input: NewClimbSubscriptionInput!) {\n    subscribeNewClimbs(input: $input)\n  }\n': typeof types.SubscribeNewClimbsDocument;
@@ -289,6 +290,8 @@ const documents: Documents = {
     types.FrozenLocationSyncEntitiesDocument,
   '\n  mutation ClearLocationSyncFreeze($input: ClearLocationSyncFreezeInput!) {\n    clearLocationSyncFreeze(input: $input) {\n      status\n      entityType\n      entityUuid\n      previousSyncFrozenAt\n    }\n  }\n':
     types.ClearLocationSyncFreezeDocument,
+  '\n  query MobileStoreRelease($platform: MobileStorePlatform!, $nativeVersion: String!) {\n    mobileStoreRelease(platform: $platform, nativeVersion: $nativeVersion) {\n      latestVersion\n      firstNewerMinorAvailableAt\n      checkedAt\n      storeUrl\n    }\n  }\n':
+    types.MobileStoreReleaseDocument,
   '\n  query GetNewClimbFeed($input: NewClimbFeedInput!) {\n    newClimbFeed(input: $input) {\n      items {\n        uuid\n        name\n        boardType\n        layoutId\n        setterDisplayName\n        setterAvatarUrl\n        angle\n        frames\n        difficultyName\n        isNoMatch\n        createdAt\n      }\n      totalCount\n      hasMore\n    }\n  }\n':
     types.GetNewClimbFeedDocument,
   '\n  query GetMyNewClimbSubscriptions {\n    myNewClimbSubscriptions {\n      id\n      boardType\n      layoutId\n      createdAt\n    }\n  }\n':
@@ -849,6 +852,12 @@ export function graphql(
 export function graphql(
   source: '\n  mutation ClearLocationSyncFreeze($input: ClearLocationSyncFreezeInput!) {\n    clearLocationSyncFreeze(input: $input) {\n      status\n      entityType\n      entityUuid\n      previousSyncFrozenAt\n    }\n  }\n',
 ): (typeof documents)['\n  mutation ClearLocationSyncFreeze($input: ClearLocationSyncFreezeInput!) {\n    clearLocationSyncFreeze(input: $input) {\n      status\n      entityType\n      entityUuid\n      previousSyncFrozenAt\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query MobileStoreRelease($platform: MobileStorePlatform!, $nativeVersion: String!) {\n    mobileStoreRelease(platform: $platform, nativeVersion: $nativeVersion) {\n      latestVersion\n      firstNewerMinorAvailableAt\n      checkedAt\n      storeUrl\n    }\n  }\n',
+): (typeof documents)['\n  query MobileStoreRelease($platform: MobileStorePlatform!, $nativeVersion: String!) {\n    mobileStoreRelease(platform: $platform, nativeVersion: $nativeVersion) {\n      latestVersion\n      firstNewerMinorAvailableAt\n      checkedAt\n      storeUrl\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

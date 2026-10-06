@@ -111,7 +111,7 @@ function base64UrlEncode(input: Buffer | string): string {
   return Buffer.from(input).toString('base64url');
 }
 
-function createAppStoreConnectJwt(input: AppStoreJwtInput): string {
+export function createAppStoreConnectJwt(input: AppStoreJwtInput): string {
   const nowSeconds = input.nowSeconds ?? Math.floor(Date.now() / 1000);
   const expiresInSeconds = input.expiresInSeconds ?? 20 * 60;
   const header = { alg: 'ES256', kid: input.keyId, typ: 'JWT' };
@@ -129,7 +129,7 @@ function createAppStoreConnectJwt(input: AppStoreJwtInput): string {
   return `${signingInput}.${signature.toString('base64url')}`;
 }
 
-function decodePrivateKey(secret: string): string {
+export function decodePrivateKey(secret: string): string {
   const trimmed = secret.trim();
   return trimmed.includes('BEGIN PRIVATE KEY') ? trimmed : Buffer.from(trimmed, 'base64').toString('utf8');
 }
@@ -203,6 +203,7 @@ async function ascFetch<T>(path: string, token: string, params?: Record<string, 
     url.searchParams.set(key, value);
   }
   const response = await fetch(url, {
+    signal: AbortSignal.timeout(30_000),
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
   });
   const body = await response.text();
@@ -212,7 +213,7 @@ async function ascFetch<T>(path: string, token: string, params?: Record<string, 
   return JSON.parse(body) as T;
 }
 
-async function resolveAppId(token: string): Promise<string> {
+export async function resolveAppId(token: string): Promise<string> {
   const data = await ascFetch<JsonApiCollectionResponse<AppResource>>('/v1/apps', token, {
     'filter[bundleId]': BUNDLE_ID,
     'fields[apps]': 'bundleId',
@@ -328,9 +329,10 @@ function createGoogleServiceAccountJwt(
   return `${signingInput}.${signer.sign(serviceAccount.private_key).toString('base64url')}`;
 }
 
-async function createGoogleAccessToken(serviceAccount: GoogleServiceAccount): Promise<string> {
+export async function createGoogleAccessToken(serviceAccount: GoogleServiceAccount): Promise<string> {
   const assertion = createGoogleServiceAccountJwt(serviceAccount);
   const response = await fetch(serviceAccount.token_uri, {
+    signal: AbortSignal.timeout(30_000),
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({

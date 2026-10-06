@@ -121,6 +121,12 @@ import { FollowedAuthorsUnavailableError } from '../../../src/lib/followed-autho
 import { useActiveBoard, useSetActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { OnboardingTipBanner } from '../../../src/components/onboarding/OnboardingTipBanner';
 import { FirstConnectCard, useFirstConnectCardExpected } from '../../../src/components/onboarding/FirstConnectCard';
+import { StoreUpdateCard } from '../../../src/components/store-update/StoreUpdateCard';
+import { useFeatureFlagsResolved } from '../../../src/providers/feature-flags-provider';
+import { useFirstConnectSelector } from '../../../src/lib/onboarding/first-connect-store';
+import { CONNECT_STEP_MIN_NATIVE_VERSION } from '../../../src/lib/onboarding/first-connect-decision';
+import { isNativeVersionAtLeast } from '../../../src/lib/native-version';
+import { readConnectStepBuild } from '../../../src/lib/onboarding/connect-step-build';
 import {
   clearBoardRevealTipPending,
   hasBoardRevealTipPending,
@@ -483,16 +489,23 @@ function ClimbListInner() {
   // shows on the Climbs landing, pointing at the board's "now on the wall" sheet.
   // The `revealTipVisible` state is declared earlier so handleOpenBoardDetail can
   // clear it on tap.
+  const [revealTipResolved, setRevealTipResolved] = useState(false);
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      void hasBoardRevealTipPending().then((pending) => {
-        if (cancelled || !pending) return;
-        setRevealTipVisible(true);
-        void clearBoardRevealTipPending();
-      });
+      void hasBoardRevealTipPending()
+        .then((pending) => {
+          if (cancelled) return;
+          if (pending) {
+            setRevealTipVisible(true);
+            void clearBoardRevealTipPending();
+          }
+          setRevealTipResolved(true);
+        })
+        .catch(() => {});
       return () => {
         cancelled = true;
+        setRevealTipResolved(false);
       };
     }, []),
   );
@@ -508,14 +521,20 @@ function ClimbListInner() {
   // Armed on focus if unseen; held back until the board-reveal banner is gone so
   // the two never stack. Marked seen the moment it actually shows, so it fires once.
   const [quickActionsTipArmed, setQuickActionsTipArmed] = useState(false);
+  const [quickActionsTipResolved, setQuickActionsTipResolved] = useState(false);
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      void hasSeenTip(ONBOARDING_TIP_QUICKACTIONS_KEY).then((seen) => {
-        if (!cancelled && !seen) setQuickActionsTipArmed(true);
-      });
+      void hasSeenTip(ONBOARDING_TIP_QUICKACTIONS_KEY)
+        .then((seen) => {
+          if (cancelled) return;
+          if (!seen) setQuickActionsTipArmed(true);
+          setQuickActionsTipResolved(true);
+        })
+        .catch(() => {});
       return () => {
         cancelled = true;
+        setQuickActionsTipResolved(false);
       };
     }, []),
   );
@@ -777,6 +796,21 @@ function ClimbListInner() {
   useEffect(() => {
     if (showQuickActionsTip) void markTipSeen(ONBOARDING_TIP_QUICKACTIONS_KEY);
   }, [showQuickActionsTip]);
+  const featureFlagsResolved = useFeatureFlagsResolved();
+  const firstConnectDeviceResolved = useFirstConnectSelector(({ device }) => device !== null);
+  const firstConnectEligibleBuild = isNativeVersionAtLeast(
+    readConnectStepBuild().nativeVersion,
+    CONNECT_STEP_MIN_NATIVE_VERSION,
+  );
+  const updateCardEnabled =
+    isBoardResolved &&
+    revealTipResolved &&
+    quickActionsTipResolved &&
+    featureFlagsResolved &&
+    (!firstConnectEligibleBuild || firstConnectDeviceResolved) &&
+    !connectCardVisible &&
+    !showRevealTip &&
+    !showQuickActionsTip;
 
   const firstSearchPage = searchPages?.pages[0];
 
@@ -1685,6 +1719,7 @@ function ClimbListInner() {
             style={styles.revealBanner}
           />
         ) : null}
+        <StoreUpdateCard enabled={updateCardEnabled} style={styles.revealBanner} />
         {/* The filter summary now lives persistently in the floating chrome's
             centre (glass) / Appbar (Material), so the list itself opens straight
             into the recent-filter pills and climbs. */}
@@ -1706,6 +1741,7 @@ function ClimbListInner() {
       handleOpenBoardDetail,
       dismissRevealTip,
       showQuickActionsTip,
+      updateCardEnabled,
       dismissQuickActionsTip,
       tCommon,
       showRecentPills,

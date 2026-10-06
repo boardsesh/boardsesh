@@ -8,12 +8,16 @@ import { AppState, type NativeEventSubscription } from 'react-native';
 // reloads. Only `background` flips the flag — not iOS `inactive`, a transient
 // interruption where a blank-then-reload would just flash.
 let backgrounded = false;
+let active = AppState.currentState === 'active';
 const listeners = new Set<() => void>();
 let appStateSub: NativeEventSubscription | null = null;
 
-function setBackgrounded(next: boolean): void {
-  if (next === backgrounded) return;
-  backgrounded = next;
+function setVisibility(state: string | null): void {
+  const nextBackgrounded = state === 'background';
+  const nextActive = state === 'active';
+  if (nextBackgrounded === backgrounded && nextActive === active) return;
+  backgrounded = nextBackgrounded;
+  active = nextActive;
   for (const listener of listeners) listener();
 }
 
@@ -23,8 +27,9 @@ function subscribe(onStoreChange: () => void): () => void {
     // Seed from the current state so a component mounting while already
     // backgrounded starts with the right flag (usually 'active' at mount).
     backgrounded = AppState.currentState === 'background';
+    active = AppState.currentState === 'active';
     appStateSub = AppState.addEventListener('change', (state) => {
-      setBackgrounded(state === 'background');
+      setVisibility(state);
     });
   }
   return () => {
@@ -42,4 +47,13 @@ function getSnapshot(): boolean {
 
 export function useIsAppBackgrounded(): boolean {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+function getActiveSnapshot(): boolean {
+  return active;
+}
+
+/** Strict foreground state for offers that should wait through iOS interruptions. */
+export function useIsAppActive(): boolean {
+  return useSyncExternalStore(subscribe, getActiveSnapshot, getActiveSnapshot);
 }
