@@ -13707,8 +13707,6 @@ export type GetFollowingClimbAscentsQuery = {
       upvotes?: number | null;
       downvotes?: number | null;
       commentCount?: number | null;
-      climbRevision?: number | null;
-      climbCurrentRevision?: number | null;
     }>;
     summary: {
       __typename?: 'FollowingClimbAscentsSummary';
@@ -13750,8 +13748,6 @@ export type GetClimbLogsQuery = {
       difficulty?: number | null;
       comment: string;
       climbedAt: string;
-      climbRevision?: number | null;
-      climbCurrentRevision?: number | null;
     }>;
   };
 };
@@ -14164,8 +14160,6 @@ export type GetUserAscentsFeedQuery = {
       climbedAt: string;
       frames?: string | null;
       hasBetaVideo?: boolean | null;
-      climbRevision?: number | null;
-      climbCurrentRevision?: number | null;
       renderBoard?: {
         __typename?: 'RenderBoardConfig';
         layoutId: number;
@@ -22168,8 +22162,6 @@ export const GetFollowingClimbAscentsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'upvotes' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'downvotes' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'commentCount' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'climbRevision' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'climbCurrentRevision' } },
                     ],
                   },
                 },
@@ -22255,8 +22247,6 @@ export const GetClimbLogsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'climbRevision' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'climbCurrentRevision' } },
                     ],
                   },
                 },
@@ -23243,8 +23233,6 @@ export const GetUserAscentsFeedDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'hasBetaVideo' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'climbRevision' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'climbCurrentRevision' } },
                     ],
                   },
                 },
