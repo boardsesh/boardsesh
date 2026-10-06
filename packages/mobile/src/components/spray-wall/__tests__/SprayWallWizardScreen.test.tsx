@@ -116,7 +116,11 @@ vi.mock('../../board-discovery/BoardMetaFields', () => ({
   BoardIdentityFields: () => createElement('div', { 'data-testid': 'identity' }),
   BoardVisibilityFields: () => null,
   SectionLabel: () => null,
+  SprayWallVisibilityField: () => null,
 }));
+// Online throughout: the upload-notice wording has its own suite (#5960).
+vi.mock('../../../lib/connectivity/use-connectivity', () => ({ useConnectivityField: () => null }));
+vi.mock('../../../lib/connectivity/connectivity-store', () => ({ getConnectivitySnapshot: () => ({ reason: null }) }));
 vi.mock('../../play-drawer/AngleSlider', () => ({ AngleSlider: () => null }));
 vi.mock('../../play-drawer/AngleBoardDiagram', () => ({ AngleBoardDiagram: () => null }));
 vi.mock('../SprayCornerFooter', () => ({ SprayCornerFooter: () => null }));

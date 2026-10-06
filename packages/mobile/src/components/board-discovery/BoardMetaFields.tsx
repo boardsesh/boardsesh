@@ -16,15 +16,18 @@
 // builder they touch, so `useBoardBuilder` and `useSprayWallBuilder` both satisfy
 // them structurally without either importing the other.
 
-import { useCallback, useEffect, type ComponentProps } from 'react';
+import { useCallback, useEffect, useMemo, type ComponentProps } from 'react';
 import { Pressable, StyleSheet, TextInput } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
-import { useDeviceLocation } from '../../lib/use-device-location';
+import { useDeviceLocation, type LocationStatus } from '../../lib/use-device-location';
+import { canOpenAppSettings, openAppSettings } from '../../lib/open-app-settings';
 import { SwitchRow } from '../SwitchRow';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
+import { SegmentedControl } from '../SegmentedControl';
+import { sprayWallVisibility, type SprayWallVisibility } from '../../lib/spray/spray-share';
 import type { PickedGym } from './GymPickerSheet';
 import { spacing, borderRadius } from '../../theme/tokens';
 
@@ -126,6 +129,10 @@ export function BoardIdentityFields({
         placeholder={namePlaceholder}
         accessibilityLabel={t('mobile.custom.name')}
         maxLength={100}
+        // A board name is a proper noun ("Garage", "The Cave"); autocorrect
+        // rewrote it and spell-check underlined it in red (#5960).
+        autoCorrect={false}
+        spellCheck={false}
         returnKeyType="done"
       />
 
@@ -157,6 +164,70 @@ export function BoardIdentityFields({
 }
 
 /**
+ * Who can see a spray wall, as one three-way control with a hint for each
+ * answer.
+ *
+ * A wall's visibility is two flags on the board row, but two switches for them
+ * made "Public AND Unlisted" reachable, a state nobody means to pick, and the
+ * Unlisted switch had no hint at all (#5960). Edit board and the add-a-wall
+ * wizard both draw this, so the two never disagree. Writing the pair
+ * exclusively keeps the round trip honest: public wins on read.
+ */
+export function SprayWallVisibilityField({
+  builder,
+}: {
+  builder: Pick<BoardVisibilityBuilder, 'isPublic' | 'setIsPublic' | 'isUnlisted' | 'setIsUnlisted'>;
+}) {
+  const { t } = useTranslation('boards');
+  const { systemColors } = useTheme();
+  const visibility = sprayWallVisibility(builder);
+  const { setIsPublic, setIsUnlisted } = builder;
+  const onSelect = useCallback(
+    (next: SprayWallVisibility) => {
+      setIsPublic(next === 'public');
+      setIsUnlisted(next === 'unlisted');
+    },
+    [setIsPublic, setIsUnlisted],
+  );
+  const options = useMemo(
+    () => [
+      { key: 'private' as const, label: t('mobile.sprayVisibility.private') },
+      { key: 'unlisted' as const, label: t('mobile.sprayVisibility.unlisted') },
+      { key: 'public' as const, label: t('mobile.sprayVisibility.public') },
+    ],
+    [t],
+  );
+
+  return (
+    <>
+      <SectionLabel>{t('mobile.sprayVisibility.label')}</SectionLabel>
+      <SegmentedControl<SprayWallVisibility>
+        options={options}
+        selectedKey={visibility}
+        onSelect={onSelect}
+        accessibilityLabel={t('mobile.sprayVisibility.label')}
+      />
+      <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.visibilityHint}>
+        {visibility === 'public'
+          ? t('mobile.sprayVisibility.publicHint')
+          : visibility === 'unlisted'
+            ? t('mobile.sprayVisibility.unlistedHint')
+            : t('mobile.sprayVisibility.privateHint')}
+      </Text>
+    </>
+  );
+}
+
+/**
+ * What to say under "Use my location" after the tap. A denial or a failed fix
+ * used to leave the button looking exactly as it did before (#5960).
+ */
+export function locationRequestFeedback(status: LocationStatus): 'denied' | 'unavailable' | null {
+  if (status === 'denied' || status === 'unavailable') return status;
+  return null;
+}
+
+/**
  * Who can see the board, and where it is.
  *
  * Owns the location-permission flow: `location.coords` stays null until the
@@ -165,29 +236,30 @@ export function BoardIdentityFields({
  */
 export function BoardVisibilityFields({
   builder,
-  publicHint,
   hideVisibilitySwitches = false,
 }: {
   builder: BoardVisibilityBuilder;
-  /** Overrides the default "public" caption — a wall is private by default and says so. */
-  publicHint?: string;
   /**
    * Drop the public / unlisted switches, leaving only the location rows.
    *
    * For a caller that expresses the same three states through one control: two
    * independent booleans make "unlisted AND public" reachable, which is a state
    * nobody means to pick, and two controls for it can disagree with each other.
-   * `BoardForm` uses this on a spray wall, where a segmented control sits up in
-   * the main form beside the name and the gym.
+   * Both spray callers use this and draw `SprayWallVisibilityField` instead.
    */
   hideVisibilitySwitches?: boolean;
 }) {
   const { t } = useTranslation('boards');
   const { setCoords } = builder;
-  const location = useDeviceLocation();
+  const { systemColors } = useTheme();
+  // Re-asks after a denial: the row offers Open Settings, and a climber who
+  // comes back having allowed location gets it from one more tap.
+  const location = useDeviceLocation({ retryAfterDenial: true });
   const requestLocation = location.request;
+  const locationFeedback = locationRequestFeedback(location.status);
   const onUseMyLocation = useCallback(() => void requestLocation(), [requestLocation]);
   const onClearLocation = useCallback(() => setCoords(null), [setCoords]);
+  const onOpenSettings = useCallback(() => void openAppSettings(), []);
 
   useEffect(() => {
     if (location.coords) setCoords(location.coords);
@@ -199,7 +271,7 @@ export function BoardVisibilityFields({
         <>
           <SwitchRow
             label={t('mobile.create.public')}
-            description={publicHint ?? t('mobile.create.publicHint')}
+            description={t('mobile.create.publicHint')}
             value={builder.isPublic}
             onValueChange={builder.setIsPublic}
           />
@@ -229,8 +301,25 @@ export function BoardVisibilityFields({
       {builder.coords ? (
         <Button title={t('mobile.create.clearLocation')} variant="text" onPress={onClearLocation} role="destructive" />
       ) : (
-        <Button title={t('mobile.create.useMyLocation')} variant="text" onPress={onUseMyLocation} />
+        <Button
+          title={t('mobile.create.useMyLocation')}
+          variant="text"
+          onPress={onUseMyLocation}
+          loading={location.status === 'loading'}
+        />
       )}
+      {!builder.coords && locationFeedback ? (
+        <>
+          <Text variant="footnote" color={systemColors.secondaryLabel} accessibilityLiveRegion="polite">
+            {locationFeedback === 'denied'
+              ? t('mobile.create.locationDeniedHint')
+              : t('mobile.create.locationUnavailableHint')}
+          </Text>
+          {locationFeedback === 'denied' && canOpenAppSettings() ? (
+            <Button title={t('mobile.firstBoard.openSettings')} variant="text" onPress={onOpenSettings} />
+          ) : null}
+        </>
+      ) : null}
     </>
   );
 }
@@ -259,5 +348,9 @@ const styles = StyleSheet.create({
   },
   gymRowLabel: {
     flex: 1,
+  },
+  visibilityHint: {
+    marginTop: spacing[2],
+    lineHeight: 18,
   },
 });

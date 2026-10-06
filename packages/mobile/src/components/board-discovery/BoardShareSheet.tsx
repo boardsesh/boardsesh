@@ -94,7 +94,9 @@ export function BoardShareSheet({
         <Text variant="body" color={systemColors.label} style={styles.wallName} numberOfLines={2}>
           {wallName}
         </Text>
-        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.subtitle}>
+        {/* Full label colour, not secondary: on the glass sheet the grey body
+            and URL were hard to read (#5960). */}
+        <Text variant="footnote" color={systemColors.label} style={styles.subtitle}>
           {visibility === 'public' ? t('mobile.sprayShare.publicBody') : t('mobile.sprayShare.unlistedBody')}
         </Text>
 
@@ -106,7 +108,7 @@ export function BoardShareSheet({
           <QRCode value={shareUrl} size={QR_SIZE} backgroundColor={QR_TILE_BACKGROUND} />
         </View>
 
-        <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={2} style={styles.url}>
+        <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={2} style={styles.url}>
           {shareUrl}
         </Text>
 
@@ -153,6 +155,8 @@ const styles = StyleSheet.create({
   },
   url: {
     textAlign: 'center',
+    // Breathing room above the buttons; the URL sat right against them.
+    marginBottom: spacing[3],
   },
   buttonRow: {
     flexDirection: 'row',

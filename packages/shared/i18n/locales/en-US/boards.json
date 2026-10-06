@@ -162,6 +162,8 @@
       "location": "Location",
       "locationPlaceholder": "Home, gym name, or city",
       "useMyLocation": "Use my location",
+      "locationDeniedHint": "Boardsesh can't see your location. Allow it in Settings, or type a place above.",
+      "locationUnavailableHint": "Couldn't find where you are. Type a place above instead.",
       "serial": "Controller serial",
       "serialPlaceholder": "e.g. ABC-12345",
       "serialHint": "Optional — your controller links itself the first time you connect.",
@@ -415,6 +417,7 @@
       "searchPlaceholder": "Search gyms",
       "noGym": "Not at a gym",
       "noGymHint": "It'll still show on the map as its own pin.",
+      "noGymHintOffMap": "It stays off the map while it isn't public.",
       "addNew": "My gym isn't listed",
       "empty": "No gyms nearby",
       "sharedEditHint": "This gym's staff will be able to edit this board's details.",
@@ -890,8 +893,7 @@
       "namePlaceholder": "Garage wall",
       "angle": "Angle",
       "angleHint": "How far the wall leans back, in 5° steps. Fixed once you publish.",
-      "publicHint": "Off keeps the wall and its photo to you.",
-      "next": "Pick a photo",
+      "next": "Next",
       "anglePreview": "Wall at {{angle}} degrees"
     },
     "photo": {
@@ -925,6 +927,9 @@
       "percent": "Uploaded {{percent}}%",
       "failed": "The photo didn't make it up.",
       "retry": "Try again",
+      "offlineMode": "Offline mode is on, so your photo can't go up. Turn it off, then try again.",
+      "noSignal": "No signal, so your photo didn't go up. Try again once you're back online.",
+      "serverUnreachable": "Boardsesh can't be reached right now. Your photo is still here, so try again in a minute.",
       "checkFailed": "Couldn't tell whether your photo made it. Try again when you've signal."
     },
     "detect": {
@@ -1002,7 +1007,7 @@
     },
     "anchors": {
       "title": "Mark the corners",
-      "body": "Drag the four rings onto the corners of the wall. This one isn't optional — it's what lines your new photo up with every climb already on the wall.",
+      "body": "Drag the four rings onto the corners of the wall. This one isn't optional: it's what lines your new photo up with every climb already on the wall.",
       "use": "Use these corners"
     },
     "leave": {

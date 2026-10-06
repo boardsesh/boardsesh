@@ -412,6 +412,7 @@
     },
     "detail": {
       "notFound": "Bloc introuvable",
+      "boardNotFound": "Cette board n'existe plus ou n'est pas partagée avec toi.",
       "backToHome": "Retour à l'accueil"
     },
     "logAscent": {

@@ -115,9 +115,25 @@ function BoardsLayout() {
 
           The live board sheet's "New photo" row opens this route after its
           native dismissal has settled. */}
+      {/* The live board sheet opens this as the first screen of the modal, so
+          there is no back chevron; swiping down was the only way out (#5960).
+          The X goes through the same removal as a swipe, so the screen's leave
+          guard still asks before a half-done reset is dropped. */}
       <Stack.Screen
         name="spray/reset"
-        options={{ title: tBoards('sprayReset.screenTitle'), headerBackButtonMenuEnabled: false }}
+        options={({ route }) => ({
+          title: tBoards('sprayReset.screenTitle'),
+          headerBackButtonMenuEnabled: false,
+          headerLeft: ({ tintColor }) => {
+            const { returnTo } = (route.params ?? {}) as { returnTo?: unknown };
+            return (
+              <SprayWizardExitButton
+                returnTo={resolveBoardReturnTo(typeof returnTo === 'string' ? returnTo : undefined)}
+                tintColor={tintColor}
+              />
+            );
+          },
+        })}
       />
     </Stack>
   );

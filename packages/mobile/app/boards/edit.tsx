@@ -188,12 +188,14 @@ function EditBoardForm({ board }: { board: UserBoard }) {
   const defaultName = useMemo(
     () =>
       formatDefaultBoardName({
-        userName: profile?.displayName,
+        // The board OWNER's name: an admin or gym staff member editing
+        // somebody's board must not rename it after themselves (#5960).
+        userName: board.ownerDisplayName ?? profile?.displayName,
         boardName: builder.boardName,
         layoutName: builder.rawLayoutName,
         size: selectedSize,
       }),
-    [profile?.displayName, builder.boardName, builder.rawLayoutName, selectedSize],
+    [board.ownerDisplayName, profile?.displayName, builder.boardName, builder.rawLayoutName, selectedSize],
   );
 
   const [submitting, setSubmitting] = useState(false);
