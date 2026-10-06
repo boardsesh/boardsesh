@@ -112,7 +112,11 @@ const ownerClimb = {
   is_draft: true,
 } as unknown as Climb;
 
-const publishedOwnerClimb = { ...ownerClimb, is_draft: false } as unknown as Climb;
+const publishedOwnerClimb = {
+  ...ownerClimb,
+  is_draft: false,
+  published_at: new Date().toISOString(),
+} as unknown as Climb;
 
 const baseProps = {
   climb,
