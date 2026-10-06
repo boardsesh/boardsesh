@@ -137,6 +137,11 @@ export const CreateSprayWallInputSchema = z.object({
   // never taken from a client. See docs/spray-walls.md.
 });
 
+/** `resetSprayWall`: the wall to clone. Everything else is copied from it server-side. */
+export const ResetSprayWallInputSchema = z.object({
+  wallUuid: UUIDSchema,
+});
+
 export const CreateSprayWallVersionInputSchema = z
   .object({
     wallUuid: UUIDSchema,

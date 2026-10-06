@@ -60,6 +60,8 @@ function discoverableBoardConditions(gymUuid: string | undefined): SQL | undefin
               eq(sprayWalls.boardUuid, userBoards.uuid),
               isNull(sprayWalls.deletedAt),
               isNull(sprayWalls.hiddenAt),
+              // A wall a reset replaced must not outrank its successor.
+              isNull(sprayWalls.archivedAt),
               isNotNull(sprayWalls.currentVersionId),
             ),
           ),

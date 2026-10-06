@@ -277,9 +277,39 @@ export const sprayWalls = pgTable(
      * again.
      */
     photosPurgedAt: timestamp('photos_purged_at'),
+    /**
+     * When this wall was archived: replaced by a reset clone that reached its
+     * first publish (`docs/spray-walls.md`, "Archive and reset").
+     *
+     * An archived wall is read-only. Its climbs, ticks, playlists and share links
+     * keep working, it leaves every picker and listing, and nobody can set or
+     * edit a climb or change its holds. Not a soft delete: nothing is tombstoned
+     * and every climb read keeps resolving, because the spray climb visibility
+     * predicates test `deleted_at`, never this.
+     */
+    archivedAt: timestamp('archived_at'),
+    /**
+     * The wall this one was cloned from by `resetSprayWall`. The clone copies the
+     * source's settings only; the owner takes a new photo and marks holds from
+     * scratch. Its first publish archives the source.
+     *
+     * `set null` on delete, matching how every other wall reference treats a row
+     * that should never be hard-deleted: the clone is a wall in its own right.
+     */
+    resetFromWallId: bigint('reset_from_wall_id', { mode: 'number' }).references((): AnyPgColumn => sprayWalls.id, {
+      onDelete: 'set null',
+    }),
   },
   (table) => ({
     currentVersionIdx: index('spray_walls_current_version_idx').on(table.currentVersionId),
+    /**
+     * Finds a wall's reset clone (the unfinished one `resetSprayWall` returns
+     * again, and the successor `replacedByWallUuid` resolves). Partial because
+     * almost every wall was never reset.
+     */
+    resetFromWallIdx: index('spray_walls_reset_from_wall_idx')
+      .on(table.resetFromWallId)
+      .where(sql`${table.resetFromWallId} IS NOT NULL`),
     /**
      * The retention purge's candidate read (SW-17): the oldest soft-deleted walls
      * whose objects have not been swept yet. Partial on BOTH conditions, so the

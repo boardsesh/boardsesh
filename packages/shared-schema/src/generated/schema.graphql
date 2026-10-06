@@ -6222,6 +6222,35 @@ type SprayWall {
   for a viewer who has never chosen one.
   """
   renderSettings: JSON
+  """
+  When this wall was archived, ISO 8601, or null for a live wall.
+
+  A wall is archived when a reset clone of it (`resetSprayWall`) reaches its
+  first publish. An archived wall is read-only: its climbs, ticks, playlists
+  and share links keep working, it leaves every board picker and listing, and
+  nobody can set a new climb, edit a climb or change its holds on it.
+  """
+  archivedAt: String
+  """
+  The wall this one was cloned from by `resetSprayWall`. Only for a viewer who
+  can see that wall without its uuid: its owner, a member of its gym, or anyone
+  when it is public.
+  """
+  resetOfWallUuid: ID
+  """
+  The published wall that replaced this one through `resetSprayWall`, when the
+  viewer may see it: its owner, a member of its gym, anyone when it is public,
+  or anyone holding this wall's unlisted share link when both walls are
+  unlisted. Null while the replacement is unfinished.
+  """
+  replacedByWallUuid: ID
+  """
+  True for an archived wall, and for a wall with at least one published climb
+  (draft climbs do not count). Advisory on a live wall in this release: the
+  server does not refuse hold edits on a wall that reads true here yet, so a
+  client uses it to steer the owner to a reset rather than as a guarantee.
+  """
+  holdsLocked: Boolean!
 }
 
 """
@@ -6267,6 +6296,11 @@ input CreateSprayWallInput {
   hideLocation: Boolean
   "Who can edit climbs on this wall. Defaults to SETTER."
   climbEditPolicy: SprayClimbEditPolicy
+}
+
+input ResetSprayWallInput {
+  "The published, live wall to replace."
+  wallUuid: ID!
 }
 
 input CreateSprayWallVersionInput {
@@ -8444,6 +8478,19 @@ type Mutation {
   `MAX_SPRAY_WALLS_PER_USER` walls per owner.
   """
   createSprayWall(input: CreateSprayWallInput!): SprayWall!
+
+  """
+  Start a reset of a wall by cloning it. The clone copies the wall's settings
+  (name, description, angle, gym, location, look, climb edit policy and
+  visibility) and nothing else: the owner takes a new photo and marks the holds
+  from scratch, and the clone's first publish archives the old wall. Calling it
+  again before that publish returns the same unfinished clone.
+
+  The wall's owner only. Refused on a wall with nothing published, and on an
+  archived wall. Capped at `MAX_ARCHIVED_SPRAY_WALLS_PER_USER` archived walls
+  per owner; the clone does not count toward `MAX_SPRAY_WALLS_PER_USER`.
+  """
+  resetSprayWall(input: ResetSprayWallInput!): SprayWall!
 
   """
   Rename a wall, change its description, share it, attach it to a gym, or correct

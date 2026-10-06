@@ -273,6 +273,19 @@ export const CREATE_SPRAY_WALL = gql`
 `;
 
 /**
+ * Start a reset: clone the wall's settings into a new, unfinished wall. The owner
+ * photographs and marks it in the add-wall wizard, and its first publish archives
+ * the old wall. Calling it again before then returns the same clone.
+ */
+export const RESET_SPRAY_WALL = gql`
+  mutation ResetSprayWall($input: ResetSprayWallInput!) {
+    resetSprayWall(input: $input) {
+      ${SPRAY_WALL_FIELDS}
+    }
+  }
+`;
+
+/**
  * Rename, share, re-gym or re-angle a wall.
  *
  * Sharing is the point: a wall is created PRIVATE, so without this one it could

@@ -4291,6 +4291,18 @@ export type Mutation = {
   /** Prepare a weekly climbing archive and, where supported, its Aurora companion. */
   requestUserDataExport: UserDataExportStatus;
   /**
+   * Start a reset of a wall by cloning it. The clone copies the wall's settings
+   * (name, description, angle, gym, location, look, climb edit policy and
+   * visibility) and nothing else: the owner takes a new photo and marks the holds
+   * from scratch, and the clone's first publish archives the old wall. Calling it
+   * again before that publish returns the same unfinished clone.
+   *
+   * The wall's owner only. Refused on a wall with nothing published, and on an
+   * archived wall. Capped at `MAX_ARCHIVED_SPRAY_WALLS_PER_USER` archived walls
+   * per owner; the clone does not count toward `MAX_SPRAY_WALLS_PER_USER`.
+   */
+  resetSprayWall: SprayWall;
+  /**
    * Resolve a BLE serial for clients that can disambiguate. Returns a single
    * `board` when the serial is unambiguous (remembered choice, only one match,
    * or freshly created), or a list of `candidates` when several boards share
@@ -4996,6 +5008,11 @@ export type MutationRequestSprayWallDetectionArgs = {
 /** Root mutation type for all write operations. */
 export type MutationRequestUserDataExportArgs = {
   boardType: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationResetSprayWallArgs = {
+  input: ResetSprayWallInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -7881,6 +7898,11 @@ export type RequestSprayWallDetectionInput = {
   wallUuid: Scalars['ID']['input'];
 };
 
+export type ResetSprayWallInput = {
+  /** The published, live wall to replace. */
+  wallUuid: Scalars['ID']['input'];
+};
+
 /**
  * Result of resolving a BLE serial that may map to several boards. Exactly one
  * of `board` / `candidates` is set: `board` when the serial is unambiguous
@@ -9105,6 +9127,15 @@ export type SprayRemixSeed = {
  */
 export type SprayWall = {
   __typename?: 'SprayWall';
+  /**
+   * When this wall was archived, ISO 8601, or null for a live wall.
+   *
+   * A wall is archived when a reset clone of it (`resetSprayWall`) reaches its
+   * first publish. An archived wall is read-only: its climbs, ticks, playlists
+   * and share links keep working, it leaves every board picker and listing, and
+   * nobody can set a new climb, edit a climb or change its holds on it.
+   */
+  archivedAt?: Maybe<Scalars['String']['output']>;
   board: UserBoard;
   /** Who may edit published climbs on this wall (#6025). */
   climbEditPolicy: SprayClimbEditPolicy;
@@ -9122,6 +9153,13 @@ export type SprayWall = {
   hiddenAt?: Maybe<Scalars['String']['output']>;
   /** Holds alive on the current version. */
   holdCount: Scalars['Int']['output'];
+  /**
+   * True for an archived wall, and for a wall with at least one published climb
+   * (draft climbs do not count). Advisory on a live wall in this release: the
+   * server does not refuse hold edits on a wall that reads true here yet, so a
+   * client uses it to steer the owner to a reset rather than as a guarantee.
+   */
+  holdsLocked: Scalars['Boolean']['output'];
   /** The wall's board_layouts id. Also its board_product_sizes id: a wall has exactly one size, itself. */
   layoutId: Scalars['Int']['output'];
   /**
@@ -9149,6 +9187,19 @@ export type SprayWall = {
    * for a viewer who has never chosen one.
    */
   renderSettings?: Maybe<Scalars['JSON']['output']>;
+  /**
+   * The published wall that replaced this one through `resetSprayWall`, when the
+   * viewer may see it: its owner, a member of its gym, anyone when it is public,
+   * or anyone holding this wall's unlisted share link when both walls are
+   * unlisted. Null while the replacement is unfinished.
+   */
+  replacedByWallUuid?: Maybe<Scalars['ID']['output']>;
+  /**
+   * The wall this one was cloned from by `resetSprayWall`. Only for a viewer who
+   * can see that wall without its uuid: its owner, a member of its gym, or anyone
+   * when it is public.
+   */
+  resetOfWallUuid?: Maybe<Scalars['ID']['output']>;
   /** Always equal to layoutId. Returned so a client never has to know the equality. */
   sizeId: Scalars['Int']['output'];
   uuid: Scalars['ID']['output'];
@@ -10962,6 +11013,7 @@ export type ResolversTypes = ResolversObject<{
   RequestGymClaimInput: RequestGymClaimInput;
   RequestGymClaimResult: ResolverTypeWrapper<RequestGymClaimResult>;
   RequestSprayWallDetectionInput: RequestSprayWallDetectionInput;
+  ResetSprayWallInput: ResetSprayWallInput;
   ResolveBoardResult: ResolverTypeWrapper<ResolveBoardResult>;
   ResolveProposalInput: ResolveProposalInput;
   ResolvedBoard: ResolverTypeWrapper<ResolvedBoard>;
@@ -11412,6 +11464,7 @@ export type ResolversParentTypes = ResolversObject<{
   RequestGymClaimInput: RequestGymClaimInput;
   RequestGymClaimResult: RequestGymClaimResult;
   RequestSprayWallDetectionInput: RequestSprayWallDetectionInput;
+  ResetSprayWallInput: ResetSprayWallInput;
   ResolveBoardResult: ResolveBoardResult;
   ResolveProposalInput: ResolveProposalInput;
   ResolvedBoard: ResolvedBoard;
@@ -14019,6 +14072,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationRequestUserDataExportArgs, 'boardType'>
   >;
+  resetSprayWall?: Resolver<
+    ResolversTypes['SprayWall'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationResetSprayWallArgs, 'input'>
+  >;
   resolveBoardCandidatesForSerial?: Resolver<
     ResolversTypes['ResolveBoardResult'],
     ParentType,
@@ -16370,16 +16429,20 @@ export type SprayWallResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['SprayWall'] = ResolversParentTypes['SprayWall'],
 > = ResolversObject<{
+  archivedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   board?: Resolver<ResolversTypes['UserBoard'], ParentType, ContextType>;
   climbEditPolicy?: Resolver<ResolversTypes['SprayClimbEditPolicy'], ParentType, ContextType>;
   currentVersion?: Resolver<Maybe<ResolversTypes['SprayWallVersion']>, ParentType, ContextType>;
   hiddenAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   holdCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  holdsLocked?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   publicPhotoUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   referenceHeight?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   referenceWidth?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   renderSettings?: Resolver<Maybe<ResolversTypes['JSON']>, ParentType, ContextType>;
+  replacedByWallUuid?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  resetOfWallUuid?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   versions?: Resolver<Array<ResolversTypes['SprayWallVersion']>, ParentType, ContextType>;

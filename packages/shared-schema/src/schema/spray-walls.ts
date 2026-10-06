@@ -186,6 +186,35 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     for a viewer who has never chosen one.
     """
     renderSettings: JSON
+    """
+    When this wall was archived, ISO 8601, or null for a live wall.
+
+    A wall is archived when a reset clone of it (\`resetSprayWall\`) reaches its
+    first publish. An archived wall is read-only: its climbs, ticks, playlists
+    and share links keep working, it leaves every board picker and listing, and
+    nobody can set a new climb, edit a climb or change its holds on it.
+    """
+    archivedAt: String
+    """
+    The wall this one was cloned from by \`resetSprayWall\`. Only for a viewer who
+    can see that wall without its uuid: its owner, a member of its gym, or anyone
+    when it is public.
+    """
+    resetOfWallUuid: ID
+    """
+    The published wall that replaced this one through \`resetSprayWall\`, when the
+    viewer may see it: its owner, a member of its gym, anyone when it is public,
+    or anyone holding this wall's unlisted share link when both walls are
+    unlisted. Null while the replacement is unfinished.
+    """
+    replacedByWallUuid: ID
+    """
+    True for an archived wall, and for a wall with at least one published climb
+    (draft climbs do not count). Advisory on a live wall in this release: the
+    server does not refuse hold edits on a wall that reads true here yet, so a
+    client uses it to steer the owner to a reset rather than as a guarantee.
+    """
+    holdsLocked: Boolean!
   }
 
   """
@@ -231,6 +260,11 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     hideLocation: Boolean
     "Who can edit climbs on this wall. Defaults to SETTER."
     climbEditPolicy: SprayClimbEditPolicy
+  }
+
+  input ResetSprayWallInput {
+    "The published, live wall to replace."
+    wallUuid: ID!
   }
 
   input CreateSprayWallVersionInput {

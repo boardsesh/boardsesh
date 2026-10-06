@@ -3,6 +3,7 @@ import { GraphQLError } from 'graphql';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
+import { boardIsNotArchivedSprayWall } from '../board/spray-wall-listing';
 
 /**
  * Live boards one account may hold.
@@ -47,7 +48,16 @@ export async function assertBoardCapNotReached(ownerId: string): Promise<void> {
   const [{ count: ownedBoardCount }] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(dbSchema.userBoards)
-    .where(and(eq(dbSchema.userBoards.ownerId, ownerId), isNull(dbSchema.userBoards.deletedAt)));
+    .where(
+      and(
+        eq(dbSchema.userBoards.ownerId, ownerId),
+        isNull(dbSchema.userBoards.deletedAt),
+        // An archived spray wall is a read-only record a reset left behind, with
+        // its own cap (`MAX_ARCHIVED_SPRAY_WALLS_PER_USER`). Counting it here
+        // would let resets eat the budget `createBoard` and the BLE mint share.
+        boardIsNotArchivedSprayWall(),
+      ),
+    );
 
   if (ownedBoardCount >= MAX_BOARDS_PER_ACCOUNT) {
     throw boardLimitReachedError();
