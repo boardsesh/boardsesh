@@ -13,6 +13,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Spray walls load again on the 2.6.0 beta, and you can create new ones. ([#6142](https://github.com/boardsesh/boardsesh/pull/6142))
 - Delete your account even if you created a spray wall. Your walls and photos go away; other climbers keep their logged sends. ([#6115](https://github.com/boardsesh/boardsesh/pull/6115))
 - Writes to spray walls you can't see are now refused at the server — private walls' climbs no longer accept strangers' proposals, reports, or log ticks, and a draft's or private wall's climb details stop leaking into other people's activity feeds. ([#6118](https://github.com/boardsesh/boardsesh/pull/6118))
 

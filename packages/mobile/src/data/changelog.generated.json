@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-06T02:41:09.049Z",
+  "generatedAt": "2026-10-06T04:13:40.910Z",
   "entries": [
+    {
+      "prNumber": 6142,
+      "category": "fixed",
+      "title": "Spray walls load again on the 2.6.0 beta, and you can create new ones.",
+      "mergedAt": "2026-10-06T04:10:51Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6142"
+    },
     {
       "prNumber": 6083,
       "category": "new",
