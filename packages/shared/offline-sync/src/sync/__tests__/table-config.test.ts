@@ -92,3 +92,19 @@ describe('board_climbs.missing_hold_count', () => {
     expect(config.refreshColumns).toEqual(['is_hidden']);
   });
 });
+
+describe('climb revision columns (#6023)', () => {
+  it('are synced on both tables', () => {
+    expect(TABLE_CONFIGS.boardsesh_ticks.localColumns).toContain('climb_revision');
+    expect(TABLE_CONFIGS.board_climbs.localColumns).toContain('revision_number');
+    expect(TABLE_CONFIGS.board_climbs.localColumns).toContain('holds_revision_number');
+  });
+
+  it('do NOT bump the refresh revision or join the refresh columns', () => {
+    // An edited climb is re-delivered by the cursor because the edit bumps its
+    // `sync_seq`; everything else is on revision 1, where NULL and 1 stamp the
+    // same tick. A bump would re-crawl every downloaded catalogue for nothing.
+    expect(TABLE_CONFIGS.board_climbs.refreshRevision).toBe(1);
+    expect(TABLE_CONFIGS.board_climbs.refreshColumns).toEqual(['is_hidden']);
+  });
+});

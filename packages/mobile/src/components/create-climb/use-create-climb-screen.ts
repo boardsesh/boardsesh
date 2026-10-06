@@ -28,7 +28,7 @@ import { useBoardActions, isDuplicateClimbError } from '@boardsesh/board-react';
 import { DEFAULT_PACE_MS, clampAuthoredPaceMs, resolveStoredPaceMs } from '@boardsesh/playback-react';
 import { GraphQLOperationError } from '@boardsesh/graphql-client';
 import { getLayoutName } from '@boardsesh/board-constants/product-sizes';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, boardTypeProperty } from '@boardsesh/analytics';
 import { track } from '../../lib/analytics';
 import { trackBoardConnectTapped } from '../../lib/analytics-board-connect';
 import { useAuth } from '../../providers/auth-provider';
@@ -1398,6 +1398,15 @@ export function useCreateClimbScreen({
       published_at: saved?.publishedAt ?? null,
       userAscents: 0,
       userAttempts: 0,
+      // No `revisionNumber` / `holdsRevisionNumber`, on purpose (#6023). This
+      // climb is what the editor holds, which is not what any saved version
+      // holds: unsaved paint, or a save the queue never took (a local
+      // set-current for the uuid that is already current is a no-op in the
+      // reducer, so a second save leaves the first save's item in place, and
+      // `refreshAuthoredClimb` then patches only what the editor authors). A
+      // version here would be stamped on the setter's next send and stored as
+      // sent. Without one the tick form sends none unless the phone's copy of
+      // the climb has these exact frames, and the server works it out.
       framesCount: frameCount,
       // Mirrors what Save writes, so the queue plays a WIP route at the pace the
       // setter dialled rather than at the default. Null on a boulder: 0/null both
@@ -1442,7 +1451,9 @@ export function useCreateClimbScreen({
       // The snapshot is passed in rather than read off state — see
       // `buildProvisionalClimb`.
       const climb = buildProvisionalClimb(saved.uuid, framesString, saved);
-      setCurrentClimb(climbToQueueItem(climb, { uuid: saved.uuid }));
+      // Marked as a save, not a choice: `Set Active Climb` is otherwise the one
+      // deliberate "this climb, now" act, and a save must not count as it.
+      setCurrentClimb(climbToQueueItem(climb, { uuid: saved.uuid }), { trigger: 'climb_saved' });
       // `setCurrentClimb` leaves an item that is ALREADY current untouched (the
       // queue reducer's deliberate same-uuid short-circuit) and never rewrites a
       // slot already in the queue. So a second save of the same climb — a draft
@@ -1701,9 +1712,12 @@ export function useCreateClimbScreen({
           isDraft,
         };
         setSavedClimb(nextSavedClimb);
-        // Match web's schema exactly (create-climb-form.tsx). See ClimbUpdated above.
+        // Web's schema (create-climb-form.tsx, see ClimbUpdated above) plus
+        // `boardType`: `boardLayout` is the empty string for a spray wall, whose
+        // layout is not in the static table, so it cannot say which board.
         track(SHARED_EVENTS.ClimbCreated, {
           boardLayout,
+          ...boardTypeProperty(board.boardName),
           isDraft,
           holdCount,
         });

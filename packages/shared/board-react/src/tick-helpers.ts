@@ -35,10 +35,29 @@ export type SaveTickOptions = {
   // wall; used when no boardUuid is given.
   boardId?: number | null;
   videoUrl?: string;
+  /**
+   * The version of the climb the climber was looking at (`Climb.revisionNumber`),
+   * sent as `SaveTickInput.climbRevision`. Pass it only when it is known: a
+   * missing or non-positive value sends no key at all, and the server stores
+   * the version that was live when the climb was climbed (#6023).
+   */
+  climbRevision?: number | null;
 };
+
+/**
+ * The `climbRevision` to put on the wire, or undefined to leave the key out.
+ * Only a positive integer is sent. An older backend rejects an input field it
+ * does not know, so an unknown version must be an absent key, never a null.
+ */
+export function climbRevisionToSend(climbRevision: number | null | undefined): number | undefined {
+  return typeof climbRevision === 'number' && Number.isInteger(climbRevision) && climbRevision >= 1
+    ? climbRevision
+    : undefined;
+}
 
 /** Builds the optimistic logbook entry written on mutate, keyed by a temp uuid. */
 export function buildOptimisticTickEntry(options: SaveTickOptions, tempUuid: string): LogbookEntry {
+  const climbRevision = climbRevisionToSend(options.climbRevision);
   return {
     uuid: tempUuid,
     climb_uuid: options.climbUuid,
@@ -54,6 +73,9 @@ export function buildOptimisticTickEntry(options: SaveTickOptions, tempUuid: str
     upvotes: 0,
     downvotes: 0,
     commentCount: 0,
+    // The version this tick is being sent with, so the row can say "Earlier
+    // version" (or not) before the server answers. Absent when unknown.
+    ...(climbRevision === undefined ? {} : { climb_revision: climbRevision }),
   };
 }
 

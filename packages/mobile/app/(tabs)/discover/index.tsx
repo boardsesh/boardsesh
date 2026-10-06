@@ -166,11 +166,19 @@ export default function DiscoverLibrary() {
     isAuthenticated,
   });
 
+  // A capture boots a fresh install with no stored board and binds one a moment
+  // later (`ScreenshotBoardAutoActivator`), so here "settled with no board" is
+  // a state that is about to end, not a climber without a wall. Waiting for the
+  // board keeps the capture from asking for an unfiltered page the recorded set
+  // does not hold; on iPhone that request failed the first attempt of every
+  // shard. Inlined flag: the branch dead-strips from normal builds.
+  const awaitingScreenshotBoard = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && !activeBoard;
+
   // Owned playlists (paginated). Feeds the "See all" affordance and receives
   // refreshes after creates/pin changes.
   const {
     playlists: userPlaylists,
-    isLoading: userLoading,
+    isLoading: userPlaylistsLoading,
     isLoadingMore: userLoadingMore,
     hasMore: userHasMore,
     hasLoadMoreError: userLoadMoreError,
@@ -179,11 +187,19 @@ export default function DiscoverLibrary() {
     loadMore: loadMoreUser,
     refetch: refetchUser,
   } = useUserPlaylists({
-    token: effectiveToken,
+    // Held back until the stored active board has been read, like the
+    // community stream below. Before that the filter is still empty, so a cold
+    // start would fetch every board's playlists and throw the page away as
+    // soon as the board arrived. Once the read settles a climber with no board
+    // still gets the unfiltered list.
+    token: activeBoardLoading || awaitingScreenshotBoard ? null : effectiveToken,
     boardType: filterBoardType,
     layoutId: filterLayoutId,
     pageSize: 20,
   });
+  // The hook reports "not loading" while it has no token, so the wait for the
+  // active board has to count as loading here or the shelf would flash empty.
+  const userLoading = userPlaylistsLoading || (isAuthenticated && (activeBoardLoading || awaitingScreenshotBoard));
 
   const { pinned: pinnedPlaylists, refetch: refetchPinned } = usePinnedPlaylists({
     token: effectiveToken,

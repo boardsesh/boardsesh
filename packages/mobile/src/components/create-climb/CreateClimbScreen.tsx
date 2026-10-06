@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
+import { Button } from '../Button';
 import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
@@ -55,6 +56,7 @@ export function CreateClimbScreen({
   editClimbUuid,
 }: CreateClimbScreenProps) {
   const { t } = useTranslation('climbs');
+  const { t: tCommon } = useTranslation('common');
   const { systemColors } = useTheme();
   const router = useRouter();
   const { openPlayDrawer } = useDrawerHost();
@@ -200,7 +202,8 @@ export function CreateClimbScreen({
   // the drawer is still up shows nothing.
   const { notifyDraftKeptOnDismiss } = controller;
   const handleClose = useCallback(() => {
-    router.back();
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)/climbs');
     notifyDraftKeptOnDismiss();
   }, [router, notifyDraftKeptOnDismiss]);
 
@@ -259,6 +262,7 @@ export function CreateClimbScreen({
       <SafeAreaView style={[styles.container, { backgroundColor: systemColors.background }]} edges={['bottom']}>
         <View style={styles.centered}>
           <ActivityIndicator size="large" />
+          <Button title={tCommon('actions.close')} onPress={handleClose} />
         </View>
       </SafeAreaView>
     );
@@ -277,6 +281,7 @@ export function CreateClimbScreen({
               ? t('mobile.create.unavailable.wrongSize')
               : t('mobile.create.unavailable.subtitle')}
           </Text>
+          <Button title={tCommon('actions.close')} onPress={handleClose} />
         </View>
       </SafeAreaView>
     );

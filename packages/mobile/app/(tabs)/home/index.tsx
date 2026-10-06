@@ -17,6 +17,7 @@ import { Text } from '../../../src/components/Text';
 import { Icon } from '../../../src/components/Icon';
 import { Card } from '../../../src/components/Card';
 import { Button } from '../../../src/components/Button';
+import { AppStorePrompt } from '../../../src/components/AppStorePrompt';
 import { SessionFeedCard } from '../../../src/components/you/SessionFeedCard';
 import { NewClimbFeedCard } from '../../../src/components/feed/NewClimbFeedCard';
 import { useCrewFeed } from '../../../src/lib/graphql/hooks/use-crew-feed';
@@ -370,6 +371,8 @@ export default function HomeTab() {
   const header = useMemo(
     () => (
       <View style={styles.header}>
+        {/* Browser app on a phone only; renders nothing on native. */}
+        <AppStorePrompt surface="home" />
         <LiveSessionsRail boardUuid={liveBoardUuid} enabled={scopeReady} onInvite={handleOpenInvite} />
         <Text variant="title3" style={styles.feedHeading}>
           {sessionsHeading}

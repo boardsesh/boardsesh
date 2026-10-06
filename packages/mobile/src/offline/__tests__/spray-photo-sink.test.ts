@@ -5,9 +5,12 @@ import {
   getSprayWall,
   registerSprayWall,
   sprayGeometryKey,
+  unregisterSprayWall,
 } from '../../lib/spray/spray-wall-registry';
 import { getRuntimeGeometry } from '@boardsesh/board-art-geometry';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
+const clearPrivateCaches = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/spray/spray-privacy-cleanup', () => ({ clearSprayWallPrivateCaches: clearPrivateCaches }));
 
 /**
  * The two sinks that keep a wall's photograph in step with its row (#5448).
@@ -26,11 +29,6 @@ const { stored, deleted, pruned, storeResult, reportedErrors } = vi.hoisted(() =
   // so a single test can be the web platform without a second module graph.
   storeResult: { ok: true, available: true },
   reportedErrors: [] as { error: unknown; tags?: Record<string, string> }[],
-}));
-
-const evictedLayouts = vi.hoisted(() => [] as number[]);
-vi.mock('../../lib/spray/spray-photo-cache', () => ({
-  deleteCachedSprayWallPhotos: (layoutId: number) => evictedLayouts.push(layoutId),
 }));
 
 vi.mock('../../lib/error-reporting', () => ({
@@ -83,7 +81,9 @@ const pull = (documents: Record<string, unknown>[], tableName = 'spray_walls') =
 
 beforeEach(async () => {
   clearSprayWallRegistry();
-  evictedLayouts.length = 0;
+  // The real cleanup withdraws the wall from the registry and erases its files;
+  // the files are `spray-privacy-cleanup.test.ts`'s business, the withdrawal is not.
+  clearPrivateCaches.mockReset().mockImplementation((layoutId: number) => unregisterSprayWall(layoutId));
   db = createTestDatabase();
   await runMigrations(db);
   stored.length = 0;
@@ -96,6 +96,18 @@ beforeEach(async () => {
 });
 
 describe('sprayWallPhotoSink', () => {
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 'not-a-layout'])(
+    'skips photographs whose layout identity is non-finite (%s)',
+    async (layoutId) => {
+      await insertWallRow();
+      await pull([wallDocument({ layout_id: layoutId })]);
+      expect(stored).toEqual([]);
+      expect(await getCheckpoint(db, CHECKPOINT_KEY)).not.toBeNull();
+      expect(
+        await db.getFirstAsync('SELECT key FROM sync_meta WHERE key LIKE ?', ['spray-photo-pending:%']),
+      ).toBeNull();
+    },
+  );
   it('stores the photograph the page carried', async () => {
     await insertWallRow();
 
@@ -245,7 +257,7 @@ describe('sprayWallDeletedSink', () => {
     ).toBeNull();
   });
 
-  it('withdraws registered geometry and evicts only the deleted wall cache', async () => {
+  it('withdraws registered geometry and erases only the deleted wall’s private caches', async () => {
     const registration = {
       wallUuid: 'wall-4',
       angle: 40,
@@ -270,7 +282,7 @@ describe('sprayWallDeletedSink', () => {
     expect(getSprayWall(LAYOUT_ID)).toBeNull();
     expect(getRuntimeGeometry(sprayGeometryKey(LAYOUT_ID))).toBeNull();
     expect(getSprayWall(9)).not.toBeNull();
-    expect(evictedLayouts).toEqual([LAYOUT_ID]);
+    expect(clearPrivateCaches.mock.calls).toEqual([[LAYOUT_ID]]);
   });
 
   it.each([PHOTO_KEY, null])('preserves a recreated wall retry after deleting photo %s', async (deletedKey) => {
@@ -302,6 +314,7 @@ describe('sprayWallDeletedSink', () => {
     });
 
     expect(deleted).toEqual([PHOTO_KEY]);
+    expect(clearPrivateCaches).toHaveBeenCalledWith(LAYOUT_ID);
   });
 
   it('clears the wall’s pending-photo state', async () => {

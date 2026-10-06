@@ -6,8 +6,10 @@
 // gate and lost the climb they came for; the allow-set below is the exact set of
 // URL shapes the gate stands aside for. Everything here is pure — no React, no
 // `window`, no platform — so the shape rules and the open-redirect rules are
-// unit-testable on their own, and the native bundle leaves the whole file out
-// (only `anonymous-auth-gate.web.ts` imports it).
+// unit-testable on their own. The auth gate reads it on web only
+// (`anonymous-auth-gate.web.ts`); native reads the shape rules for one thing,
+// deciding which signed-out deep links to keep through sign-in
+// (`board-deep-link.ts`), and relaxes nothing with them.
 //
 // Matching is deliberately SHAPE-only: it never resolves a slug or a board
 // config against the catalogue. A well-formed URL whose board no longer exists

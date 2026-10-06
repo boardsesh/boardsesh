@@ -1,5 +1,7 @@
 New in 2.6:
-- Hop between your gym's boards from the wall sheet: one tap to the wall you're standing at, and Bluetooth and the queue come with you.
-- A rest timer that counts from the moment you log a climb, and can move the queue on and light the next climb for you.
-- Route pacing now reads in seconds a frame, up to 60s, the unit the setter used.
-- Woods: every climb shows up whatever angle it was set at, and the setter filter lists them all.
+- Spray walls: photograph your home wall or your gym's spray wall, the app finds the holds, then set, queue and log climbs on it. No LEDs needed.
+- See your crew's live sessions on Home, and their logs on every climb.
+- A rest timer that starts when you log a climb and can move the queue on.
+- Play next: long-press a climb to jump the queue.
+- Your gym's other boards are one tap away in the wall sheet.
+- Shared climb links open straight in the app.

@@ -28,8 +28,8 @@ import type {
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../graphql/client';
 import type { BoardRenderDefault } from '../board-render-settings';
+import { clearSprayWallPrivateCaches } from './spray-privacy-cleanup';
 import { primeSprayWallLook } from './spray-wall-loader';
-import { listRegisteredSprayWalls, unregisterSprayWall } from './spray-wall-registry';
 import { sprayWallWithVersionsQueryKey } from './use-spray-wall-reset';
 
 /** The owner's wall list, invalidated the moment a wall becomes one. */
@@ -135,19 +135,29 @@ export async function fetchSprayWallVersions(uuid: string): Promise<CreatedSpray
 export function useDiscardSprayWallDraft() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ versionId, wallUuid }: { versionId: string | null; wallUuid: string }): Promise<void> => {
+    mutationFn: async ({
+      versionId,
+      wallUuid,
+      layoutId,
+    }: {
+      versionId: string | null;
+      wallUuid: string;
+      layoutId: number;
+    }): Promise<void> => {
       const client = getHttpClient();
       if (versionId) await client.request(DISCARD_SPRAY_WALL_VERSION, { input: { versionId } });
       await client.request(DELETE_SPRAY_WALL, { uuid: wallUuid });
+      // Initial drafts stay registered between editor and look steps. Explicit
+      // Start over deletes that wall, so withdraw its geometry and erase its
+      // private caches at this boundary.
+      clearSprayWallPrivateCaches(layoutId);
     },
     onSuccess: async (_result, { wallUuid }) => {
-      // Initial drafts stay registered between editor and look steps. Explicit
-      // Start over deletes that wall, so withdraw its geometry at this boundary.
-      for (const wall of listRegisteredSprayWalls()) {
-        if (wall.wallUuid === wallUuid) unregisterSprayWall(wall.layoutId);
-      }
+      // A draft read still in flight is disowned, not only its cached payload
+      // erased: its late response must not seed the next attempt's editor.
       await queryClient.cancelQueries({ queryKey: ['sprayWallRenderData', wallUuid] });
       queryClient.removeQueries({ queryKey: ['sprayWallRenderData', wallUuid] });
+      void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
       await queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
     },
   });
@@ -194,6 +204,7 @@ export function usePublishSprayWallVersion() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
+      void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
     },
   });
 }

@@ -65,7 +65,7 @@ ENV PGDATA=/opt/boardsesh/dev-db-seed/18/docker
 
 # Where the loader resolves the manifests from. Overridable so a build can be
 # pointed at a staging bucket; the default is the public snapshot host.
-ARG SNAPSHOT_BASE_URL=https://boardsesh-board-snapshots.t3.tigrisfiles.io
+ARG SNAPSHOT_BASE_URL=https://snapshots.boardsesh.com
 ENV SNAPSHOT_BASE_URL=${SNAPSHOT_BASE_URL}
 # Full-URL override for the catalogue manifest alone, so a build can be pointed
 # at a locally served artifact while the climb artifacts still come from the

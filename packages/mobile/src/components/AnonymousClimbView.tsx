@@ -31,6 +31,7 @@ import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Climb } from '@boardsesh/shared-schema';
 import { PlayDrawer } from './play-drawer/PlayDrawer';
+import { AppStorePrompt } from './AppStorePrompt';
 import { Button } from './Button';
 import { Text } from './Text';
 import { climbToQueueItem } from '../lib/climb-to-queue-item';
@@ -136,6 +137,10 @@ export const AnonymousClimbView = memo(function AnonymousClimbView({
         openTarget={openTarget}
         onSignIn={handleSignIn}
       />
+      {/* Phone browsers only (it renders nothing on a desktop): the way from a
+          shared climb to the store, tagged so the install can be traced back
+          here. One line, above the sign-in bar and not over the board. */}
+      <AppStorePrompt surface="climb-view" />
       {/* The standing invitation, below the drawer rather than over it: the
           board art and the below-fold reads are the reason someone followed the
           link, and covering them to ask for an account is how a read-only view

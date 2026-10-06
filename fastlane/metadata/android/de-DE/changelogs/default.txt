@@ -1,5 +1,7 @@
 Neu in 2.6:
-- Wechsle im Wand-Sheet zwischen den Boards deiner Halle: ein Tipp auf die Wand, vor der du stehst, Bluetooth und Warteschlange ziehen mit.
-- Ein Pausen-Timer, der ab deiner eingetragenen Begehung läuft und für dich zum nächsten Boulder wechselt und ihn beleuchtet.
-- Das Tempo einer Route steht in Sekunden pro Bild, bis 60 s.
-- Woods: Jeder Boulder taucht auf, egal in welchem Winkel er gesetzt wurde, und der Filter zeigt alle Routenbauer*innen.
+- Spraywände: Fotografier deine Wand, die App findet die Griffe, dann schraubst du Boulder, legst sie in die Warteschlange und loggst sie. Keine LEDs nötig.
+- Live-Sessions deiner Crew auf Start, ihre Begehungen bei jedem Boulder.
+- Ein Pausen-Timer ab deiner Begehung, der die Warteschlange weiterschaltet.
+- Als Nächstes dran: Boulder gedrückt halten.
+- Die anderen Boards deiner Halle: ein Tipp im Wand-Sheet.
+- Geteilte Boulder-Links öffnen direkt in der App.

@@ -269,7 +269,7 @@ describe('catalogue load order', () => {
 describe('parseArgs', () => {
   it('defaults to the public snapshot host with catalogue and holds enabled', () => {
     const options = parseArgs([]);
-    assert.equal(options.snapshotBaseUrl, 'https://boardsesh-board-snapshots.t3.tigrisfiles.io');
+    assert.equal(options.snapshotBaseUrl, 'https://snapshots.boardsesh.com');
     assert.equal(options.skipCatalog, false);
     assert.equal(options.skipHolds, false);
   });

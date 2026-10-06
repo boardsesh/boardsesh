@@ -22,6 +22,7 @@ import { Text } from '../Text';
 import { InteractiveFilterBoard, type FilterBoardTransformContext } from '../search/InteractiveFilterBoard';
 import { GlassIconButton } from '../GlassIconButton';
 import { OnboardingTipBanner } from '../onboarding/OnboardingTipBanner';
+import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
 import { useTheme } from '../../providers/theme-provider';
 import { overlays, spacing } from '../../theme/tokens';
 import { glassSize } from '../../theme/layout';
@@ -246,6 +247,7 @@ export function SprayHoldEditorScreen({
   const reduceMotion = useReducedMotion();
   const { t } = useTranslation('boards');
   const insets = useSafeAreaInsets();
+  const headerInset = useTransparentHeaderInset();
 
   const { isLoading, isUnavailable, isStalled, retry, homography, wall } = useSprayWallDraft(
     layoutId,
@@ -1349,6 +1351,7 @@ export function SprayHoldEditorScreen({
         return (
           <DrawStrokeOverlay
             pointsSV={draftPointsSV}
+            acceptStationaryTaps
             fingerDrawSV={addDrawSV}
             scaleSV={scaleSV}
             translateXSV={context.translateXSV}
@@ -1490,7 +1493,10 @@ export function SprayHoldEditorScreen({
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: systemColors.background }]} onLayout={handleAreaLayout}>
+    <View
+      style={[styles.container, { backgroundColor: systemColors.background, marginTop: headerInset }]}
+      onLayout={handleAreaLayout}
+    >
       {boardRender.width > 0 ? (
         <View style={[styles.boardSlot, { height: boardRender.slotHeight }]}>
           <InteractiveFilterBoard

@@ -5,11 +5,10 @@ import type { PostHogClient } from '../client';
 function fakeClient() {
   const capture = vi.fn();
   const identify = vi.fn();
-  const alias = vi.fn();
   const reset = vi.fn();
   const setPersonProperties = vi.fn();
-  const client: PostHogClient = { capture, identify, alias, reset, setPersonProperties };
-  return { client, capture, identify, alias, reset, setPersonProperties };
+  const client: PostHogClient = { capture, identify, reset, setPersonProperties };
+  return { client, capture, identify, reset, setPersonProperties };
 }
 
 describe('createAnalytics', () => {
@@ -45,7 +44,6 @@ describe('createAnalytics', () => {
     expect(analytics.capture('Session Started')).toBe(false);
     expect(analytics.identify('user-1')).toBe(false);
     expect(analytics.setPersonProperties({ language: 'en' })).toBe(false);
-    expect(analytics.alias('user-1')).toBe(false);
     expect(analytics.reset()).toBe(false);
   });
 
@@ -56,12 +54,10 @@ describe('createAnalytics', () => {
     expect(analytics.capture('X')).toBe(true);
     expect(analytics.identify('user-1', { email: 'a@b.com' })).toBe(true);
     expect(analytics.setPersonProperties({ language: 'fr' }, { signup_at: '2024' })).toBe(true);
-    expect(analytics.alias('user-1')).toBe(true);
     expect(analytics.reset()).toBe(true);
 
     expect(fake.identify).toHaveBeenCalledWith('user-1', { email: 'a@b.com' });
     expect(fake.setPersonProperties).toHaveBeenCalledWith({ language: 'fr' }, { signup_at: '2024' });
-    expect(fake.alias).toHaveBeenCalledWith('user-1');
   });
 
   it('drops calls and never resolves the client when shouldSkip returns true', () => {

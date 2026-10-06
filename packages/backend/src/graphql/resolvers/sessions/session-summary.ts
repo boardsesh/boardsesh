@@ -2,6 +2,7 @@ import { db } from '../../../db/client';
 import { sessions } from '../../../db/schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { sprayTickClimbExistsCondition } from '../shared/spray-tick-visibility';
 import { eq, and, inArray, sql, desc, isNotNull } from 'drizzle-orm';
 import type { SessionHealthExport, SessionSummary } from '@boardsesh/shared-schema';
 import { rowsFromResult } from '@boardsesh/db/client';
@@ -136,6 +137,8 @@ export async function generateSessionSummary(
             { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
             viewerUserId,
           ),
+          // …and a spray send whose climb was hard-deleted is its author's alone.
+          sprayTickClimbExistsCondition(viewerUserId),
         ),
       )
       .orderBy(desc(dbSchema.boardseshTicks.difficulty))

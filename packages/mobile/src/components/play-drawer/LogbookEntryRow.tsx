@@ -3,6 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { LogbookEntry } from '@boardsesh/board-react';
 import { parseTickTime } from '@boardsesh/profile-stats';
+import { isTickOnEarlierVersion } from '@boardsesh/logbook';
 import { Text } from '../Text';
 import { normalizeAscentStatus } from '../../lib/ascent-status-utils';
 import { getCachedDateTimeFormat } from '../../lib/intl-formatter-cache';
@@ -13,6 +14,12 @@ import { spacing } from '../../theme/tokens';
 type LogbookEntryRowProps = {
   entry: LogbookEntry;
   showMirrorTag: boolean;
+  /**
+   * The version the climb is on now (`Climb.revisionNumber`), or null when the
+   * screen does not know it. A log known to be on a lower version carries the
+   * "Earlier version" tag. A primitive, so the memo boundary holds.
+   */
+  climbCurrentRevision?: number | null;
 };
 
 // Time of day only: the day line above the row already names the day.
@@ -43,11 +50,16 @@ function formatClimbedAt(iso: string): string {
 
 /**
  * One of the climber's own logs, as words: the result ("Flash", "Sent in 3",
- * "5 tries, no send"), then in grey the grade they gave, their stars and the
- * mirror tag, the time on the right, and the note under it. The result is
- * text, never a colour or a glyph, so the row reads the same in any theme.
+ * "5 tries, no send"), then in grey the grade they gave, their stars, the
+ * mirror tag and "Earlier version" when the climb has been edited since, the
+ * time on the right, and the note under it. The result is text, never a colour
+ * or a glyph, so the row reads the same in any theme.
  */
-export const LogbookEntryRow = memo(function LogbookEntryRow({ entry, showMirrorTag }: LogbookEntryRowProps) {
+export const LogbookEntryRow = memo(function LogbookEntryRow({
+  entry,
+  showMirrorTag,
+  climbCurrentRevision,
+}: LogbookEntryRowProps) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const { formatGradeByDifficultyId } = useGradeFormat();
@@ -80,12 +92,20 @@ export const LogbookEntryRow = memo(function LogbookEntryRow({ entry, showMirror
     mirrorTag = entry.is_mirror ? t('mobile.logbook.mirroredTag') : t('mobile.logbook.originalTag');
   }
 
-  const details = [grade, stars === null ? null : `${stars}★`, mirrorTag].filter((detail) => Boolean(detail));
+  // Plain words, like the mirror tag beside it. No version numbers: the row
+  // says the climb has changed since, not by how much.
+  const onEarlierVersion = isTickOnEarlierVersion(entry.climb_revision, climbCurrentRevision);
+  const earlierVersionTag = onEarlierVersion ? t('mobile.logbook.earlierVersionTag') : null;
+
+  const details = [grade, stars === null ? null : `${stars}★`, mirrorTag, earlierVersionTag].filter((detail) =>
+    Boolean(detail),
+  );
   const accessibilityLabel = [
     result,
     grade,
     stars === null ? null : t('mobile.logbook.starsA11y', { count: stars }),
     mirrorTag,
+    onEarlierVersion ? t('mobile.logbook.earlierVersionA11y') : null,
     climbedAtLabel,
     entry.comment,
   ]

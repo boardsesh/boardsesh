@@ -13,7 +13,9 @@ import {
   OTA_REQUIRED_VARS,
   OTA_SERVICE_NAME,
   desiredRailwayState,
+  OTA_CDN_BASE_URL,
 } from '../../infra/railway/config';
+import { OTA_ASSETS_HOSTNAME, desiredR2Buckets } from '../../infra/cloudflare/config';
 
 /**
  * The declared state and the human runbook describe the same server, and nothing
@@ -65,6 +67,29 @@ describe('the OTA env contract', () => {
     });
 
     expect(wrong).toEqual([]);
+  });
+
+  it('points xprem at the same host Cloudflare attaches to the OTA bucket', () => {
+    // Two config tools, one hostname, no shared import. A drift here would
+    // redirect every asset request to a host that serves nothing.
+    const cdnBaseUrl = OTA_REQUIRED_VARS.find((variable) => variable.name === 'CDN_BASE_URL')?.value;
+    expect(cdnBaseUrl).toBe(OTA_CDN_BASE_URL);
+    expect(cdnBaseUrl).toBe(`https://${OTA_ASSETS_HOSTNAME}`);
+    expect(desiredR2Buckets.find((bucket) => bucket.name === 'boardsesh-ota-v3')?.customDomain).toBe(
+      OTA_ASSETS_HOSTNAME,
+    );
+  });
+
+  it('never redirects patches to the CDN, which does not add the headers a patch needs', () => {
+    // With BUNDLE_DIFFING_CDN_REDIRECT=true and no im / expo-base-update-id
+    // headers at the edge, every device with a patch available fails its update
+    // and does not fall back to the full bundle.
+    const names = OTA_REQUIRED_VARS.map((variable) => variable.name);
+    expect(names).toContain('BUNDLE_DIFFING');
+    expect(names).not.toContain('BUNDLE_DIFFING_CDN_REDIRECT');
+    // Forbidden too, so a value set by hand in Railway shows up as drift.
+    expect(OTA_FORBIDDEN_VARS.map((variable) => variable.name)).toContain('BUNDLE_DIFFING_CDN_REDIRECT');
+    expect(readRepoFile('scripts/mobile-ota-setup.ts')).not.toMatch(/^\s*`BUNDLE_DIFFING_CDN_REDIRECT=/m);
   });
 
   it('gives every declared variable a reason, so drift explains itself in the plan', () => {

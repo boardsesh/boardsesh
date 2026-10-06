@@ -5,7 +5,12 @@ vi.mock('expo-crypto', () => ({
   randomUUID: () => 'generated-uuid',
 }));
 
-import { climbToQueueItem, toClimbInput, toQueueItemWireInput } from '../climb-to-queue-item';
+import {
+  QUEUE_LOCAL_ONLY_CLIMB_FIELDS,
+  climbToQueueItem,
+  toClimbInput,
+  toQueueItemWireInput,
+} from '../climb-to-queue-item';
 
 // A climb queued from search / detail must keep its multi-frame playback
 // metadata so playback uses the setter's pace rather than DEFAULT_PACE_MS.
@@ -93,8 +98,42 @@ describe('climbToQueueItem ownership / draft state (#3927)', () => {
     const climb = makeClimb();
     const kept = new Set(Object.keys(climbToQueueItem(climb).climb));
     const sent = new Set(Object.keys(toClimbInput(climb)));
+    // The one named exception (#6023): the climb's version numbers stay on the
+    // local item and are not sent, because no queue document can select them
+    // while the screenshot fixtures pin those documents. Everything else must
+    // still match, read live off both functions.
+    for (const localOnlyField of QUEUE_LOCAL_ONLY_CLIMB_FIELDS) kept.delete(localOnlyField);
 
     expect(kept).toEqual(sent);
+  });
+
+  it('keeps the climb version numbers on the queued item and off the wire (#6023)', () => {
+    const climb = { ...makeClimb(), revisionNumber: 4, holdsRevisionNumber: 3 };
+    const item = climbToQueueItem(climb);
+
+    expect(item.climb.revisionNumber).toBe(4);
+    expect(item.climb.holdsRevisionNumber).toBe(3);
+
+    // Re-deriving an item from a queued climb keeps them (the play-drawer open
+    // and the climb-actions preview both rebuild an item this way).
+    const requeued = climbToQueueItem(item.climb as unknown as Climb);
+    expect(requeued.climb.revisionNumber).toBe(4);
+    expect(requeued.climb.holdsRevisionNumber).toBe(3);
+
+    // An older backend rejects an input field it does not know, and that would
+    // fail the whole queue mutation.
+    const wireClimb = toQueueItemWireInput(item).climb;
+    for (const localOnlyField of QUEUE_LOCAL_ONLY_CLIMB_FIELDS) {
+      expect(localOnlyField in toClimbInput(climb)).toBe(false);
+      expect(localOnlyField in wireClimb).toBe(false);
+    }
+  });
+
+  it('leaves the version numbers unknown on a climb that has none', () => {
+    const item = climbToQueueItem(makeClimb());
+
+    expect(item.climb.revisionNumber).toBeUndefined();
+    expect(item.climb.holdsRevisionNumber).toBeUndefined();
   });
 });
 

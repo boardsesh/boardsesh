@@ -9,6 +9,7 @@ import { logger } from '../../../utils/logger';
 import { requireAuthenticated } from '../shared/helpers';
 import { isSprayBoardType, sprayLayoutIsReadable } from '../climbs/spray-read-access';
 import { normalizeRow, toIso, type RawRow } from './row-normalize';
+import { syncClimbDocuments } from './saved-climb';
 import {
   validateInput,
   SyncCursorInputSchema,
@@ -341,6 +342,7 @@ async function enrichSprayWallDocument(document: RawRow): Promise<RawRow> {
 }
 
 export const syncQueries = {
+  syncClimbDocuments,
   /**
    * Pull the authenticated user's ticks. Local PK = uuid (the idempotency key).
    * Seq = id. Skips aurora_/kilter_ sync bookkeeping, board_id, inferred_session_id.
@@ -352,7 +354,7 @@ export const syncQueries = {
   ): Promise<SyncResult> => {
     const { userId, limit: lim } = prepareUserSync(ctx, cursor, limit);
     return runSyncPage({
-      selectList: sql`uuid, user_id, board_type, climb_uuid, angle, is_mirror, status,
+      selectList: sql`uuid, user_id, board_type, climb_uuid, climb_revision, angle, is_mirror, status,
         attempt_count, quality, difficulty, is_benchmark, comment, climbed_at, session_id,
         created_at, updated_at`,
       fromClause: sql`boardsesh_ticks`,
@@ -543,7 +545,8 @@ export const syncQueries = {
       selectList: sql`uuid, board_type, layout_id, setter_id, setter_username, name, description,
         hsm, edge_left, edge_right, edge_bottom, edge_top, angle, frames_count, frames_pace, frames,
         is_draft, is_listed, is_hidden, created_at, published_at, user_id, required_set_ids, compatible_size_ids,
-        characteristics, hold_fingerprint, missing_hold_count, updated_at, sync_seq`,
+        characteristics, hold_fingerprint, missing_hold_count, revision_number, holds_revision_number,
+        updated_at, sync_seq`,
       fromClause: sql`board_climbs`,
       scope: boardClimbsScope(validBoardType, lid, sid),
       updatedAtColumn: sql`updated_at`,

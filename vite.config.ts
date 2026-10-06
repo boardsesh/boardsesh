@@ -1324,6 +1324,43 @@ export default defineConfig({
         cache: false,
       },
 
+      // xprem control plane as code: the production channel's branch and Branch
+      // Surfing, and the long-lived branches and their protection. Plans by
+      // default and exits non-zero on drift; forward `-- --apply` to converge.
+      // Never deletes and never touches a per-PR preview branch.
+      // See scripts/ota-apply.ts + docs/mobile-ota-updates.md.
+      'ota:apply': {
+        command: 'tsx scripts/ota-apply.ts',
+        cache: false,
+      },
+
+      // Read and steer per-update rollouts on the xprem server: status, set,
+      // finish, revert, health. Needs the dashboard admin login.
+      // See scripts/mobile-ota-rollout.ts + docs/mobile-ota-updates.md.
+      'ota:rollout': {
+        command: 'tsx scripts/mobile-ota-rollout.ts',
+        cache: false,
+      },
+
+      // The throwaway-branch proof for rollouts: publishes synthetic updates to
+      // the `pr-rollout-proof` scratch branch under a runtime version no binary
+      // has, runs start / set / finish / revert against the LIVE server and
+      // prints what it did. Needs the admin login and the publish token. Run it
+      // through .github/workflows/ota-rollout-proof.yml, not from a laptop.
+      // See scripts/ota-rollout-proof.ts + docs/mobile-ota-updates.md.
+      'ota:rollout-proof': {
+        command: 'tsx scripts/ota-rollout-proof.ts',
+        cache: false,
+      },
+
+      // Read-only: downloads the public dashboard bundle and checks that every
+      // admin API path scripts/lib/xprem-admin.mts calls is still in it. No
+      // login. Run it after an xprem upgrade; the daily drift workflow does.
+      'ota:api-probe': {
+        command: 'tsx scripts/ota-admin-api-probe.ts',
+        cache: false,
+      },
+
       // Reports newer xprem releases — stable and prerelease tracked separately so
       // a beta never displaces a stable upgrade — and rewrites the repo onto one
       // with `-- --write <version>`. Drives .github/workflows/ota-image-bump.yml.

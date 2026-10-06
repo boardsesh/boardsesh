@@ -210,6 +210,43 @@ walls. Until then, expect `medium: 'poster'` and only `poster` in PostHog — a
 the kiosk QR needs a new target; the params and the builders in
 `app/lib/gym-attribution.ts` survive that move unchanged.
 
+### A scan only counts if the page loads: iOS and the association file
+
+`Gym QR Scanned` fires from a tracker on the www gym page, so a scan that never
+loads that page is never counted. On an iPhone with Boardsesh installed that
+used to be every scan. The iOS association file claimed `/*` for the app, the
+app has a `/gyms` directory but no `/gym/{slug}` screen, and an unmatched link
+falls through `+not-found` to Home. The climber saw the app's Home tab and
+PostHog saw nothing.
+
+`app/lib/apple-app-site-association.ts` now lists `/gym` in
+`WEB_ONLY_PATH_PREFIXES`, which emits `NOT /gym/*` plus one entry per locale
+prefix (`NOT /es/gym/*`, `NOT /fr/gym/*`, `NOT /de/gym/*`) above the catch-all.
+That keeps the gym page, `/gym/{slug}/poster` and `/gym/{slug}/manage` in the
+browser. `/gyms` is not matched and still opens the app.
+
+Four things to know before reading an iOS scan count:
+
+- **The change is not instant.** Phones do not fetch the file from www. Apple's
+  CDN does, and a phone asks the CDN on install, on app update and about once a
+  week after that. Allow a week before treating "no iOS scans" as a real zero.
+  `https://app-site-association.cdn-apple.com/a/v1/www.boardsesh.com` shows the
+  copy Apple is serving.
+- **Android was never affected.** The store build only opens `/join`,
+  `/preview` and `/auth/reset-password` in the app, so a poster scan has always
+  reached the web page there.
+- **Climbers who already have the app are in the count, and the page cannot
+  hand them back to it.** Their scan now loads the gym page and fires
+  `Gym QR Scanned`, but they cannot install. The board links on the page are
+  same-site navigations, which iOS never treats as universal links, and the
+  only app-bound controls are the two store buttons. So scan-to-install read
+  straight off the funnel is diluted by existing users. Until the page has an
+  "Open in Boardsesh" control (not built yet), split scans by whether an
+  install was possible before quoting a pilot rate.
+- **If the app ever gets a `/gym/{slug}` screen**, removing the exclusion sends
+  scans back into the app, and the scan event then has to fire from the app
+  too. `/poster` and `/manage` would still need to stay on the web.
+
 ### Carrying the params through a redirect
 
 Two redirects would otherwise silently unattribute a scan, and both now re-emit
@@ -226,6 +263,17 @@ link carries (`?medium=evil`, someone else's `utm_campaign`, a `?next=` URL)
 rides through a redirect into a URL we publish. Its entire reachable output is
 three fixed strings plus the empty one, and it returns `''` rather than `'?'`, so
 an ordinary visit still redirects to a clean URL.
+
+Since #6027 the merged-twin 308 also carries the campaign params a visit landed
+with (`utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`,
+`gclid`), through `gymRedirectAttributionQuery`. A gym's bio link to an old slug
+(`/gym/old-slug?utm_source=instagram&utm_medium=social`) used to arrive on the
+canonical page as direct traffic. It is still an allowlist: those six names
+only, each value trimmed and capped at 200 characters and re-encoded, so
+`?next=` and `?claim=` are dropped as before. Carrying them gives a crafted link
+nothing it did not have, since the same params on the canonical URL are read
+with no redirect involved. The `/b/{slug}` redirect still carries the QR pair
+only.
 
 Known gap, worth knowing before anyone reads a kiosk number: the board list
 (`/b/{slug}/{angle}/list`) has no equivalent of `stripGymQrParams`, so the params
@@ -312,7 +360,8 @@ web call sites (`home-page-content.tsx`, `capacitor-retirement-screen.tsx`)
 already fire — not `Gym Page CTA Clicked`. Two funnels for one action would have
 to be unioned every time anyone asks how many installs the product drives.
 
-Its payload is `{ platform, source, placement: 'gym-page', gymSlug }`.
+Its payload is `{ platform, source, placement: 'gym-page', gymSlug }`, plus
+`qrMedium` when the click follows a scan (below).
 
 - **`source` keeps its existing meaning and values** (`'google-play'`,
   `'app-store'`, `'capacitor-retirement'`, …). PH-13's install-source breakdown
@@ -320,6 +369,9 @@ Its payload is `{ platform, source, placement: 'gym-page', gymSlug }`.
   so `source` is not repurposed to carry the surface.
 - **`placement` and `gymSlug` are added alongside it.** AC2 asks for those two
   properties; it is not asking for `source` to change meaning.
+- **`qrMedium`** (`'poster' | 'kiosk' | 'board'`) is present only when the page
+  was reached from a printed code. It is absent, not `null`, on a plain visit,
+  so that payload is unchanged.
 
 The builder lives in **`packages/web/app/lib/app-install-event.ts`**, added by
 the wiring PR. It is deliberately not in `@boardsesh/analytics`: `App Install
@@ -330,20 +382,56 @@ seven gym events out of `SHARED_EVENTS`.
 The CTA itself is **`app/gym/[gym_slug]/gym-install-cta.tsx`** (#4379). It
 renders both stores as real anchors — no platform sniffing, because an effect
 that picks one store leaves the server HTML with no install link at all — and
-uses the canonical slug (`gym.slug ?? gym_slug`), so a scan that 308s off a
+uses the canonical slug (`gym.slug || gym_slug`), so a scan that 308s off a
 merged twin's URL still reports one campaign rather than two.
+
+### A poster scan and a page click are different links (#6027)
+
+Until #6027 every gym-page Play link said `utm_medium=qr`, whether the visitor
+scanned a poster or clicked through from the gym directory. An install could
+not be put down to a poster, which is the one thing the poster pilot (#5657)
+has to measure.
+
+The gym page now hands the parsed `?src=qr&medium=…` landing to the CTA as a
+`qrMedium` prop, and `buildStoreUrl` (`app/lib/store-links.ts`) turns it into
+the link:
+
+| Visit                         | `utm_medium` | link id (`utm_content`) | `utm_campaign` | App Store `ct`     |
+| ----------------------------- | ------------ | ----------------------- | -------------- | ------------------ |
+| Browsed to the gym page       | `web`        | `gym-page`              | `gym-<slug>`   | `gym-page`         |
+| Scanned the gym's poster      | `qr`         | `gym-page.poster`       | `gym-<slug>`   | `gym-page.poster`  |
+
+`utm_source` is `boardsesh` and `utm_campaign` is `gym-<slug>` in both rows,
+the strings gym installs have reported since #4379.
+
+The medium is a **prop**, not something the CTA reads from the URL:
+`GymQrLandingTracker` strips `src` and `medium` from the address bar on mount,
+so by the time a visitor reaches for the button the URL no longer says they
+scanned anything.
+
+A visitor who landed on a tagged link (`?utm_source=instagram&utm_medium=social`
+on a gym's own bio link, say) keeps their source and medium in the store link.
+Their `utm_campaign` wins too when they brought one; otherwise the campaign
+stays `gym-<slug>`. The link id is always ours. A `utm_medium` of `organic` or
+`(not set)` is the one tag not carried: the app would file the install as a
+Play organic one (see `docs/growth-metrics.md`, "Store links"). That upgrade happens after
+hydration, so the server HTML never depends on the visitor.
+
+`qr` installs from before the #6027 deploy are gym-page clicks of any kind. Do
+not compare `qr` counts across that date.
 
 ### Why the Play link carries `referrer`, not just `utm_*`
 
-`playStoreUrlForGym` (`app/lib/gym-attribution.ts`) sets
-`utm_source=boardsesh&utm_medium=qr&utm_campaign=gym-<slug>` **and** a `referrer`
-param holding a percent-encoded copy of the same three. The `referrer` is the
-one that does the work: Play populates the Install Referrer API from that query
-parameter, and `packages/mobile/src/lib/install-referrer.ts` reads the string
-back with `new URLSearchParams(raw)` to pull the three `utm_*` values into
-`Install Attributed`. A link with only the bare `utm_*` params reads correctly to
-a human, matches #4379's literal wording, and attributes **zero** installs,
-because the app never sees them.
+`buildPlayStoreUrl` (`app/lib/store-links.ts`) sets `utm_source`, `utm_medium`,
+`utm_campaign` and `utm_content` **and** a `referrer` param holding a
+percent-encoded copy of the same four. The `referrer` is the one that does the
+work: Play populates the Install Referrer API from that query parameter, and
+`packages/mobile/src/lib/install-referrer.ts` reads the string back with
+`new URLSearchParams(raw)` to pull source, medium and campaign into
+`Install Attributed`, keeping the whole string as `install_referrer_raw` (where
+the link id is read from; the HogQL is in `docs/growth-metrics.md`). A link with
+only the bare `utm_*` params reads correctly to a human, matches #4379's literal
+wording, and attributes **zero** installs, because the app never sees them.
 
 The bare `utm_*` params stay on the link anyway, but do not assume a consumer
 for them: they are kept because they are harmless and make the link readable at a
@@ -351,8 +439,14 @@ glance (and greppable in a log) without decoding the nested `referrer`. Whether
 Play's own acquisition reporting reads them has not been verified here — the
 mechanism this section documents is `referrer`, and that is the one to rely on.
 
-iOS carries none of this. The App Store URL is unchanged — Apple has no
-equivalent to read a referrer back, and iOS attribution is out of scope (#3402).
+### The App Store link
+
+Apple has no install referrer, so nothing about an iOS install reaches the app
+or PostHog. The link carries a campaign token instead (`ct`, with `pt` and
+`mt=8`), which App Store Connect counts in aggregate. All gyms share one token
+per kind of link, because App Analytics hides a campaign with fewer than 5
+first-time downloads. `pt` needs `NEXT_PUBLIC_APP_STORE_PROVIDER_ID`, which is
+not set yet; see "Store links" in `docs/growth-metrics.md`.
 
 ## Properties deliberately not carried
 

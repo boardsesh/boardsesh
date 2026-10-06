@@ -52,5 +52,6 @@ export function resetSprayPhotoCacheForTests(): void {
   // Same: nothing is memoised in a browser.
 }
 
-/** Browser photo URLs are held only by the registry; there are no app-owned copies. */
-export function deleteCachedSprayWallPhotos(_layoutId: number): void {}
+export function deleteCachedSprayPhotos(_layoutId?: number): void {
+  // The browser twin reads the live registry and owns no filesystem copy.
+}

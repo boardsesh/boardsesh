@@ -17,12 +17,20 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 
 const mocks = vi.hoisted(() => ({
   storedActiveBoard: null as UserBoard | null,
+  activeBoardGeneration: 0,
+  clearStoredQueueSnapshot: vi.fn(() => Promise.resolve()),
+  clearStoredSessionId: vi.fn(() => Promise.resolve()),
+  clearStoredCreatedSessionId: vi.fn(() => Promise.resolve()),
+  execute: vi.fn(() => Promise.resolve({})),
   request: vi.fn(),
   setStoredSessionVisibility: vi.fn((_sessionId: string, _isPublic: boolean) => Promise.resolve()),
 }));
 
 vi.mock('../../../lib/active-board-store', () => ({
   getStoredActiveBoard: () => Promise.resolve(mocks.storedActiveBoard),
+}));
+vi.mock('../../../lib/graphql/use-active-board', () => ({
+  getActiveBoardWriteGeneration: () => mocks.activeBoardGeneration,
 }));
 vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: mocks.request }) }));
 vi.mock('../../../lib/graphql/ws-client', () => ({ getWsClient: () => ({}) }));
@@ -32,17 +40,17 @@ vi.mock('../../../lib/graphql/extract-error-message', () => ({
   isGraphqlRateLimitedError: () => false,
 }));
 vi.mock('../../../lib/session-store', () => ({
-  clearStoredCreatedSessionId: () => Promise.resolve(),
-  clearStoredSessionId: () => Promise.resolve(),
+  clearStoredCreatedSessionId: mocks.clearStoredCreatedSessionId,
+  clearStoredSessionId: mocks.clearStoredSessionId,
   setStoredCreatedSessionId: () => Promise.resolve(),
   setStoredSessionId: () => Promise.resolve(),
   setStoredSessionVisibility: mocks.setStoredSessionVisibility,
 }));
-vi.mock('../../../lib/queue-snapshot-store', () => ({ clearStoredQueueSnapshot: () => Promise.resolve() }));
+vi.mock('../../../lib/queue-snapshot-store', () => ({ clearStoredQueueSnapshot: mocks.clearStoredQueueSnapshot }));
 vi.mock('../../../lib/device-timezone', () => ({ getDeviceTimezone: () => 'UTC' }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn(), reportHandledError: vi.fn() }));
-vi.mock('@boardsesh/graphql-client', () => ({ execute: () => Promise.resolve({}) }));
+vi.mock('@boardsesh/graphql-client', () => ({ execute: mocks.execute }));
 vi.mock('@boardsesh/graphql/operations/queue-session', () => ({ LEAVE_SESSION: 'LeaveSession' }));
 
 import { useSessionCommands } from '../use-session-commands';
@@ -213,5 +221,95 @@ describe('useSessionCommands — createSessionWithConfig visibility', () => {
     expect(mocks.request).toHaveBeenCalledTimes(2);
     expect(lastCreateInput()).not.toHaveProperty('isPublic');
     expect(mocks.setStoredSessionVisibility).toHaveBeenLastCalledWith('session-1', true);
+  });
+});
+
+describe('clearSession after active board removal', () => {
+  beforeEach(() => {
+    mocks.clearStoredQueueSnapshot.mockReset().mockResolvedValue(undefined);
+    mocks.clearStoredSessionId.mockClear();
+    mocks.clearStoredCreatedSessionId.mockClear();
+    mocks.execute.mockReset().mockResolvedValue({});
+    mocks.activeBoardGeneration = 0;
+  });
+
+  it('clears the solo queue and persisted climb, cancelling pending appends', async () => {
+    const { result, params } = renderSessionCommands();
+    await act(async () => {
+      await result.current.clearSession({ notifyServer: true });
+    });
+
+    expect(params.onSessionContextChanging).toHaveBeenCalledTimes(1);
+    expect(params.dispatch).toHaveBeenCalledWith({
+      type: 'INITIAL_QUEUE_DATA',
+      payload: { queue: [], currentClimbQueueItem: null },
+    });
+    expect(params.setPlaylistSuggestionSourceState).toHaveBeenCalledWith(null);
+    expect(mocks.clearStoredQueueSnapshot).toHaveBeenCalledTimes(1);
+    expect(mocks.execute).not.toHaveBeenCalled();
+  });
+
+  it('does not clear a newer session while the old leave request is pending', async () => {
+    const { result, params } = renderSessionCommands();
+    const sessionRef = params.sessionIdRef as { current: string | null };
+    sessionRef.current = 'old-room';
+    let finishLeave: (() => void) | undefined;
+    mocks.execute.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishLeave = () => resolve({});
+        }),
+    );
+    let leaving: Promise<void> | undefined;
+    act(() => {
+      leaving = result.current.clearSession({ notifyServer: true });
+    });
+    expect(params.onSessionContextChanging).toHaveBeenCalledTimes(1);
+    expect(params.dispatch).not.toHaveBeenCalled();
+    sessionRef.current = 'new-room';
+    await act(async () => {
+      finishLeave?.();
+      await leaving;
+    });
+    expect(sessionRef.current).toBe('new-room');
+    expect(params.dispatch).not.toHaveBeenCalled();
+    expect(mocks.clearStoredQueueSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('preserves the new persisted session while snapshot removal is pending', async () => {
+    const { result, params } = renderSessionCommands();
+    let finishRemoval: (() => void) | undefined;
+    mocks.clearStoredQueueSnapshot.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRemoval = resolve;
+        }),
+    );
+    let clearing: Promise<void> | undefined;
+    act(() => {
+      clearing = result.current.clearSession();
+    });
+    (params.sessionIdRef as { current: string | null }).current = 'new-room';
+    await act(async () => {
+      finishRemoval?.();
+      await clearing;
+    });
+    expect(mocks.clearStoredSessionId).not.toHaveBeenCalled();
+    expect(mocks.clearStoredCreatedSessionId).not.toHaveBeenCalled();
+  });
+
+  it('leaves a shared room instead of ending it for other climbers', async () => {
+    const { result, params } = renderSessionCommands();
+    (params.sessionIdRef as { current: string | null }).current = 'crew-session';
+    mocks.request.mockClear();
+    await act(async () => {
+      await result.current.clearSession({ notifyServer: true });
+    });
+
+    expect(mocks.execute).toHaveBeenCalledWith({}, { query: 'LeaveSession' }, 5000);
+    expect(params.sessionIdRef.current).toBeNull();
+    expect(params.setSessionId).toHaveBeenCalledWith(null);
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(mocks.clearStoredQueueSnapshot).toHaveBeenCalledTimes(1);
   });
 });

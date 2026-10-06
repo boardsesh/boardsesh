@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { playlistQueries } from '../graphql/resolvers/playlists/queries';
+import { sqlText } from '@boardsesh/db/test-utils';
 
 const { mockDb, eqSpy, notInArraySpy, resolveTargetMock, selectRefsMock, countRefsMock, cardCountMock } = vi.hoisted(
   () => {
@@ -238,16 +239,21 @@ describe('smartPlaylist resolver', () => {
     expect(pageCalls.groupBy.length).toBe(1);
   });
 
-  it('PROJECTS uses a NOT EXISTS scoped by both board_type and climb_uuid', async () => {
+  it('PROJECTS aggregates the logbook per climb, then reads each climb row once', async () => {
     const ctx = makeCtx();
 
     mockDb.select.mockReturnValueOnce(makeChain([USER_ROW]).chain);
 
-    // No separate sent-subquery select — the NOT EXISTS lives inside the
-    // where() arg as a sql`` fragment. Just three top-level selects:
-    // user lookup, page query, count query.
+    // The page and the count each build the per-climb subquery first, then
+    // select from it: five selects with the user lookup. Behaviour (which
+    // climbs count as projects, before and after a hold moves) is asserted
+    // against a real database in climb-revisions.test.ts.
+    const { chain: pageLoggedChain, calls: pageLoggedCalls } = makeChain([]);
+    mockDb.select.mockReturnValueOnce(pageLoggedChain);
     const { chain: pageChain, calls: pageCalls } = makeChain([]);
     mockDb.select.mockReturnValueOnce(pageChain);
+    const { chain: countLoggedChain, calls: countLoggedCalls } = makeChain([]);
+    mockDb.select.mockReturnValueOnce(countLoggedChain);
     const { chain: countChain, calls: countCalls } = makeChain([{ count: 0 }]);
     mockDb.select.mockReturnValueOnce(countChain);
 
@@ -259,50 +265,28 @@ describe('smartPlaylist resolver', () => {
       ctx,
     );
 
-    // Both page and count call where() exactly once with a composed condition
-    // that includes the NOT EXISTS sentinel. Stringifying the sql fragment so
-    // the test can assert on its shape without coupling to drizzle's AST.
-    expect(pageCalls.where.length).toBe(1);
-    expect(countCalls.where.length).toBe(1);
-
-    // The NOT EXISTS SQL fragment must reference both board_type and climb_uuid
-    // — that is the joint-scoping fix for the UUID-collision bug. Drizzle
-    // serialises the sql template's `queryChunks` so we can inspect them.
-    const renderSql = (whereArg: unknown): string => {
-      // drizzle wraps the fragment as `{ queryChunks: [...] }`. Recurse for nested.
-      const seen = new WeakSet<object>();
-      const walk = (node: unknown): string => {
-        if (node === null || node === undefined) return '';
-        if (typeof node === 'string') return node;
-        if (typeof node !== 'object') return '';
-        if (seen.has(node)) return '';
-        seen.add(node);
-        const obj = node as Record<string, unknown>;
-        if (Array.isArray(obj.queryChunks)) {
-          return (obj.queryChunks as unknown[]).map(walk).join(' ');
-        }
-        if (Array.isArray((obj as { value?: unknown[] }).value)) {
-          return (obj.value as unknown[]).map(walk).join(' ');
-        }
-        return Object.values(obj).map(walk).join(' ');
-      };
-      return walk(whereArg);
-    };
-    for (const calls of [pageCalls, countCalls]) {
-      const rendered = renderSql(calls.where[0][0]);
-      // Inner subquery aliases boardsesh_ticks as `sent` and references the
-      // outer scope by bare `boardsesh_ticks.<col>`. Pin both halves of the
-      // correlation so a future Drizzle interpolation regression can't
-      // silently turn the subquery into `sent.x = sent.x` (always-true) or
-      // `boardsesh_ticks.x = boardsesh_ticks.x` (no correlation at all).
-      expect(rendered.toUpperCase()).toMatch(/NOT EXISTS/);
-      expect(rendered).toMatch(/FROM\s+boardsesh_ticks\s+AS\s+sent/i);
-      expect(rendered).toMatch(/sent\.board_type\s*=\s*boardsesh_ticks\.board_type/i);
-      expect(rendered).toMatch(/sent\.climb_uuid\s*=\s*boardsesh_ticks\.climb_uuid/i);
-      expect(rendered).toMatch(/sent\.status\s+IN\s*\(\s*'flash'\s*,\s*'send'\s*\)/i);
+    for (const calls of [pageLoggedCalls, countLoggedCalls]) {
+      // The user's ticks, grouped on BOTH columns: a sent Kilter climb must not
+      // stand in for a Tension climb that shares its uuid.
+      expect(calls.from[0][0]).toBe(dbSchema.boardseshTicks);
+      expect(calls.groupBy[0]).toEqual([dbSchema.boardseshTicks.climbUuid, dbSchema.boardseshTicks.boardType]);
+      expect(calls.as[0]).toEqual(['logged']);
+      // The climb row is not read per tick.
+      expect(calls.leftJoin).toHaveLength(0);
     }
+    for (const calls of [pageCalls, countCalls]) {
+      // One board_climbs lookup per logged climb, and the two-sided epoch test.
+      expect(calls.leftJoin).toHaveLength(1);
+      expect(calls.leftJoin[0][0]).toBe(dbSchema.boardClimbs);
+      // Only climbs whose holds have moved: the partial-index predicate.
+      expect(sqlText(calls.leftJoin[0][1])).toMatch(/ > 1/);
+      expect(calls.where).toHaveLength(1);
+      const rendered = sqlText(calls.where[0][0]);
+      expect(rendered).toMatch(/COALESCE\(, 0\) >= COALESCE\(, 1\)\s+AND NOT COALESCE\(, 0\) >= COALESCE\(, 1\)/);
+    }
+    expect(pageCalls.limit[0]).toEqual([20]);
+    expect(pageCalls.offset[0]).toEqual([0]);
 
-    // Sanity: notInArray is no longer used anywhere (we replaced it with NOT EXISTS).
     expect(notInArraySpy).not.toHaveBeenCalled();
   });
 
@@ -668,27 +652,34 @@ describe('mySmartPlaylistCounts resolver', () => {
     expect(result).toContainEqual({ type: 'LIKED_CLIMBS', count: 12 });
   });
 
-  it('CTE scopes the sent-climbs check by both board_type and climb_uuid', async () => {
-    // Pin the joint-scoping fix: a kilter send must NOT exclude a tension
-    // climb sharing the same UUID from the projects count. The pure SQL of
-    // the CTE is what enforces this, so this test asserts on the SQL string
-    // rather than on db result rows.
+  it('CTE counts projects per (board_type, climb_uuid), reading each climb row once', async () => {
+    // Pin the joint scoping: a kilter send must NOT exclude a tension climb
+    // sharing the same UUID from the projects count. The pure SQL of the CTE is
+    // what enforces this, so this test asserts on the SQL string rather than on
+    // db result rows.
     const ctx = makeCtx();
     queueCountsRows([]);
 
     await playlistQueries.mySmartPlaylistCounts(null, undefined, ctx);
 
     expect(mockDb.execute).toHaveBeenCalledTimes(2);
-    const rendered = (countsSqlArg()?.queryChunks ?? [])
-      .map((chunk) => (typeof chunk === 'string' ? chunk : ((chunk as { value?: string }).value ?? '')))
-      .join(' ');
+    const rendered = sqlText(countsSqlArg());
 
-    // sent CTE projects (climb_uuid, board_type) — not just climb_uuid.
-    expect(rendered).toMatch(/SELECT\s+DISTINCT\s+climb_uuid,\s+board_type\s+FROM\s+base/i);
-    // projects CTE checks NOT EXISTS with both columns matched.
-    expect(rendered.toUpperCase()).toContain('NOT EXISTS');
-    expect(rendered).toMatch(/sent\.climb_uuid\s*=\s*base\.climb_uuid/i);
-    expect(rendered).toMatch(/sent\.board_type\s*=\s*base\.board_type/i);
+    // The per-climb aggregate groups on both columns, and its join to the climb
+    // row matches both.
+    expect(rendered).toMatch(/FROM base\s+GROUP BY climb_uuid, board_type/);
+    expect(rendered).toMatch(
+      /logged_climb\.board_type = logged\.board_type AND logged_climb\.uuid = logged\.climb_uuid/,
+    );
+    // The join repeats the partial-index predicate, so it reads only the climbs
+    // whose holds have moved and never probes board_climbs once per climb.
+    expect(rendered).toMatch(/logged\.climb_uuid\s+AND logged_climb\.holds_revision_number > 1/);
+    // Tried on the current holds, and not sent on them (#6023).
+    expect(rendered).toMatch(
+      /COALESCE\(logged\.latest_revision, 0\) >= COALESCE\(logged_climb\.holds_revision_number, 1\)\s+AND NOT COALESCE\(logged\.latest_sent_revision, 0\) >= COALESCE\(logged_climb\.holds_revision_number, 1\)/,
+    );
+    // The base scan, shared by all three cards, does not read board_climbs.
+    expect(rendered.slice(0, rendered.indexOf('logged AS'))).not.toMatch(/JOIN/);
   });
 
   it('appends RECOMMENDED_* counts when a board resolves', async () => {

@@ -37,6 +37,8 @@ import { requireBoardGymLinkAccess, resolveCanonicalGymByUuid } from '../social/
 import { syncLocationGeography } from '../social/location-geography';
 import {
   boundingSize,
+  classifySprayDraft,
+  sameSprayGeometry,
   homographyFromAnchors,
   IDENTITY_HOMOGRAPHY,
   isValidAnchorQuad,
@@ -74,6 +76,7 @@ import {
   SetSprayWallRenderSettingsInputSchema,
   UpdateSprayWallInputSchema,
   SPRAY_VERSION_STATUS_WIRE_NAME,
+  SPRAY_CLIMB_EDIT_POLICY_WIRE_NAME,
   UpsertSprayWallHoldsInputSchema,
   UUIDSchema,
 } from '../../../validation/schemas';
@@ -141,9 +144,12 @@ export const SPRAY_WALL_CODES = {
   anglePublished: 'SPRAY_WALL_ANGLE_PUBLISHED',
   publishWouldGoBackwards: 'SPRAY_WALL_PUBLISH_BACKWARDS',
   draftAlreadyOpen: 'SPRAY_WALL_DRAFT_ALREADY_OPEN',
+  draftPurposeMismatch: 'SPRAY_WALL_DRAFT_PURPOSE_MISMATCH',
+  resetReviewRequired: 'SPRAY_WALL_RESET_REVIEW_REQUIRED',
   sourceVersionNotCurrent: 'SPRAY_WALL_SOURCE_VERSION_NOT_CURRENT',
   anchorsRequired: 'SPRAY_WALL_ANCHORS_REQUIRED',
   visibilityOwnerOnly: 'SPRAY_WALL_VISIBILITY_OWNER_ONLY',
+  climbEditPolicyOwnerOnly: 'SPRAY_WALL_CLIMB_EDIT_POLICY_OWNER_ONLY',
 } as const;
 
 type SprayWallRow = typeof dbSchema.sprayWalls.$inferSelect;
@@ -475,6 +481,7 @@ async function toGraphQLWall(
   canEdit: boolean,
   preloadedVersions?: SprayWallVersionRow[],
   preloadedDeltas?: Map<number, { added: number; removed: number }>,
+  presentedWallUuid?: string | null,
 ) {
   const { wall, board } = loaded;
 
@@ -502,6 +509,7 @@ async function toGraphQLWall(
   // `visibleVersions` and this find only misses on a wall that has no published
   // version yet.
   const currentVersion = versions.find((version) => version.id === String(wall.currentVersionId)) ?? null;
+  const viewerCanEditClimbs = await computeCanEditClimbs(userId, wall, board, canEdit, presentedWallUuid);
 
   return {
     uuid: board.uuid,
@@ -515,11 +523,33 @@ async function toGraphQLWall(
     holdCount: wall.holdCount,
     publicPhotoUrl: publicWallPhotoUrl(board, wall),
     viewerCanEdit: canEdit,
+    climbEditPolicy: SPRAY_CLIMB_EDIT_POLICY_WIRE_NAME[wall.climbEditPolicy ?? 'setter'],
+    viewerCanEditClimbs,
     // Only ever non-null for the owner: `loadVisibleWall` refuses a hidden wall to
     // everybody else, so nobody else can reach this field to read it.
     hiddenAt: wall.hiddenAt ? wall.hiddenAt.toISOString() : null,
     renderSettings: wall.renderSettings ?? null,
   };
+}
+
+/**
+ * Whether the viewer can edit published climbs on this wall (#6025).
+ * True for wall editors (canEdit), and — when policy is 'collaborators' — also
+ * for anyone who can set climbs on the wall (viewerCanWriteSprayClimbs).
+ */
+async function computeCanEditClimbs(
+  userId: string | null | undefined,
+  wall: SprayWallRow,
+  board: UserBoardRow,
+  canEdit: boolean,
+  presentedWallUuid?: string | null,
+): Promise<boolean> {
+  if (canEdit) return true;
+  if (!userId) return false;
+  if (wall.climbEditPolicy === 'collaborators') {
+    return viewerCanWriteSprayClimbs(wall, board, userId, presentedWallUuid);
+  }
+  return false;
 }
 
 /** Whether the caller can edit, without throwing — the `viewerCanEdit` field. */
@@ -622,6 +652,30 @@ async function loadDraftVersion(
     });
   }
   return version;
+}
+
+/** The published source is re-read under the wall lock for every publishing decision. */
+async function draftPurpose(executor: SprayWriteExecutor, wallId: number, version: SprayWallVersionRow) {
+  const [published] = await executor
+    .select({ version: dbSchema.sprayWallVersions })
+    .from(dbSchema.sprayWalls)
+    .innerJoin(dbSchema.sprayWallVersions, eq(dbSchema.sprayWalls.currentVersionId, dbSchema.sprayWallVersions.id))
+    .where(eq(dbSchema.sprayWalls.id, wallId))
+    .limit(1);
+  const photo = (row: SprayWallVersionRow) => ({
+    photoIdentity: row.photoKey,
+    width: row.photoWidth,
+    height: row.photoHeight,
+    anchors: row.anchors,
+    homography: row.homography,
+  });
+  return classifySprayDraft(photo(version), published ? photo(published.version) : null);
+}
+
+function wrongDraftPurposeError() {
+  return new GraphQLError('This draft belongs to a different wall-editing flow. Reopen the matching editor.', {
+    extensions: { code: SPRAY_WALL_CODES.draftPurposeMismatch },
+  });
 }
 
 /**
@@ -1245,7 +1299,14 @@ export const sprayWallQueries = {
 
     const loaded = await loadVisibleWall(validatedUuid, ctx.userId);
     if (!loaded) return null;
-    return toGraphQLWall(loaded, ctx.userId, await computeCanEdit(ctx, loaded.board));
+    return toGraphQLWall(
+      loaded,
+      ctx.userId,
+      await computeCanEdit(ctx, loaded.board),
+      undefined,
+      undefined,
+      loaded.board.uuid,
+    );
   },
 
   sprayWallByLayout: async (_: unknown, { layoutId }: { layoutId: unknown }, ctx: ConnectionContext) => {
@@ -1258,7 +1319,14 @@ export const sprayWallQueries = {
     // sequence, so an unlisted wall must not resolve here. See that function.
     const loaded = await loadWall('layoutId', layoutId);
     if (!loaded || !(await viewerCanSeeSprayWallByLayout(loaded.wall, loaded.board, ctx.userId))) return null;
-    return toGraphQLWall(loaded, ctx.userId, await computeCanEdit(ctx, loaded.board));
+    return toGraphQLWall(
+      loaded,
+      ctx.userId,
+      await computeCanEdit(ctx, loaded.board),
+      undefined,
+      undefined,
+      loaded.board.uuid,
+    );
   },
 
   sprayWallRenderData: async (
@@ -1286,7 +1354,7 @@ export const sprayWallQueries = {
     const versionNumberById = await loadVersionNumbers(loaded.wall.id);
 
     return {
-      wall: await toGraphQLWall(loaded, ctx.userId, canEdit),
+      wall: await toGraphQLWall(loaded, ctx.userId, canEdit, undefined, undefined, loaded.board.uuid),
       versionNumber: versionRow.versionNumber,
       // A wall always has a frame by the time it has a photo — `createSprayWallVersion`
       // writes both in one transaction — so the photo fallbacks here only fire for
@@ -1361,7 +1429,9 @@ export const sprayWallQueries = {
     }
 
     return Promise.all(
-      visible.map(async (row) => toGraphQLWall(row, ctx.userId, await computeCanEdit(ctx, row.board))),
+      visible.map(async (row) =>
+        toGraphQLWall(row, ctx.userId, await computeCanEdit(ctx, row.board), undefined, undefined, row.board.uuid),
+      ),
     );
   },
 
@@ -1392,7 +1462,9 @@ export const sprayWallQueries = {
 
     // The caller owns every row here, so `viewerCanEdit` is true without asking.
     return Promise.all(
-      rows.map((row) => toGraphQLWall(row, ctx.userId, true, versionsByWall.get(Number(row.wall.id)) ?? [], deltas)),
+      rows.map((row) =>
+        toGraphQLWall(row, ctx.userId, true, versionsByWall.get(Number(row.wall.id)) ?? [], deltas, row.board.uuid),
+      ),
     );
   },
 
@@ -1412,6 +1484,7 @@ export const sprayWallQueries = {
     // reviewed a whole screen of decisions. Same check, same error, one step
     // earlier. No lock: nothing is written, and the commit re-reads under one.
     const draft = await loadDraftVersion(db, wall.id, validated.versionId);
+    if ((await draftPurpose(db, wall.id, draft)) === 'hold-edit') throw wrongDraftPurposeError();
     assertResetVersionIsAnchored(draft);
 
     // The wall as CLIMBERS see it — alive at `current_version_id` — which is what
@@ -1706,6 +1779,7 @@ export const sprayWallMutations = {
           referenceWidth: null,
           referenceHeight: null,
           holdCount: 0,
+          ...(validated.climbEditPolicy ? { climbEditPolicy: validated.climbEditPolicy } : {}),
           // The visibility the climber picked, held server-side until the first
           // publish applies it. It used to live only in the wizard's React state,
           // so a climber who closed the app and resumed the wall published it
@@ -1738,7 +1812,7 @@ export const sprayWallMutations = {
       pendingIsUnlisted: created.wall.pendingIsUnlisted,
     });
 
-    return toGraphQLWall(created, userId, true);
+    return toGraphQLWall(created, userId, true, undefined, undefined, created.board.uuid);
   },
 
   createSprayWallVersion: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
@@ -1789,14 +1863,6 @@ export const sprayWallMutations = {
         .from(dbSchema.sprayWallVersions)
         .where(eq(dbSchema.sprayWallVersions.wallId, wall.id));
 
-      if (Number(versionCount) >= MAX_VERSIONS_PER_WALL) {
-        throw new GraphQLError(
-          `This wall has reached the limit of ${MAX_VERSIONS_PER_WALL} photos. ` +
-            `Each one keeps its own hold generation, so there is nothing to prune automatically.`,
-          { extensions: { code: SPRAY_WALL_CODES.versionLimitReached } },
-        );
-      }
-
       // ONE active draft per wall.
       //
       // Without it two drafts can each mark the SAME inherited hold removed, and
@@ -1809,11 +1875,23 @@ export const sprayWallMutations = {
       // The way out is `publishSprayWallVersion` or `discardSprayWallVersion`; the
       // error names the draft so a client can offer both.
       const [openDraft] = await tx
-        .select({ id: dbSchema.sprayWallVersions.id, versionNumber: dbSchema.sprayWallVersions.versionNumber })
+        .select()
         .from(dbSchema.sprayWallVersions)
         .where(and(eq(dbSchema.sprayWallVersions.wallId, wall.id), eq(dbSchema.sprayWallVersions.status, 'draft')))
         .limit(1);
       if (openDraft) {
+        // Retrying the same uploaded photo after a lost response is idempotent.
+        // Another photo, mapping or editor's draft must never be silently adopted.
+        if (
+          uploadedPhoto &&
+          openDraft.photoKey === uploadedPhoto.key &&
+          openDraft.photoWidth === uploadedPhoto.width &&
+          openDraft.photoHeight === uploadedPhoto.height &&
+          sameSprayGeometry(openDraft.anchors, validated.anchors ?? null) &&
+          openDraft.notes === (validated.notes ?? null)
+        ) {
+          return openDraft;
+        }
         throw new GraphQLError(
           `This wall already has an unfinished photo (version ${openDraft.versionNumber}). ` +
             `Publish it or discard it before starting another.`,
@@ -1824,6 +1902,14 @@ export const sprayWallMutations = {
               draftVersionNumber: openDraft.versionNumber,
             },
           },
+        );
+      }
+
+      if (Number(versionCount) >= MAX_VERSIONS_PER_WALL) {
+        throw new GraphQLError(
+          `This wall has reached the limit of ${MAX_VERSIONS_PER_WALL} photos. ` +
+            `Each one keeps its own hold generation, so there is nothing to prune automatically.`,
+          { extensions: { code: SPRAY_WALL_CODES.versionLimitReached } },
         );
       }
 
@@ -2024,6 +2110,12 @@ export const sprayWallMutations = {
       });
     }
 
+    if (validated.climbEditPolicy !== undefined && board.ownerId !== ctx.userId) {
+      throw new GraphQLError('Only the climber who set this wall up can change who can edit climbs', {
+        extensions: { code: SPRAY_WALL_CODES.climbEditPolicyOwnerOnly },
+      });
+    }
+
     // The angle is the one field a published wall cannot change. `board_climb_stats`
     // is keyed by angle and every tick recorded so far sits at the old one, so
     // moving it would orphan the wall's whole history — the climbs would still be
@@ -2150,7 +2242,9 @@ export const sprayWallMutations = {
           .where(eq(dbSchema.sprayWalls.id, wall.id))
           .limit(1);
 
-        await tx.update(dbSchema.userBoards).set(updates).where(eq(dbSchema.userBoards.id, board.id));
+        if (Object.keys(updates).length > 0) {
+          await tx.update(dbSchema.userBoards).set(updates).where(eq(dbSchema.userBoards.id, board.id));
+        }
 
         if (losingPublic) {
           const retracted = await purgeSprayWallFeedItems(tx, wall.layoutId);
@@ -2224,6 +2318,10 @@ export const sprayWallMutations = {
           if (wallNow?.publicPhotoKey) orphanedPublicKeys.push(wallNow.publicPhotoKey);
         }
 
+        if (validated.climbEditPolicy !== undefined) {
+          wallUpdates.climbEditPolicy = validated.climbEditPolicy;
+        }
+
         await tx.update(dbSchema.sprayWalls).set(wallUpdates).where(eq(dbSchema.sprayWalls.id, wall.id));
       });
     } catch (error) {
@@ -2246,7 +2344,7 @@ export const sprayWallMutations = {
 
     const reloaded = await loadWall('uuid', validated.uuid);
     if (!reloaded) throw notFoundError();
-    return toGraphQLWall(reloaded, ctx.userId, true);
+    return toGraphQLWall(reloaded, ctx.userId, true, undefined, undefined, reloaded.board.uuid);
   },
 
   /**
@@ -2278,7 +2376,7 @@ export const sprayWallMutations = {
 
     const reloaded = await loadWall('uuid', validated.uuid);
     if (!reloaded) throw notFoundError();
-    return toGraphQLWall(reloaded, ctx.userId, true);
+    return toGraphQLWall(reloaded, ctx.userId, true, undefined, undefined, reloaded.board.uuid);
   },
 
   upsertSprayWallHolds: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
@@ -2590,6 +2688,7 @@ export const sprayWallMutations = {
       // generation and move every climb set on it.
       await lockWallForWrite(tx, wall.id);
       const version = await loadDraftVersion(tx, wall.id, validated.versionId);
+      if ((await draftPurpose(tx, wall.id, version)) === 'hold-edit') throw wrongDraftPurposeError();
       assertResetVersionIsAnchored(version);
 
       // The decisions are re-validated against the wall as it is NOW, not against
@@ -2840,6 +2939,12 @@ export const sprayWallMutations = {
       // this path and `commitSprayWallVersion` cannot drift on what publishing
       // means — the supersede, the hold count, the catalogue image and the
       // integrity recompute are one sequence with one owner.
+      const draft = await loadDraftVersion(tx, found.wall.id, found.version.id);
+      if ((await draftPurpose(tx, found.wall.id, draft)) === 'reset') {
+        throw new GraphQLError('Review and confirm this reset before publishing the new photo.', {
+          extensions: { code: SPRAY_WALL_CODES.resetReviewRequired },
+        });
+      }
       return publishDraftUnderLock(tx, found.wall, found.version.id);
     });
     const published = publishedDraft.version;
@@ -3047,7 +3152,10 @@ export const sprayWallMutations = {
         .update(dbSchema.sprayWalls)
         .set({ deletedAt, updatedAt: deletedAt, publicPhotoKey: null })
         .where(eq(dbSchema.sprayWalls.id, wall.id));
-      await tx.update(dbSchema.userBoards).set({ deletedAt }).where(eq(dbSchema.userBoards.id, board.id));
+      await tx
+        .update(dbSchema.userBoards)
+        .set({ deletedAt, syncFrozenAt: deletedAt })
+        .where(eq(dbSchema.userBoards.id, board.id));
     });
 
     // AFTER the commit, never before: a delete inside the transaction would destroy

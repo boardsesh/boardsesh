@@ -95,6 +95,14 @@ vi.mock('../../../hooks/use-local-climb-ticks', () => ({
   },
 }));
 
+// The version the climb is on now, as the phone's own copy of it says (#6023).
+const climbRevision = vi.hoisted(() => ({
+  current: undefined as { revisionNumber: number | null; holdsRevisionNumber: number | null } | undefined,
+}));
+vi.mock('../../../hooks/use-local-climb-revision', () => ({
+  useLocalClimbRevision: () => climbRevision.current,
+}));
+
 const pending = vi.hoisted(() => ({ count: 0 }));
 vi.mock('../../../hooks/use-local-ticks', () => ({ useLocalPendingTicks: () => ({ data: pending.count }) }));
 
@@ -176,6 +184,7 @@ beforeEach(() => {
   connectivity.effectiveOffline = false;
   localTicks.entries = undefined;
   localTicks.enabledCalls = [];
+  climbRevision.current = undefined;
 });
 
 describe('LogbookSection: the phone’s own rows while the fetch is in flight', () => {
@@ -417,6 +426,33 @@ describe('LogbookSection: the ledger body', () => {
     logbookState.logbook = [makeEntry({ angle: 45 }), makeEntry({ uuid: 'tick-2', angle: 30 })];
     const { container } = renderSection({ angle: 40 });
     expect(container.textContent).toContain('mobile.logbook.statLineAllAngles');
+  });
+});
+
+// #6023: the card hands every row the version the climb is on now, read from
+// the phone's own copy of the climb. The row decides whether to tag itself
+// (logbook-entry-row-grade.test.tsx covers that).
+describe('LogbookSection: the climb version handed to the rows', () => {
+  it('passes the phone’s version of the climb to every row', () => {
+    climbRevision.current = { revisionNumber: 3, holdsRevisionNumber: 2 };
+    logbookState.logbook = [
+      makeEntry({ uuid: 'on-current', climb_revision: 3, climbed_at: '2026-06-22T11:00:00' }),
+      makeEntry({ uuid: 'on-earlier', climb_revision: 1, climbed_at: '2026-06-21T11:00:00' }),
+    ];
+    renderSection();
+
+    expect(rows.props).toHaveLength(2);
+    expect(rows.props.every((props) => props.climbCurrentRevision === 3)).toBe(true);
+    // The entry keeps the version it was logged on, for the row to compare.
+    expect(new Set(rows.props.map((props) => (props.entry as LogbookEntry).climb_revision))).toEqual(new Set([1, 3]));
+  });
+
+  it('passes null when the phone does not know the climb’s version, so no row is tagged', () => {
+    climbRevision.current = undefined;
+    logbookState.logbook = [makeEntry({ uuid: 'on-earlier', climb_revision: 1 })];
+    renderSection();
+
+    expect(rows.props[0]?.climbCurrentRevision).toBeNull();
   });
 });
 

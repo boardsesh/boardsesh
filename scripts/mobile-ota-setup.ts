@@ -111,6 +111,11 @@ function printServerSetup(): void {
       `AWS_REGION=auto`,
       `AWS_ACCESS_KEY_ID=<bucket key id>`,
       `AWS_SECRET_ACCESS_KEY=<bucket secret>`,
+      // Assets redirect to the public R2 custom domain (edge cached, Brotli).
+      // Patches still come from this server: leave BUNDLE_DIFFING_CDN_REDIRECT
+      // unset unless the CDN adds the im and expo-base-update-id headers.
+      `CDN_BASE_URL=https://ota-assets.boardsesh.com`,
+      `BUNDLE_DIFFING=true`,
       // Redis, not local: local mode caches in the Go heap with no bound and
       // reached 1.7 GB (2.3M objects) after 21 days in production. xprem has no
       // default REDIS_PORT. The prefix names OTA keys in the shared Redis.
@@ -137,12 +142,10 @@ function setupChannel(): void {
   log('── V3 control-plane: production channel + branch surfing ────────────────');
   log('`vp run mobile:publish -- --channel production` publishes the production branch.');
   log('');
-  log('In the dashboard, map channel `production` → branch `production` once.');
-  log('Enable Branch Surfing on `production` with pattern `pr-*` — but only AFTER native builds');
-  log('carrying @xprem/control-center and the baked xprem-branch header have reached testers, since');
-  log('a binary without that header cannot surf. The toggle is on the Channels page INSIDE the');
-  log("selected channel's detail pane, not on the channel list, and an empty pattern makes the");
-  log('switch un-toggleable. Confirm the live state any time with `vp run mobile:ota-surf-doctor`.');
+  log('The channel mapping, Branch Surfing and branch protection are declared in infra/ota/config.ts.');
+  log('`vp run ota:apply` prints what differs on the server; `vp run ota:apply -- --apply` makes it so.');
+  log('It needs OTA_ADMIN_EMAIL and OTA_ADMIN_PASSWORD. Confirm what devices are offered with');
+  log('`vp run mobile:ota-surf-doctor`.');
   log('');
   log(`Verify after mapping: vp dlx ${EOAS_PACKAGE_SPEC} doctor --channel ${CHANNEL}  (needs EOO_TOKEN)`);
 }

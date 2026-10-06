@@ -1,4 +1,4 @@
-// Whether THIS BINARY may open the camera (epic #5346, SW-09).
+// Whether THIS BINARY, on THIS device, may open the camera (epic #5346, SW-09).
 //
 // The camera button is the one part of the add-a-wall flow that cannot ship by
 // OTA on its own. `launchCameraAsync` needs `NSCameraUsageDescription` in the
@@ -18,8 +18,25 @@
 // `expo-application`'s `nativeApplicationVersion` is read from the compiled app
 // (CFBundleShortVersionString / versionName), so it is exactly that: a fact
 // about the installed binary that no OTA can move.
+//
+// The version gate alone is not enough, because the BINARY can vouch for the
+// permission while the DEVICE has no camera to open. expo-image-picker used to
+// reject cleanly on the iOS simulator; upstream #45923 (56.0.16, in our 57.x)
+// removed that guard, so on a simulator `launchCameraAsync` sets
+// `sourceType = .camera` on a picker with no camera source and iOS aborts the
+// process — an ObjC exception no JS `catch` can intercept. The hardware check
+// therefore belongs before the call, exactly like the permission one.
+//
+// Only the iOS simulator is excluded. A real iPhone or iPad restricted by Screen
+// Time or MDM never reaches the picker: the permission API maps `.restricted` to
+// denied, and `pickWallPhotoFromCamera` stops at `denied` with the existing
+// toast. Android emulators answer `isDevice === false` too, but there a missing
+// camera rejects into the promise (the screen's own catch shows the retry
+// toast), and the emulator ships a virtual camera that QA drives — so hiding
+// the button there would cost a test path and buy no crash protection.
 
 import * as Application from 'expo-application';
+import * as Device from 'expo-device';
 import { isNativeVersionAtLeast } from '../native-version';
 
 /**
@@ -48,7 +65,28 @@ export function supportsWallCamera(
   return isNativeVersionAtLeast(nativeVersion, minimum);
 }
 
-/** Whether the installed binary can photograph a wall. Constant for the process's life. */
-export function canPhotographWall(): boolean {
-  return supportsWallCamera(Application.nativeApplicationVersion);
+/**
+ * Whether the device behind the binary has a camera the picker can open.
+ *
+ * `os` and `isDevice` are parameters rather than reads so the rule is testable
+ * without a device, and so this module keeps `react-native` off its import
+ * graph (the node-env suites cannot parse its entry). `Device.isDevice` is
+ * false on the iOS simulator, which has no camera source — launching a camera
+ * picker into it aborts the process (#6050). Everywhere else the answer is yes:
+ * real iOS devices have a camera or the permission layer already refuses them,
+ * and Android's picker fails as a rejection rather than an abort.
+ */
+export function hasUsableCameraSource(os: string, isDevice: boolean): boolean {
+  return os !== 'ios' || isDevice;
+}
+
+/**
+ * Whether this device, on this binary, can photograph a wall. Constant for the
+ * process's life.
+ *
+ * @param os the `Platform.OS` of the runtime — passed in rather than imported,
+ *   see `hasUsableCameraSource`.
+ */
+export function canPhotographWall(os: string): boolean {
+  return supportsWallCamera(Application.nativeApplicationVersion) && hasUsableCameraSource(os, Device.isDevice);
 }

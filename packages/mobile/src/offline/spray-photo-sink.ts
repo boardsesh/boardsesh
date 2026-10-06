@@ -1,13 +1,13 @@
 import type { QueryClient, QueryFilters } from '@tanstack/react-query';
 import type { DocumentsPulledSink, RowsDeletedSink } from '@boardsesh/offline-sync';
+import { clearSprayWallPrivateCaches } from '../lib/spray/spray-privacy-cleanup';
+import { sprayPrivacyGeneration } from '../lib/spray/spray-privacy-generation';
 import {
   SPRAY_PHOTO_STORE_AVAILABLE,
   deleteStoredSprayPhoto,
   pruneStoredSprayPhotos,
   storeSprayPhoto,
 } from '../lib/spray/spray-photo-store';
-import { deleteCachedSprayWallPhotos } from '../lib/spray/spray-photo-cache';
-import { unregisterSprayWall } from '../lib/spray/spray-wall-registry';
 import { reportHandledError } from '../lib/error-reporting';
 import { clearSprayPhotoPending, recordSprayPhotoFailure } from './spray-photo-retry';
 
@@ -39,11 +39,14 @@ import { clearSprayPhotoPending, recordSprayPhotoFailure } from './spray-photo-r
  */
 export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, documents, db }) => {
   if (tableName !== 'spray_walls') return;
+  const generation = sprayPrivacyGeneration();
 
   for (const document of documents) {
     const photoKey = document.photo_key;
     const photoUrl = document.photo_url;
     const layoutId = typeof document.layout_id === 'number' ? document.layout_id : Number(document.layout_id);
+    // A photograph without a valid wall identity cannot be fenced per wall.
+    if (!Number.isFinite(layoutId)) continue;
     // A wall with no published version has neither; a backend with no private
     // bucket configured sends the key and no URL. Both are "nothing to fetch",
     // not an error — the wall still syncs its holds.
@@ -63,8 +66,12 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
     // for — and that one goes through `recordSprayPhotoFailure` below.
     if (typeof photoUrl !== 'string' || !photoUrl) continue;
 
-    if (await storeSprayPhoto(photoKey, photoUrl)) {
-      if (Number.isFinite(layoutId)) await clearSprayPhotoPending(db, layoutId, photoKey);
+    const wallGeneration = sprayPrivacyGeneration(layoutId);
+    const stored = await storeSprayPhoto(photoKey, photoUrl, layoutId);
+    if (generation !== sprayPrivacyGeneration()) return;
+    if (wallGeneration !== sprayPrivacyGeneration(layoutId)) continue;
+    if (stored) {
+      await clearSprayPhotoPending(db, layoutId, photoKey);
       continue;
     }
 
@@ -77,7 +84,7 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
     //
     // Not on a platform with no store at all: web would otherwise rewind on
     // every cycle forever to fetch bytes it has nowhere to put.
-    if (SPRAY_PHOTO_STORE_AVAILABLE && Number.isFinite(layoutId)) {
+    if (SPRAY_PHOTO_STORE_AVAILABLE) {
       try {
         await recordSprayPhotoFailure(db, layoutId, photoKey);
       } catch (error) {
@@ -115,6 +122,7 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
   const rows = await db.getAllAsync<{ photo_key: string | null }>(
     'SELECT photo_key FROM spray_walls WHERE photo_key IS NOT NULL',
   );
+  if (generation !== sprayPrivacyGeneration()) return;
   pruneStoredSprayPhotos(rows.map((row) => row.photo_key).filter((key): key is string => !!key));
 };
 
@@ -138,9 +146,11 @@ export function createSprayWallDeletedSink(
     for (const row of rows) {
       const layoutId = typeof row.layout_id === 'number' ? row.layout_id : Number(row.layout_id);
       if (Number.isFinite(layoutId)) {
-        unregisterSprayWall(layoutId);
-        deleteCachedSprayWallPhotos(layoutId);
-        filters.push({ queryKey: ['sprayWallByLayout', layoutId], exact: true });
+        // Unregisters the wall, revokes its privacy generation and erases its
+        // cached photos and overlays, so no late download or render can land.
+        clearSprayWallPrivateCaches(layoutId);
+        // A prefix, not an exact key: the by-layout key ends in a generation.
+        filters.push({ queryKey: ['sprayWallByLayout', layoutId] });
       }
       const photoKey = row.photo_key;
       if (typeof photoKey === 'string' && photoKey) deleteStoredSprayPhoto(photoKey);

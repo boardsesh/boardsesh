@@ -10,6 +10,8 @@
 // Behaviour is unchanged from the map that used to live in the hook, plus two
 // additions the sweeper needs: an access clock and a write odometer.
 
+import { sprayOverlayLayoutId } from './spray/spray-privacy-generation';
+
 export type RenderedOverlayEntry = {
   uri: string;
   generation: number;
@@ -126,6 +128,13 @@ export function forgetOverlays(cacheKeys: Iterable<string>): number {
 export function clearOverlayIndex(): void {
   renderedOverlays.clear();
   lastUsedAtMs.clear();
+}
+
+export function forgetSprayOverlays(layoutId?: number): void {
+  for (const key of renderedOverlays.keys()) {
+    const wallId = sprayOverlayLayoutId(key);
+    if (wallId !== null && (layoutId == null || layoutId === wallId)) dropKey(key);
+  }
 }
 
 /**

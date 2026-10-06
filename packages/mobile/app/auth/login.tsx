@@ -3,7 +3,7 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, loginProviderProperties } from '@boardsesh/analytics';
 import { classifyNativeAuthFailureReason } from '../../src/lib/native-auth-analytics';
 import { EMAIL_REGEX } from '../../src/lib/auth-validation';
 import { useAuth } from '../../src/providers/auth-provider';
@@ -11,6 +11,7 @@ import { useTheme } from '../../src/providers/theme-provider';
 import { useNativeOAuthSignIn } from '../../src/hooks/use-native-oauth-sign-in';
 import { AuthFieldset } from '../../src/components/AuthFieldset';
 import { Button } from '../../src/components/Button';
+import { AppStorePrompt } from '../../src/components/AppStorePrompt';
 import { track } from '../../src/lib/analytics';
 import { useTrackLoginSucceeded } from '../../src/lib/login-analytics';
 import { reportError } from '../../src/lib/error-reporting';
@@ -61,13 +62,13 @@ export default function LoginScreen() {
 
     setError(null);
     setSubmitting(true);
-    track(SHARED_EVENTS.LoginAttempted, { auth_method: 'credentials', flow: 'native' });
+    track(SHARED_EVENTS.LoginAttempted, { ...loginProviderProperties('credentials'), flow: 'native' });
     try {
       const result = await signInWithCredentials(trimmedEmail, password);
       if (!result.success) {
         const credentialsFailureReason = classifyNativeAuthFailureReason(result, 'credentials');
         track(SHARED_EVENTS.LoginFailed, {
-          auth_method: 'credentials',
+          ...loginProviderProperties('credentials'),
           failure_reason: credentialsFailureReason,
           failure_detail: result.error,
         });
@@ -100,12 +101,12 @@ export default function LoginScreen() {
           setError(t('login.toasts.authFailed'));
         }
       } else {
-        trackLoginSucceeded({ auth_method: 'credentials', flow: 'native', screen: 'login' });
+        trackLoginSucceeded({ ...loginProviderProperties('credentials'), flow: 'native', screen: 'login' });
       }
       // On success, AuthProvider flips isAuthenticated and the redirect handles navigation.
     } catch (signInError) {
       track(SHARED_EVENTS.LoginFailed, {
-        auth_method: 'credentials',
+        ...loginProviderProperties('credentials'),
         failure_reason: 'exception',
       });
       throw signInError;
@@ -278,6 +279,10 @@ export default function LoginScreen() {
             <Text style={[styles.footerLink, { color: theme.systemColors.accent }]}>{t('login.links.discord')}</Text>
           </Pressable>
         </View>
+
+        {/* Browser app on a phone only; nothing on native or on a desktop. Last
+            on the screen so it never pushes the sign-in buttons down. */}
+        <AppStorePrompt surface="login" />
       </ScrollView>
     </KeyboardAvoidingView>
   );

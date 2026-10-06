@@ -39,6 +39,7 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 
 const PREVIEW_MAX_HEIGHT = 260;
+const ALL_CLIMB_EDIT_POLICY_KEYS = new Set<'setter' | 'collaborators'>(['setter', 'collaborators']);
 
 type BoardBuilder = ReturnType<typeof useBoardBuilder>;
 
@@ -72,6 +73,10 @@ type BoardFormProps = {
    * warning so editing your own board never warns about its own serial.
    */
   currentBoardUuid?: string;
+  /** Who may edit published climbs on this spray wall (#6025). */
+  climbEditPolicy?: 'setter' | 'collaborators';
+  onSelectClimbEditPolicy?: (policy: 'setter' | 'collaborators') => void;
+  climbEditPolicyDisabled?: boolean;
 };
 
 /**
@@ -91,6 +96,9 @@ export function BoardForm({
   lockedConfigReason = 'permission',
   errorMessage = null,
   currentBoardUuid,
+  climbEditPolicy,
+  onSelectClimbEditPolicy,
+  climbEditPolicyDisabled = false,
 }: BoardFormProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
@@ -189,6 +197,13 @@ export function BoardForm({
       { key: 'private' as const, label: t('mobile.sprayVisibility.private') },
       { key: 'unlisted' as const, label: t('mobile.sprayVisibility.unlisted') },
       { key: 'public' as const, label: t('mobile.sprayVisibility.public') },
+    ],
+    [t],
+  );
+  const climbEditPolicyOptions = useMemo(
+    () => [
+      { key: 'setter' as const, label: t('mobile.sprayClimbEditPolicy.setter') },
+      { key: 'collaborators' as const, label: t('mobile.sprayClimbEditPolicy.collaborators') },
     ],
     [t],
   );
@@ -335,6 +350,29 @@ export function BoardForm({
                       ? t('mobile.sprayVisibility.unlistedHint')
                       : t('mobile.sprayVisibility.privateHint')}
                 </Text>
+                {onSelectClimbEditPolicy ? (
+                  <>
+                    <SectionLabel>{t('mobile.sprayClimbEditPolicy.label')}</SectionLabel>
+                    <SegmentedControl<'setter' | 'collaborators'>
+                      options={climbEditPolicyOptions}
+                      selectedKey={climbEditPolicy ?? 'setter'}
+                      onSelect={climbEditPolicyDisabled ? () => {} : onSelectClimbEditPolicy}
+                      disabledKeys={climbEditPolicyDisabled ? ALL_CLIMB_EDIT_POLICY_KEYS : undefined}
+                      accessibilityLabel={t('mobile.sprayClimbEditPolicy.label')}
+                    />
+                    <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.visibilityHint}>
+                      {climbEditPolicyDisabled
+                        ? t('mobile.sprayClimbEditPolicy.ownerOnlyHint')
+                        : climbEditPolicy === 'collaborators'
+                          ? sprayVisibility === 'public'
+                            ? t('mobile.sprayClimbEditPolicy.collaboratorsPublicHint')
+                            : sprayVisibility === 'unlisted'
+                              ? t('mobile.sprayClimbEditPolicy.collaboratorsUnlistedHint')
+                              : t('mobile.sprayClimbEditPolicy.collaboratorsPrivateHint')
+                          : t('mobile.sprayClimbEditPolicy.setterHint')}
+                    </Text>
+                  </>
+                ) : null}
               </>
             ) : null}
           </>

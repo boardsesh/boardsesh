@@ -197,6 +197,15 @@ export function isSprayWallVisibilityOwnerOnlyError(error: unknown): boolean {
   );
 }
 
+/**
+ * Only the wall's owner may change who can edit climbs on this wall (#6025).
+ */
+export function isSprayWallClimbEditPolicyOwnerOnlyError(error: unknown): boolean {
+  return getGraphqlErrors(error).some(
+    (graphqlError) => graphqlError.extensions?.code === 'SPRAY_WALL_CLIMB_EDIT_POLICY_OWNER_ONLY',
+  );
+}
+
 // The board-mutation rejections clients branch on are parsed in
 // @boardsesh/graphql so web and mobile read the same shapes. Re-exported here so
 // board screens keep a single import for GraphQL error handling.

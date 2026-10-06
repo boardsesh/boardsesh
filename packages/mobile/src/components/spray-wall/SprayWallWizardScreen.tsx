@@ -33,7 +33,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { useNavigation, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -66,6 +66,7 @@ import { reportError } from '../../lib/error-reporting';
 import { extractGraphqlCode, extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import { SPRAY_CAP_VALUES, sprayCapFromErrorCode, sprayCapMessage } from '../../lib/spray/spray-cap-copy';
 import { useActivateBoard } from '../../lib/boards/use-activate-board';
+import { activatePublishedSprayWall } from '../../lib/spray/activate-published-spray-wall';
 import type { BoardReturnTo } from '../../lib/boards/board-return-to';
 import { invalidateSprayWallRenderData } from '../../lib/spray/spray-wall-loader';
 import { prefetchSprayWallDraft } from '../../lib/spray/use-spray-wall-draft';
@@ -82,6 +83,7 @@ import { uploadSprayWallPhoto } from '../../lib/spray/spray-wall-photo-upload';
 import { wallCreatedEventProperties } from './wall-created-event';
 import { SprayDetectionStep } from './SprayDetectionStep';
 import { SprayWallLookStep } from './SprayWallLookStep';
+import { useSprayWizardLeaveGuard } from './use-spray-wizard-leave-guard';
 import { canPhotographWall } from '../../lib/spray/camera-capability';
 import { pickWallPhotoFromCamera, pickWallPhotoFromLibrary, rescalePoint } from '../../lib/spray/wall-photo';
 import {
@@ -99,13 +101,6 @@ import {
   type DetectionOutcome,
 } from './add-wall-machine';
 import { findResumableWall, planUploadRetry, resumeTargetFor, startOverPlan } from './resume-draft';
-
-/** The `beforeRemove` payload this screen re-dispatches once the climber confirms. */
-type NavigationRemoveEvent = { preventDefault: () => void; data: { action: unknown } };
-type NavigationRemoveSubscribe = (
-  event: 'beforeRemove',
-  listener: (event: NavigationRemoveEvent) => void,
-) => () => void;
 
 /** The angle list as `AngleSlider` takes it. Built once: it never changes. */
 const sprayAngles: number[] = [...SPRAY_ANGLE_OPTIONS];
@@ -168,15 +163,17 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   const updateVisibility = useUpdateSprayWallVisibility();
   const updateVisibilityAsync = updateVisibility.mutateAsync;
 
-  // The camera is a property of the BINARY, not of this bundle: SW-02 put the
-  // usage description in 2.6.0 and this slice rides an OTA into older ones too.
-  const cameraAvailable = useMemo(() => canPhotographWall(), []);
+  // The camera is a property of the BINARY and of the DEVICE, not of this
+  // bundle: SW-02 put the usage description in 2.6.0, and an iOS simulator has
+  // no camera to open — a picker launched into it aborts the app. Both gates
+  // live in `canPhotographWall`.
+  const cameraAvailable = useMemo(() => canPhotographWall(Platform.OS), []);
 
   const discardDraft = useDiscardSprayWallDraft();
   const discardDraftAsync = discardDraft.mutateAsync;
 
   /**
-   * The wall's `user_boards` row, as `useActivateBoard` needs it.
+   * The initial board row, kept for creation analytics.
    *
    * A ref and not machine state because it is a PAYLOAD rather than an identity:
    * the machine holds which wall this is (and must, so a retry cannot mint a
@@ -264,7 +261,11 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
       if (choice === 'startOver') {
         const plan = startOverPlan(resumable, full.versions ?? []);
         try {
-          await discardDraftAsync({ versionId: plan.discardVersionId, wallUuid: plan.deleteWallUuid });
+          await discardDraftAsync({
+            versionId: plan.discardVersionId,
+            wallUuid: plan.deleteWallUuid,
+            layoutId: full.layoutId,
+          });
         } catch (error) {
           // Best-effort, deliberately. A start-over that cannot reach the server
           // must still let the climber build their wall; the stray row is what
@@ -565,17 +566,14 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
         await updateVisibilityAsync({ uuid: draft.wallUuid, ...visibility });
       }
 
-      // Binds the wall as the active board and dismisses back to the tab the
-      // flow was opened from, where the Climbs empty state takes over. A wall
-      // whose board payload never arrived is still published — it just is not
-      // switched to, which the board picker fixes in one tap.
-      if (board) await finish(board);
-      else router.back();
+      // Fetch the published visibility before persisting the active board.
+      // A failed read leaves the published latch set, so retry only binds.
+      await activatePublishedSprayWall(queryClient, draft.wallUuid, finish);
     } catch (error) {
       reportError(error);
       dispatch({ type: 'PUBLISH_FAILED', message: capOrServerMessage(error, t('sprayWizard.publish.failed')) });
     }
-  }, [state, publishVersionAsync, updateVisibilityAsync, queryClient, builder, finish, router, t]);
+  }, [state, publishVersionAsync, updateVisibilityAsync, queryClient, builder, finish, t]);
 
   /**
    * Publish runs by itself the moment the look step confirms — its button is
@@ -654,48 +652,20 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     [state, t, readEditorLeaveState],
   );
 
-  const leave = useCallback(() => confirmLeave(() => router.back()), [confirmLeave, router]);
-
-  /**
-   * The same question for the ways out this screen does not draw.
-   *
-   * The footer's Back was guarded; the header's back button, the iOS back
-   * gesture and Android's Back key were not, and all three remove the route
-   * outright — mid-upload, mid-publish, or with holds the editor has not written
-   * yet. `beforeRemove` is the one place all of them pass through.
-   */
-  const navigation = useNavigation();
-  const confirmLeaveRef = useRef(confirmLeave);
-  confirmLeaveRef.current = confirmLeave;
-
-  useEffect(() => {
-    // Typed loosely on purpose: `useNavigation()` here is the Expo Router stack's
-    // navigation object, and the event's payload is what has to be re-dispatched
-    // to let the removal through.
-    const subscribe = (navigation as unknown as { addListener?: NavigationRemoveSubscribe }).addListener;
-    if (typeof subscribe !== 'function') return;
-    return subscribe.call(navigation, 'beforeRemove', (event: NavigationRemoveEvent) => {
-      const decision = leaveDecision(stateRef.current, readEditorLeaveState());
-      if (decision === 'leave') return;
-      event.preventDefault();
-      // Mid-hand-over: swallowed without a dialog. See `leaveDecision`.
-      if (decision === 'block') return;
-      confirmLeaveRef.current(() => {
-        (navigation as unknown as { dispatch: (action: unknown) => void }).dispatch(event.data.action);
-      });
-    });
-  }, [navigation, readEditorLeaveState]);
+  // Native dismissal is held while the existing decision and stale-answer
+  // checks run. Always registered: editor dirtiness changes through refs.
+  useSprayWizardLeaveGuard(confirmLeave);
 
   const goBack = useCallback(() => {
     if (isBusy(state)) return;
     // `review`, `look` and `publish` have no step behind them — the draft is on
     // the server by then — so back means leaving, which keeps the draft.
     if (backLeavesFlow(state)) {
-      leave();
+      router.back();
       return;
     }
     dispatch({ type: 'BACK' });
-  }, [state, leave]);
+  }, [state, router]);
 
   const candidateCount = state.detection.candidates.length;
   const onHoldsCommitted = useCallback(
@@ -776,6 +746,10 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     return (
       <SprayWallLookStep
         draft={state.draft}
+        stepCounter={t('sprayWizard.stepCounter', {
+          current: COUNTED_STEPS.indexOf('look') + 1,
+          total: COUNTED_STEPS.length,
+        })}
         onSaveStarted={onLookSaveStarted}
         onSaveFailed={onLookSaveFailed}
         onConfirmed={onLookConfirmed}
@@ -895,20 +869,6 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
             <Text variant="subheadline" color={systemColors.secondaryLabel}>
               {t('sprayWizard.photo.body')}
             </Text>
-            {state.photo ? (
-              <View style={styles.previewWrap}>
-                <Image
-                  source={{ uri: state.photo.uri }}
-                  style={{
-                    width: previewWidth,
-                    height: previewHeight(previewWidth, state.photo),
-                    borderRadius: borderRadius.lg,
-                  }}
-                  contentFit="cover"
-                  accessibilityIgnoresInvertColors
-                />
-              </View>
-            ) : null}
             <View style={styles.photoActions}>
               <Button
                 title={state.photo ? t('sprayWizard.photo.pickAnother') : t('sprayWizard.photo.library')}
@@ -927,6 +887,20 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
                 />
               ) : null}
             </View>
+            {state.photo ? (
+              <View style={styles.previewWrap}>
+                <Image
+                  source={{ uri: state.photo.uri }}
+                  style={{
+                    width: previewWidth,
+                    height: previewHeight(previewWidth, state.photo),
+                    borderRadius: borderRadius.lg,
+                  }}
+                  contentFit="cover"
+                  accessibilityIgnoresInvertColors
+                />
+              </View>
+            ) : null}
           </>
         ) : null}
 

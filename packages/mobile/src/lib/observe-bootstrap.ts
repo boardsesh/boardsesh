@@ -6,8 +6,7 @@
 // `isInitialized()` when a screen's provider mounts and throws if that value
 // ever changes afterwards ("Router integration was toggled during a screen's
 // lifecycle"), so configure cannot move into a hook, an effect, or a provider —
-// it has to have already happened by the time the first screen renders. Same
-// reason `analytics-bootstrap.ts` next to it is an import rather than a call.
+// it has to have already happened by the time the first screen renders.
 //
 // This is also the ONLY module that imports `expo-observe` directly. Everything
 // else reaches the SDK through the dependency-free slot in

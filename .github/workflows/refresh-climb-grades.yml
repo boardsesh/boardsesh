@@ -6,9 +6,9 @@ name: Refresh Climb Grades
 # coefficients, gate results, or grades are written on a gate failure.
 # Coefficients refit weekly, frozen in between. Idempotent.
 # Model spec: docs/boardsesh-grade.md.
+# Scheduled runs moved to the homelab batch worker (pg-boss family, #5800);
+# this workflow is manual-only for backfills and dry runs.
 on:
-  schedule:
-    - cron: '30 6 * * *' # 06:30 UTC daily, after the recommendations refresh
   workflow_dispatch:
     inputs:
       refit:

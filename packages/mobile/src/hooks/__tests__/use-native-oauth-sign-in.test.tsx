@@ -238,6 +238,7 @@ describe('useNativeOAuthSignIn — Expo web redirect', () => {
     expect(signInWithGoogleWebMock).not.toHaveBeenCalled();
     expect(trackMock).toHaveBeenCalledWith('Login Attempted', {
       auth_method: 'google',
+      provider: 'google',
       flow: 'web',
     });
     expect(trackMock).not.toHaveBeenCalledWith('Login Succeeded', expect.anything());
@@ -275,6 +276,7 @@ describe('useNativeOAuthSignIn — Expo web redirect', () => {
     expect(consumeFreshOAuthPendingMock).toHaveBeenCalledWith('attempt-apple-1');
     expect(trackMock).toHaveBeenCalledWith('Login Failed', {
       auth_method: 'apple',
+      provider: 'apple',
       flow: 'web',
       failure_reason: 'oauth',
       failure_detail: 'AccessDenied',
@@ -591,6 +593,7 @@ describe('useNativeOAuthSignIn — Login Succeeded names its screen', () => {
 
     expect(trackMock).toHaveBeenCalledWith('Login Succeeded', {
       auth_method: 'google',
+      provider: 'google',
       flow: 'native',
       screen: 'login',
     });
@@ -603,6 +606,7 @@ describe('useNativeOAuthSignIn — Login Succeeded names its screen', () => {
 
     expect(trackMock).toHaveBeenCalledWith('Login Succeeded', {
       auth_method: 'apple',
+      provider: 'apple',
       flow: 'native',
       screen: 'register',
       is_registration: true,
@@ -617,6 +621,7 @@ describe('useNativeOAuthSignIn — Login Succeeded names its screen', () => {
 
     expect(trackMock).toHaveBeenCalledWith('Login Succeeded', {
       auth_method: 'apple',
+      provider: 'apple',
       flow: 'web_fallback',
       fallback_mechanism: 'browser_deeplink',
       screen: 'register',

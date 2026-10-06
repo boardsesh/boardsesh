@@ -1,4 +1,9 @@
 import { sql, type SQL } from 'drizzle-orm';
+import {
+  latestTickOnCurrentHoldsSql,
+  tickAliasOnCurrentHoldsSql,
+  tickAliasRevisionOrFirstSql,
+} from '../climb-stats/holds-epoch';
 import type { RecommendationQueryParams, RecommendationType } from './types';
 
 /** Postgres int[] literal, safe for empty arrays (`&&` against `{}` is false). */
@@ -119,7 +124,11 @@ function catalogConditions(params: RecommendationQueryParams): SQL[] {
   return conditions;
 }
 
-/** "Find NEW climbs": the user has not sent this climb at the target angle. */
+/**
+ * "Find NEW climbs": the user has not sent this climb at the target angle. A
+ * send from before the climb's holds last moved is not a send of this climb
+ * (#6023, holds-epoch.ts), so the climb is new to them again.
+ */
 function notSentByCondition(userId: string, angle: number): SQL {
   return sql`NOT EXISTS (
       SELECT 1 FROM boardsesh_ticks t
@@ -128,6 +137,7 @@ function notSentByCondition(userId: string, angle: number): SQL {
         AND t.climb_uuid = bc.uuid
         AND t.angle = ${angle}
         AND t.status IN ('flash', 'send')
+        AND ${tickAliasOnCurrentHoldsSql('t', sql`bc.holds_revision_number`)}
     )`;
 }
 
@@ -272,6 +282,13 @@ export function buildRecommendationCountSql(params: RecommendationQueryParams): 
  *
  * FRESH has no stats bounds, so it skips the stats join entirely: a LEFT JOIN on
  * the stats primary key reads no column and cannot change the count.
+ *
+ * "Sent" is the same set `notSentByCondition` excludes, or the subtraction is
+ * wrong: only sends on the climb's current holds. The subquery keeps the newest
+ * revision the viewer sent each climb on, and the row is kept when that reaches
+ * the epoch of the `board_climbs` row the query joins anyway. The subquery is
+ * grouped, and joined, on the board type as well as the uuid, so a send never
+ * pairs with a climb on another board whatever the catalogue filter says.
  */
 export function buildRecommendationSentOverlapSql(params: RecommendationQueryParams, userId: string): SQL {
   const { angle, boardType } = params.target;
@@ -281,13 +298,15 @@ export function buildRecommendationSentOverlapSql(params: RecommendationQueryPar
   return sql`
     SELECT COUNT(*)::int AS count
     FROM (
-      SELECT DISTINCT t.climb_uuid FROM boardsesh_ticks t
+      SELECT t.board_type, t.climb_uuid, MAX(${tickAliasRevisionOrFirstSql('t')}) AS latest_sent_revision
+      FROM boardsesh_ticks t
       WHERE t.user_id = ${userId}
         AND t.board_type = ${boardType}
         AND t.angle = ${angle}
         AND t.status IN ('flash', 'send')
+      GROUP BY t.board_type, t.climb_uuid
     ) sent
-    JOIN board_climbs bc ON bc.uuid = sent.climb_uuid
+    JOIN board_climbs bc ON bc.board_type = sent.board_type AND bc.uuid = sent.climb_uuid
     ${
       bounds
         ? sql`JOIN board_climb_stats s
@@ -295,5 +314,6 @@ export function buildRecommendationSentOverlapSql(params: RecommendationQueryPar
         : sql``
     }
     WHERE ${sql.join(conditions, sql` AND `)}
+      AND ${latestTickOnCurrentHoldsSql(sql`sent.latest_sent_revision`, sql`bc.holds_revision_number`)}
   `;
 }

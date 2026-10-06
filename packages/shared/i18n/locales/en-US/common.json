@@ -310,6 +310,8 @@
         "errorTitle": "Couldn't measure your downloads",
         "errorSubtitle": "Something got in the way of reading what's on this phone.",
         "errorRetry": "Try again",
+        "downgradeTitle": "Offline storage is paused",
+        "downgradeSubtitle": "This phone is on an older version of the app than the one that saved your data. Your downloaded boards and any sends waiting to sync stay on this phone and come back with the next update.",
         "cachedImagesHeader": "Cached images",
         "cachedImagesArtLabel": "Board art",
         "cachedImagesPhotosLabel": "Photos",
@@ -392,6 +394,9 @@
         "failedMessage_other": "{{count}} changes couldn't sync, and signing out deletes them. Cancel and hit Retry sync first if you want to keep them.",
         "confirm": "Sign out",
         "cancel": "Cancel",
+        "downgradeMessage": "This phone is waiting on an app update before it can open your offline data. If someone else signs in here before that update, any sends still waiting to sync on this phone are lost.",
+        "downgradeConfirm": "Sign out anyway",
+        "downgradeCancel": "Stay signed in",
         "failureTitle": "Sign-out wasn't confirmed",
         "failure": "Boardsesh couldn't confirm sign-out. Reconnect and sign out again before leaving this device."
       },
@@ -403,6 +408,18 @@
         "pickSubtitle": "Try a change before it ships and tell us how it went",
         "testPlanTitle": "Test plan #{{prNumber}}",
         "testPlanSubtitle": "What to try on the preview you're running"
+      },
+      "earlyUpdates": {
+        "sectionTitle": "App updates",
+        "title": "Get updates early",
+        "offSubtitle": "New features as soon as they land, before everyone else",
+        "onSubtitle": "You're on early updates",
+        "waitingSubtitle": "On, waiting for the next early update",
+        "leavingSubtitle": "Switched off. Regular updates take over once the next one is ready for this phone.",
+        "testingBody": "A preview is pinned on this phone. Leave it first, then change this.",
+        "footer": "Early updates can have rough edges now and then. Changes here apply next time you open the app.",
+        "joinDeferred": "Can't reach the update server. We'll try again next time you open the app; early updates start the time after.",
+        "leaveDeferred": "Can't switch back yet. We'll try again next time you open the app."
       }
     },
     "sendRecovery": {
@@ -591,6 +608,13 @@
       "errorTitle": "Couldn't load this",
       "errorBody": "That didn't come through. Give it another go.",
       "retry": "Try again"
+    },
+    "storePrompt": {
+      "title": "Get the Boardsesh app",
+      "body": "Light up your board and log every send, even with no signal.",
+      "googlePlay": "Get it on Google Play",
+      "appStore": "Download on the App Store",
+      "dismiss": "Not now"
     }
   },
   "lightControl": {
@@ -686,7 +710,8 @@
   "qa": {
     "shared": {
       "backOnProduction": "Back on production at the next update",
-      "leaveFailed": "Could not switch off this preview — try again"
+      "leaveFailed": "Could not switch off this preview — try again",
+      "backOnEarlyUpdates": "Back on early updates next time you open the app"
     },
     "pick": {
       "title": "Test a PR",
@@ -718,7 +743,10 @@
       "noMatchBody": "Nothing published for this build matches “{{query}}”.",
       "trySurfAction": "Try #{{prNumber}} anyway",
       "trySurfHint": "It may not have a preview this build can load.",
-      "notServableToast": "No preview of #{{prNumber}} for this build — it may need a rebase onto main"
+      "notServableToast": "No preview of #{{prNumber}} for this build — it may need a rebase onto main",
+      "earlyUpdatesTitle": "Early updates",
+      "earlyUpdatesBody": "Go back to early updates. Applies next time you open the app.",
+      "earlyUpdatesNextLaunch": "Early updates are back on next time you open the app"
     },
     "brief": {
       "screenTitle": "What to test",

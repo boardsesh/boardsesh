@@ -194,14 +194,19 @@ describe('useCreateClimbScreen analytics', () => {
     await nameAndSave(result);
 
     expect(board.saveClimb).toHaveBeenCalledTimes(1);
-    // Same schema AND values as web's `Climb Created` (create-climb-form.tsx):
-    // { boardLayout: <resolved layout name>, isDraft, holdCount }.
+    // Web's `Climb Created` schema and values (create-climb-form.tsx):
+    // { boardLayout: <resolved layout name>, isDraft, holdCount }, plus the
+    // board type, which is what tells a spray wall's climb from any other.
     expect(analytics.track).toHaveBeenCalledWith('Climb Created', {
       boardLayout: EXPECTED_BOARD_LAYOUT,
+      boardType: 'kilter',
       isDraft: true,
       holdCount: 3,
     });
     expect(analytics.track).not.toHaveBeenCalledWith('Climb Create Failed', expect.anything());
+    // The save queues the climb, which fires `Set Active Climb`. It is marked
+    // as a save so that event still means "a climber chose this climb" (#6027).
+    expect(queue.setCurrentClimb).toHaveBeenCalledWith(expect.anything(), { trigger: 'climb_saved' });
     // #3471: create/edit/publish share one success path with useDeleteDraftClimb's
     // key set — the Open Drafts table AND the Climbs tab's infinite list must both
     // refresh, not just the plain searchClimbs cache.

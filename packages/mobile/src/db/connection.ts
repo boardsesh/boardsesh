@@ -9,6 +9,8 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import {
   ensureMutationQueueTable,
   runMigrations,
+  readSchemaCompatibility,
+  SchemaNewerThanAppError,
   deleteUserCheckpoints,
   deleteAllSyncMeta,
   applyBusyTimeout,
@@ -33,6 +35,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { reportError } from '../lib/error-reporting';
 import { track } from '../lib/analytics';
 import { setSchemaReady } from './schema-ready';
+import { SCHEMA_NEWER_REPORT_KIND, setSchemaDowngrade, type SchemaDowngrade } from './schema-downgrade';
 import { pinDatabase } from './connection-pin';
 import { registerDeadHandleRecovery, type DeadHandleOrigin } from './dead-handle';
 import type { SqliteHandleFailure } from '@boardsesh/offline-sync';
@@ -253,10 +256,13 @@ let hasReportedRecovery = false;
  * triage can tell a refused WAL switch from a locked migration — #4104 could not,
  * because all three steps shared a single catch.
  */
-type InitPhase = 'wal' | 'queue-table' | 'migrations';
+type InitPhase = 'wal' | 'schema-version' | 'queue-table' | 'migrations';
 
 type InitOutcome =
   | { status: 'ready' }
+  // The file was migrated by a newer bundle than this one. Not a failure and not
+  // retryable: the file is healthy, this bundle is simply too old to open it.
+  | ({ status: 'schema-newer' } & SchemaDowngrade)
   | { status: 'failed'; phase: InitPhase; error: unknown; retryable: boolean; sqliteCode: number | null };
 
 // Retryability comes from `classifySqliteLockError` (@boardsesh/offline-sync,
@@ -409,22 +415,87 @@ export function initializeDatabase(db: SQLiteDatabase): Promise<void> {
  * publish, where the supersede check already lives.
  */
 async function attemptInitialization(db: SQLiteDatabase): Promise<InitOutcome> {
-  let phase: InitPhase = 'wal';
+  let phase: InitPhase = 'schema-version';
   try {
-    // WAL (persists on the file, so every later connection inherits it) + busy_timeout
-    // on the main connection. Runs first, in autocommit: journal_mode can't change
-    // inside a transaction, and ensureMutationQueueTable/runMigrations open one.
+    // FIRST, before the WAL switch and before any DDL, and read-only: a database a
+    // newer bundle migrated must be recognised before this one changes anything
+    // about it. JS goes backwards when a canary OTA is reverted or a climber
+    // leaves the early-updates track (docs/offline-sync-plan.md, "Older JS on a
+    // newer database").
+    //
+    // The busy timeout comes first because it is connection-local (it changes
+    // nothing in the file) and the read needs it: without it a launch that meets a
+    // held file fails this statement instantly on every rung of the retry ladder,
+    // instead of waiting the lock out once.
+    await applyBusyTimeout(db);
+    const compatibility = await readSchemaCompatibility(db);
+    if (compatibility.status === 'newer') return toSchemaNewerOutcome(compatibility);
+    phase = 'wal';
+    // WAL (persists on the file, so every later connection inherits it). It also
+    // sets busy_timeout on the main connection, which by now is a repeat: the
+    // version read above already needed it. Runs in autocommit: journal_mode can't
+    // change inside a transaction, and ensureMutationQueueTable/runMigrations open one.
     // Does not throw on a refused WAL switch — see configureMainConnection.
     await configureMainConnection(db);
     phase = 'queue-table';
     await ensureMutationQueueTable(db);
     phase = 'migrations';
-    await runMigrations(db);
+    // The same answer from the runner itself, which checks again before its own
+    // first statement. Unreachable after the read above, and handled anyway: a
+    // `newer` here must never fall through to `ready`.
+    const migrated = await runMigrations(db);
+    if (migrated.status === 'newer') return toSchemaNewerOutcome(migrated);
     return { status: 'ready' };
   } catch (error) {
     const { locked, code } = classifySqliteLockError(error);
     return { status: 'failed', phase, error, retryable: locked, sqliteCode: code };
   }
+}
+
+function toSchemaNewerOutcome(versions: SchemaDowngrade): InitOutcome {
+  return {
+    status: 'schema-newer',
+    storedVersion: versions.storedVersion,
+    supportedVersion: versions.supportedVersion,
+  };
+}
+
+/** At most one downgrade report per process: every remount finds the same file. */
+let hasReportedSchemaDowngrade = false;
+
+/**
+ * Record that the file belongs to a newer bundle, and count it.
+ *
+ * The store is what turns the refusal into behaviour: `useOfflineDatabase()` stops
+ * handing out the provider's live connection, Storage says why it is empty, and
+ * the root layout asks the OTA server for a bundle new enough for the file.
+ *
+ * Reported under its own `kind`, at `warning`, and deliberately NOT as
+ * `sqlite-init`: that aggregate is the lock-contention and corruption signal, and
+ * nothing is wrong with this file. One Sentry event per launch in the state, and
+ * `captureToObserve` books it against the OTA update id, which is the question a
+ * canary revert raises: which update put devices here.
+ */
+function noteSchemaDowngrade(downgrade: SchemaDowngrade): void {
+  setSchemaDowngrade(downgrade);
+  if (hasReportedSchemaDowngrade) return;
+  hasReportedSchemaDowngrade = true;
+  if (__DEV__) {
+    console.warn(
+      `[SQLite] offline database is at schema v${downgrade.storedVersion}, this bundle knows ` +
+        `v${downgrade.supportedVersion}; leaving it untouched and running without offline storage.`,
+    );
+  }
+  reportError(new SchemaNewerThanAppError(downgrade.storedVersion, downgrade.supportedVersion), {
+    level: 'warning',
+    tags: {
+      source: 'offline-sync',
+      kind: SCHEMA_NEWER_REPORT_KIND,
+      stored_schema_version: downgrade.storedVersion,
+      supported_schema_version: downgrade.supportedVersion,
+    },
+    fingerprint: [SCHEMA_NEWER_REPORT_KIND],
+  });
 }
 
 /**
@@ -478,6 +549,23 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
       if (attempts === 1) {
         markStartup('sqlite.initial.gate', outcome.status === 'ready' ? 'ready' : 'degraded');
         releaseLaunch();
+      }
+
+      if (outcome.status === 'schema-newer') {
+        // The chain ends here with NOTHING published, which is the whole guard:
+        // every `getDatabaseHandle()` reader keeps getting null and stays on the
+        // network, schema readiness stays false so the sync scheduler and the
+        // outbox drainer never start, and the queued sends wait in the file for a
+        // bundle that knows their shape. No retry: the answer is the same until
+        // the JS changes. The guard is dropped so a later mount re-reads the file
+        // rather than being handed this finished chain.
+        activeInitialization = null;
+        if (attempts > 1) markStartup('sqlite.recovery.end', 'error');
+        // Unconditional, not just the superseded retraction: whatever was published
+        // before points at this same file.
+        setDatabaseHandle(null);
+        noteSchemaDowngrade({ storedVersion: outcome.storedVersion, supportedVersion: outcome.supportedVersion });
+        return;
       }
 
       if (outcome.status === 'ready') {
@@ -842,6 +930,7 @@ export function resetDatabaseInitializationForTests(): void {
   activeInitialization = null;
   latestDatabase = null;
   hasReportedRecovery = false;
+  hasReportedSchemaDowngrade = false;
   // A chain a test walked away from must not be reachable from the next one's first
   // `initializeDatabase` call.
   wakeFromBackoff = null;

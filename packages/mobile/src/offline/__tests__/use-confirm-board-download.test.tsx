@@ -63,6 +63,7 @@ vi.mock('../../lib/format-bytes', () => ({ formatBytes: () => '128 MB' }));
 vi.mock('../../sync', () => ({ notifyBootstrapMetadataChanged: spies.notifyBootstrapMetadataChanged }));
 
 import { HOLD_INDEX_BYTES_PER_CLIMB, useConfirmBoardDownload, withHoldIndexLine } from '../use-confirm-board-download';
+import { resetSchemaDowngradeForTests, setSchemaDowngrade } from '../../db/schema-downgrade';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -71,7 +72,10 @@ beforeEach(() => {
   spies.getCheckpoint.mockResolvedValueOnce(null);
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  resetSchemaDowngradeForTests();
+});
 
 describe('useConfirmBoardDownload', () => {
   it('marks a size-disclosed partial heal as user-requested before starting it', async () => {
@@ -84,6 +88,40 @@ describe('useConfirmBoardDownload', () => {
     expect(spies.restoreBootstrapRetryBudget).toHaveBeenCalledWith(fixtures.database, 'kilter:1:10');
     expect(spies.notifyBootstrapMetadataChanged).toHaveBeenCalledWith({ scopeKey: 'kilter:1:10' });
     expect(spies.enableBoardsOffline).toHaveBeenCalledWith(fixtures.board, { trigger: 'toggle' });
+  });
+});
+
+// Older JS on a database newer JS migrated: the connection refuses every call, so
+// a download cannot start. Every nudge surface reaches the download through this
+// hook, so this is where it has to stop.
+describe('useConfirmBoardDownload while the offline database belongs to a newer app version', () => {
+  beforeEach(() => {
+    setSchemaDowngrade({ storedVersion: 11, supportedVersion: 10 });
+  });
+
+  it('resolves false without asking, reading or starting anything', async () => {
+    const { result } = renderHook(() => useConfirmBoardDownload());
+
+    await act(async () => {
+      await expect(result.current.confirmAndDownload(fixtures.board, { trigger: 'toggle' })).resolves.toBe(false);
+    });
+
+    expect(spies.confirm).not.toHaveBeenCalled();
+    expect(spies.getCheckpoint).not.toHaveBeenCalled();
+    expect(spies.isScopeDownloadComplete).not.toHaveBeenCalled();
+    expect(spies.restoreBootstrapRetryBudget).not.toHaveBeenCalled();
+    expect(spies.enableBoardsOffline).not.toHaveBeenCalled();
+  });
+
+  it('asks again once the database is one this app version can open', async () => {
+    resetSchemaDowngradeForTests();
+    const { result } = renderHook(() => useConfirmBoardDownload());
+
+    await act(async () => {
+      await expect(result.current.confirmAndDownload(fixtures.board)).resolves.toBe(true);
+    });
+
+    expect(spies.confirm).toHaveBeenCalledTimes(1);
   });
 });
 

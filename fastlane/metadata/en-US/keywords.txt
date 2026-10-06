@@ -1,1 +1,1 @@
-MoonBoard,Kilter,Tension,kilterboard,bouldering,beta,send,tick,logbook,led,workout,setter,Woods
+MoonBoard,Kilter,Tension,kilterboard,moon,climbing,bouldering,logbook,led,Woods,spray,wall,home,gym

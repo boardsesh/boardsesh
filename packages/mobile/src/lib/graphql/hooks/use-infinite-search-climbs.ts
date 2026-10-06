@@ -125,7 +125,8 @@ export function useInfiniteSearchClimbs(
     select: selectSearchClimbPages,
     placeholderData,
     enabled: enabled && (!input.onlyFollowedAuthors || !!userId),
-    networkMode: input.onlyFollowedAuthors ? 'always' : undefined,
+    // Preserve the provider's offlineFirst default for downloaded-board reads.
+    ...(input.onlyFollowedAuthors ? { networkMode: 'always' as const } : {}),
     staleTime: options?.staleTime,
     gcTime: options?.gcTime,
   });

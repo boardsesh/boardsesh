@@ -13,15 +13,42 @@ token setup, CI auto-apply, and the Pages deploy of `app.boardsesh.com`.
 - `boardsesh-static-assets` declares the unchanged public hostname `assets.boardsesh.com`;
   the staging domain `assets-r2.boardsesh.com` remains available for verification.
 - `boardsesh-board-snapshots` stages mobile bootstrap data at `snapshots.boardsesh.com`.
-- `boardsesh-ota-v3` is the private R2 target for XPRem. Verify Railway's live
-  storage endpoint before treating the service as migrated.
+- `boardsesh-ota-v3` holds XPRem's OTA updates and serves them at `ota-assets.boardsesh.com`.
+  Objects are public by URL, named by content hash, edge cached and compressed; see
+  [OTA assets host](#ota-assets-host) below.
 
 See `docs/user-media-storage.md`, `docs/static-assets.md`, `docs/board-snapshots.md`, and
 `docs/mobile-ota-updates.md` for the storage-specific contracts and cutover runbooks.
 
+### OTA assets host
+
+`ota-assets.boardsesh.com` is the custom domain on `boardsesh-ota-v3`. Two rules make it worth having, and both exist
+because the Cloudflare defaults do not apply to these objects:
+
+- **Cache rule** (`boardsesh:ota-assets-edge-cache`): the whole host is cache-eligible. Keys look like
+  `{appId}/cas/<sha256>` with no file extension, so the default extension list skips them. The rule honours the
+  origin header, and xprem uploads with `Cache-Control: max-age=31556926`.
+- **Compression rule** (`boardsesh:ota-assets-compression`, phase `http_response_compression`): Brotli, then gzip.
+  R2 stores every object as `application/octet-stream`, which Cloudflare does not compress on its own. Measured
+  2026-10-05, the iOS Hermes bundle is 20.9 MB raw, 8.1 MB at gzip 6 and 7.2 MB at Brotli 5. The edge compresses
+  on the fly at a level Cloudflare does not publish, so expect 7 to 8 MB. Whether a host-only rule compresses an
+  `application/octet-stream` body at all is not stated in Cloudflare's docs; the gate in
+  `docs/mobile-ota-updates.md` → **Asset delivery from the edge** is what proves it.
+
+The scope the compression phase needs is `Zone.Response Compression Edit`. The first apply on 2026-10-05 skipped
+the phase because the production token lacked it; the scope was granted and the rule written the same day.
+Measured from Sydney afterwards, the iOS bundle transferred at 7.94 MB for a Brotli request and 8.07 MB for gzip,
+against 20.87 MB uncompressed, and both decoded to the stored SHA-256. The phase is no longer `optional`: a token
+that loses the scope now fails `cf:apply`. A new phase can still be marked `optional` in
+`infra/cloudflare/plan.ts` while its scope is rolled out, which turns an unreadable phase or a refused write into
+a warning.
+
+Anyone holding an object's URL can download it, production and `pr-*` preview bundles alike. That is accepted: the
+bundle is the compiled form of this public repository. Never store anything in this bucket that is not an OTA asset.
+
 **R2 has two independent public access paths.** A custom domain and the managed `r2.dev` development URL can each
 publish every object in a bucket. The config disables `r2.dev` for every declared bucket; production public buckets
-use only their custom domain. `boardsesh-user-private` and `boardsesh-ota-v3` also declare `customDomain: null`.
+use only their custom domain. `boardsesh-user-private` also declares `customDomain: null`.
 The apply disables a drifted `r2.dev` URL automatically, but reports an unexpected custom domain as `BLOCKED`
 instead of detaching a hostname during a routine converge. Buckets are created when absent and never deleted.
 
@@ -46,6 +73,8 @@ R2 is **account**-scoped, unlike everything else here, so managing it needs two 
   earlier phases still apply and this one 403s — the same partial-convergence
   shape as the WAF and rate-limit phases. **Editing a token replaces all of its
   policies, so re-add every existing scope in the same edit.**
+- `Zone.Response Compression Edit` on `CLOUDFLARE_API_TOKEN`, for the OTA assets compression rule
+  (`http_response_compression`). Without it `cf:apply` fails on this phase.
 - `Account.Workers R2 Storage:Edit` on `CLOUDFLARE_API_TOKEN`. Without it, the R2 read fails authorization and is skipped with a warning — the zone config still applies.
 
 R2 degrades to "skip and say so" when the account id or storage scope is absent.
@@ -105,13 +134,14 @@ and leaves its DNS record to R2. The legacy Tigris CNAME is absent from
 The cache and unconditional CORS response-header rules cover both the live
 and staging domains.
 
-**Merge gate:** the live cutover has not been performed by this config change.
-Before merging or applying it, verify the full historical inventory on staging,
-freeze and drain Production Deploy, attach the live domain to the verified R2
-bucket, and rotate all five `STATIC_ASSETS_*` Production credentials together.
-Keep Production Deploy frozen until the cutover commit is on main; an older
-main converge would restore the Tigris CNAME. Follow
-[the complete runbook](./static-assets.md#moving-to-r2-in-progress).
+**Live cutover accepted October 4, 2026:** the domain is active on R2, all 426
+historical objects passed full integrity verification, all 421 current public
+catalog objects passed verification, and all five `STATIC_ASSETS_*` Production
+credentials target R2. The cutover configuration is merged; its dry run reports
+no drift. Follow [the complete runbook](./static-assets.md#cutover) and
+[the acceptance record](./r2-migration-2026-10.md#static-assets-accepted).
+Production Deploy must remain frozen until the separate OTA/native acceptance gates
+pass; it is also an OTA publisher.
 
 Retain the Tigris bucket, credentials and staging domain. If R2 has accepted new
 writes, reverse-copy and verify those hashes before routing back to Tigris.
@@ -252,8 +282,8 @@ has passed against `RAILWAY_WEB_ORIGIN`.
 
    No `settings` block. Cloudflare always flattens a **proxied** CNAME (the
    public answer is its own anycast address), so `flatten_cname` is not a field
-   we own on this record — unlike the DNS-only `assets` CNAME, where the literal
-   answer has to stay visible for Tigris to verify it. For the same reason the
+   we own on this record — unlike the historical DNS-only Tigris `assets` CNAME,
+   where the literal answer had to stay visible for Tigris to verify it. For the same reason the
    zone-wide "Flatten all CNAMEs" guard does not apply to www; a test pins that.
 
 3. Update the two places in `scripts/cloudflare-apply.test.ts` that pin today's
@@ -377,10 +407,9 @@ What it manages (and nothing else on the zone):
 - **DNS** — records with different ownership boundaries:
   - `ws` and `www`: only the proxied flag → orange cloud. Their target/type/content
     are not managed and the records must already exist.
-  - `assets`: the full DNS-only CNAME shape shown above. It is created when
-    missing and its owned fields (including disabled CNAME flattening) are
-    corrected when drifted. The tool refuses to apply while zone-wide CNAME
-    flattening would override that record.
+  - `assets`: R2 owns the live custom-domain record. It is absent from
+    `dnsRecords`; the historical Tigris DNS-only record above is restored only
+    by a separately verified rollback change.
   - the apex `boardsesh.com`: the full proxied, originless `A 192.0.2.0` shape
     shown above, so the redirect rule can answer it.
 
@@ -929,9 +958,10 @@ CLOUDFLARE_API_TOKEN=... vp run cf:apply -- --apply
 CLOUDFLARE_API_TOKEN=... vp run cf:apply -- --apply --allow-zone-ssl
 ```
 
-That one apply covers both DNS records plus the cache/WAF phases. A missing
+That one apply covers managed DNS records, R2 domains, and the cache/WAF phases. A missing
 `ws` record remains a hard error because this repo does not know its origin
-target; a missing `assets` record is an ordinary planned create.
+target. The static-assets domain is converged through the R2 custom-domain API,
+rather than by creating a Tigris CNAME.
 
 `CLOUDFLARE_ZONE_ID` is optional — when unset, the zone id is resolved by name.
 
@@ -1058,8 +1088,8 @@ that touch `infra/cloudflare/` or the apply script (and on manual dispatch),
 reading `CLOUDFLARE_API_TOKEN` from the GitHub **Production** environment
 secrets: `gh secret set CLOUDFLARE_API_TOKEN --env Production`. A failing job
 means unapplied drift — run the dry-run locally to see the plan.
-The assets DNS record is included in the same job; no dashboard DNS step is
-needed after the Tigris-side custom domain registration.
+R2 custom-domain convergence is included in the same job; the live assets domain
+does not require a separate Tigris registration or manually managed DNS record.
 
 A **blocked** zone-SSL change is the one failure a merge cannot clear: pushes
 deliberately resolve `--allow-zone-ssl` to empty, so `cf:apply` re-plans the same

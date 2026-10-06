@@ -55,6 +55,10 @@ export type ClimbListItemClimb = {
    *  come off. Optional for the same reason as `is_hidden` above: the queue's own
    *  `Climb` type doesn't carry it, so a queued row simply shows no chip. */
   missingHoldCount?: number | null;
+  /** The version at which this climb's holds last moved (#6023). A tick older
+   *  than that does not mark the row sent. Null or absent on a row whose source
+   *  does not carry it, where every tick counts. */
+  holdsRevisionNumber?: number | null;
   ascensionist_count?: number | null;
   /** The angle the grade and send count above were read from. Present only on rows
    *  that came through a cross-angle search (issue #5405); the queue's own `Climb`
@@ -252,18 +256,21 @@ const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
   climbUuid,
   angle,
   supportsMirroring,
+  holdsRevisionNumber,
 }: {
   climbUuid: string;
   angle: number;
   supportsMirroring: boolean;
+  /** `Climb.holdsRevisionNumber`, a primitive so the memo boundary holds. */
+  holdsRevisionNumber: number | null;
 }) {
   const { t } = useTranslation('climbs');
   const { t: tSession } = useTranslation('session');
   const { systemColors } = useTheme();
   // Unconditional hooks keep capability changes safe. The nonmirrorable board
   // keeps its existing aggregate glyph; each mirrorable direction is independent.
-  const ascentStatus = useAscentStatus(climbUuid, angle, supportsMirroring ? false : undefined);
-  const mirrorStatus = useAscentStatus(climbUuid, angle, true);
+  const ascentStatus = useAscentStatus(climbUuid, angle, supportsMirroring ? false : undefined, holdsRevisionNumber);
+  const mirrorStatus = useAscentStatus(climbUuid, angle, true, holdsRevisionNumber);
   const statusLabels = useMemo(
     () => ({
       flash: t('mobile.climbRow.ascentStatus.flash'),
@@ -581,7 +588,12 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
           </Text>
         ) : null}
         {showAscentStatus && supportsMirroring ? (
-          <AscentStatusGlyph climbUuid={climb.uuid} angle={angle} supportsMirroring={supportsMirroring} />
+          <AscentStatusGlyph
+            climbUuid={climb.uuid}
+            angle={angle}
+            supportsMirroring={supportsMirroring}
+            holdsRevisionNumber={climb.holdsRevisionNumber ?? null}
+          />
         ) : null}
         {showPlaylistChips ? <ClimbPlaylistChips climbUuid={climb.uuid} /> : null}
       </View>
@@ -590,7 +602,12 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
       <View style={styles.rightSection}>
         {showFavorite ? <FavoriteGlyph climbUuid={climb.uuid} /> : null}
         {showAscentStatus && !supportsMirroring ? (
-          <AscentStatusGlyph climbUuid={climb.uuid} angle={angle} supportsMirroring={supportsMirroring} />
+          <AscentStatusGlyph
+            climbUuid={climb.uuid}
+            angle={angle}
+            supportsMirroring={supportsMirroring}
+            holdsRevisionNumber={climb.holdsRevisionNumber ?? null}
+          />
         ) : null}
         <LiveClimbGrade
           climb={climb}

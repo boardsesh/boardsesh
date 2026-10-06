@@ -197,6 +197,7 @@ vi.mock('../../lib/error-reporting', () => ({
 
 const resetAnalyticsMock = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/analytics', () => ({
+  isAnalyticsPinnedToAPerson: () => false,
   reset: resetAnalyticsMock,
   track: (...args: unknown[]) => trackMock(...args),
 }));

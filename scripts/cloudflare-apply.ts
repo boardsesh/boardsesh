@@ -81,6 +81,7 @@ const TOKEN_SCOPES = [
   'Zone.Zone WAF Edit         — create/update crawler rules and the climb-view rate-limit rule\n                               (http_request_firewall_custom and http_ratelimit phases)',
   'Zone.Single Redirect Edit  — create/update the apex → www redirect (http_request_dynamic_redirect phase)',
   'Zone.Transform Rules Edit  — create/update the Observe country request-header rule and assets CORS\n                               response-header rule (request/response transform phases)',
+  'Zone.Response Compression Edit — create/update the OTA assets compression rule (http_response_compression\n                               phase)',
   'Zone.Zone Settings Read    — read the SSL/TLS mode',
   'Zone.Zone Settings Edit    — ONLY needed with --allow-zone-ssl (to set the zone SSL mode)',
   'Account.Workers R2 Storage Edit — create R2 buckets + attach their custom domains (Read is not enough:\n                               it detects drift but cannot converge it). Needs CLOUDFLARE_ACCOUNT_ID too.',
@@ -793,6 +794,7 @@ export async function runCloudflareApply(argv: string[] = process.argv.slice(2))
   // leaves the zone partially converged. Safe because the plan is ordered
   // (SSL -> cache rule -> proxied flip last) and re-running converges the rest.
   const appliedPhases = new Set<string>();
+  const refusedPhases = new Set<string>();
   // Each bucket is fully converged on its first planned attribute.
   const appliedR2Buckets = new Set<string>();
   for (const change of changes) {
@@ -838,10 +840,32 @@ export async function runCloudflareApply(argv: string[] = process.argv.slice(2))
       // resource throws here instead of falling out of the chain and reporting
       // "applied" for a write that never happened.
       const phase = resolveRulePhase(change.resource);
-      if (!appliedPhases.has(phase.phase)) {
+      if (!appliedPhases.has(phase.phase) && !refusedPhases.has(phase.phase)) {
         const { rules } = upsertCacheRule(phase.selectLive(live), [...phase.selectDesired(desired)]);
-        await applyPhaseRules(token, zoneId, phase.phase, rules);
-        appliedPhases.add(phase.phase);
+        try {
+          await applyPhaseRules(token, zoneId, phase.phase, rules);
+          appliedPhases.add(phase.phase);
+        } catch (error) {
+          // The write half of the `optional` concession. A token can read a
+          // phase it may not write, and a phase that has never existed on the
+          // zone can be refused for plan or validation reasons no dry run
+          // shows. Rules are applied before DNS and R2, so letting this throw
+          // would leave those unconverged and fail the production deploy over
+          // a rule nothing depends on yet. Phases that are not optional still
+          // throw.
+          const refused = error instanceof CloudflareApiRequestError && error.status >= 400 && error.status < 500;
+          if (!phase.optional || !refused) throw error;
+          refusedPhases.add(phase.phase);
+          console.warn(
+            `[cf-apply] Cloudflare refused the write to the ${phase.phase} phase (HTTP ${error.status}: ` +
+              `${error.message}). Skipping ${phase.resource}; everything else was still applied. Grant the ` +
+              'matching scope (keeping every existing one: editing a token REPLACES all its policies) and re-run.',
+          );
+        }
+      }
+      if (refusedPhases.has(phase.phase)) {
+        console.log(`[cf-apply] skipped (write refused): ${change.summary}`);
+        continue;
       }
       console.log(`[cf-apply] applied: ${change.summary}`);
     }

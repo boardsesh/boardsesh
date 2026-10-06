@@ -37,8 +37,9 @@ export const boardClimbNeighbors = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.boardType, table.climbUuid, table.neighborUuid] }),
-    // Read path: one climb's neighbours in rank order.
-    rankIdx: index('board_climb_neighbors_rank_idx').on(table.boardType, table.climbUuid, table.rank),
+    // Read path: one climb's list is the PK prefix (board_type, climb_uuid); the
+    // read orders by similarity, not rank, and sorts at most 25 rows in memory.
+    // A (board_type, climb_uuid, rank) index cost 256 MB and was dropped (C7).
     // Edit invalidation / job splice: "every list this climb appears in".
     neighborIdx: index('board_climb_neighbors_neighbor_idx').on(table.boardType, table.neighborUuid),
     climbFk: foreignKey({

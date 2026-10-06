@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, View, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -8,6 +8,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import {
   useBoard,
   useProfile,
+  useSprayWallByUuid,
   useUpdateBoard,
   useLinkBoardToGym,
   useUpdateSprayWall,
@@ -17,6 +18,7 @@ import {
   extractGraphqlMessage,
   isBoardLimitError,
   isDuplicateBoardError,
+  isSprayWallClimbEditPolicyOwnerOnlyError,
   isSprayWallVisibilityOwnerOnlyError,
   readDuplicateBoardError,
 } from '../../src/lib/graphql/extract-error-message';
@@ -96,6 +98,10 @@ export default function EditBoard() {
   return <EditBoardForm key={board.uuid} board={board} />;
 }
 
+function toClimbEditPolicyKey(policy: string | null | undefined): 'setter' | 'collaborators' {
+  return policy === 'COLLABORATORS' ? 'collaborators' : 'setter';
+}
+
 function EditBoardForm({ board }: { board: UserBoard }) {
   const router = useRouter();
   const { isAuthenticated } = useAuth();
@@ -132,6 +138,21 @@ function EditBoardForm({ board }: { board: UserBoard }) {
   // `permission` and this would go false on a wall. This is the board TYPE, which
   // is what decides where visibility is saved.
   const isSprayWall = toBoardName(board.boardType) === 'spray';
+  const { data: sprayWall } = useSprayWallByUuid(isSprayWall ? board.uuid : null);
+  const isOwner = !!profile?.id && board.ownerId === profile.id;
+  const [selectedClimbEditPolicy, setSelectedClimbEditPolicy] = useState<'setter' | 'collaborators'>('setter');
+  const [policyTouched, setPolicyTouched] = useState(false);
+
+  useEffect(() => {
+    if (!policyTouched && sprayWall?.climbEditPolicy) {
+      setSelectedClimbEditPolicy(toClimbEditPolicyKey(sprayWall.climbEditPolicy));
+    }
+  }, [sprayWall?.climbEditPolicy, policyTouched]);
+
+  const handleSelectClimbEditPolicy = useCallback((policy: 'setter' | 'collaborators') => {
+    setPolicyTouched(true);
+    setSelectedClimbEditPolicy(policy);
+  }, []);
 
   const seed = useMemo<BoardBuilderSeed>(() => {
     const seedBoardName = toBoardName(board.boardType)!;
@@ -221,20 +242,37 @@ function EditBoardForm({ board }: { board: UserBoard }) {
         // below: the name and the gym DID save, and a moderator who may edit the
         // wall but not share it should see which half was refused rather than a
         // blanket failure.
+        // An untouched control says nothing the server does not already know; a
+        // touched one says what to write even if the wall query has not landed
+        // yet — comparing against `spray_walls.climb_edit_policy`'s default of
+        // 'setter' means a fast save cannot silently drop the owner's choice.
+        const serverPolicyLoaded = sprayWall?.climbEditPolicy != null;
+        const policyChanged =
+          isSprayWall &&
+          isOwner &&
+          (serverPolicyLoaded
+            ? selectedClimbEditPolicy !== toClimbEditPolicyKey(sprayWall?.climbEditPolicy)
+            : policyTouched);
         let visibilityError: string | null = null;
         let visibilityApplied = false;
-        if (visibilityChanged) {
+        if (visibilityChanged || policyChanged) {
           try {
             await updateSprayWall.mutateAsync({
               uuid: board.uuid,
-              isPublic: nextIsPublic,
-              isUnlisted: nextIsUnlisted,
+              ...(visibilityChanged ? { isPublic: nextIsPublic, isUnlisted: nextIsUnlisted } : {}),
+              ...(policyChanged
+                ? { climbEditPolicy: selectedClimbEditPolicy === 'collaborators' ? 'COLLABORATORS' : 'SETTER' }
+                : {}),
             });
             visibilityApplied = true;
           } catch (error) {
-            visibilityError = isSprayWallVisibilityOwnerOnlyError(error)
-              ? t('mobile.sprayVisibility.ownerOnlyError')
-              : (extractGraphqlMessage(error) ?? t('mobile.sprayVisibility.updateError'));
+            if (isSprayWallClimbEditPolicyOwnerOnlyError(error)) {
+              visibilityError = t('mobile.sprayClimbEditPolicy.ownerOnlyError');
+            } else if (isSprayWallVisibilityOwnerOnlyError(error)) {
+              visibilityError = t('mobile.sprayVisibility.ownerOnlyError');
+            } else {
+              visibilityError = extractGraphqlMessage(error) ?? t('mobile.sprayVisibility.updateError');
+            }
           }
         }
 
@@ -358,6 +396,10 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       setActiveBoard,
       router,
       t,
+      isOwner,
+      policyTouched,
+      selectedClimbEditPolicy,
+      sprayWall?.climbEditPolicy,
     ],
   );
   handleUpdateRef.current = handleUpdate;
@@ -373,6 +415,9 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       lockedConfig={lockedConfig}
       lockedConfigReason={configLock ?? undefined}
       currentBoardUuid={board.uuid}
+      climbEditPolicy={selectedClimbEditPolicy}
+      onSelectClimbEditPolicy={isSprayWall ? handleSelectClimbEditPolicy : undefined}
+      climbEditPolicyDisabled={!isOwner}
     />
   );
 }

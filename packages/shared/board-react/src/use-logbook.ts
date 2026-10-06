@@ -9,6 +9,7 @@ import {
   fetchedLogbookClimbUuidsQueryKey,
   mergeLogbookEntries,
   toLogbookEntry,
+  withTickRevisions,
   type LogbookEntry,
 } from './logbook-keys';
 
@@ -93,7 +94,7 @@ function fileBatchUnderSingleClimbKeys(
  * a null board produces an inert query key and disables fetching.
  */
 export function useLogbook(boardName: BoardName | null, climbUuids: string[]) {
-  const { isAuthenticated, executeHttp } = useBoardAdapter();
+  const { isAuthenticated, executeHttp, readLocalTickRevisions } = useBoardAdapter();
   const queryClient = useQueryClient();
   const accumulatedKey = useMemo(() => accumulatedLogbookQueryKey(boardName), [boardName]);
   const fetchedUuidsKey = useMemo(() => fetchedLogbookClimbUuidsQueryKey(boardName), [boardName]);
@@ -168,7 +169,15 @@ export function useLogbook(boardName: BoardName | null, climbUuids: string[]) {
         },
       };
       const response = await executeHttp<GetTicksQueryResponse, GetTicksQueryVariables>(GET_TICKS, variables);
-      return transformTicks(response.ticks);
+      const entries = transformTicks(response.ticks);
+      // One local read for the whole batch, joined by tick uuid. A failure
+      // costs the versions, never the rows.
+      if (!readLocalTickRevisions || entries.length === 0) return entries;
+      try {
+        return withTickRevisions(entries, await readLocalTickRevisions(boardName, uuidsToFetch));
+      } catch {
+        return entries;
+      }
     },
     enabled: isEnabled && newUuids.length > 0,
     // Each batch is fetched once; accumulation handles deduplication.

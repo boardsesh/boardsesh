@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 const mocks = vi.hoisted(() => ({
   PostHog: vi.fn(),
   posthog: {
-    alias: vi.fn(),
     capture: vi.fn(),
     flush: vi.fn(async () => {}),
     identify: vi.fn(),
@@ -373,25 +372,147 @@ describe('analytics wrapper', () => {
     });
   });
 
-  it('sends path-only PostHog pageviews and skips admin URLs', async () => {
+  it('sends PostHog pageviews without a $current_url override and skips admin URLs', async () => {
+    // The SDK stamps the full `location.href` on every event and spreads its own
+    // properties after the caller's, so the pathname this used to pass was
+    // always overwritten. An untagged visit sends no properties of its own.
     const { pageview } = await import('../analytics');
 
     pageview('https://boardsesh.com/b/kilter?sort=popular#top');
     pageview('/fr/admin/retention?range=30');
 
     expect(mocks.posthog.capture).toHaveBeenCalledTimes(1);
-    expect(mocks.posthog.capture).toHaveBeenCalledWith('$pageview', { $current_url: '/b/kilter' });
+    expect(mocks.posthog.capture).toHaveBeenCalledWith('$pageview', undefined);
   });
 
-  it('identifies, aliases, and resets through PostHog', async () => {
-    const { alias, identify, reset } = await import('../analytics');
+  describe('inbound campaign (#6027)', () => {
+    it('puts the landing utm params and gclid on the pageview', async () => {
+      setWindowLocation(
+        'https://www.boardsesh.com/?utm_source=instagram&utm_medium=social&utm_campaign=spray-launch&utm_content=reel-1&utm_term=home+wall&gclid=Cj0KCQ',
+      );
+      const { pageview } = await import('../analytics');
+
+      pageview('/');
+
+      expect(mocks.posthog.capture).toHaveBeenCalledWith('$pageview', {
+        utm_source: 'instagram',
+        utm_medium: 'social',
+        utm_campaign: 'spray-launch',
+        utm_content: 'reel-1',
+        utm_term: 'home wall',
+        gclid: 'Cj0KCQ',
+      });
+    });
+
+    it('puts them on App Install Click, next to the click payload', async () => {
+      setWindowLocation('https://www.boardsesh.com/?utm_source=chatgpt.com');
+      const { track } = await import('../analytics');
+
+      track('App Install Click', { platform: 'ios', source: 'app-store', placement: 'hero', mode: 'install' });
+
+      expect(mocks.posthog.capture).toHaveBeenCalledWith('App Install Click', {
+        utm_source: 'chatgpt.com',
+        platform: 'ios',
+        source: 'app-store',
+        placement: 'hero',
+        mode: 'install',
+      });
+    });
+
+    it('puts them on an event tracked with no properties', async () => {
+      setWindowLocation('https://www.boardsesh.com/?utm_source=reddit');
+      const { track } = await import('../analytics');
+
+      track('Climb Opened');
+
+      expect(mocks.posthog.capture).toHaveBeenCalledWith('Climb Opened', { utm_source: 'reddit' });
+    });
+
+    it('puts them on an event that flushes before navigating away', async () => {
+      setWindowLocation('https://www.boardsesh.com/?utm_source=reddit');
+      const { trackBeforeNavigation } = await import('../analytics');
+
+      await trackBeforeNavigation('Climb Handoff Clicked', { surface: 'climb_front_door' });
+
+      expect(mocks.posthog.capture).toHaveBeenCalledWith('Climb Handoff Clicked', {
+        utm_source: 'reddit',
+        surface: 'climb_front_door',
+      });
+    });
+
+    it("lets the caller's own property win a name collision", async () => {
+      setWindowLocation('https://www.boardsesh.com/?utm_source=reddit&utm_medium=social');
+      const { track } = await import('../analytics');
+
+      track('Share Link Built', { utm_medium: 'share-sheet' });
+
+      expect(mocks.posthog.capture).toHaveBeenCalledWith('Share Link Built', {
+        utm_source: 'reddit',
+        utm_medium: 'share-sheet',
+      });
+    });
+
+    it('keeps the landing campaign on events after a client-side navigation', async () => {
+      // The module is re-imported fresh per test, so the campaign is read on the
+      // first call here: the landing pageview.
+      setWindowLocation('https://www.boardsesh.com/?utm_source=ig');
+      const { pageview, track } = await import('../analytics');
+      pageview('/');
+
+      setWindowLocation('https://www.boardsesh.com/gyms');
+      pageview('/gyms');
+      track('App Install Click', { platform: 'android', source: 'google-play', placement: 'gyms-directory' });
+
+      expect(mocks.posthog.capture).toHaveBeenNthCalledWith(1, '$pageview', { utm_source: 'ig' });
+      expect(mocks.posthog.capture).toHaveBeenNthCalledWith(2, '$pageview', { utm_source: 'ig' });
+      expect(mocks.posthog.capture).toHaveBeenNthCalledWith(3, 'App Install Click', {
+        utm_source: 'ig',
+        platform: 'android',
+        source: 'google-play',
+        placement: 'gyms-directory',
+      });
+    });
+
+    it('adds nothing for an untagged visit', async () => {
+      setWindowLocation('https://www.boardsesh.com/gyms?sort=popular');
+      const { pageview, track } = await import('../analytics');
+
+      pageview('/gyms');
+      track('App Install Click', { platform: 'ios', source: 'app-store' });
+
+      expect(mocks.posthog.capture).toHaveBeenNthCalledWith(1, '$pageview', undefined);
+      expect(mocks.posthog.capture).toHaveBeenNthCalledWith(2, 'App Install Click', {
+        platform: 'ios',
+        source: 'app-store',
+      });
+    });
+
+    it('leaves events that bypass track(), like $web_vitals, alone', async () => {
+      setWindowLocation('https://www.boardsesh.com/?utm_source=ig');
+      const { capturePosthog } = await import('../analytics');
+
+      capturePosthog('$web_vitals', { metric: 'LCP' });
+
+      expect(mocks.posthog.capture).toHaveBeenCalledWith('$web_vitals', { metric: 'LCP' });
+    });
+
+    it('still sends no pageview from an admin page that was reached on a tagged link', async () => {
+      setWindowLocation('https://www.boardsesh.com/admin?utm_source=ig');
+      const { pageview } = await import('../analytics');
+
+      pageview('/admin');
+
+      expect(mocks.posthog.capture).not.toHaveBeenCalled();
+    });
+  });
+
+  it('identifies and resets through PostHog', async () => {
+    const { identify, reset } = await import('../analytics');
 
     expect(identify('profile-1', { email: 'one@example.com' })).toBe(true);
-    expect(alias('user-1')).toBe(true);
     expect(reset()).toBe(true);
 
     expect(mocks.posthog.identify).toHaveBeenCalledWith('profile-1', { email: 'one@example.com' });
-    expect(mocks.posthog.alias).toHaveBeenCalledWith('user-1');
     expect(mocks.posthog.reset).toHaveBeenCalledTimes(1);
   });
 
@@ -422,14 +543,13 @@ describe('analytics wrapper', () => {
 
   it('skips all analytics calls on admin pages', async () => {
     setWindowLocation('https://boardsesh.com/admin/retention');
-    const { alias, capturePosthog, identify, pageview, reset, track } = await import('../analytics');
+    const { capturePosthog, identify, pageview, reset, track } = await import('../analytics');
 
     track('Admin Event');
     pageview('/admin/retention');
 
     expect(capturePosthog('Admin PostHog Event')).toBe(false);
     expect(identify('profile-1')).toBe(false);
-    expect(alias('user-1')).toBe(false);
     expect(reset()).toBe(false);
     expect(mocks.PostHog).not.toHaveBeenCalled();
     expect(mocks.posthog.capture).not.toHaveBeenCalled();

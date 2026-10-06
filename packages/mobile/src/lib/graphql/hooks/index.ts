@@ -97,7 +97,7 @@ import {
   type RecordBoardOpenedMutationResponse,
   type GetBoardBySlugQueryResponse,
 } from '@boardsesh/graphql/operations/boards';
-import { UPDATE_SPRAY_WALL } from '@boardsesh/graphql/operations/spray-walls';
+import { GET_SPRAY_WALL, UPDATE_SPRAY_WALL } from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWall, UpdateSprayWallInput } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../client';
 import { requestSearchBoards, shouldRetryBoardSearch, boardSearchRetryDelay } from '../search-boards-request';
@@ -256,9 +256,20 @@ export function useBoard(boardUuid: string | null) {
  * merged-away uuid resolves to the surviving canonical board (a *different*
  * uuid) while a plain-deleted board resolves to `null`.
  */
-export async function fetchBoardByUuid(boardUuid: string): Promise<UserBoard | null> {
-  const data = await getHttpClient().request<GetBoardQueryResponse>(GET_BOARD, { boardUuid });
-  return data.board;
+export { fetchBoardByUuid } from './fetch-board-by-uuid';
+
+/**
+ * Fetch one spray wall by uuid (including its climbEditPolicy and version metadata).
+ */
+export function useSprayWallByUuid(uuid: string | null | undefined) {
+  return useQuery({
+    queryKey: ['sprayWall', uuid],
+    queryFn: async () => {
+      const response = await getHttpClient().request<{ sprayWall: SprayWall | null }>(GET_SPRAY_WALL, { uuid });
+      return response.sprayWall;
+    },
+    enabled: !!uuid,
+  });
 }
 
 // `fetchAllMyBoards` — the paginated companion to `fetchBoardByUuid` — lives in
@@ -594,6 +605,7 @@ export function useUpdateSprayWall() {
       return response.updateSprayWall;
     },
     onSuccess: (updated) => {
+      queryClient.setQueryData(['sprayWall', updated.uuid], updated);
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['board', updated.uuid] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
@@ -957,7 +969,8 @@ export function useSearchClimbs(
     queryFn: () => offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input }),
     select: (data) => data.searchClimbs,
     enabled: enabled && (!input.onlyFollowedAuthors || !!userId),
-    networkMode: input.onlyFollowedAuthors ? 'always' : undefined,
+    // Preserve the provider's offlineFirst default for downloaded-board reads.
+    ...(input.onlyFollowedAuthors ? { networkMode: 'always' as const } : {}),
     // undefined → React Query's defaults.
     staleTime: options?.staleTime,
     gcTime: options?.gcTime,
@@ -973,7 +986,8 @@ export function useSearchClimbsCount(requestedInput: ClimbSearchInput, enabled =
     queryFn: () => offlineAwareRequest<SearchClimbsCountQueryResponse>(SEARCH_CLIMBS_COUNT, { input }),
     select: (data) => data.searchClimbs.totalCount,
     enabled: enabled && (!input.onlyFollowedAuthors || !!userId),
-    networkMode: input.onlyFollowedAuthors ? 'always' : undefined,
+    // Preserve the provider's offlineFirst default for downloaded-board reads.
+    ...(input.onlyFollowedAuthors ? { networkMode: 'always' as const } : {}),
     // Hold the last count while a new filter set is in flight so the bar /
     // "Show N" button doesn't flicker to blank on every filter change.
     placeholderData: input.onlyFollowedAuthors ? undefined : (previous) => previous,
@@ -987,7 +1001,8 @@ export function useSetterStats(input: SetterStatsInput, enabled = true) {
     queryFn: () => offlineAwareRequest<GetSetterStatsQueryResponse>(GET_SETTER_STATS, { input }),
     select: (data) => data.setterStats,
     enabled: enabled && (!input.onlyFollowedAuthors || !!userId),
-    networkMode: input.onlyFollowedAuthors ? 'always' : undefined,
+    // Preserve the provider's offlineFirst default for downloaded-board reads.
+    ...(input.onlyFollowedAuthors ? { networkMode: 'always' as const } : {}),
     staleTime: 5 * 60 * 1000,
   });
 }

@@ -72,7 +72,10 @@
       "unfollowMessage": "„{{name}}“ ist dein aktives Board. Wenn du nicht mehr folgst, verschwindet es aus deinen Boards und die Auswahl wird gelöscht.",
       "unfollowConfirm": "Nicht mehr folgen",
       "edit": "Bearbeiten",
-      "done": "Fertig"
+      "done": "Fertig",
+      "deleteWallTitle": "Spraywall löschen?",
+      "deleteWallMessage": "„{{name}}“ löschen? Die Fotos und Boulder sind danach nicht mehr verfügbar. Das lässt sich nicht rückgängig machen.",
+      "deleteSuccess": "„{{name}}“ gelöscht"
     },
     "emptyTitle": "Noch keine Boards",
     "emptySubtitle": "Such ein Board und leg los",
@@ -436,6 +439,17 @@
       "publicHint": "Jede*r kann das Board finden. Es steht auf der Seite der Halle, seine Boulder landen im Feed, und das Foto vom Board geht ins offene Web.",
       "ownerOnlyError": "Nur wer dieses Board aufgebaut hat, kann ändern, wer es sieht. Deine anderen Änderungen sind gespeichert.",
       "updateError": "Konnte nicht ändern, wer dieses Board sieht. Versuch es nochmal."
+    },
+    "sprayClimbEditPolicy": {
+      "label": "Wer Boulder bearbeiten kann",
+      "setter": "Nur Routenbauer*in",
+      "collaborators": "Alle, die schrauben können",
+      "setterHint": "Nur wer den Boulder geschraubt hat und die Admins des Boards können Boulder bearbeiten.",
+      "collaboratorsPublicHint": "Jede*r, die oder der dieses öffentliche Board sehen kann, kann veröffentlichte Boulder bearbeiten.",
+      "collaboratorsUnlistedHint": "Wer den Link hat, kann veröffentlichte Boulder bearbeiten.",
+      "collaboratorsPrivateHint": "An einem privaten Board können nur Kletternde, die schrauben dürfen, Boulder bearbeiten.",
+      "ownerOnlyHint": "Nur wer dieses Board aufgebaut hat, kann ändern, wer Boulder bearbeiten kann.",
+      "ownerOnlyError": "Nur wer dieses Board aufgebaut hat, kann ändern, wer Boulder bearbeiten kann. Deine anderen Änderungen sind gespeichert."
     }
   },
   "boardEntity": {

@@ -11,6 +11,7 @@
 #   4. Ensures the postgres user has a password set
 #   5. Syncs drizzle migration tracker (public → drizzle schema)
 #   6. Runs drizzle migrations (to pick up any newer migrations not yet in the image)
+#   7. Installs the pg-boss job queue schema the backend refuses to start without
 
 set -e
 
@@ -142,11 +143,27 @@ sync_drizzle_migration_tracker() {
   echo "  drizzle.__drizzle_migrations has $DRIZZLE_COUNT records."
 }
 
+# The backend never runs pg-boss DDL itself; in a deployment the migrator does.
+# The SQL migrations above go through psql rather than the migrator, so without
+# this a fresh volume leaves the backend exiting with "pg-boss is not installed".
+ensure_job_queue_schema() {
+  echo "Ensuring the job queue schema is installed..."
+  (
+    cd "$REPO_ROOT/packages/db"
+    # The script resolves DB_URL and POSTGRES_URL too, DB_URL first. Drop both
+    # so a URL exported in the developer's shell cannot redirect or fail this.
+    env -u DB_URL -u POSTGRES_URL \
+      DATABASE_URL="postgresql://postgres:password@localhost:5432/main" \
+      "$REPO_ROOT/node_modules/.bin/tsx" scripts/ensure-dev-job-queue-schema.ts
+  )
+}
+
 prepare_docker_postgres() {
   ensure_postgres_network_access
   ensure_postgres_password
   sync_drizzle_migration_tracker
   run_pending_drizzle_sql_migrations
+  ensure_job_queue_schema
   write_dev_db_env "localhost" "$1" "$(detect_local_redis_url)"
 }
 

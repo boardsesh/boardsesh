@@ -39,6 +39,8 @@ vi.mock('react-native', () => ({
   useWindowDimensions: () => ({ width: 400, height: 800 }),
 }));
 
+// Native provider behavior is exercised by use-spray-leave-guard.test.tsx.
+vi.mock('../use-spray-leave-guard', () => ({ useSprayLeaveGuard: vi.fn() }));
 vi.mock('expo-image', () => ({ Image: () => createElement('img', { 'data-testid': 'preview' }) }));
 vi.mock('expo-router', () => ({
   useRouter: () => ({ back: vi.fn(), replace: vi.fn() }),

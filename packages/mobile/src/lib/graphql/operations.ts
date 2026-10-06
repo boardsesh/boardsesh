@@ -16,7 +16,6 @@ import type {
   PopularBoardConfigsInput,
   CreateBoardInput,
   SessionSummary,
-  PublicUserProfile,
   FollowConnection,
   TickStatus,
   SessionUser,
@@ -31,53 +30,12 @@ import type {
   UpsertHoldOutlineOverrideInput,
   DeleteHoldOutlineOverrideInput,
 } from '@boardsesh/shared-schema';
+import { BOARD_FIELDS } from '@boardsesh/graphql/operations/boards';
 import type { SubscriptionQueueItem } from '../queue-conversion';
 
 // ============================================
 // Field Fragments (string interpolation, not GQL fragments)
 // ============================================
-
-const BOARD_FIELDS = `
-  uuid
-  slug
-  ownerId
-  ownerDisplayName
-  ownerAvatarUrl
-  boardType
-  layoutId
-  sizeId
-  setIds
-  name
-  description
-  locationName
-  latitude
-  longitude
-  isPublic
-  isUnlisted
-  hideLocation
-  isOwned
-  angle
-  isAngleAdjustable
-  hasLeds
-  createdAt
-  layoutName
-  sizeName
-  sizeDescription
-  setNames
-  totalAscents
-  uniqueClimbers
-  followerCount
-  commentCount
-  isFollowedByMe
-  gymId
-  gymUuid
-  gymName
-  distanceMeters
-  serialNumber
-  timerName
-  canEdit
-  isPinnedByMe
-`;
 
 const CLIMB_SEARCH_FIELDS = `
   uuid
@@ -188,27 +146,6 @@ export type UpdateProfileMutationResponse = {
   updateProfile: UserProfile;
 };
 
-export const GET_PUBLIC_PROFILE = gql`
-  query GetPublicProfile($userId: ID!) {
-    publicProfile(userId: $userId) {
-      id
-      displayName
-      avatarUrl
-      followerCount
-      followingCount
-      isFollowedByMe
-    }
-  }
-`;
-
-export type GetPublicProfileQueryVariables = {
-  userId: string;
-};
-
-export type GetPublicProfileQueryResponse = {
-  publicProfile: PublicUserProfile | null;
-};
-
 // ============================================
 // Board Configuration Queries
 // ============================================
@@ -271,21 +208,12 @@ export type GetMyBoardsQueryResponse = {
   myBoards: UserBoardConnection;
 };
 
-export const GET_BOARD = gql`
-  query GetBoard($boardUuid: ID!) {
-    board(boardUuid: $boardUuid) {
-      ${BOARD_FIELDS}
-    }
-  }
-`;
-
-export type GetBoardQueryVariables = {
-  boardUuid: string;
-};
-
-export type GetBoardQueryResponse = {
-  board: UserBoard | null;
-};
+// GetBoard lives in the shared package; there is one document for every caller.
+export {
+  GET_BOARD,
+  type GetBoardQueryVariables,
+  type GetBoardQueryResponse,
+} from '@boardsesh/graphql/operations/boards';
 
 export const SEARCH_BOARDS = gql`
   query SearchBoards($input: SearchBoardsInput!) {
@@ -841,6 +769,11 @@ export type SaveTickMutationVariables = {
     layoutId?: number;
     sizeId?: number;
     setIds?: string;
+    /**
+     * The `Climb.revisionNumber` the climber was looking at. Present only when
+     * the app knows it; an absent key lets the server pick the version (#6023).
+     */
+    climbRevision?: number | null;
   };
 };
 

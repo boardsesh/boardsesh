@@ -29,7 +29,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { useShareClimb } from '../../hooks/use-share-climb';
 import { track } from '../../lib/analytics';
-import { useSprayWallViewerCanEdit } from '../../lib/spray/use-spray-wall';
+import { useSprayWallViewerCanEditClimbs } from '../../lib/spray/use-spray-wall';
 
 export type ClimbActionId =
   | 'preview'
@@ -159,7 +159,7 @@ export function useClimbActions({
 }: UseClimbActionsArgs): ClimbActionItem[] {
   const { t } = useTranslation('climbs');
   const { openRemix, openEdit } = useCreateClimbNavigation({ dismissSourceSheet, dismissPlayerAndWait });
-  const viewerCanEditWall = useSprayWallViewerCanEdit(boardConfig?.boardName, boardConfig?.layoutId ?? null);
+  const viewerCanEditClimbs = useSprayWallViewerCanEditClimbs(boardConfig?.boardName, boardConfig?.layoutId ?? null);
   const { actionColors } = useTheme();
   const { addToQueue, playNext } = useQueueActions();
   // The active session, so a tick logged from a climb-actions sheet lands on it.
@@ -223,7 +223,7 @@ export function useClimbActions({
     // edit the wall on a published spray climb. A hint only; the server decides.
     const canEdit =
       getBoardCapabilities(boardName).climbCreation &&
-      canEditClimb({ climb, boardType: boardName, currentUserId, viewerCanEditWall, wallLayoutId: layoutId });
+      canEditClimb({ climb, boardType: boardName, currentUserId, viewerCanEditClimbs, wallLayoutId: layoutId });
 
     const items: ClimbActionItem[] = [];
 
@@ -355,6 +355,8 @@ export function useClimbActions({
             setIds,
             consensusGradeName: climb.difficulty,
             sessionId,
+            climbRevision: climb.revisionNumber,
+            climbFrames: climb.frames,
           });
         }
         after();
@@ -483,7 +485,7 @@ export function useClimbActions({
     queueItemUuid,
     activeClimbUuid,
     currentUserId,
-    viewerCanEditWall,
+    viewerCanEditClimbs,
     isAuthenticated,
     onEditEntry,
     onSelectPlaylist,

@@ -143,6 +143,10 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     climbedAt: String!
     "Encoded hold frames for thumbnail display"
     frames: String
+    "The climb revision this was logged against. 1 on a climb nobody has edited; null when it is not known (imports, and logs older than the field)."
+    climbRevision: Int
+    "The climb's revision now. A log whose climbRevision is lower was made on an earlier version of the climb. Null when the climb is no longer in the catalogue."
+    climbCurrentRevision: Int
   }
 
   """
@@ -321,6 +325,10 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     downvotes: Int
     "Number of (non-deleted) comments on this tick. Null if the resolver doesn't compute it."
     commentCount: Int
+    "The climb revision this was logged against. 1 on a climb nobody has edited; null when it is not known (imports, and logs older than the field). Populated by followingClimbAscents; null on the paginated feeds."
+    climbRevision: Int
+    "The climb's revision now. A log whose climbRevision is lower was made on an earlier version of the climb. Populated by followingClimbAscents; null on the paginated feeds."
+    climbCurrentRevision: Int
   }
 
   """
@@ -450,6 +458,10 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     comment: String!
     "When the climb was logged"
     climbedAt: String!
+    "The climb revision this was logged against. 1 on a climb nobody has edited; null when it is not known (imports, and logs older than the field)."
+    climbRevision: Int
+    "The climb's revision now. A log whose climbRevision is lower was made on an earlier version of the climb. Null when the climb is no longer in the catalogue."
+    climbCurrentRevision: Int
   }
 
   """

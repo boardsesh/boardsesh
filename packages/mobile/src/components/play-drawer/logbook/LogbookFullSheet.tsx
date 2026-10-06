@@ -61,7 +61,7 @@ export function LogbookFullSheet({ visible, climbUuid, boardName, layoutId, angl
     setHeld({ climbUuid, boardName });
   }
   const ledgerClimbUuid = climbUuid ?? (held?.boardName === boardName ? held.climbUuid : null);
-  const { ledger } = useClimbLedger(boardName, ledgerClimbUuid, angle);
+  const { ledger, climbCurrentRevision } = useClimbLedger(boardName, ledgerClimbUuid, angle);
   const showMirrorTag = boardSupportsMirroring(boardName, layoutId);
 
   const items = useMemo(() => buildLedgerListItems(ledger), [ledger]);
@@ -83,10 +83,11 @@ export function LogbookFullSheet({ visible, climbUuid, boardName, layoutId, angl
           dayLabel={formatLedgerDayLabel(item.session.dayKey, { todayKey, yesterdayKey, todayLabel, yesterdayLabel })}
           showMirrorTag={showMirrorTag}
           showDayTries={item.showDayTries}
+          climbCurrentRevision={climbCurrentRevision}
         />
       );
     },
-    [angle, showMirrorTag, todayKey, yesterdayKey, todayLabel, yesterdayLabel],
+    [angle, showMirrorTag, todayKey, yesterdayKey, todayLabel, yesterdayLabel, climbCurrentRevision],
   );
 
   return (

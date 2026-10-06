@@ -31,6 +31,8 @@ export type OnboardingGateReason =
   | 'launched_by_url'
   // a tapped push opened the app (it routes into a tab and leaves no launch URL)
   | 'launched_by_notification'
+  // a board or climb link tapped while signed out was opened after sign-in
+  | 'replayed_board_link'
   | 'segment_after_reads'
   // stalled: which input was still missing when the watchdog fired
   | 'not_ready'

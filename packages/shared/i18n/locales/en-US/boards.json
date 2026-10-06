@@ -72,7 +72,10 @@
       "unfollowMessage": "\"{{name}}\" is your active board. Unfollowing drops it from your boards and clears the selection.",
       "unfollowConfirm": "Unfollow",
       "edit": "Edit",
-      "done": "Done"
+      "done": "Done",
+      "deleteWallTitle": "Delete spray wall?",
+      "deleteWallMessage": "Delete \"{{name}}\"? Its photos and climbs will no longer be available. This cannot be undone.",
+      "deleteSuccess": "\"{{name}}\" deleted"
     },
     "emptyTitle": "No boards yet",
     "emptySubtitle": "Search for a board to get started",
@@ -436,6 +439,17 @@
       "publicHint": "Anyone can find the wall. It shows on the gym page, its climbs turn up in the feed, and the wall photo goes on the open web.",
       "ownerOnlyError": "Only the climber who set this wall up can change who sees it. Your other changes saved.",
       "updateError": "Couldn't change who can see this wall. Try again."
+    },
+    "sprayClimbEditPolicy": {
+      "label": "Who can edit climbs",
+      "setter": "Setter only",
+      "collaborators": "Anyone who can set",
+      "setterHint": "Only a climb's setter and the wall's editors can edit climbs.",
+      "collaboratorsPublicHint": "Anyone who can see this public wall can edit published climbs.",
+      "collaboratorsUnlistedHint": "Anyone with the share link can edit published climbs.",
+      "collaboratorsPrivateHint": "On a private wall, only climbers with access to set climbs can edit them.",
+      "ownerOnlyHint": "Only the climber who set this wall up can change who can edit climbs.",
+      "ownerOnlyError": "Only the climber who set this wall up can change who can edit climbs. Your other changes saved."
     }
   },
   "boardEntity": {

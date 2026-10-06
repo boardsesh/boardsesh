@@ -117,8 +117,21 @@ What the retry has to respect:
   version PR, so `OTA_SERVER_VERSION`, `EOAS_PACKAGE_SPEC` and the promote script move back
   together (the version-parity test fails on a partial revert), and then republishing the current
   JS with the old CLI. The 3.2 schema changes can stay; 3.1.2 ignores the new tables and column.
-- **Bundle diffing stays off.** `BUNDLE_DIFFING` is unset. Patches are served from the server itself
-  rather than the CDN, and each diff job peaks at about six times the bundle size in memory.
+- **Bundle diffing is on** (`BUNDLE_DIFFING=true`). On each publish xprem computes a bsdiff patch from
+  each of the five previous updates on the same branch, runtime and platform, and keeps one only when
+  it is at most 30% of the gzipped bundle. expo-updates has asked for patches by default since
+  56.0.13, so no build was needed. A device more than five updates behind gets the full bundle, and
+  `main` publishes about 14 updates a day, so patches mostly help climbers who open the app several
+  times a day. Each diff job peaks at about six times the bundle size in memory (about 125 MB) and
+  two run at once.
+- **Patches come from the server, never the CDN.** `BUNDLE_DIFFING_CDN_REDIRECT` stays unset.
+  expo-updates rejects a patch without the `im: bsdiff` and `expo-base-update-id` response headers
+  and does not fall back to the full bundle. The edge would need a Worker to add the second one,
+  because the value comes from the request path. `BUNDLE_DIFFING_CDN_REDIRECT` is a forbidden
+  variable in `infra/railway/config.ts`, so setting it by hand shows up as drift.
+- **Turning diffing off is a one-line PR:** set `BUNDLE_DIFFING` to `'false'` in
+  `infra/railway/config.ts`. Removing the entry does nothing, because `railway:apply` never unsets a
+  variable.
 
 After any bump: re-verify `/hc` = 200, `/ready` = 200, a header-carrying manifest + asset probe, and
 run `eoas doctor`.
@@ -513,11 +526,13 @@ client requesting an unmapped channel gets `No branch mapping found`. Mapping is
 **dashboard-admin operation**: the app-scoped `eoo_` publish key can list branches/channels but
 **cannot map** (it 403s with "This action requires a dashboard session").
 
-- **Production** is mapped once, by hand, in the dashboard — nothing on `main` remaps it.
+- **Production** maps to the `production` branch. The mapping is declared in `infra/ota/config.ts`
+  and checked by `vp run ota:apply` (see [Managing xprem as code](#managing-xprem-as-code)).
 - **PR previews and staging are branches, not channels.** The production channel enables xprem Branch
   Surfing with the narrow pattern `pr-*`; the picker sends `xprem-branch: pr-N` for a PR or
   `xprem-branch: pr-staging` for the staged main update. No extra channel mapping is created.
-  Production in the picker clears the branch override. Staging is intentionally selectable
+  Production in the picker clears the branch override. `pr-beta` is a third long-lived branch
+  under the same pattern: the early-updates track ("Early updates" below). Staging is intentionally selectable
   before the backend schema is promoted, so it is for testers; the staging export itself
   is promoted byte-for-byte after the schema gate. The `pr-` S3 lifecycle rule also
   covers staging assets, so a stale staging update expires after 14 days.
@@ -537,6 +552,326 @@ client requesting an unmapped channel gets `No branch mapping found`. Mapping is
 - **Green-field consequence:** a legacy v1 client that sends **no** `expo-app-id` header gets an
   HTTP 400 from V3. That's correct — only new header-carrying V3 builds ever hit V3; old binaries
   pointed at V2, which no longer exists.
+
+### Managing xprem as code
+
+The channel mapping, Branch Surfing and branch protection used to exist only as dashboard state. They
+are now declared in `infra/ota/config.ts`, and `vp run ota:apply` compares that declaration with the
+server. It follows the Railway tool (`infra/railway/`, `vp run railway:apply`): typed desired state,
+a pure plan function (`infra/ota/plan.ts`), and all I/O in the script.
+
+```bash
+OTA_ADMIN_EMAIL=... OTA_ADMIN_PASSWORD=... vp run ota:apply             # plan: print the diff, exit 1 on drift
+OTA_ADMIN_EMAIL=... OTA_ADMIN_PASSWORD=... vp run ota:apply -- --apply  # make the server match
+```
+
+What the tool converges:
+
+| What | Declared value |
+| --- | --- |
+| Channel `production` | serves branch `production` |
+| Branch Surfing on `production` | on, pattern `pr-*` |
+| Branch `production` | exists, protected |
+| Branch `pr-beta` | exists, protected |
+| Branch `pr-staging` | exists, protected |
+
+On 2026-10-05 the server differed from this in four ways: `pr-beta` did not exist, and none of the
+three branches was protected. The first apply creates one empty branch and sets three flags.
+
+A protected branch cannot be deleted by anyone until the flag is lifted in the dashboard.
+`pr-staging` and `pr-beta` carry the `pr-` prefix so the single surfing glob covers them, which
+leaves the PR-number check in `scripts/ota-preview-cleanup.ts` as the only thing between a cleanup
+run and those branches. Protection is the second lock.
+
+The same file declares a **release policy that nothing acts on yet**: canary steps 5, 10, 25, 50,
+4 hours per step, a 20 hour minimum soak and a 22:00 UTC daily window. They are written down so the
+stable-release workflow can read them when it lands. Only the health thresholds are in use today,
+by `mobile-ota-rollout.ts health`, and every one of them is provisional until the fleet's normal
+faulty-device rate has been measured.
+
+What the tool will not do, whatever the declaration says:
+
+1. Delete a channel, a branch or an update.
+2. Touch a per-PR preview branch (`pr-<number>`). Declaring one is rejected before the server is read.
+3. Lift protection from a branch.
+4. Remap a channel while a rollout is live on it or on either branch involved.
+5. Change anything it finds on the server that is not declared. It prints those and leaves them.
+
+Live rollouts are state, not configuration: every plan lists them and none of them counts as drift.
+
+**Exit codes.** `0` in sync. `1` the server was read and differs, and nothing else. `2` the server
+could not be read after three tries (a failed login, a 5xx, a timeout). `3` the tool itself failed:
+bad arguments, a refused write, an answer it could not parse. The difference matters to whoever is
+paged: `1` is somebody's change, `2` is an outage or a rotated password, `3` is a bug or an API that
+moved.
+
+**Licence.** Branch protection and update health are Enterprise features in the 3.2.5 dashboard.
+Every plan prints the server's licence state. If the server refuses a protection call for that
+reason, the run says so in those words, still creates any missing branch (every create is planned
+before any protect), and exits `1`.
+
+#### What runs unattended, and what waits for a person
+
+| Trigger | What it may change |
+| --- | --- |
+| Push to `main` touching `infra/ota/**` | Additive only: create a declared branch, protect a declared branch. It prints the whole plan and lists everything else as `pending manual apply`. |
+| `ota-apply.yml` dispatched with `mode: plan` (the default) | Nothing. |
+| `ota-apply.yml` dispatched with `mode: apply` | Everything declared: also remapping the channel, changing Branch Surfing, creating a channel. |
+| `ota-drift.yml`, daily at 05:17 UTC | Nothing. It reports. |
+
+Remapping the channel moves the whole fleet to another branch, and widening Branch Surfing changes
+what any device may switch to. Neither happens because a PR merged. The allowlist is the script's
+`--only create-branch,protect-branch` flag, which is unit-tested; the workflow only chooses the mode.
+A pending change does not fail the push run, and the daily drift check keeps reporting it until
+someone dispatches an apply.
+
+`ota-drift.yml` asks two questions and gives each finding its own Discord message (API moved,
+server differs, server unreadable, the check itself failed):
+
+1. **Is the admin API still where our client expects it?** `vp run ota:api-probe` downloads the
+   public dashboard bundle and checks that every path the client calls is still in it. No login.
+2. **Does the server match the declaration?** A plan, never an apply.
+
+#### One-time setup: the `ota-stable-release` environment
+
+The four workflows (`ota-apply.yml`, `ota-drift.yml`, `mobile-ota-unlock.yml`,
+`ota-rollout-proof.yml`) take the admin login from a GitHub environment named `ota-stable-release`. **It does not exist until the owner creates
+it.** A job that names a missing environment makes GitHub create it with no protection at all, so
+do this in order:
+
+1. Create the environment `ota-stable-release`.
+2. Set its deployment branches to **Selected branches**, with `main` as the only one.
+3. Only then add:
+
+| Environment secret | Used for |
+| --- | --- |
+| `OTA_ADMIN_EMAIL` | the dashboard admin login |
+| `OTA_ADMIN_PASSWORD` | the dashboard admin login |
+| `DISCORD_DEPLOY_WEBHOOK` | the drift alert |
+
+All three are **secrets**, the email included. The preview environments keep the email in a
+variable, and a variable is printed in logs unmasked; these jobs read it from `secrets` only and
+mask it again before their first command. None of the tools prints the email, and a refused login's
+error has it removed from whatever the server answered.
+
+`ota-rollout-proof.yml` also needs the publish token, `EOO_TOKEN`, and the `EXPO_UPDATES_URL`
+variable. Both are repository-level, so a job in this environment already sees them and nothing has
+to be added. If `EOO_TOKEN` is ever moved into another environment, that workflow fails and names it.
+
+`DISCORD_DEPLOY_WEBHOOK` exists today only in the `Production` environment, and a job reads one
+environment. Without a copy in `ota-stable-release` the drift job goes red and says so in its
+summary, and nothing reaches Discord.
+
+Each workflow also refuses, in its first step, to run from any ref but `main`. It checks out `main`
+and installs nothing: every script it runs uses node built-ins only, so no package's install script
+executes in a job that holds the admin login. Until the environment holds the login, each job
+writes one "Skipped" line to its summary and ends green.
+
+#### The admin API these tools use
+
+xprem documents the publish protocol and not the API its dashboard calls. `scripts/lib/xprem-admin.mts`
+is a client for that API, and its header lists every path, method and payload with the dashboard
+bundle and server version they were read from. Two checks stand behind it, and they cover different
+things:
+
+- `scripts/lib/xprem-admin.test.ts` pins the requests **our client** makes, against a fake server.
+  It catches an accidental edit to the client. It cannot notice the real server changing.
+- `vp run ota:api-probe` reads the **live** dashboard bundle and fails when a path the client calls
+  is no longer in it. The daily drift workflow runs it, so an upgrade that moves an endpoint goes
+  red within a day. Run it by hand after any `OTA_SERVER_VERSION` bump.
+
+Neither proves a response shape. The client parses responses strictly, so a changed shape fails
+loudly the first time it is read. None of this has been exercised against the live server with an
+admin login yet.
+
+Two things in that API are easy to get wrong:
+
+- **Two id spaces.** The rollout endpoints and `expectedUpdateId` use the numeric update id
+  (`17911745123242`). Health is keyed on the UUID-shaped id a device reports
+  (`43d5c1d5-ade8-62d9-1d01-9ffa9a169620`). `mobile-ota-rollout.ts` resolves one to the other.
+- **Remapping a channel is addressed by branch id**, not name:
+  `POST /api/apps/{app}/branch/{branchId}/updateChannelBranchMapping`. A "Legacy" branch has no
+  id, and the tool refuses to map a channel to one.
+
+#### Rollouts: `scripts/mobile-ota-rollout.ts`
+
+```bash
+node --experimental-strip-types scripts/mobile-ota-rollout.ts status
+node --experimental-strip-types scripts/mobile-ota-rollout.ts set    --runtime-version <rtv> --percentage 25
+node --experimental-strip-types scripts/mobile-ota-rollout.ts finish --runtime-version <rtv>
+node --experimental-strip-types scripts/mobile-ota-rollout.ts revert --runtime-version <rtv>
+node --experimental-strip-types scripts/mobile-ota-rollout.ts health --runtime-version <rtv>
+```
+
+All of them take `--branch` (default `production`), `--platform ios|android|all` and the admin login
+in the environment.
+
+- `status` without `--runtime-version` walks **every** runtime version of the branch. A rollout
+  belongs to one branch, one runtime version and one platform, and a release-train merge-back can
+  leave one behind on a runtime version nothing publishes to any more.
+- `set`, `finish` and `revert` read the rollout first and send the update id they found as
+  `expectedUpdateId`, so the server refuses the write if the rollout was replaced in between.
+  `--expected-update-id` also refuses to act on any rollout but the one named. A rollout that
+  disappears before the command's own first write is an error, not a success.
+- `finish` delivers the update to everyone. `revert` republishes the previous update as a new one;
+  devices that took the canary return to it on their next check. `revert --if-live` treats "nothing
+  is rolling out" as success.
+- `health` prints a verdict per platform: `healthy`, `unhealthy` or `insufficient-evidence`.
+
+How a canary is judged (`judgeCanary`, thresholds in `infra/ota/config.ts`):
+
+1. Counts that are not finite, non-negative numbers are not evidence.
+2. More faulty devices than devices on the update is treated as a crash loop: an update that
+   crashes at launch falls back to the embedded bundle, so its devices stop counting as on the
+   update. On 3 or more faulty devices that is unhealthy; on fewer there is not enough evidence.
+3. The allowed faulty-device rate is the control's rate plus 2 points, capped at 5%. A control with
+   fewer than 15 reporting devices counts as 0%, so a tiny or broken control cannot raise the bar.
+4. Below 15 reporting devices the canary is never healthy. It is unhealthy only on 3 or more faulty
+   devices at 30% or more; otherwise there is not enough evidence.
+5. From 15 devices up: over the allowed rate on 3 or more faulty devices is unhealthy, over it on
+   fewer is not enough evidence, and anything else is healthy.
+
+Every verdict comes with a reason that names the rule behind it.
+
+Launch and JS issue counts are printed and not judged: whether the server reports them as running
+totals or per-minute counts is not known yet.
+
+**What the throwaway-branch proof must establish** before any of this decides a release:
+
+1. The full sequence on a scratch branch: start a rollout, publish refused, rollback refused,
+   revert, publish accepted.
+2. What an anonymous manifest request is served while a rollout is live.
+3. Whether `expectedUpdateId` must be sent as a number or a string.
+4. Whether one rollout write moves every platform that shares a runtime version.
+5. Whether a device that fell back to the embedded bundle still counts in `devicesOnUpdate`. Rule 2
+   above assumes it does not.
+6. Whether `updateIssues` and `runtimeIssues` are running totals or per-minute counts.
+7. How the server words a refusal of a licensed feature.
+8. That a rollout names the update it replaced (`controlUpdateId`) whenever one existed. The
+   promote re-run check refuses when it is missing.
+
+##### Running the throwaway-branch proof
+
+`scripts/ota-rollout-proof.ts` runs that sequence against the live server, on a scratch branch, and
+prints what the server did. It is dispatch-only and asks for the branch name to be typed:
+
+```bash
+gh workflow run ota-rollout-proof.yml --ref main -f confirm=pr-rollout-proof
+```
+
+It takes three to five minutes. The transcript is the run's summary page, and the same transcript
+plus a `result.json` are in the `ota-rollout-proof` artifact (kept 30 days).
+
+What keeps it away from the fleet:
+
+- **The branch is `pr-rollout-proof` and nothing else.** The script refuses any other name, a
+  declared long-lived branch, and a branch the server maps to any channel. `infra/ota/config.ts`
+  names it (`ROLLOUT_PROOF_BRANCH`) and deliberately does not declare it.
+- **The runtime version is minted per run** (`rollout-proof-<UTC timestamp>-<random>`). No binary
+  has it, so no device can be served anything the proof publishes. A fingerprint is refused.
+- **Every request passes an allowlist before it is sent.** Reads, the login, writes addressed
+  to that branch and that runtime version, and file uploads to the exact URLs a lease named. A request for `production`, for another runtime version,
+  to a channel or to Branch Surfing is refused in the script and never reaches the server.
+- **The updates are a comment.** Each one is `metadata.json`, `expoConfig.json` and a three-line
+  `.js` file that says it is a rollout proof.
+
+The steps, each ending `PASS` (an expectation held), `FAIL` (it did not) or `OBSERVED` (a question
+with no right answer, written down):
+
+| Step | What it does |
+| --- | --- |
+| guards | Signs in, reads the channels, refuses if any serves the branch. |
+| a | Publishes update A at 100% for iOS and Android. Checks it is the head and that a manifest probe is answered from the branch. |
+| b | Publishes update B at 10%. Records the lease echo and the shape of `GET …/rollout`. |
+| c | Asks the manifest as a device with no client id, then as 40 simulated devices, twice. |
+| d | Tries a publish, a republish and a rollback while the rollout is live. Each should be a 409. |
+| e | Raises to 25%, then 50%. Checks that devices are only ever added. |
+| f | Reads health for B and A. |
+| g | Reverts. Records what the new head is, then publishes update C to show the lock is gone. |
+| h-start | Publishes update D at 10%. |
+| i | Sends `PUT …/rollout` and `revert` with a wrong `expectedUpdateId`, as a string and as a number. |
+| h-finish | Finishes D, checks everyone is served it, publishes update E. |
+| cleanup | Reverts a rollout that a broken step left live. Normally there is none. |
+| j | Says whether one write moved both platforms, from how many writes the lib needed. |
+
+A step that needs a broken step is `SKIPPED`. The summary table always lists every step. The run
+ends red if any step failed.
+
+**The manifest probes.** They send the headers a store binary sends (`expo-channel-name:
+production`) plus `xprem-branch: pr-rollout-proof`, so they depend on Branch Surfing offering the
+branch. Step a checks that first, by looking for `extra.branch` in the answer. If the probe is not
+answered from the branch, steps c, e, g and h-finish skip their device checks and say so. They do
+not count "no update" as "control".
+
+**The simulated devices are not UUIDs by default.** The server buckets a rollout on a hash of the
+raw `EAS-Client-ID`, and its Observe check-in only registers a device whose id parses as a UUID. So
+ids like `rollout-proof-…-device-07` sample the rollout without adding 40 phantom devices to the
+device registry. If the 50% step reports that no simulated device got the canary, dispatch again
+with `-f uuid_client_ids=true`, which sends random UUIDs and does register them.
+
+**What it leaves behind.** The branch `pr-rollout-proof`, one runtime version per run, and six
+small updates per platform under it (A to E, and the copy of A that the revert publishes). Nothing
+is deleted: removing the branch afterwards is the owner's call (dashboard, Branches). Its update
+folders sit under the `pr-` storage prefix, which the bucket lifecycle rule expires after 14 days.
+The bundles themselves are a few bytes each in the app's content-addressed store (`{appId}/cas/`),
+and any bundle patches the server computes between them land under `{appId}/bsdiff/`. That rule
+covers neither. `vp run ota:apply` and the daily drift check report the branch as a note and never
+as drift.
+
+**What it cannot establish.** Items 5 and 6 of the list above need a real device that runs an
+update, fails and falls back. Nothing runs these updates, so the proof records the shape of the
+health answers for an update with no devices and stops there.
+
+**What the server source says to expect.** xprem is public, and
+`mercuretechnologies/xprem` at the `v3.2.5` tag reads as follows. This is a reading, not a result:
+
+- The publish lock is per branch and runtime version, across platforms
+  (`HasActiveRolloutUpdate`). `requestUploadUrl`, `republish` and `rollback` all check it first and
+  answer 409.
+- A rollout row is per platform, and `PUT …/rollout` and `revert` act on every active row of the
+  branch and runtime version. One call moves both platforms when they share a runtime version.
+- `expectedUpdateId` is decoded as a JSON **string**. A number is a 400 ("invalid request body")
+  before any comparison, and a wrong string is a 409. `GET …/rollout` serialises `updateId` as a
+  string, so echoing it back unchanged is correct.
+- A request with no `EAS-Client-ID` is never in a rollout and is served the control.
+- `revert` republishes each control as a new update with an empty commit hash, or publishes a
+  roll-back-to-embedded directive when the rollout had no control.
+
+##### Results
+
+Not run yet. The answers to the eight questions above are filled in here from the first run's
+transcript, with the run's URL and date. Until then nothing in this section is known.
+
+`mobile-ota-unlock.yml` wraps `revert --if-live` for publishers that must not be refused by a live
+canary. It takes the iOS and the Android runtime version in one run. It is dispatch-only: a
+reusable workflow is loaded from the caller's ref, so a release branch could change the steps that
+run with the admin login. Callers will start it with
+`gh workflow run mobile-ota-unlock.yml --ref main`. Nothing calls it yet.
+
+#### Promoting to another branch, or as a rollout
+
+`scripts/mobile-ota-promote.ts` takes optional flags. With none of them, it behaves as before.
+
+- `--branch <name>` promotes to that branch (and `--capture-baseline --branch <name>` captures its
+  baseline). The probe still sends `expo-channel-name: production` and reaches the branch with the
+  `xprem-branch` header, the way a pinned device does.
+- `--rollout-percentage <1-99> --rollout-receipt <path>` starts the update as a rollout. The
+  anonymous manifest shows one device's view and cannot confirm a rollout, so this mode reads the
+  rollout through the admin API and needs `OTA_ADMIN_EMAIL` and `OTA_ADMIN_PASSWORD` next to
+  `EOO_TOKEN`. Admin and publish calls go to the same server, the one `EXPO_UPDATES_URL` names.
+- **Rollout mode does not run the served-bytes check** that the default mode ends with. It confirms
+  that the update it was leased is rolling out at the requested percentage. The bytes are covered
+  only by the content hashes the server validated at upload.
+- It is safe to re-run. Before any upload it writes the rollout receipt: the update id it was
+  leased per platform, and the update each rollout is about to replace (the staged baseline). On a
+  re-run, a platform whose live rollout carries its recorded id, built from its commit, counts as
+  done. A live rollout it cannot tie to its own receipt is refused, even when it was built from the
+  same commit, so keep the receipt file with the stage receipt between attempts.
+- A platform whose own rollout is already live is **not** checked against the anonymous manifest:
+  this promotion changed what the branch serves, and the manifest shows one device's side of a
+  rollout. It is checked against the server's record of what the rollout replaced instead. That
+  update must be the baseline in the receipt. If something else was published in between, the
+  re-run refuses.
 
 ### Fingerprint parity — the one rule that matters
 
@@ -1265,6 +1600,14 @@ PostHog. The reloaded-\* success outcomes are tracked (and the client flushed) *
 reload — `reloadAsync()` restarts the app immediately, so a post-reload capture would be lost;
 delivery is still best-effort since the restart can pre-empt the flush.
 
+The same check and fetch, without the reload, runs once and with no button when the app finds its
+offline database was migrated by a newer bundle than the one running (a reverted canary, or a climber
+who left the early-updates track). The fetched bundle launches on the next cold start. It reports
+through the same `OTA Recovery Attempted` event with `source: schema-downgrade` and a `result` of
+`update-fetched`, `no-fix-available` or `failed`, so filter on a missing `source` to count
+crash-screen recoveries alone. See `docs/offline-sync-plan.md` → "Older JS
+on a newer database".
+
 ## PR-time OTA-compatibility signal
 
 The native gate above answers "should `main` rebuild?". `mobile-ota-check.yml` answers the same
@@ -1303,13 +1646,53 @@ This is the runbook that stood up the live V3 server; it's here for the record a
 replacement. `vp run mobile:ota-setup` scripts the in-repo phases; the cloud actions (bucket,
 Postgres, server, DNS) stay manual. Run it with no argument for the ordered runbook.
 
-> **Storage migration gate:** `infra/cloudflare/config.ts` declares `boardsesh-ota-v3` as a private R2 bucket with
-> no custom domain and with `r2.dev` disabled. That desired state does not prove which provider Railway currently
+> **Storage migration gate:** `infra/cloudflare/config.ts` declares `boardsesh-ota-v3` as an R2 bucket with the
+> custom domain `ota-assets.boardsesh.com` and with `r2.dev` disabled. That desired state does not prove which provider Railway currently
 > uses, because `AWS_BASE_ENDPOINT` and its credentials remain live secrets. Inspect the production service before
 > calling the OTA bucket migrated. If it still points at Tigris, complete the verified copy below before rotating any
 > Railway credential. Then require `/hc` and `/ready` to return 200, publish a test update, and download/install it
 > from a production-configured client. See `docs/cloudflare.md` → **R2 buckets**; no live provider is inferred from
 > the declaration alone.
+
+### Asset delivery from the edge
+
+Every asset request costs two hops. `updates.boardsesh.com/assets` reaches the Railway server uncached, which
+answers with a 302. That first hop stays whatever the storage setup; what changes is where it points. Without
+`CDN_BASE_URL` the target is a presigned `r2.cloudflarestorage.com` URL. Measured from
+Sydney on 2026-10-05, the first hop took 350 to 650 ms per asset and the second served the 20.9 MB iOS bundle
+uncompressed over HTTP/1.1. Fleet `expo.updates.download_time` since the R2 rotation was p50 5.3 s and p90 19.6 s
+(268 samples over 19 hours).
+
+`ota-assets.boardsesh.com` is the public custom domain on the bucket, with a cache rule and a Brotli compression
+rule (`docs/cloudflare.md` → **OTA assets host**). xprem redirects asset requests to it because
+`CDN_BASE_URL` is set on the Railway service (`infra/railway/config.ts`). `railway:apply` refuses to set that
+variable while the host does not answer (`preflightUrl`), so the Railway change cannot land ahead of the
+Cloudflare one. It does not check caching or compression; the gate below does.
+
+**Rolling back to presigned URLs takes two steps, in this order.** `railway:apply` never unsets a variable, so
+reverting the declaration alone leaves the fleet on the CDN, and unsetting it alone lasts only until the next
+apply sets it again.
+
+1. Unset `CDN_BASE_URL` on the `boardsesh-ota-v3` service in Railway and let it redeploy. Delivery is back on
+   presigned URLs as soon as the new deployment serves.
+2. Merge a PR that removes the `CDN_BASE_URL` entry from `OTA_REQUIRED_VARS` and from the runbook block in
+   `scripts/mobile-ota-setup.ts`.
+
+Nothing in the bucket changes either way.
+
+**Gate before pointing xprem at the host.** Take two real `cas/` keys from launch assets, one published after
+the R2 rotation and one copied over from Tigris, and require all three for both:
+
+1. `curl -sI https://ota-assets.boardsesh.com/{appId}/cas/{hash}` returns 200.
+2. A second request returns `cf-cache-status: HIT`. A miss that never turns into a hit means the object carries no
+   `Cache-Control`; the migration only copied that header where the Tigris object had one.
+3. With `-H 'accept-encoding: br'` the response carries `content-encoding: br` and the transfer is 7 to 8 MB.
+
+If the third fails, first read the `cf:apply` log of the deploy that shipped the rule. A line saying the token
+cannot read the `http_response_compression` phase, or that Cloudflare refused the write, means the rule does not
+exist: grant `Zone.Response Compression Edit` and re-run. Only when the rule is live and the body is still
+uncompressed is the edge declining to compress `application/octet-stream`. The host is then still faster than the
+presigned path, but settle compression before treating the download-time target as reachable.
 
 ### Tigris → R2 object-copy gate
 
@@ -1319,7 +1702,7 @@ bucket and S3 credentials directly from the `boardsesh-ota-v3` Railway variables
 access keys. The workflow sends no Railway mutation and never changes the live reader. Its S3 client imports no
 delete operation, so neither provider loses an object.
 
-Before running it, add these bucket-scoped Production secrets for the private `boardsesh-ota-v3` R2 bucket:
+Before running it, add these bucket-scoped Production secrets for the `boardsesh-ota-v3` R2 bucket:
 
 - `OTA_R2_AWS_ENDPOINT_URL`
 - `OTA_R2_AWS_ACCESS_KEY_ID`
@@ -1383,7 +1766,10 @@ reads its current credentials, and creates only missing Tigris keys using condit
 must match by full size, SHA-256 and metadata; a mismatch stops the copy without replacement, and a concurrent create
 is accepted only after the same full match. Extra archived Tigris objects are retained; forward migration still
 requires exact key sets. The final verification checks source stability. Only after verification passes, restore the
-old Railway endpoint and credentials together. Verify old and new update delivery before restoring writers. Neither
+old Railway endpoint and credentials together. Before that, take `CDN_BASE_URL` off the service (both steps
+under [Asset delivery from the edge](#asset-delivery-from-the-edge)): it points at the R2 custom domain, so an
+update published to Tigris afterwards would redirect to a bucket that does not hold it and 404. Verify old and
+new update delivery before restoring writers. Neither
 direction changes Railway or deletes storage objects.
 
 Keep all mutable maintenance frozen through final verification and credential rotation, including any active bucket
@@ -1393,7 +1779,7 @@ runtimes and a newly published update, rather than passing on cached Tigris URLs
 configuration and signing identity.
 
 1. **Storage bucket** — an empty S3-compatible bucket `boardsesh-ota-v3` plus a scoped key. The original setup used
-   Tigris (`t3.storage.dev`, region `auto`); the migration target is the private R2 bucket above. Keep it portable
+   Tigris (`t3.storage.dev`, region `auto`); the migration target is the R2 bucket above. Keep it portable
    (see the object-storage rules in `CLAUDE.md`). For a brand-new replacement only, preflight
    put/get/CopyObject with a disposable key, then delete that test key only (retry with
    `AWS_S3_FORCE_PATH_STYLE=true` if CopyObject fails). The migration workflow above uses real inventory and never
@@ -1666,7 +2052,249 @@ Diagnostics for tester accounts.
 
 Telemetry keeps `ota_channel=production` and reads the selected branch from
 `Updates.manifest.extra.branch`, recording it as `branch` on the OTA status event and `ota_branch`
-in PostHog/Sentry. Diagnostic eligibility uses the same manifest field.
+in PostHog/Sentry. Diagnostic eligibility uses the same manifest field, classified by
+`otaBranchKind` in `qa-surf.ts` (`pr-<n>` and `pr-staging` are previews; `pr-beta` is not).
+
+## Early updates ("Get updates early")
+
+A switch in More → **App updates** that any climber on a surfing-capable binary can turn on. A phone
+with it on sends `xprem-branch: pr-beta` (`EARLY_UPDATES_OTA_BRANCH`) and so follows the branch that
+receives every merge to `main`; a phone with it off follows `production`. It is called "early
+updates" everywhere a climber can read it, never "beta": in this app beta means climb beta.
+
+**Status: shipped dark.** The row is behind the `early-updates` PostHog flag (see
+`docs/feature-flags.md` → "Mobile flags"), which does not exist yet, and nothing publishes to
+`pr-beta` yet. Until both happen no climber sees the row and no device sends the header. The flag
+must stay off until the device checks in the PR that added this (#6101) have been done on an iOS and
+an Android store build: everything below rests on native expo-updates behaviour that unit tests
+model but cannot prove.
+
+### Known cost: the first launch after every store update (Android)
+
+Read this before turning the flag on. It cannot be fixed from JS.
+
+On Android the embedded bundle's database row always carries the headers baked into the build, so
+it is never launchable under a pin. A member who updates the app from the store therefore opens the
+new binary with **nothing launchable**: online, the splash screen blocks on a full OTA download with
+no time cap; offline, the app emergency-launches the embedded bundle. Today that happens only to
+testers pinned to a preview. With this feature it happens to every Android member at every native
+release. After an emergency launch the sync drops the pin without needing a network, so the launch
+after is an ordinary one on the regular track, and the member rejoins once online.
+
+iOS does not pay this cost, for a reason that has its own edge (next section): it inserts the new
+embedded row under the pin and launches it normally.
+
+### The rules the design rests on
+
+All read from expo-updates 57; `ota-track-sequences.test.ts` models each and cites its source.
+
+1. **Launch.** A cold start launches only an update whose stamped request headers **equal** the
+   headers configured now (`LauncherSelectionPolicyFilterAware`, both platforms).
+2. **Stamp.** A download stamps the update with the headers in force. An update id already on disk
+   is not restamped, and `fetchUpdateAsync` still reports `isNew: true` for it (iOS `AppLoader`,
+   Android `Loader.processUpdate`).
+3. **Load.** A served update counts as available when the launched update's stamp no longer matches
+   the configured headers, whatever its commit time; otherwise only when it is newer
+   (`LoaderSelectionPolicyFilterAware`).
+4. **Embedded.** Android inserts the embedded row with the baked headers (`EmbeddedUpdate.kt`) and
+   never reaps it. iOS inserts it with the headers in force at insertion
+   (`UpdatesDatabase.addUpdate`), only when nothing else is launchable or it is newer, and reaps it
+   like any other row. So on iOS it may carry a pin's stamp, a baked stamp, or be gone.
+5. **Reaper.** After launch, updates older than the launched one are deleted but for one. Android
+   keeps the newest of them; iOS keeps the last one it iterated.
+
+So writing the header override does not mean "follow that branch from the next launch". It means
+"at the next launch, refuse everything on disk that was not downloaded under exactly these headers".
+Consequences:
+
+- **A pin is only kept once an update stamped for it is on disk.** A switch waits for expo-updates
+  to be idle, writes the override, checks, downloads, and keeps the pin only if that left a stamped
+  update. Anything else puts the previous override back.
+- **The server falling back is the dangerous answer, not an error.** When xprem does not have the
+  requested branch for this binary it serves the channel's own update. That is usually the update
+  already running, under the old stamp; expo-updates reports it "downloaded" and it still cannot
+  launch. So joining asks `/branch_lists` (the whole list) for the branch first, and after the check
+  it refuses an update id it knows is on disk under another stamp.
+- **Leaving works without waiting for a newer build** (rule 3): the regular track's current update
+  launches at the next open even though it is older than the early update that was running.
+- **Leaving is refused when it would leave nothing launchable.** On iOS a store update while pinned
+  inserts the embedded row under the pin (rule 4). If the regular track has published nothing for
+  that binary yet, dropping the pin would leave nothing launchable at every cold start, with nothing
+  to repair it. So "no update on the server" only counts as leavable when the app was launched with
+  no pin.
+
+### The pieces
+
+| Piece | File |
+| --- | --- |
+| Header writes, the pin record and journal, the queue, `/branch_lists` | `src/lib/qa/qa-surf.ts` |
+| The sync decision (pure), the sync, the switch, leaving a preview | `src/lib/qa/early-updates.ts` |
+| Launch sync (renders nothing) | `src/components/qa/EarlyUpdatesLaunchSync.tsx` |
+| Row state for More, membership, the flag-off confirmation | `src/lib/qa/use-early-updates.ts` |
+| The picker's branch query and its surfing-off effect | `src/lib/qa/use-qa-branches.ts` |
+| The More section | `src/components/early-updates-section.ts` |
+| The model of the rules above, and every sequence run against it per platform | `src/lib/qa/__tests__/ota-track-sequences.test.ts` |
+
+### State
+
+Settings (MMKV, per device):
+
+- `earlyUpdates`: the **choice**. The switch writes it at once, so it responds instantly offline.
+- `otaPinnedBranch`: the **pin record**, the branch this app last pinned, null for none.
+  expo-updates cannot read the override back. `pr-beta` also means an update stamped for that pin
+  is on disk. `pr-<n>` / `pr-staging` means a tester's preview owns the header. Only `qa-surf.ts`
+  writes it.
+- `otaPinSwitchInFlight`: a journal. Set to `{ to }` just before a no-reload switch writes the
+  override and cleared when the switch finishes either way. Found at launch, it means the app was
+  killed in between with the override left on `to`.
+- `otaLeaveOwed`: the server switched Branch Surfing off and the unpin could not be completed yet.
+- `otaLeaveBlockedUpdateId`: a leave was refused on this update id (see "Leaving can be blocked").
+
+At launch, before the first sync, `adoptRunningOtaPin` makes the record match what the launch
+proved: a `pr-*` bundle names its own pin, and a journal names the pin an interrupted switch left
+behind. After an emergency launch nothing is proven and nothing is adopted.
+
+### The sync
+
+`syncEarlyUpdates` moves the pin towards the choice. It runs behind the switch and once per launch
+(`EarlyUpdatesLaunchSync`, after the first interactions, in the background), never reloads, never
+throws, and makes no request when there is nothing to do. `decideEarlyUpdatesSync`, in order:
+
+| Condition | Action |
+| --- | --- |
+| This launch was an emergency launch | **repair**: write "no override" and clear every record of a pin, at once and with no request. Only if there was any sign of a pin (a record, an interrupted switch, or the choice) is a regular update then fetched. Before flags resolve, whoever owns the pin, once per launch. For a climber who never had a pin this is a no-op: an emergency launch has many causes that have nothing to do with branches. |
+| A leave is owed to the server | leave |
+| Pin record `pr-beta`, choice off | leave |
+| Pin record `pr-beta`, flag `off` and confirmed | leave, at most once per launch |
+| Pin record `pr-beta`, otherwise | nothing |
+| Pin record `pr-<n>` / `pr-staging`, that bundle running | nothing: the pin is the tester's |
+| Pin record `pr-<n>` / `pr-staging`, another bundle running | ask `/branch_lists`. Still offered: nothing. Gone (the PR merged): join for a member, leave for everyone else |
+| No pin, choice on, flag `on` | join: ask `/branch_lists`, then switch |
+| Anything else | nothing |
+
+A leave that was refused on the update still running is skipped in every row above.
+
+**A flag `off` is only acted on when confirmed**: it came in a response received since the app
+opened (PostHog's request id differs from the cached bag's), for the account that was signed in when
+the launch started. A cached bag, a failed request re-emitting it, a sign-out, and a different
+account signing in mid-session all leave a member where they are; hiding the row needs none of this.
+
+A join that cannot finish leaves the phone exactly where it was: offline (`deferred`), or the server
+not offering the branch for this binary (`waiting`, normal right after a native release until the
+first merge publishes for the new fingerprint). A leave that cannot finish leaves the phone pinned
+with its stamped update. Both are tried again at the next launch. A join that could not start
+online therefore takes two more opens: one to switch, one to launch the early update.
+
+### What a cold start launches
+
+| Choice | Pin record | On disk | A cold start launches |
+| --- | --- | --- | --- |
+| off | none | regular updates, or none | the newest regular update, or the embedded bundle |
+| on | none (join waiting for a network, the flag, or the branch) | the same | the same: the phone is on the regular track until the join lands |
+| on | `pr-beta` | at least one update stamped `pr-beta` | the newest update stamped `pr-beta` |
+| off | `pr-beta` (leave waiting) | the same | the newest update stamped `pr-beta`, until the leave lands |
+| any | `pr-<n>` / `pr-staging` | whatever the tester's surf downloaded | not ours while the server still offers that branch |
+
+No row has a pin without an update stamped for it. What can still put a phone there:
+
+| Situation | Android | iOS |
+| --- | --- | --- |
+| Store update to a new binary while pinned | Every time. Online: splash blocks on a full download. Offline: emergency launch, then repaired. | Launches the new embedded bundle normally; it now carries the pin's stamp. |
+| App killed mid-join | Online: one blocking download, then normal. Offline: emergency launch; the sync drops the pin with no network, so the next open is the regular update. | If the embedded row has been reaped (two or more OTAs launched): the embedded bundle, normally, which is the build's ORIGINAL JS, at every open until a network arrives. Otherwise as Android. |
+| App killed mid-leave | Launches the regular update; the journal clears the stale record, so it does not flap back. | The same. |
+
+None of the launch-time behaviour can be changed from JS: the decision is made before any JS runs.
+The kill window is not "seconds": native runs checks and downloads one after another, so a switch
+that started while the launch-time download was running would sit pinned for all of it. The switch
+therefore waits for `isStartupProcedureRunning`, `isChecking` and `isDownloading` to be false before
+writing anything, and every native call it awaits has a 3-minute JS timeout after which the
+previous override is put back.
+
+A pre-existing case this change does not touch: a PR surf that answers `nothing-to-load` keeps its
+pin with nothing stamped for it.
+
+### Leaving can be blocked
+
+While the server does not have `pr-beta` for a binary, it answers a pinned phone with the regular
+track's update, and the launch-time check downloads it **under the pin's stamp**. That update can
+then never launch without the pin (rule 2), so a leave is refused on it (`blocked`), the pin stays,
+and the attempt is not repeated until a different update is running.
+
+What that state is, honestly: the phone runs the regular track's JS, launches normally, and keeps
+getting regular updates, all under a `pr-beta` stamp. The leave completes on its own once the server
+offers `pr-beta` again (so pinned launches stop pre-fetching regular updates) and the regular track
+then publishes. No safe way to force it from JS was found: dropping the pin would launch the
+embedded bundle on Android (the build's original JS) until the next regular release, and may leave
+nothing launchable on iOS. The same applies to a non-member whose PR preview branch was deleted: the
+dead pin cannot be dropped, the phone is on regular updates in effect, and the switch in More is
+offered as usual (joining needs no leave).
+
+### Coexisting with PR previews
+
+Previews and early updates share the one `xprem-branch` header, so they take turns.
+
+- Picking a PR or Staging replaces the pin. The three `surfTo*` helpers write the pin record first
+  (a surf that reloads never returns to write it) and put the previous pin back, record and headers,
+  when xprem's surf rejects or hangs. xprem restores from its own session memory on a failed surf,
+  which knows nothing of a pin made by an earlier session or by a no-reload switch.
+- The sync stands down while a tester's bundle is running, and that includes the flag going off.
+- Leaving is where a member differs. `returnToOwnTrack` (the picker's own-track row, the brief's
+  **Leave preview**, the verdict sheet) joins early updates for a member, with no reload. A member
+  is the stored choice unless the flag says off. If the switch cannot be made (offline), the preview
+  pin stays and the screen says so. When the server does not offer `pr-beta` for this binary the
+  member's track is production for now: the picker row then reads **Production**, and the exit
+  reloads onto it as it does for everyone else.
+- A tester whose PR merged without a verdict used to be stranded on a pin to a deleted branch. The
+  sync now asks the server about any recorded preview pin whose bundle is not the one running.
+- The switch is not offered while a preview or staging bundle is running or pinned. The row becomes
+  a line saying to leave the preview first, because a flip would silently drop it.
+
+### Branch Surfing switched off
+
+`/branch_lists` answers `404` with `xprem-branch-surfing: off`. `qa-surf.ts` makes that request
+itself (`fetchQaBranches`), where it used to call xprem's `listBranches`, for two reasons: xprem
+folds that answer and any other 404 into one `null`, and it clears the pin on the spot, which is
+the bare unpin the rules above forbid. `fetchQaBranches` only reads. `noteBranchSurfingOff` is
+called from the two places that ask: `QaTesterGate` (a tester's launch, as before) and the picker's
+`useQaBranches` effect. It does a proper leave, attempted even with no pin on record, since a build
+older than the record may have pinned. When the leave cannot be completed it is recorded as owed and
+the launch sync retries it, for a member and a tester's preview pin alike. The `earlyUpdates` choice
+is kept: joining asks for the branch first, so nothing re-pins while surfing stays off. A 404
+without the header changes nothing.
+
+### Other code that checks for updates (not queued yet)
+
+The changelog's "check for updates" and the crash screen's recovery ("Check for a fix") call
+`Updates.checkForUpdateAsync` / `fetchUpdateAsync` directly, exactly as before this feature. They
+are **not** in the pin-change queue (`runPinChangeExclusively`), so one of them running in the
+middle of a no-reload switch is made, and stamped, under an override the switch may be about to take
+back, and a download of theirs after a same-session switch is attributed to the launch-time pin.
+
+That is deliberate while the flag is off: with no switch in the fleet the queue would protect
+nothing, and it would let a stuck pin change stall the last-resort recovery button. **Routing both
+through the queue (with the timeout) is owed before the flag is turned on.**
+
+### Telemetry
+
+`Early Updates Toggled` `{ enabled }` fires on a deliberate flip only (`EARLY_UPDATES_TOGGLED_EVENT`
+in `src/lib/ota-telemetry.ts`). Everything the sync does is silent. Which branch a phone actually
+runs is `ota_branch`, already on every event, and `isEmergencyLaunch` on `OTA Update Status` is the
+signal to watch for the Android cost above. A `pr-beta` bundle's `environment` tag comes from the
+env the bundle was exported with, not from the branch name, so whatever publishes to `pr-beta` must
+leave `EXPO_PUBLIC_SENTRY_ENVIRONMENT` unset or members drop out of the production population.
+
+### Known gaps
+
+- `isConnectStepProductionBuild` still treats every `pr-*` branch as a preview, so a new account on
+  an early-updates phone is not enrolled in the connect-step test.
+- The stamp bookkeeping knows about the running update, an update the launch-time check downloaded,
+  and downloads made through `qa-surf.ts`. An older update left on disk under another stamp is
+  invisible to JS. It can only matter if the server reuses an update id across branches.
+- If the pin record and the native override ever disagree with no journal to explain it (a device
+  restore that brings back one and not the other), the row can say "on" for a phone on the regular
+  track. That state launches normally.
+- Whether xprem manifests carry `expo-manifest-filters` is unverified. The "check turned down by the
+  loader policy proves the running bundle needs no pin" inference assumes they do not.
 
 ## Per-PR preview branches (self-hosted)
 
@@ -1813,8 +2441,10 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
     production publish on `main` needs it), which any same-repo PR workflow can read. For hard
     same-repo enforcement, keep `EOO_TOKEN` only on `ota-preview` and the `main` production
     environment, drop the repo-level copy, and configure required reviewers on `ota-preview`.
-    Production channel mapping stays a one-time dashboard action, so no admin creds ever touch
-    `main`.
+    Production channel mapping is declared in `infra/ota/config.ts`. The jobs that apply and check
+    it take the admin login from a third environment, `ota-stable-release`, which the owner must
+    create with a deployment-branch policy of `main` before adding secrets. They run `main`'s code
+    with no dependency install.
 - **Readiness signal.** Each publish posts a sticky PR comment (branch name + picker steps) and a
   GitHub **Deployment** to the `pr-preview` environment so the PR shows a green "ready" marker; the
   cleanup marks it inactive on close.
@@ -1841,9 +2471,42 @@ repo-level secret for the Android fingerprint).
 
 ## Deferred
 
-- **`beta` channel**: TestFlight on `beta`, App Store on `production`, promote at GA.
+- **`beta` channel**: TestFlight on `beta`, App Store on `production`, promote at GA. Not to be
+  confused with the `pr-beta` *branch* on the `production` channel, which is the early-updates track
+  ("Early updates" above) and needs no second channel.
 - **In-app `BranchSwitcher`** (`src/components/BranchSwitcherScreen.tsx`, gated on
   `isPreviewBuild()` in `src/lib/preview-build.ts`) switches branches **device-locally** on a preview
   build — it overrides the `expo-channel-name` request header via the same `channel-switch.ts` state
   machine as before, with no EAS API token and no project-wide channel remap.
   The store-binary preview flow rides self-hosted `pr-<number>` branches through xprem (above).
+
+### R2 reader publication for the frozen 2.6 cohort
+
+The manual `R2 Frozen Reader Publication` workflow targets only deployed production source
+`6cab8437bb7875e3a84ea228365c344428a6ca3c`. The current release train has newer native
+inputs, so its normal publisher cannot update this older cohort. No approved 2.6
+backport anchor exists; this workflow validates the actual deployed production source instead
+of creating a release tag or overriding its fingerprint.
+
+Dispatch from `main` with one platform and **dry run enabled first**. The protected
+Production job resolves both original full fingerprints twice on Linux, cold exports
+with the public R2 snapshot base, and checks the compiled Hermes bundle before any
+publishing credential is provided. A production dispatch uses the same immutable
+source and shared production FIFO lane, requires source-map upload, and verifies the
+new signed production manifest and every delivered R2 asset, whether xprem redirects to the
+presigned bucket URL or to `ota-assets.boardsesh.com`. The workflow
+cannot accept another source commit or runtime.
+
+Download the public acceptance receipts immediately after each run and retain them
+with the migration evidence until acceptance is complete. GitHub artifacts expire
+after seven days; receipts created before a failed step are also uploaded.
+
+A successful run is a publication check. For the October 2026 migration, native
+launch and a fresh offline-board R2 bootstrap passed on the iOS Release simulator.
+The owner explicitly waived incomplete Android native acceptance after emulator
+failures; this does not claim an Android native pass. The actual production and
+restoration results belong in [the acceptance record](r2-migration-2026-10.md).
+Keep all legacy objects and credentials during the retention period;
+see [the R2 reader acceptance PR](https://github.com/boardsesh/boardsesh/pull/5989) and issue #5912. An already
+published R2 update requires reverse copy and complete verification before an OTA
+storage rollback; changing only the endpoint is insufficient.

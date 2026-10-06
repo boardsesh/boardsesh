@@ -26,27 +26,90 @@ import { getHttpClient } from '../graphql/client';
 import {
   REGISTERED_WALL_REVALIDATE_MS,
   refreshSprayWall,
+  settleSprayWallDiscoveryMiss,
   registerSprayWall,
   resetSprayWallViewerAccess,
   setSprayWallLoader,
   setSprayWallLook,
-  sprayCacheToken,
+  sprayVersionToken,
   sprayWallViewerGeneration,
   unregisterSprayWall,
   sprayWallRemovalGeneration,
   subscribeToSprayWalls,
   type SprayWallRenderSettingsValue,
+  sprayWallLoaderGeneration,
+  unsetSprayWallLoader,
+  subscribeToSprayWallWithdrawals,
 } from './spray-wall-registry';
 import { clearSupersededSprayDrafts } from '../create-climb-draft-store';
 import { sanitizeBoardRenderDefault } from '../board-render-settings';
 import { reportHandledError } from '../error-reporting';
 import { mapCanonicalHoldsToPhoto, type CanonicalSprayHold } from './spray-hold-geometry';
+import { sprayPrivacyGeneration } from './spray-privacy-generation';
 
 type SprayWallByLayoutResponse = { sprayWallByLayout: SprayWall | null };
 type SprayWallRenderDataResponse = { sprayWallRenderData: SprayWallRenderData | null };
 
-export const sprayWallByLayoutQueryKey = (layoutId: number | null) => ['sprayWallByLayout', layoutId] as const;
-export const sprayWallRenderDataQueryKey = (wallUuid: string | null) => ['sprayWallRenderData', wallUuid] as const;
+export const sprayWallByLayoutQueryKey = (layoutId: number | null) =>
+  ['sprayWallByLayout', layoutId, sprayPrivacyGeneration(layoutId ?? undefined)] as const;
+export const sprayWallRenderDataQueryKey = (wallUuid: string | null) =>
+  ['sprayWallRenderData', wallUuid, sprayPrivacyGeneration()] as const;
+
+const privateWallQueryFamilies = new Set([
+  'sprayWallByLayout',
+  'sprayWall',
+  'sprayWallRenderData',
+  'sprayWallRevisionRenderData',
+  'sprayWallWithVersions',
+  'sprayWallResetProposal',
+]);
+
+function recordFields(payload: unknown): Record<string, unknown> | undefined {
+  return payload != null && typeof payload === 'object' ? (payload as Record<string, unknown>) : undefined;
+}
+
+/** Remove every epoch of this wall, not merely the key new readers will use. */
+function eraseWithdrawnWallQueries(queryClient: QueryClient, layoutId?: number, registeredUuid?: string): void {
+  const queries = queryClient.getQueryCache().getAll();
+  const wallUuids = new Set<string>(registeredUuid ? [registeredUuid] : []);
+  const versionIds = new Set<string>();
+  if (layoutId != null) {
+    for (const query of queries) {
+      if (!privateWallQueryFamilies.has(String(query.queryKey[0]))) continue;
+      const response = recordFields(query.state.data);
+      const render = recordFields(response?.sprayWallRenderData);
+      const wall = recordFields(response?.sprayWallByLayout ?? response?.sprayWall ?? render?.wall ?? response);
+      if (wall?.layoutId !== layoutId && !(query.queryKey[0] === 'sprayWallByLayout' && query.queryKey[1] === layoutId))
+        continue;
+      if (typeof wall?.uuid === 'string') wallUuids.add(wall.uuid);
+    }
+    for (const query of queries) {
+      if (!privateWallQueryFamilies.has(String(query.queryKey[0]))) continue;
+      const response = recordFields(query.state.data);
+      const render = recordFields(response?.sprayWallRenderData);
+      const wall = recordFields(response?.sprayWallByLayout ?? response?.sprayWall ?? render?.wall ?? response);
+      const knownUuid = typeof query.queryKey[1] === 'string' && wallUuids.has(query.queryKey[1]);
+      if (wall?.layoutId !== layoutId && !knownUuid) continue;
+      const versions = Array.isArray(wall?.versions) ? wall.versions : [];
+      for (const version of [...versions, wall?.currentVersion]) {
+        const versionId = recordFields(version)?.id;
+        if (typeof versionId === 'string') versionIds.add(versionId);
+      }
+    }
+  }
+  queryClient.removeQueries({
+    predicate: (query) => {
+      const [family, identity] = query.queryKey;
+      if (!privateWallQueryFamilies.has(String(family))) return false;
+      if (layoutId == null) return true;
+      if (family === 'sprayWallByLayout') return identity === layoutId;
+      if (family === 'sprayWallResetProposal') return typeof identity === 'string' && versionIds.has(identity);
+      return typeof identity === 'string' && wallUuids.has(identity);
+    },
+  });
+}
+
+let unsubscribeQueryWithdrawal: (() => void) | undefined;
 
 /**
  * The key the PUBLISHED render payload is cached under: the prefix above, plus
@@ -184,6 +247,7 @@ export function mapSprayWallRenderData(
     holds,
     renderSettings: null,
     viewerCanEdit: renderData.wall.viewerCanEdit === true,
+    viewerCanEditClimbs: (renderData.wall.viewerCanEditClimbs ?? renderData.wall.viewerCanEdit) === true,
     registeredAtMs: receivedAtMs,
   };
 }
@@ -246,7 +310,11 @@ export function registerRenderData(
     viewerAccess:
       fetchedUnderViewerGeneration === undefined
         ? undefined
-        : { canEdit: renderData.wall.viewerCanEdit === true, generation: fetchedUnderViewerGeneration },
+        : {
+            canEdit: renderData.wall.viewerCanEdit === true,
+            canEditClimbs: (renderData.wall.viewerCanEditClimbs ?? renderData.wall.viewerCanEdit) === true,
+            generation: fetchedUnderViewerGeneration,
+          },
   });
   if (look === undefined) void loadSprayWallLook(layoutId, renderData.wall.uuid);
 
@@ -254,7 +322,7 @@ export function registerRenderData(
   // leaves the old one holding holds that are no longer on the wall. Nothing else
   // would ever read or remove it. Fire-and-forget: losing this costs a few
   // kilobytes, and it must not sit in front of the first paint.
-  void clearSupersededSprayDrafts(layoutId, sprayCacheToken('spray', layoutId)).catch(() => {
+  void clearSupersededSprayDrafts(layoutId, sprayVersionToken('spray', layoutId)).catch(() => {
     // AsyncStorage unavailable. The orphan survives until the next reset.
   });
   return true;
@@ -403,10 +471,21 @@ async function loadSprayWallOnline(
   options?: { force?: boolean },
 ): Promise<void> {
   const removalGeneration = sprayWallRemovalGeneration(layoutId);
-  const wallUuid = await fetchSprayWallUuid(queryClient, layoutId);
-  if (sprayWallRemovalGeneration(layoutId) !== removalGeneration) return;
+  const generation = sprayPrivacyGeneration(layoutId);
+  const loaderEpoch = sprayWallLoaderGeneration();
+  const isCurrent = () =>
+    generation === sprayPrivacyGeneration(layoutId) &&
+    loaderEpoch === sprayWallLoaderGeneration() &&
+    removalGeneration === sprayWallRemovalGeneration(layoutId);
+  // A read that failed for a wall withdrawn meanwhile is not a failure to report.
+  const settleStale = (error: unknown) => {
+    if (!isCurrent()) return null;
+    throw error;
+  };
+  const wallUuid = await fetchSprayWallUuid(queryClient, layoutId).catch(settleStale);
+  if (!isCurrent()) return;
   if (!wallUuid) {
-    unregisterSprayWall(layoutId);
+    settleSprayWallDiscoveryMiss(layoutId);
     return;
   }
 
@@ -415,6 +494,7 @@ async function loadSprayWallOnline(
   // `fetchQuery` hands the dead URL straight back.
   if (options?.force) {
     await queryClient.invalidateQueries({ queryKey: sprayWallRenderDataQueryKey(wallUuid) });
+    if (!isCurrent()) return;
   }
 
   // Noted before the request leaves. If the account changes while it is out,
@@ -422,18 +502,19 @@ async function loadSprayWallOnline(
   // the account that is here now. A second change in the same breath is left to
   // the registry, which registers the wall as "cannot edit" and stale.
   let viewerGeneration = sprayWallViewerGeneration();
-  let renderDataRead = fetchSprayWallRenderData(queryClient, wallUuid, viewerGeneration);
+  let renderDataRead = fetchSprayWallRenderData(queryClient, wallUuid, viewerGeneration).catch(settleStale);
   // Alongside the render data, not after it: a wall registered without its look
   // draws in the viewer's settings, then draws again when the look lands, which
   // on a cold start doubles every spray surface's renders. Never rejects.
   const lookRead = fetchSprayWallLook(wallUuid);
   let renderData = await renderDataRead;
+  if (!isCurrent()) return;
   if (viewerGeneration !== sprayWallViewerGeneration()) {
     viewerGeneration = sprayWallViewerGeneration();
-    renderDataRead = fetchSprayWallRenderData(queryClient, wallUuid, viewerGeneration);
+    renderDataRead = fetchSprayWallRenderData(queryClient, wallUuid, viewerGeneration).catch(settleStale);
     renderData = await renderDataRead;
+    if (!isCurrent()) return;
   }
-  if (sprayWallRemovalGeneration(layoutId) !== removalGeneration) return;
   if (!renderData) {
     // The wall exists but has nothing renderable: deleted between the two reads,
     // visibility revoked, the published version's photo gone. A wall we already
@@ -445,7 +526,7 @@ async function loadSprayWallOnline(
     return;
   }
   const look = await lookRead;
-  if (sprayWallRemovalGeneration(layoutId) !== removalGeneration) return;
+  if (!isCurrent()) return;
   registerRenderData(layoutId, renderData, look, viewerGeneration, removalGeneration);
 }
 
@@ -507,7 +588,10 @@ export async function invalidateSprayWallRenderData(
   wallUuid: string,
   layoutId: number,
 ): Promise<void> {
+  const generation = sprayPrivacyGeneration(layoutId);
+  const loaderEpoch = sprayWallLoaderGeneration();
   await queryClient.invalidateQueries({ queryKey: sprayWallRenderDataQueryKey(wallUuid) });
+  if (generation !== sprayPrivacyGeneration(layoutId) || loaderEpoch !== sprayWallLoaderGeneration()) return;
   refreshSprayWall(layoutId);
 }
 
@@ -552,6 +636,12 @@ export function dropSprayWallViewerAccess(): void {
  * per-row render-board resolvers — can then ask for a wall by layout id.
  */
 export function installSprayWallLoader(queryClient: QueryClient): () => void {
+  unsubscribeQueryWithdrawal?.();
+  const unsubscribeWithdrawal = subscribeToSprayWallWithdrawals((layoutId, wallUuid) => {
+    eraseWithdrawnWallQueries(queryClient, layoutId, wallUuid);
+  });
+  unsubscribeQueryWithdrawal = unsubscribeWithdrawal;
+  let active = true;
   const requestedLayouts = new Map<number, { viewerGeneration: number; removalGeneration: number }>();
   const pruneRemovedRequests = () => {
     for (const [layoutId, requestedUnder] of requestedLayouts) {
@@ -564,6 +654,7 @@ export function installSprayWallLoader(queryClient: QueryClient): () => void {
   };
   const unsubscribeRegistry = subscribeToSprayWalls(pruneRemovedRequests);
   const loader = (layoutId: number, options?: { force?: boolean }) => {
+    if (!active) return Promise.resolve();
     requestedLayouts.set(layoutId, {
       viewerGeneration: sprayWallViewerGeneration(),
       removalGeneration: sprayWallRemovalGeneration(layoutId),
@@ -584,9 +675,12 @@ export function installSprayWallLoader(queryClient: QueryClient): () => void {
     }
   });
   return () => {
+    active = false;
     unsubscribe();
     unsubscribeRegistry();
     requestedLayouts.clear();
-    setSprayWallLoader(null);
+    unsubscribeWithdrawal();
+    if (unsubscribeQueryWithdrawal === unsubscribeWithdrawal) unsubscribeQueryWithdrawal = undefined;
+    unsetSprayWallLoader(loader);
   };
 }

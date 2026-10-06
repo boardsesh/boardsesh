@@ -1,0 +1,161 @@
+name: OTA Rollout Proof
+
+# The throwaway-branch proof for progressive rollouts on the xprem server at
+# updates.boardsesh.com. The rollout calls (start a rollout by publishing with a
+# percentage, raise it, finish it, revert it) and the health read were written
+# from the dashboard bundle and have never met the live server. This runs them
+# once, in a fixed sequence, and prints what the server did.
+#
+# What it writes to, and nothing else:
+#   - the scratch branch `pr-rollout-proof`, which no channel serves;
+#   - under a runtime version minted for the run (`rollout-proof-<timestamp>-…`),
+#     which no binary has, so no device can be served any of it.
+# The updates it publishes are a comment in a `.js` file. It deletes nothing,
+# remaps no channel and never changes Branch Surfing. The script refuses, before
+# sending it, any request that is not a read, the login, or a write addressed to
+# that branch and that runtime version (scripts/ota-rollout-proof.ts).
+#
+# It leaves the branch behind. Deleting it afterwards is the owner's call.
+#
+# See docs/mobile-ota-updates.md, "Running the throwaway-branch proof".
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type pr-rollout-proof to confirm. It publishes synthetic updates to that scratch branch on the live server.'
+        required: true
+        type: string
+      uuid_client_ids:
+        description: 'Probe as random UUIDs. Registers 40 phantom devices in Observe; only for a re-run that says the default ids were ignored.'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  # Its own group, shared with no publisher and no apply: nothing here can queue
+  # behind, or hold up, a job that touches production. One proof at a time, and
+  # a running one is never cancelled: cut off between two writes it would leave
+  # a rollout live on the scratch branch for the next run to trip over.
+  group: ota-rollout-proof
+  cancel-in-progress: false
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    # Five small publishes, about four hundred manifest probes and a few dozen
+    # admin calls: three to five minutes. Fifteen is a hung server.
+    timeout-minutes: 15
+    # Holds the dashboard admin login. The owner creates this environment with a
+    # deployment-branch policy of `main` BEFORE adding its secrets; see the docs
+    # for the list. The first step below refuses any other ref regardless.
+    environment: ota-stable-release
+    steps:
+      # Before anything reads a secret. The environment's branch policy is the
+      # real gate; this makes the refusal explicit, and holds if the policy is
+      # ever loosened or the environment recreated without one.
+      - name: Refuse any ref but main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::This workflow holds the OTA admin login and only runs from main. Dispatch it with --ref main."
+          exit 1
+
+      # Also before any secret is in scope: this step's environment holds the
+      # typed confirmation and nothing else.
+      - name: Require the typed confirmation
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "$CONFIRM" != "pr-rollout-proof" ]; then
+            echo "::error::Not confirmed. Dispatch with -f confirm=pr-rollout-proof to publish synthetic updates to that scratch branch."
+            exit 1
+          fi
+
+      # Always `main`: the code that receives the admin login and the publish
+      # token is only ever code that was reviewed and merged.
+      - name: Checkout main
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          persist-credentials: false
+
+      # No dependency install: scripts/ota-rollout-proof.ts and everything it
+      # imports use node built-ins only, so no package's install script runs in a
+      # job that holds the admin login.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
+
+      - name: Run the rollout proof
+        env:
+          # A secret, never a variable: a variable is not masked in logs, and
+          # the email is half of the login to the server the whole fleet uses.
+          OTA_ADMIN_EMAIL: ${{ secrets.OTA_ADMIN_EMAIL }}
+          OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
+          # The publish token is a REPOSITORY secret, so it reaches a job in any
+          # environment. If it is ever moved into another environment, this job
+          # stops seeing it and fails below with the secret's name.
+          EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
+          EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
+          UUID_CLIENT_IDS: ${{ inputs.uuid_client_ids }}
+          NODE_NO_WARNINGS: '1'
+        run: |
+          set -euo pipefail
+
+          # The login email is a secret here and is masked as one. Mask it again
+          # explicitly before anything else can print it: a value that was ever
+          # moved to a variable would otherwise reach the log in the clear.
+          if [ -n "${OTA_ADMIN_EMAIL:-}" ]; then echo "::add-mask::$OTA_ADMIN_EMAIL"; fi
+          if [ -n "${EOO_TOKEN:-}" ]; then echo "::add-mask::$EOO_TOKEN"; fi
+
+          # An environment that has not been given the login yet must not look
+          # like a failed proof. Say so where a human will read it, and stop.
+          if [ -z "${OTA_ADMIN_EMAIL:-}" ] || [ -z "${OTA_ADMIN_PASSWORD:-}" ]; then
+            echo "::notice::OTA_ADMIN_EMAIL or OTA_ADMIN_PASSWORD is not set in the ota-stable-release environment; skipping."
+            echo "Skipped: the \`ota-stable-release\` environment has no \`OTA_ADMIN_EMAIL\` / \`OTA_ADMIN_PASSWORD\`. Nothing was read or published." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # With the login present, a missing publish token or server URL is a
+          # misconfiguration, not a reason to skip: the proof was asked for.
+          if [ -z "${EOO_TOKEN:-}" ]; then
+            echo "::error::The EOO_TOKEN secret is not visible to this job. It must be a repository secret, or be added to the ota-stable-release environment."
+            echo "Failed: the \`EOO_TOKEN\` secret is not visible to this job. Nothing was read or published." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          if [ -z "${EXPO_UPDATES_URL:-}" ]; then
+            echo "::error::The EXPO_UPDATES_URL repository variable is not set."
+            echo "Failed: the \`EXPO_UPDATES_URL\` repository variable is not set. Nothing was read or published." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          flags=(--out-dir "$RUNNER_TEMP/ota-rollout-proof")
+          if [ "$UUID_CLIENT_IDS" = "true" ]; then flags+=(--uuid-client-ids); fi
+
+          # The script writes the transcript to the step summary itself. If it
+          # stops before it has one (a refused login, an unreachable server), its
+          # one-line error goes there instead.
+          status=0
+          node --experimental-strip-types scripts/ota-rollout-proof.ts "${flags[@]}" 2>&1 | tee "$RUNNER_TEMP/ota-rollout-proof.log" || status=$?
+          if [ ! -f "$RUNNER_TEMP/ota-rollout-proof/transcript.md" ]; then
+            {
+              echo '### OTA rollout proof did not run'
+              echo ''
+              echo '```'
+              cat "$RUNNER_TEMP/ota-rollout-proof.log"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
+
+      # The transcript and the machine-readable result. Both are written through
+      # the script's masking: no credential, no email and no presigned URL.
+      - name: Upload the result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ota-rollout-proof
+          path: ${{ runner.temp }}/ota-rollout-proof/
+          if-no-files-found: ignore
+          retention-days: 30

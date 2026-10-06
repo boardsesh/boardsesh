@@ -152,7 +152,7 @@ describe('SprayRevisionBoard', () => {
     expect(getSprayWall(LAYOUT_ID)?.version).toBe(3);
     expect(getSprayWall(LAYOUT_ID)?.photoUrl).toBe('https://private.example/current');
     expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(true);
-    expect(sprayCacheToken('spray', LAYOUT_ID)).toBe('-svid3');
+    expect(sprayCacheToken('spray', LAYOUT_ID)).toMatch(/^-svid3-pr\d+-\d+$/);
     expect(listRegisteredSprayWalls()).toHaveLength(1);
     expect(wakes).toBe(0);
   });

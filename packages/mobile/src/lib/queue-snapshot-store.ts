@@ -16,6 +16,7 @@
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { BOARD_FEED_SUGGESTION_SOURCE_ID } from './playlists/board-feed-suggestion-source';
 import { getPreference, setPreference, removePreference } from './preference-store';
+import { createQueueSnapshotWriteLane } from './queue-snapshot-write-lane';
 import type { UserStorageOwner } from './user-storage-owner';
 
 const QUEUE_SNAPSHOT_KEY = 'boardsesh_local_queue_snapshot_v1';
@@ -68,17 +69,24 @@ export async function getStoredQueueSnapshot(_owner?: UserStorageOwner | null): 
   return dropBoardFeedSource(await getPreference<LocalQueueSnapshot>(QUEUE_SNAPSHOT_KEY));
 }
 
+const snapshotWriteLane = createQueueSnapshotWriteLane();
+
+export const getQueueSnapshotGeneration = snapshotWriteLane.getGeneration;
+
 export function setStoredQueueSnapshot(
   snapshot: Omit<LocalQueueSnapshot, 'savedAt'>,
   _owner?: UserStorageOwner | null,
+  expectedGeneration = getQueueSnapshotGeneration(),
 ): Promise<void> {
-  return setPreference<LocalQueueSnapshot>(QUEUE_SNAPSHOT_KEY, {
-    ...snapshot,
-    playlistSuggestionSource: capSuggestionSource(snapshot.playlistSuggestionSource),
-    savedAt: new Date().toISOString(),
-  });
+  return snapshotWriteLane.write(async () => {
+    await setPreference<LocalQueueSnapshot>(QUEUE_SNAPSHOT_KEY, {
+      ...snapshot,
+      playlistSuggestionSource: capSuggestionSource(snapshot.playlistSuggestionSource),
+      savedAt: new Date().toISOString(),
+    });
+  }, expectedGeneration);
 }
 
 export function clearStoredQueueSnapshot(_owner?: UserStorageOwner | null): Promise<void> {
-  return removePreference(QUEUE_SNAPSHOT_KEY);
+  return snapshotWriteLane.clear(() => removePreference(QUEUE_SNAPSHOT_KEY));
 }

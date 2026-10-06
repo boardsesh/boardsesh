@@ -52,26 +52,26 @@ describe('useSprayWallToken', () => {
   it('re-renders its caller when the wall lands', async () => {
     setSprayWallLoader(async () => {});
     const { result } = renderHook(() => useSprayWallToken('spray', LAYOUT_ID));
-    expect(result.current).toBe('-svid0');
+    expect(result.current).toMatch(/^-svid0-pr\d+-\d+$/);
 
     act(() => {
       registerSprayWall(LAYOUT_ID, wallPayload(1));
     });
 
-    await waitFor(() => expect(result.current).toBe('-svid1'));
+    await waitFor(() => expect(result.current).toMatch(/^-svid1-pr\d+-\d+$/));
   });
 
   it('re-renders on a reset', async () => {
     setSprayWallLoader(async () => {});
     registerSprayWall(LAYOUT_ID, wallPayload(1));
     const { result } = renderHook(() => useSprayWallToken('spray', LAYOUT_ID));
-    expect(result.current).toBe('-svid1');
+    expect(result.current).toMatch(/^-svid1-pr\d+-\d+$/);
 
     act(() => {
       registerSprayWall(LAYOUT_ID, wallPayload(2));
     });
 
-    await waitFor(() => expect(result.current).toBe('-svid2'));
+    await waitFor(() => expect(result.current).toMatch(/^-svid2-pr\d+-\d+$/));
   });
 
   it('asks for nothing and stays empty on a catalogue board', async () => {

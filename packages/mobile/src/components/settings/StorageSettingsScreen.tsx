@@ -52,6 +52,7 @@ import { measureCachedImageBytes, clearCachedImages, type CachedImageMeasurement
 import { removeOfflineBoard, compactOfflineDatabase } from '../../offline/remove-offline-board';
 import { formatStorageSize } from '../../lib/format-storage-size';
 import { useOfflineSchemaReady } from '../../db/use-offline-schema-ready';
+import { useOfflineSchemaDowngrade } from '../../db/use-offline-schema-downgrade';
 import { reportError } from '../../lib/error-reporting';
 import { hapticLight } from '../../lib/haptics';
 import { iosSystemColors } from '../../theme/ios-colors';
@@ -86,6 +87,10 @@ export function StorageSettingsScreen() {
   // the query KEY below rather than gating the query: a failed measurement renders
   // the existing error state with its Retry, and a late readiness flip re-measures.
   const schemaReady = useOfflineSchemaReady();
+  // The file was migrated by a newer app version than this one, so `db` above
+  // refuses every call. Nothing can be measured, and saying "couldn't measure,
+  // try again" would be a lie with a button that cannot work.
+  const schemaDowngrade = useOfflineSchemaDowngrade();
   const queryClient = useQueryClient();
   const bottomChrome = useBottomChromeMetrics();
   const offlineEnabled = useOfflineDownloadsEnabled();
@@ -103,6 +108,7 @@ export function StorageSettingsScreen() {
     refetch,
   } = useQuery<StorageMeasurement>({
     queryKey: ['offlineStorage', schemaReady],
+    enabled: schemaDowngrade === null,
     // Not a poll: this walks 200k+ rows per scope in the worst case.
     refetchOnWindowFocus: false,
     queryFn: async () => {
@@ -309,6 +315,20 @@ export function StorageSettingsScreen() {
   // Also spin while re-measuring over an empty cached result: a board downloaded
   // while this screen was unmounted would otherwise flash "Nothing downloaded yet"
   // until the refetch lands, which reads as "your download is gone".
+  if (schemaDowngrade !== null) {
+    return (
+      <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
+        <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
+        <Text variant="headline" style={styles.stateTitle}>
+          {t('mobile.settings.storage.downgradeTitle')}
+        </Text>
+        <Text variant="subheadline" style={styles.stateSubtitle}>
+          {t('mobile.settings.storage.downgradeSubtitle')}
+        </Text>
+      </View>
+    );
+  }
+
   if (isLoading || (isRefetching && (measurement?.boards.length ?? 0) === 0)) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>

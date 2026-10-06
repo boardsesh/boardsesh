@@ -1,23 +1,34 @@
-New in 2.6:
+SPRAY WALLS: YOUR OWN WALL IN BOARDSESH
 
-YOUR GYM'S OTHER BOARDS, ONE TAP AWAY
+Photograph your home wall or the spray wall at your gym and the app finds the holds. Fix what it missed, pick a look, publish, and start setting. Climbs work like on any other board: queue them, save them to playlists, and log your sends in the same logbook as your other boards. No LEDs needed: the holds are highlighted on your photo.
 
-A Kilter next to a Tension, or two walls of the same board at different angles? The wall sheet now lists the other boards at your gym, so you hop to the one you're standing at in one tap instead of scrolling past boards in other cities. The Bluetooth link moves with you, a queue built across two walls plays in order, and each board keeps its own name and angle.
+Keep a wall private, make it public, or share it by link or QR code and your crew can set and log on it too. Stripped the wall? Take a new photo and check what came off before anything changes. Climbs that lost a hold stay in your list with a badge, and one tap remixes them onto what's still on the wall.
+
+Free, like the rest of Boardsesh.
+
+YOUR CREW, ON EVERY CLIMB
+
+Home shows who's climbing right now, so you can jump into their session. Open a climb and the people you follow come first: their notes, the grade they'd give it, then everyone else's logs. Follow a setter and their new climbs land in your crew feed as one card you swipe through.
 
 A REST TIMER THAT MOVES THE QUEUE ON
 
-Run boulders on the minute without picking your phone up between goes. Turn on the rest timer in the Record tab, set your rest, and it starts counting the moment you log a climb, then runs past zero into the red if you sit down too long. Let it move to the next climb and it lights that climb on the wall for you. "After each send" gives you the full rest every time; "On the minute" holds the beat however long the go takes.
+Run boulders on the minute without picking your phone up between goes. Turn on the rest timer in the Session tab and it starts counting the moment you log a climb, then runs past zero into the red if you sit down too long. Let it move to the next climb and it lights that climb on the wall for you. Someone wants a go first? Long-press their climb and tap Play next to slot it right behind the one on the wall.
 
-ROUTES IN SECONDS, NOT MULTIPLIERS
+ALSO NEW
 
-Route pacing now reads in seconds a frame, the unit the setter authored in, and reaches 60 seconds a frame. Half the route catalogue was set slower than the old control could play.
+- Your gym's other boards sit in the wall sheet: one tap to the wall you're standing at, and the Bluetooth link and the queue come with you.
+- Turn on Use my grades and the grade you gave a climb is the one you see, sort and filter by.
+- Similar climbs and the redesigned hold heatmap run on your downloaded board, so they work with no signal.
+- Linked board logbooks now sync on their own, around the clock.
+- Export your climbing history, playlists and climbs from Settings.
+- A new board look, Aura Outline: a solid outline on each lit hold.
+- Routes play at the pace they were set: pacing now reads in seconds a frame, up to 60.
 
 FIXED
 
-- Woods: every climb shows up whatever angle it was set at, carrying the grade it was given, and the setter filter lists all of a board's setters instead of the few with a climb graded at your angle.
+- Sends logged on a flaky connection wait for signal and sync instead of getting lost.
+- Woods: every climb shows up whatever angle it was set at, and the setter filter lists all of a board's setters.
 - MoonBoard: a problem graded at only one of the two angles now shows an estimate for the other.
-- Tap the lightbulb while a friend's phone holds the board and the climb lights over their link, instead of failing to connect.
 - Swiping in the play drawer stays on the list you picked from, even after logging a climb reorders that list.
-- Android: the Climbs tab no longer crashes when a board connects, offline saving keeps working after a long spell in the background, and switch labels are readable in dark mode.
 
 Free, no ads, open source.

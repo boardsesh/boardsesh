@@ -91,6 +91,15 @@ export const OTA_IMAGE = `${OTA_IMAGE_REPOSITORY}:v${OTA_SERVER_VERSION}`;
 /** Public origin of the OTA server. Also the value of its own BASE_URL. */
 export const OTA_BASE_URL = 'https://updates.boardsesh.com';
 
+/**
+ * The public R2 custom domain xprem redirects asset requests to.
+ *
+ * Repeated rather than imported from infra/cloudflare, which owns the host:
+ * the two tools share no code. scripts/__tests__/railway-config-inventory.test.ts
+ * fails if the two literals drift.
+ */
+export const OTA_CDN_BASE_URL = 'https://ota-assets.boardsesh.com';
+
 /** The port xprem listens on inside the container, and the custom domain's target. */
 export const OTA_CONTAINER_PORT = 8080;
 
@@ -216,6 +225,16 @@ export interface RequiredEnvVar {
    * values are secrets; AWS_BASE_ENDPOINT is intentionally provider-managed.
    */
   value?: string;
+  /**
+   * A URL that must answer before `--apply` may set this variable.
+   *
+   * For a value that sends clients somewhere else. The post-deploy probe only
+   * asks the service whether it is healthy, and a server redirecting every
+   * asset request to a host that does not resolve is perfectly healthy. Any
+   * HTTP status below 500 passes; a failed lookup or connection stops the run
+   * before it writes anything.
+   */
+  preflightUrl?: string;
 }
 
 /** A variable that must NOT be set, because setting it changes how xprem behaves. */
@@ -464,6 +483,12 @@ export const OTA_FORBIDDEN_VARS: ForbiddenEnvVar[] = [
     name: 'EXPO_APP_ID',
     reason: 'A V2/stateless setting. V3 routes on the expo-app-id request header the binary sends.',
   },
+  {
+    name: 'BUNDLE_DIFFING_CDN_REDIRECT',
+    reason:
+      'Sends patch requests to the CDN, which does not add the im and expo-base-update-id headers. ' +
+      'Every device with a patch available then fails its update with no fallback to the full bundle.',
+  },
 ];
 
 /**
@@ -493,6 +518,23 @@ export const OTA_REQUIRED_VARS: RequiredEnvVar[] = [
     name: 'AWS_REGION',
     value: 'auto',
     reason: 'The configured S3-compatible backend uses its automatic region selector.',
+  },
+  {
+    name: 'CDN_BASE_URL',
+    value: OTA_CDN_BASE_URL,
+    // The R2 custom domain answers 404 at its root once Cloudflare has attached
+    // it; before that the name does not resolve.
+    preflightUrl: `${OTA_CDN_BASE_URL}/`,
+    reason:
+      'Asset requests redirect to the edge-cached, compressed R2 domain instead of a presigned bucket URL. ' +
+      'This tool never unsets a variable: to roll back, unset it in Railway and revert the declaration.',
+  },
+  {
+    name: 'BUNDLE_DIFFING',
+    value: 'true',
+    reason:
+      'Serves a bsdiff patch instead of the full Hermes bundle to a device at most five updates behind. ' +
+      'BUNDLE_DIFFING_CDN_REDIRECT stays unset: the edge does not add the patch headers expo-updates requires.',
   },
   {
     name: 'AWS_BASE_ENDPOINT',

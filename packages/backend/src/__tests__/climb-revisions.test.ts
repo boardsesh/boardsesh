@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { readFileSync } from 'node:fs';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -74,6 +75,11 @@ const { db } = await import('../db/client');
 const { sprayWallMutations, lockWallForWrite } = await import('../graphql/resolvers/board/spray-walls');
 const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
 const { climbQueries } = await import('../graphql/resolvers/climbs/queries');
+const { climbFieldResolvers } = await import('../graphql/resolvers/climbs/field-resolvers');
+const { tickMutations } = await import('../graphql/resolvers/ticks/mutations');
+const { playlistQueries } = await import('../graphql/resolvers/playlists/queries');
+const { recomputeClimbStatsBulk, buildRecommendationCountSql, buildRecommendationSentOverlapSql } =
+  await import('@boardsesh/db/queries');
 const { sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
 const { MAX_REVISIONS_PER_CLIMB } = await import('@boardsesh/board-config');
 
@@ -203,6 +209,22 @@ async function revisionsOf(climbUuid: string): Promise<RevisionRow[]> {
   // A plain array: the driver's result carries extra properties `toEqual([])`
   // should not have to reason about.
   return [...rows];
+}
+
+type ClimbRevisionColumns = { revision_number: number; holds_revision_number: number; sync_seq: number };
+
+/** The climb's own copy of its revision, the holds epoch, and the cursor `syncClimbs` pages on. */
+async function revisionColumnsOf(climbUuid: string): Promise<ClimbRevisionColumns> {
+  const [row] = (await db.execute(sql`
+    SELECT revision_number, holds_revision_number, sync_seq
+    FROM board_climbs
+    WHERE uuid = ${climbUuid}
+  `)) as unknown as Array<{ revision_number: number; holds_revision_number: number; sync_seq: string | number }>;
+  return {
+    revision_number: row.revision_number,
+    holds_revision_number: row.holds_revision_number,
+    sync_seq: Number(row.sync_seq),
+  };
 }
 
 /** version number -> version id, for one wall. */
@@ -393,6 +415,13 @@ describe('what updateClimb records', () => {
     expect(numbers.at(-1)).toBe(edits + 1);
     expect(revisions[0]).toMatchObject({ name: 'Original name', changes: [] });
     expect(revisions.at(-1)).toMatchObject({ name: `Rename ${edits}` });
+
+    // The climb's own number follows the newest revision, not the row count, and
+    // pruning does not touch it. Renames only, so the holds epoch never moved.
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({
+      revision_number: edits + 1,
+      holds_revision_number: 1,
+    });
   }, 120_000);
 
   it('records a grade-only edit on a spray wall as `grade`', async () => {
@@ -529,6 +558,251 @@ describe('what updateClimb records', () => {
       changes: ['name', 'description'],
       edited_by: SETTER,
     });
+  });
+});
+
+describe('the revision columns on board_climbs (#6023)', () => {
+  it('start at 1 and stay there until a published climb is edited', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const published = await saveSprayClimb(wall, holdIds);
+    const draft = await saveSprayClimb(wall, [holdIds[0], holdIds[1]], { isDraft: true });
+    expect(await revisionColumnsOf(published)).toMatchObject({ revision_number: 1, holds_revision_number: 1 });
+
+    // A draft has no history, so editing one (holds included) and publishing it
+    // leave both numbers alone. So does a save that changes nothing.
+    await editSpray(draft, { frames: framesFor([holdIds[0], holdIds[2]]) });
+    await editSpray(draft, { isDraft: false, name: 'Published name' });
+    await editSpray(published, { name: 'Original name' });
+    expect(await revisionColumnsOf(draft)).toMatchObject({ revision_number: 1, holds_revision_number: 1 });
+    expect(await revisionColumnsOf(published)).toMatchObject({ revision_number: 1, holds_revision_number: 1 });
+  });
+
+  it('move the revision on every edit and the holds epoch only when a hold moves', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const climbUuid = await saveSprayClimb(wall, holdIds);
+
+    // The first edit writes revisions 1 and 2. A rename leaves the holds alone.
+    await editSpray(climbUuid, { name: 'Renamed' });
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 2, holds_revision_number: 1 });
+
+    await editSpray(climbUuid, { frames: framesFor([holdIds[0], holdIds[2]]) });
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 3, holds_revision_number: 3 });
+
+    // Notes, rules and the grade are all revisions of the same holds.
+    await editSpray(climbUuid, { description: 'New notes' });
+    await editSpray(climbUuid, { anyFeet: true });
+    await editSpray(climbUuid, { userGrade: '7a/V6' });
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 6, holds_revision_number: 3 });
+
+    // The same holds in the same roles is not an edit at all.
+    await editSpray(climbUuid, { frames: framesFor([holdIds[0], holdIds[2]]) });
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 6, holds_revision_number: 3 });
+
+    await editSpray(climbUuid, { frames: framesFor(holdIds), name: 'Back on three' });
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 7, holds_revision_number: 7 });
+
+    // Always the newest row's number.
+    expect((await revisionsOf(climbUuid)).at(-1)?.revision_number).toBe(7);
+  });
+
+  it('move both to 2 when the first edit is the one that moves a hold', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const climbUuid = await saveSprayClimb(wall, holdIds);
+
+    await editSpray(climbUuid, { frames: framesFor([holdIds[0], holdIds[1]]) });
+
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 2, holds_revision_number: 2 });
+  });
+
+  it('keep the holds epoch on a pace-only edit, which is still a revision', async () => {
+    const climbUuid = uuidv4().replace(/-/g, '').toUpperCase();
+    const publishedAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    await db.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, name, description, frames, frames_count, frames_pace,
+                                angle, is_draft, is_listed, created_at, published_at, user_id, setter_username)
+      VALUES (${climbUuid}, 'kilter', 1, 'Kilter route', '', 'p1117r12p1140r15', 1, 0,
+              40, false, true, ${publishedAt}, ${publishedAt}, ${SETTER}, 'setter')
+    `);
+
+    await climbMutations.updateClimb(
+      {},
+      { input: { uuid: climbUuid, boardType: 'kilter', framesPace: 900 } },
+      ctxFor(SETTER),
+    );
+
+    expect((await revisionsOf(climbUuid)).map((revision) => revision.changes)).toEqual([[], ['holds']]);
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 2, holds_revision_number: 1 });
+  });
+
+  it('give two concurrent edits the higher number, and the epoch of whichever moved a hold', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const climbUuid = await saveSprayClimb(wall, holdIds);
+
+    // A rename never conflicts with another edit (`climbEditDecisionsAreStale`
+    // ignores the name), so both of these land, in either order.
+    await Promise.all([editSpray(climbUuid, { name: 'Renamed' }), editSpray(climbUuid, { description: 'New notes' })]);
+
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 3, holds_revision_number: 1 });
+  });
+
+  it('re-deliver the climb to syncClimbs on an edit that only touched the stats row', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const climbUuid = await saveSprayClimb(wall, holdIds);
+    const before = await revisionColumnsOf(climbUuid);
+
+    // A spray regrade writes `board_climb_stats`, not `board_climbs`. The
+    // revision write is then the only change to the climb row, and it has to
+    // fire the sync trigger or a phone would keep the old revision number.
+    await editSpray(climbUuid, { userGrade: '7a/V6' });
+
+    const after = await revisionColumnsOf(climbUuid);
+    expect(after.revision_number).toBe(2);
+    expect(after.sync_seq).toBeGreaterThan(before.sync_seq);
+  });
+});
+
+describe('what updateClimb answers with (#6023)', () => {
+  type UpdateAnswer = { revisionNumber: number | null; holdsRevisionNumber: number | null; isDraft: boolean };
+  const edit = async (climbUuid: string, changes: Record<string, unknown>) =>
+    (await editSpray(climbUuid, changes)) as UpdateAnswer;
+
+  it('hands back the revision numbers the save left on the climb', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const climbUuid = await saveSprayClimb(wall, holdIds);
+
+    // A rename: a new revision, same holds.
+    expect(await edit(climbUuid, { name: 'Renamed' })).toMatchObject({ revisionNumber: 2, holdsRevisionNumber: 1 });
+    // A hold moves: both numbers.
+    expect(await edit(climbUuid, { frames: framesFor([holdIds[0], holdIds[2]]) })).toMatchObject({
+      revisionNumber: 3,
+      holdsRevisionNumber: 3,
+    });
+    // A grade-only edit, which never touches the climb row itself.
+    expect(await edit(climbUuid, { userGrade: '7a/V6' })).toMatchObject({ revisionNumber: 4, holdsRevisionNumber: 3 });
+    // A save that changes nothing answers the numbers as they are.
+    expect(await edit(climbUuid, { name: 'Renamed' })).toMatchObject({ revisionNumber: 4, holdsRevisionNumber: 3 });
+
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 4, holds_revision_number: 3 });
+  });
+
+  it('answers 1 and 1 for a draft edit, for the publish, and for a replay of that publish', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const climbUuid = await saveSprayClimb(wall, holdIds, { isDraft: true });
+
+    expect(await edit(climbUuid, { name: 'Draft rename' })).toMatchObject({
+      isDraft: true,
+      revisionNumber: 1,
+      holdsRevisionNumber: 1,
+    });
+    const publish = { isDraft: false, name: 'Published name' };
+    expect(await edit(climbUuid, publish)).toMatchObject({ isDraft: false, revisionNumber: 1, holdsRevisionNumber: 1 });
+    // The double tap: the publish has landed, so this one writes nothing.
+    expect(await edit(climbUuid, publish)).toMatchObject({ isDraft: false, revisionNumber: 1, holdsRevisionNumber: 1 });
+  });
+});
+
+// Migration 0252 ends with an UPDATE that fills the two columns in for climbs
+// edited between the deploy that created `board_climb_revisions` and the one
+// that added the columns. The test database is built from schema-sql.ts, not
+// from the migrations, so the statement is read out of the file and run here.
+describe('the backfill at the end of migration 0252', () => {
+  const backfill = readFileSync(new URL('../../../db/drizzle/0252_tick_climb_revision.sql', import.meta.url), 'utf8')
+    .split('--> statement-breakpoint')
+    .at(-1)!
+    .trim();
+  const runBackfill = () => db.execute(sql.raw(backfill));
+
+  /** A published catalogue climb, with the revision columns as the ALTERs leave them: 1 and 1. */
+  async function insertClimb(): Promise<string> {
+    const climbUuid = uuidv4().replace(/-/g, '').toUpperCase();
+    await db.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, name, frames, is_draft, is_listed, user_id)
+      VALUES (${climbUuid}, 'kilter', 1, 'Backfill climb', 'p1117r12', false, true, ${SETTER})
+    `);
+    return climbUuid;
+  }
+
+  /** Revision rows as the earlier deploy would have written them. Revision 1 always changes nothing. */
+  async function insertRevisions(climbUuid: string, changesPerRevision: Record<number, string[]>): Promise<void> {
+    for (const [revisionNumber, changes] of Object.entries(changesPerRevision)) {
+      await db.execute(sql`
+        INSERT INTO board_climb_revisions (board_type, climb_uuid, revision_number, changes)
+        VALUES ('kilter', ${climbUuid}, ${Number(revisionNumber)}, ${`{${changes.join(',')}}`}::text[])
+      `);
+    }
+  }
+
+  it('is the UPDATE statement alone, with no comment inside it', () => {
+    expect(backfill).toMatch(/^UPDATE "board_climbs"/);
+    expect(backfill).not.toMatch(/--/);
+  });
+
+  it('sets the revision to the newest row and the epoch to the newest row that changed the holds', async () => {
+    const renamedOnly = await insertClimb();
+    const holdsThenRenamed = await insertClimb();
+    const holdsLast = await insertClimb();
+    const pruned = await insertClimb();
+    await insertRevisions(renamedOnly, { 1: [], 2: ['name'], 3: ['description', 'grade'] });
+    await insertRevisions(holdsThenRenamed, { 1: [], 2: ['holds'], 3: ['name'], 4: ['rules'] });
+    await insertRevisions(holdsLast, { 1: [], 2: ['name'], 3: ['name', 'holds'] });
+    // Numbers with a gap after 1, as pruning leaves them.
+    await insertRevisions(pruned, { 1: [], 40: ['holds'], 41: ['name'] });
+
+    await runBackfill();
+
+    expect(await revisionColumnsOf(renamedOnly)).toMatchObject({ revision_number: 3, holds_revision_number: 1 });
+    expect(await revisionColumnsOf(holdsThenRenamed)).toMatchObject({ revision_number: 4, holds_revision_number: 2 });
+    expect(await revisionColumnsOf(holdsLast)).toMatchObject({ revision_number: 3, holds_revision_number: 3 });
+    expect(await revisionColumnsOf(pruned)).toMatchObject({ revision_number: 41, holds_revision_number: 40 });
+  });
+
+  it('leaves a climb with no revision rows alone, and does nothing on a second run', async () => {
+    const unedited = await insertClimb();
+    const edited = await insertClimb();
+    await insertRevisions(edited, { 1: [], 2: ['holds'] });
+    const uneditedBefore = await revisionColumnsOf(unedited);
+
+    await runBackfill();
+    const editedAfterFirstRun = await revisionColumnsOf(edited);
+    await runBackfill();
+
+    // Not rewritten at all: `sync_seq` is where it was, so no phone re-pulls it.
+    expect(await revisionColumnsOf(unedited)).toEqual(uneditedBefore);
+    // The second run found nothing that differed, so it did not fire the sync trigger again.
+    expect(editedAfterFirstRun).toMatchObject({ revision_number: 2, holds_revision_number: 2 });
+    expect(await revisionColumnsOf(edited)).toEqual(editedAfterFirstRun);
+  });
+
+  it('re-delivers a climb it changes, and agrees with what the code writes for the same edits', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const climbUuid = await saveSprayClimb(wall, holdIds);
+    await editSpray(climbUuid, { frames: framesFor([holdIds[0], holdIds[2]]) });
+    await editSpray(climbUuid, { name: 'Renamed' });
+    const written = await revisionColumnsOf(climbUuid);
+    expect(written).toMatchObject({ revision_number: 3, holds_revision_number: 2 });
+
+    // Put the row back to how the ALTERs would have left it had these edits been
+    // made before the columns existed.
+    await db.execute(
+      sql`UPDATE board_climbs SET revision_number = 1, holds_revision_number = 1 WHERE uuid = ${climbUuid}`,
+    );
+    const reset = await revisionColumnsOf(climbUuid);
+    await runBackfill();
+
+    const backfilled = await revisionColumnsOf(climbUuid);
+    expect(backfilled).toMatchObject({ revision_number: 3, holds_revision_number: 2 });
+    expect(backfilled.sync_seq).toBeGreaterThan(reset.sync_seq);
+  });
+
+  it('puts the epoch one edit too high after a pace-only edit, which `changes` cannot tell from a hold moving', async () => {
+    // The limit the migration's header describes, pinned so nobody reads the
+    // backfill as exact. The code leaves the epoch at 1 for this edit.
+    const climbUuid = await insertClimb();
+    await insertRevisions(climbUuid, { 1: [], 2: ['holds'] });
+
+    await runBackfill();
+
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 2, holds_revision_number: 2 });
   });
 });
 
@@ -760,5 +1034,389 @@ describe('climbRevisions', () => {
       'Fixed by the gym admin',
       'Original name',
     ]);
+  });
+});
+
+describe('a moved hold restarts the climb’s sends, first ascent and stars (#6023)', () => {
+  type StatsRow = {
+    ascensionist_count: number;
+    boardsesh_ascensionist_count: number;
+    fa_username: string | null;
+    fa_at: string | Date | null;
+    quality_average: number | null;
+    display_difficulty: number | null;
+    sync_seq: number;
+  };
+
+  async function statsOf(boardType: string, climbUuid: string, angle = 40): Promise<StatsRow | undefined> {
+    const [row] = (await db.execute(sql`
+      SELECT ascensionist_count, boardsesh_ascensionist_count, fa_username, fa_at, quality_average,
+             display_difficulty, sync_seq
+      FROM board_climb_stats
+      WHERE board_type = ${boardType} AND climb_uuid = ${climbUuid} AND angle = ${angle}
+    `)) as unknown as Array<Record<keyof StatsRow, string | number | Date | null>>;
+    if (!row) return undefined;
+    return {
+      ascensionist_count: Number(row.ascensionist_count),
+      boardsesh_ascensionist_count: Number(row.boardsesh_ascensionist_count),
+      fa_username: row.fa_username as string | null,
+      fa_at: row.fa_at as string | Date | null,
+      quality_average: row.quality_average == null ? null : Number(row.quality_average),
+      display_difficulty: row.display_difficulty == null ? null : Number(row.display_difficulty),
+      sync_seq: Number(row.sync_seq),
+    };
+  }
+
+  const logTick = (climbUuid: string, climber: string, status: 'send' | 'attempt', quality?: number) =>
+    tickMutations.saveTick(
+      {},
+      {
+        input: {
+          climbUuid,
+          boardType: 'spray',
+          angle: 40,
+          status,
+          attemptCount: 1,
+          isMirror: false,
+          isBenchmark: false,
+          comment: '',
+          climbedAt: new Date().toISOString(),
+          ...(quality == null ? {} : { quality }),
+        },
+      },
+      ctxFor(climber),
+    );
+
+  /** The uuids a search of the wall returns to `viewer` with one personal filter on. */
+  async function searchWall(wall: CreatedWall, viewer: string, filter: Record<string, unknown>): Promise<string[]> {
+    const context = await climbQueries.searchClimbs(
+      {},
+      {
+        input: { boardName: 'spray', layoutId: wall.layoutId, sizeId: wall.sizeId, setIds: '1', angle: 40, ...filter },
+      },
+      ctxFor(viewer),
+    );
+    const climbs = await climbFieldResolvers.climbs(context as Parameters<typeof climbFieldResolvers.climbs>[0]);
+    return climbs.map((climb) => climb.uuid);
+  }
+
+  it('drops the count, the first ascent, the stars and the sent mark, and counts a new send', async () => {
+    const { wall, holdIds } = await createPublishedWall({ isPublic: true });
+    const climbUuid = await saveSprayClimb(wall, holdIds);
+    await logTick(climbUuid, OWNER, 'send', 5);
+    await logTick(climbUuid, STRANGER, 'send', 3);
+    await logTick(climbUuid, SETTER, 'attempt');
+
+    expect(await statsOf('spray', climbUuid)).toMatchObject({
+      ascensionist_count: 2,
+      fa_username: 'User ' + OWNER,
+      quality_average: 4,
+      display_difficulty: 18,
+    });
+    expect(await searchWall(wall, STRANGER, { showOnlyCompleted: true })).toEqual([climbUuid]);
+    expect(await searchWall(wall, STRANGER, { hideCompleted: true })).toEqual([]);
+    expect(await searchWall(wall, STRANGER, { onlyRatedByMe: true })).toEqual([climbUuid]);
+    expect(await searchWall(wall, SETTER, { showOnlyAttempted: true })).toEqual([climbUuid]);
+    expect(await searchWall(wall, SETTER, { hideAttempted: true })).toEqual([]);
+    // STRANGER's latest rating is 3, OWNER's is 5.
+    expect(await searchWall(wall, STRANGER, { minUserRating: 4 })).toEqual([]);
+    expect(await searchWall(wall, OWNER, { minUserRating: 4 })).toEqual([climbUuid]);
+
+    // The same three holds in the same roles, listed in another order, which is
+    // what a client with a different frames encoder sends on any save. Not an
+    // edit: no revision, and nothing restarts.
+    const [first, second, third] = holdIds;
+    await editSpray(climbUuid, { frames: `p${third}r3p${first}r1p${second}r2` });
+    expect(await revisionsOf(climbUuid)).toEqual([]);
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 1, holds_revision_number: 1 });
+    expect(await statsOf('spray', climbUuid)).toMatchObject({ ascensionist_count: 2, quality_average: 4 });
+
+    // A rename, new notes and a regrade are edits of the same climb: nothing restarts.
+    await editSpray(climbUuid, { name: 'Renamed', description: 'New notes' });
+    await editSpray(climbUuid, { userGrade: '7a/V6' });
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 3, holds_revision_number: 1 });
+    expect(await statsOf('spray', climbUuid)).toMatchObject({
+      ascensionist_count: 2,
+      fa_username: 'User ' + OWNER,
+      quality_average: 4,
+      display_difficulty: 22,
+    });
+    expect(await searchWall(wall, STRANGER, { showOnlyCompleted: true })).toEqual([climbUuid]);
+
+    // Moving a hold does. The stats are already at zero when updateClimb returns:
+    // they were recomputed in its transaction.
+    await editSpray(climbUuid, { frames: framesFor([holdIds[0], holdIds[2]]) });
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 4, holds_revision_number: 4 });
+    expect(await statsOf('spray', climbUuid)).toMatchObject({
+      ascensionist_count: 0,
+      boardsesh_ascensionist_count: 0,
+      fa_username: null,
+      fa_at: null,
+      quality_average: null,
+      // The setter's grade is not a statistic and stays.
+      display_difficulty: 22,
+    });
+    expect(await searchWall(wall, STRANGER, { showOnlyCompleted: true })).toEqual([]);
+    expect(await searchWall(wall, STRANGER, { hideCompleted: true })).toEqual([climbUuid]);
+    expect(await searchWall(wall, STRANGER, { onlyRatedByMe: true })).toEqual([]);
+    expect(await searchWall(wall, SETTER, { showOnlyAttempted: true })).toEqual([]);
+    expect(await searchWall(wall, SETTER, { hideAttempted: true })).toEqual([climbUuid]);
+    // The rating of 3 was for the old holds, so it no longer hides the climb.
+    expect(await searchWall(wall, STRANGER, { minUserRating: 4 })).toEqual([climbUuid]);
+
+    // The edit left its key in the pending table, so the next self-heal pass
+    // recomputes it once more. That is what corrects a recompute that read the
+    // old epoch and wrote after this edit committed.
+    const pending = (await db.execute(sql`
+      SELECT angle FROM climb_stats_recompute_pending WHERE board_type = 'spray' AND climb_uuid = ${climbUuid}
+    `)) as unknown as Array<{ angle: number }>;
+    expect(pending.map((row) => row.angle)).toEqual([40]);
+
+    // The old ticks are still in the logbook, on the revision they were logged on.
+    const oldTicks = (await db.execute(sql`
+      SELECT climb_revision FROM boardsesh_ticks WHERE climb_uuid = ${climbUuid}
+    `)) as unknown as Array<{ climb_revision: number | null }>;
+    expect(oldTicks.map((tick) => tick.climb_revision)).toEqual([1, 1, 1]);
+
+    // A send on the new holds counts, and is the first ascent of them.
+    await logTick(climbUuid, STRANGER, 'send', 2);
+    expect(await statsOf('spray', climbUuid)).toMatchObject({
+      ascensionist_count: 1,
+      fa_username: 'User ' + STRANGER,
+      quality_average: 2,
+      display_difficulty: 22,
+    });
+    expect(await searchWall(wall, STRANGER, { showOnlyCompleted: true })).toEqual([climbUuid]);
+    expect(await searchWall(wall, OWNER, { showOnlyCompleted: true })).toEqual([]);
+    // And a rating of the new holds counts again.
+    expect(await searchWall(wall, STRANGER, { minUserRating: 4 })).toEqual([]);
+  });
+
+  it('lists a climb as a project only on tries of its current holds', async () => {
+    const { wall, holdIds } = await createPublishedWall({ isPublic: true });
+    const climbUuid = await saveSprayClimb(wall, holdIds);
+
+    /** The climber's Projects playlist, its total, and the count on its library card. */
+    const projectsOf = async (climber: string) => {
+      const playlist = (await playlistQueries.smartPlaylist(
+        {},
+        { input: { type: 'PROJECTS', userId: climber, boardName: 'spray' } },
+        ctxFor(climber),
+      )) as { climbs: Array<{ uuid: string }>; totalCount: number };
+      const cards = await playlistQueries.mySmartPlaylistCounts({}, {}, ctxFor(climber));
+      return {
+        uuids: playlist.climbs.map((climb) => climb.uuid),
+        totalCount: playlist.totalCount,
+        cardCount: cards.find((card) => card.type === 'PROJECTS')?.count,
+      };
+    };
+    const project = { uuids: [climbUuid], totalCount: 1, cardCount: 1 };
+    const noProject = { uuids: [], totalCount: 0, cardCount: 0 };
+
+    await logTick(climbUuid, SETTER, 'attempt');
+    await logTick(climbUuid, STRANGER, 'send');
+    expect(await projectsOf(SETTER)).toEqual(project);
+    expect(await projectsOf(STRANGER)).toEqual(noProject);
+
+    await editSpray(climbUuid, { frames: framesFor([holdIds[0], holdIds[2]]) });
+    // Neither has tried the new holds. The old send does not turn into a
+    // project, and the old attempt is no longer one.
+    expect(await projectsOf(SETTER)).toEqual(noProject);
+    expect(await projectsOf(STRANGER)).toEqual(noProject);
+
+    // Trying the new holds makes it a project again, old send or not.
+    await logTick(climbUuid, STRANGER, 'attempt');
+    expect(await projectsOf(STRANGER)).toEqual(project);
+    await logTick(climbUuid, STRANGER, 'send');
+    expect(await projectsOf(STRANGER)).toEqual(noProject);
+  });
+
+  it('finds the edited climbs among the unedited ones in a logbook', async () => {
+    // Projects reads the holds epoch through the index of edited climbs only, so
+    // every other climb must come out at epoch 1 without its row being read.
+    const { wall, holdIds } = await createPublishedWall({ isPublic: true });
+    const [first, second, third] = holdIds;
+    const holdSets = [
+      [first, second, third],
+      [first, second],
+      [first, third],
+      [second, third],
+      [second, first],
+      [third, first],
+    ];
+    const climbUuids: string[] = [];
+    for (const [index, holdSet] of holdSets.entries()) {
+      climbUuids.push(await saveSprayClimb(wall, holdSet, { name: `Climb ${index}` }));
+    }
+    const [sentThenEdited, sentOnly, triedThenEdited, ...triedOnly] = climbUuids;
+    for (const climbUuid of climbUuids) await logTick(climbUuid, STRANGER, 'attempt');
+    await logTick(sentThenEdited, STRANGER, 'send');
+    await logTick(sentOnly, STRANGER, 'send');
+
+    /** Page, total and library card, which must always describe the same set. */
+    const projects = async () => {
+      const playlist = (await playlistQueries.smartPlaylist(
+        {},
+        { input: { type: 'PROJECTS', userId: STRANGER, boardName: 'spray' } },
+        ctxFor(STRANGER),
+      )) as { climbs: Array<{ uuid: string }>; totalCount: number };
+      const cards = await playlistQueries.mySmartPlaylistCounts({}, {}, ctxFor(STRANGER));
+      const uuids = playlist.climbs.map((climb) => climb.uuid).sort();
+      expect(playlist.totalCount).toBe(uuids.length);
+      expect(cards.find((card) => card.type === 'PROJECTS')?.count).toBe(uuids.length);
+      return uuids;
+    };
+
+    expect(await projects()).toEqual([triedThenEdited, ...triedOnly].sort());
+
+    await editSpray(sentThenEdited, { frames: framesFor([third, second, first]) });
+    await editSpray(triedThenEdited, { frames: framesFor([third, second]) });
+    // The two edited climbs leave the list until their new holds are tried; the
+    // four nobody edited are untouched.
+    expect(await projects()).toEqual([...triedOnly].sort());
+
+    await logTick(sentThenEdited, STRANGER, 'attempt');
+    expect(await projects()).toEqual([sentThenEdited, ...triedOnly].sort());
+  });
+
+  it('does not touch the stats row of a climb nobody has sent', async () => {
+    const { wall, holdIds } = await createPublishedWall({ isPublic: true });
+    const climbUuid = await saveSprayClimb(wall, holdIds);
+    await logTick(climbUuid, STRANGER, 'attempt');
+    const before = await statsOf('spray', climbUuid);
+
+    await editSpray(climbUuid, { frames: framesFor([holdIds[0], holdIds[2]]) });
+
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ holds_revision_number: 2 });
+    // Same sync_seq: no write reached the row, so the seeded grade and the
+    // setter's name in the first-ascent column are as saveClimb left them.
+    expect(await statsOf('spray', climbUuid)).toEqual(before);
+    expect(before?.display_difficulty).toBe(18);
+  });
+
+  /** A Kilter climb SETTER published an hour ago, inside the catalogue edit window. */
+  async function insertKilterClimb(): Promise<string> {
+    const climbUuid = uuidv4().replace(/-/g, '').toUpperCase();
+    const publishedAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    await db.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, name, description, frames, frames_count, frames_pace,
+                                angle, is_draft, is_listed, created_at, published_at, user_id, setter_username)
+      VALUES (${climbUuid}, 'kilter', 1, 'Kilter route', '', 'p1117r12p1140r15', 1, 0,
+              40, false, true, ${publishedAt}, ${publishedAt}, ${SETTER}, 'setter')
+    `);
+    return climbUuid;
+  }
+
+  const insertKilterSend = (climbUuid: string, climber: string, angle: number, difficulty: number) =>
+    db.execute(sql`
+      INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, quality, difficulty,
+                                   climb_revision, climbed_at, created_at, updated_at)
+      VALUES (${uuidv4()}, ${climber}, ${climbUuid}, 'kilter', ${angle}, 'send', 4, ${difficulty},
+              1, now() - interval '10 minutes', now(), now())
+    `);
+
+  it('restarts every angle that has a send on a catalogue climb, and keeps its tick-derived grade', async () => {
+    const climbUuid = await insertKilterClimb();
+    await insertKilterSend(climbUuid, STRANGER, 40, 20);
+    await insertKilterSend(climbUuid, OWNER, 25, 16);
+    // A row a setter seeded at an angle nobody has sent: the recompute must not
+    // reach it, or it would write the (empty) tick average over the grade.
+    await db.execute(sql`
+      INSERT INTO board_climb_stats (board_type, climb_uuid, angle, ascensionist_count, display_difficulty, difficulty_average)
+      VALUES ('kilter', ${climbUuid}, 55, 0, 24, 24)
+    `);
+    await recomputeClimbStatsBulk(db, [
+      { boardType: 'kilter', climbUuid, angle: 40 },
+      { boardType: 'kilter', climbUuid, angle: 25 },
+    ]);
+    expect(await statsOf('kilter', climbUuid, 40)).toMatchObject({ ascensionist_count: 1, display_difficulty: 20 });
+    const seededBefore = await statsOf('kilter', climbUuid, 55);
+
+    // A pace change is a revision of the same holds.
+    await climbMutations.updateClimb(
+      {},
+      { input: { uuid: climbUuid, boardType: 'kilter', framesPace: 900 } },
+      ctxFor(SETTER),
+    );
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 2, holds_revision_number: 1 });
+    expect(await statsOf('kilter', climbUuid, 40)).toMatchObject({
+      ascensionist_count: 1,
+      fa_username: 'User ' + STRANGER,
+      quality_average: 4,
+    });
+
+    await climbMutations.updateClimb(
+      {},
+      { input: { uuid: climbUuid, boardType: 'kilter', frames: 'p1117r12p1141r15' } },
+      ctxFor(SETTER),
+    );
+    expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 3, holds_revision_number: 3 });
+    for (const [angle, grade] of [
+      [40, 20],
+      [25, 16],
+    ]) {
+      expect(await statsOf('kilter', climbUuid, angle)).toMatchObject({
+        ascensionist_count: 0,
+        fa_username: null,
+        quality_average: null,
+        // The grade average reads every send, so the climb keeps its grade.
+        display_difficulty: grade,
+      });
+    }
+    expect(await statsOf('kilter', climbUuid, 55)).toEqual(seededBefore);
+  });
+});
+
+describe('recommendations and a send from before the holds moved (#6023)', () => {
+  it('offers the climb again, and the card count subtraction still adds up', async () => {
+    const publishedAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const insertClimb = async (holdsEpoch: number): Promise<string> => {
+      const climbUuid = uuidv4().replace(/-/g, '').toUpperCase();
+      await db.execute(sql`
+        INSERT INTO board_climbs (uuid, board_type, layout_id, name, description, frames, frames_count, angle,
+                                  is_draft, is_listed, created_at, published_at, compatible_size_ids,
+                                  revision_number, holds_revision_number)
+        VALUES (${climbUuid}, 'kilter', 1, 'Fresh', '', 'p1117r12p1140r15', 1, 40,
+                false, true, ${publishedAt}, ${publishedAt}, ARRAY[10]::int[],
+                ${holdsEpoch}, ${holdsEpoch})
+      `);
+      return climbUuid;
+    };
+    const insertSend = (climbUuid: string, climbRevision: number | null) =>
+      db.execute(sql`
+        INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, climb_revision,
+                                     climbed_at, created_at, updated_at)
+        VALUES (${uuidv4()}, ${STRANGER}, ${climbUuid}, 'kilter', 40, 'send', ${climbRevision}, now(), now(), now())
+      `);
+
+    // Sent as it stands; sent before its holds moved (twice, one with no
+    // revision at all); never sent.
+    await insertSend(await insertClimb(1), null);
+    const editedSinceSent = await insertClimb(3);
+    await insertSend(editedSinceSent, 2);
+    await insertSend(editedSinceSent, null);
+    await insertClimb(1);
+
+    const params = {
+      type: 'RECOMMENDED_FRESH' as const,
+      target: { boardType: 'kilter', layoutId: 1, sizeId: 10, angle: 40, setIds: null },
+      shorterSizeIds: [],
+      narrowerSameHeightSizeIds: [],
+      gradeBand: null,
+      freshWindowDays: 365,
+    };
+    const countOf = async (statement: Parameters<typeof db.execute>[0]) => {
+      const [row] = (await db.execute(statement)) as unknown as Array<{ count: number | string }>;
+      return Number(row.count);
+    };
+
+    const excluded = await countOf(buildRecommendationCountSql({ ...params, excludeUserId: STRANGER }));
+    const catalog = await countOf(buildRecommendationCountSql({ ...params, excludeUserId: null }));
+    const overlap = await countOf(buildRecommendationSentOverlapSql({ ...params, excludeUserId: null }, STRANGER));
+
+    expect(excluded).toBe(2);
+    expect(catalog).toBe(3);
+    expect(overlap).toBe(1);
+    expect(catalog - overlap).toBe(excluded);
   });
 });

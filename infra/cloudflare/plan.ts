@@ -8,6 +8,7 @@
 
 import {
   CACHE_RULE_PHASE,
+  COMPRESSION_RULE_PHASE,
   DYNAMIC_REDIRECT_RULE_PHASE,
   RATE_LIMIT_RULE_PHASE,
   REQUEST_HEADER_RULE_PHASE,
@@ -18,6 +19,7 @@ import {
 } from './config';
 import type {
   CacheRuleDesired,
+  CompressionRuleDesired,
   DnsRecordDesired,
   R2BucketDesired,
   R2Cors,
@@ -38,7 +40,8 @@ export type ManagedRuleDesired =
   | RateLimitRuleDesired
   | RedirectRuleDesired
   | RequestHeaderRuleDesired
-  | ResponseHeaderRuleDesired;
+  | ResponseHeaderRuleDesired
+  | CompressionRuleDesired;
 
 /** A DNS record as Cloudflare returns it. Which fields are owned depends on the desired record's management mode. */
 export interface LiveDnsRecord {
@@ -114,7 +117,8 @@ export type ManagedRuleResource =
   | 'rate-limit-rule'
   | 'redirect-rule'
   | 'request-header-rule'
-  | 'response-header-rule';
+  | 'response-header-rule'
+  | 'compression-rule';
 
 /**
  * Every ruleset phase this tool owns, in one place.
@@ -156,6 +160,7 @@ export interface DesiredRuleSets {
   redirectRules: RedirectRuleDesired[];
   requestHeaderRules: RequestHeaderRuleDesired[];
   responseHeaderRules: ResponseHeaderRuleDesired[];
+  compressionRules: CompressionRuleDesired[];
 }
 
 export const MANAGED_RULE_PHASES = [
@@ -213,6 +218,18 @@ export const MANAGED_RULE_PHASES = [
     selectDesired: (desired) => desired.responseHeaderRules,
     // Confirmed alongside the request-header transform: both phases use the
     // production token's Zone.Transform Rules Edit scope.
+    optional: false,
+  },
+  {
+    resource: 'compression-rule',
+    phase: COMPRESSION_RULE_PHASE,
+    label: 'Compression rule',
+    selectLive: (live) => live.rules['compression-rule'],
+    selectDesired: (desired) => desired.compressionRules,
+    // The production token's Zone.Response Compression Edit scope was
+    // confirmed by the apply that wrote this rule on 2026-10-05. Without the
+    // rule every OTA bundle goes out uncompressed, so losing the scope must
+    // fail loudly.
     optional: false,
   },
 ] as const satisfies readonly ManagedRulePhase[];

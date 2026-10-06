@@ -1,4 +1,6 @@
 import { Stack, router } from 'expo-router';
+import { SprayWizardExitButton } from '../../src/components/spray-wall/SprayWizardExitButton';
+import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { Pressable } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../../src/components/Icon';
@@ -86,7 +88,22 @@ function BoardsLayout() {
           sheet: two of its steps (the corner markers and the hold editor) are
           full-screen pan-and-pinch surfaces, which `docs/mobile-sheets-vs-routes.md`
           rule 3 keeps off a sheet's own drag. */}
-      <Stack.Screen name="spray/new" options={{ title: tBoards('sprayWizard.screenTitle') }} />
+      <Stack.Screen
+        name="spray/new"
+        options={({ route }) => ({
+          title: tBoards('sprayWizard.screenTitle'),
+          headerBackButtonMenuEnabled: false,
+          headerLeft: ({ tintColor }) => {
+            const { returnTo } = (route.params ?? {}) as { returnTo?: unknown };
+            return (
+              <SprayWizardExitButton
+                returnTo={resolveBoardReturnTo(typeof returnTo === 'string' ? returnTo : undefined)}
+                tintColor={tintColor}
+              />
+            );
+          },
+        })}
+      />
       <Stack.Screen
         name="spray/holds"
         options={{ title: tBoards('sprayMaintenance.screenTitle'), headerBackButtonMenuEnabled: false }}
@@ -98,7 +115,10 @@ function BoardsLayout() {
 
           The live board sheet's "New photo" row opens this route after its
           native dismissal has settled. */}
-      <Stack.Screen name="spray/reset" options={{ title: tBoards('sprayReset.screenTitle') }} />
+      <Stack.Screen
+        name="spray/reset"
+        options={{ title: tBoards('sprayReset.screenTitle'), headerBackButtonMenuEnabled: false }}
+      />
     </Stack>
   );
 }

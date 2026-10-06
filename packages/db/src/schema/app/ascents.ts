@@ -80,6 +80,13 @@ export const boardseshTicks = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     boardType: text('board_type').notNull(), // 'kilter' or 'tension'
     climbUuid: text('climb_uuid').notNull(),
+    // Which revision of the climb this tick was logged against (#6023): a
+    // `board_climbs.revision_number`, so 1 on a climb nobody has edited. NULL
+    // means unknown, which is every import and every tick older than the
+    // column. Stamped once by saveTick and never moved by updateTick. No
+    // foreign key to `board_climb_revisions`: revision rows are written lazily
+    // and pruned past the cap, so the number can outlive its row.
+    climbRevision: integer('climb_revision'),
     angle: integer('angle').notNull(),
     isMirror: boolean('is_mirror').default(false),
 
@@ -147,8 +154,9 @@ export const boardseshTicks = pgTable(
     // Unique index for Aurora sync - allows upsert on aurora_id
     // PostgreSQL unique indexes allow multiple NULLs by default
     auroraIdUnique: uniqueIndex('boardsesh_ticks_aurora_id_unique').on(table.auroraId),
-    // Index for pending sync queries (ticks without aurora_id)
-    syncPendingIdx: index('boardsesh_ticks_sync_pending_idx').on(table.auroraId, table.userId),
+    // No (aurora_id, user_id) index: the pending-push count filters
+    // user_id + board_type + aurora_id IS NULL, which user_board_idx serves
+    // (boardsesh_ticks_sync_pending_idx, 54 MB, was dropped in the C7 cleanup).
     // Unique index for Kilter sync - allows upsert on kilter_id
     kilterIdUnique: uniqueIndex('boardsesh_ticks_kilter_id_unique').on(table.kilterId),
     // Index for pending kilter push queries (ticks without kilter_id)
