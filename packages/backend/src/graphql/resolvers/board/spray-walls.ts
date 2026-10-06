@@ -1462,7 +1462,9 @@ export const sprayWallQueries = {
 
     // The caller owns every row here, so `viewerCanEdit` is true without asking.
     return Promise.all(
-      rows.map((row) => toGraphQLWall(row, ctx.userId, true, versionsByWall.get(Number(row.wall.id)) ?? [], deltas)),
+      rows.map((row) =>
+        toGraphQLWall(row, ctx.userId, true, versionsByWall.get(Number(row.wall.id)) ?? [], deltas, row.board.uuid),
+      ),
     );
   },
 
@@ -1810,7 +1812,7 @@ export const sprayWallMutations = {
       pendingIsUnlisted: created.wall.pendingIsUnlisted,
     });
 
-    return toGraphQLWall(created, userId, true);
+    return toGraphQLWall(created, userId, true, undefined, undefined, created.board.uuid);
   },
 
   createSprayWallVersion: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
@@ -2342,7 +2344,7 @@ export const sprayWallMutations = {
 
     const reloaded = await loadWall('uuid', validated.uuid);
     if (!reloaded) throw notFoundError();
-    return toGraphQLWall(reloaded, ctx.userId, true);
+    return toGraphQLWall(reloaded, ctx.userId, true, undefined, undefined, reloaded.board.uuid);
   },
 
   /**
@@ -2374,7 +2376,7 @@ export const sprayWallMutations = {
 
     const reloaded = await loadWall('uuid', validated.uuid);
     if (!reloaded) throw notFoundError();
-    return toGraphQLWall(reloaded, ctx.userId, true);
+    return toGraphQLWall(reloaded, ctx.userId, true, undefined, undefined, reloaded.board.uuid);
   },
 
   upsertSprayWallHolds: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {

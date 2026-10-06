@@ -91,7 +91,7 @@ export type CanEditClimbInput = {
   viewerCanEditWall?: boolean | null;
   /**
    * Whether the viewer can edit climbs on this wall (`SprayWall.viewerCanEditClimbs`, #6025).
-   * Only read on spray. Takes precedence over `viewerCanEditWall`.
+   * Only read on spray. Takes precedence over `viewerCanEditWall` when neither null nor undefined.
    */
   viewerCanEditClimbs?: boolean | null;
   /**

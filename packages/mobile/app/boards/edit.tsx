@@ -98,6 +98,10 @@ export default function EditBoard() {
   return <EditBoardForm key={board.uuid} board={board} />;
 }
 
+function toClimbEditPolicyKey(policy: string | null | undefined): 'setter' | 'collaborators' {
+  return policy === 'COLLABORATORS' ? 'collaborators' : 'setter';
+}
+
 function EditBoardForm({ board }: { board: UserBoard }) {
   const router = useRouter();
   const { isAuthenticated } = useAuth();
@@ -141,7 +145,7 @@ function EditBoardForm({ board }: { board: UserBoard }) {
 
   useEffect(() => {
     if (!policyTouched && sprayWall?.climbEditPolicy) {
-      setSelectedClimbEditPolicy(sprayWall.climbEditPolicy === 'COLLABORATORS' ? 'collaborators' : 'setter');
+      setSelectedClimbEditPolicy(toClimbEditPolicyKey(sprayWall.climbEditPolicy));
     }
   }, [sprayWall?.climbEditPolicy, policyTouched]);
 
@@ -239,9 +243,7 @@ function EditBoardForm({ board }: { board: UserBoard }) {
         // wall but not share it should see which half was refused rather than a
         // blanket failure.
         const currentServerPolicy = sprayWall?.climbEditPolicy
-          ? sprayWall.climbEditPolicy === 'COLLABORATORS'
-            ? 'collaborators'
-            : 'setter'
+          ? toClimbEditPolicyKey(sprayWall.climbEditPolicy)
           : undefined;
         const policyChanged =
           isSprayWall &&

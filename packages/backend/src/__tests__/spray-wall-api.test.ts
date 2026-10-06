@@ -2934,6 +2934,16 @@ describe('updateSprayWall', () => {
     );
   });
 
+  it('accepts climbEditPolicy at creation time (#6025)', async () => {
+    const created = (await sprayWallMutations.createSprayWall(
+      {},
+      { input: { name: 'Collaborator Wall', angle: 40, climbEditPolicy: 'COLLABORATORS' } },
+      ctxFor(OWNER),
+    )) as { climbEditPolicy: string; viewerCanEditClimbs: boolean };
+    expect(created.climbEditPolicy).toBe('COLLABORATORS');
+    expect(created.viewerCanEditClimbs).toBe(true);
+  });
+
   it('lets the owner update climbEditPolicy, and refuses a gym admin', async () => {
     const { wall } = await createPublishedWall(OWNER);
     const gymUuid = uuidv4();
