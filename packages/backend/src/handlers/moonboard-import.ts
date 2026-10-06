@@ -9,15 +9,23 @@ import { logger } from '../utils/logger';
 
 const MAX_IMPORT_BODY_BYTES = 25 * 1024 * 1024;
 
-const moonBoardExportLogRowSchema = z.object({
-  lineNumber: z.number().int().positive(),
-  problemId: z.number().int().positive(),
-  grade: z.string().min(1),
-  tries: z.string().min(1),
-  attempts: z.number().int().min(0),
-  rating: z.number().int().min(1).max(5).nullable(),
-  date: z.string().min(1),
-});
+const moonBoardExportLogRowSchema = z
+  .object({
+    lineNumber: z.number().int().positive(),
+    problemId: z.number().int().positive().optional(),
+    name: z.string().min(1).max(200).optional(),
+    setter: z.string().min(1).max(200).optional(),
+    setup: z.string().min(1).max(100).optional(),
+    angle: z.number().int().min(0).max(90).optional(),
+    isBenchmark: z.boolean().optional(),
+    comment: z.string().max(2000).optional(),
+    grade: z.string().min(1),
+    tries: z.string().min(1),
+    attempts: z.number().int().min(0),
+    rating: z.number().int().min(1).max(5).nullable(),
+    date: z.string().min(1),
+  })
+  .refine((row) => row.problemId != null || row.name != null, { message: 'problemId or name is required' });
 
 const requestSchema = z.object({
   data: z.object({

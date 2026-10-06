@@ -65,7 +65,7 @@ type MoonBoardExportPreview = {
   attempts: number;
   projects: number;
   fails: number;
-  angle: number;
+  angles: number[];
 };
 
 // Kilter renders two cards: `kilterAurora` for the legacy Aurora-built app (JSON
@@ -92,6 +92,7 @@ type ParsedMoonBoardExport = {
 };
 
 type MoonBoardSharedSchemaModule = {
+  decodeMoonBoardExportBytes?: (bytes: Uint8Array) => string;
   parseMoonBoardExportCsv?: (csv: string) => unknown | Promise<unknown>;
 };
 
@@ -131,6 +132,17 @@ function readString(record: Record<string, unknown>, keys: string[]): string | u
   return undefined;
 }
 
+function readAngles(preview: Record<string, unknown>): number[] {
+  const { angles } = preview;
+  if (Array.isArray(angles)) {
+    const numericAngles = angles.filter(
+      (angle): angle is number => typeof angle === 'number' && Number.isFinite(angle),
+    );
+    if (numericAngles.length > 0) return numericAngles;
+  }
+  return [readNumber(preview, ['angle', 'boardAngle']) ?? 40];
+}
+
 function normalizeMoonBoardParsedExport(parsed: unknown): ParsedMoonBoardExport {
   if (!isRecord(parsed) || !('data' in parsed) || !isRecord(parsed.preview)) {
     throw new Error('moonboard_parser_invalid_result');
@@ -147,16 +159,22 @@ function normalizeMoonBoardParsedExport(parsed: unknown): ParsedMoonBoardExport 
       attempts: readNumber(preview, ['attempts', 'attemptCount']) ?? 0,
       projects: readNumber(preview, ['projects', 'projectCount']) ?? 0,
       fails: readNumber(preview, ['fails', 'failures', 'failCount']) ?? 0,
-      angle: readNumber(preview, ['angle', 'boardAngle']) ?? 40,
+      angles: readAngles(preview),
     },
   };
 }
 
-async function parseMoonBoardCsvForImport(csv: string): Promise<ParsedMoonBoardExport> {
+// Takes raw bytes because Moon's exports are sometimes Windows-1252, which a
+// plain UTF-8 read turns into replacement characters ("Bj�rk").
+async function parseMoonBoardCsvForImport(bytes: Uint8Array): Promise<ParsedMoonBoardExport> {
   const sharedSchema = (await import('@boardsesh/shared-schema')) as unknown as MoonBoardSharedSchemaModule;
-  if (typeof sharedSchema.parseMoonBoardExportCsv !== 'function') {
+  if (
+    typeof sharedSchema.parseMoonBoardExportCsv !== 'function' ||
+    typeof sharedSchema.decodeMoonBoardExportBytes !== 'function'
+  ) {
     throw new Error('moonboard_parser_unavailable');
   }
+  const csv = sharedSchema.decodeMoonBoardExportBytes(bytes);
   return normalizeMoonBoardParsedExport(await sharedSchema.parseMoonBoardExportCsv(csv));
 }
 
@@ -668,8 +686,7 @@ const MoonBoardAccountCard = memo(function MoonBoardAccountCard() {
           return;
         }
 
-        const csv = await new File(asset.uri).text();
-        const parsed = await parseMoonBoardCsvForImport(csv);
+        const parsed = await parseMoonBoardCsvForImport(await new File(asset.uri).bytes());
         setImportData(parsed.data);
         setImportPreview(parsed.preview);
         setImportPhase('preview');
@@ -855,7 +872,9 @@ function MoonBoardImportDialog({
                 {preview.fails > 0 ? (
                   <SummaryLine label={t('aurora.moonboard.importDialog.fails', { count: preview.fails })} />
                 ) : null}
-                <SummaryLine label={t('aurora.moonboard.importDialog.angleNote', { angle: preview.angle })} />
+                <SummaryLine
+                  label={t('aurora.moonboard.importDialog.angleNote', { angle: preview.angles.join('° / ') })}
+                />
               </View>
               <Text variant="footnote" color={systemColors.secondaryLabel}>
                 {t('aurora.moonboard.importDialog.previewNote')}
