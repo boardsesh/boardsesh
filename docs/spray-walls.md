@@ -431,8 +431,8 @@ changes where they live. The phone layout is untouched, key for key.
   `spray-tablet-layout.ts`, tested as a table). The picked hold's
   `SprayHoldInspector` replaces the chip bar: a 300 pt glass card with the
   hold's role, where it came from ("Found by scan · 82%" or "Added by you"),
-  the size stepper, the role's actions (Switch off, Redraw, Join; Switch on,
-  Delete; Keep, Switch off) and Previous / Next, which pick the neighbouring
+  the size stepper, the role's actions (Switch off, Redraw, Refine, Join;
+  Switch on, Delete; Keep, Switch off) and Previous / Next, which pick the neighbouring
   ring in reading order (`sprayHoldReadingOrder`, the screen reader's walk) and
   frame it through the board's `controlRef.zoomTo`. In landscape the card sits
   under the header on the side away from the rail; in portrait it sits low on
@@ -477,7 +477,7 @@ kept per device (`boardsesh_spray_editor_pencil_only`).
   stroke: within 10 screen pt it is a tap (`resolveEditTap` with
   `input: 'pencil'`), otherwise an outline (`pencilStrokeTarget` decides new
   hold or redraw).
-- **Add mode and Trace follow Pencil only.** With it on, Add's Draw takes only
+- **Add mode, Trace and Refine follow Pencil only.** With it on, Add's Draw takes only
   the Pencil (`fingerDrawSV` false), Corners takes only the Pencil
   (`PolygonTapOverlay`'s `stylusOnlySV` fails a finger at touch-down, so it
   pans), and Trace draws only with the Pencil and says so in its banner.
@@ -1248,10 +1248,58 @@ What the editor does with a wall is decided by this document rather than by tast
   add or the next touch on the wall. None of this touches the ring contract:
   outlines are stored in radius units, so a resize changes `r` alone.
 - **The chip bar is one set per role** (`SprayHoldChipBar`). ON: `[−] [+]
-  Trace Join Switch off` (− and + are 44 pt icon chips). An OFF ghost: `Switch
+  Trace Refine Join Switch off` (− and + are 44 pt icon chips; on a 375 pt
+  phone the row wraps to two). An OFF ghost: `Switch
   on  Delete`. A maybe: `Keep  Switch off`. The picked ring is drawn in its
   role's line pattern (`SelectedHoldOverlay`'s `role`), so the second tap
   visibly switches it.
+- **Refine touches up an outline with a brush; Trace redraws it.** The two sit
+  side by side on purpose: Trace is one loop that replaces the whole outline,
+  which is right when the scan got the hold wrong everywhere; Refine is for the
+  common case of one bad lobe or a missed corner, where re-tracing would throw
+  away the nine-tenths that were fine. Refine (an ON ring only, like Trace)
+  turns the hold into a filled violet AREA over its own faint ghost; the rest of
+  the wall drops to 35% so the area reads. Plain circles start as their circle.
+  - **Add | Erase** is a segmented control on the banner, beside Cancel; the
+    brush size is three dot chips in the dock (6, 12 and 24 screen-pt radius,
+    medium by default) with Done. Sizes are screen points at the stroke's zoom
+    (`refineBrushRadiusBoardPx`), so a brush feels the same at 1x and 8x, and
+    never smaller than the engine's 3-unit floor, below which a dab vanishes in
+    the decimation. Mode and size carry from one hold to the next for the visit.
+  - **Painting.** `DrawStrokeOverlay` with `acceptStationaryTaps`, so a dab
+    paints too, and the loupe for a finger. Two fingers zoom and pan
+    (`pinchPans`). On iPad with "Pencil only" on, fingers pan and only the
+    Pencil paints, and the banner says so. The stroke is drawn on the UI thread
+    as a round-capped path one brush DIAMETER wide in board px (violet for Add,
+    dark for Erase), so the preview covers what the brush will paint. When the
+    finger lifts, JS runs the stroke through the shared brush engine
+    (`@boardsesh/board-art-geometry/brush`, via `use-brush-session.ts` — the
+    catalogue editor's brush, see `docs/board-art-geometry.md`) and the area
+    redraws. The preview stays until the new area is drawn, cleared on the UI
+    thread only if it is still that stroke (`clearStrokeIfStill`), so a quick
+    second dab is never lost.
+  - **What a stroke may leave.** Holes fill (a stored outline has none). A
+    split keeps the piece holding the hold's centre, and the banner says how
+    many stray bits went; that is the engine's rule, because the biggest piece
+    is not always the hold (an erase that cuts a neighbour's lobe off). An
+    erase through the middle keeps the BIGGEST piece and moves the hold onto it
+    (`strokeKeepingLargestPiece`), so Refine can still shift a scan circle that
+    sat half off its hold. An erase that leaves nothing is refused with a
+    warning buzz and "Switch it off instead". Every kept stroke must still be a
+    storable hold, checked there and then, so Done never refuses.
+  - **One edit.** Strokes have their own undo: while Refine is open the bar's
+    (and the rail's) Undo takes back one stroke, up to 20, and Redo is hidden.
+    Cancel throws every stroke away. Done (and the rail's Mark, and a tap on +)
+    commits ONE `SET_OUTLINE`: the centre is the area's centroid (the hold's
+    anchor when a concave area's centroid falls outside it), the radius the
+    equivalent-area one grown until the ring fits (`radiusForRing`), and the
+    ring goes through round, close, `isValidOutlineRing` and the centre gate
+    (`holdFromRefinedOutline`). So the editor's Undo takes the whole refine back
+    in one step. Publish waits until Refine is closed; Start over discards it.
+  - **Resolution.** The engine works in a frame centred on the hold with its
+    radius at 32 units (`spray-refine.ts`): 5% of the hold's radius whatever
+    the photo, so the 4096 px full photo past 3x changes nothing, and at most
+    512 x 512 bitmap cells. One stroke measured 17 ms in Node on the dev box.
 - **Nothing is removed by accident.** Every switch-off is a ghost — a hold this
   session drew by hand included, which used to vanish on its second tap. A
   ghost is never written (`buildSprayHoldWritePlan` skips rejected holds and a
@@ -1337,8 +1385,8 @@ What the editor does with a wall is decided by this document rather than by tast
     `cornersTooFew`, `cornersHollow`). Done closes a valid outline before
     leaving; one that cannot close keeps add mode on with its error.
 - **A loupe follows the finger** (`SprayLoupe`), so a thumb never hides the
-  spot it is drawing, placing or moving. It shows during Draw and Trace
-  strokes, a Corners touch, a move of the selected ring, a press-and-hold
+  spot it is drawing, placing or moving. It shows during Draw, Trace and
+  Refine strokes, a Corners touch, a move of the selected ring, a press-and-hold
   placement and a pick-up — and only once the touch has lasted 120 ms or
   moved 4 pt (`loupeGateOpen`), so a tap never flashes it. A gesture that is
   already long, like the 400 ms pick-up, shows it at once. Fingers only: a

@@ -11,6 +11,7 @@ import { spacing } from '../../theme/tokens';
 import { glassSize } from '../../theme/layout';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import type { SprayHoldRole } from './spray-hold-editor-reducer';
+import type { RefineBrushSize } from './spray-refine';
 
 type SprayHoldChipBarProps = {
   /** How the selected hold reads on the wall. Picks the chip set. */
@@ -20,6 +21,8 @@ type SprayHoldChipBarProps = {
   onShrink: () => void;
   onGrow: () => void;
   onTrace: () => void;
+  /** Touch up the outline with an add / erase brush (`'refine'` tool). */
+  onRefine: () => void;
   onJoin: () => void;
   /** An ON ring or a maybe goes OFF, as a ghost. */
   onSwitchOff: () => void;
@@ -37,7 +40,7 @@ const STEP_ICON_SIZE = 18;
 /**
  * What a picked hold can have done to it, one chip set per role:
  *
- * - ON: `[−] [+] Trace Join Switch off`
+ * - ON: `[−] [+] Trace Refine Join Switch off`
  * - OFF ghost: `Switch on  Delete`
  * - maybe: `Keep  Switch off`
  *
@@ -63,6 +66,7 @@ export const SprayHoldChipBar = React.memo(function SprayHoldChipBar({
   onShrink,
   onGrow,
   onTrace,
+  onRefine,
   onJoin,
   onSwitchOff,
   onSwitchOn,
@@ -89,6 +93,7 @@ export const SprayHoldChipBar = React.memo(function SprayHoldChipBar({
             onPress={onGrow}
           />
           <SprayHoldChip label={t('sprayEditor.chips.trace')} color={systemColors.label} onPress={onTrace} />
+          <SprayHoldChip label={t('sprayEditor.chips.refine')} color={systemColors.label} onPress={onRefine} />
           <SprayHoldChip label={t('sprayEditor.chips.join')} color={systemColors.label} onPress={onJoin} />
           <SprayHoldChip label={t('sprayEditor.chips.switchOff')} color={systemColors.label} onPress={onSwitchOff} />
         </>
@@ -123,6 +128,102 @@ export const SprayCornersChipBar = React.memo(function SprayCornersChipBar({ onF
     <View pointerEvents="box-none" style={styles.row}>
       <SprayHoldChip label={t('sprayEditor.chips.finish')} color={brandColors.primary} onPress={onFinish} />
     </View>
+  );
+});
+
+type SprayRefineBarProps = {
+  brushSize: RefineBrushSize;
+  onBrushSize: (size: RefineBrushSize) => void;
+  /** Keep the refined area: one edit, one undo step. */
+  onDone: () => void;
+};
+
+/** The three brush sizes, smallest first, with the dot each chip draws (in points). */
+const REFINE_SIZE_CHIPS: readonly { size: RefineBrushSize; dot: number }[] = [
+  { size: 'small', dot: 6 },
+  { size: 'medium', dot: 11 },
+  { size: 'large', dot: 18 },
+];
+
+/**
+ * Refine's controls, docked where the hold chips sit: the brush size as three
+ * dot chips, and Done. Add / Erase lives on the banner, next to Cancel, like
+ * add mode's Draw / Corners; Undo is the bar's (or the rail's) Undo, which takes
+ * back one stroke at a time while Refine is open.
+ */
+export const SprayRefineBar = React.memo(function SprayRefineBar({
+  brushSize,
+  onBrushSize,
+  onDone,
+}: SprayRefineBarProps) {
+  const { t } = useTranslation('boards');
+  const { brandColors } = useTheme();
+  return (
+    <View pointerEvents="box-none" style={styles.row} accessibilityLabel={t('sprayEditor.refine.size')}>
+      {REFINE_SIZE_CHIPS.map(({ size, dot }) => (
+        <SprayBrushSizeChip
+          key={size}
+          size={size}
+          dot={dot}
+          label={brushSizeLabel(size, t)}
+          selected={size === brushSize}
+          onSelect={onBrushSize}
+        />
+      ))}
+      <SprayHoldChip label={t('sprayEditor.banner.done')} color={brandColors.primary} onPress={onDone} />
+    </View>
+  );
+});
+
+function brushSizeLabel(size: RefineBrushSize, t: (key: string) => string): string {
+  if (size === 'small') return t('sprayEditor.refine.sizeSmall');
+  if (size === 'large') return t('sprayEditor.refine.sizeLarge');
+  return t('sprayEditor.refine.sizeMedium');
+}
+
+type SprayBrushSizeChipProps = {
+  size: RefineBrushSize;
+  /** The dot's diameter, in points. */
+  dot: number;
+  label: string;
+  selected: boolean;
+  onSelect: (size: RefineBrushSize) => void;
+};
+
+/** A 44pt glass chip with a dot the size of its brush; the picked one is ringed in violet. */
+const SprayBrushSizeChip = React.memo(function SprayBrushSizeChip({
+  size,
+  dot,
+  label,
+  selected,
+  onSelect,
+}: SprayBrushSizeChipProps) {
+  const { systemColors, brandColors } = useTheme();
+  return (
+    <PressableSurface
+      onPress={() => onSelect(size)}
+      feedback="scale"
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected }}
+      style={[styles.chip, styles.iconChip, styles.sizeChip, selected ? { borderColor: brandColors.primary } : null]}
+    >
+      <GlassSurface
+        glassEffectStyle="regular"
+        fallbackColor={systemColors.fill}
+        borderRadius={glassSize.capsule / 2}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      <View
+        style={{
+          width: dot,
+          height: dot,
+          borderRadius: dot / 2,
+          backgroundColor: selected ? brandColors.primary : systemColors.label,
+        }}
+      />
+    </PressableSurface>
   );
 });
 
@@ -205,5 +306,10 @@ const styles = StyleSheet.create({
   },
   chipLabel: {
     fontWeight: '600',
+  },
+  // Always bordered, so picking a size never shifts the dot; only the colour changes.
+  sizeChip: {
+    borderWidth: 2,
+    borderColor: 'transparent',
   },
 });

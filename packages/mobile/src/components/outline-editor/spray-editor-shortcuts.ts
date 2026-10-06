@@ -125,7 +125,7 @@ export function resolveSprayShortcut(id: SprayShortcutId, context: SprayShortcut
     if (context.popoverOpen) return 'closePopover';
     if (!canEdit) return 'none';
     if (tool === 'add') return 'leaveAdd';
-    if (tool === 'trace' || tool === 'join') return 'cancelTool';
+    if (tool === 'trace' || tool === 'join' || tool === 'refine') return 'cancelTool';
     return selectedRole != null ? 'deselect' : 'none';
   }
   if (!canEdit) return 'none';
@@ -154,7 +154,7 @@ export function resolveSprayShortcut(id: SprayShortcutId, context: SprayShortcut
   }
 }
 
-export type PencilGestureAction = 'add' | 'mark' | 'palette' | 'none';
+export type PencilGestureAction = 'add' | 'mark' | 'refineSwitchMode' | 'palette' | 'none';
 
 /**
  * What an Apple Pencil double tap or squeeze does, following the climber's own
@@ -163,7 +163,9 @@ export type PencilGestureAction = 'add' | 'mark' | 'palette' | 'none';
  * The switch settings ("Switch between current tool and eraser", "…and last
  * used") swap between Mark, the resting tool, and Add — the eraser of a hold
  * editor being the tool that is not marking. The palette settings open the
- * small tool palette. "Ignore" and a system shortcut are left alone: the
+ * small tool palette. Inside Refine a switch setting flips the brush between
+ * Add and Erase instead — there the eraser is a real eraser, and leaving the
+ * tool would end the session. "Ignore" and a system shortcut are left alone: the
  * climber asked the Pencil to do nothing here, or iPadOS runs the shortcut
  * itself. iPad layout only, and never while the wall is locked.
  */
@@ -175,6 +177,7 @@ export function resolvePencilGesture(
   switch (preferredAction) {
     case 'switchEraser':
     case 'switchPrevious':
+      if (context.tool === 'refine') return 'refineSwitchMode';
       return context.tool === 'edit' ? 'add' : 'mark';
     case 'showColorPalette':
     case 'showInkAttributes':

@@ -833,7 +833,8 @@
       "switchOn": "Activar",
       "delete": "Eliminar",
       "keep": "Conservar",
-      "finish": "Terminar"
+      "finish": "Terminar",
+      "refine": "Retocar"
     },
     "banner": {
       "trace": "Dibuja con un dedo alrededor de la presa",
@@ -842,7 +843,11 @@
       "addDraw": "Dibuja alrededor de una presa que falta, o toca para poner un círculo",
       "addCorners": "Toca las esquinas alrededor de una presa que falta",
       "done": "Listo",
-      "tracePencil": "Dibuja con el Apple Pencil alrededor de la presa"
+      "tracePencil": "Dibuja con el Apple Pencil alrededor de la presa",
+      "refineAdd": "Pinta para ampliar la presa. Pellizca para hacer zoom.",
+      "refineErase": "Pinta para recortar la presa. Pellizca para hacer zoom.",
+      "refineAddPencil": "Pinta con el Apple Pencil para ampliar la presa",
+      "refineErasePencil": "Pinta con el Apple Pencil para recortar la presa"
     },
     "addShape": {
       "label": "Cómo perfilar una presa",
@@ -895,7 +900,10 @@
       "someHoldsOffWall_other": "{{count}} presas caen fuera del muro. Devuélvelas a la foto o desactívalas.",
       "cornersCross": "Dos lados se cruzan. Toca las esquinas en orden alrededor de la presa.",
       "cornersTooFew": "Esas esquinas están demasiado juntas o en línea. Toca al menos 3 alrededor de la presa.",
-      "cornersHollow": "Esa forma es demasiado hueca. Toca las esquinas por el borde exterior de la presa."
+      "cornersHollow": "Esa forma es demasiado hueca. Toca las esquinas por el borde exterior de la presa.",
+      "refineNothingLeft": "Eso borraría la presa entera. Mejor desactívala.",
+      "refineTooDetailed": "Ese borde queda demasiado detallado para guardarlo. Prueba con un pincel más grande.",
+      "refineCantStore": "Esa forma no se puede guardar como una sola presa. Deshaz e inténtalo de nuevo."
     },
     "empty": {
       "noPhoto": "Este muro todavía no tiene foto que editar."
@@ -935,6 +943,17 @@
       "close": "Cerrar herramientas del Pencil",
       "draw": "Añadir una presa dibujando a su alrededor",
       "corners": "Añadir una presa tocando sus esquinas"
+    },
+    "refine": {
+      "mode": "Pincel",
+      "add": "Añadir",
+      "erase": "Borrar",
+      "size": "Tamaño del pincel",
+      "sizeSmall": "Pincel pequeño",
+      "sizeMedium": "Pincel mediano",
+      "sizeLarge": "Pincel grande",
+      "dropped_one": "Se conservó la parte principal. Se descartó {{count}} trozo suelto.",
+      "dropped_other": "Se conservó la parte principal. Se descartaron {{count}} trozos sueltos."
     }
   },
   "sprayWizard": {

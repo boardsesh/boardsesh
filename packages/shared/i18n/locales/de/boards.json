@@ -833,7 +833,8 @@
       "switchOn": "Einschalten",
       "delete": "Löschen",
       "keep": "Behalten",
-      "finish": "Abschließen"
+      "finish": "Abschließen",
+      "refine": "Nachbessern"
     },
     "banner": {
       "trace": "Zeichne mit einem Finger um den Griff",
@@ -842,7 +843,11 @@
       "addDraw": "Zeichne um einen fehlenden Griff oder tippe, um einen Kreis zu setzen",
       "addCorners": "Tippe auf die Ecken um einen fehlenden Griff",
       "done": "Fertig",
-      "tracePencil": "Zeichne mit dem Apple Pencil um den Griff"
+      "tracePencil": "Zeichne mit dem Apple Pencil um den Griff",
+      "refineAdd": "Male, um den Griff zu vergrößern. Mit zwei Fingern zoomen.",
+      "refineErase": "Male, um vom Griff wegzunehmen. Mit zwei Fingern zoomen.",
+      "refineAddPencil": "Male mit dem Apple Pencil, um den Griff zu vergrößern",
+      "refineErasePencil": "Male mit dem Apple Pencil, um vom Griff wegzunehmen"
     },
     "addShape": {
       "label": "So umrandest du einen Griff",
@@ -895,7 +900,10 @@
       "someHoldsOffWall_other": "{{count}} Griffe liegen außerhalb der Wand. Schieb sie zurück aufs Foto oder schalte sie aus.",
       "cornersCross": "Zwei Seiten kreuzen sich. Tippe die Ecken der Reihe nach um den Griff.",
       "cornersTooFew": "Diese Ecken liegen zu nah beieinander oder auf einer Linie. Tippe mindestens 3 um den Griff.",
-      "cornersHollow": "Diese Form ist zu hohl. Tippe die Ecken am Außenrand des Griffs."
+      "cornersHollow": "Diese Form ist zu hohl. Tippe die Ecken am Außenrand des Griffs.",
+      "refineNothingLeft": "Damit wäre der ganze Griff weg. Schalte ihn lieber aus.",
+      "refineTooDetailed": "Dieser Rand ist zu detailliert zum Speichern. Nimm einen größeren Pinsel.",
+      "refineCantStore": "Diese Form lässt sich nicht als ein Griff speichern. Mach es rückgängig und versuch es nochmal."
     },
     "empty": {
       "noPhoto": "Diese Wand hat noch kein Foto zum Bearbeiten."
@@ -935,6 +943,17 @@
       "close": "Pencil-Werkzeuge schließen",
       "draw": "Griff hinzufügen, indem du ihn umrandest",
       "corners": "Griff hinzufügen, indem du auf seine Ecken tippst"
+    },
+    "refine": {
+      "mode": "Pinsel",
+      "add": "Hinzufügen",
+      "erase": "Radieren",
+      "size": "Pinselgröße",
+      "sizeSmall": "Kleiner Pinsel",
+      "sizeMedium": "Mittlerer Pinsel",
+      "sizeLarge": "Großer Pinsel",
+      "dropped_one": "Der Hauptteil bleibt. {{count}} loses Stück wurde entfernt.",
+      "dropped_other": "Der Hauptteil bleibt. {{count}} lose Stücke wurden entfernt."
     }
   },
   "sprayWizard": {
