@@ -7231,8 +7231,13 @@ type Query {
 
   """
   Get a board by slug (for URL routing).
+
+  wallUuid is a spray wall's share-link capability (the ?wall= param). When it
+  matches the uuid of the wall the slug resolved to, an UNLISTED wall opens for
+  any caller, the same as sprayWall(uuid). It never opens a private or
+  admin-hidden wall, a mismatch is ignored, and it does nothing on other boards.
   """
-  boardBySlug(slug: String!): UserBoard
+  boardBySlug(slug: String!, wallUuid: ID): UserBoard
 
   """
   Look up boards by controller serial numbers.
