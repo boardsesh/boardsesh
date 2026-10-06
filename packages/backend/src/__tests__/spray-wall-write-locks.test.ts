@@ -147,11 +147,12 @@ const WRITERS: Array<{ name: string; source: string; why: string; exempt?: strin
     source: SPRAY_WALLS_SOURCE,
     why: 'it writes spray_walls.render_settings',
     // A single-column write to a column no hold, version or publish path reads
-    // or writes. Its one read — a generated background is refused when the
-    // version's photo fails the quality gate — is of a version's pins and frame,
-    // which never change once written, and a publish racing it queues its own
-    // art. There is nothing to order it against; the last call wins.
-    exempt: 'it decides only on immutable version geometry and no other writer touches render_settings',
+    // or writes. Its reads are a version's pins and frame (a generated
+    // background is refused when the photo fails the quality gate), which never
+    // change once written, and the stored background an older client's write
+    // keeps — the same column, where the last call wins. A publish racing it
+    // queues its own art. There is nothing to order it against.
+    exempt: 'it decides only on immutable version geometry and its own column, which no other writer touches',
   },
   { name: 'deleteSprayWall', source: SPRAY_WALLS_SOURCE, why: 'a publish must not land on a wall being deleted' },
   {

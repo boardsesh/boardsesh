@@ -16,6 +16,15 @@ import type { SprayWallVersionArt } from '@boardsesh/db/schema';
 export const SPRAY_WALL_ART_FAMILY = 'spray-wall-art';
 
 /**
+ * The job's absolute deadline across every retry. A `pending` (or `failed`)
+ * row older than this has no run left that will ever finish it: a crash, an
+ * expired lease or the deadline itself writes no final state. Readers treat
+ * such a row as FAILED, and a read of a wall that chose generated art
+ * re-queues it.
+ */
+export const SPRAY_WALL_ART_DEADLINE_SECONDS = 3600;
+
+/**
  * The same cache rule as the stored photo: art is cut from a photograph of
  * somebody's home and lives in the private bucket behind signatures.
  */
@@ -92,5 +101,43 @@ export function refusedArt(quality: PhotoQuality): SprayWallVersionArt {
     cutoutKey: null,
     quality: { stretch: quality.stretch, verdict: quality.verdict },
     error: quality.reason,
+    requestedAt: null,
   };
+}
+
+export type SprayWallArtState = {
+  status: 'NONE' | 'PENDING' | 'READY' | 'FAILED' | 'REFUSED';
+  /** Whether a reader that wants this art should queue the job again. */
+  requeue: boolean;
+};
+
+function olderThanDeadline(requestedAt: string | null | undefined, nowMs: number): boolean {
+  const at = requestedAt ? Date.parse(requestedAt) : Number.NaN;
+  return !Number.isFinite(at) || nowMs - at > SPRAY_WALL_ART_DEADLINE_SECONDS * 1000;
+}
+
+/**
+ * What a stored art row means right now. `liveFail` is the live quality gate.
+ *
+ * - READY for the running recipe is served, whatever the live gate says: the
+ *   job checked the same immutable geometry before it rendered.
+ * - Otherwise a live fail is REFUSED, and never re-queued.
+ * - No art, an older recipe, or a refusal the live gate no longer agrees with:
+ *   NONE, re-queue.
+ * - `failed`: FAILED; re-queue once it is older than the deadline, so a
+ *   permanent failure is retried at most hourly rather than on every read.
+ * - `pending` older than the deadline: FAILED (no run left will finish it),
+ *   re-queue. Fresher: PENDING.
+ */
+export function sprayWallArtState(
+  art: SprayWallVersionArt | null | undefined,
+  liveFail: boolean,
+  nowMs: number = Date.now(),
+): SprayWallArtState {
+  if (artIsCurrent(art) && art.status === 'ready') return { status: 'READY', requeue: false };
+  if (liveFail) return { status: 'REFUSED', requeue: false };
+  if (!artIsCurrent(art) || art.status === 'refused') return { status: 'NONE', requeue: true };
+  const stale = olderThanDeadline(art.requestedAt, nowMs);
+  if (art.status === 'failed') return { status: 'FAILED', requeue: stale };
+  return stale ? { status: 'FAILED', requeue: true } : { status: 'PENDING', requeue: false };
 }

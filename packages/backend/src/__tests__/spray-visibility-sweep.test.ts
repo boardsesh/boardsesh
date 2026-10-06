@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { createRequire } from 'node:module';
 import { v4 as uuidv4 } from 'uuid';
 import { eq, sql } from 'drizzle-orm';
-import { boardClimbEvents, sprayWalls, userBoards } from '@boardsesh/db/schema';
+import { boardClimbEvents, sprayWallVersions, sprayWalls, userBoards } from '@boardsesh/db/schema';
+import { ART_RECIPE } from '@boardsesh/spray-wall-geometry';
 import type * as GraphQLModule from 'graphql';
 import type {
   GraphQLArgument,
@@ -933,6 +934,26 @@ async function seedWorld(): Promise<SeededWorld> {
   )) as Array<{ id: number }>;
 
   await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: version.id } }, ctxFor(OWNER));
+
+  // Generated wall looks, READY, so `sprayWallArt` has something to hand the
+  // owner. The keys carry the photo-id sentinel, as the presigned URLs do.
+  const artStem = `spray-walls/${wall.uuid}/art/${photoId}-r${ART_RECIPE}`;
+  await db
+    .update(sprayWallVersions)
+    .set({
+      art: {
+        recipe: ART_RECIPE,
+        status: 'ready',
+        width: 800,
+        height: 620,
+        cropKey: `${artStem}-crop.jpg`,
+        cutoutKey: `${artStem}-cutout.webp`,
+        quality: { stretch: 1, verdict: 'good' },
+        error: null,
+        requestedAt: new Date().toISOString(),
+      },
+    })
+    .where(eq(sprayWallVersions.id, Number(version.id)));
 
   const holdIds = holds.map((hold) => hold.id);
   const frames = holdIds.map((holdId, index) => `p${holdId}r${[1, 2, 3][index] ?? 2}`).join('');

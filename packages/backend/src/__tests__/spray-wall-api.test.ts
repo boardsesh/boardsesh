@@ -6168,6 +6168,63 @@ describe('generated wall looks (sprayWallArt and the background setting)', () =>
     });
   });
 
+  it('hands a draft’s art to its editor and to nobody else', async () => {
+    const { wall } = await straightWall({ isUnlisted: true });
+    const photoId = registerUploadedPhoto(wall.uuid, { width: 2400, height: 1800 });
+    await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: STRAIGHT_ANCHORS } },
+      ctxFor(OWNER),
+    );
+
+    // The stranger can read the unlisted wall's published art, not the draft's.
+    expect((await readArt(wall.uuid, STRANGER, 1))?.status).toBe('NONE');
+    expect(await readArt(wall.uuid, STRANGER, 2)).toBeNull();
+    expect(await readArt(wall.uuid, null, 2)).toBeNull();
+    expect(await readArt(wall.uuid, OWNER, 2)).toMatchObject({ versionNumber: 2, status: 'NONE' });
+  });
+
+  it('reads a pending run past the job deadline as FAILED, and a fresh one as PENDING', async () => {
+    const { wall, versionId } = await straightWall();
+    const { ART_RECIPE } = await import('@boardsesh/spray-wall-geometry');
+    const pendingAt = async (requestedAt: string) => {
+      await db
+        .update(sprayWallVersions)
+        .set({
+          art: {
+            recipe: ART_RECIPE,
+            status: 'pending',
+            width: null,
+            height: null,
+            cropKey: null,
+            cutoutKey: null,
+            quality: { stretch: 1, verdict: 'good' },
+            error: null,
+            requestedAt,
+          },
+        })
+        .where(eq(sprayWallVersions.id, Number(versionId)));
+      return (await readArt(wall.uuid, OWNER))?.status;
+    };
+    expect(await pendingAt(new Date().toISOString())).toBe('PENDING');
+    expect(await pendingAt(new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString())).toBe('FAILED');
+  });
+
+  it('keeps the stored background when an older client saves a look without one', async () => {
+    const { wall } = await straightWall();
+    await setLook(wall.uuid, { ...AURA, background: 'hold-cutouts' });
+
+    // `{ mode, boardsesh }` only: what every client before this field sends.
+    const classic = { ...AURA, mode: 'classic' };
+    expect((await setLook(wall.uuid, classic)).renderSettings).toEqual({ ...classic, background: 'hold-cutouts' });
+
+    // An explicit photo still switches back, and null still clears everything.
+    expect((await setLook(wall.uuid, { ...AURA, background: 'photo' })).renderSettings).toMatchObject({
+      background: 'photo',
+    });
+    expect((await setLook(wall.uuid, null)).renderSettings).toBeNull();
+  });
+
   it('refuses a background name it does not know', async () => {
     const { wall } = await straightWall();
     await expect(setLook(wall.uuid, { ...AURA, background: 'blurred' })).rejects.toThrow(/background/);

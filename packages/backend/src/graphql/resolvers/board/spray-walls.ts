@@ -71,7 +71,7 @@ import {
 } from '../../../storage/s3';
 import { sprayWallIsListable } from './spray-wall-listing';
 import { resizedVariantKey } from '../../../lib/image-resize';
-import { sprayVersionQuality } from '../../../lib/spray-wall-art';
+import { sprayVersionQuality, sprayWallArtState } from '../../../lib/spray-wall-art';
 import { requestSprayWallArtOn, sprayWallArtNeedsRequest, sprayWallArtView } from '../../../services/spray-wall-art';
 import {
   ClimbUuidSchema,
@@ -1484,7 +1484,25 @@ export const sprayWallQueries = {
     const versionRow = await resolveReadableVersion(loaded.wall, version, canEdit);
     if (!versionRow?.photoKey) return null;
 
-    return sprayWallArtView(versionRow, loaded.wall);
+    const liveFail = sprayVersionQuality(versionRow, loaded.wall).verdict === 'fail';
+    const state = sprayWallArtState(versionRow.art, liveFail);
+
+    // Read-time backfill: the PUBLISHED version of a wall that chose a
+    // generated look, whose art is missing, from an older recipe, or failed or
+    // stuck past the job's deadline. Only queued, never rendered inline; the
+    // singleton key dedupes concurrent readers, and a refused photo never
+    // reaches here (`requeue` is false for it).
+    const background = loaded.wall.renderSettings?.background;
+    if (
+      state.requeue &&
+      versionRow.id === loaded.wall.currentVersionId &&
+      (background === 'wall-crop' || background === 'hold-cutouts')
+    ) {
+      const outcome = await db.transaction((tx) => requestSprayWallArtOn(tx, versionRow, loaded.wall));
+      if (outcome === 'queued') return sprayWallArtView(versionRow, loaded.wall, { status: 'PENDING', requeue: false });
+    }
+
+    return sprayWallArtView(versionRow, loaded.wall, state);
   },
 
   /**
@@ -2509,9 +2527,19 @@ export const sprayWallMutations = {
     const validated = validateInput(SetSprayWallRenderSettingsInputSchema, input, 'input');
     const { wall } = await loadEditableWall(ctx, validated.uuid);
 
-    const background = validated.renderSettings?.background ?? 'photo';
+    // An older client sends `{ mode, boardsesh }` with no `background` key.
+    // That is "change the look", not "go back to the photo", so the stored
+    // background is kept. Only an explicit choice is gated: a kept one was
+    // allowed when it was made, and a reset that fails the gate draws the
+    // photo through the read-side fallback anyway.
+    const explicitBackground = validated.renderSettings?.background;
+    const renderSettings =
+      validated.renderSettings && explicitBackground === undefined && wall.renderSettings?.background
+        ? { ...validated.renderSettings, background: wall.renderSettings.background }
+        : validated.renderSettings;
+    const background = renderSettings?.background ?? 'photo';
     const artVersion = background === 'photo' ? undefined : await versionForArtChoice(wall);
-    if (background !== 'photo') {
+    if (explicitBackground !== undefined && explicitBackground !== 'photo') {
       const quality = artVersion ? sprayVersionQuality(artVersion, wall) : null;
       if (!quality || quality.verdict === 'fail') {
         throw new GraphQLError(
@@ -2525,7 +2553,7 @@ export const sprayWallMutations = {
 
     await db
       .update(dbSchema.sprayWalls)
-      .set({ renderSettings: validated.renderSettings, updatedAt: new Date() })
+      .set({ renderSettings, updatedAt: new Date() })
       .where(eq(dbSchema.sprayWalls.id, wall.id));
 
     // Backfill: only for the PUBLISHED version. A draft gets its art when it
