@@ -213,13 +213,23 @@ async function fillDetailRevisionNumbers(
  * network search on a wall sends it, whatever the caller built, except the
  * climber's own drafts list, which keeps a draft that lost a hold so its setter
  * can fix or delete it. `searchClimbsLocal` applies the same rule on the phone.
+ *
+ * The drafts list sends an explicit `ANY`, not nothing. The current server hides
+ * climbs a full reset retired from every spray search that carries no
+ * `holdIntegrity`, drafts included (`retiredByResetCondition`), and ANY is the
+ * one value that turns that off without adding an integrity predicate. Sent
+ * nothing, a draft that lost a hold in an old full reset could never be reached,
+ * fixed or deleted. A later server ignores the value.
  */
 export function withLostHoldRule(variables: SearchClimbsQueryVariables): SearchClimbsQueryVariables {
   const { input } = variables;
-  if (hidesLostHoldClimbs(input)) {
-    return input.holdIntegrity === 'INTACT'
-      ? variables
-      : { ...variables, input: { ...input, holdIntegrity: 'INTACT' } };
+  const wanted = hidesLostHoldClimbs(input)
+    ? 'INTACT'
+    : input.boardName === 'spray' && input.onlyDrafts === true
+      ? 'ANY'
+      : null;
+  if (wanted) {
+    return input.holdIntegrity === wanted ? variables : { ...variables, input: { ...input, holdIntegrity: wanted } };
   }
   if (input.holdIntegrity == null) return variables;
   const { holdIntegrity: _retiredHoldIntegrity, ...inputWithoutHoldIntegrity } = input;

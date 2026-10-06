@@ -119,6 +119,7 @@ async function fetchCandidateRows(
        WHERE c.uuid IN (${batch.map(() => '?').join(', ')})
          AND c.board_type = ? AND c.layout_id = ?
          AND c.is_draft = 0 AND c.is_listed = 1 AND COALESCE(c.is_hidden, 0) = 0
+         AND (c.board_type <> 'spray' OR COALESCE(c.missing_hold_count, 0) = 0)
          AND c.frames_count = 1
          ${sizeClause}`,
       params,

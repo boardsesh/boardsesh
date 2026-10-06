@@ -367,8 +367,21 @@ describe('offlineAwareRequest — spray searches over the network', () => {
     expect(request).toHaveBeenLastCalledWith(SEARCH_CLIMBS, { input: { ...sprayInput, holdIntegrity: 'INTACT' } });
   });
 
-  it("sends nothing for the climber's drafts, so a draft that lost a hold still lists", async () => {
+  // ANY, not nothing: the current server hides retired climbs from every spray
+  // search without a value, drafts included, and a draft retired by an old full
+  // reset would then be out of reach.
+  it("sends ANY for the climber's drafts, so a draft that lost a hold still lists", async () => {
     const draftsInput: ClimbSearchInput = { ...sprayInput, onlyDrafts: true };
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: draftsInput });
+    expect(request).toHaveBeenLastCalledWith(SEARCH_CLIMBS, { input: { ...draftsInput, holdIntegrity: 'ANY' } });
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, {
+      input: { ...draftsInput, holdIntegrity: 'INTACT' },
+    });
+    expect(request).toHaveBeenLastCalledWith(SEARCH_CLIMBS, { input: { ...draftsInput, holdIntegrity: 'ANY' } });
+  });
+
+  it('keeps a catalogue drafts search free of any value', async () => {
+    const draftsInput: ClimbSearchInput = { ...searchInput, onlyDrafts: true };
     await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: draftsInput });
     expect(request).toHaveBeenLastCalledWith(SEARCH_CLIMBS, { input: draftsInput });
   });

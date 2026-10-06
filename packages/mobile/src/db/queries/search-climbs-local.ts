@@ -427,7 +427,8 @@ export function buildJoinAndWhere(
   // search, name search included (`hidesLostHoldClimbs`; the network sends the
   // same rule as `holdIntegrity: 'INTACT'`). A downloaded wall reads here even
   // while online, so the two must agree or the list changes with the signal.
-  // Climbs a full reset retired lost every hold, so this hides them too.
+  // A climb a full reset retired lost at least one hold in it, so this hides
+  // it too.
   //
   // COALESCE because NULL reads as whole: every catalogue climb, a spray climb
   // written before the server kept the count, and any row pulled before
