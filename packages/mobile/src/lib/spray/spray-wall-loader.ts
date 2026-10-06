@@ -296,6 +296,18 @@ export function registerRenderData(
     // `SprayWall.board` is only non-null by schema contract — see the field's note
     // on `RegisteredSprayWall` for why a missing angle registers anyway.
     angle: renderData.wall.board?.angle ?? null,
+    // Only with a slug: `/b/{slug}` is the whole link, so a board row without
+    // one shares no link at all rather than a broken one. And never for a wall an
+    // admin hid: hidden means exactly what private means, and the server 404s the
+    // page and the card for it (`hiddenAt` is only ever set for the owner).
+    share:
+      renderData.wall.board?.slug && !renderData.wall.hiddenAt
+        ? {
+            slug: renderData.wall.board.slug,
+            isPublic: renderData.wall.board.isPublic,
+            isUnlisted: renderData.wall.board.isUnlisted,
+          }
+        : null,
     version: renderData.versionNumber,
     versionId,
     photoWidth: dimensions.width,

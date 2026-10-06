@@ -3049,6 +3049,40 @@ propagating the noindex up the chain. So: no breadcrumb until a wall has an
 indexable page of its own, which is a decision about crawling somebody's home
 wall rather than a markup change.
 
+### Sharing a climb from the app (#5488)
+
+The app's Share button on a wall climb hands out the same URL this page lives at,
+`/b/{slug}/{angle}/view/{name-slug}-{uuid}`, built by `buildSprayClimbSharePath`
+(`packages/mobile/src/lib/spray/spray-share.ts`) with the climb segment www's
+`constructBoardSlugViewUrl` emits. It used to share the numeric
+`/spray/{layout}/{size}/1/{angle}/view/...` path, which www 404s by design. The
+slug, the angle and the two visibility flags come off the registered wall
+(`RegisteredSprayWall.share`, filled by the loader from `sprayWallRenderData`'s
+`wall.board`), so the share costs no request.
+
+| The wall is | What Share sends | Card warmed before the sheet opens |
+| --- | --- | --- |
+| public | the clean `/b/` link | the exact `og:image` URL this page advertises |
+| unlisted | the `/b/` link plus `?wall=<uuid>` | none (`/og/climb` answers 404) |
+| private, admin-hidden, not loaded, or no slug | the climb name alone, no link | none |
+
+**An unlisted climb link opens in the app only, for now.** The app's
+`/b/.../view/` route hands `?wall=` to `BoardRouteHandoff` (`wallUuid`), which
+resolves the wall before adopting the board, so a crew member who is not the
+owner still gets the wall's photo. On www the same link 404s for anyone but the
+owner and the gym's members: this page resolves the wall through `boardBySlug`,
+which refuses an unlisted wall to an anonymous caller (a slug is derived from
+the wall's name, so it is a guess and not a capability), and nothing on the page
+reads `?wall=` yet. Teaching www to redeem it is a follow-up PR.
+
+The registered wall is re-read whenever its owner saves the edit screen
+(`useUpdateSprayWall` calls `invalidateSprayWallRenderData`), so a visibility
+change moves what Share sends straight away instead of after the registry's
+10-minute revalidation. An admin-hidden wall (`SprayWall.hiddenAt`, only set for
+the owner) registers with no share fields at all, because hidden means exactly
+what private means. The wall-level share row (`sprayShareTarget`) reads a
+`UserBoard`, which carries no `hiddenAt`, so it does not apply that rule yet.
+
 ### The card and the sitemap
 
 `GET /og/climb?board_name=spray` composes the card from the public copy and the

@@ -2,6 +2,7 @@ import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
 import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { BACKEND_URL } from './env';
+import type { SprayWallVisibility } from './spray/spray-share';
 
 // Fallback builder for the backend og:image URL, used only when the page will
 // not tell us its own card (see `readAdvertisedCard`).
@@ -29,14 +30,10 @@ export function buildOgImageUrl(args: {
   sizeId: number;
   setIds: string;
   frames: string | null | undefined;
+  /** A spray wall's visibility; ignored for every catalogue board. */
+  sprayVisibility?: SprayWallVisibility | null;
 }): string | null {
-  // A spray wall's holds and photo live in `spray_wall_holds` and the private
-  // bucket, and the backend's OG renderer only knows the bundled catalogue
-  // geometry — so `/og/climb` cannot draw a wall today, and warming it would
-  // cache a blank card under the very URL the unfurler is about to ask for.
-  // Teaching the renderer the wall is SW-16's job (the public-wall share card);
-  // until then the link still shares, it just unfurls without a picture.
-  if (args.boardName === 'spray') return null;
+  if (args.boardName === 'spray') return buildSprayOgImageUrl(args.layoutId, args.frames, args.sprayVisibility);
   const flatFrames = toFlatFrames(args.frames, args.boardName as BoardName);
   // The backend rejects an empty frames string (a blank board would cache as a
   // real card), so there is nothing to warm without frames.
@@ -58,6 +55,33 @@ export function buildOgImageUrl(args: {
     // climber just looked at are quieted by the same wash.
     'render_mode=aura',
     `field_color=${encodeURIComponent(BOARD_FIELD_COLORS.dark)}`,
+  ].join('&');
+  return `${BACKEND_URL}/og/climb?${query}`;
+}
+
+// A spray wall's card (SW-16), byte-for-byte the URL www's `buildSprayOgImageUrl`
+// puts in the page's og:image — same params, same order, same encoding — so this
+// warms the very entry the unfurler asks for rather than a near-miss.
+//
+// Public walls only. `/og/climb` answers 404 for an unlisted or private wall by
+// design (its photo sits in the private bucket, and the page advertises no card),
+// so there is nothing to warm, and an unknown visibility is treated the same way.
+// A wall's size id is its layout id and its one synthetic hold set is 1.
+function buildSprayOgImageUrl(
+  layoutId: number,
+  frames: string | null | undefined,
+  visibility: SprayWallVisibility | null | undefined,
+): string | null {
+  if (visibility !== 'public') return null;
+  const flatFrames = toFlatFrames(frames, 'spray');
+  if (!flatFrames) return null;
+  const query = [
+    'board_name=spray',
+    `layout_id=${layoutId}`,
+    `size_id=${layoutId}`,
+    'set_ids=1',
+    `frames=${encodeURIComponent(flatFrames)}`,
+    'format=jpeg',
   ].join('&');
   return `${BACKEND_URL}/og/climb?${query}`;
 }
@@ -180,6 +204,8 @@ export async function prewarmShareCaches(pageUrl: string, fallbackOgImageUrl: st
   const backdrop = fallbackOgImageUrl ? warm(fallbackOgImageUrl) : Promise.resolve();
 
   const advertised = await readAdvertisedCard(pageUrl);
-  if (advertised) await warm(advertised);
+  // A public spray wall's fallback IS the advertised card, so it is already in
+  // flight; a second request would only queue behind the first.
+  if (advertised && advertised !== fallbackOgImageUrl) await warm(advertised);
   await backdrop;
 }
