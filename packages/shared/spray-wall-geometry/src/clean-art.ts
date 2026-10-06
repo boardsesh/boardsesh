@@ -14,8 +14,12 @@
  *
  * The recipe (dilate, feather, cap) is from the October 2026 spike's
  * `render.py`. Bump `ART_RECIPE` whenever any number here changes what a
- * rendered image looks like: the recipe is part of every art key, so a bump
- * makes the backend regenerate rather than serve the old pixels.
+ * rendered image looks like. The recipe is part of every art key and every
+ * stored art row: after a bump the backend stops serving old-recipe art (it
+ * reads as NONE, and clients draw the photo), and re-queues it the next time
+ * `sprayWallArt` is read for the published version of a wall that chose a
+ * generated look, or the owner chooses one again. Walls that chose the photo
+ * are not regenerated. Old objects are never overwritten.
  */
 import type { Homography, ReferenceSize } from './homography';
 import { mapPoint } from './homography';

@@ -23,13 +23,17 @@ type StoredObject = { body: Buffer; contentType: string; cacheControl?: string; 
 
 const queueState = vi.hoisted(() => ({ boss: null as PgBoss | null }));
 const objects = vi.hoisted(() => new Map<string, StoredObject>());
+/** Runs before an upload lands; a test uses it to change the world mid-render. */
+const uploadHook = vi.hoisted(() => ({ beforeUpload: null as null | ((key: string) => Promise<void>) }));
+const deletedKeys = vi.hoisted(() => [] as string[]);
+const storage = vi.hoisted(() => ({ configured: true }));
 
 vi.mock('../services/job-queue', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/job-queue')>()),
   getJobQueue: () => queueState.boss,
 }));
 vi.mock('../storage/s3', () => ({
-  isS3Configured: () => true,
+  isS3Configured: () => storage.configured,
   getS3ObjectMetadata: async (_bucket: string, key: string) => {
     const object = objects.get(key);
     return object
@@ -55,6 +59,11 @@ vi.mock('../storage/s3', () => ({
     contentType: string,
     options: { cacheControl?: string; metadata?: Record<string, string> },
   ) => {
+    const hook = uploadHook.beforeUpload;
+    if (hook) {
+      uploadHook.beforeUpload = null;
+      await hook(key);
+    }
     objects.set(key, { body, contentType, cacheControl: options.cacheControl, metadata: options.metadata });
     return { key };
   },
@@ -63,7 +72,10 @@ vi.mock('../storage/s3', () => ({
     expiresAt: new Date(Date.now() + 900_000).toISOString(),
   }),
   copyObjectBetweenBuckets: async () => null,
-  deleteFromS3: async () => undefined,
+  deleteFromS3: async (_bucket: string, key: string) => {
+    objects.delete(key);
+    deletedKeys.push(key);
+  },
   getPublicUrl: (_bucket: string, key: string) => `https://media.example/${key}`,
 }));
 vi.mock('../events', () => ({ publishSocialEvent: vi.fn(async () => undefined) }));
@@ -173,6 +185,9 @@ beforeAll(async () => {
 beforeEach(async () => {
   vi.stubEnv('BATCH_FAMILIES_DISABLED', '');
   objects.clear();
+  deletedKeys.length = 0;
+  uploadHook.beforeUpload = null;
+  storage.configured = true;
   await ownerBoss.deleteAllJobs(queue);
   await db.delete(backgroundJobRuns).where(eq(backgroundJobRuns.family, 'spray-wall-art'));
   await db.execute(sql`
@@ -326,4 +341,84 @@ describe('spray-wall-art', () => {
     const [run] = await runs();
     expect(run).toMatchObject({ status: 'failed', errorCode: 'SPRAY_ART_VERSION_MISSING' });
   }, 30000);
+
+  it('takes its uploads back when the wall is deleted mid-render, and never marks it ready', async () => {
+    const { wall, versionId } = await publishWall(STRAIGHT);
+    uploadHook.beforeUpload = async () => {
+      await sprayWallMutations.deleteSprayWall({}, { uuid: wall.uuid }, ctx);
+    };
+    const [job] = await workerBoss.fetch<BackgroundJobPayload>(queue, { includeMetadata: true, batchSize: 1 });
+    await executeBackgroundJob(
+      workerDatabase,
+      workerBoss,
+      job,
+      handlerForRole('maintenance-delivery'),
+      new AbortController().signal,
+    );
+
+    expect((await artOf(versionId))?.status).not.toBe('ready');
+    const artPrefix = `spray-walls/${wall.uuid}/art/`;
+    expect(deletedKeys.filter((key) => key.startsWith(artPrefix))).toHaveLength(4);
+    expect([...objects.keys()].filter((key) => key.startsWith(artPrefix))).toEqual([]);
+    const [run] = await runs();
+    expect(run).toMatchObject({ status: 'failed', errorCode: 'SPRAY_ART_VERSION_MISSING' });
+  }, 60000);
+
+  it('records a failure, not a stuck pending, on a worker with no bucket', async () => {
+    const { versionId } = await publishWall(STRAIGHT);
+    const [job] = await workerBoss.fetch<BackgroundJobPayload>(queue, { includeMetadata: true, batchSize: 1 });
+    storage.configured = false;
+    await executeBackgroundJob(
+      workerDatabase,
+      workerBoss,
+      job,
+      handlerForRole('maintenance-delivery'),
+      new AbortController().signal,
+    );
+    storage.configured = true;
+    expect(await artOf(versionId)).toMatchObject({ status: 'failed', error: 'SPRAY_ART_STORAGE_UNAVAILABLE' });
+  }, 30000);
+
+  it('re-queues old-recipe art when the published version of a wall on a generated look is read', async () => {
+    const { wall, versionId } = await publishWall(STRAIGHT);
+    await ownerBoss.deleteAllJobs(queue);
+    await db.delete(backgroundJobRuns).where(eq(backgroundJobRuns.family, 'spray-wall-art'));
+    const oldRecipe = {
+      recipe: ART_RECIPE - 1,
+      status: 'ready' as const,
+      width: 2048,
+      height: 1489,
+      cropKey: 'old-crop.jpg',
+      cutoutKey: 'old-cutout.webp',
+      quality: { stretch: 1, verdict: 'good' as const },
+      error: null,
+    };
+    await db.update(sprayWallVersions).set({ art: oldRecipe }).where(eq(sprayWallVersions.id, versionId));
+
+    // On the photo: an old-recipe row is NONE and nothing is queued for it.
+    const onPhoto = (await sprayWallQueries.sprayWallArt({}, { uuid: wall.uuid }, ctx)) as { status: string };
+    expect(onPhoto.status).toBe('NONE');
+    expect(await runs()).toHaveLength(0);
+
+    await db.execute(sql`
+      UPDATE spray_walls SET render_settings = '{"mode":"aura","boardsesh":{},"background":"wall-crop"}'::jsonb
+      WHERE board_uuid = ${wall.uuid}
+    `);
+    const read = (await sprayWallQueries.sprayWallArt({}, { uuid: wall.uuid }, ctx)) as { status: string };
+    expect(read.status).toBe('PENDING');
+    expect(await runs()).toHaveLength(1);
+    expect(await artOf(versionId)).toMatchObject({ status: 'pending', recipe: ART_RECIPE });
+
+    // A second reader is deduplicated by the singleton key.
+    await db.update(sprayWallVersions).set({ art: oldRecipe }).where(eq(sprayWallVersions.id, versionId));
+    await sprayWallQueries.sprayWallArt({}, { uuid: wall.uuid }, ctx);
+    expect(await runs()).toHaveLength(1);
+  });
 });
+
+const STRAIGHT: [number, number][] = [
+  [100, 100],
+  [2300, 100],
+  [2300, 1700],
+  [100, 1700],
+];

@@ -18,6 +18,7 @@ import {
   SPRAY_WALL_ART_CACHE_CONTROL,
   SPRAY_WALL_ART_CROP_CONTENT_TYPE,
   SPRAY_WALL_ART_CUTOUT_CONTENT_TYPE,
+  SPRAY_WALL_ART_DEADLINE_SECONDS,
   SPRAY_WALL_ART_FAMILY,
   SPRAY_WALL_ART_THUMBNAIL_SIZE,
   refusedArt,
@@ -98,6 +99,7 @@ async function writeArtFailure(context: BackgroundJobContext, versionId: number,
         cutoutKey: null,
         quality: current.art?.quality ?? null,
         error: code,
+        requestedAt: current.art?.requestedAt ?? null,
       };
       await transaction.update(sprayWallVersions).set({ art: failed }).where(eq(sprayWallVersions.id, versionId));
     });
@@ -281,7 +283,7 @@ export const sprayWallArtFamily: BackgroundJobFamilyModule<Payload> = {
   options: {
     expireInSeconds: 300,
     heartbeatSeconds: 30,
-    deadlineSeconds: 3600,
+    deadlineSeconds: SPRAY_WALL_ART_DEADLINE_SECONDS,
     retryLimit: 2,
     retryDelay: 30,
     retryBackoff: true,
@@ -289,9 +291,11 @@ export const sprayWallArtFamily: BackgroundJobFamilyModule<Payload> = {
   },
   singletonKey: sprayWallArtSingletonKey,
   async execute(context, request) {
-    if (!isS3Configured('private')) throw new BackgroundJobError('SPRAY_ART_STORAGE_UNAVAILABLE');
     const startedAtMs = Date.now();
     try {
+      // Inside the try, so a worker with no bucket records `failed` rather
+      // than leaving the row pending.
+      if (!isS3Configured('private')) throw new BackgroundJobError('SPRAY_ART_STORAGE_UNAVAILABLE');
       await render(context, request);
     } catch (error) {
       const code = error instanceof BackgroundJobError ? error.code : 'SPRAY_ART_RENDER_FAILED';

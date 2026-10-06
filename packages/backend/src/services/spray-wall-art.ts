@@ -9,7 +9,9 @@ import { enabledBatchFamiliesOrNone } from './batch-schedules';
 import { isS3Configured, presignGetObject } from '../storage/s3';
 import { resizedVariantKey } from '../lib/image-resize';
 import {
+  type SprayWallArtState,
   SPRAY_WALL_ART_FAMILY,
+  sprayWallArtState,
   SPRAY_WALL_ART_THUMBNAIL_SIZE,
   artIsCurrent,
   refusedArt,
@@ -87,6 +89,7 @@ export async function requestSprayWallArtOn(
         cutoutKey: null,
         quality: { stretch: quality.stretch, verdict: quality.verdict },
         error: null,
+        requestedAt: new Date().toISOString(),
       };
       // Not over a `ready` row of this recipe: a job that finished between the
       // caller's read and this write has already done the work.
@@ -169,11 +172,15 @@ function qualityView(quality: PhotoQuality): SprayWallArtView['quality'] {
  * applied the wall's view rule; a presigned URL bypasses every other gate.
  *
  * The quality verdict is computed live from the version's pins, so a client
- * can grey out the generated backgrounds before any job has run. Art from an
- * older recipe reads as `NONE`; a ready row whose signature cannot be minted
- * reads as `PENDING` rather than handing out a dead URL.
+ * can grey out the generated backgrounds before any job has run. The status is
+ * `sprayWallArtState`; a ready row whose signature cannot be minted reads as
+ * `PENDING` rather than handing out a dead URL.
  */
-export async function sprayWallArtView(version: VersionRow, wall: WallFrame): Promise<SprayWallArtView> {
+export async function sprayWallArtView(
+  version: VersionRow,
+  wall: WallFrame,
+  state: SprayWallArtState = sprayWallArtState(version.art, sprayVersionQuality(version, wall).verdict === 'fail'),
+): Promise<SprayWallArtView> {
   const quality = qualityView(sprayVersionQuality(version, wall));
   const base = {
     versionNumber: version.versionNumber,
@@ -185,12 +192,7 @@ export async function sprayWallArtView(version: VersionRow, wall: WallFrame): Pr
     cutout: null,
   };
   const art = version.art;
-  if (quality.verdict === 'FAIL') return { ...base, status: 'REFUSED' };
-  if (!artIsCurrent(art)) return { ...base, status: 'NONE' };
-  if (art.status !== 'ready')
-    // A stored refusal the live gate no longer agrees with is stale: NONE, so
-    // the owner's next choice re-queues it.
-    return { ...base, status: art.status === 'refused' ? 'NONE' : art.status === 'failed' ? 'FAILED' : 'PENDING' };
+  if (state.status !== 'READY' || !art) return { ...base, status: state.status };
   if (!art.cropKey || !art.cutoutKey || !isS3Configured('private')) return { ...base, status: 'PENDING' };
 
   try {

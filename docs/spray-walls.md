@@ -510,8 +510,10 @@ delete the whole `spray-walls/<wall uuid>/` prefix, take the art with the photo.
 Bump it whenever a rendering number changes (dilate 4% of each hold's radius,
 feather sigma 6% of the median radius, 32-point circle for an untraced hold,
 2048 px long edge). A row whose recipe is not the running one reads as `NONE`
-and the next generated-background choice re-queues it; old objects are never
-overwritten.
+(clients draw the photo). Nothing sweeps every wall on a bump: the job is
+re-queued the next time `sprayWallArt` is read for the PUBLISHED version of a
+wall whose chosen background is generated, or when the owner chooses one again.
+Walls on the photo are left alone. Old objects are never overwritten.
 
 **The job.** `spray-wall-art` on the `maintenance-delivery` role
 (`docs/background-workers.md`), keyed `art:<versionId>:<recipe>`. It re-checks the
@@ -520,7 +522,9 @@ with sharp, warps it with `warpBilinear`, draws the hold mask as an SVG (each
 outline filled and stroked round by twice its grow, which dilates it), blurs it,
 joins it as the cutout's alpha, uploads thumbnails before their base images, and
 writes `ready`. A failure writes `failed` with a bounded code before it rethrows,
-so a retry, or the owner picking the look again, can heal it.
+so a retry, or the owner picking the look again, can heal it. A crash, an
+expired lease or the run deadline writes nothing, so every `pending` row carries
+`requestedAt`; one older than the job's 1 h deadline reads as `FAILED`.
 
 Who queues it:
 
@@ -531,7 +535,14 @@ Who queues it:
 - **`setSprayWallRenderSettings`**, when a generated background is chosen and
   the PUBLISHED version has no current art (a wall published before this
   shipped, or a failed run). Before the first publish the choice is checked
-  against the newest draft and the publish queues the art.
+  against the newest draft and the publish queues the art. A write that omits
+  `background` (every older client sends `{ mode, boardsesh }` only) keeps the
+  stored one rather than resetting it to the photo, and is not re-gated.
+- **`sprayWallArt` reads**, for the PUBLISHED version of a wall whose chosen
+  background is generated, when its art is missing, from an older recipe, or
+  `failed` / `pending` past the 1 h deadline (a `failed` row is retried at most
+  hourly, not on every read). Queue only, never rendered inline, deduplicated by
+  the singleton key, and never for a photo the gate refuses.
 
 Nothing is queued while `spray-wall-art` is in `BATCH_FAMILIES_DISABLED` (every
 dev machine): the row stays NULL and the wall draws its photo.

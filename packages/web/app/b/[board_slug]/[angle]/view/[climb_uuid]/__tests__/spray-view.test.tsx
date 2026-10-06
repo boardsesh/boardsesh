@@ -33,13 +33,16 @@ vi.mock('@/app/lib/data/queries', () => ({
 }));
 
 const fetchSprayWallPageData = vi.fn();
+const fetchSprayWallArtChoice = vi.fn();
 vi.mock('@/app/lib/spray/spray-wall-render-data.server', async () => {
   const actual = await vi.importActual<typeof import('@/app/lib/spray/spray-wall-render-data.server')>(
     '@/app/lib/spray/spray-wall-render-data.server',
   );
   return {
     resolveSprayPhotoUrl: actual.resolveSprayPhotoUrl,
+    resolveSprayArtUrl: actual.resolveSprayArtUrl,
     fetchSprayWallPageData: (...args: unknown[]) => fetchSprayWallPageData(...args),
+    fetchSprayWallArtChoice: (...args: unknown[]) => fetchSprayWallArtChoice(...args),
   };
 });
 
@@ -118,6 +121,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   getClimb.mockResolvedValue(CLIMB);
   fetchSprayWallPageData.mockResolvedValue(WALL_DATA);
+  fetchSprayWallArtChoice.mockResolvedValue(null);
 });
 
 describe('the spray climb page', () => {
@@ -130,6 +134,23 @@ describe('the spray climb page', () => {
 
     expect(element.props.photoUrl).toBe(WALL_DATA.wall.publicPhotoUrl);
     expect(fetchSprayWallPageData).toHaveBeenCalledWith('wall-uuid-1');
+    // No generated look ready: nothing but the photo reaches the page.
+    expect(element.props.art).toBeNull();
+    expect(element.props.artUrl).toBeNull();
+  });
+
+  it('hands a ready generated look to the page through the stable redirect path, photo kept as the fallback', async () => {
+    fetchSprayWallArtChoice.mockResolvedValue({ background: 'wall-crop', width: 1200, height: 900 });
+    const element = await SprayViewPage({
+      board: boardFor('public'),
+      parsedParams: PARSED_PARAMS,
+      wallParam: undefined,
+    });
+
+    expect(fetchSprayWallArtChoice).toHaveBeenCalledWith('wall-uuid-1', WALL_DATA.versionNumber);
+    expect(element.props.art).toEqual({ background: 'wall-crop', width: 1200, height: 900 });
+    expect(element.props.artUrl).toBe('/api/v1/spray-walls/wall-uuid-1/photo?look=wall-crop');
+    expect(element.props.photoUrl).toBe(WALL_DATA.wall.publicPhotoUrl);
   });
 
   it('renders an unlisted wall for a link holder, from the presigned photo', async () => {

@@ -143,6 +143,12 @@ export type SprayWallVersionArt = {
   cutoutKey: string | null;
   quality: { stretch: number | null; verdict: 'good' | 'soft' | 'fail' } | null;
   error: string | null;
+  /**
+   * ISO time the job was last queued; carried onto a `failed` row. A crash or
+   * an expired lease writes no final state, so a `pending` row older than the
+   * job's deadline is read as failed and re-queued.
+   */
+  requestedAt?: string | null;
 };
 
 type WidenOption<Value> = Value extends string ? string : Value;
