@@ -31,6 +31,8 @@ export type FilterSummaryLabels = {
   // callers that expose the personal-rating controls supply these.
   myRating?: (count: number) => string;
   onlyRatedByMe?: () => string;
+  // Only the climber's hearted climbs (auth-gated).
+  liked?: () => string;
 };
 
 export type BaseFilters = {
@@ -55,6 +57,7 @@ export type BaseFilters = {
   showOnlyCompleted?: boolean;
   minUserRating?: number;
   onlyRatedByMe?: boolean;
+  onlyFavorited?: boolean;
 };
 
 // Web suppresses minAscents >= 2 when the "Established" status chip is active
@@ -138,6 +141,10 @@ export function getBaseFilterParts(
   // "non-draft, non-project" result set — neither produces a part.
   if ((filters.status === 'drafts' || filters.status === 'projects') && labels.status) {
     parts.push(labels.status(filters.status));
+  }
+
+  if (filters.onlyFavorited && labels.liked) {
+    parts.push(labels.liked());
   }
 
   // Progress: a `progress` label collapses the four flags into one part; without

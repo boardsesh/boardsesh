@@ -90,6 +90,11 @@ export type ClimbFilterState = {
   // Spray-wall hold integrity. Undefined and 'any' both mean no filter, so the
   // default state carries neither.
   holdIntegrity?: HoldIntegrityFilterValue;
+  // Only the climbs the signed-in climber has hearted on this board, at any
+  // angle (a heart belongs to the climb). Auth-gated backend-side: signed out
+  // the search returns nothing. Kept apart from `status` so web's status values
+  // stay untouched. Maps to ClimbSearchInput.onlyFavorited.
+  onlyFavorited?: boolean;
 };
 
 export const DEFAULT_CLIMB_FILTER_STATE: ClimbFilterState = {
@@ -125,6 +130,7 @@ export function hasActiveClimbFilters(state: ClimbFilterState): boolean {
   if (state.showOnlyCompleted) return true;
   if (state.minUserRating != null) return true;
   if (state.onlyRatedByMe) return true;
+  if (state.onlyFavorited) return true;
   if (state.holdIntegrity != null && state.holdIntegrity !== 'any') return true;
   // Default is boulders-only, so "active" means routes turned on or boulders off.
   if ((state.boulders ?? true) !== true) return true;
@@ -231,6 +237,9 @@ export function toClimbSearchInput(
   if (state.showOnlyCompleted) input.showOnlyCompleted = true;
   if (state.minUserRating != null) input.minUserRating = state.minUserRating;
   if (state.onlyRatedByMe) input.onlyRatedByMe = true;
+  // Off is omitted, not sent as false: the flag is user-specific, so sending it
+  // at all would move the everyday search out of the shared cache.
+  if (state.onlyFavorited) input.onlyFavorited = true;
   // 'any' is the absence of a filter, so it is omitted rather than sent — the
   // backend treats an absent value and ANY identically, and omitting keeps the
   // search-cache key stable for the overwhelmingly common unfiltered search.
