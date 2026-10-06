@@ -278,3 +278,123 @@ export function projectOnto(dx: number, dy: number, ux: number, uy: number): num
   'worklet';
   return dx * ux + dy * uy;
 }
+
+/** The loupe's circle, in points. */
+export const LOUPE_SIZE_PT = 112;
+/** How far the loupe's centre sits from the touch: straight up, or out to one side. */
+export const LOUPE_OFFSET_PT = 88;
+/** The loupe shows the board this many times bigger than the zoom it is at… */
+export const LOUPE_ZOOM_MULTIPLE = 2;
+/** …up to this many times the unzoomed board. */
+export const LOUPE_MAX_MAGNIFICATION = 12;
+/** A touch this young that has not moved is still maybe a tap: no loupe yet. */
+export const LOUPE_DELAY_MS = 120;
+/** A touch that has moved this far is not a tap, however young. */
+export const LOUPE_SLOP_PT = 4;
+/**
+ * Room needed above the touch, past a bare fit, before a loupe that went to the
+ * side comes back above. Without it a finger resting right at the boundary
+ * would flick the loupe between the two every frame.
+ */
+export const LOUPE_RETURN_MARGIN_PT = 12;
+
+/** Where the loupe sits relative to the touch. */
+export type LoupeSide = 'above' | 'left' | 'right';
+
+/** The loupe's centre, in the host's points, and which side of the touch it is on. */
+export type LoupePlacement = { x: number; y: number; side: LoupeSide };
+
+/** How many times the loupe magnifies the unzoomed board, at a board zoom. */
+export function loupeMagnification(scale: number): number {
+  'worklet';
+  return Math.min(Math.max(scale, 0) * LOUPE_ZOOM_MULTIPLE, LOUPE_MAX_MAGNIFICATION);
+}
+
+/** True once a touch has lasted {@link LOUPE_DELAY_MS} or moved {@link LOUPE_SLOP_PT}: a tap never flashes the loupe. */
+export function loupeGateOpen(elapsedMs: number, movedPt: number): boolean {
+  'worklet';
+  return elapsedMs >= LOUPE_DELAY_MS || movedPt >= LOUPE_SLOP_PT;
+}
+
+function clampCentre(value: number, min: number, max: number): number {
+  'worklet';
+  // A host smaller than the loupe pins it to the near edge rather than inverting.
+  return Math.min(Math.max(value, min), Math.max(min, max));
+}
+
+/**
+ * Where the loupe goes for a touch at `(touchX, touchY)` in a `width` × `height`
+ * host, for a loupe `size` points across that must stay below `topSafe`.
+ *
+ * Its centre sits {@link LOUPE_OFFSET_PT} straight above the touch, so the
+ * finger never covers it. When there is no room above it moves the same
+ * distance out to one side, level with the touch: left by default, right when
+ * left would leave the host. It keeps the side it had (`prevSide`) for as long
+ * as that side fits, so it does not jump across the finger as the finger
+ * slides, and it only comes back above once there is
+ * {@link LOUPE_RETURN_MARGIN_PT} to spare. Whatever the side, it is clamped
+ * inside the host.
+ */
+export function loupePlacement(
+  touchX: number,
+  touchY: number,
+  width: number,
+  height: number,
+  size: number,
+  topSafe: number,
+  prevSide: LoupeSide,
+): LoupePlacement {
+  'worklet';
+  const half = size / 2;
+  const minX = half;
+  const maxX = width - half;
+  const minY = topSafe + half;
+  const maxY = height - half;
+  const aboveY = touchY - LOUPE_OFFSET_PT;
+  const margin = prevSide === 'above' ? 0 : LOUPE_RETURN_MARGIN_PT;
+  if (aboveY - half >= topSafe + margin) {
+    return { x: clampCentre(touchX, minX, maxX), y: clampCentre(aboveY, minY, maxY), side: 'above' };
+  }
+  const leftX = touchX - LOUPE_OFFSET_PT;
+  const rightX = touchX + LOUPE_OFFSET_PT;
+  const leftFits = leftX - half >= 0;
+  const rightFits = rightX + half <= width;
+  let side: LoupeSide;
+  if (prevSide === 'right' && rightFits) side = 'right';
+  else if (leftFits) side = 'left';
+  else if (rightFits) side = 'right';
+  // Neither fits (a host under twice the offset plus the loupe): stay put.
+  else side = prevSide === 'right' ? 'right' : 'left';
+  return {
+    x: clampCentre(side === 'left' ? leftX : rightX, minX, maxX),
+    y: clampCentre(touchY, minY, maxY),
+    side,
+  };
+}
+
+/**
+ * The translate that puts render point `(renderX, renderY)` of a board-sized
+ * view, scaled by `magnification`, at the centre of a loupe `size` points
+ * across.
+ *
+ * The view is laid out at the loupe's top-left and transformed with
+ * `[translateX, translateY, scale]`. RN scales about the view's own centre `c`
+ * and then translates, so a point `p` lands at `c + t + (p − c)·m`; setting
+ * that to `size / 2` gives `t = size/2 − c − (p − c)·m`.
+ */
+export function loupeInnerTransform(
+  renderX: number,
+  renderY: number,
+  magnification: number,
+  size: number,
+  renderWidth: number,
+  renderHeight: number,
+): { translateX: number; translateY: number } {
+  'worklet';
+  const centreX = renderWidth / 2;
+  const centreY = renderHeight / 2;
+  return {
+    translateX: size / 2 - centreX - (renderX - centreX) * magnification,
+    translateY: size / 2 - centreY - (renderY - centreY) * magnification,
+  };
+}

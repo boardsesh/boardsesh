@@ -3,6 +3,7 @@ import { StyleSheet, View, type AccessibilityActionEvent, type AccessibilityActi
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { fallbackRadiusAt, holdIdAtPoint, screenToBoard, selectedDragIdAt } from './spray-gesture-math';
+import { loupeIsTracking, pointerWantsLoupe, stopLoupe, trackLoupe, type SprayLoupeFeed } from './spray-loupe-feed';
 
 /**
  * Tap window, matching the board's own hold taps (`use-zoomed-hold-tap-gesture`)
@@ -75,6 +76,12 @@ type SprayEditGestureOverlayProps = {
    */
   placeHoldSV: SharedValue<number[]>;
   /**
+   * The magnifier over the finger. Fed while a finger moves the selected ring,
+   * picks one up, or places a hold — never for a stylus, never for a tap.
+   * Omitted, there is no loupe.
+   */
+  loupe?: SprayLoupeFeed;
+  /**
    * The screen-reader path. The rings are one drawing, not one view each, so the
    * wall is ONE adjustable element: swipe up / down walks a cursor through the
    * holds (the screen selects each, which brings up the chip bar), a double tap
@@ -145,6 +152,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
   canAdd,
   medianRadiusSV,
   placeHoldSV,
+  loupe,
   accessibility,
   onTap,
   onPickUp,
@@ -187,6 +195,8 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
   /** Where the press started, in board px — the placed circle's origin before any slide. */
   const placeStartXSV = useSharedValue(0);
   const placeStartYSV = useSharedValue(0);
+  /** The touch is a finger, so it hides what it is on and gets the loupe. */
+  const loupeFingerSV = useSharedValue(false);
 
   const callbacksRef = useRef({
     onTap,
@@ -219,6 +229,22 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
       const placing = placeHoldSV.value;
       placingSV.value = false;
       if (placing.length >= 3) runOnJS(handlePlace)(placing[0], placing[1]);
+    };
+    /** Points the loupe at the finger, for a finger only. The 120 ms gate runs from touch-down. */
+    const followWithLoupe = (x: number, y: number) => {
+      'worklet';
+      if (!loupeFingerSV.value) return;
+      trackLoupe(
+        loupe,
+        touchStartMsSV.value,
+        x,
+        y,
+        scaleSV.value,
+        translateXSV.value,
+        translateYSV.value,
+        containerWidthSV.value,
+        containerHeightSV.value,
+      );
     };
     /** A second finger or a pinch took the touch: the circle goes, nothing is placed. */
     const abandonPlacement = () => {
@@ -300,7 +326,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
         }
         pickUpIdSV.value = holdId;
       })
-      .onStart(() => {
+      .onStart((event) => {
         'worklet';
         if (placeArmedSV.value) {
           if (isPinchingSV.value || dragActiveSV.value) return;
@@ -308,6 +334,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
           placingSV.value = true;
           // Lets the drag below take over once the finger slides, exactly as a pick-up does.
           pickedUpSV.value = true;
+          followWithLoupe(event.x, event.y);
           runOnJS(handlePlaceStart)();
           return;
         }
@@ -328,6 +355,8 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
           break;
         }
         pickedUpSV.value = true;
+        // 400 ms in, so past the loupe's delay: it shows at once.
+        followWithLoupe(event.x, event.y);
         runOnJS(handlePickUp)(holdId);
       });
 
@@ -343,6 +372,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
             dragAbandonedSV.value = true;
             dragOffsetXSV.value = 0;
             dragOffsetYSV.value = 0;
+            stopLoupe(loupe);
             abandonPlacement();
             manager.end();
           }
@@ -363,6 +393,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
         touchStartXSV.value = touch.x;
         touchStartYSV.value = touch.y;
         touchStartMsSV.value = Date.now();
+        loupeFingerSV.value = pointerWantsLoupe(event.pointerType);
         const point = screenToBoard(
           touch.x,
           touch.y,
@@ -386,14 +417,17 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
           startedOnSelectionSV.value = true;
           dragHoldIdSV.value = claimedId;
           dragActiveSV.value = true;
+          // Armed now; it waits out the delay, so a tap that toggles the ring never flashes it.
+          followWithLoupe(touch.x, touch.y);
           manager.activate();
         }
       })
       .onTouchesMove((event, manager) => {
         'worklet';
-        if (dragActiveSV.value) return;
         const touch = event.allTouches[0];
         if (!touch) return;
+        if (loupeIsTracking(loupe)) followWithLoupe(touch.x, touch.y);
+        if (dragActiveSV.value) return;
         const moved = Math.hypot(touch.x - touchStartXSV.value, touch.y - touchStartYSV.value);
         if (pickedUpSV.value && (pickUpIdSV.value !== 0 || placingSV.value)) {
           if (moved < PICK_UP_DRAG_SLOP_PX) return;
@@ -482,6 +516,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
         // Anything still placing here was cancelled from outside (the board's pan
         // won the touch, the system took it): no hold.
         abandonPlacement();
+        stopLoupe(loupe);
         placeArmedSV.value = false;
         dragActiveSV.value = false;
         dragHoldIdSV.value = 0;
@@ -516,6 +551,8 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
     canAddSV,
     medianRadiusSV,
     placeHoldSV,
+    loupe,
+    loupeFingerSV,
     placeArmedSV,
     placingSV,
     placeStartXSV,

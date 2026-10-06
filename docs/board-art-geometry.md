@@ -775,7 +775,9 @@ answer and a capability computed twice is a capability that will disagree with i
 The catalogue path is untouched by all of it. `DrawStrokeOverlay`, `stroke.ts`,
 `OutlineSvgLayer` and `OutlineCanvasScreen` are the same files they were, which is what
 keeps the `manualActivation` + `pinchRef` coexistence and the round-trip ring algebra from
-drifting. The wall target reuses them rather than forking them: `SprayHoldEditorScreen`
+drifting. What the wall needed from `DrawStrokeOverlay` came in as opt-in props the
+catalogue never passes: `acceptStationaryTaps` (Add's Manual recognizer) and `loupe` (the
+magnifier over a finger stroke). The wall target reuses them rather than forking them: `SprayHoldEditorScreen`
 mounts the *same* `DrawStrokeOverlay` for its one-shot Trace tool, and everything else — tap
 to pick a ring and tap it again to switch it off or on, long press to pick one up and move
 it — goes through its own `SprayEditGestureOverlay` (see `docs/spray-walls.md`, "The hold

@@ -7,11 +7,13 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
 import Animated, {
   ReduceMotion,
   runOnJS,
   useAnimatedReaction,
   useAnimatedStyle,
+  useDerivedValue,
   useReducedMotion,
   useSharedValue,
   withTiming,
@@ -41,6 +43,8 @@ import { SprayHoldSvgLayer } from './SprayHoldSvgLayer';
 import { SelectedHoldOverlay } from './SelectedHoldOverlay';
 import { SprayPlacementPreview } from './SprayPlacementPreview';
 import { SprayResizeHandle } from './SprayResizeHandle';
+import { SprayLoupe } from './SprayLoupe';
+import { useSprayLoupeFeed } from './spray-loupe-feed';
 import { SprayEditGestureOverlay, type SprayWallAccessibility } from './SprayEditGestureOverlay';
 import { SprayEditorBottomBar, sprayCountSummary } from './SprayEditorBottomBar';
 import { SprayCornersChipBar, SprayHoldChipBar } from './SprayHoldChipBar';
@@ -68,7 +72,7 @@ import {
 import type { SprayHoldCandidate, SprayHoldSaveSummary } from './spray-hold-editor-types';
 import type { HoldGeometry } from './spray-hold-tools';
 import { editorTargetCapabilities, type SprayWallEditorTarget } from './editor-target';
-import { fallbackRadiusAt, flattenHitHolds, holdReach } from './spray-gesture-math';
+import { fallbackRadiusAt, flattenHitHolds, holdReach, loupeMagnification } from './spray-gesture-math';
 import {
   actionChangesWall,
   countEditorHolds,
@@ -135,6 +139,9 @@ const ADD_TAP_SLOP_PT = 10;
 
 /** Corners an outline needs before it can close. */
 const MIN_CORNERS = 3;
+
+/** The loupe stays this far below the top of the editor, in points. */
+const LOUPE_TOP_SAFE = spacing[2];
 
 /** "Nothing below here to avoid" for the resize handle, until the bottom dock has been laid out. */
 const NO_AVOID_TOP = 1e9;
@@ -344,6 +351,10 @@ export function SprayHoldEditorScreen({
   const placeHoldSV = useSharedValue<number[]>(NO_POINTS);
   /** The bottom dock's top edge in the board's own points, for the resize handle to stay above. */
   const avoidTopSV = useSharedValue(NO_AVOID_TOP);
+  /** The finger the loupe follows, written by whichever overlay owns the touch. See `SprayLoupe`. */
+  const loupeFeed = useSprayLoupeFeed();
+  /** The loupe's magnification, which its own ring layers also read to keep their strokes thin. */
+  const loupeMagnificationSV = useDerivedValue(() => loupeMagnification(loupeFeed.zoomSV.value));
   /** The reveal's progress: the ring layer's clip height, or its opacity with Reduce Motion. */
   const revealSV = useSharedValue(revealOnMount ? 0 : 1);
   const maybeRevealSV = useSharedValue(revealOnMount ? 0 : 1);
@@ -1583,6 +1594,89 @@ export function SprayHoldEditorScreen({
     ],
   );
 
+  // The loupe's copy of the board, in render px: the photo (a memory-cache hit,
+  // it is the same URI the board draws), the same dim, and second instances of
+  // the layers that draw a gesture's live state from shared values — so the
+  // loupe shows the stroke, the Corners preview, the move and the placed
+  // circle with no extra wiring. Memoised so the loupe re-renders only when the
+  // rings themselves do.
+  const loupeContent = useMemo(
+    () =>
+      wall && viewerCanEdit ? (
+        <>
+          <Image
+            source={{ uri: wall.photoUrl }}
+            style={StyleSheet.absoluteFill}
+            contentFit="fill"
+            cachePolicy="memory"
+          />
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: selectedHold ? overlays.photoDimFocused : overlays.photoDim },
+            ]}
+          />
+          <SprayHoldSvgLayer
+            holds={allEditorHolds}
+            showMaybes={showMaybes}
+            selectedId={focusedHold?.id ?? null}
+            maybeOpacitySV={maybeRevealSV}
+            draftPointsSV={draftPointsSV}
+            polygonSV={cornersSV}
+            scaleSV={loupeMagnificationSV}
+            boardWidth={wall.photoWidth}
+            boardHeight={wall.photoHeight}
+            renderWidth={boardRender.width}
+            renderHeight={boardRender.height}
+          />
+          <SelectedHoldOverlay
+            hold={focusedHold}
+            role={focusedHold ? holdRole(focusedHold) : 'on'}
+            revision={moveRevision}
+            selectedHoldSV={selectedHoldSV}
+            dragOffsetXSV={dragOffsetXSV}
+            dragOffsetYSV={dragOffsetYSV}
+            dragHoldIdSV={dragHoldIdSV}
+            resizeScaleSV={resizeScaleSV}
+            resizeHoldIdSV={resizeHoldIdSV}
+            scaleSV={loupeMagnificationSV}
+            boardScale={boardScale}
+            syncSharedValues={false}
+          />
+          <SprayPlacementPreview
+            placeHoldSV={placeHoldSV}
+            radius={medianRadius}
+            scaleSV={loupeMagnificationSV}
+            boardScale={boardScale}
+          />
+        </>
+      ) : null,
+    [
+      wall,
+      viewerCanEdit,
+      selectedHold,
+      focusedHold,
+      allEditorHolds,
+      showMaybes,
+      maybeRevealSV,
+      draftPointsSV,
+      cornersSV,
+      loupeMagnificationSV,
+      boardRender.width,
+      boardRender.height,
+      moveRevision,
+      selectedHoldSV,
+      dragOffsetXSV,
+      dragOffsetYSV,
+      dragHoldIdSV,
+      resizeScaleSV,
+      resizeHoldIdSV,
+      boardScale,
+      placeHoldSV,
+      medianRadius,
+    ],
+  );
+
   const renderAboveBoard = useCallback(
     (context: FilterBoardTransformContext) => {
       // Read-only: zoom and pan, and nothing that could change the wall.
@@ -1630,6 +1724,7 @@ export function SprayHoldEditorScreen({
               onVertexAdded={handleCornerAdded}
               onVertexLimit={handleCornerLimit}
               onClose={closeCorners}
+              loupe={loupeFeed}
             />
             {resizeHandle}
           </>
@@ -1653,6 +1748,7 @@ export function SprayHoldEditorScreen({
               onStrokeStart={handleAddStrokeStart}
               onStrokeEnd={(strokeBoardPoints) => handleAddStrokeEnd(strokeBoardPoints, scaleSV.value)}
               onStrokeCancel={handleStrokeCancel}
+              loupe={loupeFeed}
             />
             {resizeHandle}
           </>
@@ -1673,6 +1769,7 @@ export function SprayHoldEditorScreen({
             onStrokeStart={handleStrokeStart}
             onStrokeEnd={handleStrokeEnd}
             onStrokeCancel={handleStrokeCancel}
+            loupe={loupeFeed}
           />
         );
       }
@@ -1696,6 +1793,7 @@ export function SprayHoldEditorScreen({
             canAdd={canAddHold}
             medianRadiusSV={medianRadiusSV}
             placeHoldSV={placeHoldSV}
+            loupe={loupeFeed}
             accessibility={wallAccessibility}
             onTap={handleTap}
             onPickUp={handlePickUp}
@@ -1722,6 +1820,7 @@ export function SprayHoldEditorScreen({
       avoidTopSV,
       medianRadiusSV,
       placeHoldSV,
+      loupeFeed,
       handleResizeEnd,
       handlePlaceStart,
       handlePlace,
@@ -1924,6 +2023,24 @@ export function SprayHoldEditorScreen({
         onStartOver={handleStartOver}
         onPrimary={handlePrimary}
       />
+
+      {/* Last, so it draws over the chrome as well as the board: it is only up
+          while a finger is on the wall, and it takes no touches. */}
+      {loupeContent && boardRender.width > 0 ? (
+        <SprayLoupe
+          feed={loupeFeed}
+          magnificationSV={loupeMagnificationSV}
+          clipOffsetX={(area.width - boardRender.width) / 2}
+          clipOffsetY={boardTopInContainer}
+          hostWidth={area.width}
+          hostHeight={area.height}
+          topSafe={LOUPE_TOP_SAFE}
+          renderWidth={boardRender.width}
+          renderHeight={boardRender.height}
+        >
+          {loupeContent}
+        </SprayLoupe>
+      ) : null}
     </View>
   );
 }

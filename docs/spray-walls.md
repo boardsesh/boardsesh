@@ -1092,8 +1092,14 @@ What the editor does with a wall is decided by this document rather than by tast
     second finger lands during a finger stroke, the stroke is dropped and the
     pinch zooms (Trace works the same way); a Pencil stroke still ignores a
     resting palm.
-  - Corners: each tap places a corner, with a live preview drawn on the UI
-    thread so corners never round-trip through React per frame. The corners
+  - Corners: touch the photo, slide to the exact spot and lift; the corner
+    lands where the finger lifted, and a quick tap still drops one where it
+    landed. `PolygonTapOverlay` is a Manual recognizer that owns one pointer
+    from touch-down to lift, as Draw does, so a slide positions the corner
+    instead of panning the board: a zoomed board pans with two fingers here
+    too (`pinchPans`). A second finger drops the corner and the pinch zooms.
+    A live preview is drawn on the UI thread so corners never round-trip
+    through React per frame. The corners
     live in one shared value, and the corner count React shows is derived from
     it. Tapping the first corner once there are 3, or pressing the Finish chip,
     closes the outline. The close target is 11 pt, capped at 35% of the
@@ -1108,6 +1114,40 @@ What the editor does with a wall is decided by this document rather than by tast
     fixed, with Corners-specific copy (`errors.cornersCross`,
     `cornersTooFew`, `cornersHollow`). Done closes a valid outline before
     leaving; one that cannot close keeps add mode on with its error.
+- **A loupe follows the finger** (`SprayLoupe`), so a thumb never hides the
+  spot it is drawing, placing or moving. It shows during Draw and Trace
+  strokes, a Corners touch, a move of the selected ring, a press-and-hold
+  placement and a pick-up — and only once the touch has lasted 120 ms or
+  moved 4 pt (`loupeGateOpen`), so a tap never flashes it. A gesture that is
+  already long, like the 400 ms pick-up, shows it at once. Fingers only: a
+  Pencil's tip hides nothing, so a stylus never gets one. It is a 112 pt
+  circle centred 88 pt above the touch; with no room above it moves the same
+  distance to the side, left by default and right when left would leave the
+  screen, keeps that side while it fits, and only comes back above with
+  12 pt to spare so it cannot flicker at the boundary (`loupePlacement`). It
+  magnifies the unzoomed board `min(2 × zoom, 12)` times, with a hairline
+  crosshair and a centre dot on the exact point under the finger. It is
+  mounted in the screen, outside the board's clip, so it can overhang the
+  board's edge and draws over the chrome; it takes no touches and is hidden
+  from screen readers. Inside the circle is a board-sized view moved by one
+  animated translate and scale (`loupeInnerTransform`, which accounts for RN
+  scaling about the view's centre: `t = size/2 − c − (p − c)·m`), holding a
+  second `expo-image` of the same URI (a memory-cache hit), the same dim, and
+  second instances of `SprayHoldSvgLayer` (with the loupe's magnification as
+  its scale, so strokes stay thin), `SelectedHoldOverlay` (with
+  `syncSharedValues={false}`: the board's copy owns re-syncing) and
+  `SprayPlacementPreview`. Those layers draw from shared values, so the
+  stroke, the Corners preview, the move and the placed circle show in the
+  loupe for free. The loupe cannot read the board's zoom transform from
+  where it is mounted, so the overlay that owns the touch writes a
+  `SprayLoupeFeed` (`spray-loupe-feed.ts`): the touch-down time (0 when off),
+  the finger in the board clip's points, the point under it in render px,
+  and the zoom. It is always mounted at opacity 0, and only transforms and
+  opacity animate, so a gesture never re-renders it; the second ring layer
+  re-renders only when the rings do. `DrawStrokeOverlay` takes the feed as
+  an opt-in `loupe` prop, which the catalogue editor never passes. The
+  resize handle has none (the finger is beside the ring, not on it), and
+  the anchors step has none yet.
 - **The spray editor zooms to 8x, every other board to 4x.** The editor passes
   `maxScale={SPRAY_EDITOR_MAX_SCALE}` (8) to `InteractiveFilterBoard`, which
   hands it to `useZoomPanGesture`. Everything else keeps `MAX_SCALE = 4` from

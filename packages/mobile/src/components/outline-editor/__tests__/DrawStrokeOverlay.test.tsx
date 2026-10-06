@@ -45,6 +45,7 @@ vi.mock('react-native-gesture-handler', () => {
   };
 });
 import { DrawStrokeOverlay } from '../DrawStrokeOverlay';
+import type { SprayLoupeFeed } from '../spray-loupe-feed';
 
 const touch = (id = 7, x = 40, y = 60) => ({ id, x, y, absoluteX: x, absoluteY: y });
 // Never synthesize Pan onStart for stationary touches. iOS snapshots
@@ -87,7 +88,17 @@ function shared<T>(initial: T): SharedValue<T> {
     },
   };
 }
-function mount(acceptStationaryTaps = true, fingerDraw = true) {
+function loupeFeed(): SprayLoupeFeed {
+  return {
+    touchDownAtSV: shared(0),
+    xSV: shared(0),
+    ySV: shared(0),
+    renderXSV: shared(0),
+    renderYSV: shared(0),
+    zoomSV: shared(1),
+  };
+}
+function mount(acceptStationaryTaps = true, fingerDraw = true, loupe?: SprayLoupeFeed) {
   const points = shared<number[]>([]);
   const start = vi.fn();
   const end = vi.fn();
@@ -108,6 +119,7 @@ function mount(acceptStationaryTaps = true, fingerDraw = true) {
       onStrokeStart={start}
       onStrokeEnd={end}
       onStrokeCancel={cancel}
+      loupe={loupe}
     />,
   );
   function send(name: string, payload: unknown = event(), success?: boolean) {
@@ -237,5 +249,55 @@ describe('Add Draw pointer lifecycle', () => {
     stroke.send('finalize', {}, true);
     expect(stroke.end).toHaveBeenCalledExactlyOnceWith([80, 90, 88, 90]);
     expect(stroke.cancel).not.toHaveBeenCalled();
+  });
+});
+describe('the loupe feed', () => {
+  it('follows a finger stroke in clip points and unzoomed render px, then lets go on UP', () => {
+    const loupe = loupeFeed();
+    const stroke = mount(true, true, loupe);
+    stroke.send('down');
+    expect(loupe.touchDownAtSV.value).toBeGreaterThan(0);
+    // Clip (40, 60) through scale 2, translate (10, 20) about the 100 pt container's centre.
+    expect([loupe.xSV.value, loupe.ySV.value]).toEqual([40, 60]);
+    expect([loupe.renderXSV.value, loupe.renderYSV.value]).toEqual([40, 45]);
+    expect(loupe.zoomSV.value).toBe(2);
+    const touchDownAt = loupe.touchDownAtSV.value;
+    stroke.send('move', event([touch(7, 48, 60)]));
+    expect(loupe.xSV.value).toBe(48);
+    // The same touch: the delay still runs from touch-down.
+    expect(loupe.touchDownAtSV.value).toBe(touchDownAt);
+    stroke.send('up', upEvent([touch(7, 48, 60)], []));
+    expect(loupe.touchDownAtSV.value).toBe(0);
+  });
+  it('lets go when a second finger turns the stroke into a pinch', () => {
+    const loupe = loupeFeed();
+    const stroke = mount(true, true, loupe);
+    stroke.send('down');
+    stroke.send('down', event([touch(8)], [touch(), touch(8)]));
+    expect(loupe.touchDownAtSV.value).toBe(0);
+  });
+  it('is never fed for a stylus', () => {
+    const loupe = loupeFeed();
+    const stroke = mount(true, false, loupe);
+    stroke.send('down', event([touch()], [touch()], 1));
+    stroke.send('move', event([touch(7, 48, 60)], [touch(7, 48, 60)], 1));
+    expect(loupe.touchDownAtSV.value).toBe(0);
+    expect(loupe.xSV.value).toBe(0);
+  });
+  it('follows a Trace finger stroke and lets go on finalize', () => {
+    const loupe = loupeFeed();
+    const stroke = mount(false, true, loupe);
+    stroke.send('down');
+    stroke.send('start', { x: 40, y: 60 });
+    expect(loupe.touchDownAtSV.value).toBeGreaterThan(0);
+    stroke.send('update', { x: 48, y: 60 });
+    expect(loupe.xSV.value).toBe(48);
+    stroke.send('end', {}, true);
+    stroke.send('finalize', {}, true);
+    expect(loupe.touchDownAtSV.value).toBe(0);
+  });
+  it('is opt-in: the catalogue editor passes no loupe', () => {
+    const source = readFileSync(new FileURL('../OutlineCanvasScreen.tsx', import.meta.url), 'utf8');
+    expect(source).not.toContain('loupe');
   });
 });

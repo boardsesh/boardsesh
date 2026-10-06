@@ -53,6 +53,12 @@ type SelectedHoldOverlayProps = {
   scaleSV: SharedValue<number>;
   /** Board px per render px. */
   boardScale: number;
+  /**
+   * False for a copy that only draws: the loupe's. The copy on the board owns
+   * re-syncing the shared values above, and two owners would race each other
+   * over the same commit. Defaults to true.
+   */
+  syncSharedValues?: boolean;
 };
 
 /**
@@ -88,6 +94,7 @@ export const SelectedHoldOverlay = React.memo(function SelectedHoldOverlay({
   resizeHoldIdSV,
   scaleSV,
   boardScale,
+  syncSharedValues = true,
 }: SelectedHoldOverlayProps) {
   const { brandColors } = useTheme();
   const zoomStep = useZoomStrokeStep(scaleSV);
@@ -96,6 +103,7 @@ export const SelectedHoldOverlay = React.memo(function SelectedHoldOverlay({
   // the path below changes in this same commit, and a frame drawn with the new
   // path at the old base would jump.
   useLayoutEffect(() => {
+    if (!syncSharedValues) return;
     selectedHoldSV.value = hold ? [hold.id, hold.cx, hold.cy, hold.r] : [];
     // The radius the handle let go at is now the reducer's (or was refused), so
     // the live scale goes back to 1 in the same commit that redraws the path at
@@ -109,7 +117,17 @@ export const SelectedHoldOverlay = React.memo(function SelectedHoldOverlay({
     if (hold && dragHoldIdSV.value === hold.id) return;
     dragOffsetXSV.value = 0;
     dragOffsetYSV.value = 0;
-  }, [hold, revision, selectedHoldSV, dragOffsetXSV, dragOffsetYSV, dragHoldIdSV, resizeScaleSV, resizeHoldIdSV]);
+  }, [
+    syncSharedValues,
+    hold,
+    revision,
+    selectedHoldSV,
+    dragOffsetXSV,
+    dragOffsetYSV,
+    dragHoldIdSV,
+    resizeScaleSV,
+    resizeHoldIdSV,
+  ]);
 
   const shape = useMemo(() => {
     if (!hold) return null;
