@@ -32,6 +32,8 @@ const FPS = 30;
 const STAGE = { width: 720, height: 1280 };
 const DEVICE_SCALE = 1.5; // 1080x1920 master
 const WEB = { width: 720, height: 1280 };
+/** scripts/check-large-files.mjs fails CI on any new file over 2 MB. */
+const LARGE_FILE_MB = 2;
 const FOOTAGE_WIDTH = 900; // the phone's screen is 548 CSS px, 822 device px
 
 type Caption = { at: number; key: string };
@@ -273,11 +275,32 @@ function encodeWeb(master: string): void {
   const mp4 = resolve(VIDEO_DIR, `${NAME}.mp4`);
   const webm = resolve(VIDEO_DIR, `${NAME}.webm`);
   const input = ['-loglevel', 'error', '-y', '-i', master, '-vf', scale, '-an'];
-  const h264 = ['-c:v', 'libx264', '-preset', 'veryslow', '-crf', '28', '-profile:v', 'high', '-pix_fmt', 'yuv420p'];
+  // Both CRFs are set to land under scripts/check-large-files.mjs's 2 MB cap
+  // for a ~2-minute cut (mp4 ~1.8 MB, webm ~1.85 MB); the app text stays legible.
+  const h264 = [
+    '-c:v',
+    'libx264',
+    '-preset',
+    'veryslow',
+    '-tune',
+    'animation',
+    '-crf',
+    '31',
+    '-profile:v',
+    'high',
+    '-pix_fmt',
+    'yuv420p',
+  ];
   run('ffmpeg', [...input, ...h264, '-movflags', '+faststart', mp4]);
-  const vp9 = ['-c:v', 'libvpx-vp9', '-crf', '38', '-b:v', '0', '-row-mt', '1', '-deadline', 'good', '-cpu-used', '2'];
+  const vp9 = ['-c:v', 'libvpx-vp9', '-crf', '48', '-b:v', '0', '-row-mt', '1', '-deadline', 'good', '-cpu-used', '2'];
   run('ffmpeg', [...input, ...vp9, webm]);
-  for (const file of [mp4, webm]) log(`${relative(REPO_ROOT, file)}: ${(statSync(file).size / 1e6).toFixed(2)} MB`);
+  for (const file of [mp4, webm]) {
+    const megabytes = statSync(file).size / 1e6;
+    log(`${relative(REPO_ROOT, file)}: ${megabytes.toFixed(2)} MB`);
+    if (megabytes > LARGE_FILE_MB) {
+      throw new Error(`${relative(REPO_ROOT, file)} is over the ${LARGE_FILE_MB} MB large-files guard: raise its CRF`);
+    }
+  }
 }
 
 async function main(): Promise<void> {
