@@ -1080,6 +1080,35 @@ describe('sprayWallHoldUsage', () => {
     }
   });
 
+  it('refuses a gym member who can set climbs on the wall but not edit its holds', async () => {
+    const gym = await gymWith(GYM_ADMIN, 'member');
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    await db.execute(sql`UPDATE user_boards SET gym_id = ${gym.id} WHERE uuid = ${wall.uuid}`);
+    // A member sees the wall (and may set climbs on it)…
+    expect(await readWall(wall.uuid, GYM_ADMIN)).not.toBeNull();
+    // …but `canEditBoard` is the owner, a gym owner/admin, or a community leader.
+    await expect(usage(wall.uuid, holdIds, GYM_ADMIN)).rejects.toThrow(/not authorized/i);
+  });
+
+  it('counts only this wall’s climbs, so another wall’s hold ids come back as zeros', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    // Hold ids are global (`spray_hold_catalog_id_seq`), so a client could ask
+    // about a hold on a different wall. Its climbs must not leak through.
+    const { wall: otherWall, holdIds: otherHoldIds } = await createPublishedWall(OWNER);
+    await saveClimbOn(otherWall, [otherHoldIds[0]]);
+    await saveClimbOn(otherWall, [otherHoldIds[1]], true);
+
+    expect(await usage(wall.uuid, otherHoldIds.slice(0, 2), OWNER)).toEqual([
+      { holdId: otherHoldIds[0], publishedClimbCount: 0, draftClimbCount: 0 },
+      { holdId: otherHoldIds[1], publishedClimbCount: 0, draftClimbCount: 0 },
+    ]);
+    // The same ids, asked about on their own wall, do count.
+    expect(await usage(otherWall.uuid, otherHoldIds.slice(0, 2), OWNER)).toEqual([
+      { holdId: otherHoldIds[0], publishedClimbCount: 1, draftClimbCount: 0 },
+      { holdId: otherHoldIds[1], publishedClimbCount: 0, draftClimbCount: 1 },
+    ]);
+  });
+
   it('caps how many holds one call may ask about', async () => {
     const { wall } = await createPublishedWall(OWNER);
     const tooMany = Array.from({ length: 501 }, (_, index) => index + 1);

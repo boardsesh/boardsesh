@@ -561,7 +561,11 @@ export const sprayWallHolds = pgTable(
       .notNull()
       .references(() => sprayWallVersions.id, { onDelete: 'cascade' }),
     /**
-     * NULL = still on the wall. Set by the reset that took the hold off.
+     * NULL = still on the wall. Set to the draft version that took the hold off:
+     * `removeSprayWallHolds`, the supersede step in `upsertSprayWallHolds` when a
+     * hold is moved (a move is a removal plus an addition), or a reset's
+     * `commitSprayWallVersion`. `discardSprayWallVersion` clears it again for
+     * the draft it throws away. The removal is real once that version publishes.
      *
      * `RESTRICT`: NULL here means "alive", so nulling this on a version delete
      * would resurrect every hold that version removed — silently making lost
