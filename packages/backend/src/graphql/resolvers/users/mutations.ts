@@ -34,6 +34,8 @@ import {
 import { mapAuroraCredentialStatus } from './credential-status';
 import type { AuroraBoardName } from '@boardsesh/shared-schema';
 import { deleteClimbDependentRows, groupClimbUuidsByBoardType } from '../climbs/climb-cleanup';
+import { deleteAccountSprayWalls } from './delete-account-spray-walls';
+import { purgeDeletedSprayWallPhotos } from '../board/spray-wall-moderation';
 
 /** Credential statuses a sync can run from; `expired` needs a relink first. */
 const SYNCABLE_CREDENTIAL_STATUSES = ['pending', 'active', 'error'];
@@ -266,6 +268,7 @@ export const userMutations = {
 
     const userId = ctx.userId!;
 
+    let deletedWallIds: number[] = [];
     await db.transaction(async (tx) => {
       // This guard must be serving before migration 0250 can create its
       // archive. The migration's DDL takes ACCESS EXCLUSIVE on the live table;
@@ -276,6 +279,7 @@ export const userMutations = {
       // transaction keeps the lock until deletion commits and prevents the
       // migration from archiving favorites for an account being removed.
       await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL READ COMMITTED`);
+      deletedWallIds = await deleteAccountSprayWalls(tx, userId);
       await tx.execute(sql`LOCK TABLE public.user_favorites IN ROW EXCLUSIVE MODE`);
       const favoriteArchive = await executeFirstRow<{ present: boolean }>(
         tx,
@@ -326,6 +330,16 @@ export const userMutations = {
       // will have their userId set to null (preserved).
       await tx.delete(dbSchema.users).where(eq(dbSchema.users.id, userId));
     });
+
+    // Only committed tombstones may erase bytes. Failed erasure remains durable
+    // work in photos_purged_at and the scheduler retries it without retention.
+    if (deletedWallIds.length > 0) {
+      try {
+        await purgeDeletedSprayWallPhotos({ wallIds: deletedWallIds });
+      } catch (error) {
+        logger.warn('Account deleted; spray photo purge remains pending', { wallIds: deletedWallIds, error });
+      }
+    }
 
     return true;
   },

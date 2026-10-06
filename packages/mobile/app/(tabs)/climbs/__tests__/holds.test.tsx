@@ -68,6 +68,7 @@ vi.mock('@boardsesh/climb-filters', () => ({
 }));
 
 vi.mock('../../../../src/lib/analytics', () => ({ track: trackMock }));
+vi.mock('../../../../src/lib/haptics', () => ({ hapticMedium: vi.fn() }));
 vi.mock('../../../../src/lib/hold-filter-handoff', () => ({ emitHoldsFilterSelection: emitMock }));
 
 vi.mock('../../../../src/lib/create-board-holds', () => ({
@@ -114,21 +115,83 @@ vi.mock('../../../../src/components/ActivityIndicator', () => ({
 
 // The board stub surfaces a single button that routes a fixed hold id to
 // onHoldTap, opening the picker for that hold.
+const boardProps = vi.hoisted(() => ({ underOverlay: undefined as unknown }));
 vi.mock('../../../../src/components/search/InteractiveFilterBoard', () => ({
-  InteractiveFilterBoard: ({ onHoldTap }: { onHoldTap: (id: number) => void }) =>
-    createElement('button', { 'data-board-tap': 'true', onClick: () => onHoldTap(TAPPED_HOLD_ID) }, 'board'),
+  InteractiveFilterBoard: ({
+    onHoldTap,
+    underOverlay,
+  }: {
+    onHoldTap: (id: number) => void;
+    underOverlay?: unknown;
+  }) => {
+    boardProps.underOverlay = underOverlay;
+    return createElement('button', { 'data-board-tap': 'true', onClick: () => onHoldTap(TAPPED_HOLD_ID) }, 'board');
+  },
 }));
 
 // The picker stub exposes a button that selects the STARTING brush, so a test
-// can set the active brush before painting a hold via the board stub.
+// can set the active brush before painting a hold via the board stub, and
+// renders the mode-row accessory (the heatmap flame).
 vi.mock('../../../../src/components/search/HoldFilterPicker', () => ({
-  HoldFilterPicker: ({ onSelectType }: { onSelectType: (type: HoldFilterType) => void }) =>
+  HoldFilterPicker: ({
+    onSelectType,
+    modeRowAccessory,
+  }: {
+    onSelectType: (type: HoldFilterType) => void;
+    modeRowAccessory?: ReactNode;
+  }) =>
     createElement(
-      'button',
-      { 'data-select-start': 'true', onClick: () => onSelectType('STARTING' as HoldFilterType) },
-      'select start',
+      'div',
+      null,
+      createElement(
+        'button',
+        { 'data-select-start': 'true', onClick: () => onSelectType('STARTING' as HoldFilterType) },
+        'select start',
+      ),
+      modeRowAccessory,
     ),
 }));
+
+// The heatmap: the hook reads the offline database and the network, so it is
+// stubbed to record what the screen hands it.
+const heatmapMock = vi.hoisted(() => ({
+  enabled: false,
+  toggle: vi.fn(),
+  calls: [] as Array<{ board: Record<string, unknown>; draft: unknown }>,
+}));
+const HEAT_OVERLAY = 'heat-overlay';
+vi.mock('../../../../src/components/search/heatmap/use-hold-filter-heatmap', () => ({
+  useHoldFilterHeatmap: (board: Record<string, unknown>, draft: unknown) => {
+    heatmapMock.calls.push({ board, draft });
+    return {
+      enabled: heatmapMock.enabled,
+      toggle: heatmapMock.toggle,
+      mode: 'climbs',
+      isBusy: false,
+      overlay: heatmapMock.enabled ? HEAT_OVERLAY : null,
+    };
+  },
+}));
+vi.mock('../../../../src/components/search/heatmap/HoldFilterHeatmapPanel', () => ({
+  HoldFilterHeatmapPanel: () => null,
+}));
+vi.mock('../../../../src/components/search/heatmap/heatmap-search-input', () => ({
+  parseHeatmapSearch: (raw: string | undefined) => (raw ? JSON.parse(raw) : null),
+}));
+vi.mock('../../../../src/components/drawer-action-bar/DrawerActionBar', () => ({
+  ActionButton: ({
+    iconName,
+    onPress,
+    accessibilityLabel,
+  }: {
+    iconName: string;
+    onPress: () => void;
+    accessibilityLabel: string;
+  }) => createElement('button', { 'data-action': iconName, onClick: onPress }, accessibilityLabel),
+}));
+const authMock = vi.hoisted(() => ({ isAuthenticated: true }));
+vi.mock('../../../../src/providers/auth-provider', () => ({ useAuth: () => authMock }));
+vi.mock('../../../../src/lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: null }) }));
 
 import HoldFilterScreen from '../holds';
 
@@ -142,6 +205,11 @@ beforeEach(() => {
   routerMock.replace.mockClear();
   routeParams.current = { boardName: 'kilter', layoutId: '1', sizeId: '10', setIds: '1,2' };
   focus.cleanup = null;
+  heatmapMock.enabled = false;
+  heatmapMock.toggle.mockClear();
+  heatmapMock.calls = [];
+  authMock.isAuthenticated = true;
+  boardProps.underOverlay = undefined;
 });
 
 // The headerRight the screen last handed the native header via setOptions.
@@ -203,5 +271,32 @@ describe('HoldFilterScreen', () => {
 
     expect(routerMock.replace).not.toHaveBeenCalled();
     expect(container.querySelector('[data-spinner]')).toBeNull();
+  });
+
+  it('offers the heatmap flame to a signed-in climber and toggles it', () => {
+    const { getByText } = render(<HoldFilterScreen />);
+
+    fireEvent.click(getByText('mobile.heatmap.toggle'));
+    expect(heatmapMock.toggle).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows no flame to a signed-out climber', () => {
+    authMock.isAuthenticated = false;
+    const { queryByText } = render(<HoldFilterScreen />);
+
+    expect(queryByText('mobile.heatmap.toggle')).toBeNull();
+  });
+
+  it('counts the filter sheet draft at the board angle, and draws the heat under the rings', () => {
+    const draft = { filters: { minGrade: 16 }, boardFilters: {}, searchText: 'crimp' };
+    routeParams.current = { ...routeParams.current, angle: '40', heatmapSearch: JSON.stringify(draft) };
+    heatmapMock.enabled = true;
+
+    render(<HoldFilterScreen />);
+
+    const lastCall = heatmapMock.calls.at(-1);
+    expect(lastCall?.board).toMatchObject({ boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 });
+    expect(lastCall?.draft).toEqual(draft);
+    expect(boardProps.underOverlay).toBe(HEAT_OVERLAY);
   });
 });

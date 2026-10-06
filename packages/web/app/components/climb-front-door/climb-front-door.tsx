@@ -10,6 +10,7 @@ import { buildBoardArtLayers, toDarkArtUrl } from '@/app/components/board-render
 import boardArtStyles from '@/app/components/board-renderer/board-art-theme.module.css';
 import { buildCanonicalClimbListUrl, buildCanonicalClimbViewUrl, constructBoardSlugListUrl } from '@/app/lib/url-utils';
 import { getServerTranslation } from '@/app/lib/i18n/server';
+import { getStoreButtonLabels } from '@/app/lib/store-button-labels.server';
 import { formatBoardDisplayName, resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
@@ -21,6 +22,7 @@ import ClimbCreativeWorkJsonLd from './climb-creative-work-json-ld';
 import ClimbFacts from './climb-facts';
 import ClimbHandoffCta, { type HandoffTree } from './climb-handoff-cta';
 import FrontDoorBreadcrumb from './front-door-breadcrumb';
+import FrontDoorInstall from './front-door-install';
 
 type ClimbFrontDoorProps = {
   climb: Climb;
@@ -99,7 +101,8 @@ const emptySectionSx = { m: 0, color: 'var(--neutral-400)' };
 
 /**
  * The SSR climb page: everything a reader (or a crawler) needs about one climb,
- * with exactly one action — open it in the app.
+ * with one primary action, open it in the app, and the store button under it
+ * for a reader who does not have the app yet (#6027).
  *
  * Three deliberate absences:
  *
@@ -133,7 +136,10 @@ export default async function ClimbFrontDoor({
   tree,
   noindex = false,
 }: ClimbFrontDoorProps) {
-  const { t, locale } = await getServerTranslation('climbs');
+  const [{ t, locale }, storeButtonLabels] = await Promise.all([
+    getServerTranslation('climbs'),
+    getStoreButtonLabels(),
+  ]);
 
   const boardListUrl = buildCanonicalClimbListUrl(boardDetails, angle);
   const climbName = resolveClimbDisplayName(climb.name, boardDetails.board_name);
@@ -270,7 +276,13 @@ export default async function ClimbFrontDoor({
         angle={angle}
         climbUuid={climb.uuid}
         locale={locale}
-      />
+      >
+        <FrontDoorInstall
+          placement="climb-view"
+          helperText={t('frontDoor.install.helper')}
+          labels={storeButtonLabels}
+        />
+      </ClimbHandoffCta>
 
       <AngleCrossLinks
         boardDetails={boardDetails}

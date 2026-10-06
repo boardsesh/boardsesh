@@ -67,12 +67,12 @@ vi.mock('../../../../offline/use-confirm-board-download', () => ({
 }));
 
 import { DEFAULT_FILTERS } from '../../../../lib/climb-filter-types';
-import { PlayDrawerHeatmapPanel } from '../PlayDrawerHeatmapPanel';
-import type { PlayDrawerHeatmap } from '../use-play-drawer-heatmap';
+import { HoldFilterHeatmapPanel } from '../HoldFilterHeatmapPanel';
+import type { HoldFilterHeatmap } from '../use-hold-filter-heatmap';
 
 const board = { boardType: 'kilter', layoutId: 1, sizeId: 10, name: 'Home Kilter' } as UserBoard;
 
-function heatmap(overrides: Partial<PlayDrawerHeatmap> = {}): PlayDrawerHeatmap {
+function heatmap(overrides: Partial<HoldFilterHeatmap> = {}): HoldFilterHeatmap {
   return {
     enabled: true,
     toggle: vi.fn(),
@@ -84,7 +84,6 @@ function heatmap(overrides: Partial<PlayDrawerHeatmap> = {}): PlayDrawerHeatmap 
     source: 'local',
     isResolving: false,
     filterUnsupported: false,
-    holdPicksSkipped: false,
     isBusy: false,
     isError: false,
     isEmpty: false,
@@ -104,10 +103,10 @@ beforeEach(() => {
   firstRun.writes = [];
 });
 
-describe('PlayDrawerHeatmapPanel', () => {
+describe('HoldFilterHeatmapPanel', () => {
   it('renders nothing while the heatmap is off', () => {
     const { container } = render(
-      createElement(PlayDrawerHeatmapPanel, {
+      createElement(HoldFilterHeatmapPanel, {
         heatmap: heatmap({ enabled: false }),
         boardName: 'kilter',
         nudgeBoard: board,
@@ -118,7 +117,7 @@ describe('PlayDrawerHeatmapPanel', () => {
 
   it('offers the download in one line for a board that is not on the phone, and starts it on tap', async () => {
     const { getByTestId, getByText } = render(
-      createElement(PlayDrawerHeatmapPanel, {
+      createElement(HoldFilterHeatmapPanel, {
         heatmap: heatmap({ source: 'download' }),
         boardName: 'kilter',
         nudgeBoard: board,
@@ -131,13 +130,13 @@ describe('PlayDrawerHeatmapPanel', () => {
     await act(async () => {
       fireEvent.click(getByText('mobile.heatmap.download'));
     });
-    expect(offer.confirmAndDownload).toHaveBeenCalledWith(board, { trigger: 'hold_heatmap', source: 'play_drawer' });
+    expect(offer.confirmAndDownload).toHaveBeenCalledWith(board, { trigger: 'hold_heatmap', source: 'hold_filter' });
     expect(offer.accept).toHaveBeenCalledWith('download');
   });
 
   it('holds the offer back while the source is still resolving', () => {
     const { queryByTestId } = render(
-      createElement(PlayDrawerHeatmapPanel, {
+      createElement(HoldFilterHeatmapPanel, {
         heatmap: heatmap({ source: 'download', isResolving: true }),
         boardName: 'kilter',
         nudgeBoard: board,
@@ -148,7 +147,7 @@ describe('PlayDrawerHeatmapPanel', () => {
 
   it('says why the board is not lighting up when the offer cannot show (another board)', () => {
     const { getByText, queryByText } = render(
-      createElement(PlayDrawerHeatmapPanel, {
+      createElement(HoldFilterHeatmapPanel, {
         heatmap: heatmap({ source: 'download' }),
         boardName: 'kilter',
         nudgeBoard: null,
@@ -162,7 +161,7 @@ describe('PlayDrawerHeatmapPanel', () => {
     const toggleWholeBoard = vi.fn();
     const search = { filters: DEFAULT_FILTERS, boardFilters: {}, searchText: 'crimp' };
     const { getByText } = render(
-      createElement(PlayDrawerHeatmapPanel, {
+      createElement(HoldFilterHeatmapPanel, {
         heatmap: heatmap({ search, toggleWholeBoard }),
         boardName: 'kilter',
         nudgeBoard: board,
@@ -175,7 +174,7 @@ describe('PlayDrawerHeatmapPanel', () => {
   it('switches the colour mode and explains a filter the phone cannot follow', () => {
     const setMode = vi.fn();
     const { getByTestId, getByText } = render(
-      createElement(PlayDrawerHeatmapPanel, {
+      createElement(HoldFilterHeatmapPanel, {
         heatmap: heatmap({ setMode, filterUnsupported: true }),
         boardName: 'kilter',
         nudgeBoard: board,
@@ -186,21 +185,9 @@ describe('PlayDrawerHeatmapPanel', () => {
     expect(getByText('mobile.heatmap.filterUnsupported')).toBeTruthy();
   });
 
-  it('names a holds-only search by its board filters', () => {
-    const search = {
-      filters: DEFAULT_FILTERS,
-      boardFilters: { holdsFilter: { hold_1: { ANY: 'include' as const } } },
-      searchText: '',
-    };
-    const { getByText } = render(
-      createElement(PlayDrawerHeatmapPanel, { heatmap: heatmap({ search }), boardName: 'kilter', nudgeBoard: board }),
-    );
-    expect(getByText('mobile.holdFilter.summaryCount')).toBeTruthy();
-  });
-
   it('says the heatmap is unavailable, not that no climbs match, when the phone could not answer', () => {
     const { getByText, queryByText } = render(
-      createElement(PlayDrawerHeatmapPanel, {
+      createElement(HoldFilterHeatmapPanel, {
         heatmap: heatmap({ isUnavailable: true }),
         boardName: 'kilter',
         nudgeBoard: board,
@@ -210,21 +197,9 @@ describe('PlayDrawerHeatmapPanel', () => {
     expect(queryByText('mobile.heatmap.empty')).toBeNull();
   });
 
-  it('says when the hold picks were skipped offline', () => {
-    const search = { filters: DEFAULT_FILTERS, boardFilters: {}, searchText: 'crimp' };
-    const { getByText } = render(
-      createElement(PlayDrawerHeatmapPanel, {
-        heatmap: heatmap({ search, holdPicksSkipped: true }),
-        boardName: 'kilter',
-        nudgeBoard: board,
-      }),
-    );
-    expect(getByText('mobile.heatmap.holdPicksSkipped:V4–V6')).toBeTruthy();
-  });
-
   it('shows the legend ends, the real counts at the bucket edges and the scope count', () => {
     const { getByText } = render(
-      createElement(PlayDrawerHeatmapPanel, {
+      createElement(HoldFilterHeatmapPanel, {
         heatmap: heatmap({ climbCount: 18240 }),
         boardName: 'kilter',
         nudgeBoard: board,
@@ -239,7 +214,7 @@ describe('PlayDrawerHeatmapPanel', () => {
 
   it('names the grade ends in grade mode', () => {
     const { getByText } = render(
-      createElement(PlayDrawerHeatmapPanel, {
+      createElement(HoldFilterHeatmapPanel, {
         heatmap: heatmap({
           mode: 'grade',
           legend: { kind: 'grade', lowVNumber: 2, highVNumber: 8, swatches: ['#a', '#b', '#c', '#d', '#e'] },
@@ -255,27 +230,27 @@ describe('PlayDrawerHeatmapPanel', () => {
   it('explains the colours on the first three views only, and counts the view', async () => {
     firstRun.stored = 1;
     const { findByTestId } = render(
-      createElement(PlayDrawerHeatmapPanel, { heatmap: heatmap(), boardName: 'kilter', nudgeBoard: board }),
+      createElement(HoldFilterHeatmapPanel, { heatmap: heatmap(), boardName: 'kilter', nudgeBoard: board }),
     );
-    expect((await findByTestId('play-drawer-heatmap-caption')).textContent).toBe('mobile.heatmap.firstRun.climbsDark');
+    expect((await findByTestId('hold-filter-heatmap-caption')).textContent).toBe('mobile.heatmap.firstRun.climbsDark');
     expect(firstRun.writes).toEqual([2]);
   });
 
   it('stays quiet after the third view', async () => {
     firstRun.stored = 3;
     const { queryByTestId } = render(
-      createElement(PlayDrawerHeatmapPanel, { heatmap: heatmap(), boardName: 'kilter', nudgeBoard: board }),
+      createElement(HoldFilterHeatmapPanel, { heatmap: heatmap(), boardName: 'kilter', nudgeBoard: board }),
     );
     await act(async () => {
       await Promise.resolve();
     });
-    expect(queryByTestId('play-drawer-heatmap-caption')).toBeNull();
+    expect(queryByTestId('hold-filter-heatmap-caption')).toBeNull();
     expect(firstRun.writes).toEqual([]);
   });
 
   it('says every hold is used equally instead of claiming a hottest hold', () => {
     const { getByText, queryByText } = render(
-      createElement(PlayDrawerHeatmapPanel, {
+      createElement(HoldFilterHeatmapPanel, {
         heatmap: heatmap({
           legend: { kind: 'count', edgeValues: [null, null, 4, null, null], total: 4, allEqual: true },
         }),

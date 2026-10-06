@@ -2,7 +2,7 @@ import { notFound, redirect } from 'next/navigation';
 import type { GymQrSearchParams } from '@boardsesh/analytics';
 import { resolveBoardBySlug } from '@/app/lib/board-slug-utils';
 import { gymQrAttributionQuery } from '@/app/lib/gym-attribution';
-import { WALL_CAPABILITY_PARAM } from './[angle]/list/spray-wall-view';
+import { WALL_CAPABILITY_PARAM, readWallCapability } from '@/app/lib/spray/spray-visibility';
 
 type BoardSlugPageParams = {
   board_slug: string;
@@ -22,8 +22,7 @@ type BoardSlugPageProps = {
  * Re-emitted rather than forwarded wholesale, for the same reason the QR
  * attribution is: only the one param we understand rides through.
  */
-function wallCapabilityQuery(wallParam: string | string[] | undefined): string {
-  const wallUuid = Array.isArray(wallParam) ? wallParam[0] : wallParam;
+function wallCapabilityQuery(wallUuid: string | undefined): string {
   if (!wallUuid) return '';
   return `${WALL_CAPABILITY_PARAM}=${encodeURIComponent(wallUuid)}`;
 }
@@ -58,7 +57,11 @@ function wallCapabilityQuery(wallParam: string | string[] | undefined): string {
  */
 export default async function BoardSlugPage(props: BoardSlugPageProps) {
   const [params, searchParams] = await Promise.all([props.params, props.searchParams]);
-  const board = await resolveBoardBySlug(params.board_slug);
+  // A single `?wall=` only, the same reading the page that redeems it applies. It
+  // also has to reach the lookup: an unlisted wall has no row for an anonymous
+  // caller on the slug alone, so without it this hop would 404 the share link.
+  const wallUuid = readWallCapability(searchParams[WALL_CAPABILITY_PARAM]);
+  const board = await resolveBoardBySlug(params.board_slug, wallUuid);
 
   if (!board) {
     return notFound();
@@ -67,7 +70,7 @@ export default async function BoardSlugPage(props: BoardSlugPageProps) {
   const listPath = `/b/${encodeURIComponent(board.slug)}/${board.angle}/list`;
   // Both re-emitters produce at most one `?`-prefixed group, so they are merged
   // rather than concatenated.
-  const query = [gymQrAttributionQuery(searchParams).replace(/^\?/, ''), wallCapabilityQuery(searchParams.wall)]
+  const query = [gymQrAttributionQuery(searchParams).replace(/^\?/, ''), wallCapabilityQuery(wallUuid)]
     .filter((part) => part.length > 0)
     .join('&');
   redirect(query ? `${listPath}?${query}` : listPath);

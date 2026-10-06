@@ -14,9 +14,9 @@ name: Refresh MoonBoard Angle Estimates
 # MoonBoard is a CROWD_MEAN_BOARDS member there too now (for problems graded
 # at both 25° and 40°), but this job targets the disjoint single-angle case
 # that pipeline has no evidence for. See docs/boardsesh-grade.md.
+# The weekly run is the worker's `refresh-moonboard-angle-estimates` family
+# (docs/background-workers.md); this workflow is the manual fallback.
 on:
-  schedule:
-    - cron: '0 8 * * 1' # 08:00 UTC Monday, well clear of the nightly grade refresh
   workflow_dispatch:
     inputs:
       validate_only:
@@ -54,8 +54,6 @@ jobs:
       - name: Install dependencies
         run: vp install --frozen-lockfile
 
-      # A scheduled run has no `inputs`, so `--publish` has to be forced on for
-      # the cron path — the script writes nothing without it.
       - name: Refresh MoonBoard angle estimates
         working-directory: packages/db
         env:
@@ -64,4 +62,4 @@ jobs:
           node --import tsx scripts/refresh-moonboard-angle-estimates.ts
           ${{ inputs.validate_only && '--validate-only' || '' }}
           ${{ inputs.dry_run && '--dry-run' || '' }}
-          ${{ (github.event_name != 'workflow_dispatch' || inputs.publish) && '--publish' || '' }}
+          ${{ inputs.publish && '--publish' || '' }}

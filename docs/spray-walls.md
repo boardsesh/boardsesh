@@ -1068,6 +1068,20 @@ applies the wall's own: `'capability'` for the uuid (an unlisted wall opens, lik
 `sprayWall(uuid)`), `'enumerable'` for the slug — which is derived from the
 wall's NAME, so it is a guess, not a capability.
 
+`boardBySlug(slug, wallUuid)` takes the share link's `?wall=` as `wallUuid`. When
+it is the uuid of the row the slug resolved to, the lookup uses `'capability'`
+instead, so www's `/b/{slug}/...` pages can open an unlisted wall for whoever
+holds the link. A uuid that names a different wall is ignored, so the answer is
+the same as a request without one. A private or hidden wall stays shut to
+everybody but its owner (and its gym). www's layouts under `/b/[board_slug]/[angle]` do not
+resolve the board, because a layout never sees the query string; each page
+resolves it with the capability and runs `resolveSprayWallAccess`
+(`packages/web/app/lib/spray/spray-visibility.ts`) on the row. That page-side check
+is still needed because a signed-in owner gets their unlisted row without a uuid,
+and these paths carry a shared `s-maxage`. Every such page is `noindex, follow`
+with no canonical and no OG card, so the uuid only appears in the URL the reader
+already has.
+
 All four express the same **by-layout** rule — owner, gym member, or a public
 wall — the one `viewerCanSeeSprayWallByLayout` applies, with no unlisted
 exemption. The board-ROW shape is the only one with a second mode, and its
@@ -1098,7 +1112,31 @@ lot for an anonymous caller, a stranger and the owner. A new resolver is swept t
 day it lands, and its author has to either make it reach the wall or name it in
 that file's `NOT_APPLICABLE` with a reason.
 
-### The server validates shape, and never re-runs detection
+#### Writing to a climb is a fifth rule
+
+The read side cannot leak a wall whose existence it never confirms, but a write
+that accepts the climb anyway answers "found" versus "not found" — an existence
+oracle in the error message — and lands rows that the reads then have to keep
+masking. So the same by-layout rule sits in front of the writes too (#6032):
+
+| Write | Where the gate lives | Answers |
+| --- | --- | --- |
+| `createProposal`, `reportClimb` | `loadTargetClimb` (`social/proposals/lifecycle.ts`) — `sprayClimbVisibilityCondition` in the load's WHERE, plus the draft/unlisted check `validateEntityExists` already applies to comments, on every board type | `Climb not found`, the same words a missing uuid gets |
+| `saveTick` | one primary read before the insert, spray-only — the climb row must exist and the wall must be visible, with the tick's `boardUuid` honoured as the unlisted capability | `Climb not found` with code `CLIMB_NOT_FOUND`, which the offline drainer treats as permanent: a replay whose climb was hard-deleted dead-letters on attempt one |
+| the feed fan-out | `getProposalContextMetadata` and the tick/climb branches of `getCommentContextMetadata` (`events/feed-fanout.ts`) skip rows whose climb is a draft, and whose spray wall may not announce | nothing written |
+
+Proposals carry no wall-uuid input, so unlike `saveTick` they get no unlisted
+capability — exactly as comments already treat an unlisted wall. And the fan-out
+gate is the WALL's rule ("public and unhidden", the same `publishesFeedEvents`
+answer `saveClimb` and `saveTick` consult before they announce), never a
+per-recipient one: the fan-out writes rows for many readers at once, and which
+reader may see their own rows stays the read side's job.
+
+`packages/backend/src/__tests__/spray-write-visibility.test.ts` pins all of it,
+including the oracle itself: an invisible wall and a uuid with no row must answer
+with identical text.
+
+
 
 `packages/backend/src/validation/schemas/spray-walls.ts` checks the ring contract
 (`isValidOutlineRing` from `@boardsesh/board-art-geometry/ring` — the same
@@ -1884,7 +1922,11 @@ editor published, and applying it then would remove holds that are already gone.
    not change still disagree by a few pixels; the hold did not move, the camera
    did. An outline is a picture of the hold rather than a position, so a sharper
    one is free.
-4. Then the ordinary publish, through the same `publishDraftUnderLock` helper
+4. When the owner marked it a full reset (`fullReset: true`), the version is
+   stamped `is_full_reset` before the publish, so the publish's recompute retires
+   every climb that lost a hold in it (see "A full reset retires the old set's
+   climbs" below).
+5. Then the ordinary publish, through the same `publishDraftUnderLock` helper
    `publishSprayWallVersion` uses: the previous generation is superseded, this one
    becomes `published`, `current_version_id` / `hold_count` / the catalogue image
    move, and `recomputeMissingHoldCounts(wallId)` re-materialises every climb's
@@ -1960,6 +2002,65 @@ It reaches three places:
 `recomputeMissingHoldCounts` writes only the climbs whose number actually moved
 (`IS DISTINCT FROM`) and stamps `updated_at` on those, so the offline sync cursor
 ships the change without re-shipping the whole partition after every reset.
+
+### A full reset retires the old set's climbs
+
+When a gym strips a wall (or a section of it) and sets a new problem set, the old
+climbs should leave the list without being deleted (#6024, owner decision
+2026-10-06). The owner says which kind of reset it is: `commitSprayWallVersion`
+takes an optional `fullReset: Boolean`. Omitted or false is a partial reset, which
+is also what every app built before this sends.
+
+- **The fact lives on the version.** `spray_wall_versions.is_full_reset` records
+  that this reset was a full one. It is never derived and never changes after the
+  commit.
+- **The climb flag is derived from it.** `board_climbs.retired_by_reset` is true
+  when at least one of the climb's holds was removed by a landed full-reset
+  version. Both recomputes (`recomputeMissingHoldCounts` and
+  `recomputeMissingHoldCountForClimb`) write it beside `missing_hold_count`, from
+  the holds the climb uses now. So:
+  - a full reset retires every climb that lost a hold in it, and no other climb;
+  - a later partial reset leaves a retired climb retired and retires nothing new;
+  - a climb edited onto holds still on the wall uses no removed hold any more, so
+    the per-climb recompute after the edit un-retires it. A remix is a new climb
+    and starts out not retired. Its parent stays retired.
+- **NULL reads as not retired.** Every catalogue climb is NULL, and so is a spray
+  climb that has never been recomputed. The recompute guard compares
+  `COALESCE(retired_by_reset, false)`, so the first pass after the column shipped
+  does not rewrite every climb on a wall.
+
+`retiredByResetCondition` in `create-climb-filters.ts` hides retired climbs from a
+spray wall's **default** list. Search, the count badge and the hold heatmap all
+apply it, because they build their WHERE from the same builder. It is skipped when:
+
+- `holdIntegrity: ANY` ("All") is sent explicitly. `normalizeHoldIntegrity` keeps
+  `any` for this reason; an omitted value is the default view;
+- `holdIntegrity: BROKEN` ("Lost holds") is sent, since a retired climb always
+  lost a hold;
+- the search has a name, the same exception community-hidden climbs get.
+
+`INTACT` already drops retired climbs through `missing_hold_count`.
+
+Retired climbs are never deleted. `climb(uuid)`, logbooks, playlists and share
+links never go through the search builder, so they still open them. The setter
+picker's counts (`getSetterStats`) do not apply the rule; it has no
+`holdIntegrity` input.
+
+The flag reaches phones through the `syncClimbs` pull and the saved-climb mirror
+document as `retired_by_reset`. On-device migration v12 adds the column, and
+`search-climbs-local.ts` applies the same rule, because a downloaded wall reads
+locally even while online. Spray scopes have their own refresh revision (2,
+`refreshRevisionByBoardType`) and require the column on refresh pages
+(`refreshColumnsByBoardType`). So a climb retired while a phone ran an older
+bundle, which dropped the field, gets backfilled once on an unmetered network.
+No catalogue board is re-crawled for it. A backend that does not serve the
+column yet (an OTA preview pointed at prod before migration 0255 ships) makes
+the replay's first page come back without it. The replay then stops before it
+writes, leaves the revision at 1, and the rest of the sync carries on; the next
+cycle retries.
+
+There is no backfill on the server: no reset was marked full before the column
+existed.
 
 ### Why a moved hold is removed + added, and what remix is for
 
@@ -2266,6 +2367,43 @@ reason:
    it without probing candidate extensions and a cleanup sweep can enumerate a
    wall's objects by prefix.
 
+**Two sizes per photo (#5911).** The hold editor zooms to 8×, where a 2048 px
+photo shows about 190 photo pixels across a phone screen and a small hold goes
+soft. So a photo larger than 2048 px on its long side is stored twice:
+
+| Object | Key | Long side | Read by |
+| --- | --- | --- | --- |
+| Base | `spray-walls/<wallUuid>/<photoId>.jpg` | ≤ 2048 px (`SPRAY_WALL_PHOTO_BASE_MAX_DIMENSION`) | the canonical frame, the hold detector, the climb view, search, offline sync, the public copy |
+| Thumbnail | `<base key>@280.jpg` | 280 px square | list rows, the reset compare view |
+| Full | `spray-walls/<wallUuid>/<photoId>-full.jpg` | ≤ 4096 px (`SPRAY_WALL_PHOTO_FULL_MAX_DIMENSION`) | the hold editor, once zoomed past the base's resolution |
+
+- **The base keeps every number it had.** The response's `width`/`height` and
+  the base object's metadata are the BASE's, so `createSprayWallVersion`, the
+  canonical frame and every hold coordinate stay in the base's pixels. The full copy
+  is the same picture with more pixels, never a different frame: a client scales
+  it down to the base's size and draws holds exactly as before.
+- **No full copy for a photo that already fits.** A source at or under 2048 px
+  is stored once, as before. Both sizes are resized from the source, so the base
+  takes one JPEG generation and the full copy goes through the same
+  `rotate()` + re-encode that strips EXIF and GPS.
+- **Write order:** thumbnail, full, base. A reader who can see the base can see
+  both copies.
+- **The full key is derived from the base key** (`sprayWallFullPhotoKey`), never
+  stored. Every path that follows `photo_key` follows the copy for free: a
+  `sourceVersionId` version reuses the key, the purge and account deletion erase
+  the whole `spray-walls/<wallUuid>/` prefix, and a withdrawn upload erases every
+  key it wrote. SW-14's public promotion copies the BASE only; the full copy is
+  never public.
+- **`SprayWallRenderData.photoFullUrl`** is the presigned GET, minted with the
+  base's and expiring with `photo.expiresAt`. It is on the render payload and not
+  on `SprayWallPhoto`, so version lists and moderation previews never pay for it.
+  It is null when the version has no full copy. A base whose long side is not
+  exactly 2048 px cannot have one, so most versions cost no storage call; the rest
+  (including every pre-#5911 photo the app compressed to exactly 2048 px) get one
+  `HEAD` per key per backend process, remembered after because the answer never
+  changes for a key. An outage reads as null and is not remembered. No column
+  records it, because the check costs less than a migration and a backfill.
+
 Every stored object carries **`Cache-Control: private, no-store`**.
 `uploadToS3` defaults to `public, max-age=31536000, immutable`, which is right for
 an avatar and catastrophic here: a shared cache would keep serving the photo long
@@ -2273,14 +2411,14 @@ past the 15-minute presign that is supposed to BE the access control, and past t
 owner making the wall private. The public-promotion copy SW-14 (#5447) writes to
 `media` is the only place a long lifetime may ever be set.
 
-The cap is 10MB, `files: 1`, the magic bytes decide the format regardless of the
+The cap is 15MB (10MB before #5911 raised the app's upload to 4096 px), `files: 1`, the magic bytes decide the format regardless of the
 declared Content-Type, and the caller must **own** the wall — not merely be able
 to edit it. Nobody uploads a photograph of a stranger's living room.
 
 There is also a **per-user budget of 20 uploads per 10 minutes**, answering `429`
 with a `Retry-After: 600` once it is spent. It is the `feedback-screenshots.ts`
 pattern and it is here for the same reason: every POST mints a NEW object, so one
-authenticated account could otherwise fill the private bucket with 10MB objects,
+authenticated account could otherwise fill the private bucket with 15MB objects,
 and `MAX_VERSIONS_PER_WALL` does not help because it caps the ROWS rather than the
 uploads that never become one. A rejected upload is charged too — it still costs a
 multipart parse and a sharp decode, which is exactly what a spammer would loop on
@@ -2411,6 +2549,35 @@ are refreshed when expired, and never enter persistent storage.
 
 ## Retention: what happens to a deleted wall's photographs
 
+### Account deletion
+
+Deleting a wall owner's account also deletes every wall they owned, including
+walls already soft-deleted. The account transaction keeps inaccessible wall,
+version, hold and climb identities so other climbers' logs retain their references.
+It writes deletion tombstones before moving the deleted board rows to the existing
+system owner, clears sharing and gym links, and scrubs wall names, location,
+description and version notes. This is a deleted-row retention mechanism: no wall
+is transferred for somebody else to climb, and the system-owner visibility exception
+does not override either deletion timestamp.
+
+Photo erasure runs after commit, across both bucket prefixes, including resize
+variants and uploads never adopted by a version. Account-deleted walls skip the
+ordinary thirty-day retention window. Storage failure leaves `photos_purged_at`
+NULL and the existing daily purge retries immediately eligible work; it never
+prevents the committed account deletion. SQL rollback never erases photos.
+
+Wall creation and account deletion share a transaction advisory lock for the
+account. The account's user row is deleted last: locking that row first would
+deadlock against a version writer holding a wall lock while checking its creator
+foreign key. An upload or public-photo promotion that passed its first check before
+deletion must recheck before reporting success or attaching a public copy. Failed
+late-upload erasure marks a durable retry. The purge compares the wall's exact
+database `updated_at` token under its wall lock after erasure, so an older prefix
+listing cannot overwrite that newer retry with a success stamp.
+
+Other climbers' logs remain stored under the existing deleted-wall privacy rules;
+deleting the account does not delete their ticks or make private logs public.
+
 Deleting a wall is a **soft** delete, and it always will be: the catalogue rows
 and every climb ever set on the wall stay behind, because a deleted wall stops
 being reachable and does not un-set anybody's climbs. The PHOTOGRAPHS are the
@@ -2432,8 +2599,8 @@ behind a second service.
 What the mutation does, per wall, in this order:
 
 1. list `spray-walls/<wallUuid>/` in the `private` bucket and delete every
-   object — the photos, their resize variants, and any upload that was never
-   adopted as a version;
+   object — the photos, their resize variants, their `-full` copies (#5911), and
+   any upload that was never adopted as a version;
 2. the same prefix in `media`, which is where SW-14's public promotion copies a
    published photo. That is the one copy that would survive a private-bucket
    delete and stay fetchable by anybody;

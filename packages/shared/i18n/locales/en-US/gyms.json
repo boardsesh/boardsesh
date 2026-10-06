@@ -160,5 +160,9 @@
     "area": "Gyms within {{radius}} km of {{place}}",
     "selectedArea": "the selected location",
     "pinlessNotice": "Nearby results only include gyms with a map pin."
+  },
+  "install": {
+    "heading": "Get the app",
+    "body": "Light up your gym's boards from your phone and log every send."
   }
 }

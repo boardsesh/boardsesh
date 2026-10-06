@@ -6,15 +6,17 @@ durable attempt/settlement infrastructure. PR-1 of #5800 adds the family
 registry: every job names a family, and the worker dispatches on it.
 `worker-probe` is served by every role. PR-B1 of #5800 adds the first three
 batch families, PR-B2 the two weekly MoonBoard estimate families and PR-B3
-the similar-climbs refresh (below); each stays off until
-`BATCH_FAMILIES_ENABLED` names it. Snapshot publishing completed its ownership cutover
+the similar-climbs refresh (below); every family runs by default and
+`BATCH_FAMILIES_DISABLED` switches one off. Snapshot publishing completed its ownership cutover
 on September 30 (#5912); its Actions schedules are retired and only a gated R2 rehearsal remains.
 The four nightly refresh families cut over in #5939: their workflows lost `schedule:` and stay
-dispatchable for backfills and dry runs. The two weekly MoonBoard estimate workflows keep their
-schedules until their own cutover. PR-2 adds the first-link and "Sync now" provider
+dispatchable for backfills and dry runs. The two weekly MoonBoard estimate workflows lost their
+schedules too and are manual fallbacks. PR-2 adds the first-link and "Sync now" provider
 syncs; PR-3 the routine provider cycle, the board-wide catalog and location
-syncs, and the stats self-heal (see "Routine provider sync"). The Aurora and
-Kilter daemons keep owning routine syncs until the documented cutover.
+syncs, and the stats self-heal (see "Routine provider sync"). These families run
+by default, so the Aurora and Kilter daemons must stay off (`SYNC_DAEMON_DISABLED=true`,
+see "Routine cutover"). To hand routine syncs back to the daemons, list the five
+routine families in `BATCH_FAMILIES_DISABLED` first.
 
 ## Placement and connection budget
 
@@ -160,8 +162,8 @@ other archived climbing fields, authored climb frames/drafts, aliases, grade
 labels, favorites, and owned-playlist collections. It adds no credential access
 or application-table writes. The lists in `packages/db/src/job-queue-schema.ts`
 are authoritative and a restricted-role export test proves them. Supply this
-worker with `PRIVATE_*` storage configuration before enabling `user-data-export`
-in `BATCH_FAMILIES_ENABLED`. See [user-data-exports.md](./user-data-exports.md).
+worker with `PRIVATE_*` storage configuration before the backend deploys with
+`user-data-export` running (hold it in `BATCH_FAMILIES_DISABLED` until then). See [user-data-exports.md](./user-data-exports.md).
 
 No application SQL function is called directly; the trigger functions these
 writes fire (the `sync_seq` stamps, the location triggers) run as the caller,
@@ -278,20 +280,24 @@ more, which normally succeeds because the queued slot is now free; if it is
 dropped again with no queued holder, the running holder's run is returned. It
 never throws out of the caller's transaction for a dedup.
 
-### Schedules and `BATCH_FAMILIES_ENABLED`
+### Schedules and `BATCH_FAMILIES_DISABLED`
 
 Only the backend registers schedules; the worker's queue client is built with
-`schedule: false`. On boot the backend reads `BATCH_FAMILIES_ENABLED`, a comma
-list of family names (unset or empty: none). An unknown name, or an enabled
-multi-role family whose schedule names no role, removes every family schedule,
-registers nothing and logs an error; the backend still boots. For every schedule
-of an enabled family it calls
+`schedule: false`. Every family runs by default, so shipping a new family needs
+no env change. On boot the backend reads `BATCH_FAMILIES_DISABLED`, a comma
+list of family names to switch off (unset or empty: none; `all`: every family,
+which is what `packages/backend/.env.development` sets). An unknown name, or
+a running multi-role family whose schedule names no role, removes every family
+schedule, registers nothing and logs an error; the backend still boots, and
+request paths treat every family as off. `BATCH_FAMILIES_ENABLED` is retired:
+the backend ignores it and logs a warning at boot if it is still set. For every
+schedule of a running family it calls
 `boss.schedule('background-schedule', cron, { family, key }, { key:
 '<family>/<key>', tz: tz ?? 'UTC', missed: 'once' })` (pg-boss allows only
 letters, digits, `_`, `.`, `-` and `/` in a schedule key, so not `:`), and it
 unschedules every
 other key on that queue, so disabling a family removes its schedules on the next
-boot. With at least one family enabled it also starts one
+boot. With at least one family running it also starts one
 `background-schedule` consumer (`localConcurrency: 1`) that runs the schedule's
 `fanOut(db)` and enqueues one job per result. `ALREADY_QUEUED` counts as
 success. A failed fan-out throws so pg-boss retries the tick. A failed single
@@ -301,15 +307,16 @@ under a run-ID key. When every request in a tick fails, nothing was enqueued, so
 the tick throws and pg-boss retries it.
 
 The same list gates producers that are not schedules: a link and "Sync now"
-queue `aurora-user-sync` / `kilter-user-sync` runs only while those names are
-listed (see "Provider sync families").
+queue `aurora-user-sync` / `kilter-user-sync` runs, and an export request
+queues a `user-data-export` run, only while those families are not listed in
+`BATCH_FAMILIES_DISABLED` (see "Provider sync families").
 
 ## Batch families
 
 Seven scheduled data jobs that ran on GitHub Actions (two of them weekly) run
-on the batch worker once `BATCH_FAMILIES_ENABLED` names them; five have cut
-over (snapshot export plus the four nightly refreshes), leaving the two weekly
-MoonBoard estimate workflows on Actions schedules until their own cutover. The job
+on the batch worker; all seven have cut over (snapshot export, the four nightly
+refreshes and the two weekly MoonBoard estimates). The Actions workflows are
+manual fallbacks, and `BATCH_FAMILIES_DISABLED` switches a family off. The job
 bodies live in `packages/db/src/jobs/` (package export `@boardsesh/db/jobs`)
 and take `{ db, signal, transact, log, ...params }`: `db` for reads, `transact`
 for every write batch, and they throw instead of exiting. The CLIs in
@@ -534,7 +541,8 @@ with their own no-overlap steps in `docs/board-snapshots.md`):
 1. Deploy the migrator with `batch=boardsesh_worker_batch` in
    `MIGRATION_WORKER_ROLES`, and the batch worker with the environment above
    and `WORKER_PAUSED=false`.
-2. Add the family to the backend's `BATCH_FAMILIES_ENABLED` and redeploy. The
+2. Redeploy the backend; the family starts with it (to hold it back, list it
+   in `BATCH_FAMILIES_DISABLED` first and remove it when ready). The
    Actions workflow keeps running too, on the same cron but hours late (GitHub
    started these 06:00 UTC crons at 10:40 to 11:50 in Sep 2026). For
    recommendations and hold features that overlap is safe: both are
@@ -575,8 +583,8 @@ with their own no-overlap steps in `docs/board-snapshots.md`):
    manual runs. Update the pin in `scripts/__tests__/batch-families-cron.test.ts`
    in the same PR (and, for neighbours, `climb-neighbors-workflow.test.ts`).
 
-Rollback: remove the family from `BATCH_FAMILIES_ENABLED` (the backend
-unschedules it on boot) and restore the workflow's `schedule:` if step 4
+Rollback: add the family to `BATCH_FAMILIES_DISABLED` and redeploy (the backend
+unschedules it on boot), and restore the workflow's `schedule:` if step 4
 already landed.
 
 ## Provider sync families
@@ -676,8 +684,8 @@ the follow-up instead.
 `saveAuroraCredential`, `saveKilterCredential` and the Kilter password path call
 `rotateLinkGeneration` inside their transaction, before the credential write,
 then `requestProviderSyncOn`, which enqueues the family run and sets
-`pending_run_id` when the family is in `BATCH_FAMILIES_ENABLED` (and does nothing
-otherwise). The run commits with the link: a throw after the enqueue rolls back
+`pending_run_id` unless the family is in `BATCH_FAMILIES_DISABLED` (and does
+nothing otherwise). The run commits with the link: a throw after the enqueue rolls back
 both. `deleteAuroraCredential` rotates with `linked = false`; the control row
 outlives the credential so a job queued before the unlink still fails its check.
 For Kilter it reads the refresh token in that transaction and revokes it at
@@ -703,9 +711,10 @@ board's family is enabled, so the app hides "Sync now" until it is.
 2. Unpause the `interactive-import` worker (`WORKER_PAUSED=false`) with
    `AURORA_CREDENTIALS_SECRET` and `KILTER_OAUTH_CLIENT_ID` (plus
    `KILTER_OAUTH_CLIENT_SECRET` for a confidential client). With no family
-   enabled nothing is queued, so it idles.
-3. Deploy the backend with `BATCH_FAMILIES_ENABLED=aurora-user-sync,kilter-user-sync`.
-   Links now queue runs and "Sync now" works. In the other order, every link
+   running nothing is queued, so it idles.
+3. Deploy the backend. Until the worker is up, list `aurora-user-sync` and
+   `kilter-user-sync` in `BATCH_FAMILIES_DISABLED`; remove them to start the
+   families. Links now queue runs and "Sync now" works. In the other order, every link
    made before the worker is up queues a run nobody consumes, and its card reads
    "Syncing" until the run's 2 h deadline.
 
@@ -713,8 +722,8 @@ The daemons keep running and keep owning routine syncs until the routine
 cutover below. Their claim skips an account a run holds a live lease on
 (`excludeLeased`), so a daemon never starts syncing an account a worker is
 syncing; a daemon sync already in flight when a link lands costs at most one
-duplicate, idempotent sync. Rollback, in reverse: remove the
-families from `BATCH_FAMILIES_ENABLED` first, then pause the worker once its
+duplicate, idempotent sync. Rollback, in reverse: add the
+families to `BATCH_FAMILIES_DISABLED` first, then pause the worker once its
 queue is empty; runs left queued expire at their deadline and the reconciler
 clears the control rows.
 
@@ -921,9 +930,9 @@ together.
    URL (it is skipped without it).
 1. Run the migrator with the new grants
    (`routine-provider=<login>`, `maintenance-delivery=<login>` entries).
-2. Deploy the backend with the new code and `BATCH_FAMILIES_ENABLED` still
-   limited to the families already live. The workers can take the new image
-   now: with nothing enabled nothing is queued.
+2. Deploy the backend with the new code and the five new families listed in
+   `BATCH_FAMILIES_DISABLED`. The workers can take the new image
+   now: with the families held off nothing is queued.
 3. On the sync host set `SYNC_DAEMON_DISABLED=true`
    (`roles/boardsesh_sync/templates/sync.env.j2`) and restart the daemons: each
    logs one line and exits 0. Because they exit 0, the ansible change must land
@@ -944,8 +953,9 @@ together.
    returns no rows, or only rows whose `age` is over 90 s and still growing
    when you run it again a minute later. Until then a daemon may still be
    syncing, and step 4 would run the families beside it.
-4. Add `provider-routine-cycle,aurora-shared-sync,kilter-catalog-sync,moonboard-locations-sync,climb-stats-self-heal`
-   to `BATCH_FAMILIES_ENABLED` and redeploy the backend.
+4. Remove `provider-routine-cycle`, `aurora-shared-sync`, `kilter-catalog-sync`,
+   `moonboard-locations-sync` and `climb-stats-self-heal` from
+   `BATCH_FAMILIES_DISABLED` and redeploy the backend.
 5. Unpause the `routine-provider` worker (`WORKER_PAUSED=false`, with
    `AURORA_CREDENTIALS_SECRET`, `KILTER_OAUTH_CLIENT_ID`, optionally
    `KILTER_OAUTH_CLIENT_SECRET`, `MOONBOARD_USERNAME`, `MOONBOARD_PASSWORD`,
@@ -957,8 +967,8 @@ together.
    `oldest_pending_seconds` under 7200, `board_shared_syncs` cursors moving
    hourly, and no MoonBoard duplicates in `/admin/gym-duplicates`.
 
-Rollback is the same list backwards: pause the two workers, remove the five
-families from `BATCH_FAMILIES_ENABLED` and redeploy, wait for their queued runs
+Rollback is the same list backwards: pause the two workers, add the five
+families to `BATCH_FAMILIES_DISABLED` and redeploy, wait for their queued runs
 to reach a terminal state, then unset `SYNC_DAEMON_DISABLED` and restart the
 daemons.
 

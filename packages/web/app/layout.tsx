@@ -17,7 +17,9 @@ import CapacitorRetirementGate from './components/capacitor-retirement/capacitor
 import { getLocale } from './lib/i18n/get-locale';
 import { getServerTranslation } from './lib/i18n/server';
 import { LOCALE_HTML_LANG, LOCALE_OG } from './lib/i18n/config';
+import { PATHNAME_HEADER } from './lib/request-pathname-header';
 import { SITE_URL } from './lib/seo/base-url';
+import { SMART_APP_BANNER_META_NAME, smartAppBannerContent } from './lib/smart-app-banner';
 import { themeTokens } from './theme/theme-config';
 import { classifyMarketingBrowser } from './lib/marketing-platform';
 import { MarketingPreviewProvider } from './components/marketing/marketing-preview-provider';
@@ -25,7 +27,10 @@ import './components/index.css';
 import type { Viewport, Metadata } from 'next';
 
 export async function generateMetadata(): Promise<Metadata> {
-  const { t, locale } = await getServerTranslation('marketing');
+  const [{ t, locale }, requestHeaders] = await Promise.all([getServerTranslation('marketing'), headers()]);
+  // The page the visitor is on, as middleware saw it: locale prefix stripped,
+  // query string left off. `null` on a request no middleware saw.
+  const bannerContent = smartAppBannerContent(requestHeaders.get(PATHNAME_HEADER), locale);
   return {
     metadataBase: new URL(SITE_URL),
     title: {
@@ -41,6 +46,11 @@ export async function generateMetadata(): Promise<Metadata> {
     twitter: {
       card: 'summary_large_image',
     },
+    // The iOS Smart App Banner (#6027). Next's own `itunes` field cannot carry
+    // the campaign token, so the tag is written through `other`. No page sets
+    // `other` today; one that starts to replaces this object and loses the
+    // banner, so it has to spread the tag back in.
+    ...(bannerContent ? { other: { [SMART_APP_BANNER_META_NAME]: bannerContent } } : {}),
     // Same-origin, and no CDN copy of anything Next already serves itself.
     //
     // Next always emits `app/favicon.ico` on its own (the favicon slot is

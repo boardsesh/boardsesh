@@ -29,7 +29,7 @@ type ResolvedBoard = {
   isUnlisted: boolean;
 };
 
-const resolveBoardBySlug = vi.fn<(slug: string) => Promise<ResolvedBoard | null>>(async () => ({
+const resolveBoardBySlug = vi.fn<(slug: string, wallUuid?: string) => Promise<ResolvedBoard | null>>(async () => ({
   slug: 'my-board',
   boardType: 'kilter',
   layoutId: 1,
@@ -153,6 +153,7 @@ describe('board slug climb metadata', () => {
     vi.mocked(getClimbStatsForAllAngles).mockClear();
 
     const metadata = await pageModule.generateMetadata({
+      searchParams: Promise.resolve({}),
       params: Promise.resolve({ board_slug: 'my-board', angle: '40', climb_uuid: 'alias-climb' }),
     });
 
@@ -165,6 +166,7 @@ describe('board slug climb metadata', () => {
 
   it('uses the absolute backend OG image URL for social images', async () => {
     const metadata = await pageModule.generateMetadata({
+      searchParams: Promise.resolve({}),
       params: Promise.resolve({
         board_slug: 'my-board',
         angle: '40',
@@ -183,6 +185,7 @@ describe('board slug climb metadata', () => {
 
   it('emits explicit width and height on the OG image', async () => {
     const metadata = await pageModule.generateMetadata({
+      searchParams: Promise.resolve({}),
       params: Promise.resolve({
         board_slug: 'my-board',
         angle: '40',
@@ -194,10 +197,26 @@ describe('board slug climb metadata', () => {
     expect(image).toMatchObject({ width: 1200, height: 630 });
   });
 
+  it("presents a spray wall's ?wall= capability to the board lookup, from metadata and page alike", async () => {
+    // An unlisted wall has no row for an anonymous caller on the slug alone; the
+    // share link's uuid is what opens it, so it has to reach `boardBySlug`.
+    resolveBoardBySlug.mockClear();
+    const props = {
+      searchParams: Promise.resolve({ wall: 'wall-uuid-1' }),
+      params: Promise.resolve({ board_slug: 'my-board', angle: '40', climb_uuid: 'test-climb' }),
+    };
+    await pageModule.generateMetadata(props);
+    await pageModule.default(props).catch(() => undefined);
+
+    expect(resolveBoardBySlug).toHaveBeenNthCalledWith(1, 'my-board', 'wall-uuid-1');
+    expect(resolveBoardBySlug).toHaveBeenNthCalledWith(2, 'my-board', 'wall-uuid-1');
+  });
+
   it('marks the fallback metadata as noindex when board lookup fails', async () => {
     resolveBoardBySlug.mockResolvedValueOnce(null);
 
     const metadata = await pageModule.generateMetadata({
+      searchParams: Promise.resolve({}),
       params: Promise.resolve({
         board_slug: 'unknown',
         angle: '40',
@@ -224,6 +243,7 @@ describe('board slug climb metadata', () => {
     });
 
     const metadata = await pageModule.generateMetadata({
+      searchParams: Promise.resolve({}),
       params: Promise.resolve({
         board_slug: 'my-board',
         angle: '40',
@@ -249,6 +269,7 @@ describe('board slug climb metadata', () => {
     });
 
     const metadata = await pageModule.generateMetadata({
+      searchParams: Promise.resolve({}),
       params: Promise.resolve({
         board_slug: 'my-board',
         angle: '40',
@@ -263,6 +284,7 @@ describe('board slug climb metadata', () => {
 
   it('canonicalises a public, listed board INTO the config-tuple tree (A1)', async () => {
     const metadata = await pageModule.generateMetadata({
+      searchParams: Promise.resolve({}),
       params: Promise.resolve({
         board_slug: 'my-board',
         angle: '40',
@@ -288,6 +310,7 @@ describe('board slug climb metadata', () => {
     // `app/__tests__/board-content-metadata-guard.test.ts`; this pins the
     // rendered output.
     const metadata = await pageModule.generateMetadata({
+      searchParams: Promise.resolve({}),
       params: Promise.resolve({
         board_slug: 'my-board',
         angle: '40',

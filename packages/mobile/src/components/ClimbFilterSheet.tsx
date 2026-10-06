@@ -763,7 +763,15 @@ export function ClimbFilterSheet({
         layoutId: String(boardConfig.layoutId),
         sizeId: String(boardConfig.sizeId),
         setIds: boardConfig.setIds,
+        angle: String(boardConfig.angle),
         holdsFilter: JSON.stringify(localBoardFilters.holdsFilter ?? {}),
+        // The draft the heatmap counts over (it drops the hold picks itself).
+        // Read from the latest-draft refs, like the setters route's count input.
+        heatmapSearch: JSON.stringify({
+          filters: localFiltersRef.current,
+          boardFilters: localBoardFiltersRef.current,
+          searchText: nameDraftRef.current,
+        }),
       },
     });
   }, [beginSubPickerSuspend, boardConfig, localBoardFilters.holdsFilter, router]);

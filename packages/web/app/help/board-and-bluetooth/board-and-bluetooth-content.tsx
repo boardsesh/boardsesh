@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
 import HelpBreadcrumb from '../help-breadcrumb';
+import HelpInstallSection from '../help-install-section';
 import { HelpScreenshot, HelpShots } from '../help-screenshot';
 
 /**
@@ -102,6 +103,8 @@ export default function BoardAndBluetoothContent() {
         <Prose>{t('help.bluetooth.liveActivity.p2')}</Prose>
         <Prose>{t('help.bluetooth.liveActivity.p3')}</Prose>
       </PageSection>
+
+      <HelpInstallSection />
 
       <PageSection title={t('help.bluetooth.next.title')}>
         <ProseList>

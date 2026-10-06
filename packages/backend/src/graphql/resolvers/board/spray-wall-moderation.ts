@@ -9,12 +9,14 @@ import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/h
 import { requireAdmin } from '../social/roles';
 import { ReportSprayWallInputSchema, SetSprayWallHiddenInputSchema, UUIDSchema } from '../../../validation/schemas';
 import { deleteFromS3, isS3Configured, listS3Objects } from '../../../storage/s3';
+import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
 import {
   presignVersionPhoto,
   purgeSprayWallFeedItems,
   refreshPublicWallPhoto,
   SPRAY_WALL_CODES,
   viewerCanSeeSprayWall,
+  lockWallForWrite,
 } from './spray-walls';
 
 /**
@@ -294,6 +296,8 @@ export type PurgeDeletedSprayWallPhotosOptions = {
   /** Injected so a test can drive the threshold instead of waiting 30 days. */
   now?: Date;
   batchSize?: number;
+  /** Internal post-account-delete attempt; never accepts a caller's arbitrary prefix. */
+  wallIds?: readonly number[];
 };
 
 /**
@@ -312,8 +316,12 @@ export type PurgeDeletedSprayWallPhotosOptions = {
 export async function purgeDeletedSprayWallPhotos({
   now = new Date(),
   batchSize = DEFAULT_PURGE_BATCH_SIZE,
+  wallIds,
 }: PurgeDeletedSprayWallPhotosOptions = {}): Promise<SprayWallPhotoPurgeResult> {
   const startedAt = Date.now();
+  if (wallIds?.length === 0) {
+    return { wallsPurged: 0, objectsDeleted: 0, wallsConsidered: 0, durationMs: 0 };
+  }
   const cutoff = new Date(now.getTime() - SPRAY_WALL_PHOTO_RETENTION_DAYS * 24 * 60 * 60 * 1000);
 
   // `lt`, not `lte`: a wall deleted exactly at the cutoff is inside the window by
@@ -329,17 +337,23 @@ export async function purgeDeletedSprayWallPhotos({
   // to do". Pushed into the WHERE, the batch is always real work, and
   // `spray_walls_deleted_at_idx` is partial on exactly this pair.
   const work = await db
-    .select({ id: dbSchema.sprayWalls.id, boardUuid: dbSchema.sprayWalls.boardUuid })
+    .select({
+      id: dbSchema.sprayWalls.id,
+      boardUuid: dbSchema.sprayWalls.boardUuid,
+      updatedAtToken: sql<string>`${dbSchema.sprayWalls.updatedAt}::text`,
+    })
     .from(dbSchema.sprayWalls)
+    .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.sprayWalls.boardUuid))
     .where(
       and(
         isNotNull(dbSchema.sprayWalls.deletedAt),
-        lt(dbSchema.sprayWalls.deletedAt, cutoff),
+        or(lt(dbSchema.sprayWalls.deletedAt, cutoff), eq(dbSchema.userBoards.ownerId, SYSTEM_BOARD_OWNER_ID)),
         isNull(dbSchema.sprayWalls.photosPurgedAt),
+        wallIds ? inArray(dbSchema.sprayWalls.id, [...wallIds]) : undefined,
       ),
     )
     .orderBy(asc(dbSchema.sprayWalls.deletedAt))
-    .limit(batchSize);
+    .limit(wallIds?.length ?? batchSize);
 
   if (work.length === 0) {
     return { wallsPurged: 0, objectsDeleted: 0, wallsConsidered: 0, durationMs: Date.now() - startedAt };
@@ -363,15 +377,28 @@ export async function purgeDeletedSprayWallPhotos({
       // thing the next run would have produced. The other order would leave a key
       // nulled and the object orphaned in the bucket forever, with nothing left
       // that names it.
-      await db
-        .update(dbSchema.sprayWallVersions)
-        .set({ photoKey: null, updatedAt: now })
-        .where(eq(dbSchema.sprayWallVersions.wallId, candidate.id));
-      await db
-        .update(dbSchema.sprayWalls)
-        .set({ photosPurgedAt: now, updatedAt: now })
-        .where(eq(dbSchema.sprayWalls.id, candidate.id));
-      wallsPurged += 1;
+      const recorded = await db.transaction(async (tx) => {
+        await lockWallForWrite(tx, candidate.id);
+        const [wallNow] = await tx
+          .select({ updatedAtToken: sql<string>`${dbSchema.sprayWalls.updatedAt}::text` })
+          .from(dbSchema.sprayWalls)
+          .where(eq(dbSchema.sprayWalls.id, candidate.id))
+          .limit(1);
+        // A late uploader that could not erase its bytes marks retry under this
+        // same lock. Never stamp success over a listing older than that marker.
+        // Text preserves DB microseconds; JavaScript Date would lose them.
+        if (!wallNow || wallNow.updatedAtToken !== candidate.updatedAtToken) return false;
+        await tx
+          .update(dbSchema.sprayWallVersions)
+          .set({ photoKey: null, updatedAt: now })
+          .where(eq(dbSchema.sprayWallVersions.wallId, candidate.id));
+        await tx
+          .update(dbSchema.sprayWalls)
+          .set({ photosPurgedAt: now, updatedAt: now })
+          .where(eq(dbSchema.sprayWalls.id, candidate.id));
+        return true;
+      });
+      if (recorded) wallsPurged += 1;
     } catch (error) {
       // One wall's storage failure must not stop the batch, and it must not stamp
       // `photos_purged_at`: nothing was cleared, so the next run takes the wall

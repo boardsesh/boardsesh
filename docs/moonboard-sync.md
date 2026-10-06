@@ -37,7 +37,7 @@ When the sync first runs against a database whose MoonBoard gyms were seeded wit
 
 The `moonboard-locations-sync` family (role `routine-provider`, see
 [background-workers.md](background-workers.md#routine-provider-sync)) is the
-production schedule: `41 3 * * *` UTC, once enabled in `BATCH_FAMILIES_ENABLED`.
+production schedule: `41 3 * * *` UTC, unless switched off in `BATCH_FAMILIES_DISABLED`.
 It logs in with `MOONBOARD_USERNAME` / `MOONBOARD_PASSWORD` from the worker's
 environment, reads the markers, and writes through the same
 `upsertPublicBoardLocations` as the CLI, in fenced batches of 25 gyms. The

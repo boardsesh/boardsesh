@@ -3,8 +3,19 @@ import assert from 'node:assert/strict';
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { woodsHoldIdsInZone } from '@boardsesh/board-config';
-import { createClimbFilters, hiddenClimbCondition, holdIntegrityCondition } from '../create-climb-filters';
-import { mapSearchInputToParams, normalizeGradeSource, type BoardRouteParams, type ClimbSearchParams } from '../types';
+import {
+  createClimbFilters,
+  hiddenClimbCondition,
+  holdIntegrityCondition,
+  retiredByResetCondition,
+} from '../create-climb-filters';
+import {
+  mapSearchInputToParams,
+  normalizeGradeSource,
+  normalizeHoldIntegrity,
+  type BoardRouteParams,
+  type ClimbSearchParams,
+} from '../types';
 
 const params: BoardRouteParams = {
   board_name: 'kilter',
@@ -682,6 +693,51 @@ void describe('createClimbFilters: personal progress filters are scoped to the c
   });
 });
 
+void describe('createClimbFilters: onlyFavorited', () => {
+  // A heart belongs to the climb, not to an angle (#6077), so this filter is the
+  // one personal check that must NOT restrict by angle.
+  const userId = 'user-abc';
+  const angleParams: BoardRouteParams = { ...params, angle: 50 };
+
+  void it('is one EXISTS on user_favorites scoped to the user, the board and the climb', () => {
+    const f = createClimbFilters(angleParams, { onlyFavorited: true }, userId);
+    assert.equal(f.personalProgressConditions.length, 1);
+    const rendered = sqlToString(f.personalProgressConditions[0]);
+    assert.match(rendered, /EXISTS/);
+    assert.doesNotMatch(rendered, /NOT EXISTS/);
+    assert.match(new PgDialect().sqlToQuery(f.personalProgressConditions[0]).sql, /FROM "user_favorites"/);
+    assert.match(rendered, /user_id = user-abc/);
+    assert.match(rendered, /board_name = kilter/);
+    assert.match(rendered, /climb_uuid = uuid/);
+  });
+
+  void it('ignores the angle the heart was given at', () => {
+    const rendered = sqlToString(
+      createClimbFilters(angleParams, { onlyFavorited: true }, userId).personalProgressConditions[0],
+    );
+    assert.doesNotMatch(rendered, /angle/);
+    assert.doesNotMatch(rendered, /50/);
+  });
+
+  void it('matches nothing without a userId rather than dropping the filter', () => {
+    const f = createClimbFilters(angleParams, { onlyFavorited: true });
+    assert.equal(f.personalProgressConditions.length, 1);
+    assert.equal(sqlToString(f.personalProgressConditions[0]).trim(), 'false');
+    assert.ok(f.getClimbWhereConditions().includes(f.personalProgressConditions[0]));
+  });
+
+  void it('adds nothing when the flag is off', () => {
+    assert.equal(createClimbFilters(angleParams, {}, userId).personalProgressConditions.length, 0);
+    assert.equal(createClimbFilters(angleParams, { onlyFavorited: false }).personalProgressConditions.length, 0);
+  });
+
+  void it('collapses false to undefined in the mapper so cache keys stay put', () => {
+    assert.equal(mapSearchInputToParams({ onlyFavorited: true }).onlyFavorited, true);
+    assert.equal(mapSearchInputToParams({ onlyFavorited: false }).onlyFavorited, undefined);
+    assert.equal(mapSearchInputToParams({ onlyFavorited: null }).onlyFavorited, undefined);
+  });
+});
+
 void describe('createClimbFilters: onlyBenchmarks', () => {
   void it('produces no benchmark condition by default', () => {
     const f = createClimbFilters(params, baseSearch);
@@ -1168,5 +1224,49 @@ void describe('createClimbFilters: spray-wall hold integrity', () => {
   void it('leaves the WHERE array untouched for an unfiltered browse', () => {
     const rendered = createClimbFilters(params, baseSearch).getClimbWhereConditions().map(sqlToString).join(' || ');
     assert.doesNotMatch(rendered, /missing_hold_count/);
+  });
+});
+
+// #6024: a full reset retires the old set's climbs. They leave the wall's
+// default list and come back under "All", "Lost holds" and a name search.
+void describe('createClimbFilters: climbs retired by a full reset', () => {
+  const sprayParams: BoardRouteParams = {
+    board_name: 'spray',
+    layout_id: 9001,
+    size_id: 9001,
+    set_ids: [1],
+    angle: 25,
+  };
+  const whereSql = (boardParams: BoardRouteParams, search: ClimbSearchParams) =>
+    createClimbFilters(boardParams, search).getClimbWhereConditions().map(sqlToString).join(' || ');
+
+  void it('hides retired climbs from the default spray list, reading NULL as not retired', () => {
+    const rendered = whereSql(sprayParams, baseSearch);
+    assert.match(rendered, /retired_by_reset/);
+    assert.match(rendered, /coalesce\(retired_by_reset, false\) = false/i);
+  });
+
+  void it('shows them for an explicit ANY ("All")', () => {
+    assert.deepEqual(retiredByResetCondition('spray', { holdIntegrity: 'any' }), []);
+    assert.doesNotMatch(whereSql(sprayParams, { holdIntegrity: 'any' }), /retired_by_reset/);
+  });
+
+  void it('shows them under BROKEN ("Lost holds"), since a retired climb always lost a hold', () => {
+    assert.deepEqual(retiredByResetCondition('spray', { holdIntegrity: 'broken' }), []);
+  });
+
+  void it('shows them to a name search, like a community-hidden climb', () => {
+    assert.deepEqual(retiredByResetCondition('spray', { name: 'Old blue' }), []);
+  });
+
+  void it('renders nothing on a catalogue board', () => {
+    assert.deepEqual(retiredByResetCondition('kilter', baseSearch), []);
+    assert.doesNotMatch(whereSql(params, baseSearch), /retired_by_reset/);
+  });
+
+  void it('keeps an explicit ANY on the wire instead of collapsing it into the default view', () => {
+    assert.equal(normalizeHoldIntegrity('ANY'), 'any');
+    assert.equal(normalizeHoldIntegrity(undefined), undefined);
+    assert.equal(mapSearchInputToParams({ holdIntegrity: 'ANY' }).holdIntegrity, 'any');
   });
 });

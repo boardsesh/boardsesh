@@ -108,7 +108,7 @@ beforeEach(async () => {
   `);
 });
 afterEach(() => {
-  delete process.env.BATCH_FAMILIES_ENABLED;
+  delete process.env.BATCH_FAMILIES_DISABLED;
 });
 afterAll(async () => {
   await db.execute(sql`DELETE FROM users WHERE id = ${USER_ID}`);
@@ -118,8 +118,6 @@ afterAll(async () => {
 
 describe('linking a board queues its first sync', () => {
   it('commits one run with the link, fenced on the new generation, as the pending run', async () => {
-    process.env.BATCH_FAMILIES_ENABLED = 'aurora-user-sync';
-
     const status = await link();
 
     expect(status.syncRunId).toBeDefined();
@@ -140,7 +138,6 @@ describe('linking a board queues its first sync', () => {
   });
 
   it('leaves neither the credential nor the run behind when the link fails after the enqueue', async () => {
-    process.env.BATCH_FAMILIES_ENABLED = 'aurora-user-sync';
     setPendingFailure.next = new Error('simulated failure after enqueue');
 
     await expect(link()).rejects.toThrow('simulated failure after enqueue');
@@ -152,7 +149,6 @@ describe('linking a board queues its first sync', () => {
   });
 
   it('gives a relink its own run and fails the old one at its first fenced batch', async () => {
-    process.env.BATCH_FAMILIES_ENABLED = 'aurora-user-sync';
     const first = await link('pw1');
     const second = await link('pw2');
 
@@ -176,6 +172,7 @@ describe('linking a board queues its first sync', () => {
   });
 
   it('a relink through either saver ends a provider Retry-After hold', async () => {
+    process.env.BATCH_FAMILIES_DISABLED = 'aurora-user-sync,kilter-user-sync';
     const holdOf = async (boardType: string) =>
       (
         await db
@@ -200,7 +197,8 @@ describe('linking a board queues its first sync', () => {
     expect(await holdOf('kilter')).toBeNull();
   });
 
-  it('queues nothing while the family is not enabled, but still records the link generation', async () => {
+  it('queues nothing while the family is switched off, but still records the link generation', async () => {
+    process.env.BATCH_FAMILIES_DISABLED = 'aurora-user-sync';
     const status = await link();
 
     expect(status.syncRunId).toBeUndefined();
@@ -210,8 +208,8 @@ describe('linking a board queues its first sync', () => {
     expect(await controlRow()).toMatchObject({ linked: true, pendingRunId: null });
   });
 
-  it('still links, queueing nothing, when BATCH_FAMILIES_ENABLED has a typo', async () => {
-    process.env.BATCH_FAMILIES_ENABLED = 'aurora-user-sync,aurora-usr-sync';
+  it('still links, queueing nothing, when BATCH_FAMILIES_DISABLED has a typo', async () => {
+    process.env.BATCH_FAMILIES_DISABLED = 'aurora-usr-sync';
 
     const status = await link();
 
@@ -224,8 +222,6 @@ describe('linking a board queues its first sync', () => {
   });
 
   it('queues a kilter-user-sync run for a Kilter link and marks the row unlinked on unlink', async () => {
-    process.env.BATCH_FAMILIES_ENABLED = 'kilter-user-sync';
-
     const result = await saveKilterCredential({ userId: USER_ID, refreshToken: 'refresh', kilterUserId: 'kc-sub-1' });
 
     const [run] = await runs();

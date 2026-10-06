@@ -48,7 +48,7 @@ vi.mock('../../../lib/offline/use-catalog-query-source', () => ({
   useCatalogQuerySourceState: () => ({ source: 'network', isResolving: false }),
 }));
 vi.mock('../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: null }) }));
-vi.mock('../../play-drawer/heatmap/heatmap-search-input', () => ({ heatmapSearchInput: () => ({}) }));
+vi.mock('../../search/heatmap/heatmap-search-input', () => ({ heatmapSearchInput: () => ({}) }));
 vi.mock('../CreateDrawer', () => ({ CreateDrawer: () => null }));
 vi.mock('../HoldRoleSheet', () => ({ HoldRoleSheet: () => null }));
 vi.mock('../LostHoldSheet', () => ({ LostHoldSheet: () => null }));

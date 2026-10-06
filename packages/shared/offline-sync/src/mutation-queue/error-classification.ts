@@ -485,6 +485,13 @@ export const PERMANENT_GRAPHQL_ERROR_CODES: ReadonlySet<string> = new Set([
   'GRAPHQL_VALIDATION_FAILED',
   'BAD_REQUEST',
   'FORBIDDEN',
+  // `saveTick` answers this for a spray tick naming a climb that does not exist
+  // or sits on a wall the climber cannot see (#6032). Spray climbs are created
+  // server-side and never queued by the outbox, so a replay that used to find
+  // the climb (hard-deleted since — `deleteDraftClimb`, account deletion) can
+  // never succeed on any retry. Without this entry the row would burn all ten
+  // FIFO-blocking attempts before landing in the same dead letter.
+  'CLIMB_NOT_FOUND',
 ]);
 
 /**

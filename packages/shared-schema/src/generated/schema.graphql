@@ -302,6 +302,8 @@ input ClimbSearchInput {
   useMyGrades: Boolean
   "Show only the user's draft climbs (requires auth)"
   onlyDrafts: Boolean
+  "Show only climbs the user has hearted on this board. A heart belongs to the climb, not to an angle, so it matches at every angle. Signed out returns no climbs. (requires auth)"
+  onlyFavorited: Boolean
   "Show only unclimbed projects (climbs with 0 ascents)"
   projectsOnly: Boolean
   "Keep only intact climbs, only climbs that have lost a hold, or everything (the default)."
@@ -7231,8 +7233,13 @@ type Query {
 
   """
   Get a board by slug (for URL routing).
+
+  wallUuid is a spray wall's share-link capability (the ?wall= param). When it
+  matches the uuid of the wall the slug resolved to, an UNLISTED wall opens for
+  any caller, the same as sprayWall(uuid). It never opens a private or
+  admin-hidden wall, a mismatch is ignored, and it does nothing on other boards.
   """
-  boardBySlug(slug: String!): UserBoard
+  boardBySlug(slug: String!, wallUuid: ID): UserBoard
 
   """
   Look up boards by controller serial numbers.

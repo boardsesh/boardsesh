@@ -175,7 +175,7 @@ avoid dropping data on a broken read:
 
 `packages/backend/src/workers/families/export-board-snapshots.ts` runs the same exporter
 (`runExportWithOptions` and `runCatalogExportWithOptions`) on the homelab batch worker
-(`docs/background-workers.md`, "Batch families"). It is enabled through `BATCH_FAMILIES_ENABLED`,
+(`docs/background-workers.md`, "Batch families"). It runs by default (`BATCH_FAMILIES_DISABLED` switches it off),
 and owns production publishing; Actions has only the isolated R2 rehearsal. Part of #5800; it
 implements the job side of #5622.
 
@@ -291,7 +291,7 @@ never overlap:
    `readsAllStats: true`. Record the run's duration on the homelab uplink (`started_at` to
    `finished_at` on its ledger row) in the cutover PR; Actions took 10 to 14 minutes.
    That original Actions fallback is retired; use the sole-worker rollback below.
-4. As soon as that nightly succeeds, add the family to the backend's `BATCH_FAMILIES_ENABLED` and
+4. As soon as that nightly succeeds, remove the family from the backend's `BATCH_FAMILIES_DISABLED` and
    redeploy, so the live prefix goes no longer than one deploy without a scan.
 5. The cutover PR deletes the workflow's `schedule:`, updates
    `scripts/__tests__/batch-families-cron.test.ts` and `scripts/__tests__/snapshot-export-workflow.test.ts`,
@@ -300,7 +300,7 @@ never overlap:
 6. Wait for three nights of `succeeded` nightly rows and compare each night's manifest with the one
    before (entry count, per-layout row counts).
 
-Rollback: remove the family from `BATCH_FAMILIES_ENABLED` and redeploy (the backend unschedules it on
+Rollback: add the family to `BATCH_FAMILIES_DISABLED` and redeploy (the backend unschedules it on
 boot). Jobs already queued still run, so wait until
 
 ```sql
@@ -402,8 +402,8 @@ layout artifact but intentionally outside the enabled size.
   the next live threshold scan rebuilds the stale-schema artifact.
 - **`ARTIFACT_SCHEMA_VERSION`** is derived from the migrations. It is the highest version with a statement
   naming `board_climbs`, `board_climb_stats` or `board_climb_grades` (the same whole-word match the export
-  uses to pick artifact DDL, minus `DEVICE_ONLY_STATEMENTS`). It is 11 today (the climb revision columns
-  on `board_climbs`, #6023). It was 7 (`missing_hold_count`) through v10: a migration that touches only
+  uses to pick artifact DDL, minus `DEVICE_ONLY_STATEMENTS`). It is 12 today (`board_climbs.retired_by_reset`,
+  #6024). It was 11 for the climb revision columns on `board_climbs` (#6023), and 7 (`missing_hold_count`) through v10: a migration that touches only
   device-side tables (v8 spray walls, v9 followed authors, v10 holds index) raises
   `LATEST_SCHEMA_VERSION` but not this, so older artifacts stay importable and downloads keep coming
   from the CDN. The required-columns check below remains the backstop: an artifact that lacks a
@@ -439,6 +439,16 @@ so `ARTIFACT_SCHEMA_VERSION` becomes 11 and the
 artifact built at v10 or below and crawls the scope page by page until the export has rebuilt it. A v10
 client meeting a v11 artifact imports it and drops the two columns it does not have.
 
+### v12 moves it again
+
+Schema **v12** adds `board_climbs.retired_by_reset` (#6024), so `ARTIFACT_SCHEMA_VERSION` becomes 12 and
+the [schema-bump staleness window](#schema-bump-staleness-window) applies once more. The export selects
+the device schema's columns from Postgres, so it needs server migration 0255 applied before it can build
+a v12 artifact. Nothing orders the two: the homelab worker deploy (`dispatch-homelab` in
+`background-worker-image.yml`) waits only for the image build, not for the production `migrate` job. A
+worker that lands first fails its live scans until 0255 is applied, then the next scan builds the
+artifacts. It heals on its own; no one needs to act.
+
 ### Compatible additions and missing columns
 
 Extra incoming columns are expected while server exports and installed apps run different versions.
@@ -463,7 +473,10 @@ separate cursor in `schema-refresh:<table>:<scope>` (`revision`, `mode`, `comple
 Normal deltas retain their own cursor and keep running on metered links. Refresh rows and progress commit
 together; older refresh rows cannot overwrite newer cached rows. A disconnect, backgrounding, or metered
 connection pauses the replay until the next eligible sync. Completion advances the ordinary cursor only
-if the replay is newer. Malformed or nonadvancing pages cannot mark the replay complete.
+if the replay is newer. Malformed or nonadvancing pages cannot mark the replay complete. A page that lacks
+one of the table's refresh columns (the backend predates the field) stops that replay before it writes and
+leaves its revision unadvanced; the rest of the sync, including the holds index, still runs, and the next
+cycle retries. Other refresh errors still fail the cycle.
 
 Current snapshots and full fresh paged downloads stamp the revision as covered, so they do not immediately
 replay. Partial fresh downloads persist their coverage with each page; reaching the end of a legacy delta
@@ -1440,8 +1453,8 @@ R2 producer.
    CORS, immutable caching, and a manifest cache HIT. A successful worker nightly alone is insufficient:
    catalog failure is nonfatal on the worker, so the fresh catalog must pass independently.
 4. Immediately before live rotation, repeat the full rehearsal. Set `SNAPSHOT_PUBLISHER_STORAGE_TARGET=r2`,
-   disable Actions, and drain its queued/in-progress runs. Temporarily remove this family from the backend's
-   `BATCH_FAMILIES_ENABLED`, redeploy, and wait for its queued/running/retrying ledger rows to finish.
+   disable Actions, and drain its queued/in-progress runs. Temporarily add this family to the backend's
+   `BATCH_FAMILIES_DISABLED`, redeploy, and wait for its queued/running/retrying ledger rows to finish.
    Rotate the homelab vault/deploy to the complete R2 configuration above. Capture a trusted coverage file
    and UTC start time, then enqueue a full operator nightly with `skipPrune: true`. Verify all three
    prefixes, and exercise the live scan and filtered/gzip-only operator modes with `skipPrune: true`.

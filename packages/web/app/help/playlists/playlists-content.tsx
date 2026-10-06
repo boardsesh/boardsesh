@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
 import HelpBreadcrumb from '../help-breadcrumb';
+import HelpInstallSection from '../help-install-section';
 import { HelpClip, HelpShots } from '../help-clip';
 import { HelpScreenshot } from '../help-screenshot';
 
@@ -108,6 +109,8 @@ export default function PlaylistsContent() {
       <PageSection title={t('help.playlists.tags.title')}>
         <Prose>{t('help.playlists.tags.p1')}</Prose>
       </PageSection>
+
+      <HelpInstallSection />
 
       <PageSection title={t('help.playlists.next.title')}>
         <ProseList>

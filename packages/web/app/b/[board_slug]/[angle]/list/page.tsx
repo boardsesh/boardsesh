@@ -16,7 +16,8 @@ import {
   type ListPageSearchParams,
 } from '@/app/lib/seo/list-page-robots';
 import { getServerTranslation } from '@/app/lib/i18n/server';
-import SprayWallListPage, { WALL_CAPABILITY_PARAM, buildSprayWallListMetadata } from './spray-wall-view';
+import { WALL_CAPABILITY_PARAM, readWallCapability } from '@/app/lib/spray/spray-visibility';
+import SprayWallListPage, { buildSprayWallListMetadata } from './spray-wall-view';
 
 /**
  * A wall takes its own branch out of both exports below: it has no catalogue row
@@ -39,7 +40,9 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
   const { t, locale } = await getServerTranslation('climbs');
 
   try {
-    const board = await resolveBoardBySlug(params.board_slug);
+    // The `?wall=` capability rides along so an unlisted wall's share link gets the
+    // wall's own (noindex) title; the backend ignores a uuid that is not this wall's.
+    const board = await resolveBoardBySlug(params.board_slug, readWallCapability(searchParams[WALL_CAPABILITY_PARAM]));
     if (!board) {
       return createBoardContentPageMetadata({
         title: t('metadata.list.fallbackTitle'),
@@ -52,7 +55,7 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
     // indexable one, because the URL an unlisted wall is read at carries a
     // capability. See `./spray-wall-view`.
     if (board.boardType === SPRAY_BOARD_TYPE) {
-      return await buildSprayWallListMetadata(board);
+      return await buildSprayWallListMetadata(board, searchParams[WALL_CAPABILITY_PARAM]);
     }
 
     const boardName = formatBoardDisplayName(board.boardType);
@@ -106,7 +109,9 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
 export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
   const [params, searchParams] = await Promise.all([props.params, props.searchParams]);
 
-  const board = await resolveBoardBySlug(params.board_slug);
+  // The capability has to reach the backend: without it an anonymous caller gets
+  // no row at all for an unlisted wall, because a slug alone is a guess.
+  const board = await resolveBoardBySlug(params.board_slug, readWallCapability(searchParams[WALL_CAPABILITY_PARAM]));
   if (!board) {
     return notFound();
   }

@@ -50,11 +50,23 @@ export type ResolvedBoard = {
  * and never answers is otherwise not a failure at all, just a render that never
  * finishes.
  */
-export const resolveBoardBySlug = cache(async (slug: string): Promise<ResolvedBoard | null> => {
-  const url = getGraphQLHttpUrl();
-  const query = `
-    query BoardBySlug($slug: String!) {
-      boardBySlug(slug: $slug) {
+export const resolveBoardBySlug = cache(async (slug: string, wallUuid?: string): Promise<ResolvedBoard | null> => {
+  if (wallUuid === undefined) return fetchBoardBySlug(slug, undefined);
+  try {
+    return await fetchBoardBySlug(slug, wallUuid);
+  } catch (error) {
+    // The deploy window where www is ahead of the backend: an older schema has no
+    // `wallUuid` argument and rejects the whole document. Ask again without it, so
+    // the request gets exactly what it got before this argument existed (an
+    // unlisted wall is a 404, everything else renders) instead of a 500.
+    if (error instanceof UnknownWallUuidArgumentError) return fetchBoardBySlug(slug, undefined);
+    throw error;
+  }
+});
+
+class UnknownWallUuidArgumentError extends Error {}
+
+const BOARD_BY_SLUG_FIELDS = `
         uuid
         slug
         ownerId
@@ -70,9 +82,21 @@ export const resolveBoardBySlug = cache(async (slug: string): Promise<ResolvedBo
         isOwned
         angle
         isAngleAdjustable
-      }
-    }
-  `;
+`;
+
+/**
+ * `wallUuid` is a spray wall's share-link capability (`?wall=`). The backend
+ * honours it only when it is the uuid of the wall the slug names, and only to
+ * open an UNLISTED wall; it is sent only when the request carried one, so every
+ * other lookup sends the same document, and hits the same cache entry, as before.
+ */
+async function fetchBoardBySlug(slug: string, wallUuid: string | undefined): Promise<ResolvedBoard | null> {
+  const url = getGraphQLHttpUrl();
+  const query =
+    wallUuid === undefined
+      ? `query BoardBySlug($slug: String!) { boardBySlug(slug: $slug) { ${BOARD_BY_SLUG_FIELDS} } }`
+      : `query BoardBySlugWithWall($slug: String!, $wallUuid: ID) { boardBySlug(slug: $slug, wallUuid: $wallUuid) { ${BOARD_BY_SLUG_FIELDS} } }`;
+  const variables = wallUuid === undefined ? { slug } : { slug, wallUuid };
 
   const authToken = await getServerAuthToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -90,7 +114,7 @@ export const resolveBoardBySlug = cache(async (slug: string): Promise<ResolvedBo
   const response = await fetch(url, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ query, variables: { slug } }),
+    body: JSON.stringify({ query, variables }),
     signal: AbortSignal.timeout(SSR_BACKEND_FETCH_TIMEOUT_MS),
     ...cacheOptions,
   });
@@ -108,11 +132,20 @@ export const resolveBoardBySlug = cache(async (slug: string): Promise<ResolvedBo
   // `data.boardBySlug` is `null` alongside it — indistinguishable from a real
   // miss unless we look at `errors`.
   if (Array.isArray(payload.errors) && payload.errors.length > 0) {
+    if (wallUuid !== undefined && payload.errors.some(isUnknownWallUuidArgument)) {
+      throw new UnknownWallUuidArgumentError(`[board-slug] backend has no boardBySlug(wallUuid:) yet`);
+    }
     throw new Error(`[board-slug] boardBySlug lookup for "${slug}" returned GraphQL errors`);
   }
 
   return payload.data?.boardBySlug ?? null;
-});
+}
+
+function isUnknownWallUuidArgument(error: unknown): boolean {
+  if (error === null || typeof error !== 'object' || !('message' in error)) return false;
+  const { message } = error;
+  return typeof message === 'string' && message.includes('Unknown argument "wallUuid"');
+}
 
 /**
  * Convert a resolved board entity to ParsedBoardRouteParameters.

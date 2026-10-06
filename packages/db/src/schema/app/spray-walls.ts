@@ -395,6 +395,15 @@ export const sprayWallVersions = pgTable(
     homography: jsonb('homography').$type<number[]>(),
     /** What changed in this reset, in the wall owner's own words. */
     notes: text('notes'),
+    /**
+     * The owner marked this reset as a FULL reset: the old set is coming down.
+     * Every climb that lost a hold in it is retired
+     * (`board_climbs.retired_by_reset`) and drops out of the wall's default climb
+     * list (#6024). A fact about the reset, kept here so a later recompute can
+     * re-derive which climbs it retired. False for a partial reset and for every
+     * version that is not a reset.
+     */
+    isFullReset: boolean('is_full_reset').default(false).notNull(),
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
     publishedAt: timestamp('published_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),

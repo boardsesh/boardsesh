@@ -7,7 +7,7 @@ Where avatars, gym images, beta-video thumbnails, spray wall photos and user dat
 | Bucket | Handle | Provider | Access | Contents |
 | --- | --- | --- | --- | --- |
 | `boardsesh-user-media` | `media` | Cloudflare R2 | Public through the `media.boardsesh.com` custom domain | `beta-link-thumbnails/{instagram,tiktok}/…`, `avatars/<userId>.<ext>`, `gym-logos/<uuid>.<ext>`, `gym-photos/<uuid>.<ext>`, `feedback-screenshots/<uuid>.<ext>`, `spray-walls/<wall uuid>/<32 hex>.jpg`, and every `@<size>.jpg` resize variant |
-| `boardsesh-user-private` | `private` | Cloudflare R2 | No custom domain, therefore unreachable from the internet | `user-data-exports/<userId>/<boardType>/<isoWeek>.json`, `spray-walls/<wallUuid>/<photoId>.jpg` (+ its `@<size>.jpg` variant), `moonboard-ocr-test-data/<ts>-<uuid>/…` |
+| `boardsesh-user-private` | `private` | Cloudflare R2 | No custom domain, therefore unreachable from the internet | `user-data-exports/<userId>/<boardType>/<isoWeek>.json`, `spray-walls/<wallUuid>/<photoId>.jpg` (+ its `@<size>.jpg` variant and, for a photo over 2048 px, its `<photoId>-full.jpg` copy), `moonboard-ocr-test-data/<ts>-<uuid>/…` |
 | `boardsesh-board-snapshots` | `snapshots` | Cloudflare R2 | Public through `snapshots.boardsesh.com` after the gated publisher/reader cutover | `board-snapshots/**` — see `docs/board-snapshots.md` |
 | `boardsesh-static-assets` | — (published by CI, not the backend) | Cloudflare R2 | Public through `assets.boardsesh.com`; `assets-r2.boardsesh.com` remains available for staging | `static/v1/<sha256>.<ext>` — repo-owned board art, icons, brand marks; see `docs/static-assets.md` |
 
@@ -161,9 +161,10 @@ The fourth media surface, and the only one that is private by design: a spray wa
 | | |
 | --- | --- |
 | Bucket | `private`, never `media` — `media` is world-readable under guessable keys |
-| Key | `spray-walls/<wallUuid>/<photoId>.jpg`, plus the single largest allowed resize variant |
-| Cap | 10 MB per POST (`SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES`), 20 uploads per user per window |
+| Key | `spray-walls/<wallUuid>/<photoId>.jpg`, plus the single largest allowed resize variant, plus `<photoId>-full.jpg` when the source was over 2048 px |
+| Cap | 15 MB per POST (`SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES`), 20 uploads per user per window |
 | Accepted | JPEG / PNG / WebP by magic bytes, re-encoded to JPEG at quality 88 |
+| Sizes | base ≤ 2048 px on its long side (defines the wall's frame); `-full` copy ≤ 4096 px for the zoomed hold editor (#5911) |
 | Read | a 15-minute presigned GET, minted per read (`presignGetObject`); nothing persists a URL |
 | `Cache-Control` | `private, no-store` |
 

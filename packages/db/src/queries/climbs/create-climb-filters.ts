@@ -13,6 +13,7 @@ import {
   boardPlacements,
   boardHoles,
   boardBetaLinks,
+  userFavorites,
 } from '../../schema/index';
 import { hasNameQuery, type BoardRouteParams, type ClimbSearchParams } from './types';
 import { tickAliasOnCurrentHoldsSql, tickOnCurrentHoldsSql } from '../climb-stats/holds-epoch';
@@ -306,6 +307,37 @@ export function holdIntegrityCondition(searchParams: ClimbSearchParams): SQL[] {
   return [];
 }
 
+/**
+ * Retired spray climbs drop out of a wall's DEFAULT climb list (#6024).
+ *
+ * A climb is retired when it lost a hold in a reset its owner marked as a full
+ * reset (`board_climbs.retired_by_reset`, materialised by
+ * `recomputeMissingHoldCounts`). It is hidden, never deleted: `climb(uuid)`,
+ * logbooks, playlists and share links never come through this builder.
+ *
+ * Only the default view hides them. Each of these shows them again:
+ *
+ *   - `holdIntegrity: 'any'` ("All"), sent explicitly — an omitted value is the
+ *     default view, which is why `normalizeHoldIntegrity` keeps 'any';
+ *   - `holdIntegrity: 'broken'` ("Lost holds") — a retired climb always lost a
+ *     hold, so it belongs there;
+ *   - a name search, the same exception `hiddenClimbCondition` makes, so a
+ *     climber who knows the name can still find it.
+ *
+ * 'intact' needs nothing from here: a retired climb has lost holds, so
+ * `holdIntegrityCondition` already drops it.
+ *
+ * Spray only. NULL reads as not retired, so a catalogue board renders no
+ * predicate at all rather than one that is always true. The offline mirror is in
+ * packages/mobile/src/db/queries/search-climbs-local.ts and must say the same.
+ */
+export function retiredByResetCondition(boardName: string, searchParams: ClimbSearchParams): SQL[] {
+  if (boardName !== 'spray') return [];
+  if (searchParams.holdIntegrity != null) return [];
+  if (hasNameQuery(searchParams)) return [];
+  return [sql`COALESCE(${boardClimbs.retiredByReset}, false) = false`];
+}
+
 function moonBoardZoneCoordinates(layoutId: number, placementHoleId: SQL): { x: SQL; y: SQL } {
   const geometry = getMoonBoardGeometryByLayoutId(layoutId);
   const { leftMargin, rightMargin, topMargin, bottomMargin } = geometry.calibration;
@@ -555,6 +587,7 @@ export const createClimbFilters = (
     isDraftCondition,
     ...hiddenClimbCondition(searchParams),
     ...holdIntegrityCondition(searchParams),
+    ...retiredByResetCondition(params.board_name, searchParams),
     ...(climbTypeCondition ? [climbTypeCondition] : []),
   ];
 
@@ -1002,7 +1035,27 @@ export const createClimbFilters = (
 
   // Personal progress filter conditions
   const personalProgressConditions: SQL[] = [];
+  if (searchParams.onlyFavorited && !userId) {
+    // Nobody to read hearts for. Match nothing rather than dropping the filter,
+    // which would hand back the whole catalogue as the climber's "liked" list.
+    personalProgressConditions.push(sql`false`);
+  }
   if (userId) {
+    if (searchParams.onlyFavorited) {
+      // A heart belongs to the climb, not to an angle: user_favorites records the
+      // angle the heart was given at, but favorites/queries.ts and the toggle
+      // mutation both treat any row for (user, board, climb) as hearted. So no
+      // angle condition here — a climb hearted at 40 is liked at 25 too.
+      personalProgressConditions.push(
+        sql`EXISTS (
+          SELECT 1 FROM ${userFavorites}
+          WHERE ${userFavorites.userId} = ${userId}
+          AND ${userFavorites.boardName} = ${params.board_name}
+          AND ${userFavorites.climbUuid} = ${boardClimbs.uuid}
+        )`,
+      );
+    }
+
     if (searchParams.hideAttempted) {
       // Hide climbs where the user has at least one attempt tick
       personalProgressConditions.push(
