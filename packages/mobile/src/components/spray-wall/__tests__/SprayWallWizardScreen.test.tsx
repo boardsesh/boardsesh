@@ -32,7 +32,9 @@ const wallsQuery = vi.hoisted(() => ({
 const alertMock = vi.hoisted(() => vi.fn());
 const fetchVersionsMock = vi.hoisted(() => vi.fn());
 const guard = vi.hoisted(() => ({ confirmLeave: null as null | ((onConfirm: () => void) => void) }));
-const editorProps = vi.hoisted(() => ({ last: null as null | { onDirtyChange?: (dirty: boolean) => void } }));
+const editorProps = vi.hoisted(() => ({
+  last: null as null | { onDirtyChange?: (dirty: boolean) => void; onHandoverChange?: (handingOver: boolean) => void },
+}));
 const confirmDiscardMock = vi.hoisted(() => vi.fn());
 
 vi.mock('react-native', () => ({
@@ -118,7 +120,10 @@ vi.mock('../SprayDetectionStep', () => ({ SprayDetectionStep: () => null }));
 vi.mock('../SprayWallLookStep', () => ({ SprayWallLookStep: () => null }));
 vi.mock('../../outline-editor/SprayHoldEditorScreen', () => ({
   confirmDiscardSprayEdits: confirmDiscardMock,
-  SprayHoldEditorScreen: (props: { onDirtyChange?: (dirty: boolean) => void }) => {
+  SprayHoldEditorScreen: (props: {
+    onDirtyChange?: (dirty: boolean) => void;
+    onHandoverChange?: (handingOver: boolean) => void;
+  }) => {
     editorProps.last = props;
     return createElement('div', { 'data-testid': 'editor' });
   },
@@ -288,6 +293,24 @@ describe('native back guard', () => {
 
     expect(confirmDiscardMock).toHaveBeenCalledTimes(1);
     expect(alertMock).not.toHaveBeenCalled();
+    expect(onConfirm).not.toHaveBeenCalled();
+
+    // The dialog's discard answer is the screen's `confirmed` closure: it must
+    // still apply (nothing started publishing) and pop exactly once.
+    const confirmed = confirmDiscardMock.mock.calls[0][1] as () => void;
+    act(() => confirmed());
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('swallows the removal with no dialog while the editor is handing over to publish', async () => {
+    await resumeIntoEditor();
+    act(() => editorProps.last?.onHandoverChange?.(true));
+    const onConfirm = vi.fn();
+
+    act(() => guard.confirmLeave?.(onConfirm));
+
+    expect(alertMock).not.toHaveBeenCalled();
+    expect(confirmDiscardMock).not.toHaveBeenCalled();
     expect(onConfirm).not.toHaveBeenCalled();
   });
 });
