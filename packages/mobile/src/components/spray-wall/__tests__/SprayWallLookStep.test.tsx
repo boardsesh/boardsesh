@@ -7,7 +7,8 @@ const controls = vi.hoisted(() => ({
   headerInset: 96,
   preview: null as unknown,
   unavailable: true,
-  save: vi.fn(async () => {}),
+  save: vi.fn(async (_input: unknown) => {}),
+  art: { status: 'error' as 'pending' | 'error' | 'success', data: null as unknown },
 }));
 vi.mock('react-native', () => ({
   AccessibilityInfo: { announceForAccessibility: vi.fn() },
@@ -106,6 +107,29 @@ vi.mock('../../../lib/spray/use-spray-wall-draft', () => ({
 vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
   useSetSprayWallRenderSettings: () => ({ isPending: false, mutateAsync: controls.save }),
 }));
+vi.mock('../../../lib/spray/use-spray-wall-art', () => ({
+  useSprayWallArt: () => controls.art,
+}));
+vi.mock('../SprayWallBackgroundPicker', () => ({
+  SprayWallBackgroundPicker: ({
+    gate,
+    value,
+    onChange,
+  }: {
+    gate: { kind: string };
+    value: string;
+    onChange: (background: string) => void;
+  }) =>
+    gate.kind === 'loading' || gate.kind === 'unsupported'
+      ? null
+      : createElement(
+          'div',
+          { 'data-testid': 'background-picker', 'data-value': value, 'data-gate': gate.kind },
+          ['photo', 'wall-crop', 'hold-cutouts'].map((key) =>
+            createElement('button', { key, onClick: () => onChange(key) }, `bg:${key}`),
+          ),
+        ),
+}));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 
@@ -136,6 +160,7 @@ beforeEach(() => {
   controls.headerInset = 96;
   controls.unavailable = true;
   controls.preview = null;
+  controls.art = { status: 'error', data: null };
 });
 afterEach(cleanup);
 
@@ -169,5 +194,108 @@ describe('spray Look visibility and fallback', () => {
     const { getByTestId, queryAllByRole } = renderStep();
     expect(getByTestId('carousel')).toBeTruthy();
     expect(queryAllByRole('radio')).toHaveLength(0);
+  });
+});
+
+function artAnswer(verdict: 'GOOD' | 'SOFT' | 'FAIL', reason = 'ok') {
+  return {
+    status: 'success' as const,
+    data: {
+      versionNumber: 1,
+      recipe: 1,
+      status: 'NONE',
+      width: null,
+      height: null,
+      quality: { stretch: 1.2, verdict, reason, frameShortEdge: 3000 },
+      crop: null,
+      cutout: null,
+    },
+  };
+}
+
+describe('spray Look wall background', () => {
+  const defaultLook = () => boardLookOptionWallDefault(DEFAULT_SPRAY_WALL_LOOK_OPTION_ID);
+  const saveButton = () => {
+    const option = SPRAY_WALL_LOOK_OPTIONS.find((entry) => entry.id === DEFAULT_SPRAY_WALL_LOOK_OPTION_ID)!;
+    return `mobile.settings.boardLook.intro.saveNamed:${option.labelI18nKey}`;
+  };
+
+  it('hides the picker and sends no background to a backend without generated looks', async () => {
+    const { queryByTestId, getByText } = renderStep();
+    expect(queryByTestId('background-picker')).toBeNull();
+    await act(async () => {
+      fireEvent.click(getByText(saveButton()));
+    });
+    expect(controls.save).toHaveBeenCalledExactlyOnceWith({
+      layoutId: draft.layoutId,
+      uuid: draft.wallUuid,
+      renderSettings: defaultLook(),
+    });
+  });
+
+  it('suggests Wall only when the photo passes, and stores it', async () => {
+    controls.art = artAnswer('GOOD');
+    const { getByTestId, getByText } = renderStep();
+    expect(getByTestId('background-picker').getAttribute('data-value')).toBe('wall-crop');
+    await act(async () => {
+      fireEvent.click(getByText(saveButton()));
+    });
+    expect(controls.save).toHaveBeenCalledExactlyOnceWith({
+      layoutId: draft.layoutId,
+      uuid: draft.wallUuid,
+      renderSettings: { ...defaultLook(), background: 'wall-crop' },
+    });
+  });
+
+  it('stores the photo by name when the creator picks it, so an earlier save cannot stick', async () => {
+    controls.art = artAnswer('SOFT');
+    const { getByTestId, getByText } = renderStep();
+    fireEvent.click(getByText('bg:photo'));
+    expect(getByTestId('background-picker').getAttribute('data-value')).toBe('photo');
+    await act(async () => {
+      fireEvent.click(getByText(saveButton()));
+    });
+    expect(controls.save).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ renderSettings: { ...defaultLook(), background: 'photo' } }),
+    );
+  });
+
+  it('sends no background for an untouched photo that fails the gate', async () => {
+    controls.art = artAnswer('FAIL', 'no-pins');
+    const { getByText } = renderStep();
+    await act(async () => {
+      fireEvent.click(getByText(saveButton()));
+    });
+    expect(controls.save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ renderSettings: defaultLook() }));
+  });
+
+  it('stays on the photo for a photo that fails the gate', async () => {
+    controls.art = artAnswer('FAIL', 'keystone');
+    const { getByTestId, getByText } = renderStep();
+    expect(getByTestId('background-picker').getAttribute('data-gate')).toBe('locked');
+    expect(getByTestId('background-picker').getAttribute('data-value')).toBe('photo');
+    fireEvent.click(getByText('bg:hold-cutouts'));
+    await act(async () => {
+      fireEvent.click(getByText(saveButton()));
+    });
+    // Picked, but the gate is shut: the save stores the photo, never the look.
+    expect(controls.save).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ renderSettings: { ...defaultLook(), background: 'photo' } }),
+    );
+  });
+
+  it('says why, and goes back to the photo, when the server refuses the look', async () => {
+    controls.art = artAnswer('GOOD');
+    controls.save.mockRejectedValueOnce({
+      response: {
+        errors: [{ message: 'nope', extensions: { code: 'SPRAY_WALL_ART_NOT_AVAILABLE', reason: 'keystone' } }],
+      },
+    });
+    const { getByTestId, getByText } = renderStep();
+    await act(async () => {
+      fireEvent.click(getByText(saveButton()));
+    });
+    expect(getByText('sprayBackground.notAvailable')).toBeTruthy();
+    expect(getByTestId('background-picker').getAttribute('data-value')).toBe('photo');
   });
 });

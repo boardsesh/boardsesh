@@ -206,6 +206,16 @@ export function isSprayWallClimbEditPolicyOwnerOnlyError(error: unknown): boolea
   );
 }
 
+/**
+ * The wall's photo fails the generated-look quality gate, so the server will
+ * not store a `wall-crop` / `hold-cutouts` background for it.
+ */
+export function isSprayWallArtNotAvailableError(error: unknown): boolean {
+  return getGraphqlErrors(error).some(
+    (graphqlError) => graphqlError.extensions?.code === 'SPRAY_WALL_ART_NOT_AVAILABLE',
+  );
+}
+
 // The board-mutation rejections clients branch on are parsed in
 // @boardsesh/graphql so web and mobile read the same shapes. Re-exported here so
 // board screens keep a single import for GraphQL error handling.

@@ -21,10 +21,11 @@
 // taller of the two, so a refused quad does not re-fit the photo as the finger
 // lifts.
 
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import type { Quad } from '@boardsesh/spray-wall-geometry';
+import type { Quad, ReferenceSize } from '@boardsesh/spray-wall-geometry';
+import { cornerQualityNote } from './corner-quality';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
 import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
@@ -45,9 +46,26 @@ export type SprayCornerStepProps = {
   onChange: (quad: Quad) => void;
   /** True once the quad has been refused for crossing itself. */
   invalid: boolean;
+  /**
+   * The wall's canonical frame, to grade the corners against: the photo's own
+   * size for a new wall (version 1 defines the frame), the wall's stored frame
+   * for a reset. Left out, no grade is shown.
+   */
+  qualityFrame?: ReferenceSize | null;
 };
 
-export function SprayCornerStep({ stepCounter, title, body, photo, value, onChange, invalid }: SprayCornerStepProps) {
+const QUALITY_NOTES = ['good', 'soft', 'fail', 'small'] as const;
+
+export function SprayCornerStep({
+  stepCounter,
+  title,
+  body,
+  photo,
+  value,
+  onChange,
+  invalid,
+  qualityFrame,
+}: SprayCornerStepProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const headerInset = useTransparentHeaderInset();
@@ -66,6 +84,20 @@ export function SprayCornerStep({ stepCounter, title, body, photo, value, onChan
   const onCrossedProbeLayout = useCallback((event: LayoutChangeEvent) => {
     setCrossedHeight(event.nativeEvent.layout.height);
   }, []);
+
+  // How cleanly these corners would flatten into "Wall only" / "Holds only",
+  // graded as each ring is released (`onChange` fires on release). Its own
+  // slot, sized for the tallest grade, so a new grade never re-fits the photo.
+  const qualityNote = useMemo(
+    () => (invalid ? null : cornerQualityNote(value, qualityFrame)),
+    [invalid, value, qualityFrame],
+  );
+  const [qualityHeights, setQualityHeights] = useState<Record<string, number>>({});
+  const onQualityProbeLayout = useCallback((note: string, event: LayoutChangeEvent) => {
+    const height = event.nativeEvent.layout.height;
+    setQualityHeights((previous) => (previous[note] === height ? previous : { ...previous, [note]: height }));
+  }, []);
+  const qualitySlotHeight = Math.max(0, ...Object.values(qualityHeights));
 
   // `predictCompressedSize` answers zeros for a picker that could not report a
   // size, and such a photo does reach this step. There is no pixel space to put
@@ -146,6 +178,33 @@ export function SprayCornerStep({ stepCounter, title, body, photo, value, onChan
           {t('sprayWizard.anchors.crossed')}
         </Text>
       </View>
+      {qualityFrame ? (
+        <View style={{ minHeight: qualitySlotHeight }}>
+          {qualityNote ? (
+            <Text
+              variant="footnote"
+              color={qualityNote === 'good' ? systemColors.secondaryLabel : iosSystemColors.systemOrange}
+              style={styles.hint}
+              accessibilityLiveRegion="polite"
+              testID={`spray-corner-quality-${qualityNote}`}
+            >
+              {t(`sprayWizard.anchors.quality.${qualityNote}`)}
+            </Text>
+          ) : null}
+          {QUALITY_NOTES.map((note) => (
+            <Text
+              key={note}
+              variant="footnote"
+              style={[styles.hint, styles.hintProbe]}
+              onLayout={(event) => onQualityProbeLayout(note, event)}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+            >
+              {t(`sprayWizard.anchors.quality.${note}`)}
+            </Text>
+          ))}
+        </View>
+      ) : null}
     </ScrollView>
   );
 }

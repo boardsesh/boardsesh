@@ -1683,6 +1683,40 @@ because a look stored without a reset does not move the version. The registry
 keeps an unchanged look's identity across re-registrations, so a revalidation
 does not re-resolve every row.
 
+### Drawing a wall on a generated look
+
+An owner can draw a wall on its photo, on "Wall only" (`wall-crop`, the photo
+flattened into the canonical frame) or on "Holds only" (`hold-cutouts`, a WebP
+that is transparent everywhere but the holds). The choice is
+`render_settings.background`; missing means the photo. The app reads the art
+through `sprayWallArt` and draws it only when all of this holds:
+
+- the chosen background is not `photo`;
+- `sprayWallArt` for the registered version is `READY`, its size matches the
+  canonical frame's aspect, and the file downloaded to
+  `{cache}/spray-walls/<layoutId>-v<versionId>-crop.jpg` / `-cutout.webp`.
+
+Anything else (pending, failed, refused, an older backend, offline, a failed
+download) draws the photo. The loader downloads the art BEFORE it registers the
+wall, so the switch is one registry write: `activeSprayArt` decides the board
+size (the art's), the holds (canonical times `art width / frame width`, no
+homography), the background key (`sprayBackgroundKey(layoutId, versionId,
+variant)`) and the runtime outline table together. `sprayCacheToken` gains
+`-bg<variant>` while art is drawn, so every overlay and memo moves with it;
+`sprayVersionToken` does not, so persisted drafts survive. The registry keeps
+the photo-pixel `holds` and `photoWidth` too: the hold editor, reset flows and
+drafts always work on the raw photo. Holds only gets the Aura field colour
+(`BOARD_FIELD_COLORS`) painted under it (`LayeredClimbImage` `baseColor`).
+
+The picker lives in the add-a-wall look step (a draft: art is made at publish)
+and on the board edit screen. It is shown only when `sprayWallArt` answers,
+because a backend older than generated looks validates render settings strictly
+and refuses the `background` key. The app sends `background` only for a
+generated look, or `photo` when the owner moves off one (an omitted key keeps
+the stored value). The edit screen polls a live wall's art every 10 s while it
+is `NONE` or `PENDING`, for at most 30 reads, and swaps the wall onto the art
+when it turns `READY`.
+
 ### Asking is not the same as subscribing (SW-11)
 
 `useSprayWall` asks for exactly one wall: the active board's. Every other surface

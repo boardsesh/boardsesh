@@ -36,6 +36,9 @@ import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { useTheme } from '../../src/providers/theme-provider';
 import { iosSystemColors } from '../../src/theme/ios-colors';
 import { spacing } from '../../src/theme/tokens';
+import { sprayResetHref } from '../../src/lib/spray/spray-routes';
+import { SprayWallBackgroundPicker } from '../../src/components/spray-wall/SprayWallBackgroundPicker';
+import { useSprayWallBackgroundEditor } from '../../src/components/spray-wall/use-spray-wall-background-editor';
 
 export default function EditBoard() {
   const router = useRouter();
@@ -153,6 +156,17 @@ function EditBoardForm({ board }: { board: UserBoard }) {
     setPolicyTouched(true);
     setSelectedClimbEditPolicy(policy);
   }, []);
+
+  // What the wall is drawn on: its photo, or a generated look. Anyone who may
+  // edit the wall may change it (the same gate as its look).
+  const backgroundEditor = useSprayWallBackgroundEditor({
+    wallUuid: board.uuid,
+    layoutId: board.layoutId,
+    enabled: isSprayWall,
+  });
+  const saveBackground = backgroundEditor.save;
+  const backgroundChanged = backgroundEditor.changed;
+  const openRetake = useCallback(() => router.push(sprayResetHref(board.uuid)), [router, board.uuid]);
 
   const seed = useMemo<BoardBuilderSeed>(() => {
     const seedBoardName = toBoardName(board.boardType)!;
@@ -276,6 +290,13 @@ function EditBoardForm({ board }: { board: UserBoard }) {
               visibilityError = extractGraphqlMessage(error) ?? t('mobile.sprayVisibility.updateError');
             }
           }
+        }
+
+        // The background is part of the wall's look, its own mutation again.
+        if (isSprayWall && backgroundChanged && !visibilityError) {
+          const outcome = await saveBackground();
+          if (outcome === 'refused') visibilityError = t('sprayBackground.notAvailable');
+          else if (outcome === 'failed') visibilityError = t('sprayBackground.saveFailed');
         }
 
         // `UpdateBoardInput` carries no gym, so a changed gym is its own mutation.
@@ -402,6 +423,8 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       policyTouched,
       selectedClimbEditPolicy,
       sprayWall?.climbEditPolicy,
+      backgroundChanged,
+      saveBackground,
     ],
   );
   handleUpdateRef.current = handleUpdate;
@@ -420,6 +443,18 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       climbEditPolicy={selectedClimbEditPolicy}
       onSelectClimbEditPolicy={isSprayWall ? handleSelectClimbEditPolicy : undefined}
       climbEditPolicyDisabled={!isOwner}
+      sprayBackgroundSection={
+        isSprayWall ? (
+          <SprayWallBackgroundPicker
+            gate={backgroundEditor.gate}
+            art={backgroundEditor.art}
+            value={backgroundEditor.value}
+            onChange={backgroundEditor.onChange}
+            disabled={submitting}
+            onRetakePhoto={openRetake}
+          />
+        ) : undefined
+      }
     />
   );
 }

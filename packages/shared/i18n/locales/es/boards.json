@@ -980,7 +980,8 @@
       "adjust": "Recortar o girar",
       "next": "Siguiente",
       "cameraDenied": "Boardsesh necesita tu cámara para fotografiar un muro.",
-      "failed": "Esa foto no se abre. Prueba con otra."
+      "failed": "Esa foto no se abre. Prueba con otra.",
+      "tip": "Aléjate, ponte de frente al muro y encuadra las 4 esquinas."
     },
     "adjust": {
       "title": "Recorta y gira",
@@ -1014,7 +1015,13 @@
       "cornerBottomLeft": "Esquina inferior izquierda",
       "use": "Usar estas esquinas",
       "skip": "Saltar por ahora",
-      "clear": "Empezar las esquinas de nuevo"
+      "clear": "Empezar las esquinas de nuevo",
+      "quality": {
+        "good": "Bien de frente. El muro se enderezará limpio.",
+        "soft": "Un poco inclinada. Repítela de frente para un aspecto más nítido.",
+        "fail": "Demasiado inclinada para enderezarla. Tu foto sigue sirviendo, o repítela de frente.",
+        "small": "Esta foto es demasiado pequeña para enderezarla. Tu foto sigue sirviendo tal cual."
+      }
     },
     "upload": {
       "title": "Subiendo tu foto",
@@ -1224,5 +1231,24 @@
     },
     "reportCount_one": "{{count}} denuncia",
     "reportCount_other": "{{count}} denuncias"
+  },
+  "sprayBackground": {
+    "label": "Fondo del muro",
+    "photo": "Foto",
+    "wallCrop": "Solo el muro",
+    "holdCutouts": "Solo las presas",
+    "retake": "Repetir la foto",
+    "previewLabel": "Vista previa de {{look}}",
+    "saveFailed": "No se pudo guardar el fondo. Inténtalo de nuevo.",
+    "notAvailable": "Esta foto está demasiado inclinada para ese aspecto. Repítela de frente.",
+    "note": {
+      "lockedNoPins": "Marca las 4 esquinas para desbloquearlo.",
+      "lockedRetake": "Repite la foto de frente para desbloquearlo.",
+      "generating": "Generando…",
+      "failed": "Ese aspecto no se pudo generar. Guárdalo otra vez para reintentarlo.",
+      "afterPublish": "Listo más o menos un minuto después de publicar. Hasta entonces se ve tu foto.",
+      "soft": "Repite la foto de frente para un aspecto más nítido.",
+      "volumes": "Los volúmenes todavía no se recortan."
+    }
   }
 }

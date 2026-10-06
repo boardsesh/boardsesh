@@ -30,18 +30,23 @@ export function liveSprayPhotoFileNames(): Set<string> {
   return new Set<string>();
 }
 
+/** A presigned GET and its expiry: where a file is fetched from. */
+export type SprayFileSource = { url: string; expiresAt: string };
+
 function presignedUrl(identity: SprayPhotoIdentity): string | null {
   const wall = getSprayWall(identity.layoutId);
   if (!wall || wall.versionId !== identity.versionId) return null;
-  return wall.photoUrl;
+  if (!identity.variant) return wall.photoUrl;
+  const art = wall.art;
+  return art && art.variant === identity.variant && art.versionId === identity.versionId ? art.url : null;
 }
 
 export function tryGetSprayPhotoPathSync(identity: SprayPhotoIdentity): string | null {
   return presignedUrl(identity);
 }
 
-export function ensureSprayPhotoCached(identity: SprayPhotoIdentity): Promise<string | null> {
-  return Promise.resolve(presignedUrl(identity));
+export function ensureSprayPhotoCached(identity: SprayPhotoIdentity, source?: SprayFileSource): Promise<string | null> {
+  return Promise.resolve(source?.url ?? presignedUrl(identity));
 }
 
 export function clearSprayPhotoPathCache(): void {
