@@ -48,7 +48,7 @@ export const DEFAULT_PINNED_CHIPS: readonly PinnableChipKind[] = [
 ];
 
 // Auth-gating (progress + My drafts hide when signed out) is applied at the chip
-// row via the `canFilterProgress` / `canFilterDrafts` props, not here — the pin
+// row via the `canFilterProgress` / `canFilterPersonalCollections` props, not here — the pin
 // itself always persists, only rendering is gated.
 
 export function isValidChipKind(value: unknown): value is PinnableChipKind {
@@ -119,11 +119,12 @@ export function chipKindToTokenKeys(kind: PinnableChipKind): readonly string[] {
     case 'progress':
       return ['progress'];
     case 'collection':
-      // The onlyBenchmarks token. The Collection chip also owns My drafts
-      // (status='drafts'), whose token key `status` is shared with the Popularity
-      // group's "Unrepeated" (status='projects'), so it's left unclaimed here — a
-      // drafts token can still show alongside a pinned Collection chip (rare).
-      return ['benchmark'];
+      // The onlyBenchmarks and Liked tokens. The Collection chip also owns My
+      // drafts (status='drafts'), whose token key `status` is shared with the
+      // Popularity group's "Unrepeated" (status='projects'), so it's left
+      // unclaimed here — a drafts token can still show alongside a pinned
+      // Collection chip (rare).
+      return ['benchmark', 'liked'];
     case 'tall':
       return ['tall'];
     case 'wide':

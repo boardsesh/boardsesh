@@ -196,6 +196,15 @@ export function getActiveFilterTokens({
     });
   }
 
+  // The Liked collection (#6002). Its own token, since it is not a status.
+  if (filters.onlyFavorited) {
+    tokens.push({
+      key: 'liked',
+      label: labels.liked(),
+      clear: () => patchFilters({ onlyFavorited: undefined }),
+    });
+  }
+
   // The four per-user tick flags collapse into one "Your progress" token, so a
   // single Projects selection (showOnlyAttempted + hideCompleted) never reads as
   // two tokens. Clearing resets every progress flag to its default.

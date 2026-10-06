@@ -43,7 +43,12 @@ import { StarRating } from './StarRating';
 import { SwitchRow } from './SwitchRow';
 import { Icon } from './Icon';
 import { PinToggle } from './search/PinToggle';
-import { getCollectionFilter, getClimbTypeFilter, type CollectionFilter } from '../lib/collection-filter';
+import {
+  collectionPatch,
+  getCollectionFilter,
+  getClimbTypeFilter,
+  type CollectionFilter,
+} from '../lib/collection-filter';
 import { useTheme } from '../providers/theme-provider';
 import { useManagedSheet } from '../providers/sheet-presentation-provider';
 import { androidSafeSnapPoints } from './sheet-snap-points';
@@ -494,24 +499,32 @@ export function ClimbFilterSheet({
     },
     [updateLocalFilters],
   );
-  // Collection — a single-select over Benchmarks (board filter) + My drafts
-  // (status), which are mutually exclusive. Selecting one clears the other; only a
-  // lingering *drafts* status is cleared (never 'projects'/Unrepeated, which lives
-  // in the Popularity group and can coexist with Benchmarks).
+  // Collection — a single-select over Benchmarks (board filter), My drafts
+  // (status) and Liked (onlyFavorited), which are mutually exclusive. Selecting
+  // one clears the other two (see collectionPatch).
   const handleCollectionChange = useCallback(
     (value: CollectionFilter) => {
-      updateLocalBoardFilters((previous) => ({ ...previous, onlyBenchmarks: value === 'benchmarks' || undefined }));
-      if (value === 'drafts') handleStatusChange('drafts');
-      else if (localFilters.status === 'drafts') handleStatusChange('any');
+      // The board-filter half reads no filter state, so the ref is only a
+      // placeholder input; the filter half applies to the latest state.
+      updateLocalBoardFilters((previous) => ({
+        ...previous,
+        ...collectionPatch(value, localFiltersRef.current).boardFilters,
+      }));
+      updateLocalFilters((previous) => ({ ...previous, ...collectionPatch(value, previous).filters }));
     },
-    [updateLocalBoardFilters, handleStatusChange, localFilters.status],
+    [updateLocalBoardFilters, updateLocalFilters],
   );
   const collectionOptions = useMemo(
     () => [
       { key: 'any' as const, label: t('mobile.filter.collection.any') },
       { key: 'benchmarks' as const, label: t('mobile.filter.benchmark') },
-      // My drafts is auth-only, matching the old drafts toggle's gating.
-      ...(isAuthenticated ? [{ key: 'drafts' as const, label: t('mobile.filter.drafts') }] : []),
+      // My drafts and Liked are auth-only: both are the climber's own climbs.
+      ...(isAuthenticated
+        ? [
+            { key: 'drafts' as const, label: t('mobile.filter.drafts') },
+            { key: 'liked' as const, label: t('mobile.filter.collection.liked') },
+          ]
+        : []),
     ],
     [t, isAuthenticated],
   );

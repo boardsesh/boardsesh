@@ -65,11 +65,11 @@ export type FilterChipRowProps = {
   onChangeProgress: (value: ProgressFilter) => void;
   /** The progress selector is auth-gated (its chip hides), matching the sheet. */
   canFilterProgress: boolean;
-  /** Current "Collection" single-select (Any / Benchmarks / My drafts). */
+  /** Current "Collection" single-select (Any / Benchmarks / My drafts / Liked). */
   collection: CollectionFilter;
   onChangeCollection: (value: CollectionFilter) => void;
-  /** My drafts is auth-only; the option is dropped from the chip menu when signed out. */
-  canFilterDrafts: boolean;
+  /** My drafts and Liked are auth-only; both options drop from the chip menu when signed out. */
+  canFilterPersonalCollections: boolean;
 
   // --- Tier-2 (opt-in) chips: sheet-only controls a user can pin. ---
 

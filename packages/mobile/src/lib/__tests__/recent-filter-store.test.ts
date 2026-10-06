@@ -123,6 +123,7 @@ describe('getRecentFilters sanitizer', () => {
           showOnlyCompleted: true,
           minUserRating: 4,
           onlyRatedByMe: true,
+          onlyFavorited: true,
           minGrade: 10,
         },
         searchText: '',
@@ -136,6 +137,7 @@ describe('getRecentFilters sanitizer', () => {
     // otherwise render as active while the backend ignores it.
     expect(result[0]?.filters).not.toHaveProperty('minUserRating');
     expect(result[0]?.filters).not.toHaveProperty('onlyRatedByMe');
+    expect(result[0]?.filters).not.toHaveProperty('onlyFavorited');
     expect(result[0]?.filters.minGrade).toBe(10);
   });
 

@@ -16,7 +16,7 @@ import { Chip, Divider, Menu } from 'react-native-paper';
 import { PROGRESS_FILTER_VALUES, SORT_OPTIONS, GRADE_ACCURACY_VALUES } from '@boardsesh/climb-filters';
 import { getFilterKey } from '../../lib/recent-filter-store';
 import { POPULARITY_BUCKETS, RATING_BUCKETS } from '../../lib/filter-chip-menus';
-import { COLLECTION_VALUES } from '../../lib/collection-filter';
+import { COLLECTION_VALUES, isPersonalCollection } from '../../lib/collection-filter';
 import { spacing } from '../../theme/tokens';
 import { useMaterialAngleControl } from '../chrome/use-material-angle-control';
 import { AngleSelectorSheet } from '../play-drawer/AngleSelectorSheet';
@@ -85,7 +85,7 @@ function FilterChipRowComponent({
   canFilterProgress,
   collection,
   onChangeCollection,
-  canFilterDrafts,
+  canFilterPersonalCollections,
   sortBy,
   sortActive,
   onChangeSort,
@@ -241,17 +241,19 @@ function FilterChipRowComponent({
             selected={collection !== 'any'}
           >
             {(close) =>
-              COLLECTION_VALUES.filter((value) => value !== 'drafts' || canFilterDrafts).map((value) => (
-                <Menu.Item
-                  key={value}
-                  title={collectionChipLabel(value, t)}
-                  leadingIcon={value === collection ? 'check' : undefined}
-                  onPress={() => {
-                    onChangeCollection(value);
-                    close();
-                  }}
-                />
-              ))
+              COLLECTION_VALUES.filter((value) => canFilterPersonalCollections || !isPersonalCollection(value)).map(
+                (value) => (
+                  <Menu.Item
+                    key={value}
+                    title={collectionChipLabel(value, t)}
+                    leadingIcon={value === collection ? 'check' : undefined}
+                    onPress={() => {
+                      onChangeCollection(value);
+                      close();
+                    }}
+                  />
+                ),
+              )
             }
           </MenuChip>
         ) : null}

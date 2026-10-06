@@ -478,7 +478,8 @@
       "popularity": "Popularidad",
       "collection": {
         "label": "Colección",
-        "any": "Cualquiera"
+        "any": "Cualquiera",
+        "liked": "Favoritos"
       },
       "holdIntegrity": {
         "label": "Presas",

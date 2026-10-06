@@ -478,7 +478,8 @@
       "popularity": "Popularity",
       "collection": {
         "label": "Collection",
-        "any": "Any"
+        "any": "Any",
+        "liked": "Liked"
       },
       "holdIntegrity": {
         "label": "Holds",
