@@ -1,9 +1,14 @@
 import 'server-only';
 import { cache } from 'react';
-import { GET_SPRAY_WALL, GET_SPRAY_WALL_RENDER_DATA } from '@boardsesh/graphql/operations';
+import {
+  GET_SPRAY_WALL,
+  GET_SPRAY_WALL_ART,
+  GET_SPRAY_WALL_LOOK,
+  GET_SPRAY_WALL_RENDER_DATA,
+} from '@boardsesh/graphql/operations';
 import { getGraphQLHttpUrl } from '@/app/lib/graphql/client';
 import { SSR_BACKEND_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
-import type { SprayWallHoldGeometry } from './spray-climb-view';
+import type { SprayWallArtChoice, SprayWallHoldGeometry } from './spray-climb-view';
 
 /**
  * The wall behind a spray climb page, read anonymously.
@@ -79,11 +84,16 @@ type SprayWallRenderDataResponse = {
  * so this keeps the read cheap under a crawl burst and still hands every reader a
  * signature with time left on it.
  */
-async function readSprayWallQuery<TData>(query: string, wallUuid: string, operation: string): Promise<TData | null> {
+async function readSprayWallQuery<TData>(
+  query: string,
+  wallUuid: string,
+  operation: string,
+  extraVariables: Record<string, unknown> = {},
+): Promise<TData | null> {
   const response = await fetch(getGraphQLHttpUrl(), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, variables: { uuid: wallUuid } }),
+    body: JSON.stringify({ query, variables: { uuid: wallUuid, ...extraVariables } }),
     signal: AbortSignal.timeout(SSR_BACKEND_FETCH_TIMEOUT_MS),
     next: { revalidate: 300 },
   });
@@ -186,4 +196,76 @@ type SprayWallPhotoResponse = {
 export async function fetchSprayWallPhotoUrl(wallUuid: string): Promise<string | null> {
   const data = await readSprayWallQuery<SprayWallPhotoResponse>(GET_SPRAY_WALL, wallUuid, 'sprayWall');
   return data?.sprayWall?.currentVersion?.photo?.url ?? null;
+}
+
+type SprayWallLookResponse = { sprayWall: { renderSettings: { background?: unknown } | null } | null };
+
+type SprayWallArtResponse = {
+  sprayWallArt: {
+    versionNumber: number;
+    status: string;
+    width: number | null;
+    height: number | null;
+    crop: { url: string } | null;
+    cutout: { url: string } | null;
+  } | null;
+};
+
+type GeneratedBackground = SprayWallArtChoice['background'];
+
+function generatedBackground(value: unknown): GeneratedBackground | null {
+  return value === 'wall-crop' || value === 'hold-cutouts' ? value : null;
+}
+
+/**
+ * The owner's generated wall look for the version the page draws, or null to
+ * draw the photograph.
+ *
+ * Null for every miss and every failure, never a throw: the photo is always a
+ * correct picture of the wall, so a backend that predates `sprayWallArt`, art
+ * that is still rendering, or art for a different version than the render
+ * payload's (the two reads are cached separately) all fall back to it.
+ */
+export const fetchSprayWallArtChoice = cache(
+  async (wallUuid: string, versionNumber: number): Promise<SprayWallArtChoice | null> => {
+    try {
+      const look = await readSprayWallQuery<SprayWallLookResponse>(GET_SPRAY_WALL_LOOK, wallUuid, 'sprayWall look');
+      const background = generatedBackground(look?.sprayWall?.renderSettings?.background);
+      if (!background) return null;
+
+      const data = await readSprayWallQuery<SprayWallArtResponse>(GET_SPRAY_WALL_ART, wallUuid, 'sprayWallArt', {
+        version: versionNumber,
+      });
+      const art = data?.sprayWallArt;
+      if (!art || art.status !== 'READY' || art.versionNumber !== versionNumber || !art.width || !art.height) {
+        return null;
+      }
+      return { background, width: art.width, height: art.height };
+    } catch (error) {
+      console.warn('[spray] wall art read failed; drawing the photo instead:', error);
+      return null;
+    }
+  },
+);
+
+/**
+ * The stable path a page embeds for a wall's generated look. Like the unlisted
+ * photo, the art lives in the PRIVATE bucket behind fifteen-minute signatures,
+ * so the HTML carries this path and the route mints a fresh one per fetch. The
+ * same for a public wall: there is no public copy of the art.
+ */
+export function resolveSprayArtUrl(wallUuid: string, art: SprayWallArtChoice | null): string | null {
+  if (!art) return null;
+  return `/api/v1/spray-walls/${encodeURIComponent(wallUuid)}/photo?look=${art.background}`;
+}
+
+/**
+ * The presigned URL of one generated look of a wall's published version, or
+ * null when it is not ready (or the wall is not readable anonymously).
+ */
+export async function fetchSprayWallArtImageUrl(wallUuid: string, look: GeneratedBackground): Promise<string | null> {
+  const data = await readSprayWallQuery<SprayWallArtResponse>(GET_SPRAY_WALL_ART, wallUuid, 'sprayWallArt');
+  const art = data?.sprayWallArt;
+  if (!art || art.status !== 'READY') return null;
+  return (look === 'wall-crop' ? art.crop?.url : art.cutout?.url) ?? null;
 }

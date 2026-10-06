@@ -7,7 +7,12 @@ import { buildSprayOgImageUrl } from '@/app/components/board-renderer/util';
 import { getClimb } from '@/app/lib/data/queries';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
-import { fetchSprayWallPageData, resolveSprayPhotoUrl } from '@/app/lib/spray/spray-wall-render-data.server';
+import {
+  fetchSprayWallArtChoice,
+  fetchSprayWallPageData,
+  resolveSprayArtUrl,
+  resolveSprayPhotoUrl,
+} from '@/app/lib/spray/spray-wall-render-data.server';
 import { resolveSprayWallAccess, resolveSprayWallVisibility } from '@/app/lib/spray/spray-visibility';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { constructBoardSlugViewUrl } from '@/app/lib/url-utils';
@@ -126,12 +131,15 @@ export default async function SprayViewPage({ board, parsedParams, wallParam }: 
 
   const [climb, wallData] = await Promise.all([getClimb(parsedParams), fetchSprayWallPageData(board.uuid)]);
   if (!climb || !wallData) notFound();
+  const art = await fetchSprayWallArtChoice(board.uuid, wallData.versionNumber);
 
   return (
     <SprayClimbFrontDoor
       climb={climb}
       wallData={wallData}
       photoUrl={resolveSprayPhotoUrl(wallData, visibility === 'public')}
+      art={art}
+      artUrl={resolveSprayArtUrl(wallData.wall.uuid, art)}
       angle={parsedParams.angle}
     />
   );

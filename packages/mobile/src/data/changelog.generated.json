@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-06T07:37:18.908Z",
+  "generatedAt": "2026-10-06T20:50:12.941Z",
   "entries": [
+    {
+      "prNumber": 6178,
+      "category": "new",
+      "title": "Spray wall owners can show their wall straightened out, or just the holds on a clean background, like an LED board.",
+      "mergedAt": "2026-10-06T20:47:57Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6178"
+    },
     {
       "prNumber": 6165,
       "category": "fixed",
@@ -6329,6 +6336,19 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-10-06T19:20:54+11:00",
+      "sha": "76aca550f8bdff2b062d99abebeb4af8e40eb937",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "8501a5aacdfd3bc0e2415a999643517ab35cb6a7",
+        "ios": "152330352150d44bc700761e9fe8b8e89343f11d"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-10-05T13:37:36+11:00",
