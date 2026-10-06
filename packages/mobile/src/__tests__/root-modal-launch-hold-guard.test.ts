@@ -18,8 +18,8 @@ import { describe, expect, it } from 'vitest';
 // The source is read as text, the same way root-layout-memo-freeze-guard.test.ts
 // reads it: rendering RootLayout would need every provider in the app.
 //
-// What a text guard cannot see. It trusts `presentation` to be a string literal
-// inside the `<Stack.Screen>` it belongs to, and the wrap to be written as
+// What a text guard cannot see. It trusts `presentation` to be a string literal,
+// or a ternary between two, inside the `<Stack.Screen>` it belongs to, and the wrap to be written as
 // `export default holdUntilLaunchReady(`. A route that takes its presentation
 // from a variable, or re-exports a wrapped component under another shape, needs
 // this guard updated alongside it.
@@ -57,7 +57,10 @@ function declaredScreens(source: string): DeclaredScreen[] {
     const element = code.slice(start, end === -1 ? undefined : end);
     const name = /\bname="([^"]+)"/.exec(element)?.[1];
     if (!name) return;
-    screens.push({ name, presentation: /\bpresentation:\s*'([A-Za-z]+)'/.exec(element)?.[1] ?? null });
+    // A conditional presentation (`cond ? 'fullScreenModal' : 'modal'`) is read
+    // by its first branch: every branch the app writes is a modal kind.
+    const presentation = /\bpresentation:\s*(?:[^,{}]*?\?\s*)?'([A-Za-z]+)'/.exec(element)?.[1] ?? null;
+    screens.push({ name, presentation });
   });
   return screens;
 }
@@ -134,12 +137,19 @@ describe('root modal routes and the launch update gate', () => {
         <Stack.Screen name="index" />
         <Stack.Screen name="about" options={{ presentation: 'formSheet', headerShown: false }} />
         <Stack.Screen name="play" options={{ presentation: 'transparentModal' }} />
+        <Stack.Screen
+          name="boards"
+          options={({ route }) => ({
+            presentation: coversScreen() && opensIntoFlow(route) ? 'fullScreenModal' : 'modal',
+          })}
+        />
       </Stack>
     `;
     const found = modalScreens(layout);
     expect(found).toEqual([
       { name: 'about', presentation: 'formSheet' },
       { name: 'play', presentation: 'transparentModal' },
+      { name: 'boards', presentation: 'fullScreenModal' },
     ]);
 
     const heldByName = Object.fromEntries(
@@ -148,8 +158,9 @@ describe('root modal routes and the launch update gate', () => {
         return [name, routeFile !== null && isHeldUntilLaunchReady(routeFile)];
       }),
     );
-    // app/about.tsx is a real, unwrapped route; app/play.tsx is wrapped.
-    expect(heldByName).toEqual({ about: false, play: true });
+    // app/about.tsx is a real, unwrapped route; app/play.tsx and
+    // app/boards/_layout.tsx are wrapped.
+    expect(heldByName).toEqual({ about: false, play: true, boards: true });
   });
 
   it('does not read a presentation named only in a comment', () => {

@@ -352,6 +352,52 @@ flow mounted; confirming redispatches the original navigation action. Footer
 exits use the same guard, so they ask once. Both routes disable the native
 back-button history menu, which does not support removal prevention.
 
+### Full screen on iPad
+
+On iPad the three spray routes (`spray/new`, `spray/holds`, `spray/reset`) are a
+`fullScreenModal`, not the page card every other Boards screen is. A card leaves
+the editor a box in the middle of the screen with the app dimmed around it.
+`sprayFlowCoversScreen()` (`src/lib/spray/spray-flow-presentation.ts`) is the
+one switch: `Platform.isPad` on iOS. Phones and Android, tablets included, keep
+the presentation and layout they had, key for key.
+
+- **Two places set it.** Pushed over the picker, a spray screen's own options
+  make it full screen (`sprayFlowScreenOptions`). Opened from the live wall
+  sheet, `/boards/spray/holds` or `/reset` is the FIRST screen of the Boards
+  stack, and a stack's first screen ignores its own presentation. So the root
+  `boards` screen in `app/_layout.tsx` takes an options function and asks
+  `opensIntoSprayFlow(route)` which screen the modal was opened on: the nested
+  navigate's `params.screen`, or the first route of a cold link's state. It reads
+  the ENTRY, so the presentation does not change while the modal is up. With
+  neither, it opens as the card, which still works.
+- **An X on holds and reset.** A full-screen modal has no swipe down and no back
+  chevron, so both need the wizard's header X (`SprayWizardExitButton`). Reset
+  already carries it on every platform (#5960), so iPad only adds the
+  presentation there; holds gets it on iPad only. It calls `router.back()` like
+  the screens' own Back buttons, so the `usePreventRemove` guards above still
+  ask first; with nothing to go back to it dismisses to Climbs.
+- **The home indicator fades** (`autoHideHomeIndicator`). The status bar stays:
+  hiding it per screen needs the view-controller-based status bar appearance,
+  which Expo turns off.
+- **Form steps keep a column.** The wizard's and the reset's scrolling steps are
+  capped at `SPRAY_FORM_MAX_WIDTH` (640 pt) and centred.
+- **The photo gets the screen.** `useSprayEditorLayout()` answers `tablet` for an
+  iPad window at the regular width (700 pt and up) and `phone` otherwise, live,
+  so Split View, Slide Over and a small iPadOS 26 window fall back to the phone
+  layout. On `tablet`, `fitSprayPhoto` keeps no room free for the bottom bar
+  (`reserveBottom: false`) and the chrome floats over the photo. The scan step
+  (`SprayScanPhoto`) fits with the same answer, through the same
+  `sprayPhotoReservesBottom`, or the rings would not land where the band swept.
+- **A resize resets the zoom.** When the photo's fitted size changes under the
+  editor (rotation, Split View, Stage Manager), the zoom is reset through the
+  board's `controlRef`, and a stroke or hold drag in progress is dropped by
+  remounting the gesture overlay. The stroke's points are board pixels, so what
+  was drawn is not wrong; the rest of it would be. Phones are portrait-locked and
+  never resize.
+
+Why iPad may use `fullScreenModal` when `docs/mobile-sheets-vs-routes.md` rule 2
+bans it: the ban is about the iOS 26 NativeTabs, and iPad never mounts them.
+
 ## Caps
 
 | Cap | Value | Why |

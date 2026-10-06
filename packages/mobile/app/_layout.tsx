@@ -115,6 +115,8 @@ import {
   runChannelOverrideCleanupOnce,
 } from '../src/lib/ota-channel-override-cleanup-run';
 import { setOtaBranchSurfingState } from '../src/lib/ota-branch-surfing-state';
+import { opensIntoSprayFlow } from '../src/lib/spray/spray-routes';
+import { sprayFlowCoversScreen } from '../src/lib/spray/spray-flow-presentation';
 // Side-effect import: instantiates the Android-only MemoryTrim native module
 // (expo-modules-core creates modules lazily on first JS access), whose Kotlin
 // OnCreate registers the Glide trim-on-UI_HIDDEN callback. No-op on iOS.
@@ -804,13 +806,24 @@ function RootLayout() {
                                                                         />
                                                                         {/* Board selection is a modal off the Climbs capsule /
                                                       no-board CTA — board switching is rare, so it doesn't
-                                                      earn a tab. Its own _layout owns the headers. */}
+                                                      earn a tab. Its own _layout owns the headers.
+
+                                                      On iPad a spray flow opened straight from the live
+                                                      board sheet is this stack's FIRST screen, which
+                                                      ignores its own presentation, so the full-screen
+                                                      cover is decided here from the entry screen. iPad
+                                                      never mounts NativeTabs, so rule 2 of
+                                                      docs/mobile-sheets-vs-routes.md is not in play. */}
                                                                         <Stack.Screen
                                                                           name="boards"
-                                                                          options={{
-                                                                            presentation: 'modal',
+                                                                          options={({ route }) => ({
+                                                                            presentation:
+                                                                              sprayFlowCoversScreen() &&
+                                                                              opensIntoSprayFlow(route)
+                                                                                ? 'fullScreenModal'
+                                                                                : 'modal',
                                                                             headerShown: false,
-                                                                          }}
+                                                                          })}
                                                                         />
                                                                         {/* The moderation feed — ONE root modal, not a copy in each
                                                       tab stack. The play drawer's Community section links into
