@@ -17,7 +17,7 @@ import {
   hasActiveClimbFilters,
   hasActiveBoardFilters,
   applyStatusChange,
-  normalizeRetiredStatus,
+  normalizeRetiredFilters,
   formatMinAscentsFilterCount,
   DEFAULT_CLIMB_BOARD_FILTER_STATE,
   countFilteredHolds,
@@ -34,7 +34,6 @@ import {
   newSortSeed,
   type BoardSearchConfig,
   type ProgressFilter,
-  type HoldIntegrityFilterValue,
 } from '@boardsesh/climb-filters';
 import { Text } from './Text';
 import { Button } from './Button';
@@ -235,7 +234,7 @@ export function ClimbFilterSheet({
   const isSprayWall = boardName === SPRAY_BOARD_NAME;
 
   const [localFilters, setLocalFilters] = useState<ClimbFilters>(() =>
-    withLockedDimensions(statusForAuth(normalizeRetiredStatus(currentFilters), isAuthenticated), lockedDimensions),
+    withLockedDimensions(statusForAuth(normalizeRetiredFilters(currentFilters), isAuthenticated), lockedDimensions),
   );
   const [localBoardFilters, setLocalBoardFilters] = useState<ClimbBoardFilterState>(currentBoardFilters);
   // The name field's own draft — seeded from the committed `searchName` prop.
@@ -296,7 +295,7 @@ export function ClimbFilterSheet({
     // parent prop sync should not mark committed state as an in-flight edit.
     setLocalFilters(
       withLockedDimensions(
-        statusForAuth(normalizeRetiredStatus(currentFilters), isAuthenticated),
+        statusForAuth(normalizeRetiredFilters(currentFilters), isAuthenticated),
         lockedDimensionsRef.current,
       ),
     );
@@ -522,30 +521,6 @@ export function ClimbFilterSheet({
       ...(isAuthenticated ? [{ key: 'drafts' as const, label: t('mobile.filter.drafts') }] : []),
     ],
     [t, isAuthenticated, offerBenchmarks],
-  );
-  // Hold integrity (SW-13) — on a spray wall, whether a climb still has every
-  // hold it was set on. On a spray wall 'current' is the default and sends
-  // nothing: a climb that lost holds in a partial reset stays listed, and one a
-  // FULL reset retired is hidden until the climber picks All or Lost holds
-  // (#6024). Every other board keeps the original three options with All as
-  // the stored-as-undefined default, so its filter state, the active-filter
-  // badge and the saved last search are exactly what they were. 'broken' is an
-  // honest empty list on a catalogue board, where holds don't come off.
-  const handleHoldIntegrityChange = useCallback(
-    (value: HoldIntegrityFilterValue) =>
-      setFiltersPatch({
-        holdIntegrity: value === 'current' || (!isSprayWall && value === 'any') ? undefined : value,
-      }),
-    [setFiltersPatch, isSprayWall],
-  );
-  const holdIntegrityOptions = useMemo(
-    () => [
-      ...(isSprayWall ? [{ key: 'current' as const, label: t('mobile.filter.holdIntegrity.current') }] : []),
-      { key: 'any' as const, label: t('mobile.filter.holdIntegrity.any') },
-      { key: 'intact' as const, label: t('mobile.filter.holdIntegrity.intact') },
-      { key: 'broken' as const, label: t('mobile.filter.holdIntegrity.broken') },
-    ],
-    [t, isSprayWall],
   );
   const handlePopularity = useCallback(
     (bucket: number | undefined) => {
@@ -1097,18 +1072,6 @@ export function ClimbFilterSheet({
                 selectedKey={collectionFilter}
                 onSelect={handleCollectionChange}
                 accessibilityLabel={t('mobile.filter.collection.label')}
-              />
-
-              <View style={styles.subsectionGap} />
-              <Text variant="footnote" style={styles.subsectionLabel}>
-                {t('mobile.filter.holdIntegrity.label')}
-              </Text>
-              <View style={styles.controlGap} />
-              <SegmentedControl
-                options={holdIntegrityOptions}
-                selectedKey={localFilters.holdIntegrity ?? (isSprayWall ? 'current' : 'any')}
-                onSelect={handleHoldIntegrityChange}
-                accessibilityLabel={t('mobile.filter.holdIntegrity.label')}
               />
 
               <View style={styles.subsectionGap} />

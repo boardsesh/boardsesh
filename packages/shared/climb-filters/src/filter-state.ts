@@ -28,22 +28,6 @@ export const STATUS_FILTER_VALUES = ['any', 'drafts', 'established', 'projects']
 export type StatusFilter = (typeof STATUS_FILTER_VALUES)[number];
 
 /**
- * Whether a climb still has every hold it was set on — the spray-wall reset
- * filter (SW-12), and since #6024 whether climbs retired by a full reset show.
- *
- * 'current' is the default and sends nothing: the server (and the offline
- * mirror) then hides climbs a full reset retired, so a wall's list shows the
- * set that is up now. 'any' ("All") sends ANY explicitly and shows them too.
- * 'intact' and 'broken' map onto `ClimbSearchInput.holdIntegrity`, whose SQL
- * lives in @boardsesh/db create-climb-filters.ts (`holdIntegrityCondition`,
- * `retiredByResetCondition`). Only a spray wall ever has a broken or retired
- * climb; on a catalogue board 'current' and 'any' are the same list and 'broken'
- * is an honest empty one.
- */
-export const HOLD_INTEGRITY_VALUES = ['current', 'any', 'intact', 'broken'] as const;
-export type HoldIntegrityFilterValue = (typeof HOLD_INTEGRITY_VALUES)[number];
-
-/**
  * In-app climb filter state, shared between web and mobile.
  *
  * This is a subset of {@link ClimbSearchInput} that excludes board-renderer
@@ -90,9 +74,6 @@ export type ClimbFilterState = {
   // those. Both are auth-gated backend-side, like the four tick flags above.
   minUserRating?: number;
   onlyRatedByMe?: boolean;
-  // Spray-wall hold integrity. Undefined and 'any' both mean no filter, so the
-  // default state carries neither.
-  holdIntegrity?: HoldIntegrityFilterValue;
 };
 
 export const DEFAULT_CLIMB_FILTER_STATE: ClimbFilterState = {
@@ -128,7 +109,6 @@ export function hasActiveClimbFilters(state: ClimbFilterState): boolean {
   if (state.showOnlyCompleted) return true;
   if (state.minUserRating != null) return true;
   if (state.onlyRatedByMe) return true;
-  if (state.holdIntegrity != null && state.holdIntegrity !== 'current') return true;
   // Default is boulders-only, so "active" means routes turned on or boulders off.
   if ((state.boulders ?? true) !== true) return true;
   if ((state.routes ?? false) !== false) return true;
@@ -170,15 +150,43 @@ export function applyStatusChange(_previous: ClimbFilterState, newStatus: Status
 }
 
 /**
- * "established" is retired as a user-facing status (it's the same lever as
- * `minAscents >= 2`, now folded into the Popularity control), but the enum
- * value still appears in older stored searches / recent pills. Map it to `any`
- * while preserving `minAscents`, so the UI never holds a status that has no
- * control and the active-filter count doesn't double-count the one lever.
- * The enum value is kept for back-compat; this just normalizes on read.
+ * Filters an older app stored that no longer have a control, normalized on read
+ * of a stored search or recent pill:
+ *
+ * - "established" is retired as a user-facing status (it's the same lever as
+ *   `minAscents >= 2`, now folded into the Popularity control). Map it to `any`
+ *   while preserving `minAscents`, so the UI never holds a status that has no
+ *   control and the active-filter count doesn't double-count the one lever.
+ *   The enum value is kept for back-compat.
+ * - `holdIntegrity` was the spray-wall "Holds" filter (Current / All / Intact /
+ *   Lost holds). It is gone: a published climb that lost a hold is now always
+ *   hidden from wall lists (see {@link hidesLostHoldClimbs}). A stored value is
+ *   dropped so it is not written back with the next save.
+ *
+ * Returns the same reference when there is nothing to change.
  */
-export function normalizeRetiredStatus(state: ClimbFilterState): ClimbFilterState {
-  return state.status === 'established' ? { ...state, status: 'any' } : state;
+export function normalizeRetiredFilters(state: ClimbFilterState): ClimbFilterState {
+  const { holdIntegrity: retiredHoldIntegrity, ...withoutHoldIntegrity } = state as ClimbFilterState & {
+    holdIntegrity?: unknown;
+  };
+  const statusRetired = state.status === 'established';
+  if (retiredHoldIntegrity === undefined && !statusRetired) return state;
+  const base: ClimbFilterState = retiredHoldIntegrity === undefined ? state : withoutHoldIntegrity;
+  return statusRetired ? { ...base, status: 'any' } : base;
+}
+
+/**
+ * Whether a climb search must leave out published climbs that lost a hold.
+ *
+ * True on a spray wall, the only board whose holds ever came off, for every
+ * search but the climber's own drafts: a draft that lost a hold stays listed so
+ * its setter can fix it or delete it. Lost-hold climbs still open by uuid (a
+ * logbook, a playlist, the queue, a link); only lists and search hide them.
+ * The network sends this as `holdIntegrity: 'INTACT'`, and the phone's own
+ * search applies the same rule to `missing_hold_count`.
+ */
+export function hidesLostHoldClimbs(input: Pick<ClimbSearchInput, 'boardName' | 'onlyDrafts'>): boolean {
+  return input.boardName === 'spray' && input.onlyDrafts !== true;
 }
 
 export type BoardSearchConfig = {
@@ -234,15 +242,6 @@ export function toClimbSearchInput(
   if (state.showOnlyCompleted) input.showOnlyCompleted = true;
   if (state.minUserRating != null) input.minUserRating = state.minUserRating;
   if (state.onlyRatedByMe) input.onlyRatedByMe = true;
-  // 'current' (the default) is omitted: the server reads an absent value as
-  // "the set that is up now" and hides climbs a full reset retired (#6024).
-  // 'any' ("All") is sent explicitly on a spray wall, which is the only board
-  // where it differs from the default; on a catalogue board it stays omitted,
-  // so the everyday search keeps its cache key.
-  if (state.holdIntegrity === 'any' && board.boardName === 'spray') input.holdIntegrity = 'ANY';
-  if (state.holdIntegrity === 'intact') input.holdIntegrity = 'INTACT';
-  if (state.holdIntegrity === 'broken') input.holdIntegrity = 'BROKEN';
-
   // Personal grades (#4796, #4828): the climber's own grade drives the grade
   // range and the difficulty sort, so a climb they re-graded lands in the band
   // the row already shows them.

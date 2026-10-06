@@ -486,13 +486,6 @@
         "label": "Collection",
         "any": "Toutes"
       },
-      "holdIntegrity": {
-        "label": "Prises",
-        "current": "Actuelles",
-        "any": "Toutes",
-        "intact": "Intacts seulement",
-        "broken": "Prises perdues"
-      },
       "pin": "Épingler comme raccourci",
       "unpin": "Retirer des raccourcis",
       "established2plus": "Établies 2+",

@@ -1,4 +1,4 @@
-import { SORT_OPTIONS, STATUS_FILTER_VALUES, normalizeRetiredStatus } from '@boardsesh/climb-filters';
+import { SORT_OPTIONS, STATUS_FILTER_VALUES, normalizeRetiredFilters } from '@boardsesh/climb-filters';
 import type { ClimbFilters } from './climb-filter-types';
 import { getFilterKey } from './filter-key';
 import { deleteSecureValue, readSecureValue, writeSecureValue } from './secure-store-io';
@@ -54,7 +54,7 @@ function normalizeEntry(entry: RecentFilter): RecentFilter {
   // Backfill a missing status and retire legacy 'established' → 'any' (the
   // Popularity control reflects minAscents), so replayed pills never carry a
   // status the UI can't show.
-  return { ...entry, filters: normalizeRetiredStatus({ ...entry.filters, status }) };
+  return { ...entry, filters: normalizeRetiredFilters({ ...entry.filters, status }) };
 }
 
 function stripAuthGatedFields(filters: ClimbFilters): ClimbFilters {

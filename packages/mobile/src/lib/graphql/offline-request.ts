@@ -18,6 +18,7 @@ import {
 } from '../../db/queries/board-download-status';
 import { getClimbStatsHistoryLocal } from '../../db/queries/get-climb-stats-history-local';
 import { getHttpClient } from './client';
+import { hidesLostHoldClimbs } from '@boardsesh/climb-filters';
 import { ensureHoldIndex } from '@boardsesh/offline-sync';
 import type { OfflineReadLane, OfflineReadSurface, OfflineUnavailableReason } from '@boardsesh/offline-sync';
 import { getSimilarClimbsLocal } from '../../db/queries/get-similar-climbs-local';
@@ -120,6 +121,10 @@ type OfflineOperation<TVariables, TResponse> = {
   // Never changes what the server said, only fills fields it left out. A throw
   // here is swallowed: the network answer stands as it came.
   enrichNetworkResponse?: (db: SQLiteDatabase, variables: TVariables, response: TResponse) => Promise<TResponse>;
+  // The variables as the server should get them, when a rule the phone always
+  // applies has to travel with the request. The local read applies the same
+  // rule itself, so only the network path calls this.
+  networkVariables?: (variables: TVariables) => Variables;
 };
 
 // Generics erased at storage; `never` params keep the assignment legal
@@ -202,6 +207,25 @@ async function fillDetailRevisionNumbers(
   return climb === response.climb ? response : { ...response, climb };
 }
 
+/**
+ * A spray wall's search leaves out published climbs that lost a hold
+ * (`hidesLostHoldClimbs`). The server honours `holdIntegrity: 'INTACT'`, so every
+ * network search on a wall sends it, whatever the caller built, except the
+ * climber's own drafts list, which keeps a draft that lost a hold so its setter
+ * can fix or delete it. `searchClimbsLocal` applies the same rule on the phone.
+ */
+export function withLostHoldRule(variables: SearchClimbsQueryVariables): SearchClimbsQueryVariables {
+  const { input } = variables;
+  if (hidesLostHoldClimbs(input)) {
+    return input.holdIntegrity === 'INTACT'
+      ? variables
+      : { ...variables, input: { ...input, holdIntegrity: 'INTACT' } };
+  }
+  if (input.holdIntegrity == null) return variables;
+  const { holdIntegrity: _retiredHoldIntegrity, ...inputWithoutHoldIntegrity } = input;
+  return { ...variables, input: inputWithoutHoldIntegrity };
+}
+
 registerOfflineOperation<SearchClimbsQueryVariables, SearchClimbsQueryResponse>({
   document: SEARCH_CLIMBS,
   surface: 'search',
@@ -211,6 +235,7 @@ registerOfflineOperation<SearchClimbsQueryVariables, SearchClimbsQueryResponse>(
   resolveLocal: async (db, { input }) => ({ searchClimbs: await searchClimbsLocal(db, input) }),
   offlineFallback: () => ({ searchClimbs: { climbs: [], hasMore: false } }),
   enrichNetworkResponse: fillSearchRevisionNumbers,
+  networkVariables: withLostHoldRule,
 });
 
 registerOfflineOperation<SearchClimbsQueryVariables, SearchClimbsCountQueryResponse>({
@@ -221,6 +246,7 @@ registerOfflineOperation<SearchClimbsQueryVariables, SearchClimbsCountQueryRespo
   canServeLocal: canServeSearchLocal,
   resolveLocal: async (db, { input }) => ({ searchClimbs: { totalCount: await countClimbsLocal(db, input) } }),
   offlineFallback: () => ({ searchClimbs: { totalCount: 0 } }),
+  networkVariables: withLostHoldRule,
 });
 
 registerOfflineOperation<GetClimbQueryVariables, GetClimbQueryResponse>({
@@ -522,7 +548,11 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
   }
 
   try {
-    const networkResponse = await getHttpClient().request<TResponse>(document, variables);
+    const sentVariables =
+      operation?.networkVariables && variables !== undefined
+        ? operation.networkVariables(variables as never)
+        : variables;
+    const networkResponse = await getHttpClient().request<TResponse>(document, sentVariables);
     return await enrichNetworkResponse(operation, localDb, variables, networkResponse);
   } catch (networkError) {
     // The request reached the network and failed. If it's a registered op whose

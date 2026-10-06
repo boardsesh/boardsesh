@@ -486,13 +486,6 @@
         "label": "Colección",
         "any": "Cualquiera"
       },
-      "holdIntegrity": {
-        "label": "Presas",
-        "current": "Actuales",
-        "any": "Todas",
-        "intact": "Solo intactos",
-        "broken": "Presas perdidas"
-      },
       "pin": "Fijar como atajo",
       "unpin": "Quitar de los atajos",
       "established2plus": "Establecido 2+",

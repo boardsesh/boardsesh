@@ -340,6 +340,56 @@ describe('offlineAwareRequest — SEARCH_CLIMBS_COUNT', () => {
   });
 });
 
+// A published spray climb that lost a hold is left out of wall lists. The
+// server honours INTACT, so every network search on a wall carries it, except
+// the climber's own drafts list.
+describe('offlineAwareRequest — spray searches over the network', () => {
+  const sprayInput: ClimbSearchInput = { boardName: 'spray', layoutId: 7, sizeId: 7, setIds: '1', angle: 25 };
+
+  beforeEach(() => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+  });
+
+  it('sends INTACT on a wall search and a wall count', async () => {
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: sprayInput });
+    expect(request).toHaveBeenLastCalledWith(SEARCH_CLIMBS, { input: { ...sprayInput, holdIntegrity: 'INTACT' } });
+    await offlineAwareRequest<SearchClimbsCountQueryResponse>(SEARCH_CLIMBS_COUNT, { input: sprayInput });
+    expect(request).toHaveBeenLastCalledWith(SEARCH_CLIMBS_COUNT, {
+      input: { ...sprayInput, holdIntegrity: 'INTACT' },
+    });
+  });
+
+  it('overrides a value an older caller still builds', async () => {
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, {
+      input: { ...sprayInput, holdIntegrity: 'BROKEN' },
+    });
+    expect(request).toHaveBeenLastCalledWith(SEARCH_CLIMBS, { input: { ...sprayInput, holdIntegrity: 'INTACT' } });
+  });
+
+  it("sends nothing for the climber's drafts, so a draft that lost a hold still lists", async () => {
+    const draftsInput: ClimbSearchInput = { ...sprayInput, onlyDrafts: true };
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: draftsInput });
+    expect(request).toHaveBeenLastCalledWith(SEARCH_CLIMBS, { input: draftsInput });
+  });
+
+  it('leaves a catalogue search untouched and drops a stale value from it', async () => {
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+    expect(request).toHaveBeenLastCalledWith(SEARCH_CLIMBS, { input: searchInput });
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, {
+      input: { ...searchInput, holdIntegrity: 'BROKEN' },
+    });
+    expect(request).toHaveBeenLastCalledWith(SEARCH_CLIMBS, { input: searchInput });
+  });
+
+  it('leaves the local read to apply the rule itself', async () => {
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: sprayInput });
+    expect(searchClimbsLocal).toHaveBeenCalledWith(fakeDb, sprayInput);
+    expect(request).not.toHaveBeenCalled();
+  });
+});
+
 describe('offlineAwareRequest — GET_CLIMB', () => {
   it('reads detail locally when downloaded, without consulting the filter-support gate', async () => {
     setOnline(true);

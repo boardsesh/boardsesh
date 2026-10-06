@@ -486,13 +486,6 @@
         "label": "Sammlung",
         "any": "Beliebig"
       },
-      "holdIntegrity": {
-        "label": "Griffe",
-        "current": "Aktuelle",
-        "any": "Alle",
-        "intact": "Nur intakte",
-        "broken": "Fehlende Griffe"
-      },
       "pin": "An Schnellzugriff anpinnen",
       "unpin": "Aus Schnellzugriff entfernen",
       "established2plus": "Etabliert 2+",

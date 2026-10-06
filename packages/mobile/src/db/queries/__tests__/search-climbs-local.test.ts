@@ -807,90 +807,16 @@ describe('isOfflineSearchSupported', () => {
     expect(isOfflineSearchSupported(makeInput({ holdsFilter: { hold_5: { STARTING: 'include' } } }))).toBe(false);
   });
 
-  // Deleted on purpose, which is what SW-13's pin asked for. That test asserted
-  // `isOfflineSearchSupported` DECLINES a spray-wall hold-integrity search,
-  // because the device had no `missing_hold_count` to answer from. SW-15 (#5448)
-  // is what changes that: the column lands at on-device migration v7 and
-  // `buildJoinAndWhere` carries the server's own `COALESCE(...) = 0` predicate,
-  // so answering locally is now the faithful mirror rather than a shortcut.
-  //
-  // The three cases it pinned are covered in the "spray-wall hold integrity"
-  // block below against real rows — INTACT, BROKEN and the NULL rule, which is
-  // the half a support flag could never express.
-
   // Random needs no un-synced tables, so it stays offline-supported.
   it('supports the random sort offline', () => {
     expect(isOfflineSearchSupported(makeInput({ sortBy: 'random', sortSeed: '42' }))).toBe(true);
   });
 });
 
-describe('searchClimbsLocal: spray-wall hold integrity', () => {
-  let db: TestSqliteDb;
-
-  // Three states the column can be in, and the NULL is the one that matters:
-  // every climb on the eight catalogue boards carries it, as does any row pulled
-  // before migration v7. The server's `holdIntegrityCondition` COALESCEs it to 0
-  // — "presumed whole until a reset says otherwise" — and this mirror has to
-  // reach the same answer or a downloaded board disagrees with the network.
-  beforeEach(async () => {
-    db = createTestDatabase();
-    await ensureMutationQueueTable(db);
-    await runMigrations(db);
-    await stampLocalUserId(db, LOCAL_OWNER);
-    await insertClimb(db, { uuid: 'intact', missingHoldCount: 0 });
-    await insertClimb(db, { uuid: 'broken', missingHoldCount: 2 });
-    await insertClimb(db, { uuid: 'unknown' });
-    for (const uuid of ['intact', 'broken', 'unknown']) {
-      await insertStat(db, { climbUuid: uuid, ascensionistCount: 3 });
-    }
-  });
-
-  const names = async (holdIntegrity?: 'ANY' | 'INTACT' | 'BROKEN') => {
-    const result = await searchClimbsLocal(db, makeInput({ holdIntegrity }));
-    return result.climbs.map((climb) => climb.uuid).sort();
-  };
-
-  it('answers the filter locally instead of declining it', () => {
-    expect(isOfflineSearchSupported(makeInput({ holdIntegrity: 'INTACT' }))).toBe(true);
-    expect(isOfflineSearchSupported(makeInput({ holdIntegrity: 'BROKEN' }))).toBe(true);
-  });
-
-  it('INTACT keeps a zero count AND an unknown one', async () => {
-    expect(await names('INTACT')).toEqual(['intact', 'unknown']);
-  });
-
-  it('BROKEN keeps only a climb that has actually lost holds', async () => {
-    // The NULL row must NOT be here. Reversed, one un-backfilled row would badge
-    // every Kilter climb on the device as broken.
-    expect(await names('BROKEN')).toEqual(['broken']);
-  });
-
-  it('ANY and an absent filter carry no predicate at all', async () => {
-    expect(await names('ANY')).toEqual(['broken', 'intact', 'unknown']);
-    expect(await names()).toEqual(['broken', 'intact', 'unknown']);
-  });
-
-  it('counts agree with the list, so the header is not a different search', async () => {
-    expect(await countClimbsLocal(db, makeInput({ holdIntegrity: 'INTACT' }))).toBe(2);
-    expect(await countClimbsLocal(db, makeInput({ holdIntegrity: 'BROKEN' }))).toBe(1);
-  });
-
-  it('surfaces the count on the row, leaving an unknown one null', async () => {
-    const result = await searchClimbsLocal(db, makeInput());
-    const byUuid = new Map(result.climbs.map((climb) => [climb.uuid, climb.missingHoldCount]));
-    expect(byUuid.get('broken')).toBe(2);
-    expect(byUuid.get('intact')).toBe(0);
-    // Not 0: "no reset has touched this" and "this is not a spray climb" are
-    // different statements, and the server's Climb.missingHoldCount is nullable
-    // for exactly the same rows.
-    expect(byUuid.get('unknown')).toBeNull();
-  });
-});
-
-// #6024: a full reset retires the climbs that lost holds in it. The local list
-// must hide them exactly as the server's `retiredByResetCondition` does, since a
-// downloaded wall reads here even while online.
-describe('searchClimbsLocal: climbs retired by a full reset', () => {
+// A published spray climb that lost a hold is left out of wall lists and search
+// (the network sends the same rule as `holdIntegrity: 'INTACT'`). A downloaded
+// wall reads here even while online, so the two must agree.
+describe('searchClimbsLocal: spray climbs that lost a hold', () => {
   let db: TestSqliteDb;
   const sprayInput = (overrides: Partial<ClimbSearchInput> = {}) =>
     makeInput({ boardName: 'spray', layoutId: 7, sizeId: 5, ...overrides } as Partial<ClimbSearchInput>);
@@ -900,12 +826,14 @@ describe('searchClimbsLocal: climbs retired by a full reset', () => {
     await ensureMutationQueueTable(db);
     await runMigrations(db);
     await stampLocalUserId(db, LOCAL_OWNER);
-    await insertClimb(db, { uuid: 'current', boardType: 'spray', layoutId: 7, missingHoldCount: 0 });
-    await insertClimb(db, { uuid: 'retired', name: 'Old blue', boardType: 'spray', layoutId: 7, missingHoldCount: 1 });
-    await insertClimb(db, { uuid: 'unknown', boardType: 'spray', layoutId: 7 });
+    await insertClimb(db, { uuid: 'whole', boardType: 'spray', layoutId: 7, missingHoldCount: 0 });
+    await insertClimb(db, { uuid: 'lost', name: 'Old blue', boardType: 'spray', layoutId: 7, missingHoldCount: 2 });
+    await insertClimb(db, { uuid: 'retired', boardType: 'spray', layoutId: 7, missingHoldCount: 5 });
     await db.runAsync("UPDATE board_climbs SET retired_by_reset = 1 WHERE uuid = 'retired'");
-    await db.runAsync("UPDATE board_climbs SET retired_by_reset = 0 WHERE uuid = 'current'");
-    for (const uuid of ['current', 'retired', 'unknown']) {
+    // NULL: a spray climb written before the server kept the count, or a row
+    // pulled before migration v7. Read as whole.
+    await insertClimb(db, { uuid: 'unknown', boardType: 'spray', layoutId: 7 });
+    for (const uuid of ['whole', 'lost', 'retired', 'unknown']) {
       await insertStat(db, { climbUuid: uuid, boardType: 'spray', ascensionistCount: 3 });
     }
   });
@@ -915,20 +843,33 @@ describe('searchClimbsLocal: climbs retired by a full reset', () => {
     return result.climbs.map((climb) => climb.uuid).sort();
   };
 
-  it('hides a retired climb from the default list, and reads NULL as not retired', async () => {
-    expect(await names()).toEqual(['current', 'unknown']);
+  it('hides a published climb that lost a hold, a retired one with it, and reads NULL as whole', async () => {
+    expect(await names()).toEqual(['unknown', 'whole']);
     expect(await countClimbsLocal(db, sprayInput())).toBe(2);
   });
 
-  it('shows it again under an explicit ANY, under BROKEN and on a name search', async () => {
-    expect(await names({ holdIntegrity: 'ANY' })).toEqual(['current', 'retired', 'unknown']);
-    expect(await names({ holdIntegrity: 'BROKEN' })).toEqual(['retired']);
-    expect(await names({ name: 'Old blue' })).toEqual(['retired']);
+  it('hides it from a name search too', async () => {
+    expect(await names({ name: 'Old blue' })).toEqual([]);
+  });
+
+  it('ignores a hold-integrity value an older caller still sends', async () => {
+    expect(await names({ holdIntegrity: 'ANY' })).toEqual(['unknown', 'whole']);
+    expect(await names({ holdIntegrity: 'BROKEN' })).toEqual(['unknown', 'whole']);
+  });
+
+  it('leaves a lost-hold draft to the drafts list, which reads over the network', () => {
+    expect(isOfflineSearchSupported(sprayInput({ onlyDrafts: true }))).toBe(false);
+  });
+
+  it('still carries the count on the rows it lists', async () => {
+    const result = await searchClimbsLocal(db, sprayInput());
+    const byUuid = new Map(result.climbs.map((climb) => [climb.uuid, climb.missingHoldCount]));
+    expect(byUuid.get('whole')).toBe(0);
+    expect(byUuid.get('unknown')).toBeNull();
   });
 
   it('leaves a catalogue board alone', async () => {
-    await insertClimb(db, { uuid: 'kilter-climb' });
-    await db.runAsync("UPDATE board_climbs SET retired_by_reset = 1 WHERE uuid = 'kilter-climb'");
+    await insertClimb(db, { uuid: 'kilter-climb', missingHoldCount: 3 });
     await insertStat(db, { climbUuid: 'kilter-climb', ascensionistCount: 3 });
     const result = await searchClimbsLocal(db, makeInput());
     expect(result.climbs.map((climb) => climb.uuid)).toEqual(['kilter-climb']);

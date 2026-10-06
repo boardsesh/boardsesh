@@ -122,7 +122,7 @@ describe('getClimbLocal — climb version numbers', () => {
   });
 });
 
-describe('getClimbLocal — spray-wall hold integrity', () => {
+describe('getClimbLocal — climbs that lost holds', () => {
   let db: TestSqliteDb;
 
   beforeEach(async () => {
@@ -131,15 +131,30 @@ describe('getClimbLocal — spray-wall hold integrity', () => {
   });
 
   it('carries missing_hold_count through to the climb', async () => {
-    // The detail screen is where the lost-holds badge is drawn, and it is a
-    // different read from the list — the filter tests cover `searchClimbsLocal`
-    // and would not notice this column being dropped from the projection here.
+    // The board-compatibility rule reads it to keep a lost-hold climb loggable
+    // and queueable, and it is a different read from the list — the search tests
+    // cover `searchClimbsLocal` and would not notice this column being dropped
+    // from the projection here.
     await insertClimb(db, 'broken');
     await db.runAsync('UPDATE board_climbs SET missing_hold_count = 2 WHERE uuid = ?', ['broken']);
 
     const climb = await getClimbLocal(db, { boardName: 'kilter', layoutId: 1, angle: 40, climbUuid: 'broken' });
 
     expect(climb?.missingHoldCount).toBe(2);
+  });
+
+  it('opens a published spray climb that lost a hold by uuid, though search hides it', async () => {
+    // A logbook entry, a playlist, the queue or a link still reaches it, drawn
+    // with the holds that remain. Retired by a full reset makes no difference.
+    await insertClimb(db, 'old-blue', 'spray');
+    await db.runAsync('UPDATE board_climbs SET missing_hold_count = 3, retired_by_reset = 1 WHERE uuid = ?', [
+      'old-blue',
+    ]);
+
+    const climb = await getClimbLocal(db, { boardName: 'spray', layoutId: 1, angle: 40, climbUuid: 'old-blue' });
+
+    expect(climb?.uuid).toBe('old-blue');
+    expect(climb?.missingHoldCount).toBe(3);
   });
 
   it('reads null for a climb no reset has touched', async () => {
