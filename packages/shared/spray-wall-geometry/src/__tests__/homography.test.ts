@@ -403,3 +403,64 @@ describe('mapRing and mapRadius', () => {
     expect(mapRadius([1, 0, 0, 0, 1, 0, 1, 0, -10], 10, 0)).toBe(1);
   });
 });
+
+describe('a crop before the upload', () => {
+  // The photo step's "Crop or rotate" (packages/mobile, `photo-edit.ts`) crops
+  // the file BEFORE it is uploaded, so the server never sees the uncropped
+  // picture: the anchors are tapped on the cropped file and the homography is
+  // solved in its pixels. That is only safe if a crop is invisible to the
+  // canonical frame — the same wall point, measured in the cropped photo, has
+  // to land on the same canonical point as it would have uncropped. A crop is a
+  // translation of the pixel grid, and a homography solved from anchors that
+  // moved with the grid absorbs it exactly.
+  const REFERENCE = { width: 1200, height: 800 };
+  /** An off-axis wall: a keystoned quad, as a phone held below the wall sees it. */
+  const ANCHORS: Quad = [
+    [310, 205],
+    [1690, 260],
+    [1620, 1410],
+    [255, 1300],
+  ];
+  /** Wall points, including one near each corner and one far from all of them. */
+  const WALL_POINTS: [number, number][] = [
+    [330, 230],
+    [1650, 290],
+    [1580, 1380],
+    [280, 1280],
+    [977, 801],
+  ];
+
+  function shift(quad: Quad, offsetX: number, offsetY: number): Quad {
+    return quad.map(([pointX, pointY]) => [pointX - offsetX, pointY - offsetY]);
+  }
+
+  it('maps a wall point to the same canonical point however the photo was cropped', () => {
+    const uncropped = homographyFromAnchors(ANCHORS, REFERENCE);
+    for (const [offsetX, offsetY] of [
+      [0, 0],
+      [200, 150],
+      [255, 205],
+      [17, 3],
+    ] as const) {
+      const cropped = homographyFromAnchors(shift(ANCHORS, offsetX, offsetY), REFERENCE);
+      for (const [pointX, pointY] of WALL_POINTS) {
+        const [canonicalX, canonicalY] = mapPoint(uncropped, pointX, pointY);
+        const [croppedX, croppedY] = mapPoint(cropped, pointX - offsetX, pointY - offsetY);
+        expect(croppedX, `offset ${offsetX},${offsetY}`).toBeCloseTo(canonicalX, 6);
+        expect(croppedY, `offset ${offsetX},${offsetY}`).toBeCloseTo(canonicalY, 6);
+      }
+    }
+  });
+
+  it('keeps the frame the quad describes, so a reset after a crop compares like with like', () => {
+    // `boundingSize` is what version 1's frame is derived from when it has
+    // anchors; a crop that keeps all four corners leaves it untouched.
+    expect(boundingSize(shift(ANCHORS, 200, 150))).toEqual(boundingSize(ANCHORS));
+  });
+
+  it('maps the radius of a hold the same way too', () => {
+    const uncropped = homographyFromAnchors(ANCHORS, REFERENCE);
+    const cropped = homographyFromAnchors(shift(ANCHORS, 200, 150), REFERENCE);
+    expect(mapRadius(cropped, 977 - 200, 801 - 150)).toBeCloseTo(mapRadius(uncropped, 977, 801), 9);
+  });
+});

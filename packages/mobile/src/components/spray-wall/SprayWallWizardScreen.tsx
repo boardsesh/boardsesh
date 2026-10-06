@@ -47,6 +47,7 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { GymPickerSheet } from '../board-discovery/GymPickerSheet';
 import { SprayCornerFooter } from './SprayCornerFooter';
 import { SprayCornerStep } from './SprayCornerStep';
+import { SprayPhotoAdjustStep } from './SprayPhotoAdjustStep';
 import {
   confirmDiscardSprayEdits,
   SprayHoldEditorScreen,
@@ -97,7 +98,14 @@ import { SprayDetectionStep } from './SprayDetectionStep';
 import { SprayWallLookStep } from './SprayWallLookStep';
 import { useSprayWizardLeaveGuard } from './use-spray-wizard-leave-guard';
 import { canPhotographWall } from '../../lib/spray/camera-capability';
-import { pickWallPhotoFromCamera, pickWallPhotoFromLibrary, rescalePoint } from '../../lib/spray/wall-photo';
+import {
+  pickWallPhotoFromCamera,
+  pickWallPhotoFromLibrary,
+  renderWallPhotoEdit,
+  rescalePoint,
+} from '../../lib/spray/wall-photo';
+import { discardLocalPhoto } from '../../lib/spray/discard-local-photo';
+import { editCrops, editRotates, editsEqual, isIdentityEdit, type WallPhotoEdit } from '../../lib/spray/photo-edit';
 import {
   addWallReducer,
   backLeavesFlow,
@@ -444,6 +452,49 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   );
 
   // ============================================
+  // Step 2, detour — crop or rotate
+  // ============================================
+
+  // The last render failed. Local rather than machine state: it is copy on the
+  // crop step, and the machine's own answer to a failure is to stay put.
+  const [adjustFailed, setAdjustFailed] = useState(false);
+
+  const openAdjust = useCallback(() => {
+    setAdjustFailed(false);
+    dispatch({ type: 'ADJUST_OPENED' });
+  }, []);
+
+  const applyPhotoEdit = useCallback(
+    async (edit: WallPhotoEdit) => {
+      const photo = state.photo;
+      if (!photo || state.photoProcessing) return;
+      setAdjustFailed(false);
+      // Done with nothing changed is Cancel: re-rendering the same file would
+      // clear corners the climber has no reason to mark again.
+      if (editsEqual(photo.edit, edit)) {
+        dispatch({ type: 'BACK' });
+        return;
+      }
+      dispatch({ type: 'PHOTO_PROCESSING_STARTED' });
+      try {
+        const rendered = await renderWallPhotoEdit(photo, edit);
+        dispatch({
+          type: 'PHOTO_ADJUSTED',
+          photo: { ...photo, ...rendered, edit: isIdentityEdit(edit) ? null : edit },
+        });
+        // The edit this one replaced is nobody's now. Never the base, which
+        // the next re-edit starts from, nor the picker's original.
+        if (photo.uri !== photo.base.uri && photo.uri !== rendered.uri) discardLocalPhoto(photo.uri);
+      } catch (error) {
+        reportError(error);
+        setAdjustFailed(true);
+        dispatch({ type: 'PHOTO_PROCESSING_FAILED' });
+      }
+    },
+    [state.photo, state.photoProcessing],
+  );
+
+  // ============================================
   // Steps 4 and 5 — upload, then suggest
   // ============================================
 
@@ -521,6 +572,8 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
           durationMs: Date.now() - startedAt,
           determinate: uploaded.determinate,
           attempt,
+          cropped: editCrops(photo.edit),
+          rotated: editRotates(photo.edit),
         }),
       );
 
@@ -544,6 +597,8 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
           durationMs: Date.now() - startedAt,
           determinate: false,
           attempt,
+          cropped: editCrops(photo.edit),
+          rotated: editRotates(photo.edit),
         }),
       );
       // Classified now, at failure time, and stored with the message: a server
@@ -923,6 +978,23 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
 
   const stepIndex = COUNTED_STEPS.indexOf(state.step);
 
+  // The crop step is a screenful of its own for the corner step's reason: a
+  // drag on the crop box must never also be a scroll. It is not counted — it
+  // is a detour off the photo step, not a step of the flow.
+  if (state.step === 'adjust' && state.photo) {
+    return (
+      <SprayPhotoAdjustStep
+        title={t('sprayWizard.adjust.title')}
+        body={t('sprayWizard.adjust.body')}
+        photo={state.photo}
+        processing={state.photoProcessing}
+        failed={adjustFailed}
+        onDone={(edit) => void applyPhotoEdit(edit)}
+        onCancel={goBack}
+      />
+    );
+  }
+
   // Its own screenful rather than a section of the scrolling page below: the
   // photo is fitted to the space between the header and the footer, so all four
   // rings are on screen and a vertical drag is never also a scroll (#5958).
@@ -1083,6 +1155,15 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
                   }}
                   contentFit="cover"
                   accessibilityIgnoresInvertColors
+                />
+                {/* Under the photo it changes. Crop happens before the upload, so
+                    the server only ever sees the cropped file. */}
+                <Button
+                  title={t('sprayWizard.photo.adjust')}
+                  icon="crop.free"
+                  variant="text"
+                  onPress={openAdjust}
+                  disabled={pickerBusy}
                 />
               </View>
             ) : null}
@@ -1300,6 +1381,7 @@ const styles = StyleSheet.create({
   previewWrap: {
     alignItems: 'center',
     paddingVertical: spacing[3],
+    gap: spacing[2],
   },
   photoGuideLink: {
     alignSelf: 'flex-start',

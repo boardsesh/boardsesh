@@ -16,8 +16,14 @@ import {
   type CreatedWallDraft,
 } from '../add-wall-machine';
 
-const PHOTO = { uri: 'file:///wall.jpg', width: 2048, height: 1536, source: 'library' as const };
-const OTHER_PHOTO = { uri: 'file:///other.jpg', width: 1024, height: 1024, source: 'camera' as const };
+/** A picked photo as the picker hands it back: its own base, no edit yet. */
+function pickedPhoto(uri: string, width: number, height: number, source: 'library' | 'camera') {
+  const base = { uri, width, height };
+  return { ...base, base, original: { uri: `${uri}.heic`, longSide: 4032 }, edit: null, source };
+}
+
+const PHOTO = pickedPhoto('file:///wall.jpg', 2048, 1536, 'library');
+const OTHER_PHOTO = pickedPhoto('file:///other.jpg', 1024, 1024, 'camera');
 
 const DRAFT: CreatedWallDraft = {
   wallUuid: 'wall-1',
@@ -722,5 +728,85 @@ describe('backLeavesFlow — what the footer Back does', () => {
     expect(
       backLeavesFlow(run([{ type: 'META_DONE' }, { type: 'PHOTO_PICKED', photo: PHOTO }, { type: 'PHOTO_CONFIRMED' }])),
     ).toBe(false); // anchors
+  });
+});
+
+describe('addWallReducer — crop or rotate', () => {
+  const EDITED = {
+    ...PHOTO,
+    uri: 'file:///wall-edited.jpg',
+    width: 1500,
+    height: 1800,
+    edit: { quarterTurns: 1 as const, crop: { left: 0.1, top: 0, right: 0.9, bottom: 1 } },
+  };
+
+  function atPhoto(): AddWallState {
+    return run([{ type: 'META_DONE' }, { type: 'PHOTO_PICKED', photo: PHOTO }]);
+  }
+
+  it('opens only from the photo step, and only with a photo', () => {
+    expect(run([{ type: 'ADJUST_OPENED' }], atPhoto()).step).toBe('adjust');
+    expect(run([{ type: 'META_DONE' }, { type: 'ADJUST_OPENED' }]).step).toBe('photo');
+    expect(run([{ type: 'PHOTO_CONFIRMED' }, { type: 'ADJUST_OPENED' }], atPhoto()).step).toBe('anchors');
+  });
+
+  it('goes back to the photo on Back, with the photo as it was', () => {
+    const state = run([{ type: 'ADJUST_OPENED' }, { type: 'BACK' }], atPhoto());
+    expect(state.step).toBe('photo');
+    expect(state.photo).toEqual(PHOTO);
+  });
+
+  it('clears the corners when the edit lands, because a turn moves the top-left', () => {
+    const withCorners = run(
+      [{ type: 'PHOTO_CONFIRMED' }, { type: 'ANCHORS_SET', anchors: SQUARE }, { type: 'BACK' }],
+      atPhoto(),
+    );
+    expect(withCorners.anchors).toEqual(SQUARE);
+
+    const state = run(
+      [{ type: 'ADJUST_OPENED' }, { type: 'PHOTO_PROCESSING_STARTED' }, { type: 'PHOTO_ADJUSTED', photo: EDITED }],
+      withCorners,
+    );
+    expect(state.step).toBe('photo');
+    expect(state.photo).toEqual(EDITED);
+    expect(state.anchors).toBeNull();
+    expect(state.anchorRejection).toBeNull();
+    expect(state.photoProcessing).toBe(false);
+    expect(state.upload.attempts).toBe(0);
+  });
+
+  it('holds Back and asks before leaving while the edit renders', () => {
+    const rendering = run([{ type: 'ADJUST_OPENED' }, { type: 'PHOTO_PROCESSING_STARTED' }], atPhoto());
+    expect(isBusy(rendering)).toBe(true);
+    expect(shouldConfirmLeave(rendering)).toBe(true);
+    expect(run([{ type: 'BACK' }], rendering).step).toBe('adjust');
+  });
+
+  it('stays on the crop step when the render fails, and lets Back through again', () => {
+    const failed = run(
+      [{ type: 'ADJUST_OPENED' }, { type: 'PHOTO_PROCESSING_STARTED' }, { type: 'PHOTO_PROCESSING_FAILED' }],
+      atPhoto(),
+    );
+    expect(failed.step).toBe('adjust');
+    expect(failed.photoProcessing).toBe(false);
+    expect(failed.photo).toEqual(PHOTO);
+    expect(run([{ type: 'BACK' }], failed).step).toBe('photo');
+  });
+
+  it('ignores an edit that lands anywhere but the crop step', () => {
+    expect(run([{ type: 'PHOTO_ADJUSTED', photo: EDITED }], atPhoto()).photo).toEqual(PHOTO);
+    expect(run([{ type: 'PHOTO_PROCESSING_STARTED' }], atPhoto()).photoProcessing).toBe(false);
+  });
+
+  it('is not offered once a draft has adopted the photo', () => {
+    const uploaded = run([
+      { type: 'META_DONE' },
+      { type: 'PHOTO_PICKED', photo: PHOTO },
+      { type: 'PHOTO_CONFIRMED' },
+      { type: 'ANCHORS_DONE' },
+      { type: 'UPLOAD_STARTED' },
+      { type: 'DRAFT_CREATED', draft: DRAFT },
+    ]);
+    expect(run([{ type: 'ADJUST_OPENED' }], { ...uploaded, step: 'photo' }).step).toBe('photo');
   });
 });

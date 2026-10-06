@@ -153,6 +153,21 @@ Three consequences worth stating plainly.
   that turns out singular — the solver returns the identity rather than a matrix
   of NaN, because a wrong map still renders and NaN renders nothing.
 
+**A crop is not a warp either.** The photo step's crop happens on the phone
+before the upload, so the server only ever sees the cropped file: its stored
+width and height are the cropped photo's, the anchors are tapped on it, and the
+homography is solved in its pixels — exactly as for a photo framed that tightly
+in the camera. Nothing on the server knows a crop happened, and nothing has to.
+A crop is a translation of the pixel grid, and a homography solved from anchors
+that moved with the grid absorbs it: `homography.test.ts` ("a crop before the
+upload") pins that a wall point maps to the same canonical point however the
+photo was cropped. Cropping a version-1 photo to the wall's edges also makes
+"Skip for now" on the corner step honest: without anchors the frame is the whole
+photo, so a photo cropped to the wall is a frame that IS the wall. An uncropped
+version 1 with no anchors is the case that goes wrong: every later reset maps
+the wall's corners onto that photo's corners and is off by the floor and
+ceiling margin ([#6157](https://github.com/boardsesh/boardsesh/issues/6157)).
+
 A hold's radius is mapped with `mapRadius`, which takes `sqrt(|det J|)` of the
 local Jacobian: the scale that preserves the hold's **area**. A circle under a
 projective map is an ellipse, so there is no single right radius; taking one axis
@@ -288,7 +303,8 @@ would leave first-run open.
 | --- | --- |
 | `resuming` | Asks `mySprayWalls` for a wall of the caller's own with no published version and offers to pick it up or start over. |
 | `meta` | Name, gym, visibility, location, and the angle — snapped to `SPRAY_ANGLES`, because the server validates against that list. |
-| `photo` | Library pick; the camera button only on a binary at or past the version that shipped the usage description. Compressed to a 4096 px JPEG (`WALL_PHOTO_MAX_DIMENSION`), which bakes the EXIF orientation into the pixels. A 12 MP phone photo goes up unscaled. The server keeps a 2048 px base for the frame, the detector and the climb view, and the larger copy only for the hold editor's deep zoom (#5911). |
+| `photo` | Library pick; the camera button only on a binary at or past the version that shipped the usage description. Compressed to a 4096 px JPEG (`WALL_PHOTO_MAX_DIMENSION`), which bakes the EXIF orientation into the pixels. A 12 MP phone photo goes up unscaled. The server keeps a 2048 px base for the frame, the detector and the climb view, and the larger copy only for the hold editor's deep zoom (#5911). The photo's size is the rendered JPEG's own (`compressPickedImageWithSize`), not the picker's, which on some Android builds describes the sensor rather than the picture. "Crop or rotate" under the preview opens `adjust`. |
+| `adjust` | Not counted, and always returns to `photo`. A free-aspect crop box (four corners, four edges, drag inside to move) and a Rotate button that turns the photo a quarter clockwise, over the BASE — the first compressed, uncropped copy. Copy: "Crop to the edges of the wall". Done renders the edit in one pass with `renderWallPhotoEdit` (rotate, crop, shrink to `WALL_PHOTO_MAX_DIMENSION`, JPEG 0.85) from the picker's ORIGINAL, falling back to the base when the original is over 25 MP (`ORIGINAL_RENDER_MAX_PIXELS`: decoded memory, about 195 MB for a 48 MP capture), gone, or fails to render; the result's size is the rendered image's. At the 4096 px cap the base keeps half a 48 MP original's width, so only a crop tighter than half of each side comes out softer. The output is at most 4096 x 4096 (a square crop of a 24 MP photo), about 3.5 MB for a real wall photo against the 15 MB upload cap. It clears the anchors, as a new photo does: a quarter turn changes which corner is the top-left. Reset puts the photo back as picked, Cancel (Back) leaves it as it was, and Back and leaving wait while the edit renders (`photoProcessing`). The smallest crop keeps 15% of each side and at least 512 base pixels, which guarantees 512 uploaded ones; under 1200 px on the long side a soft warning says holds may look soft, predicted from the same file the render will read (`renderableOriginalSize`). Rotation renders a turned preview of the base per quarter turn (`renderRotatedPreview`, 1600 px) rather than a view transform, because a rotated view hands pan translations back in its own axes. The pure halves are `photo-edit.ts` and `crop-box-math.ts`. Re-opening starts from the base with the last edit, so a crop can be loosened again. |
 | `anchors` | Optional, Skip by default. Four draggable handles with the marked area outlined between them; a quad that crosses itself is refused client-side, because the server's fallback for a degenerate quad is the identity matrix. The photo is fitted on both axes to the space between the header and the footer (`corner-photo-fit.ts`), so all four handles are on screen and the step does not scroll; the footer is the same height before and after the first drag. When that space would fall under about 200 points the photo stops shrinking and the step scrolls instead — reachable on a 375x667 phone with the reset flow's longer copy, not only at large text sizes — and the page is held still while a ring is being dragged, so a drag never becomes a scroll. The hint and the refusal that replaces it share one slot, so a refused quad does not re-fit the photo. The reset flow's corner step is the same component. |
 | `upload` | `createSprayWall`, then the multipart POST, then `createSprayWallVersion`. |
 | `detect` | Request or resume a server-owned recognition job. New walls can enter manual editing while queued ("Mark holds myself"); published reset versions remain unchanged until review and confirmation. With the photo still on the phone the step is full-screen (`SprayScanPhoto`): the photo sits exactly where the editor will put it (`fitSprayPhoto`), dimmed, with a violet band looping down it and a glass status card. A run resumed without the file, and the reset flow, keep the plain spinner. |
@@ -1619,6 +1635,16 @@ the draft, then publishes it. An uncertain response is reconciled before retry;
 refreshing a successful publication never publishes a second time. Leaving
 retains the server draft, with confirmation for unsaved changes.
 
+Re-cropping a published wall's photo is not offered, on purpose. "Edit holds"
+reuses the published photo through `sourceVersionId`, which copies the photo,
+anchors and homography exactly, and the schema refuses anchors together with
+`sourceVersionId` — so there is no way to say "the same picture, cropped". A
+cropped re-upload would carry a new `photoId`, and `classifySprayDraft` reads a
+new photo as a reset, which asks for four corners and runs the reset review.
+Re-cropping needs its own draft purpose
+([#6156](https://github.com/boardsesh/boardsesh/issues/6156)). To crop
+a wall today, reset it and crop the new photo.
+
 Maintenance navigation and sharing wait for `BoardSheet.dismissAndWait()` to
 settle. `DrawerHostProvider` owns the share snapshot and sibling share sheet, so
 the panel's normal dismissal/unmount cannot lose it. A board switch, changed
@@ -1835,6 +1861,15 @@ so handing them to `/boards/spray/compare` would mean a module-level stash keyed
 by version id — a second source of truth for the one array whose INDICES the
 proposal is expressed in. It still gets the whole screen when it is showing.
 
+The reset's photo step has the same "Crop or rotate" detour as the add-a-wall
+flow (`adjust`, uncounted). Its copy adds one thing: keep all four corners inside
+the crop. From version 2 on the corners are mandatory (`assertResetVersionIsAnchored`),
+so a corner cut off by the crop is a corner nobody can mark, and the gate would
+hold the flow on the anchors step with no way to satisfy it but to crop again.
+The crop itself changes nothing the reset depends on: version 1's frame is
+inherited under the wall lock, and the new photo's homography is solved from its
+own anchors in its own (cropped) pixels.
+
 Three rules the client holds that the server cannot:
 
 - **Detections are built once**, in both frames, by `buildResetDetections`. A
@@ -1945,6 +1980,16 @@ Persisted editor drafts keep version-only keys, allowing recovery after an app
 restart. Cleanup is best effort: failed filesystem deletion is retried by later
 withdrawal or cache sweeping; a crash during native I/O can leave a partial until
 the next cleanup.
+
+The photo steps leave JPEGs in the app's cache directory: the compressed base,
+`expo-image-picker`'s copy of the original, a turned preview per quarter turn
+the crop step drew, and each rendered edit. The crop step deletes its own
+previews when it closes (a preview that finishes rendering after that is deleted
+as it lands), and applying a new edit deletes the edit it replaced
+(`discardLocalPhoto`, best effort; a no-op in the browser build). The base and
+the original are never deleted mid-flow — the base is what a re-edit starts
+from, the original what it renders from — and are left, like the picker's other
+files, to the OS's own cache eviction.
 
 Wall photos go to the **`private`** R2 bucket and are read through **15-minute
 presigned URLs** (`presignGetObject` in `packages/backend/src/storage/s3.ts`).
@@ -2189,7 +2234,7 @@ through `trackSprayEvent`; nothing calls `track` with a spray event name directl
 | Event | Properties | What it answers |
 | --- | --- | --- |
 | `Spray Wall Photo Picked` | `source` | Camera or library — the two feel different on a slow phone. |
-| `Spray Wall Upload Finished` | `outcome`, `durationMs`, `determinate`, `attempt` | Whether the photo lands, and how long a climber waits for it. |
+| `Spray Wall Upload Finished` | `outcome`, `durationMs`, `determinate`, `attempt`, `cropped?`, `rotated?` | Whether the photo lands, and how long a climber waits for it. `cropped` and `rotated` say whether the photo step's crop step changed the photo (two booleans, never the rectangle or the angle); older clients omit both, so a missing value is unknown, not false. |
 | `Spray Wall Detection Finished` | `outcome`, `candidateCount`, `durationMs` | `unavailable` is a SUCCESS — the flow lands in the editor in manual mode. Read it against `ok` for the fraction of the fleet placing every hold by hand. |
 | `Spray Holds Reviewed` | `holdCount`, `candidateCount`, `hadCandidates` | Candidate and saved counts on the same event. Older clients omit candidateCount. |
 | `Spray Wall Bind Stalled` | `stage`, `elapsedMs` | A wall that published and then sat on "Setting your wall up…": `visibility`, `fetch_board` or `bind` ran past 30 s, or `navigate` was dispatched and the wizard was still on screen 1.5 s later. |

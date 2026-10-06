@@ -26,6 +26,12 @@ const pickResult = vi.hoisted(() => ({
 const discardMutateAsync = vi.hoisted(() => vi.fn(async () => true));
 const createMutateAsync = vi.hoisted(() => vi.fn());
 const refetchWall = vi.hoisted(() => vi.fn());
+/** The crop step's props, so a test can press its Done. */
+const adjustProps = vi.hoisted(() => ({
+  current: null as null | { onDone: (edit: unknown) => void; onCancel: () => void; body: string },
+}));
+const renderWallPhotoEdit = vi.hoisted(() => vi.fn());
+const discardLocalPhoto = vi.hoisted(() => vi.fn());
 /** The corner marker's props, so a test can hand the screen four corners. */
 const markerProps = vi.hoisted(() => ({ current: null as null | { onChange?: (quad: unknown) => void } }));
 
@@ -144,7 +150,15 @@ vi.mock('../../../lib/spray/camera-capability', () => ({ canPhotographWall: () =
 vi.mock('../../../lib/spray/wall-photo', () => ({
   pickWallPhotoFromLibrary: vi.fn(async () => pickResult.current),
   pickWallPhotoFromCamera: vi.fn(async () => pickResult.current),
+  renderWallPhotoEdit,
   rescalePoint: (point: [number, number]) => point,
+}));
+vi.mock('../../../lib/spray/discard-local-photo', () => ({ discardLocalPhoto }));
+vi.mock('../SprayPhotoAdjustStep', () => ({
+  SprayPhotoAdjustStep: (props: { onDone: (edit: unknown) => void; onCancel: () => void; body: string }) => {
+    adjustProps.current = props;
+    return createElement('div', { 'data-testid': 'adjust' }, props.body);
+  },
 }));
 vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
   useCreateSprayWallVersion: () => ({ mutateAsync: createMutateAsync }),
@@ -178,7 +192,14 @@ beforeEach(() => {
   discardMutateAsync.mockClear();
   createMutateAsync.mockReset();
   refetchWall.mockReset();
-  pickResult.current = { outcome: 'picked', photo: { uri: 'file:///w.jpg', width: 2048, height: 1536 } };
+  const base = { uri: 'file:///w.jpg', width: 2048, height: 1536 };
+  pickResult.current = {
+    outcome: 'picked',
+    photo: { ...base, base, original: { uri: 'file:///w.heic', longSide: 4032 }, edit: null },
+  };
+  adjustProps.current = null;
+  renderWallPhotoEdit.mockReset().mockResolvedValue({ uri: 'file:///w-edited.jpg', width: 1800, height: 1200 });
+  discardLocalPhoto.mockReset();
   wallQueryState.current = { data: EDITABLE_WALL, isPending: false };
 });
 
@@ -446,5 +467,41 @@ describe('fresh history and discard recovery', () => {
     expect(createMutateAsync).toHaveBeenCalledTimes(2);
     expect(createMutateAsync.mock.calls[1]?.[0]).toEqual(createMutateAsync.mock.calls[0]?.[0]);
     expect(mounted.getByTestId('detection').getAttribute('data-version')).toBe('replacement');
+  });
+
+  it('crops the photo before the corners, and asks for the corners inside the crop', async () => {
+    const { getByText, getByTestId, queryByTestId } = renderScreen();
+    await act(async () => {
+      getByText('sprayWizard.photo.library').click();
+    });
+
+    act(() => getByText('sprayWizard.photo.adjust').click());
+    expect(getByTestId('adjust').textContent).toBe('sprayReset.adjust.body');
+
+    const edit = { quarterTurns: 1, crop: { left: 0, top: 0.1, right: 1, bottom: 0.9 } };
+    await act(async () => adjustProps.current?.onDone(edit));
+
+    expect(renderWallPhotoEdit).toHaveBeenCalledWith(expect.objectContaining({ uri: 'file:///w.jpg' }), edit);
+    expect(queryByTestId('adjust')).toBeNull();
+    expect(getByText('sprayReset.photo.title')).toBeTruthy();
+    // The first edit replaced the picked base, which is never deleted.
+    expect(discardLocalPhoto).not.toHaveBeenCalled();
+
+    // The corners come next, and are marked on the cropped photo.
+    act(() => getByText('sprayWizard.photo.next').click());
+    expect(getByText('sprayReset.anchors.use').getAttribute('data-disabled')).toBe('true');
+  });
+
+  it('stays on the crop step when the edit will not render', async () => {
+    renderWallPhotoEdit.mockRejectedValue(new Error('no memory'));
+    const { getByText, getByTestId } = renderScreen();
+    await act(async () => {
+      getByText('sprayWizard.photo.library').click();
+    });
+    act(() => getByText('sprayWizard.photo.adjust').click());
+    await act(async () =>
+      adjustProps.current?.onDone({ quarterTurns: 2, crop: { left: 0, top: 0, right: 1, bottom: 1 } }),
+    );
+    expect(getByTestId('adjust')).toBeTruthy();
   });
 });

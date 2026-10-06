@@ -38,7 +38,14 @@ const FORBIDDEN_KEY_FRAGMENTS = ['uri', 'url', 'name', 'uuid', 'path', 'file', '
 
 const EVERY_PAYLOAD = [
   sprayWallPhotoPicked('camera'),
-  sprayWallUploadFinished({ outcome: 'ok', durationMs: 1200, determinate: true, attempt: 1 }),
+  sprayWallUploadFinished({
+    outcome: 'ok',
+    durationMs: 1200,
+    determinate: true,
+    attempt: 1,
+    cropped: true,
+    rotated: false,
+  }),
   sprayWallDetectionFinished({ outcome: 'ok', candidateCount: 214, durationMs: 4100 }),
   sprayHoldsReviewed({ holdCount: 198, hadCandidates: true }),
   sprayWallBindStalled({ stage: 'fetch_board', elapsedMs: 30000 }),
@@ -85,6 +92,28 @@ describe('spray wall event builders', () => {
       name: SHARED_EVENTS.ClimbEditedFromBroken,
       properties: { lostHoldCount: 2, source: 'play_drawer' },
     });
+  });
+
+  it('says whether the uploaded photo was cropped or turned, and nothing about how', () => {
+    // Two booleans, not the crop rectangle or the angle: what was cut away from
+    // a photograph of somebody's wall is not ours to know.
+    expect(
+      sprayWallUploadFinished({
+        outcome: 'ok',
+        durationMs: 900,
+        determinate: true,
+        attempt: 1,
+        cropped: true,
+        rotated: true,
+      }),
+    ).toEqual({
+      name: SHARED_EVENTS.SprayWallUploadFinished,
+      properties: { outcome: 'ok', durationMs: 900, determinate: true, attempt: 1, cropped: true, rotated: true },
+    });
+    // An older client sends neither, and that must stay a valid payload.
+    expect(
+      sprayWallUploadFinished({ outcome: 'failed', durationMs: 10, determinate: false, attempt: 2 }).properties,
+    ).not.toHaveProperty('cropped');
   });
 
   it('uses a name from the shared catalog for every builder', () => {

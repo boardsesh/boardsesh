@@ -13,8 +13,14 @@ import {
   type ResetWallState,
 } from '../reset-wall-machine';
 
-const PHOTO = { uri: 'file:///wall-v2.jpg', width: 2048, height: 1536, source: 'library' as const };
-const OTHER_PHOTO = { uri: 'file:///wall-v2b.jpg', width: 1024, height: 1024, source: 'camera' as const };
+/** A picked photo as the picker hands it back: its own base, no edit yet. */
+function pickedPhoto(uri: string, width: number, height: number, source: 'library' | 'camera') {
+  const base = { uri, width, height };
+  return { ...base, base, original: { uri: `${uri}.heic`, longSide: 4032 }, edit: null, source };
+}
+
+const PHOTO = pickedPhoto('file:///wall-v2.jpg', 2048, 1536, 'library');
+const OTHER_PHOTO = pickedPhoto('file:///wall-v2b.jpg', 1024, 1024, 'camera');
 
 const DRAFT: ResetDraft = { versionId: 'version-2', versionNumber: 2, photoWidth: 2048, photoHeight: 1536 };
 
@@ -263,5 +269,62 @@ describe('resetWallReducer — the rest of the flow', () => {
     const state = run(atAnchors(), { type: 'ANCHORS_SET', anchors: SQUARE }, { type: 'BACK' });
     expect(state.step).toBe('photo');
     expect(state.anchors).toEqual(SQUARE);
+  });
+});
+
+describe('resetWallReducer — crop or rotate', () => {
+  const EDITED = {
+    ...PHOTO,
+    uri: 'file:///wall-v2-edited.jpg',
+    width: 1800,
+    height: 1200,
+    edit: { quarterTurns: 0 as const, crop: { left: 0.05, top: 0.1, right: 0.95, bottom: 0.9 } },
+  };
+
+  function atPhoto(): ResetWallState {
+    return run(initialResetWallState(), { type: 'PHOTO_PICKED', photo: PHOTO });
+  }
+
+  it('opens from the photo step and Back cancels it', () => {
+    const open = run(atPhoto(), { type: 'ADJUST_OPENED' });
+    expect(open.step).toBe('adjust');
+    expect(resetBackAction(open)).toBe('step-back');
+    const cancelled = run(open, { type: 'BACK' });
+    expect(cancelled.step).toBe('photo');
+    expect(cancelled.photo).toEqual(PHOTO);
+  });
+
+  it('does not open without a photo', () => {
+    expect(run(initialResetWallState(), { type: 'ADJUST_OPENED' }).step).toBe('photo');
+  });
+
+  it('clears the corners when the edit lands, so the gate asks for them again', () => {
+    const marked = run(
+      atPhoto(),
+      { type: 'PHOTO_CONFIRMED' },
+      { type: 'ANCHORS_SET', anchors: SQUARE },
+      { type: 'BACK' },
+    );
+    expect(anchorsAreReady(marked)).toBe(true);
+    const edited = run(
+      marked,
+      { type: 'ADJUST_OPENED' },
+      { type: 'PHOTO_PROCESSING_STARTED' },
+      { type: 'PHOTO_ADJUSTED', photo: EDITED },
+    );
+    expect(edited.step).toBe('photo');
+    expect(edited.photo).toEqual(EDITED);
+    expect(edited.anchors).toBeNull();
+    expect(anchorsAreReady(edited)).toBe(false);
+  });
+
+  it('blocks Back and asks before leaving while the edit renders', () => {
+    const rendering = run(atPhoto(), { type: 'ADJUST_OPENED' }, { type: 'PHOTO_PROCESSING_STARTED' });
+    expect(isBusy(rendering)).toBe(true);
+    expect(shouldConfirmLeave(rendering)).toBe(true);
+    expect(run(rendering, { type: 'BACK' }).step).toBe('adjust');
+    const failed = run(rendering, { type: 'PHOTO_PROCESSING_FAILED' });
+    expect(failed.step).toBe('adjust');
+    expect(isBusy(failed)).toBe(false);
   });
 });

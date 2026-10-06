@@ -949,9 +949,31 @@
       "library": "Choisir une photo",
       "camera": "Prendre une photo",
       "pickAnother": "Choisir une autre photo",
+      "adjust": "Recadrer ou pivoter",
       "next": "Suivant",
       "cameraDenied": "Boardsesh a besoin de ton appareil photo pour photographier un mur.",
       "failed": "Cette photo ne s'ouvre pas. Essaie-en une autre."
+    },
+    "adjust": {
+      "title": "Recadre et pivote",
+      "body": "Recadre au ras des bords du mur. Pivote la photo si elle est dans le mauvais sens.",
+      "hint": "Fais glisser un bord ou un coin. Fais glisser l'intérieur du cadre pour le déplacer.",
+      "small": "Cette photo est petite. Les prises risquent d'être floues quand tu zoomes.",
+      "failed": "Impossible de recadrer cette photo. Réessaie, ou annule pour la garder telle quelle.",
+      "rotate": "Pivoter",
+      "rotateLabel": "Pivoter d'un quart de tour vers la droite",
+      "done": "Terminé",
+      "reset": "Réinitialiser",
+      "cancel": "Annuler",
+      "handleTopLeft": "Coin en haut à gauche du cadre",
+      "handleTop": "Bord du haut du cadre",
+      "handleTopRight": "Coin en haut à droite du cadre",
+      "handleRight": "Bord droit du cadre",
+      "handleBottomRight": "Coin en bas à droite du cadre",
+      "handleBottom": "Bord du bas du cadre",
+      "handleBottomLeft": "Coin en bas à gauche du cadre",
+      "handleLeft": "Bord gauche du cadre",
+      "handleMove": "Zone de recadrage"
     },
     "anchors": {
       "title": "Marque les coins",
@@ -1051,6 +1073,9 @@
     "photo": {
       "title": "Photographie le mur à nouveau",
       "body": "Place-toi où tu étais la première fois si tu peux. Même mur, nouvelles prises."
+    },
+    "adjust": {
+      "body": "Recadre au ras des bords du mur, en gardant les quatre coins dans le cadre. Tu les marqueras juste après."
     },
     "anchors": {
       "title": "Marque les coins",
