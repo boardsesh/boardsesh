@@ -493,6 +493,12 @@ export async function handleSprayWallPhotoUpload(req: IncomingMessage, res: Serv
         // Erase its own objects on withdrawal; retain a durable retry if storage
         // is unavailable. The purge's updated_at fence protects this retry from
         // an older prefix listing that had not seen our late upload.
+        //
+        // The retry only acts on a DELETED wall. When the withdrawal is an
+        // archive and the erase fails, the object is left behind on purpose: it
+        // is in the private bucket under a random key nothing names, and the
+        // retention purge sweeps the wall's whole prefix, this object included,
+        // if the archived wall is ever deleted.
         const eraseUpload = async () => {
           const erased = await Promise.allSettled(writtenKeys.map((writtenKey) => deleteFromS3('private', writtenKey)));
           if (erased.every((result) => result.status === 'fulfilled')) return;

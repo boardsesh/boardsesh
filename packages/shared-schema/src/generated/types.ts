@@ -6623,12 +6623,26 @@ export type Query = {
    */
   sprayWall?: Maybe<SprayWall>;
   /**
+   * The generated wall looks of one version (`wall-crop`, `hold-cutouts`) and
+   * its photo-quality verdict. Omit `version` for the published one. Same
+   * visibility rules as `sprayWallRenderData`; null where that is null.
+   */
+  sprayWallArt?: Maybe<SprayWallArt>;
+  /**
    * The spray wall occupying a catalogue layout id, for a client holding only a
    * board config. Same visibility rules as `sprayWall`.
    */
   sprayWallByLayout?: Maybe<SprayWall>;
   sprayWallDetection?: Maybe<SprayWallDetection>;
   sprayWallDetectionForVersion?: Maybe<SprayWallDetection>;
+  /**
+   * How many climbs set on this wall use each of the given holds, for the hold
+   * editor to ask before it removes (or moves) one that published climbs use.
+   * One row per distinct requested hold, zeros included. Hidden climbs and
+   * climbs a full reset retired are not counted. Same gate as editing the
+   * wall's holds; refused on an archived wall. At most 500 holds per call.
+   */
+  sprayWallHoldUsage: Array<SprayWallHoldUsage>;
   /**
    * Everything needed to render a wall at one version: the photo, the homography
    * and the holds alive at that version. Omit `version` for the published one.
@@ -7369,6 +7383,12 @@ export type QuerySprayWallArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QuerySprayWallArtArgs = {
+  uuid: Scalars['ID']['input'];
+  version?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** Root query type for all read operations. */
 export type QuerySprayWallByLayoutArgs = {
   layoutId: Scalars['Int']['input'];
 };
@@ -7381,6 +7401,12 @@ export type QuerySprayWallDetectionArgs = {
 /** Root query type for all read operations. */
 export type QuerySprayWallDetectionForVersionArgs = {
   versionId: Scalars['ID']['input'];
+  wallUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySprayWallHoldUsageArgs = {
+  holdIds: Array<Scalars['Int']['input']>;
   wallUuid: Scalars['ID']['input'];
 };
 
@@ -9153,13 +9179,6 @@ export type SprayWall = {
   hiddenAt?: Maybe<Scalars['String']['output']>;
   /** Holds alive on the current version. */
   holdCount: Scalars['Int']['output'];
-  /**
-   * True for an archived wall, and for a wall with at least one published climb
-   * (draft climbs do not count). Advisory on a live wall in this release: the
-   * server does not refuse hold edits on a wall that reads true here yet, so a
-   * client uses it to steer the owner to a reset rather than as a guarantee.
-   */
-  holdsLocked: Scalars['Boolean']['output'];
   /** The wall's board_layouts id. Also its board_product_sizes id: a wall has exactly one size, itself. */
   layoutId: Scalars['Int']['output'];
   /**
@@ -9185,13 +9204,19 @@ export type SprayWall = {
    * because the underlying knob set still changes independently. A viewer's own
    * EXPLICIT render-mode choice always overrides this; it only supplies the look
    * for a viewer who has never chosen one.
+   *
+   * May also carry `background: 'photo' | 'wall-crop' | 'hold-cutouts'` — what
+   * the wall is drawn on. Missing means 'photo'. The generated backgrounds are
+   * read through `sprayWallArt`; a client falls back to the photo whenever that
+   * art is not READY.
    */
   renderSettings?: Maybe<Scalars['JSON']['output']>;
   /**
    * The published wall that replaced this one through `resetSprayWall`, when the
    * viewer may see it: its owner, a member of its gym, anyone when it is public,
-   * or anyone holding this wall's unlisted share link when both walls are
-   * unlisted. Null while the replacement is unfinished.
+   * or anyone holding this wall's share link when this wall is unlisted and not
+   * public and the replacement is unlisted too. Null while the replacement is
+   * unfinished.
    */
   replacedByWallUuid?: Maybe<Scalars['ID']['output']>;
   /**
@@ -9235,6 +9260,41 @@ export type SprayWallAddedDecisionInput = {
    */
   movedFromHoldId?: InputMaybe<Scalars['Int']['input']>;
 };
+
+/**
+ * One version's generated wall looks, drawn in the canonical frame (the frame
+ * hold coordinates live in), scaled to `width` x `height`. Draw holds over it
+ * with no homography: multiply canonical coordinates by width / boardWidth.
+ *
+ * Read in its own query (`sprayWallArt`), never in a shared fragment.
+ */
+export type SprayWallArt = {
+  __typename?: 'SprayWallArt';
+  /** Wall only: the photo flattened into the canonical frame. JPEG. Null unless READY. */
+  crop?: Maybe<SprayWallPhoto>;
+  /** Holds only: the same pixels, transparent everywhere but the holds. WebP with alpha; draw the field colour behind it. Null unless READY. */
+  cutout?: Maybe<SprayWallPhoto>;
+  height?: Maybe<Scalars['Int']['output']>;
+  quality: SprayWallPhotoQuality;
+  /** The rendering recipe the server runs. Art made by another recipe reads as NONE. */
+  recipe: Scalars['Int']['output'];
+  status: SprayWallArtStatus;
+  versionNumber: Scalars['Int']['output'];
+  width?: Maybe<Scalars['Int']['output']>;
+};
+
+/** Where a version's generated wall looks are. */
+export type SprayWallArtStatus =
+  /** The last job failed. Choosing a generated background again re-queues it. */
+  | 'FAILED'
+  /** Never asked for, or made by an older recipe. */
+  | 'NONE'
+  /** A job is queued or running. */
+  | 'PENDING'
+  /** Both images are ready. */
+  | 'READY'
+  /** The photo failed the quality gate, so nothing will be rendered for it. */
+  | 'REFUSED';
 
 export type SprayWallDetection = {
   __typename?: 'SprayWallDetection';
@@ -9323,6 +9383,16 @@ export type SprayWallHoldInput = {
   source?: InputMaybe<SprayHoldSource>;
 };
 
+/** How many climbs on a wall use one hold. See `sprayWallHoldUsage`. */
+export type SprayWallHoldUsage = {
+  __typename?: 'SprayWallHoldUsage';
+  /** Draft climbs that use the hold. */
+  draftClimbCount: Scalars['Int']['output'];
+  holdId: Scalars['Int']['output'];
+  /** Published climbs that use the hold. Removing it gives each of them a lost hold. */
+  publishedClimbCount: Scalars['Int']['output'];
+};
+
 /** Keep this hold, optionally refreshing its silhouette from the new photo. */
 export type SprayWallKeptDecisionInput = {
   /**
@@ -9394,11 +9464,31 @@ export type SprayWallPhotoPurgeResult = {
   wallsPurged: Scalars['Int']['output'];
 };
 
+/** How straight-on a version's photo is. Same numbers on the server and in the app. */
+export type SprayWallPhotoQuality = {
+  __typename?: 'SprayWallPhotoQuality';
+  /** The canonical frame's short edge, in pixels. */
+  frameShortEdge: Scalars['Int']['output'];
+  /** ok, no-pins, keystone, small-frame or singular. */
+  reason: Scalars['String']['output'];
+  /** sqrt(max / min) of the area scale across the frame. 1 is a perfectly front-on photo. Null when unmeasurable. */
+  stretch?: Maybe<Scalars['Float']['output']>;
+  verdict: SprayWallPhotoVerdict;
+};
+
+export type SprayWallPhotoVerdict =
+  /** Too angled, too small, or no corner pins: the generated looks are not offered. */
+  | 'FAIL'
+  /** Front-on enough to flatten cleanly. */
+  | 'GOOD'
+  /** Usable, but the far side will look stretched; suggest a front-on retake. */
+  | 'SOFT';
+
 /**
  * Everything a renderer needs for one wall at one version: the photo, the
  * geometry that maps it, and the holds alive at that version.
  *
- * No image is ever warped — the client maps holds through the INVERSE of
+ * The stored photo is never warped — the client maps holds through the INVERSE of
  * `homography` at draw time.
  */
 export type SprayWallRenderData = {
@@ -11086,15 +11176,20 @@ export type ResolversTypes = ResolversObject<{
   SprayRemixSeed: ResolverTypeWrapper<SprayRemixSeed>;
   SprayWall: ResolverTypeWrapper<SprayWall>;
   SprayWallAddedDecisionInput: SprayWallAddedDecisionInput;
+  SprayWallArt: ResolverTypeWrapper<SprayWallArt>;
+  SprayWallArtStatus: SprayWallArtStatus;
   SprayWallDetection: ResolverTypeWrapper<SprayWallDetection>;
   SprayWallDetectionInput: SprayWallDetectionInput;
   SprayWallHold: ResolverTypeWrapper<SprayWallHold>;
   SprayWallHoldInput: SprayWallHoldInput;
+  SprayWallHoldUsage: ResolverTypeWrapper<SprayWallHoldUsage>;
   SprayWallKeptDecisionInput: SprayWallKeptDecisionInput;
   SprayWallModerationResult: ResolverTypeWrapper<SprayWallModerationResult>;
   SprayWallMoveSuggestion: ResolverTypeWrapper<SprayWallMoveSuggestion>;
   SprayWallPhoto: ResolverTypeWrapper<SprayWallPhoto>;
   SprayWallPhotoPurgeResult: ResolverTypeWrapper<SprayWallPhotoPurgeResult>;
+  SprayWallPhotoQuality: ResolverTypeWrapper<SprayWallPhotoQuality>;
+  SprayWallPhotoVerdict: SprayWallPhotoVerdict;
   SprayWallRenderData: ResolverTypeWrapper<SprayWallRenderData>;
   SprayWallReport: ResolverTypeWrapper<SprayWallReport>;
   SprayWallReportReason: SprayWallReportReason;
@@ -11530,15 +11625,18 @@ export type ResolversParentTypes = ResolversObject<{
   SprayRemixSeed: SprayRemixSeed;
   SprayWall: SprayWall;
   SprayWallAddedDecisionInput: SprayWallAddedDecisionInput;
+  SprayWallArt: SprayWallArt;
   SprayWallDetection: SprayWallDetection;
   SprayWallDetectionInput: SprayWallDetectionInput;
   SprayWallHold: SprayWallHold;
   SprayWallHoldInput: SprayWallHoldInput;
+  SprayWallHoldUsage: SprayWallHoldUsage;
   SprayWallKeptDecisionInput: SprayWallKeptDecisionInput;
   SprayWallModerationResult: SprayWallModerationResult;
   SprayWallMoveSuggestion: SprayWallMoveSuggestion;
   SprayWallPhoto: SprayWallPhoto;
   SprayWallPhotoPurgeResult: SprayWallPhotoPurgeResult;
+  SprayWallPhotoQuality: SprayWallPhotoQuality;
   SprayWallRenderData: SprayWallRenderData;
   SprayWallReport: SprayWallReport;
   SprayWallReportResult: SprayWallReportResult;
@@ -15450,6 +15548,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QuerySprayWallArgs, 'uuid'>
   >;
+  sprayWallArt?: Resolver<
+    Maybe<ResolversTypes['SprayWallArt']>,
+    ParentType,
+    ContextType,
+    RequireFields<QuerySprayWallArtArgs, 'uuid'>
+  >;
   sprayWallByLayout?: Resolver<
     Maybe<ResolversTypes['SprayWall']>,
     ParentType,
@@ -15467,6 +15571,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QuerySprayWallDetectionForVersionArgs, 'versionId' | 'wallUuid'>
+  >;
+  sprayWallHoldUsage?: Resolver<
+    Array<ResolversTypes['SprayWallHoldUsage']>,
+    ParentType,
+    ContextType,
+    RequireFields<QuerySprayWallHoldUsageArgs, 'holdIds' | 'wallUuid'>
   >;
   sprayWallRenderData?: Resolver<
     Maybe<ResolversTypes['SprayWallRenderData']>,
@@ -16435,7 +16545,6 @@ export type SprayWallResolvers<
   currentVersion?: Resolver<Maybe<ResolversTypes['SprayWallVersion']>, ParentType, ContextType>;
   hiddenAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   holdCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
-  holdsLocked?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   publicPhotoUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   referenceHeight?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
@@ -16448,6 +16557,21 @@ export type SprayWallResolvers<
   versions?: Resolver<Array<ResolversTypes['SprayWallVersion']>, ParentType, ContextType>;
   viewerCanEdit?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   viewerCanEditClimbs?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayWallArtResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayWallArt'] = ResolversParentTypes['SprayWallArt'],
+> = ResolversObject<{
+  crop?: Resolver<Maybe<ResolversTypes['SprayWallPhoto']>, ParentType, ContextType>;
+  cutout?: Resolver<Maybe<ResolversTypes['SprayWallPhoto']>, ParentType, ContextType>;
+  height?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  quality?: Resolver<ResolversTypes['SprayWallPhotoQuality'], ParentType, ContextType>;
+  recipe?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['SprayWallArtStatus'], ParentType, ContextType>;
+  versionNumber?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  width?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -16481,6 +16605,16 @@ export type SprayWallHoldResolvers<
   r?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   removedVersion?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   source?: Resolver<ResolversTypes['SprayHoldSource'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayWallHoldUsageResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayWallHoldUsage'] = ResolversParentTypes['SprayWallHoldUsage'],
+> = ResolversObject<{
+  draftClimbCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  holdId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  publishedClimbCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -16527,6 +16661,17 @@ export type SprayWallPhotoPurgeResultResolvers<
   objectsDeleted?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   wallsConsidered?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   wallsPurged?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayWallPhotoQualityResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayWallPhotoQuality'] = ResolversParentTypes['SprayWallPhotoQuality'],
+> = ResolversObject<{
+  frameShortEdge?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  reason?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  stretch?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  verdict?: Resolver<ResolversTypes['SprayWallPhotoVerdict'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -17275,12 +17420,15 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   SprayDetectionResult?: SprayDetectionResultResolvers<ContextType>;
   SprayRemixSeed?: SprayRemixSeedResolvers<ContextType>;
   SprayWall?: SprayWallResolvers<ContextType>;
+  SprayWallArt?: SprayWallArtResolvers<ContextType>;
   SprayWallDetection?: SprayWallDetectionResolvers<ContextType>;
   SprayWallHold?: SprayWallHoldResolvers<ContextType>;
+  SprayWallHoldUsage?: SprayWallHoldUsageResolvers<ContextType>;
   SprayWallModerationResult?: SprayWallModerationResultResolvers<ContextType>;
   SprayWallMoveSuggestion?: SprayWallMoveSuggestionResolvers<ContextType>;
   SprayWallPhoto?: SprayWallPhotoResolvers<ContextType>;
   SprayWallPhotoPurgeResult?: SprayWallPhotoPurgeResultResolvers<ContextType>;
+  SprayWallPhotoQuality?: SprayWallPhotoQualityResolvers<ContextType>;
   SprayWallRenderData?: SprayWallRenderDataResolvers<ContextType>;
   SprayWallReport?: SprayWallReportResolvers<ContextType>;
   SprayWallReportResult?: SprayWallReportResultResolvers<ContextType>;

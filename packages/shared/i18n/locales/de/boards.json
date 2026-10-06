@@ -939,9 +939,8 @@
       "mode": "Pinsel",
       "add": "Hinzufügen",
       "erase": "Radieren",
-      "sizeSmall": "Kleiner Pinsel",
-      "sizeMedium": "Mittlerer Pinsel",
-      "sizeLarge": "Großer Pinsel",
+      "size": "Pinselgröße",
+      "sizeValue": "Größe {{step}} von {{total}}",
       "dropped_one": "Der Hauptteil bleibt. {{count}} loses Stück wurde entfernt.",
       "dropped_other": "Der Hauptteil bleibt. {{count}} lose Stücke wurden entfernt.",
       "atLimit": "Weiter kann dieser Griff nicht wachsen. Mit Umranden zeichnest du ihn größer neu."

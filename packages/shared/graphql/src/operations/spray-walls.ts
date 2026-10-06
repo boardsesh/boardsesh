@@ -272,6 +272,21 @@ export const CREATE_SPRAY_WALL = gql`
 `;
 
 /**
+ * How many published and draft climbs use each hold. The hold editor asks before
+ * it saves a removal or a move, so it can warn that published climbs will lose a
+ * hold.
+ */
+export const GET_SPRAY_WALL_HOLD_USAGE = gql`
+  query GetSprayWallHoldUsage($wallUuid: ID!, $holdIds: [Int!]!) {
+    sprayWallHoldUsage(wallUuid: $wallUuid, holdIds: $holdIds) {
+      holdId
+      publishedClimbCount
+      draftClimbCount
+    }
+  }
+`;
+
+/**
  * Start a reset: clone the wall's settings into a new, unfinished wall. The owner
  * photographs and marks it in the add-wall wizard, and its first publish archives
  * the old wall. Calling it again before then returns the same clone.
@@ -319,16 +334,16 @@ export const GET_SPRAY_WALL_LOOK = gql`
 
 /**
  * Where the wall stands in a reset (`docs/spray-walls.md`, "Archive and reset"):
- * when a reset archived it, the wall it was cloned from, the published wall that
- * replaced it, and whether a published climb has locked its holds.
+ * when a reset archived it, the wall it was cloned from, and the published wall
+ * that replaced it.
  *
  * Its own query, never part of `SPRAY_WALL_FIELDS`, for the reason
  * `GET_SPRAY_WALL_LOOK` gives: a field the backend does not serve fails
  * validation for the WHOLE operation, so an app that reached a phone before the
  * backend (or a backend rolled back under it) would load no wall at all. Out
  * here, a backend without the fields costs only this answer, and the app reads
- * the wall as live with free holds. The server still refuses every write an
- * archived or locked wall does not allow.
+ * the wall as live. The server still refuses every write an archived wall does
+ * not allow.
  */
 export const GET_SPRAY_WALL_ARCHIVE = gql`
   query GetSprayWallArchive($uuid: ID!) {
@@ -337,7 +352,6 @@ export const GET_SPRAY_WALL_ARCHIVE = gql`
       archivedAt
       resetOfWallUuid
       replacedByWallUuid
-      holdsLocked
     }
   }
 `;
@@ -348,7 +362,6 @@ export type SprayWallArchiveFields = {
   archivedAt?: string | null;
   resetOfWallUuid?: string | null;
   replacedByWallUuid?: string | null;
-  holdsLocked?: boolean | null;
 };
 
 export type GetSprayWallArchiveQueryResponse = { sprayWall: SprayWallArchiveFields | null };
@@ -385,6 +398,43 @@ export type SprayWallLifecycleRow = {
 };
 
 export type GetMySprayWallLifecycleQueryResponse = { mySprayWalls: SprayWallLifecycleRow[] };
+
+/**
+ * One version's generated wall looks and its photo-quality verdict. Its own
+ * query for the reason `GET_SPRAY_WALL_LOOK` gives: a backend without
+ * `sprayWallArt` costs only the art, and the wall draws on its photo.
+ */
+export const GET_SPRAY_WALL_ART = gql`
+  query GetSprayWallArt($uuid: ID!, $version: Int) {
+    sprayWallArt(uuid: $uuid, version: $version) {
+      versionNumber
+      recipe
+      status
+      width
+      height
+      quality {
+        stretch
+        verdict
+        reason
+        frameShortEdge
+      }
+      crop {
+        url
+        thumbUrl
+        width
+        height
+        expiresAt
+      }
+      cutout {
+        url
+        thumbUrl
+        width
+        height
+        expiresAt
+      }
+    }
+  }
+`;
 
 /**
  * Store the wall's default look (`{ mode, boardsesh }`), or clear it with

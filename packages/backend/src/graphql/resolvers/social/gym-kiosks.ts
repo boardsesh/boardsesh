@@ -293,6 +293,9 @@ async function assertLayoutBoardsInGym(gymId: number, layout: KioskLayout): Prom
         eq(dbSchema.userBoards.gymId, gymId),
         inArray(dbSchema.userBoards.uuid, [...referenced]),
         isNull(dbSchema.userBoards.deletedAt),
+        // The read side drops an archived spray wall from its slot, so a layout
+        // naming one would save a slot that can never show anything.
+        boardIsNotArchivedSprayWall(),
       ),
     );
   const alive = new Set(aliveRows.map((row) => row.uuid));

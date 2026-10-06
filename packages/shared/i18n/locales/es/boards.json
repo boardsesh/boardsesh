@@ -939,9 +939,8 @@
       "mode": "Pincel",
       "add": "Añadir",
       "erase": "Borrar",
-      "sizeSmall": "Pincel pequeño",
-      "sizeMedium": "Pincel mediano",
-      "sizeLarge": "Pincel grande",
+      "size": "Tamaño del pincel",
+      "sizeValue": "Tamaño {{step}} de {{total}}",
       "dropped_one": "Se conservó la parte principal. Se descartó {{count}} trozo suelto.",
       "dropped_other": "Se conservó la parte principal. Se descartaron {{count}} trozos sueltos.",
       "atLimit": "La presa no puede crecer más por ahí. Con Trazar puedes redibujarla más grande."

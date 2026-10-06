@@ -6012,3 +6012,221 @@ describe('draft purpose separates hold editing and photo resets', () => {
     }
   });
 });
+
+describe('generated wall looks (sprayWallArt and the background setting)', () => {
+  /** Pins on a front-on photo big enough for the quality gate: a 2200 x 1600 frame. */
+  const STRAIGHT_ANCHORS: [number, number][] = [
+    [100, 100],
+    [2300, 100],
+    [2300, 1700],
+    [100, 1700],
+  ];
+
+  type ArtRead = {
+    status: string;
+    versionNumber: number;
+    width: number | null;
+    quality: { verdict: string; reason: string; stretch: number | null };
+    crop: { url: string; thumbUrl: string | null } | null;
+    cutout: { url: string; thumbUrl: string | null } | null;
+  } | null;
+
+  async function straightWall(overrides: Record<string, unknown> = {}) {
+    const wall = await createWall(OWNER, overrides);
+    const photoId = registerUploadedPhoto(wall.uuid, { width: 2400, height: 1800 });
+    const version = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: STRAIGHT_ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+    await sprayWallMutations.upsertSprayWallHolds(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: version.id, holds: [{ cx: 400, cy: 400, r: 40 }] } },
+      ctxFor(OWNER),
+    );
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: version.id } }, ctxFor(OWNER));
+    return { wall, versionId: version.id };
+  }
+
+  const readArt = (uuid: string, userId: string | null, version?: number) =>
+    sprayWallQueries.sprayWallArt({}, { uuid, version }, ctxFor(userId)) as Promise<ArtRead>;
+
+  async function versionArt(versionId: string) {
+    const [row] = await db
+      .select({ art: sprayWallVersions.art })
+      .from(sprayWallVersions)
+      .where(eq(sprayWallVersions.id, Number(versionId)));
+    return row.art;
+  }
+
+  const AURA = {
+    mode: 'aura',
+    boardsesh: {
+      glowFalloff: 'plateau',
+      glowReach: 1.4,
+      plateauShare: 0.5,
+      veil: 'custom',
+      veilOpacity: 0.45,
+      markStyle: 'glow-fill',
+      fillOpacity: 0.6,
+      softDisc: false,
+      smallHoldBoost: true,
+      ledDots: true,
+      roleGlyphs: false,
+      thumbnailStyle: 'fill',
+      holdShape: 'silhouette',
+    },
+  } as const;
+
+  const setLook = (uuid: string, renderSettings: unknown) =>
+    sprayWallMutations.setSprayWallRenderSettings({}, { input: { uuid, renderSettings } }, ctxFor(OWNER)) as Promise<{
+      renderSettings: unknown;
+    }>;
+
+  it('refuses art at publish for a photo the gate fails, and says why', async () => {
+    // ANCHORS make an 800 x 620 frame: under the 1000 px short edge.
+    const { wall, versionId } = await createPublishedWall(OWNER);
+    expect(await versionArt(versionId)).toMatchObject({ status: 'refused', error: 'small-frame' });
+
+    const art = await readArt(wall.uuid, OWNER);
+    expect(art).toMatchObject({ status: 'REFUSED', quality: { verdict: 'FAIL', reason: 'small-frame' } });
+    expect(art?.crop).toBeNull();
+  });
+
+  it('reads a front-on wall as GOOD with no art yet when no queue is running', async () => {
+    const { wall, versionId } = await straightWall();
+    // No job queue in this file, so nothing was queued and nothing was written.
+    expect(await versionArt(versionId)).toBeNull();
+    const art = await readArt(wall.uuid, OWNER);
+    expect(art).toMatchObject({ status: 'NONE', versionNumber: 1, quality: { verdict: 'GOOD', reason: 'ok' } });
+    expect(art?.quality.stretch).toBeCloseTo(1, 5);
+  });
+
+  it('presigns both images and their thumbnails once the art is ready', async () => {
+    const { wall, versionId } = await straightWall();
+    const { sprayWallArtKeys } = await import('../lib/spray-wall-art');
+    const { ART_RECIPE } = await import('@boardsesh/spray-wall-geometry');
+    const keys = sprayWallArtKeys(wall.uuid, Number(versionId));
+    expect(keys.cropKey).toBe(`spray-walls/${wall.uuid}/art/${versionId}-r${ART_RECIPE}-crop.jpg`);
+    await db
+      .update(sprayWallVersions)
+      .set({
+        art: {
+          recipe: ART_RECIPE,
+          status: 'ready',
+          width: 2048,
+          height: 1489,
+          ...keys,
+          quality: { stretch: 1, verdict: 'good' },
+          error: null,
+        },
+      })
+      .where(eq(sprayWallVersions.id, Number(versionId)));
+
+    const art = await readArt(wall.uuid, OWNER);
+    expect(art).toMatchObject({ status: 'READY', width: 2048 });
+    expect(art?.crop?.url).toContain(keys.cropKey);
+    expect(art?.crop?.thumbUrl).toContain(`${keys.cropKey}@280.jpg`);
+    expect(art?.cutout?.url).toContain(keys.cutoutKey);
+    expect(art?.cutout?.thumbUrl).toContain(`${keys.cutoutKey}@280.webp`);
+
+    // Art from an older recipe is not served.
+    await db
+      .update(sprayWallVersions)
+      .set({ art: { ...(await versionArt(versionId))!, recipe: ART_RECIPE - 1 } })
+      .where(eq(sprayWallVersions.id, Number(versionId)));
+    expect((await readArt(wall.uuid, OWNER))?.status).toBe('NONE');
+  });
+
+  it('follows the photo’s visibility: nothing for a stranger on a private wall, nothing for a draft', async () => {
+    const { wall } = await straightWall();
+    expect(await readArt(wall.uuid, STRANGER)).toBeNull();
+    expect(await readArt(wall.uuid, null)).toBeNull();
+
+    const { wall: shared } = await straightWall({ isUnlisted: true });
+    expect((await readArt(shared.uuid, STRANGER))?.status).toBe('NONE');
+    // Version 2 does not exist; a draft would be null for a non-editor the same way.
+    expect(await readArt(shared.uuid, STRANGER, 2)).toBeNull();
+  });
+
+  it('stores a generated background on a wall that passes the gate', async () => {
+    const { wall } = await straightWall();
+    const look = { ...AURA, background: 'wall-crop' };
+    expect((await setLook(wall.uuid, look)).renderSettings).toEqual(look);
+    expect((await setLook(wall.uuid, { ...AURA, background: 'hold-cutouts' })).renderSettings).toMatchObject({
+      background: 'hold-cutouts',
+    });
+  });
+
+  it('refuses a generated background when the photo fails the gate, but always allows the photo', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    await expect(setLook(wall.uuid, { ...AURA, background: 'wall-crop' })).rejects.toMatchObject({
+      extensions: { code: 'SPRAY_WALL_ART_NOT_AVAILABLE', reason: 'small-frame' },
+    });
+    expect((await setLook(wall.uuid, { ...AURA, background: 'photo' })).renderSettings).toMatchObject({
+      background: 'photo',
+    });
+  });
+
+  it('hands a draft’s art to its editor and to nobody else', async () => {
+    const { wall } = await straightWall({ isUnlisted: true });
+    const photoId = registerUploadedPhoto(wall.uuid, { width: 2400, height: 1800 });
+    await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: STRAIGHT_ANCHORS } },
+      ctxFor(OWNER),
+    );
+
+    // The stranger can read the unlisted wall's published art, not the draft's.
+    expect((await readArt(wall.uuid, STRANGER, 1))?.status).toBe('NONE');
+    expect(await readArt(wall.uuid, STRANGER, 2)).toBeNull();
+    expect(await readArt(wall.uuid, null, 2)).toBeNull();
+    expect(await readArt(wall.uuid, OWNER, 2)).toMatchObject({ versionNumber: 2, status: 'NONE' });
+  });
+
+  it('reads a pending run past the job deadline as FAILED, and a fresh one as PENDING', async () => {
+    const { wall, versionId } = await straightWall();
+    const { ART_RECIPE } = await import('@boardsesh/spray-wall-geometry');
+    const pendingAt = async (requestedAt: string) => {
+      await db
+        .update(sprayWallVersions)
+        .set({
+          art: {
+            recipe: ART_RECIPE,
+            status: 'pending',
+            width: null,
+            height: null,
+            cropKey: null,
+            cutoutKey: null,
+            quality: { stretch: 1, verdict: 'good' },
+            error: null,
+            requestedAt,
+          },
+        })
+        .where(eq(sprayWallVersions.id, Number(versionId)));
+      return (await readArt(wall.uuid, OWNER))?.status;
+    };
+    expect(await pendingAt(new Date().toISOString())).toBe('PENDING');
+    expect(await pendingAt(new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString())).toBe('FAILED');
+  });
+
+  it('keeps the stored background when an older client saves a look without one', async () => {
+    const { wall } = await straightWall();
+    await setLook(wall.uuid, { ...AURA, background: 'hold-cutouts' });
+
+    // `{ mode, boardsesh }` only: what every client before this field sends.
+    const classic = { ...AURA, mode: 'classic' };
+    expect((await setLook(wall.uuid, classic)).renderSettings).toEqual({ ...classic, background: 'hold-cutouts' });
+
+    // An explicit photo still switches back, and null still clears everything.
+    expect((await setLook(wall.uuid, { ...AURA, background: 'photo' })).renderSettings).toMatchObject({
+      background: 'photo',
+    });
+    expect((await setLook(wall.uuid, null)).renderSettings).toBeNull();
+  });
+
+  it('refuses a background name it does not know', async () => {
+    const { wall } = await straightWall();
+    await expect(setLook(wall.uuid, { ...AURA, background: 'blurred' })).rejects.toThrow(/background/);
+  });
+});
