@@ -1128,7 +1128,10 @@
     },
     "leftoverPhoto": "This wall has an unfinished new photo from an older version of the app. Discard it to edit the holds.",
     "discardLeftover": "Discard the unfinished photo",
-    "discardLeftoverFailed": "That photo wouldn't clear. Try again."
+    "discardLeftoverFailed": "That photo wouldn't clear. Try again.",
+    "strandedDraft": "You have unpublished hold changes on this wall. They can't be published now.",
+    "discardStrandedDraft": "Discard unpublished changes",
+    "discardStrandedDraftFailed": "Those changes wouldn't clear. Try again."
   },
   "sprayCaps": {
     "holds": "A wall carries up to {{max}} holds. Drop a few and save again.",

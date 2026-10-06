@@ -377,8 +377,43 @@ describe('SprayWallHoldsScreen', () => {
     await screen.findByText(copy);
     expect(screen.queryByTestId('editor')).toBeNull();
     expect(screen.queryByText('sprayMaintenance.retry')).toBeNull();
+    expect(screen.queryByText('sprayMaintenance.discardStrandedDraft')).toBeNull();
     fireEvent.click(screen.getByText('sprayWizard.back'));
     expect(router.back).toHaveBeenCalledTimes(1);
+  });
+
+  // Hold changes opened before the wall locked can never be published, and
+  // nothing else would clear them. The owner discards them with a tap, never
+  // automatically, and the screen then settles on the plain locked state.
+  it.each(['holdsLocked', 'archived'] as const)(
+    'offers to discard a draft left on a %s wall, then shows the plain locked state',
+    async (reason) => {
+      const { SprayHoldMaintenanceError } = await import('../../../lib/spray/spray-hold-maintenance');
+      requests.prepare
+        .mockRejectedValueOnce(new SprayHoldMaintenanceError(reason, 'draft-4'))
+        .mockRejectedValueOnce(new SprayHoldMaintenanceError(reason));
+      render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+      await screen.findByText('sprayMaintenance.strandedDraft');
+      expect(requests.discardLeftover).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByText('sprayMaintenance.discardStrandedDraft'));
+      await waitFor(() => expect(requests.prepare).toHaveBeenCalledTimes(2));
+      expect(requests.discardLeftover).toHaveBeenCalledExactlyOnceWith('draft-4');
+      await waitFor(() => expect(screen.queryByText('sprayMaintenance.strandedDraft')).toBeNull());
+      expect(screen.queryByText('sprayMaintenance.discardStrandedDraft')).toBeNull();
+      expect(screen.queryByText('sprayMaintenance.retry')).toBeNull();
+      expect(screen.queryByTestId('editor')).toBeNull();
+    },
+  );
+
+  it('keeps the offer up when discarding a draft left on a locked wall fails', async () => {
+    const { SprayHoldMaintenanceError } = await import('../../../lib/spray/spray-hold-maintenance');
+    requests.prepare.mockRejectedValueOnce(new SprayHoldMaintenanceError('holdsLocked', 'draft-4'));
+    requests.discardLeftover.mockRejectedValueOnce(new Error('offline'));
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    fireEvent.click(await screen.findByText('sprayMaintenance.discardStrandedDraft'));
+    await screen.findByText('sprayMaintenance.discardStrandedDraftFailed');
+    expect(screen.getByText('sprayMaintenance.discardStrandedDraft')).toBeTruthy();
+    expect(requests.prepare).toHaveBeenCalledTimes(1);
   });
 
   it("says a server refusal for a locked wall in the climber's words, without a retry", async () => {

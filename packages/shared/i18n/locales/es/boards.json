@@ -1128,7 +1128,10 @@
     },
     "leftoverPhoto": "Este muro tiene una foto nueva sin terminar de una versión anterior de la app. Descártala para editar las presas.",
     "discardLeftover": "Descartar la foto sin terminar",
-    "discardLeftoverFailed": "No se pudo descartar esa foto. Inténtalo otra vez."
+    "discardLeftoverFailed": "No se pudo descartar esa foto. Inténtalo otra vez.",
+    "strandedDraft": "Tienes cambios de presas sin publicar en este muro. Ya no se pueden publicar.",
+    "discardStrandedDraft": "Descartar los cambios sin publicar",
+    "discardStrandedDraftFailed": "No se pudieron descartar esos cambios. Inténtalo otra vez."
   },
   "sprayCaps": {
     "holds": "En un muro caben hasta {{max}} presas. Descarta algunas y vuelve a guardar.",

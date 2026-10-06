@@ -244,7 +244,10 @@ describe('locked and archived walls cannot enter hold maintenance', () => {
   ] as const)('refuses %s before any draft opens', async (_label, overrides, reason) => {
     const requests = transport();
     requests.fetchWall.mockResolvedValue(wall(overrides));
-    await expect(prepareSprayHoldDraft('wall-1', requests)).rejects.toMatchObject({ reason });
+    await expect(prepareSprayHoldDraft('wall-1', requests)).rejects.toMatchObject({
+      reason,
+      leftoverVersionId: null,
+    });
     expect(requests.createDraft).not.toHaveBeenCalled();
   });
 
@@ -255,6 +258,20 @@ describe('locked and archived walls cannot enter hold maintenance', () => {
     await expect(prepareSprayHoldDraft('wall-1', requests)).rejects.toMatchObject({ reason: 'holdsLocked' });
     await expect(publishSprayHoldDraft(preparedDraft, requests)).rejects.toMatchObject({ reason: 'holdsLocked' });
     expect(requests.publishDraft).not.toHaveBeenCalled();
+  });
+
+  // Nothing else would ever clear that draft, so the refusal names it and the
+  // screen can offer to discard it.
+  it.each([
+    ['holds locked', { holdsLocked: true }, 'holdsLocked'],
+    ['archived', { archivedAt: '2026-10-01T09:00:00.000Z', holdsLocked: true }, 'archived'],
+  ] as const)('names the draft left open on a wall with %s', async (_label, overrides, reason) => {
+    const requests = transport();
+    requests.fetchWall.mockResolvedValue(wall({ ...overrides, versions: [publishedVersion, draftVersion] }));
+    await expect(prepareSprayHoldDraft('wall-1', requests)).rejects.toMatchObject({
+      reason,
+      leftoverVersionId: draftVersion.id,
+    });
   });
 
   it('checks access first, so a stranger hears "unavailable" not "locked"', async () => {

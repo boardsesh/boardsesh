@@ -1128,7 +1128,10 @@
     },
     "leftoverPhoto": "An dieser Wand liegt ein unfertiges neues Foto aus einer älteren App-Version. Verwirf es, um die Griffe zu bearbeiten.",
     "discardLeftover": "Unfertiges Foto verwerfen",
-    "discardLeftoverFailed": "Das Foto ließ sich nicht verwerfen. Versuch es nochmal."
+    "discardLeftoverFailed": "Das Foto ließ sich nicht verwerfen. Versuch es nochmal.",
+    "strandedDraft": "Du hast unveröffentlichte Griffänderungen an dieser Wand. Sie lassen sich nicht mehr veröffentlichen.",
+    "discardStrandedDraft": "Unveröffentlichte Änderungen verwerfen",
+    "discardStrandedDraftFailed": "Die Änderungen ließen sich nicht verwerfen. Versuch es nochmal."
   },
   "sprayCaps": {
     "holds": "Eine Wand trägt bis zu {{max}} Griffe. Verwirf ein paar und speichere erneut.",

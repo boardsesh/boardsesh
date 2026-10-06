@@ -222,12 +222,14 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
     }
   }, [queryClient, refreshRegisteredWall]);
 
-  // A new-photo draft the retired in-place reset left on this wall. Discarding
-  // it keeps the wall and its climbs; only the photo goes.
+  // An open draft this screen cannot edit: a new-photo draft the retired
+  // in-place reset left, or hold changes started before the wall was locked or
+  // archived. Discarding it keeps the wall and its climbs; only the draft goes.
+  // Only ever on a tap: the climber may still want to look at what it held.
   const discardLeftover = useDiscardSprayWallVersion(wallUuid);
   const discardLeftoverAsync = discardLeftover.mutateAsync;
   const [discardFailed, setDiscardFailed] = useState(false);
-  const discardLeftoverPhoto = useCallback(
+  const discardOpenDraft = useCallback(
     async (versionId: string) => {
       if (busyRef.current) return;
       busyRef.current = true;
@@ -333,6 +335,12 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
     failure instanceof SprayHoldMaintenanceError && failure.reason === 'leftoverPhotoDraft'
       ? failure.leftoverVersionId
       : null;
+  // A draft opened before the wall was locked or archived. It can never be
+  // published; once discarded, the screen settles on the plain locked state.
+  const strandedDraftVersionId =
+    failure instanceof SprayHoldMaintenanceError && (failure.reason === 'holdsLocked' || failure.reason === 'archived')
+      ? failure.leftoverVersionId
+      : null;
   const finalRefusal = isFinalRefusal(failure);
 
   return (
@@ -347,15 +355,31 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
           <Text variant={finalRefusal ? 'body' : 'headline'} style={styles.message}>
             {failureText}
           </Text>
-          {discardFailed ? (
+          {strandedDraftVersionId ? (
             <Text variant="subheadline" style={styles.message}>
-              {t('sprayMaintenance.discardLeftoverFailed')}
+              {t('sprayMaintenance.strandedDraft')}
             </Text>
           ) : null}
-          {leftoverVersionId ? (
+          {discardFailed ? (
+            <Text variant="subheadline" style={styles.message}>
+              {strandedDraftVersionId
+                ? t('sprayMaintenance.discardStrandedDraftFailed')
+                : t('sprayMaintenance.discardLeftoverFailed')}
+            </Text>
+          ) : null}
+          {strandedDraftVersionId ? (
+            <Button
+              title={t('sprayMaintenance.discardStrandedDraft')}
+              variant="outlined"
+              role="destructive"
+              onPress={() => void discardOpenDraft(strandedDraftVersionId)}
+              loading={discardLeftover.isPending}
+              disabled={discardLeftover.isPending}
+            />
+          ) : leftoverVersionId ? (
             <Button
               title={t('sprayMaintenance.discardLeftover')}
-              onPress={() => void discardLeftoverPhoto(leftoverVersionId)}
+              onPress={() => void discardOpenDraft(leftoverVersionId)}
               loading={discardLeftover.isPending}
               disabled={discardLeftover.isPending}
             />

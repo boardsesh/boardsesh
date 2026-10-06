@@ -36,8 +36,12 @@ export type SprayHoldMaintenanceTransport = {
  * - `holdsLocked`: the wall has a published climb, so its holds no longer
  *   change. Changing one means resetting the wall.
  * - `leftoverPhotoDraft`: the wall's open draft carries a new photo, left by the
- *   in-place reset that no longer exists. `leftoverVersionId` is that draft, so
- *   the screen can offer to discard it.
+ *   in-place reset that no longer exists.
+ *
+ * `leftoverVersionId` names an open draft the screen can offer to discard: the
+ * new-photo draft of `leftoverPhotoDraft`, or, with `archived` or
+ * `holdsLocked`, a draft opened before the wall was locked. Such a draft can
+ * never be published, and nothing else on the phone would ever clear it.
  */
 export type SprayHoldMaintenanceFailure =
   | 'unavailable'
@@ -63,13 +67,17 @@ export class SprayHoldMaintenanceError extends Error {
  * The lock is checked before anything else is read off the wall, so a locked or
  * archived wall is refused even with a draft already open: a deep link or a
  * stale sheet must not reach an editor whose Publish the server will refuse.
+ * The refusal names that draft, so the screen can offer to discard it.
  */
 function requireEditableWall(wallUuid: string, wall: SprayHoldMaintenanceWall | null): SprayHoldMaintenanceWall {
   if (!wall || wall.uuid !== wallUuid || !wall.viewerCanEdit) {
     throw new SprayHoldMaintenanceError('unavailable');
   }
-  if (wall.archivedAt != null) throw new SprayHoldMaintenanceError('archived');
-  if (wall.holdsLocked === true) throw new SprayHoldMaintenanceError('holdsLocked');
+  const lockedReason = wall.archivedAt != null ? 'archived' : wall.holdsLocked === true ? 'holdsLocked' : null;
+  if (lockedReason) {
+    const strandedDraft = wall.versions?.find((version) => version.status === 'DRAFT');
+    throw new SprayHoldMaintenanceError(lockedReason, strandedDraft?.id ?? null);
+  }
   return wall;
 }
 

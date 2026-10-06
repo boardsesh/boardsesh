@@ -1128,7 +1128,10 @@
     },
     "leftoverPhoto": "Ce mur a une nouvelle photo inachevée, laissée par une ancienne version de l'app. Abandonne-la pour modifier les prises.",
     "discardLeftover": "Abandonner la photo inachevée",
-    "discardLeftoverFailed": "Impossible d'abandonner cette photo. Réessaie."
+    "discardLeftoverFailed": "Impossible d'abandonner cette photo. Réessaie.",
+    "strandedDraft": "Tu as des modifications de prises non publiées sur ce mur. Elles ne peuvent plus être publiées.",
+    "discardStrandedDraft": "Abandonner les modifications non publiées",
+    "discardStrandedDraftFailed": "Impossible d'abandonner ces modifications. Réessaie."
   },
   "sprayCaps": {
     "holds": "Un mur porte jusqu’à {{max}} prises. Écartes-en quelques-unes et enregistre à nouveau.",
