@@ -414,6 +414,81 @@ describe('spray-wall-art', () => {
     await sprayWallQueries.sprayWallArt({}, { uuid: wall.uuid }, ctx);
     expect(await runs()).toHaveLength(1);
   });
+
+  /** Point the wall at a generated look, and clear every run so far. */
+  async function chooseWallCrop(wallUuid: string) {
+    await db.execute(sql`
+      UPDATE spray_walls SET render_settings = '{"mode":"aura","boardsesh":{},"background":"wall-crop"}'::jsonb
+      WHERE board_uuid = ${wallUuid}
+    `);
+    await ownerBoss.deleteAllJobs(queue);
+    await db.delete(backgroundJobRuns).where(eq(backgroundJobRuns.family, 'spray-wall-art'));
+  }
+
+  const artRow = (status: 'failed' | 'pending', requestedAt: string) => ({
+    recipe: ART_RECIPE,
+    status,
+    width: null,
+    height: null,
+    cropKey: null,
+    cutoutKey: null,
+    quality: { stretch: 1, verdict: 'good' as const },
+    error: status === 'failed' ? 'SPRAY_ART_RENDER_FAILED' : null,
+    requestedAt,
+  });
+
+  it('never re-queues on a read of a superseded version', async () => {
+    const { wall, versionId: firstVersionId } = await publishWall(STRAIGHT);
+    // Version 2: the same photo, one hold more, published over version 1.
+    const draft = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, sourceVersionId: String(firstVersionId) } },
+      ctx,
+    )) as { id: string };
+    await sprayWallMutations.upsertSprayWallHolds(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: draft.id, holds: [{ cx: 900, cy: 900, r: 40 }] } },
+      ctx,
+    );
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: draft.id } }, ctx);
+    await chooseWallCrop(wall.uuid);
+
+    // Version 1 is superseded and its art is from an older recipe: a published
+    // version in that state would be re-queued; this one must not be.
+    await db
+      .update(sprayWallVersions)
+      .set({ art: { ...artRow('failed', new Date(0).toISOString()), recipe: ART_RECIPE - 1 } })
+      .where(eq(sprayWallVersions.id, firstVersionId));
+    const read = (await sprayWallQueries.sprayWallArt({}, { uuid: wall.uuid, version: 1 }, ctx)) as {
+      status: string;
+      versionNumber: number;
+    };
+    expect(read).toMatchObject({ versionNumber: 1, status: 'NONE' });
+    expect(await runs()).toHaveLength(0);
+  });
+
+  it('retries a failed run at most hourly: a fresh failure queues nothing, an hour-old one queues one run', async () => {
+    const { wall, versionId } = await publishWall(STRAIGHT);
+    await chooseWallCrop(wall.uuid);
+
+    await db
+      .update(sprayWallVersions)
+      .set({ art: artRow('failed', new Date().toISOString()) })
+      .where(eq(sprayWallVersions.id, versionId));
+    expect(((await sprayWallQueries.sprayWallArt({}, { uuid: wall.uuid }, ctx)) as { status: string }).status).toBe(
+      'FAILED',
+    );
+    expect(await runs()).toHaveLength(0);
+
+    await db
+      .update(sprayWallVersions)
+      .set({ art: artRow('failed', new Date(Date.now() - 61 * 60 * 1000).toISOString()) })
+      .where(eq(sprayWallVersions.id, versionId));
+    expect(((await sprayWallQueries.sprayWallArt({}, { uuid: wall.uuid }, ctx)) as { status: string }).status).toBe(
+      'PENDING',
+    );
+    expect(await runs()).toHaveLength(1);
+  });
 });
 
 const STRAIGHT: [number, number][] = [

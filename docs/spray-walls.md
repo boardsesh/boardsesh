@@ -515,6 +515,14 @@ re-queued the next time `sprayWallArt` is read for the PUBLISHED version of a
 wall whose chosen background is generated, or when the owner chooses one again.
 Walls on the photo are left alone. Old objects are never overwritten.
 
+The recipe is also the only way to WITHDRAW art. A READY row of the running
+recipe is served whatever the live quality gate says, so tightening
+`ART_STRETCH_GOOD_MAX`, `ART_STRETCH_SOFT_MAX` or `ART_MIN_FRAME_SHORT_EDGE`
+later only stops new art from being made (and stops owners choosing a
+generated look). Art already READY stays on show until `ART_RECIPE` is bumped,
+after which the old rows read as `NONE` and a photo that now fails the gate
+reads as `REFUSED`.
+
 **The job.** `spray-wall-art` on the `maintenance-delivery` role
 (`docs/background-workers.md`), keyed `art:<versionId>:<recipe>`. It re-checks the
 gate with the shared function (writing `refused` if it fails), decodes the photo
