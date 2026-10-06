@@ -156,37 +156,6 @@ export function sprayWallResetStarted(
   return { name: SHARED_EVENTS.SprayWallResetStarted, properties: { source } };
 }
 
-/** Which surface offered the remix. One today; named so a second is legible. */
-/**
- * Where a broken climb's Edit or Remix started. `set_active` is the editor
- * opening by itself because someone who can fix the climb set it active (#5493).
- */
-export type SprayRemixSurface = 'play_drawer' | 'set_active';
-
-export type ClimbRemixedFromBrokenProps = {
-  /** Holds this climb lost to a reset. Never which holds. */
-  lostHoldCount: number;
-  // Deliberately no successor count: `remixClimb`'s suggestions are not read on
-  // this path (SW-13), and a property that is always absent reads as "no
-  // successors were offered" rather than "nobody asked".
-  source: SprayRemixSurface;
-};
-
-export function climbRemixedFromBroken(
-  properties: ClimbRemixedFromBrokenProps,
-): SprayWallPayload<typeof SHARED_EVENTS.ClimbRemixedFromBroken, ClimbRemixedFromBrokenProps> {
-  return { name: SHARED_EVENTS.ClimbRemixedFromBroken, properties };
-}
-
-/** Same shape as the remix event, so the two read side by side (#6024). */
-export type ClimbEditedFromBrokenProps = ClimbRemixedFromBrokenProps;
-
-export function climbEditedFromBroken(
-  properties: ClimbEditedFromBrokenProps,
-): SprayWallPayload<typeof SHARED_EVENTS.ClimbEditedFromBroken, ClimbEditedFromBrokenProps> {
-  return { name: SHARED_EVENTS.ClimbEditedFromBroken, properties };
-}
-
 /**
  * The ratio the flag rollout is gated on (`docs/feature-flags.md`).
  *

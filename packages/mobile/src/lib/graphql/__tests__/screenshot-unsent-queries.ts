@@ -38,7 +38,6 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetBoardBySlug',
   'GetBoardsBySerialNumbers',
   'GetClimbLogs',
-  'GetClimbLostHolds',
   'GetClimbProposals',
   'GetComments',
   'GetCrewFeed',

@@ -71,18 +71,7 @@ type InteractiveCreateBoardProps = {
    *  the board instead of scrolling the sheet. Mirrors PlayDrawer's
    *  scrollRef — see the import comment at the top of CreateDrawer.tsx. */
   scrollRef?: RefObject<ComponentType | undefined | null>;
-  /**
-   * Holds a reset took off this climb, drawn as ghosts by the `overlay` (#5493),
-   * as tap targets in the same photo pixels as `holdTargets`. A lost hold's id
-   * can never be a live hold's id, so the two sets share one hit list and the
-   * nearest centre still decides; a hit on a ghost goes to `onGhostPress`
-   * instead of painting.
-   */
-  ghostTargets?: readonly BoardHoldTarget[];
-  onGhostPress?: (lostHoldId: number) => void;
 };
-
-const NO_GHOST_TARGETS: readonly BoardHoldTarget[] = [];
 
 /**
  * The no-SVG interactive board editor. The board and its painted holds come from
@@ -134,8 +123,6 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
   controlRef,
   onInteractionActiveChange,
   scrollRef,
-  ghostTargets = NO_GHOST_TARGETS,
-  onGhostPress,
 }: InteractiveCreateBoardProps) {
   // Shared with both tap overlays so they mark themselves simultaneous with the
   // pinch — otherwise a finger resting on the overlay claims the pointer and
@@ -186,34 +173,8 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
   // Hit circles both tap overlays resolve a point against, so the two zoom
   // levels agree on which hold a touch belongs to.
   const hitTargets = useMemo(
-    () =>
-      buildHoldHitTargets(
-        ghostTargets.length > 0 ? [...holdTargets, ...ghostTargets] : holdTargets,
-        boardWidth,
-        boardHeight,
-        renderWidth,
-        renderHeight,
-        mirrored,
-      ),
-    [holdTargets, ghostTargets, boardWidth, boardHeight, renderWidth, renderHeight, mirrored],
-  );
-
-  // A tap or long-press that resolved to a ghost opens its sheet; anything else
-  // paints (or opens the role sheet) as before.
-  const ghostIds = useMemo(() => new Set(ghostTargets.map((target) => target.id)), [ghostTargets]);
-  const handleTap = useCallback(
-    (holdId: number) => {
-      if (onGhostPress && ghostIds.has(holdId)) onGhostPress(holdId);
-      else onPaint(holdId);
-    },
-    [ghostIds, onGhostPress, onPaint],
-  );
-  const handleLongPress = useCallback(
-    (holdId: number) => {
-      if (onGhostPress && ghostIds.has(holdId)) onGhostPress(holdId);
-      else onLongPressHold(holdId);
-    },
-    [ghostIds, onGhostPress, onLongPressHold],
+    () => buildHoldHitTargets(holdTargets, boardWidth, boardHeight, renderWidth, renderHeight, mirrored),
+    [holdTargets, boardWidth, boardHeight, renderWidth, renderHeight, mirrored],
   );
 
   // At rest the same circles feed a single full-bleed overlay, so a tap goes to
@@ -221,8 +182,8 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
   // render last (#4496).
   const restGesture = useRestHoldTapGesture({
     hitTargets,
-    onTap: handleTap,
-    onLongPress: handleLongPress,
+    onTap: onPaint,
+    onLongPress: onLongPressHold,
     pinchRef,
     isPinchingSV,
   });
@@ -235,8 +196,8 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
     containerWidthSV,
     containerHeightSV,
     hitTargets,
-    onTap: handleTap,
-    onLongPress: handleLongPress,
+    onTap: onPaint,
+    onLongPress: onLongPressHold,
     pinchRef,
     isPinchingSV,
   });

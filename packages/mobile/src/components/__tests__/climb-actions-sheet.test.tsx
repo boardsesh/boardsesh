@@ -511,8 +511,6 @@ describe('ClimbActionsSheet create-climb navigation (Remix / Edit)', () => {
         // The parent's grade rides along so a remix on a board that publishes
         // with the setter's own grade (a spray wall) opens at it (#5443).
         forkDifficulty: 'V4',
-        // The parent, so the editor can draw the holds it lost (#5493).
-        forkParentUuid: climb.uuid,
         boardName: 'kilter',
         layoutId: '1',
         sizeId: '10',

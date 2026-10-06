@@ -2,8 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { SHARED_EVENTS } from '../events';
 import {
   SPRAY_ROLLOUT_GATES,
-  climbEditedFromBroken,
-  climbRemixedFromBroken,
   sprayHoldsReviewed,
   sprayWallBindStalled,
   sprayWallDetectionFinished,
@@ -49,8 +47,6 @@ const EVERY_PAYLOAD = [
   sprayHoldsReviewed({ holdCount: 198, hadCandidates: true }),
   sprayWallBindStalled({ stage: 'fetch_board', elapsedMs: 30000 }),
   sprayWallResetStarted('board_sheet'),
-  climbRemixedFromBroken({ lostHoldCount: 3, source: 'play_drawer' }),
-  climbEditedFromBroken({ lostHoldCount: 3, source: 'play_drawer' }),
 ];
 
 describe('spray wall event builders', () => {
@@ -66,14 +62,6 @@ describe('spray wall event builders', () => {
     expect(sprayWallBindStalled({ stage: 'navigate', elapsedMs: 1500 })).toEqual({
       name: SHARED_EVENTS.SprayWallBindStalled,
       properties: { stage: 'navigate', elapsedMs: 1500 },
-    });
-    expect(climbRemixedFromBroken({ lostHoldCount: 3, source: 'play_drawer' })).toEqual({
-      name: SHARED_EVENTS.ClimbRemixedFromBroken,
-      properties: { lostHoldCount: 3, source: 'play_drawer' },
-    });
-    expect(climbEditedFromBroken({ lostHoldCount: 2, source: 'play_drawer' })).toEqual({
-      name: SHARED_EVENTS.ClimbEditedFromBroken,
-      properties: { lostHoldCount: 2, source: 'play_drawer' },
     });
     expect(sprayWallResetStarted('holds_locked')).toEqual({
       name: SHARED_EVENTS.SprayWallResetStarted,

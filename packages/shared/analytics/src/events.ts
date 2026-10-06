@@ -722,20 +722,6 @@ export const SHARED_EVENTS = {
   // owner confirms "Reset this wall?". The replacement's publish is the
   // ordinary `Board Created` with `isReset: true`.
   SprayWallResetStarted: 'Spray Wall Reset Started',
-  // Props: { lostHoldCount, source: 'play_drawer' }. Fired when a climber takes
-  // the remix offer on a climb that lost holds — the one number that says
-  // whether a broken climb is a dead end or a starting point. No successor
-  // count: no client reads `remixClimb`'s suggestions, and a property that is
-  // always absent is worse
-  // than no property at all — it reads as "no successors were offered" rather
-  // than "nobody asked".
-  ClimbRemixedFromBroken: 'Climb Remixed From Broken',
-  // Props: { lostHoldCount, source: 'play_drawer' }. The other answer to the
-  // same banner (#6024): the setter or a wall editor opens the climb in the
-  // editor, lost holds already dropped, to save it in place as a new revision.
-  // Read beside `Climb Remixed From Broken` to see whether broken climbs get
-  // repaired or replaced. Fires on the tap, not on the save.
-  ClimbEditedFromBroken: 'Climb Edited From Broken',
   // Board presence — "now on the wall" (board-level collaboration, keyed on the
   // shared board_id resolved from the BLE serial). `boardId` is attached as an
   // event PROPERTY at the call sites — never the raw serial. Keep these to user

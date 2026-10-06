@@ -39,8 +39,7 @@ import { climbToQueueItem, resolveCommittableQueueItem } from '../../lib/climb-t
 import { toBoardName } from '@boardsesh/board-config';
 import { formatRenderBoardLabel, resolveClimbRenderBoard, sameRenderBoard } from '../../lib/boards/climb-render-board';
 import type { ActiveSubDrawer } from '@boardsesh/play-view';
-import { SHARED_EVENTS, climbEditedFromBroken, climbRemixedFromBroken } from '@boardsesh/analytics';
-import { trackSprayEvent } from '../../lib/spray/spray-telemetry';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { DeferredBoard } from './DeferredBoard';
 import { BoardRenderUnavailable } from './BoardRenderUnavailable';
 import { PlaybackControls } from '../playback/PlaybackControls';
@@ -106,10 +105,6 @@ import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { resolveTickDefaultGradeName } from '../../lib/boardsesh-grade-display';
 import { useShareClimb } from '../../hooks/use-share-climb';
-import { LostHoldsBanner } from './LostHoldsBanner';
-import { useCanEditDisplayedClimb } from './use-can-edit-displayed-climb';
-import { useLostHoldsEditReadiness } from './use-lost-holds-edit-readiness';
-import { useCreateClimbNavigation } from '../create-climb/use-create-climb-navigation';
 import { useMountedOnFirstOpen } from '../../hooks/use-mounted-on-first-open';
 import { getBoardRenderData } from '../../lib/board-details';
 import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
@@ -561,17 +556,6 @@ export function PlayDrawer({
   );
   const renderBoardConfig = renderBoardResolution?.boardConfig ?? boardConfig;
 
-  /**
-   * Remix a climb that lost holds in a reset.
-   *
-   * The same handoff the climb-actions sheet uses — one accepted action that
-   * dismisses the player, waits for the native transition, then pushes the
-   * create route — because a second path to the create screen would be a second
-   * place for that ordering to be got wrong. `openRemix` carries the parent's
-   * frames, and the create editor's own sanitiser drops the hold ids that are no
-   * longer on the wall, so the editor opens with exactly the holds that survived.
-   */
-  const { openRemix, openEdit } = useCreateClimbNavigation({ dismissPlayerAndWait });
   const openingSetterRef = useRef(false);
   const openSetterPlaylist = useCallback(() => {
     const username = displayedClimb?.setter_username;
@@ -588,33 +572,6 @@ export function PlayDrawer({
       }
     })();
   }, [displayedClimb?.setter_username, dismissPlayerAndWait]);
-  const lostHoldCount = displayedClimb?.missingHoldCount ?? 0;
-  const handleRemixLostHolds = useCallback(() => {
-    if (!displayedClimb) return;
-    trackSprayEvent(climbRemixedFromBroken({ lostHoldCount, source: 'play_drawer' }));
-    openRemix(displayedClimb, renderBoardConfig);
-  }, [lostHoldCount, openRemix, displayedClimb, renderBoardConfig]);
-  // Fix it in place as well as remix it (#6024). The editor drops the holds that
-  // are no longer on the wall when it loads the climb, so Save writes a new
-  // revision on what is there now. Offered only to whoever may edit the climb.
-  const canEditDisplayedClimb = useCanEditDisplayedClimb(
-    displayedClimb,
-    renderBoardConfig.boardName,
-    renderBoardConfig.layoutId,
-  );
-  // And only when the editor would open on something it can save: this device's
-  // wall agrees with the server about what is gone, and some holds survive.
-  const lostHoldsEditReadiness = useLostHoldsEditReadiness(
-    lostHoldCount > 0 ? displayedClimb : null,
-    renderBoardConfig.boardName,
-    renderBoardConfig.layoutId,
-  );
-  const canEditLostHolds = canEditDisplayedClimb && lostHoldsEditReadiness === 'ready';
-  const handleEditLostHolds = useCallback(() => {
-    if (!displayedClimb) return;
-    trackSprayEvent(climbEditedFromBroken({ lostHoldCount, source: 'play_drawer' }));
-    openEdit(displayedClimb, renderBoardConfig);
-  }, [lostHoldCount, openEdit, displayedClimb, renderBoardConfig]);
   // The climb belongs to a genuinely DIFFERENT board model. Same gate as an
   // explicit board override (`boardMismatch` from the host), just discovered
   // from the climb rather than handed in by the opener.
@@ -1984,18 +1941,6 @@ export function PlayDrawer({
                           }
                         />
                       </View>
-
-                      {/* A climb that survived a reset minus a couple of holds. It
-                          is still findable, still playable and still holds its
-                          own ticks — but nothing else on this screen would say
-                          why the board is drawing fewer holds than the setter
-                          painted. Above the board, because it is about what the
-                          board is showing. */}
-                      <LostHoldsBanner
-                        count={lostHoldCount}
-                        onRemix={handleRemixLostHolds}
-                        onEdit={canEditLostHolds ? handleEditLostHolds : undefined}
-                      />
 
                       <View style={styles.boardSection}>
                         {/* Viewfinder brackets while browsing: you're looking through a

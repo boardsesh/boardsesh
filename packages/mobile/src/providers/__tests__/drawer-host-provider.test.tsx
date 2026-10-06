@@ -258,20 +258,6 @@ vi.mock('../bluetooth-provider', () => ({
   useOptionalBluetoothContext: () => ({ undoWallChange: vi.fn(async () => true) }),
 }));
 
-// The lost-holds set-active rule has its own suite; here it is only asked.
-const autoEdit = vi.hoisted(() => ({
-  answer: 'declined' as 'routed' | 'swallowed' | 'declined',
-  calls: [] as Array<{ climbUuid: string; context: Record<string, unknown> }>,
-}));
-vi.mock('../../components/play-drawer/use-lost-holds-auto-edit', () => ({
-  useLostHoldsAutoEdit: () => ({
-    tryAutoEdit: (climb: { uuid: string }, context: Record<string, unknown>) => {
-      autoEdit.calls.push({ climbUuid: climb.uuid, context });
-      return autoEdit.answer;
-    },
-  }),
-}));
-
 vi.mock('../queue-provider', () => ({
   useIsSharedSession: () => false,
   useActiveClimbUuid: () => queue.activeClimbUuid,
@@ -1032,113 +1018,6 @@ describe('DrawerHostProvider play drawer open target', () => {
 
     // No board override → no override set, and `boardConfig` must not reach the
     // open target the route applies.
-    await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(climb));
-    expect(routes.at(-1)?.playTarget?.options).toEqual({ committedExternally: true });
-  });
-
-  it('hands a broken climb a fixer set active to the editor instead of the player (#5493)', async () => {
-    const hosts: Array<HostValue> = [];
-    const routes: Array<RouteValue> = [];
-    renderHost(
-      (host) => hosts.push(host),
-      (route) => routes.push(route),
-    );
-    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
-    autoEdit.answer = 'routed';
-    autoEdit.calls.length = 0;
-    queue.setCurrentClimb.mockClear();
-    const navigate = vi.mocked(router.navigate);
-    navigate.mockClear();
-
-    const climb = makeQueueItem('queue-broken', 'climb-broken').climb as unknown as Climb;
-    try {
-      act(() => {
-        hosts.at(-1)?.openPlayDrawer(climb);
-      });
-      expect(autoEdit.calls.at(-1)).toEqual({
-        climbUuid: 'climb-broken',
-        context: expect.objectContaining({
-          isPreview: false,
-          isAlreadyCurrent: false,
-          playerOpen: false,
-          optedOut: false,
-        }),
-      });
-      // Made current here, since the drawer that would have done it never opens.
-      expect(queue.setCurrentClimb).toHaveBeenCalledWith(
-        expect.objectContaining({ climb: expect.objectContaining({ uuid: 'climb-broken' }) }),
-        { playlistSuggestionSource: null },
-      );
-      expect(navigate).not.toHaveBeenCalled();
-      expect(routes.at(-1)?.playTarget).toBeNull();
-    } finally {
-      autoEdit.answer = 'declined';
-    }
-  });
-
-  it('leaves the current-climb write to a committed opener it routes (#5493)', async () => {
-    const hosts: Array<HostValue> = [];
-    const routes: Array<RouteValue> = [];
-    renderHost(
-      (host) => hosts.push(host),
-      (route) => routes.push(route),
-    );
-    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
-    autoEdit.answer = 'routed';
-    queue.setCurrentClimb.mockClear();
-    const navigate = vi.mocked(router.navigate);
-    navigate.mockClear();
-    try {
-      const climb = makeQueueItem('queue-c', 'climb-committed').climb as unknown as Climb;
-      act(() => {
-        hosts.at(-1)?.openPlayDrawer(climb, { committedExternally: true });
-      });
-      expect(queue.setCurrentClimb).not.toHaveBeenCalled();
-      expect(navigate).not.toHaveBeenCalled();
-    } finally {
-      autoEdit.answer = 'declined';
-    }
-  });
-
-  it('does nothing at all for a swallowed double tap', async () => {
-    const hosts: Array<HostValue> = [];
-    const routes: Array<RouteValue> = [];
-    renderHost(
-      (host) => hosts.push(host),
-      (route) => routes.push(route),
-    );
-    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
-    autoEdit.answer = 'swallowed';
-    queue.setCurrentClimb.mockClear();
-    const navigate = vi.mocked(router.navigate);
-    navigate.mockClear();
-    try {
-      const climb = makeQueueItem('queue-d', 'climb-double').climb as unknown as Climb;
-      act(() => {
-        hosts.at(-1)?.openPlayDrawer(climb);
-      });
-      expect(queue.setCurrentClimb).not.toHaveBeenCalled();
-      expect(navigate).not.toHaveBeenCalled();
-      expect(routes.at(-1)?.playTarget?.climb).not.toBe(climb);
-    } finally {
-      autoEdit.answer = 'declined';
-    }
-  });
-
-  it("passes a playlist opener's opt-out to the rule and keeps it off the open target", async () => {
-    const hosts: Array<HostValue> = [];
-    const routes: Array<RouteValue> = [];
-    renderHost(
-      (host) => hosts.push(host),
-      (route) => routes.push(route),
-    );
-    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
-    autoEdit.calls.length = 0;
-    const climb = makeQueueItem('queue-p', 'climb-playlist').climb as unknown as Climb;
-    act(() => {
-      hosts.at(-1)?.openPlayDrawer(climb, { committedExternally: true, autoEditBroken: false });
-    });
-    expect(autoEdit.calls.at(-1)?.context).toEqual(expect.objectContaining({ optedOut: true }));
     await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(climb));
     expect(routes.at(-1)?.playTarget?.options).toEqual({ committedExternally: true });
   });

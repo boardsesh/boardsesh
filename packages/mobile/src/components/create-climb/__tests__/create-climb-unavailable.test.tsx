@@ -51,8 +51,6 @@ vi.mock('../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => 
 vi.mock('../../search/heatmap/heatmap-search-input', () => ({ heatmapSearchInput: () => ({}) }));
 vi.mock('../CreateDrawer', () => ({ CreateDrawer: () => null }));
 vi.mock('../HoldRoleSheet', () => ({ HoldRoleSheet: () => null }));
-vi.mock('../LostHoldSheet', () => ({ LostHoldSheet: () => null }));
-vi.mock('../use-lost-hold-ghosts', () => ({ useLostHoldGhosts: () => ({ sheetGhost: null }) }));
 
 import { CreateClimbScreen } from '../CreateClimbScreen';
 

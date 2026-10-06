@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useNavigation, useRouter } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
@@ -9,16 +9,7 @@ import type { SprayWallVersion } from '@boardsesh/graphql/generated/graphql';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
-import {
-  SprayHoldEditorScreen,
-  confirmDiscardSprayEdits,
-  type SprayPutBackHold,
-} from '../outline-editor/SprayHoldEditorScreen';
-import {
-  getLostHoldPutBack,
-  markLostHoldPutBackPublished,
-  returnToClimbEditor,
-} from '../../lib/spray/lost-hold-put-back';
+import { SprayHoldEditorScreen, confirmDiscardSprayEdits } from '../outline-editor/SprayHoldEditorScreen';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { getHttpClient } from '../../lib/graphql/client';
@@ -96,14 +87,7 @@ function isFinalRefusal(failure: unknown): boolean {
  * opened (`prepareSprayHoldDraft`), so a deep link or a sheet that rendered
  * before the lock cannot reach the editor.
  */
-export function SprayWallHoldsScreen({
-  wallUuid,
-  putBackRequestId = null,
-}: {
-  wallUuid: string;
-  /** Set when a climb editor sent the owner here to put a removed hold back (#5493). */
-  putBackRequestId?: string | null;
-}) {
+export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const queryClient = useQueryClient();
@@ -123,34 +107,6 @@ export function SprayWallHoldsScreen({
   const mountedRef = useRef(false);
   const editorDirtyRef = useRef(false);
   const editorHandingOverRef = useRef(false);
-
-  // The put-back request this visit serves, read once: a request for another
-  // wall (a stale link) is ignored and the editor opens as usual.
-  const [putBackRequest] = useState(() => {
-    const request = getLostHoldPutBack(putBackRequestId);
-    return request && request.wallUuid === wallUuid ? request : null;
-  });
-  const putBackHold = useMemo<SprayPutBackHold | null>(
-    () =>
-      putBackRequest
-        ? {
-            removedHoldId: putBackRequest.lostHold.id,
-            knownSuccessorIds: putBackRequest.knownSuccessorIds,
-            cx: putBackRequest.lostHold.cx,
-            cy: putBackRequest.lostHold.cy,
-            r: putBackRequest.lostHold.r,
-            outline: putBackRequest.lostHold.outline,
-          }
-        : null,
-    [putBackRequest],
-  );
-  // However this screen goes — published, backed out of, or failed — a climber
-  // who came from a climb goes back to that climb, not to the boards list.
-  useEffect(() => {
-    const requestId = putBackRequest?.requestId;
-    if (!requestId) return undefined;
-    return () => returnToClimbEditor(requestId);
-  }, [putBackRequest]);
 
   const returnToBoards = useCallback(() => {
     if (router.canGoBack()) router.back();
@@ -242,9 +198,6 @@ export function SprayWallHoldsScreen({
       ) {
         throw new Error('Published wall refresh was unavailable');
       }
-      // The wall is published and registered with the new hold in it: the climb
-      // editor this visit returns to can now find it.
-      if (putBackRequest) markLostHoldPutBackPublished(putBackRequest.requestId);
       // Started, not awaited: the wall is published and registered above, so
       // nothing left here decides whether the climber may leave. These are
       // invalidations over queries with live subscribers, and under
@@ -267,7 +220,7 @@ export function SprayWallHoldsScreen({
     } finally {
       busyRef.current = false;
     }
-  }, [queryClient, putBackRequest, refreshRegisteredWall]);
+  }, [queryClient, refreshRegisteredWall]);
 
   // A new-photo draft the retired in-place reset left on this wall. Discarding
   // it keeps the wall and its climbs; only the photo goes.
@@ -347,7 +300,6 @@ export function SprayWallHoldsScreen({
         onCommitted={onCommitted}
         onDirtyChange={onDirtyChange}
         onHandoverChange={onHandoverChange}
-        putBackHold={putBackHold}
       />
     );
   }

@@ -35,7 +35,7 @@ export type SprayHoldWireInput = {
   outline: number[] | null;
   source: SprayEditorHoldSource;
   confidence?: number | null;
-  /** A NEW hold that puts a removed one back names it here (#5493). */
+  /** The removed hold this one replaced, carried as the server sent it. */
   movedFromHoldId?: number;
 };
 

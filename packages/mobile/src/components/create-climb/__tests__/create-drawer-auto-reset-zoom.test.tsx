@@ -69,8 +69,6 @@ vi.mock('../OpenDraftsSection', () => ({
     createElement('button', { 'data-load-draft': 'true', onClick: () => onLoadDraft?.({ uuid: 'draft-1' }) }),
 }));
 // The lost-hold layer (#5493) draws through react-native-svg and has its own suite.
-vi.mock('../LostHoldGhostLayer', () => ({ LostHoldGhostLayer: () => null }));
-vi.mock('../LostHoldsEditorBanner', () => ({ LostHoldsEditorBanner: () => null }));
 vi.mock('../InlineConfirmBanner', () => ({
   InlineConfirmBanner: ({ onConfirm }: { onConfirm?: () => void }) =>
     createElement('button', { 'data-confirm-new': 'true', onClick: onConfirm }),

@@ -746,7 +746,7 @@ export function usePlaylistActivation({
         // The activate path already opened the drawer (committedExternally) on the
         // seed queue; the confirm path opens it now that the climb is current.
         if (!options.previewQueueItem) {
-          openPlayDrawer(toSchemaClimb(climb), { committedExternally: true, autoEditBroken: false });
+          openPlayDrawer(toSchemaClimb(climb), { committedExternally: true });
         }
       } catch (error) {
         // Ask the signal, not the error's `name` — see the drain's own catch.
@@ -889,7 +889,7 @@ export function usePlaylistActivation({
               isClimbable: target.isClimbable,
             }),
           );
-          openPlayDrawer(schemaClimb, { committedExternally: true, autoEditBroken: false });
+          openPlayDrawer(schemaClimb, { committedExternally: true });
           return replaceQueueWithPlaylist(climb, { previewQueueItem: item });
         }
       }
@@ -905,7 +905,7 @@ export function usePlaylistActivation({
       // so just reopen — the drawer renders from currentClimbQueueItem
       // (committedExternally), which already points at this climb.
       if (isAlreadyActive && suggestionsAlreadyFollowThisList) {
-        openPlayDrawer(schemaClimb, { committedExternally: true, autoEditBroken: false });
+        openPlayDrawer(schemaClimb, { committedExternally: true });
         return Promise.resolve();
       }
 
@@ -930,7 +930,7 @@ export function usePlaylistActivation({
       if (!isAlreadyActive) {
         pendingQueueItemRef.current = climbToQueueItem(schemaClimb, { suggested: true });
       }
-      openPlayDrawer(schemaClimb, { committedExternally: true, autoEditBroken: false });
+      openPlayDrawer(schemaClimb, { committedExternally: true });
       return activate(climb).catch((error: unknown) => {
         console.error('Playlist climb activation failed:', error);
         reportHandledError(error, { tags: { source: 'playlist', op: 'activate-climb' } });
