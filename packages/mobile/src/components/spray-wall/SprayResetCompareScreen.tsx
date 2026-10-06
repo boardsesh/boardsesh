@@ -238,7 +238,15 @@ export function SprayResetCompareScreen({
     hapticSelection();
     const decisions = buildResetCommitDecisions(effective, detections);
     try {
-      const result = await commitAsync({ wallUuid, versionId, ...decisions, fullReset });
+      // `fullReset` only goes on the wire when it is true: a backend that
+      // predates the field rejects an unknown input key, so a partial reset
+      // must send exactly what it always did (#6024).
+      const result = await commitAsync({
+        wallUuid,
+        versionId,
+        ...decisions,
+        ...(fullReset ? { fullReset: true } : {}),
+      });
       trackSprayEvent(
         sprayWallResetApplied({
           keptCount: result.keptCount,

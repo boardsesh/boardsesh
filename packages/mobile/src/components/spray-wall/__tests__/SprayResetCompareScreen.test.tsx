@@ -343,7 +343,8 @@ describe('SprayResetCompareScreen', () => {
       getByText('sprayReset.compare.confirm').click();
     });
 
-    expect((commitMutateAsync.mock.calls[0][0] as CommitPayload & { fullReset?: boolean }).fullReset).toBe(false);
+    // Absent, not false: a backend without the field refuses an unknown key.
+    expect(commitMutateAsync.mock.calls[0][0]).not.toHaveProperty('fullReset');
   });
 
   it('sends fullReset when the owner ticks Full reset (#6024)', async () => {

@@ -524,22 +524,28 @@ export function ClimbFilterSheet({
     [t, isAuthenticated, offerBenchmarks],
   );
   // Hold integrity (SW-13) — on a spray wall, whether a climb still has every
-  // hold it was set on. 'current' is the default and sends nothing: a climb that
-  // lost holds in a partial reset stays listed, and one a FULL reset retired is
-  // hidden until the climber picks All or Lost holds (#6024). 'broken' is an
+  // hold it was set on. On a spray wall 'current' is the default and sends
+  // nothing: a climb that lost holds in a partial reset stays listed, and one a
+  // FULL reset retired is hidden until the climber picks All or Lost holds
+  // (#6024). Every other board keeps the original three options with All as
+  // the stored-as-undefined default, so its filter state, the active-filter
+  // badge and the saved last search are exactly what they were. 'broken' is an
   // honest empty list on a catalogue board, where holds don't come off.
   const handleHoldIntegrityChange = useCallback(
-    (value: HoldIntegrityFilterValue) => setFiltersPatch({ holdIntegrity: value === 'current' ? undefined : value }),
-    [setFiltersPatch],
+    (value: HoldIntegrityFilterValue) =>
+      setFiltersPatch({
+        holdIntegrity: value === 'current' || (!isSprayWall && value === 'any') ? undefined : value,
+      }),
+    [setFiltersPatch, isSprayWall],
   );
   const holdIntegrityOptions = useMemo(
     () => [
-      { key: 'current' as const, label: t('mobile.filter.holdIntegrity.current') },
+      ...(isSprayWall ? [{ key: 'current' as const, label: t('mobile.filter.holdIntegrity.current') }] : []),
       { key: 'any' as const, label: t('mobile.filter.holdIntegrity.any') },
       { key: 'intact' as const, label: t('mobile.filter.holdIntegrity.intact') },
       { key: 'broken' as const, label: t('mobile.filter.holdIntegrity.broken') },
     ],
-    [t],
+    [t, isSprayWall],
   );
   const handlePopularity = useCallback(
     (bucket: number | undefined) => {
@@ -1092,7 +1098,7 @@ export function ClimbFilterSheet({
               <View style={styles.controlGap} />
               <SegmentedControl
                 options={holdIntegrityOptions}
-                selectedKey={localFilters.holdIntegrity ?? 'current'}
+                selectedKey={localFilters.holdIntegrity ?? (isSprayWall ? 'current' : 'any')}
                 onSelect={handleHoldIntegrityChange}
                 accessibilityLabel={t('mobile.filter.holdIntegrity.label')}
               />
