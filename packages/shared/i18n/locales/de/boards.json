@@ -796,9 +796,17 @@
       "maybes_other": "{{count}} unsichere",
       "withMaybes": "{{holds}} · {{maybes}}",
       "undo": "Rückgängig",
+      "redo": "Wiederholen",
       "menuHint": "Öffnet Optionen für alle deine Griffe",
       "saved": "Griffe gespeichert",
       "addA11y": "Fehlende Griffe hinzufügen"
+    },
+    "toast": {
+      "deleted": "Griff gelöscht",
+      "joined": "2 Griffe verbunden",
+      "keptMaybes_one": "{{count}} unsicherer behalten",
+      "keptMaybes_other": "{{count}} unsichere behalten",
+      "startedOver": "Neu angefangen"
     },
     "menu": {
       "keepMaybes": "Alle unsicheren behalten",
@@ -814,11 +822,12 @@
       "cancel": "Weiter bearbeiten"
     },
     "chips": {
-      "smaller": "Kleiner",
-      "bigger": "Größer",
       "trace": "Umranden",
       "join": "Verbinden",
-      "remove": "Entfernen",
+      "switchOff": "Ausschalten",
+      "switchOn": "Einschalten",
+      "delete": "Löschen",
+      "keep": "Behalten",
       "finish": "Abschließen"
     },
     "banner": {
@@ -835,9 +844,10 @@
       "corners": "Ecken"
     },
     "hints": {
-      "toggle": "Tippe auf einen Kreis, um ihn auszuschalten. Tippe auf freie Wand, um einen Griff hinzuzufügen.",
-      "maybe": "Gestrichelte Kreise sind unsichere Griffe. Tippe auf einen, um ihn zu behalten.",
-      "longPress": "Halte einen Kreis gedrückt, um Größe, Position oder Form anzupassen.",
+      "tap": "Tippe auf einen Kreis, um ihn auszuwählen. Tippe noch mal, um ihn auszuschalten.",
+      "maybe": "Gestrichelte Kreise sind unsichere Griffe. Tippe auf einen und dann auf Behalten.",
+      "longPress": "Halte einen Kreis gedrückt und zieh ihn, um ihn zu verschieben.",
+      "addHold": "Tippe auf +, um einen Griff hinzuzufügen.",
       "dismiss": "Tipp ausblenden",
       "replay": "Tipps zeigen"
     },
@@ -855,7 +865,7 @@
       "actions": {
         "smaller": "Kleiner machen",
         "bigger": "Größer machen",
-        "remove": "Entfernen",
+        "delete": "Löschen",
         "addHold": "Griff in der Mitte der Ansicht hinzufügen"
       },
       "revealed": "Gefundene Griffe: {{summary}}"

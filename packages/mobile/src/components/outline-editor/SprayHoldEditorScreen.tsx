@@ -42,6 +42,8 @@ import { SelectedHoldOverlay } from './SelectedHoldOverlay';
 import { SprayEditGestureOverlay, type SprayWallAccessibility } from './SprayEditGestureOverlay';
 import { SprayEditorBottomBar, sprayCountSummary } from './SprayEditorBottomBar';
 import { SprayCornersChipBar, SprayHoldChipBar } from './SprayHoldChipBar';
+import { SprayUndoToast, type SprayUndoToastContent } from './SprayUndoToast';
+import { resolveEditTap, type SprayEditorTool } from './spray-edit-tap';
 import { SprayEditorBanner } from './SprayEditorBanner';
 import { SprayEditorLoading, type SprayEditorLoadingPhoto } from './SprayEditorLoading';
 import { SprayScanBand, SCAN_BAND_HEIGHT } from './SprayScanBand';
@@ -71,7 +73,9 @@ import {
   holdsInIdOrder,
   initialSprayEditorState,
   sprayEditorReducer,
+  type SprayEditorAction,
   type SprayEditorHold,
+  type SprayEditorPresent,
   type SprayHoldRole,
 } from './spray-hold-editor-reducer';
 import { readingCursorPosition, readingOrderIndex, sprayHoldReadingOrder, stepReadingCursor } from './spray-hold-a11y';
@@ -131,19 +135,6 @@ const RESET_ZOOM_STYLE = { left: spacing[2], top: spacing[2] };
 // the pure seeding rules can name a candidate without pulling the board surface
 // into their test.
 export type { SprayHoldCandidate, SprayHoldSaveSummary };
-
-/**
- * What the editor is doing with the next touch.
- *
- * `edit` is the resting state: taps switch rings, long presses pick them up.
- * `trace` and `join` are one-shot tools a selected hold starts, each with its
- * own banner and a Cancel — never modes a climber has to remember to leave.
- * `add` is the exception, and is a mode on purpose: the scan misses holds in
- * handfuls, so it stays on until Done, and while it is on a touch never
- * switches or picks up a ring — which is what makes a missed hold squeezed
- * between two rings reachable at all.
- */
-type EditorTool = 'edit' | 'trace' | 'join' | 'add';
 
 /** A line pinned to the top of the photo when the wall has nothing on it yet. */
 export type SprayEditorNotice = {
@@ -210,14 +201,18 @@ export type SprayHoldEditorScreenProps = {
 
 /**
  * The spray-wall hold editor (issue #5441), rebuilt around one idea: rings are
- * holds, tap to switch one off or on, tap bare wall to add one.
+ * holds, a tap picks one, and a tap on the picked one switches it off or on.
  *
  * The detector's confident finds open ON and its unsure ones as dashed maybes,
  * so the climber's job is fixing the machine's mistakes rather than approving
- * every one of its guesses. A long press picks a ring up for the chip bar —
- * size, trace, join, remove — and the same touch can carry on into a move.
- * Everything goes through one pure reducer with undo, and one button saves and
- * hands over (`onCommitted`).
+ * every one of its guesses. A picked ring gets the chip bar for its role —
+ * size, trace, join and switch off for an ON ring, switch on or delete for a
+ * ghost, keep or switch off for a maybe — and a long press picks a ring up so
+ * the same touch can carry on into a move. A stray tap therefore never changes
+ * the wall: switching off leaves a ghost, and only a ghost can be deleted.
+ * Everything goes through one pure reducer with undo and redo, the heavy
+ * actions raise an in-screen undo toast, and one button saves and hands over
+ * (`onCommitted`).
  *
  * The board surface is the shared `InteractiveFilterBoard`. The rings, the dim
  * layer and the selection draw INSIDE its zoom transform; the gesture surface
@@ -262,7 +257,9 @@ export function SprayHoldEditorScreen({
     return editorTargetCapabilities(target);
   }, [wallUuid, layoutId, versionId, viewerCanEdit]);
 
-  const [tool, setTool] = useState<EditorTool>('edit');
+  const [tool, setTool] = useState<SprayEditorTool>('edit');
+  /** "Joined 2 holds · Undo" after a heavy action, until it times out or the next edit. */
+  const [undoToast, setUndoToast] = useState<SprayUndoToastContent | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [showMaybes, setShowMaybes] = useState(true);
   const [moveRevision, setMoveRevision] = useState(0);
@@ -605,22 +602,88 @@ export function SprayHoldEditorScreen({
     [refuseOverCap],
   );
 
-  /** A ring switched ON or OFF, with the cap check a tap and a screen reader share. False when the cap refused it. */
-  const toggleHold = useCallback(
-    (hold: SprayEditorHold) => {
-      const turningOn = holdRole(hold) !== 'on';
-      if (turningOn && countsRef.current.on >= MAX_HOLDS_PER_WALL) {
+  /**
+   * A ring switched ON (`turnOn`) or OFF, with the cap check a tap, a chip and a
+   * screen reader share. OFF is always a ghost, never a removal. False when the
+   * cap refused it; true when it was already that way.
+   */
+  const switchHold = useCallback(
+    (hold: SprayEditorHold, turnOn: boolean) => {
+      const role = holdRole(hold);
+      if (turnOn ? role === 'on' : role === 'off') return true;
+      if (turnOn && countsRef.current.on >= MAX_HOLDS_PER_WALL) {
         refuseOverCap();
         return false;
       }
-      if (turningOn) hapticLight();
+      if (turnOn) hapticLight();
       else hapticSelection();
-      dispatch({ type: 'TOGGLE_HOLD', id: hold.id });
-      pulseSpotlight(turningOn ? 'toggleOn' : 'toggleOff', hold);
-      recordHint(holdRole(hold) === 'maybe' ? 'maybe' : 'toggle');
+      dispatch(turnOn ? { type: 'TOGGLE_HOLD', id: hold.id } : { type: 'SWITCH_OFF', id: hold.id });
+      pulseSpotlight(turnOn ? 'toggleOn' : 'toggleOff', hold);
+      recordHint(role === 'maybe' ? 'maybe' : 'toggle');
       return true;
     },
     [refuseOverCap, pulseSpotlight, recordHint],
+  );
+
+  /** The second tap on a picked ring: ON goes OFF, OFF or a maybe goes ON. */
+  const toggleHold = useCallback((hold: SprayEditorHold) => switchHold(hold, holdRole(hold) !== 'on'), [switchHold]);
+
+  /**
+   * The undo stack as the toast last saw it. Null between raising a toast and
+   * the render that carries its action, so the effect below can tell the
+   * action that raised the toast from the edit after it.
+   */
+  const toastPastRef = useRef<readonly SprayEditorPresent[] | null>(null);
+  const toastNonceRef = useRef(0);
+
+  /**
+   * Dispatch one of the heavy edits — Delete, Join, Keep all maybes, Start over
+   * — and raise the undo toast for it. Only when the edit changed the wall: a
+   * refused join must not leave an Undo that would take back the edit before it.
+   */
+  const dispatchWithUndoToast = useCallback((action: SprayEditorAction, message: string) => {
+    const before = stateRef.current;
+    if (sprayEditorReducer(before, action).past === before.past) return false;
+    dispatch(action);
+    toastNonceRef.current += 1;
+    toastPastRef.current = null;
+    setUndoToast({ message, nonce: toastNonceRef.current });
+    return true;
+  }, []);
+
+  // The toast goes the moment the wall changes again — an edit, an undo (its
+  // own Undo included), a redo or a save — so its Undo can only ever undo the
+  // action it names. Selecting a ring leaves the undo stack, and the toast,
+  // alone.
+  useEffect(() => {
+    if (!undoToast) return;
+    if (toastPastRef.current == null) {
+      toastPastRef.current = state.past;
+      return;
+    }
+    if (toastPastRef.current !== state.past) setUndoToast(null);
+  }, [state.past, undoToast]);
+
+  const dismissUndoToast = useCallback(() => setUndoToast(null), []);
+
+  /** Join the selected hold with a second one. Shared by a tap and the screen reader's double tap. */
+  const joinHolds = useCallback(
+    (selectedId: number, otherId: number) => {
+      const joined = dispatchWithUndoToast(
+        { type: 'MERGE', ids: [selectedId, otherId] },
+        t('sprayEditor.toast.joined'),
+      );
+      if (joined) {
+        hapticMedium();
+        recordHint('edit');
+      } else {
+        hapticWarning();
+      }
+      setJoinCursorId(null);
+      setTool('edit');
+      return joined;
+    },
+    [dispatchWithUndoToast, recordHint, t],
   );
 
   const handleTap = useCallback(
@@ -629,52 +692,41 @@ export function SprayHoldEditorScreen({
       setErrorText(null);
       const current = stateRef.current;
       const fallbackRadius = fallbackRadiusAt(boardScale, zoom);
-      // A hidden maybe is still a hold under the finger. Adding a hand-drawn
-      // ring on top of it would put a duplicate on the wall, so a tap there is
-      // read as a tap on the maybe — which turns it ON, and ON rings are drawn
-      // whether maybes are shown or not.
+      // A hidden maybe is still a hold under the finger, so a tap there picks
+      // the maybe rather than finding nothing.
       const hit =
         holdAtPoint(visibleHoldsRef.current, boardX, boardY, fallbackRadius) ??
         holdAtPoint(hiddenMaybesRef.current, boardX, boardY, fallbackRadius);
 
-      if (toolRef.current === 'join') {
-        // Join waits for the second hold and nothing else: bare wall or the
-        // selected hold itself leaves it waiting.
-        if (hit && current.selectedId != null && hit.id !== current.selectedId) {
-          hapticMedium();
-          dispatch({ type: 'MERGE', ids: [current.selectedId, hit.id] });
-          recordHint('edit');
-          setTool('edit');
-        }
-        return;
+      switch (resolveEditTap({ tool: toolRef.current, hitId: hit?.id ?? null, selectedId: current.selectedId })) {
+        case 'select':
+          if (!hit) return;
+          hapticSelection();
+          dispatch({ type: 'SELECT', id: hit.id });
+          recordHint('select');
+          return;
+        case 'toggle':
+          if (hit) toggleHold(hit);
+          return;
+        case 'deselect':
+          // The first tap away from a hold is "I'm done with it", nothing more.
+          dispatch({ type: 'SELECT', id: null });
+          return;
+        case 'merge':
+          if (hit && current.selectedId != null) joinHolds(current.selectedId, hit.id);
+          return;
+        case 'bareWallHint':
+          // A tap here used to add a hold. It no longer does, so it is answered
+          // rather than ignored: a ripple where it landed, and a hint saying
+          // where adding lives now.
+          pulseSpotlight('ping', holdFromTap(boardX, boardY, medianRadiusRef.current));
+          recordHint('bareWall');
+          return;
+        case 'none':
+          return;
       }
-
-      // With a hold selected, bare wall only clears the selection — the first tap
-      // away from a hold is "I'm done with it", not "add one here".
-      if (current.selectedId != null && !hit) {
-        dispatch({ type: 'SELECT', id: null });
-        return;
-      }
-      if (current.selectedId != null && hit && hit.id !== current.selectedId) {
-        dispatch({ type: 'SELECT', id: null });
-      }
-
-      if (hit) {
-        toggleHold(hit);
-        return;
-      }
-
-      if (countsRef.current.on >= MAX_HOLDS_PER_WALL) {
-        refuseOverCap();
-        return;
-      }
-      hapticMedium();
-      const geometry = holdFromTap(boardX, boardY, medianRadiusRef.current);
-      dispatch({ type: 'ADD_HOLD', geometry });
-      pulseSpotlight('add', geometry);
-      recordHint('add');
     },
-    [boardScale, refuseOverCap, toggleHold, pulseSpotlight, recordHint],
+    [boardScale, toggleHold, joinHolds, pulseSpotlight, recordHint],
   );
 
   const handlePickUp = useCallback(
@@ -862,12 +914,25 @@ export function SprayHoldEditorScreen({
     [draftPointsSV, boardScale, addHold, t],
   );
 
-  const handleRemove = useCallback(() => {
-    if (!canEdit || state.selectedId == null) return;
-    hapticSelection();
-    dispatch({ type: 'DELETE', id: state.selectedId });
+  /** Delete the picked hold — only ever a ghost, so a removal is always two deliberate steps. */
+  const handleDelete = useCallback(() => {
+    if (!canEdit || !selectedHold || holdRole(selectedHold) !== 'off') return;
+    if (!dispatchWithUndoToast({ type: 'DELETE', id: selectedHold.id }, t('sprayEditor.toast.deleted'))) return;
+    hapticMedium();
     recordHint('edit');
-  }, [canEdit, state.selectedId, recordHint]);
+  }, [canEdit, selectedHold, dispatchWithUndoToast, recordHint, t]);
+
+  const handleSwitchSelectedOff = useCallback(() => {
+    if (!canEdit || !selectedHold) return;
+    setErrorText(null);
+    switchHold(selectedHold, false);
+  }, [canEdit, selectedHold, switchHold]);
+
+  const handleSwitchSelectedOn = useCallback(() => {
+    if (!canEdit || !selectedHold) return;
+    setErrorText(null);
+    switchHold(selectedHold, true);
+  }, [canEdit, selectedHold, switchHold]);
 
   const handleStrokeStart = useCallback(() => setErrorText(null), []);
   const handleStrokeCancel = useCallback(() => {
@@ -922,6 +987,19 @@ export function SprayHoldEditorScreen({
     if (reverted) pulseSpotlight('undo', reverted);
   }, [pulseSpotlight, cornersSV]);
 
+  const handleRedo = useCallback(() => {
+    const current = stateRef.current;
+    const next = current.future[current.future.length - 1];
+    if (!next) return;
+    setErrorText(null);
+    hapticSelection();
+    // The same halo Undo gives, on the hold the redo changes.
+    const changed = revertedHold(current.holds, next.holds);
+    dispatch({ type: 'REDO' });
+    if (toolRef.current === 'add') dispatch({ type: 'SELECT', id: null });
+    if (changed) pulseSpotlight('undo', changed);
+  }, [pulseSpotlight]);
+
   const handleKeepMaybes = useCallback(() => {
     if (!canEditRef.current) return;
     const maybes = countsRef.current.maybes;
@@ -929,12 +1007,12 @@ export function SprayHoldEditorScreen({
       refuseOverCap();
       return;
     }
+    if (!dispatchWithUndoToast({ type: 'KEEP_MAYBES' }, t('sprayEditor.toast.keptMaybes', { count: maybes }))) return;
     hapticLight();
-    dispatch({ type: 'KEEP_MAYBES' });
     // Keeping them all is the lesson the maybe hint teaches, done in bulk, so it
     // counts as using it: otherwise the hint comes back on the next wall.
-    if (maybes > 0) recordHint('maybe');
-  }, [refuseOverCap, recordHint]);
+    recordHint('maybe');
+  }, [refuseOverCap, dispatchWithUndoToast, recordHint, t]);
 
   const handleToggleMaybes = useCallback(() => {
     const selected = stateRef.current.selectedId != null ? stateRef.current.holds[stateRef.current.selectedId] : null;
@@ -949,8 +1027,8 @@ export function SprayHoldEditorScreen({
     clearCorners();
     setTool('edit');
     setShowMaybes(true);
-    dispatch({ type: 'START_OVER', holds: seedHoldsRef.current });
-  }, [clearCorners]);
+    dispatchWithUndoToast({ type: 'START_OVER', holds: seedHoldsRef.current }, t('sprayEditor.toast.startedOver'));
+  }, [clearCorners, dispatchWithUndoToast, t]);
 
   /**
    * The holds are on the draft: play the publish moment, then hand over. The
@@ -1096,12 +1174,8 @@ export function SprayHoldEditorScreen({
     if (toolRef.current === 'join') {
       const targetId = joinCursorIdRef.current;
       if (!onWalk(targetId) || current.selectedId == null || targetId === current.selectedId) return;
-      hapticMedium();
       announceNextRef.current = true;
-      dispatch({ type: 'MERGE', ids: [current.selectedId, targetId] });
-      recordHint('edit');
-      setJoinCursorId(null);
-      setTool('edit');
+      joinHolds(current.selectedId, targetId);
       return;
     }
     if (toolRef.current !== 'edit' || !onWalk(current.selectedId)) return;
@@ -1110,7 +1184,7 @@ export function SprayHoldEditorScreen({
     setErrorText(null);
     announceNextRef.current = true;
     toggleHold(hold);
-  }, [toggleHold, recordHint]);
+  }, [toggleHold, joinHolds]);
 
   /**
    * "Add a hold here" for a screen reader, which has no finger to say where:
@@ -1170,9 +1244,9 @@ export function SprayHoldEditorScreen({
         case WALL_ACTION.grow:
           handleGrow();
           return;
-        case WALL_ACTION.remove:
+        case WALL_ACTION.delete:
           announceNextRef.current = true;
-          handleRemove();
+          handleDelete();
           return;
         case WALL_ACTION.addHold:
           addHoldAtViewCentre(viewCentreX, viewCentreY);
@@ -1181,7 +1255,7 @@ export function SprayHoldEditorScreen({
           return;
       }
     },
-    [stepWallCursor, activateWallCursor, handleShrink, handleGrow, handleRemove, addHoldAtViewCentre],
+    [stepWallCursor, activateWallCursor, handleShrink, handleGrow, handleDelete, addHoldAtViewCentre],
   );
 
   const cursorId = tool === 'join' ? joinCursorId : state.selectedId;
@@ -1197,21 +1271,24 @@ export function SprayHoldEditorScreen({
       : t('sprayEditor.a11y.noHold');
   const wallHint = tool === 'join' ? t('sprayEditor.a11y.joinHint') : t('sprayEditor.a11y.hint');
   const holdToolsOpen = tool === 'edit' && canEdit;
-  const hasSelection = selectedHold != null;
+  const selectedRole = selectedHold ? holdRole(selectedHold) : null;
   const canShrinkSelected = shrinkTo != null;
   const canGrowSelected = growTo != null;
 
+  // The named actions mirror the chip bar for the picked ring's role. Switching
+  // on and off is the double tap (`activate`), so it needs no action of its own.
   const wallActions = useMemo<readonly AccessibilityActionInfo[]>(() => {
     if (!holdToolsOpen) return WALL_A11Y_ACTIONS;
     const actions: AccessibilityActionInfo[] = [...WALL_A11Y_ACTIONS];
-    if (hasSelection) {
+    if (selectedRole === 'on') {
       if (canShrinkSelected) actions.push({ name: WALL_ACTION.shrink, label: t('sprayEditor.a11y.actions.smaller') });
       if (canGrowSelected) actions.push({ name: WALL_ACTION.grow, label: t('sprayEditor.a11y.actions.bigger') });
-      actions.push({ name: WALL_ACTION.remove, label: t('sprayEditor.a11y.actions.remove') });
+    } else if (selectedRole === 'off') {
+      actions.push({ name: WALL_ACTION.delete, label: t('sprayEditor.a11y.actions.delete') });
     }
     actions.push({ name: WALL_ACTION.addHold, label: t('sprayEditor.a11y.actions.addHold') });
     return actions;
-  }, [holdToolsOpen, hasSelection, canShrinkSelected, canGrowSelected, t]);
+  }, [holdToolsOpen, selectedRole, canShrinkSelected, canGrowSelected, t]);
 
   const wallAccessibility = useMemo<SprayWallAccessibility>(
     () => ({
@@ -1288,6 +1365,7 @@ export function SprayHoldEditorScreen({
           />
           <SelectedHoldOverlay
             hold={selectedHold}
+            role={selectedHold ? holdRole(selectedHold) : 'on'}
             revision={moveRevision}
             selectedHoldSV={selectedHoldSV}
             dragOffsetXSV={dragOffsetXSV}
@@ -1550,31 +1628,48 @@ export function SprayHoldEditorScreen({
         </View>
       ) : null}
 
-      {selectedHold && tool === 'edit' && canEdit ? (
-        <SprayHoldChipBar
-          bottom={insets.bottom + SPRAY_BAR_GUTTER * 2 + SPRAY_BAR_TOTAL_HEIGHT}
-          canShrink={shrinkTo != null}
-          canGrow={growTo != null}
-          onShrink={handleShrink}
-          onGrow={handleGrow}
-          onTrace={handleStartTrace}
-          onJoin={handleStartJoin}
-          onRemove={handleRemove}
-        />
-      ) : null}
+      {/* One column docked just above the bottom bar: the undo toast on top,
+          the chip bar for the picked hold (or Corners' Finish) under it, so the
+          two stack instead of overlapping however many rows the chips wrap to. */}
+      <View
+        pointerEvents="box-none"
+        style={[styles.dock, { bottom: insets.bottom + SPRAY_BAR_GUTTER * 2 + SPRAY_BAR_TOTAL_HEIGHT }]}
+      >
+        {undoToast && canEdit ? (
+          <SprayUndoToast
+            message={undoToast.message}
+            nonce={undoToast.nonce}
+            onUndo={handleUndo}
+            onDismiss={dismissUndoToast}
+          />
+        ) : null}
 
-      {tool === 'add' && addShape === 'corners' && cornerCount >= MIN_CORNERS && canEdit ? (
-        <SprayCornersChipBar
-          bottom={insets.bottom + SPRAY_BAR_GUTTER * 2 + SPRAY_BAR_TOTAL_HEIGHT}
-          onFinish={takeAndCloseCorners}
-        />
-      ) : null}
+        {selectedHold && selectedRole && tool === 'edit' && canEdit ? (
+          <SprayHoldChipBar
+            role={selectedRole}
+            canShrink={shrinkTo != null}
+            canGrow={growTo != null}
+            onShrink={handleShrink}
+            onGrow={handleGrow}
+            onTrace={handleStartTrace}
+            onJoin={handleStartJoin}
+            onSwitchOff={handleSwitchSelectedOff}
+            onSwitchOn={handleSwitchSelectedOn}
+            onDelete={handleDelete}
+          />
+        ) : null}
+
+        {tool === 'add' && addShape === 'corners' && cornerCount >= MIN_CORNERS && canEdit ? (
+          <SprayCornersChipBar onFinish={takeAndCloseCorners} />
+        ) : null}
+      </View>
 
       <SprayEditorBottomBar
         counts={counts}
         showMaybes={showMaybes}
         canReviewMaybes={capabilities.canReviewCandidates}
         canUndo={state.past.length > 0 || (tool === 'add' && cornerCount > 0)}
+        canRedo={state.future.length > 0}
         adding={tool === 'add'}
         primaryBlocked={cornerCount > 0}
         locked={!canEdit}
@@ -1583,6 +1678,7 @@ export function SprayHoldEditorScreen({
         celebrating={celebrating}
         bottomInset={insets.bottom}
         onUndo={handleUndo}
+        onRedo={handleRedo}
         onAdd={handleToggleAddMode}
         onKeepMaybes={handleKeepMaybes}
         onToggleMaybes={handleToggleMaybes}
@@ -1599,7 +1695,7 @@ type Translate = (key: string, options?: Record<string, unknown>) => string;
 const WALL_ACTION = {
   shrink: 'shrink',
   grow: 'grow',
-  remove: 'remove',
+  delete: 'delete',
   addHold: 'addHold',
 } as const;
 
@@ -1621,7 +1717,7 @@ function bannerFor({
   onDone,
   t,
 }: {
-  tool: EditorTool;
+  tool: SprayEditorTool;
   addShape: SprayAddShape;
   errorText: string | null;
   viewerCanEdit: boolean;
@@ -1653,7 +1749,8 @@ function bannerFor({
 function hintText(id: SprayHintId, t: Translate): string {
   if (id === 'maybe') return t('sprayEditor.hints.maybe');
   if (id === 'longPress') return t('sprayEditor.hints.longPress');
-  return t('sprayEditor.hints.toggle');
+  if (id === 'addHold') return t('sprayEditor.hints.addHold');
+  return t('sprayEditor.hints.tap');
 }
 
 /** Why a Corners outline would not close. Worded for tapped corners, not a drawn loop. */
@@ -1706,6 +1803,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: spacing[2],
     right: spacing[2],
+  },
+  dock: {
+    position: 'absolute',
+    left: spacing[4],
+    right: spacing[4],
+    alignItems: 'center',
+    gap: spacing[2],
   },
   revealClip: {
     position: 'absolute',

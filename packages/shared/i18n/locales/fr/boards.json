@@ -796,9 +796,17 @@
       "maybes_other": "{{count}} incertaines",
       "withMaybes": "{{holds}} · {{maybes}}",
       "undo": "Annuler",
+      "redo": "Rétablir",
       "menuHint": "Ouvre les options pour toutes tes prises",
       "saved": "Prises enregistrées",
       "addA11y": "Ajouter les prises manquantes"
+    },
+    "toast": {
+      "deleted": "Prise supprimée",
+      "joined": "2 prises réunies",
+      "keptMaybes_one": "{{count}} incertaine gardée",
+      "keptMaybes_other": "{{count}} incertaines gardées",
+      "startedOver": "Tout est recommencé"
     },
     "menu": {
       "keepMaybes": "Garder toutes les incertaines",
@@ -814,11 +822,12 @@
       "cancel": "Continuer à modifier"
     },
     "chips": {
-      "smaller": "Réduire",
-      "bigger": "Agrandir",
       "trace": "Tracer",
       "join": "Réunir",
-      "remove": "Retirer",
+      "switchOff": "Désactiver",
+      "switchOn": "Activer",
+      "delete": "Supprimer",
+      "keep": "Garder",
       "finish": "Terminer"
     },
     "banner": {
@@ -835,9 +844,10 @@
       "corners": "Coins"
     },
     "hints": {
-      "toggle": "Touche un cercle pour le désactiver. Touche le mur vide pour ajouter une prise.",
-      "maybe": "Les cercles en pointillés sont des prises incertaines. Touche l'un d'eux pour garder la prise.",
-      "longPress": "Appuie longuement sur un cercle pour corriger sa taille, sa place ou sa forme.",
+      "tap": "Touche un cercle pour le choisir. Touche-le encore pour le désactiver.",
+      "maybe": "Les cercles en pointillés sont des prises incertaines. Touche-en une, puis touche Garder.",
+      "longPress": "Appuie longuement sur un cercle, puis fais-le glisser pour le déplacer.",
+      "addHold": "Touche + pour ajouter une prise.",
       "dismiss": "Masquer l'astuce",
       "replay": "Voir les astuces"
     },
@@ -855,7 +865,7 @@
       "actions": {
         "smaller": "Rendre plus petite",
         "bigger": "Rendre plus grande",
-        "remove": "Retirer",
+        "delete": "Supprimer",
         "addHold": "Ajouter une prise au centre de la vue"
       },
       "revealed": "Prises trouvées : {{summary}}"

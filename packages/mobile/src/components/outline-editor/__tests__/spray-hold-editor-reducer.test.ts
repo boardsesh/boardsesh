@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { IDENTITY_HOMOGRAPHY } from '@boardsesh/spray-wall-geometry';
 import {
   allHolds,
   editorCounts,
@@ -12,6 +13,8 @@ import {
   type SprayEditorState,
 } from '../spray-hold-editor-reducer';
 import { SPRAY_MAYBE_FLOOR, SPRAY_ON_CUTOFF } from '../spray-hold-tools';
+import { buildSprayHoldWritePlan } from '../spray-hold-writes';
+import { holdsToCarryOver } from '../spray-hold-seed';
 
 function storedHold(id: number, overrides: Partial<SprayEditorHold> = {}): SprayEditorHold {
   return {
@@ -124,13 +127,26 @@ describe('sprayEditorReducer', () => {
       expect(holdRole(sprayEditorReducer(on, { type: 'UNDO' }).holds[-1])).toBe('off');
     });
 
-    it('takes a hand-placed local hold away entirely, and undo brings it back', () => {
+    it('leaves a hand-placed local hold as a ghost that is never written, and undo brings it back ON', () => {
       const added = run(loaded([]), { type: 'ADD_HOLD', geometry: { cx: 10, cy: 10, r: 5, outline: null } });
       const localId = Object.values(added.holds)[0].id;
-      const removed = sprayEditorReducer(added, { type: 'TOGGLE_HOLD', id: localId });
-      expect(removed.holds[localId]).toBeUndefined();
-      expect(removed.removedIds).toEqual([]);
-      expect(sprayEditorReducer(removed, { type: 'UNDO' }).holds[localId]).toBeDefined();
+      const ghosted = sprayEditorReducer(added, { type: 'TOGGLE_HOLD', id: localId });
+      // Still on the photo, switched off — a tap never makes a hold vanish.
+      expect(ghosted.holds[localId]).toMatchObject({ review: 'rejected' });
+      expect(holdRole(ghosted.holds[localId])).toBe('off');
+      expect(ghosted.removedIds).toEqual([]);
+      const plan = buildSprayHoldWritePlan(ghosted, IDENTITY_HOMOGRAPHY);
+      expect(plan.upsert).toHaveLength(0);
+      expect(plan.removeIds).toEqual([]);
+      expect(holdsToCarryOver(allHolds(ghosted))).toEqual([]);
+      expect(holdRole(sprayEditorReducer(ghosted, { type: 'UNDO' }).holds[localId])).toBe('on');
+    });
+
+    it('switches a hand-placed ghost back ON with a third tap', () => {
+      const added = run(loaded([]), { type: 'ADD_HOLD', geometry: { cx: 10, cy: 10, r: 5, outline: null } });
+      const localId = Object.values(added.holds)[0].id;
+      const back = run(added, { type: 'TOGGLE_HOLD', id: localId }, { type: 'TOGGLE_HOLD', id: localId });
+      expect(back.holds[localId]).toMatchObject({ review: 'accepted', dirty: true });
     });
 
     it('switches a stored hold OFF and queues its removal; switching it back takes it off the queue', () => {
@@ -164,10 +180,32 @@ describe('sprayEditorReducer', () => {
     });
   });
 
+  describe('SWITCH_OFF', () => {
+    it('switches a maybe OFF as a ghost, and undo makes it a maybe again', () => {
+      const state = run(loaded([candidate(-1, UNSURE)]), { type: 'SWITCH_OFF', id: -1 });
+      expect(holdRole(state.holds[-1])).toBe('off');
+      expect(state.removedIds).toEqual([]);
+      expect(holdRole(sprayEditorReducer(state, { type: 'UNDO' }).holds[-1])).toBe('maybe');
+    });
+
+    it('switches a stored hold OFF and queues its removal', () => {
+      const state = run(loaded([storedHold(7)]), { type: 'SWITCH_OFF', id: 7 });
+      expect(state.holds[7].review).toBe('rejected');
+      expect(state.removedIds).toEqual([7]);
+    });
+
+    it('is identity on a ghost or a hold that is not there', () => {
+      const off = run(loaded([storedHold(7)]), { type: 'SWITCH_OFF', id: 7 });
+      expect(sprayEditorReducer(off, { type: 'SWITCH_OFF', id: 7 })).toBe(off);
+      expect(sprayEditorReducer(off, { type: 'SWITCH_OFF', id: 99 })).toBe(off);
+    });
+  });
+
   it('SELECT is single-select, never history, and refuses a hold that is not there', () => {
     const state = run(loaded([storedHold(1), storedHold(2)]), { type: 'SELECT', id: 1 }, { type: 'SELECT', id: 2 });
     expect(state.selectedId).toBe(2);
     expect(state.past).toHaveLength(0);
+    expect(state.future).toHaveLength(0);
     expect(sprayEditorReducer(state, { type: 'SELECT', id: 2 })).toBe(state);
     expect(sprayEditorReducer(state, { type: 'SELECT', id: 99 }).selectedId).toBeNull();
     expect(sprayEditorReducer(state, { type: 'SELECT', id: null }).selectedId).toBeNull();
@@ -287,6 +325,7 @@ describe('sprayEditorReducer', () => {
     expect(saved.removedIds).toEqual([]);
     // Undoing into a pre-write snapshot would let the next commit write again.
     expect(saved.past).toHaveLength(0);
+    expect(saved.future).toHaveLength(0);
     expect(sprayEditorReducer(saved, { type: 'MARK_SAVED', writtenIds: [1] })).toBe(saved);
   });
 
@@ -366,6 +405,104 @@ describe('sprayEditorReducer', () => {
       }
       expect(state.past.length).toBeLessThanOrEqual(HISTORY_LIMIT);
       expect(sprayEditorReducer(state, { type: 'UNDO' }).holds[1].cx).toBe(HISTORY_LIMIT + 19);
+    });
+  });
+
+  describe('redo', () => {
+    const base = () =>
+      loaded([storedHold(1, { cx: 100, cy: 100 }), storedHold(2, { cx: 130, cy: 100 }), storedHold(3)]);
+
+    it('round trips: redo after undo restores the very present the undo left', () => {
+      const edited = run(base(), { type: 'MERGE', ids: [1, 2] }, { type: 'DELETE', id: 3 });
+      const undone = run(edited, { type: 'UNDO' }, { type: 'UNDO' });
+      expect(undone.future).toHaveLength(2);
+      const once = sprayEditorReducer(undone, { type: 'REDO' });
+      expect(Object.keys(once.holds).sort()).toEqual(['1', '3']);
+      expect(once.removedIds).toEqual([2]);
+      const twice = sprayEditorReducer(once, { type: 'REDO' });
+      expect(twice.holds).toBe(edited.holds);
+      expect(twice.removedIds).toBe(edited.removedIds);
+      expect(twice.past).toHaveLength(2);
+      expect(twice.future).toHaveLength(0);
+    });
+
+    it('undo and redo interleave without losing a step', () => {
+      const edited = run(
+        base(),
+        { type: 'MOVE_HOLD', id: 1, cx: 5, cy: 5 },
+        { type: 'MOVE_HOLD', id: 1, cx: 6, cy: 6 },
+      );
+      const state = run(
+        edited,
+        { type: 'UNDO' },
+        { type: 'UNDO' },
+        { type: 'REDO' },
+        { type: 'UNDO' },
+        { type: 'REDO' },
+      );
+      expect(state.holds[1].cx).toBe(5);
+      expect(sprayEditorReducer(state, { type: 'REDO' }).holds[1].cx).toBe(6);
+    });
+
+    it('redo with nothing to bring back is identity', () => {
+      const state = base();
+      expect(sprayEditorReducer(state, { type: 'REDO' })).toBe(state);
+    });
+
+    it('a new edit after an undo clears the future', () => {
+      const undone = run(base(), { type: 'MOVE_HOLD', id: 1, cx: 5, cy: 5 }, { type: 'UNDO' });
+      expect(undone.future).toHaveLength(1);
+      const edited = sprayEditorReducer(undone, { type: 'TOGGLE_HOLD', id: 3 });
+      expect(edited.future).toHaveLength(0);
+      expect(sprayEditorReducer(edited, { type: 'REDO' })).toBe(edited);
+    });
+
+    it('SELECT leaves the future alone', () => {
+      const undone = run(base(), { type: 'MOVE_HOLD', id: 1, cx: 5, cy: 5 }, { type: 'UNDO' });
+      const selected = sprayEditorReducer(undone, { type: 'SELECT', id: 2 });
+      expect(selected.future).toBe(undone.future);
+      expect(sprayEditorReducer(selected, { type: 'REDO' }).holds[1].cx).toBe(5);
+    });
+
+    it('LOAD and MARK_SAVED clear the future', () => {
+      const undone = run(
+        base(),
+        { type: 'MOVE_HOLD', id: 1, cx: 5, cy: 5 },
+        { type: 'MOVE_HOLD', id: 2, cx: 7, cy: 7 },
+        {
+          type: 'UNDO',
+        },
+      );
+      expect(undone.future).toHaveLength(1);
+      expect(sprayEditorReducer(undone, { type: 'LOAD', holds: [storedHold(1)] }).future).toHaveLength(0);
+      expect(sprayEditorReducer(undone, { type: 'MARK_SAVED', writtenIds: [1] }).future).toHaveLength(0);
+    });
+
+    it('MARK_REMOVED scrubs the future, so redo cannot bring back a hold the server took off', () => {
+      // Hold 3 is switched off, then the undo of a later move parks a snapshot
+      // that still names it in the future. Its removal lands; redo must not
+      // resurrect it or queue it a second time.
+      const parked = run(
+        base(),
+        { type: 'TOGGLE_HOLD', id: 3 },
+        { type: 'MOVE_HOLD', id: 1, cx: 5, cy: 5 },
+        { type: 'UNDO' },
+      );
+      const landed = sprayEditorReducer(parked, { type: 'MARK_REMOVED' });
+      expect(landed.future).toHaveLength(1);
+      const redone = sprayEditorReducer(landed, { type: 'REDO' });
+      expect(redone.holds[3]).toBeUndefined();
+      expect(redone.removedIds).toEqual([]);
+      expect(redone.holds[1].cx).toBe(5);
+    });
+
+    it('the future is capped like the past', () => {
+      let state = loaded([storedHold(1)]);
+      for (let step = 1; step <= HISTORY_LIMIT + 5; step += 1) {
+        state = sprayEditorReducer(state, { type: 'MOVE_HOLD', id: 1, cx: step, cy: step });
+      }
+      for (let step = 0; step < HISTORY_LIMIT + 5; step += 1) state = sprayEditorReducer(state, { type: 'UNDO' });
+      expect(state.future.length).toBeLessThanOrEqual(HISTORY_LIMIT);
     });
   });
 

@@ -796,9 +796,17 @@
       "maybes_other": "{{count}} maybes",
       "withMaybes": "{{holds}} · {{maybes}}",
       "undo": "Undo",
+      "redo": "Redo",
       "menuHint": "Opens options for all your holds",
       "saved": "Holds saved",
       "addA11y": "Add missing holds"
+    },
+    "toast": {
+      "deleted": "Hold deleted",
+      "joined": "Joined 2 holds",
+      "keptMaybes_one": "Kept {{count}} maybe",
+      "keptMaybes_other": "Kept {{count}} maybes",
+      "startedOver": "Started over"
     },
     "menu": {
       "keepMaybes": "Keep all maybes",
@@ -814,11 +822,12 @@
       "cancel": "Keep editing"
     },
     "chips": {
-      "smaller": "Smaller",
-      "bigger": "Bigger",
       "trace": "Trace",
       "join": "Join",
-      "remove": "Remove",
+      "switchOff": "Switch off",
+      "switchOn": "Switch on",
+      "delete": "Delete",
+      "keep": "Keep",
       "finish": "Finish"
     },
     "banner": {
@@ -835,9 +844,10 @@
       "corners": "Corners"
     },
     "hints": {
-      "toggle": "Tap a ring to switch it off. Tap bare wall to add a hold.",
-      "maybe": "Dashed rings are maybes. Tap one to keep it.",
-      "longPress": "Press and hold a ring to fix its size, spot or shape.",
+      "tap": "Tap a ring to pick it. Tap it again to switch it off.",
+      "maybe": "Dashed rings are maybes. Tap one, then tap Keep.",
+      "longPress": "Press and hold a ring, then slide to move it.",
+      "addHold": "Tap + to add a hold.",
       "dismiss": "Hide tip",
       "replay": "Show tips"
     },
@@ -855,7 +865,7 @@
       "actions": {
         "smaller": "Make smaller",
         "bigger": "Make bigger",
-        "remove": "Remove",
+        "delete": "Delete",
         "addHold": "Add a hold in the middle of the view"
       },
       "revealed": "Holds found: {{summary}}"

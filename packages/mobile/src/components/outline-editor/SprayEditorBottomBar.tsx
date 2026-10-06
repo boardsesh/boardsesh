@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
-import Animated, { ZoomIn } from 'react-native-reanimated';
+import { Alert, StyleSheet, View, type ColorValue } from 'react-native';
+import Animated, { FadeIn, FadeOut, LinearTransition, ZoomIn } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
@@ -21,6 +21,14 @@ type Translate = (key: string, options?: Record<string, unknown>) => string;
 const MAYBE_DOT_SIZE = 8;
 /** The checkmark the capsule turns into once the holds are saved. */
 const CHECK_SIZE = 26;
+/** The undo and redo glyphs, the size `GlassIconButton` draws its own. */
+const HISTORY_ICON_SIZE = 22;
+/** Dimmed opacity for Undo with nothing to undo, matching a disabled glass button. */
+const DISABLED_OPACITY = 0.4;
+/** The Redo half's arrival and departure. Layout animations skip under Reduce Motion by default. */
+const REDO_ENTERING = FadeIn.duration(150);
+const REDO_EXITING = FadeOut.duration(150);
+const PILL_LAYOUT = LinearTransition.duration(150);
 // Built-in, so Reduce Motion (the system setting) skips it: the checkmark
 // simply appears.
 const CHECK_ENTERING = ZoomIn.springify()
@@ -49,6 +57,8 @@ type SprayEditorBottomBarProps = {
   /** The target reviews detector finds at all. False drops the two maybe rows. */
   canReviewMaybes: boolean;
   canUndo: boolean;
+  /** Something was undone and nothing edited since: the pill grows a Redo half. */
+  canRedo: boolean;
   /** Add mode is on: the + turns into a check that leaves it, like the banner's Done. */
   adding: boolean;
   /** Read-only, or a commit is in flight: every control is disabled. */
@@ -61,6 +71,7 @@ type SprayEditorBottomBarProps = {
   celebrating: boolean;
   bottomInset: number;
   onUndo: () => void;
+  onRedo: () => void;
   /** Enter add mode (outline the holds the scan missed), or leave it while `adding`. */
   onAdd: () => void;
   onKeepMaybes: () => void;
@@ -70,14 +81,18 @@ type SprayEditorBottomBarProps = {
 };
 
 /**
- * The editor's floating bottom bar: Undo, the count capsule, Add, and the one
- * button that saves and publishes.
+ * The editor's floating bottom bar: the Undo | Redo pill, the count capsule,
+ * Add, and the one button that saves and publishes.
+ *
+ * Undo and Redo share one split glass pill, and the Redo half only slides in
+ * while there is something to redo — so the resting bar is the same three
+ * controls it always was, and the redo arrow appears exactly when it means
+ * something.
  *
  * Add is the one tool with its own button, because it is the one a climber goes
- * looking for: every scan misses a few small holds, and a tap on bare wall next
- * to a ring switches the ring rather than adding. It is a glass + rather than a
- * labelled button so the row still fits a 375pt phone beside a long German
- * Publish label.
+ * looking for: every scan misses a few small holds, and a tap on bare wall only
+ * picks or puts down rings — it never adds. It is a glass + rather than a
+ * labelled button so the row fits a 375pt phone however long the counts read.
  *
  * The capsule is the only place the wall's numbers are said, and it doubles as
  * the menu for the three wall-wide actions — so the bar stays four controls
@@ -90,6 +105,7 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
   showMaybes,
   canReviewMaybes,
   canUndo,
+  canRedo,
   adding,
   locked,
   primaryLabel,
@@ -98,6 +114,7 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
   celebrating,
   bottomInset,
   onUndo,
+  onRedo,
   onAdd,
   onKeepMaybes,
   onToggleMaybes,
@@ -167,17 +184,37 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
       ) : null}
 
       <View pointerEvents="box-none" style={styles.row}>
-        <GlassIconButton
-          iconName="undo"
-          iconColor={systemColors.label}
-          fallbackColor={systemColors.fill}
-          size={SPRAY_BAR_HEIGHT}
-          onPress={onUndo}
-          disabled={!canUndo || locked}
-          accessibilityLabel={t('sprayEditor.bar.undo')}
-        />
+        <Animated.View layout={PILL_LAYOUT} style={styles.historyPill}>
+          <GlassSurface
+            glassEffectStyle="regular"
+            fallbackColor={systemColors.fill}
+            borderRadius={SPRAY_BAR_HEIGHT / 2}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+          <HistoryButton
+            iconName="undo"
+            label={t('sprayEditor.bar.undo')}
+            color={systemColors.label}
+            disabled={!canUndo || locked}
+            onPress={onUndo}
+          />
+          {canRedo ? (
+            <Animated.View entering={REDO_ENTERING} exiting={REDO_EXITING} style={styles.redoHalf}>
+              <View style={[styles.pillDivider, { backgroundColor: systemColors.separator }]} />
+              <HistoryButton
+                iconName="redo"
+                label={t('sprayEditor.bar.redo')}
+                color={systemColors.label}
+                disabled={locked}
+                onPress={onRedo}
+              />
+            </Animated.View>
+          ) : null}
+        </Animated.View>
 
         <PressableSurface
+          testID="spray-count-capsule"
           onPress={toggleMenu}
           disabled={locked}
           feedback="scale"
@@ -250,6 +287,37 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
   );
 });
 
+type HistoryButtonProps = {
+  iconName: 'undo' | 'redo';
+  label: string;
+  color: ColorValue;
+  disabled: boolean;
+  onPress: () => void;
+};
+
+/** One half of the Undo | Redo pill: a 48pt square, so each half is a full touch target. */
+const HistoryButton = React.memo(function HistoryButton({
+  iconName,
+  label,
+  color,
+  disabled,
+  onPress,
+}: HistoryButtonProps) {
+  return (
+    <PressableSurface
+      onPress={onPress}
+      disabled={disabled}
+      feedback="scale"
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      style={[styles.historyButton, disabled ? styles.disabled : null]}
+    >
+      <Icon name={iconName} size={HISTORY_ICON_SIZE} color={color} />
+    </PressableSurface>
+  );
+});
+
 const styles = StyleSheet.create({
   root: {
     position: 'absolute',
@@ -261,6 +329,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[2],
+  },
+  historyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: SPRAY_BAR_HEIGHT,
+    borderRadius: SPRAY_BAR_HEIGHT / 2,
+    overflow: 'hidden',
+  },
+  historyButton: {
+    width: SPRAY_BAR_HEIGHT,
+    height: SPRAY_BAR_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  redoHalf: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pillDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: SPRAY_BAR_HEIGHT / 2,
+  },
+  disabled: {
+    opacity: DISABLED_OPACITY,
   },
   capsule: {
     flex: 1,

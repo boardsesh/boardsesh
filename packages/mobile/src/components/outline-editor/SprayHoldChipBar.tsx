@@ -2,78 +2,112 @@ import React from 'react';
 import { StyleSheet, View, type ColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
+import { Icon } from '../Icon';
+import type { IconName } from '../icon-map';
 import { GlassSurface } from '../GlassSurface';
 import { PressableSurface } from '../PressableSurface';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { glassSize } from '../../theme/layout';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
+import type { SprayHoldRole } from './spray-hold-editor-reducer';
 
 type SprayHoldChipBarProps = {
-  /** Distance from the screen's bottom edge — docked just above the bottom bar. */
-  bottom: number;
+  /** How the selected hold reads on the wall. Picks the chip set. */
+  role: SprayHoldRole;
   canShrink: boolean;
   canGrow: boolean;
   onShrink: () => void;
   onGrow: () => void;
   onTrace: () => void;
   onJoin: () => void;
-  onRemove: () => void;
+  /** An ON ring or a maybe goes OFF, as a ghost. */
+  onSwitchOff: () => void;
+  /** A ghost goes back ON ("Switch on"), or a maybe is kept ("Keep"). */
+  onSwitchOn: () => void;
+  /** A ghost comes off the photo for good. The one hard removal. */
+  onDelete: () => void;
 };
 
 /** Dimmed opacity for a chip that cannot act right now (smallest / biggest size reached). */
 const DISABLED_OPACITY = 0.4;
+/** The − and + glyphs, sized to read as the same weight as a chip's label. */
+const STEP_ICON_SIZE = 18;
 
 /**
- * What a long-pressed hold can have done to it: size, shape, join, remove.
+ * What a picked hold can have done to it, one chip set per role:
+ *
+ * - ON: `[−] [+] Trace Join Switch off`
+ * - OFF ghost: `Switch on  Delete`
+ * - maybe: `Keep  Switch off`
  *
  * Only on screen while a hold is selected, so the resting editor shows the wall
  * and three controls, and the fixing tools appear exactly when there is a hold
- * to fix.
+ * to fix. Delete only ever appears for a ghost, so taking a hold off the photo
+ * is always two deliberate steps — switch it off, then delete it — and the
+ * second one raises an undo toast.
  *
  * Every chip is the same glass capsule as the bottom bar's count, at the 44pt
- * touch floor, so the row reads as five buttons over a bright photo, a dark one
- * or the black letterbox under a landscape wall alike. Remove is the same
- * weight as its neighbours with a red label: it is one tap away from an undo,
- * not an alarm.
+ * touch floor, so the row reads as buttons over a bright photo, a dark one or
+ * the black letterbox under a landscape wall alike. − and + are 44pt icon
+ * chips. Delete is the same weight as its neighbours with a red label: it is
+ * one tap away from an undo, not an alarm.
+ *
+ * Laid out in the flow of the screen's bottom dock (above the bottom bar,
+ * under the undo toast), not positioned by itself.
  */
 export const SprayHoldChipBar = React.memo(function SprayHoldChipBar({
-  bottom,
+  role,
   canShrink,
   canGrow,
   onShrink,
   onGrow,
   onTrace,
   onJoin,
-  onRemove,
+  onSwitchOff,
+  onSwitchOn,
+  onDelete,
 }: SprayHoldChipBarProps) {
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
   return (
-    <View pointerEvents="box-none" style={[styles.root, { bottom }]}>
-      <View pointerEvents="box-none" style={styles.row}>
-        <SprayHoldChip
-          label={t('sprayEditor.chips.smaller')}
-          color={systemColors.label}
-          disabled={!canShrink}
-          onPress={onShrink}
-        />
-        <SprayHoldChip
-          label={t('sprayEditor.chips.bigger')}
-          color={systemColors.label}
-          disabled={!canGrow}
-          onPress={onGrow}
-        />
-        <SprayHoldChip label={t('sprayEditor.chips.trace')} color={systemColors.label} onPress={onTrace} />
-        <SprayHoldChip label={t('sprayEditor.chips.join')} color={systemColors.label} onPress={onJoin} />
-        <SprayHoldChip label={t('sprayEditor.chips.remove')} color={brandColors.error} onPress={onRemove} />
-      </View>
+    <View pointerEvents="box-none" style={styles.row}>
+      {role === 'on' ? (
+        <>
+          <SprayHoldChip
+            label={t('sprayEditor.a11y.actions.smaller')}
+            iconName="minus"
+            color={systemColors.label}
+            disabled={!canShrink}
+            onPress={onShrink}
+          />
+          <SprayHoldChip
+            label={t('sprayEditor.a11y.actions.bigger')}
+            iconName="plus"
+            color={systemColors.label}
+            disabled={!canGrow}
+            onPress={onGrow}
+          />
+          <SprayHoldChip label={t('sprayEditor.chips.trace')} color={systemColors.label} onPress={onTrace} />
+          <SprayHoldChip label={t('sprayEditor.chips.join')} color={systemColors.label} onPress={onJoin} />
+          <SprayHoldChip label={t('sprayEditor.chips.switchOff')} color={systemColors.label} onPress={onSwitchOff} />
+        </>
+      ) : role === 'off' ? (
+        <>
+          <SprayHoldChip label={t('sprayEditor.chips.switchOn')} color={systemColors.label} onPress={onSwitchOn} />
+          <SprayHoldChip label={t('sprayEditor.chips.delete')} color={brandColors.error} onPress={onDelete} />
+        </>
+      ) : (
+        <>
+          <SprayHoldChip label={t('sprayEditor.chips.keep')} color={systemColors.label} onPress={onSwitchOn} />
+          <SprayHoldChip label={t('sprayEditor.chips.switchOff')} color={systemColors.label} onPress={onSwitchOff} />
+        </>
+      )}
     </View>
   );
 });
 
 type SprayCornersChipBarProps = {
-  bottom: number;
   onFinish: () => void;
 };
 
@@ -82,21 +116,21 @@ type SprayCornersChipBarProps = {
  * corners to close. Tapping the first corner closes it too; this is the way to
  * close it when the first corner is off screen at 8×.
  */
-export const SprayCornersChipBar = React.memo(function SprayCornersChipBar({
-  bottom,
-  onFinish,
-}: SprayCornersChipBarProps) {
+export const SprayCornersChipBar = React.memo(function SprayCornersChipBar({ onFinish }: SprayCornersChipBarProps) {
   const { t } = useTranslation('boards');
   const { brandColors } = useTheme();
   return (
-    <View pointerEvents="box-none" style={[styles.root, { bottom }]}>
+    <View pointerEvents="box-none" style={styles.row}>
       <SprayHoldChip label={t('sprayEditor.chips.finish')} color={brandColors.primary} onPress={onFinish} />
     </View>
   );
 });
 
 type SprayHoldChipProps = {
+  /** The visible label, or with `iconName` the screen-reader label alone. */
   label: string;
+  /** Draws this glyph instead of the label: a square 44pt icon chip. */
+  iconName?: IconName;
   color: ColorValue;
   disabled?: boolean;
   onPress: () => void;
@@ -104,6 +138,7 @@ type SprayHoldChipProps = {
 
 const SprayHoldChip = React.memo(function SprayHoldChip({
   label,
+  iconName,
   color,
   disabled = false,
   onPress,
@@ -117,7 +152,7 @@ const SprayHoldChip = React.memo(function SprayHoldChip({
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled }}
-      style={[styles.chip, disabled ? styles.chipDisabled : null]}
+      style={[styles.chip, iconName ? styles.iconChip : null, disabled ? styles.chipDisabled : null]}
     >
       <GlassSurface
         glassEffectStyle="regular"
@@ -126,26 +161,24 @@ const SprayHoldChip = React.memo(function SprayHoldChip({
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
-      <Text
-        variant="subheadline"
-        color={color}
-        numberOfLines={1}
-        maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-        style={styles.chipLabel}
-      >
-        {label}
-      </Text>
+      {iconName ? (
+        <Icon name={iconName} size={STEP_ICON_SIZE} color={color} />
+      ) : (
+        <Text
+          variant="subheadline"
+          color={color}
+          numberOfLines={1}
+          maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+          style={styles.chipLabel}
+        >
+          {label}
+        </Text>
+      )}
     </PressableSurface>
   );
 });
 
 const styles = StyleSheet.create({
-  root: {
-    position: 'absolute',
-    left: spacing[4],
-    right: spacing[4],
-    alignItems: 'center',
-  },
   // Tight enough that the five English chips fit one row on a 375pt phone;
   // longer labels or bigger type wrap to a second row rather than truncate.
   row: {
@@ -162,6 +195,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing[2],
+  },
+  iconChip: {
+    width: glassSize.capsule,
+    paddingHorizontal: 0,
   },
   chipDisabled: {
     opacity: DISABLED_OPACITY,
