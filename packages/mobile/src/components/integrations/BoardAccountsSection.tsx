@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Linking, Modal, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Linking, Modal, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { File } from 'expo-file-system';
 import * as Clipboard from 'expo-clipboard';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -97,6 +97,14 @@ type MoonBoardSharedSchemaModule = {
 };
 
 const MAX_IMPORT_SIZE_BYTES = 200 * 1024 * 1024;
+
+// Android file providers label .csv files inconsistently: Downloads often says
+// text/comma-separated-values, and files saved from mail or Drive arrive as
+// application/octet-stream, so a MIME filter greys out real exports. Android
+// shows every file and lets the parser reject anything that isn't a Moon log;
+// iOS matches by file type and keeps the filter.
+const MOONBOARD_CSV_PICKER_TYPES =
+  Platform.OS === 'android' ? '*/*' : ['text/csv', 'text/plain', 'application/vnd.ms-excel'];
 const IMPORT_RESULT_LIMIT = 8;
 
 // MoonBoard isn't an Aurora board, so it has no credential/sync flow.
@@ -674,7 +682,7 @@ const MoonBoardAccountCard = memo(function MoonBoardAccountCard() {
       try {
         const DocumentPicker = await import('expo-document-picker');
         const document = await DocumentPicker.getDocumentAsync({
-          type: ['text/csv', 'text/plain', 'application/vnd.ms-excel'],
+          type: MOONBOARD_CSV_PICKER_TYPES,
           copyToCacheDirectory: true,
         });
         if (document.canceled) return;
