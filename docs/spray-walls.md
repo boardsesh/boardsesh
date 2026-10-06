@@ -2021,8 +2021,8 @@ stays mounted through its own closing animation.
 
 A reset is what happens when someone takes holds off the wall and puts others on.
 The climb database survives it: climbs that lost holds keep their ticks and
-grades and get a number (`missing_hold_count`). The app hides the published ones
-from wall lists; see [A climb that lost holds](#a-climb-that-lost-holds).
+grades and get a number (`missing_hold_count`). The app lists them with a "holds
+gone" badge and offers a Remix; see [A climb that lost holds](#a-climb-that-lost-holds).
 
 The flow is three calls, and only the middle one of the three writes anything:
 
@@ -2416,9 +2416,15 @@ route asks the server:
   "Some climbs may use these holds…": it fails toward asking, never toward a
   silent removal. Only drafts use them, or nothing does: no alert. "Keep holds",
   or dismissing the alert, leaves every edit where it was and saves nothing.
-- **While it is up** the press owns the screen (the leave guard waits), and the
-  plan is read again after each answer, so a hold taken off meanwhile is asked
-  about too and a confirmed one is never asked twice (`confirmPlanRemovals`).
+- **While it is up**, the usage read included, the press owns the screen: Save
+  shows its spinner, editing waits and so does the leave guard. The plan is read
+  again after each answer, so a confirmed hold is never asked about twice
+  (`confirmPlanRemovals`).
+- **The check is per save, not per publish.** The removals land on the draft at
+  the save; the publish comes after. A saver who confirmed, then lost the
+  publish (offline, say), leaves a draft whose removals the next editor resumes
+  and publishes without being asked again, because nothing in that draft is
+  visible as a removal any more. The owner was asked once, which is the rule.
 - "Remove anyway" fires `Spray Wall Holds Removed In Use` (counts only).
 
 The publish then gives those climbs `missing_hold_count`, as it always has. The
@@ -2435,9 +2441,12 @@ a normal, listed climb with a badge:
   and absent show nothing, so no catalogue climb is ever badged.
 - **The play drawer banner.** Above the board, quietly: "This climb lost a hold.
   Remix it onto the holds that are on the wall now." with one action, Remix,
-  through the climb actions' own Remix handoff (`useCreateClimbNavigation`). It
-  fires `Climb Remixed From Broken`. On an archived wall the sentence stays and
-  the button goes. There is no Edit shortcut, no "use a hold nearby", no put
+  through the climb actions' own Remix handoff (`useCreateClimbNavigation`, via
+  `useLostHoldRemix`). `Climb Remixed From Broken` fires when the action is
+  accepted, so a swallowed double tap counts once. The handoff's one-action
+  guard is let go once the route is pushed or a dismissal aborts, and whenever
+  another climb is shown, so the banner never goes dead for the session. On an
+  archived wall the sentence stays and the button goes. There is no Edit shortcut, no "use a hold nearby", no put
   back, no editor opening on its own, and no Holds filter.
 - **It is listed.** A wall search sends no `holdIntegrity` (`withLostHoldRule` in
   `offline-request.ts` drops any value a caller built, for `SearchClimbs` and
@@ -2479,6 +2488,10 @@ at each lost hold's old position (`LostHoldGhostLayer`, from
   line under it says "Remove the grey hold to save" (plural "holds"). A tap on a
   ring removes it and nothing else: no replacement is suggested, and the climb's
   frames already lack the hold. Save comes back when the last ring is gone.
+- **A ring wins its spot.** The rings' hit targets come before the live holds',
+  and a tie keeps the earlier one, so a ring sitting exactly under the hold that
+  replaced it (a resize or a traced outline keeps the centre) takes the first
+  tap; the next tap there paints the live hold.
 - **Only in a remix.** An edit in place, a new climb and a draft opened on its
   own draw no rings.
 - **Fails open.** No signal, a failed read, an answer with nothing drawable, or a
