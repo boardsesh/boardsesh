@@ -1192,17 +1192,28 @@ published climb. Those rows stay as they are, and one rule covers them:
   its count, the hold heatmap, and a name search too (the simplest rule; there
   is no "show lost-hold climbs" view any more). `lostHoldsCondition` in
   `packages/db/src/queries/climbs/create-climb-filters.ts` adds
-  `COALESCE(missing_hold_count, 0) = 0` on spray only. NULL reads as intact.
-  `ClimbSearchInput.holdIntegrity` is accepted and ignored, so an older app's
-  Intact / Lost holds filter shows the same list whatever it picks. A climb a full
-  reset retired (`retired_by_reset`) always lost a hold, so the same rule hides it.
+  `COALESCE(missing_hold_count, 0) = 0` on spray only. NULL reads as intact. A
+  climb a full reset retired (`retired_by_reset`) always lost a hold, so the same
+  rule hides it.
+- **Except the setter's drafts list.** An `onlyDrafts` search skips the rule. A
+  draft can still lose a hold today (a hold edit on a wall with no published
+  climb), and `onlyDrafts` is the only place the setter finds it to re-set it or
+  delete it. Re-setting it onto holds that are there brings its count back to 0.
+- **The older apps' Holds filter** (`ClimbSearchInput.holdIntegrity`, shown on
+  every board by 2.5.0 and the 2.6.0 beta): All and Intact only answer the plain
+  list. Lost holds answers the empty list on every board, a `false` predicate in
+  both search and count (`lostHoldsFilterCondition`). That is what it always
+  answered on a catalogue board, and on a spray wall it is honest now that
+  lost-hold climbs are hidden. BROKEN stays a search param, so it keeps its own
+  search-cache key; All and Intact share the plain search's key.
 - **A read of one climb by uuid still returns it**: `climb(uuid)`, logbooks,
   playlists, share links and the queue never go through the list builder.
 - The setter picker's counts (`getSetterStats`) do not apply the rule.
 
-No search cache version bump: spray searches are never cached, and on a cached
-board the dropped `holdIntegrity` param makes every value hash to the key of the
-plain search, whose cached page was already right.
+No search cache version bump: spray searches are never cached. On a cached board
+a BROKEN search keeps its own key (and was already the empty list there), and
+ANY and INTACT now hash to the plain search's key, whose cached page was already
+right.
 
 The offline mirror on the phone (`search-climbs-local.ts`) keeps its own,
 older rule until a mobile release changes it. The columns it reads,
@@ -1395,12 +1406,24 @@ against this backend. Each answers like this:
 | `SprayWall.viewerCanEditClimbs` (`Boolean!`) | `false` |
 | `CreateSprayWallInput.climbEditPolicy`, `UpdateSprayWallInput.climbEditPolicy` | Accepted and not written. No owner-only refusal. |
 | `SaveClimbInput.remixOfClimbUuid` | Accepted and ignored on every board. No lineage row. |
-| `ClimbSearchInput.holdIntegrity` | Accepted and ignored. |
+| `ClimbSearchInput.holdIntegrity` | ANY and INTACT: the plain list. BROKEN: no climbs, on every board. |
 | `Climb.missingHoldCount`, `Climb.revisionNumber`, `Climb.holdsRevisionNumber`, `Tick.climbRevision`, `SaveTickInput.climbRevision` | Unchanged: the stored values, and a tick is still stamped. |
 
 `SPRAY_WALL_RESET_REVIEW_REQUIRED`, `SPRAY_WALL_ANCHORS_REQUIRED` and
 `SPRAY_WALL_CLIMB_EDIT_POLICY_OWNER_ONLY` are no longer sent. `saveTick` is never
 refused by any of this.
+
+What a climber on an older app sees, known and accepted until the app update:
+
+- **The 2.6.0 beta calls the reset "New photo"**, while the refusal says "Reset
+  wall", the new app's name for it.
+- **Its who-can-edit toggle reads back as setter-only** whatever the owner picks,
+  because the policy is not written and every wall answers `SETTER`.
+- **A hold-edit draft left open on a wall that then locks** shows the locked
+  message on every visit until the app update. Nothing is damaged: the draft
+  holds no published work, and the new app discards it.
+- **A new photo on a published wall with no climbs is refused too.** Decision:
+  the owner uses Reset wall, which works on any published wall, climbs or not.
 
 ### Kept, not written
 
@@ -2090,13 +2113,17 @@ What an edit does now:
 
 ### The Edit action in the app
 
-The app offers Edit from `canEditClimb` in `@boardsesh/create-climb-react`. On
-spray an app built before this change still offers it to the setter after 24
-hours and, where it read `viewerCanEditClimbs: true`, to wall editors. The server
-now answers `viewerCanEditClimbs: false` for everyone, so only the setter's own
-Edit survives, and past 24 hours `updateClimb` refuses it with
-`CLIMB_EDIT_WINDOW_EXPIRED`, which the editor already translates. A failure with
-no known code gets the generic line, and the working copy stays on screen.
+2.5.0 (`main`) already offers Edit on the server's rule: the setter only, a draft
+always, a published climb for 24 hours (`computeCanUpdate` in
+`@boardsesh/create-climb-react`, used by `ClimbActionsSheet`).
+
+The 2.6.0 beta (`release/next`) offers it from `canEditClimb`, a rule that lives
+only on that branch: on spray it offers Edit to the setter with no time limit
+and, where it read `viewerCanEditClimbs: true`, to wall editors. The server now
+answers `viewerCanEditClimbs: false` for everyone, so only the setter's own Edit
+survives, and past 24 hours `updateClimb` refuses it with
+`CLIMB_EDIT_WINDOW_EXPIRED`, which the editor already translates. The app update
+removes the offer.
 
 ## Climb revisions (retired)
 

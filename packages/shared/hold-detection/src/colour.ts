@@ -3,14 +3,15 @@ import type { Box, RgbaImage } from './types';
 /**
  * How many hue bins the descriptor carries. Eight is coarse on purpose: the same
  * hold photographed under a garage bulb and under daylight has to land in the
- * same bin, and a reset comparison that splits hairs on hue would call every
- * hold on the wall a different hold.
+ * same bin, and a comparison of two photos that split hairs on hue would call
+ * every hold on the wall a different hold.
  */
 export const HUE_BINS = 8;
 
 /**
- * A hold's colour, as the flat vector `@boardsesh/spray-wall-geometry`'s matcher
- * compares: `[L, a, b, ...eight hue weights]`.
+ * A hold's colour, as a flat vector: `[L, a, b, ...eight hue weights]`. The
+ * spray-wall hold matcher that compared these was retired with the in-place
+ * reset; the descriptor stays for detection.
  *
  * Lab because it is the space where "how different do these two look" is roughly
  * a distance, and a hue histogram alongside it because a two-tone hold (a black

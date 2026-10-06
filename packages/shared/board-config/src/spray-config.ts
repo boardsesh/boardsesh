@@ -101,7 +101,8 @@ export const MAX_VERSIONS_PER_WALL = 50;
  * Revisions kept per climb, from when edits were recorded as revisions.
  *
  * Retired: the server no longer writes `board_climb_revisions`, so nothing
- * enforces this any more. Kept for app builds whose history list still reads it.
+ * enforces this. Kept only because a mobile test on `release/next`
+ * (`revisions-section.test.tsx`) imports it; remove it once that file is gone.
  */
 export const MAX_REVISIONS_PER_CLIMB = 50;
 

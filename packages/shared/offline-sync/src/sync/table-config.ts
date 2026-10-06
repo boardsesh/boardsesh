@@ -216,11 +216,11 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
       // A bump means "every already-downloaded scope must re-crawl to backfill
       // this field" — that is every enabled Kilter and Tension catalogue, tens of
       // thousands of rows each, to fill in a column that is NULL on all of them
-      // (holds do not come off a catalogue board; only a spray reset writes it).
+      // (holds do not come off a catalogue board; only a spray wall publish writes it).
       // Spray scopes are new in this release, so no checkpoint predating this
       // column can exist for one, and the local predicate is NULL-safe
       // (`COALESCE(missing_hold_count, 0)`) for every row pulled before it — the
-      // same "unknown reads as intact" rule the server's `holdIntegrityCondition`
+      // same "unknown reads as intact" rule the server's `lostHoldsCondition`
       // applies. The two conditions a bump exists to protect are therefore both
       // already met, and paying for it would be a catalogue replay for nothing.
       'missing_hold_count',

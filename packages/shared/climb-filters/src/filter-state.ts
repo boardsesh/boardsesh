@@ -32,10 +32,10 @@ export type StatusFilter = (typeof STATUS_FILTER_VALUES)[number];
  * filter (SW-12).
  *
  * 'any' is the default and sends nothing. 'intact' and 'broken' map onto
- * `ClimbSearchInput.holdIntegrity`, whose SQL lives in @boardsesh/db
- * create-climb-filters.ts (`holdIntegrityCondition`) and reads the materialised
- * `board_climbs.missing_hold_count`. Only a spray wall ever has a broken climb;
- * on a catalogue board 'broken' is an honest empty list.
+ * `ClimbSearchInput.holdIntegrity`, which the server has retired: it hides a
+ * spray climb that lost a hold from every list (`lostHoldsCondition` in
+ * @boardsesh/db create-climb-filters.ts), ignores 'intact', and answers 'broken'
+ * with an empty list on every board (`lostHoldsFilterCondition`).
  */
 export const HOLD_INTEGRITY_VALUES = ['any', 'intact', 'broken'] as const;
 export type HoldIntegrityFilterValue = (typeof HOLD_INTEGRITY_VALUES)[number];

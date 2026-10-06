@@ -163,17 +163,18 @@ const integrityMoved = sql`(
  * Re-materialise `board_climbs.missing_hold_count` and `retired_by_reset` for
  * every climb on a wall.
  *
- * Run it after a reset commits. A climb's count is how many of its holds now
- * carry a `removed_version_id` — so an intact climb lands on 0, and a climb that
- * lost two holds lands on 2 and can be badged, filtered and offered a remix
- * without a join the mobile SQLite mirror cannot make (it has no
- * `board_climb_holds` table).
+ * Run it when a wall version publishes. A climb's count is how many of its holds
+ * now carry a `removed_version_id` — so an intact climb lands on 0, and a climb
+ * that lost two holds lands on 2 and can be filtered without a join the mobile
+ * SQLite mirror cannot make (it has no `board_climb_holds` table). Since the hold
+ * lock, a publish that removes holds only lands on a wall with no published
+ * climb, so only a draft can gain a count here.
  *
  * A removal only counts once the version that made it LANDED — the same rule
  * `aliveHolds` applies (see its own note). An abandoned draft owns a version
  * number and can stamp `removed_version_id`, so counting a bare NOT NULL would
- * badge every climb on the wall as broken the moment an owner started a reset and
- * walked away, and the number would never come back on its own.
+ * badge every climb on the wall as broken the moment an owner started a hold edit
+ * and walked away, and the number would never come back on its own.
  *
  * Four deliberate details:
  *
@@ -181,12 +182,12 @@ const integrityMoved = sql`(
  *     Written as two copies of the same correlated subquery — one for the SET and
  *     one for the guard — Postgres evaluates it twice per row.
  *   - `updated_at` is stamped so the offline sync cursor
- *     (`board_type, updated_at, sync_seq`) ships the change. Without it, a reset
- *     would fix the badge on the server and never reach a phone.
+ *     (`board_type, updated_at, sync_seq`) ships the change. Without it, a publish
+ *     would fix the number on the server and never reach a phone.
  *   - the `IS DISTINCT FROM` guard means only climbs whose count actually moved
  *     are written. Rewriting every climb on the wall with an identical number
  *     would re-ship the whole partition to every offline client after each
- *     reset — the same cost migration 0146's trigger guards exist to avoid.
+ *     publish — the same cost migration 0146's trigger guards exist to avoid.
  *
  * Returns how many climbs changed.
  */
@@ -215,14 +216,13 @@ export async function recomputeMissingHoldCounts(db: DrizzleDb, wallId: number):
 /**
  * Re-materialise `missing_hold_count` for ONE climb on a wall.
  *
- * The wall-wide recompute runs when a reset lands, which is when the WALL moves
- * under the climbs. This is the other direction: the climb moves under the wall.
- * A climber whose problem lost two holds edits it to use two that are still
- * there, and `updateClimb` rewrites `board_climb_holds` — at which point the
- * stored number describes holds the climb no longer uses. Nothing else would ever
- * correct it: the wall-wide recompute only runs on the next publish, so until
- * somebody reset that wall again the climb would sit in `BROKEN` searches wearing
- * a badge for a problem its setter had already fixed.
+ * The wall-wide recompute runs when a version publishes, which is when the WALL
+ * moves under the climbs. This is the other direction: the climb moves under the
+ * wall. A setter whose draft lost a hold edits it onto holds that are still there,
+ * and `updateClimb` rewrites `board_climb_holds` — at which point the stored
+ * number describes holds the climb no longer uses. Nothing else would ever
+ * correct it: the wall-wide recompute only runs on the next publish, so the draft
+ * would keep a count for a problem its setter had already fixed.
  *
  * Same count, same landed-generation rule, same `IS DISTINCT FROM` guard and the
  * same `updated_at` stamp as the wall-wide version — they share
