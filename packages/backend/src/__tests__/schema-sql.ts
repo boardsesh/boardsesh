@@ -1800,6 +1800,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "homography" jsonb,
     "notes" text,
     "is_full_reset" boolean DEFAULT false NOT NULL,
+    "art" jsonb,
     "created_by" text REFERENCES "users"("id") ON DELETE SET NULL,
     "published_at" timestamp,
     "created_at" timestamp DEFAULT now() NOT NULL,

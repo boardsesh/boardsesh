@@ -111,6 +111,38 @@ export type SprayClimbEditPolicy = (typeof sprayClimbEditPolicyEnum.enumValues)[
 export type SprayWallRenderSettingsValue = {
   mode: 'classic' | 'aura';
   boardsesh: { [Knob in keyof BoardseshRenderSettings]: WidenOption<BoardseshRenderSettings[Knob]> };
+  /**
+   * What the wall is drawn on: the raw photo, the photo flattened into the
+   * canonical frame (`wall-crop`), or only the holds on a plain field
+   * (`hold-cutouts`). Missing means `photo`. The list is
+   * `SPRAY_WALL_BACKGROUNDS` in `@boardsesh/spray-wall-geometry`.
+   */
+  background?: 'photo' | 'wall-crop' | 'hold-cutouts';
+};
+
+/**
+ * The generated wall looks of one version (`spray_wall_versions.art`), written
+ * by the `spray-wall-art` job (`docs/spray-walls.md`, "Generated wall looks").
+ *
+ * - `pending`: a job is queued or running;
+ * - `ready`: both images are in the private bucket at `cropKey` / `cutoutKey`;
+ * - `failed`: the job hit an error (`error` is its bounded code); choosing a
+ *   generated background again re-queues it;
+ * - `refused`: the photo failed the quality gate, so nothing was rendered.
+ *
+ * `recipe` is the `ART_RECIPE` the images were (or will be) made with. A row
+ * whose recipe is older than the running code's is treated as missing.
+ */
+export type SprayWallVersionArt = {
+  recipe: number;
+  status: 'pending' | 'ready' | 'failed' | 'refused';
+  /** Pixel size of both images; the canonical frame scaled to a 2048 px long edge. */
+  width: number | null;
+  height: number | null;
+  cropKey: string | null;
+  cutoutKey: string | null;
+  quality: { stretch: number | null; verdict: 'good' | 'soft' | 'fail' } | null;
+  error: string | null;
 };
 
 type WidenOption<Value> = Value extends string ? string : Value;
@@ -389,8 +421,9 @@ export const sprayWallVersions = pgTable(
     anchors: jsonb('anchors').$type<[number, number][]>(),
     /**
      * Row-major 3x3 photo→canonical homography, nine floats. The identity matrix
-     * when the version has no anchors. No image is ever warped in v1: holds are
-     * mapped through the INVERSE of this at render time.
+     * when the version has no anchors. The stored photo is never warped: holds
+     * are mapped through the INVERSE of this at render time. The generated looks
+     * in `art` are the one place a warped copy exists.
      */
     homography: jsonb('homography').$type<number[]>(),
     /** What changed in this reset, in the wall owner's own words. */
@@ -404,6 +437,14 @@ export const sprayWallVersions = pgTable(
      * version that is not a reset.
      */
     isFullReset: boolean('is_full_reset').default(false).notNull(),
+    /**
+     * The generated wall looks of this version, or NULL when none was ever
+     * asked for. Derived from the photo, the homography and the holds, so it can
+     * always be regenerated; the images live in the private bucket under
+     * `spray-walls/<wall uuid>/art/`, which the retention purge's prefix delete
+     * already covers. See `SprayWallVersionArt`.
+     */
+    art: jsonb('art').$type<SprayWallVersionArt>(),
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
     publishedAt: timestamp('published_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),

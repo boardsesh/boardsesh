@@ -3,16 +3,22 @@ import Box from '@mui/material/Box';
 import type { SprayLitHoldMark } from '@/app/lib/spray/spray-climb-view';
 
 type SprayBoardArtProps = {
-  photoUrl: string;
+  /** The photograph, or the wall's generated look (`resolveSprayWallDrawing`). */
+  imageUrl: string;
   photoAlt: string;
-  /** The photograph's own pixel box, which is the SVG's coordinate system. */
+  /** The image's own pixel box, which is the SVG's coordinate system. */
   frameWidth: number;
   frameHeight: number;
   marks: readonly SprayLitHoldMark[];
+  /**
+   * Drawn behind the image. Set for the holds-only look, which is transparent
+   * everywhere but the holds and is meant to sit on the Aura field colour.
+   */
+  fieldColor?: string | null;
 };
 
 /**
- * A wall photograph with the climb's holds drawn over it.
+ * A wall photograph (or its generated look) with the climb's holds drawn over it.
  *
  * Server-rendered, and with no client component anywhere in it, for the reason
  * `ClimbFrontDoor` gives for the catalogue boards: this image is the page's LCP
@@ -25,7 +31,14 @@ type SprayBoardArtProps = {
  * absolute positioning, matching `BoardImageLayers`: absolutely positioned
  * children inside an aspect-ratio box hit iOS 18.x WebKit bugs.
  */
-export default function SprayBoardArt({ photoUrl, photoAlt, frameWidth, frameHeight, marks }: SprayBoardArtProps) {
+export default function SprayBoardArt({
+  imageUrl,
+  photoAlt,
+  frameWidth,
+  frameHeight,
+  marks,
+  fieldColor,
+}: SprayBoardArtProps) {
   return (
     <Box
       sx={{
@@ -43,11 +56,17 @@ export default function SprayBoardArt({ photoUrl, photoAlt, frameWidth, frameHei
       */}
       <Box
         component="img"
-        src={photoUrl}
+        src={imageUrl}
         alt={photoAlt}
         width={frameWidth}
         height={frameHeight}
-        sx={{ width: '100%', height: 'auto', display: 'block', borderRadius: 1 }}
+        sx={{
+          width: '100%',
+          height: 'auto',
+          display: 'block',
+          borderRadius: 1,
+          ...(fieldColor ? { backgroundColor: fieldColor } : {}),
+        }}
       />
       <Box
         component="svg"

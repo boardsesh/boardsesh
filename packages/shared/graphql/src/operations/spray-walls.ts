@@ -258,6 +258,43 @@ export const GET_SPRAY_WALL_LOOK = gql`
 `;
 
 /**
+ * One version's generated wall looks and its photo-quality verdict. Its own
+ * query for the reason `GET_SPRAY_WALL_LOOK` gives: a backend without
+ * `sprayWallArt` costs only the art, and the wall draws on its photo.
+ */
+export const GET_SPRAY_WALL_ART = gql`
+  query GetSprayWallArt($uuid: ID!, $version: Int) {
+    sprayWallArt(uuid: $uuid, version: $version) {
+      versionNumber
+      recipe
+      status
+      width
+      height
+      quality {
+        stretch
+        verdict
+        reason
+        frameShortEdge
+      }
+      crop {
+        url
+        thumbUrl
+        width
+        height
+        expiresAt
+      }
+      cutout {
+        url
+        thumbUrl
+        width
+        height
+        expiresAt
+      }
+    }
+  }
+`;
+
+/**
  * Store the wall's default look (`{ mode, boardsesh }`), or clear it with
  * `renderSettings: null`. Same edit gate as `UPDATE_SPRAY_WALL`. Selects only
  * the look, for the reason `GET_SPRAY_WALL_LOOK` gives.

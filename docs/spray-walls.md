@@ -137,10 +137,11 @@ that the frame is the photo.
 
 Three consequences worth stating plainly.
 
-- **No image is ever warped.** The matrix is stored on the version; the renderer
-  maps holds through `invert()` at draw time and paints them over the untouched
-  photo. Warping would cost a re-encode per version and lose pixels at the edges
-  for no gain.
+- **The stored photo is never warped.** The matrix is stored on the version;
+  the renderer maps holds through `invert()` at draw time and paints them over
+  the untouched photo. The one warped copy is DERIVED art the owner can choose to
+  show instead (see "Generated wall looks"): made once per version from the
+  photo, never replacing it, and always regenerable.
 - **A version without anchors stores the identity**, which is the honest answer
   for a wall whose photo *is* its frame. Anchors are optional at creation and
   required at the first reset, because that is the first moment two photographs
@@ -453,6 +454,108 @@ it. A viewer's own explicit render-mode choice always wins over the wall's.
 - **No wall lock.** No hold, version or publish path reads or writes the column, so
   there is no concurrent writer to order against; the last call wins.
 
+### Generated wall looks
+
+A wall's owner picks what the wall is drawn on, as
+`render_settings.background`:
+
+| Value | In the app | What it is |
+| --- | --- | --- |
+| `photo` (or missing) | Photo | The stored photo, holds mapped through `invert()`. Every wall before this shipped. |
+| `wall-crop` | Wall only | The photo flattened into the canonical frame through the version's corner-pin homography. The room falls outside the pinned quad, so there is nothing to mask. The recommended look once the photo passes the quality gate. |
+| `hold-cutouts` | Holds only | Only the hold pixels, on a transparent background. Clients draw the Aura field colour behind it (`BOARD_FIELD_COLORS`: `#FFFFFF` light, `#181225` dark), so it reads like an LED board. Volumes are not detected as holds, so they drop out; an owner with volumes uses Wall only. |
+
+Both generated looks are drawn in the CANONICAL frame, the frame hold
+coordinates already live in, so a renderer draws holds on them with no
+homography: frame = the art's own size, holds scaled by `art.width /
+boardWidth`. The pixel maths is `@boardsesh/spray-wall-geometry`
+(`clean-art.ts`, `photo-quality.ts`), dependency-free, so the backend job and
+the app agree on the frame, the mask and the gate.
+
+**The quality gate.** A photo taken from a sharp angle has to stretch its far
+side much more than its near side, and the far side comes out smeared.
+`photoQuality` puts one number on that: sample the canonical -> photo map on a
+15 x 15 grid over the middle 90% of the frame, take `|det J|` at each sample,
+and `stretch = sqrt(max / min)`.
+
+| Verdict | Rule | What the client does |
+| --- | --- | --- |
+| `good` | stretch <= 1.7 | Offers both generated looks. |
+| `soft` | 1.7 < stretch <= 2.2 | Offers them, and nudges "retake front-on". |
+| `fail` | stretch > 2.2, no corner pins, or a frame whose short edge is under 1000 px | Offers only the photo. The server refuses a generated background too, so an old or hand-rolled client cannot store one (`SPRAY_WALL_ART_NOT_AVAILABLE`, with the reason). |
+
+The numbers come from a spike over real climbers' wall photos in October 2026:
+a near front-on wall (bottom corners pinned 7-8% in from the sides) scored 1.25 and flattened
+cleanly; a strongly keystoned one (bottom edge pinned at half the width of the
+top) scored 2.87 and its far side was visibly smeared. Both are pinned in
+`photo-quality.test.ts`. Pins tapped on the photo's own corners solve to the
+identity, so the gate reads the version's PINS, not its matrix: a stored
+identity with no pins is "no pins", the same identity from pins is a front-on
+photo.
+
+**Where the art lives.** `spray_wall_versions.art` (jsonb, nullable) holds
+`{ recipe, status, width, height, cropKey, cutoutKey, quality, error }`, with
+status `pending` / `ready` / `failed` / `refused`. The images are in the PRIVATE
+bucket beside the photo, under the same `private, no-store` cache rule:
+
+```
+spray-walls/<wall uuid>/art/<versionId>-r<recipe>-crop.jpg       (+ @280.jpg thumbnail)
+spray-walls/<wall uuid>/art/<versionId>-r<recipe>-cutout.webp    (+ @280.webp thumbnail, alpha kept)
+```
+
+Under the wall's own prefix, so the retention purge and account deletion, which
+delete the whole `spray-walls/<wall uuid>/` prefix, take the art with the photo.
+
+**The recipe lever.** `ART_RECIPE` (now 1) is in every key and on every row.
+Bump it whenever a rendering number changes (dilate 4% of each hold's radius,
+feather sigma 6% of the median radius, 32-point circle for an untraced hold,
+2048 px long edge). A row whose recipe is not the running one reads as `NONE`
+and the next generated-background choice re-queues it; old objects are never
+overwritten.
+
+**The job.** `spray-wall-art` on the `maintenance-delivery` role
+(`docs/background-workers.md`), keyed `art:<versionId>:<recipe>`. It re-checks the
+gate with the shared function (writing `refused` if it fails), decodes the photo
+with sharp, warps it with `warpBilinear`, draws the hold mask as an SVG (each
+outline filled and stroked round by twice its grow, which dilates it), blurs it,
+joins it as the cutout's alpha, uploads thumbnails before their base images, and
+writes `ready`. A failure writes `failed` with a bounded code before it rethrows,
+so a retry, or the owner picking the look again, can heal it.
+
+Who queues it:
+
+- **`publishDraftUnderLock`**, inside the publish transaction (a savepoint, so a
+  queue failure never fails the publish), for every new generation whatever the
+  background, so the owner's picker has art to offer straight away. A photo
+  that fails the gate gets `refused` and no job.
+- **`setSprayWallRenderSettings`**, when a generated background is chosen and
+  the PUBLISHED version has no current art (a wall published before this
+  shipped, or a failed run). Before the first publish the choice is checked
+  against the newest draft and the publish queues the art.
+
+Nothing is queued while `spray-wall-art` is in `BATCH_FAMILIES_DISABLED` (every
+dev machine): the row stays NULL and the wall draws its photo.
+
+**Reading it.** `sprayWallArt(uuid, version)`, its own query and never a field
+on the shared fragments, for the reason the look has its own query. Same gate
+as `sprayWallRenderData`: the wall's view rule, then a draft only for an editor.
+It returns the live quality verdict (so a client can grey out the choice before
+any job has run), the status, the size, and presigned `crop` / `cutout`
+`SprayWallPhoto`s when ready.
+
+**Fallback, everywhere.** A client draws the photo whenever the art is not
+`READY` for the version it is drawing: no art yet, an older recipe, a failed or
+refused run, a backend without `sprayWallArt`, or art for a different version
+than the render payload's. The photo is always a correct picture of the wall.
+
+**Public walls have no public copy of the art.** The web page links the art
+through the same redirect route the unlisted photo uses
+(`/api/v1/spray-walls/{uuid}/photo?look=wall-crop|hold-cutouts`, a fresh
+signature per fetch), for public walls too. A world-readable copy would need its
+own random key, demotion delete and hide rule, the way the photo's has (SW-14);
+that is deferred until a crawler or an unfurler needs the art. OG cards keep
+drawing the photo.
+
 ### Versions, anchors and the homography
 
 `createSprayWallVersion` takes the `photoId` the upload handler returned and
@@ -493,10 +596,11 @@ The geometry all lives in **`@boardsesh/spray-wall-geometry`** (SW-06, #5466) �
 `mapRadius`. The backend imports it and owns no copy.
 
 One contract to know before adding a backend caller: **`invert` THROWS on a
-singular matrix** rather than returning the identity. Nothing on the server inverts
-today — the stored matrix is the forward photo→canonical one and the client inverts
-at draw time — so there is no call site to guard yet. When one appears, let the
-throw surface as a clear error rather than catching it into the identity: a corrupt
+singular matrix** rather than returning the identity. The one server call site is
+the `spray-wall-art` job, which turns the throw into a non-retryable
+`SPRAY_ART_SINGULAR_HOMOGRAPHY` failure (the gate refuses most such matrices
+first). Any new caller should do the same — surface it as a clear error rather
+than catching it into the identity: a corrupt
 stored homography that silently becomes the identity renders every hold at the
 wrong place, which is far harder to notice than a failed request.
 
@@ -505,8 +609,8 @@ The homography is a 4-point DLT in pure TS
 the identity matrix when a version has no anchors. A degenerate quad — anchors
 collinear or coincident — also falls back to the identity: a worse map than a
 correct one, and a far better outcome than a matrix of NaN that would render every
-hold at nowhere. No image is ever warped in v1; the client maps holds through the
-INVERSE at draw time. SW-06 (#5439) moves the module into
+hold at nowhere. The stored photo is never warped; the client maps holds through
+the INVERSE at draw time. Generated art (below) is a separate derived image. SW-06 (#5439) moves the module into
 `@boardsesh/spray-wall-geometry` unchanged.
 
 ### Adding and removing holds
@@ -2927,6 +3031,13 @@ wall has no such copy by design, so it shows the presigned URL from
 `sprayWallRenderData`, which is right for a page read by whoever has the link
 and never indexed. Never the other way round: a presigned URL in a public page's
 HTML is a dead image fifteen minutes later.
+
+When the owner chose a generated background and the backend reports it READY
+for the version the page draws, the page shows that instead
+(`fetchSprayWallArtChoice`, `resolveSprayWallDrawing`): through the redirect
+route for public and unlisted walls alike, in canonical mode, with the dark Aura
+field behind Holds only (www has one colour scheme). Any miss draws the photo
+as above.
 
 ### Drawing the climb
 

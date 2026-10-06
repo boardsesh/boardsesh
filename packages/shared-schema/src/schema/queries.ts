@@ -797,6 +797,13 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     sprayWallRenderData(uuid: ID!, version: Int): SprayWallRenderData
 
+    """
+    The generated wall looks of one version (\`wall-crop\`, \`hold-cutouts\`) and
+    its photo-quality verdict. Omit \`version\` for the published one. Same
+    visibility rules as \`sprayWallRenderData\`; null where that is null.
+    """
+    sprayWallArt(uuid: ID!, version: Int): SprayWallArt
+
     "Every wall the caller owns, newest first. Includes walls with no published version."
     mySprayWalls: [SprayWall!]!
 
