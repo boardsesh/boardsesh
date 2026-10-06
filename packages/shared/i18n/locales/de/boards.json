@@ -844,8 +844,8 @@
       "corners": "Ecken"
     },
     "resize": {
-      "bigger": "+{{percent}} %",
-      "smaller": "−{{percent}} %",
+      "bigger": "+{{percent}} %",
+      "smaller": "−{{percent}} %",
       "original": "Original",
       "typical": "Typisch"
     },

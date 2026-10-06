@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { isValidOutlineRing, type RingPoint } from '@boardsesh/board-art-geometry/ring';
 import {
+  clampPointToPhoto,
   holdFromStroke,
   holdFromTap,
   holdRadiusBounds,
@@ -10,14 +11,17 @@ import {
   resizeFromDrag,
   snapRadiusToGrid,
   stepHoldRadius,
+  stepHoldRadiusBy,
 } from '../spray-hold-tools';
 import {
   boardToScreen,
+  fingertipScreenPt,
   holdReach,
   projectOnto,
-  RESIZE_HANDLE_GAP_PT,
+  RESIZE_HANDLE_CLEARANCE_PT,
   RESIZE_HANDLE_HIT_PT,
   resizeHandleAnchor,
+  resizeHandleDistance,
   screenToBoard,
 } from '../spray-gesture-math';
 import { initialSprayEditorState, sprayEditorReducer, type SprayEditorHold } from '../spray-hold-editor-reducer';
@@ -118,6 +122,31 @@ describe('stepHoldRadius', () => {
   });
 });
 
+describe('stepHoldRadiusBy', () => {
+  it('takes several grid steps in one go', () => {
+    expect(stepHoldRadiusBy(MEDIAN, MEDIAN, 1, WIDE_BOUNDS, 4)).toBeCloseTo(MEDIAN * Math.pow(1.05, 4));
+    expect(stepHoldRadiusBy(MEDIAN, MEDIAN, -1, WIDE_BOUNDS, 4)).toBeCloseTo(MEDIAN * Math.pow(1.05, -4));
+  });
+
+  it('stops at a bound part of the way, and is null with no room at all', () => {
+    const top = MEDIAN * Math.pow(1.05, Math.floor(gridPosition(WIDE_BOUNDS.max, MEDIAN)));
+    expect(stepHoldRadiusBy(top / 1.05, MEDIAN, 1, WIDE_BOUNDS, 4)).toBeCloseTo(top);
+    expect(stepHoldRadiusBy(top, MEDIAN, 1, WIDE_BOUNDS, 4)).toBeNull();
+  });
+});
+
+describe('clampPointToPhoto', () => {
+  it('keeps a point on the photo', () => {
+    expect(clampPointToPhoto(-30, 900, 1200, 800)).toEqual({ x: 0, y: 800 });
+    expect(clampPointToPhoto(1500, -2, 1200, 800)).toEqual({ x: 1200, y: 0 });
+    expect(clampPointToPhoto(600, 400, 1200, 800)).toEqual({ x: 600, y: 400 });
+  });
+
+  it('clamps nothing on a photo with no size yet', () => {
+    expect(clampPointToPhoto(-30, 900, 0, 0)).toEqual({ x: -30, y: 900 });
+  });
+});
+
 describe('resizeFromDrag', () => {
   /** A grab size four grid steps above the median: far enough that the two magnets never overlap. */
   const start = MEDIAN * Math.pow(1.05, 4);
@@ -190,13 +219,34 @@ describe('resizeFromDrag', () => {
     }
   });
 
-  it('grows monotonically with outward travel', () => {
-    let previous = 0;
-    for (let travel = -200; travel <= 200; travel += 2) {
-      const { r } = resizeFromDrag(travel, start, MEDIAN, WIDE_BOUNDS);
-      expect(r).toBeGreaterThanOrEqual(previous);
-      previous = r;
+  it('grows monotonically with outward travel, from inside or outside the bounds', () => {
+    // In bounds, a wide merge above the max, and a hold below the min.
+    for (const grabSize of [start, WIDE_BOUNDS.max * 1.5, WIDE_BOUNDS.min * 0.5]) {
+      let previous = 0;
+      for (let travel = -200; travel <= 200; travel += 2) {
+        const { r } = resizeFromDrag(travel, grabSize, MEDIAN, WIDE_BOUNDS);
+        expect(r).toBeGreaterThanOrEqual(previous);
+        previous = r;
+      }
     }
+  });
+
+  it('never moves an out-of-bounds hold against the drag', () => {
+    const merged = WIDE_BOUNDS.max * 1.5;
+    expect(resizeFromDrag(travelForSteps(3), merged, MEDIAN, WIDE_BOUNDS)).toMatchObject({
+      r: merged,
+      magnet: 'original',
+      atBound: true,
+    });
+    const undersized = WIDE_BOUNDS.min * 0.5;
+    expect(resizeFromDrag(travelForSteps(-3), undersized, MEDIAN, WIDE_BOUNDS)).toMatchObject({
+      r: undersized,
+      atBound: true,
+    });
+    // Back towards the bounds, it steps inside them.
+    expect(resizeFromDrag(travelForSteps(3), undersized, MEDIAN, WIDE_BOUNDS).r).toBeGreaterThanOrEqual(
+      WIDE_BOUNDS.min,
+    );
   });
 });
 
@@ -302,13 +352,62 @@ describe('projectOnto', () => {
   });
 });
 
+/**
+ * The shortest distance from a point to the handle's touch box: a
+ * `RESIZE_HANDLE_HIT_PT` square centred on the dot and turned 45°, as drawn.
+ */
+function distanceToTurnedBox(pointX: number, pointY: number, boxX: number, boxY: number): number {
+  const dx = pointX - boxX;
+  const dy = pointY - boxY;
+  // Into the box's own frame (rotate by -45°), where it is axis-aligned.
+  const localX = (dx + dy) * Math.SQRT1_2;
+  const localY = (dy - dx) * Math.SQRT1_2;
+  const half = RESIZE_HANDLE_HIT_PT / 2;
+  return Math.hypot(Math.max(Math.abs(localX) - half, 0), Math.max(Math.abs(localY) - half, 0));
+}
+
+describe('resizeHandleDistance', () => {
+  it('keeps the touch box off the hold and its fingertip disc, at any size and zoom', () => {
+    const viewport = { width: 390, height: 844 };
+    for (const scale of [0.8, 1, 2, 3, 6]) {
+      const fingertip = fingertipScreenPt(scale);
+      for (let reach = 2; reach <= 60; reach += 0.5) {
+        const ownDisc = Math.max(reach, fingertip);
+        // Every diagonal the flip can pick, from the middle and each corner of the screen.
+        for (const centre of [
+          { x: 195, y: 400 },
+          { x: 380, y: 400 },
+          { x: 195, y: 830 },
+          { x: 380, y: 830 },
+          { x: 10, y: 10 },
+        ]) {
+          const anchor = resizeHandleAnchor(centre, reach, fingertip, viewport, []);
+          const gap = distanceToTurnedBox(centre.x, centre.y, anchor.x, anchor.y);
+          expect(gap).toBeGreaterThanOrEqual(ownDisc + RESIZE_HANDLE_CLEARANCE_PT - 1e-9);
+        }
+      }
+    }
+  });
+
+  it('puts the dot of a median hold at 1x clear of the 22 pt fingertip grab', () => {
+    // ~8 pt reach on a 390 pt phone: the review's case.
+    const distance = resizeHandleDistance(8, fingertipScreenPt(1));
+    expect(distance - RESIZE_HANDLE_HIT_PT / 2).toBeGreaterThanOrEqual(22);
+  });
+
+  it('tracks the hold once it is bigger than a fingertip', () => {
+    expect(resizeHandleDistance(80, 22) - resizeHandleDistance(40, 22)).toBeCloseTo(40);
+  });
+});
+
 describe('resizeHandleAnchor', () => {
   const viewport = { width: 390, height: 600 };
-  const distance = 20 + RESIZE_HANDLE_GAP_PT;
+  const fingertip = 22;
+  const distance = resizeHandleDistance(20, fingertip);
   const offset = distance * Math.SQRT1_2;
 
-  it('sits 10 pt outside the hold on the bottom-right diagonal by default', () => {
-    const anchor = resizeHandleAnchor({ x: 150, y: 200 }, 20, viewport, []);
+  it('sits on the bottom-right diagonal by default', () => {
+    const anchor = resizeHandleAnchor({ x: 150, y: 200 }, 20, fingertip, viewport, []);
     expect(anchor.x).toBeCloseTo(150 + offset);
     expect(anchor.y).toBeCloseTo(200 + offset);
     expect(anchor.ux).toBeGreaterThan(0);
@@ -316,33 +415,34 @@ describe('resizeHandleAnchor', () => {
   });
 
   it('flips left at the right edge', () => {
-    const anchor = resizeHandleAnchor({ x: 370, y: 200 }, 20, viewport, []);
+    const anchor = resizeHandleAnchor({ x: 340, y: 200 }, 20, fingertip, viewport, []);
     expect(anchor.ux).toBeLessThan(0);
     expect(anchor.uy).toBeGreaterThan(0);
   });
 
   it('flips up when the bars are below it', () => {
     const bars = [{ x: 0, y: 240, width: 390, height: 360 }];
-    const anchor = resizeHandleAnchor({ x: 150, y: 200 }, 20, viewport, bars);
+    const anchor = resizeHandleAnchor({ x: 150, y: 200 }, 20, fingertip, viewport, bars);
     expect(anchor.uy).toBeLessThan(0);
     expect(anchor.ux).toBeGreaterThan(0);
   });
 
   it('goes to the top-left in the bottom-right corner', () => {
-    const anchor = resizeHandleAnchor({ x: 370, y: 580 }, 20, viewport, []);
+    const anchor = resizeHandleAnchor({ x: 340, y: 550 }, 20, fingertip, viewport, []);
     expect(anchor.ux).toBeLessThan(0);
     expect(anchor.uy).toBeLessThan(0);
   });
 
   it('keeps its whole touch box on screen when a diagonal is clear', () => {
-    const half = RESIZE_HANDLE_HIT_PT / 2;
+    // The turned box's corners reach this far along each axis.
+    const half = RESIZE_HANDLE_HIT_PT * Math.SQRT1_2;
     for (const centre of [
       { x: 20, y: 20 },
       { x: 370, y: 20 },
       { x: 20, y: 580 },
       { x: 195, y: 300 },
     ]) {
-      const anchor = resizeHandleAnchor(centre, 10, viewport, []);
+      const anchor = resizeHandleAnchor(centre, 10, fingertip, viewport, []);
       expect(anchor.x - half).toBeGreaterThanOrEqual(0);
       expect(anchor.y - half).toBeGreaterThanOrEqual(0);
       expect(anchor.x + half).toBeLessThanOrEqual(viewport.width);
@@ -351,12 +451,12 @@ describe('resizeHandleAnchor', () => {
   });
 
   it('falls back to a dot that is at least visible when no box fits, and to bottom-right failing that', () => {
-    // A strip too short for any 44 pt box, with the bottom-right dot past its right edge.
-    const strip = resizeHandleAnchor({ x: 388, y: 5 }, 0, { width: 390, height: 30 }, []);
+    // A strip too short for any turned box, with the bottom-right dot past its right edge.
+    const strip = resizeHandleAnchor({ x: 388, y: 5 }, 0, fingertip, { width: 390, height: 60 }, []);
     expect(strip.ux).toBeLessThan(0);
     expect(strip.uy).toBeGreaterThan(0);
     // A hold so big every dot is off screen.
-    const offScreen = resizeHandleAnchor({ x: 195, y: 300 }, 1000, viewport, []);
+    const offScreen = resizeHandleAnchor({ x: 195, y: 300 }, 1000, fingertip, viewport, []);
     expect(offScreen.ux).toBeGreaterThan(0);
     expect(offScreen.uy).toBeGreaterThan(0);
   });
