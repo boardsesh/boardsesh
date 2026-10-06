@@ -57,6 +57,25 @@ vi.mock('../use-integrations', () => ({
   useSyncSessionToIntegration: vi.fn(),
 }));
 
+// The local-queue toggle path (#6002 freshness): off by default, so every other
+// test here takes the network path as before.
+const localQueue = vi.hoisted(() => ({
+  db: null as { tag: string } | null,
+  offlineEnabled: false,
+  addFavoriteLocal: vi.fn(),
+  removeFavoriteLocal: vi.fn(),
+}));
+vi.mock('../../../../db', () => ({ getDatabaseHandle: () => localQueue.db }));
+vi.mock('../../../../providers/feature-flags-provider', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../providers/feature-flags-provider')>()),
+  useOfflineDownloadsEnabled: () => localQueue.offlineEnabled,
+}));
+vi.mock('../../../../hooks/use-offline-mutations', () => ({
+  addFavoriteLocal: localQueue.addFavoriteLocal,
+  removeFavoriteLocal: localQueue.removeFavoriteLocal,
+}));
+vi.mock('../../../../offline/offline-sync-adapter', () => ({ drainMutationQueue: vi.fn(async () => undefined) }));
+
 import { favoritesStore } from '@boardsesh/climb-actions';
 import { useFavoriteStatus, useToggleFavorite } from '../index';
 
@@ -71,6 +90,8 @@ function makeWrapper() {
 }
 
 beforeEach(() => {
+  localQueue.db = null;
+  localQueue.offlineEnabled = false;
   requestMock.mockReset();
   adapterAuth.isAuthenticated = true;
   favoritesStore.reset();
@@ -195,6 +216,30 @@ describe('useToggleFavorite', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ['favoriteStatus', 'kilter', 'climb-1', 40],
     });
+  });
+
+  // Climbs → Collection → Liked (#6002): un-hearting must drop the climb from the
+  // filtered list and hearting must add it, on both toggle paths.
+  it.each([
+    ['the network toggle', false],
+    ['the queued local toggle', true],
+  ])('refreshes the climb search lists after %s', async (_label, viaLocalQueue) => {
+    localQueue.db = viaLocalQueue ? { tag: 'db' } : null;
+    localQueue.offlineEnabled = viaLocalQueue;
+    requestMock.mockResolvedValue({ toggleFavorite: { favorited: true } });
+    const { queryClient, Wrapper } = makeWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    await result.current.mutateAsync({
+      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      currentlyFavorited: false,
+    });
+
+    if (viaLocalQueue) expect(localQueue.addFavoriteLocal).toHaveBeenCalled();
+    else expect(localQueue.addFavoriteLocal).not.toHaveBeenCalled();
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['searchClimbs'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['infiniteSearchClimbs'] });
   });
 
   // The climb list's hearts read `favoritesStore`, so the toggle owns keeping it
