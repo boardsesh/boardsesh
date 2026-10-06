@@ -721,10 +721,11 @@ export const SHARED_EVENTS = {
   // in the add-a-wall wizard; its first publish archives the old wall.
   //
   // Props: { source: 'board_sheet' | 'holds_locked' } (where the owner
-  // confirmed "Reset this wall?"). Fired once per NEW reset: when the reset
-  // resolves to a clone with nothing on it yet, never when an unfinished reset
-  // is reopened. The replacement's publish is the ordinary `Board Created` with
-  // `isReset: true`.
+  // confirmed "Reset this wall?"). Fired once per confirm tap, from the board
+  // sheet, never from the wizard: reopening an unfinished reset or starting it
+  // over fires nothing. The replacement's publish is the ordinary
+  // `Board Created` with `isReset: true`, so the ratio between the two is
+  // confirms per completed reset.
   SprayWallResetStarted: 'Spray Wall Reset Started',
   // Board presence — "now on the wall" (board-level collaboration, keyed on the
   // shared board_id resolved from the BLE serial). `boardId` is attached as an

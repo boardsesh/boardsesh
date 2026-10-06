@@ -20,10 +20,11 @@
 //                  size — itself — so a second id space would only ever hold the
 //                  same number twice.
 //
-// The wall VERSION is deliberately absent from all of this: a reset makes new
-// `spray_wall_versions` / `spray_wall_holds` rows, never a new layout or size,
-// so every climb ever set on the wall keeps pointing at the same
-// `(board_type, layout_id)` partition and stays findable.
+// The wall VERSION is deliberately absent from all of this: a published hold
+// edit makes new `spray_wall_versions` / `spray_wall_holds` rows, never a new
+// layout or size, so every climb ever set on the wall keeps pointing at the same
+// `(board_type, layout_id)` partition and stays findable. A reset is different:
+// it clones the wall into a new one, with its own layout, and archives the old.
 //
 // Rows for any of it land in SW-04; this file is the shape they must take.
 
@@ -85,15 +86,16 @@ export const MAX_ARCHIVED_SPRAY_WALLS_PER_USER = 50;
 
 /**
  * Holds on one wall. A dense commercial spray wall runs 400-800 holds; 1500
- * leaves room for the densest real wall while bounding what a detector run, a
- * hold editor session and a reset match have to hold in memory at once.
+ * leaves room for the densest real wall while bounding what a detector run and a
+ * hold editor session have to hold in memory at once.
  */
 export const MAX_HOLDS_PER_WALL = 1500;
 
 /**
- * Versions of one wall — i.e. resets. A wall reset every month for four years
- * stays inside this. The cap exists because every version keeps its own photo
- * and its own `spray_wall_holds` generation.
+ * Versions of one wall: its first photo, then one per published hold edit, all
+ * before the wall's first climb locks its holds. (A reset makes a new wall, not
+ * a version.) The cap exists because every version keeps its own photo and its
+ * own `spray_wall_holds` generation.
  */
 export const MAX_VERSIONS_PER_WALL = 50;
 

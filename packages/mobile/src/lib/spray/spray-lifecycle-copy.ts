@@ -22,6 +22,10 @@ export function sprayWallLifecycleMessage(refusal: SprayWallLifecycleRefusal, t:
     case 'holdsLocked':
       return t('sprayWallErrors.holdsLocked');
     case 'resetRetired':
+      // Unreachable from this build: the server sends it only for the retired
+      // in-place reset endpoints, which nothing here calls any more. Kept so the
+      // code never falls through to the server's prose, and the copy tells a
+      // climber on an old build to update.
       return t('sprayWallErrors.resetRetired');
     case 'resetOwnerOnly':
       return t('sprayWallErrors.resetOwnerOnly');

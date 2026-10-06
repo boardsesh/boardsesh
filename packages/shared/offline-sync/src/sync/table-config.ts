@@ -209,14 +209,14 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
       'characteristics',
       'hold_fingerprint',
       // Spray-wall hold integrity (SW-15, #5448): how many of this climb's holds
-      // have since come off the wall, so `search-climbs-local.ts` can answer the
-      // Intact / Lost-holds filter instead of declining it.
+      // have since come off the wall, so `search-climbs-local.ts` can keep a
+      // published climb that lost a hold out of the listings, as the server does.
       //
       // ADDED WITHOUT BUMPING `refreshRevision` / `refreshColumns`, on purpose.
       // A bump means "every already-downloaded scope must re-crawl to backfill
       // this field" — that is every enabled Kilter and Tension catalogue, tens of
       // thousands of rows each, to fill in a column that is NULL on all of them
-      // (holds do not come off a catalogue board; only a spray reset writes it).
+      // (holds do not come off a catalogue board; only a spray hold edit writes it).
       // Spray scopes are new in this release, so no checkpoint predating this
       // column can exist for one, and the local predicate is NULL-safe
       // (`COALESCE(missing_hold_count, 0)`) for every row pulled before it — the

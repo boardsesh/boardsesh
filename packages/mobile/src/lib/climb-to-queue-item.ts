@@ -58,7 +58,7 @@ export function toClimbInput(climb: Climb): ClimbInput {
     // different holds, so without this the peer's board lights the wrong climb
     // instead of skipping it (canAddClimbToBoard rule 5).
     compatibleSizeIds: climb.compatibleSizeIds,
-    // How many holds this climb has lost to a spray-wall reset. A peer standing
+    // How many holds this climb has lost to a spray-wall hold edit. A peer standing
     // at the same wall sees the same gaps in the board art, so the number that
     // explains them has to travel with the climb.
     missingHoldCount: climb.missingHoldCount,
@@ -154,7 +154,7 @@ export function climbToQueueItem(climb: Climb, options?: { suggested?: boolean; 
       // Size compatibility, so a queued climb keeps the one signal that tells
       // Woods' two boards apart (see toClimbInput above).
       compatibleSizeIds: climb.compatibleSizeIds,
-      // How many holds this climb has lost to a spray-wall reset. Board
+      // How many holds this climb has lost to a spray-wall hold edit. Board
       // compatibility reads it to keep a climb that lost a hold queueable,
       // loggable and playable on its own wall, so a queued row must keep it.
       missingHoldCount: climb.missingHoldCount,

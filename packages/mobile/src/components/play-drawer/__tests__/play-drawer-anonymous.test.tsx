@@ -249,11 +249,6 @@ vi.mock('../SwitchBoardOverlay', () => ({ SwitchBoardOverlay: () => null }));
 vi.mock('../AngleSelectorSheet', () => ({ AngleSelectorSheet: () => null }));
 vi.mock('../../LogAscentSheet', () => ({ LogAscentSheet: () => null }));
 vi.mock('../../ClimbActionsSheet', () => ({ ClimbActionsSheet: () => null }));
-// The create-climb handoff, stubbed like every other collaborator above: it
-// reaches Sentry, which this suite has no runtime for.
-vi.mock('../../create-climb/use-create-climb-navigation', () => ({
-  useCreateClimbNavigation: () => ({ openRemix: vi.fn(), openEdit: vi.fn(), resetActionGuard: vi.fn() }),
-}));
 vi.mock('../../AddBetaVideoSheet', () => ({ AddBetaVideoSheet: () => null }));
 vi.mock('../logbook/LogbookFullSheet', () => ({ LogbookFullSheet: () => null }));
 vi.mock('../ClimberLogsSheet', () => ({ ClimberLogsSheet: () => null }));

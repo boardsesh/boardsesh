@@ -1,6 +1,5 @@
-// Spray wall telemetry (epic #5346, SW-17): the add-a-wall funnel, the reset
-// that opens it on a clone of a wall, and the remix offer that catches a climb a
-// reset broke.
+// Spray wall telemetry (epic #5346, SW-17): the add-a-wall funnel, and the reset
+// that opens it on a clone of a wall.
 //
 // The contract, one paragraph, mirrors board-render-events.ts:
 //
@@ -147,10 +146,10 @@ export type SprayResetSurface = 'board_sheet' | 'holds_locked';
 export type SprayWallResetStartedProps = { source: SprayResetSurface };
 
 /**
- * A new reset started: the owner confirmed "Reset this wall?" and the reset
- * resolved to a clone with nothing on it yet. Not fired when an unfinished reset
- * is reopened. Read against `Board Created` with `isReset: true` to see how many
- * resets reach a published replacement.
+ * The owner confirmed "Reset this wall?": once per confirm tap, never from the
+ * wizard (reopening an unfinished reset or starting it over fires nothing).
+ * Against `Board Created` with `isReset: true` it reads as confirms per
+ * completed reset.
  */
 export function sprayWallResetStarted(
   source: SprayResetSurface,

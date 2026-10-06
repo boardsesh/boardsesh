@@ -3,8 +3,9 @@ import { accumulateFramesToMaps } from '@boardsesh/board-constants/hold-states';
 
 /**
  * Window after first publish during which the setter can still edit a published
- * climb, on every board a spray wall included. The server enforces the same
- * rule in `updateClimb`.
+ * climb, on every board a spray wall included. The app is stricter than the
+ * current server here: `updateClimb` still exempts spray climbs from the window
+ * until #6183 ships, so for a spray climb this is the app's rule alone.
  */
 export const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
