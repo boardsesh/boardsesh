@@ -129,3 +129,369 @@ export function selectedDragIdAt(
   if (Math.hypot(x - selected[1], y - selected[2]) > Math.max(selected[3], fallbackRadius)) return 0;
   return holdIdAtPoint(flat, x, y, fallbackRadius, selected) === selected[0] ? selected[0] : 0;
 }
+
+/**
+ * A board point → a screen point on the gesture overlay. The exact inverse of
+ * {@link screenToBoard}: board → render px, then the board's
+ * `animatedZoomStyle` (scale about the container centre, then translate).
+ */
+export function boardToScreen(
+  boardX: number,
+  boardY: number,
+  scale: number,
+  translateX: number,
+  translateY: number,
+  containerWidth: number,
+  containerHeight: number,
+  boardScale: number,
+): { x: number; y: number } {
+  'worklet';
+  const centreX = containerWidth / 2;
+  const centreY = containerHeight / 2;
+  const renderX = boardScale > 0 ? boardX / boardScale : 0;
+  const renderY = boardScale > 0 ? boardY / boardScale : 0;
+  return {
+    x: (renderX - centreX) * scale + centreX + translateX,
+    y: (renderY - centreY) * scale + centreY + translateY,
+  };
+}
+
+/**
+ * A hold's farthest reach from its centre, in board px: its traced ring can
+ * stick out past `r`, a plain circle cannot.
+ */
+export function holdReach(hold: HoldGeometry): number {
+  'worklet';
+  let reach = hold.r;
+  const outline = hold.outline;
+  if (outline) {
+    for (let index = 0; index + 1 < outline.length; index += 2) {
+      reach = Math.max(reach, Math.hypot(outline[index], outline[index + 1]) * hold.r);
+    }
+  }
+  return reach;
+}
+
+/** An axis-aligned box in overlay points. */
+export type ScreenRect = { x: number; y: number; width: number; height: number };
+
+/** The resize handle's dot: where it sits and the outward direction a drag is measured along. */
+export type ResizeHandleAnchor = { x: number; y: number; ux: number; uy: number };
+
+/** The handle's touch box, in screen points: the 44 pt floor, whatever the zoom. */
+export const RESIZE_HANDLE_HIT_PT = 44;
+/** Bare space between the hold's own disc and the handle's touch box, in screen points. */
+export const RESIZE_HANDLE_CLEARANCE_PT = 2;
+
+/**
+ * {@link HIT_FALLBACK_SCREEN_PT} as it lands on screen at a zoom: a fingertip
+ * at 1x and above, shrinking with the board below it (the same `max(1, scale)`
+ * as {@link fallbackRadiusAt}).
+ */
+export function fingertipScreenPt(scale: number): number {
+  'worklet';
+  return (HIT_FALLBACK_SCREEN_PT * scale) / Math.max(1, scale);
+}
+
+/**
+ * How far the handle's dot sits from the hold's centre, in screen points.
+ *
+ * The touch box is turned 45° so a flat face looks at the hold, and that face
+ * stays {@link RESIZE_HANDLE_CLEARANCE_PT} outside the hold's own disc: its
+ * farthest point, or a fingertip, whichever is bigger. That disc is where a
+ * tap, a pick-up or a drag of the selected ring lands, so the handle never sits
+ * over the ring it resizes, at any zoom. The dot is the box's centre, so a
+ * small hold at 1x gets its dot 46 pt out, and a big or zoomed one 24 pt past
+ * its farthest point.
+ */
+export function resizeHandleDistance(reachPt: number, fingertipPt: number): number {
+  'worklet';
+  return Math.max(0, reachPt, fingertipPt) + RESIZE_HANDLE_HIT_PT / 2 + RESIZE_HANDLE_CLEARANCE_PT;
+}
+
+const DIAGONAL = Math.SQRT1_2;
+/** The diagonals the handle tries, in order: bottom-right first, where a right thumb reaches. */
+const HANDLE_DIRECTIONS: readonly (readonly [number, number])[] = [
+  [DIAGONAL, DIAGONAL],
+  [-DIAGONAL, DIAGONAL],
+  [DIAGONAL, -DIAGONAL],
+  [-DIAGONAL, -DIAGONAL],
+];
+
+function boxOverlaps(centreX: number, centreY: number, half: number, rect: ScreenRect): boolean {
+  'worklet';
+  return (
+    centreX + half > rect.x &&
+    centreX - half < rect.x + rect.width &&
+    centreY + half > rect.y &&
+    centreY - half < rect.y + rect.height
+  );
+}
+
+/**
+ * Where the resize handle goes for a hold whose centre is at `centre` on screen,
+ * whose farthest point is `reachPt` screen points out, and whose fingertip grab
+ * radius is `fingertipPt`.
+ *
+ * It sits {@link resizeHandleDistance} out on the bottom-right diagonal, and
+ * flips to the next diagonal (bottom-left, top-right, top-left) whenever its
+ * touch box — a 44 pt square turned 45°, so 62 pt across corner to corner —
+ * would leave the viewport or touch one of `avoidRects` (the chip bar and the
+ * bottom bar). When no diagonal is clear it
+ * takes the first whose dot is at least on screen and uncovered, and failing
+ * even that, bottom-right. Placed in screen space, so it is the same size at any
+ * zoom.
+ */
+export function resizeHandleAnchor(
+  centre: { x: number; y: number },
+  reachPt: number,
+  fingertipPt: number,
+  viewport: { width: number; height: number },
+  avoidRects: readonly ScreenRect[],
+): ResizeHandleAnchor {
+  'worklet';
+  const distance = resizeHandleDistance(reachPt, fingertipPt);
+  // The turned box's corners reach this far along each axis.
+  const half = RESIZE_HANDLE_HIT_PT * DIAGONAL;
+  let fallbackIndex = -1;
+  for (let index = 0; index < HANDLE_DIRECTIONS.length; index += 1) {
+    const [ux, uy] = HANDLE_DIRECTIONS[index];
+    const x = centre.x + ux * distance;
+    const y = centre.y + uy * distance;
+    let covered = false;
+    let dotCovered = false;
+    for (let rectIndex = 0; rectIndex < avoidRects.length; rectIndex += 1) {
+      if (boxOverlaps(x, y, half, avoidRects[rectIndex])) covered = true;
+      if (boxOverlaps(x, y, 0, avoidRects[rectIndex])) dotCovered = true;
+    }
+    const boxInside = x - half >= 0 && y - half >= 0 && x + half <= viewport.width && y + half <= viewport.height;
+    if (boxInside && !covered) return { x, y, ux, uy };
+    const dotInside = x >= 0 && y >= 0 && x <= viewport.width && y <= viewport.height;
+    if (fallbackIndex < 0 && dotInside && !dotCovered) fallbackIndex = index;
+  }
+  const [ux, uy] = HANDLE_DIRECTIONS[fallbackIndex < 0 ? 0 : fallbackIndex];
+  return { x: centre.x + ux * distance, y: centre.y + uy * distance, ux, uy };
+}
+
+/** A drag `(dx, dy)` measured along the unit vector `(ux, uy)`: positive is outward. */
+export function projectOnto(dx: number, dy: number, ux: number, uy: number): number {
+  'worklet';
+  return dx * ux + dy * uy;
+}
+
+/** The loupe's circle, in points. */
+export const LOUPE_SIZE_PT = 112;
+/** How far the loupe's centre sits from the touch: straight up, or out to one side. */
+export const LOUPE_OFFSET_PT = 88;
+/** The loupe shows the board this many times bigger than the zoom it is at… */
+export const LOUPE_ZOOM_MULTIPLE = 2;
+/** …up to this many times the unzoomed board. */
+export const LOUPE_MAX_MAGNIFICATION = 12;
+/** A touch this young that has not moved is still maybe a tap: no loupe yet. */
+export const LOUPE_DELAY_MS = 120;
+/** A touch that has moved this far is not a tap, however young. */
+export const LOUPE_SLOP_PT = 4;
+/**
+ * Room needed above the touch, past a bare fit, before a loupe that went to the
+ * side comes back above. Without it a finger resting right at the boundary
+ * would flick the loupe between the two every frame.
+ */
+export const LOUPE_RETURN_MARGIN_PT = 12;
+
+/** Where the loupe sits relative to the touch. */
+export type LoupeSide = 'above' | 'left' | 'right';
+
+/** The loupe's centre, in the host's points, and which side of the touch it is on. */
+export type LoupePlacement = { x: number; y: number; side: LoupeSide };
+
+/** How many times the loupe magnifies the unzoomed board, at a board zoom. */
+export function loupeMagnification(scale: number): number {
+  'worklet';
+  return Math.min(Math.max(scale, 0) * LOUPE_ZOOM_MULTIPLE, LOUPE_MAX_MAGNIFICATION);
+}
+
+/** True once a touch has lasted {@link LOUPE_DELAY_MS} or moved {@link LOUPE_SLOP_PT}: a tap never flashes the loupe. */
+export function loupeGateOpen(elapsedMs: number, movedPt: number): boolean {
+  'worklet';
+  return elapsedMs >= LOUPE_DELAY_MS || movedPt >= LOUPE_SLOP_PT;
+}
+
+function clampCentre(value: number, min: number, max: number): number {
+  'worklet';
+  // A host smaller than the loupe pins it to the near edge rather than inverting.
+  return Math.min(Math.max(value, min), Math.max(min, max));
+}
+
+/**
+ * Where the loupe goes for a touch at `(touchX, touchY)` in a `width` × `height`
+ * host, for a loupe `size` points across that must stay below `topSafe`.
+ *
+ * Its centre sits {@link LOUPE_OFFSET_PT} straight above the touch, so the
+ * finger never covers it. When there is no room above it moves the same
+ * distance out to one side, level with the touch: left by default, right when
+ * left would leave the host. It keeps the side it had (`prevSide`) for as long
+ * as that side fits, so it does not jump across the finger as the finger
+ * slides, and it only comes back above once there is
+ * {@link LOUPE_RETURN_MARGIN_PT} to spare. Whatever the side, it is clamped
+ * inside the host.
+ */
+export function loupePlacement(
+  touchX: number,
+  touchY: number,
+  width: number,
+  height: number,
+  size: number,
+  topSafe: number,
+  prevSide: LoupeSide,
+): LoupePlacement {
+  'worklet';
+  const half = size / 2;
+  const minX = half;
+  const maxX = width - half;
+  const minY = topSafe + half;
+  const maxY = height - half;
+  const aboveY = touchY - LOUPE_OFFSET_PT;
+  const margin = prevSide === 'above' ? 0 : LOUPE_RETURN_MARGIN_PT;
+  if (aboveY - half >= topSafe + margin) {
+    return { x: clampCentre(touchX, minX, maxX), y: clampCentre(aboveY, minY, maxY), side: 'above' };
+  }
+  const leftX = touchX - LOUPE_OFFSET_PT;
+  const rightX = touchX + LOUPE_OFFSET_PT;
+  const leftFits = leftX - half >= 0;
+  const rightFits = rightX + half <= width;
+  let side: LoupeSide;
+  if (prevSide === 'right' && rightFits) side = 'right';
+  else if (leftFits) side = 'left';
+  else if (rightFits) side = 'right';
+  // Neither fits (a host under twice the offset plus the loupe): stay put.
+  else side = prevSide === 'right' ? 'right' : 'left';
+  return {
+    x: clampCentre(side === 'left' ? leftX : rightX, minX, maxX),
+    y: clampCentre(touchY, minY, maxY),
+    side,
+  };
+}
+
+/**
+ * The translate that puts render point `(renderX, renderY)` of a board-sized
+ * view, scaled by `magnification`, at the centre of a loupe `size` points
+ * across.
+ *
+ * The view is laid out at the loupe's top-left and transformed with
+ * `[translateX, translateY, scale]`. RN scales about the view's own centre `c`
+ * and then translates, so a point `p` lands at `c + t + (p − c)·m`; setting
+ * that to `size / 2` gives `t = size/2 − c − (p − c)·m`.
+ */
+export function loupeInnerTransform(
+  renderX: number,
+  renderY: number,
+  magnification: number,
+  size: number,
+  renderWidth: number,
+  renderHeight: number,
+): { translateX: number; translateY: number } {
+  'worklet';
+  const centreX = renderWidth / 2;
+  const centreY = renderHeight / 2;
+  return {
+    translateX: size / 2 - centreX - (renderX - centreX) * magnification,
+    translateY: size / 2 - centreY - (renderY - centreY) * magnification,
+  };
+}
+
+/** One reading of the loupe feed: when the touch landed (0 for none) and where the finger is, in the board clip. */
+export type LoupeSample = { touchDownAt: number; x: number; y: number };
+
+/** What the loupe remembers about the touch it is following, between feed readings. */
+export type LoupeTrack = {
+  /** Where the touch started, for the movement half of the gate. */
+  startX: number;
+  startY: number;
+  /** The side it sat on at the last reading, kept so it does not jump across the finger. */
+  side: LoupeSide;
+  /** The gate has opened for this touch: the fade-in is running or done. */
+  shown: boolean;
+};
+
+/** The loupe's host, in points: where the board clip sits in it, its size, and the line it stays below. */
+export type LoupeHost = {
+  clipOffsetX: number;
+  clipOffsetY: number;
+  width: number;
+  height: number;
+  topSafe: number;
+};
+
+/**
+ * What one feed reading does to the loupe: `out` fades it, `in` fades it in now,
+ * `inAfterDelay` fades it in `delayMs` from now unless a later step replaces it,
+ * `keep` leaves the fade alone.
+ */
+export type LoupeFade = 'out' | 'in' | 'inAfterDelay' | 'keep';
+
+export type LoupeStep = {
+  /** The circle's new centre, or null to leave it where it is. */
+  placement: LoupePlacement | null;
+  track: LoupeTrack;
+  fade: LoupeFade;
+  /** For `inAfterDelay`: how long until the fade-in starts. */
+  delayMs: number;
+};
+
+/**
+ * The loupe's response to one reading of the feed, at `now` (`Date.now()`).
+ *
+ * A finger lifting (`touchDownAt` back to 0) fades it out and forgets the touch.
+ * A new touch starts above the finger and records where it started; one that
+ * is already past {@link LOUPE_DELAY_MS} (a 400 ms pick-up) shows at once,
+ * a younger one waits out the rest of the delay. The same touch keeps its side,
+ * and opens the gate early once it has moved {@link LOUPE_SLOP_PT}.
+ */
+export function stepLoupe(
+  previous: LoupeSample | null,
+  sample: LoupeSample,
+  track: LoupeTrack,
+  now: number,
+  host: LoupeHost,
+  size: number,
+): LoupeStep {
+  'worklet';
+  if (sample.touchDownAt === 0) {
+    const wasTracking = previous !== null && previous.touchDownAt !== 0;
+    return {
+      placement: null,
+      track: wasTracking ? { ...track, shown: false } : track,
+      fade: wasTracking ? 'out' : 'keep',
+      delayMs: 0,
+    };
+  }
+  const isNewTouch = previous === null || previous.touchDownAt !== sample.touchDownAt;
+  const placement = loupePlacement(
+    sample.x + host.clipOffsetX,
+    sample.y + host.clipOffsetY,
+    host.width,
+    host.height,
+    size,
+    host.topSafe,
+    isNewTouch ? 'above' : track.side,
+  );
+  if (isNewTouch) {
+    const elapsed = Math.max(0, now - sample.touchDownAt);
+    const shown = loupeGateOpen(elapsed, 0);
+    return {
+      placement,
+      track: { startX: sample.x, startY: sample.y, side: placement.side, shown },
+      fade: shown ? 'in' : 'inAfterDelay',
+      delayMs: shown ? 0 : LOUPE_DELAY_MS - elapsed,
+    };
+  }
+  if (track.shown) return { placement, track: { ...track, side: placement.side }, fade: 'keep', delayMs: 0 };
+  const moved = Math.hypot(sample.x - track.startX, sample.y - track.startY);
+  const shown = loupeGateOpen(0, moved);
+  return {
+    placement,
+    track: { ...track, side: placement.side, shown },
+    fade: shown ? 'in' : 'keep',
+    delayMs: 0,
+  };
+}

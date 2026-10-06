@@ -950,29 +950,125 @@ What the editor does with a wall is decided by this document rather than by tast
 - **It edits THE draft.** One draft per wall, so there is no version to choose:
   the `versionId` handed in is the open one, and publishing or discarding are the
   two ways out (see "One open draft per wall").
-- **Rings are holds, and a tap switches one off or on.** At rest there are no
-  finger modes. A tap on a ring toggles it, a tap on bare wall adds a hold at the
-  wall's median size, a long press picks a ring up for the chip bar (Smaller,
-  Bigger, Trace, Join, Remove) and the same touch can carry on into a move, and
-  two fingers always zoom. Trace and Join are one-shot tools with a banner and a
-  Cancel. The one mode is add mode, below. The gesture surface (`SprayEditGestureOverlay`) hit-tests on the UI
+- **Rings are holds. A tap picks one, and a tap on the picked one switches it.**
+  At rest there are no finger modes, and no single tap changes the wall. The
+  rule is pure (`resolveEditTap` in `spray-edit-tap.ts`, tested row by row) and
+  the screen's `handleTap` is a switch over its answer:
+
+  | Tap on | Result |
+  |---|---|
+  | a ring that is not picked (ON, OFF or maybe) | pick it: the chip bar for its role appears, nothing changes |
+  | the picked ring | switch it: ON goes OFF (a ghost), OFF or maybe goes ON; it stays picked, so a third tap reverses it |
+  | bare wall, with a ring picked | put it down |
+  | bare wall, nothing picked | nothing changes; a ripple plays where it landed and the add-a-hold hint asks to be shown |
+
+  A double tap is pick + switch with no added delay. A TAP on bare wall never
+  adds a hold: that was the old rule, and on a dense wall it put a stray hold
+  under every missed tap. A long press does the deliberate things:
+
+  | Press and hold (400 ms) on | Result |
+  |---|---|
+  | a ring | pick it up: it is selected, and the same touch carries on into a move |
+  | bare wall | place a hold: a median-size circle appears under the finger (medium haptic), slides with it, and lands where the finger lifts — one `ADD_HOLD` then `SELECT`, so one undo step, and the resize handle is on it straight away |
+
+  Placement lives in `SprayEditGestureOverlay`: the long press no longer fails
+  at touch-down on bare wall, it arms instead, and still steps aside for Join,
+  a second finger, or a wall at the hold cap (`canAdd`). The circle is
+  `placeHoldSV` on the UI thread, drawn by `SprayPlacementPreview` inside the
+  zoom transform; the screen clears it in the layout effect of the commit that
+  draws the real ring, so the two never both show or both vanish. A finger that
+  slid past the board's edge lands the hold on the edge, and so does a move
+  (`clampPointToPhoto`): a hold centred off the photo would be saved and drawn
+  nowhere. A zoomed
+  board's one-finger pan still wins a finger that moves, because it activates
+  at 8 px and the long press allows 10. Add mode (the +, below) stays for
+  adding several in a row, and the screen reader keeps "Add a hold in the
+  middle of the view". Two fingers always zoom. Trace and Join are one-shot
+  tools with a banner and a Cancel; Join still takes its second hold with a
+  tap. The one mode is add mode, below.
+- **Resizing is a handle on a 5% grid** (`SprayResizeHandle`). The selected
+  ring carries a 12 pt dot (white edge) at the centre of a 44 pt touch box
+  turned 45°, on the bottom-right diagonal. The box's flat face towards the
+  hold stays 2 pt outside the hold's own disc — its farthest point, or the
+  22 pt fingertip grab around a small hold, whichever is bigger
+  (`resizeHandleDistance`) — so the dot sits 46 pt from a small hold's centre
+  at 1x and 24 pt past a big or zoomed hold's edge. The handle has its own
+  gesture detector, and a touch on it never reaches the edit surface under it;
+  keeping it off the disc is what keeps a tap on the selected ring a toggle and
+  a press there a pick-up at every zoom. The spec's "10 pt outside" would have
+  laid the box over the whole ring of a typical hold at 1x. It flips to another
+  diagonal when its touch box would leave the board or sit under the bottom
+  dock (toast, chip bar) or bar (`resizeHandleAnchor`, which the dock's
+  measured top feeds). It is placed in screen space, so it is the same size at
+  any zoom. One finger
+  drags it and the hold scales uniformly about its centre: the drag is
+  projected onto the handle's outward diagonal at grab time and mapped through
+  `scale = exp(pt / 120)` (`RESIZE_GAIN_PT`), so one 5% step is about 6 pt of
+  travel at any zoom and on any size of hold. The size snaps to the grid
+  `median × 1.05ⁿ`, with two magnets that each capture within half a step: the
+  size at grab time and the wall's median. Bounds are
+  `max(MIN_HOLD_RADIUS_BOARD_PX, 0.3 × median)` to
+  `min(4 × median, 0.2 × the photo's shorter side)` (`holdRadiusBounds`); a
+  hold already outside them (a wide merge) can still be dragged back to its own
+  size, and a drag away from the bounds leaves it at that size rather than
+  clamping it the other way. Each new step ticks (selection haptic, at most once per 30 ms), a
+  magnet ticks light, and reaching a bound bumps medium once. A pill above the
+  handle reads "+15%" against the grab size, or "Typical" on the median. The
+  full-strength ring scales live on the UI thread (`resizeScaleSV` on
+  `SelectedHoldOverlay`, with its stroke divided back to constant width) over
+  the ghost at the original size; JS hears from the drag only when the step
+  changes and once on release, which commits one `RESIZE_HOLD` (one undo
+  step). Resizing an OFF ring or a maybe switches it ON and meets the cap
+  check, and a refusal snaps the ring back. The chip bar's − and + step the
+  same grid, one step and one undo step per press, always strictly past the
+  current size (`stepHoldRadius`), so "+" can never shrink a hold. In add mode
+  the hold just added keeps the handle, without the chip bar, until the next
+  add or the next touch on the wall. None of this touches the ring contract:
+  outlines are stored in radius units, so a resize changes `r` alone.
+- **The chip bar is one set per role** (`SprayHoldChipBar`). ON: `[−] [+]
+  Trace Join Switch off` (− and + are 44 pt icon chips). An OFF ghost: `Switch
+  on  Delete`. A maybe: `Keep  Switch off`. The picked ring is drawn in its
+  role's line pattern (`SelectedHoldOverlay`'s `role`), so the second tap
+  visibly switches it.
+- **Nothing is removed by accident.** Every switch-off is a ghost — a hold this
+  session drew by hand included, which used to vanish on its second tap. A
+  ghost is never written (`buildSprayHoldWritePlan` skips rejected holds and a
+  re-seed drops a hand-drawn one), and only a ghost offers Delete, so taking a
+  hold off the photo is two deliberate steps. Delete, Join, Keep all maybes and
+  Start over raise `SprayUndoToast` ("Joined 2 holds · Undo") in the bottom
+  dock above the chip bar for 4 s; the next edit takes it down, so its Undo can
+  only undo what it names, and an edit the reducer refused raises no toast at
+  all (`actionChangesWall`: the action must move `past`). The toast's Undo
+  always takes back a wall edit, never the last corner of a Corners outline
+  in progress the way the bar's Undo does. It is drawn inside the screen because the app's global toast draws
+  behind this modal. Toggles raise no toast: the ring is still there.
+- **Undo has Redo.** The reducer keeps a `future` beside the capped `past`:
+  Undo pushes the present onto it, `REDO` pops it back, and every new edit,
+  `LOAD` and `MARK_SAVED` empties it. `MARK_REMOVED` scrubs it the same way it
+  scrubs the past, or a Redo could bring back a hold the server has already
+  stamped off. Selecting leaves it alone. In the bar, Undo and Redo share one
+  split glass pill and the Redo half only fades in while there is something to
+  redo; Redo spotlights the hold it changes with the same violet halo as Undo. The gesture surface (`SprayEditGestureOverlay`) hit-tests on the UI
   thread only to decide whether a long press has a ring under it, and whether a
   touch-down claims a drag of the selected ring — which it does only when the
   full hit test at that point names the selection, so a touch on a neighbour
   inside a big selection's grab radius never moves the selection. Every tap is
   resolved in JS by `holdAtPoint` (smallest containing hold first, then the
   nearest centre within `max(1.4r, 22 pt on screen)`). With maybes hidden, a tap
-  on a hidden maybe switches it ON rather than adding a duplicate on top of it.
+  on a hidden maybe picks it, so the chip bar can keep it or switch it off.
   Moving, resizing or tracing an OFF ring or a maybe switches it ON, so each is
   held to the hold cap like an add. To a screen reader the wall is one image
   labelled with the counts, and activating it does nothing: the bar and the chip
   bar are the accessible path. The wall also keeps its "Add a hold in the middle
-  of the view" action in the resting editor. Add mode itself is a touch tool.
-- **Add mode is for the holds detection missed** (#5906). At rest, a tap on bare
-  wall adds a circle only when no ring is within the hit radius above, and on a
-  dense wall that radius covers most bare wall. A glass + in the bottom bar,
-  between the count capsule and Publish, turns add mode on. It is an icon, not
-  a label, so the row still fits a 375 pt phone with the German Publish label.
+  of the view" action in the resting editor, and its named actions follow the
+  chip bar's roles (Make smaller / Make bigger for an ON ring, Delete for a
+  ghost). Make smaller / Make bigger move four grid steps (about 22%) per
+  swipe and one undo step, where a chip press moves one. Add mode itself is a
+  touch tool.
+- **Add mode is for the holds detection missed** (#5906). At rest a tap never
+  adds, so a press and hold places one at a time and the glass + in the bottom
+  bar, after the count capsule, is how a run of them goes in. It is an icon, not a label, so the row fits a 375 pt phone with the
+  Undo | Redo pill at its widest and German counts.
   While add mode is on the + becomes a check, and the check and the banner's
   Done both leave it. It is the one tool that is a mode rather than one-shot: it
   stays on until Done, so several missed holds go in one go. In add mode no
@@ -996,8 +1092,14 @@ What the editor does with a wall is decided by this document rather than by tast
     second finger lands during a finger stroke, the stroke is dropped and the
     pinch zooms (Trace works the same way); a Pencil stroke still ignores a
     resting palm.
-  - Corners: each tap places a corner, with a live preview drawn on the UI
-    thread so corners never round-trip through React per frame. The corners
+  - Corners: touch the photo, slide to the exact spot and lift; the corner
+    lands where the finger lifted, and a quick tap still drops one where it
+    landed. `PolygonTapOverlay` is a Manual recognizer that owns one pointer
+    from touch-down to lift, as Draw does, so a slide positions the corner
+    instead of panning the board: a zoomed board pans with two fingers here
+    too (`pinchPans`). A second finger drops the corner and the pinch zooms.
+    A live preview is drawn on the UI thread so corners never round-trip
+    through React per frame. The corners
     live in one shared value, and the corner count React shows is derived from
     it. Tapping the first corner once there are 3, or pressing the Finish chip,
     closes the outline. The close target is 11 pt, capped at 35% of the
@@ -1012,6 +1114,50 @@ What the editor does with a wall is decided by this document rather than by tast
     fixed, with Corners-specific copy (`errors.cornersCross`,
     `cornersTooFew`, `cornersHollow`). Done closes a valid outline before
     leaving; one that cannot close keeps add mode on with its error.
+- **A loupe follows the finger** (`SprayLoupe`), so a thumb never hides the
+  spot it is drawing, placing or moving. It shows during Draw and Trace
+  strokes, a Corners touch, a move of the selected ring, a press-and-hold
+  placement and a pick-up — and only once the touch has lasted 120 ms or
+  moved 4 pt (`loupeGateOpen`), so a tap never flashes it. A gesture that is
+  already long, like the 400 ms pick-up, shows it at once. Fingers only: a
+  Pencil's tip hides nothing, so a stylus never gets one. It is a 112 pt
+  circle centred 88 pt above the touch; with no room above it moves the same
+  distance to the side, left by default and right when left would leave the
+  screen, keeps that side while it fits, and only comes back above with
+  12 pt to spare so it cannot flicker at the boundary (`loupePlacement`). It
+  magnifies the unzoomed board `min(2 × zoom, 12)` times, with a hairline
+  crosshair and a centre dot on the exact point under the finger. It is
+  mounted in the screen, outside the board's clip, so it can overhang the
+  board's edge and draws over the chrome; it takes no touches and is hidden
+  from screen readers. Inside the circle is a board-sized view moved by one
+  animated translate and scale (`loupeInnerTransform`, which accounts for RN
+  scaling about the view's centre: `t = size/2 − c − (p − c)·m`), holding a
+  second `expo-image` of the same URI (a memory-cache hit), the same dim, and
+  second instances of `SprayHoldSvgLayer` (with the loupe's magnification as
+  its scale, so strokes stay thin, and the board's zoom as its
+  `geometryScaleSV`, so the Corners dots and close target are magnified with
+  the photo and the target covers exactly what `PolygonTapOverlay` closes
+  on), `SelectedHoldOverlay` (with
+  `syncSharedValues={false}`: the board's copy owns re-syncing) and
+  `SprayPlacementPreview`. Those layers draw from shared values, so the
+  stroke, the Corners preview, the move and the placed circle show in the
+  loupe for free. The loupe cannot read the board's zoom transform from
+  where it is mounted, so the overlay that owns the touch writes a
+  `SprayLoupeFeed` (`spray-loupe-feed.ts`): the touch-down time (0 when off),
+  the finger in the board clip's points, the point under it in render px,
+  and the zoom. An overlay unmounted mid-touch (a tool chip or Done tapped
+  with a finger still on the wall) never finalizes, so each one clears the
+  feed on unmount while it still carries its own touch
+  (`useReleaseLoupeOnUnmount`). The loupe's own state across readings — the
+  touch's start point, its side and whether the gate has opened — is one
+  pure step per reading (`stepLoupe`). It is always mounted at opacity 0, and
+  only transforms and opacity animate, so a gesture never re-renders it; the
+  second ring layer re-renders only when the rings do, or on the first touch
+  after a pinch that crossed a stroke step (the feed's zoom is written at
+  touch-down). `DrawStrokeOverlay` takes the feed as
+  an opt-in `loupe` prop, which the catalogue editor never passes. The
+  resize handle has none (the finger is beside the ring, not on it), and
+  the anchors step has none yet.
 - **The spray editor zooms to 8x, every other board to 4x.** The editor passes
   `maxScale={SPRAY_EDITOR_MAX_SCALE}` (8) to `InteractiveFilterBoard`, which
   hands it to `useZoomPanGesture`. Everything else keeps `MAX_SCALE = 4` from
@@ -1057,9 +1203,10 @@ What the editor does with a wall is decided by this document rather than by tast
   fade in (one SVG group's opacity) and a success buzz closes it; a resumed
   draft opens without it. The board, the bars and the "?" take no touch until
   the reveal ends, so a tap cannot land on a ring that is not drawn yet. A
-  toggled, added or undone hold is marked by `SprayHoldSpotlight`, one small
-  box at that hold that springs, ripples or pulses violet; a ring switched off
-  pops in the OFF ghost's dotted style, never as a solid ON ring. Publishing
+  toggled, added, undone or redone hold is marked by `SprayHoldSpotlight`, one
+  small box at that hold that springs, ripples or pulses violet; a ring switched
+  off pops in the OFF ghost's dotted style, never as a solid ON ring, and a tap
+  on bare wall with nothing picked throws the ripple alone (`ping`). Publishing
   sweeps the ON rings violet (`SprayPublishSweep`) and turns the count capsule
   into a checkmark, and `onCommitted` fires once that has played, about 700 ms
   later. From the press until then `onHandoverChange(true)` tells the host, and
@@ -1074,12 +1221,18 @@ What the editor does with a wall is decided by this document rather than by tast
   Reduce Motion the reveal is a 150 ms fade, taps change the rings with no
   extra motion, the undo halo is a static 300 ms highlight, the count only
   crossfades, and publishing shows the checkmark alone.
-- **Three first-run hints, one at a time** (`use-spray-editor-hints.ts`): tap
-  to switch a ring, then (only with maybes on the wall) tap a dashed maybe to
-  keep it, then after three edits press and hold to fix a ring. Each is marked
-  seen when the climber does the thing or closes it, never just for showing;
-  the top-right "?" replays all three for the session. None show in screenshot
-  mode or on a read-only wall.
+- **First-run hints, one at a time** (`use-spray-editor-hints.ts`): tap a
+  ring to pick it and again to switch it, then (only with maybes on the wall)
+  tap a dashed maybe and Keep it, then after three edits press and hold to move
+  a ring. A fourth, "Press and hold to add a hold.", waits to be asked: the
+  first tap on bare wall with nothing picked shows it ahead of the others, and
+  adding a hold (a press and hold, or add mode) or closing it uses it up. Each is marked seen when the climber does the thing
+  or closes it, never just for showing; picking a ring or tapping bare wall is
+  not an edit for the long-press gate. The top-right "?" replays them all for
+  the session. None show in screenshot mode or on a read-only wall. The tap
+  hint is stored under a new key (`onboarding_tip_spray_tap_select_seen`, not
+  the old `..._toggle_seen`), so a climber who learned "a tap switches a ring"
+  sees the new rule once.
 - **Provenance survives a round trip.** The render payload carries each stored
   hold's `source` and `confidence`, the registry carries them into photo space,
   and the seed reads them back; without that, an accepted detector hold is
@@ -1094,8 +1247,9 @@ What the editor does with a wall is decided by this document rather than by tast
   constants live in `spray-hold-tools.ts` with their provenance (on a 240-hold
   validation wall: 224 finds, 189 ON, 35 maybes); re-derive them once a seg
   precision curve is checked in. Tapping a
-  confident find switches it OFF (a faint dotted ghost, never written); tapping
-  a maybe or a ghost switches it ON. A stored hold switched off is queued for
+  picked confident find switches it OFF (a faint dotted ghost, never written);
+  tapping a picked maybe or ghost switches it ON, and a maybe's Switch off chip
+  makes it a ghost too. A stored hold switched off is queued for
   `removeSprayWallHolds`, and switching it back takes it off the queue.
 - **One pure step builds the commit.** `prepareCommit` accepts the confident
   finds and builds the write plan in one go, and is idempotent: run on its own
@@ -1104,7 +1258,7 @@ What the editor does with a wall is decided by this document rather than by tast
   The screen still refuses a second press while one is in flight.
 - **A save clears the dirty flags of the holds it actually wrote**
   (`MARK_SAVED` takes the ids), rather than waiting for the refetch, and drops
-  the undo history — a snapshot from before the write still holds those finds
+  the undo history and the redo future — a snapshot from before the write still holds those finds
   as unwritten, and undoing into it would let the next commit write them again. Until they
   are clear, a second press of Save re-sends holds the server has already applied
   — and a correction re-sent names an id the resolver has just superseded, which

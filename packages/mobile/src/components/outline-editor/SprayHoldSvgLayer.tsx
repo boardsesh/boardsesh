@@ -94,8 +94,15 @@ type SprayHoldSvgLayerProps = {
    * by `PolygonTapOverlay`. Omitted, the corners preview is not mounted at all.
    */
   polygonSV?: SharedValue<number[]>;
-  /** The board's live zoom, from `FilterBoardTransformContext`. */
+  /** The board's live zoom, from `FilterBoardTransformContext`. Strokes are drawn thinner by it. */
   scaleSV: SharedValue<number>;
+  /**
+   * The zoom the Corners dots and close target are sized by, when it is not
+   * `scaleSV`. The loupe draws its copy at its own magnification (`scaleSV`, so
+   * its strokes stay hairlines) but the close target must cover what
+   * `PolygonTapOverlay` tests on the board, which is set by the BOARD's zoom.
+   */
+  geometryScaleSV?: SharedValue<number>;
   boardWidth: number;
   boardHeight: number;
   renderWidth: number;
@@ -124,6 +131,7 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
   draftPointsSV,
   polygonSV,
   scaleSV,
+  geometryScaleSV,
   boardWidth,
   boardHeight,
   renderWidth,
@@ -131,6 +139,7 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
 }: SprayHoldSvgLayerProps) {
   const { brandColors } = useTheme();
   const zoomStep = useZoomStrokeStep(scaleSV);
+  const geometryZoomStep = useZoomStrokeStep(geometryScaleSV ?? scaleSV);
 
   // The expensive half — one path string per hold — keyed on the holds alone,
   // so a selection on a 1500-hold wall only re-joins strings.
@@ -171,13 +180,8 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
     };
   }, [zoomStep]);
 
-  // Dot and target radii are GEOMETRY, not stroke, so vectorEffect does nothing
-  // for them: convert points to board px through the viewBox (board px per
-  // render px) and the zoom, snapped like every width above.
-  const boardPxPerPoint = renderWidth > 0 ? boardWidth / renderWidth / zoomStep : 0;
   // Plain numbers for the worklet to capture, rather than the RING object.
-  const dotRadius = RING.cornerDotRadius * boardPxPerPoint;
-  const targetRadius = RING.closeTargetRadius * boardPxPerPoint;
+  const { dotRadius, targetRadius } = cornerMarkRadii(boardWidth, renderWidth, geometryZoomStep);
   const closeExtentFraction = CORNERS_CLOSE_EXTENT_FRACTION;
   const fallbackPolygonSV = useSharedValue<number[]>([]);
   const cornersSV = polygonSV ?? fallbackPolygonSV;
@@ -369,6 +373,27 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
     </Svg>
   );
 });
+
+/**
+ * The Corners dots and close target as radii in board px, at a zoom already
+ * snapped to a {@link ZOOM_STROKE_STEPS} step.
+ *
+ * They are GEOMETRY, not stroke, so vectorEffect does nothing for them: points
+ * go to board px through the viewBox (board px per render px) and the zoom.
+ * At a step zoom the target is exactly `PolygonTapOverlay`'s close radius
+ * (`CORNERS_CLOSE_TARGET_PT * boardScale / zoom`).
+ */
+export function cornerMarkRadii(
+  boardWidth: number,
+  renderWidth: number,
+  zoomStep: number,
+): { dotRadius: number; targetRadius: number } {
+  const boardPxPerPoint = renderWidth > 0 ? boardWidth / renderWidth / zoomStep : 0;
+  return {
+    dotRadius: RING.cornerDotRadius * boardPxPerPoint,
+    targetRadius: RING.closeTargetRadius * boardPxPerPoint,
+  };
+}
 
 /**
  * The live zoom, snapped to {@link ZOOM_STROKE_STEPS}, as React state.

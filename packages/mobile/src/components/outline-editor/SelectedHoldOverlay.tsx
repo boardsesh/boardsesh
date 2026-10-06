@@ -1,12 +1,14 @@
 import React, { useLayoutEffect, useMemo } from 'react';
 import { StyleSheet } from 'react-native';
-import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
+import Animated, { useAnimatedProps, useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 import { overlays } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { holdPathData } from './spray-hold-path';
-import { useZoomStrokeStep } from './SprayHoldSvgLayer';
+import { holdReach } from './spray-gesture-math';
+import { RING, useZoomStrokeStep } from './SprayHoldSvgLayer';
 import type { HoldGeometry } from './spray-hold-tools';
+import type { SprayHoldRole } from './spray-hold-editor-reducer';
 
 /** Selected-ring styles in screen points at 1x, divided by the zoom step like every ring. */
 const SELECTED = {
@@ -15,12 +17,20 @@ const SELECTED = {
   fillOpacity: 0.3,
 } as const;
 
+const AnimatedPath = Animated.createAnimatedComponent(Path);
+
 /** Room around the hold's own extent for the halo, in render px. */
 const HALO_MARGIN_RENDER_PX = 8;
 
 type SelectedHoldOverlayProps = {
   /** The selected hold in board px, or null. Its id is the revision key for the preview. */
   hold: (HoldGeometry & { id: number }) | null;
+  /**
+   * How the selected hold reads on the wall. The line keeps the ring layer's
+   * pattern — solid ON, dashed maybe, dotted OFF ghost — so tapping the
+   * selected ring again visibly switches it. Omitted reads as ON.
+   */
+  role?: SprayHoldRole;
   /**
    * Bumped after every committed move, so the preview re-syncs to the reducer's
    * answer even when the move changed nothing (a refused move snaps back).
@@ -32,9 +42,23 @@ type SelectedHoldOverlayProps = {
   dragOffsetYSV: SharedValue<number>;
   /** The hold a drag is moving right now, 0 when none. Owned by the gesture overlay. */
   dragHoldIdSV: SharedValue<number>;
+  /**
+   * The resize handle's live scale for this hold (1 at rest), and the hold it
+   * is resizing (0 when none). Owned by `SprayResizeHandle`; the ring follows
+   * it on the UI thread and the layout effect below hands it back to 1 once
+   * the reducer has the new radius.
+   */
+  resizeScaleSV: SharedValue<number>;
+  resizeHoldIdSV: SharedValue<number>;
   scaleSV: SharedValue<number>;
   /** Board px per render px. */
   boardScale: number;
+  /**
+   * False for a copy that only draws: the loupe's. The copy on the board owns
+   * re-syncing the shared values above, and two owners would race each other
+   * over the same commit. Defaults to true.
+   */
+  syncSharedValues?: boolean;
 };
 
 /**
@@ -55,16 +79,22 @@ type SelectedHoldOverlayProps = {
  * While this is mounted, `SprayHoldSvgLayer` draws the same hold only as a faint
  * OFF ghost (its `selectedId`), so this is the one full-strength ring: over the
  * ghost at rest, away from it mid-drag, and over it again once the move lands.
+ * A resize works the same way: the box scales on the UI thread
+ * (`resizeScaleSV`) while the ghost underneath keeps the size the hold had.
  */
 export const SelectedHoldOverlay = React.memo(function SelectedHoldOverlay({
   hold,
+  role = 'on',
   revision,
   selectedHoldSV,
   dragOffsetXSV,
   dragOffsetYSV,
   dragHoldIdSV,
+  resizeScaleSV,
+  resizeHoldIdSV,
   scaleSV,
   boardScale,
+  syncSharedValues = true,
 }: SelectedHoldOverlayProps) {
   const { brandColors } = useTheme();
   const zoomStep = useZoomStrokeStep(scaleSV);
@@ -73,7 +103,13 @@ export const SelectedHoldOverlay = React.memo(function SelectedHoldOverlay({
   // the path below changes in this same commit, and a frame drawn with the new
   // path at the old base would jump.
   useLayoutEffect(() => {
+    if (!syncSharedValues) return;
     selectedHoldSV.value = hold ? [hold.id, hold.cx, hold.cy, hold.r] : [];
+    // The radius the handle let go at is now the reducer's (or was refused), so
+    // the live scale goes back to 1 in the same commit that redraws the path at
+    // the new size — never a frame drawn at both. A resize still under the
+    // finger keeps its scale.
+    if (resizeHoldIdSV.value === 0) resizeScaleSV.value = 1;
     // A long press selects AND starts the drag, and the finger can be moving
     // before JS renders that selection. Zeroing the offset then would snap the
     // ring back under a finger that is still carrying it, so a drag of this
@@ -81,19 +117,21 @@ export const SelectedHoldOverlay = React.memo(function SelectedHoldOverlay({
     if (hold && dragHoldIdSV.value === hold.id) return;
     dragOffsetXSV.value = 0;
     dragOffsetYSV.value = 0;
-  }, [hold, revision, selectedHoldSV, dragOffsetXSV, dragOffsetYSV, dragHoldIdSV]);
+  }, [
+    syncSharedValues,
+    hold,
+    revision,
+    selectedHoldSV,
+    dragOffsetXSV,
+    dragOffsetYSV,
+    dragHoldIdSV,
+    resizeScaleSV,
+    resizeHoldIdSV,
+  ]);
 
   const shape = useMemo(() => {
     if (!hold) return null;
-    // The hold's farthest reach from its centre: the traced ring can stick out
-    // past `r`, a plain circle cannot.
-    let reach = hold.r;
-    if (hold.outline) {
-      for (let index = 0; index + 1 < hold.outline.length; index += 2) {
-        reach = Math.max(reach, Math.hypot(hold.outline[index], hold.outline[index + 1]) * hold.r);
-      }
-    }
-    const extent = reach + HALO_MARGIN_RENDER_PX * boardScale;
+    const extent = holdReach(hold) + HALO_MARGIN_RENDER_PX * boardScale;
     return {
       extent,
       sizeRender: (extent * 2) / boardScale,
@@ -107,16 +145,35 @@ export const SelectedHoldOverlay = React.memo(function SelectedHoldOverlay({
     if (base.length < 4 || boardScale <= 0) return { opacity: 0, transform: [{ translateX: 0 }, { translateY: 0 }] };
     const centreX = (base[1] + dragOffsetXSV.value) / boardScale;
     const centreY = (base[2] + dragOffsetYSV.value) / boardScale;
+    // Scaled about the box's own centre (RN's transform origin), which is the
+    // hold's centre, so a resize grows the ring in place.
     return {
       opacity: 1,
-      transform: [{ translateX: centreX - sizeRender / 2 }, { translateY: centreY - sizeRender / 2 }],
+      transform: [
+        { translateX: centreX - sizeRender / 2 },
+        { translateY: centreY - sizeRender / 2 },
+        { scale: resizeScaleSV.value },
+      ],
     };
   }, [boardScale, sizeRender]);
 
-  if (!shape) return null;
-
   const widthAtZoom = SELECTED.width / zoomStep;
   const haloAtZoom = SELECTED.haloWidth / zoomStep;
+  // The view's scale would thicken the line with the ring; dividing it back out
+  // keeps the stroke the width every other ring has while the handle is dragged.
+  const haloProps = useAnimatedProps(
+    () => ({ strokeWidth: haloAtZoom / Math.max(resizeScaleSV.value, 0.01) }),
+    [haloAtZoom],
+  );
+  const lineProps = useAnimatedProps(
+    () => ({ strokeWidth: widthAtZoom / Math.max(resizeScaleSV.value, 0.01) }),
+    [widthAtZoom],
+  );
+
+  if (!shape) return null;
+
+  const pattern = role === 'off' ? RING.offDash : role === 'maybe' ? RING.maybeDash : null;
+  const dashAtZoom = pattern ? pattern.map((dash) => dash / zoomStep) : undefined;
 
   return (
     <Animated.View
@@ -128,19 +185,21 @@ export const SelectedHoldOverlay = React.memo(function SelectedHoldOverlay({
         height={shape.sizeRender}
         viewBox={`${-shape.extent} ${-shape.extent} ${shape.extent * 2} ${shape.extent * 2}`}
       >
-        <Path
+        <AnimatedPath
+          animatedProps={haloProps}
           d={shape.path}
           fill={brandColors.primaryFill}
           fillOpacity={SELECTED.fillOpacity}
           stroke={brandColors.primaryFill}
-          strokeWidth={haloAtZoom}
           vectorEffect="non-scaling-stroke"
         />
-        <Path
+        <AnimatedPath
+          animatedProps={lineProps}
           d={shape.path}
           fill="none"
           stroke={overlays.onScrim}
-          strokeWidth={widthAtZoom}
+          strokeDasharray={dashAtZoom}
+          strokeLinecap={role === 'off' ? 'round' : undefined}
           vectorEffect="non-scaling-stroke"
         />
       </Svg>

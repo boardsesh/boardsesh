@@ -1,21 +1,24 @@
 /**
- * The spray hold editor's whole state, as one pure reducer with undo.
+ * The spray hold editor's whole state, as one pure reducer with undo and redo.
  *
- * Modelled on `framesReducer` (`@boardsesh/create-climb-react`): a present and a
- * capped past, with every mutating action pushing the state it replaced.
- * Snapshot-based rather than inverse-op based on purpose — a merge is not
- * trivially invertible, and "undo twice after a join and a remove" has to work.
- * Structural sharing keeps the cost honest: a snapshot re-points at the same
- * hold objects, so undoing over a hundred-hold wall copies a hundred
- * references, not a hundred holds. There is no redo: the screen offers one
- * Undo button and nothing else.
+ * Modelled on `framesReducer` (`@boardsesh/create-climb-react`): a present, a
+ * capped past and a future, with every mutating action pushing the state it
+ * replaced onto the past and dropping the future. Snapshot-based rather than
+ * inverse-op based on purpose — a merge is not trivially invertible, and "undo
+ * twice after a join and a delete" has to work. Structural sharing keeps the
+ * cost honest: a snapshot re-points at the same hold objects, so undoing over a
+ * hundred-hold wall copies a hundred references, not a hundred holds. Undo
+ * moves the present onto the future and Redo moves it back; any new edit
+ * forgets the future, as every undo stack does.
  *
  * Holds live in a record keyed by id, not an array, because every per-hold
  * operation on this screen — the tap hit test, the selection ring, the dirty
  * check — would otherwise be a scan per hold per render on a wall that is
  * allowed to carry 1500 of them.
  *
- * The climber's model is "rings are holds, tap to switch one off or on". Every
+ * The climber's model is "rings are holds, tap one to pick it, tap it again to
+ * switch it off or on". Nothing a tap does takes a hold off the photo: a switched
+ * off ring stays drawn as a ghost until the climber Deletes it. Every
  * hold therefore has a ROLE (`holdRole`): on, maybe or off. The role is derived
  * from `review` plus the detector's confidence, so a fresh detector run needs no
  * per-hold decision to open with its confident finds already on.
@@ -78,6 +81,8 @@ export type SprayEditorPresent = {
 
 export type SprayEditorState = SprayEditorPresent & {
   past: readonly SprayEditorPresent[];
+  /** What Redo brings back, the next one LAST. Emptied by every new edit. */
+  future: readonly SprayEditorPresent[];
 };
 
 export type SprayEditorAction =
@@ -87,13 +92,19 @@ export type SprayEditorAction =
   | { type: 'START_OVER'; holds: readonly SprayEditorHold[] }
   /** Pure selection. Never pushes history — undo is for the wall, not the cursor. */
   | { type: 'SELECT'; id: number | null }
-  /** The tap: ON goes OFF, OFF or MAYBE goes ON. See the case for the four kinds of hold. */
+  /** Tapping the selected ring: ON goes OFF (a ghost), OFF or MAYBE goes ON. */
   | { type: 'TOGGLE_HOLD'; id: number }
+  /** An ON ring or a MAYBE goes OFF (a ghost). Already OFF does nothing. The maybe's "Switch off" chip. */
+  | { type: 'SWITCH_OFF'; id: number }
   | { type: 'ADD_HOLD'; geometry: HoldGeometry }
   | { type: 'MOVE_HOLD'; id: number; cx: number; cy: number }
   | { type: 'RESIZE_HOLD'; id: number; r: number }
   | { type: 'SET_OUTLINE'; id: number; geometry: HoldGeometry }
-  /** Take a hold off entirely — no ghost left behind. */
+  /**
+   * Take a hold off entirely — no ghost left behind. The screen only offers it
+   * for a ghost, so every removal is two deliberate steps and the second one
+   * says so with an undo toast.
+   */
   | { type: 'DELETE'; id: number }
   /** Exactly two ids, or nothing happens. */
   | { type: 'MERGE'; ids: readonly number[] }
@@ -113,10 +124,10 @@ export type SprayEditorAction =
    * `dirty` on those too would let the next re-seed silently delete them.
    *
    * Clears without waiting for the refetch, so a second commit cannot re-send
-   * holds the server has already applied. It also drops the undo history: a
-   * snapshot from before the write still holds those finds as pending with no
-   * dirty flag, and undoing into it would let the next commit write them a
-   * second time.
+   * holds the server has already applied. It also drops the undo history and
+   * the redo future: a snapshot from before the write still holds those finds
+   * as pending with no dirty flag, and undoing (or redoing) into it would let
+   * the next commit write them a second time.
    */
   | { type: 'MARK_SAVED'; writtenIds: readonly number[] }
   /**
@@ -128,10 +139,11 @@ export type SprayEditorAction =
    * the session would be refused with "Hold N is not on this wall".
    */
   | { type: 'MARK_REMOVED' }
-  | { type: 'UNDO' };
+  | { type: 'UNDO' }
+  | { type: 'REDO' };
 
 export function initialSprayEditorState(holds: readonly SprayEditorHold[] = []): SprayEditorState {
-  return { ...presentFromHolds(holds), past: [] };
+  return { ...presentFromHolds(holds), past: [], future: [] };
 }
 
 function lowestId(holds: readonly SprayEditorHold[]): number {
@@ -148,8 +160,9 @@ function presentFromHolds(holds: readonly SprayEditorHold[]): SprayEditorPresent
   return { holds: byId, removedIds: [], selectedId: null, nextLocalId: lowestId(holds) - 1 };
 }
 
-function capPast(past: readonly SprayEditorPresent[]): readonly SprayEditorPresent[] {
-  return past.length > HISTORY_LIMIT ? past.slice(past.length - HISTORY_LIMIT) : past;
+/** Keeps the newest `HISTORY_LIMIT` snapshots. Both stacks keep their newest entry last. */
+function capHistory(history: readonly SprayEditorPresent[]): readonly SprayEditorPresent[] {
+  return history.length > HISTORY_LIMIT ? history.slice(history.length - HISTORY_LIMIT) : history;
 }
 
 function snapshotOf(state: SprayEditorState): SprayEditorPresent {
@@ -161,9 +174,9 @@ function snapshotOf(state: SprayEditorState): SprayEditorPresent {
   };
 }
 
-/** Commit a new present, recording the one it replaced. */
+/** Commit a new present, recording the one it replaced. A new edit forgets what Redo could bring back. */
 function commit(state: SprayEditorState, present: SprayEditorPresent): SprayEditorState {
-  return { ...state, ...present, past: capPast([...state.past, snapshotOf(state)]) };
+  return { ...state, ...present, past: capHistory([...state.past, snapshotOf(state)]), future: [] };
 }
 
 function withoutId(ids: readonly number[], id: number): readonly number[] {
@@ -192,10 +205,34 @@ function commitEdit(state: SprayEditorState, hold: SprayEditorHold): SprayEditor
   });
 }
 
+/**
+ * A maybe or an OFF ring goes ON. A stored hold keeps its own dirty flag:
+ * switching it off and back on changed nothing about it, and re-sending it as a
+ * correction would supersede its id for no reason.
+ */
+function switchOn(state: SprayEditorState, hold: SprayEditorHold): SprayEditorState {
+  return commitEdit(state, { ...hold, review: 'accepted', dirty: hold.id > 0 ? hold.dirty : true });
+}
+
+/**
+ * An ON ring or a maybe goes OFF and stays drawn as a ghost — every kind of
+ * hold, a ring this session drew by hand included, so no tap ever makes a hold
+ * vanish. A ghost is never written (`buildSprayHoldWritePlan` skips rejected
+ * holds, and a re-seed drops a hand-drawn one), and a stored one is queued for
+ * removal too, so Publish takes it off the draft.
+ */
+function switchOff(state: SprayEditorState, hold: SprayEditorHold): SprayEditorState {
+  return commit(state, {
+    ...snapshotOf(state),
+    holds: { ...state.holds, [hold.id]: { ...hold, review: 'rejected' } },
+    removedIds: withId(state.removedIds, hold.id),
+  });
+}
+
 export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorAction): SprayEditorState {
   switch (action.type) {
     case 'LOAD': {
-      return { ...state, ...presentFromHolds(action.holds), past: [] };
+      return { ...state, ...presentFromHolds(action.holds), past: [], future: [] };
     }
 
     case 'START_OVER': {
@@ -214,34 +251,13 @@ export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorA
     case 'TOGGLE_HOLD': {
       const hold = state.holds[action.id];
       if (!hold) return state;
+      return holdRole(hold) === 'on' ? switchOff(state, hold) : switchOn(state, hold);
+    }
 
-      if (holdRole(hold) !== 'on') {
-        // A maybe or an OFF ring goes ON. A stored hold keeps its own dirty flag:
-        // switching it off and back on changed nothing about it, and re-sending
-        // it as a correction would supersede its id for no reason.
-        const next: SprayEditorHold = { ...hold, review: 'accepted', dirty: hold.id > 0 ? hold.dirty : true };
-        return commitEdit(state, next);
-      }
-
-      if (hold.id < 0 && hold.source === 'MANUAL') {
-        // A hold this session drew by hand has no second life as a ghost: the
-        // second tap on bare wall's new ring simply takes it away again.
-        const holds = { ...state.holds };
-        delete holds[hold.id];
-        return commit(state, {
-          ...snapshotOf(state),
-          holds,
-          selectedId: state.selectedId === hold.id ? null : state.selectedId,
-        });
-      }
-
-      // A detector find or a stored hold goes OFF and stays drawn as a ghost. A
-      // stored one is queued for removal too, so Publish takes it off the draft.
-      return commit(state, {
-        ...snapshotOf(state),
-        holds: { ...state.holds, [hold.id]: { ...hold, review: 'rejected' } },
-        removedIds: withId(state.removedIds, hold.id),
-      });
+    case 'SWITCH_OFF': {
+      const hold = state.holds[action.id];
+      if (!hold || holdRole(hold) === 'off') return state;
+      return switchOff(state, hold);
     }
 
     case 'ADD_HOLD': {
@@ -352,9 +368,10 @@ export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorA
       // The removals have LANDED, so they leave the undo stack with them. Without
       // this, undoing past a join whose upsert then failed would restore the
       // victim as a live hold — and the next commit would name an id the server
-      // has already stamped off, which is refused for the whole batch. History
-      // is rewritten rather than cleared: everything else in the session is still
-      // undoable.
+      // has already stamped off, which is refused for the whole batch. The redo
+      // future is scrubbed the same way, or a Redo could bring one back too.
+      // History is rewritten rather than cleared: everything else in the session
+      // is still undoable.
       const spent = new Set(state.removedIds);
       const scrub = (present: SprayEditorPresent): SprayEditorPresent => {
         const holds: Record<number, SprayEditorHold> = {};
@@ -368,7 +385,12 @@ export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorA
           nextLocalId: present.nextLocalId,
         };
       };
-      return { ...state, ...scrub(snapshotOf(state)), past: state.past.map(scrub) };
+      return {
+        ...state,
+        ...scrub(snapshotOf(state)),
+        past: state.past.map(scrub),
+        future: state.future.map(scrub),
+      };
     }
 
     case 'MARK_SAVED': {
@@ -381,18 +403,47 @@ export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorA
         if (clears) changed = true;
       }
       if (!changed) return state;
-      return { ...state, holds, removedIds: [], past: [] };
+      return { ...state, holds, removedIds: [], past: [], future: [] };
     }
 
     case 'UNDO': {
       if (state.past.length === 0) return state;
       const previous = state.past[state.past.length - 1];
-      return { ...state, ...previous, past: state.past.slice(0, -1) };
+      return {
+        ...state,
+        ...previous,
+        past: state.past.slice(0, -1),
+        future: capHistory([...state.future, snapshotOf(state)]),
+      };
+    }
+
+    case 'REDO': {
+      if (state.future.length === 0) return state;
+      const next = state.future[state.future.length - 1];
+      return {
+        ...state,
+        ...next,
+        past: capHistory([...state.past, snapshotOf(state)]),
+        future: state.future.slice(0, -1),
+      };
     }
 
     default:
       return state;
   }
+}
+
+/**
+ * Would `action` put a step on the undo stack — that is, change the wall?
+ *
+ * The screen raises its undo toast only when this holds, so a refused join or
+ * a Keep all maybes with nothing to keep never leaves an Undo that would take
+ * back the edit before it. Anything that leaves `past` alone (a selection, a
+ * refused edit) returns false; the toast's take-down rule leans on the same
+ * identity check, so a selection never takes the toast down either.
+ */
+export function actionChangesWall(state: SprayEditorState, action: SprayEditorAction): boolean {
+  return sprayEditorReducer(state, action).past !== state.past;
 }
 
 // ---------------------------------------------------------------------------
