@@ -51,8 +51,10 @@ The constants live in `packages/shared/board-config/src/spray-config.ts`
 
 ### What the version is not
 
-A reset writes new `spray_wall_versions` and `spray_wall_holds` rows. It never
-writes a new layout or a new size. So every climb ever set on the wall keeps
+A hold edit writes new `spray_wall_versions` and `spray_wall_holds` rows. It
+never writes a new layout or a new size. (A reset is a different thing: it clones
+the wall, so the clone gets a layout of its own. See
+[Archive and reset](#archive-and-reset).) So every climb ever set on the wall keeps
 pointing at the same `(board_type, layout_id)` partition and stays findable, and
 the mobile render registry folds the version into its cache keys instead of into
 `sizeId`.
@@ -67,15 +69,15 @@ and two sequences.
 | `spray_walls` | `id`, with `board_uuid` and `layout_id` both unique | One wall. Its canonical frame (`reference_width` / `reference_height`), its published version, its hold count, and a soft delete. Owner, name, angle and visibility stay on the `user_boards` row it points at. |
 | `spray_wall_versions` | `id`, unique `(wall_id, version_number)` | One photograph: its key in the private bucket, its pixel size, its four anchors, the photo→canonical homography, and `draft` / `published` / `superseded`. |
 | `spray_wall_holds` | `(wall_id, hold_id)` | One hold across its whole life: centre, radius and silhouette in the canonical frame, the version that installed it, the version that removed it (NULL = still on the wall), and where it moved from. |
-| `spray_climb_lineage` | `child_uuid` | A remix and the climb it came from, plus the wall version it was rebuilt on. |
+| `spray_climb_lineage` | `child_uuid` | A remix and the climb it came from, plus the wall version it was rebuilt on. Kept, no longer written: remix was retired. |
 
 What a climber sees is the wall at `spray_walls.current_version_id`, not "every
-hold whose `removed_version_id` is NULL": while a reset is still a draft, its
+hold whose `removed_version_id` is NULL": while a hold edit is still a draft, its
 added holds already have rows and its removals are only removals AT the draft, so
 the NULL test would leak an unpublished layout the moment the owner started
 editing. `aliveHolds(wallId)` resolves the published version; `aliveHolds(wallId,
 n)` reads the wall as it stood at version `n`, which is how a climb set two
-resets ago renders on the photo it was set against.
+versions ago renders on the photo it was set against.
 
 `board_climbs.missing_hold_count` is the materialised integrity number: how many
 of a climb's holds have come off the wall. NULL on every other board type.
@@ -88,7 +90,7 @@ BOTH the hole id and the placement id).
 The catalogue rows are immutable identity. A climb's frames string
 (`p<placementId>r<code>`) points at a placement id forever, and every climb ever
 set on the wall keeps pointing at the same `(board_type, layout_id)` partition.
-Wall state is the opposite — it changes on every reset:
+Wall state is the opposite — it changes on every hold edit:
 
 - a hold's lifecycle (installed in version 2, taken off in version 5) is a
   **range**, and a placement row has exactly one present tense;
@@ -98,13 +100,13 @@ Wall state is the opposite — it changes on every reset:
   a tracer — which is what `hold_outline_overrides` is, and why it is not reused.
 
 Putting those on `board_placements` would make every other board carry nullable
-spray columns, and would force a reset to rewrite catalogue rows that climb
+spray columns, and would force a hold edit to rewrite catalogue rows that climb
 frames depend on. Keying side tables by the same ids — the
 `board_hold_features` / `hold_outline_overrides` precedent — keeps the catalogue
-frozen and the wall's history append-only. A reset therefore stamps a removal and
-appends rows; it never updates geometry in place and never deletes. **A moved
-hold is removed + added** — the review can link `moved_from_hold_id` so remix
-suggests the successor — rather than an update of the row that moved.
+frozen and the wall's history append-only. A hold edit therefore stamps a removal
+and appends rows; it never updates published geometry in place and never deletes.
+A correction to an inherited hold is a removal plus an addition, and
+`moved_from_hold_id` links the two.
 
 ### Every per-wall catalogue row is `is_listed = false`
 
@@ -116,15 +118,15 @@ not a cosmetic flag.** `getPopularConfigs` and the sitemap shards also drop
 catalogue tables has only `is_listed` to go on, so a wall seeded listed would put
 a climber's home wall on the www homepage rail. A test on the helper asserts it.
 
-## Canonical coordinates and matching
+## Canonical coordinates
 
-Two photographs of one wall have to agree on where a hold is, or a reset cannot
-tell a hold that came off from a hold the climber simply stood further left to
-photograph. That agreement is the **canonical frame**, and
-[SW-06 (#5439)](https://github.com/boardsesh/boardsesh/issues/5439) is the pure
-TypeScript that produces it: `@boardsesh/spray-wall-geometry` for the frame and
-the matcher, `@boardsesh/hold-detection` for turning a model's tensors into
-circles in the first place.
+A hold's position has to mean the same thing in every version of a wall, or a
+hold edit would move holds under climbs. That agreement is the **canonical
+frame**, and [SW-06 (#5439)](https://github.com/boardsesh/boardsesh/issues/5439)
+is the pure TypeScript that produces it: `@boardsesh/spray-wall-geometry` for the
+frame, `@boardsesh/hold-detection` for turning a model's tensors into circles in
+the first place. The hold matcher that compared two photos of one wall shipped
+with SW-06 too; it went with the in-place reset (see [Resets](#resets)).
 
 ### The frame
 
@@ -142,9 +144,9 @@ Three consequences worth stating plainly.
   photo. Warping would cost a re-encode per version and lose pixels at the edges
   for no gain.
 - **A version without anchors stores the identity**, which is the honest answer
-  for a wall whose photo *is* its frame. Anchors are optional at creation and
-  required at the first reset, because that is the first moment two photographs
-  have to be compared.
+  for a wall whose photo *is* its frame. Anchors are optional. Version 1 is the
+  only photo a wall takes: later versions are hold edits that reuse its photo,
+  anchors and homography exactly.
 - **A degenerate quad is refused at the door**, not papered over.
   `isSolvableAnchorQuad` wants a bounding box at least 8 px on a side and an
   enclosed area of at least 2% of that box. Version 1's anchors define the frame
@@ -158,62 +160,6 @@ local Jacobian: the scale that preserves the hold's **area**. A circle under a
 projective map is an ellipse, so there is no single right radius; taking one axis
 would make every hold on the compressed far side of an off-axis photo visibly
 wrong in the other direction.
-
-### The gates
-
-`matchHolds(previousAlive, detections)` compares the last published version's
-alive holds with what the new photo produced — both already in canonical
-coordinates. A pair has to clear **both** gates before it is a candidate at all:
-
-| Gate | Value | Why |
-| --- | --- | --- |
-| Centroid distance | `< 0.6 x` the pair's mean radius | Well inside the hold. Two neighbouring bolts on even a dense spray wall sit further apart than that, so a hold can never be matched to its neighbour. |
-| Circle IoU | `> 0.3` | Catches the same-centre, wrong-size case the distance gate waves through: a detector that boxed a whole volume where a crimp used to be. |
-
-What survives is scored `0.5 x (distance / mean r) + 0.3 x (1 - IoU) + 0.2 x
-colour distance`, and a **Hungarian assignment** minimises the total. Not greedy
-nearest-neighbour: on a row of identical holds with one missing, greedy pairs
-each old hold with the nearest new one, cascades the error down the row and
-reports the *last* hold as removed instead of the one that actually went.
-
-The gates are strict enough — 0.6 of a radius — that the feasible graph is very
-sparse: a hold has one candidate, occasionally two. So the matcher prunes before
-it solves. Rows and columns with no feasible pair at all go straight to `removed`
-and `added`, and what remains is split into connected components of the feasible
-graph and solved one component at a time. That is exact rather than an
-approximation — no feasible pair crosses a component boundary, so no optimal
-assignment can either — and it is what makes a **full** reset cheap: every pair
-fails the gates, and handing the whole 1,500 x 1,500 matrix of nothing to the
-solver took 14.7 s on the dev box against 86 ms pruned.
-
-The colour term is optional, and **on a reset today it never runs**. The matcher
-compares colours only when BOTH sides carry a descriptor of the same length, and
-the holds already on the wall carry none: `spray_wall_holds` has nowhere to put
-one. So `proposeSprayWallReset` accepts a `colour` on each detection and decides
-on geometry alone regardless. The machinery is real — `@boardsesh/hold-detection`'s
-`describeColour` produces the descriptor (mean Lab plus an eight-bin
-saturation-weighted hue histogram), and when either side lacks one the term is
-dropped and the remaining weights are renormalised so the gates and the ambiguity
-ratio keep meaning the same thing — it is the stored half that is missing.
-**SW-12b (#5485)** adds it.
-
-The result is four sets: `kept` (with a confidence), `removed`, `added`, and
-`lowConfidence` — a kept hold that had a second detection inside its gates and
-nearly as cheap, which is exactly what a reviewer should be shown.
-
-### Why a moved hold is removed + added
-
-Climbs reference **positions**. A hold unbolted and re-bolted 40 cm along is not
-the hold those climbs used any more: every climb through it now asks the climber
-to reach somewhere the wall has nothing. Calling it "the same hold, moved" would
-silently rewrite each of those climbs into a different problem while keeping its
-grade, its ticks and its comments attached to the new shape.
-
-So the matcher reports one removal and one addition, the affected climbs get a
-`missing_hold_count` and a badge, and `suggestMoves()` separately offers the
-pairing — nearest added detection within 3 radii — as a `movedFromHoldId` hint
-for the review UI, so a remix can start from the successor. The suggestion
-changes nothing about what was matched.
 
 ### Recognition service and shared post-processing
 
@@ -329,22 +275,20 @@ history menu, which does not support removal prevention.
 | Cap | Value | Why |
 | --- | --- | --- |
 | `MAX_SPRAY_WALLS_PER_USER` | 10 | Each wall costs a private-bucket photo per version plus a catalogue layout row. Well past what a home climber or a gym needs, low enough that a scripted account cannot fill the bucket. |
-| `MAX_HOLDS_PER_WALL` | 1500 | A dense commercial spray wall runs 400–800 holds. The cap bounds what a detector run, a hold-editor session and a reset match hold in memory at once. |
-| `MAX_VERSIONS_PER_WALL` | 50 | A wall reset monthly for four years stays inside it. Every version keeps its own photo and its own hold generation. |
-| `MAX_REVISIONS_PER_CLIMB` | 50 | A spray climb can be edited with no time limit, so its history needs a bound. A rename every week for a year stays inside it. Applies to every board, but only a spray climb can get near it. |
+| `MAX_HOLDS_PER_WALL` | 1500 | A dense commercial spray wall runs 400–800 holds. The cap bounds what a detector run and a hold-editor session hold in memory at once. |
+| `MAX_VERSIONS_PER_WALL` | 50 | Version 1 is the photo; every later version is a published hold edit, and those stop at the first published climb. Each keeps its own hold generation. |
 | `MAX_ARCHIVED_SPRAY_WALLS_PER_USER` | 50 | A reset archives the old wall, and an archived wall keeps its photos and catalogue rows. Archived walls do not count toward the 10 live walls, so they need their own bound. Fifty is a monthly reset for four years. See [Archive and reset](#archive-and-reset). |
 
-The first three are reachable by ordinary use — ten walls is a gym with a lot of bays,
-1,500 holds is a dense commercial spray wall, fifty resets is four years of
-monthly changes — so each is **said out loud with its number** rather than met as
-"Something went wrong":
+The first two are reachable by ordinary use — ten walls is a gym with a lot of
+bays, 1,500 holds is a dense commercial spray wall — and the version cap can be,
+so each is **said out loud with its number** rather than met as "Something went
+wrong":
 
 | Cap | Where the climber reads it |
 | --- | --- |
 | Walls | A hint on the create step, BEFORE it bites (`sprayCaps.wallsHint`), and the refusal itself. Meeting the cap on the publish step with a photo already uploaded is the worst moment to learn it. |
 | Holds | The hold editor's save refusal (`sprayEditor.errors.tooManyHolds`). |
-| Versions | The reset flow's upload failure (`sprayCaps.versions`). |
-| Revisions | Nowhere. This cap never refuses an edit: at 50 the oldest edit is dropped and the original is kept, so there is nothing to tell the climber. See [Climb revisions](#climb-revisions). |
+| Versions | `sprayCaps.versions`, on `SPRAY_WALL_VERSION_LIMIT_REACHED`. |
 
 The numbers come from `spray-config.ts` through
 `packages/mobile/src/lib/spray/spray-cap-copy.ts`, never typed into a catalog
@@ -391,10 +335,11 @@ Everything a wall needs is in `packages/shared-schema/src/schema/spray-walls.ts`
 | `sprayWallRenderData(uuid, version)` | The whole render payload in one round trip: the photo, the homography and the holds alive at that version. Omit `version` for the published one. |
 | `mySprayWalls` | Every wall the caller owns, drafts included. |
 | `createSprayWall(input)` | The `user_boards` row plus the three catalogue rows, all unlisted. |
-| `createSprayWallVersion(input)` | Adopts an uploaded photo as a new DRAFT version and solves its homography. |
-| `upsertSprayWallHolds(input)` | Adds or corrects holds on a draft. A hold with no `id` gets a new catalogue id; one with an `id` has its geometry rewritten. |
-| `removeSprayWallHolds(input)` | Takes holds off as of a draft. |
+| `createSprayWallVersion(input)` | A new DRAFT: version 1 from an uploaded photo (solving its homography), or a hold edit on the published photo (`sourceVersionId`). A new photo on a published wall is refused. |
+| `upsertSprayWallHolds(input)` | Adds or corrects holds on a draft. A hold with no `id` gets a new catalogue id; one with an `id` has its geometry rewritten. Refused once the wall has a published climb. |
+| `removeSprayWallHolds(input)` | Takes holds off as of a draft. Refused once the wall has a published climb. |
 | `publishSprayWallVersion(input)` | Makes a draft the generation climbers set against. |
+| `resetSprayWall(input)` | Clones the wall for a reset. See [Archive and reset](#archive-and-reset). |
 | `setSprayWallRenderSettings(input)` | Stores the wall's default look on `spray_walls.render_settings`, or clears it with `null`. The plain edit gate (below). |
 | `deleteSprayWall(uuid)` | Soft delete. Catalogue rows and climbs stay. |
 | `reportSprayWall(input)` | Report a wall. Any signed-in viewer who can see it, once per wall (SW-17, below). |
@@ -470,11 +415,13 @@ anchors must be omitted from the request, including when the source has none.
 This path makes no upload or storage-metadata request and leaves the canonical
 frame unchanged. A missing source photo is refused. Holds are inherited through
 the normal version read, keeping their existing ids until an edit supersedes or
-removes one. Old clients that supply an uploaded `photoId` keep the same behavior.
+removes one. An uploaded `photoId` is for version 1 only: on a published wall it
+is the retired in-place reset and is refused (`SPRAY_WALL_RESET_RETIRED`).
 
 Version 1 defines the frame: with anchors it is the anchor quad's bounding
-rectangle, without them it is the photo's own pixel box. Later versions **inherit**
-the frame, because every existing hold's coordinates are in it. There are no
+rectangle, without them it is the photo's own pixel box. Later versions are hold
+edits and **inherit** the frame, because every existing hold's coordinates are
+in it. There are no
 user-entered wall dimensions anywhere (owner decision 2026-09-14: we just render
 the photo).
 
@@ -512,9 +459,11 @@ INVERSE at draw time. SW-06 (#5439) moves the module into
 
 ### Adding and removing holds
 
-Holds are only editable on a **draft** version. Published and superseded versions
-are immutable, because a climb set against a published generation reads its holds
-by id — rewriting that generation's geometry would silently move every climb on it.
+Holds are only editable on a **draft** version, and only until the wall has a
+published climb (see [Holds lock at the first published climb](#holds-lock-at-the-first-published-climb)).
+Published and superseded versions are immutable, because a climb set against a
+published generation reads its holds by id — rewriting that generation's geometry
+would silently move every climb on it.
 
 Removal splits two ways, and the split is what keeps history honest:
 
@@ -527,7 +476,7 @@ Removal splits two ways, and the split is what keeps history honest:
 `movedFromHoldId` is lineage rather than geometry, and it is scoped against every
 hold **this** wall has ever had — not the alive set, because a move's whole point
 is that the predecessor has just come off. A pointer at another wall's hold, or at
-nothing, would make remix suggest a successor for a hold that was never there.
+nothing, would name a predecessor that was never there.
 
 ### One open draft per wall
 
@@ -539,7 +488,7 @@ The reason is `spray_wall_holds.removed_version_id`: it is a single column, so t
 drafts each marking the same inherited hold removed means the second write wins —
 and publishing the FIRST then no longer removes the hold, so a climb that lost it
 reads intact. Making removal a range per draft would be a schema change for a
-workflow nobody asked for: a wall has one owner and a reset is one sitting.
+workflow nobody asked for: a wall has one owner and a hold edit is one sitting.
 
 **A discarded draft is DELETED, not marked.** There is no status that works.
 `superseded` is the obvious candidate and is exactly wrong — `aliveHolds` treats
@@ -553,21 +502,20 @@ included), then deletes the version row.
 
 ### Drafts belong to one editing flow
 
-The single open draft is either initial setup, hold maintenance, or a photo reset.
-Hold maintenance reuses the current published private photo key and its exact
-pixel dimensions, anchors and homography. Any other photo or mapping requires
-reset review. This is inferred from immutable photo identity, so existing drafts
-need no migration. Expiring URL signatures never determine identity.
+The single open draft is either initial setup or hold maintenance. Hold
+maintenance reuses the current published private photo key and its exact pixel
+dimensions, anchors and homography. Any other photo or mapping on a published
+wall is a reset-purpose draft, which only the retired in-place reset made. This
+is inferred from immutable photo identity, so existing drafts need no migration.
+Expiring URL signatures never determine identity.
 
-The plain publish endpoint accepts initial setup and hold maintenance only.
-Photo resets publish through `commitSprayWallVersion`; propose and commit refuse
-hold-maintenance drafts. Initial setup may still use the commit endpoint for its
-first publication, including its saved visibility choice. Publishing checks the current source again under the
-wall lock, so an older client cannot bypass comparison through “Publish holds”.
-Creating a version with the same uploaded photo, dimensions, corners and notes
-returns its existing draft after a lost response. A different upload or mapping
-still receives `SPRAY_WALL_DRAFT_ALREADY_OPEN` and must be explicitly resumed or
-discarded.
+The plain publish endpoint accepts initial setup and hold maintenance.
+`commitSprayWallVersion` accepts initial setup only and refuses hold maintenance
+(`SPRAY_WALL_DRAFT_PURPOSE_MISMATCH`). Both refuse a reset-purpose draft with
+`SPRAY_WALL_RESET_RETIRED`, under the wall lock. Creating a version with the same
+uploaded photo, dimensions, corners and notes returns its existing draft after a
+lost response. A different upload or mapping still receives
+`SPRAY_WALL_DRAFT_ALREADY_OPEN` and must be explicitly resumed or discarded.
 
 ### The version state machine
 
@@ -596,9 +544,7 @@ a version number instead:
 | `upsertSprayWallHolds` / `removeSprayWallHolds` | the **draft's own** number, so an editing session can correct a hold it drew a moment ago |
 | `publishSprayWallVersion`'s hold count | the version being published, so another draft's additions never land in the number climbers see |
 | `saveClimb` / `updateClimb` | the **published** one (see below) |
-| `proposeSprayWallReset` | the **published** one — a reset is a reset OF what climbers see, and matching a new photo against the draft's own holds would compare the detections with themselves |
-| `commitSprayWallVersion` | the **draft's own** number for its re-validation, then the version being published for the hold count |
-| `remixClimb` | the **published** one, which is what "the hold is no longer there" means to a climber |
+| `commitSprayWallVersion` | the version being published, for the hold count (a first publish only) |
 
 ### Authorization
 
@@ -642,7 +588,7 @@ a climb and never join `board_climbs` at all:
 | Shape | Where | Used by |
 | --- | --- | --- |
 | `sprayReferenceVisibilityCondition({ boardType, climbUuid }, userId)` | in the WHERE, over the referencing table | the smart-playlist ref queries, `browseProposals`, `globalCommentFeed`, `userProfileStats`, `followingClimbAscents`, `climbLogs` |
-| `sprayClimbUuidIsReadable(climbUuid, userId)` | before the query | `comments`, `climbProposals` — the uuid-keyed threads; `climbRevisions`, a climb's edit history |
+| `sprayClimbUuidIsReadable(climbUuid, userId)` | before the query | `comments`, `climbProposals` — the uuid-keyed threads |
 
 It is phrased "there is **no INVISIBLE** spray climb behind this reference"
 rather than "there is a visible climb", so a reference whose climb row has gone
@@ -1149,117 +1095,75 @@ reasons that both have to be fixed before the flag flips (#5491):
    unreachable regardless of the flag. Whatever wires them up has to put them on
    the sheet climbers actually open.
 
+## Holds lock at the first published climb
+
+A wall's holds are free to edit until the wall has its first **published**
+climb. From then on they are locked: no hold is added, moved or removed. To
+change the holds, the owner resets the wall, which clones it (see
+[Archive and reset](#archive-and-reset)).
+
+`SprayWall.holdsLocked` reports the rule and the server enforces it. One helper,
+`assertSprayWallHoldsUnlockedUnderLock` in `spray-walls.ts`, takes the wall lock
+and refuses with `SPRAY_WALL_HOLDS_LOCKED` when the wall has at least one
+`board_climbs` row with `board_type = 'spray'`, its layout id and
+`is_draft = false`. A wall that has never published skips the climb read: its
+holds are the add-wall wizard's, and nothing can be published on a wall with no
+published holds. The archived check runs first, so an archived wall is refused
+as archived.
+
+| Call | When the lock applies |
+| --- | --- |
+| `createSprayWallVersion` with `sourceVersionId` (a hold-edit draft) | the wall is published |
+| `upsertSprayWallHolds`, `removeSprayWallHolds` | the wall is published |
+| `publishSprayWallVersion`, `commitSprayWallVersion` | not the wall's first publish |
+
+The check is exact, not a best effort: `saveClimb` and `updateClimb`, the only
+writers that can publish a spray climb, take the same wall lock before they
+insert or publish. A climb either lands before the hold write reads and is seen,
+or waits for it. A hold-edit draft opened while the wall had no climbs is refused
+at publish if a climb was published meanwhile; it can still be discarded.
+
+Draft climbs do not lock a wall. A hold edit published on a wall that has only
+draft climbs still re-materialises `missing_hold_count`, so a draft that used a
+removed hold reads 1 until its setter moves it onto holds that are there.
+
+The refusal is worded for the oldest app that can see it, because an app built
+before the lock shows the server's message and nothing else: "Holds are locked
+once a wall has climbs. Update Boardsesh, then use Reset wall to change them."
+
 ## Resets
 
-A reset is what happens when someone takes holds off the wall and puts others on.
-The climb database survives it: climbs that lost holds stay findable, get a
-number, and can be remixed onto what is there now.
+A reset is a clone: a new wall with the old wall's settings, a new photo and
+holds marked from scratch. Its first publish archives the old wall. The whole
+flow, its caps and what an archived wall refuses are in
+[Archive and reset](#archive-and-reset).
 
-The flow is three calls, and only the middle one of the three writes anything:
+The in-place reset is retired: a new photo on a published wall, matched against
+the old one, with kept / removed / added decisions, a partial or full flag, lost
+holds tracked per climb and remix as the way back. What is left of it on the
+server:
 
-1. `createSprayWallVersion` — the new photo, as a draft. **It must carry
-   anchors** (see below).
-2. `proposeSprayWallReset(wallUuid, versionId, detections)` — match the new photo's
-   detections against the holds on the wall today and report what changed. Writes
-   nothing at all, so a client may call it as often as the owner drags a hold.
-3. `commitSprayWallVersion(wallUuid, versionId, decisions)` — apply the reviewed
-   decisions and publish the draft, in ONE transaction under the wall lock.
+- `createSprayWallVersion` with a new `photoId` on a published wall refuses with
+  `SPRAY_WALL_RESET_RETIRED`, "Resets changed. Update Boardsesh, then use Reset
+  wall." A new photo is only for a wall's first version: the add-wall wizard and
+  a reset clone.
+- `proposeSprayWallReset` always refuses the same way.
+- A **reset-purpose draft** (a draft whose photo is not the published one) that
+  the old flow left on a live wall cannot be published through either
+  publish mutation. `discardSprayWallVersion` still deletes it and un-marks
+  whatever it had taken off.
+- `commitSprayWallVersion` still does a wall's **first** publish, because an
+  older app may send it there. It accepts the decision lists and `fullReset`
+  and ignores them, and answers `keptCount` = the holds the draft carries,
+  `removedCount` 0, `addedCount` 0.
 
-### The canonical frame is version 1's photo, forever
+Both installed apps (2.5.0 on `main`, the 2.6.0 beta on `release/next`) publish a
+new wall through `publishSprayWallVersion`, and only their reset screen calls
+`commitSprayWallVersion`. Both first-publish paths are covered by
+`spray-wall-hold-lock.test.ts`, for a wizard wall and for a reset clone.
 
-Version 1 defines the frame and nothing ever re-defines it — every hold ever drawn
-on the wall is already stored in it, so moving it would move all of them. Version 1
-may legitimately have no anchors: with nothing to compare against, the frame IS
-that photo, and the identity homography is true by definition rather than a
-fallback.
-
-**From version 2 on, anchors are mandatory**, and `proposeSprayWallReset` and
-`commitSprayWallVersion` both refuse a draft without them
-(`SPRAY_WALL_ANCHORS_REQUIRED`). Without anchors `resolveVersionGeometry` stores
-the identity matrix again — which now asserts that the second photograph has the
-same crop, framing and dimensions as the first. Nobody made that promise and no
-phone honours it. The detections then arrive as raw photo pixels labelled
-canonical, and the matcher, which is only comparing two coordinate sets, reports
-the entire wall as removed and the entire photo as added. Committing that takes
-every hold off the wall and breaks every climb on it, and the anchors are also the
-only thing that could have told the two photographs apart afterwards.
-
-The check is in both calls, not just the commit: the proposal is what a human
-reads, and a client is free to skip it.
-
-### What the proposal reports
-
-`proposeSprayWallReset` runs `matchHolds` from `@boardsesh/spray-wall-geometry`
-over two sets of circles in the wall's canonical frame: the holds alive at
-`current_version_id`, and the detections the client sends (already mapped through
-the draft's own homography — the server never warps an image and never re-runs
-detection). It comes back with:
-
-| Field | What it is |
-| --- | --- |
-| `kept` | hold id + which detection it matched + a 0..1 confidence |
-| `removed` | hold ids with no detection inside the gates |
-| `added` | indices into `detections` that matched nothing already there |
-| `lowConfidence` | kept holds where a second detection was nearly as good a match |
-| `climbsAffected` | climbs using at least one removed hold, counted from `board_climb_holds` |
-| `movesSuggested` | each removed hold paired with the nearest added detection |
-| `aspectMismatch` | the new photo is shaped more than a tenth differently from the frame |
-
-`aspectMismatch` is a **warning and never a block** (epic decision 2026-09-14). The
-anchors are what put two photographs in one frame and they have already been
-applied by the time detections arrive, so a different aspect ratio usually means
-the owner stood somewhere else. It is still worth saying, because the one case
-where it IS wrong — anchors tapped on the wrong corners — shows up here first.
-
-`climbsAffected` reads `board_climb_holds` rather than `missing_hold_count`,
-because the whole point is to show the number BEFORE anything is written: the
-column still says 0 for every one of those climbs.
-
-### What the commit writes
-
-All of it in one transaction, with `lockWallForWrite(tx, wallId)` as the first
-statement, and every decision re-validated under that lock against the wall as it
-is NOW. A proposal is a screenshot: the owner may have sat on it while another
-editor published, and applying it then would remove holds that are already gone.
-
-1. **Removed** holds are stamped `removed_version_id = <this version>`. Never
-   deleted — the climbs set on them have to stay findable, and
-   `missing_hold_count` has to stay countable.
-2. **Added** detections get a fresh catalogue pair (one `board_holes` row and one
-   `board_placements` row sharing an id from `spray_hold_catalog_id_seq`) and a
-   `spray_wall_holds` row installed at this version. Where the review confirmed a
-   move, `moved_from_hold_id` points back at the hold it replaced — which has to be
-   in the same commit's `removed` list, because a move IS one removal and one
-   addition in one sitting. A predecessor still on the wall would leave two holds
-   claiming one position, and the day a later reset took that predecessor off,
-   remix would offer this unrelated older hold as its successor with nothing left
-   to notice the mistake; a predecessor an earlier reset already removed is
-   history, whose successor was decided then or never.
-3. **Kept** holds take a fresher **silhouette** from the new photo and nothing
-   else. `cx` / `cy` / `r` stay exactly as published, deliberately: every climb on
-   the wall renders from those numbers, and a kept hold matched its detection
-   within six tenths of a radius — real, and enough to shift a climb's start hold
-   under the climber if it were written through. Two photographs of a wall that did
-   not change still disagree by a few pixels; the hold did not move, the camera
-   did. An outline is a picture of the hold rather than a position, so a sharper
-   one is free.
-4. When the owner marked it a full reset (`fullReset: true`), the version is
-   stamped `is_full_reset` before the publish, so the publish's recompute retires
-   every climb that lost a hold in it (see "A full reset retires the old set's
-   climbs" below).
-5. Then the ordinary publish, through the same `publishDraftUnderLock` helper
-   `publishSprayWallVersion` uses: the previous generation is superseded, this one
-   becomes `published`, `current_version_id` / `hold_count` / the catalogue image
-   move, and `recomputeMissingHoldCounts(wallId)` re-materialises every climb's
-   integrity number.
-
-An alive hold the decisions never mention simply stays on the wall. That is the
-safe direction for a client that forgot one; the alternative silently unsets every
-climb through it.
-
-Because the publish happens inside the same transaction, there is no instant at
-which the holds have gone but the version has not landed — which matters, since a
-removal is only real once its version has landed.
+The hold matcher (`matchHolds`, `suggestMoves`, the Hungarian solver) is gone
+from `@boardsesh/spray-wall-geometry`; nothing else imported it.
 
 ### The generation rule
 
@@ -1268,220 +1172,50 @@ A hold generation counts only once its installing (or removing) version has
 `aliveHolds` and `recomputeMissingHoldCounts` carry that bound on both ends.
 
 Without it, an abandoned draft poisons the wall forever. Version numbers are dense
-per wall and handed out when a photo is uploaded, so a draft nobody ever published
-still owns a number: publish v1, start a reset as v2 and walk away, publish v3, and
-v2's additions would come back as alive holds nobody ever screwed to the wall, while
-its removals would badge every climb through them as broken with no way back.
+per wall and handed out when a draft is created, so a draft nobody ever published
+still owns a number: publish v1, start a hold edit as v2 and walk away, publish
+v3, and v2's additions would come back as alive holds nobody ever screwed to the
+wall, while its removals would badge every climb through them as broken with no
+way back.
 
 `discardSprayWallVersion` therefore **deletes** a draft rather than marking it.
 There is no status that would work: `superseded` is read as landed, so a discarded
 draft's work would take effect, which is the abandoned-draft bug made permanent.
 
-### Refresh after publication
+### Climbs that lost holds to an old reset
 
-After a reset commits, `refreshPublishedSprayClimbs` refreshes climb integrity
-before the local-first climb list refetches. For a downloaded wall, it awaits
-one `pullSync` invocation scoped to `spray:<layoutId>:<layoutId>`; the existing
-engine owns bounded delta paging. Shared `pullSync` serializes cycles per SQLite
-handle, including scheduler pulls, and each refresh awaits its own queued cycle.
-Its purge token and board scope are captured before waiting so sign-out or wall
-removal cannot authorize stale work when the queue advances. It then invalidates `searchClimbs`,
-`infiniteSearchClimbs`, `searchClimbsCount`, and `climb`. Walls that are not
-downloaded, or whose SQLite schema or offline engine is unavailable, skip the
-pull and still invalidate those readers. An offline or backgrounded pull can
-be deferred by the engine; a thrown refresh error is reported without turning
-an already committed reset into a failed publication. Freshness then waits for
-a later successful sync.
+`board_climbs.missing_hold_count` is how many of a climb's holds carry a landed
+`removed_version_id`. Before the lock, an in-place reset could raise it on a
+published climb. Those rows stay as they are, and one rule covers them:
 
-### Climb integrity
+- **Every spray climb list and search leaves them out**: a wall's climb list,
+  its count, the hold heatmap, and a name search too (the simplest rule; there
+  is no "show lost-hold climbs" view any more). `lostHoldsCondition` in
+  `packages/db/src/queries/climbs/create-climb-filters.ts` adds
+  `COALESCE(missing_hold_count, 0) = 0` on spray only. NULL reads as intact.
+  `ClimbSearchInput.holdIntegrity` is accepted and ignored, so an older app's
+  Intact / Lost holds filter shows the same list whatever it picks. A climb a full
+  reset retired (`retired_by_reset`) always lost a hold, so the same rule hides it.
+- **A read of one climb by uuid still returns it**: `climb(uuid)`, logbooks,
+  playlists, share links and the queue never go through the list builder.
+- The setter picker's counts (`getSetterStats`) do not apply the rule.
 
-`board_climbs.missing_hold_count` is how many of a climb's holds now carry a landed
-`removed_version_id`. Materialised on the climb row rather than joined through
-`board_climb_holds`, because the offline mirror has no such table — a join would be
-a filter the phone could never mirror.
+No search cache version bump: spray searches are never cached, and on a cached
+board the dropped `holdIntegrity` param makes every value hash to the key of the
+plain search, whose cached page was already right.
 
-It reaches three places:
-
-- **`Climb.missingHoldCount`** in GraphQL. Null on every catalogue board, where
-  holds do not come off.
-- **`ClimbSearchInput.holdIntegrity: ANY | INTACT | BROKEN`**, implemented by
-  `holdIntegrityCondition` in `packages/db/src/queries/climbs/create-climb-filters.ts`
-  next to `hiddenClimbCondition`. Both branches `COALESCE(…, 0)`: NULL means
-  "unknown", and the honest reading of unknown is INTACT — reversed, one
-  un-backfilled row would badge every Kilter climb in the database as broken.
-- **the offline mirror**, `packages/mobile/src/db/queries/search-climbs-local.ts`,
-  which **declines** an INTACT/BROKEN search rather than answering it. The column is
-  not synced to the device until SW-15 (#5448), and declining IS the faithful
-  mirror: answering from a column the device does not have would report every climb
-  on a wall that has just been reset as intact, which is the one answer this filter
-  exists to contradict.
-
-`recomputeMissingHoldCounts` writes only the climbs whose number actually moved
-(`IS DISTINCT FROM`) and stamps `updated_at` on those, so the offline sync cursor
-ships the change without re-shipping the whole partition after every reset.
-
-### A full reset retires the old set's climbs
-
-When a gym strips a wall (or a section of it) and sets a new problem set, the old
-climbs should leave the list without being deleted (#6024, owner decision
-2026-10-06). The owner says which kind of reset it is: `commitSprayWallVersion`
-takes an optional `fullReset: Boolean`. Omitted or false is a partial reset, which
-is also what every app built before this sends.
-
-- **The fact lives on the version.** `spray_wall_versions.is_full_reset` records
-  that this reset was a full one. It is never derived and never changes after the
-  commit.
-- **The climb flag is derived from it.** `board_climbs.retired_by_reset` is true
-  when at least one of the climb's holds was removed by a landed full-reset
-  version. Both recomputes (`recomputeMissingHoldCounts` and
-  `recomputeMissingHoldCountForClimb`) write it beside `missing_hold_count`, from
-  the holds the climb uses now. So:
-  - a full reset retires every climb that lost a hold in it, and no other climb;
-  - a later partial reset leaves a retired climb retired and retires nothing new;
-  - a climb edited onto holds still on the wall uses no removed hold any more, so
-    the per-climb recompute after the edit un-retires it. A remix is a new climb
-    and starts out not retired. Its parent stays retired.
-- **NULL reads as not retired.** Every catalogue climb is NULL, and so is a spray
-  climb that has never been recomputed. The recompute guard compares
-  `COALESCE(retired_by_reset, false)`, so the first pass after the column shipped
-  does not rewrite every climb on a wall.
-
-`retiredByResetCondition` in `create-climb-filters.ts` hides retired climbs from a
-spray wall's **default** list. Search, the count badge and the hold heatmap all
-apply it, because they build their WHERE from the same builder. It is skipped when:
-
-- `holdIntegrity: ANY` ("All") is sent explicitly. `normalizeHoldIntegrity` keeps
-  `any` for this reason; an omitted value is the default view;
-- `holdIntegrity: BROKEN` ("Lost holds") is sent, since a retired climb always
-  lost a hold;
-- the search has a name, the same exception community-hidden climbs get.
-
-`INTACT` already drops retired climbs through `missing_hold_count`.
-
-Retired climbs are never deleted. `climb(uuid)`, logbooks, playlists and share
-links never go through the search builder, so they still open them. The setter
-picker's counts (`getSetterStats`) do not apply the rule; it has no
-`holdIntegrity` input.
-
-The flag reaches phones through the `syncClimbs` pull and the saved-climb mirror
-document as `retired_by_reset`. On-device migration v12 adds the column, and
-`search-climbs-local.ts` applies the same rule, because a downloaded wall reads
-locally even while online. Spray scopes have their own refresh revision (2,
-`refreshRevisionByBoardType`) and require the column on refresh pages
-(`refreshColumnsByBoardType`). So a climb retired while a phone ran an older
-bundle, which dropped the field, gets backfilled once on an unmetered network.
-No catalogue board is re-crawled for it. A backend that does not serve the
-column yet (an OTA preview pointed at prod before migration 0255 ships) makes
-the replay's first page come back without it. The replay then stops before it
-writes, leaves the revision at 1, and the rest of the sync carries on; the next
-cycle retries.
-
-There is no backfill on the server: no reset was marked full before the column
-existed.
-
-### Why a moved hold is removed + added, and what remix is for
-
-Climbs reference positions. A hold unbolted and re-bolted 40 cm left is not the
-hold that climb used — every climb through it now asks the climber to reach
-somewhere the wall has nothing. Calling it "the same hold, moved" would silently
-rewrite those climbs into different problems and leave their grades and ticks
-attached. So it is one removal and one addition, `moved_from_hold_id` records the
-pairing, and **remix** is the way back.
-
-`remixClimb(parentUuid)` returns a seed: the parent's frames with the lost holds
-stripped, the ids it lost, the ids it kept, and the successors
-`moved_from_hold_id` names for the lost ones. It writes nothing. The child is then
-an ordinary `saveClimb` carrying `remixOfClimbUuid`, which writes the
-`spray_climb_lineage` row alongside the climb — one transaction, so a remix never
-lands without the link that says where it came from.
-
-The **parent is shown even when it is no longer climbable** (epic decision
-2026-09-14). A climb that lost three holds is exactly the one worth remixing, and
-its ticks and grade history are still the best thing the child can point at. That
-is also why `spray_climb_lineage.parent_uuid` carries no FK and the version FKs are
-`RESTRICT`: losing the lineage row would erase the only link a climber has back to
-the parent.
-
-## The reset on the phone
-
-`/boards/spray/reset?wallUuid=…` is one route with a stepper behind it
-(`reset-wall-machine.ts`), a sibling of the add-a-wall machine rather than a
-branch inside it. The two flows share three steps and disagree about everything
-around them: there is no wall to name here, and **the anchors are mandatory**.
-That gate is the reason the machines are separate — `ANCHORS_DONE` does nothing
-without four corners that describe a usable quadrilateral, so a climber never
-spends four minutes uploading a photograph the server is going to refuse.
-
-The compare view is a component, not a second route, and the detections are why.
-A wall photograph yields hundreds of circles and expo-router params are strings,
-so handing them to `/boards/spray/compare` would mean a module-level stash keyed
-by version id — a second source of truth for the one array whose INDICES the
-proposal is expressed in. It still gets the whole screen when it is showing.
-
-Three rules the client holds that the server cannot:
-
-- **Detections are built once**, in both frames, by `buildResetDetections`. A
-  candidate the homography cannot place is dropped BEFORE the array is indexed;
-  dropping it later would shift every index past it, and the proposal would then
-  describe holds the screen is not drawing.
-- **No detections, no review.** The matcher compares two sets of circles, so an
-  empty second set means "the whole wall has gone" — which, committed, takes
-  every hold off and breaks every climb on it. A phone with no detector lands in
-  the hold editor on the add-a-wall flow and is fine; there is no equivalent
-  fallback for a reset, because the thing being reviewed IS what the detector
-  found. The screen says so and offers nothing else.
-- **A pairing is unrepresentable unless the server would take it.**
-  `canPairMove` is the only way a `movedFromHoldId` enters the review, and
-  putting a predecessor back on the wall drops every pairing naming it. So the
-  "in this commit's `removed` list" rule cannot be violated by the client.
-
-The "N climbs lose holds" number is the server's, computed for the removal set
-the PROPOSAL named. Nothing on the phone can recompute it — the climbs' holds are
-not there — so `climbsAffectedIsStale` hides it the moment the owner changes that
-set, rather than showing a number about a different one.
-
-After a commit lands, `invalidateSprayWallRenderData(queryClient, wallUuid,
-layoutId)` runs immediately. The SW-07 registry keys every spray cache on the
-wall's version token and this device is the one that moved it; until it
-re-registers, every key still names the generation the owner was looking at when
-they pressed Confirm.
-
-### A climb that lost holds
-
-`Climb.missingHoldCount` reaches three mobile surfaces, and the rule across all
-three is that a broken climb stays findable and stays playable:
-
-Compatibility treats a reported lost hold on the same spray layout as historical
-content. The play drawer and playlist rows keep logging, queue and favourite
-actions available. A different wall or known incompatible size still fails the
-normal compatibility checks; catalogue-board hold containment remains strict.
-
-- the climb-row chip ("2 holds gone"), beside the Hidden chip and in the same
-  neutral grey — colour in that row means grade and nothing else;
-- the **Holds** filter in the climb filter sheet (All / Intact only / Lost
-  holds), defaulting to All. One tap hides them; nothing hides them by default;
-- the play drawer banner, which states the number and offers the one thing that
-  fixes it. Remix goes through the same `useCreateClimbNavigation` handoff the
-  climb-actions sheet uses, carrying the parent's frames — the create editor's
-  own sanitiser drops the hold ids that are no longer on the wall, so it opens
-  with exactly the holds that survived.
-
-`Climb.lostHolds` carries the geometry of those holds as they were, for drawing
-dashed ghost rings where they used to be. The field and its resolver ship here;
-the layer that draws them does not. The play drawer renders through the board
-render pipeline rather than `InteractiveCreateBoard`'s `overlay` slot, so the
-ghosts need a seam in that pipeline, and the create editor would need the parent
-climb's holds threaded through route params that are strings. Both are follow-up
-work, and the banner already answers the question the missing holds raise.
+The offline mirror on the phone (`search-climbs-local.ts`) keeps its own,
+older rule until a mobile release changes it. The columns it reads,
+`missing_hold_count` and `retired_by_reset`, still reach it through `syncClimbs`.
 
 ## Archive and reset
 
-A second way to reset a wall, beside the in-place reset above. Changing a live
-wall in place turned out to be hard to follow for climbers, so a reset can
-instead be a **clone**: a new wall with the old wall's settings, a new photo and
-holds marked from scratch. When the new wall is published, the old one is
-**archived**. The in-place reset and hold editing on a live wall still work
-exactly as before; nothing here refuses them yet.
+The only way to reset a wall. Changing a live wall in place turned out to be hard
+to follow for climbers, so a reset is a **clone**: a new wall with the old wall's
+settings, a new photo and holds marked from scratch. When the new wall is
+published, the old one is **archived**. The in-place reset is retired (see
+[Resets](#resets)), and a live wall's holds lock at its first published climb
+(see [Holds lock at the first published climb](#holds-lock-at-the-first-published-climb)).
 
 ### The two columns
 
@@ -1511,8 +1245,8 @@ Migration 0256 adds both. Nothing is dropped or rewritten.
 - **Settings only.** The clone is made by `insertSprayWallRows`, the same
   function `createSprayWall` uses, so its catalogue rows, board row and slug are
   made exactly like any new wall's. It copies the name, description, angle,
-  location fields, the stored look (`render_settings`) and the climb edit
-  policy. The gym link and `hide_location` are copied as they were when the
+  location fields and the stored look (`render_settings`). The retired climb
+  edit policy is not copied. The gym link and `hide_location` are copied as they were when the
   reset started; a later change to the old wall does not follow. No photo,
   version, hold or climb is copied.
 - **Visibility.** The old wall's visibility is parked on `pending_is_public` /
@@ -1579,10 +1313,10 @@ is archived. Its climbs stay, but nothing new can be set on it."
 | `upsertSprayWallHolds`, `removeSprayWallHolds` | `discardSprayWallVersion` |
 | `publishSprayWallVersion`, `commitSprayWallVersion` | `updateSprayWall`, `setSprayWallRenderSettings`, `deleteSprayWall` |
 
-`viewerCanEditClimbs` is false on an archived wall for everyone, collaborators
-included, so an app that predates archiving does not offer an edit that can
-only fail. `viewerCanEdit` stays true for the owner, because it also gates
-renaming and deleting the wall, which an archived wall still allows.
+`viewerCanEditClimbs` is false on every wall now, archived or not (see
+[What an older app gets back](#what-an-older-app-gets-back)). `viewerCanEdit`
+stays true for the owner, because it also gates renaming and deleting the wall,
+which an archived wall still allows.
 
 ### Where an archived wall shows up
 
@@ -1621,7 +1355,7 @@ An offline device learns a wall is archived from the wall payload
 | `archivedAt` | ISO time of the archive, or null. |
 | `resetOfWallUuid` | The wall this one was cloned from, if it is not deleted, and only for a viewer who can see that wall without its uuid: its owner, a member of its gym, or anyone when it is public. |
 | `replacedByWallUuid` | The live, PUBLISHED clone that replaced this wall, null while the clone is unfinished. Shown to a viewer who can see the successor without its uuid, plus one carry-forward: when the old wall is unlisted and NOT public, and the successor is unlisted too, someone holding the old share link is shown the new one. Old to new only. |
-| `holdsLocked` | True when the wall is archived or has at least one published climb (`is_draft = false`). Drafts do not count. Advisory on a live wall for now: the server does not refuse hold edits on a wall that reads true. |
+| `holdsLocked` | True when the wall is archived or has at least one published climb (`is_draft = false`). Drafts do not count. Enforced: see [Holds lock at the first published climb](#holds-lock-at-the-first-published-climb). |
 
 `mySprayWalls` and `gymSprayWalls` read these fields for every wall in three
 queries (`loadSprayWallArchiveFacts`), not three per wall. The `holdsLocked`
@@ -1637,6 +1371,56 @@ backend that has not deployed them.
   kiosk layout is a validated JSON blob (unique slots, a leaderboard board that
   must be one of them), so repointing is a rewrite, not an UPDATE. The slot
   simply drops the archived wall until a gym editor places the new one.
+
+## What an older app gets back
+
+The retired calls and fields stay in the schema, marked `@deprecated`, with their
+types and nullability unchanged, so 2.5.0 and the 2.6.0 beta keep validating
+against this backend. Each answers like this:
+
+| Call or field | Answer |
+| --- | --- |
+| `createSprayWallVersion` with a new photo on a published wall | `SPRAY_WALL_RESET_RETIRED`, "Resets changed. Update Boardsesh, then use Reset wall." |
+| `proposeSprayWallReset` | `SPRAY_WALL_RESET_RETIRED`, same message |
+| `publishSprayWallVersion` / `commitSprayWallVersion` of a reset-purpose draft | `SPRAY_WALL_RESET_RETIRED`, same message |
+| `commitSprayWallVersion` of a wall's first draft | Publishes it. `kept`, `removed`, `added` and `fullReset` are ignored. |
+| `createSprayWallVersion` (hold edit), `upsertSprayWallHolds`, `removeSprayWallHolds`, a later publish, on a wall with a published climb | `SPRAY_WALL_HOLDS_LOCKED`, "Holds are locked once a wall has climbs. Update Boardsesh, then use Reset wall to change them." |
+| `updateClimb` by anyone but the setter | `CLIMB_EDIT_NOT_ALLOWED`, "You can only update your own climbs" |
+| `updateClimb` by the setter more than 24 hours after first publish | `CLIMB_EDIT_WINDOW_EXPIRED`, "The 24 hour edit window has expired" |
+| `Query.climbRevisions` (`[ClimbRevision!]!`) | `[]` |
+| `climbCurrentRevision` on `AscentFeedItem`, `FollowingAscentFeedItem`, `ClimbLogItem` (`Int`) | `null`, which hides the "Earlier version" tag |
+| `Query.remixClimb` (`SprayRemixSeed`) | `null` |
+| `Climb.lostHolds` (`[SprayWallHold!]`) | `[]` on a spray climb, `null` on every other board, no query |
+| `SprayWall.climbEditPolicy` (`SprayClimbEditPolicy!`) | `SETTER` |
+| `SprayWall.viewerCanEditClimbs` (`Boolean!`) | `false` |
+| `CreateSprayWallInput.climbEditPolicy`, `UpdateSprayWallInput.climbEditPolicy` | Accepted and not written. No owner-only refusal. |
+| `SaveClimbInput.remixOfClimbUuid` | Accepted and ignored on every board. No lineage row. |
+| `ClimbSearchInput.holdIntegrity` | Accepted and ignored. |
+| `Climb.missingHoldCount`, `Climb.revisionNumber`, `Climb.holdsRevisionNumber`, `Tick.climbRevision`, `SaveTickInput.climbRevision` | Unchanged: the stored values, and a tick is still stamped. |
+
+`SPRAY_WALL_RESET_REVIEW_REQUIRED`, `SPRAY_WALL_ANCHORS_REQUIRED` and
+`SPRAY_WALL_CLIMB_EDIT_POLICY_OWNER_ONLY` are no longer sent. `saveTick` is never
+refused by any of this.
+
+### Kept, not written
+
+Nothing is dropped and there is no migration. These stay in the database, pending
+a separately approved cleanup:
+
+| Table or column | Written now? |
+| --- | --- |
+| `board_climb_revisions` | No |
+| `spray_climb_lineage` | No |
+| `spray_walls.climb_edit_policy` | No (new walls take the column default, `setter`) |
+| `spray_wall_versions.is_full_reset` | No (new versions take the default, `false`) |
+| `board_climbs.revision_number`, `holds_revision_number` | No. Frozen at their stored values; the holds-epoch reads still use them. |
+| `spray_wall_holds.moved_from_hold_id` | Yes, by the hold editor: a correction to an inherited hold on a climbless wall links its successor |
+| `board_climbs.missing_hold_count`, `retired_by_reset` | Yes, by the publish recompute and by `updateClimb`'s per-climb recompute. On a wall with a published climb nothing can move them any more. |
+| `boardsesh_ticks.climb_revision` | Yes, by `saveTick`, as before |
+
+The device still mirrors `missing_hold_count`, `revision_number`,
+`holds_revision_number`, `retired_by_reset` and the tick's `climb_revision`.
+`syncClimbs`, tick sync and the snapshot export keep shipping the stored values.
 
 ## Photo privacy
 
@@ -1981,9 +1765,9 @@ through `trackSprayEvent`; nothing calls `track` with a spray event name directl
 | `Spray Wall Detection Finished` | `outcome`, `candidateCount`, `durationMs` | `unavailable` is a SUCCESS — the flow lands in the editor in manual mode. Read it against `ok` for the fraction of the fleet placing every hold by hand. |
 | `Spray Holds Reviewed` | `holdCount`, `candidateCount`, `hadCandidates` | Candidate and saved counts on the same event. Older clients omit candidateCount. |
 | `Board Created` (existing) | `boardType: 'spray'` | Closes the add funnel. The SAME event every other board type fires — a spray-only variant would hide walls from every board-creation number we already watch. |
-| `Spray Wall Reset Previewed` | `keptCount`, `removedCount`, `addedCount`, `lowConfidenceCount`, `climbsAffected`, `aspectMismatch`, `detectionCount` | What the matcher found. |
-| `Spray Wall Reset Applied` | `keptCount`, `removedCount`, `addedCount`, `climbsChanged`, `moveCount` | What landed. The server's counts, not the review's. |
-| `Climb Remixed From Broken` | `lostHoldCount`, `source` | Whether a climb a reset broke is a dead end or a starting point. |
+| `Spray Wall Reset Previewed` | `keptCount`, `removedCount`, `addedCount`, `lowConfidenceCount`, `climbsAffected`, `aspectMismatch`, `detectionCount` | What the matcher found. Retired with the in-place reset: the server refuses the preview, so only historical data has it. |
+| `Spray Wall Reset Applied` | `keptCount`, `removedCount`, `addedCount`, `climbsChanged`, `moveCount` | What landed. Retired the same way. |
+| `Climb Remixed From Broken` | `lostHoldCount`, `source` | Whether a climb a reset broke is a dead end or a starting point. An older app can still fire it; the server writes no lineage for the remix. |
 
 Two rules, both enforced by a test in
 `packages/shared/analytics/src/__tests__/spray-wall-events.test.ts`:
@@ -2264,619 +2048,85 @@ who cannot open it.
 
 ## Editing a climb
 
-On the catalogue boards a published climb can be edited by its setter for 24
-hours and then locks. A catalogue board is shared by everyone who owns one, so a
-published climb is something other people have already sent and logged.
-
-A spray wall is one physical wall, and its holds move. A climb set last year may
-need a new start hold next week. So on spray (#5955, #6025):
+A published spray climb follows the rule every board follows: **only its setter
+edits it, and only within 24 hours of its first publish.** The edit is made in
+place.
 
 | The climb is | Who can edit it | For how long |
 | --- | --- | --- |
-| A draft | Its setter | Always |
-| Published (`climbEditPolicy: 'setter'`, default) | Its setter, or anyone who can edit the wall | Always |
-| Published (`climbEditPolicy: 'collaborators'`) | Its setter, anyone who can edit the wall, or anyone who can set climbs on the wall | Always |
+| A draft | Its setter | Always, and publishing it still works |
+| Published | Its setter | 24 hours from the first publish |
 
-"Anyone who can edit the wall" is `canEditBoard` in `social/boards.ts`, the same
-rule that guards the wall's holds, with nothing added for climbs:
+Nobody else, on any wall: not the wall owner, not a gym owner or admin, not a
+community leader, not a collaborator or a share-link holder. The wall's stored
+`climb_edit_policy` is not read. Before this, a spray climb could be edited with
+no time limit by its setter and by anyone who could edit the wall (#5955), or
+anyone who could set on it under the `collaborators` policy (#6025). A spray
+wall's holds now lock at its first published climb, so its climbs no longer need
+fixing after a reset, and the reason for the exception is gone.
 
-- the wall's owner;
-- the owner or an admin of the gym the wall is linked to (a gym `editor` cannot);
-- a community admin or leader for spray, on a public wall only.
+The refusals keep their codes: `CLIMB_EDIT_NOT_ALLOWED` for anyone but the
+setter (the same message whether the wall is private, unlisted or public, so it
+says nothing about a wall existing), `CLIMB_EDIT_WINDOW_EXPIRED` past 24 hours,
+`CLIMB_NOT_EDITABLE` for a published climb with no publish date, and
+`CLIMB_EDIT_CONFLICT` when the climb changed between the resolver's first read
+and its row lock (`climb-edit-guard.ts`). The non-setter refusal comes before
+the spray wall is resolved.
 
-`requireBoardEditAccess` is that function plus a throw, so the two cannot drift.
-**`requireBoardEditAccess` is NOT widened by the climb edit policy.** Editing holds,
-resetting photos and publishing wall versions stay restricted to the wall owner
-and gym admins.
+What an edit does now:
 
-When the wall owner selects the `'collaborators'` policy (#6025), anyone who can
-write climbs on the wall (`viewerCanWriteSprayClimbs`: gym members on gym walls,
-share-link holders on unlisted walls, or anyone on public walls) may also edit
-published climbs. Only the wall creator may change the wall's `climbEditPolicy`.
-
-Four things the rule is careful about:
-
-- **The setter stays the setter.** `updateClimb` never writes `user_id` or
-  `setter_username`, and a regrade goes on the climb's stats row with
-  `fa_username` left as it was. A collaborator or wall owner who fixes your climb
-  has not taken it. Who made each edit is in the revision history instead.
-- **A draft is its setter's alone.** Collaborators and wall editors cannot edit or
-  publish somebody else's draft. Publishing announces a new climb to followers, and
-  it would announce it under the wrong name.
-- **An editor has to be able to see the wall too.** The setter's edit needs
-  `viewerCanWriteSprayClimbs`, as before. Collaborators need `viewerCanWriteSprayClimbs`
-  and `'collaborators'` policy. Wall editors need that and `canEditBoard`.
-- **One refusal for every stranger.** A caller who is neither the setter nor
-  permitted by the wall's policy gets `You can only update your own climbs` with
-  the code `CLIMB_EDIT_NOT_ALLOWED`, whether the wall is private, unlisted, or
-  public, or the climb is a draft. It is the message the mutation always gave,
-  and it does not say that a wall exists.
-
-Not changed: a climb that has lost holds to a reset still cannot be saved until
-the edit moves it onto holds that are on the wall (`assertSprayHoldsAreAlive`
-runs on every spray edit). An edit never moves `published_at`.
+- **No revision history.** No `board_climb_revisions` row is written, and
+  `revision_number` / `holds_revision_number` do not move.
+  `UpdateClimbResult.revisionNumber` and `holdsRevisionNumber` are the row's
+  stored values.
+- **A holds edit keeps the climb's sends, first ascent and stars.** There is no
+  stats restart and no recompute marker any more.
+- **The rest is as before:** the `board_climb_holds` rewrite, the neighbours row
+  delete, the fingerprint refresh, `populateSprayClimbColumns`,
+  `recomputeMissingHoldCountForClimb`, the web revalidation and the stats row
+  upsert on a grade edit. Every spray edit still checks that the climb's holds are
+  alive on the published version, and an edit never moves `published_at`. The
+  setter stays the setter.
 
 ### The Edit action in the app
 
-The app offers Edit from one shared rule, `canEditClimb` in
-`@boardsesh/create-climb-react`, used by both menus (`ClimbActionsSheet` and
-`use-climb-actions.ts`). It is the table above plus the catalogue rule (setter
-only, 24 hours).
-
-It is a hint. `updateClimb` decides.
-
-- **Where "can edit climbs" comes from.** `RegisteredSprayWall.viewerCanEditClimbs`
-  in the spray registry, filled from `sprayWallRenderData.wall.viewerCanEditClimbs`.
-  Only a literal `true` counts, and a re-registration never inherits the last
-  answer. `SprayWall.viewerCanEdit` continues to guard the hold editor and photo
-  reset screens.
-- **Which climbs it covers.** Only climbs on that wall. A queue can hold a climb
-  from another wall or from Kilter; when the climb carries `boardType` or
-  `layoutId` and they say it is somewhere else, a wall editor is not offered
-  Edit on it.
-- **How stale it can be.** Ten minutes, the registry's revalidation window.
-  `useSprayWallViewerCanEdit` asks for the wall each time a menu mounts, which
-  is what re-reads it.
-- **Account changes.** The registry is module state and outlives a sign-out, and
-  the app tree below `AuthProvider` is replaced on every auth change, so the
-  reset lives in `AuthProvider`. Signing in, and the signed-out cleanup beside
-  `queryClient.clear()`, call `refreshSprayWallViewerAccess`: every wall reads
-  "cannot edit" at once and is refetched. A flip to signed-out with no cleanup
-  only calls `dropSprayWallViewerAccess`, which fetches nothing. A native
-  keychain failure flips that way, and a request sent then carries no token, so
-  a private wall would resolve null and be withdrawn from the live player.
-- **A request that crosses the account change.** The registry counts account
-  changes (`sprayWallViewerGeneration`). A fetch notes the number before it
-  leaves, and it is part of the published render-data query key, as an object
-  (`{ viewerGeneration }`), so it can never equal the hold editor's draft key,
-  whose third segment is a version number. Two accounts never share a request
-  or a cache entry. A payload that lands under a different number registers the
-  wall but not its `viewerCanEdit`, and is stamped stale. `loadSprayWall` asks
-  once more by itself when it sees the number moved. The hold editor's draft
-  and its publish reload pass the generation they fetched under too, so the
-  owner keeps Edit while and after editing holds.
-- **When the hint is wrong.** A role taken away inside the window still shows
-  Edit. The save is refused and nothing is lost. `updateClimb` gives each
-  refusal an `extensions.code` (`CLIMB_EDIT_NOT_ALLOWED`,
-  `CLIMB_EDIT_WINDOW_EXPIRED`, `CLIMB_NOT_EDITABLE`, `CLIMB_EDIT_CONFLICT`) and
-  the editor shows a translated line for each. The server's own sentence is
-  never shown; a failure with no known code gets the generic line.
-- **Two saves crossing.** `CLIMB_EDIT_CONFLICT` shows "Someone else just changed
-  this climb. Reopen it to see the latest." There is no automatic retry, and the
-  working copy stays on screen and in the autosave slot. Tapping Save again
-  re-reads the climb and can succeed.
-- **The setter stays the setter in the queue too.** The queue row the editor
-  builds after a save takes `userId` and `setter_username` from the climb being
-  edited (`resolveProvisionalSetter`), not from whoever saved. A row with no `userId`
-  whose setter name is the saver's own keeps the saver's id, as before.
-
-## Climb revisions
-
-Unlimited edits mean a climb you sent last month may not be the climb that is
-there today. So every edit to a published climb is kept, on every board, in
-`board_climb_revisions` (`packages/db/src/schema/app/climb-revisions.ts`). On a
-catalogue board the 24 hour window means a climb collects a handful of revisions
-at most. On spray it can collect up to the cap.
-
-### What a row is
-
-A row is the climb **as it stood after an edit**: name, description, frames,
-frame count and pace, angle, rules, and on spray the setter grade. It also
-carries what the edit changed (`name`, `description`, `holds`, `grade`, `angle`,
-`rules`), who made it, and when.
-
-Rows are written lazily, by `updateClimb` only:
-
-| Event | Rows written |
-| --- | --- |
-| A climb is saved or published | 0. The live `board_climbs` row is its only revision. |
-| A draft is edited | 0. History starts when the climb is published. |
-| A draft is published by `updateClimb` | 0, even when the same call also edits it. |
-| A published climb is edited for the first time | 2. Revision 1 is the climb as it was published, dated to `published_at` and credited to the setter. Revision 2 is the new state. |
-| A published climb is edited again | 1. |
-| A save changes nothing | 0. |
-
-So the highest-numbered row always matches the live climb, and a climb with no
-rows has never been edited. There was no backfill: an edit made before this
-shipped left no row.
-
-"Changes nothing" is judged on what a climber would call different. A missing and
-an empty description are the same. On the Aurora boards the `No match`
-description prefix counts as a rule, not as description text.
-
-### The cap
-
-`MAX_REVISIONS_PER_CLIMB` is 50. Past it the oldest edit is deleted and revision
-1 is always kept, so the original is always there to compare against. An edit is
-never refused for being one too many. Revision numbers are never reused, so a
-pruned climb's numbers have a gap after 1.
-
-### Two editors at once
-
-The setter and the wall owner can save at the same moment. Inside its
-transaction `updateClimb` takes the wall lock, then locks the climb row
-(`lockClimbForRevision`, `SELECT … FOR NO KEY UPDATE`) and reads it. The second
-edit waits for the first to commit, and its "before" is the first edit's result.
-Both sides of the diff are read under that lock, never taken from the row the
-resolver loaded before the transaction. Two saves give two consecutive revision
-numbers, and each row names only its own change.
-
-The order is wall, then row. A reset holds the wall lock while it rewrites
-`missing_hold_count` on the wall's climbs, so taking the row first would be a
-deadlock.
-
-The resolver makes its decisions (did the holds change, does the duplicate gate
-run) from the row it loaded before the transaction. So the locked row is compared
-with that row on `isDraft`, `frames`, `framesCount`, `angle`, `characteristics`
-and, on the Aurora boards, `description`. If any differ, another edit landed in
-between: the save is refused with "This climb changed while you were editing it"
-(`extensions.code` `CLIMB_EDIT_CONFLICT`) and nothing is written. `name` and
-`framesPace` are not compared, because they feed no decision.
-
-The decisions are not recomputed under the lock. The duplicate-gate lock is keyed
-on the hold signature and is taken before the wall lock, so recomputing would
-mean taking it while holding the row, which reverses the lock order.
-
-One case succeeds instead: a publish that arrives after the same publish already
-landed (a double tap). When every field the request carries equals the locked
-row, `updateClimb` returns the published climb and writes nothing: no revision,
-no second `climb.created`.
-
-### Which wall photo a revision belongs to
-
-A spray revision stores the wall version it was drawn on, so an old revision can
-be shown on the photograph it was set against.
-
-- A revision written by an edit takes the wall's current version, read under the
-  wall lock.
-- Revision 1 is written later than the state it describes, possibly several
-  resets later, so its version is worked out: of the versions in which every one
-  of the climb's holds was on the wall, the newest one published at or before
-  the climb's `published_at`. If none is that old, the oldest version that had
-  all the holds. If no version ever had them all, the column is NULL and the app
-  shows the revision without a board.
-
-The foreign key to `spray_wall_versions` is `RESTRICT`. Only a draft version is
-ever deleted and a revision only points at a version that was published, so the
-restriction should never fire.
-
-### Reading them
-
-`climbRevisions(boardType, climbUuid)` returns the rows newest first, with
-`isCurrent` on the top row, the editor's name and avatar, `editedBySetter`, and
-`sprayWallVersionNumber` to pass to `sprayWallRenderData`. No pagination: the cap
-is 50.
-
-It answers an empty list, never an error, for a climb nobody has edited, for a
-draft, and for a spray climb on a wall the caller cannot see
-(`sprayClimbUuidIsReadable`, the same gate as `betaLinks`). Someone holding only
-a share link to an unlisted wall gets the empty list in v1. The visibility sweep
-(`spray-visibility-sweep.test.ts`) edits its sentinel climb once so that this
-field is proven to show the owner the history and a stranger nothing.
-
-Revisions are read-only. There is no restore, and an old revision cannot be
-queued or lit up.
-
-### Which revision a tick was logged on
-
-A send on revision 2 of a climb is not a send of revision 5 if the holds moved
-in between. So every tick records the revision it was logged against (#6023),
-in `boardsesh_ticks.climb_revision`:
-
-| Value | Meaning |
-| --- | --- |
-| 1 | The climb had never been edited, or the tick was on it as first published. |
-| 2 and up | That revision, the same number `climbRevisions` returns. |
-| NULL | Not known. Every imported tick (Aurora, Kilter, JSON, MoonBoard) and every tick older than the column. |
-
-The number is set once, when `saveTick` inserts the row. `updateTick` never
-changes it, not even when the edit moves `climbedAt`. A replayed `saveTick`
-returns the row as first stored. There is no foreign key to
-`board_climb_revisions`: a climb nobody has edited has no rows there, and rows
-past the cap are pruned, so a tick can name a revision whose row is gone.
-
-To make that one cheap read, `board_climbs` carries two numbers of its own.
-`recordClimbRevision` writes both in the same transaction as the revision row.
-
-| Column | What it is |
-| --- | --- |
-| `revision_number` | The climb's current revision. 1 until its first recorded edit, then the newest revision's number. Pruning does not change it. |
-| `holds_revision_number` | The revision at which the holds last changed: the frames, or the number of frames. A rename, new notes, a regrade, a rule change, an angle change or a pace change all leave it alone. |
-
-Both are `NOT NULL DEFAULT 1`. A tick whose `climb_revision` is at or above the
-climb's `holds_revision_number` was climbed on the holds the climb has now.
-`updateClimb` answers with both numbers as the save left them, so the app that
-made the edit knows the new revision without fetching the climb again.
-
-Climbs edited before the columns existed were filled in once, by migration
-0252, from their revision rows. For those climbs the holds number is a best
-reading of the `changes` lists: a pace-only edit is listed there as `holds`, so
-it can sit one edit too high, and a pruned revision cannot be counted at all.
-
-`saveTick` takes an optional `climbRevision`: the revision the client was
-showing when the climber logged it. The client is the better witness. A send
-logged offline on revision 3 and delivered after the setter saved revision 4 was
-still climbed on 3. What the server stores (`resolveTickClimbRevision`):
-
-| Case | Stored |
-| --- | --- |
-| The climb has no `board_climbs` row | NULL |
-| The client sent a revision from 1 up to the current one | That revision, even if its row has been pruned |
-| The client sent a revision above the current one | The fallback, and a warning in the log |
-| The client sent nothing, or 0, or a negative number | The fallback |
-| The uuid the client sent was an alias of another climb | The fallback. The client's number was counted on the retired row. |
-
-The fallback is the revision that was live when the climb was climbed: 1 when
-the climb is still on revision 1, otherwise the highest revision created at or
-before `climbedAt`, or 1 when the tick is older than all of them. With pruned
-revisions in between it answers the newest row that survives, which can be
-lower than the true one.
-
-No whole number the client sends gets a tick refused. A refused send is
-dead-lettered by the offline drainer and lost, and a wrong revision number costs
-much less than that. Something that is not a whole number at all (`2.5`, `"2"`)
-is a malformed request and GraphQL rejects it before `saveTick` runs, the same as
-it would for any other field.
-
-If the database read behind the lookup fails, the save fails with it. The app's
-outbox retries that kind of error and a retry of the same tick uuid is safe, so
-the send arrives later with its revision, where storing it at once with NULL
-would have left it without one for good.
-
-Readers: `Tick.climbRevision`, and `climbRevision` with `climbCurrentRevision`
-(the climb's `revision_number` now) on the rows of `climbLogs`,
-`followingClimbAscents`, `userAscentsFeed` and `userGroupedAscentsFeed`.
-`Climb.revisionNumber` and `Climb.holdsRevisionNumber` come back from search,
-climb detail, favourites, playlists and the setter's climb lists. `syncTicks` and `syncClimbs` emit the three columns,
-and the phone stores them from on-device schema v11, where all three are
-nullable: a row pulled before v11 reads NULL, which means unknown and not 1.
-
-#### What the app sends
-
-The app calls a revision a **version**. That is the only word a climber sees.
-
-One rule decides everything below. The server stores any in-range version the
-app sends, as sent. So a wrong version is worse than a missing one: a missing
-one gets the fallback, which is the version live at `climbedAt` and is right for
-a tick logged now, while a wrong one files the send under a version the climber
-was not on, and if the holds moved since, the send stops counting. The app sends
-a version only when it can show the number belongs to the holds on screen. When
-it cannot, it leaves the key out. It is never sent as null either: a backend
-from before the field rejects the key.
-
-Where the number comes from (`resolveTickClimbRevision`,
-`packages/mobile/src/lib/tick-climb-revision.ts`), in order:
-
-1. The climb on screen, when it carries `revisionNumber`. A climb only carries
-   one that was read together with its frames: a row from the phone's own
-   search or detail read, or a network row that passed the check in step 2.
-2. The phone's own copy of the climb (`board_climbs.revision_number`), but only
-   when that row's `frames` are the same string as the frames on screen
-   (`localRevisionMatchingFrames`). `useLocalClimbRevision` reads the number
-   and the frames in one primary-key statement, when the form opens for a climb
-   with no number of its own, and again whenever `['climb']` is invalidated: a
-   saved tick, a climb edit and a completed board pull all do that.
-3. Nowhere. The tick is sent with no version.
-
-The frames check is an exact string comparison. The server's `holdsMoved`
-compares parsed hold sets, so two strings that list the same holds in another
-order are equal there and different here. That only makes the app leave the
-number out more often, which is the safe side, and the parser stays on the
-server.
-
-Cases the check exists for:
-
-| The climb on screen | The phone's row | Sent |
-| --- | --- | --- |
-| A network answer after the setter moved a hold | The version before the move | Nothing |
-| A queue item from before an edit | The version after it | Nothing |
-| The editor's unsaved holds (Set Active) | The last save | Nothing |
-| The editor's first save, when a second save followed | The second save | Nothing |
-| Same holds as the phone's row | That row | Its version |
-| Anything, on a board that is not downloaded | No row | Nothing |
-
-The last-but-two row is why the create screen puts no version on the climb it
-queues, although `updateClimb` could tell it one. A local "make this current"
-for the uuid that is already current is a no-op in the queue reducer
-(`packages/shared/queue/src/reducer.ts`), so after Edit, Save, move a hold, Save
-again the queue still holds the first save's item. A version stamped on that
-item would be one behind the server, the setter's send would be stored on it,
-and it would not count. The `UpdateClimb` document does not select the two
-numbers, since nothing reads them.
-
-Offline, the version is written twice: into the local `boardsesh_ticks` row
-(`climb_revision`) and into the queued `SaveTick` payload. If the backend that
-finally receives the queued tick answers `Field "climbRevision" is not defined`,
-the outbox handler sends it once more without the field (`handlers.ts`,
-`DROPPABLE_INPUT_FIELDS`), so the send is delivered instead of dead-lettered.
-The match is on that clause and not on the field name: graphql-js prints the
-whole input in such messages, so the name alone appears in rejections that are
-about something else.
-
-#### Why the version comes from the phone and not from the query
-
-`SearchClimbs`, `GetClimb`, `GetTicks` and the queue documents (`QueueUpdates`,
-`JoinSession`, `GetSessionQueueState`) are pinned by the App Store screenshot
-fixtures, which key a recording on the document text
-(`docs/mobile-screenshot-fixtures.md`). They cannot select `revisionNumber` or
-`climbRevision` until the fixtures are recorded again. Until then:
-
-- A climb's numbers come from `syncClimbs` (the phone's `board_climbs` row). A
-  network `SearchClimbs` page or `GetClimb` answer is filled in from it
-  (`fillClimbRevisionNumbersLocal`, one read per page): `revisionNumber` under
-  the frames check above, `holdsRevisionNumber` always. The holds number is only
-  a threshold for "does this send still count", it only rises, and the phone's
-  value is a past one, so it can be too low and never too high. Too low counts
-  a send that should have been dropped; it cannot drop one that counts. The fill
-  has 150 ms (`NETWORK_ENRICHMENT_BUDGET_MS`); a busy database hands the
-  network answer over as it came. It is skipped where there is no offline
-  engine (the browser app).
-- A tick's version in the play drawer's own history comes from `syncTicks`: the
-  shared logbook joins the phone's `boardsesh_ticks.climb_revision` onto the
-  `GetTicks` rows by tick uuid (`BoardAdapter.readLocalTickRevisions`). See
-  "A tick the phone has not pulled yet" below.
-- A queue item keeps `revisionNumber` and `holdsRevisionNumber` on the phone
-  that queued it, and does not send them. `ClimbInput.revisionNumber` is
-  accepted by the server, but no queue document returns it, so a climb that has
-  been through a shared queue arrives without it and the tick form uses step 2
-  above. `queue-climb-field-contract.test.ts` still lists the field as
-  server-ready for this reason.
-
-Adding the fields to those documents, and removing the local joins, is the
-follow-up once the fixtures are re-recorded.
-
-#### A tick the phone has not pulled yet
-
-The join gives each of the climber's own ticks one of three answers, and they
-are kept apart all the way to the sent mark (`isTickOnCurrentHolds`):
-
-| The phone's `boardsesh_ticks` | The tick's version reads as | Counts as sent on a climb whose holds moved |
-| --- | --- | --- |
-| A row with a version | That version | When it is at or above the holds version |
-| A row the server delivered, with no version (an import, a tick older than the field) | 1 | No |
-| No row, or this phone's own write still in the outbox with no version | Not known | Yes |
-
-The third row is the second-phone case: `GetTicks` answers before the tick pull
-has written the row. Counting the tick is what the app did before the field, and
-it is right far more often than not, since most ticks are on the holds a climb
-has now. When the pull lands it invalidates `['logbook']`, the batches on screen
-are read again, and the logbook cache takes the version from the later read
-(`mergeLogbookEntries` upgrades `climb_revision` on a row it already holds, and
-never trades a known value for less). A batch that is not on screen is read
-again the next time its climb is opened.
-
-#### Where the app says "Earlier version"
-
-A log shows the words **Earlier version** when its version is known and lower
-than the version the climb is on now. Any edit counts, a rename included: the
-tag says the climb has changed since, not that the send stopped counting. No
-version numbers are shown. A log with no known version shows nothing.
-
-| Surface | Source of the two versions |
-| --- | --- |
-| Play drawer, your own history (`LogbookEntryRow`) | The tick from the phone's copy; the climb's current version from the phone's `board_climbs` row. No frames check here: the tag compares against the version the climb is on now, whatever holds a queue item is showing. |
-| Play drawer, other climbers' logs (`ClimberLogRow`) | `climbRevision` and `climbCurrentRevision` on `climbLogs` and `followingClimbAscents` |
-| You tab, the flat logbook (`LogbookRow`) | The same two fields on `userAscentsFeed` |
-| You tab, the grouped logbook | No tag. `GetUserGroupedAscentsFeed` is a pinned document. |
-| Session detail and the session feed | No tag, for the same reason. |
-
-The tag is plain text. Opening the version a log was made on needs the version
-sheet from #5973, which is on `release/next` and not on `main`; making the tag a
-button is the follow-up when it lands.
-
-#### The app's own "sent" marks
-
-Two places work "sent" out on the phone, and both follow the holds epoch:
-
-- Search on a downloaded board (`search-climbs-local.ts`): hide or show sent,
-  hide or show attempted, rated by me, my minimum rating, and the per-row
-  `userAscents` / `userAttempts`. The SQL is written once
-  (`tickOnCurrentHoldsLocalSql`, `climb-revisions-local.ts`) and COALESCEs both
-  sides to 1, because on the phone the climb's column is nullable too. The
-  personal grade is not filtered, as on the server.
-- The sent glyph on a list row (`useAscentStatus`), through
-  `isTickOnCurrentHolds` in `@boardsesh/logbook`. The row passes the climb's
-  `holdsRevisionNumber`; a row whose source does not carry it (a playlist, a
-  queue row) counts every tick, as before. A tick whose version is not known
-  counts too (see the table above).
-
-The Flash or Send label on the tick form still counts any earlier log on the
-climb as history, old holds included.
-
-### What a moved hold resets
-
-A climb's sends, stars and first ascent belong to its holds. When an edit moves
-a hold they start over, on every board. The rule is one comparison, written once
-in `packages/db/src/queries/climb-stats/holds-epoch.ts`: a tick counts when
-
-```sql
-COALESCE(tick.climb_revision, 1) >= board_climbs.holds_revision_number
-```
-
-A tick with no revision counts as revision 1. A tick whose climb has no
-`board_climbs` row is compared with 1 too.
-
-- For a tick older than the column that is exact: no climb had a revision
-  before the column existed.
-- For an imported tick (Aurora, Kilter, JSON, MoonBoard) it is a choice, and it
-  can be wrong one way. If a setter moves a hold on a Boardsesh-owned catalogue
-  climb and someone's send of the new holds arrives later by import, the import
-  has no revision, reads as 1, and does not count as a send of the current
-  holds. Their "sent" mark and the first ascent stay off until they log it in
-  Boardsesh. This is accepted: an import never adds to the Boardsesh ascent
-  count in any case, the window is the setter's 24 hours after publishing, and
-  spray walls, where edits have no limit, have no imports.
-
-| An edit that changes | Sends, stars, first ascent, sent marks |
-| --- | --- |
-| Which holds are lit, a hold's role, or the number of frames | Start over |
-| Name, notes, grade, angle, rules, pace | Unchanged |
-| Only the order the holds are listed in the frames string | Unchanged, and no revision is recorded |
-
-"The holds" means the parsed set: each frame's holds with their roles
-(`holdsMoved`, `climbs/climb-revisions.ts`). The app sends the frames string
-again on every save, written in ascending hold-id order. A stored string from
-another encoder lists the same holds in a different order, and comparing the
-strings would turn a rename into a reset. In a multi-frame climb a hold that
-moves from one frame to another is a change.
-
-On a climb whose holds never moved the epoch is 1 and every tick counts, so
-catalogue boards behave as they always did. A catalogue climb can only be edited
-by its setter in the first 24 hours.
-
-What reads the rule:
-
-| Surface | After a hold moves |
-| --- | --- |
-| `board_climb_stats.ascensionist_count` and the Boardsesh count behind it | Zero until someone sends the new holds |
-| `fa_username`, `fa_at` on a Boardsesh-owned climb | Empty until someone sends the new holds. Then that climber. |
-| `quality_average` and the Boardsesh star votes | Only ratings from sends of the new holds |
-| Search filters: hide or show sent, hide or show attempted, rated by me, my minimum rating | Read only ticks on the new holds |
-| Recommendations ("find new climbs") | The climb is offered again |
-| The Projects smart playlist and its card count | A project is a climb tried on its current holds and not sent on them. A send of the old holds does not make it a project, and neither does an old attempt. The list is still ordered by total attempts on every version. |
-| ↳ how it reads the epoch | Not from each climb's row. It joins the logbook against `board_climbs_holds_moved_idx` (migration 0253), a partial index holding only the climbs whose `holds_revision_number` is above 1. A climb that is not in it is at epoch 1. `climbHoldsEverMovedSql` in `holds-epoch.ts` is the predicate a query must repeat to use it. `boardClimbRecentSenders` reads its one epoch the same way. |
-| `boardClimbRecentSenders` (the wall's recent senders for a climb) | Only senders of the new holds |
-
-What does not:
-
-- **The grade.** On a spray wall the grade is the setter's and no tick changes
-  it. On other boards a Boardsesh-owned climb's grade is the average of every
-  graded send, old holds included. Filtering it would leave the climb ungraded
-  after an edit until someone logged a graded send, and an ungraded climb drops
-  out of grade-filtered search.
-- **Anything that counts what a climber has done.** Profile totals and
-  percentiles, leaderboards, gym insights, a board's send totals, session
-  summaries, the Five stars and Most repeated playlists, feeds, and logbook
-  lists. A send of an older version is still a send by that climber. The lists
-  that show a tick (`climbLogs`, `followingClimbAscents`, the ascent feeds)
-  return `climbRevision` and `climbCurrentRevision` so a client can label it.
-- **The climber's personal grade** on a search row, which is their latest
-  graded tick on any version.
-
-`updateClimb` does the reset, in its own transaction, in three steps
-(`climbs/holds-change-stats.ts`):
-
-1. Before it writes anything, if the request changes the frames string or the
-   frame count, it lists the angles of the climb that have a flash or a send
-   and writes one row per angle to `climb_stats_recompute_pending`
-   (`markStatsKeysForHoldsChange`).
-2. Once `recordClimbRevision` has moved the holds epoch, it recomputes
-   `board_climb_stats` for those angles (`recomputeStatsAfterHoldsChange`).
-   The new holds and the zeroed numbers commit together.
-3. After the commit the same keys go through the debounced recompute, which
-   publishes `climbStatsUpdated`.
-
-An angle nobody has sent is left alone: there is nothing to reset, and a
-recompute there would write an empty tick average over a grade a setter seeded.
-
-The pending rows from step 1 are not deleted by the edit. They do two things:
-
-- **They serialise the edit with the batched recomputes.** The hourly
-  self-heal, a sync's deferred flush and the pending drain all lock the same
-  rows, in the same `(board_type, climb_uuid, angle)` order, before they read a
-  tick. A batch touching one of these keys either finishes before the edit goes
-  on, or waits for it to commit and reads the new epoch. Because the edit takes
-  the pending rows before any stats row, as the batches do, the two cannot wait
-  on each other.
-- **They get the key recomputed once more.** The next self-heal pass drains
-  them (rows older than 2 minutes, hourly). That corrects a writer that takes no
-  pending row and read the old epoch: a `saveTick` recompute, or a sync that
-  recomputes inside its own write transaction, landing its count after the edit
-  committed. The debounced recompute from step 3 normally fixes that within two
-  seconds, but it is an in-process timer and a deploy drops it.
-
-A save that re-sends the same holds in another order also writes the pending
-rows (step 1 runs before the diff is known). The drain then recomputes a key
-that has not changed, which writes nothing.
-
-The old ticks are not changed or deleted. They stay in every logbook with the
-revision they were logged on.
-
-Known limits:
-
-- A stale count can last until the next self-heal pass, up to about an hour,
-  when the two-second timer was lost. It can outlast that pass only if the
-  stale write lands after the drain ran, which needs a statement that started
-  before the edit committed and was still running when the drain got to it.
-  Then the next tick on the climb corrects it.
-- A deadlock is possible, and rare, between a holds edit of a climb sent at two
-  or more angles and a sync that recomputes two of those angles inside its own
-  write transaction, with no pending rows. Postgres ends it after a second by
-  failing one side. If that is the edit, nothing is written and the climber
-  sees the save fail; saving again works. A spray wall has one fixed angle, so
-  in practice this needs a catalogue climb inside its 24 hour window.
-- `board_climb_popularity` needs nothing. Its incremental refresh re-reads
-  climbs whose stats row has a new `updated_at`, and the reset writes the row.
-- Cached anonymous search pages keep the old ascent count for up to 24 hours,
-  the same as after any send. Spray searches are never cached.
-
-### In the app
-
-The server half (table, `updateClimb`, the `climbRevisions` query) is on `main`.
-The app half below ships with the release train (#5973 on `release/next`).
-
-The play drawer shows an **Edit history** section (`RevisionsSection`) after
-Community and before Similar climbs. It renders nothing unless the query has two
-or more rows, so most climbs never show it. Loading, failed and offline also
-render nothing. It is collapsed by default and its summary counts edits from the
-newest revision number, so pruned edits still count.
-
-Five rows show inline and "Show all" reveals the rest, up to
-`MAX_REVISIONS_PER_CLIMB`. A full history carries a one-line note with that
-number, read through `spray-cap-copy.ts`.
-
-A row opens `ClimbRevisionSheet`: board, name, grade (spray only), notes, date,
-editor, and Older / Newer. It is mounted inside `PlayDrawer` and opened by a
-handler the drawer owns, because a root sheet presents behind the `/play` modal.
-The file imports nothing from the queue, Bluetooth or the editor.
-
-The board is drawn one of two ways (`pickRevisionBoardPath`):
-
-| Revision | Drawn by |
-| --- | --- |
-| Any catalogue board | `BoardImageNative`, with the revision's frames |
-| Spray, same wall version as the registered wall | `BoardImageNative` |
-| Spray, a different wall version | `SprayRevisionBoard` |
-| Spray, no wall version on record | Nothing. One line: "This wall photo is no longer available" |
-
-`SprayRevisionBoard` fetches `sprayWallRenderData(uuid, version)` itself, under
-its own query key, and **never writes the spray registry**. The registry holds
-one version per wall and the play drawer under the sheet draws from it, so
-registering an old version would swap the photo and holds under the live player.
-It draws the photo with `expo-image` (memory cache only, the URL is a 15 minute
-signature) and the holds as rings in one SVG layer.
-
-With no connection the sheet and the old-version board show the offline placard,
-never "photo no longer available".
-
-### Known limits
-
-- The old-photo preview draws plain rings, not the wall's stored look.
-- No history for edits made before this shipped.
-- The data export does not include revisions.
-- Deleting a climb deletes its revisions (the foreign key cascades).
-- A tick imported from another app has no revision (NULL), and neither does one
-  logged before the column existed. Nothing backfills them.
+The app offers Edit from `canEditClimb` in `@boardsesh/create-climb-react`. On
+spray an app built before this change still offers it to the setter after 24
+hours and, where it read `viewerCanEditClimbs: true`, to wall editors. The server
+now answers `viewerCanEditClimbs: false` for everyone, so only the setter's own
+Edit survives, and past 24 hours `updateClimb` refuses it with
+`CLIMB_EDIT_WINDOW_EXPIRED`, which the editor already translates. A failure with
+no known code gets the generic line, and the working copy stays on screen.
+
+## Climb revisions (retired)
+
+Revision history (#5955) and the holds-change stats restart (#6023) are retired.
+`updateClimb` writes no `board_climb_revisions` row and does not move
+`board_climbs.revision_number` or `holds_revision_number`. `climbRevisions`
+answers `[]`, and `climbCurrentRevision` on the log and feed items answers `null`.
+The rows already written stay.
+
+What is still read:
+
+- **The holds epoch.** A tick whose `climb_revision` is below the climb's
+  `holds_revision_number` was climbed on older holds, and stays off the climb's
+  ascensionist count, first ascent and stars (`recompute.ts`) and off every
+  per-climb "has this climber sent / tried / rated it" check: search filters,
+  recommendations, the Projects playlist, a wall's recent senders
+  (`packages/db/src/queries/climb-stats/holds-epoch.ts`). For a climb nobody
+  edited before the retirement the epoch is 1 and the rule changes nothing; for
+  the few edited before, it stays correct.
+- **The tick stamp.** `saveTick` still stores `boardsesh_ticks.climb_revision`
+  (`resolveTickClimbRevision`): the client's `climbRevision` when it is from 1 up
+  to the climb's stored revision, otherwise the revision live at `climbedAt` from
+  the kept revision rows, 1 for a climb on revision 1, NULL when the climb has no
+  row. No whole number the client sends gets a tick refused. `updateTick` never
+  changes the stamp.
+
+`Climb.revisionNumber`, `Climb.holdsRevisionNumber` and `Tick.climbRevision` come
+back unchanged, and `syncTicks` / `syncClimbs` keep emitting the three columns.
+`MAX_REVISIONS_PER_CLIMB` stays in `@boardsesh/board-config` for the app builds
+whose history list reads it; the server no longer enforces it.
 
 ## Setting a climb on a wall (the editor)
 
