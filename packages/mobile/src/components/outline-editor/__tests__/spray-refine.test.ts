@@ -7,10 +7,12 @@ import {
   REFINE_BRUSH_MAX_PT,
   REFINE_BRUSH_MIN_PT,
   REFINE_BRUSH_TOP_RUNG,
+  FULL_REFINE_BRUSH_RANGE,
   REFINE_CIRCLE_SAMPLES,
   REFINE_FRAME_RADIUS,
   REFINE_FRAME_SCALE_MAX,
   adjustRefineBrushPt,
+  clampRefineBrushPt,
   fromBrushFrame,
   holdFromRefinedOutline,
   interiorPointOnRow,
@@ -19,6 +21,7 @@ import {
   refineBrushPtAtRatio,
   refineBrushPtAtRung,
   refineBrushRadiusAtZoom,
+  refineBrushRangeAtZoom,
   refineBrushRatioForPt,
   refineBrushRung,
   refineBrushScreenRadiusPt,
@@ -139,60 +142,126 @@ describe('refineBrushScreenRadiusPt', () => {
   });
 });
 
+describe('the brush-size slider range', () => {
+  const frame = refineFrameFor({ cx: 0, cy: 0, r: 40 });
+  const limits = refineBrushLimits(40, frame);
+
+  it('at 1× on a phone runs from 1 pt to the size that paints the cap', () => {
+    const range = refineBrushRangeAtZoom(PHONE_BOARD_PX_PER_PT, 1, limits);
+    // The floor (3 board px) is under a point at 1×, so the track starts at 1 pt.
+    expect(range.minPt).toBe(REFINE_BRUSH_MIN_PT);
+    // The cap (24 board px) is about 4.4 pt: no dead upper half.
+    expect(range.maxPt).toBeCloseTo(limits.capBoardPx / PHONE_BOARD_PX_PER_PT);
+    expect(
+      refineBrushRadiusAtZoom(range.maxPt, PHONE_BOARD_PX_PER_PT, 1, limits.floorBoardPx, limits.capBoardPx),
+    ).toBeCloseTo(limits.capBoardPx);
+  });
+
+  it('at 8× runs from the size that paints the floor to the cap', () => {
+    const range = refineBrushRangeAtZoom(PHONE_BOARD_PX_PER_PT, 8, limits);
+    expect(range.minPt).toBeCloseTo((limits.floorBoardPx * 8) / PHONE_BOARD_PX_PER_PT);
+    // The cap is about 35 pt at 8×: held to the track's 32 pt top.
+    expect(range.maxPt).toBe(Math.min(REFINE_BRUSH_MAX_PT, (limits.capBoardPx * 8) / PHONE_BOARD_PX_PER_PT));
+    // At 4× it fits: the top of the track paints exactly the cap.
+    expect(refineBrushRangeAtZoom(PHONE_BOARD_PX_PER_PT, 4, limits).maxPt).toBeCloseTo(
+      (limits.capBoardPx * 4) / PHONE_BOARD_PX_PER_PT,
+    );
+    const { floorBoardPx, capBoardPx } = limits;
+    expect(refineBrushRadiusAtZoom(range.minPt, PHONE_BOARD_PX_PER_PT, 8, floorBoardPx, capBoardPx)).toBeCloseTo(
+      floorBoardPx,
+    );
+  });
+
+  it('stays inside 1-32 pt, and never collapses to nothing', () => {
+    const deep = refineBrushRangeAtZoom(
+      PHONE_BOARD_PX_PER_PT,
+      20,
+      refineBrushLimits(200, refineFrameFor({ cx: 0, cy: 0, r: 200 })),
+    );
+    expect(deep.maxPt).toBe(REFINE_BRUSH_MAX_PT);
+    const tiny = refineBrushRangeAtZoom(
+      PHONE_BOARD_PX_PER_PT,
+      1,
+      refineBrushLimits(4, refineFrameFor({ cx: 0, cy: 0, r: 4 })),
+    );
+    expect(tiny.minPt).toBeGreaterThanOrEqual(REFINE_BRUSH_MIN_PT * 0.8);
+    expect(tiny.maxPt).toBeGreaterThan(tiny.minPt);
+    expect(refineBrushRangeAtZoom(0, 1, limits)).toEqual(FULL_REFINE_BRUSH_RANGE);
+  });
+
+  it('shows a stored size clamped into the range without changing it', () => {
+    const atOne = refineBrushRangeAtZoom(PHONE_BOARD_PX_PER_PT, 1, limits);
+    const atEight = refineBrushRangeAtZoom(PHONE_BOARD_PX_PER_PT, 8, limits);
+    const stored = 2;
+    expect(clampRefineBrushPt(stored, atOne)).toBe(stored);
+    // At 8× 2 pt is under the floor's size: shown at the bottom of the track...
+    expect(clampRefineBrushPt(stored, atEight)).toBe(atEight.minPt);
+    // ...and it paints the same brush either way.
+    const { floorBoardPx, capBoardPx } = limits;
+    expect(refineBrushRadiusAtZoom(stored, PHONE_BOARD_PX_PER_PT, 8, floorBoardPx, capBoardPx)).toBeCloseTo(
+      refineBrushRadiusAtZoom(clampRefineBrushPt(stored, atEight), PHONE_BOARD_PX_PER_PT, 8, floorBoardPx, capBoardPx),
+    );
+    expect(stored).toBe(2);
+  });
+});
+
 describe('the brush-size slider track', () => {
-  it('runs from 1 to 32 pt in 21 rungs', () => {
-    expect(REFINE_BRUSH_TOP_RUNG).toBe(20);
-    expect(refineBrushPtAtRung(0)).toBe(REFINE_BRUSH_MIN_PT);
-    expect(refineBrushPtAtRung(REFINE_BRUSH_TOP_RUNG)).toBe(REFINE_BRUSH_MAX_PT);
-    expect(refineBrushPtAtRung(4)).toBe(2);
-    expect(refineBrushPtAtRung(-3)).toBe(REFINE_BRUSH_MIN_PT);
-    expect(refineBrushPtAtRung(99)).toBe(REFINE_BRUSH_MAX_PT);
-  });
+  const minPt = 1.5;
+  const maxPt = 12;
 
-  it('maps the track ends and its middle, and inverts exactly', () => {
-    expect(refineBrushPtAtRatio(0)).toBeCloseTo(1);
-    expect(refineBrushPtAtRatio(1)).toBeCloseTo(32);
-    // A log track: halfway is the geometric middle, not 16.5 pt.
-    expect(refineBrushPtAtRatio(0.5)).toBeCloseTo(Math.sqrt(32));
+  it('maps the range ends and its middle on a log track, and inverts exactly', () => {
+    expect(refineBrushPtAtRatio(0, minPt, maxPt)).toBeCloseTo(minPt);
+    expect(refineBrushPtAtRatio(1, minPt, maxPt)).toBeCloseTo(maxPt);
+    expect(refineBrushPtAtRatio(0.5, minPt, maxPt)).toBeCloseTo(Math.sqrt(minPt * maxPt));
     for (const ratio of [0, 0.1, 0.37, 0.5, 0.92, 1]) {
-      expect(refineBrushRatioForPt(refineBrushPtAtRatio(ratio))).toBeCloseTo(ratio, 9);
+      expect(refineBrushRatioForPt(refineBrushPtAtRatio(ratio, minPt, maxPt), minPt, maxPt)).toBeCloseTo(ratio, 9);
     }
-    expect(refineBrushRatioForPt(0)).toBe(0);
-    expect(refineBrushRatioForPt(100)).toBe(1);
-    expect(refineBrushPtAtRatio(-1)).toBeCloseTo(1);
-    expect(refineBrushPtAtRatio(2)).toBeCloseTo(32);
+    expect(refineBrushRatioForPt(0.5, minPt, maxPt)).toBe(0);
+    expect(refineBrushRatioForPt(100, minPt, maxPt)).toBe(1);
+    expect(refineBrushPtAtRatio(-1, minPt, maxPt)).toBeCloseTo(minPt);
+    expect(refineBrushPtAtRatio(2, minPt, maxPt)).toBeCloseTo(maxPt);
   });
 
-  it('snaps to a rung', () => {
-    expect(roundRefineBrushPt(2.05)).toBe(2);
-    expect(roundRefineBrushPt(0.2)).toBe(REFINE_BRUSH_MIN_PT);
-    expect(roundRefineBrushPt(500)).toBe(REFINE_BRUSH_MAX_PT);
-    expect(refineBrushRung(roundRefineBrushPt(5))).toBe(refineBrushRung(5));
+  it('has 21 steps across whatever the range is', () => {
+    expect(REFINE_BRUSH_TOP_RUNG).toBe(20);
+    expect(refineBrushPtAtRung(0, minPt, maxPt)).toBe(minPt);
+    expect(refineBrushPtAtRung(REFINE_BRUSH_TOP_RUNG, minPt, maxPt)).toBe(maxPt);
+    expect(refineBrushPtAtRung(-3, minPt, maxPt)).toBe(minPt);
+    expect(refineBrushPtAtRung(99, minPt, maxPt)).toBe(maxPt);
+    expect(refineBrushRung(refineBrushPtAtRung(7, minPt, maxPt), minPt, maxPt)).toBe(7);
+  });
+
+  it('snaps to a step', () => {
+    const seventh = refineBrushPtAtRung(7, minPt, maxPt);
+    expect(roundRefineBrushPt(seventh * 1.01, minPt, maxPt)).toBe(seventh);
+    expect(roundRefineBrushPt(0.2, minPt, maxPt)).toBe(minPt);
+    expect(roundRefineBrushPt(500, minPt, maxPt)).toBe(maxPt);
   });
 
   it('steps one rung per VoiceOver increment or decrement, clamped at the ends', () => {
-    expect(adjustRefineBrushPt(2, 1)).toBe(refineBrushPtAtRung(5));
-    expect(adjustRefineBrushPt(2, -1)).toBe(refineBrushPtAtRung(3));
-    expect(adjustRefineBrushPt(REFINE_BRUSH_MIN_PT, -1)).toBe(REFINE_BRUSH_MIN_PT);
-    expect(adjustRefineBrushPt(REFINE_BRUSH_MAX_PT, 1)).toBe(REFINE_BRUSH_MAX_PT);
+    const fourth = refineBrushPtAtRung(4, minPt, maxPt);
+    expect(adjustRefineBrushPt(fourth, 1, minPt, maxPt)).toBe(refineBrushPtAtRung(5, minPt, maxPt));
+    expect(adjustRefineBrushPt(fourth, -1, minPt, maxPt)).toBe(refineBrushPtAtRung(3, minPt, maxPt));
+    expect(adjustRefineBrushPt(minPt, -1, minPt, maxPt)).toBe(minPt);
+    expect(adjustRefineBrushPt(maxPt, 1, minPt, maxPt)).toBe(maxPt);
     // Every step lands on a value the thumb can reach too.
-    let size = REFINE_BRUSH_MIN_PT;
+    let size = minPt;
     for (let step = 0; step < REFINE_BRUSH_TOP_RUNG; step += 1) {
-      const next = adjustRefineBrushPt(size, 1);
-      expect(roundRefineBrushPt(next)).toBe(next);
+      const next = adjustRefineBrushPt(size, 1, minPt, maxPt);
+      expect(roundRefineBrushPt(next, minPt, maxPt)).toBe(next);
       expect(next).toBeGreaterThan(size);
       size = next;
     }
-    expect(size).toBe(REFINE_BRUSH_MAX_PT);
+    expect(size).toBe(maxPt);
   });
 
   it('starts near the old Medium at 1× on a phone', () => {
     expect(DEFAULT_REFINE_BRUSH_PT * PHONE_BOARD_PX_PER_PT).toBeCloseTo(0.3 * 40, -1);
   });
 
-  it('reads a stored size back, or the default', () => {
+  it('reads a stored size back as stored, or the default', () => {
     expect(parseRefineBrushPt(4)).toBe(4);
-    expect(parseRefineBrushPt(4.1)).toBe(4);
+    expect(parseRefineBrushPt(4.1)).toBe(4.1);
     expect(parseRefineBrushPt('8')).toBe(8);
     for (const stored of [null, undefined, 'big', 0, -2, 64, Number.NaN, {}]) {
       expect(parseRefineBrushPt(stored)).toBe(DEFAULT_REFINE_BRUSH_PT);

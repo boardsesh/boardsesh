@@ -26,14 +26,14 @@ describe('useSprayRefineBrush', () => {
     expect(store.getPreference).toHaveBeenCalledWith(SPRAY_REFINE_BRUSH_KEY);
   });
 
-  it('saves a pick snapped to the track, and a late read does not overwrite it', async () => {
+  it('saves a pick as picked, and a late read does not overwrite it', async () => {
     let resolveRead: (value: unknown) => void = () => {};
     store.getPreference.mockReturnValue(new Promise((resolve) => (resolveRead = resolve)));
     const hook = renderHook(useSprayRefineBrush);
     act(() => hook.result.current[1](4.1));
-    expect(hook.result.current[0]).toBe(4);
-    expect(store.setPreference).toHaveBeenCalledWith(SPRAY_REFINE_BRUSH_KEY, 4);
+    expect(hook.result.current[0]).toBe(4.1);
+    expect(store.setPreference).toHaveBeenCalledWith(SPRAY_REFINE_BRUSH_KEY, 4.1);
     await act(async () => resolveRead(16));
-    expect(hook.result.current[0]).toBe(4);
+    expect(hook.result.current[0]).toBe(4.1);
   });
 });

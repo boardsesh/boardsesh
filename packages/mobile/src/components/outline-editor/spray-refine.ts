@@ -83,23 +83,20 @@ export const REFINE_FRAME_SCALE_MAX = 8;
 export const REFINE_CIRCLE_SAMPLES = 48;
 
 /**
- * The brush size the climber picks, as a RADIUS IN SCREEN POINTS: the
- * slider's range, on a log track (rungs a quarter-doubling apart, 21 of them).
+ * The brush size the climber picks, as a RADIUS IN SCREEN POINTS.
  *
  * Screen points, so zooming in makes the brush finer on the hold: at 1× on a
  * phone a point is about 5 board px of a 2048 px photo, at 8× well under one.
- * The radius actually painted is then clamped to the hold
- * ({@link refineBrushRadiusAtZoom}), so the top of the track at 1× paints the
- * cap, not a brush bigger than the hold.
+ * The radius actually painted is clamped to the hold
+ * ({@link refineBrushRadiusAtZoom}), so the slider's range follows the zoom
+ * ({@link refineBrushRangeAtZoom}): it runs from the size that paints the floor
+ * to the size that paints the cap at the zoom the board last settled at, inside
+ * these absolute bounds, so no stretch of the track paints the same brush.
  */
 export const REFINE_BRUSH_MIN_PT = 1;
 export const REFINE_BRUSH_MAX_PT = 32;
-/** Rungs per doubling of the radius: 1, 1.19, 1.41, 1.68, 2 pt, … */
-const REFINE_BRUSH_RUNGS_PER_DOUBLING = 4;
-/** The top rung's index: 1 pt × 2^(20/4) = 32 pt. */
-export const REFINE_BRUSH_TOP_RUNG = Math.round(
-  Math.log2(REFINE_BRUSH_MAX_PT / REFINE_BRUSH_MIN_PT) * REFINE_BRUSH_RUNGS_PER_DOUBLING,
-);
+/** The slider's top step: 21 steps (0-20), whatever the range at this zoom. */
+export const REFINE_BRUSH_TOP_RUNG = 20;
 
 /**
  * The size Refine starts on: 2 pt is about 11 board px at 1× on a phone, the
@@ -115,47 +112,85 @@ export const DEFAULT_REFINE_BRUSH_PT = 2;
  */
 export const REFINE_BRUSH_CAP_FRACTION = 0.6;
 
-/** The rung a size sits on, 0 to {@link REFINE_BRUSH_TOP_RUNG}. */
-export function refineBrushRung(screenPt: number): number {
-  'worklet';
-  if (!(screenPt > REFINE_BRUSH_MIN_PT)) return 0;
-  const rung = Math.round(Math.log2(screenPt / REFINE_BRUSH_MIN_PT) * REFINE_BRUSH_RUNGS_PER_DOUBLING);
-  return Math.min(REFINE_BRUSH_TOP_RUNG, rung);
+/** The slider's range at one zoom, in screen points. */
+export type RefineBrushRange = { minPt: number; maxPt: number };
+
+/** The whole track: the range before a hold is open. */
+export const FULL_REFINE_BRUSH_RANGE: RefineBrushRange = { minPt: REFINE_BRUSH_MIN_PT, maxPt: REFINE_BRUSH_MAX_PT };
+
+/** A range never narrower than this ratio (one old quarter-doubling), so the slider always has somewhere to go. */
+const MIN_RANGE_RATIO = 2 ** 0.25;
+
+/**
+ * The slider's range at a settled zoom: from the size that paints the floor to
+ * the size that paints the cap, in screen points, inside
+ * [{@link REFINE_BRUSH_MIN_PT}, {@link REFINE_BRUSH_MAX_PT}]. Recomputed only
+ * when the zoom settles (the screen's `onZoomSettle`), never per frame.
+ */
+export function refineBrushRangeAtZoom(
+  boardPxPerPt: number,
+  zoom: number,
+  limits: RefineBrushLimits,
+): RefineBrushRange {
+  if (!(boardPxPerPt > 0) || !(zoom > 0)) return FULL_REFINE_BRUSH_RANGE;
+  const ptPerBoardPx = zoom / boardPxPerPt;
+  const clampPt = (value: number) => Math.min(REFINE_BRUSH_MAX_PT, Math.max(REFINE_BRUSH_MIN_PT, value));
+  let minPt = clampPt(limits.floorBoardPx * ptPerBoardPx);
+  let maxPt = clampPt(limits.capBoardPx * ptPerBoardPx);
+  if (maxPt < minPt * MIN_RANGE_RATIO) {
+    // A hold so small (or a zoom so far out) that the floor and the cap are the
+    // same few points: every size paints the same brush, so any short range does.
+    maxPt = Math.min(REFINE_BRUSH_MAX_PT, minPt * MIN_RANGE_RATIO);
+    minPt = maxPt / MIN_RANGE_RATIO;
+  }
+  return { minPt, maxPt };
 }
 
-/** The size on a rung, clamped to the track. */
-export function refineBrushPtAtRung(rung: number): number {
-  'worklet';
-  const clamped = Math.min(REFINE_BRUSH_TOP_RUNG, Math.max(0, Math.round(rung)));
-  // Two decimals, so a stored or spoken size is the same number every time.
-  return Math.round(REFINE_BRUSH_MIN_PT * 2 ** (clamped / REFINE_BRUSH_RUNGS_PER_DOUBLING) * 100) / 100;
+/** A stored size shown inside the range at this zoom. The stored size itself is not changed. */
+export function clampRefineBrushPt(screenPt: number, range: RefineBrushRange): number {
+  return Math.min(range.maxPt, Math.max(range.minPt, screenPt));
 }
 
-/** A size snapped to its nearest rung: the slider's quantiser. */
-export function roundRefineBrushPt(screenPt: number): number {
-  'worklet';
-  return refineBrushPtAtRung(refineBrushRung(screenPt));
-}
-
-/** The size at a 0-1 position along the log track. */
-export function refineBrushPtAtRatio(ratio: number): number {
+/** The size at a 0-1 position along the range's log track. */
+export function refineBrushPtAtRatio(ratio: number, minPt: number, maxPt: number): number {
   'worklet';
   const clamped = ratio < 0 ? 0 : ratio > 1 ? 1 : ratio;
-  return REFINE_BRUSH_MIN_PT * (REFINE_BRUSH_MAX_PT / REFINE_BRUSH_MIN_PT) ** clamped;
+  return minPt * (maxPt / minPt) ** clamped;
 }
 
-/** Where a size sits along the log track, 0-1. The inverse of {@link refineBrushPtAtRatio}. */
-export function refineBrushRatioForPt(screenPt: number): number {
+/** Where a size sits along the range's log track, 0-1. The inverse of {@link refineBrushPtAtRatio}. */
+export function refineBrushRatioForPt(screenPt: number, minPt: number, maxPt: number): number {
   'worklet';
-  if (!(screenPt > REFINE_BRUSH_MIN_PT)) return 0;
-  const ratio = Math.log(screenPt / REFINE_BRUSH_MIN_PT) / Math.log(REFINE_BRUSH_MAX_PT / REFINE_BRUSH_MIN_PT);
+  if (!(screenPt > minPt) || !(maxPt > minPt)) return 0;
+  const ratio = Math.log(screenPt / minPt) / Math.log(maxPt / minPt);
   return ratio > 1 ? 1 : ratio;
 }
 
-/** One VoiceOver / TalkBack step: the next rung up or down, clamped. */
-export function adjustRefineBrushPt(screenPt: number, direction: 1 | -1): number {
+/** The step a size sits on in the range, 0 to {@link REFINE_BRUSH_TOP_RUNG}. */
+export function refineBrushRung(screenPt: number, minPt: number, maxPt: number): number {
   'worklet';
-  return refineBrushPtAtRung(refineBrushRung(screenPt) + direction);
+  return Math.round(refineBrushRatioForPt(screenPt, minPt, maxPt) * REFINE_BRUSH_TOP_RUNG);
+}
+
+/** The size on a step of the range, clamped to it. */
+export function refineBrushPtAtRung(rung: number, minPt: number, maxPt: number): number {
+  'worklet';
+  const clamped = Math.min(REFINE_BRUSH_TOP_RUNG, Math.max(0, Math.round(rung)));
+  if (clamped === 0) return minPt;
+  if (clamped === REFINE_BRUSH_TOP_RUNG) return maxPt;
+  return refineBrushPtAtRatio(clamped / REFINE_BRUSH_TOP_RUNG, minPt, maxPt);
+}
+
+/** A size snapped to its nearest step of the range: the slider's quantiser. */
+export function roundRefineBrushPt(screenPt: number, minPt: number, maxPt: number): number {
+  'worklet';
+  return refineBrushPtAtRung(refineBrushRung(screenPt, minPt, maxPt), minPt, maxPt);
+}
+
+/** One VoiceOver / TalkBack step: the next step of the range up or down, clamped. */
+export function adjustRefineBrushPt(screenPt: number, direction: 1 | -1, minPt: number, maxPt: number): number {
+  'worklet';
+  return refineBrushPtAtRung(refineBrushRung(screenPt, minPt, maxPt) + direction, minPt, maxPt);
 }
 
 /** A stored size read back, or the default for anything that is not a size on the track. */
@@ -163,7 +198,7 @@ export function parseRefineBrushPt(stored: unknown): number {
   const value = typeof stored === 'string' ? Number(stored) : stored;
   if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_REFINE_BRUSH_PT;
   if (value < REFINE_BRUSH_MIN_PT || value > REFINE_BRUSH_MAX_PT) return DEFAULT_REFINE_BRUSH_PT;
-  return roundRefineBrushPt(value);
+  return value;
 }
 
 export type { BrushMode as RefineMode };

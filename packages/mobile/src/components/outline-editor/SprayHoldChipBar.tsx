@@ -14,16 +14,16 @@ import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import type { SprayHoldRole } from './spray-hold-editor-reducer';
 import { ValueSlider } from '../ValueSlider';
 import {
-  REFINE_BRUSH_MAX_PT,
-  REFINE_BRUSH_MIN_PT,
   REFINE_BRUSH_TOP_RUNG,
   adjustRefineBrushPt,
+  clampRefineBrushPt,
   refineBrushPtAtRatio,
   refineBrushRatioForPt,
   refineBrushRung,
   refineBrushScreenRadiusPt,
   roundRefineBrushPt,
   type RefineBrushLimits,
+  type RefineBrushRange,
 } from './spray-refine';
 
 type SprayHoldChipBarProps = {
@@ -145,8 +145,10 @@ export const SprayCornersChipBar = React.memo(function SprayCornersChipBar({ onF
 });
 
 type SprayRefineBarProps = {
-  /** The committed brush size, in screen points. */
+  /** The stored brush size, in screen points. Shown clamped into `range`, never rewritten by it. */
   brushPt: number;
+  /** The slider's range at the zoom the board last settled at (`refineBrushRangeAtZoom`). */
+  range: RefineBrushRange;
   /** The slider's live size, mirrored for the previews (the board's size disc and the dot here). */
   brushPtSV: SharedValue<number>;
   /** The board's live zoom. */
@@ -170,14 +172,16 @@ const SIZE_PREVIEW_MIN_DOT = 2;
 
 /**
  * Refine's controls, docked where the hold chips sit: the brush size as a
- * slider with a dot beside it drawn at the size the next dab paints ON SCREEN
- * (the picked size clamped to the hold at the live zoom, so it changes as the
- * board zooms), and Done. Add / Erase lives on the banner, next to Cancel, like
+ * slider whose range runs from the finest to the biggest brush at the zoom the
+ * board last settled at, with a dot beside it drawn at the size the next dab
+ * paints ON SCREEN (the picked size clamped to the hold at the live zoom, so it
+ * changes as the board zooms), and Done. Add / Erase lives on the banner, next to Cancel, like
  * add mode's Draw / Corners; Undo is the bar's (or the rail's) Undo, which takes
  * back one stroke at a time while Refine is open.
  */
 export const SprayRefineBar = React.memo(function SprayRefineBar({
   brushPt,
+  range,
   brushPtSV,
   boardZoomSV,
   boardPxPerPt,
@@ -202,10 +206,49 @@ export const SprayRefineBar = React.memo(function SprayRefineBar({
     const diameter = Math.max(SIZE_PREVIEW_MIN_DOT, radius * 2);
     return { width: diameter, height: diameter, borderRadius: diameter / 2 };
   });
+  // The track's shape for this range, as worklets the slider's gesture calls.
+  // A new range (a zoom settle) is a new identity and rebuilds the gesture:
+  // once per settle, never per frame.
+  const { minPt, maxPt } = range;
+  const ptAtRatio = useCallback(
+    (ratio: number) => {
+      'worklet';
+      return refineBrushPtAtRatio(ratio, minPt, maxPt);
+    },
+    [minPt, maxPt],
+  );
+  const ratioForPt = useCallback(
+    (screenPt: number) => {
+      'worklet';
+      return refineBrushRatioForPt(screenPt, minPt, maxPt);
+    },
+    [minPt, maxPt],
+  );
+  const roundPt = useCallback(
+    (screenPt: number) => {
+      'worklet';
+      return roundRefineBrushPt(screenPt, minPt, maxPt);
+    },
+    [minPt, maxPt],
+  );
+  const rungOf = useCallback(
+    (screenPt: number) => {
+      'worklet';
+      return refineBrushRung(screenPt, minPt, maxPt);
+    },
+    [minPt, maxPt],
+  );
+  const adjustPt = useCallback(
+    (screenPt: number, direction: 1 | -1) => adjustRefineBrushPt(screenPt, direction, minPt, maxPt),
+    [minPt, maxPt],
+  );
   const formatSize = useCallback(
     (screenPt: number) =>
-      t('sprayEditor.refine.sizeValue', { step: refineBrushRung(screenPt) + 1, count: REFINE_BRUSH_TOP_RUNG + 1 }),
-    [t],
+      t('sprayEditor.refine.sizeValue', {
+        step: refineBrushRung(screenPt, minPt, maxPt) + 1,
+        count: REFINE_BRUSH_TOP_RUNG + 1,
+      }),
+    [t, minPt, maxPt],
   );
   return (
     <View pointerEvents="box-none" style={[styles.row, styles.refineRow]}>
@@ -225,16 +268,16 @@ export const SprayRefineBar = React.memo(function SprayRefineBar({
       </View>
       <View style={styles.sliderSlot}>
         <ValueSlider
-          value={brushPt}
-          min={REFINE_BRUSH_MIN_PT}
-          max={REFINE_BRUSH_MAX_PT}
-          ratioToValue={refineBrushPtAtRatio}
-          valueToRatio={refineBrushRatioForPt}
-          round={roundRefineBrushPt}
-          notch={refineBrushRung}
+          value={clampRefineBrushPt(brushPt, range)}
+          min={minPt}
+          max={maxPt}
+          ratioToValue={ptAtRatio}
+          valueToRatio={ratioForPt}
+          round={roundPt}
+          notch={rungOf}
           format={formatSize}
           accessibilityLabel={t('sprayEditor.refine.size')}
-          adjust={adjustRefineBrushPt}
+          adjust={adjustPt}
           reduceMotion={reduceMotion}
           onLiveChange={onBrushPtLive}
           onCommit={onBrushPtCommit}

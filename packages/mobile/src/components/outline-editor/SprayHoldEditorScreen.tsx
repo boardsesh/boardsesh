@@ -59,7 +59,13 @@ import { SprayCornersChipBar, SprayHoldChipBar, SprayRefineBar } from './SprayHo
 import { SprayHoldInspector } from './SprayHoldInspector';
 import { SprayRefineLayer } from './SprayRefineLayer';
 import { planRefineExit, useSprayRefineSession, type RefineRejection } from './use-spray-refine-session';
-import { refineBrushLimits, refineBrushRadiusAtZoom, type RefineMode } from './spray-refine';
+import {
+  FULL_REFINE_BRUSH_RANGE,
+  refineBrushLimits,
+  refineBrushRadiusAtZoom,
+  refineBrushRangeAtZoom,
+  type RefineMode,
+} from './spray-refine';
 import { useSprayRefineBrush } from './use-spray-refine-brush';
 import { SprayHoverPreview } from './SprayHoverPreview';
 import { SprayPencilSurface } from './SprayPencilSurface';
@@ -460,6 +466,12 @@ export function SprayHoldEditorScreen({
   const refineSizeRingSV = useSharedValue(0);
   /** The board's zoom, mirrored out of the board by the refine layer, for the size dot by the slider. */
   const refineBoardZoomSV = useSharedValue(1);
+  /**
+   * The zoom the board last SETTLED at, reported by the refine layer once per
+   * settle (and once when Refine opens), never per frame: the slider's range
+   * follows it.
+   */
+  const [refineSettledZoom, setRefineSettledZoom] = useState(1);
   /** A line about the last kept stroke that is not an error: the stray pieces it dropped. */
   const [refineNotice, setRefineNotice] = useState<string | null>(null);
   const refine = useSprayRefineSession();
@@ -696,6 +708,12 @@ export function SprayHoldEditorScreen({
   ]);
 
   const boardScale = renderToBoardScale(wall?.photoWidth ?? 0, boardRender.width);
+  /** Refine's slider range at the settled zoom: finest to biggest brush that paints differently. */
+  const refineBrushRange = useMemo(
+    () =>
+      refineLimits ? refineBrushRangeAtZoom(boardScale, refineSettledZoom, refineLimits) : FULL_REFINE_BRUSH_RANGE,
+    [boardScale, refineSettledZoom, refineLimits],
+  );
 
   // Memoised on `state.holds`, which only changes when a hold does — never on a
   // selection tap.
@@ -2296,6 +2314,7 @@ export function SprayHoldEditorScreen({
               strokeZoomSV={refineStrokeZoomSV}
               boardZoomSV={context.scaleSV}
               zoomMirrorSV={refineBoardZoomSV}
+              onZoomSettle={setRefineSettledZoom}
               boardPxPerPt={boardScale}
               limits={refineLimits ?? NO_REFINE_LIMITS}
               sizeRingOpacitySV={refineSizeRingSV}
@@ -2783,6 +2802,7 @@ export function SprayHoldEditorScreen({
     tool === 'refine' && canEdit ? (
       <SprayRefineBar
         brushPt={refineBrushPt}
+        range={refineBrushRange}
         brushPtSV={refineBrushPtSV}
         boardZoomSV={refineBoardZoomSV}
         boardPxPerPt={boardScale}

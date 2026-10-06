@@ -1264,29 +1264,37 @@ What the editor does with a wall is decided by this document rather than by tast
     iPad a Pencil double tap (or squeeze) set to "switch to eraser" flips it
     too, instead of leaving the tool. The brush size is a slider in the dock
     with Done (`SprayRefineBar`, on the shared `ValueSlider`): a radius in
-    SCREEN POINTS from 1 to 32 on a log track, 21 rungs a quarter-doubling
-    apart (`REFINE_BRUSH_MIN_PT` .. `REFINE_BRUSH_MAX_PT` in `spray-refine.ts`),
-    starting on 2 pt, about the old Medium at 1x on a phone. Screen points so
-    that zooming in paints finer: the radius a stroke paints, in board px, is
-    `size x boardPxPerPt / zoom` at the zoom the stroke STARTED at
-    (`DrawStrokeOverlay`'s `strokeZoomSV`), clamped between the engine's floor
-    (3 frame units, 3 board px or 7.5% of a 40 px hold; below it a dab vanishes
-    in the decimation) and a cap of 0.6 of the hold's radius when Refine opened
-    (`REFINE_BRUSH_CAP_FRACTION`, the old Large; `refineBrushRadiusAtZoom`). At
-    1x on a phone a point is about 5 board px of a 2048 px photo, so most of the
-    track paints the cap there, which is what the old Large did; at 8x a 2 pt
-    brush is under 1.5 board px and paints the floor, half the old Small. The
-    cap is what keeps a 12 pt brush at 1x (about 66 board px against a 40 px
-    hold) from re-shaping the whole hold and pushing the bitmap to its cap. Next
-    to the slider a dot is drawn at the size the next dab paints ON SCREEN after
-    the clamp, at the live zoom (the refine layer mirrors the board's zoom out to
-    it), so it grows and shrinks as the board zooms. While the slider moves a
-    disc of the brush's size sits on the hold's centre, so the size reads
-    against the hold's real edge; it fades 0.7 s after the slider lets go.
-    VoiceOver reads the slider as "Brush size, Size 5 of 21" and steps it one
-    rung per swipe. The size is remembered per device (`useSprayRefineBrush`,
-    the add shape's AsyncStorage pattern); the mode carries from one hold to the
-    next for the visit.
+    SCREEN POINTS, starting on 2 pt (about the old Medium at 1x on a phone).
+    Screen points so that zooming in paints finer: the radius a stroke paints,
+    in board px, is `size x boardPxPerPt / zoom` at the zoom the stroke STARTED
+    at (`DrawStrokeOverlay`'s `strokeZoomSV`), clamped between the engine's
+    floor (3 frame units, 3 board px or 7.5% of a 40 px hold; below it a dab
+    vanishes in the decimation) and a cap of 0.6 of the hold's radius when
+    Refine opened (`REFINE_BRUSH_CAP_FRACTION`, the old Large;
+    `refineBrushRadiusAtZoom`). The cap is what keeps a 12 pt brush at 1x
+    (about 66 board px against a 40 px hold) from re-shaping the whole hold
+    and pushing the bitmap to its cap.
+  - **The slider's range follows the zoom.** It runs from the size that paints
+    the floor to the size that paints the cap at the zoom the board last
+    SETTLED at, inside 1-32 pt, on a log track with 21 steps whatever the range
+    (`refineBrushRangeAtZoom`): on a phone with a 40 px hold, 1 to about 4.4 pt
+    at 1x, about 4.4 to 32 pt at 8x. So no stretch of the track paints the same
+    brush. The range changes only on a settle, never per frame: the refine
+    layer watches the zoom on the UI thread and reports it to JS once it has
+    held still for 120 ms at a new value (a pinch's end, a zoom animation's
+    end, Refine opening), so the slider re-renders once per zoom. The stored
+    size is the screen-point radius the climber last picked, remembered per
+    device (`useSprayRefineBrush`, the add shape's AsyncStorage pattern); the
+    slider shows it clamped into the current range (`clampRefineBrushPt`) and
+    only a drag or a VoiceOver step rewrites it, so zooming in and back out
+    returns the thumb to where it was. Next to the slider a dot is drawn at the
+    size the next dab paints ON SCREEN after the clamp, at the live zoom (the
+    refine layer mirrors the board's zoom out to it), so it grows and shrinks
+    as the board zooms. While the slider moves a disc of the brush's size sits
+    on the hold's centre, so the size reads against the hold's real edge; it
+    fades 0.7 s after the slider lets go. VoiceOver reads the slider as "Brush
+    size, Size 5 of 21" and steps it one step per swipe. The mode carries from
+    one hold to the next for the visit.
   - **Painting.** `DrawStrokeOverlay` with `acceptStationaryTaps`, so a dab
     paints too, and the loupe for a finger. Two fingers zoom and pan
     (`pinchPans`). On iPad with "Pencil only" on, fingers pan and only the
