@@ -19,6 +19,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, overlays, spacing } from '../../theme/tokens';
 import { SprayScanBand, SCAN_BAND_HEIGHT } from '../outline-editor/SprayScanBand';
 import { fitSprayPhoto, SPRAY_BAR_GUTTER } from '../outline-editor/spray-photo-frame';
+import { sprayPhotoReservesBottom, useSprayEditorLayout } from '../outline-editor/use-spray-editor-layout';
 
 /** One pass of the band from the top of the photo to the bottom. */
 const SCAN_PASS_MS = 1800;
@@ -77,6 +78,7 @@ export function SprayScanPhoto({
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
+  const { layout } = useSprayEditorLayout();
   const [area, setArea] = useState({ width: 0, height: 0 });
   const [loadedSize, setLoadedSize] = useState<{ width: number; height: number } | null>(null);
 
@@ -101,6 +103,9 @@ export function SprayScanPhoto({
     bottomInset: insets.bottom,
     photoWidth: size.width,
     photoHeight: size.height,
+    // The hold editor fits with the same answer, or the rings would not land
+    // where the band swept.
+    reserveBottom: sprayPhotoReservesBottom(layout),
   });
 
   const scanning = band && !failed && !reduceMotion && frame.height > 0;

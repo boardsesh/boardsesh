@@ -1,4 +1,4 @@
-import { Stack, router } from 'expo-router';
+import { Stack, router, type NativeStackNavigationOptions } from 'expo-router';
 import { SprayWizardExitButton } from '../../src/components/spray-wall/SprayWizardExitButton';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { Pressable } from 'react-native';
@@ -8,6 +8,25 @@ import { useStackScreenOptions } from '../../src/hooks/use-stack-screen-options'
 import { isFirstBoardMode, isNoBoardEntry } from '../../src/lib/boards/first-board-mode';
 import { noteFirstBoardCloseTapped } from '../../src/lib/onboarding/first-board-picker-analytics';
 import { holdUntilLaunchReady } from '../../src/components/launch-update/hold-until-launch-ready';
+import { sprayFlowCoversScreen, sprayFlowScreenOptions } from '../../src/lib/spray/spray-flow-presentation';
+
+/**
+ * The holds and reset screens on iPad: full screen, so they also need an X, as
+ * they have neither a back chevron (a modal shows none) nor a swipe down to
+ * leave by. The X goes back the way the screens' own Back buttons do, so their
+ * `usePreventRemove` guards still ask before unsaved edits are thrown away.
+ * Elsewhere this adds nothing: on a phone the card's swipe and the chevron are
+ * already the way out.
+ */
+function sprayMaintenanceOptions(): NativeStackNavigationOptions {
+  if (!sprayFlowCoversScreen()) return {};
+  return {
+    ...sprayFlowScreenOptions(),
+    headerLeft: ({ tintColor }) => (
+      <SprayWizardExitButton returnTo={resolveBoardReturnTo(undefined)} tintColor={tintColor} />
+    ),
+  };
+}
 
 /**
  * How the picker was opened, from its params, read defensively: `route.params`
@@ -87,10 +106,17 @@ function BoardsLayout() {
       {/* The add-a-wall flow, pushed like the builder above it. A ROUTE and not a
           sheet: two of its steps (the corner markers and the hold editor) are
           full-screen pan-and-pinch surfaces, which `docs/mobile-sheets-vs-routes.md`
-          rule 3 keeps off a sheet's own drag. */}
+          rule 3 keeps off a sheet's own drag.
+
+          On iPad the three spray screens cover the whole screen
+          (`sprayFlowScreenOptions`) when pushed over the picker. Opened straight
+          from the live board sheet, one is this stack's FIRST screen, which
+          ignores its own presentation; app/_layout.tsx covers that case on the
+          root `boards` screen. */}
       <Stack.Screen
         name="spray/new"
         options={({ route }) => ({
+          ...sprayFlowScreenOptions(),
           title: tBoards('sprayWizard.screenTitle'),
           headerBackButtonMenuEnabled: false,
           headerLeft: ({ tintColor }) => {
@@ -106,7 +132,11 @@ function BoardsLayout() {
       />
       <Stack.Screen
         name="spray/holds"
-        options={{ title: tBoards('sprayMaintenance.screenTitle'), headerBackButtonMenuEnabled: false }}
+        options={{
+          title: tBoards('sprayMaintenance.screenTitle'),
+          headerBackButtonMenuEnabled: false,
+          ...sprayMaintenanceOptions(),
+        }}
       />
       {/* Resetting a wall — a new photograph of a wall that already carries
           climbs. Same route-not-sheet reasoning as the flow above: the corner
@@ -117,7 +147,11 @@ function BoardsLayout() {
           native dismissal has settled. */}
       <Stack.Screen
         name="spray/reset"
-        options={{ title: tBoards('sprayReset.screenTitle'), headerBackButtonMenuEnabled: false }}
+        options={{
+          title: tBoards('sprayReset.screenTitle'),
+          headerBackButtonMenuEnabled: false,
+          ...sprayMaintenanceOptions(),
+        }}
       />
     </Stack>
   );

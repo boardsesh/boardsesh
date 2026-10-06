@@ -19,7 +19,11 @@ import Animated, {
 import { useTranslation } from 'react-i18next';
 import { MAX_HOLDS_PER_WALL } from '@boardsesh/board-config';
 import { Text } from '../Text';
-import { InteractiveFilterBoard, type FilterBoardTransformContext } from '../search/InteractiveFilterBoard';
+import {
+  InteractiveFilterBoard,
+  type FilterBoardControls,
+  type FilterBoardTransformContext,
+} from '../search/InteractiveFilterBoard';
 import { GlassIconButton } from '../GlassIconButton';
 import { OnboardingTipBanner } from '../onboarding/OnboardingTipBanner';
 import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
@@ -51,6 +55,8 @@ import { SprayHoldSpotlight } from './SprayHoldSpotlight';
 import { SprayPublishSweep, PUBLISH_SWEEP_MS } from './SprayPublishSweep';
 import { fitSprayPhoto, SPRAY_BAR_GUTTER, SPRAY_BAR_TOTAL_HEIGHT, SPRAY_EDITOR_MAX_SCALE } from './spray-photo-frame';
 import { useSprayAddShape, type SprayAddShape } from './use-spray-add-shape';
+import { sprayPhotoReservesBottom, useSprayEditorLayout } from './use-spray-editor-layout';
+import { sprayFlowCoversScreen } from '../../lib/spray/spray-flow-presentation';
 import { revertedHold, type SpraySpotlightKind, type SpraySpotlightPulse } from './spray-spotlight';
 import { useSprayEditorHints, type SprayHintId } from './use-spray-editor-hints';
 import { renderToBoardScale, type StrokeRejection } from './stroke';
@@ -244,6 +250,7 @@ export function SprayHoldEditorScreen({
   const { t } = useTranslation('boards');
   const insets = useSafeAreaInsets();
   const headerInset = useTransparentHeaderInset();
+  const { layout } = useSprayEditorLayout();
 
   const { isLoading, isUnavailable, isStalled, retry, homography, wall } = useSprayWallDraft(
     layoutId,
@@ -406,10 +413,12 @@ export function SprayHoldEditorScreen({
   // Full width, fitted to the height the bottom bar leaves free. `slotHeight` is
   // that free height: the photo is centred in it, so a landscape wall sits in
   // the middle of the screen rather than pinned to the top over a black void.
+  // On the tablet layout nothing is kept free and the photo fills the screen.
   // The scan step fits its photo the same way, so the rings land where the
   // scan band was.
   const photoWidth = wall?.photoWidth ?? 0;
   const photoHeight = wall?.photoHeight ?? 0;
+  const reserveBottom = sprayPhotoReservesBottom(layout);
   const boardRender = useMemo(
     () =>
       fitSprayPhoto({
@@ -418,9 +427,39 @@ export function SprayHoldEditorScreen({
         bottomInset: insets.bottom,
         photoWidth,
         photoHeight,
+        reserveBottom,
       }),
-    [area.width, area.height, insets.bottom, photoWidth, photoHeight],
+    [area.width, area.height, insets.bottom, photoWidth, photoHeight, reserveBottom],
   );
+
+  const boardControlRef = useRef<FilterBoardControls | null>(null);
+  /**
+   * Bumped when the photo changes size, to remount the gesture overlay and so
+   * drop whatever touch it was tracking. See below.
+   */
+  const [gestureEpoch, setGestureEpoch] = useState(0);
+  const fittedSizeRef = useRef({ width: 0, height: 0 });
+  // An iPad window resizes under the editor: a rotation, Split View, Stage
+  // Manager, or the layout crossing between tablet and phone. The zoom is a
+  // transform of the OLD size, so it is reset rather than left framing
+  // something else, and a stroke or drag in progress is dropped rather than
+  // finished against a board that moved under the finger. Its points are in
+  // board pixels, so nothing already drawn is wrong; only the rest of the
+  // stroke would be. iPad only: phones are portrait-locked, and Android keeps
+  // the editor it had.
+  useEffect(() => {
+    const previous = fittedSizeRef.current;
+    fittedSizeRef.current = { width: boardRender.width, height: boardRender.height };
+    if (!sprayFlowCoversScreen() || previous.width === 0) return;
+    if (previous.width === boardRender.width && previous.height === boardRender.height) return;
+    boardControlRef.current?.resetZoom();
+    draftPointsSV.value = NO_POINTS;
+    dragOffsetXSV.value = 0;
+    dragOffsetYSV.value = 0;
+    dragHoldIdSV.value = 0;
+    setMoveRevision((revision) => revision + 1);
+    setGestureEpoch((epoch) => epoch + 1);
+  }, [boardRender.width, boardRender.height, draftPointsSV, dragOffsetXSV, dragOffsetYSV, dragHoldIdSV]);
 
   const boardScale = renderToBoardScale(wall?.photoWidth ?? 0, boardRender.width);
 
@@ -1419,6 +1458,7 @@ export function SprayHoldEditorScreen({
       if (tool === 'add' && addShape === 'corners') {
         return (
           <PolygonTapOverlay
+            key={gestureEpoch}
             verticesSV={cornersSV}
             scaleSV={context.scaleSV}
             translateXSV={context.translateXSV}
@@ -1438,6 +1478,7 @@ export function SprayHoldEditorScreen({
         const { scaleSV } = context;
         return (
           <DrawStrokeOverlay
+            key={gestureEpoch}
             pointsSV={draftPointsSV}
             acceptStationaryTaps
             fingerDrawSV={addDrawSV}
@@ -1457,6 +1498,7 @@ export function SprayHoldEditorScreen({
       if (tool === 'trace') {
         return (
           <DrawStrokeOverlay
+            key={gestureEpoch}
             pointsSV={draftPointsSV}
             fingerDrawSV={fingerDrawSV}
             scaleSV={context.scaleSV}
@@ -1474,6 +1516,7 @@ export function SprayHoldEditorScreen({
       }
       return (
         <SprayEditGestureOverlay
+          key={gestureEpoch}
           scaleSV={context.scaleSV}
           translateXSV={context.translateXSV}
           translateYSV={context.translateYSV}
@@ -1497,6 +1540,7 @@ export function SprayHoldEditorScreen({
     },
     [
       viewerCanEdit,
+      gestureEpoch,
       tool,
       addShape,
       canEdit,
@@ -1601,6 +1645,7 @@ export function SprayHoldEditorScreen({
             renderInTransform={renderInTransform}
             renderAboveBoard={renderAboveBoard}
             resetZoomStyle={RESET_ZOOM_STYLE}
+            controlRef={boardControlRef}
             maxScale={SPRAY_EDITOR_MAX_SCALE}
             pinchPans
           />

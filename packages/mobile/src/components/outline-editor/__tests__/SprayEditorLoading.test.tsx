@@ -59,6 +59,10 @@ vi.mock('../SprayScanBand', () => ({
 }));
 // jsdom never lays anything out, so the frame is given a size here. Without one
 // the photo and the band are both skipped and "no band" would prove nothing.
+vi.mock('../use-spray-editor-layout', () => ({
+  useSprayEditorLayout: () => ({ layout: 'phone', landscape: false }),
+  sprayPhotoReservesBottom: () => true,
+}));
 vi.mock('../spray-photo-frame', () => ({
   SPRAY_BAR_GUTTER: 8,
   fitSprayPhoto: () => ({ width: 300, height: 400, slotHeight: 500 }),

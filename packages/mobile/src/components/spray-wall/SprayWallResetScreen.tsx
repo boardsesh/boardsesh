@@ -56,6 +56,7 @@ import {
   shouldConfirmLeave,
   type ResetWallStep,
 } from './reset-wall-machine';
+import { SPRAY_FORM_MAX_WIDTH, sprayFlowCoversScreen } from '../../lib/spray/spray-flow-presentation';
 
 /** Widest the photo preview is ever drawn. Past this it is a wall on a coffee table. */
 const MAX_PREVIEW_WIDTH = 520;
@@ -74,6 +75,9 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
   const { showToast } = useToast();
   const router = useRouter();
   const { width: windowWidth } = useWindowDimensions();
+  // Launch-fixed, like the presentation it follows: an iPad's flow is a full-screen
+  // cover however its window is later resized.
+  const formColumnCapped = sprayFlowCoversScreen();
   const insets = useSafeAreaInsets();
 
   const wallQuery = useSprayWallWithVersions(wallUuid);
@@ -469,7 +473,7 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={styles.content}
+        contentContainerStyle={formColumnCapped ? [styles.content, styles.tabletContent] : styles.content}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -634,6 +638,12 @@ const styles = StyleSheet.create({
   content: {
     padding: spacing[4],
     gap: spacing[2],
+  },
+  // A full-screen iPad cover: the form keeps a readable column, centred.
+  tabletContent: {
+    maxWidth: SPRAY_FORM_MAX_WIDTH,
+    alignSelf: 'center',
+    width: '100%',
   },
   stepCounter: {
     textTransform: 'uppercase',

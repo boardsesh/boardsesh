@@ -40,9 +40,14 @@ const NO_FRAME: SprayPhotoFrame = { width: 0, height: 0, slotHeight: 0 };
  * Where a wall photo sits on the spray screens: full width, fitted to the height
  * the bottom bar leaves free, and centred in that height.
  *
+ * With `reserveBottom` false (the iPad layout) nothing is kept free: the photo
+ * is fitted to the whole area, safe area included, and the chrome floats over
+ * it on glass.
+ *
  * Shared by the scan step and the hold editor, so the photo the scan band
  * sweeps over is the same box, to the point, that the rings then appear on.
- * Zeros until the area and the photo both have a size.
+ * Both must pass the same `reserveBottom` for that to hold. Zeros until the
+ * area and the photo both have a size.
  */
 export function fitSprayPhoto({
   areaWidth,
@@ -50,16 +55,20 @@ export function fitSprayPhoto({
   bottomInset,
   photoWidth,
   photoHeight,
+  reserveBottom = true,
 }: {
   areaWidth: number;
   areaHeight: number;
   bottomInset: number;
   photoWidth: number;
   photoHeight: number;
+  /** Keep the bottom bar's room and the safe area free under the photo. Defaults to true. */
+  reserveBottom?: boolean;
 }): SprayPhotoFrame {
   if (!(areaWidth > 0) || !(photoWidth > 0) || !(photoHeight > 0)) return NO_FRAME;
   const aspect = photoWidth / photoHeight;
-  const slotHeight = Math.max(MIN_SLOT_HEIGHT, areaHeight - bottomInset - SPRAY_BAR_RESERVE);
+  const bottomReserve = reserveBottom ? bottomInset + SPRAY_BAR_RESERVE : 0;
+  const slotHeight = Math.max(MIN_SLOT_HEIGHT, areaHeight - bottomReserve);
   if (areaWidth / slotHeight > aspect) {
     return { width: slotHeight * aspect, height: slotHeight, slotHeight };
   }

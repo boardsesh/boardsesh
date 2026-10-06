@@ -104,6 +104,7 @@ import {
   type DetectionOutcome,
 } from './add-wall-machine';
 import { findResumableWall, planUploadRetry, resumeTargetFor, startOverPlan } from './resume-draft';
+import { SPRAY_FORM_MAX_WIDTH, sprayFlowCoversScreen } from '../../lib/spray/spray-flow-presentation';
 
 /** The angle list as `AngleSlider` takes it. Built once: it never changes. */
 const sprayAngles: number[] = [...SPRAY_ANGLE_OPTIONS];
@@ -152,6 +153,9 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   const router = useRouter();
   const queryClient = useQueryClient();
   const { width: windowWidth } = useWindowDimensions();
+  // Launch-fixed, like the presentation it follows: an iPad's flow is a full-screen
+  // cover however its window is later resized.
+  const formColumnCapped = sprayFlowCoversScreen();
   const insets = useSafeAreaInsets();
 
   const builder = useSprayWallBuilder();
@@ -804,7 +808,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={styles.content}
+        contentContainerStyle={formColumnCapped ? [styles.content, styles.tabletContent] : styles.content}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -1114,6 +1118,12 @@ const styles = StyleSheet.create({
   content: {
     padding: spacing[4],
     gap: spacing[2],
+  },
+  // A full-screen iPad cover: the form keeps a readable column, centred.
+  tabletContent: {
+    maxWidth: SPRAY_FORM_MAX_WIDTH,
+    alignSelf: 'center',
+    width: '100%',
   },
   stepCounter: {
     textTransform: 'uppercase',
