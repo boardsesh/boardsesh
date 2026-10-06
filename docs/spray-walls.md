@@ -2154,15 +2154,18 @@ not alive), so putting a hold back is a NEW hold that names the old one in
    draft is on screen it adds a hold at the lost one's geometry, mapped through
    the draft's homography, with `movedFromHoldId` set. It selects that hold and
    zooms to it. A draft that already has a hold linked to the lost one selects
-   that hold instead of adding a second. The write plan sends `movedFromHoldId`
-   on a new hold only. Once a hold is on the wall, the server owns its link.
+   that hold instead of adding a second. A successor that was linked before the
+   trip (a reset review's) is never reused. The write plan sends a hold's
+   `movedFromHoldId` on every write: the server writes an in-place edit's link
+   as sent, so leaving it out of a nudge would wipe it.
 3. The owner nudges the hold and publishes. The wall registers its new version,
    and the hold editor marks the request published.
 4. However the hold editor goes away (published, backed out, or failed), the
    climb editor reopens on the same climb with `putBackRequest`. It is a new
    mount, so it reads the new version's live holds. It restores the working copy
    once its own seed has settled, then places the new hold in the lost hold's
-   frames and roles. The new hold is the newest live hold linked to the lost one
+   frames and roles, and counts it as that ghost's answer wherever it was
+   nudged to. The new hold is the newest live hold linked to the lost one
    that was not linked before the trip. A trip that was backed out places
    nothing and the ghost is still there. The request is cleared once it has been
    applied, so a remount does not apply it twice.
