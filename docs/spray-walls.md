@@ -1990,12 +1990,13 @@ hours and then locks. A catalogue board is shared by everyone who owns one, so a
 published climb is something other people have already sent and logged.
 
 A spray wall is one physical wall, and its holds move. A climb set last year may
-need a new start hold next week. So on spray (#5955):
+need a new start hold next week. So on spray (#5955, #6025):
 
 | The climb is | Who can edit it | For how long |
 | --- | --- | --- |
 | A draft | Its setter | Always |
-| Published | Its setter, or anyone who can edit the wall | Always |
+| Published (`climbEditPolicy: 'setter'`, default) | Its setter, or anyone who can edit the wall | Always |
+| Published (`climbEditPolicy: 'collaborators'`) | Its setter, anyone who can edit the wall, or anyone who can set climbs on the wall | Always |
 
 "Anyone who can edit the wall" is `canEditBoard` in `social/boards.ts`, the same
 rule that guards the wall's holds, with nothing added for climbs:
@@ -2005,24 +2006,32 @@ rule that guards the wall's holds, with nothing added for climbs:
 - a community admin or leader for spray, on a public wall only.
 
 `requireBoardEditAccess` is that function plus a throw, so the two cannot drift.
+**`requireBoardEditAccess` is NOT widened by the climb edit policy.** Editing holds,
+resetting photos and publishing wall versions stay restricted to the wall owner
+and gym admins.
+
+When the wall owner selects the `'collaborators'` policy (#6025), anyone who can
+write climbs on the wall (`viewerCanWriteSprayClimbs`: gym members on gym walls,
+share-link holders on unlisted walls, or anyone on public walls) may also edit
+published climbs. Only the wall creator may change the wall's `climbEditPolicy`.
 
 Four things the rule is careful about:
 
 - **The setter stays the setter.** `updateClimb` never writes `user_id` or
   `setter_username`, and a regrade goes on the climb's stats row with
-  `fa_username` left as it was. A wall owner who fixes your climb has not taken
-  it. Who made each edit is in the revision history instead.
-- **A draft is its setter's alone.** A wall editor cannot edit or publish
-  somebody else's draft. Publishing announces a new climb to followers, and it
-  would announce it under the wrong name.
+  `fa_username` left as it was. A collaborator or wall owner who fixes your climb
+  has not taken it. Who made each edit is in the revision history instead.
+- **A draft is its setter's alone.** Collaborators and wall editors cannot edit or
+  publish somebody else's draft. Publishing announces a new climb to followers, and
+  it would announce it under the wrong name.
 - **An editor has to be able to see the wall too.** The setter's edit needs
-  `viewerCanWriteSprayClimbs`, as before. Anyone else needs that and
-  `canEditBoard`.
-- **One refusal for every stranger.** A caller who is neither the setter nor a
-  wall editor gets `You can only update your own climbs` with the code
-  `CLIMB_EDIT_NOT_ALLOWED`, whether the wall is
-  private, the wall is public, or the climb is a draft. It is the message the
-  mutation always gave, and it does not say that a wall exists.
+  `viewerCanWriteSprayClimbs`, as before. Collaborators need `viewerCanWriteSprayClimbs`
+  and `'collaborators'` policy. Wall editors need that and `canEditBoard`.
+- **One refusal for every stranger.** A caller who is neither the setter nor
+  permitted by the wall's policy gets `You can only update your own climbs` with
+  the code `CLIMB_EDIT_NOT_ALLOWED`, whether the wall is private, unlisted, or
+  public, or the climb is a draft. It is the message the mutation always gave,
+  and it does not say that a wall exists.
 
 Not changed: a climb that has lost holds to a reset still cannot be saved until
 the edit moves it onto holds that are on the wall (`assertSprayHoldsAreAlive`
@@ -2037,10 +2046,11 @@ only, 24 hours).
 
 It is a hint. `updateClimb` decides.
 
-- **Where "can edit the wall" comes from.** `RegisteredSprayWall.viewerCanEdit`
-  in the spray registry, filled from `sprayWallRenderData.wall.viewerCanEdit`.
+- **Where "can edit climbs" comes from.** `RegisteredSprayWall.viewerCanEditClimbs`
+  in the spray registry, filled from `sprayWallRenderData.wall.viewerCanEditClimbs`.
   Only a literal `true` counts, and a re-registration never inherits the last
-  answer.
+  answer. `SprayWall.viewerCanEdit` continues to guard the hold editor and photo
+  reset screens.
 - **Which climbs it covers.** Only climbs on that wall. A queue can hold a climb
   from another wall or from Kilter; when the climb carries `boardType` or
   `layoutId` and they say it is somewhere else, a wall editor is not offered

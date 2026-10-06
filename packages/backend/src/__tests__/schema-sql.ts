@@ -1743,6 +1743,10 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     CREATE TYPE spray_hold_source AS ENUM ('manual', 'auto');
   EXCEPTION WHEN duplicate_object THEN null; END $$;
 
+  DO $$ BEGIN
+    CREATE TYPE spray_climb_edit_policy AS ENUM ('setter', 'collaborators');
+  EXCEPTION WHEN duplicate_object THEN null; END $$;
+
   -- ONE sequence value is BOTH a layout id and a size id; the other hands out a
   -- number that is BOTH a board_holes id and a board_placements id. Both stop at
   -- int4 max, because every catalogue id column they feed is an integer: a default
@@ -1769,6 +1773,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     -- The wall's stored default look, { mode, boardsesh }, or NULL for "no wall
     -- default" (migration 0249).
     "render_settings" jsonb,
+    "climb_edit_policy" spray_climb_edit_policy DEFAULT 'setter' NOT NULL,
     "created_at" timestamp DEFAULT now() NOT NULL,
     "updated_at" timestamp DEFAULT now() NOT NULL,
     "deleted_at" timestamp,

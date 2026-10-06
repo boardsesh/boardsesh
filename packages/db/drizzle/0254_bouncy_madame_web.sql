@@ -1,0 +1,2 @@
+CREATE TYPE "public"."spray_climb_edit_policy" AS ENUM('setter', 'collaborators');--> statement-breakpoint
+ALTER TABLE "spray_walls" ADD COLUMN "climb_edit_policy" "spray_climb_edit_policy" DEFAULT 'setter' NOT NULL;
