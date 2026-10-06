@@ -184,11 +184,14 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
   }, [holdTargets]);
 
   // Hit circles both tap overlays resolve a point against, so the two zoom
-  // levels agree on which hold a touch belongs to.
+  // levels agree on which hold a touch belongs to. Rings go FIRST: the nearest
+  // centre wins and a tie keeps the earlier target, and a ring often sits right
+  // under the live hold that replaced it (a resize or a traced outline keeps
+  // the centre). The tap takes the ring away, and the next one paints the hold.
   const hitTargets = useMemo(
     () =>
       buildHoldHitTargets(
-        ghostTargets.length > 0 ? [...holdTargets, ...ghostTargets] : holdTargets,
+        ghostTargets.length > 0 ? [...ghostTargets, ...holdTargets] : holdTargets,
         boardWidth,
         boardHeight,
         renderWidth,
