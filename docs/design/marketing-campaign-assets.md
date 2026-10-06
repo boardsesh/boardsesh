@@ -64,7 +64,7 @@ All paths below are relative to `packages/web/public/images/app/`. Raw SHA-256 r
 | `android/profile-overview.webp` | 1080 × 1920 | 900 × 1600 | 52,434 |
 | `android/spray-wall.webp` | 1080 × 2424 | 713 × 1600 | 97,760 |
 
-Total: **853,760 bytes** across 12 files.
+Total: **1,056,090 bytes** across 14 files.
 
 | Asset | Raw PNG SHA-256 | WebP SHA-256 |
 | --- | --- | --- |
@@ -83,6 +83,6 @@ Total: **853,760 bytes** across 12 files.
 | `android/profile-overview` | `525406070e62bca67102ea868bea1201f7bc537ff304d3353b59ba4f042493bf` | `2a853fd62d925d113c34d4ec596bb2086e81fc9df36bebf48fe1691ebe520849` |
 | `android/spray-wall` | `ac67d5e6e9701dceb167d113a0c18b5f148635426b45fed7baa69cb884242c7f` | `1826b8c2c294d6c771d724d0f22dd5f1b67794281643fbeec6a1514c0a42d8e2` |
 
-The two `spray-wall` images come from different devices than the rest, which is why their raw sizes differ: the iOS one from an iPhone 16 Pro Max simulator, the Android one from a frame of the showcase recorder's Pixel 9-class emulator recording. The total and the "12 images" count above exclude them.
+The two `spray-wall` images come from different devices than the rest, which is why their raw sizes differ: the iOS one from an iPhone 16 Pro Max simulator, the Android one from a frame of the showcase recorder's Pixel 9-class emulator recording.
 
 To reproduce `spray-wall`, open the first climb on the demo spray wall (slot 6 of the showcase roster, see `docs/showcase-video.md`) live against production, capture the play view, and process it with the same Sharp settings as above. The pinned replay fixture has no spray wall, so the replay environment cannot produce this shot.

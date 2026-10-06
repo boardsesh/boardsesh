@@ -14,12 +14,13 @@ import styles from './home-feature-strip.module.css';
 /** The benefits stay server-rendered; only each image reads the shared preview choice. */
 export default async function HomeFeatureStrip() {
   const { t, locale } = await getServerTranslation('marketing');
-  const features: { id: MarketingShot; title: string; body: string; alt: string }[] = [
+  const features: { id: MarketingShot; title: string; body: string; alt: string; wide?: boolean }[] = [
     {
       id: 'queue',
       title: t('home.features.queue.title'),
       body: t('home.features.queue.body'),
       alt: t('home.features.queue.shotAlt'),
+      wide: true,
     },
     {
       id: 'wall-status',
@@ -38,6 +39,7 @@ export default async function HomeFeatureStrip() {
       title: t('home.features.spray.title'),
       body: t('home.features.spray.body'),
       alt: t('home.features.spray.shotAlt'),
+      wide: true,
     },
   ];
 
@@ -58,7 +60,7 @@ export default async function HomeFeatureStrip() {
               key={feature.id}
               padding="lg"
               radius="xl"
-              className={styles.feature}
+              className={feature.wide ? `${styles.feature} ${styles.featureWide}` : styles.feature}
               data-testid="home-feature-column"
             >
               <Box className={styles.featureCopy}>

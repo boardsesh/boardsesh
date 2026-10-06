@@ -100,7 +100,7 @@ describe('resolveScreenshotBoard', () => {
     // Its own line, so `adb logcat` truncating it can't take the marker with it.
     expect(logged).toContain('[screenshot] board roster: ');
     expect(logged).toContain('"Newest Follow"');
-    // The board type leads each description: the showcase recorder's wall check
+    // The board type closes each description: the showcase recorder's wall check
     // reads it from there, never from a name someone typed.
     expect(logged).toContain('"The Cellar" (Tension Board 2 L1 S7 @40°, tension)');
     expect(logged).toContain('"Newest Follow" (L1 S7 @40°, moonboard)');
