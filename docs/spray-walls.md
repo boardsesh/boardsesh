@@ -1820,7 +1820,12 @@ reporting; maintenance lives on the active wall's live sheet.
 The hold route uses `wallUuid`; restored links with `boardUuid` still work. It
 rechecks edit access, then refuses an archived wall or one whose holds are
 locked before any draft opens, so a deep link or a stale sheet cannot reach the
-editor. It resumes the wall's one open draft. With no draft,
+editor. A hold draft opened before the lock can never be published, and nothing
+else clears it, so the refusal names it and the screen adds "Discard unpublished
+changes" under the locked message. One tap discards it
+(`discardSprayWallVersion`) and the screen settles on the plain locked state;
+nothing is discarded without that tap. On a live wall it resumes the wall's one
+open draft. With no draft,
 it creates one from the current published photo using `sourceVersionId`, without
 uploading the photograph again or changing its coordinate frame. Editing saves
 the draft, then publishes it. An uncertain response is reconciled before retry;
@@ -2006,12 +2011,11 @@ It reaches three places:
   next to `hiddenClimbCondition`. Both branches `COALESCE(…, 0)`: NULL means
   "unknown", and the honest reading of unknown is INTACT — reversed, one
   un-backfilled row would badge every Kilter climb in the database as broken.
-- **the offline mirror**, `packages/mobile/src/db/queries/search-climbs-local.ts`,
-  which **declines** an INTACT/BROKEN search rather than answering it. The column is
-  not synced to the device until SW-15 (#5448), and declining IS the faithful
-  mirror: answering from a column the device does not have would report every climb
-  on a wall that has just been reset as intact, which is the one answer this filter
-  exists to contradict.
+- **the offline mirror**, `packages/mobile/src/db/queries/search-climbs-local.ts`.
+  The column has synced to the device since SW-15 (#5448). The app no longer sends
+  ANY or BROKEN: every spray search but a drafts-only one sends INTACT, and the
+  phone applies the same predicate itself (see
+  [A climb that lost holds](#a-climb-that-lost-holds)).
 
 `recomputeMissingHoldCounts` writes only the climbs whose number actually moved
 (`IS DISTINCT FROM`) and stamps `updated_at` on those, so the offline sync cursor
@@ -2061,9 +2065,9 @@ picker's counts (`getSetterStats`) do not apply the rule; it has no
 `holdIntegrity` input.
 
 The flag reaches phones through the `syncClimbs` pull and the saved-climb mirror
-document as `retired_by_reset`. On-device migration v12 adds the column, and
-`search-climbs-local.ts` applies the same rule, because a downloaded wall reads
-locally even while online. Spray scopes have their own refresh revision (2,
+document as `retired_by_reset`. On-device migration v12 adds the column. The
+phone's search no longer reads it: a retired climb lost every hold, so the
+lost-hold rule hides it already. Spray scopes have their own refresh revision (2,
 `refreshRevisionByBoardType`) and require the column on refresh pages
 (`refreshColumnsByBoardType`). So a climb retired while a phone ran an older
 bundle, which dropped the field, gets backfilled once on an unmetered network.
@@ -2155,143 +2159,38 @@ free holds is not stored.
 
 ### A climb that lost holds
 
-`Climb.missingHoldCount` reaches three mobile surfaces, and the rule across all
-three is that a broken climb stays findable and stays playable:
+A wall's holds lock once it has a published climb, so new climbs never lose a
+hold. Some older ones did, before the lock: `Climb.missingHoldCount` is above
+zero on them. The app no longer repairs them. There is no row chip, no play
+drawer banner, no ghost rings or "Use a hold nearby" sheet in the editor, no
+"Put this hold back on the wall" trip, no editor opening on its own when one is
+set active, and no Holds filter.
 
-Compatibility treats a reported lost hold on the same spray layout as historical
-content. The play drawer and playlist rows keep logging, queue and favourite
-actions available. A different wall or known incompatible size still fails the
-normal compatibility checks; catalogue-board hold containment remains strict.
+The rule is one predicate, `hidesLostHoldClimbs` in `@boardsesh/climb-filters`:
 
-- the climb-row chip ("2 holds gone"), beside the Hidden chip and in the same
-  neutral grey — colour in that row means grade and nothing else;
-- the **Holds** filter in the climb filter sheet (Current / All / Intact only /
-  Lost holds), defaulting to Current. Current sends nothing, and the server
-  then hides only climbs a full reset retired (#6024), so a climb that lost
-  holds in a partial reset stays listed. All sends `ANY` on a spray wall and
-  shows retired climbs too; Lost holds shows every climb that lost a hold,
-  retired or not;
-- the play drawer banner, which states the number and offers the one thing that
-  fixes it. Remix goes through the same `useCreateClimbNavigation` handoff the
-  climb-actions sheet uses, carrying the parent's frames — the create editor's
-  own sanitiser drops the hold ids that are no longer on the wall, so it opens
-  with exactly the holds that survived.
+- **A published spray climb that lost a hold leaves wall lists and search**,
+  name search included. Every network search on a spray wall sends
+  `holdIntegrity: INTACT` (`withLostHoldRule` in `offline-request.ts`, applied to
+  `SearchClimbs` and `SearchClimbsCount` whatever the caller built), and the
+  phone's own search adds `COALESCE(missing_hold_count, 0) = 0`. A climb a full
+  reset retired lost every hold, so it is hidden by the same clause. NULL reads
+  as whole: every catalogue climb, and a row pulled before the column existed.
+- **A climber's own drafts list keeps a draft that lost a hold**, so its setter
+  can fix it or delete it. A drafts-only search sends no `holdIntegrity`; the
+  phone's search never answers a drafts query, so it reads from the network.
+- **It still opens by uuid.** A logbook entry, a playlist, the queue or a link
+  reaches it through `climb(uuid)` or `getClimbLocal`, which never go through the
+  search builder. It is drawn with the holds that remain. Board compatibility
+  treats a reported lost hold on the same spray layout as historical content, so
+  it stays loggable and queueable; a different wall or a known incompatible size
+  still fails the normal checks.
+- **The editor drops holds the wall no longer has.** Opening a draft, an edit or
+  a remix of such a climb seeds without the hold ids missing from the registered
+  wall (`availableHoldIds`), so it never opens on holds it cannot draw.
 
-`Climb.lostHolds` carries the geometry of those holds as they were. The create
-editor draws it (#5493); the play drawer does not yet, because it renders through
-the board render pipeline rather than `InteractiveCreateBoard`'s `overlay` slot.
-
-### Fixing a climb that lost holds, in the editor
-
-**Set active opens the editor for someone who can fix it.** `openPlayDrawer` in
-`DrawerHostProvider` is the one door every list, queue-sheet, board-sheet and
-suggestion tap goes through, and it asks `useLostHoldsAutoEdit` first. The rule,
-`shouldAutoEditBrokenClimb`, routes to the editor in edit mode only when all of
-these hold, and otherwise the climb plays with the banner as before:
-
-- `missingHoldCount > 0` on a spray climb, on the climber's own wall;
-- the viewer can edit it (`canEditClimb`: the setter, a wall editor, or a
-  collaborator under the `'collaborators'` policy);
-- `lostHoldsEditReadiness` is `'ready'` (the device's wall agrees with the server
-  and some holds survive);
-- the open makes the climb current: not a preview, not a crew session (a tap there
-  is a look), and not the climb that is already current;
-- the opener did not opt out. Playlist and circuit activation pass
-  `autoEditBroken: false`: "Play" on a list means climb it, and dropping the
-  setter into the editor with a fresh queue behind it is not what that button
-  promises;
-- the `/play` route is not already on screen. Inside the player (a swipe, a
-  similar climb, a browse commit, a queue tap over it) the banner's Edit is one
-  tap away, and leaving the player would lose the climber's place. The iPad's
-  side pane does not count: it stays on screen under the editor, so routing
-  from it loses nothing.
-
-The routed climb is still made current, so the next open of it (the bottom bar, a
-second tap) is a reopen and plays it. That is what stops a climber who backed out
-of the editor from being sent back in. Closing the editor is a plain back to the
-list. A second tap inside 1.5 s is swallowed rather than opening the player over
-the editor. The route is counted as `Climb Edited From Broken` with
-`source: 'set_active'`.
-
-**Ghost rings.** The editor (edit, and remix through the `forkParentUuid` route
-param) asks `GetClimbLostHolds` for the climb's `lostHolds` and maps each one
-through the registered wall's inverse homography, the same map the live holds
-went through (`RegisteredSprayWall.homography`, set by both loaders). Each lost
-hold the climb used and the device's wall no longer has is a dashed ring in its
-old role's colour (`LostHoldGhostLayer`, in the `overlay` slot). The ghosts join
-the board's hit targets — a lost hold's id can never be a live hold's — so a tap
-on one opens `LostHoldSheet` instead of painting.
-
-A banner floats over the top of the board ("1 hold on this climb is gone — tap
-the dashed ring to replace it"). It floats rather than sitting above the board
-because the drawer's peek height is measured from the blocks above the fold, and a
-banner that came and went there would re-snap the sheet.
-
-**Use a hold nearby.** The sheet's first action highlights
-candidates on the board, from `rankReplacementCandidates` in
-`@boardsesh/create-climb-react`: the live hold whose `movedFromHoldId` names the
-lost one first, then the nearest free holds within eight radii, or the three
-nearest when none are that close. Holds already in the climb are never offered.
-Tapping a highlighted hold places it in every frame the lost hold was in, with the
-role it had there, as one undo step (`placeHold`). Any other tap is swallowed
-while the pick is open. If the role is full (two starts or two finishes), the
-banner says so and the pick stays open.
-
-A ghost leaves once something stands in for it: the hold picked for it this
-session, a painted hold whose `movedFromHoldId` names the lost one (its successor,
-wherever it went), or a painted hold whose centre is within the smaller of the two
-radii. The last two cover a restored autosave, which carries the paint but not
-which ghost it answered. The smaller radius keeps a small chip that happens to sit
-inside a big lost volume from clearing it. A replacement picked from further away than that shows its ghost again
-after a restore. The ghost is only a picture; Save is unaffected.
-
-**Put this hold back on the wall.** The sheet's second action, offered to whoever
-can edit the wall's holds (`viewerCanEdit`, the same rule as the hold editor). A
-removed hold's id never comes back (`upsertSprayWallHolds` refuses any id that is
-not alive), so putting a hold back is a NEW hold that names the old one in
-`movedFromHoldId`. The round trip lives in `lib/spray/lost-hold-put-back.ts`:
-
-1. The climb editor closes. Its drawer is a native sheet, and a native sheet
-   presents over any route pushed after it, so the hold editor cannot open on
-   top of it. The working copy travels in memory with the request. The autosave
-   slot cannot carry it: a new climb's and a remix's slots are keyed by the wall
-   version, publishing moves the version, and the loader then sweeps the old
-   version's slots.
-2. The hold editor opens (`/boards/spray/holds?wallUuid=…&putBack=…`). Once the
-   draft is on screen it adds a hold at the lost one's geometry, mapped through
-   the draft's homography, with `movedFromHoldId` set. It selects that hold and
-   zooms to it. A draft that already has a hold linked to the lost one selects
-   that hold instead of adding a second. A successor that was linked before the
-   trip (a reset review's) is never reused. The write plan sends a hold's
-   `movedFromHoldId` on every write: the server writes an in-place edit's link
-   as sent, so leaving it out of a nudge would wipe it.
-3. The owner nudges the hold and publishes. The wall registers its new version,
-   and the hold editor marks the request published.
-4. However the hold editor goes away (published, backed out, or failed), the
-   climb editor reopens on the same climb with `putBackRequest`. It is a new
-   mount, so it reads the new version's live holds. It restores the working copy
-   once its own seed has settled, then places the new hold in the lost hold's
-   frames and roles, and counts it as that ghost's answer wherever it was
-   nudged to. The new hold is the newest live hold linked to the lost one
-   that was not linked before the trip. A trip that was backed out places
-   nothing and the ghost is still there. If the hold's role is already full in
-   the climb (two starts or two finishes), the banner says so and the ring
-   stays. The request is cleared once it has been applied, so a remount does not
-   apply it twice.
-
-For a new climb or a remix there is a window of about one second, between the
-hold editor registering the new wall version (which sweeps the old version's
-autosave slots) and the climb editor reopening, when the working copy lives only
-in memory: killing the app then loses it. An edit is safe throughout, because its
-slot is keyed by the climb, not the version.
-
-**Offline.** The device mirrors `missing_hold_count` but not the hold history, so
-the positions need a connection. With no signal (or a failed read) the banner
-still states the count (the device's own: the climb's holds its wall no longer
-has) and says the rings need a connection. A read that answers with nothing it can
-draw — a wall this viewer cannot see answers `[]`, or the homography drops a hold —
-states the count and says the old spots cannot be shown, rather than blaming the
-connection. See `offline-reads.md`.
+A search or recent pill stored by an older app can still carry a `holdIntegrity`
+value. `normalizeRetiredFilters` drops it on read, and `toClimbSearchInput` no
+longer reads the field.
 
 ## Archive and reset
 
@@ -2809,7 +2708,8 @@ its batch loses nothing — tomorrow's run takes what it missed.
 
 ## Telemetry
 
-Eight events, all in `SHARED_EVENTS` with typed builders in
+Six spray events, plus the shared `Board Created`, all in `SHARED_EVENTS`. The
+six have typed builders in
 `packages/shared/analytics/src/spray-wall-events.ts` (the `board-render-events.ts`
 style: each builder returns `{ name, properties }` together, so a call site
 cannot pair one event's props with another event's name). Mobile fires them
@@ -2824,8 +2724,6 @@ through `trackSprayEvent`; nothing calls `track` with a spray event name directl
 | `Spray Wall Bind Stalled` | `stage`, `elapsedMs` | A wall that published and then sat on "Setting your wall up…": `visibility`, `fetch_board` or `bind` ran past 30 s, or `navigate` was dispatched and the wizard was still on screen 1.5 s later. |
 | `Board Created` (existing) | `boardType: 'spray'`, `resumed`, `isReset` | Closes the add funnel. The SAME event every other board type fires — a spray-only variant would hide walls from every board-creation number we already watch. `isReset` marks a reset's replacement, which nets to zero walls: leave it out of activation counts. |
 | `Spray Wall Reset Started` | `source` (`board_sheet`, `holds_locked`) | The owner confirmed "Reset this wall?". Read against `Board Created` with `isReset: true` for resets that reached a published replacement. |
-| `Climb Remixed From Broken` | `lostHoldCount`, `source` | Whether a climb a reset broke is a dead end or a starting point. |
-| `Climb Edited From Broken` | `lostHoldCount`, `source` | How often the setter or a wall editor repairs a broken climb in place instead of remixing it. |
 
 Two rules, both enforced by a test in
 `packages/shared/analytics/src/__tests__/spray-wall-events.test.ts`:
@@ -3176,49 +3074,27 @@ runs on every spray edit). An edit never moves `published_at`.
 
 ### The Edit action in the app
 
-The app offers Edit from one shared rule, `canEditClimb` in
-`@boardsesh/create-climb-react`, used by both menus (`ClimbActionsSheet` and
-`use-climb-actions.ts`). It is the table above plus the catalogue rule (setter
-only, 24 hours).
+The app already applies the catalogue rule to spray: a climb's setter edits it,
+a draft for good and a published climb for 24 hours after first publish
+(`EDIT_WINDOW_MS`). Nobody else is offered Edit, the wall's owner and a gym
+admin included, and there is no "who can edit climbs" setting. The server is
+more permissive than this until its own change ships, which only means the app
+offers less than the server would accept.
+
+The rule is `canEditClimb` in `@boardsesh/create-climb-react`, used by both
+menus (`ClimbActionsSheet` and `use-climb-actions.ts`). The editor's lock reads
+`computeCanUpdate` and `computeEditLocked` from the same file, with no spray
+exemption. Edit and Fork stay hidden on an archived wall. The app no longer
+reads `viewerCanEditClimbs` or `climbEditPolicy`; the server still serves both.
 
 It is a hint. `updateClimb` decides.
 
-- **Where "can edit climbs" comes from.** `RegisteredSprayWall.viewerCanEditClimbs`
-  in the spray registry, filled from `sprayWallRenderData.wall.viewerCanEditClimbs`.
-  Only a literal `true` counts, and a re-registration never inherits the last
-  answer. `SprayWall.viewerCanEdit` continues to guard the hold editor and photo
-  reset screens.
-- **Which climbs it covers.** Only climbs on that wall. A queue can hold a climb
-  from another wall or from Kilter; when the climb carries `boardType` or
-  `layoutId` and they say it is somewhere else, a wall editor is not offered
-  Edit on it.
-- **How stale it can be.** Ten minutes, the registry's revalidation window.
-  `useSprayWallViewerCanEdit` asks for the wall each time a menu mounts, which
-  is what re-reads it.
-- **Account changes.** The registry is module state and outlives a sign-out, and
-  the app tree below `AuthProvider` is replaced on every auth change, so the
-  reset lives in `AuthProvider`. Signing in, and the signed-out cleanup beside
-  `queryClient.clear()`, call `refreshSprayWallViewerAccess`: every wall reads
-  "cannot edit" at once and is refetched. A flip to signed-out with no cleanup
-  only calls `dropSprayWallViewerAccess`, which fetches nothing. A native
-  keychain failure flips that way, and a request sent then carries no token, so
-  a private wall would resolve null and be withdrawn from the live player.
-- **A request that crosses the account change.** The registry counts account
-  changes (`sprayWallViewerGeneration`). A fetch notes the number before it
-  leaves, and it is part of the published render-data query key, as an object
-  (`{ viewerGeneration }`), so it can never equal the hold editor's draft key,
-  whose third segment is a version number. Two accounts never share a request
-  or a cache entry. A payload that lands under a different number registers the
-  wall but not its `viewerCanEdit`, and is stamped stale. `loadSprayWall` asks
-  once more by itself when it sees the number moved. The hold editor's draft
-  and its publish reload pass the generation they fetched under too, so the
-  owner keeps Edit while and after editing holds.
-- **When the hint is wrong.** A role taken away inside the window still shows
-  Edit. The save is refused and nothing is lost. `updateClimb` gives each
-  refusal an `extensions.code` (`CLIMB_EDIT_NOT_ALLOWED`,
-  `CLIMB_EDIT_WINDOW_EXPIRED`, `CLIMB_NOT_EDITABLE`, `CLIMB_EDIT_CONFLICT`) and
-  the editor shows a translated line for each. The server's own sentence is
-  never shown; a failure with no known code gets the generic line.
+- **When the hint is wrong.** `updateClimb` gives each refusal an
+  `extensions.code` (`CLIMB_EDIT_NOT_ALLOWED`, `CLIMB_EDIT_WINDOW_EXPIRED`,
+  `CLIMB_NOT_EDITABLE`, `CLIMB_EDIT_CONFLICT`) and the editor shows a translated
+  line for each. "Not allowed" says only the setter can edit the climb. The
+  server's own sentence is never shown; a failure with no known code gets the
+  generic line.
 - **Two saves crossing.** `CLIMB_EDIT_CONFLICT` shows "Someone else just changed
   this climb. Reopen it to see the latest." There is no automatic retry, and the
   working copy stays on screen and in the autosave slot. Tapping Save again
@@ -3750,8 +3626,9 @@ unlisted wall. The uuid paths (`sprayWall`, `sprayWallRenderData`) are where a
 share link works.
 
 The climbs come through the ordinary per-board tables, and
-`board_climbs.missing_hold_count` is mirrored with them (v7) so the Intact /
-Lost-holds filter works with no signal. It is synced WITHOUT a catalogue
+`board_climbs.missing_hold_count` is mirrored with them (v7) so a downloaded wall
+hides climbs that lost a hold with no signal, the same way the network search
+does. It is synced WITHOUT a catalogue
 refresh-revision bump; the reasoning is in `table-config.ts` next to the column.
 
 **The picture is a file, and its URL is not storable.** The photo is in the

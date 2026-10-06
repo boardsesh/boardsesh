@@ -63,7 +63,6 @@ These have "now" semantics or are unbounded, so a stale copy is worse than an ho
 | `['crewFeed', viewerId]`                                                               | Neither                     | Viewer-scoped live feed; no persisted cache                        |
 | `['searchUsers', …]`, `['gymMembers', …]`, `['comments', …]`, `['bulkVoteSummaries', …]` | Neither                     | Unbounded or live                                                  |
 | `['nearbyBoards']`, `['nearbyGyms']`, `['betaLinkPreview', …]`                           | Neither                     | Location/link-scoped, useless stale                                |
-| `['climbLostHolds', variables]` (`GetClimbLostHolds`)                                    | Neither                     | Where a spray climb's lost holds were, for the create editor's ghost rings (#5493). Network only (`networkMode: 'always'`), never persisted: the mirror keeps `missing_hold_count` but not the hold history. Offline the editor's banner still states the count (derived on the device from the climb's frames and the wall's live holds) and says the rings need a connection |
 | `['activeBoard']`                                                                        | Neither (already persisted) | AsyncStorage-backed in `use-active-board.ts` — do not double-store |
 
 ## The auth-scoping contract
@@ -140,13 +139,13 @@ A tick records which version of the climb it was logged on (#6023, `docs/spray-w
 
 | Read | Table | Gate |
 | --- | --- | --- |
-| `fillClimbRevisionNumbersLocal`: fills `revisionNumber` / `holdsRevisionNumber` on a **network** `SearchClimbs` page or `GetClimb` answer (`OfflineOperation.enrichNetworkResponse`) | `board_climbs`, by primary key, one statement per page, `frames` included | None on ownership: board reference data, the same rows `searchClimbsLocal` serves. Skipped when the offline engine is off or there is no handle. Races a 150 ms budget (`NETWORK_ENRICHMENT_BUDGET_MS`); past it, or on a throw, the network answer goes out as it came |
+| `fillClimbRevisionNumbersLocal`: fills `holdsRevisionNumber` on a **network** `SearchClimbs` page or `GetClimb` answer (`OfflineOperation.enrichNetworkResponse`) | `board_climbs`, by primary key, one statement per page | None on ownership: board reference data, the same rows `searchClimbsLocal` serves. Skipped when the offline engine is off or there is no handle. Races a 150 ms budget (`NETWORK_ENRICHMENT_BUDGET_MS`); past it, or on a throw, the network answer goes out as it came |
 | `readTickRevisionsLocal` (`BoardAdapter.readLocalTickRevisions`): which version each of the climber's own ticks was on, joined onto the `GetTicks` rows by tick uuid | `boardsesh_ticks`, through `idx_ticks_climb`, one statement per logbook batch, with a `pending_mutations` probe for rows that have no version | Row predicate only (`user_id = ? OR user_id IS NULL`, bound to the stamp). No owner assertion and no completeness gate, and that is deliberate: the map is only ever joined onto ticks the server just returned for the signed-in climber, by a uuid that is unique across accounts, so a row another account left behind cannot match one. An incomplete table costs a missing version, never a wrong row |
 | `tickOnCurrentHoldsLocalSql`: the "logged on the holds the climb has now" predicate inside `searchClimbsLocal` | `boardsesh_ticks` ⋈ `board_climbs` | The search's existing ones. It only narrows the tick subqueries that were already there |
 
 None of the three is a new answer to "what did this climber do": the rows themselves still come from the server or from the readers documented above. They add one number to rows that already passed their own gate.
 
-**The phone's row is a witness only for the holds it has.** `board_climbs` is one past state of a climb, and the climb on screen can be another (a network answer newer than the last pull, a queue item from before an edit, unsaved work in the editor). So `revisionNumber` is filled only when that row's `frames` equal the frames on screen, as exact strings. `holdsRevisionNumber` is filled without that check: it is a threshold that only rises, so the phone's older value can count a send that should have been dropped and can never drop one that counts.
+**The phone's row is one past state of the climb.** The climb on screen can be another (a network answer newer than the last pull, a queue item from before an edit, unsaved work in the editor). `holdsRevisionNumber` is filled anyway: it is a threshold that only rises, so the phone's older value can count a send that should have been dropped and can never drop one that counts. The climb's own `revisionNumber` is not filled: nothing on the phone reads it.
 
 What a missing number means, by reader:
 
