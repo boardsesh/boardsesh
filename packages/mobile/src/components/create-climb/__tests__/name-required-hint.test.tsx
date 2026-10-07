@@ -11,7 +11,9 @@ vi.mock('react-native', () => ({
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ brandColors: { error: '#f00' } }) }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 2: 8, 4: 16 } }));
-vi.mock('../../Text', () => ({ Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children) }));
+vi.mock('../../Text', () => ({
+  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+}));
 
 import { NameRequiredHint } from '../NameRequiredHint';
 
