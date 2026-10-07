@@ -21,6 +21,7 @@ import { getPlaylistFollowStats } from './queries';
 import { verifyPlaylistAccess } from './helpers/enrichment';
 import { computePlaylistReorderWrites } from './helpers/reorder';
 import { logger } from '../../../utils/logger';
+import { lockSprayClimbAgainstDelete } from '../climbs/spray-climb-lock';
 
 type ClimbBoardScope = { boardType: string; layoutId: number };
 
@@ -435,6 +436,16 @@ export const playlistMutations = {
     const maxInsertAttempts = 2;
     const { playlistClimb, wasAlreadyInPlaylist } = await db.transaction(
       async (tx) => {
+        // A spray playlist only takes spray climbs (the guard above), and a
+        // spray climb can be hard-deleted by its setter (`deleteClimb`, #5960).
+        // The fail-open lookup above ran outside this transaction, so hold the
+        // climb until this insert commits, or refuse with CLIMB_NOT_FOUND (the
+        // drainer dead-letters it). Without this, an add drained after the
+        // delete leaves a row that the playlist's climb count includes but no
+        // climb list can show. Catalogue playlists stay fail-open.
+        if (ownership[0].boardType === 'spray') {
+          await lockSprayClimbAgainstDelete(tx, validatedInput.climbUuid);
+        }
         for (let attempt = 0; attempt < maxInsertAttempts; attempt += 1) {
           const maxPosition = await tx
             .select({ max: sql<number>`coalesce(max(${dbSchema.playlistClimbs.position}), -1)` })

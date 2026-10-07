@@ -1,10 +1,12 @@
 import { eq, and, inArray } from 'drizzle-orm';
+import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import type { ConnectionContext, SocialEntityType } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { VoteInputSchema, BulkVoteSummaryInputSchema, SocialEntityTypeSchema } from '../../../validation/schemas';
 import { validateEntityExists } from './entity-validation';
+import { lockReferencedClimb } from '../climbs/spray-climb-lock';
 import { publishSocialEvent } from '../../../events/index';
 import { logger } from '../../../utils/logger';
 
@@ -126,6 +128,9 @@ export const socialVoteQueries = {
   },
 };
 
+/** The `db` singleton or a transaction's `tx`. */
+type VoteExecutor = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
+
 export const socialVoteMutations = {
   vote: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
@@ -137,39 +142,52 @@ export const socialVoteMutations = {
 
     await validateEntityExists(entityType as SocialEntityType, entityId, userId);
 
-    // Check for existing vote
-    const [existing] = await db
-      .select({ id: dbSchema.votes.id, value: dbSchema.votes.value })
-      .from(dbSchema.votes)
-      .where(
-        and(
-          eq(dbSchema.votes.userId, userId),
-          eq(dbSchema.votes.entityType, entityType as SocialEntityType),
-          eq(dbSchema.votes.entityId, entityId),
-        ),
-      )
-      .limit(1);
+    const writeVote = async (executor: VoteExecutor): Promise<boolean> => {
+      // Check for existing vote
+      const [existing] = await executor
+        .select({ id: dbSchema.votes.id, value: dbSchema.votes.value })
+        .from(dbSchema.votes)
+        .where(
+          and(
+            eq(dbSchema.votes.userId, userId),
+            eq(dbSchema.votes.entityType, entityType as SocialEntityType),
+            eq(dbSchema.votes.entityId, entityId),
+          ),
+        )
+        .limit(1);
 
-    let isFirstVote = false;
-
-    if (existing) {
-      if (existing.value === value) {
-        // Same value — toggle off (remove vote)
-        await db.delete(dbSchema.votes).where(eq(dbSchema.votes.id, existing.id));
+      let isFirstVote = false;
+      if (existing) {
+        if (existing.value === value) {
+          // Same value — toggle off (remove vote)
+          await executor.delete(dbSchema.votes).where(eq(dbSchema.votes.id, existing.id));
+        } else {
+          // Different value — update (direction change, not a new vote)
+          await executor.update(dbSchema.votes).set({ value }).where(eq(dbSchema.votes.id, existing.id));
+        }
       } else {
-        // Different value — update (direction change, not a new vote)
-        await db.update(dbSchema.votes).set({ value }).where(eq(dbSchema.votes.id, existing.id));
+        // No existing vote — insert
+        await executor.insert(dbSchema.votes).values({
+          userId,
+          entityType: entityType as SocialEntityType,
+          entityId,
+          value,
+        });
+        isFirstVote = true;
       }
-    } else {
-      // No existing vote — insert
-      await db.insert(dbSchema.votes).values({
-        userId,
-        entityType: entityType as SocialEntityType,
-        entityId,
-        value,
-      });
-      isFirstVote = true;
-    }
+      return isFirstVote;
+    };
+
+    // The existence check above runs outside any transaction, and a spray climb
+    // can be hard-deleted by its setter (`deleteClimb`, #5960). Holding the climb
+    // until the vote commits stops a vote landing after the delete's sweep.
+    const isFirstVote =
+      entityType === 'climb'
+        ? await db.transaction(async (tx) => {
+            await lockReferencedClimb(tx, entityId);
+            return writeVote(tx);
+          })
+        : await writeVote(db);
 
     // Only notify on first vote, not on direction changes or toggle-off
     if (isFirstVote) {

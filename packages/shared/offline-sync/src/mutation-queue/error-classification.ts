@@ -491,6 +491,8 @@ export const PERMANENT_GRAPHQL_ERROR_CODES: ReadonlySet<string> = new Set([
   // the climb (hard-deleted since — `deleteDraftClimb`, account deletion) can
   // never succeed on any retry. Without this entry the row would burn all ten
   // FIFO-blocking attempts before landing in the same dead letter.
+  // `addFavorite` and `addClimbToPlaylist` answer it too for a spray climb its
+  // setter has deleted since the write was queued (`deleteClimb`, #5960).
   'CLIMB_NOT_FOUND',
 ]);
 

@@ -794,6 +794,38 @@ describe('drainMutationQueue', () => {
     });
   });
 
+  // Issue #5960: a setter can hard-delete their spray climb. A favourite or a
+  // playlist add queued before that drains into CLIMB_NOT_FOUND on HTTP 200, and
+  // no replay can bring the climb back, so it must dead-letter on attempt one
+  // instead of holding the FIFO outbox for ten attempts.
+  describe('a queued reference to a spray climb its setter deleted (#5960)', () => {
+    it.each([
+      ['user_favorites', 'fav-key'],
+      ['playlist_climbs', 'playlist-key'],
+    ])('dead-letters a %s create answered CLIMB_NOT_FOUND on the first attempt', async (tableName, key) => {
+      useRealClassification();
+      const mutation = makeMutation({ id: 7, table_name: tableName, idempotency_key: key });
+      mockPeekPending.mockResolvedValueOnce([mutation]).mockResolvedValueOnce([]);
+      mockProcessMutation.mockRejectedValueOnce(
+        Object.assign(new Error('Climb not found'), {
+          response: { status: 200, errors: [{ message: 'Climb not found', extensions: { code: 'CLIMB_NOT_FOUND' } }] },
+        }),
+      );
+      const onMutationDeadLettered = vi.fn();
+
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+        ...ONLINE,
+        onMutationDeadLettered,
+      });
+
+      expect(mockMarkDeadLetter).toHaveBeenCalledWith(mockDb, 7, 'Climb not found');
+      expect(mockRecordFailure).not.toHaveBeenCalled();
+      expect(onMutationDeadLettered).toHaveBeenCalledWith(
+        expect.objectContaining({ tableName, reason: 'non_retryable' }),
+      );
+    });
+  });
+
   // Issue #4862: a backend that is up but whose database is down answers every
   // mutation with a server-side failure. Charging each queued write a strike for
   // that spends the whole outbox's budget on a single outage — and the masked

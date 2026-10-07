@@ -26,6 +26,7 @@ import { publishSocialEvent } from '../../../events';
 import { publishDebouncedSessionStats } from '../sessions/debounced-stats-publisher';
 import { queueClimbStatsRecompute, recomputeClimbStatsNow } from './debounced-climb-stats-publisher';
 import { resolveTickClimbRevision } from './tick-climb-revision';
+import { lockSprayClimbAgainstDelete } from '../climbs/spray-climb-lock';
 import { getInstagramMediaId, isInstagramUrl, normalizeBetaVideoUrl } from '../../../lib/instagram-meta';
 import {
   InstagramBetaValidationError,
@@ -1139,15 +1140,7 @@ export const tickMutations = {
         // this holds it first, the delete waits and its tick count sees this
         // tick. Inside the transaction so the lock lasts until the insert commits.
         if (validatedInput.boardType === 'spray') {
-          const [lockedClimb] = await tx
-            .select({ uuid: dbSchema.boardClimbs.uuid })
-            .from(dbSchema.boardClimbs)
-            .where(and(eq(dbSchema.boardClimbs.uuid, climbUuid), eq(dbSchema.boardClimbs.boardType, 'spray')))
-            .limit(1)
-            .for('key share');
-          if (!lockedClimb) {
-            throw new GraphQLError('Climb not found', { extensions: { code: 'CLIMB_NOT_FOUND' } });
-          }
+          await lockSprayClimbAgainstDelete(tx, climbUuid);
         }
 
         // Re-lock and canonicalise the association immediately before INSERT.
