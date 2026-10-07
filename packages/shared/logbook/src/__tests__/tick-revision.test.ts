@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isTickOnCurrentHolds, isTickOnEarlierVersion, knownClimbRevision } from '../tick-revision';
+import { isTickOnCurrentHolds, knownClimbRevision } from '../tick-revision';
 
 describe('knownClimbRevision', () => {
   it('keeps a positive integer', () => {
@@ -47,28 +47,5 @@ describe('isTickOnCurrentHolds', () => {
   it('counts every tick on a climb whose holds never moved', () => {
     expect(isTickOnCurrentHolds(1, 1)).toBe(true);
     expect(isTickOnCurrentHolds(9, 1)).toBe(true);
-  });
-});
-
-describe('isTickOnEarlierVersion', () => {
-  it('is true when the tick is below the climb’s version', () => {
-    expect(isTickOnEarlierVersion(1, 2)).toBe(true);
-    expect(isTickOnEarlierVersion(2, 5)).toBe(true);
-  });
-
-  it('is false on the current version', () => {
-    expect(isTickOnEarlierVersion(2, 2)).toBe(false);
-    expect(isTickOnEarlierVersion(1, 1)).toBe(false);
-  });
-
-  it('is false when either number is unknown', () => {
-    expect(isTickOnEarlierVersion(null, 4)).toBe(false);
-    expect(isTickOnEarlierVersion(undefined, 4)).toBe(false);
-    expect(isTickOnEarlierVersion(1, null)).toBe(false);
-    expect(isTickOnEarlierVersion(1, undefined)).toBe(false);
-  });
-
-  it('is false for a tick that names a version ahead of the climb', () => {
-    expect(isTickOnEarlierVersion(6, 4)).toBe(false);
   });
 });

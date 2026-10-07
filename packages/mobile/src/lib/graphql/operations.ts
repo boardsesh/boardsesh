@@ -769,11 +769,6 @@ export type SaveTickMutationVariables = {
     layoutId?: number;
     sizeId?: number;
     setIds?: string;
-    /**
-     * The `Climb.revisionNumber` the climber was looking at. Present only when
-     * the app knows it; an absent key lets the server pick the version (#6023).
-     */
-    climbRevision?: number | null;
   };
 };
 
@@ -801,15 +796,6 @@ export {
   type ToggleFavoriteMutationVariables,
   type ToggleFavoriteMutationResponse,
 } from '@boardsesh/graphql/operations/favorites';
-
-// Climb revision history (#5955): shared with web, re-exported for the same reason.
-export {
-  GET_CLIMB_REVISIONS,
-  type ClimbRevisionChange,
-  type ClimbRevisionRow,
-  type GetClimbRevisionsQueryVariables,
-  type GetClimbRevisionsQueryResponse,
-} from '@boardsesh/graphql/operations/climb-revisions';
 
 // ============================================
 // Queue Mutations

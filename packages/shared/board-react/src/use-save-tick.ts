@@ -17,7 +17,6 @@ import {
 import {
   applySavedTickToLogbook,
   buildOptimisticTickEntry,
-  climbRevisionToSend,
   rollbackOptimisticTick,
   type SaveTickOptions,
 } from './tick-helpers';
@@ -93,7 +92,6 @@ export function useSaveTick(boardName: BoardName | null) {
         throw new Error('No board selected');
       }
 
-      const climbRevision = climbRevisionToSend(options.climbRevision);
       const variables: SaveTickMutationVariables = {
         input: {
           boardType: boardName,
@@ -114,9 +112,6 @@ export function useSaveTick(boardName: BoardName | null) {
           boardUuid: options.boardUuid,
           ...(options.boardId != null ? { boardId: options.boardId } : {}),
           videoUrl: options.videoUrl,
-          // Only when known. The key is left out otherwise, so a backend from
-          // before the field never sees it and the server picks the version.
-          ...(climbRevision === undefined ? {} : { climbRevision }),
         },
       };
 
@@ -184,13 +179,9 @@ export function useSaveTick(boardName: BoardName | null) {
     },
     onSuccess: ({ savedTick, delivery }, options, context) => {
       // The SaveTick document does not select `climbRevision` (it is also the
-      // outbox document), so the saved row takes the version that was sent.
-      // The server stores exactly that unless the climb moved back under it.
-      const sentClimbRevision = climbRevisionToSend(options.climbRevision);
-      const savedEntry: LogbookEntry = {
-        ...toLogbookEntry(savedTick),
-        ...(sentClimbRevision === undefined ? {} : { climb_revision: sentClimbRevision }),
-      };
+      // outbox document), so the saved row's version is not known and the
+      // send counts until a later read fills it in (`isTickOnCurrentHolds`).
+      const savedEntry = toLogbookEntry(savedTick);
       // `setQueriesData` (not `setQueryData`) so a logbook cache that was
       // removed mid-flight (e.g. invalidate fired between mutate and
       // success) is NOT recreated. setQueriesData iterates already-existing

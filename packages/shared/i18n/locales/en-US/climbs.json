@@ -876,42 +876,6 @@
     "setterNotes": {
       "title": "Setter's notes"
     },
-    "revisions": {
-      "title": "Edit history",
-      "summary_one": "Edited once",
-      "summary_other": "Edited {{count}} times",
-      "current": "Current",
-      "tagSetter": "Setter",
-      "tagWallEditor": "Wall editor",
-      "deletedEditor": "Deleted account",
-      "published": "First published",
-      "edited": "Edited",
-      "changed": "Changed {{changes}}",
-      "changes": {
-        "name": "name",
-        "description": "notes",
-        "holds": "holds",
-        "grade": "grade",
-        "angle": "angle",
-        "rules": "rules"
-      },
-      "showAll": "Show all {{count}}",
-      "capNote": "Only the first version and the most recent edits are kept, {{max}} versions in total.",
-      "rowLabel": "{{date}}, {{editor}}. See this version.",
-      "sheet": {
-        "title": "Version from {{date}}",
-        "by": "{{editor}} · {{role}}",
-        "readOnly": "An earlier version. You can look at it, but not queue it or light it up.",
-        "noGrade": "No grade",
-        "angle": "{{angle}}°",
-        "older": "Older",
-        "newer": "Newer",
-        "position": "{{position}} of {{total}}",
-        "photoUnavailable": "This wall photo is no longer available",
-        "boardUnavailable": "This board can't be drawn right now",
-        "boardLabel": "The holds in this version"
-      }
-    },
     "heatmap": {
       "toggle": "Heatmap",
       "modeLabel": "Color holds by",

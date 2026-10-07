@@ -6,7 +6,6 @@ import { normalizeAscentStatus } from '../../../lib/ascent-status-utils';
 import { useConnectivityField } from '../../../lib/connectivity/use-connectivity';
 import type { ConnectivitySnapshot } from '../../../lib/connectivity/connectivity-store';
 import { useLocalClimbTicks } from '../../../hooks/use-local-climb-ticks';
-import { useLocalClimbRevision } from '../../../hooks/use-local-climb-revision';
 
 // The same normaliser the entry rows use, so the verdict, the totals and the
 // rows under them always agree, including for entries that arrive without a
@@ -36,11 +35,6 @@ const NO_CLIMBS: string[] = [];
  * already synced to the phone (`useLocalClimbTicks`), so a slow server does not
  * hold the history back. Those rows are a placeholder for display: `fetched`
  * stays false until the server answers, and its rows then replace them.
- *
- * `climbCurrentRevision` is the version the climb is on now, read from the
- * phone's own copy of the climb (#6023). Rows compare their own version with
- * it to say "Earlier version". Null when the phone does not know, and then no
- * row is tagged.
  */
 export function useClimbLedger(
   boardName: BoardName,
@@ -55,8 +49,6 @@ export function useClimbLedger(
   offline: boolean;
   /** Runs this climb's fetch again after it failed. */
   retry: () => void;
-  /** The version the climb is on now, or null when the phone does not know. */
-  climbCurrentRevision: number | null;
 } {
   const climbUuids = useMemo(() => (climbUuid ? [climbUuid] : NO_CLIMBS), [climbUuid]);
   const { logbook, fetchedUuids, error, refetch } = useLogbook(boardName, climbUuids);
@@ -67,7 +59,6 @@ export function useClimbLedger(
   // start says so instead, over what the logbook cache holds.
   const awaitingServer = !fetched && error === null && !offline;
   const localEntries = useLocalClimbTicks(boardName, climbUuid, awaitingServer);
-  const climbCurrentRevision = useLocalClimbRevision(boardName, climbUuid, true)?.revisionNumber ?? null;
 
   const ledger = useMemo(() => {
     const cachedEntries = climbUuid ? logbook.filter((entry) => entry.climb_uuid === climbUuid) : [];
@@ -88,6 +79,5 @@ export function useClimbLedger(
     error,
     offline,
     retry: refetch,
-    climbCurrentRevision,
   };
 }

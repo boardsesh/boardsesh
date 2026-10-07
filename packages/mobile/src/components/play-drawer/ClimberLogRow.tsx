@@ -7,9 +7,6 @@
 //   ClimberLogEarlierRow     one of a climber's other logs, under their row
 //   ClimberLogEarlierFoldRow that climber's plain repeat sends at one angle
 //
-// A log made before the climb was last edited says "Earlier version" in grey,
-// beside its time (#6023). The fold row counts several logs and carries no tag.
-//
 // A name or face that opens a profile is its own tap target. The earlier-logs
 // buttons sit beside those targets, never inside them.
 import { memo, useCallback } from 'react';
@@ -23,7 +20,6 @@ import { PressableSurface } from '../PressableSurface';
 import {
   describeResult,
   gradeDisagrees,
-  isLogOnEarlierVersion,
   type ClimberLog,
   type ClimberLogGroup,
   type ClimberLogResult,
@@ -94,12 +90,7 @@ function useLogWords(boardAngle: number, boardName?: string | null) {
     },
     [formatGradeByDifficultyId, boardName, t],
   );
-  // "Earlier version" for a log made before the climb was last edited, else null.
-  const earlierVersion = useCallback(
-    (log: ClimberLog): string | null => (isLogOnEarlierVersion(log) ? t('mobile.climberLogs.earlierVersionTag') : null),
-    [t],
-  );
-  return { result, graded, earlierVersion };
+  return { result, graded };
 }
 
 /** "+2 earlier logs · 9 tries over 2 days", as a button that opens them in place. */
@@ -155,8 +146,6 @@ export const ClimberLogRow = memo(function ClimberLogRow({
   const result = logWords.result(lead);
   const graded = logWords.graded(group.disagreeingGradeId);
   const when = formatRelativeTime(lead.climbedAt);
-  // About `lead`, the log the result and the time come from.
-  const earlierVersion = logWords.earlierVersion(lead);
 
   const handlePress = useCallback(() => onPressClimber(userId), [onPressClimber, userId]);
   const handlePressEarlier = useCallback(() => onPressEarlier?.(userId), [onPressEarlier, userId]);
@@ -181,16 +170,7 @@ export const ClimberLogRow = memo(function ClimberLogRow({
         accessibilityLabel={t('mobile.climberLogs.rowA11y', {
           name,
           // "+N earlier" is part of the row when it is not a button of its own.
-          result: [
-            result,
-            graded,
-            when,
-            earlierVersion ? t('mobile.climberLogs.earlierVersionA11y') : null,
-            earlierShort,
-            note,
-          ]
-            .filter(Boolean)
-            .join(', '),
+          result: [result, graded, when, earlierShort, note].filter(Boolean).join(', '),
         })}
         style={styles.pressable}
       >
@@ -213,7 +193,6 @@ export const ClimberLogRow = memo(function ClimberLogRow({
             <Text variant="subheadline" color={systemColors.secondaryLabel}>
               {SEPARATOR}
               {when}
-              {earlierVersion ? `${SEPARATOR}${earlierVersion}` : null}
               {earlierShort ? `${SEPARATOR}${earlierShort}` : null}
             </Text>
           </Text>
@@ -250,7 +229,6 @@ const BareCell = memo(function BareCell({ group, boardAngle, underTriedHeading, 
   const name = group.displayName ?? t('mobile.climberLogs.unknownClimber');
   const result = logWords.result(lead);
   const when = formatRelativeTime(lead.climbedAt);
-  const earlierVersion = logWords.earlierVersion(lead);
   const tries = describeResult(lead);
   const shown =
     underTriedHeading && tries.kind === 'noSend' && lead.angle === boardAngle
@@ -267,9 +245,7 @@ const BareCell = memo(function BareCell({ group, boardAngle, underTriedHeading, 
       // The full words, heading or not: a screen reader may land here without it.
       accessibilityLabel={t('mobile.climberLogs.rowA11y', {
         name,
-        result: [result, when, earlierVersion ? t('mobile.climberLogs.earlierVersionA11y') : null]
-          .filter(Boolean)
-          .join(', '),
+        result: [result, when].join(', '),
       })}
       style={styles.bareCell}
     >
@@ -278,13 +254,10 @@ const BareCell = memo(function BareCell({ group, boardAngle, underTriedHeading, 
         <Text variant="subheadline" numberOfLines={1} style={styles.strong}>
           {name}
         </Text>
-        {/* A second line only for the tag: two cells share the row, and one
-            line would cut it off. */}
-        <Text variant="footnote" numberOfLines={earlierVersion ? 2 : 1} color={systemColors.secondaryLabel}>
+        <Text variant="footnote" numberOfLines={1} color={systemColors.secondaryLabel}>
           {shown}
           {SEPARATOR}
           {when}
-          {earlierVersion ? `${SEPARATOR}${earlierVersion}` : null}
         </Text>
       </View>
     </PressableSurface>
@@ -363,7 +336,6 @@ export const ClimberLogEarlierRow = memo(function ClimberLogEarlierRow({
   const note = log.comment.trim();
   const result = logWords.result(log);
   const graded = logWords.graded(gradeDisagrees(log, boardAngle, climbGradeId) ? log.difficulty : null);
-  const earlierVersion = logWords.earlierVersion(log);
 
   return (
     <View style={[styles.earlierRow, { borderLeftColor: systemColors.separator }]}>
@@ -374,12 +346,6 @@ export const ClimberLogEarlierRow = memo(function ClimberLogEarlierRow({
           {graded ? (
             <Text variant="subheadline" style={styles.strong}>
               {graded}
-            </Text>
-          ) : null}
-          {earlierVersion ? (
-            <Text variant="subheadline" color={systemColors.secondaryLabel}>
-              {SEPARATOR}
-              {earlierVersion}
             </Text>
           ) : null}
         </Text>

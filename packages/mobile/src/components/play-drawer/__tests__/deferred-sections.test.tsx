@@ -139,14 +139,6 @@ vi.mock('../CommunitySection', () => ({
   CommunitySection: () => createElement('div', { 'data-testid': 'community' }),
 }));
 
-const revisions = vi.hoisted(() => ({ props: [] as Array<Record<string, unknown>> }));
-vi.mock('../RevisionsSection', () => ({
-  RevisionsSection: (props: Record<string, unknown>) => {
-    revisions.props.push(props);
-    return createElement('div', { 'data-testid': 'revisions' });
-  },
-}));
-
 vi.mock('../SimilarClimbsSection', () => ({
   SimilarClimbsSection: () => createElement('div', { 'data-testid': 'similar-climbs' }),
 }));
@@ -298,9 +290,8 @@ describe('DeferredSections', () => {
     expect(screen.getByTestId('similar-climbs')).not.toBeNull();
   });
 
-  it('puts the edit history after Community and before Similar climbs, with the Logbook still first', () => {
+  it('puts Similar climbs straight after Community, with the Logbook still first', () => {
     deferred.ready = true;
-    const onOpenRevision = vi.fn();
     const { container } = render(
       <DeferredSections
         climb={climb}
@@ -312,7 +303,6 @@ describe('DeferredSections', () => {
         enabled
         contentEnabled
         onSimilarClimbPress={vi.fn()}
-        onOpenRevision={onOpenRevision}
       />,
     );
 
@@ -320,16 +310,7 @@ describe('DeferredSections', () => {
       .map((node) => node.getAttribute('data-testid'))
       .filter((id) => id !== 'text');
     expect(order[0]).toBe('logbook');
-    expect(order.indexOf('revisions')).toBe(order.indexOf('community') + 1);
-    expect(order.indexOf('similar-climbs')).toBe(order.indexOf('revisions') + 1);
-
-    // The drawer's own opener reaches the section untouched.
-    expect(revisions.props.at(-1)).toMatchObject({ climbUuid: 'climb-1', boardName: 'kilter', onOpenRevision });
-  });
-
-  it('keeps the edit history behind the same below-fold gate as the other sections', () => {
-    renderSections({ contentEnabled: false });
-    expect(screen.queryByTestId('revisions')).toBeNull();
+    expect(order.indexOf('similar-climbs')).toBe(order.indexOf('community') + 1);
   });
 
   it('hides the Boardsesh grade section when the flag is off', () => {

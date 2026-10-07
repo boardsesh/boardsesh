@@ -97,20 +97,6 @@ vi.mock('../../../providers/rogue-timer-provider', () => ({
   useOptionalRogueTimer: () => null,
 }));
 vi.mock('../../../hooks/use-local-ticks', () => ({ useLocalPendingTicks: () => ({ data: 0 }) }));
-// The phone's own copy of the climb's version numbers (#6023). Undefined by
-// default: the board is not downloaded, or the row predates the columns.
-const localRevisionState = vi.hoisted(() => ({
-  current: undefined as
-    | { revisionNumber: number | null; holdsRevisionNumber: number | null; frames: string | null }
-    | undefined,
-  calls: [] as Array<{ boardName: unknown; climbUuid: unknown; enabled: boolean }>,
-}));
-vi.mock('../../../hooks/use-local-climb-revision', () => ({
-  useLocalClimbRevision: (boardName: unknown, climbUuid: unknown, enabled: boolean) => {
-    localRevisionState.calls.push({ boardName, climbUuid, enabled });
-    return enabled ? localRevisionState.current : undefined;
-  },
-}));
 // Connectivity drives which save-failure message the form shows (issue #4315).
 const connectivityState = vi.hoisted(() => ({ isOffline: false }));
 vi.mock('../../../hooks/use-is-offline', () => ({ useIsOffline: () => connectivityState.isOffline }));
@@ -237,8 +223,6 @@ beforeEach(() => {
   presenceState.boardId = null;
   activeBoardState.current = null;
   connectivityState.isOffline = false;
-  localRevisionState.current = undefined;
-  localRevisionState.calls = [];
   vi.mocked(track).mockClear();
   resetRestTimerStoreForTests();
 });
@@ -459,77 +443,12 @@ describe('useQuickTickForm analytics', () => {
   });
 });
 
-// Which wall a tick lands on. The presence binding names the board the climber
-// is standing at; the form's board fields name the board the CLIMB belongs to,
-// because the play drawer hands down the resolved render board. Those two part
-// company the moment the queue holds climbs from more than one wall, and the
-// tick has to follow the climb — a tick stamped with the wrong wall shows up in
-// that wall's "Now on the wall" feed as a problem nobody climbed there.
-// #6023: every tick says which version of the climb it was logged on, when the
-// app knows. Unknown must be an ABSENT key: a backend from before the field
-// rejects the key, and the server picks the version itself when it is missing.
+// #6023: the server picks which version of the climb a tick is on, so the
+// form never names one.
 describe('useQuickTickForm climb version', () => {
-  const FRAMES = 'p1r12p2r13p3r14';
-  const MOVED_FRAMES = 'p1r12p2r13p9r14';
-
-  it('sends the version the displayed climb carries, without asking the phone', () => {
+  it('never sends climbRevision', () => {
     boardState.current = null;
-    localRevisionState.current = { revisionNumber: 9, holdsRevisionNumber: 9, frames: FRAMES };
-    const { getByTestId } = renderForm({ climbRevision: 4, climbFrames: FRAMES });
-
-    fireEvent.click(getByTestId('save'));
-
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ climbRevision: 4 });
-    // The local read is switched off when the climb has its own number.
-    expect(localRevisionState.calls.every((call) => call.enabled === false)).toBe(true);
-  });
-
-  it('falls back to the phone’s copy when it has the same holds as the climb on screen', () => {
-    boardState.current = null;
-    localRevisionState.current = { revisionNumber: 3, holdsRevisionNumber: 2, frames: FRAMES };
-    const { getByTestId } = renderForm({ climbFrames: FRAMES });
-
-    fireEvent.click(getByTestId('attempt'));
-
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ climbRevision: 3, status: 'attempt' });
-    expect(localRevisionState.calls.at(-1)).toEqual({ boardName: 'kilter', climbUuid: CLIMB_UUID, enabled: true });
-  });
-
-  // The server stores any in-range version as sent, so a wrong one is worse
-  // than none. Each of these is a case where the phone's row cannot be shown
-  // to be the climb on screen.
-  it.each([
-    [
-      'the climb on screen is newer than the phone’s row (a network answer after the setter moved a hold)',
-      { climbFrames: MOVED_FRAMES },
-      { revisionNumber: 3, holdsRevisionNumber: 3, frames: FRAMES },
-    ],
-    [
-      'the climb on screen is older than the phone’s row (a queue item from before an edit)',
-      { climbFrames: FRAMES },
-      { revisionNumber: 4, holdsRevisionNumber: 4, frames: MOVED_FRAMES },
-    ],
-    ['the caller passed no frames to compare', {}, { revisionNumber: 3, holdsRevisionNumber: 3, frames: FRAMES }],
-    [
-      'the phone’s row has no frames',
-      { climbFrames: FRAMES },
-      { revisionNumber: 3, holdsRevisionNumber: 3, frames: null },
-    ],
-    ['nothing is known anywhere', { climbFrames: FRAMES }, undefined],
-    [
-      'the phone’s row predates the columns',
-      { climbFrames: FRAMES },
-      { revisionNumber: null, holdsRevisionNumber: null, frames: FRAMES },
-    ],
-    [
-      'the carried value is not a positive integer and the phone has no row',
-      { climbRevision: 0, climbFrames: FRAMES },
-      undefined,
-    ],
-  ])('omits the climbRevision key when %s', (_label, formInput, localNumbers) => {
-    boardState.current = null;
-    localRevisionState.current = localNumbers;
-    const { getByTestId } = renderForm(formInput);
+    const { getByTestId } = renderForm();
 
     fireEvent.click(getByTestId('save'));
 
@@ -537,6 +456,12 @@ describe('useQuickTickForm climb version', () => {
   });
 });
 
+// Which wall a tick lands on. The presence binding names the board the climber
+// is standing at; the form's board fields name the board the CLIMB belongs to,
+// because the play drawer hands down the resolved render board. Those two part
+// company the moment the queue holds climbs from more than one wall, and the
+// tick has to follow the climb — a tick stamped with the wrong wall shows up in
+// that wall's "Now on the wall" feed as a problem nobody climbed there.
 describe('useQuickTickForm board attribution', () => {
   /** The wall the climber is standing at, as `useActiveBoard` reports it. */
   const ACTIVE_BOARD = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: ANGLE };

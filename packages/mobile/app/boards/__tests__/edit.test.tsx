@@ -44,9 +44,6 @@ const state = vi.hoisted(() => ({
   boardIsUnlisted: false,
   builderIsPublic: false,
   builderIsUnlisted: false,
-  // #6025: the wall query's climb-edit policy as the server reports it; null
-  // stands in for the query not having landed yet.
-  wallPolicy: 'SETTER' as string | null,
 }));
 
 const board = {
@@ -105,10 +102,6 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
     isLoading: false,
   }),
   useProfile: () => ({ data: { id: 'owner-id', displayName: 'Marco' } }),
-  useSprayWallByUuid: () => ({
-    data: state.wallPolicy ? { climbEditPolicy: state.wallPolicy } : undefined,
-    isLoading: state.wallPolicy === null,
-  }),
   useUpdateBoard: () => ({ mutateAsync: updateBoardMock }),
   useLinkBoardToGym: () => ({ mutateAsync: linkBoardToGymMock }),
   useUpdateSprayWall: () => ({ mutateAsync: updateSprayWallMock }),
@@ -149,31 +142,9 @@ vi.mock('../../../src/components/board-discovery/board-builder-labels', () => ({
 }));
 
 vi.mock('../../../src/components/board-discovery/BoardForm', () => ({
-  BoardForm: ({
-    onSubmit,
-    errorMessage,
-    onSelectClimbEditPolicy,
-    climbEditPolicyDisabled,
-  }: {
-    onSubmit: () => void;
-    errorMessage?: string | null;
-    onSelectClimbEditPolicy?: (policy: 'setter' | 'collaborators') => void;
-    climbEditPolicyDisabled?: boolean;
-  }) =>
+  BoardForm: ({ onSubmit, errorMessage }: { onSubmit: () => void; errorMessage?: string | null }) =>
     createElement('div', null, [
       createElement('button', { key: 'submit', type: 'button', onClick: onSubmit }, 'submit'),
-      onSelectClimbEditPolicy
-        ? createElement(
-            'button',
-            {
-              key: 'collaborators',
-              type: 'button',
-              disabled: climbEditPolicyDisabled,
-              onClick: () => onSelectClimbEditPolicy('collaborators'),
-            },
-            'collaborators',
-          )
-        : null,
       errorMessage ? createElement('span', { key: 'error', 'data-testid': 'error' }, errorMessage) : null,
     ]),
 }));
@@ -230,7 +201,6 @@ beforeEach(() => {
   state.boardIsUnlisted = false;
   state.builderIsPublic = false;
   state.builderIsUnlisted = false;
-  state.wallPolicy = 'SETTER';
   state.ownerDisplayName = undefined;
   background.changed = false;
   background.save.mockResolvedValue({ outcome: 'saved' });
@@ -545,58 +515,6 @@ describe('EditBoard — spray wall visibility', () => {
     await waitFor(() => expect(updateBoardMock).toHaveBeenCalledTimes(1));
     expect(updateBoardMock.mock.calls[0][0].isPublic).toBe(true);
     expect(updateSprayWallMock).not.toHaveBeenCalled();
-  });
-
-  it('sends a touched climbEditPolicy before the wall query has landed (#6025)', async () => {
-    // A fast save: the owner flips the control while `useSprayWallByUuid` is
-    // still in flight. Comparing against the column's default is what keeps the
-    // choice from being silently dropped.
-    state.wallPolicy = null;
-    state.boardIsPublic = true;
-    state.boardIsUnlisted = false;
-    editSprayWall({ isPublic: true, isUnlisted: false });
-    render(createElement(EditBoard));
-    fireEvent.click(screen.getByText('collaborators'));
-    fireEvent.click(screen.getByText('submit'));
-
-    await waitFor(() => expect(updateSprayWallMock).toHaveBeenCalledTimes(1));
-    expect(updateSprayWallMock).toHaveBeenCalledWith({
-      uuid: 'board-uuid',
-      climbEditPolicy: 'COLLABORATORS',
-    });
-  });
-
-  it('sends changed climbEditPolicy to updateSprayWall (#6025)', async () => {
-    state.boardIsPublic = true;
-    state.builderIsPublic = true;
-    state.boardIsUnlisted = false;
-    editSprayWall({ isPublic: true, isUnlisted: false });
-    render(createElement(EditBoard));
-    fireEvent.click(screen.getByText('collaborators'));
-    fireEvent.click(screen.getByText('submit'));
-
-    await waitFor(() => expect(updateSprayWallMock).toHaveBeenCalledTimes(1));
-    expect(updateSprayWallMock).toHaveBeenCalledWith({
-      uuid: 'board-uuid',
-      climbEditPolicy: 'COLLABORATORS',
-    });
-  });
-
-  it('reports climbEditPolicy owner-only rejection inline (#6025)', async () => {
-    state.boardIsPublic = true;
-    state.builderIsPublic = true;
-    editSprayWall({ isPublic: true, isUnlisted: false });
-    updateSprayWallMock.mockRejectedValueOnce({
-      response: { errors: [{ message: 'nope', extensions: { code: 'SPRAY_WALL_CLIMB_EDIT_POLICY_OWNER_ONLY' } }] },
-    });
-    render(createElement(EditBoard));
-    fireEvent.click(screen.getByText('collaborators'));
-    fireEvent.click(screen.getByText('submit'));
-
-    await waitFor(() => expect(screen.getByTestId('error')).toBeTruthy());
-    expect(screen.getByTestId('error').textContent).toBe('mobile.sprayClimbEditPolicy.ownerOnlyError');
-    expect(updateBoardMock).toHaveBeenCalledTimes(1);
-    expect(backMock).not.toHaveBeenCalled();
   });
 
   it('saves a changed wall background and leaves on success', async () => {

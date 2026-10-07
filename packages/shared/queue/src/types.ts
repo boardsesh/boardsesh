@@ -75,7 +75,7 @@ export type Climb = {
   // unknown. LOCAL ONLY for now: the queue documents are pinned by the App
   // Store screenshot fixtures and cannot select them, so they are not written
   // to the wire either, and an item rebuilt from a server echo has neither.
-  // The tick form falls back to the phone's own copy of the climb then.
+  // The sent glyph then counts every tick on the climb. No tick sends a version.
   revisionNumber?: number | null;
   holdsRevisionNumber?: number | null;
 };

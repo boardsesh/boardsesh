@@ -123,17 +123,6 @@ export type LogAscentInput = {
   // without being preselected. Optional — callers that don't have a
   // freshly fetched climb can omit it.
   consensusGradeName?: string;
-  /**
-   * The version of the climb the caller is showing (`Climb.revisionNumber`),
-   * stamped on the tick. Omit it when the climb carries none: the tick form
-   * then asks the phone's own copy of the climb (#6023).
-   */
-  climbRevision?: number | null;
-  /**
-   * The frames the caller is showing (`Climb.frames`). The tick form uses the
-   * phone's copy of the climb's version only when that copy has these holds.
-   */
-  climbFrames?: string | null;
 };
 
 export function boardConfigsMatch(left: BoardConfig | null, right: BoardConfig | null): boolean {
@@ -1238,8 +1227,6 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
               setIds={logAscentData.setIds}
               sessionId={logAscentData.sessionId}
               consensusGradeName={logAscentData.consensusGradeName}
-              climbRevision={logAscentData.climbRevision}
-              climbFrames={logAscentData.climbFrames}
             />
           ) : null}
           {betaVideoData ? (

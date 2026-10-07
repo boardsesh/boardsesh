@@ -210,8 +210,6 @@ export const GET_USER_ASCENTS_FEED = gql`
         climbedAt
         frames
         hasBetaVideo
-        climbRevision
-        climbCurrentRevision
       }
       totalCount
       hasMore
@@ -268,14 +266,6 @@ export type AscentFeedItem = {
    * guards on `=== true`.
    */
   hasBetaVideo?: boolean | null;
-  /**
-   * Which version of the climb this was logged on, and the version the climb
-   * is on now (#6023). Lower than `climbCurrentRevision` means the climb has
-   * been edited since. Selected by `GetUserAscentsFeed` only: the grouped feed
-   * and the caption matches leave both undefined, which reads as unknown.
-   */
-  climbRevision?: number | null;
-  climbCurrentRevision?: number | null;
 };
 
 // Type for the feed query variables

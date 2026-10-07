@@ -198,15 +198,6 @@ export function isSprayWallVisibilityOwnerOnlyError(error: unknown): boolean {
 }
 
 /**
- * Only the wall's owner may change who can edit climbs on this wall (#6025).
- */
-export function isSprayWallClimbEditPolicyOwnerOnlyError(error: unknown): boolean {
-  return getGraphqlErrors(error).some(
-    (graphqlError) => graphqlError.extensions?.code === 'SPRAY_WALL_CLIMB_EDIT_POLICY_OWNER_ONLY',
-  );
-}
-
-/**
  * The wall's photo fails the generated-look quality gate, so the server will
  * not store a `wall-crop` / `hold-cutouts` background for it.
  */
