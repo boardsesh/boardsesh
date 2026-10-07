@@ -12,7 +12,10 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('../../../hooks/use-is-offline', () => ({ useIsOffline: () => runtime.offline }));
 vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: runtime.request }) }));
-vi.mock('../../../notifications/device-registration', () => ({ registerNotificationDevice: vi.fn() }));
+const registration = vi.hoisted(() => ({ registered: false }));
+vi.mock('../../../notifications/device-registration', () => ({
+  registerNotificationDevice: vi.fn(async () => registration.registered),
+}));
 vi.mock('../../../lib/spray/spray-telemetry', () => ({ trackSprayEvent: vi.fn() }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../Text', () => ({
@@ -59,6 +62,7 @@ function mount(photo = false) {
 }
 
 beforeEach(() => {
+  registration.registered = true;
   runtime.offline = false;
   runtime.request.mockReset();
 });
@@ -76,15 +80,24 @@ describe('SprayDetectionStep saved recognition', () => {
       const { client, onComplete } = mount(photo);
       expect(screen.getByText('sprayDetection.connection')).toBeTruthy();
       expect(screen.queryByText('sprayDetection.queuePosition')).toBeNull();
-      expect(document.body.textContent).toContain('sprayDetection.notifyHint');
       await act(async () => {
         await vi.advanceTimersByTimeAsync(5000);
       });
+      expect(document.body.textContent).toContain('sprayDetection.notifyHint');
       expect(runtime.request).not.toHaveBeenCalled();
       expect(client.getQueryData(queryKey)).toEqual(savedDetection);
       expect(onComplete).not.toHaveBeenCalled();
     },
   );
+
+  it('promises no push when this device could not register for one', async () => {
+    registration.registered = false;
+    runtime.offline = true;
+    mount();
+    await waitFor(() => expect(screen.getByText('sprayDetection.connection')).toBeTruthy());
+    await act(async () => {});
+    expect(document.body.textContent).not.toContain('sprayDetection.notifyHint');
+  });
 
   it('retains the saved job and shows the connection banner when its status request fails', async () => {
     runtime.request.mockRejectedValue(new Error('backend unreachable'));

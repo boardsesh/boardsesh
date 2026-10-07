@@ -282,12 +282,15 @@ inaccessible targets without creating another wall.
 
 Delivery rows remain until their source notification, recipient or installation
 is deleted; foreign-key cascades remove the related rows. There is no separate
-age-based delivery cleanup job. Push sending holds the wall validity lock during
-the Expo request (a 15-second timeout), so wall edits can wait behind an in-flight
-delivery. Provider outages can repeat that wait across retries; the lock keeps
-privacy and source changes from racing the outgoing wall details. Push delivery
-runs with local concurrency one, so it reserves at most one Drizzle connection
-per backend process during the request. The backend pool defaults to ten
+age-based delivery cleanup job. Push sending rechecks the target (device, edit
+access, source draft) under the wall lock in its own short transaction and
+releases that lock before the Expo request (a 15-second timeout), so wall edits
+never wait on a push. A revoke that commits after the recheck behaves as if it
+had landed just after the send. Only the delivery's own advisory lock spans the
+request, which keeps two workers from sending the same delivery twice. Push
+delivery runs with local concurrency one, so it holds at most two Drizzle
+connections per backend process during the request (the delivery transaction and
+the short recheck). The backend pool defaults to ten
 connections (`DB_POOL_MAX`, minimum two). Deployment sizing must leave room for
 ordinary API traffic in each pool and account for every replica against the
 shared database connection limit; this bound does not guarantee capacity under

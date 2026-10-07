@@ -31,7 +31,7 @@ export function SprayDetectionStep({
   onManual?: () => void;
 }) {
   const { t } = useTranslation('boards');
-  const { query, retry, offline } = useSprayDetection(wallUuid, versionId);
+  const { query, retry, offline, pushReady } = useSprayDetection(wallUuid, versionId);
   const delivered = useRef<string | null>(null);
   const detection = query.data;
   useEffect(() => {
@@ -91,7 +91,11 @@ export function SprayDetectionStep({
         photo={photo}
         message={message}
         detail={slow && !stopped ? t('sprayWizard.scan.slow') : null}
-        resumeHint={`${t('sprayWizard.scan.resumeHint')} ${t('sprayDetection.notifyHint')}`}
+        resumeHint={
+          pushReady
+            ? `${t('sprayWizard.scan.resumeHint')} ${t('sprayDetection.notifyHint')}`
+            : t('sprayWizard.scan.resumeHint')
+        }
         failed={stopped}
         retry={{ label: t('sprayDetection.retry'), onPress: handleRetry, disabled: retry.isPending }}
         manual={onManual ? { label: t('sprayDetection.manual'), onPress: onManual } : undefined}
@@ -105,7 +109,7 @@ export function SprayDetectionStep({
       {!failed && !query.isError ? <ActivityIndicator /> : null}
       <Text>{message}</Text>
       <Text>{t('sprayDetection.resumeHint')}</Text>
-      <Text>{t('sprayDetection.notifyHint')}</Text>
+      {pushReady ? <Text>{t('sprayDetection.notifyHint')}</Text> : null}
       {failed || unreachable ? (
         <Button title={t('sprayDetection.retry')} disabled={retry.isPending} onPress={handleRetry} />
       ) : null}

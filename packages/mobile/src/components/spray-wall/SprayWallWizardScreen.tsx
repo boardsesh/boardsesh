@@ -422,6 +422,13 @@ export function SprayWallWizardScreen({
   // `resetSprayWall` calls or stack two prompts.
   const resetInFlightRef = useRef(false);
 
+  // A targeted open (progress row, notification) whose wall or draft has gone:
+  // asking again cannot bring it back, so only Back is offered.
+  const showTargetUnavailable = useCallback(() => {
+    setResumeError(t('sprayImport.unavailable'));
+    setResumeErrorIsFinal(true);
+  }, [t]);
+
   const decideResume = useCallback(
     async (
       resumable: NonNullable<ReturnType<typeof findResumableWall>>,
@@ -440,7 +447,7 @@ export function SprayWallWizardScreen({
         return;
       }
       if (wallUuid && (!full.viewerCanEdit || full.uuid !== wallUuid)) {
-        setResumeError(t('sprayImport.unavailable'));
+        showTargetUnavailable();
         return;
       }
       if (wallUuid && full.currentVersion) {
@@ -451,7 +458,7 @@ export function SprayWallWizardScreen({
         versionId &&
         !full.versions?.some((version) => version.id === versionId && version.status.toLowerCase() === 'draft')
       ) {
-        setResumeError(t('sprayImport.unavailable'));
+        showTargetUnavailable();
         return;
       }
       if (full.board) boardRef.current = full.board;
@@ -482,7 +489,7 @@ export function SprayWallWizardScreen({
         dispatch({ type: 'RESUMED_AT_PHOTO', wall: target.wall });
       }
     },
-    [discardDraftAsync, t, wallUuid, versionId, finish],
+    [discardDraftAsync, t, wallUuid, versionId, finish, showTargetUnavailable],
   );
 
   const [targetAttempt, setTargetAttempt] = useState(0);
@@ -493,7 +500,7 @@ export function SprayWallWizardScreen({
       .then(async (target) => {
         if (cancelled) return;
         if (!target) {
-          setResumeError(t('sprayImport.unavailable'));
+          showTargetUnavailable();
           return;
         }
         await decideResume(target, 'resume', target);
@@ -504,7 +511,7 @@ export function SprayWallWizardScreen({
     return () => {
       cancelled = true;
     };
-  }, [resetOfWallUuid, wallUuid, state.step, targetAttempt, decideResume, t]);
+  }, [resetOfWallUuid, wallUuid, state.step, targetAttempt, decideResume, showTargetUnavailable, t]);
 
   useEffect(() => {
     if (resetOfWallUuid != null || wallUuid) return;
@@ -1289,7 +1296,7 @@ export function SprayWallWizardScreen({
             {resumeError && !resumeErrorIsFinal ? (
               <Button title={t('sprayWizard.resume.retry')} variant="filled" onPress={retryResume} />
             ) : null}
-            {resumeError && resetOfWallUuid != null ? (
+            {resumeError && (resetOfWallUuid != null || wallUuid) ? (
               <Button title={t('sprayWizard.back')} variant="text" onPress={closeBoardsModal} />
             ) : null}
           </View>

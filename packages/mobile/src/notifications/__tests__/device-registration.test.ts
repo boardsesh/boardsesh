@@ -59,7 +59,7 @@ describe('account notification device registration', () => {
 
   it('registers an Expo token with the captured account, installation, and locale', async () => {
     const { registerNotificationDevice } = await import('../device-registration');
-    await registerNotificationDevice();
+    await expect(registerNotificationDevice()).resolves.toBe(true);
     expect(mocks.getExpoToken).toHaveBeenCalledWith({ projectId: 'test-project' });
     expect(sentRequest()).toMatchObject({
       headers: { Authorization: 'Bearer account-one' },
@@ -80,7 +80,7 @@ describe('account notification device registration', () => {
   it('does not prompt at launch and denial does not reject importing', async () => {
     mocks.getPermissions.mockResolvedValue({ status: 'denied' });
     const { registerNotificationDevice } = await import('../device-registration');
-    await expect(registerNotificationDevice()).resolves.toBeUndefined();
+    await expect(registerNotificationDevice()).resolves.toBe(false);
     expect(mocks.requestPermissions).not.toHaveBeenCalled();
     expect(mocks.getExpoToken).not.toHaveBeenCalled();
     expect(
@@ -89,6 +89,22 @@ describe('account notification device registration', () => {
         return typeof body === 'string' && body.includes('RegisterNotificationDevice(');
       }),
     ).toBe(false);
+  });
+
+  it('reports no push when the token lookup fails (a binary without push credentials)', async () => {
+    mocks.getExpoToken.mockRejectedValue(new Error('no FCM config'));
+    const { registerNotificationDevice } = await import('../device-registration');
+    await expect(registerNotificationDevice(true)).resolves.toBe(false);
+  });
+
+  it('shares the five-minute throttle when permission is already granted', async () => {
+    const { registerNotificationDevice } = await import('../device-registration');
+    await expect(registerNotificationDevice(true)).resolves.toBe(true);
+    await expect(registerNotificationDevice(true)).resolves.toBe(true);
+    expect(mocks.getExpoToken).toHaveBeenCalledTimes(1);
+    expect(mocks.requestPermissions).not.toHaveBeenCalled();
+    await expect(registerNotificationDevice(true, true)).resolves.toBe(true);
+    expect(mocks.getExpoToken).toHaveBeenCalledTimes(2);
   });
 
   it('creates the Android channel before explicitly requesting permission', async () => {

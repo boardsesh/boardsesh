@@ -85,8 +85,13 @@ is not proof the phone displayed an alert.
    app exposes its EAS project ID. If Expo push-security access-token protection
    is enabled, set backend `EXPO_ACCESS_TOKEN`; otherwise it is optional. Ship
    the app after the new backend APIs are available. Set `GOOGLE_SERVICES_JSON`
-   to the EAS file-variable path for the Android package's `google-services.json`
-   and upload its matching FCM V1 service account to EAS as described in
+   to the path of the Android package's `google-services.json` in the Android
+   native build (`android-apk-rn.yml`) AND in every OTA workflow
+   (`mobile-ota-production.yml`, `mobile-ota-check.yml`, `mobile-ota-preview.yml`,
+   `mobile-ota-backport.yml`): it changes the Android fingerprint, so setting it
+   on the build alone stops Android OTAs landing (`scripts/mobile-ci-env-parity.test.ts`
+   enforces this). Until a binary built with it ships, Android cannot get an Expo
+   push token. Upload the matching FCM V1 service account to EAS as described in
    [Expo's FCM credential setup](https://docs.expo.dev/push-notifications/fcm-credentials/).
    Android needs a new binary
    with the `expo-notifications` config plugin before exposing phone alerts; an

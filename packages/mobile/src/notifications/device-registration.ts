@@ -41,23 +41,28 @@ async function requestDevice(query: string, variables: Record<string, unknown>, 
   }
 }
 
-/** Permission is requested only when starting recognition, never on launch. */
-export async function registerNotificationDevice(requestPermission = false, force = false): Promise<void> {
-  if (!Device.isDevice || (Platform.OS !== 'ios' && Platform.OS !== 'android')) return;
+/**
+ * Permission is requested only when starting recognition, never on launch.
+ * Resolves true when this device is registered for pushes to the signed-in
+ * account (just now, or within the last five minutes).
+ */
+export async function registerNotificationDevice(requestPermission = false, force = false): Promise<boolean> {
+  if (!Device.isDevice || (Platform.OS !== 'ios' && Platform.OS !== 'android')) return false;
   const generation = captureAuthCredentialGeneration();
   const epoch = lifecycleEpoch;
   try {
     const bearer = await getAuthToken();
-    if (!bearer) return;
+    if (!bearer) return false;
     const locale = isSupportedLocale(i18n.language) ? i18n.language : 'en-US';
+    // Permission is granted by now, so asking again (each detection step mount)
+    // shares the throttle instead of re-registering and re-running catch-up.
     if (
       !force &&
-      !requestPermission &&
       registration?.bearer === bearer &&
       registration.locale === locale &&
       Date.now() - registration.registeredAt < 300_000
     )
-      return;
+      return true;
     if (Platform.OS === 'android')
       await Notifications.setNotificationChannelAsync('default', {
         name: 'Boardsesh',
@@ -71,19 +76,21 @@ export async function registerNotificationDevice(requestPermission = false, forc
     if (status !== 'granted') {
       if (epoch === lifecycleEpoch && isAuthCredentialGenerationCurrent(generation))
         await deactivateNotificationDevice();
-      return;
+      return false;
     }
+    // Permission is granted by now, so asking again (each detection step mount)
+    // shares the throttle instead of re-registering and re-running catch-up.
     if (
       !force &&
-      !requestPermission &&
       registration?.bearer === bearer &&
       registration.locale === locale &&
       Date.now() - registration.registeredAt < 300_000
     )
-      return;
+      return true;
     const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
-    if (typeof projectId !== 'string') return;
+    if (typeof projectId !== 'string') return false;
     const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+    let registered = false;
     operations = operations
       .catch(() => {})
       .then(async () => {
@@ -97,10 +104,13 @@ export async function registerNotificationDevice(requestPermission = false, forc
           bearer,
         );
         if (registration?.bearer === bearer) registration.registeredAt = Date.now();
+        registered = true;
       });
     await operations;
+    return registered;
   } catch {
     // Importing and the in-app notification remain available without push.
+    return false;
   }
 }
 

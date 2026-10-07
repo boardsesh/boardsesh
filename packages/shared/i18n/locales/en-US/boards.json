@@ -1217,6 +1217,6 @@
     "offline": "Importing · Connect to check progress",
     "open": "Check import",
     "review": "Review holds",
-    "unavailable": "This import is no longer available. Open My Boards to continue."
+    "unavailable": "This import is gone. Its photo was replaced or discarded, or you can't edit this wall anymore."
   }
 }

@@ -855,10 +855,17 @@ export const mutationsTypeDefs = /* GraphQL */ `
     # ============================================
 
     """
-    Mark a notification as read.
+    Register this installation's Expo push token for the signed-in account. The
+    registration lasts until the credential expires (24 hours at most).
     """
     registerNotificationDevice(input: RegisterNotificationDeviceInput!): Boolean!
+    """
+    Stop pushes to this installation for the signed-in account.
+    """
     unregisterNotificationDevice(installationId: String!): Boolean!
+    """
+    Mark a notification as read.
+    """
     markNotificationRead(notificationUuid: ID!): Boolean!
 
     """

@@ -1217,6 +1217,6 @@
     "offline": "Importation · Connecte-toi pour voir la progression",
     "open": "Vérifier l’importation",
     "review": "Vérifier les prises",
-    "unavailable": "Cette importation n’est plus disponible. Ouvre Mes murs pour continuer."
+    "unavailable": "Cette importation n’existe plus : sa photo a été remplacée ou abandonnée, ou tu ne peux plus modifier ce mur."
   }
 }

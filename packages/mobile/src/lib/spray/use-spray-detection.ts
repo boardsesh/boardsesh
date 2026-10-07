@@ -17,8 +17,17 @@ export function useSprayDetection(wallUuid: string, versionId: string) {
   const queryClient = useQueryClient();
   const focused = useIsFocused();
   const offline = useIsOffline();
+  // Promise a push only once this device is registered for one: a binary
+  // without push credentials (Android before FCM ships) never gets a token.
+  const [pushReady, setPushReady] = useState(false);
   useEffect(() => {
-    void registerNotificationDevice(true);
+    let mounted = true;
+    void registerNotificationDevice(true).then((registered) => {
+      if (mounted) setPushReady(registered);
+    });
+    return () => {
+      mounted = false;
+    };
   }, []);
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   useEffect(() => {
@@ -66,5 +75,5 @@ export function useSprayDetection(wallUuid: string, versionId: string) {
       void queryClient.invalidateQueries({ queryKey: ['sprayImportProgress'] });
     },
   });
-  return { query, retry, offline };
+  return { query, retry, offline, pushReady };
 }
