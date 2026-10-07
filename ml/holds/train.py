@@ -25,6 +25,7 @@ from pathlib import Path
 
 from common import DEFAULT_THREADS, HOLDS_DIR, DetectorConfig, cap_threads, load_config
 from data.tile_coco import clip_polygon_to_tile
+from data.user_walls import check_training_dataset, is_user_walls_dataset
 
 RFDETR_VARIANTS = {
     "nano": "RFDETRNano",
@@ -73,7 +74,11 @@ def resolve_device(requested: str) -> tuple[str, str]:
     return requested, ACCELERATOR_BY_DEVICE[requested]
 
 
-def build_model(family: str, variant: str, resolution: int, num_classes: int = 1):
+def build_model(
+    family: str, variant: str, resolution: int, num_classes: int = 1, pretrain_weights: str | None = None
+):
+    """`pretrain_weights` starts from a checkpoint of ours (a fine-tune) instead of
+    rfdetr's released COCO weights."""
     if family != "rfdetr":
         raise SystemExit(
             f"family {family!r} is not wired up. Apache-2.0 families only: rfdetr, yolox, dfine, rtdetr."
@@ -86,7 +91,8 @@ def build_model(family: str, variant: str, resolution: int, num_classes: int = 1
     # 90-class COCO one. There is one class here, `hold`, and the unused 89 are
     # roughly half the exported file — which is the difference between a model a
     # phone downloads on a gym connection and one it does not.
-    return getattr(rfdetr, RFDETR_VARIANTS[variant])(resolution=resolution, num_classes=num_classes)
+    weights = {"pretrain_weights": pretrain_weights} if pretrain_weights else {}
+    return getattr(rfdetr, RFDETR_VARIANTS[variant])(resolution=resolution, num_classes=num_classes, **weights)
 
 
 def cap_train_split(dataset_dir: Path, limit: int) -> Path:
@@ -100,6 +106,10 @@ def cap_train_split(dataset_dir: Path, limit: int) -> Path:
 
     capped_dir = dataset_dir.parent / f"{dataset_dir.name}-cap{limit}"
     for split in ("valid", "test"):
+        if not (dataset_dir / split).exists():
+            # A user-walls export has no `test/` (its held-out split is `eval`);
+            # a dangling link here would break the next run's symlink_to.
+            continue
         link = capped_dir / split
         if not link.exists():
             link.parent.mkdir(parents=True, exist_ok=True)
@@ -138,11 +148,13 @@ def tiled_dataset_dir(config: DetectorConfig, dataset_dir: Path) -> Path:
     """
     grid = config.tiles
     source_name = dataset_dir.resolve().name
-    return (
-        HOLDS_DIR
-        / ".data"
-        / f"{source_name}-tiles-{grid.rows}x{grid.cols}-{grid.overlap}-{config.long_side}"
-    )
+    tiles_name = f"{source_name}-tiles-{grid.rows}x{grid.cols}-{grid.overlap}-{config.long_side}"
+    if is_user_walls_dataset(dataset_dir):
+        # Tiles are crops of climbers' wall photos. Keep them beside the export,
+        # where data/user_walls.py fetch deletes them together with it once the
+        # bucket retires that export, never in the shared .data/ root.
+        return dataset_dir.resolve().parent / tiles_name
+    return HOLDS_DIR / ".data" / tiles_name
 
 
 def tile_source_record(config: DetectorConfig, dataset_dir: Path) -> dict[str, object]:
@@ -284,6 +296,15 @@ def main() -> int:
             "last.ckpt. Forwarded to rfdetr's `resume`, i.e. trainer.fit(ckpt_path=...)."
         ),
     )
+    parser.add_argument(
+        "--init-weights",
+        help=(
+            "start from this checkpoint (.pth) instead of rfdetr's released COCO weights: a fine-tune "
+            "of the current best model, e.g. on a user-walls export. Unlike --resume it starts a fresh "
+            "run (epoch 0, new optimizer). Copy it out of .data/runs/<config>/ first, because this run "
+            "writes its own checkpoints there."
+        ),
+    )
     parser.add_argument("--max-train-images", type=int, help="cap the training set, for a quick smoke run")
     parser.add_argument(
         "--threads",
@@ -301,8 +322,15 @@ def main() -> int:
         ),
     )
     args = parser.parse_args()
+    if args.init_weights and args.resume:
+        parser.error("--init-weights starts a new run and --resume continues one; pass only one")
+    if args.init_weights and not Path(args.init_weights).is_file():
+        raise SystemExit(f"--init-weights: no checkpoint at {args.init_weights}")
 
     cap_threads(args.threads)
+    # A user-walls export must be freshly fetched (so a wall whose owner opted out
+    # is gone) and keep its eval walls out of training. No-op for other corpora.
+    check_training_dataset(Path(args.dataset))
     device_name, accelerator = resolve_device(args.device)
     config = load_config(args.config)
     dataset_dir = prepare_dataset(config, Path(args.dataset))
@@ -328,9 +356,13 @@ def main() -> int:
 
     print(f"config       {config.name} ({config.family}/{config.variant} @ {config.resolution}px, {config.num_classes} class)")
     print(f"dataset      {dataset_dir}")
+    if args.init_weights:
+        print(f"init weights {args.init_weights}")
     print(f"train config {json.dumps({**train_config, 'device': device_name, 'accelerator': accelerator})}")
 
-    model = build_model(config.family, config.variant, config.resolution, config.num_classes)
+    model = build_model(
+        config.family, config.variant, config.resolution, config.num_classes, pretrain_weights=args.init_weights
+    )
 
     started = time.time()
     model.train(
@@ -361,6 +393,7 @@ def main() -> int:
         "device": device_name,
         "accelerator": accelerator,
         "train_config": summary_train_config,
+        "init_weights": args.init_weights,
         "wall_clock_seconds": round(elapsed, 1),
         "output_dir": str(output_dir),
     }

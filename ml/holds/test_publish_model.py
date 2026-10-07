@@ -239,6 +239,7 @@ def _eval_py_results(**overrides: Any) -> dict[str, Any]:
         "box": {"precision": 0.514, "recall": 0.612, "f1": 0.559, "tp": 590},
         "correction_rate_micro": 0.97,
         "correction_rate_macro": 1.04,
+        "gesture_savings": 0.4761,
     }
     results.update(overrides)
     return results
@@ -253,12 +254,45 @@ def test_an_eval_py_results_file_populates_the_manifest(tmp_path: Path, sample_m
     assert manifest["eval"] == {
         "sprayEvalF1": 0.559,
         "weightedCorrectionsPerHold": 0.97,
+        # The release gate's number (docs/spray-recognition-rollout.md, 40%).
+        "gestureSavings": 0.4761,
         # Which half the numbers came from: `eval` is held out, `tune` is where the
         # threshold was chosen.
         "split": "eval",
     }
     schema = json.loads(publish_model.SCHEMA_PATH.read_text())
     jsonschema.validate(instance=manifest, schema=schema)
+
+
+def test_an_eval_py_file_from_before_gesture_savings_still_publishes(tmp_path: Path, sample_model: Path) -> None:
+    """Older eval.py output has no gesture_savings; the manifest simply leaves it out."""
+    results = _eval_py_results()
+    del results["gesture_savings"]
+    eval_json_path = tmp_path / "eval.json"
+    eval_json_path.write_text(json.dumps(results))
+    out_dir = _run_publish(tmp_path, sample_model, extra_args=["--eval-json", str(eval_json_path)])
+    manifest = json.loads((out_dir / "manifest.json").read_text())
+    assert "gestureSavings" not in manifest["eval"]
+
+
+def test_a_null_gesture_savings_is_refused(tmp_path: Path, sample_model: Path) -> None:
+    eval_json_path = tmp_path / "eval.json"
+    eval_json_path.write_text(json.dumps(_eval_py_results(gesture_savings=None)))
+    with pytest.raises(SystemExit, match="gesture_savings set to null"):
+        _run_publish(tmp_path, sample_model, extra_args=["--eval-json", str(eval_json_path)])
+
+
+def test_the_user_walls_export_is_recorded_in_training(tmp_path: Path, sample_model: Path) -> None:
+    export_id = "2026-10-07T08:00:00.000Z"
+    out_dir = _run_publish(tmp_path, sample_model, extra_args=["--user-walls-export", export_id])
+    manifest = json.loads((out_dir / "manifest.json").read_text())
+    assert manifest["training"]["userWallsExportId"] == export_id
+
+
+def test_without_a_user_walls_export_training_has_no_export_id(tmp_path: Path, sample_model: Path) -> None:
+    out_dir = _run_publish(tmp_path, sample_model)
+    manifest = json.loads((out_dir / "manifest.json").read_text())
+    assert "userWallsExportId" not in manifest["training"]
 
 
 def test_an_eval_json_for_another_config_is_refused(tmp_path: Path, sample_model: Path) -> None:

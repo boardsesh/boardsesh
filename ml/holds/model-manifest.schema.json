@@ -288,6 +288,11 @@
           "type": "string",
           "minLength": 1,
           "description": "ISO date the export was trained/produced."
+        },
+        "userWallsExportId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional - the spray-training export (private bucket, spray-training/exports/<exportId>/) the run trained on, from publish_model.py's --user-walls-export. Absent for a model trained on public corpora only."
         }
       }
     },
@@ -314,7 +319,8 @@
         },
         "gestureSavings": {
           "type": "number",
-          "description": "Estimated fraction of manual tap-to-place gestures the detector saves a user, relative to placing every hold by hand."
+          "maximum": 1,
+          "description": "eval.py's gesture_savings: 1 - (2 * misses + false positives) / (2 * holds) on the `eval` split at the shipped default threshold. The share of hand-placement gestures the detector saves, where placing a hold by hand costs 2 and deleting a false positive costs 1. Can go negative for a detector that mostly adds false positives. The release gate is 40% (docs/spray-recognition-rollout.md)."
         }
       }
     },

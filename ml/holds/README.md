@@ -23,7 +23,18 @@ Expo SDK 57 / RN 0.86).
   describe the file a phone runs, including whatever the exporter changed.
 - **Splits are by photo, never by hold.** Two holds off the same wall on opposite
   sides of the split would inflate every number: the model has already seen that
-  wall, its lighting and its hold set.
+  wall, its lighting and its hold set. Climbers' walls go one step further: the
+  backend splits them by **root wall**, so a reset clone always lands in the same
+  split as the wall it was cloned from.
+- **Climbers' walls train only with their owner's consent, and leave when it
+  goes.** Every wall has a "Help train hold finding" switch, on by default. A wall
+  reaches the training export only with that switch on and a spray admin's
+  approval. `data/user_walls.py fetch` deletes every local export the bucket has
+  retired, and `train.py` refuses a copy fetched more than 7 days ago. These photos
+  are never committed, never a fixture and never redistributed.
+- **The hand-labelled spray `eval` split stays the gate.** Climbers' labels start
+  from the old model's suggestions, so a model scored only on them is partly
+  scored on agreeing with its predecessor. See "Retrain runbook".
 
 ## Layout
 
@@ -41,6 +52,7 @@ ml/holds/
                        score threshold is chosen on photos the F1 is not reported on)
   data/wayup.py        frame The Way Up videos into COCO, split by participant
   data/make_fixtures.py promote labelled photos into the committed fixtures
+  data/user_walls.py   fetch climbers' consented walls from the private bucket (see "Retrain runbook")
   data/to_coco.py      convert a labelled source into one COCO set, split by photo
   data/tile_coco.py    cut a COCO set into the tiles a tiled config will see
   train.py          one pipeline; the config picks the model family
@@ -51,7 +63,9 @@ ml/holds/
   test_publish_model.py        pytest for publish_model.py — --dry-run only, no R2 needed
   test_train.py                pytest for the tiled-dataset cache (no training, no torch)
   test_tile_coco.py            polygon clipping and tiled-annotation propagation (Pillow + NumPy)
-  test_fetch.py                pytest for data/fetch.py's missing-SDK message
+  test_fetch.py                pytest for data/fetch.py (missing SDK, the private user-walls entry)
+  test_user_walls.py           pytest for data/user_walls.py and train.py's user-walls guards (synthetic photos)
+  test_eval.py                 pytest for eval.py's gesture savings
   fixtures/         committed inputs + expected detections for the SW-06 Node tests
   .data/            downloads, scraped photos, labels, checkpoints, exports —
                     gitignored, never committed
@@ -154,6 +168,99 @@ over this repo's 15 MB ceiling — so it does not get committed; it goes to R2
 under `models/hold-detector/<version>/` instead — see "Publishing a model"
 below (`docs/user-media-storage.md` has the bucket/credential contract).
 
+## Retrain runbook
+
+How a new model gets made from climbers' walls (SW-20, #5471). A person runs
+this; nothing retrains on a schedule.
+
+**Gesture savings** is the number that decides it. `eval.py` writes it as
+`gesture_savings`: 1 − (2 × misses + false positives) ÷ (2 × holds), at the
+threshold being scored. Placing a hold by hand counts 2 gestures and deleting a
+false positive counts 1, the same weights as the "Weighted corr." row in the
+full-run table, so gesture savings is that row halved and subtracted from 1. It is
+the definition behind the 48.2% the Node detector reported for `2026-09-18-seg`,
+and the release gate is **40%** (`docs/spray-recognition-rollout.md`).
+
+```bash
+cd ml/holds && . .venv/bin/activate
+CONFIG=seg-nano-tiled-1024          # the shipped model's config
+SHIPPED=2026-09-18-seg              # the shipped version, from its manifest
+
+# 1. Fetch. Uses the backend's PRIVATE_* variables (docs/user-media-storage.md);
+#    R2_PRIVATE_BUCKET and R2_ENDPOINT also work for the bucket and endpoint.
+#    Use the read-only token. Prints the exportId and the directory to train on.
+export PRIVATE_S3_BUCKET_NAME=boardsesh-user-private
+export PRIVATE_AWS_ENDPOINT_URL=https://<account>.r2.cloudflarestorage.com
+export PRIVATE_AWS_ACCESS_KEY_ID=… PRIVATE_AWS_SECRET_ACCESS_KEY=…
+python data/user_walls.py fetch
+EXPORT=.data/user-walls/<exportId>
+
+# 2. Keep the shipped model to compare against. Training writes to the same
+#    .data/runs/ and .data/artifacts/ directories, so copy both out first.
+mkdir -p .data/shipped/$SHIPPED
+curl -fo .data/shipped/$SHIPPED/model-int8.onnx \
+  https://media.boardsesh.com/models/hold-detector/$SHIPPED/model-int8.onnx
+cp .data/runs/$CONFIG/checkpoint_best_ema.pth .data/shipped/$SHIPPED/
+
+# 3. Fine-tune from the shipped checkpoint on the user walls.
+python train.py --config $CONFIG --device mps --epochs 10 --dataset $EXPORT \
+  --init-weights .data/shipped/$SHIPPED/checkpoint_best_ema.pth
+python export.py --config $CONFIG --formats onnx --shrink int8
+NEW=.data/artifacts/$CONFIG/model-int8.onnx
+
+# 4. Pick the threshold on the hand-labelled spray `tune` half, against the int8 file.
+for t in 0.30 0.40 0.50 0.60 0.70; do
+  python eval.py --config $CONFIG --dataset .data/spraywall-coco --split tune \
+    --score-threshold $t --model $NEW --out .data/artifacts/$CONFIG/eval-tune-$t.json
+done
+T=<best gesture_savings of the sweep>
+
+# 5. Score both models on both held-out splits at their own shipped thresholds.
+python eval.py --config $CONFIG --dataset .data/spraywall-coco --split eval \
+  --score-threshold $T --model $NEW --out .data/artifacts/$CONFIG/eval-spray.json
+python eval.py --config $CONFIG --dataset $EXPORT --split eval \
+  --score-threshold $T --model $NEW --out .data/artifacts/$CONFIG/eval-user-walls.json
+python eval.py --config $CONFIG --dataset .data/spraywall-coco --split eval \
+  --score-threshold <shipped threshold> --model .data/shipped/$SHIPPED/model-int8.onnx \
+  --out .data/shipped/$SHIPPED/eval-spray.json
+python eval.py --config $CONFIG --dataset $EXPORT --split eval \
+  --score-threshold <shipped threshold> --model .data/shipped/$SHIPPED/model-int8.onnx \
+  --out .data/shipped/$SHIPPED/eval-user-walls.json
+
+# 6. Publish, only if step 5 passes the rule below.
+python publish_model.py --config $CONFIG --version <new version> --threshold $T \
+  --dataset "Roboflow climbing-holds-and-volumes v14 + Boardsesh user walls <exportId>" \
+  --training-licence "CC BY 4.0 + owner consent per wall" --epochs 10 --trained-on m5-max-mps \
+  --date <today> --user-walls-export <exportId> \
+  --eval-json .data/artifacts/$CONFIG/eval-spray.json
+```
+
+**Ship only if** `gesture_savings` rises on **both** `eval` splits against the
+shipped model's score on the same split, and stays at **40% or more** on both.
+The manifest's `eval` section comes from the hand-labelled spray split, and
+`training.userWallsExportId` records which export the walls came from.
+
+**Why the hand-labelled split stays the gate.** A climber's hold set starts from
+the old model's suggestions. Holds marked `auto_review: accepted` are suggestions
+the climber kept as they were, so they agree with the old model by construction.
+A retrain scored only on the user-walls `eval` split is partly scored on agreeing
+with its predecessor. `fetch` prints the share of `accepted` holds (the backend's
+manifest counts them too); the higher it is, the less the user-walls number says
+on its own. The hand-labelled `eval` split has none of that bias, so it decides.
+
+`fetch` also prints the share of holds whose polygon is a 24-point circle
+(`mask_from_circle`: the climber placed a circle and never traced an outline).
+Those train the mask head on circles rather than silhouettes; a high share is a
+reason to look at outline quality before shipping.
+
+**When a wall leaves.** Switching training off, deleting or hiding the wall,
+deleting the account, or an admin revoking approval takes the wall out of the
+next export at once. The backend retires every stored export that contains it
+within 24 hours. The next `fetch` deletes the local copy along with every cache
+`train.py` built from it (`<exportId>-cap*`, `<exportId>-tiles-*`), and `train.py`
+refuses a copy fetched more than 7 days ago. Trained weights hold no photos and
+are not retracted.
+
 ## Publishing a model
 
 `publish_model.py` (SW-01, issue #5434) is the only thing in `ml/holds/` that
@@ -238,9 +345,10 @@ stamped (bytes untouched) so the repair path stays open for older versions.
 Credentials are never printed or logged by either mode.
 
 `--eval-json` takes an `eval.py` results file (`.data/artifacts/<config>/eval.json`)
-as well as a manifest-shaped one: `box.f1` and `correction_rate_micro` are read
-into the manifest's `sprayEvalF1` and `weightedCorrectionsPerHold`, and the file's
-`split` is recorded alongside them. A file with none of those keys is an error
+as well as a manifest-shaped one: `box.f1`, `correction_rate_micro` and
+`gesture_savings` are read into the manifest's `sprayEvalF1`,
+`weightedCorrectionsPerHold` and `gestureSavings`, and the file's `split` is
+recorded alongside them. A file with none of those keys is an error
 rather than a manifest that silently ships without its `eval` section, and so is
 one whose own `config`, `model` or `score_threshold` disagrees with what is being
 published — a tune-sweep run or another config's run must not be presented as this
@@ -275,7 +383,8 @@ With pytest, Pillow, NumPy, boto3 and jsonschema installed from the pinned
 requirements, run from `ml/holds`:
 
 ```sh
-vp exec python -m pytest test_tile_coco.py test_publish_model.py test_train.py test_fetch.py -q
+vp exec python -m pytest test_tile_coco.py test_publish_model.py test_train.py test_fetch.py \
+  test_user_walls.py test_eval.py -q
 ```
 
 These checks use generated images and model bytes; they do not train a model,
@@ -600,8 +709,12 @@ against a copyrighted photo on one machine is a different act from baking it int
 weights that ship. The Commons set is CC and *could* be trained on, but it is the
 only other clean evaluation set there is.
 
-So the honest position is: there is still no corpus this model may both learn from
-and be judged on. The Roboflow ask below is what fixes that.
+Climbers' own walls (SW-20, #5471) are the first corpus this model may both learn
+from and be judged on. Each owner's consent covers internal training, and the
+backend holds back an `eval` split per root wall that is never trained on. They are
+fetched with `data/user_walls.py fetch` and used as the "Retrain runbook" describes.
+The web corpus above stays out of training for the reasons given, and stays the
+unbiased gate.
 
 Reproduce exactly:
 
@@ -744,6 +857,40 @@ aws s3 sync s3://$R2_PRIVATE_BUCKET/spray-wall-test-data/ .data/spraywall-discor
 Label every hold as a box (a mask is a bonus), export COCO, and put it through
 `data/to_coco.py`.
 
+### Climbers' walls (`boardsesh-user-walls`)
+
+The second private corpus is already labelled: every published spray wall is a
+photo plus the holds its owner placed and checked. The backend exports the walls
+whose owner left "Help train hold finding" on and that a spray admin approved,
+once a day, to the same private bucket:
+
+```
+spray-training/exports/<exportId>/
+  train/v<versionId>.jpg, train/_annotations.coco.json
+  valid/…, eval/…          same layout; split frozen per root wall
+  candidates.json          the detector's suggestions and what became of each
+                           (kept, edited, deleted, not shown); analysis only, never labels
+  manifest.json            written last: counts, consent snapshot, split membership,
+                           and the sha256 of every other file
+```
+
+Each COCO file has one category, `hold`. Every annotation carries a box and a
+polygon in photo pixels, plus `attributes`: `source` (`manual` or `auto`),
+`auto_review` (`accepted`, `confirmed`, `edited`, or null), and
+`mask_from_circle: true` when the polygon is a circle. Every image carries
+`boardsesh.version_ref` and `boardsesh.root_ref`, hashed references that let
+`fetch` and `train.py` prove no `eval` wall is in `train` or `valid` without
+carrying a wall id.
+
+```bash
+python data/user_walls.py fetch      # see "Retrain runbook" for the env vars
+```
+
+`fetch` mirrors the newest export into `.data/user-walls/<exportId>/`, refuses any
+file whose sha256 does not match the manifest, and deletes everything else in
+`.data/user-walls/` that the bucket no longer holds. The result is the layout
+`train.py` reads, with the held-out split kept as `eval/` and no `test/`.
+
 ## Licences
 
 See `data/sources.json` for the machine-readable registry — that file, not this
@@ -765,6 +912,7 @@ table, is what `data/fetch.py` enforces.
 | CS152-SSL label set | CC BY 4.0 | labels are keyless; the images need a free Roboflow account |
 | xiaoxiae gym masks | CC BY-SA 4.0 | the only per-hold masks found; images need a Kaggle token |
 | Spray-wall photos from Discord | uploader consent, per photo | private bucket; fixtures only with `consent.redistribute` |
+| Climbers' spray walls (`boardsesh-user-walls`) | owner consent per wall (on by default, revocable), internal training only, never redistributed | private bucket → gitignored `.data/user-walls/`; **training data** and the second `eval` split; deleted locally on the next `fetch` after the bucket retires it; never committed, never a fixture. Weights trained on it hold no photos and are not retracted |
 
 Nothing AGPL is installed, imported or vendored here.
 

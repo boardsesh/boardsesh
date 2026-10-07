@@ -61,6 +61,14 @@
       "format": "coco",
       "notes": "Real spray-wall photos uploaded through POST /api/spray-wall-test-data into the private R2 bucket under spray-wall-test-data/. Pull them down with the AWS CLI against the private bucket (see README) into .data/spraywall-discord/ and hand-label. This is the corpus the gate is meant to be decided on; the public sources below only bootstrap the harness."
     },
+    "boardsesh-user-walls": {
+      "kind": "private",
+      "licence": "owner consent per wall (on by default, revocable), internal training only, never redistributed",
+      "redistributable": false,
+      "url": null,
+      "format": "coco",
+      "notes": "Climbers' own spray walls: the wall photo plus the holds its owner marked, for every wall whose owner left 'Help train hold finding' on and that a spray admin approved. The backend writes them daily to the private R2 bucket under spray-training/exports/<exportId>/ (train, valid, eval; eval is frozen per root wall and never trained on). Fetch with `python data/user_walls.py fetch`, which verifies every sha256 and deletes local exports the bucket has retired; train.py refuses a copy fetched more than 7 days ago. Never committed, never a fixture, never redistributed. Trained weights hold no photos and are not retracted when a wall leaves."
+    },
     "spraywalls-web": {
       "kind": "manual",
       "licence": "not stated / all rights reserved (per photo, verbatim in .data/spraywalls/sources.csv)",
