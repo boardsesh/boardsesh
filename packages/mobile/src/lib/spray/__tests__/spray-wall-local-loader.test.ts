@@ -10,6 +10,8 @@ const fixture = vi.hoisted(() => ({
   register: vi.fn(),
   getSize: vi.fn(),
   remembered: null as { archivedAt: string; replacedByWallUuid: string | null } | null,
+  previous: null as unknown,
+  artOnDisk: true,
 }));
 vi.mock('react-native', () => ({ Image: { getSize: fixture.getSize } }));
 vi.mock('../../../db', () => ({ getDatabaseHandle: () => ({}) }));
@@ -17,11 +19,15 @@ vi.mock('../../../db/queries/get-spray-wall-local', () => ({ getSprayWallLocal: 
 vi.mock('../../local-user-id', () => ({ readLocalUserId: async () => fixture.userId }));
 vi.mock('../spray-photo-store', () => ({ tryGetStoredSprayPhotoPathSync: () => fixture.storedPath }));
 vi.mock('../../../settings/offline-boards', () => ({ getRememberedSprayWallArchive: () => fixture.remembered }));
+vi.mock('../spray-photo-cache', () => ({
+  tryGetSprayPhotoPathSync: () => (fixture.artOnDisk ? '/cache/4-v21-crop.jpg' : null),
+}));
 vi.mock('../spray-wall-registry', () => ({
   LIVE_SPRAY_WALL_ARCHIVE_STATE: {
     archivedAt: null,
     replacedByWallUuid: null,
   },
+  getSprayWall: () => fixture.previous,
   registerSprayWall: fixture.register,
   sprayWallViewerGeneration: () => fixture.viewerGeneration,
   sprayWallRemovalGeneration: () => fixture.removalGeneration,
@@ -48,6 +54,8 @@ beforeEach(() => {
   fixture.viewerGeneration = 1;
   fixture.removalGeneration = 1;
   fixture.remembered = null;
+  fixture.previous = null;
+  fixture.artOnDisk = true;
   fixture.read.mockResolvedValue(wall);
   fixture.getSize.mockImplementation((_uri: string, success: (width: number, height: number) => void) =>
     success(1200, 900),
@@ -149,5 +157,36 @@ describe('offline published wall hydration', () => {
     fixture.read.mockResolvedValueOnce(wall).mockResolvedValueOnce({ ...wall, version: 3 });
     expect(await loadLocalSprayWall(4, 1, 1)).toBe(false);
     expect(fixture.register).not.toHaveBeenCalled();
+  });
+});
+
+describe('a generated look survives going offline', () => {
+  const art = {
+    variant: 'crop',
+    versionId: 21,
+    version: 2,
+    width: 800,
+    height: 600,
+    scale: 1,
+    url: 'https://private.example/crop',
+    expiresAt: 'later',
+    holds: [],
+  };
+
+  it('keeps the art the online wall drew for the same published version', async () => {
+    fixture.previous = { wallUuid: 'wall', version: 2, versionId: 21, art };
+    expect(await loadLocalSprayWall(4, 1, 1)).toBe(true);
+    expect(fixture.register).toHaveBeenCalledWith(4, expect.objectContaining({ art }));
+  });
+
+  it.each([
+    ['another version', { wallUuid: 'wall', art: { ...art, version: 1 } }, true],
+    ['another wall', { wallUuid: 'other', art }, true],
+    ['a file no longer on disk', { wallUuid: 'wall', art }, false],
+  ])('drops it for %s', async (_label, previous, onDisk) => {
+    fixture.previous = previous;
+    fixture.artOnDisk = onDisk;
+    expect(await loadLocalSprayWall(4, 1, 1)).toBe(true);
+    expect(fixture.register).toHaveBeenCalledWith(4, expect.objectContaining({ art: null }));
   });
 });

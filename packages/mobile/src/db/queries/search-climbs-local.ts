@@ -777,7 +777,8 @@ export function mapRowToClimb(
     angle,
     statsAngle: row.stats_angle ?? null,
     ascensionist_count: Number(row.ascensionist_count ?? 0),
-    difficulty: getGradeLabel(difficultyId),
+    // On the board's own scale, so it matches the server's `boulder_name` (MoonBoard's 16 is "6a/V2").
+    difficulty: getGradeLabel(difficultyId, boardType),
     quality_average: row.quality_average !== null ? String(roundTo(row.quality_average, 2)) : '0',
     stars: getClimbStars(row.quality_average),
     difficulty_error: difficultyError,

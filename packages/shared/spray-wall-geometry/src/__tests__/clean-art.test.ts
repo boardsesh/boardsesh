@@ -4,7 +4,15 @@
 // the photo has to land on its corner of the canonical frame, and the identity
 // map has to behave like a plain resize.
 import { describe, expect, it } from 'vite-plus/test';
-import { ART_CIRCLE_POINTS, artFeather, canonicalArtSize, holdMaskRings, warpBilinear } from '../clean-art';
+import {
+  ART_CIRCLE_POINTS,
+  ART_DILATE_MAX_PX,
+  ART_FEATHER_MAX_SIGMA,
+  artFeather,
+  canonicalArtSize,
+  holdMaskRings,
+  warpBilinear,
+} from '../clean-art';
 import { IDENTITY_HOMOGRAPHY, type Quad, boundingSize, homographyFromAnchors, invert } from '../homography';
 
 describe('canonicalArtSize', () => {
@@ -55,6 +63,11 @@ describe('holdMaskRings', () => {
     expect(ring.grow).toBe(8);
   });
 
+  it('caps the grow of an enormous hold at ART_DILATE_MAX_PX', () => {
+    const [ring] = holdMaskRings([{ cx: 0, cy: 0, r: 10000 }], 1);
+    expect(ring.grow).toBe(ART_DILATE_MAX_PX);
+  });
+
   it('skips a hold with no usable radius', () => {
     expect(holdMaskRings([{ cx: 0, cy: 0, r: 0 }], 1)).toEqual([]);
   });
@@ -69,6 +82,11 @@ describe('artFeather', () => {
   it('never drops below 1 px', () => {
     expect(artFeather([2, 3], 1)).toBe(1);
     expect(artFeather([100], 0.01)).toBe(1);
+  });
+
+  it('never exceeds ART_FEATHER_MAX_SIGMA, however big the owner made a hold', () => {
+    expect(artFeather([10000], 1)).toBe(ART_FEATHER_MAX_SIGMA);
+    expect(artFeather([5000, 10000, 10000], 1)).toBe(ART_FEATHER_MAX_SIGMA);
   });
 
   it('assumes a 10 px radius with no holds', () => {

@@ -773,7 +773,8 @@ feather sigma 6% of the median radius, 32-point circle for an untraced hold,
 (clients draw the photo). Nothing sweeps every wall on a bump: the job is
 re-queued the next time `sprayWallArt` is read for the PUBLISHED version of a
 wall whose chosen background is generated, or when the owner chooses one again.
-Walls on the photo are left alone. Old objects are never overwritten.
+Walls on the photo are left alone. Old objects are never overwritten; the
+re-render deletes them once the new recipe's images are ready.
 
 The recipe is also the only way to WITHDRAW art. A READY row of the running
 recipe is served whatever the live quality gate says, so tightening
@@ -789,10 +790,21 @@ gate with the shared function (writing `refused` if it fails), decodes the photo
 with sharp, warps it with `warpBilinear`, draws the hold mask as an SVG (each
 outline filled and stroked round by twice its grow, which dilates it), blurs it,
 joins it as the cutout's alpha, uploads thumbnails before their base images, and
-writes `ready`. A failure writes `failed` with a bounded code before it rethrows,
-so a retry, or the owner picking the look again, can heal it. A crash, an
-expired lease or the run deadline writes nothing, so every `pending` row carries
-`requestedAt`; one older than the job's 1 h deadline reads as `FAILED`.
+writes `ready`, then deletes this version's images from any older recipe. The
+mask is bounded whatever radius an owner types: the feather sigma is capped at
+`ART_FEATHER_MAX_SIGMA` (24 art px) and each hold's dilation at
+`ART_DILATE_MAX_PX` (24), because an uncapped sigma of 600 (a 10,000 px hold)
+kept the worker busy for minutes. sharp cannot be interrupted, so the job checks
+its lease between stages. A failure writes `failed` with a bounded code before it rethrows,
+so a retry, or the owner picking the look again, can heal it. That write
+survives a worker shutdown or a lost attempt: it goes through
+`transactionAfterAbort`, the same attempt fence without the abort check, and is
+recorded as `SPRAY_ART_ABORTED`. It does not survive a lease timeout: that abort
+fires exactly when the fence's active-attempt check stops passing, so the fence
+refuses the write. A timeout (now unlikely, with the blur capped), a crash, or an
+abort whose fence another attempt already took writes nothing, so every
+`pending` row carries `requestedAt`; one older than the job's 1 h deadline reads
+as `FAILED` and is re-queued.
 
 Who queues it:
 
@@ -810,7 +822,11 @@ Who queues it:
   background is generated, when its art is missing, from an older recipe, or
   `failed` / `pending` past the 1 h deadline (a `failed` row is retried at most
   hourly, not on every read). Queue only, never rendered inline, deduplicated by
-  the singleton key, and never for a photo the gate refuses.
+  the singleton key, and never for a photo the gate refuses. A read opens no
+  transaction while the family is off or no queue is running, asks at most once
+  per version per 10 minutes per process, and logs a failed request at `warn`
+  (a publish's failure stays `error`), so a queue outage costs neither
+  Postgres round trips nor alert noise on every read.
 
 Nothing is queued while `spray-wall-art` is in `BATCH_FAMILIES_DISABLED` (every
 dev machine): the row stays NULL and the wall draws its photo.
@@ -1882,6 +1898,48 @@ because a look stored without a reset does not move the version. The registry
 keeps an unchanged look's identity across re-registrations, so a revalidation
 does not re-resolve every row.
 
+### Drawing a wall on a generated look
+
+An owner can draw a wall on its photo, on "Wall only" (`wall-crop`) or on
+"Holds only" (`hold-cutouts`). What the looks are, the quality gate that decides
+whether a photo may have them, and when the backend makes them are in
+["Generated wall looks"](#generated-wall-looks). This section is the app's
+half: the app draws the art only when the owner chose a generated look and
+`sprayWallArt` for the registered version is `READY`, its size matches the
+canonical frame's aspect, and the file downloaded to
+`{cache}/spray-walls/<layoutId>-v<versionId>-crop.jpg` / `-cutout.webp`.
+
+Anything else (pending, failed, refused, an older backend, offline, a failed
+download) draws the photo. The loader downloads the art BEFORE it registers the
+wall, so the switch is one registry write: `activeSprayArt` decides the board
+size (the art's), the holds (canonical times `art width / frame width`, no
+homography), the background key (`sprayBackgroundKey(layoutId, versionId,
+variant)`) and the runtime outline table together. `sprayCacheToken` gains
+`-bg<variant>` while art is drawn, so every overlay and memo moves with it;
+`sprayVersionToken` does not, so persisted drafts survive. The registry keeps
+the photo-pixel `holds` and `photoWidth` too: the hold editor, reset flows and
+drafts always work on the raw photo. Holds only gets the Aura field colour
+(`BOARD_FIELD_COLORS`) painted under it (`LayeredClimbImage` `baseColor`).
+
+The picker lives in the add-a-wall look step (a draft: art is made at publish)
+and on the board edit screen. It is shown only when `sprayWallArt` answers,
+because a backend older than generated looks validates render settings strictly
+and refuses the `background` key. The app sends `background` only for a
+generated look, or `photo` when the owner moves off one (an omitted key keeps
+the stored value). The edit screen polls a live wall's art every 10 s while it
+is `NONE` or `PENDING`, for at most 30 reads, and swaps the wall onto the art
+when it turns `READY`.
+
+Without any screen open, the loader itself asks again 20 s after it reads
+`NONE` or `PENDING` art for a published version, at most 6 times per version, so
+a wall swaps onto its look about a minute after a publish, hold edit or reset.
+A revalidation that fails offline registers the local mirror, which keeps the
+art it held when it is for the same published version and its file is still on
+disk (`RegisteredSprayArt.version`), so a gym with no signal does not flip every
+board back to the photo. The picker hides its segmented control on a locked
+gate (iOS's segmented control cannot disable one segment) and holds it still
+while a save runs. Its previews use expo-image's memory cache only.
+
 ### Asking is not the same as subscribing (SW-11)
 
 `useSprayWall` asks for exactly one wall: the active board's. Every other surface
@@ -2519,7 +2577,7 @@ have.
 | `spray_walls.archived_at` | When a reset replaced this wall. NULL for a live wall. |
 | `spray_walls.reset_from_wall_id` | The wall this one was cloned from. Self-reference, `ON DELETE SET NULL`, with a partial index where it is not null (almost no wall has one). |
 
-Migration 0257 adds both. Nothing is dropped or rewritten.
+Migration 0258 adds both. Nothing is dropped or rewritten.
 
 ### `resetSprayWall`
 

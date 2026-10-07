@@ -1190,6 +1190,8 @@ export function SprayWallWizardScreen({ returnTo, resetOfWallUuid = null }: Spra
           value={state.anchors}
           onChange={(quad) => dispatch({ type: 'ANCHORS_SET', anchors: quad })}
           invalid={state.anchorRejection != null}
+          // A new wall's frame IS its first photo (version 1 defines it).
+          qualityFrame={state.photo}
         />
         <SprayCornerFooter
           primaryTitle={state.anchors ? t('sprayWizard.anchors.use') : t('sprayWizard.anchors.skip')}
@@ -1294,6 +1296,9 @@ export function SprayWallWizardScreen({ returnTo, resetOfWallUuid = null }: Spra
             </Text>
             <Text variant="subheadline" color={systemColors.secondaryLabel}>
               {resetOfWallUuid != null ? t('sprayWizard.reset.photoBody') : t('sprayWizard.photo.body')}
+            </Text>
+            <Text variant="footnote" color={systemColors.secondaryLabel}>
+              {t('sprayWizard.photo.tip')}
             </Text>
             <Pressable
               onPress={openPhotoGuide}

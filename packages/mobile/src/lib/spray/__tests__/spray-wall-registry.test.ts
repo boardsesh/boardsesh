@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { clearBoardArtGeometryCache, loadBoardArtGeometry } from '@boardsesh/board-art-geometry';
 import {
+  activeSprayArt,
   clearSprayWallRegistry,
   findRegisteredSprayWallByUuid,
   getSprayWall,
@@ -426,5 +427,48 @@ describe('spray wall archive state', () => {
     registerSprayWall(LAYOUT_ID, wall(1));
     expect(findRegisteredSprayWallByUuid('wall-uuid')?.layoutId).toBe(LAYOUT_ID);
     expect(findRegisteredSprayWallByUuid('nobody')).toBeNull();
+  });
+});
+
+describe('activeSprayArt on a local mirror', () => {
+  const art = {
+    variant: 'crop' as const,
+    versionId: 21,
+    version: 3,
+    width: 800,
+    height: 1200,
+    scale: 0.8,
+    url: 'https://private.example/crop',
+    expiresAt: 'later',
+    holds: [],
+  };
+  function localWall(version: number) {
+    return {
+      layoutId: 77,
+      wallUuid: 'wall',
+      angle: null,
+      version,
+      versionId: `local-0a1b2c3d-0000-4000-8000-000000000000-${version}` as const,
+      photoWidth: 1200,
+      photoHeight: 1600,
+      photoUrl: 'file:///photos/wall.jpg',
+      photoThumbUrl: null,
+      photoExpiresAt: 'later',
+      holds: [],
+      renderSettings: null,
+      background: 'wall-crop' as const,
+      art,
+      viewerCanEdit: false,
+      archive: LIVE_SPRAY_WALL_ARCHIVE_STATE,
+      registeredAtMs: 0,
+    };
+  }
+
+  it('draws art made for the same published version', () => {
+    expect(activeSprayArt(localWall(3))).toBe(art);
+  });
+
+  it('never draws art made for another published version', () => {
+    expect(activeSprayArt(localWall(4))).toBeNull();
   });
 });

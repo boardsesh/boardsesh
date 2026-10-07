@@ -48,13 +48,13 @@ const PINS = [
   {
     family: refreshMoonboardAngleEstimatesFamily,
     workflow: 'refresh-moonboard-angle-estimates.yml',
-    cutOver: false,
+    cutOver: true,
     crons: ['0 8 * * 1'],
   },
   {
     family: refreshMoonboardWideAngleEstimatesFamily,
     workflow: 'refresh-moonboard-wide-angle-estimates.yml',
-    cutOver: false,
+    cutOver: true,
     crons: ['30 8 * * 1'],
   },
 ] as const;

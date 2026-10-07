@@ -90,8 +90,13 @@ vi.mock('expo-file-system', () => {
 
 const { clearSprayWallRegistry, registerSprayWall } = await import('../spray-wall-registry');
 const registry = await import('../spray-wall-registry');
-const { ensureSprayPhotoCached, resetSprayPhotoCacheForTests, tryGetSprayPhotoPathSync, deleteCachedSprayPhotos } =
-  await import('../spray-photo-cache');
+const {
+  ensureSprayPhotoCached,
+  resetSprayPhotoCacheForTests,
+  tryGetSprayPhotoPathSync,
+  deleteCachedSprayPhotos,
+  liveSprayPhotoFileNames,
+} = await import('../spray-photo-cache');
 const { sprayPartialPhotoFileName, sprayPhotoFileName } = await import('../spray-photo-keys');
 
 const LAYOUT_ID = 4200;
@@ -322,5 +327,40 @@ describe('durable offline photos', () => {
     const { resetSprayWallViewerAccess } = await import('../spray-wall-registry');
     resetSprayWallViewerAccess();
     expect(tryGetSprayPhotoPathSync(identity)).toBeNull();
+  });
+});
+
+describe('liveSprayPhotoFileNames', () => {
+  it('protects the art a local mirror kept, under the server version it was made for', () => {
+    const local = 'local-0a1b2c3d-0000-4000-8000-000000000000-3' as const;
+    registerSprayWall(LAYOUT_ID, {
+      wallUuid: 'wall-uuid',
+      angle: 40,
+      version: 3,
+      versionId: local,
+      localPhotoPath: '/photos/wall.jpg',
+      photoWidth: 1200,
+      photoHeight: 1600,
+      photoUrl: 'file:///photos/wall.jpg',
+      photoThumbUrl: null,
+      photoExpiresAt: PAST,
+      holds: [],
+      background: 'wall-crop',
+      art: {
+        variant: 'crop',
+        versionId: 21,
+        version: 3,
+        width: 800,
+        height: 1200,
+        scale: 0.8,
+        url: 'https://private.example/crop',
+        expiresAt: PAST,
+        holds: [],
+      },
+    });
+    const names = liveSprayPhotoFileNames();
+    // An offline sweep must not delete the file the board is drawn from.
+    expect(names.has(`${LAYOUT_ID}-v21-crop.jpg`)).toBe(true);
+    expect(names.has(`${LAYOUT_ID}-v${local}.jpg`)).toBe(true);
   });
 });

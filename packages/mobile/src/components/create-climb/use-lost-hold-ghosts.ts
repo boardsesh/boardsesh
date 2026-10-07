@@ -4,7 +4,8 @@ import { buildInitialFrames } from '@boardsesh/create-climb-react';
 import type { GetClimbLostHoldsQueryVariables } from '@boardsesh/graphql/operations';
 import { useClimbLostHolds } from '../../lib/graphql/hooks/use-climb-lost-holds';
 import { getSprayWall, SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
-import { mapCanonicalHoldsToPhoto, type SprayPhotoHold } from '../../lib/spray/spray-hold-geometry';
+import type { SprayPhotoHold } from '../../lib/spray/spray-hold-geometry';
+import { mapCanonicalHoldsForDrawnWall } from '../../lib/spray/spray-drawn-geometry';
 import { hapticSelection } from '../../lib/haptics';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import type { CreateClimbBoard } from './use-create-climb-screen';
@@ -97,9 +98,9 @@ export function useLostHoldGhosts({
   );
   const lostHoldsQuery = useClimbLostHolds(variables);
 
-  // The live wall, re-read whenever the registry hands over a new copy: its
-  // homography is the one the live holds were drawn through, so the rings land
-  // on the same photo.
+  // The live wall, re-read whenever the registry hands over a new copy: the
+  // rings are mapped the way its live holds are drawn (photo or generated
+  // look), so they land on the same picture.
   const wall = useMemo(
     () => (isSpray ? getSprayWall(board.layoutId) : null),
     // `sprayWallToken` is the reason to re-read.
@@ -108,10 +109,12 @@ export function useLostHoldGhosts({
   );
 
   const allGhosts = useMemo(() => {
-    if (lostHoldsQuery.status !== 'ready' || !wall?.homography || lostHoldIds.length === 0) return NO_GHOSTS;
+    if (lostHoldsQuery.status !== 'ready' || !wall || lostHoldIds.length === 0) return NO_GHOSTS;
     const lost = new Set(lostHoldIds);
-    const photoHolds = mapCanonicalHoldsToPhoto(
-      wall.homography,
+    // Onto the picture the live holds are drawn on: the photo through the
+    // inverse homography, or a generated look by its scale.
+    const photoHolds = mapCanonicalHoldsForDrawnWall(
+      wall,
       lostHoldsQuery.lostHolds
         .filter((lostHold) => lost.has(lostHold.id))
         .map((lostHold) => ({

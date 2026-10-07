@@ -14,6 +14,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { formatSessionWhen } from '../../lib/format-session-when';
 import { gradeChartColor } from '../you/profile-chart-colors';
 import { useGradeFormat } from '../../hooks/use-grade-format';
+import { getSoleBoardType } from '../../lib/grade-label';
 
 function formatDuration(minutes: number): string {
   if (minutes < 60) return `${minutes}m`;
@@ -137,7 +138,7 @@ export function SessionSummaryCard({
                 style={[styles.gradeAccent, { backgroundColor: gradeChartColor(session.hardestGrade, colorScheme) }]}
               />
               <Text variant="largeTitle" color={systemColors.label} style={[styles.statNumber, styles.gradeNumber]}>
-                {formatGrade(session.hardestGrade) ?? session.hardestGrade}
+                {formatGrade(session.hardestGrade, getSoleBoardType(session.boardTypes)) ?? session.hardestGrade}
               </Text>
             </View>
             <Text variant="subheadline" color={systemColors.secondaryLabel}>
