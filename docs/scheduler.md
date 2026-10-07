@@ -23,7 +23,7 @@ missed-occurrence issue.
 
 ## Job ownership
 
-All seven jobs. `packages/scheduler/src/__tests__/registry.test.ts` pins each
+All eight jobs. `packages/scheduler/src/__tests__/registry.test.ts` pins each
 row's path and slot as data, and asserts `packages/web/vercel.json` declares no
 `crons` key at all — so a schedule reappearing there (which would double-fire
 the route, Vercel and Railway both) reds CI.
@@ -37,6 +37,7 @@ the route, Vercel and Railway both) reds CI.
 | `purge-spray-wall-photos`    | Backend `/graphql`: `purgeDeletedSprayWallPhotos` | `0 7 * * *` | 10 min | — (`overdue` on `/health/jobs`)        |
 | `snapshot-active-users`      | Backend `/graphql`: `snapshotActiveUsers`   | `20 0 * * *`   | 10 min      | — (`overdue` on `/health/jobs`)        |
 | `purge-user-activity`        | Backend `/graphql`: `purgeExpiredUserActivity` | `30 7 * * *` | 10 min    | — (`overdue` on `/health/jobs`)        |
+| `export-spray-training`      | Backend `/graphql`: `exportSprayTrainingDataset` | `0 8 * * *` | 15 min | — (`overdue` on `/health/jobs`)        |
 
 **`refresh-sitemap-climbs` is the one job that missed the migration.** Vercel
 fired it at `0 */6 * * *` from 2026-08-22 until the climb-sitemap pause deleted
@@ -128,6 +129,33 @@ Same failure handling as the other backend jobs: a non-2xx or GraphQL errors
 inside an HTTP 200 fail the run, and only 502/503 is retried once after two
 seconds. Deploy the backend before the scheduler, or list both in
 `SCHEDULER_DISABLED_JOBS` until it is out.
+
+### Spray wall training export
+
+`export-spray-training` writes the admin-approved spray wall training set to the
+private bucket under `spray-training/exports/<exportId>/` (see
+[spray-walls.md](./spray-walls.md) → "Training data: consent, vetting, export").
+Daily at 08:00 UTC, an hour after the photo purge, because the promise to a
+climber who switches "Help train hold finding" off is that their wall leaves
+every stored export within 24 hours: each run first deletes any export holding a
+version that is no longer eligible and approved, then keeps the newest two.
+
+The same shape as the purge: a cron-authenticated backend mutation, the same
+failure handling, 502/503 retried once. Overlap-safe with a lock: the mutation
+holds `pg_try_advisory_xact_lock` for the whole run, so a second run meeting a
+first answers `skipped: true` and writes nothing. A run that finds the approved
+set unchanged since the newest export also answers `skipped: true`.
+
+Fifteen minutes, because each approved photo (at most 10 MB) is read and written
+once. A run cut short writes no `manifest.json`, so the half-written export is
+invisible to the ML fetch and the next run deletes it.
+
+Manual run: `scheduler run export-spray-training`, or POST to the backend
+`/graphql` with `Authorization: Bearer $CRON_SECRET`:
+
+```json
+{"query":"mutation { exportSprayTrainingDataset { exportId imagesWritten exportsRetired skipped durationMs } }"}
+```
 
 ### Gym activity backend cutover
 
@@ -287,7 +315,7 @@ canary: a dead ticker misses a six-hourly check-in within 6 hours (plus the
 5-minute margin), where the daily `cleanup` would take up to 24. A job opts in
 with `sentryMonitor: true` on its `JobDefinition`; `registry.test.ts` pins
 `refresh-sitemap-climbs` as the only one, so adding a second is a deliberate
-billing change. The other four jobs are watched through `overdue`, which an
+billing change. The other five jobs are watched through `overdue`, which an
 external probe (the homelab's Prometheus blackbox exporter) alerts on. Their
 old monitors (`scheduler-cleanup`, `scheduler-profile-percentiles`,
 `scheduler-refresh-gym-activity-stats`, `scheduler-purge-spray-wall-photos`)

@@ -3330,6 +3330,82 @@ Reporting and review both read `climb-moderation-kill`; they wait for flag
 resolution before accepting actions. Signed preview URLs remain in memory,
 are refreshed when expired, and never enter persistent storage.
 
+## Training data: consent, vetting, export
+
+SW-20 (#5471). A published wall is a photo plus a set of holds a human checked,
+which is exactly what the hold detector lacks for spray walls. This is how that
+reaches training, and how it leaves again.
+
+### Consent
+
+`spray_walls.training_consent_at` is the "Help train hold finding" switch. On by
+default for every wall, private and link-only included: `createSprayWall` stamps
+`now()` unless the input says `trainingConsent: false`, and a reset clone copies
+the source's choice. `updateSprayWall { trainingConsent }` turns it off (NULL)
+or back on (a fresh `now()`; restating "on" keeps the old stamp). Only the
+owner can change it, through the same gate and error code as visibility
+(`SPRAY_WALL_VISIBILITY_OWNER_ONLY`). `SprayWall.trainingConsent` answers the
+owner and is null for everybody else. The user data export lists each owned
+wall with its `trainingConsentAt`.
+
+### Hold provenance
+
+`spray_wall_holds` records what the climber did with each detector suggestion:
+`auto_review` (`accepted` < `confirmed` < `edited`, never downgraded) and
+`origin_detection_id` + `origin_candidate_index`, the suggestion it came from.
+A CHECK keeps both on `source = 'auto'` rows only. `upsertSprayWallHolds`
+validates every origin in one query (same wall, run `done`, index in range) and
+stores an invalid one as NULL rather than failing the save. It sets `edited`
+itself whenever an auto hold's centre, radius or outline moves by more than a
+pixel (a fiftieth of a radius for the outline), so an app that predates the
+fields still records a correction. Deleted suggestions need no table: a shown
+candidate that no alive hold points back at was dropped.
+
+### Eligibility and vetting
+
+`trainingEligibleVersions` (`trainingEligibleCondition()` in
+`resolvers/board/spray-training.ts`) is the one predicate the queue, the review
+mutation and the export share: consent set, version not a draft, photo key
+present, wall and board not deleted, wall not hidden, owner not the system
+owner, and the newest non-draft version for its `(wall, photo_key)` (a hold edit
+reuses its predecessor's photo). Archived walls stay eligible.
+
+Admins (`spray`-scoped or global) read `sprayTrainingQueue(status, limit ≤ 25,
+offset)`: the presigned photo, holds projected into photo pixels through the
+shared `mapCanonicalHoldsToPhoto`, the newest finished detector run's
+candidates with a fate (KEPT, EDITED, DELETED, NOT_SHOWN below
+`SPRAY_MAYBE_FLOOR`, or UNKNOWN when no hold records provenance), counts, and
+the verdict. No owner or wall name. `setSprayTrainingReview` writes one row per
+version in `spray_wall_training_reviews` (`approved`, or `rejected` with a
+reason); `UNREVIEWED` deletes it. A review row never exports anything on its
+own: the predicate is re-read every time.
+
+### The export
+
+`exportSprayTrainingDataset`, run daily at 08:00 UTC by the scheduler's
+`export-spray-training` job ([scheduler.md](./scheduler.md)), under one advisory
+lock:
+
+1. **Retire.** Every stored export under `spray-training/exports/` in the
+   private bucket whose manifest names a version that is no longer eligible and
+   approved is deleted, manifest first. So is any export with no manifest (a run
+   that died). This is what makes switching consent off, deleting or hiding a
+   wall, or deleting an account reach stored exports within 24 hours.
+2. **Skip** when the approved, eligible set (version ids, review times, consent
+   stamps) matches the newest export's fingerprint.
+3. **Write** `<exportId>/`: `<split>/v<versionId>.jpg` (the stored, already
+   EXIF-free bytes), `<split>/_annotations.coco.json` (class `hold`; bbox and
+   polygon in photo pixels; circle-only holds as a 24-point polygon with
+   `mask_from_circle: true`; `train`, `valid` and `eval` always present, even
+   when empty),
+   `candidates.json`, and `manifest.json` LAST, listing every file's sha256.
+   Then only the newest two exports are kept.
+
+The split is frozen per physical wall: `sha256('spray-split:' + root wall
+uuid)`, following `reset_from_wall_id` to the root, so reset clones share it;
+under 15 of 100 is `eval`, under 25 `valid`, the rest `train`. Manifests and
+COCO images name walls by 16-hex sha256 refs, never by uuid.
+
 ## Retention: what happens to a deleted wall's photographs
 
 ### Account deletion
