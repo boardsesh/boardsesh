@@ -18,9 +18,15 @@ function readPaddingBottom(style: unknown): number | undefined {
 const sheet = vi.hoisted(() => ({ expand: vi.fn() }));
 // The keyboard height the sheet reads; 0 = keyboard down.
 const keyboard = vi.hoisted(() => ({ height: 0 }));
+const platform = vi.hoisted(() => ({ os: 'ios' as 'ios' | 'android' }));
 
 type ViewMockProps = { children?: ReactNode; style?: unknown; testID?: string };
 vi.mock('react-native', () => ({
+  Platform: {
+    get OS() {
+      return platform.os;
+    },
+  },
   View: ({ children, style, testID }: ViewMockProps) =>
     createElement('div', { 'data-testid': testID, 'data-pb': String(readPaddingBottom(style) ?? '') }, children),
   // Present so a regression back to a KeyboardAvoidingView shows up below.
@@ -159,6 +165,7 @@ type TopBarActionMock = {
   onPress: () => void;
   loading?: boolean;
   disabled?: boolean;
+  destructive?: boolean;
 };
 vi.mock('../SheetTopBar', () => ({
   SheetTopBar: ({
@@ -182,6 +189,7 @@ vi.mock('../SheetTopBar', () => ({
               'data-slot': index === 0 ? 'leading' : 'trailing',
               'data-loading': action.loading ? 'true' : 'false',
               'data-disabled': action.disabled ? 'true' : 'false',
+              'data-destructive': action.destructive ? 'true' : 'false',
             })
           : null,
       ),
@@ -260,7 +268,26 @@ describe('EndSessionSheet', () => {
     expect(getByTestId('end-session-content').getAttribute('data-pb')).toBe('46');
   });
 
-  it('pads by the keyboard height instead of the inset while the keyboard is up, never both', () => {
+  it('on Android pads the inset alone at rest, and keyboard plus inset when it is up', () => {
+    platform.os = 'android';
+    try {
+      keyboard.height = 0;
+      const atRest = render(<EndSessionSheet {...makeProps()} />);
+      expect(atRest.getByTestId('end-session-content').getAttribute('data-pb')).toBe('46');
+      atRest.unmount();
+
+      // RN's Android height leaves out the system bars, which this edge-to-edge
+      // sheet still sits over: 300 + 34 + spacing[3].
+      keyboard.height = 300;
+      const typing = render(<EndSessionSheet {...makeProps()} />);
+      expect(typing.getByTestId('end-session-content').getAttribute('data-pb')).toBe('346');
+    } finally {
+      keyboard.height = 0;
+      platform.os = 'ios';
+    }
+  });
+
+  it('on iOS pads by the keyboard height instead of the inset while the keyboard is up, never both', () => {
     keyboard.height = 300;
     try {
       const { container, getByTestId } = render(<EndSessionSheet {...makeProps()} />);
@@ -279,6 +306,16 @@ describe('EndSessionSheet', () => {
     expect(container.querySelector('[data-top-bar="mobile.queue.endSession"]')).not.toBeNull();
     expect(button(container, 'mobile.queue.endSession')?.getAttribute('data-slot')).toBe('trailing');
     expect(button(container, 'mobile.queue.endSessionCancel')?.getAttribute('data-slot')).toBe('leading');
+  });
+
+  it('draws End session as destructive but not Leave, which ends nothing for anyone else', () => {
+    const endSheet = render(<EndSessionSheet {...makeProps()} />);
+    expect(button(endSheet.container, 'mobile.queue.endSession')?.getAttribute('data-destructive')).toBe('true');
+    endSheet.unmount();
+    const leaveSheet = render(<EndSessionSheet {...makeProps({ defaultMode: 'leave' })} />);
+    expect(button(leaveSheet.container, 'mobile.queue.leaveSessionAction')?.getAttribute('data-destructive')).toBe(
+      'false',
+    );
   });
 
   it('keeps the sheet up while an exit is in flight', () => {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, Platform, StyleSheet } from 'react-native';
 import BottomSheet, {
   BottomSheetView,
   BottomSheetTextInput,
@@ -68,6 +68,8 @@ export function EndSessionSheet({
   const { systemColors, brandColors } = useTheme();
   const windowInsetBottom = useWindowBottomInset();
   const keyboardHeight = useKeyboardHeight();
+  const bottomClearance =
+    Platform.OS === 'android' ? keyboardHeight + windowInsetBottom : Math.max(windowInsetBottom, keyboardHeight);
   const sheetRef = useRef<BottomSheetMethods>(null);
 
   // Resolved mode. A known non-creator can never reach `end`, whatever mode
@@ -142,22 +144,20 @@ export function EndSessionSheet({
                   loading: isLeaving,
                   disabled: isEnding,
                   prominent: true,
-                  destructive: true,
                 }
           }
         />
         {/* The Compose/UIKit sheet window does not resize for the keyboard, so the
             content pads itself above it on both platforms. The sheet sizes to its
             content and its bottom edge is the window's, so the keyboard height is
-            exactly the overlap. The keyboard covers the window inset when it is
-            up, so the pad is the larger of the two, never their sum: no
-            inset-sized gap above the keyboard. Not a KeyboardAvoidingView: RN
+            exactly the overlap. On iOS the keyboard height includes the home
+            indicator, so the pad is the larger of the two, never their sum. On
+            Android RN reports the IME inset minus the system bars, and this
+            edge-to-edge sheet sits over the navigation bar, so the overlap is
+            keyboard + inset. Not a KeyboardAvoidingView: RN
             0.86 measures overlap from its parent-relative onLayout frame, which
             inside this sheet finds none. */}
-        <View
-          testID="end-session-content"
-          style={[styles.content, { paddingBottom: Math.max(windowInsetBottom, keyboardHeight) + spacing[3] }]}
-        >
+        <View testID="end-session-content" style={[styles.content, { paddingBottom: bottomClearance + spacing[3] }]}>
           <Icon name={isEndMode ? 'end.session' : 'leave.session'} size={40} color={systemColors.secondaryLabel} />
 
           <Text variant="body" color={systemColors.secondaryLabel} style={styles.subtitle}>
