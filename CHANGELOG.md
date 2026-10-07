@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Jump the MoonBoard angle straight to 25° or 40° with one tap ([#6189](https://github.com/boardsesh/boardsesh/pull/6189))
 - Import your MoonBoard logbook from Moon's newer exports, now matched by problem name ([#6187](https://github.com/boardsesh/boardsesh/pull/6187))
   Logs from the 25° board keep their angle, and your comments come along too
 

@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-07T01:44:16.253Z",
+  "generatedAt": "2026-10-07T02:08:07.202Z",
   "entries": [
+    {
+      "prNumber": 6189,
+      "category": "new",
+      "title": "Jump the MoonBoard angle straight to 25° or 40° with one tap",
+      "mergedAt": "2026-10-07T02:01:26Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6189"
+    },
     {
       "prNumber": 6186,
       "category": "fixed",
