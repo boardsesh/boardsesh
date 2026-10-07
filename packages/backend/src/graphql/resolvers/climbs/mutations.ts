@@ -277,7 +277,7 @@ export const climbMutations = {
     let sprayMayAnnounce = sprayTarget?.publishesFeedEvents ?? false;
 
     const sprayDifficultyId = sprayTarget ? await resolveDifficultyId(boardType, validated.userGrade) : null;
-    if (sprayTarget && !validated.isDraft && sprayDifficultyId === null) {
+    if (sprayTarget && !validated.isDraft && validated.userGrade && sprayDifficultyId === null) {
       throw new GraphQLError(`"${validated.userGrade}" is not a grade on the Boardsesh scale`, {
         extensions: { code: SPRAY_CLIMB_CODES.gradeRequired },
       });

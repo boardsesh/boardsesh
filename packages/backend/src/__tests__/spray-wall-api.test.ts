@@ -118,6 +118,7 @@ const { favoriteClimbsQuery } = await import('../graphql/resolvers/favorites/fav
 const { playlistQueries } = await import('../graphql/resolvers/playlists/queries');
 const { climbStatsSubscriptions } = await import('../graphql/resolvers/ticks/climb-stats-subscriptions');
 const { socialProposalQueries } = await import('../graphql/resolvers/social/proposals/queries');
+const { socialProposalMutations } = await import('../graphql/resolvers/social/proposals/mutations');
 const { MAX_HOLDS_PER_WALL, MAX_SPRAY_WALLS_PER_USER, MAX_VERSIONS_PER_WALL } = await import('@boardsesh/board-config');
 const { recomputeClimbStatsBulk } = await import('@boardsesh/db/queries');
 const { lockWallForWrite, resetSprayFullPhotoPresenceCache } = await import('../graphql/resolvers/board/spray-walls');
@@ -976,32 +977,30 @@ describe('removing holds', () => {
 });
 
 describe('saveClimb on a spray wall', () => {
-  it('refuses a publish with no grade, and takes one with a grade', async () => {
+  it('publishes a climb with no grade, ungraded, and takes an older app\u2019s grade as provisional', async () => {
     const { wall, holdIds } = await createPublishedWall(OWNER);
     const frames = framesFor(holdIds);
 
-    await expect(
-      climbMutations.saveClimb(
-        {},
-        {
-          input: {
-            boardType: 'spray',
-            layoutId: wall.layoutId,
-            name: 'Ungraded traverse',
-            isDraft: false,
-            frames,
-            angle: 40,
-          },
+    // No grade: the first ascent grades it (#5971). It publishes with a stats row
+    // and no grade, so it is in the list as a project and out of grade filters.
+    const ungraded = (await climbMutations.saveClimb(
+      {},
+      {
+        input: {
+          boardType: 'spray',
+          layoutId: wall.layoutId,
+          name: 'Ungraded traverse',
+          isDraft: false,
+          frames: framesFor([holdIds[0], holdIds[2]]),
+          angle: 40,
         },
-        ctxFor(OWNER),
-      ),
-    ).rejects.toThrow(/needs your grade/i);
-
-    // Nothing was written — the check is ahead of every insert.
-    const [{ climbs }] = (await db.execute(
-      sql`SELECT count(*)::int AS climbs FROM board_climbs WHERE board_type = 'spray'`,
-    )) as unknown as Array<{ climbs: number }>;
-    expect(climbs).toBe(0);
+      },
+      ctxFor(OWNER),
+    )) as { uuid: string };
+    const [ungradedStats] = (await db.execute(sql`
+      SELECT display_difficulty, tick_graded_at FROM board_climb_stats WHERE climb_uuid = ${ungraded.uuid}
+    `)) as unknown as Array<{ display_difficulty: number | null; tick_graded_at: string | null }>;
+    expect(ungradedStats).toEqual({ display_difficulty: null, tick_graded_at: null });
 
     const saved = (await climbMutations.saveClimb(
       {},
@@ -1034,15 +1033,21 @@ describe('saveClimb on a spray wall', () => {
     expect(climb.missing_hold_count).toBe(0);
     expect(climb.is_listed).toBe(true);
 
-    // The setter's grade is the ONLY grade this climb will ever have: spray has
-    // `crowdGrade: false`, so nothing converges on a consensus difficulty.
+    // An older app still sends the setter's grade. It is seeded unstamped, which
+    // is what marks it provisional: the first graded send replaces it.
     const [stats] = (await db.execute(sql`
-      SELECT display_difficulty, difficulty_average, angle
+      SELECT display_difficulty, difficulty_average, angle, tick_graded_at
       FROM board_climb_stats WHERE climb_uuid = ${saved.uuid}
-    `)) as unknown as Array<{ display_difficulty: number; difficulty_average: number; angle: number }>;
+    `)) as unknown as Array<{
+      display_difficulty: number;
+      difficulty_average: number;
+      angle: number;
+      tick_graded_at: string | null;
+    }>;
     expect(stats.display_difficulty).toBe(18);
     expect(stats.difficulty_average).toBe(18);
     expect(stats.angle).toBe(40);
+    expect(stats.tick_graded_at).toBeNull();
   });
 
   it('refuses a grade the Boardsesh scale does not know', async () => {
@@ -1303,7 +1308,7 @@ describe('saveClimb on a spray wall', () => {
     ).resolves.toMatchObject({ isDraft: false });
   });
 
-  it('applies a grade EDIT to an already-published climb', async () => {
+  it('ignores a grade on an edit of a published climb: it changes through a proposal', async () => {
     // The picker is offered for the whole edit window, but `updateClimb` used to
     // resolve `userGrade` only while PUBLISHING — so a setter who moved the grade
     // got a success toast and a stats row that still said 6b/V4.
@@ -1334,12 +1339,13 @@ describe('saveClimb on a spray wall', () => {
     const [stats] = (await db.execute(sql`
       SELECT display_difficulty, difficulty_average FROM board_climb_stats WHERE climb_uuid = ${published.uuid}
     `)) as unknown as Array<{ display_difficulty: number; difficulty_average: number }>;
-    // 7a/V6 is difficulty 22 on the shared scale; 6b/V4 was 18.
-    expect(stats.display_difficulty).toBe(22);
-    expect(Number(stats.difficulty_average)).toBe(22);
+    // Still 6b/V4 (18): an older app's edit carries the grade picker along, and
+    // the edit lands, but the grade is a proposal's to change now (#5971).
+    expect(stats.display_difficulty).toBe(18);
+    expect(Number(stats.difficulty_average)).toBe(18);
   });
 
-  it('applies a grade edit to a draft without publishing it', async () => {
+  it('ignores a grade edit on a draft, which stays a draft', async () => {
     const { wall, holdIds } = await createPublishedWall(OWNER);
 
     const draft = (await climbMutations.saveClimb(
@@ -1370,12 +1376,13 @@ describe('saveClimb on a spray wall', () => {
       JOIN board_climbs c ON c.board_type = s.board_type AND c.uuid = s.climb_uuid
       WHERE s.climb_uuid = ${draft.uuid}
     `)) as unknown as Array<{ display_difficulty: number; is_draft: boolean }>;
-    expect(stats.display_difficulty).toBe(10);
-    // Still a draft: a grade edit is not a publish.
+    // The grade the draft was saved with; the edit's grade is ignored.
+    expect(stats.display_difficulty).toBe(18);
+    // Still a draft: an edit is not a publish.
     expect(stats.is_draft).toBe(true);
   });
 
-  it('refuses a grade edit that names no grade on the scale', async () => {
+  it('lets an edit through when its ignored grade is not on the scale', async () => {
     const { wall, holdIds } = await createPublishedWall(OWNER);
 
     const published = (await climbMutations.saveClimb(
@@ -1394,16 +1401,22 @@ describe('saveClimb on a spray wall', () => {
       ctxFor(OWNER),
     )) as { uuid: string };
 
-    await expect(
-      climbMutations.updateClimb(
-        {},
-        { input: { uuid: published.uuid, boardType: 'spray', userGrade: 'V99' } },
-        ctxFor(OWNER),
-      ),
-    ).rejects.toThrow(/not a grade on the Boardsesh scale/i);
+    // The grade on an edit is never read, so a bad one cannot fail the rename.
+    await climbMutations.updateClimb(
+      {},
+      { input: { uuid: published.uuid, boardType: 'spray', name: 'Renamed', userGrade: 'V99' } },
+      ctxFor(OWNER),
+    );
+    const [row] = (await db.execute(sql`
+      SELECT c.name, s.display_difficulty
+      FROM board_climbs c
+      JOIN board_climb_stats s ON s.board_type = c.board_type AND s.climb_uuid = c.uuid
+      WHERE c.uuid = ${published.uuid}
+    `)) as unknown as Array<{ name: string; display_difficulty: number }>;
+    expect(row).toEqual({ name: 'Renamed', display_difficulty: 18 });
   });
 
-  it('refuses to publish an ungraded draft through updateClimb', async () => {
+  it('publishes an ungraded draft through updateClimb, ungraded', async () => {
     const { wall, holdIds } = await createPublishedWall(OWNER);
 
     const draft = (await climbMutations.saveClimb(
@@ -1421,14 +1434,20 @@ describe('saveClimb on a spray wall', () => {
       ctxFor(OWNER),
     )) as { uuid: string };
 
-    // Otherwise draft → publish is a way around assertSprayGradeOnPublish.
-    await expect(
-      climbMutations.updateClimb(
-        {},
-        { input: { uuid: draft.uuid, boardType: 'spray', isDraft: false } },
-        ctxFor(OWNER),
-      ),
-    ).rejects.toThrow(/needs your grade/i);
+    // The first ascent grades it (#5971). The publish seeds an ungraded stats row,
+    // so the climb is searchable at once.
+    await climbMutations.updateClimb(
+      {},
+      { input: { uuid: draft.uuid, boardType: 'spray', isDraft: false } },
+      ctxFor(OWNER),
+    );
+    const [stats] = (await db.execute(sql`
+      SELECT s.display_difficulty, c.is_draft
+      FROM board_climb_stats s
+      JOIN board_climbs c ON c.board_type = s.board_type AND c.uuid = s.climb_uuid
+      WHERE s.climb_uuid = ${draft.uuid}
+    `)) as unknown as Array<{ display_difficulty: number | null; is_draft: boolean }>;
+    expect(stats).toEqual({ display_difficulty: null, is_draft: false });
   });
 
   it('refuses an edit that moves a climb onto a hold that came off the wall', async () => {
@@ -3160,10 +3179,9 @@ describe('the wall angle is fixed', () => {
 });
 
 describe('publishing a draft that was created without a grade', () => {
-  it('accepts the grade on updateClimb, which used to be impossible', async () => {
-    // `saveClimb` lets a draft through without a grade on purpose — the grade is the
-    // last thing a setter decides — but `UpdateClimbInput` had no `userGrade`, so
-    // draft → publish always hit the grade error and the draft could never publish.
+  it('takes an older app\u2019s grade on updateClimb as the provisional grade', async () => {
+    // An older app sends the setter's grade with the publish; it is seeded unstamped
+    // so the first graded send replaces it (#5971).
     const { wall, holdIds } = await createPublishedWall(OWNER);
     const draft = (await climbMutations.saveClimb(
       {},
@@ -3179,15 +3197,6 @@ describe('publishing a draft that was created without a grade', () => {
       },
       ctxFor(OWNER),
     )) as { uuid: string };
-
-    // Still refused with no grade from either source.
-    await expect(
-      climbMutations.updateClimb(
-        {},
-        { input: { uuid: draft.uuid, boardType: 'spray', isDraft: false } },
-        ctxFor(OWNER),
-      ),
-    ).rejects.toThrow(/needs your grade/i);
 
     await expect(
       climbMutations.updateClimb(
@@ -4304,7 +4313,7 @@ describe('updateBoard refuses the fields a wall does not have', () => {
   });
 });
 
-describe('a tick never takes the setter\u2019s grade off a spray climb', () => {
+describe('a spray climb\u2019s grade is the climbers\u2019 vote (#5971)', () => {
   /** The stats row for a spray climb at the wall angle. */
   async function statsFor(climbUuid: string) {
     const [row] = (await db.execute(sql`
@@ -4347,75 +4356,166 @@ describe('a tick never takes the setter\u2019s grade off a spray climb', () => {
       ctxFor(viewer),
     );
 
-  it('leaves display_difficulty at the seeded id when the tick carries no grade', async () => {
-    // The owned leg of the recompute is `board_climbs.user_id IS NOT NULL`, and a
-    // spray climb HAS a user_id — its setter. So the first ungraded tick averaged
-    // the (empty) set of tick difficulties to NULL, wrote that over the seeded
-    // setter grade and cleared `tick_graded_at`, which left nothing on the row to
-    // say a grade had ever been there. Unrecoverable.
-    const { climbUuid } = await wallWithAClimb({ isPublic: true });
-    expect((await statsFor(climbUuid)).display_difficulty).toBe(18);
+  /** A published spray climb with no grade, set by `setter` on OWNER's public wall. */
+  async function ungradedClimb(setter = OWNER) {
+    const { wall, holdIds } = await createPublishedWall(OWNER, { isPublic: true });
+    const saved = (await climbMutations.saveClimb(
+      {},
+      {
+        input: {
+          boardType: 'spray',
+          layoutId: wall.layoutId,
+          name: 'Project in the cave',
+          isDraft: false,
+          frames: framesFor(holdIds),
+          angle: 40,
+        },
+      },
+      ctxFor(setter),
+    )) as { uuid: string };
+    climbWalls.set(saved.uuid, wall);
+    return saved.uuid;
+  }
+  const climbWalls = new Map<string, CreatedWall>();
 
-    await sendTick(climbUuid, OWNER, undefined, 5);
+  const reportGrade = (climbUuid: string, reporter: string, proposedGrade: string) =>
+    socialProposalMutations.reportClimb(
+      {},
+      {
+        input: {
+          climbUuid,
+          boardType: 'spray',
+          angle: 40,
+          kind: 'grade',
+          proposedGrade,
+          reason: 'It climbs harder than that',
+        },
+      },
+      ctxFor(reporter),
+    ) as Promise<{ status: string; proposal: { status: string } }>;
 
-    const afterUngraded = await statsFor(climbUuid);
-    expect(afterUngraded.display_difficulty).toBe(18);
-    expect(afterUngraded.difficulty_average).toBe(18);
-    expect(afterUngraded.tick_graded_at).toBeNull();
+  it('takes its grade from the first ascent, then from the climbers\u2019 vote', async () => {
+    const climbUuid = await ungradedClimb();
+    expect((await statsFor(climbUuid)).display_difficulty).toBeNull();
 
-    // …and a tick that DOES carry a grade is no different: the setter's grade is
-    // the wall's grade, and 4a/V0 from one climber does not replace it.
-    await sendTick(climbUuid, STRANGER, 10, 4);
-    const afterGraded = await statsFor(climbUuid);
-    expect(afterGraded.display_difficulty).toBe(18);
-    expect(afterGraded.difficulty_average).toBe(18);
-    expect(afterGraded.tick_graded_at).toBeNull();
+    // The first ascent is a vote of one: its grade is the climb's grade.
+    await sendTick(climbUuid, STRANGER, 18);
+    const afterFirst = await statsFor(climbUuid);
+    expect(Number(afterFirst.display_difficulty)).toBe(18);
+    expect(afterFirst.tick_graded_at).not.toBeNull();
 
-    // The fence is on the GRADE only. Everything else the owned leg decides is
-    // still Boardsesh's to compute on a wall in somebody's garage: the counts
-    // moved, the quality is the plain AVG over both ticks, and the FA is derived.
-    // Counts come back from postgres-js as bigint strings.
-    expect(Number(afterGraded.boardsesh_ascensionist_count)).toBe(2);
-    expect(Number(afterGraded.ascensionist_count)).toBe(2);
-    expect(Number(afterGraded.quality_average)).toBeCloseTo(4.5, 5);
-    expect(afterGraded.quality_normalized).toBe(true);
-    expect(afterGraded.fa_username).toBe('User ' + OWNER);
+    // A second climber moves it to the average of the two votes.
+    await sendTick(climbUuid, OWNER, 22);
+    expect(Number((await statsFor(climbUuid)).display_difficulty)).toBe(20);
   });
 
-  it('holds the same line through the BULK recompute', async () => {
-    // The sync daemons and the backfill take the set-based path, which repeats the
-    // owned leg in its own LATERAL. A fence on one path only would let the nightly
-    // job undo what saveTick was stopped from doing.
-    const { climbUuid } = await wallWithAClimb({ isPublic: true });
+  it('counts one vote per climber: their latest graded send', async () => {
+    const climbUuid = await ungradedClimb();
+    // STRANGER logs it three times. Only the last grade (22) is their vote, so
+    // the climb is (22 + 10) / 2 = 16, not the tick average (10+10+22+10)/4 = 13.
     await db.execute(sql`
-      INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, climbed_at, created_at, updated_at)
-      VALUES (${uuidv4()}, ${OWNER}, ${climbUuid}, 'spray', 40, 'send', now(), now(), now())
+      INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, difficulty, climbed_at, created_at, updated_at)
+      VALUES (${uuidv4()}, ${STRANGER}, ${climbUuid}, 'spray', 40, 'send', 10, now() - interval '3 days', now(), now()),
+             (${uuidv4()}, ${STRANGER}, ${climbUuid}, 'spray', 40, 'send', 10, now() - interval '2 days', now(), now()),
+             (${uuidv4()}, ${STRANGER}, ${climbUuid}, 'spray', 40, 'send', 22, now() - interval '1 day', now(), now()),
+             (${uuidv4()}, ${OWNER}, ${climbUuid}, 'spray', 40, 'send', 10, now() - interval '1 day', now(), now())
     `);
 
     await recomputeClimbStatsBulk(db, [{ boardType: 'spray', climbUuid, angle: 40 }]);
+    expect(Number((await statsFor(climbUuid)).display_difficulty)).toBe(16);
 
-    const stats = await statsFor(climbUuid);
-    expect(stats.display_difficulty).toBe(18);
-    expect(stats.difficulty_average).toBe(18);
-    expect(stats.tick_graded_at).toBeNull();
-    expect(Number(stats.boardsesh_ascensionist_count)).toBe(1);
+    // The single-key path, which saveTick runs, agrees.
+    await sendTick(climbUuid, OUTSIDER);
+    expect(Number((await statsFor(climbUuid)).display_difficulty)).toBe(16);
   });
 
-  it('still grades an UNGRADED spray climb from its ticks', async () => {
-    // The fence is on the owned leg, not on `deriveGradeFromTicksSql`, so a climb
-    // with no grade at all is not frozen ungraded forever — tick-derived is the
-    // only grade it can have. Built by hand: `saveClimb` refuses to publish one.
+  it('keeps an older app\u2019s setter grade through an ungraded send, until a graded one replaces it', async () => {
     const { climbUuid } = await wallWithAClimb({ isPublic: true });
-    await db.execute(sql`
-      UPDATE board_climb_stats SET display_difficulty = NULL, difficulty_average = NULL
-      WHERE board_type = 'spray' AND climb_uuid = ${climbUuid}
-    `);
+    expect((await statsFor(climbUuid)).display_difficulty).toBe(18);
 
-    await sendTick(climbUuid, OWNER, 10);
+    // An ungraded send is no vote, so the provisional grade stands.
+    await sendTick(climbUuid, OWNER, undefined, 5);
+    const afterUngraded = await statsFor(climbUuid);
+    expect(afterUngraded.display_difficulty).toBe(18);
+    expect(afterUngraded.tick_graded_at).toBeNull();
 
-    const stats = await statsFor(climbUuid);
-    expect(stats.display_difficulty).toBe(10);
-    expect(stats.tick_graded_at).not.toBeNull();
+    // The first graded send replaces it: 4a/V0 from one climber is the vote.
+    await sendTick(climbUuid, STRANGER, 10, 4);
+    const afterGraded = await statsFor(climbUuid);
+    expect(Number(afterGraded.display_difficulty)).toBe(10);
+    expect(afterGraded.tick_graded_at).not.toBeNull();
+
+    // Everything else the owned leg decides is unchanged: counts, quality, FA.
+    expect(Number(afterGraded.boardsesh_ascensionist_count)).toBe(2);
+    expect(Number(afterGraded.quality_average)).toBeCloseTo(4.5, 5);
+    expect(afterGraded.fa_username).toBe('User ' + OWNER);
+
+    // Once a vote has graded it, the seed is gone: removing the only graded send
+    // takes the climb back to ungraded rather than to the old setter grade.
+    await db.execute(sql`DELETE FROM boardsesh_ticks WHERE climb_uuid = ${climbUuid} AND difficulty IS NOT NULL`);
+    await recomputeClimbStatsBulk(db, [{ boardType: 'spray', climbUuid, angle: 40 }]);
+    const afterDelete = await statsFor(climbUuid);
+    expect(afterDelete.display_difficulty).toBeNull();
+    expect(afterDelete.tick_graded_at).toBeNull();
+  });
+
+  it('applies a grade proposal the wall owner files at once, and pins it', async () => {
+    const climbUuid = await ungradedClimb(STRANGER);
+    await sendTick(climbUuid, STRANGER, 10);
+    expect(Number((await statsFor(climbUuid)).display_difficulty)).toBe(10);
+
+    const outcome = await reportGrade(climbUuid, OWNER, '7a/V6');
+    expect(outcome.proposal.status).toBe('approved');
+    // The read side: lists, search and the play drawer all read this column.
+    const pinned = await statsFor(climbUuid);
+    expect(Number(pinned.display_difficulty)).toBe(22);
+    expect(pinned.tick_graded_at).not.toBeNull();
+    const wall = climbWalls.get(climbUuid)!;
+    const read = (await climbQueries.climb(
+      {},
+      { boardName: 'spray', layoutId: wall.layoutId, sizeId: wall.sizeId, setIds: '1', angle: 40, climbUuid },
+      ctxFor(OUTSIDER),
+    )) as { difficulty: string } | null;
+    expect(read?.difficulty).toBe('7a/V6');
+
+    // Pinned: a later vote does not move it.
+    await sendTick(climbUuid, OUTSIDER, 10);
+    expect(Number((await statsFor(climbUuid)).display_difficulty)).toBe(22);
+  });
+
+  it('puts a grade proposal from anyone else, the setter included, to the vote', async () => {
+    const climbUuid = await ungradedClimb(STRANGER);
+    await sendTick(climbUuid, STRANGER, 10);
+
+    const outcome = await reportGrade(climbUuid, STRANGER, '7a/V6');
+    expect(outcome.proposal.status).toBe('open');
+    expect(Number((await statsFor(climbUuid)).display_difficulty)).toBe(10);
+
+    // The owner joining it by voting is not filing it: still open.
+    const [proposal] = (await db.execute(sql`
+      SELECT uuid FROM climb_proposals WHERE climb_uuid = ${climbUuid}
+    `)) as unknown as Array<{ uuid: string }>;
+    await socialProposalMutations.voteOnProposal(
+      {},
+      { input: { proposalUuid: proposal.uuid, value: 1 } },
+      ctxFor(OWNER),
+    );
+    const [row] = (await db.execute(sql`
+      SELECT status FROM climb_proposals WHERE uuid = ${proposal.uuid}
+    `)) as unknown as Array<{ status: string }>;
+    expect(row.status).toBe('open');
+    expect(Number((await statsFor(climbUuid)).display_difficulty)).toBe(10);
+  });
+
+  it('refuses the setter override on a spray climb, even for its setter', async () => {
+    const climbUuid = await ungradedClimb(STRANGER);
+    await expect(
+      socialProposalMutations.setterOverrideCommunityStatus(
+        {},
+        { input: { climbUuid, boardType: 'spray', angle: 40, communityGrade: '7a/V6' } },
+        ctxFor(STRANGER),
+      ),
+    ).rejects.toThrow(/through a proposal/i);
   });
 });
 
