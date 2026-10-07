@@ -100,12 +100,12 @@ export function ClimbCapsule({
   // Boardsesh grade (label + colour) when the toggle is on and a trusted one
   // exists, else the legacy Aurora grade — the same treatment as the list rows.
   const grades = useMemo(() => {
-    const resolved = currentClimb ? resolveGrade(currentClimb) : null;
+    const resolved = currentClimb ? resolveGrade(currentClimb, boardConfig?.boardName) : null;
     return {
       current: resolved?.label ?? null,
       currentColor: resolved?.color ?? DEFAULT_GRADE_COLOR,
     };
-  }, [currentClimb, resolveGrade]);
+  }, [currentClimb, resolveGrade, boardConfig?.boardName]);
 
   if (!currentClimb) return null;
 

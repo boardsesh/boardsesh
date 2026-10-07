@@ -27,6 +27,8 @@ type SessionAnalyticsProps = {
   /** Session start time for the live duration cell (null until summary loads). */
   startedAt: string | null;
   gradeDistribution: SessionGradeDistributionItem[];
+  /** The session's only board, or null when it spans several. */
+  boardName?: string | null;
 };
 
 /**
@@ -42,6 +44,7 @@ export function SessionAnalytics({
   hardestSends,
   startedAt,
   gradeDistribution,
+  boardName,
 }: SessionAnalyticsProps) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
@@ -105,7 +108,9 @@ export function SessionAnalytics({
                 ) : null}
                 {/* Grade as bold coloured text — no pill, per the chip cleanup. */}
                 <Text variant="title3" color={gradeBadgeColor(send.grade)} style={styles.hardestGrade}>
-                  {formatGradeByDifficultyId(send.difficultyId) ?? formatGrade(send.grade) ?? send.grade}
+                  {formatGradeByDifficultyId(send.difficultyId, send.boardType ?? boardName) ??
+                    formatGrade(send.grade, send.boardType ?? boardName) ??
+                    send.grade}
                 </Text>
                 {send.climbName ? (
                   <Text variant="body" numberOfLines={1} style={styles.hardestName}>
@@ -123,7 +128,7 @@ export function SessionAnalytics({
           <View style={styles.sectionHeaderBleed}>
             <SectionHeader title={t('mobile.session.inStatsGrades')} />
           </View>
-          <SessionGradeChart distribution={gradeDistribution} />
+          <SessionGradeChart distribution={gradeDistribution} boardName={boardName} />
         </View>
       ) : null}
     </View>

@@ -175,7 +175,7 @@ export const favoriteClimbsQuery = {
       angle: input.angle,
       statsAngle: result.statsAngle ?? null,
       ascensionist_count: Number(result.ascensionist_count || 0),
-      difficulty: getGradeLabel(result.difficulty_id),
+      difficulty: getGradeLabel(result.difficulty_id, boardName),
       quality_average: result.quality_average?.toString() || '0',
       stars: getClimbStars(result.quality_average),
       difficulty_error: result.difficulty_error?.toString() || '0',

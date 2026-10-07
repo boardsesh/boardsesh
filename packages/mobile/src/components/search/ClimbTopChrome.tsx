@@ -40,6 +40,8 @@ type ClimbTopChromeProps = {
    *  state — the centre then reads empty (the redundant "All climbs" label is
    *  dropped). Unused by the Material variant. */
   title?: string;
+  /** The board being searched, so grade labels follow its scale (MoonBoard's 6A is V2). */
+  boardName?: string;
   canCreate: boolean;
   onCreate: () => void;
   onOpenBoardDetail: () => void;
@@ -91,6 +93,7 @@ type ClimbTopChromeProps = {
 function ClimbTopChromeComponent({
   searchMode = 'custom',
   title,
+  boardName,
   canCreate,
   onCreate,
   onOpenBoardDetail,
@@ -127,7 +130,7 @@ function ClimbTopChromeComponent({
   // current climb (hidden in the solo case).
   const currentClimbUuid = useActiveClimbUuid();
   const wallClimb = useWallClimbIfDistinct(currentClimbUuid);
-  const wallCapsule = wallClimb ? <WallStatusCapsule climb={wallClimb} /> : undefined;
+  const wallCapsule = wallClimb ? <WallStatusCapsule climb={wallClimb} boardName={boardName} /> : undefined;
 
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => onHeightChange(event.nativeEvent.layout.height),
@@ -296,6 +299,7 @@ function ClimbTopChromeComponent({
                 grades={grades}
                 bound={gradeBound}
                 lastUsedGradeId={lastUsedGradeId}
+                boardName={boardName}
                 onChange={onGradeChange}
                 onRequestClose={onCloseGrade}
                 dismissible={false}

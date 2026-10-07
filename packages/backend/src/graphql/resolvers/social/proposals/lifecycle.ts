@@ -209,7 +209,7 @@ export async function resolveCurrentValue(params: {
             LIMIT 1
           `,
         );
-        currentValue = getGradeLabel(statsRows[0]?.difficulty_id ?? null) || 'Unknown';
+        currentValue = getGradeLabel(statsRows[0]?.difficulty_id ?? null, boardType) || 'Unknown';
       } catch {
         currentValue = 'Unknown';
       }

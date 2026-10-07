@@ -14,6 +14,8 @@ type LogbookStatLineProps = {
    * several angles, and the line then says so instead of naming a result.
    */
   section: LedgerAngleSection<unknown> | undefined;
+  /** The climb's board, so the climber's grade reads on that board's scale. */
+  boardName?: string | null;
 };
 
 /**
@@ -21,7 +23,7 @@ type LogbookStatLineProps = {
  * session". The sends count is left out at zero, and the climber's own grade
  * joins only when they gave one.
  */
-export const LogbookStatLine = memo(function LogbookStatLine({ totals, section }: LogbookStatLineProps) {
+export const LogbookStatLine = memo(function LogbookStatLine({ totals, section, boardName }: LogbookStatLineProps) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const { formatGradeByDifficultyId } = useGradeFormat();
@@ -42,7 +44,7 @@ export const LogbookStatLine = memo(function LogbookStatLine({ totals, section }
   let line = section
     ? t('mobile.logbook.angleLine', { result: formatAngleResult(t, section), recap })
     : t('mobile.logbook.statLineAllAngles', { recap });
-  const grade = formatGradeByDifficultyId(totals.personalGrade);
+  const grade = formatGradeByDifficultyId(totals.personalGrade, boardName);
   if (grade) line = t('mobile.logbook.statLineWithGrade', { line, grade });
 
   return (

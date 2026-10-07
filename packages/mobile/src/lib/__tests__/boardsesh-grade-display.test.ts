@@ -19,6 +19,12 @@ describe('renderDifficulty / clampDifficultyId', () => {
     expect(rendered?.color).toMatch(/^#/);
   });
 
+  it("renders on the climb's board scale: 16 is V2 on MoonBoard, V3 elsewhere", () => {
+    expect(renderDifficulty(16, 'v-grade', 'moonboard')?.label).toBe('V2');
+    expect(renderDifficulty(16, 'v-grade', 'kilter')?.label).toBe('V3');
+    expect(renderDifficulty(16, 'v-grade')?.label).toBe('V3');
+  });
+
   it('clamps below and above the scale bounds', () => {
     expect(clampDifficultyId(-100)).toBe(MIN_DIFFICULTY_ID);
     expect(clampDifficultyId(9999)).toBe(MAX_DIFFICULTY_ID);
@@ -219,6 +225,12 @@ describe('resolveTickDefaultGradeName', () => {
     expect(
       resolveTickDefaultGradeName({ boardseshDifficulty: 20, boardseshConfidence: 'moonboard_angle_estimate' }, true),
     ).toBeNull();
+  });
+
+  it("seeds the picker with the MoonBoard name on a MoonBoard climb, matching that board's grade list", () => {
+    expect(
+      resolveTickDefaultGradeName({ boardseshDifficulty: 16, boardseshConfidence: 'confirmed' }, true, 'moonboard'),
+    ).toBe('6a/V2');
   });
 
   it('returns the Aurora difficulty_name for the resolved Boardsesh grade id', () => {

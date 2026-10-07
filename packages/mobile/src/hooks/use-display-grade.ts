@@ -23,18 +23,23 @@ export function useBoardseshGradesActive(): boolean {
  * grades are active, plus a stable `resolveGrade` callback that renders a
  * climb's label + colour per the current preference and grade-format
  * setting. Call this once per list/screen component (it's cheap, but
- * `resolveGrade` is meant to run per row, not be re-derived per row).
+ * `resolveGrade` is meant to run per row, not be re-derived per row). Pass
+ * the climb's board as `resolveGrade`'s second argument so MoonBoard climbs
+ * read on MoonBoard's scale.
  */
 export function useDisplayGrade(): {
   boardseshActive: boolean;
-  resolveGrade: (climb: BoardseshGradeFields & { difficulty?: string | null }) => DisplayGrade;
+  resolveGrade: (
+    climb: BoardseshGradeFields & { difficulty?: string | null },
+    boardName?: string | null,
+  ) => DisplayGrade;
 } {
   const boardseshActive = useBoardseshGradesActive();
   const { gradeFormat } = useGradeFormat();
 
   const resolveGrade = useCallback(
-    (climb: BoardseshGradeFields & { difficulty?: string | null }): DisplayGrade =>
-      resolveDisplayGrade(climb, { useBoardseshGrades: boardseshActive, gradeFormat }),
+    (climb: BoardseshGradeFields & { difficulty?: string | null }, boardName?: string | null): DisplayGrade =>
+      resolveDisplayGrade(climb, { useBoardseshGrades: boardseshActive, gradeFormat, boardName }),
     [boardseshActive, gradeFormat],
   );
 

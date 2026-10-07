@@ -1,8 +1,8 @@
 import type { ClimbStatsHistoryEntry } from '@boardsesh/graphql/operations';
 import { formatGrade, type GradeDisplayFormat } from '@boardsesh/play-view';
-import { BOULDER_GRADES, type BoulderGrade } from '@boardsesh/board-constants/boulder-grade-mapping';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
 import { formatCount } from '../../lib/format-climb-stats';
+import { getBoulderGradeById } from '../../lib/boardsesh-grade-display';
 
 export type AngleGradeBar = {
   angle: number;
@@ -89,13 +89,12 @@ export function buildAscentChartScale(sends: number[]): AscentChartScale {
   return { maxValue, noOfSections, yAxisLabelTexts, plot: (count: number) => count, isLog: false };
 }
 
-const GRADE_BY_ID = new Map<number, BoulderGrade>(BOULDER_GRADES.map((grade) => [grade.difficulty_id, grade]));
-
 // Latest snapshot per angle → one grade bar; out-of-range difficulties show the rounded number.
 // The grade (label + colour) comes from the difficulty; bar height comes from the ascent count.
 export function buildAngleGradeBars(
   history: ClimbStatsHistoryEntry[] | undefined,
   gradeFormat: GradeDisplayFormat,
+  boardName?: string | null,
 ): AngleGradeBar[] {
   if (!history) return [];
 
@@ -111,9 +110,9 @@ export function buildAngleGradeBars(
 
   return Array.from(latestByAngle.values())
     .map(({ entry, difficulty }) => {
-      const grade = GRADE_BY_ID.get(Math.round(difficulty));
+      const grade = getBoulderGradeById(Math.round(difficulty), boardName);
       const gradeName = grade
-        ? (formatGrade(grade.difficulty_name, gradeFormat) ?? grade.v_grade)
+        ? (formatGrade(grade.difficulty_name, gradeFormat, boardName) ?? grade.v_grade)
         : String(Math.round(difficulty));
       return {
         angle: entry.angle,
@@ -143,6 +142,7 @@ export type AngleStats = {
 export function buildAngleStatsMap(
   history: ClimbStatsHistoryEntry[] | undefined,
   gradeFormat: GradeDisplayFormat,
+  boardName?: string | null,
 ): Map<number, AngleStats> {
   const result = new Map<number, AngleStats>();
   if (!history) return result;
@@ -157,10 +157,10 @@ export function buildAngleStatsMap(
 
   for (const [angle, entry] of latestByAngle) {
     const difficulty = entry.displayDifficulty ?? entry.difficultyAverage;
-    const grade = difficulty == null ? undefined : GRADE_BY_ID.get(Math.round(difficulty));
+    const grade = difficulty == null ? undefined : getBoulderGradeById(Math.round(difficulty), boardName);
     let gradeName: string | null = null;
     if (grade) {
-      gradeName = formatGrade(grade.difficulty_name, gradeFormat) ?? grade.v_grade;
+      gradeName = formatGrade(grade.difficulty_name, gradeFormat, boardName) ?? grade.v_grade;
     } else if (difficulty != null) {
       gradeName = String(Math.round(difficulty));
     }

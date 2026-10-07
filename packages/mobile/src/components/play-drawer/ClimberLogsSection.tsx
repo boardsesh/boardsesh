@@ -313,11 +313,13 @@ function ClimberLogsSkeleton() {
 const ClimberLogsFromEveryone = memo(function ClimberLogsFromEveryone({
   block,
   angle,
+  boardName,
   onPressClimber,
   onSeeAll,
 }: {
   block: ClimberLogsCardBlock;
   angle: number;
+  boardName: string;
   onPressClimber: (userId: string) => void;
   onSeeAll: () => void;
 }) {
@@ -335,7 +337,13 @@ const ClimberLogsFromEveryone = memo(function ClimberLogsFromEveryone({
           key={group.userId}
           style={index > 0 ? [styles.rowRule, { borderTopColor: systemColors.separator }] : undefined}
         >
-          <ClimberLogRow group={group} boardAngle={angle} hideEarlier onPressClimber={onPressClimber} />
+          <ClimberLogRow
+            group={group}
+            boardAngle={angle}
+            boardName={boardName}
+            hideEarlier
+            onPressClimber={onPressClimber}
+          />
         </View>
       ))}
       <ClimberLogsFooter
@@ -421,7 +429,13 @@ export const ClimberLogsSection = memo(function ClimberLogsSection({
   // No block (nobody else logged it, no signal, or the request failed) leaves
   // the plain message exactly as it was.
   const fromEveryone = plan.everyone ? (
-    <ClimberLogsFromEveryone block={plan.everyone} angle={angle} onPressClimber={onPressClimber} onSeeAll={onSeeAll} />
+    <ClimberLogsFromEveryone
+      block={plan.everyone}
+      angle={angle}
+      boardName={boardName}
+      onPressClimber={onPressClimber}
+      onSeeAll={onSeeAll}
+    />
   ) : null;
 
   if (followState === 'none') {
@@ -466,7 +480,7 @@ export const ClimberLogsSection = memo(function ClimberLogsSection({
       : tally.map(({ difficultyId, count }) =>
           t('mobile.climberLogs.gradedItCount', {
             count,
-            grade: formatGradeByDifficultyId(difficultyId) || getGradeLabel(difficultyId),
+            grade: formatGradeByDifficultyId(difficultyId, boardName) || getGradeLabel(difficultyId, boardName),
           }),
         )),
   ].join(SEPARATOR);
@@ -484,7 +498,13 @@ export const ClimberLogsSection = memo(function ClimberLogsSection({
           key={group.userId}
           style={index > 0 ? [styles.rowRule, { borderTopColor: systemColors.separator }] : undefined}
         >
-          <ClimberLogRow group={group} boardAngle={angle} hideEarlier={hasMore} onPressClimber={onPressClimber} />
+          <ClimberLogRow
+            group={group}
+            boardAngle={angle}
+            boardName={boardName}
+            hideEarlier={hasMore}
+            onPressClimber={onPressClimber}
+          />
         </View>
       ))}
 

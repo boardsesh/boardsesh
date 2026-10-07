@@ -264,7 +264,11 @@ export function GeneratorPickerCard({
 }: GeneratorPickerCardProps) {
   const { t } = useTranslation('session');
   const { systemColors, variant, m3 } = useTheme();
-  const { formatGradeByDifficultyId } = useGradeFormat();
+  const { formatGradeByDifficultyId: formatAnyBoardGradeByDifficultyId } = useGradeFormat();
+  const formatGradeByDifficultyId = useCallback(
+    (difficultyId: number | null | undefined) => formatAnyBoardGradeByDifficultyId(difficultyId, boardName),
+    [formatAnyBoardGradeByDifficultyId, boardName],
+  );
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
 
   const tallWideScope =
@@ -638,6 +642,7 @@ export function GeneratorPickerCard({
               <GradeSingleSelectRail
                 grades={railGrades}
                 selectedDifficultyId={selection.options.targetGrade}
+                boardName={boardName}
                 onSelect={(difficultyId) =>
                   updateCommonOptions({ targetGrade: difficultyId ?? selection.options.targetGrade })
                 }

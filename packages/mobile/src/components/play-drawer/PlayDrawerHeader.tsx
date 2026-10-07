@@ -272,10 +272,13 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
     qualityAverage: climb.quality_average,
     difficulty: climb.difficulty,
   });
-  const displayedGrade = resolveGrade({
-    ...climb,
-    difficulty: liveStats.difficulty,
-  });
+  const displayedGrade = resolveGrade(
+    {
+      ...climb,
+      difficulty: liveStats.difficulty,
+    },
+    boardName,
+  );
 
   // Your grade wins over the crowd's. Resolved ABOVE `resolveGrade`, never
   // inside it — that resolver's contract is community-grades-only.
@@ -283,7 +286,7 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
   // so the drawer shows the climber's grade offline too — the same grade the
   // on-device search placed this climb by.
   const myGrade = useMyGrade(climb.uuid, angle, { localFallback: true });
-  const mine = myGrade.status === 'set' ? renderDifficulty(myGrade.difficultyId, gradeFormat) : null;
+  const mine = myGrade.status === 'set' ? renderDifficulty(myGrade.difficultyId, gradeFormat, boardName) : null;
   const personal = derivePersonalGradeDisplay(mine?.label ?? null, displayedGrade.label);
   const showsMine = personal.source === 'personal' && mine !== null;
 

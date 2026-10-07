@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { SessionGradeDistributionItem } from '@boardsesh/shared-schema';
@@ -16,6 +16,8 @@ const BAR_MIN_OPACITY = opacity.peek;
 type SessionGradeStripProps = {
   distribution: SessionGradeDistributionItem[];
   totalSends: number;
+  /** The session's only board, or null when it spans several. */
+  boardName?: string | null;
 };
 
 /**
@@ -27,10 +29,18 @@ type SessionGradeStripProps = {
  * doubles as the separator. Hidden unless there are 2+ grades (a single grade
  * isn't a spread), and self-hides on an empty distribution.
  */
-export const SessionGradeStrip = memo(function SessionGradeStrip({ distribution, totalSends }: SessionGradeStripProps) {
+export const SessionGradeStrip = memo(function SessionGradeStrip({
+  distribution,
+  totalSends,
+  boardName,
+}: SessionGradeStripProps) {
   const { systemColors, colorScheme } = useTheme();
   const { t } = useTranslation('feed');
-  const { formatGrade } = useGradeFormat();
+  const { formatGrade: formatAnyBoardGrade } = useGradeFormat();
+  const formatGrade = useCallback(
+    (difficulty: string | null | undefined) => formatAnyBoardGrade(difficulty, boardName),
+    [formatAnyBoardGrade, boardName],
+  );
 
   // Reuse the chart builder: easy→hard order, empty grades dropped, each grade's
   // vivid colour + total already resolved. Solid bars (no splitFlash).

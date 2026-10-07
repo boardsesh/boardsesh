@@ -90,7 +90,7 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
   const rowHeight = placement === 'inline' ? glassSize.inline : glassSize.standard;
   // The platter shows a plain (non-colorized) grade; only the label swaps to the
   // Boardsesh grade when the toggle is on and a trusted one exists.
-  const currentFormattedGrade = resolveGrade(climb).label;
+  const currentFormattedGrade = resolveGrade(climb, boardConfig?.boardName).label;
 
   return (
     <View style={[styles.row, { width, height: rowHeight }]}>
