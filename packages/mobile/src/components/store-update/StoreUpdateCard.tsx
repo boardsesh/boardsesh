@@ -66,6 +66,13 @@ function StoreUpdateCardComponent({ enabled, style }: { enabled: boolean; style?
         disabled={nudge.openingStore}
         testID="store-update-later"
       />
+      <Button
+        title={t('mobile.storeUpdate.stopReminders')}
+        variant="text"
+        onPress={nudge.turnOffReminders}
+        disabled={nudge.openingStore}
+        testID="store-update-stop-reminders"
+      />
     </View>
   );
 }

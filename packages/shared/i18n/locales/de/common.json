@@ -631,6 +631,7 @@
       "androidBody": "Aktualisiere bei Google Play auf {{version}}, um die neuesten Verbesserungen zu erhalten.",
       "update": "Boardsesh aktualisieren",
       "later": "Später",
+      "stopReminders": "Nicht mehr erinnern",
       "openFailed": "Der Store konnte nicht geöffnet werden. Versuch es noch einmal."
     }
   },

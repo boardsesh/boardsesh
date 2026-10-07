@@ -14,6 +14,7 @@ const controls = vi.hoisted(() => ({
   openFailed: false,
   release: { latestVersion: '2.7.0' } as { latestVersion: string } | null,
   acknowledge: vi.fn(),
+  turnOffReminders: vi.fn(),
   openStore: vi.fn(),
 }));
 vi.mock('../../../lib/store-update/use-store-update-nudge', () => ({
@@ -86,6 +87,8 @@ describe('translated store update card', () => {
     expect(controls.openStore).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: commonCatalog.mobile.storeUpdate.later }));
     expect(controls.acknowledge).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: commonCatalog.mobile.storeUpdate.stopReminders }));
+    expect(controls.turnOffReminders).toHaveBeenCalledTimes(1);
   });
 
   it('uses Google Play copy on Android', () => {

@@ -631,6 +631,7 @@
       "androidBody": "Passe à la version {{version}} sur Google Play pour profiter des dernières améliorations.",
       "update": "Mettre Boardsesh à jour",
       "later": "Plus tard",
+      "stopReminders": "Ne plus me le rappeler",
       "openFailed": "Impossible d’ouvrir la boutique. Réessaie."
     }
   },

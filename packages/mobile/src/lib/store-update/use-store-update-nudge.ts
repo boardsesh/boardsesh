@@ -23,6 +23,8 @@ import {
 } from './nudge-policy';
 
 const ACKNOWLEDGMENT_KEY = 'storeUpdateAcknowledgmentV1';
+/** Survives native updates: a climber who opts out is never reminded again on this install. */
+const REMINDERS_OFF_KEY = 'storeUpdateRemindersOffV1';
 
 export function useStoreUpdateNudge(enabled: boolean) {
   const focused = useIsFocused();
@@ -38,7 +40,9 @@ export function useStoreUpdateNudge(enabled: boolean) {
     (qaStage !== null || (build.productionBuild && process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1'));
   const eligible = enabled && focused && active && launchReady && sessionId === null && allowedBuild;
   const preferenceKey = qaStage ? `${ACKNOWLEDGMENT_KEY}:qa:${qaStage}` : ACKNOWLEDGMENT_KEY;
+  const remindersOffKey = qaStage ? `${REMINDERS_OFF_KEY}:qa:${qaStage}` : REMINDERS_OFF_KEY;
   const [acknowledgment, setAcknowledgment] = useState<StoreUpdateAcknowledgment | null>();
+  const [remindersOff, setRemindersOff] = useState<boolean>();
   const [storageFailed, setStorageFailed] = useState(false);
   const [openingStore, setOpeningStore] = useState(false);
   const [openFailed, setOpenFailed] = useState(false);
@@ -48,11 +52,14 @@ export function useStoreUpdateNudge(enabled: boolean) {
     if (!eligible) return;
     let cancelled = false;
     setAcknowledgment(undefined);
+    setRemindersOff(undefined);
     setCurrentTimeMs(Date.now());
     setStorageFailed(false);
-    void getPreference<unknown>(preferenceKey)
-      .then((stored) => {
-        if (!cancelled) setAcknowledgment(parseStoreUpdateAcknowledgment(stored));
+    void Promise.all([getPreference<unknown>(preferenceKey), getPreference<unknown>(remindersOffKey)])
+      .then(([storedAcknowledgment, storedRemindersOff]) => {
+        if (cancelled) return;
+        setAcknowledgment(parseStoreUpdateAcknowledgment(storedAcknowledgment));
+        setRemindersOff(storedRemindersOff === true);
       })
       .catch(() => {
         if (!cancelled) setStorageFailed(true);
@@ -63,9 +70,10 @@ export function useStoreUpdateNudge(enabled: boolean) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [eligible, preferenceKey]);
+  }, [eligible, preferenceKey, remindersOffKey]);
 
-  const queryEnabled = eligible && qaStage === null && parseNumericVersion(nativeVersion) !== null;
+  const queryEnabled =
+    eligible && remindersOff === false && qaStage === null && parseNumericVersion(nativeVersion) !== null;
   const query = useQuery({
     queryKey: ['mobileStoreRelease', platform, nativeVersion],
     queryFn: async (): Promise<MobileStoreRelease | null> => {
@@ -88,7 +96,7 @@ export function useStoreUpdateNudge(enabled: boolean) {
   });
   const release = qaStage ? makeStoreUpdateQaRelease(qaStage, currentTimeMs) : (query.data ?? null);
   const stage =
-    eligible && !storageFailed && acknowledgment !== undefined
+    eligible && !storageFailed && acknowledgment !== undefined && remindersOff === false
       ? getStoreUpdateStage({ release, nativeVersion, acknowledgment, nowMs: currentTimeMs })
       : null;
 
@@ -100,6 +108,12 @@ export function useStoreUpdateNudge(enabled: boolean) {
     setOpenFailed(false);
     void setPreference(preferenceKey, next).catch(() => setStorageFailed(true));
   }, [nativeVersion, preferenceKey]);
+
+  const turnOffReminders = useCallback(() => {
+    setRemindersOff(true);
+    setOpenFailed(false);
+    void setPreference(remindersOffKey, true).catch(() => setStorageFailed(true));
+  }, [remindersOffKey]);
 
   const openStore = useCallback(async () => {
     if (!release || openingStore) return;
@@ -119,5 +133,5 @@ export function useStoreUpdateNudge(enabled: boolean) {
     }
   }, [release, openingStore, qaStage, platform, acknowledge]);
 
-  return { stage, release, platform, openingStore, openFailed, acknowledge, openStore };
+  return { stage, release, platform, openingStore, openFailed, acknowledge, turnOffReminders, openStore };
 }

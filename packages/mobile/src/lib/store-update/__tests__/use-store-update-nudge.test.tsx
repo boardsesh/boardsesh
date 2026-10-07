@@ -43,6 +43,7 @@ vi.mock('../../preference-store', () => ({ getPreference: mocks.getPreference, s
 
 const NOW = Date.parse('2026-10-06T00:00:00.000Z');
 const ACK_KEY = 'storeUpdateAcknowledgmentV1';
+const REMINDERS_OFF_KEY = 'storeUpdateRemindersOffV1';
 let nowMs = NOW;
 let client: QueryClient;
 function serverRelease(): MobileStoreRelease {
@@ -167,6 +168,34 @@ describe('store update hook lifecycle', () => {
     await waitFor(() => expect(remounted.result.current.stage).toBe('weekly'));
   });
 
+  it('turns reminders off for good, across cooldowns and native updates', async () => {
+    const first = mount();
+    await waitFor(() => expect(first.result.current.stage).toBe('weekly'));
+    await act(async () => {
+      first.result.current.turnOffReminders();
+    });
+    expect(first.result.current.stage).toBeNull();
+    expect(controls.preferences.get(REMINDERS_OFF_KEY)).toBe(true);
+    first.unmount();
+    mocks.request.mockClear();
+    nowMs = NOW + 90 * DAY_MS;
+    controls.nativeVersion = '2.5.0';
+    const later = mount();
+    await act(async () => {});
+    expect(later.result.current.stage).toBeNull();
+    expect(mocks.request).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when turning reminders off cannot persist', async () => {
+    const hook = mount();
+    await waitFor(() => expect(hook.result.current.stage).toBe('weekly'));
+    mocks.setPreference.mockRejectedValueOnce(new Error('storage full'));
+    await act(async () => {
+      hook.result.current.turnOffReminders();
+    });
+    expect(hook.result.current.stage).toBeNull();
+  });
+
   it('retries failed store opening without acknowledgment, then acknowledges a successful opening', async () => {
     const hook = mount();
     await waitFor(() => expect(hook.result.current.stage).toBe('weekly'));
@@ -217,7 +246,7 @@ describe('store update hook lifecycle', () => {
     controls.active = true;
     hook.rerender({ allow: true });
     await waitFor(() => expect(hook.result.current.stage).toBe('weekly'));
-    expect(mocks.getPreference).toHaveBeenCalledTimes(2);
+    expect(mocks.getPreference.mock.calls.filter(([key]) => key === ACK_KEY)).toHaveLength(2);
   });
 
   it('ignores forced QA metadata in a production bundle', async () => {
