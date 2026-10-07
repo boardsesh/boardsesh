@@ -7,10 +7,6 @@ import { useSprayCompletionUpdates } from './use-spray-completion-updates';
 import { registerNotificationDevice } from './device-registration';
 import { setupNotificationHandlers } from './handlers';
 
-// Push templates are rendered by the backend, outside the UI scanner.
-// i18n-keep notifications.push.sprayWallTitle
-// i18n-keep notifications.push.sprayWallBody
-
 /** Keep import progress and the bell current without background polling. */
 export function useNotificationUpdates(authenticated: boolean, accountId: string | null | undefined) {
   const { i18n } = useTranslation();
