@@ -97,10 +97,11 @@ vi.mock('../../../lib/boardsesh-grade-display', () => ({
     boardseshActive && ascent.boardseshDifficulty != null && ascent.boardseshConfidence !== 'setter_only'
       ? ascent.boardseshDifficulty
       : ascent.consensusDifficulty,
-  GRADE_BY_ID: new Map([
-    [21, { difficulty_name: 'V21-name' }],
-    [25, { difficulty_name: 'V25-name' }],
-  ]),
+  getBoulderGradeById: (difficultyId: number) =>
+    new Map([
+      [21, { difficulty_name: 'V21-name' }],
+      [25, { difficulty_name: 'V25-name' }],
+    ]).get(difficultyId),
   clampDifficultyId: (difficulty: number) => Math.round(difficulty),
 }));
 

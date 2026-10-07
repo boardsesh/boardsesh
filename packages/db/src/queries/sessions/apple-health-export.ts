@@ -67,9 +67,9 @@ function dateToIso(value: Date | string | null | undefined): string | null {
   return new Date(value).toISOString();
 }
 
-function gradeForDifficulty(difficulty: number | null): string | null {
+function gradeForDifficulty(difficulty: number | null, boardType: string): string | null {
   if (difficulty === null) return null;
-  return getGradeLabel(difficulty) ?? `V${difficulty}`;
+  return getGradeLabel(difficulty, boardType) ?? `V${difficulty}`;
 }
 
 /**
@@ -136,7 +136,7 @@ export async function getSessionHealthExport(
     tickUuid: tick.tickUuid,
     climbUuid: tick.climbUuid,
     climbName: tick.climbName ?? null,
-    grade: tick.grade ?? gradeForDifficulty(tick.difficulty),
+    grade: tick.grade ?? gradeForDifficulty(tick.difficulty, tick.boardType),
     status: tick.status,
     attemptCount: tick.attemptCount,
     boardType: tick.boardType,
@@ -168,7 +168,10 @@ export async function getSessionHealthExport(
       ? {
           climbUuid: hardestTick.climbUuid,
           climbName: hardestTick.climbName || 'Unknown climb',
-          grade: hardestTick.grade ?? gradeForDifficulty(hardestTick.difficulty) ?? `V${hardestTick.difficulty}`,
+          grade:
+            hardestTick.grade ??
+            gradeForDifficulty(hardestTick.difficulty, hardestTick.boardType) ??
+            `V${hardestTick.difficulty}`,
         }
       : null,
     laps,

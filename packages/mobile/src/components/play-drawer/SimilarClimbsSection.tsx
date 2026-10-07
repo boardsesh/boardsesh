@@ -136,7 +136,10 @@ export const SimilarClimbsSection = memo(function SimilarClimbsSection({
       {ranked.map(({ climb: similar, compatible }) => {
         // SimilarClimb carries no Boardsesh grade today, so `resolveGrade` falls
         // back to the legacy label + colour — lights up once the backend stamps them.
-        const { label: formattedGrade, color: gradeColor } = resolveGrade({ difficulty: similar.difficultyName });
+        const { label: formattedGrade, color: gradeColor } = resolveGrade(
+          { difficulty: similar.difficultyName },
+          boardName,
+        );
         const byline = formatByline(similar, tClimbs);
         return (
           <Pressable

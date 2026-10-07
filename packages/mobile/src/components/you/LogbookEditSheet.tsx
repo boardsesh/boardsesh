@@ -279,6 +279,7 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
         <GradeSingleSelectRail
           grades={grades}
           selectedDifficultyId={difficulty}
+          boardName={ascent?.boardType}
           onSelect={handleGradeSelect}
           allowClear={false}
           colorway="selection"

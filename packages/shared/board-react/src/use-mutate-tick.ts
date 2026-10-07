@@ -11,16 +11,19 @@ import {
   type GetUserAscentsFeedQueryResponse,
   type GetUserGroupedAscentsFeedQueryResponse,
 } from '@boardsesh/graphql/operations';
-import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
+import { getBoulderGradesForBoard } from '@boardsesh/board-constants/boulder-grade-mapping';
 import { useBoardAdapter } from './adapter';
 
-// Canonical difficulty_id → "6a/V3" display name, the same names the feed
-// resolvers serve. UPDATE_TICK returns only the numeric difficulty, so the
-// write-through derives the paired name to keep patched items internally
-// consistent (grade colors and the day divider's top-grade label read the NAME).
-const GRADE_NAME_BY_DIFFICULTY_ID = new Map<number, string>(
-  BOULDER_GRADES.map((grade) => [grade.difficulty_id, grade.difficulty_name]),
-);
+// Canonical difficulty_id → "6a/V3" display name on the tick's board, the same
+// names the feed resolvers serve (MoonBoard's 16 is "6a/V2"). UPDATE_TICK
+// returns only the numeric difficulty, so the write-through derives the paired
+// name to keep patched items internally consistent (grade colors and the day
+// divider's top-grade label read the NAME).
+function gradeNameForDifficultyId(difficultyId: number, boardType: string): string | null {
+  return (
+    getBoulderGradesForBoard(boardType).find((grade) => grade.difficulty_id === difficultyId)?.difficulty_name ?? null
+  );
+}
 
 // Stats / feed / climb-state caches that derive from a user's ticks. Editing or
 // deleting a tick must refresh all of them. Prefix matching means the bare root
@@ -91,7 +94,7 @@ function patchTickInAscentFeeds(queryClient: QueryClient, updatedTick: UpdateTic
           quality: updatedTick.quality,
           difficulty: updatedTick.difficulty,
           difficultyName:
-            updatedTick.difficulty != null ? (GRADE_NAME_BY_DIFFICULTY_ID.get(updatedTick.difficulty) ?? null) : null,
+            updatedTick.difficulty != null ? gradeNameForDifficultyId(updatedTick.difficulty, item.boardType) : null,
           isBenchmark: updatedTick.isBenchmark,
           comment: updatedTick.comment,
           climbedAt: updatedTick.climbedAt,

@@ -540,6 +540,10 @@ function ClimbListInner() {
   gradesRef.current = gradesData;
   const grades = useMemo(() => gradesData ?? [], [gradesData]);
   const { formatGradeByDifficultyId } = useGradeFormat();
+  const formatBoardGradeByDifficultyId = useCallback(
+    (difficultyId: number | null | undefined) => formatGradeByDifficultyId(difficultyId, boardName),
+    [formatGradeByDifficultyId, boardName],
+  );
 
   const boardConfig = useMemo(
     () => (hasBoardConfig ? { boardName, layoutId, sizeId, setIds, angle } : null),
@@ -1271,12 +1275,12 @@ function ClimbListInner() {
         boardFilters,
         grades,
         t,
-        formatGradeByDifficultyId,
+        formatGradeByDifficultyId: formatBoardGradeByDifficultyId,
         patchFilters,
         patchBoardFilters,
         setGrade,
       }),
-    [filters, boardFilters, grades, t, formatGradeByDifficultyId, patchFilters, patchBoardFilters, setGrade],
+    [filters, boardFilters, grades, t, formatBoardGradeByDifficultyId, patchFilters, patchBoardFilters, setGrade],
   );
   const nonGradeFilterTokens = useMemo(
     () => filterTokens.filter((filterToken) => filterToken.key !== 'grade'),
@@ -1991,6 +1995,7 @@ function ClimbListInner() {
         // tab itself names the screen, so the centre title is dropped entirely —
         // the redundant "All climbs" label added nothing.
         title={showFilterChips ? undefined : searchTitle}
+        boardName={boardName}
         canCreate={canCreateClimb}
         onCreate={handleCreateClimb}
         onOpenBoardDetail={handleOpenBoardDetail}
@@ -2035,6 +2040,7 @@ function ClimbListInner() {
               grades={grades}
               bound={gradeBound}
               lastUsedGradeId={lastUsedGrade}
+              boardName={boardName}
               onChange={handleGradeChange}
               onRequestClose={handleDismissGrade}
               dismissible={false}

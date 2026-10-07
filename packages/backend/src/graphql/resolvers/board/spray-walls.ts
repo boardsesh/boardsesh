@@ -66,7 +66,12 @@ import {
 import { sprayWallIsListable } from './spray-wall-listing';
 import { resizedVariantKey } from '../../../lib/image-resize';
 import { sprayVersionQuality, sprayWallArtState } from '../../../lib/spray-wall-art';
-import { requestSprayWallArtOn, sprayWallArtNeedsRequest, sprayWallArtView } from '../../../services/spray-wall-art';
+import {
+  requestSprayWallArtFromRead,
+  requestSprayWallArtOn,
+  sprayWallArtNeedsRequest,
+  sprayWallArtView,
+} from '../../../services/spray-wall-art';
 import {
   CommitSprayWallVersionInputSchema,
   CreateSprayWallInputSchema,
@@ -1816,7 +1821,7 @@ export const sprayWallQueries = {
       versionRow.id === loaded.wall.currentVersionId &&
       (background === 'wall-crop' || background === 'hold-cutouts')
     ) {
-      const outcome = await db.transaction((tx) => requestSprayWallArtOn(tx, versionRow, loaded.wall));
+      const outcome = await requestSprayWallArtFromRead(db, versionRow, loaded.wall);
       if (outcome === 'queued') return sprayWallArtView(versionRow, loaded.wall, { status: 'PENDING', requeue: false });
     }
 

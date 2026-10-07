@@ -30,7 +30,9 @@ export { classifySprayDraft, sameSprayGeometry, type SprayDraftPurpose, type Spr
 export {
   ART_CIRCLE_POINTS,
   ART_DILATE_FRACTION,
+  ART_DILATE_MAX_PX,
   ART_FEATHER_FRACTION,
+  ART_FEATHER_MAX_SIGMA,
   ART_MAX_EDGE,
   ART_RECIPE,
   SPRAY_WALL_BACKGROUNDS,

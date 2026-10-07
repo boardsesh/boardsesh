@@ -707,7 +707,7 @@ export const climbQueries = {
     return rows.map((row) => ({
       ...row,
       // Mirror the REST endpoint: round display difficulty to a grade id and label it.
-      difficulty: row.displayDifficulty == null ? null : getGradeLabel(Math.round(row.displayDifficulty)),
+      difficulty: row.displayDifficulty == null ? null : getGradeLabel(Math.round(row.displayDifficulty), boardName),
       syncSeq: row.syncSeq,
     }));
   },
@@ -765,7 +765,7 @@ export const climbQueries = {
 
     return rows.map((row) => ({
       ...row,
-      difficulty: row.displayDifficulty == null ? null : getGradeLabel(Math.round(row.displayDifficulty)),
+      difficulty: row.displayDifficulty == null ? null : getGradeLabel(Math.round(row.displayDifficulty), boardName),
       syncSeq: row.syncSeq,
     }));
   },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BOULDER_GRADES } from '@boardsesh/board-config';
-import { getDifficultyIdForGradeName, getGradeLabel } from '../grade-label';
+import { getDifficultyIdForGradeName, getGradeLabel, getSoleBoardType } from '../grade-label';
 
 // `getDifficultyIdForGradeName` is the inverse of `getGradeLabel`, and what a
 // spray-wall remix resolves its parent's grade through (#5443). The string it is
@@ -60,5 +60,31 @@ describe('getDifficultyIdForGradeName', () => {
       expect(label).not.toBe('');
       expect(getDifficultyIdForGradeName(label)).toBe(grade.difficulty_id);
     }
+  });
+});
+
+describe('getGradeLabel on a board scale', () => {
+  it("labels 16 the way MoonBoard does, so local search matches the server's boulder_name", () => {
+    expect(getGradeLabel(16, 'moonboard')).toBe('6a/V2');
+    expect(getGradeLabel(16, 'kilter')).toBe('6a/V3');
+    expect(getGradeLabel(16)).toBe('6a/V3');
+  });
+
+  it('keeps every other id the same on MoonBoard', () => {
+    expect(getGradeLabel(17, 'moonboard')).toBe(getGradeLabel(17));
+    expect(getGradeLabel(22, 'moonboard')).toBe('7a/V6');
+  });
+
+  it('takes the MoonBoard name back to the same id', () => {
+    expect(getDifficultyIdForGradeName(getGradeLabel(16, 'moonboard'))).toBe(16);
+  });
+});
+
+describe('getSoleBoardType', () => {
+  it('names the board only when the session has exactly one', () => {
+    expect(getSoleBoardType(['moonboard'])).toBe('moonboard');
+    expect(getSoleBoardType(['moonboard', 'kilter'])).toBeNull();
+    expect(getSoleBoardType([])).toBeNull();
+    expect(getSoleBoardType(undefined)).toBeNull();
   });
 });
