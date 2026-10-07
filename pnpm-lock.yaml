@@ -1587,6 +1587,10 @@ importers:
         version: 7.0.2
 
   packages/shared/spray-wall-geometry:
+    dependencies:
+      '@boardsesh/board-art-geometry':
+        specifier: workspace:*
+        version: link:../board-art-geometry
     devDependencies:
       '@types/node':
         specifier: ^25.9.5
