@@ -213,7 +213,7 @@
       "boardConfigIncomplete": "Los datos del plafón faltan o no son válidos. Vuelve a elegir el plafón para montar tu bloque.",
       "noUsableBoard": "Elige un plafón primero y luego monta tu bloque.",
       "boardTypeUnsupported": "Esta versión de la app todavía no permite montar bloques en ese plafón. Elige otro plafón.",
-      "wallArchived": "Este plafón está archivado. Sus bloques y encadenes se quedan, pero ya no se puede montar nada nuevo en él."
+      "wallArchived": "Este Spraywall está archivado. Sus bloques y encadenes se quedan, pero ya no se puede montar nada nuevo en él."
     },
     "alerts": {
       "publishDuplicateNamed": "Este patrón de presas coincide con \"{{name}}\". Activa Borrador para guardarlo sin publicar, o cambia una presa.",
@@ -386,8 +386,8 @@
         "subtitle": "Intenta ajustar la configuración de tu plafón"
       },
       "unsetWall": {
-        "title": "Nadie ha montado nada en este plafón",
-        "subtitle": "Elige tus presas, ponle nombre y el plafón ya tiene su primer bloque.",
+        "title": "Nadie ha montado nada en este Spraywall",
+        "subtitle": "Elige tus presas, ponle nombre y el Spraywall ya tiene su primer bloque.",
         "cta": "Monta el primer bloque"
       },
       "noMatches": {
@@ -690,15 +690,15 @@
       "deleteClimb": {
         "row": "Eliminar bloque",
         "title": "¿Eliminar este bloque?",
-        "message": "Desaparece del plafón de spray para todos, con sus comentarios. No se puede deshacer.",
+        "message": "Desaparece del Spraywall para todos, con sus comentarios. No se puede deshacer.",
         "confirm": "Eliminar",
         "cancel": "Conservarlo",
         "success": "Bloque eliminado.",
         "hasTicks": "Alguien ya registró este bloque, así que se queda en el plafón.",
         "pendingTick": "Tienes una ascensión de este bloque esperando a sincronizarse, así que se queda.",
         "notFound": "Este bloque ya no existe.",
-        "notAllowed": "Solo se pueden eliminar bloques de un plafón de spray.",
-        "archived": "Este plafón de spray está archivado, así que sus bloques se quedan como están.",
+        "notAllowed": "Solo se pueden eliminar bloques de un Spraywall.",
+        "archived": "Este Spraywall está archivado, así que sus bloques se quedan como están.",
         "offline": "Estás sin conexión. Para eliminar un bloque necesitas conexión.",
         "error": "No se pudo eliminar el bloque. Inténtalo de nuevo."
       }
@@ -954,7 +954,7 @@
     "unknownGrade": "Sin grado",
     "unknownSetter": "un equipador desconocido",
     "heading": "{{climbName}} — {{grade}}",
-    "summary": "En {{wallName}}, un plafón de spray a {{angle}}° con {{holdCount}} presas.",
+    "summary": "En {{wallName}}, un Spraywall a {{angle}}° con {{holdCount}} presas.",
     "setterLine": "Equipado por {{setter}}. {{ascents}} ascensiones registradas.",
     "ascentsLine": "{{ascents}} ascensiones registradas.",
     "setterNotesHeading": "Notas del equipador",
@@ -962,24 +962,24 @@
     "setterLink": "Más bloques de {{setter}}",
     "gymsLink": "Encuentra un rocódromo con plafones",
     "homeLink": "Inicio de Boardsesh",
-    "photoAlt": "{{climbName}}, {{grade}}, iluminado en el plafón de spray {{wallName}}",
-    "noPhoto": "Este plafón aún no tiene foto que mostrar.",
+    "photoAlt": "{{climbName}}, {{grade}}, iluminado en el Spraywall {{wallName}}",
+    "noPhoto": "Este Spraywall aún no tiene foto que mostrar.",
     "metadata": {
-      "title": "{{climbName}} {{grade}} en {{wallName}} | Plafón de spray",
-      "description": "{{climbName}}, {{grade}}, en el plafón de spray {{wallName}} a {{angle}}°, equipado por {{setter}}. Mira las presas sobre la foto del plafón."
+      "title": "{{climbName}} {{grade}} en {{wallName}} | Spraywall",
+      "description": "{{climbName}}, {{grade}}, en el Spraywall {{wallName}} a {{angle}}°, equipado por {{setter}}. Mira las presas sobre la foto del Spraywall."
     },
     "wall": {
-      "summary": "Un plafón de spray a {{angle}}° con {{holdCount}} presas.",
-      "photoAlt": "El plafón de spray {{wallName}}",
-      "openInApp": "Abre este plafón en la app de Boardsesh para ver sus bloques, equipar los tuyos y registrar tus ascensiones.",
+      "summary": "Un Spraywall a {{angle}}° con {{holdCount}} presas.",
+      "photoAlt": "El Spraywall {{wallName}}",
+      "openInApp": "Abre este Spraywall en la app de Boardsesh para ver sus bloques, equipar los tuyos y registrar tus ascensiones.",
       "metadata": {
-        "title": "{{wallName}} | Plafón de spray",
-        "description": "{{wallName}}, un plafón de spray a {{angle}}°. Mira el plafón y ábrelo en la app de Boardsesh."
+        "title": "{{wallName}} | Spraywall",
+        "description": "{{wallName}}, un Spraywall a {{angle}}°. Mira el Spraywall y ábrelo en la app de Boardsesh."
       }
     },
     "install": {
       "heading": "Consigue la app",
-      "body": "Registra tus encadenes en este plafón y equipa tus propios bloques."
+      "body": "Registra tus encadenes en este Spraywall y equipa tus propios bloques."
     }
   }
 }

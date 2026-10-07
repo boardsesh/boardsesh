@@ -137,10 +137,10 @@
       "printAction": "Imprimir este póster",
       "backToGym": "Volver al rocódromo"
     },
-    "sprayWallsHeading": "Plafones de spray",
-    "sprayWallCount_one": "{{count}} plafón",
-    "sprayWallCount_other": "{{count}} plafones",
-    "sprayWallsIntro": "Los plafones de spray de este centro, presa a presa. Abre uno para ver lo que se ha montado en él.",
+    "sprayWallsHeading": "Spraywalls",
+    "sprayWallCount_one": "{{count}} Spraywall",
+    "sprayWallCount_other": "{{count}} Spraywalls",
+    "sprayWallsIntro": "Los Spraywalls de este centro, presa a presa. Abre uno para ver lo que se ha montado en él.",
     "sprayWallPhotoAlt": "Foto de {{wallName}}",
     "sprayWallMeta": "{{angle}}° · {{holds}} presas"
   },

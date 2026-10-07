@@ -7,7 +7,7 @@ const LOCALES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'l
 
 // A spray wall has one name per language, and every back-reference to it uses
 // the same word (#5960):
-//   es  plafón de spray   (el plafón de spray, los plafones de spray)
+//   es  Spraywall         (el Spraywall, los Spraywalls; untranslated, masculine)
 //   fr  spray wall        (le spray wall, les spray walls)
 //   de  Spraywall         (die Spraywall, die Spraywalls)
 // Before this test the catalogs mixed five to six names per language (muro de
@@ -116,14 +116,20 @@ type TermRule = {
 const RULES: TermRule[] = [
   {
     locale: 'es',
-    term: '"plafón de spray" / "plafones de spray", and bare "plafón" for later mentions',
+    term: '"Spraywall" / "Spraywalls", untranslated and masculine (el Spraywall)',
     glossary: 'docs/i18n-spanish-glossary.md',
-    bannedEverywhere:
-      /\bmuros?\s+(?:de\s+)?spray\b|\b(?:plafones|plafón)\s+(?:de\s+)?presas\b|\b(?:plafones|plafón)\s+spray\b/i,
-    bannedInSprayStrings: /\bmuros?\b/i,
-    scopedAllowlist: new Set([NOT_A_WALL_KEY]),
-    requiredTerm: /plafón de spray|plafones de spray/i,
-    requiredTermFloor: 18,
+    bannedEverywhere: /\bmuros?\s+(?:de\s+)?spray\b|\bplaf(?:ones|ón)\s+(?:de\s+)?(?:presas|spray)\b/i,
+    // Plafón is the Kilter/Tension/MoonBoard board; the spray wall is never one.
+    bannedInSprayStrings: /\bmuros?\b|\bplaf(?:ones|ón)/i,
+    scopedAllowlist: new Set([
+      NOT_A_WALL_KEY,
+      // "Añádelo a tus plafones": the climber's boards in general, spray walls among them.
+      'boards.json:sprayWizard.publish.title',
+      // "Encuentra un rocódromo con plafones": gyms with any board.
+      'climbs.json:spray.gymsLink',
+    ]),
+    requiredTerm: /Spraywalls?/,
+    requiredTermFloor: 99,
   },
   {
     locale: 'fr',
@@ -134,7 +140,7 @@ const RULES: TermRule[] = [
     bannedInSprayStrings: /\bmurs?\b|\bspray\b(?!\s+walls?\b)/i,
     scopedAllowlist: new Set([NOT_A_WALL_KEY]),
     requiredTerm: /spray walls?/i,
-    requiredTermFloor: 98,
+    requiredTermFloor: 100,
   },
   {
     locale: 'de',
@@ -152,7 +158,7 @@ const RULES: TermRule[] = [
       'climbs.json:spray.gymsLink',
     ]),
     requiredTerm: /Spraywalls?/,
-    requiredTermFloor: 94,
+    requiredTermFloor: 97,
   },
 ];
 
@@ -161,9 +167,9 @@ describe.each(RULES)('$locale spray wall terminology', (rule) => {
   const sprayStrings = strings.filter(isSprayString);
 
   it('finds the spray-wall strings', () => {
-    // Floor at about 80% of today's 392. Not exact: the epic keeps adding spray copy. A scope regex that
+    // Floor at about 80% of today's 398. Not exact: the epic keeps adding spray copy. A scope regex that
     // quietly matched nothing would make every check below pass for free.
-    expect(sprayStrings.length).toBeGreaterThanOrEqual(310);
+    expect(sprayStrings.length).toBeGreaterThanOrEqual(318);
   });
 
   it('never uses a retired full name for the spray wall', () => {
@@ -237,7 +243,7 @@ describe('spray wall term pins', () => {
     const lookup = (locale: string) =>
       new Map(loadStrings(locale).map((entry) => [`${entry.file}:${entry.keyPath}`, entry.value]));
 
-    expect(lookup('es').get('boards.json:mobile.boardDetail.spray.kind')).toBe('Plafón de spray');
+    expect(lookup('es').get('boards.json:mobile.boardDetail.spray.kind')).toBe('Spraywall');
     expect(lookup('fr').get('boards.json:mobile.boardDetail.spray.kind')).toBe('Spray wall');
     expect(lookup('de').get('boards.json:mobile.boardDetail.spray.kind')).toBe('Spraywall');
   });
