@@ -1576,7 +1576,16 @@ export function useCreateClimbScreen({
   }, [setterGradeMissing]);
 
   const [focusNameSignal, setFocusNameSignal] = useState(0);
-  const requestFocusName = useCallback(() => setFocusNameSignal((value) => value + 1), []);
+  // Save with no name focuses the field AND says why, in a line under the
+  // header. Cleared as soon as the name changes, so it never outlives the fix.
+  const [nameMissingHint, setNameMissingHint] = useState(false);
+  const requestFocusName = useCallback(() => {
+    setFocusNameSignal((value) => value + 1);
+    setNameMissingHint(true);
+  }, []);
+  useEffect(() => {
+    setNameMissingHint(false);
+  }, [name]);
 
   const handleSave = useCallback(async () => {
     if (saveInFlightRef.current || startNewInFlightRef.current) return;
@@ -2000,6 +2009,8 @@ export function useCreateClimbScreen({
     publishDuplicateError,
     dismissDuplicateError,
     focusNameSignal,
+    /** True after a Save tap with no name, until the name changes. */
+    nameMissingHint,
     /** Bumped by a Save tap that needs the setter grade first; 0 when none is
      *  outstanding. The drawer scrolls to the grade rail on a change. */
     focusGradeSignal,

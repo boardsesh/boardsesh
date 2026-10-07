@@ -752,7 +752,8 @@
         "ariaLabel": "Create a climb"
       },
       "header": {
-        "newClimb": "New climb"
+        "newClimb": "New climb",
+        "nameRequired": "Name it to save"
       },
       "save": {
         "idle": "Save",
