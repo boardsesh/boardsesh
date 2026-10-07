@@ -86,10 +86,16 @@ type SetRenderSettingsResponse = { setSprayWallRenderSettings: SetRenderSettings
  * publishes.
  */
 export function useCreateSprayWall() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (input: CreateSprayWallInput): Promise<CreatedSprayWall> => {
       const response = await getHttpClient().request<CreateWallResponse>(CREATE_SPRAY_WALL, { input });
       return response.createSprayWall;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
+      void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
+      void queryClient.invalidateQueries({ queryKey: ['sprayImportProgress'] });
     },
   });
 }
@@ -132,10 +138,13 @@ export function useCreateSprayWallVersion() {
       const response = await getHttpClient().request<CreateVersionResponse>(CREATE_SPRAY_WALL_VERSION, { input });
       return response.createSprayWallVersion;
     },
-    onSuccess: (_version, input) =>
-      queryClient.invalidateQueries({
+    onSuccess: (_version, input) => {
+      void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
+      void queryClient.invalidateQueries({ queryKey: ['sprayImportProgress'] });
+      return queryClient.invalidateQueries({
         queryKey: sprayWallWithVersionsQueryKey(input.wallUuid),
-      }),
+      });
+    },
   });
 }
 
@@ -226,6 +235,7 @@ export function useDiscardSprayWallDraft() {
       await queryClient.cancelQueries({ queryKey: ['sprayWallRenderData', wallUuid] });
       queryClient.removeQueries({ queryKey: ['sprayWallRenderData', wallUuid] });
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
+      void queryClient.invalidateQueries({ queryKey: ['sprayImportProgress'] });
       await queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
     },
   });
@@ -250,6 +260,8 @@ export function useUpdateSprayWallVisibility() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
+      void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
+      void queryClient.invalidateQueries({ queryKey: ['sprayImportProgress'] });
     },
   });
 }
@@ -273,6 +285,7 @@ export function usePublishSprayWallVersion() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
+      void queryClient.invalidateQueries({ queryKey: ['sprayImportProgress'] });
     },
   });
 }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render, cleanup, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
@@ -424,5 +424,54 @@ describe('BoardManageRow subtitle', () => {
       <BoardManageRow {...rowProps} board={anonymous} isOwned={false} downloadState={undefined} />,
     );
     expect(queryByText('Original 12×12 with kickboard')).not.toBeNull();
+  });
+});
+
+describe('BoardManageRow import actions', () => {
+  it('keeps an unfinished import resumable and removes unusable download actions', () => {
+    const importing = {
+      ...board,
+      boardType: 'spray',
+      sprayImport: {
+        wallUuid: board.uuid,
+        versionId: '42',
+        detectionId: 'detection',
+        stage: 'queued' as const,
+        queuePosition: 3,
+        retryAt: null,
+        isReset: false,
+      },
+    };
+    const onOpenImport = vi.fn();
+    const { getByText, queryByTestId } = render(
+      <BoardManageRow {...rowProps} board={importing} onOpenImport={onOpenImport} downloadState="off" />,
+    );
+    expect(getByText('sprayImport.queuePosition')).toBeTruthy();
+    expect(queryByTestId('offline-toggle')).toBeNull();
+    fireEvent.click(getByText('sprayImport.open'));
+    expect(onOpenImport).toHaveBeenCalledWith(importing);
+  });
+
+  it('keeps published resets downloadable and opens their ready-to-review action', () => {
+    const resetting = {
+      ...board,
+      boardType: 'spray',
+      sprayImport: {
+        wallUuid: board.uuid,
+        versionId: '42',
+        detectionId: 'detection',
+        stage: 'ready' as const,
+        queuePosition: null,
+        retryAt: null,
+        isReset: true,
+      },
+    };
+    const onOpenImport = vi.fn();
+    const { getByText, getByTestId } = render(
+      <BoardManageRow {...rowProps} board={resetting} onOpenImport={onOpenImport} downloadState="downloaded" />,
+    );
+    expect(getByTestId('offline-toggle')).toBeTruthy();
+    fireEvent.click(getByText('sprayImport.review'));
+    expect(onOpenImport).toHaveBeenCalledWith(resetting);
   });
 });

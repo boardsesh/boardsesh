@@ -1,3 +1,5 @@
+import { useSprayImportProgress } from '../../src/lib/spray/use-spray-import-progress';
+import { sprayImportRoute } from '../../src/lib/spray/spray-import-progress';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
@@ -127,7 +129,16 @@ export default function ManageBoards() {
     refetch,
     isRefetching,
   } = useMyBoards(undefined, { enabled: isAuthenticated });
-  const myBoards = boardConnection?.boards ?? EMPTY_BOARDS;
+  const { boards: myBoards, stale: importStatusStale } = useSprayImportProgress(
+    boardConnection?.boards ?? EMPTY_BOARDS,
+  );
+
+  const openImport = useCallback(
+    (board: UserBoard) => {
+      if (board.sprayImport) router.push(sprayImportRoute(board.sprayImport));
+    },
+    [router],
+  );
 
   // Offline download wiring. Subscribe to the sync status + enabled-boards setting
   // ONCE here (not per row) and derive a primitive state per row, so a download's
@@ -608,6 +619,8 @@ export default function ManageBoards() {
       return (
         <BoardManageRow
           board={item.board}
+          importStatusStale={importStatusStale}
+          onOpenImport={openImport}
           isOwned={item.isOwned}
           isActive={item.isActive}
           downloadState={downloadState}
@@ -624,6 +637,8 @@ export default function ManageBoards() {
     },
     [
       offlineDownloadsEnabled,
+      importStatusStale,
+      openImport,
       enabledSet,
       isSyncing,
       downloadedSet,

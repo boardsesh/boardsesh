@@ -158,3 +158,29 @@ describe('useNotificationNavigation proposal rows', () => {
     expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
   });
 });
+
+describe('useNotificationNavigation spray imports', () => {
+  it.each([false, true])('opens the exact completed photo with reset=%s', (isReset) => {
+    const notification = makeNotification({
+      type: 'spray_wall_detection_completed',
+      sprayWallUuid: 'wall-1',
+      sprayVersionId: '123',
+      isSprayReset: isReset,
+      actorCount: 0,
+      actors: [],
+    });
+    tap(notification);
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: isReset ? '/boards/spray/reset' : '/boards/spray/new',
+      params: { wallUuid: 'wall-1', versionId: '123' },
+    });
+    expect(markGroupMutate).toHaveBeenCalledWith(notification);
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+  });
+
+  it('opens My Boards when the completed photo is no longer accessible', () => {
+    tap(makeNotification({ type: 'spray_wall_detection_completed', sprayWallUuid: null, sprayVersionId: null }));
+    expect(routerMock.push).toHaveBeenCalledWith('/boards');
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+  });
+});

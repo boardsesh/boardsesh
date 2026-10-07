@@ -6,7 +6,10 @@
     "failed": "We couldn't finish finding holds. Your photo is saved.",
     "resumeHint": "You can leave and resume later. Your published wall stays unchanged.",
     "retry": "Try again",
-    "manual": "Mark holds myself"
+    "manual": "Mark holds myself",
+    "queuePosition": "Your photo is #{{position}} in the recognition queue.",
+    "retrying": "Your photo is saved. Recognition will try again shortly.",
+    "notifyHint": "We'll notify you when your photo is ready to review."
   },
   "mobile": {
     "edit": {
@@ -1202,5 +1205,18 @@
     "notAvailableNoPins": "Pin the 4 corners of the wall first to use this look.",
     "notAvailableSmall": "This photo is too small to flatten. Retake it with your phone's main camera at 1x.",
     "usePhoto": "Use the photo"
+  },
+  "sprayImport": {
+    "draft": "Draft",
+    "queued": "Importing · Waiting in queue",
+    "queuePosition": "Importing · #{{position}} in queue",
+    "running": "Importing",
+    "ready": "Ready to review",
+    "failed": "Couldn't import",
+    "retrying": "Importing · Waiting to retry",
+    "offline": "Importing · Connect to check progress",
+    "open": "Check import",
+    "review": "Review holds",
+    "unavailable": "This import is no longer available. Open My Boards to continue."
   }
 }

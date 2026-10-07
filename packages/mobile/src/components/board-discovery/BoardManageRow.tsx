@@ -1,3 +1,4 @@
+import { sprayImportCopy } from '../../lib/spray/spray-import-progress';
 import { memo, useEffect, useMemo, useRef } from 'react';
 import { AccessibilityInfo, Platform, Pressable, View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -20,6 +21,8 @@ const THUMB_SIZE = 56;
 
 type BoardManageRowProps = {
   board: UserBoard;
+  importStatusStale?: boolean;
+  onOpenImport?: (board: UserBoard) => void;
   /**
    * True when the viewer owns this board. Still needed after the edit/delete
    * affordances moved to the picker's cards: it is what decides whether the
@@ -78,6 +81,8 @@ type BoardManageRowProps = {
  */
 function BoardManageRowComponent({
   board,
+  importStatusStale = false,
+  onOpenImport,
   isOwned,
   isActive,
   downloadState,
@@ -91,6 +96,7 @@ function BoardManageRowComponent({
   offlineControlsDisabled = false,
 }: BoardManageRowProps) {
   const { t, i18n } = useTranslation('boards');
+  const importCopy = board.sprayImport ? sprayImportCopy(board.sprayImport, importStatusStale) : null;
   const { systemColors, brandColors } = useTheme();
 
   const boardName = toBoardName(board.boardType);
@@ -246,7 +252,19 @@ function BoardManageRowComponent({
         <Text variant="subheadline" color={systemColors.secondaryLabel} numberOfLines={1}>
           {subtitle}
         </Text>
-        {offlineStatus ? (
+        {importCopy ? (
+          <Text variant="caption1" color={brandColors.primary} accessibilityLiveRegion="polite">
+            {t(importCopy.textI18nKey, importCopy.params)}
+          </Text>
+        ) : null}
+        {board.sprayImport && onOpenImport ? (
+          <Pressable onPress={() => onOpenImport(board)} accessibilityRole="button" hitSlop={8}>
+            <Text variant="caption1" color={brandColors.primary}>
+              {board.sprayImport.stage === 'ready' ? t('sprayImport.review') : t('sprayImport.open')}
+            </Text>
+          </Pressable>
+        ) : null}
+        {offlineStatus && (!board.sprayImport || board.sprayImport.isReset) ? (
           <Text
             variant="caption1"
             color={downloadState === 'downloaded' ? brandColors.primary : systemColors.tertiaryLabel}
@@ -265,7 +283,7 @@ function BoardManageRowComponent({
         {/* Rendered unconditionally when the row can download at all, so the
             first progress frame cannot change the row's height inside the
             FlashList and jump the scroll position. */}
-        {downloadState !== undefined ? (
+        {downloadState !== undefined && (!board.sprayImport || board.sprayImport.isReset) ? (
           <OfflineDownloadProgressBar
             fraction={downloadProgress && downloadProgress.stage === 'download' ? downloadProgress.fraction : undefined}
           />
@@ -291,7 +309,7 @@ function BoardManageRowComponent({
         ) : null}
       </View>
 
-      {downloadState !== undefined ? (
+      {downloadState !== undefined && (!board.sprayImport || board.sprayImport.isReset) ? (
         <BoardOfflineToggle
           state={downloadState}
           onPress={() => onToggleOffline(board)}

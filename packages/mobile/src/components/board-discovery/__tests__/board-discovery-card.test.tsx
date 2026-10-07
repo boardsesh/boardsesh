@@ -24,6 +24,9 @@ function styleAttribute(style: unknown): string {
   return JSON.stringify(style);
 }
 
+const importRouter = vi.hoisted(() => ({ push: vi.fn() }));
+vi.mock('expo-router', () => ({ useRouter: () => importRouter }));
+
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (spec: Record<string, unknown>) => spec.ios },
   View: ({ children, style, testID }: { children?: ReactNode; style?: unknown; testID?: string }) =>
@@ -205,6 +208,7 @@ function discShape(element: Element | null): Record<string, unknown> {
 
 function resetCapture() {
   cleanup();
+  importRouter.push.mockReset();
   boardImageProps.last = null;
   cardRootProps.last = null;
   cardRootProps.accessibilityActions = [];
@@ -794,5 +798,83 @@ describe('spray wall Details action', () => {
         (action) => action.name === 'details',
       ),
     ).toBe(false);
+  });
+});
+
+const importProgress = {
+  wallUuid: 'spray-wall',
+  versionId: '42',
+  detectionId: 'detection',
+  stage: 'queued' as const,
+  queuePosition: 3,
+  retryAt: null,
+  isReset: false,
+};
+
+describe('BoardDiscoveryCard import status', () => {
+  afterEach(resetCapture);
+
+  it('hands the exact unfinished import to the picker and masks stale ranks', () => {
+    const onPress = vi.fn();
+    const onDetails = vi.fn();
+    const importItem = { ...item, boardName: 'spray' as const, sprayImport: importProgress, importStatusStale: true };
+    const { getByText, getByTestId, queryByRole } = render(
+      createElement(BoardDiscoveryCard, { item: importItem, onPress, onDetails }),
+    );
+    expect(queryByRole('button', { name: 'mobile.boardDetail.detailsAria' })).toBeNull();
+    expect(
+      ((cardRootProps.last?.accessibilityActions ?? []) as Array<{ name: string }>).some(
+        (action) => action.name === 'details',
+      ),
+    ).toBe(false);
+    expect(getByText('sprayImport.offline')).toBeTruthy();
+    fireEvent.click(getByTestId('card-root'));
+    expect(onPress).toHaveBeenCalledWith(importItem);
+  });
+
+  it('offers neither Details nor import review while editing a published reset', () => {
+    const resetItem = {
+      ...item,
+      boardName: 'spray' as const,
+      sprayImport: { ...importProgress, isReset: true, stage: 'ready' as const },
+    };
+    const { queryByRole } = render(
+      createElement(BoardDiscoveryCard, { item: resetItem, onPress: vi.fn(), onDetails: vi.fn(), isEditing: true }),
+    );
+    expect(queryByRole('button', { name: 'mobile.boardDetail.detailsAria' })).toBeNull();
+    expect(queryByRole('button', { name: 'sprayImport.review' })).toBeNull();
+    const actionNames = ((cardRootProps.last?.accessibilityActions ?? []) as Array<{ name: string }>).map(
+      (action) => action.name,
+    );
+    expect(actionNames).not.toContain('details');
+    expect(actionNames).not.toContain('import');
+  });
+
+  it('keeps a published reset selectable and opens its exact review target separately', () => {
+    const onPress = vi.fn();
+    const onDetails = vi.fn();
+    const resetItem = {
+      ...item,
+      boardName: 'spray' as const,
+      sprayImport: { ...importProgress, isReset: true, stage: 'ready' as const },
+    };
+    const { getByTestId, getByRole } = render(
+      createElement(BoardDiscoveryCard, { item: resetItem, onPress, onDetails }),
+    );
+    expect(
+      ((cardRootProps.last?.accessibilityActions ?? []) as Array<{ name: string }>).map((action) => action.name),
+    ).toEqual(expect.arrayContaining(['details', 'import']));
+    fireEvent.click(getByRole('button', { name: 'mobile.boardDetail.detailsAria' }));
+    expect(onDetails).toHaveBeenCalledWith(resetItem);
+    expect(onPress).not.toHaveBeenCalled();
+    fireEvent.click(getByTestId('card-root'));
+    expect(onPress).toHaveBeenCalledWith(resetItem);
+    onPress.mockClear();
+    fireEvent.click(getByRole('button', { name: 'sprayImport.review' }));
+    expect(importRouter.push).toHaveBeenCalledWith({
+      pathname: '/boards/spray/reset',
+      params: { wallUuid: 'spray-wall', versionId: '42' },
+    });
+    expect(onPress).not.toHaveBeenCalled();
   });
 });

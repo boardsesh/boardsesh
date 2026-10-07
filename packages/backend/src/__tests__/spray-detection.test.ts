@@ -12,7 +12,7 @@ import {
 import { users, sprayWalls, sprayWallVersions, sprayWallDetections } from '@boardsesh/db/schema';
 import { claimSprayDetection, finishSprayDetection, retrySprayDetectionAttempt } from '@boardsesh/db/queries';
 import { db } from '../db/client';
-import { startJobQueue, stopJobQueue } from '../services/job-queue';
+import { startJobQueue, stopJobQueue, requireJobQueue } from '../services/job-queue';
 import { initializeJobQueueSchema } from '@boardsesh/db/job-queue-schema';
 import { sprayWallMutations } from '../graphql/resolvers/board/spray-walls';
 import { sprayDetectionMutations, sprayDetectionQueries } from '../graphql/resolvers/board/spray-detection';
@@ -62,6 +62,91 @@ describe('durable spray recognition', () => {
   });
   afterAll(async () => {
     await stopJobQueue();
+  });
+
+  it('keeps queued imports resumable and omits progress for users without edit access', async () => {
+    const { owner, input } = await draft();
+    const requested = await sprayDetectionMutations.requestSprayWallDetection({}, { input }, owner);
+    const progress = await sprayDetectionQueries.sprayWallImportProgress({}, { wallUuids: [input.wallUuid] }, owner);
+    expect(progress[0].queuePosition).toBeGreaterThan(0);
+    expect(progress).toMatchObject([
+      {
+        wallUuid: input.wallUuid,
+        versionId: input.versionId,
+        detectionId: requested.id,
+        stage: 'queued',
+        isReset: false,
+      },
+    ]);
+    expect(
+      await sprayDetectionQueries.sprayWallImportProgress({}, { wallUuids: [input.wallUuid] }, context(randomUUID())),
+    ).toEqual([]);
+  });
+
+  it('keeps terminal detection status authoritative after the queue job disappears', async () => {
+    const { owner, input } = await draft();
+    const requested = await sprayDetectionMutations.requestSprayWallDetection({}, { input }, owner);
+    const [record] = await db.select().from(sprayWallDetections).where(eq(sprayWallDetections.id, requested.id));
+    const claimed = await claimSprayDetection(db, requested.id, record.jobId);
+    expect(await finishSprayDetection(db, requested.id, claimed!.attemptToken, proposal)).toBe(true);
+    await requireJobQueue().cancel(SPRAY_DETECTION_QUEUE, record.jobId);
+    expect(
+      await sprayDetectionQueries.sprayWallImportProgress({}, { wallUuids: [input.wallUuid] }, owner),
+    ).toMatchObject([
+      {
+        stage: 'ready',
+        queuePosition: null,
+        retryAt: null,
+      },
+    ]);
+  });
+
+  it('shows a wall without a photo as a draft and omits its metadata from strangers', async () => {
+    const { owner } = await draft();
+    const wall = (await sprayWallMutations.createSprayWall(
+      {},
+      { input: { name: 'Unfinished', angle: 40 } },
+      owner,
+    )) as { uuid: string };
+    expect(await sprayDetectionQueries.sprayWallImportProgress({}, { wallUuids: [wall.uuid] }, owner)).toEqual([
+      {
+        wallUuid: wall.uuid,
+        versionId: null,
+        detectionId: null,
+        stage: 'draft',
+        queuePosition: null,
+        retryAt: null,
+        isReset: false,
+      },
+    ]);
+    expect(
+      await sprayDetectionQueries.sprayWallImportProgress({}, { wallUuids: [wall.uuid] }, context(randomUUID())),
+    ).toEqual([]);
+  });
+
+  it('uses the published version to identify resets and clears progress when a reset publishes', async () => {
+    const { owner, input } = await draft();
+    const [wall] = await db.select().from(sprayWalls).where(eq(sprayWalls.boardUuid, input.wallUuid));
+    const versionId = Number(input.versionId);
+    await db.update(sprayWallVersions).set({ status: 'published' }).where(eq(sprayWallVersions.id, versionId));
+    await db.update(sprayWalls).set({ currentVersionId: versionId }).where(eq(sprayWalls.id, wall.id));
+    expect(await sprayDetectionQueries.sprayWallImportProgress({}, { wallUuids: [input.wallUuid] }, owner)).toEqual([]);
+    const [reset] = await db
+      .insert(sprayWallVersions)
+      .values({ wallId: wall.id, versionNumber: 2, status: 'draft' })
+      .returning();
+    expect(
+      await sprayDetectionQueries.sprayWallImportProgress({}, { wallUuids: [input.wallUuid] }, owner),
+    ).toMatchObject([
+      {
+        versionId: String(reset.id),
+        isReset: true,
+        stage: 'draft',
+      },
+    ]);
+    await db.update(sprayWallVersions).set({ status: 'published' }).where(eq(sprayWallVersions.id, reset.id));
+    await db.update(sprayWalls).set({ currentVersionId: reset.id }).where(eq(sprayWalls.id, wall.id));
+    expect(await sprayDetectionQueries.sprayWallImportProgress({}, { wallUuids: [input.wallUuid] }, owner)).toEqual([]);
   });
 
   it('deduplicates concurrent requests and prevents another owner reading results', async () => {

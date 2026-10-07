@@ -36,9 +36,15 @@
     "newClimbsSynced": "{{actor}} a ouvert de nouveaux blocs",
     "gymClaimApproved": "Tu gères maintenant {{gym}}",
     "gymClaimApprovedGeneric": "Tu es désormais le propriétaire : ta revendication de la salle est validée",
-    "default": "Tu as une nouvelle notification"
+    "default": "Tu as une nouvelle notification",
+    "sprayWallReady": "{{wall}} est prêt à vérifier.",
+    "sprayWallReadyGeneric": "La photo de ton mur est prête à vérifier."
   },
   "errors": {
     "load": "Impossible de charger tes notifications"
+  },
+  "push": {
+    "sprayWallTitle": "Prêt à vérifier",
+    "sprayWallBody": "La photo de {{wall}} est prête. Vérifie les prises."
   }
 }

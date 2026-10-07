@@ -6,7 +6,10 @@
     "failed": "No pudimos terminar de buscar las presas. Tu foto está guardada.",
     "resumeHint": "Puedes salir y continuar más tarde. Tu muro publicado no cambia.",
     "retry": "Intentar de nuevo",
-    "manual": "Marcar las presas a mano"
+    "manual": "Marcar las presas a mano",
+    "queuePosition": "Tu foto está en el puesto {{position}} de la cola de reconocimiento.",
+    "retrying": "Tu foto está guardada. El reconocimiento volverá a intentarlo pronto.",
+    "notifyHint": "Te avisaremos cuando tu foto esté lista para revisar."
   },
   "mobile": {
     "edit": {
@@ -1202,5 +1205,18 @@
     "notAvailableNoPins": "Marca primero las 4 esquinas del muro para usar este aspecto.",
     "notAvailableSmall": "Esta foto es demasiado pequeña para enderezarla. Repítela con la cámara principal a 1x.",
     "usePhoto": "Usar la foto"
+  },
+  "sprayImport": {
+    "draft": "Borrador",
+    "queued": "Importando · En espera",
+    "queuePosition": "Importando · N.º {{position}} en la cola",
+    "running": "Importando",
+    "ready": "Listo para revisar",
+    "failed": "No se pudo importar",
+    "retrying": "Importando · Esperando otro intento",
+    "offline": "Importando · Conéctate para ver el progreso",
+    "open": "Comprobar importación",
+    "review": "Revisar presas",
+    "unavailable": "Esta importación ya no está disponible. Abre Mis plafones para continuar."
   }
 }

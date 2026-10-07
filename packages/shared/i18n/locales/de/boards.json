@@ -6,7 +6,10 @@
     "failed": "Die Grifferkennung konnte nicht abgeschlossen werden. Dein Foto ist gespeichert.",
     "resumeHint": "Du kannst später weitermachen. Deine veröffentlichte Wand bleibt unverändert.",
     "retry": "Erneut versuchen",
-    "manual": "Griffe selbst markieren"
+    "manual": "Griffe selbst markieren",
+    "queuePosition": "Dein Foto ist auf Platz {{position}} in der Warteschlange für die Erkennung.",
+    "retrying": "Dein Foto ist gespeichert. Die Erkennung wird bald erneut versucht.",
+    "notifyHint": "Wir benachrichtigen dich, sobald dein Foto zur Prüfung bereit ist."
   },
   "mobile": {
     "edit": {
@@ -1202,5 +1205,18 @@
     "notAvailableNoPins": "Setz zuerst die 4 Ecken der Wand, um diesen Look zu nutzen.",
     "notAvailableSmall": "Dieses Foto ist zu klein zum Entzerren. Nimm es mit der Hauptkamera bei 1x neu auf.",
     "usePhoto": "Foto nehmen"
+  },
+  "sprayImport": {
+    "draft": "Entwurf",
+    "queued": "Import läuft · In der Warteschlange",
+    "queuePosition": "Import läuft · Platz {{position}} in der Warteschlange",
+    "running": "Import läuft",
+    "ready": "Bereit zur Prüfung",
+    "failed": "Import fehlgeschlagen",
+    "retrying": "Import läuft · Wartet auf neuen Versuch",
+    "offline": "Import läuft · Verbinde dich, um den Fortschritt zu sehen",
+    "open": "Import prüfen",
+    "review": "Griffe prüfen",
+    "unavailable": "Dieser Import ist nicht mehr verfügbar. Öffne Meine Boards, um fortzufahren."
   }
 }

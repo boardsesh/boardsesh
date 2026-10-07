@@ -1,7 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { useOfflineDatabase } from '../db/use-offline-database';
 import { useQueryClient } from '@tanstack/react-query';
-import { router } from 'expo-router';
 import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
 import {
   assertLocalUserDataOwner,
@@ -13,7 +12,7 @@ import { startSyncScheduler, drainMutationQueue, startBackgroundTracking } from 
 import { recoverAndReportOutboxOnce } from '../offline/outbox-telemetry';
 import { sweepDelistedDownloadTerminals } from '../offline/abandoned-download-terminals';
 import { getSetting } from '../settings';
-import { setupNotificationHandlers } from '../notifications';
+import { useNotificationUpdates } from '../notifications/use-notification-updates';
 import { getOfflineSyncHttpClient } from '../lib/graphql/client';
 import { setOfflineEngineEnabled } from '../lib/offline-engine';
 import { registerOfflineEngineState } from '../lib/analytics-offline-engine-state';
@@ -63,7 +62,7 @@ export function OfflineSyncBridge() {
   // still be the wrapper around the dead native instance (#5410).
   const db = useOfflineDatabase();
   const queryClient = useQueryClient();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   const snapshotSource = useSnapshotSource();
   // `useSQLiteContext()` hands out a connection as soon as the launch gate opens,
   // which is after the FIRST init attempt whatever it did — so on a contended launch
@@ -95,6 +94,7 @@ export function OfflineSyncBridge() {
   // reads go through getDatabaseHandle(), which stays null until the same
   // moment.
   const { userId: localUserId } = useStoredUserId(isAuthenticated);
+  useNotificationUpdates(isAuthenticated && !isLoading, localUserId);
   useEffect(() => {
     if (!isAuthenticated || !localUserId || !schemaReady) return;
     let cancelled = false;
@@ -224,20 +224,6 @@ export function OfflineSyncBridge() {
       return undefined;
     }
   }, [db, queryClient, graphqlFetch, snapshotSource, isAuthenticated, schemaReady]);
-
-  // Deep-link routing for tapped push notifications. Deliberately independent
-  // of the offline flag — notifications ship inert for everyone today.
-  useEffect(() => {
-    try {
-      const cleanup = setupNotificationHandlers(router);
-      return cleanup;
-    } catch (error) {
-      if (__DEV__) {
-        console.warn('[OfflineSyncBridge] failed to set up notification handlers:', error);
-      }
-      return undefined;
-    }
-  }, []);
 
   return null;
 }

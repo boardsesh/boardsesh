@@ -6,7 +6,10 @@
     "failed": "La recherche des prises n'a pas abouti. Ta photo est enregistrée.",
     "resumeHint": "Tu peux quitter et reprendre plus tard. Ton mur publié reste inchangé.",
     "retry": "Réessayer",
-    "manual": "Marquer les prises à la main"
+    "manual": "Marquer les prises à la main",
+    "queuePosition": "Ta photo est en position {{position}} dans la file de reconnaissance.",
+    "retrying": "Ta photo est enregistrée. La reconnaissance réessaiera bientôt.",
+    "notifyHint": "Nous te préviendrons quand ta photo sera prête à vérifier."
   },
   "mobile": {
     "edit": {
@@ -1202,5 +1205,18 @@
     "notAvailableNoPins": "Place d'abord les 4 coins du mur pour utiliser ce rendu.",
     "notAvailableSmall": "Cette photo est trop petite pour être redressée. Reprends-la avec l'appareil principal en 1x.",
     "usePhoto": "Utiliser la photo"
+  },
+  "sprayImport": {
+    "draft": "Brouillon",
+    "queued": "Importation · En attente",
+    "queuePosition": "Importation · N° {{position}} dans la file",
+    "running": "Importation",
+    "ready": "Prêt à vérifier",
+    "failed": "L’importation a échoué",
+    "retrying": "Importation · En attente d’un nouvel essai",
+    "offline": "Importation · Connecte-toi pour voir la progression",
+    "open": "Vérifier l’importation",
+    "review": "Vérifier les prises",
+    "unavailable": "Cette importation n’est plus disponible. Ouvre Mes murs pour continuer."
   }
 }

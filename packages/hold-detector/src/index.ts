@@ -2,10 +2,15 @@ import { createServer } from 'node:http';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { PgBoss } from 'pg-boss';
 import { count, inArray, min, sql } from 'drizzle-orm';
+import { jobQueueTransactionAdapter } from '@boardsesh/db/background-jobs';
 import { sprayWallDetections } from '@boardsesh/db/schema';
 import { createDb, closePool } from '@boardsesh/db/client';
 import { claimSprayDetection, finishSprayDetection, retrySprayDetectionAttempt } from '@boardsesh/db/queries';
-import { SPRAY_DETECTION_QUEUE, type SprayDetectionJob } from '@boardsesh/shared-schema';
+import {
+  SPRAY_DETECTION_QUEUE,
+  SPRAY_DETECTION_COMPLETION_QUEUE,
+  type SprayDetectionJob,
+} from '@boardsesh/shared-schema';
 import { detectorConfig } from './config';
 import { InferenceRunner } from './inference';
 import { detectionProposal } from './result';
@@ -83,7 +88,17 @@ async function main(): Promise<void> {
           }
           const result = await inference.run(Buffer.concat(chunks));
           const proposal = detectionProposal(result, { width: claim.photoWidth, height: claim.photoHeight });
-          if (await finishSprayDetection(database, claim.id, claim.attemptToken, proposal)) completed++;
+          if (
+            await finishSprayDetection(database, claim.id, claim.attemptToken, proposal, async (transaction) => {
+              const queued = await boss.send(
+                SPRAY_DETECTION_COMPLETION_QUEUE,
+                { detectionId: claim.id },
+                { db: jobQueueTransactionAdapter(transaction), retryLimit: 10, retryDelay: 30, retryBackoff: true },
+              );
+              if (!queued) throw new Error('COMPLETION_ENQUEUE_FAILED');
+            })
+          )
+            completed++;
           lastCompletedMs = Date.now() - started;
           console.info(
             JSON.stringify({
