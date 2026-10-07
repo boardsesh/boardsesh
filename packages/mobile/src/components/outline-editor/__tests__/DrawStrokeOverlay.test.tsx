@@ -341,7 +341,6 @@ describe('closing the loop', () => {
   });
 });
 
-
 describe('strokes that start off the photo (startsOnPhotoOnly)', () => {
   // The mount draws a 100 x 100 render box (200 x 200 board px) at scale 2,
   // translate (10, 20): screen x = 400 lands well past its right edge, in the
